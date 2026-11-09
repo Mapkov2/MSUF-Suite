@@ -75,6 +75,7 @@ Adapters\DeepWindows.lua
 Adapters\DeepWindowsProfessions.lua
 Adapters\SemanticHUD.lua
 Adapters\EquipmentInfo.lua
+Adapters\GearGeometry.lua
 Adapters\GearAnnotations.lua
 Adapters\CharacterDetails.lua
 Adapters\CharacterStats.lua

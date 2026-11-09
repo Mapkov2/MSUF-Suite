@@ -1,6 +1,9 @@
 local root = assert(arg[1])
 local path = root .. "/MSUF_Suite_CharacterPanel/"
-local writes, frames, modelReads = 0, 0, 0
+local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local writes, frames, modelReads, modelRefreshes, playerModels = 0, 0, 0, 0, 0
+local liveCombat, identityRestricted, secretIdentityChecked = false, false, false
+local secretIdentity = newproxy()
 local fontPath, modelReady = "First.ttf", false
 local skinEnabled, skinRefreshes, releases = true, 0, 0
 local openingWatches = 0
@@ -16,11 +19,30 @@ local methods = {
     GetWidth = function(self) return self.width end,
     GetHeight = function(self) return self.height end,
     SetJustifyH = Write, SetWordWrap = Write, SetTexCoord = Write, SetAllPoints = Write,
-    SetFrameStrata = Write, SetClampedToScreen = Write, SetMovable = Write,
+    SetFrameStrata = function(self, strata) self.strata = strata Write() end,
+    SetParent = function(self, parent) self.parent = parent Write() end,
+    SetHitRectInsets = function(self, left, right, top, bottom) self.insets = {left, right, top, bottom} Write() end,
+    SetFrameLevel = function(self, level)
+        local parent = self.parent
+        self.frameLevel = level
+        self.parentLevel = parent and parent.GetFrameLevel and parent:GetFrameLevel()
+        Write()
+    end,
+    GetFrameLevel = function(self)
+        local parentLevel = self.parent and self.parent.GetFrameLevel and self.parent:GetFrameLevel() or 0
+        if self.frameLevel then return self.frameLevel + (self.parentLevel and parentLevel - self.parentLevel or 0) end
+        return parentLevel + 1
+    end,
+    SetClampedToScreen = Write, SetMovable = Write,
     SetScale = function(self, scale) self.scale = scale Write() end,
-    GetEffectiveScale = function(self) return self.scale or 1 end,
+    GetEffectiveScale = function(self)
+        local parent = self.parent
+        return (self.scale or 1) * (parent and parent.GetEffectiveScale and parent:GetEffectiveScale() or 1)
+    end,
     GetLeft = function() return 100 end, GetTop = function() return 700 end,
-    RegisterForDrag = Write, RegisterForClicks = Write, SetTexture = Write, EnableMouse = Write,
+    RegisterForDrag = Write, SetTexture = Write,
+    RegisterForClicks = function(self, ...) self.registeredClicks = { ... } Write() end,
+    EnableMouse = function(self, enabled) self.mouseEnabled = enabled Write() end,
     EnableMouseWheel = Write, SetAtlas = Write, SetScrollChild = Write, ClearModel = Write,
     SetRotation = function(self, angle) self.angle = angle Write() end,
     SetPortraitZoom = function(self, zoom) self.zoom = zoom Write() end,
@@ -34,12 +56,18 @@ local methods = {
             handler(...)
         end
     end,
-    SetUnit = function(self)
+    SetUnit = function(self, unit)
+        assert(not liveCombat or unit == "player" and rawequal(identityRestricted, false), "restricted model bind")
         assert(modelWindow:IsShown() and self:IsShown(), "model was bound before its window and region were shown")
         modelReads = modelReads + 1
+        self.testUnit = unit
         return modelReady
     end,
-    RefreshUnit = Write,
+    RefreshUnit = function(self)
+        assert(not liveCombat or self.testUnit == "player" and rawequal(identityRestricted, false), "restricted model refresh")
+        modelRefreshes = modelRefreshes + 1
+        Write()
+    end,
     SetShown = function(self, value)
         if self.shown and not value and self.scripts.OnHide then self.scripts.OnHide(self) end
         self.shown = value
@@ -58,9 +86,10 @@ local methods = {
         if hook then hook(self, offset) end
     end,
 }
-local function Create(kind, _, parent)
+local function Create(kind, name, parent)
     frames = frames + 1
-    return setmetatable({ kind = kind, scripts = {}, parent = parent }, { __index = methods })
+    if kind == "PlayerModel" then playerModels = playerModels + 1 end
+    return setmetatable({ kind = kind, name = name, scripts = {}, parent = parent }, { __index = methods })
 end
 CreateFrame = Create
 methods.CreateTexture = function() return Create("Texture") end
@@ -91,8 +120,18 @@ local suite = {
     FontRevision = 0,
 }
 MSUFSuite = { Suite = suite }
-local ns = { Text = function(value) return value end, Number = tonumber, Suite = suite, Client = {},
-    Host = { InCombat = function() return false end } }
+local function Number(value)
+    if not Strict.IsSecret(value) then return tonumber(value) end
+end
+local ns = { Text = function(value) return value end, Number = Number, Suite = suite, Client = {},
+    Host = { InCombat = function() return liveCombat end } }
+ns.Public = function(value)
+    if rawequal(value, secretIdentity) then
+        secretIdentityChecked = true
+        return false
+    end
+    return true
+end
 local function Noop() end
 local build = setmetatable({}, { __index = function() return function() return {} end end })
 ns.CatalogBuild = { ForAddon = function() return build end }
@@ -364,6 +403,37 @@ assert(report.cards[1].panelX == 0 and report.cards[1].panelY == 0 and report.ca
     "stock report reused the custom card or row displacement")
 
 do
+    liveCombat = true
+    C_Secrets = {
+        ShouldUnitIdentityBeSecret = function(unit)
+            assert(unit == "player", "combat queried a non-player model")
+            return identityRestricted
+        end,
+    }
+    view.frame:Show()
+    view:SetHeader("Name", "Level 22", "19", "player", "combat-guid")
+    local beforeBind, beforeRefresh = modelReads, modelRefreshes
+    view:ShowGear(item, empty, empty, groups, nil, empty, true)
+    assert(modelReads == beforeBind + 1 and view.model:IsShown(), "public player model was missing on combat open")
+    view:RefreshModel()
+    assert(modelRefreshes == beforeRefresh + 1, "public player model did not refresh in combat")
+    identityRestricted = true
+    view:RefreshModel()
+    assert(modelRefreshes == beforeRefresh + 1 and view.model:IsShown(), "combat dropped or refreshed an existing restricted model")
+    identityRestricted = secretIdentity
+    view:SetHeader("Name", "Level 22", "19", "player", "other-combat-guid")
+    view:RefreshModel()
+    assert(secretIdentityChecked and modelReads == beforeBind + 1 and not view.model:IsShown(),
+        "secret model predicate did not block an identity change")
+    C_Secrets = nil
+    view:RefreshModel()
+    assert(modelReads == beforeBind + 1, "missing model predicate must keep the bind gated")
+    liveCombat = false
+    view:RefreshModel()
+    assert(modelReads == beforeBind + 2 and view.model:IsShown(), "model was not restored when restrictions lifted")
+end
+
+do
     local parent = Create("Frame")
     suite.NewContext = function(id)
         assert(id == "characterPanelPreview", "preview reused the live skin context")
@@ -482,7 +552,6 @@ do
     preview:Paint(config, "own", order, last.id, {}, 800)
     preview:Hide()
     preview:VisitContent(function() error("hidden preview retained content targets") end)
-    local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
     Strict.Install()
     ns.Public = function(value) return not Strict.IsSecret(value) end
     GetInventoryItemTexture = function() return Strict.New("number") end
@@ -496,4 +565,275 @@ do
     assert(not embedded.frame:IsShown(), "closing the editor left the embedded view shown")
 end
 
-print("Character Panel appearance: runtime and embedded layouts, fonts, model controls, offsets and warm paint passed")
+do
+    local left, right, top, scale = 30, 560, 730, 1
+    local rail = {
+        GetRight = function() return right + 64 end, GetWidth = function() return 64 end,
+        GetEffectiveScale = function() return scale end,
+    }
+    local native = {
+        GetLeft = function() return left end, GetRight = function() return right end,
+        GetTop = function() return top end, GetEffectiveScale = function() return scale end,
+        ModeTabs = rail,
+    }
+    local beforeModels = playerModels
+    local hosted = ns.View.New({
+        frameName = "StandaloneInspect",
+        tab = function(id) chosenTab = id end, group = Noop,
+    }, nil, native)
+    local frame = hosted.frame
+    assert(frame.parent == UIParent and not frame.name and not frame.mouseEnabled and not hosted.embedded,
+        "the hosted shell captured native mouse input or acquired an independent window")
+    assert(not hosted.gear and not hosted.model and not hosted.window.grip and not hosted.window.minimize,
+        "the hosted shell duplicated native controls")
+    assert(frame.point[1] == "TOPLEFT" and frame.point[2] == native
+        and frame.point[3] == "TOPRIGHT" and frame.point[4] == 2, "Retail dock overlaps its host")
+    local unchanged = writes
+    hosted:FitScreen()
+    hosted:ApplyWindowPreferences({ dock = "right", scale = 2 })
+    hosted:SetMinimized(true)
+    hosted:RefreshModel()
+    assert(writes == unchanged and playerModels == beforeModels and not hosted:IsMinimized(),
+        "unchanged hosted geometry or standalone window controls wrote widgets")
+
+    hosted.frame:Show()
+    hosted:SetHeader("Mapko", "Level 22", "19", "player", "player-guid")
+    assert(hosted.header.buttons.name.text.text == "Mapko" and hosted.header.rightReserve == 0,
+        "the native host dropped the Suite header")
+    local all = { { id = "overview", label = "Overview" } }
+    for i = 2, 10 do all[i] = { id = "report" .. i, label = "Extra report " .. i } end
+    all[11] = { id = "custom1", label = "My custom report", custom = true }
+    hosted:SetTabs(all, "overview")
+    hosted:ShowGroups(groups)
+    assert(hosted.report.scroll:IsShown() and hosted.report.columns == 1 and hosted.report.cards[1].title.label.text == "Quick",
+        "the native host dropped the Suite report")
+    liveCombat = true
+    hosted.moreTab.scripts.OnClick(hosted.moreTab)
+    menu[#menu].pick(menu[#menu].data)
+    assert(chosenTab == "custom1", "hosted custom tabs could not be selected in combat")
+    hosted:SetTabs(all, chosenTab)
+    assert(hosted.tabButtons[11]:IsShown() and hosted.tabButtons[11].selected,
+        "selected hosted custom tab stayed hidden in overflow")
+    liveCombat = false
+
+    ns.Host.Client.isForever = true
+    hosted:FitScreen()
+    assert(frame.point[4] == 66, "Forever dock overlapped the original mode tabs")
+    scale = .8
+    hosted:FitScreen()
+    assert(frame.scale == .8 and math.abs(frame.point[4] - 66.5) < .001, "dock did not follow the native scale")
+    scale, left, right = 1, 990, 1540
+    hosted:FitScreen()
+    assert(frame.point[1] == "TOPRIGHT" and frame.point[3] == "TOPLEFT" and frame.point[4] == -2,
+        "dock did not move to the clear side of the screen")
+    ns.Host.Client.isForever = false
+    left, right = 100, 1500
+    hosted:FitScreen()
+    assert(frame.point[1] == "TOPLEFT" and math.abs(frame.scale * (frame.width + frame.point[4]) - 100) < .001,
+        "dock clipped outside the remaining space instead of scaling to it")
+    ns.Host.Client.isForever = true
+    native.ModeTabs, right = Strict.New("table"), Strict.New("number")
+    Strict.GUARD_NAMES.falsy.Public = true
+    local stop = Strict.Watch(path .. "WindowControls.lua", { strict = true })
+    hosted:FitScreen()
+    local violations = stop()
+    assert(#violations == 0, table.concat(violations, " | "))
+    assert(frame.point[4] == 66, "restricted geometry lost the stock Forever rail clearance")
+    assert(playerModels == beforeModels, "hosted layout created a duplicate model")
+end
+
+do
+    local nativeLevel, scale = 25, .8
+    local native = { GetEffectiveScale = function() return scale end, GetFrameLevel = function() return nativeLevel end }
+    local head = { slot = 1, token = "HeadSlot", label = "Head", name = "Helm", icon = 42, quality = 2, level = 19 }
+    local hand = { slot = 10, token = "HandsSlot", label = "Hands", name = "Gloves", icon = 44, quality = 2, level = 22 }
+    local main = { slot = 16, token = "MainHandSlot", label = "Main Hand", name = "Staff", icon = 46, level = 31 }
+    local off = { slot = 17, token = "SecondaryHandSlot", label = "Off Hand", name = "Shield", icon = 48, level = 27 }
+    local gear = { left = { head }, right = { hand }, weapons = { main, off } }
+
+    ns.Host.Client.isForever = false
+    local layout = ns.View.NativeLayout(gear)
+    layout.rootLevel = nativeLevel
+    assert(layout.width == suite.CharacterHeader.Width and layout.height == 552 and layout.strata == "HIGH",
+        "the full native view changed the old window geometry or sits above the native flyout")
+    assert(layout.artLevel < layout.modelLevel and layout.modelLevel < layout.slotLevel
+        and layout.slotLevel < layout.reportLevel and layout.reportLevel < layout.closeLevel,
+        "the native presentation layers cannot support the native item flyout or report cover")
+    assert(#layout.slots == 4 and layout.slots[1].token == head.token and layout.slots[4].token == off.token,
+        "the layout lost an actual slot")
+    local nativeHand = layout.slots[2]
+    assert(nativeHand.x == 496 and nativeHand.alternateX == 372
+        and not layout.slots[1].alternateX and not layout.slots[4].alternateX,
+        "the two original layouts changed the wrong native slot hit areas")
+    assert(layout.close.x == 909 and layout.close.y == 9 and layout.close.size == 22,
+        "the native close moved away from the original Suite caption")
+    ns.Host.Client.isForever = true
+    local foreverLayout = ns.View.NativeLayout(gear)
+    local ammo = foreverLayout.slots[5]
+    assert(ammo and ammo.optional and ammo.token == "AmmoSlot", "Forever's optional native ammo slot was omitted")
+
+    local beforeModels = playerModels
+    local clicked, actions = nil, {}
+    local full = ns.View.New({
+        frameName = "StandaloneInspect",
+        windowAction = function(action)
+            actions[#actions + 1] = action
+            if action == "maximize" or action == "minimize" then return true end
+        end,
+        tab = Noop, group = Noop, enter = Noop, leave = Noop, drop = Noop, drag = Noop,
+        slot = function(slot, _, mouse)
+            assert(mouse == "LeftButton", "the card received a protected equipment action")
+            clicked = slot
+        end,
+    }, nil, native, layout)
+    local frame = full.frame
+    assert(full.nativeLayout == layout and frame.parent == native and not frame.name and not frame.mouseEnabled
+        and frame.width == layout.width and frame.height == layout.height and frame:GetFrameLevel() == nativeLevel + layout.artLevel
+        and frame.strata == layout.strata and frame:GetEffectiveScale() == .8 and not frame.scale,
+        "the hosted shell did not share native stacking and inherited scale, or blocked native input")
+    assert(frame.point[1] == "TOPLEFT" and frame.point[2] == native
+        and frame.point[3] == "TOPLEFT" and frame.point[4] == 0 and frame.point[5] == 0,
+        "the art moved independently of the actual slot layout")
+    local close = full.closeArt
+    assert(close.point[1] == "TOPRIGHT" and close.point[2] == -8 and close.point[3] == -8
+        and close.width == layout.close.size and close:GetFrameLevel() == nativeLevel + layout.closeLevel + 1
+        and not close.mouseEnabled and not close.scripts.OnClick, "the original Close art intercepted native input")
+    local window = full.window
+    assert(window.maximize.point[2] == -34 and window.minimize.point[2] == -60
+        and window.dockRight.point[2] == -86 and window.dockLeft.point[2] == -112
+        and window.nativeGrip.point[1] == "BOTTOMRIGHT", "the original titlebar or scale-grip art moved")
+    window.maximize.scripts.OnClick(window.maximize)
+    window.minimize.scripts.OnClick(window.minimize)
+    window.dockLeft.scripts.OnClick(window.dockLeft)
+    window.dockRight.scripts.OnClick(window.dockRight)
+    window.nativeTitleDrag.scripts.OnDragStart()
+    window.nativeTitleDrag.scripts.OnDragStop()
+    window.nativeTitleDrag.scripts.OnHide()
+    window.nativeGrip.scripts.OnMouseDown(window.nativeGrip, "RightButton")
+    window.nativeGrip.scripts.OnMouseDown(window.nativeGrip, "LeftButton")
+    window.nativeGrip.scripts.OnMouseUp(window.nativeGrip, "LeftButton")
+    window.nativeGrip.scripts.OnHide()
+    assert(table.concat(actions, ",") == "maximize,minimize,dockLeft,dockRight,moveStart,moveStop,moveStop,scaleStart,scaleStop,scaleStop",
+        "the original controls did not call the native geometry owner")
+    assert(window.maximizeLabel.text == "−" and window.minimizeLabel.text == "+",
+        "the original caption did not reflect native maximize/minimize state")
+    full.frame:Show()
+    full:SetHeader("Mapko", "Level 22", "31", "player", "player-guid")
+    assert(full.header.rightReserve == suite.CharacterHeader.CaptionWidth, "the full window shifted the original header fields")
+    full:SetTabs(tabs, "overview")
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    local card = full.left[1]
+    assert(card.texture == head.icon and card.name.text == head.name and card.level.text == head.level,
+        "the full native panel lost the original card icon, name, or item level")
+    assert(#card.registeredClicks == 1 and card.registeredClicks[1] == "LeftButtonUp"
+        and card.insets[1] == 5 + layout.slots[1].size and card.insets[2] == 0
+        and not card.scripts.OnReceiveDrag and not card.scripts.OnDragStart,
+        "the Suite card covered the native icon or replaced its equipment interaction")
+    card.scripts.OnClick(card, "LeftButton")
+    assert(clicked == head.slot, "the original gear card no longer opens item details")
+    local bodyX, bodyY = full.body.point[2], -full.body.point[3]
+    local cards = { card, full.right[1], full.weapons[1], full.weapons[2] }
+    for i = 1, #cards do
+        local nativeSlot, suiteCard = layout.slots[i], cards[i]
+        assert(nativeSlot.x == bodyX + suiteCard.panelX + 5
+            and nativeSlot.y == bodyY + suiteCard.panelY + (suiteCard.panelHeight - nativeSlot.size) / 2,
+            "the actual button does not cover the old icon")
+    end
+    assert(layout.model.x == bodyX + full.modelHost.point[2] + 3
+        and layout.model.y == bodyY - full.modelHost.point[3] + 28
+        and layout.model.width == full.modelHost.width - 6 and layout.model.height == full.modelHost.height - 31,
+        "the native model escaped its original stage")
+    assert(not full.model and full.modelHost:IsShown() and not full.reportCover:IsShown()
+        and full.rail.cards[1].title.label.text == "Quick", "native gear or the original stats rail is missing")
+    local camera, zoom, resets = { yaw = 0 }, 0, 0
+    function camera:GetYaw() return self.yaw end
+    function camera:SetYaw(yaw) self.yaw = yaw end
+    function camera:OnMouseWheel(delta) zoom = zoom + delta end
+    CharacterModelScene = {
+        IsVisible = function() return true end,
+        GetActiveCamera = function() return camera end,
+        Reset = function() resets = resets + 1 end,
+    }
+    local toolbarCount = 0
+    for control in pairs(full.surfaces) do
+        if control.control then
+            toolbarCount = toolbarCount + 1
+            assert(control.width == 20 and control.height == 20 and control.parent:GetFrameLevel() > nativeLevel + layout.modelLevel,
+                "the original model control art moved beneath the native scene")
+            control.scripts.OnClick(control)
+        end
+    end
+    assert(toolbarCount == 5 and resets == 1 and zoom == 0 and camera.yaw == 0,
+        "the original model toolbar did not drive the native camera")
+    local input = assert(full.modelInput, "the inactive slot mask still overlaps the 3D viewport")
+    assert(input.parent == full.modelHost and input.mouseEnabled and input.width == layout.model.width
+        and input:GetFrameLevel() > nativeLevel + layout.slotLevel + 1
+        and input.point[4] == layout.model.x and input.point[5] == -layout.model.y,
+        "the 3D input region crossed the active slots or remained under their mask")
+    liveCombat = true
+    input.scripts.OnMouseDown(input, "LeftButton")
+    cursorX = cursorX + 20
+    input.scripts.OnUpdate(input)
+    input.scripts.OnMouseUp(input, "LeftButton")
+    input.scripts.OnMouseWheel(input, 1)
+    assert(camera.yaw > 0 and zoom == 1 and not input.scripts.OnUpdate, "the center did not rotate/zoom the native 3D model")
+    liveCombat = false
+    CharacterModelScene = nil
+    local overviewWidth, overviewLevel = full.right[1].panelWidth, full.right[1]:GetFrameLevel()
+    local slotMask = full.nativeSlotMasks[1]
+    assert(slotMask.mouseEnabled and slotMask:GetFrameLevel() > nativeLevel + layout.slotLevel
+        and slotMask:GetFrameLevel() < nativeLevel + layout.reportLevel and slotMask.point[4] == nativeHand.alternateX
+        and slotMask.point[5] == -nativeHand.y and slotMask.width == nativeHand.x - nativeHand.alternateX
+        and not slotMask.scripts.OnClick and not full.gearMask:IsShown(), "Overview exposed an inactive slot hit region")
+
+    local transparent = {
+        IsEnabled = function() return true end,
+        GetColor = function() return .2, .3, .4, .25 end,
+        SkinFrame = function(_, target, style)
+            if style.role == "navigation" then target.sharedTabMotion = style.motion end
+            return true, "applied"
+        end,
+        SetActive = Noop, RefreshAll = Noop, ReleaseAll = Noop,
+    }
+    local overviewTab = full.tabButtons[1]
+    assert(overviewTab.underline:IsShown(), "fallback selection lost its underline")
+    full:RefreshAppearance(transparent)
+    assert(overviewTab.sharedTabMotion == true and not overviewTab.underline:IsShown(),
+        "themed tabs did not opt into shared selection motion or kept the snapping underline")
+    assert(full.artMask.color[4] == 1 and full.reportMask.color[4] == 1 and full.gearMask.color[4] == 1,
+        "theme opacity leaked the covered native paper doll through its report")
+    liveCombat = true
+    nativeLevel = nativeLevel + 12
+    full:ShowGroups(groups)
+    assert(not full.gear:IsShown() and full.reportCover:IsShown() and full.reportCover.mouseEnabled
+        and full.reportCover:GetFrameLevel() == nativeLevel + layout.reportLevel and full.report.scroll.parent == full.reportCover
+        and full.report.columns == 2, "the report can click through to native slots")
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(full.gear:IsShown() and not full.modelHost:IsShown() and not full.reportCover:IsShown()
+        and full.gearMask:IsShown() and full.plate:GetFrameLevel() > nativeLevel + layout.modelLevel
+        and full.right[1]:GetFrameLevel() > full.plate:GetFrameLevel()
+        and full.right[1]:GetFrameLevel() < nativeLevel + layout.slotLevel,
+        "Equipment did not hide the model beneath its original wide gear art")
+    assert(full.right[1].panelWidth > overviewWidth and bodyX + full.right[1].panelX + 5 == nativeHand.alternateX
+        and slotMask.point[4] == nativeHand.alternateX + nativeHand.size
+        and slotMask.width == nativeHand.x - nativeHand.alternateX, "Equipment kept the inactive hit rectangle exposed")
+    clicked = nil
+    slotMask.scripts.OnClick(slotMask, "LeftButton")
+    assert(clicked == hand.slot, "the Equipment mask blocked item details over the active card")
+    local settled = writes
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(writes == settled, "unchanged Equipment rewrote native presentation state")
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    assert(not full.gearMask:IsShown() and full.modelHost:IsShown() and full.right[1]:GetFrameLevel() == overviewLevel + 12
+        and slotMask.point[4] == nativeHand.alternateX and not slotMask.scripts.OnClick,
+        "returning to Overview kept the wider Equipment geometry active")
+    scale = .9
+    full:FitScreen()
+    full:RefreshAppearance(nil)
+    assert(overviewTab.underline:IsShown(), "leaving the skin lost the fallback selection")
+    assert(frame:GetEffectiveScale() == .9 and not frame.scale and playerModels == beforeModels,
+        "full native mode lost inherited scale or allocated a duplicate model")
+    liveCombat = false
+end
+
+print("Character Panel appearance: full native, hosted fallback, Inspect, preview, fonts, offsets and warm paint passed")

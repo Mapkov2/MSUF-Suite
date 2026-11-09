@@ -8,7 +8,6 @@ local FRAME_NAME = "MSUFSuiteCharacterPanel"
 local PLAYER, INSPECT = "character", "inspect"
 local OVERVIEW, EQUIPMENT, COMPARE = "overview", "gear", "compare"
 local IN_COMBAT = { inCombat = true }
-local NATIVE_COMBAT_LABEL = Text("Blizzard Character (%s)")
 local ITEM_EVENTS = { "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED" }
 local SCREEN_EVENTS = { "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED" }
 local INSPECT_IDENTITY_EVENTS = { "PLAYER_TARGET_CHANGED", "GROUP_ROSTER_UPDATE" }
@@ -65,21 +64,26 @@ local function SuspendPaint()
 end
 
 local function OnClose()
+    if not Module.kind then return end
+    if Module.view.nativeLayout then Module.layoutGeometry.Present(Module.layoutRoot, nil) end
+    local restoreCharacter = Module.kind == INSPECT and Module.running and not Module.replacing and Routing.Shown()
     Module.view:CancelWindowGestures()
     SuspendPaint()
     Module.appearanceJob:Clear()
-    if Module.gear then Gear.Close(Module.reader, Module.gear) end
+    if Module.gear and Module.reader then Gear.Close(Module.reader, Module.gear) end
     Module.unit, Module.guid, Module.kind, Module.gear, Module.slot = nil, nil, nil, nil, nil
     Module.inspectGuild, Module.custom, Module.customDefinition = nil, nil, nil
     Module.gearStale, Module.durabilityStale = nil, nil
+    if restoreCharacter then Module.nativeJob:Request() end
 end
 
-local function Close()
-    if Module.view and Module.view.frame:IsShown() then Module.view.frame:Hide() end
-end
-
-local function NativeCharacterVisible()
-    return CharacterFrame and CharacterFrame:IsShown()
+local function Close(replacing)
+    if Module.view and Module.view.frame:IsShown() then
+        Module.replacing = replacing == true
+        Module.view.frame:Hide()
+        OnClose()
+        Module.replacing = nil
+    end
 end
 
 local function CancelInspect()
@@ -114,11 +118,12 @@ local function Header()
     local level = NS.Number(UnitLevel(unit))
     local class = NS.String(UnitClass(unit))
     local name = NS.String(UnitName(unit)) or Text(kind == INSPECT and "Inspect" or "Character")
-    local spec = NS.String(Module.reader.SpecializationName(kind, unit))
+    local reader = Module.reader
+    local spec = reader and NS.String(reader.SpecializationName(kind, unit))
     Module.name, Module.level, Module.class = name, level, class
     Module.header.level, Module.header.class = level and level > 0 and level or nil, class
     Module.header.specialization = spec ~= class and spec or nil
-    Module.average = Module.reader.AverageItemLevel(kind, unit)
+    Module.average = reader and reader.AverageItemLevel(kind, unit)
     PaintHeader()
 end
 
@@ -182,11 +187,10 @@ local function PaintContextAction(event)
     local view = Module.view
     if Module.kind == INSPECT then
         view:SetContextAction(Text("Blizzard Inspect"))
-    elseif Host.InCombat(event) then
-        local key = Routing.NativeCombatKey()
-        view:SetContextAction(key and NATIVE_COMBAT_LABEL:format(key) or nil, true)
+    elseif Module.tab == EQUIPMENT and not Host.InCombat(event) then
+        view:SetContextAction(Module.setLabel)
     else
-        view:SetContextAction(Module.tab == EQUIPMENT and Module.setLabel or nil)
+        view:SetContextAction(nil)
     end
 end
 
@@ -214,7 +218,13 @@ local function Paint()
                 Pages.EquipmentSummary(groups, model)
             end
         end
-        view:ShowGear(model.left, model.right, model.weapons, groups, Module.slot, details, tab == OVERVIEW)
+        if Module.kind == INSPECT or view.nativeLayout then
+            view:ShowGear(model.left, model.right, model.weapons, groups, Module.slot, details, tab == OVERVIEW)
+        else
+            local report = #details > 0 and details or groups
+            if tab == EQUIPMENT and Module.reader then Gear.EquipmentList(report, model) end
+            view:ShowGroups(report)
+        end
     elseif tab == COMPARE then
         wipe(groups)
         Gear.Compare(groups, Module.ownGear, model)
@@ -244,7 +254,7 @@ local function Flush()
     local readDurability = (not custom or custom.durability) and Module.dirtyDurability
     local repaint = Module.dirtyPage or Module.tab == OVERVIEW or Module.tab == EQUIPMENT
         or custom and (readGear or readDurability)
-    if Module.kind == PLAYER and readGear then
+    if Module.kind == PLAYER and Module.reader and readGear then
         local level = NS.Number(UnitLevel("player"))
         Gear.Read(Module.reader, Module.gear, "player", Module.guid, level, not dirtyAll and dirtySlot or nil)
     elseif next(Module.inspectItems) then
@@ -316,7 +326,6 @@ function Dirty(_, event, first, success)
             Module.dirtySlot = slot
         end
         if not custom or custom.durability then Module.dirtyDurability = true end
-        if not custom then Module.dirtyModel = true end
         Module.dirtyHeader = true
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
         if event == "PLAYER_SPECIALIZATION_CHANGED" and NS.String(first) ~= "player" then return end
@@ -340,7 +349,7 @@ end
 local HEADER_EVENTS = { "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED" }
 local EQUIPMENT_EVENTS = {
     "PLAYER_EQUIPMENT_CHANGED", "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED",
-    "UPDATE_INVENTORY_DURABILITY", "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED", "UNIT_MODEL_CHANGED",
+    "UPDATE_INVENTORY_DURABILITY", "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED",
 }
 local function SyncHeaderEvents()
     SetEvents(GUILD_EVENTS, Module.config.headerGuildVisible == true)
@@ -355,7 +364,7 @@ end
 local function SyncPlayerEquipment()
     local custom, model = Module.custom, Module.gear
     local wantsGear, wantsDurability = not custom or custom.audit, not custom or custom.durability
-    local refreshGear = wantsGear and Module.gearStale
+    local refreshGear = wantsGear and Module.reader and Module.gearStale
     local refreshDurability = wantsDurability and Module.durabilityStale
     if refreshGear then
         Module.dirtyAll, Module.dirtySlot = nil, nil
@@ -367,7 +376,7 @@ local function SyncPlayerEquipment()
         Gear.Durability(model)
     end
     if model.auditFocus and (refreshGear or refreshDurability) then Gear.Mark(model, model.auditFocus) end
-    Module.gearStale, Module.durabilityStale = not wantsGear, not wantsDurability
+    Module.gearStale, Module.durabilityStale = not wantsGear or not Module.reader, not wantsDurability
 end
 
 local function SelectTab(tab, preserveSlot)
@@ -414,66 +423,49 @@ local function SelectTab(tab, preserveSlot)
 end
 
 local function OnMinimized(minimized, tab)
-    if not Module.kind then return end
+    if Module.kind ~= INSPECT then return end
     if minimized then
         SuspendPaint()
         Subscribe(SCREEN_EVENTS)
-        if Module.kind == INSPECT then Subscribe(INSPECT_IDENTITY_EVENTS) end
+        Subscribe(INSPECT_IDENTITY_EVENTS)
         return
     end
 
     local model = Module.gear
-    ReadHeaderExtras()
-    if Module.kind == INSPECT then
-        if Identity(Module.unit) ~= Module.guid then Close() return end
-        if next(model.pending) then
-            Gear.UpdateSnapshot(Module.reader, model, model.pending, Module.level)
-        end
-        PaintHeader()
-    else
-        Module.gearStale, Module.durabilityStale = true, true
-        Header()
-    end
+    if Identity(Module.unit) ~= Module.guid then Close() return end
+    if next(model.pending) then Gear.UpdateSnapshot(Module.reader, model, model.pending, Module.level) end
+    PaintHeader()
     SelectTab(tab or Module.tab, true)
 end
 
 local function ClickSlot(slot, _, mouse)
+    if not Module.kind then return end
     local combat = Host.InCombat()
-    if combat and (Module.kind ~= PLAYER or mouse == "RightButton") then return end
-    if not combat and slot and Module.gear then
-        local row = Module.gear.bySlot[slot]
-        if row and row.link and (IsModifiedClick("CHATLINK") or IsModifiedClick("DRESSUP")) then
-            HandleModifiedItemClick(row.link)
-            return
-        end
-        if Module.kind == PLAYER and row then
-            if mouse == "RightButton" then
-                UseInventoryItem(slot)
-                return
-            end
-            if NS.String(GetCursorInfo()) == "item" then
-                PickupInventoryItem(slot)
-                return
-            end
-        end
+    if Module.kind == INSPECT and combat or Module.kind == PLAYER and mouse == "RightButton" then return end
+    local row = Module.gear.bySlot[slot]
+    if not combat and row and row.link and (IsModifiedClick("CHATLINK") or IsModifiedClick("DRESSUP")) then
+        HandleModifiedItemClick(row.link)
+        return
     end
     if Module.slot == slot then slot = nil end
     Module.slot = slot
     Paint()
 end
 
-local function InventoryDrag(slot)
-    if Module.kind == PLAYER and slot and not Host.InCombat() then PickupInventoryItem(slot) end
-end
-
 local function GroupClick(index)
-    if Module.kind ~= PLAYER or Host.InCombat() then return end
-    if type(index) == "string" and (Module.tab == OVERVIEW or Module.tab == EQUIPMENT) then
+    if Module.kind ~= PLAYER then return end
+    if Module.tab == OVERVIEW or Module.tab == EQUIPMENT then
         local model = Module.gear
-        if model.auditFocus == index then index = nil end
-        Gear.Mark(model, index)
+        if type(index) == "string" then
+            if model.auditFocus == index then index = nil end
+            Gear.Mark(model, index)
+            if Module.tab == OVERVIEW and not Module.view.nativeLayout then SelectTab(EQUIPMENT) return end
+        elseif model.bySlot[index] then
+            if Module.slot == index then index = nil end
+            Module.slot = index
+        end
         Paint()
-    elseif Pages.Toggle(Module.tab, index) then
+    elseif not Host.InCombat() and Pages.Toggle(Module.tab, index) then
         Module.dirtyPage = true
         Module.paintJob:Request()
     end
@@ -504,18 +496,33 @@ local function ContextAction(button)
     if opened and NS.String(InspectFrame.unit) == unit then Close() end
 end
 
+local function WindowAction(action)
+    local geometry, root = Module.layoutGeometry, Module.layoutRoot
+    if not geometry then return end
+    if action == "moveStop" or action == "scaleStop" or Module.kind == PLAYER and not Host.InCombat() then
+        return geometry.WindowAction(root, action)
+    end
+end
+
 local CALLBACKS = {
     frameName = FRAME_NAME, tab = SelectTab, slot = ClickSlot, close = Close, group = GroupClick,
-    enter = OnEnter, leave = OnLeave, drag = InventoryDrag, drop = InventoryDrag,
+    enter = OnEnter, leave = OnLeave,
     minimized = OnMinimized,
-    contextAction = ContextAction,
+    contextAction = ContextAction, windowAction = WindowAction,
 }
+
+local function AvailableSkin()
+    if Module.kind == INSPECT then return Host.Skin.Acquire("characterPanelInspect") end
+    if Module.view.nativeLayout then return Module.context:Skin() end
+    if Module.reader or not Host.InCombat() then return Host.Skin.Acquire("characterPanelDock") end
+end
 
 local function RefreshVisibleAppearance()
     local view = Module.view
     if Module.running and view and view.frame:IsShown() then
         view:ApplyWindowPreferences(Suite.ModuleState("characterPanel"))
-        view:RefreshAppearance(Module.context:Skin(), Module.config)
+        view:RefreshAppearance(AvailableSkin(), Module.config)
+        if view.nativeLayout and not Host.InCombat() then Module.layoutGeometry.Apply(Module.layoutRoot, Module.layoutPlan) end
         if not view:IsMinimized() then
             if Module.showGuild ~= (Module.config.headerGuildVisible == true)
                 or Module.showZone ~= (Module.config.headerZoneVisible == true) then
@@ -539,77 +546,118 @@ local function RefreshVisibleAppearance()
     end
 end
 
-local OpenCharacter
-
 local function PrimeEquipmentReader()
-    if not Module.reader and not Host.InCombat() then
-        Module.reader = Host.Skin.GetEquipmentReader()
+    if not Module.reader then
+        Module.reader = Host.Skin.EquipmentReader
+        if not Module.reader and not Host.InCombat() then Module.reader = Host.Skin.GetEquipmentReader() end
     end
     return Module.reader
 end
 
-local function Open(kind, unit, guid, tab)
-    local reader = Module.reader
-    if not reader then
-        reader = PrimeEquipmentReader()
-        if not reader then return false end
-        Routing.Sync(OpenCharacter, true)
+local function ReleaseNativeLayout()
+    local geometry, root = Module.layoutGeometry, Module.layoutRoot
+    if not geometry then return end
+    geometry.WindowAction(root, "release")
+    geometry.Release(root)
+    Module.layoutGeometry, Module.layoutRoot = nil, nil
+end
+
+local function AcquireView(nativeRoot)
+    local plan = nativeRoot and nativeRoot == Module.layoutRoot and Module.layoutPlan or nil
+    local key = plan and "characterView" or nativeRoot and "dockView" or "inspectView"
+    local view = Module[key]
+    if not view then
+        view = NS.View.New(CALLBACKS, nil, nativeRoot, plan)
+        view.frame:HookScript("OnHide", function()
+            if Module.view == view then OnClose() end
+        end)
+        if not nativeRoot then UISpecialFrames[#UISpecialFrames + 1] = FRAME_NAME end
+        Module[key] = view
     end
-    if Module.kind ~= kind or Module.guid ~= guid then Close() end
+    return view
+end
+
+local function PrepareNativeLayout(root)
+    if not root or Module.layoutRoot == root or Host.InCombat() then return end
+    if root:IsVisible() and Routing.Shown() ~= root then return end
+    local geometry = Host.Skin.CharacterGeometry
+    if not geometry then return end
+    if not Module.ownGear then Module.ownGear = Gear.New() end
+    local plan = Module.layoutPlan or NS.View.NativeLayout(Module.ownGear)
+    Module.layoutPlan = plan
+    if not geometry.Apply(root, plan) then return end
+    Module.layoutRoot, Module.layoutGeometry = root, geometry
+    AcquireView(root)
+end
+
+local function Open(kind, unit, guid, tab, nativeRoot)
+    local reader = PrimeEquipmentReader()
+    if kind == INSPECT and not reader then return false end
+    local playerVisible = kind == INSPECT and Module.kind == PLAYER
+    if not playerVisible and (Module.kind ~= kind or Module.guid ~= guid) then Close(true) end
     if not Module.ownGear then Module.ownGear = Gear.New() end
     if kind == INSPECT and not Module.inspectGear then Module.inspectGear = Gear.New() end
     local model = kind == PLAYER and Module.ownGear or Module.inspectGear
-    Gear.Read(reader, model, unit, guid, NS.Number(UnitLevel(unit)))
+    if reader then Gear.Read(reader, model, unit, guid, NS.Number(UnitLevel(unit)))
+    else model.missingLinks = true end
     if kind == INSPECT and model.missingLinks then return false end
-    if not Module.view then
-        Module.view = NS.View.New(CALLBACKS)
-        Module.view.frame:HookScript("OnHide", OnClose)
-        UISpecialFrames[#UISpecialFrames + 1] = FRAME_NAME
-    end
+    if playerVisible then Close(true) end
+    local view = AcquireView(nativeRoot)
+    Module.view = view
     Module.kind, Module.unit, Module.guid, Module.gear = kind, unit, guid, model
     if kind == PLAYER then
+        WindowAction("prepare")
         Gear.Durability(model)
     else
         Module.inspectGuild = NS.String(select(3, C_PaperDollInfo.GetInspectGuildInfo(unit)))
     end
-    Module.view:SetMinimized(false, nil, true)
-    Module.view:RefreshAppearance(Module.context:Skin(), Module.config)
-    Module.view:ApplyWindowPreferences(Suite.ModuleState("characterPanel"))
-    Module.view:FitScreen()
+    view:SetMinimized(false, nil, true)
+    view:RefreshAppearance(AvailableSkin(), Module.config)
+    view:ApplyWindowPreferences(Suite.ModuleState("characterPanel"))
+    view:FitScreen()
     ReadHeaderExtras()
     Header()
     SelectTab(tab)
-    Module.view.frame:Show()
-    Module.view:RefreshModel()
+    view.frame:Show()
+    if view.nativeLayout then Module.layoutGeometry.Present(nativeRoot, view.frame) end
+    if kind == INSPECT then view:RefreshModel() end
     return true
 end
 
-function OpenCharacter(tab)
-    if not Module.running or not NS.CanOpenCharacter() then return false end
-    local combat = Host.InCombat()
-    if combat and NativeCharacterVisible() then
+local function OpenNativeCharacter()
+    local root = Routing.Shown()
+    if Module.running and Module.kind ~= PLAYER and root and NS.CanOpenCharacter() then
+        PrepareNativeLayout(root)
+        Open(PLAYER, "player", Identity("player") or "player", OVERVIEW, root)
+    end
+end
+
+local function NativeVisibilityChanged(root)
+    if root and NS.CanOpenCharacter() then
+        if Module.kind ~= PLAYER then Module.nativeJob:Request() end
+    else
+        Module.nativeJob:Clear()
+        Module.nativeFitJob:Clear()
         if Module.kind == PLAYER then Close() end
-        return true
-    end
-    if Module.kind == PLAYER and Module.view.frame:IsShown() then
-        if Module.view:IsMinimized() then
-            Module.view:SetMinimized(false, tab ~= OVERVIEW and tab or nil)
-        elseif Module.tab == tab then
-            Close()
-        else
-            SelectTab(tab)
+        if not Host.InCombat() then
+            local native = Routing.Root()
+            if native and native:IsVisible() then ReleaseNativeLayout() else PrepareNativeLayout(native) end
         end
-        return true
     end
-    local guid = Identity("player") or (combat and "player")
-    if not guid or not Open(PLAYER, "player", guid, tab) then return false end
-    if NativeCharacterVisible() then
-        if not Host.InCombat() then HideUIPanel(CharacterFrame) end
-        if NativeCharacterVisible() then Close() end
-    end
-    -- Native Inspect already plays this on its own OnShow before the handoff.
-    if Module.view.frame:IsShown() then PlaySound(SOUNDKIT.IG_CHARACTER_INFO_OPEN) end
-    return true
+end
+
+local function FitNative()
+    if Module.kind == PLAYER then Module.view:FitScreen() end
+end
+
+local function NativeSizeChanged()
+    if Module.kind == PLAYER and not Module.view.nativeLayout then Module.nativeFitJob:Request() end
+end
+
+local function InspectInputMode(_, event, cvar)
+    if Module.kind ~= INSPECT then return end
+    if event == "CVAR_UPDATE" and (NS.String(cvar) or ""):lower() ~= "gamepadenable" then return end
+    if Suite.GamepadUI() then Close() end
 end
 
 local function HandoffInspect()
@@ -657,11 +705,6 @@ local function AddOnLoaded(_, _, addon)
     if addon == "Blizzard_InspectUI" then HookInspect() end
 end
 
-local characterHooked
-local function NativeCharacterToggled()
-    if Module.kind == PLAYER and Host.InCombat() and NativeCharacterVisible() then Close() end
-end
-
 local function RepaintAfterCombat()
     ClearPendingPaint()
     if Module.guid == "player" then Module.guid = Identity("player") or Module.guid end
@@ -673,29 +716,36 @@ local function RepaintAfterCombat()
     if tab == EQUIPMENT then
         Module.setLabel = GearActions.SetLabel()
         Subscribe(SET_EVENTS)
-    elseif tab == OVERVIEW then
-        Module.view:RefreshModel()
     end
     Paint()
 end
 
-local function SyncRouting(_, event, cvar)
-    if event == "CVAR_UPDATE" and (NS.String(cvar) or ""):lower() ~= "gamepadenable" then return end
-    if Module.running and Suite.GamepadUI() then Close() end
-    if event == "PLAYER_REGEN_ENABLED" and Module.running then PrimeEquipmentReader() end
-    Routing.Sync(Module.running and OpenCharacter or nil, Module.reader ~= nil)
-    if Module.kind == PLAYER and not Module.view:IsMinimized() then
-        if event == "PLAYER_REGEN_ENABLED" then RepaintAfterCombat() end
-        PaintContextAction(event)
+local function LeaveCombat(_, event)
+    local root = Routing.Shown()
+    NativeVisibilityChanged(root)
+    local hadReader = Module.reader
+    PrimeEquipmentReader()
+    PrepareNativeLayout(Routing.Root())
+    if Module.kind ~= PLAYER then return end
+    if root and Module.layoutRoot == root and not Module.view.nativeLayout then
+        local tab = Module.tab
+        Close(true)
+        Open(PLAYER, "player", Identity("player") or "player", tab, root)
+        return
     end
+    if not hadReader and Module.reader then Module.view:RefreshAppearance(AvailableSkin(), Module.config) end
+    RepaintAfterCombat()
+    PaintContextAction(event)
 end
 
 local function EnterCombat(_, event)
     CancelInspect()
-    if Module.kind == INSPECT or (Module.kind == PLAYER and NativeCharacterVisible()) then
+    if Module.kind == INSPECT then
         Close()
     elseif Module.kind == PLAYER then
         Module.view:CancelWindowGestures()
+        WindowAction("moveStop")
+        WindowAction("scaleStop")
         HideTooltip()
         SetEvents(SET_EVENTS, false)
         Module.dirtySets = nil
@@ -716,21 +766,19 @@ function Module:Refresh()
     self.paintJob = self.context:Coalesce(0, Flush)
     self.inspectJob = self.context:Coalesce(0, HandoffInspect)
     self.appearanceJob = self.context:Coalesce(0, RefreshVisibleAppearance)
-    self.context:Event("UPDATE_BINDINGS", SyncRouting, IN_COMBAT)
-    self.context:Event("CVAR_UPDATE", SyncRouting, IN_COMBAT)
-    self.context:Event("GAME_PAD_ACTIVE_CHANGED", SyncRouting, IN_COMBAT)
-    self.context:Event("PLAYER_REGEN_ENABLED", SyncRouting)
+    self.nativeJob = self.context:Coalesce(0, OpenNativeCharacter)
+    self.nativeFitJob = self.context:Coalesce(0, FitNative)
+    self.context:Event("CVAR_UPDATE", InspectInputMode, IN_COMBAT)
+    self.context:Event("GAME_PAD_ACTIVE_CHANGED", InspectInputMode, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", LeaveCombat)
     self.context:Event("PLAYER_REGEN_DISABLED", EnterCombat, IN_COMBAT)
-    if not characterHooked then
-        hooksecurefunc("ToggleCharacter", NativeCharacterToggled)
-        characterHooked = true
-    end
     if not inspectHooked then
         self.context:Event("ADDON_LOADED", AddOnLoaded)
         HookInspect()
     end
     PrimeEquipmentReader()
-    Routing.Sync(OpenCharacter, self.reader ~= nil)
+    Routing.Sync(NativeVisibilityChanged, NativeSizeChanged)
+    PrepareNativeLayout(Routing.Root())
 end
 
 function Module:Enable()
@@ -741,11 +789,15 @@ function Module:Disable()
     self.running = nil
     Routing.Sync(nil)
     Close()
-    if self.view then self.view:RefreshAppearance(nil) end
+    if self.nativeJob then self.nativeJob:Clear() end
+    if self.nativeFitJob then self.nativeFitJob:Clear() end
+    ReleaseNativeLayout()
+    if self.characterView then self.characterView:RefreshAppearance(nil) end
+    if self.dockView then self.dockView:RefreshAppearance(nil) end
+    if self.inspectView then self.inspectView:RefreshAppearance(nil) end
     CancelInspect()
     self.context:Cancel(CancelInspect)
     if self.inspectJob then self.inspectJob:Clear() end
-    self.context:RemoveEvent("UPDATE_BINDINGS")
     self.context:RemoveEvent("CVAR_UPDATE")
     self.context:RemoveEvent("GAME_PAD_ACTIVE_CHANGED")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")

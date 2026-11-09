@@ -379,6 +379,7 @@ local function BeginDrag(state)
     local x, y = GetCursorPosition()
     local frame = state.frame
     local width, height = frame:GetWidth(), frame:GetHeight()
+    if state.suiteBounds then width, height = state.suiteBounds.width, state.suiteBounds.height end
     local parentScale = frame:GetEffectiveScale() / frame:GetScale()
     if type(x) ~= "number" or type(y) ~= "number"
         or not width or not height or not parentScale or parentScale <= 0 then return end
@@ -778,4 +779,32 @@ function WindowControls.ResetLayout()
     return scaled and moved
 end
 
+function WindowControls.SuiteAction(frame, bounds, action)
+    local state = WindowControls.states[frame]
+    if action == "moveStop" then return state and EndMove(state) end
+    if action == "scaleStop" then return state and state.grip and EndDrag(state) end
+    if action == "release" then
+        if not state then return end
+        state.suiteBounds = nil
+        if state.fit and not IsCombat() then Chrome.LeaveFit(state) end
+        if state.owners.suiteCharacterPanel then WindowControls.DisableOwner("suiteCharacterPanel") end
+        return
+    end
+    if IsCombat() or frame ~= CharacterFrame then return end
+    if (not state or not Controlled(state)) and not WindowControls.Attach(frame, "suiteCharacterPanel") then return end
+    state = WindowControls.states[frame]
+    if not Controlled(state) then return end
+    local prepare = state.suiteBounds == nil
+    state.suiteBounds = bounds
+    if prepare then ApplyStoredPosition(state) end
+    if action == "maximize" then ToggleFit(state)
+    elseif action == "minimize" and state.restore then
+        Minimize(state)
+    elseif action == "moveStart" then BeginMove(state)
+    elseif action == "scaleStart" then BeginDrag(state)
+    elseif action == "dockLeft" or action == "dockRight" then
+        if Chrome.DockSuite(state, action == "dockRight") then SavePosition(state) end
+    end
+    return action == "minimize" and state.minimized == true or action ~= "minimize" and state.fit ~= nil
+end
 return WindowControls

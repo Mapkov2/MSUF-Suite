@@ -59,7 +59,7 @@ end
 
 function Details.IsModern()
     return NS.Client.modernEquipment
-        and (Config().view == nil or Config().view == "modern")
+        and (NS.SuiteOwnership.Owned("characterDossier") or (Config().view or "modern") == "modern")
 end
 
 -- Whether this view shows item data (and needs events and reads).
@@ -733,7 +733,7 @@ end
 function Details.Apply(root, kind, owner)
     Details.StyleChrome(root, owner)
     if not Details.IsAvailable() then return end
-    -- InspectPaperDollFrame loads with Blizzard_InspectUI (load-on-demand).
+    if kind == "character" and NS.SuiteOwnership.Owns("characterDossier") then return Details.Disable(root, owner, true) end
     local parent = _G.InspectPaperDollFrame
     if kind == "character" then parent = PaperDollFrame end
     if not NS.Safety.CanCreateRegions(root, not NS.IsCombatLocked())
@@ -749,18 +749,12 @@ function Details.Apply(root, kind, owner)
     end
     v.owner, v.active = owner, true
     if not CanPaintView(v) then return end
-    if Enabled(v) then
-        v.host:Show()
-        OnShow(v)
-    else
-        v.host:Hide()
-        Unregister(v)
-        NS.GearAnnotations.RestoreLayout(v)
-        Clear(v)
-    end
+    if not Enabled(v) then return Details.Disable(root, owner, true) end
+    v.host:Show()
+    OnShow(v)
 end
 
-function Details.Disable(root, owner)
+function Details.Disable(root, owner, keepChrome)
     local v = root and Details.views[root]
     if v and v.owner == owner then
         v.active = false
@@ -775,7 +769,7 @@ function Details.Disable(root, owner)
         NS.GearAnnotations.RestoreLayout(v)
         NS.WindowActionSkin.DisableOwner(v.actionOwner)
     end
-    if root and root.CloseButton then NS.WindowActionSkin.Disable(root.CloseButton, owner) end
+    if not keepChrome and root and root.CloseButton then NS.WindowActionSkin.Disable(root.CloseButton, owner) end
 end
 
 function Details.SetOption(key, value)

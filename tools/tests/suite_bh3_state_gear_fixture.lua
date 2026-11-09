@@ -23,6 +23,7 @@ end
 
 local NS = {
     IsCombatLocked = function() return false end,
+    SuiteCore = function() return { Skin = {} } end,
     AdapterKit = { DEFAULT_FONT = "Fonts\\FRIZQT__.TTF", FontPath = function() return "Fonts\\FRIZQT__.TTF" end },
     Safety = {
         Public = function() return true end,
@@ -43,6 +44,7 @@ GameTooltip = Mock("GameTooltip")
 CharacterHeadSlot = Mock("CharacterHeadSlot")
 InspectHeadSlot = Mock("InspectHeadSlot")
 
+assert(loadfile(root .. "MSUF_Suite_Skin/Adapters/GearGeometry.lua"))("MSUF_Suite_Skin", NS)
 local Gear = assert(loadfile(root .. "MSUF_Suite_Skin/Adapters/GearAnnotations.lua"))("MSUF_Suite_Skin", NS)
 
 local function Run(kind, inlineGear)

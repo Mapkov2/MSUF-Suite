@@ -150,5 +150,10 @@ if NS.Client.isForever then
     continuation()
     Check(backdrop.vertex[1] == 0.36, "stale combat completion removed the current model tint")
 end
+NS.GearGeometry = { Owns = function(root) return root == CharacterFrame end }
+local beforeSuiteArt = writes
+hook(CharacterModelScene)
+Check(writes == beforeSuiteArt, "native model skin repainted over wide Suite artwork")
+NS.GearGeometry = nil
 Check(#H.reported == 0, "Character callback reported a Lua error")
 print(("Character combat skin: %d checks, %.3f KiB/1000 native resets (%s)"):format(checks, growth, arg[2]))

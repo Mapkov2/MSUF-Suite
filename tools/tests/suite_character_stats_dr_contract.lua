@@ -38,12 +38,14 @@ local locales = {}
 dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
 local NS = {
     Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
+    SuiteCore = function() return { Skin = {} } end,
     Registry = { AddListener = function() end },
     IsCombatLocked = function() return false end,
     RegisterLocale = function(locale, values) locales[locale] = values end,
     -- Retail: the dossier and its modern equipment rows are available.
     Client = { modernEquipment = true },
 }
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/SuiteOwnership.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/enUS.lua"))("MSUF_Suite_Skin", NS)
 NS.L = locales.enUS
 -- German through the Suite's pack, as the skin reads it (Localization.lua).
@@ -196,7 +198,7 @@ NS.CharacterDetails = { IsModern = function() return true end }
 NS.GearAnnotations = {
     IsWide = function() return false end,
     ApplyLayout = NOOP, RestoreLayout = NOOP, Paint = NOOP, Update = NOOP,
-    UpdateSummary = NOOP, Hide = NOOP,
+    UpdateSummary = NOOP, Hide = NOOP, SuppressListProvider = NOOP,
 }
 NS.WindowActionSkin = { Apply = function() return nil end, DisableOwner = NOOP, Disable = NOOP }
 NS.DB = {
@@ -526,6 +528,7 @@ end
 -- UIParent's panel manager re-anchors a resized Character window.
 local panelRepositions = 0
 UpdateUIPanelPositions = function() panelRepositions = panelRepositions + 1 end
+assert(loadfile(skin .. "GearGeometry.lua"))("MSUF_Suite_Skin", NS)
 local gear = Fresh("GearAnnotations.lua").GearAnnotations
 local characterRoot = Geometry(338, 424, { "TOPLEFT", nil, "TOPLEFT", 16, -116 })
 characterRoot.activeSubframe = "PaperDollFrame"
@@ -591,12 +594,14 @@ headSlot.enchant = label
 CharacterHeadSlot = headSlot
 EnhanceQoL = { ItemEnchantDisplay = { Apply = NOOP, Clear = NOOP },
     variables = { itemSlots = { [1] = headSlot } }, functions = {} }
-local secretNS = setmetatable({ CharacterDetails = { GetView = function() return nil end, RefreshEQoL = NOOP } },
+local secretNS = setmetatable({ CharacterDetails = { GetView = function() return "list" end, RefreshEQoL = NOOP } },
     { __index = NS })
+NS.SuiteOwnership.answers.characterDossier = true
 assert(loadfile(skin .. "EQoLCharacter.lua"))("MSUF_Suite_Skin", secretNS)
 secretNS.EQoLCharacter.Apply("eqol-secret")
-assert(label.points[1] and label.points[1][2] == headSlot, "the provider label was not laid out")
+assert(label.points[1] and label.points[1][2] == headSlot, "the Suite dock left the native provider in Basic list mode")
 secretNS.EQoLCharacter.Disable("eqol-secret")
+NS.SuiteOwnership.answers.characterDossier = nil
 issecretvalue = isSecret
 for _, point in ipairs(label.points) do
     assert(point[2] ~= nil, "a label anchored to a secret region was restored relative to its parent")

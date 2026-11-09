@@ -417,6 +417,65 @@ Check(anchorWrites == geometryBefore, "idle refresh added native geometry writes
 -- preserve explicit false, and do not double-animate owned MSUF artwork.
 local api = NS.PublicAPI.API
 local client = assert(api:RegisterAddon("MotionContract"))
+do
+    local character = assert(api:RegisterAddon("MSUF_Suite_characterPanel"))
+    local tabBar = Target("Frame", parent)
+    local overview = Target("Button", tabBar, 10, 0, 88, 32)
+    local equipment = Target("Button", tabBar, 98, 0, 105, 32)
+    local reputation = Target("Button", tabBar, 203, 0, 130, 32)
+    local external = Target("Button", tabBar)
+    local spec = { role = "navigation", activeRole = "navigationActive", ownedArt = true, motion = true }
+    local pending = {}
+    NS.CombatGate.RunOrDefer = function(key, callback) pending[key] = callback end
+    lockdown = true
+    clock:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
+    local applied, reason = character:SkinFrame(overview, spec)
+    Check(applied and reason == "applied", "first combat opening deferred the owned navigation art")
+    Check(character:SkinFrame(equipment, spec) and character:SkinFrame(reputation, spec), "combat tabs could not attach")
+    Check(character:SetActive(overview, true), "cold combat selection did not paint")
+    local _, refreshReason = character:RefreshAll()
+    Check(refreshReason == "deferred", "combat tab exception changed full-scope refresh policy")
+    local _, externalReason = client:SkinFrame(external, spec)
+    Check(externalReason == "deferred" and not NS.Registry.GetSurface(external), "foreign navigation bypassed the combat gate")
+    local beforeTextures, attachments, attach = textures, 0, Surface.Attach
+    Surface.Attach = function(...)
+        attachments = attachments + 1
+        return attach(...)
+    end
+    Check(character:SetActive(overview, false) and character:SetActive(equipment, true), "combat selection refused")
+    Surface.Attach = attach
+    local selected = NS.Registry.GetSurface(equipment)
+    local channels = selected.motion.channels
+    Check(channels and channels[1].value == -88 and channels[3].value == -17
+        and Motion.count > 0 and textures == beforeTextures, "combat selection did not slide and resize from the previous tab")
+    Check(attachments == 0, "warm combat selection reattached the tab skins")
+    Tick(3)
+    local fromX = equipment.x + selected.motion.channels[1].value
+    character:SetActive(equipment, false)
+    character:SetActive(reputation, true)
+    local current = NS.Registry.GetSurface(reputation)
+    Check(math.abs(current.motion.channels[1].value - (fromX - reputation.x)) < .000001,
+        "combat retarget snapped to the old tab's final position")
+    Tick()
+    Check(current.active and current.motion.channels[1].value == 0 and not clock:GetScript("OnUpdate"),
+        "combat tab motion failed to settle or kept the shared driver running")
+    reputation.protected = true
+    local beforeProtected = anchorWrites
+    local _, protectedReason = character:SetActive(reputation, false)
+    Check(protectedReason == "deferred" and anchorWrites == beforeProtected, "combat tab paint bypassed fresh protection")
+    reputation.protected = false
+    NS.DB.theme.reduceMotion = true
+    character:SetActive(reputation, false)
+    character:SetActive(overview, true)
+    Check(NS.Registry.GetSurface(overview).active and Motion.count == 0, "reduced motion did not snap the combat selector")
+    NS.DB.theme.reduceMotion = false
+    lockdown = false
+    clock:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
+    for _, callback in pairs(pending) do callback() end
+    NS.CombatGate.RunOrDefer = nil
+    character:ReleaseAll()
+    client:Release(external)
+end
 local owned = Target("Button", parent)
 Check(client:SkinButton(owned, { ownedArt = true, motion = true }), "public motion opt-in failed")
 owned:Fire("OnEnter")

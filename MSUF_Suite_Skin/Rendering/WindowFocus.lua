@@ -6,6 +6,7 @@ local Focus = { records = setmetatable({}, { __mode = "k" }) }
 NS.WindowFocus = Focus
 local Safety, Geometry, Visual = NS.Safety, NS.WindowFocusGeometry, NS.WindowFocusVisual
 local visible, generations = {}, {}
+local presentations = setmetatable({}, { __mode = "k" })
 local count, serial = 0, 0
 local driver = CreateFrame("Frame")
 driver:Hide()
@@ -90,7 +91,10 @@ Reconcile = function()
     local bank = visible[Safety.Field(_G, "BankFrame")]
     local bagsOpen = false
     for frame, state in pairs(visible) do
-        state.readable = IsVisible(frame) and Geometry.Read(frame, state.rect) and Geometry.Layer(state)
+        local surface = presentations[frame]
+        state.presentation = IsVisible(surface) and surface or nil
+        state.readable = IsVisible(frame) and Geometry.Read(state.presentation or frame, state.rect)
+            and Geometry.Layer(state)
         if state.readable then
             NS.WindowFocusChrome.Update(state)
             NS.WindowFocusLayers.Prepare(state)
@@ -278,6 +282,17 @@ local function Observe(frame)
     if Safety.HasMethod(frame, "StartMoving") then hooksecurefunc(frame, "StartMoving", Moving) end
     if Safety.HasMethod(frame, "StartSizing") then hooksecurefunc(frame, "StartSizing", Moving) end
     if Safety.HasMethod(frame, "StopMovingOrSizing") then hooksecurefunc(frame, "StopMovingOrSizing", Moved) end
+end
+
+-- A native window can present a wider Suite shell while keeping the same input owner.
+function Focus.Present(frame, surface)
+    if presentations[frame] == surface then return end
+    presentations[frame] = surface
+    local state = visible[frame]
+    if state then
+        state.chromeDirty = true
+        Reconcile()
+    end
 end
 
 function Focus.Track(frame, owner)

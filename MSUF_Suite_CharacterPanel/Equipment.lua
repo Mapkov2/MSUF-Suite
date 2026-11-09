@@ -18,7 +18,7 @@ local function AddSlots(model, output, names)
         if id then
             local label = _G[token:upper()]
             local row = {
-                slot = id, label = String(label) or Text("Slot"),
+                slot = id, token = token, label = String(label) or Text("Slot"),
                 emptyIcon = NS.Public(texture) and texture or nil, audit = {},
             }
             output[#output + 1], model.rows[#model.rows + 1], model.bySlot[id] = row, row, row
@@ -146,6 +146,28 @@ end
 
 local function ItemLevel(row)
     return row and row.level and string.format("%.0f", row.level) or "—"
+end
+
+function Gear.EquipmentList(groups, model)
+    local group = model.equipmentList
+    if not group then
+        group = { title = Text("Your equipment"), rows = {} }
+        model.equipmentList = group
+    end
+    wipe(group.rows)
+    for i = 1, #model.rows do
+        local item = model.rows[i]
+        if item.name and (not model.auditFocus or item.marked) then
+            local row = item.listRow
+            if not row then
+                row = { label = item.label, action = item.slot }
+                item.listRow = row
+            end
+            row.value = item.name
+            group.rows[#group.rows + 1] = row
+        end
+    end
+    if #group.rows > 0 then groups[#groups + 1] = group end
 end
 
 function Gear.Compare(groups, own, inspect)

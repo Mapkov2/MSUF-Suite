@@ -23,7 +23,9 @@ local function Region()
     return region
 end
 local pending, watcher = {}, nil
+local suiteArt = false
 local NS = { IsCombatLocked = function() return combat end,
+    GearGeometry = { Owns = function(root) return suiteArt and root == CharacterFrame end },
     DB = { enabled = true, theme = { iconBorderStyle = "quality", iconBorderThickness = 2, iconBorderPadding = 1 } },
     Defaults = { theme = { iconBorderStyle = "quality" } },
     Theme = { GetColor = function() return 1, 1, 1, 1 end },
@@ -118,4 +120,7 @@ CharacterFrame:Fire("OnShow")
 Check(applies == 3 and state.painted[1] == 0.8, "safe show lost deferred completion")
 Check(inspectApplies == 1 and structural == 1, "deferred structural work was lost")
 Check(watcher, "icon setting watcher was not retained")
+suiteArt, writes = true, 0
+panel:RefreshSlot(CharacterHeadSlot)
+Check(writes == 0, "native skin repainted over Suite slot artwork")
 print("PaperDoll safe combat integration: " .. checks .. " checks passed")

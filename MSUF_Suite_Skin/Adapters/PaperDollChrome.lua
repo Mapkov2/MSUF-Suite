@@ -211,6 +211,7 @@ end
 
 function Chrome:SkinSlot(state, slot)
     if not state.active or not slot or not self.exactSlots[slot] or not VisibleRoot(self) then return false end
+    if self.rootName == "CharacterFrame" and NS.GearGeometry.Owns(Root(self)) then return false end
     local combat = NS.IsCombatLocked()
     if combat and not self.safeCombatApply or not Safety.CanCreateRegions(slot, not combat) then
         if combat then self:RunOrDefer(state, "slots", self.skinAllSlots) end

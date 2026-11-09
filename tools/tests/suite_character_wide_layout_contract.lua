@@ -25,6 +25,7 @@ local NS = {
     -- Retail: the dossier and its modern equipment rows are available.
     Client = { isForever = false, isMainline = true, modernEquipment = true },
     IsCombatLocked = function() return false end,
+    SuiteCore = function() return MSUFSuite end,
     FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" },
     Theme = { RefreshDynamicLook = Noop },
     Registry = { AddListener = Noop, QueueJob = Noop, NotifyListeners = Noop },
@@ -32,8 +33,9 @@ local NS = {
     Surface = { SetVisible = function(frame, visible) frame.surfaceVisible = visible end },
 }
 local skin = root .. "/MSUF_Suite_Skin/"
-for _, file in ipairs({ "Core/Safety", "Core/Defaults", "Core/DefaultsLooks", "Core/Database",
-    "Adapters/AdapterKit", "Adapters/CharacterDetails" }) do
+MSUFSuite = { Skin = {} }
+for _, file in ipairs({ "Core/Safety", "Core/Cosmetics", "Core/Defaults", "Core/DefaultsLooks", "Core/Database",
+    "Adapters/AdapterKit", "Adapters/CharacterDetails", "Adapters/GearGeometry" }) do
     assert(loadfile(skin .. file .. ".lua"))("MSUF_Suite_Skin", NS)
 end
 assert(loadfile(gearSource))("MSUF_Suite_Skin", NS)
@@ -242,4 +244,169 @@ Gear.RestoreLayout(v)
 Gear.FollowNativeSize(v)
 CharacterFrame.IsForbidden, CharacterFrame.GetWidth = nil, width
 locked = false
+
+-- The Suite presentation moves only the exact native interaction surfaces.
+-- Its art keeps the stock parent, model dimensions, panel manager and scripts.
+v.geometry, v.wide, v.list = nil, false, false
+local geometry = assert(MSUFSuite.Skin.CharacterGeometry)
+local pending
+NS.CombatGate = {
+    RunOrDefer = function(_, callback) if locked then pending = callback else callback() end end,
+    Cancel = function() pending = nil end,
+}
+local function NativeWrite() error("Suite wrote native root geometry or a native script") end
+CharacterFrame.SetWidth, CharacterFrame.SetHeight, CharacterFrame.SetPoint = NativeWrite, NativeWrite, NativeWrite
+UpdateUIPanelPositions = NativeWrite
+local function Layered(frame, parent, strata, level)
+    frame.parent, frame.strata, frame.level = parent, strata or "MEDIUM", level or 1
+    frame.insets, frame.insetWrites = { 0, 0, 0, 0 }, 0
+    function frame:GetParent() return self.parent end
+    function frame:GetEffectiveScale() return self.scale * (self.parent and self.parent:GetEffectiveScale() or 1) end
+    function frame:GetFrameStrata() return self.strata end
+    function frame:SetFrameStrata(value) self.strata = value end
+    function frame:GetFrameLevel() return self.level end
+    function frame:SetFrameLevel(value) self.level = value end
+    function frame:GetRegions() return unpack(self.regions or {}) end
+    function frame:GetHitRectInsets() return unpack(self.insets) end
+    function frame:SetHitRectInsets(...)
+        assert(not locked, "the Suite wrote native hit insets in combat")
+        self.insets, self.insetWrites = { ... }, self.insetWrites + 1
+    end
+    frame.SetParent, frame.SetScript, frame.Show, frame.Hide = NativeWrite, NativeWrite, NativeWrite, NativeWrite
+    return frame
+end
+Layered(CharacterFrame, nil)
+CharacterFrame.scale = 0.8
+Layered(PaperDollFrame, CharacterFrame)
+PaperDollFrame.scale = 0.9
+local items = Layered(Region(1, 1), PaperDollFrame)
+items.scale = 1.2
+local head = Layered(CharacterHeadSlot, items, "MEDIUM", 100)
+local headPoint = head.points[1]
+head.insets = { 1, 2, 3, 4 }
+local weapon = Layered(Region(37, 37, { "CENTER", items, "CENTER", 7, -9 }), items, "MEDIUM", 100)
+CharacterMainHandSlot = weapon
+local close = Layered(Region(24, 24, { "TOPRIGHT", CharacterFrame, "TOPRIGHT", -2, -2 }), CharacterFrame, "MEDIUM", 6)
+local closePoint = close.points[1]
+CharacterFrame.CloseButton = close
+local model = Layered(CharacterModelScene, PaperDollFrame, "MEDIUM", 50)
+model.points = { { "TOPLEFT", CharacterFrame, "TOPLEFT", 8, -66 },
+    { "TOPRIGHT", CharacterFrame, "TOPRIGHT", -8, -66 }, { "BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", -8, 8 } }
+model.SetWidth, model.SetHeight = NativeWrite, NativeWrite
+local modelPoints = model.points
+local leftPane = Layered(Region(1, 1), CharacterFrame)
+local modelControls = Layered(Region(100, 20, { "TOP", leftPane, "TOP", 0, -40 }), model, "MEDIUM", 51)
+model.ControlFrame = modelControls
+local function Art(kind, alpha)
+    local region = { kind = kind, alpha = alpha, vertex = { 1, 1, 1, 0.7 } }
+    function region:GetObjectType() return self.kind end
+    function region:GetAlpha() return self.alpha end
+    function region:SetAlpha(value) self.alpha = value end
+    function region:GetVertexColor() return unpack(self.vertex) end
+    function region:SetVertexColor(...) self.vertex = { ... } end
+    return region
+end
+local icon, border, count, cooldown = Art("Texture", 0.8), Art("Texture", 0.7), Art("FontString", 1), Art("Texture", 0.4)
+head.regions, head.BorderFrame = { icon, count }, Layered(Region(1, 1), head)
+head.BorderFrame.regions = { border }
+head.Cooldown = Layered(Region(1, 1), head)
+head.Cooldown.regions = { cooldown }
+model.BackgroundTopLeft, model.BackgroundOverlay = Art("Texture", 0.9), Art("Texture", 0.5)
+PaperDollInnerBorderBottom2 = Art("Texture", 0.6)
+local closeArt = Art("Texture", 1)
+close.regions = { closeArt }
+local plan = {
+    width = 940, height = 576, strata = "HIGH", artLevel = 550, modelLevel = 570, slotLevel = 590, reportLevel = 610, closeLevel = 630,
+    slots = { { token = "HeadSlot", x = 22, alternateX = 184, y = 111, size = 32 },
+        { token = "MainHandSlot", x = 360, alternateX = 280, y = 483, size = 32 },
+        { token = "AmmoSlot", x = 400, y = 483, size = 32, optional = true } },
+    model = { x = 278, y = 114, width = 244, height = 312 },
+    close = { x = 910, y = 4, size = 22 },
+}
+function weapon:IsProtected() return true, true end
+Check(not geometry.Apply(CharacterFrame, plan) and head.points[1] == headPoint and head.scale == 1 and icon.alpha == 0.8,
+    "preflight partially changed equipment before rejecting a required protected slot")
+weapon.IsProtected = nil
+local setInsets = weapon.SetHitRectInsets
+weapon.SetHitRectInsets = nil
+Check(not geometry.Apply(CharacterFrame, plan) and head.points[1] == headPoint and head.insetWrites == 0,
+    "the required native hit-rect API was checked after a partial layout")
+weapon.SetHitRectInsets = setInsets
+NS.Cosmetics.Fade(border, "prior-skin-owner")
+Check(geometry.Apply(CharacterFrame, plan), "the Suite native geometry could not start")
+local _, anchor, _, anchorX, anchorY = head:GetPoint(1)
+local ratio = head:GetEffectiveScale() / CharacterFrame:GetEffectiveScale()
+Check(anchor == CharacterFrame and math.abs(head:GetWidth() * ratio - 32) < 0.01
+    and math.abs(anchorX * ratio - 22) < 0.01 and math.abs(anchorY * ratio + 111) < 0.01,
+    "the original equipment button did not align to the authored icon at inherited scale")
+local left, right, top, bottom = head:GetHitRectInsets()
+local weaponRatio = weapon:GetEffectiveScale() / CharacterFrame:GetEffectiveScale()
+local weaponLeft, weaponRight = weapon:GetHitRectInsets()
+Check(left == 0 and math.abs(right * ratio + 162) < 0.01 and top == 0 and bottom == 0
+    and math.abs(weaponLeft * weaponRatio + 80) < 0.01 and weaponRight == 0,
+    "native hit extents did not cover both icon positions at the authored scale")
+Check(head.parent == items and model.parent == PaperDollFrame and close.parent == CharacterFrame
+    and head.level == CharacterFrame.level + plan.slotLevel and model.level == CharacterFrame.level + plan.modelLevel
+    and close.level == CharacterFrame.level + plan.closeLevel and head.strata == "HIGH",
+    "native descendants lost their parents or relative layer")
+local closeAnchor, closeRelative, closeRelativePoint, closeX, closeY = close:GetPoint(1)
+local closeRatio = close:GetEffectiveScale() / CharacterFrame:GetEffectiveScale()
+Check(closeAnchor == "TOPLEFT" and closeRelative == CharacterFrame and closeRelativePoint == "TOPLEFT"
+    and math.abs(closeX * closeRatio - 910) < 0.01 and math.abs(closeY * closeRatio + 4) < 0.01
+    and math.abs(close:GetWidth() * closeRatio - 22) < 0.01 and closeArt.alpha == 1,
+    "native Close did not match the Suite button without changing its original art")
+Check(model:GetNumPoints() == 2 and CharacterFrame:GetWidth() == 540,
+    "the Suite layout changed the Blizzard root or native model size property")
+local controlPoint, controlAnchor = modelControls:GetPoint(1)
+Check(controlPoint == "TOP" and controlAnchor == leftPane and modelControls.parent == model and modelControls.strata == "LOW",
+    "the stock model controls painted over the original Suite artwork")
+NS.WindowControls = {
+    SuiteAction = function(frame, layout, action)
+        Check(frame == CharacterFrame and layout == plan and action == "release", "window action lost its native root or plan")
+        return true
+    end,
+}
+Check(not geometry.WindowAction(items, "release") and geometry.WindowAction(CharacterFrame, "release"),
+    "the native window action did not honor its geometry owner")
+Check(icon.alpha == 0 and border.alpha == 0 and count.alpha == 1 and cooldown.alpha == 0.4
+    and model.BackgroundTopLeft.alpha == 0 and model.BackgroundOverlay.vertex[4] == 0 and PaperDollInnerBorderBottom2.alpha == 0,
+    "slot or model art conflicted with the Suite stage or hid separate native feedback")
+Check(NS.Cosmetics.GetOwner(border) == "prior-skin-owner", "Suite stole an existing skin alpha claim")
+NS.Cosmetics.RestoreOwner("prior-skin-owner")
+Check(geometry.Apply(CharacterFrame, plan) and border.alpha == 0, "appearance refresh did not pick up the released native border")
+Check(head.insetWrites == 1 and weapon.insetWrites == 1, "the same layout rewrote native hit insets")
+Gear.ApplyLayout(v)
+Check(head.points[1][2] == CharacterFrame and not Gear.IsWide(), "Basic layout competed with the Suite owner")
+
+locked = true
+Check(not geometry.Apply(CharacterFrame, plan), "the Suite reapplied native geometry during combat")
+geometry.Release(CharacterFrame)
+Check(type(pending) == "function" and icon.alpha == 0 and head.level == CharacterFrame.level + plan.slotLevel and head.insetWrites == 1,
+    "native geometry was restored before combat ended")
+locked = false
+weapon:SetFrameLevel(777)
+weapon:SetHitRectInsets(5, 6, 7, 8)
+local release = pending
+pending = nil
+release()
+local _, oldAnchor, _, oldX, oldY = head:GetPoint(1)
+Check(oldAnchor == headPoint[2] and oldX == headPoint[4] and oldY == headPoint[5] and head.scale == 1
+    and head.strata == "MEDIUM" and head.level == 100 and weapon.level == 777,
+    "native anchor/scale/layers were not restored or a later native layer was overwritten")
+left, right, top, bottom = head:GetHitRectInsets()
+local laterLeft, laterRight, laterTop, laterBottom = weapon:GetHitRectInsets()
+Check(left == 1 and right == 2 and top == 3 and bottom == 4
+    and laterLeft == 5 and laterRight == 6 and laterTop == 7 and laterBottom == 8,
+    "release did not restore the owned hit insets or overwrote a later native change")
+closeAnchor, closeRelative, closeRelativePoint, closeX, closeY = close:GetPoint(1)
+Check(closeAnchor == closePoint[1] and closeRelative == closePoint[2] and closeRelativePoint == closePoint[3]
+    and closeX == closePoint[4] and closeY == closePoint[5] and close.scale == 1 and close.level == 6,
+    "Basic did not get its original Close anchor, scale and layer back")
+Check(not geometry.WindowAction(CharacterFrame, "release"), "released geometry still offered native window actions")
+local _, restoredControlAnchor, _, _, restoredControlY = modelControls:GetPoint(1)
+Check(restoredControlAnchor == leftPane and restoredControlY == -40 and modelControls.level == 51 and modelControls.strata == "MEDIUM"
+    and PaperDollInnerBorderBottom2.alpha == 0.6, "stock model controls or borders were left in the Suite layout")
+Check(model:GetNumPoints() == #modelPoints and model.points[3][2] == modelPoints[3][2]
+    and icon.alpha == 0.8 and border.alpha == 0.7 and model.BackgroundTopLeft.alpha == 0.9 and model.BackgroundOverlay.vertex[4] == 0.7,
+    "release left a native scene anchor or cosmetic suppression behind")
 print("Suite character wide layout: " .. checks .. " checks passed")

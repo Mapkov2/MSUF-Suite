@@ -5,19 +5,16 @@ local function Load(file, ns)
 end
 
 local secret = newproxy()
-local keyboard = { TOGGLECHARACTER0 = "C", TOGGLECHARACTER2 = "U", TOGGLECURRENCY = "SHIFT-C", TOGGLECHARACTER4 = "H" }
-local buttons, hooks, overrides, units = {}, {}, {}, { player = "P", target = "A" }
-local nativeOverrides, occupiedBindings, foreignOverrides = {}, {}, {}
+local hooks, units = {}, { player = "P", target = "A" }
 local locked, pad, disabled = false, false, false
-local secondCharacterKey
 local requests, nativeToggles, nativeHides, gearReads = 0, 0, 0, 0
-local snapshotReads, routingWrites, missingLinks = 0, 0, false
+local snapshotReads, missingLinks = 0, false
 local appearancePaints = 0
 local openSounds = 0
 local screenFits, cancelledGestures = 0, 0
 local lastSlot, lastTab, lastKind, lastUnit, lastGroup, actions
-local usedSlot, modifiedClick, linkedItem
-local driver, runningSecure, nativePane
+local usedSlot, pickedSlot, modifiedClick, linkedItem
+local nativeHardware, nativeSlots, nativeModel
 local groupReads = 0
 local setReads, setUses = 0, 0
 local inspectAllowed, currentSet, setMenu, equippedSet
@@ -55,99 +52,84 @@ function UnitGUID(unit) return units[unit] end
 function UnitClass() return "Priest" end
 function UnitLevel() return 22 end
 function UnitName(unit) return unit end
-function GetBindingKey(command)
-    return keyboard[command], command == "TOGGLECHARACTER0" and secondCharacterKey or nil
-end
-function GetBindingAction(key, checkOverride)
-    if checkOverride then
-        if foreignOverrides[key] then return foreignOverrides[key] end
-        if overrides[key] then return "CLICK " .. overrides[key] .. ":LeftButton" end
-        if nativeOverrides[key] then return nativeOverrides[key] end
-    end
-    if key == secondCharacterKey then return "TOGGLECHARACTER0" end
-    if occupiedBindings[key] then return occupiedBindings[key] end
-    for command, boundKey in pairs(keyboard) do
-        if key == boundKey then return command end
-    end
-    return ""
-end
-function GetCursorInfo() end
+function GetBindingKey() error("Suite must leave the stock Character key in place") end
+function GetBindingAction() error("Suite must leave the stock Character key in place") end
+function RegisterStateDriver() error("Suite must leave the stock Character key in place") end
 function IsModifiedClick(kind) return kind == modifiedClick end
 function HandleModifiedItemClick(link) linkedItem = link end
 function ToggleCharacter(pane)
-    nativeToggles, nativePane = nativeToggles + 1, pane
-    if CharacterFrame:IsShown() then CharacterFrame:Hide() else CharacterFrame:Show() end
-    if hooks.ToggleCharacter then hooks.ToggleCharacter(pane) end
+    if disabled then return end
+    nativeToggles = nativeToggles + 1
+    local visible = CharacterFrame:IsShown()
+    if visible and pane == "PaperDollFrame" and PaperDollFrame:IsShown() then
+        CharacterFrame:Hide()
+        return
+    end
+    if pane == "PaperDollFrame" then PaperDollFrame:Show() else PaperDollFrame:Hide() end
+    if not visible then
+        CharacterFrame:Show()
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_OPEN)
+    end
+    CharacterFrame.stockWidth = 338 -- Blizzard RefreshDisplay runs after toggling.
 end
-function PickupInventoryItem(slot) lastSlot = slot end
-function UseInventoryItem(slot) usedSlot = slot end
+function PickupInventoryItem(slot)
+    assert(nativeHardware and PaperDollFrame:IsVisible(), "Suite attempted to pick up a native inventory slot")
+    pickedSlot = slot
+end
+function UseInventoryItem(slot)
+    assert(nativeHardware and PaperDollFrame:IsVisible(), "Suite attempted to use a native inventory slot")
+    usedSlot = slot
+end
 function HideUIPanel(frame)
+    assert(frame ~= CharacterFrame, "Suite attempted to hide the native player window")
     nativeHides = nativeHides + 1
     frame.shown, frame.unit = false, nil
 end
-local function ExecuteRestricted(owner, snippet)
-    local run = assert(loadstring(snippet, "@character_secure_binding"))
-    setfenv(run, { self = owner })
-    runningSecure = true
-    run()
-    runningSecure = nil
-    routingWrites = routingWrites + 1
+function hooksecurefunc(target, method, callback)
+    assert(target ~= "ToggleCharacter", "Suite wrapped the stock Character toggle")
+    if target == CharacterFrame then
+        local original = assert(target[method])
+        target[method] = function(...)
+            original(...)
+            callback(...)
+        end
+    else
+        hooks[target] = method
+    end
 end
-local function DriveCombatState(state)
-    driver.attributes["state-character"] = state
-    ExecuteRestricted(driver, driver:GetAttribute("_onstate-character"))
-end
-function RegisterStateDriver(owner, state, conditional)
-    assert(not locked and state == "character")
-    assert(conditional == "[petbattle] native; [combat] combat; suite", "combat and pet battles need distinct routing")
-    driver = owner
-    DriveCombatState("suite")
-end
-function SecureHandlerExecute(owner, snippet)
-    assert(not locked, "insecure binding write during combat")
-    ExecuteRestricted(owner, snippet)
-end
-function hooksecurefunc(name, callback) hooks[name] = callback end
-local function CreateFrame(_, name)
-    local scripts, attributes = {}, {}
+local function CreateFrame(_, name, parent)
+    local scripts = {}
     local frame = {
-        attributes = attributes, scripts = scripts,
-        SetAttribute = function(self, key, value)
-            assert(not locked or self ~= driver, "insecure protected attribute write")
-            attributes[key] = value
-        end,
-        GetAttribute = function(_, key) return attributes[key] end,
-        ClearBindings = function()
-            assert(runningSecure)
-            wipe(overrides)
-            wipe(nativeOverrides)
-        end,
-        SetBinding = function(_, _, key, action)
-            assert(runningSecure and action == "TOGGLECHARACTER0", "native key lost secure routing")
-            nativeOverrides[key] = action
-        end,
-        SetBindingClick = function(_, _, key, button)
-            assert(runningSecure)
-            overrides[key] = button
-        end,
+        scripts = scripts,
         GetName = function() return name end,
-        RegisterForClicks = function() end,
         SetScript = function(_, key, value) scripts[key] = value end,
-        HookScript = function(_, key, value) scripts[key] = value end,
+        HookScript = function(_, key, value)
+            local old = scripts[key]
+            scripts[key] = function(...)
+                if old then old(...) end
+                value(...)
+            end
+        end,
         IsShown = function(self) return self.shown == true end,
-        Show = function(self) self.shown = true end,
+        IsVisible = function(self) return self:IsShown() and (not parent or parent:IsVisible()) end,
+        Show = function(self)
+            if self.shown then return end
+            self.shown = true
+            if scripts.OnShow then scripts.OnShow(self) end
+        end,
         Hide = function(self)
+            if not self.shown then return end
             self.shown = false
-            if scripts.OnHide then scripts.OnHide() end
+            if scripts.OnHide and (not parent or parent:IsVisible()) then scripts.OnHide(self) end
         end,
     }
-    if name then buttons[name] = frame end
     frames[#frames + 1] = frame
     return frame
 end
 local callbacks, jobs, timers, tickers = {}, {}, {}, {}
 local context = {}
-function context:Skin() return nil end
+local skinAcquires = 0
+function context:Skin() skinAcquires = skinAcquires + 1 end
 function context:Event(event, fn, _, unit)
     if event == "UNIT_AURA" then assert(unit == "target", "mount aura subscription was not unit-filtered") end
     callbacks[event] = fn
@@ -180,9 +162,16 @@ local function Event(module, event, ...)
     if callbacks[event] then callbacks[event](module, event, ...) end
 end
 local function Press(key)
-    local button = buttons[overrides[key]]
-    if button then button.scripts.OnClick(button)
-    elseif GetBindingAction(key, true) == "TOGGLECHARACTER0" then ToggleCharacter("PaperDollFrame") end
+    if key == "C" then ToggleCharacter("PaperDollFrame")
+    elseif key == "U" then ToggleCharacter("ReputationFrame") end
+    Flush()
+end
+
+local function NativeSlot(slot, event)
+    local frame = nativeSlots[slot]
+    nativeHardware = true
+    frame.scripts[event](frame)
+    nativeHardware = nil
 end
 local function RequestInspect(unit)
     requests = requests + 1
@@ -290,6 +279,9 @@ local function Run(forever)
         end,
     }
     local readerAvailable, readerChecks = false, 0
+    local geometryApplied, geometryReleased = 0, 0
+    local lastWindowAction, lastWithModel, presented
+    local layout = { width = 940, height = 552 }
     local reader = {
         SpecializationName = function(kind) lastKind = kind end,
         AverageItemLevel = function() return averageItemLevel end,
@@ -304,6 +296,30 @@ local function Run(forever)
         end,
         PublicText = function(value) return type(value) == "string" and value or nil end,
         Skin = {
+            Acquire = function(id) assert(id == "characterPanelInspect" or id == "characterPanelDock") end,
+            CharacterGeometry = {
+                Present = function(root, frame)
+                    assert(root == CharacterFrame and (not frame or frame:IsVisible()), "focus footprint used an invalid host")
+                    presented = frame
+                end,
+                WindowAction = function(root, action)
+                    assert(root == CharacterFrame)
+                    if locked and action ~= "release" and action ~= "moveStop" and action ~= "scaleStop" then
+                        error("native window gesture started in combat")
+                    end
+                    lastWindowAction = action
+                    return action == "maximize"
+                end,
+                Apply = function(root, plan)
+                    assert(not locked and root == CharacterFrame and plan == layout, "native layout was written in combat or on the wrong root")
+                    geometryApplied = geometryApplied + 1
+                    return true
+                end,
+                Release = function(root)
+                    assert(not locked and root == CharacterFrame, "native geometry was not released on its owner")
+                    geometryReleased = geometryReleased + 1
+                end,
+            },
             GetEquipmentReader = function()
                 assert(not locked, "character panel tried loading a cold provider in combat")
                 readerChecks = readerChecks + 1
@@ -319,6 +335,16 @@ local function Run(forever)
     controller.CharacterHeader = MSUFSuite.CharacterHeader
     assert(loadfile(root .. "/MSUF_Suite/Core/UnitMount.lua"))("MSUF_Suite", MSUFSuite)
     CharacterFrame = CreateFrame("Frame")
+    CharacterFrame.SetPoint, CharacterFrame.SetScale, CharacterFrame.StopMovingOrSizing =
+        function() end, function() end, function() end
+    PaperDollFrame = CreateFrame("Frame", nil, CharacterFrame)
+    nativeModel = CreateFrame("ModelScene", nil, PaperDollFrame)
+    nativeModel:Show()
+    nativeSlots = { [13] = CreateFrame("ItemButton", nil, PaperDollFrame),
+        [16] = CreateFrame("ItemButton", nil, PaperDollFrame) }
+    nativeSlots[13]:SetScript("OnClick", function() UseInventoryItem(13) end)
+    nativeSlots[16]:SetScript("OnDragStart", function() PickupInventoryItem(16) end)
+    nativeSlots[16]:SetScript("OnReceiveDrag", function() PickupInventoryItem(16) end)
     InspectFrame = CreateFrame("Frame")
     InspectFrame_Show = RequestInspect
     local inspectGuildReads = 0
@@ -335,6 +361,7 @@ local function Run(forever)
             gearReads, lastSlot = gearReads + 1, slot
             gear.missingLinks = unit == "target" and missingLinks
             if unit == "target" then gear.pending[123] = true end
+            gear.rows[1].name, gear.rows[2].name = "Helm", "Robe"
             gear.rows[1].level = unit == "target" and 24 or 18
             gear.rows[2].level = unit == "player" and 20 or nil
             gear.missingEnchants, gear.emptySockets = 1, 2
@@ -347,11 +374,18 @@ local function Run(forever)
     }
     local ns = {
         View = {
-            New = function(buttons)
-                actions = buttons
+            NativeLayout = function(gear)
+                assert(gear.rows[1].slot == 1)
+                return layout
+            end,
+            New = function(buttons, parent, nativeRoot, nativeLayout)
+                assert(parent == nil and (not nativeRoot or nativeRoot == CharacterFrame))
+                assert(not nativeLayout or not locked, "the native child was built for the first time in combat")
                 return {
-                    frame = CreateFrame("Frame", buttons.frameName),
+                    nativeRoot = nativeRoot, nativeLayout = nativeLayout,
+                    frame = CreateFrame("Frame", not nativeRoot and buttons.frameName or nil, nativeLayout and nativeRoot or nil),
                     SetTabs = function(_, tabs, tab)
+                        actions = buttons
                         lastTab, lastTabs = tab, tabs
                         local visible = {}
                         for i = 1, #tabs do visible[tabs[i].id] = true end
@@ -365,7 +399,8 @@ local function Run(forever)
                     end,
                     SetHeader = function(_, _, _, _, unit, _, data) lastUnit, lastHeader = unit, data end,
                     SetContextAction = function(_, label) lastContext = label end,
-                    ShowGear = function(_, _, _, _, groups, _, details)
+                    ShowGear = function(_, _, _, _, groups, _, details, withModel)
+                        lastWithModel = withModel
                         lastRail = #details > 0 and details or groups
                         lastGearSummary = lastRail[#lastRail] and lastRail[#lastRail].rows
                     end,
@@ -373,10 +408,18 @@ local function Run(forever)
                         railPaints = railPaints + 1
                         assert(lastGearSummary == groups[1].rows, "speed repaint used a different rail")
                     end,
-                    ShowGroups = function(_, groups) lastReport = groups end,
-                    ApplyWindowPreferences = function(_, state) boundPreferences = state end,
+                    ShowGroups = function(_, groups)
+                        lastReport = groups
+                        if nativeRoot and (lastTab == "overview" or lastTab == "gear") then
+                            lastRail = groups
+                            lastGearSummary = lastRail[#lastRail] and lastRail[#lastRail].rows
+                        end
+                    end,
+                    ApplyWindowPreferences = function(_, state)
+                        if not nativeRoot then boundPreferences = state end
+                    end,
                     FitScreen = function() screenFits = screenFits + 1 end,
-                    RefreshModel = function() end,
+                    RefreshModel = function() assert(not nativeRoot, "hosted view allocated a duplicate model") end,
                     IsMinimized = function(self) return self.minimized end,
                     SetMinimized = function(self, minimized, tab, silent)
                         if self.minimized == minimized then return end
@@ -401,35 +444,45 @@ local function Run(forever)
     Load("Runtime", ns)
     runtime.context, runtime.config, runtime.active = context, { mode = 1 }, true
     runtime:Enable()
-    assert(not overrides.C and not callbacks.INSPECT_READY and not runtime.view and readerChecks == 0, "Basic acquired ownership")
+    assert(not callbacks.INSPECT_READY and not runtime.view and readerChecks == 0, "Basic acquired ownership")
+    Press("C")
+    assert(CharacterFrame:IsVisible() and not runtime.view, "Basic changed native Character ownership")
+    Press("C")
     runtime.config.mode = 2
     runtime:Refresh()
-    assert(overrides.C and overrides.U and overrides["SHIFT-C"] and not runtime.view)
-    local coldReaderChecks = readerChecks
-    Event(runtime, "UPDATE_BINDINGS")
-    assert(readerChecks == coldReaderChecks, "binding changes retried a cold provider load")
+    assert(not runtime.view and runtime.characterView and not runtime.characterView.frame:IsShown()
+        and not callbacks.UPDATE_BINDINGS and geometryApplied == 1,
+        "Suite failed to prepare the wide layout without opening or overriding C")
+    local coldReaderChecks, coldReads, beforeCombatSkin = readerChecks, gearReads, skinAcquires
     locked = true
-    DriveCombatState("combat")
-    assert(not overrides.C and not next(nativeOverrides), "a cold provider must leave combat Character native")
-    locked = false
-    readerAvailable = true
-    DriveCombatState("suite")
-    Event(runtime, "PLAYER_REGEN_ENABLED")
-    locked = true
-    DriveCombatState("combat")
-    assert(overrides.C and nativeOverrides["ALT-C"], "successful provider preflight did not arm combat keys")
-    locked = false
-    DriveCombatState("suite")
-    Event(runtime, "PLAYER_REGEN_ENABLED")
-    local beforeRouting = routingWrites
-    Event(runtime, "UPDATE_BINDINGS")
-    Event(runtime, "PLAYER_REGEN_ENABLED")
-    assert(routingWrites == beforeRouting, "unchanged bindings caused secure writes")
-    assert((overrides.H ~= nil) == forever, "wrong PvP binding capability")
-    local beforeSounds = openSounds
+    local playerGUID = units.player
+    units.player = secret
     Press("C")
-    assert(runtime.view.frame:IsShown() and lastTab == "overview" and lastKind == "character")
-    assert(boundPreferences == preferences, "opening did not bind the profile's window state")
+    local hostedView = assert(runtime.characterView, "first combat open missed its host")
+    assert(hostedView == runtime.view and hostedView.nativeRoot == CharacterFrame and hostedView.frame:IsShown()
+        and hostedView.nativeLayout == layout and presented == hostedView.frame and CharacterFrame.stockWidth == 338 and geometryApplied == 1
+        and nativeModel:IsVisible() and readerChecks == coldReaderChecks and gearReads == coldReads,
+        "first combat open missed its host or attempted to load optional metadata")
+    assert(skinAcquires == beforeCombatSkin + 1, "prepared wide panel lost its skin when first opened in combat")
+    if not forever then
+        local audit = lastRail[#lastRail].rows
+        assert(audit[#audit - 1].value == "—" and audit[#audit].value == "—", "cold gear audit displayed false zeroes")
+    end
+    units.player = playerGUID
+    locked, readerAvailable = false, true
+    Event(runtime, "PLAYER_REGEN_ENABLED")
+    Flush()
+    assert(runtime.reader == reader and gearReads == coldReads + 1 and hostedView.frame:IsShown(),
+        "combat exit did not fill metadata in the same view")
+    Press("C")
+    assert(not hostedView.frame:IsShown() and not runtime.kind and not presented, "native close retained Suite events")
+    armorReads = 0
+    local beforeSounds, beforeOpenReads = openSounds, gearReads
+    Press("C")
+    assert(runtime.view == hostedView and runtime.view.frame:IsShown() and lastTab == "overview"
+        and lastKind == "character" and lastWithModel)
+    assert(actions.windowAction("maximize") and lastWindowAction == "maximize", "Suite caption lost its native window owner")
+    assert(gearReads == beforeOpenReads + 1 and boundPreferences == nil, "native show painted twice or moved its hosted view")
     local function FindRow(label)
         for _, group in ipairs(lastRail) do
             for _, row in ipairs(group.rows) do
@@ -450,19 +503,18 @@ local function Run(forever)
     Event(runtime, statEvent)
     Flush()
     assert(FindRow("Armor") == 55 and armorReads == 2, "full-stat events did not coalesce and refresh the rail")
-    usedSlot, linkedItem = nil, nil
-    actions.slot(1, nil, "RightButton")
-    assert(usedSlot == 1 and not runtime.slot, "right click did not use the equipped player slot")
-    usedSlot, modifiedClick = nil, "CHATLINK"
-    actions.slot(1, nil, "RightButton")
-    assert(linkedItem == "item:1" and not usedSlot, "modified slot click used the item instead of linking it")
-    modifiedClick = nil
-    actions.slot(1)
+    NativeSlot(13, "OnClick")
+    assert(usedSlot == 13 and not runtime.slot, "original right-click did not reach equipped trinket")
+    usedSlot = nil
+    actions.tab("gear")
+    actions.group(1)
+    assert(runtime.slot == 1 and lastRail[1].title == "Helm" and not lastWithModel,
+        "wide gear lost its read-only details or distinct renderer")
     assert(not callbacks[statEvent] and not callbacks.UNIT_STATS, "hidden stats kept event subscriptions")
     Event(runtime, statEvent)
     Flush()
     assert(armorReads == 2, "hidden Overview stats were read behind an equipment detail")
-    actions.slot(1)
+    actions.tab("overview")
     assert(callbacks[statEvent] and armorReads == 3 and FindRow("Armor") == 55,
         "returning from equipment details did not refresh stats")
     local beforeStatsToggle = gearReads
@@ -523,7 +575,7 @@ local function Run(forever)
     Flush()
     assert(appearancePaints == beforeAppearance + 1 and gearReads == baselineReads,
         "appearance change did not refresh the open view without rereading gear")
-    assert(boundPreferences == preferences, "profile refresh did not rebind the open window")
+    assert(boundPreferences == nil, "profile refresh moved the native host from Suite")
     Event(runtime, "PLAYER_EQUIPMENT_CHANGED", secret)
     Event(runtime, "UNIT_STATS", "player")
     Flush()
@@ -598,13 +650,12 @@ local function Run(forever)
         assert(lastTab == "custom1" and lastTabs[#lastTabs - 1].label == progress.name
             and lastReport[1].rows[1].label == "New training" and lastReport[1].rows[1].layout.y == -9 and xpReads == 4,
             "active tab did not update on an in-place rename/content edit")
-        runtime.view:SetMinimized(true)
-        assert(not callbacks.PLAYER_XP_UPDATE, "minimized custom tab retained source events")
         xp = 80
-        Press("C")
+        Event(runtime, "PLAYER_XP_UPDATE", "player")
+        Flush()
         assert(lastTab == "custom1" and callbacks.PLAYER_XP_UPDATE and xpReads == 5
             and lastReport[1].rows[1].value == "80 / 100" and gearReads == gearBeforeCustom,
-            "custom resume reread hidden equipment or missed the selected data")
+            "live hosted source reread hidden equipment or missed the selected data")
         averageItemLevel = 20
         Event(runtime, "PLAYER_AVG_ITEM_LEVEL_UPDATE")
         actions.tab("custom2")
@@ -637,7 +688,7 @@ local function Run(forever)
     Event(runtime, "EQUIPMENT_SWAP_FINISHED")
     Flush()
     assert(lastContext == "Equipment set: PvP", "finished swap did not refresh the active set")
-    Press("U")
+    actions.tab("reputation")
     assert(lastGroup == "reputation" and callbacks.UPDATE_FACTION and not callbacks.UNIT_STATS)
     local beforeSets = setReads
     Event(runtime, "EQUIPMENT_SETS_CHANGED")
@@ -647,19 +698,18 @@ local function Run(forever)
     actions.group(1)
     Flush()
     assert(groupReads == beforeGroups + 1, "group action waited for an unrelated native event")
-    local beforeMinimized, beforeFits = gearReads, screenFits
-    Event(runtime, "PLAYER_EQUIPMENT_CHANGED", 1)
-    runtime.view:SetMinimized(true)
-    assert(not callbacks.UPDATE_FACTION and not callbacks.PLAYER_EQUIPMENT_CHANGED, "minimized player retained paint events")
-    Event(runtime, "DISPLAY_SIZE_CHANGED")
+    local beforeFits = screenFits
+    CharacterFrame.scripts.OnSizeChanged()
+    CharacterFrame:SetPoint("CENTER")
+    CharacterFrame:SetScale(1)
+    CharacterFrame:StopMovingOrSizing()
     Flush()
-    assert(screenFits == beforeFits + 1 and gearReads == beforeMinimized, "minimized paint or screen fit was incorrect")
+    assert(screenFits == beforeFits, "the inherited wide host rescheduled a detached layout on native movement")
+    local beforeClose = gearReads
+    Event(runtime, "PLAYER_EQUIPMENT_CHANGED", 1)
     Press("C")
-    assert(not runtime.view:IsMinimized() and lastTab == "reputation" and gearReads == beforeMinimized + 1,
-        "C did not restore the previous tab and catch up on gear")
-    assert(callbacks.UPDATE_FACTION and callbacks.PLAYER_EQUIPMENT_CHANGED, "restore did not resume player events")
-    Press("U")
-    assert(not runtime.view.frame:IsShown() and not callbacks.UPDATE_FACTION and not callbacks.PLAYER_EQUIPMENT_CHANGED)
+    assert(not runtime.view.frame:IsShown() and not callbacks.UPDATE_FACTION and not callbacks.PLAYER_EQUIPMENT_CHANGED
+        and gearReads == beforeClose, "native close retained Suite events or a queued equipment repaint")
     assert(openSounds == beforeSounds + 1, "changing tabs or closing replayed the opening sound")
     beforeAppearance = appearancePaints
     runtime:Refresh()
@@ -682,7 +732,8 @@ local function Run(forever)
     Flush()
     assert(requests == beforeRequests + 2 and not callbacks.INSPECT_READY, "issued or retained an Inspect request")
     assert(not InspectFrame:IsShown() and runtime.view.frame:IsShown() and lastKind == "inspect" and lastUnit == "target")
-    assert(lastTabs[1].id == "overview", "player tab order leaked into Inspect")
+    assert(lastTabs[1].id == "overview" and boundPreferences == preferences,
+        "Inspect lost its independent tab order or free position")
     assert(callbacks.UNIT_AURA and callbacks.ADDON_RESTRICTION_STATE_CHANGED and not next(tickers)
         and auraReads == 1 and speedReads == 0 and not lastGearSummary[3], "unmounted Inspect polled speed")
     local readsBeforeSpeed = gearReads
@@ -793,89 +844,92 @@ local function Run(forever)
     assert(openSounds == beforeSounds + 2, "reopening the player window did not replay its sound")
     local beforeCancel = cancelledGestures
     Event(runtime, "PLAYER_REGEN_DISABLED")
-    assert(runtime.view.frame:IsShown() and cancelledGestures == beforeCancel + 1,
-        "entering combat closed the player panel or kept an old gesture")
+    assert(runtime.view == hostedView and hostedView.frame:IsShown() and cancelledGestures == beforeCancel + 1
+        and lastWindowAction == "scaleStop",
+        "entering combat closed the hosted view or kept an old gesture")
     locked = true
-    DriveCombatState("combat")
-    assert(overrides.C and not overrides.U and not overrides["SHIFT-C"] and not overrides.H,
-        "combat should only override the primary Character key")
-    assert(nativeOverrides["ALT-C"] == "TOGGLECHARACTER0", "a free Alt+C should reach native equipment")
-    assert(lastContext == "Blizzard Character (ALT-C)", "combat footer omitted the native key")
-    actions.slot(1, nil, "RightButton")
-    actions.drag(1)
-    assert(not runtime.slot and not lastSlot and not usedSlot, "combat accepted a custom equipment action")
+    local nativeClick, nativeDrag = nativeSlots[13].scripts.OnClick, nativeSlots[16].scripts.OnDragStart
+    NativeSlot(13, "OnClick")
+    NativeSlot(16, "OnDragStart")
+    assert(usedSlot == 13 and pickedSlot == 16 and nativeModel:IsVisible() and runtime.view.frame:IsShown(),
+        "the same combat window lost native trinket, weapon or model behavior")
+    usedSlot, pickedSlot = nil, nil
+    NativeSlot(16, "OnReceiveDrag")
+    assert(pickedSlot == 16 and nativeSlots[13].scripts.OnClick == nativeClick
+        and nativeSlots[16].scripts.OnDragStart == nativeDrag, "Suite replaced a native slot script")
+    actions.tab("gear")
+    actions.group(1)
+    assert(runtime.slot == 1 and lastRail[1].title == "Helm" and not usedSlot and not lastWithModel,
+        "combat item details no longer belong to the same window")
+    actions.tab("reputation")
+    assert(lastTab == "reputation" and nativeModel:IsVisible(), "combat tab displaced the native viewport")
     local beforeNative = nativeToggles
     Press("C")
-    assert(not runtime.view.frame:IsShown(), "the primary binding did not close the Suite window in combat")
-    local playerGUID = units.player
-    units.player = secret
+    assert(nativeToggles == beforeNative + 1 and not CharacterFrame:IsVisible() and not hostedView.frame:IsShown()
+        and not runtime.kind and not presented, "native close left the hosted window or its footprint active")
+    pad = true
     Press("C")
-    assert(runtime.view.frame:IsShown() and lastTab == "overview" and nativeToggles == beforeNative,
-        "the primary binding did not reopen the Suite window with a restricted player identity")
-    units.player = playerGUID
-    actions.slot(1, nil, "LeftButton")
-    assert(runtime.slot == 1 and not usedSlot, "combat disabled read-only item details")
-    actions.tab("reputation")
-    assert(lastTab == "reputation", "combat disabled the custom tabs")
-    Press("ALT-C")
-    assert(nativeToggles == beforeNative + 1 and nativePane == "PaperDollFrame" and CharacterFrame:IsShown()
-        and not runtime.view.frame:IsShown(), "native weapon slots did not get the window in combat")
-    CharacterFrame:Hide()
-    DriveCombatState("native")
-    assert(not next(overrides) and not next(nativeOverrides), "pet battle kept a Suite override")
+    assert(CharacterFrame:IsVisible() and hostedView.frame:IsShown() and runtime.view == hostedView
+        and lastTab == "overview", "C did not reopen the same hosted panel in combat")
+    pad = false
+    Press("U")
+    assert(CharacterFrame:IsVisible() and not hostedView.frame:IsShown() and not nativeModel:IsVisible(),
+        "the addon stayed over a different native subframe")
     Press("C")
-    assert(CharacterFrame:IsShown() and nativeToggles == beforeNative + 2, "pet battle lost the Blizzard binding")
-    CharacterFrame:Hide()
+    assert(CharacterFrame:IsVisible() and hostedView.frame:IsShown(), "returning to PaperDoll lost the hosted view")
     locked = false
-    DriveCombatState("suite")
     Event(runtime, "PLAYER_REGEN_ENABLED")
-    assert(overrides.C and not next(nativeOverrides), "combat exit did not restore the normal Suite bindings")
-
-    occupiedBindings["ALT-C"], occupiedBindings["CTRL-C"] = "JUMP", "TOGGLEWORLDMAP"
-    Event(runtime, "UPDATE_BINDINGS")
-    locked = true
-    DriveCombatState("combat")
-    assert(not overrides.C and not next(nativeOverrides), "no free shortcut should leave the primary key native")
-    Press("C")
-    assert(CharacterFrame:IsShown(), "no safe alternate left combat without native weapon slots")
-    CharacterFrame:Hide()
-    locked = false
-    DriveCombatState("suite")
-    Event(runtime, "PLAYER_REGEN_ENABLED")
-    secondCharacterKey = "ALT-X"
-    Event(runtime, "UPDATE_BINDINGS")
-    locked = true
-    DriveCombatState("combat")
-    assert(overrides.C and not next(nativeOverrides) and not overrides["ALT-X"],
-        "combat replaced a user's secondary native Character key")
-    Press("C")
-    assert(lastContext == "Blizzard Character (ALT-X)" and runtime.view.frame:IsShown())
-    Press("ALT-X")
-    assert(CharacterFrame:IsShown() and not runtime.view.frame:IsShown(), "secondary key did not open native equipment")
-    CharacterFrame:Hide()
-    locked = false
-    DriveCombatState("suite")
-    Event(runtime, "PLAYER_REGEN_ENABLED")
-    foreignOverrides["ALT-X"] = "TOGGLEGAMEMENU"
-    occupiedBindings["ALT-C"] = nil
-    Event(runtime, "UPDATE_BINDINGS")
-    locked = true
-    DriveCombatState("combat")
-    assert(overrides.C and nativeOverrides["ALT-C"] and not nativeOverrides["ALT-X"],
-        "a foreign override swallowed the user's secondary native access")
-    locked = false
-    DriveCombatState("suite")
-    Event(runtime, "PLAYER_REGEN_ENABLED")
-    wipe(occupiedBindings)
-    wipe(foreignOverrides)
-    secondCharacterKey = nil
+    assert(hostedView.frame:IsShown() and CharacterFrame:IsVisible(), "combat exit changed the active window")
+    missingLinks = true
+    RequestInspect("target")
+    InspectFrame:Show()
+    Event(runtime, "INSPECT_READY", "A")
+    Flush()
+    assert(hostedView.frame:IsShown() and InspectFrame:IsShown(), "failed Inspect handoff hid the character dock")
+    missingLinks = false
+    RequestInspect("target")
+    InspectFrame:Show()
+    Event(runtime, "INSPECT_READY", "A")
+    Flush()
+    assert(not hostedView.frame:IsShown() and runtime.view == runtime.inspectView, "Inspect did not claim its own view")
+    actions.close()
+    Flush()
+    assert(hostedView.frame:IsShown() and CharacterFrame:IsVisible(), "closing Inspect did not resume the already visible character dock")
     runtime.config.mode = 1
     runtime:Refresh()
-    assert(not overrides.C and not callbacks.UPDATE_BINDINGS and not callbacks.INSPECT_READY)
+    assert(CharacterFrame:IsVisible() and not hostedView.frame:IsShown() and not callbacks.INSPECT_READY
+        and geometryReleased == 1 and lastWindowAction == "release",
+        "Basic stopped the native Character window or kept the custom geometry")
+    Press("C")
+    assert(not CharacterFrame:IsVisible() and not hostedView.frame:IsShown(), "Basic retained the Suite view")
+
+    local beforeFallback = geometryApplied
+    locked = true
+    runtime.config.mode = 2
+    runtime:Refresh()
+    Press("C")
+    assert(runtime.view == runtime.dockView and runtime.view.frame:IsShown() and geometryApplied == beforeFallback,
+        "combat startup applied unprepared geometry or lost the native fallback")
+    actions.tab("reputation")
+    locked = false
+    Event(runtime, "PLAYER_REGEN_ENABLED")
+    assert(runtime.view == hostedView and runtime.view.frame:IsShown() and lastTab == "reputation"
+        and geometryApplied == beforeFallback + 1 and not runtime.dockView.frame:IsShown(),
+        "combat exit did not restore wide art and retain the selected tab")
+    local beforeStock = geometryReleased
+    Press("U")
+    assert(CharacterFrame:IsVisible() and not hostedView.frame:IsShown() and geometryReleased == beforeStock + 1
+        and not runtime.layoutRoot, "the stock subframe kept Suite anchors")
+    Press("C")
+    assert(runtime.view == hostedView and hostedView.frame:IsShown() and runtime.layoutRoot == CharacterFrame,
+        "the Suite geometry did not return after visiting a stock subframe")
+    Press("C")
+    runtime.config.mode = 1
+    runtime:Refresh()
     assert(#UISpecialFrames == (forever and 2 or 1))
 end
 
 Run(false)
 Run(true)
-assert(nativeToggles == 8 and nativeHides == 4)
-print("Character Panel: both clients, audit navigation, native sets, Inspect comparison and combat browsing and secure native weapon access passed")
+assert(nativeHides == 6)
+print("Character Panel: both clients, audit navigation, native sets, Inspect comparison and native-hosted combat model and equipment passed")

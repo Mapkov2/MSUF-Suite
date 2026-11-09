@@ -8,11 +8,10 @@ function NS.Number(value)
 end
 
 function NS.CanOpenCharacter()
-    if NS.Suite.GamepadUI() then return false end
     local disabled = C_GameRules.IsGameRuleActive(Enum.GameRule.CharacterPanelDisabled)
     return NS.Public(disabled) and disabled == false
 end
 
 function NS.CanReplace()
-    return not suite.InCombat() and NS.CanOpenCharacter()
+    return not suite.InCombat() and not NS.Suite.GamepadUI() and NS.CanOpenCharacter()
 end

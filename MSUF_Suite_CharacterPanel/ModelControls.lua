@@ -8,6 +8,15 @@ local FULL_TURN, BUTTON_TURN, DRAG_TURN = 2 * math.pi, math.pi / 12, .01
 local ZOOM_STEP, MAX_ZOOM = .15, .8
 local Number, min, max = NS.Number, math.min, math.max
 
+function Controls.CanBindUnit(unit)
+    if not NS.Host.InCombat() then return true end
+    if unit ~= "player" then return false end
+    local query = C_Secrets and C_Secrets.ShouldUnitIdentityBeSecret
+    if not query then return false end
+    local restricted = query(unit)
+    return NS.Public(restricted) and restricted == false
+end
+
 local function SetRotation(model, rotation)
     if model.controlRotation == rotation then return end
     model.controlRotation = rotation
@@ -33,6 +42,25 @@ local function Reset(model)
     SetRotation(model, 0)
 end
 
+local function NativeCamera()
+    local scene = CharacterModelScene
+    if not NS.Public(scene) or not scene or not scene:IsVisible() then return end
+    local camera = scene:GetActiveCamera()
+    if NS.Public(camera) then return camera end
+end
+
+local function NativeRotate(amount)
+    local camera = NativeCamera()
+    if not camera or type(camera.GetYaw) ~= "function" or type(camera.SetYaw) ~= "function" then return end
+    local yaw = Number(camera:GetYaw())
+    if yaw then camera:SetYaw(yaw + amount) end
+end
+
+local function NativeZoom(amount)
+    local camera = NativeCamera()
+    if camera and type(camera.OnMouseWheel) == "function" then camera:OnMouseWheel(amount) end
+end
+
 local function StopDrag(model)
     if model.rotationCursor == nil then return end
     model.rotationCursor = nil
@@ -46,7 +74,8 @@ local function UpdateDrag(model)
     end
     local cursor = Number((GetCursorPosition()))
     if cursor and cursor ~= model.rotationCursor then
-        Rotate(model, (cursor - model.rotationCursor) * DRAG_TURN)
+        local amount = (cursor - model.rotationCursor) * DRAG_TURN
+        if model.nativeScene then NativeRotate(amount) else Rotate(model, amount) end
         model.rotationCursor = cursor
     end
 end
@@ -64,7 +93,8 @@ end
 local function Wheel(model, delta)
     if not model.ready then return end
     local steps = Number(delta)
-    if steps then Zoom(model, steps) end
+    if not steps then return end
+    if model.nativeScene then NativeZoom(steps) else Zoom(model, steps) end
 end
 
 local BUTTONS = {
@@ -80,6 +110,13 @@ local function Click(button)
     if model.ready then control.apply(model, control.amount) end
 end
 
+local function ClickNative(button)
+    local scene, control = CharacterModelScene, button.control
+    if control.apply == Zoom then NativeZoom(control.amount)
+    elseif control.apply == Rotate then NativeRotate(control.amount)
+    elseif NS.Public(scene) and scene and scene:IsVisible() and not NS.Host.InCombat() then scene:Reset() end
+end
+
 local function ShowTooltip(button)
     if not button.tooltipText then return end
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
@@ -93,10 +130,12 @@ end
 
 local function MakeToolbar(view, makeButton)
     local toolbar = S.CreateFrame("Frame", nil, view.modelHost)
+    if view.nativeLayout then toolbar:SetFrameLevel(NS.Window.NativeLevel(view, view.nativeLayout.modelLevel + 2)) end
     toolbar:SetPoint("TOP", 0, -5)
     toolbar:SetSize(#BUTTONS * (BUTTON_SIZE + GAP) - GAP, BUTTON_SIZE)
+    local click = view.nativeLayout and ClickNative or Click
     for i, control in ipairs(BUTTONS) do
-        local button = makeButton(view, toolbar, "", Click)
+        local button = makeButton(view, toolbar, "", click)
         button.model, button.control, button.tooltipText = view.model, control, _G[control.tooltip]
         button:SetPoint("LEFT", (i - 1) * (BUTTON_SIZE + GAP), 0)
         button:SetSize(BUTTON_SIZE, BUTTON_SIZE)
@@ -110,8 +149,21 @@ local function MakeToolbar(view, makeButton)
     end
 end
 
+local function AttachNativeInput(view)
+    local plan = view.nativeLayout
+    local rect = plan.model
+    local input = NS.Window.CreateChild(view, "Frame", view.modelHost)
+    input:SetPoint("TOPLEFT", view.frame, "TOPLEFT", rect.x, -rect.y)
+    input:SetSize(rect.width, rect.height)
+    -- The inactive right-slot hit span crosses the model. Capture only the viewport.
+    input:SetFrameLevel(NS.Window.NativeLevel(view, plan.slotLevel + 2))
+    input.nativeScene, input.ready = true, true
+    view.modelInput = input
+    return input
+end
+
 function Controls.Attach(view, makeButton)
-    local model = view.model
+    local model = view.model or AttachNativeInput(view)
     model.controlRotation, model.controlZoom = 0, 0
     model:EnableMouse(true)
     model:EnableMouseWheel(true)

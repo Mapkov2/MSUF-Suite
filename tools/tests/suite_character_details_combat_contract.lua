@@ -45,8 +45,67 @@ for _, kind in ipairs({"explicit","forbidden"}) do
 end
 H.SetCombat(false)
 if wake then wake() end
+
+-- The Suite dock takes only the skin's supplemental dossier. The native
+-- character frame, close skin, model, slot scripts and Basic preference survive.
+CharacterFrame = H.root
+local ownsDossier, restored, closeReleases = false, 0, 0
+MSUFSuite = { Suite = { OwnsBlizzardSurface = function(surface) return surface == "characterDossier" and ownsDossier end } }
+H.NS.CharacterDetails = H.Details
+H.NS.CharacterPanel = {
+    owners = { blizzardWindows = { active = true, owner = "details" } },
+    Apply = function(owner) H.Details.Apply(H.root, "character", owner) end,
+}
+H.NS.Adapters = { Refresh = function() error("character dossier handoff rebuilt unrelated windows") end }
+H.NS.GearAnnotations.RestoreLayout = function(v)
+    if v == view then restored = restored + 1 end
+end
+H.root.CloseButton = H.Object()
+H.NS.WindowActionSkin.Disable = function(frame)
+    if frame == H.root.CloseButton then closeReleases = closeReleases + 1 end
+end
+local function NativeWrite() error("dossier ownership modified a native frame") end
+H.root.Show, H.root.Hide, H.root.SetPoint = NativeWrite, NativeWrite, NativeWrite
+CharacterModelScene, CharacterMainHandSlot = H.Object(), H.Object()
+CharacterModelScene.Show, CharacterModelScene.Hide, CharacterModelScene.SetParent = NativeWrite, NativeWrite, NativeWrite
+CharacterMainHandSlot.SetScript, CharacterMainHandSlot.SetParent, CharacterMainHandSlot.Hide = NativeWrite, NativeWrite, NativeWrite
+H.NS.DB.characterDetails.view = "list"
+H.Details.Apply(H.root, "character", "details")
+Check(view.active and view.panel:IsShown() and view.registered, "Basic list did not start with its dossier")
+
+ownsDossier = true
+local ownership = H.NS.SuiteOwnership
+ownership.Refresh("after")
+Check(view.active, "the dossier yielded after the Suite dock started")
+ownership.Refresh("before")
+Check(not view.active and not view.host:IsShown() and not view.registered and restored > 0,
+    "the dossier or its native layout survived the Suite handoff")
+Check(H.Details.GetView() == "list" and H.Details.IsModern() and closeReleases == 0,
+    "the handoff altered the Basic preference, native stat styling or close skin")
+
+H.SetCombat(true)
+ownsDossier = false
+local coldRoot, beforeReads = H.Object(), H.Reads()
+H.Details.Apply(coldRoot, "character", "details")
+Check(not H.Details.views[coldRoot] and H.Reads() == beforeReads, "queued Basic mode created a dossier in combat")
+H.SetCombat(false)
+ownership.Refresh("before")
+Check(not view.active, "Basic took its dossier back before the Suite dock stopped")
+ownership.Refresh("after")
+Check(view.active and view.panel:IsShown() and view.registered and H.Details.GetView() == "list",
+    "returning to Basic did not restore the saved list view")
+
+view.host:Hide()
+local beforeClaim = restored
+ownsDossier = true
+ownership.Refresh("before")
+Check(not view.active and restored > beforeClaim, "a hidden Basic dossier retained its layout on takeover")
+ownsDossier = false
+ownership.Refresh("after")
+
 H.Details.Disable(H.root,"details")
 Check(not view.registered and not view.host:IsShown(),"disabled dossier retained work")
+Check(closeReleases == 1, "full adapter disable did not release the close skin")
 -- Forever keeps the native equipment pane and reads its extra ranged slot.
 H.NS.Client.modernEquipment, H.NS.Client.isForever = false, true
 H.NS.DB.characterDetails.expanded = true

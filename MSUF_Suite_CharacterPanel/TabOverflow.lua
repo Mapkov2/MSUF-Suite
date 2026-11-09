@@ -23,7 +23,7 @@ function Overflow.Fit(buttons, count, width)
 end
 
 local function PromotedTab(view, tabs, selected, firstHidden)
-    if not view.embedded then return end
+    if not view.embedded and not view.nativeRoot then return end
     for i = firstHidden, #tabs do
         if tabs[i].custom and tabs[i].id == selected then return i end
     end
@@ -48,7 +48,7 @@ function Overflow.Layout(view, tabs, selected, style)
         button.naturalWidth = min(180, ceil(button.label:GetUnboundedStringWidth()) + 22)
     end
     local insetX, insetY = Overflow.Insets(tabs)
-    local width, height = style.width - 2 * insetX, style.height - 2 * insetY
+    local width, height = view.bodyWidth - 2 * insetX, style.height - 2 * insetY
     local visible, more = Overflow.Fit(buttons, count, width), view.moreTab
     local promoted
     if visible < count then
@@ -62,7 +62,7 @@ function Overflow.Layout(view, tabs, selected, style)
         visible = Overflow.Fit(buttons, count, available)
         promoted = PromotedTab(view, tabs, selected, visible + 1)
         if promoted then visible = Overflow.Fit(buttons, visible, available - buttons[promoted].naturalWidth) end
-        style.place(more, style.width + style.pad - moreWidth, insetY, moreWidth, height)
+        style.place(more, view.bodyWidth + style.pad - moreWidth, insetY, moreWidth, height)
     end
     if more then style.visible(more, visible + (promoted and 1 or 0) < count) end
     view.visibleTabs, view.promotedTab = visible, promoted

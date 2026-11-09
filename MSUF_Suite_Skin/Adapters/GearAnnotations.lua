@@ -28,118 +28,10 @@ end
 
 local FontPath = NS.AdapterKit.FontPath
 
--- Reversible geometry -------------------------------------------------------------------
--- Source: upstream/live 8ea15b61, CharacterFrameMixin:UpdateSize and
--- PaperDollFrame.xml. Only the Character page grows; sidebar collapse stays native.
-
-local function CanLayout(frame)
-    return NS.Safety.CanCreateRegions(frame, not NS.IsCombatLocked())
-end
-
-local function Points(frame)
-    local points = {}
-    for index = 1, math.min(frame:GetNumPoints(), 4) do
-        points[index] = { frame:GetPoint(index) }
-    end
-    return points
-end
-
--- Geometry is stored with less precision than Lua numbers, so offsets, sizes
--- and scales read back after Set* differ slightly from the values set. Only
--- a larger difference means Blizzard (or another addon) changed the value.
-local GEOMETRY_EPSILON = 0.01
-local SCALE_EPSILON = 0.0001
-
-local function Near(current, applied, epsilon)
-    if type(current) == "number" and type(applied) == "number" then
-        return NS.Safety.Public(current) and math.abs(current - applied) <= epsilon
-    end
-    return current == applied
-end
-
-local function SamePoints(frame, points)
-    if not points or frame:GetNumPoints() ~= #points then return false end
-    for index, point in ipairs(points) do
-        local a, b, c, d, e = frame:GetPoint(index)
-        if a ~= point[1] or b ~= point[2] or c ~= point[3]
-            or not Near(d, point[4], GEOMETRY_EPSILON) or not Near(e, point[5], GEOMETRY_EPSILON) then
-            return false
-        end
-    end
-    return true
-end
-
-local function RecordGeometry(v, frame)
-    local record = v.geometry[frame]
-    if not record then
-        record = {}
-        v.geometry[frame] = record
-    end
-    return record
-end
-
--- Anchors frame at one point (plus an optional second), remembering the
--- native points the first time we move it.
-local function Place(v, frame, point, parent, relative, x, y, second)
-    if not CanLayout(frame) then return end
-    local record = RecordGeometry(v, frame)
-    if not SamePoints(frame, record.appliedPoints) then record.points = Points(frame) end
-    local applied = record.appliedPoints
-    if not applied then
-        applied = { {} }
-        record.appliedPoints = applied
-    end
-    local first = applied[1]
-    first[1], first[2], first[3], first[4], first[5] = point, parent, relative, x, y
-    applied[2] = second
-    if not SamePoints(frame, applied) then
-        frame:ClearAllPoints()
-        for _, anchor in ipairs(applied) do frame:SetPoint(unpack(anchor)) end
-    end
-end
-
-local function Size(v, frame, width, height)
-    if not CanLayout(frame) then return end
-    local record = RecordGeometry(v, frame)
-    if width then
-        local current = frame:GetWidth()
-        if not Near(current, record.appliedWidth, GEOMETRY_EPSILON) then record.width = current end
-        if not Near(current, width, GEOMETRY_EPSILON) then frame:SetWidth(width) end
-        record.appliedWidth = width
-    end
-    if height then
-        local current = frame:GetHeight()
-        if not Near(current, record.appliedHeight, GEOMETRY_EPSILON) then record.height = current end
-        if not Near(current, height, GEOMETRY_EPSILON) then frame:SetHeight(height) end
-        record.appliedHeight = height
-    end
-end
-
-local function Conceal(v, frame)
-    if not CanLayout(frame) or not frame.IsShown then return end
-    local record = RecordGeometry(v, frame)
-    if record.shown == nil then record.shown = frame:IsShown() end
-    if frame:IsShown() then frame:Hide() end
-end
-
-local function Scale(v, frame, value)
-    if not CanLayout(frame) then return end
-    local record = RecordGeometry(v, frame)
-    local current = frame:GetScale()
-    if not Near(current, record.appliedScale, SCALE_EPSILON) then record.scale = current end
-    if not Near(current, value, SCALE_EPSILON) then frame:SetScale(value) end
-    record.appliedScale = value
-end
-
-local function RepositionPanels(v, oldWidth, oldHeight)
-    local root = v.root
-    v.repositionPending = v.repositionPending or root:GetWidth() ~= oldWidth or root:GetHeight() ~= oldHeight
-    -- Blizzard's panel manager writes secure attributes, even for a safe root.
-    if v.repositionPending and not NS.IsCombatLocked() then
-        v.repositionPending = nil
-        UpdateUIPanelPositions(root)
-    end
-end
+local Geometry = NS.GearGeometry
+local CanLayout, Place, Size, Scale, Conceal = Geometry.CanLayout, Geometry.Place, Geometry.Size, Geometry.Scale, Geometry.Conceal
+local Near, GEOMETRY_EPSILON = Geometry.Near, Geometry.Epsilon
+local RestoreFrame, RepositionPanels = Geometry.RestoreFrame, Geometry.RepositionPanels
 
 -- Called by the existing exact-provider hooks too, after it refreshes a slot.
 -- Keep its content intact; only suppress duplicate annotations in list mode.
@@ -165,27 +57,6 @@ end
 function Gear.IsWide()
     local v = NS.CharacterDetails.views[_G.CharacterFrame]
     return v and v.wide == true or false
-end
-
--- Puts back what the layout changed on one frame. Only values we still own
--- go back; a newer native change is kept.
-local function RestoreFrame(frame, record)
-    if not CanLayout(frame) then return false end
-    if SamePoints(frame, record.appliedPoints) then
-        frame:ClearAllPoints()
-        for _, point in ipairs(record.points) do frame:SetPoint(unpack(point)) end
-    end
-    if record.width and Near(frame:GetWidth(), record.appliedWidth, GEOMETRY_EPSILON) then
-        frame:SetWidth(record.width)
-    end
-    if record.height and Near(frame:GetHeight(), record.appliedHeight, GEOMETRY_EPSILON) then
-        frame:SetHeight(record.height)
-    end
-    if record.scale and Near(frame:GetScale(), record.appliedScale, SCALE_EPSILON) then
-        frame:SetScale(record.scale)
-    end
-    if record.shown ~= nil and not frame:IsShown() then frame:SetShown(record.shown) end
-    return true
 end
 
 -- The view's own parts and flags back to Blizzard's layout.
@@ -299,7 +170,7 @@ local function ApplyWideLayout(v)
 end
 
 function Gear.ApplyLayout(v)
-    if not v or v.forever or v.kind ~= "character" or not CanLayout(v.host) or not v.host:IsVisible()
+    if not v or v.forever or v.kind ~= "character" or Geometry.Owns(v.root) or not CanLayout(v.host) or not v.host:IsVisible()
         or not CanLayout(v.root) then return end
     local config = NS.DB.characterDetails
     local mode = config.view or "modern"

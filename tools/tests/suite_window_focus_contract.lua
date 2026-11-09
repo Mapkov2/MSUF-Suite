@@ -127,10 +127,19 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     for _, record in ipairs(F.records[a].veils) do
         Check(not record.dim or not Intersects(record.rect, F.records[b].rect), "inactive veil crosses active window")
     end
-    local child, nested = Frame(nil, a, "Button"), Frame(nil, nil, "Button")
+    local shell = Frame(nil, a)
+    shell.left, shell.bottom, shell.width, shell.height = 100, 80, 940, 552
+    function shell:GetBottom() return self.bottom end
+    function shell:IsVisible() return self.shown and a:IsVisible() end
+    F.Present(a, shell)
+    Check(F.records[a].rect.width == 940 and F.records[a].rect.bottom == 80 and F.records[a].footprintCount == 1,
+        "the presented Character Panel dimmed only its stock-sized native host")
+    local child, nested = Frame(nil, shell, "Button"), Frame(nil, nil, "Button")
     nested.parent = child
     Click(nested)
-    Check(F.active.frame == a and Dimmed(b) and not Dimmed(a), "nested native click did not focus its root")
+    Check(F.active.frame == a and Dimmed(b) and not Dimmed(a), "hosted surface input did not focus its native root")
+    F.Present(a, nil)
+    Check(F.records[a].rect.width == 500, "closing the hosted shell retained the wide footprint on native tabs")
     Click(Frame(nil, UIParent), Frame(nil, b))
     Check(F.active.frame == a, "click through an untracked top popup stole focus")
     if flavor == "Forever" then

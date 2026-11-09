@@ -8,12 +8,15 @@ NS.View = View
 
 local WIDTH, HEIGHT = CharacterHeader.Width, 552
 local HEADER, TABS, FOOTER, PAD = CharacterHeader.Height, 39, 28, 12
-local CAPTION_WIDTH = CharacterHeader.CaptionWidth
+local CAPTION_WIDTH, CAPTION_SIZE, CLOSE_OFFSET = CharacterHeader.CaptionWidth, 22, 8
 local BODY_W, BODY_H = WIDTH - 2 * PAD, HEIGHT - HEADER - TABS - FOOTER - 2 * PAD
 local RAIL_W = 202
 local DOLL_W = BODY_W - PAD - RAIL_W
-local SLOT_W, SLOT_H, SLOT_STEP, INSET = 215, 38, 42, 8
+local SLOT_W, SLOT_H, SLOT_STEP, INSET, ICON = 215, 38, 42, 8, 30
 local WEAPON_Y, GROUP_HEADER, GROUP_ROW, GROUP_GAP = 353, 30, 24, 8
+local BODY_Y, MODEL_X = HEADER + TABS + PAD, SLOT_W + INSET + 7
+local MODEL_W, MODEL_H = DOLL_W - 2 * MODEL_X, WEAPON_Y - 2 * INSET
+local WIDE_SLOT_W = (DOLL_W - 2 * INSET - GROUP_GAP) / 2
 local BG, PANEL, RAISED = { .078, .098, .118 }, { .110, .137, .165 }, { .145, .176, .208 }
 local LINE, SLOT, MODEL = { .224, .263, .294 }, { .137, .169, .196 }, { .125, .157, .184 }
 local TEXT, MUTED, GOLD = { .941, .922, .886 }, { .682, .714, .733 }, { .922, .784, .553 }
@@ -29,15 +32,16 @@ local SHELL = { role = "shell", ownedArt = true }
 local PANEL_STYLE = { role = "panel", ownedArt = true }
 local CARD = { role = "card", ownedArt = true }
 local CONTROL = { role = "button", activeRole = "navigationActive", useControlShape = true, ownedArt = true }
-local NAVIGATION = { role = "navigation", activeRole = "navigationActive", useControlShape = true, ownedArt = true }
+local NAVIGATION = { role = "navigation", activeRole = "navigationActive", useControlShape = true, ownedArt = true, motion = true }
 local CreateFrame, CreateTexture, CreateFontString = S.CreateFrame, S.CreateTexture, S.CreateFontString
 local ceil, floor, max, min = math.ceil, math.floor, math.max, math.min
-
 local function Tint(view, target, fallback, isText)
     local tints = isText and view.textTints or view.textureTints
     tints[target] = fallback
     local color = view.palette[fallback] or fallback
     if isText then target:SetTextColor(unpack(color))
+    elseif target == view.artMask or target == view.reportMask or target == view.gearMask then
+        target:SetColorTexture(color[1], color[2], color[3], 1)
     else target:SetColorTexture(unpack(color)) end
 end
 
@@ -56,6 +60,7 @@ local function ApplySurface(skin, frame, record)
     if record.border then record.border:SetShown(not themed) end
     if record.fill then record.fill:SetShown(not themed) end
     if record.hover then record.hover:SetShown(not themed) end
+    if frame.underline then frame.underline:SetShown(frame.selected == true and not themed) end
     if themed and frame.selected then skin:SetActive(frame, true) end
     record.themed = themed
 end
@@ -67,7 +72,7 @@ local function TrackSurface(view, frame, border, fill, style, hover)
 end
 
 local function Surface(view, parent, color, kind, style)
-    local frame = CreateFrame(kind or "Frame", nil, parent)
+    local frame = Window.CreateChild(view, kind or "Frame", parent)
     local border = Fill(view, frame, "BACKGROUND", LINE)
     local fill = Fill(view, frame, "BORDER", color, 1)
     local hover = kind == "Button" and Fill(view, frame, "HIGHLIGHT", HOVER, 1) or nil
@@ -151,31 +156,21 @@ end
 local function Caption(view, header, text, title, offset, action)
     local button, label = ClickLabel(view, header, text, not view.embedded and action or nil)
     button.view = view
-    button:SetSize(22, 22)
-    button:SetPoint("TOPRIGHT", -offset, -8)
+    button:SetSize(CAPTION_SIZE, CAPTION_SIZE)
+    button:SetPoint("TOPRIGHT", -offset, -CLOSE_OFFSET)
     WindowTooltip(button, title)
     return button, label
 end
 
-local function DockLeft(button) Window.Dock(button.view.window, "left") end
-local function DockRight(button) Window.Dock(button.view.window, "right") end
-local function Minimize(button) button.view:SetMinimized(not button.view:IsMinimized()) end
-local function Maximize(button)
-    local view = button.view
-    if view:IsMinimized() then
-        view:SetMinimized(false)
-        if view.window.maximized or not view.frame:IsShown() then return end
-    end
-    Window.ToggleMaximized(view.window)
-end
-
 local function CaptionButtons(view, header)
     local window = view.window
-    Caption(view, header, "X", NS.Text("Close"), 8, view.callbacks.close)
-    window.maximize, window.maximizeLabel = Caption(view, header, "+", NS.Text("Maximize window"), 34, Maximize)
-    window.minimize, window.minimizeLabel = Caption(view, header, "−", NS.Text("Minimize window"), 60, Minimize)
-    Caption(view, header, ">", NS.Text("Dock window right"), 86, DockRight)
-    Caption(view, header, "<", NS.Text("Dock window left"), 112, DockLeft)
+    local actions = view.nativeLayout and Window.NativeCaptionActions or Window.CaptionActions
+    local close = Caption(view, header, "X", NS.Text("Close"), CLOSE_OFFSET, not view.nativeLayout and view.callbacks.close or nil)
+    if view.nativeLayout then Window.PlaceCloseArt(view, close) end
+    window.maximize, window.maximizeLabel = Caption(view, header, "+", NS.Text("Maximize window"), 34, actions.maximize)
+    window.minimize, window.minimizeLabel = Caption(view, header, "−", NS.Text("Minimize window"), 60, actions.minimize)
+    window.dockRight = Caption(view, header, ">", NS.Text("Dock window right"), 86, actions.dockRight)
+    window.dockLeft = Caption(view, header, "<", NS.Text("Dock window left"), 112, actions.dockLeft)
 end
 
 local function Header(view)
@@ -187,35 +182,32 @@ local function Header(view)
     Fill(view, header, "BACKGROUND", PANEL)
     Rule(view, header, "TOP", GOLD_LINE)
 
-    if not view.embedded then
+    if not view.embedded and (not view.nativeRoot or view.nativeLayout) then
         local drag = CreateFrame("Button", nil, header)
         drag:SetPoint("TOPLEFT")
         drag:SetPoint("BOTTOMRIGHT", -CAPTION_WIDTH, 0)
         drag:RegisterForDrag("LeftButton")
-        drag:SetScript("OnDragStart", function() Window.BeginMove(view.window) end)
-        drag:SetScript("OnDragStop", function() Window.EndMove(view.window) end)
+        Window.BindTitleDrag(view, drag)
     end
 
     view.header = CharacterHeader.Create(header, view.callbacks)
     view.header.frame:SetPoint("TOPLEFT")
-    CaptionButtons(view, header)
+    if not view.nativeRoot or view.nativeLayout then CaptionButtons(view, header) end
 end
 
 local function NewTab(view)
-    local tab = CreateFrame("Button", nil, view.tabBar)
+    local tab = Window.CreateChild(view, "Button", view.tabBar)
     tab.view = view
-    TrackSurface(view, tab, nil, nil, NAVIGATION, Fill(view, tab, "HIGHLIGHT", HOVER, 1))
     tab.label = Font(view, tab, 12, MUTED, "CENTER")
     tab.label:SetPoint("LEFT", 5, 1)
     tab.label:SetPoint("RIGHT", -5, 1)
     tab.underline = Rule(view, tab, "BOTTOM", GOLD)
+    TrackSurface(view, tab, nil, nil, NAVIGATION, Fill(view, tab, "HIGHLIGHT", HOVER, 1))
     tab:SetScript("OnClick", TabOverflow.Click)
     return tab
 end
 
-local tabLayout = {
-    width = BODY_W, height = TABS, pad = PAD, new = NewTab, place = Place, text = Text, visible = Visible,
-}
+local tabLayout = { height = TABS, pad = PAD, new = NewTab, place = Place, text = Text, visible = Visible }
 
 local function RefreshFonts(view)
     if view.fontRevision == S.FontRevision then return false end
@@ -262,10 +254,7 @@ function View:RefreshAppearance(skin, headerConfig)
             if not record.themed then ApplySurface(skin, frame, record) end
         end
     end
-    if RefreshFonts(self) and self.tabs then
-        TabOverflow.Layout(self, self.tabs, self.tab, tabLayout)
-        self:SetTabs(self.tabs, self.tab)
-    end
+    if RefreshFonts(self) and self.tabs then self:SetTabs(self.tabs, self.tab, true) end
     self:ApplyHeaderSettings(headerConfig)
 end
 
@@ -273,13 +262,14 @@ local function ActiveTab(view, tab, active)
     if tab.selected == active then return end
     tab.selected = active
     Tint(view, tab.label, active and GOLD or MUTED, true)
-    Visible(tab.underline, active)
-    if view.surfaces[tab].themed then view.skin:SetActive(tab, active) end
+    local themed = view.surfaces[tab].themed
+    tab.underline:SetShown(active and not themed)
+    if themed then view.skin:SetActive(tab, active) end
 end
 
-function View:SetTabs(tabs, selected)
+function View:SetTabs(tabs, selected, forceLayout)
     local fontChanged = RefreshFonts(self)
-    if self.tabs ~= tabs or fontChanged or (self.embedded and TabOverflow.SelectionMovesTab(self, tabs, selected)) then
+    if self.tabs ~= tabs or fontChanged or forceLayout or TabOverflow.SelectionMovesTab(self, tabs, selected) then
         self.tabs = tabs
         TabOverflow.Layout(self, tabs, selected, tabLayout)
     end
@@ -303,7 +293,7 @@ local function PaintModel(view)
         return
     end
     if model.unit ~= unit or model.identity ~= view.identity or not model.ready then
-        if NS.Host.InCombat() then Visible(model, false) return end
+        if not ModelControls.CanBindUnit(unit) then Visible(model, false) return end
         model.unit, model.identity = unit, view.identity
         Visible(model, true)
         model.ready = model:SetUnit(unit) == true
@@ -314,7 +304,8 @@ end
 
 function View:ApplyHeaderSettings(config)
     if config then self.headerConfig = config end
-    self.header:Settings(self.headerConfig, self.skin, self.frame:GetWidth() - 2, CAPTION_WIDTH, self.previewLayers)
+    local reserve = self.nativeRoot and not self.nativeLayout and 0 or CAPTION_WIDTH
+    self.header:Settings(self.headerConfig, self.skin, self.frame:GetWidth() - 2, reserve, self.previewLayers)
     self.header:Paint(self.headerData, self:IsMinimized())
 end
 
@@ -328,9 +319,10 @@ function View:SetHeader(name, subtitle, average, unit, identity, data)
 end
 
 function View:RefreshModel()
-    if not self.frame:IsShown() or self:IsMinimized() or not self.gear.panelShown or not self.modelHost.panelShown then return end
+    if not self.model or not self.frame:IsShown() or self:IsMinimized()
+        or not self.gear.panelShown or not self.modelHost.panelShown then return end
     if self.model.ready and self.model.unit == self.unit and self.model.identity == self.identity then
-        if NS.Host.InCombat() then return end
+        if not ModelControls.CanBindUnit(self.unit) then return end
         self.model:RefreshUnit()
         ModelControls.Apply(self)
     else PaintModel(self) end
@@ -357,19 +349,22 @@ local function GearDrop(button)
 end
 
 local function NewSlot(view)
+    local native = view.nativeLayout ~= nil
     local button, fill = Surface(view, view.plate, SLOT, "Button", CONTROL)
     button.view, button.fill = view, fill
-    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    button:RegisterForDrag("LeftButton")
+    if native then
+        button:RegisterForClicks("LeftButtonUp")
+        button:SetHitRectInsets(5 + ICON, 0, 0, 0)
+    else button:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+    if not native and view.callbacks.drag then button:RegisterForDrag("LeftButton") end
     button:SetScript("OnClick", GearClick)
     button:SetScript("OnEnter", GearEnter)
     button:SetScript("OnLeave", GearLeave)
-    button:SetScript("OnDragStart", GearDrag)
-    button:SetScript("OnReceiveDrag", GearDrop)
-
+    button:SetScript("OnDragStart", not native and view.callbacks.drag and GearDrag or nil)
+    button:SetScript("OnReceiveDrag", not native and view.callbacks.drop and GearDrop or nil)
     local rim = CreateTexture(button, nil, "ARTWORK")
     rim:SetPoint("LEFT", 5, 0)
-    rim:SetSize(30, 30)
+    rim:SetSize(ICON, ICON)
     button.rim = rim
     button.icon = CreateTexture(button, nil, "ARTWORK", nil, 1)
     button.icon:SetPoint("TOPLEFT", rim, "TOPLEFT", 1, -1)
@@ -432,6 +427,10 @@ local function PaintSlots(view, buttons, items, startX, startY, width, stepX, st
             button = NewSlot(view)
             buttons[i] = button
         end
+        if view.gearArtLevel and button.nativeLevel ~= view.gearArtLevel then
+            button.nativeLevel = view.gearArtLevel
+            button:SetFrameLevel(view.frame:GetFrameLevel() + view.gearArtLevel)
+        end
         Place(button, startX + (i - 1) * stepX, startY + (i - 1) * stepY, width, SLOT_H)
         PaintSlot(button, item, item.slot == selected)
     end
@@ -444,7 +443,7 @@ end
 
 local function NewCard(list)
     local card = Surface(list.view, list.canvas, PANEL, nil, CARD)
-    local title = CreateFrame("Button", nil, card)
+    local title = Window.CreateChild(list.view, "Button", card)
     title.view = list.view
     title:SetPoint("TOPLEFT", 7, -1)
     title:SetPoint("TOPRIGHT", -7, -1)
@@ -459,7 +458,7 @@ local function NewCard(list)
 end
 
 local function NewValueRow(list, card)
-    local row = CreateFrame("Button", nil, card)
+    local row = Window.CreateChild(list.view, "Button", card)
     row.view = list.view
     row:EnableMouse(false)
     row:SetScript("OnClick", GroupClick)
@@ -630,13 +629,16 @@ local function GearBody(view)
     view.plate = Surface(view, view.gear, BG)
     view.plate:SetPoint("TOPLEFT")
     view.plate:SetSize(DOLL_W, BODY_H)
+    if view.nativeLayout then view.gearMask = Fill(view, view.plate, "BACKGROUND", BG) end
     view.modelHost = Surface(view, view.plate, MODEL)
-    view.modelHost:SetPoint("TOPLEFT", SLOT_W + INSET + 7, -INSET)
-    view.modelHost:SetSize(DOLL_W - 2 * (SLOT_W + INSET + 7), WEAPON_Y - 2 * INSET)
-    view.model = CreateFrame("PlayerModel", nil, view.modelHost)
-    view.model:SetPoint("TOPLEFT", 3, -28)
-    view.model:SetPoint("BOTTOMRIGHT", -3, 3)
-    view.model:SetScript("OnHide", function(model) model.ready = nil end)
+    view.modelHost:SetPoint("TOPLEFT", MODEL_X, -INSET)
+    view.modelHost:SetSize(MODEL_W, MODEL_H)
+    if not view.nativeLayout then
+        view.model = CreateFrame("PlayerModel", nil, view.modelHost)
+        view.model:SetPoint("TOPLEFT", 3, -28)
+        view.model:SetPoint("BOTTOMRIGHT", -3, 3)
+        view.model:SetScript("OnHide", function(model) model.ready = nil end)
+    end
     ModelControls.Attach(view, ClickLabel)
 
     local divider = CreateTexture(view.plate, nil, "ARTWORK")
@@ -656,13 +658,14 @@ local function GearBody(view)
 end
 
 function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups, withModel)
+    if self.nativeLayout then Window.ApplyNativeGearMode(self, right, withModel, GearClick, GearEnter, GearLeave) end
     local reset = self.contentTab ~= self.tab or self.detailSlot ~= selectedSlot
     self.contentTab, self.detailSlot = self.tab, selectedSlot
-    Visible(self.report.scroll, false)
+    Visible(self.reportCover or self.report.scroll, false)
     Visible(self.gear, true)
     Visible(self.modelHost, withModel == true)
-    if withModel and self.frame:IsShown() then PaintModel(self) end
-    local columnWidth = withModel and SLOT_W or (DOLL_W - 2 * INSET - GROUP_GAP) / 2
+    if self.model and withModel and self.frame:IsShown() then PaintModel(self) end
+    local columnWidth = withModel and SLOT_W or WIDE_SLOT_W
     local weaponWidth = (DOLL_W - 2 * INSET - (#weapons - 1) * GROUP_GAP) / max(1, #weapons)
     PaintSlots(self, self.left, left, INSET, INSET, columnWidth, 0, SLOT_STEP, selectedSlot)
     PaintSlots(self, self.right, right, DOLL_W - INSET - columnWidth, INSET, columnWidth, 0, SLOT_STEP, selectedSlot)
@@ -683,18 +686,19 @@ end
 function View:ShowGroups(groups)
     local reset = self.contentTab ~= self.tab
     self.contentTab, self.detailSlot = self.tab, nil
-    Visible(self.gear, false)
-    Visible(self.report.scroll, true)
+    if self.gear then Visible(self.gear, false) end
+    Visible(self.reportCover or self.report.scroll, true)
     PaintGroups(self.report, groups or GROUP_EMPTY, reset)
     Text(self.hint, "")
 end
 
 function View:FitScreen()
-    Window.Fit(self.window)
+    if self.nativeLayout then return end
+    if self.nativeRoot then Window.FitHosted(self.window, self.nativeRoot) else Window.Fit(self.window) end
 end
 
 function View:ApplyWindowPreferences(preferences)
-    Window.ApplyPreferences(self.window, preferences)
+    if not self.nativeRoot then Window.ApplyPreferences(self.window, preferences) end
 end
 
 function View:IsMinimized()
@@ -702,7 +706,7 @@ function View:IsMinimized()
 end
 
 function View:SetMinimized(minimized, tab, silent)
-    if not Window.SetMinimized(self.window, minimized) then return end
+    if self.nativeRoot or not Window.SetMinimized(self.window, minimized) then return end
     self.body:SetShown(not minimized)
     self.tabBar:SetShown(not minimized)
     self.footer:SetShown(not minimized)
@@ -710,13 +714,8 @@ function View:SetMinimized(minimized, tab, silent)
     if not silent then self.callbacks.minimized(minimized, tab) end
 end
 
-function View:SetContextAction(label, readOnly)
-    local button, disabled = self.contextAction, readOnly == true
-    if (button.panelReadOnly or false) ~= disabled then
-        button.panelReadOnly = disabled
-        button:EnableMouse(not disabled)
-    end
-    Visible(button, label ~= nil)
+function View:SetContextAction(label)
+    Visible(self.contextAction, label ~= nil)
     if label and (self.contextLabel.panelText ~= label or self.contextAction.fontRevision ~= self.fontRevision) then
         Text(self.contextLabel, label)
         self.contextAction.fontRevision = self.fontRevision
@@ -732,43 +731,41 @@ function View:CancelWindowGestures()
     Window.CancelGestures(self.window)
 end
 
-local function ScaleGrip(view)
-    local grip = CreateFrame("Button", nil, view.frame)
-    grip:SetSize(20, 20)
-    grip:SetPoint("BOTTOMRIGHT", -1, 1)
-    WindowTooltip(grip, NS.Text("Scale window"))
-    for i = 1, 3 do
-        local length, offset = i * 4, 3 + (3 - i) * 3
-        local horizontal = CreateTexture(grip, nil, "OVERLAY")
-        horizontal:SetSize(length, 1)
-        horizontal:SetPoint("BOTTOMRIGHT", -offset, offset)
-        Tint(view, horizontal, MUTED)
-        local vertical = CreateTexture(grip, nil, "OVERLAY")
-        vertical:SetSize(1, length)
-        vertical:SetPoint("BOTTOMRIGHT", -offset, offset)
-        Tint(view, vertical, MUTED)
-    end
-    if not view.embedded then Window.BindGrip(view.window, grip) end
+function View.NativeLayout(gear)
+    return Window.NativeLayout(gear, WIDTH, HEIGHT, {
+        left = PAD + INSET + 5, right = PAD + DOLL_W - INSET - SLOT_W + 5,
+        alternateRight = PAD + DOLL_W - INSET - WIDE_SLOT_W + 5,
+        close = { x = WIDTH - 1 - CLOSE_OFFSET - CAPTION_SIZE, y = 1 + CLOSE_OFFSET, size = CAPTION_SIZE },
+        top = BODY_Y + INSET, slotHeight = SLOT_H, slotSize = ICON, slotStep = SLOT_STEP,
+        weaponTop = BODY_Y + WEAPON_Y, weaponSpan = DOLL_W - 2 * INSET, weaponGap = GROUP_GAP,
+        model = { x = PAD + MODEL_X + 3, y = BODY_Y + INSET + 28, width = MODEL_W - 6, height = MODEL_H - 31 },
+        ammo = { x = WIDTH - PAD - ICON, y = BODY_Y + BODY_H - ICON },
+    })
 end
 
-function View.New(callbacks, parent)
-    local frame = CreateFrame("Frame", callbacks.frameName, parent or UIParent)
+function View.New(callbacks, parent, nativeRoot, nativeLayout)
+    local width = nativeLayout and nativeLayout.width or nativeRoot and 464 or WIDTH
+    local height = nativeLayout and nativeLayout.height or HEIGHT
+    local frame = CreateFrame("Frame", not nativeRoot and callbacks.frameName or nil, nativeRoot and UIParent or parent or UIParent)
     local view = setmetatable({
         frame = frame, callbacks = callbacks, fonts = {}, tabButtons = {}, left = {}, right = {}, weapons = {},
         fontRevision = S.FontRevision, fontPath = S.GlobalFontPath(),
         palette = {}, changedTints = {}, textTints = {}, textureTints = {}, surfaces = {},
-        headerConfig = {}, headerData = {}, embedded = parent ~= nil,
+        headerConfig = {}, headerData = {}, embedded = parent ~= nil, nativeRoot = nativeRoot,
+        nativeLayout = nativeLayout, bodyWidth = width - 2 * PAD,
     }, View)
     frame:Hide()
-    frame:SetSize(WIDTH, HEIGHT)
-    frame:SetPoint(parent and "TOPLEFT" or "CENTER")
-    if not parent then
-        frame:SetFrameStrata("DIALOG")
+    frame:SetSize(width, height)
+    if not nativeRoot then frame:SetPoint(parent and "TOPLEFT" or "CENTER") end
+    if not parent then frame:SetFrameStrata(nativeLayout and nativeLayout.strata or nativeRoot and "MEDIUM" or "DIALOG") end
+    if nativeLayout then frame:SetFrameLevel((nativeLayout.rootLevel or 0) + nativeLayout.artLevel) end
+    if not parent and not nativeRoot then
         frame:SetClampedToScreen(true)
         frame:SetMovable(true)
     end
-    frame:EnableMouse(true)
-    view.window = Window.New(frame, WIDTH, HEIGHT, HEADER)
+    frame:EnableMouse(not nativeRoot)
+    view.window = Window.New(frame, width, height, HEADER)
+    if nativeLayout then view.artMask = Fill(view, frame, "BACKGROUND", BG, 1) end
     local border = Fill(view, frame, "BACKGROUND", LINE)
     local fill = Fill(view, frame, "BORDER", BG, 1)
     TrackSurface(view, frame, border, fill, SHELL)
@@ -784,10 +781,12 @@ function View.New(callbacks, parent)
     Rule(view, bar, "BOTTOM", LINE)
 
     view.body = CreateFrame("Frame", nil, frame)
-    view.body:SetPoint("TOPLEFT", PAD, -(HEADER + TABS + PAD))
-    view.body:SetSize(BODY_W, BODY_H)
-    GearBody(view)
-    view.report = NewList(view, view.body, BODY_W, BODY_H, 2)
+    view.body:SetPoint("TOPLEFT", PAD, -BODY_Y)
+    view.body:SetSize(view.bodyWidth, BODY_H)
+    if not nativeRoot or nativeLayout then GearBody(view) end
+    local reportParent = Window.ReportParent(view)
+    if view.reportCover then view.reportMask = Fill(view, reportParent, "BACKGROUND", BG) end
+    view.report = NewList(view, reportParent, view.bodyWidth, BODY_H, nativeRoot and not nativeLayout and 1 or 2)
 
     local footer = CreateFrame("Frame", nil, frame)
     view.footer = footer
@@ -804,7 +803,7 @@ function View.New(callbacks, parent)
     view.contextAction:SetPoint("LEFT", 8, 0)
     Visible(view.contextAction, false)
     view.gearHint = NS.Text("Click an item for details")
-    ScaleGrip(view)
-    if not parent then view:FitScreen() end
+    if not nativeRoot or nativeLayout then Window.CreateGrip(view, WindowTooltip, function(texture) Tint(view, texture, MUTED) end) end
+    if nativeLayout then Window.HostNativeView(view) elseif not parent then view:FitScreen() end
     return view
 end

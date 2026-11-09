@@ -65,6 +65,16 @@ Check(S.OwnsBlizzardSurface("staticPopups"),"independent popup skin did not clai
 S.Config("popupAttention").enabled=false
 Check(not S.OwnsBlizzardSurface("staticPopups"),"disabled popup skin retained ownership")
 
+local character = S.Config("characterPanel")
+character.enabled, character.mode = true, Suite.CharacterPanelMode.BASIC
+Check(not S.OwnsBlizzardSurface("characterDossier"), "Basic did not retain its equipment dossier")
+character.mode = Suite.CharacterPanelMode.SUITE
+Check(S.OwnsBlizzardSurface("characterDossier"), "Suite mode did not claim the dossier surface")
+available = false
+Check(not S.OwnsBlizzardSurface("characterDossier"), "an unavailable character panel claimed the dossier")
+available, character.enabled = true, false
+Check(not S.OwnsBlizzardSurface("characterDossier"), "a disabled character panel claimed the dossier")
+
 -- Start/stop also reconciles the DataTexts follower surface; unrelated modules never notify.
 Suite.Skin = { SurfacesChanged = function(phase) events[#events + 1] = "skin:" .. phase end }
 S.Config("dataTexts").enabled = false

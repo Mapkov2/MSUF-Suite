@@ -407,9 +407,19 @@ local function ReconcileEntry(scope, target, entry)
     return GuardedCall(ReconcileNow, scope, target, entry)
 end
 
+-- Suite's authored Character Panel tabs only paint addon artwork. Their
+-- navigation must work on the first opening in combat as well as on retargets.
+local function OwnedCharacterNavigation(scope, entry)
+    local spec = entry.surface
+    return spec and spec.ownedArt and spec.motion == true and spec.role == "navigation"
+        and scope.client.name == "MSUF_Suite_characterPanel"
+        and not (entry.control or entry.icon or entry.cosmetic or entry.menu or entry.release)
+        and entry.visible == nil and not scope.suspended and scope.pendingOperation ~= "release" and RuntimeEnabled()
+end
+
 QueueEntry = function(scope, target, entry)
     if not PublicAPI.playerReady then return true, "pending" end
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not (OwnedCharacterNavigation(scope, entry) and ValidateEntry(entry)) then
         NS.CombatGate.RunOrDefer(entry.pendingKey, function()
             ReconcileEntry(scope, target, entry)
         end)
@@ -439,6 +449,14 @@ end
 -- or role, a settings notification, suspend, release, another owner, an
 -- icon, cosmetic or visibility aspect) takes the full reconcile.
 local function SelectEntry(scope, target, entry)
+    if OwnedCharacterNavigation(scope, entry) and claims[target] == entry
+        and entry.applied and entry.appliedFor == settingsGeneration then
+        local surface = Registry.GetSurface(target)
+        if surface and surface.spec == entry.surface and surface.visible ~= false and not surface.syncNativeSelected
+            and ValidateEntry(entry) and NS.Surface.SetActive(target, entry.active) then
+            return true, "applied"
+        end
+    end
     local control = entry.control
     if control and control.kind == "button" and entry.appliedControl == control
         and entry.applied == true and entry.appliedFor == settingsGeneration

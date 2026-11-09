@@ -34,10 +34,28 @@ local outsideGrips = {
 }
 
 function Chrome.Footprint(state)
+    local bounds = state.suiteBounds
+    if bounds then
+        local width, height = Safety.Read(state.frame, "GetWidth"), Safety.Read(state.frame, "GetHeight")
+        return math.max(0, bounds.width - (width or bounds.width)), math.max(0, bounds.height - (height or bounds.height)), 0
+    end
     if state.inventory and state.name ~= "BankFrame" then return 0, 0, 8 end
     local outside = outsideGrips[state.name] or state.inventory
     return (outside or state.name == "WorldMapFrame") and 21 or 0,
         outside and 21 or 0, state.inventory and state.name ~= "BankFrame" and 18 or 0
+end
+
+function Chrome.DockSuite(state, right)
+    Chrome.LeaveFit(state)
+    local frame = state.frame
+    local effective, uiScale = Safety.Read(frame, "GetEffectiveScale"), Safety.Read(UIParent, "GetEffectiveScale")
+    local width = Safety.Read(UIParent, "GetWidth")
+    if not effective or effective <= 0 or not uiScale or uiScale <= 0 or not width then return false end
+    local ratio = effective / uiScale
+    local x = right and math.max(0, width - state.suiteBounds.width * ratio - 14) or 14
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x / ratio, -14 / ratio)
+    return true
 end
 
 local function ExteriorGrip(grip, state)

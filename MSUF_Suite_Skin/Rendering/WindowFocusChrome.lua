@@ -81,12 +81,12 @@ end
 
 local function Inspect(state, frame, depth)
     if Safety.Read(frame, "GetObjectType") == "GameTooltip" then return end
-    if NS.WindowFocus.records[frame] then return end
+    if frame == state.presentation or NS.WindowFocus.records[frame] then return end
     local layer, level = Safety.Read(frame, "GetFrameStrata"), Safety.Read(frame, "GetFrameLevel")
     local rank = ranks[layer]
     local raised = rank and type(level) == "number" and (rank > state.rank or rank == state.rank and level >= state.level)
     local shown = Safety.Read(frame, "IsVisible") == true
-    local exterior = shown and Exterior(state, frame, depth)
+    local exterior = shown and not state.presentation and Exterior(state, frame, depth)
     if depth <= 2 or raised or exterior then Observe(frame, state) end
     if shown and raised then
         if rank > state.chromeRank then state.chromeStrata, state.chromeRank, state.chromeLevel = layer, rank, level + 1

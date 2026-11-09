@@ -3,6 +3,7 @@ local Window = {}
 NS.Window = Window
 
 local MARGIN, MIN_SCALE, MAX_SCALE = 14, .65, 2
+local HOST_GAP = 2
 local MINIMIZED_WIDTH = 450
 local min, max, abs = math.min, math.max, math.abs
 local Number = NS.Number
@@ -68,6 +69,148 @@ function Window.Fit(state)
     elseif state.dock then Dock(state)
     elseif state.freeX then PlaceFree(state) end
     SyncControls(state)
+end
+
+local function NativeRailGap(root, right, scale)
+    if not NS.Host.Client.isForever then return 0 end
+    -- The stock Forever rail is 64px wide, even before its geometry resolves.
+    local rail = root.ModeTabs
+    if not NS.Public(rail) or not rail then return 64 * scale end
+    local railRight = Number(rail:GetRight())
+    local railScale = Number(rail:GetEffectiveScale())
+    if not railScale or railScale <= 0 then railScale = scale end
+    if not right or not railRight then return (Number(rail:GetWidth()) or 64) * railScale end
+    return max(0, railRight * railScale - right * scale)
+end
+
+function Window.HostNativeView(view)
+    local frame, root, plan = view.frame, view.nativeRoot, view.nativeLayout
+    frame:SetParent(root)
+    frame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
+    frame:SetFrameStrata(plan.strata)
+    frame:SetFrameLevel((plan.rootLevel or 0) + plan.artLevel)
+end
+
+function Window.CreateChild(view, kind, parent)
+    if not view.nativeLayout then return NS.Suite.CreateFrame(kind, nil, parent) end
+    -- Forever's CreateFrame hook must not discover a native panel ancestor.
+    local child = NS.Suite.CreateFrame(kind)
+    child:SetParent(parent)
+    return child
+end
+
+function Window.FitHosted(state, root)
+    local parentScale, nativeScale = Number(UIParent:GetEffectiveScale()), Number(root:GetEffectiveScale())
+    if not parentScale or parentScale <= 0 or not nativeScale or nativeScale <= 0 then return end
+    local left, right, top = Number(root:GetLeft()), Number(root:GetRight()), Number(root:GetTop())
+    local x, y, width = UIParent:GetRect()
+    x, y, width = Number(x), Number(y), Number(width)
+    local railGap = NativeRailGap(root, right, nativeScale) / parentScale
+    local scale, onLeft = nativeScale / parentScale, false
+    if left and right and top and x and y and width and width > 0 then
+        local roomLeft = left * scale - x
+        local roomRight = x + width - right * scale - railGap
+        onLeft = roomRight < state.width * scale + HOST_GAP and roomLeft > roomRight
+        local room = onLeft and roomLeft or roomRight
+        local bottomRoom = top * scale - y
+        scale = min(scale, max(1, room - HOST_GAP) / state.width, max(1, bottomRoom) / state.height)
+    end
+    SetScale(state, scale)
+    local offset = (onLeft and -HOST_GAP or railGap + HOST_GAP) / scale
+    if state.hostedLeft == onLeft and state.hostedOffset == offset then return end
+    state.hostedLeft, state.hostedOffset = onLeft, offset
+    local frame = state.frame
+    frame:ClearAllPoints()
+    if onLeft then frame:SetPoint("TOPRIGHT", root, "TOPLEFT", offset, 0)
+    else frame:SetPoint("TOPLEFT", root, "TOPRIGHT", offset, 0) end
+end
+
+local function AddNativeSlots(plan, rows, size, x, y, stepX, stepY, alternateX)
+    for i = 1, #rows do
+        plan.slots[#plan.slots + 1] = {
+            token = rows[i].token, x = x + (i - 1) * stepX, y = y + (i - 1) * stepY,
+            size = size, alternateX = alternateX,
+        }
+    end
+end
+
+function Window.NativeLayout(gear, width, height, grid)
+    -- The stock flyout uses HIGH, and Forever's native header reaches level 520.
+    local plan = {
+        width = width, height = height, strata = "HIGH", artLevel = 550,
+        modelLevel = 570, slotLevel = 590, reportLevel = 610, closeLevel = 630,
+        slots = {}, model = grid.model, close = grid.close,
+    }
+    local offset = (grid.slotHeight - grid.slotSize) / 2
+    local span = (grid.weaponSpan - (#gear.weapons - 1) * grid.weaponGap) / max(1, #gear.weapons)
+    AddNativeSlots(plan, gear.left, grid.slotSize, grid.left, grid.top + offset, 0, grid.slotStep)
+    plan.rightFirst = #plan.slots + 1
+    AddNativeSlots(plan, gear.right, grid.slotSize, grid.right, grid.top + offset, 0, grid.slotStep, grid.alternateRight)
+    AddNativeSlots(plan, gear.weapons, grid.slotSize, grid.left, grid.weaponTop + offset, span + grid.weaponGap, 0)
+    if NS.Host.Client.isForever then
+        plan.slots[#plan.slots + 1] = {
+            token = "AmmoSlot", x = grid.ammo.x, y = grid.ammo.y, size = grid.slotSize, optional = true,
+        }
+    end
+    return plan
+end
+
+function Window.NativeLevel(view, offset)
+    return view.frame:GetFrameLevel() + offset - view.nativeLayout.artLevel
+end
+
+function Window.PlaceCloseArt(view, art)
+    view.closeArt = art
+    art:EnableMouse(false)
+    art:SetFrameLevel(Window.NativeLevel(view, view.nativeLayout.closeLevel + 1))
+end
+
+function Window.ReportParent(view)
+    if not view.nativeLayout then return view.body end
+    local cover = NS.Suite.CreateFrame("Frame", nil, view.body)
+    cover:SetAllPoints()
+    cover:SetFrameLevel(Window.NativeLevel(view, view.nativeLayout.reportLevel))
+    cover:EnableMouse(true)
+    cover:EnableMouseWheel(true)
+    cover:Hide()
+    view.reportCover = cover
+    return cover
+end
+
+function Window.ApplyNativeGearMode(view, rows, withModel, click, enter, leave)
+    withModel = withModel == true
+    if view.nativeGearModel == withModel then return end
+    view.nativeGearModel = withModel
+    local plan, plate = view.nativeLayout, view.plate
+    local base = view.frame:GetFrameLevel()
+    view.overviewPlateLevel = view.overviewPlateLevel or plate:GetFrameLevel() - base
+    local level = withModel and view.overviewPlateLevel or plan.slotLevel - plan.artLevel - 3
+    plate:SetFrameLevel(base + level)
+    view.gearArtLevel = level + 1
+    view.gearMask:SetShown(not withModel)
+
+    local masks = view.nativeSlotMasks or {}
+    view.nativeSlotMasks = masks
+    for i = 1, #rows do
+        local entry = plan.slots[plan.rightFirst + i - 1]
+        local mask = masks[i]
+        if not mask then
+            mask = Window.CreateChild(view, "Button", view.gear)
+            mask.view = view
+            mask:SetFrameLevel(Window.NativeLevel(view, plan.slotLevel + 1))
+            mask:EnableMouse(true)
+            mask:RegisterForClicks("LeftButtonUp")
+            masks[i] = mask
+        end
+        mask.slot = rows[i].slot
+        mask:SetScript("OnClick", not withModel and click or nil)
+        mask:SetScript("OnEnter", not withModel and enter or nil)
+        mask:SetScript("OnLeave", not withModel and leave or nil)
+        local x = withModel and entry.alternateX or entry.alternateX + entry.size
+        mask:ClearAllPoints()
+        mask:SetPoint("TOPLEFT", view.frame, "TOPLEFT", x, -entry.y)
+        mask:SetSize(entry.x - entry.alternateX, entry.size)
+    end
 end
 
 local function RememberPoint(state)
@@ -209,6 +352,90 @@ function Window.BindGrip(state, grip)
     grip:SetScript("OnMouseUp", EndResize)
     grip:SetScript("OnHide", EndResize)
 end
+
+function Window.BindTitleDrag(view, drag)
+    if view.nativeLayout then
+        view.window.nativeTitleDrag = drag
+        local action = view.callbacks.windowAction
+        if not action then return end
+        drag:SetScript("OnDragStart", function() action("moveStart") end)
+        drag:SetScript("OnDragStop", function() action("moveStop") end)
+        drag:HookScript("OnHide", function() action("moveStop") end)
+    else
+        drag:SetScript("OnDragStart", function() Window.BeginMove(view.window) end)
+        drag:SetScript("OnDragStop", function() Window.EndMove(view.window) end)
+    end
+end
+
+local function BindNativeGrip(view, grip)
+    view.window.nativeGrip = grip
+    local action = view.callbacks.windowAction
+    if not action then return end
+    grip:SetScript("OnMouseDown", function(_, button)
+        if button == "LeftButton" then action("scaleStart") end
+    end)
+    grip:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then action("scaleStop") end
+    end)
+    grip:HookScript("OnHide", function() action("scaleStop") end)
+end
+
+function Window.CreateGrip(view, tooltip, paint)
+    local state = view.window
+    local grip = NS.Suite.CreateFrame("Button", nil, state.frame)
+    grip:SetSize(20, 20)
+    grip:SetPoint("BOTTOMRIGHT", -1, 1)
+    tooltip(grip, NS.Text("Scale window"))
+    for i = 1, 3 do
+        local length, offset = i * 4, 3 + (3 - i) * 3
+        local horizontal = NS.Suite.CreateTexture(grip, nil, "OVERLAY")
+        horizontal:SetSize(length, 1)
+        horizontal:SetPoint("BOTTOMRIGHT", -offset, offset)
+        paint(horizontal)
+        local vertical = NS.Suite.CreateTexture(grip, nil, "OVERLAY")
+        vertical:SetSize(1, length)
+        vertical:SetPoint("BOTTOMRIGHT", -offset, offset)
+        paint(vertical)
+    end
+    if view.nativeLayout then BindNativeGrip(view, grip)
+    elseif not view.embedded then Window.BindGrip(state, grip) end
+end
+
+Window.CaptionActions = {
+    dockLeft = function(button) Window.Dock(button.view.window, "left") end,
+    dockRight = function(button) Window.Dock(button.view.window, "right") end,
+    minimize = function(button) button.view:SetMinimized(not button.view:IsMinimized()) end,
+    maximize = function(button)
+        local view = button.view
+        if view:IsMinimized() then
+            view:SetMinimized(false)
+            if view.window.maximized or not view.frame:IsShown() then return end
+        end
+        Window.ToggleMaximized(view.window)
+    end,
+}
+
+local function NativeAction(button, action)
+    local callback = button.view.callbacks.windowAction
+    if callback then return callback(action) end
+end
+
+Window.NativeCaptionActions = {
+    dockLeft = function(button) NativeAction(button, "dockLeft") end,
+    dockRight = function(button) NativeAction(button, "dockRight") end,
+    minimize = function(button)
+        local minimized = NativeAction(button, "minimize")
+        if type(minimized) ~= "boolean" then return end
+        button.view.window.minimizeLabel:SetText(minimized and "+" or "−")
+        button.tooltip = NS.Text(minimized and "Restore window" or "Minimize window")
+    end,
+    maximize = function(button)
+        local maximized = NativeAction(button, "maximize")
+        if type(maximized) ~= "boolean" then return end
+        button.view.window.maximizeLabel:SetText(maximized and "−" or "+")
+        button.tooltip = NS.Text(maximized and "Restore window" or "Maximize window")
+    end,
+}
 
 function Window.CancelGestures(state)
     Window.EndMove(state)

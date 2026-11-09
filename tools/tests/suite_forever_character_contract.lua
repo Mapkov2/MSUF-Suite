@@ -187,6 +187,7 @@ local ns = {
     end },
     CharacterStats = { Apply = function() end, Disable = function() end },
     GearAnnotations = { IsWide = function() return false end },
+    GearGeometry = { Owns = function() return false end },
     CharacterDetails = { Apply = function() end, Disable = function() end, views = {} },
     EQoLCharacter = { Apply = function() end, Disable = function() end },
     GenericWindows = { IsCategoryEnabled = function() return true end },

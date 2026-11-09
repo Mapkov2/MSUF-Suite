@@ -556,7 +556,7 @@ local function SkinModelArt(state)
 end
 
 local function SkinModel(state)
-    if not state.active then return false end
+    if not state.active or NS.GearGeometry.Owns(CharacterFrame) then return false end
     SkinModelArt(state)
     return Attach(state, CharacterModelScene, MODEL_SPEC)
 end
@@ -717,7 +717,7 @@ local function OnModeTabSelected() RefreshShownOwners("mode-tabs", SkinTabsAndVi
 local function OnTabLayout() RefreshShownOwners("mode-tabs-layout", RepositionForeverTabs, CharacterRoot()) end
 
 local function OnPaperDollBackground(model)
-    if model == _G.CharacterModelScene then
+    if model == _G.CharacterModelScene and not NS.GearGeometry.Owns(CharacterFrame) then
         for _, state in pairs(panel.owners) do
             if state.active then Safety.Dispatch(SkinModelArt, state) end
         end

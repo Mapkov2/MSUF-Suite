@@ -406,6 +406,7 @@ end
 local SURFACE_MODULES = {
     damageMeter = "damageMeter", bagWindows = "bags",
     cooldownViewers = "cooldownManager", bagBar = "dataTexts", staticPopups = "popupAttention",
+    characterDossier = "characterPanel",
 }
 local SURFACE_OWNERS = {}
 for _, id in pairs(SURFACE_MODULES) do SURFACE_OWNERS[id] = true end
@@ -417,6 +418,7 @@ function S.OwnsBlizzardSurface(surface)
     if not id or not ActiveSuite() or S.states[id].error then return false end
     local config = S.Config(id)
     if config.enabled ~= true then return false end
+    if surface == "characterDossier" and config.mode ~= NS.CharacterPanelMode.SUITE then return false end
     -- DataTexts hides the bag bar only on request.
     if surface == "bagBar" then
         if config.hideBlizzardBagBar ~= true or not S.states.bags.active then return false end

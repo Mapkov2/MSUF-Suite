@@ -50,6 +50,12 @@ end
 -- Asks the Suite and remembers the answer, so Refresh rebuilds only what
 -- changed hands. Apply paths use this.
 function SuiteOwnership.Owns(surface)
+    -- The character mode can be edited while its controller apply is queued.
+    -- Keep the applied presentation until the ownership handoff runs.
+    if surface == "characterDossier" and NS.IsCombatLocked() then
+        local applied = SuiteOwnership.answers[surface]
+        if applied ~= nil then return applied end
+    end
     local owned = Ask(surface)
     SuiteOwnership.answers[surface] = owned
     return owned
@@ -79,20 +85,38 @@ function SuiteOwnership.OwnsWindowGeometry(frame)
     return false
 end
 
+local function RefreshCharacterDossier(claiming)
+    local panel = NS.CharacterPanel
+    local state = panel.owners.blizzardWindows
+    if not state or not state.active then return end
+    if claiming then
+        -- The normal panel apply waits for a visible window. Release the
+        -- dossier now so its native geometry cannot survive a hidden handoff.
+        NS.Safety.Dispatch(NS.CharacterDetails.Apply, CharacterFrame, "character", state.owner)
+    else
+        NS.Safety.Dispatch(panel.Apply, state.owner)
+    end
+end
+
 -- "before" a module starts or stops, the skin lets go of surfaces that became
 -- owned; "after", it takes back surfaces that were freed. A surface the skin
 -- never asked about has nothing to undo.
 function SuiteOwnership.Refresh(phase)
     local claiming = phase == "before"
-    local rebuild
+    local rebuild, characterDossier
     for surface, owned in pairs(SuiteOwnership.answers) do
         local now = Ask(surface)
         if now ~= owned and now == claiming then
             SuiteOwnership.answers[surface] = now
-            rebuild = rebuild or {}
-            rebuild[ADAPTERS[surface]] = true
+            if surface == "characterDossier" then
+                characterDossier = true
+            else
+                rebuild = rebuild or {}
+                rebuild[ADAPTERS[surface]] = true
+            end
         end
     end
+    if characterDossier then RefreshCharacterDossier(claiming) end
     if not rebuild then return end
     for id in pairs(rebuild) do NS.Adapters.Refresh(id) end
 end
