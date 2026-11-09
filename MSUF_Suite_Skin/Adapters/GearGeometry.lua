@@ -391,7 +391,7 @@ function CharacterGeometry.Release(root)
 end
 
 function CharacterGeometry.Present(root, surface)
-    if NS.WindowFocus then NS.WindowFocus.Present(root, surface) end
+    NS.WindowFocus.Present(root, surface)
 end
 
 function CharacterGeometry.WindowAction(root, action)
