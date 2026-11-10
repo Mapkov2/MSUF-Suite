@@ -62,6 +62,14 @@ for pass = 1, 2 do
     end
     local world = run()
     local P = world.optionsNS
+    local sections = P.NameplateSections
+    assert(#sections == 0, "hidden nameplate sections were allocated during Options attach")
+    local rule = P.catalog.nameplates.rules.auradebuffSize
+    assert(P.NameplateSearchTarget(rule) == "suite_nameplates_auraGroups", "cold aura search missed its lazy section")
+    local sectionCount = #sections
+    assert(sectionCount > 0 and P.NameplateSections == sections, "lazy nameplate sections changed their shared identity")
+    P.NameplateSearchTarget(rule)
+    assert(#sections == sectionCount, "cold nameplate search appended duplicate sections")
     local summaryCache
     for index = 1, 10 do
         local name, value = debug.getupvalue(P.SummaryPriority, index)

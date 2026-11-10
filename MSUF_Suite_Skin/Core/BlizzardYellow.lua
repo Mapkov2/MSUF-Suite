@@ -107,7 +107,10 @@ local function ApplyObject(object, states)
     if not r then return false end
     local state = states[object]
     if state then
-        if not ColorMatches(state.applied, r, g, b, a, COLOR_OWN) and not IsNativeYellow(r, g, b) then
+        if ColorMatches(state.applied, r, g, b, a, COLOR_OWN) then
+            if state.applied[1] == desired[1] and state.applied[2] == desired[2]
+                and state.applied[3] == desired[3] and state.applied[4] == desired[4] then return true end
+        elseif not IsNativeYellow(r, g, b) then
             return false
         end
     elseif not IsNativeYellow(r, g, b) then

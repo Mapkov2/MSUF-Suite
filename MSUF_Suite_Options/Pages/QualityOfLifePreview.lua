@@ -1,7 +1,10 @@
 local _, P = ...
 local S, K, Tr = P.S, P.PreviewCanvas, P.Tr
-local EXPORTS = { glimmer = "DrawGlimmerPreview", xpBar = "DrawExperienceBarPreview", skyriding = "DrawSkyridingPreview",
-    actionTracker = "DrawActionTrackerPreview", battleRes = "DrawBattleResPreview", enemyCastStack = "DrawEnemyCastStackPreview" }
+local EXPORTS = {
+    glimmer = "DrawGlimmerPreview", xpBar = "DrawExperienceBarPreview", skyriding = "DrawSkyridingPreview",
+    lootRolls = "DrawLootRollPreview", actionTracker = "DrawActionTrackerPreview",
+    battleRes = "DrawBattleResPreview", enemyCastStack = "DrawEnemyCastStackPreview",
+}
 local RETAIL = { skyriding = true, battleRes = true, enemyCastStack = true }
 local function GlossGate(rule)
     if rule.key == "glossEnabled" or rule.key == "glossStrength" then
@@ -18,6 +21,7 @@ local TARGETS = {
     glimmer = { key = "size" },
     skyriding = { view = "suiteFlightPreview", key = "width",
         { "speed", "speedHeight" }, { "title", "fontSize" }, { "state", "displayStyle" } },
+    lootRolls = { key = "rowHeight" },
     actionTracker = { key = "rowHeight" },
     battleRes = { key = "scale" },
     enemyCastStack = { key = "rowHeight" },

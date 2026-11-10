@@ -10,10 +10,11 @@ local LOOK_BLIZZARD, LOOK_RECOMMENDED = 2, 4
 local Workspace = {}
 P.NameplatesWorkspace = Workspace
 
-local ORDER = { "general", "enemies", "colors", "friendly", "auras" }
+local ORDER = { "general", "enemies", "casts", "colors", "friendly", "auras", "profiles" }
 -- The preview sample each area shows (NameplatesEditor.lua ShowSample).
-local SAMPLES = { enemies = "enemy", colors = "enemy", friendly = "friendly" }
-local LABELS = { general = "General", enemies = "Enemies", colors = "Colors", friendly = "Friendly", auras = "Auras" }
+local SAMPLES = { casts = "enemy", enemies = "enemy", colors = "enemy", friendly = "friendly" }
+local LABELS = { profiles = "Templates", casts = "Castbars", general = "General",
+    enemies = "Enemies", colors = "Colors", friendly = "Friendly", auras = "Auras" }
 -- The area last chosen this session; the page reopens on it.
 local current = "general"
 

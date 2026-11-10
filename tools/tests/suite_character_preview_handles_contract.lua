@@ -93,6 +93,7 @@ local function Run(isForever)
         IsSecret = function() return false end, Number = tonumber, Client = { isForever = isForever } }
     Load("MSUF_Suite/Core/SuiteCatalog.lua", suite)
     Load("MSUF_Suite/Core/CharacterTabs.lua", suite)
+    Load("MSUF_Suite/Core/CharacterBindings.lua", suite)
     Load("MSUF_Suite/Core/Catalog/CharacterPanel.lua", suite)
     Load("MSUF_Suite/Core/CharacterHeader.lua", suite)
     Load("MSUF_Suite/Core/PreviewKit.lua", suite)
@@ -254,6 +255,11 @@ local function Run(isForever)
     assert(handles:Nudge(-1, 1))
     x, y = suite.CharacterTabs.Position(suite.CharacterTabs.Find(config, customID))
     assert(x == 47 and y == -7 and writes == 5, "selected custom tab did not nudge in logical panel units")
+    Press(first)
+    Move(first, -16, 8)
+    config.hiddenTabs = "reputation"
+    Release(first)
+    assert(writes == 5 and not first.scripts.OnUpdate, "a visibility change left a stale drag active")
 end
 
 Run(false)

@@ -41,6 +41,7 @@ local function Available(action)
     if action.panel then return S.CanOpenNativeWindow() end
     local character = ActiveModule("characterPanel")
     return character and character.running and S.OpenCharacterPanelTab and S.CanOpenNativeWindow()
+        and S.CharacterHeader.TabVisible(character.config, "tab", action.character)
 end
 
 local function Trim(query)

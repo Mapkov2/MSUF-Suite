@@ -57,7 +57,7 @@ local function Here(_, _, window)
         window:SetStatus(S.Text("Your position is not available on this map."))
         return
     end
-    local x, y = position:GetXY()
+    local x, y = position.x, position.y
     if not S.Finite(x) or not S.Finite(y) then return end
     SavePoint({ map = map, x = x, y = y })
 end
@@ -66,7 +66,7 @@ local function Current(_, _, window)
     if not S.Public(point) or not point or not S.Finite(point.uiMapID) or not S.Public(point.position) or not point.position then
         window:SetStatus(S.Text("Place a waypoint on Blizzard's map first.")) return
     end
-    local x, y = point.position:GetXY()
+    local x, y = point.position.x, point.position.y
     if S.Finite(x) and S.Finite(y) then SavePoint({ map = point.uiMapID, x = x, y = y }) end
 end
 local function Activate(_, row, window)
@@ -105,4 +105,5 @@ end
 function M:Enable() Store() end
 function M:Refresh() S.ToolListWindow.Refresh(self) end
 function M:Disable() S.ToolListWindow.Close(self) end
+function S.WaypointPoints() return Store() end
 S.Install("waypointLists", M)

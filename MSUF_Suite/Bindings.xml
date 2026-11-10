@@ -80,4 +80,61 @@
 	<Binding name="CLICK MSUFSuiteQuestItem:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
 	<Binding name="CLICK MSUFSuiteFishing:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
 	<Binding name="CLICK MSUFSuiteFishingLure:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_CHARACTER_OVERVIEW" header="MSUFSUITE_CHARACTER" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_OVERVIEW") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_GEAR" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_GEAR") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_REPUTATION" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_REPUTATION") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_ATTRIBUTES" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_ATTRIBUTES") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_SKILLS" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_SKILLS") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_PVP" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_PVP") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CURRENCY" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CURRENCY") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_STATISTICS" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_STATISTICS") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CUSTOM1" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CUSTOM1") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CUSTOM2" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CUSTOM2") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CUSTOM3" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CUSTOM3") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CUSTOM4" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CUSTOM4") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CUSTOM5" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CUSTOM5") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CUSTOM6" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CUSTOM6") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CUSTOM7" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CUSTOM7") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_CUSTOM8" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_CUSTOM8") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_FROM_PVP" hidden="true">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_FROM_PVP") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_FROM_PROFESSIONS" hidden="true">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_FROM_PROFESSIONS") end
+	</Binding>
+	<Binding name="MSUFSUITE_CHARACTER_FROM_STATISTICS" hidden="true">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_FROM_STATISTICS") end
+	</Binding>
 </Bindings>

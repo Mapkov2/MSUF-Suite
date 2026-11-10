@@ -10,6 +10,7 @@ local function Check(value, message)
     checks = checks + 1
 end
 local function Noop() end
+C_CVar = { GetCVar = function() end }
 
 -- The client's securecallfunction reports an error and returns nothing.
 local reported = {}
@@ -66,12 +67,27 @@ do
         end
     end)
     local S = Suite.Suite
+    local color = S.catalog.characterPanel.rules.reputationBarColor
+    Check(S.CheckProfileValue(color, "") == "" and S.CheckProfileValue(color, "14a0ff") == "14a0ff",
+        "Reputation bar color cannot be set and reset through the profile validator")
     S.catalog.dataTexts.prepareConfig = function() error("prepare failed") end
     local profile = { suite = { schema = 1, revision = 0, modules = {
         objectives = { backgroundOpacity = 82 }, minimap = { enabled = "yes" }, dataTexts = { enabled = 7 },
+        characterPanel = {
+            hiddenTabs = "gear,pvp", hiddenInspectTabs = "compare", homeTab = "reputation",
+            reputationBindingTab = "skills", characterBindingSlot2 = "custom1", customTabs = "1|2\nT|custom1|Shortcut",
+        },
     } } }
     S.Normalize(profile)
     local modules = profile.suite.modules
+    local panel = modules.characterPanel
+    Check(panel.hiddenTabs == "gear,pvp" and panel.hiddenInspectTabs == "compare" and panel.homeTab == "reputation",
+        "character tab settings did not survive real profile normalization")
+    local bindingModel = Suite.CharacterBindings
+    local command = bindingModel.CommandForTab(panel, "custom1")
+    Check(bindingModel.NativeTab(panel, "reputation") == "skills"
+        and command == bindingModel.Slots[2].command and bindingModel.DirectTab(panel, command) == "custom1",
+        "character shortcut destinations did not survive real profile normalization")
     Check(Reported("migration step failed") and Reported("repair failed") and Reported("prepare failed"),
         "a raising normalization step was not reported")
     Check(modules.objectives.backgroundOpacity == 0, "the steps before a raising one did not run")

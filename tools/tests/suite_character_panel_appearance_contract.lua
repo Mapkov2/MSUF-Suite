@@ -14,11 +14,13 @@ local methods = {
     SetPoint = function(self, ...) self.point = { ... } Write() end,
     GetPoint = function(self) return unpack(self.point or {}) end,
     ClearAllPoints = function(self) self.point = nil Write() end,
-    SetHeight = function(self)
+    SetHeight = function(self, height)
         assert(not (self.parent and self.parent.blockScrollLayout), "canvas resized inside a restricted native scroll")
+        self.height = height
         Write()
     end,
-    SetWidth = Write, SetClipsChildren = Write,
+    SetWidth = function(self, width) self.width = width Write() end,
+    SetClipsChildren = Write,
     SetSize = function(self, width, height) self.width, self.height = width, height Write() end,
     GetWidth = function(self) return self.width end,
     GetHeight = function(self) return self.height end,
@@ -125,13 +127,19 @@ local suite = {
     SetFont = function(font, path) font.fontPath = path or fontPath Write() end,
     GlobalFontPath = function() return fontPath end,
     FontRevision = 0,
+    RGB = function(hex)
+        if hex == "ff6600" then return 1, .4, 0 end
+        assert(hex == "33cc66")
+        return .2, .8, .4
+    end,
 }
 MSUFSuite = { Suite = suite }
 local function Number(value)
     if not Strict.IsSecret(value) then return tonumber(value) end
 end
 local ns = { Text = function(value) return value end, Number = Number, Suite = suite, Client = {},
-    Host = { InCombat = function() return liveCombat end } }
+    Routing = { HoverGearTab = function() end, ReleaseGearClick = function() end },
+    Host = { Client = {}, InCombat = function() return liveCombat end } }
 ns.Public = function(value)
     if rawequal(value, secretIdentity) then
         secretIdentityChecked = true
@@ -144,10 +152,11 @@ local build = setmetatable({}, { __index = function() return function() return {
 ns.CatalogBuild = { ForAddon = function() return build end }
 ns.ResolveFont = function(key) return key == "Alternate" and "Alternate.ttf" or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/CharacterTabs.lua"))("MSUF_Suite", ns)
+assert(loadfile(root .. "/MSUF_Suite/Core/CharacterBindings.lua"))("MSUF_Suite", ns)
 ns.Host.CharacterTabs = ns.CharacterTabs
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/CharacterPanel.lua"))("MSUF_Suite", ns)
 assert(loadfile(root .. "/MSUF_Suite/Core/CharacterHeader.lua"))("MSUF_Suite", ns)
-for _, file in ipairs({ "ModelControls", "WindowControls", "TabOverflow", "GroupLayout", "View" }) do
+for _, file in ipairs({ "Stats", "ModelControls", "WindowControls", "TabOverflow", "GroupLayout", "View" }) do
     assert(loadfile(path .. file .. ".lua"))("MSUF_Suite_CharacterPanel", ns)
 end
 local minimizedCount = 0
@@ -394,6 +403,65 @@ local function FindCard(title)
         if card:IsShown() and card.title.label.text == title then return card end
     end
 end
+do
+    FACTION_BAR_COLORS = { [5] = { r = .2, g = .7, b = .35 } }
+    local entries = {
+        { label = "Darnassus", value = "Friendly", reputationFill = .4, reputationReaction = 5 },
+        { label = "Ironforge", value = "Friendly", reputationFill = 0, reputationReaction = 5 },
+        { label = "Stormwind", value = "Friendly", reputationFill = .8 },
+    }
+    local sample = { { title = "Alliance", rows = entries } }
+    local reputation = { { id = "reputation", label = "Reputation" } }
+    view:SetTabs(reputation, "reputation")
+    view:RefreshAppearance(nil, { reputationBarHeight = 3 })
+    entries[1].reputationFill, entries[2].reputationFill, entries[3].reputationFill = nil, nil, nil
+    view:ShowGroups(sample)
+    assert(not report.cards[1].rows[1].reputationTrack, "disabled bars allocated track textures")
+    entries[1].reputationFill, entries[2].reputationFill, entries[3].reputationFill = .4, 0, .8
+    view:ShowGroups(sample)
+    local card = report.cards[1]
+    local row, emptyRow = card.rows[1], card.rows[2]
+    local track, bar = row.reputationTrack, row.reputationBar
+    assert(track and track:IsShown() and track.height == 3 and row.left.point[5] == 2.5,
+        "the reputation track did not lift the row text above the bar")
+    assert(bar:IsShown() and bar.width == (row.panelWidth - 20) * .4 and bar.color[2] == .7,
+        "the standing did not paint its filled fraction and native color")
+    assert(emptyRow.reputationTrack:IsShown() and not emptyRow.reputationBar:IsShown(),
+        "zero progress should retain only the track")
+    local oldFrames, oldWrites = frames, writes
+    view:ShowGroups(sample)
+    assert(frames == oldFrames and writes == oldWrites, "warm reputation repaint changed widgets")
+
+    view:RefreshAppearance(nil, { reputationBarHeight = 8, reputationBarColor = "ff6600" })
+    assert(track.height == 8 and row.left.point[5] == 5 and bar.color[1] == 1 and bar.color[2] == .4,
+        "a visual settings change did not restyle the visible row")
+    view:RefreshAppearance(skin, { reputationBarHeight = 8 })
+    assert(bar.color[2] == .7 and card.rows[3].reputationBar.color[1] == color,
+        "removing the override did not restore standing and theme colors")
+    local oldHeight = report.height
+    report.height = 24
+    report.scroll:SetVerticalScroll(78)
+    assert(row.left.text == "Stormwind" and row.reputationBar == bar
+        and bar.width == (row.panelWidth - 20) * .8, "scrolling did not reuse and repaint the visible row bar")
+    report.height = oldHeight
+    report.scroll:SetVerticalScroll(0)
+
+    view:SetTabs(tabs, "overview")
+    view:ShowGroups(groups)
+    assert(not track:IsShown() and not bar:IsShown() and row.left.point[5] == 0,
+        "a recycled row retained its reputation bar or text offset")
+    view:SetTabs(reputation, "reputation")
+    view:ShowGroups(sample)
+    assert(row.reputationTrack == track and track:IsShown() and bar:IsShown(),
+        "returning to the report did not reuse the hidden bar")
+    entries[1].reputationFill, entries[2].reputationFill, entries[3].reputationFill = nil, nil, nil
+    view:ShowGroups(sample)
+    assert(not track:IsShown() and not bar:IsShown() and row.left.point[5] == 0,
+        "disabling bars left progress art or shifted text")
+    view:SetTabs(tabs, "overview")
+    view:ShowGroups(shiftedGroups)
+end
+
 local reportHeight = report.height
 report.height = 20
 report.scroll:SetVerticalScroll(115)
@@ -414,9 +482,13 @@ do
     assert(view.combatRail.cards[1].rows[1].right.text == 595, "fixed combat rail dropped vitals")
     assert(rail.offset == 110, "combat repaint reset the native scroller")
     report.scroll.range, report.scroll.blockScrollLayout = Strict.New("number"), true
-    view:ShowGroups(groups)
+    view:ShowGroups(vitals, true)
+    assert(view.combatReport.canvas:IsShown() and not report.scroll:IsShown(), "Attributes used the native scroller in combat")
+    assert(view.combatReport.cards[1].rows[1].right.text == 595)
     report.scroll.scripts.OnVerticalScroll(report.scroll, Strict.New("number"))
     report.scroll.range, report.scroll.blockScrollLayout = nil, nil
+    view:ShowGroups(vitals)
+    assert(report.scroll:IsShown() and not view.combatReport.canvas:IsShown(), "Attributes stayed in its combat layout")
     rail.range, rail.blockScrollLayout = nil, nil
     view:ShowGear(item, empty, empty, groups, nil, empty, true)
     assert(rail:IsShown() and not view.combatRail.canvas:IsShown(), "normal stats rail did not return after combat")
@@ -449,9 +521,9 @@ do
     view:RefreshModel()
     assert(secretIdentityChecked and modelReads == beforeBind + 1 and not view.model:IsShown(),
         "secret model predicate did not block an identity change")
-    C_Secrets = nil
+    identityRestricted = nil
     view:RefreshModel()
-    assert(modelReads == beforeBind + 1, "missing model predicate must keep the bind gated")
+    assert(modelReads == beforeBind + 1, "unknown model restriction must keep the bind gated")
     liveCombat = false
     view:RefreshModel()
     assert(modelReads == beforeBind + 2 and view.model:IsShown(), "model was not restored when restrictions lifted")
@@ -469,16 +541,23 @@ do
     GetInventorySlotInfo = function(token) if token == "HeadSlot" then return 1, 42 end end
     GetInventoryItemTexture = function() return 123 end
     assert(loadfile(path .. "Equipment.lua"))("MSUF_Suite_CharacterPanel", ns)
+    assert(loadfile(path .. "Reputation.lua"))("MSUF_Suite_CharacterPanel", ns)
     assert(loadfile(path .. "Pages.lua"))("MSUF_Suite_CharacterPanel", ns)
-    ns.Pages.Overview = function(data) data[1] = groups[1] end
+    local fullStats, previewCombat
+    ns.Pages.Overview = function(data, full, combat) data[1], fullStats, previewCombat = groups[1], full, combat end
     ns.Pages.EquipmentSummary = function() end
-    ns.Pages.Read = function(tab, data)
+    local reputationReads = 0
+    ns.Pages.Read = function(tab, data, config)
         if tab == "statistics" then
             data[1] = { title = "No data available", rows = {} }
             return
         end
         assert(tab == "reputation")
-        data[1] = { title = "Reputation", rows = { { label = "Faction", value = "Friendly" } } }
+        reputationReads = reputationReads + 1
+        data[1] = { title = "Reputation", rows = {
+            { label = "Faction", value = config.reputationValue == 3 and "750 left" or "Friendly",
+                reputationFill = config.showReputationBars and .25 or nil },
+        } }
     end
     assert(loadfile(path .. "Preview.lua"))("MSUF_Suite_CharacterPanel", ns)
     local preview = suite.CharacterPanelPreview.New(parent, {
@@ -507,6 +586,28 @@ do
         and embedded.report.cards[1].title.label.text == "Reputation",
         "embedded runtime view did not render a complete report tab")
     assert(embedded.report.cards[1].rows[1].left.text == "Faction", "a meaningful built-in report was replaced")
+    assert(reputationReads == 1 and not embedded.report.cards[1].rows[1].reputationTrack)
+    local reputation = { showReputationBars = true, reputationValue = 3 }
+    preview:Paint(reputation, "own", all, "reputation", {}, 800)
+    local faction = embedded.report.cards[1].rows[1]
+    assert(reputationReads == 2 and faction.right.text == "750 left" and faction.reputationBar:IsShown(),
+        "the same-tab preview did not refresh its progress content")
+    reputation.reputationBarHeight, reputation.reputationBarColor = 6, "33cc66"
+    preview:Paint(reputation, "own", all, "reputation", {}, 800)
+    assert(reputationReads == 2 and faction.reputationTrack.height == 6 and faction.reputationBar.color[2] == .8,
+        "the same-tab preview did not restyle its cached bar without reading factions")
+    local attributes = { showAttributesTab = true, showFullStats = false }
+    preview:Paint(attributes, "own", suite.CharacterHeader.Order(attributes, "tab"), "attributes", {}, 800)
+    assert(fullStats == true and embedded.report.scroll:IsShown() and not embedded.gear:IsShown(),
+        "Attributes preview did not use the full runtime stats without equipment")
+    liveCombat = true
+    preview:Paint(attributes, "own", suite.CharacterHeader.Order(attributes, "tab"), "attributes", {}, 800)
+    assert(previewCombat == true and embedded.combatReport.canvas:IsShown(), "preview missed the combat edge")
+    preview:Paint({}, "own", all, "overview", {}, 800)
+    assert(previewCombat == true and embedded.combatRail.canvas:IsShown(), "Overview preview read full combat stats")
+    liveCombat = false
+    preview:Paint({}, "own", all, "overview", {}, 800)
+    assert(previewCombat == false and embedded.rail.scroll:IsShown(), "Overview preview did not restore stats")
     preview:Paint({}, "own", all, "statistics", {}, 800)
     assert(embedded.report.cards[1].title.label.text == "Statistics"
         and embedded.report.cards[1].rows[1].left.text == "Quests",

@@ -49,6 +49,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         HostBridge = { NameFormatter = function() return provider end },
         Safety = { IsForbidden = function(f) checks = checks + 1 return f.forbidden == true end },
         IsCombatLocked = function() return combat end }
+    NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
     assert(loadfile(os.getenv("SUITE_NAME_TEXT_HELPER_OVERRIDE") or root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
     local private = { NS = NS, Suite = S }
     local callback

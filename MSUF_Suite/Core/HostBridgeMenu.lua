@@ -70,6 +70,24 @@ function L.GetControlSearchMeta(widget) return widget._msuf2SearchMeta end
 function L.GetRawSetText(fontString) return fontString._msuf2RawSetText end
 function L.ReleaseColorShortcut(shortcut) shortcut._msuf2BoundColorShortcut = nil end
 
+-- Stage expensive writes during Menu2 interactions, preserving its transaction, keyboard and Cancel callbacks.
+function L.TrackControlInteraction(widget, kind, started, finished)
+    local color = kind == "color"
+    local beginKey = color and "_msuf2BeginColorInteraction" or "_msuf2BeginSliderHistory"
+    local finishKey = color and "_msuf2CommitColorInteraction" or "_msuf2CommitSliderHistory"
+    local finish = widget[finishKey]
+    if widget[beginKey] then hooksecurefunc(widget, beginKey, started) end
+    widget[finishKey] = function(self)
+        finished()
+        if finish then finish(self) end
+    end
+    widget:HookScript("OnHide", finished)
+    return function()
+        return widget._msuf2SliderActive == true or widget._msuf2HistoryTransaction == true
+            or widget._msuf2ColorHistoryTransaction == true
+    end
+end
+
 function L.GetSectionEntry(frame) return frame._msuf2CollapsibleEntry end
 function L.SetSectionEntry(frame, entry) frame._msuf2CollapsibleEntry = entry end
 function L.GetSectionWidth(frame) return frame._msuf2Width end
@@ -157,6 +175,7 @@ local function Build(M)
         return adapter
     end
     local adapter = { mode = "host", SetFixedPreviewCompactHeight = L.SetFixedPreviewCompactHeight,
+        TrackControlInteraction = L.TrackControlInteraction,
         MarkSegmentChoice = markSegmentChoice, HookToggleHover = HookToggleHover }
     for index = 1, #NAMES do adapter[NAMES[index]] = M[NAMES[index]] end
     return adapter
@@ -173,25 +192,6 @@ function HostBridge.Menu2(M)
         adapters[M] = adapter
     end
     return adapter
-end
-
-function HostBridge.HasNameplateFontsMenu(M)
-    local formatter = HostBridge.NameFormatter()
-    local bridge = M.SearchBridge
-    return formatter and formatter.Nameplates and M.pages and M.pages.opt_fonts
-        and bridge and bridge.OpenSearchTarget
-end
-
--- Menu2 applies the scope as view state and resolves the real section on both
--- cold and cached pages. The Suite never writes the host profile.
-function HostBridge.NameplateFontsTarget(section)
-    return "opt_fonts", { sectionId = section }, { general = { _fontScopeKey = "nameplates" } }
-end
-
-function HostBridge.OpenNameplateFonts(M, section)
-    local page, target, route = HostBridge.NameplateFontsTarget(section)
-    local called, opened = M.SearchBridge.OpenSearchTarget(page, nil, nil, nil, route, target)
-    return called and opened
 end
 
 -- MSUF's Icon Skins page (Style > Icon Skins, MSUF 7.0: M.IconSkinsPage)

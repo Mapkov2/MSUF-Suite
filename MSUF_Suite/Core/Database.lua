@@ -222,16 +222,31 @@ function Database.GetProfile(name)
     return Suite.RootDB and Suite.RootDB.profiles[name]
 end
 
-function Database.Activate(name)
+function Database.Activate(name, forceNative)
     if Suite.IsCombatLocked() then return false, "combat" end
     local allowed,why=Suite.ProfileVariants.CanMutate()
     if not allowed then return false,why end
     if not Database.IsProfileName(name) or not Database.GetProfile(name) then
         return false, "missing-profile"
     end
+    local previousName, previous = Database.GetActiveProfileName(), Suite.DB
+    local previousNative = previous and Copy(previous.nameplateCVars)
+    local io = Suite.ProfileIO
+    if io then io.RememberNameplateCVars(previous) end
     Suite.RootDB.activeProfile = name
     Suite.DB = Suite.RootDB.profiles[name]
     Suite.ProfileVariants.OnActivated(name)
+    if io then
+        local ok, reason = io.ActivateNameplateProfile(Suite.DB, forceNative)
+        if not ok then
+            Suite.RootDB.activeProfile, Suite.DB = previousName, previous
+            if previous then previous.nameplateCVars = previousNative end
+            Suite.ProfileVariants.OnActivated(previousName)
+            Suite.OnProfileChanged(previousName)
+            return false, reason
+        end
+        io.RememberNameplateCVars()
+    end
     Suite.OnProfileChanged(name)
     return true
 end

@@ -889,15 +889,22 @@ do
             "the DataTexts controls must share one fixed header")
         Check(dataPage.sections.suite_dataTexts_dataTexts_module == navigation.section,
             "the former module section must resolve to the fixed header")
-        local editor = dataPage.context.dataTextWorkspace.deck.views[400000].frame
+        Check(P.DataTextPage.selectedBar == 400000, "search selected a different DataText bar")
+        local editor = Check(dataPage._msuf2ResolveMissingSection("suite_dataTexts_bar400000"),
+            "the managed DataText bar has no registered editor section")
         local headerHost = env.CreateFrame("Frame", nil, env.UIParent)
         local originalHost, wasActive = navigation.section:GetParent(), navigation.active
         Check(navigation:Activate(headerHost), "DataTexts navigation could not activate in the header host")
         local _, relativeTo, _, _, top = navigation.section:GetPoint(1)
         Check(relativeTo == headerHost and top == -12 and navigation.hostHeight == 102,
             "DataTexts navigation did not retain its own fixed geometry above the scroll body")
-        Check(editor:GetParent() ~= navigation.section and editor:GetParent() ~= headerHost,
-            "DataTexts settings moved into the fixed navigation instead of the scroll body")
+        local ancestor = editor
+        while ancestor and ancestor ~= dataPage.wrapper do
+            Check(ancestor ~= navigation.section and ancestor ~= headerHost,
+                "DataTexts settings moved into the fixed navigation instead of the scroll body")
+            ancestor = ancestor:GetParent()
+        end
+        Check(ancestor == dataPage.wrapper, "the DataText editor left the scrolling page body")
         navigation:Deactivate()
         Check(navigation.section:GetParent() == dataPage.wrapper and not navigation.section:IsShown(),
             "leaving DataTexts stranded its navigation in the shared header host")
@@ -1290,7 +1297,7 @@ do
         for _, record in ipairs(Search(case[1])) do if record.key==case[2] then found=record;break end end
         Check(found,"bilingual page query missed its exact owner: "..case[1])
     end
-    for _,case in ipairs({{"Dungeonportale","dungeonPortals"},{"Charakterfenster","characterExtras"}}) do
+    for _,case in ipairs({{"Dungeonportale","dungeonPortals"},{"Ergänzungen zum Charakterfenster","characterExtras"}}) do
         local found
         for _,record in ipairs(Search(case[1])) do
             if record.exactTarget and record.exactTarget.settingKey=="msufsuite."..case[2]..".enabled" then found=record;break end
@@ -1299,7 +1306,13 @@ do
             "German feature alias did not follow client availability: "..case[1])
     end
     local seen={}
+    local hasCharacterAlias = false
     for _,row in ipairs(P.SearchRows()) do
+        if row.settingKey == "msufsuite.characterExtras.enabled" then
+            for _, word in ipairs(row.keywords or {}) do
+                if word:lower() == "charakterfenster" then hasCharacterAlias = true end
+            end
+        end
         if row.controlId then seen[row.controlId]=row end
         if row.settingKey=="msufsuite.tooltipDetails.unitMount" then
             Check(row.label==german["Currently ridden mount in unit tooltips (out of combat)"], "mount label did not use shipped translation")
@@ -1308,6 +1321,8 @@ do
             Check(english,"translated mount row lost the English query words")
         end
     end
+    Check(hasCharacterAlias == (P.Available("characterExtras") == true),
+        "the German character-window alias did not follow feature availability")
     for _,case in ipairs({
         {"chat","clearHistory","suite_chat_tools","Clear saved chat history"},
         {"dataTexts","chooseSeasonStages","suite_dataTexts_sources","Choose observed seasonal stages"},

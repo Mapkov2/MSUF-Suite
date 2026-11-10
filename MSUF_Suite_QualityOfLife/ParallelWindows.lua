@@ -23,7 +23,6 @@ local watcher, reconcile, flush, queued, layoutPending, map, playerSpells
 local latest, pendingClose, pendingCap
 local windowLimit = 0
 local escapeArmed = false
-local escapeSupported = GameMenuEscPriority ~= nil and debugstack ~= nil
 local serial, ownedCount, shownBags = 0, 0, 0
 local bagOrder
 
@@ -44,8 +43,8 @@ local function OccupiesSlot(frame)
 end
 
 local function EscapeAllowed(event)
-    return escapeSupported and not NS.InCombat(event)
-        and not (NS.Client.isForever and InputUtil.IsGamepadUIEnabled())
+    return not NS.InCombat(event)
+        and not (NS.Client.isForever and S.GamepadUI())
 end
 
 local function CanFloat(frame)
@@ -181,7 +180,8 @@ local function OnEscapeFrameHidden()
     -- CloseSpecialWindows also runs when opening some native panels. Only the
     -- Escape dispatcher should close a floating window. Defer the close so
     -- the native handler completes before Suite runs any panel code.
-    if EscapeAllowed() and CanClose(latest) and debugstack(2, 12, 0):find("Blizzard_GameMenuEsc.lua", 1, true) then
+    local stack = EscapeAllowed() and CanClose(latest) and NS.PublicText(debugstack(2, 12, 0))
+    if stack and stack:find("Blizzard_GameMenuEsc.lua", 1, true) then
         pendingClose = latest
     end
     Queue()
@@ -315,7 +315,7 @@ local function OnSpellAreaChanged(frame, key)
     -- set it while still occupying a slot, then write the offset after HideUIPanel.
     if frame ~= playerSpells or not M.active or (key ~= "area" and key ~= "centerXOffset")
         or NS.InCombat() or not Accessible(frame) or frame:GetParent() ~= UIParent or not CanFloat(frame)
-        or InputUtil.IsGamepadUIEnabled() then return end
+        or S.GamepadUI() then return end
     local area = frame:GetAttribute(AREA)
     if not NS.Public(area) or (area ~= "center" and area ~= "centerOrLeft" and area ~= "left") then return end
     local record = records[frame]
@@ -415,12 +415,10 @@ function M:Enable()
         watcher = CreateFrame("Frame", ESCAPE_FRAME)
         watcher:Hide()
         watcher:SetScript("OnEvent", OnEvent)
-        if escapeSupported then
-            watcher:SetScript("OnHide", OnEscapeFrameHidden)
-            -- The native close pass already supports addon-owned windows.
-            -- Registering an Escape callback would re-sort the shared protected dispatch.
-            UISpecialFrames[#UISpecialFrames + 1] = ESCAPE_FRAME
-        end
+        watcher:SetScript("OnHide", OnEscapeFrameHidden)
+        -- The native close pass already supports addon-owned windows.
+        -- Registering an Escape callback would re-sort the shared protected dispatch.
+        UISpecialFrames[#UISpecialFrames + 1] = ESCAPE_FRAME
     end
     watcher:RegisterEvent("ADDON_LOADED")
     watcher:RegisterEvent("PLAYER_REGEN_DISABLED")

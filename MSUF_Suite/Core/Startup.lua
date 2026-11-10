@@ -155,6 +155,8 @@ function Start(transition)
         Suite.startingModules = true
         Step(Suite.Suite, "Start")
         Suite.startingModules = nil
+        local ran, ok, reason = Suite.Dispatch(Suite.Finish, Suite.ProfileIO.StartNameplateProfile, transition)
+        if ran and not ok and reason then Suite.Print(Suite.Text(reason)) end
     end
     -- Profile repairs and setup retain their normal post-combat start path.
     if beforeLockdown then

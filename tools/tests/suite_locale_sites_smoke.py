@@ -27,6 +27,9 @@ for path in sorted(root.glob("MSUF_Suite*/**/*.lua")):
 
 ALLOWED = (
     ("MSUF_Suite/Core/Catalog/", "field:enableKey"),
+    # Native() computes the Blizzard binding command used by the secure character-window key bindings.
+    # The adjacent binding.label/defaultLabel are independently translated.
+    ("MSUF_Suite/Core/CharacterBindings.lua:", "field:override"),
 )
 run = subprocess.run([sys.executable, str(root / "tools" / "suite_locale_tool.py"), "dynamic"],
                      cwd=root, capture_output=True, text=True, encoding="utf-8")

@@ -128,6 +128,7 @@ local enemyPlan
 local MAX_POWER_EVENT = "UNIT_MAXPOWER"
 local POWER_EVENT = "UNIT_POWER_UPDATE"
 local ENEMY_POWER_EVENTS = { inCombat = true }
+local extraTextEvents
 
 local function StopEnemyUpdates(bar)
     if not bar.enemyPowerListening then return end
@@ -286,17 +287,30 @@ function Power.EnemyResourceChanged(uf, unit)
     Power.ApplyEnemy(uf, container and container.healthBar, private.PlatePrefix(uf), unit, true)
 end
 
-local function OnEnemyMaximumChanged(module, _, unit)
+local function OnEnemyMaximumChanged(module, event, unit)
     if not NS.Public(unit) then return end
-    local uf = module.activeUnits[unit]
-    if Accessible(uf) then Power.EnemyResourceChanged(uf, unit) end
+    if Power.enemyEnabled then
+        local uf = module.activeUnits[unit]
+        if Accessible(uf) then NS.Dispatch(Power.EnemyResourceChanged, uf, unit) end
+    end
+    if extraTextEvents then private.Extensions.OnUnit(module, event, unit) end
+end
+
+function Power.SetExtraTextEvents(wanted)
+    extraTextEvents = wanted == true
+    if not owner then return end
+    if extraTextEvents or Power.enemyEnabled then
+        owner.context:Event(MAX_POWER_EVENT, OnEnemyMaximumChanged, ENEMY_POWER_EVENTS, private.Suite.NameplateUnits)
+    else
+        owner.context:RemoveEvent(MAX_POWER_EVENT)
+    end
 end
 
 local function DisableEnemy()
     if not Power.enemyEnabled then return end
     Power.enemyEnabled = false
     enemyPlan = nil
-    owner.context:RemoveEvent(MAX_POWER_EVENT)
+    Power.SetExtraTextEvents(extraTextEvents)
     for uf in pairs(enemyBars) do Power.RestoreEnemy(uf) end
 end
 
@@ -310,7 +324,7 @@ function Power.ConfigureEnemy()
     enemyPlan = plan
     if not Power.enemyEnabled then
         Power.enemyEnabled = true
-        owner.context:Event(MAX_POWER_EVENT, OnEnemyMaximumChanged, ENEMY_POWER_EVENTS)
+        Power.SetExtraTextEvents(extraTextEvents)
     end
 end
 

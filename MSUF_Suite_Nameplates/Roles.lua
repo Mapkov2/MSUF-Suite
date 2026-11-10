@@ -113,6 +113,7 @@ local function Incomplete(text)
     local percent = text:match("(%d+)%%")
     return not percent or tonumber(percent) < 100
 end
+Roles.QuestObjectiveIncomplete = Incomplete
 
 -- Tooltip lines distinguish our unfinished objectives from completed
 -- objectives and party quests. nil while a line is restricted.
@@ -288,6 +289,9 @@ function Roles.Get(facts, unit, uf)
     end
     if threat then
         local role = threat >= 3 and "ThreatLost" or "ThreatWarning"
+        -- Native level 2 is orange in both the ordinary threat state and
+        -- the tank's lead state. Keep the combined legacy warning by default.
+        if threat == 2 and c.enemyThreatTransitionEnabled then role = "ThreatTransition" end
         if c[RoleKey[role].enabled] ~= false then return role end
         return nil
     end

@@ -138,7 +138,15 @@ local function Widget(kind)
     function w:SetStatusBarColor(...) self.barColor = { ... } end
     return w
 end
-CreateFrame = function(kind, _, parent) local widget = Widget(kind); widget.parent = parent; return widget end
+CreateFrame = function(kind, _, parent, template)
+    local widget = Widget(kind)
+    widget.parent = parent
+    if template == "ScrollFrameTemplate" then
+        widget.ScrollBar = Widget("ScrollBar")
+        widget.ScrollBar.parent = widget
+    end
+    return widget
+end
 UIParent = Widget("Root")
 UIParent:SetSize(1920, 1080)
 
@@ -304,6 +312,11 @@ M.SetPreviewArrowBindings = function(box, enabled, spec)
 end
 M.RunWithHistory = function(_, _, fn) historyWrites = historyWrites + 1; return fn() end
 M.Widgets, M.Theme = W, T
+T.ApplyMenuFont = function(label, _, role) label.fontRole = role end
+T.StyleFontString = function(label, _, _, role) label.fontRole = role end
+T.SkinSuccessButton = function(button) return T.ApplyButtonRole(button, "success") end
+T.ApplyButtonRole = function(button, role) button.role = role end
+M.RefreshPageHistoryNav = function() end
 M.PreviewSelectionBar = {
     Create = function(box, deps)
         box.selectionDeps = deps
@@ -730,7 +743,16 @@ Enum = { DamageMeterType = { DamageDone = 0 }, SpellBookSpellBank = { Player = 0
     StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 },
     GameRule = { PersonalResourceDisplayDisabled = 5 } }
 PowerBarColor = { MANA = { r = 0.1, g = 0.4, b = 1 } }
-C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
+EventRegistry = { callbacks = {} }
+function EventRegistry:RegisterCallback(event, callback, owner)
+    self.callbacks[event] = self.callbacks[event] or {}
+    self.callbacks[event][owner] = callback
+end
+function EventRegistry:UnregisterCallback(event, owner)
+    if self.callbacks[event] then self.callbacks[event][owner] = nil end
+end
+C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end,
+    GetNumSpellBookSkillLines = function() return 0 end }
 issecretvalue = function(value) return actionPreview.secret ~= nil and rawequal(value, actionPreview.secret) end
 Minimap = { SetMaskTexture = function() end }
 C_EventUtils = { IsEventValid = function() return true end }
@@ -863,7 +885,8 @@ do
     for _, section in ipairs(ctx.sections) do
         if section.sectionId == "suite_bags_bank" then bankSection = true end
     end
-    assert(bankSection, "Bank organisation must render for both supported Suite clients")
+    assert(bankSection,
+        "Bank organisation must render only when this client has visible bank controls")
     -- Reset section restores the visible organisation settings only; the
     -- player's custom categories are data, not a setting of that section.
     local organisation
@@ -1619,7 +1642,7 @@ end)() end
     for _, section in ipairs(hudCtx.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    local defaultTopics = flavor == "Forever" and 17 or 20
+    local defaultTopics = flavor == "Forever" and 19 or 22
     assert(topics == defaultTopics + #S.CharacterHeader.Fields, "HUD topics must be separate accordions beneath their feature tabs")
     local previousTabs = W.SegmentTabs
     W.SegmentTabs = nil
@@ -1805,6 +1828,8 @@ do
     layer.scripts.OnClick(layer, "LeftButton")
     assert(not plates.enemyPowerEnabled and not handle:IsShown(), "the preview toggle did not disable the saved bar")
     plates.look, plates.enemy = oldLook, oldEnemy
+    -- Include the opt-in control exercised above in the catalog coverage check.
+    oldControls[key] = handle
     current, registeredControls, previewControls = oldContext, oldControls, oldPreview
 end
 
@@ -3102,6 +3127,7 @@ for _, section in ipairs(contexts.suite_hud.sections) do
     hudSections[section.sectionId] = section
     local appearance = section.sectionId:match("_type$") or section.sectionId:match("_module$")
         and section.sectionId ~= "suite_hud_afkScreen_module" and section.sectionId ~= "suite_hud_characterPanel_module"
+    if section.sectionId == "suite_hud_characterPanel_reputation" then appearance = true end
     local fieldId = section.sectionId:match("^suite_hud_characterPanel_(%a+)$")
     for _, field in ipairs(S.CharacterHeader.Fields) do
         if field.id == fieldId then appearance = not field.portrait break end
@@ -3116,7 +3142,7 @@ do
     for _, section in ipairs(contexts.suite_hud.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    assert(topics == 20 + #S.CharacterHeader.Fields, "HUD topics lost their separate accordions")
+    assert(topics == 22 + #S.CharacterHeader.Fields, "HUD topics lost their separate accordions")
 end
 assert(hudSections.suite_hud_objectives_raid, "Retail raid encounter accordion missing")
 local raidPause
@@ -3616,7 +3642,8 @@ do
     end
     Suite.Client.modernEquipment = original
 end
-assert(dataPage.sections[1].title == "DataTexts", "DataTexts lost its module switch")
+assert(dataPage.dataTextWorkspace.buttons.enabled.parent == dataPage.dataTextWorkspace.navigation,
+    "DataTexts lost its module switch")
 for index = 1, 3 do
     local body = dataPage.entry._msuf2ResolveMissingSection("suite_dataTexts_bar" .. index)
     assert(body and body.headerSwitch, "DataTexts bar has no visible enable switch")
@@ -3918,7 +3945,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 70 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 71 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated: expected " .. expectedQolFeatureCount .. ", rendered " .. actualQolFeatureCount)
 assert(#optionsNS.QualityOfLifeCategories == 6, "Quality of Life source should define six primary categories")
 local sourceSeen, sourceCount, subgroupCount, expectedRenderedOrder = {}, 0, 0, {}
@@ -4475,6 +4502,22 @@ end
 S.states.damageMeter.error = meterLoadError
 current = skinContext
 MapkoSkin = nil
+-- The label editor exists only for a slot whose source is the micro menu.
+do
+    local ctx, config = contexts.suite_dataTexts, S.Config("dataTexts")
+    local oldCurrent = current
+    current = ctx
+    for slot = 1, 6 do
+        local key = "bar1Slot" .. slot
+        local saved = config[key]
+        config[key] = Suite.DataTextSourceIndex.microMenu
+        ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar1_slot" .. slot)
+        for _, refresh in ipairs(ctx.refreshers) do refresh() end
+        config[key] = saved
+    end
+    current = oldCurrent
+end
+
 local covered = {}
 for _, ctx in pairs(contexts) do
     for _, widget in ipairs(ctx.widgets) do
@@ -6018,6 +6061,7 @@ end)()
     end
     local searchRows = optionsNS.SearchRows()
     local qol = contexts.suite_qualityOfLife
+    assert(qol.entry._msuf2ResolveMissingSection(optionsNS.GraphicsPerformanceSection), "graphics search target")
     for _, sectionId in ipairs(qol.qualityOfLifeFeatureOrder) do
         qol.entry._msuf2ResolveMissingSection(sectionId)
     end

@@ -58,4 +58,18 @@ assert(region.size == 9, "disabled style did not restore the native font")
 style.enabled, region.path = true, secret
 Apply(0, 1, 0)
 assert(rawequal(region.path, secret), "restricted font was written")
+region.path = "native"
+region.color, region.colorWrites = { .2, .3, .4, .5 }, 0
+function region:GetTextColor() return unpack(self.color) end
+function region:SetTextColor(...)
+    self.color, self.colorWrites = { ... }, self.colorWrites + 1
+end
+style.color = { r = .7, g = .8, b = .9, a = .75 }
+Text.Apply(region, style, 12, true)
+assert(region.color[1] == .7 and region.color[4] == .75, "shared text color and opacity were ignored")
+local colorWrites = region.colorWrites
+for _ = 1, 1000 do Text.Apply(region, style, 12, true) end
+assert(region.colorWrites == colorWrites, "steady text repaint repeated shared color writes")
+Text.Restore(region)
+assert(region.color[1] == .2 and region.color[4] == .5, "shared color release lost the native text color")
 print("Suite nameplate text: one no-write GetFont; native resets, pool reuse, failed writes, shadows and restoration passed")

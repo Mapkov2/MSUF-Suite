@@ -445,6 +445,10 @@ P.SectionRules = function(_, section)
     return { { key = section .. "Size", label = "Size", sectionTitle = section, section = section, default = 1, min = 0, max = 2 } }
 end
 P.ModuleCard, P.BuildNameplatesPreview, P.BuildNameplatesAuraColors = Noop, Noop, Noop
+-- Companion areas have dedicated real-host tests. This fixture isolates
+-- the original nameplate accordion's lazy construction and reveal order.
+P.NameplatesAdvancedAuras, P.NameplatesExtensions = { Append = Noop }, { Append = Noop }
+P.NameplatesProfiles, P.NameplatesHostOptions = { Build = Noop }, { Build = Noop }
 P.catalog.nameplates = { rules = {}, controls = {} }
 -- The native-aware catalog always provides its client-filtered controls.
 P.catalog.nameplates.getControls = function() return P.catalog.nameplates.controls end

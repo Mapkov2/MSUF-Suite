@@ -78,6 +78,12 @@ with tempfile.TemporaryDirectory() as directory:
         'local Font = B.Font\nFont("private" .. suffix, "Visible font label")\n', encoding="utf-8")
     caption = tree / "MSUF_Suite/Core/Catalog/Caption.lua"
     caption.write_text('local function Font(text) NS.Text(text) end\nFont("Visible real font caption")\n', encoding="utf-8")
+    nameplates = tree / "MSUF_Suite_Nameplates/Feedback.lua"
+    nameplates.parent.mkdir(parents=True)
+    nameplates.write_text('local _, P = ...\nP.NS.Text("Interrupted by %s")\nNS.Text("Set a hostile focus")\n', encoding="utf-8")
+    projection = tree / "MSUF_Suite/Core/Projection.lua"
+    projection.write_text('local Display = {}\nfunction Display.Text(config) return config[selector] end\n'
+                          'local translated = NS.Text("Visible translator caption")\nNS.Text(translated)\n', encoding="utf-8")
     extractor = tool.Extractor(tree).run()
     found = extractor.found
     check("Visible color label" in found and "Visible texture label" in found, "catalog color or texture labels disappeared")
@@ -89,6 +95,150 @@ with tempfile.TemporaryDirectory() as directory:
     check("ARTWORK" not in found and "OVERLAY" not in found, "rendering color helpers were treated as catalog labels")
     check("width height privateKey" not in found, "catalog ranking keys were treated as translated prose")
     check("Visible help summary" in found, "authored help summary stopped being translated")
+    check("Set a hostile focus" in found, "nameplate runtime feedback was excluded from locale extraction")
+    check(not any(definition.name == "Display.Text" for definition in extractor.param_sinks),
+          "a translator was resolved to an unrelated Text projection")
+
+# CopyValue preserves a projection's shape. Following its recursive memo
+# implementation creates unrelated list nesting instead of following callers.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    database = tree / "MSUF_Suite/Core/Database.lua"
+    database.parent.mkdir(parents=True)
+    database.write_text('''local _, Suite = ...
+local function CopyTable(value, seen)
+    if seen[value] then return seen[value] end
+    local result = {}
+    seen[value] = result
+    for key, item in pairs(value) do
+        if type(item) == "table" then item = CopyTable(item, seen) end
+        result[key] = item
+    end
+    return result
+end
+local function Copy(value, seen)
+    if type(value) ~= "table" then return value end
+    return CopyTable(value, seen or {})
+end
+Suite.CopyValue = Copy
+local rows = { { "privateRowId", "Copied positional caption" } }
+local copied = Suite.CopyValue(rows, { "Private memo entry" })
+Suite.Text(copied[1][2])
+local direct = CopyTable({ { "privateRowId", "Direct copied caption" } }, {})
+Suite.Text(direct[1][2])
+''', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    check("Copied positional caption" in extractor.found, "a copied nested caption lost its translation path")
+    check("Direct copied caption" in extractor.found, "a recursive copy lost its direct nested caption")
+    check("Private memo entry" not in extractor.found, "the copier's memo was interpreted as displayed data")
+    check(len(extractor.seen) < 100, "recursive copying expanded translation shapes without a bound")
+
+# Keyed getters preserve the selected field for this invocation. Unrelated
+# calls with a table as their parent must not recursively broaden that path.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    getter = tree / "MSUF_Suite_AdventurePlanner/PlanningTools.lua"
+    getter.parent.mkdir(parents=True)
+    getter.write_text('''local _, P = ...
+local Plan = {}
+function Plan.Table(parent, key)
+    if type(parent[key]) ~= "table" then parent[key] = {} end
+    return parent[key]
+end
+local root = {
+    private = { "Private getter sibling" },
+    group = { rows = { "Selected getter caption" } },
+}
+local group = Plan.Table(root, "group")
+local rows = Plan.Table(group, "rows")
+P.Suite.Text(rows[1])
+Plan.Table(root, "private")
+''', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    check("Selected getter caption" in extractor.found, "a nested getter lost its selected caption")
+    check("Private getter sibling" not in extractor.found, "a getter selected an unrelated field")
+    check(len(extractor.seen) < 100, "keyed getters expanded translation paths without a bound")
+
+# Numeric summary ranks share their field name with authored help prose.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    source = tree / "MSUF_Suite_Options/Menu/Controls.lua"
+    source.parent.mkdir(parents=True)
+    source.write_text('''local _, P = ...
+function P.SummaryPriority(id, key)
+    local ranks = P.catalog[id].summary
+    return ranks[key]
+end
+local numeric = { summary = P.SummaryPriority("privateModule", "privateKey") }
+P.numeric = numeric
+local prose = { summary = "Visible summary sentence" }
+P.Tr(prose.summary)
+''', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    check("Visible summary sentence" in extractor.found, "numeric summary handling hid authored help")
+    check(len(extractor.seen) < 100, "numeric summary rank recursively expanded prose shapes")
+
+# Runtime modules read model captions exported by the core namespace.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    model = tree / "MSUF_Suite/Core/Captions.lua"
+    model.parent.mkdir(parents=True)
+    model.write_text('local _, NS = ...\nlocal Captions = {}\nNS.Captions = Captions\n'
+                     'Captions.RangeLabels = { "Visible shared model caption" }\n', encoding="utf-8")
+    module = tree / "MSUF_Suite_Nameplates/Feedback.lua"
+    module.parent.mkdir(parents=True)
+    module.write_text('local _, P = ...\nlocal NS = P.NS\nNS.Text(NS.Captions.RangeLabels[state])\n', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    check("Visible shared model caption" in extractor.found, "a runtime reader lost its core model captions")
+
+# Native-setting dropdown values stay internal while their captions translate.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    page = tree / "MSUF_Suite_Options/Pages/NameplatesHostOptions.lua"
+    page.parent.mkdir(parents=True)
+    page.write_text('''local _, P = ...
+local function Choice(state, section, key, label, options)
+    local row = { label = P.Tr(label), values = {} }
+    for _, option in ipairs(options) do
+        row.values[#row.values + 1] = { value = option[1], text = P.Tr(option[2]) }
+    end
+    row.get = function() return options[1][1] end
+    return row
+end
+P.row = Choice({}, "general", "anchor", "Visible dropdown label", { { "ABBREV", "Visible option caption" } })
+P.Tr(P.row.get())
+''', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    check("Visible option caption" in extractor.found, "dropdown option captions lost their translation path")
+    check("ABBREV" not in extractor.found, "dropdown identifiers were translated as captions")
+
+# Appearance's native orientation enums are mapped to their display labels.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    page = tree / "MSUF_Suite_Options/Pages/Appearance.lua"
+    page.parent.mkdir(parents=True)
+    page.write_text('''local _, P = ...
+local Kit = P.SkinPageKit
+local ConfigRow = Kit.ConfigRow
+ConfigRow(nil, nil, nil, nil, nil, nil, nil, { "HORIZONTAL", "VERTICAL" })
+''', encoding="utf-8")
+    kit = page.with_name("AppearanceKit.lua")
+    kit.write_text('''local _, P = ...
+local Kit = {}
+P.SkinPageKit = Kit
+local CHOICE_LABELS = { VERTICAL = "Vertical", HORIZONTAL = "Horizontal" }
+function Kit.ConfigRow(a, b, c, d, e, f, g, values)
+    for _, value in ipairs(values) do P.Tr(CHOICE_LABELS[value] or value) end
+end
+''', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    check("HORIZONTAL" not in extractor.found and "VERTICAL" not in extractor.found,
+          "native orientation enums were treated as their visible labels")
+    check("Horizontal" in extractor.found and "Vertical" in extractor.found,
+          "mapped orientation labels disappeared")
+    real_kit = (ROOT / "MSUF_Suite_Options/Pages/AppearanceKit.lua").read_text(encoding="utf-8-sig")
+    for native, label in tool.DISPLAY_ENUM_LABELS[(page.relative_to(tree).as_posix(), "ConfigRow#7")].items():
+        check(native + ' = "' + label + '"' in real_kit, "orientation mapping no longer matches AppearanceKit")
 
 # A private table's named fields cannot borrow the translation shape of
 # an unrelated global field. This is the real ProfileVariants UseBase shape:
@@ -144,6 +294,13 @@ local function Callback() NS.Text(captured.caption) end
 Callback()
 NS.Render = function(text) NS.Text(text) end
 NS.Render("Visible global callback label")
+local function Identity(value) return value end
+NS.Text(Identity("Visible identity label"))
+NS.SetInternalMode(Identity("Internal identity argument"))
+local function Second(a, b) return a, b end
+local _, caption = Second("Internal multi-return argument", "Visible multi-return label")
+NS.Text(caption)
+
 local mixed = {}
 mixed = NS.GetRow()
 NS.Text(mixed.opaqueCaption)
@@ -159,10 +316,10 @@ RenderChild(written.items)
     for label in ("Visible global list label", "Visible local record label", "Visible parameter record label",
                   "Visible opaque namespace label", "Visible returned record label", "Visible exported record label",
                   "Visible passed record label", "Visible alias record label", "Visible closure record label",
-                  "Visible global callback label", "Visible opaque reassignment label",
+                  "Visible global callback label", "Visible identity label", "Visible multi-return label", "Visible opaque reassignment label",
                   "Visible escaped subtable label", "Visible assigned subtable label"):
         check(label in extractor.found, "field ownership lost " + label)
-    for value in ("Private enum payload", "Private setting key"):
+    for value in ("Private enum payload", "Private setting key", "Internal identity argument", "Internal multi-return argument"):
         check(value not in extractor.found, "an unrelated global field tainted " + value)
 
 # File-level checks run against a temporary locale folder.

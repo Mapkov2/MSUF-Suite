@@ -472,7 +472,6 @@ end
 
 local function BindWheel(ui, frame)
     frame:EnableMouseWheel(true)
-    if frame.SetPropagateMouseWheel then frame:SetPropagateMouseWheel(false) end
     frame:SetScript("OnMouseWheel", ui.wheel)
 end
 

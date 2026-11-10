@@ -75,8 +75,9 @@ end
 function Native.Blocked()
     if NS.InCombat() then return "combat" end
     if NS.Client.isForever then
-        if not InputUtil or not InputUtil.IsGamepadUIEnabled then return "unavailable" end
-        local gamepad = InputUtil.IsGamepadUIEnabled()
+        local readMode = InputUtil.IsGamepadUIEnabled
+        if not readMode then return "unavailable" end
+        local gamepad = readMode()
         if not S.Public(gamepad) or type(gamepad) ~= "boolean" then return "unavailable" end
         if gamepad then return "gamepad" end
     end

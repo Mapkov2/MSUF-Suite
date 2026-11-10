@@ -13,19 +13,6 @@ local NativeBit = Style.NativeBit
 -- OpenSetting link every preview control to search and to its setting.
 local Layers = {}
 P.NameplatesEditorLayers = Layers
--- Match unit-preview colors and group related nameplate layers.
-local LAYER_COLORS = {
-    guides = { 0.42, 0.72, 1.00 }, health = { 0.25, 0.90, 0.42 },
-    backdrop = { 0.80, 0.55, 0.25 }, border = { 0.85, 0.70, 0.25 }, roleFill = { 0.30, 0.78, 0.55 },
-    name = { 0.30, 0.66, 1.00 }, level = { 0.30, 0.66, 1.00 }, healthText = { 0.25, 0.90, 0.42 },
-    cast = { 0.20, 0.90, 0.85 }, castText = { 0.20, 0.90, 0.85 }, castTime = { 0.20, 0.90, 0.85 },
-    auras = { 0.90, 0.20, 0.22 }, buffs = { 0.20, 0.90, 0.35 }, controlAura = { 0.90, 0.42, 1.00 },
-    classification = { 0.95, 0.72, 0.18 }, raidIcon = { 0.95, 0.72, 0.18 }, power = { 0.95, 0.72, 0.18 },
-    enemyPower = { 0.25, 0.64, 1.00 },
-    castIcon = { 0.20, 0.90, 0.85 }, castShield = { 0.20, 0.90, 0.85 }, castTarget = { 0.20, 0.90, 0.85 },
-    target = { 0.95, 0.72, 0.18 }, eliteMarker = { 0.95, 0.72, 0.18 }, questMarker = { 0.95, 0.72, 0.18 },
-    threatFlash = { 0.90, 0.20, 0.22 }, threatHighlight = { 0.90, 0.20, 0.22 }, softTarget = { 0.25, 0.72, 1.00 },
-}
 local DECOR_LAYERS = {
     outerFrame = "OuterFrame", shadow = "ShadowEnabled", glow = "GlowEnabled",
     focusMarker = "enemyFocusMarker", threshold = "enemyThresholdEnabled", fillTexture = "TextureEnabled",
@@ -35,30 +22,48 @@ local function DecorSetting(ui, key)
     local suffix = DECOR_LAYERS[key]
     return suffix and (suffix:match("^[A-Z]") and ui.sampleKind .. suffix or suffix)
 end
-for key in pairs(DECOR_LAYERS) do LAYER_COLORS[key] = LAYER_COLORS.border end
-local LAYERS = {
-    { "guides", "Guides", "enemy" }, { "health", "Blizzard health", "enemy" },
-    { "backdrop", "Skin backdrop", "enemy" }, { "border", "Skin border", "enemy" },
-    { "roleFill", "Role fill", "roleColors" },
-    { "outerFrame", "Outer frame", "enemy" }, { "shadow", "Shadow", "enemy" },
-    { "glow", "Glow", "enemy" }, { "fillTexture", "Texture", "enemy" },
-    { "threshold", "Threshold", "enemy" }, { "focusMarker", "Focus diamond", "enemy" },
-    { "targetScale", "Target size", "native" },
-    { "name", "Name", "elements" }, { "level", "Level", "elements" },
-    { "healthText", "HP text", "elements" },
-    { "cast", "Castbar", "castbar" }, { "enemyPower", "Enemy power bar", "enemyPower" },
-    { "castText", "Spell name", "castbar" }, { "castTime", "Cast time", "castbar" },
-    { "auras", "Debuffs", "auras" },
-    { "buffs", "Buffs", "auras" }, { "controlAura", "Control", "auras" },
-    { "classification", "Elite / rare", "elements" }, { "raidIcon", "Raid mark", "elements" },
-    { "castIcon", "Spell icon", "castbar" }, { "castShield", "Blizzard shield", "castbar" },
-    { "castTarget", "Cast target", "castbar" }, { "target", "Target arrows", "enemy" },
-    { "eliteMarker", "MSUF elite", "enemy" }, { "questMarker", "MSUF quest", "enemy" },
-    { "threatFlash", "Aggro flash", "signals" },
-    { "threatHighlight", "Aggro highlight", "signals" },
-    { "softTarget", "Soft target", "signals" },
-    { "power", "Power skin", "personal" },
-}
+
+local LAYERS, LAYER_COLORS
+local function PrepareLayers()
+    if LAYERS then return LAYERS end
+    LAYER_COLORS = {
+        guides = { 0.42, 0.72, 1.00 }, health = { 0.25, 0.90, 0.42 },
+        backdrop = { 0.80, 0.55, 0.25 }, border = { 0.85, 0.70, 0.25 }, roleFill = { 0.30, 0.78, 0.55 },
+        name = { 0.30, 0.66, 1.00 }, level = { 0.30, 0.66, 1.00 }, healthText = { 0.25, 0.90, 0.42 },
+        cast = { 0.20, 0.90, 0.85 }, castText = { 0.20, 0.90, 0.85 }, castTime = { 0.20, 0.90, 0.85 },
+        auras = { 0.90, 0.20, 0.22 }, buffs = { 0.20, 0.90, 0.35 }, controlAura = { 0.90, 0.42, 1.00 },
+        classification = { 0.95, 0.72, 0.18 }, raidIcon = { 0.95, 0.72, 0.18 }, power = { 0.95, 0.72, 0.18 },
+        enemyPower = { 0.25, 0.64, 1.00 },
+        castIcon = { 0.20, 0.90, 0.85 }, castShield = { 0.20, 0.90, 0.85 }, castTarget = { 0.20, 0.90, 0.85 },
+        target = { 0.95, 0.72, 0.18 }, eliteMarker = { 0.95, 0.72, 0.18 }, questMarker = { 0.95, 0.72, 0.18 },
+        threatFlash = { 0.90, 0.20, 0.22 }, threatHighlight = { 0.90, 0.20, 0.22 }, softTarget = { 0.25, 0.72, 1.00 },
+    }
+    for key in pairs(DECOR_LAYERS) do LAYER_COLORS[key] = LAYER_COLORS.border end
+    LAYERS = {
+        { "guides", "Guides", "enemy" }, { "health", "Blizzard health", "enemy" },
+        { "backdrop", "Skin backdrop", "enemy" }, { "border", "Skin border", "enemy" },
+        { "roleFill", "Role fill", "roleColors" },
+        { "outerFrame", "Outer frame", "enemy" }, { "shadow", "Shadow", "enemy" },
+        { "glow", "Glow", "enemy" }, { "fillTexture", "Texture", "enemy" },
+        { "threshold", "Threshold", "enemy" }, { "focusMarker", "Focus diamond", "enemy" },
+        { "targetScale", "Target size", "native" },
+        { "name", "Name", "elements" }, { "level", "Level", "elements" },
+        { "healthText", "HP text", "elements" },
+        { "cast", "Castbar", "castbar" }, { "enemyPower", "Enemy power bar", "enemyPower" },
+        { "castText", "Spell name", "castbar" }, { "castTime", "Cast time", "castbar" },
+        { "auras", "Debuffs", "auras" },
+        { "buffs", "Buffs", "auras" }, { "controlAura", "Control", "auras" },
+        { "classification", "Elite / rare", "elements" }, { "raidIcon", "Raid mark", "elements" },
+        { "castIcon", "Spell icon", "castbar" }, { "castShield", "Blizzard shield", "castbar" },
+        { "castTarget", "Cast target", "castbar" }, { "target", "Target arrows", "enemy" },
+        { "eliteMarker", "MSUF elite", "enemy" }, { "questMarker", "MSUF quest", "enemy" },
+        { "threatFlash", "Aggro flash", "signals" },
+        { "threatHighlight", "Aggro highlight", "signals" },
+        { "softTarget", "Soft target", "signals" },
+        { "power", "Power skin", "personal" },
+    }
+    return LAYERS
+end
 local LAYER_SETTING = {
     health = "enemyHealthWidthDelta", backdrop = "enemyBackdropEnabled", border = "enemyBorderEnabled",
     roleFill = "enemyRoleColors", target = "enemyTargetMarker",
@@ -411,7 +416,7 @@ local function ToggleLayer(ui, key)
     end
     if not ui:LayerAvailable(key) then
         local section = "elements"
-        for _, layer in ipairs(LAYERS) do
+        for _, layer in ipairs(PrepareLayers()) do
             if layer[1] == key then
                 section = layer[3]
                 break
@@ -472,7 +477,7 @@ function Layers.Build(ui)
     title:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, -8)
     local headerWidth = title:GetStringWidth() + 24
     ui.layerButtons = {}
-    for i, def in ipairs(LAYERS) do
+    for i, def in ipairs(PrepareLayers()) do
         local key, label, section = def[1], def[2], def[3]
         local button
         if H.CreateLayerButton then

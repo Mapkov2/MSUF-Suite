@@ -60,6 +60,8 @@ SINKS = [
     # Menu2's M.BindDropdownAt translates its label (through W.Dropdown).
     ("Selected data", OPTIONS + "DataTextsEditor.lua"),
     ("MSUF style", OPTIONS + "DataTextsPresets.lua"),
+    ("Set a hostile focus", "MSUF_Suite_Nameplates/ExtensionEffects.lua"),
+    ("Interrupted by %s", "MSUF_Suite_Nameplates/ExtensionEffects.lua"),
 ]
 # The nameplate preview names its sample plate after the previewed role.
 style = (ROOT / CORE / "NameplateStyle.lua").read_text(encoding="utf-8")

@@ -14,6 +14,9 @@ function P.BuildHUDCharacterPanel(ctx, builder)
     P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. ID .. "_appearance", P.Tr("Appearance"),
         P.SectionRules(ID, "appearance", function(rule) return not rule.hidden end),
         { open = true, help = P.catalog[ID].description, onBuilt = P.HUDMenu.Prepare })
+    P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. ID .. "_reputation", P.Tr("Reputation"),
+        P.SectionRules(ID, "reputation"), { open = true, onBuilt = P.HUDMenu.Prepare })
+    P.CharacterPanelBindings.Build(ctx, builder)
     local controls = P.catalog[ID].rules
     local sections = {}
     ctx.characterHeaderSections = sections

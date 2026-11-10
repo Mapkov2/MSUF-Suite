@@ -345,23 +345,20 @@ local function BuildHUD(ctx, b, skin)
         hud, false)
 end
 
-local materialSpecs
+local MATERIAL_SPECS = {
+    { "Shaded surfaces", "gradient", "toggle" },
+    { "Light direction", "gradientDirection", "dropdown", { "VERTICAL", "HORIZONTAL" } },
+    { "Shading strength", "gradientStrength", "slider", nil, 0, 1, 0.05 },
+    { "Surface depth", "materialDepth", "slider", nil, 0, 1, 0.05 },
+    { "Window opacity", "shellOpacity", "slider", nil, 0.35, 1, 0.05 },
+    { "Content opacity", "panelOpacity", "slider", nil, 0.35, 1, 0.05 },
+    { "Controls opacity", "controlOpacity", "slider", nil, 0.35, 1, 0.05 },
+    { "Outline opacity", "borderOpacity", "slider", nil, 0, 1, 0.05 },
+}
 
 local function BuildMaterial(ctx, b, skin)
-    if not materialSpecs then
-        materialSpecs = {
-            { "Shaded surfaces", "gradient", "toggle" },
-            { "Light direction", "gradientDirection", "dropdown", { "VERTICAL", "HORIZONTAL" } },
-            { "Shading strength", "gradientStrength", "slider", nil, 0, 1, 0.05 },
-            { "Surface depth", "materialDepth", "slider", nil, 0, 1, 0.05 },
-            { "Window opacity", "shellOpacity", "slider", nil, 0.35, 1, 0.05 },
-            { "Content opacity", "panelOpacity", "slider", nil, 0.35, 1, 0.05 },
-            { "Controls opacity", "controlOpacity", "slider", nil, 0.35, 1, 0.05 },
-            { "Outline opacity", "borderOpacity", "slider", nil, 0, 1, 0.05 },
-        }
-    end
     local material = {}
-    for _, spec in ipairs(materialSpecs) do
+    for _, spec in ipairs(MATERIAL_SPECS) do
         ConfigRow(skin, material, "material", spec[1], "theme", spec[2], spec[3], spec[4], spec[5], spec[6], spec[7],
             skin.Theme.SetAppearance)
     end

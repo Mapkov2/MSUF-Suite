@@ -109,7 +109,7 @@ end
 
 local function Test(initialPreview)
     local config, combat, profile, refresh = {}, false, {}, nil
-    local paths, toggles, writes = {}, {}, {}
+    local paths, toggles, writes, menuItems = {}, {}, {}, {}
     local skin = { IsEnabled = function() return false end }
     local Suite = {
         Text = function(value) return value end,
@@ -125,6 +125,7 @@ local function Test(initialPreview)
     }
     Load("MSUF_Suite/Core/SuiteCatalog.lua", Suite)
     Load("MSUF_Suite/Core/CharacterTabs.lua", Suite)
+    Load("MSUF_Suite/Core/CharacterBindings.lua", Suite)
     Load("MSUF_Suite/Core/Catalog/CharacterPanel.lua", Suite)
     Load("MSUF_Suite/Core/CharacterHeader.lua", Suite)
     Load("MSUF_Suite/Core/PreviewKit.lua", Suite)
@@ -141,11 +142,18 @@ local function Test(initialPreview)
         font:SetText(value)
         return font
     end
-    local ctx = {}
+    local ctx, bindingTab = {}, nil
     local P = {
+        CharacterPanelBindings = { Build = function(owner) assert(owner == ctx) end,
+            Open = function(owner, tab) assert(owner == ctx) bindingTab = tab end },
         Suite = Suite, S = Suite.Suite, Tr = Suite.Text, catalog = Suite.SuiteCatalog,
         Combat = function() return combat end,
         ProfileGuard = function() local owner = profile return function() return owner == profile end end,
+        ContextMenu = function(anchor, generate)
+            menuItems = {}
+            generate(anchor, { CreateTitle = function(_, label) menuItems[label] = true end,
+                CreateButton = function(_, label, click) menuItems[label] = click end })
+        end,
         Set = function(_, key, value)
             config[key] = value
             writes[#writes + 1] = key
@@ -190,20 +198,26 @@ local function Test(initialPreview)
         SectionRules = function(_, section, accept)
             local matches = {}
             for _, rule in pairs(rules) do
-                if rule.section == section and accept(rule) then matches[#matches + 1] = rule end
+                if rule.section == section and (not accept or accept(rule)) then matches[#matches + 1] = rule end
             end
             return matches
         end,
         RuleSection = function(_, _, _, _, id, _, controls)
             if id == "suite_hud_characterPanel_appearance" then ctx.appearanceControls = controls end
+            if id == "suite_hud_characterPanel_reputation" then ctx.reputationControls = controls end
             return { id = id, controls = controls }
         end,
     }
     local customSelection, contentOpened, actionsOpened
+    local restoring, restoreStock, offeredStock
     local customCancels = 0
     P.CharacterCustomTabs = { Create = function(_, changed)
         return {
-            Add = function()
+            Add = function(_, _, hidden, restore)
+                if restoring then
+                    offeredStock, restoreStock = hidden, restore
+                    return
+                end
                 local tabs = Suite.CharacterTabs.Copy(config)
                 local id = Suite.CharacterTabs.Create(tabs, "empty", "My Raid Tab")
                 P.Set("characterPanel", "customTabs", Suite.CharacterTabs.Encode(tabs))
@@ -241,8 +255,16 @@ local function Test(initialPreview)
     assert(rules.showFullStats and rules.showFullStats.default == true, "full Overview stats must default on")
     local appearance = {}
     for _, rule in ipairs(ctx.appearanceControls) do appearance[rule.key] = true end
-    assert(appearance.mode and appearance.showFullStats and not appearance.tabOrder,
-        "the existing Appearance section did not expose the stats toggle")
+    assert(rules.showAttributesTab and rules.showAttributesTab.default == false, "Attributes must be opt-in")
+    assert(appearance.mode and appearance.showFullStats and appearance.showAttributesTab and not appearance.tabOrder,
+        "the existing Appearance section did not expose both stats toggles")
+    local reputation = {}
+    for _, rule in ipairs(assert(ctx.reputationControls)) do reputation[rule.key] = rule end
+    assert(reputation.showReputationBars.default == false and reputation.reputationValue.default == 1
+        and reputation.reputationGoal.default == 1 and reputation.reputationGoal.max == 8
+        and reputation.reputationBarHeight.min == 2 and reputation.reputationBarHeight.max == 8
+        and reputation.reputationBarColor.color and reputation.reputationBarColor.default == "",
+        "the dedicated Reputation section omitted the bars, target, text or style settings")
     local pane = Frame()
     pane.width = 720
     local height, host
@@ -482,6 +504,47 @@ local function Test(initialPreview)
     toggles["Own character"]:Fire("OnClick")
     assert(paintedMode == "own" and paintedTab == "gear" and not hidden,
         "mode switch lost the selected Own tab")
+    local framesBefore = #host.children
+    toggles["Tab actions"]:Fire("OnClick")
+    local staleHide = assert(menuItems["Hide tab"], "built-in tab had no hide action")
+    profile = {}
+    staleHide()
+    assert(Suite.CharacterHeader.TabVisible(config, "tab", "gear"), "old profile menu hid a tab")
+    toggles["Tab actions"]:Fire("OnClick")
+    assert(menuItems["Key bindings"])()
+    assert(bindingTab == "gear", "tab actions did not open bindings for the selected tab")
+    assert(menuItems["Use as character start tab"])()
+    assert(config.homeTab == "gear", "the selected built-in tab could not become C home")
+    toggles["Tab actions"]:Fire("OnClick")
+    assert(menuItems["Character start tab"], "current C home was not labeled")
+    assert(menuItems["Hide tab"])()
+    assert(config.homeTab == "overview" and paintedTab == "overview"
+        and not Suite.CharacterHeader.TabVisible(config, "tab", "gear"),
+        "hiding the selected C home did not fall back to a visible tab")
+
+    restoring = true
+    toggles["+"]:Fire("OnClick")
+    assert(offeredStock[1].id == "gear", "the Add menu did not offer the hidden built-in tab")
+    local staleRestore = restoreStock
+    toggles.Inspect:Fire("OnClick")
+    staleRestore("gear")
+    assert(not Suite.CharacterHeader.TabVisible(config, "tab", "gear"), "an old menu restored into a different window")
+    toggles["Tab actions"]:Fire("OnClick")
+    assert(not menuItems["Use as character start tab"] and not menuItems["Key bindings"] and menuItems["Hide tab"],
+        "Inspect offered player tab binding actions")
+    assert(menuItems["Hide tab"])()
+    assert(paintedTab == "overview" and toggles["+"]:IsShown(), "Inspect could not hide and restore a built-in tab")
+    toggles["+"]:Fire("OnClick")
+    assert(offeredStock[1].id == "compare")
+    restoreStock("compare")
+    assert(paintedTab == "compare" and not toggles["+"]:IsShown(), "restoring Inspect Compare changed the wrong window")
+
+    toggles["Own character"]:Fire("OnClick")
+    toggles["+"]:Fire("OnClick")
+    restoreStock("gear")
+    assert(paintedTab == "gear" and config.homeTab == "overview"
+        and Suite.CharacterHeader.TabVisible(config, "tab", "gear")
+        and #host.children == framesBefore, "restoring a built-in recreated controls or changed C home")
     host:Hide()
     assert(hidden, "closing the editor left the runtime preview active")
 end

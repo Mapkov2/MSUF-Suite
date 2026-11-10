@@ -187,6 +187,7 @@ local function EnsureGossipHooks(root)
 end
 
 PaintCurrent = function()
+    if not next(QuestText.roots) and not next(QuestText.colors) then return end
     for name, role in pairs(fields) do Paint(_G[name], role) end
     PaintRewards(QuestInfoRewardsFrame)
     local list = QuestInfoObjectivesFrame.Objectives
@@ -289,7 +290,9 @@ function QuestText.Refresh()
 end
 
 NS.Registry.AddListener(QuestText, function(_, domain)
-    if domain == "color" or domain == "theme" then NS.Registry.QueueJob(PaintCurrent) end
+    if (domain == "color" or domain == "theme") and (next(QuestText.roots) or next(QuestText.colors)) then
+        NS.Registry.QueueJob(PaintCurrent)
+    end
 end)
 
 return QuestText

@@ -285,12 +285,13 @@ do
 end
 -- Old menu hosts can omit these optional presentation APIs.
 do
-    local preview, focus, relayout, segments = W.FixedPreviewSection, W.FocusCollapsibleSection,
-        M.RelayoutPageHeaderHost, W.SegmentTabs
-    W.FixedPreviewSection, W.FocusCollapsibleSection, M.RelayoutPageHeaderHost, W.SegmentTabs = nil, nil, nil, nil
+    local widgets = M.Widgets
+    local preview, focus, relayout, segments = widgets.FixedPreviewSection, widgets.FocusCollapsibleSection,
+        M.RelayoutPageHeaderHost, widgets.SegmentTabs
+    widgets.FixedPreviewSection, widgets.FocusCollapsibleSection, M.RelayoutPageHeaderHost, widgets.SegmentTabs = nil, nil, nil, nil
     local _, ui = Build("suite_bags", 340)
     assert(ui.selector and ui:Focus("suite_bags_appearance"), "legacy host lost navigation")
-    W.FixedPreviewSection, W.FocusCollapsibleSection, M.RelayoutPageHeaderHost, W.SegmentTabs = preview, focus, relayout, segments
+    widgets.FixedPreviewSection, widgets.FocusCollapsibleSection, M.RelayoutPageHeaderHost, widgets.SegmentTabs = preview, focus, relayout, segments
 end
 -- The composer keeps the existing persistence keys. Invalid/duplicate input
 -- and combat refusal never write; item and spell removal are independent.

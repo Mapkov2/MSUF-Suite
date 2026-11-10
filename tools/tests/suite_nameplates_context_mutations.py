@@ -25,7 +25,7 @@ MUTANTS = (
     (SKIN, CONTEXT_TEST, "cold friendly name queries", "if styled and not visual then Paint(uf)",
      "if styled and not visual then\n                    FilterFriendlyName(uf, prefix)\n                    Paint(uf)"),
     (SKIN, CONTEXT_TEST, "level transition", "PLAYER_LEVEL_UP = true", "PLAYER_LEVEL_UP = false"),
-    (SKIN, CONTEXT_TEST, "specialization kick-ready", 'if event == "PLAYER_SPECIALIZATION_CHANGED" then RepaintCasts() end', ""),
+    (SKIN, CONTEXT_TEST, "specialization kick-ready", 'if event == "PLAYER_SPECIALIZATION_CHANGED" then CastTime.Repaint() end', ""),
     (TEXT, TEXT_TEST, "no-write font read", "local appliedPath, appliedSize, appliedFlags = path, nativeSize, flags",
      "local appliedPath, appliedSize, appliedFlags = region:GetFont()"),
     (TEXT, TEXT_TEST, "post-write font read", "        appliedPath, appliedSize, appliedFlags = region:GetFont()", ""),

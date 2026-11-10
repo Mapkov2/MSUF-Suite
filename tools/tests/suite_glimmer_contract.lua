@@ -256,6 +256,13 @@ tooltip = { lines = { { leftText = "|cffff2020" .. UNIT_SKINNABLE_LEATHER .. "|r
 timers[retryLoot] = nil
 retryLoot(module)
 assert(module.host.shown, "localized skinning tooltip did not reveal the corpse without a cursor")
+do
+    local label = UNIT_SKINNABLE_LEATHER
+    UNIT_SKINNABLE_LEATHER, tooltip = nil, { lines = { {} } }
+    events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+    assert(not module.host.shown, "missing localized text matched an empty tooltip line")
+    UNIT_SKINNABLE_LEATHER = label
+end
 tooltip = { lines = { { leftText = secret } } }
 events.LOOT_CLOSED(module, "LOOT_CLOSED")
 assert(not module.host.shown, "private tooltip text left a stale effect")

@@ -495,12 +495,16 @@ function M:Refresh(resample)
     NativeBagBar.Sync()
 end
 
+local function RefreshSurface(module, resample)
+    module:Refresh(resample)
+    module:RegisterMovers()
+end
+
 local function ScaleChanged(module)
     if NS.IsCombatLocked() then
         S.Queue(ID)
     else
-        module:Refresh()
-        module:RegisterMovers()
+        RefreshSurface(module)
     end
 end
 
@@ -544,8 +548,7 @@ local function Resume(self)
     if self.refreshAfterCombat or self.uiWidth ~= UIParent:GetWidth() or self.uiHeight ~= UIParent:GetHeight()
         or self.uiPixel ~= S.PixelUnit() then
         self.refreshAfterCombat = nil
-        self:Refresh(true)
-        self:RegisterMovers()
+        RefreshSurface(self, true)
     else
         for _, bar in pairs(self.bars) do Bars.SetVisibilityCallbacks(bar, true) end
         if self.config.trackAltGold then GoldLedger.Capture() end

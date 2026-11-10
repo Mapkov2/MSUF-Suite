@@ -144,3 +144,24 @@ function CastTime.Paint(cast, prefix, unit, uf)
         CastTime.Refresh(state, unit)
     end
 end
+
+function CastTime.OnChanged(module, event, unit, ...)
+    if not module.active or not S.Public(unit) or type(unit) ~= "string" then return end
+    local uf = module.activeUnits[unit]
+    if not Safe(uf) then return end
+    local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
+    local state = cast and module.castTimes[cast]
+    if state and state.unit == unit then CastTime.Refresh(state, unit, event) end
+    if cast then private.KickReady.OnCast(cast, unit, event) end
+    if private.Extensions.inUse then private.Extensions.OnCast(module, event, unit, ...) end
+end
+
+-- MSUF's interrupt-ready settings were applied: repaint the castbars of the
+-- shown plates (KickReady.lua decides from MSUF's switch and look).
+function CastTime.Repaint()
+    for _, uf in pairs(M.activeUnits) do
+        local health = Safe(uf) and uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+        local cast = health and uf.CastBarsContainer and uf.CastBarsContainer.castBar
+        if cast then private.KickReady.Paint(cast, private.PlatePrefix(uf), M.units[health]) end
+    end
+end

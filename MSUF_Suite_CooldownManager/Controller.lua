@@ -118,7 +118,7 @@ function M:Refresh()
     C.Effects.RecommendationVisibility()
     C.Effects.Recommendation()
     C.KickMark.Rebuild()
-    if C.Preview.mode == "options" then C.Preview.PaintLabels() end
+    if C.Preview.mode then C.Preview.PaintLabels() end
     if not Settings.CaptureWaiting() then
         C.Native.Apply()
         Settings.SyncViewerOffset()

@@ -103,6 +103,7 @@ local function Frame(name, parent, kind)
         function texture:ClearAllPoints() self.point = nil end
         function texture:SetPoint(...) self.point = { ... } end
         function texture:SetSize(width, height) self.width, self.height = width, height end
+        function texture:SetHeight(height) self.height = height end
         function texture:Show() self.shown = true end
         function texture:Hide() self.shown = false end
         return texture
@@ -882,7 +883,11 @@ end }
 NS.Registry = NS.Registry or { AddListener = function() end }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/AdapterKit.lua"))("MSUF_Suite_Skin", NS)
 NS.GenericWindows = { IsCategoryEnabled = function() return true end }
-NS.Surface = { Attach = function() return true end, SetVisible = function() end }
+NS.Surface = {
+    Attach = function() return true end,
+    Ensure = function() return true end,
+    SetVisible = function() end,
+}
 NS.Cosmetics = { FadeNineSlice = function() end, RestoreOwner = function() end }
 NS.CharacterDetails = { Apply = function() end, Disable = function() end }
 NS.CombatGate = { Cancel = function() end }

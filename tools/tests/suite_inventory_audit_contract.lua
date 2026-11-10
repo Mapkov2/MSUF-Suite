@@ -57,8 +57,12 @@ local function Read(path)
 end
 local function Installer(addon, id)
     for _, file in ipairs(Support.TocFiles(root, addon)) do
-        if file:match("%.lua$") and Read(addon .. "/" .. file):find('S.Install("' .. id .. '"', 1, true) then
-            return file
+        if file:match("%.lua$") then
+            local source = Read(addon .. "/" .. file)
+            if source:find('S.Install("' .. id .. '"', 1, true) then return file end
+            for name in source:gmatch('local%s+([%w_]+)%s*=%s*"' .. id .. '"') do
+                if source:match("S%.Install%(%s*" .. name .. "%s*,") then return file end
+            end
         end
     end
 end

@@ -360,6 +360,8 @@ for _, forever in ipairs({ false, true }) do
         assert(not Suite.Database.GetProfile("MSUF Blizzard"), "rollback leaked a profile")
         assert(not Suite.Skin.enabled and Suite.RootDB.skinEnabled == false, "rollback activated skinning")
         Suite.HostBridge.ApplyScale = scaleApply
+        local expectedOriginal = Suite.CopyValue(previous)
+        expectedOriginal.nameplateCVars = Suite.ProfileIO.NameplateSnapshot(previous.nameplateCVars)
         assert(Suite.Installer.Apply())
         assert(Suite.Database.GetActiveProfileName() == "MSUF Blizzard")
         assert(Suite.RootDB.installation.profile == "blizzard" and Suite.RootDB.installation.status == "complete")
@@ -368,7 +370,7 @@ for _, forever in ipairs({ false, true }) do
         assert(Suite.DB.suite.modules.minimap.styleTexture == 8)
         assert(Suite.DB.suite.modules.cooldownManager.listsData == "", "old CDM layout escaped into reference preset")
         assert(Suite.DB.suite.modules.cooldownManager.spellsData == "", "old spell styles escaped into reference preset")
-        assert(Equal(Suite.Database.GetProfile("Default"), previous), "install changed the original Suite profile")
+        assert(Equal(Suite.Database.GetProfile("Default"), expectedOriginal), "install changed the original Suite profile")
         assert(Suite.Skin.enabled == skin and Suite.RootDB.skinEnabled == skin, "skinning stayed disabled")
         assert(H.skin.Database.GetProfile("Default").enabled == false, "old Skin profile changed")
         if skin then

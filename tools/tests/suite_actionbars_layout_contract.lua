@@ -20,7 +20,7 @@ local created=0
 CreateFrame=function() created=created+1;return {SetScript=function() end,RegisterEvent=function() end} end
 UIParent={GetEffectiveScale=function() return 1 end,GetWidth=function() return 1024 end,GetHeight=function() return 768 end}
 GetPhysicalScreenSize=function() return 1024,768 end
-for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings",
+for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings","CharacterTabs","CharacterBindings",
     "Catalog/DataTexts","NameplateStyle","SuiteMigrations","Suite"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
@@ -109,7 +109,13 @@ for tag,body in xml:gmatch('(<Binding%s[^>]*>)(.-)</Binding>') do
     end
 end
 for tag in xml:gmatch('<Binding%s[^>]*>') do
-    assert(tag:find('category="BINDING_HEADER_MSUFSUITE"',1,true),"binding outside the MSUF Suite category: "..tag)
+    local name = assert(tag:match('name="([^"]+)"'))
+    if name:match("^MSUFSUITE_CHARACTER_FROM_") then
+        assert(tag:find('hidden="true"',1,true) and not tag:find("category=",1,true), "visible delegate: "..tag)
+    else
+        local category = name:match("^MSUFSUITE_CHARACTER_") and "BINDING_HEADER_MSUFSUITE_CHARACTER" or "BINDING_HEADER_MSUFSUITE"
+        assert(tag:match('category="([^"]+)"') == category, "wrong binding category: "..tag)
+    end
     local header=tag:match('header="([%w_]+)"')
     assert(not header or type(_G["BINDING_HEADER_"..header])=="string","binding header without a label: "..tag)
 end

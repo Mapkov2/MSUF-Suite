@@ -3034,6 +3034,18 @@ do
     combat=true;assert(S.ForEachActionBarButtonForSpell(1001,Visit,context)==0);combat=false
     assert(S.ForEachActionBarButtonForSpell("secret",Visit,context)==0,"spell visitor accepted non-public ID")
 end
+-- Retail's clear-outfit button uses the same spell as Forever, without an exported spell constant.
+do
+    local old = GameTooltip.SetSpellByID
+    local spell
+    GameTooltip.SetSpellByID = function(_, id) spell = id end
+    local action = { kind = "outfit", id = 0 }
+    local tile = { name = { SetText = function() end }, cooldown = { Clear = function() end } }
+    assert(AB.VirtualPaint.Preview(action, tile, {}) == 1247917 + 400, "clear outfit preview uses an invalid spell")
+    AB.VirtualPaint.Tooltip({ virtualAction = action })
+    assert(spell == 1247917, "clear outfit tooltip uses an invalid spell")
+    GameTooltip.SetSpellByID = old
+end
 assert(S.ActionBarsBindingForSpell(2013)=="CM4","bar 9 presses slots 13-24")
 assert(S.ActionBarsBindingForSpell(2110)=="2","page 10 belongs to bar 1's form")
 do
@@ -3045,6 +3057,17 @@ do
     rec.button:GetScript("OnReceiveDrag")(rec.button)
     assert(held==nil and rec.button.attrs.spell==4001)
     local oldPickup=C_Spell.PickupSpell
+    held=4004
+    C_Spell.PickupSpell=function() end
+    rec.button:GetScript("OnReceiveDrag")(rec.button)
+    assert(held==4004 and rec.button.attrs.spell==4001, "failed swap lost a cursor action or the occupied slot")
+    C_Spell.PickupSpell=function(id) held=id==4004 and id or nil end
+    rec.button:GetScript("OnReceiveDrag")(rec.button)
+    assert(held==4004 and rec.button.attrs.spell==4001, "native cursor cancellation lost the incoming action")
+    held=4001
+    C_Spell.PickupSpell=function() error("duplicate action pickup") end
+    rec.button:GetScript("OnReceiveDrag")(rec.button)
+    assert(held==4001 and rec.button.attrs.spell==4001, "identical drop changed the slot or cursor")
     C_Spell.PickupSpell=function(id) held=id end
     held=4004
     rec.button:GetScript("PreClick")(rec.button,"Keybind",false)

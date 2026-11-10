@@ -520,6 +520,12 @@ P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
     assert(name == "MSUF_Suite.NameplatesTabs" and type(resolver) == "function")
     return true
 end
+-- Keep this fixture on native visibility controls. Expanded aura placement
+-- and rendering are exercised by suite_nameplates_aura_display_contract.
+P.NameplatesAdvancedAuras = { Append = function() end }
+P.NameplatesExtensions = { Append = function() end }
+P.NameplatesProfiles = { Build = function() end }
+P.NameplatesHostOptions = { Build = function() end }
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Nameplates.lua"))("MSUF_Suite_Options", P)
 local where = {}
 local function See(key, place)

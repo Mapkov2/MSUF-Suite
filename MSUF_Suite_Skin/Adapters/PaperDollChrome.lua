@@ -109,7 +109,7 @@ function Chrome.UpdateBadge(row, slot, info)
         frame:EnableMouse(false)
         local fill = frame:CreateTexture(nil, "BACKGROUND")
         fill:SetAllPoints()
-        local text = frame:CreateFontString(nil, "OVERLAY")
+        local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         text:SetPoint("CENTER")
         badge = { frame = frame, fill = fill, text = text }
         row.levelBadge = badge

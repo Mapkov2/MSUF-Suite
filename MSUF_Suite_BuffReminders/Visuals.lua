@@ -165,11 +165,11 @@ function R.IconGeometry(config, count)
         rows * size + (rows - 1) * spacing
 end
 
-function R.PositionIcon(button, host, shown, config)
+function R.PositionIcon(button, host, shown, config, topOffset)
     local size, spacing, columns = config.size, config.spacing, config.columns
     button:ClearAllPoints()
     button:SetPoint("TOPLEFT", host, "TOPLEFT", (shown % columns) * (size + spacing),
-        -math.floor(shown / columns) * (size + spacing))
+        -math.floor(shown / columns) * (size + spacing) - (topOffset or 0))
 end
 
 function R.PreviewCount(entry)

@@ -40,6 +40,16 @@ B.Section("releaseProtection", "release_protection", "Release spirit protection"
     Bool("pvp", "Protect release in battlegrounds and arenas", true),
 })
 
+B.Module("groupFinderLocations", {
+    title = "LFG locations",
+    description = "Show the group leader's current area in Group Finder rows while outside instances and combat. Forever shares no member areas.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if not NS.Client.isForever then return false, "LFG locations are available only in WoW Forever" end
+        return true
+    end,
+})
+
 B.Module("groupFinderDoubleClick", {
     title = "Group finder double-click",
     description = "Double-click a search result to open Blizzard's normal application dialog.",
@@ -158,6 +168,20 @@ B.Section("groupRaidShortcuts", "raid_shortcuts", "Raid shortcuts", {
     RaidMarker("healerMarker", "Healer raid marker", 6),
     B.Automation(Bool("autoMarkTank", "Automatically mark the party tank")),
     B.Automation(Bool("autoMarkHealer", "Automatically mark the party healer")),
+})
+
+B.Module("keystoneReadyCheck", {
+    title = "Keystone ready check and countdown",
+    description = "Add ready check and countdown buttons below the keystone window.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Keystone preparation is available only in Retail" end
+        return true
+    end,
+})
+B.Section("keystoneReadyCheck", "keystone_preparation", "Keystone preparation", {
+    Number("countdownSeconds", "Left-click countdown (seconds)", 10, 1, 60, 1),
+    Number("shortCountdownSeconds", "Right-click countdown (seconds)", 5, 1, 60, 1),
 })
 
 B.Module("mythicKeyShare", {

@@ -3,11 +3,11 @@ local Tr = P.Tr
 -- The help of each settings section of the Quality of Life page, by section key:
 -- the "?" popup of a feature and the tooltip of its row show it (QualityOfLife.lua).
 local HELP = {
+    keystone_preparation = "Adds ready check and countdown buttons below the keystone window for the group leader or assistant. "
+        .. "Left-click starts the normal countdown; right-click starts the short countdown. Click again to cancel. "
+        .. "Closing the window cancels your countdown when Blizzard allows it. Start the keystone with Blizzard's Start button.",
     forever_world_map = "Show known travel stops and roads on the world map. Click a marker to place a waypoint.",
     gathering_tooltips = "Red means your skill is too low. The other colors show how far you are above the requirement.",
-    gathering_routes = "The arrow automatically points to the nearest known spot for your selected professions and shows the distance in meters. "
-        .. "Use /msufgather hud to toggle the radar and /msufgather stop to stop guidance. "
-        .. "Known spots may have been gathered already. The arrow works in open-world combat and pauses in instances.",
     castbar_art = "Adds a thin castbar frame and a dark spell-name panel below it. The Blizzard setup enables this artwork. "
         .. "Disable it to keep the MSUF castbar appearance.",
     glimmer_objects = "Quest item sparkle enables the game's own golden particles on eligible quest objects, including during "
@@ -67,6 +67,8 @@ local HELP = {
     group_death_alert = "Reports the first observed death of each group member during combat. Local chat, a screen notice and a sound can be selected separately. Simultaneous deaths share one sound. Optionally include your own death. The listener is active only while you are grouped and in combat.",
     release_protection = "Hold the selected key while clicking Release Spirit. The release button stays hidden until you hold it; resurrection and death recap remain available. Choose where to use the protection. Blizzard's automatic release timer is unchanged.",
     bloodlust_lockout = "Shows your own Bloodlust exhaustion while in a group, or a ready state if you prefer. Relevant player aura changes update it; MSUF Edit Mode moves it and previews the locked state.",
+    group_finder_locations = "Shows the area of each listed player or group leader. "
+        .. "Locations update with Blizzard's search results while the browser is open. Missing or restricted areas stay hidden.",
     group_finder_double_click = "Double-click a search result to open Blizzard's application dialog. With submit on double-click, the second click also signs up with the roles already chosen in that dialog; hold Shift to review it instead. A saved note can appear beside the dialog for copying; it is stored when you finish editing.",
     group_finder_applicant_sort = "Sort applicants for your own Mythic+ listing by their average member score, highest first. Ties keep Blizzard's order. If any score is missing or restricted, the native order remains. The closed list is untouched.",
     mythic_auto_queue = "Confirms Mythic+ role checks with saved roles. Invitation reminders have their own switch; accept invitations in Blizzard's dialog.",
@@ -80,6 +82,7 @@ local HELP = {
     quiet_popups = "Choose each Blizzard popup separately. The feature hides its window when it appears and leaves the underlying game events intact. Combat lockdown can prevent hiding a protected window.",
     collection = "Adds automatic collection on top of Blizzard's own Auto Loot setting, which stays unchanged. Locked slots and confirmations stay manual.",
     history = "Hides or briefly shows the loot history window. Need, Greed and Pass popups stay available.",
+    loot_rolls = "Manual rolls with player counts and results. Identical drops have separate results. Gamepad uses Blizzard's window.",
     open_containers = "Only containers newly acquired after enabling this helper are opened. It waits for combat to end, opens one at a time, and leaves them to you while you hold Shift or a loot window or a window that gives item use another meaning is open: merchant, bank, guild bank, mail, trade, auction house, scrapper, socket, upgrade and similar. Warbound containers stay unopened unless you allow them; profiles that used this helper before keep opening them. Midnight Artisan payouts can wait while your Shard of Dundun is capped.",
     marked_sales = "Enter up to 200 item IDs. A button appears only at a merchant and previews eligible stacks; clicking it opens a confirmation. The helper checks item identity, quality, value, quest status and bag position again before requesting sales. Equippable items require a separate opt-in.",
     filtered_loot = "Shows up to three extra compact notices for Blizzard personal item-loot toasts. Filter by minimum quality, mount or pet items, and optionally up to 100 item IDs. Native Blizzard notices remain visible; ordinary bag additions without a toast are not included.",

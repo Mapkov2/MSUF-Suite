@@ -72,70 +72,102 @@ local function Table(value)
     return Public(value) and type(value) == "table"
 end
 
-local function Paragon(id)
-    local value, threshold, _, pending = C_Reputation.GetFactionParagonInfo(id)
-    if not (Finite(value) and Finite(threshold) and threshold > 0) then return end
-    -- A reward waiting to be claimed shows the bar full, as Blizzard's does: its
-    -- status bar clamps value + threshold to the maximum, so the step stops at it.
-    return PARAGON, Public(pending) and pending == true and threshold or value % threshold, threshold, false
+local function Flag(value)
+    return Public(value) and value == true
 end
 
-local function Renown(id)
+local function Paragon(id)
+    local value, threshold, _, pending, tooLowLevel = C_Reputation.GetFactionParagonInfo(id)
+    if not (Finite(value) and Finite(threshold) and threshold > 0) then return end
+    -- A waiting reward fills the current bar, matching the native status bar.
+    pending = Flag(pending)
+    local claimable = pending and Public(tooLowLevel) and tooLowLevel ~= true
+    return PARAGON, pending and threshold or value % threshold, threshold, false, nil, claimable
+end
+
+local function Renown(id, detailed)
     local data = C_MajorFactions.GetMajorFactionData(id)
     if not (Table(data) and Finite(data.renownLevel)) then return end
-    local label = RENOWN_LEVEL_LABEL:format(data.renownLevel)
-    if C_MajorFactions.HasMaximumRenown(id) then return label, 1, 1, true end
+    local level = data.renownLevel
+    local label = RENOWN_LEVEL_LABEL:format(level)
+    if not detailed then return label end
+    if Flag(C_MajorFactions.HasMaximumRenown(id)) then return label, 1, 1, true end
     if Finite(data.renownReputationEarned) and Finite(data.renownLevelThreshold) and data.renownLevelThreshold > 0 then
-        return label, data.renownReputationEarned, data.renownLevelThreshold, false
+        return label, data.renownReputationEarned, data.renownLevelThreshold, false, level + 1
     end
+    return label
 end
 
--- Nothing for a faction that is no friendship: its friendshipFactionID is 0.
-local function Friendship(id)
+local function Friendship(id, detailed)
     local info = C_GossipInfo.GetFriendshipReputation(id)
     if not (Table(info) and Finite(info.friendshipFactionID) and info.friendshipFactionID > 0) then return end
     local label = PublicText(info.reaction)
-    if not label then return end
-    local lower, upper = info.reactionThreshold, info.nextThreshold
-    if Finite(lower) and Finite(upper) and Finite(info.standing) and upper > lower then
-        return label, info.standing - lower, upper - lower, false
+    if not label or not detailed then return label end
+    local upper = info.nextThreshold
+    if not Public(upper) then return label end
+    if upper == nil then return label, 1, 1, true end
+    local lower, value = info.reactionThreshold, info.standing
+    if Finite(lower) and Finite(upper) and Finite(value) and upper > lower then
+        return label, value - lower, upper - lower, false
     end
-    return label, 1, 1, true
+    return label
 end
 
-local function Standing(data)
-    if not Finite(data.reaction) then return end
-    local label = PublicText(GetText("FACTION_STANDING_LABEL" .. data.reaction, UnitSex("player")))
-    if not label then return end
-    local lower, upper = data.currentReactionThreshold, data.nextReactionThreshold
-    if data.reaction < MAX_REPUTATION_REACTION and Finite(lower) and Finite(upper) and Finite(data.currentStanding)
-        and upper > lower then
-        return label, data.currentStanding - lower, upper - lower, false
+local labelsBySex = {}
+function S.ReputationStandingLabel(reaction, sex)
+    if not Finite(reaction) or not Finite(sex) then return end
+    local labels = labelsBySex[sex]
+    if not labels then
+        labels = {}
+        labelsBySex[sex] = labels
     end
-    return label, 1, 1, true
+    local label = labels[reaction]
+    if not label then
+        label = PublicText(GetText("FACTION_STANDING_LABEL" .. reaction, sex))
+        labels[reaction] = label
+    end
+    return label
+end
+
+local function Standing(data, sex, detailed)
+    local reaction = data.reaction
+    if sex == nil then sex = UnitSex("player") end
+    local label = S.ReputationStandingLabel(reaction, sex)
+    if not label or not detailed then return label end
+    if reaction == MAX_REPUTATION_REACTION then return label, 1, 1, true end
+    local lower, upper, value = data.currentReactionThreshold, data.nextReactionThreshold, data.currentStanding
+    if Finite(lower) and Finite(upper) and Finite(value) and upper > lower then
+        return label, value - lower, upper - lower, false, reaction + 1
+    end
+    return label
+end
+
+-- Reuse the caller's faction data. The list reader already holds the native
+-- row and the player's sex, so no watched lookup or second scan is needed.
+function S.ReadFactionReputation(data, sex, detailed)
+    local id = data.factionID
+    if Finite(id) and id > 0 then
+        if detailed and Flag(C_Reputation.IsFactionParagonForCurrentPlayer(id)) then
+            local label, current, maximum, capped, nextLevel, pending = Paragon(id)
+            if label then return "paragon", label, current, maximum, capped, nextLevel, pending end
+        end
+        if Flag(C_Reputation.IsMajorFaction(id)) then
+            local label, current, maximum, capped, nextLevel = Renown(id, detailed)
+            if label then return "renown", label, current, maximum, capped, nextLevel end
+        end
+        local label, current, maximum, capped = Friendship(id, detailed)
+        if label then return "friendship", label, current, maximum, capped end
+    end
+    return "standing", Standing(data, sex, detailed)
 end
 
 function S.ReputationProgress()
     local data = C_Reputation.GetWatchedFactionData()
     if not (Table(data) and Finite(data.factionID) and data.factionID ~= 0) then return nil end
-    local name, id = PublicText(data.name), data.factionID
+    local name = PublicText(data.name)
     if not name then return nil end
-    local label, current, maximum, capped, kind
-    if C_Reputation.IsFactionParagonForCurrentPlayer(id) then
-        label, current, maximum, capped = Paragon(id)
-        kind = "paragon"
-    elseif C_Reputation.IsMajorFaction(id) then
-        label, current, maximum, capped = Renown(id)
-        kind = "renown"
-    else
-        label, current, maximum, capped = Friendship(id)
-        kind = "friendship"
-        if not label then
-            label, current, maximum, capped = Standing(data)
-            kind = "standing"
-        end
-    end
-    if not label then return nil end
+    local kind, label, current, maximum, capped = S.ReadFactionReputation(data, nil, true)
+    if not label or not current or not maximum then return nil end
     progress.name, progress.label, progress.current, progress.maximum = name, label, current, maximum
     progress.kind, progress.capped = kind, capped
     return progress

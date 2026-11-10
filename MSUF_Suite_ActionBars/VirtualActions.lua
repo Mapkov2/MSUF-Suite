@@ -272,11 +272,20 @@ local function Drop(button)
     local action = CursorAction()
     if not action or not SecureAction(action) then return end
     local previous = rec.virtualAction
-    -- A pickup from another bar may already have emptied its source slot.
-    -- Commit the incoming assignment before clearing the game cursor.
-    Set(rec, action)
-    ClearCursor()
-    if previous then Pickup(previous) end
+    if previous then
+        -- Native pickup can decline, e.g. a mount hidden by journal filters.
+        -- Keep the slot until the old action is safely on the cursor.
+        if previous.kind == action.kind and previous.id == action.id then return end
+        if not Pickup(previous) then
+            local held = GetCursorInfo()
+            if S.Public(held) and held == nil then Pickup(action) end
+            return
+        end
+        Set(rec, action)
+    else
+        Set(rec, action)
+        ClearCursor()
+    end
 end
 
 -- A click while holding an action places it, just like a release-drag.

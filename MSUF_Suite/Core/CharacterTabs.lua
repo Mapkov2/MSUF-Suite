@@ -1,10 +1,12 @@
 local _, NS = ...
-local Text, Client = NS.Text, NS.Client
-local Model = { TabLimit = 8, CardLimit = 6, RowLimit = 12, NameLimit = 80, MaxBytes = 65535 }
+local Text, Client, IsSecret = NS.Text, NS.Client, NS.IsSecret
+-- Include the longest named and positioned dynamic source in every row.
+local Model = { TabLimit = 8, CardLimit = 6, RowLimit = 12, NameLimit = 80, MaxBytes = 66 * 1024 }
 NS.CharacterTabs = Model
 
 local RETAIL, FOREVER = "retail", "forever"
-local MAX_ID, ORDER_VERSION, POSITION_VERSION = 999999, "1", "2"
+local MAX_ID, MAX_SOURCE_ID = 999999, 2147483647
+local ORDER_VERSION, POSITION_VERSION = "1", "2"
 -- A fixed bias fits each signed axis into two decimal digits.
 local POSITION_BIAS = 50
 local RECORD_KINDS = { T = "tab", C = "card", R = "row" }
@@ -14,11 +16,15 @@ local EMPTY = {}
 local cache = setmetatable({}, { __mode = "k" })
 local sources, groups, templates = {}, {}, {}
 
-local function Source(id, label, category, sample, client)
-    local source = { id = id, label = label, text = Text(label), category = category, sample = sample, client = client }
+local function Source(id, label, category, sample, client, report)
+    local source = { id = id, label = label, text = Text(label), category = category,
+        sample = sample, client = client, report = report }
     sources[id] = source
     return source
 end
+
+local watched = Source("watchedReputation", "Watched reputation", "Reputation")
+watched.kind = "faction"
 
 Model.Sources = {
     Source("itemLevel", "Item Level", "Equipment", "712"),
@@ -42,7 +48,37 @@ Model.Sources = {
     Source("avoidance", "Avoidance", "Defense", "3.50%", RETAIL),
     Source("level", "Level", "Progress", "23"),
     Source("xp", "Experience", "Progress", "4500 / 7600"),
+    watched,
+    Source("reputationReport", "All reputations", "Reports", nil, nil, "reputation"),
+    Source("currencyReport", "All currencies", "Reports", nil, nil, "currency"),
+    Source("skillsReport", "All skills", "Reports", nil, nil, "skills"),
+    Source("pvpReport", "PvP summary", "Reports", nil, nil, "pvp"),
+    Source("statisticsReport", "All statistics", "Reports", nil, nil, "statistics"),
+    Source("attributesReport", "All attributes", "Reports", nil, nil, "attributes"),
+    Source("equipmentReport", "Equipment summary", "Reports", nil, nil, "gear"),
 }
+
+local dynamicSources = {
+    faction = { label = "Faction reputation", text = Text("Faction reputation"), category = "Reputation" },
+    currency = { label = "Currency amount", text = Text("Currency amount"), category = "Currencies" },
+}
+
+function Model.DynamicSourceID(kind, id)
+    if IsSecret(kind) or IsSecret(id) or not dynamicSources[kind] or type(id) ~= "number" then return end
+    if id >= 1 and id <= MAX_SOURCE_ID and id % 1 == 0 then return kind .. ":" .. id end
+end
+
+local function ParseDynamicSource(id)
+    if type(id) ~= "string" or #id > 19 then return end
+    local kind, digits = id:match("^(%l+):([1-9]%d*)$")
+    if not dynamicSources[kind] then return end
+    local target = tonumber(digits)
+    if target <= MAX_SOURCE_ID then return kind, target end
+end
+
+local function ValidSource(id)
+    return sources[id] ~= nil or ParseDynamicSource(id) ~= nil
+end
 
 local function Group(id, label, ...)
     local group = { id = id, label = label, text = Text(label), sources = { ... } }
@@ -56,6 +92,7 @@ Model.Groups = {
     Group("enhancements", "Enhancements", "crit", "haste", "mastery", "versatility"),
     Group("defense", "Defense", "armor", "dodge", "defense", "avoidance"),
     Group("progress", "Progress", "level", "xp"),
+    Group("reputation", "Reputation", "reputationReport"),
 }
 
 local function Template(id, label, ...)
@@ -68,15 +105,22 @@ Model.Templates = {
     Template("empty", "Empty tab"),
     Template("raid", "Raid check", "equipment", "enhancements"),
     Template("progress", "Progress", "progress"),
+    Template("reputation", "Reputation", "reputation"),
 }
 
 function Model.Source(id)
-    return sources[id]
+    local source = sources[id]
+    if source then return source end
+    local kind, target = ParseDynamicSource(id)
+    if not kind then return end
+    local defaults = dynamicSources[kind]
+    return { id = id, kind = kind, target = target, label = defaults.label,
+        text = defaults.text, category = defaults.category }
 end
 
 function Model.SourceAvailable(id)
     local source = sources[id]
-    if not source then return false end
+    if not source then return ParseDynamicSource(id) ~= nil end
     return not source.client or source.client == (Client.isForever and FOREVER or RETAIL)
 end
 
@@ -186,7 +230,7 @@ local function Decode(value)
             card = { title = Name(label, Text("Values")), rows = {}, x = x, y = y }
             tab.cards[#tab.cards + 1] = card
         elseif kind == "R" then
-            if not card or not sources[key] or #card.rows >= Model.RowLimit then return EMPTY end
+            if not card or not ValidSource(key) or #card.rows >= Model.RowLimit then return EMPTY end
             card.rows[#card.rows + 1] = { source = key, label = CleanText(label), x = x, y = y }
         else
             return EMPTY
@@ -234,7 +278,7 @@ local function EncodeCard(lines, card)
     local positioned = EncodeRecord(lines, "card", card, "C||" .. Name(card.title, Text("Values")))
     for i = 1, #card.rows do
         local row = card.rows[i]
-        if type(row) ~= "table" or not sources[row.source] then return false end
+        if type(row) ~= "table" or not ValidSource(row.source) then return false end
         if EncodeRecord(lines, "row", row, "R|" .. row.source .. "|" .. CleanText(row.label)) then positioned = true end
     end
     return true, positioned

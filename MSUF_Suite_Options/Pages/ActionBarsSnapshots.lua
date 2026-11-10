@@ -147,7 +147,7 @@ local function UpdateRows(ui)
         UpdateRow(ui, row, list[index], index)
     end
     ui.empty:SetShown(#list == 0)
-    ui.pageLabel:SetText(Tr("Page %d of %d"):format(ui.page, pages))
+    P.SetTranslatedText(ui.pageLabel, Tr("Page %d of %d"):format(ui.page, pages))
     ui.previous:SetEnabled(ui.page > 1 and not P.Combat())
     ui.next:SetEnabled(ui.page < pages and not P.Combat())
     ui.stage:SetEnabled(ui.packet ~= nil and next(ui.assignments) ~= nil and not P.Combat())
@@ -291,7 +291,7 @@ end
 local function BuildRows(ui, y)
     local body, width = ui.body, ui.width
     local buttonWidth = math.min(ui.half, 150)
-    ui.empty = P.Text(body, Tr("Nothing to show here yet."), 16, y, width)
+    ui.empty = P.Text(body, "Nothing to show here yet.", 16, y, width)
     for offset = 1, ROW_COUNT do
         local row = {}
         ui.rows[offset] = row

@@ -50,7 +50,7 @@ local function Focus(ui, handle)
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
 end
 local function Write(ui, handle, x, y)
-    if P.Combat() or Layers.NPCWorldNames(ui) then return false end
+    if P.Combat() or Layers.NPCWorldNames(ui) or ui.groupPreviewEnabled and not ui.compact then return false end
     local rules = P.catalog[ID].rules
     local xr, yr = rules[handle.keyX], rules[handle.keyY]
     if not xr or not yr then return false end
@@ -58,9 +58,12 @@ local function Write(ui, handle, x, y)
         [handle.keyY] = Clamp(Round(y), yr.min, yr.max) }) ~= false
 end
 local function Read(handle) return P.Get(ID, handle.keyX), P.Get(ID, handle.keyY) end
-local function CanEdit(handle) return not Layers.NPCWorldNames(handle.previewUI) end
+local function CanEdit(handle)
+    local ui = handle.previewUI
+    return not Layers.NPCWorldNames(ui) and (not ui.groupPreviewEnabled or ui.compact)
+end
 
-function Editor:Select(handle) self.kit:Select(not Layers.NPCWorldNames(self) and handle or nil) end
+function Editor:Select(handle) self.kit:Select(handle and CanEdit(handle) and handle or nil) end
 
 function Editor:RefreshSelection()
     local selected = self.body._selectedHandle
@@ -102,6 +105,8 @@ local function BindSetting(handle, id)
         handle._npSettingKey = "enemyPowerEnabled"
     elseif id == "personal.Power" then
         handle._npSettingKey = "personalPowerSkin"
+    elseif P.Suite.NameplateAuraDisplay.Element(id) then
+        handle._npSettingKey = P.Suite.NameplateAuraDisplay.Prefix(P.Suite.NameplateAuraDisplay.Element(id)) .. "Visible"
     elseif id:match("%.target$") or id:match("%.targetRight$") then
         handle._npSettingKey = id:match("^enemy") and "enemyTargetMarker" or "enemyTargetHideFriendly"
     elseif id == "enemy.elite" or id == "enemy.quest"
@@ -143,7 +148,9 @@ function Editor:Paint()
     self.stage:ClearAllPoints()
     self.stage:SetPoint("CENTER", self.canvas, "CENTER", self.panX, self.panY)
     self.stage:SetScale(self.zoom)
-    for _, render in ipairs(self.renderers) do render() end
+    if not P.NameplatesMultiPreview.Paint(self) then
+        for _, render in ipairs(self.renderers) do render() end
+    end
     if self.zoomLabel then self.zoomLabel:SetText(string.format("%d%%", Round(self.zoom * 100))) end
     self:LayoutLayerRail()
     for _, button in ipairs(self.layerButtons or {}) do
@@ -189,7 +196,7 @@ local function BuildZoomTools(ui)
     tools:SetHeight(46)
     Button(ui, tools, "fit", "Fit", 36, 0, function()
         ui.panX, ui.panY = 0, 0
-        ui.zoom = Clamp((canvas:GetWidth() - 40) / 600, 0.5, 1)
+        ui.zoom = ui.groupPreviewEnabled and 1 or Clamp((canvas:GetWidth() - 40) / 600, 0.5, 1)
         ui:Paint()
     end)
     Button(ui, tools, "actual", "1:1", 36, 40, function()
@@ -329,7 +336,7 @@ local function BuildSelection(ui)
         local bar = SB.Create(body, {
             Tr = Tr, Theme = function() return T end, HandleList = function() return ui.handles end,
             HandleLabel = function(handle) return handle._label end,
-            IsPlaced = function(handle) return not Layers.NPCWorldNames(ui) and handle:IsShown() end,
+            IsPlaced = function(handle) return CanEdit(handle) and handle:IsShown() end,
             ReadOffsets = function(_, handle) return Read(handle) end,
             WriteOffsets = function(_, handle, x, y)
                 local ok = Write(ui, handle, x, y)

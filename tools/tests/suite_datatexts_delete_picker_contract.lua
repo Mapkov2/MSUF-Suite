@@ -31,6 +31,7 @@ local function Options(world, client)
         return frame
     end
     local theme = { colors = { text = {} } }
+    function theme.ApplyMenuFont(label, _, role) label.menuFontRole = role end
     function theme.Font(parent, _, text)
         local label = parent:CreateFontString()
         label:SetText(text)

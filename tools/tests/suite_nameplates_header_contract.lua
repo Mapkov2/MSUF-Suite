@@ -9,7 +9,8 @@ PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
 C_CVar = { GetCVar = function() return "5" end, GetCVarBool = function() return false end }
 UnitIsGameObject = function() return object end
 UnitIsFriend, UnitIsPlayer = function() return false end, function() return false end
-local private = { NS = NS }
+NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
+local private = { NS = NS, Extensions = { OnAnchors = function() end } }
 for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "NameplateText" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
 end

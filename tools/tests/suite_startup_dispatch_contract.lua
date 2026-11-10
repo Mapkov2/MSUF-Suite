@@ -129,6 +129,10 @@ local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, reco
     end
     assert(loadfile(root .. "/MSUF_Suite/Core/Platform.lua"))("MSUF_Suite", suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", suite)
+    suite.ProfileIO = { StartNameplateProfile = function()
+        assert(suite.Suite.started, "nameplate profile applied before module startup")
+        return true
+    end }
     assert(loadfile(root .. "/MSUF_Suite/Core/Startup.lua"))("MSUF_Suite", suite)
     if startBeforeLockdown and scaleSupported then
         local host = CreateFrame()

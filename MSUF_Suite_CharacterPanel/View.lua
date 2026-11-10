@@ -2,6 +2,7 @@ local _, NS = ...
 local S = MSUFSuite.Suite
 local CharacterHeader = S.CharacterHeader
 local Window, ModelControls, TabOverflow, GroupLayout = NS.Window, NS.ModelControls, NS.TabOverflow, NS.GroupLayout
+local Stats = NS.Stats
 local View = {}
 View.__index = View
 NS.View = View
@@ -205,7 +206,7 @@ local function NewTab(view)
     tab.underline = Rule(view, tab, "BOTTOM", GOLD)
     TrackSurface(view, tab, nil, nil, NAVIGATION, Fill(view, tab, "HIGHLIGHT", HOVER, 1))
     tab:SetScript("OnClick", TabOverflow.Click)
-    if view.nativeLayout and NS.Routing then tab:HookScript("OnEnter", NS.Routing.HoverGearTab) end
+    if view.nativeLayout then tab:HookScript("OnEnter", NS.Routing.HoverGearTab) end
     return tab
 end
 
@@ -275,7 +276,7 @@ end
 function View:SetTabs(tabs, selected, forceLayout)
     local fontChanged = RefreshFonts(self)
     if self.tabs ~= tabs or fontChanged or forceLayout or TabOverflow.SelectionMovesTab(self, tabs, selected) then
-        if self.nativeLayout and NS.Routing then NS.Routing.ReleaseGearClick() end
+        if self.nativeLayout then NS.Routing.ReleaseGearClick() end
         self.tabs = tabs
         TabOverflow.Layout(self, tabs, selected, tabLayout)
     end
@@ -310,6 +311,7 @@ end
 
 function View:ApplyHeaderSettings(config)
     if config then self.headerConfig = config end
+    GroupLayout.SetReputationStyle(self, self.headerConfig, self.palette[GOLD] or GOLD)
     local reserve = self.nativeRoot and not self.nativeLayout and 0 or CAPTION_WIDTH
     self.header:Settings(self.headerConfig, self.skin, self.frame:GetWidth() - 2, reserve, self.previewLayers)
     self.header:Paint(self.headerData, self:IsMinimized())
@@ -468,13 +470,11 @@ local function NewValueRow(list, card)
     row.view = list.view
     row:EnableMouse(false)
     row:SetScript("OnClick", GroupClick)
+    Stats.BindTooltip(row)
     Fill(list.view, row, "HIGHLIGHT", HOVER, 1)
     row.left = Font(list.view, row, 11, MUTED)
-    row.left:SetPoint("LEFT", 10, 0)
-    row.left:SetPoint("RIGHT", row, "CENTER", 18, 0)
     row.right = Font(list.view, row, 11, TEXT, "RIGHT", true)
-    row.right:SetPoint("LEFT", row, "CENTER", 20, 0)
-    row.right:SetPoint("RIGHT", -10, 0)
+    GroupLayout.PositionValueText(row, 0)
     Rule(list.view, row, "TOP", LINE)
     return row
 end
@@ -509,15 +509,18 @@ local function PaintCard(list, card, group, offset)
             card.rows[used] = row
         end
         local values = group.rows[i]
+        Stats.UpdateTooltip(row, values)
         if row.action ~= values.action then
             row.action = values.action
-            row:EnableMouse(values.action ~= nil)
             Tint(list.view, row.right, values.action and GOLD or TEXT, true)
         end
         local movement = values.layout
         local x, y = list.rowInset, GROUP_HEADER + (i - 1) * GROUP_ROW
         if movement then x, y = x + movement.x, y - movement.y end
         Place(row, x, y, list.rowWidth, GROUP_ROW)
+        if values.reputationFill ~= nil or row.reputationProgress ~= nil then
+            GroupLayout.PaintReputationBar(row, values.reputationFill, values.reputationReaction)
+        end
         Text(row.left, values.label)
         Text(row.right, list.view.readableValues and values.value == "—" and "?" or values.value)
         Visible(row, true)
@@ -627,28 +630,27 @@ local function GearBody(view)
     rail:SetPoint("TOPRIGHT")
     rail:SetSize(RAIL_W, BODY_H)
     view.rail = GroupLayout.NewList(view, rail, RAIL_W, BODY_H - 32, 1, PaintList)
-    view.railHost = rail
     view.dismiss = ClickLabel(view, rail, NS.Text("Close"), CloseDetails)
     view.dismiss.view = view
     view.dismiss:SetPoint("BOTTOMLEFT")
     view.dismiss:SetSize(82, 24)
 end
 
-local function PaintGearRail(view, groups, reset, combat)
-    local rail = view.rail
+local function PaintGroupMode(view, list, key, groups, reset, combat)
+    local fixed = view[key]
     if combat then
-        -- The native scroll template recalculates the protected range in its
-        -- own scripts. The short combat rail needs neither scrolling nor a bar.
-        Visible(rail.scroll, false)
-        if not view.combatRail then
-            view.combatRail = GroupLayout.NewList(view, view.railHost, RAIL_W, BODY_H - 32, 1, PaintList, true)
+        -- The native scroll template recalculates the protected range in its scripts.
+        Visible(list.scroll, false)
+        if not fixed then
+            fixed = GroupLayout.NewList(view, list.parent, list.width + 16, list.height, 1, PaintList, true)
+            view[key] = fixed
         end
-        PaintGroups(view.combatRail, groups, false)
-        Visible(view.combatRail.canvas, true)
+        PaintGroups(fixed, groups, false)
+        Visible(fixed.canvas, true)
     else
-        if view.combatRail then Visible(view.combatRail.canvas, false) end
-        PaintGroups(rail, groups, reset)
-        Visible(rail.scroll, true)
+        if fixed then Visible(fixed.canvas, false) end
+        PaintGroups(list, groups, reset)
+        Visible(list.scroll, true)
     end
 end
 
@@ -657,6 +659,7 @@ function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups,
     local reset = self.contentTab ~= self.tab or self.detailSlot ~= selectedSlot
     self.contentTab, self.detailSlot = self.tab, selectedSlot
     Visible(self.reportCover or self.report.scroll, false)
+    if self.combatReport then Visible(self.combatReport.canvas, false) end
     Visible(self.gear, true)
     Visible(self.modelHost, withModel == true)
     if self.model and withModel and self.frame:IsShown() then PaintModel(self) end
@@ -666,7 +669,8 @@ function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups,
     PaintSlots(self, self.right, right, DOLL_W - INSET - columnWidth, INSET, columnWidth, 0, SLOT_STEP, selectedSlot)
     PaintSlots(self, self.weapons, weapons, INSET, WEAPON_Y, weaponWidth, weaponWidth + GROUP_GAP, 0, selectedSlot)
     local detailsShown = selectedSlot ~= nil and detailGroups ~= nil and #detailGroups > 0
-    PaintGearRail(self, detailsShown and detailGroups or groups or GROUP_EMPTY, reset, combat)
+    local railGroups = detailsShown and detailGroups or groups or GROUP_EMPTY
+    PaintGroupMode(self, self.rail, "combatRail", railGroups, reset, combat)
     Visible(self.dismiss, detailsShown)
     Text(self.hint, self.gearHint)
 end
@@ -678,12 +682,12 @@ function View:RefreshInspectSummary(groups, relayout)
     PaintList(rail, NS.Number(rail.scroll:GetVerticalScroll()) or 0)
 end
 
-function View:ShowGroups(groups)
+function View:ShowGroups(groups, combat)
     local reset = self.contentTab ~= self.tab
     self.contentTab, self.detailSlot = self.tab, nil
     if self.gear then Visible(self.gear, false) end
-    Visible(self.reportCover or self.report.scroll, true)
-    PaintGroups(self.report, groups or GROUP_EMPTY, reset)
+    if self.reportCover then Visible(self.reportCover, true) end
+    PaintGroupMode(self, self.report, "combatReport", groups or GROUP_EMPTY, reset, combat)
     Text(self.hint, "")
 end
 

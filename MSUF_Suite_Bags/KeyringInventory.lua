@@ -9,7 +9,9 @@ P.KeyringInventory = Keyring
 local buttons, versions, shownSlots = {}, {}, 0
 
 local function Enabled()
-    local enabled = C_ActionBar.ShouldShowKeyring()
+    local shouldShow = C_ActionBar.ShouldShowKeyring
+    if not shouldShow then return false end
+    local enabled = shouldShow()
     return S.Public(enabled) and enabled == true and GetCVarBool("showKeyring") and not S.GamepadUI()
 end
 

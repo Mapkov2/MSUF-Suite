@@ -125,6 +125,11 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         opened = opened + 1
         return true
     end
+    owner.Finish = function(callback, ...) return true, callback(...) end
+    owner.ProfileIO = { StartNameplateProfile = function()
+        assert(owner.Suite.started, "nameplate profile applied before module startup")
+        return true
+    end }
     assert(loadfile(root .. "/MSUF_Suite/Core/Startup.lua"))("MSUF_Suite", owner)
     assert(MSUFSuite == owner)
     frame:callback("ADDON_LOADED", "Unrelated")

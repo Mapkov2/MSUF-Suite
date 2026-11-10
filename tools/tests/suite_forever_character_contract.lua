@@ -375,16 +375,22 @@ do
     local text = badgeFrame:CreateFontString()
     badgeFrame.Show, badgeFrame.Hide = text.Show, text.Hide
     local fontWrites, textWrites = 0, 0
+    local rejectFont = false
     text.SetFont = function(self, path)
-        self.font = path
         fontWrites = fontWrites + 1
+        if rejectFont then return false end
+        self.font = path
+        return true
     end
     text.SetText = function(self, value)
         assert(self.font, "item level written before its font was set")
         self.text = value
         textWrites = textWrites + 1
     end
-    badgeFrame.CreateFontString = function() return text end
+    badgeFrame.CreateFontString = function(_, _, _, template)
+        text.font = template
+        return text
+    end
     ns.Safety.CreateChildFrame = function() return badgeFrame end
     ns.AdapterKit.FontPath = function() return "Fonts\\FRIZQT__.TTF" end
 
@@ -399,6 +405,9 @@ do
     ns.PaperDollChrome.UpdateBadge(row, headSlot, nil)
     assert(not badgeFrame.shown, "empty equipment slot kept its item level")
 
+    rejectFont = true
+    ns.PaperDollChrome.UpdateBadge({}, headSlot, { itemLevel = 22 })
+    assert(text.font == "GameFontNormalSmall" and text.text == "22", "unavailable font hid the item level")
     ns.Safety.CreateChildFrame, ns.AdapterKit.FontPath = createChild, fontPath
 end
 print("Suite Forever character: panes, mode tabs, item level and restore passed (secret strata: " .. tostring(secretCase) .. ")")

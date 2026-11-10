@@ -193,7 +193,7 @@ Enum = { TooltipDataType = { Item = 0 },
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/InventoryRules.lua"))("Core", P.NS)
 for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "PlayerGear", "UpgradeMarker", "Presentation", "Appearance", "GridView", "LayoutSafety",
-    "InventoryDetails", "SavedSearches", "SmartSearch", "FreeSlots", "InventoryActions", "EquippedBags", "WindowResize", "InventoryControls", "InventoryRendering", "InventoryView" }) do
+    "InventoryDetails", "SavedSearches", "SmartSearch", "FreeSlots", "InventoryActions", "BagHover", "EquippedBags", "WindowResize", "InventoryControls", "InventoryRendering", "InventoryView" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
 -- Bags.lua runs the view from its sub-module list after its own refresh and stop.

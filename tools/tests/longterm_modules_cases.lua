@@ -14,7 +14,7 @@ local function widget()
     end })
 end
 local P = {
-    NS = { Client = { isForever = false }, IsCombatLocked = function() return false end },
+    NS = { Client = { isForever = false }, IsCombatLocked = function() return false end, InCombat = function() return false end },
     Suite = { CreateFrame = widget, CreateTexture = widget,
         Public = function(v) return v ~= "secret" end,
         PublicText = function(v) return v ~= "secret" and type(v) == "string" and v or nil end },
@@ -64,7 +64,7 @@ local function widget(kind)
     end })
 end
 local P = {
-    NS = { Client = { isForever = false }, IsCombatLocked = function() return false end,
+    NS = { Client = { isForever = false }, IsCombatLocked = function() return false end, InCombat = function() return false end,
         BagsBankView = { TABS = 1, CHARACTER = 2, WARBANK = 3, CATEGORIES = 4 }, BagsView = {} },
     Suite = { CreateFrame = widget, CreateTexture = widget,
         Public=function(v) return v~="secret" end,
@@ -761,7 +761,8 @@ assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite"
 local P = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", P)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", P)
-for _, name in ipairs({ "Layout", "Roles", "Text", "Power", "Threat", "Level", "CastTime", "Auras", "KickReady", "Selection", "AuraColors", "Geometry", "Mouseover", "FriendlyNames" }) do P[name] = helper() end
+for _, name in ipairs({ "Layout", "Roles", "Text", "NameText", "Power", "Threat", "Level", "CastTime", "Auras", "KickReady", "Selection", "AuraColors", "AuraDisplay", "Extensions", "Geometry", "Mouseover", "FriendlyNames" }) do P[name] = helper() end
+P.Extensions.inUse = false
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Decor.lua"))("MSUF_Suite_Nameplates", P)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Skin.lua"))("MSUF_Suite_Nameplates", P)
 module.context = { CVar = function(_, key, value)
@@ -887,7 +888,9 @@ RegisterStateDriver = function() end
 InCombatLockdown = function() return false end
 local S = {}
 MSUFSuite = { Suite=S, SuiteCatalog={}, SuiteOrder={}, Database={}, FontRendering={}, InCombat=function() return false end,
-    HostBridge={Menu2=function() return {} end} }
+    HostBridge={Menu2=function() return {
+        GetControlTitle=function(w) return w._msuf2Title end,
+        GetControlLabel=function(w) return rawget(w,'_msuf2Label') end } end} }
 MSUF_NS={Client={Flavor='Mainline',IsForever=false}}
 securecallfunction=function(fn,...) return fn(...) end
 assert(loadfile(root..'/MSUF_Suite/Core/Platform.lua'))('MSUF_Suite',MSUFSuite)
@@ -1037,6 +1040,7 @@ local function Visit(fn)
 end
 Visit(P.pages[1].build)
 assert(found.SelectCopyDestination and found.RunCopyTo,'real copy callbacks were not found')
+found.InitEditorData()
 found.SelectCopyDestination('all')
 found.RunCopyTo({Hide=function() end})
 assert(question and question.callback,'Copy All did not open its real confirmation')

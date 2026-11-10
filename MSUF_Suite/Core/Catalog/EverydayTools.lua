@@ -31,20 +31,6 @@ Module("waypointLists", "Saved waypoint lists", "Save named map points and activ
 B.Section("waypointLists", "saved_waypoints", "Saved waypoint lists", {
     B.Bool("superTrack", "Track the selected saved waypoint", true),
 })
-Module("gatheringRoutes", "Resource routes",
-    "Choose gathering spots and follow a direction arrow with distance in meters.")
-B.Section("gatheringRoutes", "gathering_routes", "Resource routes", {
-    B.Bool("herbs", "Track herb locations", true),
-    B.Bool("ore", "Track ore locations", true),
-    B.Bool("fish", "Track fishing pools", true),
-    B.Bool("timber", "Track timber locations", false),
-    B.Bool("skinning", "Track skinning spots", false),
-    B.Bool("record", "Remember herbs and ore after harvesting", true),
-    B.Bool("radar", "Show the resource radar"),
-    B.Number("radarRange", "Resource radar range (meters)", 150, 50, 300, 10),
-})
-NS.SuiteCatalog.gatheringRoutes.rules.timber.hidden = NS.Client.isForever or nil
-NS.SuiteCatalog.gatheringRoutes.rules.radarRange.enableKey = "radar"
 Module("soundProfiles", "Context sound profiles",
     "Choose volumes for each activity. Turning this off restores the previous volumes when they are still owned by MSUF.")
 NS.SuiteCatalog.soundProfiles.cvars = {

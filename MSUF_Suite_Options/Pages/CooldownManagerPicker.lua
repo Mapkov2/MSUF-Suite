@@ -346,14 +346,13 @@ local function AddDefensiveRow(n, id, key, header)
 end
 
 local function AddExternalDefensives(n)
-    if Page.ForeignSpec() or not C_SpellBook or not C_SpellBook.IsSpellKnown then return n end
+    if Page.ForeignSpec() then return n end
     local seen, header = {}, false
     if not P.Suite.Client.isForever and Plain(C_SpellBook.IsSpellKnown(190456)) == true then
         n, header = AddDefensiveRow(n, 190456, "a190456", header) -- Ignore Pain
     end
-    local classify = C_Spell.IsExternalDefensive
-    local lines = C_SpellBook.GetNumSpellBookSkillLines and Plain(C_SpellBook.GetNumSpellBookSkillLines())
-    if not classify or type(lines) ~= "number" then return n end
+    local lines = Plain(C_SpellBook.GetNumSpellBookSkillLines())
+    if type(lines) ~= "number" then return n end
     for line = 1, lines do
         local info = Plain(C_SpellBook.GetSpellBookSkillLineInfo(line))
         local offset = info and Plain(info.itemIndexOffset)
@@ -362,7 +361,7 @@ local function AddExternalDefensives(n)
             for index = offset + 1, offset + count do
                 local item = Plain(C_SpellBook.GetSpellBookItemInfo(index, Enum.SpellBookSpellBank.Player))
                 local id = item and RowSpell(item.spellID)
-                if id and not seen[id] and Plain(C_SpellBook.IsSpellKnown(id)) == true and Plain(classify(id)) == true then
+                if id and not seen[id] and Plain(C_SpellBook.IsSpellKnown(id)) == true and Plain(C_Spell.IsExternalDefensive(id)) == true then
                     seen[id] = true
                     n, header = AddDefensiveRow(n, id, "g" .. id, header)
                 end

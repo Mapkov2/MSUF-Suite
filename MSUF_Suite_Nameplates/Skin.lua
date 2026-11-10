@@ -10,6 +10,7 @@ local KickReady, Selection, AuraColors = private.KickReady, private.Selection, p
 local Decor, Mouseover, Names = private.Decor, private.Mouseover, private.FriendlyNames
 local FilterFriendlyName, RestoreFriendlyName = Names.Filter, Names.Restore
 local NameText = private.NameText
+local AuraDisplay, Extensions = private.AuraDisplay, private.Extensions
 local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local IN_COMBAT = { inCombat = true }
 local M = {
@@ -250,16 +251,16 @@ local function PaintFonts(uf, health, cast, prefix)
     -- "Name and health text outline" styles both sides' health text; only
     -- enemy plates have a health text size (friendly keeps Blizzard's).
     local healthSize = nameStyle.healthSize
-    Text.Apply(health.Text, nameStyle, healthSize)
-    Text.Apply(health.LeftText, nameStyle, healthSize)
-    Text.Apply(health.RightText, nameStyle, healthSize)
+    Text.Apply(health.Text, nameStyle, healthSize, true)
+    Text.Apply(health.LeftText, nameStyle, healthSize, true)
+    Text.Apply(health.RightText, nameStyle, healthSize, true)
     if not cast then return end
     local style = Text.styles[keys.Cast]
     local size = style.size
-    Text.Apply(cast.Text, style, size)
-    Text.Apply(cast.CastTargetNameText, style, size)
+    Text.Apply(cast.Text, style, size, true)
+    Text.Apply(cast.CastTargetNameText, style, size, true)
     local time = M.castTimes[cast]
-    if time and time.unit then Text.Apply(time.label, style, size) end
+    if time and time.unit then Text.Apply(time.label, style, size, true) end
 end
 
 local function Paint(uf)
@@ -271,6 +272,7 @@ local function Paint(uf)
     CastTime.Paint(cast, prefix, unit, uf)
     KickReady.Paint(cast, prefix, unit)
     Threat.Apply(uf)
+    Extensions.BeforeNameFilter(uf)
     FilterFriendlyName(uf, prefix)
     PaintRaidIcon(uf, prefix)
     Level.PaintNative(uf, prefix)
@@ -298,11 +300,15 @@ local function Paint(uf)
     -- colors do (AuraColors.lua).
     AuraColors.Apply(uf, unit, prefix == "enemy")
     if NameText.inUse then NameText.Apply(uf, prefix, unit) end
+    AuraDisplay.Apply(uf, unit, prefix == "enemy")
+    if Extensions.inUse then Extensions.Apply(uf, health, cast, prefix, unit) end
 end
 
 local function RestorePlate(uf)
     if Power.enemyEnabled then Power.RestoreEnemy(uf) end
     NameText.Release(uf)
+    AuraDisplay.Restore(uf)
+    Extensions.Restore(uf)
     AuraColors.Restore(uf)
     Threat.Restore(uf)
     RestoreFriendlyName(uf.name)
@@ -488,6 +494,7 @@ local function QuestPass(module)
 end
 
 local function OnQuestLogChanged(module)
+    Extensions.OnMetadata()
     Roles.ClearQuest()
     if Roles.inInstance or not (module.config.enemyQuestColors or module.config.enemyQuestMarker
         or module.config.friendlyQuestMarker) then return end
@@ -496,6 +503,7 @@ local function OnQuestLogChanged(module)
 end
 
 local function OnTargetChanged(self)
+    Extensions.OnSelection()
     local previous = self.targetUF
     local plate = C_NamePlate.GetNamePlateForUnit("target")
     local current = Safe(plate) and plate.UnitFrame
@@ -511,6 +519,7 @@ end
 local FACT_EVENTS = { UNIT_LEVEL = true, UNIT_CLASSIFICATION_CHANGED = true, UNIT_DISPLAYPOWER = true }
 
 local function OnUnitChanged(module, event, unit)
+    if Extensions.inUse then Extensions.OnUnit(module, event, unit) end
     if not S.Public(unit) or type(unit) ~= "string" then return end
     local uf = module.activeUnits[unit]
     if not Safe(uf) then return end
@@ -542,28 +551,12 @@ local function OnUnitChanged(module, event, unit)
     end
 end
 
-local function OnCastChanged(module, event, unit)
-    if not module.active or not S.Public(unit) or type(unit) ~= "string" then return end
-    local uf = module.activeUnits[unit]
-    if not Safe(uf) then return end
-    local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
-    local state = cast and module.castTimes[cast]
-    if state and state.unit == unit then CastTime.Refresh(state, unit, event) end
-    if cast then KickReady.OnCast(cast, unit, event) end
-end
-
--- MSUF's interrupt-ready settings were applied: repaint the castbars of the
--- shown plates (KickReady.lua decides from MSUF's switch and look).
-local function RepaintCasts()
-    for _, uf in pairs(M.activeUnits) do
-        local health = Safe(uf) and uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
-        local cast = health and uf.CastBarsContainer and uf.CastBarsContainer.castBar
-        if cast then KickReady.Paint(cast, Prefix(uf), M.units[health]) end
-    end
-end
 
 local function RepaintAuraColors(module)
-    for unit, uf in pairs(module.activeUnits) do AuraColors.Apply(uf, unit, Prefix(uf) == "enemy") end
+    for unit, uf in pairs(module.activeUnits) do
+        AuraColors.Apply(uf, unit, Prefix(uf) == "enemy")
+        AuraDisplay.Apply(uf, unit, Prefix(uf) == "enemy")
+    end
 end
 
 -- World/area/level changes can reset native level badges and geometry. Keep
@@ -572,18 +565,21 @@ local FULL_CONTEXT = { PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = tru
 local function OnContextChanged(module, event)
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
         AuraColors.Configure(module.config, true)
+        AuraDisplay.Configure(module.config)
     end
     local changed = Roles.RefreshContext()
+    Extensions.OnContext(changed)
     if event == "ZONE_CHANGED" and not changed then return end
     CancelQuestRefresh(module)
     Roles.ClearQuest()
     RefreshActive(module, not FULL_CONTEXT[event], event == "PLAYER_SPECIALIZATION_CHANGED")
     -- A specialization brings other interrupt spells: casts that already run
     -- take the kick-ready look again (KickReady.Paint).
-    if event == "PLAYER_SPECIALIZATION_CHANGED" then RepaintCasts() end
+    if event == "PLAYER_SPECIALIZATION_CHANGED" then CastTime.Repaint() end
 end
 
 local function OnFocusChanged(module)
+    Extensions.OnSelection()
     local previous = module.focusUF
     local plate = C_NamePlate.GetNamePlateForUnit("focus")
     local current = Safe(plate) and plate.UnitFrame
@@ -645,6 +641,8 @@ end
 -- personal power write (needsRefresh) is Power's own: Power.Reapply writes it
 -- and no plate paint reads it (2026-10-26 M+ trace: 16 plates, 3.5-7.8 ms).
 local function OnCombatEnded(module)
+    Extensions.OnCombatEnded()
+    AuraDisplay.Resume()
     -- CVar writes held back for combat (CVars.Apply).
     if module.cvarsPending then CVars.Apply(module) end
     NameText.FlushRestores()
@@ -683,13 +681,22 @@ local AURA_CONFIG_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_P
 
 local function OnAuraSpellsChanged(module)
     AuraColors.Configure(module.config, true)
+    AuraDisplay.Configure(module.config)
     RepaintAuraColors(module)
 end
 
 -- Blizzard's Edit Mode feeds aura containers sample auras: on 12.1.0 the DoT
 -- colors hide while it is open (AuraColors.SetEditMode).
-local function OnEditModeEnter() AuraColors.SetEditMode(true) end
-local function OnEditModeExit() AuraColors.SetEditMode(false) end
+local function OnEditModeEnter()
+    AuraDisplay.SetEditMode(true)
+    AuraColors.SetEditMode(true)
+    RepaintAuraColors(M)
+end
+local function OnEditModeExit()
+    AuraDisplay.SetEditMode(false)
+    AuraColors.SetEditMode(false)
+    RepaintAuraColors(M)
+end
 
 -- Every plate listener also runs in combat (the context's allowCombat, kept
 -- explicit should the module ever move frames itself): restyling a native
@@ -709,7 +716,7 @@ function M:Enable()
     Listen(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
     Listen(self, "PLAYER_FOCUS_CHANGED", OnFocusChanged)
     for _, event in ipairs(UNIT_EVENTS) do Listen(self, event, OnUnitChanged) end
-    for _, event in ipairs(CAST_EVENTS) do Listen(self, event, OnCastChanged) end
+    for _, event in ipairs(CAST_EVENTS) do Listen(self, event, CastTime.OnChanged) end
     Listen(self, "QUEST_LOG_UPDATE", OnQuestLogChanged)
     for _, event in ipairs(CONTEXT_EVENTS) do Listen(self, event, OnContextChanged) end
     Listen(self, "PLAYER_REGEN_ENABLED", OnCombatEnded)
@@ -733,13 +740,16 @@ function M:Refresh()
     Selection.Configure(self.config)
     Mouseover.Configure()
     AuraColors.Configure(self.config)
-    if self.config.auraColorsEnabled then
+    AuraDisplay.Configure(self.config)
+    Extensions.Configure(self)
+    if self.config.auraColorsEnabled or self.config.auraDisplayEnabled then
         for _, event in ipairs(AURA_CONFIG_EVENTS) do Listen(self, event, OnAuraSpellsChanged) end
         self.context:Callback("EditMode.Enter", OnEditModeEnter)
         self.context:Callback("EditMode.Exit", OnEditModeExit)
         -- Edit Mode may have opened or closed while the module was off; the
         -- plate pass below repaints.
         AuraColors.SetEditMode(EditModeManagerFrame:IsEditModeActive(), false)
+        AuraDisplay.SetEditMode(EditModeManagerFrame:IsEditModeActive())
         self.auraSpellsListening = true
     elseif self.auraSpellsListening then
         for _, event in ipairs(AURA_CONFIG_EVENTS) do self.context:RemoveEvent(event) end
@@ -759,6 +769,8 @@ end
 function M:Disable()
     CancelQuestRefresh(self)
     self.active = false
+    Extensions.Disable()
+    AuraDisplay.Release()
     self.auraSpellsListening = nil
     Decor.Disable()
     Power.Disable()
@@ -786,9 +798,11 @@ Text.Bind(M)
 NameText.Bind(M)
 Level.Bind(M)
 CastTime.Bind(M)
-KickReady.Bind(M, RepaintCasts)
+KickReady.Bind(M, CastTime.Repaint)
 Mouseover.Bind(M)
 Names.Bind(M)
 Auras.Bind(M)
 AuraColors.Bind(M, RepaintAuraColors)
+AuraDisplay.Bind(M, RepaintAuraColors)
+Extensions.Bind(M)
 S.Install("nameplates", M)

@@ -1,9 +1,10 @@
 local root = assert(arg[1])
 local H = dofile(root .. "/tools/tests/suite_bags_harness.lua")
 local flavor = arg[2] or "Mainline"
-KEYRING_CONTAINER, KEYRING = -2, "Schlüsselbund"
-C_ActionBar = { ShouldShowKeyring = function() return true end }
+KEYRING_CONTAINER = -2
 local W = H.New(root, {client=flavor,catalogPresentation=true,config={desaturateInactiveQuestItems=false}})
+KEYRING = "Schlüsselbund"
+C_ActionBar.ShouldShowKeyring = function() return true end
 W.sizes[0], W.sizes[1], W.sizes[5] = 8, 4, 8
 W.Define(101, { name = "Inactive quest item", class = Enum.ItemClass.Questitem })
 W.Put(0,1,101,1)

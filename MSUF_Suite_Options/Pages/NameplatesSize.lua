@@ -1,7 +1,7 @@
 local _, P = ...
 local ID = "nameplates"
 local T, Tr = P.T, P.Tr
-local Text = P.Suite.NameplateText
+local Text, Auras = P.Suite.NameplateText, P.Suite.NameplateAuraDisplay
 local Size = {}
 P.NameplatesSize = Size
 
@@ -28,6 +28,15 @@ function Size.Keys(handle)
     if id:match("^[a-z]+%.elite$") or id:match("^[a-z]+%.quest$") then
         local prefix, kind = id:match("^(%a+)%.(%a+)$")
         return prefix .. (kind == "elite" and "Elite" or "Quest") .. "MarkerSize", nil, "Size"
+    end
+    -- A Suite container has its own size; a lane (Buffs, Debuffs) only while
+    -- the Suite draws it, else Blizzard's aura size applies.
+    local auraScope, auraContainer = Auras.Element(id)
+    if auraContainer then
+        local prefix = Auras.Prefix(auraScope, auraContainer)
+        if auraContainer.kind ~= "lane" or P.Get(ID, "auraDisplayEnabled") and P.Get(ID, prefix .. "Visible") then
+            return prefix .. "Size", nil, "Size"
+        end
     end
     if id:match("%.Auras$") or id:match("%.Buffs$") or id:match("%.ControlAura$") then
         return "auraScalePercent", nil, "Size %"

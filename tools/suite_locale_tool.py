@@ -208,10 +208,11 @@ class Scope:
     parameters, loop values (for _, v in ipairs(X)), assigned values (a
     range, or (start, end, n) for the n-th result of a call) and values
     stored into a local table (X[k] = v)."""
-    __slots__ = ("params", "loops", "locals", "declared", "elements")
+    __slots__ = ("params", "loops", "locals", "declared", "elements", "shadowed_params")
 
     def __init__(self):
         self.params, self.loops, self.locals, self.declared, self.elements = {}, {}, {}, set(), {}
+        self.shadowed_params = set()
 
 
 class Call:
@@ -229,6 +230,7 @@ class LuaFile:
         # (field, value range, owner) of `a.b.field[k] = value`, and the second
         # value of `return false, reason` / `return nil, reason`.
         self.field_elements, self.reasons = [], []
+        self.table_exports = {}
         self.call_at = {}
         self.main = Scope()
         self._match()
@@ -406,6 +408,7 @@ class LuaFile:
             if t.kw("for") and tokens[k + 1].kind == "name":
                 names, j = self.names(k + 1)
                 scope = self.scope_of(self.owner[k])
+                scope.shadowed_params.update(n for n in names if n in scope.params)
                 scope.declared.update(names)
                 if tokens[j].kw("in") and tokens[j + 1].kind == "name" and tokens[j + 1].value in ("ipairs", "pairs") \
                         and tokens[j + 2].op("(") and len(names) >= 2:
@@ -413,10 +416,14 @@ class LuaFile:
                     end = self.block_end.get(body, len(tokens) - 1) if tokens[body].kw("do") else len(tokens) - 1
                     scope.loops.setdefault(names[1], []).append(((j + 3, self.pair[j + 2]), body, end))
             elif t.kw("local") and tokens[k + 1].kw("function") and tokens[k + 2].kind == "name":
-                self.scope_of(self.owner[k]).declared.add(tokens[k + 2].value)
+                scope, name = self.scope_of(self.owner[k]), tokens[k + 2].value
+                if name in scope.params:
+                    scope.shadowed_params.add(name)
+                scope.declared.add(name)
             elif t.kw("local") and tokens[k + 1].kind == "name":
                 names, j = self.names(k + 1)
                 scope = self.scope_of(self.owner[k])
+                scope.shadowed_params.update(n for n in names if n in scope.params)
                 scope.declared.update(names)
                 if not tokens[j].op("="):
                     continue
@@ -443,6 +450,11 @@ class LuaFile:
                         assigns.append((start, tokens[start].value, value, False))
                     elif tokens[end - 1].kind == "name" and tokens[end - 2].op("."):
                         self.fields.append((tokens[end - 1].value, value, self.owner[k]))
+                        if self.owner[k] is None and len(value) == 2 and value[1] == value[0] + 1:
+                            rhs = tokens[value[0]]
+                            if rhs.kind == "name" and all(t.kind == "name" or t.op(".") for t in tokens[start:end]):
+                                export = "".join(t.value for t in tokens[start:end])
+                                self.table_exports.setdefault(rhs.value, []).append(export)
                     elif tokens[end - 1].op("]") and tokens[end - 2].kind == "str" and tokens[end - 3].op("["):
                         self.fields.append((tokens[end - 2].value, value, self.owner[k]))
                     elif tokens[end - 1].op("]"):
@@ -605,6 +617,17 @@ class LuaFile:
                 if len(values) != 1 or len(values[0]) != 2:
                     return None
                 start, end = values[0]
+                # Resolve only the complete receiver-producing call. Another arm
+                # of an "or" expression can return a different implementation.
+                if end > start and self.tokens[end - 1].op(")"):
+                    opening = self.open_of[end - 1]
+                    callee = callee_before(self.tokens, opening) if opening > start else None
+                    parts = [t.value for t in self.tokens[start:opening]]
+                    if callee == "NS.CatalogBuild.ForAddon" and parts == ["NS", ".", "CatalogBuild", ".", "ForAddon"]:
+                        return "NS.CatalogBuild"
+                    if callee == "HostBridge.IconSkins" and parts in (["HostBridge", ".", "IconSkins"],
+                            ["look", "and", "HostBridge", ".", "IconSkins"]):
+                        return "ExternalIconSkins"
                 if end > start and all(t.kind == "name" or t.op(".") for t in self.tokens[start:end]):
                     return "".join(str(t.value) for t in self.tokens[start:end])
                 return None
@@ -692,6 +715,7 @@ BASE_SINKS = [
     ("MSUF_Suite_Options", re.compile(r"^P\.Help$"), {0: "s", 1: "s"}),
     (None, re.compile(r"(?:^|\.)Tr$"), {0: "s"}),
     (None, re.compile(r"^(?:Suite|NS|S|P\.Suite|P\.S|NS\.Suite|Private\.NS|Private\.Suite|MSUFSuite)\.Text$"), {0: "s"}),
+    (CORE, re.compile(r"^(?:Suite|NS)\.ProfileWorkbenchBridge\.Checkpoint$"), {0: "s"}),
     (None, re.compile(r"^(?:Suite|NS|P\.Suite)\.StatusText$"), {0: "s"}),
     (None, re.compile(r"(?:^|\.)FormatStatus$"), {0: "s"}),
     (None, re.compile(r"(?:^|\.)T\.Font$"), {2: "s"}),
@@ -714,12 +738,62 @@ BASE_SINKS = [
     # literals count, so runtime values are never followed.
     ("MSUF_Suite_Options", re.compile(r":SetText$"), {0: "t"}),
 ]
+# These declarations carry an identifier beside the corresponding visible label.
+# A fuzzy method/field match must not reinterpret their saved setting or section keys.
+IDENTIFIER_PARAMETERS = {
+    ("MSUF_Suite/Core/SuiteCatalog.lua", "Build.Add"): {"section"},
+    ("MSUF_Suite/Core/SuiteCatalog.lua", "Build.Section"): {"section"},
+    ("MSUF_Suite/Core/SuiteCatalog.lua", "Build.TextStyle"): {"section"},
+    ("MSUF_Suite/Core/PreviewKit.lua", "Host:Paint"): {"reason"},
+    ("MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua", "E.Handle"): {"controlKey"},
+    ("MSUF_Suite_Options/Pages/MinimapSections.lua", "BuildMinimapGroup"): {"sources"},
+    ("MSUF_Suite/Core/ProfileIO.lua", "IO.EncodeNameplateProfile"): {"settings", "native", "shared", "options"},
+}
+# Dropdown option tuples carry an internal value followed by the rendered
+# caption. Their value-returning callbacks do not display the value as prose.
+PARAMETER_PROJECTIONS = {
+    ("MSUF_Suite_Options/Pages/NameplatesHostOptions.lua", "Choice", "options"): LIST(IDX(2, STR)),
+}
+# AppearanceKit.Values maps these native enums through CHOICE_LABELS before
+# the dropdown translates them. Follow that mapping at its values argument.
+DISPLAY_ENUM_LABELS = {
+    ("MSUF_Suite_Options/Pages/Appearance.lua", "ConfigRow#7"): {
+        "HORIZONTAL": "Horizontal", "VERTICAL": "Vertical",
+    },
+}
+# These helpers preserve the complete value shape. Walking the recursive
+# copier's memo table instead invents an additional list level each round.
+# Keep the contract tied to its owning definition, not other Copy methods.
+VALUE_COPY_RESULTS = {
+    ("MSUF_Suite/Core/Database.lua", "Copy"): 0,
+    ("MSUF_Suite/Core/Database.lua", "CopyTable"): 0,
+}
+# These getters return one input field. Project each invocation's key onto
+# its own table, so callers selecting nested tables do not repeatedly add
+# wildcard levels to every other invocation's first parameter.
+VALUE_LOOKUP_RESULTS = {
+    ("MSUF_Suite_AdventurePlanner/PlanningTools.lua", "Plan.Table"): (0, 1),
+    ("MSUF_Suite/Core/HostBridgeMenu.lua", "AppearanceAction"): (0, 1),
+}
+# The options use summary both for prose and a numeric display rank.
+# This function returns the rank, so it cannot introduce text paths.
+NON_TEXT_RESULTS = {
+    ("MSUF_Suite_Options/Menu/Controls.lua", "P.SummaryPriority"),
+    # Four geometry values (size, anchor enum, x, y), consumed by native layout.
+    ("MSUF_Suite/Core/NameplateAuraDisplay.lua", "Display.Text"),
+    # Saved host settings contain numeric values and native identifiers.
+    ("MSUF_Suite/Core/NameplateProfiles.lua", "DefaultTypography"),
+    ("MSUF_Suite/Core/NameplateProfiles.lua", "DefaultInterrupts"),
+}
 SHAPES = {"s": ("s",), "t": ("t",)}
 # Menu2 and other external namespaces: calls through them never match a
 # Suite helper of the same name.
-EXTERNAL = re.compile(r"^(?:P\.M|P\.T|P\.W|MSUF2|_G|GameTooltip|MenuUtil|C_\w+|string|table|math)[.:]")
+EXTERNAL = re.compile(r"^(?:P\.M|P\.T|P\.W|MSUF2|ExternalIconSkins|_G|GameTooltip|MenuUtil|C_\w+|string|table|math)[.:]")
 # The Suite's own functions that look like sinks by name but are not.
-NOT_SINKS = {"Suite.Text", "Suite.StatusText", "Suite.FormatStatus"}
+NOT_SINKS = {"Suite.Text", "Suite.StatusText", "Suite.FormatStatus", "P.Suite.NameplateAuraDisplay.Text"}
+TRANSLATORS = re.compile(
+    r"^(?:Suite|NS|S|P\.Suite|P\.S|NS\.Suite|Private\.NS|Private\.Suite|MSUFSuite)\.Text$"
+)
 # Fields that hold keys or runtime data. A label falls back to one of them
 # (CATEGORY_LABELS[id] or id), which must not make every `id = "..."` a label.
 FIELD_NOT_SINKS = {"L", "id", "key", "keys", "value", "kind", "type", "PAGE", "ID", "name", "previewKey", "anchor",
@@ -755,10 +829,17 @@ class Extractor:
         self.root = root
         self.files = [LuaFile(root, path) for path in source_files(root)]
         self.defs_by_name, self.defs_by_last, self.call_targets = {}, {}, {}
+        self.core_exports = {self.core_path(export) for f in self.files if f.addon == CORE
+                             for exports in f.table_exports.values() for export in exports}
         for f in self.files:
             for d in f.defs:
                 if d.name:
                     self.defs_by_name.setdefault(d.name, []).append(d)
+                    receiver = re.match(r"(\w+)([.:].+)", d.name)
+                    if receiver:
+                        for export in f.table_exports.get(receiver[1], ()):
+                            public_name = f.resolve_path(export, None) + receiver[2]
+                            self.defs_by_name.setdefault(public_name, []).append(d)
                     if "." in d.name or ":" in d.name:
                         self.defs_by_last.setdefault(re.split(r"[.:]", d.name)[-1], []).append(d)
         # A local function exported as a field (Page.Button = Button) answers
@@ -780,7 +861,14 @@ class Extractor:
         self.current = None
 
     # registration
+    @staticmethod
+    def core_path(path):
+        return re.sub(r"^(?:P\.NS|Private\.NS|Suite|NS|MSUFSuite)(?=\.|$)", "NS", path)
+
     def add_param_sink(self, d, index, shape):
+        if d.params[index] in IDENTIFIER_PARAMETERS.get((d.file.rel, d.name), ()):
+            return
+        shape = PARAMETER_PROJECTIONS.get((d.file.rel, d.name, d.params[index]), shape)
         slot = self.param_sinks.setdefault(d, {}).setdefault(index, set())
         if shape not in slot:
             slot.add(shape)
@@ -803,6 +891,7 @@ class Extractor:
     def collect(self, f, k, sink, direct, text=None):
         if text is None:
             text = f.tokens[k].value
+        text = DISPLAY_ENUM_LABELS.get((f.rel, sink), {}).get(text, text)
         if not is_translatable(text):
             return
         # A plain lowercase word from a list that goes straight into a
@@ -861,7 +950,8 @@ class Extractor:
                 if owner is None:
                     break
                 owner = owner.parent
-        if EXTERNAL.match(resolved) or resolved in NOT_SINKS or ("." not in resolved and ":" not in resolved):
+        if (EXTERNAL.match(resolved) or TRANSLATORS.match(resolved) or TRANSLATORS.match(callee) or resolved in NOT_SINKS
+                or ("." not in resolved and ":" not in resolved)):
             return []
         # Exact names reach the addon and the core; a match by the last name
         # part (B.Bool -> Build.Bool) stays inside the calling addon.
@@ -1013,12 +1103,45 @@ class Extractor:
             # A function held by a parameter or a local: its callers' functions.
             self.resolve_name(RET(index, shape), f, call.callee, call.owner, sink, call.open)
         for d in targets:
-            self.apply_returns(d, index, shape, sink)
+            self.apply_returns(d, index, shape, sink, f, call)
 
-    def apply_returns(self, d, index, shape, sink):
+    def apply_returns(self, d, index, shape, sink, caller=None, call=None):
+        if (d.file.rel, d.name) in NON_TEXT_RESULTS:
+            return
+        copy_arg = VALUE_COPY_RESULTS.get((d.file.rel, d.name))
+        if index == 0 and copy_arg is not None and call is not None:
+            argument = copy_arg - int(call.method)
+            if 0 <= argument < len(call.args):
+                self.apply(shape, caller, call.args[argument], call.owner, sink, direct=False)
+            return
+        lookup = VALUE_LOOKUP_RESULTS.get((d.file.rel, d.name))
+        if index == 0 and lookup is not None and call is not None:
+            table, key = (argument - int(call.method) for argument in lookup)
+            if 0 <= table < len(call.args) and 0 <= key < len(call.args):
+                start, end = call.args[key]
+                token = caller.tokens[start]
+                projection = LIST(shape)
+                if end == start + 1 and token.kind == "str":
+                    projection = FIELD(token.value, shape)
+                elif end == start + 1 and token.kind == "num":
+                    projection = IDX(int(float(token.value)), shape)
+                self.apply(projection, caller, call.args[table], call.owner, sink, direct=False)
+            return
         for values in d.returns:
-            if index < len(values):
-                self.apply(shape, d.file, values[index], d, sink, direct=False)
+            if index >= len(values):
+                continue
+            value = values[index]
+            if call is not None and len(value) == 2 and value[1] == value[0] + 1:
+                token = d.file.tokens[value[0]]
+                if (token.kind == "name" and token.value in d.scope.params and
+                        token.value not in d.scope.locals and token.value not in d.scope.shadowed_params):
+                    # An identity wrapper passes this invocation's argument through.
+                    # Other callers can supply unrelated identifiers to the same parameter.
+                    arg = d.scope.params[token.value] - int(call.method)
+                    if 0 <= arg < len(call.args):
+                        self.apply(shape, caller, call.args[arg], call.owner, sink, direct=False)
+                        continue
+            self.apply(shape, d.file, value, d, sink, direct=False)
 
     def call_targets_of(self, f, call):
         targets = self.call_targets.get(id(call))
@@ -1031,6 +1154,13 @@ class Extractor:
             self.resolve_name(shape, f, name, owner, sink, at)
             return
         kind, value = suffixes[-1]
+        if kind == "." and value == "category" and len(suffixes) == 1:
+            # Report categories are display labels. Other models use category for IDs.
+            for (a, b), first, last in f.scope_of(owner).loops.get(name, ()):
+                collection = "".join(str(t.value) for t in f.tokens[a:b])
+                if first <= at < last and f.resolve_path(collection, owner) == "P.Suite.CharacterTabs.Sources":
+                    self.resolve_name(FIELD(value, shape), f, name, owner, sink, at)
+                    return
         if kind == "." and len(suffixes) == 1 and f.local_table(name, owner):
             if value not in FIELD_NOT_SINKS:
                 self.resolve_name(FIELD(value, shape), f, name, owner, sink, at)
@@ -1038,7 +1168,12 @@ class Extractor:
         if kind == ".":
             # rule.label, spec.title, NS.AnchorLabels: every table field and
             # assignment of that name in the addon is a sink.
-            self.add_field_sink(f.addon, value, shape)
+            addon = f.addon
+            if all(kind == "." for kind, _ in suffixes):
+                path = self.core_path(f.resolve_path(name, owner) + "".join("." + key for _, key in suffixes))
+                if any(path.startswith(export + ".") for export in self.core_exports):
+                    addon = CORE
+            self.add_field_sink(addon, value, shape)
             return
         if kind == "[":
             index_tokens = f.tokens[value[0]:value[1]]
@@ -1160,10 +1295,9 @@ class Extractor:
 
 def source_files(root):
     """Suite Lua sources that can show text through MSUF's locale table. The
-    skin reads its text by key from its English table (skin_strings);
-    Nameplates shows no translated text."""
+    skin reads its text by key from its English table (skin_strings)."""
     for folder in sorted(root.glob("MSUF_Suite*")):
-        if not folder.is_dir() or folder.name.startswith("MSUF_Suite_Skin") or folder.name == "MSUF_Suite_Nameplates":
+        if not folder.is_dir() or folder.name.startswith("MSUF_Suite_Skin"):
             continue
         for path in sorted(folder.rglob("*.lua")):
             parts = path.relative_to(root).parts
@@ -1385,7 +1519,7 @@ LATIN_LOCALES = ("deDE", "esES", "esMX", "frFR", "itIT", "ptBR")
 PROPER_WORDS = {
     "mapkotwo", "msuf", "suite", "forever", "midnight", "blue", "dark", "modern", "elvui", "bartender4", "dominos",
     "ellesmereuiactionbars", "arkinventory", "bagnon", "baganator", "adibags", "inventorian", "details",
-    "skada", "recount", "prat", "chattynator", "sexymap", "basicminimap", "minimapbuttonbag",
+    "skada", "recount", "prat", "chattynator", "sexymap", "basicminimap", "minimapbuttonbag", "mapzeroth",
     "midnightcooldownmanager", "cooldownmanagercentered", "mapkoskin", "mapko", "midnightskin", "jundies", "slug",
     "px", "ctrl", "shift", "alt", "wow", "blizzard", "edit", "mode", "datatexts", "antique", "footer",
 }

@@ -307,6 +307,33 @@ function Steps.NameplateNativeCastOpacity(modules)
     if plates and plates.look == 1 and plates.enemyCastFillAlpha == 35 then plates.enemyCastFillAlpha = 100 end
 end
 
+-- Buffs, debuffs and crowd control went back to Blizzard's own lists; the
+-- fixed DoT slots became the enemy "Dots on target" container. The old
+-- tracked row was centred on its Y offset, a container sits on its edge.
+local RETIRED_AURA_GROUP_FIELDS = { "Size", "Max", "PerRow", "Rows", "Spacing", "RowSpacing", "Growth", "Filter", "Sort",
+    "Reverse", "Allow", "Block", "TimeOverride", "TimeSize", "TimePoint", "TimeX", "TimeY", "StackOverride", "StackSize",
+    "StackPoint", "StackX", "StackY" }
+function Steps.NameplateAuraContainers(modules)
+    local plates = Module(modules, "nameplates")
+    if not plates then return end
+    local moves = { auraTrackedEnabled = "auraEnemyDotsVisible", auraTrackedSource = "auraEnemyDotsSource",
+        auraTrackedIDs = "auraEnemyDotsIDs" .. (NS.Client.isForever and "Forever" or "Retail"),
+        auraTrackedMissing = "auraEnemyDotsMissing", auraTrackedAlpha = "auraEnemyDotsMissingAlpha",
+        auraTrackedSize = "auraEnemyDotsSize", auraTrackedSpacing = "auraEnemyDotsGap", auraTrackedX = "auraEnemyDotsOffsetX" }
+    for old, new in pairs(moves) do
+        if plates[old] ~= nil and plates[new] == nil then plates[new] = plates[old] end
+        plates[old] = nil
+    end
+    local y, size = plates.auraTrackedY, plates.auraEnemyDotsSize
+    if type(y) == "number" and y == y and plates.auraEnemyDotsOffsetY == nil then
+        plates.auraEnemyDotsOffsetY = y - math.floor((type(size) == "number" and size == size and size or 24) / 2)
+    end
+    plates.auraTrackedY = nil
+    for _, group in ipairs({ "buff", "debuff", "control" }) do
+        for _, field in ipairs(RETIRED_AURA_GROUP_FIELDS) do plates["aura" .. group .. field] = nil end
+    end
+end
+
 function Steps.FriendlyPlayerDisplay(modules)
     local plates = Module(modules, "nameplates")
     if not plates then return end

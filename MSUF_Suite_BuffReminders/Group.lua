@@ -17,7 +17,7 @@ local RANGE_EVENT = "UNIT_IN_RANGE_UPDATE"
 function R.WantsGroup(self)
     local c = self.config
     return c.groupBuff == true or c.otherClassBuffs == true or c.healthstoneFromWarlock == true
-        or c.soulstoneOnAlly == true or c.beaconOnAlly == true or R.WantsAllies(self)
+        or c.soulstoneOnAlly == true or c.beaconOnAlly == true or R.WantsAllies(self) or c.raidBuffOverview == true
 end
 
 -- The group options that read the members' auras (R.RefreshGroup), the ally
@@ -27,6 +27,7 @@ end
 function R.WantsMemberAuras(self)
     local c = self.config
     return c.groupBuff == true or c.soulstoneOnAlly == true or c.beaconOnAlly == true or R.WantsAllies(self)
+        or c.raidBuffOverview == true and self.group.unitList and #self.group.unitList > 1
 end
 
 local function NewRoster()
@@ -94,6 +95,10 @@ function R.GroupRoster(self)
         local _, class = UnitClass(unit)
         if Public(class) and type(class) == "string" then classes[class] = true end
     end
+    -- Spell/class changes already compile the roster. Keep this selection
+    -- off member aura events, which only need to refresh the cached buff.
+    local buff = self.config.groupBuff and R.ClassBuff(R.PlayerClass())
+    group.buff = buff and R.Known(buff.cast) and buff or nil
 end
 
 -- Combat end after a roster change in combat (Controller.lua
@@ -102,7 +107,7 @@ end
 -- roster input of the reminder list.
 local hadClass = {}
 function R.RosterChanged(self)
-    local watched, classes = self.config.otherClassBuffs == true, self.group.classes
+    local watched, classes = self.config.otherClassBuffs == true or self.config.raidBuffOverview == true, self.group.classes
     for i = 1, #CLASSES do hadClass[i] = classes ~= nil and classes[CLASSES[i]] == true end
     R.GroupRoster(self)
     if not watched then return false end
@@ -229,10 +234,11 @@ local function BuffOn(unit, aliases, ranked)
             data = C_UnitAuras.GetUnitAuraBySpellID(unit, aliases[i])
         end
         if not known or not Public(data) then return nil end
-        if data then return true end
+        if data then return true, data end
     end
     return false
 end
+R.GroupBuffOn = BuffOn
 
 -- Whether the player's own aura is on no member: true, false, or nil while
 -- a member is unknown. The members' answers are kept in group[key], or in
@@ -314,6 +320,7 @@ function R.RefreshGroup(self, changedUnit)
     RefreshOwnBuffs(self, changedUnit)
     if group.allies then RefreshAllies(self, changedUnit) end
     local config = self.config
+    if config.raidBuffOverview then R.RefreshRaidOverview(self, changedUnit) end
     if not changedUnit and (config.onlyInRange or group.range) then
         R.SyncRange(self, true)
         local range = group.range
@@ -323,9 +330,15 @@ function R.RefreshGroup(self, changedUnit)
         end
     end
     if not config.groupBuff then return end
-    local _, class = UnitClass("player")
-    local buff = Public(class) and R.ClassBuff(class)
-    if not buff or not R.Known(buff.cast) then return end
+    local buff = group.buff
+    if not buff then return end
+    if config.raidBuffOverview then
+        local shared = R.RaidBuffPresence(self, buff)
+        if shared then
+            group.presence = shared
+            return
+        end
+    end
     local states = group.presence or {}
     group.presence = states
     local ranked = NS.Client.isForever

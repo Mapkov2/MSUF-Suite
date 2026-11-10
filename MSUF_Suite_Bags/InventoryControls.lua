@@ -118,6 +118,18 @@ local function ViewSelected(button)
     end
 end
 
+local function ViewTip(button)
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    if button.view == VIEW.CATEGORIES then
+        GameTooltip:SetText(S.Text("Categories"))
+        GameTooltip:AddLine(S.Text("Group items into collapsible sections. Use Edit categories to add your own."), .8, .8, .8, true)
+    else
+        GameTooltip:SetText(S.Text(button.view == VIEW.BY_BAG and "By bag" or "All items"))
+        GameTooltip:AddLine(S.Text("Choose Categories to show separate sections for equipment, consumables and other items."), .8, .8, .8, true)
+    end
+    GameTooltip:Show()
+end
+
 -- The click's own arguments (the button) must not reach Editor.Show,
 -- whose first argument selects the pinned list.
 local function EditCategories()
@@ -162,6 +174,8 @@ function Controls.Create()
     for view = VIEW.ALL, VIEW.CATEGORIES do
         local button = Button(InventoryView.chrome, titles[view], 88, ViewSelected)
         button.view, button.bagNavigation = view, true
+        button:HookScript("OnEnter", ViewTip)
+        button:HookScript("OnLeave", GameTooltip_Hide)
         button:SetFrameLevel(InventoryView.chrome:GetFrameLevel() + 1)
         InventoryView.tabs[view] = button
         button:SetPoint("TOPLEFT", 12 + (view - 1) * 92, -62)

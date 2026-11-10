@@ -3,7 +3,7 @@ local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
 assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,NameText.lua,Power.lua,Threat.lua,"
     .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Selection.lua,"
-    .. "Mouseover.lua,FriendlyNames.lua,Decor.lua,Skin.lua",
+    .. "Mouseover.lua,FriendlyNames.lua,Decor.lua,AuraDisplay.lua,ExtensionLayout.lua,ExtensionText.lua,ExtensionEffects.lua,ExtensionResources.lua,Extensions.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -440,8 +440,10 @@ assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraColors.lua"))("MSUF_Suite
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
 NS.HostBridge.KickReady = function() return nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("MSUF_Suite", NS)
 NS.HostBridge = NS.HostBridge or {}
 NS.HostBridge.NameFormatter = function() return nil end
+NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
 local private = { NS = NS, Suite = S }
 -- No runtime file needs a protected call: every API both clients have is
@@ -715,8 +717,10 @@ assert(scans == 2 and name.points[1][1] == "CENTER", "event performed a scan or 
 -- The threat budget (2026-10-02: 114, +2 %) counts one
 -- UNIT_THREAT_SITUATION_UPDATE of that plate the same way; 100 of them must
 -- not allocate with the GC stopped.
+-- 2026-11-10: the disabled optional-extension routing adds three VM
+-- instructions to the 114 baseline, with no extra native calls or allocations.
 do
-    local PLATE_ADDED_BUDGET, THREAT_BUDGET = 1828, 116
+    local PLATE_ADDED_BUDGET, THREAT_BUDGET = 1828, 117
     -- Setting keys come from the per-prefix tables: built once, then plain reads.
     assert(private.Key.enemy.BackdropColor == "enemyBackdropColor"
         and rawget(private.Key.friendly, "BackdropColor") == nil

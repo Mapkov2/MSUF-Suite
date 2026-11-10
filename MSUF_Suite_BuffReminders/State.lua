@@ -26,7 +26,7 @@ R.STATE = {
     -- newAlert: a newly shown reminder still owes its sound; dismissed: the
     -- reminders the player hid until the next reload (Alerts).
     view = { "host", "buttons", "preview", "previewShown", "previewing", "mask", "layout", "newAlert",
-        "dismissed" },
+        "dismissed", "allowed" },
     -- Following the cursor (Cursor): the OnUpdate driver (it runs while the
     -- host follows) and whether the host left its saved anchor.
     cursor = { "driver", "displaced" },
@@ -54,7 +54,7 @@ R.STATE = {
     -- present only while the range filter is listening.
     group = { "settings", "buffers", "units", "unitList", "classes", "listChanged", "presence",
         "soulstonePresence", "beaconLightPresence", "beaconFaithPresence", "soulstoneKnown",
-        "beaconLightKnown", "beaconFaithKnown", "allies", "allyStates", "dirty", "rosterDirty", "pass", "range" },
+        "beaconLightKnown", "beaconFaithKnown", "allies", "allyStates", "dirty", "rosterDirty", "pass", "range", "buff" },
     -- The notice lines below the buttons (Special, Group): one field per
     -- notice (Special's NOTICES), the shown set (mask), its text and label, the
     -- summon that may teach a demon look (summonDemon, summonAt, summonPet).
@@ -72,6 +72,9 @@ R.STATE = {
     -- The options stage owns a separate entry buffer and selection snapshot;
     -- no menu drawing uses the live controller's mutable list or view.
     menuPreview = { "buffer", "settings" },
+    -- Optional raid buff coverage: reused rows and per-member snapshots,
+    -- plain display buttons, sample mode and the personal row's top offset.
+    raid = { "rows", "pool", "buttons", "sample", "offset", "update" },
 }
 
 -- Gives an owner (the module, or a test's owner) one empty table per concern.

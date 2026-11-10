@@ -234,6 +234,7 @@ local function OnAnchors(uf)
     end
     if locked then
         Defer(uf)
+        private.Extensions.OnAnchors(uf)
         return
     end
     if not module.active then
@@ -242,6 +243,13 @@ local function OnAnchors(uf)
     end
     if not NS.Public(uf.isFriend) then return end
     Layout.Reapply(uf, uf.isFriend and "friendly" or "enemy", module.config)
+    private.Extensions.OnAnchors(uf)
+end
+
+function Layout.Observe(uf)
+    if hooked[uf] then return end
+    hooksecurefunc(uf, "UpdateAnchors", OnAnchors)
+    hooked[uf] = true
 end
 
 -- Rebuild the native castbar edges with the configured width and position.
@@ -456,10 +464,7 @@ local function Apply(uf, prefix, config, force)
     if not CastOffsets(state, uf, plan, setup, force) then return end
     state.generation, state.prefix = generation, prefix
     state.nativeReset = nil
-    if not hooked[uf] then
-        hooksecurefunc(uf, "UpdateAnchors", OnAnchors)
-        hooked[uf] = true
-    end
+    Layout.Observe(uf)
 end
 Layout.Apply = Apply
 

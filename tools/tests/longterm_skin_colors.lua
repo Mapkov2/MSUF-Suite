@@ -7,7 +7,9 @@ local a,b = Profile(.1),Profile(.7)
 local changes, captured, owners = 0
 local S = {}
 local Suite = {Suite=S, SuiteCatalog={}, SuiteOrder={}, DB={},
-    HostBridge={Menu2=function() return {} end},
+    HostBridge={Menu2=function() return {
+        GetControlTitle=function(w) return w._msuf2Title end,
+        GetControlLabel=function(w) return rawget(w,'_msuf2Label') end } end},
     Database={IsProfileName=function(name) return type(name)=='string' and name~='' end}}
 MSUF_NS={Client={Flavor='Mainline',IsForever=false}}
 securecallfunction=function(fn,...) return fn(...) end

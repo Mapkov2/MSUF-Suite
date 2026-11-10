@@ -265,6 +265,13 @@ local function CheckQuestCaptureBudget()
     engine.RebuildCollection(box)
     Check(visibleCopy.fonts[1].color[2] == 0.5, "same quest snapshot missed a visible recolor")
 
+    regionReads, safetyChecks, writes = 0, 0, 0
+    for offset = 1, 12 do
+        box.scrollOffset = offset
+        box:Fire("OnVerticalScroll", offset)
+    end
+    Check(regionReads == 0 and safetyChecks == 0 and writes == 0, "scrolling unchanged quest rows recaptured artwork")
+
     box.scrollOffset = 100
     offscreen.top, offscreen.label.top = 340, 340
     box:Fire("OnVerticalScroll", 100)

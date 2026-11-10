@@ -1,3 +1,23 @@
+local function LoadNameplatePage(P, root, opened)
+    P.Help = function() return "" end
+    P.NameplatesAdvancedAuras = { Append = function() end }
+    P.NameplatesExtensions = { Append = function() end }
+    P.RegisterPage = function() end
+    P.Combat = function() return false end
+    P.Suite.NameplateStyle.Roles = {}
+    local rules = {}
+    for _, key in ipairs({ "enemyNpcDebuffs", "enemyNpcBuffs", "enemyNpcControl",
+        "softTargetEnemy", "friendlyCastTimeEnabled" }) do
+        rules[key] = { key = key }
+    end
+    P.catalog = { nameplates = { rules = rules } }
+    P.Suite.HostBridge = { RegisterSearchTargetResolver = function() end, OpenExactMenuSetting = function(_, page, section, key)
+        assert(page == "suite_nameplates" and section)
+        return opened(key, section)
+    end }
+    assert(loadfile(root .. "Nameplates.lua"))("MSUF_Suite_Options", P)
+end
+
 BH3("S04-A2",function()
 -- Loads the real NameplatesEditorLayers.lua + NameplatesEditor.lua and right-clicks
 -- preview handles. Prints which accordion is focused and which exact setting opens.
@@ -26,6 +46,7 @@ P.Suite = { Client = { isForever = false }, NameplateStyle = { NativeBit = funct
 P.PreviewInteraction = { Outline = noop, Handles = function(host, opts) return core.PreviewKit.Handles(host, opts) end }
 P.NameplatesEditorMarkers = {}
 P.NameplatesPreviewLayout = { Apply = noop }
+LoadNameplatePage(P, ROOT, function(key) opened[#opened+1] = key; return true end)
 assert(loadfile(ROOT .. "NameplatesEditorLayers.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(ROOT .. "NameplatesEditor.lua"))("MSUF_Suite_Options", P)
 local Editor = P.NameplatesEditor
@@ -77,6 +98,12 @@ P.Get = function(_, k) return DB[k] end
 P.Meta = function() return {} end
 P.Suite = { Client = { isForever = false }, NameplateStyle = { NativeBit = function() return false end } }
 P.NameplatesEditorMarkers = {}
+local reachedSection, canOpen = nil, true
+LoadNameplatePage(P, ROOT, function(key, section)
+  reachedSection = section
+  opened[#opened+1] = key
+  return canOpen
+end)
 assert(loadfile(ROOT .. "NameplatesEditorLayers.lua"))("MSUF_Suite_Options", P)
 local L = P.NameplatesEditorLayers
 local ui = { sampleKind = "friendly", layers = {},
@@ -84,7 +111,10 @@ local ui = { sampleKind = "friendly", layers = {},
 function ui:LayerOn(k) return L.On(self, k) end
 function ui:LayerAvailable(k) return L.Available(self, k) end
 L.Focus(ui, "castbar", "castTime")
-assert(focused[1] == "SECTION:friendly" and opened[1] == "msufsuite.nameplates.friendlyCastTimeEnabled",
- "S04-A3: friendly cast-time chip opened enemy controls")
+assert(reachedSection == "suite_nameplates_friendly" and opened[1] == "msufsuite.nameplates.friendlyCastTimeEnabled"
+    and not focused[1], "S04-A3: friendly cast-time chip opened enemy controls")
+canOpen = false
+L.Focus(ui, "castbar", "castTime")
+assert(focused[1] == "SECTION:friendly", "S04-A3: exact-open failure lost its local section fallback")
 
 end)

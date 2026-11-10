@@ -35,6 +35,11 @@ local TEXT = {
     stacks = S.Text("%d / 3 stacks (%s)"), lowRested = S.Text("Low rested XP"),
     afk = S.Text("AFK time"), rate = S.Text("Active XP per hour"),
     missingWarning = S.Text("XP bonus missing: %s."), expiresWarning = S.Text("XP bonus expiring soon: %s."),
+    routeStart = S.Text("Turn-in route (%d)"), routeStop = S.Text("Stop route"),
+    routeStartHelp = S.Text("Guides you to every quest that is ready to turn in, nearest first."),
+    routeStopHelp = S.Text("Stops the route and clears its map pin."),
+    routeEnable = S.Text("Navigation & waypoints is turned off. Turn it on and start the turn-in route?"),
+    routePlanned = S.Text("Turn-in route planned. Stops: %d"), routeStopped = S.Text("Turn-in route stopped."),
 }
 
 local function ReadAuras(state, now)
@@ -210,8 +215,132 @@ local function ReadQuest(state, info)
     if xp > 0 and Public(title) and type(title) == "string" then
         local index = state.questCount + 1
         state.questCount, state.questTitles[index], state.questRewards[index] = index, title, xp
+        state.questIDs[index] = id
     end
     return true
+end
+
+-- Route button: one control beside the bar. Gold while quests are ready
+-- (starts the turn-in route), red while a route runs (stops it). Navigation
+-- owns the route (NavigationRoutes.lua) and reports changes (questsChanged).
+local ROUTE_GAP, ROUTE_PADDING, ROUTE_MIN_HEIGHT = 4, 16, 16
+local ROUTE_GOLD, ROUTE_RED = { 1, .76, .28 }, { .96, .47, .42 }
+
+local function StartRoute(state)
+    local planned, stops = S.Navigation.RouteQuests(state.questIDs, state.questCount)
+    if not planned then return end
+    S.Print(TEXT.routePlanned:format(stops))
+    S.Navigation.PrintStop()
+end
+
+local function RouteClick(button, mouse)
+    if mouse ~= "LeftButton" then return end
+    local self, navigation = button.owner, S.Navigation
+    local state = self.optimizer
+    if not state or not navigation then return end
+    if navigation.quests then
+        if navigation.StopQuests() then S.Print(TEXT.routeStopped) end
+    elseif navigation.owner then
+        StartRoute(state)
+    else
+        S.Confirm("suite-turnin-route", { text = TEXT.routeEnable, callback = function()
+            if self.optimizer == state and S.Set("navigation", "enabled", true) then StartRoute(state) end
+        end })
+    end
+end
+
+local function RouteEnter(button)
+    button.hover:Show()
+    local color = button.running and ROUTE_RED or ROUTE_GOLD
+    GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine(button.text, color[1], color[2], color[3])
+    GameTooltip:AddLine(button.running and TEXT.routeStopHelp or TEXT.routeStartHelp, 1, 1, 1, true)
+    GameTooltip:Show()
+end
+
+local function RouteLeave(button)
+    button.hover:Hide()
+    if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
+end
+
+local function CreateRoute(self)
+    local button = S.CreateFrame("Frame", nil, self.host)
+    button.owner = self
+    button:EnableMouse(true)
+    button:SetScript("OnMouseUp", RouteClick)
+    button:SetScript("OnEnter", RouteEnter)
+    button:SetScript("OnLeave", RouteLeave)
+    local fill = S.CreateTexture(button, nil, "BACKGROUND")
+    fill:SetAllPoints()
+    fill:SetColorTexture(.05, .06, .08, .94)
+    button.hover = S.CreateTexture(button, nil, "ARTWORK")
+    button.hover:SetAllPoints()
+    button.hover:SetColorTexture(1, 1, 1, .12)
+    button.hover:Hide()
+    button.line = S.CreateTexture(button, nil, "OVERLAY")
+    button.line:SetPoint("BOTTOMLEFT")
+    button.line:SetPoint("BOTTOMRIGHT")
+    button.label = S.CreateFontString(button, nil, "OVERLAY", "GameFontHighlightSmall")
+    button.label:SetPoint("CENTER")
+    self.routeButton = button
+    return button
+end
+
+-- Beside the bar; inside its right end where the screen leaves no room.
+local function PlaceRoute(self, button)
+    local bar, width = self.bar, button.label:GetStringWidth()
+    width = (Finite(width) and width or 0) + ROUTE_PADDING
+    local right, limit = bar:GetRight(), UIParent:GetRight()
+    local scale, uiScale = bar:GetEffectiveScale(), UIParent:GetEffectiveScale()
+    local inside = Finite(right) and Finite(limit) and Finite(scale) and Finite(uiScale)
+        and (right + ROUTE_GAP + width) * scale > limit * uiScale
+    button:ClearAllPoints()
+    if inside then
+        button:SetPoint("RIGHT", bar, "RIGHT")
+    else
+        button:SetPoint("LEFT", bar, "RIGHT", ROUTE_GAP, 0)
+    end
+    button:SetSize(width, math.max(ROUTE_MIN_HEIGHT, self.config.height))
+    button.line:SetHeight((self.pixel or 1) * 2)
+end
+
+local function PaintRoute(self)
+    local state, button, navigation = self.optimizer, self.routeButton, S.Navigation
+    local running = navigation ~= nil and navigation.quests ~= nil
+    local count = state and state.questCount or 0
+    if not state or (not running and count == 0) then
+        if button and button.shown then
+            button.shown = false
+            button:Hide()
+            RouteLeave(button)
+        end
+        return
+    end
+    button = button or CreateRoute(self)
+    local font, layout = S.GlobalFontPath(), self.textLayoutRevision
+    local restyle = button.font ~= font
+    if restyle then
+        S.SetFont(button.label, font, 11, "")
+        button.font = font
+    end
+    if button.running ~= running or button.count ~= count then
+        local color = running and ROUTE_RED or ROUTE_GOLD
+        button.running, button.count, restyle = running, count, true
+        button.text = running and TEXT.routeStop or TEXT.routeStart:format(count)
+        button.label:SetText(button.text)
+        button.label:SetTextColor(color[1], color[2], color[3])
+        button.line:SetColorTexture(color[1], color[2], color[3], 1)
+        if GameTooltip:IsOwned(button) then RouteEnter(button) end
+    end
+    if restyle or button.layout ~= layout then
+        button.layout = layout
+        PlaceRoute(self, button)
+    end
+    if not button.shown then
+        button.shown = true
+        button:Show()
+    end
 end
 
 local function RefreshQuests(self)
@@ -227,6 +356,7 @@ local function RefreshQuests(self)
     else
         state.questIncomplete = true
     end
+    PaintRoute(self)
     self.optimizerPaint(self)
 end
 
@@ -277,7 +407,7 @@ end
 function Optimizer.Start(self, level)
     local state = {
         level = level, bonuses = { {}, {}, {}, {} }, afk = AFK(), questXP = 0, questCount = 0,
-        questSeen = {}, questTitles = {}, questRewards = {},
+        questSeen = {}, questTitles = {}, questRewards = {}, questIDs = {},
     }
     self.optimizer = state
     Optimizer.ResetRate(state)
@@ -296,6 +426,10 @@ function Optimizer.Start(self, level)
     state.remindAt = GetTime() + 15
     state.aurasDirty = true
     QueueItems(self)
+    if S.Navigation then
+        state.routeChanged = function() PaintRoute(self) end
+        S.Navigation.questsChanged = state.routeChanged
+    end
 end
 
 function Optimizer.Stop(self)
@@ -312,6 +446,9 @@ function Optimizer.Stop(self)
     for _, event in ipairs(STATUS_EVENTS) do context:RemoveEvent(event) end
     context:RemoveEvent("UNIT_AURA")
     context:RemoveEvent("PLAYER_FLAGS_CHANGED")
+    local navigation = S.Navigation
+    if navigation and navigation.questsChanged == state.routeChanged then navigation.questsChanged = nil end
+    PaintRoute(self)
 end
 
 function Optimizer.Sync(self, level)
@@ -337,6 +474,7 @@ end
 
 -- Thin gold strip leaves the rested fill visible on the same portion of the bar.
 function Optimizer.Paint(view, fraction, maximum, xp)
+    if view.optimizer then PaintRoute(view) end
     local strip = view.questXPStrip
     if not xp or xp <= 0 or fraction >= 1 then
         if strip and view.questStripShown then

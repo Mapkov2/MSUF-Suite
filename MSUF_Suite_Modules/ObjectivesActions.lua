@@ -336,6 +336,10 @@ local function BuildQuestMenu(root, button)
     root:CreateButton(selected and STOP_SUPER_TRACK_QUEST or SUPER_TRACK_QUEST, function()
         C_SuperTrack.SetSuperTrackedQuestID(selected and 0 or questID)
     end)
+    local navigation = S.Navigation
+    if navigation and navigation.owner and navigation.owner.config.trackerLinks then
+        root:CreateButton(Tr("Navigate to quest"), function() navigation.FocusQuest(questID) end)
+    end
     if CanUntrack(button) then
         root:CreateButton(OBJECTIVES_STOP_TRACKING, function() Untrack(button) end)
     end

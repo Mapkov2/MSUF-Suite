@@ -21,6 +21,7 @@ local function Widget(parent)
     function w:GetStringWidth() return #(self.text or "") * (self.font and self.font[2] or 11) * .55 end
     function w:GetStringHeight() return self.font and self.font[2] or 11 end
     function w:GetEffectiveScale() return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1) end
+    function w:GetRight() return self.right or 500 end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetShown(value) self.shown = value end
     function w:IsShown() return self.shown end
@@ -843,6 +844,68 @@ do
     retail.config.foreverOptimizer = true
     retail:Refresh()
     assert(not retail.optimizer and not retailEvents.UNIT_AURA, "Retail started a Forever optimizer profile")
+    -- Route button beside the bar: one control that starts the turn-in route and stops it.
+    local routed, asked, enabled, hinted
+    local live, liveEngine = Load("login", true)
+    local route = { owner = {} }
+    route.RouteQuests = function(ids, count)
+        routed = { ids[1], ids[2], count }
+        route.quests = {}
+        route.questsChanged()
+        return true, count
+    end
+    route.StopQuests = function()
+        route.quests = nil
+        route.questsChanged()
+        return true
+    end
+    route.PrintStop = function() hinted = (hinted or 0) + 1 end
+    liveEngine.Navigation = route
+    liveEngine.Confirm = function(key, spec) asked = { key, spec.text, spec.callback } end
+    liveEngine.Set = function(id, key, value) enabled = { id, key, value } route.owner = {} return true end
+    live.config.foreverOptimizer = true
+    UIParent.right, questReady = 2000, true
+    live:Refresh()
+    Advance(1)
+    local button = live.routeButton
+    assert(button and button:IsShown() and button.label.text == "Turn-in route (2)" and button.point[1] == "LEFT"
+        and button.point[3] == "RIGHT" and button.height == 18 and button.width > 16, "ready quests showed no route button beside the bar")
+    button.OnEnter(button)
+    assert(tooltip.owner == button and table.concat(tooltip.lines, "\n"):find("nearest first", 1, true), "the button explains nothing")
+    button.OnMouseUp(button, "RightButton")
+    assert(not routed, "a right-click started a route")
+    button.OnMouseUp(button, "LeftButton")
+    assert(routed and routed[1] == 42 and routed[2] == 43 and routed[3] == 2
+        and liveEngine.lastReminder == "Turn-in route planned. Stops: 2" and hinted == 1,
+        "the button did not route the listed quests or say how to stop")
+    assert(button.label.text == "Stop route" and table.concat(tooltip.lines, "\n"):find("clears its map pin", 1, true),
+        "a running route kept the start button or its stale tooltip")
+    button.OnLeave(button)
+    button.OnMouseUp(button, "LeftButton")
+    assert(not route.quests and button.label.text == "Turn-in route (2)" and liveEngine.lastReminder == "Turn-in route stopped.",
+        "the button did not stop the route")
+    -- Navigation switched off: one question, then on and started.
+    route.owner, routed = nil, nil
+    button.OnMouseUp(button, "LeftButton")
+    assert(not routed and asked and asked[1] == "suite-turnin-route" and asked[2]:find("turned off", 1, true), "no offer to turn Navigation on")
+    asked[3]()
+    assert(enabled[1] == "navigation" and enabled[2] == "enabled" and enabled[3] == true and routed, "the offer did not enable and start")
+    route.StopQuests()
+    -- No room beside the bar: the button moves inside its right end.
+    UIParent.right = 500
+    live:Refresh()
+    assert(button.point[1] == "RIGHT" and button.point[3] == "RIGHT", "a bar at the screen edge pushed the button off-screen")
+    -- Nothing ready and no route: no button; a running route keeps its stop button.
+    questReady = false
+    live.optimizer.questJob:Request()
+    Advance(1)
+    assert(not button:IsShown(), "the button stayed without a ready quest")
+    route.quests = {}
+    route.questsChanged()
+    assert(button:IsShown() and button.label.text == "Stop route", "a running route lost its stop button")
+    live:Disable()
+    assert(not button:IsShown() and route.questsChanged == nil, "disabling the bar left the button or its route hook")
+    UIParent.right = nil
     local violations = stopWatching()
     assert(#violations == 0, table.concat(violations, "\n"))
 end

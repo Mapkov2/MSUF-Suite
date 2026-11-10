@@ -282,7 +282,6 @@ B.Module("waypoints", {
     description = "Set a native map waypoint with /way x y or /msufway x y.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
-        if NS.Client.isForever then return false, "Native waypoints are available only in Retail" end
         return true
     end,
 })

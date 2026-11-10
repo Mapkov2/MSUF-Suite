@@ -1,5 +1,8 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local defaultCVars = { GetCVar = function() return nil end }
+DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+C_CVar = defaultCVars
 local Suite, combat, encodings, frameImports = {}, false, {}, 0
 -- The client's securecallfunction reports an error to the error handler and
 -- returns nothing; this harness models exactly that.
@@ -325,6 +328,7 @@ local skinProfiles, skinActive = { Default = { look = "gold" } }, "Default"
 local skin = { addonName = "MSUF_Suite_Skin", Defaults = { look = "default" } }
 skin.Database = {
     GetActiveProfileName = function() return skinActive end,
+    GetHistoryEpoch = function() return 0 end,
     GetProfile = function(name) return skinProfiles[name] end,
     CreateProfile = function(name, copy)
         if skinProfiles[name] then return false, "exists" end
@@ -1137,11 +1141,13 @@ do
 
     assert(Complete(assert(P.BeginImport(bundle, "Native Nameplate Bundle"))))
     assert(live.nameplateShowEnemies == "1" and live.nameplateDebuffPadding == "5", "staged full import lost native settings")
-    assert(DB.GetProfile("Native Nameplate Bundle").nameplateCVars == nil, "one-time client settings leaked into the profile store")
+    assert(DB.GetProfile("Native Nameplate Bundle").nameplateCVars.nameplateDebuffPadding == "5", "native profile snapshot was discarded")
     live.nameplateDebuffPadding = "9"
     S.Config("nameplates").protectImport = true
+    Suite.DB.nameplateCVars.nameplateMaxDistance = "48"
     assert(P.Import("Native Nameplates Protected", bundle))
     assert(live.nameplateDebuffPadding == "9", "full import bypassed nameplate protection")
+    assert(Suite.DB.nameplateCVars.nameplateMaxDistance == "48", "protected import lost an unavailable native setting")
     assert(P.ImportModuleIntoNew("Native Nameplate Module", module))
     assert(live.nameplateDebuffPadding == "5", "module-to-new import lost native settings")
     native.nameplateDebuffPadding = nil
@@ -1153,5 +1159,45 @@ do
     encoded.nameplateCVars = nil
     before = writes
     assert(P.ImportModule(module) and writes == before, "legacy module import wrote native values")
+    local transfer = assert(P.ExportModule("nameplates"))
+    local payload = Encoded(transfer)
+    local originalX = S.Config("nameplates").enemyAurasOffsetX
+    local originalPadding = live.nameplateDebuffPadding
+    payload.settings.enemyAurasOffsetX = 102
+    payload.nameplateCVars.nameplateDebuffPadding = "23"
+    local setter = C_CVar.SetCVar
+    C_CVar.SetCVar = function(key, value)
+        if key == "nameplateDebuffPadding" and value == "23" then return false end
+        return setter(key, value)
+    end
+    local accepted, reason = P.ImportModule(transfer)
+    assert(not accepted and reason, "a rejected native setting was reported as successful")
+    assert(S.Config("nameplates").enemyAurasOffsetX == originalX
+        and live.nameplateDebuffPadding == originalPadding, "a rejected native setting left a partial module import")
+    accepted, reason = Complete(assert(P.BeginImport(transfer)))
+    assert(not accepted and reason and S.Config("nameplates").enemyAurasOffsetX == originalX,
+        "a staged rejected native setting left a partial module import")
+    C_CVar.SetCVar = function(key, value)
+        if key == "nameplateDebuffPadding" and value == "23" then error("injected native setter failure") end
+        return setter(key, value)
+    end
+    accepted, reason = P.ImportModule(transfer)
+    assert(not accepted and reason and S.Config("nameplates").enemyAurasOffsetX == originalX,
+        "a raising native setting left a partial module import")
+    local previousProfile = DB.GetActiveProfileName()
+    accepted, reason = P.ImportModuleIntoNew("Rejected Native Profile", transfer)
+    assert(not accepted and reason and DB.GetActiveProfileName() == previousProfile
+        and not DB.GetProfile("Rejected Native Profile") and not MSUF_GlobalDB.profiles["Rejected Native Profile"],
+        "a native failure published an incomplete new profile")
+    C_CVar.SetCVar = setter
+    assert(P.ImportModule(transfer))
+    assert(DB.GetProfile(DB.GetActiveProfileName()).nameplateCVars.nameplateDebuffPadding == "23",
+        "a successful module import did not store native settings")
+    local stored = DB.GetProfile("Native Nameplate Bundle")
+    local savedPadding = stored.nameplateCVars.nameplateDebuffPadding
+    assert(Encoded(assert(IO.ExportProfile("Native Nameplate Bundle"))).profile.nameplateCVars.nameplateDebuffPadding == savedPadding,
+        "an inactive profile export dropped its native snapshot")
+    assert(DB.Activate("Native Nameplate Bundle"))
+    assert(live.nameplateDebuffPadding == savedPadding, "profile switching did not restore the native snapshot")
     print("Native nameplate transfer: module, bundle, protection, release and legacy compatibility passed")
 end

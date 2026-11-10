@@ -42,7 +42,14 @@ end
 
 function Text.Invalidate(region)
     local original = Text.originals[region]
-    if original then original.appliedShadow = nil end
+    if original then original.appliedShadow, original.appliedColor = nil, nil end
+end
+
+local function RestoreTint(region, original)
+    local color = original.nativeColor
+    if not color then return end
+    region:SetTextColor(color[1], color[2], color[3], color[4])
+    original.nativeColor, original.appliedColor = nil, nil
 end
 
 function Text.Restore(region)
@@ -52,10 +59,26 @@ function Text.Restore(region)
     region:SetFont(original[1], original[2], original[3])
     if original.shadow then region:SetShadowColor(unpack(original.shadow)) end
     if original.offset then region:SetShadowOffset(unpack(original.offset)) end
+    RestoreTint(region, original)
     original.restored = true
 end
 
-function Text.Apply(region, style, size)
+local function Tint(region, original, color)
+    if not color then
+        RestoreTint(region, original)
+        return
+    end
+    if original.appliedColor == color then return end
+    if not original.nativeColor then
+        local r, g, b, a = region:GetTextColor()
+        if not S.Finite(r) or not S.Finite(g) or not S.Finite(b) or not S.Finite(a) then return end
+        original.nativeColor = { r, g, b, a }
+    end
+    region:SetTextColor(color.r, color.g, color.b, color.a)
+    original.appliedColor = color
+end
+
+function Text.Apply(region, style, size, tint)
     if not region or NS.Safety.IsForbidden(region) then return end
     if not style.enabled then
         Text.Restore(region)
@@ -74,6 +97,7 @@ function Text.Apply(region, style, size)
     elseif path ~= original.appliedPath or nativeSize ~= original.appliedSize or flags ~= original.appliedFlags then
         Capture(region, original, path, nativeSize, flags)
     end
+    if tint then Tint(region, original, style.color) end
     local face, height = style.font or original[1], size > 0 and size or original[2]
     local fontChanged = path ~= face or nativeSize ~= height or flags ~= style.flags
     -- 2026-10-26 M+ trace: only a font write can change the values just read.

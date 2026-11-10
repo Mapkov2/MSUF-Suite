@@ -67,12 +67,14 @@ for _, forever in ipairs({false, true}) do
     H.combat = true
     assert(not Suite.Installer.Apply(), "combat install succeeded")
     H.combat = false
+    local expectedModules = Copy(priorModules)
+    expectedModules.nameplateCVars = Suite.ProfileIO.NameplateSnapshot(priorModules.nameplateCVars)
     local ok, why = Suite.Installer.Apply()
     assert(ok, tostring(why))
     assert(Suite.RootDB.installation.profile == "darkRaid")
     assert(MSUF_ActiveProfile == "Dark Raid")
     assert(Equal(MSUF_GlobalDB.profiles.Default, priorFrames), "existing frame profile overwritten")
-    assert(Equal(Suite.RootDB.profiles.Default, priorModules), "existing Suite profile overwritten")
+    assert(Equal(Suite.RootDB.profiles.Default, expectedModules), "existing Suite profile overwritten")
     assert(MSUF_DB.boss.width == 192 and MSUF_DB.gf_mythicraid.growth == "RIGHT")
     assert(Suite.DB.suite.modules.damageMeter.windowCount == 2)
     local cd = Suite.DB.suite.modules.cooldownManager
@@ -95,6 +97,7 @@ end
 for _, flavor in ipairs({"Mainline", "Forever"}) do
     local World = assert(loadfile(host .. "/tools/tests/client_world.lua"))()
     local world = World.New(host, flavor)
+    world.env.GetNumSubgroupMembers = function() return 0 end
     local load = world.LoadFile
     function world:LoadFile(path, addon, namespace)
         local ok, message = load(self, path, addon, namespace)

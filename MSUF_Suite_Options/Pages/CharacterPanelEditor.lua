@@ -109,7 +109,7 @@ local function CurrentDrag(handle, config)
     if not claim or not claim.current() or claim.config ~= config or claim.mode ~= ui.mode
         or claim.positionMode ~= ui.positionMode then return false end
     if handle.group == TAB then
-        return claim.order == config[TabKey(ui)] and (ui.mode ~= OWN or claim.customTabs == config.customTabs)
+        return claim.order == Header.Order(config, TabKind(ui))
     end
     local x, y = ReadPosition(handle, config)
     return x == claim.savedX and y == claim.savedY
@@ -193,7 +193,7 @@ local function DragPhase(handle, phase)
         if handle.group == TAB then left, top = handle.layoutX, handle.layoutY end
         handle.cancelled = nil
         handle.claim = { current = P.ProfileGuard(), config = config, mode = ui.mode,
-            order = config[TabKey(ui)], customTabs = config.customTabs, positionMode = ui.positionMode,
+            order = ui.order, positionMode = ui.positionMode,
             x = x, y = y, parent = parent, left = left, top = top,
             savedX = savedX, savedY = savedY, drawX = 0, drawY = 0, level = handle:GetFrameLevel() }
     elseif phase == "start" and claim then
@@ -265,7 +265,7 @@ end
 
 local function LayoutTabs(ui, width, top, shown)
     local order, fontRevision = ui.order, S.FontRevision
-    local add = shown and ui.mode == OWN
+    local add = shown and (ui.mode == OWN or #ui.hiddenTabs > 0)
     if ui.tabOrder == order and ui.tabWidth == width and ui.tabTop == top and ui.addVisible == add
         and ui.tabFontRevision == fontRevision and ui.tabsVisible == shown then return ui.tabRailHeight end
     ui.addVisible = add
@@ -307,20 +307,25 @@ local function LayoutTabs(ui, width, top, shown)
     return ui.tabRailHeight
 end
 
-local function LayoutHeader(ui, width, positionVisible)
-    if ui.previewWidth == width and ui.positionVisible == positionVisible then return end
-    ui.previewWidth, ui.positionVisible = width, positionVisible
+local function LayoutHeader(ui, width, positionVisible, actionsVisible)
+    if ui.previewWidth == width and ui.positionVisible == positionVisible and ui.actionsVisible == actionsVisible then return end
+    ui.previewWidth, ui.positionVisible, ui.actionsVisible = width, positionVisible, actionsVisible
     ui.scale = math.min(1, width / Header.PreviewWidth)
     ui.header.frame:SetScale(ui.scale)
     ui.headerCanvas:SetSize(width, Header.Height * ui.scale)
-    local columns = positionVisible and 3 or 2
+    local columns = 2 + (positionVisible and 1 or 0) + (actionsVisible and 1 or 0)
     local buttonWidth = math.min(152, math.floor((width - (columns - 1) * GAP) / columns))
     ui.ownButton:SetWidth(buttonWidth)
     ui.inspectButton:SetWidth(buttonWidth)
     ui.positionButton:SetWidth(buttonWidth)
     ui.positionButton:SetShown(positionVisible)
     ui.addContent:Hide()
-    ui.tabActions:Hide()
+    ui.tabActions:SetShown(actionsVisible)
+    if actionsVisible then
+        ui.tabActions:SetWidth(buttonWidth)
+        ui.tabActions:ClearAllPoints()
+        ui.tabActions:SetPoint("TOPLEFT", positionVisible and ui.positionButton or ui.inspectButton, "TOPRIGHT", GAP, 0)
+    end
     Interaction.LayoutLayerRail(ui, width)
 end
 
@@ -344,11 +349,9 @@ local function UpdateHeight(ui, height)
 end
 
 local function SelectPreviewTab(ui, id)
+    if id == ui.selectedTabs[ui.mode] or not Header.TabVisible(S.Config(ID), TabKind(ui), id) then return end
     ui.selectedTabs[ui.mode] = id
-    if ui.mode == OWN then
-        local tab = Model.Find(S.Config(ID), id)
-        ui.customSelected = tab and id or nil
-    end
+    ui.custom:Cancel()
     Refresh(ui)
 end
 
@@ -366,10 +369,11 @@ end
 
 local function LayoutFullToolbar(ui, width, own, custom)
     local showPosition = own and #ui.customDefinitions > 0
-    if ui.toolbarWidth == width and ui.toolbarOwn == own and ui.toolbarCustom == custom
+    local showAdd = own or #ui.hiddenTabs > 0
+    if ui.toolbarWidth == width and ui.toolbarCustom == custom and ui.toolbarAdd == showAdd
         and ui.toolbarPosition == showPosition then return ui.toolbarHeight end
-    ui.toolbarWidth, ui.toolbarOwn, ui.toolbarCustom, ui.toolbarPosition = width, own, custom, showPosition
-    local visible = { true, true, own, showPosition, custom, custom }
+    ui.toolbarWidth, ui.toolbarCustom, ui.toolbarPosition, ui.toolbarAdd = width, custom, showPosition, showAdd
+    local visible = { true, true, showAdd, showPosition, custom, true }
     local count = 0
     for _, shown in ipairs(visible) do if shown then count = count + 1 end end
     local columns = math.min(count, width >= 840 and 6 or width >= 420 and 3 or 2)
@@ -393,19 +397,70 @@ local function LayoutFullToolbar(ui, width, own, custom)
     return ui.toolbarHeight
 end
 
-local function FullTab(ui)
-    local selected = ui.selectedTabs[ui.mode]
-    for _, spec in ipairs(ui.order) do
-        if spec.id == selected then return selected end
+local function UpdateTabControls(ui)
+    local unlocked = not P.Combat()
+    local own = ui.mode == OWN
+    local canAdd = unlocked and (#ui.hiddenTabs > 0 or (own and #ui.customDefinitions < Model.TabLimit))
+    local canEdit = unlocked and (own or #ui.order > 1)
+    if ui.canAdd ~= canAdd then
+        ui.canAdd = canAdd
+        ui.addTab:SetEnabled(canAdd)
     end
-    return "overview"
+    if ui.canEdit ~= canEdit then
+        ui.canEdit = canEdit
+        ui.tabActions:SetEnabled(canEdit)
+    end
 end
 
-local function SetAddEnabled(ui)
-    local enabled = not P.Combat() and #ui.customDefinitions < Model.TabLimit
-    if ui.canAdd == enabled then return end
-    ui.canAdd = enabled
-    ui.addTab:SetEnabled(enabled)
+local function TabClaim(ui, anchor)
+    local config, kind = S.Config(ID), TabKind(ui)
+    return { config = config, kind = kind, anchor = anchor, current = P.ProfileGuard(),
+        order = ui.order, selected = ui.selectedTabs[ui.mode] }
+end
+
+local function CurrentTabs(ui, claim)
+    return not P.Combat() and claim.current() and claim.config == S.Config(ID) and claim.kind == TabKind(ui)
+        and claim.anchor:IsVisible() and Header.Order(claim.config, claim.kind) == claim.order
+        and ui.selectedTabs[ui.mode] == claim.selected
+end
+
+local function AddTab(ui, anchor)
+    if not ui.canAdd then return end
+    local claim = TabClaim(ui, anchor)
+    ui.custom:Add(anchor, ui.hiddenTabs, function(id)
+        if not CurrentTabs(ui, claim) then return end
+        local patch = Header.SetTabVisible(claim.config, claim.kind, id, true)
+        if patch and P.SetMany(ID, patch) then SelectPreviewTab(ui, id) end
+    end)
+end
+
+local function OpenTabActions(ui, anchor)
+    if not ui.canEdit then return end
+    if ui.mode == OWN and ui.customSelected then return ui.custom:OpenTabActions(anchor) end
+    local claim = TabClaim(ui, anchor)
+    P.ContextMenu(anchor, function(_, menu)
+        if claim.kind == TAB then
+            menu:CreateButton(P.Tr("Key bindings"), function()
+                if CurrentTabs(ui, claim) then P.CharacterPanelBindings.Open(ui.ctx, claim.selected) end
+            end)
+            if Header.HomeTab(claim.config, TAB) == claim.selected then
+                menu:CreateTitle(P.Tr("Character start tab"))
+            else
+                menu:CreateButton(P.Tr("Use as character start tab"), function()
+                    if not CurrentTabs(ui, claim) then return end
+                    local patch = Header.SetHomeTab(claim.config, claim.selected)
+                    if patch then P.SetMany(ID, patch) end
+                end)
+            end
+        end
+        if #claim.order > 1 then
+            menu:CreateButton(P.Tr("Hide tab"), function()
+                if not CurrentTabs(ui, claim) then return end
+                local patch = Header.SetTabVisible(claim.config, claim.kind, claim.selected, false)
+                if patch then P.SetMany(ID, patch) end
+            end)
+        end
+    end)
 end
 
 local function PaintFullPreview(ui, config, width, overrides)
@@ -418,13 +473,12 @@ local function PaintFullPreview(ui, config, width, overrides)
     local preview = ui.preview
     ShowEditor(ui, not preview, width)
     if not preview then return false end
-    local tab, own = FullTab(ui), ui.mode == OWN
+    local tab, own = ui.selectedTabs[ui.mode], ui.mode == OWN
     local custom = own and Model.Find(config, tab)
     local customID = custom and tab or nil
     if ui.attachedCustom ~= customID or ui.attachedOwn ~= own then ui.custom:DetachPreview() end
     ui.attachedCustom, ui.attachedOwn = customID, own
     local toolbarHeight = LayoutFullToolbar(ui, width, own, customID ~= nil)
-    SetAddEnabled(ui)
     local height = preview:Paint(config, ui.mode, ui.order, tab, overrides, width)
     if ui.fullHeight ~= height then
         ui.fullHeight = height
@@ -454,13 +508,20 @@ Refresh = function(ui)
     if width < 24 then return end
     local config, sample = S.Config(ID), ui.sample[ui.mode]
     local overrides = ui.overrides[ui.mode]
-    ui.order = Header.Order(config, TabKind(ui))
+    local kind = TabKind(ui)
+    ui.order, ui.hiddenTabs = Header.Order(config, kind), Header.HiddenTabs(config, kind)
+    local selected = ui.selectedTabs[ui.mode]
+    if not Header.TabVisible(config, kind, selected) then
+        selected = Header.HomeTab(config, kind)
+        ui.selectedTabs[ui.mode] = selected
+    end
+    if ui.mode == OWN then ui.customSelected = Model.Find(config, selected) and selected or nil end
     RecycleTabs(ui, config)
+    UpdateTabControls(ui)
     if PaintFullPreview(ui, config, width, overrides) then return end
-    SetAddEnabled(ui)
     local tabs = overrides[TABS_LAYER] ~= false
     local ownTabs = ui.mode == OWN and tabs
-    LayoutHeader(ui, width, ownTabs and #ui.customDefinitions > 0)
+    LayoutHeader(ui, width, ownTabs and #ui.customDefinitions > 0, tabs and not (ownTabs and ui.customSelected))
     ui.header:Render(config, sample, nil, Header.PreviewWidth, 0, overrides)
     local railHeight = LayoutTabs(ui, width, MODE_HEIGHT + Header.Height * ui.scale + GAP, tabs)
     RefreshLayers(ui, sample, tabs, ui.header)
@@ -470,9 +531,7 @@ Refresh = function(ui)
         ui.chips:SetPoint("TOPLEFT", ui.host, "TOPLEFT", 0, -railHeight - GAP)
     end
     local height = railHeight + ui.chips:GetHeight() + math.max(34, math.ceil(ui.hint:GetStringHeight()) + 14) + GAP
-    local selected = ui.customSelected
-    if selected and not Model.Find(config, selected) then ui.customSelected, selected = nil, nil end
-    height = ui.custom:Refresh(width, height, selected, ownTabs, ui.positionMode, ui.scale)
+    height = ui.custom:Refresh(width, height, ui.customSelected, ownTabs, ui.positionMode, ui.scale)
     UpdateHeight(ui, height)
 end
 
@@ -532,15 +591,7 @@ end
 local function ClickHandle(ui, handle, moved)
     if moved or handle.cancelled or P.Combat() then return end
     if handle.group == FIELD then OpenField(ui, handle.spec) return end
-    ui.selectedTabs[ui.mode] = handle.spec.id
-    if ui.mode ~= OWN then return end
-    local id = handle.spec.id
-    if not Model.Find(S.Config(ID), id) then id = nil end
-    if ui.customSelected ~= id then
-        ui.custom:Cancel()
-        ui.customSelected = id
-        Refresh(ui)
-    end
+    SelectPreviewTab(ui, handle.spec.id)
 end
 
 local function CreateStage(ui)
@@ -567,7 +618,7 @@ local function CreateStage(ui)
     ui.addTab = T.Button(host, "+", ADD_WIDTH, TAB_HEIGHT)
     HM.SkipHistoryCheckpoint(ui.addTab)
     M.AddTooltip(ui.addTab, "Add tab", nil, { hook = true })
-    ui.addTab:SetScript("OnClick", function(button) ui.custom:Add(button) end)
+    ui.addTab:SetScript("OnClick", function(button) AddTab(ui, button) end)
 end
 
 local function CreateRail(ui)
@@ -580,7 +631,7 @@ local function CreateRail(ui)
     end, function(spec)
         local field = FIELDS[spec[1]]
         if ui.direct then
-            if field then ui.direct:SelectField(field.id) else ui.direct:SelectTab(FullTab(ui)) end
+            if field then ui.direct:SelectField(field.id) else ui.direct:SelectTab(ui.selectedTabs[ui.mode]) end
         elseif not field then
             if ui.layers[TABS_LAYER] then ui.kit:Select(ui.tabs[ui.order[1].id]) end
         else
@@ -611,7 +662,7 @@ local function CreateToolbar(ui)
     HM.SkipHistoryCheckpoint(ui.addContent)
     HM.SkipHistoryCheckpoint(ui.tabActions)
     ui.addContent:SetScript("OnClick", function(button) ui.custom:OpenContent(button) end)
-    ui.tabActions:SetScript("OnClick", function(button) ui.custom:OpenTabActions(button) end)
+    ui.tabActions:SetScript("OnClick", function(button) OpenTabActions(ui, button) end)
     ui.ownButton:SetPoint("TOPLEFT")
     ui.inspectButton:SetPoint("TOPLEFT", ui.ownButton, "TOPRIGHT", GAP, 0)
     ui.positionButton:SetPoint("TOPLEFT", ui.inspectButton, "TOPRIGHT", GAP, 0)

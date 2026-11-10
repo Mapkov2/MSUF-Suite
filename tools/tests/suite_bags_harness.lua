@@ -1096,6 +1096,11 @@ function H.New(root, options)
     end
     function W.Item(bag, slot) return W.items[bag] and W.items[bag][slot] end
     local function Data(id) return W.data[id] or W.Define(id) end
+    C_ActionBar = {}
+    if forever then
+        C_ActionBar.ShouldShowKeyring = function() return false end
+        KEYRING = "Keyring"
+    end
     C_Container = {
         GetContainerNumSlots = function(bag) return W.sizes[bag] or 0 end,
         GetContainerNumFreeSlots = function(bag)

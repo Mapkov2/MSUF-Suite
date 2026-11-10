@@ -36,7 +36,9 @@ local function Load(addon, namespace)
     local source = file:read("*a"); file:close()
     for line in source:gmatch("[^\r\n]+") do
         if line:sub(1, 1) ~= "#" then
-            local ok, message = world:LoadFile(root .. "/" .. addon .. "/" .. line:gsub("\\", "/"), addon, namespace)
+            local path = root .. "/" .. addon .. "/" .. line:gsub("\\", "/")
+            if path == arg[5] then path = arg[6] end
+            local ok, message = world:LoadFile(path, addon, namespace)
             assert(ok, tostring(message))
         end
     end
@@ -259,6 +261,69 @@ do
         P.StylePreviewFont = paint
     end
     general.fontSize = previous
+end
+
+-- The Suite's aura containers use the shared sample painter and existing
+-- XY/size editor; Blizzard's own sample auras keep Blizzard's size setting.
+-- Six-plate mode allocates on demand and keeps editing handles unique.
+do
+    local config = P.S.Config("nameplates")
+    local Auras = P.Suite.NameplateAuraDisplay
+    local dotsList = Auras.ListKey(Auras.Scope("enemy"), Auras.Container("dots"))
+    local changes = { look = 4, enemy = true, auraDisplayEnabled = true, auraEnemyDotsVisible = true,
+        auraEnemyDotsSource = 2, [dotsList] = "589,34914", auraEnemyDotsMissing = true,
+        enemyNpcAuraMode = 2, enemyNpcBuffs = true, auraPandemicHighlight = true }
+    local previous = {}
+    for key in pairs(changes) do previous[key] = config[key] end
+    previous.auraEnemyDotsOffsetX, previous.auraEnemyDotsSize = config.auraEnemyDotsOffsetX, config.auraEnemyDotsSize
+    assert(P.SetMany("nameplates", changes))
+    preview:ShowSample("enemy")
+    preview:Paint()
+    local buffs = assert(preview.kit.entries["enemy.Buffs"]).region
+    local tracked = assert(preview.kit.entries["enemy.Tracked"]).region
+    assert(tracked:IsVisible(), "the Dots on target container was not painted")
+    assert(P.NameplatesSize.Keys(buffs) == "auraScalePercent" and P.NameplatesSize.Keys(tracked) == "auraEnemyDotsSize",
+        "aura sample size fields edit a different setting")
+    assert(P.NameplatesSize.Write(preview, tracked, "auraEnemyDotsSize", 40))
+    assert(config.auraEnemyDotsSize == 40 and tracked:GetHeight() == 40, "aura size editor did not repaint the container")
+    preview:Select(tracked)
+    local editX = preview.selection.editX
+    editX:GetScript("OnEditFocusGained")(editX)
+    editX:SetText("17")
+    editX:GetScript("OnEnterPressed")(editX)
+    assert(config.auraEnemyDotsOffsetX == 17, "container drag editor did not write its X offset")
+    assert(not preview.groupPreview, "six-plate sample eagerly allocated")
+    local handles = #preview.handles
+    preview.zoom, preview.panX, preview.panY = 1.3, 11, -7
+    local toggle = assert(preview.groupPreviewButton):GetScript("OnClick")
+    toggle(preview.groupPreviewButton)
+    local group = assert(preview.groupPreview)
+    assert(group.frame:IsVisible() and #group.samples == 6 and #preview.handles == handles,
+        "six-plate preview omitted plates or duplicated editing handles")
+    preview:Select(tracked)
+    assert(not preview.body._selectedHandle, "group preview selected a hidden single-plate handle")
+    assert(not preview.sampleCells.enemy:IsVisible() and not preview.sampleCells.friendly:IsVisible())
+    assert(group.samples[1].sample.state.target and group.samples[2].editor.focusSample
+        and group.samples[3].sample.state.health == 21 and not group.samples[3].sample.state.cast,
+        "group sample facts do not vary target, focus, health and cast state")
+    local auraState = assert(group.samples[1].sample.auraPreviewState)
+    assert(#auraState.containers.dots.icons == 2,
+        "group sample bypassed the shared aura container preview")
+    local create, created = env.CreateFrame, 0
+    env.CreateFrame = function(...) created = created + 1 return create(...) end
+    for _ = 1, 25 do preview:Paint() end
+    env.CreateFrame = create
+    assert(created == 0, "warm group paints allocate new frames")
+    toggle(preview.groupPreviewButton)
+    assert(not group.frame:IsVisible() and preview.sampleCells.enemy:IsVisible()
+        and preview.zoom == 1.3 and preview.panX == 11 and preview.panY == -7,
+        "leaving group mode lost the original single-plate view")
+    toggle(preview.groupPreviewButton)
+    assert(preview.groupPreview == group and #preview.handles == handles, "group toggle rebuilt its samples")
+    toggle(preview.groupPreviewButton)
+    assert(P.SetMany("nameplates", previous))
+    preview.zoom, preview.panX, preview.panY = 1, 0, 0
+    preview:Paint()
 end
 
 -- 7.0's generic exact link queues navigation until the static index is ready.

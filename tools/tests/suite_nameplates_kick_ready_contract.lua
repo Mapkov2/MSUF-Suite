@@ -211,7 +211,7 @@ host.Util = { InCombat = function() return false end }
 host.Public.GetCastbarTexture = function() return "Interface\\MSUF\\Lucent" end
 -- The real boundary runs each consumer callback; none may raise here.
 geterrorhandler = function() return function(message) error("unexpected error report: " .. tostring(message), 0) end end
-for _, file in ipairs({ "Kernel/MSUF_Boundary.lua", "Runtime/MSUF_HostAPI.lua", "Castbars/MSUF_CastbarUtils.lua",
+for _, file in ipairs({ "Kernel/MSUF_Boundary.lua", "Runtime/MSUF_NameplateSettings.lua", "Runtime/MSUF_HostAPI.lua", "Castbars/MSUF_CastbarUtils.lua",
     "Castbars/MSUF_InterruptReady.lua" }) do
     assert(loadfile(classic .. "/" .. file))("MidnightSimpleUnitFrames", host)
 end
@@ -524,28 +524,32 @@ assert(not engine.HasConsumers() and next(events) == nil and not state.showing,
     "disabling the module left the engine running")
 
 ------------------------------------------------------------------ skin wiring
--- Skin.lua owns the plate lifecycle; each hook sits in the function that
--- owns that moment (suite_nameplates_contract.lua runs it with the engine).
+-- Skin.lua and CastTime.lua share the plate lifecycle; each hook sits in its
+-- owner (suite_nameplates_contract.lua runs the lifecycle with the engine).
 local skinFile = assert(io.open(root .. "/MSUF_Suite_Nameplates/Skin.lua", "rb"))
 local skin = skinFile:read("*a"):gsub("\r\n", "\n")
 skinFile:close()
-local function Body(header)
-    local start = assert(skin:find(header, 1, true), "Skin.lua lost " .. header)
-    local finish = assert(skin:find("\nend\n", start, true))
-    return skin:sub(start, finish)
+local castFile = assert(io.open(root .. "/MSUF_Suite_Nameplates/CastTime.lua", "rb"))
+local castTime = castFile:read("*a"):gsub("\r\n", "\n")
+castFile:close()
+local function Body(header, source)
+    source = source or skin
+    local start = assert(source:find(header, 1, true), "Lifecycle owner lost " .. header)
+    local finish = assert(source:find("\nend\n", start, true))
+    return source:sub(start, finish)
 end
-local function Has(header, call)
-    assert(Body(header):find(call, 1, true), header .. " must call " .. call)
+local function Has(header, call, source)
+    assert(Body(header, source):find(call, 1, true), header .. " must call " .. call)
 end
 Has("local function Paint(uf)", "KickReady.Paint(cast, prefix, unit)")
 Has("local function RestorePlate(uf)", "KickReady.Restore(cast)")
-Has("local function OnCastChanged(module, event, unit)", "KickReady.OnCast(cast, unit, event)")
-Has("local function RepaintCasts()", "KickReady.Paint(cast, Prefix(uf), M.units[health])")
+Has("function CastTime.OnChanged(module, event, unit, ...)", "private.KickReady.OnCast(cast, unit, event)", castTime)
+Has("function CastTime.Repaint()", "private.KickReady.Paint(cast, private.PlatePrefix(uf), M.units[health])", castTime)
 Has("function M:Disable()", "KickReady.Disable()")
 local refresh = Body("function M:Refresh()")
 assert(refresh:find("KickReady.Configure()", 1, true) < refresh:find("EachPlate(ApplyPlate)", 1, true),
     "the engine registration must precede the plate pass")
-assert(skin:find("\nKickReady.Bind(M, RepaintCasts)\n", 1, true), "Skin.lua must bind the readiness module")
+assert(skin:find("\nKickReady.Bind(M, CastTime.Repaint)\n", 1, true), "Skin.lua must bind the readiness module")
 
 local violations = stopWatch()
 assert(#violations == 0, "KickReady.lua compares or tests a secret:\n" .. table.concat(violations, "\n"))

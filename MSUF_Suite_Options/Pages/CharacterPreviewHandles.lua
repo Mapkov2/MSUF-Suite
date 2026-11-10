@@ -17,6 +17,10 @@ local function TabOrderKey(handles)
     return handles.ui.mode == OWN and "tabOrder" or "inspectTabOrder"
 end
 
+local function HiddenTabKey(handles)
+    return handles.ui.mode == OWN and "hiddenTabs" or "hiddenInspectTabs"
+end
+
 local function PositionsTab(handles, button)
     return button.group == TAB and button.spec.custom and handles.ui.mode == OWN and handles.positionMode
 end
@@ -55,7 +59,9 @@ local function IsCurrent(handles, button, config)
         local view = handles.view
         return view.tabs == claim.order and view.visibleTabs == claim.visibleTabs and view.promotedTab == claim.promotedTab
             and view.fontRevision == claim.fontRevision and config[TabOrderKey(handles)] == claim.savedOrder
-            and (claim.mode ~= OWN or config.customTabs == claim.customTabs)
+            and config[HiddenTabKey(handles)] == claim.hiddenTabs
+            and (claim.mode ~= OWN or (config.customTabs == claim.customTabs
+                and config.showAttributesTab == claim.showAttributes))
     end
     local savedX, savedY = SavedOffsets(handles, button, config)
     local header = handles.view.header
@@ -180,6 +186,7 @@ local function Claim(handles, button)
     handles.claim = {
         profile = P.ProfileGuard(), config = config, mode = handles.ui.mode, positionMode = handles.positionMode,
         spec = button.spec, order = view.tabs, savedOrder = config[TabOrderKey(handles)], customTabs = config.customTabs,
+        hiddenTabs = config[HiddenTabKey(handles)], showAttributes = config.showAttributesTab,
         visibleTabs = view.visibleTabs, promotedTab = view.promotedTab,
         fontRevision = view.fontRevision, scale = button:GetEffectiveScale(),
         left = left, top = top, width = width, height = height, baseX = button.baseX, baseY = button.baseY,

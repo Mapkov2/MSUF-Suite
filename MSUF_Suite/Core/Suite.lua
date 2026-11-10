@@ -30,12 +30,13 @@ end
 
 -- Setters reject invalid input; stored profiles are repaired instead.
 local function CheckedValue(rule, value)
-    if not rule or type(value) ~= type(rule.default) then return nil, "Invalid setting" end
-    if type(value) == "number" then
+    local kind = type(value)
+    if not rule or kind ~= type(rule.default) then return nil, "Invalid setting" end
+    if kind == "number" then
         if not Finite(value) then return nil, "Invalid number" end
         return ClampNumber(rule, value)
     end
-    if type(value) == "string" and not ValidText(rule, value) then return nil, "Invalid setting text" end
+    if kind == "string" and not ValidText(rule, value) then return nil, "Invalid setting text" end
     return value
 end
 S.CheckProfileValue = CheckedValue
@@ -97,6 +98,7 @@ local MIGRATIONS = {
     { run = Steps.CooldownSpecLayouts },
     { run = Steps.ChatComfort },
     { run = NS.MigrateCharacterPanelMode },
+    { run = Steps.NameplateAuraContainers },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {

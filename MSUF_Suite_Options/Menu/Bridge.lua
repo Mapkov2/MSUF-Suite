@@ -20,7 +20,7 @@ local S, T, HM = P.S, P.T, P.HM
 local COPY_ROLES = { caption = true, supporting = true }
 local SMALL_TEMPLATES = { GameFontHighlightSmall = true, GameFontDisableSmall = true }
 local function ApplyMenuFont(label, role)
-    if label and theme.ApplyMenuFont then theme.ApplyMenuFont(label, nil, role) end
+    if label then theme.ApplyMenuFont(label, nil, role) end
 end
 
 function T.Font(parent, template, text, color, role)
@@ -384,7 +384,7 @@ P.ChoiceGates = {}
 local function RuleKey(resolve, key) return resolve and resolve(key) or key end
 local function RuleLabel(id, key)
     local rule = P.catalog[id].rules[key]
-    return Tr(rule and rule.label or key)
+    return rule and rule.label and Tr(rule.label) or key
 end
 local function Blocked(explain, template, label)
     if not explain then return false end
@@ -509,8 +509,7 @@ function P.Description(parent, text, x, y, width, title)
     end
     if P.W.Description then
         local label = P.W.Description(parent, text, x, y, width, title, details)
-        if label and theme.StyleFontString then theme.StyleFontString(label, T.colors.text, nil, "section")
-        else ApplyMenuFont(label, "section") end
+        if label then theme.StyleFontString(label, T.colors.text, nil, "section") end
         Suite.HostBridge.RefreshMenuDescriptionHelp(label, details)
         return label
     end
@@ -522,8 +521,8 @@ function P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta, optio
     local height = options and options.height or 26
     local button = T.Button(parent, label, width or 180, height)
     if options then
-        if options.role == "success" and T.SkinSuccessButton then T.SkinSuccessButton(button)
-        elseif options.role and T.ApplyButtonRole then T.ApplyButtonRole(button, options.role) end
+        if options.role == "success" then T.SkinSuccessButton(button)
+        elseif options.role then T.ApplyButtonRole(button, options.role) end
         local text = HM.GetControlLabel(button)
         if options.fontRole then ApplyMenuFont(text, options.fontRole) end
         if text and options.wrap then

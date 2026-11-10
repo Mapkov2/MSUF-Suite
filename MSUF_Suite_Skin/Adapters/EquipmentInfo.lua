@@ -9,8 +9,7 @@ local _, NS = ...
 -- No external addon implementation, localized names or assets are included.
 local Info = {}
 NS.EquipmentInfo = Info
-local suite = _G.MSUFSuite
-if suite and suite.Skin then suite.Skin.EquipmentReader = Info end
+MSUFSuite.Skin.EquipmentReader = Info
 
 local Public = NS.Safety.Public
 -- Blizzard getters called with valid arguments; secret results read as nil.
@@ -309,8 +308,9 @@ function Info.AddTooltip(result)
     -- These are the current item's raw bonuses, not derived character totals.
     for _, key in ipairs(statKeys) do
         local value = result.stats and result.stats[key]
-        if value and value > 0 and _G[key] then
-            GameTooltip:AddLine(string.format("%s: %d", _G[key], value), .7, .8, .9)
+        local label = value and value > 0 and _G[key]
+        if label then
+            GameTooltip:AddLine(string.format("%s: %d", label, value), .7, .8, .9)
         end
     end
     GameTooltip:AddLine(" ")

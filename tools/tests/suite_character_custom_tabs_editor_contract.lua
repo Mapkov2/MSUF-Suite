@@ -1,6 +1,8 @@
 local root = assert(arg[1])
+local candidate = arg[2]
 local function Load(path, namespace)
-    return assert(loadfile(root .. "/" .. path))("MSUF_Suite", namespace)
+    local file = candidate and loadfile(candidate .. "/" .. path) or nil
+    return assert(file or loadfile(root .. "/" .. path))("MSUF_Suite", namespace)
 end
 
 local Frame = {}
@@ -56,7 +58,12 @@ function Frame:GetStringHeight() return 14 end
 function Frame:SetAutoFocus() end
 function Frame:SetMaxLetters() end
 function Frame:SetFocus() end
-function Frame:SetVerticalScroll(value) self.offset = value end
+function Frame:SetVerticalScroll(value)
+    if self:GetVerticalScroll() ~= value then
+        self.offset = value
+        self:Fire("OnVerticalScroll", value)
+    end
+end
 function Frame:GetVerticalScroll() return self.offset or 0 end
 function Frame:EnableMouseWheel(value) self.wheelEnabled = value end
 function Frame:GetVerticalScrollRange() return self.range or 0 end
@@ -82,6 +89,9 @@ end
 local x, y, originX, originY, held = 0, 0, 0, 0, false
 function GetCursorPosition() return x, y end
 function IsMouseButtonDown() return held end
+function wipe(values)
+    for key in pairs(values) do values[key] = nil end
+end
 
 local function Press(button, cursorX, cursorY)
     originX, originY = cursorX or 450, cursorY or 450
@@ -104,6 +114,33 @@ end
 
 local function Run(forever, styled)
     local config, profile, combat, writes = { customTabs = "", tabOrder = "" }, 1, false, 0
+    local secret = {}
+    local factions = { { name = "Alliance frontiers", isHeader = true } }
+    local byFaction, factionReads, currencyReads = {}, 0, 0
+    for index = 1, 14 do
+        local info = { name = ("Frontier %02d"):format(index), factionID = 100 + index }
+        factions[#factions + 1], byFaction[info.factionID] = info, info
+    end
+    factions[#factions + 1] = { name = "Other factions", isHeader = true }
+    for index = 1, 180 do
+        local info = { name = ("Observer %03d"):format(index), factionID = 200 + index }
+        factions[#factions + 1], byFaction[info.factionID] = info, info
+    end
+    factions[#factions + 1] = { name = "Protected ID", factionID = secret }
+    factions[#factions + 1] = { name = secret, factionID = 999 }
+    factions[#factions + 1] = secret
+    local currencies = { { name = "Raid marks", isHeader = true },
+        { name = "Veteran Medal", currencyID = 392, quantity = 12 } }
+    C_Reputation = {
+        GetNumFactions = function() return #factions end,
+        GetFactionDataByIndex = function(index) factionReads = factionReads + 1 return factions[index] end,
+        GetFactionDataByID = function(id) return byFaction[id] end,
+    }
+    C_CurrencyInfo = {
+        GetCurrencyListSize = function() return #currencies end,
+        GetCurrencyListInfo = function(index) currencyReads = currencyReads + 1 return currencies[index] end,
+        GetCurrencyInfo = function(id) if id == 392 then return currencies[2] end end,
+    }
     local menus, answer, confirm, selected, component = {}
     local positionMode, previewScale, attached = false, 1
     local feedbackX, feedbackY
@@ -113,15 +150,20 @@ local function Run(forever, styled)
         return component:Refresh(440, 80, selected, visible, positionMode, previewScale)
     end
     local function Text(value) return value end
-    local suite = { Text = Text, Client = { isForever = forever }, IsSecret = function() return false end,
+    local suite = { Text = Text, Client = { isForever = forever }, IsSecret = function(value) return value == secret end,
+        Public = function(value) return value ~= secret end,
+        PublicText = function(value) if type(value) == "string" then return value end end,
         Number = tonumber, Finite = function(value) return type(value) == "number" and value == value end,
         Suite = { Config = function() return config end, FontRevision = 1 } }
     Load("MSUF_Suite/Core/SuiteCatalog.lua", suite)
     Load("MSUF_Suite/Core/CharacterTabs.lua", suite)
+    Load("MSUF_Suite/Core/CharacterBindings.lua", suite)
     Load("MSUF_Suite/Core/Catalog/CharacterPanel.lua", suite)
     Load("MSUF_Suite/Core/PreviewKit.lua", suite)
     suite.Suite.CharacterHeader = suite.CharacterHeader
+    local bindingTab
     local P = { Suite = suite, S = suite.Suite, Tr = Text, M = {},
+        CharacterPanelBindings = { Open = function(_, tab) bindingTab = tab end },
         HM = { SkipHistoryCheckpoint = function() end, GetControlLabel = function(button) return button.label end },
         T = { colors = { accent = { 1, .8, .4 }, panel = { .08, .08, .09 }, muted = { .6, .6, .6 } } },
         Combat = function() return combat end,
@@ -177,6 +219,7 @@ local function Run(forever, styled)
 
     Load("MSUF_Suite_Options/Menu/PreviewInteraction.lua", P)
     Load("MSUF_Suite_Options/Pages/CharacterPreviewContent.lua", P)
+    Load("MSUF_Suite_Options/Pages/CharacterSourcePicker.lua", P)
     Load("MSUF_Suite_Options/Pages/CharacterCustomTabs.lua", P)
     local host = NewFrame()
     component = P.CharacterCustomTabs.Create({ host = host }, function(id)
@@ -195,7 +238,10 @@ local function Run(forever, styled)
     end
 
     assert(component:Refresh(440, 80, nil, true) == 80 and not component.root:IsShown())
-    assert(component:Add(plus))
+    local restored
+    assert(component:Add(plus, { { id = "gear", label = "Equipment" } }, function(id) restored = id end))
+    Menu("Equipment")
+    assert(restored == "gear" and menus[#menus]["Raid check"], "stock restoration replaced custom templates")
     Menu("Raid check")
     answer("Raid desk")
     assert(Tab().name == "Raid desk" and #Tab().cards == 2 and component.root:IsShown())
@@ -285,10 +331,24 @@ local function Run(forever, styled)
     local removed = selected
     config.tabOrder = "overview," .. removed .. "," .. original .. ",gear"
     component.actions:Fire("OnClick")
+    Menu("Key bindings")
+    assert(bindingTab == removed, "custom tab actions did not open its direct bindings")
+    Menu("Use as character start tab")
+    assert(config.homeTab == removed, "a custom tab could not be selected as C home")
+    component.actions:Fire("OnClick")
     Menu("Delete tab")
     confirm()
-    assert(not selected and #model.Get(config) == 1 and not config.tabOrder:find(removed, 1, true),
-        "delete did not clear the tab order atomically")
+    assert(not selected and #model.Get(config) == 1 and not config.tabOrder:find(removed, 1, true)
+        and config.homeTab == "overview", "delete did not clear both home and order atomically")
+    selected = original
+    local hidden = {}
+    for _, tab in ipairs(suite.CharacterHeader.Tabs) do hidden[#hidden + 1] = tab.id end
+    config.hiddenTabs = table.concat(hidden, ",")
+    Refresh(true)
+    component.actions:Fire("OnClick")
+    assert(not menus[#menus]["Delete tab"], "the final visible custom tab was offered for deletion")
+    config.hiddenTabs = nil
+    Refresh(true)
 
     assert(component:Add(plus))
     Menu("Empty tab")
@@ -517,6 +577,74 @@ local function Run(forever, styled)
     component:DetachPreview()
     assert(not attached.before and not attached.after and not rowHandle:IsShown(),
         "direct preview teardown left handles or callbacks active")
+
+    attached, positionMode = nil, false
+    Refresh(true)
+    local initialCards = #Tab().cards
+    component.add:Fire("OnClick")
+    local picker = component.picker
+    local initialFactionReads, initialCurrencyReads = factionReads, currencyReads
+    local last = #picker.results
+    assert(last > 180 and #picker.rows <= 10, "the large source list did not use a bounded row pool")
+    picker.scroll:SetVerticalScroll((last - 7) * 28)
+    assert(PickerRow("currency:392"):IsShown() and #picker.rows <= 10, "scrolling missed the recycled end of the list")
+    picker.search:SetText("observer 179")
+    assert(PickerRow("faction:379").label.text == "Observer 179")
+    picker.search:SetText("protected id")
+    assert(picker.empty:IsShown(), "a protected ID became an available choice")
+    picker.search:SetText("veteran")
+    assert(PickerRow("currency:392").label.text == "Veteran Medal")
+    assert(factionReads == initialFactionReads and currencyReads == initialCurrencyReads,
+        "scroll or search reread a native list")
+    PickerRow("currency:392"):Fire("OnClick")
+    local card = Tab().cards[initialCards]
+    assert(card.rows[#card.rows].source == "currency:392" and card.rows[#card.rows].label == "",
+        "a currency choice saved a transient index or replaced the source label")
+
+    component.add:Fire("OnClick")
+    picker.search:SetText("frontier 03")
+    PickerRow("faction:103"):Fire("OnClick")
+    card = Tab().cards[initialCards]
+    assert(card.rows[#card.rows].source == "faction:103" and card.rows[#card.rows].label == "")
+    local editorRow = component.cards[initialCards].rows[#card.rows]
+    assert(editorRow.label.text == "Frontier 03", "the editor lost the live faction name")
+    component.add:Fire("OnClick")
+    picker.search:SetText("add shown factions in alliance frontiers")
+    before = writes
+    picker.search:Fire("OnEnterPressed")
+    assert(writes == before + 1 and #Tab().cards == initialCards + 2, "a group did not write once across two cards")
+    local firstGroup, lastGroup = Tab().cards[initialCards + 1], Tab().cards[initialCards + 2]
+    assert(firstGroup.title == "Alliance frontiers" and #firstGroup.rows == model.RowLimit and #lastGroup.rows == 2)
+    assert(firstGroup.rows[1].source == "faction:101" and lastGroup.rows[2].source == "faction:114")
+
+    component.add:Fire("OnClick")
+    picker.search:SetText("add shown factions in other factions")
+    before = writes
+    assert(picker.results[2].noRoom and not picker.results[2].enabled)
+    picker.search:Fire("OnEnterPressed")
+    assert(writes == before and #Tab().cards == initialCards + 2, "an oversized group was saved partially")
+    picker.search:SetText("all reputations")
+    PickerRow("reputationReport"):Fire("OnClick")
+    component.add:Fire("OnClick")
+    picker.search:SetText("all reputations")
+    assert(not PickerRow("reputationReport").enabled, "a second full report was offered")
+    picker:Hide()
+    local current = Tab().cards[initialCards + 2]
+    local reportIndex = #current.rows
+    local reportRow = component.cards[initialCards + 2].rows[reportIndex]
+    Press(reportRow)
+    Release(reportRow)
+    Menu("Change data source")
+    picker.search:SetText("all reputations")
+    assert(PickerRow("reputationReport").enabled, "the current source became unavailable while replacing it")
+    picker:Hide()
+    component.add:Fire("OnClick")
+    picker.search:SetText("frontier 03")
+    local staleChoice = PickerRow("faction:103")
+    before = writes
+    profile = profile + 1
+    staleChoice:Fire("OnClick")
+    assert(writes == before, "a picker from the old profile wrote a faction into the new profile")
 end
 
 Run(false, true)

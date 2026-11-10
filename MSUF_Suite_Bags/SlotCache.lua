@@ -55,9 +55,12 @@ end
 
 -- Brings one container up to date and returns its slot count.
 function SlotCache.Sync(bag)
+    if not Finite(bag) then return 0 end
     local size
-    if bag == KEYRING_BAG then
-        size = GetKeyRingSize()
+    if client and client.isForever and bag == KEYRING_BAG then
+        local keyringSize = GetKeyRingSize
+        if not keyringSize then return 0 end
+        size = keyringSize()
     else
         size = C_Container.GetContainerNumSlots(bag)
     end

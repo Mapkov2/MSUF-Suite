@@ -89,6 +89,12 @@ function S.BuffRemindersDrawPreview(stage, config, dirty, open, classSample)
     end
     local entries, view = classSample and ClassSample(state, classSample, config) or state.list.entries, state.view
     local width, height = R.IconGeometry(config, #entries)
+    if config.raidBuffOverview or state.raid.rows then
+        R.BuildRaidOverview(state, true)
+        width, height = R.OverviewGeometry(state, #entries)
+        R.LayoutRaidOverview(state, open)
+        R.DrawRaidOverview(state, true, true)
+    end
     stage:SetSize(width, height)
     local shape, look = R.IconLook(config)
     for index = 1, math.max(#entries, #view.buttons) do
@@ -108,13 +114,13 @@ function S.BuffRemindersDrawPreview(stage, config, dirty, open, classSample)
             button.count:SetText(R.PreviewCount(entry))
             button:SetSize(config.size, config.size)
             R.StyleIcon(button, config, look, shape)
-            R.PositionIcon(button, stage, index - 1, config)
+            R.PositionIcon(button, stage, index - 1, config, state.raid.offset)
         end
         R.AlertTransition(state, button, entry, entry ~= nil)
         button:SetShown(entry ~= nil)
     end
     view.newAlert = nil
-    return width, height, #entries
+    return width, height, #entries + (state.raid.rows and #state.raid.rows or 0)
 end
 
 function S.BuffRemindersReleasePreview(stage)

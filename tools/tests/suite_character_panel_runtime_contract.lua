@@ -20,9 +20,10 @@ local setReads, setUses = 0, 0
 local inspectAllowed, currentSet, setMenu, equippedSet
 local itemWorn = true
 local frames = {}
+local externalKeys, otherKeys, overrideKeys, bindingOwner, bindingWrites
 UIParent, UISpecialFrames = { GetEffectiveScale = function() return 2 end }, {}
 C_GameRules = { IsGameRuleActive = function() return disabled end }
-Enum = { GameRule = { CharacterPanelDisabled = 1 }, AddOnRestrictionState = { Inactive = 0, Activating = 1 } }
+Enum = { PowerType = { Mana = 0 }, GameRule = { CharacterPanelDisabled = 1 }, AddOnRestrictionState = { Inactive = 0, Activating = 1 } }
 SOUNDKIT = { IG_CHARACTER_INFO_OPEN = 839 }
 function PlaySound(kit)
     assert(kit == SOUNDKIT.IG_CHARACTER_INFO_OPEN, "incorrect window opening sound")
@@ -51,12 +52,53 @@ function wipe(values) for key in pairs(values) do values[key] = nil end end
 function UnitGUID(unit) return units[unit] end
 function UnitClass() return "Priest" end
 function UnitLevel() return 22 end
+function UnitSex() return 2 end
 function UnitName(unit) return unit end
-function GetBindingKey() error("Suite must leave the stock Character key in place") end
-function GetBindingAction() error("Suite must leave the stock Character key in place") end
+C_KeyBindings = { GetBindingContextForAction = function(command)
+    assert(externalKeys[command], "Suite read an unrelated binding: " .. command)
+    return 1
+end }
+function GetBindingKey(command, _, context)
+    assert(context == 1)
+    return unpack(assert(externalKeys[command]))
+end
+function GetBindingAction(key, checkOverride, context)
+    assert(context == 1)
+    if checkOverride and (otherKeys[key] or overrideKeys[key]) then return otherKeys[key] or overrideKeys[key] end
+    for command, keys in pairs(externalKeys) do
+        for _, candidate in ipairs(keys) do if key == candidate then return command end end
+    end
+    return ""
+end
+local function RunBindingSnippet(frame, snippet)
+    local chunk = assert(loadstring(snippet))
+    setfenv(chunk, { self = frame })
+    chunk()
+end
+local function SetBindingState(state)
+    local owner = assert(bindingOwner)
+    assert(owner.driver)
+    owner.state = state
+    RunBindingSnippet(owner, owner:GetAttribute("_onstate-characterkeys"))
+end
+function SecureHandlerExecute(frame, snippet)
+    assert(frame == bindingOwner and not locked, "override mutated insecurely in combat")
+    bindingWrites = bindingWrites + 1
+    RunBindingSnippet(frame, snippet)
+end
 function RegisterStateDriver(frame, state, condition)
+    if frame == bindingOwner then
+        assert(state == "characterkeys" and condition == "[combat][petbattle][vehicleui] native; suite" and not locked)
+        frame.driver = true
+        SetBindingState("suite")
+        return
+    end
     assert(frame == gearProxy and state == "visibility" and condition == "[combat] hide",
         "native click proxy lost the combat visibility driver")
+end
+function UnregisterStateDriver(frame, state)
+    assert(frame == bindingOwner and state == "characterkeys" and not locked)
+    frame.driver = nil
 end
 function IsModifiedClick(kind) return kind == modifiedClick end
 function HandleModifiedItemClick(link) linkedItem = link end
@@ -144,6 +186,26 @@ local function CreateFrame(_, name, parent, template)
         frame.SetFrameStrata = function() end
         frame.SetFrameLevel = function() end
         frame.RegisterForClicks = function(_, button) assert(button == "LeftButtonUp") end
+    elseif template == "SecureHandlerStateTemplate" then
+        assert(not locked and parent == UIParent and not bindingOwner)
+        bindingOwner = frame
+        local attrs = {}
+        frame.SetAttribute = function(_, key, value)
+            assert(not locked)
+            attrs[key] = value
+            if key == "state-characterkeys" then frame.state = value end
+        end
+        frame.GetAttribute = function(_, key)
+            if key == "state-characterkeys" then return frame.state end
+            return attrs[key]
+        end
+        frame.ClearBindings = function() wipe(overrideKeys) end
+        frame.SetBinding = function(_, priority, key, command)
+            assert(priority == false)
+            overrideKeys[key] = command
+        end
+        frame.RegisterEvent = function(_, event) frame.event = event end
+        frame.UnregisterEvent = function() frame.event = nil end
     end
     frames[#frames + 1] = frame
     return frame
@@ -210,6 +272,12 @@ end
 
 local function Run(forever)
     local runtime, controller
+    externalKeys, otherKeys, overrideKeys, bindingOwner, bindingWrites = {
+        TOGGLEPROFESSIONBOOK = { "F7", "CTRL-F7" },
+        TOGGLECHARACTER4 = { "F8" },
+        TOGGLESTATISTICS = { "F9" },
+    }, {}, {}, nil, 0
+    local panelOpens = 0
     local preferences, boundPreferences = {}, nil
     local lastContext, lastReport, lastGearSummary, lastHeader, lastTabs, lastRail
     local armor, armorReads, averageItemLevel = 42, 0, 19
@@ -233,9 +301,17 @@ local function Run(forever)
     C_SpecializationInfo = { GetSpecialization = function() return nil end }
     function UnitHealthMax() return 595 end
     function UnitPowerType() return 0, "MANA" end
-    function UnitPowerMax() return 1264 end
+    BASE_MOVEMENT_SPEED = 7
+function GetManaRegen() return 0, 0 end
+function UnitPowerMax() return 1264 end
     function UnitStat(_, id) statReads = statReads + 1 return id, id * 10 end
     function UnitArmor() armorReads = armorReads + 1 return 0, armor end
+    function GetCritChance() critReads = critReads + 1 return 1 end
+    function GetRangedCritChance() return 0 end
+    function GetSpellCritChance() return 0 end
+    function GetMeleeHaste() return 2 end
+    function GetRangedHaste() return 0, 0 end
+    function UnitSpellHaste() return 0 end
     function GetDodgeChance() return 2 end
     function GetAvoidance() return 3 end
     function UnitDefenseSkill() return 100, 5 end
@@ -247,6 +323,10 @@ local function Run(forever)
         assert(unit == "target", "Inspect travel read a different unit")
     end
     function GetUnitSpeed(unit)
+        if unit == "player" then
+            assert(forever and not locked, "unexpected player speed read")
+            return 0, 7, 7, 7
+        end
         TargetOnly(unit)
         speedReads = speedReads + 1
         return currentSpeed, 77, 88, 99
@@ -280,6 +360,12 @@ local function Run(forever)
     currentSet, inspectAllowed, itemWorn = 0, true, true
     controller = {
         CreateFrame = CreateFrame, GamepadUI = function() return pad end,
+        ShowPanel = function(panel)
+            assert(panel == "character" and not locked and not pad and not disabled, "unsafe native panel open")
+            panelOpens = panelOpens + 1
+            CharacterFrame:Show()
+            return true
+        end,
         ReadCrit = function() critReads = critReads + 1 return 1 end, ReadHaste = function() return 2 end,
         ReadMastery = function() return 3 end, ReadVersatility = function() return 4 end,
         Dispatch = function(callback, ...) return callback(...) end,
@@ -311,7 +397,7 @@ local function Run(forever)
         ClearPending = function(_, pending) wipe(pending) end,
     }
     MSUFSuite = {
-        Suite = controller, Text = function(text) return text end, Client = { isForever = forever },
+        Suite = controller, Text = function(text) return text end, Client = { isForever = forever, isMainline = not forever },
         InCombat = function(event) return locked or event == "PLAYER_REGEN_DISABLED" end, Public = function(value) return not rawequal(value, secret) end,
         Finite = function(value)
             return MSUFSuite.Public(value) and type(value) == "number" and value == value
@@ -354,6 +440,7 @@ local function Run(forever)
     local build = setmetatable({}, { __index = function() return function() return {} end end })
     MSUFSuite.CatalogBuild = { ForAddon = function() return build end }
     assert(loadfile(root .. "/MSUF_Suite/Core/CharacterTabs.lua"))("MSUF_Suite", MSUFSuite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/CharacterBindings.lua"))("MSUF_Suite", MSUFSuite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/CharacterPanel.lua"))("MSUF_Suite", MSUFSuite)
     controller.CharacterHeader = MSUFSuite.CharacterHeader
     assert(loadfile(root .. "/MSUF_Suite/Core/UnitMount.lua"))("MSUF_Suite", MSUFSuite)
@@ -366,6 +453,13 @@ local function Run(forever)
     CharacterFrame.SetPoint, CharacterFrame.SetScale, CharacterFrame.StopMovingOrSizing =
         function() end, function() end, function() end
     PaperDollFrame = CreateFrame("Frame", nil, CharacterFrame)
+    local equipmentSidebar = CreateFrame("Frame", nil, PaperDollFrame)
+    PaperDollFrame.EquipmentManagerPane = equipmentSidebar
+    PaperDollFrame_SetSidebar = function(owner, index)
+        assert(index == 3)
+        equipmentSidebar:Show()
+        if hooks.PaperDollFrame_SetSidebar then hooks.PaperDollFrame_SetSidebar(owner, index) end
+    end
     nativePanes = { PaperDollFrame = PaperDollFrame }
     for _, name in ipairs({ "ReputationFrame", "TokenFrame", "SkillsFrame", "PVPRankFrame", "StatisticsFrame", "UnmappedFrame" }) do
         _G[name] = CreateFrame("Frame", name, CharacterFrame)
@@ -379,6 +473,9 @@ local function Run(forever)
         nativePanes[name]:Show()
         if not forever then self.activeSubframe = name end
     end
+    function CharacterFrame:ToggleTokenFrame()
+        if C_CurrencyInfo.GetCurrencyListSize() > 0 then ToggleCharacter("TokenFrame") end
+    end
     nativeModel = CreateFrame("ModelScene", nil, PaperDollFrame)
     nativeModel:Show()
     nativeSlots = { [13] = CreateFrame("ItemButton", nil, PaperDollFrame),
@@ -389,7 +486,12 @@ local function Run(forever)
     InspectFrame = CreateFrame("Frame")
     InspectFrame_Show = RequestInspect
     local inspectGuildReads = 0
+    IsDualWielding = function() return false end
+    IsRangedWeapon = function() return false end
+    UnitDamage = function() return 0, 0, 0, 0 end
+    GetExpertise = function() return 0, 0, 0 end
     C_PaperDollInfo = {
+        OffhandHasShield = function() return false end,
         GetInspectGuildInfo = function(unit)
             assert(InspectFrame.unit == unit, "guild was read after native Inspect cleared its cache")
             inspectGuildReads = inspectGuildReads + 1
@@ -431,9 +533,11 @@ local function Run(forever)
                         local visible = {}
                         for i = 1, #tabs do visible[tabs[i].id] = true end
                         assert(not visible.stats, "standalone character Stats tab remained")
-                        if visible.compare then
-                            assert(not visible.reputation and not visible.custom2, "own tabs leaked into Inspect")
-                        else
+                        assert(visible[tab], "a hidden tab remained selected")
+                        if not nativeRoot then
+                            assert(not visible.reputation and not visible.custom2 and not visible.attributes,
+                                "own tabs leaked into Inspect")
+                        elseif not runtime.config.hiddenTabs or runtime.config.hiddenTabs == "" then
                             assert(visible.reputation and visible.currency)
                             assert(visible.skills and visible.pvp and visible.statistics)
                         end
@@ -449,8 +553,12 @@ local function Run(forever)
                         railPaints = railPaints + 1
                         assert(lastGearSummary == groups[1].rows, "speed repaint used a different rail")
                     end,
-                    ShowGroups = function(_, groups)
+                    ShowGroups = function(_, groups, combat)
                         lastReport = groups
+                        if nativeRoot and locked and (lastTab == "overview" or lastTab == "gear") then
+                            assert(combat, "combat gear fallback used native scrolling")
+                        end
+                        if lastTab == "attributes" then lastCombatRail = combat end
                         if nativeRoot and (lastTab == "overview" or lastTab == "gear") then
                             lastRail = groups
                             lastGearSummary = lastRail[#lastRail] and lastRail[#lastRail].rows
@@ -477,8 +585,14 @@ local function Run(forever)
     Load("Equipment", ns)
     for key, fn in pairs(gearFixture) do ns.Gear[key] = fn end
     Load("GearActions", ns)
+    Load("Stats", ns)
+    Load("Reputation", ns)
     Load("Pages", ns)
-    ns.Pages.Read = function(tab) lastGroup, groupReads = tab, groupReads + 1 end
+    local reputationConfig
+    ns.Pages.Read = function(tab, _, config)
+        lastGroup, groupReads = tab, groupReads + 1
+        if tab == "reputation" then reputationConfig = config end
+    end
     ns.Pages.Toggle = function() return true end
     do
         local definition = { cards = { { title = "Combat stats", rows = {
@@ -499,6 +613,7 @@ local function Run(forever)
     Load("Travel", ns)
     Load("Runtime", ns)
     runtime.context, runtime.config, runtime.active = context, { mode = 1 }, true
+    controller.Config = function(id) assert(id == "characterPanel") return runtime.config end
     runtime:Enable()
     assert(not callbacks.INSPECT_READY and not runtime.view and readerChecks == 0, "Basic acquired ownership")
     Press("C")
@@ -548,8 +663,8 @@ local function Run(forever)
         and lastKind == "character" and lastWithModel)
     assert(actions.windowAction("maximize") and lastWindowAction == "maximize", "Suite caption lost its native window owner")
     assert(gearReads == beforeOpenReads + 1 and boundPreferences == nil, "native show painted twice or moved its hosted view")
-    local function FindRow(label)
-        for _, group in ipairs(lastRail) do
+    local function FindRow(label, groups)
+        for _, group in ipairs(groups or lastRail) do
             for _, row in ipairs(group.rows) do
                 if row.label == label then return row.value end
             end
@@ -736,6 +851,35 @@ local function Run(forever)
             "deleting the live selected custom tab did not return to Overview")
         assert(not lastRail[1].layout and not lastRail[1].rows[1].layout,
             "stock report inherited positioned data from the custom pool")
+        local reports = { id = "custom3", name = "My reputations", cards = {
+            { title = "Reputation", rows = { { source = "reputationReport", label = "" } } },
+        } }
+        InstallCustom(reports)
+        actions.tab("custom3")
+        local reportReads, equipmentReads = groupReads, gearReads
+        assert(callbacks.UPDATE_FACTION and not callbacks.QUEST_TURNED_IN and not callbacks.PLAYER_EQUIPMENT_CHANGED)
+        Event(runtime, "PLAYER_AVG_ITEM_LEVEL_UPDATE")
+        Flush()
+        assert(groupReads == reportReads and gearReads == equipmentReads, "an unrelated header change rescanned a custom report")
+        Event(runtime, "UPDATE_FACTION")
+        Event(runtime, "UPDATE_FACTION")
+        Flush()
+        assert(groupReads == reportReads + 1, "custom report events did not coalesce into one fresh read")
+        runtime.config.reputationBarHeight = 7
+        runtime:Refresh()
+        Flush()
+        assert(groupReads == reportReads + 1, "custom bar appearance reread its faction report")
+        runtime.config.showReputationBars, runtime.config.reputationGoal = true, 8
+        runtime:Refresh()
+        Flush()
+        assert(groupReads == reportReads + 2 and callbacks.QUEST_TURNED_IN,
+            "custom reputation format or goal did not refresh its report and detail events")
+        runtime.config.showReputationBars, runtime.config.reputationGoal = false, 1
+        runtime:Refresh()
+        Flush()
+        assert(not callbacks.QUEST_TURNED_IN)
+        actions.tab("overview")
+        assert(not callbacks.UPDATE_FACTION, "an inactive custom report retained faction events")
         InstallCustom(audit)
     end
 
@@ -755,6 +899,22 @@ local function Run(forever)
     assert(lastContext == "Equipment set: PvP", "finished swap did not refresh the active set")
     actions.tab("reputation")
     assert(lastGroup == "reputation" and callbacks.UPDATE_FACTION and not callbacks.UNIT_STATS)
+    assert(not callbacks.QUEST_TURNED_IN, "plain Reputation listens to Paragon reward events")
+    assert(reputationConfig == runtime.config, "the live Reputation tab did not receive profile settings")
+    local reputationReads = groupReads
+    runtime.config.reputationBarHeight, runtime.config.reputationBarColor = 6, "14a0ff"
+    runtime:Refresh()
+    Flush()
+    assert(groupReads == reputationReads, "a bar style edit reread the faction list")
+    runtime.config.showReputationBars, runtime.config.reputationGoal, runtime.config.reputationValue = true, 8, 3
+    runtime:Refresh()
+    Flush()
+    assert(groupReads == reputationReads + 1, "the current Reputation tab ignored data settings")
+    assert(callbacks.QUEST_TURNED_IN, "detailed Reputation omitted reward updates")
+    runtime.config.showReputationBars, runtime.config.reputationGoal, runtime.config.reputationValue = false, 1, 1
+    runtime:Refresh()
+    Flush()
+    assert(not callbacks.QUEST_TURNED_IN, "disabling detailed Reputation retained reward updates")
     local beforeSets = setReads
     Event(runtime, "EQUIPMENT_SETS_CHANGED")
     Flush()
@@ -967,6 +1127,16 @@ local function Run(forever)
     Event(runtime, "INSPECT_READY", "A")
     Flush()
     assert(not hostedView.frame:IsShown() and runtime.view == runtime.inspectView, "Inspect did not claim its own view")
+    runtime.config.hiddenInspectTabs = "overview"
+    runtime:Refresh()
+    Flush()
+    assert(lastTab == "compare" and not callbacks.UNIT_AURA and not next(tickers),
+        "hiding the Inspect home retained the old page or its work")
+    runtime.config.hiddenInspectTabs = ""
+    runtime:Refresh()
+    Flush()
+    actions.tab("overview")
+    assert(lastTab == "overview", "restoring Inspect Overview did not reopen its page")
     actions.close()
     Flush()
     assert(hostedView.frame:IsShown() and CharacterFrame:IsVisible(), "closing Inspect did not resume the already visible character dock")
@@ -1063,12 +1233,271 @@ local function Run(forever)
     CharacterFrame:Show()
     Flush()
     assert(hostedView.frame:IsShown() and lastTab == "reputation", "reopening the last native report missed the Suite")
+    for _, tab in ipairs(lastTabs) do assert(tab.id ~= "attributes", "Attributes tab must be opt-in") end
+    runtime.config.showAttributesTab, runtime.config.showFullStats = true, false
+    runtime:Refresh()
+    Flush()
+    for i, tab in ipairs(lastTabs) do
+        if tab.id == "reputation" then assert(lastTabs[i + 1].id == "attributes") end
+    end
+    local attrsReads = gearReads
+    actions.tab("attributes")
+    assert(lastTab == "attributes" and lastReport[1].title == "Attributes" and callbacks[statEvent]
+        and FindRow("Armor", lastReport) == 55 and not FindRow("Durability", lastReport),
+        "Attributes report did not read the full sheet without equipment details")
+    armor = 58
+    Event(runtime, "PLAYER_EQUIPMENT_CHANGED", 1)
+    Flush()
+    assert(FindRow("Armor", lastReport) == 58 and gearReads == attrsReads,
+        "Attributes ignored an equipment change or read the gear model")
+    local beforeCombatArmor = armorReads
+    Event(runtime, "PLAYER_REGEN_DISABLED")
+    assert(lastTab == "attributes" and lastCombatRail and not callbacks[statEvent]
+        and lastReport[2].title == "Full stats after combat" and armorReads == beforeCombatArmor,
+        "Attributes did not suspend restricted reads on combat entry")
+    locked = true
+    Event(runtime, "UNIT_MAXHEALTH", "player")
+    Flush()
+    assert(lastCombatRail and armorReads == beforeCombatArmor, "a vital update read restricted stats")
+    locked = false
+    Event(runtime, "PLAYER_REGEN_ENABLED")
+    Flush()
+    assert(lastTab == "attributes" and not lastCombatRail and callbacks[statEvent]
+        and FindRow("Armor", lastReport) == 58 and gearReads == attrsReads,
+        "Attributes did not refresh in place after combat")
+    actions.tab("reputation")
+    assert(not callbacks.UNIT_STATS and not callbacks[statEvent], "hidden Attributes retained its event work")
+    actions.tab("attributes")
+    runtime.config.showAttributesTab = false
+    runtime:Refresh()
+    Flush()
+    assert(lastTab == "overview" and lastRail[1].title == "At a glance" and not callbacks[statEvent],
+        "hiding the selected Attributes tab did not restore Overview")
     ToggleCharacter("TokenFrame", true)
     CharacterFrame:Hide()
     Flush()
     assert(not hostedView.frame:IsShown(), "closing the native window replayed a queued link")
+
+    local addedFrames = #frames
+    local config = runtime.config
+    config.homeTab = "reputation"
+    local scans = gearReads
+    Press("C")
+    assert(lastTab == "reputation" and lastGroup == "reputation" and PaperDollFrame:IsVisible(),
+        "C did not keep the native PaperDoll owner and open the configured home")
+    assert(gearReads == scans and not callbacks.PLAYER_EQUIPMENT_CHANGED and not callbacks.UPDATE_INVENTORY_DURABILITY,
+        "a report home read equipment or retained its events")
+    actions.tab("gear")
+    assert(lastTab == "gear" and nativeModel:IsVisible(), "an explicit Suite tab was redirected to the home")
+    assert(gearReads == scans + 1 and callbacks.PLAYER_EQUIPMENT_CHANGED,
+        "the equipment page did not acquire its deferred data and events")
+    Press("C")
+    Press("C")
+    assert(lastTab == "reputation", "reopening C remembered the previous selection instead of its home")
+    ToggleCharacter("PaperDollFrame", true)
+    Flush()
+    assert(lastTab == "overview", "an explicit native PaperDoll link did not open available Overview")
+    actions.tab("reputation")
+    config.hiddenTabs = "gear,reputation"
+    runtime:Refresh()
+    Flush()
+    assert(lastTab == "overview" and not callbacks.UPDATE_FACTION, "hiding the active home left its report running")
+    local beforeHidden = nativeToggles
+    assert(controller.OpenCharacterPanelTab("gear") == false and nativeToggles == beforeHidden,
+        "a hidden shortcut touched the native window")
+    Press("U")
+    assert(lastTab == "overview" and ReputationFrame:IsVisible(), "a hidden native report bypassed the visible home")
+    Press("TokenFrame")
+    assert(lastTab == "currency" and lastGroup == "currency", "an available direct native report was redirected")
+
+    ToggleCharacter("PaperDollFrame", true)
+    PaperDollFrame_SetSidebar(nil, 3)
+    Flush()
+    assert(equipmentSidebar:IsVisible() and not hostedView.frame:IsShown() and not runtime.layoutRoot,
+        "the Planner's native equipment-manager fallback remained covered by the Suite")
+    Press("C")
+    local model, customTabs = MSUFSuite.CharacterTabs, {}
+    local home = assert(model.Create(customTabs, "empty", "My home"))
+    config.customTabs, config.homeTab = assert(model.Encode(customTabs)), home
+    scans = gearReads
+    locked = true
+    Press("C")
+    assert(lastTab == home and PaperDollFrame:IsVisible() and hostedView.frame:IsShown(),
+        "C in combat did not open the custom home through the native owner")
+    locked = false
+    Event(runtime, "PLAYER_REGEN_ENABLED")
+    Flush()
+    assert(lastTab == home and gearReads == scans, "custom home changed or reread equipment across combat")
+    config.customTabs, config.homeTab = "", home
+    runtime:Refresh()
+    Flush()
+    assert(lastTab == "overview", "deleting the custom home left stale content selected")
+    runtime.config = { mode = 2, hiddenTabs = "overview,gear", homeTab = "currency" }
+    runtime:Refresh()
+    Flush()
+    assert(lastTab == "currency" and lastGroup == "currency", "profile replacement kept a hidden active tab")
+    runtime.config = config
+    config.hiddenTabs = ""
+    runtime:Refresh()
+    Flush()
+    actions.tab("gear")
+    assert(lastTab == "gear" and #frames == addedFrames, "restoring a tab created extra routing frames")
+    local function QueueGear()
+        Press("TokenFrame")
+        HoverGearTab("gear")
+        gearProxy.scripts.PreClick(gearProxy)
+        gearProxy:GetAttribute("clickbutton1"):Click()
+        gearProxy.scripts.PostClick(gearProxy)
+    end
+    QueueGear()
+    ToggleCharacter("TokenFrame")
+    ToggleCharacter("PaperDollFrame")
+    Flush()
+    assert(lastTab == "overview", "native pane switches replayed a stale gear request")
+    QueueGear()
+    config.mode = 1
+    runtime:Refresh()
+    config.mode = 2
+    runtime:Refresh()
+    Flush()
+    assert(lastTab == "overview" and #frames == addedFrames, "stopping Suite replayed a stale gear request")
+    Press("C")
+    do
+        local bindings = MSUFSuite.CharacterBindings
+        local function ApplyBinding(patch)
+            for key, value in pairs(assert(patch)) do config[key] = value end
+        end
+        ApplyBinding(bindings.SetNativeTab(config, "reputation", "skills"))
+        Press("U")
+        assert(ReputationFrame:IsVisible() and lastTab == "skills", "native Reputation binding missed the mapped tab")
+        ToggleCharacter("ReputationFrame", true)
+        Flush()
+        assert(lastTab == "reputation", "an explicit native Reputation link inherited the binding remap")
+        Press("U")
+        assert(not hostedView.frame:IsShown(), "the native toggle did not close its already-shown pane")
+        Press("U")
+        assert(lastTab == "skills", "native remap was lost after close")
+        config.hiddenTabs = "skills"
+        runtime:Refresh()
+        Flush()
+        assert(lastTab == "overview", "hiding a remapped destination did not return to Home")
+        Press("U")
+        Press("U")
+        assert(lastTab == "overview", "a hidden native mapping did not resolve to Home")
+        config.hiddenTabs = ""
+        ApplyBinding(bindings.SetNativeTab(config, "currency", "statistics"))
+        CharacterFrame:ToggleTokenFrame()
+        Flush()
+        assert(TokenFrame:IsVisible() and lastTab == "statistics", "the Blizzard Currency command missed its remap")
+        assert(controller.OpenCharacterPanelTab("currency"))
+        Flush()
+        assert(lastTab == "currency", "the Suite Currency link inherited the binding remap")
+        if forever then
+            ApplyBinding(bindings.SetNativeTab(config, "pvp", "reputation"))
+            Press("PVPRankFrame")
+            assert(PVPRankFrame:IsVisible() and lastTab == "reputation", "Forever PvP binding missed its remap")
+        end
+        local tabID = assert(model.Create(customTabs, "empty", "Bound custom"))
+        config.customTabs = assert(model.Encode(customTabs))
+        ApplyBinding(bindings.SetSlot(config, 1, tabID))
+        local customCommand = bindings.Slots[1].command
+        local customLabel = "BINDING_NAME_" .. customCommand
+        runtime:Refresh()
+        Flush()
+        assert(_G[customLabel]:find("Bound custom", 1, true), "a refreshed custom slot missed its Blizzard binding label")
+        local beforeOpens = panelOpens
+        local beforeReads = gearReads
+        assert(controller.OpenBoundCharacterTab(customCommand))
+        Flush()
+        assert(panelOpens == beforeOpens + 1 and lastTab == tabID and gearReads == beforeReads,
+            "a direct custom binding missed its exact tab or acquired equipment")
+        assert(controller.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_PVP"))
+        Flush()
+        assert(lastTab == "pvp", "the direct PvP command was unavailable")
+        config.hiddenTabs = "pvp"
+        locked = true
+        local blockedOpens = panelOpens
+        assert(not controller.OpenBoundCharacterTab(customCommand), "combat allowed a direct binding")
+        locked, pad = false, true
+        assert(not controller.OpenBoundCharacterTab(customCommand), "gamepad allowed a direct binding")
+        pad, disabled = false, true
+        assert(not controller.OpenBoundCharacterTab(customCommand), "a restricted Character panel allowed a direct binding")
+        disabled = false
+        assert(not controller.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_PVP"), "a hidden bound tab opened")
+        assert(not controller.OpenBoundCharacterTab(secret), "a secret binding command opened")
+        assert(not controller.OpenBoundCharacterTab(bindings.Slots[2].command), "an unassigned slot opened")
+        assert(panelOpens == blockedOpens and #frames == addedFrames, "a rejected binding touched native routing")
+        config.customTabs = ""
+        assert(not controller.OpenBoundCharacterTab(customCommand), "a deleted custom tab kept its binding route")
+        config.hiddenTabs = ""
+        CharacterFrame:Hide()
+        Flush()
+        assert(not bindingOwner and not callbacks.UPDATE_BINDINGS and not callbacks.ACTIVE_GAME_MODE_UPDATED,
+            "default routes installed an override owner or event")
+        config.customTabs = assert(model.Encode(customTabs))
+        ApplyBinding(bindings.SetNativeTab(config, "professions", tabID))
+        if not forever then
+            ApplyBinding(bindings.SetNativeTab(config, "pvp", "pvp"))
+            ApplyBinding(bindings.SetNativeTab(config, "statistics", "statistics"))
+        end
+        otherKeys["CTRL-F7"] = "ANOTHER_ADDON"
+        runtime:Refresh()
+        Flush()
+        local professions = "MSUFSUITE_CHARACTER_FROM_PROFESSIONS"
+        assert(overrideKeys.F7 == professions and not overrideKeys["CTRL-F7"] and bindingWrites == 1,
+            "the opt-in Professions route missed a native key or overrode another owner")
+        assert(overrideKeys.F8 == (not forever and "MSUFSUITE_CHARACTER_FROM_PVP" or nil))
+        assert(overrideKeys.F9 == (not forever and "MSUFSUITE_CHARACTER_FROM_STATISTICS" or nil))
+        assert(controller.OpenBoundCharacterTab(overrideKeys.F7))
+        Flush()
+        assert(lastTab == tabID, "a native shortcut could not open a custom tab without a direct slot")
+        Event(runtime, "UPDATE_BINDINGS")
+        assert(bindingWrites == 1, "an identical binding update rewrote routes")
+        externalKeys.TOGGLEPROFESSIONBOOK[1] = "F6"
+        Event(runtime, "UPDATE_BINDINGS")
+        assert(not overrideKeys.F7 and overrideKeys.F6 == professions, "the override did not follow Blizzard's new key")
+        if not forever then
+            externalKeys.TOGGLESTATISTICS[1], externalKeys.TOGGLEPROFESSIONBOOK[1] = "F6", "F9"
+            Event(runtime, "UPDATE_BINDINGS")
+            assert(overrideKeys.F9 == professions and overrideKeys.F6 == "MSUFSUITE_CHARACTER_FROM_STATISTICS",
+                "a reassigned key kept its previous override")
+            externalKeys.TOGGLESTATISTICS[1], externalKeys.TOGGLEPROFESSIONBOOK[1] = "F9", "F6"
+            Event(runtime, "UPDATE_BINDINGS")
+        end
+        locked = true
+        SetBindingState("native")
+        assert(not next(overrideKeys) and GetBindingAction("F6", true, 1) == "TOGGLEPROFESSIONBOOK",
+            "the secure driver did not give Blizzard its combat shortcut")
+        locked = false
+        SetBindingState("suite")
+        Event(runtime, "PLAYER_REGEN_ENABLED")
+        assert(overrideKeys.F6 == professions)
+        pad = true
+        Event(runtime, "GAME_PAD_ACTIVE_CHANGED")
+        assert(not next(overrideKeys), "gamepad retained a shortcut it could not open")
+        pad = false
+        Event(runtime, "GAME_PAD_ACTIVE_CHANGED")
+        assert(overrideKeys.F6 == professions)
+        disabled = true
+        Event(runtime, "ACTIVE_GAME_MODE_UPDATED")
+        assert(not next(overrideKeys), "a restricted mode retained a shortcut it could not open")
+        disabled = false
+        Event(runtime, "ACTIVE_GAME_MODE_UPDATED")
+        assert(overrideKeys.F6 == professions)
+        config.customTabs = ""
+        runtime:Refresh()
+        assert(not overrideKeys.F6 and not controller.OpenBoundCharacterTab(professions))
+        config.pvpBindingTab, config.statisticsBindingTab = "", ""
+        runtime:Refresh()
+        Flush()
+        assert(not next(overrideKeys) and not bindingOwner.driver and not callbacks.UPDATE_BINDINGS and #frames == addedFrames + 1,
+            "resetting the optional routes left a driver or listener, or created another owner")
+    end
     runtime.config.mode = 1
     runtime:Refresh()
+    assert(not controller.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_OVERVIEW"), "Basic mode opened a Suite binding")
+    local slot = MSUFSuite.CharacterBindings.Slots[1]
+    assert(_G["BINDING_NAME_" .. slot.command] == slot.label, "Basic mode left a custom slot label behind")
     Press("U")
     assert(ReputationFrame:IsVisible() and not hostedView.frame:IsShown(), "Basic retained the Suite native routes")
     Press("U")

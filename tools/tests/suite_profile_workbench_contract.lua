@@ -3,6 +3,8 @@
 -- staged imports of Suite strings, through a recording workbench.
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local defaultCVars = { GetCVar = function() return nil end }
+C_CVar = defaultCVars
 local Suite, combat, encodings, padding = {}, false, {}, ""
 local overlay, recording, external = false, false, nil
 -- The client clock; a /reload starts a new load at a later time.
@@ -280,7 +282,23 @@ Case("Blizzard nameplate settings transfer and restore", function()
     prepared = assert(provider.PrepareImport(bundle))
     assert(provider.Restore(prepared.provider))
     assert(cvars.nameplateDebuffPadding == "3", "applying a prepared bundle lost the native value")
-    C_CVar = nil
+    local oldOffset = Suite.DB.suite.modules.nameplates.enemyAurasOffsetX
+    local rejected = Suite.CopyValue(previous)
+    rejected.nameplateCVars.nameplateDebuffPadding = "19"
+    rejected.suite.modules.nameplates.enemyAurasOffsetX = 99
+    C_CVar.SetCVar = function(key, value)
+        if key == "nameplateDebuffPadding" and value == "19" then return false end
+        cvars[key] = value
+    end
+    local accepted, reason = provider.Restore(rejected)
+    assert(not accepted and reason and cvars.nameplateDebuffPadding == "3"
+        and Suite.DB.suite.modules.nameplates.enemyAurasOffsetX == oldOffset,
+        "a rejected workbench native setting left a partial import")
+    local partial = { present = false, suite = { schema = 1, modules = { nameplates = { enabled = true } } } }
+    assert(provider.Restore(partial))
+    assert(partial.suite.modules.nameplates.look == nil and partial.suite.modules.chat == nil,
+        "workbench preparation mutated the caller's restore point")
+    C_CVar = defaultCVars
 end)
 
 assert(#failures == 0, "\n" .. table.concat(failures, "\n"))

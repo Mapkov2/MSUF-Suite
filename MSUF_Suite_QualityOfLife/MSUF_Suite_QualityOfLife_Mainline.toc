@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Quality of Life
 ## Notes: Optional combat, quest, merchant, vault, tooltip and experience helpers for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.17-alpha
+## Version: 0.1.18-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -13,16 +13,20 @@ KeyAudit.lua
 CurrencyGoals.lua
 KeywordAlerts.lua
 WaypointLists.lua
+NavigationModel.lua
+NavigationVisuals.lua
+NavigationSources.lua
+NavigationTargets.lua
+NavigationMap.lua
+NavigationGuides.lua
+NavigationRoutes.lua
+Navigation.lua
 SoundProfiles.lua
 SlashCommands.lua
 CharacterPanel.lua
 TooltipLines.lua
 GatheringData.lua
 GatheringTooltips.lua
-GatheringRouteData.lua
-GatheringRadar.lua
-GatheringArrow.lua
-GatheringRoutes.lua
 ForeverMapData.lua
 ForeverMapPins.lua
 ForeverMapPins.xml
@@ -79,6 +83,7 @@ GroupFinderDoubleClick.lua
 GroupFinderApplicantView.lua
 GroupFinderApplicantSort.lua
 GroupFinderExitReminder.lua
+GroupFinderLocations.lua
 MPlusAutoQueue.lua
 TrustedPartyInvites.lua
 AutoResponses.lua
@@ -86,6 +91,7 @@ GroupRaidShortcuts.lua
 MPlusKeystoneSources.lua
 MPlusKeystoneTeleport.lua
 MPlusKeystoneShare.lua
+KeystoneReadyCheck.lua
 GroupDelvePower.lua
 MPlusResetReminder.lua
 GroupBloodlust.lua
@@ -102,6 +108,9 @@ BurningRushCue.lua
 LoadoutReminder.lua
 QuietPopups.lua
 Loot.lua
+LootRollData.lua
+LootRollView.lua
+LootRolls.lua
 LootContainers.lua
 LootVendorRules.lua
 CombatLog.lua

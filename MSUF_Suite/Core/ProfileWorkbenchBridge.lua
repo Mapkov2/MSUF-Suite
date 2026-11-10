@@ -22,7 +22,7 @@ end
 -- One canonical payload; old Options points keep their explicit profile names.
 local function Canonical(snapshot)
     if type(snapshot) ~= "table" then return nil end
-    if snapshot.root == nil then return snapshot end
+    if snapshot.root == nil then return Suite.CopyValue(snapshot) end
     local root = snapshot.root
     local name = type(root) == "table" and root.activeProfile
     local profiles = type(root) == "table" and root.profiles
@@ -35,7 +35,8 @@ local function Canonical(snapshot)
     return { suite = profile.suite, activeProfile = name, skinEnabled = root.skinEnabled,
         legacyOptions = true, hasSkinEnabled = root.skinEnabled ~= nil, hasLayout = type(profile.layoutState) == "table",
         layout = profile.layoutState, present = skin ~= nil, profile = skin, skinProfileName = skinName,
-        skinEpoch = snapshot.skinEpoch, skinSession = snapshot.skinSession }
+        skinEpoch = snapshot.skinEpoch, skinSession = snapshot.skinSession,
+        nameplateCVars = Suite.CopyValue(profile.nameplateCVars), nameplateShared = Suite.CopyValue(profile.nameplateShared) }
 end
 
 local function OwnsSnapshot(snapshot)
@@ -83,8 +84,14 @@ function P.CaptureWorkbenchSkin()
     Suite.ProfileVariants.Register()
     local settings, reason = Suite.ProfileVariants.BaseSettings(Suite.Database.GetActiveProfileName())
     if not settings then return false, reason end
+    local shared, exact = IO.CaptureNameplateShared()
     local result = { suite = settings, activeProfile = Suite.Database.GetActiveProfileName(),
-        skinEnabled = Suite.RootDB.skinEnabled, layout = {}, nameplateCVars = IO.CaptureNameplateCVars() }
+        skinEnabled = Suite.RootDB.skinEnabled, layout = {}, nameplateCVars = IO.NameplateSnapshot(Suite.DB.nameplateCVars),
+        nameplateShared = shared }
+    result.hasNameplateSharedSnapshot = true
+    result.nameplateSharedExact = exact
+    result.nameplateSharedStored = Suite.CopyValue(Suite.DB.nameplateShared)
+    result.nameplateSharedPending = Suite.DB.nameplateSharedPending
     local states = Suite.DB.suite.moduleState
     for id, keys in pairs(Suite.Database.PROFILE_LAYOUT_STATE) do
         local source = states and states[id]
@@ -155,6 +162,28 @@ local function RestoreSuite(snapshot)
     Suite.OnProfileChanged(name)
 end
 
+local function ApplyWorkbenchSnapshot(snapshot, historyReason, source)
+    if snapshot.present then
+        local ok, reason = RestoreSkin(snapshot, historyReason)
+        if not ok then return false, reason end
+    end
+    if snapshot.suite then
+        RestoreSuite(snapshot)
+        if historyReason == nil or source == "profile-workbench" then
+            local ok, reason = IO.ApplyNameplateCVars(snapshot.nameplateCVars)
+            if not ok then return false, reason end
+            ok, reason = IO.ApplyNameplateShared(snapshot.nameplateSharedExact or snapshot.nameplateShared)
+            if not ok then return false, reason end
+            if snapshot.hasNameplateSharedSnapshot or snapshot.nameplateSharedExact then
+                Suite.DB.nameplateShared = Suite.CopyValue(snapshot.nameplateSharedStored)
+                Suite.DB.nameplateSharedPending = snapshot.nameplateSharedPending
+            end
+            IO.RememberNameplateCVars(nil, snapshot.nameplateCVars)
+        end
+    end
+    return true
+end
+
 function P.RestoreWorkbenchSkin(snapshot, historyReason, source)
     -- Without its store the Suite captured nothing, the skin included: a
     -- point's parts wait in it, and a skin write here could not be undone.
@@ -166,32 +195,44 @@ function P.RestoreWorkbenchSkin(snapshot, historyReason, source)
     if not snapshot then return false, "Invalid skin restore point" end
     if snapshot.activeProfile ~= nil and not Suite.Database.IsProfileName(snapshot.activeProfile) then return false, "Missing suite profile" end
     if snapshot.suite then
-        local clean, why = IO.PrepareTable({ suite = snapshot.suite, nameplateCVars = snapshot.nameplateCVars }, false)
+        local clean, why = IO.PrepareTable({ suite = snapshot.suite, nameplateCVars = snapshot.nameplateCVars,
+            nameplateShared = snapshot.nameplateShared }, false)
         if not clean then return false, why end
         snapshot.suite, snapshot.nameplateCVars = clean.suite, clean.nameplateCVars
+        snapshot.nameplateShared = clean.nameplateShared
     end
-    if snapshot.present then
-        local ok, reason = RestoreSkin(snapshot, historyReason)
-        if not ok then return false, reason end
+    if snapshot.nameplateSharedExact then
+        local clean, why = Suite.NameplateHostSettings.Normalize(snapshot.nameplateSharedExact)
+        if not clean then return false, why end
+        snapshot.nameplateSharedExact = clean
     end
-    if snapshot.suite then
-        RestoreSuite(snapshot)
-        -- Profile Workbench undo and restore points can reverse a transfer.
-        -- Ordinary menu undo leaves later changes in Blizzard Settings alone.
-        if historyReason == nil or source == "profile-workbench" then IO.ApplyNameplateCVars(snapshot.nameplateCVars) end
+    local previous, previousWhy = P.CaptureWorkbenchSkin()
+    if not previous then return false, previousWhy end
+    IO.lastNameplateReport = nil
+    local ran, ok, reason = Suite.Dispatch(Suite.Finish, ApplyWorkbenchSnapshot, snapshot, historyReason, source)
+    if ran and ok then
+        if historyReason == nil then IO.ReportNameplateImport() end
+        return true
     end
-    return true
+    local report = IO.lastNameplateReport
+    local restored, restoreOK = Suite.Dispatch(Suite.Finish, ApplyWorkbenchSnapshot, previous, nil, "profile-workbench")
+    IO.lastNameplateReport = report
+    if not restored or not restoreOK then return false, "Profile import failed; restore the previous profiles manually" end
+    return false, reason or "Profile import failed"
 end
 
 local function PrepareWorkbenchImport(text)
     local snapshot, snapshotWhy = P.CaptureWorkbenchSkin()
     if not snapshot then return false, snapshotWhy end
     if not snapshot.suite then return false, "Missing suite profile" end
+    snapshot.nameplateSharedExact, snapshot.nameplateSharedStored, snapshot.nameplateSharedPending = nil, nil, nil
+    snapshot.hasNameplateSharedSnapshot = nil
     if text:match("^%s*MSUFS") then
         local bundle, reason = P.WorkbenchPrepareBundle(text)
         if not bundle then return false, reason end
         IO.KeepPersonal(bundle.profile, snapshot.suite.modules, bundle.characterBound)
         snapshot.suite, snapshot.nameplateCVars = bundle.profile.suite, bundle.profile.nameplateCVars
+        snapshot.nameplateShared = bundle.profile.nameplateShared
         snapshot.present, snapshot.profile = bundle.provider.present, bundle.provider.profile
         return { coreText = bundle.coreText, provider = snapshot }
     end
@@ -201,16 +242,19 @@ local function PrepareWorkbenchImport(text)
         local profile, reason = skin.ProfileIO.PrepareProfile(text)
         if not profile then return false, reason end
         snapshot.present, snapshot.profile, snapshot.nameplateCVars = true, profile, nil
+        snapshot.nameplateShared = nil
         return { provider = snapshot }
     end
-    local id, settings, reason, chat, nameplateCVars = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, chat, nameplateCVars, nameplateShared = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
     -- Only the string's settings change, as in P.ImportModule (SetMany): it
     -- leaves out character-bound ones, and an old helper string names seven
     -- Minimap settings.
     for key, value in pairs(settings) do snapshot.suite.modules[id][key] = value end
-    if chat then snapshot.suite.modules.chatComfort = chat end
-    snapshot.nameplateCVars = nameplateCVars
+    if chat then
+        for key, value in pairs(chat) do snapshot.suite.modules.chatComfort[key] = value end
+    end
+    snapshot.nameplateCVars, snapshot.nameplateShared = nameplateCVars, nameplateShared
     return { provider = snapshot }
 end
 

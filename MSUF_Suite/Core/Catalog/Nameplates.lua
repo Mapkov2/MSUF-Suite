@@ -642,6 +642,7 @@ EnabledBy({ "enemyFocusMarkerSize", "enemyFocusMarkerColor", "enemyFocusMarkerX"
 -- test is the one Context:CVar makes before a write and Blizzard's own
 -- Settings make for the stacking option: a hidden control could not write.
 spec.controlAvailable = function(rule)
+    if rule.client and rule.client ~= (NS.Client.isForever and "forever" or "retail") then return false end
     if rule.cvar == nil then return true end
     if C_CVar.GetCVar(rule.cvar) == nil then return false end
     return not (rule.gameRule and C_GameRules.IsGameRuleActive(Enum.GameRule[rule.gameRule]))

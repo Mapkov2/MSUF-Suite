@@ -124,7 +124,9 @@ Page.initializers[#Page.initializers + 1] = function()
         if pet then
             local count = C_SpellBook.HasPetSpells()
             if Public(count) and type(count) == "number" then
-                for index = 1, math.min(count, 1000) do Helpers.Spell(list, seen, index, Enum.SpellBookSpellBank.Pet, ids) end
+                for index = 1, math.min(count, 1000) do
+                    Helpers.Spell(list, seen, index, Enum.SpellBookSpellBank.Pet, ids, learned)
+                end
             end
             return
         end
@@ -251,7 +253,7 @@ end
 
 Page.initializers[#Page.initializers + 1] = function()
     local Page, Helpers = P.MacroPage, P.MacroPage.helpers
-    function Page.Pick(anchor, kind, callback, create)
+    function Helpers.OpenPicker(anchor, title, items, callback, create)
         local ui, document = Page.ui, Page.document
         if not Page.Active(ui) then return end
         local frame = Helpers.Picker()
@@ -263,16 +265,9 @@ Page.initializers[#Page.initializers + 1] = function()
         end
         frame.anchor, frame.page = anchor, 1
         frame.pick, frame.create = Guard(callback), create and Guard(create)
-        frame.title:SetText(create and "From spellbook" or "Choose a spell or item")
+        P.SetTranslatedText(frame.title, P.Tr(title))
         for _, row in ipairs(frame.rows) do row:SetWidth(create and 224 or 390) end
-        frame.items = {}
-        local seen = {}
-        if kind == "spell" or kind == "spellID" or kind == "any" then
-            Helpers.Spells(frame.items, seen, false, kind == "spellID", create ~= nil)
-        end
-        if kind == "pet" or kind == "any" then Helpers.Spells(frame.items, seen, true) end
-        if kind == "item" or kind == "itemID" or kind == "any" then Helpers.Items(frame.items, seen, kind == "itemID") end
-        table.sort(frame.items, function(a, b) return a.name < b.name end)
+        frame.items = items
         frame:ClearAllPoints()
         frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
         frame.search:SetText("")
@@ -281,4 +276,76 @@ Page.initializers[#Page.initializers + 1] = function()
         frame.search:SetFocus()
     end
 
+    function Page.Pick(anchor, kind, callback, create)
+        if not Page.Active(Page.ui) then return end
+        local items = {}
+        local seen = {}
+        if kind == "spell" or kind == "spellID" or kind == "any" then
+            Helpers.Spells(items, seen, false, kind == "spellID", create ~= nil)
+        end
+        if kind == "pet" or kind == "any" then Helpers.Spells(items, seen, true) end
+        if kind == "item" or kind == "itemID" or kind == "any" then Helpers.Items(items, seen, kind == "itemID") end
+        table.sort(items, function(a, b) return a.name < b.name end)
+        Helpers.OpenPicker(anchor, create and "From spellbook" or "Choose a spell or item", items, callback, create)
+    end
+
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Page, Helpers, NS = P.MacroPage, P.MacroPage.helpers, P.Suite
+
+    local function SpellName(value, items)
+        local id = tonumber(value)
+        if id then
+            local data = C_Spell.GetSpellInfo(id)
+            if not NS.Public(data) or type(data) ~= "table" or not NS.Public(data.name) then return end
+            value = data.name
+        end
+        if type(value) ~= "string" then return end
+        value = value:lower()
+        for _, item in ipairs(items) do
+            if item.value:lower() == value or item.spellName:lower() == value then return item.spellName end
+        end
+        local name = value:match("^(.-)%s*%([^()]+%)$")
+        if name then
+            for _, item in ipairs(items) do
+                if item.spellName:lower() == name then return item.spellName end
+            end
+        end
+    end
+
+    function Page.PickRank(anchor, kind, value, callback)
+        if not Page.Active(Page.ui) or not NS.Client.isForever then return end
+        local spell = value:match("^%s*(.-)%s*$")
+        local prefix = spell:sub(1, 1) == "!" and "!" or ""
+        spell = spell:sub(#prefix + 1):match("^%s*(.-)%s*$")
+        local items, seen = {}, {}
+        -- Lower ranks remain in the book data when Blizzard's ShowAllSpellRanks filter hides them.
+        if kind ~= "pet" then Helpers.Spells(items, seen, false, false, true) end
+        if kind == "pet" or kind == "any" then Helpers.Spells(items, seen, true, false, true) end
+        local name = SpellName(spell, items)
+        local ranks = {}
+        for _, item in ipairs(items) do
+            if item.spellName == name then
+                if item.value == name then
+                    table.insert(ranks, 1, { name = P.Tr("Highest rank (automatic)"), value = prefix .. name,
+                        icon = item.icon, spellName = name })
+                else
+                    ranks[#ranks + 1] = { name = item.name, value = prefix .. item.value,
+                        icon = item.icon, spellName = name }
+                end
+            end
+        end
+        if #ranks < 2 then Page.Error("No learned ranks found for this spell") return end
+        Helpers.OpenPicker(anchor, "Choose a spell rank", ranks, callback)
+    end
+
+    function Page.RankButton(ui, key, read, kind, y, width, callback)
+        if not NS.Client.isForever then return y end
+        local button
+        button = Page.Button(ui, key .. ":rank", "Spell rank", 16, y, math.min(180, width - 32), function()
+            Page.PickRank(button, kind, read(), callback)
+        end)
+        return y - 38
+    end
 end

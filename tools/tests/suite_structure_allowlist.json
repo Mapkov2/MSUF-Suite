@@ -16,6 +16,12 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_QualityOfLife/KeystoneReadyCheck.lua",
+   "kind": "addon",
+   "reason": "ChallengesKeystoneFrame belongs to load-on-demand Blizzard_ChallengesUI. Wait for ADDON_LOADED before attaching the optional controls.",
+   "symbol": "parent (= ChallengesKeystoneFrame)"
+  },
+  {
    "file": "MSUF_Suite_QualityOfLife/TrainerLearnAll.lua",
    "kind": "client",
    "reason": "Forever's native trainer distinguishes training points from coin prices. Retail 12.1 has no trainer-type API and keeps its separate runtime.",
@@ -631,12 +637,6 @@
    "file": "MSUF_Suite/Core/Profiles.lua",
    "kind": "addon",
    "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
-   "symbol": "get (= Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
    "symbol": "set (= Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters)"
   },
   {
@@ -1142,6 +1142,12 @@
    "kind": "addon",
    "reason": "MSUF Edit Mode export: MSUF_EditModeAPI and MSUF_EM2 differ between the Main and Classic MSUF builds",
    "symbol": "api.IsActive"
+  },
+  {
+   "file": "MSUF_Suite_Modules/EditMode.lua",
+   "kind": "addon",
+   "reason": "The external Edit Mode provider can accept entry without exporting popup selection. suite_datatexts_edit_mode_contract covers entry and combat refusal with that provider.",
+   "symbol": "api.OpenPopup"
   },
   {
    "file": "MSUF_Suite_Modules/EditMode.lua",
@@ -2194,12 +2200,6 @@
    "symbol": "self.RefreshSizeSelection"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/NameplatesPreview.lua",
-   "kind": "client",
-   "reason": "not in the UI source: GlobalStrings (STANDARD_TEXT_FONT) are absent from the mirror, so the preview keeps Blizzard's default face as its fallback path",
-   "symbol": "STANDARD_TEXT_FONT"
-  },
-  {
    "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
    "kind": "addon",
    "reason": "MSUF2 widget export (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts) that asks whether a docked preview opens expanded; without it the preview keeps its fixed size when the page activates.",
@@ -2402,12 +2402,6 @@
    "kind": "addon",
    "reason": "Blizzard load-on-demand UI (Blizzard_AuctionHouseUI); the frame exists only after that addon loads",
    "symbol": "AuctionHouseFrame"
-  },
-  {
-   "file": "MSUF_Suite_Skin/Adapters/Commerce.lua",
-   "kind": "addon",
-   "reason": "Blizzard load-on-demand UI (Blizzard_AuctionHouseUI); the frame exists only after that addon loads",
-   "symbol": "frame (= AuctionHouseFrame)"
   },
   {
    "file": "MSUF_Suite_Skin/Adapters/CommonArt.lua",
@@ -3302,6 +3296,402 @@
    "kind": "addon",
    "reason": "MSUF Menu2 export for optional search/keyboard metadata. Older hosts can lack it; the topic buttons still select their groups. Same external-host contract as the existing NameplatesWorkspace selector.",
    "symbol": "P.M.RegisterControlMetadata"
+  },
+  {
+   "file": "MSUF_Suite/Core/NameplateText.lua",
+   "kind": "addon",
+   "reason": "DisplayName belongs to the optional Nameplates extension of the MSUF v1 name formatter. Hosts without that extension display the unformatted sample.",
+   "symbol": "formatter.DisplayName"
+  },
+  {
+   "file": "MSUF_Suite/Core/ProfileIO.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_Modules/Runtime.lua supplies baseline capture and restoration after its load-on-demand package loads. Profile export and import also operate from the base addon alone.",
+   "symbol": "readBaseline (= Suite.Suite.CVarBaseline)"
+  },
+  {
+   "file": "MSUF_Suite/Core/ProfileIO.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_Modules/Runtime.lua supplies baseline capture and restoration after its load-on-demand package loads. Profile export and import also operate from the base addon alone.",
+   "symbol": "runtime.RestoreSaved"
+  },
+  {
+   "file": "MSUF_Suite_ActionBars/Snapshots.lua",
+   "kind": "addon",
+   "reason": "Action bar import and export use the host compact codec when available. Older host versions can lack the codec; report the existing codec error in that case.",
+   "symbol": "decode (= MSUF_TryDecodeCompactString)"
+  },
+  {
+   "file": "MSUF_Suite_ActionBars/Snapshots.lua",
+   "kind": "addon",
+   "reason": "Action bar import and export use the host compact codec when available. Older host versions can lack the codec; report the existing codec error in that case.",
+   "symbol": "encode (= MSUF_EncodeCompactTable)"
+  },
+  {
+   "file": "MSUF_Suite_ActionBars/VirtualActions.lua",
+   "kind": "state",
+   "reason": "The native per-character SavedVariable can be absent on first login or hold a scalar from an old or damaged profile. Initialize its table at first use.",
+   "symbol": "saved (= MSUFSuiteIndependentBar)"
+  },
+  {
+   "file": "MSUF_Suite_ActionBars/VirtualActions.lua",
+   "kind": "state",
+   "reason": "The native pet command is a localized string from Blizzard slash registration. An absent command cannot be used to build a secure action.",
+   "symbol": "slash (= SLASH_SUMMON_BATTLE_PET1)"
+  },
+  {
+   "file": "MSUF_Suite_ActionBars/SnapshotNative.lua",
+   "kind": "client",
+   "reason": "Forever provides the Gamepad interface query in Blizzard_SharedXML/Mainline/InputUtil.lua. Retail has no such method. Snapshot application refuses unavailable or private interface state.",
+   "symbol": "InputUtil.IsGamepadUIEnabled"
+  },
+  {
+   "file": "MSUF_Suite_ActionBars/SnapshotNative.lua",
+   "kind": "client",
+   "reason": "Forever provides the Gamepad interface query in Blizzard_SharedXML/Mainline/InputUtil.lua. Retail has no such method. Snapshot application refuses unavailable or private interface state.",
+   "symbol": "readMode (= InputUtil.IsGamepadUIEnabled)"
+  },
+  {
+   "file": "MSUF_Suite_Bags/EquippedBags.lua",
+   "kind": "client",
+   "reason": "The Forever equipped-bag strip forwards clicks to a usable native KeyRingButton. Retail has neither this button nor its visibility API.",
+   "symbol": "KeyRingButton"
+  },
+  {
+   "file": "MSUF_Suite_Bags/EquippedBags.lua",
+   "kind": "client",
+   "reason": "The Forever equipped-bag strip forwards clicks to a usable native KeyRingButton. Retail has neither this button nor its visibility API.",
+   "symbol": "C_ActionBar.ShouldShowKeyring"
+  },
+  {
+   "file": "MSUF_Suite_Bags/InventoryIndex.lua",
+   "kind": "client",
+   "reason": "The native Forever keyring uses a separate container. Retail has no keyring container ID.",
+   "symbol": "KEYRING_CONTAINER"
+  },
+  {
+   "file": "MSUF_Suite_Bags/KeyringInventory.lua",
+   "kind": "client",
+   "reason": "The native Forever keyring uses a separate container. Retail has no keyring container ID.",
+   "symbol": "KEYRING_CONTAINER"
+  },
+  {
+   "file": "MSUF_Suite_Bags/SlotCache.lua",
+   "kind": "client",
+   "reason": "The native Forever keyring uses a separate container. Retail has no keyring container ID.",
+   "symbol": "KEYRING_CONTAINER"
+  },
+  {
+   "file": "MSUF_Suite_Bags/KeyringInventory.lua",
+   "kind": "client",
+   "reason": "The Forever-only inventory consults Blizzardâ€™s keyring visibility capability. Retail has no keyring API.",
+   "symbol": "C_ActionBar.ShouldShowKeyring"
+  },
+  {
+   "file": "MSUF_Suite_Bags/KeyringInventory.lua",
+   "kind": "client",
+   "reason": "The Forever-only inventory consults Blizzardâ€™s keyring visibility capability. Retail has no keyring API.",
+   "symbol": "shouldShow (= C_ActionBar.ShouldShowKeyring)"
+  },
+  {
+   "file": "MSUF_Suite_Bags/SlotCache.lua",
+   "kind": "client",
+   "reason": "Blizzard_MainMenuBarBagButtons supplies the native keyring size on Forever. The slot cache resolves it when the Forever container is requested; Retail uses C_Container for its bags.",
+   "symbol": "GetKeyRingSize"
+  },
+  {
+   "file": "MSUF_Suite_Bags/SlotCache.lua",
+   "kind": "client",
+   "reason": "Blizzard_MainMenuBarBagButtons supplies the native keyring size on Forever. The slot cache resolves it when the Forever container is requested; Retail uses C_Container for its bags.",
+   "symbol": "keyringSize (= GetKeyRingSize)"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/ModelControls.lua",
+   "kind": "state",
+   "reason": "The current model scene can return a non-orbit camera. Rotation requires both yaw operations on the active camera.",
+   "symbol": "camera.GetYaw"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/ModelControls.lua",
+   "kind": "state",
+   "reason": "The current model scene can return a non-orbit camera. Rotation requires both yaw operations on the active camera.",
+   "symbol": "camera.SetYaw"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Pages.lua",
+   "kind": "client",
+   "reason": "Forever displays its skill lines and effective defense. Retail uses its professions reader instead. suite_character_native_pages_contract executes both dispatch paths with forbidden cross-client reads.",
+   "symbol": "C_SkillInfo"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Pages.lua",
+   "kind": "client",
+   "reason": "Forever displays its skill lines and effective defense. Retail uses its professions reader instead. suite_character_native_pages_contract executes both dispatch paths with forbidden cross-client reads.",
+   "symbol": "UnitDefenseSkill"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Pages.lua",
+   "kind": "client",
+   "reason": "Forever supplies faction-based PvP progression; Retail uses the honor APIs. The character pages contract exercises both readers.",
+   "symbol": "C_MajorFactions.GetMajorFactionProgressionInfo"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Pages.lua",
+   "kind": "client",
+   "reason": "Forever supplies faction-based PvP progression; Retail uses the honor APIs. The character pages contract exercises both readers.",
+   "symbol": "progression (= C_MajorFactions.GetMajorFactionProgressionInfo)"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Stats.lua",
+   "kind": "client",
+   "reason": "The Forever paper doll uses classic stat conversion, hit and defense APIs or breakpoints missing on Retail. The Forever stat reader and Retail paths have separate client fixtures.",
+   "symbol": "GetArmorPenetration"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Stats.lua",
+   "kind": "client",
+   "reason": "The Forever paper doll uses classic stat conversion, hit and defense APIs or breakpoints missing on Retail. The Forever stat reader and Retail paths have separate client fixtures.",
+   "symbol": "GetCritChanceFromStat"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Stats.lua",
+   "kind": "client",
+   "reason": "The Forever paper doll uses classic stat conversion, hit and defense APIs or breakpoints missing on Retail. The Forever stat reader and Retail paths have separate client fixtures.",
+   "symbol": "GetSpellCritChanceFromStat"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Stats.lua",
+   "kind": "client",
+   "reason": "The Forever paper doll uses classic stat conversion, hit and defense APIs or breakpoints missing on Retail. The Forever stat reader and Retail paths have separate client fixtures.",
+   "symbol": "GetRangedHitModifier"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Stats.lua",
+   "kind": "client",
+   "reason": "The Forever paper doll uses classic stat conversion, hit and defense APIs or breakpoints missing on Retail. The Forever stat reader and Retail paths have separate client fixtures.",
+   "symbol": "INTELLECT_BREAK"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Stats.lua",
+   "kind": "client",
+   "reason": "The Forever paper doll uses classic stat conversion, hit and defense APIs or breakpoints missing on Retail. The Forever stat reader and Retail paths have separate client fixtures.",
+   "symbol": "STAMINA_BREAK"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Stats.lua",
+   "kind": "client",
+   "reason": "The Forever paper doll uses classic stat conversion, hit and defense APIs or breakpoints missing on Retail. The Forever stat reader and Retail paths have separate client fixtures.",
+   "symbol": "UnitDefenseSkill"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Routing.lua",
+   "kind": "state",
+   "reason": "The secure click route requires a present, public, usable native micro button. When it is unavailable the delegate must not target it.",
+   "symbol": "target (= CharacterMicroButton)"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Runtime.lua",
+   "kind": "lod",
+   "reason": "Blizzard_InspectUI is load-on-demand. Install the native show hook when it becomes available.",
+   "symbol": "InspectFrame_Show"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/View.lua",
+   "kind": "addon",
+   "reason": "The character window also accepts a running legacy API v2 MapkoSkin provider, whose menu registration extension is optional.",
+   "symbol": "skin.RegisterMenu"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
+   "kind": "lod",
+   "reason": "The options preview opens before the independent action bar addon loads. VirtualPaint exports the live virtual-slot preview when that addon is available.",
+   "symbol": "S.ActionBarPreviewVirtual"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsSnapshots.lua",
+   "kind": "addon",
+   "reason": "The 6.5 host creates this callback while building its window toolbar. Embedded operations can run before that window exists.",
+   "symbol": "M.ShowStatusFeedback"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatWorkspace.lua",
+   "kind": "addon",
+   "reason": "The 7.0 MSUF theme provides tab width measurement and layout tracking. The 6.5 and frozen 6.22 hosts use the existing fixed-width layout.",
+   "symbol": "P.T.TrackTabLayout"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatWorkspace.lua",
+   "kind": "addon",
+   "reason": "The 7.0 MSUF theme provides tab width measurement and layout tracking. The 6.5 and frozen 6.22 hosts use the existing fixed-width layout.",
+   "symbol": "measureWidth (= P.T.MeasureTabWidth)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Macros.lua",
+   "kind": "addon",
+   "reason": "The 7.0 MSUF theme provides tab width measurement and layout tracking. The 6.5 and frozen 6.22 hosts use the existing fixed-width layout.",
+   "symbol": "P.T.TrackTabLayout"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Macros.lua",
+   "kind": "addon",
+   "reason": "The 7.0 MSUF theme provides tab width measurement and layout tracking. The 6.5 and frozen 6.22 hosts use the existing fixed-width layout.",
+   "symbol": "T.MeasureTabWidth"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/InventoryArchive.lua",
+   "kind": "lod",
+   "reason": "The archive listens before the native auction house and guild bank load-on-demand windows exist. Read only a visible window.",
+   "symbol": "AuctionHouseFrame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/InventoryArchive.lua",
+   "kind": "lod",
+   "reason": "The archive listens before the native auction house and guild bank load-on-demand windows exist. Read only a visible window.",
+   "symbol": "GuildBankFrame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/ParallelWindows.lua",
+   "kind": "state",
+   "reason": "A native frame may exist before Blizzard registers it in UIPanelWindows. Float only the currently registered PlayerSpells panel.",
+   "symbol": "UIPanelWindows.PlayerSpellsFrame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Navigation.lua",
+   "symbol": "native (= SuperTrackedFrame)",
+   "kind": "addon",
+   "reason": "Blizzard_WorldMap and Blizzard_QuestNavigation are load-on-demand. Wait for their native frames and never construct a replacement native owner."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationGuides.lua",
+   "symbol": "tomtom.RegisterCallback (= TomTom)",
+   "kind": "addon",
+   "reason": "TomTom is optional. Version 4.4 uses public RegisterCallback; older releases use SetCrazyArrow. The 4.4.1 private current-target getter is only an optional seed."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationGuides.lua",
+   "symbol": "internal.GetCrazyArrowTarget",
+   "kind": "addon",
+   "reason": "TomTom is optional. Version 4.4 uses public RegisterCallback; older releases use SetCrazyArrow. The 4.4.1 private current-target getter is only an optional seed."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationGuides.lua",
+   "symbol": "tomtom.SetCrazyArrow (= TomTom)",
+   "kind": "addon",
+   "reason": "TomTom is optional. Version 4.4 uses public RegisterCallback; older releases use SetCrazyArrow. The 4.4.1 private current-target getter is only an optional seed."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationGuides.lua",
+   "symbol": "apr.Arrow.SetArrowActive (= APR)",
+   "kind": "addon",
+   "reason": "Azeroth Pilot Reloaded is optional. Its source-verified Arrow SetArrowActive accepts active, world x/y and an optional non-coordinate action."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationGuides.lua",
+   "symbol": "guide.Start",
+   "kind": "addon",
+   "reason": "Mapzeroth is optional. The source-verified Navigation Start/Stop and Journey PlanFromHere contracts belong to that addon and may be absent."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationGuides.lua",
+   "symbol": "guide.Stop",
+   "kind": "addon",
+   "reason": "Mapzeroth is optional. The source-verified Navigation Start/Stop and Journey PlanFromHere contracts belong to that addon and may be absent."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationGuides.lua",
+   "symbol": "arrow (= RXPG_ARROW)",
+   "kind": "addon",
+   "reason": "RestedXP is optional. Its named arrow exists only after the guide addon loads; no timer is started for an absent or hidden arrow."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationGuides.lua",
+   "symbol": "rxp (= RXPG_ARROW)",
+   "kind": "addon",
+   "reason": "RestedXP is optional. Its named arrow exists only after the guide addon loads; no timer is started for an absent or hidden arrow."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationMap.lua",
+   "symbol": "WorldMapFrame",
+   "kind": "addon",
+   "reason": "Blizzard_WorldMap and Blizzard_QuestNavigation are load-on-demand. Wait for their native frames and never construct a replacement native owner."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationRoutes.lua",
+   "symbol": "provider (= FarstriderLib_API)",
+   "kind": "addon",
+   "reason": "FarstriderLib is an optional external addon. Its documented versioned API exposes FindTrailTo with normalized map coordinates."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationRoutes.lua",
+   "symbol": "provider.FindTrailTo (= FarstriderLib_API)",
+   "kind": "addon",
+   "reason": "FarstriderLib is an optional external addon. Its documented versioned API exposes FindTrailTo with normalized map coordinates."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationRoutes.lua",
+   "symbol": "addon (= MapzerothAddon)",
+   "kind": "addon",
+   "reason": "Mapzeroth is optional. The source-verified Navigation Start/Stop and Journey PlanFromHere contracts belong to that addon and may be absent."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationRoutes.lua",
+   "symbol": "addon.Journey (= MapzerothAddon)",
+   "kind": "addon",
+   "reason": "Mapzeroth is optional. The source-verified Navigation Start/Stop and Journey PlanFromHere contracts belong to that addon and may be absent."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationRoutes.lua",
+   "symbol": "addon.Journey.PlanFromHere (= MapzerothAddon)",
+   "kind": "addon",
+   "reason": "Mapzeroth is optional. The source-verified Navigation Start/Stop and Journey PlanFromHere contracts belong to that addon and may be absent."
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/Navigation.lua",
+   "symbol": "C_Navigation",
+   "kind": "client",
+   "reason": "Retail and Forever expose native world navigation; the catalog leaves the optional module unavailable on clients without C_Navigation."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Navigation.lua",
+   "symbol": "navigation (= P.S.Navigation)",
+   "kind": "lod",
+   "reason": "Options can load before the optional QualityOfLife navigation runtime. Import actions require its live owner."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "S.Navigation",
+   "kind": "lod",
+   "reason": "The standalone numeric /way owner also works without the optional Navigation parser; retain its existing command fallback."
+  },
+  {
+   "file": "MSUF_Suite/Core/NameplateHostSettings.lua",
+   "kind": "addon",
+   "reason": "Older MSUF hosts can omit the public NPC color reader. Nameplate text keeps its inherited color until the host supplies it. suite_nameplate_host_settings_contract covers missing and late-published palettes.",
+   "symbol": "colors.GetNPCColor"
+  },
+  {
+   "file": "MSUF_Suite/Core/NameplateHostSettings.lua",
+   "kind": "addon",
+   "symbol": "provider.HasFontScope",
+   "reason": "The external MSUF nameplate provider is versioned independently. Providers without the optional HasFontScope method use Suite portable typography. suite_nameplate_host_settings_contract covers the absent method and strips unsupported font writes."
+  },
+  {
+   "file": "MSUF_Suite/Core/NameplateExtensions.lua",
+   "symbol": "driver",
+   "kind": "client",
+   "reason": "Retail loads NamePlateDriverFrame and GetClassNameplateBar from Blizzard_NamePlates; the Forever TOC excludes class mechanic bars. This cold capability report can run before the Retail nameplate addon loads. suite_nameplate_extensions_contract covers absent and active native bars."
+  },
+  {
+   "file": "MSUF_Suite/Core/NameplateExtensions.lua",
+   "symbol": "driver.GetClassNameplateBar",
+   "kind": "client",
+   "reason": "Retail loads NamePlateDriverFrame and GetClassNameplateBar from Blizzard_NamePlates; the Forever TOC excludes class mechanic bars. This cold capability report can run before the Retail nameplate addon loads. suite_nameplate_extensions_contract covers absent and active native bars."
+  },
+  {
+   "file": "MSUF_Suite/Core/NameplateHostSettings.lua",
+   "kind": "addon",
+   "symbol": "provider.ResolveTypography",
+   "reason": "Older MSUF hosts can omit the read-only portable typography resolver. Updated 6.5 and 7.0 providers resolve live inherited font groups, while absent providers retain the portable fallback."
   }
  ]
 }

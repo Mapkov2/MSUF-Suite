@@ -34,7 +34,10 @@ local function OnEnter(icon)
     local tip = GameTooltip
     GameTooltip_SetDefaultAnchor(tip, icon)
     local slot = entry.equipSlot or (entry.src == "e" and entry.id)
-    if slot then
+    if entry.src == "p" then
+        tip:SetText(S.Text("Empty bar - preview"))
+        tip:AddLine(S.Text("Add spells to this bar in the Cooldown Manager. Preview slots disappear when you close the editor."), .8, .8, .8, true)
+    elseif slot then
         tip:SetInventoryItem("player", slot)
     elseif entry.src == "i" or entry.categoryItem then
         tip:SetItemByID(entry.categoryItem or entry.itemID or entry.id)

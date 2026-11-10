@@ -138,7 +138,7 @@ local function AuctionCounts()
 end
 
 local function GuildID()
-    local guild = C_Club and C_Club.GetGuildClubId()
+    local guild = C_Club.GetGuildClubId()
     return S.Finite(guild) and guild or S.PublicText(guild)
 end
 
@@ -204,7 +204,7 @@ local function RecordGuild(store, guid, region, tab, now)
     return true
 end
 
-local function MailShown() return MailFrame and MailFrame:IsShown() end
+local function MailShown() return MailFrame:IsShown() end
 local function AuctionsShown() return AuctionHouseFrame and AuctionHouseFrame:IsShown() end
 
 local function CaptureLocations(self)

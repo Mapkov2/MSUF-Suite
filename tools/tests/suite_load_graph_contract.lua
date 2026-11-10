@@ -42,6 +42,8 @@ C_Timer = { After = function(delay, callback)
 end }
 InCombatLockdown = function() return false end
 C_EventUtils = { IsEventValid = function() return true end }
+-- C_CVar exists on both clients; this world has no native nameplate settings.
+C_CVar = { GetCVar = function() return nil end }
 UnitGUID = function() return "Player-Test" end
 UnitName = function() return "Tester" end
 UnitClass = function() return "Druid", "DRUID" end
@@ -177,7 +179,9 @@ assert(type(owner.ClassicFactoryFramesCompact) == "string"
 assert(owner.Suite.Config("chat").enabled == true
     and owner.Suite.Config("chat").look == 5,
     "chat must start enabled with the client look")
-assert(#frames == 4 and loads == 1 and featureLoads == 1
+assert(frames[5].events.PLAYER_LOGOUT and not frames[5].events.PLAYER_REGEN_ENABLED,
+    "successful startup must retain only its profile save event")
+assert(#frames == 5 and loads == 1 and featureLoads == 1
     and not next(frames[1].events) and not next(frames[2].events))
 assert((owner.Suite.MythicPlus ~= nil) == (flavor == "Mainline"),
     "Mythic+ runtime must be available only on Retail")
@@ -202,6 +206,8 @@ assert(owner.Suite.Set("combatLog", "enabled", false))
 assert(not owner.Suite.states.qol.active and not owner.Suite.states.quests.active
     and not owner.Suite.states.loot.active and not owner.Suite.states.combatLog.active
     and loads == 1 and featureLoads == 1)
-for _, frame in ipairs(frames) do assert(not next(frame.events), "disabled runtime retained an event") end
+for index, frame in ipairs(frames) do
+    if index ~= 5 then assert(not next(frame.events), "disabled runtime retained an event") end
+end
 assert(MapkoSkin == nil and MapkoSkinDB == nil)
 print("Standalone TOC boot, menu attach, on-demand activation and disable passed: " .. flavor)

@@ -1,3 +1,4 @@
+C_SpellBook = { IsSpellKnown = function() return false end, GetNumSpellBookSkillLines = function() return 0 end }
 C_CreatureInfo = { GetClassInfo = function(id) return { className = "Class " .. id } end }
 LOCALIZED_CLASS_NAMES_MALE = {}
 local root = assert(arg[1], "repository root required")
@@ -287,6 +288,10 @@ MSUF_NS = { L = L, GetEffectiveLocale = function() return "enUS" end }
 local M, W, T = {}, {}, {}
 MSUF2 = M
 M.Widgets, M.Theme = W, T
+T.ApplyMenuFont = function(label, _, role) label.fontRole = role end
+T.StyleFontString = function(label, _, _, role) label.fontRole = role end
+T.SkinSuccessButton = function(button) button.role = "success" end
+T.ApplyButtonRole = function(button, role) button.role = role end
 M.frame = Widget("Frame")
 local historyProvider, historyWrites, historyDepth = nil, 0, 0
 M.RegisterHistoryProvider = function(_, capture, restore) historyProvider = { capture = capture, restore = restore }; return true end

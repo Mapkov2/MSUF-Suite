@@ -465,8 +465,8 @@ local function NewName(name)
 end
 
 local function Restore(frames, modules)
-    if Suite.HostBridge.ActiveFrameProfileName() ~= frames then Suite.HostBridge.Profiles.SwitchProfile(frames) end
-    if DB.GetActiveProfileName() ~= modules then DB.Activate(modules) end
+    if Suite.HostBridge.ActiveFrameProfileName() ~= frames then Dispatch(Finish, Suite.HostBridge.Profiles.SwitchProfile, frames) end
+    if DB.GetActiveProfileName() ~= modules then Dispatch(Finish, DB.Activate, modules) end
     return Suite.HostBridge.ActiveFrameProfileName() == frames and DB.GetActiveProfileName() == modules
 end
 
@@ -511,7 +511,7 @@ end
 -- Activates a stored Suite profile and publishes its skin profile. Activation
 -- starts the profile's modules.
 local function ActivateProfiles(name, skin, skinProfile)
-    local ok, reason = DB.Activate(name)
+    local ok, reason = DB.Activate(name, true)
     if ok and skinProfile then ok, reason = skin.Database.SetProfile(name, skinProfile) end
     if ok and skinProfile then ok, reason = skin.Database.SetActiveProfile(name) end
     return ok, reason
@@ -539,14 +539,16 @@ local function CommitFrameJob(_, job)
 end
 
 local function Create(name, frames, profile, skinProfile, screenHeight, finish, hostJob)
+    IO.lastNameplateReport = nil
     local _, previousFrames, previousModules = P.Active()
+    local previousProfile = DB.GetProfile(previousModules)
+    local previousNative = previousProfile and Suite.CopyValue(previousProfile.nameplateCVars)
+    local previousLiveNative = IO.CaptureNameplateCVars()
     local skin = skinProfile and SkinEngine()
     if skinProfile and (not skin or skin.Database.GetProfile(name)) then
         return false, "Skin profile name already exists or skin engine is unavailable"
     end
     local previousSkin = skin and skin.Database.GetActiveProfileName()
-    local nameplateCVars = profile.nameplateCVars
-    profile.nameplateCVars = nil
     -- Module settings have already been validated. MSUF validates its own
     -- payload before creating a frame profile and reports a refusal as
     -- false, reason. Neither import overwrites data. An error in any step is
@@ -559,25 +561,36 @@ local function Create(name, frames, profile, skinProfile, screenHeight, finish, 
         finished, ok, reason = Dispatch(Finish, PublishCreated, name, profile, skin, skinProfile, screenHeight)
     end
     local active = finished and ok and Suite.HostBridge.ActiveFrameProfileName() == name and DB.GetActiveProfileName() == name
+    if active and profile.nameplateShared then
+        local done, applied, why = Dispatch(Finish, IO.ApplyNameplateShared, profile.nameplateShared)
+        active = done and applied == true
+        if not active then reason = why end
+    end
     if active and finish then
         local done, finishedOk, why = Dispatch(Finish, finish)
         active = done and finishedOk == true
         if not active then reason = why end
     end
     if active then
-        IO.ApplyNameplateCVars(nameplateCVars)
+        IO.ReportNameplateImport()
         return true, name
     end
     if skin and previousSkin and skin.Database.GetProfile(previousSkin) then
-        skin.Database.SetActiveProfile(previousSkin)
+        Dispatch(Finish, skin.Database.SetActiveProfile, previousSkin)
     end
-    if skin and skin.Database.GetProfile(name) then skin.Database.DeleteProfile(name) end
-    if not Restore(previousFrames, previousModules) then
+    local profilesRestored = Restore(previousFrames, previousModules)
+    local ran, nativeRestored = Dispatch(Finish, IO.ApplyNameplateCVars, previousLiveNative)
+    if previousProfile then previousProfile.nameplateCVars = previousNative end
+    if profilesRestored then
+        if skin and skin.Database.GetProfile(name) then Dispatch(Finish, skin.Database.DeleteProfile, name) end
+        if Suite.HostBridge.FrameProfile(name) then Dispatch(Finish, Suite.HostBridge.Profiles.DeleteProfile, name) end
+        if DB.GetProfile(name) then Dispatch(Finish, DB.Delete, name) end
+    end
+    local skinRestored = not previousSkin or skin.Database.GetActiveProfileName() == previousSkin
+    if not profilesRestored or not ran or not nativeRestored or not skinRestored then
         return false, "Profile import failed; restore the previous profiles manually"
     end
-    if Suite.HostBridge.FrameProfile(name) then Suite.HostBridge.Profiles.DeleteProfile(name) end
-    if DB.GetProfile(name) then DB.Delete(name) end
-    if Suite.HostBridge.FrameProfile(name) or DB.GetProfile(name) then
+    if Suite.HostBridge.FrameProfile(name) or DB.GetProfile(name) or skin and skin.Database.GetProfile(name) then
         return false, "Profile import failed; the incomplete profile could not be removed"
     end
     return false, reason or "Profile import failed"
@@ -590,6 +603,8 @@ local function PrepareActive()
     if not source then return nil, why end
     local profile, reason = IO.PrepareTable(source, false)
     if not profile then return nil, reason end
+    profile.nameplateCVars = IO.NameplateSnapshot(source.nameplateCVars)
+    profile.nameplateShared = IO.CaptureNameplateShared()
     local state = source.suite.moduleState
     for id, keys in pairs(DB.PROFILE_LAYOUT_STATE) do
         local original = state and state[id]

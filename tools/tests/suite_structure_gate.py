@@ -128,7 +128,7 @@ def declared_clients(root, interfaces, problems):
 
 # ---------------------------------------------------------------- luac listing
 HEADER = re.compile(r"^(main|function) <.+:(\d+),(\d+)> \(")
-LOCALS = re.compile(r"(\d+) locals")
+LOCALS = re.compile(r"(\d+) locals?\b")
 INSTRUCTION = re.compile(r"^\t\d+\t\[(\d+)\]\t(\w+)\s+([-\d ]+?)\s*(?:;\s*(.*))?$")
 
 

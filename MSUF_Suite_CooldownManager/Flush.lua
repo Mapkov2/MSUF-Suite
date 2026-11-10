@@ -372,7 +372,7 @@ local function FlushPlacement()
             Run(visible, slot, true, VisibilityUnit, slot)
         end
     end
-    if C.Preview.mode == "options" then S.Dispatch(C.Preview.PaintLabels) end
+    if C.Preview.mode then S.Dispatch(C.Preview.PaintLabels) end
 end
 
 -- The flush flag clears whatever raised, so the bars never freeze until a

@@ -1,5 +1,27 @@
 # MSUF Suite Changelog
 
+## 0.1.18 Alpha - 2026-11-10
+
+### Nameplates
+
+- Expand the native Blizzard nameplate skin with profiles, portable settings, aura displays, advanced customization and a multi-unit preview.
+- Add configurable text, resource displays, effects, sizing and layouts, with settings shared through compatible MSUF hosts.
+
+### Navigation and quality of life
+
+- Introduce a navigation workspace for destinations, routes, map markers and optional guide sources. Improve waypoint selection, group finder locations and travel guidance.
+- Add loot roll tools, a group buff overview and Mythic Keystone preparation checks.
+
+### Character panel, bags and profiles
+
+- Expand character statistics, reputation views, configurable tabs and keyboard bindings. Improve native character pages and combat behavior.
+- Improve organized bags, item feedback, inventory views and keyring handling.
+- Improve profile import and preservation, DataText appearance and settings previews.
+
+### Fixes and interface
+
+- Improve cooldown previews, action bar behavior, objective tracking, skins, localization and settings navigation.
+
 ## 0.1.17 Alpha - 2026-11-09
 
 ### Action Bars

@@ -48,7 +48,8 @@ function API.OnMSUFProfileChanged(name, reason) return Suite.OnMSUFProfileChange
 function API.OnMSUFProfileLifecycle(kind, source, target)
     return Suite.OnMSUFProfileLifecycle(kind, source, target)
 end
-function API.HasNameplateFonts() return Suite.NameplateText ~= nil end
+-- Core/NameplateText.lua is loaded before this public capability is published.
+function API.HasNameplateFonts() return true end
 function API.ApplyFontsFromMSUF(force) return Suite.Suite.ApplyGlobalFont(force) end
 
 ------------------------------------------------------------------ cooldown anchor

@@ -90,8 +90,15 @@ local function Enter(button)
     if not GameTooltip:SetInventoryItem("player", button.inventoryID) then
         GameTooltip:SetText(S.Text(button.bagID > BAG_SLOTS and "Reagent bag" or "Empty bag slot"))
     end
+    P.BagHover.Tooltip(button)
     GameTooltip:AddLine(S.Text("Drop a bag here to equip it. Drag an equipped bag to replace it."), .72, .78, .85, true)
     GameTooltip:Show()
+    P.BagHover.Enter(button)
+end
+
+local function Leave(button)
+    P.BagHover.Leave(button)
+    if GameTooltip:IsOwned(button) then GameTooltip_Hide() end
 end
 
 local function Drag(button)
@@ -128,7 +135,8 @@ local function CreateButton(parent, bag)
     button:SetScript("OnDragStart", Drag)
     button:SetScript("OnReceiveDrag", Receive)
     button:SetScript("OnEnter", Enter)
-    button:SetScript("OnLeave", GameTooltip_Hide)
+    button:SetScript("OnLeave", Leave)
+    button:SetScript("OnHide", P.BagHover.Leave)
     return button
 end
 
@@ -145,7 +153,7 @@ function Equipped.Create(parent)
     hint:SetPoint("RIGHT", -8, 0)
     hint:SetText(S.Text("Drop a bag here to equip it. Drag an equipped bag to replace it."))
     Equipped.hint = hint
-    if NS.Client.isForever and C_ActionBar and C_ActionBar.ShouldShowKeyring then
+    if NS.Client.isForever and C_ActionBar.ShouldShowKeyring then
         Equipped.keyring = CreateKeyring(frame)
     end
     Equipped.frame = frame
@@ -172,6 +180,7 @@ function Equipped.Refresh()
             button.Count:SetText(total > 0 and tostring(free) or "")
             button.Count:SetShown(total > 0)
         end
+        if P.BagHover.IsOwner(button) and GameTooltip:IsOwned(button) and GameTooltip:IsShown() then Enter(button) end
     end
 end
 
@@ -203,6 +212,7 @@ function Equipped.Layout(panel)
 end
 
 function Equipped.Close()
+    P.BagHover.Clear()
     DetachKeyring()
     if Equipped.frame then Equipped.frame:Hide() end
 end

@@ -1,18 +1,10 @@
 local _, Suite = ...
-
--- The one place where the Suite reaches into MSUF for settings MSUF owns:
--- the UI scale, the class resource stack and Menu2's page resets, plus
--- MSUF's interrupt-ready engine for the nameplates. MSUF hosts
--- with host API v1 (MSUF_HostAPI and Menu2's RegisterPageResetProvider, the
--- "MSUF host API v1 for the Suite") own these writes; older hosts get the
--- Suite's previous code, kept here unchanged. Capabilities are resolved
--- once, at the first use (MSUF's core loads before the Suite, its options
--- before the Suite's), and cached.
+-- Host-owned settings and runtime providers enter through this bridge.
 local HostBridge = {}
 Suite.HostBridge = HostBridge
 
 local HOST_API_VERSION = 1
-local coreResolved, coreAPI = false, nil
+local coreAPI
 
 -- Catalog and factory preview share the live host namespace; do not cache
 -- a missing or late-published older host export.
@@ -29,8 +21,7 @@ end
 
 -- MSUF_HostAPI when it is v1 or newer, else nil.
 local function CoreAPI()
-    if not coreResolved then
-        coreResolved = true
+    if not coreAPI then
         local api = HostTable()
         if api and type(api.version) == "number" and api.version >= HOST_API_VERSION
             and type(api.ApplyUIScaleProfile) == "function" and type(api.SetResourceStack) == "function" then
@@ -723,6 +714,7 @@ end
 
 function HostBridge.ProfileVariantServices()
     local host = HostNamespace()
+    if not host then return end
     return host.ProfileFields, host.ProfileVariants, host.ProfileSync, host.ProfileRuntime
 end
 
@@ -806,5 +798,13 @@ function HostBridge.BossTargetIndicator() return _G.MSUF_NS.BossTargetIndicator 
 function HostBridge.ProfileWorkbench()
     local api = CoreAPI()
     return api and api.GetProfileWorkbench and api.GetProfileWorkbench() or nil
+end
+function HostBridge.NameplateSettingsGetter()
+    local api = HostTable()
+    return api and api.GetNameplateSettings
+end
+function HostBridge.NPCColors()
+    local host = HostNamespace()
+    return host and host.Public and host.Public.Colors
 end
 return HostBridge

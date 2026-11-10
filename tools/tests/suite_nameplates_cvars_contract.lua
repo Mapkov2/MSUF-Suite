@@ -404,6 +404,12 @@ P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
     assert(name == "MSUF_Suite.NameplatesTabs" and type(resolver) == "function")
     return true
 end
+-- This fixture isolates native CVar controls. The native aura expansion has
+-- its own model, UI and runtime contract in suite_nameplates_aura_display.
+P.NameplatesAdvancedAuras = { Append = function() end }
+P.NameplatesExtensions = { Append = function() end }
+P.NameplatesProfiles = { Build = function() end }
+P.NameplatesHostOptions = { Build = function() end }
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Nameplates.lua"))("MSUF_Suite_Options", P)
 page.build({})
 local function Keys(sectionId)

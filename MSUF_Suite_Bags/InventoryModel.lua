@@ -18,10 +18,12 @@ local floor, sort = math.floor, table.sort
 local BUILTINS = {
     { "myArmorSlot", "My Armor Slot", 35, true, true },
     { "equipment", "Equipment", 40 }, { "professionGear", "Profession gear", 45, true },
-    { "consumables", "Consumables", 50 }, { "reagents", "Reagents", 60 }, { "recipes", "Recipes", 70 },
+    { "consumables", "Consumables", 50 }, { "ammo", "Ammunition", 55, true },
+    { "reagents", "Reagents", 60 }, { "recipes", "Recipes", 70 },
     { "collectibles", "Collectibles", 75, true }, { "containers", "Containers", 85, true },
     { "quest", "Quest items", 90 }, { "junk", "Junk", 100 }, { "other", "Other items", 110 },
 }
+if not P.NS.Client.isForever then table.remove(BUILTINS, 5) end
 Model.categories = BUILTINS
 for i = 1, #BUILTINS do BUILTINS[i].setting = "category_" .. BUILTINS[i][1] end
 
@@ -159,6 +161,7 @@ end
 -- What each optional category holds. Collectibles: pets, mounts, toys (the
 -- toy flag is read for them alone, InventoryDetails.lua) and cosmetic armor.
 local OPTIONAL_TESTS = {
+    ammo = function(item) return item.classID == CLASS.Projectile end,
     professionGear = function(item) return item.classID == CLASS.Profession end,
     containers = function(item) return item.classID == CLASS.Container end,
     collectibles = function(item)
@@ -271,6 +274,14 @@ local function Add(model, group, item, merge, alias)
     local row = mergeKey and group.merge[mergeKey]
     if row then
         row.count, row.stacks = row.count + (item.count or 1), row.stacks + 1
+        -- Unmerged rows need no map or reset work. A reused row's first merge
+        -- starts fresh; hover ignores old maps while the row has one stack.
+        local bags = row.bags
+        if row.stacks == 2 then
+            if bags then Clear(bags) else bags = {} row.bags = bags end
+            bags[row.item.bag] = 1
+        end
+        bags[item.bag] = (bags[item.bag] or 0) + 1
         return
     end
     model.rowCount = model.rowCount + 1

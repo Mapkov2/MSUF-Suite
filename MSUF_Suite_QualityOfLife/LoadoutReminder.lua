@@ -53,12 +53,11 @@ local function MissingAbilities(self, guid)
     if not self.config.dungeonAbilities or self.config.dungeonAbilities == "" or NS.InCombat() then return end
     local zone, rules = Dungeon(), AbilityData(self, guid)
     local spells = zone and rules and rules[zone]
-    local known = C_SpellBook and C_SpellBook.IsSpellKnown
-    if not spells or not known then return end
+    if not spells then return end
     local missing
     for i = 1, #spells do
         local id = spells[i]
-        local learned = known(id)
+        local learned = C_SpellBook.IsSpellKnown(id)
         if S.Public(learned) and learned == false then
             local name = S.PublicText(C_Spell.GetSpellName(id))
             if name then missing = missing and (missing .. ", " .. name) or name end

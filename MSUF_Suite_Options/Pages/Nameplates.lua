@@ -46,89 +46,88 @@ for _, role in ipairs(P.Suite.NameplateStyle.Roles) do
     if role.key ~= "TankMode" then ROLE_SWITCHES[#ROLE_SWITCHES + 1] = "enemy" .. role.key .. "Enabled" end
     ROLE_COLORS[#ROLE_COLORS + 1] = "enemy" .. role.key .. "Color"
 end
-local MODULE_KEYS = { "look", "enemy", "friendly", "protectImport" }
-local SECTIONS = {
-    { key = "nameText", area = "general", title = "Name formats and colors", keys = {
-        "nameFormattingEnabled", "nameTextUseCustomSettings", "enemyNameFormat", "enemyNameMaxChars", "enemyNameClipSide", "enemyNameNoEllipsis",
-        "enemyNameColorEnabled", "friendlyNameFormat", "friendlyNameMaxChars", "friendlyNameClipSide", "friendlyNameNoEllipsis",
-        "friendlyNameColorEnabled" }, colors = { "enemyNameColor", "friendlyNameColor" } },
-    { key = "native", area = "general", title = "Nameplate styling",
-      keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry", "levelAppearance",
-            "hideHealthBarBorders", "classColors", "playerGuildNames", "playerTitles" } },
-    { key = "visibility", area = "general", catalog = "visibility" },
-    { key = "distance", area = "general", catalog = "distance" },
-    { key = "personal", area = "general", catalog = "personal", positions = "personal" },
-    { key = "enemy", area = "enemies", title = "Enemy appearance", open = true, positions = "enemy",
-      colors = { "enemyBorderColor", "enemyBackdropColor", "enemyOuterFrameColor", "enemyGlowColor", "enemyTargetColor",
-            "enemyFocusMarkerColor", "enemyThresholdColor" }, tabs = {
-        { id = "bar", label = "Bar", help = "enemy", keys = { "enemyHealthWidthDelta", "enemyHealthHeightDelta",
-            "enemyBackdropEnabled", "enemyBackdropAlpha", "enemyBorderEnabled", "enemyBorderSize", "enemyBorderStyle",
-            "enemyNativeBorderEnabled", "enemyTextureEnabled", "enemyFillTexture" } },
-        { id = "frame", label = "Frame and highlights", help = "decor", keys = {
-            "enemyOuterFrame", "enemyOuterFrameSize", "enemyShadowEnabled", "enemyGlowEnabled", "enemyGlowMode", "enemyEffectSize" } },
-        { id = "text", label = "Text", keys = { "enemyTextMode", "enemyMirrorHeader", "enemyTextEnabled", "enemyCustomFont", "enemyNameFont",
-            "enemyNameSize", "enemyHealthTextSize", "enemyTextOutline", "enemyTextShadow", "enemyLevelEnabled", "enemyLevelSize",
-            "enemyLevelColor" } },
-        { id = "markers", label = "Markers", help = "elements", keys = { "enemyEliteMarker", "enemyEliteMarkerAnchor",
-            "enemyEliteMarkerSize", "enemyQuestMarker", "enemyQuestMarkerAnchor", "enemyQuestMarkerSize",
-            "enemyRarityIcon", "enemyRaidIcon", "enemyFocusMarker", "enemyFocusMarkerSize", "enemyFocusMarkerX", "enemyFocusMarkerY",
-            "enemyThresholdEnabled", "enemyThresholdPercent", "enemyThresholdWidth" } },
-        { id = "target", label = "Target arrows", keys = { "enemyTargetMarker", "enemyTargetStyle", "enemyTargetLayout",
-            "enemyTargetAnchor", "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetHideFriendly" } },
-    } },
-    { key = "castbar", area = "enemies", catalog = "castbar", positions = "castbar" },
-    { key = "enemyPower", area = "enemies", catalog = "enemyPower", positions = "enemyPower" },
-    { key = "roleColors", area = "colors", title = "Enemy color rules", open = true, colors = ROLE_COLORS, tabs = {
-        { id = "rules", label = "Rules", help = "roleColors", keys = { "enemyRoleColors", "enemyColorsInDungeons",
-            "enemyColorsOutside", "enemyQuestColors", "enemyTankMode", "enemyPreviewRole" } },
-        { id = "types", label = "Types", keys = ROLE_SWITCHES },
-    } },
-    { key = "signals", area = "colors", title = "Blizzard indicators", positionElements = { "SoftTarget" },
-      colors = { "threatFlashColor", "threatHighlightColor", "selectionTargetColor", "selectionFocusColor",
-            "mouseoverHighlightColor" }, tabs = {
-        { id = "aggro", label = "Aggro", help = "signals", keys = { "threatSignalMode", "threatFlash", "threatHighlight",
-            "threatFlashColorEnabled", "threatHighlightColorEnabled" } },
-        { id = "selection", label = "Target and focus", keys = { "selectionBorder", "selectionDim", "selectionDimPercent",
-            "mouseoverHighlight" } },
-        { id = "soft", label = "Soft target", keys = { "softTargetEnemy", "softTargetFriend", "softTargetInteract",
-            "softTargetIconGate" } },
-    } },
-    { key = "auraColors", area = "colors" },
-    { key = "friendly", area = "friendly", title = "Friendly appearance", open = true, positions = "friendly",
-      colors = { "friendlyBorderColor", "friendlyBackdropColor", "friendlyOuterFrameColor", "friendlyGlowColor" }, tabs = {
-        { id = "display", label = "Display", help = "friendly", keys = { "friendlyNamesOnly", "friendlyNameClassColor",
-            "friendlyRealm", "friendlyNPCs" } },
-        { id = "bar", label = "Bar", keys = { "friendlyHealthWidthDelta", "friendlyHealthHeightDelta",
-            "friendlyBackdropEnabled", "friendlyBackdropAlpha", "friendlyBorderEnabled", "friendlyBorderSize",
-            "friendlyBorderStyle", "friendlyNativeBorderEnabled", "friendlyTextureEnabled", "friendlyFillTexture" } },
-        { id = "frame", label = "Frame and highlights", help = "decor", keys = {
-            "friendlyOuterFrame", "friendlyOuterFrameSize", "friendlyShadowEnabled", "friendlyGlowEnabled", "friendlyGlowMode", "friendlyEffectSize" } },
-        { id = "text", label = "Text", keys = { "friendlyTextEnabled", "friendlyCustomFont", "friendlyNameFont",
-            "friendlyNameSize", "friendlyTextOutline", "friendlyTextShadow", "friendlyLevelEnabled", "friendlyLevelSize" } },
-        { id = "markers", label = "Markers", keys = { "friendlyEliteMarker", "friendlyEliteMarkerAnchor",
-            "friendlyEliteMarkerSize", "friendlyQuestMarker", "friendlyQuestMarkerAnchor", "friendlyQuestMarkerSize" } },
-        { id = "castbar", label = "Castbar", keys = { "friendlyCastWidthDelta", "friendlyCastHeight", "friendlyCastIconSize",
-            "friendlyCastTextEnabled", "friendlyCastTimeEnabled", "friendlyCastTimeFormat",
-            "friendlyCastCustomFont", "friendlyCastFont", "friendlyCastSize", "friendlyCastOutline", "friendlyCastTextShadow" } },
-    } },
-    -- The aura handles' offsets sit in the enemy and friendly catalog sections
-    -- (Catalog/Nameplates.lua AddOffsets); the reset names them here.
-    { key = "auras", area = "auras", title = "Blizzard auras", open = true,
-      positionElements = { "Auras", "Buffs", "ControlAura" }, tabs = {
-        { id = "enemyNpc", label = "Enemy NPC", help = "auras", keys = { "enemyNpcAuraMode", "enemyNpcBuffs",
-            "enemyNpcDebuffs", "enemyNpcControl" } },
-        { id = "enemyPlayer", label = "Enemy player", keys = { "enemyPlayerAuraMode", "enemyPlayerBuffs",
-            "enemyPlayerDebuffs", "enemyPlayerControl" } },
-        { id = "friendlyPlayer", label = "Friendly player", keys = { "friendlyPlayerAuraMode", "friendlyPlayerBuffs",
-            "friendlyPlayerDebuffs", "friendlyPlayerControl" } },
-        { id = "general", label = "General", keys = { "friendlyNpcDebuffs", "auraScaleMode", "auraScalePercent",
-            "personalAuras", "auraClickthrough" } },
-    } },
-}
+local MODULE_KEYS = { "look", "enemy", "friendly", "protectImport", "nativeProfileMode" }
+local ENEMY = { key = "enemy", area = "enemies", title = "Enemy appearance", open = true, positions = "enemy",
+  colors = { "enemyBorderColor", "enemyBackdropColor", "enemyOuterFrameColor", "enemyGlowColor", "enemyTargetColor",
+        "enemyFocusMarkerColor", "enemyThresholdColor" }, tabs = {
+    { id = "bar", label = "Bar", help = "enemy", keys = { "enemyHealthWidthDelta", "enemyHealthHeightDelta",
+        "enemyBackdropEnabled", "enemyBackdropAlpha", "enemyBorderEnabled", "enemyBorderSize", "enemyBorderStyle",
+        "enemyNativeBorderEnabled", "enemyTextureEnabled", "enemyFillTexture" } },
+    { id = "frame", label = "Frame and highlights", help = "decor", keys = {
+        "enemyOuterFrame", "enemyOuterFrameSize", "enemyShadowEnabled", "enemyGlowEnabled", "enemyGlowMode", "enemyEffectSize" } },
+    { id = "text", label = "Text", keys = { "enemyTextMode", "enemyMirrorHeader", "enemyTextEnabled", "enemyCustomFont", "enemyNameFont",
+        "enemyNameSize", "enemyHealthTextSize", "enemyTextOutline", "enemyTextShadow", "enemyLevelEnabled", "enemyLevelSize",
+        "enemyLevelColor" } },
+    { id = "markers", label = "Markers", help = "elements", keys = { "enemyEliteMarker", "enemyEliteMarkerAnchor",
+        "enemyEliteMarkerSize", "enemyQuestMarker", "enemyQuestMarkerAnchor", "enemyQuestMarkerSize",
+        "enemyRarityIcon", "enemyRaidIcon", "enemyFocusMarker", "enemyFocusMarkerSize", "enemyFocusMarkerX", "enemyFocusMarkerY",
+        "enemyThresholdEnabled", "enemyThresholdPercent", "enemyThresholdWidth" } },
+    { id = "target", label = "Target arrows", keys = { "enemyTargetMarker", "enemyTargetStyle", "enemyTargetLayout",
+        "enemyTargetAnchor", "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetHideFriendly" } },
+} }
+
+local function BaseSections()
+    return {
+        { key = "nameText", area = "general", title = "Name formats and colors", keys = {
+            "nameFormattingEnabled", "nameTextUseCustomSettings", "enemyNameFormat", "enemyNameMaxChars", "enemyNameClipSide", "enemyNameNoEllipsis",
+            "enemyNameColorEnabled", "friendlyNameFormat", "friendlyNameMaxChars", "friendlyNameClipSide", "friendlyNameNoEllipsis",
+            "friendlyNameColorEnabled" }, colors = { "enemyNameColor", "friendlyNameColor" } },
+        { key = "native", area = "general", title = "Nameplate styling",
+          keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry", "levelAppearance",
+                "hideHealthBarBorders", "classColors", "playerGuildNames", "playerTitles" } },
+        { key = "visibility", area = "general", catalog = "visibility" },
+        { key = "distance", area = "general", catalog = "distance" },
+        { key = "personal", area = "general", catalog = "personal", positions = "personal" },
+        ENEMY,
+        { key = "castbar", area = "casts", catalog = "castbar", positions = "castbar" },
+        { key = "enemyPower", area = "enemies", catalog = "enemyPower", positions = "enemyPower" },
+        { key = "roleColors", area = "colors", title = "Enemy color rules", open = true, colors = ROLE_COLORS, tabs = {
+            { id = "rules", label = "Rules", help = "roleColors", keys = { "enemyRoleColors", "enemyColorsInDungeons",
+                "enemyColorsOutside", "enemyQuestColors", "enemyTankMode", "enemyPreviewRole" } },
+            { id = "types", label = "Types", keys = ROLE_SWITCHES },
+        } },
+        { key = "signals", area = "colors", title = "Blizzard indicators", positionElements = { "SoftTarget" },
+          colors = { "threatFlashColor", "threatHighlightColor", "selectionTargetColor", "selectionFocusColor",
+                "mouseoverHighlightColor" }, tabs = {
+            { id = "aggro", label = "Aggro", help = "signals", keys = { "threatSignalMode", "threatFlash", "threatHighlight",
+                "threatFlashColorEnabled", "threatHighlightColorEnabled" } },
+            { id = "selection", label = "Target and focus", keys = { "selectionBorder", "selectionDim", "selectionDimPercent",
+                "mouseoverHighlight" } },
+            { id = "soft", label = "Soft target", keys = { "softTargetEnemy", "softTargetFriend", "softTargetInteract",
+                "softTargetIconGate" } },
+        } },
+        { key = "auraColors", area = "colors" },
+        { key = "friendly", area = "friendly", title = "Friendly appearance", open = true, positions = "friendly",
+          colors = { "friendlyBorderColor", "friendlyBackdropColor", "friendlyOuterFrameColor", "friendlyGlowColor" }, tabs = {
+            { id = "display", label = "Display", help = "friendly", keys = { "friendlyNamesOnly", "friendlyNameClassColor",
+                "friendlyRealm", "friendlyNPCs" } },
+            { id = "bar", label = "Bar", keys = { "friendlyHealthWidthDelta", "friendlyHealthHeightDelta",
+                "friendlyBackdropEnabled", "friendlyBackdropAlpha", "friendlyBorderEnabled", "friendlyBorderSize",
+                "friendlyBorderStyle", "friendlyNativeBorderEnabled", "friendlyTextureEnabled", "friendlyFillTexture" } },
+            { id = "frame", label = "Frame and highlights", help = "decor", keys = {
+                "friendlyOuterFrame", "friendlyOuterFrameSize", "friendlyShadowEnabled", "friendlyGlowEnabled", "friendlyGlowMode", "friendlyEffectSize" } },
+            { id = "text", label = "Text", keys = { "friendlyTextEnabled", "friendlyCustomFont", "friendlyNameFont",
+                "friendlyNameSize", "friendlyTextOutline", "friendlyTextShadow", "friendlyLevelEnabled", "friendlyLevelSize" } },
+            { id = "markers", label = "Markers", keys = { "friendlyEliteMarker", "friendlyEliteMarkerAnchor",
+                "friendlyEliteMarkerSize", "friendlyQuestMarker", "friendlyQuestMarkerAnchor", "friendlyQuestMarkerSize" } },
+            { id = "castbar", label = "Castbar", keys = { "friendlyCastWidthDelta", "friendlyCastHeight", "friendlyCastIconSize",
+                "friendlyCastTextEnabled", "friendlyCastTimeEnabled", "friendlyCastTimeFormat",
+                "friendlyCastCustomFont", "friendlyCastFont", "friendlyCastSize", "friendlyCastOutline", "friendlyCastTextShadow" } },
+        } },
+        -- Blizzard's aura settings are the Buffs and Debuffs tabs of the Auras
+        -- workspace (NameplatesAdvancedAuras.lua).
+    }
+end
+
+local SECTIONS = {}
 P.NameplateSections = SECTIONS
-local ENEMY
-for _, spec in ipairs(SECTIONS) do
-    if spec.key == "enemy" then ENEMY = spec end
+local sectionsReady
+local function EnsureSections()
+    if sectionsReady then return end
+    for _, section in ipairs(BaseSections()) do SECTIONS[#SECTIONS + 1] = section end
+    P.NameplatesAdvancedAuras.Append(SECTIONS, HELP)
+    P.NameplatesExtensions.Append(SECTIONS, HELP)
+    sectionsReady = true
 end
 
 local function IsPositionRule(rule)
@@ -169,6 +168,18 @@ local function PositionKeys(spec)
     return keys
 end
 
+-- The offsets of Blizzard's aura handles on one side. They sit in the enemy
+-- and friendly catalog sections (Catalog/Nameplates.lua AddOffsets); the
+-- Buffs and Debuffs tabs of the Auras workspace reset them.
+function P.NameplateAuraPositionKeys(side, elements)
+    local keys = {}
+    for _, element in ipairs(elements) do
+        keys[#keys + 1] = side .. element .. "OffsetX"
+        keys[#keys + 1] = side .. element .. "OffsetY"
+    end
+    return keys
+end
+
 -- Section id of every placed key; More settings holds the rest.
 local placed
 local selectedTabs = {}
@@ -179,6 +190,7 @@ end
 -- Only a Nameplates page or search request needs the placement index.
 local function PlacedSections()
     if placed then return placed end
+    EnsureSections()
     placed = {}
     Place(MODULE_KEYS, PAGE .. "_" .. ID .. "_module")
     for _, spec in ipairs(SECTIONS) do
@@ -260,6 +272,7 @@ local function Panels(ctx, body, width, spec, sectionId)
         for _, entry in ipairs(entries or {}) do
             if entry.widget then HM.SetSearchTargetPrepare(entry.widget, function() spec.select(tab.id) end) end
         end
+        if tab.extra then y = tab.extra(ctx, panel, y, width, sectionId) end
         heights[tabId] = -y + 14
         panel:SetHeight(heights[tabId])
     end
@@ -301,9 +314,14 @@ local function PrepareSearch(page, target)
         if destination then return destination, focus, route end
     end
     local key = (target.settingKey or ""):match("^msufsuite%.nameplates%.(.+)$")
-    local sectionId = key and placed[key]
+    local sectionId = key and PlacedSections()[key]
     if not sectionId then return end
     for _, spec in ipairs(SECTIONS) do
+        if spec.prepare and sectionId == PAGE .. "_" .. spec.key then
+            if P.Combat() then return false end
+            spec.prepare(key)
+            return
+        end
         if spec.tabs and sectionId == PAGE .. "_" .. spec.key then
             for _, tab in ipairs(spec.tabs) do
                 for _, tabKey in ipairs(tab.keys) do
@@ -368,7 +386,7 @@ end
 -- Every host with the engine has Menu2's exact setting jump.
 local KICK_SWITCH = "general.kickReadyShowNameplates"
 local KICK_HELP =
-    "Interrupt readiness on these castbars looks exactly like on MSUF's castbars. Turn it on and style it in MSUF: Castbars > Interrupt Ready Indicator."
+    "Customize nameplate interrupt readiness in this area. MSUF castbar settings provide the inherited appearance."
 local function KickReadyLink(ctx)
     return function(body, y, width)
         if not P.Suite.HostBridge.KickReady() then return y end
@@ -402,7 +420,9 @@ local function PlainSection(ctx, builder, spec, rules)
     return P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. spec.key, Tr(spec.title or rules[1].sectionTitle), rules,
         { help = HELP[spec.key], open = spec.open, resetKeys = PositionKeys(spec),
           onBuilt = spec.key == "native" and PrepareNativeSearch or nil,
-          extra = spec.key == "castbar" and KickReadyLink(ctx) or nil })
+          extra = spec.extra and function(body, y, width)
+                return spec.extra(ctx, body, y, width, PAGE .. "_" .. spec.key)
+            end or spec.key == "castbar" and KickReadyLink(ctx) or nil })
 end
 
 -- Preview handles and the lazy-section contract still name the old enemy
@@ -417,15 +437,21 @@ function P.SelectNameplatesEnemyTab(tab)
 end
 
 local function Build(ctx)
+    EnsureSections()
     local builder = P.W.PageBuilder(ctx)
     local sections = {}
     local Workspace = P.NameplatesWorkspace
     local ui = Workspace.Header(ctx, builder)
     P.BuildNameplatesPreview(ctx, builder, sections)
+    Workspace.Track(ui, P.NameplatesProfiles.Build(ctx, builder), "profiles")
+    Workspace.Track(ui, P.NameplatesHostOptions.Build(ctx, builder, "general"), "casts")
+    Workspace.Track(ui, P.NameplatesHostOptions.Build(ctx, builder, "nameplates"), "general")
     Workspace.Track(ui, P.ModuleCard(ctx, builder, PAGE, ID, nil, { rules = Rules(MODULE_KEYS), help = HELP.general }), "general")
     for _, spec in ipairs(SECTIONS) do
         if spec.key == "auraColors" then
             P.BuildNameplatesAuraColors(ctx, builder, sections)
+        elseif spec.build then
+            sections[spec.key] = spec.build(ctx, builder, spec)
         elseif spec.tabs then
             sections[spec.key] = TabbedSection(ctx, builder, spec)
         else

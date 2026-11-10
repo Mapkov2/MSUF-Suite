@@ -89,6 +89,7 @@ local P = { Suite = NS, Tr = function(text) return text end, Combat = function()
 function P.Text(parent, text) local result = Frame(parent) result.text = text return result end
 function P.T.Button(parent, text) return P.Text(parent, text) end
 function P.SetButtonText(button, text) button:SetText(text) end
+function P.SetTranslatedText(region, text) region:SetText(text) end
 function P.T.Panel(parent) return Frame(parent) end
 function P.T.SkinEditBox() end
 function P.T.SkinPrimaryButton() end
@@ -491,4 +492,129 @@ assert(not next(body.events) and not next(picker.events), "combat leaves no subs
 assert(scans == 3 and slotReads == 0 and cursorReads == 3 and publications == before and textureReads == beforeTextures,
     "combat skips all spell reads and publication")
 assert(not picker.scripts.OnUpdate and not drop.scripts.OnUpdate, "no picker or drop ticker")
+
+-- Rank selection reads known ranks on demand and preserves native macro syntax.
+combat = false
+P.registered.build(Context())
+entries[2].subName, entries[3].subName, entries[4].subName = "Rang 3", "Rang 4", "Rang 5"
+entries[#entries + 1] = { spellID = 15, itemType = 1, subName = "Rang 10" }
+entries[#entries + 1] = { spellID = 16, itemType = 1, subName = "Rang 1" }
+entries[#entries + 1] = { spellID = 17, itemType = 1 }
+local petEntries = {
+    { spellID = 20, itemType = 1, subName = "Rang 1" },
+    { spellID = 21, itemType = 1, subName = "Rang 2" },
+    { spellID = 22, itemType = 2, subName = "Rang 3" },
+}
+C_SpellBook.GetSpellBookItemInfo = function(slot, bank)
+    slotReads = slotReads + 1
+    return (bank == 2 and petEntries or entries)[slot]
+end
+C_SpellBook.IsSpellBookItemPassive = function(slot, bank)
+    return (bank == 2 and petEntries or entries)[slot].passive == true
+end
+C_SpellBook.HasPetSpells = function() return #petEntries end
+C_Spell.GetSpellInfo = function(id)
+    if id == 999 then return nil end
+    return { name = id >= 20 and "Pet Bite" or id == 16 and "Other Spell" or id == 17 and "Teleport" or spellName,
+        iconID = 135000 }
+end
+C_Spell.GetSpellSubtext = function() return "" end
+page.document = NS.Macros.Model.New("focus")
+page.document.icon = 135999
+local beforeScans = scans
+page.Render()
+assert(scans == beforeScans, "rank buttons do not scan the book during rendering")
+edit = page.ui.pools.edit["step:1:branch:1:action"]
+edit.action(" !" .. spellName:lower() .. " (rang 1) ")
+local rankButton = assert(page.ui.pools.button["step:1:branch:1:rank"], "Forever exposes a spell rank button")
+rankButton.scripts.OnClick(rankButton)
+assert(scans == beforeScans + 1 and #picker.items == 4,
+    "rank picker includes automatic and three learned ranks only")
+assert(picker.items[1].value == "!" .. spellName and picker.items[1].name == "Highest rank (automatic)",
+    "automatic rank is explicit and preserves the non-toggle prefix")
+assert(picker.items[2].value == "!" .. spellName .. "(Rang 1)" and picker.items[4].value:find("Rang 10", 1, true),
+    "rank order follows the native spellbook")
+local readsBeforeFilter = slotReads
+picker.search:SetText("Rang 2")
+picker.search.scripts.OnTextChanged()
+assert(#picker.filtered == 1 and slotReads == readsBeforeFilter, "rank filtering uses the existing snapshot")
+picker.rows[1].scripts.OnClick(picker.rows[1])
+local ranked = "!" .. spellName .. "(Rang 2)"
+assert(page.document.steps[1].branches[1].value == ranked and page.compiled:find(ranked, 1, true),
+    "selected rank reaches the native macro preview")
+assert(page.document.icon == 135999 and publications == before, "rank selection changes neither icon nor published macro")
+assert(page.compiled:find("[@focus,harm,nodead][harm,nodead]", 1, true), "rank change preserves inherited rules")
+local rankID = NS.Macros.Store.Save(page.document)
+page.document = NS.Macros.Store.Get(rankID)
+page.Render()
+assert(page.document.steps[1].branches[1].value == ranked, "rank survives the draft persistence boundary")
+rankButton = page.ui.pools.button["step:1:branch:1:rank"]
+rankButton.scripts.OnClick(rankButton)
+picker.rows[1].scripts.OnClick(picker.rows[1])
+assert(page.document.steps[1].branches[1].value == "!" .. spellName, "automatic removes only the explicit rank")
+
+edit = page.ui.pools.edit["step:1:branch:1:action"]
+edit.action("14")
+rankButton.scripts.OnClick(rankButton)
+assert(#picker.items == 4 and picker.items[1].value == spellName, "numeric spell IDs resolve the rank family")
+local staleRank = picker.pick
+page.document = NS.Macros.Model.New("sequence")
+page.document.steps[1].sequence = { spellName, "item:5512" }
+page.Render()
+staleRank(ranked)
+assert(page.document.steps[1].sequence[1] == spellName, "rank selection cannot edit a replacement document")
+rankButton = assert(page.ui.pools.button["step:1:sequence:1:rank"], "sequence entries expose rank selection")
+rankButton.scripts.OnClick(rankButton)
+picker.rows[3].scripts.OnClick(picker.rows[3])
+assert(page.compiled:find(spellName .. "(Rang 2),item:5512", 1, true), "sequence preserves chosen rank and following item")
+local itemRank = page.ui.pools.button["step:1:sequence:2:rank"]
+itemRank.scripts.OnClick(itemRank)
+assert(not picker:IsShown() and page.message == "No learned ranks found for this spell",
+    "item entries do not offer unrelated spell ranks")
+assert(page.document.steps[1].sequence[2] == "item:5512", "failed rank lookup preserves the item")
+
+page.document.steps = { NS.Macros.Model.NewStep("petautocasttoggle") }
+page.document.steps[1].branches[1].value = "Pet Bite"
+page.Render()
+beforeScans = scans
+rankButton = page.ui.pools.button["step:1:branch:1:rank"]
+rankButton.scripts.OnClick(rankButton)
+assert(scans == beforeScans and #picker.items == 3, "pet ranks use the pet bank and reject future spells")
+picker.rows[3].scripts.OnClick(picker.rows[3])
+assert(page.compiled:find("/petautocasttoggle Pet Bite(Rang 2)", 1, true), "pet autocast retains its selected rank")
+
+page.document.steps = { NS.Macros.Model.NewStep("cast") }
+page.document.steps[1].branches[1].value = "Teleport"
+page.Render()
+rankButton = page.ui.pools.button["step:1:branch:1:rank"]
+rankButton.scripts.OnClick(rankButton)
+assert(not picker:IsShown() and page.message == "No learned ranks found for this spell",
+    "unranked spells do not acquire a fabricated rank")
+local secret = {}
+local originalPublic = NS.Public
+NS.Public = function(value) return value ~= secret end
+entries[1].subName, entries[5].subName = secret, secret
+edit = page.ui.pools.edit["step:1:branch:1:action"]
+edit.action(spellName)
+rankButton.scripts.OnClick(rankButton)
+assert(#picker.items == 2 and picker.items[2].value:find("Rang 10", 1, true), "secret rank text is ignored")
+NS.Public = originalPublic
+entries[1].subName, entries[5].subName = "Rang 1", "Rang 2"
+
+NS.Client.isForever = false
+page.Render()
+assert(not rankButton:IsShown(), "Retail does not expose legacy spell rank controls")
+beforeScans, readsBeforeFilter = scans, slotReads
+page.PickRank(page.ui.body, "spell", spellName, function() error("Retail rank callback") end)
+assert(scans == beforeScans and slotReads == readsBeforeFilter, "Retail rank action never reads legacy rank data")
+NS.Client.isForever = true
+page.Render()
+rankButton.scripts.OnClick(rankButton)
+staleRank = picker.pick
+combat = true
+beforeScans, readsBeforeFilter = scans, slotReads
+page.PickRank(rankButton, "spell", spellName, function() error("combat rank callback") end)
+staleRank(ranked)
+assert(scans == beforeScans and slotReads == readsBeforeFilter
+    and page.document.steps[1].branches[1].value == spellName, "combat blocks rank lookup and stale selection")
 print("suite_macros_menu_contract: passed")

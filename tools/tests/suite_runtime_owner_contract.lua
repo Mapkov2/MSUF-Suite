@@ -72,6 +72,8 @@ assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",
 assert(Suite.Database.Initialize(nil))
 local retiredCelebrations = { enabled = true, onLust = true }
 Suite.DB.suite.modules.partyEffects = retiredCelebrations
+local retiredRoutes = { enabled = true, radar = true }
+Suite.DB.suite.modules.gatheringRoutes = retiredRoutes
 Suite.Suite.Normalize(Suite.DB)
 assert(Suite.DB.suite.modules.partyEffects == retiredCelebrations, "normalization changed legacy profile data")
 -- Native spellbook enums/namespaces exist even while the new opt-in helper is off.
@@ -94,15 +96,19 @@ Support.Load(root, "MSUF_Suite_QualityOfLife", {})
 assert(not Suite.SuiteCatalog.partyEffects and not Suite.Suite.instances.partyEffects,
     "retired Celebrations still registered from an enabled legacy profile")
 assert(Suite.Suite.Set("partyEffects", "enabled", true) == false, "retired Celebrations accepts setting writes")
+assert(Suite.DB.suite.modules.gatheringRoutes == retiredRoutes, "legacy route settings were rewritten")
+assert(not Suite.SuiteCatalog.gatheringRoutes and not Suite.Suite.instances.gatheringRoutes
+    and not SlashCmdList.MSUFSUITEGATHER and not Suite.Suite.Set("gatheringRoutes", "enabled", true),
+    "retired resource routes registered from a legacy profile")
 local count = 0
 for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
--- The shared notice owner and nine QoL tools are available on Forever.
+-- The shared notice owner and supported QoL tools are available on Forever.
 -- Craft shopping and mail templates remain Retail-only.
-assert(count == 83 and Suite.Suite.instances.foreverWorldMap and Suite.Suite.instances.gatheringTooltips
-    and Suite.Suite.instances.gatheringRoutes
+assert(count == 85 and Suite.Suite.instances.lootRolls and Suite.Suite.instances.navigation and Suite.Suite.instances.foreverWorldMap and Suite.Suite.instances.gatheringTooltips
+    and Suite.Suite.instances.groupFinderLocations
     and not Suite.Suite.instances.castbarArt and Suite.Suite.instances.glimmer and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
     and Suite.Suite.instances.playerAuraSkins and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel

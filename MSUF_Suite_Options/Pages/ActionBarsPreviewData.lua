@@ -136,7 +136,6 @@ local EVENTS = { "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BON
 -- a frame however many arrive; the events themselves stay here.
 function Preview.Watch(ui)
     local host = ui.host
-    local registry = EventRegistry
     local event = "MSUFSuite.ActionBars.ActionsChanged"
     local function ActionsChanged()
         if ui.selected() == ENUM.BAR.INDEPENDENT then ui.kit:Request("actions") end
@@ -144,12 +143,12 @@ function Preview.Watch(ui)
     ui.kit = Suite.PreviewKit.NewHost(nil, { frame = host, paint = function() ui.Paint() end,
         activate = function(kit)
             for _, nativeEvent in ipairs(EVENTS) do host:RegisterEvent(nativeEvent) end
-            if registry and registry.RegisterCallback then registry:RegisterCallback(event, ActionsChanged, kit) end
+            EventRegistry:RegisterCallback(event, ActionsChanged, kit)
             kit:Paint("show")
         end,
         deactivate = function(kit)
             host:UnregisterAllEvents()
-            if registry and registry.UnregisterCallback then registry:UnregisterCallback(event, kit) end
+            EventRegistry:UnregisterCallback(event, kit)
         end })
     host:SetScript("OnEvent", function(_, event, unit)
         if event == "UNIT_PET" and (IsSecret(unit) or unit ~= "player") then return end

@@ -183,6 +183,7 @@ function Rendering.Suite(visualPass)
         P.BagAppearance.Button(button, view == c.inventoryView)
     end
     P.InventoryControls.Layout(g)
+    P.BagHover.Refresh()
 end
 
 -- Protected fallback: every slot in physical order without pages, groups, merged or hidden
@@ -191,6 +192,7 @@ end
 -- last moment before combat lockdown, so nothing is out of reach while the
 -- layout cannot change.
 function Rendering.Combat()
+    P.BagHover.Clear()
     InventoryView = P.InventoryView
     local items = InventoryView.index.items
     local total = #items

@@ -321,7 +321,10 @@ local function LayoutButtons(self, entries)
     local size = c.size
     local newEntries, geometry = changed.entries, changed.geometry
     if newEntries or geometry then
-        view.host:SetSize(R.IconGeometry(c, #entries))
+        if self.raid.rows then view.host:SetSize(R.OverviewGeometry(self, #entries))
+        else
+            view.host:SetSize(R.IconGeometry(c, #entries))
+        end
     end
     if not (newEntries or geometry or changed.color or changed.text or changed.skin) then return end
     local r, g, b = S.RGB(c.borderColor)
@@ -358,6 +361,11 @@ function M:Compile()
     Settle(self)
     local c = self.config
     local entries = BuildEntries(self)
+    local overviewChanged
+    if c.raidBuffOverview or self.raid.rows then
+        overviewChanged = R.BuildRaidOverview(self, S.editMode == true)
+        R.BindRaidOverview(self)
+    end
     R.ReadPet(self)
     R.ReadHealthstone(self)
     SyncRosterEvent(self)
@@ -372,6 +380,7 @@ function M:Compile()
         entries = list.entries
     end
     local layoutChanged = ReadLayoutChanges(view.layout, c)
+    if overviewChanged then changed.geometry, layoutChanged = true, true end
     if not changed.entries and not layoutChanged then return false end
     if layoutChanged then
         view.layout = RememberLayout(view.layout or {}, c)
@@ -384,6 +393,7 @@ function M:Compile()
         view.host:SetPoint(point, UIParent, point, c.x, c.y)
     end
     LayoutButtons(self, entries)
+    if self.raid.rows then R.LayoutRaidOverview(self) end
     return changed.entries
 end
 
@@ -476,7 +486,7 @@ local function ShowMask(self, mask)
         local visible = mask % (bit * 2) >= bit and not (entry and entry.dismissed)
         R.AlertTransition(self, button, entry, visible)
         if visible then
-            R.PositionIcon(button, view.host, shown, self.config)
+            R.PositionIcon(button, view.host, shown, self.config, self.raid.offset)
             button:Show()
             shown = shown + 1
         else
@@ -541,6 +551,7 @@ function M:Update(mode, updateCounts, updateInfo, foodDirty)
     local threshold = R.Threshold(self)
     local mask, nextDue = 0, nil
     local allowed = Allowed(self)
+    view.allowed = allowed
     if allowed then
         mask, nextDue = Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
     else
@@ -648,6 +659,7 @@ OnEvent = function(self, event, unit, updateInfo)
     if not self.active then return end
     local listen = self.listen
     if MEMBER_EVENT[event] and listen.aura == "group" then
+        if self.config.raidBuffOverview then R.MarkRaidOverview(self, unit, event, updateInfo) end
         -- Member work waits for one coalesced pass. The player's own aura
         -- delta refreshes the player's group state at once and goes on to
         -- the personal update below, so no second pass follows.

@@ -1,13 +1,13 @@
 local _, P = ...
 -- Aliases name feature switches; keywords also describe their detail controls.
 local GROUPS = {
+    { id = "navigation", title = "Navigation & waypoints", switch = "enabled",
+        sections = { "navigation_basics", "navigation_appearance", "navigation_sources", "navigation_audio", "navigation_integrations" },
+        aliases = { "waypoint", "navigation", "navigator", "pinpoint", "route", "wegpunkt", "zielfuehrung" } },
     { id = "foreverWorldMap", title = "World map information (Forever)", switch = "enabled",
         sections = { "forever_world_map" }, aliases = { "zone levels", "travel markers", "world map" } },
     { id = "gatheringTooltips", title = "Gathering tooltips (Forever)", switch = "enabled",
         sections = { "gathering_tooltips" }, aliases = { "herbalism", "mining", "gathering skill" } },
-    { id = "gatheringRoutes", title = "Resource routes", switch = "enabled",
-        sections = { "gathering_routes" },
-        aliases = { "gathering guide", "gathering radar", "farmhud", "farming route", "sammelroute", "sammelpfeil" } },
     { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
         keywords = { "SCT", "FCT", "floating combat text", "Kampftext", "Schadenszahlen", "Heilungszahlen" } },
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
@@ -48,6 +48,8 @@ local GROUPS = {
             "Todesmelder", "Todesansage", "Todesmeldungen" } },
     { id = "releaseProtection", title = "Release spirit protection", switch = "enabled", sections = { "release_protection" },
         keywords = { "freilassen", "releasen", "geist freilassen", "release schutz", "release-schutz", "anti release" } },
+    { id = "groupFinderLocations", title = "LFG locations (Forever)", switch = "enabled",
+        sections = { "group_finder_locations" }, aliases = { "player location", "leader location", "zone", "lfg standort", "gebiet" } },
     { id = "groupFinderDoubleClick", title = "Group finder double-click (Retail)", switch = "enabled",
         sections = { "group_finder_double_click" } },
     { id = "groupFinderApplicantSort", title = "Mythic+ applicant score sorting (Retail)", switch = "enabled",
@@ -68,6 +70,9 @@ local GROUPS = {
             "group finder profile links", "lfg profile links", "right click profiles", "bewerber profile",
             "bewerber rechtsklick", "gruppensuche profile", "rechtsklick links", "raid progress", "raidprogress",
             "raid fortschritt", "raidfortschritt", "progressstand", "bewerber fortschritt" } },
+    { id = "keystoneReadyCheck", title = "Keystone ready check and countdown", switch = "enabled",
+        sections = { "keystone_preparation" },
+        aliases = { "ready check", "readycheck", "pull timer", "countdown", "keystone window", "bereitschaftscheck", "schlüsselstein" } },
     { id = "mythicKeyShare", title = "Keystone command (Retail)", switch = "enabled", sections = { "keystone_command" } },
     { id = "autoUprank", title = "Auto-uprank (Forever)", switch = "enabled", sections = { "auto_uprank" } },
     { id = "trainerLearnAll", title = P.Suite.Client.isForever and "Trainer budget" or "Learn all at trainer (Retail)",
@@ -78,6 +83,8 @@ local GROUPS = {
         sections = { "mythic_reset" } },
     { id = "loadoutReminder", title = "Loadout reminder (Retail)", switch = "enabled",
         sections = { "loadout_reminder", "loadout_expectation" } },
+    { id = "lootRolls", title = "Loot roll window", switch = "enabled", sections = { "loot_rolls" },
+        aliases = { "loot rolls", "need greed pass", "roll window", "würfelfenster", "beute würfeln" } },
     { id = "loot", title = "Loot history", switch = "manageHistory", other = "quickLoot", sections = { "history" } },
     { id = "durabilityAlert", title = "Low durability warning", switch = "enabled",
         sections = { "durability_warning" } },
@@ -155,20 +162,22 @@ return {
         Subgroup("gear", "Gear", "characterUpgradeWindow socketGemSuggestions durabilityAlert"),
     } },
     { id = "lootMerchants", title = "Loot & Merchants", subgroups = {
-        Subgroup("loot", "Loot", "loot.quickLoot lootToastFilter vaultSpec loot.manageHistory lootContainers"),
+        Subgroup("loot", "Loot", "loot.quickLoot lootRolls lootToastFilter vaultSpec loot.manageHistory lootContainers"),
         Subgroup("merchants", "Merchants", "merchantLevel qol.repair qol.autoJunk lootVendorRules merchantList inventoryProtection"),
     } },
     { id = "questsProfessions", title = "Quests & Professions", subgroups = {
         Subgroup("quests", "Quests", "quests questRewardValue"),
-        Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips gatheringRoutes"),
+        Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips"),
     } },
     { id = "groups", title = "Groups", subgroups = {
         Subgroup("groupRaid", "Group & Raid", "groupRaidShortcuts trustedPartyInvites autoResponses releaseProtection"),
-        Subgroup("groupFinder", "Group Finder", "groupFinderExitReminder groupFinderDoubleClick groupFinderTools groupFinderApplicantSort"),
-        Subgroup("mythic", "Dungeons & Raids", "mythicKeyShare mythicAutoQueue mythicResetReminder combatLog delveSolePower"),
+        Subgroup("groupFinder", "Group Finder",
+            "groupFinderLocations groupFinderExitReminder groupFinderDoubleClick groupFinderTools groupFinderApplicantSort"),
+        Subgroup("mythic", "Dungeons & Raids", "keystoneReadyCheck mythicKeyShare mythicAutoQueue mythicResetReminder combatLog delveSolePower"),
     } },
     { id = "travel", title = "Travel", subgroups = {
-        Subgroup("travel", "Map & Travel", "mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists dungeonPortals foreverWorldMap"),
+        Subgroup("travel", "Map & Travel",
+            "navigation mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists dungeonPortals foreverWorldMap"),
     } },
     { id = "interface", title = "Interface", subgroups = {
         Subgroup("interface", "Interface", "dailyComfort soundProfiles"),

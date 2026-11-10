@@ -140,6 +140,7 @@ B.Section("bags", "categories", "Built-in categories", {
     B.Bool("category_myArmorSlot", "My Armor Slot", true),
     B.Bool("category_equipment", "Equipment category", true),
     B.Bool("category_consumables", "Consumables category", true),
+    B.Bool("category_ammo", "Ammunition category", true),
     B.Bool("category_reagents", "Reagents category", true),
     B.Bool("category_recipes", "Recipes category", true),
     B.Bool("category_quest", "Quest items category", true),
@@ -182,6 +183,7 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 })
 
 local rules = NS.SuiteCatalog.bags.rules
+rules.category_ammo.hidden = not NS.Client.isForever
 rules.desaturateInactiveQuestItems.requiresChoice = { key = "inventoryView", values = {
     [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,
 } }

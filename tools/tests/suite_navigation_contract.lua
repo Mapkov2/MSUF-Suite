@@ -149,6 +149,10 @@ MSUF2_Open = function(page) opened[#opened + 1] = page end
 M.RegisterHistoryProvider = function() return true end
 M.RunWithHistory = function(_, _, fn) historyWrites = historyWrites + 1; return fn() end
 M.Widgets, M.Theme = W, T
+T.ApplyMenuFont = function(label, _, role) label.fontRole = role end
+T.StyleFontString = function(label, color, _, role) label.fontColor, label.fontRole = color, role end
+T.ApplyButtonRole = function(button, role) button.role = role end
+T.SkinSuccessButton = function(button) return T.ApplyButtonRole(button, "success") end
 M.pages = {}
 M.Tr = function(text) return L[text] end
 T.colors = { muted = {}, text = {}, dim = {} }

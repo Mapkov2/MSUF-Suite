@@ -75,10 +75,14 @@ for _, name in ipairs(migrated) do
 end
 -- PaperDollChrome is a thin wrapper: the kit's gated Fade/Attach/Ensure and its registry.
 local chrome = Source("Adapters/PaperDollChrome.lua")
+-- All owners share the header color job. Per-owner work still goes through the registry.
+local headerStart, headerEnd = chrome:find('NS.CombatGate.RunOrDefer("paper-doll-header-colors", RefreshHeaders)', 1, true)
+Check(headerStart, "header color changes lost their shared combat deferral")
+local ownerCode = chrome:sub(1, headerStart - 1) .. chrome:sub(headerEnd + 1)
 Check(chrome:find("Chrome.Fade = Kit.Fade", 1, true) and chrome:find("Chrome.Track = Kit.Track", 1, true)
     and chrome:find("return Kit.Ensure(state, target, spec)", 1, true)
     and chrome:find("return self.registry.RunOrDefer(state, suffix, callback)", 1, true)
-    and not chrome:find("NS.Cosmetics.", 1, true) and not chrome:find("NS.CombatGate.", 1, true),
+    and not chrome:find("NS.Cosmetics.", 1, true) and not ownerCode:find("NS.CombatGate.", 1, true),
     "PaperDollChrome reimplements the kit's Fade, Attach or deferral")
 
 -- Edit Mode fades through the kit's gate (combat, forbidden, CanDecorate).

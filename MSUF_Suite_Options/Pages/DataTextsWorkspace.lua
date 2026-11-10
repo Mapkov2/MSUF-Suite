@@ -348,7 +348,7 @@ local function Navigation(ctx, builder, bars, choose, selection)
         meta = P.Meta(PAGE, ID, "action.addBar", "action", PAGE .. "_presets") } },
         PAGE .. "_presets", function() choose("add") end)
     if M.RegisterControlMetadata then
-        M.RegisterControlMetadata(delete, P.Meta(PAGE, ID, "action.deleteBars", "action", MODULE_SECTION), Tr("Delete bars"), "button")
+        M.RegisterControlMetadata(delete, P.Meta(PAGE, ID, "action.deleteBars", "action", MODULE_SECTION), "Delete bars", "button")
     end
     M.TrackRefresh(ctx, function()
         local editable = not P.Combat()
@@ -407,7 +407,7 @@ function Page.Build(ctx, builder, shared)
         selection = (type(key) == "number" or key == "shared") and key or nil
         ctx.dataTextBarSelector:SetValue(selection)
         if entering then PageScroll(0) end
-        if M.RefreshPageHistoryNav then M.RefreshPageHistoryNav() end
+        M.RefreshPageHistoryNav()
         return view
     end
     ctx.dataTextWorkspace = { deck = deck, choose = choose, buttons = buttons, navigation = navigation,

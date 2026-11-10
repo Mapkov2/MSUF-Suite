@@ -6,6 +6,16 @@ local SPEED_INTERVAL = 0.25
 local Travel = { row = { label = NS.Text("Speed") } }
 NS.Travel = Travel
 
+local summaryRows = { { label = NS.Text("Class") }, { label = NS.Text("Level") } }
+local summary = { title = NS.Text("Inspect"), rows = summaryRows }
+
+function Travel.Summary(class, level)
+    summaryRows[1].value = class or "—"
+    summaryRows[2].value = level or "—"
+    summaryRows[3] = Travel.row.value ~= nil and Travel.row or nil
+    return summary
+end
+
 local context, unit, guid, changed, identityLost
 local mounted, mountInstance, speed, restrictionJob
 

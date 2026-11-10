@@ -127,7 +127,11 @@ C_AddOns = { LoadAddOn = function(name)
     return true
 end }
 
-assert(loadfile(root .. "/MSUF_Suite/Core/Startup.lua"))("MSUF_Suite", Suite)
+Suite.ProfileIO = { StartNameplateProfile = function()
+        assert(Suite.Suite.started, "nameplate profile applied before module startup")
+        return true
+    end }
+    assert(loadfile(root .. "/MSUF_Suite/Core/Startup.lua"))("MSUF_Suite", Suite)
 local suiteFrame = frames[1]
 suiteFrame:callback("ADDON_LOADED", "MSUF_Suite")
 assert(provider and skinFrame.events.ADDON_LOADED and provider.RootDB

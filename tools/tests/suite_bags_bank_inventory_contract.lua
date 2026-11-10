@@ -163,6 +163,12 @@ local B = P.BankInventory
 -- Bags.lua runs the bank view from its sub-module list after its own refresh and stop.
 M.Refresh, M.Disable = function() B.Refresh() end, function() B.Disable() end
 P.SlotCache.Start()
+do
+    local count = C_Container.GetContainerNumSlots
+    C_Container.GetContainerNumSlots = function() error("invalid bag reached the native container API") end
+    assert(P.SlotCache.Sync(nil) == 0 and P.SlotCache.Sync("bank") == 0, "invalid bag touched the slot cache")
+    C_Container.GetContainerNumSlots = count
+end
 -- Every registered frame receives the event, the shared slot cache included.
 local function Fire(event, ...)
     B.events.scripts.OnEvent(nil, event, ...)

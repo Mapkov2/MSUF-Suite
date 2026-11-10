@@ -122,8 +122,18 @@ end
 
 local function PreviewFont(region, prefix, nativeSize, nativeOnly, health)
     if not nativeOnly then
-        return P.Suite.NameplateText.PaintFont(
+        local size = P.Suite.NameplateText.PaintFont(
             region, P.S.Config(ID), prefix, nativeSize, NATIVE_TEXT_FONT, P.StylePreviewFont, health)
+        if health or prefix:sub(-4) == "Cast" then
+            local shared = P.Suite.NameplateText.Shared(P.S.Config(ID))
+            local color = shared and shared.textColor
+            if color then
+                region:SetTextColor(color.r, color.g, color.b, color.a)
+            else
+                region:SetTextColor(1, 1, 1, 1)
+            end
+        end
+        return size
     end
     P.StylePreviewFont(region, NATIVE_TEXT_FONT, nativeSize, "OUTLINE")
     region:SetShadowColor(0, 0, 0, 0)
@@ -147,7 +157,7 @@ local function BuildBar(editor, s, cell)
     local bar = CreateFrame("Button", nil, cell)
     bar:SetSize(206, 20)
     bar:SetPoint("CENTER", cell, "CENTER", 0, -4)
-    if M.RegisterControlMetadata then
+    if M.RegisterControlMetadata and not s.static then
         M.RegisterControlMetadata(bar,
             P.Meta(PAGE, ID, "preview." .. prefix, "action", "suite_nameplates_preview"),
             prefix == "enemy" and "Enemy nameplate preview" or "Friendly nameplate preview", "button")
@@ -227,10 +237,10 @@ local function BuildMarkers(editor, s, cell)
     if prefix == "enemy" then editor.questMarkerHandle = questMarker end
     s.markers = {
         { handle = eliteMarker, back = eliteBack, icon = eliteIcon, kind = "elite",
-          enabled = prefix .. "EliteMarker", size = prefix .. "EliteMarkerSize", color = "enemyMinibossColor",
+          enabledKey = prefix .. "EliteMarker", size = prefix .. "EliteMarkerSize", color = "enemyMinibossColor",
           x = prefix .. "EliteOffsetX", y = prefix .. "EliteOffsetY", roles = { [3] = true, [4] = true } },
         { handle = questMarker, back = questBack, icon = questIcon, kind = "quest",
-          enabled = prefix .. "QuestMarker", size = prefix .. "QuestMarkerSize", color = "enemyQuestColor",
+          enabledKey = prefix .. "QuestMarker", size = prefix .. "QuestMarkerSize", color = "enemyQuestColor",
           x = prefix .. "QuestOffsetX", y = prefix .. "QuestOffsetY", roles = { [5] = true } },
     }
 end
@@ -455,7 +465,7 @@ end
 
 local function RenderName(s, m)
     local prefix, name, bar = s.prefix, s.name, s.bar
-    name:EnableMouse(not m.npcWorldName)
+    name:EnableMouse(not m.npcWorldName and not s.static)
     local config = P.S.Config(ID)
     local shared = not m.npcWorldName and P.Suite.NameplateText.Shared(config)
     local size = P.Suite.NameplateText.ResolveSize(config, prefix .. "NameSize", shared)
@@ -552,8 +562,8 @@ local function RenderMarkers(editor, s, m)
             P.Get(ID, prefix .. (marker.kind == "elite" and "EliteMarkerAnchor" or "QuestMarkerAnchor")))
         Style.PaintMarker(marker.icon, marker.kind, size, P.Get(ID, marker.color), m.role == 4 and "boss" or "elite")
         marker.handle:SetShown(not m.npcWorldName and editor:LayerOn(marker.kind .. "Marker") and P.Get(ID, "look") ~= 2
-            and P.Get(ID, marker.enabled) and (prefix == "friendly" and m.friendlyNPC or marker.roles[m.role] == true))
-        marker.handle:EnableMouse(true)
+            and P.Get(ID, marker.enabledKey) and (prefix == "friendly" and m.friendlyNPC or marker.roles[m.role] == true))
+        marker.handle:EnableMouse(not s.static)
         marker.back:Hide()
     end
 end
@@ -755,10 +765,11 @@ local function Render(editor, s)
     RenderCastDetails(editor, s, m)
     RenderEnemyPower(editor, s, m)
     P.NameplatesPreviewDecor.Paint(editor, s, m)
+    P.NameplatesAdvancedAuras.Render(editor, s, m)
 end
 
 local function Sample(editor, prefix, x)
-    local s = { prefix = prefix, metrics = {},
+    local s = { prefix = prefix, metrics = {}, static = editor.isGroupSample,
         state = { health = prefix == "enemy" and 53 or 100, target = prefix == "enemy", cast = true } }
     local cell = CreateFrame("Frame", nil, editor.stage)
     cell:SetSize(260, 124)
@@ -776,7 +787,10 @@ local function Sample(editor, prefix, x)
     P.NameplatesPreviewDecor.Build(editor, s)
     BindElements(editor, s)
     editor.renderers[#editor.renderers + 1] = function() Render(editor, s) end
+    return s
 end
+
+P.NameplatesPreview = { Sample = Sample, Render = Render }
 
 function P.BuildNameplatesPreview(ctx, builder, sections)
     local editor = P.NameplatesEditor.Create(ctx, builder, sections)
@@ -785,5 +799,6 @@ function P.BuildNameplatesPreview(ctx, builder, sections)
     Sample(editor, "enemy", 0)
     Sample(editor, "friendly", 0)
     P.BuildNameplatesAuraSamples(editor)
+    P.NameplatesMultiPreview.Attach(editor)
     editor:Paint()
 end

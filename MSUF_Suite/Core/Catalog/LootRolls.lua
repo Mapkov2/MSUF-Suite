@@ -1,0 +1,35 @@
+local _, NS = ...
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
+local Number, Bool, Choice = B.Number, B.Bool, B.Choice
+
+B.Module("lootRolls", {
+    title = "Loot roll window",
+    description = "Compact manual loot rolls with player counts, a countdown and results. Gamepad mode keeps Blizzard's roll window.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", editElement = "lootrolls",
+    conflicts = { "XLoot_Group" },
+})
+B.Section("lootRolls", "loot_rolls", "Loot roll window", {
+    Number("width", "Window width", 380, 300, 600, 5),
+    Number("rowHeight", "Row height", 58, 48, 84),
+    Number("rowGap", "Space between rows", 4, 0, 12),
+    Number("maxRows", "Visible loot rolls", 6, 2, 12),
+    Choice("growth", "Loot roll growth direction", 1, { "Down", "Up" }),
+    Number("scale", "Scale (percent)", 100, 50, 150, 5),
+    B.Font("font", "Font"),
+    Number("fontSize", "Font size", 12, 9, 18),
+    Bool("showItemLevel", "Show item level", true),
+    Bool("showBind", "Show bind-on-pickup status", true),
+    Bool("showCounts", "Show roll counts", true),
+    Bool("showResults", "Keep loot roll results visible", true),
+    Number("resultSeconds", "Loot result duration (seconds)", 8, 2, 30),
+    Bool("urgentTimer", "Highlight expiring loot rolls"),
+    Number("urgentSeconds", "Loot roll warning threshold (seconds)", 10, 3, 30),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 160, -3000, 3000),
+})
+NS.AddQoLVisualStyle("lootRolls", "loot_rolls", "Loot roll window")
+NS.AddQoLTextStyle("lootRolls", "loot_rolls", "Loot roll window")
+NS.SuiteCatalog.lootRolls.rules.resultSeconds.enableKey = "showResults"
+NS.SuiteCatalog.lootRolls.rules.urgentSeconds.enableKey = "urgentTimer"
+for _, key in ipairs({ "point", "x", "y" }) do NS.SuiteCatalog.lootRolls.rules[key].hidden = true end

@@ -181,6 +181,9 @@ local function RegisterFeatureRuleSearch(group, sectionId, entries, keywords)
 end
 
 local function BuildFeatureDetails(ctx, details, group, sectionId, width, sections, allRules, keywords)
+    if group.id == "navigation" then
+        return P.BuildNavigationDetails(ctx, details, group, sectionId, width, sections, allRules, keywords, RegisterFeatureRuleSearch)
+    end
     if #allRules == 0 and group.id ~= "mailTemplates" and not EDIT_ELEMENTS[group.id]
         and group.id ~= "xpBar" and group.id ~= "innervateCue" and group.id ~= "loadoutReminder"
         and group.id ~= "macroBuilder" then

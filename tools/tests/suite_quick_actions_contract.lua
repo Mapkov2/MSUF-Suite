@@ -37,6 +37,14 @@ local function NewWorld(forever)
 
     E:Load("MSUF_Suite/Core/CharacterData.lua", true)
     S.CharacterData = NS.CharacterData
+    local build = setmetatable({}, { __index = function() return function() return {} end end })
+    NS.CatalogBuild = { ForAddon = function() return build end }
+    E:Load("MSUF_Suite/Core/CharacterTabs.lua", true)
+    E:Load("MSUF_Suite/Core/CharacterBindings.lua", true)
+    E:Load("MSUF_Suite/Core/Catalog/CharacterPanel.lua", true)
+    S.CharacterHeader = NS.CharacterHeader
+    local characterConfig = {}
+    S.Config = function(id) Check("characterPanel", id, "character route config") return characterConfig end
     C_AddOns = { LoadAddOn = function(addon)
         Check("MSUF_Suite_Modules", addon, "lazy runtime")
         calls.loads = calls.loads + 1
@@ -73,7 +81,8 @@ local function VerifyLaunch(forever)
     E:Item(0, 1, 123, 2)
     E:Item(0, 2, 999, 3)
     E:Flush()
-    S.instances.characterPanel = { active = true, running = true }
+    local characterConfig = S.Config("characterPanel")
+    S.instances.characterPanel = { active = true, running = true, config = characterConfig }
     S.OpenCharacterPanelTab = function(tab)
         calls.tab = tab
         return true
@@ -159,6 +168,22 @@ local function VerifyLaunch(forever)
     window.scripts.OnGamePadButtonDown(window, "PAD2")
     Check(false, window:IsShown(), "gamepad cancel closes the launcher")
     Check(1, calls.loads, "no repeated runtime loads")
+
+    slash("Equipment")
+    Check("gear", window:Selected().key, "available equipment shortcut is searchable")
+    window.actions[2]:Click()
+    characterConfig.hiddenTabs = "gear"
+    slash("Equipment")
+    Check("itemSearch", window:Selected().key, "hidden equipment does not appear in search")
+    window.tabs[2]:Click()
+    Check(nil, window:Selected(), "hidden equipment does not appear in favorites")
+    Check(true, owner.state.favorites.gear, "hiding equipment did not erase its favorite")
+    characterConfig.hiddenTabs = ""
+    slash("Equipment")
+    window.tabs[2]:Click()
+    Check("gear", window:Selected().key, "restoring equipment restores the favorite")
+    Keyboard(window, "OnEnterPressed")
+    Check("gear", calls.tab, "the restored favorite opens its exact destination")
 end
 
 local function VerifyCharacterRoute(forever)
@@ -194,6 +219,10 @@ local function VerifyCharacterRoute(forever)
     Check("reputation", nativeTab, "native tab remains unchanged")
     Check("gear", requested, "coalesced consumer receives exact Suite destination")
     Check(nil, select(3, panel.Routing.TakeTabRequest()), "request is consumed once")
+    S.Config("characterPanel").hiddenTabs = "gear"
+    Check(false, S.OpenCharacterPanelTab("gear"), "hidden equipment refused before opening native")
+    Check(1, calls.panels, "hidden route attempted no native writes")
+    Check(nil, select(3, panel.Routing.TakeTabRequest()), "hidden route did not queue a stale destination")
     E.combat = true
     Check(false, S.OpenCharacterPanelTab("reputation"), "combat blocks native route")
     Check(1, calls.panels, "combat attempted no native writes")

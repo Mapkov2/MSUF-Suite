@@ -88,7 +88,8 @@ local Style = {
         return { edges = { Region(), Region(), Region(), Region() } }
     end,
 }
-local NS = { NameplateStyle = Style, Client = {}, Finite = Finite, IsCombatLocked = function() return true end, Safety = {
+local NS = { NameplateStyle = Style, Client = {}, Finite = Finite, IsSecret = function(value) return not Public(value) end,
+    IsCombatLocked = function() return true end, Safety = {
     IsForbidden = function(frame) return frame.forbidden end,
 } }
 local S = { Public = Public, Finite = Finite, RGB = function(hex) return hex, 0, 0 end,
@@ -103,18 +104,19 @@ local function Component(name, methods)
     private[name] = component
     return component
 end
-Component("Layout", "Bind Configure Apply Restore RestoreAll")
-Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable")
+Component("Layout", "Bind Configure Apply Restore RestoreAll Observe")
+Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable SetExtraTextEvents")
 Component("Threat", "Enable Apply Restore Disable Refresh")
 Component("Level", "Bind PaintNative Paint Hide RestoreNative")
 Component("CastTime", "Bind Paint Restore Refresh")
 Component("CVars", "Apply")
 Component("Auras", "Bind Apply Restore")
-Component("KickReady", "Bind Paint Restore Configure Disable")
+Component("KickReady", "Bind Paint Restore Configure Disable OnCast")
 Component("Mouseover", "Bind Configure Restore Disable")
 Component("Selection", "Apply Restore Configure RestoreAll")
 Component("Decor", "Configure Paint Restore Disable TargetChanged")
 Component("AuraColors", "Bind Configure Apply Restore SetEditMode")
+Component("AuraDisplay", "Bind Configure Apply Restore Release Resume SetEditMode")
 private.AuraColors.Apply = function(frame)
     assert(not frame.forbidden and not frame.HealthBarsContainer.healthBar.forbidden,
         "specialization applied aura colors to a forbidden plate")
@@ -126,8 +128,19 @@ assert(loadfile(root .. "/MSUF_Suite_Nameplates/Text.lua"))("nameplates", privat
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/FriendlyNames.lua"))("nameplates", private)
 NS.HostBridge = NS.HostBridge or {}
 NS.HostBridge.NameFormatter = function() return nil end
+NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/NameText.lua"))("nameplates", private)
+-- Keep presentation mocked while exercising the relocated real cast router
+-- and the entirely disabled extension lifecycle alongside this context test.
+local castPresentation = private.CastTime
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/CastTime.lua"))("nameplates", private)
+private.CastTime.Paint, private.CastTime.Restore = castPresentation.Paint, castPresentation.Restore
+private.CastTime.Refresh = castPresentation.Refresh
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("Suite", NS)
+for _, file in ipairs({ "ExtensionLayout", "ExtensionText", "ExtensionEffects", "ExtensionResources", "Extensions" }) do
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("nameplates", private)
+end
 assert(loadfile(override or root .. "/MSUF_Suite_Nameplates/Skin.lua"))("nameplates", private)
 local applyText = private.Text.Apply
 private.Text.Apply = function(...) Count("Text.Apply"); return applyText(...) end
@@ -143,6 +156,7 @@ module.config = {
 module.context = {
     Event = function(_, event, callback) events[event] = callback end,
     Coalesce = function() return { Cancel = Nothing, Request = Nothing } end,
+    Cancel = Nothing,
 }
 for i = 1, 5 do
     local unit = "nameplate" .. i
@@ -285,4 +299,20 @@ for _, forever in ipairs({ false, true }) do
     module:Disable()
 end
 assert(guidReads == 0, "context refresh read group GUIDs")
+-- Native threat level 2 may receive its own color; the default keeps the
+-- combined warning and restricted threat still falls through to NPC type.
+module.config.enemyOtherTankEnabled = false
+private.Roles.Configure(module.config)
+local facts = { eligible = true, rest = "Melee" }
+local frame = plates[1].UnitFrame
+units.nameplate1.lead = 2
+assert(private.Roles.Get(facts, "nameplate1", frame) == "ThreatWarning")
+module.config.enemyThreatTransitionEnabled = true
+assert(private.Roles.Get(facts, "nameplate1", frame) == "ThreatTransition")
+units.nameplate1.lead = 1
+assert(private.Roles.Get(facts, "nameplate1", frame) == "ThreatWarning")
+units.nameplate1.lead = 3
+assert(private.Roles.Get(facts, "nameplate1", frame) == "ThreatLost")
+units.nameplate1.lead = secret
+assert(private.Roles.Get(facts, "nameplate1", frame) == "Melee")
 print("Suite nameplates: combat roster/role/spec replay matches full paints with zero presentation calls on Retail/Forever")

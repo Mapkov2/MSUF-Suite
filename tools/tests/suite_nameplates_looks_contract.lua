@@ -206,7 +206,7 @@ local NS = {
     -- MSUF without the interrupt-ready engine: KickReady.lua stays idle.
     HostBridge = { KickReady = function() return nil end },
 }
-for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "Catalog/Nameplates" }) do
+for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "NameplateExtensions", "Catalog/Nameplates", "Catalog/NameplateExtensions" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
 end
 local spec, Style = NS.SuiteCatalog.nameplates, NS.NameplateStyle
@@ -259,6 +259,7 @@ local S = { Public = NS.Public, Finite = NS.Finite, RGB = RGB,
 NS.Suite = S
 NS.HostBridge = NS.HostBridge or {}
 NS.HostBridge.NameFormatter = function() return nil end
+NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
 local private = { NS = NS, Suite = S }
 local function Component(name, methods)
@@ -269,15 +270,17 @@ end
 local function Load(file) assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("MSUF_Suite_Nameplates", private) end
 Load("Modes")
 Load("Geometry")
-Component("Layout", "Bind Configure Apply Restore RestoreAll")
+Component("Layout", "Bind Configure Apply Restore RestoreAll Observe")
 Component("Roles", "Configure Marker Quest Classify Base Get ClearQuest RefreshContext RetryQuests")
-Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable")
+Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable SetExtraTextEvents")
 Component("Threat", "Enable Apply Restore Disable Refresh")
 Component("CVars", "Apply")
 Component("Auras", "Bind Apply Restore")
 Component("Selection", "Apply Restore Configure RestoreAll")
 Component("AuraColors", "Bind Configure Apply Restore SetEditMode")
-for _, file in ipairs({ "Text", "NameText", "Level", "CastTime", "KickReady", "Mouseover", "FriendlyNames", "Decor", "Skin" }) do
+Component("AuraDisplay", "Bind Configure Apply Restore Release Resume SetEditMode")
+for _, file in ipairs({ "Text", "NameText", "Level", "CastTime", "KickReady", "Mouseover", "FriendlyNames", "Decor",
+    "ExtensionLayout", "ExtensionText", "ExtensionEffects", "ExtensionResources", "Extensions", "Skin" }) do
     Load(file)
 end
 local stopWatch = Secrets.Watch(root .. "/MSUF_Suite_Nameplates/Level.lua", { strict = true })
@@ -454,8 +457,11 @@ assert(#violations == 0, "a level read compares or tests a secret:\n" .. table.c
 
 ------------------------------------------------------------------ position resets
 -- The Blizzard auras and soft target handles' offsets sit in the enemy and
--- friendly catalog sections; their own sections' resets restore them.
-local P = { Gates = {}, SearchPreparers = {}, catalog = { nameplates = spec }, Suite = { NameplateStyle = Style, HostBridge = {} } }
+-- friendly catalog sections. The Buffs and Debuffs tabs of the Auras
+-- workspace reset the aura offsets, the Blizzard indicators section the
+-- soft target's.
+local P = { Gates = {}, SearchPreparers = {}, catalog = { nameplates = spec },
+    Suite = { NameplateStyle = Style, NameplateExtensions = NS.NameplateExtensions, HostBridge = {} } }
 P.Tr = function(text) return text end
 P.Help = function(summary, details) return { summary = summary, details = details } end
 P.HM = { GetSectionEntry = function() return nil end, SetSectionEnsureVisible = function() end }
@@ -470,6 +476,10 @@ P.ModuleCard = function() end
 local resets = {}
 P.RuleSection = function(_, _, _, _, sectionId, _, _, opts) resets[sectionId] = opts.resetKeys; return {} end
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesWorkspace.lua"))("MSUF_Suite_Options", P)
+P.NameplatesAdvancedAuras = { Append = function() end }
+P.NameplatesProfiles = { Build = function() end }
+P.NameplatesHostOptions = { Build = function() end }
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesExtensions.lua"))("MSUF_Suite_Options", P)
 -- The page registers a cold exact-target preparer through the host adapter.
 P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
     assert(name == "MSUF_Suite.NameplatesTabs" and type(resolver) == "function")
@@ -480,7 +490,12 @@ page.build({})
 local function Lists(keys, key)
     for _, listed in ipairs(keys or {}) do if listed == key then return true end end
 end
-local auras, signals = resets.suite_nameplates_auras, resets.suite_nameplates_signals
+local auras, signals = {}, resets.suite_nameplates_signals
+for _, side in ipairs({ "enemy", "friendly" }) do
+    for _, elements in ipairs({ { "Buffs" }, { "Auras", "ControlAura" } }) do
+        for _, key in ipairs(P.NameplateAuraPositionKeys(side, elements)) do auras[#auras + 1] = key end
+    end
+end
 for _, side in ipairs({ "enemy", "friendly" }) do
     for _, axis in ipairs({ "X", "Y" }) do
         for _, element in ipairs({ "Auras", "Buffs", "ControlAura" }) do

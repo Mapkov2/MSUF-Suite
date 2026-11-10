@@ -6,14 +6,14 @@ local CharacterHeader, CharacterTabs = Suite.CharacterHeader, Host.CharacterTabs
 local Module = { groups = {}, details = {}, subscriptions = {}, pageEvents = {}, inspectItems = {}, header = {} }
 local FRAME_NAME = "MSUFSuiteCharacterPanel"
 local PLAYER, INSPECT = "character", "inspect"
-local OVERVIEW, EQUIPMENT, COMPARE = "overview", "gear", "compare"
+local TAB_KIND = { [PLAYER] = "tab", [INSPECT] = "inspectTab" }
+local OVERVIEW, EQUIPMENT, COMPARE, ATTRIBUTES, REPUTATION = "overview", "gear", "compare", "attributes", "reputation"
 local IN_COMBAT = { inCombat = true }
 local ITEM_EVENTS = { "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED" }
 local SCREEN_EVENTS = { "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED" }
 local INSPECT_IDENTITY_EVENTS = { "PLAYER_TARGET_CHANGED", "GROUP_ROSTER_UPDATE" }
 local MODEL_EVENTS = { "UNIT_MODEL_CHANGED" }
 local SET_EVENTS = { "EQUIPMENT_SETS_CHANGED", "EQUIPMENT_SWAP_FINISHED" }
-
 local GUILD_EVENTS = { "PLAYER_GUILD_UPDATE" }
 local ZONE_EVENTS = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA" }
 
@@ -45,7 +45,6 @@ local function Unsubscribe()
     for event in pairs(Module.subscriptions) do Module.context:RemoveEvent(event) end
     wipe(Module.subscriptions)
     wipe(Module.pageEvents)
-    Module.overviewEventsActive = false
 end
 
 local function ClearPendingPaint()
@@ -128,23 +127,9 @@ local function Header()
     PaintHeader()
 end
 
-local inspectRows = { { label = Text("Class") }, { label = Text("Level") } }
-local inspectGroup = { title = Text("Inspect"), rows = inspectRows }
-
-local function SetInspectSpeedRow()
-    inspectRows[3] = Travel.row.value ~= nil and Travel.row or nil
-end
-
 local function InspectSpeedChanged(relayout)
-    if relayout then SetInspectSpeedRow() end
+    if relayout then Travel.Summary(Module.class, Module.level) end
     Module.view:RefreshInspectSummary(Module.groups, relayout)
-end
-
-local function InspectSummary(groups)
-    inspectRows[1].value = Module.class or "—"
-    inspectRows[2].value = Module.level or "—"
-    SetInspectSpeedRow()
-    groups[#groups + 1] = inspectGroup
 end
 
 local Dirty
@@ -177,11 +162,11 @@ local function SetEvents(events, enabled, isPage)
     end
 end
 
-local function SyncOverviewEvents(visible)
-    if Module.overviewEventsActive == visible then return end
-    Module.overviewEventsActive = visible
-    SetEvents(Pages.Events.overview, visible, true)
-    if Module.fullStats then SetEvents(Pages.ExtraStatEvents, visible, true) end
+local function SyncStatsEvents(visible, combat)
+    local quick, extra = Pages.Events.overview, Pages.ExtraStatEvents
+    if visible ~= (Module.subscriptions[quick[1]] == true) then SetEvents(quick, visible, true) end
+    local full = visible and Module.fullStats and not combat
+    if full ~= (Module.subscriptions[extra[1]] == true) then SetEvents(extra, full, true) end
 end
 
 local function PaintContextAction(event)
@@ -209,12 +194,15 @@ local function Paint(event)
     else
         Travel.Stop()
     end
-    if Module.kind == PLAYER and tab == OVERVIEW then SyncOverviewEvents(#details == 0) end
+    if Module.kind == PLAYER and (tab == OVERVIEW or tab == ATTRIBUTES) then
+        SyncStatsEvents(tab == ATTRIBUTES or #details == 0, combat)
+    end
+    Pages.SyncCustomEvents(Module.custom, combat, SetEvents)
     if gearTab then
         if #details == 0 then
             if tab == OVERVIEW and Module.kind == PLAYER then Pages.Overview(groups, Module.fullStats, combat) else wipe(groups) end
             if Module.kind == INSPECT then
-                InspectSummary(groups)
+                groups[#groups + 1] = Travel.Summary(Module.class, Module.level)
             else
                 Pages.EquipmentSummary(groups, model)
             end
@@ -224,15 +212,17 @@ local function Paint(event)
         else
             local report = #details > 0 and details or groups
             if tab == EQUIPMENT and Module.reader then Gear.EquipmentList(report, model) end
-            view:ShowGroups(report)
+            view:ShowGroups(report, combat)
         end
+    elseif tab == ATTRIBUTES then
+        view:ShowGroups(Pages.Overview(groups, true, combat), combat)
     elseif tab == COMPARE then
         wipe(groups)
         Gear.Compare(groups, Module.ownGear, model)
         view:ShowGroups(groups)
     else
-        if Module.custom then Pages.Custom(groups, Module.custom, Module, combat) else Pages.Read(tab, groups) end
-        view:ShowGroups(groups)
+        if Module.custom then Pages.Custom(groups, Module.custom, Module, combat) else Pages.Read(tab, groups, Module.config) end
+        view:ShowGroups(groups, combat and Module.custom and Module.custom.hasReports)
     end
 end
 
@@ -245,14 +235,20 @@ local function ReleaseResolvedItems()
     end
 end
 
+local function GearDemand(tab, custom)
+    local equipment = tab == OVERVIEW or tab == EQUIPMENT
+    return equipment or custom and custom.audit, equipment or custom and custom.durability
+end
+
 local function Flush()
     if not Module.kind then return end
     if Module.kind == INSPECT and Identity(Module.unit) ~= Module.guid then Close() return end
     local dirtySlot, dirtyAll = Module.dirtySlot, Module.dirtyAll
     Module.dirtySlot, Module.dirtyAll = nil, nil
     local custom = Module.custom
-    local readGear = (not custom or custom.audit) and (dirtyAll or dirtySlot)
-    local readDurability = (not custom or custom.durability) and Module.dirtyDurability
+    local wantsGear, wantsDurability = GearDemand(Module.tab, custom)
+    local readGear = wantsGear and (dirtyAll or dirtySlot)
+    local readDurability = wantsDurability and Module.dirtyDurability
     local repaint = Module.dirtyPage or Module.tab == OVERVIEW or Module.tab == EQUIPMENT
         or custom and (readGear or readDurability)
     if Module.kind == PLAYER and Module.reader and readGear then
@@ -344,10 +340,12 @@ function Dirty(_, event, first, success)
         Module.dirtySets = true
     end
     if Module.pageEvents[event] then Module.dirtyPage = true end
+    Pages.InvalidateCustom(Module.custom, event)
     Module.paintJob:Request()
 end
 
 local HEADER_EVENTS = { "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED" }
+local ATTRIBUTE_EVENTS = { "PLAYER_EQUIPMENT_CHANGED" }
 local EQUIPMENT_EVENTS = {
     "PLAYER_EQUIPMENT_CHANGED", "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED",
     "UPDATE_INVENTORY_DURABILITY", "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED",
@@ -358,13 +356,13 @@ local function SyncHeaderEvents()
 end
 
 local function PaintTabs()
-    local tabs = CharacterHeader.Order(Module.config, Module.kind == PLAYER and "tab" or "inspectTab")
+    local tabs = CharacterHeader.Order(Module.config, TAB_KIND[Module.kind])
     Module.view:SetTabs(tabs, Module.tab)
 end
 
 local function SyncPlayerEquipment()
     local custom, model = Module.custom, Module.gear
-    local wantsGear, wantsDurability = not custom or custom.audit, not custom or custom.durability
+    local wantsGear, wantsDurability = GearDemand(Module.tab, custom)
     local refreshGear = wantsGear and Module.reader and Module.gearStale
     local refreshDurability = wantsDurability and Module.durabilityStale
     if refreshGear then
@@ -381,28 +379,29 @@ local function SyncPlayerEquipment()
 end
 
 local function SelectTab(tab, preserveSlot)
+    if not Module.kind then return end
     HideTooltip()
-    local definition
-    if tab:match("^custom%d+$") then
-        if Module.kind == PLAYER then definition = CharacterTabs.Find(Module.config, tab) end
-        if not definition then tab = OVERVIEW end
-    end
-    Module.customDefinition = definition
-    Module.custom = definition and Pages.CustomPlan(definition) or nil
+    local kind, config = TAB_KIND[Module.kind], Module.config
+    if not CharacterHeader.TabVisible(config, kind, tab) then tab = CharacterHeader.HomeTab(config, kind) end
+    local definition = Module.kind == PLAYER and tab:match("^custom%d+$") and CharacterTabs.Find(config, tab)
+    Module.customDefinition, Module.custom = definition, definition and Pages.CustomPlan(definition, true) or nil
     if not preserveSlot or tab ~= Module.tab then Module.slot = nil end
-    Module.tab, Module.dirtyPage = tab, nil
+    Module.tab, Module.dirtyPage, Module.reputationKey = tab, nil, Pages.ReputationKey(tab, config, Module.custom)
     Unsubscribe()
     Subscribe(SCREEN_EVENTS)
     if Module.kind == PLAYER then
         local custom = Module.custom
         if custom then
             Subscribe(HEADER_EVENTS)
-            Subscribe(custom.events, true)
-        else
+            Subscribe(Pages.CustomEvents(custom, Module.reputationKey), true)
+        elseif tab == OVERVIEW or tab == EQUIPMENT then
             Subscribe(EQUIPMENT_EVENTS)
-            if tab ~= OVERVIEW then Subscribe(Pages.Events[tab], true) end
+        else
+            local attributes = tab == ATTRIBUTES
+            Subscribe(HEADER_EVENTS, attributes)
+            Subscribe(attributes and ATTRIBUTE_EVENTS or Pages.ReportEvents(tab, config), true)
         end
-        Module.fullStats = Module.config.showFullStats ~= false
+        Module.fullStats = tab == ATTRIBUTES or Module.config.showFullStats ~= false
         SyncHeaderEvents()
         SyncPlayerEquipment()
         if tab == EQUIPMENT and not Host.InCombat() then
@@ -460,7 +459,9 @@ local function GroupClick(index)
         if type(index) == "string" then
             if model.auditFocus == index then index = nil end
             Gear.Mark(model, index)
-            if Module.tab == OVERVIEW and not Module.view.nativeLayout then SelectTab(EQUIPMENT) return end
+            if Module.tab == OVERVIEW and not Module.view.nativeLayout and CharacterHeader.TabVisible(Module.config, "tab", EQUIPMENT) then
+                return SelectTab(EQUIPMENT)
+            end
         elseif model.bySlot[index] then
             if Module.slot == index then index = nil end
             Module.slot = index
@@ -530,17 +531,14 @@ local function RefreshVisibleAppearance()
                 ReadHeaderExtras()
                 PaintHeader()
             end
-            if Module.kind == PLAYER then
-                if Module.customDefinition and CharacterTabs.Find(Module.config, Module.tab) ~= Module.customDefinition then
-                    SelectTab(Module.tab, true)
-                    return
-                end
-                if Module.tab == OVERVIEW and Module.fullStats ~= (Module.config.showFullStats ~= false) then
-                    SelectTab(OVERVIEW, true)
-                    return
-                end
-                SyncHeaderEvents()
+            local tab, config = Module.tab, Module.config
+            if not CharacterHeader.TabVisible(config, TAB_KIND[Module.kind], tab)
+                or Module.customDefinition and CharacterTabs.Find(config, tab) ~= Module.customDefinition
+                or Module.kind == PLAYER and tab == OVERVIEW and Module.fullStats ~= (config.showFullStats ~= false)
+                or Module.reputationKey ~= Pages.ReputationKey(tab, config, Module.custom) then
+                return SelectTab(tab, true)
             end
+            if Module.kind == PLAYER then SyncHeaderEvents() end
             PaintTabs()
             PaintContextAction()
         end
@@ -599,16 +597,17 @@ local function Open(kind, unit, guid, tab, nativeRoot, nativeTab)
     if not Module.ownGear then Module.ownGear = Gear.New() end
     if kind == INSPECT and not Module.inspectGear then Module.inspectGear = Gear.New() end
     local model = kind == PLAYER and Module.ownGear or Module.inspectGear
-    if reader then Gear.Read(reader, model, unit, guid, NS.Number(UnitLevel(unit)))
-    else model.missingLinks = true end
-    if kind == INSPECT and model.missingLinks then return false end
+    if kind == INSPECT then
+        Gear.Read(reader, model, unit, guid, NS.Number(UnitLevel(unit)))
+        if model.missingLinks then return false end
+    elseif not reader then model.missingLinks = true end
     if playerVisible then Close(true) end
     local view = AcquireView(nativeRoot)
     Module.view, Module.nativeTab = view, nativeTab
     Module.kind, Module.unit, Module.guid, Module.gear = kind, unit, guid, model
     if kind == PLAYER then
         WindowAction("prepare")
-        Gear.Durability(model)
+        Module.gearStale, Module.durabilityStale = true, true
     else
         Module.inspectGuild = NS.String(select(3, C_PaperDollInfo.GetInspectGuildInfo(unit)))
     end
@@ -628,12 +627,13 @@ local function OpenNativeCharacter()
     local root, tab, requested = Routing.TakeTabRequest()
     if not Module.running or not root or not NS.CanOpenCharacter() then return end
     if Module.kind == PLAYER and Module.nativeTab == tab and (not requested or Module.tab == requested) then return end
+    local destination = requested or (tab == OVERVIEW and CharacterHeader.HomeTab(Module.config, "tab") or tab)
     if Module.kind == PLAYER then
         Module.nativeTab = tab
-        return SelectTab(requested or tab)
+        return SelectTab(destination)
     end
     PrepareNativeLayout(root)
-    Open(PLAYER, "player", Identity("player") or "player", requested or tab, root, tab)
+    Open(PLAYER, "player", Identity("player") or "player", destination, root, tab)
 end
 local function NativeVisibilityChanged(root, requestedTab)
     if requestedTab and Module.tab ~= requestedTab then Module.nativeTab = nil end
@@ -655,9 +655,10 @@ local function NativeSizeChanged()
 end
 
 local function InspectInputMode(_, event, cvar)
-    if Module.kind ~= INSPECT then return end
+    if Module.kind ~= INSPECT and not Routing.HasBindingRoutes() then return end
     if event == "CVAR_UPDATE" and (NS.String(cvar) or ""):lower() ~= "gamepadenable" then return end
-    if Suite.GamepadUI() then Close() end
+    Routing.UpdateBindings()
+    if Module.kind == INSPECT and Suite.GamepadUI() then Close() end
 end
 
 local function HandoffInspect()
@@ -665,7 +666,7 @@ local function HandoffInspect()
     CancelInspect()
     Module.context:Cancel(CancelInspect)
     local frame = InspectFrame
-    if not Module.running or not guid or not NS.CanReplace() or not frame or not frame:IsShown() then return end
+    if not Module.running or not guid or not NS.CanReplace() or not frame:IsShown() then return end
     if NS.String(frame.unit) ~= unit or Identity(unit) ~= guid then return end
     if Open(INSPECT, unit, guid, OVERVIEW) then
         if Host.InCombat() then Close() return end
@@ -684,7 +685,7 @@ local function InspectRequested(unit)
     if not Module.running or Module.openingNativeInspect then return end
     CancelInspect()
     Module.inspectJob:Clear()
-    if not NS.CanReplace() or not InspectFrame then return end
+    if not NS.CanReplace() then return end
     unit = NS.String(unit)
     local guid = Identity(unit)
     if not guid or NS.String(InspectFrame.unit) ~= unit then return end
@@ -721,6 +722,7 @@ local function RepaintAfterCombat()
 end
 
 local function LeaveCombat(_, event)
+    Routing.UpdateBindings()
     local root = Routing.Shown()
     NativeVisibilityChanged(root)
     local hadReader = Module.reader
@@ -751,15 +753,15 @@ local function EnterCombat(_, event)
         SetEvents(SET_EVENTS, false)
         Module.dirtySets = nil
         PaintContextAction(event)
-        if Module.tab == OVERVIEW or Module.tab == EQUIPMENT or Module.custom then Paint(event) end
+        if Module.tab == OVERVIEW or Module.tab == EQUIPMENT or Module.tab == ATTRIBUTES or Module.custom then Paint(event) end
     end
 end
-
 function Module:Refresh()
     if self.config.mode ~= Mode.SUITE then
         if self.running then self:Disable() end
         return
     end
+    Routing.RefreshBindings(self.config, self.context)
     if self.running then
         if self.view and self.view.frame:IsShown() then self.appearanceJob:Request() end
         return
@@ -783,11 +785,9 @@ function Module:Refresh()
     PrepareNativeLayout(Routing.Root())
 end
 
-function Module:Enable()
-    self:Refresh()
-end
-
+Module.Enable = Module.Refresh
 function Module:Disable()
+    Routing.RefreshBindings(nil, self.context)
     self.running = nil
     Routing.Sync(nil)
     Close()

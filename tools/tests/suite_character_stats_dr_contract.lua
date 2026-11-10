@@ -1,5 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local skin = root .. "/MSUF_Suite_Skin/Adapters/"
+MSUFSuite = { Skin = {} }
 
 -- Blizzard's callback isolation: an error is reported and the caller goes on.
 local reported = {}
@@ -35,10 +36,28 @@ GameTooltip = {
 
 local locales = {}
 -- Safety reads issecretvalue at load; the cases below assign it later.
-dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
+local secretValue = dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
+local combatLocked, combatStarting = false, false
+local ratingPath = root .. "/MSUF_Suite/Core/CombatRating.lua"
+local function RatingCore(forever)
+    local core = {
+        Client = { isMainline = true, isForever = forever },
+        Public = function(value) return not secretValue(value) end,
+        Finite = function(value)
+            return not secretValue(value) and type(value) == "number" and value == value
+                and value > -math.huge and value < math.huge
+        end,
+        InCombat = function() return combatStarting or combatLocked end,
+        Dispatch = securecallfunction,
+        Skin = {},
+    }
+    assert(loadfile(ratingPath))("MSUF_Suite", core)
+    return core
+end
+local suiteCore = RatingCore(false)
 local NS = {
     Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
-    SuiteCore = function() return { Skin = {} } end,
+    SuiteCore = function() return suiteCore end,
     Registry = { AddListener = function() end },
     IsCombatLocked = function() return false end,
     RegisterLocale = function(locale, values) locales[locale] = values end,
@@ -78,7 +97,7 @@ assert(math.abs(crit.inDR - 50) < .1 and math.abs(crit.lostRating - 5) < .001,
 assert(stats.DRBadge(crit) == "(10% DR, +50)")
 assert(stats.DRBadge({ penalty = 20, inDR = 1240 }) == "(20% DR, +1.2k)")
 local afterDiscovery = curveCalls
-local mastery = stats.ReadRating(3, {})
+local mastery = suiteCore.ReadCharacterRating(3, {}, true)
 assert(math.abs(mastery.inDR - 110) < .1 and math.abs(mastery.lostRating - 12) < .001)
 assert(curveCalls - afterDiscovery < 8, "the first DR breakpoint was rediscovered for each stat")
 local haste = stats.ReadRating(2, {})
@@ -89,6 +108,45 @@ NS.L = German
 assert(stats.DRBadge(crit) == "(10% DR, +50)")
 assert(string.format(NS.L.STATS_DR_AMOUNT, crit.inDR, crit.lostRating):find("Wertung", 1, true))
 assert(stats.DRBadge({}) == "(DR ?)", "unknown data was rendered as verified zero DR")
+
+-- Rating remains available without DR, and on Forever no Retail curve may run.
+local beforeRead = curveCalls
+local foreverCore = RatingCore(true)
+local forever = foreverCore.ReadCharacterRating(1, {}, true)
+assert(forever.rating == 350 and forever.bonus == 34.5 and forever.penalty == nil)
+local ratingOnly = suiteCore.ReadCharacterRating(1, {}, false)
+assert(ratingOnly.rating == forever.rating and ratingOnly.bonus == forever.bonus and ratingOnly.penalty == nil)
+assert(curveCalls == beforeRead + 2, "a rating-only read evaluated the DR curve beyond the bonus getter")
+
+-- The same result buffer is reused. Combat starts before lockdown and must
+-- clear all cached values without touching any of the native rating getters.
+combatStarting = true
+suiteCore.ReadCharacterRating(1, crit, true)
+assert(next(crit) == nil and curveCalls == beforeRead + 2)
+combatStarting = false
+do
+    local strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+    local savedIsSecret, savedToNumber, savedToString = issecretvalue, tonumber, tostring
+    strict.Install()
+    strict.GUARD_NAMES.falsy.Finite = true
+    strict.GUARD_NAMES.falsy.Public = true
+    local source = debug.getinfo(suiteCore.ReadCharacterRating, "S").source:sub(2)
+    local stop = strict.Watch(source, { strict = true })
+    local secret = strict.New("number")
+    local savedRating, savedTimerunning = GetCombatRating, PlayerIsTimerunning
+    GetCombatRating = function() return secret end
+    local restricted = suiteCore.ReadCharacterRating(1, crit, true)
+    assert(restricted.rating == nil and restricted.bonus == 34.5 and restricted.penalty == nil)
+    GetCombatRating = savedRating
+    PlayerIsTimerunning = function() return secret end
+    suiteCore.ReadCharacterRating(1, crit, true)
+    assert(crit.rating == 350 and crit.penalty == nil)
+    PlayerIsTimerunning = savedTimerunning
+    assert(next(suiteCore.ReadCharacterRating(secret, crit, true)) == nil)
+    local violations = stop()
+    issecretvalue, tonumber, tostring = savedIsSecret, savedToNumber, savedToString
+    assert(#violations == 0, table.concat(violations, " | "))
+end
 
 local bonus = GetCombatRatingBonus
 GetCombatRatingBonus = function() return 999 end
@@ -113,10 +171,10 @@ C_CurveUtil = { EvaluateGameCurve = function()
     brokenCalls = brokenCalls + 1
     error("contract: unknown curve")
 end }
-local freshStats = Fresh("CharacterStats.lua").CharacterStats
+local freshCore = RatingCore(false)
 local before = #reported
-local firstRead, first = pcall(freshStats.ReadRating, 1, {})
-local secondRead, second = pcall(freshStats.ReadRating, 3, {})
+local firstRead, first = pcall(freshCore.ReadCharacterRating, 1, {}, true)
+local secondRead, second = pcall(freshCore.ReadCharacterRating, 3, {}, true)
 assert(firstRead and secondRead and first.rating == 350 and first.penalty == nil
     and second.penalty == nil, "a missing rating curve raised or produced DR data")
 assert(brokenCalls == 1 and #reported == before + 1,
@@ -126,7 +184,6 @@ C_CurveUtil = { EvaluateGameCurve = Curve }
 -- Widgets for the stat pane and the dossier: plain objects with the few
 -- methods the adapters call.
 local NOOP = function() end
-local combatLocked = false
 InCombatLockdown = function() return combatLocked end
 local NOOP_METHODS = {
     "SetSize", "SetPoint", "ClearAllPoints", "SetAllPoints", "EnableMouse", "SetFrameLevel",

@@ -60,7 +60,12 @@ Page.initializers[#Page.initializers + 1] = function()
                 end)
             end)
         end
-        return y - 61
+        y = y - 61
+        if command == "cast" or command == "cancelaura" or command:find("petautocast", 1, true) then
+            y = Page.RankButton(ui, key, function() return branch.value end,
+                command:find("petautocast", 1, true) and "pet" or "spell", y, width, ApplySpell)
+        end
+        return y
     end
 
 end
@@ -289,7 +294,11 @@ Page.initializers[#Page.initializers + 1] = function()
             table.remove(step.sequence, index)
             Page.Changed(true)
         end)
-        return y - (narrow and 92 or 63)
+        y = y - (narrow and 92 or 63)
+        return Page.RankButton(ui, key, function() return step.sequence[index] end, "any", y, width, function(value)
+            step.sequence[index] = value
+            Page.Changed(true)
+        end)
     end
 end
 

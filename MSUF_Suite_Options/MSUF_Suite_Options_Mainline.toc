@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
-## Version: 0.1.17-alpha
+## Version: 0.1.18-alpha
 ## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -37,9 +37,11 @@ Pages\Minimap.lua
 Pages\DamageMeter.lua
 Pages\Bags.lua
 Pages\CharacterPreviewContent.lua
+Pages\CharacterSourcePicker.lua
 Pages\CharacterCustomTabs.lua
 Pages\CharacterPreviewHandles.lua
 Pages\CharacterPanelEditor.lua
+Pages\CharacterPanelBindings.lua
 Pages\CharacterPanel.lua
 Pages\DataTextsWorkspace.lua
 Pages\DataTextsPreviewData.lua
@@ -71,6 +73,8 @@ Pages\Gameplay.lua
 Pages\QualityOfLifeOwners.lua
 Pages\QualityOfLifeCatalog.lua
 Pages\QualityOfLifeNavigation.lua
+Pages\NavigationPreview.lua
+Pages\Navigation.lua
 Pages\QualityOfLife.lua
 Pages\QualityOfLifeAccordions.lua
 Pages\HUDWorkspace.lua
@@ -100,7 +104,12 @@ Pages\NameplatesPreviewLayout.lua
 Pages\NameplatesEditor.lua
 Pages\NameplatesPreviewDecor.lua
 Pages\NameplatesPreview.lua
+Pages\NameplatesMultiPreview.lua
 Pages\NameplatesWorkspace.lua
+Pages\NameplatesAdvancedAuras.lua
+Pages\NameplatesExtensions.lua
+Pages\NameplatesProfiles.lua
+Pages\NameplatesHostOptions.lua
 Pages\Nameplates.lua
 Pages\NameplateFonts.lua
 Pages\CooldownManagerData.lua

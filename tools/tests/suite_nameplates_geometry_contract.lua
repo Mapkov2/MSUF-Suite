@@ -15,9 +15,10 @@ PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
 UnitIsGameObject = function(unit) assert(unit == "nameplate1"); return false end
 UnitIsFriend = function(_, unit) assert(unit == "nameplate1"); return false end
 UnitIsPlayer = function(unit) assert(unit == "nameplate1"); return false end
-local private = { NS = NS }
+local private = { NS = NS, Extensions = { OnAnchors = function() end } }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
+NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Geometry.lua"))("MSUF_Suite_Nameplates", private)

@@ -41,7 +41,6 @@ local function ReadNameplateCVar(key)
 end
 
 function IO.CaptureNameplateCVars()
-    if not C_CVar then return nil end
     local spec = Suite.SuiteCatalog[NAMEPLATES]
     local values = {}
     for key in pairs(spec.cvars) do values[key] = NativeValue(key, ReadNameplateCVar(key)) end
@@ -49,26 +48,279 @@ function IO.CaptureNameplateCVars()
     return next(values) and values or nil
 end
 
--- This payload transfers client settings once. Future edits in Blizzard's
--- Settings remain authoritative wherever the Suite chooses Keep.
-function IO.ApplyNameplateCVars(values)
-    if not values or not C_CVar or Suite.InCombat() then return end
-    local changes = {}
-    for key, value in pairs(values) do
-        local current = ReadNameplateCVar(key)
-        if current ~= nil and current ~= value
-            and (not NAMEPLATE_ARRAY_CVARS[key] or current:byte(1) == value:byte(1)) then
-            changes[key] = value
-        end
-    end
-    if not next(changes) then return end
+local function NativeEqual(left, right)
+    if not Suite.Public(left) then return false end
+    if left == right then return true end
+    local a, b = tonumber(left), tonumber(right)
+    return a ~= nil and b ~= nil and a == b
+end
 
+local function ResetNameplateBaseline()
     local runtime = Suite.Suite
     if runtime.RestoreSaved then runtime.RestoreSaved(NAMEPLATES) end
     local instance = runtime.instances[NAMEPLATES]
     if instance and instance.active then instance:ResetCVarBaseline() end
-    for key, value in pairs(changes) do C_CVar.SetCVar(key, value) end
-    runtime.Apply(NAMEPLATES)
+end
+
+local function WriteNameplateValues(values)
+    ResetNameplateBaseline()
+    local keys = {}
+    for key in pairs(values) do keys[#keys + 1] = key end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        local value = values[key]
+        if not NativeEqual(C_CVar.GetCVar(key), value) then
+            C_CVar.SetCVar(key, value)
+            if not NativeEqual(C_CVar.GetCVar(key), value) then
+                return false, "Blizzard rejected a nameplate setting", key
+            end
+        end
+    end
+    Suite.Suite.Apply(NAMEPLATES)
+    return true
+end
+
+-- Read back the native values before the skin reapplies its own overrides.
+-- A rejected setter and a raising setter both restore the previous baseline.
+function IO.ApplyNameplateCVars(values, transition)
+    if not values then return true end
+    if Suite.InCombat(transition) or Suite.IsCombatLocked() then return false, "Finish combat before importing" end
+    values = CleanNameplateCVars(values)
+    if not values then return true end
+    local changes = {}
+    local report = { applied = {}, skipped = {}, unchanged = 0 }
+    for key, value in pairs(values) do
+        local current = ReadNameplateCVar(key)
+        if current == nil then
+            report.skipped[key] = "Unavailable on this client"
+        elseif NAMEPLATE_ARRAY_CVARS[key] and current:byte(1) ~= value:byte(1) then
+            report.skipped[key] = "Different Blizzard setting version"
+        elseif not NativeEqual(current, value) then
+            changes[key] = value
+            report.applied[#report.applied + 1] = key
+        else
+            report.unchanged = report.unchanged + 1
+        end
+    end
+    table.sort(report.applied)
+    if not next(changes) then
+        IO.lastNameplateReport = report
+        return true, nil, report
+    end
+    local before = IO.CaptureNameplateCVars()
+    local ran, ok, reason, key = Suite.Dispatch(Suite.Finish, WriteNameplateValues, changes)
+    if not ran or not ok then
+        local restored, restoreOK = Suite.Dispatch(Suite.Finish, WriteNameplateValues, before or {})
+        report.failed, report.rollbackFailed = key, not restored or not restoreOK
+        IO.lastNameplateReport = report
+        if report.rollbackFailed then return false, "Nameplate restore failed; restore the previous settings", report end
+        return false, reason or "Nameplate settings could not be applied", report
+    end
+    IO.lastNameplateReport = report
+    return true, nil, report
+end
+
+function IO.ReportNameplateImport()
+    local report = IO.lastNameplateReport
+    if not report or report.reported then return end
+    report.reported = true
+    local lines = {}
+    for key, reason in pairs(report.skipped or {}) do lines[#lines + 1] = key .. " - " .. Suite.Text(reason) end
+    for _, reason in pairs(report.skippedShared or {}) do lines[#lines + 1] = Suite.Text(reason) end
+    table.sort(lines)
+    for _, line in ipairs(lines) do Suite.Dispatch(Suite.Print, line) end
+end
+
+function IO.NameplateSnapshot(stored)
+    local values = CleanNameplateCVars(stored) or {}
+    for key, value in pairs(IO.CaptureNameplateCVars() or {}) do values[key] = value end
+    return next(values) and values or nil
+end
+
+function IO.RememberNameplateCVars(profile, imported)
+    profile = profile or Suite.DB
+    if not profile then return end
+    local values = CleanNameplateCVars(profile.nameplateCVars) or {}
+    for key, value in pairs(CleanNameplateCVars(imported) or {}) do values[key] = value end
+    profile.nameplateCVars = IO.NameplateSnapshot(values)
+end
+
+function IO.DefaultNameplateCVars()
+    local values, spec = {}, Suite.SuiteCatalog[NAMEPLATES]
+    for key in pairs(spec.cvars) do
+        if NativeValue(key, C_CVar.GetCVar(key)) then values[key] = NativeValue(key, C_CVar.GetCVarDefault(key)) end
+    end
+    for key in pairs(spec.nativeProfileCVars) do
+        if NativeValue(key, C_CVar.GetCVar(key)) then values[key] = NativeValue(key, C_CVar.GetCVarDefault(key)) end
+    end
+    return values
+end
+
+function IO.CaptureNameplateShared(name)
+    name = name or Suite.Database.GetActiveProfileName()
+    local shared, _, snapshot = Suite.HostBridge.CaptureNameplateSettings(name)
+    local profile = Suite.Database.GetProfile(name)
+    local stored = Suite.NameplateHostSettings.Capture(profile and profile.nameplateShared)
+    if not shared and stored then shared = Suite.CopyValue(stored) end
+    if stored and stored.nameplates and next(stored.nameplates) and stored.nameplates.fontOverride ~= false
+        and not Suite.HostBridge.HasNameplateFontSettings() then
+        shared = shared or { version = 1 }
+        shared.nameplates = Suite.HostBridge.ResolveNameplateTypography(stored.nameplates, name)
+            or Suite.CopyValue(stored.nameplates)
+    end
+    return shared, snapshot
+end
+
+function IO.CaptureNameplateUndo()
+    local shared, exact = IO.CaptureNameplateShared()
+    if not exact then return shared end
+    if not Suite.HostBridge.HasNameplateFontSettings() then
+        local stored = Suite.NameplateHostSettings.Capture(Suite.DB and Suite.DB.nameplateShared)
+        exact.nameplates = stored and stored.nameplates or {}
+        local clear = {}
+        for _, path in ipairs(exact.clear or {}) do
+            if path:sub(1, 8) == "general." then clear[#clear + 1] = path end
+        end
+        exact.clear = clear
+        for _, key in ipairs(Suite.NameplateHostSettings.Keys("nameplates")) do
+            if exact.nameplates[key] == nil then exact.clear[#exact.clear + 1] = "nameplates." .. key end
+        end
+    end
+    return exact
+end
+
+function IO.MergeNameplateShared(stored, shared)
+    stored = Suite.NameplateHostSettings.Capture(stored) or { version = 1 }
+    local clear = {}
+    for _, path in ipairs(stored.clear or {}) do clear[path] = true end
+    for _, section in ipairs({ "general", "nameplates" }) do
+        if shared[section] then
+            stored[section] = stored[section] or {}
+            for key, value in pairs(shared[section]) do
+                stored[section][key] = Suite.CopyValue(value)
+                clear[section .. "." .. key] = nil
+            end
+        end
+    end
+    for _, path in ipairs(shared.clear or {}) do
+        local section, key = path:match("^(%a+)%.(%w+)$")
+        if stored[section] then stored[section][key] = nil end
+        clear[path] = true
+    end
+    stored.clear = {}
+    for path in pairs(clear) do stored.clear[#stored.clear + 1] = path end
+    table.sort(stored.clear)
+    if #stored.clear == 0 then stored.clear = nil end
+    return stored
+end
+
+function IO.ApplyNameplateShared(shared, transition)
+    if not shared then return true end
+    shared = Suite.NameplateHostSettings.Normalize(shared)
+    if not shared then return false, "Invalid nameplate settings" end
+    local sections = {}
+    for _, section in ipairs({ "general", "nameplates" }) do
+        if shared[section] then sections[section] = true end
+    end
+    for _, path in ipairs(shared.clear or {}) do sections[path:match("^(%a+)%.")] = true end
+    local pending = Suite.DB.nameplateSharedPending
+    pending = type(pending) == "table" and Suite.CopyValue(pending) or (pending and { general = true, nameplates = true } or {})
+    local ok, result = Suite.HostBridge.ApplyNameplateSettings(shared, transition)
+    if not ok and result == "unavailable" then
+        IO.lastNameplateReport = IO.lastNameplateReport or { applied = {}, skipped = {}, unchanged = 0 }
+        if sections.general then
+            IO.lastNameplateReport.skippedShared = { general = "Update MSUF Core to apply imported interrupt settings." }
+        end
+        for section in pairs(sections) do pending[section] = true end
+        ok = true
+    elseif ok then
+        for section in pairs(sections) do
+            pending[section] = section == "nameplates" and type(result) == "table" and result.fontFallback or nil
+        end
+    end
+    if not ok then return false, "Nameplate text or interrupt settings could not be applied" end
+    Suite.DB.nameplateSharedPending = next(pending) and pending or nil
+    Suite.DB.nameplateShared = IO.MergeNameplateShared(Suite.DB.nameplateShared, shared)
+    Suite.Suite.Apply(NAMEPLATES)
+    return true, result
+end
+
+function IO.ActivateNameplateCVars(profile, force, transition)
+    local settings = profile.suite and profile.suite.modules and profile.suite.modules[NAMEPLATES]
+    if not force and settings and settings.nativeProfileMode == 2 then return true end
+    return IO.ApplyNameplateCVars(profile.nameplateCVars, transition)
+end
+
+-- Only explicitly imported pending sections replay after the host gains a
+-- capability. Ordinary profile switches use the Core profile's own settings.
+function IO.ActivateNameplatePending(profile, transition)
+    local pending = profile.nameplateSharedPending
+    if not pending or not Suite.HostBridge.HasNameplateSettings() then return true end
+    local shared = Suite.NameplateHostSettings.Capture(profile.nameplateShared)
+    if not shared then return true end
+    local selected = {}
+    for _, section in ipairs({ "general", "nameplates" }) do
+        local ready = section == "general" or Suite.HostBridge.HasNameplateFontSettings()
+        selected[section] = ready and (type(pending) ~= "table" or pending[section])
+        if not selected[section] then shared[section] = nil end
+    end
+    local clear = {}
+    for _, path in ipairs(shared.clear or {}) do
+        if selected[path:match("^(%a+)%.")] then clear[#clear + 1] = path end
+    end
+    shared.clear = #clear > 0 and clear or nil
+    if not shared.general and not shared.nameplates and not shared.clear then return true end
+    return IO.ApplyNameplateShared(shared, transition)
+end
+
+function IO.ActivateNameplateProfile(profile, force, transition)
+    if not profile.nameplateSharedPending or not Suite.HostBridge.HasNameplateSettings() then
+        return IO.ActivateNameplateCVars(profile, force, transition)
+    end
+    local native, shared = IO.CaptureNameplateCVars(), IO.CaptureNameplateUndo()
+    local stored, pending = Suite.CopyValue(profile.nameplateShared), Suite.CopyValue(profile.nameplateSharedPending)
+    local ok, reason = IO.ActivateNameplateCVars(profile, force, transition)
+    if not ok then return false, reason end
+    local ran
+    ran, ok, reason = Suite.Dispatch(Suite.Finish, IO.ActivateNameplatePending, profile, transition)
+    if ran and ok then return true end
+    local hostRan, hostOK = Suite.Dispatch(Suite.Finish, Suite.HostBridge.ApplyNameplateSettings, shared, transition)
+    local nativeRan, nativeOK = Suite.Dispatch(Suite.Finish, IO.ApplyNameplateCVars, native, transition)
+    profile.nameplateShared, profile.nameplateSharedPending = stored, pending
+    if not hostRan or not hostOK or not nativeRan or not nativeOK then
+        return false, "Nameplate restore failed; restore the previous settings"
+    end
+    return false, reason or "Nameplate settings could not be applied"
+end
+
+local nameplateSaveFrame, pendingNameplateStartup
+function IO.StartNameplateProfile(transition)
+    local profile = Suite.DB
+    if not profile then return true end
+    if not nameplateSaveFrame then
+        nameplateSaveFrame = CreateFrame("Frame")
+        nameplateSaveFrame:RegisterEvent("PLAYER_LOGOUT")
+        nameplateSaveFrame:SetScript("OnEvent", function(_, event)
+            if event == "PLAYER_LOGOUT" then
+                -- A combat reload has not applied its stored baseline yet.
+                if pendingNameplateStartup ~= Suite.DB then IO.RememberNameplateCVars() end
+            elseif pendingNameplateStartup then
+                local ran, ok, reason = Suite.Dispatch(Suite.Finish, IO.StartNameplateProfile, event)
+                if not ran or not ok then Suite.Dispatch(Suite.Print, reason or "Nameplate settings could not be applied") end
+            end
+        end)
+    end
+    if Suite.InCombat(transition) or Suite.IsCombatLocked() then
+        pendingNameplateStartup = profile
+        nameplateSaveFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return true
+    end
+    local ok, reason = IO.ActivateNameplateProfile(profile, nil, transition)
+    if not ok then return false, reason end
+    pendingNameplateStartup = nil
+    nameplateSaveFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    IO.RememberNameplateCVars(profile)
+    return true
 end
 
 local LEGACY_MINIMAP_KEYS = { enabled = "specButton", showSpec = "specShowSpec", showLoot = "specShowLoot",
@@ -79,6 +331,10 @@ local LEGACY_MINIMAP_KEYS = { enabled = "specButton", showSpec = "specShowSpec",
 local function CodecAvailable()
     return type(_G.MSUF_EncodeCompactTable) == "function"
         and type(_G.MSUF_TryDecodeCompactString) == "function"
+end
+
+local function EncodeCompact(value)
+    return _G.MSUF_EncodeCompactTable(value, "MSUF3")
 end
 
 -- A copy keeps the migration state of its source, so one-time migrations
@@ -202,8 +458,10 @@ function IO.PrepareTable(profile, shared, keep)
     if type(data) ~= "table" or data.schema ~= 1 or type(data.modules) ~= "table" then
         return nil, "Unsupported suite profile"
     end
+    local hostSettings, sharedWhy = Suite.HostBridge.NormalizeNameplateSettings(profile.nameplateShared)
+    if sharedWhy then return nil, "Invalid nameplate text or interrupt settings" end
     local result = { suite = { schema = 1, modules = {} },
-        nameplateCVars = CleanNameplateCVars(profile.nameplateCVars) }
+        nameplateCVars = CleanNameplateCVars(profile.nameplateCVars), nameplateShared = hostSettings }
     -- Only a look the Suite knows; an unknown name (or a shared string of any
     -- length) never enters the profile.
     if type(data.globalLook) == "string" and Suite.SuiteLooks.indexes[data.globalLook] then
@@ -268,10 +526,11 @@ function IO.ExportProfile(name, options)
     if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
     local keep = KeptModules(clean, options)
     ResetPersonal(clean, keep)
-    if name == Suite.Database.GetActiveProfileName() then clean.nameplateCVars = IO.CaptureNameplateCVars() end
-    local encoded = _G.MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 1, profile = clean,
-        characterBound = keep }, "MSUF3")
-    if type(encoded) ~= "string" or #encoded > IO.maxBytes then return nil, "Suite profile is too large" end
+    if name == Suite.Database.GetActiveProfileName() then clean.nameplateCVars = IO.NameplateSnapshot(clean.nameplateCVars) end
+    clean.nameplateShared = IO.CaptureNameplateShared(name)
+    local encoded = EncodeCompact({ addon = "MSUF_Suite", format = 1, profile = clean,
+        characterBound = keep })
+    if type(encoded) ~= "string" or #IO.prefix + #encoded > IO.maxExportBytes then return nil, "Suite profile is too large" end
     return IO.prefix .. encoded
 end
 
@@ -289,11 +548,38 @@ function IO.ExportModule(id, options)
     if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
     local keep = KeptModules(clean, options)
     ResetPersonal(clean, keep)
-    local encoded = _G.MSUF_EncodeCompactTable({
+    local selected = id == NAMEPLATES and Suite.NameplateProfiles.Selection(options) or nil
+    local settings, native, shared = clean.suite.modules[id]
+    if id == NAMEPLATES then
+        settings = Suite.NameplateProfiles.FilterSettings(settings, selected)
+        native = (not selected or selected.blizzard) and IO.NameplateSnapshot(clean.nameplateCVars) or nil
+        shared = Suite.NameplateProfiles.FilterShared(IO.CaptureNameplateShared(), selected)
+    end
+    local encoded = EncodeCompact({
         addon = "MSUF_Suite", format = 2, module = id, revision = clean.suite.revision,
-        settings = clean.suite.modules[id], characterBound = keep and keep[id] or nil,
-        nameplateCVars = id == NAMEPLATES and IO.CaptureNameplateCVars() or nil,
-    }, "MSUF3")
+        settings = settings, characterBound = keep and keep[id] or nil,
+        nameplateCVars = native, nameplateShared = shared, nameplateSections = selected,
+    })
+    if type(encoded) ~= "string" or #IO.modulePrefix + #encoded > IO.maxExportBytes then
+        return nil, "Suite module profile is too large"
+    end
+    return IO.modulePrefix .. encoded
+end
+
+function IO.EncodeNameplateProfile(settings, native, shared, options)
+    if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
+    local selected = Suite.NameplateProfiles.Selection(options)
+    local profile, reason = IO.PrepareTable({ suite = { schema = 1,
+        revision = Suite.Suite.MigrationRevision, modules = { [NAMEPLATES] = settings } },
+        nameplateCVars = native, nameplateShared = shared }, false)
+    if not profile then return nil, reason end
+    local encoded = EncodeCompact({ addon = "MSUF_Suite", format = 2, module = NAMEPLATES,
+        revision = profile.suite.revision,
+        settings = Suite.NameplateProfiles.FilterSettings(profile.suite.modules[NAMEPLATES], selected),
+        nameplateCVars = (not selected or selected.blizzard) and profile.nameplateCVars or nil,
+        nameplateShared = Suite.NameplateProfiles.FilterShared(profile.nameplateShared, selected),
+        nameplateSections = selected,
+    })
     if type(encoded) ~= "string" or #IO.modulePrefix + #encoded > IO.maxExportBytes then
         return nil, "Suite module profile is too large"
     end
@@ -336,14 +622,29 @@ function IO.PrepareModuleProfile(text, preservePersonal)
     end
     -- Old Daily UI comforts exports carried both the interface and chat choices.
     if id == "dailyComfort" then
-        for _, rule in ipairs(Suite.SuiteCatalog.chatComfort.controls) do
-            if rule.key ~= "enabled" and envelope.settings[rule.key] ~= nil then
-                return id, settings, nil, clean.suite.modules.chatComfort
+        local chat = {}
+        for key, rule in pairs(Suite.SuiteCatalog.chatComfort.rules) do
+            if key ~= "enabled" and not rule.personal and envelope.settings[key] ~= nil then
+                chat[key] = clean.suite.modules.chatComfort[key]
             end
         end
+        if next(chat) then return id, settings, nil, chat end
     end
-    local native = id == NAMEPLATES and CleanNameplateCVars(envelope.nameplateCVars) or nil
-    return id, settings, nil, nil, native
+    local native, shared, selected
+    if id == NAMEPLATES then
+        native = CleanNameplateCVars(envelope.nameplateCVars)
+        local why
+        shared, why = Suite.HostBridge.NormalizeNameplateSettings(envelope.nameplateShared)
+        if why then return nil, nil, "Invalid nameplate text or interrupt settings" end
+        if envelope.nameplateSections ~= nil and type(envelope.nameplateSections) ~= "table" then
+            return nil, nil, "Invalid nameplate import selection"
+        end
+        selected = Suite.NameplateProfiles.Selection({ nameplateSections = envelope.nameplateSections })
+        settings = Suite.NameplateProfiles.FilterSettings(settings, selected)
+        shared = Suite.NameplateProfiles.FilterShared(shared, selected)
+        if selected and not selected.blizzard then native = nil end
+    end
+    return id, settings, nil, nil, native, shared, selected
 end
 
 function IO.PrepareProfile(text, shared)

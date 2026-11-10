@@ -51,6 +51,7 @@ local function CursorCategory(self)
 end
 
 local function TooltipHasLine(field, expected)
+    if not S.Public(expected) or expected == nil or expected == "" then return false end
     local data = C_TooltipInfo.GetUnit(UNIT)
     if not S.Public(data) or not data then return false end
     local lines = data.lines
@@ -74,8 +75,7 @@ local function SkinningCategory(self)
     local kind, private = CursorCategory(self)
     if private then return nil end
     if kind == "skinning" then return kind end
-    local label = UNIT_SKINNABLE_LEATHER
-    if label and TooltipHasLine("leftText", label) then return "skinning" end
+    if TooltipHasLine("leftText", UNIT_SKINNABLE_LEATHER) then return "skinning" end
 end
 
 local function Category(self)

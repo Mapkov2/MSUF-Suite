@@ -15,12 +15,14 @@ local function FontProvider(config)
 end
 
 function Text.UsesSharedFont(config)
-    return not not FontProvider(config)
+    return FontProvider(config) ~= nil or NS.NameplatePortableText.Stored() ~= nil
 end
 
 function Text.Shared(config)
+    if NS.NameplatePortableText.Stored() then return NS.NameplatePortableText.Resolve() end
     local resolve = FontProvider(config)
     if resolve then return resolve({}) end
+    return NS.NameplatePortableText.Resolve()
 end
 
 local SIZE_OVERRIDES = {
@@ -42,7 +44,9 @@ end
 function Text.Compile(config, prefix)
     local mode = MODES[config[prefix .. "NameFormat"] or 2] or MODE_FULL
     local provider = NS.HostBridge.NameFormatter()
-    local nativeScope = provider and provider.Nameplates ~= nil
+    local portable = NS.NameplatePortableText.Stored()
+    if portable then provider = NS.NameplatePortableText end
+    local nativeScope = provider and (provider.Nameplates ~= nil or portable ~= nil)
     local formatting = nativeScope or config.nameFormattingEnabled == true
     local formatter = formatting and provider or nil
     local color = not nativeScope and config[prefix .. "NameColorEnabled"] == true
@@ -58,7 +62,7 @@ function Text.Compile(config, prefix)
     return { enabled = formatting and formatter ~= nil,
         displayName = nativeScope and shared and shared.characterNameParts and provider.DisplayName,
         formatter = formatter, formatID = mode, max = maxChars, side = side, dots = dots,
-        customColor = color, r = r, g = g, b = b, shared = shared, colorPainter = shared and NS.HostBridge.NameFormatter() }
+        customColor = color, r = r, g = g, b = b, shared = shared, colorPainter = shared and provider }
 end
 
 function Text.Format(state, value, look)
@@ -118,6 +122,7 @@ function Text.FontStyle(config, prefix, shared)
         style.enabled, style.font, style.flags = true, shared.font, shared.fontFlags
         style.healthSize = prefix == "enemy" and Text.ResolveSize(config, "enemyHealthTextSize", shared) or shared.fontSize
         style.shadow, style.shadowAlpha = shared.fontShadow, shared.fontShadowAlpha
+        style.color = shared.textColor
         style.shadowX, style.shadowY = shared.fontShadowX, shared.fontShadowY
         style.shadowKey = tostring(shared.fontShadow) .. ":" .. shared.fontShadowAlpha
             .. ":" .. shared.fontShadowX .. ":" .. shared.fontShadowY

@@ -19,14 +19,18 @@ MSUFSuite = {
     HostBridge = { Menu2 = function() return {} end, ProfileWorkbench = function() end }, SuiteCatalog = {}, SuiteOrder = {},
     ProfileVariants = { BaseSettings = function() return Copy(suiteRoot.profiles.Default.suite) end,
         LiftOverlay = function() return false end, Register = function() end },
-    CopyValue = Copy, IsCombatLocked = function() return false end,
+    CopyValue = Copy, InCombat = function() return false end, IsCombatLocked = function() return false end,
+    Dispatch = function(callback, ...) return callback(...) end,
+    Finish = function(callback, ...) return true, callback(...) end,
     Skin = { enabled = true }, Registry = { AddListener = function() end },
     Suite = { Normalize = function() end, ApplyAll = function() end },
+    ProfileIO = { PrepareTable = function(value) return Copy(value) end,
+        CaptureNameplateCVars = function() return {} end, ApplyNameplateCVars = function() return true end,
+        NameplateSnapshot = function() return {} end, CaptureNameplateShared = function() end,
+        ApplyNameplateShared = function() return true end, RememberNameplateCVars = function() end,
+        ReportNameplateImport = function() end },
     OnProfileChanged = function() end,
 }
-assert(loadfile(root .. "/MSUF_Suite/Core/ProfileIO.lua"))("MSUF_Suite", MSUFSuite)
-MSUFSuite.ProfileIO.PrepareTable = Copy
-MSUFSuite.InCombat = MSUFSuite.IsCombatLocked
 MSUF2 = { Widgets = {}, Theme = {} }
 MapkoSkin = { addonName = "MSUF_Suite_Skin", Database = {
     GetRoot = function() return skinRoot end,

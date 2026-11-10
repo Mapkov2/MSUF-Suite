@@ -4,6 +4,7 @@ local Support = {}
 function Support.Run(harness, checks, cutoff)
     local f = assert(io.open(root .. "/tools/tests/" .. harness, "rb"))
     local code = f:read("*a"); f:close()
+    code = code:gsub("\r\n", "\n")
     if cutoff then code = code:sub(1, assert(code:find(cutoff, 1, true)) - 1) end
     local selected = os.getenv("BH3_CASE")
     local prefix = "function BH3(id, callback) if " .. string.format("%q", selected or "") .. " == '' or "

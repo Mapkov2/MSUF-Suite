@@ -27,6 +27,7 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
     "suite_trainer_learn_all_contract.lua": [[str(MSUF_MAIN / "tools/tests/classpower_secrets.lua")]],
+    "suite_bags_audit_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_editor_style_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_player_gear_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_category_scroll_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -55,6 +56,7 @@ EXTRA = {
     "suite_cdm_self_target_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_native_data_refresh_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_usability_runtime_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_cdm_empty_preview_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_glimmer_default_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_replacement_aura_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_menu_geometry_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
@@ -77,6 +79,7 @@ EXTRA = {
     "suite_gameplay_extension_contract.lua": [[flavor] for flavor in FLAVORS]
         + [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_qol_navigation_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_loot_roll_menu_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_qol_accordions_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
         for host in (MSUF_MAIN, MSUF_70)],
     "suite_xp_editor_contract.lua": [[flavor, str(host)] for flavor in FLAVORS

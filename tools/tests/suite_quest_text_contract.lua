@@ -270,4 +270,12 @@ assert(NS.DeepWindows.Apply("quest-test"))
 assert(gossipGreeting.color[1] == 0.84, "quest adapter did not activate GossipFrame text")
 assert(NS.DeepWindows.Disable("quest-test"))
 assert(gossipGreeting.color[1] == 0.21, "quest adapter did not restore GossipFrame text")
+local parentQueries = 0
+local getParent = QuestInfoDescriptionText.GetParent
+function QuestInfoDescriptionText:GetParent()
+    parentQueries = parentQueries + 1
+    return getParent(self)
+end
+for _ = 1, 100 do callbacks.QuestInfo_Display() end
+assert(parentQueries == 0, "disabled quest skin inspected native widget parents")
 print("suite quest text contract: OK")

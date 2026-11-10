@@ -3,6 +3,7 @@ local checks, combat, gamepad = 0, false, false
 local events, deferred, occupied = {}, {}, {}
 local module, watcher, escapeRegistered
 local nativeEscape, stackReads = false, 0
+local hiddenStack = {}
 local bagsOpen = true
 local config = {}
 local nativeAreaHook, nativeSpellWrite
@@ -154,12 +155,14 @@ local NS = {
     Client = { isForever = true },
     Safety = { IsForbidden = function(frame) return frame.forbidden end },
     InCombat = function(event) return event == "PLAYER_REGEN_DISABLED" or combat end,
-    Public = function() return true end,
+    Public = function(value) return value ~= hiddenStack end,
+    PublicText = function(value) return type(value) == "string" and value end,
     Dispatch = function(callback, ...) return callback(...) end,
 }
 local S = {
     Install = function(id, instance) assert(id == "parallelWindows"); module = instance end,
     Config = function() return config end,
+    GamepadUI = function() return InputUtil.IsGamepadUIEnabled() end,
 }
 local auction = Panel("AuctionHouseFrame", "doublewide")
 local quest = Panel("QuestLogPopupDetailFrame", "left")
@@ -233,6 +236,14 @@ Check(auction:IsShown() and quest:IsShown() and npcQuest:IsShown(), "independent
 Check(quest.point[4] ~= auction.point[4] and auction.raised and npcQuest.raised, "floating windows lack independent placement")
 Check(Escape(true) == "cast" and npcQuest:IsShown() and bagsOpen and stackReads == 0,
     "Escape interrupted native cast handling")
+local readStack = debugstack
+for _, read in ipairs({ function() return hiddenStack end, function() return nil end }) do
+    debugstack = read
+    CloseSpecialWindows()
+    Flush()
+    Check(npcQuest:IsShown() and auction:IsShown(), "unreadable stack closed a floating window")
+end
+debugstack = readStack
 CloseSpecialWindows()
 Flush()
 Check(npcQuest:IsShown() and auction:IsShown() and quest:IsShown(), "native panel cleanup closed a floating window")

@@ -1,11 +1,11 @@
 local _, NS = ...
 local Host, Suite, Text = NS.Host, NS.Suite, NS.Text
-local Gear, Pages, Model = NS.Gear, NS.Pages, Host.CharacterTabs
+local Gear, Pages, Model, Reputation = NS.Gear, NS.Pages, Host.CharacterTabs, NS.Reputation
 local Preview = {}
 Preview.__index = Preview
 Suite.CharacterPanelPreview = Preview
 
-local OWN, OVERVIEW, EQUIPMENT, COMPARE = "own", "overview", "gear", "compare"
+local OWN, OVERVIEW, EQUIPMENT, COMPARE, ATTRIBUTES, REPUTATION = "own", "overview", "gear", "compare", "attributes", "reputation"
 local MAX_HEIGHT = 426
 local NO_DATA = Text("No data available")
 
@@ -22,10 +22,11 @@ local reportSamples = {
     statistics = ReportSample("Statistics", "Quests", 84),
 }
 
-local function ReadBuiltIn(tab, groups)
-    Pages.Read(tab, groups)
+local function ReadBuiltIn(tab, groups, config)
+    Pages.Read(tab, groups, config)
     local sample = reportSamples[tab]
     if sample and (#groups == 0 or (#groups == 1 and groups[1].title == NO_DATA and #groups[1].rows == 0)) then
+        if tab == REPUTATION then Reputation.Sample(sample.rows[1], config) end
         groups[1] = sample
     end
 end
@@ -52,7 +53,7 @@ local function FillGear(preview)
     if preview.slot then Gear.Details(details, model, preview.slot, preview.mode ~= OWN) end
     if #details == 0 then
         if preview.mode == OWN then
-            if preview.tab == OVERVIEW then Pages.Overview(groups, preview.fullStats) end
+            if preview.tab == OVERVIEW then Pages.Overview(groups, preview.fullStats, preview.combat) end
             Pages.EquipmentSummary(groups, model)
         else
             local sample = preview.samples[preview.mode]
@@ -61,7 +62,8 @@ local function FillGear(preview)
             groups[1] = group
         end
     end
-    view:ShowGear(model.left, model.right, model.weapons, groups, preview.slot, details, preview.tab == OVERVIEW)
+    view:ShowGear(model.left, model.right, model.weapons, groups, preview.slot, details,
+        preview.tab == OVERVIEW, preview.combat)
 end
 
 local function PaintBody(preview)
@@ -73,6 +75,8 @@ local function PaintBody(preview)
     if tab == OVERVIEW or tab == EQUIPMENT then
         preview.gear[mode] = preview.gear[mode] or SampleGear(preview.samples[mode])
         FillGear(preview)
+    elseif tab == ATTRIBUTES then
+        view:ShowGroups(Pages.Overview(groups, true, preview.combat), preview.combat)
     else
         if tab == COMPARE then
             local ownGear = preview.gear[OWN] or SampleGear(preview.samples[OWN])
@@ -80,9 +84,9 @@ local function PaintBody(preview)
             preview.gear[OWN], preview.gear[mode] = ownGear, inspectGear
             Gear.Compare(groups, ownGear, inspectGear)
         elseif preview.definition then
-            Pages.Custom(groups, Pages.CustomPlan(preview.definition))
+            Pages.Custom(groups, Pages.CustomPlan(preview.definition), nil, nil, preview.config)
         else
-            ReadBuiltIn(tab, groups)
+            ReadBuiltIn(tab, groups, preview.config)
         end
         view:ShowGroups(groups)
     end
@@ -129,10 +133,14 @@ function Preview:Paint(config, mode, order, tab, overrides, width)
 
     local definition = mode == OWN and Model.Find(config, tab)
     local fullStats = config.showFullStats ~= false
+    local combat = mode == OWN and (tab == OVERVIEW or tab == ATTRIBUTES) and Host.InCombat()
+    local reputationKey = mode == OWN and Pages.ReputationKey(tab, config, definition and Pages.CustomPlan(definition))
     local switched = self.mode ~= mode or self.tab ~= tab
     if switched then self.slot = nil end
-    if switched or self.definition ~= definition or self.fullStats ~= fullStats or self.reopen then
-        self.mode, self.tab, self.definition, self.fullStats = mode, tab, definition, fullStats
+    if switched or self.definition ~= definition or self.fullStats ~= fullStats or self.combat ~= combat
+        or self.reputationKey ~= reputationKey or self.reopen then
+        self.mode, self.tab, self.definition, self.fullStats, self.combat = mode, tab, definition, fullStats, combat
+        self.config, self.reputationKey = config, reputationKey
         self.reopen = nil
         PaintBody(self)
     end

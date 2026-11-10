@@ -85,7 +85,11 @@ P.S.SetFont = function() end
 P.S.ResolveFont = function() end
 P.S.GlobalFontPath = function() return "Global.ttf" end
 P.S.BagsPaintPreviewSection = function() end
-P.S.BagsNewPreview = function() return { width = 700, model = {lineCount=2}, config = { inventoryColumns = 12 } } end
+P.S.BagsNewPreview = function()
+    return { width = 700, model = {lineCount=2}, config = { inventoryColumns = 12 },
+        items = { [1] = { icon = 134830, itemLevel = 450, count = 1, quality = 3 },
+            [15] = { icon = 134845, itemLevel = 500, count = 2, quality = 4 } } }
+end
 P.S.BagsPreviewIsPanel = function() return false end
 P.S.BagsFitPreviewRows = function() end
 P.S.BagsPreviewScale = function() return 1 end
@@ -112,6 +116,7 @@ Refresh(ctx)
 assert(paints == prior, "unchanged bag preview redrew its chrome")
 ui.selected = "bank"
 ui.refreshPreview()
+assert(preview.nativeBank.slots[15].icon.texture == 134845, "bank preview lost an item after an empty slot")
 preview.search.scripts.OnClick()
 assert(focused == "suite_bags_bank", "bank search opened inventory settings")
 preview.categories.scripts.OnClick()

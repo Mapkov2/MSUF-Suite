@@ -22,9 +22,9 @@ local function Stop(record)
     if record.arrowGroup then record.arrowGroup:Stop() end
 end
 
-local function StopState(state)
+local function StopState(state, keepArtwork)
     Ghost.Stop(state)
-    state.ghostGeneration = (state.ghostGeneration or 0) + 1
+    if not keepArtwork then state.ghostGeneration = (state.ghostGeneration or 0) + 1 end
     for _, record in pairs(state.records) do Stop(record) end
     wipe(state.previous)
     wipe(state.collapsed)
@@ -58,7 +58,11 @@ end
 
 local function CollectionScrolled(root)
     local state = AddonListMotion.scrollStates[root]
-    if state and state.active then StopState(state) OnLayout(state) end
+    if state and state.active then
+        -- A quest log scroll moves the viewport. Its separate pool update invalidates row artwork.
+        StopState(state, state.model == "quest")
+        OnLayout(state)
+    end
 end
 
 local function SafeRow(row)

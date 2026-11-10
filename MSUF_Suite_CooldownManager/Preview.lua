@@ -26,7 +26,7 @@ local SIM_STEP, SIM_LOOP, SIM_GAP, SIM_LENGTH, PROC_LEAD = 1, 10, 3, 6, 3
 
 ------------------------------------------------------------------ sample icons
 -- The first class spells of each family in Blizzard's order, unlearned ones
--- included; the question mark when the catalog has none.
+-- included; a neutral empty slot when the catalog has none.
 local samples = { {}, {} }
 local function Samples()
     local catalog = C.Catalog
@@ -39,14 +39,14 @@ local function Samples()
         local list = rec and samples[rec.family]
         if list and #list < 3 then
             local tex = catalog.RecordTexture(rec)
-            if tex then list[#list + 1] = tex end
+            if tex and tex ~= QUESTION then list[#list + 1] = tex end
         end
         if #a >= 3 and #b >= 3 then break end
     end
 end
 local function Sample(family, n)
     local list = samples[family]
-    return list and list[n] or QUESTION
+    return list and list[n] or "Interface\\Buttons\\UI-Quickslot2"
 end
 
 -- Resolve rebuilds placeholders with the question mark; this runs after
@@ -85,6 +85,12 @@ function Preview.SetMode(mode)
     C.state.preview = on
     if was == on then return false end
     C.Auras.SetPreview(on)
+    -- Remove empty live samples at once, even before the deferred rebuild.
+    if not on then
+        for slot, plan in pairs(C.plans) do
+            if plan.entries[1] and plan.entries[1].src == "p" then C.Layout.Hide(slot) end
+        end
+    end
     return true
 end
 
@@ -599,12 +605,12 @@ function Preview.ReleaseAll()
 end
 
 ------------------------------------------------------------------ live bar labels
--- A pooled outline follows each existing bar while its options are open.
--- Both the label and the rim select that bar; combat removes the overlays.
+-- Options outline each bar; Edit Mode explains empty bars without catching
+-- mover drags. Only options labels select a bar; combat removes the overlays.
 local labels, selectBar = {}, nil
 Preview.labels = labels
 local function LabelClick(self)
-    if selectBar and not NS.IsCombatLocked() then selectBar(self.slot) end
+    if Preview.mode == "options" and selectBar and not NS.IsCombatLocked() then selectBar(self.slot) end
 end
 local function NewLabel(bar)
     local frame = S.CreateFrame("Button", nil, bar.frame)
@@ -642,13 +648,16 @@ function Preview.HideLabels()
     end
 end
 function Preview.PaintLabels()
-    if Preview.mode ~= "options" or not selectBar or not C.M.active or C.state.inCombat or NS.IsCombatLocked() then
+    local options = Preview.mode == "options" and selectBar ~= nil
+    if not (options or Preview.mode == "edit") or not C.M.active or C.state.inCombat or NS.IsCombatLocked() then
         Preview.HideLabels()
         return
     end
     for _, slot in ipairs(NS.CDM.SLOTS) do
         local bar, view = C.bars[slot.key], C.views[slot.key]
-        local show = bar and bar.shown and view and view.on
+        local plan = C.plans[slot.key]
+        local empty = plan and plan.entries[1] and plan.entries[1].src == "p"
+        local show = bar and bar.shown and view and view.on and (options or empty)
         local frame = labels[slot.key]
         if show then
             if not frame then
@@ -657,6 +666,11 @@ function Preview.PaintLabels()
             end
             local name = view.name
             if not name or name == "" then name = NS.Text(slot.title) end
+            if empty then name = string.format(S.Text("%s - empty bar: add spells"), name) end
+            if frame.selectable ~= options then
+                frame:EnableMouse(options)
+                frame.selectable = options
+            end
             if frame.labelName ~= name or frame.labelTextGen ~= C.state.textGen then
                 S.SetStyledFont(frame.label, C.state.font, 12, C.state.fontFlags,
                     C.state.fontRendering, C.state.fontShadow, C.state.fontShadowOpacity, C.state.fontShadowDistance)

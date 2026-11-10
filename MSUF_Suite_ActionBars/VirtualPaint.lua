@@ -7,6 +7,8 @@ local BAR, VIS = AB.ENUM.BAR.INDEPENDENT, AB.ENUM.VISIBILITY
 local Virtual = {}
 AB.VirtualPaint = Virtual
 
+-- Blizzard_Transmog uses this spell for Show Equipped Gear on both clients.
+local SHOW_EQUIPPED_GEAR_SPELL_ID = 1247917
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local function Number(value)
@@ -79,7 +81,7 @@ local function Texture(action, spell)
         return icon
     elseif kind == "outfit" then
         if id == 0 then
-            return C_Spell.GetSpellTexture(Constants.TransmogOutfitDataConsts.CLEAR_TRANSMOG_OUTFIT_MANUAL_SPELL_ID)
+            return C_Spell.GetSpellTexture(SHOW_EQUIPPED_GEAR_SPELL_ID)
         end
         local info = C_TransmogOutfitInfo.GetOutfitInfo(id)
         if Public(info) and info then return info.icon end
@@ -301,7 +303,7 @@ function Virtual.Tooltip(rec)
         tooltip:SetEquipmentSet(id)
     elseif kind == "outfit" then
         if id == 0 then
-            tooltip:SetSpellByID(Constants.TransmogOutfitDataConsts.CLEAR_TRANSMOG_OUTFIT_MANUAL_SPELL_ID)
+            tooltip:SetSpellByID(SHOW_EQUIPPED_GEAR_SPELL_ID)
         else
             tooltip:SetOutfit(id)
         end

@@ -104,12 +104,14 @@ for _, forever in ipairs({ false, true }) do
         H.combat = true
         assert(not Suite.Installer.Apply(), "combat install was not refused")
         H.combat = false
+        local expectedOriginal = Suite.CopyValue(originalModules)
+        expectedOriginal.nameplateCVars = Suite.ProfileIO.NameplateSnapshot(originalModules.nameplateCVars)
         local ok, reason = Suite.Installer.Apply()
         assert(ok, tostring(reason))
         assert(Suite.RootDB.installation.profile == "modernDark")
         assert(MSUF_ActiveProfile == "Modern Dark" and Suite.Database.GetActiveProfileName() == "Modern Dark")
         assert(Equal(MSUF_GlobalDB.profiles.Default, originalFrames), "previous frame profile was overwritten")
-        assert(Equal(Suite.RootDB.profiles.Default, originalModules), "previous Suite profile was overwritten")
+        assert(Equal(Suite.RootDB.profiles.Default, expectedOriginal), "previous Suite profile was overwritten")
         local cd = Suite.DB.suite.modules.cooldownManager
         if not forever then
             assert(cd.listsData == "user-lists" and cd.spellsData == "user-spells", "personal cooldown lists were replaced")

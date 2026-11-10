@@ -1,21 +1,16 @@
 local _, NS = ...
 
--- Native player stats: wow-ui-source upstream/live 8ea15b61e45c0ed4eba01439c90757f86eb78d34,
--- CharacterFrame.xml, PaperDollFrame.lua, PlayerScript/CurveUtilDocumentation.lua.
--- Curve identity/units checked against SimulationCraft midnight sc_enums.hpp and
--- player_t::apply_combat_rating_dr. No copied implementation or fixed rating tables.
+-- Layout follows the Retail CharacterFrame and PaperDollFrame stats pane.
 local Stats = { views = setmetatable({}, { __mode = "k" }) }
 NS.CharacterStats = Stats
 
 -- Blizzard getters called with valid arguments; secret results read as nil.
 local Read = NS.AdapterKit.ReadValues
 
-local RATING_CURVE = 21024
 local MAX_STAT_ROWS = 64
 local categories = { "ItemLevelCategory", "AttributesCategory", "EnhancementsCategory" }
 local fontFields = { "Label", "Value" }
 local hosts = setmetatable({}, { __mode = "k" })
-local firstDRPoint
 
 local definitions = {
     { label = "STAT_CRITICAL_STRIKE", rating = "CR_CRIT_MELEE" },
@@ -61,82 +56,8 @@ local function CanStyle(target)
     return NS.Safety.Public(target) and NS.Safety.CanDecorate(target, not NS.IsCombatLocked())
 end
 
--- Diminishing returns ---------------------------------------------------------------------
-
--- C_CurveUtil.EvaluateGameCurve raises for a curve the client does not ship.
--- The rating curve is probed once as its own error boundary (the error is
--- reported, not swallowed) and an unusable curve is remembered, so the DR
--- details fail closed without raising on every refresh.
-local ratingCurve -- nil: not probed yet, false: unavailable, else the function
-
-local function ProbeCurve(curve)
-    curve(RATING_CURVE, 1)
-    return true
-end
-
-local function RatingCurve()
-    if ratingCurve == nil then
-        local curve = C_CurveUtil.EvaluateGameCurve
-        ratingCurve = NS.Safety.Dispatch(ProbeCurve, curve) == true and curve or false
-    end
-    return ratingCurve or nil
-end
-
--- Reuse one result per rating. DR describes the marginal return of the NEXT
--- rating point, not a blanket penalty on all existing rating or the total stat.
--- The first reduced segment is discovered from the native curve once rather
--- than assuming a threshold or rating conversion for every client version.
-local function FirstDRPoint(curve)
-    if firstDRPoint then return firstDRPoint end
-    local high = 200
-    local value = Number(Read(curve, RATING_CURVE, high))
-    if not value or high - value < .001 then return nil end
-    local low = 0
-    for _ = 1, 18 do
-        local middle = (low + high) / 2
-        value = Number(Read(curve, RATING_CURVE, middle))
-        if not value then return nil end
-        if middle - value > .00001 then high = middle else low = middle end
-    end
-    firstDRPoint = low
-    return firstDRPoint
-end
-
 function Stats.ReadRating(index, result)
-    result.rating, result.bonus, result.penalty, result.loss = nil, nil, nil, nil
-    result.inDR, result.lostRating = nil, nil
-    if NS.IsCombatLocked() or not index then return result end
-    local rating = Number(Read(GetCombatRating, index))
-    local bonus = Number(Read(GetCombatRatingBonus, index))
-    result.rating, result.bonus = rating, bonus
-    if not rating or not bonus or Read(PlayerIsTimerunning) == true then return result end
-    local perPoint = Number(Read(GetCombatRatingBonusForCombatRatingValue, index, 1))
-    if not perPoint or perPoint <= 0 then return result end
-    local curve = RatingCurve()
-    if not curve then return result end
-    local baseline = Number(Read(curve, RATING_CURVE, 1))
-    if not baseline or math.abs(baseline - 1) > .001 then return result end
-    local raw = rating * perPoint
-    local effective = Number(Read(curve, RATING_CURVE, raw))
-    local nextPoint = Number(Read(curve, RATING_CURVE, raw + perPoint))
-    -- Fail closed on unavailable curves, different units, unusual scaling or
-    -- stale client contracts. Mastery stays in rating-derived mastery POINTS.
-    if not effective or not nextPoint or effective > raw + .001
-        or math.abs(effective - bonus) > math.max(.02, bonus * .002)
-        or nextPoint < effective or nextPoint - effective > perPoint * 1.002 then
-        return result
-    end
-    result.penalty = math.max(0, math.min(100, 100 * (1 - (nextPoint - effective) / perPoint)))
-    if result.penalty < .05 then result.penalty = 0 end
-    result.loss = raw > 0 and math.max(0, 100 * (raw - effective) / raw) or 0
-    result.lostRating = math.max(0, (raw - effective) / perPoint)
-    if result.penalty == 0 then
-        result.inDR = 0
-    else
-        local onset = FirstDRPoint(curve)
-        if onset then result.inDR = math.max(0, rating - onset / perPoint) end
-    end
-    return result
+    return NS.SuiteCore().ReadCharacterRating(index, result, true)
 end
 
 function Stats.DRBadge(result)

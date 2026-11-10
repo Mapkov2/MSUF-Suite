@@ -11,9 +11,7 @@ local Number, min, max = NS.Number, math.min, math.max
 function Controls.CanBindUnit(unit)
     if not NS.Host.InCombat() then return true end
     if unit ~= "player" then return false end
-    local query = C_Secrets and C_Secrets.ShouldUnitIdentityBeSecret
-    if not query then return false end
-    local restricted = query(unit)
+    local restricted = C_Secrets.ShouldUnitIdentityBeSecret(unit)
     return NS.Public(restricted) and restricted == false
 end
 
@@ -58,7 +56,7 @@ end
 
 local function NativeZoom(amount)
     local camera = NativeCamera()
-    if camera and type(camera.OnMouseWheel) == "function" then camera:OnMouseWheel(amount) end
+    if camera then camera:OnMouseWheel(amount) end
 end
 
 local function StopDrag(model)

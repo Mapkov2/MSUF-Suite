@@ -101,8 +101,8 @@ local function TextStyleCatalog()
 end
 
 -- The help text of each settings section, read from the page's own file.
-local function HelpTexts()
-    local page = { Tr = function(text) return text end }
+local function HelpTexts(forever)
+    local page = { Tr = function(text) return text end, Suite = { Client = { isForever = forever } } }
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/QualityOfLifeHelp.lua"))("MSUF_Suite_Options", page)
     return setmetatable({}, { __index = function(_, key) return page.QoLHelpText(key) end })
 end
@@ -123,11 +123,25 @@ local function PageSections()
 end
 
 local function HelpCatalog()
-    local help, listed = HelpTexts(), PageSections()
+    local help, listed = HelpTexts(false), PageSections()
+    Check(help.trainer_all:find("before buying", 1, true) and HelpTexts(true).trainer_all:find("shortfall", 1, true),
+        "trainer help does not describe the action available on each client")
     local at = {}
     for index, file in ipairs(Support.TocFiles(root, "MSUF_Suite_Options")) do at[file] = index end
     Check(at["Pages/QualityOfLifeHelp.lua"] and at["Pages/QualityOfLifeHelp.lua"] < at["Pages/QualityOfLife.lua"],
         "the help loads after the page that asks for it")
+    local embedded = {}
+    local page = { Suite = Suite, catalog = catalog }
+    function page.RuleGrid(_, _, pageKey, id, rules, y, _, _, section)
+        Check(pageKey == "suite_qualityOfLife" and listed[section] == "dailyComfort", "embedded QoL host section")
+        for _, rule in ipairs(rules) do
+            Check(catalog[id].rules[rule.key] == rule, "embedded QoL rule identity")
+            embedded[rule] = section
+        end
+        return y, {}
+    end
+    assert(loadfile(root .. "/MSUF_Suite_Options/Pages/QualityOfLifeComfort.lua"))("MSUF_Suite_Options", page)
+    page.BuildQoLComfortActions({}, {}, "dailyComfort", "daily_comfort", 0, 500)
     local sections = 0
     for section, id in pairs(listed) do
         Check(#(help[section] or "") > 30, id .. " section " .. section .. " has no help text")
@@ -137,7 +151,7 @@ local function HelpCatalog()
     for _, id in ipairs(Suite.SuiteOrder) do
         local spec = catalog[id]
         for _, rule in ipairs(spec.controls) do
-            local section = spec.page == "suite_qualityOfLife" and rule.section
+            local section = spec.page == "suite_qualityOfLife" and (embedded[rule] or rule.section)
             Check(not section or listed[section], id .. " section " .. tostring(section) .. " is on no page")
         end
     end

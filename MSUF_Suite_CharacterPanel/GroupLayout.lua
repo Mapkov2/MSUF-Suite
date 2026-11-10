@@ -51,7 +51,7 @@ function Layout.FirstCard(list, offset)
     return (low - 1) * list.columns + 1
 end
 
-local CreateFrame = NS.Suite.CreateFrame
+local CreateFrame, CreateTexture = NS.Suite.CreateFrame, NS.Suite.CreateTexture
 local Number = NS.Number
 
 local function VerticalScroll(scroll, offset)
@@ -75,7 +75,7 @@ function Layout.NewList(view, parent, width, height, columns, paint, fixed)
         scroll:SetScrollChild(canvas)
     end
     local list = {
-        view = view, scroll = scroll, canvas = canvas, groups = {}, paint = paint,
+        view = view, parent = parent, scroll = scroll, canvas = canvas, groups = {}, paint = paint,
         columns = columns, height = height, width = width - 16, cards = {}, offsets = {}, heights = {},
     }
     if scroll then
@@ -83,6 +83,101 @@ function Layout.NewList(view, parent, width, height, columns, paint, fixed)
         scroll:HookScript("OnVerticalScroll", VerticalScroll)
     end
     return list
+end
+
+local BAR_INSET, BAR_BOTTOM = 10, 2
+
+function Layout.PositionValueText(row, lift)
+    if row.textLift == lift then return end
+    row.textLift = lift
+    row.left:SetPoint("LEFT", BAR_INSET, lift)
+    row.left:SetPoint("RIGHT", row, "CENTER", 18, lift)
+    row.right:SetPoint("LEFT", row, "CENTER", 20, lift)
+    row.right:SetPoint("RIGHT", -BAR_INSET, lift)
+end
+
+local function NewReputationBar(row)
+    local track = CreateTexture(row, nil, "ARTWORK", nil, -1)
+    track:SetPoint("BOTTOMLEFT", BAR_INSET, BAR_BOTTOM)
+    track:SetPoint("BOTTOMRIGHT", -BAR_INSET, BAR_BOTTOM)
+    track:SetColorTexture(0, 0, 0, .4)
+    local fill = CreateTexture(row, nil, "ARTWORK")
+    fill:SetPoint("BOTTOMLEFT", track, "BOTTOMLEFT", 0, 0)
+    fill:SetPoint("TOPLEFT", track, "TOPLEFT", 0, 0)
+    row.reputationTrack, row.reputationBar = track, fill
+    return track, fill
+end
+
+local function BarColor(view, reaction)
+    if view.reputationRed then return view.reputationRed, view.reputationGreen, view.reputationBlue end
+    local color = reaction and FACTION_BAR_COLORS[reaction]
+    if color then return color.r, color.g, color.b end
+    return unpack(view.reputationAccent)
+end
+
+function Layout.PaintReputationBar(row, progress, reaction)
+    local track, fill = row.reputationTrack, row.reputationBar
+    if progress == nil or row.panelWidth <= 2 * BAR_INSET then
+        if row.reputationProgress ~= nil then
+            track:Hide()
+            if fill.reputationShown then fill:Hide() end
+            fill.reputationShown, row.reputationProgress, row.reputationReaction = false, nil, nil
+            Layout.PositionValueText(row, 0)
+        end
+        return
+    end
+
+    local shown = row.reputationProgress ~= nil
+    row.reputationProgress, row.reputationReaction = progress, reaction
+    if not track then track, fill = NewReputationBar(row) end
+    local height = row.view.reputationHeight
+    if track.reputationHeight ~= height then
+        track.reputationHeight = height
+        track:SetHeight(height)
+    end
+    Layout.PositionValueText(row, (height + BAR_BOTTOM) / 2)
+    if not shown then track:Show() end
+
+    local filled = progress > 0
+    if fill.reputationShown ~= filled then
+        fill.reputationShown = filled
+        fill:SetShown(filled)
+    end
+    if not filled then return end
+    local width = (row.panelWidth - 2 * BAR_INSET) * progress
+    if fill.reputationWidth ~= width then
+        fill.reputationWidth = width
+        fill:SetWidth(width)
+    end
+    local r, g, b = BarColor(row.view, reaction)
+    if fill.reputationR ~= r or fill.reputationG ~= g or fill.reputationB ~= b then
+        fill.reputationR, fill.reputationG, fill.reputationB = r, g, b
+        fill:SetColorTexture(r, g, b, .9)
+    end
+end
+
+function Layout.SetReputationStyle(view, config, accent)
+    local height = min(8, max(2, config.reputationBarHeight or 3))
+    local hex = config.reputationBarColor or ""
+    if view.reputationHeight == height and view.reputationHex == hex and view.reputationAccent == accent then return end
+    view.reputationHeight, view.reputationHex, view.reputationAccent = height, hex, accent
+    if hex ~= "" then
+        view.reputationRed, view.reputationGreen, view.reputationBlue = NS.Suite.RGB(hex)
+    else
+        view.reputationRed, view.reputationGreen, view.reputationBlue = nil, nil, nil
+    end
+
+    local report = view.combatReport and view.combatReport.canvas.panelShown and view.combatReport or view.report
+    if not report then return end
+    for _, card in ipairs(report.cards) do
+        if not card.panelShown then break end
+        for _, row in ipairs(card.rows) do
+            if not row.panelShown then break end
+            if row.reputationProgress ~= nil then
+                Layout.PaintReputationBar(row, row.reputationProgress, row.reputationReaction)
+            end
+        end
+    end
 end
 
 function Layout.UpdateScroll(list, content, reset)

@@ -150,6 +150,14 @@ local function Build(ctx)
     })
     sections.style_presets = BuildStylePresets(ctx, b)
     P.MinimapSections.BuildMinimapSections(ctx, b, sections, HELP, SkinStatus(ctx))
+    P.RuleSection(ctx, b, PAGE, "navigation", "suite_minimap_navigation", Tr("Navigation & waypoints"), {}, {
+      extra = function(body, y, width)
+        P.Button(ctx, body, "Open navigation settings", 16, y, width - 32, function()
+            P.Suite.Menu.FocusQualityOfLifeModule("navigation")
+        end, nil, P.Meta(PAGE, "navigation", "action.open", "action", "suite_minimap_navigation"))
+        return y - 38
+      end,
+    })
     P.QoLOwners.Build(ctx, b, PAGE)
 end
 

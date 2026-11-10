@@ -292,7 +292,7 @@ do
     Suite.Client.IsAddOnLoaded = original
 end
 
--- The bank window rules are on the page's Bank organisation tab on Retail.
+-- Both clients can recolor the Suite bank. Retail also owns its stored window geometry.
 do
     local ctx = { key = "suite_bags", width = 720, refreshers = {}, widgets = {}, sections = {},
         pageItems = {}, entry = { sections = {} } }
@@ -302,7 +302,15 @@ do
     for _, section in ipairs(ctx.sections) do
         if section.sectionId == "suite_bags_bankWindow" then found = true end
     end
-    equal(found, not Suite.Client.isForever, "the Bank window section follows the client")
+    equal(found, true, "the Bank window section is available for its background")
+    local visible = P.SectionRules("bags", "bankWindow", function(rule) return not rule.hidden end)
+    local keys = {}
+    for _, rule in ipairs(visible) do keys[rule.key] = true end
+    equal(keys.bankBackground, true, "bank background is adjustable")
+    equal(#visible, Suite.Client.isForever and 1 or 5, "visible bank settings for this client")
+    for _, key in ipairs({ "bankWindowScale", "bankWindowMoved", "bankWindowX", "bankWindowY" }) do
+        equal(keys[key] == true, not Suite.Client.isForever, key .. " belongs to Retail's bank window")
+    end
 end
 
 ------------------------------------------------ greyed outside the Categories view

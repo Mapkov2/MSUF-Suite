@@ -103,6 +103,8 @@ B.Section(id, "tracking", "What to remind", {
     Bool("classBuff", "Remind me of my known class raid buff", true),
     Bool("groupBuff", "Remind me when others need my group buff", false),
     Bool("otherClassBuffs", "Remind me of missing buffs from classes in my group", false),
+    B.Tooltip(Bool("raidBuffOverview", "Show raid buff coverage", false),
+        "Shows buffed/total players for raid buffs supplied by classes in your group. Unreadable players are marked with ?. Updates outside combat."),
     Bool("petPassiveWarning", "Tell me when my pet is set to passive", false),
     Bool("healthstoneFromWarlock", "Healthstone check: none in my bags while a Warlock is grouped with me", false),
     Bool("soulstoneOnAlly", "Tell me while my Soulstone is on nobody in the group", false),

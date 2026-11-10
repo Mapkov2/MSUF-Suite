@@ -297,7 +297,7 @@ local function PaintNativeBank(ui, preview, c, native)
     end
     preview.nativeBank = preview.nativeBank or CreateNativeBank(ui, preview)
     preview.nativeBank.frame:Show()
-    for index, slot in ipairs(preview.nativeBank.slots) do PaintItem(slot, preview.snapshot.items[index], c, true, true) end
+    for index, slot in pairs(preview.nativeBank.slots) do PaintItem(slot, preview.snapshot.items[index], c, true, true) end
 end
 
 local function PaintCells(ui, preview, c, bank, layout, columns)

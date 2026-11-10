@@ -278,6 +278,8 @@ do
     grey.writes = 0
     Check(Yellow.TrackFrames(nodes, #nodes) == 1 and grey.writes == 1 and ShowsDesired(grey)
         and Yellow.directStates[grey] ~= nil, "a recycled row whose text Blizzard turned gold was not tinted")
+    for _ = 1, 100 do Yellow.TrackFrames(nodes, #nodes) end
+    Check(grey.writes == 1 and ShowsDesired(grey), "unchanged owned row text was written again")
     -- ... and back to its own colour: left alone, as before.
     grey:SetTextColor(0.5, 0.5, 0.5, 1)
     grey.writes = 0

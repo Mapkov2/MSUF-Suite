@@ -58,9 +58,8 @@ end
 local function Available(index)
     local style = STYLES[index]
     if not style then return 1 end
-    local getAtlasInfo = C_Texture and C_Texture.GetAtlasInfo
     for _, part in ipairs(style) do
-        if part.atlas and (not getAtlasInfo or not getAtlasInfo(part.atlas)) then return 1 end
+        if part.atlas and not C_Texture.GetAtlasInfo(part.atlas) then return 1 end
     end
     return index
 end

@@ -40,6 +40,12 @@ end
 local function Place(message)
     if not M.active then return end
     local mapID, x, y = Coordinates(message)
+    local named
+    if S.Navigation then
+        local current = WorldMapFrame:IsShown() and WorldMapFrame:GetMapID() or C_Map.GetBestMapForUnit("player")
+        named = S.Navigation.Parse(message, current)
+        if named then mapID, x, y = named.map, named.x * 100, named.y * 100 end
+    end
     if not x or x < 0 or x > 100 or y < 0 or y > 100 then
         S.Print(S.Text("Usage: /way x y or /way mapID x y"))
         return
@@ -53,6 +59,7 @@ local function Place(message)
     if not S.Public(allowed) or allowed ~= true then return Refuse() end
     local placed = C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(mapID, x / 100, y / 100))
     if not S.Public(placed) or placed ~= true then return Refuse() end
+    if named then S.Navigation.Remember(named, "manual") end
     if M.config.superTrack then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
     -- The world map is a panel of Blizzard's panel manager, which refuses the
     -- Suite's ToggleWorldMap in combat lockdown ("Interface action failed

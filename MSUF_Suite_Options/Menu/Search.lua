@@ -246,7 +246,7 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
     -- the page, so a color row leads to its section. Nameplate colors owned
     -- by Fonts retain the setting identity for the cross-page resolver.
     local settingKey = "msufsuite." .. spec.id .. "." .. rule.key
-    local movedColor = kind == "color" and spec.id == "nameplates" and P.NameplateFonts
+    local movedColor = kind == "color" and spec.id == "nameplates"
         and P.NameplateFonts.TargetForSetting(settingKey) ~= nil
     local exact = movedColor or kind ~= "color" and targetExact ~= false
     local controlId
