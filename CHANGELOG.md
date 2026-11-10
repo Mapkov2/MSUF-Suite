@@ -2,14 +2,19 @@
 
 ## 0.1.18 Alpha - 2026-11-10
 
+[Compare with 0.1.17](https://github.com/Mapkov2/MSUF-Suite/compare/v0.1.17-alpha...v0.1.18-alpha) · [CurseForge](https://www.curseforge.com/wow/addons/msuf-suite) · [Wago](https://addons.wago.io/addons/msuf-suite)
+
 ### Nameplates
 
-- Expand the native Blizzard nameplate skin with profiles, portable settings, aura displays, advanced customization and a multi-unit preview.
-- Add configurable text, resource displays, effects, sizing and layouts, with settings shared through compatible MSUF hosts.
+- The native Blizzard nameplate skin gains separate friendly and enemy aura layouts. Configure Buffs, Debuffs, three custom spell containers, and a dedicated Dots on Target display. Choose which spells to show and set each container's icon size, placement, spacing and growth direction. [Aura settings](https://github.com/Mapkov2/MSUF-Suite/blob/v0.1.18-alpha/MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua)
+- Set nameplate size, opacity and visibility by unit type and location. Add player identity icons, extra text, and separate raid-marker and cast-icon anchors. Preview multiple units while editing.
+- Customize interrupted-cast feedback, casting-name visibility, focus and casting scale, execute pulses and threat warnings. Set a spell range check, click area and friendly click-through, or anchor Blizzard class resources to the target plate. [Nameplate controls](https://github.com/Mapkov2/MSUF-Suite/blob/v0.1.18-alpha/MSUF_Suite/Core/Catalog/NameplateExtensions.lua)
+- Save and share nameplate profiles. Compatible MSUF hosts can also carry supported nameplate settings across imports and restore points.
 
 ### Navigation and quality of life
 
-- Introduce a navigation workspace for destinations, routes, map markers and optional guide sources. Improve waypoint selection, group finder locations and travel guidance.
+- The Navigation workspace brings together destinations, waypoints, saved routes, map markers and optional guide sources. Improve waypoint selection, Group Finder locations and travel guidance.
+- On WoW Forever, start **Turn-in route** from the XP Optimizer. It guides you to quests ready to hand in, starting with the nearest available destination, and advances after each turn-in. Stop the route at any time. [Quest routing](https://github.com/Mapkov2/MSUF-Suite/blob/v0.1.18-alpha/MSUF_Suite_QualityOfLife/NavigationRoutes.lua)
 - Add loot roll tools, a group buff overview and Mythic Keystone preparation checks.
 
 ### Character panel, bags and profiles
