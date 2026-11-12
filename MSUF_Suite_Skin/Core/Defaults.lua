@@ -290,6 +290,9 @@ NS.Defaults = {
             layoutX = -24,
             layoutY = 24,
             positionPreset = "bottomRight",
+            -- Off hides the whole frame around the bar (MicroMenu.lua); the
+            -- looks keep their background and border for when it comes back.
+            barFrame = true,
             barBackground = true,
             barBorder = 1,
             buttonBackground = true,

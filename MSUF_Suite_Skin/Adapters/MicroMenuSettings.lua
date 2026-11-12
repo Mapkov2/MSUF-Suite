@@ -191,6 +191,8 @@ local optionValidators = {
     positionPreset = function(value)
         return value == "custom" or NS.MicroMenuPositionPresets[value] ~= nil, value
     end,
+    -- Not a look key: a preset keeps the frame setting as it is.
+    barFrame = BooleanOption,
     barBackground = BooleanOption,
     barBorder = BorderOption,
     barMaterial = ListedOption("MicroMenuBarMaterials"),

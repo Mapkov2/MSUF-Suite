@@ -476,6 +476,24 @@ local function ApplyLayout(root, settings)
     return target, owned, false, false
 end
 
+-- Camelot's MicroMenu root has its own wide action-bar art. Its border
+-- extends past our compact owned shell, producing a second frame. With the
+-- bar frame off, that art goes in Blizzard's layout too (not while Blizzard
+-- overrides the menu: the skin stands back then). False when a step failed.
+local NATIVE_FRAME_ART = { "BorderArt", "BackgroundArt" }
+local function ApplyNativeFrame(root, settings, ownedTarget, overridden)
+    if not NS.Client.isForever or overridden
+        or settings.barFrame ~= false and not (ownedTarget and settings.iconStyle ~= "blizzard") then
+        return RestoreButtonAlphas(root)
+    end
+    local faded = true
+    for _, key in ipairs(NATIVE_FRAME_ART) do
+        local art = Field(root, key)
+        if art and not FadeExact(root, art) then faded = false end
+    end
+    return faded
+end
+
 local function ApplyResolved(root, owner, settings)
     local partial = false
     local currentButtons = setmetatable({}, { __mode = "k" })
@@ -507,20 +525,12 @@ local function ApplyResolved(root, owner, settings)
 
     local barTarget, ownedTarget, overridden, layoutPartial = ApplyLayout(root, settings)
     partial = partial or layoutPartial
-    -- Camelot's MicroMenu root has its own wide action-bar art. Its border
-    -- extends past our compact owned shell, producing a second frame.
-    if NS.Client.isForever and ownedTarget and settings.iconStyle ~= "blizzard" then
-        local borderArt = Field(root, "BorderArt")
-        local backgroundArt = Field(root, "BackgroundArt")
-        if borderArt then partial = not FadeExact(root, borderArt) or partial end
-        if backgroundArt then partial = not FadeExact(root, backgroundArt) or partial end
-    elseif not RestoreButtonAlphas(root) then
-        partial = true
-    end
+    if not ApplyNativeFrame(root, settings, ownedTarget, overridden) then partial = true end
+    local framed = settings.barFrame ~= false
     if overridden then
         if not RestoreSurface(root) then partial = true end
-    elseif not ApplySurface(barTarget, "microBar", settings.barBackground,
-        settings.barBorder, settings, true, ownedTarget) then
+    elseif not ApplySurface(barTarget, "microBar", framed and settings.barBackground,
+        framed and settings.barBorder or 0, settings, true, ownedTarget) then
         partial = true
     end
 

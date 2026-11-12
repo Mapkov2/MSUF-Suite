@@ -108,6 +108,8 @@ local ROWS = {
     { kind = "toggle", label = L["Skin the Blizzard Micro Bar"], essential = true,
         get = function() return NS.DB.skins.microMenu end,
         set = function(value) NS.Adapters.SetEnabled("microMenu", value) end },
+    { kind = "toggle", label = L["Micro Bar frame"], source = "micro", key = "barFrame",
+        essential = true, gate = "micro" },
 
     { kind = "heading", label = L["MSKIN-OWNED MICRO BAR"], essential = true },
     { kind = "segmented", label = L["Layout engine"], source = "micro", key = "layoutMode",
@@ -507,7 +509,9 @@ end
 
 local function PaintBar(view, settings, shape, radius)
     local role = BAR_ROLES[settings.barMaterial] or "microBar"
-    if UpdateSpec(view.barSpec, role, shape, radius, settings.barBorder, settings.barBackground == true) then
+    local framed = settings.barFrame ~= false
+    if UpdateSpec(view.barSpec, role, shape, radius, framed and settings.barBorder or 0,
+        framed and settings.barBackground == true) then
         NS.Surface.Attach(view.bar, view.barSpec)
     end
 end

@@ -398,6 +398,7 @@ NS.RegisterLocale("enUS", {
     ["Mouse-over effect"] = "Mouse-over effect",
     ["Verified item icon borders"] = "Verified item icon borders",
     ["MICRO BAR MATERIALS"] = "MICRO BAR MATERIALS",
+    ["Micro Bar frame"] = "Micro Bar frame",
     ["Bar background"] = "Bar background",
     ["Bar border"] = "Bar border",
     ["Bar material"] = "Bar material",

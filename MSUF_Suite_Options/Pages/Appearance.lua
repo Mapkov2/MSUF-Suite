@@ -49,6 +49,9 @@ local function MicroRows(skin)
                 Change(skin, "Micro Bar", "skins.microMenu",
                     function() return skin.Adapters.SetEnabled("microMenu", value) end)
             end),
+        Row("toggle", "Micro Bar frame", "icons.microMenu.barFrame", "micro",
+            function() return settings().barFrame ~= false end,
+            MicroOption(skin, "Micro Bar frame", "barFrame")),
         Row("dropdown", "Bar direction", "icons.microMenu.orientation", "micro",
             function() return settings().orientation end,
             MicroOption(skin, "Micro Bar direction", "orientation"), Values(skin.MicroMenuOrientations)),

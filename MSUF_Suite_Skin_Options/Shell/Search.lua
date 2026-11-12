@@ -65,6 +65,7 @@ local entries = {
     { "icons", L["Button style"], "window action close x add remove maximize minimize bare soft outline native button" },
     { "icons", L["Maximize / minimize symbols"], "window action close x plus minus chevrons glyph fine bold size offset opacity shape radius inset smaller" },
     { "icons", L["Skin the Blizzard Micro Bar"], "micro menu micromenu minimenu buttons hud" },
+    { "icons", L["Micro Bar frame"], "micro menu bar frame border background box art remove hide" },
     { "icons", L["Micro Bar style"], "forever modern compact glass preset" },
     { "icons", L["Icon colors"], "micro native theme class monochrome tint normal hover pressed disabled" },
     { "icons", L["Bar background"], "micro bar button plates surfaces backgrounds individual", EXPERT },

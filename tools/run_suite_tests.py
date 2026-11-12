@@ -96,6 +96,7 @@ EXTRA = {
     "suite_menu_lifecycle_budget_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_options_load_budget_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_minimap_sections_contract.lua": [[], ["Forever"]],
+    "suite_skin_micro_bar_frame_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_collapse_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_collapse_budget_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_motion_contract.lua": [[flavor] for flavor in FLAVORS],

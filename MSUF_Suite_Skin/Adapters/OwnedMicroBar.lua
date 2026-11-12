@@ -158,8 +158,9 @@ local function ApplyShell(root, settings, horizontal, scale)
     bar:SetSize(width + padding * 2 + portraitSpace, shellHeight)
     portrait:SetShown(portraitEnabled)
     portraitRing:SetShown(portraitEnabled)
-    topRule:SetShown(portraitEnabled)
-    bottomRule:SetShown(portraitEnabled)
+    -- The rules are part of the bar frame.
+    topRule:SetShown(portraitEnabled and settings.barFrame ~= false)
+    bottomRule:SetShown(portraitEnabled and settings.barFrame ~= false)
     if not portraitEnabled then return end
 
     portraitRing:SetTexture(barMaterial == "forever" and FOREVER_RING or MIDNIGHT_RING)

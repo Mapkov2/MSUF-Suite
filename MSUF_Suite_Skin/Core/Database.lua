@@ -597,6 +597,7 @@ local function NormalizeMicroMenu(microMenu)
         microMenu.positionPreset = defaults.positionPreset
     end
     microMenu.locked = microMenu.locked ~= false
+    microMenu.barFrame = microMenu.barFrame ~= false
     for _, condition in ipairs(NS.MicroMenuLoadConditions) do
         local key = condition[1]
         if type(microMenu[key]) ~= "boolean" then microMenu[key] = defaults[key] end
