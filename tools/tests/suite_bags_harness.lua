@@ -87,6 +87,21 @@ local function ItemButton(W, env, parent, index, button)
     return button
 end
 
+-- PortraitFrameFlatTemplate's X (UIPanelCloseButtonDefaultAnchors: 24 x 24 at
+-- TOPRIGHT 1, 0 on Retail, 28 x 28 at TOPRIGHT 0, 3 on WoW Forever's Camelot
+-- SharedUIPanelTemplates.lua; frameLevel 510). Its OnClick,
+-- ContainerFrame_OnCloseButtonClicked, closes the bag (CloseBag ->
+-- CloseBackpack_Combined for the combined bag).
+function H.CloseButton(env, frame)
+    local close = env.NewWidget("Button", nil, frame, true)
+    close:SetSize(env.forever and 28 or 24, env.forever and 28 or 24)
+    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", env.forever and 0 or 1, env.forever and 3 or 0)
+    close:SetFrameLevel(510)
+    close.mouse = true
+    close.scripts.OnClick = function(self) self:GetParent():Hide() end
+    return close
+end
+
 local function CombinedBag(W, env)
     local frame = env.NewWidget("Frame", "ContainerFrameCombinedBags", W.UIParent, true)
     frame.guarded = not W.unprotectedBags
@@ -105,6 +120,7 @@ local function CombinedBag(W, env)
         self.TitleContainer:SetPoint("TOPLEFT", self, "TOPLEFT", left, -1)
         self.TitleContainer:SetPoint("TOPRIGHT", self, "TOPRIGHT", right or -24, -1)
     end
+    frame.CloseButton = H.CloseButton(env, frame)
     frame.MoneyFrame = env.NewWidget("Frame", nil, frame, true)
     frame.MoneyFrame.height = 16
     frame.MoneyFrame:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 8)
@@ -172,6 +188,7 @@ local function ReagentBag(W, env)
     function frame.PortraitButton:IsMenuOpen() return false end
     frame.TitleContainer = env.NewWidget("Frame", nil, frame, true)
     function frame:SetTitleOffsets() end
+    frame.CloseButton = H.CloseButton(env, frame)
     frame.Items = {}
     function frame:EnumerateValidItems() return ipairs(self.Items) end
     function frame:UpdateItems() end
@@ -377,6 +394,12 @@ function H.BuildClient(W, env)
     W.NativeSort = env.NewWidget("Button", "BagItemAutoSortButton", W.CF, true)
     W.NativeSearch.mouse, W.NativeSort.mouse = true, true
     W.Reagent = ReagentBag(W, env)
+    -- MainMenuBarBackpackButton: BaseBagSlotButtonMixin:BagSlotOnClick runs
+    -- ToggleBag(0), which toggles the combined bag.
+    W.Backpack = env.NewWidget("Button", "MainMenuBarBackpackButton", W.UIParent, true)
+    W.Backpack.scripts.OnClick = function()
+        if W.CF.shown then W.CF:Hide() else W.OpenBags() end
+    end
     W.BankFrame = Bank(W, env)
     -- UpdateUIPanelPositions (Blizzard_UIParentPanelManager): a pass anchors the
     -- left panel, the bank, at the top left of the screen in its own scale. A
@@ -695,6 +718,8 @@ function H.New(root, options)
     function Widget:SetVertexColor(r, g, b) self.vertex = { r, g, b } end
     function Widget:SetDesaturated(value) self.desaturated = value end
     function Widget:SetTexCoord() end
+    function Widget:SetSnapToPixelGrid(value) self.snapToPixelGrid = value end
+    function Widget:SetTexelSnappingBias(value) self.texelSnappingBias = value end
     function Widget:SetText(text) self.text = text end
     function Widget:SetFormattedText(format, ...) self.text = format:format(...) end
     function Widget:GetText() return self.text end
@@ -931,6 +956,7 @@ function H.New(root, options)
     }
     function W.SecureClick(frame, mouseButton)
         mouseButton = mouseButton or "LeftButton"
+        if frame.scripts.PreClick then Insecure(frame.scripts.PreClick, frame, mouseButton) end
         W.Native(frame.scripts.OnClick, frame, mouseButton)
         if frame.scripts.PostClick then Insecure(frame.scripts.PostClick, frame, mouseButton) end
     end
@@ -1276,6 +1302,8 @@ function H.New(root, options)
         queued = 0 }
     NS.Suite = S
     _G.MSUFSuite = NS
+    assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", NS)
+    S.WindowCaption.PixelFactor = function() return nil end
     local configs = { bags = {}, dataTexts = { enabled = true, trackAltGold = options.trackAltGold == true } }
     for key, rule in pairs(NS.SuiteCatalog.bags.rules) do configs.bags[key] = rule.default end
     configs.bags.enabled = true

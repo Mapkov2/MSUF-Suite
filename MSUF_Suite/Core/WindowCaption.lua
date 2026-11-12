@@ -17,10 +17,10 @@ local WHITE = { 1, 1, 1, 1 }
 -- UI units per screen pixel at scale 1 (the client's PixelUtil).
 function Caption.PixelFactor() return PixelUtil.GetPixelToUIUnitFactor() end
 
--- One screen pixel in the button's own units.
+-- One screen pixel in the button's own units (one unit while either is unknown).
 local function Pixel(button)
     local factor, scale = Caption.PixelFactor(), button:GetEffectiveScale()
-    if not factor or factor <= 0 or not scale or scale <= 0 then return 1 end
+    if type(factor) ~= "number" or type(scale) ~= "number" or factor <= 0 or scale <= 0 then return 1 end
     return factor / scale
 end
 

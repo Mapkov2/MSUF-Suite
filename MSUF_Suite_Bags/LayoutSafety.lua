@@ -48,6 +48,12 @@ function Layout.Anchor(context, frame, point, relative, relativePoint, x, y)
     end
 end
 
+function Layout.Size(context, frame, width, height)
+    local set = NS.IsCombatLocked() and context.UnprotectedProperty or context.Property
+    set(context, frame, "GetWidth", "SetWidth", width)
+    set(context, frame, "GetHeight", "SetHeight", height)
+end
+
 function Layout.Position(context, frame, point, x, y)
     if NS.IsCombatLocked() then
         context:UnprotectedAnchor(frame, point, UIParent, point, x, y)

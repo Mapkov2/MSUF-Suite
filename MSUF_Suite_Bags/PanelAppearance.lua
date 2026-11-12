@@ -22,7 +22,7 @@ local function Extras(t)
     t.glow:SetSize(Presentation.RAIL + 148, 5)
     t.heading = S.CreateFontString(shell, nil, "OVERLAY")
     t.heading:SetPoint("TOPLEFT", Presentation.RAIL + 16, -16)
-    t.heading:SetPoint("TOPRIGHT", -176, -16)
+    t.heading:SetPoint("TOPRIGHT", -P.BagCaption.PANEL_TITLE, -16)
     t.heading:SetJustifyH("LEFT")
     t.heading:SetWordWrap(false)
 end

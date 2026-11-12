@@ -72,6 +72,20 @@ function Policy.CanChangeVisibility(state)
     return (not managed or not NS.IsCombatLocked()) and Policy.CanChangeGeometry(state.frame), managed
 end
 
+-- The profession window casts its open profession again as it shows, which
+-- only Blizzard's own path may do. Minimizing notes the open profession; the
+-- restore tab reopens it through the trade skill API, so Blizzard shows the
+-- window from its own event. The book page simply shows again.
+function Policy.NoteProfession(state)
+    local info = state.name == "ProfessionsFrame" and C_TradeSkillUI.GetBaseProfessionInfo()
+    local crafting = Safety.Read(Safety.Field(state.frame, "CraftingPage"), "IsShown") == true
+    state.profession = crafting and info and Safety.Public(info.professionID) and info.professionID or nil
+end
+
+function Policy.ReopenProfession(state)
+    return C_TradeSkillUI.OpenTradeSkill(state.profession) == true
+end
+
 -- Forever rebuilds native map overlays and pins when the player opens the
 -- map during an encounter. Leave that layout to Blizzard until combat ends.
 function Policy.DeferMapLayout(state)

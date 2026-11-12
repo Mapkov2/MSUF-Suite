@@ -345,6 +345,9 @@ local config = { windowScale=1, font="FancyFont", itemCountSize=12, inventoryCol
     inventoryView=1, bankView=1, showItemLevel=true, showBankItemLevel=true }
 local inherited, fancy = "Interface\\Fonts\\Global.ttf", "Interface\\Fonts\\Fancy.ttf"
 local S = { Config=function() return config end, BagsPaintPreviewWindow=function() end,
+    -- The Suite core's caption painter (MSUF_Suite/Core/WindowCaption.lua).
+    WindowCaption={ Dress=function(cell, kind) cell.caption={ kind=kind } end,
+        SetKind=function(cell, kind) cell.caption.kind=kind end },
     BagsStylePreviewLabel=function() end,
     BagsPreviewIsPanel=function() return false end,
     BagsFitPreviewRows=function() end,

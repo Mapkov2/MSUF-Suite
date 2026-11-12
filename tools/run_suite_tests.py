@@ -49,6 +49,7 @@ EXTRA = {
     "suite_bags_panel_companion_contract.lua": [[], ["Forever"]],
     "suite_bags_panel_contract.lua": [[], ["Forever"]],
     "suite_bags_menu_preview_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_bags_caption_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_chat_mover_popup_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_chat_screen_coordinates_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
         for host in (MSUF_MAIN, MSUF_70)],

@@ -485,6 +485,7 @@ local SUBMODULES = {
     { "StackSplitter", "Refresh", "Close" },                  -- split presets beside Blizzard's window
     { "SortDirection", "Refresh", "Restore" },                -- Blizzard's bag sorting direction
     { "BuybackSearch", "Refresh", "Disable" },                -- search the merchant buyback tab
+    { "BagCaption", "Refresh", "Release" },                   -- the windows' minimize, maximize and close
 }
 M.SUBMODULES = SUBMODULES
 local REFRESH, STOP = 2, 3

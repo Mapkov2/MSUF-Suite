@@ -200,7 +200,8 @@ local function OwnChrome(self, frame, textures)
         for point = 1, title:GetNumPoints() do points[point] = { title:GetPoint(point) } end
         textures.titlePoints = points
     end
-    frame:SetTitleOffsets(8)
+    -- The title ends before the window's caption (BagCaption.lua).
+    frame:SetTitleOffsets(8, -Private.BagCaption.Inset(textures.combined))
     if not textures.dragHandle then textures.dragHandle = NewDragHandle(frame) end
 end
 
@@ -224,7 +225,7 @@ function M:UpdatePresentation()
         t.dragHandle:ClearAllPoints()
         if panel then
             t.dragHandle:SetPoint("TOPLEFT", self.frame, "TOPLEFT", Private.BagPresentation.RAIL + 12, -8)
-            t.dragHandle:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", -176, -46)
+            t.dragHandle:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", -Private.BagCaption.PANEL_TITLE, -46)
         else
             t.dragHandle:SetAllPoints(title)
         end
@@ -243,6 +244,7 @@ function M:StyleWindows()
     for frame, textures in pairs(self.windows) do
         SetSkinShown(textures, true)
         OwnChrome(self, frame, textures)
+        Private.BagCaption.Attach(self, frame, textures)
         if textures.dragHandle then textures.dragHandle:SetShown(not S.editMode) end
         PaintWindow(textures, self.config)
         textures.presentation = nil
@@ -441,6 +443,7 @@ function M:ApplyWindowLayout()
             Layout.Position(self.context, reagent, "BOTTOMRIGHT", c.reagentWindowX, c.reagentWindowY)
         end
     end
+    Private.BagCaption.Moved()
 end
 
 -- Blizzard's anchor pass (UpdateContainerFrameAnchors) reads the open bags

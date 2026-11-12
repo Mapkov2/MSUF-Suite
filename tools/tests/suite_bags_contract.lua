@@ -355,6 +355,12 @@ for _, entry in ipairs(module.SUBMODULES) do
     end
     bagsPrivate[entry[1]] = methods
 end
+-- The windows' caption (BagCaption.lua, its own contract) is a sub-module too;
+-- the bag windows ask it for its room and hand it their windows.
+local caption = bagsPrivate.BagCaption
+caption.Inset = function(combined) return combined and 91 or 31 end
+caption.PANEL_TOOLS, caption.PANEL_TITLE = 99, 231
+caption.Attach, caption.Moved = function() end, function() end
 -- BAG_UPDATE(bag) reaches the shared slot cache before Blizzard's UpdateItems.
 local function BagChanged()
     local cache = bagsPrivate.SlotCache
@@ -372,7 +378,7 @@ for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
         NS = state, Suite = S, BagsModule = module, BagResize={active=false}, BagWindowMotion={active=false}, ItemLoads = bagsPrivate.ItemLoads,
         BagLayout = bagsPrivate.BagLayout, InventoryView = bagsPrivate.InventoryView, BagPresentation = bagsPrivate.BagPresentation, BagAppearance = bagsPrivate.BagAppearance, BagMotion = bagsPrivate.BagMotion,
         BagPanelAppearance = bagsPrivate.BagPanelAppearance,
-        ChildFrame = bagsPrivate.ChildFrame, BankWindow = { mover = {} },
+        ChildFrame = bagsPrivate.ChildFrame, BankWindow = { mover = {} }, BagCaption = caption,
     })
 end
 assert(module and #fonts == 0 and #textures == 0 and not next(hooks) and infoCalls == 0,
@@ -453,9 +459,10 @@ module:Enable()
 assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or hooks missing")
 -- The explicit sub-module list replaces the files' post-hooks on the module.
 local REFRESH_ORDER = { "PlayerGear.Refresh", "UpgradeMarker.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
-    "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh", "BuybackSearch.Refresh" }
+    "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh", "BuybackSearch.Refresh", "BagCaption.Refresh" }
 local STOP_ORDER = { "PlayerGear.Disable", "UpgradeMarker.Disable", "PhysicalSort.Stop", "InventoryView.Disable", "BankInventory.Disable",
-    "BankWindow.Disable", "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore", "BuybackSearch.Disable" }
+    "BankWindow.Disable", "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore", "BuybackSearch.Disable",
+    "BagCaption.Release" }
 local function Ran(order)
     if #submoduleCalls ~= #order then return false end
     for i = 1, #order do if submoduleCalls[i] ~= order[i] then return false end end

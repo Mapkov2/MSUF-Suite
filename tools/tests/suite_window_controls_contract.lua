@@ -638,7 +638,7 @@ do
         Check(controls.grip:GetFrameLevel() > panel.NineSlice:GetFrameLevel()
             and controls.titleDrag:GetFrameLevel() > panel.NineSlice:GetFrameLevel(),
             name .. " controls stayed beneath native portrait chrome/content")
-        Check(not controls.minimize, name .. " gained a custom minimize that can end native interactions")
+        Check(not controls.minimize, name .. " gained a minimize without its X")
         if name == "ProfessionsFrame" then
             -- Native Create button: width80, height28, BOTTOMRIGHT(-9,+7)
             -- or y13 when minimized. Calculate the grip's actual rectangle.
@@ -1009,6 +1009,37 @@ do
         "releasing the map left Blizzard's caption art or its socket faded")
     NS.WindowActionSkin = actions
     UIPanelWindows.WorldMapFrame = nil
+end
+
+-- Forever's profession window gets our minimize too. It casts its open
+-- profession again as it shows, which our restore tab may not do: the tab
+-- reopens that profession through the trade skill API (Blizzard shows the
+-- window from its own event); the book page just shows again.
+do
+    local opened = {}
+    C_TradeSkillUI = {
+        GetBaseProfessionInfo = function() return { professionID = 164 } end,
+        OpenTradeSkill = function(skillLine) opened[#opened + 1] = skillLine return true end,
+    }
+    local professions = Frame("ProfessionsFrame", UIParent)
+    local close = Frame(nil, professions, "Button")
+    professions.CloseButton, professions.CraftingPage = close, Frame(nil, professions)
+    close.left, close.top, close.width, close.height = 676, 800, 24, 24
+    local state = NS.WindowControls.Attach(professions, "professions") and NS.WindowControls.states[professions]
+    Check(state and state.minimize and state.minimize.shown, "the profession window has no minimize")
+    state.minimize.scripts.OnClick(state.minimize)
+    Check(not professions.shown and state.restore.shown, "minimize left the profession window open")
+    state.restore.scripts.OnClick(state.restore, "LeftButton")
+    Check(opened[1] == 164 and not professions.shown, "the profession was shown outside Blizzard's own path")
+    professions:Show()
+    Check(not state.restore.shown and not state.minimized, "the reopened profession kept its restore tab")
+    professions.CraftingPage:Hide()
+    state.minimize.scripts.OnClick(state.minimize)
+    state.restore.scripts.OnClick(state.restore, "LeftButton")
+    Check(professions.shown and #opened == 1 and not state.restore.shown, "the profession book did not come back")
+    professions:Hide()
+    NS.WindowControls.DisableOwner("professions")
+    C_TradeSkillUI = nil
 end
 
 -- The caption is drawn once, when the window is attached, closed windows

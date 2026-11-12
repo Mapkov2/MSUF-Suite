@@ -257,10 +257,12 @@ local function PanelControls(g)
         button.bagRail = true
         Place(button, frame, "TOPLEFT", 8, -100 - (mode - 1) * 34, 96, 28)
     end
-    Place(view.equipped, frame, "TOPRIGHT", -44, -16, 24, 24)
-    Place(view.cleanup, frame, "TOPRIGHT", -76, -16, 24, 24)
-    Place(view.manage, frame, "TOPRIGHT", -108, -16, 24, 24)
-    Place(view.clearRecent, frame, "TOPRIGHT", -140, -16, 24, 24)
+    -- Left of the window's caption (BagCaption.lua).
+    local right = P.BagCaption.PANEL_TOOLS
+    Place(view.equipped, frame, "TOPRIGHT", -right, -16, 24, 24)
+    Place(view.cleanup, frame, "TOPRIGHT", -right - 32, -16, 24, 24)
+    Place(view.manage, frame, "TOPRIGHT", -right - 64, -16, 24, 24)
+    Place(view.clearRecent, frame, "TOPRIGHT", -right - 96, -16, 24, 24)
     view.free:ClearAllPoints()
     view.free:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 12)
     view.free:SetSize(96, 32)

@@ -26,7 +26,7 @@ local GRIP_LEVEL_OFFSET = 20
 
 -- Only persistent, player-opened windows get a restore tab (closing an NPC panel ends it).
 local minimizablePanels = {
-    CharacterFrame = true, FriendsFrame = true, PVEFrame = true, PVPUIFrame = true, ProfessionsBookFrame = true,
+    CharacterFrame = true, FriendsFrame = true, PVEFrame = true, PVPUIFrame = true, ProfessionsBookFrame = true, ProfessionsFrame = true,
     CollectionsJournal = true, EncounterJournal = true, SettingsPanel = true, AddonList = true, CommunitiesFrame = true,
     LFGParentFrame = true, LegacySystemFrame = true, PlayerSpellsFrame = true, WorldMapFrame = true, AchievementFrame = true,
     QuestLogFrame = true, MacroFrame = true, CalendarFrame = true, InspectFrame = true, DressUpFrame = true, HelpFrame = true,
@@ -241,6 +241,7 @@ local function Restore(state)
     if not state or not state.minimized then return false end
     local allowed, managed = Policy.CanChangeVisibility(state)
     if not allowed then return false end
+    if state.profession then return Policy.ReopenProfession(state) end
     if managed and not NS.Client.IsGamepadUI() then
         ShowUIPanel(state.frame)
     else
@@ -280,6 +281,7 @@ local function Minimize(state)
         state.restore:SetPoint("TOP", UIParent, "TOP", 0, -80)
     end
     state.restoreLabel:SetText(Chrome.Title(state) .. "  +")
+    Policy.NoteProfession(state)
     state.minimized = true
     if managed then
         HideUIPanel(frame)

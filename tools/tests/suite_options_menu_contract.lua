@@ -756,6 +756,8 @@ C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = 
 issecretvalue = function(value) return actionPreview.secret ~= nil and rawequal(value, actionPreview.secret) end
 Minimap = { SetMaskTexture = function() end }
 C_EventUtils = { IsEventValid = function() return true end }
+-- The client's pixel helper (the caption painter, MSUF_Suite/Core/WindowCaption.lua).
+PixelUtil = PixelUtil or { GetPixelToUIUnitFactor = function() return 1 end }
 
 -- Boot the suite core as the client would, then attach the menu.
 LoadTOC("MSUF_Suite", {})

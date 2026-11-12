@@ -226,6 +226,9 @@ do
         backgroundOpacity = 50, accentColor = "ff8800" }
     local painted
     local S = { Config = function() return config end,
+        -- The Suite core's caption painter (MSUF_Suite/Core/WindowCaption.lua).
+        WindowCaption = { Dress = function(cell, kind) cell.caption = { kind = kind } end,
+            SetKind = function(cell, kind) cell.caption.kind = kind end },
         SetFont = function() end, ResolveFont = function() end, GlobalFontPath = function() return "Global.ttf" end,
         BagsNewPreview = function() return { width = 700, items = {}, model = {lineCount=2}, config = { inventoryColumns = 12 } } end,
         BagsPreviewLayout = function() return {} end,

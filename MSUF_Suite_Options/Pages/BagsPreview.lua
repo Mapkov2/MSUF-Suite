@@ -73,6 +73,34 @@ local function Chrome(window, width)
     return t
 end
 
+-- The bag window's Windows caption (MSUF_Suite_Bags/BagCaption.lua), drawn
+-- only: minimize, maximize and close cells in the top right corner. Maximize
+-- stands for the side panel's full screen height.
+local CAPTION_TEXT, CAPTION_MUTED = { .94, .95, .98, 1 }, { .45, .48, .53, 1 }
+local function Caption(content)
+    local cells = {}
+    for index, kind in ipairs({ "close", "maximize", "minimize" }) do
+        local cell = CreateFrame("Frame", nil, content)
+        cell:SetSize(30, 24)
+        cell:SetPoint("TOPRIGHT", content, "TOPRIGHT", 1 - index * 30, -1)
+        S.WindowCaption.Dress(cell, kind, function()
+            local color = cell.previewMuted and CAPTION_MUTED or CAPTION_TEXT
+            return color[1], color[2], color[3], color[4]
+        end)
+        cell:EnableMouse(false)
+        cells[index] = cell
+    end
+    return cells
+end
+
+local function PaintCaption(preview, c, bank)
+    local panel = not bank and S.BagsPreviewIsPanel(c)
+    local maximize = preview.caption[2]
+    maximize.previewMuted = not panel
+    S.WindowCaption.SetKind(maximize, panel and c.panelFullHeight and "restore" or "maximize")
+    for _, cell in ipairs(preview.caption) do cell:SetShown(not bank) end
+end
+
 local function Slot(preview, ui, parent)
     local slot = K.Button(parent or preview.content, 0, 0, 36, 36, function() ui:Focus("suite_bags_itemLevels") end)
     GuideTarget(preview, slot)
@@ -205,10 +233,11 @@ local function PlaceControls(preview, c, bank, width, native)
         button:SetShown(suite)
     end
     preview.equipped:SetShown(suite)
+    -- The side panel's tools end 8 left of the caption (BagCaption.lua PANEL_TOOLS).
     PlaceTool(preview.equipped, "Equipped bags", "Interface\\Icons\\INV_Misc_Bag_08", nil,
-        g.panel, g.panel and -44 or -12, g.panel and -16 or -62, g.panel and 24 or 116)
+        g.panel, g.panel and -99 or -12, g.panel and -16 or -62, g.panel and 24 or 116)
     PlaceTool(preview.cleanup, bank and "Manage bank tabs" or "Clean up bags", nil, "bags-button-autosort-up",
-        g.panel, g.panel and -76 or (bank and -12 or -156), g.panel and -16 or -328, g.panel and 24 or (bank and 160 or 108))
+        g.panel, g.panel and -131 or (bank and -12 or -156), g.panel and -16 or -328, g.panel and 24 or (bank and 160 or 108))
     local showSession = g.panel and c.showSessionGold
     preview.session:SetShown(showSession)
     preview.sessionJump:SetShown(showSession)
@@ -351,6 +380,7 @@ local function Paint(ui, preview)
     local native = bank and c.bankView == BANK_VIEW.TABS
     preview.chrome.combined = not bank
     S.BagsPaintPreviewWindow(preview.chrome, bank and BankLook(preview.bankLook, c) or c)
+    PaintCaption(preview, c, bank)
     preview.chrome[3]:SetHeight(native and 22 or 62)
     local title = bank and P.catalog.bags.rules.bankView.choices[c.bankView] or "Bags"
     P.SetTranslatedText(preview.title, native and (BANK or Tr("Bank")) or Tr(title))
@@ -393,6 +423,7 @@ function P.BuildBagsMenuPreview(ui)
         RefreshGuide(preview)
     end)
     preview.chrome = Chrome(content, 620)
+    preview.caption = Caption(content)
     preview.title = K.Text(content, "Bags", 12, -10, 400)
     local function FocusOrganisation()
         ui:Focus(ui.selected == "bank" and "suite_bags_bank" or "suite_bags_organisation")
