@@ -10,6 +10,9 @@ local PAGES = {
     suite_hud = { title = "Additional displays", modules = "xpBar skyriding flightTimer lootToastFilter" },
     opt_misc = { title = "Tooltips", modules =
         "tooltipClassColors tooltipSpellCopy itemCounts tooltipIDs tooltipVisibility tooltipDetails tooltipMPlusScore" },
+    -- The Battle.net toast's look and font sit with Blizzard's windows on the
+    -- Skinning page; with the skin addon off they stay on Quality of Life.
+    suite_skin = { title = "Notifications", modules = "bnetToast", addon = "MSUF_Suite_Skin" },
 }
 for page, spec in pairs(PAGES) do
     for id in spec.modules:gmatch("%S+") do destinations[id] = page end
@@ -109,7 +112,10 @@ local tooltipProvider = {
     finish = function() P.Refresh() end,
 }
 function Owners.Register()
-    for _, page in ipairs(P.pages) do if PAGES[page.key] then active[page.key] = true end end
+    for _, page in ipairs(P.pages) do
+        local spec = PAGES[page.key]
+        if spec and (not spec.addon or P.Suite.Client.AddOnEnabled(spec.addon)) then active[page.key] = true end
+    end
     -- Registration can rebuild an already visible host page immediately.
     active.opt_misc = true
     active.opt_misc = P.Suite.HostBridge.RegisterPageTail(P.M, "opt_misc", "MSUF_Suite.Tooltips", tooltipProvider)

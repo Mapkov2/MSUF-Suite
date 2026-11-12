@@ -23,6 +23,9 @@ local GROUPS = {
         sections = { "trusted_invites" } },
     { id = "battleRes", title = "Battle resurrection (Retail)", switch = "enabled",
         sections = { "battle_res" }, aliases = { "combat resurrection", "brez", "kampfwiederbelebung" } },
+    { id = "bnetToast", title = "Battle.net toast", switch = "enabled", sections = { "bnet_toast" },
+        aliases = { "bnet toast", "battle.net", "battlenet", "friend online", "friend toast",
+            "freund online", "freunde benachrichtigung", "bnet benachrichtigung" } },
     { id = "groupBloodlust", title = "Bloodlust lockout (Retail)", switch = "enabled", sections = { "bloodlust_lockout" },
         aliases = { "bloodlust timer", "heroism timer", "exhaustion timer", "kampfrausch timer" } },
     { id = "loot", title = "Collecting loot", switch = "quickLoot", other = "manageHistory", sections = { "collection" } },
@@ -184,7 +187,7 @@ return {
     { id = "interface", title = "Interface", subgroups = {
         Subgroup("interface", "Interface", "dailyComfort soundProfiles"),
         Subgroup("chat", "Chat & Mail", "mailRecipients mailTemplates guildChatPrivacy"),
-        Subgroup("notifications", "Notifications", "quietPopups uiErrorFilter popupAttention notificationHistory"),
+        Subgroup("notifications", "Notifications", "quietPopups uiErrorFilter popupAttention bnetToast notificationHistory"),
         Subgroup("tooltips", "Tooltips", "tooltipClassColors tooltipSpellCopy itemCounts tooltipIDs tooltipVisibility tooltipDetails tooltipMPlusScore"),
     } },
 }

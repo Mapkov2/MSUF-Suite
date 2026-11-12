@@ -186,7 +186,10 @@ end
 
 local function SkinSocialToasts(state)
     if not NS.GenericWindows.IsCategoryEnabled("social") then return false end
-    local applied = SkinSocialToast(state, _G.BNToastFrame)
+    -- The Suite's Battle.net toast module paints its own look on the toast
+    -- (Core/SuiteOwnership.lua); the skin keeps the time alert.
+    local applied = false
+    if not NS.SuiteOwnership.Owns("battleNetToast") then applied = SkinSocialToast(state, _G.BNToastFrame) end
     applied = SkinSocialToast(state, _G.TimeAlertFrame) or applied
     return applied
 end

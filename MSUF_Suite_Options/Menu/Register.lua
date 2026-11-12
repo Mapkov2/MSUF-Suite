@@ -49,9 +49,12 @@ for _, id in ipairs(Suite.SuiteOrder) do
 end
 local function PageAddOnEnabled(key)
     if key == "suite_macros" then return true end
-    if key == "suite_skin" then return Suite.Client.AddOnEnabled("MSUF_Suite_Skin") end
+    -- Skinning also shows Suite modules (QualityOfLifeOwners.lua: the
+    -- Battle.net toast; they stay on Quality of Life when the skin AddOn
+    -- is off at load). A skin AddOn turned off later leaves the page to them.
+    if key == "suite_skin" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then return true end
     local modules = PAGE_MODULES[key]
-    if not modules then return true end
+    if not modules then return key ~= "suite_skin" end
     for _, id in ipairs(modules) do
         if Suite.Client.AddOnEnabled(P.catalog[id].addon) then return true end
     end
@@ -61,7 +64,8 @@ local function PageEnabled(key)
     if key == "suite_macros" then return true end
     if not PageAddOnEnabled(key) then return false, ADDON_NOTICE end
     if key == "suite_skin" then
-        return P.SkinningEnabled() == true and Suite.Client.IsAddOnLoaded("MSUF_Suite_Skin"), "Off"
+        if P.SkinningEnabled() == true and Suite.Client.IsAddOnLoaded("MSUF_Suite_Skin") then return true end
+        if not PAGE_MODULES[key] then return false, "Off" end
     end
     local modules = PAGE_MODULES[key]
     if not modules then return true end
@@ -218,17 +222,22 @@ local function PageResetHandlers()
     function handlers.label(key)
         return string.format(P.Tr("Reset %s"), PageTitle(key))
     end
+    -- Skinning resets the skin, while its AddOn is on, and then the Suite
+    -- modules it shows.
+    local function SkinAddOn(key)
+        return key == "suite_skin" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    end
     function handlers.prepare(key)
-        return key ~= "suite_skin" or Suite.Skin.EnsureEngine() == true
+        return not SkinAddOn(key) or Suite.Skin.EnsureEngine() == true
     end
     function handlers.run(key)
-        if key == "suite_skin" then return P.ResetSkinPage() or false end
+        if SkinAddOn(key) and not P.ResetSkinPage() then return false end
         -- The cooldown manager resets its settings, spell lists and spell
         -- options through its page, which offers an Undo line.
         local body = specs[key] and specs[key].resetPage
         if body then return body() == true end
         local modules = PAGE_MODULES[key]
-        if not modules then return false end
+        if not modules then return key == "suite_skin" end
         for _, id in ipairs(modules) do
             local moved = key == "suite_qualityOfLife" and
                 (P.PlayerAurasPage.Relocated(id) or P.GameplayPage.Relocated(id))

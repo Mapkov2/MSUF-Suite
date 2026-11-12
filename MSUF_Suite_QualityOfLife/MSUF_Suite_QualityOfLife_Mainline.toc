@@ -139,3 +139,4 @@ TooltipBorder.lua
 TooltipHiddenLines.lua
 TooltipDetails.lua
 PopupAttention.lua
+BattleNetToast.lua

@@ -65,6 +65,19 @@ Check(S.OwnsBlizzardSurface("staticPopups"),"independent popup skin did not clai
 S.Config("popupAttention").enabled=false
 Check(not S.OwnsBlizzardSurface("staticPopups"),"disabled popup skin retained ownership")
 
+-- The Battle.net toast module claims the toast only with a Suite look; with
+-- Blizzard's look (choice 1) the skin may style it.
+local bnetToast = S.Config("bnetToast")
+bnetToast.enabled, bnetToast.look = true, 1
+Check(not S.OwnsBlizzardSurface("battleNetToast"), "the toast module with Blizzard's look claimed the toast")
+bnetToast.look = 3
+Check(S.OwnsBlizzardSurface("battleNetToast"), "the toast module with a Suite look left the toast to the skin")
+available = false
+Check(not S.OwnsBlizzardSurface("battleNetToast"), "an unavailable toast module claimed the toast")
+available = true
+bnetToast.enabled = false
+Check(not S.OwnsBlizzardSurface("battleNetToast"), "a disabled toast module claimed the toast")
+
 local character = S.Config("characterPanel")
 character.enabled, character.mode = true, Suite.CharacterPanelMode.BASIC
 Check(not S.OwnsBlizzardSurface("characterDossier"), "Basic did not retain its equipment dossier")
@@ -182,6 +195,13 @@ rebuilt = {}
 owned.damageMeter = true
 Ownership.Refresh("before")
 Check(#rebuilt == 1 and rebuilt[1] == "damageMeter", "Blizzard's meter was not handed to the Suite meter")
+rebuilt = {}
+owned.battleNetToast = false
+Check(not Ownership.Owns("battleNetToast"), "a free Battle.net toast answered as owned")
+owned.battleNetToast = true
+Ownership.Refresh("before")
+Check(#rebuilt == 1 and rebuilt[1] == "blizzardWindows" and Ownership.Owned("battleNetToast"),
+    "the Battle.net toast was not handed to the Suite module")
 
 ContainerFrameCombinedBags, ContainerFrame6 = {}, {}
 Check(Ownership.IsBagShell(ContainerFrameCombinedBags) and Ownership.IsBagShell(ContainerFrame6)

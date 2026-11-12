@@ -745,6 +745,8 @@ local function Build(ctx)
         -- The chat colors the skin themes outlive the engine.
         BuildBasicsWithoutEngine(ctx, b,
             P.Combat() and "Open Skinning outside combat to load its settings." or "The Suite skin engine is unavailable.")
+        -- Suite modules shown here keep their settings without the engine.
+        P.QoLOwners.Build(ctx, b, PAGE)
         return
     end
     -- FixedPreviewSection must own the first builder slot so its reserved
@@ -760,6 +762,10 @@ local function Build(ctx)
     local skinPreview = rawget(ctx, "skinPreview")
     if ui and skinPreview then ui.refreshPreview = skinPreview.Paint end
     BuildSections(ctx, workspace, skin)
+    -- Suite modules that style a Blizzard window (QualityOfLifeOwners.lua:
+    -- the Battle.net toast) follow Blizzard's windows on their tab.
+    P.QoLOwners.Build(ctx, ui and ui.groups.windows.builder or workspace, PAGE,
+        ui and function() ui.select("windows") end)
     P.MenuWorkspace.Finish(ui)
 end
 

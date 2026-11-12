@@ -408,7 +408,7 @@ end
 local SURFACE_MODULES = {
     damageMeter = "damageMeter", bagWindows = "bags",
     cooldownViewers = "cooldownManager", bagBar = "dataTexts", staticPopups = "popupAttention",
-    characterDossier = "characterPanel",
+    characterDossier = "characterPanel", battleNetToast = "bnetToast",
 }
 local SURFACE_OWNERS = {}
 for _, id in pairs(SURFACE_MODULES) do SURFACE_OWNERS[id] = true end
@@ -428,6 +428,8 @@ function S.OwnsBlizzardSurface(surface)
         if not S.OwnsBlizzardSurface("bagWindows") then return false end
     end
     if surface == "staticPopups" and config.skin ~= true and config.dialogFont ~= true then return false end
+    -- Choice 1 keeps Blizzard's look of the toast, which the skin may style.
+    if surface == "battleNetToast" and config.look == 1 then return false end
     return S.Availability(id) == true
 end
 

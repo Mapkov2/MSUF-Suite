@@ -209,3 +209,44 @@ do
     rules.x.hidden, rules.y.hidden = true, true
     rules.fontSize.enableKey = "dialogFont"
 end
+
+-- Blizzard's Battle.net toast (friends coming online or going offline,
+-- broadcasts, invitations). Until MSUF Edit Mode moves it, it stays at
+-- Blizzard's spot above the chat; point, x and y stay for its mover, profile
+-- import and undo. Look, font, scale and layer are set once outside combat
+-- (MSUF_Suite_QualityOfLife/BattleNetToast.lua). Its settings show on the
+-- Skinning page (MSUF_Suite_Options/Pages/QualityOfLifeOwners.lua).
+B.Module("bnetToast", {
+    title = "Battle.net toast",
+    description = "Move Blizzard's Battle.net toast in MSUF Edit Mode and give it a Suite look and font. Nothing of it runs in combat unless the toast shows.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    editElement = "toast",
+})
+B.Section("bnetToast", "bnet_toast", "Battle.net toast", {
+    Choice("look", "Toast style", 1,
+        { "Blizzard", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern", "Class Style" }),
+    Number("opacity", "Background opacity (percent)", 92, 20, 100, 5),
+    Bool("accent", "Accent stripe on the left", true),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Bool("raise", "Show the toast above other frames"),
+    Bool("suiteFont", "Suite font for the toast text"),
+    B.Font("font", "Font"),
+    Number("fontSize", "Toast text size", 12, 9, 16),
+    Bool("moved", "Custom toast position"),
+    Choice("point", "Screen anchor", 7, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 0, -3000, 3000),
+})
+NS.AddQoLTextStyle("bnetToast", "bnet_toast", "Battle.net toast")
+-- The Suite-wide Skinning look picks the matching toast style (choice 1 is
+-- Blizzard's own look, so every palette sits one choice later).
+NS.SuiteCatalog.bnetToast.look = { key = "look", global = { 2, 3, 4, [5] = 5, [6] = 6 } }
+do
+    local rules = NS.SuiteCatalog.bnetToast.rules
+    for _, key in ipairs({ "moved", "point", "x", "y" }) do rules[key].hidden = true end
+    local suiteLook = { key = "look", values = { [2] = true, [3] = true, [4] = true, [5] = true, [6] = true } }
+    rules.opacity.requiresChoice, rules.accent.requiresChoice = suiteLook, suiteLook
+    for _, key in ipairs({ "font", "fontSize", "fontOutline", "fontRendering", "fontShadow" }) do
+        rules[key].enableKey = "suiteFont"
+    end
+end

@@ -18,6 +18,8 @@ local ADAPTERS = {
     cooldownViewers = "blizzardWindows",
     bagBar = "blizzardWindows",
     staticPopups = "blizzardWindows",
+    -- The Battle.net toast with a Suite look (Adapters/SharedChrome.lua).
+    battleNetToast = "blizzardWindows",
 }
 
 -- Catalog entries whose frames are exactly one owned surface.

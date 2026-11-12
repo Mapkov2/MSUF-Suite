@@ -763,6 +763,26 @@ Section("shared chrome", function()
     _G.TalkingHeadFrame, _G.RaidParentFrame, _G.QueueStatusFrame, _G.PlayerChoiceFrame = nil, nil, nil, nil
 end)
 
+-- The Battle.net toast with a Suite look belongs to the Suite's toast module
+-- (Core/SuiteOwnership.lua "battleNetToast"); the time alert keeps its skin.
+Section("shared chrome battle.net toast", function()
+    local SharedChrome = NS.SharedChrome
+    local toast, timeAlert = Frame("BNToastFrame"), Frame("TimeAlertFrame")
+    _G.BNToastFrame, _G.TimeAlertFrame = toast, timeAlert
+    suiteOwned.battleNetToast = true
+    local ok = pcall(SharedChrome.Apply, "toastOwned")
+    Expect(ok and toast.surfaceSpec == nil and timeAlert.surfaceSpec ~= nil,
+        "the skin styled the Battle.net toast the Suite module styles, or dropped the time alert")
+    SharedChrome.Disable("toastOwned")
+    suiteOwned.battleNetToast = false
+    toast.surfaceSpec, timeAlert.surfaceSpec = nil, nil
+    ok = pcall(SharedChrome.Apply, "toastFree")
+    Expect(ok and toast.surfaceSpec ~= nil and timeAlert.surfaceSpec ~= nil,
+        "the skin left a free Battle.net toast unstyled")
+    SharedChrome.Disable("toastFree")
+    _G.BNToastFrame, _G.TimeAlertFrame, suiteOwned.battleNetToast = nil, nil, nil
+end)
+
 Section("deep windows", function()
     -- A private namespace: the post-hooks installed here stay local.
     local deepNS = setmetatable({}, { __index = NS })
