@@ -1,5 +1,51 @@
 # MSUF Suite Changelog
 
+## 0.1.20 Alpha - 2026-11-12
+
+[Compare with 0.1.19](https://github.com/Mapkov2/MSUF-Suite/compare/v0.1.19-alpha...v0.1.20-alpha) · [CurseForge](https://www.curseforge.com/wow/addons/msuf-suite) · [Wago](https://addons.wago.io/addons/msuf-suite)
+
+### Bags
+
+- New **Delete cheapest item** (Quality of Life): a button on the open bag deletes the stack a vendor pays least for, to make room when your bags are full. Point at it to see the stack marked in the bag; right-click to pick one of the ten cheapest or to never offer an item again. Only Poor items by default, at most Uncommon. Quest items, refundable items, equipment set items and Never sell items are never offered, and anything above Poor always asks first.
+- Bag windows get the Windows caption of the skinned Blizzard windows: minimize, maximize and close. Minimize leaves a restore tab, and maximize toggles the side panel's full screen height.
+- In combat with every bag window closed, the Bags run no code at all and catch up when a window opens or the fight ends.
+- On WoW Forever, the keyring keeps its keys and tooltips visible in combat but takes no clicks or drags there, so Blizzard no longer blocks the action. New-item highlights clear when the bag closes.
+
+### Window skin
+
+- Skinned Blizzard windows get a Windows-style caption with minimize, maximize and close, with a choice of glyph styles. Fixed-size windows such as Trade show only close and minimize, and only windows you opened yourself leave a restore tab.
+- Minimize and the restore tab click Blizzard's own buttons through secure code. This fixes the blocked action on WoW Forever when the world map opened after a window was minimized or restored.
+- Turn off the Micro Bar frame to hide the whole frame around the micro menu.
+- On WoW Forever, the spellbook brings back Show All Spell Ranks and gets a portrait ring that matches the skin.
+
+### Cooldown manager
+
+- On WoW Forever, entries follow the highest rank you have learned and keep their settings when you learn a new rank. Spell ranks, Defensives defaults, spell groups, racials, potions and bandages come from Enhance QoL's Forever data. Many thanks to R41z0r for building it and allowing the Suite to use it.
+- Add totem slots: one entry for every slot or one per slot, each showing whatever totem, statue or summon is in it. Shamans see the slots named by element.
+- The picker lists equipment slots with a use effect and stays open for several picks.
+
+### Announcements
+
+- The banner frame has its own section: turn it on or off and choose its shape (full box, top and bottom lines, corner brackets), thickness, opacity and color. Artwork opacity is adjustable too.
+- Move the headline and subtitle by dragging them in the preview, or click one and use the arrow keys.
+
+### Quality of life
+
+- New **Battle.net toast** module: move Blizzard's Battle.net toast in MSUF Edit Mode and give it a Suite style, font, scale and layer. Its settings are on the Skinning page.
+- The loot roll preview is now an element editor: click any part of a sample row to open its setting, show or hide parts in Preview Layers, and set each element's offset and size.
+- **Player aura layout:** move Blizzard's own buff and debuff icons in MSUF Edit Mode. Each row has its own mover (Player buffs, Player debuffs) with icon size, zoom, icons per row and spacing in its popup. A drag stops at the screen edge, so the icons stay where you drop them.
+- New **Icon zoom** setting for Blizzard's buff and debuff icons. The debuff row also gets a horizontal offset and can sit above the buffs.
+
+### Reminders
+
+- On WoW Forever, paladins get an aura reminder that casts the highest known rank of the aura used last.
+- On WoW Forever, the Lightning Shield and weapon imbue reminders know every rank, and Earth Shield counts as a shield.
+
+### Profiles and action bars
+
+- Profile exports and imports can carry your action bar key bindings (bars 1 to 10) while the Suite action bars are on. Turn this off under Action bars > Behavior. Restore previous setup under Account transfer undoes an import's keys.
+- An Account transfer import now replaces the target's action bar keys instead of skipping conflicting ones.
+
 ## 0.1.19 Alpha - 2026-11-12
 
 [Compare with 0.1.18](https://github.com/Mapkov2/MSUF-Suite/compare/v0.1.18-alpha...v0.1.19-alpha) · [CurseForge](https://www.curseforge.com/wow/addons/msuf-suite) · [Wago](https://addons.wago.io/addons/msuf-suite)
