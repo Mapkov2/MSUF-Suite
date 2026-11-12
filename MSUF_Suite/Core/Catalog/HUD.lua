@@ -231,15 +231,48 @@ B.Section("announcements", "layout", "Timing and position", {
     B.Number("y", "Vertical position", -90, -3000, 3000),
 })
 B.Section("announcements", "artwork", "Banner artwork", {
-    B.Bool("showBoxArt", "Show box art", true),
+    B.Tooltip(B.Bool("showBoxArt", "Show box art", true),
+        "The decorations of the artwork style. The frame around the banner has its own switch."),
     B.Choice("artStyle", "Artwork style", 1, { "Classic lines", "Twin arrows", "Gilded edges", "Soft glow" }),
+    B.Number("artOpacity", "Artwork opacity (percent)", 100, 10, 100, 5),
 })
-NS.SuiteCatalog.announcements.rules.artStyle.enableKey = "showBoxArt"
+-- The frame around the banner (MSUF_Suite/Core/AnnouncementArt.lua). Its
+-- default is the gold one pixel box the banner always drew.
+B.Section("announcements", "frame", "Banner frame", {
+    B.Bool("showFrame", "Show frame around the banner", true),
+    B.Choice("frameStyle", "Frame shape", 1, { "Full box", "Top and bottom lines", "Corner brackets" }),
+    B.Number("frameThickness", "Frame thickness", 1, 1, 4, 1),
+    B.Number("frameOpacity", "Frame opacity (percent)", 48, 5, 100, 1),
+    B.Choice("frameColorSource", "Frame color", 1, { "Classic gold", "Headline color", "Custom color" }),
+    B.Color("frameColor", "Frame", "f5cf70"),
+})
+local announcementRules = NS.SuiteCatalog.announcements.rules
+announcementRules.artStyle.enableKey = "showBoxArt"
+announcementRules.artOpacity.enableKey = "showBoxArt"
+for _, key in ipairs({ "frameStyle", "frameThickness", "frameOpacity", "frameColorSource", "frameColor" }) do
+    announcementRules[key].enableKey = "showFrame"
+end
+announcementRules.frameColor.requiresChoice = { key = "frameColorSource", values = { [3] = true } }
+-- Before the frame had its own switch, turning the artwork off hid it too.
+-- Carry that over once, so a saved banner keeps its look.
+NS.SuiteCatalog.announcements.prepareConfig = function(config)
+    if config.showFrame == nil and config.showBoxArt == false then config.showFrame = false end
+end
 B.Section("announcements", "type", "Announcement text", {
     B.Font("font", "Font"),
     B.Number("titleSize", "Headline size", 31, 20, 42),
     B.Number("subtitleSize", "Subtitle size", 16, 10, 24),
+    -- Moves from each row's usual place: right and up are positive. The menu
+    -- preview drags the rows (MSUF_Suite_Options/Pages/HUDPreview.lua).
+    B.Number("titleOffsetX", "Headline horizontal offset", 0, -250, 250, 1),
+    B.Number("titleOffsetY", "Headline vertical offset", 0, -60, 60, 1),
+    B.Number("subtitleOffsetX", "Subtitle horizontal offset", 0, -250, 250, 1),
+    B.Number("subtitleOffsetY", "Subtitle vertical offset", 0, -60, 60, 1),
 })
+for _, key in ipairs({ "titleOffsetX", "titleOffsetY", "subtitleOffsetX", "subtitleOffsetY" }) do
+    B.Tooltip(NS.SuiteCatalog.announcements.rules[key],
+        "Drag the headline or subtitle in the preview, or click it and use the arrow keys.")
+end
 B.TextStyle("announcements", "type", "Announcement text", 70)
 B.Section("announcements", "colors", "Announcement colors", {
     B.Choice("colorStyle", "Color source", 1, { "Suite skin + default accents", "Custom colors" }),
@@ -266,6 +299,9 @@ for _, hud in ipairs({ "objectives", "runSummary", "announcements" }) do
     end
     NS.SuiteCatalog[hud].look = { key = "colorStyle", visualKeys = colors, custom = 2 }
 end
+-- The frame color has its own source: editing it chooses Custom color for
+-- the frame alone (MSUF_Suite_Options/Menu/Bridge.lua, P.Set).
+NS.SuiteCatalog.announcements.look.visualKeys.frameColor = nil
 
 -- This screen has deliberately no appearance or layout rules. The HUD page
 -- exposes only the module's standard enable switch.

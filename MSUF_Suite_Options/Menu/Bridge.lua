@@ -143,6 +143,11 @@ function P.Set(id, key, value)
         local box = key:match("^(info%a+Box)Color$")
         if box and P.Get(id, box) == 2 then return P.SetMany(id, { [key] = value, [box] = 3 }) end
     end
+    -- A new announcement frame color shows at once: it chooses Custom color
+    -- for the frame in the same undoable write (Catalog/HUD.lua).
+    if id == "announcements" and key == "frameColor" and P.Get(id, "frameColorSource") ~= 3 then
+        return P.SetMany(id, { frameColor = value, frameColorSource = 3 })
+    end
     if id == "dataTexts" and value == Suite.DataTextDock.FREE then
         local prefix = key:match("^(bar%d+)Dock$")
         if prefix and P.Get(id, key) ~= value then return P.SetMany(id, Suite.DataTextFreePositionValues(prefix)) end

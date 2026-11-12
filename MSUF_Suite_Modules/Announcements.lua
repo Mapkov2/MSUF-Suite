@@ -7,15 +7,6 @@ local IN_COMBAT = { inCombat = true }
 -- Cinematic banners for zones and events. Blizzard's own banners, toasts and
 -- alerts for the enabled kinds are hidden; their content is shown here.
 local M = { queue = {}, achievementReceipts = setmetatable({}, { __mode = "k" }) }
-local COLORS = {
-    zone = { .96, .88, .67 }, quest = { .98, .79, .39 },
-    achievement = { .88, .69, .41 }, level = { .47, .81, .98 },
-    scenario = { .69, .58, .96 }, notice = { .66, .84, .98 },
-}
-local COLOR_KEYS = {
-    zone = "zoneColor", quest = "questColor", achievement = "achievementColor",
-    level = "levelColor", scenario = "scenarioColor", notice = "noticeColor",
-}
 
 local Text, ReadText, Number = S.PublicText, S.ReadText, S.Number
 local Dispatch = S.Dispatch
@@ -27,13 +18,9 @@ local function Create(self)
     host:SetSize(Art.WIDTH, Art.HEIGHT)
     host:SetFrameStrata("HIGH")
     host:EnableMouse(false)
-    self.art = Art.Create(host, S.CreateTexture)
-    local title = S.CreateFontString(host, nil, "OVERLAY")
-    title:SetJustifyH("CENTER")
-    title:SetWordWrap(false)
-    local subtitle = S.CreateFontString(host, nil, "OVERLAY")
-    subtitle:SetJustifyH("CENTER")
-    subtitle:SetWordWrap(false)
+    -- The banner's parts and their painting are shared with the menu's
+    -- sample (MSUF_Suite/Core/AnnouncementArt.lua).
+    self.art = Art.Create(host, S.CreateTexture, S.CreateFontString)
     local enter = host:CreateAnimationGroup()
     local fadeIn = enter:CreateAnimation("Alpha")
     fadeIn:SetFromAlpha(0)
@@ -50,55 +37,17 @@ local function Create(self)
         self.current, self.showing, self.expiresAt = nil, false, nil
         self:Next()
     end)
-    self.host, self.title, self.subtitle = host, title, subtitle
+    self.host, self.title, self.subtitle = host, self.art.title, self.art.subtitle
     self.enter, self.leave = enter, leave
     host:Hide()
 end
 
--- colorStyle: Suite skin + default accents, Custom colors; anchor: Top
--- center, Screen center (MSUF_Suite/Core/Catalog/HUD.lua).
-local CUSTOM_COLORS, SCREEN_CENTER = 2, 2
-
-local function LayoutArt(self, config)
-    Art.Layout(self.art, config)
-    local inset = self.art.inset
-    if self.artInset == inset then return end
-    self.artInset = inset
-    self.title:ClearAllPoints()
-    self.title:SetPoint("TOPLEFT", inset, -23)
-    self.title:SetPoint("TOPRIGHT", -inset, -23)
-    self.subtitle:ClearAllPoints()
-    self.subtitle:SetPoint("TOPLEFT", inset + 4, -84)
-    self.subtitle:SetPoint("TOPRIGHT", -inset - 4, -84)
-end
+-- anchor: Top center, Screen center (MSUF_Suite/Core/Catalog/HUD.lua).
+local SCREEN_CENTER = 2
 
 local function Theme(self)
     local c = self.config
-    local skin = self.context and self.context:Skin()
-    local font = S.ResolveFont(c.font) or S.GlobalFontPath()
-    S.SetStyledFont(self.title, font, c.titleSize or 31, NS.HUDTextArgs(c, "banner"))
-    S.SetStyledFont(self.subtitle, font, c.subtitleSize or 16, NS.HUDTextArgs(c, "subtitle"))
-    local dark = not skin or skin:GetLook() == "midnightDark"
-    local custom = c.colorStyle == CUSTOM_COLORS
-    self.kindColors = {}
-    for kind, key in pairs(COLOR_KEYS) do
-        self.kindColors[kind] = custom and { S.RGB(c[key]) } or COLORS[kind]
-    end
-    LayoutArt(self, c)
-    local art = self.art
-    local opacity = (c.backgroundOpacity or (dark and 57 or 50)) / 100
-    if custom then
-        local r, g, b = S.RGB(c.backgroundColor)
-        Art.PaintBackground(art, r, g, b, opacity)
-        self.subtitle:SetTextColor(S.RGB(c.subtitleColor))
-    elseif skin then
-        local r, g, b = skin:GetColor("surface")
-        Art.PaintBackground(art, r, g, b, opacity)
-        self.subtitle:SetTextColor(skin:GetColor("text"))
-    else
-        Art.PaintBackground(art, dark and .02 or .03, dark and .025 or .05, dark and .035 or .075, opacity)
-        self.subtitle:SetTextColor(.91, .93, .96)
-    end
+    Art.Theme(self.art, c, self.context and self.context:Skin())
     self.host:SetScale(c.scale / 100)
     self.host:ClearAllPoints()
     local point = c.anchor == SCREEN_CENTER and "CENTER" or "TOP"
@@ -106,11 +55,7 @@ local function Theme(self)
 end
 
 local function Paint(self, item)
-    local color = self.kindColors[item.kind] or self.kindColors.zone
-    self.title:SetText(item.title)
-    self.title:SetTextColor(color[1], color[2], color[3])
-    self.subtitle:SetText(item.subtitle or "")
-    Art.Tint(self.art, color[1], color[2], color[3])
+    Art.Show(self.art, self.config, item.kind, item.title, item.subtitle)
 end
 
 -- The banner on screen fades out after its duration (ctx:After);

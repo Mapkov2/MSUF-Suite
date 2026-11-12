@@ -89,6 +89,7 @@ function Page.Builder(ctx)
         if sectionId:match("_module$") then ui.groups[id].body = section end
         if sectionId:match("_type$") then ui.groups[id].appearance = section end
         if sectionId:match("_artwork$") then ui.groups[id].artwork = section end
+        if sectionId:match("_frame$") then ui.groups[id].bannerFrame = section end
         section._msufSuiteHUDSectionID = sectionId
         section._msufSuiteHUDID = id
         section._msufSuiteHUDBuilder = owner

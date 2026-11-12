@@ -2,7 +2,7 @@ local _, P = ...
 local V, Tr, Art = P.HUDPreview, P.Tr, P.Suite.AnnouncementArt
 local DrawText, Fill, Color = V.Label, V.Fill, V.Color
 local WHITE, TEXT, MUTED = { .96, .97, .99 }, { .95, .96, .98 }, { .78, .81, .85 }
-local GOLD, GREEN = { .98, .79, .39 }, { .39, .86, .54 }
+local GREEN = { .39, .86, .54 }
 V.Choices = {
     objectives = { { "quests", "QUESTS" }, { "world", "WORLD QUESTS" }, { "scenario", "SCENARIO" },
         { "achievements", "ACHIEVEMENTS" }, { "collectibles", "COLLECTIBLES" }, { "zone", "ZONE EVENT" },
@@ -149,28 +149,25 @@ local function Summary(ui, mode)
     return width, height
 end
 
+-- One banner of each kind, shaped like the runtime's own
+-- (MSUF_Suite_Modules/Announcements.lua): a zone without a subzone says NEW
+-- AREA, an achievement and a scenario name themselves, a level counts up.
+-- The runtime's painter draws it (MSUF_Suite/Core/AnnouncementArt.lua).
 local ANNOUNCEMENTS = {
-    zone = { "Example Dungeon", "NEW AREA", "zoneColor", { .96, .88, .67 } },
-    quest = { "Example Quest", "QUEST COMPLETE", "questColor", GOLD },
-    achievement = { "Example Quest", "ACHIEVEMENT EARNED", "achievementColor", { .88, .69, .41 } },
-    level = { "LEVEL UP", "LEVEL UP", "levelColor", { .47, .81, .98 } },
-    scenario = { "SCENARIO COMPLETE", "Defeat enemies", "scenarioColor", { .69, .58, .96 } },
-    notice = { "Other events", "Example Dungeon", "noticeColor", { .66, .84, .98 } },
+    zone = { title = "Example Dungeon", subtitle = "NEW AREA" },
+    quest = { title = "Example Quest", subtitle = "QUEST COMPLETE" },
+    achievement = { title = "Example Achievement", subtitle = "ACHIEVEMENT EARNED" },
+    level = { title = "LEVEL %d", subtitle = "LEVEL UP" },
+    scenario = { title = "SCENARIO COMPLETE", subtitle = "Example Scenario" },
+    notice = { title = "Example Event", subtitle = "Example Dungeon" },
 }
+local SAMPLE_LEVEL = 70
 local function Announcement(ui, mode)
-    local c, sample = ui.config, ANNOUNCEMENTS[mode] or ANNOUNCEMENTS.zone
-    local color = { Color(c, sample[3], sample[4]) }
-    if not ui.bannerArt then ui.bannerArt = Art.Create(ui.canvas) end
-    local art = ui.bannerArt
-    Art.Layout(art, c)
-    local r, g, b = Color(c, "backgroundColor", { .02, .025, .035 }, "surface")
-    Art.PaintBackground(art, r, g, b, c.backgroundOpacity / 100)
-    Art.Tint(art, unpack(color))
-    local inset = art.inset
-    local title = mode == "level" and string.format(Tr("LEVEL %d"), 70) or Tr(sample[1])
-    DrawText(ui, title, inset, -23, Art.WIDTH - 2 * inset, c.titleSize, color, "banner"):SetJustifyH("CENTER")
-    DrawText(ui, Tr(sample[2]), inset + 4, -84, Art.WIDTH - 2 * (inset + 4), c.subtitleSize,
-        { Color(c, "subtitleColor", { .91, .93, .96 }, "text") }, "subtitle"):SetJustifyH("CENTER")
+    local kind = ANNOUNCEMENTS[mode] and mode or "zone"
+    local sample, art = ANNOUNCEMENTS[kind], ui.bannerArt
+    local title = kind == "level" and Tr(sample.title):format(SAMPLE_LEVEL) or Tr(sample.title)
+    Art.Theme(art, ui.config, V.Skin())
+    Art.Show(art, ui.config, kind, title, Tr(sample.subtitle))
     return Art.WIDTH, Art.HEIGHT
 end
 

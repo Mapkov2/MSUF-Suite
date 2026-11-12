@@ -173,6 +173,11 @@ local function BuildAnnouncements(ctx, b)
         Tr("Banner artwork"), P.SectionRules("announcements", "artwork"), {
             help = "Choose an artwork style in the preview to see it on the banner.",
         })
+    AddSection(sections, "suite_hud_announcements_frame",
+        Tr("Banner frame"), P.SectionRules("announcements", "frame"), {
+            help = "Show or hide the frame around the banner and set its shape, thickness, opacity and color. "
+                .. "Pick a shape in the preview, or click the frame there to open these settings.",
+        })
     AddSection(sections, "suite_hud_announcements_type",
         Tr("Appearance"), AppearanceRules("announcements"), {
             help = "Set font, text sizes and background opacity here. Open the three-dot color menu in this section for announcement colors; choosing one switches to Custom colors automatically.",

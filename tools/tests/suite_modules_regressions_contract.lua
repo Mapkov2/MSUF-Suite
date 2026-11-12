@@ -110,14 +110,14 @@ Case("announcements", function()
     Load("MSUF_Suite/Core/AnnouncementArt.lua", NS)
     Load("MSUF_Suite_Modules/Announcements.lua", { Suite = suite, NS = NS })
     local event, alert = Upvalue(module.Enable, "Event"), Upvalue(module.ApplyNative, "OnShowAlert")
-    local label = { SetText = function() end, SetTextColor = function() end }
+    -- Every method a no-op: this case checks the queue, not the drawing.
+    local region = setmetatable({}, { __index = function() return function() end end })
+    local function Region() return region end
     module.active, module.config = true, { quests = true, duration = 4 }
     module.context = { After = function() end }
     module.host = { SetAlpha = function() end, Show = function() end }
     module.enter = { Stop = function() end, Play = function() end }; module.leave = module.enter
-    module.title, module.subtitle = label, label
-    module.art = { style = 0 }
-    module.kindColors = { quest = { 0, 1, 0 }, zone = { 1, 0, 0 } }
+    module.art = NS.AnnouncementArt.Create({}, Region, Region)
     C_QuestLog = { GetTitleForQuestID = function() return "Same title" end }
     local system = {}
     module.alertHooks = { [system] = "quests" }

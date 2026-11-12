@@ -87,7 +87,8 @@ function Interaction.Refresh(bar)
     P.SetTranslatedText(bar.label, Tr(bar._suitePreviewLabel or HINT))
     bar.button:SetEnabled(target ~= nil)
     bar.button:SetAlpha(target and 1 or .45)
-    if target then Interaction.Outline(target, true, bar._suitePreviewThickness) end
+    -- Thickness 0 names the selection in the bar without outlining it.
+    if target then Interaction.Outline(target, bar._suitePreviewThickness ~= 0, bar._suitePreviewThickness) end
 end
 
 function Interaction.Select(bar, handle, label, open, thickness)

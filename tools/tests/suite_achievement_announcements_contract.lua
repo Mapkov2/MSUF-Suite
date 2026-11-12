@@ -72,9 +72,11 @@ S.CreateFrame = function(_, _, parent) return Widget(parent) end
 S.CreateTexture = function(parent) return parent:CreateTexture() end
 S.CreateFontString = function(parent) return parent:CreateFontString() end
 S.Install = function(id, module) S.instances[id] = module end
+-- The banner's shared painter (Core/AnnouncementArt.lua) reads the core's
+-- font and color helpers.
 local NS = { Safety = { IsForbidden = function() return false end },
     HUDTextArgs = function() end, Dispatch = S.Dispatch, Public = S.Public, Suite = S,
-    IsCombatLocked = InCombatLockdown }
+    IsCombatLocked = InCombatLockdown, ResolveFont = S.ResolveFont, GlobalFontPath = S.GlobalFontPath, RGB = S.RGB }
 local Context = Support.ModuleTimers(root, S, NS)
 local active, originalParents, nextProtected = {}, {}, false
 AchievementAlertSystem = { alertFramePool = {} }
@@ -124,6 +126,15 @@ end
 banner.context = ctx
 banner.config = { achievements = true, duration = 4, scale = 100, x = 0, y = -90 }
 banner:Enable()
+-- The banner draws through the painter the menu's sample uses
+-- (Core/AnnouncementArt.lua), text offsets included.
+assert(banner.title == banner.art.title and banner.subtitle == banner.art.subtitle,
+    "the runtime banner does not draw through the shared painter")
+banner.config.titleOffsetX = 7
+banner:Refresh()
+assert(banner.title.point[1] == "TOPRIGHT" and banner.title.point[2] == -7, "the runtime ignored the headline offset")
+banner.config.titleOffsetX = nil
+banner:Refresh()
 local first = AchievementAlertSystem:ShowAlert(11)
 assert(banner.showing and banner.host.shown and banner.title.text == "Achievement 11",
     "native scalar achievement alert was hidden without a Suite announcement")

@@ -1406,6 +1406,10 @@ do (function()
         ui.select(id)
         assert(preview.id == id and group.frame.shown, "HUD feature selection did not select its preview")
         assert(preview.artPicker.shown == (id == "announcements"), "art picker leaked into another HUD tab")
+        assert(preview.framePicker.shown == (id == "announcements")
+            and preview.handles.entries.frame1.region.shown == (id == "announcements")
+            and preview.bannerArt.title.shown == (id == "announcements"),
+            "the banner frame picker or click targets leaked into another HUD tab")
         if id ~= "announcements" and preview.bannerArt then
             assert(not preview.bannerArt.background.shown, "announcement art leaked into another HUD tab")
         end
@@ -1431,7 +1435,7 @@ do (function()
         and hud.fixedPreview.record.heightResolver() >= 190, "Character Panel preview was not isolated or sized")
     ui.select("extras")
     assert(ui.groups.extras.frame.shown and not characterPreview.shown and not preview.host.shown
-        and not preview.selection.shown and not preview.artPicker.shown
+        and not preview.selection.shown and not preview.artPicker.shown and not preview.framePicker.shown
         and preview.id == nil and hud.fixedPreview.record.heightResolver() == 62,
         "additional displays retained an unrelated large HUD preview")
     ui.select("objectives")
@@ -1445,11 +1449,23 @@ do (function()
     preview:Paint()
     local art = preview.bannerArt
     local top, bottom = unpack(art.accents)
-    assert(preview.labels[1].font[2] == 40 and preview.labels[1].textColor[1] == 1
-        and preview.labels[1].textColor[2] == 0 and art.background.color[4] == .2,
+    -- The sample is the runtime's banner: drawn by its painter, with no
+    -- pooled preview labels and no selection box the screen would not show.
+    assert(art.title.font[2] == 40 and art.title.textColor[1] == 1
+        and art.title.textColor[2] == 0 and art.background.color[4] == .2 and preview.used == 0,
         "banner example does not follow font size, type color and background opacity")
     assert(top.color[4] == .95 and bottom.color[4] == .62,
         "banner accents differ from the real feature")
+    local canvasEdges = preview.canvas._suitePreviewSelectionEdges
+    assert(preview.target.label == "Banner artwork" and (not canvasEdges or not canvasEdges[1].shown),
+        "the banner sample drew a selection box the banner does not have")
+    preview.pickers.announcements.set("achievement")
+    assert(art.title.text == optionsNS.Tr("Example Achievement") and art.subtitle.text == optionsNS.Tr("ACHIEVEMENT EARNED"),
+        "the achievement sample is not shaped like the runtime's banner")
+    preview.pickers.announcements.set("level")
+    assert(art.title.text == optionsNS.Tr("LEVEL %d"):format(70) and art.subtitle.text == optionsNS.Tr("LEVEL UP"),
+        "the level sample is not shaped like the runtime's banner")
+    preview.pickers.announcements.set("quest")
     do
         local rule = optionsNS.catalog.announcements.rules.showBoxArt
         assert(rule and rule.default == true, "announcement artwork switch must default on")
@@ -1462,10 +1478,9 @@ do (function()
             assert(art.background.shown and top.shown == enabled and bottom.shown == enabled,
                 "artwork toggle must leave the preview background visible")
             for _, edge in ipairs(art.border) do
-                assert(edge.shown == enabled, "preview frame did not follow the artwork toggle")
+                assert(edge.shown, "the artwork switch hid the frame, which has its own switch")
             end
-            assert(preview.used == 2 and preview.labels[1].shown and preview.labels[2].shown,
-                "announcement artwork switch hid the preview text")
+            assert(art.title.shown and art.subtitle.shown, "announcement artwork switch hid the preview text")
         end
         announcement.showBoxArt = nil
         preview:Paint()
@@ -1484,8 +1499,8 @@ do (function()
         preview.finished = true
         preview.canvas:SetAlpha(0)
         opacityControl.set(0)
-        assert(not art.background.shown and not art.border[1].shown,
-            "opacity must still control the preview background with artwork off")
+        assert(not art.background.shown and art.border[1].shown,
+            "opacity must still control the preview background with artwork off, the frame its own switch")
         assert(preview.canvas.alpha == 1 and not preview.finished,
             "opacity edits after playback must bring back the static sample")
         picker.set(1)
@@ -1494,7 +1509,7 @@ do (function()
         assert(not art.background.shown and art.border[1].shown and art.border[1].color[4] > 0,
             "preview frame must remain visible with zero background opacity")
         picker.set(2)
-        assert(artControl.get() == 2 and art.style == 2 and preview.labels[1].width == 530
+        assert(artControl.get() == 2 and art.style == 2 and art.title.points[1][2] == 65 and art.title.points[2][2] == -65
             and top.atlas == "NPE_ArrowRight" and bottom.atlas == "NPE_ArrowLeft",
             "preview picker did not show the arrows and update the accordion")
         artControl.set(3)
@@ -1511,6 +1526,116 @@ do (function()
         C_Texture.GetAtlasInfo = atlasInfo
         announcement.artStyle = 1
         preview:Paint()
+        historyBefore = historyWrites
+    end
+    do
+        -- The frame has its own switch, shape, thickness, opacity and color.
+        -- The preview's frame picker and the accordion write the same settings.
+        local rules = optionsNS.catalog.announcements.rules
+        local defaults = { showFrame = true, frameStyle = 1, frameThickness = 1, frameOpacity = 48,
+            frameColorSource = 1, frameColor = "f5cf70", artOpacity = 100 }
+        for key, default in pairs(defaults) do
+            assert(rules[key] and rules[key].default == default, "banner setting " .. key .. " has the wrong default")
+        end
+        local framePicker, shapeControl = preview.framePicker, Control("announcements", "frameStyle")
+        assert(shapeControl.meta.sectionId == "suite_hud_announcements_frame", "frame shape search targets the wrong accordion")
+        local function ShownEdges()
+            local count = 0
+            for _, edge in ipairs(art.border) do if edge.shown then count = count + 1 end end
+            return count
+        end
+        assert(framePicker.shown and framePicker.get() == 1 and ShownEdges() == 4, "the banner lost its full frame")
+        preview.finished = true
+        preview.canvas:SetAlpha(0)
+        framePicker.set(0)
+        assert(framePicker.get() == 0 and announcement.showFrame == false and ShownEdges() == 0,
+            "the preview frame picker did not hide the frame")
+        assert(top.shown and bottom.shown and art.background.shown, "hiding the frame hid the artwork or background")
+        assert(preview.canvas.alpha == 1 and not preview.finished, "frame edits after playback must bring back the static sample")
+        framePicker.set(3)
+        assert(announcement.showFrame and shapeControl.get() == 3 and ShownEdges() == 8,
+            "the preview picker did not show the corner brackets")
+        shapeControl.set(2)
+        assert(framePicker.get() == 2 and ShownEdges() == 2 and art.border[1].width == 530
+            and art.border[2].points[1][3] == -118, "top and bottom lines did not follow the accordion")
+        Control("announcements", "frameThickness").set(3)
+        assert(art.border[1].height == 3 and art.border[2].points[1][3] == -116, "frame thickness did not grow inwards")
+        Control("announcements", "frameOpacity").set(80)
+        local edge = art.border[1]
+        assert(edge.color[4] == .8 and edge.color[1] == .96 and edge.color[3] == .44, "the gold frame ignored its opacity")
+        Control("announcements", "frameColorSource").set(2)
+        assert(edge.color[1] == 1 and edge.color[2] == 0 and edge.color[3] == 0, "headline color did not tint the frame")
+        -- A frame color edit chooses Custom color for the frame alone.
+        announcement.colorStyle = 1
+        optionsNS.Set("announcements", "frameColor", "00ff00")
+        assert(announcement.frameColorSource == 3 and announcement.colorStyle == 1
+            and edge.color[1] == 0 and edge.color[2] == 1, "a frame color edit did not choose its custom color alone")
+        announcement.colorStyle = 2
+        Control("announcements", "artOpacity").set(50)
+        assert(math.abs(top.color[4] - .475) < 1e-9 and edge.shown, "artwork opacity did not reach the accents")
+        assert(historyWrites == historyBefore + 8, "each frame edit must have one undo step")
+        -- Frame, artwork and text are separate targets, layered as the banner
+        -- draws them (text over artwork over frame). A hover outlines one
+        -- part; a click marks what it selected, and only that.
+        local focused, oldFocus = nil, W.FocusCollapsibleSection
+        W.FocusCollapsibleSection = function(body) focused = body end
+        local entries = preview.handles.entries
+        local frameEdge, titleRegion, artworkPart = entries.frame2.region, entries.title.region, entries.artwork1.region
+        local frameOutline = preview.frameOutline
+        local function Marked(region)
+            local edges = region._suitePreviewSelectionEdges
+            return edges ~= nil and edges[1].shown == true
+        end
+        assert(artworkPart.shown and frameEdge.level < artworkPart.level and artworkPart.level < titleRegion.level,
+            "the banner's targets are not layered as the banner draws its parts")
+        assert(titleRegion.points[1][1] == "CENTER" and titleRegion.width == math.max(24, art.title:GetStringWidth() + 12),
+            "the headline target covers its whole row instead of the drawn text")
+        assert(not Marked(frameOutline) and not Marked(artworkPart) and not Marked(titleRegion),
+            "the banner opened with a part marked")
+        frameEdge.scripts.OnEnter()
+        assert(Marked(frameOutline) and frameOutline._suitePreviewSelectionEdges[1].height == 1 and not Marked(artworkPart),
+            "hovering the frame did not outline the frame alone")
+        frameEdge.scripts.OnLeave()
+        assert(not Marked(frameOutline), "the frame's hover outline stayed")
+        frameEdge.scripts.OnClick(frameEdge, "LeftButton")
+        assert(focused == hudSections.suite_hud_announcements_frame and preview.target.label == "Banner frame"
+            and Marked(frameOutline) and not Marked(artworkPart), "clicking the frame did not select the frame alone")
+        artworkPart.scripts.OnClick(artworkPart, "LeftButton")
+        assert(focused == hudSections.suite_hud_announcements_artwork and preview.target.label == "Banner artwork"
+            and Marked(artworkPart) and Marked(entries.artwork2.region) and not Marked(frameOutline),
+            "clicking the artwork did not select the artwork alone")
+        titleRegion.scripts.OnClick(titleRegion, "LeftButton")
+        assert(focused == hudSections.suite_hud_announcements_type and preview.target.label == "Headline"
+            and Marked(titleRegion) and not Marked(artworkPart), "clicking the headline did not select it alone")
+        focused = nil
+        preview.selection.button.scripts.OnClick()
+        W.FocusCollapsibleSection = oldFocus
+        assert(focused == hudSections.suite_hud_announcements_type, "the settings shortcut lost the selected text")
+        -- Dragging the headline draws it where it goes and saves its offset
+        -- in one undo step; arrows nudge the selected row.
+        local cursor, cursorX, cursorY = GetCursorPosition, 100, 100
+        GetCursorPosition = function() return cursorX, cursorY end
+        local writes = historyWrites
+        titleRegion.scripts.OnMouseDown(titleRegion, "LeftButton")
+        cursorX, cursorY = 112, 95
+        titleRegion.scripts.OnUpdate()
+        assert(art.title.points[1][2] == 26 and art.title.points[1][3] == -28 and announcement.titleOffsetX == 0,
+            "the dragged headline was not drawn under the cursor before the write")
+        titleRegion.scripts.OnMouseUp(titleRegion, "LeftButton")
+        GetCursorPosition = cursor
+        assert(announcement.titleOffsetX == 12 and announcement.titleOffsetY == -5 and historyWrites == writes + 1
+            and art.title.points[1][2] == 26, "dragging the headline did not save its offset")
+        preview.handles:Arrow(1, 0)
+        assert(announcement.titleOffsetX == 13 and art.title.points[1][2] == 27, "an arrow did not nudge the headline")
+        local canvasClick = preview.canvas.scripts.OnClick
+        canvasClick()
+        assert(not preview.handles:Selected() and preview.target.label == "Banner artwork"
+            and not preview.handles:Arrow(1, 0) and announcement.titleOffsetX == 13,
+            "the arrows kept moving the headline after the artwork was selected")
+        announcement.titleOffsetX, announcement.titleOffsetY = 0, 0
+        for key, default in pairs(defaults) do announcement[key] = default end
+        preview:Paint()
+        assert(ShownEdges() == 4 and art.border[1].height == 1, "restoring the defaults did not restore the frame")
         historyBefore = historyWrites
     end
     assert(preview.playButton.shown and not preview.playing, "banner playback must be explicitly started")
@@ -1644,7 +1769,7 @@ end)() end
     for _, section in ipairs(hudCtx.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    local defaultTopics = flavor == "Forever" and 19 or 22
+    local defaultTopics = flavor == "Forever" and 20 or 23
     assert(topics == defaultTopics + #S.CharacterHeader.Fields, "HUD topics must be separate accordions beneath their feature tabs")
     local previousTabs = W.SegmentTabs
     W.SegmentTabs = nil
@@ -1671,6 +1796,9 @@ end)() end
     local preview = workspace.preview
     assert(preview.artPicker.shown and preview.artPicker.points[1][4] > preview.pickers.announcements.points[1][4],
         "narrow HUD keeps the artwork picker beside the announcement sample picker")
+    assert(preview.framePicker == nil and preview.artPicker.points[1][4] - 28 >= 120
+        and preview.handles.entries.frame1.region.shown,
+        "narrow HUD squeezed a third banner picker into the row; the frame keeps its click targets")
     assert(workspace.selector.meta.classification == "ephemeral", "feature selector writes settings")
     workspace.select("characterPanel")
     assert(workspace.selector.value == "characterPanel" and workspace.groups.characterPanel.frame.shown

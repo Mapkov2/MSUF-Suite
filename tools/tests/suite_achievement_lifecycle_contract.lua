@@ -104,7 +104,10 @@ function context:Unmute(frame)
 end
 function context:HideUnprotected() end
 context.muteHost = Frame:new(UIParent)
-local NS = { Safety = { IsForbidden = function() return false end }, HUDTextArgs = function() end }
+-- The banner's shared painter (Core/AnnouncementArt.lua) reads the core's
+-- font and color helpers and the runtime's styled-font setter.
+local NS = { Safety = { IsForbidden = function() return false end }, HUDTextArgs = function() end, Suite = S,
+    ResolveFont = S.ResolveFont, GlobalFontPath = S.GlobalFontPath, RGB = S.RGB }
 local native = { active = {}, pending = {}, frames = {} }
 AchievementAlertSystem = native
 native.setUpFunction = function(frame, id) frame.id = id; return true end
