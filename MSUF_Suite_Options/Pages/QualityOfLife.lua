@@ -200,7 +200,8 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
         end
         if #section.rules > 0 then
             local _, entries
-            local rules = group.id == "xpBar" and P.XPBarTextOptions.BarRules(section.rules) or section.rules
+            local rules = group.id == "xpBar" and P.XPBarTextOptions.BarRules(section.rules)
+                or group.id == "lootRolls" and P.LootRollPreviewProperties.GridRules(section.rules) or section.rules
             y, entries = P.RuleGrid(ctx, details, V.GetFeaturePage(group), group.id, rules, y,
                 width - 32, nil, sectionId, nil, nil, true)
             RegisterFeatureRuleSearch(group, sectionId, entries, keywords)

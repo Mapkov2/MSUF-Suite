@@ -552,6 +552,7 @@ local previewCases = {
     { "actionTracker", "DrawActionTrackerPreview", nil, "rowHeight" },
     { "battleRes", "DrawBattleResPreview", nil, "scale" },
     { "enemyCastStack", "DrawEnemyCastStackPreview", nil, "rowHeight" },
+    { "lootRolls", "DrawLootRollPreview", nil, "width" },
 }
 local createPreviewFrame, previewFrames = env.CreateFrame, 0
 env.CreateFrame = function(...)
@@ -623,6 +624,24 @@ for _, case in ipairs(previewCases) do
             local before = S.Config(id).displayStyle
             ui.sliders.xp:SetValue(12)
             Check(S.Config(id).displayStyle == before and not S.Config(id).enabled, "sample slider changed stored settings")
+        end
+        if id == "lootRolls" then
+            local editor = assert(ui.lootEditor, "loot preview lacks its layer editor")
+            Check(#editor.layerButtons == #P.LootRollPreviewEditor.Layers and editor.chips:IsVisible(),
+                "loot preview layer rail missing")
+            Check(editor.bar and editor.bar:IsVisible() and editor.bar.axisX and editor.bar.editY,
+                "loot preview lacks the host's X/Y bar")
+            local chip = editor.layerButtons[2]
+            Check(chip.key == "icon", "loot preview layer order drifted")
+            chip:GetScript("OnClick")(chip, "LeftButton")
+            Check(editor.layers.icon == false and not S.Config(id).enabled, "layer chip did not hide its preview layer")
+            chip:GetScript("OnClick")(chip, "LeftButton")
+            Check(editor.layers.icon == true, "layer chip did not show its preview layer again")
+            lastPreviewTarget = nil
+            chip:GetScript("OnClick")(chip, "RightButton")
+            Settle()
+            Check(lastPreviewTarget and lastPreviewTarget.key == "msufsuite.lootRolls.rowHeight"
+                and lastPreviewTarget.focused and lastPreviewTarget.matched, "layer right-click did not focus its setting")
         end
         ui.stage:Hide()
         lastPreviewTarget = nil

@@ -30,6 +30,27 @@ B.Section("lootRolls", "loot_rolls", "Loot roll window", {
 })
 NS.AddQoLVisualStyle("lootRolls", "loot_rolls", "Loot roll window")
 NS.AddQoLTextStyle("lootRolls", "loot_rolls", "Loot roll window")
-NS.SuiteCatalog.lootRolls.rules.resultSeconds.enableKey = "showResults"
-NS.SuiteCatalog.lootRolls.rules.urgentSeconds.enableKey = "urgentTimer"
-for _, key in ipairs({ "point", "x", "y" }) do NS.SuiteCatalog.lootRolls.rules[key].hidden = true end
+-- Row elements the preview edits. <id>OffsetX/Y shift an element from its
+-- default place in every row (the preview's X/Y bar; hidden from the grid).
+-- <id>Size is its icon, text, bar or button size, 0 keeping the automatic one;
+-- the preview shows it for the selected element (lootElement), not the grid.
+NS.LootRollElements = {
+    { id = "icon", label = "Icon", maxSize = 80 }, { id = "name", label = "Name", maxSize = 30 },
+    { id = "details", label = "Details", maxSize = 30 }, { id = "result", label = "Result", maxSize = 30 },
+    { id = "remaining", label = "Remaining time", maxSize = 30 },
+    { id = "timer", label = "Timer bar", maxSize = 12 }, { id = "buttons", label = "Buttons", maxSize = 40 },
+}
+for _, element in ipairs(NS.LootRollElements) do
+    local name = NS.Text(element.label)
+    element.xKey, element.yKey, element.sizeKey = element.id .. "OffsetX", element.id .. "OffsetY", element.id .. "Size"
+    B.Add("lootRolls", Number(element.xKey, NS.Text("%s: Horizontal offset"):format(name), 0, -200, 200), "loot_rolls", "Loot roll window")
+    B.Add("lootRolls", Number(element.yKey, NS.Text("%s: Vertical offset"):format(name), 0, -200, 200), "loot_rolls", "Loot roll window")
+    local size = Number(element.sizeKey, NS.Text("%s: Size (0 = automatic)"):format(name), 0, 0, element.maxSize)
+    size.lootElement = element.id
+    B.Add("lootRolls", size, "loot_rolls", "Loot roll window")
+end
+local rules = NS.SuiteCatalog.lootRolls.rules
+rules.resultSeconds.enableKey = "showResults"
+rules.urgentSeconds.enableKey = "urgentTimer"
+for _, key in ipairs({ "point", "x", "y" }) do rules[key].hidden = true end
+for _, element in ipairs(NS.LootRollElements) do rules[element.xKey].hidden, rules[element.yKey].hidden = true, true end

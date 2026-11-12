@@ -54,6 +54,9 @@ Pages\QualityOfLifeComfort.lua
 Pages\DataTexts.lua
 Pages\XPBarTextOptions.lua
 Pages\XPBarPreviewEditor.lua
+Pages\LootRollPreviewMove.lua
+Pages\LootRollPreviewProperties.lua
+Pages\LootRollPreviewEditor.lua
 Pages\QualityOfLifePreview.lua
 Menu\GraphicsPerformance.lua
 Pages\GraphicsPerformance.lua

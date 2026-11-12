@@ -144,10 +144,29 @@ local function RowHeight(config)
     return math.max(config.rowHeight, config.fontSize + 43)
 end
 
+-- Element sizes, once per layout into one reused table: 0 keeps each
+-- element's automatic size. Layout and paint read them; the tick never does.
+local function Sizes(self)
+    local config, sizes = self.config, self.sizes
+    if not sizes then
+        sizes = {}
+        self.sizes = sizes
+    end
+    local height = RowHeight(config)
+    sizes.icon = config.iconSize > 0 and config.iconSize or height - 12
+    sizes.name = config.nameSize > 0 and config.nameSize or config.fontSize
+    sizes.details = config.detailsSize > 0 and config.detailsSize or math.max(9, config.fontSize - 1)
+    sizes.result = config.resultSize > 0 and config.resultSize or config.fontSize
+    sizes.remaining = config.remainingSize > 0 and config.remainingSize or config.fontSize
+    sizes.timer = config.timerSize > 0 and config.timerSize or 2
+    sizes.button = config.buttonsSize > 0 and config.buttonsSize or 23
+    return sizes
+end
+
 local function PlaceRow(self, row, index)
-    local config = self.config
+    local config, sizes = self.config, self.sizes
     local height, width = RowHeight(config), config.width
-    local iconSize = height - 12
+    local iconSize = sizes.icon
     row.frame:ClearAllPoints()
     local offset = (index - 1) * (height + config.rowGap)
     if config.growth == GROW_UP then
@@ -156,30 +175,34 @@ local function PlaceRow(self, row, index)
         row.frame:SetPoint("TOPLEFT", self.host, "TOPLEFT", 0, -offset)
     end
     row.frame:SetSize(width, height)
+    -- Element offsets (Options' X/Y editor) apply here, on layout only.
     row.item:ClearAllPoints()
-    row.item:SetPoint("LEFT", row.frame, "LEFT", 6, 0)
+    row.item:SetPoint("LEFT", row.frame, "LEFT", 6 + config.iconOffsetX, config.iconOffsetY)
     row.item:SetSize(iconSize, iconSize)
+    local nameX, nameY = config.nameOffsetX, config.nameOffsetY - 6
     row.name:ClearAllPoints()
-    row.name:SetPoint("TOPLEFT", row.frame, "TOPLEFT", iconSize + 14, -6)
-    row.name:SetPoint("TOPRIGHT", row.frame, "TOPRIGHT", -39, -6)
-    row.name:SetHeight(config.fontSize + 3)
+    row.name:SetPoint("TOPLEFT", row.frame, "TOPLEFT", iconSize + 14 + nameX, nameY)
+    row.name:SetPoint("TOPRIGHT", row.frame, "TOPRIGHT", nameX - 39, nameY)
+    row.name:SetHeight(sizes.name + 3)
     row.remaining:ClearAllPoints()
-    row.remaining:SetPoint("TOPRIGHT", row.frame, "TOPRIGHT", -7, -6)
-    row.remaining:SetSize(29, config.fontSize + 3)
+    row.remaining:SetPoint("TOPRIGHT", row.frame, "TOPRIGHT", config.remainingOffsetX - 7, config.remainingOffsetY - 6)
+    row.remaining:SetSize(math.max(29, math.ceil(sizes.remaining * 2.4)), sizes.remaining + 3)
     row.details:ClearAllPoints()
-    row.details:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", iconSize + 14, 10)
-    row.details:SetHeight(config.fontSize + 2)
+    row.details:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", iconSize + 14 + config.detailsOffsetX, 10 + config.detailsOffsetY)
+    row.details:SetHeight(sizes.details + 3)
     row.status:ClearAllPoints()
-    row.status:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", iconSize + 14, 10)
-    row.status:SetHeight(config.fontSize + 2)
+    row.status:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", iconSize + 14 + config.resultOffsetX, 10 + config.resultOffsetY)
+    row.status:SetHeight(sizes.result + 2)
+    local timerX, timerY = config.timerOffsetX, config.timerOffsetY + 4
     row.timer:ClearAllPoints()
-    row.timer:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", 5, 4)
-    row.timer:SetPoint("BOTTOMRIGHT", row.frame, "BOTTOMRIGHT", -5, 4)
-    row.timer:SetHeight(2)
+    row.timer:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", 5 + timerX, timerY)
+    row.timer:SetPoint("BOTTOMRIGHT", row.frame, "BOTTOMRIGHT", timerX - 5, timerY)
+    row.timer:SetHeight(sizes.timer)
 end
 
 function View.Layout(self)
     View.Create(self)
+    Sizes(self)
     local config = self.config
     local count = math.min(#self.visibleEntries, config.maxRows, MAX_ROWS)
     self.viewCount = count
@@ -207,15 +230,16 @@ local function StyleRow(self, row, entry)
     row.urgent = false
     local qr, qg, qb = QualityColor(entry)
     S.PlaceEdges(row.iconBorder, row.item, 1, qr, qg, qb, 1)
-    S.QoLStyleText(row.name, config, font, config.fontSize)
+    local sizes = self.sizes
+    S.QoLStyleText(row.name, config, font, sizes.name)
     row.name:SetTextColor(qr, qg, qb)
     local tr, tg, tb = S.RGB(palette.text)
     local mr, mg, mb = S.RGB(palette.muted)
-    S.QoLStyleText(row.details, config, font, math.max(9, config.fontSize - 1))
+    S.QoLStyleText(row.details, config, font, sizes.details)
     row.details:SetTextColor(mr, mg, mb)
-    S.QoLStyleText(row.status, config, font, config.fontSize)
+    S.QoLStyleText(row.status, config, font, sizes.result)
     row.status:SetTextColor(tr, tg, tb)
-    S.QoLStyleText(row.remaining, config, font, config.fontSize)
+    S.QoLStyleText(row.remaining, config, font, sizes.remaining)
     row.remaining:SetTextColor(tr, tg, tb)
     local ar, ag, ab = S.RGB(palette.accent)
     row.timer:SetStatusBarColor(ar, ag, ab, 1)
@@ -244,7 +268,9 @@ end
 local function Actions(self, row, entry)
     local displayActions = (entry.rollID ~= nil or IsPreview(self)) and not entry.finished
     local actionable = displayActions and entry.choice == nil and not entry.cancelled
-    local shown = 0
+    local shown, buttonsX, buttonsY = 0, self.config.buttonsOffsetX - 9, self.config.buttonsOffsetY + 9
+    local size = self.sizes.button
+    local step = size + 6
     for index = #row.actions, 1, -1 do
         local action = row.actions[index]
         local eligible = action.action.id == 0 or entry[action.action.flag] == true
@@ -256,8 +282,8 @@ local function Actions(self, row, entry)
         action.icon:SetAlpha(actionable and eligible and 1 or .6)
         if available then
             action.button:ClearAllPoints()
-            action.button:SetPoint("BOTTOMRIGHT", row.frame, "BOTTOMRIGHT", -9 - shown * 29, 9)
-            action.button:SetSize(23, 23)
+            action.button:SetPoint("BOTTOMRIGHT", row.frame, "BOTTOMRIGHT", buttonsX - shown * step, buttonsY)
+            action.button:SetSize(size, size)
             local hasCount = self.config.showCounts and counted
             action.count:SetShown(hasCount)
             action.backdrop:SetShown(hasCount)
@@ -265,7 +291,7 @@ local function Actions(self, row, entry)
             shown = shown + 1
         end
     end
-    local width = math.max(1, self.config.width - RowHeight(self.config) - 18 - shown * 29)
+    local width = math.max(1, self.config.width - self.sizes.icon - 30 - shown * step)
     row.details:SetWidth(width)
     row.status:SetWidth(width)
     row.details:SetShown(actionable)

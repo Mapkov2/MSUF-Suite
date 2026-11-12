@@ -21,7 +21,7 @@ local TARGETS = {
     glimmer = { key = "size" },
     skyriding = { view = "suiteFlightPreview", key = "width",
         { "speed", "speedHeight" }, { "title", "fontSize" }, { "state", "displayStyle" } },
-    lootRolls = { key = "rowHeight" },
+    lootRolls = { key = "width" },
     actionTracker = { key = "rowHeight" },
     battleRes = { key = "scale" },
     enemyCastStack = { key = "rowHeight" },
@@ -64,6 +64,7 @@ local function BindTargets(ui, host)
     local spec = TARGETS[ui.id]
     Target(ui, host, host, spec.key, 0)
     if ui.id == "xpBar" then P.XPBarPreviewEditor.Bind(ui, ui.stage.suiteXPPreview) end
+    if ui.id == "lootRolls" then P.LootRollPreviewEditor.Bind(ui, ui.stage.suiteLootRollPreview) end
     local view = spec.view and ui.stage[spec.view]
     if not view then return end
     for index, row in ipairs(spec) do Target(ui, host, view[row[1]], row[2], index) end
@@ -113,6 +114,7 @@ local function Paint(ui)
     local config = S.Config(ui.id)
     local native = UIParent:GetEffectiveScale() / ui.stage:GetEffectiveScale()
     ui.viewport.scale = native * (config.scale or 100) / 100
+    if ui.restore then ui.restore() end
     local host, _, _, dx, dy = S[EXPORTS[ui.id]](ui.stage, config, ui.sample, ui.viewport)
     host:ClearAllPoints()
     host:SetPoint("CENTER", ui.stage, "CENTER", dx or 0, dy or 0)
@@ -141,6 +143,7 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
         sample = { xp = 62, rested = 25, vigor = 4.5, speed = 760 } }
     ui.status = P.Text(stage, "", 0, -8, room)
     ui.Paint = function() Paint(ui) end
+    ui.OpenTarget = function(key) return OpenTarget(ui, key) end
     y = y - height - 8
     if id == "xpBar" then
         y = SampleSlider(ui, parent, "xp", "Preview XP (percent)", 100, 1, y)
@@ -166,5 +169,6 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
         ui.Paint()
     end
     if id == "xpBar" then y = P.XPBarPreviewEditor.Build(ui, parent, y, room) end
+    if id == "lootRolls" then y = P.LootRollPreviewEditor.Build(ui, parent, y, room) end
     return y - 14
 end

@@ -63,7 +63,7 @@ local P = { S = S, Suite = { Client = { isForever = false }, GlossMaterial = { A
     M = { AddTooltip = function() end,
         TrackRefresh = function(ctx, callback) ctx.refresh[#ctx.refresh + 1] = callback end }, W = {} }
 P.catalog = {}
-for id, key in pairs({ lootRolls = "rowHeight", xpBar = "displayStyle", skyriding = "width", actionTracker = "rowHeight",
+for id, key in pairs({ lootRolls = "width", xpBar = "displayStyle", skyriding = "width", actionTracker = "rowHeight",
     battleRes = "scale", enemyCastStack = "rowHeight", glimmer = "size" }) do
     P.catalog[id] = { rules = { [key] = { label = key } } }
 end
@@ -71,6 +71,7 @@ function P.W.SettingsRows() error("sample sliders must not enter profile binding
 -- Scene loading and viewport policy are isolated here. The real-menu XP
 -- editor contract exercises text handles and their actual property controls.
 P.XPBarPreviewEditor = { Bind = function() end, Build = function(_, _, y) return y end }
+P.LootRollPreviewEditor = { Bind = function() end, Build = function(_, _, y) return y end }
 local function Draw(parent, config, sample, viewport)
     draws = draws + 1
     assert(config.enabled == false, "preview enabled a disabled module")

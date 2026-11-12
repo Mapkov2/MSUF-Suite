@@ -123,6 +123,9 @@ local config = {
     showItemLevel = true, showBind = true, showCounts = true,
     urgentTimer = true, urgentSeconds = 10,
 }
+for _, element in ipairs({ "icon", "name", "details", "result", "remaining", "timer", "buttons" }) do
+    config[element .. "OffsetX"], config[element .. "OffsetY"], config[element .. "Size"] = 0, 0, 0
+end
 local active = {
     rollID = 17, name = "Blue sword", link = "|Hitem:17|h[Blue sword]|h", icon = 1234, quality = 3,
     itemLevel = 100, count = 2, bindOnPickUp = true,
@@ -290,6 +293,67 @@ config.showCounts = false
 replacement.counts[1] = 5
 View.Paint(module)
 assert(not need.count.shown and not need.backdrop.shown)
+
+-- Element offsets (the preview's X/Y editor) move only their own element.
+local function Point(region, index)
+    local point = region.points[index or 1]
+    return point[4], point[5]
+end
+local nameX, nameY = Point(row.name)
+local nameRightX = Point(row.name, 2)
+local iconX, iconY = Point(row.item)
+local needX, needY = Point(need.button)
+local timerX, timerY = Point(row.timer)
+local remainingX, remainingY = Point(row.remaining)
+local detailsX, detailsY = Point(row.details)
+local statusX, statusY = Point(row.status)
+config.nameOffsetX, config.nameOffsetY, config.iconOffsetX, config.iconOffsetY = 7, -3, -2, 4
+config.buttonsOffsetX, config.buttonsOffsetY, config.timerOffsetY = -11, 6, 5
+config.remainingOffsetX, config.detailsOffsetY, config.resultOffsetX = 3, -1, 9
+View.Paint(module)
+local x, y = Point(row.name)
+assert(x == nameX + 7 and y == nameY - 3 and Point(row.name, 2) == nameRightX + 7, "name offset")
+x, y = Point(row.item)
+assert(x == iconX - 2 and y == iconY + 4, "icon offset")
+x, y = Point(need.button)
+assert(x == needX - 11 and y == needY + 6, "roll buttons offset")
+x, y = Point(row.timer)
+assert(x == timerX and y == timerY + 5 and select(2, Point(row.timer, 2)) == timerY + 5, "timer bar offset")
+x, y = Point(row.remaining)
+assert(x == remainingX + 3 and y == remainingY, "remaining time offset")
+x, y = Point(row.details)
+assert(x == detailsX and y == detailsY - 1, "details offset")
+x, y = Point(row.status)
+assert(x == statusX + 9 and y == statusY, "result offset")
+for _, element in ipairs({ "icon", "name", "details", "result", "remaining", "timer", "buttons" }) do
+    config[element .. "OffsetX"], config[element .. "OffsetY"] = 0, 0
+end
+View.Paint(module)
+assert(Point(row.name) == nameX and Point(need.button) == needX, "offsets did not return to the default place")
+
+-- Element sizes (0 = automatic) resize only their element, on layout and paint.
+local autoName, autoIcon, autoButton = row.name.fontSize, row.item.width, need.button.width
+local autoStep = Point(Action(row, 0).button) - Point(Action(row, 1).button)
+assert(autoName == 12 and autoIcon == 46 and autoButton == 23 and row.timer.height == 2, "automatic sizes drifted")
+config.nameSize, config.iconSize, config.buttonsSize, config.timerSize = 16, 30, 28, 4
+config.detailsSize, config.resultSize, config.remainingSize = 10, 14, 18
+View.Paint(module)
+assert(row.name.fontSize == 16 and row.name.height == 19, "name size")
+assert(row.item.width == 30 and row.item.height == 30 and Point(row.name) == 30 + 14, "icon size or text start")
+assert(need.button.width == 28 and Point(Action(row, 0).button) - Point(Action(row, 1).button) == autoStep + 5,
+    "button size or spacing")
+assert(row.timer.height == 4 and row.details.fontSize == 10 and row.status.fontSize == 14, "bar or text sizes")
+assert(row.remaining.fontSize == 18 and row.remaining.width >= 43, "remaining time size")
+assert(row.frame.height == 58, "an element size changed the row height")
+for _, element in ipairs({ "icon", "name", "details", "result", "remaining", "timer", "buttons" }) do
+    config[element .. "Size"] = 0
+end
+View.Paint(module)
+assert(row.name.fontSize == autoName and row.item.width == autoIcon and need.button.width == autoButton)
+local beforeTick = writes
+View.Tick(module, 205)
+View.Tick(module, 205)
+assert(writes - beforeTick <= 2, "offsets or sizes added per-tick widget writes")
 
 local sample = {
     name = "Sample item", quality = 3, remaining = 42, canNeed = true, canGreed = true,
