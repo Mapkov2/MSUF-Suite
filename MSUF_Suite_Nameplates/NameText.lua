@@ -22,7 +22,17 @@ local function Clear(state)
     for key in pairs(state) do state[key] = nil end
 end
 
+-- Keeps the unit mapping, drops the rest. captured marks a Capture that
+-- succeeded since the last Clear (raw alone does not: a label without text
+-- captures nil); every field but unit, prefix, look and nativeDirty is
+-- written only after one, so a state without the mark has nothing else to
+-- drop. Secret names take this way on every native update (2026-11-11 raid
+-- trace: 24,911 in 300 s).
 local function ForgetPlain(state)
+    if not state.captured then
+        state.look, state.nativeDirty = nil, nil
+        return
+    end
     local unit, prefix = state.unit, state.prefix
     Clear(state)
     state.unit, state.prefix = unit, prefix
@@ -34,7 +44,7 @@ local function Capture(state, label)
         ForgetPlain(state)
         return false
     end
-    state.raw = raw
+    state.raw, state.captured = raw, true
     local r, g, b, a = label:GetTextColor()
     if S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a) then
         state.r, state.g, state.b, state.a = r, g, b, a

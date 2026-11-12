@@ -26,6 +26,81 @@ local NATIVE_CVARS = { nameplateenemynpcauradisplay = true, nameplateenemyplayer
     nameplatefriendlyplayerauradisplay = true, nameplateshowdebuffsonfriendly = true }
 local IN_COMBAT = { inCombat = true }
 
+-- Blizzard makes a group's buttons on demand, one per aura up to the group's
+-- frame limit, and each new button costs about half a millisecond of
+-- protected set-up (2026-11-11 combat trace: ten buttons, 7.4 ms in the frame
+-- a plate got its unit). So a group's limit stays RAMP above the buttons it
+-- has, and all plates together are granted FRAME_GRANT new buttons a frame.
+-- The grant is counted in allowances, not in buttons made: Blizzard fills an
+-- allowance later and the aura count cannot be read here. Plates that appear
+-- together therefore do not wait one frame each.
+local RAMP, FRAME_GRANT = 3, 6
+local ramping = {}
+local waiting, waitCount, snapshot = {}, 0, {}
+local GROUP_NAMES = { "any", "auras" }
+local rampFrame, grantAt, granted = nil, 0, 0
+local RampStep
+
+-- How many of the wanted new allowances this frame's budget still allows.
+-- GetTime does not change within a frame.
+local function Grant(count)
+    local now = GetTime()
+    if now ~= grantAt then grantAt, granted = now, 0 end
+    local n = math.min(count, FRAME_GRANT - granted)
+    if n <= 0 then return 0 end
+    granted = granted + n
+    return n
+end
+
+-- The frame runs only while a group waits for its allowance.
+local function Ramp(record)
+    if not ramping[record] then
+        -- The order of the waiting list is the order the groups started to wait, so a frame is the same on every run.
+        ramping[record] = true
+        waitCount = waitCount + 1
+        waiting[waitCount] = record
+    end
+    if not rampFrame then rampFrame = CreateFrame("Frame") end
+    rampFrame:SetScript("OnUpdate", RampStep)
+end
+
+-- Raises each waiting group's limit by what this frame's budget allows, up to
+-- the buttons it has plus RAMP. A group still short of its want stays waiting.
+-- The small groups go first, so the one-button "any" group is never starved.
+RampStep = function()
+    -- The lists are reused: this runs every frame while a group waits. A group
+    -- that still waits after this frame is appended to the waiting list again.
+    local count = waitCount
+    for index = 1, count do
+        snapshot[index] = waiting[index]
+        waiting[index] = nil
+    end
+    waitCount = 0
+    for index = 1, count do
+        local record = snapshot[index]
+        snapshot[index] = nil
+        ramping[record] = nil
+        for slot = 1, #GROUP_NAMES do
+            local name = GROUP_NAMES[slot]
+            local want = record.want[name]
+            if want then
+                local allowed = record.allowed[name]
+                local need = math.min(want, (record.made[name] or 0) + RAMP) - allowed
+                if need > 0 then
+                    local n = Grant(need)
+                    if n > 0 then
+                        allowed = allowed + n
+                        record.allowed[name] = allowed
+                        record.frame:SetAuraGroupMaxFrameCount(name, allowed)
+                    end
+                    if n < need then Ramp(record) end
+                end
+            end
+        end
+    end
+    if not next(ramping) then rampFrame:SetScript("OnUpdate", nil) end
+end
+
 local function Accessible(frame)
     if not frame or NS.Safety.IsForbidden(frame) then return false end
     local allowed = frame:CanBeAccessedInContext()
@@ -172,19 +247,28 @@ local function Font(part, c, field)
     part[field .. "Host"]:SetAlpha(values["aura" .. field .. "Text"] and c[TEXT_SWITCH[field]] and 1 or 0)
 end
 
+-- AddDispelTypeTexture copies and processes these options on every call,
+-- four times a button (2026-11-10 combat trace: 0.83 ms a button). A colour
+-- object carries all its methods; the map's documented element is colorRGB,
+-- so it gets the three numbers only.
+local function Plain(color)
+    local r, g, b = color:GetRGB()
+    return { r = r, g = g, b = b }
+end
+
 local function DispelOptions(values)
     local assets, colors = {}, {}
     if values.auraDispelHighlight then
         for _, key in ipairs({ "Magic", "Curse", "Disease", "Poison", "Bleed" }) do
             assets[key] = { asset = WHITE }
-            colors[key] = AuraUtil.GetAuraBorderColor(key)
+            colors[key] = Plain(AuraUtil.GetAuraBorderColor(key))
         end
     end
     if values.auraEnrageHighlight then
         -- Enrages use the empty dispel-name token on legacy clients. The
         -- named token is accepted too, without treating nil as an enrage.
         assets[""], assets.Enrage = { asset = WHITE }, { asset = WHITE }
-        colors[""], colors.Enrage = CreateColor(1, .55, .1), CreateColor(1, .55, .1)
+        colors[""], colors.Enrage = { r = 1, g = .55, b = .1 }, { r = 1, g = .55, b = .1 }
     end
     return { style = Enum.CustomAuraButtonDispelTypeTextureStyle.CustomAsset,
         showWhenHelpful = true, showWhenHarmful = true, customDispelAssetMap = assets, customDispelColorMap = colors }
@@ -199,7 +283,17 @@ end
 
 local function BindDispel(record, part)
     if not record.c.dispel then return end
-    for _, texture in ipairs(part.dispel) do part.button:AddDispelTypeTexture(texture, plan.dispel) end
+    part.button:AddDispelTypeTexture(part.dispel, plan.dispel)
+end
+
+-- One texture behind the icon, a highlight's width larger on every side: the
+-- icon covers its middle, so it shows as a ring. Every bound dispel texture
+-- costs a protected call with the full options (2026-11-10 combat trace:
+-- four edges, 0.83 ms a button), so there is only this one.
+local function Ring(texture, button, width)
+    texture:ClearAllPoints()
+    texture:SetPoint("TOPLEFT", button, "TOPLEFT", -width, width)
+    texture:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", width, -width)
 end
 
 local function StylePart(record, part)
@@ -213,7 +307,7 @@ local function StylePart(record, part)
     Font(part, c, "Time")
     Font(part, c, "Stack")
     part.cooldown:SetAlpha(values.auraSwipe and c.swipe and values.auraSwipeAlpha / 100 or 0)
-    Border(part.dispel, part.dispelHost, values.auraHighlightSize)
+    Ring(part.dispel, button, values.auraHighlightSize)
     Border(part.pandemicEdges, part.pandemicStyle, values.auraHighlightSize)
     for _, texture in ipairs(part.pandemicEdges) do texture:SetColorTexture(NS.RGB(values.auraPandemicColor)) end
     part.pandemicStyle:SetShown(values.auraPandemicHighlight and c.pandemic)
@@ -229,14 +323,13 @@ local function Initialize(record, button, slot, anyGroup)
     local part = { button = button, slot = slot, anyGroup = anyGroup == true }
     part.icon = button:CreateTexture(nil, "ARTWORK")
     part.icon:SetAllPoints(button)
+    part.dispel = button:CreateTexture(nil, "BACKGROUND")
     part.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     part.cooldown:SetAllPoints(button)
     part.cooldown:SetDrawBling(false)
     part.cooldown:SetReverse(true)
     part.cooldown:SetHideCountdownNumbers(true)
     part.cooldown:SetFrameLevel(level + 1)
-    part.dispelHost = Child(button, level + 2)
-    part.dispel = Edges(part.dispelHost)
     part.pandemic = Child(button, level + 3)
     part.pandemicStyle = Child(part.pandemic, level + 3)
     part.pandemicEdges = Edges(part.pandemicStyle)
@@ -256,13 +349,20 @@ local function Initialize(record, button, slot, anyGroup)
     button:AddPandemicRegion(part.pandemic)
     part.bound = true
     record.parts[#record.parts + 1] = part
+    if not slot then
+        -- A group's button filled its allowance: the group may take more.
+        local name = anyGroup == true and "any" or "auras"
+        local made = (record.made[name] or 0) + 1
+        record.made[name] = made
+        if made >= record.allowed[name] and record.allowed[name] < record.want[name] then Ramp(record) end
+    end
 end
 
 local function NewRecord(state, c)
     local frame = CreateFrame("AuraContainer", nil, state.wrapper, "CustomAuraContainerTemplate")
     frame:SetEnabled(false)
     NS.Client.RealAurasOnly(frame)
-    return { frame = frame, parts = {}, slots = {}, groups = {}, key = c.key }
+    return { frame = frame, parts = {}, slots = {}, groups = {}, key = c.key, made = {}, want = {}, allowed = {} }
 end
 
 local function Place(state, record, c)
@@ -333,15 +433,28 @@ end
 -- player (index 2) need their own filter and follow as a second group.
 local function Group(record, c, name, index, filter, candidate, count)
     local frame = record.frame
+    -- The limit is set before the group exists: Blizzard may make buttons at once.
+    -- A group that is still short after its buttons fill is ramped by Initialize.
     if not record.groups[name] then
         if count == 0 then return end
-        frame:AddAuraGroup(name, filter, { maxFrameCount = count, candidateFilters = candidate,
+        record.want[name], record.made[name] = count, record.made[name] or 0
+        local allowed = Grant(math.min(count, RAMP))
+        record.allowed[name] = allowed
+        frame:AddAuraGroup(name, filter, { maxFrameCount = allowed, candidateFilters = candidate,
             initializeFrame = function(button) Initialize(record, button, nil, index == 2) end })
         record.groups[name] = true
+        if record.made[name] >= allowed and allowed < count then Ramp(record) end
     else
+        record.want[name] = count
         frame:SetAuraGroupFilterString(name, filter)
         frame:SetAuraGroupCandidateFilters(name, count > 0 and candidate or EMPTY)
-        if count > 0 then frame:SetAuraGroupMaxFrameCount(name, count) end
+        if count > 0 then
+            -- A settings change takes no grant from the frame budget.
+            local allowed = math.min(count, record.made[name] + RAMP)
+            record.allowed[name] = allowed
+            frame:SetAuraGroupMaxFrameCount(name, allowed)
+            if record.made[name] >= allowed and allowed < count then Ramp(record) end
+        end
     end
     local layout = { elementWidth = c.width, elementHeight = c.height, elementSpacing = c.gap, lineSpacing = c.gap }
     if c.anyCount > 0 or record.groups.any then
@@ -352,7 +465,10 @@ local function Group(record, c, name, index, filter, candidate, count)
         c.reverse and AuraContainerSortDirection.Reverse or AuraContainerSortDirection.Normal)
 end
 
+-- A button this pass makes is styled by Initialize and sealed by Blizzard as
+-- soon as that returns, so only the buttons from before take the new style.
 local function Configure(state, record, c)
+    local styled = #record.parts
     record.c = c
     if c.enabled then
         Place(state, record, c)
@@ -364,7 +480,7 @@ local function Configure(state, record, c)
             Group(record, c, "auras", 1, c.filter, c.candidate, c.groupCount)
             Group(record, c, "any", 2, c.anyFilter, c.anyCandidate, c.anyCount)
         end
-        for _, part in ipairs(record.parts) do StylePart(record, part) end
+        for index = 1, styled do StylePart(record, record.parts[index]) end
     end
     record.sig, record.style = c.sig, plan.style
 end
@@ -394,7 +510,7 @@ local function ConfigureSide(state, sideKey)
             side.records[c.key] = record
         end
         if record and (record.sig ~= c.sig or record.style ~= plan.style) then
-            if record.sig then
+            if record.sig or record.parts[1] then
                 if mutable == nil then mutable = Mutable(side) end
                 if not mutable then return false end
             end
@@ -466,7 +582,9 @@ local function Show(state, unit, sideKey, kind)
 end
 
 local function Used(unit, sideKey)
-    if not NS.Public(unit) or type(unit) ~= "string" or not active or editMode then return false end
+    -- Side-effect-free tests, cheapest first: a plate add with the display off
+    -- reads two upvalues (suite_nameplates_contract plate-add budget).
+    if not active or editMode or not NS.Public(unit) or type(unit) ~= "string" then return false end
     local values = plan.values
     return values.look ~= private.Mode.LOOK_BLIZZARD and values[sideKey] and plan.used[sideKey] == true
 end
@@ -538,6 +656,8 @@ function Display.Configure(config)
         Display.Release()
         return
     end
+    -- A group still short of its want resumes its ramp after Release stopped the frame.
+    if rampFrame and next(ramping) then rampFrame:SetScript("OnUpdate", RampStep) end
     if not listening then
         owner.context:Event("CVAR_UPDATE", NativeCVar, IN_COMBAT)
         listening = true
@@ -574,6 +694,9 @@ end
 
 function Display.Release()
     active = false
+    -- Nothing ticks while the feature is off. The waiting groups stay listed,
+    -- so the next Configure that turns the feature on resumes their ramp.
+    if rampFrame then rampFrame:SetScript("OnUpdate", nil) end
     if listening then
         owner.context:RemoveEvent("CVAR_UPDATE")
         listening = false

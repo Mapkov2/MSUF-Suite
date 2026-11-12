@@ -71,6 +71,68 @@ function S.ClockText(seconds, roundUp)
     return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
+-- The same clock written by the client. S.ElapsedClock() gives the text
+-- format of a duration text binding that shows the time since its duration's
+-- start as S.ClockText does (m:ss, h:mm:ss from an hour on). Bound to a font
+-- string the client writes the text once a second: no Lua runs for a running
+-- clock, where a 1 s ticker ran a paint.
+-- The numeric rule formatter's components (div, mod, step) are documented on
+-- Retail and Forever (NumericRuleFormatterSharedDocumentation.lua,
+-- upstream/live 297d7aaa and forever 9dc84f0d) but no Blizzard file calls
+-- them, so the documentation alone does not say what a client prints. The
+-- first caller therefore has the client format known times and compares:
+-- zero, which is a clock's first text; times three quarters into their
+-- second, and past the half of their minute and of their hour, so a client
+-- that rounds anywhere instead of cutting off prints another text; and one
+-- just under the hour, for a client that picks the hour's rule early.
+-- The long times are a duration's length (TotalDuration through the same
+-- formatter), not a start in the past: early after a boot such a start
+-- would lie before the clock's zero.
+-- A client that prints anything else, lacks a part or raises gets nil here
+-- for the session, and the caller keeps its own ticker.
+local PROOF = { { 0, "0:00" }, { 59.75, "0:59" },
+    { 155.75, "2:35", true }, { 3599.75, "59:59", true }, { 7175.75, "1:59:35", true } }
+local clockFormat, clockAsked
+-- The length of a clock's duration: a clock never runs out.
+S.CLOCK_SPAN = 7 * 86400
+
+local function ProveClock()
+    local down = Enum.NumericRuleFormatRounding.Down
+    local formatter = C_StringUtil.CreateNumericRuleFormatter()
+    formatter:AddBreakpoint({ threshold = 0, format = "%d:%02d", components = {
+        { div = 60, step = 1, rounding = down }, { mod = 60, step = 1, rounding = down } } })
+    formatter:AddBreakpoint({ threshold = 3600, format = "%d:%02d:%02d", components = {
+        { div = 3600, step = 1, rounding = down }, { div = 60, mod = 60, step = 1, rounding = down },
+        { mod = 60, step = 1, rounding = down } } })
+    local property = Enum.DurationTextBindingProperty
+    local components = { { property = property.ElapsedDuration, formatter = formatter } }
+    local length = { { property = property.TotalDuration, formatter = formatter } }
+    -- A binding of its own, never enabled and without a font string: it is
+    -- only asked for the text it would write.
+    local duration, binding = C_DurationUtil.CreateDuration(), C_DurationUtil.CreateDurationTextBinding()
+    binding:SetEnabled(false)
+    local now = GetTime()
+    for index = 1, #PROOF do
+        local seconds, wanted, asLength = PROOF[index][1], PROOF[index][2], PROOF[index][3]
+        if asLength then duration:SetTimeFromStart(now, seconds) else duration:SetTimeFromStart(now - seconds, S.CLOCK_SPAN) end
+        binding:SetTextFormat("{}", asLength and length or components)
+        binding:SetDuration(duration)
+        local text = binding:GetFormattedText()
+        if not Suite.Public(text) or text ~= wanted then return nil end
+    end
+    return components
+end
+
+function S.ElapsedClock()
+    if not clockAsked then
+        clockAsked = true
+        -- Dispatch returns nothing when the proof raised.
+        local finished, components = Suite.Dispatch(Suite.Finish, ProveClock)
+        clockFormat = finished and components or nil
+    end
+    return clockFormat
+end
+
 -- The class color as six hex digits (the settings' color format), or nil.
 function S.ClassHex(classFile)
     local r, g, b = S.ClassRGB(classFile)

@@ -332,6 +332,7 @@ NS.RegisterLocale("enUS", {
     ["Outline"] = "Outline",
     ["Native"] = "Native",
     ["Chevrons"] = "Chevrons",
+    ["Windows"] = "Windows",
     ["Fine"] = "Fine",
     ["Bold"] = "Bold",
     ["Line glyphs"] = "Line glyphs",

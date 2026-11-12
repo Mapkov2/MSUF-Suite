@@ -372,7 +372,7 @@ function Effects.Usable(entry, queries, shownOnly)
     if view and (view.usable or needResources) and entry.src ~= "p" then
         local usable, noPower, id, reader
         if entry.src == "i" then
-            id, reader = entry.itemID or entry.id, IsUsableItem
+            id, reader = entry.categoryItem or entry.itemID or entry.id, IsUsableItem
         elseif not (entry.equipSlot or entry.src == "e") then
             local spell, category = entry.spell, entry.spellCategory
             if category and category ~= 0 then spell = entry.catSpell end
@@ -537,7 +537,7 @@ function Effects.GateUsable(entry, queries)
     if queries then queries.used = true end
     local id, reader
     if entry.src == "i" then
-        id, reader, queries = entry.itemID or entry.id, IsUsableItem, queries and queries.items
+        id, reader, queries = entry.categoryItem or entry.itemID or entry.id, IsUsableItem, queries and queries.items
     else
         local spell, category = entry.spell, entry.spellCategory
         if category and category ~= 0 then spell = entry.catSpell end

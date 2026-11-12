@@ -142,11 +142,29 @@ do
         local f = assert(io.open(path, "rb")) local s = f:read("*a") f:close()
         return assert(loadstring(s:gsub("\r\n", "\n"), "@" .. path:match("[^/]+$")))(...)
     end
-    local log, frames, combat, blocked = {}, {}, false, false
-    local methods = {}
+    local log, frames, combat, blocked, secret, failLayout = {}, {}, false, false, false, false
+    local methods, dispelCalls = {}, {}
+    -- the clock (GetTime), the frame that runs a group's ramp (the last OnUpdate owner), whether the clock holds
+    -- for a frame of several plates, and the aura count a group of each key has (default: one aura)
+    local now, holdFrame, updateFrame, presentDefault = 100, false, nil, {}
+    -- Blizzard seals an aura button, and with it everything on it, as soon as
+    -- initializeFrame returns (DenyTaintedAccessWhenAurasAreSecret,
+    -- Blizzard_AuraContainerFrameProviders.lua CreateFrame). While auras are
+    -- secret every call of ours on a sealed object raises.
+    local function Refused(frame)
+        if not (combat or secret) then return false end
+        while frame do
+            if rawget(frame, "restricted") then return true end
+            frame = rawget(frame, "parent")
+        end
+        return false
+    end
     local function Frame(kind, parent, template)
         local frame = setmetatable({ kind = kind, parent = parent, template = template, shown = true, level = 1, scripts = {}, calls = {} },
             { __index = function(self, name)
+                if name ~= "CanBeAccessedInContext" and Refused(self) then
+                    error("calling '" .. name .. "' on bad self (sealed aura button)", 2)
+                end
                 if methods[name] then return methods[name] end
                 return function(this, ...) this.calls[name] = (this.calls[name] or 0) + 1 this[name .. "Args"] = { ... } end
             end })
@@ -154,16 +172,32 @@ do
         return frame
     end
     function methods:GetFrameLevel() return self.level end
+    -- Anchors are kept in order per frame (a ClearAllPoints starts over), for the ring and the pandemic edges.
+    function methods:ClearAllPoints() self.calls.ClearAllPoints = (self.calls.ClearAllPoints or 0) + 1 self.points = {} end
+    function methods:SetPoint(...)
+        self.calls.SetPoint = (self.calls.SetPoint or 0) + 1
+        self.SetPointArgs = { ... }
+        local points = rawget(self, "points") or {}
+        points[#points + 1] = self.SetPointArgs
+        self.points = points
+    end
+    function methods:ClearDispelTypeTextures() dispelCalls[#dispelCalls + 1] = { button = self } end
+    function methods:AddDispelTypeTexture(texture, options) dispelCalls[#dispelCalls + 1] = { button = self, texture = texture, options = options } end
     function methods:SetFrameLevel(v) self.level = v end
     function methods:IsProtected() return false end
-    function methods:CanBeAccessedInContext() return not rawget(self, "sealed") end
+    function methods:CanBeAccessedInContext() return not rawget(self, "sealed") and not Refused(self) end
+    local function AuraButton(container, initializeFrame)
+        local button = Frame("AuraButton", container)
+        initializeFrame(button)
+        button.restricted = true
+    end
     function methods:IsShown() return self.shown end
     function methods:SetShown(v) self.shown = v local cb = self.scripts[v and "OnShow" or "OnHide"] if cb then cb(self) end end
     function methods:Show() self:SetShown(true) end
     function methods:Hide() self:SetShown(false) end
     function methods:HookScript(e, cb) self.scripts[e] = cb end
-    function methods:SetScript(e, cb) self.scripts[e] = cb end
-    function methods:CreateTexture() return Frame("Texture", self) end
+    function methods:SetScript(e, cb) self.scripts[e] = cb if e == "OnUpdate" then updateFrame = self end end
+    function methods:CreateTexture(_, layer) local texture = Frame("Texture", self) texture.drawLayer = layer return texture end
     function methods:CreateFontString() return Frame("FontString", self) end
     function methods:SetEnabled(v) self.enabled = v end
     function methods:SetUnit(u) self.unit = u end
@@ -171,29 +205,55 @@ do
         self.slots = rawget(self, "slots") or {}
         self.slots[key] = { filter = filter, candidate = options.candidateFilters }
         log[#log + 1] = "slot:" .. key
-        options.initializeFrame(Frame("AuraButton", self))
+        AuraButton(self, options.initializeFrame)
     end
     function methods:SetAuraSlotCandidateFilters(key, c) self.slots[key].candidate = c log[#log + 1] = "slotc:" .. key end
     function methods:SetAuraSlotFilterString(key, f) self.slots[key].filter = f end
+    -- Blizzard makes a group's buttons on demand: min(auras, limit). SetAuraGroupMaxFrameCount only stores the limit;
+    -- the stub makes the buttons it allows at once (Blizzard makes them on its next refresh, through initializeFrame).
+    local function Fill(frame, key)
+        local group = frame.groups[key]
+        local want = math.min(presentDefault[key] or 1, group.max)
+        while group.made < want do
+            group.made = group.made + 1
+            AuraButton(frame, group.init)
+        end
+    end
     function methods:AddAuraGroup(key, filter, options)
         self.groups = rawget(self, "groups") or {}
-        self.groups[key] = { filter = filter, candidate = options.candidateFilters, max = options.maxFrameCount, init = options.initializeFrame }
+        self.groups[key] = { filter = filter, candidate = options.candidateFilters, max = options.maxFrameCount, init = options.initializeFrame, made = 0 }
         log[#log + 1] = "group:" .. key
-        options.initializeFrame(Frame("AuraButton", self))
+        Fill(self, key)
     end
     function methods:SetAuraGroupCandidateFilters(key, c) self.groups[key].candidate = c end
     function methods:SetAuraGroupFilterString(key, f) self.groups[key].filter = f end
-    function methods:SetAuraGroupMaxFrameCount(key, n) self.groups[key].max = n end
-    function methods:SetAuraGroupLayout(key, l) self.groups[key].layout = l end
+    function methods:SetAuraGroupMaxFrameCount(key, n) self.groups[key].max = n Fill(self, key) end
+    function methods:SetAuraGroupLayout(key, l)
+        if failLayout then failLayout = false error("layout refused") end
+        self.groups[key].layout = l
+    end
     CreateFrame = function(kind, _, parent, template) return Frame(kind, parent, template) end
+    GetTime = function() return now end
     AnchorUtil = { FlowDirection = { Left = "L", Right = "R", Up = "U", Down = "D" } }
     AuraContainerSortMethod = setmetatable({}, { __index = function(_, k) return k end })
     AuraContainerSortDirection = { Normal = 1, Reverse = 2 }
-    AuraUtil = { GetAuraBorderColor = function(k) return k end }
-    CreateColor = function() return {} end
+    -- Blizzard's colour objects (ColorMixin): r, g, b, a and the methods copied into each object. The real
+    -- ColorMixin carries about 25 methods; this stub copies 24 and the GetRGB that Plain calls.
+    local SOURCE = { Magic = { .2, .6, 1 }, Curse = { .6, 0, 1 }, Disease = { .6, .4, 0 }, Poison = { 0, .6, 0 }, Bleed = { .8, .1, .1 } }
+    local MIXIN = { "GetRGBA", "GetRGBAsBytes", "SetRGB", "SetRGBA", "SetRGBAsBytes", "IsEqualTo", "WrapTextInColorCode",
+        "GenerateHexColor", "GenerateHexColorMarkup", "GetRed", "GetGreen", "GetBlue", "GetAlpha", "SetAlpha", "Clone", "Mix", "Lerp",
+        "SetRGBFromHex", "IsTransparent", "Init", "Dump", "Reset", "IsValid", "ToString" }
+    local function BlizzardColor(r, g, b, a)
+        local color = { r = r, g = g, b = b, a = a or 1 }
+        for _, name in ipairs(MIXIN) do color[name] = function() end end
+        function color:GetRGB() return self.r, self.g, self.b end
+        return color
+    end
+    AuraUtil = { GetAuraBorderColor = function(k) local c = SOURCE[k] return BlizzardColor(c[1], c[2], c[3]) end }
+    CreateColor = function(r, g, b, a) return BlizzardColor(r, g, b, a) end
     Enum = { CustomAuraButtonDispelTypeTextureStyle = { CustomAsset = 1 } }
     C_Spell = { GetSpellTexture = function(id) return id end }
-    C_Secrets = { ShouldAurasBeSecret = function() return combat end }
+    C_Secrets = { ShouldAurasBeSecret = function() return combat or secret end }
     C_StringUtil = { CreateNumericRuleFormatter = function() return { SetBreakpoints = function() end } end }
     UnitClass = function() return "Mage", "MAGE" end
     local playerUnit = false
@@ -224,6 +284,9 @@ do
     local private = { NS = NS, Suite = S, Mode = { LOOK_BLIZZARD = 2 } }
     load(out .. "/MSUF_Suite_Nameplates/AuraDisplay.lua", "MSUF_Suite_Nameplates", private)
     local D = private.AuraDisplay
+    -- every Apply is a frame of its own, so each one has its own budget (the holdFrame switch keeps a frame)
+    local apply = D.Apply
+    D.Apply = function(...) if not holdFrame then now = now + 1 end return apply(...) end
     local repaints = 0
     local function Plate()
         local uf = Frame("Frame")
@@ -272,7 +335,8 @@ do
     local custom
     for _, f in ipairs(frames) do if f.kind == "AuraContainer" and f ~= dots then custom = f end end
     assert(custom.groups.auras.filter == "HARMFUL|INCLUDE_NAME_PLATE_ONLY" and custom.groups.auras.candidate.includeSpellIDs[339]
-        and custom.groups.auras.max == 8 and custom.groups.auras.layout.layoutIndex == nil and not custom.groups.any)
+        -- the limit is the buttons the group has (one aura here) plus the ramp, not the want of 8 (2026-11-11)
+        and custom.groups.auras.max == 3 and custom.groups.auras.layout.layoutIndex == nil and not custom.groups.any)
     -- combat: an edit waits, the old plan keeps showing, then applies
     combat = true
     config.auraEnemyDotsSize = 40
@@ -303,6 +367,176 @@ do
     assert(D.Apply(uf2, "nameplate3", true) == false and log[#log] == "afterbuild")
     blocked = false
     assert(D.Apply(uf2, "nameplate3", true) == true)
+    -- auras secret outside combat (keystone run, encounter, PvP): a new plate
+    -- builds its containers at once. Each new button is styled once, inside
+    -- initializeFrame; the build never returns to a button Blizzard sealed
+    -- (2026-11-10: SetSize on bad self, AuraDisplay.lua StylePart, 3x).
+    secret = true
+    local uf3, first = Plate(), #frames + 1
+    assert(D.Apply(uf3, "nameplate4", true) == true, "a first build under secret auras did not complete")
+    secret = false
+    local built = 0
+    for index = first, #frames do
+        local frame = frames[index]
+        if frame.kind == "AuraButton" then
+            built = built + 1
+            assert(frame.calls.SetSize == 1, "a new aura button was styled " .. frame.calls.SetSize .. " times")
+        elseif frame.kind == "AuraContainer" then
+            assert(frame.enabled and frame.unit == "nameplate4", "a container built under secret auras does not show")
+        end
+    end
+    assert(built == 2, built .. " aura buttons")
+    -- a build that raised half way leaves a container with buttons and no
+    -- signature. Its retry is an edit of sealed buttons: it waits while auras
+    -- are secret and completes once they can be read.
+    secret, failLayout = true, true
+    local uf4 = Plate()
+    assert(not pcall(D.Apply, uf4, "nameplate6", true), "the interrupted build did not raise")
+    assert(D.Apply(uf4, "nameplate6", true) == false, "a half-built container was restyled under secret auras")
+    secret, active[uf4] = false, { "nameplate6", true }
+    D.Resume()
+    active[uf4] = nil
+    assert(D.Apply(uf4, "nameplate6", true) == true, "the interrupted build never completed")
+    -- Dispel colours. Blizzard copies and processes the options on every AddDispelTypeTexture call, four a button.
+    -- 2026-11-11, Lua 5.1, recursive key count of the options passed to AddDispelTypeTexture (both highlights on,
+    -- this stub's colour objects: 29 keys each): before 229 (base AuraDisplay.lua) -> after 47 (colorRGB, r g b only).
+    local function Names(map)
+        local names = {}
+        for key in pairs(map) do names[#names + 1] = key end
+        table.sort(names)
+        return table.concat(names, "|")
+    end
+    local function Keys(value)
+        local n = 0
+        for _, child in pairs(value) do n = n + 1 if type(child) == "table" then n = n + Keys(child) end end
+        return n
+    end
+    -- Under(frame, button): the frame is the button or was made under it. Initialize makes the button's frames and
+    -- textures; 2026-11-11, Lua 5.1, per aura button, before (base: four dispel edges on a host frame) -> after
+    -- (one texture on the button): frames 6 -> 5 (the dispel host is gone), textures 9 -> 6 (four edges -> one),
+    -- AddDispelTypeTexture calls 4 -> 1.
+    local function Under(frame, button)
+        while frame do
+            if frame == button then return true end
+            frame = rawget(frame, "parent")
+        end
+        return false
+    end
+    local function Made(first, button, kind)
+        local n = 0
+        for index = first, #frames do
+            local frame = frames[index]
+            if frame ~= button and frame.kind == kind and Under(frame, button) then n = n + 1 end
+        end
+        return n
+    end
+    local function Calls(button)
+        local n = 0
+        for _, call in ipairs(dispelCalls) do if call.button == button and call.texture then n = n + 1 end end
+        return n
+    end
+    local function Options(button)
+        for _, call in ipairs(dispelCalls) do if call.button == button and call.texture then return call.options end end
+    end
+    local function Anchor(entry, point, relative, relativePoint, x, y)
+        return entry[1] == point and entry[2] == relative and entry[3] == relativePoint and entry[4] == x and entry[5] == y
+    end
+    local function Dispel(enrage, on)
+        -- the custom 1 container of the earlier section is still on: every enemy container takes the switch
+        config.auraDispelHighlight, config.auraEnrageHighlight, config.auraEnemyDotsDispel = true, enrage, on
+        config.auraEnemyCustom1Dispel = on
+        config.auraHighlightSize = 2
+        D.Configure(config)
+        local first, plate = #frames + 1, Plate()
+        assert(D.Apply(plate, "nameplate7", true) == true, "the plate did not build")
+        local buttons = {}
+        for index = first, #frames do if frames[index].kind == "AuraButton" then buttons[#buttons + 1] = frames[index] end end
+        assert(#buttons > 0, "no aura button was built")
+        return plate, buttons, first
+    end
+    local plate, buttons, first = Dispel(true, true)
+    local button = buttons[1]
+    local frameCount, textureCount = Made(first, button, "Frame") + Made(first, button, "Cooldown"), Made(first, button, "Texture")
+    print(("aura dispel per button: %d frames, %d textures, %d AddDispelTypeTexture calls"):format(frameCount, textureCount, Calls(button)))
+    local dispel = Options(button)
+    local count = Keys(dispel)
+    print("aura dispel options: " .. count .. " keys")
+    local map = dispel.customDispelColorMap
+    assert(Names(map) == "|Bleed|Curse|Disease|Enrage|Magic|Poison", Names(map))
+    local function CheckColor(color, want, label)
+        local n = 0
+        for key in pairs(color) do n = n + 1 assert(key == "r" or key == "g" or key == "b", label .. " keeps " .. tostring(key)) end
+        assert(n == 3 and color.r == want[1] and color.g == want[2] and color.b == want[3], label .. " is not the source colour")
+    end
+    for key, want in pairs(SOURCE) do CheckColor(map[key], want, key) end
+    CheckColor(map[""], { 1, .55, .1 }, "enrage token")
+    CheckColor(map.Enrage, { 1, .55, .1 }, "Enrage")
+    assert(map[""] ~= map.Enrage, "the two enrage entries share one table")
+    assert(count <= 47, "dispel options grew to " .. count .. " keys")
+    assert(frameCount == 5 and textureCount == 6, "frames " .. frameCount .. ", textures " .. textureCount)
+    local want = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
+    for _, b in ipairs(buttons) do
+        -- one texture behind the icon, reaching the highlight's width beyond the button on every side
+        assert(Calls(b) == 1, "a button got " .. Calls(b) .. " AddDispelTypeTexture calls")
+        assert(Options(b) == dispel, "a button has its own options table")
+        local texture
+        for _, call in ipairs(dispelCalls) do if call.button == b and call.texture then texture = call.texture end end
+        assert(texture.parent == b and texture.drawLayer == "BACKGROUND", "the dispel texture is not a background of its button")
+        assert(b.SetIconArgs[1].drawLayer == "ARTWORK" and b.SetIconArgs[1] ~= texture, "the icon does not draw above the highlight")
+        local points = rawget(texture, "points")
+        assert(points and #points == 2 and Anchor(points[1], "TOPLEFT", b, "TOPLEFT", -2, 2)
+            and Anchor(points[2], "BOTTOMRIGHT", b, "BOTTOMRIGHT", 2, -2), "the ring is not 2 pixels beyond the button")
+        -- the pandemic highlight: its four edges keep Border's anchors and width
+        local pandemic, style
+        for index = first, #frames do
+            local frame = frames[index]
+            if frame.kind == "Frame" and rawget(frame, "parent") == b and frame.level == 4 then pandemic = frame end
+        end
+        assert(pandemic, "no pandemic frame")
+        for index = first, #frames do
+            local frame = frames[index]
+            if frame.kind == "Frame" and rawget(frame, "parent") == pandemic and frame.level == 4 then style = frame end
+        end
+        assert(style, "no pandemic style frame")
+        local edges = {}
+        for index = first, #frames do
+            local frame = frames[index]
+            if frame.kind == "Texture" and rawget(frame, "parent") == style then edges[#edges + 1] = frame end
+        end
+        assert(#edges == 4, #edges .. " pandemic edges")
+        for i, edge in ipairs(edges) do
+            local edgePoints = rawget(edge, "points")
+            assert(edgePoints and #edgePoints == 2 and Anchor(edgePoints[1], want[i][1], style, want[i][1])
+                and Anchor(edgePoints[2], want[i][2], style, want[i][2]), "pandemic edge " .. i .. " anchors")
+            local side = i <= 2 and "height" or "width"
+            assert((i <= 2 and edge.SetHeightArgs or edge.SetWidthArgs)[1] == 2, "pandemic edge " .. i .. " " .. side)
+        end
+    end
+    -- the highlight follows the thickness, and a restyled button is rebound once: its clear, then one bind
+    local mark = #dispelCalls
+    config.auraHighlightSize = 4
+    D.Configure(config)
+    assert(D.Apply(plate, "nameplate7", true) == true)
+    for _, b in ipairs(buttons) do
+        local sequence = {}
+        for index = mark + 1, #dispelCalls do
+            if dispelCalls[index].button == b then sequence[#sequence + 1] = dispelCalls[index].texture and "add" or "clear" end
+        end
+        assert(table.concat(sequence, ",") == "clear,add", "a restyled button was rebound as " .. table.concat(sequence, ","))
+        local texture
+        for _, call in ipairs(dispelCalls) do if call.button == b and call.texture then texture = call.texture end end
+        local points = rawget(texture, "points")
+        assert(points and #points == 2 and Anchor(points[1], "TOPLEFT", b, "TOPLEFT", -4, 4)
+            and Anchor(points[2], "BOTTOMRIGHT", b, "BOTTOMRIGHT", 4, -4), "the ring did not follow the thickness")
+    end
+    -- off: no texture is bound; the enrage entries leave the map when enrages are off
+    local _, offButtons = Dispel(true, false)
+    for _, b in ipairs(offButtons) do assert(Calls(b) == 0, "a button with the dispel highlight off got " .. Calls(b) .. " calls") end
+    local _, enrageOff = Dispel(false, true)
+    assert(Names(Options(enrageOff[1]).customDispelColorMap) == "Bleed|Curse|Disease|Magic|Poison", "enrage off still colours enrages")
+    config.auraDispelHighlight, config.auraEnrageHighlight, config.auraHighlightSize = nil, nil, nil
+    config.auraEnemyDotsDispel, config.auraEnemyCustom1Dispel = nil, nil
+    D.Configure(config)
     -- a Visible lane draws Debuffs and hides Blizzard's list of that kind only
     local buffList, debuffList = uf.AurasFrame.BuffListFrame, uf.AurasFrame.DebuffListFrame
     config.auraEnemyDebuffVisible = true
@@ -341,6 +575,218 @@ do
     assert(debuffList.shown == true, "Blizzard's list was not handed back after combat")
     -- release
     assert(dots.enabled == false and custom.enabled == false and D.Apply(uf, "nameplate2", true) == false and cvarEvent == nil)
+    -- Ramp. Blizzard makes a group's buttons on demand, min(auras, limit), each at about half a millisecond
+    -- (2026-11-11 combat trace). Budget, lua 5.1, 2026-11-11: a plate that gets a unit with ten auras makes
+    -- buttons in that frame: before 10 (base: the group's limit is its want) -> after 3 (RAMP), and frames
+    -- until complete: before 1 -> after 4 (3, 3, 3, 1).
+    local function Total(list)
+        local n = 0
+        for _, container in ipairs(list) do
+            for _, frame in ipairs(frames) do
+                if frame.kind == "AuraButton" and rawget(frame, "parent") == container then n = n + 1 end
+            end
+        end
+        return n
+    end
+    local function Containers(first)
+        local list = {}
+        for index = first, #frames do if frames[index].kind == "AuraContainer" then list[#list + 1] = frames[index] end end
+        return list
+    end
+    -- one frame: the clock moves on and the ramp runs; the result is the buttons each frame made
+    local function Frames(list, count)
+        local made = {}
+        for i = 1, count do
+            local before = Total(list)
+            now = now + 1
+            if updateFrame and updateFrame.scripts.OnUpdate then updateFrame.scripts.OnUpdate(updateFrame) end
+            made[i] = Total(list) - before
+        end
+        return made
+    end
+    local ramp = { auraDisplayEnabled = true, auraEnemyCustom1Visible = true, auraEnemyCustom1SpellsRetail = "118,339",
+        auraEnemyCustom1Max = 10 }
+    config, module.config = ramp, ramp
+    D.Configure(ramp)
+    -- groups of the earlier sections that the budget left without a button are still waiting: let them finish
+    for _ = 1, 20 do
+        if not (updateFrame and updateFrame.scripts.OnUpdate) then break end
+        Frames({}, 1)
+    end
+    -- (a) one plate, ten auras: three buttons in its frame, then three a frame, then the rest
+    presentDefault.auras = 10
+    local a = Plate()
+    local firstA = #frames + 1
+    assert(D.Apply(a, "nameplate8", true) == true)
+    local boxA = Containers(firstA)
+    local appliedA = Total(boxA)
+    local ticksA = Frames(boxA, 3)
+    local count, untilTen = appliedA, 1
+    for _, made in ipairs(ticksA) do
+        if count < 10 then count, untilTen = count + made, untilTen + 1 end
+    end
+    print(("aura ramp: %d buttons in the frame of a plate with ten auras, %d frames until ten"):format(appliedA, untilTen))
+    assert(appliedA == 3, "the frame of a unit made " .. appliedA .. " buttons")
+    assert(table.concat(ticksA, ",") == "3,3,1" and Total(boxA) == 10, table.concat(ticksA, ","))
+    assert(boxA[1].groups.auras.max == 10 and updateFrame.scripts.OnUpdate == nil, "the ramp still runs with nothing waiting")
+    -- (b) one plate, two auras: two buttons at once, a limit of three, and no ramp started
+    presentDefault.auras = 2
+    local b = Plate()
+    local firstB = #frames + 1
+    assert(D.Apply(b, "nameplate9", true) == true)
+    local boxB = Containers(firstB)
+    assert(Total(boxB) == 2 and boxB[1].groups.auras.max == 3, "two auras made " .. Total(boxB) .. " buttons")
+    assert(updateFrame.scripts.OnUpdate == nil, "a ramp runs with nothing waiting")
+    -- (c) the plate's unit changes to one with ten auras: the spare allowance makes one button, then three a frame
+    presentDefault.auras = 10
+    local spare = Total(boxB)
+    for _, container in ipairs(boxB) do Fill(container, "auras") end
+    local atOnce = Total(boxB) - spare
+    assert(D.Apply(b, "nameplate10", true) == true)
+    local ticksC = Frames(boxB, 3)
+    assert(atOnce == 1 and table.concat(ticksC, ",") == "3,3,1" and Total(boxB) == 10, atOnce .. " at once, " .. table.concat(ticksC, ","))
+    -- a group with fewer auras than its want stops at the buttons it has plus the ramp, and nothing ticks after that
+    presentDefault.auras = 4
+    local h = Plate()
+    local firstH = #frames + 1
+    assert(D.Apply(h, "nameplate60", true) == true)
+    local boxH = Containers(firstH)
+    local hTicks = Frames(boxH, 2)
+    assert(table.concat(hTicks, ",") == "1,0" and Total(boxH) == 4 and boxH[1].groups.auras.max == 6, "four auras: " .. table.concat(hTicks, ","))
+    assert(updateFrame.scripts.OnUpdate == nil, "a ramp runs for a group that is not full")
+    -- (d) five plates with ten auras in one frame: three buttons in that frame over all plates, three a frame after
+    now = now + 1
+    holdFrame = true
+    presentDefault.auras = 10
+    local firstD = #frames + 1
+    for index = 1, 5 do assert(D.Apply(Plate(), "nameplate" .. (20 + index), true) == true) end
+    holdFrame = false
+    local boxD = Containers(firstD)
+    assert(#boxD == 5, #boxD .. " containers")
+    local sizes = { Total(boxD) }
+    for _ = 1, 20 do
+        if Total(boxD) >= 50 then break end
+        sizes[#sizes + 1] = Frames(boxD, 1)[1]
+    end
+    -- 2026-11-11, measured: the frame budget is FRAME_GRANT (6) allowances; the first frame grants two plates three
+    -- each, then six a frame until the remainder
+    assert(table.concat(sizes, ",") == "6,6,6,6,6,6,6,3,3,2", "five plates made " .. table.concat(sizes, ","))
+    for _, size in ipairs(sizes) do assert(size <= 6, "a frame made " .. size .. " buttons") end
+    for _, container in ipairs(boxD) do assert(container.groups.auras.max == 10, "a limit of " .. container.groups.auras.max) end
+    assert(updateFrame.scripts.OnUpdate == nil)
+    -- (e) a want of two never allows more than two; a settings change raises it to twelve, and the group goes on
+    ramp.auraEnemyCustom1Max = 2
+    D.Configure(ramp)
+    presentDefault.auras = 10
+    local e = Plate()
+    local firstE = #frames + 1
+    assert(D.Apply(e, "nameplate30", true) == true)
+    local boxE = Containers(firstE)
+    local capped = Frames(boxE, 2)
+    assert(Total(boxE) == 2 and boxE[1].groups.auras.max == 2 and capped[1] == 0 and capped[2] == 0, "a want of two allowed more")
+    ramp.auraEnemyCustom1Max = 12
+    D.Configure(ramp)
+    presentDefault.auras = 12
+    local beforeRaise = Total(boxE)
+    assert(D.Apply(e, "nameplate30", true) == true)
+    local raisedAtOnce = Total(boxE) - beforeRaise
+    local raised = Frames(boxE, 3)
+    assert(raisedAtOnce == 3 and table.concat(raised, ",") == "3,3,1" and Total(boxE) == 12, raisedAtOnce .. " then " .. table.concat(raised, ","))
+    -- (f) the any group (Sunder: WoW Forever only) ramps by the same rule and shares the budget; it is granted first
+    NS.Client.isForever = true
+    local forever = { auraDisplayEnabled = true, auraEnemyDotsVisible = true, auraEnemyDotsDisplay = 2, auraEnemyDotsMax = 10,
+        auraEnemyDotsOnlyMine = true, auraSunder = true, auraEnemyDotsSource = 2, auraEnemyDotsIDsRetail = "589" }
+    config, module.config = forever, forever
+    D.Configure(forever)
+    presentDefault.auras, presentDefault.any = 10, 1
+    local f = Plate()
+    local firstF = #frames + 1
+    assert(D.Apply(f, "nameplate40", true) == true)
+    local boxF = Containers(firstF)
+    local dots = boxF[1]
+    assert(#boxF == 1 and dots.groups.any and dots.groups.auras, "the dots container has no any group")
+    local rows = { { dots.groups.auras.made, dots.groups.any.made } }
+    for _ = 1, 5 do
+        Frames(boxF, 1)
+        rows[#rows + 1] = { dots.groups.auras.made, dots.groups.any.made }
+    end
+    local text = {}
+    for index, row in ipairs(rows) do text[index] = row[1] .. "/" .. row[2] end
+    -- 2026-11-11, measured (auras/any per frame): the frame of the Apply takes both groups' allowances (3 + 1 of 6),
+    -- then the auras group takes three a frame
+    assert(table.concat(text, ",") == "3/1,6/1,9/1,10/1,10/1,10/1", table.concat(text, ","))
+    for index = 2, #rows do
+        local made = (rows[index][1] - rows[index - 1][1]) + (rows[index][2] - rows[index - 1][2])
+        assert(made <= 6, "a frame made " .. made .. " buttons")
+    end
+    assert(rows[#rows][1] == 10 and rows[#rows][2] == 1 and dots.groups.auras.max == 10 and dots.groups.any.max == 1, "the any group ramp stopped")
+    NS.Client.isForever = false
+    presentDefault.auras, presentDefault.any = nil, nil
+    -- (g) the module stops with a ramp waiting: nothing ticks; a restart resumes the ramp; applying a plate works
+    D.Configure(ramp)
+    presentDefault.auras = 10
+    local g = Plate()
+    local firstG = #frames + 1
+    assert(D.Apply(g, "nameplate50", true) == true)
+    local boxG = Containers(firstG)
+    local atStop = Total(boxG)
+    D.Configure({ auraDisplayEnabled = false })
+    assert(updateFrame.scripts.OnUpdate == nil, "a ramp still ticks after the module stopped")
+    local idle = Frames(boxG, 2)
+    assert(idle[1] == 0 and idle[2] == 0 and Total(boxG) == atStop, "a stopped module made buttons")
+    D.Configure(ramp)
+    assert(updateFrame.scripts.OnUpdate ~= nil, "the ramp did not resume after a restart")
+    assert(D.Apply(g, "nameplate51", true) == true)
+    local resumed = Frames(boxG, 3)
+    assert(table.concat(resumed, ",") == "3,3,1" and Total(boxG) == 10, "the restarted ramp made " .. table.concat(resumed, ","))
+    D.Configure({ auraDisplayEnabled = false })
+    presentDefault.auras = nil
+    -- (i) the ramp allocates nothing in a frame that makes no button (2026-11-11). Five plates ramp once as a
+    -- warm-up; then five more ramp with the collector stopped. In each frame that ends with a group still waiting, a
+    -- second tick at the same clock is measured when it makes no button: the stub makes the buttons, so a tick that
+    -- makes one is not measured. A group that waited for the budget finds it spent, so its second tick grants nothing.
+    presentDefault.auras = 10
+    ramp.auraEnemyCustom1Max = 10
+    D.Configure(ramp)
+    local function FiveRamp(prefix)
+        now = now + 1
+        holdFrame = true
+        local first = #frames + 1
+        for index = 1, 5 do assert(D.Apply(Plate(), prefix .. index, true) == true) end
+        holdFrame = false
+        return Containers(first)
+    end
+    local function Settle(list)
+        for _ = 1, 40 do
+            if not (updateFrame and updateFrame.scripts.OnUpdate) then return end
+            Frames(list, 1)
+        end
+        error("the ramp did not finish")
+    end
+    Settle(FiveRamp("warm"))
+    local list = FiveRamp("measured")
+    local measured, worst = 0, 0
+    collectgarbage("collect")
+    collectgarbage("stop")
+    for _ = 1, 40 do
+        if not (updateFrame and updateFrame.scripts.OnUpdate) then break end
+        Frames(list, 1)
+        if updateFrame.scripts.OnUpdate then
+            local before, kib = Total(list), collectgarbage("count")
+            updateFrame.scripts.OnUpdate(updateFrame)
+            local delta = collectgarbage("count") - kib
+            if Total(list) == before then
+                measured = measured + 1
+                if delta > worst then worst = delta end
+            end
+        end
+    end
+    collectgarbage("restart")
+    print(("aura ramp: %d waiting frames measured, worst %.4f KB"):format(measured, worst))
+    assert(measured > 0, "no waiting frame was measured")
+    assert(worst < 0.001, "a frame that makes no button allocated " .. worst .. " KB")
+    for _, container in ipairs(list) do assert(container.groups.auras.max == 10, "a limit of " .. container.groups.auras.max) end
+    D.Configure({ auraDisplayEnabled = false })
 end
 
 -- Options workspace and preview

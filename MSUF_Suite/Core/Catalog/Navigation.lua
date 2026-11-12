@@ -15,6 +15,7 @@ Build.Section("navigation", "navigation_basics", "Navigation", {
     Number("nearDistance", "Show destination card within (yards)", 80, 10, 500, 5),
     Number("hideDistance", "Hide within (yards, 0 = never)", 0, 0, 50),
     Bool("navigator", "Show direction when the destination is off-screen", true),
+    Choice("navigatorStyle", "Off-screen direction display", 1, { "Arrow and symbol", "Arrow only", "Symbol only" }),
     Choice("units", "Distance units", 1, { "Yards", "Meters" }),
     Bool("showDistance", "Show destination distance", true),
     Bool("showETA", "Show estimated travel time"),
@@ -29,6 +30,7 @@ Build.Section("navigation", "navigation_appearance", "Appearance", {
     Number("markerSize", "Waypoint symbol size", 34, 16, 80),
     Choice("shape", "Waypoint symbol shape", 1, { "Diamond", "Circle" }),
     Bool("beam", "Show waypoint light beam", true),
+    Bool("beamPulse", "Animate the light beam", true),
     Number("beamHeight", "Light beam height", 180, 40, 500, 5),
     Number("beamOpacity", "Light beam opacity (percent)", 45, 0, 100, 5),
     Number("opacity", "Navigation opacity (percent)", 95, 10, 100, 5),
@@ -55,6 +57,7 @@ Build.Section("navigation", "navigation_sources", "Destinations & maps", {
     Bool("trackPins", "Follow map waypoints", true),
     Bool("trackPOIs", "Follow tracked points of interest", true),
     Bool("mapPins", "Show saved places on the world map", true),
+    Bool("flightMapPins", "Show the map pin and focused quest on the flight map", true),
     Bool("minimapPins", "Show nearby saved places on the minimap", true),
     Bool("minimapPlacement", "Ctrl-click the minimap to save a place"),
     Bool("autoTrackPins", "Follow a newly placed map pin", true),
@@ -87,11 +90,14 @@ spec.look = {
     },
     visualKeys = { markerSize = true, beam = true, beamHeight = true, beamOpacity = true, fontSize = true, opacity = true },
 }
-for _, key in ipairs({ "beamHeight", "beamOpacity", "beamColor" }) do spec.rules[key].enableKey = "beam" end
+for _, key in ipairs({ "beamPulse", "beamHeight", "beamOpacity", "beamColor" }) do spec.rules[key].enableKey = "beam" end
+spec.rules.navigatorStyle.enableKey = "navigator"
 for _, key in ipairs({ "minScale", "maxScale" }) do spec.rules[key].enableKey = "worldScale" end
 for _, key in ipairs({ "soundTarget", "soundNear", "soundLeave", "soundDistance", "soundFile" }) do
     spec.rules[key].enableKey = "sound"
 end
+Build.Tooltip(spec.rules.showInCombat,
+    "Applies in the open world. Inside dungeons, raids and other instances, navigation always pauses during combat.")
 Build.Tooltip(spec.rules.guideTomTom,
     "Also follows Dugi and SilverDragon when they send their destinations through TomTom. Native map pins use Follow map waypoints.")
 Build.Tooltip(spec.rules.pathfinding, "Optional route providers must be installed separately. Plan the selected destination with Plan current route.")

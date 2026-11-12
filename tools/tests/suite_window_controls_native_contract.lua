@@ -65,8 +65,21 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Check(panel.CloseButton:GetScript("OnClick") == nativeClick
             and panel.MaximizeMinimizeButton:GetScript("OnClick") == nativeClick,
             name .. " native actions were replaced")
-        Check(not state.minimize and not state.maximize,
-            name .. " custom caption covers the native maximize/minimize control")
+        if name == "PlayerSpellsFrame" then
+            -- Windows order: our minimize, Blizzard's own size toggle, close.
+            local minimize, toggle = state.minimize, panel.MaximizeMinimizeButton
+            Check(minimize and minimize.shown and not state.maximize,
+                name .. " lacks a minimize beside its native size toggle")
+            Check(minimize.point[1] == "RIGHT" and minimize.point[2] == toggle and minimize.point[3] == "LEFT",
+                name .. " minimize is not left of the native size toggle")
+            toggle:Hide()
+            Check(minimize.point[2] ~= toggle, name .. " minimize stayed beside a hidden size toggle")
+            toggle:Show()
+            Check(minimize.point[2] == toggle, name .. " minimize did not return beside the size toggle")
+        else
+            Check(not state.minimize and not state.maximize,
+                name .. " custom caption covers the native maximize/minimize control")
+        end
         Check(not state.grip.scripts.OnUpdate, name .. " idle grip retained an updater")
     end
     local function CheckLayout(label)
@@ -136,6 +149,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     _G.combatEdge = true
     UpdateScaleForFitForOpenPanels()
     CheckLayout("unprotected combat fit")
+    -- The spellbook's minimize hides a managed panel: it greys out in combat
+    -- and its caption refresh waits for the combat end. Nothing else waits.
+    Check(H.jobs["windowControls:captions"] and W.states[panels[3]].minimize.mouseEnabled == false,
+        "spellbook minimize stayed active in combat")
+    H.jobs["windowControls:captions"] = nil
     Check(next(H.jobs) == nil, "safe visible windows queued combat work")
     _G.combatEdge = false
     for _, child in ipairs(children) do

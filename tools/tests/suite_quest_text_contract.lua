@@ -257,6 +257,7 @@ NS.AdapterKit = {
     WeakSet = function() return setmetatable({}, { __mode = "k" }) end,
     CancelDeferred = function() end,
     NewOwners = kitScope.AdapterKit.NewOwners,
+    HidePortraitBezels = kitScope.AdapterKit.HidePortraitBezels,
 }
 NS.GenericWindows = { IsCategoryEnabled = function(category) return category == "quest" end }
 NS.Client = { IsAddOnLoaded = function(addon) return addon == "Blizzard_UIPanels_Game" end }

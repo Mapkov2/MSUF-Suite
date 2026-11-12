@@ -30,17 +30,21 @@ local function Widget(parent)
     function w:SetShown(v) self.shown=v end
     function w:Hide() self.shown=false end
     function w:SetEnabled(v) self.enabled=v end
-    function w:SetTimeFromEnd(finish,duration) self.finish,self.duration=finish,duration end
+    function w:SetTimeFromEnd(finish,duration) self.finish,self.duration,self.start=finish,duration,nil end
+    function w:SetTimeFromStart(start,span) self.start,self.span,self.finish=start,span,nil end
+    -- A text format and a formatter replace each other on a binding.
+    function w:SetTextFormat(format,components) self.textFormat,self.components,self.formatter=format,components,nil end
     function w:SetFontString(v) self.fontString=v end
     function w:SetDuration(v)
         self.bound=v
         self.binds=(self.binds or 0)+1
     end
     function w:UpdateFontString()
-        self.fontString:SetText(tostring(math.ceil(self.bound.finish-GetTime())))
+        if self.bound.finish then self.fontString:SetText(tostring(math.ceil(self.bound.finish-GetTime())))
+        else self.fontString:SetText("clock from "..self.bound.start) end
         self.paints=(self.paints or 0)+1
     end
-    function w:SetFormatter(v) self.formatter=v end
+    function w:SetFormatter(v) self.formatter,self.textFormat,self.components=v,nil,nil end
     function w:GetID() return 3 end
     return w
 end
@@ -89,6 +93,11 @@ S.CreateFontString=function(parent) local label=Widget(parent);label.isFontStrin
 S.SetStyledFont=function(label,path,size) label.fontSize=size end;
 S.QoLStyleText=function(label,config,path,size) label.style=config; S.SetStyledFont(label,path,size) end;S.GlobalFontPath=function() return "font" end
 S.Text=function(v) return v end
+-- The format of the clock the client writes (MSUF_Suite_Modules/Surfaces.lua), nil on a client that
+-- cannot: the module then keeps its ticker. The cases below run without it unless they set it.
+local clockFormat
+S.ElapsedClock=function() return clockFormat end
+S.CLOCK_SPAN=604800
 local movers={}
 S.RegisterOwnedMover=function(id,element,spec) assert(id=="flightTimer");movers[element]=spec end
 S.Install=function(id,m) assert(id=="flightTimer");S.module=m end
@@ -233,6 +242,41 @@ assert(not m.binding.enabled and Running()==1 and m.host.status.text=="Elapsed t
     "early landing kept an invalid full-route estimate")
 Landed(215)
 assert(state.timings["A > B > C"]==60,"early landing overwrote full route duration")
+-- Where the client can write the clock, the elapsed time is the countdown's binding showing the time
+-- since departure: no ticker, no paint per second. The countdown gets its own format back.
+do
+    clockFormat={{property=2}}
+    now=216;Fire("TAXIMAP_OPENED")
+    TakeOff(216)
+    assert(m.binding.enabled and m.binding.formatter and not m.binding.textFormat and m.duration.finish==276,
+        "probe: the learned route has no countdown")
+    local binds=m.binding.binds
+    m.host.land.OnClick()
+    assert(m.host.status.text=="Elapsed time" and Running()==0,"the client's clock still runs a ticker")
+    assert(m.binding.enabled and m.binding.textFormat=="{}" and m.binding.components==clockFormat,
+        "the elapsed time is not the client's clock")
+    assert(m.duration.start==m.departed and m.duration.span==S.CLOCK_SPAN and m.binding.binds==binds+1
+        and m.host.time.text=="clock from "..m.departed,"the clock does not count from the departure")
+    Landed(230)
+    assert(not m.binding.enabled and m.binding.formatter==m.formatter and not m.binding.textFormat,
+        "landing left the client's clock running, or the countdown without its format")
+    now=231;Fire("TAXIMAP_OPENED")
+    TakeOff(231)
+    assert(m.binding.enabled and m.binding.formatter==m.formatter and m.duration.finish==291 and Running()==0,
+        "the countdown after a client clock is not the countdown's format")
+    -- A refresh of the display leaves the running countdown alone.
+    m:Refresh()
+    assert(m.binding.enabled and m.binding.formatter==m.formatter and m.duration.finish==291,
+        "a refresh after a client clock stopped the countdown")
+    -- Disabled with the client's clock running: the clock stops too.
+    m.host.land.OnClick()
+    assert(m.binding.enabled and m.binding.textFormat=="{}","probe: the early landing did not start the client's clock")
+    m.active=false;m:Disable()
+    assert(not m.binding.enabled and m.binding.formatter==m.formatter and Running()==0,
+        "disabling left the client's clock running")
+    taxi=false;m.active=true;m:Enable();m:RegisterMovers()
+    clockFormat=nil
+end
 -- The client can report the taxi flag from inside TakeTaxiNode, before the
 -- secure post-hook has supplied the route. Play the saved duration immediately
 -- from the already observed departure, without waiting for another event.

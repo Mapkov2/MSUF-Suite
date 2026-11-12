@@ -860,9 +860,83 @@ Section("deep windows", function()
     function professions:RightTabSelected() end
     local book, rank = Frame(nil), Frame(nil)
     deepNS.protectedBook = book
-    book.ProfessionsContentFrame = { PrimaryProfession1 = { StatusBar = rank } }
+    -- Forever's rank bar (ProfessionsRankBarTemplate): Background and Border
+    -- are the ornate art; Fill and the Rank lane (y -3) carry the value.
+    rank.Rank, rank.Background, rank.Border, rank.Fill = Frame(nil), {}, {}, {}
+    function rank:GetFrameLevel() return 7 end
+    local unlearn = Frame(nil)
+    book.ProfessionsContentFrame = { PrimaryProfession1 = { StatusBar = rank, UnlearnButton = unlearn } }
     professions.BookPage = book
+    -- Forever side tabs (LargeSideTabButtonTemplate): overview + one per profession.
+    local function SideTab()
+        local tab = Frame(nil)
+        tab.Icon, tab.Background, tab.TabGlow = {}, {}, {}
+        tab.SelectedTexture = { shown = false, IsShown = function(self) return self.shown end }
+        function tab:SetChecked(checked) self.SelectedTexture.shown = checked end
+        return tab
+    end
+    local overviewTab, miningTab = SideTab(), SideTab()
+    professions.ProfessionsOverviewTab, professions.rightProfessionTabs = overviewTab, { miningTab }
+    local rankFaded, rankButtons, rankTrack = {}, {}, nil
+    local fadeBefore, applyButtonBefore, createBefore = NS.Cosmetics.Fade, NS.ControlSkin.ApplyButton, CreateFrame
+    NS.Cosmetics.Fade = function(region, ...) rankFaded[region] = true; return fadeBefore(region, ...) end
+    NS.ControlSkin.ApplyButton = function(button, owner, spec) rankButtons[button] = spec; return {} end
+    -- The portrait (profession icon) and the anonymous ornate recipe frame.
+    local portrait = {}
+    professions.PortraitContainer = { portrait = portrait, GetFrameLevel = function() return 9 end }
+    local insideFrame = { GetAtlas = function() return "common-insideframe" end }
+    function schematic:GetRegions() return insideFrame end
+    local ownedFrames = {}
+    CreateFrame = function(frameType, name, parent)
+        Check(parent == nil, "an owned frame was created with a parent (Forever SmartNavigation hook)")
+        local frame = createBefore(frameType, name, parent)
+        function frame:SetPoint(point, relative) self.points = (self.points or 0) + 1; self.lane = relative end
+        function frame:SetFrameLevel(level) self.level = level end
+        function frame:CreateTexture()
+            local texture = {}
+            function texture:SetTexture(path) self.path = path end
+            function texture:SetDesaturated(value) self.desaturated = value end
+            function texture:SetVertexColor() self.tinted = true end
+            function texture:ClearAllPoints() end
+            function texture:SetPoint(_, relative) self.anchor = self.anchor or relative end
+            self.ring = texture
+            return texture
+        end
+        ownedFrames[#ownedFrames + 1] = frame
+        return frame
+    end
     deepNS.DeepWindows.Apply("deep")
+    -- First the rank track (book pass), then the portrait bezel.
+    rankTrack = ownedFrames[1]
+    local bezel = ownedFrames[2]
+    Expect(bezel and bezel.parent == professions.PortraitContainer and bezel.level == 17
+        and bezel.ring.desaturated and bezel.ring.tinted and bezel.ring.anchor == portrait,
+        "the profession portrait missed its owned bezel")
+    Expect(rankFaded[insideFrame], "Forever's ornate recipe frame (common-insideframe) stayed visible")
+    NS.Cosmetics.Fade, NS.ControlSkin.ApplyButton, CreateFrame = fadeBefore, applyButtonBefore, createBefore
+    Expect(rankTrack and rankTrack.parent == rank and rankTrack.lane == rank.Rank and rankTrack.points == 2
+        and rankTrack.level == 6 and rankTrack.surfaceSpec and rankTrack.surfaceSpec.role == "status",
+        "the Forever rank bar track is not an owned status surface on the Rank lane below the bar")
+    Expect(rankFaded[rank.Background] and rankFaded[rank.Border] and not rankFaded[rank.Fill],
+        "the rank bar faded its value fill or kept its ornate frame")
+    Expect(rankButtons[unlearn] and rankButtons[unlearn].role == "button" and not rankFaded[unlearn],
+        "the unlearn button stayed unskinned or lost its icon")
+    for _, tab in ipairs({ overviewTab, miningTab }) do
+        Expect(tab.surfaceSpec and tab.surfaceSpec.role == "navigation" and tab.surfaceSpec.selectionEdge
+            and tab.surfaceSpec.radius == 6, "a Forever profession side tab missed the Legacy tab tile")
+        Expect(rankFaded[tab.Background] and rankFaded[tab.SelectedTexture] and not rankFaded[tab.Icon],
+            "a profession side tab kept its ornate frame or lost its icon")
+    end
+    -- Blizzard's SetChecked drives the tile's selection.
+    local getSurface = NS.Registry.GetSurface
+    NS.Registry.GetSurface = function(target)
+        return target.surfaceSpec and { spec = target.surfaceSpec, visible = true } or nil
+    end
+    miningTab:SetChecked(true)
+    overviewTab:SetChecked(false)
+    NS.Registry.GetSurface = getSurface
+    Expect(miningTab.surfaceActive == true and overviewTab.surfaceActive == false,
+        "the profession side tab selection did not follow Blizzard's SetChecked")
     Expect(motionWatches[crafting] == "deep" and motionWatches[spec] == "deep" and motionWatches[rank] == "deep"
         and not motionWatches[book], "profession animations missed exact pages or targeted the protected book")
     locked = true
@@ -999,6 +1073,7 @@ Section("deep windows", function()
     -- Every window is its own error boundary: a raising one is reported and
     -- the other windows still apply.
     deepNS.DeepWindows.Disable("deep")
+    Expect(rankTrack and rankTrack.surfaceVisible == false, "disabling the deep windows left the rank bar track visible")
     Reset()
     local brokenProfessions = Frame("ProfessionsFrame")
     function brokenProfessions:GetChildren() error("contract: professions raised") end
@@ -1404,7 +1479,49 @@ Section("player spells tab colors", function()
     local getColor = NS.Theme.GetColor
     local themeRed, themeReads = 0.71, 0
     NS.Theme.GetColor = function() themeReads = themeReads + 1; return themeRed, 0.72, 0.73, 1 end
+    -- The portrait overhangs the frame corner: a small round copy sits in the
+    -- title bar and follows Blizzard's portrait changes (spellbook, class, spec).
+    local spellsPortrait = { texture = 136830, coords = { 0, 0, 0, 1, 1, 0, 1, 1 } }
+    function spellsPortrait:GetTexture() return self.texture end
+    function spellsPortrait:GetTexCoord() return unpack(self.coords) end
+    function spellsPortrait:SetTexture(texture) self.texture = texture end
+    function spellsPortrait:SetTexCoord(...) self.coords = { ... } end
+    spells.PortraitContainer = { portrait = spellsPortrait, GetFrameLevel = function() return 4 end }
+    local createSpells, spellFrames = CreateFrame, {}
+    CreateFrame = function(...)
+        local frame = createSpells(...)
+        function frame:SetFrameLevel(level) self.level = level end
+        function frame:SetSize(width, height) self.width, self.height = width, height end
+        function frame:SetPoint(...) self.point = { ... } end
+        function frame:IsShown() return self.shown == true end
+        function frame:CreateTexture()
+            local texture = {}
+            function texture:SetAllPoints() end
+            function texture:SetTexture(value) self.texture = value end
+            function texture:SetTexCoord(...) self.coords = { ... } end
+            self.icon = texture
+            return texture
+        end
+        spellFrames[#spellFrames + 1] = frame
+        return frame
+    end
     NS.PlayerSpellsSkin.Apply(spells, "spells")
+    CreateFrame = createSpells
+    local spellBadge
+    for _, frame in ipairs(spellFrames) do
+        if frame.parent == spells and frame.icon then spellBadge = frame end
+    end
+    Expect(spellBadge and spellBadge.shown and spellBadge.level == 5 and spellBadge.width == 18
+        and spellBadge.point[1] == "TOPLEFT" and spellBadge.point[2] == spells
+        and spellBadge.point[4] > 0 and spellBadge.point[5] < 0,
+        "the spellbook portrait lacks its small badge inside the title bar")
+    Expect(spellBadge.icon.texture == 136830 and spellBadge.icon.coords[8] == 1,
+        "the portrait badge does not show Blizzard's portrait")
+    spellsPortrait:SetTexCoord(0.25, 0, 0.25, 0.5, 0.5, 0, 0.5, 0.5)
+    spellsPortrait:SetTexture("Interface/TargetingFrame/UI-Classes-Circles")
+    Expect(spellBadge.icon.texture == "Interface/TargetingFrame/UI-Classes-Circles"
+        and spellBadge.icon.coords[1] == 0.25 and spellBadge.icon.coords[8] == 0.5,
+        "the portrait badge missed Blizzard's class portrait change")
     NS.ControlSkin.ApplySearchBox = applySearchBox
     Expect(searchBoxes[spellBook.SearchBox], "the spell book search box was not skinned")
     Expect(talents.surfaceSpec and talents.surfaceSpec.role == "panel" and talents.childReads == 0,
@@ -1459,6 +1576,7 @@ Section("player spells tab colors", function()
     NS.CombatGate.RunOrDefer = defer
     NS.PlayerSpellsSkin.Disable(spells, "spells")
     Expect(releasedOwner == "spells", "disabling the dedicated spellbook skin did not release its window controls")
+    Expect(spellBadge and spellBadge.shown == false, "disabling the spellbook skin left the portrait badge visible")
     local previousSpells, previousDB = _G.PlayerSpellsFrame, NS.DB
     local cold = Frame("PlayerSpellsFrame")
     cold.TalentsFrame, cold.SpellBookFrame = Frame(nil), Frame(nil)

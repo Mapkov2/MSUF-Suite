@@ -311,6 +311,8 @@ local function Usable(handle)
     return handle.frame
 end
 local actions,special,pressHold,modified={},{},{},{}
+-- slot -> "has" or "kind": that answer is a client secret (TestSlotChangeDedupe).
+local secretAction={}
 local pickupModifier, pickupWrites = "SHIFT", 0
 GetModifiedClick = function(action)
     assert(action == "PICKUPACTION")
@@ -633,7 +635,10 @@ C_ActionBar={
         return a and a.quality and {iconInventory=a.quality} or nil
     end,
     IsItemAction=function(slot) local a=actions[slot];return a~=nil and a.kind=="item" end,
-    HasAction=function(slot) return actions[slot]~=nil end,
+    HasAction=function(slot)
+        if secretAction[slot]=="has" then return Secret() end
+        return actions[slot]~=nil
+    end,
     GetActionTexture=function(slot) calls.texture=calls.texture+1;local a=actions[slot];return a and a.texture end,
     GetActionDisplayCount=function(slot) local a=actions[slot];return a and a.count or "" end,
     GetActionCooldown=function(slot)
@@ -685,6 +690,7 @@ local infoReads=0
 GetActionInfo=function(slot)
     infoReads=infoReads+1
     local a=actions[slot]
+    if a and secretAction[slot]=="kind" then return Secret(),a.id,a.sub end
     if a then return a.kind,a.id,a.sub end
 end
 -- Flyout 7 (slot 49) holds two spells; both clients have these globals.
@@ -1364,6 +1370,298 @@ local function TestGridCap()
     RunTimers()
 end
 
+------------------------------------------------------------------ slot change dedupe
+-- 2026-11-10 idle trace: ACTIONBAR_SLOT_CHANGED arrived 12 times in 20 s for
+-- one macro slot whose content never changed, and each arrival ran a
+-- shown-button plan (0.44 ms of protected work). Lua 5.1, this harness, slot
+-- 62 on bar 2 (suite buttons), before -> after: plans per unchanged event
+-- 1 -> 0; VM instructions per unchanged event (the Event call and its
+-- handler, no flush) 160 -> 255. The +95 instructions are the trade for
+-- removing a native SecureHandlerExecute per event. Blizzard's reused buttons
+-- follow the same rule (2026-11-11, native mode): 12 plans in 12 unchanged
+-- events before the change, 0 after.
+local SLOT_EVENT_BUDGET = 255
+local function TestSlotChangeDedupe()
+    RunTimers()
+    local execute,plans=SecureHandlerExecute,0
+    SecureHandlerExecute=function(frame,body)
+        if body==AB.SNIPPET.GRID then plans=plans+1 end
+        return execute(frame,body)
+    end
+    local saved,slotMap=actions[62],AB.Painter.slotMap
+    local function Fire(slot)
+        Event("ACTIONBAR_SLOT_CHANGED",slot);RunTimers()
+    end
+    -- The plans fn runs; the count restarts afterwards.
+    local function Count(fn)
+        plans=0;fn()
+        local ran=plans;plans=0
+        return ran
+    end
+    local function Unchanged(n)
+        return Count(function() for _=1,n do Fire(62) end end)
+    end
+    actions[62]={kind="macro",id=2052,sub="spell",texture=62}
+    local list=slotMap[62]
+    assert(list and #list>0,"slot 62 is not shown by a button")
+    if nativeReuse then
+        assert(list[1].native,"slot 62 is not shown by a native button")
+        -- The first sighting primes the slot; unchanged events then run nothing.
+        Fire(62)
+        local ran=Unchanged(12)
+        print(("slot change, native: %d plans in 12 unchanged events"):format(ran))
+        assert(ran==0,("native slot change: %d plans in 12 unchanged events, expected 0"):format(ran))
+        actions[62]=nil
+        assert(Count(function() Fire(62) end)==1,"native: a removal did not run one plan")
+        actions[62]={kind="spell",id=62,texture=62}
+        assert(Count(function() Fire(62) end)==1,"native: a fill did not run one plan")
+        actions[62]={kind="spell",id=63,texture=63}
+        assert(Count(function() Fire(62) end)==1,"native: spell to other spell did not run one plan")
+        assert(Unchanged(12)==0,"native: unchanged events after a spell change ran a plan")
+        secretAction[62]="has"
+        assert(Count(function() for _=1,5 do Fire(62) end end)==5,"native: an unreadable HasAction did not run a plan per event")
+        secretAction[62]=nil
+        assert(Count(function() Fire(62) end)==1,"native: the first readable event did not run one plan")
+        assert(Unchanged(12)==0,"native: unchanged events after a readable answer ran a plan")
+        -- A Blizzard hide of a shown reused button under its visible header is
+        -- undone by the restricted OnHide wrap (KEEP_POST) without a grid plan.
+        -- The hidden-header repair is the existing "hidden header repair" check.
+        -- A child's OnHide cascades only while its header is visible.
+        local shown,header=Button(2,1).button,Bar(2).header
+        local headerWasShown=header.shown
+        header:Show();RunTimers()
+        assert(shown.shown and not shown.attrs.statehidden,"native: slot 61 is not shown before the Blizzard hide")
+        assert(Count(function() shown:Hide() end)==0,"native: the wrap's restore ran a grid plan")
+        assert(shown.shown and not shown.attrs.statehidden,"native: the OnHide wrap did not undo a Blizzard hide")
+        if not headerWasShown then header:Hide() end
+        actions[62]=saved;SecureHandlerExecute=execute;RunTimers()
+        return
+    end
+    assert(not list[1].native,"slot 62 is shown only by native buttons")
+    -- The macro's first event primes what the plan read.
+    Fire(62)
+    local ran=Unchanged(100)
+    local used=0
+    for _=1,100 do
+        RunTimers()
+        used=used+Cost(Event,"ACTIONBAR_SLOT_CHANGED",62)
+    end
+    local per=math.floor(used/100)
+    print(("slot change: %d plans in 100 unchanged events, %d VM instructions per event"):format(ran,per))
+    assert(ran==0,("unchanged macro slot ran %d plans in 100 events"):format(ran))
+    Budget("unchanged slot change",per,SLOT_EVENT_BUDGET)
+    -- a. The same macro, twelve more events.
+    assert(Unchanged(12)==0,"a: unchanged macro slot ran a plan")
+    -- b. The macro's resolved spell changes; the slot itself does not.
+    actions[62]={kind="macro",id=2053,sub="spell",texture=62}
+    assert(Unchanged(12)==0,"b: a macro slot's resolved spell alone ran a plan")
+    -- c. Each real change runs exactly one plan, then its unchanged event none.
+    local function Step(label,action)
+        actions[62]=action
+        assert(Count(function() Fire(62) end)==1,label..": expected one plan")
+        assert(Unchanged(3)==0,label..": the unchanged event after it ran a plan")
+    end
+    Step("macro to empty",nil)
+    Step("empty to spell",{kind="spell",id=62,texture=62})
+    Step("spell to other spell",{kind="spell",id=63,texture=63})
+    Step("spell to macro",{kind="macro",id=2052,sub="spell",texture=62})
+    Step("macro to empty again",nil)
+    -- d. Unreadable answers run a plan every event; once readable, the first
+    -- event runs one plan and the unchanged ones after it none.
+    actions[62]={kind="spell",id=62,texture=62}
+    Fire(62)
+    secretAction[62]="has"
+    assert(Count(function() for _=1,5 do Fire(62) end end)==5,"d: an unreadable HasAction did not run a plan per event")
+    secretAction[62]="kind"
+    assert(Count(function() for _=1,3 do Fire(62) end end)==3,"d: an unreadable action kind did not run a plan per event")
+    secretAction[62]=nil
+    assert(Count(function() Fire(62) end)==1,"d: the first readable event did not run one plan")
+    assert(Unchanged(12)==0,"d: unchanged events after a readable answer ran a plan")
+    -- e. A slot no button shows forgets what it saw. Bar 1 pages to 2, so
+    -- slot 1 leaves its button; the slot changes meanwhile and its events run
+    -- nothing. Back on page 1 its first unchanged event runs one plan.
+    local slot1=actions[1]
+    actions[1]={kind="spell",id=1001,texture=101}
+    Fire(1)
+    -- The header's paging attribute runs the product's page change.
+    local function Page(page)
+        Bar(1).header:SetAttribute("actionpage",page)
+        RunTimers()
+    end
+    Page(2)
+    assert(not slotMap[1] or #slotMap[1]==0,"e: bar 1 page 2 still shows slot 1")
+    actions[1]=nil
+    assert(Count(function() Fire(1) end)==0,"e: an event for an unmapped slot ran a plan")
+    actions[1]={kind="spell",id=1001,texture=101}
+    Page(1)
+    assert(slotMap[1] and #slotMap[1]>0 and Button(1,1).slot==1,"e: slot 1 is not shown again")
+    assert(Count(function() Fire(1) end)==1,"e: the first event after the slot is shown again did not run one plan")
+    assert(Count(function() for _=1,12 do Fire(1) end end)==0,"e: unchanged events after the slot is shown again ran a plan")
+    actions[1]=slot1
+    -- f. Stopping and starting the dispatcher drops what it saw (Reset).
+    AB.StopDispatcher()
+    AB.StartDispatcher()
+    RunTimers()
+    assert(Count(function() Fire(62) end)==1,"f: the first event after a restart did not run one plan")
+    assert(Unchanged(12)==0,"f: unchanged events after a restart ran a plan")
+    actions[62]=saved
+    SecureHandlerExecute=execute
+    RunTimers()
+end
+
+------------------------------------------------------------------ reveal cache
+-- 2026-11-11 traces: every CURSOR_CHANGED ended in AB.ApplyDrag, which ran
+-- AB.Reveal(2, false) and AB.Reveal(4, false): two protected executes (about
+-- 0.15 ms each) with nothing changed. Lua 5.1, this harness, before -> after
+-- reveal executes per unchanged cursor change (settled, empty cursor): 2 -> 0.
+-- Bit 4 costs one execute only after a secure pickup (secureReveal).
+local SNAP_PLACED, SNAP_EMPTIED = "true true true 2", "true true false 0"
+if nativeReuse then SNAP_PLACED, SNAP_EMPTIED = "false false true 2", "false false true 0" end
+local function TestRevealCache()
+    RunTimers()
+    local grid,execute=AB.grid,SecureHandlerExecute
+    local names={}
+    for _,bit in ipairs({2,4,8,16}) do
+        for _,on in ipairs({"true","false"}) do
+            names[('self:RunAttribute("msuf-reveal",%d,%s)'):format(bit,on)]=bit..","..on
+        end
+    end
+    local runs={}
+    SecureHandlerExecute=function(frame,body)
+        if frame==grid and names[body] then runs[#runs+1]=names[body] end
+        return execute(frame,body)
+    end
+    local function Drain()
+        for i=#runs,1,-1 do runs[i]=nil end
+    end
+    local function Ran(label,...)
+        local got,want=table.concat(runs," "),table.concat({...}," ")
+        Drain()
+        assert(got==want,label..": reveal executes {"..got.."}, expected {"..want.."}")
+    end
+    -- One CURSOR_CHANGED and the settle it starts.
+    local function Change(kind)
+        cursor=kind
+        Event("CURSOR_CHANGED")
+        RunTimers()
+    end
+    local function Snap()
+        return ("%s %s %s %s"):format(tostring(Bar(2).header.shown),tostring(Bar(5).header.shown),
+            tostring(Button(5,4).button.shown),tostring(Bar(5).header.attrs.gridmask))
+    end
+    local savedEdit=S.editMode
+    cursor=nil
+    Change(nil)
+    Drain()
+    -- a. Unchanged empty cursor: no reveal execute.
+    for _=1,20 do Change(nil) end
+    Ran("a: 20 unchanged empty cursor changes")
+    -- b. A placeable cursor, then emptied: one 2,true; then 2,false and 4,false.
+    local start=Snap()
+    Change("spell")
+    Ran("b: placeable cursor","2,true")
+    local placed=Snap()
+    Change(nil)
+    Ran("b: emptied","2,false","4,false")
+    local emptied=Snap()
+    for _=1,5 do Change(nil) end
+    Ran("b: further empty changes")
+    print(("reveal visible: start %s, placed %s, emptied %s"):format(start,placed,emptied))
+    assert(placed==SNAP_PLACED,"b: buttons after a placeable cursor changed: "..placed)
+    assert(emptied==SNAP_EMPTIED,"b: buttons after the cursor emptied changed: "..emptied)
+    -- c. Picked up and emptied before the settle: only bit 4 is cleared.
+    cursor="spell";Event("CURSOR_CHANGED")
+    cursor=nil;Event("CURSOR_CHANGED")
+    RunTimers()
+    Ran("c: pickup over before the settle","4,false")
+    -- c2. A drag applied without its cursor event: ApplyDrag marks it too.
+    cursor="spell";AB.ApplyDrag()
+    Ran("c2: placeable cursor applied directly","2,true")
+    cursor=nil;Event("CURSOR_CHANGED");RunTimers()
+    Ran("c2: emptied","2,false","4,false")
+    -- c3. A settle that cannot reach the grid keeps the pending clear.
+    cursor="spell";Event("CURSOR_CHANGED");RunTimers()
+    Ran("c3: placeable cursor","2,true")
+    local held=AB.grid
+    AB.grid=nil
+    cursor=nil;Event("CURSOR_CHANGED");RunTimers()
+    AB.grid=held
+    Ran("c3: settle without a grid")
+    Change(nil)
+    Ran("c3: emptied afterwards","2,false","4,false")
+    -- d. Combat: no execute; the clear waits for combat to end.
+    combat=true
+    Change("spell")
+    Change(nil)
+    Ran("d: combat drag and its end")
+    combat=false
+    cursor=nil
+    Event("PLAYER_REGEN_ENABLED");RunTimers()
+    Ran("d: after combat","4,false")
+    -- e. Edit mode (bit 8) and panels (bit 16): only real changes execute.
+    AB.ApplyVisibility()
+    Ran("e: unchanged visibility")
+    S.editMode=true
+    AB.ApplyVisibility()
+    Ran("e: edit mode on","8,true")
+    AB.ApplyVisibility()
+    Ran("e: edit mode unchanged")
+    S.editMode=savedEdit or false
+    AB.ApplyVisibility()
+    Ran("e: edit mode off","8,false")
+    AB.Reveal(8,nil)
+    Ran("e: a nil request is off")
+    local oldBook=PlayerSpellsFrame
+    local showPanels=c.showOnPanels
+    PlayerSpellsFrame=NewFrame("Frame",nil,UIParent)
+    PlayerSpellsFrame.SpellBookFrame=NewFrame("Frame",nil,PlayerSpellsFrame)
+    PlayerSpellsFrame.SpellBookFrame:Show();PlayerSpellsFrame:Hide()
+    assert(S.Set("actionbars","showOnPanels",true))
+    AB.SyncPanelReveal()
+    Drain()
+    AB.SyncPanelReveal()
+    Ran("e: unchanged panels")
+    PlayerSpellsFrame:Show()
+    Ran("e: spellbook open","16,true")
+    PlayerSpellsFrame:Hide()
+    Ran("e: spellbook closed","16,false")
+    assert(S.Set("actionbars","showOnPanels",showPanels))
+    PlayerSpellsFrame=oldBook
+    -- A reveal refused in combat is not remembered.
+    combat=true
+    assert(AB.Reveal(16,true)==false,"e: a reveal in combat reported success")
+    combat=false
+    Ran("e: refused reveal runs nothing")
+    AB.Reveal(16,true)
+    Ran("e: refused request is not remembered","16,true")
+    AB.Reveal(16,false)
+    Ran("e: reveal off","16,false")
+    -- f. Disable and enable again: the first settle runs both reveals once.
+    assert(S.Set("actionbars","enabled",false))
+    assert(S.Set("actionbars","enabled",true))
+    RunTimers()
+    -- The enable refresh runs the reveals again (the forgotten bits are
+    -- unknown); the settle after it finds them already set.
+    Ran("f: re-enabling","8,false","2,false","4,false")
+    Change(nil)
+    Ran("f: first settle after re-enabling")
+    for _=1,3 do Change(nil) end
+    Ran("f: unchanged empty cursor after re-enabling")
+    -- h. Budget: 100 unchanged cursor changes.
+    local n=0
+    for _=1,100 do
+        Change(nil)
+        n=n+#runs
+        Drain()
+    end
+    print(("reveal executes: %d in 100 unchanged cursor changes"):format(n))
+    assert(n==0,("%d reveal executes in 100 unchanged cursor changes"):format(n))
+    S.editMode=savedEdit
+    cursor=nil
+    SecureHandlerExecute=execute
+    RunTimers()
+end
+
 -- Actions: bar 1 page 1 and page 2, one spell on bar 2 (slot 61), a flyout
 -- on bar 3 (slot 49), an empower spell on bar 4 (slot 25).
 for slot=1,12 do actions[slot]={kind="spell",id=1000+slot,texture=100+slot} end
@@ -1818,6 +2116,8 @@ if nativeReuse then
     cursor=nil;AB.ApplyDrag()
     assert(not Bar(6).header.shown and Bar(6).paintDormant and AB.nativeFeedbackVisible==false,
         "ending drag left hidden native bars awake")
+    TestSlotChangeDedupe()
+    TestRevealCache()
     print("Action bars native reuse: Retail bars 2-8 adopted, suite painter skipped, custom bars retained, routing passed")
     return
 end
@@ -2000,6 +2300,22 @@ conditions["mod:shift"]=nil;conditions["bonusbar:1"]=nil;special.bonus=nil
 assert(S.SetMany("actionbars",{pagingModifiers=false}))
 RunTimers()
 assert(Bar(1).header.attrs.actionpage==1 and MainBar.attrs.actionpage==1 and not overrides["1"],"native routing restored")
+-- Moonkin opt-out: bonus bar 4 alone stays on page 1; the other forms page.
+conditions["bonusbar:4"]=true;special.bonus=4;Drivers()
+assert(Bar(1).header.attrs.actionpage==10 and MainBar.attrs.actionpage==10,"Moonkin Form pages bar 1 by default")
+bindingEvents=triggered[BINDINGS_EVENT] or 0
+assert(S.SetMany("actionbars",{disableMoonkinPaging=true}))
+assert((triggered[BINDINGS_EVENT] or 0)>bindingEvents,"the Moonkin opt-out did not tell the cooldown manager its key texts changed")
+RunTimers()
+assert(Bar(1).header.attrs.actionpage==1 and Bar(1).header.attrs.mirror==false,"Moonkin opt-out keeps page 1")
+assert(Button(1,2).button.attrs.action==2 and overrides["1"]=="MSUFSuiteBar1Button1","Moonkin opt-out routes bar 1 keys to page 1")
+conditions["bonusbar:4"]=nil;conditions["bonusbar:1"]=true;special.bonus=1;Drivers()
+assert(Bar(1).header.attrs.actionpage==7,"the Moonkin opt-out stopped the other form pages")
+conditions["bonusbar:1"]=nil;special.bonus=nil
+assert(S.SetMany("actionbars",{disableMoonkinPaging=false}))
+RunTimers()
+assert(Bar(1).header.attrs.actionpage==1 and MainBar.attrs.actionpage==1 and not overrides["1"],
+    "native routing restored after the Moonkin opt-out")
 assert(S.SetMany("actionbars",restoreManualPages))
 assert(overrides["1"]=="MSUFSuiteBar1Button1","enabling fixed bars restores the safe click route")
 RunTimers()
@@ -2062,6 +2378,8 @@ assert(not AB.dragPending)
 
 ------------------------------------------------------------------ protected flush cap
 TestGridCap()
+TestSlotChangeDedupe()
+TestRevealCache()
 
 ------------------------------------------------------------------ visibility and mouseover
 Fire(Bar(1).header,"OnLeave",true)
@@ -3139,6 +3457,11 @@ assert(S.ActionBarsBindingForSpell(3000)=="","a spell on no button has no key")
 c.disableFormPaging=true
 assert(S.ActionBarsBindingForSpell(2075)=="","bar 1 never pages to forms with the opt-out")
 c.disableFormPaging=false
+c.disableMoonkinPaging=true
+assert(S.ActionBarsBindingForSpell(2110)=="" and S.ActionBarsBindingForSpell(2075)=="3",
+    "the Moonkin opt-out drops page 10's keys and keeps the other form pages'")
+c.disableMoonkinPaging=false
+assert(S.ActionBarsBindingForSpell(2110)=="2","page 10 lost bar 1's key after the Moonkin opt-out")
 -- Labels that follow the page (the cooldown manager's "Keep key labels
 -- stable across action pages and forms" off): each button answers for the
 -- slot it presses now. Bar 1 in cat form (page 7, slots 73-84) presses slot

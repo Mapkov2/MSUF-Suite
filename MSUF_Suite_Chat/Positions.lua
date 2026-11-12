@@ -196,11 +196,6 @@ function C.PositionTabs(self)
         S.Queue("chat")
         return
     end
-    if c.headerToolbar then
-        C.LayoutToolbarDock()
-    else
-        C.OffsetNative(self, _G.GENERAL_CHAT_DOCK, c.tabX or 0, c.tabY or 0)
-    end
     for frame, visual in pairs(self.visuals) do
         if not frame.isDocked and visual.tab then
             C.OffsetNative(self, visual.tab, c.tabX or 0, c.tabY or 0)

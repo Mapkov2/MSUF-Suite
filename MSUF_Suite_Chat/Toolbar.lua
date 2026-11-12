@@ -3,6 +3,7 @@ local NS, S = P.NS, P.Suite
 local C = P.Chat
 local M = C.M
 local SIZE, WIDTH = 20, 100
+local ARROW_WIDTH, ARROW_HEIGHT, ARROW_GAP = 36, 18, 2
 local TOOLS = {
     { title = S.Text("New tab"), action = "new" },
     { title = S.Text("Chat input"), action = "input" },
@@ -138,7 +139,7 @@ end
 function C.ApplyToolbar()
     local c = M.config
     if not c.headerToolbar then
-        C.ReleaseToolbar()
+        if M.toolbar and M.toolbar:IsShown() then C.ReleaseToolbar() end
         return
     end
     local toolbar = M.toolbar
@@ -167,39 +168,153 @@ function C.ToolbarWrap(config, frame)
     return S.Finite(width) and width < 180 + WIDTH + 8 + (config.headerClock and 80 or 0)
 end
 
-function C.LayoutToolbarDock()
-    if M.toolbarLayingOut or not M.active or not M.config.headerToolbar or C.LayoutLocked() then return end
-    local dock, c = GENERAL_CHAT_DOCK, M.config
-    if C.ToolbarWrap(c, ChatFrame1) then
-        if M.toolbarDockOwned then
-            M.toolbarLayingOut = true
-            M.context:RestoreProperty(dock, "SetWidth")
-            M.context:RestorePoints(dock)
-            M.toolbarDockOwned = nil
-            FCFDock_UpdateTabs(dock, true)
-            M.toolbarLayingOut = nil
+local function IsWhisper(frame)
+    local kind = frame.chatType
+    return frame.isTemporary and S.Public(kind) and (kind == "WHISPER" or kind == "BN_WHISPER")
+end
+
+local function HasDockedWhisper(dock)
+    if not (dock.DOCKED_CHAT_FRAMES and dock.scrollFrame and dock.overflowButton) then return false end
+    for _, frame in ipairs(dock.DOCKED_CHAT_FRAMES) do
+        if not NS.Safety.IsForbidden(frame) and not frame.isStaticDocked and IsWhisper(frame) then
+            local tab = _G[frame:GetName() .. "Tab"]
+            if tab and not NS.Safety.IsForbidden(tab) and tab:IsShown() then return true end
         end
-        C.OffsetNative(M, dock, c.tabX or 0, c.tabY or 0)
+    end
+    return false
+end
+
+local function BeforeControl(limit, left, bottom, top, control, scale)
+    if not control or not control:IsShown() then return limit end
+    local x, right, low, high = control:GetLeft(), control:GetRight(), control:GetBottom(), control:GetTop()
+    if S.Finite(x) and S.Finite(right) and S.Finite(low) and S.Finite(high)
+        and x * scale < limit and right * scale > left and high * scale > bottom and low * scale < top then
+        return x * scale - ARROW_GAP
+    end
+    return limit
+end
+
+local function NativeDockMinimum(dock, left)
+    local scrollLeft, overflowWidth = dock.scrollFrame:GetLeft(), dock.overflowButton:GetWidth()
+    if not S.Finite(scrollLeft) or not S.Finite(overflowWidth) then return end
+    local minimum = math.max(0, scrollLeft - left) + overflowWidth + 6
+    if dock.RightTabHint and S.GamepadUI() then
+        local hintWidth = dock.RightTabHint:GetWidth()
+        if not S.Finite(hintWidth) then return end
+        -- Forever reserves three pixels to the left of the gamepad hint.
+        minimum = minimum + hintWidth + 3
+    end
+    return minimum
+end
+
+local function WhisperDockWidth(dock, inset, previousX, previousY)
+    local left, bottom, top = dock:GetLeft(), dock:GetBottom(), dock:GetTop()
+    local right, chatTop = ChatFrame1:GetRight(), ChatFrame1:GetTop()
+    local dockScale, chatScale = dock:GetEffectiveScale(), ChatFrame1:GetEffectiveScale()
+    if not (S.Finite(left) and S.Finite(bottom) and S.Finite(top) and S.Finite(right) and S.Finite(chatTop)
+        and S.Finite(dockScale) and dockScale > 0 and S.Finite(chatScale) and chatScale > 0) then return end
+    local minimum = NativeDockMinimum(dock, left)
+    if not minimum then return end
+    local c, scale = M.config, chatScale / dockScale
+    local x, y = c.tabX or 0, c.tabY or 0
+    left = left + x - previousX
+    bottom, top = bottom + y - previousY, top + y - previousY
+    local limit = (right + math.min(0, (c.padding or 0) + x) - inset) * scale
+    local rowBottom, rowHeight = (chatTop + y) * scale, (c.tabHeight or 24) * scale
+    local frame = Selected() or ChatFrame1
+    local visual = M.visuals[frame]
+    if visual then
+        local visualScale = frame:GetEffectiveScale()
+        if not S.Finite(visualScale) or visualScale <= 0 then return end
+        local low, high = math.min(bottom, rowBottom), math.max(top, rowBottom + rowHeight)
+        limit = BeforeControl(limit, left, low, high, visual.copyButton, visualScale / dockScale)
+        limit = BeforeControl(limit, left, low, high, visual.headerClock, visualScale / dockScale)
+    end
+    local width = limit - left
+    if width < minimum then return end
+    local slot = ARROW_WIDTH + ARROW_GAP
+    -- Reserving the slot while a whisper is docked keeps overflow independent
+    -- of whether the arrows happen to be shown.
+    if width >= minimum + slot and rowHeight >= ARROW_HEIGHT then
+        return width - slot, rowBottom + rowHeight / 2 - (bottom + top) / 2
+    end
+    return width
+end
+
+local function ReleaseDockWidth(dock)
+    if not M.toolbarDockOwned then return end
+    M.toolbarLayingOut = true
+    M.context:RestoreProperty(dock, "SetWidth")
+    M.context:RestorePoints(dock)
+    M.toolbarDockAnchor, M.toolbarDockOwned, M.whisperArrowY = nil, nil, nil
+    M.toolbarDockX, M.toolbarDockY = nil, nil
+    FCFDock_UpdateTabs(dock, true)
+    M.toolbarLayingOut = nil
+end
+
+local function RememberDockAnchor(point, relative, edge, x, y, xOffset, yOffset)
+    local before = M.toolbarDockAnchor or {}
+    before[1], before[2], before[3], before[4], before[5] = point, relative, edge, x, y
+    M.toolbarDockAnchor, M.toolbarDockX, M.toolbarDockY = before, xOffset, yOffset
+end
+
+local function LayoutNativeDock(dock, xOffset, yOffset)
+    ReleaseDockWidth(dock)
+    C.OffsetNative(M, dock, xOffset, yOffset)
+    M.whisperArrowY = nil
+    if xOffset == 0 and yOffset == 0 then
+        M.toolbarDockAnchor = nil
+    else
+        local point, relative, edge, x, y = dock:GetPoint(1)
+        if S.Public(point) and S.Public(relative) and S.Public(edge) and S.Finite(x) and S.Finite(y) then
+            RememberDockAnchor(point, relative, edge, x, y, xOffset, yOffset)
+        else
+            M.toolbarDockAnchor = nil
+        end
+    end
+end
+
+function C.LayoutToolbarDock()
+    if M.toolbarLayingOut or not M.active or C.LayoutLocked() then return end
+    local dock, c = GENERAL_CHAT_DOCK, M.config
+    local xOffset, yOffset = c.tabX or 0, c.tabY or 0
+    local toolbar = c.headerToolbar and not C.ToolbarWrap(c, ChatFrame1)
+    local whisper = HasDockedWhisper(dock)
+    if not toolbar and not whisper then
+        LayoutNativeDock(dock, xOffset, yOffset)
         return
     end
-    local width = ChatFrame1:GetWidth() - WIDTH - 8 - (c.headerClock and 80 or 0)
-    if not S.Finite(width) then return end
     local point, relative, edge, x, y = dock:GetPoint(1)
     local before = M.toolbarDockAnchor
-    if before and M.toolbarDockX == (c.tabX or 0) and M.toolbarDockY == (c.tabY or 0)
-        and dock:GetNumPoints() == 1 and point == before[1] and relative == before[2]
-        and edge == before[3] and x == before[4] and y == before[5] and dock:GetWidth() == width then return end
+    local sameAnchor = before and dock:GetNumPoints() == 1 and S.Public(point) and S.Public(relative) and S.Public(edge)
+        and S.Finite(x) and S.Finite(y) and point == before[1] and relative == before[2]
+        and edge == before[3] and x == before[4] and y == before[5]
+    local inset = toolbar and WIDTH + 8 + (c.headerClock and 80 or 0) or 0
+    local width, arrowY
+    if whisper then
+        width, arrowY = WhisperDockWidth(dock, inset, sameAnchor and M.toolbarDockX or 0, sameAnchor and M.toolbarDockY or 0)
+    end
+    M.whisperArrowY = arrowY
+    if not width and not toolbar then
+        LayoutNativeDock(dock, xOffset, yOffset)
+        return
+    end
+    width = width or ChatFrame1:GetWidth() - inset
+    if not S.Finite(width) then return end
+    if M.toolbarDockOwned and sameAnchor and M.toolbarDockX == xOffset and M.toolbarDockY == yOffset
+        and dock:GetWidth() == width then return end
     M.toolbarLayingOut = true
     M.context:RestorePoints(dock)
     point, relative, edge, x, y = dock:GetPoint(1)
     if S.Public(point) and S.Public(relative) and S.Public(edge) and S.Finite(x) and S.Finite(y) then
-        x, y = x + (c.tabX or 0), y + (c.tabY or 0)
+        x, y = x + xOffset, y + yOffset
         M.context:Anchor(dock, point, relative, edge, x, y)
         M.context:Property(dock, "GetWidth", "SetWidth", width)
-        M.toolbarDockAnchor = { point, relative, edge, x, y }
-        M.toolbarDockX, M.toolbarDockY = c.tabX or 0, c.tabY or 0
+        RememberDockAnchor(point, relative, edge, x, y, xOffset, yOffset)
         M.toolbarDockOwned = true
         FCFDock_UpdateTabs(dock, true)
+    else
+        M.whisperArrowY = nil
     end
     M.toolbarLayingOut = nil
 end
@@ -216,17 +331,7 @@ function C.ReleaseToolbar()
     if M.toolbar then M.toolbar:Hide() end
     if M.toolbarDrag then M.toolbarDrag:Hide() end
     if M.toolbarResize then M.toolbarResize:Hide() end
-    if M.toolbarDockOwned then
-        M.toolbarDockOwned = nil
-        M.context:RestoreProperty(GENERAL_CHAT_DOCK, "SetWidth")
-        M.context:RestorePoints(GENERAL_CHAT_DOCK)
-        FCFDock_UpdateTabs(GENERAL_CHAT_DOCK, true)
-    end
-end
-
-local function IsWhisper(frame)
-    local kind = frame.chatType
-    return frame.isTemporary and S.Public(kind) and (kind == "WHISPER" or kind == "BN_WHISPER")
+    ReleaseDockWidth(GENERAL_CHAT_DOCK)
 end
 
 local function SelectWhisper(button)
@@ -250,8 +355,6 @@ local function SelectWhisper(button)
     local tab = neighbor or (button.previous and last or first)
     if tab and tab ~= selectedTab then FCF_Tab_OnClick(tab, "LeftButton") end
 end
-
-local ARROW_WIDTH, ARROW_HEIGHT = 36, 18
 
 local function WakeWhisperArrows()
     if M.active then C.ChatActivity(C.DockSelection() or ChatFrame1) end
@@ -280,65 +383,41 @@ local function WhisperArrows(frame)
     return arrows
 end
 
--- Compare the whole dynamic row with its viewport so the result is stable
--- while Blizzard scrolls to the selected tab. Copy can cover part of the row.
-local function WhisperOverflow(dock, copy)
-    if not (dock.DOCKED_CHAT_FRAMES and dock.scrollFrame and dock.overflowButton) then return false end
-    local first, last, hasWhisper
+-- Compare the whole row with the remaining viewport, independent of
+-- Blizzard's horizontal scroll position.
+local function WhisperOverflow(dock)
+    if dock.overflowButton:IsShown() then return true end
+    local first, last
     for _, frame in ipairs(dock.DOCKED_CHAT_FRAMES) do
         if not NS.Safety.IsForbidden(frame) and not frame.isStaticDocked then
             local tab = _G[frame:GetName() .. "Tab"]
-            if tab and not NS.Safety.IsForbidden(tab) and tab:IsShown() then
-                first, last = first or tab, tab
-                hasWhisper = hasWhisper or IsWhisper(frame)
-            end
+            if tab and not NS.Safety.IsForbidden(tab) and tab:IsShown() then first, last = first or tab, tab end
         end
     end
-    if not hasWhisper then return false end
-    if dock.overflowButton:IsShown() then return true end
+    if not first then return false end
     local left, right = dock.scrollFrame:GetLeft(), dock.scrollFrame:GetRight()
     local firstLeft, lastRight = first:GetLeft(), last:GetRight()
     if not (S.Finite(left) and S.Finite(right) and S.Finite(firstLeft) and S.Finite(lastRight)) then return false end
-    if copy then
-        local copyLeft, copyRight = copy:GetLeft(), copy:GetRight()
-        local copyTop, copyBottom, tabTop, tabBottom = copy:GetTop(), copy:GetBottom(), last:GetTop(), last:GetBottom()
-        if S.Finite(copyLeft) and S.Finite(copyRight) and copyLeft < right and copyRight > left
-            and S.Finite(copyTop) and S.Finite(copyBottom) and S.Finite(tabTop) and S.Finite(tabBottom)
-            and copyTop > tabBottom and copyBottom < tabTop then
-            right = math.max(left, copyLeft)
-        end
-    end
     return lastRight - firstLeft > right - left + 0.5
 end
 
-local function ArrowOffset(anchor, copy)
-    if not copy then return 2 end
-    local right, top = anchor:GetRight(), anchor:GetTop()
-    local copyLeft, copyRight, copyBottom, copyTop = copy:GetLeft(), copy:GetRight(), copy:GetBottom(), copy:GetTop()
-    if S.Finite(right) and S.Finite(top) and S.Finite(copyLeft) and S.Finite(copyRight)
-        and S.Finite(copyBottom) and S.Finite(copyTop) and copyLeft < right and copyRight > right - ARROW_WIDTH
-        and copyTop > top + 2 and copyBottom < top + 2 + ARROW_HEIGHT then
-        return copyTop - top + 2
-    end
-    return 2
+local function WhisperArrowFits(dock)
+    -- Suite tab padding and gaps are applied after Blizzard's layout. Recheck
+    -- the static span so those tabs cannot paint into the reserved arrow slot.
+    local left, width = dock:GetLeft(), dock:GetWidth()
+    if not (S.Finite(left) and S.Finite(width)) then return false end
+    local minimum = NativeDockMinimum(dock, left)
+    return minimum ~= nil and width >= minimum
 end
 
 function C.UpdateWhisperArrows(dock)
     local frame = C.DockSelection() or ChatFrame1
-    local visual = M.visuals[frame]
-    local copy = visual and visual.copyButton
-    if copy and not copy:IsShown() then copy = nil end
     local arrows = M.whisperArrows
-    if NS.Safety.IsForbidden(frame) or not WhisperOverflow(dock, copy) then
+    if NS.Safety.IsForbidden(frame) or M.whisperArrowY == nil or not WhisperArrowFits(dock) or not WhisperOverflow(dock) then
         if arrows and arrows:IsShown() then arrows:Hide() end
         return
     end
     local c = M.config
-    local anchor = dock
-    if c.headerToolbar and M.toolbar and C.ToolbarWrap(c, ChatFrame1) then
-        anchor = M.toolbar
-    end
-    local offset = ArrowOffset(anchor, copy)
     if not arrows then
         arrows = WhisperArrows(frame)
         M.whisperArrows = arrows
@@ -346,10 +425,18 @@ function C.UpdateWhisperArrows(dock)
         -- Follow the selected chat window's visibility and inactivity alpha.
         arrows:SetParent(frame)
     end
-    if arrows.anchor ~= anchor or arrows.offset ~= offset then
+    local dockScale, frameScale = dock:GetEffectiveScale(), frame:GetEffectiveScale()
+    if S.Finite(dockScale) and dockScale > 0 and S.Finite(frameScale) and frameScale > 0 then
+        local scale = dockScale / frameScale
+        if arrows.dockScale ~= scale then
+            arrows:SetScale(scale)
+            arrows.dockScale = scale
+        end
+    end
+    if arrows.anchor ~= dock or arrows.y ~= M.whisperArrowY then
         arrows:ClearAllPoints()
-        arrows:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, offset)
-        arrows.anchor, arrows.offset = anchor, offset
+        arrows:SetPoint("LEFT", dock, "RIGHT", ARROW_GAP, M.whisperArrowY)
+        arrows.anchor, arrows.y = dock, M.whisperArrowY
     end
     if arrows.color ~= c.panelColor or arrows.minimal ~= c.minimalChrome then
         for _, button in ipairs(arrows.buttons) do C.Tint(button.fill, c.panelColor, c.minimalChrome and 0 or 95) end

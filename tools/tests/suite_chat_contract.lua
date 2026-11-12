@@ -112,6 +112,8 @@ local function Frame(name)
     function frame:SetWidth(width) self.width = width end
     function frame:SetHeight(height) self.height = height end
     function frame:ClearAllPoints() self.points = {} end
+    function frame:GetPoint(index) return unpack((self.points or {})[index or 1] or {}) end
+    function frame:GetNumPoints() return #(self.points or {}) end
     function frame:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
     function frame:SetShown(shown) self.shown = shown end
     function frame:IsShown() return self.shown end
@@ -1398,7 +1400,9 @@ do
     local oldLeft, oldRight, oldBottom, oldTop = dock.GetLeft, dock.GetRight, dock.GetBottom, dock.GetTop
     local oldChat, oldClick = SELECTED_CHAT_FRAME, FCF_Tab_OnClick
     local primary = module.visuals[ChatFrame1]
-    local oldCopy = primary.copyButton
+    local oldCopy, oldClock = primary.copyButton, primary.headerClock
+    local oldFrameRight, oldFrameTop = ChatFrame1.GetRight, ChatFrame1.GetTop
+    local oldDockPoint, oldDockWidth = dock.points, dock.width
     local first, second, third, other = Frame("TestWhisper1"), Frame("TestWhisper2"), Frame("TestWhisper3"), Frame("TestPetLog")
     local function Bounds(frame, left, right, bottom, top)
         function frame:GetLeft() return left end
@@ -1417,8 +1421,16 @@ do
     dock.DOCKED_CHAT_FRAMES, dock.selected = { ChatFrame1, first, other, second, third }, ChatFrame1
     dock.scrollFrame, dock.overflowButton = Frame(), Frame()
     dock.overflowButton:Hide()
+    dock:ClearAllPoints()
+    dock:SetPoint("BOTTOMLEFT", ChatFrame1, "TOPLEFT", 0, 0)
+    dock:SetWidth(300)
     Bounds(dock, 0, 300, 0, 26)
-    Bounds(dock.scrollFrame, 0, 245, 0, 22)
+    function ChatFrame1:GetRight() return 300 end
+    function ChatFrame1:GetTop() return 0 end
+    dock.overflowButton:SetWidth(18)
+    local viewport = 245
+    Bounds(dock.scrollFrame, 0, viewport, 0, 22)
+    function dock.scrollFrame:GetRight() return math.min(viewport, dock:GetWidth()) end
     FCF_Tab_OnClick = function(tab, mouseButton)
         assert(mouseButton == "LeftButton", "arrows did not use normal native tab selection")
         dock.selected, SELECTED_CHAT_FRAME = tab.chatFrame, tab.chatFrame
@@ -1432,18 +1444,47 @@ do
     primary.copyButton = copy
     dockTabsHook(dock)
     local arrows = assert(module.whisperArrows, "Copy covered a whisper tab without showing arrows")
-    assert(arrows:IsShown() and arrows.points[1][2] == dock and arrows.points[1][3] == "TOPRIGHT",
-        "arrows overlapped the tabs or Copy")
+    local function AssertArrowRight(limit, label)
+        local point = arrows.points[1]
+        assert(arrows:IsShown() and point[1] == "LEFT" and point[2] == dock and point[3] == "RIGHT",
+            "whisper arrows must stay in the dock row")
+        local center = (dock:GetBottom() + dock:GetTop()) / 2 + point[5]
+        local bottom, half = module.config.tabY or 0, arrows:GetHeight() / 2
+        assert(center - half >= bottom and center + half <= bottom + module.config.tabHeight,
+            "arrows exceeded the configured tab height")
+        assert(dock:GetLeft() + dock:GetWidth() + point[4] + arrows:GetWidth() <= limit, label)
+    end
+    AssertArrowRight(215, "whisper arrows crossed Copy's left edge")
     dock.overflowButton:Show()
+    local clock = Frame()
+    Bounds(clock, 160, 212, 1, 20)
+    primary.headerClock = clock
+    dockTabsHook(dock)
+    AssertArrowRight(160, "whisper arrows or tabs crossed the clock")
     Bounds(copy, 265, 311, 29, 48)
+    clock:Hide()
     dockTabsHook(dock)
-    assert(arrows.points[1][2] == dock and arrows.points[1][5] == 24, "arrows did not clear a moved Copy button")
-    Bounds(copy, 310, 356, 29, 48)
+    AssertArrowRight(300, "moving Copy off the row pushed arrows outside the chat header")
+    assert(dock:GetWidth() > 240, "off-row Copy still consumed tab space")
+    local tabX, tabHeight = module.config.tabX, module.config.tabHeight
+    module.config.tabX, module.config.tabHeight = -40, 18
+    local function DockLeft() return select(4, dock:GetPoint(1)) or 0 end
+    dock.GetLeft = DockLeft
+    dock.scrollFrame.GetLeft = DockLeft
     dockTabsHook(dock)
-    assert(arrows.points[1][5] == 2, "arrows moved for a Copy button outside their slot")
+    AssertArrowRight(300 + module.config.padding - 40, "arrows overhung the offset tab strip")
+    module.config.tabX, module.config.tabHeight = tabX, tabHeight
+    local savedHint, savedGamepad = dock.RightTabHint, S.GamepadUI
+    dock.RightTabHint, S.GamepadUI = Frame(), function() return true end
+    dock.RightTabHint:SetWidth(32)
+    Bounds(copy, 95, 141, 1, 20)
+    dockTabsHook(dock)
+    assert(not arrows:IsShown() and dock.overflowButton:IsShown(),
+        "narrow gamepad header replaced native overflow with Suite arrows")
+    dock.RightTabHint, S.GamepadUI = savedHint, savedGamepad
     dock.overflowButton:Hide()
     primary.copyButton = oldCopy
-    Bounds(dock.scrollFrame, 0, 150, 0, 22)
+    viewport = 150
     dockTabsHook(dock)
     local previous, nextTab = unpack(arrows.buttons)
     nextTab:Click("LeftButton")
@@ -1466,13 +1507,18 @@ do
     table.remove(dock.DOCKED_CHAT_FRAMES, 5)
     nextTab:Click("LeftButton")
     assert(dock.selected == first, "arrow retained a closed whisper or did not wrap")
-    Bounds(dock.scrollFrame, 0, 245, 0, 22)
+    viewport = 245
     dockTabsHook(dock)
     assert(not arrows:IsShown(), "widening the dock left the arrows visible")
     dock.overflowButton:Show()
     dockTabsHook(dock)
     assert(arrows:IsShown() and dock.overflowButton:IsShown(), "native overflow did not retain both navigation paths")
     dock.DOCKED_CHAT_FRAMES, dock.selected = oldFrames, oldSelected
+    primary.headerClock = oldClock
+    dockTabsHook(dock)
+    assert(not arrows:IsShown() and dock:GetWidth() == 300, "closing whispers did not release the reserved dock width")
+    ChatFrame1.GetRight, ChatFrame1.GetTop = oldFrameRight, oldFrameTop
+    dock.points, dock.width = oldDockPoint, oldDockWidth
     dock.scrollFrame, dock.overflowButton = oldScroll, oldOverflow
     dock.GetLeft, dock.GetRight, dock.GetBottom, dock.GetTop = oldLeft, oldRight, oldBottom, oldTop
     SELECTED_CHAT_FRAME, FCF_Tab_OnClick = oldChat, oldClick

@@ -213,6 +213,7 @@ B.Section(id, "behavior", "Behavior", {
     Bool("showOnPanels", "Show bars while spellbook or macros are open", false),
     Bool("showOnDrag", "Show hidden bars while dragging a spell", true),
     Bool("disableFormPaging", "Keep bar 1 on its page in stance or shapeshift forms", false),
+    Bool("disableMoonkinPaging", "Keep bar 1 on its page in Moonkin Form", false),
     Bool("disableSkyridingPaging", "Keep bar 1 on its page while skyriding", false),
     Bool("pageArrows", "Show page arrows beside bar 1", false),
     Choice("pageArrowSide", "Page arrow side", ENUM.PAGE_ARROW_SIDE.RIGHT, { "Left", "Right" }),
@@ -318,6 +319,8 @@ local rules = NS.SuiteCatalog.actionbars.rules
 rules.imported.hidden = true
 rules.iconSkin.hidden = true
 rules.disableSkyridingPaging.hidden = NS.Client.isForever or nil
+-- The forms opt-out already covers Moonkin Form.
+rules.disableMoonkinPaging.disabledBy = "disableFormPaging"
 rules.borderColor.disabledBy = "borderClassColor"
 rules.interactionColor.disabledBy = "interactionClassColor"
 rules.rangeColor.enableKey = "rangeColoring"

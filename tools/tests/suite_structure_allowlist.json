@@ -2473,6 +2473,12 @@
    "file": "MSUF_Suite_Skin/Adapters/ForeverGroupFinder.lua",
    "kind": "client",
    "reason": "WoW Forever's own group finder frames; 12.1.0 and 12.1.5 do not have them",
+   "symbol": "eye (= LFGParentFramePortrait)"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Adapters/ForeverGroupFinder.lua",
+   "kind": "client",
+   "reason": "WoW Forever's own group finder frames; 12.1.0 and 12.1.5 do not have them",
    "symbol": "LFGWhoListFrame"
   },
   {

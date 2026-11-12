@@ -24,8 +24,9 @@ local FOREVER_CHARACTER_DOCK = { x = 0, y = 0 }
 local CONTROL_LEVEL_OFFSET = 15
 local GRIP_LEVEL_OFFSET = 20
 
+-- A string names Blizzard's size toggle: our minimize goes left of it (Windows order).
 local nativeMinimize = {
-    WorldMapFrame = true, PlayerSpellsFrame = true,
+    WorldMapFrame = true, PlayerSpellsFrame = "MaximizeMinimizeButton",
 }
 -- Only persistent, player-opened windows get a restore tab (closing an NPC panel ends it).
 local minimizablePanels = {
@@ -545,21 +546,20 @@ local function HideControls(state, releasing)
     if state.customPosition and not IsCombat() then RestoreNativePosition(state, releasing) end
 end
 
-local function CanMinimize(name)
-    return minimizablePanels[name] == true and not nativeMinimize[name]
-end
-
 local function EnsureCaption(state)
-    if state.maximize or nativeMinimize[state.name] or NS.Client.IsGamepadUI() then return end
     local frame, name = state.frame, state.name
+    local toggle = type(nativeMinimize[name]) == "string" and Safety.Field(frame, nativeMinimize[name])
+    if state.maximize or nativeMinimize[name] and not toggle or NS.Client.IsGamepadUI() then return end
     if not state.close then state.close = Chrome.FindClose(frame, name) end
-    if not state.close or Chrome.HasNativeCaption(frame, name, state.close) then return end
-    if not state.minimize and CanMinimize(name) then
+    if not state.close or not toggle and Chrome.HasNativeCaption(frame, name, state.close) then return end
+    if not state.minimize and (toggle or minimizablePanels[name]) then
+        if toggle then Chrome.FollowSizeToggle(state, toggle) end
         state.restore = Chrome.CreateRestore(state, OnRestoreClick)
         controlStates[state.restore] = state
         state.minimize = Chrome.CreateMinimize(state, state.close, CONTROL_LEVEL_OFFSET, OnMinimizeClick)
         controlStates[state.minimize] = state
     end
+    if toggle then return end
     local button = Chrome.CreateCaption(state, CONTROL_LEVEL_OFFSET, OnMaximizeClick)
     if button then controlStates[button] = state end
 end

@@ -94,7 +94,7 @@ end
 ------------------------------------------------------------------ actions
 -- ObjectivesActions.lua: Blizzard's quest, achievement and group finder
 -- actions and the context menus.
-local OpenQuestDetails, OpenAchievement, OpenJournal = O.OpenQuestDetails, O.OpenAchievement, O.OpenJournal
+local OpenQuestWindow, OpenAchievement, OpenJournal = O.OpenQuestWindow, O.OpenAchievement, O.OpenJournal
 local WatchTogglePressed, Untrack, ShowContextMenu = O.WatchTogglePressed, O.Untrack, O.ShowContextMenu
 
 ------------------------------------------------------------------ rows
@@ -148,7 +148,8 @@ local function OnRowClick(button, mouseButton)
     -- Blizzard's panel manager refuses the Suite's call in combat (KS-2).
     if opens and not O.WindowAllowed() then return end
     if Finite(button.questID) then
-        OpenQuestDetails(button.questID)
+        -- No Blizzard button took the click (O.RowPreClick): the world map.
+        OpenQuestWindow()
     elseif Finite(button.achievementID) then
         OpenAchievement(button.achievementID)
     elseif button.group == "scenario" then

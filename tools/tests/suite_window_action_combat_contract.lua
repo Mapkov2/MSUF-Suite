@@ -116,4 +116,33 @@ Check(W.Disable(button, "combat") and not state.visible, "safe per-button disabl
 button:Hide(); H.Tick()
 for _, frame in ipairs(H.created) do Check(frame:GetScript("OnUpdate") == nil, "closed action retained an updater") end
 Check(next(jobs) == nil, "closed action retained combat jobs")
+-- Windows mode: Blizzard's maximize/minimize pair draws Windows' maximize
+-- square and restore squares; close and the other modes keep their glyphs.
+H.SetCombat(false)
+local caption = Button()
+local captionState = W.Apply(caption, "caption", "maximize")
+for _, glyph in pairs(captionState.glyphs) do
+    function glyph:SetTexture(path) self.file = path end
+    function glyph:SetTexCoord(left, right) self.left, self.right = left, right end
+end
+local function Glyph(kind, mode)
+    settings.glyphMode = mode
+    Check(W.Apply(caption, "caption", kind) == captionState, kind .. " " .. mode .. " did not apply")
+    local glyph = captionState.glyphs.normal
+    return glyph.file, glyph.left, glyph.right
+end
+local path, left, right = Glyph("maximize", "windows")
+Check(path:find("MapkoSkinWindowCaptionFine", 1, true) and left == 0 and right == 0.5,
+    "Windows mode lacks the maximize square")
+path, left, right = Glyph("minimize", "windows")
+Check(path:find("MapkoSkinWindowCaptionFine", 1, true) and left == 0.5 and right == 1,
+    "Windows mode lacks the restore squares")
+path, left = Glyph("close", "windows")
+Check(path:find("MapkoSkinWindowActionsFine", 1, true) and left == 0, "Windows mode changed the close glyph")
+path, left = Glyph("maximize", "plusMinus")
+Check(path:find("MapkoSkinWindowActionsFine", 1, true) and left == 1 / 8, "plus/minus mode lost its plus")
+settings.weight = "bold"
+path = Glyph("minimize", "windows")
+Check(path:find("MapkoSkinWindowCaptionBold", 1, true), "bold weight lost the bold restore squares")
+settings.weight = "fine"
 print("Window action combat parity: " .. checks .. " checks passed (" .. tostring(arg[2]) .. ")")

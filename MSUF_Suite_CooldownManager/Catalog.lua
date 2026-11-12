@@ -89,7 +89,19 @@ local function EquipTexture(slot)
     local _, icon = C_PaperDollInfo.GetInventorySlotInfoForInvSlot(slot)
     if Public(icon) and icon then return icon end
 end
+-- Blizzard's own title of a bag-item category, else the Suite's.
+local function CategoryName(category)
+    local title = category and CATEGORY_TITLE[category]
+    if not title then return nil end
+    local text = _G[title[1]]
+    if Public(text) and type(text) == "string" and text ~= "" then return text end
+    return S.Text(title[2])
+end
+-- An item family (Presets.STOCK) goes by its category's title: its key
+-- names one rank only.
 local function ItemName(item)
+    local stock = item and C.Presets.STOCK[item]
+    if stock then return CategoryName(stock) end
     local name = item and C_Item.GetItemNameByID(item)
     if Public(name) and type(name) == "string" and name ~= "" then return name end
 end
@@ -127,12 +139,7 @@ function Catalog.RecordName(rec)
     if name then return name end
     name = SpellName(rec.tooltip or rec.override or rec.spell)
     if name then return name end
-    local title = rec.spellCategory and CATEGORY_TITLE[rec.spellCategory]
-    if title then
-        local text = _G[title[1]]
-        if Public(text) and type(text) == "string" and text ~= "" then return text end
-        return S.Text(title[2])
-    end
+    return CategoryName(rec.spellCategory)
 end
 
 ------------------------------------------------------------------ readiness

@@ -27,6 +27,9 @@ local dirty = {
     icon = false, tint = false, keys = false, full = false,
 }
 local dirtySlots, dirtyBars, refillBars, gridBars = {}, {}, {}, {}
+-- What a shown-button plan read per mapped slot: filled, and for a plain
+-- spell that spell (Events.lua GridChanged).
+local gridFill, gridHold = {}, {}
 -- The suite buttons SPELL_UPDATE_COOLDOWN named since the last flush.
 local spellCooldowns = {}
 -- Protected work for the next flush out of combat: every bar's shown-button
@@ -365,6 +368,8 @@ local function Reset()
     for rec in pairs(spellCooldowns) do spellCooldowns[rec] = nil end
     for bar in pairs(dirtyBars) do dirtyBars[bar] = nil end
     for bar in pairs(gridBars) do gridBars[bar] = nil end
+    for slot in pairs(gridFill) do gridFill[slot] = nil end
+    for slot in pairs(gridHold) do gridHold[slot] = nil end
     protected.routing, protected.grid = false, false
     ResetUnits()
 end
@@ -382,6 +387,6 @@ end
 
 -- What the event map (Events.lua) marks directly.
 AB.Dirty = {
-    slots = dirtySlots, grid = gridBars, protected = protected, reported = reported, spellCooldowns = spellCooldowns,
-    Schedule = Schedule, Mark = Mark, Reset = Reset,
+    slots = dirtySlots, grid = gridBars, gridFill = gridFill, gridHold = gridHold, protected = protected, reported = reported,
+    spellCooldowns = spellCooldowns, Schedule = Schedule, Mark = Mark, Reset = Reset,
 }

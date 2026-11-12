@@ -157,9 +157,25 @@ function Navigation.RefreshMap(owner)
     end
     WorldQueue()
     owner.context:Cancel(MinimapRefresh)
-    if owner.config.minimapPins and #owner.mapPoints > 0 and Minimap:IsVisible() then owner.context:Ticker(.2, MinimapRefresh)
+    if owner.config.minimapPins and not owner.paused and #owner.mapPoints > 0 and Minimap:IsVisible() then
+        owner.context:Ticker(.2, MinimapRefresh)
     else Release(Pins.mini) end
     Modifier(owner)
+end
+
+-- Navigation is paused (Navigation.lua, combat inside an instance): no minimap
+-- ticker and no modifier event. The world map pins stay, they only refresh
+-- when the player opens or moves the map.
+function Navigation.PauseMap(owner)
+    owner.context:Cancel(MinimapRefresh)
+    owner.context:RemoveEvent("MODIFIER_STATE_CHANGED")
+    Release(Pins.mini)
+    if owner.placement then owner.placement:EnableMouse(false) end
+end
+
+function Navigation.ResumeMap(owner)
+    owner.context:Event("MODIFIER_STATE_CHANGED", Modifier, true)
+    Navigation.RefreshMap(owner)
 end
 
 function Navigation.EnableMap(owner)

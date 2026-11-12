@@ -2,14 +2,21 @@ local _, Private = ...
 local Suite, Navigation = Private.Suite, Private.Navigation
 local Types = Enum.SuperTrackingType
 
+-- model.incomplete: the client could not give all of the destination (an
+-- unreadable value, a name it has not loaded). Navigation.lua then lets the
+-- player's movement ask again.
 local function Quest(model, config)
     if not config.trackQuests then return false end
     local id = C_SuperTrack.GetSuperTrackedQuestID()
-    if not Suite.Finite(id) or id <= 0 then return false end
+    if not Suite.Finite(id) or id <= 0 then
+        model.incomplete = not Suite.Public(id)
+        return false
+    end
     model.identity, model.source = id, "quest"
-    local title = C_QuestLog.GetTitleForQuestID(id)
-    model.title = Suite.PublicText(title) or Suite.Text("Quest destination")
+    local title = Suite.PublicText(C_QuestLog.GetTitleForQuestID(id))
+    model.title = title or Suite.Text("Quest destination")
     local complete = C_QuestLog.IsComplete(id)
+    model.incomplete = not title or not Suite.Public(complete)
     model.kind = Suite.Public(complete) and complete == true and "complete" or "quest"
     model.info = model.kind == "complete" and Suite.Text("Ready for turn-in") or Suite.Text("Focused quest")
     local index = C_QuestLog.GetLogIndexForQuestID(id)
@@ -35,12 +42,18 @@ end
 local function Waypoint(model, config)
     if not config.trackPins then return false end
     local point = C_Map.GetUserWaypoint()
-    if not Suite.Public(point) or not point then return false end
+    if not Suite.Public(point) or not point then
+        model.incomplete = not Suite.Public(point)
+        return false
+    end
+    -- A pin that is there and cannot be read in full.
+    model.incomplete = true
     local map = point.uiMapID
     local position = point.position
     if not Suite.Finite(map) or not Suite.Public(position) or not position then return false end
     local x, y = position.x, position.y
     if not Suite.Finite(x) or not Suite.Finite(y) then return false end
+    model.incomplete = false
     model.identity, model.source, model.kind = ("%d:%.5f:%.5f"):format(map, x, y), "pin", "pin"
     local selected = Navigation.IsSelectedPoint(point) and Navigation.selected or nil
     model.title = selected and selected.name or Suite.Text("Map waypoint")
@@ -53,12 +66,15 @@ local function Interest(model, config, kind)
     if not config.trackPOIs then return false end
     model.source, model.kind = "poi", "pin"
     local name, description = C_SuperTrack.GetSuperTrackedItemName()
-    model.title = Suite.PublicText(name) or Suite.Text("Tracked point of interest")
+    name = Suite.PublicText(name)
+    model.title = name or Suite.Text("Tracked point of interest")
     model.info = Suite.PublicText(description) or Suite.Text("Point of interest")
     local identity
     if kind == Types.MapPin then _, identity = C_SuperTrack.GetSuperTrackedMapPin()
     elseif kind == Types.Content then _, identity = C_SuperTrack.GetSuperTrackedContent()
     elseif kind == Types.Vignette then identity = C_SuperTrack.GetSuperTrackedVignette() end
+    -- The client may give the name later (GetSuperTrackedItemName may return nothing).
+    model.incomplete = not name or not Suite.Public(identity)
     if not Suite.Public(identity) then return false end
     model.identity = identity or kind
     return true
@@ -66,7 +82,8 @@ end
 
 function Navigation.ReadSource(model, config)
     local kind = C_SuperTrack.GetHighestPrioritySuperTrackingType()
-    if not Suite.Public(kind) then return false end
+    model.incomplete = not Suite.Public(kind)
+    if model.incomplete then return false end
     local previousSource, previousID = model.source, model.identity
     local supported = false
     if kind == Types.Quest then supported = Quest(model, config)

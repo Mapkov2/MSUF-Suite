@@ -47,8 +47,20 @@ local events = {}
 -- five times per second for ordinary tinting, ten for resource-ready glows.
 -- The cold index selects the interval. A trailing refresh keeps the final
 -- state; range, target and show edges still paint immediately.
-local USABLE_INTERVAL = .2
+-- In combat the ordinary tint window is 0.5 s (owner decision 2026-11-11,
+-- an accepted trade: 2026-11-11 raid trace, 7,817 SPELL_UPDATE_USABLE in
+-- 300 s, 1,442 sweeps at 4.8/s, 19,604 usable reads, 273 ms inclusive; the
+-- worst-case tint latency in a storm goes from 0.2 s to 0.5 s in combat).
+-- Resource-ready glows (0.1 s) and "show only when usable" gates keep their
+-- window. The length is read when a window opens (C.state.inCombat follows
+-- PLAYER_REGEN_DISABLED, before InCombatLockdown turns true).
+local USABLE_INTERVAL, USABLE_COMBAT_INTERVAL = .2, .5
 local usableNext, usableArmed = 0, false
+local function UsableWindow()
+    local interval = Index.usableInterval or USABLE_INTERVAL
+    if interval >= USABLE_INTERVAL and C.state.inCombat and #Index.gated == 0 then return USABLE_COMBAT_INTERVAL end
+    return interval
+end
 -- BAG_UPDATE_COOLDOWN has no payload either and arrived 19 times a second
 -- in combat (2026-10-11 raid trace: 1,701 events, 1,523 item reads, 0.30
 -- ms/s). The same leading edge and trailing refresh, at most ten item
@@ -203,7 +215,7 @@ end
 local function UsableWindowDone()
     usableArmed = false
     if not M.active then return end
-    usableNext = GetTime() + (Index.usableInterval or USABLE_INTERVAL)
+    usableNext = GetTime() + UsableWindow()
     dirty.usable = true
     Schedule()
 end
@@ -214,7 +226,7 @@ local function OnUsable()
         if UsableShown(usableEntries[i]) then
             local now = GetTime()
             if now >= usableNext then
-                usableNext = now + (Index.usableInterval or USABLE_INTERVAL)
+                usableNext = now + UsableWindow()
                 dirty.usable = true
                 Schedule()
             else
@@ -236,7 +248,7 @@ local function OnUsableGated()
         usableArmed = true
         return C.Wake(USABLE_WAKE, wait)
     end
-    usableNext, dirty.usable = now + (Index.usableInterval or USABLE_INTERVAL), true
+    usableNext, dirty.usable = now + UsableWindow(), true
     Schedule()
 end
 

@@ -1,5 +1,42 @@
 # MSUF Suite Changelog
 
+## 0.1.19 Alpha - 2026-11-12
+
+[Compare with 0.1.18](https://github.com/Mapkov2/MSUF-Suite/compare/v0.1.18-alpha...v0.1.19-alpha) · [CurseForge](https://www.curseforge.com/wow/addons/msuf-suite) · [Wago](https://addons.wago.io/addons/msuf-suite)
+
+### Navigation
+
+- Show the followed map pin and your focused quest on the flight map, beneath the flight points so they stay clickable. Turn this off under Destinations & maps.
+- The direction arrow keeps its place more steadily and follows UI scale and window size changes.
+- Choose how an off-screen destination is shown: arrow and symbol, arrow only, or symbol only. The light beam's animation can be turned off.
+- Inside dungeons, raids and other instances, navigation pauses during combat and resumes afterwards.
+
+### Action bars, reminders and objectives
+
+- Keep bar 1 on its page in Moonkin Form while cat and bear forms still change pages.
+- On WoW Forever, druids get a Thorns reminder that casts the highest known rank on yourself outside combat.
+- Tracked achievements in the Objective Tracker show their progress the way Blizzard's tracker words it, and stay listed when only another character has earned them.
+
+### Cooldowns and nameplates
+
+- On WoW Forever, Healthstone and health potion entries follow the strongest rank in your bags, count every rank, and use that item's icon and tooltip.
+- Nameplate auras create their buttons gradually and use a single dispel ring, which reduces stutter when many plates appear in combat.
+- Cooldown tints, empty Healthstone entries and nameplates with hidden names do less work in combat.
+
+### Skins
+
+- On WoW Forever, the Group Finder, Professions and talent windows get fitted side tabs, flat role icons, skinned profession rank bars and portrait rings that match the skin.
+
+### Fixes
+
+- A reload during combat now starts the Suite before combat lockdown on Retail as well as WoW Forever.
+- Clicking a quest or the header in the Objective Tracker opens the quest log through Blizzard's own button, avoiding blocked quest-pin updates in combat.
+- Whisper tab overflow arrows and the header toolbar keep their space when the chat window is resized.
+- Action bars skip unchanged slot and drag updates, reducing idle work from macros.
+- Cooldown stack counts keep their font on newly created icons.
+- The raid pull timer and the flight timer's elapsed time no longer need a script running every second.
+- The equipment comparison no longer shows a box instead of its arrow.
+
 ## 0.1.18 Alpha - 2026-11-10
 
 [Compare with 0.1.17](https://github.com/Mapkov2/MSUF-Suite/compare/v0.1.17-alpha...v0.1.18-alpha) · [CurseForge](https://www.curseforge.com/wow/addons/msuf-suite) · [Wago](https://addons.wago.io/addons/msuf-suite)

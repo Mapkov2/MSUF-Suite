@@ -66,12 +66,14 @@ for _,height in ipairs({94, 180, 38, 120}) do
     Check(reminderPaints == paints, "unchanged reminder preview repainted")
 end
 local unitClass = env.UnitClass
-for _, class in ipairs({ "MAGE", "PRIEST", "WARRIOR" }) do
+for _, class in ipairs({ "MAGE", "PRIEST", "DRUID", "WARRIOR" }) do
     env.UnitClass = function() return class, class end
     Check(P.Gates.buffReminders({ key = "classMageArmor" }) == (arg[2] == "Forever" and class == "MAGE"),
         "Mage armor menu gate leaked to another class or client")
     Check(P.Gates.buffReminders({ key = "classInnerFire" }) == (arg[2] == "Forever" and class == "PRIEST"),
         "Inner Fire menu gate leaked to another class or client")
+    Check(P.Gates.buffReminders({ key = "classThorns" }) == (arg[2] == "Forever" and class == "DRUID"),
+        "Thorns menu gate leaked to another class or client")
 end
 env.UnitClass = unitClass
 P.MenuSamples.Reminders = reminders

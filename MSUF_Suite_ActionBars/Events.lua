@@ -25,10 +25,36 @@ local GLOW_SPELL, GLOW_DYNAMIC, GLOW_FLYOUT = Painter.GLOW_SPELL, Painter.GLOW_D
 local Walk, WalkNative, MapButton, UnmapButton, Remap, AllKeyTexts = Painter.Walk, Painter.WalkNative, Painter.MapButton, Painter.UnmapButton,
     Painter.Remap, Painter.AllKeyTexts
 local dirtySlots, gridBars, protected, reported = Dirty.slots, Dirty.grid, Dirty.protected, Dirty.reported
+local gridFill, gridHold = Dirty.gridFill, Dirty.gridHold
 local spellCooldowns = Dirty.spellCooldowns
 local Schedule, Mark = Dirty.Schedule, Dirty.Mark
+-- The resolved slot accessors (Paint.lua AB.ResolveAPI), as Paint reads them.
+local api = Painter.api
 
 ------------------------------------------------------------------ events
+-- A suite button's shown-button plan depends on its slot being filled and,
+-- for a plain spell, on that spell (press and hold; AB.SNIPPET.BUTTON). The
+-- client also sends ACTIONBAR_SLOT_CHANGED when neither changed: a macro
+-- whose conditions it evaluates again (2026-11-10 idle trace: one macro slot,
+-- 12 plans of 0.44 ms in 20 s). gridFill and gridHold hold what the last
+-- event of a mapped slot saw; an unreadable answer forgets it. Blizzard's
+-- reused buttons follow the same rule: its own plan cannot show a button the
+-- suite hid, and its hides are corrected by the restricted hide wrap or, under
+-- a hidden header, by the grid repair (Blizzard.lua).
+local function GridChanged(slot)
+    local has = api.HasAction(slot)
+    local kind, id = GetActionInfo(slot)
+    if not Public(has) or not Public(kind) or not Public(id) then
+        gridFill[slot], gridHold[slot] = nil, nil
+        return true
+    end
+    has = has == true
+    local hold = kind == "spell" and id or false
+    if gridFill[slot] == has and gridHold[slot] == hold then return false end
+    gridFill[slot], gridHold[slot] = has, hold
+    return true
+end
+
 local function SlotChanged(_, _, slot)
     if AB.snapshotChanged then AB.snapshotChanged() end
     if not Public(slot) or type(slot) ~= "number" or slot == 0 then
@@ -41,12 +67,15 @@ local function SlotChanged(_, _, slot)
     -- action when repainted; Blizzard paints the native ones, so their proc
     -- glow match is re-read here while the pixel glow follows it.
     local list = slotMap[slot]
-    if list then
+    -- A slot's list outlives its buttons (Remap empties it), so an empty list
+    -- is a slot no button shows.
+    if list and #list > 0 then
         local flyout = AB.IsFlyoutSlot(slot)
         local nativeGlow = M.config.procGlow == PROC_PIXEL
+        local changed = GridChanged(slot)
         for i = 1, #list do
             local rec = list[i]
-            gridBars[rec.bar] = true
+            if changed then gridBars[rec.bar] = true end
             if rec.native then
                 if nativeGlow then CacheAction(rec) end
             elseif rec.flyout ~= flyout then
@@ -54,6 +83,8 @@ local function SlotChanged(_, _, slot)
                 protected.routing = true
             end
         end
+    else
+        gridFill[slot], gridHold[slot] = nil, nil
     end
     Schedule()
 end

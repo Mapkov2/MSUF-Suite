@@ -56,6 +56,9 @@ NS.BuffReminderClassReminders = {
     { key = "classInnerFire", label = "Priest: Inner Fire (Forever)", class = "PRIEST", default = NS.Client.isForever == true, standalone = true,
         forever = { kind = "aura", ranked = true, casts = { 10952, 10951, 1006, 602, 7128, 588 },
             auras = { 588 }, missingOnly = true } },
+    -- Forever SpellName 1.60.1.70009: the six player ranks of Thorns, highest first.
+    { key = "classThorns", label = "Druid: Thorns (Forever)", class = "DRUID", default = NS.Client.isForever == true, standalone = true,
+        forever = { kind = "aura", ranked = true, casts = { 9910, 9756, 8914, 1075, 782, 467 }, auras = { 467 } } },
     { key = "classShadowform", label = "Priest: Shadowform", class = "PRIEST",
         retail = { kind = "aura", casts = { 232698 }, auras = { 232698, 194249 } },
         forever = { kind = "aura", casts = { 15473 }, auras = { 15473 } } },
@@ -129,6 +132,8 @@ B.Tooltip(NS.SuiteCatalog[id].rules.classMageArmor,
     "Shows one reminder while no Frost Armor, Ice Armor or Mage Armor is active. Click to cast the highest known rank of your last active armor.")
 B.Tooltip(NS.SuiteCatalog[id].rules.classInnerFire,
     "Shows a reminder when Inner Fire expires or its charges are used up. Click to cast the highest known rank outside combat.")
+B.Tooltip(NS.SuiteCatalog[id].rules.classThorns,
+    "Shows a reminder when Thorns is missing or about to expire. Click to cast the highest known rank on yourself outside combat.")
 B.Section(id, "demons", "Warlock demon choice", {
     Bool("demonChoiceWarning", "Tell me when my demon is not one of the demons below", false),
 })

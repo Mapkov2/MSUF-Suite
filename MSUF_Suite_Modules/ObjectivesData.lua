@@ -293,22 +293,49 @@ local function CollectBonus(list, c)
     end
 end
 
+-- One open criterion as Blizzard's achievement module words it
+-- (Blizzard_AchievementObjectiveTracker.lua, AddAchievement): a progress
+-- criterion is its count before the achievement's description ("74/100
+-- Complete 100 victories"), a meta criterion the name of its achievement,
+-- any other its own text.
+local function CriterionLine(id, index, description)
+    local line, kind, done, _, _, _, flags, assetID, quantity = GetAchievementCriteriaInfo(id, index)
+    if not Public(done) or done then return end
+    quantity = Text(quantity)
+    if description and quantity and Finite(flags) and bit.band(flags, EVALUATION_TREE_FLAG_PROGRESS_BAR) ~= 0 then
+        -- A money count is coin icons; it takes the line above the description.
+        if quantity:lower():find("interface\\moneyframe", 1, true) then return quantity .. "\n" .. description end
+        return (quantity:gsub(" / ", "/")) .. " " .. description
+    end
+    if Public(kind) and kind == CRITERIA_TYPE_ACHIEVEMENT and Finite(assetID) then
+        local _, name = GetAchievementInfo(assetID)
+        return Text(name) or Text(line)
+    end
+    return Text(line)
+end
+
+-- Blizzard hides an achievement this character earned, not one that only
+-- another character completed.
 local function CollectAchievements(list)
     local ids = Read(C_ContentTracking.GetTrackedIDs, Enum.ContentTrackingType.Achievement)
     if type(ids) ~= "table" then return end
     for i = 1, math.min(#ids, 15) do
         local id = ids[i]
         if Finite(id) then
-            local _, name, _, complete = GetAchievementInfo(id)
-            if Text(name) and Public(complete) and not complete then
+            local _, name, _, _, _, _, _, description, _, _, _, _, earned = GetAchievementInfo(id)
+            if Text(name) and Public(earned) and not earned then
                 local entry = NextEntry(list, id, name, "achievements")
                 entry.tracked = true
+                description = Text(description)
                 local count = Read(GetAchievementNumCriteria, id)
-                if Finite(count) then
+                if Finite(count) and count > 0 then
                     for j = 1, count do
-                        local line, _, done = GetAchievementCriteriaInfo(id, j)
-                        if Text(line) and Public(done) and not done then AddLine(entry, line) end
+                        local line = CriterionLine(id, j, description)
+                        if line then AddLine(entry, line) end
                     end
+                elseif description then
+                    -- An achievement without criteria is its description.
+                    AddLine(entry, description)
                 end
             end
         end

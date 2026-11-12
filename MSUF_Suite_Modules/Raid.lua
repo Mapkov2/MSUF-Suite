@@ -15,7 +15,7 @@ local Clock = S.ClockText
 local RaidRecords = S.RaidRecords
 local Tr = S.Text
 local DOT = "  \194\183  "
--- Translated once; the view repaints every second during a pull.
+-- Translated once; the view repaints with every event of a pull.
 local L = {
     lastPull = Tr("LAST PULL  %s"), boss = Tr("Boss %d"), active = Tr("ACTIVE BOSSES  %s"),
     hpUnavailable = Tr("HP unavailable"), defeated = Tr("%d defeated"), bestPull = Tr("BEST PULL  %s"),
@@ -29,7 +29,8 @@ local BOSS_UNITS = { "boss1", "boss2", "boss3", "boss4", "boss5" }
 local BOSS_INDEX = {}
 for index, unit in ipairs(BOSS_UNITS) do BOSS_INDEX[unit] = index end
 -- Boss health changes with every damage tick. The boss row is redrawn at
--- most five times per second; the one-second ticker redraws the rest.
+-- most five times per second; the rest is redrawn by its events (and by the
+-- one-second ticker where the client cannot write the pull clock itself).
 local LIVE_PAINT_DELAY = .2
 local ReadPending
 
@@ -176,8 +177,11 @@ local function Paint(owner)
     if view.pull then ReadPending(view) end
     local record = Record(view)
     SetText(view.name, view.encounterName or L.waiting)
-    SetText(view.elapsed, view.pull and Clock(GetTime() - view.pull.started)
-        or view.lastTime and Clock(view.lastTime) or "--:--")
+    -- While the client writes the pull clock (StartClock) the line is its.
+    if not view.clockRunning then
+        SetText(view.elapsed, view.pull and Clock(GetTime() - view.pull.started)
+            or view.lastTime and Clock(view.lastTime) or "--:--")
+    end
     local phase = L.phase:format(view.stage and (view.stage .. (view.stageSource and (DOT .. view.stageSource) or ""))
         or "--")
     local phases = record and record.bestPhases
@@ -332,9 +336,38 @@ function H.Show(owner)
     return true
 end
 
--- The pull clock ticks once a second on the owner's context (ctx:Ticker).
+-- The pull clock. Where the client can write it (S.ElapsedClock) a duration
+-- text binding on the elapsed line shows the time since the pull, and nothing
+-- runs per second: every other line of the panel is painted by its event.
+-- Otherwise it ticks once a second on the owner's context (ctx:Ticker).
+local function StartClock(owner, view)
+    local format = S.ElapsedClock()
+    if not format then
+        owner.context:Ticker(1, H.Tick)
+        return
+    end
+    if not view.clock then
+        view.clock, view.clockDuration = C_DurationUtil.CreateDurationTextBinding(), C_DurationUtil.CreateDuration()
+        view.clock:SetFontString(view.elapsed)
+        view.clock:SetTextFormat("{}", format)
+        view.clock:SetUpdateInterval(1)
+    end
+    view.clockDuration:SetTimeFromStart(view.pull.started, S.CLOCK_SPAN)
+    view.clock:SetDuration(view.clockDuration)
+    view.clock:SetEnabled(true)
+    view.clock:UpdateFontString()
+    view.clockRunning = true
+end
+
 local function StopTicker(owner)
     owner.context:Cancel(H.Tick)
+    local view = owner.raid
+    if view and view.clockRunning then
+        view.clockRunning = false
+        view.clock:SetEnabled(false)
+        -- The client wrote the line: what Lua last wrote there is not what it shows.
+        view.elapsed.cachedText = nil
+    end
 end
 
 function H.Stop(owner)
@@ -557,7 +590,7 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     owner.context:Event("UNIT_HEALTH", BossHealth, IN_COMBAT, BOSS_UNITS)
     owner.context:Event("INSTANCE_ENCOUNTER_ENGAGE_UNIT", H.UpdateBosses, IN_COMBAT)
     H.UpdateBosses(owner)
-    owner.context:Ticker(1, H.Tick)
+    StartClock(owner, view)
     Paint(owner)
     return true
 end

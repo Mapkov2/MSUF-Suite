@@ -109,6 +109,8 @@ local Owners = Kit.NewOwners({
     keyField = "parentOwner",
     init = function(state, parentOwner)
         state.owner = tostring(parentOwner) .. ":deep-windows"
+        -- Surfaces attached through Kit.Attach/Kit.Ensure (Forever rank bars).
+        state.surfaces = Kit.WeakSet()
         state.cardSurfaces = Kit.WeakSet()
         state.cardsVisited = 0
         state.cardsDecorated = 0
@@ -546,6 +548,8 @@ local function DisableNow(state)
     NS.ControlSkin.DisableOwner(state.owner)
     NS.IconSkin.DisableOwner(state.owner)
     HideWarbandCards(state)
+    for target in pairs(state.surfaces) do NS.Surface.SetVisible(target, false) end
+    Kit.HidePortraitBezels(state.owner)
     NS.Cosmetics.RestoreOwner(state.owner)
     Owners.Forget(state)
     return true

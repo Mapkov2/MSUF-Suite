@@ -41,8 +41,13 @@ P.SetTranslatedText = noop
 local core = { IsSecret = function() return false end, Number = function(v) return type(v) == "number" end,
   InCombat = function() return false end }
 assert(loadfile(arg[1] .. "/MSUF_Suite/Core/PreviewKit.lua"))("MSUF_Suite", core)
+-- The editor asks the shipped aura display model which handles are aura
+-- containers, so the model is loaded on a namespace of its own.
+local auras = { Public = function() return true end, Client = { isForever = false } }
+assert(loadfile(arg[1] .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", auras)
 P.Suite = { Client = { isForever = false }, NameplateStyle = { NativeBit = function() return false end,
-  CreateBorder = function() return {} end, PaintBorder = noop }, PreviewKit = core.PreviewKit }
+  CreateBorder = function() return {} end, PaintBorder = noop }, PreviewKit = core.PreviewKit,
+  NameplateAuraDisplay = auras.NameplateAuraDisplay }
 P.PreviewInteraction = { Outline = noop, Handles = function(host, opts) return core.PreviewKit.Handles(host, opts) end }
 P.NameplatesEditorMarkers = {}
 P.NameplatesPreviewLayout = { Apply = noop }

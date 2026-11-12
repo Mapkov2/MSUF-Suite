@@ -22,6 +22,17 @@ local blockedOwners = setmetatable({}, { __mode = "k" })
 local FINE_ATLAS = NS.path .. "Media\\WindowActions\\MapkoSkinWindowActionsFine.png"
 local BOLD_ATLAS = NS.path .. "Media\\WindowActions\\MapkoSkinWindowActionsBold.png"
 local ATLAS_SLOTS = 8
+-- Windows caption glyphs: maximize (one square) and restore (two squares).
+local CAPTION_FINE = NS.path .. "Media\\WindowActions\\MapkoSkinWindowCaptionFine.png"
+local CAPTION_BOLD = NS.path .. "Media\\WindowActions\\MapkoSkinWindowCaptionBold.png"
+local CAPTION_SLOTS = 2
+local captionCells = { maximizeWindow = 0, restoreWindow = 1 }
+local actionAtlases = {
+    fine = { file = FINE_ATLAS, slots = ATLAS_SLOTS }, bold = { file = BOLD_ATLAS, slots = ATLAS_SLOTS },
+}
+local captionAtlases = {
+    fine = { file = CAPTION_FINE, slots = CAPTION_SLOTS }, bold = { file = CAPTION_BOLD, slots = CAPTION_SLOTS },
+}
 
 local validKinds = {
     close = true,
@@ -295,6 +306,11 @@ local function GlyphKey(kind, glyphMode)
     if kind == "close" then return "close" end
     if kind == "add" then return "plus" end
     if kind == "remove" then return "minus" end
+    -- Blizzard's maximize/minimize pair toggles a window's large and small
+    -- size: Windows shows that as maximize and restore.
+    if glyphMode == "windows" and (kind == "maximize" or kind == "minimize") then
+        return kind == "maximize" and "maximizeWindow" or "restoreWindow"
+    end
     if glyphMode == "chevrons" then
         if kind == "maximize" or kind == "expand" then return "up" end
         return "down"
@@ -317,8 +333,8 @@ local function ColorRole(kind, stateName)
 end
 
 local function ConfigureGlyph(glyph, atlas, cell, size, role, alphaScale)
-    glyph:SetTexture(atlas)
-    glyph:SetTexCoord(cell / ATLAS_SLOTS, (cell + 1) / ATLAS_SLOTS, 0, 1)
+    glyph:SetTexture(atlas.file)
+    glyph:SetTexCoord(cell / atlas.slots, (cell + 1) / atlas.slots, 0, 1)
     glyph:SetSize(size, size)
     local r, g, b, a = NS.Theme.GetColor(role)
     glyph:SetVertexColor(r, g, b, (tonumber(a) or 1) * alphaScale)
@@ -350,8 +366,9 @@ end
 
 local function ConfigureGlyphs(button, state, settings)
     local glyphKey = GlyphKey(state.kind, settings.glyphMode)
-    local cell = glyphCells[glyphKey]
-    local atlas = settings.weight == "bold" and BOLD_ATLAS or FINE_ATLAS
+    local weight = settings.weight == "bold" and "bold" or "fine"
+    local cell, atlas = captionCells[glyphKey], captionAtlases[weight]
+    if not cell then cell, atlas = glyphCells[glyphKey], actionAtlases[weight] end
     local size, x, y = GlyphLayout(button, state.kind, settings)
     local idle = tonumber(settings.opacity) or 0.78
     AnchorGlyphs(button, state, x, y)

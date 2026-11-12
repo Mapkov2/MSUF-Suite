@@ -3421,6 +3421,34 @@ do
     module:Refresh()
     Run()
 end
+-- With every assist option off (no group highlights the suggestion, no standalone icon) nothing asks the
+-- client for a suggestion: no ticker in or out of combat, on Retail with Blizzard's highlight on or off
+-- and on Forever (2026-11-11, the owner's own settings).
+do
+    local asked=0
+    local realNext=C_AssistedCombat.GetNextCastSpell
+    C_AssistedCombat.GetNextCastSpell=function(...) asked=asked+1;return realNext(...) end
+    assert(config.ess_assist==true and config.assistIcon==false,"probe: the assist options are not as the cases above left them")
+    config.ess_assist=false
+    for _,forever in ipairs({false,true}) do
+        Suite.Client.isForever=forever
+        for _,value in ipairs({"0","1"}) do
+            cvars.assistedCombatHighlight=value
+            module:Refresh();Run()
+            local where=(forever and "Forever" or "Retail")..", highlight "..value
+            assert(LiveTickers()==0,"an assist poll runs out of combat with every assist option off ("..where..")")
+            combat=true;Fire("PLAYER_REGEN_DISABLED");Run()
+            assert(LiveTickers()==0 and asked==0,"an assist poll runs in combat with every assist option off ("..where..")")
+            combat=false;Fire("PLAYER_REGEN_ENABLED");Run()
+            assert(LiveTickers()==0 and asked==0,"an assist poll outlived combat with every assist option off ("..where..")")
+        end
+    end
+    Suite.Client.isForever=false
+    cvars.assistedCombatHighlight="0"
+    C_AssistedCombat.GetNextCastSpell=realNext
+    config.ess_assist=true
+    module:Refresh();Run()
+end
 
 ------------------------------------------------------------------ invisible mode and MSUF promotion
 do (function()
@@ -3984,6 +4012,33 @@ do (function()
         Fire("BAG_UPDATE_COOLDOWN")
         Run()
         assert(native.hidden and not native.icon.shown and native.icon.countOff,"empty native stone must leave its bar")
+        -- WoW Forever: every Healthstone rank is an item of its own. A category
+        -- of many ranks (Presets.CATEGORY_ITEMS) counts them all and reads the
+        -- shared cooldown from the rank the bags hold, not from its first item
+        -- or the item that last started the category (here the used-up 5512).
+        do
+            local items=C.Presets.CATEGORY_ITEMS
+            local one=items[1711]
+            items[1711]={5512,5511,9421}
+            assert(native.catItem==5512,"the category's last source is the used-up stone")
+            bagCounts[5511],bagCounts[9421]=2,0
+            C_Spell.categoryCooldowns[5511]={startTime=now,duration=120,isEnabled=true,isActive=true,isOnGCD=false,modRate=1}
+            Fire("BAG_UPDATE_DELAYED")
+            Run()
+            assert(not native.hidden and native.icon.shown and native.icon.count.text==2,"a held rank must show its category")
+            assert(native.cooling and native.icon.cd.running and native.icon.itemDur.length==120,
+                "a category of many ranks must read the held rank's cooldown")
+            local reads=C_Item.countReads[5511]
+            Run(.1)
+            Fire("BAG_UPDATE_COOLDOWN")
+            Run()
+            assert(C_Item.countReads[5511]==reads,"an unchanged family recounted on a bag cooldown event")
+            C_Spell.categoryCooldowns[5511],bagCounts[5511],bagCounts[9421]=nil,nil,nil
+            items[1711]=one
+            Fire("BAG_UPDATE_DELAYED")
+            Run()
+            assert(native.hidden and not native.icon.shown,"the emptied category must leave its bar again")
+        end
         C.Alerts.Ready=realReady
         C_Spell.categoryCooldowns[5512],C_Spell.categoryCooldowns[224464]=nil,nil
         infos[80],infos[81],sets[5]=nil,nil,oldSet

@@ -61,9 +61,11 @@ local BUTTON_SPEC = {
 -- state-texture setters, so use the surface renderer for the background and
 -- selection. Its native HIGHLIGHT layer retains mouseover (Surface's automatic
 -- hover overlay applies only to Buttons).
+-- Same tab treatment as the Legacy window: a framed tile fitted to the icon
+-- (Kit.FitSideTab), with the selection drawn on its edge.
 local SIDE_TAB_SPEC = {
-    role = "navigation", activeRole = "navigationActive", radius = 4,
-    inset = 0, allowImplicitProtected = true,
+    role = "navigation", activeRole = "navigationActive", radius = 6,
+    inset = 1, selectionEdge = true, allowImplicitProtected = true,
 }
 local CONTENT_MODE = {
     rootSurface = false, maxDepth = 0, maxNodes = 1,
@@ -287,7 +289,72 @@ local function SkinPanels(listing, browse, who)
     end
 end
 
+-- Role buttons. Forever's UI-LFG-RoleIcon-* atlases bake a bronze ring and
+-- a coloured glow into the icon itself, so fading the halo (Background)
+-- alone changes little. The native icon is faded and an owned texture shows
+-- Blizzard's flat Group Finder role icon (the one its browse rows use). The
+-- not-recommended cover (OVERLAY) and the checkbox stay native above it; the
+-- checkbox takes the window's checkmark colours. New Player Friendly shows
+-- its flag in the same ringed art: the owned icon is Blizzard's newcomer
+-- symbol, which its corner badge already uses.
+local ROLE_ATLASES = {
+    TANK = "groupfinder-icon-role-large-tank",
+    HEALER = "groupfinder-icon-role-large-heal",
+    DAMAGER = "groupfinder-icon-role-large-dps",
+}
+local NEWCOMER_ATLAS = "newplayerchat-chaticon-newcomer"
+local ROLE_ICON_SIZE, NEWCOMER_ICON_SIZE = 36, 30
+-- button -> owned icon texture; never stored on Blizzard's button.
+local flatIcons = setmetatable({}, { __mode = "k" })
+ForeverGroupFinder.flatIcons = flatIcons
+
+local function ShowFlatIcon(button, atlas, size)
+    local normal = Safety.Call(button, "GetNormalTexture")
+    if not normal or not CanPaintTarget(button) or not CanPaintTarget(normal) then return end
+    local icon = flatIcons[button]
+    if not icon then
+        icon = button:CreateTexture(nil, "ARTWORK")
+        icon:SetPoint("CENTER")
+        flatIcons[button] = icon
+    end
+    icon:SetAtlas(atlas, false)
+    icon:SetSize(size, size)
+    icon:Show()
+    NS.Cosmetics.Fade(normal, OWNER)
+end
+
+local function SkinRoleButton(button)
+    if not button then return end
+    Fade(button.Background)
+    local roleID = Safety.Field(button, "roleID")
+    local atlas = Safety.Public(roleID) and ROLE_ATLASES[roleID]
+    if atlas then ShowFlatIcon(button, atlas, ROLE_ICON_SIZE) end
+    NS.Checkmarks.TrackFrame(button, OWNER)
+end
+
+local function FadeCornerNewcomer(region, own)
+    if region ~= own and Safety.Read(region, "GetAtlas") == NEWCOMER_ATLAS then Fade(region) end
+end
+
+local function SkinNewPlayerButton(button)
+    if not button then return end
+    ShowFlatIcon(button, NEWCOMER_ATLAS, NEWCOMER_ICON_SIZE)
+    if flatIcons[button] then Kit.ForEachRegion(button, FadeCornerNewcomer, flatIcons[button]) end
+    local check = Kit.Path(button, "CheckButton")
+    if check then NS.Checkmarks.TrackFrame(check, OWNER) end
+end
+
+local function SkinRoleButtons(listing)
+    local buttons = Kit.Path(listing, "SoloRoleButtons", "RoleButtons")
+    if type(buttons) == "table" then
+        for index = 1, #buttons do SkinRoleButton(buttons[index]) end
+    end
+    SkinRoleButton(Kit.Path(listing, "GroupRoleButtons", "RoleIcon"))
+    SkinNewPlayerButton(Kit.Path(listing, "NewPlayerFriendlyButton"))
+end
+
 local function SkinControls(listing, browse, who)
+    SkinRoleButtons(listing)
     for index = 1, #BROWSE_CONTROLS do
         local key = BROWSE_CONTROLS[index]
         SkinButton(browse[key], key:find("Dropdown", 1, true) and FILTER_SPEC or BUTTON_SPEC)
@@ -317,7 +384,10 @@ local function SkinTabs(parent)
     end
     for index = 1, #MODE_TABS do
         local tab = parent[MODE_TABS[index]]
-        if tab and CanPaintTarget(tab) and Kit.Ensure(ForeverGroupFinder, tab, SIDE_TAB_SPEC) then
+        local painted, surface
+        if tab and CanPaintTarget(tab) then painted, surface = Kit.Ensure(ForeverGroupFinder, tab, SIDE_TAB_SPEC) end
+        if painted then
+            Kit.FitSideTab(tab, surface)
             Fade(tab.Background)
             Fade(tab.SelectedTexture)
             if tab.TabGlow and CanPaintTarget(tab.TabGlow) then NS.Cosmetics.SuppressVertexAlpha(tab.TabGlow, OWNER) end
@@ -350,6 +420,9 @@ SkinLoadedWindow = function()
     SkinPanels(listing, browse, who)
     SkinControls(listing, browse, who)
     SkinTabs(parent)
+    -- The eye's stone ring is part of its animated art: an owned bezel covers it.
+    local eye = _G.LFGParentFramePortrait
+    if eye and CanPaintTarget(eye) then Kit.PortraitBezel(eye, eye, OWNER, 0) end
     SkinCategoryCards()
     RegisterRows(browse.ScrollBox, "browse", browse.selectionBehavior)
     RegisterRows(who and who.ScrollBox, "who", who and who.selectionBehavior)
@@ -402,6 +475,9 @@ function ForeverGroupFinder.Disable()
         ForeverGroupFinder.scrollBoxes[scrollBox] = nil
     end
     for frame in pairs(ForeverGroupFinder.surfaces) do NS.Surface.SetVisible(frame, false) end
+    -- The native role icons come back with the owner's Cosmetics restore.
+    for _, icon in pairs(flatIcons) do icon:Hide() end
+    Kit.HidePortraitBezels(OWNER)
     return NS.GenericWindows.Disable(OWNER)
 end
 

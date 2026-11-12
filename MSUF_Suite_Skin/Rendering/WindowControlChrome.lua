@@ -372,7 +372,7 @@ function Chrome.ShowCaption(state, level)
         minimize:SetSize(22, height or 22)
         minimize:SetFrameLevel(level)
         minimize:ClearAllPoints()
-        PlaceMinimize(minimize, state.frame, state.close)
+        PlaceMinimize(minimize, state, state.close)
         LayoutCaption(minimize, "minimize")
         minimize:Show()
     elseif minimize then
@@ -482,7 +482,13 @@ function Chrome.ToggleFit(state, capturePoints)
     return true
 end
 
-PlaceMinimize = function(button, frame, close)
+-- A native size toggle (state.sizeToggle) sits between close and minimize.
+PlaceMinimize = function(button, state, close)
+    local frame, toggle = state.frame, state.sizeToggle
+    if toggle and Safety.Read(toggle, "IsShown") then
+        button:SetPoint("RIGHT", toggle, "LEFT", -1, 0)
+        return
+    end
     local anchor = close and Safety.Read(close, "GetPoint", 1)
     if type(anchor) == "string" and anchor:find("TOP", 1, true) then
         button:SetPoint("RIGHT", close, "LEFT", -3, 0)
@@ -491,10 +497,30 @@ PlaceMinimize = function(button, frame, close)
     end
 end
 
+-- Blizzard hides its size toggle on tabs without a small layout; our
+-- minimize then moves next to the close button.
+function Chrome.FollowSizeToggle(state, toggle)
+    if not Safety.Public(toggle) or not Safety.HasMethod(toggle, "HookScript") then return end
+    state.sizeToggle = toggle
+    local function Replace()
+        local minimize = state.minimize
+        if minimize and minimize:IsShown() and Safety.CanDecorate(minimize, not NS.IsCombatLocked()) then
+            Chrome.PlaceMinimize(state)
+        end
+    end
+    toggle:HookScript("OnShow", Replace)
+    toggle:HookScript("OnHide", Replace)
+end
+
+function Chrome.PlaceMinimize(state)
+    state.minimize:ClearAllPoints()
+    PlaceMinimize(state.minimize, state, state.close)
+end
+
 function Chrome.CreateMinimize(state, close, level, click)
     local button = Safety.CreateChildFrame("Button", state.frame)
     Chrome.Control(button, "minimize", level)
-    PlaceMinimize(button, state.frame, close)
+    PlaceMinimize(button, state, close)
     button:RegisterForClicks("LeftButtonUp")
     button:SetScript("OnClick", click)
     return button

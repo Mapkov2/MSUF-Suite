@@ -270,6 +270,13 @@ assert(AB.PageDriver(c2)==base..manual..forms.."[bonusbar:5] 11; 1","default Mai
 assert(not AB.CustomPaging(c2))
 c2.disableFormPaging=true
 assert(AB.PageDriver(c2)==base..manual.."[bonusbar:5] 11; 1" and AB.CustomPaging(c2))
+-- Moonkin opt-out: bonus bar 4 alone stops paging; the forms opt-out covers it.
+c2.disableMoonkinPaging=true
+assert(AB.PageDriver(c2)==base..manual.."[bonusbar:5] 11; 1","the forms opt-out covers Moonkin Form")
+c2.disableFormPaging=false
+assert(AB.PageDriver(c2)==base..manual.."[bonusbar:1] 7; [bonusbar:2] 8; [bonusbar:3] 9; [bonusbar:5] 11; 1"
+    and AB.CustomPaging(c2),"Moonkin opt-out keeps the other form pages")
+c2.disableMoonkinPaging=false
 c2.disableFormPaging,c2.disableSkyridingPaging=false,true
 assert(AB.PageDriver(c2)==base..manual..forms.."1" and AB.CustomPaging(c2),"skyriding opt-out")
 c2.disableSkyridingPaging,c2.pagingModifiers,c2.pageShift=false,true,6

@@ -95,7 +95,7 @@ local function Describe(key, family, saved)
     elseif kind == "s" or CDM.IsAuraKey(key) then
         spell = id
     elseif kind == "i" then
-        name, texture = Text(C_Item.GetItemNameByID(id)), Number(C_Item.GetItemIconByID(id))
+        name, texture = Text(C.Catalog.ItemName(id)), Number(C_Item.GetItemIconByID(id))
     elseif kind == "e" then
         name = string.format(S.Text("Trinket slot %d"), id - 12)
     end

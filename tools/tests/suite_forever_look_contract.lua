@@ -285,6 +285,24 @@ forever.Database.Normalize(customGlyphs)
 assert(customGlyphs.icons.microMenu.iconStyle == "line",
     "custom Micro Bar glyphs were overwritten")
 
+-- Revision 53: Windows' maximize/restore symbols replace the old default
+-- + / -; a hand-picked chevron mode stays.
+assert(forever.Defaults.icons.windowActions.glyphMode == "windows", "fresh profiles lack the Windows symbols")
+local plusMinus = forever.CopyValue(forever.Defaults)
+plusMinus.revision = 52
+plusMinus.icons.windowActions.glyphMode = "plusMinus"
+forever.Database.Normalize(plusMinus)
+assert(plusMinus.icons.windowActions.glyphMode == "windows", "the former default kept + / -")
+local chevrons = forever.CopyValue(forever.Defaults)
+chevrons.revision = 52
+chevrons.icons.windowActions.glyphMode = "chevrons"
+forever.Database.Normalize(chevrons)
+assert(chevrons.icons.windowActions.glyphMode == "chevrons", "hand-picked chevrons were overwritten")
+local current = forever.CopyValue(forever.Defaults)
+current.icons.windowActions.glyphMode = "plusMinus"
+forever.Database.Normalize(current)
+assert(current.icons.windowActions.glyphMode == "plusMinus", "a + / - chosen after the update was overwritten")
+
 local retail = Engine(false)
 assert(retail.Defaults.theme.look == "cleanModern"
     and retail.Defaults.icons.microMenu.positionPreset == "bottomRight",

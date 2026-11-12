@@ -50,7 +50,6 @@ local state = {
     rows = Kit.WeakSet(), rewards = Kit.WeakSet(), bars = Kit.WeakSet(),
     scrollbars = Kit.WeakSet(), tintRoles = Kit.WeakSet(),
 }
-local fittedTabs = Kit.WeakSet()
 local rowHooks = Kit.WeakSet()
 local rewardHooks = Kit.WeakSet()
 local objectivesHook
@@ -147,24 +146,6 @@ local function SetTabActive(root, index, active)
     if tab and state.surfaces[tab] and CanPaint(tab) then NS.Surface.SetActive(tab, active) end
 end
 
-local function FitTabRegion(region, icon, outset)
-    region:ClearAllPoints()
-    region:SetPoint("TOPLEFT", icon, "TOPLEFT", -outset, outset)
-    region:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", outset, -outset)
-end
-
-local function FitTabSurface(tab, surface)
-    if fittedTabs[tab] == surface then return end
-    local icon = Field(tab, "Icon")
-    if not icon then return end
-    -- Camelot's tab frame has right-side padding and the 50px icon sits
-    -- four pixels left of center. Follow the native icon, including press.
-    FitTabRegion(surface.fill, icon, 2)
-    FitTabRegion(surface.edge, icon, 1)
-    surface.edge:SetDrawLayer("OVERLAY", 2)
-    fittedTabs[tab] = surface
-end
-
 local function PaintTabs(root)
     local page = Field(root, "currentPage")
     for index = 1, #TAB_KEYS do
@@ -172,7 +153,8 @@ local function PaintTabs(root)
         local painted, surface
         if CanPaint(tab) then painted, surface = Ensure(state, tab, TAB) end
         if painted then
-            FitTabSurface(tab, surface)
+            -- Shared with the Group Finder and Professions side tabs.
+            Kit.FitSideTab(tab, surface)
             Fade(state, Field(tab, "Background"))
             local selected = Field(tab, "SelectedTexture")
             Fade(state, selected)

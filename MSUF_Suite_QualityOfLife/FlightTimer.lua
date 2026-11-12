@@ -181,6 +181,7 @@ local function Create(self)
     formatter:SetDesiredUnitCount(2)
     formatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
     formatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
+    self.formatter = formatter
     self.binding:SetFormatter(formatter)
     self.binding:SetExpiredText(S.Text("Arriving"))
     self.binding:SetUpdateInterval(1)
@@ -250,7 +251,33 @@ local function StopElapsed(self)
         self.elapsedTicker:Cancel()
         self.elapsedTicker = nil
     end
+    if self.elapsedClock then
+        self.elapsedClock = nil
+        self.binding:SetEnabled(false)
+        -- The countdown's own format again.
+        self.binding:SetFormatter(self.formatter)
+    end
     self.elapsedSecond = nil
+end
+
+-- The elapsed time of a flight without an estimate. Where the client can
+-- write the clock (S.ElapsedClock) the binding that shows the countdown shows
+-- the time since departure instead, and nothing runs per second; otherwise a
+-- 1 s ticker paints it. (From an hour on the client's clock reads h:mm:ss
+-- where the ticker's reads minutes; no flight lasts that long.)
+local function StartElapsed(self)
+    local format = S.ElapsedClock()
+    if not format then
+        Elapsed(self)
+        self.elapsedTicker = self.context:Ticker(1, Elapsed)
+        return
+    end
+    self.elapsedClock = true
+    self.binding:SetTextFormat("{}", format)
+    self.duration:SetTimeFromStart(self.departed, S.CLOCK_SPAN)
+    self.binding:SetDuration(self.duration)
+    self.binding:SetEnabled(true)
+    self.binding:UpdateFontString()
 end
 
 local function StopCountdown(self)
@@ -298,8 +325,7 @@ local function Update(self, taxi, force)
         StopCountdown(self)
         self.host.status:SetText(S.Text(route and not self.earlyLanding and "Learning flight time" or "Elapsed time"))
         if taxi and self.departed then
-            Elapsed(self)
-            self.elapsedTicker = self.context:Ticker(1, Elapsed)
+            StartElapsed(self)
         else
             self.host.time:SetText("0:00")
             self.host.status:SetText(S.Text("Estimated time"))

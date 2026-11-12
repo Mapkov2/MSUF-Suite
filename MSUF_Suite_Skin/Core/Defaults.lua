@@ -168,7 +168,7 @@ NS.BaseColors = midnightColors
 NS.MicroMenuMaxButtonsPerLine = NS.Client.isForever and 14 or 13
 
 NS.Defaults = {
-    revision = 52,
+    revision = 53,
     enabled = true,
     characterDetails = { view = "modern", enabled = true, expanded = true, styleEQoL = true, inlineGear = true, wideLayout = true },
     characterStats = { enabled = true, diminishingReturns = true },
@@ -250,7 +250,7 @@ NS.Defaults = {
     icons = {
         windowActions = {
             style = "bare",
-            glyphMode = "plusMinus",
+            glyphMode = "windows",
             weight = "fine",
             glyphSize = 12,
             closeGlyphSize = 16,
@@ -369,7 +369,7 @@ NS.GradientDirections = { "VERTICAL", "HORIZONTAL" }
 NS.HoverStyles = { "outline", "softFill", "solidFill", "off" }
 NS.IconBorderStyles = { "quality", "theme", "off" }
 NS.WindowActionStyles = { "bare", "soft", "outline", "native" }
-NS.WindowActionGlyphModes = { "plusMinus", "chevrons" }
+NS.WindowActionGlyphModes = { "windows", "plusMinus", "chevrons" }
 NS.WindowActionWeights = { "fine", "bold" }
 NS.WindowActionShapes = { "global", "round", "continuous", "squircle" }
 NS.MicroMenuPresets = { "modern", "midnightDark", "forever", "blizzard" }

@@ -912,6 +912,32 @@ do
     T.Refresh(b4,"item")
     assert(b4.icon.countOff==true and b4.hidden==false and b4.empty==false,"an empty potion category stays")
 end
+-- An empty healthstone reads the bags once per bag change, not per refresh
+-- (2026-11-11 raid trace: an empty stone read 1,692 times in 300 s, 50 us a
+-- read): with none in the bags it has no uses to lose. A stone entering the
+-- bags shows with that bag change; one in the bags keeps reading its uses.
+do
+    bag[5512]=nil
+    T.BagsChanged()
+    local queries=countQueries
+    T.Refresh(stone,"item");T.Refresh(stoneCat,"item")
+    assert(countQueries==queries+2,"an empty stone reads the bags after a bag change: "..(countQueries-queries))
+    local quiet=writes
+    for _=1,10 do T.Refresh(stone,"item");T.Refresh(stoneCat,"item");T.Refresh(stone,"full");T.Refresh(stoneCat,"full") end
+    assert(countQueries==queries+2 and writes==quiet and stone.hidden==true and stoneCat.hidden==true,
+        "an empty stone read the bags again without a bag change: "..(countQueries-queries))
+    bag[5512]=2
+    T.BagsChanged()
+    assert(T.Refresh(stone,"item")==true and T.Refresh(stoneCat,"item")==true and stone.icon.count.last.SetText==2
+        and stoneCat.icon.count.last.SetText==2,"a stone entering the bags shows with the bag change")
+    queries=countQueries
+    T.Refresh(stone,"item");T.Refresh(stoneCat,"item")
+    assert(countQueries==queries+2,"a stone in the bags reads its uses on every refresh")
+    bag[5512]=nil
+    T.BagsChanged()
+    T.Refresh(stone,"item");T.Refresh(stoneCat,"item")
+    assert(stone.hidden==true and stoneCat.hidden==true,"the last stone used hides both")
+end
 -- An item cooldown on hold (Blizzard starts it when combat ends: false from
 -- C_Item, 0 from C_Container and the inventory API) shows no swipe, looks
 -- held (desaturated even with desaturation off, at the cooling opacity) and
@@ -975,6 +1001,76 @@ do
     table.remove(C.plans.uti.entries)
     I.Sync("uti")
     assert(not stone.icon and not stoneCat.icon)
+end
+-- Item families (WoW Forever, Presets.STOCK): every Healthstone rank is an
+-- item of its own on one shared cooldown. The family's entry keeps its key
+-- (i5512) and reads the strongest rank the bags hold: that item's cooldown,
+-- icon and tooltip, and the count of every rank; Blizzard's category entry
+-- counts the same ranks. With none in the bags both hide and the icon is
+-- the family's own again. One-item categories (Retail) read no bag for it.
+do
+    local items=Presets.CATEGORY_ITEMS
+    local one=items[1711]
+    assert(#one==1 and next(Presets.STOCK)==nil,"Retail has no item families")
+    items[1711]={5512,5511,9421}
+    Presets.STOCK[5512]=1711
+    local family=Entry("i5512","uti",{itemID=5512,texture=538745,hideEmpty=true})
+    local native=Entry("b10","uti",{spellCategory=1711,texture=K.CATEGORY_ICONS[1711],hideEmpty=true})
+    table.insert(C.plans.uti.entries,family)
+    table.insert(C.plans.uti.entries,native)
+    T.BagsChanged()
+    I.Sync("uti")
+    local icon=family.icon
+    assert(family.hidden==true and family.empty==true and native.hidden==true and family.categoryItem==nil
+        and icon.tex.last.SetTexture==538745,"an empty family hides under its own icon")
+    -- A Lesser Healthstone only: the family shows it and reads its cooldown.
+    bag[5511]=1
+    itemCd[5511]={now,120,true}
+    T.BagsChanged()
+    assert(T.Refresh(family,"item")==true and family.hidden==false and family.categoryItem==5511
+        and icon.tex.last.SetTexture==105511 and icon.count.last.SetText==1,"the held rank shows with its icon and count")
+    assert(family.cooling==true and icon.cd.running and icon.itemDur.start==now and icon.itemDur.length==120,
+        "the shared cooldown is read from the held rank, not the family's key")
+    assert(T.Refresh(native,"item")==true and native.hidden==false and native.icon.count.last.SetText==1,
+        "Blizzard's category counts the same ranks")
+    uti.tooltips=true
+    I.Style("uti")
+    icon.scripts.OnEnter(icon)
+    assert(GameTooltip.last.SetItemByID==5511,"the tooltip names the held rank")
+    -- A stronger rank joins: it leads, and every rank counts.
+    bag[9421]=2
+    itemCd[9421]={now,120,true}
+    T.BagsChanged()
+    assert(T.Refresh(family,"item")==false and family.categoryItem==9421 and icon.tex.last.SetTexture==109421
+        and icon.count.last.SetText==3 and family.cooling==true,"the strongest held rank leads; all ranks count")
+    T.Refresh(native,"item")
+    assert(native.icon.count.last.SetText==3)
+    -- An unchanged pass repaints nothing and reads no bag: using a rank
+    -- changes bag contents, which is what recounts a family.
+    local quiet,queries=writes,countQueries
+    T.Refresh(family,"item");T.Refresh(native,"item")
+    assert(writes==quiet and countQueries==queries,"an unchanged family repainted or recounted")
+    -- The stronger rank is used up: the rank that is left takes over.
+    bag[9421]=nil
+    T.BagsChanged()
+    T.Refresh(family,"item")
+    assert(family.categoryItem==5511 and icon.tex.last.SetTexture==105511 and icon.count.last.SetText==1
+        and family.cooling==true,"the remaining rank takes over")
+    -- The last one goes: hidden, the family's own icon again.
+    bag[5511]=nil
+    T.BagsChanged()
+    assert(T.Refresh(family,"item")==true and family.hidden==true and family.categoryItem==nil
+        and icon.tex.last.SetTexture==538745,"an emptied family hides")
+    assert(T.Refresh(native,"item")==true and native.hidden==true)
+    itemCd[5511],itemCd[9421]=nil,nil
+    items[1711],Presets.STOCK[5512]=one,nil
+    uti.tooltips=false
+    I.Style("uti")
+    T.BagsChanged()
+    table.remove(C.plans.uti.entries)
+    table.remove(C.plans.uti.entries)
+    I.Sync("uti")
+    assert(not family.icon and not native.icon)
 end
 -- Category 0 is no category; OnCooldownDone never re-enters its own refresh.
 do
@@ -1824,4 +1920,4 @@ do
     assert(not icon.readinessValue and not icon.readinessText.shown, "pooled icon retained its status symbol")
     T.SetReadability(nil)
 end
-print("Cooldown manager render: constants, 10:9 defaults, pooled icons, memoized styling, tooltips, hidden-bar mouse, threshold formatter, keybinds, secret sinks, isolation, ready edges, ready inside a GCD, charges, hideReady, category counts, cached bag totals, memoized items, empty healthstones, held item cooldowns, simulation, zero allocation, hot-path budgets, tint, range references, glow union and repaint memo, assist and release passed")
+print("Cooldown manager render: constants, 10:9 defaults, pooled icons, memoized styling, tooltips, hidden-bar mouse, threshold formatter, keybinds, secret sinks, isolation, ready edges, ready inside a GCD, charges, hideReady, category counts, cached bag totals, memoized items, empty healthstones, held item cooldowns, item families, simulation, zero allocation, hot-path budgets, tint, range references, glow union and repaint memo, assist and release passed")

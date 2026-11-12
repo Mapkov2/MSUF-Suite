@@ -221,7 +221,10 @@ do
         eq(foreverRules[def.key].hidden, def.forever == nil or nil, def.key .. " Forever visibility")
         if def.forever then shown = shown + 1 end
     end
-    eq(shown, 6, "Forever class preset count")
+    eq(shown, 7, "Forever class preset count")
+    eq(rules.classThorns.default, false, "Thorns has no Retail default")
+    eq(foreverRules.classThorns.default, true, "Forever Thorns must default on")
+    eq(foreverRules.classThorns.enableKey, nil, "Thorns still depends on the class master")
 end
 
 local function Owner(overrides)
@@ -773,6 +776,34 @@ do
     NS.Client.isForever = false
     eq(#R.BuildEntries(Owner({ classReminders = true, classMageArmor = true, classInnerFire = true })), 0,
         "Forever armor reminders leaked into Retail")
+end
+
+-- Thorns (Forever): the highest known rank on the player, any rank counts,
+-- and it warns before it runs out like any timed self buff.
+do
+    local thorns = assert(ForeverPlan("classThorns"))
+    for _, id in ipairs(thorns.casts) do SPELL_NAMES[id] = "Thorns" end
+    Reset({ "DRUID", 1 })
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    Set(467, 782, 1075)
+    local entries = R.BuildEntries(Owner({ classReminders = false, classThorns = true }))
+    eq(Ids(entries), "1075", "highest known Thorns rank")
+    assert(entries[1].ranked and entries[1].spellName == "Thorns", "rank-safe Thorns click")
+    eq(entries[1].missingOnly, nil, "Thorns lost its expiration warning")
+    for _, id in ipairs(thorns.casts) do
+        playerAuras = { [id] = { spellId = id, name = "Thorns" } }
+        assert(R.AuraPresent(entries[1]) == true, "Thorns rank " .. id .. " did not satisfy the reminder")
+    end
+    playerAuras = {}
+    eq(#R.BuildEntries(Owner({ classReminders = false, classThorns = false })), 0, "Thorns ignored its opt-out")
+    Reset({ "PRIEST", 1 })
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    Set(467)
+    eq(#R.BuildEntries(Owner({ classReminders = true, classThorns = true, classInnerFire = false, classShadowform = false })), 0,
+        "Priest received Thorns")
+    Reset({ "DRUID", 1 })
+    Set(467)
+    eq(#R.BuildEntries(Owner({ classReminders = true, classThorns = true })), 0, "Thorns leaked into Retail")
 end
 
 print("Suite buff reminders class: " .. (mutation and ("mutation " .. mutation .. " survived") or

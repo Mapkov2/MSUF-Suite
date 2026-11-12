@@ -60,7 +60,11 @@ function AB.ReservedPage(config, page)
     local mode = key and config[key]
     return mode ~= nil and mode ~= AB.ENUM.VISIBILITY.NEVER
 end
-local FORMS = "[bonusbar:1] 7; [bonusbar:2] 8; [bonusbar:3] 9; [bonusbar:4] 10; "
+-- Bonus bar 4 is the druid's Moonkin Form. It has its own opt-out, so a
+-- healer who only passes through the form keeps bar 1 while cat and bear
+-- keep their pages.
+local FORMS = "[bonusbar:1] 7; [bonusbar:2] 8; [bonusbar:3] 9; "
+local MOONKIN = "[bonusbar:4] 10; "
 
 -- Skyriding only exists on Retail. On Forever bonus bar 5 is the possess
 -- bar, which must keep paging.
@@ -71,7 +75,8 @@ end
 -- True when bar 1 must not follow Blizzard's native page: its keys then
 -- click the suite buttons instead of the hidden Blizzard ones.
 function AB.CustomPaging(config)
-    if config.pagingTarget or config.pagingModifiers or config.disableFormPaging or SkyridingOptOut(config) then return true end
+    if config.pagingTarget or config.pagingModifiers or config.disableFormPaging or config.disableMoonkinPaging
+        or SkyridingOptOut(config) then return true end
     for page = FIRST_MANUAL_PAGE, LAST_MANUAL_PAGE do
         if AB.ReservedPage(config, page) then return true end
     end
@@ -101,7 +106,10 @@ function AB.PageDriver(config)
     for page = FIRST_MANUAL_PAGE, LAST_MANUAL_PAGE do
         driver = AddPage(driver, "[bar:" .. page .. "] ", page, config)
     end
-    if not config.disableFormPaging then driver = driver .. FORMS end
+    if not config.disableFormPaging then
+        driver = driver .. FORMS
+        if not config.disableMoonkinPaging then driver = driver .. MOONKIN end
+    end
     if not SkyridingOptOut(config) then driver = driver .. "[bonusbar:5] 11; " end
     return driver .. "1"
 end

@@ -11,6 +11,7 @@ local C = P.CDM
 -- GetSpellCharges) and the duration objects.
 local K = C.Const
 local COMBAT_POTION, HEALTH_POTION = K.SPELL_CATEGORY.COMBAT_POTION, K.SPELL_CATEGORY.HEALTH_POTION
+local STOCK = C.Presets.STOCK
 local DESAT = K.DESAT
 -- The timer-bar presentation of cooldown icons (TrackingBars.lua loads first).
 local TrackingBars = C.TrackingBars
@@ -328,13 +329,14 @@ end
 -- their combat cooldown is held, so those counts refresh with their timing.
 -- Category entries sum the item ranks in Presets.CATEGORY_ITEMS.
 local totals, counts, countsStale = {}, {}, true
-local selectedItems = {}
+local selectedItems, heldItems = {}, {}
 function Time.BagsChanged() countsStale = true end
 local function Fresh()
     if countsStale then
         countsStale = false
         wipe(totals)
         wipe(counts)
+        wipe(heldItems)
     end
 end
 local function Total(category)
@@ -368,11 +370,53 @@ local function ItemCount(item)
     end
     return count
 end
+-- The strongest rank of a category the bags hold (the lists run weakest
+-- first), for WoW Forever's healthstones and health potions: every rank is
+-- an item of its own on one shared cooldown, and only an item the bags hold
+-- answers for it. nil when the bags hold none, and for a category of one
+-- item (every category on Retail), which costs no bag read. Using a rank
+-- takes an item out of the bags, so the answer holds until bag contents
+-- change (Fresh); only Retail's healthstone charges need the recount per
+-- refresh.
+local function HeldItem(category)
+    local items = C.Presets.CATEGORY_ITEMS[category]
+    if #items == 1 then return nil end
+    Fresh()
+    local item = heldItems[category]
+    if item == nil then
+        item = false
+        for i = #items, 1, -1 do
+            local count = GetItemCount(items[i], false, true)
+            if not issecret(count) and type(count) == "number" and count > 0 then
+                item = items[i]
+                break
+            end
+        end
+        heldItems[category] = item
+    end
+    return item or nil
+end
+-- An item family's entry (Presets.STOCK) reads the rank the bags hold; its
+-- icon and tooltip follow that item (categoryItem, as a stocked potion).
+-- With none in the bags it keeps the family's first item.
+local function StockItem(entry, category)
+    local item = HeldItem(category)
+    if entry.categoryItem ~= item then
+        entry.categoryItem = item
+        local texture = item and C_Item.GetItemIconByID(item)
+        entry.categoryTexture = not issecret(texture) and texture or nil
+        C.Icons.Texture(entry)
+    end
+    return item or entry.itemID
+end
 -- Returns true when the bags hold none; a hideEmpty entry reads its total
 -- even while counts are off.
 local function CategoryCount(icon, category, entry)
     local choose = C.state.potionStockIcon and (category == COMBAT_POTION or category == HEALTH_POTION)
-    if entry.hideEmpty then totals[category] = nil end
+    -- A healthstone's total is read again on every refresh, as its uses can
+    -- drop while the cooldown is held; a total of 0 has no uses to lose and
+    -- waits for bag contents (Fresh), like the item count in ItemState.
+    if entry.hideEmpty and totals[category] ~= 0 and #C.Presets.CATEGORY_ITEMS[category] == 1 then totals[category] = nil end
     local total = (icon.stackOn or entry.hideEmpty or choose) and Total(category) or 0
     local item = choose and selectedItems[category] or nil
     if entry.categoryItem ~= item then
@@ -468,17 +512,23 @@ end
 local function ItemState(entry, icon, reason)
     local slot = entry.equipSlot or (entry.src == "e" and entry.id)
     local item = entry.itemID or entry.id
-    local start, length, enable
+    local start, length, enable, stock
     if slot then
         start, length, enable = GetInventoryItemCooldown("player", slot)
     else
+        -- An item family reads the rank the bags hold and counts every rank.
+        stock = STOCK[item]
+        if stock then item = StockItem(entry, stock) end
         start, length, enable = GetItemCooldown(item)
     end
     local cooling = ItemTiming(entry, icon, reason, start, length, enable, not slot and item or nil)
     ClearCharge(icon)
     -- Healthstone uses can change while the same combat cooldown stays held.
-    if entry.hideEmpty then counts[item] = nil end
-    local count = not slot and (icon.stackOn or entry.hideEmpty) and ItemCount(item)
+    -- None in the bags (a count of 0) has no uses: an item enters the bags
+    -- with BAG_UPDATE_DELAYED (BagsChanged), as every other count here waits
+    -- for (2026-11-11 raid trace: 1,692 reads of an empty stone, 50 us each).
+    if entry.hideEmpty and counts[item] ~= 0 then counts[item] = nil end
+    local count = not slot and (icon.stackOn or entry.hideEmpty) and (stock and Total(stock) or ItemCount(item))
     if count and (count ~= 1 or entry.hideEmpty) and icon.stackOn and not (count == 0 and entry.hideEmpty) then
         ShowCount(icon, count)
     else
@@ -491,8 +541,10 @@ end
 -- Forever 70170 CooldownViewerItemData.lua prefers the last category item:
 -- its cover spell may have no cooldown. Older builds keep the spell fallback.
 local function CategoryState(entry, icon, reason, spell)
-    -- Each healthstone category has one item, even before its first use event.
-    local item = entry.catItem or (entry.hideEmpty and C.Presets.CATEGORY_ITEMS[entry.spellCategory][1])
+    -- Each healthstone category has one item, even before its first use
+    -- event; a category of many ranks reads the one the bags hold.
+    local item = entry.hideEmpty and HeldItem(entry.spellCategory) or entry.catItem
+        or (entry.hideEmpty and C.Presets.CATEGORY_ITEMS[entry.spellCategory][1])
     local info = item and GetCategoryCooldown and GetCategoryCooldown(item)
     if not info then
         icon.itemStart, icon.itemLock = nil, nil

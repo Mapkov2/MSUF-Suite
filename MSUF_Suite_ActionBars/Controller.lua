@@ -155,8 +155,8 @@ Global({ "procGlow" }, { style = true, events = true, repaint = true, native = t
 Global({ "mouseoverShowAll" }, { alpha = true })
 Global({ "pageArrows", "pageArrowSide" }, { allLayout = true })
 Global({ "showOnDrag" }, { drag = true })
-Global({ "disableFormPaging", "disableSkyridingPaging", "pagingModifiers", "pageShift", "pageCtrl", "pageAlt", "pagingTarget", "pageFriendly", "pageHostile" },
-    { paging = true })
+Global({ "disableFormPaging", "disableMoonkinPaging", "disableSkyridingPaging", "pagingModifiers", "pageShift", "pageCtrl",
+    "pageAlt", "pagingTarget", "pageFriendly", "pageHostile" }, { paging = true })
 
 -- ResumeVisibility is only read when a bar is switched back on (the switch
 -- writes Visibility too), and Tooltip when the mouse enters a button, so

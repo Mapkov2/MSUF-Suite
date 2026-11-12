@@ -93,6 +93,7 @@ local function QuestPoint(id)
         end
     end
 end
+Navigation.QuestPoint = QuestPoint
 
 -- Drops quests that are no longer ready. Quests the client cannot measure
 -- from here (another continent) come after every measurable one.

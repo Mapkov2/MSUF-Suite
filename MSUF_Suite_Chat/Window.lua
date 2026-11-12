@@ -563,6 +563,8 @@ function C.DockGeometry()
         S.Queue("chat")
         return
     end
+    -- A width change asks Blizzard to lay out tabs again before we space them.
+    C.LayoutToolbarDock()
     if padded then
         for tab, visual in pairs(M.tabs) do ApplyTabWidth(M, visual, tab) end
     end

@@ -3,11 +3,6 @@ local Suite = Private.Suite
 local Navigation = { WAYPOINT = 1, CARD = 2, DIRECTION = 3 }
 Private.Navigation, Suite.Navigation = Navigation, Navigation
 
-local function Duration(seconds)
-    if seconds < 60 then return Suite.Text("%d sec"):format(seconds) end
-    return Suite.Text("%d min %02d sec"):format(math.floor(seconds / 60), seconds % 60)
-end
-
 function Navigation.Distance(yards, units)
     local value = units == 2 and yards * .9144 or yards
     if value >= 1000 then
@@ -16,17 +11,51 @@ function Navigation.Distance(yards, units)
     return (units == 2 and Suite.Text("%d m") or Suite.Text("%d yd")):format(math.floor(value + .5))
 end
 
+-- A distance format and a travel time format as one: "%d yd · %d sec".
+local joined = {}
+local function Joined(distance, eta)
+    local row = joined[distance]
+    if not row then
+        row = {}
+        joined[distance] = row
+    end
+    local format = row[eta]
+    if not format then
+        format = Suite.Text("%s · %s"):format(distance, eta)
+        row[eta] = format
+    end
+    return format
+end
+
+-- The readout is a format and its numbers, not a text: the client builds the
+-- text (SetFormattedText, NavigationVisuals.lua), so a distance that changes
+-- ten times a second leaves no string behind. The numbers are the ones the
+-- text shows (whole yards, tenths of a kilometre), so they change only when
+-- the text does, and the stamp counts those changes for the view.
 function Navigation.Readout(model, config, distance, speed)
     local rounded = math.floor(distance + .5)
     local seconds = config.showETA and speed > 1 and math.floor(distance / speed + .5) or -1
     if rounded == model.rounded and seconds == model.seconds then return end
     model.rounded, model.seconds = rounded, seconds
-    local text = config.showDistance and Navigation.Distance(distance, config.units) or ""
-    if seconds >= 0 then
-        local eta = Duration(seconds)
-        text = text ~= "" and Suite.Text("%s · %s"):format(text, eta) or eta
+    local format, a, b, c
+    if config.showDistance then
+        local metric = config.units == 2
+        local value = metric and distance * .9144 or distance
+        if value >= 1000 then
+            format, a = metric and Suite.Text("%.1f km") or Suite.Text("%.1f kyd"), math.floor(value / 100 + .5) / 10
+        else
+            format, a = metric and Suite.Text("%d m") or Suite.Text("%d yd"), math.floor(value + .5)
+        end
     end
-    model.readout = text
+    if seconds >= 0 then
+        local eta, first, second = Suite.Text("%d sec"), seconds, nil
+        if seconds >= 60 then eta, first, second = Suite.Text("%d min %02d sec"), math.floor(seconds / 60), seconds % 60 end
+        if format then format, b, c = Joined(format, eta), first, second
+        else format, a, b = eta, first, second end
+    end
+    if format == model.readoutFormat and a == model.readoutA and b == model.readoutB and c == model.readoutC then return end
+    model.readoutFormat, model.readoutA, model.readoutB, model.readoutC = format, a, b, c
+    model.readoutStamp = (model.readoutStamp or 0) + 1
 end
 
 function Navigation.Mode(model, config)

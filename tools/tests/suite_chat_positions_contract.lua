@@ -6,8 +6,8 @@ arg = savedArgs
 local C, env, S = F.runtime.Chat, F.env, F.Suite.Suite
 local mutations = {
     messageRestore = { "Positions", "        self.context:RestorePoints(line)", "" },
-    tabRecovery = { "Window", '        S.Queue("chat")\n        return\n    end\n    if padded then',
-        '        return\n    end\n    if padded then' },
+    tabRecovery = { "Window", '        S.Queue("chat")\n        return\n    end\n    -- A width change',
+        '        return\n    end\n    -- A width change' },
     floatingGap = { "Window", "\n        C.PositionTabs(M)\n", "\n" },
     messageOffset = { "Positions", 'local x, y = self.config.messageTextX or 0, self.config.messageTextY or 0', 'local x, y = 0, 0' },
     inputOffset = { "Window", 'local x, y = -c.padding + c.inputX, c.inputY', 'local x, y = -c.padding, 0' },

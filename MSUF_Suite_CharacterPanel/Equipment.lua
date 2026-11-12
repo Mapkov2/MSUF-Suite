@@ -144,6 +144,9 @@ function Gear.Mark(model, focus)
     model.auditFocus = marked and focus or nil
 end
 
+-- U+2192 is missing from WoW fonts (renders as a box); use an ASCII separator.
+local COMPARE_SEPARATOR = " > "
+
 local function ItemLevel(row)
     return row and row.level and string.format("%.0f", row.level) or "—"
 end
@@ -173,7 +176,7 @@ end
 function Gear.Compare(groups, own, inspect)
     local group = inspect.comparison
     if not group then
-        group = { title = Text("Your equipment") .. " → " .. Text("Inspected equipment"), rows = {} }
+        group = { title = Text("Your equipment") .. COMPARE_SEPARATOR .. Text("Inspected equipment"), rows = {} }
         inspect.comparison = group
     end
     for i = 1, #inspect.rows do
@@ -186,7 +189,7 @@ function Gear.Compare(groups, own, inspect)
             group.rows[i] = comparison
         end
         if not comparison.value or comparison.own ~= ownLevel or comparison.inspect ~= inspectLevel then
-            local value = ItemLevel(ownRow) .. " → " .. ItemLevel(row)
+            local value = ItemLevel(ownRow) .. COMPARE_SEPARATOR .. ItemLevel(row)
             if ownLevel and inspectLevel then value = value .. string.format(" · %+.0f", inspectLevel - ownLevel) end
             comparison.own, comparison.inspect, comparison.value = ownLevel, inspectLevel, value
         end

@@ -368,6 +368,49 @@ local function SkinRootControls(state)
     end
 end
 
+-- Blizzard's portrait overhangs the frame corner. A small round copy sits in
+-- the title bar instead and follows every portrait change (spellbook, class
+-- or spec icon); the native portrait only fades, Blizzard keeps setting it.
+local BADGE_SIZE, BADGE_MASK = 18, "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+
+local function SyncPortraitBadge(badge)
+    local texture = Safety.Read(badge.portrait, "GetTexture")
+    if texture == nil then return end
+    badge.icon:SetTexture(texture)
+    local left, top, x2, y2, x3, y3, right, bottom = Safety.Call(badge.portrait, "GetTexCoord")
+    if Safety.Public(bottom) then badge.icon:SetTexCoord(left, top, x2, y2, x3, y3, right, bottom) end
+end
+
+local function CreatePortraitBadge(frame, container, portrait)
+    local badge = Safety.CreateChildFrame("Frame", frame)
+    badge:SetSize(BADGE_SIZE, BADGE_SIZE)
+    badge:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -2)
+    badge:SetFrameLevel((Safety.Read(container, "GetFrameLevel") or frame:GetFrameLevel()) + 1)
+    badge.icon = badge:CreateTexture(nil, "ARTWORK")
+    badge.icon:SetAllPoints(badge)
+    if Safety.HasMethod(badge, "CreateMaskTexture") then
+        local mask = badge:CreateMaskTexture()
+        mask:SetTexture(BADGE_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(badge)
+        badge.icon:AddMaskTexture(mask)
+    end
+    badge.portrait = portrait
+    local function Sync() if badge:IsShown() then SyncPortraitBadge(badge) end end
+    Kit.HookFunction(portrait, "SetTexture", Sync)
+    Kit.HookFunction(portrait, "SetTexCoord", Sync)
+    return badge
+end
+
+local function SkinPortrait(state, frame)
+    local container = PublicField(frame, "PortraitContainer")
+    local portrait = PublicField(container, "portrait")
+    if not portrait or Safety.IsForbidden(portrait) then return end
+    state.portraitBadge = state.portraitBadge or CreatePortraitBadge(frame, container, portrait)
+    Fade(state, portrait)
+    SyncPortraitBadge(state.portraitBadge)
+    state.portraitBadge:Show()
+end
+
 local function SkinRootStatic(state, skipWindowControls)
     local frame = state.frame
     if not CanCreateRegions(frame) or not Kit.Attach(state, frame, SHELL_SPEC) then return false end
@@ -375,6 +418,7 @@ local function SkinRootStatic(state, skipWindowControls)
     Fade(state, frame.TopTileStreaks)
     Kit.FadeNineSlice(state, frame.NineSlice)
     SkinRootControls(state)
+    SkinPortrait(state, frame)
     if not skipWindowControls then NS.WindowControls.Attach(frame, state.owner) end
     return true
 end
@@ -593,6 +637,7 @@ local function RestoreState(state)
     state.pagesSkinned = nil
     NS.ControlSkin.DisableOwner(state.owner)
     Kit.HideSurfaces(state)
+    if state.portraitBadge then state.portraitBadge:Hide() end
     state.surfaces = Kit.WeakSet()
     for glyph in pairs(state.glyphs) do
         glyph:Hide()

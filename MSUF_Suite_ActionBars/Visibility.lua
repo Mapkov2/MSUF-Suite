@@ -31,6 +31,11 @@ for _, bit in ipairs({ 2, 4, 8, 16 }) do
         [false] = 'self:RunAttribute("msuf-reveal",' .. bit .. ',false)',
     }
 end
+-- What Lua last set for bits 2, 8 and 16 (nil: unknown). Bit 4 is also set by
+-- the restricted drag snippet, so it is never remembered; secureReveal says
+-- it may be set and Lua has not cleared it since.
+local revealed = {}
+local secureReveal = true
 
 local function HasForms()
     local forms = GetNumShapeshiftForms()
@@ -72,8 +77,22 @@ function AB.GamepadHideActive()
     return S.Public(devices) and type(devices) == "table" and next(devices) ~= nil
 end
 
+-- Bits 2, 8 and 16 are set only here, so an unchanged request costs no
+-- protected call (2026-11-10 traces: two per cursor change). Bit 4 is also
+-- set by the restricted drag snippet, so it is never remembered.
 function AB.Reveal(bit, on)
-    return AB.grid and AB.Execute(AB.grid, REVEAL[bit][on and true or false])
+    on = on and true or false
+    if bit ~= 4 and revealed[bit] == on then return true end
+    if not (AB.grid and AB.Execute(AB.grid, REVEAL[bit][on])) then return false end
+    if bit ~= 4 then revealed[bit] = on end
+    return true
+end
+
+-- A stopped module reveals nothing it still remembers: the next start sets
+-- every bit again.
+function AB.ForgetReveal()
+    for bit in pairs(revealed) do revealed[bit] = nil end
+    secureReveal = true
 end
 
 local function AnyHover()
@@ -315,6 +334,7 @@ function AB.ApplyDrag()
     local kind = GetCursorInfo()
     local dragging = S.Public(kind) and PLACEABLE[kind] or false
     AB.dragging = dragging
+    if dragging then secureReveal = true end
     if NS.IsCombatLocked() then
         AB.UpdateAllAlpha()
         AB.dragPending = true
@@ -322,7 +342,7 @@ function AB.ApplyDrag()
     end
     AB.dragPending = nil
     AB.Reveal(2, dragging)
-    if not dragging then AB.Reveal(4, false) end
+    if not dragging and secureReveal and AB.Reveal(4, false) then secureReveal = false end
     local forms, gamepad = HasForms(), AB.GamepadHideActive()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
@@ -339,6 +359,11 @@ local function Settle()
     if M.active then AB.ApplyDrag() end
 end
 function AB.CursorChanged()
+    -- A pickup from a suite button sets bit 4 in restricted code; the cursor
+    -- holds something placeable at this event even if the drag is over
+    -- before the settle runs.
+    local kind = GetCursorInfo()
+    if not S.Public(kind) or PLACEABLE[kind] then secureReveal = true end
     if AB.settling then return end
     AB.settling = true
     C_Timer.After(0.05, Settle)
@@ -393,6 +418,7 @@ function AB.StopVisibility()
         end
     end
     AB.dragging, AB.dragPending = nil, nil
+    AB.ForgetReveal()
 end
 
 -- The toggle bindings. Settings are locked in combat, so a toggle pressed

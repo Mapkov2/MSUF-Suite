@@ -14,7 +14,8 @@ local Tr = S.Text
 -- In combat the panel manager refuses the call, so the player is told, the
 -- same way for every row. Under the Gamepad UI nothing opens from here: the
 -- click went to Blizzard's own button (row.secureWindow, O.RowPreClick) or
--- has none to go to.
+-- has none to go to. The quest log and a quest's details always open from
+-- Blizzard's own button, on every client.
 local function WindowAllowed()
     if NS.IsCombatLocked() then
         S.Print(NS.RestrictedNotice())
@@ -24,27 +25,23 @@ local function WindowAllowed()
 end
 O.WindowAllowed = WindowAllowed
 
--- Quest log/group finder load with Retail/Forever game UI. Achievement and
+-- The group finder loads with Retail/Forever game UI. Achievement and
 -- Adventure Guide bootstraps depend on game type, so those two are checked.
 -- Each opens a panel of Blizzard's panel manager (ShowUIPanel), which refuses
 -- the Suite's call in combat ("Interface action failed because of an AddOn",
 -- CheckProtectedFunctionsAllowed) and under WoW Forever's Gamepad UI would
 -- run the frame controls manager in it: they act only while
 -- S.CanOpenNativeWindow allows (MSUF_Suite_Modules/MicroMenu.lua).
-local function OpenQuestDetails(questID)
-    if not Finite(questID) or questID <= 0 or not S.CanOpenNativeWindow() then return end
-    QuestMapFrame_OpenToQuestDetails(questID)
-end
-
-local function OpenTaskMap(questID)
-    if not S.CanOpenNativeWindow() then return end
-    local mapID = Read(C_TaskQuest.GetQuestZoneID, questID)
-    if Finite(mapID) and mapID > 0 then
-        OpenQuestLog(mapID)
-        EventRegistry:TriggerEvent("MapCanvas.PingQuestID", questID)
-    else
-        OpenQuestDetails(questID)
-    end
+-- The quest log and a quest's details open only from Blizzard's own code: a
+-- row's click goes to Blizzard's button (O.RowPreClick). Called from here,
+-- QuestMapFrame_OpenToQuestDetails and OpenQuestLog would write the focused
+-- quest and the map's id inside this addon's call; Blizzard's quest pins read
+-- both on every super-tracking change, also while the map is closed, and
+-- their SetPassThroughButtons is then blocked in combat. Without such a
+-- button the world map opens through the panel manager's secure delegate
+-- (S.ShowPanel, MicroMenu.lua), on the player's zone.
+local function OpenQuestWindow()
+    if S.CanOpenNativeWindow() then S.ShowPanel("worldMap") end
 end
 
 local function OpenAchievement(achievementID)
@@ -55,11 +52,6 @@ end
 
 local function OpenJournal()
     if type(_G.ToggleEncounterJournal) == "function" and S.CanOpenNativeWindow() then _G.ToggleEncounterJournal() end
-end
-
--- The quest log for the tracker's header, under the same rule.
-local function OpenLog()
-    if S.CanOpenNativeWindow() then OpenQuestLog() end
 end
 
 local function WatchTogglePressed()
@@ -110,11 +102,15 @@ function O.OnRecipeClick(button)
     end
 end
 
--- WoW Forever's tracker rows and header are InsecureActionButtonTemplate
--- buttons (ObjectivesTracker.lua). Under its Gamepad UI (S.GamepadUI) a click
--- that would open a Blizzard window or menu from the Suite's code clicks
--- Blizzard's own button from the template's handler instead (out of combat,
--- as the template acts), with the same mouse button. The native tracker
+-- The tracker rows and header are InsecureActionButtonTemplate buttons on
+-- every client (ObjectivesTracker.lua). Under WoW Forever's Gamepad UI
+-- (S.GamepadUI) a click that would open a Blizzard window or menu from the
+-- Suite's code clicks Blizzard's own button from the template's handler
+-- instead (out of combat, as the template acts), with the same mouse button.
+-- Without the Gamepad UI a left click on the header or on a quest row goes
+-- the same way (the quest log and a quest's details must open from Blizzard's
+-- own code, see OpenQuestWindow); right clicks and every other row stay with
+-- the Suite. The native tracker
 -- stays shown at alpha 0 (Objectives.lua), so its blocks exist for the
 -- quests it tracks, and their block headers answer as on Blizzard's tracker
 -- (OnBlockHeaderClick, upstream/forever Blizzard_ObjectiveTracker; Blizzard's
@@ -156,11 +152,23 @@ local function NativeQuestHeader(row, mouseButton)
     end
 end
 
+-- Blizzard's quest log button: the Gamepad UI's (S.PanelButton), elsewhere
+-- the micro menu's, which runs ToggleQuestLog from Blizzard's own click. A
+-- button that is shown takes Click() even while the micro menu is hidden.
+local function QuestLogButton()
+    local button = S.PanelButton("questLog")
+    if button then return button end
+    button = _G.QuestLogMicroButton
+    if type(button) ~= "table" or NS.Safety.IsForbidden(button) then return nil end
+    local shown, enabled = button:IsShown(), button:IsEnabled()
+    if S.Public(shown) and shown == true and S.Public(enabled) and enabled == true then return button end
+end
+
 local function WindowButton(row)
-    if row.kind == "header" then return S.PanelButton("questLog") end
+    if row.kind == "header" then return QuestLogButton() end
     if Finite(row.questID) then
         if O.CanCompleteQuest(row.questID) then return nil end
-        return NativeQuestHeader(row, "LeftButton") or S.PanelButton("questLog")
+        return NativeQuestHeader(row, "LeftButton") or QuestLogButton()
     elseif row.group == "scenario" then
         return S.PanelButton("journal")
     elseif Finite(row.recipeID) then
@@ -176,11 +184,19 @@ end
 -- button took the click.
 function O.RowPreClick(row, mouseButton)
     local target
-    if row.kind ~= "section" and S.GamepadUI() and not NS.IsCombatLocked() then
-        if mouseButton == "LeftButton" then
-            target = not WatchTogglePressed() and WindowButton(row) or nil
-        elseif mouseButton == "RightButton" then
-            target = NativeQuestHeader(row, mouseButton)
+    if row.kind ~= "section" and not NS.IsCombatLocked() then
+        if S.GamepadUI() then
+            if mouseButton == "LeftButton" then
+                target = not WatchTogglePressed() and WindowButton(row) or nil
+            elseif mouseButton == "RightButton" then
+                target = NativeQuestHeader(row, mouseButton)
+            end
+        elseif mouseButton == "LeftButton" and not WatchTogglePressed()
+            and (row.kind == "header" or Finite(row.questID)) then
+            -- Without the Gamepad UI only the quest log and a quest's details
+            -- go to Blizzard's button; every other row keeps the Suite's own
+            -- click and menu.
+            target = WindowButton(row)
         end
     end
     row:SetAttribute("type", target and "click" or nil)
@@ -188,20 +204,15 @@ function O.RowPreClick(row, mouseButton)
     row.secureWindow = target ~= nil or nil
 end
 
--- On WoW Forever the tracker's row and header buttons are
--- InsecureActionButtonTemplate buttons whose PreClick (O.RowPreClick) lets
--- the template click Blizzard's own button under the Gamepad UI; the Suite's
--- click handler runs after it. Elsewhere they are plain buttons.
+-- The tracker's row and header buttons are InsecureActionButtonTemplate
+-- buttons whose PreClick (O.RowPreClick) lets the template click Blizzard's
+-- own button (out of combat, as the template acts); the Suite's click handler
+-- runs after it.
 function O.ClickButton(parent, onClick)
-    local template = NS.Client.isForever and "InsecureActionButtonTemplate" or nil
-    local button = S.CreateFrame("Button", nil, parent, template)
-    if template then
-        button:SetAttribute("useOnKeyDown", false)
-        button:SetScript("PreClick", O.RowPreClick)
-        button:HookScript("OnClick", onClick)
-    else
-        button:SetScript("OnClick", onClick)
-    end
+    local button = S.CreateFrame("Button", nil, parent, "InsecureActionButtonTemplate")
+    button:SetAttribute("useOnKeyDown", false)
+    button:SetScript("PreClick", O.RowPreClick)
+    button:HookScript("OnClick", onClick)
     return button
 end
 
@@ -210,7 +221,7 @@ function O.OnHeaderClick(header)
         header.secureWindow = nil
         return
     end
-    OpenLog()
+    OpenQuestWindow()
 end
 
 ------------------------------------------------------------------ group finder
@@ -328,9 +339,6 @@ local function BuildQuestMenu(root, button)
     local task = group == "world" or group == "bonus"
     local windows = S.CanOpenNativeWindow()
     if button.findGroup then root:CreateButton(Tr("Open group finder"), OpenGroupFinder):SetEnabled(windows) end
-    root:CreateButton(task and OBJECTIVES_SHOW_QUEST_MAP or OBJECTIVES_VIEW_IN_QUESTLOG, function()
-        if task then OpenTaskMap(questID) else OpenQuestDetails(questID) end
-    end):SetEnabled(windows)
     local current = Read(C_SuperTrack.GetSuperTrackedQuestID)
     local selected = Finite(current) and current == questID
     root:CreateButton(selected and STOP_SUPER_TRACK_QUEST or SUPER_TRACK_QUEST, function()
@@ -380,5 +388,5 @@ local function ShowContextMenu(button)
     end)
 end
 
-O.OpenQuestDetails, O.OpenAchievement, O.OpenJournal = OpenQuestDetails, OpenAchievement, OpenJournal
+O.OpenQuestWindow, O.OpenAchievement, O.OpenJournal = OpenQuestWindow, OpenAchievement, OpenJournal
 O.WatchTogglePressed, O.Untrack, O.ShowContextMenu = WatchTogglePressed, Untrack, ShowContextMenu

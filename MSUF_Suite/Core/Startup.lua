@@ -9,6 +9,19 @@ local startupFinished = false
 local startedBeforeLockdown = false
 local waitingForCombat = false
 local combatEvent
+-- True from a reload's world entry until the queued start runs. Combat that
+-- begins in between still starts the modules before lockdown.
+local watchingCombatStart = false
+
+local function WatchCombatStart(watch)
+    if watchingCombatStart == watch then return end
+    watchingCombatStart = watch
+    if watch then
+        events:RegisterEvent("PLAYER_REGEN_DISABLED")
+    elseif not combatEvent then
+        events:UnregisterEvent("PLAYER_REGEN_DISABLED")
+    end
+end
 
 local function SetCombatWait(wait)
     if waitingForCombat == wait then return end
@@ -17,11 +30,19 @@ local function SetCombatWait(wait)
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
     else
         events:UnregisterEvent("PLAYER_REGEN_ENABLED")
-        if combatEvent then
+        if combatEvent or watchingCombatStart then
             events:UnregisterEvent("PLAYER_REGEN_DISABLED")
-            combatEvent = nil
+            combatEvent, watchingCombatStart = nil, false
         end
     end
+end
+
+-- Starts the modules while combat is known or starting and protected writes
+-- are still allowed. Profile repairs and setup keep their post-combat path.
+local function StartBeforeLockdown()
+    Suite.startingBeforeLockdown = true
+    Suite.Dispatch(Start, "PLAYER_ENTERING_WORLD")
+    Suite.startingBeforeLockdown = nil
 end
 
 local function ShowInstaller()
@@ -53,14 +74,16 @@ loginEvent:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
     Suite.CaptureSessionGold(isReloadingUi)
     -- Settle the chat colour ledger before starting the reload layout.
     Suite.Dispatch(Suite.Skin.SettleChatColors)
-    -- Forever can report combat at reload while protected writes are still
-    -- allowed here. The next frame is already locked. PLAYER_LOGIN has
+    -- A reload in combat can report combat here while protected writes are
+    -- still allowed. The next frame is already locked. PLAYER_LOGIN has
     -- finished, so loading modules here also avoids a nested login load.
-    if isReloadingUi == true and Suite.Client.isForever and waitingForCombat and not Suite.Suite.started
-        and Suite.InCombat() and not Suite.IsCombatLocked() then
-        Suite.startingBeforeLockdown = true
-        Suite.Dispatch(Start, "PLAYER_ENTERING_WORLD")
-        Suite.startingBeforeLockdown = nil
+    if isReloadingUi == true and waitingForCombat and not Suite.Suite.started and not Suite.IsCombatLocked() then
+        if Suite.InCombat() then
+            StartBeforeLockdown()
+        else
+            -- Combat can still begin before the queued start runs.
+            WatchCombatStart(true)
+        end
     end
     -- The next frame follows client login readiness and all startup listeners.
     C_Timer.After(0, FinishWorldEntry)
@@ -99,8 +122,8 @@ local function Step(owner, name, ...)
     Suite.Dispatch(owner[name], ...)
 end
 
--- At combat end and the Forever reload window, the unit flag can still
--- report combat. Both paths must respect actual lockdown.
+-- At combat end and in the reload window, the unit flag can still report
+-- combat. Both paths must respect actual lockdown.
 local function StartupInCombat(transition)
     if transition == "PLAYER_REGEN_ENABLED" or transition == "PLAYER_ENTERING_WORLD" then
         return Suite.IsCombatLocked()
@@ -178,6 +201,7 @@ end
 local startQueued = false
 local function RunStart()
     startQueued = false
+    WatchCombatStart(false)
     Start(combatEvent)
 end
 
@@ -227,10 +251,17 @@ events:SetScript("OnEvent", function(self, event, loadedAddon)
         else
             if not combatEvent then self:RegisterEvent("PLAYER_REGEN_DISABLED") end
             combatEvent = event
+            WatchCombatStart(false)
             QueueStart()
         end
     elseif event == "PLAYER_REGEN_DISABLED" then
-        combatEvent = event
+        if watchingCombatStart then
+            -- The client sends this event before lockdown begins.
+            WatchCombatStart(false)
+            if not Suite.Suite.started and not Suite.IsCombatLocked() then StartBeforeLockdown() end
+        else
+            combatEvent = event
+        end
     end
 end)
 events:RegisterEvent("ADDON_LOADED")

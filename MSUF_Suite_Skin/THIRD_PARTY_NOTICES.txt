@@ -59,6 +59,9 @@ ORIGINAL PROJECT ARTWORK (no third-party material)
 - Media/WindowActions/MapkoSkinWindowActionsFine.png and
   MapkoSkinWindowActionsBold.png: MapkoSkin assets-src/WindowActions
   (PROVENANCE.md, generate_window_action_glyphs.py).
+- Media/WindowActions/MapkoSkinWindowCaptionFine.png and
+  MapkoSkinWindowCaptionBold.png: drawn from primitives by
+  tools/generate-window-caption-glyphs.py.
 - Media/MicroMenu/ForeverMicroPlate.tga, ForeverPortraitRing.tga,
   MidnightMicroPlate.tga and MidnightPortraitRing.tga: drawn from primitives
   by tools/generate-forever-microbar.py.

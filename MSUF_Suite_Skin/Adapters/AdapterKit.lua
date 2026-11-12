@@ -470,6 +470,94 @@ function AdapterKit.Ensure(context, target, spec)
     return AttachWith(NS.Surface.Ensure, context, target, spec)
 end
 
+-- Camelot LargeSideTabButtonTemplate (Legacy, Group Finder, Professions).
+-- The tab frame keeps the side-tab art's transparent right padding and its
+-- 50 px icon sits four pixels left of centre, so a surface on the frame boxes
+-- the icon unevenly. The surface follows the native icon instead, pressed
+-- offset included, with its edge drawn above the icon.
+local fittedSideTabs = AdapterKit.WeakSet()
+
+local function FitSideTabRegion(region, icon, outset)
+    region:ClearAllPoints()
+    region:SetPoint("TOPLEFT", icon, "TOPLEFT", -outset, outset)
+    region:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", outset, -outset)
+end
+
+function AdapterKit.FitSideTab(tab, surface)
+    if type(surface) ~= "table" or fittedSideTabs[tab] == surface then return end
+    local icon = Field(tab, "Icon")
+    if not icon or not surface.fill or not surface.edge then return end
+    FitSideTabRegion(surface.fill, icon, 2)
+    FitSideTabRegion(surface.edge, icon, 1)
+    surface.edge:SetDrawLayer("OVERLAY", 2)
+    fittedSideTabs[tab] = surface
+end
+
+-- Portrait bezels. Blizzard portraits bake their own frame into the art (the
+-- Group Finder eye's stone ring, the class circles' gold ring), so fading
+-- chrome cannot reach it. An owned ring above the portrait covers that outer
+-- band in the look's border colour: the skin's portrait-ring asset,
+-- desaturated and tinted, so no new file is needed. Nothing is written to
+-- Blizzard's portrait: the ring lives on an owned frame parented to it.
+local BEZEL_TEXTURE = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\MicroMenu\\ForeverPortraitRing.tga"
+local BEZEL_LEVEL_OFFSET = 8
+local bezels = AdapterKit.WeakSet()
+local bezelListener = {}
+
+local function PaintBezel(record)
+    local r, g, b = NS.Theme.GetColor("border")
+    record.ring:SetVertexColor(r, g, b, 1)
+end
+
+local function OnBezelTheme(_, domain)
+    if domain ~= "theme" and domain ~= "color" and domain ~= "profile" then return end
+    for _, record in pairs(bezels) do
+        if record.visible then PaintBezel(record) end
+    end
+end
+
+local function NewBezel(holder)
+    local level = Read(holder, "GetFrameLevel")
+    if type(level) ~= "number" then return nil end
+    -- Parented after creation: Forever's SmartNavigation hooks CreateFrame.
+    local frame = Safety.CreateChildFrame("Frame", holder)
+    frame:SetFrameLevel(level + BEZEL_LEVEL_OFFSET)
+    local ring = frame:CreateTexture(nil, "OVERLAY", nil, 7)
+    ring:SetTexture(BEZEL_TEXTURE)
+    ring:SetDesaturated(true)
+    if not next(bezels) then NS.Registry.AddListener(bezelListener, OnBezelTheme) end
+    return { frame = frame, ring = ring }
+end
+
+-- holder: the frame that shows the portrait (it carries the ring frame);
+-- anchor: the portrait region the ring follows; outset in UI units.
+function AdapterKit.PortraitBezel(holder, anchor, owner, outset)
+    if not holder or not anchor or not CanCreateRegions(holder) then return false end
+    local record = bezels[holder]
+    if not record then
+        record = NewBezel(holder)
+        if not record then return false end
+        bezels[holder] = record
+    end
+    outset = outset or 3
+    record.ring:ClearAllPoints()
+    record.ring:SetPoint("TOPLEFT", anchor, "TOPLEFT", -outset, outset)
+    record.ring:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", outset, -outset)
+    record.owner, record.visible = owner, true
+    PaintBezel(record)
+    record.frame:Show()
+    return true
+end
+
+function AdapterKit.HidePortraitBezels(owner)
+    for _, record in pairs(bezels) do
+        if record.owner == owner then
+            record.visible = false
+            record.frame:Hide()
+        end
+    end
+end
+
 -- ControlSkin copies spec. method defaults to ApplyButton; other values are
 -- ApplyTab, ApplySearchBox and ApplyThreeSliceButton.
 function AdapterKit.SkinControl(context, control, spec, method)

@@ -20,11 +20,14 @@ C.EntryFill = EntryFill
 -- Healthstones (Presets.CONSUMABLES): their item entries and Blizzard's
 -- records of their categories hide while the bags hold none (hideEmpty,
 -- read by Time). Potion categories never hide: their item lists may miss a
--- rank.
+-- rank. WoW Forever's health potion item entry (potion) hides like a
+-- healthstone; Blizzard's record of its category stays a potion category.
 local CONSUMABLES = C.Presets.CONSUMABLES
 local hideItem, hideCategory = {}, {}
 for i = 1, #CONSUMABLES do
-    hideItem[CONSUMABLES[i].item], hideCategory[CONSUMABLES[i].category] = true, true
+    local consumable = CONSUMABLES[i]
+    hideItem[consumable.item] = true
+    if not consumable.potion then hideCategory[consumable.category] = true end
 end
 local FAMILY = C.Const.FAMILY
 local COOLDOWN_FAMILY, AURA_FAMILY = FAMILY.COOLDOWN, FAMILY.AURA

@@ -59,7 +59,7 @@ end
 -- current (the cooldown manager's labels follow the page): each button
 -- answers for the slot it presses now, and bar 1's target and form pages,
 -- which its keys press only at other times, do not count.
-local FORM_FIRST, FORM_LAST = 73, 120
+local FORM_FIRST, MOONKIN_FIRST, FORM_LAST = 73, 109, 120
 local spellSlots = {}
 
 -- Bar 1's custom pages are pressed by bar 1's keys as well: the friendly and
@@ -131,7 +131,8 @@ function S.ActionBarsBindingForSpell(spell, current)
         if text ~= "" then return text end
     end
     if main and not current and not M.config.disableFormPaging then
-        for slot = FORM_FIRST, FORM_LAST do
+        -- With the Moonkin opt-out bar 1 never reaches page 10.
+        for slot = FORM_FIRST, M.config.disableMoonkinPaging and MOONKIN_FIRST - 1 or FORM_LAST do
             if spellSlots[slot] then
                 local text = AB.BindingText(main.buttons[(slot - FORM_FIRST) % 12 + 1])
                 if text ~= "" then return text end

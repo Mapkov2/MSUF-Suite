@@ -401,6 +401,11 @@ local function NormalizeWindowActions(windowActions, revision)
     if revision < 36 and windowActions.closeGlyphSize == 10 then
         windowActions.closeGlyphSize = 16
     end
+    -- Revision 53 replaced the default + / - with Windows' maximize and
+    -- restore symbols; chevrons, a hand-picked mode, stay.
+    if revision < 53 and windowActions.glyphMode == "plusMinus" then
+        windowActions.glyphMode = "windows"
+    end
     ClampRanges(windowActions, NS.WindowActionRanges)
     KeepListedNumber(windowActions, "surfaceRadius", NS.GeometryRadii, defaults.surfaceRadius)
 end

@@ -219,19 +219,49 @@ Presets.RACIALS = RACIALS
 -- create the Demonic Healthstone. Each one stands in for Blizzard's record
 -- of its spellCategory while the catalog has no learned record, and shows
 -- only while the bags hold it (hideEmpty).
-Presets.CONSUMABLES = {
+local CONSUMABLES = {
     { item = 5512, category = SPELL_CATEGORY.HEALTHSTONE },
     { item = 224464, category = SPELL_CATEGORY.DEMONIC_HEALTHSTONE },
 }
 
 -- Bag items behind Blizzard's potion and healthstone entries (spellCategory),
 -- every quality rank: their counts add up to the number shown on the icon.
-Presets.CATEGORY_ITEMS = {
+local CATEGORY_ITEMS = {
     [SPELL_CATEGORY.COMBAT_POTION] = { 241308, 241309, 245897, 245898, 241288, 241289, 245902, 245903, 271886, 271887, 274763, 274764 },
     [SPELL_CATEGORY.HEALTH_POTION] = { 241304, 241305, 271883, 271884 },
     [SPELL_CATEGORY.HEALTHSTONE] = { 5512 },
     [SPELL_CATEGORY.DEMONIC_HEALTHSTONE] = { 224464 },
 }
+
+-- WoW Forever has no single Healthstone or health potion item: every rank
+-- is an item of its own (Improved Healthstone adds two per rank), all on
+-- one shared cooldown. The item identities are the ones reviewed for the
+-- consumable macros (MacroConsumableData.lua, 2026-10-31), weakest first.
+-- The first item names the family (its entry key, shared with Retail for
+-- the Healthstone); the icon follows the strongest rank the bags hold and
+-- counts every rank (Time.lua). Rejuvenation potions heal as well and share
+-- the potion cooldown. There is no Demonic Healthstone. The potion list may
+-- miss a potion, so Blizzard's own record of that category never hides
+-- (potion: EntryFill.lua); the item entry needs a listed potion in the bags.
+if P.NS.Client.isForever then
+    CONSUMABLES = {
+        { item = 5512, category = SPELL_CATEGORY.HEALTHSTONE },
+        { item = 118, category = SPELL_CATEGORY.HEALTH_POTION, potion = true },
+    }
+    CATEGORY_ITEMS[SPELL_CATEGORY.HEALTHSTONE] = { 5512, 19004, 19005, 19006, 5511, 19007, 19008, 5509, 19009,
+        19010, 5510, 19011, 19012, 9421, 19013 }
+    CATEGORY_ITEMS[SPELL_CATEGORY.HEALTH_POTION] = { 118, 282011, 268881, 2456, 858, 268882, 929, 268883, 1710, 9144,
+        3928, 18839, 274935, 13446, 23579, 18253 }
+end
+Presets.CONSUMABLES, Presets.CATEGORY_ITEMS = CONSUMABLES, CATEGORY_ITEMS
+
+-- Families of more than one item (WoW Forever): the family's first item ->
+-- its category. Empty on Retail, where one item is one consumable.
+Presets.STOCK = {}
+for i = 1, #CONSUMABLES do
+    local consumable = CONSUMABLES[i]
+    if #CATEGORY_ITEMS[consumable.category] > 1 then Presets.STOCK[consumable.item] = consumable.category end
+end
 
 -- Spell IDs of the player's class, strongest first; C.EMPTY when unknown.
 function Presets.Defensives(classID)

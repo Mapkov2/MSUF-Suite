@@ -145,6 +145,81 @@ local function FadeProfessionSchematic(state, schematic, hasOwnNineSlice)
     Kit.FadeFields(state, Field(schematic, "Details"), PROFESSION_DETAIL_FIELDS)
 end
 
+-- Forever rank bars. Blizzard draws the lane 3 px below the bar frame (Fill
+-- and the Rank text frame sit at y -3), so the track is an owned holder on
+-- the Rank lane, one frame level below the bar: the profession's own fill,
+-- flare and rank text stay native and on top. Only the ornate frame and its
+-- background art are faded. The unlearn cross keeps its red icon.
+local RANK_TRACK_SPEC = {
+    role = "status", shape = "continuous", radius = 3, inset = 0,
+    allowImplicitProtected = true,
+}
+local UNLEARN_SPEC = { role = "button", radius = 4, inset = 0, allowImplicitProtected = true }
+local rankTracks = setmetatable({}, { __mode = "k" })
+
+local function RankTrack(bar)
+    local track = rankTracks[bar]
+    if track then return track end
+    local lane = Field(bar, "Rank")
+    local level = Safety.Read(bar, "GetFrameLevel")
+    if not lane or type(level) ~= "number" or not CanCreateRegions(bar) then return nil end
+    -- Parented after creation: Forever's SmartNavigation hooks CreateFrame.
+    track = Safety.CreateChildFrame("Frame", bar)
+    track:SetPoint("TOPLEFT", lane, "TOPLEFT")
+    track:SetPoint("BOTTOMRIGHT", lane, "BOTTOMRIGHT")
+    track:SetFrameLevel(level > 0 and level - 1 or 0)
+    rankTracks[bar] = track
+    return track
+end
+
+local function SkinRankBar(state, card)
+    local bar = Field(card, "StatusBar")
+    local track = bar and RankTrack(bar)
+    if track and Kit.Ensure(state, track, RANK_TRACK_SPEC) then
+        Fade(state, Field(bar, "Background"))
+        Fade(state, Field(bar, "Border"))
+    end
+    local unlearn = Field(card, "UnlearnButton")
+    if unlearn then NS.ControlSkin.ApplyButton(unlearn, state.owner, UNLEARN_SPEC) end
+end
+
+-- Forever's profession side tabs (the overview and one per profession) use
+-- LargeSideTabButtonTemplate like the Legacy window and get the same fitted
+-- tile. Blizzard marks the selection with SetChecked (SelectedTexture).
+local SIDE_TAB_SPEC = {
+    role = "navigation", activeRole = "navigationActive", radius = 6, inset = 1,
+    selectionEdge = true, allowImplicitProtected = true,
+}
+local sideTabHooks = setmetatable({}, { __mode = "k" })
+
+local function SyncSideTab(tab)
+    local surface = NS.Registry.GetSurface(tab)
+    if surface and surface.spec == SIDE_TAB_SPEC and surface.visible ~= false
+        and Safety.CanDecorate(tab, not NS.IsCombatLocked()) then
+        NS.Surface.SetActive(tab, Kit.IsShown(Field(tab, "SelectedTexture")))
+    end
+end
+
+local function SkinSideTab(state, tab)
+    local painted, surface = Kit.Ensure(state, tab, SIDE_TAB_SPEC)
+    if not painted then return end
+    Kit.FitSideTab(tab, surface)
+    Fade(state, Field(tab, "Background"))
+    Fade(state, Field(tab, "SelectedTexture"))
+    Kit.SuppressVertexAlpha(state, Field(tab, "TabGlow"))
+    SyncSideTab(tab)
+    if not sideTabHooks[tab] and Kit.HookFunction(tab, "SetChecked", Safety.Isolated(SyncSideTab)) then
+        sideTabHooks[tab] = true
+    end
+end
+
+local function SkinProfessionSideTabs(state, root)
+    SkinSideTab(state, Field(root, "ProfessionsOverviewTab"))
+    local tabs = Field(root, "rightProfessionTabs")
+    if type(tabs) ~= "table" then return end
+    for index = 1, #tabs do SkinSideTab(state, tabs[index]) end
+end
+
 -- Camelot puts its professions book inside ProfessionsFrame instead of
 -- loading the standalone ProfessionsBookFrame. The anonymous atlas on
 -- CraftingPage and the five book cards are exact decorative regions; spell
@@ -170,6 +245,7 @@ local function SkinForeverProfessionBook(state, book, reuse)
                     NS.Cosmetics.Fade(background, state.parentOwner)
                 end
             end
+            SkinRankBar(state, card)
         end
     end
 end
@@ -186,6 +262,9 @@ local function FadeProfessionChrome(state, root, changed)
     end
     if not changed or changed == crafting or changed == schematic then
         FadeProfessionSchematic(state, schematic, true)
+        -- Forever's SchematicFormCraftingTemplate adds an anonymous ornate
+        -- frame (common-insideframe, BORDER) around the recipe panel.
+        if NS.Client.isForever then Kit.FadeAtlas(state, schematic, "common-insideframe") end
     end
 
     local spec = Field(root, "SpecPage")
@@ -307,6 +386,13 @@ local function ApplyProfessionRoot(state, root)
         if book and (combat and not Kit.IsHidden(book) or not combat and applied) then
             SkinForeverProfessionBook(state, book, combat)
         end
+        -- The side tabs hold no secure children: they paint in combat too.
+        if applied or combat then SkinProfessionSideTabs(state, root) end
+        -- The profession icon portrait gets the same owned bezel as the
+        -- Group Finder eye and the talent class circle.
+        local container = Field(root, "PortraitContainer")
+        local portrait = Field(container, "portrait")
+        if portrait and (applied or combat) then Kit.PortraitBezel(container, portrait, state.owner, 3) end
     end
     return applied, reason
 end

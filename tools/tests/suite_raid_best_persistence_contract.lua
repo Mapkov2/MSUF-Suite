@@ -108,6 +108,10 @@ local function Session(saved, options)
     function context:RemoveEvent(event) self.events[event] = nil end
     function context:Ticker() self.ticker = true end
     function context:Cancel() self.ticker = false end
+    -- The clock the client writes (MSUF_Suite_Modules/Surfaces.lua): nil on a client that cannot, and the
+    -- pull clock is the 1 s ticker then. A case that wants the client's clock sets S.clockFormat.
+    S.ElapsedClock = function() return S.clockFormat end
+    S.CLOCK_SPAN = 604800
     self.ns, self.S, self.H = ns, S, S.Raid
     self.owner = { active = true, config = { showRaid = true }, content = Widget(), context = context }
     return self
@@ -276,4 +280,58 @@ unseen.encounter = true
 assert(unseen.H.Show(unseen.owner))
 Blank(unseen, "unobserved encounter after idle restore")
 assert(not firstData.raidHistory and not firstData.history, "best-only storage grew a pull history")
+-- The pull clock is the client's where it can write one (S.ElapsedClock): no ticker runs, the elapsed line is the
+-- binding's while a pull runs and Lua's again when it ends, and the next pull uses the same binding.
+do
+    local made = {}
+    local function Bound()
+        local bound = {}
+        function bound:SetFontString(value) self.fontString = value end
+        function bound:SetTextFormat(format, components) self.format, self.components = format, components end
+        function bound:SetUpdateInterval(value) self.interval = value end
+        function bound:SetTimeFromStart(start, span) self.start, self.span = start, span end
+        function bound:SetDuration(value) self.duration = value; self.binds = (self.binds or 0) + 1 end
+        function bound:SetEnabled(value) self.enabled = value end
+        function bound:UpdateFontString() self.fontString.text = "client clock" end
+        made[#made + 1] = bound
+        return bound
+    end
+    C_DurationUtil = { CreateDuration = Bound, CreateDurationTextBinding = Bound }
+    local clocked = Session()
+    clocked.S.clockFormat = { { property = 2 } }
+    local H, owner = clocked.H, clocked.owner
+    assert(H.Start(owner, 800, "Twin Guardians", 16))
+    local view = owner.raid
+    assert(not owner.context.ticker, "the client's pull clock still runs a ticker")
+    assert(view.clock.enabled and view.clock.fontString == view.elapsed and view.clock.format == "{}"
+        and view.clock.components == clocked.S.clockFormat and view.clock.interval == 1,
+        "the pull clock is not the client's clock on the elapsed line")
+    assert(view.clockDuration.start == view.pull.started and view.clockDuration.span == 604800
+        and view.elapsed.text == "client clock", "the client's clock does not count from the pull")
+    H.Stage(owner, "DBM", 2, 3)
+    assert(view.elapsed.text == "client clock", "an event's paint wrote over the client's clock")
+    clocked.now = clocked.now + 75
+    H.End(owner, 800, "Twin Guardians", 16, 20, 0, {})
+    -- This harness writes its clock text as mm:ss.
+    assert(not view.clock.enabled and view.elapsed.text == "01:15",
+        "the ended pull does not show its time: " .. tostring(view.elapsed.text))
+    local count = #made
+    clocked.now = clocked.now + 30
+    assert(H.Start(owner, 800, "Twin Guardians", 16))
+    assert(#made == count and view.clock.enabled and view.clock.binds == 2 and view.elapsed.text == "client clock"
+        and not owner.context.ticker, "the second pull made a new binding or has no clock")
+    assert(view.pull.started == clocked.now and view.clockDuration.start == view.pull.started,
+        "the second pull's clock counts from the first pull")
+    -- A second pull of the same length: the line shows its time again, not the client's last text.
+    clocked.now = clocked.now + 75
+    H.End(owner, 800, "Twin Guardians", 16, 20, 0, {})
+    assert(view.elapsed.text == "01:15", "the second pull's time was not written: " .. tostring(view.elapsed.text))
+    clocked.now = clocked.now + 30
+    assert(H.Start(owner, 800, "Twin Guardians", 16))
+    assert(view.clock.enabled and view.clock.binds == 3 and view.clockDuration.start == clocked.now,
+        "the third pull's clock does not count from its pull")
+    H.Stop(owner)
+    assert(not view.clock.enabled and not owner.context.ticker, "stopping the panel left the client's clock running")
+    C_DurationUtil = nil
+end
 print("Suite raid best persistence: serialized reload, best-only display, owner binding and context isolation passed")

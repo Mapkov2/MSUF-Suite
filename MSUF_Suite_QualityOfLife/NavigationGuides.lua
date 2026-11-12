@@ -95,7 +95,7 @@ local function RXPVisibility()
     owner.context:Cancel(RXPPoint)
     if owner.config.guideRestedXP and _G.RXPG_ARROW:IsShown() then
         RXPPoint(owner)
-        owner.context:Ticker(.5, RXPPoint)
+        if not owner.paused then owner.context:Ticker(.5, RXPPoint) end
     else
         ClearGuide("RestedXP")
     end
@@ -107,7 +107,7 @@ local function MapzerothVisibility()
     owner.context:Cancel(MapzerothPoint)
     if owner.config.guideMapzeroth and addon.Navigation:IsActive() then
         MapzerothPoint(owner)
-        owner.context:Ticker(.5, MapzerothPoint)
+        if not owner.paused then owner.context:Ticker(.5, MapzerothPoint) end
     else
         ClearGuide("Mapzeroth")
     end
@@ -164,6 +164,15 @@ function Navigation.RefreshGuides(owner)
     end
     if rxp then RXPVisibility() else owner.context:Cancel(RXPPoint) end
     MapzerothVisibility()
+end
+
+-- Navigation is paused (Navigation.lua, combat inside an instance): the guide
+-- addons are not polled. A guide that changes its destination by itself is
+-- still followed, and Navigation.RefreshGuides reads every guide again when
+-- the pause ends.
+function Navigation.PauseGuides(owner)
+    owner.context:Cancel(RXPPoint)
+    owner.context:Cancel(MapzerothPoint)
 end
 
 function Navigation.DisableGuides(owner)

@@ -1022,8 +1022,8 @@ function UnitPowerMax() return 1264 end
     actions.tab("compare")
     assert(not callbacks.UNIT_AURA and not callbacks.ADDON_RESTRICTION_STATE_CHANGED and not next(tickers),
         "comparison retained travel work")
-    assert(#lastReport == 1 and lastReport[1].rows[1].value == "18 → 24 · +6"
-        and lastReport[1].rows[2].value == "20 → —", "comparison lost aligned slots or treated unknown as zero")
+    assert(#lastReport == 1 and lastReport[1].rows[1].value == "18 > 24 · +6"
+        and lastReport[1].rows[2].value == "20 > —", "comparison lost aligned slots or treated unknown as zero")
     assert(openSounds == beforeSounds + 1, "Inspect handoff replayed the native opening sound")
     actions.slot(1, nil, "RightButton")
     assert(not usedSlot, "right clicking an inspected item used the player's slot")

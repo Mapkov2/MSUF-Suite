@@ -14,7 +14,14 @@ end
 function methods:SetScript(key, fn) self.scripts[key] = fn end
 function methods:CreateTexture() return Frame(self) end
 function methods:CreateFontString() return Frame(self) end
-function methods:SetShown(value) self.shown = value counters.writes = counters.writes + 1 end
+-- A frame's own show or hide runs its OnShow or OnHide script, as the client does.
+function methods:SetShown(value)
+    local was = self.shown
+    self.shown = value
+    counters.writes = counters.writes + 1
+    local script = self.scripts[(value and not was) and "OnShow" or (was and not value) and "OnHide" or 0]
+    if script then script(self) end
+end
 function methods:Show() self:SetShown(true) end
 function methods:Hide() self:SetShown(false) end
 function methods:IsShown() return self.shown end
@@ -42,9 +49,41 @@ function methods:SetScale(scale) self.scale = scale counters.writes = counters.w
 function methods:SetRotation(angle) self.angle = angle counters.writes = counters.writes + 1 end
 function methods:GetRotation() return self.angle or 0 end
 function methods:SetText(text) assert(Public(text)) self.text = text counters.writes = counters.writes + 1 end
-function methods:SetVertexColor() counters.writes = counters.writes + 1 end
+-- The client builds the text; the arguments stay numbers on the Lua side,
+-- and there are exactly as many as the format takes (no nil at the end).
+function methods:SetFormattedText(format, ...)
+    assert(Public(format))
+    assert(select("#", ...) > 0 and select(select("#", ...), ...) ~= nil, "a formatted text got a nil argument")
+    self.text = format:format(...)
+    counters.writes = counters.writes + 1
+end
+function methods:SetVertexColor(r, g, b, a)
+    self.vertexR, self.vertexG, self.vertexB, self.vertexA = r, g, b, a
+    counters.writes = counters.writes + 1
+end
 function methods:SetColorTexture() counters.writes = counters.writes + 1 end
-function methods:SetGradient() counters.writes = counters.writes + 1 end
+function methods:SetGradient(orientation, low, high)
+    self.gradient, self.gradientLow, self.gradientHigh = orientation, low, high
+    counters.writes = counters.writes + 1
+end
+function methods:SetBlendMode(mode) self.blend = mode end
+function methods:SetTexCoord(left, right, top, bottom) self.texLeft, self.texRight, self.texTop, self.texBottom = left, right, top, bottom end
+-- The beam pulse (NavigationVisuals.lua): the group records what it was told.
+function methods:CreateAnimationGroup()
+    local group = { playing = false, plays = 0, stops = 0, animations = {} }
+    function group:SetLooping(kind) self.looping = kind end
+    -- An animation keeps the arguments of every setter under the setter's name.
+    function group:CreateAnimation(kind)
+        local animation = setmetatable({ kind = kind, set = {} }, { __index = function(_, setter)
+            return function(animation, ...) animation.set[setter] = { ... } end
+        end })
+        self.animations[#self.animations + 1] = animation
+        return animation
+    end
+    function group:Play() self.playing, self.plays = true, self.plays + 1 end
+    function group:Stop() self.playing, self.stops = false, self.stops + 1 end
+    return group
+end
 function methods:SetTexture() counters.writes = counters.writes + 1 end
 function methods:SetAtlas() counters.writes = counters.writes + 1 end
 function methods:EnableMouse(on) self.mouse = on end
@@ -58,9 +97,12 @@ SuperTrackedFrame = Frame(UIParent)
 for _, key in ipairs({ "Icon", "Arrow", "DistanceText", "IconBorder" }) do SuperTrackedFrame[key] = Frame(SuperTrackedFrame) end
 Enum = { SuperTrackingType = { Quest = 1, UserWaypoint = 2, MapPin = 3, Content = 4, Vignette = 5, Corpse = 6 },
     NavigationState = { Invalid = 0, Occluded = 1, InRange = 2, Disabled = 3 } }
-CreateColor = function(...) return ... end
+CreateColor = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 hooksecurefunc = function() end
-GetTime = function() return 100 end
+-- The client's clock: Advance (below) lets a frame of dt seconds pass.
+local clock = { now = 100, tickers = {}, fired = false }
+GetTime = function() return clock.now end
+IsInInstance = function() return world.instance == true end
 GetUnitSpeed = function() return world.speed end
 PlaySound, PlaySoundFile = function() end, function() end
 SOUNDKIT = { MAP_PING = 1 }
@@ -93,7 +135,15 @@ C_QuestLog = { GetTitleForQuestID = function() return "Quest" end, IsComplete = 
     GetLogIndexForQuestID = function() return 0 end }
 C_AddOns = { LoadAddOn = function() return true end }
 local NS = { Defaults = {}, Client = {}, Public = Public, Finite = Finite, PublicText = PublicText,
-    IsCombatLocked = function() return combat end, InCombat = function() return combat end,
+    -- combat is the lockdown: still false at PLAYER_REGEN_DISABLED and false again at PLAYER_REGEN_ENABLED,
+    -- so the product asks with the event (MSUF_Suite/Core/Platform.lua, Suite.InCombat). world.fighting is
+    -- the player's own combat flag, which a caller without an event also gets.
+    IsCombatLocked = function() return combat end,
+    InCombat = function(event)
+        if event == "PLAYER_REGEN_DISABLED" then return true end
+        if event == "PLAYER_REGEN_ENABLED" then return false end
+        return combat or world.fighting == true
+    end,
     Safety = { IsForbidden = function() return false end } }
 NS.Finish = function(fn, ...) return true, fn(...) end
 local Suite = { Public = Public, Finite = Finite, PublicText = PublicText, Text = function(text) return text end,
@@ -117,6 +167,13 @@ local navigation, module = Suite.Navigation, modules.navigation
 navigation.RefreshMap, navigation.RefreshMapInput = function() end, function() end
 navigation.EnableMap, navigation.DisableMap = function() end, function() end
 navigation.RefreshGuides, navigation.DisableGuides = function() end, function() end
+navigation.PauseMap, navigation.ResumeMap, navigation.PauseGuides = function() end, function() end, function() end
+-- The flight map markers (NavigationTaxi.lua, suite_navigation_taxi_contract.lua)
+-- start and stop with the module and follow every destination change.
+local taxi = { enabled = 0, disabled = 0, refreshed = 0 }
+navigation.EnableTaxi = function(owner) assert(owner == module) taxi.enabled = taxi.enabled + 1 end
+navigation.DisableTaxi = function(owner) assert(owner == module) taxi.disabled = taxi.disabled + 1 end
+navigation.RefreshTaxi = function(owner) assert(owner == module) taxi.refreshed = taxi.refreshed + 1 end
 local properties = {}
 local context = {}
 function context:Property(region, getter, setter, value)
@@ -124,51 +181,159 @@ function context:Property(region, getter, setter, value)
     properties[region] = properties[region] or region[getter](region)
     region[setter](region, value)
 end
+-- The runtime's entry for native frames that stay unprotected in combat
+-- (MSUF_Suite_Modules/Runtime.lua).
+function context:UnprotectedProperty(region, getter, setter, value)
+    if combat and region:IsProtected() then return false end
+    properties[region] = properties[region] or region[getter](region)
+    region[setter](region, value)
+    return true
+end
 function context:RestoreProperty(region, setter)
     if properties[region] and region:GetAlpha() == 0 then region[setter](region, properties[region]) end
     properties[region] = nil
 end
 function context:Event(event, fn) events[event] = fn end
+function context:RemoveEvent(event) events[event] = nil end
 function context:Coalesce(_, fn) return { Request = function() fn(module) end } end
 function context:After(_, fn) self.pending = fn end
+-- The runtime's tickers (MSUF_Suite_Modules/Timers.lua over C_Timer.NewTicker):
+-- a ticker fires in the first frame in which its interval has passed since it
+-- last fired, at most once a frame. Asking for a running ticker at its own
+-- pace changes nothing; another pace starts it anew. A ticker of a module
+-- that is not active fires into nothing.
+function context:Ticker(interval, fn)
+    local ticker = clock.tickers[fn]
+    if ticker and ticker.interval == interval then return end
+    clock.tickers[fn] = { interval = interval, waited = 0 }
+end
+function context:Cancel(fn) clock.tickers[fn] = nil end
+-- One frame of dt seconds; clock.fired says whether a ticker fired in it.
+-- clock.inside is true while a ticker's callback runs, so an instruction
+-- budget can count the product's side of a frame without the clock's own.
+local function Advance(dt)
+    clock.now, clock.fired = clock.now + dt, false
+    for fn, ticker in pairs(clock.tickers) do
+        ticker.waited = ticker.waited + dt
+        if ticker.waited >= ticker.interval then
+            ticker.waited, clock.fired = 0, true
+            if module.active then
+                clock.inside = true
+                fn(module)
+                clock.inside = false
+            end
+        end
+    end
+end
+-- Whether the marker is being ticked at all.
+local function Ticking() return next(clock.tickers) ~= nil end
+-- Whether the last frame's tick was a sample. At the arrow's pace (1/30 s)
+-- only the tick that restarts the arrow's count is one (Navigation.lua, Tick).
+local function Sampled() return clock.fired and (module.interval ~= 1 / 30 or module.sampledAt == clock.now) end
 module.config, module.context, module.active = config, context, true
 module:Enable()
 assert(module.view.root:IsShown() and SuperTrackedFrame.Icon:GetAlpha() == 0)
+assert(taxi.enabled == 1 and taxi.refreshed > 0, "enabling navigation did not start the flight map markers")
 local before, nativeDistanceReads = counters.writes, counters.distance
 collectgarbage("collect")
 collectgarbage("stop")
-local memory = collectgarbage("count")
 local instructions = 0
-debug.sethook(function() instructions = instructions + 100 end, "", 100)
-for _ = 1, 1000 do module.driver.scripts.OnUpdate(module.driver, .1) end
+-- The hook is made before the memory is read: it is the test's, not navigation's.
+local function CountInside() if clock.inside then instructions = instructions + 1 end end
+local memory = collectgarbage("count")
+debug.sethook(CountInside, "", 1)
+for _ = 1, 1000 do Advance(.1) end
 debug.sethook()
 local allocated = collectgarbage("count") - memory
 collectgarbage("restart")
 assert(counters.writes == before, "unchanged navigation repaints native/widget state")
--- 2026-11-10 Lua 5.1 baseline: 434300 VM instructions and 0.1171875 KiB.
+-- 2026-11-10 Lua 5.1 baseline: 434300 VM instructions (hook every 100, with the test's own call) and
+-- 0.1171875 KiB (with the test's hook). 2026-11-11, the ticker: the product's instructions only (a hook on
+-- every instruction that counts while the ticker's callback runs), frame script 400000 -> ticker 385000,
+-- and 0.0625 KiB in the first 1000 samples.
 -- Keep the normal two-percent regression limit, including native distance reads.
-assert(allocated <= .1171875 * 1.02, "unchanged navigation allocates: " .. allocated .. " KiB")
-assert(instructions <= 434300 * 1.02, "unchanged navigation exceeds the instruction budget")
+assert(allocated <= .0625 * 1.02, "unchanged navigation allocates: " .. allocated .. " KiB")
+assert(instructions <= 385000 * 1.02, "unchanged navigation exceeds the instruction budget: " .. instructions)
 assert(counters.distance - nativeDistanceReads == 1000, "navigation reread native distance within one sample")
 print(("navigation warm budget: %.3f KiB, %d instructions / 1000 samples"):format(allocated, instructions))
 world.x = .6
+local taxiRefreshes = taxi.refreshed
 events.USER_WAYPOINT_UPDATED(module, "USER_WAYPOINT_UPDATED")
 assert(module.model.identity:find("0.60000", 1, true), "waypoint identity ignores position")
+assert(taxi.refreshed == taxiRefreshes + 1, "a moved map pin did not reach the flight map markers")
 world.clamped = true
 events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
 world.distance = secret
-module.driver.scripts.OnUpdate(module.driver, .1)
+Advance(.1)
 assert(not module.view.root:IsShown() and not module.model.mode, "secret geometry retained the old marker")
 world.distance, world.valid = 400, true
 events.NAVIGATION_FRAME_CREATED(module, "NAVIGATION_FRAME_CREATED")
 combat, world.kind = true, Enum.SuperTrackingType.Corpse
 events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
 assert(SuperTrackedFrame.Icon:GetAlpha() == 1, "combat fallback hid the native corpse marker")
-assert(module.driver.scripts.OnUpdate == nil, "unsupported destination kept the tick alive")
+assert(not Ticking(), "unsupported destination kept the tick alive")
 combat, world.kind = false, Enum.SuperTrackingType.UserWaypoint
 events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
+taxiRefreshes = taxi.refreshed
+world.kind = Enum.SuperTrackingType.Corpse
+events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
+assert(taxi.refreshed == taxiRefreshes + 1, "a destination the world marker does not follow froze the flight map markers")
+world.kind = Enum.SuperTrackingType.UserWaypoint
+events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
+-- A destination that appears in combat (a reload mid-fight, a new guide
+-- step): the unprotected native marker is taken over there too.
+world.kind = Enum.SuperTrackingType.Corpse
+events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
+combat, world.kind = true, Enum.SuperTrackingType.UserWaypoint
+events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
+assert(module.view.root:IsShown() and SuperTrackedFrame.Icon:GetAlpha() == 0,
+    "a destination set in combat left the Suite marker hidden beside the native one")
+-- Between two samples a turning direction arrow is placed and turned; nothing
+-- else is repainted. A due sample replaces the arrow tick of its frame.
+-- 2026-11-10, Lua 5.1, per tick (VM instructions / native calls), before ->
+-- after: turning arrow 1417 -> 965 / 16.4 -> 11.4, steady arrow 1107 -> 863 /
+-- 10.7 -> 8.7, on-screen sample 773 -> 722, marker that cannot show
+-- 1211 -> 503 / 14.7 -> 7.0.
+local paints, paint, turn = 0, navigation.Paint, 300
+navigation.Paint = function(...) paints = paints + 1 return paint(...) end
+SuperTrackedFrame.GetCenter = function() return 1400, turn end
+for _ = 1, 2 do
+    turn = turn + 40
+    local angle = module.model.angle
+    Advance(1 / 30)
+    assert(module.model.angle ~= angle and module.view.tip.angle == module.model.angle and module.view.root:IsShown(),
+        "the direction arrow did not turn between two samples")
+end
+assert(paints == 0, "a turning direction arrow repainted the whole marker between two samples")
+Advance(.1)
+assert(paints == 1, "a due sample did not paint once in place of its arrow tick")
+navigation.Paint, SuperTrackedFrame.GetCenter = paint, nil
+-- A protected native marker cannot be taken over in combat. The Suite marker
+-- then stays hidden; a turning direction arrow must not flash it.
+world.kind = Enum.SuperTrackingType.Corpse
+events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
+local height = 300
+SuperTrackedFrame.IsProtected = function() return true end
+SuperTrackedFrame.GetCenter = function() return 1400, height end
+world.kind = Enum.SuperTrackingType.UserWaypoint
+events.SUPER_TRACKING_CHANGED(module, "SUPER_TRACKING_CHANGED")
+assert(world.clamped and module.model.mode == navigation.DIRECTION, "the off-screen destination is not a direction arrow")
+local placed = module.host.point
+for _ = 1, 12 do
+    height = height + 40
+    Advance(1 / 30)
+    assert(not module.view.root:IsShown() and SuperTrackedFrame.Icon:GetAlpha() == 1,
+        "the Suite marker flickered over a native marker it could not take over")
+end
+assert(module.host.point == placed, "a marker that cannot show was still placed")
+SuperTrackedFrame.IsProtected, SuperTrackedFrame.GetCenter = nil, nil
+combat = false
+events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+assert(module.view.root:IsShown() and SuperTrackedFrame.Icon:GetAlpha() == 0,
+    "the Suite marker did not return after combat")
 module:Disable()
-assert(module.driver.scripts.OnUpdate == nil and SuperTrackedFrame.Icon:GetAlpha() == 1)
+assert(not Ticking() and SuperTrackedFrame.Icon:GetAlpha() == 1)
+assert(taxi.disabled == 1, "disabling navigation left the flight map markers")
 local point = navigation.Parse("/way 84 12.3,45.6 A place", 1)
 assert(point and point.map == 84 and math.abs(point.x - .123) < .00001 and math.abs(point.y - .456) < .00001)
 assert(not navigation.Parse("/way 84 120 5", 1))
@@ -204,8 +369,12 @@ TomTom = {
     UnregisterCallback = function(_, event) callbacks[event] = nil end,
     private = { GetCrazyArrowTarget = function() return { 84, .8, .9, title = "Guide" }, "Guide" end },
 }
-function context:Cancel() end
-function context:Ticker() error("an absent guide started polling") end
+-- The marker's own ticker keeps its place on the clock; a guide polls every half second.
+local clockTicker = context.Ticker
+function context:Ticker(interval, fn)
+    assert(interval ~= .5, "an absent guide started polling")
+    return clockTicker(self, interval, fn)
+end
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationGuides.lua"))("MSUF_Suite_QualityOfLife", private)
 config.guideTomTom, config.replaceManual = true, false
 navigation.RefreshGuides(module)
@@ -237,7 +406,14 @@ C_Map.GetMapWorldSize = function() return 1000, 1000 end
 GetCursorPosition = function() return 575, 337.5 end
 IsControlKeyDown = function() return true end
 local tickerStarts = 0
-context.Ticker = function() tickerStarts = tickerStarts + 1 end
+-- The minimap pins refresh every 0.2 s and a guide polls every 0.5 s; the marker's ticker stays on the clock.
+context.Ticker = function(self, interval, fn)
+    if interval == .2 or interval == .5 then
+        tickerStarts = tickerStarts + 1
+        return
+    end
+    return clockTicker(self, interval, fn)
+end
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationMap.lua"))("MSUF_Suite_QualityOfLife", private)
 config.minimapPlacement, config.autoTrackPins = true, false
 navigation.EnableMap(module)
@@ -339,14 +515,52 @@ do
     assert(module.view.root:IsShown() and module.model.mode == navigation.WAYPOINT and SuperTrackedFrame.Icon:GetAlpha() == 0,
         "a placed and measured destination stayed hidden behind the native Invalid state")
     state = Enum.NavigationState.Disabled
-    module.driver.scripts.OnUpdate(module.driver, .1)
+    Advance(.1)
     assert(not module.view.root:IsShown() and SuperTrackedFrame.Icon:GetAlpha() == 1, "disabled navigation kept the marker")
     state, world.distance = Enum.NavigationState.Invalid, 0
-    module.driver.scripts.OnUpdate(module.driver, .25)
+    Advance(.25)
     assert(not module.view.root:IsShown(), "a destination without a distance showed a marker")
     world.distance = 245
-    module.driver.scripts.OnUpdate(module.driver, .25)
+    Advance(.25)
     assert(module.view.root:IsShown(), "the marker did not return with the distance")
     state = Enum.NavigationState.InRange
+end
+-- Paused (combat inside an instance, Navigation.lua): the map and the guides
+-- run nothing, and both return when the pause ends.
+do
+    local cancelled, removed = 0, {}
+    context.Cancel = function(_, fn)
+        cancelled = cancelled + 1
+        clock.tickers[fn] = nil
+    end
+    context.RemoveEvent = function(_, event) removed[event] = true events[event] = nil end
+    combat, world.map, tickerStarts = false, points[1].map, 0
+    config.minimapPins = true
+    navigation.RefreshMap(module)
+    assert(tickerStarts == 1 and events.MODIFIER_STATE_CHANGED, "saved places on this map did not start the minimap ticker")
+    module.paused, cancelled = true, 0
+    navigation.PauseMap(module)
+    assert(cancelled == 1 and removed.MODIFIER_STATE_CHANGED and events.MODIFIER_STATE_CHANGED == nil
+        and module.placement.mouse == false, "the paused map kept its ticker, its modifier event or its minimap overlay")
+    tickerStarts = 0
+    navigation.RefreshMap(module)
+    assert(tickerStarts == 0, "a refresh during the pause restarted the minimap ticker")
+    module.paused = false
+    navigation.ResumeMap(module)
+    assert(tickerStarts == 1 and events.MODIFIER_STATE_CHANGED, "the map did not return after the pause")
+    RXPG_ARROW = Frame(UIParent)
+    RXPG_ARROW.element = { zone = 84, x = 10, y = 20, step = { title = "Step" } }
+    MapzerothAddon = { Navigation = { IsActive = function() return true end, Start = function() end, Stop = function() end,
+        Model = function() return { step = { text = "Travel", path = { { mapID = 84, x = .1, y = .2 } } } } end } }
+    config.guideTomTom, config.guideRestedXP, config.guideMapzeroth = false, true, true
+    module.paused, tickerStarts = true, 0
+    navigation.RefreshGuides(module)
+    assert(tickerStarts == 0, "a paused navigation polled a guide")
+    cancelled = 0
+    navigation.PauseGuides(module)
+    assert(cancelled == 2, "pausing the guides did not stop both polls")
+    module.paused = false
+    navigation.RefreshGuides(module)
+    assert(tickerStarts == 2, "the guides were not polled again after the pause")
 end
 print("PASS navigation: native fallback, lifecycle, stable repaint budget, identity, secrets and atomic import")

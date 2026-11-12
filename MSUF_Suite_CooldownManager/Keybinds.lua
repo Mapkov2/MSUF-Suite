@@ -135,8 +135,9 @@ end
 
 -- An item entry (Blizzard's trinket records, the equipment-slot rows and
 -- custom items) takes the key of its item action, else its use spell's.
+-- An item family goes by the rank the bags hold (categoryItem).
 function Keybinds.EntryText(entry)
-    local item = entry.itemID
+    local item = entry.src == "i" and entry.categoryItem or entry.itemID
     if item and (entry.equipSlot or entry.src == "e" or entry.src == "i") then
         local text = itemMap[item]
         if text == nil then

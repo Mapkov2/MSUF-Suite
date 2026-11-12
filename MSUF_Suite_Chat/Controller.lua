@@ -188,7 +188,7 @@ function M:Disable()
     if self.moverFrame then self.moverFrame:Hide() end
     C.HideFloatingMovers(self)
     if self.whisperArrows then self.whisperArrows:Hide() end
-    if self.toolbar then C.ReleaseToolbar() end
+    if self.toolbar or self.toolbarDockOwned then C.ReleaseToolbar() end
     C.StopInputAnimations()
     C.DisableClock()
     C.MessagesDisable()

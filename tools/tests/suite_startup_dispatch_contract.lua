@@ -13,9 +13,13 @@ local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, reco
     local frames, timers, starts = {}, {}, 0
     local loggedIn, loadOwner = false, nil
     local earlyRecovery = recovery == "early-regen" or recovery == "early-reentry"
-    local startBeforeLockdown = recovery == "forever-combat-reload"
-    local forever = recovery ~= "mainline-combat-reload"
-    local enterBeforeLockdown = startBeforeLockdown or not forever or recovery == "forever-combat-login"
+    -- Combat begins after a reload's world entry, before the queued start.
+    local edgeStart = recovery == "forever-combat-edge" or recovery == "mainline-combat-edge"
+    local combatReload = recovery == "forever-combat-reload" or recovery == "mainline-combat-reload"
+    local startBeforeLockdown = combatReload or edgeStart
+    local startEvent = edgeStart and "PLAYER_REGEN_DISABLED" or "PLAYER_ENTERING_WORLD"
+    local forever = recovery ~= "mainline-combat-reload" and recovery ~= "mainline-combat-edge"
+    local enterBeforeLockdown = combatReload or recovery == "forever-combat-login"
     local locked = earlyRecovery
     local unitCombat = locked or recovery == "world-entry" or enterBeforeLockdown
     local foreignEnabled, timerOwner, dispatching = false, nil, false
@@ -105,7 +109,7 @@ local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, reco
         layoutRepairs = layoutRepairs + 1
     end
     suite.Suite = { Start = function()
-        Check(not dispatching or startBeforeLockdown and dispatching == "PLAYER_ENTERING_WORLD",
+        Check(not dispatching or startBeforeLockdown and dispatching == startEvent,
             "optional runtime loaded before the login/load dispatch finished")
         Check(not locked, "startup ran inside combat lockdown")
         Check(suite.startingModules == true, "initial module startup did not expose its bounded catch-up window")
@@ -169,6 +173,22 @@ local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, reco
         locked, unitCombat = false, false
         Emit("PLAYER_REGEN_ENABLED")
         while #timers > 0 do FireTimer() end
+    elseif edgeStart then
+        -- The client sends PLAYER_REGEN_DISABLED before lockdown begins. The
+        -- modules start in that dispatch instead of waiting out the fight.
+        Emit("PLAYER_ENTERING_WORLD", false, true)
+        Check(starts == 0, "a reload out of combat started inside world entry")
+        unitCombat = true
+        Emit("PLAYER_REGEN_DISABLED")
+        Check(starts == 1 and layoutWidth == width, "combat before the queued start missed the unlocked start")
+        Check(installerCalls == 0 and layoutRepairs == 0, "startup follow-up ran before combat ended")
+        locked = true
+        while #timers > 0 do FireTimer() end
+        Check(starts == 1 and installerCalls == 0 and layoutRepairs == 0,
+            "queued callbacks applied startup work during lockdown")
+        locked, unitCombat = false, false
+        Emit("PLAYER_REGEN_ENABLED")
+        while #timers > 0 do FireTimer() end
     elseif recovery == "world-entry" then
         if #timers > 0 then FireTimer() end
         Check(starts == 0 and #timers == 0, "combat at login did not defer startup")
@@ -217,7 +237,8 @@ local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, reco
         FireTimer(2)
         Check(installerCalls == 0, "world-entry timer opened setup before startup")
     end
-    if not enterBeforeLockdown and recovery ~= "world-entry" and not earlyRecovery and recovery ~= "world-timer" then
+    if not enterBeforeLockdown and not edgeStart and recovery ~= "world-entry" and not earlyRecovery
+        and recovery ~= "world-timer" then
         locked, unitCombat = combatAtFlush, combatAtFlush
         FireTimer()
     end
@@ -288,6 +309,10 @@ for _, skinLoaded in ipairs({ false, true }) do
     Scenario(false, false, true, false, "forever-combat-reload", skinLoaded)
     Scenario(false, false, false, false, "forever-combat-reload", skinLoaded)
     Scenario(false, false, true, false, "mainline-combat-reload", skinLoaded)
+    Scenario(false, false, false, false, "mainline-combat-reload", skinLoaded)
+    Scenario(false, false, true, false, "forever-combat-edge", skinLoaded)
+    Scenario(false, false, false, false, "forever-combat-edge", skinLoaded)
+    Scenario(false, false, true, false, "mainline-combat-edge", skinLoaded)
     Scenario(false, false, true, false, "forever-combat-login", skinLoaded)
 end
 print("Suite startup dispatch: " .. checks .. " lifecycle checks passed")

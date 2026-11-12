@@ -36,10 +36,12 @@ local SECTIONS = {
     { "position", "Position" },
 }
 
+-- Forever's standalone class reminders show only to their own class.
+local FOREVER_CLASS_GATES = { classMageArmor = "MAGE", classInnerFire = "PRIEST", classThorns = "DRUID" }
 P.Gates[ID] = function(rule)
-    if rule.key == "classMageArmor" or rule.key == "classInnerFire" then
+    local expected = FOREVER_CLASS_GATES[rule.key]
+    if expected then
         local _, class = UnitClass("player")
-        local expected = rule.key == "classMageArmor" and "MAGE" or "PRIEST"
         return P.Suite.Client.isForever == true and P.Suite.Public(class) and class == expected
     end
     if rule.key == "campfireBuff" then return P.Suite.Client.isForever == true end

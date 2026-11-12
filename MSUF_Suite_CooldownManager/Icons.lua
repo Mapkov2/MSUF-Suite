@@ -307,12 +307,14 @@ local function StylePlain(icon, view, width, height)
     r, g, b = K.SwipeRGB(view)
     cooldown:SetSwipeColor(r, g, b, (view.swipeAlpha or SWIPE_ALPHA) / 100)
     cooldown:SetDrawEdge(view.edge == true)
-    local entry = icon.entry
-    Texts(icon, view, entry and entry.ov or EMPTY)
+    -- Fonts before Texts: it clears a hidden count, and a new icon's count
+    -- may take no text before its first font.
     local text = cooldown:GetCountdownFontString()
     local extra = state.readableValues and 2 or 0
     if text then Font(text, TextSize(view.cdSize, FONT.countdown, h) + extra, state.cdR, state.cdG, state.cdB) end
     Font(icon.count, TextSize(view.stackSize, FONT.stacks, h) + extra, state.stackR, state.stackG, state.stackB)
+    local entry = icon.entry
+    Texts(icon, view, entry and entry.ov or EMPTY)
     if icon.readinessText then
         if state.readableValues then
             Font(icon.readinessText, 12, state.stackR, state.stackG, state.stackB)
