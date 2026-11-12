@@ -1281,13 +1281,78 @@ Section("legacy windows", function()
     _G.MerchantFrame = Frame("MerchantFrame")
     local merchantItem = Frame("MerchantItem1")
     _G.MerchantItem1 = merchantItem
+    -- MerchantFrame.xml page buttons: the stone backplate goes, however the
+    -- client spells its path; the label and the arrow textures stay.
+    local function Region(objectType, file)
+        local region = {}
+        function region:GetObjectType() return objectType end
+        if file then function region:GetTextureFilePath() return file end end
+        return region
+    end
+    local prevPlate = Region("Texture", "Interface/Buttons/UI-PageButton-Background.blp")
+    local nextPlate = Region("Texture", "INTERFACE\\BUTTONS\\UI-PAGEBUTTON-BACKGROUND")
+    local arrow = Region("Texture", "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+    local fileID = Region("Texture", 136040)
+    local label = Region("FontString")
+    for name, regions in pairs({ MerchantPrevPageButton = { label, prevPlate, arrow },
+        MerchantNextPageButton = { nextPlate, fileID } }) do
+        local button = Frame(name)
+        function button:GetRegions() return unpack(regions) end
+        _G[name] = button
+    end
+    local faded, fade = {}, NS.Cosmetics.Fade
+    NS.Cosmetics.Fade = function(region, ...) faded[region] = true; return fade(region, ...) end
     local before = #reported
     local ok, applied, state = pcall(NS.LegacyWindows.Apply, "legacy")
     Expect(ok and applied and state == "partial" and merchantItem.surfaceSpec ~= nil
         and #reported == before + 1,
         "a raising legacy window group stopped the other groups")
+    Expect(faded[prevPlate] and faded[nextPlate], "a merchant page button kept its stone backplate")
+    Expect(not faded[arrow] and not faded[fileID] and not faded[label],
+        "the merchant page buttons lost more than their backplates")
+    NS.Cosmetics.Fade = fade
     NS.LegacyWindows.Disable("legacy")
     _G.CalendarFrame, _G.CalendarDayButton1, _G.MerchantFrame, _G.MerchantItem1 = nil, nil, nil, nil
+    _G.MerchantPrevPageButton, _G.MerchantNextPageButton = nil, nil
+end)
+
+-- A generic arrow glyph reads muted while its button is disabled (a pager on
+-- its first page) and bright once Blizzard enables it again.
+Section("glyph buttons follow their enabled state", function()
+    local glyph = { shown = false }
+    function glyph:SetPoint() end
+    function glyph:SetText(text) self.text = text end
+    function glyph:SetTextColor(role) self.role = role end
+    function glyph:Show() self.shown = true end
+    function glyph:Hide() self.shown = false end
+    local button = { enabled = false, hooks = {} }
+    function button:GetObjectType() return "Button" end
+    function button:GetName() return "ContractNextPageButton" end
+    function button:IsEnabled() return self.enabled end
+    function button:CreateFontString() return glyph end
+    function button:HookScript(script, callback) self.hooks[script] = callback end
+    local window = Frame("ContractPagerWindow", { button })
+    local applyButton, getColor = NS.ControlSkin.ApplyButton, NS.Theme.GetColor
+    NS.ControlSkin.ApplyButton = function() return {} end
+    -- Colors read back as their theme role names.
+    NS.Theme.GetColor = function(role) return role end
+    local ok, message = pcall(function()
+        Expect(GenericWindows.ApplyFrame(window, "pager-glyph", MODE) and glyph.text == ">" and glyph.shown
+            and glyph.role == "muted", "a disabled pager showed its arrow as active")
+        local onEnable, onDisable = button.hooks.OnEnable, button.hooks.OnDisable
+        Expect(onEnable and onDisable, "the arrow glyph did not follow its button's state")
+        if not (onEnable and onDisable) then return end
+        button.enabled = true
+        onEnable(button)
+        Expect(glyph.role == "accentBright", "an enabled pager kept its muted arrow")
+        button.enabled = false
+        onDisable(button)
+        listener(nil, "theme")
+        Expect(glyph.role == "muted", "a theme repaint brightened a disabled pager's arrow")
+    end)
+    GenericWindows.Disable("pager-glyph")
+    NS.ControlSkin.ApplyButton, NS.Theme.GetColor = applyButton, getColor
+    assert(ok, message)
 end)
 
 Section("social ui tabs", function()
@@ -3328,6 +3393,36 @@ Section("communities column layout", function()
     NS.Cosmetics.RestoreOwner = restoreOwner
     NS.Checkmarks.TrackControlTree = nil
     CommunitiesFrameMixin = nil
+end)
+
+-- GuildRoster.xml: the member dialog's X (TOPRIGHT +3,-4) sits inside the
+-- popup's corner while the skin is on, and back at Blizzard's place after.
+Section("communities member dialog close", function()
+    NS.Checkmarks.TrackControlTree = function() end
+    CommunitiesFrameMixin = { Event = { DisplayModeChanged = "DisplayModeChanged", ClubSelected = "ClubSelected" } }
+    local communities, detail, close = Frame("CommunitiesFrame"), Frame(nil), Frame(nil)
+    close.points = { { "TOPRIGHT", detail, "TOPRIGHT", 3, -4 } }
+    function close:GetNumPoints() return #self.points end
+    function close:GetPoint(index) return unpack(self.points[index]) end
+    function close:ClearAllPoints() self.points = {} end
+    function close:SetPoint(...) self.points[#self.points + 1] = { ... } end
+    detail.CloseButton, communities.GuildMemberDetailFrame = close, detail
+    local function At(x, y)
+        local point = close.points[1]
+        return #close.points == 1 and point[1] == "TOPRIGHT" and point[2] == detail
+            and point[3] == "TOPRIGHT" and point[4] == x and point[5] == y
+    end
+    NS.CommunitiesSkin.Apply(communities, "member-close")
+    NS.CommunitiesSkin:OnDisplayChanged()
+    Expect(At(-4, -4), "the member dialog's X still hung past the popup's right edge")
+    NS.CommunitiesSkin.Disable(communities, "member-close")
+    Expect(At(3, -4), "turning the skin off left the member dialog's X moved")
+    NS.CommunitiesSkin.Apply(communities, "member-close")
+    close:ClearAllPoints()
+    close:SetPoint("TOPRIGHT", detail, "TOPRIGHT", 0, 0)
+    NS.CommunitiesSkin.Disable(communities, "member-close")
+    Expect(At(0, 0), "turning the skin off moved an X someone else placed since")
+    NS.Checkmarks.TrackControlTree, CommunitiesFrameMixin = nil, nil
 end)
 
 Section("generic traversal secrets", function()

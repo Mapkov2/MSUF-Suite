@@ -22,6 +22,7 @@ local LegacyWindows = {
 NS.LegacyWindows = LegacyWindows
 
 local Field = NS.Safety.Field
+local Read = NS.Safety.Read
 local Kit = NS.AdapterKit
 local Fade = Kit.Fade
 
@@ -138,8 +139,10 @@ local function GroupState(state, spec)
     return group
 end
 
+local function Global(name) return _G[name] end
+
 local function FadeGlobal(group, name)
-    local region = _G[name]
+    local region = Global(name)
     if not region then return false end
     Fade(group, region)
     return true
@@ -198,7 +201,23 @@ local function SkinNamedRows(group, prefix, count)
     return found
 end
 
+-- MerchantFrame.xml: each page button's BACKGROUND layer holds an anonymous
+-- UI-PageButton-Background, the stone square behind its arrow. The catalog
+-- pass draws the button and its arrow (GenericWindowsNodes glyph buttons).
+local MERCHANT_PAGE_BUTTONS = { "MerchantPrevPageButton", "MerchantNextPageButton" }
+local PAGE_BACKPLATE = "interface\\buttons\\ui-pagebutton-background"
+
+local function FadePageBackplate(region, group)
+    local path = Read(region, "GetTextureFilePath")
+    if type(path) == "string" and path:gsub("/", "\\"):lower():gsub("%.blp$", "") == PAGE_BACKPLATE then
+        Fade(group, region)
+    end
+end
+
 local function SkinMerchant(_, group)
+    for index = 1, #MERCHANT_PAGE_BUTTONS do
+        Kit.ForEachRegion(Global(MERCHANT_PAGE_BUTTONS[index]), FadePageBackplate, group)
+    end
     -- ItemButton, icon/quality, MoneyFrame, AltCurrencyFrame, repair/sell
     -- controls, layout and scripts remain entirely Blizzard-owned.
     return StaticResult(SkinNamedRows(group, "MerchantItem", 12), 12)

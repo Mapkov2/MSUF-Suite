@@ -77,7 +77,11 @@ Suite.DB.suite.modules.gatheringRoutes = retiredRoutes
 Suite.Suite.Normalize(Suite.DB)
 assert(Suite.DB.suite.modules.partyEffects == retiredCelebrations, "normalization changed legacy profile data")
 -- Native spellbook enums/namespaces exist even while the new opt-in helper is off.
-Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } }
+-- Enum.ItemQuality and Enum.BagIndex: Delete cheapest item reads them at load
+-- (CheapestItem.lua).
+Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 },
+    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2 }, BagIndex = { Backpack = 0 } }
+Constants = Constants or { InventoryConstants = { NumBagSlots = 4 } }
 C_SpellBook = {}
 local private = {}
 -- Blizzard builds its shared font objects at startup on every client.
@@ -107,7 +111,8 @@ for id in pairs(Suite.Suite.instances) do
 end
 -- The shared notice owner and supported QoL tools are available on Forever.
 -- Craft shopping and mail templates remain Retail-only.
-assert(count == 85 and Suite.Suite.instances.lootRolls and Suite.Suite.instances.navigation and Suite.Suite.instances.foreverWorldMap and Suite.Suite.instances.gatheringTooltips
+assert(count == 87 and Suite.Suite.instances.bnetToast and Suite.Suite.instances.cheapestItem
+    and Suite.Suite.instances.lootRolls and Suite.Suite.instances.navigation and Suite.Suite.instances.foreverWorldMap and Suite.Suite.instances.gatheringTooltips
     and Suite.Suite.instances.groupFinderLocations
     and not Suite.Suite.instances.castbarArt and Suite.Suite.instances.glimmer and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
     and Suite.Suite.instances.playerAuraSkins and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes

@@ -272,11 +272,26 @@ local themeDomains = {
     theme = true, color = true, appearance = true, geometry = true, profile = true,
 }
 
+-- An arrow on a disabled button (a pager on its first or last page) reads
+-- muted, as Blizzard greys its own arrow there.
+local function GlyphColor(button, role)
+    if role == "accentBright" and Safety.Read(button, "IsEnabled") == false then role = "muted" end
+    return NS.Theme.GetColor(role)
+end
+
 local function RecolorGlyphs()
     for _, ownerState in pairs(ownerStates) do
         for button, glyph in pairs(ownerState.glyphs) do
-            glyph:SetTextColor(NS.Theme.GetColor(ownerState.glyphRoles[button] or "accentBright"))
+            glyph:SetTextColor(GlyphColor(button, ownerState.glyphRoles[button] or "accentBright"))
         end
+    end
+end
+
+-- OnEnable/OnDisable of a glyph button: repaints only our own glyph of it.
+local function RecolorGlyph(button)
+    for _, ownerState in pairs(ownerStates) do
+        local glyph, role = ownerState.glyphs[button], ownerState.glyphRoles[button]
+        if glyph and role then glyph:SetTextColor(GlyphColor(button, role)) end
     end
 end
 
@@ -372,6 +387,8 @@ NS.GenericWindowsShared = {
     FadeChrome = FadeChrome,
     FadeAtlasRegions = FadeAtlasRegions,
     EnsureThemeListener = EnsureThemeListener,
+    GlyphColor = GlyphColor,
+    RecolorGlyph = RecolorGlyph,
     DeactivateOwner = DeactivateOwner,
 }
 

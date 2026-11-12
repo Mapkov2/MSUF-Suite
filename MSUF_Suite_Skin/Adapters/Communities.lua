@@ -403,6 +403,49 @@ local function SkinBottomButtons(state)
     SkinPanelButton(state, Field(controls, "GuildRecruitmentButton"))
 end
 
+-- GuildRoster.xml anchors the member dialog's CloseButton at TOPRIGHT +3,-4,
+-- inside Blizzard's DialogBorderDark, which reaches 6 past the dialog's right
+-- edge. Our popup surface is the dialog itself, so that X hung past its edge:
+-- it sits inside the corner instead, as far in from the right as from the top.
+local MEMBER_CLOSE_INSET = 4
+
+local function PublicPoint(button)
+    if Safety.Read(button, "GetNumPoints") ~= 1 then return nil end
+    local point = { Safety.Call(button, "GetPoint", 1) }
+    for index = 1, 5 do
+        if not Safety.Public(point[index]) then return nil end
+    end
+    return point
+end
+
+local function OwnsMemberClose(saved)
+    local point = PublicPoint(saved.button)
+    return point ~= nil and point[1] == "TOPRIGHT" and point[2] == saved.detail and point[3] == "TOPRIGHT"
+        and math.abs(point[4] + MEMBER_CLOSE_INSET) < 0.01 and math.abs(point[5] + MEMBER_CLOSE_INSET) < 0.01
+end
+
+-- A place someone else gave the X since our last pass becomes its native one.
+local function PlaceMemberClose(state, detail)
+    local close = Field(detail, "CloseButton")
+    if not close or not Safety.CanDecorate(close, true) then return end
+    local saved = state.memberClose
+    if saved and saved.button == close and OwnsMemberClose(saved) then return end
+    local native = PublicPoint(close)
+    if not native then return end
+    state.memberClose = { button = close, detail = detail, native = native }
+    close:ClearAllPoints()
+    close:SetPoint("TOPRIGHT", detail, "TOPRIGHT", -MEMBER_CLOSE_INSET, -MEMBER_CLOSE_INSET)
+end
+
+-- Puts the native anchor back, unless someone else placed the X since.
+local function RestoreMemberClose(state)
+    local saved = state.memberClose
+    state.memberClose = nil
+    if not saved or not OwnsMemberClose(saved) then return end
+    saved.button:ClearAllPoints()
+    saved.button:SetPoint(unpack(saved.native))
+end
+
 local function SkinGuildMemberDetail(state)
     -- GuildRoster.xml constructs this hidden dialog together with
     -- CommunitiesFrame. Its two actions inherit UIPanelButtonTemplate, so
@@ -422,6 +465,7 @@ local function SkinGuildMemberDetail(state)
     end
     SkinPanelButton(state, Field(detail, "RemoveButton"))
     SkinPanelButton(state, Field(detail, "GroupInviteButton"))
+    PlaceMemberClose(state, detail)
 end
 
 local function SkinTabs(state)
@@ -502,6 +546,7 @@ end
 
 local function RestoreState(state)
     state.active = false
+    RestoreMemberClose(state)
     UnregisterCallbacks(state)
     NS.ControlSkin.DisableOwner(state.owner)
     Kit.HideSurfaces(state)
