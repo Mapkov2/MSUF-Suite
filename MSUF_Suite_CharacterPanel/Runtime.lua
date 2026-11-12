@@ -75,6 +75,7 @@ local function OnClose()
     Module.inspectGuild, Module.custom, Module.customDefinition, Module.nativeTab = nil, nil, nil, nil
     Module.gearStale, Module.durabilityStale = nil, nil
     if restoreCharacter then Module.nativeJob:Request() end
+    Module.view.frame:Hide() -- A parent hide (CharacterFrame, UIParent) keeps the shown flag; a close drops it.
 end
 
 local function Close(replacing)
@@ -567,9 +568,7 @@ local function AcquireView(nativeRoot)
     local view = Module[key]
     if not view then
         view = NS.View.New(CALLBACKS, nil, nativeRoot, plan)
-        view.frame:HookScript("OnHide", function()
-            if Module.view == view then OnClose() end
-        end)
+        view.frame:HookScript("OnHide", function() if Module.view == view then OnClose() end end)
         if not nativeRoot then UISpecialFrames[#UISpecialFrames + 1] = FRAME_NAME end
         Module[key] = view
     end

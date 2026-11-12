@@ -654,8 +654,19 @@ function UnitPowerMax() return 1264 end
     Flush()
     assert(runtime.reader == reader and gearReads == coldReads + 1 and hostedView.frame:IsShown(),
         "combat exit did not fill metadata in the same view")
+    local nativeHidden = CharacterFrame.scripts.OnHide
+    CharacterFrame.scripts.OnHide = function(frame)
+        -- The client can report the parent's hide to the hosted child (shown flag kept) before Routing hears it.
+        hostedView.frame.scripts.OnHide(hostedView.frame)
+        nativeHidden(frame)
+    end
     Press("C")
+    CharacterFrame.scripts.OnHide = nativeHidden
     assert(not hostedView.frame:IsShown() and not runtime.kind and not presented, "native close retained Suite events")
+    local closedAppearance = appearancePaints
+    runtime:Refresh()
+    Flush()
+    assert(appearancePaints == closedAppearance, "a settings refresh painted the closed hosted view")
     armorReads = 0
     local beforeSounds, beforeOpenReads = openSounds, gearReads
     Press("C")
@@ -1051,6 +1062,19 @@ function UnitPowerMax() return 1264 end
     Event(runtime, "INSPECT_READY", "A")
     Flush()
     assert(next(tickers), "reopening Inspect did not resume mounted speed")
+    -- Hiding the UI (Alt+Z, cinematics) hides UIParent: the view hears OnHide but keeps its own shown flag.
+    runtime.view.frame.scripts.OnHide(runtime.view.frame)
+    assert(not runtime.kind and not runtime.view.frame:IsShown() and not callbacks.UNIT_AURA and not next(tickers),
+        "hiding the UI left a closed Inspect flagged shown or subscribed")
+    local hiddenAppearance = appearancePaints
+    runtime:Refresh()
+    Flush()
+    assert(appearancePaints == hiddenAppearance, "a settings refresh painted Inspect closed by the hidden UI")
+    RequestInspect("target")
+    InspectFrame:Show()
+    Event(runtime, "INSPECT_READY", "A")
+    Flush()
+    assert(runtime.kind == "inspect" and runtime.view.frame:IsShown() and next(tickers), "Inspect did not reopen after a UI hide")
     local nativeRequest = requests
     inspectAllowed = secret
     actions.contextAction({})
@@ -1506,5 +1530,5 @@ end
 
 Run(false)
 Run(true)
-assert(nativeHides == 6)
+assert(nativeHides == 8) -- three Inspect handoffs per client, plus the reopen after the UI hide
 print("Character Panel: both clients, audit navigation, native sets, Inspect comparison and native-hosted combat model and equipment passed")
