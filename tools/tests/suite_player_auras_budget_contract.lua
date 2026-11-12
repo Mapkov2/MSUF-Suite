@@ -484,8 +484,9 @@ end
 -- Every shown button carries the configured geometry, crop, anchors and fonts.
 local function Painted(frame, label)
     local offset = frame == DebuffFrame and config.debuffOffset or 0
+    local shiftX = frame == DebuffFrame and config.debuffX or 0
     assert(#frame.points == 1 and frame.points[1][2] == Minimap, label .. ": the frame left the minimap")
-    assert(frame.points[1][4] == config.x and frame.points[1][5] == config.y - offset,
+    assert(frame.points[1][4] == config.x + shiftX and frame.points[1][5] == config.y - offset,
         label .. ": the frame is not at the configured position")
     local buttons = frame.ConsolidatedBuffs and { frame.ConsolidatedBuffs } or {}
     for _, button in ipairs(frame.auraFrames) do buttons[#buttons + 1] = button end

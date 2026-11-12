@@ -1,7 +1,10 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local ID = "playerAuras"
 local M = {}
-local cleanup, trayHooked
+local cleanup, trayHooked, debuffControls
+-- Blizzard's two aura frames, read at each Adopt.
+local buffFrame, debuffFrame
 -- Side tables; nothing is written onto Blizzard frames.
 --   saved    region -> the readable originals of what this module writes on it
 --   borders  button -> the module's outline frame
@@ -16,10 +19,14 @@ local cleanup, trayHooked
 --                       frame's AuraContainer and the frame itself; nil: none)
 --   skinned  button -> { look, w, h } while that skin draws on it
 --   lifted   region -> the Duration's draw layer before a skin lifted it
+--   shifted  frame  -> { dx, dy }: an MSUF Edit Mode drag's preview offset of
+--                       the frame's AuraContainer, until the next Adopt
+--   handles  container -> the Suite's empty frame over it that its MSUF
+--                       Edit Mode mover holds
 local saved, borders, hooked, debuffs, laid, styled = {}, {}, {}, {}, {}, {}
-local looks, skinned, lifted = {}, {}, {}
+local looks, skinned, lifted, shifted, handles = {}, {}, {}, {}, {}
 local generation, fontPath = 0, nil
-local unpack, select, floor, ceil, max = unpack, select, math.floor, math.ceil, math.max
+local unpack, select, floor, ceil, max, min = unpack, select, math.floor, math.ceil, math.max, math.min
 -- The client's secret test (Platform.lua), called directly on the aura path.
 local IsSecret = NS.IsSecret
 local Finite = S.Finite
@@ -152,6 +159,7 @@ local function Restore()
         if layer then Put(region, "SetDrawLayer", layer) end
         lifted[region] = nil
     end
+    for frame in pairs(shifted) do shifted[frame] = nil end
 end
 
 -- Forget every placement and style: the next sync of each frame paints all.
@@ -231,7 +239,9 @@ end
 local function Style(button, icon, c)
     styled[button] = generation
     if icon.SetTexCoord then
-        local x, y = .43, .43
+        -- Half the shown artwork; the zoom cuts c.iconZoom percent per side.
+        local x = .5 - c.iconZoom / 100
+        local y = x
         if c.iconWidth > c.iconHeight then
             y = y * c.iconHeight / c.iconWidth
         else
@@ -306,18 +316,22 @@ end
 -- The container that holds the rows, and the frame beside the minimap. The
 -- frame is an Edit Mode system whose SetPoint and ClearAllPoints are Lua
 -- overrides that mark Edit Mode's anchors dirty (EditModeSystemTemplates.lua
--- 9-17, 147-156), so it moves only after Blizzard moved it.
+-- 9-17, 147-156), so it moves only after Blizzard moved it. The debuff row's
+-- offsets count from the buff row.
 local function Anchor(frame, list, count)
     local c, container = M.config, frame.AuraContainer
     if not saved[container] and not Remember(container, CONTAINER) then return end
     if not list.framed then
         if not Remember(frame, FRAME) then return end
+        local debuff = debuffs[frame]
         frame:ClearAllPoints()
-        frame:SetPoint("TOPRIGHT", Minimap, "TOPLEFT", c.x, c.y - (debuffs[frame] and c.debuffOffset or 0))
+        frame:SetPoint("TOPRIGHT", Minimap, "TOPLEFT", debuff and c.x + c.debuffX or c.x,
+            debuff and c.y - c.debuffOffset or c.y)
         list.framed = true
     end
+    local shift = shifted[frame]
     container:ClearAllPoints()
-    container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", shift and shift[1] or 0, shift and shift[2] or 0)
     container:SetSize(c.perRow * (c.iconWidth + c.spacing) - c.spacing,
         max(1, ceil(count / c.perRow)) * (c.iconHeight + c.rowSpacing) - c.rowSpacing)
     list.anchored = true
@@ -453,12 +467,15 @@ local function ResolveLooks()
 end
 
 local function Adopt()
-    local buffs, debuffFrame = _G.BuffFrame, _G.DebuffFrame
+    buffFrame, debuffFrame = _G.BuffFrame, _G.DebuffFrame
     fontPath = S.ResolveFont(M.config.font) or NS.MSUFMedia.font
+    -- Every refresh, also the one after a drag's commit or cancel, ends a
+    -- drag preview: the containers go back onto their frames.
+    for frame in pairs(shifted) do shifted[frame] = nil end
     Invalidate()
-    Hook(buffs, false)
+    Hook(buffFrame, false)
     Hook(debuffFrame, true)
-    Sync(buffs)
+    Sync(buffFrame)
     Sync(debuffFrame)
     if not trayHooked then
         hooksecurefunc(StatusTrayManager, "UpdateTrayAndBuffFrameLayout", Reanchor)
@@ -506,6 +523,144 @@ function M:Disable()
     else
         FinishCleanup()
     end
+end
+
+------------------------------------------------------------------ MSUF Edit Mode
+-- One mover per row, over the AuraContainer the module laid out. Positions
+-- stay this module's settings, so undo, discard and profiles work as for
+-- every Suite mover. A drag previews on the containers alone: plain child
+-- frames, so no Edit Mode system override (Anchor) runs per mouse step. The
+-- commit writes the settings; the refresh after it pins the frames once, as
+-- a slider change does. MSUF Edit Mode refuses drags in combat.
+local LAYOUT = { "iconWidth", "iconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" }
+
+local function Round(value)
+    return floor(value + .5)
+end
+
+-- MSUF Edit Mode flags the frame a mover drags (_msufDragActive), so each
+-- mover holds an empty Suite frame laid over its row's container, never the
+-- Blizzard container itself.
+local function Handle(frame)
+    local container = frame and frame.AuraContainer
+    if not (container and saved[container]) then return end
+    local handle = handles[container]
+    if not handle then
+        handle = S.CreateFrame("Frame", nil, UIParent)
+        handle:EnableMouse(false)
+        handle:SetAllPoints(container)
+        handles[container] = handle
+    end
+    return handle
+end
+
+local function Visible(frame)
+    local visible = frame and frame:IsVisible()
+    return not IsSecret(visible) and visible == true
+end
+
+local function Shift(frame, dx, dy)
+    local list, container = laid[frame], frame and frame.AuraContainer
+    if not (list and list.anchored and container and saved[container]) then return false end
+    local shift = shifted[frame]
+    if not shift then
+        shift = {}
+        shifted[frame] = shift
+    end
+    shift[1], shift[2] = dx, dy
+    container:ClearAllPoints()
+    container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", dx, dy)
+    return true
+end
+
+-- A delta that keeps value + delta inside the setting's range: the drop
+-- then stores what the preview showed.
+local function InRange(delta, rule, value)
+    return max(rule.min - value, min(rule.max - value, delta))
+end
+
+-- Blizzard sizes each frame for all its aura slots (BuffFrame.lua
+-- UpdateSize) and clamps it to the screen inside its Edit Mode selection
+-- (EditModeSystemTemplate clampedToScreen, UpdateClampOffsets). A drag stops
+-- where that clamp would move the frame away from the dropped row.
+local function OnScreen(frame, scale, dx, dy)
+    if not frame then return dx, dy end
+    local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+    local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+    if not (Finite(left) and Finite(right) and Finite(top) and Finite(bottom) and Finite(width)
+        and Finite(height)) then return dx, dy end
+    local insetLeft, insetRight, insetTop, insetBottom = frame:GetClampRectInsets()
+    if Finite(insetLeft) and Finite(insetRight) and Finite(insetTop) and Finite(insetBottom) then
+        left, right = left + insetLeft, right + insetRight
+        top, bottom = top + insetTop, bottom + insetBottom
+    end
+    return max(-left, min(width / scale - right, dx)), max(-bottom, min(height / scale - top, dy))
+end
+
+-- The host's deltas are UIParent units; the offsets are the frame's. The
+-- buff row carries the debuff row along, whose offsets count from it, and
+-- the debuff row offset grows downwards.
+local function Drag(debuffRow, request)
+    local frame, state = debuffRow and debuffFrame or buffFrame, request.state
+    local origin = state.origin or state.values
+    if not frame then return false end
+    local scale = frame:GetScale()
+    if not (Finite(scale) and scale > 0) then scale = 1 end
+    local dx, dy = (request.deltaX or 0) / scale, (request.deltaY or 0) / scale
+    if not (Finite(dx) and Finite(dy)) then return false end
+    local rules = S.catalog[ID].rules
+    if debuffRow then
+        dx, dy = InRange(dx, rules.debuffX, origin.debuffX), -InRange(-dy, rules.debuffOffset, origin.debuffOffset)
+    else
+        dx, dy = OnScreen(debuffFrame, scale, InRange(dx, rules.x, origin.x), InRange(dy, rules.y, origin.y))
+    end
+    dx, dy = OnScreen(frame, scale, dx, dy)
+    if request.phase == "commit" then
+        if debuffRow then
+            return S.CommitEditPosition(ID, { debuffX = Round(origin.debuffX + dx),
+                debuffOffset = Round(origin.debuffOffset - dy) })
+        end
+        return S.CommitEditPosition(ID, { x = Round(origin.x + dx), y = Round(origin.y + dy) })
+    end
+    -- The debuff row follows only a buff row that moved.
+    local moved = Shift(frame, dx, dy)
+    if moved and not debuffRow then Shift(debuffFrame, dx, dy) end
+    return moved
+end
+
+local function Control(key)
+    local rule = S.catalog[ID].rules[key]
+    return { id = key, label = S.Text(rule.label), kind = "number", min = rule.min, max = rule.max,
+        step = rule.step or 1,
+        get = function() return S.Config(ID)[key] end,
+        set = function(value) return S.Set(ID, key, value) end }
+end
+
+-- The debuff row's own offsets replace the generic X and Y fields (its
+-- vertical offset grows downwards); the icon layout is shared by both rows.
+local function DebuffControls()
+    local controls = { Control("debuffX"), Control("debuffOffset") }
+    for _, key in ipairs(LAYOUT) do controls[#controls + 1] = Control(key) end
+    return controls
+end
+
+function M:RegisterMovers()
+    S.RegisterOwnedMover(ID, "buffs", {
+        label = "Player buffs", order = 650, xKey = "x", yKey = "y",
+        getFrame = function() return Handle(buffFrame) end,
+        visible = function() return Visible(buffFrame) end,
+        move = function(_, _, request) return Drag(false, request) end,
+        historyKeys = LAYOUT, sizeSummary = false,
+        sizeKeys = { "iconWidth", "iconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" },
+    })
+    debuffControls = debuffControls or DebuffControls()
+    S.RegisterOwnedMover(ID, "debuffs", {
+        label = "Player debuffs", order = 651, xKey = "debuffX", yKey = "debuffOffset",
+        getFrame = function() return Handle(debuffFrame) end,
+        visible = function() return Visible(debuffFrame) end,
+        move = function(_, _, request) return Drag(true, request) end,
+        quickPosition = false, extraControls = debuffControls, historyKeys = LAYOUT, sizeSummary = false,
+    })
 end
 
 S.Install("playerAuras", M)

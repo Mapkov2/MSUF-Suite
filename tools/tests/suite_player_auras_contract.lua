@@ -83,7 +83,7 @@ S.Install=function(id,m)captured=m end
 hooksecurefunc=function(obj,key,callback)local old=obj[key];obj[key]=function(self,...)local out={old(self,...)};callback(self,...);return unpack(out)end end
 P.PlayerAuraSkins={Yield=function()end} -- the skin-only piece (PlayerAuraSkins.lua)
 assert(loadfile(root .. '/MSUF_Suite_QualityOfLife/PlayerAuras.lua'))('MSUF_Suite_QualityOfLife',P)
-captured.config={iconWidth=52,iconHeight=26,perRow=12,spacing=4,rowSpacing=8,x=-12,y=0,debuffOffset=80,borderColor='000000',borderSize=2,font='x',fontSize=16,showDuration=true}
+captured.config={iconWidth=52,iconHeight=26,iconZoom=7,perRow=12,spacing=4,rowSpacing=8,x=-12,y=0,debuffOffset=80,debuffX=0,borderColor='000000',borderSize=2,font='x',fontSize=16,showDuration=true}
 captured.context={Event=function()end}
 if arg[2] then
  local mode=arg[2]
@@ -159,12 +159,12 @@ debuff.ShouldShowAura=frame.ShouldShowAura;debuff.IsEditing=frame.IsEditing;debu
 debuff.UpdateAuraButtons=NativeAuraUpdate;debuff.UpdateGridLayout=frame.UpdateGridLayout
 _G.DebuffFrame=debuff
 captured.config.iconWidth,captured.config.iconHeight,captured.config.fontSize=28,28,10
-captured.config.x,captured.config.y,captured.config.debuffOffset=-10,0,88
+captured.config.x,captured.config.y,captured.config.debuffOffset,captured.config.debuffX=-10,0,88,-6
 captured:Enable()
 assert(frame.points[1][1]=='TOPRIGHT' and frame.points[1][2]==Minimap and frame.points[1][3]=='TOPLEFT')
 assert(frame.points[1][4]==-10 and frame.points[1][5]==0,'buffs did not move beside minimap')
-assert(debuff.points[1][2]==Minimap and debuff.points[1][4]==-10 and debuff.points[1][5]==-88,
- 'debuffs did not follow the minimap below the buff rows')
+assert(debuff.points[1][2]==Minimap and debuff.points[1][4]==-16 and debuff.points[1][5]==-88,
+ 'debuffs did not follow the minimap below the buff rows, shifted by their horizontal offset')
 assert(frame.auraFrames[1].width==28 and debuff.auraFrames[1].width==28)
 captured:Disable()
 print('player aura gain, edit mode font reset, rectangular border and disable restore: OK')

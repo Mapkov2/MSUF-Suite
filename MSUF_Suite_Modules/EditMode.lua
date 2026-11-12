@@ -233,6 +233,8 @@ local function Element(id, elementID, spec)
         end,
         openSettings = function() return S.Open(id) end,
     }
+    -- false drops the popup's W/H readout (hosts without the field show it).
+    if spec.sizeSummary == false then element.sizeSummary = false end
     if spec.nativePosition then
         element.captureState = spec.nativePosition.capture
         element.restoreState = spec.nativePosition.restore
@@ -261,7 +263,8 @@ end
 -- sizeKeys (explicit catalog dimensions for this element), moveValues, resetKeys,
 -- place(x, y) (drag preview for x/y that are not UIParent offsets),
 -- move(x, y, request) handles a compound move or returns nil for the normal path,
--- capture(origin) (live drag start x/y; undo keeps the saved values).
+-- capture(origin) (live drag start x/y; undo keeps the saved values),
+-- sizeSummary=false hides the popup's W/H readout where the controls say more.
 -- Native owners supply nativePosition = { capture, restore, move } instead
 -- of profile keys and can provide their own extraControls.
 -- Returns true when MSUF Edit Mode accepted the element.

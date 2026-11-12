@@ -62,12 +62,19 @@ B.Module("playerAuras", {
 B.Section("playerAuras", "player_auras", "Player aura layout", {
     Number("iconWidth", "Icon width", 52, 16, 100),
     Number("iconHeight", "Icon height", 26, 12, 100),
+    -- The icon artwork cut from each side (7: the crop this layout always had).
+    Number("iconZoom", "Icon zoom (percent)", 7, 0, 30),
     Number("perRow", "Icons per row", 12, 1, 32),
     Number("spacing", "Icon spacing", 4, 0, 30),
     Number("rowSpacing", "Row spacing", 8, 0, 40),
-    Number("x", "Horizontal position", -12, -2000, 2000),
-    Number("y", "Vertical position", 0, -2000, 2000),
-    Number("debuffOffset", "Debuff row offset", 80, 0, 600),
+    -- Offsets from the minimap's top left; wide enough for any screen, as
+    -- the other movers' positions (MSUF Edit Mode drags them).
+    Number("x", "Horizontal position", -12, -4000, 4000),
+    Number("y", "Vertical position", 0, -3000, 3000),
+    -- The debuff row's offsets from the buff row (offset: downwards); MSUF
+    -- Edit Mode's debuff mover drags both, also above the buffs.
+    Number("debuffOffset", "Debuff row offset", 80, -3000, 3000),
+    Number("debuffX", "Debuff horizontal offset", 0, -4000, 4000),
     Bool("showDuration", "Show aura duration", true),
     Number("borderSize", "Outline thickness", 2, 0, 4),
     B.Color("borderColor", "Outline color", "000000"),
