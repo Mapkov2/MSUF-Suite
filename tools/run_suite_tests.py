@@ -37,6 +37,7 @@ EXTRA = {
     "suite_bags_physical_sort_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_merchant_buyback_search_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_tab_selection_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_qol_cheapest_item_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_resize_transition_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_window_sizing_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_native_templates_contract.lua": [[flavor] for flavor in FLAVORS],

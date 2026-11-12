@@ -35,6 +35,8 @@ local GROUPS = {
     { id = "dailyComfort", title = "Daily UI comforts", switch = "enabled", sections = { "daily_comfort", "daily_cvars" } },
     { id = "delveSolePower", title = "Delve single power (Retail)", switch = "enabled",
         sections = { "delve_sole_power" } },
+    { id = "cheapestItem", title = "Delete cheapest item", switch = "enabled", sections = { "cheapestItem" },
+        aliases = { "delete junk", "full bags", "cheapest item", "dci", "müll löschen", "taschen voll", "billigstes item" } },
     { id = "playerAuras", title = "Player aura layout", switch = "enabled", sections = { "player_auras" },
         aliases = { "player buffs", "minimap auras" } },
     { id = "playerAuraSkins", title = "Player aura skins", switch = "enabled", sections = { "player_aura_skins" }, aliases = { "buff skins" } },
@@ -162,7 +164,7 @@ return {
         Subgroup("gear", "Gear", "characterUpgradeWindow socketGemSuggestions durabilityAlert"),
     } },
     { id = "lootMerchants", title = "Loot & Merchants", subgroups = {
-        Subgroup("loot", "Loot", "loot.quickLoot lootRolls lootToastFilter vaultSpec loot.manageHistory lootContainers"),
+        Subgroup("loot", "Loot", "loot.quickLoot lootRolls lootToastFilter vaultSpec loot.manageHistory lootContainers cheapestItem"),
         Subgroup("merchants", "Merchants", "merchantLevel qol.repair qol.autoJunk lootVendorRules merchantList inventoryProtection"),
     } },
     { id = "questsProfessions", title = "Quests & Professions", subgroups = {

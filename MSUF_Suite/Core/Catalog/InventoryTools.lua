@@ -27,6 +27,16 @@ Module("inventoryProtection", "Never sell items", "Protect selected items and eq
 })
 NS.SuiteCatalog.inventoryProtection.rules.sets.help =
     "When equipment sets exist, all equippable items are protected. Exact set membership is unavailable to this helper."
+-- The highest quality Delete cheapest item offers (its "quality" choice).
+NS.CheapestItemQuality = { POOR = 1, COMMON = 2, UNCOMMON = 3 }
+Module("cheapestItem", "Delete cheapest item",
+    "A button on the open bag deletes the stack that sells for the least, to make room when your bags are full.", false, {
+    B.Choice("quality", "Highest quality to delete", NS.CheapestItemQuality.POOR, { "Poor", "Common", "Uncommon" }),
+    B.Bool("confirm", "Ask before deleting Poor items", true),
+    B.String("keep", "Never delete item data", "", 2000),
+})
+NS.SuiteCatalog.cheapestItem.rules.keep.hidden = true
+NS.SuiteCatalog.cheapestItem.rules.quality.help = "Stacks above Poor quality always ask before they are deleted."
 Module("bankTransfer", "Bank transfer preview", "Review matching stacks and move one selected stack with each click while your bank is open.", false)
 Module("mailTemplates", "Mail templates",
     "Prepare mail for your own recorded characters with saved subjects and item quantities. Sending stays manual.", true, {

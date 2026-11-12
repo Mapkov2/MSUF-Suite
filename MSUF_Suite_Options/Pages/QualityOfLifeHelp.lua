@@ -121,6 +121,13 @@ local HELP = {
     saved_waypoints = "Save named map points and activate the next stop with a click. Saving never moves you or sets a pin; a point is pinned only when you choose it, and can be tracked in Blizzard's navigation.",
     notice_history = "Keeps a short local history of the notices the Suite showed, combines repeats that arrive within the chosen time and opens the settings a notice came from.",
     inventoryProtection = "Items you protect are skipped by every sale action of the Suite. With the equipment set switch on, all equippable items are protected while any equipment set exists, because exact set membership is not available to this helper. Manage the protected items in the inventory tool.",
+    cheapestItem = "A button on your open bag deletes the stack a vendor pays least for: beside Filters in the Suite Bags views, "
+        .. "otherwise on the title of Blizzard's bag window. Point at it to see that stack, marked in the bag; click to delete it, "
+        .. "or right-click to choose one of the ten cheapest or to keep an item type from ever being offered. Only Poor items "
+        .. "are offered until you raise the highest quality, never above Uncommon. Quest items, refundable items, items in "
+        .. "equipment sets, items protected by Never sell items and items without a vendor price are never offered. A stack "
+        .. "above Poor quality always asks first. The button works only while the bag is open and out of combat, and runs "
+        .. "nothing in the background.",
     mailTemplates = "Prepare mail to your own recorded characters with a saved subject and item quantities. Applying a template fills the mail form; sending stays manual.",
 }
 

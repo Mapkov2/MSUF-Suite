@@ -43,6 +43,7 @@ AutoUprank.lua
 CharacterUpgradeWindow.lua
 ProfessionAppearance.lua
 SharedItems.lua
+CheapestItem.lua
 InventoryToolsUI.lua
 InventoryData.lua
 InventoryArchive.lua

@@ -243,6 +243,42 @@ local function Place(button, frame, point, x, y, width, height)
     button:SetSize(width, height)
 end
 
+-- Quality of Life's Delete cheapest item (MSUF_Suite_QualityOfLife/
+-- CheapestItem.lua) sits beside Filters while that module runs: Bags makes
+-- the button in its own look, the module binds what it does.
+local function CheapestTool()
+    local tool, button = S.CheapestItem, InventoryView.cheapest
+    if not (tool and tool.active) then
+        if button then button:Hide() end
+        return nil
+    end
+    if not button then
+        button = tool:Bind(Button(InventoryView.chrome, "", 22))
+        InventoryView.cheapest = button
+    end
+    button:Show()
+    return button
+end
+
+-- The search row of both presentations: the box from left, then that tool
+-- when it shows, then Filters. The tool takes 28 of the box's width.
+local function SearchRow(frame, left, y)
+    local view, tool = InventoryView, CheapestTool()
+    view.smartSearch:ClearAllPoints()
+    view.smartSearch:SetPoint("TOPLEFT", frame, "TOPLEFT", left, y)
+    view.smartSearch:SetPoint("TOPRIGHT", frame, "TOPRIGHT", tool and -132 or -104, y)
+    if tool then Place(tool, frame, "TOPRIGHT", -100, y, 22, 22) end
+    view.filterButton:ClearAllPoints()
+    view.filterButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, y)
+end
+
+-- Quality of Life switched a bag tool on or off: the next pass lays the
+-- controls out again.
+function S.BagsToolsChanged()
+    if InventoryView then InventoryView.controlPanel, InventoryView.controlTop = nil, nil end
+    P.InventoryView.Request()
+end
+
 local function Tools(panel)
     local view, appearance = InventoryView, P.BagAppearance
     appearance.Tool(view.equipped, "Equipped bags", "Interface\\Icons\\INV_Misc_Bag_08", nil, panel)
@@ -281,11 +317,7 @@ local function PanelControls(g)
     view.sidebar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 94)
     view.sidebar:SetWidth(88)
     view.sidebarChild:SetWidth(88)
-    view.smartSearch:ClearAllPoints()
-    view.smartSearch:SetPoint("TOPLEFT", frame, "TOPLEFT", g.rail + 20, -58)
-    view.smartSearch:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -104, -58)
-    view.filterButton:ClearAllPoints()
-    view.filterButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, -58)
+    SearchRow(frame, g.rail + 20, -58)
     P.EquippedBags.frame:ClearAllPoints()
     P.EquippedBags.frame:SetPoint("TOPLEFT", frame, "TOPLEFT", g.rail + 12, -92)
     P.EquippedBags.frame:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, -92)
@@ -319,11 +351,7 @@ local function WindowControls(g)
     view.sidebar:SetPoint("BOTTOMLEFT", view.previous, "TOPLEFT", -4, 8)
     view.sidebar:SetWidth(142)
     view.sidebarChild:SetWidth(140)
-    view.smartSearch:ClearAllPoints()
-    view.smartSearch:SetPoint("TOPLEFT", 18, -91)
-    view.smartSearch:SetPoint("TOPRIGHT", -104, -91)
-    view.filterButton:ClearAllPoints()
-    view.filterButton:SetPoint("TOPRIGHT", -12, -91)
+    SearchRow(frame, 18, -91)
     P.EquippedBags.frame:ClearAllPoints()
     P.EquippedBags.frame:SetPoint("TOPLEFT", 12, -118)
     P.EquippedBags.frame:SetPoint("TOPRIGHT", -12, -118)

@@ -50,6 +50,14 @@ function Caption.Inset(combined)
     return combined and Caption.WIDE or Caption.NARROW
 end
 
+-- Quality of Life's buttons on a bag window's title (Delete cheapest item)
+-- stay left of the caption the Suite drew there; nil: no Suite caption.
+function S.BagsTitleInset(frame)
+    local state = states[frame]
+    if not state or not state.owned or not P.BagsModule.active then return nil end
+    return Caption.Inset(state.maximize ~= nil)
+end
+
 ------------------------------------------------------------------ secure delegate
 local function Hover(owner, hover)
     if owner.caption then
