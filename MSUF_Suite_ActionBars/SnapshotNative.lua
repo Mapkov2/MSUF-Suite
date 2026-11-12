@@ -84,16 +84,20 @@ function Native.Blocked()
     if not CursorEmpty() then return "cursor" end
 end
 
+local function CurrentSet()
+    local set = GetCurrentBindingSet()
+    if not S.Finite(set) then return nil end
+    if set == Enum.BindingSet.Account then return "account", set end
+    if set == Enum.BindingSet.Character then return "character", set end
+end
+
 function Native.BindingScope()
     -- Both native editors stage binding changes before saving. Saving ours
     -- during an edit would commit those pending changes as well.
     local quick = AB.Frame("QuickKeybindFrame")
     local settings = AB.Frame("SettingsPanel")
     if (quick and quick:IsShown()) or (settings and settings:IsShown()) then return nil end
-    local set = GetCurrentBindingSet()
-    if not S.Finite(set) then return nil end
-    if set == Enum.BindingSet.Account then return "account", set end
-    if set == Enum.BindingSet.Character then return "character", set end
+    return CurrentSet()
 end
 
 -- False is a known empty slot. Nil is an occupied unsupported slot or an
@@ -152,20 +156,32 @@ local function CaptureSpell(record, output, slot, spell)
     end
 end
 
+-- The keyboard keys of every action bar command in the binding set this
+-- character uses, and that set ("account" or "character"). Reading saved
+-- keys changes nothing, so neither combat, the cursor nor an open native
+-- editor (its staged changes are not saved yet) blocks it.
+function Native.CaptureKeys()
+    local scope = CurrentSet()
+    if not scope then return nil, "unavailable" end
+    local keys = {}
+    for command in pairs(commands) do
+        local context = BindingContext(command)
+        if context then CaptureKeys(keys, command, context, GetBindingKey(command, nil, context)) end
+    end
+    return keys, scope
+end
+
 function Native.Capture()
     local blocked = Native.Blocked()
     if blocked then return nil, blocked end
-    local scope = Native.BindingScope()
-    if not scope then return nil, "unavailable" end
-    local record = { slots = {}, keys = {}, scope = scope, unsupportedSlots = 0 }
+    if not Native.BindingScope() then return nil, "unavailable" end
+    local keys, scope = Native.CaptureKeys()
+    if not keys then return nil, scope end
+    local record = { slots = {}, keys = keys, scope = scope, unsupportedSlots = 0 }
     for slot in pairs(slots) do CaptureSpell(record, record.slots, slot, ReadSlot(slot)) end
     local independent = {}
     for index = 1, AB.BUTTONS do CaptureSpell(record, independent, index, independentSlots.read(index)) end
     if next(independent) then record.independentSlots = independent end
-    for command in pairs(commands) do
-        local context = BindingContext(command)
-        if context then CaptureKeys(record.keys, command, context, GetBindingKey(command, nil, context)) end
-    end
     return record
 end
 
@@ -192,19 +208,35 @@ local function PlanSlots(plan, record, source)
     end
 end
 
-local function PlanKeys(plan, incoming, sameScope)
-    for key, command in pairs(incoming) do
-        local context = sameScope and BindingContext(command)
-        if context and Native.ValidKey(key) then
-            local before = ReadKey(key, context)
-            if before == false then
-                plan.backup.keys[key] = { before = false, after = command }
-            elseif before ~= command then
-                plan.skippedKeys = plan.skippedKeys + 1
-            end
-        else
-            plan.skippedKeys = plan.skippedKeys + 1
+-- Imported keys replace this setup's action bar keys (owner decision
+-- 2026-11-12): an imported key gets its command whatever it pressed before,
+-- and the other keyboard keys of the bar commands are cleared, so the bars
+-- end up with exactly the imported keys. The undo holds every replaced
+-- binding. An empty map changes nothing; an unreadable key is never written.
+local function ClearStale(changes, incoming, command, context, ...)
+    for index = 1, select("#", ...) do
+        local key = select(index, ...)
+        if Native.ValidKey(key) and incoming[key] == nil and not changes[key] and ReadKey(key, context) == command then
+            changes[key] = { before = command, after = false }
         end
+    end
+end
+
+local function PlanKeys(plan, incoming, sameScope)
+    local changes = plan.backup.keys
+    for key, command in pairs(incoming) do
+        local context = sameScope and Native.ValidKey(key) and BindingContext(command)
+        local before = context and ReadKey(key, context)
+        if not context or before == nil then
+            plan.skippedKeys = plan.skippedKeys + 1
+        elseif before ~= command then
+            changes[key] = { before = before, after = command }
+        end
+    end
+    if not sameScope or not next(incoming) then return end
+    for command in pairs(commands) do
+        local context = BindingContext(command)
+        if context then ClearStale(changes, incoming, command, context, GetBindingKey(command, nil, context)) end
     end
 end
 
@@ -301,15 +333,22 @@ local function ApplySlots(report, backup, restore, source)
     end
 end
 
+-- Every key change has one action bar command: the imported one, or the one
+-- a cleared key pressed. Its binding context is the change's context; the
+-- other side is a free key or the binding the key had before.
+local function ChangeContext(change)
+    return BindingContext(Native.AllowedCommand(change.after) and change.after or change.before)
+end
+
 local function ApplyKeys(report, changes, scope, restore)
     for key, change in pairs(changes) do
         local blocked = Native.Blocked()
         local before, after = Values(change, restore)
         local sameScope = scope ~= nil and Native.BindingScope() == scope
-        local context = sameScope and BindingContext(restore and before or after)
+        local context = sameScope and ChangeContext(change)
         local applied = false
         if not blocked and context and Native.ValidKey(key) and before ~= nil and ReadKey(key, context) == before
-            and (after == false or BindingContext(after) == context) then
+            and (after == false or S.PublicText(after)) then
             S.Dispatch(SetBinding, key, after or nil, context)
             applied = ReadKey(key, context) == after
         end

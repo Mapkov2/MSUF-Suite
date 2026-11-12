@@ -76,6 +76,7 @@ function native.AllowedCommand(command)
     return command == "ACTIONBUTTON1" or command == "ACTIONBUTTON2" or command == "ACTIONBUTTON3"
 end
 function native.ValidKey(key) return key == "1" or key == "2" or key == "CTRL-1" end
+function native.CaptureKeys() return Copy(active.keys), active.scope end
 function native.Capture()
     assert(not blocked, "capture ran while blocked")
     Called("capture")
@@ -449,6 +450,33 @@ for _, record in ipairs(conflictingAccountPacket.records) do record.keys["1"] = 
 assert(not api.Queue(conflictingAccountPacket, { [accountClass.WARRIOR] = "Anotherwarrior" }, false, true),
     "a second account-wide key package overlapped an already queued shared map")
 assert(#api.Status().pending == 1, "rejected shared binding job changed the queue")
+
+-- Profile strings carry the action bar key map. An import writes it into the
+-- binding set the character uses now, lists it as a result and can be undone.
+local profileSource = Character("source-profile", "Profiled", "PRIEST", 258, "profile-source", 701)
+profileSource.keys = { ["1"] = "ACTIONBUTTON2", ["CTRL-1"] = "ACTIONBUTTON3" }
+Login(profileSource, {})
+local carried = assert(api.ProfileKeys())
+assert(carried["1"] == "ACTIONBUTTON2" and carried["CTRL-1"] == "ACTIONBUTTON3", "the profile key map lost a key")
+local profileTarget = Character("dest-profile", "Keyed", "PRIEST", 258, "profile-target", 702, "account")
+Login(profileTarget, {})
+assert(not api.ImportProfileKeys({ ["1"] = "MOVEFORWARD" }), "an unrelated command entered the bindings")
+assert(not api.ImportProfileKeys({}), "an empty key map was applied")
+blocked = "combat"
+assert(not api.ImportProfileKeys(carried) and profileTarget.keys["1"] == "ACTIONBUTTON1", "keys were written in combat")
+blocked = nil
+bar.M.active = false
+assert(not api.ImportProfileKeys(carried) and profileTarget.keys["1"] == "ACTIONBUTTON1",
+    "keys were written while the Suite action bars were off")
+bar.M.active = true
+assert(api.ImportProfileKeys(carried), "a character-scoped key map did not reach an account-scoped target")
+assert(profileTarget.keys["1"] == "ACTIONBUTTON2" and profileTarget.keys["CTRL-1"] == "ACTIONBUTTON3",
+    "the imported profile keys were not applied")
+local status = api.Status()
+assert(status.results[1].keys == 2 and status.results[1].name == "Keyed" and status.canRestore,
+    "a profile key import was not listed or cannot be undone")
+assert(api.Restore() and profileTarget.keys["1"] == "ACTIONBUTTON1" and profileTarget.keys["CTRL-1"] == nil,
+    "undo did not restore the keys from before the profile import")
 
 if flavor == "Forever" then
     local source = Character("source-dual", "Dual", "DRUID", 105, "group:1", 511)

@@ -211,7 +211,11 @@ function P.RestoreWorkbenchSkin(snapshot, historyReason, source)
     IO.lastNameplateReport = nil
     local ran, ok, reason = Suite.Dispatch(Suite.Finish, ApplyWorkbenchSnapshot, snapshot, historyReason, source)
     if ran and ok then
-        if historyReason == nil then IO.ReportNameplateImport() end
+        if historyReason == nil then
+            IO.ReportNameplateImport()
+            -- Only a prepared import carries a key map (PrepareWorkbenchImport).
+            Suite.Dispatch(IO.ApplyActionBarKeys, snapshot.actionBarKeys, snapshot.actionBarKeysWanted)
+        end
         return true
     end
     local report = IO.lastNameplateReport
@@ -227,6 +231,8 @@ local function PrepareWorkbenchImport(text)
     if not snapshot.suite then return false, "Missing suite profile" end
     snapshot.nameplateSharedExact, snapshot.nameplateSharedStored, snapshot.nameplateSharedPending = nil, nil, nil
     snapshot.hasNameplateSharedSnapshot = nil
+    -- The importer's own choice decides whether a carried key map applies.
+    snapshot.actionBarKeysWanted = IO.ActionBarKeysWanted()
     if text:match("^%s*MSUFS") then
         local bundle, reason = P.WorkbenchPrepareBundle(text)
         if not bundle then return false, reason end
@@ -234,6 +240,7 @@ local function PrepareWorkbenchImport(text)
         snapshot.suite, snapshot.nameplateCVars = bundle.profile.suite, bundle.profile.nameplateCVars
         snapshot.nameplateShared = bundle.profile.nameplateShared
         snapshot.present, snapshot.profile = bundle.provider.present, bundle.provider.profile
+        snapshot.actionBarKeys = bundle.actionBarKeys
         return { coreText = bundle.coreText, provider = snapshot }
     end
     if text:match("^%s*MSKIN1:") then
@@ -245,8 +252,9 @@ local function PrepareWorkbenchImport(text)
         snapshot.nameplateShared = nil
         return { provider = snapshot }
     end
-    local id, settings, reason, chat, nameplateCVars, nameplateShared = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, chat, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
+    snapshot.actionBarKeys = keys
     -- Only the string's settings change, as in P.ImportModule (SetMany): it
     -- leaves out character-bound ones, and an old helper string names seven
     -- Minimap settings.

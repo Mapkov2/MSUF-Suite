@@ -224,6 +224,9 @@ B.Section(id, "behavior", "Behavior", {
     Number("pageShift", "Page while holding Shift", 2, 1, 6),
     Number("pageCtrl", "Page while holding Ctrl", 3, 1, 6),
     Number("pageAlt", "Page while holding Alt", 4, 1, 6),
+    B.Tooltip(Bool("profileKeybinds", "Include key bindings in profile exports and imports", true),
+        "While the Suite action bars are on, exports carry the keys of bars 1 to 10, and an import replaces your action "
+            .. "bar keys in the key binding set this character uses. Restore previous setup under Account transfer undoes it."),
     Bool("imported", "Blizzard layout imported", false),
 })
 
@@ -317,6 +320,10 @@ end
 
 local rules = NS.SuiteCatalog.actionbars.rules
 rules.imported.hidden = true
+-- The key bindings travel with profile strings only while this is on
+-- (ProfileIO.lua). The choice itself stays with this profile: no export or
+-- import carries it.
+rules.profileKeybinds.personal = true
 rules.iconSkin.hidden = true
 rules.disableSkyridingPaging.hidden = NS.Client.isForever or nil
 -- The forms opt-out already covers Moonkin Form.

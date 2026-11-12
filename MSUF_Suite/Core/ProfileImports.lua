@@ -11,10 +11,18 @@ local function BundleModules(text)
     if not version then version, frames, modules = text:match("^MSUFS([12]):([^\n]+)\n([^\n]+)$") end
     if not frames or not frames:match("^MSUF[234]:") then return nil, "Invalid suite profile" end
     local decode = version == "1" and IO.PrepareLegacyProfile or IO.PrepareProfile
-    local profile, why, marked = decode(modules)
+    local profile, why, marked, keys = decode(modules)
     if not profile then return nil, why end
     return { version = version, profile = profile, coreText = frames, characterBound = marked,
-        skinText = version == "3" and skinText or modules }
+        skinText = version == "3" and skinText or modules, actionBarKeys = keys }
+end
+
+-- A string's action bar key map applies once its import succeeded, and only
+-- while the importer chose so (wanted, read before the import). Its own
+-- failure is reported and never fails the import.
+local function KeysAfter(keys, wanted, ok, ...)
+    if ok then Suite.Dispatch(IO.ApplyActionBarKeys, keys, wanted) end
+    return ok, ...
 end
 
 local function ProtectNameplates(profile)
@@ -58,7 +66,9 @@ function Profiles.Import(name, text)
     if not clean then return false, reason end
     local bundle, why = PrepareBundle(text)
     if not bundle then return false, why end
-    return Operations.Create(clean, bundle.coreText, bundle.profile, bundle.provider.profile)
+    local wanted = IO.ActionBarKeysWanted()
+    return KeysAfter(bundle.actionBarKeys, wanted,
+        Operations.Create(clean, bundle.coreText, bundle.profile, bundle.provider.profile))
 end
 
 local function IsSkin(text)
@@ -186,9 +196,10 @@ function Profiles.ImportModule(text)
         if not profile then return false, reason end
         return ApplySkin(skin, profile)
     end
-    local id, settings, reason, chat, nameplateCVars, nameplateShared = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, chat, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
-    return ApplyModule(id, settings, chat, nameplateCVars, nameplateShared)
+    local wanted = IO.ActionBarKeysWanted()
+    return KeysAfter(keys, wanted, ApplyModule(id, settings, chat, nameplateCVars, nameplateShared))
 end
 
 local function CopySkin(skin)
@@ -216,12 +227,13 @@ end
 function Profiles.ImportModuleIntoNew(name, text)
     local clean, reason = Operations.NewName(name)
     if not clean then return false, reason end
-    local id, settings, why, chat, nameplateCVars, nameplateShared, skinProfile
+    local id, settings, why, chat, nameplateCVars, nameplateShared, skinProfile, keys
     if IsSkin(text) then
         skinProfile, why = ReadSkin(SkinEngine(), text)
         if not skinProfile then return false, why end
     else
-        id, settings, why, chat, nameplateCVars, nameplateShared = IO.PrepareModuleProfile(text, true)
+        local _
+        id, settings, why, chat, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
         if not id then return false, why end
     end
     local frames
@@ -236,7 +248,8 @@ function Profiles.ImportModuleIntoNew(name, text)
         copied, skinProfile = CopySkin(SkinEngine())
         if not copied then return false, skinProfile end
     end
-    return Operations.Create(clean, frames, profile, skinProfile)
+    local wanted = IO.ActionBarKeysWanted()
+    return KeysAfter(keys, wanted, Operations.Create(clean, frames, profile, skinProfile))
 end
 
 -- Jobs prepare private payloads. The final frame, Suite and Skin publication
@@ -284,6 +297,7 @@ local function Decode(job)
         local bundle, reason = BundleModules(job.text)
         if not bundle then return false, reason end
         job.bundle, job.profile, job.frames = bundle, bundle.profile, bundle.coreText
+        job.actionBarKeys = bundle.actionBarKeys
     elseif job.kind == "skin" then
         -- Loading an absent Skin engine can initialize its store. Keep that
         -- legacy fallback in the final phase, after the staleness checks.
@@ -292,10 +306,10 @@ local function Decode(job)
         if not profile then return false, reason end
         job.skinProfile = profile
     else
-        local id, settings, reason, chat, nameplateCVars, nameplateShared = IO.PrepareModuleProfile(job.text, true)
+        local id, settings, reason, chat, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(job.text, true)
         if not id then return false, reason end
         job.id, job.settings, job.chat, job.nameplateCVars = id, settings, chat, nameplateCVars
-        job.nameplateShared = nameplateShared
+        job.nameplateShared, job.actionBarKeys = nameplateShared, keys
     end
     return true
 end
@@ -337,7 +351,8 @@ local function Apply(job)
     end
     if not job.name then
         if job.kind == "skin" then return ApplySkin(skin, skinProfile) end
-        return ApplyModule(job.id, job.settings, job.chat, job.nameplateCVars, job.nameplateShared)
+        return KeysAfter(job.actionBarKeys, job.keysWanted,
+            ApplyModule(job.id, job.settings, job.chat, job.nameplateCVars, job.nameplateShared))
     end
     local profile, frames = job.profile, job.frames
     if job.bundle then
@@ -361,7 +376,8 @@ local function Apply(job)
             if not ok then return false, skinProfile end
         end
     end
-    return Operations.Create(job.name, frames, profile, skinProfile, nil, nil, job.hostJob)
+    return KeysAfter(job.actionBarKeys, job.keysWanted,
+        Operations.Create(job.name, frames, profile, skinProfile, nil, nil, job.hostJob))
 end
 
 local PHASES = {
@@ -401,7 +417,7 @@ function Job:Step()
     self.settings, self.chat, self.skinProfile = nil, nil, nil
     self.root, self.activeSuite, self.activeFrames, self.activeSkin, self.skin = nil, nil, nil, nil, nil
     self.beginFrames, self.importFrames, self.skinTargetProfile, self.nameplateCVars = nil, nil, nil, nil
-    self.nameplateShared = nil
+    self.nameplateShared, self.actionBarKeys = nil, nil
     return true, self.ok, self.reason, self.stage
 end
 
@@ -429,5 +445,6 @@ function Profiles.BeginImport(text, name)
         beginFrames = kind == "bundle" and Host.Profiles.BeginImport or nil, importFrames = name and FrameImporter(),
         skin = skin, skinName = skinName, activeSkin = activeSkin, skinEpoch = skinEpoch,
         skinTarget = skinTarget, skinTargetProfile = skinTarget and skin.Database.GetProfile(skinTarget),
+        keysWanted = IO.ActionBarKeysWanted(),
     }, Job)
 end

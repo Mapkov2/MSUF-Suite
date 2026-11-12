@@ -163,7 +163,7 @@ local function BuildTop(ui, y)
     local body, width, half = ui.body, ui.width, ui.half
     local help = P.Text(body,
         Tr("Save spells and keys from the characters you play and transfer those setups to another account.") .. " "
-            .. Tr("The import skips unsupported actions and conflicting keys."),
+            .. Tr("The import replaces the target's action bar keys and skips unsupported actions."),
         16, y, width)
     y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
     ui.current = P.Text(body, "", 16, y, width)

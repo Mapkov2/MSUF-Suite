@@ -514,6 +514,61 @@ function IO.PrepareTable(profile, shared, keep)
     return result
 end
 
+-- The action bar key map a profile string carries while the player's choice
+-- (actionbars.profileKeybinds, Core/Catalog/ActionBars.lua) is on: key ->
+-- action bar command, under the client that exported it. Retail and Forever
+-- keep their own keys: an import applies only its own client's map. The
+-- action bar addon reads and writes the bindings (MSUF_Suite_ActionBars/
+-- Snapshots.lua); here only the shape is checked, and the addon checks keys
+-- and commands again before it writes one.
+local ACTIONBARS, MAX_KEYS, MAX_KEY_TEXT = "actionbars", 256, 64
+local function Flavor()
+    return Suite.Client.isForever and "forever" or "retail"
+end
+local function CleanActionBarKeys(keys)
+    if type(keys) ~= "table" then return nil end
+    local clean, count = {}, 0
+    for key, command in pairs(keys) do
+        count = count + 1
+        if count > MAX_KEYS or type(key) ~= "string" or type(command) ~= "string"
+            or #key > MAX_KEY_TEXT or #command > MAX_KEY_TEXT then
+            return nil
+        end
+        clean[key] = command
+    end
+    return next(clean) and clean or nil
+end
+
+local function CarriedKeys(map)
+    return type(map) == "table" and CleanActionBarKeys(map[Flavor()]) or nil
+end
+
+-- The choice of the profile that is active now. An import reads it before
+-- it replaces the profile: the importer decides, not the string.
+function IO.ActionBarKeysWanted()
+    local config = Suite.Suite.Config(ACTIONBARS)
+    return type(config) == "table" and config.profileKeybinds == true
+end
+
+-- nil while the choice is off or the action bar addon is not loaded (the
+-- Suite action bars are off): the string then carries no keys.
+function IO.CaptureActionBarKeys()
+    local transfers = IO.ActionBarKeysWanted() and Suite.ActionBarSnapshots
+    local keys = transfers and CleanActionBarKeys(transfers.ProfileKeys())
+    return keys and { [Flavor()] = keys } or nil
+end
+
+-- Runs after an import finished, so a refused key write never rolls the
+-- profile back; Restore previous setup (Account transfer) undoes the keys.
+function IO.ApplyActionBarKeys(keys, wanted)
+    keys = wanted and CleanActionBarKeys(keys)
+    if not keys then return end
+    local transfers = Suite.ActionBarSnapshots
+    if transfers and transfers.ImportProfileKeys(keys) then return end
+    Suite.Dispatch(Suite.Print, Suite.Text(
+        "Key bindings were not imported. Turn on the Suite action bars, close Blizzard's key binding windows and import again."))
+end
+
 -- options.characterBound keeps every module's character-bound settings
 -- (a caller's explicit export choice); otherwise each module's own choice.
 function IO.ExportProfile(name, options)
@@ -529,7 +584,7 @@ function IO.ExportProfile(name, options)
     if name == Suite.Database.GetActiveProfileName() then clean.nameplateCVars = IO.NameplateSnapshot(clean.nameplateCVars) end
     clean.nameplateShared = IO.CaptureNameplateShared(name)
     local encoded = EncodeCompact({ addon = "MSUF_Suite", format = 1, profile = clean,
-        characterBound = keep })
+        characterBound = keep, actionBarKeys = IO.CaptureActionBarKeys() })
     if type(encoded) ~= "string" or #IO.prefix + #encoded > IO.maxExportBytes then return nil, "Suite profile is too large" end
     return IO.prefix .. encoded
 end
@@ -559,6 +614,7 @@ function IO.ExportModule(id, options)
         addon = "MSUF_Suite", format = 2, module = id, revision = clean.suite.revision,
         settings = settings, characterBound = keep and keep[id] or nil,
         nameplateCVars = native, nameplateShared = shared, nameplateSections = selected,
+        actionBarKeys = id == ACTIONBARS and IO.CaptureActionBarKeys() or nil,
     })
     if type(encoded) ~= "string" or #IO.modulePrefix + #encoded > IO.maxExportBytes then
         return nil, "Suite module profile is too large"
@@ -644,7 +700,8 @@ function IO.PrepareModuleProfile(text, preservePersonal)
         shared = Suite.NameplateProfiles.FilterShared(shared, selected)
         if selected and not selected.blizzard then native = nil end
     end
-    return id, settings, nil, nil, native, shared, selected
+    local keys = id == ACTIONBARS and CarriedKeys(envelope.actionBarKeys) or nil
+    return id, settings, nil, nil, native, shared, selected, keys
 end
 
 function IO.PrepareProfile(text, shared)
@@ -660,7 +717,7 @@ function IO.PrepareProfile(text, shared)
     -- The marks go back too, for an import into an existing profile (KeepPersonal).
     local keep = MarkedModules(envelope.characterBound)
     local profile, why = IO.PrepareTable(envelope.profile, shared ~= false, keep)
-    return profile, why, keep
+    return profile, why, keep, CarriedKeys(envelope.actionBarKeys)
 end
 
 -- Older development bundles embedded module settings in a MapkoSkin export.

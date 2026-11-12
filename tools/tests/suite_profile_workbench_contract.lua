@@ -301,5 +301,76 @@ Case("Blizzard nameplate settings transfer and restore", function()
     C_CVar = defaultCVars
 end)
 
+-- Profile strings carry the action bar key map while the player chose so
+-- (actionbars.profileKeybinds). Every import path applies it after the
+-- import succeeded and only by the importer's own choice, which no string
+-- carries; history steps never replay it.
+Case("Action bar key bindings in profile strings", function()
+    local imported, printed, refuse = {}, {}, nil
+    local carried = { Q = "ACTIONBUTTON1", ["SHIFT-2"] = "MULTIACTIONBAR1BUTTON2" }
+    local transfers = {
+        ProfileKeys = function() return Suite.CopyValue(carried) end,
+        ImportProfileKeys = function(keys)
+            if refuse then return false, refuse end
+            imported[#imported + 1] = keys
+            return true
+        end,
+    }
+    local print = Suite.Print
+    Suite.Print = function(text) printed[#printed + 1] = text end
+    Suite.ActionBarSnapshots = transfers
+    local bars = Suite.DB.suite.modules.actionbars
+    local function Envelope(text, prefix)
+        return encodings[tonumber(text:match(prefix .. "MSUF3:(%d+)"))]
+    end
+    bars.profileKeybinds = true
+    local module, bundle = assert(P.ExportModule("actionbars")), assert(P.Export())
+    assert(Envelope(module, "^MSUFM2:").actionBarKeys.retail["SHIFT-2"] == "MULTIACTIONBAR1BUTTON2",
+        "the action bar string lost its key map")
+    assert(Envelope(bundle, "\nMSUFM1:").actionBarKeys.retail.Q == "ACTIONBUTTON1", "the full profile lost its key map")
+    assert(not Envelope(module, "^MSUFM2:").actionBarKeys.forever, "the string claimed keys for the other client")
+    assert(not Envelope(assert(P.ExportModule("nameplates")), "^MSUFM2:").actionBarKeys,
+        "another module's string carried key bindings")
+    bars.profileKeybinds = false
+    local plain = Envelope(assert(P.ExportModule("actionbars")), "^MSUFM2:")
+    assert(not plain.actionBarKeys and not Envelope(assert(P.Export()), "\nMSUFM1:").actionBarKeys,
+        "keys were exported against the player's choice")
+    assert(plain.settings.profileKeybinds == true, "the export carried the player's own choice")
+
+    bars.profileKeybinds = true
+    local prepared = assert(provider.PrepareImport(module))
+    assert(#imported == 0, "preparing an import wrote key bindings")
+    assert(provider.Restore(prepared.provider))
+    assert(#imported == 1 and imported[1]["SHIFT-2"] == "MULTIACTIONBAR1BUTTON2", "the module import lost its keys")
+    prepared = assert(provider.PrepareImport(bundle))
+    assert(provider.Restore(prepared.provider) and #imported == 2, "the full profile import lost its keys")
+    assert(provider.Restore(prepared.provider, "MSUF2_HISTORY_UNDO", "profile-workbench") and #imported == 2,
+        "a history step replayed key bindings")
+    assert(P.ImportModule(module) and #imported == 3, "the direct module import lost its keys")
+    local job = assert(P.BeginImport(module))
+    local done, ok
+    repeat done, ok = job:Step() until done
+    assert(ok and #imported == 4, "the stepped module import lost its keys")
+    -- Retail and Forever keep their own keys.
+    Suite.Client.isForever = true
+    prepared = assert(provider.PrepareImport(module))
+    assert(provider.Restore(prepared.provider) and P.ImportModule(module) and #imported == 4,
+        "keys exported on the other client were imported")
+    Suite.Client.isForever = false
+
+    Suite.DB.suite.modules.actionbars.profileKeybinds = false
+    prepared = assert(provider.PrepareImport(module))
+    assert(provider.Restore(prepared.provider) and #imported == 4, "keys were imported against the importer's choice")
+    assert(Suite.DB.suite.modules.actionbars.profileKeybinds == false, "the import replaced the importer's choice")
+    Suite.DB.suite.modules.actionbars.profileKeybinds = true
+    refuse = "unavailable"
+    local reports = #printed
+    prepared = assert(provider.PrepareImport(module))
+    assert(provider.Restore(prepared.provider) and #printed == reports + 1, "a refused key import was not reported")
+    refuse, Suite.ActionBarSnapshots = nil, nil
+    assert(P.ImportModule(module) and #printed == reports + 2, "keys for absent action bars were not reported")
+    Suite.Print = print
+end)
+
 assert(#failures == 0, "\n" .. table.concat(failures, "\n"))
 print("suite_profile_workbench_contract: OK")

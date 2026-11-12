@@ -512,3 +512,33 @@ function Transfers.Restore()
     if data.capture then CaptureChanged() end
     return true, report
 end
+
+-- Profile strings (MSUF_Suite/Core/ProfileIO.lua) carry the key map of the
+-- action bar commands when the player chose so (actionbars.profileKeybinds).
+-- An import writes it into the binding set this character uses now, as a
+-- confirmed keys-only transfer: it is listed under Transfer results, and
+-- Restore previous setup undoes it.
+function Transfers.ProfileKeys()
+    local keys, reason = Native.CaptureKeys()
+    if not keys then return nil, reason end
+    return CleanKeys(keys)
+end
+
+function Transfers.ImportProfileKeys(keys)
+    if busy then return nil, "busy" end
+    local identity = Current()
+    local data = identity and Store(true)
+    if not data then return nil, "unavailable" end
+    keys = CleanKeys(keys)
+    if not keys or not next(keys) then return nil, "invalid" end
+    local blocked = Native.Blocked()
+    if blocked then return nil, blocked end
+    local scope = Native.BindingScope()
+    if not scope then return nil, "unavailable" end
+    local row = { name = identity.name, realm = identity.realm, label = identity.setupLabel, applyKeys = true,
+        record = { scope = scope, slots = {}, keys = keys } }
+    busy = true
+    local applied, reason = NS.Dispatch(Execute, data, identity, row)
+    busy = false
+    return applied == true, reason
+end

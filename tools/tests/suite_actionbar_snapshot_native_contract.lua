@@ -215,17 +215,48 @@ local record = { scope = "account", slots = { [1] = 101, [2] = 102, [3] = 103, [
     keys = { E = "ACTIONBUTTON1", R = "ACTIONBUTTON2", Q = "ACTIONBUTTON1", X = "ACTIONBUTTON1",
         V = "ACTIONBUTTON1" } }
 local plan = assert(N.Plan(record, true, true))
-assert(plan.skippedSlots == 3 and plan.skippedKeys == 2 and plan.backup.slots[2].before == false)
+assert(plan.skippedSlots == 3 and plan.skippedKeys == 1 and plan.backup.slots[2].before == false,
+    "only the unreadable key may be skipped")
 assert(plan.backup.keys.E.before == false and plan.backup.keys.X == nil)
+assert(plan.backup.keys.Q.before == "JUMP" and plan.backup.keys.Q.after == "ACTIONBUTTON1",
+    "an imported key must replace the binding it conflicts with")
 assert(saves == 0 and pickups == 0 and placements == 0 and bindingWrites == 0)
 local report = assert(N.Apply(plan))
-assert(report.slots == 2 and report.keys == 2 and report.skippedSlots == 3 and report.skippedKeys == 2)
-assert(actions[1] == 101 and actions[2] == 102 and actions[3] == "macro" and keys.Q == "JUMP" and not cursor)
-assert(keys.E == "ACTIONBUTTON1" and keys.R == "ACTIONBUTTON2" and saves == 1)
+assert(report.slots == 2 and report.keys == 3 and report.skippedSlots == 3 and report.skippedKeys == 1)
+assert(actions[1] == 101 and actions[2] == 102 and actions[3] == "macro" and keys.Q == "ACTIONBUTTON1" and not cursor)
+assert(keys.E == "ACTIONBUTTON1" and keys.R == "ACTIONBUTTON2" and keys.V == SECRET and saves == 1)
 assert(report.backup.slots[1].before == 102 and report.backup.slots[2].before == false)
 local restored = assert(N.Restore(report.backup))
-assert(restored.slots == 2 and restored.keys == 2 and restored.backup == nil)
+assert(restored.slots == 2 and restored.keys == 3 and restored.backup == nil)
 assert(actions[1] == 102 and actions[2] == nil and keys.E == nil and keys.R == nil and saves == 2 and not cursor)
+assert(keys.Q == "JUMP", "undo did not give the replaced key its own binding back")
+
+-- The bars end up with exactly the imported keys: other keyboard keys of a
+-- bar command lose it, gamepad keys and unrelated bindings stay, and the undo
+-- returns every one of them.
+Reset()
+keys = { ["1"] = "ACTIONBUTTON1", ["6"] = "ACTIONBUTTON6", Q = "STRAFELEFT", F = "MSUFSUITE_BAR9_BUTTON1",
+    PAD1 = "ACTIONBUTTON1", Z = "JUMP" }
+local layout = { scope = "account", slots = {}, keys = { Q = "ACTIONBUTTON1", T = "ACTIONBUTTON6" } }
+plan = assert(N.Plan(layout, false, true))
+assert(plan.skippedKeys == 0 and plan.backup.keys["1"].after == false and plan.backup.keys.F.after == false,
+    "stale keys of the bar commands were not planned for removal")
+assert(not plan.backup.keys.PAD1 and not plan.backup.keys.Z, "the plan reached a gamepad or unrelated binding")
+report = assert(N.Apply(plan))
+assert(report.keys == 5 and saves == 1, "the key layout was not applied as one save")
+assert(keys.Q == "ACTIONBUTTON1" and keys.T == "ACTIONBUTTON6" and keys["1"] == nil and keys["6"] == nil
+    and keys.F == nil and keys.PAD1 == "ACTIONBUTTON1" and keys.Z == "JUMP", "the bars did not get exactly the imported keys")
+restored = assert(N.Restore(report.backup))
+assert(restored.keys == 5 and not restored.backup and keys["1"] == "ACTIONBUTTON1" and keys["6"] == "ACTIONBUTTON6"
+    and keys.Q == "STRAFELEFT" and keys.T == nil and keys.F == "MSUFSUITE_BAR9_BUTTON1", "undo lost a replaced binding")
+local empty = assert(N.Plan({ scope = "account", slots = {}, keys = {} }, false, true))
+assert(not next(empty.backup.keys) and empty.skippedKeys == 0, "an empty key map cleared the bars")
+local keyMap, keyScope = N.CaptureKeys()
+assert(keyScope == "account" and keyMap["1"] == "ACTIONBUTTON1" and keyMap.F == "MSUFSUITE_BAR9_BUTTON1"
+    and not keyMap.PAD1 and not keyMap.Z and not keyMap.Q, "the key map read the wrong bindings")
+cursor, nativeEditor = "item", "SettingsPanel"
+assert(N.CaptureKeys() and not N.Capture(), "reading keys must not need an empty cursor or a closed editor")
+cursor, nativeEditor = nil, nil
 
 Reset()
 local simple = { scope = "account", slots = { [1] = 101 }, keys = { E = "ACTIONBUTTON1" } }
