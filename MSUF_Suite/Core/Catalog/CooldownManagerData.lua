@@ -6,9 +6,12 @@ local rules = NS.SuiteCatalog.cooldownManager.rules
 
 ------------------------------------------------------------------ entry keys and data codec
 -- Entry keys: b<cooldownID> Blizzard entry, s<spellID> spell, i<itemID> item,
--- e<slot> equipment slot, a<spellID> helpful aura on the player,
--- d<spellID> harmful aura on the target, g<spellID> own external defensive.
-local ENTRY_KINDS = { b = true, s = true, i = true, e = true, a = true, d = true, g = true }
+-- e<slot> equipment slot, t<slot> totem slot, a<spellID> helpful aura on the
+-- player, d<spellID> harmful aura on the target, g<spellID> own external
+-- defensive.
+local ENTRY_KINDS = { b = true, s = true, i = true, e = true, t = true, a = true, d = true, g = true }
+-- Totem slots a key may name (Blizzard's MAX_TOTEMS is 4; room for more).
+CDM.TOTEM_SLOTS = 8
 -- One aura entry for several spells of one effect. The key's number is not a
 -- spell and never reaches a spell API: `spell` gives the icon and tooltip,
 -- `ids` are the player auras looked for, from any caster, in one icon or bar
@@ -26,7 +29,7 @@ function CDM.ValidEntryKey(key)
     if not kind or not ENTRY_KINDS[kind] then return false end
     number = tonumber(number)
     if not number or number <= 0 or number >= 2147483648 then return false end
-    if kind == "e" and number > 19 then return false end
+    if kind == "e" and number > 19 or kind == "t" and number > CDM.TOTEM_SLOTS then return false end
     return true
 end
 function CDM.EntryKind(key) return key:sub(1, 1) end

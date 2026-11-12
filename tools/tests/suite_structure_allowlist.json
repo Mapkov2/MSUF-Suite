@@ -3226,6 +3226,18 @@
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads"
   },
   {
+   "file": "MSUF_Suite_Options/Pages/CooldownManagerPicker.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_CooldownManager/Exports.lua exports WoW Forever's spell rank families only while the cooldown manager runtime is loaded; without it the picker files the typed spell ID itself.",
+   "symbol": "ranks (= P.S.CooldownManagerSpellRanks)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/CooldownManagerPicker.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_CooldownManager/Exports.lua names totem and equipment slots (WoW Forever's Shaman: by element) only while the cooldown manager runtime is loaded; without it the picker names them by number.",
+   "symbol": "get (= P.S.CooldownManagerSlotLabel)"
+  },
+  {
    "file": "MSUF_Suite/Core/Macros/Store.lua",
    "symbol": "Macros.Consumables",
    "kind": "lod",

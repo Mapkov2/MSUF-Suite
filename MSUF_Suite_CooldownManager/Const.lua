@@ -48,8 +48,10 @@ K.BAR_RGB = { .91, .72, .33 }
 K.BAR_BG_ALPHA = 55
 
 -- The spell categories (spellCategory of a Blizzard record) of the bag
--- consumables the viewer shows as one entry each.
-K.SPELL_CATEGORY = { COMBAT_POTION = 4, HEALTH_POTION = 30, HEALTHSTONE = 1711, DEMONIC_HEALTHSTONE = 2566 }
+-- consumables the viewer shows as one entry each. Negative: item families of
+-- the Suite's own (WoW Forever, Presets.lua) that no Blizzard record names.
+K.SPELL_CATEGORY = { COMBAT_POTION = 4, HEALTH_POTION = 30, HEALTHSTONE = 1711, DEMONIC_HEALTHSTONE = 2566,
+    MANA_POTION = -1, FOREVER_COMBAT_POTION = -2, BANDAGE = -3 }
 local SPELL_CATEGORY = K.SPELL_CATEGORY
 -- Blizzard's viewers use these file paths for bag-item categories (potions,
 -- healthstones); the space in the Warlock paths is part of the file name.

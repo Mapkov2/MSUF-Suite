@@ -41,6 +41,8 @@ local function Region(kind)
     function region:SetText(text) self.text = text end
     function region:SetColorTexture(...) self.color = { ... } end
     function region:SetTextColor(...) self.textColor = { ... } end
+    function region:SetSnapToPixelGrid() end
+    function region:SetTexelSnappingBias() end
     return region
 end
 
@@ -178,7 +180,13 @@ UpdateScaleForFitForOpenPanels = function()
     LayoutPanels()
 end
 local hookCalls = {}
-hooksecurefunc = function(name, post)
+hooksecurefunc = function(name, post, method)
+    if type(name) == "table" then
+        local object, key, post = name, post, method
+        local native = object[key]
+        object[key] = function(...) native(...) post(...) end
+        return
+    end
     assert(name == "UpdateUIPanelPositions" or name == "UpdateScaleForFitForOpenPanels",
         "unexpected secure hook " .. tostring(name))
     hookCalls[name] = (hookCalls[name] or 0) + 1
@@ -223,6 +231,10 @@ local NS = {
     Adapters = { ApplyAll = function() end },
 }
 local core = { HostBridge = {} }
+core.Suite = {}
+assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", core)
+core.WindowCaption.PixelFactor = function() return nil end
+NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
 NS.SuiteCore = function() return core end
 for _, file in ipairs({ "Core/Safety.lua", "Core/Defaults.lua", "Core/DefaultsLooks.lua",

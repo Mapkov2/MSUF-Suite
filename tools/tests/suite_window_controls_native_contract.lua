@@ -32,7 +32,13 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         end
         UpdateUIPanelPositions()
     end
-    hooksecurefunc = function(name, callback)
+    hooksecurefunc = function(name, callback, method)
+        if type(name) == "table" then
+            local object, key, post = name, callback, method
+            local native = object[key]
+            object[key] = function(...) native(...) post(...) end
+            return
+        end
         local native = assert(_G[name])
         _G[name] = function(...) native(...); callback(...) end
     end
@@ -48,9 +54,18 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         panel.CloseButton = Frame(nil, panel, "Button")
         panel.CloseButton:SetSize(24, 24)
         panel.CloseButton:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 1, 0)
+        panel.CloseButton.left = 676
+        -- Children share the panel's effective scale, as in the client.
+        function panel.CloseButton:GetEffectiveScale() return panel:GetEffectiveScale() end
         panel.MaximizeMinimizeButton = Frame(nil, panel, "Button")
         panel.MaximizeMinimizeButton:SetSize(24, 24)
         panel.MaximizeMinimizeButton:SetPoint("RIGHT", panel.CloseButton, "LEFT", 0, 0)
+        if name == "PlayerSpellsFrame" then
+            -- Blizzard's MaximizeMinimizeButtonFrameTemplate: two buttons, one shown.
+            local toggle = panel.MaximizeMinimizeButton
+            toggle.MaximizeButton, toggle.MinimizeButton = Frame(nil, toggle, "Button"), Frame(nil, toggle, "Button")
+            toggle.MaximizeButton.shown = false
+        end
         local nativeClick = function() end
         panel.CloseButton:SetScript("OnClick", nativeClick)
         panel.MaximizeMinimizeButton:SetScript("OnClick", nativeClick)
@@ -66,16 +81,27 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             and panel.MaximizeMinimizeButton:GetScript("OnClick") == nativeClick,
             name .. " native actions were replaced")
         if name == "PlayerSpellsFrame" then
-            -- Windows order: our minimize, Blizzard's own size toggle, close.
+            -- Windows order in one cell size: our minimize, a drawn cell over
+            -- Blizzard's own size toggle, a drawn cell over Blizzard's X. The
+            -- native buttons keep their clicks; their art fades.
             local minimize, toggle = state.minimize, panel.MaximizeMinimizeButton
-            Check(minimize and minimize.shown and not state.maximize,
-                name .. " lacks a minimize beside its native size toggle")
-            Check(minimize.point[1] == "RIGHT" and minimize.point[2] == toggle and minimize.point[3] == "LEFT",
-                name .. " minimize is not left of the native size toggle")
+            local closeCell, toggleCell, maximize = state.closeCell, state.toggleCell, state.maximize
+            Check(minimize and minimize.shown and toggleCell and toggleCell.shown and closeCell and closeCell.shown
+                and maximize and not maximize.shown, name .. " lacks the Windows caption beside its native size toggle")
+            Check(closeCell.point[1] == "TOPRIGHT" and toggleCell.point[2] == closeCell and minimize.point[2] == toggleCell
+                and minimize.width == toggleCell.width and toggleCell.width == closeCell.width,
+                name .. " caption cells are not one row of equal cells")
+            Check(toggle.alpha == 0 and panel.CloseButton.alpha == 0,
+                name .. " shows Blizzard's caption art under the drawn cells")
+            -- Talents hide Blizzard's toggle: our maximize takes its place. The
+            -- hidden toggle stays faded, so it cannot flash when it comes back.
             toggle:Hide()
-            Check(minimize.point[2] ~= toggle, name .. " minimize stayed beside a hidden size toggle")
+            Check(not toggleCell.shown and maximize.shown and maximize.point[2] == closeCell
+                and minimize.point[2] == maximize and toggle.alpha == 0,
+                name .. " caption lost its maximize with the size toggle hidden")
             toggle:Show()
-            Check(minimize.point[2] == toggle, name .. " minimize did not return beside the size toggle")
+            Check(toggleCell.shown and not maximize.shown and minimize.point[2] == toggleCell and toggle.alpha == 0,
+                name .. " caption lost the returning size toggle")
         else
             Check(not state.minimize and not state.maximize,
                 name .. " custom caption covers the native maximize/minimize control")

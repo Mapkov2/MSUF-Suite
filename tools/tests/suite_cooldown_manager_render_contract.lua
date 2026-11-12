@@ -189,6 +189,16 @@ C_Spell={
     GetSpellCooldownDurationUnused=nil,
 }
 C_SpellActivationOverlay={IsSpellOverlayed=function(spell) Plain(spell,"overlay");return overlayed[spell]==true end}
+-- Totem slots: GetTotemInfo per slot (plain fields, or all secret while the
+-- slot is secret), GetTotemDuration a duration object that is never nil.
+local totems,totemReads={},0
+GetTotemInfo=function(slot)
+    Plain(slot,"GetTotemInfo");totemReads=totemReads+1
+    local t=totems[slot]
+    if not t then return false,"",0,0,0 end
+    return t.have,t.name,t.start,t.length,t.icon
+end
+GetTotemDuration=function(slot) Plain(slot,"GetTotemDuration");return NextDuration() end
 local equip={start=0,length=0,enable=1}
 GetInventoryItemCooldown=function(unit,slot) assert(unit=="player" and slot==13);return equip.start,equip.length,equip.enable end
 -- Bag contents by item ID; the last GetItemCount flags are kept for the count contract.
@@ -1920,4 +1930,66 @@ do
     assert(not icon.readinessValue and not icon.readinessText.shown, "pooled icon retained its status symbol")
     T.SetReadability(nil)
 end
-print("Cooldown manager render: constants, 10:9 defaults, pooled icons, memoized styling, tooltips, hidden-bar mouse, threshold formatter, keybinds, secret sinks, isolation, ready edges, ready inside a GCD, charges, hideReady, category counts, cached bag totals, memoized items, empty healthstones, held item cooldowns, item families, simulation, zero allocation, hot-path budgets, tint, range references, glow union and repaint memo, assist and release passed")
+-- Totem slots (Time's TotemState, Icons' TotemTexture): a placed totem
+-- counts as cooling, swipes its duration object reversed and shows its own
+-- icon, never desaturated; an empty slot, or a totem past its plain end (no
+-- event comes when a totem runs out), hides the icon and shows the slot's
+-- icon; the swipe's end re-reads the slot. A secret slot keeps the icon in
+-- its place and lets the client show or hide it (SetAlphaFromBoolean) and
+-- paint its icon (SetTexture is AllowedWhenTainted); an icon choice wins.
+-- The tooltip names the totem, or the slot while it is empty.
+do
+    Record("SetAlphaFromBoolean")
+    Record("SetTotem")
+    local plan=C.plans.ess
+    local t1=Entry("t1","ess",{texture=136099,hideEmpty=true,name="Totem slot 1"})
+    C.plans.ess={slot="ess",kind=1,entries={t1}}
+    ess.desat=true
+    ess.behaviorGen=ess.behaviorGen+1
+    I.Sync("ess")
+    local icon=t1.icon
+    assert(icon and t1.hidden==true and t1.empty==true and t1.cooling==false,"an empty slot hides its icon")
+    assert(icon.tex.last.SetTexture==136099 and not icon.cd.running and icon.cd.last.SetReverse==true,
+        "an empty slot shows the slot icon, no swipe, reversed by default")
+    totems[1]={have=true,name="Searing Totem",start=now-5,length=60,icon=4444}
+    assert(T.Refresh(t1,"totem")==true and t1.hidden==false and t1.cooling==true and t1.empty==false,
+        "a placed totem shows its icon (a hidden flip relayouts)")
+    assert(icon.cd.running and icon.tex.last.SetTexture==4444 and icon.tex.last.SetDesaturation==0,
+        "a placed totem swipes its duration and keeps its colors")
+    -- One refresh: one GetTotemInfo, one duration object, no other client read.
+    local reads,durations,cooldowns=totemReads,durationCalls,cooldownQueries
+    T.Refresh(t1,"totem")
+    assert(totemReads==reads+1 and durationCalls==durations+1 and cooldownQueries==cooldowns,"one slot read per refresh")
+    ess.tooltips=true
+    I.Style("ess")
+    icon.scripts.OnEnter(icon)
+    assert(GameTooltip.last.SetTotem==1,"the tooltip names the totem")
+    totems[1].start=now-61
+    assert(T.Refresh(t1,"done")==true and t1.hidden==true and icon.tex.last.SetTexture==136099,
+        "a totem past its plain end counts as gone")
+    icon.scripts.OnEnter(icon)
+    assert(GameTooltip.last.SetText=="Totem slot 1","an empty slot's tooltip names the slot")
+    totems[1].start=now
+    T.Refresh(t1,"totem")
+    totems[1]=nil
+    icon.cd.scripts.OnCooldownDone(icon.cd)
+    assert(t1.hidden==true and t1.cooling==false and not icon.cd.running,"the swipe's end re-reads the slot")
+    local setTexture=Widget.SetTexture
+    Record("SetTexture")
+    local secretIcon=Secret("number")
+    totems[1]={have=SECRET_BOOL,name=SECRET_COUNT,start=SECRET_START,length=SECRET_LENGTH,icon=secretIcon}
+    T.Refresh(t1,"totem")
+    assert(t1.hidden==false and t1.cooling==true and icon.cd.running,"a secret slot keeps its place and its swipe")
+    assert(icon.last.SetAlphaFromBoolean==SECRET_BOOL and icon.tex.last.SetTexture==secretIcon and icon.lastTex==nil,
+        "the client shows the secret slot and paints its icon")
+    t1.ov={icon=777}
+    I.Texture(t1)
+    assert(icon.tex.last.SetTexture==777,"an icon choice wins over the totem's")
+    t1.ov=C.EMPTY
+    Widget.SetTexture=setTexture
+    totems[1]=nil
+    ess.tooltips,ess.desat=false,false
+    I.Release("ess")
+    C.plans.ess,C.entries.t1=plan,nil
+end
+print("Cooldown manager render: totem slots, constants, 10:9 defaults, pooled icons, memoized styling, tooltips, hidden-bar mouse, threshold formatter, keybinds, secret sinks, isolation, ready edges, ready inside a GCD, charges, hideReady, category counts, cached bag totals, memoized items, empty healthstones, held item cooldowns, item families, simulation, zero allocation, hot-path budgets, tint, range references, glow union and repaint memo, assist and release passed")

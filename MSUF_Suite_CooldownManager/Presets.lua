@@ -115,7 +115,6 @@ local DEFENSIVES = {
         374227,  -- Zephyr
     },
 }
-Presets.DEFENSIVES = DEFENSIVES
 
 -- Raid essentials for Retail 12.1. Each row is a specialization ID and is
 -- intentionally short: major throughput windows and the buttons needed to
@@ -175,9 +174,9 @@ end
 
 -- Active racial abilities, appended to the Potions and racials bar. Retail's
 -- Blizzard catalog does not list them; only the character's own racial is
--- known. WoW Forever keeps the Vanilla IDs (the last group), and its catalog
--- lists the racial as a Utility record hidden by default (Perception 20600,
--- in game): the preset claims that record for this bar.
+-- known. WoW Forever has its own list (Enhance QoL's, ForeverPresets.lua,
+-- below); its catalog lists the racial as a Utility record hidden by default
+-- (Perception 20600, in game): the preset claims that record for this bar.
 local RACIALS = {
     7744,    -- Will of the Forsaken
     20549,   -- War Stomp
@@ -212,6 +211,8 @@ local RACIALS = {
     20577,   -- Cannibalize
     20554, 26296, -- Berserking
 }
+local FOREVER = C.FOREVER_PRESETS
+if FOREVER then RACIALS = FOREVER.racials end
 Presets.RACIALS = RACIALS
 
 -- Bag consumables on the Potions and racials bar, in this order after
@@ -243,11 +244,27 @@ local CATEGORY_ITEMS = {
 -- the potion cooldown. There is no Demonic Healthstone. The potion list may
 -- miss a potion, so Blizzard's own record of that category never hides
 -- (potion: EntryFill.lua); the item entry needs a listed potion in the bags.
+-- Mana potions, the other potions (Free Action, Mighty Rage, protection
+-- potions, ...) and bandages follow as families of their own: Enhance QoL's
+-- Forever lists (ForeverPresets.lua). Their categories are the Suite's own
+-- (Const.SPELL_CATEGORY, negative), so no Blizzard record stands in for them.
 if P.NS.Client.isForever then
     CONSUMABLES = {
         { item = 5512, category = SPELL_CATEGORY.HEALTHSTONE },
         { item = 118, category = SPELL_CATEGORY.HEALTH_POTION, potion = true },
     }
+    local own = {
+        { FOREVER and FOREVER.manaPotions, SPELL_CATEGORY.MANA_POTION, true },
+        { FOREVER and FOREVER.combatPotions, SPELL_CATEGORY.FOREVER_COMBAT_POTION, true },
+        { FOREVER and FOREVER.bandages, SPELL_CATEGORY.BANDAGE, false },
+    }
+    for i = 1, #own do
+        local items, category, potion = own[i][1], own[i][2], own[i][3]
+        if items and items[1] then
+            CONSUMABLES[#CONSUMABLES + 1] = { item = items[1], category = category, potion = potion }
+            CATEGORY_ITEMS[category] = items
+        end
+    end
     CATEGORY_ITEMS[SPELL_CATEGORY.HEALTHSTONE] = { 5512, 19004, 19005, 19006, 5511, 19007, 19008, 5509, 19009,
         19010, 5510, 19011, 19012, 9421, 19013 }
     CATEGORY_ITEMS[SPELL_CATEGORY.HEALTH_POTION] = { 118, 282011, 268881, 2456, 858, 268882, 929, 268883, 1710, 9144,
@@ -276,7 +293,7 @@ end
 -- nothing. Major offensive cooldowns are per specialization (specID), taken
 -- from RAID_ESSENTIALS above and from the cooldown type table of LibOpenRaid
 -- (LGPL; spell IDs only). Interrupts follow MSUF's interrupt table.
--- Retail 12.1 IDs; a client that lacks a spell (WoW Forever) never adds it.
+-- Retail 12.1 IDs; WoW Forever has its own lists (below).
 local CATEGORY_CLASS = {
     interrupts = {
         [1] = { 6552, 386071 },            -- Pummel, Disrupting Shout
@@ -393,6 +410,18 @@ local CATEGORY_SPEC = {
     },
 }
 Presets.CATEGORY_ORDER = { "interrupts", "crowdcontrol", "movement", "battlerez", "dispels", "offensive" }
+
+-- WoW Forever lacks most Retail IDs above: Enhance QoL's reviewed Forever
+-- groups (ForeverPresets.lua) take their place. They fill the Defensives
+-- bar's default and the picker groups by class (Forever lists no group per
+-- specialization); its racials and consumables are set above.
+-- Credits: R41z0r (Enhance QoL) for these Forever groups.
+if FOREVER then
+    DEFENSIVES = FOREVER.defensives
+    for _, name in ipairs(Presets.CATEGORY_ORDER) do CATEGORY_CLASS[name] = FOREVER[name] or C.EMPTY end
+    CATEGORY_SPEC = {}
+end
+Presets.DEFENSIVES = DEFENSIVES
 Presets.CATEGORY_CLASS, Presets.CATEGORY_SPEC = CATEGORY_CLASS, CATEGORY_SPEC
 
 -- The spell IDs of one group for a class and specialization: the class's

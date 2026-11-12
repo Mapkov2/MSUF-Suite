@@ -55,7 +55,7 @@ end
 -- One entry key's fields (EntryFill.lua loads first).
 local EntryFill = C.EntryFill
 local Parse, FamilyOf, Known, BaseSpell = EntryFill.Parse, EntryFill.FamilyOf, EntryFill.Known, EntryFill.BaseSpell
-local OverrideOf, Charged = EntryFill.OverrideOf, EntryFill.Charged
+local OverrideOf, Charged, KeySpell, RankClaim = EntryFill.OverrideOf, EntryFill.Charged, EntryFill.KeySpell, C.Ranks.Claim
 local Fill, Clear, SetOverride, ChosenUnit = EntryFill.Fill, EntryFill.Clear, EntryFill.SetOverride, EntryFill.ChosenUnit
 
 -- Talent and spell conditions (requireSpell1..3, excludeSpell1..3): known in
@@ -130,15 +130,11 @@ local function PresetLists()
             if not held or rec.id < held.id then covered[category] = rec end
         end
         if rec.family == FAMILY.COOLDOWN then
-            local key = rec.key
-            if rec.spell and not spellKey[rec.spell] then spellKey[rec.spell] = key end
-            if rec.override and not spellKey[rec.override] then spellKey[rec.override] = key end
-            local linked = rec.linked
-            for i = 1, #(linked or EMPTY) do
-                if not spellKey[linked[i]] then
-                    spellKey[linked[i]] = key
-                end
-            end
+            -- Every rank of a ranked spell names the record (WoW Forever, Ranks.Claim).
+            local key, linked = rec.key, rec.linked
+            RankClaim(spellKey, rec.spell, key)
+            RankClaim(spellKey, rec.override, key)
+            for i = 1, #(linked or EMPTY) do RankClaim(spellKey, linked[i], key) end
         end
     end
     local Presets = C.Presets
@@ -156,7 +152,7 @@ local function PresetLists()
                 local key = spellKey[id]
                 if not key then
                     -- A replaced spell and its replacement share one entry.
-                    local base = BaseSpell(id)
+                    local base = KeySpell(id)
                     key = spellKey[base]
                     if not key then
                         key = "s" .. base
@@ -199,6 +195,7 @@ end
 -- instead of building, and the end of combat reads everything the fight held
 -- back again (ResumeConditions).
 function Resolve.SpellsChanged()
+    C.Ranks.Invalidate()
     if NS.IsCombatLocked() then
         conditionsPending, learnedStale = true, true
         return true
@@ -577,7 +574,7 @@ local function Materialize(key, slot, index, preview, spells, stage)
     local src, id = Parse(key)
     if src == "b" then
         local rec = Catalog.records[id]
-        if not (rec and (rec.known or preview)) then return nil end
+        if not (rec and (rec.known or preview and Catalog.Exists(rec))) then return nil end
     elseif presetSpell[key] and not PresetKnown(key) then
         return nil
     end

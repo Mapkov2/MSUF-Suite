@@ -7,9 +7,12 @@
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
+## X-Credits: R41z0r (Enhance QoL) - WoW Forever spell rank families and spell groups
 
 Bootstrap.lua
 Const.lua
+RankData.lua
+ForeverPresets.lua
 Presets.lua
 GuideProfiles.lua
 Catalog.lua

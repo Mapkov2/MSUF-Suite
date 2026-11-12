@@ -198,6 +198,8 @@ C_Item = {
     RequestLoadItemDataByID = function(id) potionRequests[id] = (potionRequests[id] or 0) + 1 end,
 }
 GetInventoryItemTexture = function(_, slot) return slot == 13 and 3001 or nil end
+-- No totem slots unless a test gives some (the picker's Totems section).
+GetNumTotemSlots = function() return 0 end
 GetInventoryItemID = function(_, slot) return slot == 13 and 9001 or nil end
 C_SpecializationInfo = {
     GetSpecialization = function() return 1 end,
@@ -1295,6 +1297,120 @@ Config().listsData = listsBefore
 pick.idBox:SetText("999999")
 Fire(pick.idBox, "OnTextChanged", true)
 assert(not pick.addA.enabled and not pick.addB.enabled and pick.echo.textColor[1] == 1, "unknown IDs must be refused")
+-- WoW Forever spell ranks (the runtime's S.CooldownManagerSpellRanks): any
+-- rank of a spell finds Blizzard's entry of it (Frost Nova rank 3 -> b4,
+-- rank 1), by search and by ID; a typed rank of a spell no entry tracks is
+-- filed under its family's first rank, so its choices survive a rank-up.
+do
+    local FROST, STRIKE = { 122, 865, 6131 }, { 1752, 1757 }
+    local RANKS = { [122] = FROST, [865] = FROST, [6131] = FROST, [1752] = STRIKE, [1757] = STRIKE }
+    SPELLS[865], SPELLS[6131] = { "Frost Nova", 1004 }, { "Frost Nova", 1004 }
+    SPELLS[1752], SPELLS[1757] = { "Sinister Strike", 1020 }, { "Sinister Strike", 1020 }
+    S.CooldownManagerSpellRanks = function(id)
+        local family = RANKS[id]
+        return family and family[1] or id, family
+    end
+    Page.RebuildPicker()
+    pick.search:SetText("6131")
+    Fire(pick.search, "OnTextChanged", true)
+    rows = VisibleRows()
+    assert(#rows == 2 and rows[2].key == "b4", "a rank's ID must find Blizzard's entry of its spell")
+    pick.search:SetText("")
+    Fire(pick.search, "OnTextChanged", true)
+    pick.idBox:SetText("6131")
+    Fire(pick.idBox, "OnTextChanged", true)
+    assert(pick.customBlizzard and pick.customBlizzard.key == "b4" and pick.echo.text:find("Blizzard's entry", 1, true),
+        "a typed rank must name Blizzard's entry of its spell")
+    writes = historyWrites
+    Fire(pick.addA, "OnClick")
+    assert(historyWrites == writes and pick.note.text:find("already on this bar", 1, true),
+        "a rank of a spell already on the bar must not add a second entry")
+    pick.idBox:SetText("1757")
+    Fire(pick.idBox, "OnTextChanged", true)
+    assert(pick.customBlizzard == nil and pick.customSpell == 1752 and pick.echo.text:find("Spell 1757", 1, true),
+        "a typed rank keeps its echo and files the family's first rank")
+    Fire(pick.addA, "OnClick")
+    assert(Keys("ess") == "b1,b2,b3,b4,i5512,s133,s1752", "a custom rank must be added under its first rank")
+    Config().listsData = listsBefore
+    S.CooldownManagerSpellRanks = nil
+    SPELLS[865], SPELLS[6131], SPELLS[1752], SPELLS[1757] = nil, nil, nil, nil
+    Page.RebuildPicker()
+    pick.idBox:SetText("")
+    Fire(pick.idBox, "OnTextChanged", true)
+end
+-- Totem slots and equipment (the Totems and Trinkets and items sections of
+-- a cooldown bar): one row adds every totem slot at once and one row per
+-- slot names the totem in it (the runtime's slot name first, S.CooldownManagerSlotLabel);
+-- the totem rows come after Blizzard's cooldowns, before the equipment.
+-- Besides both trinkets, every equipped slot whose item has a use spell or
+-- a "Use:" line (an engineering tinker) is offered; other gear stays out,
+-- and a slot's answer is read once while the picker stays open. A
+-- character without totem slots has no totem section.
+do
+    local totems = { [1] = { true, "Searing Totem", 0, 60, 4444 } }
+    GetTotemDuration = function() return {} end
+    GetNumTotemSlots = function() return 4 end
+    GetTotemInfo = function(slot)
+        local totem = totems[slot]
+        if totem then return totem[1], totem[2], totem[3], totem[4], totem[5] end
+        return false, "", 0, 0, 0
+    end
+    S.CooldownManagerSlotLabel = function(key) return key == "t2" and "Earth totem" or nil end
+    ITEM_SPELL_TRIGGER_ONUSE = "Use:"
+    local tips, reads = { [10] = { lines = { { leftText = "Rocket Gloves" }, { leftText = "Use: Fire a rocket." } } },
+        [6] = { lines = { { leftText = "Plain Belt" }, { leftText = "Equip: Nothing." } } } }, 0
+    C_TooltipInfo = { GetInventoryItem = function(_, slot) reads = reads + 1 return tips[slot] end }
+    local equipped = { [13] = 9001, [10] = 9010, [1] = 9011, [6] = 9012 }
+    local names = { [9010] = "Rocket Gloves", [9011] = "Helm of Use", [9012] = "Plain Belt" }
+    local getID, getSpell, getName = GetInventoryItemID, C_Item.GetItemSpell, C_Item.GetItemNameByID
+    GetInventoryItemID = function(_, slot) return equipped[slot] end
+    C_Item.GetItemSpell = function(id) if id == 9011 then return "Use", 70011 end return getSpell(id) end
+    C_Item.GetItemNameByID = function(id) return names[id] or getName(id) end
+    local function Rows()
+        local byKey, order = {}, {}
+        for i = 1, pick.count do
+            local item = pick.items[i]
+            if item.key then byKey[item.key], order[item.key] = item, i end
+        end
+        return byKey, order
+    end
+    Page.RebuildPicker()
+    local byKey, order = Rows()
+    local all = byKey.totems
+    assert(all and all.kind == "group" and table.concat(all.keys, ",") == "t1,t2,t3,t4" and all.count == 4 and not all.slot,
+        "one row adds all four totem slots")
+    assert(byKey.t1.text == "Totem slot 1: Searing Totem" and byKey.t1.texture == 4444 and byKey.t1.family == 1,
+        "an occupied slot names and shows its totem")
+    assert(byKey.t2.text == "Earth totem" and byKey.t2.texture == 136099 and byKey.t4.text == "Totem slot 4",
+        "an empty slot shows the runtime's name of the slot and the totem icon")
+    assert(order.b1 < order.totems and order.t4 < order.e13, "totems sit between Blizzard's cooldowns and the equipment")
+    assert(byKey.e1 and byKey.e1.text == "Equipment slot 1: Helm of Use", "an item with a use spell is offered")
+    assert(byKey.e10 and byKey.e10.text == "Equipment slot 10: Rocket Gloves", "an item with a Use: line is offered")
+    assert(byKey.e13 and byKey.e14 and not byKey.e6 and not byKey.e2, "trinkets always, gear without a use never")
+    local before = reads
+    Page.RebuildPicker()
+    assert(reads == before, "a slot's use is read once while the picker stays open")
+    pick.search:SetText("totem")
+    Fire(pick.search, "OnTextChanged", true)
+    local found = {}
+    for _, item in ipairs(VisibleRows()) do found[item.key or item.text] = true end
+    assert(found.totems and found.t1 and found.t2 and found.t3 and found.t4, "the word totem finds every totem row")
+    pick.search:SetText("")
+    Fire(pick.search, "OnTextChanged", true)
+    local listed = Config().listsData
+    assert(Page.PickItem(all), "the totem group adds")
+    assert(Keys("ess"):sub(-12) == ",t1,t2,t3,t4", "every totem slot joins the bar: " .. Keys("ess"))
+    byKey = Rows()
+    assert(byKey.totems.count == 0 and byKey.totems.slot == "ess" and byKey.t3.slot == "ess", "the bar holds every slot now")
+    Config().listsData = listed
+    GetNumTotemSlots = function() return 0 end
+    Page.RebuildPicker()
+    byKey = Rows()
+    assert(not byKey.totems and not byKey.t1 and byKey.e1, "no totem slots, no totem section")
+    GetTotemDuration, GetTotemInfo, S.CooldownManagerSlotLabel, ITEM_SPELL_TRIGGER_ONUSE, C_TooltipInfo = nil, nil, nil, nil, nil
+    GetInventoryItemID, C_Item.GetItemSpell, C_Item.GetItemNameByID = getID, getSpell, getName
+    Page.RebuildPicker()
+end
 local ok, reason = Page.AddEntry("ess", "a1459", 2)
 assert(not ok and reason == "That bar shows cooldowns.", "wrong family must be refused")
 Fire(pick.close, "OnClick")

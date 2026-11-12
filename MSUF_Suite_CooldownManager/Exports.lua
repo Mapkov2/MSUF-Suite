@@ -36,10 +36,12 @@ function C.PressBridge()
 end
 
 -- Why a listed entry does not show on its bar now: "cap" (past Maximum
--- icons), "ready" (Hide icons that are ready) or "empty" (no Healthstone in
--- the bags, Time: entry.empty); nil while it shows.
+-- icons), "totem" (an empty totem slot), "ready" (Hide icons that are
+-- ready) or "empty" (no Healthstone in the bags, Time: entry.empty); nil
+-- while it shows.
 local function HiddenBy(placed, cap, hide, live, desc)
     if cap ~= nil and placed >= cap then return "cap" end
+    if live ~= nil and live.src == "t" and live.empty == true then return "totem" end
     if hide and live ~= nil and desc.family == K.FAMILY.COOLDOWN and not live.cooling then return "ready" end
     if live ~= nil and live.empty == true then return "empty" end
 end
@@ -134,9 +136,8 @@ end
 -- player's or the pet's spell book, so a client without a spell (WoW
 -- Forever) never gets it. Cold: one call per picker build.
 local tracked, listed = {}, {}
-local function Track(id, key)
-    if id and not tracked[id] then tracked[id] = key end
-end
+-- Every rank of a ranked spell names the record (WoW Forever, Ranks.Claim).
+local function Track(id, key) C.Ranks.Claim(tracked, id, key) end
 function S.CooldownManagerGroupKeys(plain)
     Cold()
     local Presets, Fill, Catalog = C.Presets, C.EntryFill, C.Catalog
@@ -159,7 +160,7 @@ function S.CooldownManagerGroupKeys(plain)
             local ids = pass == 1 and byClass or bySpec
             for i = 1, #ids do
                 local id = ids[i]
-                local base = Fill.BaseSpell(id)
+                local base = Fill.KeySpell(id)
                 if Fill.Known(id) or Fill.Known(base) then
                     local key = tracked[id] or tracked[base] or "s" .. base
                     if not listed[key] then
@@ -189,6 +190,17 @@ end
 
 -- Moves with every Blizzard catalog rebuild; the page's tile memo keys on it.
 function S.CooldownManagerGeneration() return C.Catalog.generation end
+-- WoW Forever: the first rank of id's spell family and the family's ranks,
+-- first rank first (Ranks); elsewhere id and nil. The picker files a typed
+-- rank under its family and finds Blizzard's entry by any rank.
+function S.CooldownManagerSpellRanks(id) return C.Ranks.Canon(id), C.Ranks.Family(id) end
+-- The name of a totem slot (t<slot>; WoW Forever's Shaman: its element) or
+-- equipment slot (e<slot>) key for the picker; nil for other keys.
+function S.CooldownManagerSlotLabel(key)
+    local src, id = C.EntryFill.Parse(key)
+    if src == "t" then return C.EntryFill.TotemLabel(id) end
+    if src == "e" then return C.EntryFill.SlotLabel(id) end
+end
 -- Whether the spec has an MSUF profile row (Presets.RAID_ESSENTIALS): only
 -- then do its built-in bars take the Suite's spec defaults (Resolve.ListOf).
 function S.CooldownManagerProfileRow(spec) return C.Presets.RaidEssentials(spec) ~= nil end

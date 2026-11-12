@@ -40,7 +40,8 @@ Run("U07", function()
     Enum.CooldownViewerCategory = { TrackedBuff = 2, TrackedBar = 3, SpecAgnosticTracked = 6, EquipSlotTracked = 7 }
     local C = { EMPTY = {}, Catalog = { BAR_OF = {}, TAIL = {}, generation = 1 }, GuideProfiles = {},
         Const = { QUESTION_ICON = 134400 }, Presets = { RACIALS = {}, CONSUMABLES = {},
-            RaidEssentials = function() end, Defensives = function() end } }
+            RaidEssentials = function() end, Defensives = function() end },
+        Ranks = { Claim = function(map, id, key) if id and not map[id] then map[id] = key end end } }
     local NS = { CDM = CDM, RootDB = {}, Database = { GetActiveProfileName = function() return "Pkg3" end } }
     assert(originalLoad(root .. "/MSUF_Suite_CooldownManager/Editor.lua"))("test", { NS = NS, Suite = Suite, CDM = C })
     local config = S.Config(ID)

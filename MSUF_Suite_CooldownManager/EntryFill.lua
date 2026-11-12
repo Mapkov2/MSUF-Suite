@@ -3,9 +3,10 @@ local NS, S = P.NS, P.Suite
 local C = P.CDM
 -- What one entry key stands for: the key parsed once per string, plain
 -- spell lookups, and the fill of an entry table per source (a Blizzard
--- record, a spell, an item, an equipment slot, a custom aura) from
--- read-only APIs and the catalog. Resolve.lua builds the bars' plans from
--- these and Exports.lua describes keys for the options page. Cold path.
+-- record, a spell, an item, an equipment slot, a totem slot, a custom aura) from
+-- read-only APIs and the catalog, and WoW Forever's spell rank families
+-- (C.Ranks). Resolve.lua builds the bars' plans from these and Exports.lua
+-- describes keys for the options page. Cold path.
 local Public = S.Public
 local type, tonumber = type, tonumber
 local EMPTY = C.EMPTY
@@ -31,7 +32,7 @@ for i = 1, #CONSUMABLES do
 end
 local FAMILY = C.Const.FAMILY
 local COOLDOWN_FAMILY, AURA_FAMILY = FAMILY.COOLDOWN, FAMILY.AURA
-local SOURCE_FAMILY = { s = COOLDOWN_FAMILY, i = COOLDOWN_FAMILY, e = COOLDOWN_FAMILY,
+local SOURCE_FAMILY = { s = COOLDOWN_FAMILY, i = COOLDOWN_FAMILY, e = COOLDOWN_FAMILY, t = COOLDOWN_FAMILY,
     a = AURA_FAMILY, d = AURA_FAMILY, g = AURA_FAMILY }
 
 -- Keys are parsed once per distinct string.
@@ -52,6 +53,94 @@ local function FamilyOf(key)
         return rec and rec.family
     end
     return src and SOURCE_FAMILY[src] or nil
+end
+
+------------------------------------------------------------------ spell ranks
+-- WoW Forever: every rank is a spell of its own, and Rogues and Warriors
+-- unlearn a rank when they learn the next one (no base rank for the next to
+-- override). A key, a preset or an aura ID that names one rank would lose
+-- its spell on a rank-up, and the choices saved under it with it. A family
+-- (RankData.lua, Enhance QoL's list) names every rank of one spell, first
+-- rank first; the first rank is its identity. Keys stay as saved, so their
+-- choices stay too: a spell entry reads the highest learned rank (BaseSpell),
+-- keys and presets the first rank (KeySpell), routing takes every rank
+-- (Index.lua), aura filters every rank's aura (AuraSet) and a rank of a
+-- spell finds Blizzard's entry of that spell (Claim). Retail has no
+-- families: Ranks.on is false and every function answers as if no spell
+-- had ranks. The IDs are plain numbers (the callers' Num and Public reads).
+-- Credits: R41z0r (Enhance QoL) for the rank families and this approach
+-- (the first rank as identity, the highest learned rank at runtime).
+local FAMILIES = C.RANK_FAMILIES or {}
+local Ranks = { on = next(FAMILIES) ~= nil }
+C.Ranks = Ranks
+local baseOf, learned, scratch = {}, {}, {}
+for base, family in pairs(FAMILIES) do
+    for i = 1, #family do baseOf[family[i]] = base end
+end
+-- The family's first rank, else the ID itself.
+function Ranks.Canon(id) return baseOf[id] or id end
+-- Every rank of the ID's family, first rank first; nil outside the families.
+function Ranks.Family(id)
+    local base = baseOf[id]
+    return base and FAMILIES[base] or nil
+end
+-- The highest learned rank of the ID's family: the player's spell book, then
+-- the pet's (Bite, Claw, Spell Lock). IsSpellKnown, as Enhance QoL reads it:
+-- a rank the book lists but the character has not learned does not count.
+-- Kept per family until the spell book may have changed (Invalidate, from
+-- Resolve.SpellsChanged).
+local function Highest(family, bank)
+    local known = C_SpellBook.IsSpellKnown
+    for i = #family, 1, -1 do
+        local value = known(family[i], bank)
+        if Public(value) and value == true then return family[i] end
+    end
+end
+function Ranks.Learned(id)
+    local base = baseOf[id]
+    if not base then return nil end
+    local rank = learned[base]
+    if rank == nil then
+        local family, bank = FAMILIES[base], Enum.SpellBookSpellBank
+        rank = Highest(family, bank.Player) or Highest(family, bank.Pet) or false
+        learned[base] = rank
+    end
+    return rank or nil
+end
+-- The learned rank an entry of the ID follows, when it is another rank.
+function Ranks.Override(id)
+    local rank = Ranks.Learned(id)
+    if rank ~= id then return rank end
+end
+function Ranks.Invalidate() wipe(learned) end
+-- map[id] = key unless id is taken, and the same for every rank of its
+-- family: a preset, a picked ID or an event naming any rank of a spell
+-- finds the entry kept for that spell.
+function Ranks.Claim(map, id, key)
+    if id == nil then return end
+    if not map[id] then map[id] = key end
+    local family = FAMILIES[baseOf[id]]
+    for i = 1, #(family or EMPTY) do
+        local rank = family[i]
+        if not map[rank] then map[rank] = key end
+    end
+end
+-- Adds every rank of each family the aura set names: an aura carries the ID
+-- of the rank that was cast (Rend rank 7 is 11574, not 772).
+function Ranks.Expand(set)
+    local n = 0
+    for id in pairs(set) do
+        if baseOf[id] then
+            n = n + 1
+            scratch[n] = id
+        end
+    end
+    for i = 1, n do
+        local family = FAMILIES[baseOf[scratch[i]]]
+        for j = 1, #family do set[family[j]] = true end
+        scratch[i] = nil
+    end
+    return set
 end
 
 ------------------------------------------------------------------ plain lookups
@@ -81,6 +170,20 @@ local function OverrideOf(base)
     local id = Num(C_SpellBook.FindSpellOverrideByID(base))
     if id and id ~= base then return id end
 end
+-- The first rank of a spell's family keys it (presets, group adds); a spell
+-- entry reads the family's highest learned rank, which shares the family's
+-- cooldown, and the family is known while any rank is. Retail: both are
+-- the base spell.
+local KeySpell = BaseSpell
+if Ranks.on then
+    local plainKnown, plainBase, Canon, Learned = Known, BaseSpell, Ranks.Canon, Ranks.Learned
+    KeySpell = function(id) return Canon(plainBase(id)) end
+    BaseSpell = function(id)
+        local base = plainBase(id)
+        return Learned(base) or Canon(base)
+    end
+    Known = function(spell) return Learned(spell) ~= nil or plainKnown(spell) end
+end
 
 ------------------------------------------------------------------ entry fill
 local function SetOverride(entry, override)
@@ -103,6 +206,7 @@ local function AuraSet(set, a, b, c, linked)
             set[linked[i]] = true
         end
     end
+    if Ranks.on then Ranks.Expand(set) end
     return set
 end
 -- Resets the source fields; auraIDs is left for the caller so its table is reused.
@@ -178,8 +282,10 @@ function EntryFill.ApplyReplacement(entry, choices)
     return true
 end
 
+-- Without Blizzard's own override a record of a ranked spell reads its
+-- learned rank (Ranks.Override; Catalog.OnOverride keeps to the same rule).
 local function FillBlizzard(entry, rec)
-    local base, override, family = rec.spell, rec.override, rec.family
+    local base, override, family = rec.spell, rec.override or Ranks.on and Ranks.Override(rec.spell) or nil, rec.family
     Clear(entry, "b", rec.id, family)
     SetOverride(entry, override)
     entry.base, entry.tooltip, entry.spell, entry.linked, entry.category = base, rec.tooltip, override or base, rec.linked, rec.category
@@ -236,6 +342,40 @@ local function FillItem(entry, id, key)
     OwnAura(entry, key)
     return true
 end
+-- Slot names (FillEquip, FillTotem, the editor and the picker's
+-- S.CooldownManagerSlotLabel). An equipment slot goes by Blizzard's own name
+-- of it (the character sheet's, read once), the rings numbered, trinkets and
+-- anything else as the catalog names them. A totem slot goes by number: Retail fills
+-- the slots in any order. On WoW Forever a Shaman keeps one totem per
+-- element in a fixed slot (Blizzard's FIRE_TOTEM_SLOT, EARTH_, WATER_ and
+-- AIR_TOTEM_SLOT, the order of its totem bar), so those go by element.
+local slotNames
+local function SlotLabel(slot)
+    if slot == 11 then return S.Text("Ring 1") end
+    if slot == 12 then return S.Text("Ring 2") end
+    slotNames = slotNames or { HEADSLOT, NECKSLOT, SHOULDERSLOT, SHIRTSLOT, CHESTSLOT, WAISTSLOT, LEGSSLOT, FEETSLOT,
+        WRISTSLOT, HANDSSLOT, nil, nil, nil, nil, BACKSLOT, MAINHANDSLOT, SECONDARYHANDSLOT, RANGEDSLOT, TABARDSLOT }
+    local text = slotNames[slot]
+    if Public(text) and type(text) == "string" and text ~= "" then return text end
+    return Catalog.SlotLabel(slot)
+end
+EntryFill.TOTEM_ICON = 136099
+local ELEMENT = {}
+if NS.Client.isForever then
+    local slots = { FIRE_TOTEM_SLOT, EARTH_TOTEM_SLOT, WATER_TOTEM_SLOT, AIR_TOTEM_SLOT }
+    local names = { "Fire totem", "Earth totem", "Water totem", "Air totem" }
+    for i = 1, #names do
+        if type(slots[i]) == "number" then ELEMENT[slots[i]] = names[i] end
+    end
+end
+local function TotemLabel(slot)
+    local _, class = UnitClass("player")
+    local element = class == "SHAMAN" and ELEMENT[slot]
+    if element then return S.Text(element) end
+    return S.Text("Totem slot %d"):format(slot)
+end
+EntryFill.SlotLabel, EntryFill.TotemLabel = SlotLabel, TotemLabel
+
 local function FillEquip(entry, slot, key)
     local item = Catalog.EquipItem(slot)
     local spell = item and Catalog.ItemSpell(item) or nil
@@ -243,9 +383,23 @@ local function FillEquip(entry, slot, key)
     SetOverride(entry, nil)
     entry.base, entry.spell, entry.equipSlot, entry.itemID, entry.known = spell, spell, slot, item, item ~= nil
     entry.texture = Catalog.EquipTexture(slot)
-    entry.name = item and Catalog.ItemName(item) or Catalog.SlotLabel(slot)
+    entry.name = item and Catalog.ItemName(item) or SlotLabel(slot)
     entry.auraIDs = nil
     OwnAura(entry, key)
+    return true
+end
+-- A totem slot (t1..t4), on both clients: whatever totem, statue or
+-- ground effect the game puts in that slot, any spell and any rank (Time
+-- reads the slot's duration object, Icons its icon). It hides while the slot
+-- is empty (hideEmpty). Known while this character has the slot.
+local function FillTotem(entry, slot)
+    local count = GetNumTotemSlots()
+    Clear(entry, "t", slot, COOLDOWN_FAMILY)
+    SetOverride(entry, nil)
+    entry.base, entry.spell, entry.hideEmpty = nil, nil, true
+    entry.known = Public(count) and type(count) == "number" and slot <= count
+    entry.texture, entry.name = EntryFill.TOTEM_ICON, TotemLabel(slot)
+    entry.auraIDs = nil
     return true
 end
 -- An aura group (CDM.AURA_GROUPS): one entry that looks for every aura of
@@ -292,6 +446,8 @@ local function Fill(entry, key)
         return FillItem(entry, id, key)
     elseif src == "e" then
         return FillEquip(entry, id, key)
+    elseif src == "t" then
+        return FillTotem(entry, id)
     elseif src == "a" or src == "d" or src == "g" then
         return FillAura(entry, src, id)
     end
@@ -320,4 +476,4 @@ end
 EntryFill.Parse, EntryFill.FamilyOf, EntryFill.Known, EntryFill.BaseSpell = Parse, FamilyOf, Known, BaseSpell
 EntryFill.Fill, EntryFill.Clear, EntryFill.SetOverride, EntryFill.AURA_UNIT = Fill, Clear, SetOverride, AURA_UNIT
 EntryFill.RefreshAuraUnit, EntryFill.ItemAura = RefreshAuraUnit, ItemAura
-EntryFill.OverrideOf, EntryFill.Charged = OverrideOf, Charged
+EntryFill.OverrideOf, EntryFill.Charged, EntryFill.KeySpell = OverrideOf, Charged, KeySpell

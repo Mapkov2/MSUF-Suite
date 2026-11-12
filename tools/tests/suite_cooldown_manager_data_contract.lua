@@ -1083,7 +1083,10 @@ assert(after==before,"ForSpell allocated "..((after-before)*1024).." bytes")
 -- index after it.
 Resolve.Build()
 Budget("resolve: an unchanged build",Cost(Resolve.Build),30019)
-Budget("resolve: the routing index",Cost(Index.Rebuild),3897)
+-- 2026-11-12, an accepted cold-path trade: totem slot entries (t1..t4) route
+-- by their slot only (one source test per entry, the byTotem map and the
+-- totems list), so no cooldown, bag or icon event ever reaches them: 3897 -> 3992.
+Budget("resolve: the routing index",Cost(Index.Rebuild),3992)
 
 -- Late load: the Essential set is already filled, so the fallback reports
 -- ready at once and no gate frame is ever made.

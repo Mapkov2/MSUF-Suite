@@ -21,7 +21,12 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             if frame.shown then frame.scale = 1 end -- native secure fit
         end
     end
-    hooksecurefunc = function(name, callback)
+    hooksecurefunc = function(name, callback, post)
+        if type(name) == "table" then
+            local native = name[callback]
+            name[callback] = function(...) native(...) post(...) end
+            return
+        end
         local native = assert(_G[name])
         _G[name] = function(...) native(...); callback(...) end
     end

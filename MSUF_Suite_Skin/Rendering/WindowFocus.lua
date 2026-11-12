@@ -345,4 +345,9 @@ end
 NS.WindowFocusChrome.Initialize(QueueGeometry)
 NS.WindowFocusPopups.Initialize(QueueGeometry)
 NS.Registry.AddListener(Focus, SettingsChanged)
+-- Our caption fades Blizzard's caption buttons outside the observed geometry
+-- hooks: the window's chrome is discovered again, without those buttons.
+function Focus.RefreshChrome(frame) LayoutChanged(frame) end
+NS.WindowFocusChrome.SetHidden(NS.WindowControlChrome.IsFaded)
+NS.WindowControlChrome.SetFocusRefresh(Focus.RefreshChrome)
 NS.WindowControls.SetFocusProvider(Focus.Track, Focus.ReleaseOwner)

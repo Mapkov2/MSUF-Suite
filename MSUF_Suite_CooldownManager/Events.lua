@@ -252,6 +252,19 @@ local function OnUsableGated()
     Schedule()
 end
 
+-- PLAYER_TOTEM_UPDATE: one handler for both consumers, registered while
+-- either has work. Totem slot entries of that slot refresh at once (rare
+-- event: a cast, a totem destroyed or replaced); summon timers on buff bars
+-- (AuraTimers) follow the same payload.
+local totemTimers = false
+local function RefreshTotem(entry)
+    if entry.icon and Refresh(entry, "totem") then Request(entry.slot) end
+end
+local function OnTotem(_, event, slot)
+    if totemTimers then AuraTimers.Totem(nil, event, slot) end
+    Index.ForTotem(slot, RefreshTotem)
+end
+
 -- SPELL_UPDATE_ICON names the base spell (nil = all).
 local function Retexture(entry)
     local catalog, tex = C.Catalog, nil
@@ -405,6 +418,11 @@ end
 -- loading screen may have had no event).
 local function OnWorld()
     EnterWorld()
+    -- Totems can end with the loading screen without an event of their own.
+    local totems = Index.totems
+    for i = 1, #totems do
+        if totems[i].icon then Mark(totems[i], "full") end
+    end
     if AlertsWanted() then C.Alerts.SyncAuraSounds() end
     C.Resolve.SpellsChanged()
     dirty.catalog, dirty.resolve, dirty.visibility = true, true, true
@@ -609,7 +627,8 @@ local function UpdateEvents()
     Want("SPELL_UPDATE_USES", #Index.counted > 0, OnUses)
     Want("SPELL_UPDATE_ICON", cooldown, OnIcon)
     local timers = C.AuraTimers.Wanted()
-    Want("PLAYER_TOTEM_UPDATE", timers, C.AuraTimers.Totem)
+    totemTimers = timers
+    Want("PLAYER_TOTEM_UPDATE", timers or #Index.totems > 0, OnTotem)
     Want("UNIT_SPELLCAST_SUCCEEDED", timers, C.AuraTimers.Cast, "player")
     Want("SPELL_UPDATE_CHARGES", #Index.charged > 0, OnCharges)
     Want("BAG_UPDATE_COOLDOWN", #Index.bags > 0, OnBag)

@@ -11,6 +11,9 @@ local MAX_NODES, MAX_DEPTH, MAX_EXTENTS = 384, 5, 16
 local ranks = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5,
     FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
 local Changed
+-- Blizzard caption buttons our caption faded (WindowControlChrome): no chrome.
+local Hidden = function() return false end
+function Chrome.SetHidden(predicate) Hidden = predicate end
 
 local function LayoutChanged(frame)
     local state = observed[frame]
@@ -80,7 +83,7 @@ local function Exterior(state, frame, depth)
 end
 
 local function Inspect(state, frame, depth)
-    if Safety.Read(frame, "GetObjectType") == "GameTooltip" then return end
+    if Safety.Read(frame, "GetObjectType") == "GameTooltip" or Hidden(frame) then return end
     if frame == state.presentation or NS.WindowFocus.records[frame] then return end
     local layer, level = Safety.Read(frame, "GetFrameStrata"), Safety.Read(frame, "GetFrameLevel")
     local rank = ranks[layer]

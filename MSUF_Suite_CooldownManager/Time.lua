@@ -34,6 +34,7 @@ local GetItemCooldown = C_Item.GetItemCooldown
 local GetCategoryCooldown = C_Spell.GetItemCooldown
 local GetItemCount = C_Item.GetItemCount
 local GetInventoryItemCooldown = GetInventoryItemCooldown
+local GetTotemInfo, GetTotemDuration = GetTotemInfo, GetTotemDuration
 local CreateDuration = C_DurationUtil.CreateDuration
 local GetTime = GetTime
 -- Direct readers stay on the common unique-spell path. A flush with shared
@@ -571,6 +572,54 @@ local function CategoryState(entry, icon, reason, spell)
     return cooling
 end
 
+------------------------------------------------------------------ totem slots
+-- A totem slot (EntryFill's src "t") counts as cooling while it holds a
+-- totem: its duration object drives the swipe and a timer bar, never
+-- desaturation (a placed totem is no cooldown). The slot's state is read
+-- per PLAYER_TOTEM_UPDATE (Index.byTotem) and at the swipe's end, as no
+-- event comes when a totem runs out (Blizzard's viewer does the same, and
+-- treats a totem past its plain end as gone). While the game keeps the
+-- slot secret (haveTotem secret) the icon stays in its place and the
+-- client shows or hides it from the secret answer. Returns cooling and
+-- whether the slot is plainly empty.
+local function TotemState(entry, icon)
+    local have, _, start, length, texture = GetTotemInfo(entry.id)
+    local duration = GetTotemDuration(entry.id)
+    local secret = issecret(have)
+    if not secret and have == true and not issecret(start) and not issecret(length) and type(start) == "number"
+        and type(length) == "number" and length > 0 and start + length <= GetTime() then have = false end
+    ClearCharge(icon)
+    CountOff(icon)
+    Feedback(icon, nil)
+    if readable then icon.readinessKnown = not secret end
+    if (secret or have == true) and (issecret(duration) or duration) then
+        icon.cd:SetCooldownFromDurationObject(duration, true)
+        icon.cdSet, icon.cdReal = true, true
+        TrackingBars.Duration(icon, duration)
+    else
+        ClearMain(icon)
+    end
+    if secret then
+        icon:SetAlphaFromBoolean(have, icon.fbAlpha or 1, 0)
+        icon.fbAlpha = nil
+    end
+    C.Icons.TotemTexture(entry, have, texture)
+    return secret or have == true, not secret and have ~= true
+end
+
+-- No spell and no category: a totem slot reads its slot (after every
+-- spell and item test, so they pay nothing for it); anything else has no
+-- timing and shows ready.
+local function Untimed(entry, icon)
+    if entry.src == "t" then return TotemState(entry, icon) end
+    if readable then icon.readinessKnown = false end
+    ClearMain(icon)
+    ClearCharge(icon)
+    Feedback(icon, nil)
+    CountOff(icon)
+    return false
+end
+
 ------------------------------------------------------------------ edges
 local function Request(slotKey)
     C.Layout.Request(slotKey)
@@ -648,12 +697,7 @@ function Time.Refresh(entry, reason, usableQueries)
         elseif spell then
             cooling = SpellState(entry, icon, spell, reason)
         else
-            if readable then icon.readinessKnown = false end
-            ClearMain(icon)
-            ClearCharge(icon)
-            Feedback(icon, nil)
-            if not category then CountOff(icon) end
-            cooling = false
+            cooling, empty = Untimed(entry, icon)
         end
         if category then empty = CategoryCount(icon, category, entry) end
     end

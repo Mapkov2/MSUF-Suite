@@ -159,9 +159,10 @@ function Alerts.Play(value, force)
 end
 
 -- A cooldown became ready (called by the time layer on the edge). Aura
--- entries sound through their native registrations instead.
+-- entries sound through their native registrations instead; a totem slot
+-- that empties is no cooldown coming back (no pulse, sound or speech).
 function Alerts.Ready(entry)
-    if not entry or entry.family == FAMILY.AURA then return end
+    if not entry or entry.family == FAMILY.AURA or entry.src == "t" then return end
     local view = C.views[entry.slot]
     if view and view.readyPulse then Pulse.Ready(entry) end
     local ov = entry.ov

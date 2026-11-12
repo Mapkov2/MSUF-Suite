@@ -25,6 +25,7 @@ local methods = {
     GetWidth = function(self) return self.width end,
     GetHeight = function(self) return self.height end,
     SetJustifyH = Write, SetWordWrap = Write, SetTexCoord = Write, SetAllPoints = Write,
+    SetSnapToPixelGrid = Write, SetTexelSnappingBias = Write,
     SetFrameStrata = function(self, strata) self.strata = strata Write() end,
     SetParent = function(self, parent) self.parent = parent Write() end,
     SetHitRectInsets = function(self, left, right, top, bottom) self.insets = {left, right, top, bottom} Write() end,
@@ -156,6 +157,8 @@ assert(loadfile(root .. "/MSUF_Suite/Core/CharacterBindings.lua"))("MSUF_Suite",
 ns.Host.CharacterTabs = ns.CharacterTabs
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/CharacterPanel.lua"))("MSUF_Suite", ns)
 assert(loadfile(root .. "/MSUF_Suite/Core/CharacterHeader.lua"))("MSUF_Suite", ns)
+assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", ns)
+suite.WindowCaption.PixelFactor = function() return nil end
 for _, file in ipairs({ "Stats", "ModelControls", "WindowControls", "TabOverflow", "GroupLayout", "View" }) do
     assert(loadfile(path .. file .. ".lua"))("MSUF_Suite_CharacterPanel", ns)
 end
@@ -217,7 +220,10 @@ window.maximize.scripts.OnClick(window.maximize)
 assert(view.frame.scale > scaled and view.frame.point[1] == "CENTER" and not grip.shown)
 window.maximize.scripts.OnClick(window.maximize)
 assert(view.frame.scale == scaled and view.frame.point[1] == "TOPLEFT" and grip.shown)
-ns.Window.Dock(window, "right")
+-- Docking left with its buttons; a saved dock still places the window.
+assert(not window.dockLeft and not window.dockRight, "the caption still offers dock buttons")
+window.dock, preferences.dock = "right", "right"
+ns.Window.Fit(window)
 assert(preferences.dock == "right" and view.frame.point[1] == "TOPRIGHT")
 window.minimize.scripts.OnClick(window.minimize)
 assert(view:IsMinimized() and not view.body.shown and not grip.shown and view.frame.height < window.height)
@@ -790,7 +796,7 @@ do
     assert(nativeHand.x == 496 and nativeHand.alternateX == 372
         and not layout.slots[1].alternateX and not layout.slots[4].alternateX,
         "the two original layouts changed the wrong native slot hit areas")
-    assert(layout.close.x == 909 and layout.close.y == 9 and layout.close.size == 22,
+    assert(layout.close.x == 912 and layout.close.y == 2 and layout.close.size == 24,
         "the native close moved away from the original Suite caption")
     ns.Host.Client.isForever = true
     local foreverLayout = ns.View.NativeLayout(gear)
@@ -819,18 +825,20 @@ do
     assert(frame.point[1] == "TOPLEFT" and frame.point[2] == native
         and frame.point[3] == "TOPLEFT" and frame.point[4] == 0 and frame.point[5] == 0,
         "the art moved independently of the actual slot layout")
+    -- Windows caption: three equal cells flush in the header's corner; the
+    -- close art covers Blizzard's X (opaque, no mouse) and that X keeps the click.
     local close = full.closeArt
-    assert(close.point[1] == "TOPRIGHT" and close.point[2] == -8 and close.point[3] == -8
-        and close.width == layout.close.size and close:GetFrameLevel() == nativeLevel + layout.closeLevel + 1
+    assert(close.point[1] == "TOPRIGHT" and close.point[4] == 0 and close.point[5] == -1
+        and close.width == 30 and close.height == layout.close.size and close.caption.base
+        and close:GetFrameLevel() == nativeLevel + layout.closeLevel + 1
         and not close.mouseEnabled and not close.scripts.OnClick, "the original Close art intercepted native input")
     local window = full.window
-    assert(window.maximize.point[2] == -34 and window.minimize.point[2] == -60
-        and window.dockRight.point[2] == -86 and window.dockLeft.point[2] == -112
-        and window.nativeGrip.point[1] == "BOTTOMRIGHT", "the original titlebar or scale-grip art moved")
+    assert(window.maximize.point[4] == -30 and window.minimize.point[4] == -60 and not window.dockLeft
+        and window.maximize.caption.kind == "maximize" and window.minimize.caption.kind == "minimize"
+        and close.caption.kind == "close" and window.nativeGrip.point[1] == "BOTTOMRIGHT",
+        "the original titlebar or scale-grip art moved")
     window.maximize.scripts.OnClick(window.maximize)
     window.minimize.scripts.OnClick(window.minimize)
-    window.dockLeft.scripts.OnClick(window.dockLeft)
-    window.dockRight.scripts.OnClick(window.dockRight)
     window.nativeTitleDrag.scripts.OnDragStart()
     window.nativeTitleDrag.scripts.OnDragStop()
     window.nativeTitleDrag.scripts.OnHide()
@@ -838,9 +846,9 @@ do
     window.nativeGrip.scripts.OnMouseDown(window.nativeGrip, "LeftButton")
     window.nativeGrip.scripts.OnMouseUp(window.nativeGrip, "LeftButton")
     window.nativeGrip.scripts.OnHide()
-    assert(table.concat(actions, ",") == "maximize,minimize,dockLeft,dockRight,moveStart,moveStop,moveStop,scaleStart,scaleStop,scaleStop",
+    assert(table.concat(actions, ",") == "maximize,minimize,moveStart,moveStop,moveStop,scaleStart,scaleStop,scaleStop",
         "the original controls did not call the native geometry owner")
-    assert(window.maximizeLabel.text == "−" and window.minimizeLabel.text == "+",
+    assert(window.maximize.caption.kind == "restore" and window.minimize.caption.kind == "restore",
         "the original caption did not reflect native maximize/minimize state")
     full.frame:Show()
     full:SetHeader("Mapko", "Level 22", "31", "player", "player-guid")

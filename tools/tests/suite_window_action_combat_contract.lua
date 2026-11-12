@@ -145,4 +145,12 @@ settings.weight = "bold"
 path = Glyph("minimize", "windows")
 Check(path:find("MapkoSkinWindowCaptionBold", 1, true), "bold weight lost the bold restore squares")
 settings.weight = "fine"
+-- A button our Windows caption cell stands for drops the action skin at once
+-- and takes none while the cell is there; released, it can be skinned again.
+W.Yield(caption, true)
+Check(not captionState.visible and caption.slots.Normal.atlas == "redbutton-exit"
+    and W.Apply(caption, "caption", "close") == nil, "a captioned native kept or retook the old action skin")
+W.Yield(caption, false)
+Check(W.Apply(caption, "caption", "close") == captionState and captionState.visible,
+    "a released native could not take the action skin again")
 print("Window action combat parity: " .. checks .. " checks passed (" .. tostring(arg[2]) .. ")")

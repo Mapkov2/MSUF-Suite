@@ -50,7 +50,7 @@ local function Read(path)
     return text
 end
 AuraContainerSortMethod={ExpirationOnly=5}
-local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua","Icons.lua","Masque.lua",
+local ORDER={"Bootstrap.lua","Const.lua","RankData.lua","ForeverPresets.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua","Icons.lua","Masque.lua",
     "TrackingBars.lua","Time.lua","GlowLines.lua","Effects.lua","AssistIcon.lua", "KickMark.lua","AuraGlows.lua","AuraLooks.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","AuraRecipients.lua","ActionGlows.lua",
     "ActionUsableGlows.lua","ReadyPulse.lua","Alerts.lua","Grid.lua","FrameAnchors.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua","Flush.lua","Settings.lua","Events.lua","Controller.lua","Editor.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
@@ -175,11 +175,12 @@ assert(toc:find("## Title: MSUF Suite - Cooldown manager\n",1,true),"TOC title")
 assert(toc:find("## Dependencies: MSUF_Suite, MSUF_Suite_Modules\n",1,true),"TOC dependencies")
 assert(toc:find("## LoadOnDemand: 1\n",1,true),"runtime must load on demand")
 local HEADER="local _, P = ...\nlocal NS, S = P.NS, P.Suite\nlocal C = P.CDM\n"
--- Presets.lua is plain data plus one class lookup: it needs only the CDM table.
+-- Presets.lua is plain data plus one class lookup, RankData.lua and
+-- ForeverPresets.lua plain WoW Forever data: they need only the CDM table.
 local DATA_HEADER="local _, P = ...\nlocal C = P.CDM\n"
 for _,file in ipairs(ORDER) do
     local text=Read(root.."/"..ADDON.."/"..file)
-    if file=="Presets.lua" or file=="GuideProfiles.lua" then assert(text:sub(1,#DATA_HEADER)==DATA_HEADER,file.." header")
+    if file=="Presets.lua" or file=="GuideProfiles.lua" or file=="RankData.lua" or file=="ForeverPresets.lua" then assert(text:sub(1,#DATA_HEADER)==DATA_HEADER,file.." header")
     elseif file~="Bootstrap.lua" then assert(text:sub(1,#HEADER)==HEADER,file.." header") end
     for _,word in ipairs({"pcall","loadstring","setfenv","getfenv","OnUpdate","Cl".."aude","Anth".."ropic"}) do
         assert(not text:find(word,1,true),file.." uses "..word)
@@ -559,6 +560,15 @@ end
 C_DurationUtil={CreateDuration=function() return NewDuration(false) end,
     CreateDurationTextBinding=function() return setmetatable({},BindingMT) end}
 GetNumTotemSlots=function() return 0 end
+-- Totem slots (Time.lua, Icons.lua): every slot empty unless a test fills
+-- TotemFixture[slot] = { haveTotem, name, start, duration, icon }.
+TotemFixture={}
+GetTotemInfo=function(slot)
+    local t=TotemFixture[slot]
+    if t then return t[1],t[2],t[3],t[4],t[5] end
+    return false,"",0,0,0
+end
+GetTotemDuration=function() return NewDuration(false) end
 local CurveMT={}
 CurveMT.__index=CurveMT
 function CurveMT:SetType(kind) self.type=kind end
@@ -4465,6 +4475,29 @@ do (function()
     config.listsData,config.spellsData,config.buf_on,config.bar_on=oldLists,oldSpells,oldBuf,oldBar
     UnitCanAssist,Suite.Client.isForever=oldAssist,oldForever
     C.Flush.dirty.catalog=true;module:Refresh();Run()
+end)() end
+do (function()
+    -- Totem slots (t1..t4, picked by the user): listed slots register
+    -- PLAYER_TOTEM_UPDATE and wait hidden; a slot's payload refreshes that
+    -- slot's entry at once and no other, an unreadable payload every totem
+    -- entry, and a removed slot lets the event go.
+    local oldLists,oldSlots=config.listsData,GetNumTotemSlots
+    GetNumTotemSlots=function() return 4 end
+    config.listsData=assert(Codec.EncodeLists({specs={[C.state.specID]={ess={"t1","t2"}}}}))
+    C.Flush.dirty.catalog=true;module:Refresh();Run()
+    local t1,t2=assert(C.entries.t1),assert(C.entries.t2)
+    assert(Registered("PLAYER_TOTEM_UPDATE") and t1.icon and t1.hidden and t2.hidden,"listed totem slots wait hidden")
+    TotemFixture[1],TotemFixture[2]={true,"Searing Totem",now-1,60,4444},{true,"Healing Stream Totem",now-1,15,5555}
+    assert(Fire("PLAYER_TOTEM_UPDATE",1) and not t1.hidden and t1.cooling and t2.hidden,
+        "a slot's payload refreshes that slot at once and no other")
+    Fire("PLAYER_TOTEM_UPDATE",2);Run()
+    assert(not t2.hidden and t2.icon.tex.tex==5555,"the second slot shows its own totem")
+    TotemFixture[1],TotemFixture[2]=nil,nil
+    Fire("PLAYER_TOTEM_UPDATE",nil);Run()
+    assert(t1.hidden and t2.hidden,"an unreadable payload refreshes every totem slot")
+    config.listsData=oldLists;C.Flush.dirty.catalog=true;module:Refresh();Run()
+    assert(not Registered("PLAYER_TOTEM_UPDATE") and not C.entries.t1,"removed totem slots let the event go")
+    GetNumTotemSlots=oldSlots
 end)() end
 Deactivate()
 for key in pairs(_G) do assert(globalsBefore[key] or key=="MSUF_DB","runtime created the global "..tostring(key)) end

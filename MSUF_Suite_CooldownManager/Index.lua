@@ -16,17 +16,19 @@ local K = C.Const
 local COOLDOWN = K.KIND.COOLDOWN
 local COOLDOWN_FAMILY, AURA_FAMILY = K.FAMILY.COOLDOWN, K.FAMILY.AURA
 local issecret = _G.issecretvalue
+local Ranks, EMPTY = C.Ranks, C.EMPTY
 
 -- countedSet: the counted entries by entry, for SPELL_UPDATE_USES routing.
 -- gated: entries shown only while usable (asked by the usable sweep, Effects.GateUsable).
-local Index = { bySpell = {}, byBase = {}, byCategory = {}, byItem = {}, byEquip = {}, countedSet = {},
+-- byTotem/totems: totem slot entries, which follow PLAYER_TOTEM_UPDATE only.
+local Index = { bySpell = {}, byBase = {}, byCategory = {}, byItem = {}, byEquip = {}, byTotem = {}, countedSet = {},
     cooldown = {}, gcd = {}, charged = {}, counted = {}, ranged = {}, usable = {}, proc = {}, ready = {},
-    items = {}, bags = {}, aura = {}, overlay = {}, assist = {}, gated = {} }
+    items = {}, bags = {}, aura = {}, overlay = {}, assist = {}, gated = {}, totems = {} }
 C.Index = Index
 
 local ARRAYS = { "cooldown", "gcd", "charged", "counted", "ranged", "usable", "proc", "ready", "items", "bags", "aura", "overlay", "assist",
-    "gated" }
-local MAPS = { "bySpell", "byBase", "byCategory", "byItem", "byEquip" }
+    "gated", "totems" }
+local MAPS = { "bySpell", "byBase", "byCategory", "byItem", "byEquip", "byTotem" }
 local pool = {}
 -- entry -> stamp of the last two-list ForSpell call that reached it.
 local seen, seenStamp = {}, 0
@@ -107,6 +109,18 @@ local function AddCooldown(entry, view)
     if spell and view and view.assist then Push(Index.assist, entry) end
 end
 
+-- WoW Forever (EntryFill's C.Ranks): a cooldown event may name any rank of
+-- the entry's spell, so every rank routes to it. Retail keeps the plain
+-- AddCooldown, with no rank work per entry.
+if Ranks.on then
+    local plainAdd, Family = AddCooldown, Ranks.Family
+    AddCooldown = function(entry, view)
+        plainAdd(entry, view)
+        local ranks = Family(entry.base)
+        for i = 1, #(ranks or EMPTY) do Add(Index.bySpell, ranks[i], entry) end
+    end
+end
+
 -- Rare per-spell choices route in a pass of their own, only while a choice
 -- of any specialization uses one (C.routedChoices, Settings.DecodeData):
 -- "Show only when usable" (the gate list), "Show only during a spell alert"
@@ -154,12 +168,20 @@ function Index.Rebuild()
             local cooldownBar = plan.kind == COOLDOWN
             for j = 1, #entries do
                 local entry = entries[j]
+                local src = entry.src
                 -- Placeholders never read live state.
-                if entry.src ~= "p" then
+                if src ~= "p" then
                     -- Override updates find their entries by base spell.
                     Add(byBase, entry.base, entry)
                     if cooldownBar then
-                        if entry.family == COOLDOWN_FAMILY then AddCooldown(entry, view) end
+                        -- A totem slot has no spell, item or cooldown event:
+                        -- its slot routes it, and nothing else does.
+                        if src == "t" then
+                            Add(Index.byTotem, entry.id, entry)
+                            Push(Index.totems, entry)
+                        elseif entry.family == COOLDOWN_FAMILY then
+                            AddCooldown(entry, view)
+                        end
                     elseif entry.family == AURA_FAMILY then
                         Push(Index.aura, entry)
                     end
@@ -252,4 +274,9 @@ end
 function Index.ForItem(itemID, fn)
     if issecret(itemID) or not itemID then return 0 end
     return Each(Index.byItem[itemID], fn)
+end
+-- PLAYER_TOTEM_UPDATE's slot; an unreadable one reaches every totem entry.
+function Index.ForTotem(slot, fn)
+    if issecret(slot) or not slot then return Each(Index.totems, fn) end
+    return Each(Index.byTotem[slot], fn)
 end

@@ -45,19 +45,6 @@ function Chrome.Footprint(state)
         outside and 21 or 0, state.inventory and state.name ~= "BankFrame" and 18 or 0
 end
 
-function Chrome.DockSuite(state, right)
-    Chrome.LeaveFit(state)
-    local frame = state.frame
-    local effective, uiScale = Safety.Read(frame, "GetEffectiveScale"), Safety.Read(UIParent, "GetEffectiveScale")
-    local width = Safety.Read(UIParent, "GetWidth")
-    if not effective or effective <= 0 or not uiScale or uiScale <= 0 or not width then return false end
-    local ratio = effective / uiScale
-    local x = right and math.max(0, width - state.suiteBounds.width * ratio - 14) or 14
-    frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x / ratio, -14 / ratio)
-    return true
-end
-
 local function ExteriorGrip(grip, state)
     local frame = state.frame
     local ratio = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
@@ -176,45 +163,26 @@ function Chrome.Title(state)
 end
 
 local captionArt = setmetatable({}, { __mode = "k" })
-local captionBars = {
-    minimize = { { -4, -2, 4, -2 } },
-    maximize = { { -4, -4, 4, -4 }, { 4, -4, 4, 4 }, { 4, 4, -4, 4 }, { -4, 4, -4, -4 } },
-    restore = { { -5, -5, 2, -5 }, { 2, -5, 2, 2 }, { 2, 2, -5, 2 }, { -5, 2, -5, -5 },
-        { -2, 2, -2, 5 }, { -2, 5, 5, 5 }, { 5, 5, 5, -2 }, { 5, -2, 2, -2 } },
-}
-
 local function PaintCaption(button)
     local art = captionArt[button]
-    local r, g, b, a = NS.Theme.GetColor(art.disabled and "disabled" or "text")
-    for _, texture in ipairs(art.bars) do texture:SetColorTexture(r, g, b, a) end
     local active = not art.disabled and (art.hover or art.down)
-    art.fill:SetColorTexture(1, 1, 1, active and (art.down and 0.17 or 0.10) or 0)
+    local r, g, b, a = NS.Theme.GetColor(art.disabled and "disabled" or "text")
+    -- Windows' close cell turns red under the pointer, its cross white.
+    if art.kind == "close" and active then r, g, b, a = 1, 1, 1, 1 end
+    for _, texture in ipairs(art.bars) do texture:SetColorTexture(r, g, b, a) end
+    if art.kind == "close" then
+        local dr, dg, db = NS.Theme.GetColor("danger")
+        art.fill:SetColorTexture(dr, dg, db, active and (art.down and 1 or 0.85) or 0)
+    else
+        art.fill:SetColorTexture(1, 1, 1, active and (art.down and 0.17 or 0.10) or 0)
+    end
 end
 
+-- Glyph bars sit on whole screen pixels (the Suite's shared caption layout).
 local function LayoutCaption(button, kind)
     local art = captionArt[button]
-    local pixelUtil = Safety.Field(_G, "PixelUtil")
-    local scale = button:GetEffectiveScale()
-    local nearest = Safety.Field(pixelUtil, "GetNearestPixelSize")
-    local pixel = nearest and nearest(0, scale, 1) or 1
-    local unit = nearest and nearest(1, scale, 1) or 1
-    unit = math.min(unit, (math.min(button:GetWidth(), button:GetHeight()) - pixel) / 10)
-    local bars = captionBars[kind]
-    for index, bar in ipairs(bars) do
-        local texture = art.bars[index]
-        if not texture then
-            texture = button:CreateTexture(nil, "OVERLAY")
-            Safety.Invoke(texture, "SetRoundLayoutToNearestPixel", true)
-            art.bars[index] = texture
-        end
-        local left, right = math.min(bar[1], bar[3]) * unit, math.max(bar[1], bar[3]) * unit
-        local bottom, top = math.min(bar[2], bar[4]) * unit, math.max(bar[2], bar[4]) * unit
-        texture:ClearAllPoints()
-        texture:SetPoint("TOPLEFT", button, "CENTER", left - pixel / 2, top + pixel / 2)
-        texture:SetSize(right - left + pixel, top - bottom + pixel)
-        texture:Show()
-    end
-    for index = #bars + 1, #art.bars do art.bars[index]:Hide() end
+    art.kind = kind
+    NS.SuiteCore().WindowCaption.Layout(button, kind, art.bars)
     PaintCaption(button)
 end
 
@@ -277,7 +245,7 @@ local function CaptionObstacle(state, scale, right, low, high, ...)
         local child = select(index, ...)
         if not Safety.Public(child) then return right end
         local kind = Safety.Read(child, "GetObjectType")
-        if child ~= state.close and child ~= state.minimize and child ~= state.maximize and child ~= state.captionMin
+        if child ~= state.close and child ~= state.minimize and child ~= state.maximize
             and (kind == "Button" or kind == "CheckButton") and Safety.Read(child, "IsShown") then
             local top, bottom = Safety.Read(child, "GetTop"), Safety.Read(child, "GetBottom")
             local x, left = Safety.Read(child, "GetRight"), Safety.Read(child, "GetLeft")
@@ -293,39 +261,39 @@ local function CaptionObstacle(state, scale, right, low, high, ...)
     return obstacle
 end
 
--- Work in the panel's local coordinates. Native close buttons may have a
--- different scale and their rectangles may move when Blizzard changes tabs.
+-- Windows caption, right to left: close, maximize/restore, minimize. One
+-- cell size for all three, in the panel's own units: the cells scale with the
+-- window. The close cell is the part of Blizzard's X inside the panel, so an
+-- X that overhangs the corner is drawn inside. Blizzard's X and a native size
+-- toggle keep their clicks; their art fades while our cells show.
 function Chrome.CaptionSize(state)
     local frame, close = state.frame, state.close
-    if not close or not Safety.Read(close, "IsShown") or Safety.Read(close, "IsVisible") == false then return nil, nil, 0 end
-    local left, top = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop")
-    local scale = Safety.Read(frame, "GetEffectiveScale")
-    local closeScale = Safety.Read(close, "GetEffectiveScale")
+    if not close or not Safety.Read(close, "IsShown") then return nil, nil, 0 end
+    local left, top, frameWidth = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop"), Safety.Read(frame, "GetWidth")
+    local scale, closeScale = Safety.Read(frame, "GetEffectiveScale"), Safety.Read(close, "GetEffectiveScale")
     local closeLeft, closeTop = Safety.Read(close, "GetLeft"), Safety.Read(close, "GetTop")
-    local closeHeight = Safety.Read(close, "GetHeight")
-    if not left or not top or not scale or scale <= 0 or not closeScale
-        or not closeLeft or not closeTop or not closeHeight then return end
+    local closeWidth, closeHeight = Safety.Read(close, "GetWidth"), Safety.Read(close, "GetHeight")
+    if not left or not top or not frameWidth or not scale or scale <= 0 or not closeScale or not closeLeft
+        or not closeTop or not closeWidth or not closeHeight then return end
     local ratio = closeScale / scale
-    closeLeft, closeTop, closeHeight = closeLeft * ratio, closeTop * ratio, closeHeight * ratio
-    local right = left + frame:GetWidth()
+    local right = left + frameWidth
+    closeLeft, closeTop = closeLeft * ratio, closeTop * ratio
+    local closeRight, closeBottom = math.min(closeLeft + closeWidth * ratio, right - 1), closeTop - closeHeight * ratio
     if closeLeft >= right then return nil, nil, 0 end
-    if closeTop > top + 6 or closeTop - closeHeight < top - 38 or closeHeight < 16 then return end
-    local centerY = closeTop - closeHeight / 2
-    -- The native X can overhang the top edge. The added hit rectangles and
-    -- hover fills stay inside the panel while sharing the X's vertical center.
-    local height = math.min(closeHeight, 28, 2 * (top - centerY))
-    if height < 14 then return nil, nil, 0 end
-    local low, high = centerY - height / 2, centerY + height / 2
-    local obstacle = CaptionObstacle(state, scale, closeLeft, low, high, Safety.Call(frame, "GetChildren"))
+    -- A footer Close action is no caption X (no room: minimize stays alone).
+    if closeTop > top + 6 or closeBottom < top - 40 or closeHeight * ratio < 16 then return end
+    closeTop = math.min(closeTop, top - 1)
+    local width, height = math.min(30, closeRight - closeLeft), math.min(26, closeTop - closeBottom)
+    if width < 14 or height < 14 then return nil, nil, 0 end
+    local cellLeft, low = closeRight - width, closeTop - height
+    local obstacle = CaptionObstacle(state, scale, cellLeft, low, closeTop, Safety.Call(frame, "GetChildren"))
     local closeParent = Safety.Read(close, "GetParent")
     if closeParent and closeParent ~= frame then
-        local headerObstacle = CaptionObstacle(state, scale, closeLeft, low, high, Safety.Call(closeParent, "GetChildren"))
-        obstacle = math.max(obstacle, headerObstacle)
+        obstacle = math.max(obstacle, CaptionObstacle(state, scale, cellLeft, low, closeTop, Safety.Call(closeParent, "GetChildren")))
     end
-    local room = closeLeft - math.max(left + 54, TitleRight(frame, scale) + 6, obstacle)
-    local width = math.min(30, math.floor(room / 2))
-    if width < 18 then return nil, height, room end
-    return width, height, room, right - closeLeft + width * 2 + 4
+    state.captionX, state.captionY = closeRight - right, closeTop - top
+    local room = cellLeft - math.max(left + 54, TitleRight(frame, scale) + 6, obstacle)
+    return width, height, room, right - cellLeft + width * 2 + 4
 end
 
 local PlaceMinimize
@@ -341,49 +309,318 @@ function Chrome.SyncMinimize(state)
     if disabled then NS.CombatGate.RunOrDefer("windowControls:captions", NS.WindowControls.Refresh) end
 end
 
+-- Drawn cells over Blizzard's own buttons have no mouse of their own: the
+-- native button's hover and press paint them.
+local drivers = setmetatable({}, { __mode = "k" })
+local cellStates = setmetatable({}, { __mode = "k" })
+local function DriveEnter(button)
+    local cell = drivers[button]
+    if not cell then return end
+    CaptionEnter(cell)
+    -- Blizzard's button shows again under its cell and the pointer: the
+    -- caption fades it.
+    local state = cellStates[cell]
+    if state and state.settle and cell:IsShown() and (Safety.Read(button, "GetAlpha") or 0) ~= 0 then
+        state.settle("hover")
+    end
+end
+local function DriveLeave(button) if drivers[button] then CaptionLeave(drivers[button]) end end
+local function DriveDown(button) if drivers[button] then CaptionDown(drivers[button]) end end
+local function DriveUp(button) if drivers[button] then CaptionUp(drivers[button]) end end
+
+local function Drive(button, cell)
+    if not Safety.HasMethod(button, "HookScript") or drivers[button] == cell then return end
+    if drivers[button] == nil then
+        button:HookScript("OnEnter", DriveEnter)
+        button:HookScript("OnLeave", DriveLeave)
+        button:HookScript("OnMouseDown", DriveDown)
+        button:HookScript("OnMouseUp", DriveUp)
+    end
+    drivers[button] = cell
+end
+
+local function DrawnCell(state, key)
+    local cell = state[key]
+    if cell then return cell end
+    cell = Safety.CreateChildFrame("Frame", Chrome.Parent(state))
+    local fill = cell:CreateTexture(nil, "BACKGROUND")
+    fill:SetAllPoints(cell)
+    captionArt[cell] = { fill = fill, bars = {} }
+    cellStates[cell] = state
+    state[key] = cell
+    return cell
+end
+
+-- Blizzard's caption buttons under our cells fade, the button and every art
+-- region of it (a size toggle: both of its buttons too), so an alpha written to
+-- the button later, or an animation of it, still finds no art. While faded, a
+-- hook puts 0 back on any alpha write. The alphas they had come back with the
+-- caption's end. The window's focus outline leaves faded buttons out.
+local faded = setmetatable({}, { __mode = "k" })
+local alphaHooked = setmetatable({}, { __mode = "k" })
+local RefreshFocus = function() end
+function Chrome.SetFocusRefresh(callback) RefreshFocus = callback end
+function Chrome.IsFaded(region) return faded[region] ~= nil end
+
+-- Alpha is no protected action: a faded part stays faded in combat too.
+local function KeepFaded(region, alpha)
+    if faded[region] and alpha ~= 0 and not Safety.IsForbidden(region) then region:SetAlpha(0) end
+end
+
+-- The old action skin (box and glyph) leaves Blizzard's buttons while our
+-- cells stand for them, so nothing of it can show through.
+local function Yield(target, yield)
+    NS.WindowActionSkin.Yield(target, yield)
+    for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
+        local child = Safety.Field(target, key)
+        if child then NS.WindowActionSkin.Yield(child, yield) end
+    end
+end
+
+-- target, its art regions, and a size toggle's buttons with theirs.
+local function NativeParts(target)
+    local parts = { target, Safety.Call(target, "GetRegions") }
+    for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
+        local button = Safety.Field(target, key)
+        if Safety.Public(button) and button then
+            parts[#parts + 1] = button
+            for _, region in ipairs({ Safety.Call(button, "GetRegions") }) do parts[#parts + 1] = region end
+        end
+    end
+    return parts
+end
+
+local function Fade(state, region)
+    if not Safety.Public(region) or not Safety.HasMethod(region, "SetAlpha") then return end
+    if state.nativeAlpha[region] == nil then state.nativeAlpha[region] = region:GetAlpha() end
+    if not alphaHooked[region] then
+        alphaHooked[region] = true
+        hooksecurefunc(region, "SetAlpha", KeepFaded)
+    end
+    faded[region] = state
+    region:SetAlpha(0)
+end
+
+-- Alpha only, so combat too; the old action skin lets go outside combat.
+local function FadeNative(state, target)
+    if type(target) ~= "table" or Safety.IsForbidden(target) then return false end
+    if Safety.CanDecorate(target, not NS.IsCombatLocked()) then Yield(target, true) end
+    state.nativeAlpha = state.nativeAlpha or setmetatable({}, { __mode = "k" })
+    state.nativeRoots = state.nativeRoots or setmetatable({}, { __mode = "k" })
+    state.nativeRoots[target] = true
+    for _, region in ipairs(NativeParts(target)) do Fade(state, region) end
+    return true
+end
+
+-- Blizzard's top right corner art holds a socket for each native caption
+-- button: it fades with them, on the window and on panes laid over it.
+local function FadeSockets(state)
+    local frame = state.frame
+    local right, top = Safety.Read(frame, "GetRight"), Safety.Read(frame, "GetTop")
+    if not right or not top then return end
+    for _, owner in ipairs({ frame, Safety.Call(frame, "GetChildren") }) do
+        local corner = Safety.Field(Safety.Field(owner, "NineSlice"), "TopRightCorner")
+        local cornerRight, cornerTop = Safety.Read(owner, "GetRight"), Safety.Read(owner, "GetTop")
+        if corner and cornerRight and cornerTop and math.abs(cornerRight - right) < 6 and math.abs(cornerTop - top) < 6
+            and Safety.Read(owner, "IsShown") then
+            FadeNative(state, corner)
+        end
+    end
+end
+
+local function RestoreNative(state, target)
+    if not state.nativeRoots or not state.nativeRoots[target]
+        or not Safety.CanDecorate(target, not NS.IsCombatLocked()) then return end
+    state.nativeRoots[target] = nil
+    state.restores = (state.restores or 0) + 1
+    Yield(target, false)
+    for _, region in ipairs(NativeParts(target)) do
+        local alpha = state.nativeAlpha[region]
+        if alpha ~= nil then
+            if faded[region] == state then faded[region] = nil end
+            region:SetAlpha(alpha)
+            state.nativeAlpha[region] = nil
+        end
+    end
+end
+
+-- Field report: one chat line per window when Blizzard's X or size toggle
+-- shows under our cells, before the caption fades it again.
+local function Report(state, moment)
+    local close, cell = state.close, state.closeCell
+    if state.reported or not cell or not cell:IsShown() then return end
+    local native = Safety.Read(close, "GetAlpha") == 0 and state.sizeToggle or close
+    local alpha = Safety.Read(native, "GetAlpha")
+    if not alpha or alpha == 0 or not Safety.Read(native, "IsShown") then return end
+    state.reported = true
+    NS.Print(("caption check: %s %s, %s alpha %.2f, faded %s, owned %s, path %s, restores %d"):format(state.name,
+        tostring(moment or "next frame"), native == close and "X" or "toggle", alpha, tostring(faded[native] ~= nil),
+        tostring(state.nativeRoots and state.nativeRoots[native] == true), tostring(state.captionPath), state.restores or 0))
+end
+
+local CELLS = { "closeCell", "toggleCell", "maximize", "minimize" }
+function Chrome.HideCaption(state)
+    for _, key in ipairs(CELLS) do
+        if state[key] then state[key]:Hide() end
+    end
+    for target in pairs(state.nativeRoots or {}) do RestoreNative(state, target) end
+    RefreshFocus(state.frame)
+end
+
+-- The glyph is laid out on the cell's final place (whole screen pixels).
+local function PlaceCell(cell, anchor, width, height, level, kind)
+    cell:SetSize(width, height)
+    cell:SetFrameLevel(level)
+    if anchor then
+        cell:ClearAllPoints()
+        cell:SetPoint("RIGHT", anchor, "LEFT", 0, 0)
+    end
+    LayoutCaption(cell, kind)
+    cell:Show()
+    return cell
+end
+
+-- Blizzard's size toggle shows its maximize or its restore button.
+local function ToggleCell(state, anchor, width, height, level)
+    local toggle = state.sizeToggle
+    local maximize = Safety.Field(toggle, "MaximizeButton")
+    if not Safety.Read(toggle, "IsShown") or not FadeNative(state, toggle) then
+        if state.toggleCell then state.toggleCell:Hide() end
+        return nil
+    end
+    local cell = DrawnCell(state, "toggleCell")
+    Drive(maximize, cell)
+    Drive(Safety.Field(toggle, "MinimizeButton"), cell)
+    return PlaceCell(cell, anchor, width, height, level, Safety.Read(maximize, "IsShown") and "maximize" or "restore")
+end
+
 function Chrome.ShowCaption(state, level)
     Chrome.SyncMinimize(state)
-    local minimize, maximize = state.minimize or state.captionMin, state.maximize
     local width, height, room, inset = Chrome.CaptionSize(state)
     local gamepad = NS.Client.IsGamepadUI()
     if state.fit and (not width or gamepad) then
         Chrome.LeaveFit(state)
         width, height, room, inset = Chrome.CaptionSize(state)
     end
-    state.captionInset = nil
-    if maximize and width and not gamepad then
-        state.captionInset = inset
-        maximize:SetSize(width, height)
-        minimize:SetSize(width, height)
-        maximize:SetFrameLevel(level)
-        minimize:SetFrameLevel(level)
-        maximize:ClearAllPoints()
-        maximize:SetPoint("RIGHT", state.close, "LEFT", 0, 0)
-        minimize:ClearAllPoints()
-        minimize:SetPoint("RIGHT", maximize, "LEFT", 0, 0)
-        LayoutCaption(maximize, state.fit and "restore" or "maximize")
-        LayoutCaption(minimize, "minimize")
-        maximize:Show()
-        minimize:Show()
-        return
+    local cells = width and not gamepad and FadeNative(state, state.close)
+    -- Combat leaves a shown caption where it is (a protected window can read
+    -- as unsized there): Blizzard's buttons stay faded, the toggle's cell comes
+    -- and goes with the toggle, and the window is laid out once combat ends.
+    if not cells and NS.IsCombatLocked() and state.closeCell and state.closeCell:IsShown() then
+        local toggle, shown = state.sizeToggle, Safety.Read(state.sizeToggle, "IsShown") == true
+        if shown then FadeNative(state, toggle) end
+        if state.toggleCell then state.toggleCell:SetShown(shown) end
+        for target in pairs(state.nativeRoots or {}) do FadeNative(state, target) end
+        return NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
     end
-    if maximize then maximize:Hide() end
-    if state.minimize and not gamepad and (room == nil or room >= 25) then
-        minimize:SetSize(22, height or 22)
-        minimize:SetFrameLevel(level)
+    state.captionInset, state.captionLevel = nil, level
+    if not cells then
+        state.captionPath = not width and "size" or gamepad and "gamepad" or "protected"
+        Chrome.HideCaption(state)
+        local minimize = state.minimize
+        if not minimize or gamepad or room ~= nil then return end
         minimize:ClearAllPoints()
         PlaceMinimize(minimize, state, state.close)
-        LayoutCaption(minimize, "minimize")
-        minimize:Show()
+        return PlaceCell(minimize, nil, 22, 22, level, "minimize")
+    end
+    state.captionInset, state.captionPath = inset, "cells"
+    -- Above Blizzard's own caption buttons, whatever pane raised them.
+    for _, native in ipairs({ state.close, state.sizeToggle }) do
+        local nativeLevel = Safety.Read(native, "GetFrameLevel")
+        if type(nativeLevel) == "number" and nativeLevel + 2 > level then level = nativeLevel + 2 end
+    end
+    local toggle = state.sizeToggle and Safety.Read(state.sizeToggle, "IsShown")
+    -- A tight title shrinks all cells alike before one of them gives way.
+    local cells = ((state.maximize or toggle) and 1 or 0) + (state.minimize and 1 or 0)
+    if cells > 0 and room < width * cells then width = math.max(18, math.floor(room / cells)) end
+    local close = DrawnCell(state, "closeCell")
+    close:ClearAllPoints()
+    close:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", state.captionX, state.captionY)
+    PlaceCell(close, nil, width, height, level, "close")
+    Drive(state.close, close)
+    FadeSockets(state)
+    RefreshFocus(state.frame)
+    local middle = state.sizeToggle and ToggleCell(state, close, width, height, level)
+    local maximize, minimize = state.maximize, state.minimize
+    if maximize and not middle and room >= width * 2 then
+        middle = PlaceCell(maximize, close, width, height, level, state.fit and "restore" or "maximize")
+    elseif maximize then
+        -- Without its restore cell (Blizzard's size toggle took the place, or
+        -- the title is too tight) a fitted window goes back to its own size.
+        if state.fit then
+            Chrome.LeaveFit(state)
+            if not state.fit then return Chrome.ShowCaption(state, level) end
+        end
+        maximize:Hide()
+    end
+    if minimize and room >= width * (middle and 2 or 1) then
+        PlaceCell(minimize, middle or close, width, height, level, "minimize")
     elseif minimize then
         minimize:Hide()
     end
 end
 
+-- Windows finish their layout after OnShow (Guild sizes itself from its
+-- display mode): the caption is laid out again on the next frame, and once
+-- more three seconds later. Guild, the AddOn list and Settings show Blizzard's
+-- caption buttons again while they open: until then, every frame looks at
+-- them under shown cells, and the caption fades them at once. Combat, or the
+-- window closing, ends the look; no update runs without an opening window.
+local OPENING_SECONDS = 3
+local opening = {}
+local watcher = CreateFrame("Frame")
+watcher:Hide()
+
+local function EndOpening(state)
+    opening[state] = nil
+    if next(opening) == nil then watcher:SetScript("OnUpdate", nil) watcher:Hide() end
+end
+
+local function NativeShown(state)
+    if (Safety.Read(state.close, "GetAlpha") or 0) ~= 0 then return true end
+    for target in pairs(state.nativeRoots or {}) do
+        if (Safety.Read(target, "GetAlpha") or 0) ~= 0 then return true end
+    end
+    return false
+end
+
+local function Watch(_, elapsed)
+    local combat = NS.IsCombatLocked()
+    for state, age in pairs(opening) do
+        age = age + (elapsed or 0)
+        opening[state] = age
+        local cell = state.closeCell
+        if combat or age >= OPENING_SECONDS then
+            EndOpening(state)
+            if not combat then state.settle(OPENING_SECONDS .. "s") end
+        elseif cell and cell:IsVisible() and NativeShown(state) then
+            state.settle(("%.2fs"):format(age))
+        end
+    end
+end
+
+function Chrome.Settle(state, level, allowed)
+    state.settleLevel, state.settleAllowed = level, allowed
+    state.settle = state.settle or function(moment)
+        if not state.settleAllowed(state) then return end
+        Report(state, moment)
+        Chrome.ShowCaption(state, state.settleLevel)
+    end
+    NS.Registry.QueueJob(state.settle)
+    if NS.IsCombatLocked() or Safety.Read(state.frame, "IsVisible") ~= true then return end
+    if not state.watchHooked then
+        state.watchHooked = true
+        state.frame:HookScript("OnHide", function() EndOpening(state) end)
+    end
+    opening[state] = 0
+    watcher:SetScript("OnUpdate", Watch)
+    watcher:Show()
+end
+
 function Chrome.RecolorCaption(state)
-    if state.minimize then PaintCaption(state.minimize) end
-    if state.captionMin then PaintCaption(state.captionMin) end
-    if state.maximize then PaintCaption(state.maximize) end
+    for _, key in ipairs(CELLS) do
+        if state[key] then PaintCaption(state[key]) end
+    end
 end
 
 -- Fixed-size native panels fill the available area by scaling uniformly.
@@ -482,43 +719,48 @@ function Chrome.ToggleFit(state, capturePoints)
     return true
 end
 
--- A native size toggle (state.sizeToggle) sits between close and minimize.
 PlaceMinimize = function(button, state, close)
-    local frame, toggle = state.frame, state.sizeToggle
-    if toggle and Safety.Read(toggle, "IsShown") then
-        button:SetPoint("RIGHT", toggle, "LEFT", -1, 0)
-        return
-    end
     local anchor = close and Safety.Read(close, "GetPoint", 1)
     if type(anchor) == "string" and anchor:find("TOP", 1, true) then
         button:SetPoint("RIGHT", close, "LEFT", -3, 0)
     else
-        button:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -36, -4)
+        button:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -36, -4)
     end
 end
 
--- Blizzard hides its size toggle on tabs without a small layout; our
--- minimize then moves next to the close button.
+-- Blizzard's own size toggle (a MaximizeMinimizeButton frame), or nil.
+function Chrome.NativeSizeToggle(frame, close)
+    local header = Safety.Read(close, "GetParent")
+    local toggle = NativeCaption(frame) or header ~= frame and NativeCaption(header) or nil
+    if Safety.Public(toggle) and Safety.HasMethod(toggle, "HookScript")
+        and Safety.Field(toggle, "MaximizeButton") and Safety.Field(toggle, "MinimizeButton") then
+        return toggle
+    end
+end
+
+-- Blizzard shows the toggle's other button after a size change and hides
+-- the toggle on tabs without a small layout (our maximize stands in): the
+-- caption follows.
 function Chrome.FollowSizeToggle(state, toggle)
-    if not Safety.Public(toggle) or not Safety.HasMethod(toggle, "HookScript") then return end
     state.sizeToggle = toggle
-    local function Replace()
-        local minimize = state.minimize
-        if minimize and minimize:IsShown() and Safety.CanDecorate(minimize, not NS.IsCombatLocked()) then
-            Chrome.PlaceMinimize(state)
+    local function Relayout()
+        local close = state.closeCell
+        if close and close:IsShown() and Safety.CanDecorate(close, not NS.IsCombatLocked()) then
+            Chrome.ShowCaption(state, state.captionLevel)
         end
     end
-    toggle:HookScript("OnShow", Replace)
-    toggle:HookScript("OnHide", Replace)
+    toggle:HookScript("OnShow", Relayout)
+    toggle:HookScript("OnHide", Relayout)
+    for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
+        local button = Safety.Field(toggle, key)
+        if Safety.HasMethod(button, "HookScript") then button:HookScript("OnShow", Relayout) end
+    end
 end
 
-function Chrome.PlaceMinimize(state)
-    state.minimize:ClearAllPoints()
-    PlaceMinimize(state.minimize, state, state.close)
-end
-
+-- Caption buttons share the parent of the grip: the map's border, whose
+-- strata is above the map root.
 function Chrome.CreateMinimize(state, close, level, click)
-    local button = Safety.CreateChildFrame("Button", state.frame)
+    local button = Safety.CreateChildFrame("Button", Chrome.Parent(state))
     Chrome.Control(button, "minimize", level)
     PlaceMinimize(button, state, close)
     button:RegisterForClicks("LeftButtonUp")
@@ -556,16 +798,12 @@ function Chrome.CreateRestore(state, click)
 end
 
 function Chrome.CreateCaption(state, level, click)
-    if state.maximize or state.inventory or not Chrome.CaptionSize(state) then return end
-    local frame = state.frame
-    local button = Safety.CreateChildFrame("Button", frame)
+    if state.maximize or state.inventory then return end
+    local parent = Chrome.Parent(state)
+    local button = Safety.CreateChildFrame("Button", parent)
     state.maximize = button
     Chrome.Control(button, "maximize", level)
     button:RegisterForClicks("LeftButtonUp")
     button:SetScript("OnClick", click)
-    if not state.minimize then
-        state.captionMin = Safety.CreateChildFrame("Button", frame)
-        Chrome.Control(state.captionMin, "minimize", level, true)
-    end
     return button
 end

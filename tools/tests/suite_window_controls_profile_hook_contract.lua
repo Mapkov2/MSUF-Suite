@@ -78,7 +78,8 @@ local function Frame(name, parent, kind)
     function frame:CreateTexture()
         return { SetAllPoints = function() end,
             ClearAllPoints = function() end, SetPoint = function() end, SetSize = function() end,
-            Show = function() end, Hide = function() end, SetColorTexture = function() end }
+            Show = function() end, Hide = function() end, SetColorTexture = function() end,
+            SetSnapToPixelGrid = function() end, SetTexelSnappingBias = function() end }
     end
     function frame:CreateFontString()
         return { SetPoint = function() end, SetJustifyH = function() end,
@@ -95,7 +96,13 @@ local character, hookInstalls, fitInstalls
 
 -- The client's hooksecurefunc: the global becomes the original followed by
 -- the post-hook.
-hooksecurefunc = function(name, post)
+hooksecurefunc = function(name, post, method)
+    if type(name) == "table" then
+        local object, key, post = name, post, method
+        local native = object[key]
+        object[key] = function(...) native(...) post(...) end
+        return
+    end
     -- The UI scale fit hook comes with it (suite_window_controls_edges_contract.lua).
     if name == "UpdateScaleForFitForOpenPanels" then
         fitInstalls = fitInstalls + 1
@@ -153,6 +160,10 @@ local function NewSession(forever, look)
         Adapters = { ApplyAll = function() end },
     }
     local core = { HostBridge = {} }
+    core.Suite = {}
+    assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", core)
+    core.WindowCaption.PixelFactor = function() return nil end
+    NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
     NS.SuiteCore = function() return core end
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)

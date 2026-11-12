@@ -18,7 +18,7 @@ local WindowActionStyleLabel = O.Labeler({
     outline = L["Outline"],
     native = L["Native"],
 })
-local WindowActionGlyphLabel = O.Labeler({ windows = L["Windows"], plusMinus = "+ / -", chevrons = L["Chevrons"] })
+local WindowActionGlyphLabel = O.Labeler({ windows = L["Windows style"], plusMinus = "+ / -", chevrons = L["Chevrons"] })
 local WindowActionWeightLabel = O.Labeler({ fine = L["Fine"], bold = L["Bold"] })
 local IconStyleLabel = O.Labeler({
     line = L["Line glyphs"],

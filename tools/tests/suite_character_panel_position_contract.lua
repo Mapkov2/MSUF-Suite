@@ -94,7 +94,8 @@ width, height, uiScale = 1600, 900, .8
 Window.Fit(state)
 Position(frame, 376, 775)
 
-Window.Dock(state, "right")
+-- A dock saved before the dock buttons left still places the window.
+preferences.dock = "right"
 state, frame = New(preferences)
 assert(preferences.dock == "right" and frame.point == "TOPRIGHT")
 Window.SetMinimized(state, true)

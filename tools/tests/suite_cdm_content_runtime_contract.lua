@@ -357,6 +357,8 @@ Check(frame.shown and frame.icon.tex == 309, "'Pulse only in combat' off: pulses
 Finish()
 C.Alerts.Ready({ slot = "ess", family = 2, texture = 310, ov = C.EMPTY })
 Check(not frame.shown, "buffs do not pulse")
+C.Alerts.Ready({ slot = "ess", family = 1, src = "t", id = 1, texture = 4444, ov = C.EMPTY, key = "t1" })
+Check(not frame.shown, "a totem slot that empties does not pulse")
 -- The module lets go: the pulse on screen and the queue disappear.
 Combat(false)
 Ready(311)

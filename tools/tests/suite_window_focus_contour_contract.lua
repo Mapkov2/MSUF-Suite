@@ -62,6 +62,20 @@ local body = [======[
             Check(slice.source.contour ~= nil, "exterior piece lost its alpha contour")
         end
     end
+    -- Blizzard's X over the top edge (Forever's 28px close) is window chrome
+    -- the inactive veil dims, until our caption cells stand for it: faded
+    -- under them, it leaves no box in the veil.
+    local close = Native("ContourClose", 676, 487, 28, 28)
+    close.parent, close.kind = border, "Button"
+    border.GetChildren = function() return info, portrait, close end
+    map:Hide(); map:Show(); Click(character)
+    Check(Covered(690, 510), "an exterior native button lost its dimming")
+    NS.WindowFocusChrome.SetHidden(function(frame) return frame == close end)
+    map:Hide(); map:Show(); Click(character)
+    Check(not Covered(690, 510), "a faded native caption button still shapes the focus veil")
+    NS.WindowFocusChrome.SetHidden(NS.WindowControlChrome.IsFaded)
+    border.GetChildren = function() return info, portrait end
+    map:Hide(); map:Show(); Click(character)
     local foreignWrites = 0
     for _, frame in ipairs({ map, border, info, portrait, portrait.portrait, portrait.CircleMask }) do
         foreignWrites = foreignWrites + (frame.geometryWrites or 0)

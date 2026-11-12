@@ -272,6 +272,67 @@ local function SkinPagingControls(state, pagingControls)
     SkinGlyphButton(state, PublicField(pagingControls, "NextPageButton"), ">", NEXT_PAGE_SPEC)
 end
 
+-- Forever: Classic's "Show All Spell Ranks" option back on the page, as a
+-- toggle chip in the theme's controls: a lit dot and the active fill while
+-- on. It only flips Blizzard's own ShowAllSpellRanks setting. Refreshing the
+-- list from here would taint the spell buttons, so Blizzard applies the
+-- setting when the player switches spellbook tabs; the tooltip says so.
+local RANKS_CVAR = "ShowAllSpellRanks"
+local classesWithoutRanks = { ROGUE = true, WARRIOR = true }
+local RANKS_SPEC = { role = "button", activeRole = "navigationActive", useControlShape = true, ownedArt = true }
+
+local function SyncRanksToggle(button)
+    local on = GetCVarBool(RANKS_CVAR) == true
+    button.on = on
+    NS.ControlSkin.Refresh(button, on)
+    button.Text:SetTextColor(NS.Theme.GetColor(on and "accentBright" or "muted"))
+    button.Dot:SetColorTexture(NS.Theme.GetColor(on and "accentBright" or "border"))
+end
+
+local function OnRanksToggleClick(button)
+    SetCVar(RANKS_CVAR, button.on and "0" or "1")
+    SyncRanksToggle(button)
+end
+
+local function OnRanksToggleEnter(button)
+    GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    GameTooltip_SetTitle(GameTooltip, SHOW_ALL_SPELL_RANKS)
+    GameTooltip_AddNormalLine(GameTooltip, NS.L["Takes effect when you switch spellbook tabs."], true)
+    GameTooltip:Show()
+end
+
+local function CreateRanksToggle(spellBook, paged)
+    local button = CreateFrame("Button")
+    button:SetParent(spellBook)
+    button:SetPoint("BOTTOMLEFT", paged, "BOTTOMLEFT", 80, 34)
+    -- Above the pages and the book's skin surface, like Blizzard's paging controls.
+    button:SetFrameLevel((Safety.Read(paged, "GetFrameLevel") or 1) + 10)
+    button.Dot = button:CreateTexture(nil, "OVERLAY")
+    button.Dot:SetSize(6, 6)
+    button.Dot:SetPoint("LEFT", button, "LEFT", 11, 0)
+    button.Text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    button.Text:SetPoint("LEFT", button.Dot, "RIGHT", 8, 0)
+    button.Text:SetText(SHOW_ALL_SPELL_RANKS)
+    button:SetSize(math.ceil((Safety.Read(button.Text, "GetStringWidth") or 120) + 37), 24)
+    button:RegisterForClicks("LeftButtonUp")
+    button:SetScript("OnClick", OnRanksToggleClick)
+    button:SetScript("OnShow", SyncRanksToggle)
+    button:SetScript("OnEnter", OnRanksToggleEnter)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    return button
+end
+
+local function SkinRanksToggle(state, spellBook, paged)
+    if not NS.Client.isForever or NS.Client.IsGamepadUI() then return end
+    local _, classFile = UnitClass("player")
+    -- A combat page repair only shows a toggle created before the fight.
+    if classesWithoutRanks[classFile] or not state.ranksToggle and NS.IsCombatLocked() then return end
+    state.ranksToggle = state.ranksToggle or CreateRanksToggle(spellBook, paged)
+    Kit.SkinControl(state, state.ranksToggle, RANKS_SPEC)
+    SyncRanksToggle(state.ranksToggle)
+    state.ranksToggle:Show()
+end
+
 local function SkinSpellBookControls(state, spellBook)
     SkinTabSystem(state, PublicField(spellBook, "CategoryTabSystem"))
     Kit.SkinSearchBox(state, PublicField(spellBook, "SearchBox"))
@@ -288,6 +349,7 @@ local function SkinSpellBookControls(state, spellBook)
     local paged = PublicField(spellBook, "PagedSpellsFrame")
     if paged and not Safety.IsForbidden(paged) then
         SkinPagingControls(state, PublicField(paged, "PagingControls"))
+        SkinRanksToggle(state, spellBook, paged)
     end
 end
 
@@ -368,10 +430,12 @@ local function SkinRootControls(state)
     end
 end
 
--- Blizzard's portrait overhangs the frame corner. A small round copy sits in
--- the title bar instead and follows every portrait change (spellbook, class
--- or spec icon); the native portrait only fades, Blizzard keeps setting it.
-local BADGE_SIZE, BADGE_MASK = 18, "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+-- Blizzard's portrait overhangs the frame corner. Like the Legacy window's
+-- emblem, a round copy sits inside the spell book's free top-left corner,
+-- level with the category tabs, and follows every portrait change. It lives
+-- on the spell book page, so the talents tab shows none. The native
+-- portrait only fades; Blizzard keeps setting it.
+local BADGE_SIZE, BADGE_MASK = 40, "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
 local function SyncPortraitBadge(badge)
     local texture = Safety.Read(badge.portrait, "GetTexture")
@@ -381,11 +445,16 @@ local function SyncPortraitBadge(badge)
     if Safety.Public(bottom) then badge.icon:SetTexCoord(left, top, x2, y2, x3, y3, right, bottom) end
 end
 
-local function CreatePortraitBadge(frame, container, portrait)
-    local badge = Safety.CreateChildFrame("Frame", frame)
+local function CreatePortraitBadge(spellBook, portrait)
+    local badge = Safety.CreateChildFrame("Frame", spellBook)
+    local tabs = PublicField(spellBook, "CategoryTabSystem")
     badge:SetSize(BADGE_SIZE, BADGE_SIZE)
-    badge:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -2)
-    badge:SetFrameLevel((Safety.Read(container, "GetFrameLevel") or frame:GetFrameLevel()) + 1)
+    if tabs then
+        badge:SetPoint("RIGHT", tabs, "LEFT", -14, 0)
+    else
+        badge:SetPoint("TOPLEFT", spellBook, "TOPLEFT", 16, -22)
+    end
+    badge:SetFrameLevel((Safety.Read(tabs, "GetFrameLevel") or Safety.Read(spellBook, "GetFrameLevel") or 1) + 1)
     badge.icon = badge:CreateTexture(nil, "ARTWORK")
     badge.icon:SetAllPoints(badge)
     if Safety.HasMethod(badge, "CreateMaskTexture") then
@@ -402,13 +471,14 @@ local function CreatePortraitBadge(frame, container, portrait)
 end
 
 local function SkinPortrait(state, frame)
-    local container = PublicField(frame, "PortraitContainer")
-    local portrait = PublicField(container, "portrait")
-    if not portrait or Safety.IsForbidden(portrait) then return end
-    state.portraitBadge = state.portraitBadge or CreatePortraitBadge(frame, container, portrait)
+    local portrait = PublicField(PublicField(frame, "PortraitContainer"), "portrait")
+    local spellBook = PublicField(frame, "SpellBookFrame")
+    if not portrait or Safety.IsForbidden(portrait) or not spellBook or Safety.IsForbidden(spellBook) then return end
+    state.portraitBadge = state.portraitBadge or CreatePortraitBadge(spellBook, portrait)
     Fade(state, portrait)
     SyncPortraitBadge(state.portraitBadge)
     state.portraitBadge:Show()
+    Kit.PortraitBezel(state.portraitBadge, state.portraitBadge, state.owner, 2)
 end
 
 local function SkinRootStatic(state, skipWindowControls)
@@ -638,6 +708,8 @@ local function RestoreState(state)
     NS.ControlSkin.DisableOwner(state.owner)
     Kit.HideSurfaces(state)
     if state.portraitBadge then state.portraitBadge:Hide() end
+    Kit.HidePortraitBezels(state.owner)
+    if state.ranksToggle then state.ranksToggle:Hide() end
     state.surfaces = Kit.WeakSet()
     for glyph in pairs(state.glyphs) do
         glyph:Hide()

@@ -83,6 +83,7 @@ Core\CDMInspection.lua
 Core\SpellRange.lua
 Core\FontBridge.lua
 Core\CharacterHeader.lua
+Core\WindowCaption.lua
 Integrations\MapkoSkin.lua
 Core\HostBridge.lua
 Core\NameplateHostSettings.lua

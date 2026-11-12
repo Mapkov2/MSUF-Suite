@@ -31,7 +31,7 @@ function Editor.Remember()
     local rows = {}
     for i = 1, math.min(#C.Catalog.order, 600) do
         local rec = C.Catalog.records[C.Catalog.order[i]]
-        if rec and CDM.ValidEntryKey(rec.key) then
+        if rec and CDM.ValidEntryKey(rec.key) and C.Catalog.Exists(rec) then
             rows[#rows + 1] = { key = rec.key, name = Text(C.Catalog.RecordName(rec)), texture = Number(C.Catalog.RecordTexture(rec)),
                 spell = Number(rec.spell), override = Number(rec.override), family = rec.family, slot = rec.bar,
                 tail = C.Catalog.TAIL[rec.category] == true, known = rec.known == true, equipSlot = Number(rec.equipSlot),
@@ -96,8 +96,12 @@ local function Describe(key, family, saved)
         spell = id
     elseif kind == "i" then
         name, texture = Text(C.Catalog.ItemName(id)), Number(C_Item.GetItemIconByID(id))
-    elseif kind == "e" then
+    elseif kind == "e" and (id == 13 or id == 14) then
         name = string.format(S.Text("Trinket slot %d"), id - 12)
+    elseif kind == "e" then
+        name = C.EntryFill.SlotLabel(id)
+    elseif kind == "t" then
+        name, texture = C.EntryFill.TotemLabel(id), C.EntryFill.TOTEM_ICON
     end
     if spell then
         name, texture = name or Text(C_Spell.GetSpellName(spell)), texture or Number(C_Spell.GetSpellTexture(spell))
@@ -202,9 +206,10 @@ local function Defaults(context)
             list[#list + 1] = row.key
         end
         if row.family == 1 then
-            if row.base and not spellKey[row.base] then spellKey[row.base] = row.key end
-            if row.spell and not spellKey[row.spell] then spellKey[row.spell] = row.key end
-            if row.override and not spellKey[row.override] then spellKey[row.override] = row.key end
+            -- Every rank of a ranked spell names the row (WoW Forever, Ranks.Claim).
+            C.Ranks.Claim(spellKey, row.base, row.key)
+            C.Ranks.Claim(spellKey, row.spell, row.key)
+            C.Ranks.Claim(spellKey, row.override, row.key)
             for j = 1, math.min(#(row.linked or EMPTY), 600) do
                 local id = Number(row.linked[j])
                 if id and not spellKey[id] then spellKey[id] = row.key end
@@ -283,7 +288,7 @@ local function Claim(context, list, slot, shared)
     for i = 1, list and #list or 0 do
         local key = context.alias[list[i]] or list[i]
         local kind, family = CDM.EntryKind(key), Family(context, slot)
-        if kind == "s" or kind == "i" or kind == "e" then
+        if kind == "s" or kind == "i" or kind == "e" or kind == "t" then
             family = 1
         elseif CDM.IsAuraKey(key) then
             family = 2

@@ -455,7 +455,13 @@ function WindowActionSkin.HasOwnedStates(button)
     return true
 end
 
+-- Blizzard's caption buttons that a Windows caption cell stands for
+-- (WindowControlChrome): they keep their native art, faded under our cell,
+-- and take no action skin of their own while the cell is there.
+local yielded = setmetatable({}, { __mode = "k" })
+
 local function ApplyNow(button, owner, kind, motion)
+    if yielded[button] then return nil, "caption cell" end
     if not CanApply(button, owner) then return nil, "protected control" end
     if not validKinds[kind] then return nil, "unknown action" end
 
@@ -664,6 +670,12 @@ function WindowActionSkin.SyncButtonArtKit(button, owner, artKit, kind)
         return nil, reason or "combat"
     end
     return SyncButtonArtKitNow(button, owner, artKit, kind)
+end
+
+function WindowActionSkin.Yield(button, yield)
+    yielded[button] = yield and true or nil
+    local state = WindowActionSkin.states[button]
+    if yield and state and state.visible then DisableNow(button, state) end
 end
 
 function WindowActionSkin.Disable(button, owner)

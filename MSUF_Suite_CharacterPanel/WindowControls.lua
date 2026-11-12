@@ -7,6 +7,12 @@ local HOST_GAP = 2
 local MINIMIZED_WIDTH = 450
 local min, max, abs = math.min, math.max, math.abs
 local Number = NS.Number
+-- The Suite core's caption painter (MSUF_Suite/Core/WindowCaption.lua).
+local function Caption() return NS.Suite.WindowCaption end
+-- Windows caption cells (close, maximize/restore, minimize), flush in the
+-- header's top right corner under its accent rule.
+local CELL_W, CELL_H = 30, 24
+Window.CaptionCell = { width = CELL_W, height = CELL_H }
 
 local function ScreenFit(state)
     local width, height = Number(UIParent:GetWidth()), Number(UIParent:GetHeight())
@@ -51,9 +57,9 @@ local function SyncControls(state)
     if minimized == state.captionMinimized and maximized == state.captionMaximized then return end
     state.captionMinimized, state.captionMaximized = minimized, maximized
     state.grip:SetShown(not minimized and not maximized)
-    state.maximizeLabel:SetText(maximized and "−" or "+")
+    Caption().SetKind(state.maximize, maximized and "restore" or "maximize")
     state.maximize.tooltip = maximized and NS.Text("Restore window") or NS.Text("Maximize window")
-    state.minimizeLabel:SetText(minimized and "+" or "−")
+    Caption().SetKind(state.minimize, minimized and "restore" or "minimize")
     state.minimize.tooltip = minimized and NS.Text("Restore window") or NS.Text("Minimize window")
 end
 
@@ -159,10 +165,16 @@ function Window.NativeLevel(view, offset)
     return view.frame:GetFrameLevel() + offset - view.nativeLayout.artLevel
 end
 
+-- The art keeps no mouse: Blizzard's X under it takes the click, and its
+-- hover lights the art.
 function Window.PlaceCloseArt(view, art)
     view.closeArt = art
     art:EnableMouse(false)
     art:SetFrameLevel(Window.NativeLevel(view, view.nativeLayout.closeLevel + 1))
+    local native = view.nativeRoot and NS.Public(view.nativeRoot.CloseButton) and view.nativeRoot.CloseButton
+    if not native or not native.HookScript then return end
+    native:HookScript("OnEnter", function() Caption().SetHover(art, true) end)
+    native:HookScript("OnLeave", function() Caption().SetHover(art, false) end)
 end
 
 function Window.ReportParent(view)
@@ -235,13 +247,6 @@ end
 
 function Window.ToggleMaximized(state)
     SetMaximized(state, not state.maximized)
-end
-
-function Window.Dock(state, side)
-    SetMaximized(state, false)
-    state.dock = side
-    if state.preferences then state.preferences.dock = side end
-    Dock(state)
 end
 
 local function ScreenTopLeft(state)
@@ -402,8 +407,6 @@ function Window.CreateGrip(view, tooltip, paint)
 end
 
 Window.CaptionActions = {
-    dockLeft = function(button) Window.Dock(button.view.window, "left") end,
-    dockRight = function(button) Window.Dock(button.view.window, "right") end,
     minimize = function(button) button.view:SetMinimized(not button.view:IsMinimized()) end,
     maximize = function(button)
         local view = button.view
@@ -421,21 +424,52 @@ local function NativeAction(button, action)
 end
 
 Window.NativeCaptionActions = {
-    dockLeft = function(button) NativeAction(button, "dockLeft") end,
-    dockRight = function(button) NativeAction(button, "dockRight") end,
     minimize = function(button)
         local minimized = NativeAction(button, "minimize")
         if type(minimized) ~= "boolean" then return end
-        button.view.window.minimizeLabel:SetText(minimized and "+" or "−")
+        Caption().SetKind(button, minimized and "restore" or "minimize")
         button.tooltip = NS.Text(minimized and "Restore window" or "Minimize window")
     end,
     maximize = function(button)
         local maximized = NativeAction(button, "maximize")
         if type(maximized) ~= "boolean" then return end
-        button.view.window.maximizeLabel:SetText(maximized and "−" or "+")
+        Caption().SetKind(button, maximized and "restore" or "maximize")
         button.tooltip = NS.Text(maximized and "Restore window" or "Maximize window")
     end,
 }
+
+-- Right to left: close, maximize, minimize. text and base are the view's
+-- palette colours for the glyphs and for the header under the hosted close
+-- art, which covers Blizzard's own X (that X keeps the click).
+local CAPTION = { { "close", "Close" }, { "maximize", "Maximize window" }, { "minimize", "Minimize window" } }
+
+function Window.CreateCaption(view, header, close, tooltip, text, base)
+    local window = view.window
+    local actions = view.nativeLayout and Window.NativeCaptionActions or Window.CaptionActions
+    local function Color(role)
+        local color = role == "base" and base or text
+        color = view.palette[color] or color
+        return color[1], color[2], color[3], color[4] or 1
+    end
+    local cells = {}
+    for index, entry in ipairs(CAPTION) do
+        local cell = Window.CreateChild(view, "Button", header)
+        cell.view = view
+        cell:SetSize(CELL_W, CELL_H)
+        cell:SetPoint("TOPRIGHT", header, "TOPRIGHT", (1 - index) * CELL_W, -1)
+        Caption().Dress(cell, entry[1], Color, index == 1 and view.nativeLayout ~= nil)
+        local action = index == 1 and close or actions[entry[1]]
+        if action and not view.embedded then cell:SetScript("OnClick", action) end
+        tooltip(cell, NS.Text(entry[2]))
+        cells[index] = cell
+    end
+    window.captionCells, window.maximize, window.minimize = cells, cells[2], cells[3]
+    if view.nativeLayout then Window.PlaceCloseArt(view, cells[1]) end
+end
+
+function Window.PaintCaption(window)
+    for _, cell in ipairs(window.captionCells or {}) do Caption().Paint(cell) end
+end
 
 function Window.CancelGestures(state)
     Window.EndMove(state)

@@ -1479,8 +1479,9 @@ Section("player spells tab colors", function()
     local getColor = NS.Theme.GetColor
     local themeRed, themeReads = 0.71, 0
     NS.Theme.GetColor = function() themeReads = themeReads + 1; return themeRed, 0.72, 0.73, 1 end
-    -- The portrait overhangs the frame corner: a small round copy sits in the
-    -- title bar and follows Blizzard's portrait changes (spellbook, class, spec).
+    -- The portrait overhangs the frame corner: a round copy sits in the spell
+    -- book's free top-left corner, like the Legacy emblem, and follows
+    -- Blizzard's portrait changes (spellbook, class, spec).
     local spellsPortrait = { texture = 136830, coords = { 0, 0, 0, 1, 1, 0, 1, 1 } }
     function spellsPortrait:GetTexture() return self.texture end
     function spellsPortrait:GetTexCoord() return unpack(self.coords) end
@@ -1491,6 +1492,7 @@ Section("player spells tab colors", function()
     CreateFrame = function(...)
         local frame = createSpells(...)
         function frame:SetFrameLevel(level) self.level = level end
+        function frame:GetFrameLevel() return self.level or 1 end
         function frame:SetSize(width, height) self.width, self.height = width, height end
         function frame:SetPoint(...) self.point = { ... } end
         function frame:IsShown() return self.shown == true end
@@ -1499,6 +1501,10 @@ Section("player spells tab colors", function()
             function texture:SetAllPoints() end
             function texture:SetTexture(value) self.texture = value end
             function texture:SetTexCoord(...) self.coords = { ... } end
+            function texture:SetDesaturated(value) self.desaturated = value end
+            function texture:SetVertexColor() end
+            function texture:ClearAllPoints() end
+            function texture:SetPoint(_, relative) self.anchor = self.anchor or relative end
             self.icon = texture
             return texture
         end
@@ -1507,14 +1513,19 @@ Section("player spells tab colors", function()
     end
     NS.PlayerSpellsSkin.Apply(spells, "spells")
     CreateFrame = createSpells
-    local spellBadge
+    local spellBadge, spellBezel
     for _, frame in ipairs(spellFrames) do
-        if frame.parent == spells and frame.icon then spellBadge = frame end
+        if frame.parent == spellBook and frame.icon then spellBadge = frame end
     end
-    Expect(spellBadge and spellBadge.shown and spellBadge.level == 5 and spellBadge.width == 18
-        and spellBadge.point[1] == "TOPLEFT" and spellBadge.point[2] == spells
+    for _, frame in ipairs(spellFrames) do
+        if spellBadge and frame.parent == spellBadge then spellBezel = frame end
+    end
+    Expect(spellBadge and spellBadge.shown and spellBadge.width == 40
+        and spellBadge.point[1] == "TOPLEFT" and spellBadge.point[2] == spellBook
         and spellBadge.point[4] > 0 and spellBadge.point[5] < 0,
-        "the spellbook portrait lacks its small badge inside the title bar")
+        "the spellbook portrait lacks its emblem inside the book's top-left corner")
+    Expect(spellBezel and spellBezel.icon and spellBezel.icon.desaturated and spellBezel.icon.anchor == spellBadge,
+        "the spellbook emblem lacks its themed ring")
     Expect(spellBadge.icon.texture == 136830 and spellBadge.icon.coords[8] == 1,
         "the portrait badge does not show Blizzard's portrait")
     spellsPortrait:SetTexCoord(0.25, 0, 0.25, 0.5, 0.5, 0, 0.5, 0.5)
@@ -1601,11 +1612,108 @@ Section("player spells tab colors", function()
         "a tab refresh recaptured our own color as the native one")
 end)
 
+-- Forever: Classic's "Show All Spell Ranks" option on the page, as a themed
+-- toggle chip (not Blizzard's yellow checkbox). It flips only Blizzard's own
+-- setting and never refreshes Blizzard's spell list.
+Section("forever spellbook ranks toggle", function()
+    Load("PlayerSpells.lua")
+    local forever, gamepad, create = NS.Client.isForever, NS.Client.IsGamepadUI, CreateFrame
+    local saved = { GetCVarBool, SetCVar, UnitClass, SHOW_ALL_SPELL_RANKS,
+        GameTooltip, GameTooltip_SetTitle, GameTooltip_AddNormalLine, GameTooltip_Hide, NS.ControlSkin.Refresh }
+    NS.Client.isForever, NS.Client.IsGamepadUI = true, function() return false end
+    local cvars, tooltip, class, active = { ShowAllSpellRanks = "0" }, {}, "MAGE", {}
+    GetCVarBool = function(name) return cvars[name] == "1" end
+    SetCVar = function(name, value) cvars[name] = value end
+    UnitClass = function() return "Class", class end
+    SHOW_ALL_SPELL_RANKS = "Show All Spell Ranks"
+    GameTooltip = { SetOwner = function() end, Show = function() tooltip.shown = true end }
+    GameTooltip_SetTitle = function(_, text) tooltip.title = text end
+    GameTooltip_AddNormalLine = function(_, text) tooltip.line = text end
+    GameTooltip_Hide = function() tooltip.shown = false end
+    NS.ControlSkin.Refresh = function(target, on) active[target] = on return true end
+    local created = {}
+    CreateFrame = function(kind, _, parent, template)
+        local frame = create()
+        frame.kind, frame.template = kind, template
+        function frame:SetSize(width, height) self.width, self.height = width, height end
+        function frame:SetPoint(...) self.point = { ... } end
+        function frame:RegisterForClicks() end
+        function frame:CreateTexture()
+            local dot = {}
+            function dot:SetSize() end
+            function dot:SetPoint() end
+            function dot:SetColorTexture(...) self.color = { ... } end
+            return dot
+        end
+        function frame:CreateFontString()
+            local text = Text(1, 1, 1)
+            function text:SetText(value) self.text = value end
+            function text:SetPoint() end
+            function text:GetStringWidth() return 120 end
+            return text
+        end
+        created[#created + 1] = frame
+        return frame
+    end
+    local function Book()
+        local spells = Frame("PlayerSpellsFrame")
+        spells.shown, spells.hooks = true, {}
+        function spells:IsShown() return self.shown end
+        function spells:HookScript(name, callback) self.hooks[name] = callback end
+        local book = Frame(nil)
+        book.PagedSpellsFrame = Frame(nil)
+        spells.SpellBookFrame = book
+        return spells, book
+    end
+    local spells, book = Book()
+    local refreshes = 0
+    function book:UpdateDisplayedSpells() refreshes = refreshes + 1 end
+    NS.PlayerSpellsSkin.Apply(spells, "ranks")
+    local toggle
+    for _, frame in ipairs(created) do
+        if frame.Text and frame.Text.text == "Show All Spell Ranks" then toggle = frame end
+    end
+    Expect(toggle and toggle.kind == "Button" and not toggle.template and toggle.parent == book and toggle.shown
+        and toggle.point[2] == book.PagedSpellsFrame and toggle.width > 120 and toggle.height == 24,
+        "Forever's spellbook lacks the Show All Spell Ranks toggle button")
+    Expect(toggle and active[toggle] == false and toggle.on == false, "the ranks toggle does not show Blizzard's setting")
+    if toggle then
+        toggle.scripts.OnClick(toggle)
+        Expect(cvars.ShowAllSpellRanks == "1" and refreshes == 0 and active[toggle] == true,
+            "the ranks toggle did not set Blizzard's setting, light up, or refreshed the spell list itself")
+        cvars.ShowAllSpellRanks = "0"
+        toggle.scripts.OnShow(toggle)
+        Expect(active[toggle] == false, "the ranks toggle missed a change from Blizzard's menu")
+        toggle.scripts.OnEnter(toggle)
+        Expect(tooltip.shown and tooltip.title == "Show All Spell Ranks"
+            and tooltip.line == "Takes effect when you switch spellbook tabs.",
+            "the ranks toggle tooltip does not say when the setting applies")
+        NS.PlayerSpellsSkin.Disable(spells, "ranks")
+        Expect(toggle.shown == false, "disabling the spellbook skin left the ranks toggle visible")
+    end
+    -- Rogues and warriors have no ranks; Blizzard's menu omits the option too.
+    class = "ROGUE"
+    created = {}
+    Load("PlayerSpells.lua")
+    local rogue = Book()
+    NS.PlayerSpellsSkin.Apply(rogue, "ranks")
+    local rogueToggle = false
+    for _, frame in ipairs(created) do rogueToggle = rogueToggle or (frame.Text and frame.Text.text == "Show All Spell Ranks") end
+    Expect(not rogueToggle, "a rogue spellbook gained a ranks toggle")
+    NS.PlayerSpellsSkin.Disable(rogue, "ranks")
+    CreateFrame, NS.Client.isForever, NS.Client.IsGamepadUI = create, forever, gamepad
+    GetCVarBool, SetCVar, UnitClass, SHOW_ALL_SPELL_RANKS = saved[1], saved[2], saved[3], saved[4]
+    GameTooltip, GameTooltip_SetTitle, GameTooltip_AddNormalLine, GameTooltip_Hide = saved[5], saved[6], saved[7], saved[8]
+    NS.ControlSkin.Refresh = saved[9]
+end)
+
 Section("prepared Forever spells window combat artwork", function()
     local oldClient, oldCosmetics, oldGetSurface = NS.Client, NS.Cosmetics, NS.Registry.GetSurface
-    local oldLockdown = InCombatLockdown
-    NS.Client = { isForever = true }
+    local oldLockdown, oldUnitClass = InCombatLockdown, UnitClass
+    NS.Client = { isForever = true, IsGamepadUI = function() return false end }
     InCombatLockdown = function() return locked end
+    -- A warrior's book has no ranks checkbox: this section is about artwork.
+    UnitClass = function() return "Warrior", "WARRIOR" end
     assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
     Load("PlayerSpells.lua")
     local writes = 0
@@ -1851,7 +1959,7 @@ Section("prepared Forever spells window combat artwork", function()
     EventRegistry, NS.CombatGate, NS.ControlSkin.ApplyButton = oldEvents, oldGate, oldApplyButton
     PlayerSpellsFrame, NS.DB = oldSpells, oldDB
     NS.Client, NS.Cosmetics, NS.Registry.GetSurface = oldClient, oldCosmetics, oldGetSurface
-    InCombatLockdown = oldLockdown
+    InCombatLockdown, UnitClass = oldLockdown, oldUnitClass
 end)
 
 Section("edit mode and game menu pools", function()

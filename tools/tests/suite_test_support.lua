@@ -601,7 +601,7 @@ end
 -- Skin names that read the same in German: the German pack keeps no entry
 -- identical to the English text (suite_locale_tool.py rejects one).
 Support.SKIN_SAME_IN_GERMAN = { ["MSUF Forever Glass"] = true, ["Ink & Sand"] = true,
-    ["(%.0f%% DR, +%.1fk)"] = true, ["Windows"] = true }
+    ["(%.0f%% DR, +%.1fk)"] = true }
 
 -- The skin's English table (MSUF_Suite_Skin/Locales/enUS.lua): key -> text.
 function Support.SkinEnglish(root)

@@ -9,7 +9,7 @@ NS.View = View
 
 local WIDTH, HEIGHT = CharacterHeader.Width, 552
 local HEADER, TABS, FOOTER, PAD = CharacterHeader.Height, 39, 28, 12
-local CAPTION_WIDTH, CAPTION_SIZE, CLOSE_OFFSET = CharacterHeader.CaptionWidth, 22, 8
+local CAPTION_WIDTH, CELL = CharacterHeader.CaptionWidth, Window.CaptionCell
 local BODY_W, BODY_H = WIDTH - 2 * PAD, HEIGHT - HEADER - TABS - FOOTER - 2 * PAD
 local RAIL_W = 202
 local DOLL_W = BODY_W - PAD - RAIL_W
@@ -155,26 +155,6 @@ local function WindowTooltip(button, label)
     button:HookScript("OnHide", HideWindowTooltip)
 end
 
-local function Caption(view, header, text, title, offset, action)
-    local button, label = ClickLabel(view, header, text, not view.embedded and action or nil)
-    button.view = view
-    button:SetSize(CAPTION_SIZE, CAPTION_SIZE)
-    button:SetPoint("TOPRIGHT", -offset, -CLOSE_OFFSET)
-    WindowTooltip(button, title)
-    return button, label
-end
-
-local function CaptionButtons(view, header)
-    local window = view.window
-    local actions = view.nativeLayout and Window.NativeCaptionActions or Window.CaptionActions
-    local close = Caption(view, header, "X", NS.Text("Close"), CLOSE_OFFSET, not view.nativeLayout and view.callbacks.close or nil)
-    if view.nativeLayout then Window.PlaceCloseArt(view, close) end
-    window.maximize, window.maximizeLabel = Caption(view, header, "+", NS.Text("Maximize window"), 34, actions.maximize)
-    window.minimize, window.minimizeLabel = Caption(view, header, "−", NS.Text("Minimize window"), 60, actions.minimize)
-    window.dockRight = Caption(view, header, ">", NS.Text("Dock window right"), 86, actions.dockRight)
-    window.dockLeft = Caption(view, header, "<", NS.Text("Dock window left"), 112, actions.dockLeft)
-end
-
 local function Header(view)
     local frame = view.frame
     local header = CreateFrame("Frame", nil, frame)
@@ -194,7 +174,9 @@ local function Header(view)
 
     view.header = CharacterHeader.Create(header, view.callbacks)
     view.header.frame:SetPoint("TOPLEFT")
-    if not view.nativeRoot or view.nativeLayout then CaptionButtons(view, header) end
+    if not view.nativeRoot or view.nativeLayout then
+        Window.CreateCaption(view, header, not view.nativeLayout and view.callbacks.close or nil, WindowTooltip, TEXT, PANEL)
+    end
 end
 
 local function NewTab(view)
@@ -248,6 +230,7 @@ end
 function View:RefreshAppearance(skin, headerConfig)
     if skin and not skin:IsEnabled() then skin = nil end
     RefreshPalette(self, skin)
+    Window.PaintCaption(self.window)
     if self.skin ~= skin then
         if self.skin then self.skin:ReleaseAll() end
         self.skin = skin
@@ -734,7 +717,7 @@ function View.NativeLayout(gear)
     return Window.NativeLayout(gear, WIDTH, HEIGHT, {
         left = PAD + INSET + 5, right = PAD + DOLL_W - INSET - SLOT_W + 5,
         alternateRight = PAD + DOLL_W - INSET - WIDE_SLOT_W + 5,
-        close = { x = WIDTH - 1 - CLOSE_OFFSET - CAPTION_SIZE, y = 1 + CLOSE_OFFSET, size = CAPTION_SIZE },
+        close = { x = WIDTH - 1 - (CELL.width + CELL.height) / 2, y = 2, size = CELL.height },
         top = BODY_Y + INSET, slotHeight = SLOT_H, slotSize = ICON, slotStep = SLOT_STEP,
         weaponTop = BODY_Y + WEAPON_Y, weaponSpan = DOLL_W - 2 * INSET, weaponGap = GROUP_GAP,
         model = { x = PAD + MODEL_X + 3, y = BODY_Y + INSET + 28, width = MODEL_W - 6, height = MODEL_H - 31 },

@@ -17,6 +17,7 @@ local owner = {}
 local syncGen = 0
 local FONT, TextSize = K.FONT, K.TextSize
 local SWIPE_ALPHA = K.SWIPE_ALPHA
+local issecret, GetTotemInfo = NS.IsSecret, GetTotemInfo
 
 ------------------------------------------------------------------ scripts
 -- Prebuilt handlers shared by every icon; the icon is looked up, never captured.
@@ -39,6 +40,9 @@ local function OnEnter(icon)
         tip:AddLine(S.Text("Add spells to this bar in the Cooldown Manager. Preview slots disappear when you close the editor."), .8, .8, .8, true)
     elseif slot then
         tip:SetInventoryItem("player", slot)
+    elseif entry.src == "t" then
+        -- An empty totem slot (the editor shows it) has no totem to describe.
+        if entry.cooling then tip:SetTotem(entry.id) else tip:SetText(entry.name) end
     elseif entry.src == "i" or entry.categoryItem then
         tip:SetItemByID(entry.categoryItem or entry.itemID or entry.id)
     else
@@ -504,9 +508,27 @@ function Icons.SetTexture(icon, texture)
     icon.tex:SetTexture(texture)
 end
 
+-- A totem slot shows the totem in it: a secret icon goes straight to the
+-- texture (no memo compare), a plainly empty slot shows the entry's own
+-- icon. An icon choice wins.
+function Icons.TotemTexture(entry, have, texture)
+    local icon, ov = entry.icon, entry.ov or EMPTY
+    if not icon then return end
+    if issecret(texture) and not ov.icon then
+        icon.lastTex = nil
+        icon.tex:SetTexture(texture)
+        return
+    end
+    if ov.icon or issecret(have) or have ~= true or not texture then texture = ov.icon or entry.texture end
+    Icons.SetTexture(icon, texture or K.QUESTION_ICON)
+end
 function Icons.Texture(entry)
     local icon = entry.icon
     if not icon then return end
+    if entry.src == "t" then
+        local have, _, _, _, texture = GetTotemInfo(entry.id)
+        return Icons.TotemTexture(entry, have, texture)
+    end
     local ov = entry.ov or EMPTY
     Icons.SetTexture(icon, ov.icon or entry.categoryTexture or entry.texture or K.QUESTION_ICON)
 end
@@ -524,7 +546,8 @@ function Icons.Apply(entry)
     Texts(icon, view, ov)
     Icons.StyleCharge(icon)
     local cooldown, state = icon.cd, C.state
-    local swipe = view.cooldownDuration and SWIPE.HIDDEN or ov.swipe or SWIPE.NORMAL
+    -- A totem slot counts down its totem like a buff: reversed by default.
+    local swipe = view.cooldownDuration and SWIPE.HIDDEN or ov.swipe or entry.src == "t" and SWIPE.REVERSED or SWIPE.NORMAL
     if icon.lastSwipe ~= swipe then
         icon.lastSwipe = swipe
         cooldown:SetReverse(swipe == SWIPE.REVERSED)

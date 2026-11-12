@@ -58,6 +58,9 @@ local CATEGORY_TITLE = {
     [SPELL_CATEGORY.HEALTH_POTION] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_HEALTH_TITLE", "Health potion" },
     [SPELL_CATEGORY.HEALTHSTONE] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_HEALTHSTONE_TITLE", "Healthstone" },
     [SPELL_CATEGORY.DEMONIC_HEALTHSTONE] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_DEMONIC_HEALTHSTONE_TITLE", "Demonic Healthstone" },
+    [SPELL_CATEGORY.MANA_POTION] = { "", "Mana potion" },
+    [SPELL_CATEGORY.FOREVER_COMBAT_POTION] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_COMBAT_TITLE", "Combat potion" },
+    [SPELL_CATEGORY.BANDAGE] = { "", "Bandage" },
 }
 
 ------------------------------------------------------------------ plain-value helpers
@@ -140,6 +143,27 @@ function Catalog.RecordName(rec)
     name = SpellName(rec.tooltip or rec.override or rec.spell)
     if name then return name end
     return CategoryName(rec.spellCategory)
+end
+-- WoW Forever: whether an unlearned record names anything this client has: a
+-- name or an icon. Forever's tables list Retail rows whose spell it does not
+-- have; such a record has neither, so previews and the picker leave it out
+-- instead of showing a question mark and its key. Learned records and every
+-- Retail record count (Retail keeps its behavior). Read once per catalog
+-- content.
+local void, voidContent = {}, nil
+local FOREVER = NS.Client.isForever == true
+function Catalog.Exists(rec)
+    if rec.known or not FOREVER then return true end
+    if voidContent ~= Catalog.content then
+        wipe(void)
+        voidContent = Catalog.content
+    end
+    local gone = void[rec.id]
+    if gone == nil then
+        gone = Catalog.RecordName(rec) == nil and Catalog.RecordTexture(rec) == nil
+        void[rec.id] = gone
+    end
+    return not gone
 end
 
 ------------------------------------------------------------------ readiness
@@ -688,10 +712,14 @@ function Catalog.OnOverride(base, override)
         end
     end
     if list then
+        -- Without Blizzard's override an entry of a ranked spell keeps its
+        -- learned rank (WoW Forever; EntryFill's FillBlizzard reads the same).
+        local ranks = C.Ranks
+        local follow = override or ranks.on and ranks.Override(base) or nil
         for i = 1, #list do
             local entry = list[i]
-            if (entry.src == "b" or entry.src == "s") and entry.base == base and entry.override ~= override then
-                Override(entry, base, override)
+            if (entry.src == "b" or entry.src == "s") and entry.base == base and entry.override ~= follow then
+                Override(entry, base, follow)
                 any = true
             end
         end
@@ -720,7 +748,7 @@ function Catalog.List(family)
     local order = Catalog.order
     for i = 1, #order do
         local rec = records[order[i]]
-        if rec and rec.family == family then
+        if rec and rec.family == family and Catalog.Exists(rec) then
             local placed = entries[rec.key]
             n = n + 1
             rows[n] = { key = rec.key, name = Catalog.RecordName(rec), texture = Catalog.RecordTexture(rec), known = rec.known,

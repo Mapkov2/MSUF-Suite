@@ -24,21 +24,14 @@ local FOREVER_CHARACTER_DOCK = { x = 0, y = 0 }
 local CONTROL_LEVEL_OFFSET = 15
 local GRIP_LEVEL_OFFSET = 20
 
--- A string names Blizzard's size toggle: our minimize goes left of it (Windows order).
-local nativeMinimize = {
-    WorldMapFrame = true, PlayerSpellsFrame = "MaximizeMinimizeButton",
-}
 -- Only persistent, player-opened windows get a restore tab (closing an NPC panel ends it).
 local minimizablePanels = {
-    CharacterFrame = true, FriendsFrame = true, PVEFrame = true,
-    PVPUIFrame = true, ProfessionsBookFrame = true,
-    CollectionsJournal = true, EncounterJournal = true,
-    SettingsPanel = true, AddonList = true,
-    LFGParentFrame = true, LegacySystemFrame = true,
+    CharacterFrame = true, FriendsFrame = true, PVEFrame = true, PVPUIFrame = true, ProfessionsBookFrame = true,
+    CollectionsJournal = true, EncounterJournal = true, SettingsPanel = true, AddonList = true, CommunitiesFrame = true,
+    LFGParentFrame = true, LegacySystemFrame = true, PlayerSpellsFrame = true, WorldMapFrame = true, AchievementFrame = true,
+    QuestLogFrame = true, MacroFrame = true, CalendarFrame = true, InspectFrame = true, DressUpFrame = true, HelpFrame = true,
 }
-local function IsCombat()
-    return NS.IsCombatLocked()
-end
+local function IsCombat() return NS.IsCombatLocked() end
 
 local function Enabled()
     local db = NS.DB
@@ -63,17 +56,19 @@ local function Controlled(state)
     return Enabled() and next(state.owners) ~= nil and CanChangeFrameGeometry(state.frame)
 end
 
+local CONTROL_KEYS = { "grip", "titleDrag", "minimize", "maximize", "closeCell", "toggleCell" }
 local function SafeControls(state)
     local implicit = not IsCombat()
-    return Safety.CanDecorate(state.grip, implicit) and Safety.CanDecorate(state.titleDrag, implicit)
-        and (not state.minimize or Safety.CanDecorate(state.minimize, implicit))
-        and (not state.maximize or Safety.CanDecorate(state.maximize, implicit))
-        and (not state.captionMin or Safety.CanDecorate(state.captionMin, implicit))
+    for _, key in ipairs(CONTROL_KEYS) do
+        if state[key] and not Safety.CanDecorate(state[key], implicit) then return false end
+    end
+    return true
 end
 
-local function Maximized(state)
-    return state.name == "WorldMapFrame" and Safety.Read(state.frame, "IsMaximized") == true
-end
+-- Windows caption (Chrome.ShowCaption): minimize, our maximize or Blizzard's size toggle, X.
+local function HasCaption(state) return state.maximize or state.minimize or state.sizeToggle end
+
+local function Maximized(state) return state.name == "WorldMapFrame" and Safety.Read(state.frame, "IsMaximized") == true end
 
 local InstallPanelPositionHook
 
@@ -203,7 +198,7 @@ local function OnPanelPositionsUpdated()
         if Controlled(state) and frame:IsShown() and not Policy.DeferMapLayout(state) then
             if not state.drag then ApplyStoredScale(state) end
             ApplyStoredPosition(state)
-            if (state.maximize or state.minimize) and SafeControls(state) then
+            if HasCaption(state) and SafeControls(state) then
                 Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET)
             end
         end
@@ -235,8 +230,10 @@ local function SavePosition(state)
         return true
     end)
     state.customPosition = true
-    if CanChangeFrameGeometry(frame) then ApplyStoredPosition(state)
-    else NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow) end
+    if not CanChangeFrameGeometry(frame) then NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow) return true end
+    ApplyStoredPosition(state)
+    -- The caption's glyphs sit on whole screen pixels of the new place.
+    if HasCaption(state) and not IsCombat() then Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET) end
     return true
 end
 
@@ -339,7 +336,7 @@ local function EndDrag(state)
         state.customScale = true
         InstallPanelPositionHook()
         if SafeControls(state) then
-            if state.maximize or state.minimize then Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET) end
+            if HasCaption(state) then Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET) end
             Chrome.PlaceGrip(grip, state)
             Chrome.PlaceTitleDrag(state.titleDrag, state)
         end
@@ -497,14 +494,18 @@ local function CreateTitleDrag(state)
     return strip
 end
 
+local function Settles(state) return activeStates[state.frame] == state and Controlled(state) and SafeControls(state) end
 local function ShowControls(state)
+    local level = Chrome.Level(state)
+    if HasCaption(state) then
+        Chrome.ShowCaption(state, level + CONTROL_LEVEL_OFFSET)
+        Chrome.Settle(state, level + CONTROL_LEVEL_OFFSET, Settles)
+    end
     if Maximized(state) then
         state.titleDrag:Hide()
         state.grip:Hide()
         return
     end
-    local level = Chrome.Level(state)
-    if state.maximize or state.minimize then Chrome.ShowCaption(state, level + CONTROL_LEVEL_OFFSET) end
     Chrome.PlaceGrip(state.grip, state)
     Chrome.PlaceTitleDrag(state.titleDrag, state)
     state.titleDrag:SetFrameLevel(level + CONTROL_LEVEL_OFFSET)
@@ -539,27 +540,25 @@ local function HideControls(state, releasing)
     Chrome.LeaveFit(state)
     state.titleDrag:Hide()
     state.grip:Hide()
-    if state.minimize then state.minimize:Hide() end
-    if state.maximize then state.maximize:Hide() end
-    if state.captionMin then state.captionMin:Hide() end
+    Chrome.HideCaption(state)
     RestoreNativeScale(state, releasing)
     if state.customPosition and not IsCombat() then RestoreNativePosition(state, releasing) end
 end
 
 local function EnsureCaption(state)
     local frame, name = state.frame, state.name
-    local toggle = type(nativeMinimize[name]) == "string" and Safety.Field(frame, nativeMinimize[name])
-    if state.maximize or nativeMinimize[name] and not toggle or NS.Client.IsGamepadUI() then return end
+    if state.maximize or NS.Client.IsGamepadUI() then return end
     if not state.close then state.close = Chrome.FindClose(frame, name) end
-    if not state.close or not toggle and Chrome.HasNativeCaption(frame, name, state.close) then return end
-    if not state.minimize and (toggle or minimizablePanels[name]) then
-        if toggle then Chrome.FollowSizeToggle(state, toggle) end
+    if not state.close then return end
+    local toggle = state.sizeToggle or Chrome.NativeSizeToggle(frame, state.close)
+    if not toggle and Chrome.HasNativeCaption(frame, name, state.close) then return end
+    if not state.minimize and minimizablePanels[name] then
         state.restore = Chrome.CreateRestore(state, OnRestoreClick)
         controlStates[state.restore] = state
         state.minimize = Chrome.CreateMinimize(state, state.close, CONTROL_LEVEL_OFFSET, OnMinimizeClick)
         controlStates[state.minimize] = state
     end
-    if toggle then return end
+    if toggle and not state.sizeToggle then Chrome.FollowSizeToggle(state, toggle) end
     local button = Chrome.CreateCaption(state, CONTROL_LEVEL_OFFSET, OnMaximizeClick)
     if button then controlStates[button] = state end
 end
@@ -571,13 +570,15 @@ local function OnPanelShow(frame)
     if not state or Safety.IsForbidden(frame) then return end
     activeStates[frame] = state
     if state.inventory then activeInventory[frame] = Controlled(state) and state or nil end
-    if state.restore then
-        state.minimized = false
-        state.restore:Hide()
-    end
-    if Policy.DeferMapLayout(state) then return end
-    if IsCombat() and (not CanChangeFrameGeometry(frame) or not SafeControls(state)) then
+    if state.restore then state.minimized = false state.restore:Hide() end
+    local deferred = Policy.DeferMapLayout(state)
+    if not deferred and IsCombat() and (not CanChangeFrameGeometry(frame) or not SafeControls(state)) then
         NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
+        deferred = true
+    end
+    -- Geometry waits for combat's end; the caption is only drawn, so it shows now.
+    if deferred then
+        if HasCaption(state) and SafeControls(state) then Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET) end
         return
     end
     if Controlled(state) then
@@ -801,10 +802,7 @@ function WindowControls.SuiteAction(frame, bounds, action)
     elseif action == "minimize" and state.restore then
         Minimize(state)
     elseif action == "moveStart" then BeginMove(state)
-    elseif action == "scaleStart" then BeginDrag(state)
-    elseif action == "dockLeft" or action == "dockRight" then
-        if Chrome.DockSuite(state, action == "dockRight") then SavePosition(state) end
-    end
+    elseif action == "scaleStart" then BeginDrag(state) end
     return action == "minimize" and state.minimized == true or action ~= "minimize" and state.fit ~= nil
 end
 return WindowControls

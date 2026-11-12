@@ -47,8 +47,12 @@ local function Frame(name, parent, kind)
     function frame:IsProtected() return self.protected or false, self.explicitProtected or false end
     function frame:IsForbidden() return false end
     function frame:IsShown() return self.shown end
+    function frame:IsVisible() return self.shown and (self.parent == nil or self.parent:IsVisible()) end
+    function frame:SetShown(value) if value then self:Show() else self:Hide() end end
     function frame:IsMouseOver() return false end
     function frame:GetFrameLevel() return self.frameLevel or 1 end
+    function frame:GetAlpha() return self.alpha or 1 end
+    function frame:SetAlpha(value) self.alpha = value end
     function frame:GetLeft() return self.left end
     function frame:GetTop() return self.top end
     function frame:GetNumPoints() return 1 end
@@ -104,6 +108,9 @@ local function Frame(name, parent, kind)
         function texture:SetPoint(...) self.point = { ... } end
         function texture:SetSize(width, height) self.width, self.height = width, height end
         function texture:SetHeight(height) self.height = height end
+        function texture:SetRotation(angle) self.angle = angle end
+        function texture:SetSnapToPixelGrid(snap) self.snap = snap end
+        function texture:SetTexelSnappingBias(bias) self.bias = bias end
         function texture:Show() self.shown = true end
         function texture:Hide() self.shown = false end
         return texture
@@ -151,6 +158,9 @@ ShowUIPanel = function(frame) frame:Show() end
 -- a Blizzard window are therefore created without one and parented afterwards.
 local parentedCreates = 0
 local createdFrames = {}
+-- 12.x secret values: anything marked here reads as secret.
+local secretValues = setmetatable({}, { __mode = "k" })
+issecretvalue = function(value) return secretValues[value] == true end
 CreateFrame = function(kind, _, parent)
     if parent ~= nil and parent ~= UIParent then parentedCreates = parentedCreates + 1 end
     local frame = Frame(nil, parent, kind)
@@ -179,7 +189,13 @@ UpdateUIPanelPositions = function(frame)
     if frame then frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -90) end
     if panelPositionHook then panelPositionHook() end
 end
-hooksecurefunc = function(name, callback)
+hooksecurefunc = function(name, callback, method)
+    if type(name) == "table" then
+        local object, key, post = name, callback, method
+        local native = object[key]
+        object[key] = function(...) native(...) post(...) end
+        return
+    end
     -- The UI scale fit hook comes with it (suite_window_controls_edges_contract.lua).
     if name == "UpdateScaleForFitForOpenPanels" then return end
     assert(name == "UpdateUIPanelPositions")
@@ -204,7 +220,9 @@ local function NextFrame()
     queuedJobs = {}
     for _, job in ipairs(jobs) do job() end
 end
+local printed = {}
 local NS = {
+    Print = function(message) printed[#printed + 1] = message end,
     -- The skin's locale table (Locales/Localization.lua) is ready before
     -- any of this runs; here every key reads as itself.
     L = setmetatable({}, { __index = function(_, key) return key end }),
@@ -231,6 +249,10 @@ local NS = {
     Adapters = { ApplyAll = function() adapterPasses = adapterPasses + 1 end },
 }
 local core = { HostBridge = {} }
+core.Suite = {}
+assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", core)
+core.WindowCaption.PixelFactor = function() return nil end
+NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
 NS.SuiteCore = function() return core end
 local bridgeHistoryCalls, withHistory = 0, core.HostBridge.WithMenuHistory
@@ -243,7 +265,11 @@ assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", 
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)
+local chromeFrames = #createdFrames
 assert(loadfile(arg[3] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrome.lua"))("MSUF_Suite_Skin", NS)
+-- The frame that looks at opening windows (WindowControlChrome.lua); one frame passes.
+local watcher = createdFrames[chromeFrames + 1]
+local function Watch(elapsed) watcher.scripts.OnUpdate(watcher, elapsed) end
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
 
 -- Safety helpers always return a value, even when they refuse to read.
@@ -872,6 +898,177 @@ do
     UIPanelWindows.WorldMapFrame = nil
 end
 
+-- The map gets the Windows caption too: cells on its border (above the map
+-- root's strata), a drawn cell over Blizzard's size toggle, our minimize.
+do
+    UIPanelWindows.WorldMapFrame = { area = "left", pushable = 0 }
+    local map = Frame("WorldMapFrame", UIParent)
+    map.width, map.height = 1035, 534
+    map:SetFrameStrata("LOW")
+    local border = Frame(nil, map)
+    map.BorderFrame = border
+    border:SetFrameStrata("HIGH")
+    local close = Frame(nil, border, "Button")
+    border.CloseButton = close
+    close.left, close.top, close.width, close.height = 1111, 800, 24, 24
+    function close:GetEffectiveScale() return map:GetEffectiveScale() end
+    local toggle = Frame(nil, border)
+    toggle.MaximizeButton, toggle.MinimizeButton = Frame(nil, toggle, "Button"), Frame(nil, toggle, "Button")
+    toggle.MinimizeButton.shown = false
+    border.MaximizeMinimizeFrame = toggle
+    -- Blizzard's art regions and the corner socket that frames its buttons.
+    local function Art()
+        local region = { alpha = 1 }
+        function region:GetAlpha() return self.alpha end
+        function region:SetAlpha(value) self.alpha = value end
+        return region
+    end
+    local art, corner = Art(), Art()
+    function close:GetRegions() return art end
+    map.NineSlice = { TopRightCorner = corner }
+    function map:GetRight() return self.left + self.width end
+    local yielded, actions = {}, NS.WindowActionSkin
+    NS.WindowActionSkin = { Yield = function(button, yield) yielded[button] = yield end }
+    Check(NS.WindowControls.Attach(map, "map-caption"), "the map caption did not attach")
+    Check(yielded[close] and yielded[toggle.MaximizeButton] and yielded[toggle.MinimizeButton],
+        "Blizzard's caption buttons kept the old action skin under the cells")
+    Check(art.alpha == 0 and corner.alpha == 0 and NS.WindowControlChrome.IsFaded(close),
+        "Blizzard's caption art or its corner socket shows under the cells")
+    -- Guild, the AddOn list and Settings show Blizzard's buttons again while
+    -- they open, past any alpha write: the next frame of the opening fades
+    -- them again, and says so once in chat.
+    Check(watcher.shown, "the opening window is not looked at")
+    close.alpha, art.alpha = 1, 1
+    Watch(0.02)
+    Check(close.alpha == 0 and art.alpha == 0, "Blizzard's X stayed visible after the window opened")
+    local function Reports()
+        local found = {}
+        for _, message in ipairs(printed) do
+            if message:find("caption check: WorldMapFrame", 1, true) then found[#found + 1] = message end
+        end
+        return found
+    end
+    Check(#Reports() == 1 and Reports()[1]:find("WorldMapFrame 0.02s, X alpha 1.00, faded true", 1, true),
+        "the opening did not report Blizzard's X under the cells")
+    -- Under the pointer it fades at once, without a second report.
+    close.alpha = 1
+    for _, enter in ipairs(close.hooks.OnEnter) do enter(close) end
+    Check(close.alpha == 0 and #Reports() == 1, "Blizzard's X stayed visible under the pointer")
+    -- Back without its fade (the caption let it go) under a shown cell: faded too.
+    local mapState = NS.WindowControls.states[map]
+    NS.WindowControlChrome.HideCaption(mapState)
+    mapState.closeCell:Show()
+    Check(close.alpha == 1, "the caption did not let Blizzard's X go")
+    Watch(0.02)
+    Check(close.alpha == 0 and NS.WindowControlChrome.IsFaded(close), "Blizzard's X came back without its fade")
+    -- Three seconds on, the opening is over: nothing looks any more.
+    Watch(3)
+    Check(not watcher.shown, "the look outlived the opening")
+    art:SetAlpha(1)
+    Check(art.alpha == 0, "an art region of Blizzard's X came back under the cells")
+    local state = NS.WindowControls.states[map]
+    -- The caption is laid out again once the window settled (next frame).
+    close.top = 790
+    NextFrame()
+    Check(state.closeCell.point[5] == -10, "the caption did not follow the window's settled layout")
+    close.top = 800
+    NextFrame()
+    Check(state.closeCell and state.closeCell.shown and state.closeCell.parent == border
+        and state.toggleCell and state.toggleCell.shown and state.minimize and state.minimize.shown
+        and state.minimize.parent == border and state.maximize and not state.maximize.shown,
+        "the map lacks the Windows caption on its border")
+    Check(toggle.alpha == 0 and close.alpha == 0, "the map shows Blizzard's caption art under the cells")
+    -- A later alpha write (another skin pass) must not bring the old X back.
+    close:SetAlpha(1)
+    Check(close.alpha == 0, "Blizzard's X came back under the drawn cells")
+    -- In combat the size toggle can read as protected: it stays faded under its cell.
+    _G.combatEdge, toggle.protected = true, true
+    NS.WindowControlChrome.ShowCaption(state, state.captionLevel)
+    Check(state.toggleCell.shown and toggle.alpha == 0, "combat dropped the size toggle's cell")
+    _G.combatEdge, toggle.protected, combatJobs["windowControls:captions"] = false, nil, nil
+    NS.WindowControlChrome.ShowCaption(state, state.captionLevel)
+    -- A layout read as secret in combat keeps the cells: the toggle's cell
+    -- comes and goes with Blizzard's toggle, which stays faded.
+    local secretWidth, mapWidth = {}, map.GetWidth
+    secretValues[secretWidth] = true
+    function map:GetWidth() return secretWidth end
+    _G.combatEdge = true
+    toggle:Hide()
+    Check(not state.toggleCell.shown and state.closeCell.shown, "combat kept the cell of a hidden size toggle")
+    toggle:Show()
+    Check(state.toggleCell.shown and toggle.alpha == 0, "combat lost the cell of the returning size toggle")
+    _G.combatEdge, map.GetWidth = false, mapWidth
+    combatJobs[state.replayKey], combatJobs["windowControls:captions"] = nil, nil
+    NS.WindowControlChrome.ShowCaption(state, state.captionLevel)
+    NS.WindowControls.DisableOwner("map-caption")
+    Check(close.alpha == 1 and toggle.alpha == 1 and not state.closeCell.shown, "releasing the map left its caption")
+    close:SetAlpha(.5)
+    Check(close.alpha == .5 and yielded[close] == false and yielded[toggle.MinimizeButton] == false,
+        "a released X stayed under the caption's alpha guard or without its skin")
+    Check(art.alpha == 1 and corner.alpha == 1 and not NS.WindowControlChrome.IsFaded(close),
+        "releasing the map left Blizzard's caption art or its socket faded")
+    NS.WindowActionSkin = actions
+    UIPanelWindows.WorldMapFrame = nil
+end
+
+-- The caption is drawn once, when the window is attached, closed windows
+-- too: a window first opened in combat has it already.
+do
+    local list = Frame("AddonList", UIParent)
+    local close = Frame(nil, list, "Button")
+    list.CloseButton, list.shown = close, false
+    close.left, close.top, close.width, close.height = 676, 800, 24, 24
+    local state = NS.WindowControls.Attach(list, "drawn-once") and NS.WindowControls.states[list]
+    Check(state and state.closeCell and state.closeCell.shown and close.alpha == 0,
+        "a closed window got no caption before it opened")
+    NS.WindowControls.DisableOwner("drawn-once")
+end
+
+-- A window whose geometry waits for combat (protected there) still draws
+-- its caption as it opens.
+do
+    local list = Frame("AddonList", UIParent)
+    local close = Frame(nil, list, "Button")
+    list.CloseButton, list.shown, close.shown = close, false, false
+    close.left, close.top, close.width, close.height = 676, 800, 24, 24
+    local state = NS.WindowControls.Attach(list, "combat-open") and NS.WindowControls.states[list]
+    Check(state and not state.closeCell, "a window without its X got a caption")
+    close.shown, list.protected, _G.combatEdge = true, true, true
+    list:Show()
+    Check(state.closeCell and state.closeCell.shown and close.alpha == 0,
+        "a window opened in combat showed Blizzard's buttons instead of its caption")
+    combatJobs[state.replayKey], combatJobs["windowControls:captions"] = nil, nil
+    list.protected, _G.combatEdge = nil, false
+    NS.WindowControls.DisableOwner("combat-open")
+end
+
+-- A window opening in combat gets its caption, but no look on every frame.
+-- Once shown, combat keeps the caption as it is.
+do
+    local list = Frame("AddonList", UIParent)
+    local close = Frame(nil, list, "Button")
+    list.CloseButton = close
+    close.left, close.top, close.width, close.height = 676, 800, 24, 24
+    _G.combatEdge = true
+    local state = NS.WindowControls.Attach(list, "combat-caption") and NS.WindowControls.states[list]
+    Check(state and state.closeCell, "an unprotected window opened in combat lost its caption")
+    Check(not watcher.shown, "a window opened in combat started a look on every frame")
+    -- The window's width reads as secret (a protected window's layout in
+    -- combat) and Blizzard writes the alpha of its X, now protected: the cells
+    -- stay, the X stays faded, and the window is laid out again after combat.
+    local secretWidth, width = {}, list.GetWidth
+    secretValues[secretWidth] = true
+    function list:GetWidth() return secretWidth end
+    close.protected = true
+    NS.WindowControlChrome.ShowCaption(state, state.captionLevel)
+    close:SetAlpha(1)
+    Check(state.closeCell:IsShown() and close.alpha == 0, "combat took the caption apart")
+    Check(combatJobs[state.replayKey] == state.replayShow, "the caption is not laid out again after combat")
+    combatJobs[state.replayKey], list.GetWidth, close.protected = nil, width, nil
+    _G.combatEdge = false
+    NS.WindowControls.DisableOwner("combat-caption")
+end
+
 -- Inspect skips the generic window adapter. Its dedicated, load-on-demand
 -- adapter must still reach the real window controls after Blizzard loads it.
 local inspectLoaded
@@ -1043,9 +1240,15 @@ do
     Check(NS.WindowControls.Attach(panel, "caption"), "could not attach the settings caption")
     local state = NS.WindowControls.states[panel]
     Check(state.maximize and state.maximize.shown and state.minimize.shown, "caption needs minimize, maximize and native close")
-    Check(state.maximize.point[2] == close and state.minimize.point[2] == state.maximize,
+    -- One row of equal cells; the X cell is the part of Blizzard's X inside
+    -- the panel (this X overhangs the top edge), and Blizzard's art fades.
+    local closeCell = state.closeCell
+    Check(closeCell and closeCell.shown and closeCell.point[1] == "TOPRIGHT" and closeCell.point[2] == panel
+        and closeCell.point[5] == -1 and close.alpha == 0, "the X cell is not inside the panel over the faded native X")
+    Check(state.maximize.point[2] == closeCell and state.minimize.point[2] == state.maximize,
         "caption buttons are not in Windows order beside the native X")
-    Check(state.maximize.width == 28 and state.minimize.width == 28 and state.maximize.height == 20,
+    Check(state.maximize.width == 28 and state.minimize.width == 28 and closeCell.width == 28
+        and state.maximize.height == 22 and closeCell.height == 22,
         "caption crossed a native neighbor or followed the native X past the top edge")
     local dash, square = state.minimize.textures, state.maximize.textures
     Check(#dash == 2 and #square == 5, "caption still relies on native Line regions")
@@ -1053,6 +1256,33 @@ do
         "caption lost a horizontal one-pixel bar")
     Check(square[3].width == 1 and square[5].width == 1,
         "maximize lost a vertical one-pixel bar")
+    -- Glyphs sit on whole screen pixels at any scale (here 1.25 units per
+    -- pixel), also where a cell itself sits between pixels: no rotated bars,
+    -- no edge on part of a pixel, and no engine rounding that could drop one.
+    core.WindowCaption.PixelFactor = function() return 1 end
+    for _, cell in ipairs({ closeCell, state.maximize, state.minimize }) do cell.left, cell.top = 100.3, 799.6 end
+    NS.WindowControls.Refresh()
+    local pixel = 1 / closeCell:GetEffectiveScale()
+    local function Whole(value) local steps = value / pixel return math.abs(steps - math.floor(steps + .5)) < 1e-6 end
+    for _, cell in ipairs({ closeCell, state.maximize, state.minimize }) do
+        for index = 2, #cell.textures do
+            local bar = cell.textures[index]
+            Check(not bar.shown or not bar.angle and bar.snap == false and bar.point[1] == "TOPLEFT" and bar.point[2] == cell
+                and Whole(cell.left + bar.point[4]) and Whole(cell.top + bar.point[5]) and Whole(bar.width) and Whole(bar.height),
+                "a caption glyph bar left the screen pixel grid, kept engine rounding or was rotated")
+        end
+        cell.left, cell.top = 100, 800
+    end
+    Check(#closeCell.textures > 9, "the X is not a pixel staircase")
+    core.WindowCaption.PixelFactor = function() return nil end
+    -- A pane can raise Blizzard's X far above the window root (Forever's LFG:
+    -- 510 over a root at 1): the cells stay on top of it.
+    close.frameLevel = 510
+    NS.WindowControls.Refresh()
+    Check(closeCell:GetFrameLevel() > 510 and state.maximize:GetFrameLevel() > 510
+        and state.minimize:GetFrameLevel() > 510, "the caption cells sit under Blizzard's raised X")
+    close.frameLevel = nil
+    NS.WindowControls.Refresh()
     GetUIPanelAttribute = function(frame, key)
         return frame == panel and key == "checkFitExtraHeight" and 60 or nil
     end
