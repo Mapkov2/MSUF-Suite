@@ -122,14 +122,14 @@ local function Scale(v, frame, value)
     record.appliedScale = value
 end
 
-local function RepositionPanels(v, oldWidth, oldHeight)
+-- Blizzard's panel manager lays out the windows after the Character window from
+-- its width. Its own pass, run from the skin's code, would run under the skin's
+-- taint and, with Talents open, call PlayerSpellsFrame.SetMinimized there
+-- (FramePositionDelegate:EvaluateAutoMinimize): the windows it placed after
+-- this one move by the width the layout changed instead (Policy.ShiftFollowers).
+local function RepositionPanels(v, oldWidth)
     local root = v.root
-    v.repositionPending = v.repositionPending or root:GetWidth() ~= oldWidth or root:GetHeight() ~= oldHeight
-    -- Blizzard's panel manager writes secure attributes, even for a safe root.
-    if v.repositionPending and not NS.IsCombatLocked() then
-        v.repositionPending = nil
-        UpdateUIPanelPositions(root)
-    end
+    NS.WindowControlPolicy.ShiftFollowers(root, (root:GetWidth() - oldWidth) * root:GetScale())
 end
 
 -- Puts back what the layout changed on one frame. Only values we still own

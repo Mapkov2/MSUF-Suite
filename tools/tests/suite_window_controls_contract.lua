@@ -185,8 +185,15 @@ local function SkinHandlerSeenBySmartNavigation(panel)
     end
 end
 local panelPositionHook
+-- Blizzard's panel manager: the window it lays out holds the left slot, and
+-- its pass anchors at offset / scale (FramePositionDelegate:UpdateUIPanelPositions).
+local panelSlots = {}
+GetUIPanel = function(slot) return panelSlots[slot] end
 UpdateUIPanelPositions = function(frame)
-    if frame then frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -90) end
+    if frame then
+        panelSlots.left = frame
+        frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30 / frame.scale, -90 / frame.scale)
+    end
     if panelPositionHook then panelPositionHook() end
 end
 hooksecurefunc = function(name, callback, method)
@@ -270,6 +277,7 @@ assert(loadfile(arg[3] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrom
 -- The frame that looks at opening windows (WindowControlChrome.lua); one frame passes.
 local watcher = createdFrames[chromeFrames + 1]
 local function Watch(elapsed) watcher.scripts.OnUpdate(watcher, elapsed) end
+assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlDelegate.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
 
 -- Safety helpers always return a value, even when they refuse to read.
@@ -289,6 +297,11 @@ Check(select(2, Safety.Call({ Pair = function() return 1, 2 end }, "Pair")) == 2
 
 local character = Frame("CharacterFrame", UIParent)
 character.CloseButton = Frame(nil, character, "Button")
+-- The Character window reads back the anchor it was given, as the client does.
+function character:GetPoint()
+    if self.point then return unpack(self.point) end
+    return "CENTER", UIParent, "CENTER", 0, 0
+end
 Check(NS.WindowControls.Attach(character, "blizzardWindows"), "character panel was not attached")
 local state = NS.WindowControls.states[character]
 Check(state and state.grip and state.minimize and state.restore and not state.move,
@@ -498,30 +511,33 @@ Check(state.grip.scripts.OnMouseDown == settingsGrip.scripts.OnMouseDown
     and state.titleDrag.scripts.OnDragStart == settingsTitle.scripts.OnDragStart,
     "window controls allocate script handlers per panel")
 
--- A Blizzard panel layout that raises while a reset returns a panel to its
--- native anchors is reported, the reset says it failed, and the layout hook
--- still re-places saved panels afterwards.
+-- A reset puts a panel back where Blizzard's last pass put it and never runs
+-- that pass itself: from the skin's code ShowUIPanel, HideUIPanel and
+-- UpdateUIPanelPositions run the panel manager under the skin's taint. An
+-- anchor write that raises on the way is reported, the reset says it failed,
+-- and the layout hook still re-places saved panels afterwards.
 NS.DB.windowControls.positions.CharacterFrame = { x = 200, y = -100 }
 NS.WindowControls:OnThemeChanged("profile")
 NextFrame()
-local nativeLayout = UpdateUIPanelPositions
-local failLayout = true
-UpdateUIPanelPositions = function(frame)
-    if failLayout then
-        failLayout = false
-        error("panel layout failed")
+local nativeLayout, nativePoint = UpdateUIPanelPositions, character.SetPoint
+UpdateUIPanelPositions = function() error("the reset ran Blizzard's panel layout pass") end
+local failPoint = true
+function character:SetPoint(...)
+    if failPoint then
+        failPoint = false
+        error("panel anchor failed")
     end
-    return nativeLayout(frame)
+    return nativePoint(self, ...)
 end
-Check(NS.WindowControls.ResetPositions() == false and Reported("panel layout failed"),
-    "a failed native restore was reported as a successful reset")
+Check(NS.WindowControls.ResetPositions() == false and Reported("panel anchor failed")
+    and not Reported("panel layout pass"), "a failed native restore was reported as a successful reset")
+character.SetPoint, UpdateUIPanelPositions = nativePoint, nativeLayout
 NS.DB.windowControls.positions.CharacterFrame = { x = 150, y = -60 }
 NS.WindowControls:OnThemeChanged("profile")
 NextFrame()
 UpdateUIPanelPositions(character)
 Check(character.point[4] == 150 / character.scale,
     "the panel layout hook stayed suspended after a failed reset")
-UpdateUIPanelPositions = nativeLayout
 
 -- Stored scales remain stable in combat for safe panels. Protected panels
 -- retain their native geometry and lose their controls outside combat.
@@ -1098,6 +1114,33 @@ do
     combatJobs[state.replayKey], list.GetWidth, close.protected = nil, width, nil
     _G.combatEdge = false
     NS.WindowControls.DisableOwner("combat-caption")
+end
+
+-- The trade window keeps its fixed layout: its caption is the drawn X alone,
+-- with no maximize cell after the trade partner's name.
+do
+    local findByFrame = NS.BlizzardCatalog.FindByFrame
+    NS.BlizzardCatalog.FindByFrame = function(name)
+        if name == "TradeFrame" then return { category = "npc" } end
+        return findByFrame(name)
+    end
+    UIPanelWindows.TradeFrame = { area = "left", pushable = 1 }
+    local trade = Frame("TradeFrame", UIParent)
+    local close = Frame(nil, trade, "Button")
+    trade.CloseButton = close
+    close.left, close.top, close.width, close.height = 676, 800, 24, 24
+    local state = NS.WindowControls.Attach(trade, "trade-caption") and NS.WindowControls.states[trade]
+    Check(state and state.closeCell and state.closeCell.shown and close.alpha == 0,
+        "the trade window lost its drawn X")
+    Check(not state.maximize and not state.minimize and not state.toggleCell,
+        "the trade window got a maximize or minimize cell")
+    trade:Hide()
+    trade:Show()
+    Check(state.closeCell.shown and close.alpha == 0 and not state.maximize,
+        "the trade window's caption changed as it opened again")
+    NS.WindowControls.DisableOwner("trade-caption")
+    Check(not state.closeCell.shown and close.alpha == 1, "releasing the trade window left its caption")
+    UIPanelWindows.TradeFrame, NS.BlizzardCatalog.FindByFrame = nil, findByFrame
 end
 
 -- Inspect skips the generic window adapter. Its dedicated, load-on-demand

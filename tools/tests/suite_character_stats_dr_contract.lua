@@ -582,9 +582,15 @@ local function Geometry(width, height, point)
     function frame:SetPoint(...) self.points[#self.points + 1] = { ... } end
     return frame
 end
--- UIParent's panel manager re-anchors a resized Character window.
-local panelRepositions = 0
-UpdateUIPanelPositions = function() panelRepositions = panelRepositions + 1 end
+-- The skin never runs Blizzard's panel pass (WindowControlPolicy.ShiftFollowers):
+-- the window Blizzard laid out after the Character window moves by its width.
+UpdateUIPanelPositions = function() error("the skin ran Blizzard's panel layout pass") end
+UIParent = UIParent or {}
+local panelSlots = {}
+GetUIPanel = function(slot) return panelSlots[slot] end
+-- Window controls load before the adapters (TOC); none of these windows has any.
+NS.WindowControls = NS.WindowControls or { states = {} }
+assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(skin .. "GearGeometry.lua"))("MSUF_Suite_Skin", NS)
 local gear = Fresh("GearAnnotations.lua").GearAnnotations
 local characterRoot = Geometry(338, 424, { "TOPLEFT", nil, "TOPLEFT", 16, -116 })
@@ -596,12 +602,17 @@ CharacterModelScene = Geometry(231, 320, { "TOPLEFT", characterRoot, "TOPLEFT", 
 NS.DB.characterDetails = { enabled = true, inlineGear = true, wideLayout = true }
 local wide = { kind = "character", active = true, host = Object(), root = characterRoot,
     panel = Object(), rows = {} }
+-- Talents in the next slot, where Blizzard's pass put it: 16 + 338 + 32.
+local talents = Geometry(660, 600, { "TOPLEFT", UIParent, "TOPLEFT", 386, -116 })
+panelSlots.left, panelSlots.center = characterRoot, talents
 gear.ApplyLayout(wide)
 gear.ApplyLayout(wide)
 assert(math.abs(characterRoot.width - 704) < 0.001, "the wide layout was not applied")
-assert(panelRepositions == 1, "the resized Character window was not re-anchored exactly once")
+local _, _, _, talentsX = talents:GetPoint(1)
+assert(math.abs(talentsX - (386 + 366)) < 0.01, "the window after the resized Character window did not move once")
 gear.RestoreLayout(wide)
-assert(panelRepositions == 2, "the restored Character window was not re-anchored")
+_, _, _, talentsX = talents:GetPoint(1)
+assert(math.abs(talentsX - 386) < 0.01, "the window after the restored Character window did not move back")
 assert(math.abs(characterRoot.width - 338) < 0.001
     and math.abs(CharacterModelScene.width - 231) < 0.001,
     "restoring the wide layout kept a size it had applied itself")

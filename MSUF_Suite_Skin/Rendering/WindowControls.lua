@@ -11,6 +11,7 @@ function WindowControls.TrackFocus(frame, owner) return TrackFocus(frame, owner)
 local Safety = NS.Safety
 local Policy = NS.WindowControlPolicy
 local Chrome = NS.WindowControlChrome
+local Delegate = NS.WindowControlDelegate
 local CanChangeFrameGeometry = Policy.CanControl
 
 local positionedStates = setmetatable({}, { __mode = "k" })
@@ -23,14 +24,6 @@ local FOREVER_CHARACTER_DOCK = { x = 0, y = 0 }
 -- Our controls sit this many levels above their panel.
 local CONTROL_LEVEL_OFFSET = 15
 local GRIP_LEVEL_OFFSET = 20
-
--- Only persistent, player-opened windows get a restore tab (closing an NPC panel ends it).
-local minimizablePanels = {
-    CharacterFrame = true, FriendsFrame = true, PVEFrame = true, PVPUIFrame = true, ProfessionsBookFrame = true, ProfessionsFrame = true,
-    CollectionsJournal = true, EncounterJournal = true, SettingsPanel = true, AddonList = true, CommunitiesFrame = true,
-    LFGParentFrame = true, LegacySystemFrame = true, PlayerSpellsFrame = true, WorldMapFrame = true, AchievementFrame = true,
-    QuestLogFrame = true, MacroFrame = true, CalendarFrame = true, InspectFrame = true, DressUpFrame = true, HelpFrame = true,
-}
 local function IsCombat() return NS.IsCombatLocked() end
 
 local function Enabled()
@@ -65,8 +58,8 @@ local function SafeControls(state)
     return true
 end
 
--- Windows caption (Chrome.ShowCaption): minimize, our maximize or Blizzard's size toggle, X.
-local function HasCaption(state) return state.maximize or state.minimize or state.sizeToggle end
+-- Windows caption (Chrome.ShowCaption): minimize, our maximize or Blizzard's size toggle, X (alone on a fixed window).
+local function HasCaption(state) return state.maximize or state.minimize or state.sizeToggle or state.closeOnly end
 
 local function Maximized(state) return state.name == "WorldMapFrame" and Safety.Read(state.frame, "IsMaximized") == true end
 
@@ -137,10 +130,10 @@ local function RestoreNativePosition(state, releasing)
     state.customPosition = false
     state.defaultPosition = false
     positionedStates[state.frame] = nil
-    -- The panel manager never anchors the Game Menu (centerFrameSkipAnchoring).
+    -- The panel manager never anchors the Game Menu (centerFrameSkipAnchoring). Its
+    -- own pass placed the panel (Policy.RestorePanel); it never runs from here.
     if panel and not panel.centerFrameSkipAnchoring then
-        -- Under the Gamepad UI Blizzard places the panel again when it next opens.
-        if not NS.Client.IsGamepadUI() then UpdateUIPanelPositions(state.frame) end
+        if not NS.Client.IsGamepadUI() then Policy.RestorePanel(state) end
     elseif state.nativePoints then
         state.frame:ClearAllPoints()
         for index = 1, #state.nativePoints do
@@ -193,6 +186,7 @@ local suspendPositionHook = false
 
 -- Blizzard's panel layout re-anchors open panels; ours move back after it.
 local function OnPanelPositionsUpdated()
+    Policy.CapturePanels(WindowControls.states)
     if suspendPositionHook or not Enabled() then return end
     for frame, state in pairs(activeStates) do
         if Controlled(state) and frame:IsShown() and not Policy.DeferMapLayout(state) then
@@ -242,11 +236,9 @@ local function Restore(state)
     local allowed, managed = Policy.CanChangeVisibility(state)
     if not allowed then return false end
     if state.profession then return Policy.ReopenProfession(state) end
-    if managed and not NS.Client.IsGamepadUI() then
-        ShowUIPanel(state.frame)
-    else
-        state.frame:Show()
-    end
+    -- A click the secure delegate did not take; only Blizzard's map button reopens the map.
+    if Policy.SecureOnly(state) then return false end
+    if managed and not NS.Client.IsGamepadUI() then ShowUIPanel(state.frame) else state.frame:Show() end
     -- OnPanelShow drops the tab. Blizzard can refuse the panel (a center
     -- panel such as the Game Menu is open): the tab stays for another try.
     return state.frame:IsShown() == true
@@ -261,38 +253,40 @@ local function ToggleFit(state)
     end
 end
 
-local function Minimize(state)
-    if NS.Client.IsGamepadUI() or not state or state.minimized or not Controlled(state) then return end
-    local allowed, managed = Policy.CanChangeVisibility(state)
-    if not allowed then Chrome.SyncMinimize(state) return end
+-- What minimize does around the hide; false while the window may not go. The
+-- secure delegate runs it before Blizzard's X (WindowControlDelegate.lua).
+local function PrepareMinimize(state)
+    if NS.Client.IsGamepadUI() or not state or state.minimized or not Controlled(state) then return false end
+    if not Policy.CanChangeVisibility(state) then Chrome.SyncMinimize(state) return false end
     -- Native OnHide resets pending changes. Keep the editor open until the
     -- user explicitly applies or cancels them; never write its save flag.
     if state.name == "AddonList" and AddonList_HasAnyChanged() then return false end
     Chrome.LeaveFit(state)
-    local frame = state.frame
-    local left, top = frame:GetLeft(), frame:GetTop()
-    local uiScale = UIParent:GetEffectiveScale()
-    local frameScale = frame:GetEffectiveScale()
+    local frame, uiScale = state.frame, UIParent:GetEffectiveScale()
+    local left, top, frameScale = frame:GetLeft(), frame:GetTop(), frame:GetEffectiveScale()
     state.restore:ClearAllPoints()
     if type(left) == "number" and type(top) == "number" and uiScale > 0 then
-        state.restore:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT",
-            left * frameScale / uiScale, top * frameScale / uiScale)
+        state.restore:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * frameScale / uiScale, top * frameScale / uiScale)
     else
         state.restore:SetPoint("TOP", UIParent, "TOP", 0, -80)
     end
     state.restoreLabel:SetText(Chrome.Title(state) .. "  +")
     Policy.NoteProfession(state)
     state.minimized = true
-    if managed then
-        HideUIPanel(frame)
-    else
-        frame:Hide()
-    end
-    if frame:IsShown() then
-        state.minimized = false
-    else
-        state.restore:Show()
-    end
+    return true
+end
+
+-- Blizzard kept the window open: no tab.
+local function FinishMinimize(state)
+    if state.frame:IsShown() then state.minimized = false else state.restore:Show() end
+end
+
+-- A click the secure delegate did not take; only Blizzard's X hides the map.
+local function Minimize(state)
+    if not state or Policy.SecureOnly(state) or not PrepareMinimize(state) then return end
+    local _, managed = Policy.CanChangeVisibility(state)
+    if managed then HideUIPanel(state.frame) else state.frame:Hide() end
+    FinishMinimize(state)
 end
 
 local function OnRestoreClick(bar, mouseButton)
@@ -549,16 +543,17 @@ end
 
 local function EnsureCaption(state)
     local frame, name = state.frame, state.name
-    if state.maximize or NS.Client.IsGamepadUI() then return end
+    if state.maximize or state.closeOnly or NS.Client.IsGamepadUI() then return end
     if not state.close then state.close = Chrome.FindClose(frame, name) end
     if not state.close then return end
     local toggle = state.sizeToggle or Chrome.NativeSizeToggle(frame, state.close)
     if not toggle and Chrome.HasNativeCaption(frame, name, state.close) then return end
-    if not state.minimize and minimizablePanels[name] then
+    if not state.minimize and Policy.IsMinimizable(name) then
         state.restore = Chrome.CreateRestore(state, OnRestoreClick)
         controlStates[state.restore] = state
         state.minimize = Chrome.CreateMinimize(state, state.close, CONTROL_LEVEL_OFFSET, OnMinimizeClick)
         controlStates[state.minimize] = state
+        Delegate.Bind(state, PrepareMinimize, FinishMinimize)
     end
     if toggle and not state.sizeToggle then Chrome.FollowSizeToggle(state, toggle) end
     local button = Chrome.CreateCaption(state, CONTROL_LEVEL_OFFSET, OnMaximizeClick)

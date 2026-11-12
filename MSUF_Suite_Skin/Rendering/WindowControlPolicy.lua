@@ -16,6 +16,11 @@ function Policy.IsInventory(frame)
     return inventoryRoots[name] == true and frame == Safety.Field(_G, name)
 end
 
+-- Fixed-layout exchange windows keep their size: their caption is the X
+-- (and a minimize where one is offered) without a maximize cell.
+local fixedPanels = { TradeFrame = true }
+function Policy.CanFit(state) return not fixedPanels[state.name] end
+
 local specialPanels = {
     SettingsPanel = true, AddonList = true, PlayerSpellsFrame = true,
     GameMenuFrame = true, ProfessionsFrame = true,
@@ -84,6 +89,116 @@ end
 
 function Policy.ReopenProfession(state)
     return C_TradeSkillUI.OpenTradeSkill(state.profession) == true
+end
+
+-- Only persistent, player-opened windows get a restore tab (closing an NPC panel ends it).
+local minimizable = {
+    CharacterFrame = true, FriendsFrame = true, PVEFrame = true, PVPUIFrame = true, ProfessionsBookFrame = true,
+    ProfessionsFrame = true, CollectionsJournal = true, EncounterJournal = true, SettingsPanel = true, AddonList = true,
+    CommunitiesFrame = true, LFGParentFrame = true, LegacySystemFrame = true, PlayerSpellsFrame = true,
+    WorldMapFrame = true, AchievementFrame = true, QuestLogFrame = true, MacroFrame = true, CalendarFrame = true,
+    InspectFrame = true, DressUpFrame = true, HelpFrame = true,
+}
+function Policy.IsMinimizable(name) return minimizable[name] == true end
+
+-- Blizzard buttons whose own OnClick opens the window as the player's click or
+-- key binding does (live and forever): MinimapZoneTextButtonMixin:OnClick runs
+-- ToggleWorldMap (Blizzard_Minimap/Mainline/Minimap.lua), the micro buttons
+-- (Blizzard_MicroMenu/Mainline/MainMenuBarMicroButtons.lua) ToggleCharacter
+-- ("PaperDollFrame"), ToggleProfessionsBook, ToggleAchievementFrame,
+-- ToggleCollectionsJournal, ToggleEncounterJournal and, on WoW Forever,
+-- ToggleLegacySystemUI. The restore tab clicks one of them from secure code
+-- (WindowControlDelegate.lua). A hidden micro button still takes the click.
+local openers = {
+    WorldMapFrame = { "MinimapCluster", "ZoneTextButton" }, CharacterFrame = { "CharacterMicroButton" },
+    ProfessionsBookFrame = { "ProfessionMicroButton" }, AchievementFrame = { "AchievementMicroButton" },
+    CollectionsJournal = { "CollectionsMicroButton" }, EncounterJournal = { "EJMicroButton" },
+    LegacySystemFrame = { "LegacyMicroButton" },
+}
+function Policy.Opener(state)
+    local path = not state.profession and openers[state.name]
+    if not path then return nil end
+    local button = Safety.Field(_G, path[1])
+    for index = 2, #path do button = Safety.Field(button, path[index]) end
+    if not Safety.Public(button) or not button or Safety.IsForbidden(button)
+        or Safety.Read(button, "GetObjectType") ~= "Button" or Safety.Read(button, "IsEnabled") ~= true then
+        return nil
+    end
+    return button
+end
+
+-- The world map's own show and hide refresh its pins, and WoW Forever's pins
+-- call the protected SetPassThroughButtons (MapCanvasMixin:AcquirePin): only
+-- Blizzard's buttons may show or hide it, never the skin's own code.
+function Policy.SecureOnly(state) return state.name == "WorldMapFrame" end
+
+-- Blizzard's panel manager places the windows of its slots
+-- (FramePositionDelegate:UpdateUIPanelPositions, Blizzard_UIParentPanelManager/
+-- Shared/UIParentPanelManager.lua, live and forever). The skin only reads that
+-- layout: a pass run from its code runs, and writes, under its taint.
+local SLOTS = { "left", "doublewide", "center", "right", "fullscreen" }
+local FOLLOWERS = { left = { "center", "right" }, doublewide = { "right" }, center = { "right" } }
+
+local function SlotOf(frame)
+    for _, slot in ipairs(SLOTS) do
+        if GetUIPanel(slot) == frame then return slot end
+    end
+end
+
+-- Where Blizzard's pass anchored a window, written into layout with the scale
+-- it divided by (TOPLEFT both offsets, a centred TOP window only y): read
+-- right after the pass, before the skin rescales the window.
+local function PanelLayout(frame, layout)
+    if Safety.Read(frame, "GetNumPoints") ~= 1 then return nil end
+    local point, relative, relativePoint, x, y = frame:GetPoint(1)
+    local scale = Safety.Read(frame, "GetScale")
+    if not Safety.Public(point) or not Safety.Public(relative) or not Safety.Public(relativePoint)
+        or type(x) ~= "number" or type(y) ~= "number" or type(scale) ~= "number" or scale <= 0 then
+        return nil
+    end
+    layout[1], layout[2], layout[3], layout[4], layout[5] = point, relative, relativePoint, x, y
+    layout.scale, layout.scaled = scale, point == "TOPLEFT"
+    return layout
+end
+
+-- After Blizzard's pass (the UpdateUIPanelPositions post-hook): where it put
+-- each controlled window that holds a slot.
+function Policy.CapturePanels(states)
+    for _, slot in ipairs(SLOTS) do
+        local frame = GetUIPanel(slot)
+        local state = frame and states[frame]
+        if state then state.panelLayout = PanelLayout(frame, state.panelLayout or {}) end
+    end
+end
+
+-- Puts a window that still holds its slot back where Blizzard's last pass put it.
+function Policy.RestorePanel(state)
+    local layout, frame = state.panelLayout, state.frame
+    if not layout or not SlotOf(frame) then return false end
+    local ratio = layout.scale / frame:GetScale()
+    frame:ClearAllPoints()
+    frame:SetPoint(layout[1], layout[2], layout[3], layout.scaled and layout[4] * ratio or layout[4], layout[5] * ratio)
+    return true
+end
+
+-- A window that changed width moves the windows Blizzard laid out after it by
+-- that width (UIParent units), as the pass would. A centred "center" window
+-- (TOP) and windows the skin placed itself stay; protected ones wait for
+-- Blizzard's next pass.
+local scratch = {}
+function Policy.ShiftFollowers(root, delta)
+    local followers = delta ~= 0 and FOLLOWERS[SlotOf(root) or ""]
+    if not followers then return end
+    for _, slot in ipairs(followers) do
+        local frame = GetUIPanel(slot)
+        local controls = frame and NS.WindowControls.states[frame]
+        local layout = frame and frame ~= root and not (controls and controls.customPosition)
+            and Policy.CanChangeGeometry(frame) and PanelLayout(frame, scratch)
+        if layout and layout[1] == "TOPLEFT" and layout[2] == UIParent and layout[3] == "TOPLEFT" then
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", layout[4] + delta / layout.scale, layout[5])
+        end
+    end
 end
 
 -- Forever rebuilds native map overlays and pins when the player opens the

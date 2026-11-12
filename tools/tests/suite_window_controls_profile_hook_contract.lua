@@ -142,6 +142,7 @@ local function NewSession(forever, look)
         character:ClearAllPoints()
         character:SetPoint("TOPLEFT", "UIParent", "TOPLEFT", NATIVE_X / scale, NATIVE_Y / scale)
     end
+    GetUIPanel = function(slot) return slot == "left" and character:IsShown() and character or nil end
 
     local listeners, jobs = {}, {}
     local NS = {
@@ -172,6 +173,7 @@ local function NewSession(forever, look)
     -- The TOC loads the controls' chrome right before them.
     assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrome.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlDelegate.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(source))("MSUF_Suite_Skin", NS)
     local session = { NS = NS }
     function session.Profile(positions)

@@ -17,9 +17,17 @@ local function Noop() end
 
 securecallfunction = function(callback, ...) return callback(...) end
 C_Timer = { After = Noop }
--- UIParent's panel manager re-anchors a resized Character window.
-local panelRepositions = 0
-UpdateUIPanelPositions = function() panelRepositions = panelRepositions + 1 end
+-- Blizzard's panel manager owns its slots and their layout. The skin never runs
+-- its pass: from addon code the pass and the windows' scripts ran under the
+-- skin's taint (with Talents open it called PlayerSpellsFrame.SetMinimized
+-- there). The window Blizzard laid out after a resized Character window moves
+-- by the width the layout changed instead (WindowControlPolicy.ShiftFollowers).
+UpdateUIPanelPositions = function() error("the skin ran Blizzard's panel layout pass") end
+UIParent = {}
+local panelSlots = {}
+GetUIPanel = function(slot) return panelSlots[slot] end
+-- Window controls load before the adapters (TOC); none of these windows has any.
+local windowControls = { states = {} }
 
 local NS = {
     -- Retail: the dossier and its modern equipment rows are available.
@@ -31,11 +39,12 @@ local NS = {
     Registry = { AddListener = Noop, QueueJob = Noop, NotifyListeners = Noop },
     GenericWindows = { IsCategoryEnabled = function() return true end },
     Surface = { SetVisible = function(frame, visible) frame.surfaceVisible = visible end },
+    WindowControls = windowControls,
 }
 local skin = root .. "/MSUF_Suite_Skin/"
 MSUFSuite = { Skin = {} }
 for _, file in ipairs({ "Core/Safety", "Core/Cosmetics", "Core/Defaults", "Core/DefaultsLooks", "Core/Database",
-    "Adapters/AdapterKit", "Adapters/CharacterDetails", "Adapters/GearGeometry" }) do
+    "Rendering/WindowControlPolicy", "Adapters/AdapterKit", "Adapters/CharacterDetails", "Adapters/GearGeometry" }) do
     assert(loadfile(skin .. file .. ".lua"))("MSUF_Suite_Skin", NS)
 end
 assert(loadfile(gearSource))("MSUF_Suite_Skin", NS)
@@ -83,6 +92,18 @@ local v = { kind = "character", active = true, host = Region(1, 1), root = Chara
     panel = Region(352, 644, { "TOPLEFT", CharacterFrame, "TOPRIGHT", 0, 0 }), rows = {} }
 Details.views[CharacterFrame] = v
 
+-- Talents in the next slot, where Blizzard's pass put it: 16 + 540 + 32.
+local talents = Region(660, 600, { "TOPLEFT", UIParent, "TOPLEFT", 588, -116 })
+local talentWrites, talentsProtected = 0, false
+local talentPoint = talents.SetPoint
+function talents:SetPoint(...) talentWrites = talentWrites + 1; return talentPoint(self, ...) end
+function talents:IsProtected() return talentsProtected, false end
+panelSlots.left, panelSlots.center = CharacterFrame, talents
+local function TalentsX()
+    local _, _, _, x = talents:GetPoint(1)
+    return x
+end
+
 local function Native()
     local _, _, _, headX, headY = CharacterHeadSlot:GetPoint(1)
     return not v.wide and not v.list and CharacterFrame.width == 540 and CharacterFrame.height == 424
@@ -108,45 +129,57 @@ Check(NS.DB.characterDetails.view == "modern" and NS.DB.characterDetails.wideLay
     "the default Character view changed")
 Gear.ApplyLayout(v)
 Check(Wide(), "the default modern view lost its wide layout")
+Check(TalentsX() == 588 + 380, "the window after the widened Character window did not move by the added width")
 
 -- Turning the toggle off returns the window and its regions to Blizzard's
--- geometry; the panel manager re-anchors the narrower window.
-local repositions = panelRepositions
+-- geometry; the window after it moves back by the width it lost.
 Check(Details.SetOption("wideLayout", false) and NS.DB.characterDetails.wideLayout == false
     and panelApplies == 1, "the Wide layout setter did not store the choice and reapply the panel")
 Gear.ApplyLayout(v)
 Check(Native(), "turning Wide layout off kept the wide Character layout")
-Check(panelRepositions == repositions + 1, "the narrowed Character window was not re-anchored")
+Check(TalentsX() == 588, "the window after the narrowed Character window did not move back")
 Check(CharacterFrame.Inset.surfaceVisible == true, "the native inset stayed hidden after the wide layout")
+local writes = talentWrites
 Gear.ApplyLayout(v)
-Check(Native() and panelRepositions == repositions + 1, "a repeated layout pass changed the native window")
+Check(Native() and talentWrites == writes, "a repeated layout pass moved the window after it")
 
 -- Turning it on again widens the modern view.
 Check(Details.SetOption("wideLayout", true), "the Wide layout setter refused true")
 Gear.ApplyLayout(v)
 Check(Wide(), "turning Wide layout on again did not widen the modern view")
 
--- Native UpdateSize must not collapse the configured safe layout in combat.
--- Blizzard's secure panel manager is a separate boundary and waits for regen.
+-- Native UpdateSize must not collapse the configured safe layout in combat. A
+-- protected window after it (Talents in combat) keeps the place Blizzard's own
+-- pass gave it; only that pass moves it again.
 local locked = true
 NS.IsCombatLocked = function() return locked end
 NS.CombatGate = { RunOrDefer = function(_, callback) NS.pendingLayout = callback end }
 Gear.FollowNativeSize(v)
 Check(Wide(), "an unchanged window gave up the wide layout in combat")
-CharacterFrame.width = 540
+-- Blizzard's UpdateSize resets the width; its own pass re-anchors Talents.
+CharacterFrame.width, talents.points[1][4], talentsProtected = 540, 588, true
 CharacterFrame.InsetRight.IsProtected = function() return true, false end
-local beforeCombat = panelRepositions
+writes = talentWrites
 Gear.FollowNativeSize(v)
 Check(Wide(), "native UpdateSize collapsed the safe wide Character layout in combat")
-Check(panelRepositions == beforeCombat, "the secure panel manager was changed in combat")
+Check(talentWrites == writes and TalentsX() == 588, "a protected window was moved in combat")
 local _, _, _, insetX = CharacterFrame.InsetRight:GetPoint(1)
 Check(insetX == 704, "a protected region was moved in combat")
-locked = false
+locked, talentsProtected = false, false
 CharacterFrame.InsetRight.IsProtected = nil
 Gear.ApplyLayout(v)
-Check(Wide() and panelRepositions == beforeCombat + 1, "deferred panel positioning did not finish")
+Check(Wide() and talentWrites == writes, "an unchanged layout moved the window after it")
+-- Blizzard's next pass (any window opening or closing) places Talents again.
+talents.points[1][4] = 588 + 380
 Gear.RestoreLayout(v)
-Check(Native(), "the layout after combat no longer restores Blizzard's geometry")
+Check(Native() and TalentsX() == 588, "the layout after combat no longer restores Blizzard's geometry")
+-- A window Blizzard centres (TOP) does not follow the Character window's width.
+talents.points[1] = { "TOP", UIParent, "TOP", 0, -116 }
+writes = talentWrites
+Gear.ApplyLayout(v)
+Gear.RestoreLayout(v)
+Check(talentWrites == writes, "a centred window was moved after the Character window")
+talents.points[1] = { "TOPLEFT", UIParent, "TOPLEFT", 588, -116 }
 
 -- First combat open and hide/reopen use the same reversible layout.
 locked = true
@@ -157,10 +190,11 @@ Check(Native(), "combat close did not restore the safe native geometry")
 Gear.ApplyLayout(v)
 Check(Wide(), "combat reopen did not restore the configured layout")
 v.host.shown = false
-CharacterFrame.width = 540
+CharacterFrame.width, talents.points[1][4] = 540, 588
+writes = talentWrites
 Gear.FollowNativeSize(v)
 Gear.ApplyLayout(v)
-Check(CharacterFrame.width == 540 and panelRepositions == beforeCombat + 2,
+Check(CharacterFrame.width == 540 and talentWrites == writes,
     "hidden Character window performed layout work")
 v.host.shown = true
 Gear.ApplyLayout(v)

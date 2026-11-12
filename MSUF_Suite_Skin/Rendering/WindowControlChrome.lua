@@ -799,6 +799,7 @@ end
 
 function Chrome.CreateCaption(state, level, click)
     if state.maximize or state.inventory then return end
+    if not NS.WindowControlPolicy.CanFit(state) then state.closeOnly = true return end
     local parent = Chrome.Parent(state)
     local button = Safety.CreateChildFrame("Button", parent)
     state.maximize = button

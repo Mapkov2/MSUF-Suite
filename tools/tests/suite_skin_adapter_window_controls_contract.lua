@@ -290,6 +290,9 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         })
         Check(NS.Adapters.Apply("blizzardWindows"), "native inventory adapter failed")
         for _, frame in ipairs(inventory) do Exercise(frame, Controls(frame, "blizzardWindows")) end
+        -- Blizzard's panel pass lays out the open Bank window in its slot; the
+        -- skin keeps that place for the hand-off and never runs the pass itself.
+        UpdateUIPanelPositions(BankFrame)
         UpdateContainerFrameAnchors()
         for index = 2, #inventory do
             local frame = inventory[index]
@@ -314,8 +317,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             if relinquished then
                 Check(frame.scale == (frame == BankFrame and 1 or nativeScale),
                     frame.name .. " ownership transfer did not restore the latest native scale")
-                Check(frame.point and frame.point[4] == (frame == BankFrame and 30 or -nativeInset)
-                    and frame.point[5] == (frame == BankFrame and -90 or nativeInset),
+                -- Blizzard anchors at offset / scale: the Bank window's place comes back
+                -- through the scale it was laid out at, to the last float digit.
+                local x, y = frame == BankFrame and 30 or -nativeInset, frame == BankFrame and -90 or nativeInset
+                Check(frame.point and math.abs(frame.point[4] - x) < 1e-9 and math.abs(frame.point[5] - y) < 1e-9,
                     frame.name .. " ownership transfer did not restore native position")
                 -- The module is free to place its native windows after the skin yields.
                 frame.scale, frame.point = 0.75, { "BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -80, 60 }
@@ -337,6 +342,8 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         end
         NS.GenericWindows.Disable("blizzardWindows")
         for _, frame in ipairs(inventory) do frame:Hide(); _G[frame.name] = nil end
+        -- Closed through the panel manager, the Bank window holds no slot any more.
+        GetUIPanel = function() return nil end
     end
     local reads = 0
     for frame in pairs(W.states) do

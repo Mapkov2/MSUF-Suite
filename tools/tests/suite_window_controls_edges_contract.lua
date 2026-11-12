@@ -153,6 +153,7 @@ local function LayoutPanels()
     end
 end
 UpdateUIPanelPositions = function() LayoutPanels() end
+GetUIPanel = function(slot) return slots[slot] end
 local function Fit(frame)
     frame:SetScale(1)
     if frame.width > UIParent.width or frame.height > UIParent.height then
@@ -238,7 +239,8 @@ NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
 NS.SuiteCore = function() return core end
 for _, file in ipairs({ "Core/Safety.lua", "Core/Defaults.lua", "Core/DefaultsLooks.lua",
-    "Rendering/WindowControlPolicy.lua", "Rendering/WindowControlChrome.lua", "Rendering/WindowControls.lua" }) do
+    "Rendering/WindowControlPolicy.lua", "Rendering/WindowControlChrome.lua", "Rendering/WindowControlDelegate.lua",
+    "Rendering/WindowControls.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local WindowControls = NS.WindowControls
