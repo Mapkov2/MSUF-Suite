@@ -459,10 +459,11 @@ module:Enable()
 assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or hooks missing")
 -- The explicit sub-module list replaces the files' post-hooks on the module.
 local REFRESH_ORDER = { "PlayerGear.Refresh", "UpgradeMarker.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
-    "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh", "BuybackSearch.Refresh", "BagCaption.Refresh" }
+    "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh", "BuybackSearch.Refresh", "BagCaption.Refresh",
+    "BagsIdle.Refresh" }
 local STOP_ORDER = { "PlayerGear.Disable", "UpgradeMarker.Disable", "PhysicalSort.Stop", "InventoryView.Disable", "BankInventory.Disable",
     "BankWindow.Disable", "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore", "BuybackSearch.Disable",
-    "BagCaption.Release" }
+    "BagCaption.Release", "BagsIdle.Disable" }
 local function Ran(order)
     if #submoduleCalls ~= #order then return false end
     for i = 1, #order do if submoduleCalls[i] ~= order[i] then return false end end

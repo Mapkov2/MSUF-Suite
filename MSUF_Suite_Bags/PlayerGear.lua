@@ -74,6 +74,20 @@ function Gear.Refresh()
     end
 end
 
+-- A fight with every bag window closed (CombatIdle.lua): what changed while
+-- paused is unknown, so Resume answers every item again.
+function Gear.Pause()
+    if Gear.listening and Gear.events then Gear.events:UnregisterAllEvents() end
+end
+
+function Gear.Resume()
+    if not Gear.listening or not Gear.events then return end
+    for i = 1, #EVENTS do
+        if NS.Client.SupportsEvent(EVENTS[i]) then Gear.events:RegisterEvent(EVENTS[i]) end
+    end
+    Gear.revision = Gear.revision + 1
+end
+
 function Gear.Disable()
     if Gear.events then Gear.events:UnregisterAllEvents() end
     Gear.listening, Gear.armor, Gear.revision = false, nil, Gear.revision + 1

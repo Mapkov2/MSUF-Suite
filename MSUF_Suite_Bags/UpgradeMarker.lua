@@ -142,6 +142,22 @@ function Marker.Refresh()
     end
 end
 
+-- A fight with every bag window closed (CombatIdle.lua): the worn equipment
+-- may have changed while paused, so Resume works every answer out again, as
+-- EquipmentChanged does.
+function Marker.Pause()
+    if Marker.listening and Marker.events then Marker.events:UnregisterAllEvents() end
+end
+
+function Marker.Resume()
+    if not Marker.listening or not Marker.events then return end
+    Marker.events:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+    Marker.events:RegisterEvent("PLAYER_LEVEL_UP")
+    ClearWaiting()
+    ItemEvents()
+    Marker.dirty = true
+end
+
 function Marker.Disable()
     if Marker.events then Marker.events:UnregisterAllEvents() end
     Marker.listening, Marker.dirty = false, true

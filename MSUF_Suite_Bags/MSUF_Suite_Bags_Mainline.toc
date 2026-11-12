@@ -58,3 +58,4 @@ AutoSplit.lua
 StackSplitter.lua
 SortDirection.lua
 BuybackSearch.lua
+CombatIdle.lua

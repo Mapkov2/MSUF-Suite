@@ -315,6 +315,19 @@ local function ItemInfoReceived(module, _, itemID, success)
 end
 M.ItemInfoReceived = ItemInfoReceived
 M.StyleItemLevel = Style
+
+-- A fight with every bag window closed (CombatIdle.lua): no badge can wait
+-- on screen. Opening a window repaints the visible slots and retries the
+-- loads (CombinedShown, the bank's own refresh).
+function M:PauseItemInfo()
+    self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
+end
+
+function M:ResumeItemInfo()
+    if next(self.pending) or next(self.bankPending) then
+        self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, IN_COMBAT)
+    end
+end
 M.PaintItemLevelQuality = PaintQuality
 
 local function HideItemLevels(self)
@@ -486,6 +499,7 @@ local SUBMODULES = {
     { "SortDirection", "Refresh", "Restore" },                -- Blizzard's bag sorting direction
     { "BuybackSearch", "Refresh", "Disable" },                -- search the merchant buyback tab
     { "BagCaption", "Refresh", "Release" },                   -- the windows' minimize, maximize and close
+    { "BagsIdle", "Refresh", "Disable" },                     -- pauses the listeners above in a fight with the bags closed
 }
 M.SUBMODULES = SUBMODULES
 local REFRESH, STOP = 2, 3

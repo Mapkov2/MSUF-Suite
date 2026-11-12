@@ -99,7 +99,8 @@ if flavor == "Forever" then
     assert(delegate:IsShown(), "keyring delegate did not reopen")
     W.EnterCombat()
     assert(not delegate:IsShown() and delegate:GetNumPoints() == 0, "keyring delegate survived the combat transition")
-    assert(not mouseButton:IsShown(), "owned keyring slots survived the protected combat transition")
+    assert(mouseButton:IsVisible() and #mouseButton.clicks == 0 and #mouseButton.drag == 0,
+        "owned keyring slots must stay visible but take no clicks in combat")
     W.LeaveCombat()
     W.Settle()
 

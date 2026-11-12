@@ -56,6 +56,7 @@ end
 -- Brings one container up to date and returns its slot count.
 function SlotCache.Sync(bag)
     if not Finite(bag) then return 0 end
+    if SlotCache.paused then SlotCache.Resume() end
     local size
     if client and client.isForever and bag == KEYRING_BAG then
         local keyringSize = GetKeyRingSize
@@ -177,6 +178,11 @@ end
 local EVENTS = { "BAG_UPDATE", "ITEM_LOCK_CHANGED", "INVENTORY_SEARCH_UPDATE",
     "QUEST_ACCEPTED", "QUEST_REMOVED", "BAG_CONTAINER_UPDATE", "PLAYER_ENTERING_WORLD", "BANKFRAME_OPENED" }
 
+local function Listen()
+    for i = 1, #EVENTS do SlotCache.events:RegisterEvent(EVENTS[i]) end
+    SlotCache.events:RegisterUnitEvent("UNIT_QUEST_LOG_CHANGED", "player")
+end
+
 -- Bags.lua starts the cache before its first read and stops it on disable.
 -- Contents can change while the module is off: a start reads everything again.
 function SlotCache.Start()
@@ -186,13 +192,28 @@ function SlotCache.Start()
     end
     if SlotCache.listening then return end
     SlotCache.Reset()
-    for i = 1, #EVENTS do SlotCache.events:RegisterEvent(EVENTS[i]) end
-    SlotCache.events:RegisterUnitEvent("UNIT_QUEST_LOG_CHANGED", "player")
+    Listen()
     SlotCache.listening = true
 end
 
 function SlotCache.Stop()
     if SlotCache.events then SlotCache.events:UnregisterAllEvents() end
-    SlotCache.listening = false
+    SlotCache.listening, SlotCache.paused = false, false
     SlotCache.Reset()
+end
+
+-- A fight with every bag window closed pauses the cache (CombatIdle.lua).
+-- Nothing is known about the slots after that: Resume marks every container
+-- for a full read, and the first read while paused resumes by itself.
+function SlotCache.Pause()
+    if not SlotCache.listening or SlotCache.paused then return end
+    SlotCache.events:UnregisterAllEvents()
+    SlotCache.paused = true
+end
+
+function SlotCache.Resume()
+    if not SlotCache.paused then return end
+    SlotCache.paused = false
+    Listen()
+    SlotCache.MarkAll()
 end

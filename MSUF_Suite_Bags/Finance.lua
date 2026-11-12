@@ -316,6 +316,25 @@ function Finance.Enable()
     Gold.SetHistoryRecording(M.active and M.config.showGoldHistory == true or false)
 end
 
+-- A fight with every bag window closed (CombatIdle.lua): money and currency
+-- changes wait. Resume records the balance once (Finance.observed is kept),
+-- so the fight's net change lands in the history.
+function Finance.Pause()
+    if not Finance.events then return end
+    Finance.events:UnregisterEvent("PLAYER_MONEY")
+    Finance.events:UnregisterEvent("CURRENCY_DISPLAY_UPDATE")
+end
+
+function Finance.Resume()
+    if not Finance.events or not M.active then return end
+    if M.config.showGoldHistory then
+        Finance.events:RegisterEvent("PLAYER_MONEY")
+        Finance.Record()
+    end
+    Finance.events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+    Finance.Event(nil, "CURRENCY_DISPLAY_UPDATE")
+end
+
 function Finance.Disable()
     Finance.observed = nil
     if Finance.events then Finance.events:UnregisterAllEvents() end

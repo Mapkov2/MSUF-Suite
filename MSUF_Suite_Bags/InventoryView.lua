@@ -134,7 +134,7 @@ Flush = function(event)
     local state = State()
     if not state then return end
     Index.ReadContainer(InventoryView.index, InventoryView.frame, Index.Recent())
-    if Keyring then Keyring.Append(InventoryView.index, InventoryView.frame, not inCombat) end
+    if Keyring then Keyring.Append(InventoryView.index, InventoryView.frame, inCombat) end
     P.InventoryDetails.Index(InventoryView.index, InventoryView.smartQuery)
     if not canLayout then
         P.InventoryRendering.Combat()
@@ -234,7 +234,7 @@ end
 -- (or while protected) its grid is what shows.
 local function WindowHidden()
     P.PhysicalSort.Stop()
-    if Keyring then Keyring.Hide() end
+    if Keyring then Keyring.Close() end
     if not InventoryView.active then return end
     InventoryView.layout = "native"
     InventoryView.transitionPending, InventoryView.categoryTransitionPending = false, false
@@ -243,6 +243,45 @@ local function WindowHidden()
     P.BagMotion.StopAll()
     P.EquippedBags.Close()
     ShowChrome(false)
+end
+
+local function RegisterEvents()
+    local events = InventoryView.events
+    for i = 1, #EVENTS do
+        if NS.Client.SupportsEvent(EVENTS[i]) then events:RegisterEvent(EVENTS[i]) end
+    end
+    for i = 1, #QUEST_TINT_EVENTS do
+        local event = QUEST_TINT_EVENTS[i]
+        local keyringLock = Keyring and event == "ITEM_LOCK_CHANGED"
+        if (keyringLock or M.config.desaturateInactiveQuestItems) and NS.Client.SupportsEvent(event) then
+            events:RegisterEvent(event)
+        else
+            events:UnregisterEvent(event)
+        end
+    end
+end
+
+-- In a fight with every bag window closed (CombatIdle.lua) only the combat
+-- edges and a scale change reach the view. Resume invalidates what the
+-- missed events would have; WindowShown reads every slot and retries the
+-- item data that was still loading.
+local PAUSE_KEEPS = { PLAYER_REGEN_DISABLED = true, PLAYER_REGEN_ENABLED = true, UI_SCALE_CHANGED = true,
+    DISPLAY_SIZE_CHANGED = true }
+
+function InventoryView.Pause()
+    if not InventoryView.active then return end
+    local events = InventoryView.events
+    for i = 1, #EVENTS do
+        local event = EVENTS[i]
+        if not PAUSE_KEEPS[event] and NS.Client.SupportsEvent(event) then events:UnregisterEvent(event) end
+    end
+    for i = 1, #QUEST_TINT_EVENTS do events:UnregisterEvent(QUEST_TINT_EVENTS[i]) end
+end
+
+function InventoryView.Resume()
+    if not InventoryView.active then return end
+    RegisterEvents()
+    P.InventoryDetails.Invalidate()
 end
 
 function InventoryView.Refresh()
@@ -264,18 +303,7 @@ function InventoryView.Refresh()
         InventoryView.events = S.CreateFrame("Frame")
         InventoryView.events:SetScript("OnEvent", OnEvent)
     end
-    for i = 1, #EVENTS do
-        if NS.Client.SupportsEvent(EVENTS[i]) then InventoryView.events:RegisterEvent(EVENTS[i]) end
-    end
-    for i = 1, #QUEST_TINT_EVENTS do
-        local event = QUEST_TINT_EVENTS[i]
-        local keyringLock = Keyring and event == "ITEM_LOCK_CHANGED"
-        if (keyringLock or M.config.desaturateInactiveQuestItems) and NS.Client.SupportsEvent(event) then
-            InventoryView.events:RegisterEvent(event)
-        else
-            InventoryView.events:UnregisterEvent(event)
-        end
-    end
+    RegisterEvents()
     if not InventoryView.hooked then
         hooksecurefunc(InventoryView.frame, "UpdateItems", Request)
         hooksecurefunc(InventoryView.frame, "UpdateItemLayout", NativeLayoutChanged)

@@ -279,7 +279,8 @@ local function UpdateTodayGold(self)
     PaintGold(label, TEXT.today, net)
 end
 
-function M:ApplyGoldEvents()
+-- Follows the money for the configured period; returns which labels show.
+local function WatchGold(self)
     local show, period = self.config.showSessionGold, self.config.goldPeriod
     local session = show and period ~= GOLD_PERIOD.TODAY
     local today = show and (period == GOLD_PERIOD.TODAY or period == GOLD_PERIOD.BOTH)
@@ -291,6 +292,24 @@ function M:ApplyGoldEvents()
         self.context:RemoveEvent("PLAYER_MONEY")
         self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
     end
+    return show, session, today
+end
+
+-- A fight with every bag window closed (CombatIdle.lua): the labels stop
+-- following the money; Resume paints them once.
+function M:PauseGoldEvents()
+    Gold.WatchToday(self, nil)
+    self.context:RemoveEvent("PLAYER_MONEY")
+end
+
+function M:ResumeGoldEvents()
+    local _, session, today = WatchGold(self)
+    if session then UpdateSessionGold(self) end
+    if today then UpdateTodayGold(self) end
+end
+
+function M:ApplyGoldEvents()
+    local show, session, today = WatchGold(self)
     local style = self.windows and self.windows[self.frame]
     if not style then return end
     local both = session and today or false

@@ -35,6 +35,16 @@ local function ItemButton(W, env, parent, index, button)
     button.icon = button:CreateTexture(nil, "BORDER")
     button.ItemSlotBackground = button:CreateTexture(nil, "BACKGROUND")
     button.emptyBackgroundAtlas = "bags-item-slot64"
+    -- ContainerFrame.xml (live and forever): BattlepayItemTexture is shown and
+    -- NewItemTexture is not hidden (alpha 0, faded in by newitemglowAnim)
+    -- until UpdateNewItem or a hover hides them.
+    button.NewItemTexture = button:CreateTexture(nil, "OVERLAY")
+    button.NewItemTexture:SetAlpha(0)
+    button.BattlepayItemTexture = button:CreateTexture(nil, "OVERLAY")
+    button.flashAnim, button.newitemglowAnim = button:CreateAnimationGroup(), button:CreateAnimationGroup()
+    -- ContainerFrameItemButtonMixin:OnLoad.
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:RegisterForDrag("LeftButton")
     function button:GetBagID() return self.bagID end
     function button:HasItem() return self.hasItem end
     function button:SetItemButtonTexture(texture)
@@ -48,6 +58,25 @@ local function ItemButton(W, env, parent, index, button)
     end
     function button:SetReadable(readable) self.readable = readable end
     function button:UpdateCooldown() self.cooldowns = (self.cooldowns or 0) + 1 end
+    local function StopNewItem(self)
+        self.NewItemTexture:Hide()
+        self.BattlepayItemTexture:Hide()
+        self.flashAnim:Stop()
+        self.newitemglowAnim:Stop()
+    end
+    -- ContainerFrameItemButtonMixin:UpdateNewItem.
+    function button:UpdateNewItem(quality)
+        local bag, slot = self:GetBagID(), self:GetID()
+        if not C_NewItems.IsNewItem(bag, slot) then return StopNewItem(self) end
+        local battlePay = C_Container.IsBattlePayItem(bag, slot)
+        if not battlePay then self.NewItemTexture:SetAtlas(quality and "bags-glow-quality" or "bags-glow-white") end
+        self.NewItemTexture:SetShown(not battlePay)
+        self.BattlepayItemTexture:SetShown(battlePay)
+        if not self.flashAnim:IsPlaying() and not self.newitemglowAnim:IsPlaying() then
+            self.flashAnim:Play()
+            self.newitemglowAnim:Play()
+        end
+    end
     function button:Initialize(container, bag, slot)
         self.containerFrame = container
         self:SetAttribute("bagid", bag)
@@ -59,6 +88,7 @@ local function ItemButton(W, env, parent, index, button)
     function button:UpdateTooltip()
         W.GameTooltip:SetOwner(self, "ANCHOR_NONE")
         C_NewItems.RemoveNewItem(self:GetBagID(), self:GetID())
+        StopNewItem(self)
         W.GameTooltip:SetBagItem(self:GetBagID(), self:GetID())
     end
     button.scripts.OnEnter = function(self) self:UpdateTooltip() end
@@ -1129,6 +1159,7 @@ function H.New(root, options)
     end
     C_Container = {
         GetContainerNumSlots = function(bag) return W.sizes[bag] or 0 end,
+        IsBattlePayItem = function(bag, slot) return (W.battlePay or {})[bag * KEY + slot] == true end,
         GetContainerNumFreeSlots = function(bag)
             local free = 0
             for slot = 1, W.sizes[bag] or 0 do if not W.Item(bag, slot) then free = free + 1 end end
