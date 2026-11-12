@@ -243,11 +243,12 @@ local function PopoverOn(anchor)
 end
 
 -- Why a listed entry is not shown in play (runtime rows may say which rule
--- hides it: "cap", "ready" or "empty"); already translated.
+-- hides it: "cap", "ready", "empty" or "totem"); already translated.
 function Page.HiddenText(hiddenBy)
     if hiddenBy == "cap" then return Tr("Beyond this bar's Maximum icons.") end
     if hiddenBy == "ready" then return Tr("Hidden while ready (Hide icons that are ready).") end
     if hiddenBy == "empty" then return Tr("None in your bags right now.") end
+    if hiddenBy == "totem" then return Tr("Shows while this totem slot is in use.") end
     return Tr("Hidden right now by a bar rule.")
 end
 -- An entry past Maximum icons that Send excess cooldowns to moves to

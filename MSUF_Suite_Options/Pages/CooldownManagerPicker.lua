@@ -1,7 +1,8 @@
 local _, P = ...
 -- Cooldown manager page, spell picker: Blizzard's cooldowns or buffs for the
--- selected bar, trinket slots and custom spell, item and aura IDs. A pooled
--- popup (CooldownManagerWidgets.lua) that stays open for several picks.
+-- selected bar, totem slots, equipment slots with a use and custom spell,
+-- item and aura IDs. A pooled popup (CooldownManagerWidgets.lua) that stays
+-- open for several picks.
 local Page = P.CDMPage
 local Tr = P.Tr
 local CDM = P.Suite.CDM
@@ -43,6 +44,26 @@ local POTION_BUFFS = {
     1238443, -- Potion of Zealotry
 }
 
+-- WoW Forever spell ranks (the runtime's S.CooldownManagerSpellRanks): a
+-- rank of a spell stands for the whole spell. A typed rank is filed under
+-- the family's first rank, every rank finds Blizzard's entry of the spell
+-- and its row in the search. Retail, or no runtime yet: the ID itself.
+local function SpellRanks(id)
+    local ranks = P.S.CooldownManagerSpellRanks
+    if ranks and id then return ranks(id) end
+    return id, nil
+end
+local function BySpell(bySpell, id, item)
+    if not id then return end
+    if not bySpell[id] then bySpell[id] = item end
+    local _, family = SpellRanks(id)
+    for i = 1, #(family or EMPTY) do
+        local rank = family[i]
+        if rank ~= id and bySpell[rank] ~= item then item.search = item.search .. format(" %d", rank) end
+        if not bySpell[rank] then bySpell[rank] = item end
+    end
+end
+
 local function SortCatalog(a, b)
     if a.rank ~= b.rank then return a.rank < b.rank end
     if a.known ~= b.known then return a.known end
@@ -61,16 +82,27 @@ local function Item(n, kind, text, key, texture, known, slot, family, spell, ove
     item.search = kind == "entry" and Page.SearchText(text, key, spell, override, tooltip) or nil
     return item
 end
--- An equipped trinket slot (13 or 14); row is the runtime's catalog entry of
--- that slot, if any.
-local function TrinketItem(n, trinket, row)
-    local key = "e" .. trinket
-    local texture = not Page.ForeignSpec() and GetInventoryItemTexture("player", trinket)
+-- The runtime's name of a totem or equipment slot key (S.CooldownManagerSlotLabel:
+-- WoW Forever's Shaman names totem slots by element), else a plain one.
+local function SlotLabel(key)
+    local get = P.S.CooldownManagerSlotLabel
+    local label = get and get(key)
+    if type(label) == "string" then return label end
+    return format(Tr(CDM.EntryKind(key) == "t" and "Totem slot %d" or "Equipment slot %d"), CDM.EntryID(key))
+end
+-- An equipment slot (trinkets 13 and 14 by number, the others by name);
+-- row is the runtime's catalog entry of that slot, if any.
+local function SlotItem(n, slot, row)
+    local key = "e" .. slot
+    local texture = not Page.ForeignSpec() and GetInventoryItemTexture("player", slot)
     if not Public(texture) or texture == nil then texture = row and Plain(row.texture) or nil end
-    local itemID = not Page.ForeignSpec() and GetInventoryItemID("player", trinket)
+    local itemID = not Page.ForeignSpec() and GetInventoryItemID("player", slot)
     local name = Public(itemID) and type(itemID) == "number" and C_Item.GetItemNameByID(itemID) or nil
-    local label = format(Tr("Trinket slot %d"), trinket - 12)
-    if Public(name) and type(name) == "string" then label = format(Tr("Trinket slot %d: %s"), trinket - 12, name) end
+    local trinket = slot == 13 or slot == 14
+    local label = trinket and format(Tr("Trinket slot %d"), slot - 12) or SlotLabel(key)
+    if Public(name) and type(name) == "string" then
+        label = trinket and format(Tr("Trinket slot %d: %s"), slot - 12, name) or format(Tr("%s: %s"), label, name)
+    end
     -- The runtime knows where the slot lives even without an explicit list.
     local home = row and Plain(row.slot) or Page.WhereIs(key)
     Item(n, "entry", label, key, texture, true, home, 1)
@@ -257,13 +289,13 @@ local function CollectCatalog(slot, family)
     local sorted, bySpell, equip = picker.sorted, picker.bySpell, picker.equip
     for i = #sorted, 1, -1 do sorted[i] = nil end
     for id in pairs(bySpell) do bySpell[id] = nil end
-    equip[13], equip[14] = nil, nil
+    for id in pairs(equip) do equip[id] = nil end
     local catalog = Page.Catalog(family) or EMPTY
     for i = 1, #catalog do
         local entry = catalog[i]
         local key = EntryKey(entry)
         if key and CDM.EntryKind(key) == "e" then
-            -- Equipment slots belong to the trinket section below.
+            -- Equipment slots belong to the equipment section below.
             equip[CDM.EntryID(key)] = entry
         elseif key then
             local record = picker.pool[i]
@@ -393,7 +425,7 @@ local function AddPotionSpell(n, spell, itemID, itemName)
     picker.potionRows[spell] = item
     return n
 end
-local function RequestPotionData(itemID)
+local function RequestItemData(itemID)
     if picker.potionLoads[itemID] ~= nil then return end
     local cached = C_Item.IsItemDataCachedByID(itemID)
     if not Public(cached) or cached ~= false then return end
@@ -403,11 +435,11 @@ end
 local function AddBagPotion(n, itemID)
     local _, _, _, _, _, class, subclass = C_Item.GetItemInfoInstant(itemID)
     if not Public(class) or not Public(subclass) then return n end
-    if class == nil then RequestPotionData(itemID) end
+    if class == nil then RequestItemData(itemID) end
     if class ~= Enum.ItemClass.Consumable or subclass ~= Enum.ItemConsumableSubclass.Potion then return n end
     local _, spell = C_Item.GetItemSpell(itemID)
     local name = C_Item.GetItemNameByID(itemID)
-    if RowSpell(spell) == nil or Plain(name) == nil then RequestPotionData(itemID) end
+    if RowSpell(spell) == nil or Plain(name) == nil then RequestItemData(itemID) end
     return AddPotionSpell(n, spell, itemID, name)
 end
 local function AddPotions(n)
@@ -447,7 +479,8 @@ local function PotionItemsChanged(_, event, itemID, success)
             picker.pendingItem = nil
             if Public(success) and success == true then Page.EchoCustom() end
         end
-        if picker.family ~= FAMILY.AURA or not picker.potionLoads[itemID] then return end
+        -- A bag potion (buff bars) or an equipped item (cooldown bars) loaded.
+        if not picker.potionLoads[itemID] then return end
         picker.potionLoads[itemID] = false
     end
     Page.RebuildPicker()
@@ -489,13 +522,77 @@ local function AddGroups(n, slot)
     return n
 end
 
--- The two trinket slots, after the catalog.
-local function AddTrinkets(n, equip)
+-- Totem slots, after the catalog: one row adds every slot at once, then one
+-- row per slot (an occupied slot names its totem). An entry shows whatever
+-- totem, statue or summon the game puts in its slot, of any spell or rank.
+local TOTEM_ICON = 136099
+local function AddTotems(n, slot)
+    local count = Plain(GetNumTotemSlots())
+    if type(count) ~= "number" or count < 1 then return n end
+    count = min(count, CDM.TOTEM_SLOTS)
+    local keys, fresh, search = {}, 0, Tr("Totems"):lower()
+    for i = 1, count do
+        keys[i] = "t" .. i
+        if Page.WhereIs(keys[i]) ~= slot then fresh = fresh + 1 end
+    end
+    n = n + 1
+    Item(n, "header", Tr("Totems"))
+    n = n + 1
+    local all = Item(n, "group", Tr("All totem slots"), "totems", TOTEM_ICON, true, fresh == 0 and slot or nil, FAMILY.COOLDOWN)
+    all.keys, all.count, all.search = keys, fresh, Tr("All totem slots"):lower() .. " " .. search
+    all.tip = Tr("Adds every totem slot. Each icon shows the totem, statue or summon in its slot and hides while the slot is empty.")
+    for i = 1, count do
+        local key, label = keys[i], SlotLabel(keys[i])
+        local have, name, _, _, texture = GetTotemInfo(i)
+        if Plain(have) == true and type(Plain(name)) == "string" and name ~= "" then label = format(Tr("%s: %s"), label, name) end
+        n = n + 1
+        local item = Item(n, "entry", label, key, Plain(have) == true and Plain(texture) or TOTEM_ICON, true, Page.WhereIs(key), FAMILY.COOLDOWN)
+        item.search = item.search .. " " .. search
+        item.tip = Tr("Shows whatever totem, statue or summon the game puts in this slot, with its time left. Hidden while the slot is empty.")
+    end
+    return n
+end
+
+-- Equipment slots, after the totems: both trinkets, then every other slot
+-- whose item has a use (its use spell, or a "Use:" line such as an
+-- engineering tinker) or that a bar lists. Item data not cached yet is
+-- requested; its load rebuilds the picker. The answer is kept per slot and
+-- item while the picker stays open (picker.useItem, picker.useAnswer).
+local EQUIP_ORDER = { 13, 14, 1, 2, 3, 15, 5, 4, 19, 9, 10, 6, 7, 8, 11, 12, 16, 17, 18 }
+local function UseLine(slot)
+    local prefix = ITEM_SPELL_TRIGGER_ONUSE
+    local info = Plain(C_TooltipInfo.GetInventoryItem("player", slot))
+    local lines = type(info) == "table" and Plain(info.lines)
+    if type(lines) ~= "table" then return false end
+    for i = 1, min(#lines, 40) do
+        local text = type(lines[i]) == "table" and Plain(lines[i].leftText)
+        if type(text) == "string" and text:sub(1, #prefix) == prefix then return true end
+    end
+    return false
+end
+local function HasUse(slot, itemID)
+    if picker.useItem[slot] == itemID then return picker.useAnswer[slot] end
+    local _, spell = C_Item.GetItemSpell(itemID)
+    local use = RowSpell(spell) ~= nil
+    if not use and Plain(C_Item.IsItemDataCachedByID(itemID)) == false then
+        RequestItemData(itemID)
+        return false
+    end
+    use = use or UseLine(slot)
+    picker.useItem[slot], picker.useAnswer[slot] = itemID, use
+    return use
+end
+local function AddEquipment(n, equip)
     n = n + 1
     Item(n, "header", Tr("Trinkets and items"))
-    for trinket = 13, 14 do
-        n = n + 1
-        TrinketItem(n, trinket, equip[trinket])
+    local foreign = Page.ForeignSpec()
+    for i = 1, #EQUIP_ORDER do
+        local slot = EQUIP_ORDER[i]
+        local itemID = not foreign and RowSpell(GetInventoryItemID("player", slot))
+        if slot == 13 or slot == 14 or Page.WhereIs("e" .. slot) or itemID and HasUse(slot, itemID) then
+            n = n + 1
+            SlotItem(n, slot, equip[slot])
+        end
     end
     return n
 end
@@ -512,11 +609,11 @@ function Page.RebuildPicker()
         n = n + 1
         local item = Item(n, "entry", record.entry.name, record.key, record.entry.texture, record.known, record.slot,
             family, record.spell, record.override, record.tooltip)
-        if record.spell and not bySpell[record.spell] then bySpell[record.spell] = item end
-        if record.override and not bySpell[record.override] then bySpell[record.override] = item end
+        BySpell(bySpell, record.spell, item)
+        BySpell(bySpell, record.override, item)
     end
     if family == FAMILY.AURA then n = AddPotions(AddReceivedBuffs(AddExternalDefensives(n))) end
-    if family == FAMILY.COOLDOWN then n = AddTrinkets(n, equip) end
+    if family == FAMILY.COOLDOWN then n = AddEquipment(AddTotems(n, slot), equip) end
     picker.count = n
     picker.family = family
     WatchPotionItems()
@@ -560,7 +657,7 @@ function Page.EchoCustom()
     -- Cooldowns reuse Blizzard's entry. A received buff must keep its own
     -- a<spellID> key: Blizzard's entry can be unlearned or caster-filtered.
     local blizzard = picker.family == FAMILY.COOLDOWN and spellID and picker.bySpell[spellID] or nil
-    picker.customSpell, picker.customItem, picker.customBlizzard = spellID, itemID, blizzard
+    picker.customSpell, picker.customItem, picker.customBlizzard = (SpellRanks(spellID)), itemID, blizzard
     local r, g, b = MutedColor()
     if text == "" then
         SetRaw(picker.echo, Tr("Type an ID or a spell name."))
@@ -613,7 +710,7 @@ local function EnsurePicker()
     picker = Page.NewPopup(PICK_W, PICK_H)
     Page.picker = picker
     picker.items, picker.rows, picker.sorted, picker.pool, picker.count = {}, {}, {}, {}, 0
-    picker.bySpell, picker.equip, picker.potionLoads = {}, {}, {}
+    picker.bySpell, picker.equip, picker.potionLoads, picker.useItem, picker.useAnswer = {}, {}, {}, {}, {}
     picker:SetScript("OnEvent", PotionItemsChanged)
     picker.title = Label(picker, "GameFontNormal", "")
     picker.title:SetPoint("TOPLEFT", picker, "TOPLEFT", 12, -12)
@@ -669,7 +766,7 @@ function Page.TogglePicker(anchor)
     end
     if P.Combat() or Page.EditorBlocked() then return false end
     EnsurePicker()
-    picker.potionLoads = {}
+    picker.potionLoads, picker.useItem, picker.useAnswer = {}, {}, {}
     Page.ClosePopups(picker)
     Page.PlacePopup(picker, anchor)
     picker.note:SetText("")

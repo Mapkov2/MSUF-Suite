@@ -435,6 +435,7 @@ function Page.Identity(key)
     if kind == "s" then return format(Tr("Spell %d"), number) end
     if kind == "i" then return format(Tr("Item %d"), number) end
     if kind == "e" then return format(Tr("Equipment slot %d"), number) end
+    if kind == "t" then return format(Tr("Totem slot %d"), number) end
     if kind == "a" then
         local group = CDM.AURA_GROUPS[number]
         return group and Tr(group.name) or format(Tr("Buff %d on you"), number)

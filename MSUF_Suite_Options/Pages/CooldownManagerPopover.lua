@@ -34,9 +34,15 @@ local SWATCH, SWATCH_STEP, STACK_SWATCH = 13, 14, 18
 local STACK_COLOR = CDM.SPELL_DEFAULTS.stackColor
 local pop
 
+-- A totem slot (kind t) counts its totem down: no charges, glows, ready
+-- state or use, only the look of its swipe, countdown and bar, its icon and
+-- the spell conditions.
+local TOTEM_FIELDS = { swipe = true, timeText = true, threshold = true, icon = true, barColor = true, barText = true,
+    requireSpell1 = true, requireSpell2 = true, requireSpell3 = true, excludeSpell1 = true, excludeSpell2 = true, excludeSpell3 = true }
 -- aura: the entry is a buff, or a cooldown that shows the buff it tracks.
 -- bars: the bar draws bars (buff bars, cooldowns shown as timer bars).
 local function Applies(field, family, kind, aura, barKind, bars)
+    if kind == "t" then return TOTEM_FIELDS[field.key] == true and not (field.bars and not bars) end
     if field.timer and barKind ~= CDM.KIND.AURA_BAR then return false end
     if field.blizzardOnly and kind ~= "b" then return false end
     if field.bars and not bars then return false end
