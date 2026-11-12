@@ -221,7 +221,7 @@ do
         eq(foreverRules[def.key].hidden, def.forever == nil or nil, def.key .. " Forever visibility")
         if def.forever then shown = shown + 1 end
     end
-    eq(shown, 7, "Forever class preset count")
+    eq(shown, 8, "Forever class preset count")
     eq(rules.classThorns.default, false, "Thorns has no Retail default")
     eq(foreverRules.classThorns.default, true, "Forever Thorns must default on")
     eq(foreverRules.classThorns.enableKey, nil, "Thorns still depends on the class master")
@@ -528,7 +528,11 @@ do
     NS.Client.isForever, NS.Client.modernEquipment = true, false
     Set(2457, 71, 2458, 386164)
     eq(Ids(R.BuildEntries(Owner({ classReminders = true }))), "2457", "Forever stance")
-    for _, case in ipairs({ { "PALADIN", 465, 433583 }, { "SHAMAN", 192106, 33757 }, { "EVOKER", 369459, 360827 },
+    -- Character storage loads further down; the Forever Paladin aura asks
+    -- for its remembered line on every compile.
+    S.CharacterData = function() end
+    -- Devotion Aura 465 is a Forever rank too: only Retail's own Paladin IDs here.
+    for _, case in ipairs({ { "PALADIN", 317920, 32223, 433583 }, { "SHAMAN", 192106, 33757 }, { "EVOKER", 369459, 360827 },
         { "DRUID", 474750 }, { "MAGE", 205022 } }) do
         Reset({ case[1], 1 }, { [16] = WEAPON, [17] = SHIELD })
         NS.Client.isForever, NS.Client.modernEquipment = true, false
@@ -537,7 +541,6 @@ do
         eq(#R.BuildEntries(owner), 0, case[1] .. " got a Retail reminder on Forever")
         eq(R.WantsAllies(owner), false, case[1] .. " reads member auras on Forever")
     end
-    eq(ForeverPlan("classPaladinAura"), nil, "Forever has a Paladin aura plan")
     assert(ForeverPlan("classShadowform"), "Forever lost Shadowform")
     Reset({ "PRIEST", 258 })
 end
@@ -559,6 +562,54 @@ do
     eq(Ids(R.BuildEntries(Owner({ classReminders = true }))), "8232@16,408510", "physical shield got a weapon imbue")
     Set(324)
     eq(Ids(R.BuildEntries(Owner({ classReminders = true }))), "324", "Lightning Shield fallback")
+end
+
+-- The Forever IDs of EllesmereUI's and Enhance QoL's lists: a shaman who
+-- knows only higher ranks still gets the imbue and shield reminders, Earth
+-- Shield on the shaman satisfies the shield, and the Paladin aura reminder
+-- casts the best known rank of an aura line and follows the line in use.
+do
+    Reset({ "SHAMAN", 1488 }, { [16] = WEAPON, [17] = WEAPON })
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    for _, id in ipairs({ 8232, 8235, 10486, 16362 }) do SPELL_NAMES[id] = "Windfury Weapon" end
+    for _, id in ipairs({ 324, 325, 905, 945, 8134, 10431, 10432 }) do SPELL_NAMES[id] = "Lightning Shield" end
+    SPELL_NAMES[408514] = "Earth Shield"
+    Set(16362, 10432)
+    local entries = R.BuildEntries(Owner({ classReminders = true }))
+    eq(Ids(entries), "16362@16,16362@17,10432", "higher ranks alone lost the imbue or shield reminder")
+    eq(entries[1].spellName, "Windfury Weapon", "imbue click is not by name")
+    eq(entries[3].spellName, "Lightning Shield", "shield click is not by name")
+    eq(R.AuraPresent(entries[3]), false, "no shield read as present")
+    playerAuras[408514] = { spellId = 408514 }
+    assert(R.AuraPresent(entries[3]) == true, "Earth Shield on the shaman did not satisfy the shield reminder")
+
+    Reset({ "PALADIN", 1 })
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    local plan = assert(ForeverPlan("classPaladinAura"), "Forever has no Paladin aura plan")
+    local auraNames = { [465] = "Devotion Aura", [7294] = "Retribution Aura", [19746] = "Concentration Aura",
+        [20218] = "Sanctity Aura", [19876] = "Shadow Resistance Aura", [19888] = "Frost Resistance Aura",
+        [19891] = "Fire Resistance Aura" }
+    eq(#plan.casts, 7, "Forever Paladin aura lines")
+    for index, base in ipairs(plan.casts) do
+        eq(plan.auras[index], base, "a Paladin aura line is not satisfied by its own aura")
+        local ranks = assert(plan.ranks[base], "Paladin aura line " .. base .. " has no ranks")
+        eq(ranks[#ranks], base, "Paladin aura ranks do not end at rank 1")
+        for _, id in ipairs(ranks) do SPELL_NAMES[id] = assert(auraNames[base]) end
+    end
+    Set(7294, 10298, 19746)
+    entries = R.BuildEntries(Owner({ classReminders = true }))
+    eq(Ids(entries), "10298", "the best known rank of the first known aura line")
+    assert(entries[1].ranked and entries[1].spellName == "Retribution Aura", "Paladin aura click is not by name")
+    eq(#R.BuildEntries(Owner({ classReminders = true, classPaladinAura = false })), 0, "Paladin aura ignored its switch")
+    eq(#R.BuildEntries(Owner({ classReminders = false })), 0, "Paladin aura ignored the master switch")
+    entries = R.BuildEntries(Owner({ classReminders = true }))
+    eq(R.AuraPresent(entries[1]), false, "no aura read as present")
+    playerAuras[19746] = { spellId = 19746 }
+    local present, _, _, _, _, line = R.AuraPresent(entries[1])
+    assert(present == true and line == 19746, "another aura line did not satisfy the reminder")
+    assert(R.RememberClassAura(entries[1], line) and entries[1].id == 19746
+        and entries[1].spellName == "Concentration Aura", "the click did not follow the aura in use")
+    Reset({ "PRIEST", 258 })
 end
 
 -- The longer sound list: the old four keep their place.

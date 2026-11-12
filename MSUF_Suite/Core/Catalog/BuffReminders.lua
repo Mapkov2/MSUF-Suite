@@ -34,12 +34,34 @@ NS.BuffReminderDemons = {
 -- specs is a set of specialization IDs. WoW Forever keeps only the reminders
 -- whose spells are available; ranked plans resolve aura and click names.
 local PALADIN_AURAS = { 465, 317920, 32223 }
+-- Forever's Paladin auras, the lists of EllesmereUI and Enhance QoL checked
+-- against SpellName 1.60.1.70888: each line's ranks, highest first, under its
+-- rank 1. Lines in fallback order: Devotion, Retribution, Concentration,
+-- Sanctity, Shadow, Frost and Fire Resistance Aura.
+local FOREVER_PALADIN_AURAS = { 465, 7294, 19746, 20218, 19876, 19888, 19891 }
+local FOREVER_PALADIN_AURA_RANKS = {
+    [465] = { 10293, 10292, 1032, 10291, 643, 10290, 465 },
+    [7294] = { 10301, 10300, 10299, 10298, 7294 },
+    [19746] = { 19746 },
+    [20218] = { 20218 },
+    [19876] = { 19896, 19895, 19876 },
+    [19888] = { 19898, 19897, 19888 },
+    [19891] = { 19900, 19899, 19891 },
+}
 local WARRIOR_STANCES = { 386164, 386208, 386196 }
 local FOREVER_STANCES = { 2457, 71, 2458 }
 local SHAMAN_SHIELDS = { 192106, 52127 }
 -- Forever SpellName 1.60.1.70009: Water Shield is 408510, not Retail's 52127.
-local FOREVER_SHIELDS = { 408510, 324 }
-local FOREVER_IMBUES = { 8232, 8024, 8017, 8033 }
+-- The casts list every Lightning Shield rank (SpellName 1.60.1.70888), so a
+-- character that knows only a higher rank still gets the reminder. Earth
+-- Shield (408514, Enhance QoL's shield list) on the shaman also counts.
+local FOREVER_SHIELD_CASTS = { 408510, 10432, 10431, 8134, 945, 905, 325, 324 }
+local FOREVER_SHIELDS = { 408510, 324, 408514 }
+-- Every rank of Windfury, Flametongue, Rockbiter and Frostbrand Weapon, highest
+-- first within each (EllesmereUI's lists, SpellName 1.60.1.70888); the click
+-- casts the rank's name, so the game uses the highest rank known.
+local FOREVER_IMBUES = { 16362, 10486, 8235, 8232, 16342, 16341, 16339, 8030, 8027, 8024,
+    16316, 16315, 16314, 10399, 8019, 8018, 8017, 16356, 16355, 10456, 8038, 8033 }
 -- Fallback order only: an observed armor keeps the player's own choice.
 local MAGE_ARMORS = { 6117, 7302, 168 }
 local MAGE_ARMOR_RANKS = {
@@ -63,7 +85,9 @@ NS.BuffReminderClassReminders = {
         retail = { kind = "aura", casts = { 232698 }, auras = { 232698, 194249 } },
         forever = { kind = "aura", casts = { 15473 }, auras = { 15473 } } },
     { key = "classPaladinAura", label = "Paladin: an aura", class = "PALADIN",
-        retail = { kind = "aura", casts = PALADIN_AURAS, auras = PALADIN_AURAS } },
+        retail = { kind = "aura", casts = PALADIN_AURAS, auras = PALADIN_AURAS },
+        forever = { kind = "aura", ranked = true, casts = FOREVER_PALADIN_AURAS, auras = FOREVER_PALADIN_AURAS,
+            remember = "paladinAura", ranks = FOREVER_PALADIN_AURA_RANKS } },
     { key = "classPaladinRite", label = "Paladin: a weapon rite", class = "PALADIN",
         retail = { kind = "imbue", imbues = {
             { slot = 16, spell = 433568, equip = "weapon" }, { slot = 16, spell = 433583, equip = "weapon" } } } },
@@ -84,7 +108,7 @@ NS.BuffReminderClassReminders = {
             { slot = 17, spells = FOREVER_IMBUES, equip = "weapon" } } } },
     { key = "classShamanShield", label = "Shaman: Lightning Shield or Water Shield", class = "SHAMAN",
         retail = { kind = "aura", casts = SHAMAN_SHIELDS, auras = SHAMAN_SHIELDS, prefer = { [264] = 52127 } },
-        forever = { kind = "aura", ranked = true, casts = FOREVER_SHIELDS, auras = FOREVER_SHIELDS } },
+        forever = { kind = "aura", ranked = true, casts = FOREVER_SHIELD_CASTS, auras = FOREVER_SHIELDS } },
     { key = "classEarthShield", label = "Shaman: Earth Shield on an ally", class = "SHAMAN",
         retail = { kind = "ally", casts = { 974 }, auras = { 974 }, specs = RESTORATION } },
     { key = "classSourceOfMagic", label = "Evoker: Source of Magic on an ally", class = "EVOKER",
