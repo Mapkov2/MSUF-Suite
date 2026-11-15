@@ -4,10 +4,11 @@ local Data, M = S.InventoryData, { direction = "deposit", status = "" }
 local DEPOSIT, WITHDRAW = "deposit", "withdraw"
 local QUESTION = "MSUF_SUITE_MOVE_MATCHING_BANK_STACKS"
 local BANK_EVENTS = { "BAG_UPDATE_DELAYED", "CURSOR_CHANGED", "PLAYER_REGEN_DISABLED" }
--- Forever's equipped bags end before the first bank bag. The keyring is
--- deliberately outside this transfer source, and Retail has a reagent bag.
-local CARRIED = NS.Client.isForever and { 0, 1, 2, 3, 4 } or { 0, 1, 2, 3, 4, 5 }
-local LAST_CARRIED = CARRIED[#CARRIED]
+-- The native equipped-bag range includes the extra bag slot when present.
+-- The keyring and purchased bank tabs are outside this range.
+local LAST_CARRIED = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
+local CARRIED = {}
+for bag = 0, LAST_CARRIED do CARRIED[#CARRIED + 1] = bag end
 
 local function Ready()
     if not M.active or not M.bankOpen or NS.InCombat() or not BankFrame:IsShown()

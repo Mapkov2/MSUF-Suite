@@ -302,12 +302,16 @@ local function EnsureGlyphs(button, state)
     }
 end
 
-local function GlyphKey(kind, glyphMode)
+local function GlyphKey(kind, glyphMode, caption)
     if kind == "close" then return "close" end
     if kind == "add" then return "plus" end
     if kind == "remove" then return "minus" end
     -- Blizzard's maximize/minimize pair toggles a window's large and small
     -- size: Windows shows that as maximize and restore.
+    if caption and glyphMode == "windows" then
+        if kind == "restore" then return "restoreWindow" end
+        if kind == "minimize" then return "minus" end
+    end
     if glyphMode == "windows" and (kind == "maximize" or kind == "minimize") then
         return kind == "maximize" and "maximizeWindow" or "restoreWindow"
     end
@@ -353,7 +357,7 @@ local function GlyphLayout(button, kind, settings)
     size = math.floor((tonumber(size) or 12) + 0.5)
     local x = math.floor((tonumber(settings.glyphOffsetX) or 0) + 0.5)
     local y = math.floor((tonumber(settings.glyphOffsetY) or 0) + 0.5)
-    if kind ~= "close" and kind ~= "minimize" and kind ~= "maximize" then return size, x, y end
+    if kind ~= "close" and kind ~= "minimize" and kind ~= "maximize" and kind ~= "restore" then return size, x, y end
     local width, height = Safety.Read(button, "GetWidth"), Safety.Read(button, "GetHeight")
     if not width or not height or width <= 0 or height <= 0 then return size, x, y end
     size = math.min(size, math.min(width, height) / 1.04)
@@ -364,11 +368,16 @@ local function GlyphLayout(button, kind, settings)
     return size, math.max(-roomX, math.min(x, roomX)), math.max(-roomY, math.min(y, roomY))
 end
 
-local function ConfigureGlyphs(button, state, settings)
-    local glyphKey = GlyphKey(state.kind, settings.glyphMode)
+local function GlyphAsset(kind, settings, caption)
+    local glyphKey = GlyphKey(kind, settings.glyphMode, caption)
     local weight = settings.weight == "bold" and "bold" or "fine"
     local cell, atlas = captionCells[glyphKey], captionAtlases[weight]
     if not cell then cell, atlas = glyphCells[glyphKey], actionAtlases[weight] end
+    return atlas, cell
+end
+
+local function ConfigureGlyphs(button, state, settings)
+    local atlas, cell = GlyphAsset(state.kind, settings)
     local size, x, y = GlyphLayout(button, state.kind, settings)
     local idle = tonumber(settings.opacity) or 0.78
     AnchorGlyphs(button, state, x, y)
@@ -779,6 +788,11 @@ end
 -- it off NS again.
 NS.WindowActionSkinShared = {
     Settings = Settings,
+    GlyphAsset = GlyphAsset,
+    GlyphLayout = GlyphLayout,
+    ConfigureGlyph = ConfigureGlyph,
+    ColorRole = ColorRole,
+    SurfaceSpec = SurfaceSpec,
 }
 
 return WindowActionSkin

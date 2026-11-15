@@ -11,6 +11,7 @@ local coreAPI
 local function HostNamespace()
     return _G.MSUF_NS
 end
+HostBridge.Namespace = HostNamespace
 
 -- The table MSUF publishes as MSUF_HostAPI (any version), else nil.
 local function HostTable()
@@ -276,6 +277,16 @@ function HostBridge.TargetDotCatalog(class)
         end
     end
     return out
+end
+
+-- Forever's ranks share a tracked row. Resolve the host's aliases while
+-- compiling settings and leave its cached list read-only.
+function HostBridge.ForeverAuraAliases(id)
+    local host = HostNamespace()
+    local auras = type(host) == "table" and host.MSUF_Auras3
+    if not auras or type(auras.CompileCustomAuraAliases) ~= "function" then return end
+    auras.CompileCustomAuraAliases({ [id] = true })
+    return auras.AuraSpellIDAliases and auras.AuraSpellIDAliases[id]
 end
 
 ------------------------------------------------------------------ UI scale

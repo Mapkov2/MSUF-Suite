@@ -30,12 +30,39 @@ local function LayoutMutable(state)
         and PartMutable(state, cast) and (not cast or PartMutable(state, cast.Icon) and PartMutable(state, cast.Text))
 end
 
+local function HealthCurve(alpha)
+    local curve = C_CurveUtil.CreateCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    curve:AddPoint(0, alpha)
+    curve:AddPoint(1, 0)
+    return curve
+end
+
+local function InjuredAlpha(state, alpha, inRange, outMultiplier)
+    if state.healthAlphaValue ~= alpha then
+        state.healthAlphaValue, state.healthAlphaCurve = alpha, HealthCurve(alpha)
+        state.healthRangeCurve, state.healthRangeMultiplier = nil, nil
+    end
+    local injured = UnitHealthPercent(state.unit, false, state.healthAlphaCurve)
+    if NS.IsSecret(inRange) and outMultiplier ~= 1 then
+        if state.healthRangeMultiplier ~= outMultiplier then
+            state.healthRangeMultiplier = outMultiplier
+            state.healthRangeCurve = HealthCurve(alpha * outMultiplier)
+        end
+        local outOfRange = UnitHealthPercent(state.unit, false, state.healthRangeCurve)
+        state.uf:SetAlphaFromBoolean(inRange, injured, outOfRange)
+    else
+        state.uf:SetAlpha(injured)
+    end
+    state.alpha = nil
+end
+
 -- Alpha and scale are captured only when first changed. Blizzard's native
 -- distance/selection alpha lives on the outer nameplate and still applies.
-function L.Alpha(state, alpha, inRange, outMultiplier)
+function L.Alpha(state, alpha, inRange, outMultiplier, injured)
     local uf = state.uf
     local opaqueRange = NS.IsSecret(inRange)
-    if alpha == 1 and state.baseAlpha == nil and not opaqueRange then return end
+    if alpha == 1 and state.baseAlpha == nil and not opaqueRange and not injured then return end
     if not Safe(uf) then return end
     if state.baseAlpha == nil then
         local native = uf:GetAlpha()
@@ -43,6 +70,10 @@ function L.Alpha(state, alpha, inRange, outMultiplier)
         state.baseAlpha = native
     end
     local value = state.baseAlpha * alpha
+    if injured and value > 0 then
+        InjuredAlpha(state, value, inRange, outMultiplier)
+        return
+    end
     if opaqueRange then
         uf:SetAlphaFromBoolean(inRange, value, value * outMultiplier)
         state.alpha = nil
@@ -50,6 +81,74 @@ function L.Alpha(state, alpha, inRange, outMultiplier)
     end
     if state.alpha ~= value then uf:SetAlpha(value) state.alpha = value end
     if alpha == 1 then state.baseAlpha, state.alpha = nil, nil end
+end
+
+local PREDICTION = { "myHealPrediction", "otherHealPrediction", "totalAbsorb", "totalAbsorbOverlay",
+    "myHealAbsorb", "myHealAbsorbLeftShadow", "myHealAbsorbRightShadow", "overAbsorbGlow", "overHealAbsorbGlow" }
+
+local function Layer(records, region, alpha)
+    if not Safe(region) then return end
+    local record = records[region]
+    if not record and alpha == 1 then return end
+    if region.CanBeAccessedInContext then
+        local accessible = region:CanBeAccessedInContext()
+        if not NS.Public(accessible) or accessible ~= true then return end
+    end
+    if not record then
+        local base = region:GetAlpha()
+        if not S.Finite(base) then return end
+        record = { base = base }
+        records[region] = record
+    end
+    local value = record.base * alpha
+    if record.value ~= value then region:SetAlpha(value) end
+    record.value = value
+    if alpha == 1 then records[region] = nil end
+end
+
+local function RestoreLayers(state)
+    local records = state.layers
+    if records then
+        for region in pairs(records) do Layer(records, region, 1) end
+        if not next(records) then state.layers = nil end
+    end
+    if P.Mouseover then P.Mouseover.SetOpacity(state.uf, state.health, state.prefix) end
+    if P.AuraColors and P.AuraColors.SetOpacity then P.AuraColors.SetOpacity(state.uf, 1) end
+    local visual = state.owner.visuals and state.owner.visuals[state.health]
+    if visual and visual.gradient then NS.NameplateStyle.Gradient.SetAlpha(visual.gradient, 1) end
+    local bar = P.Power.EnemyBar and P.Power.EnemyBar(state.uf)
+    if bar and bar.powerGradient then NS.NameplateStyle.Gradient.SetAlpha(bar.powerGradient, 1) end
+    state.layerFade, state.layerFill = nil, nil
+end
+
+function L.Layers(state, fade, force)
+    if not fade then
+        if state.layerFade or state.layers and next(state.layers) then RestoreLayers(state) end
+        return
+    end
+    if not force and state.layerFade == fade then return end
+    local records, health, uf = state.layers or {}, state.health, state.uf
+    local visual = state.owner.visuals and state.owner.visuals[health]
+    local fill = health:GetStatusBarTexture()
+    if state.layerFill and state.layerFill ~= fill then Layer(records, state.layerFill, 1) end
+    state.layerFill = fill
+    Layer(records, fill, fade.health)
+    Layer(records, health.bgTexture, fade.background)
+    if visual then
+        Layer(records, visual.fill, fade.health)
+        Layer(records, visual.back, fade.background)
+        if visual.gradient then NS.NameplateStyle.Gradient.SetAlpha(visual.gradient, fade.health) end
+    end
+    for _, key in ipairs(PREDICTION) do Layer(records, health[key], fade.prediction) end
+    local bar = P.Power.EnemyBar and P.Power.EnemyBar(uf)
+    if bar then
+        Layer(records, bar:GetStatusBarTexture(), fade.power)
+        if bar.powerGradient then NS.NameplateStyle.Gradient.SetAlpha(bar.powerGradient, fade.power) end
+        Layer(records, bar.enemyPowerBackground, fade.powerBackground)
+        Layer(records, bar.enemyPowerLoss and bar.enemyPowerLoss.bar, fade.power)
+    end
+    if P.AuraColors and P.AuraColors.SetOpacity then P.AuraColors.SetOpacity(uf, fade.health) end
+    state.layers, state.layerFade = next(records) and records or nil, fade
 end
 
 function L.Scale(state, scale)
@@ -70,6 +169,12 @@ function L.Name(state)
     local name, side = state.uf.name, state.plan[state.prefix]
     if not side or not Safe(name) then return end
     local alpha = state.casting == true and (side.nameCast == 3 and 0 or side.nameCast == 2 and side.nameAlpha) or 1
+    local fade = state.layerFade
+    if fade and P.Mouseover then
+        L.RestoreName(state)
+        P.Mouseover.SetOpacity(state.uf, state.health, state.prefix, fade.text, fade.powerText, alpha)
+        return
+    end
     if alpha == 1 and state.baseNameAlpha == nil then return end
     if state.baseNameAlpha == nil then
         local native = name:GetAlpha()
@@ -193,7 +298,7 @@ local function Icon(state, choice)
         -- Its original bottom lies one public icon height above the container.
         if not S.Finite(setup.castIconHeight) then return end
         local cx, cy = c[prefix .. "CastOffsetX"] or 0, c[prefix .. "CastOffsetY"] or 0
-        local half = (c[prefix .. "CastWidthDelta"] or 0) / 2
+        local half = P.Layout.CastWidthDelta(state.uf, c, prefix) / 2
         local height = c[prefix .. "CastIconSize"] or 0
         if height <= 0 then height = setup.castIconHeight end
         cast:ClearAllPoints()
@@ -235,8 +340,9 @@ end
 function L.HitTest(state, hidden, force)
     local plate, plan = state.plate, state.plan
     if not Safe(plate) or not plate.CanChangeHitTestPoints then return true end
-    local clear = hidden or plan.clickThrough and state.prefix == "friendly"
-    local mode = clear and "clear" or plan.clickbox and "custom" or "native"
+    local scope = state.interaction
+    local clear = hidden or scope and scope.clickThrough
+    local mode = clear and "clear" or scope and scope.clickbox and "custom" or "native"
     if not force and state.hitMode == mode and state.hitPlan == plan then return true end
     if mode == "native" and not state.hitOriginal then return true end
     local allowed = plate:CanChangeHitTestPoints()
@@ -260,8 +366,8 @@ function L.HitTest(state, hidden, force)
             state.hitPoints = points
         end
         points[1].relativeTo, points[2].relativeTo = state.health, state.health
-        points[1].offsetX, points[1].offsetY = -plan.clickWidth / 2, plan.clickHeight / 2
-        points[2].offsetX, points[2].offsetY = plan.clickWidth / 2, -plan.clickHeight / 2
+        points[1].offsetX, points[1].offsetY = -scope.clickWidth / 2, scope.clickHeight / 2
+        points[2].offsetX, points[2].offsetY = scope.clickWidth / 2, -scope.clickHeight / 2
         plate:SetHitTestPoints(points)
     else
         plate:SetHitTestPoints(state.hitOriginal)
@@ -276,7 +382,9 @@ function L.NativeHitTest(state)
 end
 
 function L.Restore(state)
+    L.Layers(state)
     L.Alpha(state, 1)
+    state.healthAlphaValue, state.healthAlphaCurve, state.healthRangeCurve = nil, nil, nil
     L.RestoreName(state)
     if not LayoutMutable(state) then return false end
     L.Scale(state, 1)

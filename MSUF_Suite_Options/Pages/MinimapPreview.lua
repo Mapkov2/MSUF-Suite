@@ -9,7 +9,8 @@ local COMPACT_HEIGHT, EXPANDED_HEIGHT = 112, 316
 local HANDLE_COLOR = { 0.30, 0.74, 1.00 }
 local DEFAULT_HINT = "Click to select; drag or use arrow keys; edit exact X/Y below."
 local Data = P.MinimapPreviewData
-local TEXTS, ICONS, LAYERS, ORNAMENT_EDGES = Data.TEXTS, Data.ICONS, Data.LAYERS, Data.ORNAMENT_EDGES
+local TEXTS, ICONS, LAYERS
+local ORNAMENT_EDGES = Data.ORNAMENT_EDGES
 local Clamp, Tint, SetIcon = Data.Clamp, Data.Tint, Data.SetIcon
 local OffsetKeys, PaintElements = Data.OffsetKeys, Data.PaintElements
 local Kit = Suite.PreviewKit
@@ -475,8 +476,7 @@ local function BuildLayerChips(ui)
     local chips = CreateFrame("Frame", nil, ui.body, "BackdropTemplate")
     chips:SetPoint("BOTTOMLEFT", ui.body, "BOTTOMLEFT", 0, 4)
     chips:SetPoint("BOTTOMRIGHT", ui.body, "BOTTOMRIGHT", 0, 4)
-    if H.ApplyPreviewChrome then H.ApplyPreviewChrome(chips, "sidebar", T) end
-    local title = T.Font(chips, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
+    local title = P.PreviewInteraction.LayerRailTitle(chips)
     title:SetPoint("TOPLEFT", chips, "TOPLEFT", 10, -8)
     ui.layerButtons = {}
     local measure = T.Font(chips, "GameFontDisableSmall", "", T.colors.muted)
@@ -634,6 +634,7 @@ end
 -- The docked minimap preview: a static canvas with selectable, draggable
 -- elements whose offsets write the minimap settings.
 function P.BuildMinimapPreview(ctx, b, sections)
+    TEXTS, ICONS, LAYERS = Data.Texts(), Data.Icons(), Data.Layers()
     local ui = { sections = sections }
     if not BuildCanvas(ui, ctx, b) then return end
     local initialSize = math.max(100, P.Get(ID, "size") or P.catalog[ID].rules.size.default)

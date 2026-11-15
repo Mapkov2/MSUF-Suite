@@ -403,10 +403,6 @@ end
 
 local function Separator(row, edge)
     local line = row.separator
-    if not edge then
-        if line then line:Hide() end
-        return
-    end
     if not line then
         line = S.CreateTexture(row, nil, "OVERLAY")
         line:SetColorTexture(1, 1, 1, .35)
@@ -451,7 +447,7 @@ function D.Render(win)
     local offset = min(win.offset, D.MaxOffset(win, count))
     win.offset = offset
     local pinSlot, pinIndex = 0, 0
-    if M.style.showPlayer and count > capacity and capacity > 1 then
+    if M.style.showPlayer and count > capacity and capacity > 0 then
         local own = D.LocalIndex(sources, count)
         if own > 0 and own <= offset then
             pinSlot, pinIndex = 1, own
@@ -473,7 +469,11 @@ function D.Render(win)
             end
             row.index = index
             D.PaintSource(row, sources[index], index, session, win)
-            Separator(row, slot == pinSlot and (slot == 1 and "BOTTOM" or "TOP") or nil)
+            if slot == pinSlot then
+                Separator(row, slot == 1 and "BOTTOM" or "TOP")
+            elseif row.separator then
+                row.separator:Hide()
+            end
             row:Show()
         elseif row then
             row.index = nil

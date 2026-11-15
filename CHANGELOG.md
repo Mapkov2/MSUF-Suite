@@ -1,5 +1,66 @@
 # MSUF Suite Changelog
 
+## 0.1.22 Alpha - 2026-11-15
+
+### Nameplates
+
+- Refined the Jundies and Mapko presets, health textures and Frame Outline controls. Choosing Off now also hides native target and focus outlines on skinned plates.
+- Improved preview layers, selection, markers and settings shortcuts. The preview toolbar and layer list adapt to the available width.
+- Castbar fills and backgrounds use their selected textures through casts, channels and interrupts. **Nameplate castbar colors are work in progress.** Inheriting Unit Frame colors and setting per-state overrides are still being tested, especially on WoW Forever.
+- Reduced repeated work for name updates and preserved the handling of restricted names and aura data.
+
+### WoW Forever skinning and windows
+
+- Expanded the interactive Style preview with live scroll, dropdown, focus and action samples. Title buttons stay flat and honor the selected glyph style. Character Panel appearance settings are under HUD.
+- The Character Panel offers List, Classic and Modern views. The spellbook toggles all spell ranks in one click and keeps the native book controls.
+- Moved map filters beside the window controls and corrected their click area. Updated Guild & Communities styling and the developer panel's reload and diagnostics controls.
+- Improved chat item links, quest offer reward display, and the Group Finder's category artwork and activity list controls. Adjusted protected window and mailbox interactions.
+
+### Bags, action bars and Edit Mode
+
+- Forever One Bag shows regular slots in physical bag order. Cleanup packs and sorts eligible slots across regular bags while respecting exclusions and keeping reagent, specialty and keyring slots separate.
+- Reduced redundant Action Bar updates, repeated Data Text layout and unnecessary tooltip event work during normal play.
+- Suite movers show screen coordinates at the edges with the updated MSUF Edit Mode, including Action Bars and the Minimap. Player debuffs retain their offset from the buff row.
+
+### Other updates
+
+- Refined character stats, navigation and the options previews. Navigation refreshes quest destinations across subzones and adjusts its update rate while walking.
+
+## 0.1.21 Alpha - 2026-11-14
+
+### Nameplates
+
+- Rebuilt the menu with separate Enemy, Neutral, Friendly and Friendly NPC tabs and Unitframes-style accordions. Presets are in Basics, colors in their section menus, shared typography under Fonts, and spell range in its own section. Basics now owns each type's Enable switch.
+- One preview handles all placement. Select or drag an element to adjust X/Y and available size. The element menu can show disabled elements for editing. The Castbar, Text, Resource Bar, Aura and Status Icons accordions leave position editing to the preview.
+- Aggro, Target, Focus and Mouseover borders have their own preview layers. Right-click to go to Bars. Aggro inherits the host's Shared setting where supported, with an optional Nameplate override.
+- Health and castbar foreground and background textures live under Bars and Cast Bars. Health has a separate focus texture and a choice of native or custom outline.
+- Buffs, Debuffs and Control Effects have separate controls for their native rows. Three Custom rows and Dots on Target have their own lists, layout, ordering and style. Duplicate filtering keeps protected auras visible when the client restricts access to them.
+- Text now has separate Name, HP Text and Power Text controls. Resource Bar supports mana and other available resources, size, fill, border and detached placement. Castbar options include separate icon, spell, time, target and interrupt settings.
+- Status Icons use one indicator selector for supported markers and named text sources, including raid markers, level, quest progress and resource text. Preview current and Show all use the main preview.
+- Added per-type visibility and opacity controls, out-of-combat opacity, click-area settings, and range spell selection by spellbook or spell ID.
+- Fixed stale Enable and Show switches when reopening or switching tabs. Improved native aura filtering, resource rendering, bar textures, and preview positioning and navigation.
+
+### Bags, character and chat
+
+- On Forever, the backpack key also opens the reagent window in the Suite bag views when a reagent bag is equipped. Reagent and specialty slots stay out of the regular free-slot count, and detached bag positions clamp to the screen.
+- Upgrade markers account for dual wield eligibility. Character and Inspect item levels use two decimals with the localized separator.
+- Chat keeps messages and controls available while typing. Refined fading, compact chrome, the toolbar and spam filtering.
+
+### Action bars, macros and cooldowns
+
+- Forever action bar transfers use the full character name, including surnames.
+- Macro Library entries can manage keyboard and supported mouse bindings, with conflict checks and cleanup when deleting a macro. Consumable macros respect the preferred item order and availability.
+- Cooldowns refresh after loadout and spell override changes. Recharge overlays and countdowns keep their own style, layer and timer when the main cooldown ends.
+- Updated augment rune detection for buff reminders.
+
+### Combat, quests and interface
+
+- Live damage meter rows can update party specialization icons. Threat displays handle tank changes before the reported percentages catch up.
+- Mythic+ split records wait for confirmed completion times. Updated gathering names and tooltips, and refined the interact glow.
+- Loot rolls reconcile pending choices with Blizzard and show the choice after submission. Quest helpers handle the native quest greeting flow.
+- Blizzard player aura skins and layout recover more reliably after protected changes. Adjusted secure window controls and deferred World Map quest row updates during map opening.
+- Added an optional developer diagnostics page and updated locale strings for the revised menus.
+
 ## 0.1.20 Alpha - 2026-11-12
 
 [Compare with 0.1.19](https://github.com/Mapkov2/MSUF-Suite/compare/v0.1.19-alpha...v0.1.20-alpha) · [CurseForge](https://www.curseforge.com/wow/addons/msuf-suite) · [Wago](https://addons.wago.io/addons/msuf-suite)

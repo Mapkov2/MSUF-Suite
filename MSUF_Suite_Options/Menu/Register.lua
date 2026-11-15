@@ -228,6 +228,7 @@ local function PageResetHandlers()
         return key == "suite_skin" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     end
     function handlers.prepare(key)
+        if key == "suite_hud" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then P.SkinPageKit.Engine() end
         return not SkinAddOn(key) or Suite.Skin.EnsureEngine() == true
     end
     function handlers.run(key)
@@ -243,6 +244,7 @@ local function PageResetHandlers()
                 (P.PlayerAurasPage.Relocated(id) or P.GameplayPage.Relocated(id))
             if not moved and not S.Reset(id) then return false end
         end
+        if key == "suite_hud" then P.SkinPageKit.ResetCharacter() end
         return true
     end
     function handlers.finish()
@@ -258,6 +260,10 @@ end
 
 AddIcons()
 P.GameplayPage.Register()
+local nameplateTextures = P.NameplateBarTextures
+if nameplateTextures then nameplateTextures.Register() end
+local nameplateFonts = P.NameplatesHostOptions
+if nameplateFonts then nameplateFonts.Register() end
 RegisterPages()
 
 Suite.HostBridge.WatchMenuContent(M, function(frame, token)

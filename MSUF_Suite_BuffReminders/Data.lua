@@ -68,7 +68,7 @@ local NONLETHAL_POISONS = { 381637, 5761, 3408 }
 
 -- Consumables. Selection runs only on configuration, bag and equipment
 -- events, never on a timer. A picker takes the first listed item in the
--- bags; every item list runs from the highest item ID down.
+-- bags in list order.
 --
 -- Midnight flasks: the four kinds in both crafted qualities (241320-241327)
 -- and in the second item range of the same flasks (245926-245933).
@@ -79,13 +79,10 @@ local FLASKS = {
 -- Flask of Thalassian Resistance, of the Magisters, of the Blood Knights and
 -- of the Shattered Sun. Any of them satisfies the flask reminder.
 local FLASK_AURAS = { 1235057, 1235108, 1235110, 1235111 }
--- Midnight augment runes.
-local RUNES = { 259085, 243191 }
--- Augment rune auras from the highest spell ID down, like the item lists, so
--- the current rune is found in one lookup: Void-Touched, Soulgorged and
--- Ethereal (Midnight), Crystallization (The War Within), Draconic
--- (Dragonflight), Veiled (Shadowlands). An older rune still counts.
-local RUNE_AURAS = { 1264426, 1242347, 1234969, 453250, 393438, 347901 }
+-- Void-Touched stays the restock default. Tidesworn is region-specific.
+local RUNES = { 259085, 274797, 243191 }
+-- Augment rune auras, highest spell ID first. Older active runes still count.
+local RUNE_AURAS = { 1295329, 1264426, 1242347, 1234969, 453250, 393438, 347901 }
 -- Midnight weapon oils.
 local OILS = { 243738, 243737, 243736, 243735, 243734, 243733 }
 local OIL_WEAPON_LOCATIONS = {

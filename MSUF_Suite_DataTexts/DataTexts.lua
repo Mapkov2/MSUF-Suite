@@ -18,6 +18,7 @@ local Snap, ApplyColor = Appearance.Snap, Appearance.Color
 local PrepareProgress, PaintProgress = NS.PrepareDataTextProgress, NS.PaintDataTextProgress
 local SOURCES, SAMPLED, INTERVAL = Standard.SOURCES, Standard.SAMPLED, Standard.INTERVAL
 local READER, EVENT_SOURCES = Standard.READER, Standard.EVENT_SOURCES
+local SAMPLES, SampleText = Standard.SAMPLES, Standard.SampleText
 local NO_VALUE = P.NO_VALUE
 local floor = math.floor
 local Finite = S.Finite
@@ -73,7 +74,9 @@ end
 local function PaintSlot(bar, button, key, label, value, severity, alternate, rested)
     local text, display = bar.display(label, value, severity, bar.style, key, alternate)
     local changed = button.display ~= display
+    local previousWidth = button.layoutTextWidth
     if changed then
+        button.layoutTextWidth = nil
         button.label:SetText(display)
         button.text, button.display = text, display
     end
@@ -81,24 +84,43 @@ local function PaintSlot(bar, button, key, label, value, severity, alternate, re
         PaintProgress(button, alternate, rested)
         return false -- The progress place has a stable width in Fit mode.
     end
-    if button.extra then Extra.Paint(button) end
+    if button.extra then
+        Extra.Paint(button)
+    elseif changed and previousWidth and M.config[bar.layoutKey] == LAYOUT.FIT then
+        return P.DataTextGeometry.TextWidth(button) ~= previousWidth
+    end
     return changed
 end
 
 -- force repaints unchanged values: a bar that just became visible still
 -- shows whatever it displayed before it was hidden.
+-- A sampled rate (Standard.SAMPLES: frame rate, latency) is compared by the
+-- whole numbers it shows and its severity, before any text exists: a tick
+-- that finds both unchanged builds no string. The 2026-11-15 standing trace
+-- formatted and compared the text of every tick.
 function M:UpdateSource(key, force)
     local list = targets[key]
     if not list then return end
-    local label, value, severity, alternate, rested = Format(key)
-    local record = self.values[key]
-    if record and not force and record.label == label and record.value == value
-        and record.severity == severity and record.alternate == alternate and record.rested == rested then
-        return
-    end
-    if not record then
+    local record, sample = self.values[key], SAMPLES[key]
+    -- One call site: a sample returns its two numbers and severity into
+    -- label, value, severity; they become texts only past the gate.
+    local label, value, severity, alternate, rested = (sample or Format)(key)
+    if sample then
+        if not record then
+            record = {}
+            self.values[key] = record
+        elseif not force and record.first == label and record.second == value
+            and record.severity == severity then
+            return
+        end
+        record.first, record.second = label, value
+        label, value = SampleText(key, label, value)
+    elseif not record then
         record = {}
         self.values[key] = record
+    elseif not force and record.label == label and record.value == value
+        and record.severity == severity and record.alternate == alternate and record.rested == rested then
+        return
     end
     record.label, record.value, record.severity = label, value, severity
     record.alternate, record.rested = alternate, rested
@@ -146,17 +168,30 @@ function M:Schedule()
     if soonest then self.timer = S.ScheduleDataTick("datatexts", math.max(.05, soonest - now), TickDataTexts) end
 end
 
+-- Samples what is due and arms the timer for the soonest deadline in the same
+-- pass over the active sources: every sampled one has a deadline once it was
+-- looked at, so nothing is left for Schedule to find.
 function M:Tick()
     self.timer = nil
-    if not self.activeSources then return end
-    local now = GetTime()
-    for key in pairs(self.activeSources or {}) do
-        if SAMPLED[key] and (self.due[key] or 0) <= now + .001 then
-            self:UpdateSource(key)
-            self.due[key] = NextSample(key, now)
+    local active, due = self.activeSources, self.due
+    if not active then return end
+    local now, soonest = GetTime(), nil
+    for key in pairs(active) do
+        if SAMPLED[key] then
+            local at = due[key] or 0
+            if at <= now + .001 then
+                self:UpdateSource(key)
+                at = NextSample(key, now)
+                due[key] = at
+            end
+            if not soonest or at < soonest then soonest = at end
         end
     end
-    self:Schedule()
+    -- The delay is relative to a clock read after sampling and painting:
+    -- ScheduleDataTick adds it to a fresh GetTime() of its own.
+    if soonest then
+        self.timer = S.ScheduleDataTick("datatexts", math.max(.05, soonest - GetTime()), TickDataTexts)
+    end
 end
 
 TickDataTexts = function() M:Tick() end
@@ -396,7 +431,7 @@ local function RefreshSlot(button, c, index, slot, style, font)
     elseif button.dataProgress then
         PaintProgress(button)
     end
-    button.text, button.display = nil, nil
+    button.text, button.display, button.layoutTextWidth = nil, nil, nil
     button:SetShown(button.source ~= nil)
     if button.source then StyleSlot(button, style, font) end
 end

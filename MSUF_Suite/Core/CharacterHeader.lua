@@ -167,12 +167,12 @@ local function Style(renderer, field, config, skin, globalFont)
     end
 end
 
-function Render:Settings(config, skin, width, rightReserve, previewLayers)
+function Render:Settings(config, skin, width, rightReserve, previewLayers, fontPath)
     if self.width ~= width then self.frame:SetSize(width, Header.Height) end
     self.width, self.rightReserve = width, rightReserve or 0
     self.previewLayers = previewLayers
     self.fields = Header.Order(config, "field")
-    local fontPath = S.GlobalFontPath()
+    fontPath = fontPath or S.GlobalFontPath()
     for i = 1, #self.fields do Style(self, self.fields[i], config, skin, fontPath) end
 end
 

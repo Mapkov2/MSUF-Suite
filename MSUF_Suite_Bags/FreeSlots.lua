@@ -1,12 +1,12 @@
 local _, P = ...
 local S = P.Suite
 -- The free slot count in the footer of the bag and bank views, split into the
--- bags and the reagent bag. The bags' count is taken from the records the index
--- reads anyway (a slot with no item has no item ID: index.free, InventoryIndex.lua
--- and BankIndex.lua), so it costs no client call.
+-- bags and the reagent bag. The regular count comes from the bag or bank
+-- index, which already reads the item records.
 local FreeSlots = {}
 P.FreeSlots = FreeSlots
 local REAGENT_BAG = Enum.BagIndex.ReagentBag
+local IS_FOREVER = P.NS and P.NS.Client and P.NS.Client.isForever
 
 -- The reagent bag has its own window and is not in the combined bag's index:
 -- its slots come from the shared slot cache (SlotCache.lua), which reads a
@@ -15,6 +15,10 @@ local REAGENT_BAG = Enum.BagIndex.ReagentBag
 function FreeSlots.Reagent()
     local size = P.SlotCache.Sync(REAGENT_BAG)
     if size == 0 then return nil end
+    if IS_FOREVER then
+        local _, family = C_Container.GetContainerNumFreeSlots(REAGENT_BAG)
+        if S.Finite(family) and family ~= 0 then return nil end
+    end
     local free = 0
     for slot = 1, size do
         if not P.SlotCache.Get(REAGENT_BAG, slot) then free = free + 1 end

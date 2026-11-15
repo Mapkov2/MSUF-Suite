@@ -107,11 +107,13 @@ function C.ApplyMessageFade(visual, config)
     end
     visual.nativeFadeBefore = visual.nativeFadeBefore or {}
     visual.nativeFadeApplied = visual.nativeFadeApplied or {}
-    HoldFading(visual.frame, "fade", not (visual.hovered or visual.frame.editBox:HasFocus()))
+    C.MessageFadeFocus(visual)
     OwnFade(visual, 1, config.messageTimeVisible)
     OwnFade(visual, 2, config.messageFadeDuration)
 end
 
 function C.MessageFadeFocus(visual, focused)
-    if visual.nativeFadeBefore then HoldFading(visual.frame, "fade", not focused) end
+    if not visual.nativeFadeBefore then return end
+    if focused == nil then focused = visual.hovered or C.InputHasFocus(visual.frame) end
+    HoldFading(visual.frame, "fade", not focused)
 end

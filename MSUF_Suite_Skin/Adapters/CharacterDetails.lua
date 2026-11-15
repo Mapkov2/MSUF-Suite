@@ -788,10 +788,12 @@ function Details.SetView(value)
     if not Details.IsAvailable() or NS.IsCombatLocked() or not VIEWS[value] then return false end
     if Config().view == value then return true end
     Config().view = value
-    -- This selector is reload-only: persist first, then let Blizzard rebuild
-    -- every native frame before applying the new layout. Do not hot-swap or
-    -- notify appearance listeners in the old UI session. Native entry point:
-    -- upstream/live, Blizzard_SharedXML/InterfaceUtil.lua (ReloadUI).
+    if NS.Client.isForever and NS.SuiteOwnership.Owns("characterDossier") then
+        NS.Registry.NotifyListeners("characterDetails", "view")
+        NS.Safety.Dispatch(NS.SuiteCore().Suite.Apply, "characterPanel")
+        return true
+    end
+    -- Let Blizzard rebuild the native frames before applying the Basic layout.
     ReloadUI()
     return true
 end

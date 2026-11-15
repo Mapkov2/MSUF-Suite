@@ -94,29 +94,28 @@ local function Numbers(count, ...)
     return values
 end
 
-local function Remember(region, aspects)
-    if saved[region] then return true end
-    if not region or NS.Safety.IsForbidden(region) then return false end
+local function Snapshot(region, aspects)
+    if not region or NS.Safety.IsForbidden(region) then return end
     local state = {}
     if aspects.points then
         state.points = Points(region)
-        if not state.points then return false end
+        if not state.points then return end
     end
     if aspects.size then
         state.size = Numbers(2, region:GetWidth(), region:GetHeight())
-        if not state.size then return false end
+        if not state.size then return end
     end
     if aspects.scale then
         state.scale = Numbers(1, region:GetScale())
-        if not state.scale then return false end
+        if not state.scale then return end
     end
     if aspects.alpha then
         state.alpha = Numbers(1, region:GetAlpha())
-        if not state.alpha then return false end
+        if not state.alpha then return end
     end
     if aspects.coords then
         state.coords = Numbers(8, region:GetTexCoord())
-        if not state.coords then return false end
+        if not state.coords then return end
     end
     if aspects.text then
         state.font = Readable(region:GetFont())
@@ -124,32 +123,39 @@ local function Remember(region, aspects)
         state.shadow = Numbers(4, region:GetShadowColor())
         state.shadowOffset = Numbers(2, region:GetShadowOffset())
         if not state.font or type(state.font[1]) ~= "string" or not Finite(state.font[2])
-            or not state.color or not state.shadow or not state.shadowOffset then return false end
+            or not state.color or not state.shadow or not state.shadowOffset then return end
     end
-    saved[region] = state
-    return true
+    return state
+end
+
+local function Remember(region, aspects)
+    if not saved[region] then saved[region] = Snapshot(region, aspects) end
+    return saved[region] ~= nil
 end
 
 local function Put(region, setter, values)
     if values then region[setter](region, unpack(values, 1, values.n)) end
 end
 
-local function Restore()
-    for region, state in pairs(saved) do
-        if state.points then
-            region:ClearAllPoints()
-            for _, point in ipairs(state.points) do Put(region, "SetPoint", point) end
-        end
-        Put(region, "SetSize", state.size)
-        Put(region, "SetScale", state.scale)
-        Put(region, "SetAlpha", state.alpha)
-        Put(region, "SetTexCoord", state.coords)
-        Put(region, "SetFont", state.font)
-        Put(region, "SetTextColor", state.color)
-        Put(region, "SetShadowColor", state.shadow)
-        Put(region, "SetShadowOffset", state.shadowOffset)
-        saved[region] = nil
+local function RestoreRegion(region, state)
+    if not state then return end
+    if state.points then
+        region:ClearAllPoints()
+        for _, point in ipairs(state.points) do Put(region, "SetPoint", point) end
     end
+    Put(region, "SetSize", state.size)
+    Put(region, "SetScale", state.scale)
+    Put(region, "SetAlpha", state.alpha)
+    Put(region, "SetTexCoord", state.coords)
+    Put(region, "SetFont", state.font)
+    Put(region, "SetTextColor", state.color)
+    Put(region, "SetShadowColor", state.shadow)
+    Put(region, "SetShadowOffset", state.shadowOffset)
+    saved[region] = nil
+end
+
+local function Restore()
+    for region, state in pairs(saved) do RestoreRegion(region, state) end
     for _, border in pairs(borders) do border:Hide() end
     for button in pairs(skinned) do
         NS.HostBridge.PaintIconSkin(button, nil)
@@ -268,35 +274,33 @@ end
 -- debuff type border and Count, OVERLAY, stay above); it replaces the
 -- module's outline while it draws. Style made that outline with the icon's
 -- texture coordinates: without it the icon is not styled and takes no skin.
+local function PaintSkin(button, icon, look, w, h)
+    local shown = skinned[button]
+    if not (look or shown) then return end
+    if shown and shown.look == look and shown.w == w and shown.h == h then return true end
+    local skin = NS.HostBridge.PaintIconSkin(button, look, w, h, icon)
+    skinned[button] = skin and { look = look, w = w, h = h } or nil
+    Lift(button.Duration, skin)
+    return skin
+end
+
 local style = Style
 local function StyleSkinned(button, icon, c)
     Style(button, icon, c)
     local border = borders[button]
-    if not border then return end
-    local look, shown = looks[button:GetParent()], skinned[button]
-    if not (look or shown) then return end
-    -- The look it shows at this size (a restyle of the same buttons, also an
-    -- adoption in combat) is kept: Style only showed the outline again.
-    if shown and shown.look == look and shown.w == c.iconWidth and shown.h == c.iconHeight then
+    if border and PaintSkin(button, icon, looks[button:GetParent()], c.iconWidth, c.iconHeight) then
         border:Hide()
-        return
     end
-    local skin = NS.HostBridge.PaintIconSkin(button, look, c.iconWidth, c.iconHeight, icon)
-    skinned[button] = skin and { look = look, w = c.iconWidth, h = c.iconHeight } or nil
-    Lift(button.Duration, skin)
-    if skin then border:Hide() end
 end
 
 -- Native layout owns these: UpdateGridLayout resets them on each laid-out button.
-local function Place(button, icon, slot, container, c, list)
+local function Place(button, icon, slot, container, c)
     local auraAnchor = button.isAuraAnchor
-    if not saved[button] and not Remember(button, BUTTON) then
-        list[slot] = nil
-        return
-    end
-    if not saved[icon] and not auraAnchor and not Remember(icon, ICON) then
-        list[slot] = nil
-        return
+    if not saved[button] or (not auraAnchor and not saved[icon]) then
+        if not icon then return end
+        local original = saved[button] or Snapshot(button, BUTTON)
+        if not original or (not auraAnchor and not Remember(icon, ICON)) then return end
+        saved[button] = original
     end
     local col, row = (slot - 1) % c.perRow, floor((slot - 1) / c.perRow)
     button:SetScale(1)
@@ -306,11 +310,12 @@ local function Place(button, icon, slot, container, c, list)
         -row * (c.iconHeight + c.rowSpacing))
     -- Private aura artwork is registered with fixed native dimensions.
     -- Keep its native IconInfo; only place its public anchor in the row.
-    if auraAnchor then return end
+    if auraAnchor then return true end
     icon:ClearAllPoints()
     icon:SetAllPoints(button)
     Pin(button.Duration, button, "BOTTOMLEFT")
     if styled[button] ~= generation then style(button, icon, c) end
+    return true
 end
 
 -- The container that holds the rows, and the frame beside the minimap. The
@@ -335,6 +340,86 @@ local function Anchor(frame, list, count)
     container:SetSize(c.perRow * (c.iconWidth + c.spacing) - c.spacing,
         max(1, ceil(count / c.perRow)) * (c.iconHeight + c.rowSpacing) - c.rowSpacing)
     list.anchored = true
+    return true
+end
+
+local function RestoreButton(button)
+    RestoreRegion(button, saved[button])
+    RestoreRegion(button.Icon, saved[button.Icon])
+    RestoreRegion(button.Count, saved[button.Count])
+    RestoreRegion(button.Duration, saved[button.Duration])
+    RestoreRegion(button.DebuffBorder, saved[button.DebuffBorder])
+    RestoreRegion(button.TempEnchantBorder, saved[button.TempEnchantBorder])
+    if borders[button] then borders[button]:Hide() end
+    if skinned[button] then NS.HostBridge.PaintIconSkin(button, nil) end
+    skinned[button], styled[button] = nil, nil
+    Lift(button.Duration, false)
+end
+
+local function PaintNativeSkin(button, look)
+    local icon = button.Icon
+    if not icon or button.isAuraAnchor or NS.Safety.IsForbidden(button) or NS.Safety.IsForbidden(icon) then return end
+    local w, h = icon:GetWidth(), icon:GetHeight()
+    if Finite(w) and Finite(h) and w > 0 and h > 0 then
+        PaintSkin(button, icon, look, w, h)
+    end
+end
+
+-- The layout module still owns the look while Blizzard owns the geometry.
+-- Prepaint the pool so ordinary native refills already have a skin.
+local function PaintNativeSkins(frame)
+    local look = looks[frame]
+    if not look then return end
+    for _, button in ipairs(frame.auraFrames) do PaintNativeSkin(button, look) end
+    local collect = frame.ConsolidatedBuffs
+    if collect then PaintNativeSkin(collect, look) end
+end
+
+-- Native layout recomputes the current grid, including consolidation and
+-- hidden slots. Suppress our post-hook while it runs.
+local function RestoreNative(frame, list)
+    RestoreRegion(frame, saved[frame])
+    local container, collect = frame.AuraContainer, frame.ConsolidatedBuffs
+    RestoreRegion(container, saved[container])
+    if collect then RestoreButton(collect) end
+    for _, button in ipairs(frame.auraFrames) do RestoreButton(button) end
+    shifted[frame] = nil
+    list.n, list.framed, list.anchored = 0, false, false
+    -- Blizzard's grid requires an Icon on every button it lays out.
+    if not NS.Safety.IsForbidden(frame)
+        and (list.failed == frame or (list.failed.Icon and not NS.Safety.IsForbidden(list.failed))) then
+        frame:UpdateGridLayout()
+    end
+    PaintNativeSkins(frame)
+end
+
+local function RollBack(frame, list)
+    list.restoring = true
+    local finished = NS.Dispatch(NS.Finish, RestoreNative, frame, list)
+    list.restoring, list.rollback = nil, not finished or nil
+    return finished
+end
+
+local function FallBack(frame, list, failed, locked)
+    list.failed = failed
+    if locked then
+        list.rollback = true
+        S.Queue(ID)
+        return
+    end
+    RollBack(frame, list)
+end
+
+-- While a frame stays native, probe the failed region before moving any
+-- buttons again. A missing button can also leave the row on a normal refill.
+local function CanRetry(frame, failed)
+    if failed == frame then
+        return Snapshot(frame, FRAME) and Snapshot(frame.AuraContainer, CONTAINER)
+    end
+    local shown, icon = failed:IsShown(), failed.Icon
+    if IsSecret(shown) then return end
+    return not shown or (icon and Snapshot(failed, BUTTON)
+        and (failed.isAuraAnchor or Snapshot(icon, ICON)))
 end
 
 -- The shown buttons in slot order, the native consolidation button first.
@@ -347,6 +432,13 @@ local function Sync(frame)
         list = { n = 0, anchored = false, framed = false, restyle = false }
         laid[frame] = list
     end
+    if list.failed then
+        if list.restoring then return end
+        if NS.IsCombatLocked() then return end
+        if list.rollback and not RollBack(frame, list) then return end
+        if not CanRetry(frame, list.failed) then return end
+        list.failed = nil
+    end
     local valid, slot, seated, locked = list.n, 0, false, nil
     if list.restyle then
         generation, valid, list.restyle = generation + 1, 0, false
@@ -356,19 +448,23 @@ local function Sync(frame)
     for index = collect and 0 or 1, #buttons do
         local button = index == 0 and collect or buttons[index]
         local shown = button:IsShown()
-        if not IsSecret(shown) and shown then
+        if IsSecret(shown) then
+            FallBack(frame, list, button, NS.IsCombatLocked())
+            return
+        end
+        if shown then
             slot = slot + 1
             if slot > valid or list[slot] ~= button then
                 if locked == nil then
                     locked = NS.IsCombatLocked()
                     if locked and Refused(frame, list, slot) then return end
                 end
-                local icon = button.Icon
-                list[slot], seated = button, true
-                if icon then
-                    if locked and Refused(button, list, slot) then return end
-                    Place(button, icon, slot, frame.AuraContainer, c, list)
+                if locked and Refused(button, list, slot) then return end
+                if not Place(button, button.Icon, slot, frame.AuraContainer, c) then
+                    FallBack(frame, list, button, locked)
+                    return
                 end
+                list[slot], seated = button, true
             end
         end
     end
@@ -378,7 +474,7 @@ local function Sync(frame)
         locked = NS.IsCombatLocked()
         if locked and Refused(frame, list, slot + 1) then return end
     end
-    Anchor(frame, list, slot)
+    if not Anchor(frame, list, slot) then FallBack(frame, list, frame, locked) end
 end
 
 -- UpdateGridLayout re-scaled, re-sized and re-anchored what it laid out and
@@ -487,6 +583,9 @@ local function FinishCleanup()
     if NS.IsCombatLocked() then return end
     if cleanup then cleanup:UnregisterEvent("PLAYER_REGEN_ENABLED") end
     Restore()
+    for _, list in pairs(laid) do
+        list.failed, list.restoring, list.rollback = nil, nil, nil
+    end
     for frame in pairs(hooked) do frame:UpdateGridLayout() end
     -- The skin-only piece paints the buttons again (if it runs).
     P.PlayerAuraSkins.Yield(false)
@@ -509,6 +608,10 @@ end
 function M:Refresh()
     ResolveLooks()
     Adopt()
+    if NS.IsCombatLocked() then return end
+    for frame, list in pairs(laid) do
+        if list.failed and not list.rollback then PaintNativeSkins(frame) end
+    end
 end
 
 function M:Disable()
@@ -640,6 +743,7 @@ end
 -- vertical offset grows downwards); the icon layout is shared by both rows.
 local function DebuffControls()
     local controls = { Control("debuffX"), Control("debuffOffset") }
+    controls[1].positionAxis, controls[2].positionAxis = "x", "y"
     for _, key in ipairs(LAYOUT) do controls[#controls + 1] = Control(key) end
     return controls
 end

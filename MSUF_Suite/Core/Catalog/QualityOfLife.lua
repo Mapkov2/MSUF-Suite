@@ -126,7 +126,8 @@ NS.SuiteCatalog.qol.rules.junkReport.enableKey = "autoJunk"
 
 B.Module("quests", {
     title = "Quest helpers",
-    description = "Accept and turn in quests automatically. Hold the selected key to pause. Reward choices and quests with a money cost stay manual.",
+    description = "Accept and turn in quests automatically. Use the selected key to pause or enable automation. "
+        .. "Reward choices and quests with a money cost stay manual.",
     optIn = true, automation = true, page = "suite_qualityOfLife",
 })
 B.Section("quests", "automation", "Quest actions", {
@@ -134,7 +135,8 @@ B.Section("quests", "automation", "Quest actions", {
     Bool("complete", "Automatically complete ready quests"),
     Bool("reward", "Collect rewards without a choice"),
     Bool("gossip", "Select offered or completed quests in dialogue"),
-    Choice("pauseModifier", "Hold to pause quest automation", 1, { "Shift", "Ctrl", "Alt" }),
+    Choice("questModifierMode", "Quest automation key behavior", 1, { "Hold to pause", "Hold to automate" }),
+    Choice("pauseModifier", "Quest automation key", 1, { "Shift", "Ctrl", "Alt" }),
 })
 local onlyIDs = String("onlyIDs", "Only these quest IDs (empty: all)", "", 1600)
 onlyIDs.ids = true
@@ -685,6 +687,12 @@ B.Module("trainerLearnAll", {
         or "Review the total cost, then learn available non-profession abilities at a trainer.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
 })
+
+if NS.Client.isForever then
+    B.Section("trainerLearnAll", "trainer_budget", "Trainer budget", {
+        Number("reserveSilver", "Gold to reserve, in silver (0 = off)", 0, 0, 100000),
+    })
+end
 
 B.Module("characterUpgradeWindow", {
     title = "Equipment window at upgrades",

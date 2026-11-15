@@ -91,6 +91,19 @@ function Store.Delete(id)
     if NS.InCombat() then return false, "Macro changes are unavailable in combat" end
     local data = Database(false)
     if not data or not data.documents[id] then return false, "The macro draft is no longer available" end
+    local character = Macros.Native.Character()
+    for key, bindings in pairs(data.bindings) do
+        if (key == "account" or key == character) and type(bindings) == "table" and bindings[id] then
+            local entries, errorText = Macros.Native.Scan()
+            if errorText then return false, errorText end
+            local entry = Macros.Native.Resolve(bindings[id], entries)
+            if entry then
+                local ok
+                ok, errorText = Macros.Native.RemoveBindings(entry)
+                if not ok then return false, errorText end
+            end
+        end
+    end
     data.documents[id] = nil
     for i = #data.order, 1, -1 do if data.order[i] == id then table.remove(data.order, i) end end
     for _, bindings in pairs(data.bindings) do
@@ -102,6 +115,21 @@ end
 
 function Store.Native()
     return Macros.Native.Scan()
+end
+
+function Store.DeleteNative(entry)
+    local ok, errorText = Macros.Native.Delete(entry)
+    if not ok then return false, errorText end
+    local data = Database(false)
+    local key = BindingKey(entry)
+    local bindings = data and key and data.bindings[key]
+    if type(bindings) == "table" then
+        for id, binding in pairs(bindings) do
+            if Macros.Native.Resolve(binding, { entry }) then bindings[id] = nil end
+        end
+    end
+    Changed()
+    return true
 end
 
 function Store.Import(index)
@@ -160,6 +188,15 @@ function Store.Pickup(id)
     local document = data and data.documents[id]
     if not document then return false, "The macro draft is no longer available" end
     return Macros.Native.Pickup(Binding(data, document))
+end
+
+function Store.ResolvePublished(id)
+    local data = Database(false)
+    local document = data and data.documents[id]
+    if not document then return nil, "The macro draft is no longer available" end
+    local entries, errorText = Macros.Native.Scan()
+    if errorText then return nil, errorText end
+    return Macros.Native.Resolve(Binding(data, document), entries)
 end
 
 local function IsManaged(binding)

@@ -163,8 +163,9 @@ function Chrome.Title(state)
 end
 
 local captionArt = setmetatable({}, { __mode = "k" })
-local function PaintCaption(button)
+local function PaintCaption(button, refreshGlyph)
     local art = captionArt[button]
+    if refreshGlyph then NS.SuiteCore().WindowCaption.UpdateGlyph(button, art) end
     local active = not art.disabled and (art.hover or art.down)
     local r, g, b, a = NS.Theme.GetColor(art.disabled and "disabled" or "text")
     -- Windows' close cell turns red under the pointer, its cross white.
@@ -178,11 +179,10 @@ local function PaintCaption(button)
     end
 end
 
--- Glyph bars sit on whole screen pixels (the Suite's shared caption layout).
 local function LayoutCaption(button, kind)
     local art = captionArt[button]
     art.kind = kind
-    NS.SuiteCore().WindowCaption.Layout(button, kind, art.bars)
+    NS.SuiteCore().WindowCaption.UpdateGlyph(button, art, true)
     PaintCaption(button)
 end
 
@@ -514,24 +514,24 @@ function Chrome.ShowCaption(state, level)
         return NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
     end
     state.captionInset, state.captionLevel = nil, level
+    local minimize = state.minimize and NS.WindowControlPolicy.OffersMinimize(state) and state.minimize
+    if not minimize and state.minimize then state.minimize:Hide() end
     if not cells then
         state.captionPath = not width and "size" or gamepad and "gamepad" or "protected"
         Chrome.HideCaption(state)
-        local minimize = state.minimize
         if not minimize or gamepad or room ~= nil then return end
         minimize:ClearAllPoints()
         PlaceMinimize(minimize, state, state.close)
         return PlaceCell(minimize, nil, 22, 22, level, "minimize")
     end
     state.captionInset, state.captionPath = inset, "cells"
-    -- Above Blizzard's own caption buttons, whatever pane raised them.
     for _, native in ipairs({ state.close, state.sizeToggle }) do
         local nativeLevel = Safety.Read(native, "GetFrameLevel")
         if type(nativeLevel) == "number" and nativeLevel + 2 > level then level = nativeLevel + 2 end
     end
     local toggle = state.sizeToggle and Safety.Read(state.sizeToggle, "IsShown")
     -- A tight title shrinks all cells alike before one of them gives way.
-    local cells = ((state.maximize or toggle) and 1 or 0) + (state.minimize and 1 or 0)
+    local cells = ((state.maximize or toggle) and 1 or 0) + (minimize and 1 or 0)
     if cells > 0 and room < width * cells then width = math.max(18, math.floor(room / cells)) end
     local close = DrawnCell(state, "closeCell")
     close:ClearAllPoints()
@@ -541,7 +541,7 @@ function Chrome.ShowCaption(state, level)
     FadeSockets(state)
     RefreshFocus(state.frame)
     local middle = state.sizeToggle and ToggleCell(state, close, width, height, level)
-    local maximize, minimize = state.maximize, state.minimize
+    local maximize = state.maximize
     if maximize and not middle and room >= width * 2 then
         middle = PlaceCell(maximize, close, width, height, level, state.fit and "restore" or "maximize")
     elseif maximize then
@@ -619,7 +619,7 @@ end
 
 function Chrome.RecolorCaption(state)
     for _, key in ipairs(CELLS) do
-        if state[key] then PaintCaption(state[key]) end
+        if state[key] then PaintCaption(state[key], true) end
     end
 end
 

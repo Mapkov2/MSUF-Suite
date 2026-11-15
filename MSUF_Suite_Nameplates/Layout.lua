@@ -8,7 +8,8 @@ local Point = Geometry.Point
 local states = setmetatable({}, { __mode = "k" })
 local hooked = setmetatable({}, { __mode = "k" })
 local plans, generation, module = {}, 0
-local elements = NS.NameplateStyle.Elements
+local elements, X = NS.NameplateStyle.Elements, NS.NameplateExtensions
+local AuraModel = NS.NameplateAuraDisplay
 
 local function Accessible(region)
     return region and not NS.Safety.IsForbidden(region)
@@ -24,10 +25,10 @@ end
 -- SetPointsOffset changes their displacement without reading/replacing native
 -- anchors. We store only our own offsets, never GetPoint/GetRect results.
 local function Offset(state, region, x, y, force)
-    if not Accessible(region) then return end
     local old = state.offsets[region]
     if x == 0 and y == 0 and not old then return end
     if not force and old and old[1] == x and old[2] == y then return end
+    if not Accessible(region) then return end
     region:SetPointsOffset(x, y)
     if x == 0 and y == 0 then
         state.offsets[region] = nil
@@ -186,6 +187,67 @@ local function MirrorHeader(state, uf, prefix, plan, setup, config)
     return true
 end
 
+local function AuraWritable(frame)
+    if not Accessible(frame) then return false end
+    local allowed = frame:CanBeAccessedInContext()
+    return NS.Public(allowed) and allowed == true
+end
+
+local function RestoreAuraStyles(state, uf)
+    if not state.auraStyles then return end
+    for frame, saved in pairs(state.auraStyles) do
+        if AuraWritable(frame) then
+            if saved.scale then frame:SetScale(saved.scale) end
+            if saved.alpha then frame:SetAlpha(saved.alpha) end
+            if saved.layer then frame:SetFrameLevel(saved.layer) end
+            state.auraStyles[frame] = nil
+        else
+            Defer(uf)
+        end
+    end
+    if not next(state.auraStyles) then state.auraStyles = nil end
+end
+
+local function NameAnchorWritable(label)
+    if not AuraWritable(label) then return false end
+    local restricted = label:IsAnchoringRestricted()
+    return NS.Public(restricted) and restricted == false
+end
+
+local function RestoreNameAnchor(state, uf)
+    local saved = state.nameAnchor
+    if not saved then return true end
+    if not NameAnchorWritable(uf.name) then
+        Defer(uf)
+        return false
+    end
+    uf.name:ClearAllPoints()
+    for _, point in ipairs(saved.points) do uf.name:SetPoint(unpack(point)) end
+    uf.name:SetJustifyH(saved.justify)
+    state.nameAnchor = nil
+    return true
+end
+
+local function ApplyNameAnchor(state, uf, plan)
+    local anchor, label, owner = plan.nameAnchor, uf.name, uf.HealthBarsContainer.healthBar
+    if not anchor or uf.showOnlyName or not NameAnchorWritable(label) or not Accessible(owner) then return end
+    local points, justify = {}, label:GetJustifyH()
+    if not NS.Public(justify) then return end
+    local count = label:GetNumPoints()
+    if not NS.Finite(count) then return end
+    for index = 1, count do
+        local point, relative, relativePoint, x, y = label:GetPoint(index)
+        if not NS.Public(point) or not NS.Public(relative) or not NS.Public(relativePoint)
+            or not NS.Finite(x) or not NS.Finite(y) then return end
+        points[index] = { point, relative, relativePoint, x, y }
+    end
+    state.nameAnchor = { points = points, justify = justify }
+    label:ClearAllPoints()
+    Point(label, anchor, owner, anchor, plan.Name[1], plan.Name[2])
+    label:SetJustifyH(anchor:find("LEFT", 1, true) and "LEFT" or anchor:find("RIGHT", 1, true) and "RIGHT" or "CENTER")
+    return true
+end
+
 function Layout.Restore(uf)
     local state = states[uf]
     if not state then return end
@@ -193,9 +255,12 @@ function Layout.Restore(uf)
         Defer(uf)
         return
     end
-    if not RestoreHeader(state, uf) then return end
+    if not RestoreNameAnchor(state, uf) or not RestoreHeader(state, uf) then return end
     RestoreLinks(state, uf)
     RestoreHealthSize(state, uf)
+    RestoreAuraStyles(state, uf)
+    if state.iconZoom and not Geometry.RestoreIconZoom(state) then Defer(uf) end
+    if state.castIconBorder then Geometry.HideCastIconBorder(state) end
     if not Geometry.Restore(state, uf, NamePlateSetupOptions) then Defer(uf) end
     for region in pairs(state.offsets) do
         if Accessible(region) then
@@ -205,10 +270,13 @@ function Layout.Restore(uf)
             Defer(uf)
         end
     end
-    if not next(state.offsets) and #state.links == 0 and not state.healthSize and not state.geometry then states[uf] = nil end
+    if not next(state.offsets) and #state.links == 0 and not state.healthSize and not state.geometry
+        and not state.iconZoom and not (state.auraStyles and next(state.auraStyles)) then states[uf] = nil end
 end
 
 local function OnAnchors(uf)
+    local textures = private.Textures
+    if textures and textures.inUse then textures.OnAnchors(uf) end
     local state = states[uf]
     local locked = NS.IsCombatLocked() or NS.Safety.IsForbidden(uf)
     if state then
@@ -228,7 +296,7 @@ local function OnAnchors(uf)
             end
         end
         state.links = pending
-        state.header = nil -- Blizzard rebuilt both header regions and name justification.
+        state.header, state.nameAnchor = nil, nil -- Blizzard rebuilt the anchors and justification.
         state.generation = nil
         state.nativeReset = true
     end
@@ -237,12 +305,17 @@ local function OnAnchors(uf)
         private.Extensions.OnAnchors(uf)
         return
     end
-    if not module.active then
+    if not module.active or private.IsSkinSuppressed and private.IsSkinSuppressed(uf) then
         Layout.Restore(uf)
         return
     end
     if not NS.Public(uf.isFriend) then return end
-    Layout.Reapply(uf, uf.isFriend and "friendly" or "enemy", module.config)
+    -- Blizzard can rebuild a recycled frame several times during SetUnit.
+    -- OnAdded paints the settled frame once, after native setup.
+    local unit = uf.unit
+    if NS.Public(unit) and type(unit) == "string" and module.activeUnits[unit] == uf then
+        Layout.Reapply(uf, uf.isFriend and "friendly" or "enemy", module.config)
+    end
     private.Extensions.OnAnchors(uf)
 end
 
@@ -254,8 +327,8 @@ end
 
 -- Rebuild the native castbar edges with the configured width and position.
 -- Its parent anchors the health bar and keeps its own size.
-local function CastWidth(state, cast, container, setup, plan)
-    local half = plan.castWidth / 2
+local function CastWidth(state, cast, container, setup, plan, delta)
+    local half = delta / 2
     local x, y = plan.Cast[1], plan.Cast[2]
     if setup.useClassicCastBar then
         local h, baseY = setup.horizontalScale, .5 * setup.verticalScale
@@ -273,10 +346,10 @@ local function CastWidth(state, cast, container, setup, plan)
     end
 end
 
-local function CastOffsets(state, uf, plan, setup, force)
+local function CastOffsets(state, uf, plan, setup, force, delta)
     local container = uf.CastBarsContainer
     local cast = container and container.castBar
-    local customWidth = plan.castWidth ~= 0
+    local customWidth = delta ~= 0
     local classic, inside = setup.useClassicCastBar == true, setup.spellNameInsideCastBar == true
     if customWidth and (not Accessible(container) or not Accessible(cast)
         or not classic and not inside and not Accessible(cast.Icon)) then
@@ -297,7 +370,7 @@ local function CastOffsets(state, uf, plan, setup, force)
         Offset(state, cast.Icon, icon[1], icon[2], force)
         Link(state, cast, "BOTTOM", cast.Icon, "TOP", 0, 0, icon[1], icon[2])
     end
-    if customWidth then CastWidth(state, cast, container, setup, plan) end
+    if customWidth then CastWidth(state, cast, container, setup, plan, delta) end
     local parent = classic and bar or icon
     Offset(state, cast.Text, text[1] - parent[1], text[2] - parent[2], force)
     local castTime = module.castTimes[cast]
@@ -407,18 +480,70 @@ local function DebuffPaddingAnchor(state, uf, plan, setup)
     end
 end
 
-local function ElementOffsets(state, uf, plan, force)
+local function ElementOffsets(state, uf, plan, force, anchored)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local name, value, raid = plan.Name, plan.HealthText, plan.RaidIcon
     local namesOnly = uf.showOnlyName == true
     Offset(state, uf.HealthBarsContainer, plan.Health[1], plan.Health[2], force)
-    Offset(state, uf.name, name[1], name[2], force)
+    if not anchored then Offset(state, uf.name, name[1], name[2], force) end
     Offset(state, health and (health.LeftText or health.Text), value[1], value[2], force)
     Offset(state, uf.SoftTargetFrame, plan.SoftTarget[1], plan.SoftTarget[2], force)
     Offset(state, uf.RaidTargetFrame, raid[1] - (namesOnly and name[1] or 0),
         raid[2] - (namesOnly and name[2] or 0), force)
     Offset(state, uf.ClassificationFrame and uf.ClassificationFrame.classificationIndicator,
         plan.Classification[1] - raid[1], plan.Classification[2] - raid[2], force)
+end
+
+local function AuraProperty(frame, saved, field, value, get, set, relative)
+    local original, applied = saved[field], "applied" .. field
+    if value == nil then
+        if original then set(frame, original) end
+        saved[field], saved[applied] = nil, nil
+        return
+    end
+    if not original then
+        original = get(frame)
+        if not NS.Finite(original) then return end
+        saved[field] = original
+    end
+    local result = relative and original + value or original * value
+    if saved[applied] ~= result then
+        set(frame, result)
+        saved[applied] = result
+    end
+end
+
+local function StyleAuraRow(state, uf, frame, style)
+    if not frame then return end
+    local previous = state.auraStyles and state.auraStyles[frame]
+    if not style and not previous then return end
+    if not AuraWritable(frame) then
+        Defer(uf)
+        return
+    end
+    if not previous then
+        previous = {}
+        state.auraStyles = state.auraStyles or {}
+        state.auraStyles[frame] = previous
+    end
+    AuraProperty(frame, previous, "scale", style and style.scale, frame.GetScale, frame.SetScale)
+    AuraProperty(frame, previous, "alpha", style and style.alpha, frame.GetAlpha, frame.SetAlpha)
+    AuraProperty(frame, previous, "layer", style and style.layer, frame.GetFrameLevel, frame.SetFrameLevel, true)
+    if not style then state.auraStyles[frame] = nil end
+end
+
+local function ApplyAuraStyles(state, uf, styles)
+    local auras = uf.AurasFrame
+    if not AuraWritable(auras) then
+        Defer(uf)
+        return
+    end
+    for _, row in ipairs(AuraModel.NativeRows) do
+        local style = styles and styles[row.key]
+        StyleAuraRow(state, uf, auras[row.frame], style)
+        if row.playerFrame then StyleAuraRow(state, uf, auras[row.playerFrame], style) end
+    end
+    if state.auraStyles and not next(state.auraStyles) then state.auraStyles = nil end
 end
 
 -- Lays one plate out, once per settings generation (Layout.Configure).
@@ -434,35 +559,58 @@ local function Apply(uf, prefix, config, force)
         Defer(uf)
         return
     end
-    if state and state.generation == generation and state.prefix == prefix and not force then return end
+    local kind
+    if X and (prefix == "enemy" and config.neutralNpcSizeOverride or prefix == "friendly" and config.friendlyNpcSizeOverride)
+        and NS.Public(uf.unit) then kind = X.PlateKind(uf, uf.unit) end
+    if state and state.generation == generation and state.prefix == prefix and state.kind == kind and not force then return end
     local setup = NamePlateSetupOptions
     if not NS.Public(setup.useClassicCastBar) or not NS.Public(setup.spellNameInsideCastBar)
         or not NS.Public(setup.unitNameAnchorStyle) or not NS.Public(uf.showOnlyName) then return end
     state = state or { offsets = {}, links = {} }
     states[uf] = state
     force = force or state.nativeReset
+    if state.nameAnchor and not RestoreNameAnchor(state, uf) then return end
     if not RestoreHeader(state, uf) then return end
-    RestoreLinks(state, uf)
+    if state.links[1] then RestoreLinks(state, uf) end
     local wasUniform = state.geometry ~= nil and state.geometry.inset ~= nil
     local geometryChanged = (config.barGeometry == Mode.SAME_GEOMETRY) ~= wasUniform
-    local baseHeight = Geometry.Apply(state, uf, setup, config, force, prefix)
+    local keys = Key[prefix]
+    local width, height = config[keys.HealthWidthDelta] or 0, config[keys.HealthHeightDelta] or 0
+    if kind then width, height = X.HealthDimensions(config, prefix, kind) end
+    local delta = plan.castWidth
+    if plan.castWidthMode then
+        delta = Geometry.CastWidthDelta(uf, setup, config, prefix, width)
+        if delta == nil then
+            Defer(uf)
+            return
+        end
+    end
+    state.castWidth = delta
+    local baseHeight = Geometry.Apply(state, uf, setup, config, force, prefix, delta)
     if not baseHeight then
         Defer(uf)
         return
     end
-    local keys = Key[prefix]
-    HealthSize(state, uf, setup, config[keys.HealthWidthDelta] or 0,
-        config[keys.HealthHeightDelta] or 0, force or geometryChanged, baseHeight)
-    ElementOffsets(state, uf, plan, force)
+    HealthSize(state, uf, setup, width, height, force or geometryChanged, baseHeight)
+    if plan.nameAnchor then Offset(state, uf.name, 0, 0, true) end
+    local anchored = plan.nameAnchor and ApplyNameAnchor(state, uf, plan)
+    ElementOffsets(state, uf, plan, force, anchored)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
-    local mirrored = MirrorHeader(state, uf, prefix, plan, setup, config)
-    if mirrored == nil then return end
-    if not mirrored then NameLink(state, uf, plan, setup, badgeShown) end
+    if not anchored then
+        local mirrored = MirrorHeader(state, uf, prefix, plan, setup, config)
+        if mirrored == nil then return end
+        if not mirrored then NameLink(state, uf, plan, setup, badgeShown) end
+    end
     AuraAnchors(state, uf, plan)
     ControlAuraAnchors(state, uf, plan, setup, config, badgeShown)
     DebuffPaddingAnchor(state, uf, plan, setup)
-    if not CastOffsets(state, uf, plan, setup, force) then return end
-    state.generation, state.prefix = generation, prefix
+    if plan.auraStyles or state.auraStyles then ApplyAuraStyles(state, uf, plan.auraStyles) end
+    if not CastOffsets(state, uf, plan, setup, force, delta) then return end
+    if (plan.castIconStyle or state.castIconStyle) and not Geometry.CastIconStyle(state, uf, plan) then
+        Defer(uf)
+        return
+    end
+    state.generation, state.prefix, state.kind = generation, prefix, kind
     state.nativeReset = nil
     Layout.Observe(uf)
 end
@@ -474,10 +622,30 @@ function Layout.Reapply(uf, prefix, config)
     Apply(uf, prefix, config, true)
 end
 
+function Layout.CastWidthDelta(uf, config, prefix)
+    local state = states[uf]
+    return state and state.castWidth or config[prefix .. "CastWidthDelta"] or 0
+end
+
 function Layout.Bind(owner) module = owner end
 
 function Layout.RestoreAll()
     for uf in pairs(states) do Layout.Restore(uf) end
+end
+
+local function AuraStyles(config, prefix)
+    local scope = AuraModel.Scope(prefix)
+    local styles
+    for _, row in ipairs(AuraModel.NativeRows) do
+        local key = AuraModel.Prefix(scope, row)
+        local scale, alpha, layer = config[key .. "Scale"] or 100, config[key .. "Alpha"] or 100, config[key .. "Layer"] or 0
+        if scale ~= 100 or alpha ~= 100 or layer ~= 0 then
+            styles = styles or {}
+            styles[row.key] = { scale = scale ~= 100 and scale / 100 or nil,
+                alpha = alpha ~= 100 and alpha / 100 or nil, layer = layer ~= 0 and layer or nil }
+        end
+    end
+    return styles
 end
 
 function Layout.Configure(config)
@@ -485,7 +653,9 @@ function Layout.Configure(config)
     local baseline = shared and shared.fontBaselineOffset or 0
     generation = generation + 1
     for _, prefix in ipairs({ "enemy", "friendly" }) do
-        local plan = { active = config.barGeometry == Mode.SAME_GEOMETRY
+        local auraStyles = AuraStyles(config, prefix)
+        local anchor = NS.NameplateText.NameAnchor(config, prefix)
+        local plan = { auraStyles = auraStyles, nameAnchor = anchor, active = auraStyles ~= nil or anchor ~= nil or config.barGeometry == Mode.SAME_GEOMETRY
             or prefix == "enemy" and config.enemyMirrorHeader == true }
         for i = 1, #elements do
             local element = elements[i]
@@ -500,10 +670,17 @@ function Layout.Configure(config)
             plan[element.key] = { x, y }
         end
         plan.castWidth = config[Key[prefix].CastWidthDelta] or 0
+        plan.castWidthMode = (config[prefix .. "CastWidthMode"] or 1) ~= 1
+        local zoom = config[prefix .. "CastIconZoom"] or 100
+        plan.iconZoom = zoom > 100 and zoom or nil
+        plan.iconBorder = config[prefix .. "CastIconBorder"] and (config[prefix .. "CastIconBorderSize"] or 1) or nil
+        plan.iconBorderColor = config[prefix .. "CastIconBorderColor"] or "000000"
+        plan.castIconStyle = plan.iconZoom or plan.iconBorder
         plans[prefix] = plan
         plan.active = plan.active or (config[prefix .. "HealthWidthDelta"] or 0) ~= 0
             or (config[prefix .. "HealthHeightDelta"] or 0) ~= 0
-            or plan.castWidth ~= 0 or (config[Key[prefix].CastHeight] or 0) > 0
+            or (prefix == "enemy" and config.neutralNpcSizeOverride or prefix == "friendly" and config.friendlyNpcSizeOverride)
+            or plan.castIconStyle or plan.castWidthMode or plan.castWidth ~= 0 or (config[Key[prefix].CastHeight] or 0) > 0
             or (config[Key[prefix].CastIconSize] or 0) > 0
     end
 end

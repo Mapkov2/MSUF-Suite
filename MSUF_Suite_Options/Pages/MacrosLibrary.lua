@@ -32,8 +32,10 @@ Page.initializers[#Page.initializers + 1] = function()
             if not ok then Page.Error(errorKey) end
         end)
         Page.Button(ui, key .. ":delete", "Delete", actionsX + 166, actionsY, 78, function()
-            Page.Confirm("macro-draft-delete", Tr("Delete this saved draft?"), function()
-                Store.Delete(entry.id)
+            local prompt = entry.published and "Delete this saved draft and remove its macro bindings?" or "Delete this saved draft?"
+            Page.Confirm("macro-draft-delete", Tr(prompt), function()
+                local ok, errorKey = Store.Delete(entry.id)
+                if not ok then Page.Error(errorKey) return end
                 if Page.id == entry.id then Page.id, Page.bound = nil, false end
                 Page.LibraryRefresh()
             end)
@@ -43,19 +45,29 @@ Page.initializers[#Page.initializers + 1] = function()
 
     Helpers.Native = function(ui, entry, index, y, width)
         local key = "library:native:" .. index
-        local narrow = width < 490
-        Page.Label(ui, key .. ":name", entry.name, 16, y - 4, narrow and width - 32 or width - 205)
-        local actionsX, actionsY = narrow and 16 or width - 185, narrow and y - 29 or y
-        Page.Button(ui, key .. ":import", "Edit", actionsX, actionsY, 91, function()
+        local narrow = width < 530
+        Page.Label(ui, key .. ":name", entry.name, 16, y - 4, narrow and width - 32 or width - 270)
+        local actionsX, actionsY = narrow and 16 or width - 251, narrow and y - 29 or y
+        Page.Button(ui, key .. ":import", "Edit", actionsX, actionsY, 74, function()
             local id, errorKey = Store.Import(entry.index)
             if id then Page.Load(id) else Page.Error(errorKey) end
         end)
-        Page.Button(ui, key .. ":pickup", "Pick up", actionsX + 98, actionsY, 80, function()
+        Page.Button(ui, key .. ":pickup", "Pick up", actionsX + 80, actionsY, 80, function()
             local native = P.Suite.Macros.Native
             local binding = { index = entry.index, name = entry.name, body = entry.body, icon = entry.icon,
                 scope = entry.scope, character = entry.scope == "character" and native.Character() or nil }
             local ok, errorKey = native.Pickup(binding)
             if not ok then Page.Error(errorKey) end
+        end)
+        Page.Button(ui, key .. ":delete", "Delete", actionsX + 166, actionsY, 78, function()
+            Page.Confirm("macro-native-delete", Tr("Delete this WoW macro and remove its bindings?"), function()
+                local ok, errorKey = Store.DeleteNative(entry)
+                if not ok then Page.Error(errorKey) return end
+                if Page.bound and Page.document.name == entry.name and Page.document.scope == entry.scope then
+                    Page.bound, Page.pickupReady, Page.publishedStamp = false, false, nil
+                end
+                Page.LibraryRefresh()
+            end)
         end)
         return y - (narrow and 67 or 40)
     end

@@ -3,16 +3,16 @@ local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Actions = {}
 P.InventoryActions = Actions
 
--- Physical cleanup and display sorting are separate operations. Native sort
--- completion invalidates slot data through BAG_UPDATE; no random order survives.
 function Actions.Cleanup()
     if not M.active or NS.InCombat() then return false end
     local kind = GetCursorInfo()
-    if not NS.Public(kind) or kind ~= nil or StackSplitFrame:IsShown() then return false end
+    if not NS.Public(kind) or kind ~= nil or StackSplitFrame:IsShown() then
+        S.Print(S.Text("Put down the item on your cursor or close the stack split window before cleaning up."))
+        return false
+    end
+    if not P.PhysicalSort.Cleanup() then return false end
     local view = P.InventoryView
     view.scroll, view.selected = 0, "all"
-    P.PhysicalSort.Stop()
-    C_Container.SortBags()
     view.Request()
     return true
 end

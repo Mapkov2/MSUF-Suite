@@ -1,10 +1,11 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 if not NS.Client.isForever then return end
-local M = { markers = {}, pending = {}, requested = {} }
+local M = { markers = {}, values = {}, pending = {}, requested = {} }
 local IN_COMBAT = { inCombat = true }
 local function Clear()
     for _, marker in pairs(M.markers) do marker:Hide() end
+    for _, label in pairs(M.values) do label:Hide() end
     for id in pairs(M.pending) do M.pending[id] = nil end
     M.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
 end
@@ -21,6 +22,17 @@ local function Item(button, log)
     end
     if S.Finite(id) and id > 0 and S.Finite(count) and count > 0 and S.PublicText(link) then return id, count, link end
 end
+local function ShowValue(button, amount)
+    if amount <= 0 then return end
+    local label = M.values[button]
+    if not label then
+        label = S.CreateFontString(button, nil, "OVERLAY", "GameFontHighlightSmall")
+        label:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -3, 3)
+        M.values[button] = label
+    end
+    label:SetText(S.MoneyText(amount))
+    label:Show()
+end
 local Draw
 local function Loaded(_, _, id, success)
     if not S.Finite(id) or not M.pending[id] then return end
@@ -29,9 +41,10 @@ local function Loaded(_, _, id, success)
     if not next(M.pending) then M.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
 end
 Draw = function()
-    if not M.active then return end
-    Clear()
+    if not M.active or NS.InCombat() then return end
     local frame = QuestInfoFrame
+    Clear()
+    if not frame then return end
     local log = frame.questLog
     if not S.Public(log) then return end
     local quest = log and C_QuestLog.GetSelectedQuest() or GetQuestID()
@@ -52,7 +65,9 @@ Draw = function()
             if id then
                 local _, _, _, _, _, _, _, _, _, _, price = C_Item.GetItemInfo(link)
                 if S.Finite(price) and price >= 0 then
-                    if price * count > maximum then best, maximum = button, price * count end
+                    local amount = price * count
+                    ShowValue(button, amount)
+                    if amount > maximum then best, maximum = button, amount end
                 else
                     missing = true
                     if not M.requested[id] then
@@ -82,10 +97,18 @@ Draw = function()
     marker:Show()
 end
 local function Changed()
-    if M.active then M.job:Request() end
+    if M.active and not NS.InCombat() then M.job:Request() end
 end
 function M:Enable()
     self.job = self.context:Coalesce(0, Draw)
+    self.context:Event("PLAYER_REGEN_DISABLED", function()
+        M.job:Cancel()
+        Clear()
+    end, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", function()
+        local rewards = QuestInfoFrame and QuestInfoFrame.rewardsFrame
+        if rewards and rewards:IsVisible() then Changed() end
+    end, IN_COMBAT)
     if not self.hooked then
         hooksecurefunc("QuestInfo_Display", Changed)
         hooksecurefunc("QuestInfo_ShowRewards", Changed)
@@ -93,7 +116,7 @@ function M:Enable()
     end
     self:Refresh()
 end
-function M:Refresh() self.job:Request() end
+function M:Refresh() Changed() end
 function M:Disable()
     Clear()
     self.quest = nil

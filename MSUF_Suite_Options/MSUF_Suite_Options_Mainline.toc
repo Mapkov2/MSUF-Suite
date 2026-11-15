@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
-## Version: 0.1.20-alpha
+## Version: 0.1.22-alpha
 ## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -68,6 +68,7 @@ Pages\MacrosConsumables.lua
 Pages\MacrosLibrary.lua
 Pages\Macros.lua
 Pages\PlanningTools.lua
+Pages\DevMode.lua
 Pages\EverydayTools.lua
 Pages\ToolIntegration.lua
 Pages\QualityOfLifeHelp.lua
@@ -111,10 +112,13 @@ Pages\NameplatesMultiPreview.lua
 Pages\NameplatesWorkspace.lua
 Pages\NameplatesAdvancedAuras.lua
 Pages\NameplatesExtensions.lua
-Pages\NameplatesProfiles.lua
 Pages\NameplatesHostOptions.lua
+Pages\NameplateBarTextures.lua
+Pages\NameplatesStatus.lua
+Pages\NameplatesSectionsLayout.lua
 Pages\Nameplates.lua
 Pages\NameplateFonts.lua
+Pages\NameplatesDirectSettings.lua
 Pages\CooldownManagerData.lua
 Pages\CooldownManagerLists.lua
 Pages\CooldownManagerTarget.lua

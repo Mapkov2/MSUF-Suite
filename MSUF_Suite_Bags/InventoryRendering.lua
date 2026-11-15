@@ -74,7 +74,7 @@ local function PaintCell(cell, top, sidebar, columns, font)
         InventoryView.labelCount = InventoryView.labelCount + 1
         local toggle = M.config.inventoryView == VIEW.CATEGORIES and P.InventoryControls.ToggleGroup or nil
         local label = Grid.PaintHeader(InventoryView.labels, InventoryView.labelCount, InventoryView.chrome, InventoryView.frame,
-            sidebar + cell.column * CELL, y - 10, (cell.width or columns) * CELL - 5, group, toggle)
+            sidebar + cell.column * CELL, y - 10, (cell.width or columns) * CELL - 5, group, toggle, P.NS.Client.isForever)
         local plate = P.BagAppearance.Section(label, InventoryView.frame)
         P.BagAppearance.PaintSection(plate, InventoryView.frame, sidebar + cell.column * CELL, y,
             (cell.width or columns) * CELL - 4, math.min(cell.height, InventoryView.visibleRows - cell.line + top) * CELL - 5, nil, label)

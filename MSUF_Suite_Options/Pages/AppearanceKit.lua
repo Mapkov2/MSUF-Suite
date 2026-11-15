@@ -11,13 +11,18 @@ P.SkinPageKit = Kit
 
 -- The skin engine loads on demand (never in combat) the first time this page
 -- is built.
-local function Engine()
+local function LoadedEngine()
     local skin = _G.MapkoSkin
-    if not (skin and skin.addonName == "MSUF_Suite_Skin") and not P.Combat() then
-        Suite.Skin.EnsureEngine()
-        skin = _G.MapkoSkin
-    end
     if skin and skin.addonName == "MSUF_Suite_Skin" and skin.DB and skin.Theme then return skin end
+end
+
+local function Engine()
+    local skin = LoadedEngine()
+    if not skin and not P.Combat() then
+        Suite.Skin.EnsureEngine()
+        return LoadedEngine()
+    end
+    return skin
 end
 
 -- Every skin write is one MSUF history entry; the page repaints afterwards.
@@ -68,7 +73,7 @@ local function Values(list, labels)
 end
 
 -- The Skinning values a collapsed section shows, most important first.
-P.RegisterSummary("skin", "theme.look theme.shellOpacity theme.panelOpacity geometry.family geometry.controlShape"
+P.RegisterSummary("skin", "theme.look theme.gradient geometry.family geometry.controlShape"
     .. " icons.windowActions.style theme.iconBorderStyle font.enabled font.face icons.microMenu.preset"
     .. " icons.microMenu.scale")
 
@@ -205,10 +210,11 @@ end
 -- `extra(body, y, width) -> y` builder, and the color shortcut. A lazy host
 -- builds them when the accordion first opens (P.LazySection); its summary
 -- and "..." are in the header at once.
-local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
+local function Section(ctx, b, id, title, help, rows, open, extra, contextRows, route)
+    local sectionId = route and route.section or "suite_skin_" .. id
     if ctx.searchRows then
-        local sectionId = "suite_skin_" .. id
-        SearchRow(ctx, { kind = "section", label = Tr(title), searchLabel = title }, sectionId, Tr(title), Tr(help))
+        local page = route and route.page
+        SearchRow(ctx, { kind = "section", label = Tr(title), searchLabel = title, pageKey = page }, sectionId, Tr(title), Tr(help))
         for _, row in ipairs(rows) do SearchRow(ctx, row, sectionId, Tr(title), Tr(help)) end
         for _, row in ipairs(contextRows or {}) do SearchRow(ctx, row, sectionId, Tr(title), Tr(help)) end
         if extra then extra(nil, 0, 720) end
@@ -219,6 +225,7 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
         if row.kind ~= "color" then visibleRows[#visibleRows + 1] = row end
     end
     local function Content(body)
+        if route then Engine() end
         local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
         local y = -18
         if help then
@@ -231,13 +238,20 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
             })
             y = grid.bottomY
             GateRows(ctx, grid, visibleRows)
+            local entries = {}
+            for _, row in ipairs(visibleRows) do
+                entries[#entries + 1] = { widget = grid.controls[row.id], meta = row,
+                    rule = { key = row.id, label = row.searchLabel }, label = row.label }
+            end
+            if route then P.HUDMenu.Prepare(body, entries)
+            else P.MenuWorkspace.Prepare(body, entries) end
         end
         if extra then y = extra(body, y, width) or y end
         P.AttachRowsSummary(ctx, body, visibleRows)
         P.AttachSkinColors(body, title, contextRows or rows)
         return y
     end
-    return P.LazySection(b, "suite_skin_" .. id, Tr(title), open, {
+    return P.LazySection(b, sectionId, Tr(title), open, {
         content = Content,
         shell = id ~= "advanced" and function(body)
             P.AttachSectionReset(ctx, body, title, function()
@@ -287,43 +301,61 @@ local CHARACTER_TOGGLES = {
 }
 
 local CHARACTER_HELP = "Choose the detailed character view and its extra information. Changing the view reloads the UI."
-local CHARACTER_FOREVER_NOTE = "The detailed character panel and stats are available only in Retail. WoW Forever keeps its own character layout."
-
-local function CharacterUnavailable()
-    return "The detailed character panel is available only in Retail."
-end
-
 local function RetailCharacterOption()
     return "This feature is available only in Retail"
 end
 
-function Kit.BuildCharacter(ctx, b, skin)
+function Kit.BuildCharacter(ctx, b)
+    if not Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then return end
+    local route = { page = "suite_hud", section = "suite_hud_characterPanel_equipment" }
     local character = {
         Row("dropdown", "Character view", "character.view", "character",
-            function() return skin.DB.characterDetails.view end,
+            function()
+                local engine = LoadedEngine()
+                return engine and engine.DB.characterDetails.view or "modern"
+            end,
             function(value)
+                local skin = Engine()
                 Change(skin, "Character view", "character.view", function() return skin.CharacterDetails.SetView(value) end)
             end,
             Values({ "modern", "list", "classic" })),
     }
     local retail = Suite.Client.modernEquipment == true
-    local details = skin.CharacterDetails
-    local supported = retail or details and details.IsAvailable and details.IsAvailable()
-    if not supported then character[1].unavailable = CharacterUnavailable end
+    local function Available()
+        if not retail and not Suite.Client.isForever then return RetailCharacterOption() end
+        if not LoadedEngine() then return "The Suite skin engine is unavailable." end
+    end
+    local help = Suite.Client.isForever
+        and "Choose the Suite Character Panel layout. Extra details apply to Blizzard's character and inspect windows."
+        or CHARACTER_HELP
+    character[1].unavailable = Available
     for _, spec in ipairs(CHARACTER_TOGGLES) do
         local label, group, key, api = spec[1], spec[2], spec[3], spec[4]
         local row = Row("toggle", label, group .. "." .. key, "character",
-            function() return skin.DB[group][key] end,
+            function()
+                local engine = LoadedEngine()
+                return engine and engine.DB[group][key]
+            end,
             function(value)
+                local skin = Engine()
                 Change(skin, label, group .. "." .. key, function() return skin[api].SetOption(key, value) end)
             end)
-        if not supported then
-            row.unavailable = CharacterUnavailable
-        elseif not retail and (key == "wideLayout" or api == "CharacterStats") then
-            row.unavailable = RetailCharacterOption
-        end
+        row.unavailable = not retail and (key == "wideLayout" or api == "CharacterStats") and RetailCharacterOption or Available
         character[#character + 1] = row
     end
-    Section(ctx, b, "character", "Character panel and stats",
-        supported and CHARACTER_HELP or CHARACTER_FOREVER_NOTE, character, false)
+    for _, row in ipairs(character) do
+        local identity = P.Meta(route.page, "skin", row.id, "setting", route.section)
+        for key, value in pairs(identity) do row[key] = value end
+        row.pageKey = route.page
+    end
+    Section(ctx, b, "character", "Character and equipment", help, character, false, nil, nil, route)
+end
+
+function Kit.ResetCharacter()
+    local skin = LoadedEngine()
+    if not skin then return end
+    local defaults = skin.Database.CreateFactoryProfile()
+    skin.DB.characterDetails, skin.DB.characterStats = defaults.characterDetails, defaults.characterStats
+    skin.Adapters.ApplyAll()
+    skin.Registry.NotifyListeners("characterDetails", "reset")
 end

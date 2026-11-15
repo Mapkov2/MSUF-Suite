@@ -358,14 +358,18 @@ function M:CancelWindowDrag()
     if self.active and not NS.IsCombatLocked() then self:RefreshWindowLayout() end
 end
 
-local function PanelOffset(frame, x, y)
+local function ScreenOffset(frame, x, y, width, height)
     local ratio = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
-    local companion = Private.BagPresentation.CompanionWidth(M.config)
-    local reserve = companion > 0 and companion + 8 or 0
-    local horizontal = math.max(0, UIParent:GetWidth() * ratio - frame:GetWidth() - reserve)
-    local height = companion > 0 and math.max(frame:GetHeight(), ContainerFrame6:GetHeight()) or frame:GetHeight()
+    local horizontal = math.max(0, UIParent:GetWidth() * ratio - width)
     local vertical = math.max(0, UIParent:GetHeight() * ratio - height)
     return math.max(-horizontal, math.min(0, x)), math.max(0, math.min(vertical, y))
+end
+
+local function PanelOffset(frame, x, y)
+    local companion = Private.BagPresentation.CompanionWidth(M.config)
+    local reserve = companion > 0 and companion + 8 or 0
+    local height = companion > 0 and math.max(frame:GetHeight(), ContainerFrame6:GetHeight()) or frame:GetHeight()
+    return ScreenOffset(frame, x, y, frame:GetWidth() + reserve, height)
 end
 
 function M:EndWindowDrag(frame)
@@ -459,7 +463,8 @@ function M:ApplyWindowLayout()
         Layout.RestoreProperty(self.context, reagent, "SetScale")
         Layout.RestorePoints(self.context, reagent)
         if reagent:IsShown() and c.reagentWindowMoved then
-            Layout.Position(self.context, reagent, "BOTTOMRIGHT", c.reagentWindowX, c.reagentWindowY)
+            local x, y = ScreenOffset(reagent, c.reagentWindowX, c.reagentWindowY, reagent:GetWidth(), reagent:GetHeight())
+            Layout.Position(self.context, reagent, "BOTTOMRIGHT", x, y)
         end
     end
     Private.BagCaption.Moved()

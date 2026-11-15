@@ -41,6 +41,11 @@ local function Flavor()
 end
 
 local function CharacterKey(name, realm)
+    if NS.Client.isForever then
+        -- Pre-surname jobs contain only a first name. Leave them in the queue
+        -- for manual cancellation and reassignment instead of guessing a target.
+        return ("forever:" .. name:gsub("%s+", " ") .. "-" .. realm:gsub("[%s']", "")):lower()
+    end
     return (name .. "-" .. realm):gsub("[%s']", ""):lower()
 end
 
@@ -54,10 +59,13 @@ end
 
 local function ParseTarget(text, realm)
     if not Text(text, 160) then return end
-    local name, explicitRealm = text:match("^%s*([^%s%-]+)%s*%-%s*(.-)%s*$")
-    if not name then name = text:match("^%s*([^%s%-]+)%s*$") end
+    local name, explicitRealm = text:match("^%s*([^%-]-)%s*%-%s*(.-)%s*$")
+    if not name then name = text:match("^%s*(.-)%s*$") end
+    local pattern = NS.Client.isForever and "^%S+%s*%S*$" or "^%S+$"
     local destination = explicitRealm or realm
-    if name and Text(destination, 100) then return name, destination end
+    if name:match(pattern) and Text(name, 80) and Text(destination, 100) then
+        return name:gsub("%s+", " "), destination
+    end
 end
 
 local function SameKeys(left, right)

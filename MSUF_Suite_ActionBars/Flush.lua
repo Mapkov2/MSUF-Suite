@@ -61,6 +61,21 @@ local function Schedule()
     C_Timer.After(0, Flush)
 end
 
+local function WakeRetry()
+    -- An otherwise idle slot event still wakes a failed paint or grid plan.
+    if next(dirtyBars) or next(dirtySlots) or next(spellCooldowns)
+        or (protected.grid or protected.routing or next(gridBars)) and not NS.IsCombatLocked() then
+        Schedule()
+        return
+    end
+    for kind, marked in pairs(dirty) do
+        if marked and not waiting[kind] then
+            Schedule()
+            return
+        end
+    end
+end
+
 local function CapDone()
     throttled, sharedDue = false, nil
     -- A pending next-frame flush runs the capped walks as well.
@@ -388,5 +403,5 @@ end
 -- What the event map (Events.lua) marks directly.
 AB.Dirty = {
     slots = dirtySlots, grid = gridBars, gridFill = gridFill, gridHold = gridHold, protected = protected, reported = reported,
-    spellCooldowns = spellCooldowns, Schedule = Schedule, Mark = Mark, Reset = Reset,
+    spellCooldowns = spellCooldowns, Schedule = Schedule, WakeRetry = WakeRetry, Mark = Mark, Reset = Reset,
 }

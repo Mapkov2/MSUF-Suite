@@ -224,17 +224,27 @@ local function RepaintItemBorder(button)
     Kit.SkinItemIcon(button, owner, iconState.icon, iconState.nativeBorder, true)
 end
 
--- Buttons IconSkin does not own return at once. The repaint runs inside
--- Blizzard's item update loop, so it is its own error boundary. In combat
--- (looting, swapping or using items with bags open) the owned border lines
--- take the new quality colour as paint only; nothing is created or anchored.
+-- In combat the owned border takes the new quality as paint only.
+local function RefreshItemBorder(button)
+    Dispatch(NS.IsCombatLocked() and NS.IconSkin.Repaint or RepaintItemBorder, button)
+end
+
+local mailItemBorders = Kit.WeakSet()
+local function RepaintMailItemBorders()
+    for button in pairs(mailItemBorders) do
+        mailItemBorders[button] = nil
+        if NS.IconSkin.GetOwner(button) ~= nil and not Kit.IsHidden(button) then RefreshItemBorder(button) end
+    end
+end
+
 local function OnItemQualitySet(button)
     if NS.IconSkin.GetOwner(button) == nil then return end
-    if NS.IsCombatLocked() then
-        Dispatch(NS.IconSkin.Repaint, button)
+    if NS.Client.isForever and Safety.Read(Safety.Field(_G, "MailFrame"), "IsShown") == true then
+        mailItemBorders[button] = true
+        NS.Registry.QueueJob(RepaintMailItemBorders)
         return
     end
-    Dispatch(RepaintItemBorder, button)
+    RefreshItemBorder(button)
 end
 
 -- Every item button takes its quality border from the global

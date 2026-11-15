@@ -3,8 +3,8 @@ local B, Model = NS.CatalogBuild.ForAddon("MSUF_Suite_Nameplates"), NS.Nameplate
 local id, spec = "nameplates", NS.SuiteCatalog.nameplates
 local POSITION_LIMIT = 2048
 local rules = {
-    B.Tooltip(B.Bool("auraDisplayEnabled", "Enable MSUF nameplate auras", false),
-        "MSUF draws the Buffs and Debuffs made Visible here, Custom 1-3 and Dots on target. Off: only Blizzard's own nameplate auras."),
+    B.Tooltip(B.Bool("auraDisplayEnabled", "Enable custom aura rows", false),
+        "Shows the enabled Custom 1–3 and Dots on target rows."),
     B.Font("auraFont", "Aura font"),
     B.Choice("auraTextOutline", "Aura text outline", 2, { "None", "Outline", "Thick outline" }),
     B.Bool("auraTimeText", "Show aura countdown", true),
@@ -27,7 +27,7 @@ local rules = {
     B.Color("auraPandemicColor", "Aura pandemic color", "ff7026"),
     B.Number("auraHighlightSize", "Aura highlight thickness", 2, 1, 5),
 }
-B.Section(id, "auraDisplay", "Native aura appearance", rules)
+B.Section(id, "auraDisplay", "Shared aura appearance", rules)
 
 -- A rule of one container. short: the label inside the container's own
 -- workspace, where the Container bar already names it; the full label names
@@ -45,11 +45,6 @@ local function PointLabels()
 end
 
 local function SetupRules(scope, container, prefix, L)
-    if container.kind == "lane" then
-        return { Rule(B.Tooltip(B.Bool(prefix .. "Visible", L("%s visible"), false),
-            "On: MSUF draws these auras with the settings here and hides Blizzard's own list. Off: Blizzard keeps drawing them."),
-            "Visible") }
-    end
     local dots = container.kind == "dots"
     local fixed = { key = prefix .. "Display", values = { [1] = true } }
     local setup = { Rule(B.Bool(prefix .. "Visible", L("%s enabled"), false), "Enabled") }
@@ -60,6 +55,9 @@ local function SetupRules(scope, container, prefix, L)
     if dots and scope.key == "enemy" then
         setup[#setup + 1] = Rule(B.Choice(prefix .. "Source", L("%s tracked DoT selection"), 1, Model.Sources), "Tracked DoT selection")
     end
+    setup[#setup + 1] = Rule(B.Tooltip(B.Bool(prefix .. "HideDuplicates", L("%s hide duplicate auras"), false),
+        "Hides verified duplicates. Both icons can remain visible when aura data is protected."),
+        "Hide duplicate auras", { enableKey = prefix .. "Visible" })
     setup[#setup + 1] = Rule(B.Bool(prefix .. "Missing", L("%s missing auras faded"), dots), "Show missing auras faded",
         { requiresChoice = fixed })
     setup[#setup + 1] = Rule(B.Number(prefix .. "MissingAlpha", L("%s placeholder opacity (percent)"), 25, 5, 80, 5),
@@ -78,49 +76,63 @@ local function LayoutRules(container, prefix, L)
         Rule(B.Number(prefix .. "Gap", L("%s icon spacing"), 2, 0, 20), "Gap"),
         Rule(B.Number(prefix .. "Layer", L("%s layer"), 5, 0, 30), "Layer (0-30)"),
     }
-    -- A lane keeps the offsets of Blizzard's list (the same preview handle).
-    if container.y then
-        layout[#layout + 1] = B.Number(prefix .. "OffsetX", L("%s X"), 0, -POSITION_LIMIT, POSITION_LIMIT)
-        layout[#layout + 1] = B.Number(prefix .. "OffsetY", L("%s Y"), container.y, -POSITION_LIMIT, POSITION_LIMIT)
-    end
+    layout[#layout + 1] = B.Number(prefix .. "OffsetX", L("%s X"), 0, -POSITION_LIMIT, POSITION_LIMIT)
+    layout[#layout + 1] = B.Number(prefix .. "OffsetY", L("%s Y"), container.y, -POSITION_LIMIT, POSITION_LIMIT)
     return layout
 end
 
-local function BehaviorRules(scope, container, prefix, L)
-    -- Fixed slots keep the list order; a lane always packs its auras.
-    local lane = container.kind == "lane"
-    local flow = not lane and { requiresChoice = { key = prefix .. "Display", values = { [2] = true } } } or nil
-    local mine = container.kind == "dots" or lane and scope.key == "enemy" and container.key == "debuff"
-    local behavior = {}
-    if lane then behavior[1] = Rule(B.Choice(prefix .. "Filter", L("%s filter"), 1, Model.Filters), "Show") end
-    for _, rule in ipairs({
+local function BehaviorRules(container, prefix, L)
+    local flow = { requiresChoice = { key = prefix .. "Display", values = { [2] = true } } }
+    return {
         Rule(B.Choice(prefix .. "Sort", L("%s sorting"), 1, Model.Sorts), "Sort By", flow),
         Rule(B.Choice(prefix .. "Order", L("%s sort order"), 1, Model.Orders), "Order", flow),
-        Rule(B.Bool(prefix .. "OnlyMine", L("%s only my auras"), mine), "Only mine"),
+        Rule(B.Bool(prefix .. "OnlyMine", L("%s only my auras"), container.kind == "dots"), "Only mine"),
         Rule(B.Bool(prefix .. "HidePermanent", L("%s hide permanent auras"), false), "Hide permanent"),
         Rule(B.Tooltip(B.Number(prefix .. "MaxDuration", L("%s maximum duration (seconds)"), 0, 0, 180, 5),
             "Hides auras that last longer. 0 shows every duration."), "Maximum duration"),
-    }) do behavior[#behavior + 1] = rule end
-    return behavior
+    }
 end
 
 local function StyleRules(prefix, L)
     local points = PointLabels()
     return {
+        Rule(B.Tooltip(B.Bool(prefix .. "IconSkin", L("%s use MSUF icon skin"), false),
+            "Uses the default rectangular Icon Skin from MSUF when available."), "Use MSUF icon skin"),
         Rule(B.Bool(prefix .. "Pandemic", L("%s pandemic state"), true), "Show Pandemic State"),
         Rule(B.Number(prefix .. "Zoom", L("%s icon zoom (percent)"), 100, 100, 200, 5), "Icon Zoom (%)"),
         Rule(B.Number(prefix .. "Alpha", L("%s opacity (percent)"), 100, 10, 100, 5), "Opacity"),
         Rule(B.Bool(prefix .. "Tooltip", L("%s tooltip"), true), "Tooltip"),
+        Rule(B.Number(prefix .. "Padding", L("%s lane padding"), 0, 0, 16), "Lane Padding"),
         Rule(B.Bool(prefix .. "Dispel", L("%s dispel-type border"), true), "Dispel-type Border"),
         Rule(B.Bool(prefix .. "StackText", L("%s stack count"), true), "Stack count"),
         Rule(B.Choice(prefix .. "StackPoint", L("%s stack anchor"), 1, points), "Stack anchor", { enableKey = prefix .. "StackText" }),
         Rule(B.Tooltip(B.Number(prefix .. "StackSize", L("%s stack size"), 0, 0, 36), "0 uses the global aura stack size."),
             "Stack size", { enableKey = prefix .. "StackText" }),
         Rule(B.Bool(prefix .. "TimeText", L("%s cooldown text"), true), "Cooldown text"),
+        Rule(B.Tooltip(B.Number(prefix .. "TimeDecimals", L("%s cooldown decimals below seconds"), 0, 0, 30),
+            "Show one decimal place below this many seconds. Set 0 for the standard countdown."),
+            "Decimals below sec", { enableKey = prefix .. "TimeText" }),
         Rule(B.Choice(prefix .. "TimePoint", L("%s cooldown anchor"), 1, points), "Cooldown anchor", { enableKey = prefix .. "TimeText" }),
         Rule(B.Tooltip(B.Number(prefix .. "TimeSize", L("%s cooldown text size"), 0, 0, 36), "0 uses the global aura countdown size."),
             "Cooldown text size", { enableKey = prefix .. "TimeText" }),
+        Rule(B.Number(prefix .. "StackX", L("%s stack text X"), 0, -50, 50), "Stack X", { enableKey = prefix .. "StackText" }),
+        Rule(B.Number(prefix .. "StackY", L("%s stack text Y"), 0, -50, 50), "Stack Y", { enableKey = prefix .. "StackText" }),
+        Rule(B.Number(prefix .. "TimeX", L("%s cooldown text X"), 0, -50, 50), "Cooldown X", { enableKey = prefix .. "TimeText" }),
+        Rule(B.Number(prefix .. "TimeY", L("%s cooldown text Y"), 0, -50, 50), "Cooldown Y", { enableKey = prefix .. "TimeText" }),
         Rule(B.Bool(prefix .. "Swipe", L("%s cooldown swipe"), true), "Cooldown swipe"),
+        Rule(B.Choice(prefix .. "SwipeDirection", L("%s swipe direction"), 1, { "Reversed", "Normal" }), "Swipe direction",
+            { enableKey = prefix .. "Swipe" }),
+        Rule(B.Bool(prefix .. "DurationBar", L("%s duration bar"), false), "Duration bar"),
+        Rule(B.Choice(prefix .. "DurationBarDisplay", L("%s duration bar display"), 1, { "Icon + Bar", "Bar Only" }),
+            "Bar display", { enableKey = prefix .. "DurationBar" }),
+        Rule(B.Number(prefix .. "DurationBarHeight", L("%s duration bar height"), 2, 1, 16), "Height",
+            { enableKey = prefix .. "DurationBar" }),
+        Rule(B.Choice(prefix .. "DurationBarPosition", L("%s duration bar position"), 1, { "Bottom", "Top" }), "Position",
+            { enableKey = prefix .. "DurationBar" }),
+        Rule(B.Choice(prefix .. "DurationBarDirection", L("%s duration bar direction"), 1, { "Remaining time", "Elapsed time" }),
+            "Direction", { enableKey = prefix .. "DurationBar" }),
+        Rule(B.Color(prefix .. "DurationBarColor", L("%s duration bar color"), "b180e0"), "Duration bar color",
+            { enableKey = prefix .. "DurationBar" }),
     }
 end
 
@@ -138,13 +150,22 @@ end
 
 local sections = { auraDisplay = true }
 for _, scope in ipairs(Model.Scopes) do
+    for _, row in ipairs(Model.NativeRows) do
+        local prefix = Model.Prefix(scope, row)
+        local name = NS.Text("%s: %s"):format(NS.Text(scope.label), NS.Text(row.label))
+        B.Section(id, prefix, name, {
+            Rule(B.Number(prefix .. "Scale", NS.Text("%s icon size (percent)"):format(name), 100, 50, 200, 5), "Icon size (%)"),
+            Rule(B.Number(prefix .. "Layer", NS.Text("%s layer"):format(name), 0, 0, 30), "Layer (0-30)"),
+            Rule(B.Number(prefix .. "Alpha", NS.Text("%s opacity (percent)"):format(name), 100, 10, 100, 5), "Opacity"),
+        })
+    end
     for _, container in ipairs(Model.Containers) do
         local prefix = Model.Prefix(scope, container)
         local name = NS.Text("%s: %s"):format(NS.Text(scope.label), NS.Text(container.label))
         local function L(format) return NS.Text(format):format(name) end
         sections[prefix] = true
         for _, list in ipairs({ SetupRules(scope, container, prefix, L), LayoutRules(container, prefix, L),
-            BehaviorRules(scope, container, prefix, L), StyleRules(prefix, L), ListRules(scope, container, name) }) do
+            BehaviorRules(container, prefix, L), StyleRules(prefix, L), ListRules(scope, container, name) }) do
             B.Section(id, prefix, name, list)
         end
     end
@@ -157,7 +178,7 @@ B.Add(id, B.Tooltip(B.Bool("auraSunder", "Show Sunder Armor stacks on WoW Foreve
 -- placement are the player's own and survive a look change.
 for _, rule in ipairs(spec.controls) do
     if sections[rule.section] then
-        if rule.key ~= "auraDisplayEnabled" and not rule.enableKey then rule.enableKey = "auraDisplayEnabled" end
+        if rule.section ~= "auraDisplay" and not rule.enableKey then rule.enableKey = "auraDisplayEnabled" end
         if rule.section == "auraDisplay" then
             spec.look.visualKeys[rule.key] = true
             for _, preset in pairs(spec.look.presets) do preset[rule.key] = rule.default end

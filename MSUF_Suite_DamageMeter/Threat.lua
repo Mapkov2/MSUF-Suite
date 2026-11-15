@@ -161,6 +161,10 @@ function D.ThreatSession()
     local enemy = T.enemy
     for i = 1, enemy and T.count or 0 do
         local tanking, _, scaled, raw, threat = UnitDetailedThreatSituation(T.units[i], enemy)
+        local tank = Public(tanking) and tanking == true
+        -- After a taunt the client can still report the previous raw share.
+        -- Only a public tank flag establishes that this unit is the reference.
+        if tank and Finite(raw) then raw = 100 end
         local secret = IsSecret(threat) or IsSecret(raw)
         if secret or (Finite(threat) and Finite(raw)) then
             n = n + 1
@@ -170,7 +174,7 @@ function D.ThreatSession()
                 restricted = true
             else
                 if threat > top then top = threat end
-                if T.own[i] and not (Public(tanking) and tanking == true) and Finite(scaled) and scaled > 0 then
+                if T.own[i] and not tank and Finite(scaled) and scaled > 0 then
                     threshold, pullShare = threat * 100 / scaled, raw * 100 / scaled
                 end
             end

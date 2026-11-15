@@ -95,10 +95,12 @@ local function PopupControls(id, spec)
     if spec.quickPosition == false then return spec.extraControls end
     local controls, rules = {}, S.catalog[id].rules
     local api = API()
-    local capabilities = spec.screenPosition and api and api.GetCapabilities and api.GetCapabilities()
-    -- Hosts with position fields own screen coordinates, clamping and rounding.
-    -- Older hosts retain the owner's editable profile offsets.
-    local axes = capabilities and capabilities.positionFields and EMPTY or { { spec.xKey, "X" }, { spec.yKey, "Y" } }
+    local capabilities = api and api.GetCapabilities and api.GetCapabilities()
+    -- The screen row is the default on hosts with relative position steps.
+    -- Retain existing opt-ins and owner offsets on older hosts.
+    local screenPosition = capabilities and capabilities.positionFields
+        and (spec.screenPosition == true or capabilities.relativePositionSteps and spec.screenPosition ~= false)
+    local axes = screenPosition and EMPTY or { { spec.xKey, "X" }, { spec.yKey, "Y" } }
     for _, axis in ipairs(axes) do
         local key, label = axis[1], axis[2]
         local rule = rules[key]
@@ -258,7 +260,8 @@ local function Element(id, elementID, spec)
 end
 
 -- spec: label, getFrame(), xKey, yKey, point (string or function), pointKey,
--- isEnabled(), visible(), order, quickPosition=false opt-out, screenPosition=true for host screen fields,
+-- isEnabled(), visible(), order, quickPosition=false for owner-defined controls,
+-- screenPosition overrides the screen row default for a specific mover,
 -- precisePosition=true preserves subpixel anchor offsets across scaled one-pixel steps; extraControls, historyKeys,
 -- sizeKeys (explicit catalog dimensions for this element), moveValues, resetKeys,
 -- place(x, y) (drag preview for x/y that are not UIParent offsets),

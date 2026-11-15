@@ -119,10 +119,13 @@ function M:Enable()
     if not self.registered then
         Lines.Add(self, "Object", WorldTooltip)
         Lines.Add(self, "MinimapMouseover", MinimapTooltip)
+        local locale = GetLocale()
         for i = 1, #Data.ores do
             local ore = Data.ores[i]
             local row = { MINING, ore[2] }
             self.names[S.Text(ore[1])], self.names[ore[1]] = row, row
+            local clientName = ore[locale]
+            if clientName then self.names[clientName] = row end
         end
         self.registered = true
     end

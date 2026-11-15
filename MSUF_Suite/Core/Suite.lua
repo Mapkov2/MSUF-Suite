@@ -99,6 +99,12 @@ local MIGRATIONS = {
     { run = Steps.ChatComfort },
     { run = NS.MigrateCharacterPanelMode },
     { run = Steps.NameplateAuraContainers },
+    { run = Steps.NameplateTypeSettings },
+    { run = Steps.NameplateSkinSwitches },
+    { run = Steps.NameplateEnableVisibility },
+    { run = Steps.NameplateTextIndicators },
+    { run = Steps.NameplateBarsOverride },
+    { run = Steps.NameplateOutlineOff },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {

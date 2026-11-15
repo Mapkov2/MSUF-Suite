@@ -28,6 +28,46 @@ local function Paint(bar, view, entry)
     bar.r, bar.g, bar.b, bar.hex, bar.segmentStyle = r, g, b, hex, nil
 end
 
+-- Only one cooldown supplies the countdown. The charge widget keeps its
+-- own timer when the main cooldown clears as the first charge returns.
+function TrackingBars.UpdateChargeText(icon)
+    if not icon.chargeCd then return end
+    local shown = icon.lastTime == true and icon.chargeSet == true and icon.cdSet ~= true
+    if icon.chargeTime ~= shown then
+        icon.chargeTime = shown
+        icon.chargeCd:SetHideCountdownNumbers(not shown)
+    end
+end
+
+function TrackingBars.StyleChargeText(icon, view)
+    local cd, state = icon.chargeCd, C.state
+    local text = cd:GetCountdownFontString()
+    local h = icon.h or select(2, K.IconSize(view))
+    local size = K.TextSize(view.cdSize, K.FONT.countdown, h) + (state.readableValues and 2 or 0)
+    if text then
+        S.SetStyledFont(text, state.font, size, state.fontFlags, state.fontRendering,
+            state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
+        text:SetTextColor(state.cdR or 1, state.cdG or 1, state.cdB or 1)
+    end
+    cd:SetCountdownFormatter(icon.lastFmt)
+end
+
+function TrackingBars.PlaceCountdown(icon, cooldown)
+    local text = cooldown:GetCountdownFontString()
+    if not text then return end
+    text:ClearAllPoints()
+    if icon.durationBar then
+        text:SetPoint("RIGHT", icon.timerBar, "RIGHT", -4, 0)
+    else
+        text:SetPoint("CENTER", cooldown, "CENTER", 0, 0)
+    end
+end
+
+local function PlaceCountdowns(icon)
+    TrackingBars.PlaceCountdown(icon, icon.cd)
+    if icon.chargeCd then TrackingBars.PlaceCountdown(icon, icon.chargeCd) end
+end
+
 -- Presentation of the existing cooldown entry; the native duration, event
 -- routing, ownership, binding and tooltip stay with the icon owner.
 function TrackingBars.Style(icon, view)
@@ -46,11 +86,7 @@ function TrackingBars.Style(icon, view)
     bar:SetShown(wanted)
     bar.name:SetShown(wanted and view.barName ~= false)
     if not wanted then
-        local countdown = icon.cd:GetCountdownFontString()
-        if countdown then
-            countdown:ClearAllPoints()
-            countdown:SetPoint("CENTER", icon.cd, "CENTER", 0, 0)
-        end
+        PlaceCountdowns(icon)
         return
     end
     local inset, h = icon.border or 0, icon.h
@@ -87,11 +123,7 @@ function TrackingBars.Style(icon, view)
     label:SetWordWrap(false)
     label:SetJustifyH("LEFT")
     label:SetText(K.EntryLabel(icon.entry))
-    local countdown = icon.cd:GetCountdownFontString()
-    if countdown then
-        countdown:ClearAllPoints()
-        countdown:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
-    end
+    PlaceCountdowns(icon)
 end
 
 -- Per-spell parts of a bar row (Icons.Apply, on a new entry or choice):

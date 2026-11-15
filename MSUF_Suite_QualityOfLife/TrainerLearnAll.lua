@@ -27,7 +27,7 @@ if NS.Client.isForever then
     end
 
     local function PaintBudget(self)
-        if not self.budgetTotal or not TrainerOpen(self) then
+        if NS.InCombat() or not self.budgetTotal or not TrainerOpen(self) then
         HideBudget(self)
         return
     end
@@ -37,12 +37,20 @@ if NS.Client.isForever then
         return
     end
         local count, total = self.budgetCount, self.budgetTotal
-        local short = math.max(0, total - money)
-        if self.paintCount ~= count or self.paintTotal ~= total or self.paintShort ~= short then
+        local remaining = money - total
+        local reserve = (self.config.reserveSilver or 0) * 100
+        if self.paintCount ~= count or self.paintTotal ~= total or self.paintRemaining ~= remaining or self.paintReserve ~= reserve then
             local text = S.Text("%d paid · %s"):format(count, Coins(total))
-            if short > 0 then text = text .. "\n" .. S.Text("%s short"):format(Coins(short)) end
+            if remaining < 0 then
+                text = text .. "\n" .. S.Text("%s short"):format(Coins(-remaining))
+            else
+                text = text .. "\n" .. S.Text("%s left after training"):format(Coins(remaining))
+            end
+            if reserve > 0 and remaining < reserve then
+                text = text .. "\n" .. S.Text("%s short of your reserve after training"):format(Coins(reserve - remaining))
+            end
             self.budget:SetText(text)
-            self.paintCount, self.paintTotal, self.paintShort = count, total, short
+            self.paintCount, self.paintTotal, self.paintRemaining, self.paintReserve = count, total, remaining, reserve
         end
         if not self.budget:IsShown() then self.budget:Show() end
     end
@@ -126,7 +134,7 @@ if NS.Client.isForever then
             label:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 157, 4)
             label:SetPoint("BOTTOMRIGHT", train, "BOTTOMLEFT", -4, 4)
             label:SetJustifyH("CENTER")
-            label:SetMaxLines(2)
+            label:SetMaxLines(3)
             label:Hide()
             self.budget = label
             frame:HookScript("OnShow", function() if M.active then StartBudget(M) end end)

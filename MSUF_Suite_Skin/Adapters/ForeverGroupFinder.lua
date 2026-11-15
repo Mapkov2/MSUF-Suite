@@ -4,7 +4,7 @@ local _, NS = ...
 -- is a different window from Retail's PVEFrame. Keep Blizzard's role icons,
 -- category IDs, result rows, scripts, and secure listing controls intact.
 -- Mainline templates and native selection lifecycle checked against
--- Gethe/wow-ui-source forever e3ecc27b (1.60.1.70205).
+-- Gethe/wow-ui-source forever bebcb6bf (1.60.1.70938).
 local ForeverGroupFinder = {
     active = false,
     hooks = {},
@@ -30,11 +30,6 @@ local PANEL_MODE = {
     role = "panel", maxDepth = 0, maxNodes = 1,
     fillVisible = false, childSurfaces = false, registerDynamicRows = false,
     allowImplicitProtected = true,
-}
-local CARD_SPEC = {
-    role = "card", activeRole = "navigationActive", radius = 5,
-    inset = 0, listItem = true, allowImplicitProtected = true,
-    regions = { "Icon", "Cover", "HighlightTexture" },
 }
 local TAB_SPEC = {
     role = "navigation", activeRole = "navigationActive", radius = 4,
@@ -108,6 +103,18 @@ local function CanPaintTarget(target)
     return false
 end
 
+-- The listing tree and its scrollbar are owned by Blizzard, including all
+-- disclosure layout, recycling, scrolling, and selection.
+function ForeverGroupFinder.IsActivityList(target)
+    if not NS.Client.isForever or not Safety.Public(target) or target == nil then return false end
+    local listing = Safety.Field(_G, "LFGListingFrame")
+    if not Safety.Public(listing) then return false end
+    local activity = Safety.Field(listing, "ActivityView")
+    if not Safety.Public(activity) then return false end
+    local box, bar = Safety.Field(activity, "ScrollBox"), Safety.Field(activity, "ScrollBar")
+    return Safety.Public(box) and target == box or Safety.Public(bar) and target == bar
+end
+
 local function Fade(region)
     if region and CanPaintTarget(region) then
         NS.Cosmetics.Fade(region, OWNER)
@@ -146,7 +153,7 @@ local function FadeRoleBackground(roles)
     FadeRoleRegions(Safety.Call(roles, "GetRegions"))
 end
 
-local function SkinCategoryCards()
+local function SkinCategoryLabels()
     if not Enabled() then return end
     local listing = _G.LFGListingFrame
     local view = listing and listing.CategoryView
@@ -154,9 +161,11 @@ local function SkinCategoryCards()
     if not buttons then return end
     for index = 1, #buttons do
         local button = buttons[index]
-        if button and button.Icon and button.Cover and button.Label
-            and CanPaintTarget(button) then
-            NS.ControlSkin.ApplyButton(button, OWNER, CARD_SPEC)
+        local label = Kit.Path(button, "Label")
+        if label and CanPaintTarget(button) then
+            -- Cover uses an atlas-sized region and contributes to ResizeLayoutFrame.
+            -- Keep its art, full hit area, and native click feedback together.
+            NS.BlizzardYellow.TrackFrame(button)
         end
     end
 end
@@ -193,17 +202,11 @@ end
 -- A post-hook on Blizzard's global: the card pass is its own error boundary,
 -- so a raising pass never reaches Blizzard's caller.
 local function OnCategoryButtonsUpdated()
-    Safety.Dispatch(SkinCategoryCards)
+    Safety.Dispatch(SkinCategoryLabels)
 end
 
 local function SkinResultRow(row, kind, selectionBehavior)
     if not Enabled() or not row or not CanPaintTarget(row) then return end
-    if kind == "activity" and row.NameButton and row.CheckButton then
-        NS.Checkmarks.TrackFrame(row, OWNER)
-        NS.Checkmarks.TrackFrame(row.CheckButton, OWNER)
-        NS.Checkmarks.TrackFrame(row.ExpandOrCollapseButton, OWNER)
-        return
-    end
     if kind == "browse" and row.ResultBG and (row.Name or row.CategoryLabel) then
         NS.ControlSkin.ApplyButton(row, OWNER, RESULT_SPEC)
         SkinButton(Kit.Path(row, "DataDisplay", "DelistButton"))
@@ -372,7 +375,8 @@ local function SkinControls(listing, browse, who)
     -- Paint the input container; Blizzard's secure EditBox and its text/paste
     -- restrictions remain under the native input-scrollframe lifecycle.
     SkinFrame(activity.Comment, INPUT_MODE)
-    RegisterRows(activity.ScrollBox, "activity")
+    -- This is Blizzard's pooled tree. Its checks and disclosure buttons are
+    -- rebound on each initialization, including on collapse and expansion.
 end
 
 local function SkinTabs(parent)
@@ -423,7 +427,7 @@ SkinLoadedWindow = function()
     -- The eye's stone ring is part of its animated art: an owned bezel covers it.
     local eye = _G.LFGParentFramePortrait
     if eye and CanPaintTarget(eye) then Kit.PortraitBezel(eye, eye, OWNER, 0) end
-    SkinCategoryCards()
+    SkinCategoryLabels()
     RegisterRows(browse.ScrollBox, "browse", browse.selectionBehavior)
     RegisterRows(who and who.ScrollBox, "who", who and who.selectionBehavior)
 

@@ -10,6 +10,55 @@ local Shared = NS.WindowActionSkinShared
 NS.WindowActionSkinShared = nil
 local Settings = Shared.Settings
 local IsListed = NS.IsListed
+local forever = (rawget(NS, "Client") or {}).isForever == true
+
+-- Owned caption cells can mirror the native button's mouse state without
+-- assigning any scripts or textures to that native button.
+local captionVisuals = setmetatable({}, { __mode = "k" })
+local visualRevision = 0
+function WindowActionSkin.ClearCaption(button)
+    local visual = captionVisuals[button]
+    if not visual then return end
+    visual.glyph:Hide()
+    if visual.surface then NS.Surface.SetVisible(button, false) end
+    visual.surface, visual.surfaceRevision, visual.active = nil, nil, nil
+end
+
+function WindowActionSkin.PaintCaption(button, kind, visualState)
+    if not forever then return false end
+    if NS.IsCombatLocked() then return captionVisuals[button] and captionVisuals[button].active == true end
+    if not NS.Safety.CanCreateRegions(button) then return false end
+    local settings, visual = Settings(), captionVisuals[button]
+    if settings.style == "native" then
+        WindowActionSkin.ClearCaption(button)
+        return false
+    end
+    if not visual then
+        visual = { glyph = button:CreateTexture(nil, "OVERLAY", nil, 6) }
+        captionVisuals[button] = visual
+    end
+    local atlas, cell = Shared.GlyphAsset(kind, settings, true)
+    local size, x, y = Shared.GlyphLayout(button, kind, settings)
+    local glyph = visual.glyph
+    glyph:ClearAllPoints()
+    glyph:SetPoint("CENTER", button, "CENTER", x, y)
+    local opacity = visualState == "normal" and settings.opacity
+        or visualState == "disabled" and math.min(settings.opacity, .55) or 1
+    Shared.ConfigureGlyph(glyph, atlas, cell, size, Shared.ColorRole(kind, visualState), opacity)
+    if visual.surfaceRevision ~= visualRevision then
+        visual.surfaceRevision = visualRevision
+        if settings.style == "soft" or settings.style == "outline" then
+            local spec = Shared.SurfaceSpec(settings, visual)
+            spec.ownedArt, spec.interactive = true, false
+            visual.surface = NS.Surface.Attach(button, spec)
+        elseif visual.surface then
+            NS.Surface.SetVisible(button, false)
+            visual.surface = nil
+        end
+    end
+    visual.active = true
+    return true
+end
 
 function WindowActionSkin.SetOption(key, value)
     if NS.IsCombatLocked() then return false, "combat" end
@@ -48,6 +97,7 @@ function WindowActionSkin.SetOption(key, value)
         return false, "unknown option"
     end
     settings[key] = value
+    visualRevision = visualRevision + 1
     WindowActionSkin.RefreshAll()
     NS.Registry.NotifyListeners("windowAction", key)
     return true
@@ -58,6 +108,7 @@ function WindowActionSkin.ResetRecommended()
     local defaults = NS.Defaults.icons.windowActions
     local settings = Settings()
     for key, value in pairs(defaults) do settings[key] = value end
+    visualRevision = visualRevision + 1
     local refreshed, reason = WindowActionSkin.RefreshAll()
     NS.Registry.NotifyListeners("windowAction", "reset")
     return refreshed, reason
@@ -104,6 +155,9 @@ local GLYPH_COLORS = {
 -- Re-applies only for what the glyphs depend on, once per frame however many
 -- settings a color-picker drag writes.
 function WindowActionSkin:OnThemeChanged(domain, key)
+    if domain == "profile" or domain == "theme" or domain == "geometry" then
+        visualRevision = visualRevision + 1
+    end
     if domain == "color" and GLYPH_COLORS[key]
         or domain == "theme" and key ~= "gradient"
         or domain == "profile" then

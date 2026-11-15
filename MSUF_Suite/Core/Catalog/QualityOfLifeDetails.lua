@@ -61,6 +61,7 @@ B.Module("glimmer", {
         -- These APIs belong to Forever's loaded native nameplate controller.
         return true
     end,
+    -- Keep SoftTargetInteract declared so recovery records from older versions can be restored.
     cvars = { SoftTargetInteract = true, SoftTargetNameplateInteract = true,
         SoftTargetIconGameObject = true, SoftTargetInteractRange = true, SoftTargetInteractOnlyInRange = true,
         SoftTargetInteractArc = true, outlineModeShowLootEffectWhenDisabled = true },

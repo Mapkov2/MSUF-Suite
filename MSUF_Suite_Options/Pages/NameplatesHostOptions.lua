@@ -2,7 +2,7 @@ local _, P = ...
 local Suite, Tr = P.Suite, P.Tr
 local UI = {}
 P.NameplatesHostOptions = UI
-local PAGE, ID = "suite_nameplates", "nameplates"
+local PAGE, ID = "opt_fonts", "nameplates"
 -- The host section this page edits. Interrupt readiness has no rows here: its
 -- look is MSUF's castbar menu's, for castbars and nameplates alike.
 local SECTION = "nameplates"
@@ -157,8 +157,6 @@ end
 local function FontRows(state)
     local rows = {
         Toggle(state, "nameplates", "fontOverride", "Customize nameplate typography"),
-        Slider(state, "nameplates", "fontSize", "Nameplate text size", 12, 6, 40),
-        Slider(state, "nameplates", "nameFontSize", "Name size", 12, 6, 40),
         Toggle(state, "nameplates", "noOutline", "Hide text outline"),
         Toggle(state, "nameplates", "boldText", "Thick text outline"),
         Toggle(state, "nameplates", "fontMonochrome", "Monochrome text"),
@@ -186,8 +184,7 @@ end
 local function Content(ctx, builder, body, state)
     local width = math.max(240, (P.HM.GetSectionWidth(body) or builder.width or 720) - 32)
     local rows = FontRows(state)
-    local label = P.Description(body, "Nameplate typography is included when sharing a complete nameplate setup.", 16, -12, width)
-    local y = -24 - math.max(14, label:GetStringHeight() or 14)
+    local y = -16
     local edits = DeferredRows(rows)
     local grid = P.W.SettingsRows(ctx, body, { x = 16, y = y, width = width, columns = 2, rows = rows })
     for _, row in ipairs(rows) do
@@ -211,14 +208,25 @@ local function Content(ctx, builder, body, state)
     P.FinishBody(builder, body, y - 44)
 end
 
-function UI.Build(ctx, builder)
+local function Build(ctx, builder)
     local state = contexts[ctx]
     if not state then
         state = {}
         contexts[ctx] = state
         P.M.TrackRefresh(ctx, function() state.shared = nil end)
     end
-    return P.LazySection(builder, PAGE .. "_host_" .. SECTION, Tr("Shared nameplate typography"), false, {
+    P.LazySection(builder, PAGE .. "_host_" .. SECTION, Tr("Nameplates"), false, {
         content = function(body) Content(ctx, builder, body, state) end,
     })
+    local rules = {}
+    for _, rule in ipairs(P.catalog[ID].controls) do
+        if P.NameplateFonts.IsTypography(rule.key) then rules[#rules + 1] = rule end
+    end
+    P.RuleSection(ctx, builder, PAGE, ID, "opt_fonts_nameplate_text", Tr("Nameplate text"), rules)
+end
+
+function UI.Register()
+    if not Suite.Client.isMainline then return end
+    if P.NameplateFonts.HasLinks() then return end
+    UI.registered = Suite.HostBridge.RegisterPageTail(P.M, PAGE, "MSUF_Suite.NameplateTypography", { build = Build })
 end

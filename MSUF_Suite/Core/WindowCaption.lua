@@ -33,9 +33,21 @@ local function Box(rects, x, y, width, height, t)
 end
 
 -- Rectangles in pixels from the glyph's top left: x, y, width, height.
-local function Shape(kind, n, t)
+local function Shape(kind, n, t, mode)
     local rects = {}
-    if kind == "minimize" then
+    if kind ~= "close" and mode == "chevrons" then
+        local mid = floor((n - t) / 2)
+        local top = floor((n - mid - t) / 2)
+        for x = 0, 2 * mid do
+            local distance = math.abs(x - mid)
+            local y = kind == "maximize" and distance or (mid - distance)
+            rects[#rects + 1] = { x, top + y, t, t }
+        end
+    elseif kind ~= "close" and mode == "plusMinus" then
+        local mid = floor((n - t) / 2)
+        rects[1] = { 0, mid, n, t }
+        if kind == "maximize" then rects[2] = { mid, 0, t, n } end
+    elseif kind == "minimize" then
         rects[1] = { 0, floor(n / 2), n, t }
     elseif kind == "maximize" then
         Box(rects, 0, 0, n, n, t)
@@ -61,7 +73,7 @@ end
 -- edge lands on a whole screen pixel: the glyph is offset by the button's own
 -- distance to the pixel grid, and the engine's rounding stays off, because a
 -- one-pixel bar it rounds the wrong way vanishes (a square loses a side).
-function Caption.Layout(button, kind, bars)
+function Caption.Layout(button, kind, bars, mode)
     local pixel = Pixel(button)
     local width = floor((button:GetWidth() or 0) / pixel + .5)
     local height = floor((button:GetHeight() or 0) / pixel + .5)
@@ -73,7 +85,7 @@ function Caption.Layout(button, kind, bars)
         dx = (floor(left / pixel + .5) - left / pixel) * pixel
         dy = (top / pixel - floor(top / pixel + .5)) * pixel
     end
-    local rects = Shape(kind, n, t)
+    local rects = Shape(kind, n, t, mode)
     for index, rect in ipairs(rects) do
         local bar = bars[index]
         if not bar then
@@ -91,6 +103,15 @@ function Caption.Layout(button, kind, bars)
     return #rects
 end
 
+function Caption.UpdateGlyph(cell, art, force)
+    local skin = NS.Skin
+    local mode = skin and skin.GetWindowCaptionMode and skin.GetWindowCaptionMode() or "windows"
+    if force or art.glyphMode ~= mode then
+        Caption.Layout(cell, art.kind, art.bars, mode)
+        art.glyphMode = mode
+    end
+end
+
 ------------------------------------------------------------------ cells
 -- A Suite window's caption cell: no box at rest, a soft fill under the
 -- pointer, a red close cell with a white cross. colors(role) answers
@@ -98,6 +119,7 @@ end
 
 local function Paint(cell)
     local art = cell.caption
+    Caption.UpdateGlyph(cell, art)
     local active = art.hover or art.down
     local close = art.kind == "close"
     local r, g, b, a = art.colors("text")
@@ -126,7 +148,7 @@ local function Up(cell) cell.caption.down = nil Paint(cell) end
 function Caption.SetKind(cell, kind)
     local art = cell.caption
     art.kind = kind
-    Caption.Layout(cell, kind, art.bars)
+    Caption.UpdateGlyph(cell, art, true)
     Paint(cell)
 end
 

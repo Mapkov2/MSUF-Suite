@@ -149,7 +149,10 @@ Refresh = function(self, event)
     -- endsAt is set. A later start or cancellation supersedes our countdown.
     -- Payloads may be secret; only the event itself is needed here.
     if event == "START_PLAYER_COUNTDOWN" or event == "CANCEL_PLAYER_COUNTDOWN" then ClearCountdown(self) end
-    if event == "CHALLENGE_MODE_START" then Close(self) return end
+    if event == "CHALLENGE_MODE_START" then
+        Close(self)
+        return
+    end
     if self.endsAt and (not Permitted() or Restricted(event)) then Stop(self, event) end
     Paint(self, event)
 end

@@ -3,7 +3,7 @@ local M, W, T, Tr, HM = P.M, P.W, P.T, P.Tr, P.HM
 local ID = "nameplates"
 local SB, H = M.PreviewSelectionBar, M.PreviewHelpers or {}
 local Layers = P.NameplatesEditorLayers
-local AURA_KIND, AuraGroup = Layers.AURA_KIND, Layers.AuraGroup
+local AURA_KIND = Layers.AURA_KIND
 local AURA_ELEMENT = Layers.AuraElement
 local Register, OpenSetting = Layers.Register, Layers.OpenSetting
 local Kit = P.Suite.PreviewKit
@@ -18,12 +18,20 @@ local ENEMY_ELEMENT_SETTINGS = { Name = true, Level = true, HealthText = true, C
     RaidIcon = true, Cast = true, CastText = true, CastTime = true,
     CastIcon = true, CastShield = true, CastTarget = true }
 local ELEMENT_SETTING = {
-    CastShield = "enemyCastEnabled",
-    Name = "enemyTextMode", Level = "enemyLevelEnabled", HealthText = "enemyTextMode", Cast = "enemyCastEnabled",
-    CastText = "enemyCastSpellName", CastTime = "enemyCastTimeEnabled", RaidIcon = "enemyRaidIcon",
+    Name = "enemyNameSize", Level = "enemyLevelEnabled", HealthText = "enemyHealthTextSize", Cast = "enemyCastHeight",
+    CastText = "enemyCastSize", CastTime = "enemyCastTimeSize", RaidIcon = "enemyRaidIcon",
     Classification = "enemyRarityIcon", CastIcon = "enemyCastSpellIcon",
-    CastTarget = "enemyCastSpellTarget",
+    CastTarget = "enemyCastSize",
 }
+local FRIENDLY_ELEMENTS = { Name = "friendlyNameSize", HealthText = "friendlyHealthTextSize", Level = "friendlyLevelEnabled",
+    RaidIcon = "friendlyRaidIcon", Cast = "friendlyCastHeight", CastText = "friendlyCastSize", CastTime = "friendlyCastTimeSize",
+    CastIcon = "friendlyCastIconSize", CastTarget = "friendlyCastSize" }
+local function NoPreview() end
+P.ShowNameplatesSample, P.EditNameplatesPreview = NoPreview, NoPreview
+P.ShowNameplatesAuraSample = NoPreview
+P.PreviewNameplateStatus, P.PreviewNameplateOpacity, P.PreviewNameplateHighlight = NoPreview, NoPreview, NoPreview
+P.SelectNameplateStatusPreview = NoPreview
+
 local function Clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function Round(v) return math.floor(v + 0.5) end
 
@@ -36,12 +44,16 @@ local function Focus(ui, handle)
     local key = handle._npSettingKey
     local kind = handle._key and AURA_ELEMENT[handle._key:match("%.([%a]+)$")]
     if kind and AURA_KIND[kind] then
-        local group = AuraGroup(ui)
-        key = group and group .. AURA_KIND[kind] or "friendlyNpcDebuffs"
+        key = Layers.AuraSetting(ui, kind)
     elseif handle._key and handle._key:find("%.SoftTarget$", 1, false) then
         key = ui.sampleKind == "enemy" and (ui.softInteract and "softTargetInteract" or "softTargetEnemy")
             or "softTargetFriend"
     end
+    if handle._key and handle._key:match("%.Health$") then
+        key = P.NameplatesSize.Keys(handle) or key
+    end
+    if handle._key and handle._key:match("%.CastShield$") and P.OpenNameplateCastDetail(ui.sampleKind, "advanced") then return end
+    if P.OpenNameplateStatusItem(ui.sampleKind, handle.keyX) then return end
     if OpenSetting(key) then return end
     local section = ui.sections and ui.sections[handle.section]
     if handle._npSettingsTab then
@@ -50,7 +62,7 @@ local function Focus(ui, handle)
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
 end
 local function Write(ui, handle, x, y)
-    if P.Combat() or Layers.NPCWorldNames(ui) or ui.groupPreviewEnabled and not ui.compact then return false end
+    if P.Combat() or Layers.NPCWorldNames(ui) or ui.groupPreviewEnabled then return false end
     local rules = P.catalog[ID].rules
     local xr, yr = rules[handle.keyX], rules[handle.keyY]
     if not xr or not yr then return false end
@@ -60,7 +72,7 @@ end
 local function Read(handle) return P.Get(ID, handle.keyX), P.Get(ID, handle.keyY) end
 local function CanEdit(handle)
     local ui = handle.previewUI
-    return not Layers.NPCWorldNames(ui) and (not ui.groupPreviewEnabled or ui.compact)
+    return not Layers.NPCWorldNames(ui) and not ui.groupPreviewEnabled
 end
 
 function Editor:Select(handle) self.kit:Select(handle and CanEdit(handle) and handle or nil) end
@@ -72,6 +84,10 @@ function Editor:RefreshSelection()
         P.PreviewInteraction.Outline(handle, handle == selected)
     end
     if SB then SB.Refresh(self.body) end
+    if self.elementPicker and selected ~= self.pickerSelection then
+        self.pickerSelection = selected
+        P.SetButtonText(self.elementPicker, (selected and selected._label or Tr("Select")) .. " ▾")
+    end
     if self.RefreshSizeSelection then self:RefreshSizeSelection() end
 end
 
@@ -87,36 +103,32 @@ end
 -- Which Blizzard setting a preview element opens when it is clicked.
 local function BindSetting(handle, id)
     local enemyElement = id:match("^enemy%.(.+)$")
-    if enemyElement and ENEMY_ELEMENT_SETTINGS[enemyElement] then
+    local friendlyElement = id:match("^friendly%.(%a+)$")
+    if P.Suite.NameplateStyle.StatusByKey and P.Suite.NameplateStyle.StatusByKey[enemyElement or friendlyElement] then
+        local side, element = id:match("^(%a+)%.(%a+)$")
+        handle._npSettingKey = side .. element
+    elseif enemyElement and ENEMY_ELEMENT_SETTINGS[enemyElement] then
         handle._npSettingsTab = "elements"
         handle._npSettingKey = ELEMENT_SETTING[enemyElement]
     elseif id == "enemy.Health" then
         handle._npSettingKey = "enemyHealthWidthDelta"
     elseif id == "friendly.Health" then
         handle._npSettingKey = "friendlyHealthWidthDelta"
-    elseif id == "friendly.Classification" or id == "friendly.Cast" or id == "friendly.CastText"
-        or id == "friendly.CastIcon" or id == "friendly.CastTarget" then
-        local element = id:match("^friendly%.(.+)$")
-        handle._npSettingsTab = "elements"
-        handle._npSettingKey = ELEMENT_SETTING[element]
-    elseif id == "friendly.Name" or id == "friendly.HealthText" or id == "friendly.Level" then
-        handle._npSettingKey = id == "friendly.Level" and "friendlyLevelEnabled" or "friendlyNamesOnly"
+    elseif friendlyElement and FRIENDLY_ELEMENTS[friendlyElement] then
+        handle._npSettingKey = FRIENDLY_ELEMENTS[friendlyElement]
+        handle.section = friendlyElement == "RaidIcon" and "friendlyMarkers"
+            or friendlyElement:match("^Cast") and "friendlyCast" or "friendlyText"
+    elseif id == "friendly.Classification" then
+        handle._npSettingKey = "enemyRarityIcon"
+        handle.section = "friendlyMarkers"
     elseif id == "enemy.Power" then
         handle._npSettingKey = "enemyPowerEnabled"
-    elseif id == "personal.Power" then
-        handle._npSettingKey = "personalPowerSkin"
-    elseif P.Suite.NameplateAuraDisplay.Element(id) then
-        handle._npSettingKey = P.Suite.NameplateAuraDisplay.Prefix(P.Suite.NameplateAuraDisplay.Element(id)) .. "Visible"
-    elseif id:match("%.target$") or id:match("%.targetRight$") then
-        handle._npSettingKey = id:match("^enemy") and "enemyTargetMarker" or "enemyTargetHideFriendly"
-    elseif id == "enemy.elite" or id == "enemy.quest"
-        or id == "friendly.elite" or id == "friendly.quest" then
-        handle._npSettingKey = id:match("^enemy") and (id:find("elite") and "enemyEliteMarker" or "enemyQuestMarker")
-            or (id:find("elite") and "friendlyEliteMarker" or "friendlyQuestMarker")
-    elseif id:match("%.SoftTarget$") then
-        handle._npSettingKey = id:match("^enemy") and "softTargetEnemy" or "softTargetFriend"
-    elseif AURA_ELEMENT[id:match("%.([%a]+)$")] then
-        handle._npSettingKey = "enemyNpcAuraMode"
+    elseif id == "enemy.PowerText" then
+        handle._npSettingKey = "enemyPowerTextSize"
+        handle.section = "enemyText"
+
+    elseif id:match("%.CastShield$") then
+        handle._npSettingsTab = "cast"
     end
 end
 
@@ -148,33 +160,34 @@ function Editor:Paint()
     self.stage:ClearAllPoints()
     self.stage:SetPoint("CENTER", self.canvas, "CENTER", self.panX, self.panY)
     self.stage:SetScale(self.zoom)
+    local config = P.S.Config(ID)
+    local style = P.Suite.NameplateStyle
+    self.barSettings = style.BarSettings(config, not config.barsOverride and style.SharedBars())
     if not P.NameplatesMultiPreview.Paint(self) then
         for _, render in ipairs(self.renderers) do render() end
     end
     if self.zoomLabel then self.zoomLabel:SetText(string.format("%d%%", Round(self.zoom * 100))) end
-    self:LayoutLayerRail()
     for _, button in ipairs(self.layerButtons or {}) do
         if button.Refresh then button:Refresh()
-        else button:SetAlpha(self:LayerActive(button.layerKey) and 1 or 0.42) end
+        else button:SetAlpha(self:LayerActive(button.layerKey) and 1 or 0.6) end
     end
-    if self.sampleButton then
-        self.sampleButton:SetText(self.personal and "Personal plate" or self.sampleKind == "enemy"
-            and "Enemy plate" or "Friendly plate")
-    end
-    if self.roleButton then self.roleButton:SetShown(self.sampleKind == "enemy" and not self.enemyPlayer) end
-    if self.enemyTypeButton then self.enemyTypeButton:SetShown(self.sampleKind == "enemy") end
+    if self.roleButton then self.roleButton:SetShown(self.sampleKind == "enemy" and self.scope ~= "neutral" and not self.enemyPlayer) end
+    if self.enemyTypeButton then self.enemyTypeButton:SetShown(self.sampleKind == "enemy" and self.scope ~= "neutral") end
     if self.softTypeButton then self.softTypeButton:SetShown(self.sampleKind == "enemy") end
-    if self.questButton then self.questButton:SetShown(self.sampleKind == "enemy") end
-    if self.friendlyTypeButton then self.friendlyTypeButton:SetShown(self.sampleKind == "friendly" and not self.personal) end
+    if self.questButton then self.questButton:SetShown(self.sampleKind == "enemy" and self.scope ~= "neutral") end
     for _, choice in ipairs(self.raidChoices or {}) do
         choice.outline(self.raidMarked and self.raidIndex == choice.index and 1 or 0, "4ebaff")
     end
     for _, button in ipairs(self.friendlyButtons or {}) do
-        button:SetShown(self.sampleKind == "friendly" and not self.personal)
+        button:SetShown(self.sampleKind == "friendly" and self.scope ~= "friendlyNpc")
     end
     local selected = self.body._selectedHandle
     if selected and (not selected:IsShown() or Layers.NPCWorldNames(self)) then self:Select(nil) end
     self:RefreshSelection()
+    if not self.compact and not self.groupPreviewEnabled then
+        self:LayoutLayerRail()
+        P.NameplatesPreviewLayout.Samples(self)
+    end
 end
 
 local function Button(ui, parent, key, label, width, x, action)
@@ -223,33 +236,22 @@ local function BuildSampleButtons(ui)
     ui.samples = samples
     samples:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
     samples:SetSize(540, 20)
-    ui.sampleButton = Button(ui, samples, "plateKind", "Enemy / Friendly / Personal", 124, 0, function()
-        if ui.sampleKind == "enemy" then
-            ui.sampleKind, ui.personal = "friendly", false
-        elseif not ui.personal then
-            ui.sampleKind, ui.personal = "friendly", true
-        else
-            ui.sampleKind, ui.personal = "enemy", false
-        end
-        ui:Select(nil)
-        ui:Paint()
-    end)
-    ui.roleButton = Button(ui, samples, "role", "Enemy type", 88, 130, function()
+    ui.roleButton = Button(ui, samples, "role", "Enemy type", 88, 0, function()
         ui.previewRole = nil
         P.Set(ID, "enemyPreviewRole", P.Get(ID, "enemyPreviewRole") % #P.Suite.NameplateStyle.Roles + 1)
         ui:Paint()
     end)
-    ui.enemyTypeButton = Button(ui, samples, "enemyType", "NPC / player", 112, 224, function()
+    ui.enemyTypeButton = Button(ui, samples, "enemyType", "NPC / player", 112, 94, function()
         ui.enemyPlayer = not ui.enemyPlayer
         ui:Select(nil)
         ui:Paint()
     end)
-    ui.softTypeButton = Button(ui, samples, "softType", "Soft: enemy / interact", 126, 342, function()
+    ui.softTypeButton = Button(ui, samples, "softType", "Soft: enemy / interact", 126, 212, function()
         ui.softInteract = not ui.softInteract
         ui:Select(nil)
         ui:Paint()
     end)
-    ui.questButton = Button(ui, samples, "questSample", "Quest", 58, 472, function()
+    ui.questButton = Button(ui, samples, "questSample", "Quest", 58, 344, function()
         if P.Get(ID, "look") == 2 then
             OpenSetting("look")
             return
@@ -262,16 +264,11 @@ local function BuildSampleButtons(ui)
         if ui.questMarkerHandle and ui.questMarkerHandle:IsShown() then ui:Select(ui.questMarkerHandle) end
     end)
     ui.friendlyButtons = {}
-    ui.friendlyButtons[1] = Button(ui, samples, "friendlyMode", "Friendly player display", 146, 130, function()
+    ui.friendlyButtons[1] = Button(ui, samples, "friendlyMode", "Friendly player display", 146, 0, function()
         OpenSetting("friendlyNamesOnly")
     end)
-    ui.friendlyButtons[2] = Button(ui, samples, "friendlyGroup", "Group / outsider", 114, 282, function()
+    ui.friendlyButtons[2] = Button(ui, samples, "friendlyGroup", "Group / outsider", 114, 152, function()
         ui.friendlyOutsider = not ui.friendlyOutsider
-        ui:Paint()
-    end)
-    ui.friendlyTypeButton = Button(ui, samples, "friendlyType", "Player / elite NPC", 112, 402, function()
-        ui.friendlyElite = not ui.friendlyElite
-        ui:Select(nil)
         ui:Paint()
     end)
     if H.EnsurePreviewBackgroundButton then
@@ -279,8 +276,11 @@ local function BuildSampleButtons(ui)
         if background then
             background:ClearAllPoints()
             background:SetPoint("RIGHT", canvas, "TOPRIGHT", -8, -18)
+            ui.backgroundButton = background
         end
     end
+    ui.sampleButtons = { ui.roleButton, ui.enemyTypeButton, ui.softTypeButton,
+        ui.questButton, ui.friendlyButtons[1], ui.friendlyButtons[2] }
 end
 
 local function BuildTools(ui)
@@ -317,7 +317,7 @@ local function BuildRaidPalette(ui)
             end
             ui.raidMarked = not (ui.raidMarked and ui.raidIndex == index)
             ui.raidIndex = ui.raidMarked and index or 0
-            ui.layers.raidIcon = true
+            ui.layers.raidIcon, ui.layers.status = true, true
             ui:Paint()
         end)
         button:SetScript("OnEnter", function()
@@ -328,6 +328,18 @@ local function BuildRaidPalette(ui)
         Register(button, "raidMark." .. index, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])))
         ui.raidChoices[index] = button
     end
+end
+
+local function BuildElementPicker(ui, tools)
+    local picker = T.Button(tools, "Select", 182, 20)
+    P.SetButtonText(picker, Tr("Select") .. " ▾")
+    picker:SetPoint("TOPRIGHT", tools, "TOPRIGHT", 0, 0)
+    picker:SetScript("OnClick", function()
+        if P.Combat() or not ui:CanPickElement() then return end
+        P.AnchoredContextMenu(picker, function(_, menu) ui:BuildElementMenu(menu) end)
+    end)
+    Register(picker, "selectElement", "Select")
+    ui.elementPicker = picker
 end
 
 local function BuildSelection(ui)
@@ -360,18 +372,13 @@ local function BuildSelection(ui)
                 return ok ~= false
             end,
             NudgeDelta = function(_, dx, dy) return ui.kit:Nudge(dx, dy) end,
-            OpenSettings = function(_, handle) Focus(ui, handle) end,
         })
         bar:SetPoint("TOPLEFT", tools, "BOTTOMLEFT", 0, -5)
         bar:SetPoint("TOPRIGHT", tools, "BOTTOMRIGHT", 0, -5)
         P.NameplatesSize.Build(ui, bar, body)
-        if SB.CreatePicker then
-            local picker = SB.CreatePicker(body, tools)
-            picker:SetPoint("TOPRIGHT", tools, "TOPRIGHT", 0, 0)
-            picker:SetWidth(152)
-        end
         ui.selection = bar
     end
+    BuildElementPicker(ui, tools)
 end
 
 local function BuildInput(ui)
@@ -425,12 +432,169 @@ local function TrackCombat(ui)
 end
 
 -- The page's area header shows the matching sample (NameplatesWorkspace.lua).
-function Editor:ShowSample(kind, personal)
-    personal = personal == true
-    if self.sampleKind == kind and self.personal == personal then return end
-    self.sampleKind, self.personal = kind, personal
+local SAMPLE_LABELS = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly", friendlyNpc = "Friendly NPC" }
+
+function Editor:ShowSample(kind, scope)
+    scope = scope or kind
+    if self.sampleKind == kind and self.scope == scope then return end
+    self.sampleKind, self.scope = kind, scope
+    self.friendlyElite = scope == "friendlyNpc"
+    self.statusSample, self.allStatusSamples, self.opacitySample = nil, nil, nil
+    self.statusOffsetSample = nil
+    if self.highlightSample == "aggro" and scope ~= "enemy" then self.highlightSample = nil end
+    self.auraSample, self.sharedAuraText, self.textSample = nil, nil, nil
+    self.castSample, self.interruptedSample = nil, nil
+    self.editFullPlate = nil
+    self.enemyPlayer = false
+    self.previewRole = scope == "neutral" and 8 or nil
+    self.previewRoleSource = P.Get(ID, "enemyPreviewRole")
+    if self.title then
+        P.SetTranslatedText(self.title, Tr("Preview – %s"):format(Tr(SAMPLE_LABELS[scope] or SAMPLE_LABELS[kind])))
+    end
     self:Select(nil)
     self:Paint()
+end
+
+local ELEMENTS = { anchor = "Health", text = "Name", cast = "Cast", status = "RaidIcon", power = "Power" }
+
+local function SelectElement(editor, element)
+    local prefix = editor.sampleKind
+    local scope = editor.scope or prefix
+    local entry = editor.kit.entries[scope .. "." .. element] or editor.kit.entries[prefix .. "." .. element]
+    if entry and entry.region:IsShown() then editor:Select(entry.region) end
+end
+
+function Editor:ShowAuraSample(key)
+    if self.sampleKind ~= "enemy" or self.scope ~= "enemy" then return end
+    local player = key:match("^enemyPlayer") ~= nil
+    if (not player and not key:match("^enemyNpc")) or player == (self.enemyPlayer == true) then return end
+    self.enemyPlayer = player
+    self:Select(nil)
+    self:Paint()
+end
+
+local TEXT_LAYERS = { Name = "name", HealthText = "healthText", PowerText = "enemyPower" }
+
+function Editor:Edit(context, element, interrupted, sharedAuraText)
+    if P.Combat() then return end
+    self.interruptedSample = interrupted == true
+    self.castSample = context == "cast" and (element or "Cast") or nil
+    self.auraSample = context == "auras" and element or nil
+    self.sharedAuraText = sharedAuraText
+    if self.groupPreviewEnabled then P.NameplatesMultiPreview.Set(self, false) end
+    self.layerContext, self.layerGroup = context, nil
+    local layer = context == "text" and TEXT_LAYERS[element]
+    self.textSample = layer and element or nil
+    self.editFullPlate = element == "Health" or element == "HealthText" or self.auraSample ~= nil
+        or context == "status" and self.statusOffsetSample == "Level"
+    if context == "anchor" then self.layers.health = true end
+    if layer then self.layers[layer], self.layers.health = true, true end
+    if self.auraSample then
+        self.layers[AURA_ELEMENT[element] or "auras"] = true
+        if element:match("^Tracked") then self.targetSample = true end
+    end
+    if context ~= "highlight" then self.highlightSample = nil end
+    if context ~= "status" then self.statusSample, self.allStatusSamples, self.statusOffsetSample = nil, nil, nil end
+    if context ~= "opacity" then self.opacitySample = nil end
+    local expander = self.expander
+    if expander and not expander.expanded then expander:Open("NAMEPLATES_PREVIEW") end
+    self:Paint()
+    if context == "status" and self.allStatusSamples then return end
+    if context == "status" or context == "cast" then self:Select(nil) end
+    SelectElement(self, element or ELEMENTS[context] or "Auras")
+end
+
+function Editor:SampleHighlight(sample, clear, fromLayer)
+    if P.Combat() then return end
+    if clear then
+        self.highlightSample = nil
+        self:Paint()
+        return
+    end
+    self.highlightSample = sample
+    self.layers.highlightBorders, self.layers.health = true, true
+    if fromLayer then
+        if self.groupPreviewEnabled then P.NameplatesMultiPreview.Set(self, false) end
+        self:Paint()
+    else
+        self:Edit("highlight")
+        self:Select(nil)
+    end
+end
+
+local STATUS_PREVIEW_LAYERS = {
+    Level = "level", RaidIcon = "raidIcon", Classification = "classification", elite = "eliteMarker", quest = "questMarker",
+    focusMarker = "focusMarker", SoftTarget = "softTarget", target = "target", Threshold = "threshold",
+}
+
+local function ShowStatusLayers(editor, element, all)
+    editor.layers.status = true
+    if all then
+        for _, layer in pairs(STATUS_PREVIEW_LAYERS) do editor.layers[layer] = true end
+    elseif STATUS_PREVIEW_LAYERS[element] then
+        editor.layers[STATUS_PREVIEW_LAYERS[element]] = true
+    end
+    if all or element == "Aggro" then
+        editor.layers.threatFlash, editor.layers.threatHighlight = true, true
+    end
+end
+
+function Editor:FocusStatusOffset(key, element, sample)
+    ShowStatusLayers(self, sample)
+    self.statusSample, self.allStatusSamples, self.statusOffsetSample = sample, false, element
+    self:Edit("status", element)
+    local handle = self.body._selectedHandle
+    if handle and self.selection then
+        if key == handle.keyX then return self.selection.axisX end
+        if key == handle.keyY then return self.selection.axisY end
+    end
+    return self.selection
+end
+
+local CAST_PICKER = {
+    { "Cast", "Castbar" }, { "CastIcon", "Blizzard spell icon" }, { "CastText", "Spell name" },
+    { "CastTime", "Cast time" }, { "CastTarget", "Spell target" }, { "CastShield", "Blizzard interrupt shield" },
+}
+
+local function AuraPicker(ui, menu, add)
+    local model = P.Suite.NameplateAuraDisplay
+    for _, row in ipairs(model.NativeRows) do
+        if ui.scope ~= "friendlyNpc" or row.key == "debuff" then add(menu, row.label, "auras", row.element) end
+    end
+    for _, row in ipairs(model.Containers) do
+        local group = menu:CreateButton(Tr(row.label))
+        add(group, "Position", "auras", row.element)
+        add(group, "Cooldown Text", "auras", row.element .. "Time")
+        add(group, "Stack Count", "auras", row.element .. "Stack")
+    end
+    add(menu, "Aura countdown position", "auras", "CustomOneTime", true)
+    add(menu, "Aura stack position", "auras", "CustomOneStack", true)
+end
+
+function Editor:BuildElementMenu(menu)
+    local function Add(parent, label, context, element, shared)
+        parent:CreateButton(Tr(label), function() self:Edit(context, element, false, shared) end)
+    end
+    Add(menu, "Health bar", "anchor", "Health")
+    local text = menu:CreateButton(Tr("Text"))
+    Add(text, "Name", "text", "Name")
+    Add(text, "HP Text", "text", "HealthText")
+    if self.sampleKind == "enemy" then
+        Add(menu, "Resource Bar", "power", "Power")
+        Add(text, "Power Text", "text", "PowerText")
+    end
+    local cast = menu:CreateButton(Tr("Castbar"))
+    for _, entry in ipairs(CAST_PICKER) do Add(cast, entry[2], "cast", entry[1]) end
+    AuraPicker(self, menu:CreateButton(Tr("Auras")), Add)
+    local status = menu:CreateButton(Tr("Status icons"))
+    P.NameplatesStatus.PreviewItems(status, self.scope or self.sampleKind, function(element, sample)
+        if not P.Combat() then self:FocusStatusOffset(nil, element, sample) end
+    end)
+end
+
+function Editor:CanPickElement()
+    return not Layers.NPCWorldNames(self) and P.Get(ID, "enabled") ~= false and P.Get(ID, "look") ~= 2
+        and P.Suite.NameplateExtensions.SkinEnabled(P.S.Config(ID), self.scope or self.sampleKind)
 end
 
 -- The kit host and its handles: lifecycle and drag, select, nudge and commit.
@@ -453,8 +617,8 @@ local function BuildKit(ui)
             P.NameplatesPreviewDecor.Hover(handle, entering)
             if entering then
                 handle.outline(1, "4ebaff")
-                P.SetTranslatedText(ui.hint, Tr(handle._label) .. " · " .. Tr(handle._npSettingsTab
-                    and "Drag to move; click for Blizzard settings" or "Drag to move; right-click for settings"))
+                P.SetTranslatedText(ui.hint, Tr(handle._label) .. " · " .. Tr((handle._npSettingsTab or handle._npSettingKey)
+                    and "Drag to move; click for settings" or "Drag to move; right-click for settings"))
             else
                 ui:RefreshSelection()
                 P.SetTranslatedText(ui.hint, Tr(ui.help))
@@ -471,23 +635,58 @@ local function BuildKit(ui)
 end
 Editor.BuildKit = BuildKit
 
-function Editor.Create(ctx, builder, sections)
-    local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 162, gap = 8 })
-    if not section then return end
-    local ui = setmetatable({ ctx = ctx, sections = sections, renderers = {}, layers = {},
-        sampleKind = "enemy", zoom = 1, panX = 0, panY = 0, compact = true,
-        softTargetSample = true, aggroSample = true,
-        layoutWidth = math.max(640, (HM.GetSectionWidth(section) or builder.width or 720) - 28),
-        help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom",
-    }, { __index = Editor })
-    ui.previewRole, ui.previewRoleSource = nil, P.Get(ID, "enemyPreviewRole")
-    P.ShowNameplatesSample = function(kind, personal) ui:ShowSample(kind, personal) end
+local function BindPreviewActions(ui)
+    P.ShowNameplatesSample = function(kind, scope) ui:ShowSample(kind, scope) end
+    P.ShowNameplatesAuraSample = function(key) ui:ShowAuraSample(key) end
+    P.EditNameplatesPreview = function(...) ui:Edit(...) end
+    P.PreviewNameplateStatus = function(element, all)
+        if P.Combat() then return end
+        ShowStatusLayers(ui, element, all)
+        ui.statusSample, ui.allStatusSamples = not all and element or nil, all == true
+        ui.statusOffsetSample = nil
+        ui:Edit("status", element)
+    end
+    P.SelectNameplateStatusPreview = function(element)
+        if P.Combat() then return end
+        if ui.layerContext == "status" and not ui.allStatusSamples and ui.statusSample ~= element then
+            P.PreviewNameplateStatus(element)
+        else
+            SelectElement(ui, element)
+        end
+    end
+    P.PreviewNameplateOpacity = function(outOfCombat)
+        if P.Combat() then return end
+        ui.opacitySample = outOfCombat == true
+        ui:Edit("opacity")
+        ui:Select(nil)
+    end
+    P.PreviewNameplateHighlight = function(sample)
+        if P.Combat() then return end
+        if sample == "aggro" and ui.scope ~= "enemy" then P.NameplatesWorkspace.Open("enemy") end
+        local plan = P.Suite.NameplateStyle.CompileHighlights(ui.barSettings or P.S.Config(ID))
+        ui:SampleHighlight(sample or plan and (plan.target and "target" or plan.focus and "focus"
+            or ui.scope == "enemy" and plan.aggro and "aggro" or plan.mouseover and "mouseover") or "target")
+    end
     P.ShowNameplatesElementsSample = function()
+        if ui.scope == "neutral" then return end
         ui.sampleKind = "enemy"
         ui.previewRole = nil
         ui.previewRoleSource = P.Get(ID, "enemyPreviewRole")
         ui:Paint()
     end
+end
+
+function Editor.Create(ctx, builder, sections)
+    local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 162, gap = 8 })
+    if not section then return end
+    local ui = setmetatable({ ctx = ctx, sections = sections, renderers = {}, layers = {},
+        sampleKind = "enemy", zoom = 1, panX = 0, panY = 0, compact = true, layerContext = "anchor",
+        softTargetSample = true, aggroSample = true,
+        help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom",
+    }, { __index = Editor })
+    ui.previewRole, ui.previewRoleSource = nil, P.Get(ID, "enemyPreviewRole")
+    ui.title = section.title
+    BindPreviewActions(ui)
     local body = CreateFrame("Frame", nil, section)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 14, -38)
     body:SetPoint("TOPRIGHT", section, "TOPRIGHT", -14, -38)
@@ -517,6 +716,8 @@ function Editor.Create(ctx, builder, sections)
     BuildRaidPalette(ui)
     BuildSelection(ui)
     Layers.Build(ui)
+    ui.toolbar = toolbar
+    P.NameplatesMultiPreview.Attach(ui)
     BuildInput(ui)
     P.NameplatesPreviewLayout.Attach(ui, section, toolbar, record)
     TrackCombat(ui)

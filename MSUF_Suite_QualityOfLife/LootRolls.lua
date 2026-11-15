@@ -3,7 +3,7 @@ local NS, S = P.NS, P.Suite
 local Data, View = P.LootRollData, P.LootRollView
 local ID = "lootRolls"
 local IN_COMBAT = { inCombat = true }
-local MAX_TRACKED, RESULT_WAIT = 48, 8
+local MAX_TRACKED, RESULT_WAIT, CHOICE_SECONDS = 48, 8, 3
 local BUTTON_KEYS = { "NeedButton", "GreedButton", "TransmogButton", "DisenchantButton", "PassButton" }
 local M = {}
 local Flush, RetryItems, WatchItems
@@ -39,6 +39,15 @@ end
 
 local function Schedule(self)
     if self.active then self.context:After(0, Flush) end
+end
+
+local function RecordChoice(entry, choice, now)
+    if entry.choice == nil then entry.choiceUntil = now + CHOICE_SECONDS end
+    entry.choice = choice
+end
+
+local function IsActionable(entry, now)
+    return not entry.finished and not entry.cancelled and entry.choice == nil and now < entry.endsAt
 end
 
 local function RestoreNative(self, record)
@@ -142,6 +151,8 @@ local function StoreDrop(self, encounterID, key)
     local old = self.histories[token]
     entry.token = token
     entry.removeAt = old and old.removeAt
+    entry.choice = entry.selfChoice
+    if entry.choice == nil and old then entry.choice = old.choice end
     if entry.finished and not entry.removeAt then entry.removeAt = GetTime() + self.config.resultSeconds end
     if not old then
         if #self.historyOrder >= MAX_TRACKED then
@@ -195,15 +206,17 @@ local function BindHistory(self, now)
         local history, count, complete = HistoryFor(self, entry.link)
         local rolls = RollCount(self, entry.link)
         entry.counts, entry.rollNames = nil, nil
-        entry.finished, entry.status, entry.statusName, entry.statusRoll = nil, nil, nil, nil
+        entry.selfRoll = nil
+        entry.finished, entry.status, entry.statusName, entry.statusRoll, entry.statusChoice = nil, nil, nil, nil, nil
         if entry.link and (count > 1 or rolls > 1) then self.ambiguousLinks[entry.link] = true end
         if history and count == 1 and rolls == 1 and not self.ambiguousLinks[entry.link] then
             history.attached = true
             entry.counts, entry.rollNames = history.counts, history.rollNames
             entry.finished, entry.status = history.finished, history.status
             entry.statusName, entry.statusRoll, entry.statusChoice = history.statusName, history.statusRoll, history.statusChoice
-            if history.selfChoice ~= nil then entry.choice = history.selfChoice end
-            entry.removeAt = history.removeAt
+            if history.choice ~= nil then RecordChoice(entry, history.choice, now) end
+            entry.selfRoll = history.selfRoll
+            if history.removeAt then entry.removeAt = history.removeAt end
         elseif entry.cancelled and count >= rolls and complete == count and count > 0 then
             -- Equal hyperlinks carry no native rollID. Show each history key
             -- independently instead of assigning somebody else's winner.
@@ -211,6 +224,32 @@ local function BindHistory(self, now)
         end
         SetStatus(entry)
         if not entry.removeAt and entry.endsAt then entry.removeAt = entry.endsAt + RESULT_WAIT end
+    end
+end
+
+local function ReconcileRequests(self, now)
+    -- Blizzard rebuilds its roll controls from the pending IDs. History and
+    -- CANCEL_LOOT_ROLL can arrive on different frames from that change.
+    local activeIDs
+    for _, entry in ipairs(self.order) do
+        if entry.requestedChoice ~= nil and not entry.confirmationRequired and IsActionable(entry, now) then
+            if not activeIDs then
+                local ids = GetActiveLootRollIDs()
+                if not PublicTable(ids) then return end
+                for _, id in ipairs(ids) do
+                    if not S.Finite(id) then return end
+                end
+                activeIDs = ids
+            end
+            local pending = false
+            for _, id in ipairs(activeIDs) do
+                if id == entry.rollID then
+                    pending = true
+                    break
+                end
+            end
+            if not pending then RecordChoice(entry, entry.requestedChoice, now) end
+        end
     end
 end
 
@@ -241,16 +280,24 @@ local function Purge(self, now)
     return changed
 end
 
-local function NextExpiry(self)
+local function NextExpiry(self, now)
     local deadline
     for _, entry in ipairs(self.order) do
         if entry.removeAt and (not deadline or entry.removeAt < deadline) then deadline = entry.removeAt end
+        local visibleUntil = entry.choiceUntil or not entry.cancelled and entry.endsAt
+        if visibleUntil and visibleUntil > now and (not deadline or visibleUntil < deadline) then
+            deadline = visibleUntil
+        end
     end
     for _, token in ipairs(self.historyOrder) do
         local entry = self.histories[token]
         if entry and entry.removeAt and (not deadline or entry.removeAt < deadline) then deadline = entry.removeAt end
     end
-    self.nextExpiry = deadline
+    if deadline then
+        self.context:After(math.max(0, deadline - now), Flush)
+    else
+        self.context:Cancel(Flush)
+    end
 end
 
 local function Append(self, entry)
@@ -259,15 +306,17 @@ local function Append(self, entry)
     end
 end
 
-local function SelectRows(self)
+local function SelectRows(self, now)
     for index = #self.visibleEntries, 1, -1 do self.visibleEntries[index] = nil end
     -- Unanswered choices always precede waiting/results. Overflow keeps its
     -- native window, so limiting the custom stack cannot hide a decision.
     for _, entry in ipairs(self.order) do
-        if not entry.choice and not entry.cancelled and not entry.finished then Append(self, entry) end
+        if IsActionable(entry, now) then Append(self, entry) end
     end
     for _, entry in ipairs(self.order) do
-        if not entry.finished and (entry.choice or entry.cancelled) then Append(self, entry) end
+        if entry.choiceUntil and now < entry.choiceUntil and (not entry.finished or not self.config.showResults) then
+            Append(self, entry)
+        end
     end
     if not self.config.showResults then return end
     for _, entry in ipairs(self.order) do
@@ -279,9 +328,13 @@ local function SelectRows(self)
     end
 end
 
-local function NativeVisible(self, rollID)
+local function NativeVisible(self, rollID, now)
+    local claimed = self.rolls[rollID]
+    if claimed and claimed.requestedChoice ~= nil and claimed.choice ~= nil and not claimed.cancelled then
+        return true
+    end
     for _, entry in ipairs(self.visibleEntries) do
-        if entry.rollID == rollID and not entry.choice and not entry.cancelled and not entry.finished then return true end
+        if entry.rollID == rollID and IsActionable(entry, now) then return true end
     end
     return false
 end
@@ -293,10 +346,9 @@ local function Samples()
             canNeed = true, canGreed = true, counts = { [1] = 2, [2] = 3, [0] = 1 },
             remaining = 42 },
         { name = S.Text("Example equipment"), icon = "Interface\\Icons\\INV_Misc_QuestionMark",
-            quality = 3, count = 1, canNeed = true, canGreed = true, choice = 1,
-            statusText = S.Text("Waiting for result") },
+            quality = 3, count = 1, canNeed = true, canGreed = true, choice = 1 },
         { name = S.Text("Example equipment"), icon = "Interface\\Icons\\INV_Shield_04",
-            quality = 4, count = 1, finished = true,
+            quality = 4, count = 1, finished = true, choice = 2,
             statusText = S.Text("Winner: %s"):format(S.Text("Example player")) },
     }
 end
@@ -306,12 +358,7 @@ local function Tick(_, elapsed)
     M.tickElapsed = (M.tickElapsed or 0) + elapsed
     if M.tickElapsed < .1 then return end
     M.tickElapsed = 0
-    local now = GetTime()
-    if M.nextExpiry and now >= M.nextExpiry then
-        Flush(M)
-    else
-        View.Tick(M, now)
-    end
+    View.Tick(M, GetTime())
 end
 
 Flush = function(self)
@@ -321,9 +368,10 @@ Flush = function(self)
     Purge(self, now)
     BindHistory(self, now)
     if Purge(self, now) then BindHistory(self, now) end
+    ReconcileRequests(self, now)
     self.visibleEntries = self.liveEntries
-    SelectRows(self)
-    NextExpiry(self)
+    SelectRows(self, now)
+    NextExpiry(self, now)
     WatchItems(self)
     local pad = S.GamepadUI()
     if S.editMode and #self.visibleEntries == 0 and not pad then
@@ -334,14 +382,18 @@ Flush = function(self)
         self.showingSamples = nil
     end
     View.Paint(self)
-    View.Tick(self, now)
+    local ticking = View.Tick(self, now)
     self.host:SetShown(not pad and #self.visibleEntries > 0)
     for frame, record in pairs(self.native) do
         local rollID = frame.rollID
-        local hidden = not pad and not S.editMode and S.Finite(rollID) and NativeVisible(self, rollID)
+        local hidden = not pad and not S.editMode and S.Finite(rollID) and NativeVisible(self, rollID, now)
         SetNative(self, record, hidden)
     end
-    self.host:SetScript("OnUpdate", not pad and (#self.order > 0 or self.nextExpiry ~= nil) and Tick or nil)
+    self.host:SetScript("OnUpdate", not pad and ticking and Tick or nil)
+end
+
+local function CheckSubmission(self)
+    Flush(self)
 end
 
 WatchItems = function(self)
@@ -394,10 +446,30 @@ local function CancelRoll(self, _, rollID)
     local entry = self.rolls[rollID]
     if entry then
         entry.cancelled = true
-        entry.choice = entry.requestedChoice or entry.choice
-        entry.removeAt = math.max(GetTime(), entry.endsAt or 0) + RESULT_WAIT
+        local now = GetTime()
+        if entry.choice == nil and entry.requestedChoice ~= nil and not entry.confirmationRequired and now < entry.endsAt then
+            RecordChoice(entry, entry.requestedChoice, now)
+        end
     end
     Schedule(self)
+end
+
+local function ConfirmRoll(self, _, rollID, rollType)
+    if not S.Finite(rollID) or not S.Finite(rollType) then return end
+    local entry = self.rolls[rollID]
+    if entry and entry.requestedChoice == rollType then entry.confirmationRequired = true end
+end
+
+local function NativeConfirmed(rollID, rollType)
+    if not M.active or not S.Finite(rollID) or not S.Finite(rollType) then return end
+    local entry = M.rolls[rollID]
+    if not entry or not entry.confirmationRequired or entry.requestedChoice ~= rollType then return end
+    entry.confirmationRequired = nil
+    local now = GetTime()
+    -- The cancel event can fire inside ConfirmLootRoll, before the post-hook.
+    if entry.cancelled and entry.choice == nil and now < entry.endsAt then RecordChoice(entry, rollType, now) end
+    Schedule(M)
+    M.context:After(.25, CheckSubmission)
 end
 
 local function CancelAll(self)
@@ -429,16 +501,18 @@ end
 
 function M:Choose(entry, rollType)
     if not self.active or S.editMode or S.GamepadUI() or not entry or not S.Finite(entry.rollID) then return end
-    if self.rolls[entry.rollID] ~= entry or entry.choice or entry.cancelled or entry.finished then return end
-    local live = Data.ReadRoll(entry.rollID, nil, GetTime())
+    local now = GetTime()
+    if self.rolls[entry.rollID] ~= entry or not IsActionable(entry, now) then return end
+    local live = Data.ReadRoll(entry.rollID, nil, now)
     if not live or not S.Finite(rollType) then return end
     local allowed = rollType == 0 or rollType == 1 and live.canNeed or rollType == 2 and live.canGreed
         or rollType == 3 and live.canDisenchant or rollType == 4 and live.canTransmog
     if not allowed then return end
     entry.requestedChoice = rollType
-    -- The native confirm popup remains in charge. Only CANCEL_LOOT_ROLL
-    -- commits the visible choice, so cancelling that popup keeps buttons usable.
+    entry.confirmationRequired = nil
     RollOnLoot(entry.rollID, rollType)
+    Schedule(self)
+    self.context:After(.25, CheckSubmission)
 end
 
 function M:Enable()
@@ -448,10 +522,16 @@ function M:Enable()
     self.liveEntries, self.ignoredHistory, self.ignoredOrder = self.visibleEntries, {}, {}
     self.ambiguousLinks = {}
     self.native = self.native or {}
+    if not self.confirmHooked then
+        hooksecurefunc("ConfirmLootRoll", NativeConfirmed)
+        self.confirmHooked = true
+    end
     View.Create(self)
     self.context:Event("START_LOOT_ROLL", StartRoll, IN_COMBAT)
     self.context:Event("CANCEL_LOOT_ROLL", CancelRoll, IN_COMBAT)
     self.context:Event("CANCEL_ALL_LOOT_ROLLS", CancelAll, IN_COMBAT)
+    self.context:Event("CONFIRM_LOOT_ROLL", ConfirmRoll, IN_COMBAT)
+    self.context:Event("CONFIRM_DISENCHANT_ROLL", ConfirmRoll, IN_COMBAT)
     self.context:Event("LOOT_HISTORY_UPDATE_DROP", HistoryDrop, IN_COMBAT)
     self.context:Event("LOOT_HISTORY_UPDATE_ENCOUNTER", HistoryEncounter, IN_COMBAT)
     self.context:Event("LOOT_HISTORY_CLEAR_HISTORY", ClearHistory, IN_COMBAT)
@@ -475,7 +555,7 @@ function M:Disable()
         self.host:SetScript("OnUpdate", nil)
         self.host:Hide()
     end
-    self.nextExpiry, self.showingSamples = nil, nil
+    self.showingSamples = nil
 end
 
 function M:RegisterMovers()

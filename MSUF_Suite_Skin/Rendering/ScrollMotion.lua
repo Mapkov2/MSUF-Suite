@@ -1,13 +1,14 @@
 local _, NS = ...
 
--- Settings builds keybinding scripts in pooled rows. Group Finder and
--- SocialUI run restricted operations during native updates.
+-- Settings builds keybinding scripts in pooled rows. Group Finder, SocialUI
+-- and Communities can run restricted operations during native updates.
 -- Lua ScrollController setters write native fields from skin execution.
 -- Keep that state native and ease only the rendered content, with finite C
 -- animations and external ownership, as the legacy scroll renderer does.
 local NativeList = { states = setmetatable({}, { __mode = "k" }), targets = {}, owners = {}, active = {} }
 do
 local Safety = NS.Safety
+local nativeRoots = { LFGListFrame = true, LFGParentFrame = true, SocialUIFrame = true, CommunitiesFrame = true }
 
 function NativeList.IsTarget(target)
     local panel = SettingsPanel
@@ -18,7 +19,7 @@ function NativeList.IsTarget(target)
     end
     for _ = 1, 16 do
         local name = Safety.Read(target, "GetName")
-        if name == "LFGListFrame" or name == "LFGParentFrame" or name == "SocialUIFrame" then return true end
+        if type(name) == "string" and nativeRoots[name] then return true end
         target = Safety.Read(target, "GetParent")
         if target == nil then return false end
     end
@@ -331,9 +332,10 @@ local function OnWheel(target, delta)
     if accelerated ~= destination then target:SetScrollPercentage(accelerated) end
 end
 
-function Adaptive.Bind(state)
+function Adaptive.Bind(state, ownedPreview)
     local target = state.target
-    if target ~= Safety.Field(AddonList, "ScrollBox") or not Safety.HasMethod(target, "ScrollInDirection") then return end
+    if not ownedPreview and target ~= Safety.Field(AddonList, "ScrollBox") then return end
+    if not Safety.HasMethod(target, "ScrollInDirection") then return end
     state.wheel = {}
     target:HookScript("OnMouseWheel", Safety.Isolated(OnWheel))
     hooksecurefunc(target, "ScrollInDirection", Safety.Isolated(NativeWheelStep))
@@ -523,7 +525,7 @@ local function AddController(lease, target)
     if not state then
         state = { target = target, leases = {} }
         ScrollMotion.states[target] = state
-        Adaptive.Bind(state)
+        Adaptive.Bind(state, lease.ownedPreview and target == lease.target)
         target:HookScript("OnHide", Safety.Isolated(Hidden))
         target:HookScript("OnShow", Safety.Isolated(Shown))
         hooksecurefunc(target, "SetInterpolateScroll", Safety.Isolated(FlagChanged))
@@ -559,10 +561,15 @@ Partner = function(target)
     return nil
 end
 
-function ScrollMotion.Track(target, owner)
+function ScrollMotion.Track(target, owner, ownedPreview)
     if owner == nil or ScrollMotion.IsQuestScroll(target) or not Supported(target) then return false end
     local partner = Partner(target)
-    if partner and IsNativeQuestList(partner) then return false end
+    local groupFinder = NS.ForeverGroupFinder
+    local isActivityList = groupFinder and groupFinder.IsActivityList
+    if partner and IsNativeQuestList(partner)
+        or isActivityList and (isActivityList(target) or isActivityList(partner)) then
+        return false
+    end
     if NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner) then
         return NativeList.Track(target, owner)
     end
@@ -571,7 +578,7 @@ function ScrollMotion.Track(target, owner)
     if not targets then targets = {} ScrollMotion.targets[target] = targets end
     local lease = targets[owner]
     if not lease then
-        lease = { target = target, owner = owner, controllers = {} }
+        lease = { target = target, owner = owner, controllers = {}, ownedPreview = ownedPreview == true }
         targets[owner] = lease
     end
     local owned = ScrollMotion.owners[owner]
@@ -621,6 +628,7 @@ end
 -- OnShow/OnHide maintain the combat working set. Hidden controllers catch
 -- up on show; deferred ownership restoration has its own bounded set.
 local function Refresh(_, domain, key)
+    if domain == "readability" then return end
     local acquire = domain == "profile" or domain == "motion"
         and (key == "smoothScrolling" or key == "reduceMotion")
     local enabled = Enabled() == true

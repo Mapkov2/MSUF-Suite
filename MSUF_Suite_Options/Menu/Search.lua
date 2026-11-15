@@ -80,7 +80,7 @@ end
 
 -- Page rows and FAQ answers: some module of the page can run here.
 local function PageAvailable(pageKey)
-    if pageKey == "suite_macros" then return true end
+    if pageKey == "suite_macros" or pageKey == "suite_devMode" then return true end
     if pageKey == "suite_skin" then return SkinAvailable() end
     for _, id in ipairs(P.order) do
         if (P.QoLOwners.PageFor(id) or P.catalog[id].page) == pageKey and ModuleAvailable(id) then return true end
@@ -175,7 +175,7 @@ local function RuleTarget(page, spec, rule)
     local section = rule.section
     if P.OwnedTools[spec.id] then return page.key .. "_" .. spec.id .. "_module" end
     if spec.id == "planningTools" then return P.PlanningRuleTarget(rule.key) end
-    if rule.key == "enabled" then return page.key .. "_" .. spec.id .. "_module" end
+    if rule.key == "enabled" and spec.id ~= "nameplates" then return page.key .. "_" .. spec.id .. "_module" end
     if rule.previewOnly then
         local target = spec.id == "minimap" and P.MinimapSections.PreviewOffsetSection(rule.key) or page.key .. "_preview"
         return target, nil, false
@@ -186,7 +186,7 @@ local function RuleTarget(page, spec, rule)
     end
     if spec.id == "cooldownManager" then
         if rule.suffix then
-            for _, group in ipairs(P.CDMPage.SECTIONS) do
+            for _, group in ipairs(P.CDMPage.PrepareSections()) do
                 for _, suffix in ipairs(group.suffixes) do
                     if suffix == rule.suffix then return page.key .. "_" .. group.id, group.title end
                 end
@@ -248,7 +248,7 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
     local settingKey = "msufsuite." .. spec.id .. "." .. rule.key
     local movedColor = kind == "color" and spec.id == "nameplates"
         and P.NameplateFonts.TargetForSetting(settingKey) ~= nil
-    local exact = movedColor or kind ~= "color" and targetExact ~= false
+    local exact = movedColor or targetExact == true or kind ~= "color" and targetExact ~= false
     local controlId
     if exact and not template and (spec.id == "minimap" or P.OwnedTools[spec.id]
         or spec.id == "planningTools" or spec.id == "macroBuilder") then
@@ -277,6 +277,11 @@ local function SectionRow(page, spec, title, sectionId, ruleKey)
 end
 
 local function SearchableRule(spec, rule, config)
+    local textures = spec.id == "nameplates" and P.NameplateBarTextures
+    if textures and textures.LegacyRule(rule.key) then return false end
+    if spec.id == "nameplates" and rule.section == "nativeTextures" then
+        return textures and textures.Target(rule.key) ~= nil
+    end
     if spec.id == "minimap" and not P.MinimapSections.IsMinimapSectionAvailable(rule.section) then return false end
     if spec.controlAvailable and not spec.controlAvailable(rule, config) then return false end
     if spec.id == "dataTexts" and rule.key:match("^bar%d+Slot%d+MenuLabel$") then
@@ -322,7 +327,16 @@ local function ModuleRows(rows, page, spec, instanceTitles)
         end
         if SearchableRule(spec, rule, config) and not seenRules[template or rule.key] then
             seenRules[template or rule.key] = true
-            rows[#rows + 1] = RuleRow(page, spec, rule, template, nil, nil, config)
+            local textures = P.NameplateBarTextures
+            local target = spec.id == "nameplates" and textures and textures.Target(rule.key)
+            local row = RuleRow(page, spec, rule, template, nil, nil, config)
+            if row and target then
+                row.pageKey, row.sectionId, row.section = target.page, target.section, Tr(target.title)
+                row.controlId = not (rule.color or target.searchBySetting)
+                    and P.Meta(target.page, spec.id, rule.key, "setting", target.section).controlId or nil
+            end
+            rows[#rows + 1] = row
+            if target then sectionKey = nil end
             if sectionKey and not template and not seenSections["row:" .. sectionKey] then
                 seenSections["row:" .. sectionKey] = true
                 local bar = spec.id == "dataTexts" and rule.key:match("^bar(%d+)")
@@ -484,16 +498,17 @@ end
 -- dynamic bars, partitioned by configured ordinal rather than numeric ID.
 -- The host collects sorted provider names once per invalidated rebuild, so
 -- the base callback generates every row once and the fixed siblings reuse it.
+local ROWS_PER_PROVIDER, EXTRA_PROVIDERS = 4000, 2
 local BARS_PER_GROUP = 16
 local GROUP_COUNT = math.ceil(Suite.DataTextBarLimit / BARS_PER_GROUP)
-local barGroups = {}
+local barGroups, baseOverflow = {}, {}
 local function CollectBase()
     local ordinal = {}
     for index, bar in ipairs(Suite.DataTextBarIDs(P.S.Config("dataTexts"))) do
         ordinal[tostring(bar)] = math.ceil(index / BARS_PER_GROUP)
     end
-    local base = {}
-    barGroups = {}
+    local base, baseCount = {}, 0
+    barGroups, baseOverflow = {}, {}
     for _, row in ipairs(P.SearchRows()) do
         local bar = row.pageKey == "suite_dataTexts" and
             ((row.suiteRuleKey or ""):match("^bar(%d+)") or (row.sectionId or ""):match("^suite_dataTexts_bar(%d+)"))
@@ -506,7 +521,17 @@ local function CollectBase()
             end
             rows[#rows + 1] = row
         elseif not bar then
-            base[#base + 1] = row
+            local page = math.floor(baseCount / ROWS_PER_PROVIDER)
+            local bucket = base
+            if page > 0 then
+                bucket = baseOverflow[page]
+                if not bucket then
+                    bucket = {}
+                    baseOverflow[page] = bucket
+                end
+            end
+            bucket[#bucket + 1] = row
+            baseCount = baseCount + 1
         end
     end
     return base
@@ -532,6 +557,12 @@ local function SearchContextChanged()
     return changed
 end
 P.searchRegistered = M.RegisterSearchProvider("MSUF_Suite", CollectBase, SearchContextChanged) == true
+for index = 1, EXTRA_PROVIDERS do
+    local page = index
+    M.RegisterSearchProvider("MSUF_Suite.Controls." .. page, function()
+        return baseOverflow[page] or EMPTY_ROWS
+    end)
+end
 for index = 1, GROUP_COUNT do
     local group = index
     M.RegisterSearchProvider("MSUF_Suite.DataTexts." .. string.format("%02d", group), function()
@@ -574,6 +605,9 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     local row = record.providerRow or record
     local owner = type(settingKey) == "string" and settingKey:match("^msufsuite%.([^.]+)%.")
     owner = owner or row.suiteModuleId or (row.sectionId or record.sectionId or ""):match("^suite_qualityOfLife_([^_]+)_")
+    if owner == "skin" and (row.sectionId or record.sectionId) == "suite_hud_characterPanel_equipment" then
+        return P.Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and ModuleAvailable("characterPanel")
+    end
     if owner == "skin" then pageKey = "suite_skin"
     elseif owner and P.catalog[owner] then pageKey = P.catalog[owner].page or pageKey end
     if pageKey:sub(1, 6) ~= "suite_" then return true end
@@ -637,18 +671,25 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
 end
 
 -- Saved Suite artwork favourites now open the native MSUF controls.
-local artworkLinks = {}
-for _, page in ipairs({ "suite_qualityOfLife", "opt_castbar" }) do
-    local section = page == "opt_castbar" and "opt_castbar_castbarArt_module"
-        or "suite_qualityOfLife_castbarArt_castbar_art"
-    for _, key in ipairs({ "enabled", "namePanel", "action.settings.enabled", "action.reset.enabled" }) do
-        local kind = key:match("^action%.") and "action" or "setting"
-        artworkLinks[P.Meta(page, "castbarArt", key, kind, section).controlId] = key
+local artworkLinks
+local function FormerArtworkKey(controlId)
+    if not controlId then return end
+    if not artworkLinks then
+        artworkLinks = {}
+        for _, page in ipairs({ "suite_qualityOfLife", "opt_castbar" }) do
+            local section = page == "opt_castbar" and "opt_castbar_castbarArt_module"
+                or "suite_qualityOfLife_castbarArt_castbar_art"
+            for _, key in ipairs({ "enabled", "namePanel", "action.settings.enabled", "action.reset.enabled" }) do
+                local kind = key:match("^action%.") and "action" or "setting"
+                artworkLinks[P.Meta(page, "castbarArt", key, kind, section).controlId] = key
+            end
+        end
     end
+    return artworkLinks[controlId]
 end
 local function ResolveFormerArtwork(_, target)
     if not target then return end
-    local key = (target.settingKey or ""):match("^msufsuite%.castbarArt%.(.+)$") or artworkLinks[target.controlId]
+    local key = (target.settingKey or ""):match("^msufsuite%.castbarArt%.(.+)$") or FormerArtworkKey(target.controlId)
     if not key and target.sectionId ~= "suite_qualityOfLife_castbarArt_castbar_art"
         and target.sectionId ~= "opt_castbar_castbarArt_module" then return end
     local copy = {}
@@ -661,16 +702,24 @@ local function ResolveFormerArtwork(_, target)
 end
 Suite.HostBridge.RegisterSearchTargetResolver(M, "MSUF_Suite.FormerCastbarArtwork", ResolveFormerArtwork)
 
-local legacyChatBehavior = {}
+local legacyChatBehavior
 local chatBehaviorSection = "suite_chat_chatComfort_module"
-for _, rule in ipairs(P.SectionRules("chatComfort", "chatComfort_module")) do
-    local old = P.Meta("suite_qualityOfLife", "dailyComfort", rule.key, "setting", "suite_qualityOfLife_dailyComfort_daily_comfort")
-    if old.controlId then legacyChatBehavior[old.controlId] = rule.key end
+local function FormerChatKey(controlId)
+    if not controlId then return end
+    if not legacyChatBehavior then
+        legacyChatBehavior = {}
+        for _, rule in ipairs(P.SectionRules("chatComfort", "chatComfort_module")) do
+            local old = P.Meta("suite_qualityOfLife", "dailyComfort", rule.key, "setting",
+                "suite_qualityOfLife_dailyComfort_daily_comfort")
+            if old.controlId then legacyChatBehavior[old.controlId] = rule.key end
+        end
+    end
+    return legacyChatBehavior[controlId]
 end
 
 local function ResolveFormerChatBehavior(_, target)
     if not target then return end
-    local key = (target.settingKey or ""):match("^msufsuite%.dailyComfort%.(.+)$") or legacyChatBehavior[target.controlId]
+    local key = (target.settingKey or ""):match("^msufsuite%.dailyComfort%.(.+)$") or FormerChatKey(target.controlId)
     if not key or key == "enabled" or not P.catalog.chatComfort.rules[key] then return end
     local copy = P.Meta("suite_chat", "chatComfort", key, "setting", chatBehaviorSection)
     copy.pageKey = "suite_chat"

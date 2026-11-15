@@ -11,6 +11,13 @@ local ACTIONS = {
     { id = 3, label = "Disenchant", flag = "canDisenchant" },
     { id = 0, label = "Pass", atlas = "lootroll-toast-icon-pass-up" },
 }
+local ACTION_LABELS = {}
+for _, action in ipairs(ACTIONS) do ACTION_LABELS[action.id] = action.label end
+
+local function ChoiceText(entry, label)
+    if S.Finite(entry.selfRoll) then return S.Text("Your roll: %s (%d)"):format(label, entry.selfRoll) end
+    return S.Text("Your roll: %s"):format(label)
+end
 
 -- The controller supplies public, sanitized records. No native roll readers,
 -- event subscriptions or replacement of Blizzard controls live in this painter.
@@ -33,7 +40,9 @@ local function ItemTooltip(button)
     if IsPreview(row.owner) or not row.entry then return end
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
     if row.entry.link then GameTooltip:SetHyperlink(row.entry.link)
-    else GameTooltip:SetText(row.entry.name or "") end
+    else
+        GameTooltip:SetText(row.entry.name or "")
+    end
     GameTooltip:Show()
 end
 
@@ -42,7 +51,8 @@ local function RollTooltip(button)
     local entry = row.entry
     if IsPreview(row.owner) or not entry then return end
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-    GameTooltip:SetText(S.Text(action.label))
+    local label = S.Text(action.label)
+    GameTooltip:SetText(entry.choice == action.id and ChoiceText(entry, label) or label)
     local names = entry.rollNames and entry.rollNames[action.id]
     if names and names ~= "" then
         GameTooltip:AddLine(names, 1, 1, 1, true)
@@ -50,6 +60,9 @@ local function RollTooltip(button)
         GameTooltip:AddLine(S.Text("Roll details are unavailable."), .7, .7, .7, true)
     else
         GameTooltip:AddLine(S.Text("No rolls yet."), .7, .7, .7, true)
+    end
+    if entry.choice == action.id and entry.status == "leader" and entry.statusText then
+        GameTooltip:AddLine(entry.statusText, 1, 1, 1, true)
     end
     GameTooltip:Show()
 end
@@ -93,14 +106,19 @@ local function NewAction(row, action)
     local highlight = S.CreateTexture(button, nil, "HIGHLIGHT")
     highlight:SetAllPoints(button)
     highlight:SetColorTexture(1, 1, 1, .12)
+    local check = S.CreateTexture(button, nil, "OVERLAY")
+    check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    check:SetPoint("TOPLEFT", button, "TOPLEFT", -4, 4)
+    check:SetSize(17, 17)
+    check:Hide()
     local count = Text(button, "CENTER")
     count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 3, -2)
-    count:SetSize(17, 12)
+    count:SetSize(20, 12)
     local backdrop = S.CreateTexture(button, nil, "ARTWORK")
     backdrop:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 3, -2)
-    backdrop:SetSize(17, 12)
+    backdrop:SetSize(20, 12)
     backdrop:SetColorTexture(0, 0, 0, .78)
-    return { button = button, icon = icon, count = count, backdrop = backdrop, action = action }
+    return { button = button, icon = icon, check = check, count = count, backdrop = backdrop, action = action }
 end
 
 local function NewRow(owner)
@@ -266,32 +284,39 @@ local function Details(config, entry)
 end
 
 local function Actions(self, row, entry)
-    local displayActions = (entry.rollID ~= nil or IsPreview(self)) and not entry.finished
+    local preview = IsPreview(self)
+    local displayActions = (entry.rollID ~= nil or preview) and not entry.finished
     local actionable = displayActions and entry.choice == nil and not entry.cancelled
     local shown, buttonsX, buttonsY = 0, self.config.buttonsOffsetX - 9, self.config.buttonsOffsetY + 9
     local size = self.sizes.button
     local step = size + 6
+    local textWidth = self.config.width - self.sizes.icon - 30
+    local showOtherCounts = self.config.showCounts and textWidth - #ACTIONS * step >= self.sizes.result * 8
     for index = #row.actions, 1, -1 do
         local action = row.actions[index]
+        local selected = entry.choice == action.action.id
         local eligible = action.action.id == 0 or entry[action.action.flag] == true
         local count = entry.counts and entry.counts[action.action.id]
         local counted = S.Finite(count) and count > 0
-        local available = displayActions and (eligible or counted)
+        local available = selected or displayActions and (entry.choice == nil or showOtherCounts and counted)
+            and (eligible or counted)
         action.button:SetShown(available)
-        action.button:EnableMouse(available and not IsPreview(self))
-        action.icon:SetAlpha(actionable and eligible and 1 or .6)
+        action.button:EnableMouse(available and not preview)
+        action.icon:SetAlpha((selected or actionable and eligible) and 1 or .6)
+        action.check:SetShown(selected)
         if available then
             action.button:ClearAllPoints()
             action.button:SetPoint("BOTTOMRIGHT", row.frame, "BOTTOMRIGHT", buttonsX - shown * step, buttonsY)
             action.button:SetSize(size, size)
-            local hasCount = self.config.showCounts and counted
-            action.count:SetShown(hasCount)
-            action.backdrop:SetShown(hasCount)
-            if hasCount then action.count:SetText(count) end
+            local showSelfRoll = selected and entry.finished and S.Finite(entry.selfRoll)
+            local hasCount = not entry.finished and self.config.showCounts and counted
+            action.count:SetShown(showSelfRoll or hasCount)
+            action.backdrop:SetShown(showSelfRoll or hasCount)
+            if showSelfRoll or hasCount then action.count:SetText(showSelfRoll and entry.selfRoll or count) end
             shown = shown + 1
         end
     end
-    local width = math.max(1, self.config.width - self.sizes.icon - 30 - shown * step)
+    local width = math.max(1, textWidth - shown * step)
     row.details:SetWidth(width)
     row.status:SetWidth(width)
     row.details:SetShown(actionable)
@@ -342,10 +367,15 @@ local function PaintRow(self, row, entry)
     row.name:SetText(entry.name or "")
     row.details:SetText(Details(self.config, entry))
     local actionable = Actions(self, row, entry)
-    row.status:SetText(entry.statusText or (not actionable and S.Text("Waiting for result") or ""))
+    local choice = ACTION_LABELS[entry.choice]
+    local status = entry.statusText
+    if choice and (not entry.finished or self.config.showResults == false and not IsPreview(self)) then
+        status = ChoiceText(entry, S.Text(choice))
+    end
+    row.status:SetText(status or (not actionable and S.Text("Waiting for result") or ""))
     row.item:EnableMouse(not IsPreview(self))
     local staticTimer = IsPreview(self) and S.Finite(entry.remaining) and not entry.finished
-    local hasTimer = (S.Finite(entry.endsAt) or staticTimer) and not entry.finished
+    local hasTimer = actionable and (S.Finite(entry.endsAt) or staticTimer)
     TimerShown(row, hasTimer)
     if staticTimer then PaintCountdown(self, row, entry, entry.remaining) end
     if not hasTimer then row.timerTick, row.timerSecond = nil, nil end
@@ -371,11 +401,11 @@ function View.Tick(self, now)
     for index = 1, self.viewCount or 0 do
         local row = self.rows[index]
         local entry = row.entry
-        if entry and S.Finite(entry.endsAt) and not entry.finished then
+        if entry and row.timerShown and S.Finite(entry.endsAt) then
             local left = math.max(0, entry.endsAt - now)
             ticking = ticking or left > 0
             PaintCountdown(self, row, entry, left)
-        elseif entry and IsPreview(self) and S.Finite(entry.remaining) and not entry.finished then
+        elseif entry and row.timerShown and IsPreview(self) and S.Finite(entry.remaining) then
             PaintCountdown(self, row, entry, entry.remaining)
         end
     end

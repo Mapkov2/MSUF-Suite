@@ -518,6 +518,12 @@ function M:Enable()
     InstallHooks(self)
     self.context:Event("USE_COMBINED_BAGS_CHANGED", CombinedModeChanged, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, IN_COMBAT)
+    if NS.Client.isForever then
+        local equipped = Private.EquippedBags
+        self.context:Event("UPDATE_BINDINGS", equipped.RefreshBackpackBindings, IN_COMBAT)
+        self.context:Event("BAG_UPDATE", equipped.BackpackBagsChanged, IN_COMBAT)
+        self.context:Event("CVAR_UPDATE", equipped.BackpackStyleChanged, IN_COMBAT)
+    end
     self:ApplyBankLevels()
     self:Refresh()
 end
@@ -621,10 +627,12 @@ function M:Refresh()
     RememberVisuals(self, c)
     Private.BagWidgets.Refresh()
     RunSubmodules(REFRESH)
+    if NS.Client.isForever then Private.EquippedBags.RefreshBackpackBindings(self) end
 end
 
 
 function M:Disable()
+    if NS.Client.isForever then Private.EquippedBags.ClearBackpackBindings() end
     Private.CurrencyPicker.Close()
     self:CancelWindowDrag()
     self.combinedBagConfigured, self.writingCombinedMode = nil, nil

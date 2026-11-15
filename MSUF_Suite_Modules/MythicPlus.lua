@@ -369,6 +369,11 @@ local function DungeonTitle(view)
     return (view.name or L.dungeon) .. (view.level and ("  +" .. view.level) or "")
 end
 
+-- The clock rounds down. A value below one second is not a usable record.
+local function ValidRecordTime(seconds)
+    return Finite(seconds) and seconds >= 1
+end
+
 -- Weighted criteria are enemy forces; every other named criterion is a boss
 -- or objective row with its split time.
 -- The character's records (MSUF_Suite/Core/CharacterData.lua) contain only
@@ -419,14 +424,12 @@ local function Reference(owner, criterion)
     end
     local record = cache[key]
     local splits = record and ((pace == RUN_THIS_LEVEL or pace == RUN_ANY_LEVEL) and record.run or record.individual)
-    return splits and splits[criterion]
+    local split = splits and splits[criterion]
+    return ValidRecordTime(split) and split or nil
 end
 
-local function SaveSplits(owner)
-    local view = owner.mplus
-    if view.savedSplits or not Finite(view.lastElapsed) or not view.splits or not next(view.splits) then return end
-    local info = C_ChallengeMode.GetChallengeCompletionInfo()
-    if Field(info, "practiceRun") == true then return end
+local function SaveSplits(view, time)
+    if view.savedSplits or not next(view.splits) then return end
     for _, sameLevel in ipairs({ true, false }) do
         local records, key, state = RecordBucket(view, sameLevel)
         if records then
@@ -436,10 +439,10 @@ local function SaveSplits(owner)
             record.individual = record.individual or {}
             for criterion, split in pairs(view.splits) do
                 local old = record.individual[criterion]
-                if not Finite(old) or split < old then record.individual[criterion] = split end
+                if not ValidRecordTime(old) or split < old then record.individual[criterion] = split end
             end
-            if not Finite(record.time) or view.lastElapsed < record.time then
-                record.time, record.run = view.lastElapsed, {}
+            if not ValidRecordTime(record.time) or time < record.time then
+                record.time, record.run = time, {}
                 for criterion, split in pairs(view.splits) do record.run[criterion] = split end
             end
             record.serial, records[key] = state.mythicSplitSerial, record
@@ -450,9 +453,9 @@ local function SaveSplits(owner)
                 if serial < oldest then oldest, oldestKey = serial, candidate end
             end
             if count > 160 and oldestKey then records[oldestKey] = nil end
+            view.savedSplits = true
         end
     end
-    view.savedSplits = true
 end
 
 local function PaintCriterion(owner, info, bossCount, elapsed)
@@ -481,17 +484,25 @@ local function PaintCriterion(owner, info, bossCount, elapsed)
         label = name .. "  " .. quantity .. "/" .. total
     end
     SetText(row.name, (complete and DONE or OPEN) .. label)
-    local since = Field(info, "elapsed")
-    local split = complete and Finite(since) and Finite(elapsed) and elapsed - since or nil
     local id = Field(info, "criteriaID")
     local criterion = Finite(id) and id > 0 and tostring(id) or name
-    view.splits = view.splits or {}
-    if Finite(split) and split >= 0 and not view.splits[criterion] then view.splits[criterion] = split end
-    split = complete and view.splits[criterion] or nil
+    local split = complete and view.splits[criterion] or nil
+    if complete and not split then
+        if ValidRecordTime(elapsed) then
+            local since = Field(info, "elapsed")
+            local candidate = Finite(since) and since >= 0 and elapsed - since or nil
+            if ValidRecordTime(candidate) then
+                split = candidate
+                view.splits[criterion] = split
+            end
+        elseif not view.completed then
+            view.retrySplits = true
+        end
+    end
     local reference = Reference(owner, criterion)
-    local display = Finite(split) and Clock(split) or ""
-    if Finite(reference) then
-        if Finite(split) then
+    local display = split and Clock(split) or ""
+    if reference then
+        if split then
             local delta = split - reference
             display = display .. "  " .. (delta >= 0 and "+" or "-") .. Clock(math.abs(delta))
         elseif owner.config.bossTargets == true then
@@ -510,12 +521,14 @@ function H.UpdateObjectives(owner)
     if not view then return end
     local _, _, count = C_Scenario.GetStepInfo()
     if not Finite(count) or count < 0 then return end
+    local elapsed = view.lastElapsed
+    if view.completed then elapsed = view.completionTime end
     local bossCount, forcesPercent, newRows = 0, nil, false
     for i = 1, math.min(count, 40) do
         local info = C_ScenarioInfo.GetCriteriaInfo(i)
         if Public(info) and type(info) == "table" then
             local forces, created
-            bossCount, forces, created = PaintCriterion(owner, info, bossCount, view.lastElapsed)
+            bossCount, forces, created = PaintCriterion(owner, info, bossCount, elapsed)
             forcesPercent = forces or forcesPercent
             newRows = newRows or created
         end
@@ -562,6 +575,10 @@ function H.Tick(owner)
             view.lastElapsed = elapsed
             PaintClock(owner, elapsed)
         end
+        if view.retrySplits and elapsed >= 1 then
+            view.retrySplits = nil
+            H.UpdateObjectives(owner)
+        end
     elseif view.lastElapsed ~= nil then
         view.lastElapsed = nil
         PaintClock(owner, nil)
@@ -595,6 +612,7 @@ function H.Start(owner, mapID)
     view.barLimit, view.barBracket = nil, nil
     view.completed, view.upgrades, view.bossCount = false, nil, 0
     view.splits, view.savedSplits, view.referenceRecords = {}, nil, {}
+    view.retrySplits, view.completionTime = nil, nil
     view.limit, view.name = nil, nil
     view.height = 297
     view.frame:SetHeight(view.height)
@@ -618,6 +636,17 @@ function H.Start(owner, mapID)
     owner.context:Ticker(1, H.Tick)
 end
 
+local function CompletionTime(view, info)
+    local mapID, level = Field(info, "mapChallengeModeID"), Field(info, "level")
+    local milliseconds = Field(info, "time")
+    if mapID ~= view.mapID or not Finite(level) or level <= 0 then return nil end
+    if view.level and view.level > 0 and view.level ~= level then return nil end
+    local time = Finite(milliseconds) and milliseconds / 1000 or nil
+    if not ValidRecordTime(time) then return nil end
+    view.level = level
+    return time
+end
+
 function H.Complete(owner)
     local view = owner.mplus
     if not view or not owner.mplusActive then return end
@@ -626,14 +655,20 @@ function H.Complete(owner)
     S.MythicPlusPull.Stop(owner)
     view.observedPull:Hide()
     local info = C_ChallengeMode.GetChallengeCompletionInfo()
-    local milliseconds = Field(info, "time")
-    local upgrades = Field(info, "keystoneUpgradeLevels")
-    if Finite(milliseconds) and milliseconds > 0 then view.lastElapsed = milliseconds / 1000 end
-    view.upgrades = Finite(upgrades) and upgrades or nil
+    local time = CompletionTime(view, info)
+    if time then
+        view.completionTime, view.lastElapsed = time, time
+        local upgrades = Field(info, "keystoneUpgradeLevels")
+        view.upgrades = Finite(upgrades) and upgrades or nil
+    end
     H.UpdateDeaths(owner)
     H.UpdateObjectives(owner)
     PaintClock(owner, view.lastElapsed)
-    SaveSplits(owner)
+    -- Keep the last clock value visible while the confirmed result arrives.
+    if time then
+        local practice = info.practiceRun
+        if Public(practice) and practice ~= true then SaveSplits(view, time) end
+    end
 end
 
 function H.Stop(owner)

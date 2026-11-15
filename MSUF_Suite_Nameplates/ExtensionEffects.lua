@@ -129,9 +129,9 @@ function E.Reminder(state, wanted)
     end
 end
 
-function E.Range(state)
+function E.Range(state, target)
     local label = state.rangeLabel
-    if state.plan.range and state.plan.rangeText and state.prefix == "enemy" then
+    if target and state.interaction and state.interaction.range and state.interaction.rangeText then
         if not label then
             label = state.uf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             label:SetPoint("TOP", state.health, "BOTTOM", 0, -14)

@@ -130,7 +130,9 @@ local FORMATTERS = {
     end,
     bags = function(free, total)
         if Finite(free) and Finite(total) then
-            return free .. "/" .. total, nil,
+            local limit = settings and settings.bagSpaceWarning or 0
+            local warning = limit > 0 and free <= limit and not NS.InCombat() and "bad" or nil
+            return free .. "/" .. total, warning,
                 total > 0 and floor((total - free) / total * 100 + .5) .. "%" or NO_VALUE
         end
     end,
@@ -140,15 +142,6 @@ local FORMATTERS = {
         end
     end,
     clock = ClockText,
-    fps = function(rate)
-        if Finite(rate) then return tostring(floor(rate + .5)), rate < fpsLimit and "bad" or nil end
-    end,
-    latency = function(_, world)
-        if Finite(world) then return Milliseconds(world), world >= latencyLimit and "bad" or nil end
-    end,
-    homeLatency = function(home)
-        if Finite(home) then return Milliseconds(home), home >= latencyLimit and "bad" or nil end
-    end,
     coordinates = function(x, y)
         if Finite(x) and Finite(y) then return string.format(coordinateFormat, x * 100, y * 100) end
     end,
@@ -162,6 +155,43 @@ local FORMATTERS = {
         end
     end,
 }
+
+-- The frame rate and latency places are sampled on a timer and mostly find
+-- the number they already show. Each reader returns the whole numbers its
+-- place shows and the severity, and nothing while the client gives no value.
+-- The raw values decide the severity (a rate of 29.6 shows 30 and still warns
+-- below 30), so the numbers alone do not say it. No text is built here:
+-- DataTexts.lua compares numbers and severity first (M:UpdateSource).
+local SAMPLES = {
+    fps = function()
+        local rate = S.ReadInfoSource("fps")
+        if Finite(rate) then return floor(rate + .5), nil, rate < fpsLimit and "bad" or nil end
+    end,
+    latency = function()
+        local _, world = S.ReadInfoSource("latency")
+        if Finite(world) then return floor(world + .5), nil, world >= latencyLimit and "bad" or nil end
+    end,
+    homeLatency = function()
+        local home = S.ReadInfoSource("latency")
+        if Finite(home) then return floor(home + .5), nil, home >= latencyLimit and "bad" or nil end
+    end,
+    fpsLatency = function()
+        local rate = S.ReadInfoSource("fps")
+        local _, world = S.ReadInfoSource("latency")
+        if Finite(rate) and Finite(world) then
+            return floor(rate + .5), floor(world + .5), (rate < fpsLimit or world >= latencyLimit) and "bad" or nil
+        end
+    end,
+}
+Standard.SAMPLES = SAMPLES
+
+-- Label and display value of a sampled place from its numbers.
+function Standard.SampleText(key, first, second)
+    if first == nil then return LABELS[key], NO_VALUE end
+    if key == "fps" then return LABELS[key], tostring(first) end
+    if key == "fpsLatency" then return LABELS[key], first .. " / " .. Milliseconds(second) end
+    return LABELS[key], Milliseconds(first)
+end
 
 -- The module's settings (a new table on every profile change): the places
 -- read their clock format, warning limits and coordinate decimals from them.
@@ -202,6 +232,12 @@ end
 
 -- Label, display value, severity and alternate value of a built-in source.
 function Standard.Format(key)
+    -- The event-driven places first: they are the common call.
+    local formatter = FORMATTERS[key]
+    if formatter then
+        local value, severity, alternate = formatter(S.ReadInfoSource(Standard.READER[key] or key))
+        return LABELS[key], value or NO_VALUE, severity, alternate
+    end
     if key == "todayGold" then
         local _, _, net = Gold.Today()
         if net == nil then return LABELS[key], NO_VALUE end
@@ -213,17 +249,9 @@ function Standard.Format(key)
         local now = date("*t")
         return LABELS[key], FormatShortDate(now.day, now.month, now.year)
     end
-    if key == "fpsLatency" then
-        local fps = S.ReadInfoSource("fps")
-        local _, world = S.ReadInfoSource("latency")
-        if Finite(fps) and Finite(world) then
-            return LABELS[key], floor(fps + .5) .. " / " .. Milliseconds(world),
-                (fps < fpsLimit or world >= latencyLimit) and "bad" or nil
-        end
-        return LABELS[key], NO_VALUE
-    end
-    local value, severity, alternate = FORMATTERS[key](S.ReadInfoSource(Standard.READER[key] or key))
-    return LABELS[key], value or NO_VALUE, severity, alternate
+    local first, second, severity = SAMPLES[key]()
+    local label, value = Standard.SampleText(key, first, second)
+    return label, value, severity
 end
 
 -- The detail lines of a built-in source below the tooltip title.
@@ -274,10 +302,19 @@ end
 -- Under WoW Forever's Gamepad UI every built-in window place carries the
 -- overlay (Sources.gamepadPanelSources) and nothing opens from here: a click
 -- that reaches the place found it detached and attaches it for the next one.
-function Standard.Click(button)
+function Standard.Click(button, mouse)
     if S.GamepadUI() then
         P.DataTextActions.Attach(button)
         return
+    end
+    if mouse == "RightButton" and NS.Client.isForever and button.source == "bags" then
+        local cheapest = S.instances and S.instances.cheapestItem
+        if cheapest and cheapest.active and not NS.InCombat() then
+            if cheapest:OpenCandidates(button) then return end
+            _G.OpenAllBags()
+            cheapest:OpenCandidates(button)
+            return
+        end
     end
     local name = CLICK[button.source]
     if name then

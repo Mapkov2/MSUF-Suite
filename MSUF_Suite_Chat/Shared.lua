@@ -24,6 +24,18 @@ local BORDERED_PARTS = {
 }
 local RGB, Finite = S.RGB, S.Finite
 
+-- HasFocus can return a secret boolean. Focus hooks keep the last known
+-- state available when the native query is restricted.
+function C.InputHasFocus(frame)
+    local focused = frame.editBox:HasFocus()
+    local visual = M.visuals[frame]
+    if S.Public(focused) then
+        if visual then visual.inputFocused = focused end
+        return focused
+    end
+    return visual ~= nil and visual.inputFocused == true
+end
+
 -- Cold presentation can use the reload's unlocked frame. Chat actions
 -- and combat event handlers continue to use the unit combat flag.
 function C.LayoutLocked()

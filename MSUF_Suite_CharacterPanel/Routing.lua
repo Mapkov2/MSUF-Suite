@@ -116,6 +116,9 @@ function Routing.HasBindingRoutes()
 end
 
 function Routing.Root() return root end
+function Routing.CharacterView(kind)
+    if kind == "character" and NS.Host.Client.isForever then return NS.Host.Skin.GetCharacterView() end
+end
 
 function Routing.PaperDollShown()
     return paperDoll and paperDoll:IsVisible()

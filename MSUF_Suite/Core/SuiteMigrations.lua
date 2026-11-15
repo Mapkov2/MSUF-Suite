@@ -334,6 +334,136 @@ function Steps.NameplateAuraContainers(modules)
     end
 end
 
+local TEXT_FIELDS = { "Anchor", "X", "Y", "Size", "Color", "Unknown" }
+
+function Steps.NameplateTypeSettings(modules)
+    local plates, X = Module(modules, "nameplates"), NS.NameplateExtensions
+    if not plates then return end
+    for _, scope in ipairs(X.OpacityScopes) do
+        local friendly = scope == "friendly" or scope == "friendlyNpc"
+        for _, field in ipairs(X.InteractionFields) do
+            local key = scope .. field
+            if plates[key] == nil and (not friendly or field:sub(1, 5) ~= "Range") then
+                plates[key] = plates["plate" .. field]
+            end
+        end
+        if scope == "friendlyNpc" and plates.friendlyNpcPlateClickThrough == nil then
+            plates.friendlyNpcPlateClickThrough = plates.friendlyPlateClickThrough
+        end
+        for i = 1, 4 do
+            local old = "extraText" .. i
+            local side = plates[old .. "Side"] or 1
+            if side == 1 or side == (friendly and 3 or 2) then
+                local key = scope .. "ExtraText" .. i
+                if plates[key .. "Source"] == nil then plates[key .. "Source"] = plates[old .. "Source"] end
+                for _, field in ipairs(TEXT_FIELDS) do
+                    if plates[key .. field] == nil then plates[key .. field] = plates[old .. field] end
+                end
+            end
+        end
+    end
+end
+
+local function MigrateTextSlots(plates, scope, X)
+    for i = 1, 4 do
+        local old = scope .. "ExtraText" .. i
+        local source = plates[old .. "Source"]
+        if X.TextIndicators[source] then
+            local key = X.TextKey(scope, source)
+            if plates[key] == nil then
+                plates[key] = true
+                for _, field in ipairs(TEXT_FIELDS) do
+                    plates[key .. field] = plates[old .. field]
+                end
+                plates[key .. "Anchor"] = plates[key .. "Anchor"] or (i == 1 and 1 or 2)
+                plates[key .. "Y"] = plates[key .. "Y"] or (i - 1) * -12
+            end
+        end
+        plates[old .. "Source"] = nil
+        for _, field in ipairs(TEXT_FIELDS) do plates[old .. field] = nil end
+    end
+end
+
+function Steps.NameplateTextIndicators(modules)
+    local plates, X = Module(modules, "nameplates"), NS.NameplateExtensions
+    if not plates then return end
+    for _, scope in ipairs(X.OpacityScopes) do
+        MigrateTextSlots(plates, scope, X)
+        local hostile = scope == "enemy" or scope == "neutral"
+        local old = (hostile and "enemy" or "friendly") .. "StatusThreat"
+        local key = X.TextKey(scope, 6)
+        if plates[old] == true and plates[key] == nil then
+            local anchor = NS.AnchorPoints[plates[old .. "Anchor"]] and plates[old .. "Anchor"] or 8
+            plates[key] = true
+            plates[key .. "Anchor"] = X.TextHealthAnchorStart + anchor
+            plates[key .. "X"], plates[key .. "Y"] = plates[old .. "OffsetX"] or 0, plates[old .. "OffsetY"] or -9
+            plates[key .. "Color"], plates[key .. "Size"] = plates[old .. "Color"], plates[old .. "Size"] or 11
+            plates[key .. "Layer"] = plates[old .. "Layer"]
+        end
+    end
+    for _, side in ipairs({ "enemy", "friendly" }) do
+        for _, field in ipairs({ "", "Size", "Anchor", "OffsetX", "OffsetY", "Layer", "Color" }) do
+            plates[side .. "StatusThreat" .. field] = nil
+        end
+    end
+    for i = 1, 4 do
+        local old = "extraText" .. i
+        plates[old .. "Side"] = nil
+        plates[old .. "Source"] = nil
+        for _, field in ipairs(TEXT_FIELDS) do plates[old .. field] = nil end
+    end
+end
+
+function Steps.NameplateSkinSwitches(modules)
+    local plates = Module(modules, "nameplates")
+    if not plates then return end
+    if plates.enemy == false then
+        if plates.enemySkinEnabled == nil then plates.enemySkinEnabled = false end
+        if plates.neutralSkinEnabled == nil then plates.neutralSkinEnabled = false end
+    end
+    if plates.friendly == false then
+        if plates.friendlySkinEnabled == nil then plates.friendlySkinEnabled = false end
+        if plates.friendlyNpcSkinEnabled == nil then plates.friendlyNpcSkinEnabled = false end
+    end
+    plates.enemy, plates.friendly = true, true
+end
+
+function Steps.NameplateEnableVisibility(modules)
+    local plates = Module(modules, "nameplates")
+    if not plates then return end
+    if plates.plateEnemies == 3 then plates.enemySkinEnabled, plates.neutralSkinEnabled = false, false end
+    if plates.neutralNpcVisible == false then plates.neutralSkinEnabled = false end
+    if plates.plateFriendlyPlayers == 3 then plates.friendlySkinEnabled = false end
+    if plates.friendlyNPCs == 3 then plates.friendlyNpcSkinEnabled = false end
+    plates.plateEnemies, plates.plateFriendlyPlayers, plates.neutralNpcVisible = nil, nil, nil
+    if plates.friendlyNPCs ~= 4 then plates.friendlyNPCs = nil end
+end
+
+function Steps.NameplateBarsOverride(modules)
+    local plates = Module(modules, "nameplates")
+    if not plates or plates.barsOverride ~= nil then return end
+    local rules = NS.SuiteCatalog.nameplates.rules
+    for key, value in pairs(plates) do
+        local rule = rules[key]
+        if rule and value ~= rule.default and (rule.section == "barGradients" or rule.section == "frameOutline"
+            or key == "nativeHealthFillTexture" or key == "nativeHealthBackgroundTexture"
+            or key == "hideHealthBarBorders" or key == "enemyBorderSize" or key == "friendlyBorderSize"
+            or key == "enemyBorderColor" or key == "friendlyBorderColor" or key == "highlightBorderSize"
+            or key == "highlightAggroColor") then
+            plates.barsOverride, plates.barsOverrideSaved = true, true
+            return
+        end
+    end
+end
+
+function Steps.NameplateOutlineOff(modules)
+    local plates = Module(modules, "nameplates")
+    if not plates or plates.hideHealthBarBorders ~= true or plates.look == 2 then return end
+    plates.enemyOutlineMode, plates.friendlyOutlineMode = 4, 4
+    plates.barsOverride, plates.barsOverrideSaved = true, true
+    plates.hideHealthBarBorders = false
+end
+
 function Steps.FriendlyPlayerDisplay(modules)
     local plates = Module(modules, "nameplates")
     if not plates then return end

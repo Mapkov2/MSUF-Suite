@@ -148,9 +148,9 @@ local function Apply(self)
     end
     self.pending = nil
     self.applying = true
-    -- These native controls supply one nearby interactable object's anchor.
-    -- Reassert required object controls while remembering the latest external choice.
-    if not S.GamepadUI() then self.context:CVar("SoftTargetInteract", "3") end
+    -- Hand back the Interact Key setting if an older Glimmer version owned it.
+    S.RestoreCVar("glimmer", "SoftTargetInteract")
+    -- Reassert the native object controls while remembering the latest external choice.
     self.context:CVar("SoftTargetNameplateInteract", "1")
     self.context:CVar("SoftTargetIconGameObject", "1", self.changedCVars.SoftTargetIconGameObject)
     self.context:CVar("SoftTargetInteractOnlyInRange", "0", self.changedCVars.SoftTargetInteractOnlyInRange)

@@ -54,8 +54,8 @@ function Sort.Refresh()
         -- Changed outside the Suite since: that value is the one to give back.
         record.before = current
     end
-    -- Fill from the bottom: Blizzard sorts right to left.
-    local value = mode == DIRECTION.FROM_BOTTOM
+    -- With the combined grid, right-to-left puts the backpack first.
+    local value = mode == DIRECTION.FROM_TOP
     if current ~= value then C_Container.SetSortBagsRightToLeft(value) end
     record.applied = value
 end

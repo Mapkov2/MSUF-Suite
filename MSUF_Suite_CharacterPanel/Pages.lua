@@ -7,8 +7,10 @@ local defenseSkill = Forever and UnitDefenseSkill
 local Pages, Stats, Reputation = {}, NS.Stats, NS.Reputation
 NS.Pages = Pages
 
+local RESTRICTION_CHANGED = "ADDON_RESTRICTION_STATE_CHANGED"
 local quickEvents = {
     "UNIT_MAXHEALTH", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "UNIT_STATS",
+    RESTRICTION_CHANGED,
 }
 local ratingEvents = { "UNIT_SPELL_HASTE", "COMBAT_RATING_UPDATE", "PLAYER_DAMAGE_DONE_MODS" }
 if not Forever then
@@ -81,14 +83,21 @@ local function Group(buffer, title, action, collapsed, depth, layout)
     return group
 end
 
-local function Row(group, label, value, layout, tooltip, argument)
+local function Row(group, label, value, layout, tooltip, argument, format, extra)
     local index = group.count + 1
     local row = group.pool[index]
     if not row then
         row = {}
         group.pool[index] = row
     end
-    row.label, row.value, row.layout = label, value or "—", layout
+    row.label, row.layout = label, layout
+    row.displayFormat, row.displayExtra = nil, nil
+    if not Public(value) or not Public(extra) then
+        row.value = "—"
+        if format then row.value, row.displayFormat, row.displayExtra = value, format, extra end
+    else
+        row.value = value or "—"
+    end
     row.tooltip, row.tooltipArgument = tooltip, argument
     row.reputationFill, row.reputationReaction = nil, nil
     group.rows[index], group.count = row, index
@@ -121,13 +130,13 @@ local attributes = {
 if Forever then attributes[#attributes + 1] = LE_UNIT_STAT_SPIRIT end
 
 local function Attribute(id)
-    if id then return Number(select(2, UnitStat("player", id))) end
+    if id then return Stats.DisplayNumber(select(2, UnitStat("player", id))) end
 end
 
 local function Stat(group, id, full)
     if not id then return end
     local label = String(_G["SPELL_STAT" .. id .. "_NAME"])
-    if label then Row(group, label, Attribute(id), nil, full and Stats.AttributeTooltip or nil, id) end
+    if label then Row(group, label, Attribute(id), nil, full and Stats.AttributeTooltip or nil, id, "%d") end
 end
 
 local function Health()
@@ -148,16 +157,17 @@ local function Vitals(group)
 end
 
 local function Armor()
-    return Number(select(2, UnitArmor("player")))
+    return Stats.DisplayNumber(select(2, UnitArmor("player")))
 end
 
 local function Dodge()
-    return Percentage(Number(GetDodgeChance()))
+    return Stats.DisplayPercent(GetDodgeChance())
 end
 
 local function Defense()
     if not defenseSkill then return end
     local base, bonus = defenseSkill("player")
+    if not Public(base) or not Public(bonus) then return nil, base, bonus end
     base, bonus = Number(base), Number(bonus)
     return base and bonus and base + bonus
 end
@@ -186,10 +196,15 @@ local function ReadStats(buffer)
     if Forever then Stats.ForeverModifiers(enhancements, Row) end
 
     local defense = Group(buffer, Text("Defense"))
-    Row(defense, STAT_ARMOR, Armor(), nil, Stats.ArmorTooltip)
-    Row(defense, STAT_DODGE, Dodge(), nil, Stats.DodgeTooltip)
+    Row(defense, STAT_ARMOR, Armor(), nil, Stats.ArmorTooltip, nil, "%d")
+    Row(defense, STAT_DODGE, Dodge(), nil, Stats.DodgeTooltip, nil, Stats.PERCENT)
     if Forever then
-        Row(defense, DEFENSE, Defense(), nil, Stats.DefenseTooltip)
+        local value, base, bonus = Defense()
+        if not Public(base) or not Public(bonus) then
+            Row(defense, DEFENSE, base, nil, Stats.DefenseTooltip, nil, "%d (%+d)", bonus)
+        else
+            Row(defense, DEFENSE, value, nil, Stats.DefenseTooltip)
+        end
         Stats.Weapons(Group(buffer, STAT_CATEGORY_WEAPONS or Text("Weapons")), Row)
     else
         Row(defense, STAT_AVOIDANCE, Avoidance(), nil, Stats.SimpleRatingTooltip, CR_AVOIDANCE)
@@ -235,8 +250,8 @@ end
 local Model = Host.CharacterTabs
 local NO_DATA = Text("No data available")
 local REPORT = Text("Report")
-local statChange = { "UNIT_STATS" }
-local ratingChange = { "UNIT_STATS", "COMBAT_RATING_UPDATE" }
+local statChange = { "UNIT_STATS", RESTRICTION_CHANGED }
+local ratingChange = { "UNIT_STATS", "COMBAT_RATING_UPDATE", RESTRICTION_CHANGED }
 local auditChange = {
     "PLAYER_EQUIPMENT_CHANGED", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED",
     "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED",
@@ -288,8 +303,18 @@ local function ReadXP()
     if maximum and maximum > 0 then return Progress(current, maximum) end
 end
 
+function Pages.FormatItemLevel(average)
+    if not average then return nil end
+    local text = string.format("%.2f", average)
+    local separator = DECIMAL_SEPERATOR
+    if separator and separator ~= "." then
+        return (text:gsub("%.", separator, 1))
+    end
+    return text
+end
+
 local function ReadItemLevel(state)
-    if state.average then return string.format("%.0f", state.average) end
+    return Pages.FormatItemLevel(state.average)
 end
 
 local function ReadDurability(state)
@@ -303,18 +328,18 @@ local providers = {
     emptySockets = { function(state) return Pages.AuditCount(state.gear, "emptySockets") end, auditChange, audit = true },
     health = { Health, { "UNIT_MAXHEALTH" } },
     resource = { Resource, { "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER" } },
-    strength = { ReadAttribute(attributes[1]), statChange },
-    agility = { ReadAttribute(attributes[2]), statChange },
-    stamina = { ReadAttribute(attributes[3]), statChange },
-    intellect = { ReadAttribute(attributes[4]), statChange },
-    spirit = { ReadAttribute(attributes[5]), statChange },
+    strength = { ReadAttribute(attributes[1]), statChange, displayFormat = "%d" },
+    agility = { ReadAttribute(attributes[2]), statChange, displayFormat = "%d" },
+    stamina = { ReadAttribute(attributes[3]), statChange, displayFormat = "%d" },
+    intellect = { ReadAttribute(attributes[4]), statChange, displayFormat = "%d" },
+    spirit = { ReadAttribute(attributes[5]), statChange, displayFormat = "%d" },
     crit = { ReadPercent(Suite.ReadCrit), { "UNIT_STATS", "COMBAT_RATING_UPDATE", "PLAYER_DAMAGE_DONE_MODS" } },
     haste = { ReadPercent(Suite.ReadHaste), { "UNIT_SPELL_HASTE", "COMBAT_RATING_UPDATE" } },
     mastery = { ReadPercent(Suite.ReadMastery), { "MASTERY_UPDATE", "COMBAT_RATING_UPDATE" } },
     versatility = { ReadPercent(Suite.ReadVersatility), ratingChange },
-    armor = { Armor, { "UNIT_RESISTANCES", "UNIT_STATS" } },
-    dodge = { Dodge, ratingChange },
-    defense = { Defense, { "SKILL_LINES_CHANGED", "UNIT_STATS" } },
+    armor = { Armor, { "UNIT_RESISTANCES", "UNIT_STATS", RESTRICTION_CHANGED }, displayFormat = "%d" },
+    dodge = { Dodge, ratingChange, displayFormat = Stats.PERCENT },
+    defense = { function() return (Defense()) end, { "SKILL_LINES_CHANGED", "UNIT_STATS" } },
     avoidance = { Avoidance, { "AVOIDANCE_UPDATE", "COMBAT_RATING_UPDATE" } },
     level = { function(state) return state.header.level end, { "PLAYER_LEVEL_UP" }, header = "level" },
     xp = { ReadXP, { "PLAYER_XP_UPDATE", "PLAYER_LEVEL_UP" } },
@@ -426,6 +451,7 @@ function Pages.CustomPlan(definition, reset)
             target.rows[j] = {
                 x = rowX, y = rowY,
                 index = index,
+                displayFormat = provider and provider.displayFormat,
                 label = row.label ~= "" and row.label or nil,
                 defaultLabel = source and (source.target and ("%s (%d)"):format(source.text, source.target) or source.text) or NO_DATA,
                 data = available and source and (source.kind or source.report) and AddData(plan, source, events) or nil,
@@ -527,7 +553,7 @@ local function ReadCustomData(plan, state, combat, config)
 end
 
 local function CopyCustomValue(group, value, label, layout)
-    local row = Row(group, label, value.value, layout, value.tooltip, value.tooltipArgument)
+    local row = Row(group, label, value.value, layout, value.tooltip, value.tooltipArgument, value.displayFormat, value.displayExtra)
     row.reputationFill, row.reputationReaction = value.reputationFill, value.reputationReaction
 end
 
@@ -572,7 +598,7 @@ function Pages.Custom(groups, plan, state, combat, config)
             if row.data then
                 AppendCustomData(group, row, state)
             else
-                Row(group, row.label or labels[row.index] or row.defaultLabel, values[row.index], row)
+                Row(group, row.label or labels[row.index] or row.defaultLabel, values[row.index], row, nil, nil, row.displayFormat)
             end
         end
     end

@@ -3,11 +3,30 @@ local NS, S = P.NS, P.Suite
 local M = {}
 local Public = S.Public
 local MAX_GOSSIP_QUESTS = 100
-local PAUSE_KEYS = { IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown }
+local MODIFIER_KEYS = { IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown }
+local MODIFIER_LABELS = { "Shift", "Ctrl", "Alt" }
+local HOLD_TO_AUTOMATE = 2
+
+local function PaintModifierHint(self, frame)
+    if self.config.questModifierMode ~= HOLD_TO_AUTOMATE or not self.active or not frame
+        or NS.Safety.IsForbidden(frame) then return end
+    self.hints = self.hints or {}
+    local label = self.hints[frame]
+    if not label then
+        label = S.CreateFontString(frame, nil, "OVERLAY", "GameFontHighlightSmall")
+        label:SetPoint("BOTTOM", frame, "BOTTOM", 0, 43)
+        self.hints[frame] = label
+    end
+    local key = MODIFIER_LABELS[self.config.pauseModifier] or "Shift"
+    label:SetText(S.Text("Hold %s when opening the dialogue to automate quests."):format(S.Text(key)))
+    label:Show()
+end
 
 local function Paused(self)
-    local held = (PAUSE_KEYS[self.config.pauseModifier] or IsShiftKeyDown)()
-    return not Public(held) or held == true
+    local held = (MODIFIER_KEYS[self.config.pauseModifier] or IsShiftKeyDown)()
+    if not Public(held) then return true end
+    if self.config.questModifierMode == HOLD_TO_AUTOMATE then return held ~= true end
+    return held == true
 end
 
 local function QuestFrequency(self, id, info)
@@ -67,9 +86,13 @@ end
 local function Gossip(self, event)
     if event == "GOSSIP_CLOSED" then
         self.gossipChosen = nil
+        local hint = self.hints and self.hints[GossipFrame]
+        if hint then hint:Hide() end
         return
     end
-    if NS.IsCombatLocked() or Paused(self) or self.gossipChosen then return end
+    if NS.InCombat(event) then return end
+    PaintModifierHint(self, GossipFrame)
+    if Paused(self) or self.gossipChosen then return end
     if self.config.complete then
         local questID, info = FirstQuest(self, C_GossipInfo.GetActiveQuests(), true)
         if questID then
@@ -89,13 +112,51 @@ local function Gossip(self, event)
     end
 end
 
+-- The native QuestFrame greeting has its own event and index-based choices.
+local function Greeting(self, event)
+    if NS.InCombat(event) then return end
+    PaintModifierHint(self, QuestFrame)
+    if Paused(self) or self.greetingChosen then return end
+    if self.config.complete then
+        local count = GetNumActiveQuests()
+        if S.Finite(count) then
+            for index = 1, math.min(count, MAX_GOSSIP_QUESTS) do
+                local _, complete = GetActiveTitle(index)
+                if Public(complete) and (complete == true or complete == 1) and Allowed(self, GetActiveQuestID(index)) then
+                    self.greetingChosen = true
+                    SelectActiveQuest(index)
+                    return
+                end
+            end
+        end
+    end
+    if not self.config.accept then return end
+    local count = GetNumAvailableQuests()
+    if not S.Finite(count) then return end
+    for index = 1, math.min(count, MAX_GOSSIP_QUESTS) do
+        local trivial, frequency, _, _, id = GetAvailableQuestInfo(index)
+        local info = { isTrivial = trivial, frequency = frequency, questID = id }
+        if Allowed(self, id, info) then
+            self.greetingChosen = true
+            self.selectedQuestInfo = info
+            SelectAvailableQuest(index)
+            return
+        end
+    end
+end
+
 local function Quest(self, event)
     if event == "QUEST_FINISHED" then
+        local hint = self.hints and self.hints[QuestFrame]
+        if hint then hint:Hide() end
         for key in pairs(self.handled) do self.handled[key] = nil end
         self.selectedQuestInfo = nil
+        self.greetingChosen = nil
         return
     end
-    if NS.IsCombatLocked() or Paused(self) then return end
+    if NS.InCombat(event) then return end
+    PaintModifierHint(self, QuestFrame)
+    if Paused(self) then return end
     local cost = GetQuestMoneyToGet()
     -- An unreadable cost cannot authorize spending on a quest turn-in.
     if event ~= "QUEST_DETAIL" and (not Public(cost) or type(cost) ~= "number" or cost > 0) then return end
@@ -134,6 +195,9 @@ end
 
 function M:Refresh()
     local context, c = self.context, self.config
+    if c.questModifierMode ~= HOLD_TO_AUTOMATE and self.hints then
+        for _, label in pairs(self.hints) do label:Hide() end
+    end
     self.only, self.skip = {}, {}
     for id in c.onlyIDs:gmatch("%d+") do self.only[tonumber(id)] = true end
     for id in c.skipIDs:gmatch("%d+") do self.skip[tonumber(id)] = true end
@@ -141,7 +205,8 @@ function M:Refresh()
     local gossip = c.gossip and (c.accept or c.complete)
     WantEvent(context, "GOSSIP_SHOW", gossip, Gossip)
     WantEvent(context, "GOSSIP_CLOSED", gossip, Gossip)
-    if not gossip then self.gossipChosen = nil end
+    WantEvent(context, "QUEST_GREETING", gossip, Greeting)
+    if not gossip then self.gossipChosen, self.greetingChosen = nil, nil end
     WantEvent(context, "QUEST_DETAIL", c.accept, Quest)
     WantEvent(context, "QUEST_PROGRESS", c.complete, Quest)
     WantEvent(context, "QUEST_COMPLETE", c.reward, Quest)
@@ -154,8 +219,10 @@ function M:Enable()
 end
 
 function M:Disable()
+    if self.hints then for _, label in pairs(self.hints) do label:Hide() end end
     self.handled = {}
     self.gossipChosen = nil
+    self.greetingChosen = nil
     self.selectedQuestInfo = nil
 end
 

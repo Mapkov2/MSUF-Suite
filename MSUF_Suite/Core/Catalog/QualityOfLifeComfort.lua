@@ -14,6 +14,12 @@ B.Module("questRewardValue", {
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = Forever,
 })
 B.Section("questRewardValue", "quest_reward_value", "Quest reward value", {})
+B.Module("auctionPriceTooltip", {
+    title = "Auction house price comparison",
+    description = "Show auction prices, vendor sell prices and what a replacement costs after selling the equipped item.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = Forever,
+})
+B.Section("auctionPriceTooltip", "auction_price_tooltip", "Auction house price comparison", {})
 B.Module("mailRecipients", {
     title = "Mail recipients",
     description = [[Remember characters visited with this helper enabled.
@@ -57,6 +63,7 @@ B.Section("fishingComfort", "fishing_comfort", "Fishing comfort", {
     B.String("lure", "Lure item ID (separate key binding)", "", 12),
     B.Bool("sameKeyInteract", "Use the Fishing key to interact during a cast"),
     B.Bool("audio", "Use fishing sound profile during your cast"),
+    B.Bool("warnInInstance", "Warn if a fishing rod is equipped when entering an instance", true),
     B.Number("music", "Fishing music volume (percent)", 10, 0, 100, 5),
     B.Number("ambience", "Fishing ambience volume (percent)", 20, 0, 100, 5),
     B.Number("effects", "Fishing effects volume (percent)", 100, 0, 100, 5),

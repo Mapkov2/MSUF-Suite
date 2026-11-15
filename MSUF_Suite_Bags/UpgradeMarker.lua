@@ -10,20 +10,32 @@ P.UpgradeMarker = Marker
 
 -- Equip location -> the inventory slots (INVSLOT_*) it can fill. Rings and
 -- trinkets are compared with the lower worn item and an empty slot counts as
--- level 0 (filled); a one-hand weapon is compared with the lower worn weapon,
--- an empty hand being no weapon.
+-- level 0 (filled). A one-hand weapon can compete for the off hand only
+-- while the player can dual wield.
+local MAIN_HAND = { 16 }
 local SLOTS = {
     INVTYPE_HEAD = { 1 }, INVTYPE_NECK = { 2 }, INVTYPE_SHOULDER = { 3 }, INVTYPE_CHEST = { 5 },
     INVTYPE_ROBE = { 5 }, INVTYPE_WAIST = { 6 }, INVTYPE_LEGS = { 7 }, INVTYPE_FEET = { 8 },
     INVTYPE_WRIST = { 9 }, INVTYPE_HAND = { 10 }, INVTYPE_CLOAK = { 15 },
     INVTYPE_FINGER = { 11, 12, filled = true }, INVTYPE_TRINKET = { 13, 14, filled = true },
-    INVTYPE_WEAPON = { 16, 17 }, INVTYPE_2HWEAPON = { 16 }, INVTYPE_WEAPONMAINHAND = { 16 },
-    INVTYPE_RANGED = { 16 }, INVTYPE_RANGEDRIGHT = { 16 }, INVTYPE_SHIELD = { 17 },
+    INVTYPE_WEAPON = { 16, 17 }, INVTYPE_2HWEAPON = MAIN_HAND, INVTYPE_WEAPONMAINHAND = MAIN_HAND,
+    INVTYPE_RANGED = MAIN_HAND, INVTYPE_RANGEDRIGHT = MAIN_HAND, INVTYPE_SHIELD = { 17 },
     INVTYPE_WEAPONOFFHAND = { 17 }, INVTYPE_HOLDABLE = { 17 },
 }
 local WORN = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 }
 
--- PlayerGear owns the shared class armor and client usability policy.
+-- PlayerGear owns shared class armor and tracks proficiency changes.
+local dualWieldRevision, dualWield
+local function SlotsFor(equip, gearRevision)
+    if equip ~= "INVTYPE_WEAPON" and equip ~= "INVTYPE_WEAPONOFFHAND" then return SLOTS[equip] end
+    if dualWieldRevision ~= gearRevision then
+        local allowed = CanDualWield()
+        dualWield = S.Public(allowed) and allowed == true
+        dualWieldRevision = gearRevision
+    end
+    if dualWield then return SLOTS[equip] end
+    if equip == "INVTYPE_WEAPON" then return MAIN_HAND end
+end
 
 local function ItemEvents()
     if not Marker.events or not Marker.listening then return end
@@ -84,8 +96,7 @@ end
 
 -- Sets item.beatsEquipped (InventoryDetails.lua calls this once per pass for
 -- every piece of equipment, after the item's effective level is read). An
--- answer stands until the worn equipment or the player's level changes (both
--- start a new revision), or the item's link or level does.
+-- answer stands until the worn equipment, player eligibility or item changes.
 function Marker.Read(item)
     if Marker.dirty then Rebuild() end
     local gearRevision = P.PlayerGear.revision
@@ -93,7 +104,7 @@ function Marker.Read(item)
         and item.markGearRevision == gearRevision and item.markLoaded == item.loaded then
         return
     end
-    local slots = SLOTS[item.equipLoc]
+    local slots = SlotsFor(item.equipLoc, gearRevision)
     item.markLink, item.markRevision, item.markLevel = item.link, Marker.revision, item.itemLevel
     item.markGearRevision, item.markLoaded = gearRevision, item.loaded
     local lowest = slots and Lowest(slots)

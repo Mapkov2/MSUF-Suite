@@ -183,6 +183,7 @@ end)
 clock:RegisterEvent("PLAYER_REGEN_DISABLED")
 clock:RegisterEvent("PLAYER_REGEN_ENABLED")
 NS.Registry.AddListener(Motion, function(_, domain, key)
+    if domain == "readability" then return end
     local palette = domain == "profile" or domain == "theme"
         and (key == "preset" or key == "look" or key == "colors")
     Motion.StopAll(palette)

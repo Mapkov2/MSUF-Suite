@@ -35,6 +35,17 @@ local function Read(fn, ...)
 end
 O.Read = Read
 
+-- Set while the watched quests are collected and something a quest shows could
+-- not be read: the collected list is then not known to be whole (CollectQuests).
+local partial = false
+
+-- Read for what a quest shows: a secret answer also marks the collection partial.
+local function Detail(fn, ...)
+    local value = fn(...)
+    if Public(value) then return value or nil end
+    partial = true
+end
+
 ------------------------------------------------------------------ collected entries
 -- Each source keeps its entry tables (and their line tables) across flushes;
 -- count marks how many are live.
@@ -81,13 +92,18 @@ end
 O.NextEntry, O.AddLine = NextEntry, AddLine
 
 local function QuestIndex(questID)
-    local index = Read(C_QuestLog.GetLogIndexForQuestID, questID)
+    local index = Detail(C_QuestLog.GetLogIndexForQuestID, questID)
     return Finite(index) and index >= 1 and index or nil
 end
 
 local function IsAutoComplete(index)
-    local info = Read(C_QuestLog.GetInfo, index)
-    return type(info) == "table" and Public(info.isAutoComplete) and info.isAutoComplete == true
+    local info = Detail(C_QuestLog.GetInfo, index)
+    if type(info) == "table" then
+        local auto = info.isAutoComplete
+        if Public(auto) then return auto == true end
+    end
+    partial = true
+    return false
 end
 
 -- Read current completion at click time before opening the native reward dialog.
@@ -98,56 +114,90 @@ function O.CanCompleteQuest(questID)
 end
 
 local function QuestItem(index, complete)
-    if Read(QuestUtil.QuestShowsItemByIndex, index, complete) ~= true then return end
+    if Detail(QuestUtil.QuestShowsItemByIndex, index, complete) ~= true then return end
     local link, icon, _, showWhenComplete = GetQuestLogSpecialItemInfo(index)
-    if not Public(link) or type(link) ~= "string" or link == ""
-        or not Public(icon) or (type(icon) ~= "number" and type(icon) ~= "string")
-        or (complete and (not Public(showWhenComplete) or showWhenComplete ~= true)) then
+    if not Public(link) or not Public(icon) then
+        partial = true
         return
+    end
+    if type(link) ~= "string" or link == "" or (type(icon) ~= "number" and type(icon) ~= "string") then return end
+    if complete then
+        if not Public(showWhenComplete) then
+            partial = true
+            return
+        end
+        if showWhenComplete ~= true then return end
     end
     return icon, link
 end
 
 local function QuestTimeLeft(questID, task)
     if task then
-        local left = Read(C_TaskQuest.GetQuestTimeLeftSeconds, questID)
+        local left = Detail(C_TaskQuest.GetQuestTimeLeftSeconds, questID)
         return Finite(left) and left > 0 and left or nil
     end
     local total, elapsed = C_QuestLog.GetTimeAllowed(questID)
-    if Finite(total) and Finite(elapsed) and total > elapsed then return total - elapsed end
+    -- A quest without a time limit has no total: one check, as before.
+    if not Public(total) then
+        partial = true
+    elseif total ~= nil and Finite(total) then
+        if Finite(elapsed) then
+            if total > elapsed then return total - elapsed end
+        elseif not Public(elapsed) then
+            partial = true
+        end
+    end
 end
 
+-- A quest whose objectives or one of their texts cannot be read keeps the lines
+-- that can; the collection is partial (the lines come back once readable).
 local function AddObjectiveLines(entry, questID)
-    local objectives = Read(C_QuestLog.GetQuestObjectives, questID)
-    if type(objectives) ~= "table" then return end
+    local objectives = Detail(C_QuestLog.GetQuestObjectives, questID)
+    if type(objectives) ~= "table" then
+        partial = true
+        return
+    end
     for i = 1, #objectives do
         local objective = objectives[i]
         if Public(objective) and type(objective) == "table" then
             local line = Text(objective.text)
             if line then
                 local percent
-                if Text(objective.type) == "progressbar" then
-                    local value = Read(GetQuestProgressBarPercent, questID)
+                local kind = objective.type
+                if not Public(kind) then
+                    partial = true
+                elseif kind == "progressbar" then
+                    local value = Detail(GetQuestProgressBarPercent, questID)
                     if Finite(value) then percent = math.max(0, math.min(100, value)) end
                 end
-                AddLine(entry, line, Public(objective.finished) and objective.finished == true, percent)
+                local done = objective.finished
+                if Public(done) then
+                    done = done == true
+                else
+                    done, partial = false, true
+                end
+                AddLine(entry, line, done, percent)
+            elseif not Public(objective.text) or objective.text == nil then
+                partial = true
             end
+        else
+            partial = true
         end
     end
 end
 
 local function QuestTitle(questID)
-    local title = Read(C_QuestLog.GetTitleForQuestID, questID)
+    local title = Detail(C_QuestLog.GetTitleForQuestID, questID)
     if Text(title) then return title end
-    local index = Read(C_QuestLog.GetLogIndexForQuestID, questID)
-    local info = Finite(index) and Read(C_QuestLog.GetInfo, index)
+    local index = Detail(C_QuestLog.GetLogIndexForQuestID, questID)
+    local info = Finite(index) and Detail(C_QuestLog.GetInfo, index)
     return type(info) == "table" and Text(info.title) or nil
 end
 
 local function Category(questID, focused, complete)
     if questID == focused then return "focused" end
     if complete then return "complete" end
-    local kind = Read(C_QuestInfoSystem.GetQuestClassification, questID)
+    local kind = Detail(C_QuestInfoSystem.GetQuestClassification, questID)
     local kinds = Enum.QuestClassification
     if Finite(kind) then
         if kind == kinds.Campaign then return "campaign" end
@@ -160,7 +210,7 @@ local function AddQuest(list, c, id, title, group, tracked, task, complete)
     local entry = NextEntry(list, id, title, group)
     entry.tracked = tracked
     if not P.NS.Client.isForever then
-        local activityID = Read(C_LFGList.GetActivityIDForQuestID, id)
+        local activityID = Detail(C_LFGList.GetActivityIDForQuestID, id)
         entry.questGroupSearch = Finite(activityID) and activityID > 0 or nil
     end
     entry.findGroup = not P.NS.Client.isForever and (group == "world" or entry.questGroupSearch)
@@ -171,7 +221,7 @@ local function AddQuest(list, c, id, title, group, tracked, task, complete)
     if index then
         if showCompletion and IsAutoComplete(index) then AddLine(entry, QUEST_WATCH_CLICK_TO_COMPLETE, true) end
         if showItem then
-            if task then complete = Read(C_QuestLog.IsComplete, id) == true end
+            if task then complete = Detail(C_QuestLog.IsComplete, id) == true end
             entry.itemIcon, entry.itemLink = QuestItem(index, complete)
         end
     end
@@ -179,6 +229,8 @@ local function AddQuest(list, c, id, title, group, tracked, task, complete)
         local asset, atlas = QuestUtil.GetQuestIconActiveForQuestID(id)
         if Public(asset) and type(asset) == "string" and Public(atlas) and type(atlas) == "boolean" then
             entry.questIcon, entry.questIconAtlas = asset, atlas
+        elseif not Public(asset) or not Public(atlas) then
+            partial = true
         end
     end
     if c.showTimers ~= false then entry.timeLeft = QuestTimeLeft(id, task) end
@@ -208,32 +260,83 @@ local function ZoneMap(mapID)
     end
 end
 
+-- The zone group a quest's own map puts it in, or nil where it has none.
+local function ZoneGroup(questID, zone)
+    local questZone = ZoneMap(Read(GetQuestUiMapID, questID, true))
+    return questZone and (questZone == zone and "localQuests" or "otherQuests") or nil
+end
+
 local function QuestGroup(questID, focused, zone, complete)
     if not zone or questID == focused then return Category(questID, focused, complete) end
-    local questZone = ZoneMap(Read(GetQuestUiMapID, questID, true))
-    if not questZone then return Category(questID, focused, complete) end
-    return questZone == zone and "localQuests" or "otherQuests"
+    return ZoneGroup(questID, zone) or Category(questID, focused, complete)
+end
+
+local function PlayerZone(c)
+    return c.groupQuestsByZone and ZoneMap(Read(C_Map.GetBestMapForUnit, "player"))
+end
+
+-- The quests list carries what it was collected with (CollectQuests): zone is
+-- the player's zone (false with the grouping off, nil without a readable one),
+-- focus the focused quest, and known tells that every watched quest and all a
+-- quest shows was read. Objectives.lua clears known where it empties the list.
+--
+-- A zone event with zone grouping on (Objectives.lua) collected every watched
+-- quest in full on each subzone change, in the frame that also showed the zone
+-- banner (the 2026-11-15 outdoor walk). For a list known to be whole it now
+-- reads again only what the groups are made from (the player's zone, the
+-- focused quest and each quest's own zone) and collects when one of them
+-- changed: the zone and focus are compared by what was read, so one that was
+-- unreadable collects once it reads differently. A list that is not known
+-- (never collected, emptied, or a watch count, quest ID, title, objective or
+-- other detail was secret or missing) is collected on every zone event as
+-- before, which is what shows a quest or line again once the client gives it.
+local function QuestGroupsChanged(self)
+    local list = self.sources.quests
+    if not list or not list.known then return true end
+    local zone = PlayerZone(self.config)
+    if zone ~= list.zone or Read(C_SuperTrack.GetSuperTrackedQuestID) ~= list.focus then return true end
+    if not zone then return false end
+    for i = 1, list.count do
+        local entry = list[i]
+        local group = entry.group
+        if group ~= "focused" then
+            local collected = (group == "localQuests" or group == "otherQuests") and group or nil
+            if ZoneGroup(entry.id, zone) ~= collected then return true end
+        end
+    end
+    return false
 end
 
 local seen = {}
 local function CollectQuests(list, c)
     for id in pairs(seen) do seen[id] = nil end
     local focused = Read(C_SuperTrack.GetSuperTrackedQuestID)
-    local zone = c.groupQuestsByZone and ZoneMap(Read(C_Map.GetBestMapForUnit, "player"))
+    local zone = PlayerZone(c)
+    -- The zone, the focus and each quest's own zone are read again by
+    -- QuestGroupsChanged; everything else must have been readable here.
+    list.zone, list.focus, list.known = zone, focused, false
+    partial = false
     local count = Read(C_QuestLog.GetNumQuestWatches)
     if not Finite(count) then return end
     for i = 1, math.min(count, 40) do
         local id = Read(C_QuestLog.GetQuestIDForQuestWatchIndex, i)
-        if Finite(id) and id > 0 and not seen[id] then
-            seen[id] = true
-            local title = QuestTitle(id)
-            if title then
-                -- One snapshot for the category, completion hint and item in this refresh.
-                local complete = Read(C_QuestLog.IsComplete, id) == true
-                AddQuest(list, c, id, title, QuestGroup(id, focused, zone, complete), true, false, complete)
+        if Finite(id) and id > 0 then
+            if not seen[id] then
+                seen[id] = true
+                local title = QuestTitle(id)
+                if title then
+                    -- One snapshot for the category, completion hint and item in this refresh.
+                    local complete = Detail(C_QuestLog.IsComplete, id) == true
+                    AddQuest(list, c, id, title, QuestGroup(id, focused, zone, complete), true, false, complete)
+                else
+                    partial = true
+                end
             end
+        else
+            partial = true
         end
     end
+    list.known = not partial
 end
 
 local function CollectWorld(list, c)
@@ -642,6 +745,11 @@ O.COLLECTORS = COLLECTORS
 -- Re-reads every dirty source into its reused entry list.
 function O.CollectDirty(self)
     tasksRead, tasksTable = false, nil
+    -- A zone event: the quests are collected unless their list is known and its groups still hold.
+    if self.dirty.questZones then
+        self.dirty.questZones = nil
+        if not self.dirty.quests and QuestGroupsChanged(self) then self.dirty.quests = true end
+    end
     local now = GetTime()
     for i = 1, #SOURCES do
         local key = SOURCES[i]

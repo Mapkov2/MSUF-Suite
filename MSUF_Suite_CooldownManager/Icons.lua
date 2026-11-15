@@ -141,7 +141,7 @@ local function Shape(icon, shape)
     C.Effects.Shapes(next(shaped) ~= nil)
 end
 
--- Recharge edge (charge spells): swipe off, edge on, no numbers.
+-- The recharge swipe and edge have their own settings.
 function Icons.StyleCharge(icon)
     local cooldown, entry = icon.chargeCd, icon.entry
     if not cooldown then return end
@@ -162,10 +162,12 @@ function Icons.ChargeCooldown(icon)
     cooldown:SetDrawSwipe(false)
     cooldown:SetDrawEdge(true)
     cooldown:SetDrawBling(false)
-    cooldown:SetHideCountdownNumbers(true)
     cooldown:SetFrameLevel(icon:GetFrameLevel() + K.LEVEL.charge)
-    icon.chargeCd = cooldown
+    icon.chargeCd, icon.chargeTime = cooldown, nil
     Icons.StyleCharge(icon)
+    C.TrackingBars.StyleChargeText(icon, icon.styleView or (icon.entry and C.views[icon.entry.slot]) or EMPTY)
+    C.TrackingBars.PlaceCountdown(icon, cooldown)
+    C.TrackingBars.UpdateChargeText(icon)
     return cooldown
 end
 
@@ -262,6 +264,7 @@ local function Texts(icon, view, ov)
     if icon.lastTime ~= time then
         icon.lastTime = time
         icon.cd:SetHideCountdownNumbers(not time)
+        C.TrackingBars.UpdateChargeText(icon)
     end
     local stack = K.Choice(ov.stackText, K.BarStacks(view, true))
     icon.stackOn = stack
@@ -270,9 +273,10 @@ local function Texts(icon, view, ov)
         icon.count:SetText("")
     end
     local top = K.Choice(ov.textTop, K.BarStacksTop(view))
-    if icon.lastTop ~= top then
-        icon.lastTop = top
-        icon.cd:SetFrameLevel(icon:GetFrameLevel() + (top and K.LEVEL.cd or K.LEVEL.top))
+    local base = icon:GetFrameLevel()
+    if icon.lastTop ~= top or icon.textBaseLevel ~= base then
+        icon.lastTop, icon.textBaseLevel = top, base
+        icon.cd:SetFrameLevel(base + (top and K.LEVEL.countdown or K.LEVEL.top))
     end
 end
 
@@ -329,6 +333,7 @@ local function StylePlain(icon, view, width, height)
     end
     PlaceText(icon.count, icon, view.stackPos or 9, K.Pixels(1) + border)
     StyleKey(icon, view)
+    if icon.chargeCd then C.TrackingBars.StyleChargeText(icon, view) end
     C.TrackingBars.Style(icon, view)
     icon.styleGen, icon.styleView = view.styleGen, view
     if icon.glow or icon.ants or view.kickMark then C.Effects.Refit(icon) end
@@ -564,6 +569,7 @@ function Icons.Apply(entry)
     if icon.lastFmt ~= formatter then
         icon.lastFmt = formatter
         cooldown:SetCountdownFormatter(formatter)
+        if icon.chargeCd then icon.chargeCd:SetCountdownFormatter(formatter) end
     end
 end
 

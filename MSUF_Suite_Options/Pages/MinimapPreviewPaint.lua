@@ -14,63 +14,79 @@ local LANDING, LANDING_ICON, ZOOM = Suite.MinimapLanding, Suite.MinimapLandingIc
 local ROTATE = Suite.MinimapRotate
 local RULES = P.catalog.minimap.rules
 local Native = Suite.MinimapElements
+local Data = {}
+P.MinimapPreviewData = Data
+local TEXTS, ICONS, ICON_KEYS, LAYERS
 
 -- { name, sample text, key } of every info text.
-local TEXTS = {
-    { "Clock", "12:34", "clock" }, { "FPS", "60 FPS", "fps" }, { "Latency", "23 ms", "latency" },
-    { "Coordinates", "42.1, 56.7", "coordinates" }, { "Durability", "100%", "durability" },
-    { "Location", "Current zone", "location" }, { "Weather", "Clear", "weather" },
-    { "Difficulty", "5H", "difficulty" }, { "CalendarDay", "12", "calendarDay" },
-}
--- { key, label, section, visibility setting (false: native state), layer, atlas, file }
-local ICONS = {
-    { "dungeon", "Group finder", "dungeon", "dungeonButton", "blizzard", "groupfinder-eye-single" },
-    { "queueStatus", "Queue status", "elements", "queueStatusEnabled", "blizzard", "groupfinder-eye-single", nil, "QueueStatus" },
-    { "tracking", "Tracking", "elements", "showTracking", "blizzard", "ui-hud-minimap-tracking-up", "Interface\\Minimap\\Tracking\\None" },
-    { "calendar", "Calendar", "elements", "showCalendar", "blizzard", "ui-hud-minimap-calendar-up", "Interface\\Calendar\\UI-Calendar-Button" },
-    { "mail", "Mail", "elements", "showMail", "blizzard", "ui-hud-minimap-mail-up", "Interface\\Minimap\\Tracking\\Mailbox" },
-    { "crafting", "Crafting", "elements", "showCrafting", "blizzard", "UI-HUD-Minimap-CraftingOrder-Up", "Interface\\Icons\\INV_Hammer_20" },
-    { "compartment", "Compartment", "elements", "showCompartment", "blizzard", "ui-hud-minimap-button", "Interface\\Buttons\\UI-OptionsButton" },
-    { "externalEvent", "External event", "elements", false, "blizzard", nil, "Interface\\Icons\\Spell_nature_timestop", "ExternalEvent" },
-    { "difficulty", "Difficulty", "elements", "showDifficulty", "blizzard", nil, "Interface\\GroupFrame\\UI-Group-LeaderIcon" },
-    { "folio", "Omnium Folio", "landing", "showLanding", "folio", "GarrLanding-MinimapIcon-Alliance-Up", "Interface\\Icons\\INV_Misc_Book_09" },
-    { "drawer", "Addon drawer", "addons", "collectButtons", "addons", nil, "Interface\\Buttons\\UI-OptionsButton" },
-}
-local ICON_KEYS = {}
-if not Suite.Client.isForever then
-    ICONS[#ICONS + 1] = { "specialization", "Minimap specialization menu", "specialization", "specButton",
-        "specialization", nil, "Interface\\Icons\\INV_Misc_QuestionMark" }
+function Data.Texts()
+    if TEXTS then return TEXTS end
+    TEXTS = {
+        { "Clock", "12:34", "clock" }, { "FPS", "60 FPS", "fps" }, { "Latency", "23 ms", "latency" },
+        { "Coordinates", "42.1, 56.7", "coordinates" }, { "Durability", "100%", "durability" },
+        { "Location", "Current zone", "location" }, { "Weather", "Clear", "weather" },
+        { "Difficulty", "5H", "difficulty" }, { "CalendarDay", "12", "calendarDay" },
+    }
+    return TEXTS
 end
-for _, spec in ipairs(ICONS) do ICON_KEYS[spec[1]] = true end
-local LAYERS = {
-    { "map", "Map" }, { "border", "Border" }, { "ornament", "Artwork" }, { "glow", "Glow" },
-    { "backdrop", "Plate" }, { "shadow", "Shadow" },
-    { "text", "Texts" }, { "blizzard", "Blizzard" }, { "folio", "Folio" },
-    { "addons", "Addons" }, { "player", "Player arrow" },
-    { "clock", "Clock" }, { "fps", "FPS" }, { "latency", "Latency" },
-    { "coordinates", "Coordinates" }, { "durability", "Durability" }, { "location", "Location" },
-    { "weather", "Weather" }, { "difficultyText", "Difficulty text" },
-    { "calendarDay", "Calendar day" }, { "dungeon", "Group finder" },
-    { "queueStatus", "Queue status" },
-    { "tracking", "Tracking" }, { "calendar", "Calendar" }, { "mail", "Mail" },
-    { "crafting", "Crafting" }, { "compartment", "Compartment" }, { "externalEvent", "External event" }, { "difficulty", "Difficulty" },
-    { "zoom", "Zoom buttons" }, { "compass", "Compass" },
-    { "guides", "Guides" }, { "hidden", "Hidden" },
-}
-local LAYER_COLORS = {
-    map = { 0.30, 0.66, 1.00 }, border = { 0.85, 0.70, 0.25 }, ornament = { 0.90, 0.42, 1.00 },
-    glow = { 0.20, 0.90, 0.85 }, backdrop = { 0.80, 0.55, 0.25 }, shadow = { 0.48, 0.56, 0.72 },
-    text = { 0.70, 0.90, 1.00 }, blizzard = { 0.95, 0.72, 0.18 }, folio = { 0.90, 0.42, 1.00 },
-    addons = { 0.30, 0.78, 0.55 }, specialization = { 0.30, 0.78, 0.55 },
-    player = { 0.95, 0.72, 0.18 }, guides = { 0.42, 0.72, 1.00 }, hidden = { 0.48, 0.56, 0.72 },
-}
-for _, entry in ipairs(LAYERS) do
-    local key = entry[1]
-    entry[3] = LAYER_COLORS[key] or (key == "zoom" or key == "compass") and LAYER_COLORS.blizzard
-        or LAYER_COLORS.text
+-- { key, label, section, visibility setting (false: native state), layer, atlas, file }
+function Data.Icons()
+    if ICONS then return ICONS end
+    ICONS = {
+        { "dungeon", "Group finder", "dungeon", "dungeonButton", "blizzard", "groupfinder-eye-single" },
+        { "queueStatus", "Queue status", "elements", "queueStatusEnabled", "blizzard", "groupfinder-eye-single", nil, "QueueStatus" },
+        { "tracking", "Tracking", "elements", "showTracking", "blizzard", "ui-hud-minimap-tracking-up", "Interface\\Minimap\\Tracking\\None" },
+        { "calendar", "Calendar", "elements", "showCalendar", "blizzard", "ui-hud-minimap-calendar-up", "Interface\\Calendar\\UI-Calendar-Button" },
+        { "mail", "Mail", "elements", "showMail", "blizzard", "ui-hud-minimap-mail-up", "Interface\\Minimap\\Tracking\\Mailbox" },
+        { "crafting", "Crafting", "elements", "showCrafting", "blizzard", "UI-HUD-Minimap-CraftingOrder-Up", "Interface\\Icons\\INV_Hammer_20" },
+        { "compartment", "Compartment", "elements", "showCompartment", "blizzard", "ui-hud-minimap-button", "Interface\\Buttons\\UI-OptionsButton" },
+        { "externalEvent", "External event", "elements", false, "blizzard", nil, "Interface\\Icons\\Spell_nature_timestop", "ExternalEvent" },
+        { "difficulty", "Difficulty", "elements", "showDifficulty", "blizzard", nil, "Interface\\GroupFrame\\UI-Group-LeaderIcon" },
+        { "folio", "Omnium Folio", "landing", "showLanding", "folio", "GarrLanding-MinimapIcon-Alliance-Up", "Interface\\Icons\\INV_Misc_Book_09" },
+        { "drawer", "Addon drawer", "addons", "collectButtons", "addons", nil, "Interface\\Buttons\\UI-OptionsButton" },
+    }
+    if not Suite.Client.isForever then
+        ICONS[#ICONS + 1] = { "specialization", "Minimap specialization menu", "specialization", "specButton",
+            "specialization", nil, "Interface\\Icons\\INV_Misc_QuestionMark" }
+    end
+    ICON_KEYS = {}
+    for _, spec in ipairs(ICONS) do ICON_KEYS[spec[1]] = true end
+    return ICONS
+end
+function Data.Layers()
+    if LAYERS then return LAYERS end
+    LAYERS = {
+        { "map", "Map" }, { "border", "Border" }, { "ornament", "Artwork" }, { "glow", "Glow" },
+        { "backdrop", "Plate" }, { "shadow", "Shadow" },
+        { "text", "Texts" }, { "blizzard", "Blizzard" }, { "folio", "Folio" },
+        { "addons", "Addons" }, { "player", "Player arrow" },
+        { "clock", "Clock" }, { "fps", "FPS" }, { "latency", "Latency" },
+        { "coordinates", "Coordinates" }, { "durability", "Durability" }, { "location", "Location" },
+        { "weather", "Weather" }, { "difficultyText", "Difficulty text" },
+        { "calendarDay", "Calendar day" }, { "dungeon", "Group finder" },
+        { "queueStatus", "Queue status" },
+        { "tracking", "Tracking" }, { "calendar", "Calendar" }, { "mail", "Mail" },
+        { "crafting", "Crafting" }, { "compartment", "Compartment" }, { "externalEvent", "External event" }, { "difficulty", "Difficulty" },
+        { "zoom", "Zoom buttons" }, { "compass", "Compass" },
+        { "guides", "Guides" }, { "hidden", "Hidden" },
+    }
+    local colors = {
+        map = { 0.30, 0.66, 1.00 }, border = { 0.85, 0.70, 0.25 }, ornament = { 0.90, 0.42, 1.00 },
+        glow = { 0.20, 0.90, 0.85 }, backdrop = { 0.80, 0.55, 0.25 }, shadow = { 0.48, 0.56, 0.72 },
+        text = { 0.70, 0.90, 1.00 }, blizzard = { 0.95, 0.72, 0.18 }, folio = { 0.90, 0.42, 1.00 },
+        addons = { 0.30, 0.78, 0.55 }, specialization = { 0.30, 0.78, 0.55 },
+        player = { 0.95, 0.72, 0.18 }, guides = { 0.42, 0.72, 1.00 }, hidden = { 0.48, 0.56, 0.72 },
+    }
+    for _, entry in ipairs(LAYERS) do
+        local key = entry[1]
+        entry[3] = colors[key] or (key == "zoom" or key == "compass") and colors.blizzard or colors.text
+    end
+    if not Suite.Client.isForever then
+        table.insert(LAYERS, #LAYERS - 1, { "specialization", "Specialization", colors.specialization })
+    end
+    return LAYERS
 end
 local ORNAMENT_EDGES = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
-if not Suite.Client.isForever then table.insert(LAYERS, #LAYERS - 1, { "specialization", "Specialization", LAYER_COLORS.specialization }) end
 
 local function Clamp(value, low, high) return math.max(low, math.min(high, value)) end
 -- Secret-safe readers from MSUF_Suite (always loaded, also without the runtime).
@@ -669,8 +685,7 @@ local function PaintElements(ui, config)
     PaintMapControls(ui, config)
 end
 
-P.MinimapPreviewData = {
-    TEXTS = TEXTS, ICONS = ICONS, ICON_KEYS = ICON_KEYS, LAYERS = LAYERS, ORNAMENT_EDGES = ORNAMENT_EDGES,
-    Clamp = Clamp, Tint = Tint, SetIcon = SetIcon, OffsetPrefix = OffsetPrefix, OffsetKeys = OffsetKeys,
-    PaintElements = PaintElements,
-}
+Data.ORNAMENT_EDGES = ORNAMENT_EDGES
+Data.Clamp, Data.Tint, Data.SetIcon = Clamp, Tint, SetIcon
+Data.OffsetPrefix, Data.OffsetKeys = OffsetPrefix, OffsetKeys
+Data.PaintElements = PaintElements

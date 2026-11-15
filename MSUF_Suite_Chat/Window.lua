@@ -507,7 +507,6 @@ function C.ApplyWindow(self, frame, keepPosition)
     C.ApplyCompleteMessages(self, frame)
     -- The scrollback limit comes first: the saved ring replays into its room.
     C.ApplyLineLimit(self, frame)
-    C.ApplyMessages(self, frame)
     C.ApplyInputHistory(self, frame)
     C.ApplyMessageFade(visual, c)
     C.ApplyInactivity(self, visual)

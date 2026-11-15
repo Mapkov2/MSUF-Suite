@@ -112,7 +112,7 @@ local function BuiltIn(ctx, b, reveal)
         help = "Choose whether the Time place shows the realm clock or your computer's clock, in 12 or 24 hours, with or without seconds.",
     })
     SharedRules(ctx, b, reveal, PAGE .. "_warnings", Tr("Warning thresholds"), P.SectionRules(ID, "warnings"), {
-        help = "The Durability, FPS and Latency places, and FPS / latency, take the warning color at these limits.",
+        help = "Bag space, Durability, FPS and Latency use the warning color at these limits.",
     })
     SharedRules(ctx, b, reveal, PAGE .. "_coordinates", Tr("Coordinates"), P.SectionRules(ID, "coordinates"), {})
 end

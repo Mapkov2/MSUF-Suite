@@ -1,7 +1,7 @@
 local _, P = ...
 local Tr, M, W = P.Tr, P.M, P.W
 local A, D = P.Suite.NameplateAuraColors, P.NameplatesAuraDraft
-local PAGE, ID, SECTION = "suite_nameplates", "nameplates", "suite_nameplates_auraColors"
+local PAGE, ID, SECTION = "suite_nameplates", "nameplates", "suite_nameplates_auraWorkspace"
 local UI = {}
 P.NameplatesAuraUI = UI
 local HELP = P.Help(
@@ -159,19 +159,13 @@ end
 
 -- The section's three-dot colour shortcut, where the host's widgets offer
 -- one (older hosts do not, like the skin sections in Menu/Controls.lua).
-local function AttachColors(body)
-    if not W.AttachContextColorShortcut then return end
-    local shortcut = W.AttachContextColorShortcut(body, { title = Tr("DoT health colors"), maxTargets = A.LIMIT + 2,
-        getTargets = function()
-            local targets = { ColorTarget("auraColorsAll", Tr("All selected DoTs")),
-                ColorTarget("auraColorsNone", Tr("No selected DoT")) }
-            for index, entry in ipairs(D.Rows()) do
-                targets[#targets + 1] = ColorTarget("auraColorsData", Name(entry.id), entry)
-            end
-            return targets
-        end,
-    })
-    if shortcut then P.HM.ReleaseColorShortcut(shortcut) end
+function UI.ColorTargets()
+    local targets = { ColorTarget("auraColorsAll", Tr("All selected DoTs")),
+        ColorTarget("auraColorsNone", Tr("No selected DoT")) }
+    for _, entry in ipairs(D.Rows()) do
+        targets[#targets + 1] = ColorTarget("auraColorsData", Name(entry.id), entry)
+    end
+    return targets
 end
 
 local function Actions(ctx, parent, index)
@@ -217,7 +211,7 @@ local function BuildEntry(ctx, list, index, width)
         up = up, down = down, height = 90 }
 end
 
-local function RefreshList(pool, list, builder, body, y, status)
+local function RefreshList(pool, list, y, status)
     local rows, offset = D.Rows(), 0
     for i, ui in ipairs(pool) do
         local row = rows[i]
@@ -245,7 +239,7 @@ local function RefreshList(pool, list, builder, body, y, status)
     if P.Get(ID, "look") == 2 then text = Tr("Choose a nameplate skin to show DoT health colors") end
     if UI.invalidID then text = Tr("Enter a valid numeric aura ID") end
     P.SetTranslatedText(status, text)
-    P.FinishBody(builder, body, y - offset - 12)
+    return y - offset - 12
 end
 
 local function PreviewRows()
@@ -261,8 +255,7 @@ local function PreviewRows()
     return row
 end
 
-function UI.Build(ctx, builder, body)
-    local width = math.max(240, (P.HM.GetSectionWidth(body) or builder.width or 720) - 32)
+function UI.Build(ctx, body, width, resize)
     local help = P.Description(body, HELP, 16, -12, width, Tr("DoT health colors"))
     local y = -24 - math.max(14, math.ceil(help:GetStringHeight() or 14))
     local settings = { SpecRow(), LabelRow("auraColorsEnabled", "Color enemy health by your DoTs", "toggle"),
@@ -284,22 +277,18 @@ function UI.Build(ctx, builder, body)
     list:SetSize(width, 1)
     list:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
     for i = 1, A.LIMIT do pool[i] = BuildEntry(ctx, list, i, width) end
-    M.TrackRefresh(ctx, function() RefreshList(pool, list, builder, body, y, status) end)
-    RefreshList(pool, list, builder, body, y, status)
+    local last = RefreshList(pool, list, y, status)
+    M.TrackRefresh(ctx, function()
+        local bottom = RefreshList(pool, list, y, status)
+        if bottom ~= last then
+            last = bottom
+            resize(bottom)
+        end
+    end)
+    return last
 end
 
-function P.BuildNameplatesAuraColors(ctx, builder, sections)
-    sections.auraColors = P.LazySection(builder, SECTION, Tr("DoT health colors"), true, {
-        content = function(body) UI.Build(ctx, builder, body) end,
-        shell = function(body)
-            AttachColors(body)
-            P.AttachSectionReset(ctx, body, Tr("DoT colors"), function()
-                D.ResetColors()
-                return true
-            end)
-        end,
-    })
-end
+UI.ResetColors = D.ResetColors
 
 function P.BuildNameplatesAuraSamples(editor)
     local bar = CreateFrame("Frame", nil, editor.canvas)

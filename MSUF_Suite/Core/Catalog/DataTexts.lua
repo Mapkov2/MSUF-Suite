@@ -225,6 +225,7 @@ B.Section("dataTexts", "clock", "Clock", {
 })
 B.Section("dataTexts", "warnings", "Warning thresholds", {
     Number("durabilityWarning", "Durability warns at or below (percent)", 20, 1, 99),
+    Number("bagSpaceWarning", "Warn at or below this many free bag slots (0 = off)", NS.Client.isForever and 4 or 0, 0, 50),
     Number("fpsWarning", "FPS warns below", 30, 1, 300),
     Number("latencyWarning", "Latency warns at or above (ms)", 200, 20, 2000),
 })
@@ -722,6 +723,7 @@ end
 if NS.Client.isForever then
     B.Section("dataTexts", "supplies", "Supplies", {
         Bool("suppliesLearn", "Remember carried reagents", true),
+        Number("ammoWarning", "Warn when ammunition is below this amount (0 = off)", 0, 0, 5000),
         B.String("suppliesItems", "Additional supply item IDs", "", 400),
     })
 end

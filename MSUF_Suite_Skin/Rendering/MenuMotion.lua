@@ -19,6 +19,8 @@ local function Safe(frame)
 end
 
 local function TrackChecked(frame, owner, kind)
+    local groupFinder = NS.ForeverGroupFinder
+    if groupFinder and groupFinder.IsActivityList and groupFinder.IsActivityList(frame) then return false, false end
     local collection = NS.CollapseCollections.Track(frame, owner)
     if Safety.HasMethod(frame, "GetDataProvider") and Safety.HasMethod(frame, "RegisterCallback") then
         NS.ResultMotion.Track(frame, owner)

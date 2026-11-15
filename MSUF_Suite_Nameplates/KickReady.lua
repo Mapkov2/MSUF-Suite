@@ -73,7 +73,7 @@ end
 
 local function HideBorder(state)
     local border = state.border
-    if border then for i = 1, 4 do border.edges[i]:Hide() end end
+    if border then Style.PaintBorder(border, nil, 0) end
 end
 
 local function HideVisuals(state)
@@ -102,9 +102,11 @@ local function PaintFill(cast, state, engine, look, notInterruptible)
         fill = cast:CreateTexture(nil, "ARTWORK", nil, 3)
         state.fill = fill
     end
-    if state.fillTexture ~= look.texture then
-        fill:SetTexture(look.texture)
-        state.fillTexture = look.texture
+    local textures = private.Textures
+    local path = textures and textures.castFill or look.texture
+    if state.fillTexture ~= path then
+        fill:SetTexture(path)
+        state.fillTexture = path
     end
     if state.fillTarget ~= target then
         fill:ClearAllPoints()
@@ -114,6 +116,9 @@ local function PaintFill(cast, state, engine, look, notInterruptible)
     -- MSUF_CastbarUtils.lua's tint: not interruptible, else the cast color
     -- while an interrupt is ready and the unavailable color while none is.
     local castColor, nonColor, unavailableColor = engine.FillColors()
+    if textures and textures.castFill then
+        castColor, nonColor = textures.CastFillColorObjects()
+    end
     local active = castColor
     if engine.SlotCount() > 0 then active = engine.SelectColor(castColor, unavailableColor) end
     fill:SetVertexColorFromBoolean(notInterruptible, nonColor, active)
@@ -359,6 +364,7 @@ local function OnEngineChange(reason)
     local engine = NS.HostBridge.KickReady()
     local look = engine.Look()
     if reason == "settings" then
+        if private.Textures then private.Textures.RefreshCastColors() end
         shown = look.show == true
         if shown then RepaintCasts() else RestoreAll() end
         return

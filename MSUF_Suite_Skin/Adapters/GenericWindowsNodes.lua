@@ -25,7 +25,6 @@ local FadeChrome = Shared.FadeChrome
 local FadeAtlasRegions = Shared.FadeAtlasRegions
 local EnsureThemeListener = Shared.EnsureThemeListener
 local GlyphColor = Shared.GlyphColor
-local RecolorGlyph = Shared.RecolorGlyph
 
 local staticPopupButtons = Kit.WeakSet()
 local legacyPanelButtons = Kit.WeakSet()
@@ -374,16 +373,6 @@ local function GlyphForButton(button, hint)
     return nil
 end
 
--- A glyph follows its button's enabled state (Shared.GlyphColor). The hooks
--- stay once set and repaint only a glyph the skin still keeps.
-local stateHooked = Kit.WeakSet()
-local function HookEnabledState(button)
-    if stateHooked[button] or not Safety.HasMethod(button, "HookScript") then return end
-    stateHooked[button] = true
-    button:HookScript("OnEnable", RecolorGlyph)
-    button:HookScript("OnDisable", RecolorGlyph)
-end
-
 local function ShowGlyph(button, owner, glyphText)
     local ownerState = OwnerState(owner)
     local glyph = ownerState.glyphs[button]
@@ -397,7 +386,6 @@ local function ShowGlyph(button, owner, glyphText)
     glyph:SetText(glyphText)
     glyph:SetTextColor(GlyphColor(button, glyphRole))
     glyph:Show()
-    HookEnabledState(button)
     EnsureThemeListener()
 end
 

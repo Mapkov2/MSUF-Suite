@@ -55,7 +55,10 @@ function Navigation.NextStep()
     local route = Navigation.travel
     if not route then return false end
     local nextIndex = route.index + 1
-    if not route.steps[nextIndex] then Navigation.travel = nil return false end
+    if not route.steps[nextIndex] then
+        Navigation.travel = nil
+        return false
+    end
     if not Navigation.Select(route.steps[nextIndex], "route") then return false end
     route.index = nextIndex
     return true
@@ -152,7 +155,10 @@ function Navigation.AdvanceQuests()
         -- A different map pin is the player's own choice: the route ends.
         local pin = C_Map.GetUserWaypoint()
         if not Suite.Public(pin) then return end
-        if pin and not Navigation.IsSelectedPoint(pin) then Navigation.SetQuests(nil) return end
+        if pin and not Navigation.IsSelectedPoint(pin) then
+            Navigation.SetQuests(nil)
+            return
+        end
     end
     local nextQuest = NearestQuest(route.ids)
     if nextQuest and FollowQuest(route, nextQuest) then return end

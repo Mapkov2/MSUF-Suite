@@ -10,8 +10,14 @@ local waiting, editMode = false, false
 local SPAN = 4096
 local EMPTY_FILTER = { includeSpellIDs = { [1] = true } }
 
-local function Paint(texture, hex)
-    texture:SetColorTexture(NS.RGB(hex))
+local function Paint(texture, hex, path, hadTexture)
+    if path then
+        texture:SetTexture(path)
+        texture:SetVertexColor(NS.RGB(hex))
+    else
+        if hadTexture then texture:SetVertexColor(1, 1, 1, 1) end
+        texture:SetColorTexture(NS.RGB(hex))
+    end
 end
 
 -- Blizzard seals each native slot once its initializeFrame returns: the
@@ -149,12 +155,32 @@ local function Individual(state, health, index, filter)
     end
 end
 
-local function PaintLayer(layer, fill, color)
+local function PaintLayer(layer, fill, color, path)
     layer.texture:SetAllPoints(fill)
-    Paint(layer.texture, color)
+    Paint(layer.texture, color, path, layer.path)
+    layer.path = path
 end
 
-local function ConfigureState(state, health)
+local function RepaintTextures(state, path)
+    for i = 1, #rows do
+        local layer = state.layers[i]
+        if layer and config.auraColorsIndividual then
+            Paint(layer.texture, rows[i].color, path, layer.path)
+            layer.path = path
+        end
+    end
+    Paint(state.all.texture, config.auraColorsAll, path, state.all.path)
+    Paint(state.none.texture, config.auraColorsNone, path, state.none.path)
+    state.all.path, state.none.path, state.path = path, path, path
+end
+
+local function PaintOpacity(state, alpha)
+    if state.all then state.all.texture:SetAlpha(alpha) end
+    if state.none then state.none.texture:SetAlpha(alpha) end
+    for _, layer in ipairs(state.layers) do layer.texture:SetAlpha(alpha) end
+end
+
+local function ConfigureState(state, health, path)
     state.active = false
     state.container:SetEnabled(false)
     local fill = health:GetStatusBarTexture()
@@ -171,7 +197,7 @@ local function ConfigureState(state, health)
         end
         if config.auraColorsIndividual then
             Individual(state, health, i, filter)
-            PaintLayer(state.layers[i], fill, row.color)
+            PaintLayer(state.layers[i], fill, row.color, path)
         end
     end
     for i = #rows + 1, #state.countSlots do
@@ -189,9 +215,10 @@ local function ConfigureState(state, health)
         state.none.texture:Hide()
     end
     state.all, state.none = state.allCounts[#rows], state.noneCounts[#rows]
-    PaintLayer(state.all, fill, config.auraColorsAll)
-    PaintLayer(state.none, fill, config.auraColorsNone)
-    state.revision, state.fill = revision, fill
+    PaintLayer(state.all, fill, config.auraColorsAll, path)
+    PaintLayer(state.none, fill, config.auraColorsNone, path)
+    if state.opacity then PaintOpacity(state, state.opacity) end
+    state.revision, state.fill, state.path = revision, fill, path
 end
 
 local function Hide(state)
@@ -203,6 +230,13 @@ local function Hide(state)
     for _, layer in ipairs(state.layers) do layer.texture:Hide() end
     state.unit = nil
     state.active = false
+end
+
+function Colors.SetOpacity(uf, alpha)
+    local state = states[uf]
+    if not state or state.opacity == alpha then return end
+    state.opacity = alpha
+    PaintOpacity(state, alpha)
 end
 
 function Colors.Restore(uf)
@@ -234,24 +268,29 @@ function Colors.Configure(c, force)
     end
     config = c
     local spec = A.Spec()
+    local textures = private.Textures
+    local texture = textures and textures.healthFill
     if not force and plan and plan.spec == spec and plan.data == c.auraColorsData
         and plan.all == c.auraColorsAll and plan.none == c.auraColorsNone
-        and plan.warn == c.auraColorsNoneEnabled and plan.individual == c.auraColorsIndividual then return end
+        and plan.warn == c.auraColorsNoneEnabled and plan.individual == c.auraColorsIndividual
+        and plan.texture == texture then return end
     local selected = A.Selected(A.Decode(c.auraColorsData)[spec])
     local changed = not plan or plan.all ~= c.auraColorsAll or plan.none ~= c.auraColorsNone
-        or plan.warn ~= c.auraColorsNoneEnabled or plan.individual ~= c.auraColorsIndividual
+        or plan.warn ~= c.auraColorsNoneEnabled or plan.individual ~= c.auraColorsIndividual or plan.texture ~= texture
         or not SameRows(rows, selected)
     rows = selected
     plan = plan or {}
     plan.spec, plan.data, plan.all, plan.none = spec, c.auraColorsData, c.auraColorsAll, c.auraColorsNone
     plan.warn, plan.individual = c.auraColorsNoneEnabled, c.auraColorsIndividual
+    plan.texture = texture
     if changed then revision = revision + 1 end
 end
 
 function Colors.Apply(uf, unit, enemy)
     local state = states[uf]
     if not config or not config.auraColorsEnabled or #rows == 0 or not enemy
-        or config.look == private.Mode.LOOK_BLIZZARD or not config.enemy or not unit then
+        or config.look == private.Mode.LOOK_BLIZZARD or not config.enemy or not unit
+        or private.IsSkinSuppressed and private.IsSkinSuppressed(uf) then
         if state then Hide(state) end
         return
     end
@@ -271,8 +310,14 @@ function Colors.Apply(uf, unit, enemy)
         Hide(state)
         return
     end
-    if state.active and state.revision == revision and state.fill == fill and state.unit == unit then return end
-    if state.revision ~= revision or state.fill ~= fill then ConfigureState(state, health) end
+    local textures = private.Textures
+    local path = textures and textures.focusFill and textures.HealthFill(uf) or plan.texture
+    if state.revision ~= revision or state.fill ~= fill then
+        ConfigureState(state, health, path)
+    else
+        if state.path ~= path then RepaintTextures(state, path) end
+        if state.active and state.unit == unit then return end
+    end
     if state.unit ~= unit then
         state.container:SetUnit(unit)
         state.unit = unit

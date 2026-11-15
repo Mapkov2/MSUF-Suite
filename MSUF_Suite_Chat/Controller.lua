@@ -46,6 +46,16 @@ local function ForEachChatFrame(callback, arg)
     end
 end
 
+-- Window events can fire inside Blizzard's pop-out/whisper setup, before the
+-- native copy loop finishes. Reconcile message hooks after that stack unwinds.
+local function RefreshMessageWindows(self)
+    if C.LayoutLocked() then
+        S.Queue("chat")
+        return
+    end
+    ForEachChatFrame(C.ApplyMessages, self)
+end
+
 local function ApplyNativeWindow(self, frame) ApplyWindow(self, frame, true) end
 
 local function ApplyAll(self, nativeRefresh)
@@ -62,6 +72,7 @@ local function ApplyAll(self, nativeRefresh)
     self.selectedChat = _G.SELECTED_CHAT_FRAME
     self.selectedDock = DockSelection()
     C.RefreshClocks()
+    self.messageWindows:Request()
 end
 
 local function NativeWindowsUpdated(self)
@@ -116,8 +127,16 @@ end
 
 -- Temporary whisper frames are created after the usual chat-window update
 -- events. Hook only these cold window paths, never the message path.
+local function ApplyOpenWhisper(self, frame)
+    if S.Public(frame.isTemporary) and frame.isTemporary then C.ApplyMessages(self, frame) end
+end
+
 local function TemporaryWindowOpened()
-    if M.active then ApplyAll(M, true) end
+    if not M.active then return end
+    ApplyAll(M, true)
+    -- This post-hook runs after the temporary window's seed copy and before
+    -- Blizzard synchronously delivers the first incoming whisper to it.
+    if not C.LayoutLocked() then ForEachChatFrame(ApplyOpenWhisper, M) end
 end
 
 local function DockSelectionChanged()
@@ -146,6 +165,7 @@ local function NewWindowOpened()
     if frame then ApplyWindow(M, frame, S.editMode) end
     RefreshSelection(M)
     C.RefreshClocks()
+    M.messageWindows:Request()
 end
 
 -- The FCF_* targets exist at login on both clients (Blizzard_ChatFrameBase);
@@ -158,6 +178,7 @@ end
 
 function M:Enable()
     self.geometry = true
+    self.messageWindows = self.context:Coalesce(0, RefreshMessageWindows)
     self.context:Event("UPDATE_CHAT_WINDOWS", NativeWindowsUpdated)
     self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", NativeWindowsUpdated)
     for _, event in ipairs(FRIEND_EVENTS) do C.ListenInCombat(self.context, event, UpdateFriendsCount) end
@@ -191,6 +212,7 @@ function M:Disable()
     if self.toolbar or self.toolbarDockOwned then C.ReleaseToolbar() end
     C.StopInputAnimations()
     C.DisableClock()
+    self.messageWindows:Cancel()
     C.MessagesDisable()
     C.SpamFilterDisable()
     -- Faded alpha goes back before the context restores the tabs it owns.

@@ -1,5 +1,7 @@
 local _, Private = ...
 local NS, Suite, Navigation = Private.NS, Private.Suite, Private.Navigation
+local Finite, Public = Suite.Finite, Suite.Public
+local Readout, Mode = Navigation.Readout, Navigation.Mode
 local Module = { geometry = true, model = {}, screen = { age = 0 }, moving = false, settled = false, quiet = 0,
     running = false, visible = false }
 Module.addons = { Blizzard_QuestNavigation = true, Blizzard_WorldMap = true, TomTom = true,
@@ -7,6 +9,9 @@ Module.addons = { Blizzard_QuestNavigation = true, Blizzard_WorldMap = true, Tom
     DugisGuideViewerZ = true, SilverDragon = true }
 local ART = { "Icon", "Arrow", "DistanceText", "IconBorder" }
 local SAMPLE_INTERVAL, HIDDEN_INTERVAL, ARROW_INTERVAL = .1, .25, 1 / 30
+-- The pace of a marker shown on screen while the client reports the player
+-- moving (owner decision 2026-11-15; Pace).
+local MOVING_SAMPLE_INTERVAL = 1
 -- At the arrow's pace a tick is a sample once this long has passed since the
 -- last one: just under SAMPLE_INTERVAL, so the third tick counts whatever the
 -- clock (in milliseconds) rounds to.
@@ -19,6 +24,10 @@ local STATE_EVENTS = { "SUPER_TRACKING_CHANGED", "USER_WAYPOINT_UPDATED", "QUEST
     "NAVIGATION_FRAME_CREATED", "NAVIGATION_FRAME_DESTROYED", "PLAYER_ENTERING_WORLD",
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ADDON_LOADED",
     "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING" }
+if Navigation.RefreshSleepingBag then
+    STATE_EVENTS[#STATE_EVENTS + 1] = "QUEST_ACCEPTED"
+    STATE_EVENTS[#STATE_EVENTS + 1] = "QUEST_TURNED_IN"
+end
 -- The events that start or end a pause (Pause), and the ones that stay
 -- registered through it: the two that can end it, and a map pin the player
 -- places meanwhile, which fires once and is followed when the pause ends.
@@ -29,7 +38,10 @@ local Tick
 local function RestoreArt(self)
     if not self.native or not self.ownsArt then return end
     local protected = self.native:IsProtected()
-    if not Suite.Public(protected) or protected == true then self.restorePending = true return end
+    if not Suite.Public(protected) or protected == true then
+        self.restorePending = true
+        return
+    end
     for _, key in ipairs(ART) do
         local region = self.native[key]
         if region then self.context:RestoreProperty(region, "SetAlpha") end
@@ -48,15 +60,24 @@ end
 -- Blizzard's marker stays unprotected in the open world, so a destination
 -- that appears in combat (a reload, a new guide step) is taken over too.
 local function OwnArt(self)
-    if self.ownsArt then self.restorePending = false return true end
+    if self.ownsArt then
+        self.restorePending = false
+        return true
+    end
     if not Ownable(self) then return false end
     self.ownsArt = true
     for _, key in ipairs(ART) do
         local region = self.native[key]
-        if not region or NS.Safety.IsForbidden(region) then RestoreArt(self) return false end
+        if not region or NS.Safety.IsForbidden(region) then
+            RestoreArt(self)
+            return false
+        end
         self.context:UnprotectedProperty(region, "GetAlpha", "SetAlpha", 0)
         local alpha = region:GetAlpha()
-        if not Suite.Finite(alpha) or alpha ~= 0 then RestoreArt(self) return false end
+        if not Suite.Finite(alpha) or alpha ~= 0 then
+            RestoreArt(self)
+            return false
+        end
     end
     return true
 end
@@ -97,20 +118,26 @@ end
 local function ReadPosition(self)
     local valid = C_Navigation.HasValidScreenPosition()
     local distance, clamped, state = C_Navigation.GetDistance(), C_Navigation.WasClampedToScreen(), C_Navigation.GetTargetState()
-    if not Suite.Public(valid) or valid ~= true or not Suite.Finite(distance) or distance <= 0
-        or not Suite.Public(clamped) or not Suite.Public(state) then return false end
-    local model, config = self.model, self.config
+    if not Public(valid) or valid ~= true or not Finite(distance) or distance <= 0
+        or not Public(clamped) or not Public(state) then return false end
+    local model, config, states = self.model, self.config, Enum.NavigationState
     model.valid, model.distance, model.clamped = true, distance, clamped == true
-    model.occluded = state == Enum.NavigationState.Occluded
+    model.occluded = state == states.Occluded
     -- A placed, measured destination decides. Forever reports Invalid for one
     -- while Blizzard's own in-game navigation option is off (live, 2026-11-10).
-    if state == Enum.NavigationState.Disabled then return false end
-    local speed = GetUnitSpeed("player")
-    if not Suite.Finite(speed) then speed = 0 end
+    if state == states.Disabled then return false end
+    -- The speed is the travel time's and a standing player's (Paint, Settle).
+    -- While the client reports the player moving and no travel time shows,
+    -- nothing reads it, so it is not asked for; the position above always is.
+    local speed
+    if config.showETA or not self.moving then
+        speed = GetUnitSpeed("player")
+        if not Finite(speed) then speed = 0 end
+    end
     model.speed = speed
-    Navigation.Readout(model, config, distance, speed)
+    Readout(model, config, distance, speed or 0)
     Proximity(self, distance)
-    model.mode = Navigation.Mode(model, config)
+    model.mode = Mode(model, config)
     if not config.showInCombat and NS.InCombat() then model.mode = nil end
     return true
 end
@@ -124,25 +151,36 @@ end
 -- frames per second or more, longer below). Samples that place nothing (the
 -- marker on screen, hidden or stopped) do not count, and while unannounced
 -- unreadable geometry lasts less than that it no longer hides the marker.
+-- A read that finds the geometry it already holds keeps what the last
+-- placement computed from it (Position): the safeguard read of a standing
+-- player's arrow then costs the reads alone.
 local function ReadScreen(self)
     local screen, host = self.screen, self.host
     local parent = host:GetParent()
     local centerX, centerY = parent:GetCenter()
     local sourceScale, scale = UIParent:GetEffectiveScale(), parent:GetEffectiveScale()
     local width, height = parent:GetSize()
-    if not Suite.Finite(centerX) or not Suite.Finite(centerY) or not Suite.Finite(sourceScale) or not Suite.Finite(scale)
-        or scale <= 0 or not Suite.Finite(width) or not Suite.Finite(height) or width <= 0 or height <= 0 then
+    if not Finite(centerX) or not Finite(centerY) or not Finite(sourceScale) or not Finite(scale)
+        or scale <= 0 or not Finite(width) or not Finite(height) or width <= 0 or height <= 0 then
         screen.valid = false
         return false
     end
-    screen.parent, screen.centerX, screen.centerY = parent, centerX, centerY
-    screen.sourceScale, screen.scale = sourceScale, scale
-    screen.radiusX, screen.radiusY = math.min(500, width * .38), math.min(230, height * .3)
+    local radiusX, radiusY = math.min(500, width * .38), math.min(230, height * .3)
+    if screen.parent ~= parent or screen.centerX ~= centerX or screen.centerY ~= centerY
+        or screen.sourceScale ~= sourceScale or screen.scale ~= scale
+        or screen.radiusX ~= radiusX or screen.radiusY ~= radiusY then
+        screen.parent, screen.centerX, screen.centerY = parent, centerX, centerY
+        screen.sourceScale, screen.scale = sourceScale, scale
+        screen.radiusX, screen.radiusY = radiusX, radiusY
+        self.projectionX = nil
+    end
     screen.valid, screen.age = true, 0
-    self.projectionX = nil
     return true
 end
 
+-- The second result says that the marker's place on screen may have changed
+-- (a new anchor, or parent geometry that was read anew): whether the pointer
+-- is over the marker must then be asked after this, not before.
 local function Position(self, sample)
     local model, config, host = self.model, self.config, self.host
     if not model.clamped then
@@ -151,18 +189,21 @@ local function Position(self, sample)
             host:ClearAllPoints()
             host:SetPoint("CENTER", self.projection, "CENTER")
             self.anchor = self.projection
+            return true, true
         end
-        return true
+        return true, false
     end
     local screen = self.screen
     if sample then screen.age = screen.age + 1 end
     if (not screen.valid or screen.age >= SCREEN_SAMPLES) and not ReadScreen(self) then return false end
     local x, y = self.projection:GetCenter()
-    if not Suite.Finite(x) or not Suite.Finite(y) then return false end
+    if not Finite(x) or not Finite(y) then return false end
     -- Same projection centre, same parent geometry and still anchored: the
     -- angle and the anchor are already what this would compute. Config changes
     -- arrive through Module:Refresh, which drops the anchor.
-    if self.screenAnchored and x == self.projectionX and y == self.projectionY then return true end
+    if self.screenAnchored and x == self.projectionX and y == self.projectionY then return true, false end
+    -- ReadScreen (and Module:Refresh) drop projectionX when the geometry changed.
+    local moved = self.projectionX == nil
     local x0, y0 = x, y
     local sourceScale, scale, centerX, centerY = screen.sourceScale, screen.scale, screen.centerX, screen.centerY
     local radiusX, radiusY = screen.radiusX, screen.radiusY
@@ -176,9 +217,10 @@ local function Position(self, sample)
         host:ClearAllPoints()
         host:SetPoint("CENTER", screen.parent, "CENTER", x, y)
         self.anchorX, self.anchorY, self.screenAnchored = x, y, true
+        moved = true
     end
     self.projectionX, self.projectionY = x0, y0
-    return true
+    return true, moved
 end
 
 local function Lost(self)
@@ -187,27 +229,102 @@ local function Lost(self)
     RestoreArt(self)
 end
 
--- A marker that cannot show is not placed. The native art is taken over only
--- once the marker is placed, so an unreadable position writes no native alpha.
 -- A completed sample of a player who is not moving stays true until the
 -- projection moves, the pointer changes the hover fade or an event arrives.
-local function Settle(self)
-    local x, y = self.projection:GetCenter()
-    if not Suite.Finite(x) or not Suite.Finite(y) then return end
+-- x and y are the projection centre when this tick has read it already.
+local function Settle(self, x, y)
+    if not x then
+        x, y = self.projection:GetCenter()
+        if not Finite(x) or not Finite(y) then return end
+    end
     self.sampleX, self.sampleY, self.settled, self.quiet = x, y, true, 0
 end
 
+-- Places and paints what ReadPosition found. A marker that cannot show is not
+-- placed. The native art is taken over only once the marker is placed, so an
+-- unreadable position writes no native alpha. x and y are what this tick has
+-- read already (Still); a placed arrow's centre is Position's. A hovered that
+-- is given comes from Resample, which has placed the marker already and asked
+-- for the pointer where the marker now is: neither is done again.
+local function Show(self, x, y, hovered)
+    if not Ownable(self) then
+        Navigation.Hide(self.view)
+        return
+    end
+    if hovered == nil and not Position(self, true) then
+        Lost(self)
+        return
+    end
+    if not OwnArt(self) then
+        Navigation.Hide(self.view)
+        return
+    end
+    local model, config, view = self.model, self.config, self.view
+    if hovered == nil then
+        hovered = config.fadeOnHover and view.root:IsMouseOver()
+        hovered = Public(hovered) and hovered == true
+    end
+    model.hovered = hovered
+    Navigation.Paint(view, model, config)
+    if not self.moving and model.speed == 0 then
+        if model.clamped then x, y = self.projectionX, self.projectionY end
+        Settle(self, x, y)
+    end
+end
+
+-- A full sample: an event, a refresh, and every tick of a marker that is not
+-- settled (a moving player's, a hidden one that cannot show).
 local function Paint(self)
     self.settled = false
-    if not self.supported or not ReadPosition(self) then Lost(self) return end
-    if not Ownable(self) then Navigation.Hide(self.view) return end
-    if not Position(self, true) then Lost(self) return end
-    if not OwnArt(self) then Navigation.Hide(self.view) return end
-    local model, config, root = self.model, self.config, self.view.root
-    local hovered = config.fadeOnHover and root:IsMouseOver()
-    model.hovered = Suite.Public(hovered) and hovered == true
-    Navigation.Paint(self.view, model, config)
-    if not self.moving and model.speed == 0 then Settle(self) end
+    if not self.supported or not ReadPosition(self) then
+        Lost(self)
+        return
+    end
+    return Show(self)
+end
+
+-- The sample of a settled marker (Tick). Settled says that the marker shows
+-- what the model holds: every change from outside (an event, a refresh, the
+-- screen, the driver frame) ends it, and the next tick is a full sample. So
+-- the position is read as always, and only a read that differs from the model
+-- in what the marker shows is placed and painted again: the mode, the
+-- readout, the distance (the scale by distance), the line of sight, the hover
+-- fade, on or off screen. An unchanged arrow is still placed, because the
+-- camera or the parent geometry may have moved it (Position holds what it
+-- placed last), and nothing else is written.
+local function Resample(self, x, y, hovered)
+    local model = self.model
+    local mode, stamp, distance, occluded = model.mode, model.readoutStamp, model.distance, model.occluded
+    local clamped, faded = model.clamped, model.hovered
+    self.settled = false
+    if not self.supported or not ReadPosition(self) then
+        Lost(self)
+        return
+    end
+    if not Ownable(self) then
+        Navigation.Hide(self.view)
+        return
+    end
+    -- Placed before the pointer is asked for, as a full sample does (Show):
+    -- what Still read holds only while the marker stays where it was.
+    local placed, moved = Position(self, true)
+    if not placed then
+        Lost(self)
+        return
+    end
+    if hovered == nil or moved then
+        hovered = self.config.fadeOnHover and self.view.root:IsMouseOver()
+        hovered = Public(hovered) and hovered == true
+    end
+    if hovered ~= faded or model.mode ~= mode or model.readoutStamp ~= stamp or model.distance ~= distance
+        or model.occluded ~= occluded or model.clamped ~= clamped then
+        return Show(self, x, y, hovered)
+    end
+    if clamped then
+        if mode == Navigation.DIRECTION then Navigation.Turn(self.view, model.angle) end
+        x, y = self.projectionX, self.projectionY
+    end
+    if not self.moving and model.speed == 0 then Settle(self, x, y) end
 end
 
 -- Without the native art the marker stays hidden (Paint): a turning arrow
@@ -220,12 +337,17 @@ end
 
 -- Whether a due sample of a settled marker can be skipped: the projection is
 -- where the last sample saw it and the pointer did not change the hover fade.
+-- What it read goes to the sample that follows (Resample), which reads
+-- neither again: the centre, and whether the pointer is over the marker.
 local function Still(self)
     local x, y = self.projection:GetCenter()
-    if not Suite.Finite(x) or not Suite.Finite(y) or x ~= self.sampleX or y ~= self.sampleY then return false end
-    if not self.config.fadeOnHover then return true end
+    if not Finite(x) or not Finite(y) then return false end
+    local still = x == self.sampleX and y == self.sampleY
+    if not self.config.fadeOnHover then return still, x, y, false end
     local hovered = self.view.root:IsMouseOver()
-    return Suite.Public(hovered) and (hovered == true) == self.model.hovered
+    if not Public(hovered) then return false, x, y, false end
+    hovered = hovered == true
+    return still and hovered == self.model.hovered, x, y, hovered
 end
 
 -- How often the marker needs attention follows from what it shows: the arrow
@@ -242,14 +364,27 @@ end
 -- and placed up to a sixth less often than by the frame script (at 100
 -- frames per second 8.3 samples and 25 placements a second, not 10 and 30);
 -- at 30 frames per second and below the cadence is the frame script's.
+-- While the client reports the player moving (the movement events), a marker
+-- shown on screen is sampled every MOVING_SAMPLE_INTERVAL: it hangs on
+-- Blizzard's projection frame (Position), which the client moves with the
+-- world, so it stays on its destination between two samples. Accepted trade
+-- (owner decision 2026-11-15, a tenth of the walking samples): what a sample
+-- decides shows up to a second late while walking: the distance and the
+-- travel time, the hover fade, the proximity sound, and the change to the
+-- arrow, the card or hidden. The arrow's and the hidden marker's pace do not
+-- depend on the movement, and an event samples at once as before.
 local function Pace(self)
     local mode = self.model.mode
     self.paced = mode
     local interval = self.running and self.visible
-        and (mode == Navigation.DIRECTION and ARROW_INTERVAL or mode and SAMPLE_INTERVAL or HIDDEN_INTERVAL) or nil
+        and (mode == Navigation.DIRECTION and ARROW_INTERVAL
+            or mode and (self.moving and MOVING_SAMPLE_INTERVAL or SAMPLE_INTERVAL) or HIDDEN_INTERVAL) or nil
     if interval == self.interval then return end
     self.interval = interval
-    if not interval then self.context:Cancel(Tick) return end
+    if not interval then
+        self.context:Cancel(Tick)
+        return
+    end
     self.wait = mode and SAMPLE_INTERVAL or HIDDEN_INTERVAL
     if interval == ARROW_INTERVAL then self.sampledAt = GetTime() end
     self.context:Ticker(interval, Tick)
@@ -261,6 +396,9 @@ end
 -- and paints the marker itself. A settled marker skips its samples while
 -- nothing it reads can have changed, for at most SETTLE_SECONDS of sample
 -- intervals; the sample after that also reads the parent geometry again.
+-- A settled marker's sample reads the position and writes only what changed
+-- (Resample): the 2026-11-15 standing trace painted an unchanged marker in
+-- full once a second and read the pointer and the centre twice in one tick.
 -- Accepted trade: a change that neither moves the projection nor comes from
 -- the player's own movement, the pointer or an event (the distance on a
 -- transport that moves straight along the line of sight) shows after ten
@@ -270,18 +408,28 @@ end
 Tick = function(self)
     if self.interval == ARROW_INTERVAL then
         local now = GetTime()
-        if now - self.sampledAt < ARROW_SAMPLE then UpdateArrow(self) return end
-        self.sampledAt = now
-    end
-    if self.settled then
-        local quiet = self.quiet + self.wait
-        if quiet < SETTLE_SECONDS and Still(self) then
-            self.quiet = quiet
+        if now - self.sampledAt < ARROW_SAMPLE then
+            UpdateArrow(self)
             return
         end
-        if quiet >= SETTLE_SECONDS then self.screen.age = SCREEN_SAMPLES end
+        self.sampledAt = now
     end
-    Paint(self)
+    if not self.settled then
+        Paint(self)
+    else
+        local quiet = self.quiet + self.wait
+        if quiet < SETTLE_SECONDS then
+            local still, x, y, hovered = Still(self)
+            if still then
+                self.quiet = quiet
+                return
+            end
+            Resample(self, x, y, hovered)
+        else
+            self.screen.age = SCREEN_SAMPLES
+            Resample(self)
+        end
+    end
     if self.model.mode ~= self.paced then Pace(self) end
 end
 
@@ -307,9 +455,13 @@ local function RefreshSource(self)
     if self.pendingPin then self.pendingPin = nil Navigation.ObservePin(self) end
     if self.restorePending and not NS.IsCombatLocked() then RestoreArt(self) end
     if Navigation.quests then Navigation.AdvanceQuests() end
+    if Navigation.RefreshSleepingBag then Navigation.RefreshSleepingBag() end
     Navigation.RefreshTaxi(self)
     self.supported = Navigation.ReadSource(self.model, self.config)
-    if not self.supported or not Native(self) then Stop(self) return end
+    if not self.supported or not Native(self) then
+        Stop(self)
+        return
+    end
     self.running = true
     Paint(self)
     Pace(self)
@@ -380,12 +532,15 @@ StateChanged = function(self, event)
     if GATE[event] and Gate(self, event) then return end
     -- The player's own movement changes what the next sample reads, not the
     -- destination: the source is not read again (a map pin or a quest costs
-    -- client tables on every read), the next tick samples. Only a destination
-    -- whose data the client could not give in full (a name that arrives
-    -- later, an unreadable source, native art still to hand back) is asked
-    -- again, as every movement event did before.
+    -- client tables on every read), the next tick samples. A running ticker
+    -- takes the pace of the new movement state at once (Pace; a stop brings
+    -- the next sample within SAMPLE_INTERVAL); none is started. Only a
+    -- destination whose data the client could not give in full (a name that
+    -- arrives later, an unreadable source, native art still to hand back) is
+    -- asked again, as every movement event did before.
     if event == "PLAYER_STARTED_MOVING" or event == "PLAYER_STOPPED_MOVING" then
         self.moving, self.settled = event == "PLAYER_STARTED_MOVING", false
+        if self.interval then Pace(self) end
         if not self.model.incomplete and not self.restorePending then return end
     end
     if event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
@@ -412,7 +567,9 @@ function Module:Enable()
     end
     C_AddOns.LoadAddOn("Blizzard_QuestNavigation")
     self.refresh = self.context:Coalesce(0, RefreshSource)
-    self.paused = false
+    -- The movement events were not heard while disabled (as in Resume): the
+    -- standing pace, and the next sample reads the speed.
+    self.paused, self.moving = false, false
     Listen(self)
     Navigation.owner = self
     Navigation.RegisterCommand()
@@ -445,6 +602,7 @@ function Module:Disable()
     Navigation.DisableMap(self)
     Navigation.DisableTaxi(self)
     Navigation.DisableGuides(self)
+    if Navigation.DisableSleepingBag then Navigation.DisableSleepingBag() end
     Navigation.owner = nil
     Navigation.UnregisterCommand()
 end

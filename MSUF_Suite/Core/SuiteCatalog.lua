@@ -94,9 +94,10 @@ end
 function Build.String(key, label, value, maxLength)
     return { key=key, label=label, default=value, maxLength=maxLength }
 end
-function Build.Color(key, label, value)
+function Build.Color(key, label, value, resolve)
     local rule = Build.String(key, label, value, 6)
     rule.color = true
+    if resolve then rule.inheritColor, rule.resolveColor = true, resolve end
     return rule
 end
 -- Empty font keys inherit the MSUF font. Chat offers an explicit Blizzard

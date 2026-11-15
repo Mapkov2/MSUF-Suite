@@ -594,7 +594,6 @@ function HostBridge.IsOptionsSurface(frame)
     return false
 end
 
--- Owned links can supply their own destination without loading the search index.
 function HostBridge.OpenExactMenuSetting(menu, page, section, settingKey)
     local search = menu.SearchBridge
     if not (search and search.OpenSearchTarget) then return false end
@@ -604,8 +603,16 @@ function HostBridge.OpenExactMenuSetting(menu, page, section, settingKey)
     return called == true and opened == true and focused == true and exact == true
 end
 
--- Older hosts expose the same routing function through their search facade.
--- Keep the compatibility wrapper local to this adapter; no Blizzard table is touched.
+function HostBridge.OpenSharedAggroBorder(menu)
+    local search = menu.SearchBridge
+    if not (search and search.OpenSearchTarget) then return end
+    local target = { pageKey = "opt_bars", sectionId = "bars_highlight",
+        controlId = "menu2.opt.bars.global.highlight.border.mode.aggro.outline.mode" }
+    local route = { accordion = { ["opt_bars:bars_highlight"] = true },
+        general = { hpPowerTextSelectedKey = "shared" }, state = { barsHighlightTab = "modes" } }
+    search.OpenSearchTarget("opt_bars", "", nil, nil, route, target)
+end
+
 local targetResolvers = {}
 function HostBridge.RegisterSearchTargetResolver(menu, name, resolver)
     if menu.RegisterSearchTargetResolver then return menu.RegisterSearchTargetResolver(name, resolver) end
@@ -731,7 +738,6 @@ local function KeepSuiteSearchTerms(menu)
     end
 end
 
--- Additive host capabilities keep extension runtimes in their owning addon.
 function HostBridge.RegisterPageExtension(menu, page, name, provider)
     KeepSuiteSearchTerms(menu)
     if not AppearanceAction(menu, "RegisterPageExtension") or not AppearanceAction(menu, "BuildPageExtensions") then
@@ -740,8 +746,29 @@ function HostBridge.RegisterPageExtension(menu, page, name, provider)
     return menu.RegisterPageExtension(page, name, provider) == true
 end
 
--- Some host pages do not call BuildPageExtensions. Append through their
--- existing builder without requiring that opt-in, including on newer hosts.
+function HostBridge.RegisterBarsScope(menu, key, label, provider)
+    if not AppearanceAction(menu, "RegisterBarsScope") then return false end
+    KeepSuiteSearchTerms(menu)
+    return menu.RegisterBarsScope(key, label, provider) == true
+end
+
+function HostBridge.HighlightPriorityRows(menu, parent, definitions, options)
+    local build = AppearanceAction(menu.UnitSectionsShared, "MakeDragSortRows")
+    if not build then return end
+    local holder = build(parent, definitions, options)
+    return holder, function(order, enabled, colors)
+        local indexes = {}
+        for slot, key in ipairs(order) do indexes[key] = slot end
+        for _, row in ipairs(holder.rows) do
+            row.slotIndex = indexes[row.key]
+            local color = colors[row.key]
+            row.frame._stripe:SetColorTexture(color[1], color[2], color[3], 1)
+        end
+        holder:SnapRows()
+        holder:SetRowsEnabled(enabled)
+    end
+end
+
 function HostBridge.RegisterPageTail(menu, page, name, provider)
     KeepSuiteSearchTerms(menu)
     return RegisterLegacyExtension(menu, page, name, provider)

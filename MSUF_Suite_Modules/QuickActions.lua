@@ -23,6 +23,8 @@ local ACTIONS = {
     { key = "waypointLists", title = "Saved waypoint lists", module = "waypointLists" },
     { key = "notificationHistory", title = "Suite notice history", module = "notificationHistory" },
     { key = "keyAudit", title = "Action and key review", module = "keyAudit" },
+    { key = "actionBarSetups", title = "Action bar setups", search = "snapshots transfer import restore undo",
+        section = "suite_actionbars_account_transfer" },
 }
 local byKey = {}
 for i = 1, #ACTIONS do
@@ -36,6 +38,7 @@ local function ActiveModule(id)
 end
 
 local function Available(action)
+    if action.section then return NS.ActionBarSnapshots ~= nil end
     if action.module then return ActiveModule(action.module) ~= nil end
     if action.planner then return S.PlanningTools and S.PlanningTools.CanEdit() end
     if action.panel then return S.CanOpenNativeWindow() end
@@ -139,6 +142,10 @@ local function Rows(owner, query, input)
 end
 
 local function OpenAction(action)
+    if action.section then
+        local menu = NS.Menu
+        return menu.Open("suite_actionbars") and menu.FocusSection and menu.FocusSection("suite_actionbars", action.section)
+    end
     if action.planner then return S.PlanningTools.Window.Open(action.planner) end
     if action.panel then return S.ShowPanel(action.panel) end
     if action.character then return S.OpenCharacterPanelTab(action.character) end

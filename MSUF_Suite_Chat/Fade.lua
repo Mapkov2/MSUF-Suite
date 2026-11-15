@@ -67,7 +67,7 @@ end
 
 local function Expired(visual)
     if not (M.active and visual.fadeArmed) or visual.hovered or visual.toolbarHovered or M.toolbarGesture then return end
-    if visual.frame.editBox:HasFocus() == true then return end
+    if C.InputHasFocus(visual.frame) then return end
     FadeOut(visual)
 end
 
@@ -94,27 +94,39 @@ local function HoverEnded(chatFrame)
     local visual = M.active and M.visuals[chatFrame]
     if not visual then return end
     visual.hovered = nil
-    C.MessageFadeFocus(visual, visual.frame.editBox:HasFocus())
+    C.MessageFadeFocus(visual)
     C.UpdateMinimalChrome(visual)
     C.ChatActivity(chatFrame)
 end
 
 -- The player starts typing into the window's input line.
 local function InputFocused(editBox)
-    local visual = M.active and inputs[editBox]
+    local visual = inputs[editBox]
     if not visual then return end
+    visual.inputFocused = true
+    if not (M.active and visual.fadeCallback) then return end
     C.MessageFadeFocus(visual, true)
     C.UpdateMinimalChrome(visual, true)
     if visual.fadeArmed then Wake(visual) end
 end
 
 local function InputReleased(editBox)
-    local visual = M.active and inputs[editBox]
-    if visual then
-        C.MessageFadeFocus(visual, visual.hovered == true)
-        C.UpdateMinimalChrome(visual, false)
-        C.ChatActivity(visual.frame)
+    local visual = inputs[editBox]
+    if not visual then return end
+    visual.inputFocused = false
+    if not (M.active and visual.fadeCallback) then return end
+    C.MessageFadeFocus(visual, visual.hovered == true)
+    C.UpdateMinimalChrome(visual, false)
+    C.ChatActivity(visual.frame)
+end
+
+local function TrackInput(visual)
+    local input = visual.frame.editBox
+    if not inputs[input] then
+        input:HookScript("OnEditFocusGained", InputFocused)
+        input:HookScript("OnEditFocusLost", InputReleased)
     end
+    inputs[input] = visual
 end
 
 function C.ReleaseFade(visual)
@@ -129,7 +141,9 @@ end
 function C.ApplyInactivity(self, visual)
     local seconds = self.config.idleSeconds
     local idle = Finite(seconds) and seconds > 0
-    if not idle and not visual.nativeFadeBefore and not self.config.minimalChrome then
+    local trackFade = idle or visual.nativeFadeBefore or self.config.minimalChrome
+    if trackFade or self.config.headerToolbar then TrackInput(visual) end
+    if not trackFade then
         C.ReleaseFade(visual)
         return
     end
@@ -145,14 +159,6 @@ function C.ApplyInactivity(self, visual)
         visual.fadeParts, visual.fadeBefore, visual.fadeApplied = {}, {}, {}
         visual.fadeCallback = function() Expired(visual) end
     end
-    local input = frame.editBox
-    if not inputs[input] then
-        -- Post-hooks of the native edit box; they cannot be removed, so the
-        -- handlers check the module and the window's fade.
-        input:HookScript("OnEditFocusGained", InputFocused)
-        input:HookScript("OnEditFocusLost", InputReleased)
-    end
-    inputs[input] = visual
     if not idle then
         C.ReleaseFade(visual)
         return

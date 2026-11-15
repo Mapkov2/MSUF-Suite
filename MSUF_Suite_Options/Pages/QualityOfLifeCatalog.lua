@@ -8,6 +8,10 @@ local GROUPS = {
         sections = { "forever_world_map" }, aliases = { "zone levels", "travel markers", "world map" } },
     { id = "gatheringTooltips", title = "Gathering tooltips (Forever)", switch = "enabled",
         sections = { "gathering_tooltips" }, aliases = { "herbalism", "mining", "gathering skill" } },
+    { id = "auctionPriceTooltip", title = "Auction house price comparison", switch = "enabled",
+        sections = { "auction_price_tooltip" },
+        aliases = { "auction price", "ah price", "vendor sell price", "net upgrade cost",
+            "auktionshaus", "ah preis", "händlererlös", "haendlererloes", "aufpreis" } },
     { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
         keywords = { "SCT", "FCT", "floating combat text", "Kampftext", "Schadenszahlen", "Heilungszahlen" } },
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
@@ -81,7 +85,8 @@ local GROUPS = {
     { id = "mythicKeyShare", title = "Keystone command (Retail)", switch = "enabled", sections = { "keystone_command" } },
     { id = "autoUprank", title = "Auto-uprank (Forever)", switch = "enabled", sections = { "auto_uprank" } },
     { id = "trainerLearnAll", title = P.Suite.Client.isForever and "Trainer budget" or "Learn all at trainer (Retail)",
-        switch = "enabled", sections = { "trainer_all" }, aliases = { "trainer budget", "training costs", "lehrerkosten" } },
+        switch = "enabled", sections = P.Suite.Client.isForever and { "trainer_budget" } or { "trainer_all" },
+        aliases = { "trainer budget", "training costs", "lehrerkosten" } },
     { id = "characterUpgradeWindow", title = "Equipment window at upgrades (Retail)", switch = "enabled",
         sections = { "upgrade_equipment" } },
     { id = "mythicResetReminder", title = "Mythic+ reset reminder (Retail)", switch = "enabled",
@@ -188,7 +193,8 @@ return {
         Subgroup("interface", "Interface", "dailyComfort soundProfiles"),
         Subgroup("chat", "Chat & Mail", "mailRecipients mailTemplates guildChatPrivacy"),
         Subgroup("notifications", "Notifications", "quietPopups uiErrorFilter popupAttention bnetToast notificationHistory"),
-        Subgroup("tooltips", "Tooltips", "tooltipClassColors tooltipSpellCopy itemCounts tooltipIDs tooltipVisibility tooltipDetails tooltipMPlusScore"),
+        Subgroup("tooltips", "Tooltips",
+            "auctionPriceTooltip tooltipClassColors tooltipSpellCopy itemCounts tooltipIDs tooltipVisibility tooltipDetails tooltipMPlusScore"),
     } },
 }
 end

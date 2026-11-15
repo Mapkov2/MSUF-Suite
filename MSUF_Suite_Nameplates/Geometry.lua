@@ -59,6 +59,119 @@ local function NativeWidth(classic)
     return constants.NAMEPLATE_WIDTH or constants.NAME_PLATE_WIDTH
 end
 
+-- Native cast and health share the horizontal insets. The health bar also
+-- reserves the level badge and can have its own width delta.
+function G.CastWidthDelta(uf, setup, config, prefix, healthDelta)
+    local p = prefix .. "Cast"
+    local mode = config[p .. "WidthMode"] or 1
+    if mode == 1 then return config[p .. "WidthDelta"] or 0 end
+    local style, scale = NS.NameplateStyle, setup.horizontalScale
+    if not NS.Finite(scale) or not NS.Finite(setup.insetWidth) or not NS.Finite(setup.verticalScale)
+        or not NS.Public(setup.useClassicHealthBar) then return end
+    local classic = setup.useClassicHealthBar == true
+    local total = style.BarDimensions(config.barGeometry, config.nativeStyle, scale, setup.verticalScale)
+    local reserve = total and 0 or G.LevelReserve(uf, setup)
+    local nativeWidth = NativeWidth(classic)
+    if not reserve or not NS.Finite(nativeWidth) then return end
+    local width = total or nativeWidth * scale
+    local base = width - 2 * setup.insetWidth - (setup.useClassicCastBar and 24.25 * scale or 0)
+    local health = width - 2 * setup.insetWidth - (classic and 24.25 * scale or 0) - reserve + healthDelta
+    return style.CastWidth(base, health, mode, config[p .. "ManualWidth"] or 160, 0) - base
+end
+
+function G.RestoreIconZoom(state)
+    local zoom = state.iconZoom
+    if not zoom then return true end
+    local icon = zoom.icon
+    if NS.Safety.IsForbidden(icon) then return false end
+    local accessible = icon:CanBeAccessedInContext()
+    if not NS.Public(accessible) or not accessible then return false end
+    icon:SetTexCoord(unpack(zoom.coords))
+    state.iconZoom = nil
+    return true
+end
+
+local castIconBorders = setmetatable({}, { __mode = "k" })
+local function SyncCastIconBorder(cast)
+    local border = castIconBorders[cast]
+    if not border or NS.Safety.IsForbidden(cast) or NS.Safety.IsForbidden(border.icon) then return end
+    if not border.enabled then return end
+    local accessible = border.icon:CanBeAccessedInContext()
+    if not NS.Public(accessible) or not accessible then
+        border.host:Hide()
+        return
+    end
+    local shown = border.icon:IsShown()
+    border.host:SetShown(NS.Public(shown) and shown == true)
+end
+
+function G.HideCastIconBorder(state)
+    local border = state.castIconBorder
+    if border then
+        border.enabled = false
+        border.host:Hide()
+    end
+    state.castIconStyle = nil
+end
+
+local function GetCastIconBorder(cast, icon)
+    local border = castIconBorders[cast]
+    if not border then
+        local host = CreateFrame("Frame", nil, cast)
+        host:SetAllPoints(icon)
+        border = NS.NameplateStyle.CreateBorder(host)
+        border.host, border.icon = host, icon
+        castIconBorders[cast] = border
+        hooksecurefunc(cast, "UpdateIconShown", SyncCastIconBorder)
+    end
+    return border
+end
+
+function G.CastIconZoom(state, cast, percent)
+    if not percent then return G.RestoreIconZoom(state) end
+    if not cast or NS.Safety.IsForbidden(cast) then return false end
+    local icon = cast.Icon
+    if not icon or NS.Safety.IsForbidden(icon) then return false end
+    local accessible = icon:CanBeAccessedInContext()
+    if not NS.Public(accessible) or not accessible then return false end
+    local zoom = state.iconZoom
+    if not zoom then
+        local coords = { icon:GetTexCoord() }
+        if #coords ~= 8 then return false end
+        for _, value in ipairs(coords) do if not NS.Finite(value) then return false end end
+        zoom = { icon = icon, coords = coords }
+        state.iconZoom = zoom
+    end
+    if zoom.percent == percent then return true end
+    local c, scale = zoom.coords, 100 / percent
+    local x, y = (c[1] + c[3] + c[5] + c[7]) / 4, (c[2] + c[4] + c[6] + c[8]) / 4
+    icon:SetTexCoord(x + (c[1] - x) * scale, y + (c[2] - y) * scale, x + (c[3] - x) * scale, y + (c[4] - y) * scale,
+        x + (c[5] - x) * scale, y + (c[6] - y) * scale, x + (c[7] - x) * scale, y + (c[8] - y) * scale)
+    zoom.percent = percent
+    return true
+end
+
+function G.CastIconStyle(state, uf, plan)
+    local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
+    if not G.CastIconZoom(state, cast, plan.iconZoom) then return false end
+    if plan.iconBorder then
+        if not cast or NS.Safety.IsForbidden(cast) then return false end
+        local icon = cast.Icon
+        if not icon or NS.Safety.IsForbidden(icon) then return false end
+        local accessible = icon:CanBeAccessedInContext()
+        if not NS.Public(accessible) or not accessible then return false end
+        local border = GetCastIconBorder(cast, icon)
+        state.castIconBorder = border
+        NS.NameplateStyle.PaintBorder(border, icon, plan.iconBorder, plan.iconBorderColor)
+        border.enabled = true
+        SyncCastIconBorder(cast)
+    elseif state.castIconBorder then
+        G.HideCastIconBorder(state)
+    end
+    state.castIconStyle = plan.castIconStyle
+    return true
+end
+
 local SETUP_NUMBERS = { "insetWidth", "castBarToHealthBarSpacing", "healthBarHeight",
     "castBarHeight", "castIconWidth", "castIconHeight", "horizontalScale", "verticalScale" }
 local function Ready(uf, setup)
@@ -106,9 +219,10 @@ function G.Restore(state, uf, setup)
     return true
 end
 
-function G.Apply(state, uf, setup, config, force, prefix)
+function G.Apply(state, uf, setup, config, force, prefix, width)
     local keys, old = Key[prefix], state.geometry
-    local height, icon, width = config[keys.CastHeight] or 0, config[keys.CastIconSize] or 0, config[keys.CastWidthDelta] or 0
+    local height, icon = config[keys.CastHeight] or 0, config[keys.CastIconSize] or 0
+    width = width or config[keys.CastWidthDelta] or 0
     local uniform = config.barGeometry == SAME_GEOMETRY
     local classicBorder = setup.useClassicCastBar and (width ~= 0 or height ~= 0)
     local customCast = height ~= 0 or icon ~= 0 or classicBorder

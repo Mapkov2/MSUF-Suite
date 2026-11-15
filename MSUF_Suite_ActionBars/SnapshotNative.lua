@@ -46,7 +46,17 @@ end
 
 function Native.Identity()
     local guid = S.PublicText(UnitGUID("player"))
-    local name = S.PublicText(UnitName("player"))
+    local first, surname = UnitName("player")
+    local name = S.PublicText(first)
+    if name and NS.Client.isForever then
+        if not S.Public(surname) then return nil end
+        surname = S.PublicText(surname)
+        if surname then
+            local separator = Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR
+            local suffix = separator .. surname
+            if name:sub(-#suffix) ~= suffix then name = name .. suffix end
+        end
+    end
     local realm = S.PublicText(GetRealmName())
     local className, token = UnitClass("player")
     local class = S.PublicText(token)

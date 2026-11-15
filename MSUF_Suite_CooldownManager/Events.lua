@@ -355,7 +355,8 @@ local function OnOverride(_, _, base, override)
 end
 
 ------------------------------------------------------------------ cold event handlers
-local RESOLVING = { SPELLS_CHANGED = true, TRAIT_CONFIG_UPDATED = true, ACTIVE_PLAYER_SPECIALIZATION_CHANGED = true }
+local RESOLVING = { SPELLS_CHANGED = true, TRAIT_CONFIG_UPDATED = true,
+    ACTIVE_PLAYER_SPECIALIZATION_CHANGED = true, ACTIVE_TALENT_GROUP_CHANGED = true, ACTIVE_COMBAT_CONFIG_CHANGED = true }
 local function OnCatalog(_, event)
     dirty.catalog = true
     -- Learned state of custom spells and per-spec lists follow these. In
@@ -659,7 +660,7 @@ local function UpdateEvents()
 end
 -- Catalog, combat, scale and loading-screen events while the module runs.
 local CATALOG_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
-    "COOLDOWN_VIEWER_DATA_LOADED", "COOLDOWN_VIEWER_TABLE_HOTFIXED" }
+    "ACTIVE_TALENT_GROUP_CHANGED", "ACTIVE_COMBAT_CONFIG_CHANGED", "COOLDOWN_VIEWER_DATA_LOADED", "COOLDOWN_VIEWER_TABLE_HOTFIXED" }
 function Events.CoreEvents()
     for i = 1, #CATALOG_EVENTS do Want(CATALOG_EVENTS[i], true, OnCatalog) end
     Want("PLAYER_ENTERING_WORLD", true, OnWorld)

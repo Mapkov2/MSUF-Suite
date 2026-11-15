@@ -194,6 +194,8 @@ function Start(transition)
     Step(profiles, "EnsureModernDarkMinimap")
     Step(profiles, "EnsureRetailResourceStack", false)
     ShowInstaller()
+    -- A restored combat force flag must never gate the Suite's own startup.
+    if Suite.RootDB.devModeCVars then Step(Suite.DevMode, "RestoreRestrictions", transition) end
 end
 
 -- Finish the login dispatch before loading optional addons. AceAddon may
@@ -234,6 +236,7 @@ events:SetScript("OnEvent", function(self, event, loadedAddon)
             self:UnregisterAllEvents()
             return
         end
+        if Suite.RootDB.devModeCVars then Step(Suite.DevMode, "RestoreLogging") end
         -- Load the Suite-owned skin engine before PLAYER_LOGIN so it can skin
         -- Blizzard's first visible frames without a reload.
         if Suite.RootDB.skinEnabled ~= false then Step(Suite.Skin, "EnsureEngine") end

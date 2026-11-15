@@ -72,7 +72,7 @@ local function Click(button)
         return
     end
     if action == "input" then
-        if frame.editBox:HasFocus() then
+        if C.InputHasFocus(frame) then
             ChatFrameUtil.DeactivateChat(frame.editBox)
         else
             ChatFrameUtil.OpenChat(nil, frame)

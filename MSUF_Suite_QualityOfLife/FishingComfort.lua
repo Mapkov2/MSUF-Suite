@@ -139,6 +139,26 @@ local function Channel(_, event, unit)
     M.audio = true
     for key, setting in pairs(VOLUMES) do M.context:CVar(key, M.config[setting] / 100) end
 end
+local function CheckInstance(self, event)
+    if NS.InCombat(event) then return end
+    local _, kind, _, _, _, _, _, instanceID = GetInstanceInfo()
+    kind = S.PublicText(kind)
+    if (kind ~= "party" and kind ~= "raid") or not S.Finite(instanceID) then
+        self.warnedInstance = nil
+        return
+    end
+    if self.warnedInstance == instanceID then return end
+    self.warnedInstance = instanceID
+    local link = S.PublicText(GetInventoryItemLink("player", INVSLOT_MAINHAND))
+    if not link then return end
+    local _, _, _, _, _, class, subclass = C_Item.GetItemInfoInstant(link)
+    if S.Finite(class) and S.Finite(subclass) and class == Enum.ItemClass.Weapon
+        and subclass == Enum.ItemWeaponSubclass.Fishingpole then
+        local message = S.Text("Your fishing rod is still equipped.")
+        if UIErrorsFrame then UIErrorsFrame:AddMessage(message, 1, .7, .3) else NS.Print(message) end
+    end
+end
+
 local function Changed(_, event)
     if event == "UPDATE_BINDINGS" then
         if M.fishing then Route() end
@@ -149,6 +169,7 @@ local function Changed(_, event)
         return
     end
     if event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_ENTERING_WORLD" then StopFishing() end
+    if event == "PLAYER_ENTERING_WORLD" and M.config.warnInInstance ~= false then CheckInstance(M, event) end
     Prepare()
 end
 function M:Enable()
@@ -176,6 +197,7 @@ function M:Refresh()
     Prepare()
 end
 function M:Disable()
+    self.warnedInstance = nil
     StopFishing()
     Prepare()
 end

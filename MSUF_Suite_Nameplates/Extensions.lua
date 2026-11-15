@@ -1,16 +1,17 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local X, L, T, E, R = NS.NameplateExtensions, P.ExtensionLayout, P.ExtensionText, P.ExtensionEffects, P.ExtensionResources
+local X, L, T, E = NS.NameplateExtensions, P.ExtensionLayout, P.ExtensionText, P.ExtensionEffects
 local Extensions = { inUse = false }
 P.Extensions = Extensions
-local M, plan, context, hasFocus, targetState
+local M, plan, context, hasFocus, targetState, hideEnemies, opacityCombat
 local states, restores = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
 local castStates = setmetatable({}, { __mode = "k" })
 local subscribed = {}
-local rangeCount, registeredSpell = 0, nil
+local registeredSpell, RangeEvent
+local nativeRange = C_Spell and C_Spell.EnableSpellRangeCheck
 local restoreFrame, hooked, metadataJob
 local IN_COMBAT, RANGE_OWNER = { inCombat = true }, "MSUF_Suite_NameplateExtensions"
-local RangeTick, ExpireInterrupts
+local ExpireInterrupts
 
 local function Safe(region)
     return not NS.IsSecret(region) and region and not NS.Safety.IsForbidden(region)
@@ -34,37 +35,88 @@ local function FocusPresent()
     return hostile == true
 end
 
-local function ReadContext()
+local function Is(value, expected)
+    return not NS.IsSecret(value) and value == expected
+end
+
+local function EnemyHidden(load, event)
+    local usesCombat = load.enemyHideInCombat or load.enemyHideOutOfCombat or load.enemyHideOutOfCombatNoTarget
+    local combat = usesCombat and NS.InCombat(event)
+    if load.enemyHideInCombat and combat or load.enemyHideOutOfCombat and not combat then return true end
+    if (load.enemyHideNoTarget or load.enemyHideOutOfCombatNoTarget and not combat)
+        and Is(UnitExists("target"), false) then return true end
+    if load.enemyHideInGroup or load.enemyHideSolo then
+        local grouped = IsInGroup()
+        if load.enemyHideInGroup and Is(grouped, true) or load.enemyHideSolo and Is(grouped, false) then return true end
+    end
+    if load.enemyHideInInstance and Is(IsInInstance(), true) then return true end
+    if load.enemyHideInVehicle and (Is(UnitHasVehicleUI("player"), true) or Is(UnitInVehicle("player"), true)) then
+        return true
+    end
+    if load.enemyHideMounted and Is(IsMounted(), true) then return true end
+    if load.enemyHideResting and Is(IsResting(), true) then return true end
+    if load.enemyHideStealthed and Is(IsStealthed(), true) then return true end
+    return load.enemyHideInHousing == true and C_Housing and C_Housing.IsInsideHouseOrPlot
+        and Is(C_Housing.IsInsideHouseOrPlot(), true) or false
+end
+
+local function ReadEnemyLoad(event)
+    local hidden = plan.enemyLoad ~= nil and EnemyHidden(plan.enemyLoad, event)
+    if hidden == hideEnemies then return false end
+    hideEnemies = hidden
+    return true
+end
+
+local function ReadContext(event)
     context, hasFocus = nil, nil
     if not plan.enabled then return end
     if plan.contextEnabled then local _, instanceType = IsInInstance() context = X.Context(instanceType) end
-    if plan.focusReminder then hasFocus = FocusPresent() else hasFocus = nil end
+    if plan.focusReminder then hasFocus = FocusPresent() end
+    local combat = plan.opacityCombat and NS.InCombat(event)
+    local opacityChanged = combat ~= opacityCombat
+    opacityCombat = combat
+    return ReadEnemyLoad(event) or opacityChanged
 end
 
 local function RangeSubscription()
-    local spell = rangeCount > 0 and plan and plan.rangeSpell > 0 and plan.rangeSpell or nil
-    if spell ~= registeredSpell then
-        if registeredSpell then S.SetNativeSpellRange(RANGE_OWNER, registeredSpell, false) end
-        registeredSpell = spell
-        if spell then S.SetNativeSpellRange(RANGE_OWNER, spell, true) end
+    local scope = targetState and targetState.interaction
+    local spell = nativeRange and plan.range and targetState and targetState.visible and scope and scope.range
+        and targetState.rangeSpell or nil
+    if spell == registeredSpell then return end
+    local previous = registeredSpell
+    registeredSpell = spell
+    if previous then S.SetNativeSpellRange(RANGE_OWNER, previous, false) end
+    if spell then
+        if not previous then M.context:Event("SPELL_RANGE_CHECK_UPDATE", RangeEvent, IN_COMBAT) end
+        S.SetNativeSpellRange(RANGE_OWNER, spell, true)
+    else
+        M.context:RemoveEvent("SPELL_RANGE_CHECK_UPDATE")
     end
-    if spell then M.context:Ticker(.25, RangeTick) else M.context:Cancel(RangeTick) end
 end
 
-local function RangeActive(state, active)
-    active = active == true
-    if active == (state.rangeActive == true) then return end
-    state.rangeActive = active
-    rangeCount = rangeCount + (active and 1 or -1)
-    RangeSubscription()
+local function SeedRange(state)
+    if state ~= targetState then
+        state.range, state.rangeValue, state.rangeSeed, state.rangeSpell = nil, nil, nil, nil
+        return
+    end
+    local scope = state.interaction
+    local spell = scope and scope.range and scope.rangeSpell or 0
+    if spell == state.rangeSeed then return end
+    state.rangeSeed = spell
+    local value
+    if spell > 0 then
+        local override = C_Spell.GetOverrideSpell and C_Spell.GetOverrideSpell(spell)
+        if not NS.IsSecret(override) and type(override) == "number" and override > 0 then spell = override end
+        value = C_Spell.IsSpellInRange(spell, state.unit)
+    end
+    state.range, state.rangeValue, state.rangeSpell = X.Range(value), value, spell > 0 and spell or nil
 end
 
-local function ReadRange(state)
-    if plan.rangeSpell > 0 then
-        local value = C_Spell.IsSpellInRange(plan.rangeSpell, state.unit)
-        return X.Range(value), value
-    end
-    return 3
+local function ReseedTarget()
+    local state = targetState
+    if not state or not Safe(state.uf) or not Same(state.unit, "target") then return end
+    state.rangeSeed = nil
+    SeedRange(state)
 end
 
 local function Relevant(state)
@@ -79,43 +131,52 @@ local function Relevant(state)
     return kind == "Caster" or kind == "Miniboss"
 end
 
+local function ApplyAlpha(state)
+    local opacity = state.visible and state.opacity or 0
+    local fade = state.layerFade
+    if fade and not opacityCombat then opacity = opacity * fade.ooc end
+    local rangeValue
+    local scope = state.interaction
+    if opacity > 0 and state == targetState and scope and scope.range then
+        rangeValue = state.rangeValue
+        if not NS.IsSecret(rangeValue) then
+            local range = state.range or 3
+            opacity = opacity * (range == 2 and scope.rangeAlpha or range == 3 and scope.rangeUnknownAlpha or 1)
+        end
+    end
+    L.Alpha(state, opacity, rangeValue, scope and scope.rangeAlpha or 1, state.injured)
+end
+
+local function PlateLayers(state, force)
+    if plan.opacity or state.layerFade or state.layers then
+        local scope = X.OpacityScope(state.kind)
+        L.Layers(state, plan.opacity and plan.opacity[scope], force)
+    end
+end
+
 local function Presentation(state)
     local wasVisible = state.visible
     local visible, opacity, scale = X.Visibility(plan, state.kind, context, state.casting)
+    local enemy = plan.enemyLoad and X.IsEnemy(state.kind)
+    local loadHidden = enemy and hideEnemies
+    if loadHidden then visible = false end
     local clickable = L.HitTest(state, not visible)
-    if not clickable then visible = state.visible ~= false end
-    state.visible = visible
-    local range = state.range or 3
-    local rangeValue
-    if plan.range and state.prefix == "enemy" then rangeValue = state.rangeValue end
-    if plan.range and state.prefix == "enemy" and not NS.IsSecret(rangeValue) then
-        opacity = opacity * (range == 2 and plan.rangeAlpha or range == 3 and plan.rangeUnknownAlpha or 1)
-    end
+    -- Public load conditions still update alpha when Blizzard holds the click area.
+    if not clickable and not (loadHidden or state.loadHidden) then visible = state.visible ~= false end
+    state.visible, state.loadHidden = visible, loadHidden
+    state.opacity, state.injured = opacity, enemy and plan.enemyLoad.enemyShowWhenInjured
+    ApplyAlpha(state)
     if state.focus then scale = scale * plan.focusScale end
     if state.casting then scale = scale * plan.castScale end
-    L.Alpha(state, visible and opacity or 0, rangeValue, plan.rangeAlpha)
     L.Scale(state, scale)
     L.Name(state)
     if L.Mutable(state, state.uf) then
         E.Reminder(state, plan.focusReminder and hasFocus == false
             and (state.relevant or state.casting == true and state.kind == "enemyNpc"))
-        E.Range(state)
+        E.Range(state, state == targetState)
         if wasVisible ~= nil and wasVisible ~= visible then E.Execute(state) end
     end
-    RangeActive(state, visible and plan.range and plan.rangeSpell > 0 and state.prefix == "enemy")
-end
-
-RangeTick = function()
-    if not M.active or not plan.range then return end
-    for _, state in pairs(states) do
-        if state.rangeActive and state.unit and state ~= targetState and Safe(state.uf) then
-            local range, value = ReadRange(state)
-            if range ~= state.range or NS.IsSecret(value) or NS.IsSecret(state.rangeValue) then
-                state.range, state.rangeValue = range, value
-                Presentation(state)
-            end
-        end
-    end
+    if state == targetState then RangeSubscription() end
 end
 
 local function ArmInterrupts()
@@ -152,15 +213,20 @@ local function Retire(state)
     E.Hide(state)
     state.unit, state.plan, state.casting, state.castID, state.interruptExpired = nil, nil, nil, nil, nil
     state.focus, state.relevant, state.range, state.rangeValue, state.visible = nil, nil, nil, nil, nil
-    if targetState == state then targetState = nil end
+    state.rangeSeed, state.rangeSpell = nil, nil
+    state.opacity, state.injured, state.loadHidden = nil, nil, nil
+    state.interaction = nil
+    if targetState == state then
+        targetState = nil
+        RangeSubscription()
+    end
     return true
 end
 
 local function FlushRestores()
     for state in pairs(restores) do if Retire(state) then restores[state] = nil end end
-    if R.pending then R.Refresh() end
-    if restoreFrame and not next(restores) and not R.pending then restoreFrame:UnregisterEvent("PLAYER_REGEN_ENABLED") end
-    Extensions.inUse = plan and plan.enabled or next(restores) ~= nil or R.pending == true
+    if restoreFrame and not next(restores) then restoreFrame:UnregisterEvent("PLAYER_REGEN_ENABLED") end
+    Extensions.inUse = plan and plan.enabled or next(restores) ~= nil
 end
 
 local function RestoreEvent()
@@ -179,7 +245,10 @@ end
 function Extensions.Restore(uf)
     local state = states[uf]
     if not state or not state.unit then return end
-    RangeActive(state, false)
+    if targetState == state then
+        targetState = nil
+        RangeSubscription()
+    end
     if Retire(state) then
         restores[state] = nil
     else
@@ -225,6 +294,15 @@ local function ObserveCast(state)
     cast:HookScript("OnHide", NativeCastHidden)
 end
 
+local function SetInteraction(state)
+    local entry = plan.interaction[X.OpacityScope(state.kind)]
+    if entry ~= state.interaction then
+        state.interaction = entry
+        state.hitPlan = nil
+        T.Invalidate(state)
+    end
+end
+
 function Extensions.Apply(uf, health, cast, prefix, unit)
     if not M.active or not plan or not plan.enabled or not prefix or not M.config[prefix]
         or M.config.look == P.Mode.LOOK_BLIZZARD or not PublicUnit(unit) then
@@ -253,12 +331,18 @@ function Extensions.Apply(uf, health, cast, prefix, unit)
     P.Layout.Observe(uf)
     ObserveCast(state)
     if state.interruptExpired then E.EndInterrupt(state) state.interruptExpired = nil end
-    state.kind = X.Kind(uf.isFriend, uf.isPlayer)
+    if plan.neutralContext or plan.enemyLoad or plan.opacity or plan.hostileScoped then
+        state.kind = X.PlateKind(uf, unit)
+    else
+        state.kind = X.Kind(uf.isFriend, uf.isPlayer)
+    end
     state.focus = (plan.focusScale ~= 1 or plan.focusReminder) and Same(unit, "focus") or false
+    SetInteraction(state)
     if plan.range and Same(unit, "target") then targetState = state end
     state.relevant = Relevant(state)
-    if plan.range and prefix == "enemy" then state.range, state.rangeValue = ReadRange(state) end
+    if plan.range then SeedRange(state) end
     L.Anchors(state)
+    PlateLayers(state, true)
     Presentation(state)
     if mutable then
         E.Resume(state)
@@ -268,17 +352,61 @@ function Extensions.Apply(uf, health, cast, prefix, unit)
     end
 end
 
+function Extensions.RepaintLayers(uf)
+    local state = states[uf]
+    if not state or not state.unit or restores[state] or not plan.opacity then return end
+    if not Safe(uf) or not Safe(state.health) then return end
+    PlateLayers(state, true)
+    L.Name(state)
+end
+
+local function UpdateKind(uf, unit)
+    local state = states[uf]
+    if not state or restores[state] or state.unit ~= unit then return end
+    local kind = X.PlateKind(uf, unit)
+    if kind == state.kind then return end
+    state.kind = kind
+    SetInteraction(state)
+    if state == targetState then SeedRange(state) end
+    PlateLayers(state)
+    Presentation(state)
+    if L.Mutable(state, uf) then T.Apply(state) end
+end
+
+local function NeutralEvent(module, event, unit)
+    module.unitEvents(module, event, unit)
+    if not PublicUnit(unit) then return end
+    local uf = module.activeUnits[unit]
+    if not Safe(uf) or P.PlatePrefix(uf) ~= "enemy" then return end
+    if P.IsSkinSuppressed and P.IsSkinSuppressed(uf) then return end
+    if module.config.neutralNpcSizeOverride then P.Layout.Apply(uf, "enemy", module.config) end
+    if plan.neutralContext or plan.enemyLoad or plan.opacity or plan.hostileScoped then UpdateKind(uf, unit) end
+end
+
+function Extensions.NeutralHandler(config)
+    if config.neutralNpcSizeOverride == true or plan.neutralContext or plan.enemyLoad or plan.opacity or plan.hostileScoped then
+        return NeutralEvent
+    end
+end
+
 local function DataEvent(_, event, unit)
     if not M.active or not plan.enabled or not PublicUnit(unit) then return end
     local uf = M.activeUnits[unit]
     local state = uf and states[uf]
-    if not state or restores[state] or state.unit ~= unit or not L.Mutable(state, uf) then return end
-    if event == "UNIT_HEALTH" then
-        E.Execute(state)
+    if not state or restores[state] or state.unit ~= unit or not Safe(uf) then return end
+    if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+        if state.injured and state.visible then ApplyAlpha(state) end
+        if plan.execute and event == "UNIT_HEALTH" and L.Mutable(state, uf) then E.Execute(state) end
         return
     end
+    if not L.Mutable(state, uf) then return end
     if event == "UNIT_NAME_UPDATE" then state.metadataReady = nil E.Identity(state) end
     T.Apply(state, event)
+end
+
+local function TargetEvent(module, event, unit)
+    module:OnAggroTargetChanged(unit)
+    DataEvent(module, event, unit)
 end
 
 function Extensions.OnUnit(_, event, unit)
@@ -296,15 +424,17 @@ function Extensions.OnMetadata()
     if metadataJob then metadataJob:Request() end
 end
 
-local function RangeEvent(_, _, spell, inRange, checksRange)
-    if NS.IsSecret(spell) or spell ~= registeredSpell or not targetState or not targetState.unit then return end
-    if not Safe(targetState.uf) then return end
+RangeEvent = function(_, _, spell, inRange, checksRange)
+    local state = targetState
+    if NS.IsSecret(spell) or spell ~= registeredSpell or not state or not state.unit then return end
+    if not Safe(state.uf) or not Same(state.unit, "target") then return end
     local checked = not NS.IsSecret(checksRange) and checksRange == true
     local range = checked and X.Range(inRange) or 3
-    if targetState.range ~= range or checked and NS.IsSecret(inRange) or NS.IsSecret(targetState.rangeValue) then
-        targetState.range, targetState.rangeValue = range, nil
-        if checked then targetState.rangeValue = inRange end
-        Presentation(targetState)
+    if state.range ~= range or checked and NS.IsSecret(inRange) or NS.IsSecret(state.rangeValue) then
+        state.range, state.rangeValue = range, nil
+        if checked then state.rangeValue = inRange end
+        ApplyAlpha(state)
+        if state.interaction.rangeText and L.Mutable(state, state.uf) then E.Range(state, true) end
     end
 end
 
@@ -340,24 +470,31 @@ end
 
 function Extensions.OnSelection()
     if not plan or not plan.enabled or not M.active then return end
+    if plan.enemyLoad then ReadEnemyLoad() end
     if plan.focusReminder then hasFocus = FocusPresent() else hasFocus = nil end
+    local previous = targetState
     targetState = nil
     for _, state in pairs(states) do
         if state.unit and not restores[state] and Safe(state.uf) then
             state.focus = (plan.focusScale ~= 1 or plan.focusReminder) and Same(state.unit, "focus") or false
-            if plan.range and Same(state.unit, "target") then targetState = state end
-            if plan.range and state.prefix == "enemy" then state.range, state.rangeValue = ReadRange(state) end
+            if plan.range and Same(state.unit, "target") then
+                targetState = state
+                SeedRange(state)
+            elseif state == previous then
+                SeedRange(state)
+            end
             Presentation(state)
         end
     end
-    if not R.Refresh() then ArmRestores() end
+    if plan.range then RangeSubscription() end
 end
 
-function Extensions.OnContext(changed)
+function Extensions.OnContext(changed, event)
     if not plan or not plan.enabled or not M.active then return end
     local oldContext, oldFocus = context, hasFocus
-    ReadContext()
-    if changed == false and oldContext == context and oldFocus == hasFocus then return end
+    local loadChanged = ReadContext(event)
+    if event == "PLAYER_ENTERING_WORLD" then ReseedTarget() end
+    if changed == false and not loadChanged and oldContext == context and oldFocus == hasFocus then return end
     for _, state in pairs(states) do
         if state.unit and not restores[state] and Safe(state.uf) then
             state.metadataReady = nil
@@ -368,9 +505,15 @@ function Extensions.OnContext(changed)
     end
 end
 
+function Extensions.RangeSpellChanged()
+    if not targetState then return end
+    ReseedTarget()
+    if targetState and Safe(targetState.uf) then Presentation(targetState) end
+end
+
 function Extensions.OnCombatEnded()
     FlushRestores()
-    if plan and plan.enabled then Extensions.OnContext() end
+    if plan and plan.enabled then Extensions.OnContext(nil, "PLAYER_REGEN_ENABLED") end
 end
 
 local function NativeAnchors(uf)
@@ -382,15 +525,16 @@ end
 Extensions.OnAnchors = NativeAnchors
 
 local function NativeHitTest(uf)
+    if P.SkinScopes and P.SkinScopes.OnHitTest(uf) then return end
     local state = states[uf]
     if not state or not state.unit then return end
     L.NativeHitTest(state)
-    if M.active and plan.enabled and L.Mutable(state, uf) then Presentation(state) end
+    if not restores[state] and M.active and plan.enabled and L.Mutable(state, uf) then Presentation(state) end
 end
 
-local function Subscribe(event, callback, wanted)
+local function Subscribe(event, callback, wanted, unit)
     if wanted then
-        local units = event:sub(1, 5) == "UNIT_" and S.NameplateUnits or nil
+        local units = unit or event:sub(1, 5) == "UNIT_" and S.NameplateUnits or nil
         M.context:Event(event, callback, IN_COMBAT, units)
         subscribed[event] = true
     elseif subscribed[event] then
@@ -399,16 +543,62 @@ local function Subscribe(event, callback, wanted)
     end
 end
 
+local function EnemyLoadEvent(_, event, unit)
+    if not M.active then return end
+    if event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
+        if not PublicUnit(unit) or unit ~= "player" then return end
+    end
+    local changed = ReadEnemyLoad(event)
+    local combatChanged = event == "PLAYER_REGEN_DISABLED" and plan.opacityCombat and not opacityCombat
+    if combatChanged then opacityCombat = true end
+    if not changed and not combatChanged then return end
+    for _, state in pairs(states) do
+        if state.unit and not restores[state] and Safe(state.uf) then
+            if changed and X.IsEnemy(state.kind) then
+                Presentation(state)
+            elseif combatChanged and state.layerFade then
+                ApplyAlpha(state)
+            end
+        end
+    end
+end
+
+local LOAD_EVENTS = {
+    { "PLAYER_REGEN_DISABLED", "enemyHideInCombat", "enemyHideOutOfCombat", "enemyHideOutOfCombatNoTarget" },
+    { "UNIT_ENTERED_VEHICLE", "enemyHideInVehicle" },
+    { "UNIT_EXITED_VEHICLE", "enemyHideInVehicle" },
+    { "UPDATE_VEHICLE_ACTIONBAR", "enemyHideInVehicle" },
+    { "PLAYER_MOUNT_DISPLAY_CHANGED", "enemyHideMounted" },
+    { "PLAYER_UPDATE_RESTING", "enemyHideResting" },
+    { "UPDATE_STEALTH", "enemyHideStealthed" },
+    { "HOUSE_PLOT_ENTERED", "enemyHideInHousing" },
+    { "HOUSE_PLOT_EXITED", "enemyHideInHousing" },
+}
+
+local function SubscribeEnemyLoad(load, fadeCombat)
+    for _, entry in ipairs(LOAD_EVENTS) do
+        local event, first, second, third = unpack(entry)
+        local needed = event == "PLAYER_REGEN_DISABLED" and fadeCombat or load and (load[first] or load[second] or load[third])
+        local unit = first == "enemyHideInVehicle" and event:sub(1, 5) == "UNIT_" and "player" or nil
+        Subscribe(event, EnemyLoadEvent, needed, unit)
+    end
+end
+
 local function Subscriptions()
     local sources, enabled = plan.sources, plan.enabled and M.active
-    Subscribe("UNIT_HEALTH", DataEvent, enabled and plan.execute)
-    Subscribe("UNIT_TARGET", DataEvent, enabled and (sources[2] or sources[7]))
+    local load = enabled and plan.enemyLoad
+    local injured = load and load.enemyShowWhenInjured
+    SubscribeEnemyLoad(load, enabled and plan.opacityCombat)
+    Subscribe("UNIT_HEALTH", DataEvent, enabled and (plan.execute or injured))
+    Subscribe("UNIT_MAXHEALTH", DataEvent, injured)
+    local aggro = M.active and P.Selection and P.Selection.aggroEnabled
+    Subscribe("UNIT_TARGET", aggro and TargetEvent or DataEvent, aggro or enabled and (sources[2] or sources[7]))
     local identity = plan.enemy.identity > 1 or plan.friendly.identity > 1
     Subscribe("UNIT_NAME_UPDATE", DataEvent, enabled and (sources[2] or sources[4] or sources[5] or identity))
     Subscribe("UNIT_POWER_UPDATE", DataEvent, enabled and sources[8])
     P.Power.SetExtraTextEvents(enabled and sources[8])
     Subscribe("UNIT_ABSORB_AMOUNT_CHANGED", DataEvent, enabled and sources[9])
-    Subscribe("SPELL_RANGE_CHECK_UPDATE", RangeEvent, enabled and plan.range)
+    Subscribe("UPDATE_SHAPESHIFT_FORM", Extensions.RangeSpellChanged, enabled and plan.range)
     local metadata = enabled and (sources[3] or sources[4] or sources[5] or sources[10])
     Subscribe("CHALLENGE_MODE_START", Extensions.OnMetadata, metadata and sources[10])
     Subscribe("CHALLENGE_MODE_COMPLETED", Extensions.OnMetadata, metadata and sources[10])
@@ -425,40 +615,43 @@ function Extensions.Configure(module)
     M = module
     plan = X.Plan(module.config)
     plan.enabled = plan.enabled and module.config.look ~= P.Mode.LOOK_BLIZZARD
-    if plan.enabled and plan.range and plan.rangeSpell > 0 then
-        local exists = C_Spell.DoesSpellExist(plan.rangeSpell)
-        if NS.IsSecret(exists) or exists ~= true then plan.rangeSpell = 0 end
+    if plan.enabled and plan.range then
+        for _, scope in pairs(plan.interaction) do
+            if scope.range and scope.rangeSpell > 0 then
+                local exists = C_Spell.DoesSpellExist(scope.rangeSpell)
+                if NS.IsSecret(exists) or exists ~= true then scope.rangeSpell = 0 end
+            end
+        end
     end
     ReadContext()
     E.Configure(plan)
     Extensions.inUse = plan.enabled or next(restores) ~= nil
-    if plan.enabled and not hooked then
+    Extensions.usesRange = plan.enabled and plan.range
+    if not hooked and (P.IsSkinSuppressed or plan.enabled and (plan.contextEnabled or plan.enemyLoad or plan.clickbox))
+        and type(NamePlateUnitFrameMixin.UpdateHitTestArea) == "function" then
         hooked = true
         P.HookPlates("UpdateHitTestArea", NativeHitTest)
     end
     Subscriptions()
-    if not R.Configure(module, plan) then ArmRestores() end
     if not plan.enabled then
         for uf in pairs(states) do Extensions.Restore(uf) end
-        Extensions.inUse = next(restores) ~= nil or R.pending == true
+        Extensions.inUse = next(restores) ~= nil
     end
-    if not plan.range then
-        for _, state in pairs(states) do RangeActive(state, false) end
-    end
+    if not plan.range then targetState = nil end
     RangeSubscription()
 end
 
 function Extensions.Disable()
     if not M then return end
     plan.enabled, plan.range = false, false
+    Extensions.usesRange = nil
     Subscriptions()
     for uf in pairs(states) do Extensions.Restore(uf) end
-    if registeredSpell then S.SetNativeSpellRange(RANGE_OWNER, registeredSpell, false) registeredSpell = nil end
-    M.context:Cancel(RangeTick)
+    targetState = nil
+    RangeSubscription()
     M.context:Cancel(ExpireInterrupts)
     if metadataJob then metadataJob:Cancel() metadataJob = nil end
-    if not R.Disable() then ArmRestores() end
-    Extensions.inUse = next(restores) ~= nil or R.pending == true
+    Extensions.inUse = next(restores) ~= nil
 end
 
 function Extensions.Bind(module) M = module end

@@ -146,7 +146,10 @@ function Supplies.Format(binding)
     if not NS.Client.isForever then return S.Text("Supplies"), P.NO_VALUE end
     Read()
     for i = 1, #rows do binding.icons[#binding.icons + 1] = rows[i].icon end
-    return S.Text("Supplies"), value
+    local limit = config and config.ammoWarning or 0
+    local first = rows[1]
+    local warning = limit > 0 and not NS.InCombat() and first and first.id == ammoID and first.count < limit and "bad" or nil
+    return S.Text("Supplies"), value, warning
 end
 function Supplies.Tooltip(tooltip)
     Read()

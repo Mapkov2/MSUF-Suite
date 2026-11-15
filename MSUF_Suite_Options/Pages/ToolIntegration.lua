@@ -77,13 +77,16 @@ function P.BuildOwnedTool(ctx, builder, id, reveal)
     })
 end
 
-function P.Suite.Menu.FocusOwnedTool(id)
-    local spec = P.catalog[id]
-    if not spec or not P.OwnedTools[id] then return true end
-    local page, section = spec.page, spec.page .. "_" .. id .. "_module"
+function P.Suite.Menu.FocusSection(page, section)
     local called, opened, focused = P.M.SearchBridge.OpenSearchTarget(page, "", nil, nil, {},
         { pageKey = page, sectionId = section })
     return called == true and opened == true and focused == true
+end
+
+function P.Suite.Menu.FocusOwnedTool(id)
+    local spec = P.catalog[id]
+    if not spec or not P.OwnedTools[id] then return true end
+    return P.Suite.Menu.FocusSection(spec.page, spec.page .. "_" .. id .. "_module")
 end
 
 function P.AppendToolSearchActions(Add)

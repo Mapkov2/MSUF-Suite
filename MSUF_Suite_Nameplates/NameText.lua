@@ -1,21 +1,42 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
 local Text = NS.NameplateText
-local Names = { states = setmetatable({}, { __mode = "k" }), inUse = false }
+local IsSecret = NS.IsSecret
+local IsCombatLocked = NS.IsCombatLocked
+local states = setmetatable({}, { __mode = "k" })
+local Names = { states = states, inUse = false }
 private.NameText = Names
 local M, looks, hooked
 
 function Names.Bind(module) M = module end
 
-local function Safe(uf)
-    if not uf or NS.Safety.IsForbidden(uf) then return false, "forbidden" end
+-- The plate Button and its FontString can lose access while still tracked.
+local function ReadLabel(uf)
+    local forbidden = uf:IsForbidden()
+    if IsSecret(forbidden) or forbidden then return end
     local label = uf.name
-    if not label or NS.Safety.IsForbidden(label) then return false, "forbidden" end
-    if NS.IsCombatLocked() and (uf:IsProtected() or label:IsProtected()) then
+    if not label then return end
+    forbidden = label:IsForbidden()
+    if IsSecret(forbidden) or forbidden then return end
+    return label
+end
+
+local function Protected(uf, label)
+    local protected = uf:IsProtected()
+    if IsSecret(protected) or protected then return true end
+    protected = label:IsProtected()
+    return IsSecret(protected) or protected
+end
+
+local function Safe(uf)
+    if not uf then return end
+    local label = ReadLabel(uf)
+    if not label then return end
+    if IsCombatLocked() and Protected(uf, label) then
         M.pendingPlates[uf] = true
-        return false, "protected"
+        return
     end
-    return true
+    return label
 end
 
 local function Clear(state)
@@ -38,12 +59,7 @@ local function ForgetPlain(state)
     state.unit, state.prefix = unit, prefix
 end
 
-local function Capture(state, label)
-    local raw = label:GetText()
-    if not S.Public(raw) then
-        ForgetPlain(state)
-        return false
-    end
+local function Capture(state, label, raw)
     state.raw, state.captured = raw, true
     local r, g, b, a = label:GetTextColor()
     if S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a) then
@@ -52,7 +68,6 @@ local function Capture(state, label)
         state.r, state.g, state.b, state.a = nil, nil, nil, nil
     end
     state.formatted, state.tinted, state.nativeDirty = nil, nil, nil
-    return true
 end
 
 local function RestoreColor(state, label)
@@ -107,28 +122,41 @@ end
 -- Hidden and override calls can return without a native write. Only a shown
 -- ordinary update can replace the saved baseline with fresh native values.
 local function OnNativeName(uf)
-    if not M.active or not Names.inUse then return end
-    local state = Names.states[uf]
-    if not state or not state.unit then return end
-    local prefix, unit = state.prefix, state.unit
-    if not M.config[prefix] or M.activeUnits[unit] ~= uf then return end
-    local safe, reason = Safe(uf)
-    if not safe then
+    local state = states[uf]
+    if not state or not M.active or not Names.inUse then return end
+    local unit, prefix = state.unit, state.prefix
+    if not unit or M.activeUnits[unit] ~= uf or not M.config[prefix] then return end
+    local label = ReadLabel(uf)
+    if not label then
         state.look = nil
-        if reason == "protected" and not uf.UpdateNameOverride and uf.name:IsShown() then state.nativeDirty = true end
         return
     end
-    if uf.UpdateNameOverride or not uf.name:IsShown() then return end
-    if Capture(state, uf.name) then
-        Paint(state, uf.name, looks[prefix])
-    else
-        state.look = looks[prefix]
+    if IsCombatLocked() and Protected(uf, label) then
+        -- A name can become readable before the next native update. Keep
+        -- the combat-end replay even when the current text would be secret.
+        M.pendingPlates[uf], state.look = true, nil
+        if not uf.UpdateNameOverride then
+            local shown = label:IsShown()
+            if not IsSecret(shown) and shown then state.nativeDirty = true end
+        end
+        return
     end
+    if uf.UpdateNameOverride then return end
+    local shown = label:IsShown()
+    if IsSecret(shown) or not shown then return end
+    local raw, look = label:GetText(), looks[prefix]
+    if IsSecret(raw) then
+        if state.captured then ForgetPlain(state) end
+        state.look, state.nativeDirty = look, nil
+        return
+    end
+    Capture(state, label, raw)
+    Paint(state, label, look)
 end
 
 local function RestoreInactive()
     Names.pendingRestore = false
-    for uf, state in pairs(Names.states) do
+    for uf, state in pairs(states) do
         if state.formatted or state.tinted then
             if Safe(uf) then
                 Restore(state, uf.name)
@@ -155,47 +183,57 @@ function Names.Configure(config)
 end
 
 function Names.Apply(uf, prefix, unit)
-    local state = Names.states[uf]
+    local state = states[uf]
     local look = prefix and looks and looks[prefix]
     local enabled = Names.inUse and look and unit and M.config[prefix]
     -- Other skin events do no native text/color work on an unchanged look.
     if enabled and state and state.unit == unit and state.look == look then return end
     if not enabled and (not state or not state.formatted and not state.tinted) then return end
-    if not Safe(uf) then return end
+    local label = Safe(uf)
+    if not label then return end
     if not enabled then
-        Restore(state, uf.name)
+        Restore(state, label)
         state.look = nil
         return
     end
-    if uf.UpdateNameOverride or not uf.name:IsShown() then return end
-    if not state then state = {} Names.states[uf] = state end
+    if uf.UpdateNameOverride then return end
+    local shown = label:IsShown()
+    if IsSecret(shown) or not shown then return end
+    if not state then state = {} states[uf] = state end
     if state.unit ~= unit then Clear(state) end
     state.unit, state.prefix = unit, prefix
-    local current = uf.name:GetText()
-    if not S.Public(current) then
+    local current = label:GetText()
+    if IsSecret(current) then
         ForgetPlain(state)
         state.look = look
         return
     end
-    if (state.nativeDirty or state.raw == nil or current ~= state.output and current ~= state.raw) and not Capture(state, uf.name) then
-        state.look = look
-        return
+    if state.nativeDirty or state.raw == nil or current ~= state.output and current ~= state.raw then
+        Capture(state, label, current)
     end
-    Paint(state, uf.name, look)
+    Paint(state, label, look)
 end
 
 function Names.Begin(uf)
-    local state = Names.states[uf]
+    local state = states[uf]
     if state then Clear(state) end
 end
 
 function Names.Invalidate(uf)
-    local state = Names.states[uf]
+    local state = states[uf]
     if state then state.look = nil end
 end
 
+function Names.Suspend(uf)
+    local state = states[uf]
+    if not state then return end
+    state.unit = nil
+    if not state.formatted and not state.tinted then return end
+    if Safe(uf) then Restore(state, uf.name) else Names.pendingRestore = true end
+end
+
 function Names.Release(uf)
-    local state = Names.states[uf]
+    local state = states[uf]
     if not state then return end
     if (state.formatted or state.tinted) and Safe(uf) then Restore(state, uf.name) end
     -- Removal retires identity even when combat/forbidden state blocks restore.

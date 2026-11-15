@@ -66,7 +66,9 @@ local function Item(entry)
     if not Key(entry.quality) and Key(quality) then entry.quality = quality end
     local detailed = C_Item.GetDetailedItemLevelInfo(entry.link)
     if Positive(detailed) then entry.itemLevel = detailed
-    elseif Positive(level) then entry.itemLevel = level end
+    elseif Positive(level) then
+        entry.itemLevel = level
+    end
 end
 
 function D.ReadRoll(rollID, durationMilliseconds, now)
@@ -105,7 +107,10 @@ local function ReadParticipants(entry, rolls)
                 entry.counts[choice] = entry.counts[choice] + 1
                 local name = PlayerName(info)
                 if name then names[choice][#names[choice] + 1] = name end
-                if True(info.isSelf) then entry.selfChoice = choice end
+                if True(info.isSelf) then
+                    entry.selfChoice = choice
+                    if S.Finite(info.roll) then entry.selfRoll = info.roll end
+                end
             end
         end
     end
@@ -143,6 +148,7 @@ function D.ReadDrop(encounterID, lootKey)
     Item(entry)
     if not entry.name then entry.name = entry.link end
     ReadParticipants(entry, info.rollInfos)
+    entry.selfChoice = Action(info.playerRollState) or entry.selfChoice
     ReadStatus(entry, info)
     return entry
 end

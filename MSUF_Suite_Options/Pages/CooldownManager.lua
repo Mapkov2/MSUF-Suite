@@ -30,41 +30,47 @@ local HELP = {
 -- Per-bar settings by topic; every custom bar 1 rule appears exactly once.
 -- Basics holds the most used ones (attachment complete) and stays open; the
 -- rest start closed. The bar's name and type sit in Basics.
-local SECTIONS = {
-    { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "anchorFrame", "side", "gap", "align",
-        "alpha", "cooldownDuration", "shareContents" } },
-    { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "cooldownFixed", "centerFirst", "overflow",
-        "laterPerRow", "laterSize", "vertical", "grow", "x", "y" } },
-    { id = "look", title = "Look", suffixes = { "iconShape", "masque", "zoom", "border", "borderColor", "borderClass", "swipeAlpha",
-        "swipeColor", "swipeClass", "edge", "strata", "layer" } },
-    { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackText", "stackSize", "textTop",
-        "stackPos", "keybind", "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding" } },
-    { id = "effects", title = "Cooldown effects", suffixes = { "desat", "cdAlpha", "readyAlpha", "hideReady", "procGlow",
-        "readyGlow", "readyResources", "fullChargeGlow", "glowStyle", "glowTint", "glowColor", "glowLines", "glowThickness", "glowSpeed", "usable", "range",
-        "rangeColor", "showAura", "auraSwipeColor", "charges", "chargeSwipe", "chargeEdge",
-        "assist", "kickMark", "bling", "readyPulse" } },
-    -- The pandemic window keeps its own look; line styling sits beside glow style.
-    { id = "buffs", title = "Buffs", suffixes = { "showMissing", "keepSlots", "auraGlow", "pandemic", "pandemicStyle",
-        "pandemicColor", "pandemicSize" } },
-    { id = "barstyle", title = "Timer bar style", suffixes = { "barWidth", "barHeight", "barTexture", "barColor",
-        "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill", "barSpark",
-        "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments", "barChargeDim" } },
-    { id = "visibility", title = "Visibility", suffixes = { "vis", "oocAlpha", "hideMounted", "hideVehicle", "hideResting",
-        "hideSolo", "hideWorld", "hideFlying", "hideDead", "hiddenAlpha", "hoverShow", "fadeTime", "tooltips" } },
-}
+local function SectionDefinitions()
+    return {
+        { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "anchorFrame", "side", "gap", "align",
+            "alpha", "cooldownDuration", "shareContents" } },
+        { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "cooldownFixed", "centerFirst", "overflow",
+            "laterPerRow", "laterSize", "vertical", "grow", "x", "y" } },
+        { id = "look", title = "Look", suffixes = { "iconShape", "masque", "zoom", "border", "borderColor", "borderClass", "swipeAlpha",
+            "swipeColor", "swipeClass", "edge", "strata", "layer" } },
+        { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackText", "stackSize", "textTop",
+            "stackPos", "keybind", "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding" } },
+        { id = "effects", title = "Cooldown effects", suffixes = { "desat", "cdAlpha", "readyAlpha", "hideReady", "procGlow",
+            "readyGlow", "readyResources", "fullChargeGlow", "glowStyle", "glowTint", "glowColor", "glowLines", "glowThickness", "glowSpeed", "usable", "range",
+            "rangeColor", "showAura", "auraSwipeColor", "charges", "chargeSwipe", "chargeEdge",
+            "assist", "kickMark", "bling", "readyPulse" } },
+        -- The pandemic window keeps its own look; line styling sits beside glow style.
+        { id = "buffs", title = "Buffs", suffixes = { "showMissing", "keepSlots", "auraGlow", "pandemic", "pandemicStyle",
+            "pandemicColor", "pandemicSize" } },
+        { id = "barstyle", title = "Timer bar style", suffixes = { "barWidth", "barHeight", "barTexture", "barColor",
+            "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill", "barSpark",
+            "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments", "barChargeDim" } },
+        { id = "visibility", title = "Visibility", suffixes = { "vis", "oocAlpha", "hideMounted", "hideVehicle", "hideResting",
+            "hideSolo", "hideWorld", "hideFlying", "hideDead", "hiddenAlpha", "hoverShow", "fadeTime", "tooltips" } },
+    }
+end
 local CARD_SUFFIXES = { "name", "kind" }
+local SECTIONS = {}
 Page.SECTIONS, Page.CARD_SUFFIXES = SECTIONS, CARD_SUFFIXES
 -- Only settings the catalog has. One it adds that no section names joins
 -- Cooldown effects, so every rule keeps exactly one control.
-do
+local sectionsReady
+function Page.PrepareSections()
+    if sectionsReady then return SECTIONS end
     local listed, effects = {}, nil
     for _, suffix in ipairs(CARD_SUFFIXES) do listed[suffix] = true end
-    for _, spec in ipairs(SECTIONS) do
+    for index, spec in ipairs(SectionDefinitions()) do
         local kept = {}
         for _, suffix in ipairs(spec.suffixes) do
             if KEYS.c1[suffix] and not listed[suffix] then kept[#kept + 1], listed[suffix] = suffix, true end
         end
         spec.suffixes = kept
+        SECTIONS[index] = spec
         if spec.id == "effects" then effects = spec end
     end
     for _, rule in ipairs(P.SectionRules(ID, "c1")) do
@@ -73,6 +79,8 @@ do
             effects.suffixes[#effects.suffixes + 1], listed[rule.suffix] = rule.suffix, true
         end
     end
+    sectionsReady = true
+    return SECTIONS
 end
 -- Module settings: Blizzard's bars and sounds share a row, then the switches.
 local GENERAL_ORDER = { "blizzard", "raidEssentials", "soundChannel", "showGCD", "muteSounds", "readyGlowCombat" }
@@ -89,12 +97,7 @@ local function AnchorTip(item)
         return format(Tr("%s follows this bar. Attaching this bar to it would make a loop."), Page.BarName(item.loopOf))
     end
 end
-for i, label in ipairs(CDM.ANCHOR_LABELS) do
-    anchorValues[i] = { value = i, text = label }
-    if i >= 2 and i <= #SLOTS + 1 then anchorValues[i].tooltip = AnchorTip end
-end
 local kindValues = {}
-for i, name in ipairs(Page.KIND_NAMES) do kindValues[i] = { value = i, text = name } end
 -- Send excess cooldowns to: only another cooldown bar can take them (the
 -- runtime routes nothing else, Resolve.OverflowTarget).
 local overflowValues = {}
@@ -119,10 +122,6 @@ local function OverflowTip(item)
     local reason = Page.OverflowReason(Page.selected, item.value)
     return reason and Tr(reason)
 end
-for i, label in ipairs(RULES[KEYS.c1.overflow].choices) do
-    overflowValues[i] = { value = i, text = label }
-    if i >= 2 then overflowValues[i].tooltip = OverflowTip end
-end
 -- Blizzard's cooldown bars: each choice explains itself, and the current one
 -- also says what the runtime does right now.
 local BLIZZARD_TIPS = {
@@ -137,8 +136,20 @@ local function BlizzardTip(item)
     return tip
 end
 local blizzardValues = {}
-for i, choice in ipairs(RULES.blizzard.choices) do
-    blizzardValues[i] = { value = i, text = choice, tooltip = BlizzardTip }
+local function PrepareChoices()
+    if anchorValues[1] then return end
+    for i, label in ipairs(CDM.ANCHOR_LABELS) do
+        anchorValues[i] = { value = i, text = label }
+        if i >= 2 and i <= #SLOTS + 1 then anchorValues[i].tooltip = AnchorTip end
+    end
+    for i, name in ipairs(Page.KIND_NAMES) do kindValues[i] = { value = i, text = name } end
+    for i, label in ipairs(RULES[KEYS.c1.overflow].choices) do
+        overflowValues[i] = { value = i, text = label }
+        if i >= 2 then overflowValues[i].tooltip = OverflowTip end
+    end
+    for i, choice in ipairs(RULES.blizzard.choices) do
+        blizzardValues[i] = { value = i, text = choice, tooltip = BlizzardTip }
+    end
 end
 
 local function PaintChoices()
@@ -678,6 +689,8 @@ end
 
 ------------------------------------------------------------------ page
 local function Build(ctx)
+    PrepareChoices()
+    Page.PrepareSections()
     local b = W.PageBuilder(ctx)
     local ui = { sections = {} }
     -- A layout built while another one is on screen (Menu2 builds one per

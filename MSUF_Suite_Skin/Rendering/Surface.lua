@@ -1,5 +1,6 @@
 local _, NS = ...
 
+local forever = (rawget(NS, "Client") or {}).isForever == true
 local Surface = {}
 NS.Surface = Surface
 local OnPainted = function() end
@@ -68,11 +69,11 @@ local function SetVertexColor(texture, colorKey, alphaScale)
     texture:SetVertexColor(r, g, b, a * (alphaScale or 1))
 end
 
-local function ApplyFill(texture, material, state)
+local function ApplyFill(texture, material, state, alphaScale)
     local from = NS.Theme.GetColorTable(material.from)
     local to = NS.Theme.GetColorTable(material.to)
     local opacity = NS.Theme.GetMaterialOpacity(material)
-        * (tonumber(state.spec.fillAlphaScale) or 1)
+        * (tonumber(state.spec.fillAlphaScale) or 1) * (alphaScale or 1)
     local strength = NS.DB.theme.gradientStrength or 1
     local toR = from[1] + (to[1] - from[1]) * strength
     local toG = from[2] + (to[2] - from[2]) * strength
@@ -80,16 +81,17 @@ local function ApplyFill(texture, material, state)
     local opaque = state.spec.opaqueFill == true
     local fromA = opaque and 1 or from[4] * opacity
     texture:SetVertexColor(1, 1, 1, 1)
-    if NS.DB.theme.gradient then
-        -- Still call SetGradient every time to repair native resets.
-        local toA = opaque and 1 or (from[4] + (to[4] - from[4]) * strength) * opacity
+    local shaded = NS.DB.theme.gradient == true
+    if shaded or state.gradientFrom then
+        -- Replace the previous per-corner colors even when the shade is turned off.
         state.gradientFrom = NS.Theme.ReuseColor(state.gradientFrom, from[1], from[2], from[3], fromA)
-        state.gradientTo = NS.Theme.ReuseColor(state.gradientTo, toR, toG, toB, toA)
-        texture:SetGradient(
-            NS.DB.theme.gradientDirection or "VERTICAL",
-            state.gradientFrom,
-            state.gradientTo
-        )
+        local finish = state.gradientFrom
+        if shaded then
+            local toA = opaque and 1 or (from[4] + (to[4] - from[4]) * strength) * opacity
+            state.gradientTo = NS.Theme.ReuseColor(state.gradientTo, toR, toG, toB, toA)
+            finish = state.gradientTo
+        end
+        texture:SetGradient(NS.DB.theme.gradientDirection or "VERTICAL", state.gradientFrom, finish)
     else
         texture:SetVertexColor(from[1], from[2], from[3], fromA)
     end
@@ -365,8 +367,11 @@ local function RefreshState(state, checked)
     local material = NS.Theme.GetMaterial(RoleForState(state))
     local hideIdleListFill = state.spec.listItem == true and state.active ~= true
     local suppressNestedGlassFill = SuppressNestedGlassFill(state)
+    local tintLayer = suppressNestedGlassFill and forever
+        and state.spec.keepGlassFill ~= false and not state.spec.opaqueFill
+    if tintLayer then suppressNestedGlassFill = false end
     ConfigureShape(state.fill, geometry.fill, geometry)
-    ApplyFill(state.fill, material, state)
+    ApplyFill(state.fill, material, state, tintLayer and 0.32 or nil)
 
     local edgeAsset = geometry.edge
     if state.active and (state.spec.activeEdge or state.spec.selectionEdge) then
@@ -384,7 +389,7 @@ local function RefreshState(state, checked)
         state.edge:Hide()
     end
 
-    RefreshDepth(state, geometry, material, suppressNestedGlassFill)
+    RefreshDepth(state, geometry, material, suppressNestedGlassFill or tintLayer)
     RefreshButtonState(state, geometry)
     RefreshInteractiveHover(state, geometry)
     if state.visible == false then

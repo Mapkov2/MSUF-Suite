@@ -1,11 +1,12 @@
 local _, NS = ...
 
+local emptySpec = {}
+local forever = (rawget(NS, "Client") or emptySpec).isForever
 local Geometry = {}
 NS.Geometry = Geometry
 
 local shapePath = NS.path .. "Media\\Shapes\\"
 local pillHeights = { 20, 24, 28, 32 }
-local emptySpec = {}
 local assets = {}
 local STRETCHED = Enum.UITextureSliceMode.Stretched
 
@@ -74,8 +75,9 @@ function Geometry.Resolve(spec, result)
         shape = "continuous"
     end
     local pill = shape == "pill"
-    local extent = pill and ClosestValue(pillHeights, spec.pillHeight or 24)
-        or ClosestValue(NS.GeometryRadii, spec.radius or geometry.radius)
+    local window = forever and (spec.role == "shell" or spec.role == "popup")
+    local radius = window and geometry.radius or spec.radius or geometry.radius
+    local extent = pill and ClosestValue(pillHeights, spec.pillHeight or 24) or ClosestValue(NS.GeometryRadii, radius)
     local asset = GetAssets(shape, extent, border)
     -- Callers may reuse their own result, but never share mutable geometry
     -- between surfaces. Every spec/default is resolved again on every refresh.

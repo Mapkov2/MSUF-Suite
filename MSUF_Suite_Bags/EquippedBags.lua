@@ -5,7 +5,53 @@ P.EquippedBags = Equipped
 local BAG_SLOTS = Constants.InventoryConstants.NumBagSlots
 local TOTAL = BAG_SLOTS + Constants.InventoryConstants.NumReagentBagSlots
 local EMPTY = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"
+local REAGENT_BAG = Enum.BagIndex.ReagentBag
 local keyringClick
+local bindingOwner, firstKey, secondKey
+
+local function HasReagentBag()
+    local slots = C_Container.GetContainerNumSlots(REAGENT_BAG)
+    return S.Finite(slots) and slots > 0
+end
+
+function Equipped.ClearBackpackBindings()
+    if not bindingOwner or not (firstKey or secondKey) then return end
+    firstKey, secondKey = nil, nil
+    ClearOverrideBindings(bindingOwner)
+end
+
+-- Forever binds B to Backpack. In the Suite views, open all bags through
+-- Blizzard's existing binding so Blizzard also creates the reagent window.
+function Equipped.RefreshBackpackBindings(module)
+    if not module.active then return end
+    local first, second
+    if module.config.inventoryView ~= NS.BagsView.BLIZZARD_GRID and not S.GamepadUI() and HasReagentBag() then
+        first, second = GetBindingKey("TOGGLEBACKPACK")
+        if not S.Public(first) then first = nil end
+        if not S.Public(second) then second = nil end
+    end
+    if first == firstKey and second == secondKey then return end
+    if NS.InCombat() then
+        S.Queue("bags")
+        return
+    end
+    local hadBindings = firstKey or secondKey
+    -- Publish the new keys before client calls that may notify binding listeners.
+    firstKey, secondKey = first, second
+    if hadBindings then ClearOverrideBindings(bindingOwner) end
+    if not (first or second) then return end
+    bindingOwner = bindingOwner or S.CreateFrame("Frame")
+    if first then SetOverrideBinding(bindingOwner, false, first, "OPENALLBAGS") end
+    if second then SetOverrideBinding(bindingOwner, false, second, "OPENALLBAGS") end
+end
+
+function Equipped.BackpackBagsChanged(module, _, bag)
+    if S.Finite(bag) and bag == REAGENT_BAG then Equipped.RefreshBackpackBindings(module) end
+end
+
+function Equipped.BackpackStyleChanged(module, _, name)
+    if S.Public(name) and name == "InputDeviceInterfaceStyle" then Equipped.RefreshBackpackBindings(module) end
+end
 
 -- Leave the native bag's protection and the keyring's item actions with
 -- Blizzard. A separate secure button covers the icon only while hovered.
@@ -115,8 +161,12 @@ local function Click(button)
     if not S.Public(kind) then return end
     if kind == "item" then
         PutItemInBag(button.inventoryID)
-    elseif kind == nil and IsModifiedClick("PICKUPITEM") then
-        PickupBagFromSlot(button.inventoryID)
+    elseif kind == nil then
+        if IsModifiedClick("PICKUPITEM") then
+            PickupBagFromSlot(button.inventoryID)
+        elseif button.bagID == REAGENT_BAG and not IsModifiedClick() and not S.GamepadUI() and HasReagentBag() then
+            ToggleBag(REAGENT_BAG)
+        end
     end
 end
 

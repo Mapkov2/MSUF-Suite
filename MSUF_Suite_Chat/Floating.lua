@@ -272,6 +272,7 @@ end
 
 function C.FloatingWindowClosed(frame, fallback)
     frame = fallback or frame or FCF_GetCurrentChatFrame()
+    if M.active and frame and frame ~= DEFAULT_CHAT_FRAME then C.SuspendMessages(frame) end
     if frame and not NS.Safety.IsForbidden(frame) then
         local index = frame:GetID()
         if Finite(index) then generations[index] = (generations[index] or 0) + 1 end

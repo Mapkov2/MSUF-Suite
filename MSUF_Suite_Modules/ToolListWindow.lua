@@ -263,11 +263,22 @@ local function CreateRows(window)
     end
 end
 
+local function DropOnAction(window, button)
+    if NS.InCombat() or not Valid(window) then return end
+    local action = window.spec.actions and window.spec.actions[button.index]
+    if not action or not action.drop or action.enabled and not action.enabled(window.owner, window:Selected()) then return end
+    local kind, id = GetCursorInfo()
+    if S.PublicText(kind) ~= "item" or not S.Finite(id) or id < 1 or id > 9999999 or id % 1 ~= 0 then return end
+    ClearCursor()
+    action.drop(window.owner, id)
+end
+
 local function CreateNavigation(window)
     window.actions, window.tabs = {}, {}
     for i = 1, 6 do
         local button = Button(window, "", 114, RunAction)
         button.index = i
+        button:SetScript("OnReceiveDrag", function(self) DropOnAction(window, self) end)
         button:SetPoint("BOTTOMLEFT", 18 + (i - 1) * 121, 17)
         window.actions[i] = button
     end

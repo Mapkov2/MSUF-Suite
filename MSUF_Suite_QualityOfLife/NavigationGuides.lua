@@ -25,7 +25,9 @@ local function Offer(source, map, x, y, name)
         or map < 1 or x < 0 or x > 1 or y < 0 or y > 1 then return end
     local previous = observed[source]
     if previous and previous.map == map and previous.x == x and previous.y == y then return end
-    local manual = Navigation.selectedSource == "manual" or Navigation.selectedSource == "saved" or Navigation.selectedSource == "route"
+    local sourceSelected = Navigation.selectedSource
+    local manual = sourceSelected == "manual" or sourceSelected == "saved" or sourceSelected == "route"
+        or sourceSelected == "sleepingBag"
     if manual and Navigation.IsSelectedPoint(C_Map.GetUserWaypoint()) and not owner.config.replaceManual then return end
     if Navigation.Select({ map = map, x = x, y = y, name = Suite.PublicText(name) or Suite.Text("Guide destination"),
         list = source }, source) then
@@ -46,7 +48,10 @@ end
 local function TomTomChanged(_, uid)
     local owner = Navigation.owner
     if not owner or not owner.active or not owner.config.guideTomTom then return end
-    if Suite.Public(uid) and uid == nil then ClearGuide("TomTom") return end
+    if Suite.Public(uid) and uid == nil then
+        ClearGuide("TomTom")
+        return
+    end
     TomTomPoint(nil, uid, nil, Table(uid) and uid.title or nil)
 end
 
@@ -74,8 +79,14 @@ local function APRPoint(_, active, x, y, displayAction)
     local owner, addon = Navigation.owner, _G.APR
     if not owner or not owner.active or not owner.config.guideAPR then return end
     if not Suite.Public(displayAction) then return end
-    if displayAction ~= nil then ClearGuide("Azeroth Pilot Reloaded") return end
-    if Suite.Public(active) and active ~= true then ClearGuide("Azeroth Pilot Reloaded") return end
+    if displayAction ~= nil then
+        ClearGuide("Azeroth Pilot Reloaded")
+        return
+    end
+    if Suite.Public(active) and active ~= true then
+        ClearGuide("Azeroth Pilot Reloaded")
+        return
+    end
     if active ~= true or not Table(addon)
         or not Suite.Finite(x) or not Suite.Finite(y) then return end
     local map = addon:GetPlayerParentMapID()

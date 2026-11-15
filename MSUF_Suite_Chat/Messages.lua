@@ -24,11 +24,19 @@ local NAME = "[%a\128-\255][%w\128-\255]*"
 local DATE_SPEC = "%%[aAbBcdHIjmMpSUwWxXyYzZ%%]"
 local DEFAULT_STAMP = "[%H:%M]"
 local COPY_LINK = "msufline"
+local URL_EVENTS = {
+    "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
+    "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER",
+    "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER", "CHAT_MSG_CHANNEL",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM",
+}
+-- These branches feed arg1 straight to AddMessage on both clients.
+local VERBATIM_EVENTS = { "CHAT_MSG_LOOT", "CHAT_MSG_MONEY", "CHAT_MSG_CURRENCY", "CHAT_MSG_SKILL" }
 local CLASS_CACHE_LIMIT, ITEM_CACHE_LIMIT = 128, 256
 local classTags, senderIcons, itemIcons = {}, {}, {}
 local classFilter, senderIconCount, itemIconCount = false, 0, 0
 local stampSession, stampSerial, stampLabel = nil, 0, ""
-local stampLinkRegistered
+local stampLinkRegistered, urlFilter, verbatimFilter
 -- Keyword highlight: at most MAX_KEYWORDS words of MAX_KEYWORD_BYTES each.
 local MAX_KEYWORDS, MAX_KEYWORD_BYTES = 20, 64
 local DEFAULT_HIGHLIGHT = "ffd100"
@@ -133,18 +141,20 @@ end
 
 -- Plain text between native links: URLs become links, keywords and names get
 -- colored outside the new links.
-local function FormatRun(run)
-    if run == "" or not tools.links then return MarkText(run) end
+local function FormatRun(run, urlsOnly)
+    if run == "" or not tools.links then return urlsOnly and run or MarkText(run) end
     local start, finish = run:find(URL)
-    if not start then return MarkText(run) end
+    if not start then return urlsOnly and run or MarkText(run) end
     local count, index = 0, 1
     while start do
-        pieces[count + 1] = MarkText(run:sub(index, start - 1))
+        local leading = run:sub(index, start - 1)
+        pieces[count + 1] = urlsOnly and leading or MarkText(leading)
         pieces[count + 2] = LinkURL(run:sub(start, finish))
         count, index = count + 2, finish + 1
         start, finish = run:find(URL, index)
     end
-    pieces[count + 1] = MarkText(run:sub(index))
+    local trailing = run:sub(index)
+    pieces[count + 1] = urlsOnly and trailing or MarkText(trailing)
     return table.concat(pieces, "", 1, count + 1)
 end
 
@@ -168,7 +178,7 @@ local function ItemIcon(text, start)
 end
 
 -- Never alters the payload of a native hyperlink, texture or atlas escape.
-local function FormatPlainRuns(text)
+local function FormatPlainRuns(text, urlsOnly)
     local count, index, length = 0, 1, #text
     while index <= length do
         local start, finish = text:find("|H.-|h.-|h", index)
@@ -176,16 +186,36 @@ local function FormatPlainRuns(text)
         if escape and (not start or escape < start) then start, finish = escape, escapeEnd end
         if not start then
             count = count + 1
-            runs[count] = FormatRun(text:sub(index))
+            runs[count] = FormatRun(text:sub(index), urlsOnly)
             break
         end
-        runs[count + 1] = FormatRun(text:sub(index, start - 1))
+        runs[count + 1] = FormatRun(text:sub(index, start - 1), urlsOnly)
         local link = text:sub(start, finish)
-        if tools.itemIcons and start ~= escape then link = ItemIcon(text, start) .. link end
+        if not urlsOnly and tools.itemIcons and start ~= escape then link = ItemIcon(text, start) .. link end
         runs[count + 2] = link
         count, index = count + 2, finish + 1
     end
     return table.concat(runs, "", 1, count)
+end
+
+-- The public filter receives the body before Blizzard builds the rendered
+-- line. Only ordinary chat types use this lane: notices may read the body
+-- as a token. Return all remaining arguments so routing stays with Blizzard.
+local function LinkMessageBody(_, event, text, ...)
+    -- The Suite's spam rules match raw channel text, independent of filter order.
+    if event == "CHAT_MSG_CHANNEL" and C.M.config.spamFilter then return end
+    if not PublicText(text) or not text:find("http", 1, true) or text:find("[{}]") then return end
+    local lineID = select(10, ...)
+    if not S.Finite(lineID) or lineID <= 0 then return end
+    local censored = C_ChatInfo.IsChatLineCensored(lineID)
+    if not Public(censored) or censored ~= false then return end
+    local linked = FormatPlainRuns(text, true)
+    if linked ~= text then return false, linked, ... end
+end
+
+local function SetMessageFilters(events, filter, enabled)
+    local set = enabled and ChatFrameUtil.AddMessageEventFilter or ChatFrameUtil.RemoveMessageEventFilter
+    for _, event in ipairs(events) do set(event, filter) end
 end
 
 -- A world channel's "[2. Trade - City]" as its shortcut or "[2]".
@@ -277,6 +307,26 @@ local function Format(text)
     if tools.channels then text = ShortChannels(text) end
     if tools.stamps then text = Stamp(text) end
     return text
+end
+
+-- These events have already been formatted by the client. Their body is the
+-- final line, but SYSTEM has exact-text routing and must use the late path.
+local function FormatVerbatim(frame, _, text, ...)
+    local record = hooks[frame]
+    if not record or not record.live or record.wakeOnly or not PublicText(text) then return end
+    local rendered = Format(text)
+    if rendered ~= text and Format(rendered) == rendered then return false, rendered, ... end
+end
+
+local function RefreshMessageFilters(urls, verbatim)
+    if urls ~= (urlFilter == true) then
+        SetMessageFilters(URL_EVENTS, LinkMessageBody, urls)
+        urlFilter = urls
+    end
+    if verbatim ~= (verbatimFilter == true) then
+        SetMessageFilters(VERBATIM_EVENTS, FormatVerbatim, verbatim)
+        verbatimFilter = verbatim
+    end
 end
 
 local function CompileChannels(config)
@@ -511,13 +561,33 @@ local function HistoryKey(frame)
     return name and title and name .. ":" .. title or nil
 end
 
--- Cold path, per styled window (Window.lua). The combat log (ChatFrame2,
--- Blizzard_CombatLog's COMBATLOG) takes the hook only for the idle fade.
+-- A docked background tab is open even while visually hidden. Blizzard
+-- recycles a temporary frame after clearing inUse in FCF_Close.
+local function MessageWindowOpen(frame)
+    local temporary = frame.isTemporary
+    if not Public(temporary) then return false end
+    if temporary then
+        local inUse = frame.inUse
+        return Public(inUse) and inUse == true
+    end
+    local id = frame:GetID()
+    if not S.Finite(id) or id < 1 or id > Constants.ChatFrameConstants.MaxChatWindows then return false end
+    local open = FCF_IsChatWindowIndexActive(id)
+    return Public(open) and (open == true or open == 1)
+end
+
+function C.SuspendMessages(frame)
+    local record = hooks[frame]
+    if record then record.live, record.ring = nil, nil end
+end
+
+-- The combat log (ChatFrame2) takes the hook only for the idle fade.
 function C.ApplyMessages(_, frame)
+    if NS.Safety.IsForbidden(frame) then return end
     local record = hooks[frame]
     local combatLog = frame == ChatFrame2
-    if not (combatLog and tools.fade or not combatLog and tools.any) then
-        if record then record.live, record.ring = nil, nil end
+    if not (combatLog and tools.fade or not combatLog and tools.any) or not MessageWindowOpen(frame) then
+        C.SuspendMessages(frame)
         return
     end
     if not record then
@@ -538,6 +608,7 @@ function C.ApplyMessages(_, frame)
 end
 
 function C.MessagesDisable()
+    RefreshMessageFilters(false, false)
     RefreshClassIcons(false)
     if itemIconCount > 0 then
         wipe(itemIcons)
@@ -638,6 +709,7 @@ end
 function C.MessagesRefresh(self)
     local c, context = self.config, self.context
     C.CompileMessages(c)
+    RefreshMessageFilters(tools.links == true, tools.format == true)
     RefreshClassIcons(c.showClassIcons)
     if tools.copyStamp and not stampLinkRegistered then
         LinkUtil.RegisterLinkHandler(COPY_LINK, CopyTimestamp)

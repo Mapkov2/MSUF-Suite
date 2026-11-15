@@ -5,6 +5,7 @@ local Forever = Host.Client.isForever
 local defenseSkill = Forever and UnitDefenseSkill
 local Stats = {}
 NS.Stats = Stats
+Stats.PERCENT = "%.2f%%"
 
 local PLAYER = "player"
 -- The loaded Camelot PaperDoll stats use two armor per effective agility.
@@ -19,7 +20,17 @@ local DR_AMOUNT = Text("%.0f rating above the first DR threshold; about %.0f rat
 local DR_UNKNOWN = Text("DR data unavailable")
 
 local function Percent(value)
-    if value then return string.format("%.2f%%", value) end
+    if value then return string.format(Stats.PERCENT, value) end
+end
+
+function Stats.DisplayNumber(value)
+    if not Public(value) then return value end
+    return Number(value)
+end
+
+function Stats.DisplayPercent(value)
+    if not Public(value) then return value end
+    return Percent(Number(value))
 end
 
 local function AddValue(tip, label, value)
@@ -181,20 +192,44 @@ local function PercentRow(group, row, label, value, tooltip, argument)
     if label then row(group, label, Percent(value), nil, tooltip, argument) end
 end
 
-local function ForeverCrit()
-    local melee, ranged, spell = Read(GetCritChance), Read(GetRangedCritChance), Read(GetSpellCritChance)
+local function SourcePercentRow(group, row, label, source, value)
+    row(group, ("%s (%s)"):format(label, source), Stats.DisplayPercent(value), nil, nil, nil, Stats.PERCENT)
+end
+
+local function ForeverCrit(group, row)
+    local melee, ranged, spell = GetCritChance(), GetRangedCritChance(), GetSpellCritChance()
+    if not (Public(melee) and Public(ranged) and Public(spell)) then
+        SourcePercentRow(group, row, STAT_CRITICAL_STRIKE, MELEE, melee)
+        SourcePercentRow(group, row, STAT_CRITICAL_STRIKE, RANGED, ranged)
+        SourcePercentRow(group, row, STAT_CRITICAL_STRIKE, SPELLS, spell)
+        return nil, nil, true
+    end
+    melee, ranged, spell = Number(melee), Number(ranged), Number(spell)
     if not (melee and ranged and spell) then return end
     if spell >= melee and spell >= ranged then return spell, CR_CRIT_SPELL end
     if ranged >= melee then return ranged, CR_CRIT_RANGED end
     return melee, CR_CRIT_MELEE
 end
 
-local function ForeverHaste()
-    local melee, spell = Read(GetMeleeHaste), Read(UnitSpellHaste, PLAYER)
-    if not (melee and spell and GetRangedHaste) then return end
+local function ForeverHaste(group, row)
+    if not GetRangedHaste then return end
+    local melee, spell = GetMeleeHaste(), UnitSpellHaste(PLAYER)
     local ranged, ammo = GetRangedHaste()
+    if not (Public(melee) and Public(spell) and Public(ranged) and Public(ammo)) then
+        SourcePercentRow(group, row, STAT_HASTE, MELEE, melee)
+        local rangedLabel = ("%s (%s)"):format(STAT_HASTE, RANGED)
+        if Public(ranged) and Public(ammo) then
+            ranged, ammo = Number(ranged), Number(ammo)
+            PercentRow(group, row, rangedLabel, ranged and ammo and ranged + ammo)
+        else
+            row(group, rangedLabel, ranged, nil, nil, nil, "%.2f%% %+.2f%%", ammo)
+        end
+        SourcePercentRow(group, row, STAT_HASTE, SPELLS, spell)
+        return nil, nil, true
+    end
+    melee, spell = Number(melee), Number(spell)
     ranged, ammo = Number(ranged), Number(ammo)
-    if not (ranged and ammo) then return end
+    if not (melee and spell and ranged and ammo) then return end
     ranged = ranged + ammo
     if spell >= melee and spell >= ranged then return spell, CR_HASTE_SPELL end
     if ranged >= melee then return ranged, CR_HASTE_RANGED end
@@ -202,17 +237,16 @@ local function ForeverHaste()
 end
 
 function Stats.Enhancements(group, row)
-    local crit, critRating, haste, hasteRating
     if Forever then
-        crit, critRating = ForeverCrit()
-        haste, hasteRating = ForeverHaste()
-    else
-        crit, critRating = Suite.ReadCrit()
-        haste, hasteRating = Suite.ReadHaste(), CR_HASTE_MELEE
+        local crit, critRating, critExpanded = ForeverCrit(group, row)
+        if not critExpanded then PercentRow(group, row, STAT_CRITICAL_STRIKE, crit, SecondaryTooltip, critRating) end
+        local haste, hasteRating, hasteExpanded = ForeverHaste(group, row)
+        if not hasteExpanded then PercentRow(group, row, STAT_HASTE, haste, SecondaryTooltip, hasteRating) end
+        return
     end
+    local crit, critRating = Suite.ReadCrit()
     PercentRow(group, row, STAT_CRITICAL_STRIKE, crit, SecondaryTooltip, critRating)
-    PercentRow(group, row, STAT_HASTE, haste, SecondaryTooltip, hasteRating)
-    if Forever then return end
+    PercentRow(group, row, STAT_HASTE, Suite.ReadHaste(), SecondaryTooltip, CR_HASTE_MELEE)
     PercentRow(group, row, STAT_MASTERY, Suite.ReadMastery(), SecondaryTooltip, CR_MASTERY)
     PercentRow(group, row, STAT_VERSATILITY, Suite.ReadVersatility(), SecondaryTooltip, CR_VERSATILITY_DAMAGE_DONE)
     PercentRow(group, row, STAT_LIFESTEAL, Read(Suite.ReadLeech), Stats.SimpleRatingTooltip, CR_LIFESTEAL)
@@ -242,7 +276,12 @@ function Stats.General(group, row)
     end
     local mana = Read(UnitPowerMax, PLAYER, Enum.PowerType.Mana)
     if mana and mana > 0 then
-        local regen = Number(select(2, GetManaRegen()))
+        local _, regen = GetManaRegen()
+        if not Public(regen) then
+            row(group, MANA_REGEN, regen, nil, ManaRegenTooltip, nil, "%.2f/s")
+            return
+        end
+        regen = Number(regen)
         row(group, MANA_REGEN, regen and math.floor(regen * 5), nil, ManaRegenTooltip)
     end
 end
@@ -405,7 +444,7 @@ local function ShowTooltip(button)
     tooltipOwner, button.tooltipLabel = button, values.label
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
     GameTooltip:SetText(values.label)
-    AddValue(GameTooltip, TOTAL, values.value)
+    if not values.displayFormat then AddValue(GameTooltip, TOTAL, values.value) end
     values.tooltip(GameTooltip, values.tooltipArgument)
     GameTooltip:Show()
 end

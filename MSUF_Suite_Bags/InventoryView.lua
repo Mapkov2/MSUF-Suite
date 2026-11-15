@@ -2,10 +2,11 @@ local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Model, Index, Grid, FreeSlots = P.InventoryModel, P.InventoryIndex, P.GridView, P.FreeSlots
 local VIEW, Keyring = NS.BagsView, P.KeyringInventory
+local POOR = Enum.ItemQuality.Poor
 -- layout: "suite" (Suite grid), "combat" (every slot in physical order, no
 -- Suite controls) or "native" (Blizzard's own grid is showing).
 local InventoryView = { index = Index.New(), model = Model.New(), buttons = {}, labels = {}, scroll = 0, view = {},
-    context = {}, layout = "native", freeSlots = {}, geometry = {}, combatGeometry = {} }
+    context = { mergeJunk = NS.Client.isForever }, layout = "native", freeSlots = {}, geometry = {}, combatGeometry = {} }
 InventoryView.nativeCountFonts = setmetatable({}, { __mode = "k" })
 InventoryView.visibleButtons, InventoryView.slotState = {}, setmetatable({}, { __mode = "k" })
 P.InventoryView = InventoryView
@@ -20,7 +21,7 @@ local EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO
     "AUCTION_HOUSE_CLOSED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED",
     "BAG_UPDATE_DELAYED", "EQUIPMENT_SETS_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "INVENTORY_SEARCH_UPDATE",
     "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }
-local QUEST_TINT_EVENTS = { "QUEST_REMOVED", "ITEM_LOCK_CHANGED" }
+local ITEM_EVENTS = { "QUEST_REMOVED", "ITEM_LOCK_CHANGED" }
 
 local function State()
     local state = S.ModuleState("bags")
@@ -94,6 +95,11 @@ local function StackTooltip(tooltip)
     tooltip:AddLine(string.format(S.Text("Combined: %d items in %d stacks"), row.count, row.stacks), 0.8, 0.8, 0.8)
     tooltip:AddLine(string.format(S.Text("This slot contains %d; clicking uses this physical stack."),
         row.item.count), 0.8, 0.8, 0.8, true)
+    local price = row.item.sellPrice
+    if NS.Client.isForever and not NS.InCombat() and S.Finite(price) and price > 0 then
+        tooltip:AddLine(S.Text("Vendor value for %d items: %s (%s each)"):format(
+            row.count, S.MoneyText(price * row.count), S.MoneyText(price)), 0.8, 0.8, 0.8, true)
+    end
 end
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, StackTooltip)
 
@@ -170,12 +176,11 @@ end
 InventoryView.Request = Request
 
 local RestoreLayout
-local function QuestSlotChanged(bag, slot)
-    if not InventoryView.frame:IsShown() or not S.Finite(bag) or not S.Finite(slot) then return false end
+local function IndexedItem(bag, slot)
+    if not InventoryView.frame:IsShown() or not S.Finite(bag) or not S.Finite(slot) then return nil end
     local index = InventoryView.index
     local button = index.buttons[bag * P.SlotCache.KEY + slot]
-    local item = index.records[button]
-    return item and P.InventoryRendering.InactiveQuest(item)
+    return index.records[button]
 end
 
 local function OnEvent(_, event, value, success)
@@ -210,15 +215,20 @@ local function OnEvent(_, event, value, success)
     end
     if event == "BAG_UPDATE_DELAYED" then P.EquippedBags.Refresh() end
     if event == "INVENTORY_SEARCH_UPDATE" then InventoryView.scroll = 0 end
-    -- Blizzard's single-slot lock refresh can clear the quest desaturation.
-    if event == "ITEM_LOCK_CHANGED" and not (Keyring and Keyring.OwnsBag(value))
-        and not (M.config.desaturateInactiveQuestItems and QuestSlotChanged(value, success)) then return end
+    -- A lock can change which junk slots combine and clear Blizzard's slot tint.
+    if event == "ITEM_LOCK_CHANGED" and not (Keyring and Keyring.OwnsBag(value)) then
+        local item = IndexedItem(value, success)
+        if not item or not (InventoryView.context.mergeJunk and item.quality == POOR
+            or M.config.desaturateInactiveQuestItems and P.InventoryRendering.InactiveQuest(item)) then return end
+    end
     Request()
 end
 
 -- Blizzard re-acquires and re-anchors its item buttons; slot order is read again.
 local function NativeLayoutChanged()
     InventoryView.positionsDirty = true
+    -- Blizzard also moves hidden slots, which the next Suite pass may skip.
+    for _, slot in pairs(InventoryView.slotState) do slot.x, slot.y = nil, nil end
     Index.Invalidate(InventoryView.index)
     Request()
 end
@@ -250,10 +260,10 @@ local function RegisterEvents()
     for i = 1, #EVENTS do
         if NS.Client.SupportsEvent(EVENTS[i]) then events:RegisterEvent(EVENTS[i]) end
     end
-    for i = 1, #QUEST_TINT_EVENTS do
-        local event = QUEST_TINT_EVENTS[i]
-        local keyringLock = Keyring and event == "ITEM_LOCK_CHANGED"
-        if (keyringLock or M.config.desaturateInactiveQuestItems) and NS.Client.SupportsEvent(event) then
+    for i = 1, #ITEM_EVENTS do
+        local event = ITEM_EVENTS[i]
+        local lockRefresh = event == "ITEM_LOCK_CHANGED" and (Keyring or InventoryView.context.mergeJunk)
+        if (lockRefresh or M.config.desaturateInactiveQuestItems) and NS.Client.SupportsEvent(event) then
             events:RegisterEvent(event)
         else
             events:UnregisterEvent(event)
@@ -275,7 +285,7 @@ function InventoryView.Pause()
         local event = EVENTS[i]
         if not PAUSE_KEEPS[event] and NS.Client.SupportsEvent(event) then events:UnregisterEvent(event) end
     end
-    for i = 1, #QUEST_TINT_EVENTS do events:UnregisterEvent(QUEST_TINT_EVENTS[i]) end
+    for i = 1, #ITEM_EVENTS do events:UnregisterEvent(ITEM_EVENTS[i]) end
 end
 
 function InventoryView.Resume()
@@ -295,6 +305,7 @@ function InventoryView.Refresh()
         if InventoryView.active then InventoryView.Release() end
         return
     end
+    InventoryView.context.physicalSlots = NS.Client.isForever and M.config.inventoryView == VIEW.ALL
     if InventoryView.nativeMouseWheel == nil then InventoryView.nativeMouseWheel = InventoryView.frame:IsMouseWheelEnabled() end
     if not InventoryView.controlsReady then P.InventoryControls.Create() end
     Grid.RefreshFonts()
@@ -334,6 +345,7 @@ end
 -- return at once (neither is protected); the layout follows when combat ends,
 -- also after a module error stopped the view in combat.
 function InventoryView.Release()
+    P.PhysicalSort.Stop()
     local wasActive = InventoryView.active
     InventoryView.transitionPending, InventoryView.categoryTransitionPending = false, false
     P.BagWindowMotion.Cancel()

@@ -272,11 +272,9 @@ local function SkinPagingControls(state, pagingControls)
     SkinGlyphButton(state, PublicField(pagingControls, "NextPageButton"), ">", NEXT_PAGE_SPEC)
 end
 
--- Forever: Classic's "Show All Spell Ranks" option back on the page, as a
--- toggle chip in the theme's controls: a lit dot and the active fill while
--- on. It only flips Blizzard's own ShowAllSpellRanks setting. Refreshing the
--- list from here would taint the spell buttons, so Blizzard applies the
--- setting when the player switches spellbook tabs; the tooltip says so.
+-- Forever's footer runs Blizzard's rank checkbox through the button's
+-- hardware OnClick. Calling the responder from addon Lua can taint the
+-- spell rows it rebuilds for subsequent casts and drags.
 local RANKS_CVAR = "ShowAllSpellRanks"
 local classesWithoutRanks = { ROGUE = true, WARRIOR = true }
 local RANKS_SPEC = { role = "button", activeRole = "navigationActive", useControlShape = true, ownedArt = true }
@@ -289,15 +287,37 @@ local function SyncRanksToggle(button)
     button.Dot:SetColorTexture(NS.Theme.GetColor(on and "accentBright" or "border"))
 end
 
-local function OnRanksToggleClick(button)
-    SetCVar(RANKS_CVAR, button.on and "0" or "1")
-    SyncRanksToggle(button)
+local function GetRanksResponder(book)
+    local menu = Safety.Read(PublicField(book, "SettingsDropdown"), "GetMenuDescription")
+    if Safety.Read(menu, "GetTag") ~= "MENU_SPELL_BOOK_SETTINGS"
+        or not Safety.HasMethod(menu, "EnumerateElementDescriptions") then return end
+    for _, option in menu:EnumerateElementDescriptions() do
+        if PublicField(option, "text") == SHOW_ALL_SPELL_RANKS and Safety.Read(option, "IsCheckbox") == true then
+            if Safety.Read(option, "CanSelect") == true and issecurevariable(option, "responder")
+                and Safety.HasMethod(option, "responder") then return PublicField(option, "responder") end
+            return
+        end
+    end
+end
+
+local function PrepareRanksClick(button, mouseButton, down)
+    local book = button:GetParent()
+    local responder
+    if mouseButton == "LeftButton" and not down and not NS.IsCombatLocked() then responder = GetRanksResponder(book) end
+    button:SetScript("OnClick", responder)
+end
+
+local function FinishRanksClick(button)
+    button:SetScript("OnClick", nil)
+    if button.on ~= (GetCVarBool(RANKS_CVAR) == true) then SyncRanksToggle(button) end
 end
 
 local function OnRanksToggleEnter(button)
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip_SetTitle(GameTooltip, SHOW_ALL_SPELL_RANKS)
-    GameTooltip_AddNormalLine(GameTooltip, NS.L["Takes effect when you switch spellbook tabs."], true)
+    if not GetRanksResponder(button:GetParent()) then
+        GameTooltip_AddNormalLine(GameTooltip, NS.L["To apply immediately, use the rank checkbox in the spellbook settings menu."], true)
+    end
     GameTooltip:Show()
 end
 
@@ -315,7 +335,8 @@ local function CreateRanksToggle(spellBook, paged)
     button.Text:SetText(SHOW_ALL_SPELL_RANKS)
     button:SetSize(math.ceil((Safety.Read(button.Text, "GetStringWidth") or 120) + 37), 24)
     button:RegisterForClicks("LeftButtonUp")
-    button:SetScript("OnClick", OnRanksToggleClick)
+    button:SetScript("PreClick", PrepareRanksClick)
+    button:SetScript("PostClick", FinishRanksClick)
     button:SetScript("OnShow", SyncRanksToggle)
     button:SetScript("OnEnter", OnRanksToggleEnter)
     button:SetScript("OnLeave", GameTooltip_Hide)
@@ -504,6 +525,8 @@ local function RefreshVisualState(state, refreshPages)
     if not state or not state.active then
         return
     end
+    local toggle = state.ranksToggle
+    if toggle and toggle.on ~= (GetCVarBool(RANKS_CVAR) == true) then SyncRanksToggle(toggle) end
     SkinTabSystem(state, PublicField(state.frame, "TabSystem"))
     local book = PublicField(state.frame, "SpellBookFrame")
     if book and not Safety.IsForbidden(book) then
@@ -578,7 +601,7 @@ local function RefreshCombatPage(state, book)
     end
 end
 
-function PlayerSpellsSkin:QueueRefresh(frame, refreshPages)
+function PlayerSpellsSkin:QueueRefresh(frame, refreshPages, deferPaint)
     local state = self.activeState
     if not state or not state.active then
         return
@@ -597,15 +620,16 @@ function PlayerSpellsSkin:QueueRefresh(frame, refreshPages)
         if not state.combatPrepared then NS.CombatGate.RunOrDefer("playerSpells:refresh", RefreshPendingState) end
         return
     end
-    RefreshPendingState()
+    -- Forever can still be laying out its native spell rows and action grids.
+    if deferPaint then NS.Registry.QueueJob(RefreshPendingState) else RefreshPendingState() end
 end
 
 function PlayerSpellsSkin:OnFrameTabSet(frame)
-    self:QueueRefresh(frame, true)
+    self:QueueRefresh(frame, true, NS.Client.isForever)
 end
 
 function PlayerSpellsSkin:OnDisplayedSpellsChanged()
-    self:QueueRefresh()
+    self:QueueRefresh(nil, nil, NS.Client.isForever)
 end
 
 local function Activate(state)
@@ -645,7 +669,7 @@ local function OnShown(frame)
             RefreshCombatPage(state, ShownPage(frame, "SpellBookFrame"))
         end
     elseif state and state.pendingRefresh then
-        PlayerSpellsSkin:QueueRefresh(frame)
+        PlayerSpellsSkin:QueueRefresh(frame, nil, NS.Client.isForever)
     end
 end
 

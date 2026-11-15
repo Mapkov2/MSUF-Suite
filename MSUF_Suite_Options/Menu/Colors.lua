@@ -1,6 +1,32 @@
 local _, P = ...
 local W, Tr, HM = P.W, P.Tr, P.HM
 
+function P.LayoutColorRows(parent, controls, rows, y, width, columns)
+    local gap, left = 18, 16
+    local cell = math.floor((width - gap * (columns - 1)) / columns)
+    local height = 34
+    for i, row in ipairs(rows) do
+        local column = (i - 1) % columns
+        local widget = controls[row.id]
+        local label = widget and HM.GetControlTitle(widget)
+        if label then
+            local x = left + column * (cell + gap)
+            label:SetWidth(math.max(36, cell - widget:GetWidth() - 12))
+            label:SetJustifyH("LEFT")
+            label:ClearAllPoints()
+            label:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+            widget:ClearAllPoints()
+            widget:SetPoint("TOPRIGHT", parent, "TOPLEFT", x + cell, y + 2)
+            height = math.max(height, math.ceil(label:GetStringHeight() or 0))
+        end
+        if column == columns - 1 or i == #rows then
+            y = y - height - 6
+            height = 34
+        end
+    end
+    return y
+end
+
 local function SkinColorRow(skin, entry)
     local key = entry[1]
     local row = {

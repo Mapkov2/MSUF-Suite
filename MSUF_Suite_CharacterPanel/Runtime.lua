@@ -94,10 +94,8 @@ end
 
 local function PaintHeader()
     local average = Module.average
-    local shownAverage = average and string.format("%.0f", average) or "—"
-    if not average and Module.kind == INSPECT and Module.gear.visibleAverage then
-        shownAverage = string.format("≈%.0f", Module.gear.visibleAverage)
-    end
+    if not average and Module.kind == INSPECT then average = Module.gear.visibleAverage end
+    local shownAverage = Pages.FormatItemLevel(average) or "—"
     Module.view:SetHeader(Module.name, nil, shownAverage, Module.unit, Module.guid, Module.header)
 end
 
@@ -186,6 +184,7 @@ local function Paint(event)
     if not model then return end
     local groups, details, combat = Module.groups, Module.details, Module.kind == PLAYER and Host.InCombat(event)
     local gearTab = tab == OVERVIEW or tab == EQUIPMENT
+    local listView = Module.kind == PLAYER and gearTab and view.characterView == "list"
     if gearTab then
         wipe(details)
         Gear.Details(details, model, Module.slot, Module.kind == INSPECT)
@@ -196,10 +195,12 @@ local function Paint(event)
         Travel.Stop()
     end
     if Module.kind == PLAYER and (tab == OVERVIEW or tab == ATTRIBUTES) then
-        SyncStatsEvents(tab == ATTRIBUTES or #details == 0, combat)
+        SyncStatsEvents(tab == ATTRIBUTES or not listView and #details == 0, combat)
     end
     Pages.SyncCustomEvents(Module.custom, combat, SetEvents)
-    if gearTab then
+    if listView then
+        view:ShowGroups(Gear.ListReport(groups, details, model, Module.reader), combat)
+    elseif gearTab then
         if #details == 0 then
             if tab == OVERVIEW and Module.kind == PLAYER then Pages.Overview(groups, Module.fullStats, combat) else wipe(groups) end
             if Module.kind == INSPECT then
@@ -212,7 +213,7 @@ local function Paint(event)
             view:ShowGear(model.left, model.right, model.weapons, groups, Module.slot, details, tab == OVERVIEW, combat)
         else
             local report = #details > 0 and details or groups
-            if tab == EQUIPMENT and Module.reader then Gear.EquipmentList(report, model) end
+            if #details == 0 and tab == EQUIPMENT and Module.reader then Gear.EquipmentList(report, model) end
             view:ShowGroups(report, combat)
         end
     elseif tab == ATTRIBUTES then
@@ -526,6 +527,8 @@ local function RefreshVisibleAppearance()
         view:ApplyWindowPreferences(Suite.ModuleState("characterPanel"))
         view:RefreshAppearance(AvailableSkin(), Module.config)
         if view.nativeLayout and not Host.InCombat() then Module.layoutGeometry.Apply(Module.layoutRoot, Module.layoutPlan) end
+        local previousView = view.characterView
+        view.characterView = Routing.CharacterView(Module.kind)
         if not view:IsMinimized() then
             if Module.showGuild ~= (Module.config.headerGuildVisible == true)
                 or Module.showZone ~= (Module.config.headerZoneVisible == true) then
@@ -533,7 +536,7 @@ local function RefreshVisibleAppearance()
                 PaintHeader()
             end
             local tab, config = Module.tab, Module.config
-            if not CharacterHeader.TabVisible(config, TAB_KIND[Module.kind], tab)
+            if previousView ~= view.characterView or not CharacterHeader.TabVisible(config, TAB_KIND[Module.kind], tab)
                 or Module.customDefinition and CharacterTabs.Find(config, tab) ~= Module.customDefinition
                 or Module.kind == PLAYER and tab == OVERVIEW and Module.fullStats ~= (config.showFullStats ~= false)
                 or Module.reputationKey ~= Pages.ReputationKey(tab, config, Module.custom) then
@@ -548,8 +551,7 @@ end
 
 local function PrimeEquipmentReader()
     if not Module.reader then
-        Module.reader = Host.Skin.EquipmentReader
-        if not Module.reader and not Host.InCombat() then Module.reader = Host.Skin.GetEquipmentReader() end
+        Module.reader = Host.Skin.EquipmentReader or not Host.InCombat() and Host.Skin.GetEquipmentReader() or nil
     end
     return Module.reader
 end
@@ -604,6 +606,7 @@ local function Open(kind, unit, guid, tab, nativeRoot, nativeTab)
     local view = AcquireView(nativeRoot)
     Module.view, Module.nativeTab = view, nativeTab
     Module.kind, Module.unit, Module.guid, Module.gear = kind, unit, guid, model
+    view.characterView = Routing.CharacterView(kind)
     if kind == PLAYER then
         WindowAction("prepare")
         Module.gearStale, Module.durabilityStale = true, true
@@ -646,9 +649,7 @@ local function NativeVisibilityChanged(root, requestedTab)
     end
 end
 
-local function FitNative()
-    if Module.kind == PLAYER then Module.view:FitScreen() end
-end
+local function FitNative() if Module.kind == PLAYER then Module.view:FitScreen() end end
 local function NativeSizeChanged()
     if Module.kind == PLAYER and not Module.view.nativeLayout then Module.nativeFitJob:Request() end
 end

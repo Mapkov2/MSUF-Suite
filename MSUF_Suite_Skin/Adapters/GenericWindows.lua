@@ -287,14 +287,6 @@ local function RecolorGlyphs()
     end
 end
 
--- OnEnable/OnDisable of a glyph button: repaints only our own glyph of it.
-local function RecolorGlyph(button)
-    for _, ownerState in pairs(ownerStates) do
-        local glyph, role = ownerState.glyphs[button], ownerState.glyphRoles[button]
-        if glyph and role then glyph:SetTextColor(GlyphColor(button, role)) end
-    end
-end
-
 -- Repaints the glyphs, once per frame of settings writes. A theme change
 -- also makes every pooled row take one full skin pass again on its next
 -- initialization.
@@ -388,7 +380,6 @@ NS.GenericWindowsShared = {
     FadeAtlasRegions = FadeAtlasRegions,
     EnsureThemeListener = EnsureThemeListener,
     GlyphColor = GlyphColor,
-    RecolorGlyph = RecolorGlyph,
     DeactivateOwner = DeactivateOwner,
 }
 

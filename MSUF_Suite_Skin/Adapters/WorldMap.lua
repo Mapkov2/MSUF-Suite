@@ -21,7 +21,6 @@ NS.WorldMapSkin = WorldMapSkin
 
 local Safety = NS.Safety
 local Field = Safety.Field
-local Dispatch = Safety.Dispatch
 local Kit = NS.AdapterKit
 local Fade = Kit.Fade
 local FadeFields = Kit.FadeFields
@@ -114,6 +113,11 @@ local function RefreshQuestHovers()
     for row in pairs(questHovers) do PaintQuestHover(row) end
 end
 
+local function OnQuestRowVisibilityChanged(row)
+    local record = questHovers[row]
+    if record and record.enabled then NS.Registry.QueueJob(record.repaint) end
+end
+
 local function OnQuestHoverTheme(_, domain)
     if domain == "color" or domain == "theme" or domain == "profile" or domain == "appearance" then
         RefreshQuestHovers()
@@ -137,8 +141,10 @@ local function EnsureQuestHover(row, state)
         questHovers[row] = record
         row:HookScript("OnEnter", PaintQuestHover)
         row:HookScript("OnLeave", PaintQuestHover)
-        row:HookScript("OnHide", PaintQuestHover)
-        row:HookScript("OnShow", PaintQuestHover)
+        -- Native pool resets can show or hide rows during the map open stack.
+        local onVisibility = NS.Client.isForever and OnQuestRowVisibilityChanged or PaintQuestHover
+        row:HookScript("OnHide", onVisibility)
+        row:HookScript("OnShow", onVisibility)
     end
     record.state = state
     record.enabled = true
@@ -378,6 +384,16 @@ local function SkinFrame(frame, state)
     return true
 end
 
+-- Blizzard can refill the pools while the map is closed. The map-open
+-- callback also requests this pass to catch up on rows skipped while hidden.
+local function OnQuestLogUpdated()
+    for frame, state in pairs(activeFrames) do
+        if state.active and state.generation ~= nil and Safety.Read(frame, "IsVisible") == true then
+            VisitQuestRows(state, Field(frame, "QuestLog"), SkinQuestRow)
+        end
+    end
+end
+
 -- WorldMapMixin:OnShow sets the player's map first, which can rebuild the
 -- navigation bar. The rest of the window keeps what this skin generation
 -- applied: the quest log's display-mode callback covers its panels, and
@@ -389,7 +405,7 @@ function WorldMapSkin:OnWorldMapShown()
         if state.active then
             if state.generation == Kit.SkinGeneration() then
                 SkinNavBar(state, Field(frame, "NavBar"))
-                VisitQuestRows(state, Field(frame, "QuestLog"), SkinQuestRow)
+                NS.Registry.QueueJob(OnQuestLogUpdated)
             else
                 SkinFrame(frame, state)
             end
@@ -397,26 +413,28 @@ function WorldMapSkin:OnWorldMapShown()
     end
 end
 
--- Blizzard can refill the pools while the map is closed. The existing
--- OnWorldMapShown pass catches up any rows that were skipped while hidden.
-local function OnQuestLogUpdated()
+-- WorldMapMixin:OnShow can rebuild the list before its protected reading
+-- emote. Queue the row writes after the native map open and coalesce rebuilds.
+local function OnQuestLogUpdatedHook()
+    if NS.IsCombatLocked() then return end
     for frame, state in pairs(activeFrames) do
-        if state.active and state.generation ~= nil and Safety.Read(frame, "IsVisible") == true then
-            VisitQuestRows(state, Field(frame, "QuestLog"), SkinQuestRow)
+        if state.generation ~= nil and Safety.Read(frame, "IsVisible") == true then
+            NS.Registry.QueueJob(OnQuestLogUpdated)
+            return
         end
     end
 end
 
--- Runs inside Blizzard's update, so the pass is its own error boundary.
-local function OnQuestLogUpdatedHook()
-    if not NS.IsCombatLocked() then Dispatch(OnQuestLogUpdated) end
-end
-
-function WorldMapSkin:OnQuestLogModeChanged()
+local function PaintQuestLogMode()
     if NS.IsCombatLocked() then return end
     for frame, state in pairs(activeFrames) do
         if state.active then SkinQuestLog(state, Field(frame, "QuestLog")) end
     end
+end
+
+function WorldMapSkin:OnQuestLogModeChanged()
+    if NS.Client.isForever then NS.Registry.QueueJob(PaintQuestLogMode)
+    else PaintQuestLogMode() end
 end
 
 local function MapDisplayChanged()

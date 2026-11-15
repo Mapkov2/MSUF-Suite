@@ -16,7 +16,10 @@ end
 local function Click(pin, button)
     if button ~= "LeftButton" or NS.InCombat() or not Navigation.owner then return end
     if IsControlKeyDown() then Navigation.Remove(pin.point)
-    else Navigation.route = pin.point Navigation.Select(pin.point, "saved") end
+    else
+        Navigation.route = pin.point
+        Navigation.Select(pin.point, "saved")
+    end
 end
 local function Acquire(pool, index, parent)
     local pin = pool[index]
@@ -39,7 +42,10 @@ end
 
 local function WorldRefresh()
     local owner, map = Navigation.owner, hookedMap
-    if not owner or not owner.config.mapPins or not map or not map:IsShown() then Release(Pins.world) return end
+    if not owner or not owner.config.mapPins or not map or not map:IsShown() then
+        Release(Pins.world)
+        return
+    end
     local mapID, canvas = map:GetMapID(), map:GetCanvas()
     local width, height = canvas:GetSize()
     if not Suite.Finite(mapID) or not Suite.Finite(width) or not Suite.Finite(height) or width <= 0 or height <= 0 then
@@ -69,20 +75,38 @@ local function WorldQueue()
 end
 
 local function MinimapRefresh(owner)
-    if not owner.config.minimapPins or not Minimap:IsVisible() then Release(Pins.mini) return end
+    if not owner.config.minimapPins or not Minimap:IsVisible() then
+        Release(Pins.mini)
+        return
+    end
     local map = C_Map.GetBestMapForUnit("player")
-    if not Suite.Finite(map) then Release(Pins.mini) return end
+    if not Suite.Finite(map) then
+        Release(Pins.mini)
+        return
+    end
     local position = C_Map.GetPlayerMapPosition(map, "player")
-    if not Suite.Public(position) or not position then Release(Pins.mini) return end
+    if not Suite.Public(position) or not position then
+        Release(Pins.mini)
+        return
+    end
     local x, y = position.x, position.y
     local width, height = C_Map.GetMapWorldSize(map)
     local radius = C_Minimap.GetViewRadius()
     if not Suite.Finite(x) or not Suite.Finite(y) or not Suite.Finite(width) or not Suite.Finite(height)
-        or not Suite.Finite(radius) or radius <= 0 then Release(Pins.mini) return end
+        or not Suite.Finite(radius) or radius <= 0 then
+            Release(Pins.mini)
+            return
+        end
     local rotating = C_CVar.GetCVarBool("rotateMinimap")
-    if not Suite.Public(rotating) then Release(Pins.mini) return end
+    if not Suite.Public(rotating) then
+        Release(Pins.mini)
+        return
+    end
     local angle = rotating and GetPlayerFacing() or 0
-    if not Suite.Finite(angle) then Release(Pins.mini) return end
+    if not Suite.Finite(angle) then
+        Release(Pins.mini)
+        return
+    end
     local minimapWidth, minimapHeight = Minimap:GetSize()
     if not Suite.Finite(minimapWidth) or minimapWidth <= 0 or not Suite.Finite(minimapHeight) or minimapHeight <= 0 then
         Release(Pins.mini)
@@ -159,7 +183,9 @@ function Navigation.RefreshMap(owner)
     owner.context:Cancel(MinimapRefresh)
     if owner.config.minimapPins and not owner.paused and #owner.mapPoints > 0 and Minimap:IsVisible() then
         owner.context:Ticker(.2, MinimapRefresh)
-    else Release(Pins.mini) end
+    else
+        Release(Pins.mini)
+    end
     Modifier(owner)
 end
 

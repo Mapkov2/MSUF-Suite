@@ -14,10 +14,15 @@ local opacityMaterial = { opacity = "control" }
 local idleChannels = {}
 for index = 1, 7 do idleChannels[index] = { value = index == 7 and 1 or 0, target = 0, velocity = 0 } end
 
+local function Enabled(target)
+    return not Safety.HasMethod(target, "IsEnabled") or Safety.Read(target, "IsEnabled") == true
+end
+
 local function Safe(record)
     local state = record.state
     return state.visible ~= false and Safety.ReadUnprotected(state.target, "IsVisible") == true
         and not Safety.IsCompositorManaged(state.target)
+        and Enabled(state.target)
 end
 
 local function Anchor(region, state, x, y, width, height, press)
@@ -61,8 +66,7 @@ end
 local function Record(target)
     local state = NS.Registry.GetSurface(target)
     local record = state and state.motion
-    if record and record.enabled and Motion.Enabled(state.spec)
-        and (not Safety.HasMethod(target, "IsEnabled") or Safety.Read(target, "IsEnabled") == true) then
+    if record and record.enabled and Motion.Enabled(state.spec) and Enabled(target) then
         if not record.channels then Motion.New(state, Paint, Safe, Motion.Restore, record) end
         return record
     end
@@ -77,7 +81,15 @@ local function Hover(target, entered)
     Motion.Play(record, 0.12)
 end
 local function Enter(target) Hover(target, true) end
-local function Leave(target) Hover(target, false) end
+local function Leave(target)
+    local state = NS.Registry.GetSurface(target)
+    local record = state and state.motion
+    if record and record.channels and not Enabled(target) then
+        Motion.Clear(record)
+        return
+    end
+    Hover(target, false)
+end
 local function FocusIn(target)
     local record = Record(target)
     if record then
@@ -94,7 +106,7 @@ local function FocusOut(target)
 end
 local function Press(target)
     local record = Record(target)
-    if record and Safety.Read(target, "IsEnabled") ~= false then
+    if record then
         Motion.Set(record, 6, 1)
         Motion.Play(record, 0.14)
     end
@@ -142,8 +154,10 @@ local function Show(target)
 end
 
 local hoverHooks = { OnEnter = Enter, OnLeave = Leave }
+-- Native SetEnabled can receive secret Booleans. A skin OnDisable or
+-- OnEnable handler would make the client reject those state changes.
 local hooks = {
-    OnHide = Hide, OnDisable = Hide, OnShow = Show,
+    OnHide = Hide, OnShow = Show,
     OnEditFocusGained = FocusIn, OnEditFocusLost = FocusOut,
     OnClick = Click,
 }

@@ -127,8 +127,9 @@ local function Collect(self, key, enemy)
                         row = {}
                         pool[unit] = row
                     end
-                    row.unit, row.threat, row.scaled, row.raw = unit, amount, scaled, raw
-                    row.tanking = S.Public(tanking) and tanking
+                    local tank = S.Public(tanking) and tanking == true
+                    -- A taunt can update tanking before the API refreshes raw.
+                    row.unit, row.threat, row.scaled, row.raw = unit, amount, scaled, tank and 100 or raw
                     data[#data + 1] = row
                     highest = math.max(highest, amount)
                     local own = UnitIsUnit(unit, "player")

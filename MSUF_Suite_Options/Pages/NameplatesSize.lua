@@ -1,7 +1,7 @@
 local _, P = ...
 local ID = "nameplates"
 local T, Tr = P.T, P.Tr
-local Text, Auras = P.Suite.NameplateText, P.Suite.NameplateAuraDisplay
+local Text, Auras, Style = P.Suite.NameplateText, P.Suite.NameplateAuraDisplay, P.Suite.NameplateStyle
 local Size = {}
 P.NameplatesSize = Size
 
@@ -10,51 +10,65 @@ local function Round(value) return math.floor(value + 0.5) end
 
 local function FontKey(side, key, enableKey)
     if not P.Get(ID, side) then return end
-    if Text.UsesSharedFont(P.S.Config(ID)) then return Text.SizeOverrides[key], nil, "Font" end
+    if Text.UsesSharedFont(P.S.Config(ID)) then return Text.SizeOverrides[key] or key, nil, "Font" end
     if P.Get(ID, enableKey) then return key, nil, "Font" end
 end
 
--- Size controls describe real runtime settings. Native badges, raid icons
--- and personal power bars have no independent width/height override.
+-- Size controls describe the settings that resize each live region.
+function Size.HealthScope(ui, side)
+    local scope = ui and ui.scope
+    local kind = scope == "neutral" and "neutralNpc" or scope == "friendlyNpc" and "friendlyNpc"
+    if kind and P.Get(ID, kind .. "SizeOverride") then return kind end
+    return side
+end
+
 function Size.Keys(handle)
     local id = handle and handle._key
     if not id or P.Get(ID, "look") == 2 then return end
     if id == "enemy.Health" or id == "friendly.Health" then
         local prefix = id:match("^(%a+)%.")
+        prefix = Size.HealthScope(handle.previewUI, prefix)
         return prefix .. "HealthWidthDelta", prefix .. "HealthHeightDelta", "W", "H"
     end
-    if id == "enemy.Power" then return "enemyPowerWidth", "enemyPowerHeight", "W", "H" end
+    if id == "enemy.Power" then
+        if P.Get(ID, "enemyPowerDetached") then return "enemyPowerDetachedWidth", "enemyPowerDetachedHeight", "W", "H" end
+        return "enemyPowerWidth", "enemyPowerHeight", "W", "H"
+    end
     if id:match("%.target$") or id:match("%.targetRight$") then return "enemyTargetMarkerSize", nil, "Size" end
     if id:match("^[a-z]+%.elite$") or id:match("^[a-z]+%.quest$") then
         local prefix, kind = id:match("^(%a+)%.(%a+)$")
         return prefix .. (kind == "elite" and "Elite" or "Quest") .. "MarkerSize", nil, "Size"
     end
-    -- A Suite container has its own size; a lane (Buffs, Debuffs) only while
-    -- the Suite draws it, else Blizzard's aura size applies.
-    local auraScope, auraContainer = Auras.Element(id)
-    if auraContainer then
-        local prefix = Auras.Prefix(auraScope, auraContainer)
-        if auraContainer.kind ~= "lane" or P.Get(ID, "auraDisplayEnabled") and P.Get(ID, prefix .. "Visible") then
-            return prefix .. "Size", nil, "Size"
-        end
-    end
-    if id:match("%.Auras$") or id:match("%.Buffs$") or id:match("%.ControlAura$") then
-        return "auraScalePercent", nil, "Size %"
-    end
     local prefix, element = id:match("^(%a+)%.(%a+)$")
+    local auraScope, auraContainer = Auras.Element(id)
+    if auraContainer then return Auras.Prefix(auraScope, auraContainer) .. "Size", nil, "Size" end
+    local native = Auras.NativeElement(element)
+    if native and Auras.Scope(prefix) then
+        return Auras.Prefix(Auras.Scope(prefix), native) .. "Scale", nil, "Size %"
+    end
     if not prefix then return end
+    if element:match("^ExtraText") then return prefix .. element .. "Size", nil, "Font" end
+    if element == "RaidIcon" then return prefix .. "RaidIconSize", nil, "Size" end
+    if Style.StatusByKey and Style.StatusByKey[element] then
+        return prefix .. element .. "Size", nil, "Size"
+    end
     if P.Get(ID, prefix) and P.Get(ID, "enemyCastEnabled") ~= 3 then
-        if element == "Cast" then return prefix .. "CastWidthDelta", prefix .. "CastHeight", "W", "H" end
+        if element == "Cast" then
+            local mode = P.Get(ID, prefix .. "CastWidthMode")
+            if mode == 3 then return prefix .. "CastManualWidth", prefix .. "CastHeight", "W", "H" end
+            if mode == 2 then return prefix .. "CastHeight", nil, "H" end
+            return prefix .. "CastWidthDelta", prefix .. "CastHeight", "W", "H"
+        end
         if element == "CastIcon" then return prefix .. "CastIconSize", nil, "Size" end
     end
+    if element == "PowerText" and prefix == "enemy" then return "enemyPowerTextSize", nil, "Font" end
     if element == "Name" then return FontKey(prefix, prefix .. "NameSize", prefix .. "TextEnabled") end
     if element == "Level" and handle._npLevelMode == "number" then
         return prefix .. "LevelSize", nil, "Font"
     end
-    if element == "HealthText" and prefix == "enemy" then
-        return FontKey(prefix, "enemyHealthTextSize", "enemyTextEnabled")
-    end
-    if element == "CastText" or element == "CastTime" or element == "CastTarget" then
+    if element == "HealthText" then return FontKey(prefix, prefix .. "HealthTextSize", prefix .. "TextEnabled") end
+    if element == "CastTime" then return prefix .. "CastTimeSize", nil, "Font" end
+    if element == "CastText" or element == "CastTarget" then
         return FontKey(prefix, prefix .. "CastSize", prefix .. "CastTextEnabled")
     end
 end
@@ -70,17 +84,11 @@ function Size.Value(handle, key)
         return Text.ResolveSize(config, key:sub(1, -9), Text.Shared(config))
     end
     if IsWidthDelta(key) then return (handle._npNativeWidth or 0) + value end
-    if value == 0 and (key:match("CastHeight$") or key:match("CastIconSize$")) then
+    if key == "enemyPowerDetachedWidth" and value == 0 then return handle:GetWidth() end
+    if value == 0 and (key:match("CastHeight$") or key:match("CastIconSize$") or key:match("CastTimeSize$")) then
         return handle:GetHeight()
     end
     if key:match("HealthHeightDelta$") then return (handle._npNativeHeight or 0) + value end
-    if key == "auraScalePercent" and P.Get(ID, "auraScaleMode") ~= 2 then
-        local native = C_CVar.GetCVar("nameplateAuraScale")
-        if P.Suite.Public(native) then
-            local scale = tonumber(native)
-            if scale and scale > 0 then return Round(scale * 100) end
-        end
-    end
     return value
 end
 
@@ -93,7 +101,6 @@ function Size.Write(ui, handle, key, value)
     local step = rule.step or 1
     local rounded = Clamp(math.floor(value / step + 0.5) * step, rule.min, rule.max)
     local values = { [key] = rounded }
-    if key == "auraScalePercent" then values.auraScaleMode = 2 end
     local ok = P.SetMany(ID, values)
     ui:Paint()
     return ok ~= false
@@ -164,6 +171,9 @@ local function Field(ui, row, body, index)
 end
 
 function Size.Build(ui, bar, body)
+    bar.openButton:Hide()
+    bar.resetButton:ClearAllPoints()
+    bar.resetButton:SetPoint("RIGHT", bar, "RIGHT", -8, 0)
     local row = CreateFrame("Frame", nil, bar)
     -- Use the rendered end of Y, not the axis container's nominal width.
     row:SetPoint("LEFT", bar.axisY.plusButton, "RIGHT", 6, 0)
@@ -183,13 +193,7 @@ function Size.Build(ui, bar, body)
     local function Layout()
         local width = bar:GetWidth()
         if not width or width <= 0 then width = ui.layoutWidth end
-        local wide = width >= 780
-        bar.label:SetWidth(wide and 132 or 108)
-        local showOpen = width >= (wide and 780 or 756)
-        bar.openButton:SetShown(showOpen)
-        bar.resetButton:ClearAllPoints()
-        if showOpen then bar.resetButton:SetPoint("RIGHT", bar.openButton, "LEFT", -6, 0)
-        else bar.resetButton:SetPoint("RIGHT", bar, "RIGHT", -8, 0) end
+        bar.label:SetWidth(width >= 780 and 132 or 108)
     end
     bar:SetScript("OnSizeChanged", Layout)
     Layout()

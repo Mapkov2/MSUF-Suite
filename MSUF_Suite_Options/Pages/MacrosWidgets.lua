@@ -228,6 +228,7 @@ Page.initializers[#Page.initializers + 1] = function()
     function Page.Close()
         local ui = Page.ui
         if not ui then return end
+        Helpers.StopBindingCapture()
         ui.body:UnregisterAllEvents()
         for _, edit in pairs(ui.pools.edit or {}) do edit:ClearFocus() end
         if Page.picker then Page.picker:Hide() end

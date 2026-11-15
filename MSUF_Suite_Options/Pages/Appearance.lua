@@ -7,6 +7,7 @@ local Kit = P.SkinPageKit
 local Engine, Change, Meta, Values = Kit.Engine, Kit.Change, Kit.Meta, Kit.Values
 local Row, Section, ResetSkinSection = Kit.Row, Kit.Section, Kit.ResetSkinSection
 local SkinColorRow, ConfigRow = Kit.SkinColorRow, Kit.ConfigRow
+local SkinUtilityButtons
 
 local CATEGORY_LABELS = {
     character = "Character and equipment", inventory = "Bags and bank",
@@ -242,7 +243,9 @@ local function BuildFrameBasics(ctx, b, skin)
                 function(value)
                     Change(skin, "Skin Suite windows", "suiteEnabled", function() return Suite.Skin.SetEnabled(value) end)
                 end),
-        }, true)
+        }, true, function(body, y, width)
+            return SkinUtilityButtons(ctx, body, y, width, "suite_skin_frame_basic")
+        end)
     if ctx.searchRows then
         SearchRow(ctx, Row("toggle", "Enable Skinning", "enabled", "frame_basic"),
             "suite_skin_frame_basic", Tr("Basics"))
@@ -353,10 +356,6 @@ local MATERIAL_SPECS = {
     { "Light direction", "gradientDirection", "dropdown", { "VERTICAL", "HORIZONTAL" } },
     { "Shading strength", "gradientStrength", "slider", nil, 0, 1, 0.05 },
     { "Surface depth", "materialDepth", "slider", nil, 0, 1, 0.05 },
-    { "Window opacity", "shellOpacity", "slider", nil, 0.35, 1, 0.05 },
-    { "Content opacity", "panelOpacity", "slider", nil, 0.35, 1, 0.05 },
-    { "Controls opacity", "controlOpacity", "slider", nil, 0.35, 1, 0.05 },
-    { "Outline opacity", "borderOpacity", "slider", nil, 0, 1, 0.05 },
 }
 
 local function BuildMaterial(ctx, b, skin)
@@ -364,6 +363,11 @@ local function BuildMaterial(ctx, b, skin)
     for _, spec in ipairs(MATERIAL_SPECS) do
         ConfigRow(skin, material, "material", spec[1], "theme", spec[2], spec[3], spec[4], spec[5], spec[6], spec[7],
             skin.Theme.SetAppearance)
+    end
+    for index = 2, 3 do
+        material[index].unavailable = function()
+            if not skin.DB.theme.gradient then return Tr("Requires shaded surfaces.") end
+        end
     end
     Section(ctx, b, "material", "Glass and surfaces",
         "Adjust the glass effect while keeping your colors and window coverage.", material, true)
@@ -495,13 +499,29 @@ local function BuildIcons(ctx, b, skin)
         { "Idle glyph opacity", "opacity", "slider", nil, 0.35, 1, 0.05 },
     }) do
         local label, key, kind = spec[1], spec[2], spec[3]
-        icons[#icons + 1] = Row(kind, label, "icons.windowActions." .. key, "icons",
+        local row = Row(kind, label, "icons.windowActions." .. key, "icons",
             function() return skin.DB.icons.windowActions[key] end,
             function(value)
                 Change(skin, label, "icons.windowActions." .. key,
                     function() return skin.WindowActionSkin.SetOption(key, value) end)
             end,
             kind == "dropdown" and Values(spec[4]) or nil, spec[5], spec[6], spec[7])
+        if key ~= "style" and key ~= "glyphMode" then
+            row.unavailable = function()
+                local options = skin.DB.icons.windowActions
+                if key == "surfaceShape" or key == "surfaceRadius" or key == "surfaceInset" then
+                    if options.style ~= "soft" and options.style ~= "outline" then
+                        return Tr("Requires the Soft or Outline window action style.")
+                    end
+                    if key == "surfaceRadius" and options.surfaceShape == "global" and skin.DB.geometry.controlShape == "pill" then
+                        return Tr("Requires rounded action buttons.")
+                    end
+                elseif options.style == "native" then
+                    return Tr("Choose a custom window action style to change its glyphs.")
+                end
+            end
+        end
+        icons[#icons + 1] = row
     end
     for _, spec in ipairs({
         { "Item icon border", "iconBorderStyle", "dropdown", skin.IconBorderStyles },
@@ -579,8 +599,10 @@ end
 -- (Blizzard windows, Suite windows) stay as they were. The Suite follows the
 -- factory look like it follows any look chosen on this page.
 local function ResetSkinProfile(skin, windowsEnabled)
+    local characterDetails, characterStats = skin.DB.characterDetails, skin.DB.characterStats
     skin.Database.ResetAll()
     skin.DB.enabled = windowsEnabled
+    skin.DB.characterDetails, skin.DB.characterStats = characterDetails, characterStats
     P.S.ApplyGlobalLook(skin.DB.theme.look)
     skin.Typography.ApplyConfigured()
     skin.Adapters.ApplyAll()
@@ -647,14 +669,14 @@ function P.RestoreChatColors()
 end
 
 -- "Save setup as…" and "Restore chat colors" need neither the skin engine
--- nor the Skin addon: this page builds them in every state (Maintenance,
+-- nor the Skin addon: this page builds them in every state (Basics,
 -- the engine-unavailable Basics, the notice while the Skin addon is off),
 -- and search always finds them (suiteAlways, Menu/Search.lua).
 local MAINTENANCE_ACTIONS = {
     { label = "Save setup as…", key = "maintenance.saveSetup", run = function() return P.SaveSetupAs() end },
     { label = "Restore chat colors", key = "maintenance.restoreChatColors", run = function() return P.RestoreChatColors() end },
 }
-local function MaintenanceButtons(ctx, body, y, width, sectionId)
+SkinUtilityButtons = function(ctx, body, y, width, sectionId)
     for _, action in ipairs(MAINTENANCE_ACTIONS) do
         local meta = P.Meta(PAGE, "skin", action.key, "action", sectionId)
         meta.suiteAlways = true
@@ -664,21 +686,23 @@ local function MaintenanceButtons(ctx, body, y, width, sectionId)
     return y
 end
 
-local function BuildMaintenance(ctx, b, skin)
-    Section(ctx, b, "advanced", "Maintenance",
-        "Refresh newly opened Blizzard windows. Use Reset page in the menu toolbar to restore this skin profile.",
-        {}, false, function(body, y, width)
-            Button(ctx, body, "Refresh Blizzard skins", 16, y, width, function()
-                if skin.Adapters.ApplyAll then skin.Adapters.ApplyAll() end
-            end, nil, P.Meta(PAGE, "skin", "maintenance.refresh", "action", "suite_skin_advanced"))
-            return MaintenanceButtons(ctx, body, y - 34, width, "suite_skin_advanced") - 6
-        end)
+local function RefreshButton(ctx, header, skin)
+    local button = Button(ctx, header, "Refresh Blizzard skins", 20, 0, 226, function()
+        skin.Adapters.ApplyAll()
+        skin.Typography.ApplyConfigured()
+        skin.Registry.RefreshAll()
+        if ctx.skinPreview then ctx.skinPreview.Paint() end
+    end, function() return not P.Combat() end, P.Meta(PAGE, "skin", "maintenance.refresh", "action"), { height = 21 })
+    if button then
+        button:ClearAllPoints()
+        button:SetPoint("TOPRIGHT", header, "TOPRIGHT", -16, -5)
+    end
 end
 
 -- Basics without the skin engine: its notice, then the maintenance actions.
 local function BuildBasicsWithoutEngine(ctx, b, notice)
     Section(ctx, b, "frame_basic", "Basics", notice, {}, true, function(body, y, width)
-        return MaintenanceButtons(ctx, body, y, width, "suite_skin_frame_basic") - 6
+        return SkinUtilityButtons(ctx, body, y, width, "suite_skin_frame_basic") - 6
     end)
 end
 
@@ -698,23 +722,23 @@ local function BuildSections(ctx, b, skin)
     BuildWindows(ctx, b, skin)
     P.BuildSkinQuestLogSection(ctx, b, skin)
     BuildCoverage(ctx, b, skin)
-    Kit.BuildCharacter(ctx, b, skin)
-    BuildMaintenance(ctx, b, skin)
 end
 
 -- Also while the Skin addon is off: its maintenance actions stay findable
 -- (on the notice, outside any section, then).
-local COLD_SKIN_SECTIONS = {
-    { "basic", "Choose a look" }, { "material", "Glass and surfaces" },
-    { "shape", "Corners and hover" }, { "fonts", "Fonts" },
-    { "icons", "Window buttons and icon borders" },
-    { "window_controls", "Window position, size and minimize" },
-    { "windows", "Blizzard windows" }, { "coverage", "Window categories" },
-    { "character", "Character panel and stats" },
-}
+local coldSections
+local function ColdSkinSections()
+    coldSections = coldSections or {
+        { "basic", "Choose a look" }, { "material", "Glass and surfaces" }, { "shape", "Corners and hover" }, { "fonts", "Fonts" },
+        { "icons", "Window buttons and icon borders" }, { "window_controls", "Window position, size and minimize" },
+        { "windows", "Blizzard windows" }, { "coverage", "Window categories" },
+    }
+    return coldSections
+end
 function P.SkinSearchRows()
     local ctx, b = { searchRows = {} }, {}
     local skin = _G.MapkoSkin
+    Kit.BuildCharacter(ctx, b)
     if not (skin and skin.addonName == "MSUF_Suite_Skin" and skin.DB and skin.Theme) then
         -- The switch remains discoverable before the optional engine loads.
         SearchRow(ctx, Row("toggle", "Enable Skinning", "enabled", "frame_basic"),
@@ -723,18 +747,19 @@ function P.SkinSearchRows()
             BuildBasicsWithoutEngine(ctx, b, nil)
             -- These sections exist when the page loads the engine. Collection
             -- stays metadata-only and never fabricates a setting identity.
-            for _, section in ipairs(COLD_SKIN_SECTIONS) do
+            for _, section in ipairs(ColdSkinSections()) do
                 ctx.searchRows[#ctx.searchRows + 1] = {
                     pageKey = PAGE, kind = "section", label = Tr(section[2]),
                     sectionId = PAGE .. "_" .. section[1], keywords = { section[2], Tr(section[2]) },
                 }
             end
         else
-            MaintenanceButtons(ctx, nil, 0, 720, nil)
+            SkinUtilityButtons(ctx, nil, 0, 720, nil)
         end
         return ctx.searchRows
     end
     BuildSections(ctx, b, skin)
+    RefreshButton(ctx, nil, skin)
     return ctx.searchRows
 end
 
@@ -753,14 +778,18 @@ local function Build(ctx)
     -- header space contains the preview instead of leaving a blank gap.
     local header, toolbar = Preview(ctx, b, skin)
     local workspace, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = "skin", title = "Skinning",
-        builder = b, header = header, toolbar = toolbar, height = 380, tabY = -22, tabs = {
+        builder = b, header = header, toolbar = toolbar, height = 62, tabY = -8, tabs = {
             { id = "style", label = "Style", sections = "frame_basic basic material shape fonts icons" },
             { id = "windows", label = "Blizzard windows", sections = "micro hud window_controls windows coverage" },
-            { id = "character", label = "Character and equipment", sections = "character" },
-            { id = "maintenance", label = "Maintenance", sections = "advanced" },
         } })
     local skinPreview = rawget(ctx, "skinPreview")
-    if ui and skinPreview then ui.refreshPreview = skinPreview.Paint end
+    if ui and skinPreview then
+        ui.refreshPreview = function()
+            skinPreview.Layout()
+            skinPreview.Paint()
+        end
+    end
+    if header then RefreshButton(ctx, header, skin) end
     BuildSections(ctx, workspace, skin)
     -- Suite modules that style a Blizzard window (QualityOfLifeOwners.lua:
     -- the Battle.net toast) follow Blizzard's windows on their tab.
@@ -772,7 +801,7 @@ end
 -- The Skin addon is off in Blizzard's AddOn list: below the notice
 -- (Menu/Register.lua), from y down; returns the next free y.
 local function BuildNotice(ctx, y)
-    return MaintenanceButtons(ctx, ctx.wrapper, y, math.max(240, (ctx.width or 720) - 32), nil)
+    return SkinUtilityButtons(ctx, ctx.wrapper, y, math.max(240, (ctx.width or 720) - 32), nil)
 end
 
 P.RegisterPage({ key = PAGE, label = "Skinning", title = "Skinning", build = Build, notice = BuildNotice, icon = { 4, 1 },

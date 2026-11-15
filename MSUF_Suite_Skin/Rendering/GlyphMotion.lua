@@ -11,6 +11,7 @@ local function Safe(record)
     return record.owner.visible == true and record.owner.style ~= "native"
         and not Safety.IsForbidden(target) and not Safety.GetProtection(target)
         and Safety.Read(target, "IsVisible") == true
+        and Safety.Read(target, "IsEnabled") == true
 end
 
 local function Paint(record)
@@ -24,8 +25,7 @@ end
 
 local function Get(target)
     local record = GlyphMotion.records[target]
-    if record and Safe(record) and Motion.Enabled(record.state.spec)
-        and Safety.Read(target, "IsEnabled") == true then return record end
+    if record and Safe(record) and Motion.Enabled(record.state.spec) then return record end
 end
 
 local function Enter(target)
@@ -36,8 +36,8 @@ local function Enter(target)
     end
 end
 local function Leave(target)
-    local record = Get(target)
-    if record then
+    local record = GlyphMotion.records[target]
+    if record and Motion.Enabled(record.state.spec) then
         Motion.Set(record, 5, 0)
         Motion.Play(record, 0.12)
     end
@@ -70,7 +70,7 @@ function GlyphMotion.Stop(target)
 end
 
 local hooks = { OnEnter = Enter, OnLeave = Leave, OnMouseDown = Down, OnMouseUp = Up,
-    OnHide = GlyphMotion.Stop, OnDisable = GlyphMotion.Stop, OnClick = Click }
+    OnHide = GlyphMotion.Stop, OnClick = Click }
 
 function GlyphMotion.Refresh(target, owner, size, glyphMode)
     local record = GlyphMotion.records[target]

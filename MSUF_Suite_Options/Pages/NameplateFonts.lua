@@ -12,11 +12,14 @@ local function LegacyTextKey(key)
     if key == "nameFormattingEnabled" or key == "nameTextUseCustomSettings" then return true end
     for _, prefix in ipairs({ "enemy", "friendly", "enemyCast", "friendlyCast" }) do
         for _, suffix in ipairs(Text.Suffixes) do if key == prefix .. suffix then return true end end
-        for _, suffix in ipairs(Text.StyleSuffixes) do if key == prefix .. suffix then return true end end
+        for _, suffix in ipairs(Text.StyleSuffixes) do
+            if key == prefix .. suffix then return key ~= "enemyCastTextEnabled" and key ~= "friendlyCastTextEnabled" end
+        end
     end
     return key == "enemyCastFont" or key == "friendlyCastFont"
         or key == "enemyCastOutline" or key == "friendlyCastOutline"
 end
+Fonts.IsTypography = LegacyTextKey
 P.Gates.nameplates = function(rule, key)
     if NativeScope() and LegacyTextKey(key) then return false, "Configure this in Fonts > Nameplates." end
     if oldGate then return oldGate(rule, key) end
@@ -52,7 +55,12 @@ end
 
 function Fonts.TargetForSetting(settingKey)
     local key = settingKey and settingKey:match("^msufsuite%.nameplates%.(.+)$")
-    if not key or not Fonts.HasLinks() then return end
+    if not key or not LegacyTextKey(key) then return end
+    if not Fonts.HasLinks() then
+        local fallback = P.NameplatesHostOptions
+        if fallback and fallback.registered then return "opt_fonts", { sectionId = "opt_fonts_nameplate_text" } end
+        return
+    end
     if key == "nameFormattingEnabled" or key == "nameTextUseCustomSettings" then
         return Bridge.NameplateFontsTarget(SHORTEN)
     end
@@ -63,23 +71,29 @@ function Fonts.TargetForSetting(settingKey)
             return Bridge.NameplateFontsTarget(section)
         end
     end
+    local section = key:match("Font$") and "fonts_global_font" or "fonts_text_style"
+    return Bridge.NameplateFontsTarget(section)
 end
 
-function Fonts.LinkSection(ctx, builder, sectionId, title)
-    return P.LazySection(builder, sectionId, title, nil, {
-        content = function(body)
-            local width = math.max(240, (P.HM.GetSectionWidth(body) or builder.width or 720) - 32)
-            local hint = P.Description(body, "Configure this in Fonts > Nameplates.", 16, -18, width, title)
-            local y = -30 - math.max(14, math.ceil(hint:GetStringHeight() or 14))
-            local buttonWidth = math.min(164, (width - 8) / 2)
-            local function Button(label, x, section, key)
-                P.Button(ctx, body, label, x, y, buttonWidth, function() Bridge.OpenNameplateFonts(P.M, section) end,
-                    nil, P.Meta("suite_nameplates", "nameplates", key, "action", sectionId))
-            end
-            Button("Name format", 16, SHORTEN, "action.fontNameFormat")
-            Button("Colors", 24 + buttonWidth, COLORS, "action.fontNameColors")
-            return y - 34
-        end,
-        finish = function(body, y) P.FinishBody(builder, body, y) end,
-    })
+function Fonts.AddLinks(ctx, body, y, width, sectionId)
+    if not Fonts.HasLinks() then
+        local fallback = P.NameplatesHostOptions
+        if not fallback or not fallback.registered then return y end
+        P.Button(ctx, body, "Nameplate typography", 16, y, math.min(200, width), function()
+            P.M.SelectPage("opt_fonts")
+            local page = P.M.cache and P.M.cache.opt_fonts
+            local target = page and page.sections and page.sections.opt_fonts_host_nameplates
+            if target and P.W.FocusCollapsibleSection then P.W.FocusCollapsibleSection(target, { persist = true }) end
+        end, nil, P.Meta("suite_nameplates", "nameplates", "action.fontTypography." .. sectionId, "action", sectionId))
+        return y - 34
+    end
+    local buttonWidth = math.min(164, (width - 16) / 3)
+    local function Button(label, x, section, key)
+        P.Button(ctx, body, label, x, y, buttonWidth, function() Bridge.OpenNameplateFonts(P.M, section) end,
+            nil, P.Meta("suite_nameplates", "nameplates", key .. "." .. sectionId, "action", sectionId))
+    end
+    Button("Nameplate font", 16, "fonts_global_font", "action.fontTypography")
+    Button("Name format", 24 + buttonWidth, SHORTEN, "action.fontNameFormat")
+    Button("Colors", 32 + 2 * buttonWidth, COLORS, "action.fontNameColors")
+    return y - 34
 end

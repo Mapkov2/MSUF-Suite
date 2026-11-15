@@ -1,11 +1,6 @@
 local _, NS = ...
--- Cold configuration of the nameplate aura containers, shared by the
--- runtime, the options and the preview. Every plate side (enemy, friendly)
--- has Buffs and Debuffs, Custom 1-3 and Dots on target, laid out like MSUF's
--- unit frame Auras. Buffs and Debuffs stay Blizzard's own lists until they
--- are made Visible here; then the Suite draws them and Blizzard's list of
--- that kind is hidden. No live aura data enters this model: Blizzard's aura
--- containers evaluate every predicate.
+-- Settings shared by the options, preview and the tracked aura containers.
+-- The built-in nameplate rows are used unless a tracked row requests exclusions.
 local Display = { LIMIT = 16, MAX_ICONS = 40, LIST_BYTES = 2048 }
 NS.NameplateAuraDisplay = Display
 local Public, floor, min, max = NS.Public, math.floor, math.min, math.max
@@ -24,59 +19,85 @@ Display.Scopes = {
     { key = "enemy", id = "Enemy", label = "Enemy", helpful = false },
     { key = "friendly", id = "Friendly", label = "Friendly", helpful = true },
 }
--- element: the container's handle in the nameplate preview editor (letters
--- only). A lane (Buffs, Debuffs) shares the handle, the offsets and the
--- plate-kind switches of Blizzard's list: native names its switch, fields
--- and elements what its tab shows and resets, frame Blizzard's list frame.
--- title: the name in a tool title ("Buff Layout"). y: default distance of a
--- Suite-only container above the health bar.
+Display.NativeRows = {
+    { key = "buff", id = "Buff", label = "Buffs", kind = "native", element = "Buffs", native = "Buffs",
+        frame = "BuffListFrame" },
+    { key = "debuff", id = "Debuff", label = "Debuffs", kind = "native", element = "Auras", native = "Debuffs",
+        frame = "DebuffListFrame" },
+    { key = "control", id = "Control", label = "Control effects", kind = "native", element = "ControlAura", native = "Control",
+        frame = "CrowdControlListFrame", playerFrame = "LossOfControlFrame" },
+}
 Display.Containers = {
-    { key = "buff", id = "Buff", label = "Buffs", title = "Buff", kind = "lane", list = "Block", element = "Buffs",
-        helpful = true, native = "Buffs", fields = { "Buffs" }, elements = { "Buffs" }, frame = "BuffListFrame",
-        anchor = 4, growth = 2 },
-    { key = "debuff", id = "Debuff", label = "Debuffs", title = "Debuff", kind = "lane", list = "Block", element = "Auras",
-        helpful = false, native = "Debuffs", fields = { "Debuffs", "Control" }, elements = { "Auras", "ControlAura" },
-        frame = "DebuffListFrame", anchor = 1, growth = 1 },
     { key = "custom1", id = "Custom1", label = "Custom 1", kind = "custom", list = "Spells", y = 74, element = "CustomOne" },
     { key = "custom2", id = "Custom2", label = "Custom 2", kind = "custom", list = "Spells", y = 102, element = "CustomTwo" },
     { key = "custom3", id = "Custom3", label = "Custom 3", kind = "custom", list = "Spells", y = 130, element = "CustomThree" },
     { key = "dots", id = "Dots", label = "Dots on target", kind = "dots", list = "IDs", y = 46, element = "Tracked" },
 }
 Display.NativeGroups = { enemy = { "enemyNpc", "enemyPlayer" }, friendly = { "friendlyPlayer" } }
-Display.NativeShared = { "auraScaleMode", "auraScalePercent", "personalAuras", "auraClickthrough" }
+Display.NativeShared = { "auraScaleMode", "auraScalePercent", "auraDebuffPadding", "personalAuras", "auraClickthrough" }
+
+function Display.NativeSetting(group, kind)
+    if group == "friendlyNpc" then return kind == "Debuffs" and "friendlyNpcDebuffs" or nil end
+    return group and group .. kind
+end
+
+function Display.NativeShown(config, group, kind)
+    local style = NS.NameplateStyle
+    local key = Display.NativeSetting(group, kind)
+    if not key then return false end
+    local original = config.look == 2
+    if group == "friendlyNpc" then
+        local mode = config[key]
+        if not original and (mode == 2 or mode == 3) then return mode == 2 end
+        return style.NativeToggle("nameplateShowDebuffsOnFriendly", false)
+    end
+    if not original and config[group .. "AuraMode"] == 2 then return config[key] == true end
+    return style.NativeBit(style.AuraCVar[group], style.AuraBits[kind], true)
+end
+
+function Display.Active(config)
+    return config.auraDisplayEnabled == true
+end
+
+function Display.PersonalAuras()
+    return NS.NameplateStyle.NativeToggle("nameplateShowAllPersonalAuras", false)
+end
+
 Display.Tools = {
-    lane = { "layout", "ordering", "filters", "blacklist", "style" },
+    native = { "layout", "style" },
     custom = { "setup", "layout", "ordering", "filters", "whitelist", "style" },
-    dots = { "setup", "layout", "ordering", "filters", "dots", "style" },
 }
+Display.Tools.dots = Display.Tools.custom
+Display.NativeFields = { layout = { "Scale", "Layer" }, style = { "Alpha" } }
 Display.ToolLabels = { setup = "Setup", layout = "Layout", ordering = "Ordering", filters = "Filters",
-    blacklist = "Blacklist", whitelist = "Whitelist", dots = "Dots", style = "Style" }
+    whitelist = "Whitelist", style = "Style" }
 -- The settings of each tool, in control order. A container lacks the fields
 -- its kind does not have (Name on Dots, Source on Custom, Filter off a lane).
 Display.ToolFields = {
-    setup = { "Visible", "Name", "Type", "Display", "Source", "Missing", "MissingAlpha" },
+    setup = { "Visible", "Name", "Type", "Display", "Source", "HideDuplicates", "Missing", "MissingAlpha" },
     layout = { "Anchor", "Growth", "Max", "Size", "HeightPercent", "PerRow", "Gap", "Layer" },
     ordering = { "Sort", "Order" },
-    filters = { "Filter", "OnlyMine", "HidePermanent", "MaxDuration" },
-    blacklist = {},
+    filters = { "OnlyMine", "HidePermanent", "MaxDuration" },
     whitelist = {},
-    dots = {},
-    style = { "Pandemic", "Zoom", "Alpha", "Tooltip", "Dispel", "StackText", "StackPoint", "StackSize",
-        "TimeText", "TimePoint", "TimeSize", "Swipe" },
+    style = { "IconSkin", "Pandemic", "Zoom", "Alpha", "Tooltip", "Padding", "Dispel", "StackText", "StackPoint", "StackSize", "StackX", "StackY",
+        "TimeText", "TimePoint", "TimeSize", "TimeX", "TimeY", "TimeDecimals", "Swipe", "SwipeDirection",
+        "DurationBar", "DurationBarDisplay", "DurationBarHeight", "DurationBarPosition", "DurationBarDirection", "DurationBarColor" },
 }
 Display.Types = { "Buffs", "Debuffs" }
 Display.Displays = { "Fixed slots", "Only active auras" }
 Display.Sources = { "DoTs selected for health colors", "Custom aura IDs" }
-Display.Filters = { "All auras", "Priority auras", "Important auras", "Stealable auras", "Dispellable auras" }
 Display.Sorts = { "Blizzard priority", "Expiration time", "Name", "Application order", "Important first" }
 Display.Orders = { "Normal", "Reversed" }
 Display.Growth = { "Right then up", "Left then up", "Right then down", "Left then down" }
--- The look every container shares; the Style tool shows it below its own.
+-- The common appearance of the tracked containers.
 Display.AppearanceKeys = { "auraFont", "auraTextOutline", "auraTimeText", "auraTimeSize", "auraTimePoint", "auraTimeX",
     "auraTimeY", "auraStackText", "auraStackSize", "auraStackPoint", "auraStackX", "auraStackY", "auraSwipe",
     "auraSwipeAlpha", "auraDispelHighlight", "auraEnrageHighlight", "auraPandemicHighlight", "auraHighlightSize" }
 Display.ColorKeys = { "auraTimeColor", "auraStackColor", "auraPandemicColor" }
-Display.SharedKeys = { "auraDisplayEnabled", "auraSunder", "auraClickthrough", "auraColorsData", "look", "enemy", "friendly" }
+Display.SharedKeys = { "auraDisplayEnabled", "auraSunder", "auraClickthrough", "auraColorsData", "look", "enemy", "friendly",
+    "personalAuras", "auraScaleMode", "auraScalePercent", "nativeSize", "auraEnemyBuffScale", "auraEnemyDebuffScale",
+    "auraFriendlyBuffScale", "auraFriendlyDebuffScale", "auraEnemyBuffLayer", "auraEnemyDebuffLayer", "auraFriendlyBuffLayer",
+    "auraFriendlyDebuffLayer", "auraEnemyBuffAlpha", "auraEnemyDebuffAlpha", "auraFriendlyBuffAlpha", "auraFriendlyDebuffAlpha" }
 for _, list in ipairs({ Display.AppearanceKeys, Display.ColorKeys }) do
     for _, key in ipairs(list) do Display.SharedKeys[#Display.SharedKeys + 1] = key end
 end
@@ -85,7 +106,6 @@ end
 -- unreachable finite ceiling hides permanent auras and keeps every timed one.
 local MAX_FINITE_DURATION = 2147483647
 local SUNDER = { 7386, 7405, 8380, 11596, 11597, 25225, 47467 }
-local LANE_PAD = 6
 -- The container point that sits on each health bar anchor (outside the
 -- bar) and the direction a lane keeps its distance in.
 local ATTACH = { TOPLEFT = { "BOTTOMLEFT", 0, 1 }, TOP = { "BOTTOM", 0, 1 }, TOPRIGHT = { "BOTTOMRIGHT", 0, 1 },
@@ -108,6 +128,9 @@ function Display.Scope(key)
 end
 
 function Display.Container(key)
+    for _, row in ipairs(Display.NativeRows) do
+        if row.key == key then return row end
+    end
     for _, container in ipairs(Display.Containers) do
         if container.key == key then return container end
     end
@@ -123,22 +146,22 @@ function Display.Element(id)
     end
 end
 
--- Blizzard's settings a lane's Layout shows below its own, each in one
--- place only: the mode of each plate kind (shared by both lanes of the
--- plates), the lane's own switches, and what every Blizzard aura shares.
-function Display.NativeKeys(scope, lane)
-    local modes, switches = {}, {}
-    for _, group in ipairs(Display.NativeGroups[scope.key]) do
-        modes[#modes + 1] = group .. "AuraMode"
-        for _, field in ipairs(lane.fields) do switches[#switches + 1] = group .. field end
+function Display.NativeElement(element)
+    for _, row in ipairs(Display.NativeRows) do
+        if row.element == element then return row end
     end
-    if scope.key == "friendly" and lane.key == "debuff" then switches[#switches + 1] = "friendlyNpcDebuffs" end
-    return modes, switches, Display.NativeShared
+end
+
+function Display.VisibilityKeys(scope, lane)
+    local switches = {}
+    for _, group in ipairs(Display.NativeGroups[scope.key]) do
+        switches[#switches + 1] = Display.NativeSetting(group, lane.native)
+    end
+    return switches
 end
 
 -- The catalog keys one tool edits, in control order. own: only the
--- container's own settings, without the ones its tool shares with others
--- (Blizzard's settings under a lane's Layout, the shared look under Style).
+-- container's own controls, without visibility and shared appearance.
 function Display.ToolKeys(scope, container, tool, own)
     local keys, rules = {}, NS.SuiteCatalog.nameplates.rules
     local prefix = Display.Prefix(scope, container)
@@ -147,14 +170,14 @@ function Display.ToolKeys(scope, container, tool, own)
             if rules[key] then keys[#keys + 1] = key end
         end
     end
-    if container.kind == "lane" and tool == "layout" then Add({ prefix .. "Visible" }) end
-    for _, field in ipairs(Display.ToolFields[tool] or {}) do Add({ prefix .. field }) end
-    if tool == "dots" and scope.key == "enemy" then Add({ "auraSunder" }) end
+    local fields = container.kind == "native" and Display.NativeFields or Display.ToolFields
+    for _, field in ipairs(fields[tool] or {}) do Add({ prefix .. field }) end
     if own then return keys end
-    if container.kind == "lane" and tool == "layout" then
-        for _, list in ipairs({ Display.NativeKeys(scope, container) }) do Add(list) end
-    elseif tool == "style" then
-        Add(Display.AppearanceKeys)
+    if container.kind == "native" and tool == "layout" then
+        Add(Display.VisibilityKeys(scope, container))
+        if scope.key == "friendly" and container.key == "debuff" then Add({ "friendlyNpcDebuffs" }) end
+    elseif tool == "whitelist" and container.kind == "dots" and scope.key == "enemy" then
+        Add({ prefix .. "Source", "auraSunder" })
     end
     return keys
 end
@@ -202,6 +225,16 @@ local function AddRow(rows, used, id, ids, any)
     if next(set) then rows[#rows + 1] = { id = id, ids = set, any = any or nil } end
 end
 
+local function AddTrackedRow(rows, used, id, ids)
+    if used[id] then return end
+    local aliases = NS.Client.isForever and NS.HostBridge.ForeverAuraAliases(id)
+    if not aliases then return AddRow(rows, used, id, ids) end
+    local merged = { id }
+    for _, spell in ipairs(ids) do merged[#merged + 1] = spell end
+    for _, spell in ipairs(aliases) do merged[#merged + 1] = spell end
+    AddRow(rows, used, id, merged)
+end
+
 -- The DoTs the health colors use for this specialization. A preview shows a
 -- saved specialization without reading the live one.
 local function ColorRows(values, preview)
@@ -228,9 +261,11 @@ function Display.Rows(values, scope, container, preview)
     local rows, used = {}, {}
     local prefix = Display.Prefix(scope, container)
     if container.kind == "dots" and scope.key == "enemy" and values[prefix .. "Source"] == 1 then
-        for _, row in ipairs(ColorRows(values, preview)) do AddRow(rows, used, row.id, row.ids) end
+        for _, row in ipairs(ColorRows(values, preview)) do AddTrackedRow(rows, used, row.id, row.ids) end
     else
-        for _, id in ipairs(Display.IDs(values[Display.ListKey(scope, container)])) do AddRow(rows, used, id, { id }) end
+        for _, id in ipairs(Display.IDs(values[Display.ListKey(scope, container)])) do
+            AddTrackedRow(rows, used, id, { id })
+        end
     end
     if container.kind == "dots" and scope.key == "enemy" and values.auraSunder and NS.Client.isForever then
         AddRow(rows, used, SUNDER[1], SUNDER, true)
@@ -245,15 +280,16 @@ local function Geometry(c)
     c.flowPoint = (down and "TOP" or "BOTTOM") .. (left and "RIGHT" or "LEFT")
     c.horizontal, c.vertical = left and "Left" or "Right", down and "Down" or "Up"
     c.dx, c.dy = left and -1 or 1, down and -1 or 1
+    local padding = 2 * c.padding
     c.lineSize = c.perRow * (c.width + c.gap) - c.gap
-    c.gridWidth = columns * (c.width + c.gap) - c.gap
-    c.gridHeight = lines * (c.height + c.gap) - c.gap
+    c.gridWidth = columns * (c.width + c.gap) - c.gap + padding
+    c.gridHeight = lines * (c.height + c.gap) - c.gap + padding
 end
 
 -- Where icon `index` of a fixed grid sits, from the container's flow corner.
 function Display.SlotOffset(c, index)
     local column, line = (index - 1) % c.perRow, floor((index - 1) / c.perRow)
-    return column * (c.width + c.gap) * c.dx, line * (c.height + c.gap) * c.dy
+    return (c.padding + column * (c.width + c.gap)) * c.dx, (c.padding + line * (c.height + c.gap)) * c.dy
 end
 
 local function Candidate(ids, limit)
@@ -272,6 +308,8 @@ function Display.Text(values, prefix, field)
     else
         text.point = NS.AnchorPoints[point - 1]
     end
+    text.x = text.x + (values[prefix .. field .. "X"] or 0)
+    text.y = text.y + (values[prefix .. field .. "Y"] or 0)
     text.size = size == 0 and values["aura" .. field .. "Size"] or size
     return text
 end
@@ -289,6 +327,7 @@ local function Tracking(c, values, prefix, rows)
     c.anyFilter = base .. "|INCLUDE_NAME_PLATE_ONLY"
     c.filter = mine and base .. "|PLAYER|INCLUDE_NAME_PLATE_ONLY" or c.anyFilter
     c.fixed = values[prefix .. "Display"] == 1
+    c.helpful = base == "HELPFUL"
     c.rows, c.count, c.groupCount, c.anyCount = {}, 0, 0, 0
     if c.fixed then
         for index = 1, min(#rows, c.max, Display.LIMIT) do
@@ -303,65 +342,12 @@ local function Tracking(c, values, prefix, rows)
     for _, row in ipairs(rows) do
         local target = row.any and mine and any or include
         for id in pairs(row.ids) do target[id] = true end
+        c.rows[#c.rows + 1] = row
     end
     c.groupCount = next(include) and c.max or 0
     c.anyCount = next(any) and 1 or 0
     c.count = max(c.groupCount, c.anyCount)
     c.candidate, c.anyCandidate = Candidate(include, limit), Candidate(any, limit)
-end
-
--- A lane shows every aura of its kind Blizzard's filter accepts, minus the
--- blacklist. Crowd control stays with Blizzard's own list.
-local function LaneTracking(c, values, prefix, lane, scope)
-    local filter = lane.helpful and "HELPFUL|INCLUDE_NAME_PLATE_ONLY" or "HARMFUL|INCLUDE_NAME_PLATE_ONLY|!CROWD_CONTROL"
-    local kind, candidate = values[prefix .. "Filter"], {}
-    if values[prefix .. "OnlyMine"] then filter = filter .. "|PLAYER" end
-    if kind == 2 then candidate.isPriorityAura = true
-    elseif kind == 3 then filter = filter .. "|IMPORTANT"
-    elseif kind == 4 then candidate.isStealable = true
-    elseif kind == 5 then filter = filter .. "|DISPELLABLE" end
-    local _, blocked = Display.IDs(values[Display.ListKey(scope, lane)])
-    if next(blocked) then candidate.excludeSpellIDs = blocked end
-    candidate.maxDuration = DurationLimit(values, prefix)
-    c.filter, c.candidate, c.fixed, c.rows = filter, candidate, false, {}
-    c.groupCount, c.anyCount, c.count = c.max, 0, c.max
-end
-
--- The plate kinds a lane shows on: Blizzard's own switches, customized in
--- the Suite or left with Blizzard's setting. A preview reads no CVar.
-local function LaneKinds(config, scope, lane, preview, parts)
-    local kinds, style = {}, NS.NameplateStyle
-    for _, group in ipairs(Display.NativeGroups[scope.key]) do
-        if config[group .. "AuraMode"] == 2 then
-            kinds[group] = config[group .. lane.native] == true
-        else
-            kinds[group] = preview ~= nil or style.NativeBit(style.AuraCVar[group], style.AuraBits[lane.native], true) == true
-        end
-        parts[#parts + 1] = tostring(kinds[group])
-    end
-    if scope.key == "friendly" and lane.key == "debuff" then
-        local mode = config.friendlyNpcDebuffs
-        kinds.friendlyNpc = mode == 2
-            or mode == 1 and (preview ~= nil or style.NativeToggle("nameplateShowDebuffsOnFriendly", false) == true)
-        parts[#parts + 1] = tostring(kinds.friendlyNpc)
-    end
-    return kinds
-end
-
--- A lane sits where Blizzard's list sits (the same preview handle), a
--- Suite-only container at its own offsets.
-local function Position(c, config, values, scope, container, V)
-    local anchor = NS.AnchorPoints[V("Anchor")]
-    local attach = ATTACH[anchor]
-    c.point, c.relative = attach[1], anchor
-    if container.kind ~= "lane" then
-        c.x, c.y = V("OffsetX"), V("OffsetY")
-        return
-    end
-    local key = scope.key .. container.element .. "Offset"
-    values[key .. "X"], values[key .. "Y"] = Read(config, key .. "X") or 0, Read(config, key .. "Y") or 0
-    c.x, c.y = values[key .. "X"] + attach[2] * LANE_PAD, values[key .. "Y"] + attach[3] * LANE_PAD
-    c.offsets = values[key .. "X"] .. "," .. values[key .. "Y"]
 end
 
 local function Compile(config, values, scope, container, preview)
@@ -375,53 +361,112 @@ local function Compile(config, values, scope, container, preview)
     for _, fields in pairs(Display.ToolFields) do
         for _, field in ipairs(fields) do V(field) end
     end
-    local listKey, lane = Display.ListKey(scope, container), container.kind == "lane"
+    local listKey = Display.ListKey(scope, container)
     values[listKey] = Read(config, listKey)
     parts[#parts + 1] = tostring(values[listKey])
     local c = { key = container.key, kind = container.kind, prefix = prefix, scope = scope.key, label = container.label,
-        frame = container.frame, element = container.element }
+        element = container.element }
     local size = V("Size")
     c.width, c.height = size, max(1, floor(size * V("HeightPercent") / 100 + .5))
     c.gap, c.perRow, c.growth, c.max, c.layer = V("Gap"), V("PerRow"), V("Growth"), V("Max"), V("Layer")
-    local rows = lane and {} or Display.Rows(values, scope, container, preview)
+    local rows = Display.Rows(values, scope, container, preview)
     for _, row in ipairs(rows) do
         local ids = {}
         for id in pairs(row.ids) do ids[#ids + 1] = id end
         table.sort(ids)
         parts[#parts + 1] = table.concat(ids, ",") .. (row.any and "*" or "")
     end
-    if lane then
-        LaneTracking(c, values, prefix, container, scope)
-        c.kinds = LaneKinds(config, scope, container, preview, parts)
-    else
-        Tracking(c, values, prefix, rows)
-    end
-    c.enabled = V("Visible") and (lane or #rows > 0)
+    Tracking(c, values, prefix, rows)
+    c.enabled = values.auraDisplayEnabled == true and V("Visible") and #rows > 0
+    c.hideDuplicates = V("HideDuplicates")
+    parts[#parts + 1] = tostring(c.enabled)
+    c.iconSkin, c.padding = V("IconSkin") == true, V("Padding")
     Geometry(c)
-    Position(c, config, values, scope, container, V)
-    parts[#parts + 1] = c.offsets or ""
+    local anchor = NS.AnchorPoints[V("Anchor")]
+    c.point, c.relative, c.x, c.y = ATTACH[anchor][1], anchor, V("OffsetX"), V("OffsetY")
     c.sort, c.reverse = V("Sort"), V("Order") == 2
     c.missing, c.missingAlpha = c.fixed and V("Missing"), V("MissingAlpha")
     c.crop = .07 + (1 - 100 / V("Zoom")) * .43
     c.alpha, c.tooltip, c.dispel, c.pandemic, c.swipe = V("Alpha") / 100, V("Tooltip"), V("Dispel"), V("Pandemic"), V("Swipe")
-    c.timeText, c.stackText = V("TimeText"), V("StackText")
+    c.swipeReverse = V("SwipeDirection") ~= 2
+    c.durationBar = V("DurationBar")
+    c.barOnly = c.durationBar and V("DurationBarDisplay") == 2
+    c.durationBarHeight = min(c.height, V("DurationBarHeight"))
+    c.durationBarTop = V("DurationBarPosition") == 2
+    c.durationBarElapsed = V("DurationBarDirection") == 2
+    c.durationBarColor = V("DurationBarColor")
+    c.timeText, c.stackText, c.timeDecimals = V("TimeText"), V("StackText"), V("TimeDecimals")
     c.text = { Time = Display.Text(values, prefix, "Time"), Stack = Display.Text(values, prefix, "Stack") }
     c.sig = table.concat(parts, "|")
     return c
 end
 
+-- A checked row claims its configured spell IDs. Fixed rows only claim IDs
+-- from the slots within their visible limit.
+local function AddExclusions(ids, source)
+    local function Add(candidate)
+        for id in pairs(candidate.includeSpellIDs) do ids[id] = true end
+    end
+    if source.fixed then
+        for _, row in ipairs(source.rows) do Add(row.candidate) end
+    else
+        Add(source.candidate)
+        Add(source.anyCandidate)
+    end
+end
+
+local function AddLaneExclusions(list, destination, helpful)
+    local ids = {}
+    local row = list[destination]
+    for index, source in ipairs(list) do
+        local preferred = not row or index ~= destination and row.kind ~= "dots"
+            and (index < destination or source.kind == "dots" or not row.hideDuplicates)
+        -- A target-only row is not an exclusion source for ordinary tracked
+        -- rows: they also run on plates where that DoT row is absent.
+        if preferred and (not row or source.kind ~= "dots")
+            and source.enabled and source.hideDuplicates and source.helpful == helpful then
+            AddExclusions(ids, source)
+        end
+    end
+    return next(ids) and ids or nil
+end
+
+local function HasExclusions(list)
+    for _, row in ipairs(list) do
+        if row.enabled and row.hideDuplicates then return true end
+    end
+    return false
+end
+
+function Display.Exclusions(list)
+    local rows = {
+        debuff = AddLaneExclusions(list, 0, false),
+        buff = AddLaneExclusions(list, 0, true),
+    }
+    for index, row in ipairs(list) do
+        if row.enabled then rows[row.key] = AddLaneExclusions(list, index, row.helpful) end
+    end
+    return rows
+end
+
+function Display.Excluding(candidate, ids)
+    if not ids then return candidate end
+    return { includeSpellIDs = candidate.includeSpellIDs, maxDuration = candidate.maxDuration, excludeSpellIDs = ids }
+end
+
 -- The immutable plan of every container. signature: any change; style: the
 -- settings every container shares; a container's sig: its own settings, so
 -- the runtime touches only the containers an edit changed. used: the side
--- has an enabled container; lanes: one of them replaces a Blizzard list.
+-- has an enabled tracked container.
 function Display.Plan(config, preview)
     local values, shared, signature = {}, {}, {}
     for _, key in ipairs(Display.SharedKeys) do
         values[key] = Read(config, key)
         shared[#shared + 1] = tostring(values[key])
     end
-    local plan = { values = values, scopes = {}, used = {}, lanes = {}, style = table.concat(shared, "|") }
+    local plan = { values = values, scopes = {}, used = {}, targetOnly = {}, always = {}, exclusions = {}, style = table.concat(shared, "|") }
     signature[1] = plan.style
+    plan.iconSkin = false
     for _, scope in ipairs(Display.Scopes) do
         local list = {}
         for _, container in ipairs(Display.Containers) do
@@ -429,10 +474,19 @@ function Display.Plan(config, preview)
             list[#list + 1], signature[#signature + 1] = c, c.sig
             if c.enabled then
                 plan.used[scope.key] = true
-                if c.kinds then plan.lanes[scope.key] = true end
+                if c.kind == "dots" then
+                    plan.targetOnly[scope.key] = true
+                else
+                    plan.always[scope.key] = true
+                end
+                if c.iconSkin then plan.iconSkin = true end
             end
         end
         plan.scopes[scope.key] = list
+        if HasExclusions(list) then
+            local exclusions = Display.Exclusions(list)
+            plan.exclusions[scope.key] = exclusions
+        end
     end
     plan.signature = table.concat(signature, "#")
     return plan

@@ -440,7 +440,10 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
         local due = BuildPoisonWarnings(state, now, threshold)
         if due and (not nextDue or due < nextDue) then nextDue = due end
     end
-    local config, environmentKey = self.config, self.environment.key
+    local config, environment = self.config, self.environment
+    local personal = config.personalBuffWarningSeconds
+    if personal and environment.preKey then personal = nil end
+    local suffix = "_" .. environment.key
     for index, entry in ipairs(list.entries) do
         if entry.group then
             local before = entry.missingCount
@@ -458,16 +461,21 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
         end
         -- A category follows its own content choices within the module-wide
         -- visibility filter.
-        if config[(entry.category or "personal") .. "_" .. environmentKey] ~= false then
+        local category = entry.category
+        if config[category .. suffix] ~= false then
             if entry.restock or entry.present == false then
                 mask = mask + entry.bit
-            elseif entry.present == true and threshold > 0 and now and entry.expiresAt
-                and (not entry.totalDuration or entry.totalDuration > (config.remindBeforeMinutes or R.Default("remindBeforeMinutes")) * 60) then
-                local due = entry.expiresAt - threshold
-                if due <= now then
-                    mask = mask + entry.bit
-                elseif not nextDue or due < nextDue then
-                    nextDue = due
+            elseif entry.present == true and now and entry.expiresAt then
+                local custom = personal and personal > 0 and category == "class" and not entry.notice
+                local minimum = custom and personal or (config.remindBeforeMinutes or R.Default("remindBeforeMinutes")) * 60
+                local warning = custom and personal or threshold
+                if warning > 0 and (not entry.totalDuration or entry.totalDuration > minimum) then
+                    local due = entry.expiresAt - warning
+                    if due <= now then
+                        mask = mask + entry.bit
+                    elseif not nextDue or due < nextDue then
+                        nextDue = due
+                    end
                 end
             end
         end

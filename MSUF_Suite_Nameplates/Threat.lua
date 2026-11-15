@@ -16,6 +16,7 @@ local function Eligible(uf)
     local config = owner and owner.config
     return owner and owner.active and config and config.look ~= LOOK_BLIZZARD and config.enemy
         and Safe(uf) and NS.Public(uf.isFriend) and uf.isFriend == false
+        and (not private.IsSkinSuppressed or not private.IsSkinSuppressed(uf))
 end
 
 local function Color(region, hex)

@@ -173,6 +173,7 @@ local function ClearMain(icon)
     if icon.cdSet ~= false then
         icon.cdSet = false
         icon.cd:Clear()
+        if icon.chargeSet then TrackingBars.UpdateChargeText(icon) end
     end
 end
 local function ClearCharge(icon)
@@ -180,6 +181,7 @@ local function ClearCharge(icon)
     if cooldown and icon.chargeSet ~= false then
         icon.chargeSet = false
         cooldown:Clear()
+        TrackingBars.UpdateChargeText(icon)
     end
 end
 local function CountOff(icon)
@@ -214,12 +216,8 @@ local function Real(info, duration, reason, previous)
     return issecret(gcd) or not gcd, false
 end
 
--- The charge part of SpellState: the recharge swipe, entry.fullyCharged,
--- the timer bar's charges and "Hide while a charge is available". cooling
--- and exact are the main answer; returns cooling. A charge spell stays
--- cooling until every charge is back. When the main answer was only the
--- last known state (a GCD hides it), a plain "not recharging" settles it:
--- every charge is back.
+-- Keep a running recharge independent of the main cooldown. If a GCD hid
+-- the last known cooldown state, a public "not recharging" settles it.
 local function ChargeState(entry, icon, spell, cooling, exact)
     local charges = entry.charges ~= false and GetCharges(spell)
     local rechargeDuration
@@ -236,7 +234,10 @@ local function ChargeState(entry, icon, spell, cooling, exact)
                 local cooldown = icon.chargeCd or C.Icons.ChargeCooldown(icon)
                 cooldown:SetCooldownFromDurationObject(duration, true)
                 TrackingBars.Duration(icon, duration)
-                icon.chargeSet = true
+                if not icon.chargeSet then
+                    icon.chargeSet = true
+                    if not icon.cdSet then TrackingBars.UpdateChargeText(icon) end
+                end
             else
                 ClearCharge(icon)
             end
@@ -292,6 +293,7 @@ local function SpellState(entry, icon, spell, reason)
             if duration then
                 icon.cd:SetCooldownFromDurationObject(duration, true)
                 icon.cdSet, icon.cdReal = true, ignoreGCD
+                if icon.chargeTime then TrackingBars.UpdateChargeText(icon) end
             else
                 ClearMain(icon)
             end
@@ -792,6 +794,7 @@ function Time.SimulateCharges(entry, current, maximum, duration)
         local cooldown = icon.chargeCd or C.Icons.ChargeCooldown(icon)
         cooldown:SetCooldownFromDurationObject(duration, true)
         icon.chargeSet = true
+        TrackingBars.UpdateChargeText(icon)
     else
         ClearCharge(icon)
     end
@@ -800,7 +803,6 @@ function Time.SimulateCharges(entry, current, maximum, duration)
     TrackingBars.Charges(icon, simCharges, duration)
     if icon.stackOn then ShowCount(icon, current) else CountOff(icon) end
 end
--- Preview: a sample stack count (nil: none), where the entry shows counts.
 function Time.SimulateCount(entry, count)
     local icon = entry.icon
     if not icon then return end

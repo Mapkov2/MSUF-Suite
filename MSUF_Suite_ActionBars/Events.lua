@@ -27,7 +27,7 @@ local Walk, WalkNative, MapButton, UnmapButton, Remap, AllKeyTexts = Painter.Wal
 local dirtySlots, gridBars, protected, reported = Dirty.slots, Dirty.grid, Dirty.protected, Dirty.reported
 local gridFill, gridHold = Dirty.gridFill, Dirty.gridHold
 local spellCooldowns = Dirty.spellCooldowns
-local Schedule, Mark = Dirty.Schedule, Dirty.Mark
+local Schedule, Mark, WakeRetry = Dirty.Schedule, Dirty.Mark, Dirty.WakeRetry
 -- The resolved slot accessors (Paint.lua AB.ResolveAPI), as Paint reads them.
 local api = Painter.api
 
@@ -41,9 +41,8 @@ local api = Painter.api
 -- reused buttons follow the same rule: its own plan cannot show a button the
 -- suite hid, and its hides are corrected by the restricted hide wrap or, under
 -- a hidden header, by the grid repair (Blizzard.lua).
-local function GridChanged(slot)
+local function GridChanged(slot, kind, id)
     local has = api.HasAction(slot)
-    local kind, id = GetActionInfo(slot)
     if not Public(has) or not Public(kind) or not Public(id) then
         gridFill[slot], gridHold[slot] = nil, nil
         return true
@@ -61,7 +60,6 @@ local function SlotChanged(_, _, slot)
         AB.MarkAll()
         return
     end
-    dirtySlots[slot] = true
     -- A filled or emptied slot changes which buttons show; a slot becoming or
     -- ceasing to be a flyout changes key routing. Suite buttons re-read their
     -- action when repainted; Blizzard paints the native ones, so their proc
@@ -69,24 +67,33 @@ local function SlotChanged(_, _, slot)
     local list = slotMap[slot]
     -- A slot's list outlives its buttons (Remap empties it), so an empty list
     -- is a slot no button shows.
-    if list and #list > 0 then
-        local flyout = AB.IsFlyoutSlot(slot)
-        local nativeGlow = M.config.procGlow == PROC_PIXEL
-        local changed = GridChanged(slot)
-        for i = 1, #list do
-            local rec = list[i]
-            if changed then gridBars[rec.bar] = true end
-            if rec.native then
-                if nativeGlow then CacheAction(rec) end
-            elseif rec.flyout ~= flyout then
+    if not list or #list == 0 then
+        gridFill[slot], gridHold[slot] = nil, nil
+        WakeRetry()
+        return
+    end
+    local kind, id = GetActionInfo(slot)
+    local flyout = Public(kind) and kind == "flyout"
+    local nativeGlow = M.config.procGlow == PROC_PIXEL
+    local changed = GridChanged(slot, kind, id)
+    for i = 1, #list do
+        local rec = list[i]
+        if changed then gridBars[rec.bar] = true end
+        if rec.native then
+            if nativeGlow then CacheAction(rec) end
+        else
+            dirtySlots[slot] = true
+            if rec.flyout ~= flyout then
                 rec.flyout = flyout
                 protected.routing = true
             end
         end
-    else
-        gridFill[slot], gridHold[slot] = nil, nil
     end
-    Schedule()
+    if changed or dirtySlots[slot] then
+        Schedule()
+    else
+        WakeRetry()
+    end
 end
 
 local function UsableChanged(_, _, changes)

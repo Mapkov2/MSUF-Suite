@@ -11,6 +11,15 @@ function Navigation.Distance(yards, units)
     return (units == 2 and Suite.Text("%d m") or Suite.Text("%d yd")):format(math.floor(value + .5))
 end
 
+-- The readout's formats in the player's language, read once: the language is
+-- fixed when the addons load (Suite.Text, MSUF_Suite/Core/Platform.lua), and a
+-- walking player's readout changes several times a second. The 2026-11-15
+-- outdoor walk spent an eighth of the marker's time on these lookups.
+local YARDS = { whole = Suite.Text("%d yd"), thousands = Suite.Text("%.1f kyd") }
+local METRES = { whole = Suite.Text("%d m"), thousands = Suite.Text("%.1f km") }
+local SECONDS, MINUTES = Suite.Text("%d sec"), Suite.Text("%d min %02d sec")
+local JOIN = Suite.Text("%s · %s")
+
 -- A distance format and a travel time format as one: "%d yd · %d sec".
 local joined = {}
 local function Joined(distance, eta)
@@ -21,7 +30,7 @@ local function Joined(distance, eta)
     end
     local format = row[eta]
     if not format then
-        format = Suite.Text("%s · %s"):format(distance, eta)
+        format = JOIN:format(distance, eta)
         row[eta] = format
     end
     return format
@@ -40,18 +49,22 @@ function Navigation.Readout(model, config, distance, speed)
     local format, a, b, c
     if config.showDistance then
         local metric = config.units == 2
+        local formats = metric and METRES or YARDS
         local value = metric and distance * .9144 or distance
         if value >= 1000 then
-            format, a = metric and Suite.Text("%.1f km") or Suite.Text("%.1f kyd"), math.floor(value / 100 + .5) / 10
+            format, a = formats.thousands, math.floor(value / 100 + .5) / 10
         else
-            format, a = metric and Suite.Text("%d m") or Suite.Text("%d yd"), math.floor(value + .5)
+            -- Whole yards are the rounded distance above.
+            format, a = formats.whole, metric and math.floor(value + .5) or rounded
         end
     end
     if seconds >= 0 then
-        local eta, first, second = Suite.Text("%d sec"), seconds, nil
-        if seconds >= 60 then eta, first, second = Suite.Text("%d min %02d sec"), math.floor(seconds / 60), seconds % 60 end
+        local eta, first, second = SECONDS, seconds, nil
+        if seconds >= 60 then eta, first, second = MINUTES, math.floor(seconds / 60), seconds % 60 end
         if format then format, b, c = Joined(format, eta), first, second
-        else format, a, b = eta, first, second end
+        else
+            format, a, b = eta, first, second
+        end
     end
     if format == model.readoutFormat and a == model.readoutA and b == model.readoutB and c == model.readoutC then return end
     model.readoutFormat, model.readoutA, model.readoutB, model.readoutC = format, a, b, c
@@ -81,7 +94,9 @@ end
 function Navigation.Play(config, preview)
     if not config.sound and not preview then return end
     if config.soundFile > 0 then PlaySoundFile(config.soundFile, "Master")
-    else PlaySound(SOUNDKIT.MAP_PING, "Master") end
+    else
+        PlaySound(SOUNDKIT.MAP_PING, "Master")
+    end
 end
 
 function Navigation.Color(config, kind)

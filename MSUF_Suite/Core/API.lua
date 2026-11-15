@@ -19,6 +19,7 @@ local _, Suite = ...
 --   OnMSUFProfileChanged(name, reason)        MSUF switched its profile
 --   OnMSUFProfileLifecycle(kind, source, target) -> allowed
 --   ApplyFontsFromMSUF()                      MSUF's global font changed
+--   ApplyNameplateHighlightsFromMSUF()        MSUF's shared Aggro border changed
 --   HasCooldownAnchor() -> bool               the cooldown manager is loaded
 --   GetCooldownAnchorFrame(viewerName) -> frame | nil
 --   HasColorsCategory() -> bool               the Suite options are loaded
@@ -44,13 +45,31 @@ function API.IsInstallerPending() return Suite.Installer.IsFirstRunPending() end
 function API.IsInstallerOpen() return Suite.Installer.IsOpen() end
 
 ------------------------------------------------------------------ MSUF state
-function API.OnMSUFProfileChanged(name, reason) return Suite.OnMSUFProfileChanged(name, reason) end
+function API.OnMSUFProfileChanged(name, reason)
+    local same = Suite.Database.GetActiveProfileName() == name
+    local ok = Suite.OnMSUFProfileChanged(name, reason)
+    if same and ok then
+        local controller = Suite.Suite
+        local instance = controller.instances.nameplates
+        if instance and instance.active and not instance.config.barsOverride then controller.Apply("nameplates") end
+    end
+    return ok
+end
 function API.OnMSUFProfileLifecycle(kind, source, target)
     return Suite.OnMSUFProfileLifecycle(kind, source, target)
 end
 -- Core/NameplateText.lua is loaded before this public capability is published.
 function API.HasNameplateFonts() return true end
 function API.ApplyFontsFromMSUF(force) return Suite.Suite.ApplyGlobalFont(force) end
+
+function API.ApplyNameplateHighlightsFromMSUF()
+    local controller = Suite.Suite
+    local instance = controller.instances.nameplates
+    if instance and instance.active and instance.AggroHighlightSettingChanged
+        and instance:AggroHighlightSettingChanged() then
+        controller.Apply("nameplates")
+    end
+end
 
 ------------------------------------------------------------------ cooldown anchor
 -- MSUF_Suite_CooldownManager publishes Suite.CooldownManager when it loads.

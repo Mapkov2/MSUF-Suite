@@ -2,7 +2,60 @@ local _, NS = ...
 -- Presentation shared by the native skin and its options preview. Loading
 -- this file creates no frames, hooks, timers or event listeners.
 local Style = {}
+
+function Style.CastFillColors(cast, locked)
+    local bridge = NS.HostBridge
+    local resolve = bridge and bridge.SharedCastFillColors
+    local r, g, b, nr, ng, nb
+    if resolve then r, g, b, nr, ng, nb = resolve() end
+    if cast and cast ~= "" then r, g, b = NS.RGB(cast) end
+    if locked and locked ~= "" then nr, ng, nb = NS.RGB(locked) end
+    return r or 1, g or .84, b or .2, nr or .62, ng or .62, nb or .62
+end
+
+function Style.SharedCastColor()
+    local r, g, b = Style.CastFillColors()
+    return r, g, b
+end
+
+function Style.SharedLockedCastColor()
+    return select(4, Style.CastFillColors())
+end
+
 NS.NameplateStyle = Style
+-- Nameplate indicators with data available for the plate's own unit token.
+-- The menu and preview share the same labels, artwork and default placement.
+Style.Status = {
+    { key = "StatusLeader", label = "Leader icon", player = true, side = "friendly", texture = "Interface\\GroupFrame\\UI-Group-LeaderIcon", x = -30 },
+    { key = "StatusAssist", label = "Assist icon", player = true, side = "friendly", texture = "Interface\\GroupFrame\\UI-Group-AssistantIcon", x = -14 },
+    { key = "StatusRace", label = "Race text", player = true, sample = "Tauren", x = 16, y = 29 },
+    { key = "StatusClass", label = "Class text", player = true, sample = "Warrior", x = 16, y = 14 },
+    { key = "StatusGroup", label = "Raid group", player = true, side = "friendly", sample = "4", x = 48 },
+    { key = "StatusDead", label = "Dead / Offline text", sample = "Dead", anchor = 5, y = 0 },
+    { key = "StatusGhost", label = "Ghost text", player = true, sample = "Ghost", anchor = 5, y = -15 },
+    { key = "StatusAFK", label = "AFK text", player = true, sample = "AFK", x = -30, y = 26 },
+    { key = "StatusAFKTimer", label = "AFK timer", player = true, sample = "5:00", x = -30, y = 13 },
+    { key = "StatusDND", label = "DND text", player = true, sample = "DND", x = -78, y = 13 },
+    { key = "StatusCombat", label = "Combat icon", atlas = "UI-HUD-UnitFrame-Player-CombatIcon", x = -46 },
+    { key = "StatusRez", label = "Incoming resurrection", player = true, texture = "Interface\\RaidFrame\\Raid-Icon-Rez", x = -62 },
+    { key = "StatusPvP", label = "PvP flag", player = true, texture = "Interface\\TargetingFrame\\UI-PVP-Horde", x = 32 },
+    { key = "StatusBossNumber", label = "Boss number", side = "enemy", sample = "1", anchor = 3, x = 0 },
+}
+Style.StatusByKey = {}
+for _, item in ipairs(Style.Status) do Style.StatusByKey[item.key] = item end
+
+function Style.StatusSupported(item, side)
+    return (not item.side or item.side == side) and (not item.forever or NS.Client.isForever)
+end
+
+function Style.StatusAnchor(index) return NS.AnchorPoints[index] end
+
+function Style.StatusPoint(config, prefix, item)
+    local key = prefix .. item.key
+    local point = NS.AnchorPoints[config[key .. "Anchor"] or item.anchor or 2] or "TOP"
+    return point, config[key .. "OffsetX"] or item.x or 0, config[key .. "OffsetY"] or item.y or 9
+end
+
 -- Blizzard's array CVars store six bits per data byte after a version byte.
 -- Keep one decoder for the runtime and preview; callers choose their flags.
 function Style.CVarFlags(value)
@@ -78,9 +131,8 @@ end
 -- The native badge can replace the Suite number. Its space in the native
 -- layout is independent from its visibility when a skin hides it.
 function Style.LevelMode(forever, classic, styled, enabled, appearance, badgeShown, namesOnly)
-    if namesOnly then return end
+    if namesOnly or styled and not enabled then return end
     if forever then
-        if styled and not enabled then return end
         if not styled or appearance == 2 then return badgeShown ~= false and "badge" or nil end
     elseif classic then
         return "classic"
@@ -106,8 +158,25 @@ function Style.BarDimensions(mode, choice, horizontal, vertical)
         cast * vertical, (classic and 14 or 12) * vertical
 end
 
--- Zero keeps the current geometry base. A custom icon is square; automatic
--- icons use Blizzard's independent width and height.
+function Style.CastWidth(base, health, mode, manual, delta)
+    if mode == 2 then return math.max(30, health) end
+    if mode == 3 then return math.max(30, manual) end
+    return base + delta
+end
+
+-- The Modern artwork extends left/top by 2/3 and right/bottom by 6/6.
+-- Move only the rendered corners. The selection border still anchors to
+-- the unchanged native region.
+function Style.FitModernHealthBackground(texture, fit)
+    local left, top, right, bottom = 0, 0, 0, 0
+    if fit then left, top, right, bottom = 2, -3, -6, 6 end
+    texture:SetVertexOffset(1, left, top)     -- upper left
+    texture:SetVertexOffset(2, left, bottom)  -- lower left
+    texture:SetVertexOffset(3, right, top)    -- upper right
+    texture:SetVertexOffset(4, right, bottom) -- lower right
+end
+
+-- Zero keeps the native height or icon dimensions.
 function Style.CastDimensions(height, icon, castHeight, iconWidth, iconHeight)
     if type(height) == "number" and height > 0 then castHeight = height end
     if type(icon) == "number" and icon > 0 then iconWidth, iconHeight = icon, icon end
@@ -197,7 +266,7 @@ local TARGET_SHAPES = { [1] = "DOUBLE_ARROW", [9] = "BORDER", [10] = "ARROW", [1
 Style.TargetDirections = { "RIGHT", "LEFT", "UP", "DOWN" }
 Style.TargetLayouts = { "SINGLE", "BOTH_IN", "BOTH_OUT" }
 
-function Style.TargetConfig(config)
+function Style.TargetConfig(config, barSettings, side)
     local size = config.enemyTargetMarkerSize or 16
     local r, g, b = NS.RGB(config.enemyTargetColor or "ffffff")
     local layout = Style.TargetLayouts[config.enemyTargetLayout or 2]
@@ -217,7 +286,7 @@ function Style.TargetConfig(config)
         atlas = not TARGET_SHAPES[config.enemyTargetStyle or 1]
             and Style.TargetAtlases[config.enemyTargetStyle == 15 and 8 or (config.enemyTargetStyle or 1) - 1] or nil,
         color = config.enemyTargetColor or "ffffff",
-        hideBorder = config.hideHealthBarBorders == true,
+        hideBorder = Style.OutlineOff(barSettings or config, side or "enemy"),
     }
 end
 
@@ -334,7 +403,7 @@ function Style.FontFlags(choice)
 end
 
 -- The mouseover highlight: an additive wash over the whole health bar, above
--- the role tint and below the texture finish and the native text.
+-- the role tint and below the native text.
 local HIGHLIGHT_ALPHA = 0.25
 function Style.CreateHighlight(owner)
     local texture = owner:CreateTexture(nil, "ARTWORK", nil, 7)
@@ -350,15 +419,22 @@ function Style.PaintHighlight(texture, hex)
 end
 
 function Style.CreateBorder(owner)
-    local visual = { edges = {} }
-    for i = 1, 4 do visual.edges[i] = owner:CreateTexture(nil, "OVERLAY", nil, 7) end
+    local visual = { edges = {}, borderShown = false }
+    for i = 1, 4 do
+        local edge = owner:CreateTexture(nil, "OVERLAY", nil, 7)
+        edge:Hide()
+        visual.edges[i] = edge
+    end
     return visual
 end
 
 function Style.PaintBorder(visual, owner, size, color)
     local edges = visual.edges
     if size <= 0 then
-        for i = 1, 4 do edges[i]:Hide() end
+        if visual.borderShown then
+            for i = 1, 4 do edges[i]:Hide() end
+            visual.borderShown = false
+        end
         visual.borderSize = 0
         return
     end
@@ -367,7 +443,7 @@ function Style.PaintBorder(visual, owner, size, color)
         for i = 1, 4 do edges[i]:SetColorTexture(r, g, b, 1) end
         visual.borderColor = color
     end
-    if visual.borderSize ~= size then
+    if visual.borderGeometrySize ~= size then
         for i = 1, 4 do edges[i]:ClearAllPoints() end
         edges[1]:SetPoint("TOPLEFT", owner, "TOPLEFT", -size, size)
         edges[1]:SetPoint("TOPRIGHT", owner, "TOPRIGHT", size, size)
@@ -381,9 +457,106 @@ function Style.PaintBorder(visual, owner, size, color)
         edges[4]:SetPoint("TOPRIGHT", owner, "TOPRIGHT", size, 0)
         edges[4]:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT", size, 0)
         edges[4]:SetWidth(size)
-        visual.borderSize = size
+        visual.borderGeometrySize = size
     end
-    for i = 1, 4 do edges[i]:Show() end
+    if not visual.borderShown then
+        for i = 1, 4 do edges[i]:Show() end
+        visual.borderShown = true
+    end
+    visual.borderSize = size
+end
+
+local BLIZZARD_OUTLINE, CUSTOM_OUTLINE, NO_OUTLINE = 2, 3, 4
+
+function Style.OutlineOff(config, side)
+    return config.hideHealthBarBorders == true or config[side .. "OutlineMode"] == NO_OUTLINE
+end
+
+function Style.CustomOutlineEnabled(config, side)
+    return Style.OutlineSize(config[side .. "OutlineMode"], config[side .. "BorderEnabled"],
+        config[side .. "BorderSize"], config.hideHealthBarBorders) > 0
+end
+
+function Style.OutlineSize(mode, enabled, size, hide)
+    if hide or mode == BLIZZARD_OUTLINE or mode == NO_OUTLINE or mode ~= CUSTOM_OUTLINE and enabled == false then
+        return 0
+    end
+    if mode == CUSTOM_OUTLINE then return math.max(1, size or 1) end
+    return size or 0
+end
+
+function Style.HideNativeOutline(config, side)
+    local mode = config[side .. "OutlineMode"]
+    if mode and mode ~= 1 then return mode ~= BLIZZARD_OUTLINE end
+    return NS.Client.isForever and config[side .. "NativeBorderEnabled"] == false
+end
+
+function Style.UsesNativeOutline(config, side)
+    return config[side .. "OutlineMode"] == BLIZZARD_OUTLINE and not config.hideHealthBarBorders
+end
+
+function Style.SharedBars()
+    local bridge = NS.HostBridge
+    if bridge and bridge.SharedNameplateBars then return bridge.SharedNameplateBars() end
+end
+
+function Style.BarSettings(config, shared)
+    if config.barsOverride or not shared then return config end
+    if config.highlightAggroOverride then shared.highlightAggroColor = nil end
+    return setmetatable(shared, { __index = config })
+end
+
+local HIGHLIGHT_KEYS = { "target", "focus", "aggro", "mouseover" }
+
+function Style.HighlightOrder(order)
+    local result, seen = {}, {}
+    for digit in (order or ""):gmatch("[1-4]") do
+        local key = HIGHLIGHT_KEYS[tonumber(digit)]
+        if not seen[key] then result[#result + 1], seen[key] = key, true end
+    end
+    for _, key in ipairs(HIGHLIGHT_KEYS) do
+        if not seen[key] then result[#result + 1] = key end
+    end
+    return result
+end
+
+function Style.AggroHighlightEnabled(config)
+    local bridge = NS.HostBridge
+    local read = bridge and bridge.SharedAggroBorderEnabled
+    if config.highlightAggroOverride ~= true and read then
+        local enabled = read()
+        if type(enabled) == "boolean" then return enabled end
+    end
+    return config.highlightAggro == true
+end
+
+function Style.CompileHighlights(config, sample)
+    local target = (config.highlightTarget or sample == "target") and (config.selectionTargetColor or "ffffff")
+    local focus = (config.highlightFocus or sample == "focus") and (config.selectionFocusColor or "ff66ff")
+    local aggro = (sample == "aggro" or Style.AggroHighlightEnabled(config)) and (config.highlightAggroColor or "ff5252")
+    local mouseover = (config.highlightMouseover or sample == "mouseover") and (config.highlightMouseoverColor or "ffffff")
+    if target or focus or aggro or mouseover then
+        return { target = target, focus = focus, aggro = aggro, mouseover = mouseover,
+            size = config.highlightBorderSize or 2,
+            order = config.highlightPriority and Style.HighlightOrder(config.highlightOrder) or nil }
+    end
+end
+
+function Style.HighlightColor(plan, target, focus, aggro, mouseover)
+    if plan.order then
+        for _, key in ipairs(plan.order) do
+            local color = plan[key]
+            if color and (key == "target" and target or key == "focus" and focus
+                or key == "aggro" and aggro or key == "mouseover" and mouseover) then
+                return color, not not (target and plan.target or focus and plan.focus)
+            end
+        end
+        return
+    end
+    if target and plan.target then return plan.target, true end
+    if focus and plan.focus then return plan.focus, true end
+    if aggro and plan.aggro then return plan.aggro end
+    if mouseover then return plan.mouseover end
 end
 
 function Style.PlaceMarker(region, owner, kind, x, y, anchor)
@@ -414,7 +587,6 @@ end
 local Decor = {}
 Style.Decor = Decor
 local DECOR_MEDIA = "Interface\\AddOns\\MSUF_Suite\\Media\\Nameplates\\"
-local TEXTURES = { DECOR_MEDIA .. "Soft.tga", DECOR_MEDIA .. "Stripes.tga" }
 -- Opacity of the static effects: each has a firm inner and a faint outer ring.
 local SHADOW_ALPHA, SHADOW_SOFT_ALPHA, GLOW_ALPHA, GLOW_SOFT_ALPHA = 0.35, 0.12, 0.25, 0.1
 local THRESHOLD_WIDTH = 1
@@ -430,17 +602,18 @@ end
 
 function Decor.Plan(c, prefix)
     local enabled = c.look ~= 2 and c[prefix] ~= false
-    local framed = enabled and not c.hideHealthBarBorders
+    local framed = enabled and not Style.OutlineOff(c, prefix)
+    local borderSize = Style.OutlineSize(c[prefix .. "OutlineMode"], c[prefix .. "BorderEnabled"],
+        c[prefix .. "BorderSize"], not framed)
     local p = {
         joined = Joined(c, prefix),
-        border = framed and c[prefix .. "BorderEnabled"] ~= false and c[prefix .. "BorderStyle"] == 2,
-        borderSize = c[prefix .. "BorderSize"] or 1, borderColor = c[prefix .. "BorderColor"] or "000000",
+        border = borderSize > 0 and c[prefix .. "BorderStyle"] == 2,
+        borderSize = borderSize, borderColor = c[prefix .. "BorderColor"] or "000000",
         shadow = framed and c[prefix .. "ShadowEnabled"] == true,
         glow = framed and c[prefix .. "GlowEnabled"] and ((c[prefix .. "GlowMode"] or 1) + 1) or 1,
         glowColor = c[prefix .. "GlowColor"] or "ffffff", effectSize = c[prefix .. "EffectSize"] or 4,
         outer = framed and c[prefix .. "OuterFrame"] == true,
         outerSize = c[prefix .. "OuterFrameSize"] or 1, outerColor = c[prefix .. "OuterFrameColor"] or "000000",
-        texture = enabled and c[prefix .. "TextureEnabled"] and TEXTURES[c[prefix .. "FillTexture"] or 1] or nil,
         threshold = enabled and prefix == "enemy" and c.enemyThresholdEnabled == true,
         percent = (c.enemyThresholdPercent or 20) / 100, thresholdColor = c.enemyThresholdColor or "ffffff",
         thresholdWidth = c.enemyThresholdWidth or THRESHOLD_WIDTH,
@@ -448,7 +621,7 @@ function Decor.Plan(c, prefix)
         focusSize = c.enemyFocusMarkerSize or 12, focusColor = c.enemyFocusMarkerColor or "ff66ff",
         focusX = c.enemyFocusMarkerX or -56, focusY = c.enemyFocusMarkerY or 0,
     }
-    p.active = p.border or p.shadow or p.glow ~= 1 or p.outer or p.texture ~= nil or p.threshold or p.focus
+    p.active = p.border or p.shadow or p.glow ~= 1 or p.outer or p.threshold or p.focus
     return p
 end
 
@@ -518,34 +691,6 @@ local function Effects(state, p, last, target, focus, visible)
     PaintRing(state, "double", state.health, state.health, p.borderSize + 2, 1,
         p.borderColor, 1, p.border and p.borderSize > 0 and visible)
     PaintRing(state, "outer", state.health, last, 1, p.outerSize, p.outerColor, 1, p.outer and visible)
-end
-
-local function FillFinish(state, p)
-    local texture = state.finish
-    if not p.texture then
-        if texture then Shown(texture, false) end
-        return
-    end
-    local native = state.fillSource or state.health:GetStatusBarTexture()
-    if not native or NS.Safety.IsForbidden(native) then
-        if texture then Shown(texture, false) end
-        return
-    end
-    if not texture then
-        texture = state.health:CreateTexture(nil, "OVERLAY", nil, 0)
-        texture:SetBlendMode("MOD")
-        state.finish = texture
-    end
-    if state.fill ~= native then
-        texture:ClearAllPoints()
-        texture:SetAllPoints(native)
-        state.fill = native
-    end
-    if state.texture ~= p.texture then
-        texture:SetTexture(p.texture)
-        state.texture = p.texture
-    end
-    Shown(texture, true)
 end
 
 local function Threshold(state, p)
@@ -630,7 +775,6 @@ function Decor.Paint(state, p, target, focus, castShown)
     else
         Decor.Hide(state.castOnly)
     end
-    FillFinish(state, p)
     Threshold(state, p)
     FocusMarker(state, p, focus)
 end
@@ -645,99 +789,6 @@ function Decor.Hide(state)
         local ring = state[RINGS[i]]
         if ring then Shown(ring.host, false) end
     end
-    if state.finish then Shown(state.finish, false) end
     if state.threshold then Shown(state.threshold, false) end
     if state.focusMarker then Shown(state.focusMarker, false) end
-end
-
--- The enemy resource row is Suite-owned. Runtime and preview use the same
--- art and anchors, with the cast container reserving the native cast space.
-local EnemyPower, NO_ENEMY_POWER = {}, { enabled = false }
-Style.EnemyPower = EnemyPower
-local POWER_WHITE = "Interface\\Buttons\\WHITE8X8"
-
-local function PowerNumber(value, fallback, minimum, maximum)
-    if not NS.Finite(value) then return fallback end
-    return math.max(minimum, math.min(maximum, value))
-end
-
-function EnemyPower.Plan(config, previous)
-    local enabled = config.enemyPowerEnabled == true and config.enemy == true and config.look ~= 2
-    if not enabled then return NO_ENEMY_POWER end
-    local smooth = config.enemyPowerSmooth ~= false
-    local byType = config.enemyPowerByType ~= false
-    local width = PowerNumber(config.enemyPowerWidth, 0, -20, 120)
-    local height = PowerNumber(config.enemyPowerHeight, 4, 2, 18)
-    local x = PowerNumber(config.enemyPowerOffsetX, 0, -2048, 2048)
-    local y = PowerNumber(config.enemyPowerOffsetY, 0, -2048, 2048)
-    local color = config.enemyPowerColor or "337be6"
-    local background = config.enemyPowerBackgroundColor or "10151d"
-    local alpha = PowerNumber(config.enemyPowerBackgroundAlpha, 80, 0, 100) / 100
-    if previous and previous.enabled and previous.smooth == smooth and previous.byType == byType
-        and previous.width == width and previous.height == height and previous.x == x and previous.y == y
-        and previous.colorKey == color
-        and previous.backgroundKey == background and previous.backgroundAlpha == alpha then
-        return previous
-    end
-    return {
-        enabled = true,
-        smooth = smooth,
-        interpolation = smooth and Enum.StatusBarInterpolation.ExponentialEaseOut or nil,
-        byType = byType,
-        width = width,
-        height = height,
-        x = x,
-        y = y,
-        colorKey = color,
-        color = { NS.RGB(color) },
-        backgroundKey = background,
-        background = { NS.RGB(background) },
-        backgroundAlpha = alpha,
-    }
-end
-
-function EnemyPower.Create(parent)
-    local bar = CreateFrame("StatusBar", nil, parent)
-    bar:EnableMouse(false)
-    bar:Hide()
-    bar:SetStatusBarTexture(POWER_WHITE)
-    bar.enemyPowerBackground = bar:CreateTexture(nil, "BACKGROUND")
-    bar.enemyPowerBackground:SetAllPoints(bar)
-    return bar
-end
-
-function EnemyPower.Place(bar, health, bottom, plan)
-    local halfWidth = plan.width / 2
-    bar:ClearAllPoints()
-    bar:SetPoint("TOP", bottom, "BOTTOM", 0, plan.y - 1)
-    bar:SetPoint("LEFT", health, "LEFT", plan.x - halfWidth, 0)
-    bar:SetPoint("RIGHT", health, "RIGHT", plan.x + halfWidth, 0)
-end
-
-function EnemyPower.Paint(bar, plan, r, g, b)
-    local previous = bar.enemyPowerPlan
-    if previous ~= plan then
-        bar.enemyPowerPlan = plan
-        if not previous or previous.height ~= plan.height then bar:SetHeight(plan.height) end
-        if not previous or previous.backgroundKey ~= plan.backgroundKey or previous.backgroundAlpha ~= plan.backgroundAlpha then
-            local background = plan.background
-            bar.enemyPowerBackground:SetColorTexture(background[1], background[2], background[3], plan.backgroundAlpha)
-        end
-    end
-    if r == nil then r, g, b = unpack(plan.color) end
-    if bar.enemyPowerR ~= r or bar.enemyPowerG ~= g or bar.enemyPowerB ~= b then
-        bar:SetStatusBarColor(r, g, b)
-        bar.enemyPowerR, bar.enemyPowerG, bar.enemyPowerB = r, g, b
-    end
-end
-
-function EnemyPower.SetValue(bar, value, interpolation)
-    interpolation = interpolation or Enum.StatusBarInterpolation.Immediate
-    if not NS.Public(value) then
-        bar.enemyPowerValue = nil
-        bar:SetValue(value, interpolation)
-    elseif bar.enemyPowerValue ~= value or bar.enemyPowerInterpolation ~= interpolation then
-        bar.enemyPowerValue, bar.enemyPowerInterpolation = value, interpolation
-        bar:SetValue(value, interpolation)
-    end
 end

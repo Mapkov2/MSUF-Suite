@@ -10,6 +10,7 @@ local Shared = NS.GenericWindowsShared
 NS.GenericWindowsShared = nil
 
 local Kit = NS.AdapterKit
+local Safety = NS.Safety
 
 local DEFAULT_OWNER = Shared.DEFAULT_OWNER
 local OwnerState = Shared.OwnerState
@@ -154,7 +155,7 @@ local function AddMetrics(totals, metrics)
     totals.truncated = totals.truncated or metrics.truncated == true
 end
 
-local DeferredEntryFrame, DeferEntryFrame
+local DeferredEntryFrame, DeferEntryFrame, QueueEntryFrame
 
 local function EntryRequest(entry, owner)
     local ownerState = OwnerState(owner)
@@ -188,6 +189,57 @@ local function StoreFrameResult(request, index, applied, reason, metrics)
     result.truncated = metrics and metrics.truncated == true or false
 end
 
+local itemReferenceCells = setmetatable({}, { __mode = "k" })
+
+local function ItemReferenceCaptionColor()
+    return NS.Theme.GetColor("text")
+end
+
+local function DismissItemReference(cell)
+    local frame = cell:GetParent()
+    -- This is a special window outside the UI panel layout. Blizzard also
+    -- hides it directly when the same link is clicked or Escape closes it.
+    if cell.itemReferenceOwner and frame == Safety.Field(_G, "ItemRefTooltip")
+        and Safety.CanControl(frame) then
+        frame:Hide()
+    end
+end
+
+local function DrawItemReferenceClose(frame, ownerState, owner)
+    -- The native X calls HideUIPanel, which refuses insecure combat calls
+    -- even for this unmanaged tooltip. Use the same hit rectangle.
+    local close = Safety.Field(frame, "CloseButton")
+    if not Safety.Public(close) or not Safety.CanCreateRegions(frame) or not Safety.CanControl(close)
+        or Safety.Read(close, "GetParent") ~= frame then return end
+    local level = Safety.Read(close, "GetFrameLevel")
+    if not level then return end
+    local caption = NS.SuiteCore().WindowCaption
+    local cell = itemReferenceCells[close]
+    if not cell then
+        cell = Safety.CreateChildFrame("Button", frame)
+        if not cell then return end
+        cell:Hide()
+        cell:EnableMouse(true)
+        cell:SetAllPoints(close)
+        caption.Dress(cell, "close", ItemReferenceCaptionColor)
+        cell:RegisterForClicks("LeftButtonUp")
+        cell:SetScript("OnClick", DismissItemReference)
+        close:HookScript("OnShow", function()
+            if itemReferenceCells[close] == cell and cell.itemReferenceOwner then
+                cell:Show()
+            end
+        end)
+        close:HookScript("OnHide", function() cell:Hide() end)
+        cell:HookScript("OnShow", function() caption.SetKind(cell, "close") end)
+        itemReferenceCells[close] = cell
+    end
+    if not NS.Cosmetics.Fade(close, owner) then return end
+    cell.itemReferenceOwner = owner
+    cell:SetFrameLevel(level + 1)
+    cell:SetShown(Safety.Read(close, "IsShown") == true)
+    ownerState.itemReferenceCell = cell
+end
+
 local function PaintEntryFrame(request, index)
     local entry, owner = request.entry, request.owner
     local frameValue = entry.frames[index]
@@ -204,12 +256,16 @@ local function PaintEntryFrame(request, index)
         DeferEntryFrame(request, index)
         return
     end
+    if frameValue == "ItemRefTooltip" and entry.id == "item-reference-tooltips" then
+        DrawItemReferenceClose(frame, request.ownerState, owner)
+    end
     -- Only an unprotected window root waits for its OnShow. HUD and protected roots
     -- (EncounterTimeline, encounter warnings, ExtraActionBar, TargetFrame ...) show
     -- mostly in combat, where they cannot be painted: a deferral woke in combat and
     -- re-armed after every combat. They are decided now, as before deferral.
     if entry.category ~= "hud" and CanSkin(frame)
-        and Kit.DeferHidden(frame, request, DeferredEntryFrame, request, index) then
+        and Kit.DeferHidden(frame, request, NS.Client.isForever and entry.id == "mail"
+            and QueueEntryFrame or DeferredEntryFrame, request, index) then
         StoreFrameResult(request, index, false, "waiting")
         return
     end
@@ -264,6 +320,11 @@ local function FrameJob(request, index)
         request.jobs[index] = job
     end
     return job
+end
+
+-- MailFrame_Show still has its protected reading emote to run after OnShow.
+QueueEntryFrame = function(request, index)
+    NS.Registry.QueueJob(FrameJob(request, index).run)
 end
 
 DeferEntryFrame = function(request, index)
@@ -413,6 +474,11 @@ end
 local function DisableNow(owner)
     NS.MacroWindow.Disable(owner)
     local ownerState = OwnerState(owner)
+    if ownerState.itemReferenceCell then
+        ownerState.itemReferenceCell.itemReferenceOwner = nil
+        ownerState.itemReferenceCell:Hide()
+        ownerState.itemReferenceCell = nil
+    end
     if ownerState.chatConfig then
         ownerState.chatConfig = nil
         NS.ChatConfigSkin.Disable(owner)

@@ -50,7 +50,7 @@ function UI.PickItem(owner, pick, back, valid)
         } })
 end
 
-function UI.Quantities(owner, title, get, set, back, valid)
+function UI.Quantities(owner, title, get, set, back, valid, itemID)
     local baseline = NS.InventoryLists.EncodeQuantities(get())
     local function Valid()
         return (not valid or valid()) and NS.InventoryLists.EncodeQuantities(get()) == baseline
@@ -67,22 +67,23 @@ function UI.Quantities(owner, title, get, set, back, valid)
         if not saved then baseline = previous end
         return saved
     end
-    local function Open()
+    local Open
+    local function AddItem(module, id)
+        UI.Number(module, "Item quantity", get()[id] or 1, function(_, count)
+            local values = get()
+            values[id] = count
+            if Store(values) == false then return false, S.Text("This list is full.") end
+            Open()
+        end, Valid)
+    end
+    Open = function()
         S.ToolListWindow.Open(owner, { title = title, valid = Valid,
             help = "Add items from your bags, then choose the quantity for each item.",
             empty = "Your list is empty. Choose Add item to begin.",
             rows = function() local _, counts = S.InventoryData.Bags() return S.InventoryData.QuantityRows(get(), counts) end,
             actions = {
-                { label = "Add item", run = function(self)
-                    UI.PickItem(self, function(module, id)
-                        UI.Number(module, "Item quantity", get()[id] or 1, function(_, count)
-                            local values = get()
-                            values[id] = count
-                            if Store(values) == false then return false, S.Text("This list is full.") end
-                            Open()
-                        end, Valid)
-                    end, Open, Valid)
-                end },
+                { label = "Add item", run = function(self) UI.PickItem(self, AddItem, Open, Valid) end,
+                    drop = function(self, id) AddItem(self, id) end },
                 { label = "Quantity", enabled = function(_, row) return row ~= nil end, run = function(self, row)
                     local id = row.itemID
                     UI.Number(self, "Item quantity", row.quantity, function(_, count)
@@ -100,4 +101,5 @@ function UI.Quantities(owner, title, get, set, back, valid)
             } })
     end
     Open()
+    if itemID then AddItem(owner, itemID) end
 end

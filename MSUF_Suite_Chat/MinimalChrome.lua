@@ -47,8 +47,9 @@ end
 local function ChromeAlpha(visual, focused)
     if not M.config.minimalChrome then return 1 end
     if not visual then return 0 end
-    if focused == nil then focused = visual.frame.editBox:HasFocus() end
-    return (visual.hovered or visual.toolbarHovered or focused) and 1 or 0
+    if visual.hovered or visual.toolbarHovered then return 1 end
+    if focused == nil then focused = C.InputHasFocus(visual.frame) end
+    return focused and 1 or 0
 end
 
 -- Background art appears only when the chat is in use. Incoming text keeps

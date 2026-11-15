@@ -173,6 +173,13 @@ function Gear.EquipmentList(groups, model)
     if #group.rows > 0 then groups[#groups + 1] = group end
 end
 
+function Gear.ListReport(groups, details, model, reader)
+    if #details > 0 then return details end
+    wipe(groups)
+    if reader then Gear.EquipmentList(groups, model) end
+    return groups
+end
+
 function Gear.Compare(groups, own, inspect)
     local group = inspect.comparison
     if not group then

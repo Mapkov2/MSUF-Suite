@@ -115,8 +115,21 @@ local openers = {
     CollectionsJournal = { "CollectionsMicroButton" }, EncounterJournal = { "EJMicroButton" },
     LegacySystemFrame = { "LegacyMicroButton" },
 }
+local spellbookOpener, talentsOpener = { "SpellbookMicroButton" }, { "TalentMicroButton" }
+local function IsForeverPlayerSpells(state)
+    return NS.Client.isForever and state.name == "PlayerSpellsFrame"
+end
+
+local function PlayerSpellsOpener(state)
+    if not IsForeverPlayerSpells(state) then return end
+    if state.minimized then return state.playerSpellsRestorePath end
+    if Safety.Read(Safety.Field(state.frame, "SpellBookFrame"), "IsShown") == true then return spellbookOpener end
+    if Safety.Read(Safety.Field(state.frame, "TalentsFrame"), "IsShown") == true
+        and Safety.Read(state.frame, "IsInspecting") == false then return talentsOpener end
+end
+
 function Policy.Opener(state)
-    local path = not state.profession and openers[state.name]
+    local path = not state.profession and (openers[state.name] or PlayerSpellsOpener(state))
     if not path then return nil end
     local button = Safety.Field(_G, path[1])
     for index = 2, #path do button = Safety.Field(button, path[index]) end
@@ -124,13 +137,27 @@ function Policy.Opener(state)
         or Safety.Read(button, "GetObjectType") ~= "Button" or Safety.Read(button, "IsEnabled") ~= true then
         return nil
     end
-    return button
+    return button, path
 end
 
--- The world map's own show and hide refresh its pins, and WoW Forever's pins
--- call the protected SetPassThroughButtons (MapCanvasMixin:AcquirePin): only
--- Blizzard's buttons may show or hide it, never the skin's own code.
-function Policy.SecureOnly(state) return state.name == "WorldMapFrame" end
+-- These windows' native show/hide scripts update protected quest pins or
+-- action bar buttons. The caption delegates visibility to Blizzard's buttons.
+function Policy.SecureOnly(state)
+    return state.name == "WorldMapFrame" or IsForeverPlayerSpells(state)
+end
+
+function Policy.OffersMinimize(state)
+    return not IsForeverPlayerSpells(state) or Policy.Opener(state) ~= nil
+end
+
+-- Capture the current page before the native close can change its state.
+function Policy.RememberNativeRestore(state)
+    if not Policy.SecureOnly(state) then return true end
+    local button, path = Policy.Opener(state)
+    if not button then return false end
+    if IsForeverPlayerSpells(state) then state.playerSpellsRestorePath = path end
+    return true
+end
 
 -- Blizzard's panel manager places the windows of its slots
 -- (FramePositionDelegate:UpdateUIPanelPositions, Blizzard_UIParentPanelManager/
@@ -189,10 +216,12 @@ local scratch = {}
 function Policy.ShiftFollowers(root, delta)
     local followers = delta ~= 0 and FOLLOWERS[SlotOf(root) or ""]
     if not followers then return end
+    -- Blizzard owns map placement during another panel's width change.
+    local foreverMap = NS.Client.isForever and Safety.Field(_G, "WorldMapFrame")
     for _, slot in ipairs(followers) do
         local frame = GetUIPanel(slot)
         local controls = frame and NS.WindowControls.states[frame]
-        local layout = frame and frame ~= root and not (controls and controls.customPosition)
+        local layout = frame and frame ~= root and frame ~= foreverMap and not (controls and controls.customPosition)
             and Policy.CanChangeGeometry(frame) and PanelLayout(frame, scratch)
         if layout and layout[1] == "TOPLEFT" and layout[2] == UIParent and layout[3] == "TOPLEFT" then
             frame:ClearAllPoints()
@@ -201,13 +230,30 @@ function Policy.ShiftFollowers(root, delta)
     end
 end
 
--- Forever rebuilds native map overlays and pins when the player opens the
--- map during an encounter. Leave that layout to Blizzard until combat ends.
-function Policy.DeferMapLayout(state)
-    if state.name == "WorldMapFrame" and NS.Client.isForever and NS.IsCombatLocked() then
+-- Forever's native show and size transitions can rebuild pins and run the
+-- protected reading emote. Replay saved geometry after native layout settles.
+function Policy.DeferMapLayout(state, afterNative)
+    if state.name ~= "WorldMapFrame" or not NS.Client.isForever then return false end
+    if Safety.Read(state.frame, "IsShown") ~= true then return true end
+    if NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
         return true
     end
+    if afterNative then return false end
+    NS.Registry.QueueJob(state.replayShow)
+    return true
+end
+
+-- Forever opens all native bags and refreshes the inbox before its protected
+-- reading emote. Leave that opening stack to Blizzard.
+function Policy.MailIsOpen()
+    return NS.Client.isForever and Safety.Read(Safety.Field(_G, "MailFrame"), "IsShown") == true
+end
+
+function Policy.DeferMailLayout(state)
+    if not Policy.MailIsOpen() or (state.name ~= "MailFrame" and not state.inventory) then return false end
+    NS.Registry.QueueJob(state.replayShow)
+    return true
 end
 
 local focusCompanions = {
@@ -242,6 +288,8 @@ local function IdentifyWindow(frame, focus)
     if not frame or Safety.IsForbidden(frame) then return nil end
     local name = Safety.Read(frame, "GetName")
     if type(name) ~= "string" or name == "" then return nil end
+    -- The Battle.net notification has a close button but appears without player input.
+    if focus and name == "BNToastFrame" then return nil end
     local companion = focus and (focusCompanions[name] or focusParents[name])
     if companion and frame ~= Safety.Field(_G, name) then return nil end
     if IsBag(name) and not inventoryRoots[name] and not companion then return nil end

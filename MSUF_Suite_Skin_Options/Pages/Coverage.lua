@@ -39,14 +39,15 @@ local CHARACTER_TOGGLES = {
 }
 
 local function BuildCharacterControls(page)
-    local view, viewButton = O.CreateDropdown(page, NS.L.CHARACTER_VIEW, CHARACTER_VIEWS, function()
+    local viewLabel = NS.Client.isForever and NS.L["Character view"] or NS.L.CHARACTER_VIEW
+    local view, viewButton = O.CreateDropdown(page, viewLabel, CHARACTER_VIEWS, function()
         return NS.CharacterDetails.GetView() or "modern"
     end, function(value)
         NS.CharacterDetails.SetView(value)
     end, WIDTH, CharacterViewLabel, nil, { history = false })
     view:SetPoint("TOPLEFT", 4, -65)
     page._mskinCharacterViewSelector = viewButton
-    O.TrackRefresh(function() viewButton:SetEnabled(NS.Client.modernEquipment == true) end)
+    O.TrackRefresh(function() viewButton:SetEnabled(NS.CharacterDetails.IsAvailable() == true) end)
 
     local previous = view
     for index = 1, #CHARACTER_TOGGLES do
@@ -58,7 +59,11 @@ local function BuildCharacterControls(page)
             NS[module].SetOption(key, value)
         end, WIDTH)
         toggle:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -6)
-        O.TrackRefresh(function() toggle:SetEnabled(NS.Client.modernEquipment == true) end)
+        O.TrackRefresh(function()
+            local available = module == "CharacterDetails" and NS.CharacterDetails.IsAvailable()
+                or NS.Client.modernEquipment == true
+            toggle:SetEnabled(available == true)
+        end)
         previous = toggle
     end
     -- EnhanceQoL styling is on unless it was switched off.

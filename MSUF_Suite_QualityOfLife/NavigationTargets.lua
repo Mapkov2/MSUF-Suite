@@ -36,7 +36,10 @@ end
 function Navigation.ObservePin(owner)
     local point = C_Map.GetUserWaypoint()
     if not Suite.Public(point) then return end
-    if not point then owner.pinMap, owner.pinX, owner.pinY = nil, nil, nil return end
+    if not point then
+        owner.pinMap, owner.pinX, owner.pinY = nil, nil, nil
+        return
+    end
     if not Suite.Finite(point.uiMapID)
         or not Suite.Public(point.position) or not point.position then return end
     local x, y = point.position.x, point.position.y
@@ -60,7 +63,11 @@ end
 function Navigation.Remove(point)
     local points = Suite.WaypointPoints()
     for index, existing in ipairs(points or {}) do
-        if existing == point then table.remove(points, index) Navigation.Changed() return true end
+        if existing == point then
+            table.remove(points, index)
+            Navigation.Changed()
+            return true
+        end
     end
     return false
 end
@@ -88,7 +95,9 @@ function Navigation.Parse(line, fallbackMap)
     end
     local map, x, y
     if #values == 2 then map, x, y = fallbackMap, values[1], values[2]
-    elseif #values == 3 then map, x, y = values[1], values[2], values[3] end
+    elseif #values == 3 then
+        map, x, y = values[1], values[2], values[3]
+    end
     if not Suite.Finite(map) or map <= 0 or map % 1 ~= 0 or not Suite.Finite(x) or not Suite.Finite(y)
         or x < 0 or x > 100 or y < 0 or y > 100 then return nil end
     return { map = map, x = x / 100, y = y / 100,
@@ -189,7 +198,10 @@ function Navigation.QueueNext(owner)
             break
         end
     end
-    if not nextPoint then Navigation.route = nil return end
+    if not nextPoint then
+        Navigation.route = nil
+        return
+    end
     owner.nextPoint, owner.nextGeneration = nextPoint, Navigation.generation
     owner.context:After(0, Navigation.Advance)
 end
@@ -218,9 +230,14 @@ end
 local function Command(text)
     if not Navigation.owner then return end
     if text == "stop" then Navigation.Clear()
-    elseif text == "save" then Navigation.SaveHere()
-    elseif text == "next" then Navigation.NextStep()
-    elseif text == "" or text == "list" then Navigation.OpenPlaces()
+    elseif text == "save" then
+        Navigation.SaveHere()
+    elseif text == "next" then
+        Navigation.NextStep()
+    elseif text == "sleepingbag" and Navigation.OpenSleepingBag then
+        Navigation.OpenSleepingBag()
+    elseif text == "" or text == "list" then
+        Navigation.OpenPlaces()
     else
         local point = Navigation.Parse(text, C_Map.GetBestMapForUnit("player"))
         if not point or not Navigation.Select(point, "manual") then

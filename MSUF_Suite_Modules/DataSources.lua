@@ -1,5 +1,5 @@
 local _, Private = ...
-local S = Private.Suite
+local S, NS = Private.Suite, Private.NS
 local Dispatch, Finite, PublicText = S.Dispatch, S.Finite, S.PublicText
 
 -- All Suite information displays share one deadline timer. A display owns one
@@ -231,10 +231,14 @@ local readers = {
         local slots, freeSlots = C_Container.GetContainerNumSlots, C_Container.GetContainerNumFreeSlots
         local free, total = 0, 0
         local lastBag = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
+        local forever = NS and NS.Client.isForever
         for bag = 0, lastBag do
-            local capacity, available = slots(bag), freeSlots(bag)
+            local capacity = slots(bag)
+            local available, family = freeSlots(bag)
             if not Finite(capacity) or not Finite(available) then return nil end
-            total, free = total + capacity, free + available
+            if not (forever and Finite(family) and family ~= 0) then
+                total, free = total + capacity, free + available
+            end
         end
         return free, total
     end,

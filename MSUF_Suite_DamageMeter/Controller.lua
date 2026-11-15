@@ -378,6 +378,7 @@ end
 local function LateRepaint()
     if not M.active or M.inCombat then return end
     D.SnapshotIdentities()
+    D.PruneRemoteSpecs()
     CloseBlocked()
     D.MarkAll()
     D.PaintDirty()
@@ -424,16 +425,26 @@ local function World(self, _, isInitialLogin)
     M.available, M.reason = S.DamageMeterAvailability()
     if Public(isInitialLogin) and isInitialLogin == true then ApplyLoginRole() end
     D.EvaluateVisibility()
+    D.PruneRemoteSpecs()
     D.MarkAll()
     D.RequestPaint()
 end
 local function Roster()
     D.ClearIdentities()
     D.SnapshotIdentities()
+    D.PruneRemoteSpecs()
     if M.threatOn then D.ThreatRosterChanged() end
     if M.config.visibility ~= VISIBILITY.GROUP then return end
     D.EvaluateVisibility()
     D.RequestPaint()
+end
+local function SpecChanged(_, _, unit)
+    if not Public(unit) or type(unit) ~= "string" then return end
+    if unit == "player" then
+        if D.WantsRoleMeters() then D.RoleChanged() end
+    else
+        D.RemoteSpecChanged(unit)
+    end
 end
 local function KeyStart(self)
     if self.config.mythicReset then C_DamageMeter.ResetAllCombatSessions() end
@@ -493,14 +504,20 @@ function D.UpdateEvents()
     local shown = M.anyShown and MeterShown(true)
     local data = shown and MeterShown(false)
     M.dataVisible = data == true
+    local remoteSpecs = M.available and c.inspectRemoteSpecs and c.iconStyle == D.ICON.SPEC and not M.preview
+        and (shown or (possible and not M.sessionHidden and c.visibility == VISIBILITY.COMBAT))
+    M.watchRemoteSpecs = remoteSpecs
+    if not remoteSpecs then D.ClearRemoteSpecs() end
     WantThreat(threat)
     Want("PLAYER_REGEN_DISABLED", clock or M.compareOpen, CombatStart)
     Want("PLAYER_REGEN_ENABLED", clock or M.inCombat, CombatEnd)
     local roles = D.WantsRoleMeters()
     Want("PLAYER_ENTERING_WORLD", clock or roles or M.compareOpen, World)
-    Want("PLAYER_SPECIALIZATION_CHANGED", roles, D.RoleChanged, "player")
+    Want("PLAYER_SPECIALIZATION_CHANGED", roles or remoteSpecs, SpecChanged, not remoteSpecs and "player" or nil)
+    Want("INSPECT_READY", M.remoteSpecs, D.RemoteSpecReady)
     Want("ZONE_CHANGED_NEW_AREA", possible, World)
-    Want("GROUP_ROSTER_UPDATE", (possible and c.visibility == VISIBILITY.GROUP) or (shown and D.WantsGroupDetails()) or threat, Roster)
+    Want("GROUP_ROSTER_UPDATE", (possible and c.visibility == VISIBILITY.GROUP) or (shown and D.WantsGroupDetails())
+        or threat or M.remoteSpecs, Roster)
     local mythic = D.WantsMythicEvents()
     Want("CHALLENGE_MODE_START", mythic, KeyStart)
     Want("CHALLENGE_MODE_COMPLETED", mythic, D.MythicEnd)
@@ -622,6 +639,8 @@ function M:Disable()
     NS.HostBridge.WatchIconSkins("damageMeter", false)
     M.sessionHidden = nil
     D.ClearIdentities()
+    M.watchRemoteSpecs = nil
+    D.ClearRemoteSpecs()
     SyncHistoryVisibility()
     D.StopClock()
     D.CancelPaint()

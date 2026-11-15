@@ -1,4 +1,5 @@
 local _, P = ...
+local Tr = P.Tr
 local ID, PAGE = "navigation", "suite_qualityOfLife"
 local KEYS = { markerSize = 2, cardWidth = 2, navigatorX = 2, beamHeight = 2, fontSize = 2 }
 local TAB_LABELS = { "Basics", "Appearance", "Destinations", "Sounds", "Guides" }
@@ -27,6 +28,9 @@ local function Actions(ctx, parent, section, y, width)
         { "Next route step", function() P.S.Navigation.NextStep() end },
         { "Preview navigation sound", function() P.S.Navigation.Play(P.S.Config(ID), true) end },
     }
+    if P.Suite.Client.isForever then
+        buttons[#buttons + 1] = { "Cozy Sleeping Bag", function() P.S.Navigation.OpenSleepingBag() end }
+    end
     for index, button in ipairs(buttons) do
         local column, row = (index - 1) % 2, math.floor((index - 1) / 2)
         P.Button(ctx, parent, button[1], 16 + column * width / 2, y - row * 35, width / 2 - 6,
@@ -78,7 +82,7 @@ function P.BuildNavigationDetails(ctx, parent, group, sectionId, width, sections
     local shortcut = P.AttachRuleColors(parent, group.title, ID, allRules)
     if shortcut then
         P.M.RegisterControlMetadata(shortcut, P.Meta(PAGE, ID, "action.colors.enabled", "action", sectionId),
-            P.Tr("%s Colors"):format(P.Tr(group.title)), "button")
+            Tr("%s Colors"):format(Tr(group.title)), "button")
     end
     return y - maxHeight, -y + maxHeight + 12, shortcut
 end

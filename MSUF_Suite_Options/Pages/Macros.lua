@@ -44,9 +44,10 @@ Page.initializers[#Page.initializers + 1] = function()
             Page.document.icon = Page.AUTO_ICON
             Page.Changed(false)
         end)
-        Page.Card(ui, "result", 8, y + 10, width - 16, 404)
+        local bottom = Helpers.BindingRow(ui, y - 392, width - 32)
+        Page.Card(ui, "result", 8, y + 10, width - 16, y - bottom + 14)
         Page.Preview()
-        return y - 401
+        return bottom
     end
 end
 
@@ -68,6 +69,9 @@ Page.initializers[#Page.initializers + 1] = function()
         if not message and Page.document.mode == "consumable" then message = "Prepared outside combat" end
         ui.status:SetText(message and Tr(message) or Tr("Ready"))
         ui.publish:SetEnabled(body ~= nil and Page.document.name ~= "" and not P.Combat())
+        local canBind = body ~= nil and Page.document.name ~= ""
+        ui.bindClick:SetEnabled(canBind)
+        ui.bindKey:SetEnabled(canBind)
         Page.pickupReady = body ~= nil and Page.bound and not Page.dirty
             and Page.publishedStamp == Helpers.Stamp(Page.document, body)
         ui.autoIcon:SetEnabled(Page.document.icon ~= Page.AUTO_ICON)
@@ -308,11 +312,12 @@ Page.initializers[#Page.initializers + 1] = function()
     Helpers.Publish = function(replace)
         local id = Helpers.Saved()
         if not id then return end
-        local ok, errorKey, index = Store.Publish(id, replace)
+        local ok, errorKey = Store.Publish(id, replace)
         if not ok then Page.Error(errorKey) return end
         Page.bound, Page.message = true, "Macro saved to WoW"
         Helpers.BindPublished(Page.document)
         Page.Render()
+        return true
     end
 
     Helpers.BindPublished = function(document)
@@ -379,6 +384,133 @@ Page.initializers[#Page.initializers + 1] = function()
         if not body then return nil end
         return document.name .. "\0" .. document.scope .. "\0" .. tostring(document.icon) .. "\0" .. body
     end
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Helpers, Tr, Native = Page.helpers, P.Tr, P.Suite.Macros.Native
+    local capture
+
+    local function StopCapture(owner)
+        if not capture or owner and capture.button ~= owner then return end
+        local button, label = capture.button, capture.label
+        capture = nil
+        button:SetScript("OnKeyDown", nil)
+        button:EnableKeyboard(false)
+        button:SetPropagateKeyboardInput(true)
+        button:RegisterForClicks("LeftButtonUp")
+        button:SetText(Tr(label))
+    end
+
+    Helpers.StopBindingCapture = StopCapture
+
+    local function HandleInput(raw, isMouse, mouseInput)
+        local session = capture
+        if not session or not P.Suite.Public(raw) then return end
+        if not Page.Active(session.ui) or raw == "ESCAPE" then StopCapture() return end
+        if isMouse ~= session.isMouse then return end
+        local input = mouseInput or Native.BindingInput(raw, isMouse)
+        if not input then return end
+        if Native.IsReservedClick(input) then
+            Page.Error("Hold Shift, Ctrl or Alt to bind left or right click.")
+            return
+        end
+        StopCapture()
+        local expected, errorText = Native.BindingState(input)
+        if not expected then Page.Error(errorText) return end
+        local label = Native.BindingLabel(input)
+        local document = Page.document
+        local stamp = Helpers.Stamp(document, Helpers.Body())
+        local function Apply()
+            if Page.tab ~= "library" and stamp and stamp == Helpers.Stamp(Page.document, Helpers.Body()) then
+                Helpers.ApplyBinding(input, expected, label)
+            end
+        end
+        Helpers.ConfirmBinding(input, expected, label, Apply)
+    end
+
+    Helpers.CaptureBindingInput = function(ui, button, mouse, label, prompt, isMouse, mouseInput)
+        if capture and capture.button == button then
+            if isMouse then return HandleInput(mouse, true, mouseInput) end
+            return StopCapture()
+        end
+        if not Page.Active(ui) then return end
+        StopCapture()
+        for _, edit in pairs(ui.pools.edit or {}) do edit:ClearFocus() end
+        capture = { ui = ui, button = button, label = label, isMouse = isMouse }
+        if mouseInput and mouseInput.modifiers ~= 0 then
+            return HandleInput(mouse, true, mouseInput)
+        end
+        button:SetText(Tr(prompt))
+        if isMouse then button:RegisterForClicks("AnyUp") end
+        button:SetScript("OnKeyDown", function(self, key)
+            if isMouse then self:SetPropagateKeyboardInput(P.Suite.Public(key) and key ~= "ESCAPE") end
+            HandleInput(key, false)
+        end)
+        button:SetPropagateKeyboardInput(isMouse)
+        button:EnableKeyboard(true)
+    end
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Helpers, Tr, Macros = Page.helpers, P.Tr, P.Suite.Macros
+    local Native, Store = Macros.Native, Macros.Store
+    Helpers.ApplyBinding = function(input, expected, label)
+        local state, errorText = Native.CheckBinding(input, expected)
+        if not state then Page.Error(errorText) return end
+        if not Page.pickupReady and not Helpers.Publish(Page.bound) then return end
+        local entry
+        entry, errorText = Store.ResolvePublished(Page.id)
+        if not entry then Page.Error(errorText) return end
+        local ok
+        ok, errorText = Native.ApplyBinding(input, expected, entry)
+        Page.Error(ok and Tr("Macro bound to %s."):format(label) or errorText)
+    end
+
+    Helpers.ConfirmBinding = function(input, expected, label, apply)
+        if expected.occupied then
+            Page.Confirm("macro-binding", Tr("Replace the existing binding for %s?"):format(label), apply)
+        else
+            apply()
+        end
+    end
+
+    local function BindingButton(ui, key, label, prompt, y, width, isMouse)
+        local button = Page.Button(ui, key, label, 16, y, width)
+        if not button.macroBindingInput then
+            button.macroBindingInput = true
+            local mouseInput
+            if isMouse then
+                button:HookScript("OnMouseDown", function(_, mouse) mouseInput = Native.BindingInput(mouse, true) end)
+            end
+            button:SetScript("OnClick", function(self, mouse)
+                local input = mouseInput
+                mouseInput = nil
+                if isMouse and not input then input = Native.BindingInput(mouse, true) end
+                Helpers.CaptureBindingInput(ui, self, mouse, label, prompt, isMouse, input)
+            end)
+            button:RegisterForClicks("LeftButtonUp")
+            button:HookScript("OnHide", function(self)
+                mouseInput = nil
+                Helpers.StopBindingCapture(self)
+            end)
+        end
+        return button
+    end
+
+    Helpers.BindingRow = function(ui, y, width)
+        ui.bindClick = BindingButton(ui, "bind-click", "Bind click casting", "Click here with a mouse button (Esc)", y, width, true)
+        ui.bindKey = BindingButton(ui, "bind-key", "Bind keyboard shortcut", "Press a key. Escape cancels.", y - 32, width, false)
+        ui.restoreClicks = Page.Button(ui, "restore-clicks", "Restore plain left and right click", 16, y - 64, width,
+            Helpers.RestorePlainClicks)
+        return y - 99
+    end
+end
+
+Page.helpers.RestorePlainClicks = function()
+    local Macros = P.Suite.Macros
+    local entry = Page.id and Macros.Store.ResolvePublished(Page.id)
+    local ok, errorKey = Macros.Native.RemoveBindings(entry, true)
+    Page.Error(ok and "Plain left and right click restored." or errorKey)
 end
 
 Page.helpers.EditorChoices = function()

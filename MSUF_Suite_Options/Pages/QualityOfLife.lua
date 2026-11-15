@@ -191,7 +191,13 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
     end
     details._msufSuiteSkipSummary = true
     AddFeatureHelp(details, group, sections)
-    local y = P.BuildQoLIndicatorPreview(ctx, details, group.id, width, -18)
+    local y = -18
+    if group.id == "glimmer" then
+        local warning = P.Text(details, "Enable Interact Key in Blizzard's Controls settings to see Glimmer's glow with mouse and keyboard.",
+            16, y, width - 32, P.T.colors.warning or P.T.colors.accent2)
+        y = y - math.max(16, math.ceil(warning:GetStringHeight() or 16)) - 10
+    end
+    y = P.BuildQoLIndicatorPreview(ctx, details, group.id, width, y)
     y = P.BuildNewToolActions(ctx, details, group.id, sectionId, y, width - 32)
     for _, section in ipairs(sections) do
         if #sections > 1 and section.source[1] then

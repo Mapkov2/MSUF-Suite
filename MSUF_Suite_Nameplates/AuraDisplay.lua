@@ -1,31 +1,26 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
 local Model = NS.NameplateAuraDisplay
--- The aura containers of a nameplate: Buffs, Debuffs, Custom 1-3 and Dots
--- on target, one set for enemy and one for friendly plates. Buffs and
--- Debuffs are lanes: while one is Visible the Suite draws it and hides
--- Blizzard's list of that kind; otherwise Blizzard's list is not touched.
--- Crowd control always stays Blizzard's. Every container is a native
--- AuraContainer: Blizzard tracks, filters, sorts and times the auras, so
--- nothing in this file runs on an aura update. Work happens only when a
--- plate gets a unit or the settings change, and a settings change reaches
--- only the containers whose own signature changed.
+-- The Suite creates containers only for explicitly tracked Custom and DoT
+-- rows. Blizzard owns their aura evaluation and the standard nameplate rows.
 local Display = {}
 private.AuraDisplay = Display
 local states = setmetatable({}, { __mode = "k" })
 local pending = setmetatable({}, { __mode = "k" })
-local owner, repaint, plan, revision, waitFrame, stackOptions
-local active, editMode, listening = false, false, false
+local owner, repaint, plan, revision, waitFrame, stackOptions, targetUF
+local active, editMode = false, false
 local EMPTY = { includeSpellIDs = {} }
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local SORT = { "Default", "ExpirationOnly", "NameOnly", "AuraInstanceIDOnly", "ImportantOnly" }
+local function SameIDs(left, right)
+    if left == right then return true end
+    if not left or not right then return false end
+    for id in pairs(left) do if not right[id] then return false end end
+    for id in pairs(right) do if not left[id] then return false end end
+    return true
+end
 local OUTLINE = { "", "OUTLINE", "THICKOUTLINE" }
 local TEXT_SWITCH = { Time = "timeText", Stack = "stackText" }
-local LISTS = { "BuffListFrame", "DebuffListFrame" }
-local NATIVE_CVARS = { nameplateenemynpcauradisplay = true, nameplateenemyplayerauradisplay = true,
-    nameplatefriendlyplayerauradisplay = true, nameplateshowdebuffsonfriendly = true }
-local IN_COMBAT = { inCombat = true }
-
 -- Blizzard makes a group's buttons on demand, one per aura up to the group's
 -- frame limit, and each new button costs about half a millisecond of
 -- protected set-up (2026-11-11 combat trace: ten buttons, 7.4 ms in the frame
@@ -122,88 +117,23 @@ local function Unwait()
     if waitFrame and not next(pending) then waitFrame:UnregisterAllEvents() end
 end
 
-local function Writable(frame)
-    if not Accessible(frame) then return false end
-    if not NS.InCombat() then return true end
-    local protected = frame:IsProtected()
-    return NS.Public(protected) and protected == false
-end
-
--- A Visible lane replaces one Blizzard list. A hidden list has no mouse
--- targets and skips its refresh. Every visibility request of Blizzard's is
--- observed, so handing the list back also restores what Blizzard asked for
--- meanwhile. All bookkeeping stays outside the Blizzard frames.
-local function ListChanged(state, list, shown)
-    if not list.owned or list.changing or not NS.Public(shown) then return end
-    list.shown = shown == true
-    if not list.shown then return end
-    if not Writable(list.frame) then
-        Display.Restore(state.uf)
-        return
-    end
-    list.changing = true
-    list.frame:Hide()
-    list.changing = nil
-end
-
-local function List(state, name)
-    local list = state.lists[name]
-    if list ~= nil then return list end
-    local frame = state.native and state.native[name]
-    if not Accessible(frame) then
-        state.lists[name] = false
-        return false
-    end
-    list = { frame = frame, owned = false }
-    state.lists[name] = list
-    hooksecurefunc(frame, "SetShown", function(_, shown) ListChanged(state, list, shown) end)
-    hooksecurefunc(frame, "Show", function() ListChanged(state, list, true) end)
-    hooksecurefunc(frame, "Hide", function() ListChanged(state, list, false) end)
-    return list
-end
-
--- Hides (owned) or hands back one Blizzard list. False while Blizzard
--- refuses the change: a protected list in combat, or a secret state.
-local function OwnList(state, name, owned)
-    local list = List(state, name)
-    if not list or list.owned == owned then return true end
-    if not Writable(list.frame) then return false end
-    if owned then
-        local shown = list.frame:IsShown()
-        if not NS.Public(shown) then return false end
-        list.shown = shown
-    end
-    list.owned, list.changing = owned, true
-    list.frame:SetShown(not owned and list.shown)
-    list.changing = nil
-    return true
-end
-
--- False while a Blizzard list could not be handed back yet.
-local function Hide(state)
-    if state.visible then
+function Display.Restore(uf)
+    if targetUF == uf then targetUF = nil end
+    local state = states[uf]
+    if state and state.visible then
+        if private.Auras and state.duplicateTracked then
+            private.Auras.SetDuplicateState(uf, nil)
+            state.duplicateTracked = nil
+        end
         if Accessible(state.wrapper) then state.wrapper:Hide() end
         for _, side in pairs(state.sides) do
             for _, record in pairs(side.records) do
                 if Accessible(record.frame) then record.frame:SetEnabled(false) end
+                for _, slot in ipairs(record.slots) do slot.anchor:Hide() end
+                record.unit, record.shown = nil, false
             end
         end
         state.visible = false
-    end
-    state.unit, state.side, state.kind = nil, nil, nil
-    local restored = true
-    for name, list in pairs(state.lists) do
-        if list and list.owned and not OwnList(state, name, false) then restored = false end
-    end
-    state.restoring = not restored or nil
-    return restored
-end
-
-function Display.Restore(uf)
-    local state = states[uf]
-    if state and not Hide(state) then
-        Wait(uf)
-        return
     end
     pending[uf] = nil
     Unwait()
@@ -296,6 +226,57 @@ local function Ring(texture, button, width)
     texture:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", width, -width)
 end
 
+local function DurationBar(part, c)
+    local button, bar = part.button, part.durationBar
+    if not c.durationBar then
+        if bar then
+            button:ClearDurationBar()
+            bar:Hide()
+        end
+        return
+    end
+    if not bar then
+        bar = CreateFrame("StatusBar", nil, button)
+        bar:SetStatusBarTexture(WHITE)
+        bar:SetFrameLevel(button:GetFrameLevel() + 2)
+        bar:SetMinMaxValues(0, 1)
+        part.durationBar = bar
+    end
+    local edge, y = c.durationBarTop and "TOP" or "BOTTOM", c.durationBarTop and -1 or 1
+    bar:ClearAllPoints()
+    bar:SetPoint(edge .. "LEFT", button, edge .. "LEFT", 1, y)
+    bar:SetPoint(edge .. "RIGHT", button, edge .. "RIGHT", -1, y)
+    bar:SetHeight(c.durationBarHeight)
+    bar:SetStatusBarColor(NS.RGB(c.durationBarColor))
+    bar:Show()
+    local direction = Enum.StatusBarTimerDirection
+    button:SetDurationBar(bar, { direction = c.durationBarElapsed and direction.ElapsedTime or direction.RemainingTime })
+end
+
+-- The native binding formats protected durations. One immutable formatter
+-- per slider value; the default path never builds a formatter.
+local durationTextOptions = {}
+local function DurationText(part, decimals)
+    if part.timeDecimals == decimals then return end
+    local options = durationTextOptions[decimals]
+    if not options and decimals > 0 then
+        local up, down = Enum.NumericRuleFormatRounding.Up, Enum.NumericRuleFormatRounding.Down
+        local formatter = C_StringUtil.CreateNumericRuleFormatter()
+        formatter:SetBreakpoints({
+            { threshold = 0, step = .1, rounding = up, min = .1, format = "%.1f" },
+            { threshold = decimals, step = 1, rounding = up, format = "%.0f" },
+            { threshold = 60, format = "%d:%02d", rounding = down,
+                components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } },
+            { threshold = 3600, format = "%d:%02d", rounding = down,
+                components = { { div = 3600, rounding = down }, { div = 60, mod = 60, rounding = down } } },
+        })
+        options = { textFormatter = formatter }
+        durationTextOptions[decimals] = options
+    end
+    part.button:SetDurationText(part.Time, options)
+    part.timeDecimals = decimals
+end
+
 local function StylePart(record, part)
     local c, values, button = record.c, plan.values, part.button
     local mouse = c.tooltip and not values.auraClickthrough
@@ -304,18 +285,32 @@ local function StylePart(record, part)
     button:SetMouseClickEnabled(mouse)
     button:SetMouseMotionEnabled(mouse)
     part.icon:SetTexCoord(c.crop, 1 - c.crop, c.crop, 1 - c.crop)
+    local look = c.iconSkin and plan.iconLook
+    if look or part.skinned then
+        part.skinned = NS.HostBridge.PaintIconSkin(button, look or nil, c.width, c.height, part.icon, true)
+    end
     Font(part, c, "Time")
     Font(part, c, "Stack")
-    part.cooldown:SetAlpha(values.auraSwipe and c.swipe and values.auraSwipeAlpha / 100 or 0)
+    DurationBar(part, c)
+    part.icon:SetAlpha(c.barOnly and 0 or 1)
+    part.cooldown:SetReverse(c.swipeReverse)
+    part.cooldown:SetAlpha(not c.barOnly and values.auraSwipe and c.swipe and values.auraSwipeAlpha / 100 or 0)
     Ring(part.dispel, button, values.auraHighlightSize)
     Border(part.pandemicEdges, part.pandemicStyle, values.auraHighlightSize)
     for _, texture in ipairs(part.pandemicEdges) do texture:SetColorTexture(NS.RGB(values.auraPandemicColor)) end
     part.pandemicStyle:SetShown(values.auraPandemicHighlight and c.pandemic)
     if part.bound then
+        DurationText(part, c.timeDecimals)
         button:ClearDispelTypeTextures()
         BindDispel(record, part)
         button:SetApplicationCount(part.Stack, Any(part) and stackOptions or nil)
     end
+end
+
+local function Advance(record, name)
+    local made = (record.made[name] or 0) + 1
+    record.made[name] = made
+    if made >= record.allowed[name] and record.allowed[name] < record.want[name] then Ramp(record) end
 end
 
 local function Initialize(record, button, slot, anyGroup)
@@ -327,7 +322,6 @@ local function Initialize(record, button, slot, anyGroup)
     part.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     part.cooldown:SetAllPoints(button)
     part.cooldown:SetDrawBling(false)
-    part.cooldown:SetReverse(true)
     part.cooldown:SetHideCountdownNumbers(true)
     part.cooldown:SetFrameLevel(level + 1)
     part.pandemic = Child(button, level + 3)
@@ -343,7 +337,7 @@ local function Initialize(record, button, slot, anyGroup)
     -- initializeFrame returns. Future paints never inspect aura state.
     button:SetIcon(part.icon)
     button:SetDurationCooldown(part.cooldown)
-    button:SetDurationText(part.Time)
+    DurationText(part, record.c.timeDecimals)
     button:SetApplicationCount(part.Stack, Any(part) and stackOptions or nil)
     BindDispel(record, part)
     button:AddPandemicRegion(part.pandemic)
@@ -351,10 +345,7 @@ local function Initialize(record, button, slot, anyGroup)
     record.parts[#record.parts + 1] = part
     if not slot then
         -- A group's button filled its allowance: the group may take more.
-        local name = anyGroup == true and "any" or "auras"
-        local made = (record.made[name] or 0) + 1
-        record.made[name] = made
-        if made >= record.allowed[name] and record.allowed[name] < record.want[name] then Ramp(record) end
+        Advance(record, anyGroup == true and "any" or "auras")
     end
 end
 
@@ -375,6 +366,7 @@ local function Place(state, record, c)
     frame:SetFlowLayoutAnchorPoint(c.flowPoint)
     frame:SetFlowLayoutGrowthDirection(direction[c.horizontal], direction[c.vertical])
     frame:SetFlowLayoutMaximumLineSize(c.lineSize)
+    frame:SetFlowLayoutPadding(c.padding, c.padding, c.padding, c.padding)
 end
 
 -- A slot or group that was added once stays; one without candidates is empty.
@@ -401,7 +393,7 @@ end
 
 -- Fixed slots: one native aura slot per tracked aura, in list order, with an
 -- optional faded icon while the aura is missing.
-local function Slots(state, record, c)
+local function Slots(state, record, c, excluded)
     for index, row in ipairs(c.rows) do
         local slot = record.slots[index] or NewSlot(state, record, index)
         local x, y = Model.SlotOffset(c, index)
@@ -413,16 +405,17 @@ local function Slots(state, record, c)
         if NS.Public(texture) then slot.texture:SetTexture(texture) end
         slot.texture:SetTexCoord(c.crop, 1 - c.crop, c.crop, 1 - c.crop)
         slot.texture:SetAlpha(c.missingAlpha / 100)
-        slot.texture:SetShown(c.missing)
-        slot.anchor:Show()
+        slot.texture:SetShown(c.missing and not (excluded and excluded[row.id]))
+        slot.anchor:SetShown(record.shown == true)
         slot.any = row.any
+        local candidate = Model.Excluding(row.candidate, excluded)
         if not slot.added then
-            record.frame:AddAuraSlot(slot.key, row.filter, { candidateFilters = row.candidate,
+            record.frame:AddAuraSlot(slot.key, row.filter, { candidateFilters = candidate,
                 sortMethod = AuraContainerSortMethod.ExpirationOnly,
                 initializeFrame = function(button) Initialize(record, button, slot) end })
             slot.added = true
         else
-            record.frame:SetAuraSlotCandidateFilters(slot.key, row.candidate)
+            record.frame:SetAuraSlotCandidateFilters(slot.key, candidate)
             record.frame:SetAuraSlotFilterString(slot.key, row.filter)
         end
     end
@@ -467,22 +460,24 @@ end
 
 -- A button this pass makes is styled by Initialize and sealed by Blizzard as
 -- soon as that returns, so only the buttons from before take the new style.
-local function Configure(state, record, c)
+local function Configure(state, record, c, excluded)
     local styled = #record.parts
     record.c = c
+    if c.hideDuplicates and not record.dedup then record.dedup, record.auras = {}, {} end
     if c.enabled then
         Place(state, record, c)
         if c.fixed then
             ClearGroups(record)
-            Slots(state, record, c)
+            Slots(state, record, c, excluded)
         else
             ClearSlots(record, 1)
-            Group(record, c, "auras", 1, c.filter, c.candidate, c.groupCount)
-            Group(record, c, "any", 2, c.anyFilter, c.anyCandidate, c.anyCount)
+            Group(record, c, "auras", 1, c.filter, Model.Excluding(c.candidate, excluded), c.groupCount)
+            Group(record, c, "any", 2, c.anyFilter, Model.Excluding(c.anyCandidate, excluded), c.anyCount)
         end
         for index = 1, styled do StylePart(record, record.parts[index]) end
     end
-    record.sig, record.style = c.sig, plan.style
+    record.sig, record.style, record.iconLook = c.sig, plan.style, plan.iconLook
+    record.excluded = excluded
 end
 
 -- Sealed aura regions refuse edits in combat and while auras are secret.
@@ -501,20 +496,24 @@ end
 -- Builds the containers this side uses and applies the plan to the ones it
 -- changed. A container that never showed is built at once; one that already
 -- holds buttons waits until its regions may be edited (false).
-local function ConfigureSide(state, sideKey)
+local function ConfigureSide(state, sideKey, target)
     local side, mutable = state.sides[sideKey], nil
+    local exclusions = plan.exclusions[sideKey]
     for _, c in ipairs(plan.scopes[sideKey]) do
         local record = side.records[c.key]
-        if not record and c.enabled then
+        if not record and c.enabled and (c.kind ~= "dots" or target) then
             record = NewRecord(state, c)
             side.records[c.key] = record
         end
-        if record and (record.sig ~= c.sig or record.style ~= plan.style) then
+        local skinChanged = record and c.iconSkin and record.iconLook ~= plan.iconLook
+        local excluded = exclusions and exclusions[c.key]
+        if record and (record.sig ~= c.sig or record.style ~= plan.style or skinChanged
+            or not SameIDs(record.excluded, excluded)) then
             if record.sig or record.parts[1] then
                 if mutable == nil then mutable = Mutable(side) end
                 if not mutable then return false end
             end
-            Configure(state, record, c)
+            Configure(state, record, c, excluded)
         end
     end
     side.revision = revision
@@ -529,7 +528,7 @@ local function New(uf, health)
     wrapper:SetAllPoints(uf)
     wrapper:SetFrameLevel(uf:GetFrameLevel() + 5)
     wrapper:Hide()
-    local state = { uf = uf, wrapper = wrapper, health = health, visible = false, lists = {},
+    local state = { uf = uf, wrapper = wrapper, health = health, visible = false,
         sides = { enemy = { records = {} }, friendly = { records = {} } } }
     -- Blizzard hides its aura frame where a plate shows no auras (names
     -- only). Follow it; nothing is written to Blizzard's frame.
@@ -542,43 +541,26 @@ local function New(uf, health)
     return state
 end
 
--- kind: the plate kind (enemyNpc ...), nil while the side has no lane. A
--- lane shows on the plate kinds Blizzard's switches name and owns Blizzard's
--- list of its kind meanwhile; a lane whose list cannot be hidden yet leaves
--- the plate to Blizzard's list. False while a list change is still due.
-local function Show(state, unit, sideKey, kind)
-    local complete, blocked = true, nil
-    for _, name in ipairs(LISTS) do
-        local owned = false
-        for _, record in pairs(state.sides[sideKey].records) do
-            local c = record.c
-            if c.frame == name and c.enabled and c.kinds[kind] == true then owned = true end
-        end
-        if (owned or state.lists[name]) and not OwnList(state, name, owned) then
-            complete = false
-            if owned then
-                blocked = blocked or {}
-                blocked[name] = true
-            end
-        end
-    end
+local function Show(state, unit, sideKey, target)
     for key, side in pairs(state.sides) do
         for _, record in pairs(side.records) do
             local c = record.c
-            local shown = key == sideKey and c.enabled and (not c.kinds or c.kinds[kind] == true)
-                and not (blocked and blocked[c.frame])
-            if shown then record.frame:SetUnit(unit) end
-            record.frame:SetEnabled(shown)
+            local shown = key == sideKey and c.enabled and (c.kind ~= "dots" or target)
+            if shown and (record.unit ~= unit or not record.shown) then record.frame:SetUnit(unit) end
+            if record.shown ~= shown then
+                record.frame:SetEnabled(shown)
+                for index, slot in ipairs(record.slots) do slot.anchor:SetShown(shown and c.fixed and index <= #c.rows) end
+            end
+            record.unit, record.shown = shown and unit or nil, shown
         end
     end
     local shown = true
     if state.native then
-        shown = state.native:IsShown()
+        shown = Accessible(state.native) and state.native:IsShown()
         shown = NS.Public(shown) and shown == true
     end
     state.wrapper:SetShown(shown)
-    state.visible, state.unit, state.side, state.kind = true, unit, sideKey, kind
-    return complete
+    state.visible, state.unit, state.side, state.target = true, unit, sideKey, target
 end
 
 local function Used(unit, sideKey)
@@ -597,73 +579,98 @@ function Display.Apply(uf, unit, enemy)
         Display.Restore(uf)
         return false
     end
-    local kind
-    if plan.lanes[sideKey] then
-        local player = UnitIsPlayer(unit)
-        if not NS.Public(player) then
-            Display.Restore(uf)
-            return false
-        end
-        kind = sideKey .. (player == true and "Player" or "Npc")
+    local target = false
+    if plan.targetOnly[sideKey] then
+        local selected = UnitIsUnit(unit, "target")
+        target = NS.Public(selected) and selected == true
+        if target then targetUF = uf end
+    end
+    if not target and not plan.always[sideKey] then
+        Display.Restore(uf)
+        return false
     end
     local state = states[uf]
-    if state and state.visible and state.unit == unit and state.side == sideKey and state.kind == kind
-        and state.sides[sideKey].revision == revision and not pending[uf] then return true end
+    if state and state.visible and state.unit == unit and state.side == sideKey and state.target == target
+        and state.sides[sideKey].revision == revision and not pending[uf] then
+        return true
+    end
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Accessible(health) then
         Wait(uf)
         return false
     end
     if not state then
+        local native = uf.AurasFrame
+        if native and not Accessible(native) then
+            Wait(uf)
+            return false
+        end
         state = New(uf, health)
         states[uf] = state
     end
     local side, current = state.sides[sideKey], true
-    if side.revision ~= revision then
+    if side.revision ~= revision or (target and not side.records.dots and plan.targetOnly[sideKey]) then
         if NS.Client.AuraBuildBlocked() then
             NS.Client.AfterAuraBuild(Display, Display.Resume)
             current = false
         else
-            current = ConfigureSide(state, sideKey)
+            current = ConfigureSide(state, sideKey, target)
         end
     end
     if not current and not side.revision then
         -- Nothing of this side is complete yet: show it once it is.
-        Hide(state)
+        Display.Restore(uf)
         Wait(uf)
         return false
     end
-    if Show(state, unit, sideKey, kind) and current then
+    Show(state, unit, sideKey, target)
+    if current then
         pending[uf] = nil
         Unwait()
     else
         Wait(uf)
     end
+    local exclusions = current and plan.exclusions[sideKey]
+    if private.Auras and (exclusions or state.duplicateTracked) then
+        state.duplicateTracked = exclusions and (exclusions.buff or exclusions.debuff)
+        private.Auras.SetDuplicateState(uf, state.duplicateTracked and state, exclusions)
+    end
     return true
 end
 
--- Blizzard's own aura switches decide the plate kinds of a lane.
-local function NativeCVar(module, _, name)
-    if not active or not NS.Public(name) or type(name) ~= "string" or not NATIVE_CVARS[name:lower()] then return end
-    local before = revision
-    Display.Configure(module.config)
-    if revision ~= before then repaint(module) end
+-- Target changes repaint just the previously selected and the new plate.
+local function RefreshTarget(uf)
+    if private.IsSkinSuppressed and private.IsSkinSuppressed(uf) then return end
+    if not Accessible(uf) then return end
+    local unit, friendly = uf.unit, uf.isFriend
+    if NS.Public(unit) and NS.Public(friendly) then Display.Apply(uf, unit, friendly == false) end
+end
+
+function Display.TargetChanged(current)
+    if not active or not next(plan.targetOnly) then return end
+    local previous = targetUF
+    targetUF = nil
+    if previous ~= current then RefreshTarget(previous) end
+    RefreshTarget(current)
 end
 
 function Display.Configure(config)
-    active = config and config.auraDisplayEnabled == true or false
+    active = config and Model.Active(config) or false
     if not active then
         Display.Release()
         return
     end
     -- A group still short of its want resumes its ramp after Release stopped the frame.
     if rampFrame and next(ramping) then rampFrame:SetScript("OnUpdate", RampStep) end
-    if not listening then
-        owner.context:Event("CVAR_UPDATE", NativeCVar, IN_COMBAT)
-        listening = true
-    end
     local nextPlan = Model.Plan(config)
-    if plan and nextPlan.signature == plan.signature then return end
+    local bridge = NS.HostBridge
+    if bridge and nextPlan.iconSkin then
+        nextPlan.iconLook = bridge.IconSkinLook(nil, "RECTANGLE", nil, true)
+        bridge.WatchIconSkins("nameplates", true)
+    elseif bridge and plan and plan.iconSkin then
+        bridge.WatchIconSkins("nameplates", false)
+    end
+    if plan and nextPlan.signature == plan.signature and nextPlan.iconLook == plan.iconLook then return end
     nextPlan.font = S.ResolveFont(nextPlan.values.auraFont) or S.GlobalFontPath()
     nextPlan.dispel = DispelOptions(nextPlan.values)
     if not stackOptions then
@@ -676,10 +683,6 @@ end
 
 function Display.Resume()
     if not next(pending) then return end
-    for uf in pairs(pending) do
-        local state = states[uf]
-        if not active or state and state.restoring then Display.Restore(uf) end
-    end
     if active and repaint then repaint(owner) end
     Unwait()
 end
@@ -693,14 +696,12 @@ function Display.Bind(module, refresh)
 end
 
 function Display.Release()
-    active = false
+    active, targetUF = false, nil
+    if NS.HostBridge and plan and plan.iconSkin then NS.HostBridge.WatchIconSkins("nameplates", false) end
+    plan = nil
     -- Nothing ticks while the feature is off. The waiting groups stay listed,
     -- so the next Configure that turns the feature on resumes their ramp.
     if rampFrame then rampFrame:SetScript("OnUpdate", nil) end
-    if listening then
-        owner.context:RemoveEvent("CVAR_UPDATE")
-        listening = false
-    end
     for uf in pairs(states) do Display.Restore(uf) end
     for uf in pairs(pending) do
         if not states[uf] then pending[uf] = nil end

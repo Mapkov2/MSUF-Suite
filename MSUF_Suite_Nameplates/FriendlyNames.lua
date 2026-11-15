@@ -46,6 +46,8 @@ function Names.Filter(uf, prefix)
         return
     end
     if M.friendlyNames[name] == nil then
+        local hover = private.Mouseover
+        if hover.textInUse and not hover.ReleaseName(uf, name) then return end
         local alpha = name:GetAlpha()
         if not NS.Finite(alpha) then return end
         M.friendlyNames[name] = alpha

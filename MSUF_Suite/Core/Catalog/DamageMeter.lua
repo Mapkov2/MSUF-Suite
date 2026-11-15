@@ -122,6 +122,7 @@ B.Section(id, "bars", "Bars", {
     Color("trackColor", "Bar background color", initial.trackColor),
     Number("trackAlpha", "Bar background opacity (percent)", initial.trackAlpha, 0, 100, 5),
     Choice("iconStyle", "Bar icons", 2, { "None", "Specialization", "Class" }),
+    B.Automation(Bool("inspectRemoteSpecs", "Update group specializations (sends inspect requests)", false)),
     B.String("iconSkin", "Icon skin", "CUSTOM", 64),
     Number("iconZoom", "Icon zoom (percent)", 6, 0, 20),
     Number("iconOffsetX", "Icons: horizontal", 0, -200, 200),
@@ -373,6 +374,7 @@ for _, key in ipairs({ "gradientDirLeft", "gradientDirRight", "gradientDirUp", "
     rules[key].enableKey = "gradientEnabled"
 end
 rules.iconSkin.hidden = true
+rules.inspectRemoteSpecs.requiresChoice = { key = "iconStyle", values = { [ICON.SPEC] = true } }
 rules.iconZoom.requiresChoice = { key = "iconStyle", values = { [ICON.SPEC] = true, [ICON.CLASS] = true } }
 rules.shadowOpacity.requiresChoice = { key = "outline", values = SHADOWED }
 rules.shadowDistance.requiresChoice = { key = "outline", values = SHADOWED }

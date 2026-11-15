@@ -58,7 +58,9 @@ local function Visible(frame)
 end
 
 local function CanClose(frame, managed)
-    return frame and shown[frame] and Visible(frame) and CanFloat(frame) and (managed or IsFree(frame))
+    -- Forever's spell window updates protected action bars in its native show and hide scripts.
+    return frame and (frame ~= playerSpells or not NS.Client.isForever)
+        and shown[frame] and Visible(frame) and CanFloat(frame) and (managed or IsFree(frame))
 end
 
 local function CanCloseBags()
@@ -114,7 +116,7 @@ local function SetEscapeArmed(armed)
 end
 
 local function SyncEscape(event)
-    if not EscapeAllowed(event) then
+    if not EscapeAllowed(event) or NS.Client.isForever and Visible(playerSpells) then
         SetEscapeArmed(false)
         return
     end
@@ -206,20 +208,16 @@ local function OnShow(frame)
     record.open = true
     ObserveOpen(frame)
     QueueCap()
+    if frame == playerSpells and NS.Client.isForever then
+        -- Blizzard closes its managed slots before it closes special windows.
+        -- Keep this watcher disarmed until the existing deferred hide pass.
+        SetEscapeArmed(false)
+        return
+    end
     if not record.area or not IsFree(frame) then return end
     if CanFloat(frame) then
         if not CanClose(latest) or shown[frame] > shown[latest] then latest = frame end
-        if not NS.InCombat() then
-            if frame == playerSpells then
-                local fit = frame:GetAttribute("UIPanelLayout-checkFit")
-                local width = frame:GetAttribute("UIPanelLayout-checkFitExtraWidth")
-                local height = frame:GetAttribute("UIPanelLayout-checkFitExtraHeight")
-                if NS.Public(fit) and fit == 1 and NS.Public(width) and NS.Public(height) then
-                    UIPanelUpdateScaleForFit(frame, width or 20, height or 20)
-                end
-            end
-            if frame:IsToplevel() then frame:Raise() end
-        end
+        if not NS.InCombat() and frame:IsToplevel() then frame:Raise() end
     end
     SyncEscape()
 end
@@ -310,30 +308,13 @@ local function Attach(name, index)
     end
 end
 
-local function OnSpellAreaChanged(frame, key)
-    -- Native tab selection sets the area before ShowUIPanel. A resize can
-    -- set it while still occupying a slot, then write the offset after HideUIPanel.
-    if frame ~= playerSpells or not M.active or (key ~= "area" and key ~= "centerXOffset")
-        or NS.InCombat() or not Accessible(frame) or frame:GetParent() ~= UIParent or not CanFloat(frame)
-        or S.GamepadUI() then return end
-    local area = frame:GetAttribute(AREA)
-    if not NS.Public(area) or (area ~= "center" and area ~= "centerOrLeft" and area ~= "left") then return end
-    local record = records[frame]
-    if (not record.area and frame:IsShown()) or OccupiesSlot(frame) then return end
-    SetUIPanelAttribute(frame, "area", nil)
-    if IsFree(frame) then
-        if not record.area then ownedCount = ownedCount + 1 end
-        record.area = area
-    end
-end
-
 local function AttachPlayerSpells()
     if playerSpells then return end
     local frame = _G.PlayerSpellsFrame
     if not Accessible(frame) or not UIPanelWindows.PlayerSpellsFrame or frame:GetParent() ~= UIParent then return end
     playerSpells = frame
+    -- Count the window without rewriting its area. A nil area bypasses Blizzard's panel delegate.
     Track(frame)
-    if NS.Client.isForever then hooksecurefunc("SetUIPanelAttribute", OnSpellAreaChanged) end
 end
 
 local function OnBagShow(frame)

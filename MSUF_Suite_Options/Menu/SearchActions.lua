@@ -4,81 +4,89 @@ local Tr = P.Tr
 -- Actions are absent from the settings catalog. These are the stable controls
 -- that open an editor, preview, picker or operation on the real feature page.
 -- Searching them only navigates to the control; it never runs the action.
-local MODULE_ACTIONS = {
-    bags = { { "open", "Open bags" }, { "move", "Move bag windows" }, { "currencies", "Choose currencies" },
-        { "categories", "Edit categories" } },
-    buffReminders = { { "edit", "Edit Mode" }, { "potionMap", "Add this map to the potion maps" } },
-    damageMeter = { { "reset_data", "Reset combat data" }, { "move", "Move on screen" } },
-    minimap = { { "rescan", "Collect addon buttons again" }, { "button_positions", "Arrange individual addon buttons" },
-        { "reload", "Reload UI" } },
-    actionbars = { { "bindings", "Key bindings" }, { "move", "Move on screen" }, { "reload", "Reload UI" } },
-    cooldownManager = { { "move", "Move bars on screen" }, { "blizzard", "Open Blizzard's Cooldown Settings" } },
-    objectives = { { "edit", "Move in Edit Mode" }, { "colors", "Tracker colors" } },
-    -- Clear run history exists only with Mythic+ results (see the block below).
-    runSummary = { { "edit", "Move in Edit Mode" }, { "preview_raid", "Preview raid result" },
-        { "last", "Show last result" }, { "colors", "Summary colors" } },
-    announcements = { { "edit", "Move in Edit Mode" }, { "colors", "Announcement colors" } },
-}
+local MODULE_ACTIONS, EDITOR_ACTIONS, BAR_ACTIONS, PLACE_ACTION_WORDS, QOL_ACTIONS
+local function PrepareModuleActions()
+    return {
+        bags = { { "open", "Open bags" }, { "move", "Move bag windows" }, { "currencies", "Choose currencies" },
+            { "categories", "Edit categories" } },
+        buffReminders = { { "edit", "Edit Mode" }, { "potionMap", "Add this map to the potion maps" } },
+        damageMeter = { { "reset_data", "Reset combat data" }, { "move", "Move on screen" } },
+        minimap = { { "rescan", "Collect addon buttons again" }, { "button_positions", "Arrange individual addon buttons" },
+            { "reload", "Reload UI" } },
+        actionbars = { { "bindings", "Key bindings" }, { "move", "Move on screen" }, { "reload", "Reload UI" } },
+        cooldownManager = { { "move", "Move bars on screen" }, { "blizzard", "Open Blizzard's Cooldown Settings" } },
+        objectives = { { "edit", "Move in Edit Mode" }, { "colors", "Tracker colors" } },
+        -- Clear run history exists only with Mythic+ results (see the block below).
+        runSummary = { { "edit", "Move in Edit Mode" }, { "preview_raid", "Preview raid result" },
+            { "last", "Show last result" }, { "colors", "Summary colors" } },
+        announcements = { { "edit", "Move in Edit Mode" }, { "colors", "Announcement colors" } },
+    }
+end
 
 -- module, section suffix, control key, visible label, optional classification/kind.
-local EDITOR_ACTIONS = {
-    { "buffReminders", "composer", "composer.kind", "Reminder", "ephemeral", "dropdown" },
-    { "buffReminders", "composer", "composer.spell", "Spell name or ID", "ephemeral", "textinput" },
-    { "buffReminders", "composer", "composer.item", "Item ID", "ephemeral", "textinput" },
-    { "buffReminders", "composer", "action.addReminder", "Add reminder" },
-    { "actionbars", "editor", "editor.selected", "Selected bar", "ephemeral", "dropdown" },
-    { "actionbars", "editor", "editor.copyTo", "Copy To", "ephemeral" },
-    { "actionbars", "editor", "editor.preset.row", "One row" },
-    { "actionbars", "editor", "editor.preset.double", "Two rows" },
-    { "actionbars", "editor", "editor.preset.grid", "Three rows" },
-    { "actionbars", "editor", "editor.preset.column", "One column" },
-    { "actionbars", "editor", "editor.move", "Move selected bar" },
-    { "actionbars", "editor", "editor.find", "Center Screen - Find my Bar" },
-    { "actionbars", "actionbars_module", "header.bindings", "Keybind Mode" },
-    { "actionbars", "editor", "editor.bindings", "Key bindings" },
-    { "actionbars", "editor", "editor.extraAbility", "Move extra action button" },
-    { "damageMeter", "windows", "window.selected", "Window", "ephemeral", "dropdown" },
-    { "damageMeter", "windows", "window.move", "Move this window" },
-    { "dataTexts", "gold", "action.clearGold", "Clear saved character gold" },
-    { "dataTexts", "presets", "action.addBar", "Add bar" },
-    { "dataTexts", "dataTexts_module", "action.deleteBars", "Delete bars" },
-    { "dataTexts", "sources", "chooseSeasonStages", "Choose observed seasonal stages" },
-    { "dataTexts", "sources", "chooseCrestCurrencies", "Choose crest currencies" },
-    { "bags", "finance", "action.clearGold", "Clear saved character gold" },
-    { "chat", "tools", "clearHistory", "Clear saved chat history" },
-    { "chat", "tools", "timestamp", "Timestamps (Blizzard setting)", nil, "dropdown" },
-    { "cooldownManager", "cooldownManager_module", "editor.selected", "Bar to edit", "ephemeral", "dropdown" },
-    { "cooldownManager", "cooldownManager_module", "editor.add", "+ Add bar" },
-    { "cooldownManager", "cooldownManager_module", "editor.actions", "Bar actions" },
-    { "cooldownManager", "layout", "editor.move", "Move this bar on screen" },
-    { "cooldownManager", "layout", "editor.reset", "Reset this bar's settings" },
-    { "cooldownManager", "layout", "editor.copyLayout", "Copy layout to other specializations" },
-    { "cooldownManager", "basics", "editor.pickFrame", "Pick a frame" },
-    { "cooldownManager", "spells", "spells.add", "Add spells" },
-    { "cooldownManager", "spells", "spells.restore", "Show removed spells" },
-    { "cooldownManager", "spells", "spells.clear", "Reset to Blizzard's list" },
-    { "cooldownManager", "spells", "spells.copy", "Copy to other specializations" },
-    { "cooldownManager", "spells", "spells.importBlizzard", "Import Blizzard CDM" },
-    { "cooldownManager", "overrides", "spells.overrides", "Spell overrides" },
-    { "nameplates", "auraColors", "action.auraSpec", "DoTs by specialization", nil, "dropdown" },
-    { "nameplates", "auraColors", "action.auraSuggestion", "Add a DoT from MSUF", nil, "dropdown" },
-    { "nameplates", "auraColors", "action.auraCustom", "Custom aura ID", nil, "textinput" },
-    { "nameplates", "auraColors", "action.auraSample", "Preview DoT state", nil, "dropdown" },
-}
-local BAR_ACTIONS = {
-    { "addPlace", "Add data" }, { "move", "Move in Edit Mode" },
-    { "manage", "Apply preset to this bar" }, { "duplicate", "Duplicate bar" },
-    { "remove", "Remove bar" }, { "shared", "All bars" },
-}
+local function PrepareEditorActions()
+    return {
+        { "buffReminders", "composer", "composer.kind", "Reminder", "ephemeral", "dropdown" },
+        { "buffReminders", "composer", "composer.spell", "Spell name or ID", "ephemeral", "textinput" },
+        { "buffReminders", "composer", "composer.item", "Item ID", "ephemeral", "textinput" },
+        { "buffReminders", "composer", "action.addReminder", "Add reminder" },
+        { "actionbars", "editor", "editor.selected", "Selected bar", "ephemeral", "dropdown" },
+        { "actionbars", "editor", "editor.copyTo", "Copy To", "ephemeral" },
+        { "actionbars", "editor", "editor.preset.row", "One row" },
+        { "actionbars", "editor", "editor.preset.double", "Two rows" },
+        { "actionbars", "editor", "editor.preset.grid", "Three rows" },
+        { "actionbars", "editor", "editor.preset.column", "One column" },
+        { "actionbars", "editor", "editor.move", "Move selected bar" },
+        { "actionbars", "editor", "editor.find", "Center Screen - Find my Bar" },
+        { "actionbars", "actionbars_module", "header.bindings", "Keybind Mode" },
+        { "actionbars", "editor", "editor.bindings", "Key bindings" },
+        { "actionbars", "editor", "editor.extraAbility", "Move extra action button" },
+        { "damageMeter", "windows", "window.selected", "Window", "ephemeral", "dropdown" },
+        { "damageMeter", "windows", "window.move", "Move this window" },
+        { "dataTexts", "gold", "action.clearGold", "Clear saved character gold" },
+        { "dataTexts", "presets", "action.addBar", "Add bar" },
+        { "dataTexts", "dataTexts_module", "action.deleteBars", "Delete bars" },
+        { "dataTexts", "sources", "chooseSeasonStages", "Choose observed seasonal stages" },
+        { "dataTexts", "sources", "chooseCrestCurrencies", "Choose crest currencies" },
+        { "bags", "finance", "action.clearGold", "Clear saved character gold" },
+        { "chat", "tools", "clearHistory", "Clear saved chat history" },
+        { "chat", "tools", "timestamp", "Timestamps (Blizzard setting)", nil, "dropdown" },
+        { "cooldownManager", "cooldownManager_module", "editor.selected", "Bar to edit", "ephemeral", "dropdown" },
+        { "cooldownManager", "cooldownManager_module", "editor.add", "+ Add bar" },
+        { "cooldownManager", "cooldownManager_module", "editor.actions", "Bar actions" },
+        { "cooldownManager", "layout", "editor.move", "Move this bar on screen" },
+        { "cooldownManager", "layout", "editor.reset", "Reset this bar's settings" },
+        { "cooldownManager", "layout", "editor.copyLayout", "Copy layout to other specializations" },
+        { "cooldownManager", "basics", "editor.pickFrame", "Pick a frame" },
+        { "cooldownManager", "spells", "spells.add", "Add spells" },
+        { "cooldownManager", "spells", "spells.restore", "Show removed spells" },
+        { "cooldownManager", "spells", "spells.clear", "Reset to Blizzard's list" },
+        { "cooldownManager", "spells", "spells.copy", "Copy to other specializations" },
+        { "cooldownManager", "spells", "spells.importBlizzard", "Import Blizzard CDM" },
+        { "cooldownManager", "overrides", "spells.overrides", "Spell overrides" },
+        { "nameplates", "auraWorkspace", "action.auraSpec", "DoTs by specialization", nil, "dropdown" },
+        { "nameplates", "auraWorkspace", "action.auraSuggestion", "Add a DoT from MSUF", nil, "dropdown" },
+        { "nameplates", "auraWorkspace", "action.auraCustom", "Custom aura ID", nil, "textinput" },
+        { "nameplates", "auraWorkspace", "action.auraSample", "Preview DoT state", nil, "dropdown" },
+    }
+end
+local function PrepareBarActions()
+    return {
+        { "addPlace", "Add data" }, { "move", "Move in Edit Mode" },
+        { "manage", "Apply preset to this bar" }, { "duplicate", "Duplicate bar" },
+        { "remove", "Remove bar" }, { "shared", "All bars" },
+    }
+end
 -- Each place of a bar has these in its own editor; they are found on the bar's
 -- data entry, which opens that editor.
-local PLACE_ACTION_WORDS = { "Remove data", "Move earlier", "Move later", "Choose data source" }
-local QOL_ACTIONS = {
-    xpBar = { { "resetSession", "Reset session" } },
-    innervateCue = { { "target", "Use current player target" } },
-    loadoutReminder = { { "saveCurrent", "Save current build and loot spec" }, { "clearSaved", "Clear saved selection" } },
-    dungeonPortals = { { "portals", "Choose dungeon portals" } },
-}
+local function PrepareQoLActions()
+    return {
+        xpBar = { { "resetSession", "Reset session" } },
+        innervateCue = { { "target", "Use current player target" } },
+        loadoutReminder = { { "saveCurrent", "Save current build and loot spec" }, { "clearSaved", "Clear saved selection" } },
+        dungeonPortals = { { "portals", "Choose dungeon portals" } },
+    }
+end
 
 -- The names of a Quality of Life feature's color rules besides its own switch,
 -- in English and translated; nil when it has none. They are searched on the
@@ -182,6 +190,11 @@ local function AddQualityOfLifeRows(Add)
 end
 
 function P.AppendSearchActionRows(rows, pagesByKey)
+    if not MODULE_ACTIONS then
+        MODULE_ACTIONS, EDITOR_ACTIONS = PrepareModuleActions(), PrepareEditorActions()
+        BAR_ACTIONS, QOL_ACTIONS = PrepareBarActions(), PrepareQoLActions()
+        PLACE_ACTION_WORDS = { "Remove data", "Move earlier", "Move later", "Choose data source" }
+    end
     P.MeterPreviewProperties.AppendSearchRows(rows, pagesByKey)
     -- extra: optional { words = { ... }, section = "shown section" }.
     local function Add(id, key, label, sectionId, classification, kind, feature, extra)

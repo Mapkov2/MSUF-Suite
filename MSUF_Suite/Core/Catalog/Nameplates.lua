@@ -33,6 +33,7 @@ B.Module("nameplates", {
         nameplateFriendlyPlayerAuraDisplay = true,
         nameplateShowDebuffsOnFriendly = true,
         nameplateAuraScale = true,
+        nameplateDebuffPadding = true,
         nameplateThreatDisplay = true,
         SoftTargetIconEnemy = true,
         SoftTargetIconFriend = true,
@@ -56,7 +57,6 @@ local id = "nameplates"
 -- Native settings that the Suite does not write itself. The remaining
 -- transferable CVars are already declared by the Nameplates module above.
 NS.SuiteCatalog[id].nativeProfileCVars = {
-    nameplateDebuffPadding = true,
     ShowQuestUnitCircles = true,
     UnitNameOwn = true,
     UnitSurnameOwn = true,
@@ -95,7 +95,6 @@ local native = {
     threatFlashColorEnabled = false, threatHighlightColorEnabled = false,
     softTargetEnemy = 1, softTargetFriend = 1, softTargetInteract = 1,
     softTargetIconGate = 1,
-    personalPowerSkin = false,
     enemyNameFont = "", friendlyNameFont = "", enemyCastFont = "",
 }
 local roles = NS.NameplateStyle.Roles
@@ -121,13 +120,17 @@ local generalRules = {
     B.Bool("hideHealthBarBorders", "Hide health bar borders", false),
     B.Bool("enemy", "Skin enemy nameplates", true),
     B.Bool("friendly", "Skin friendly nameplates", true),
-    B.Choice("nativeStyle", "Blizzard plate style", 2,
+    B.Bool("enemySkinEnabled", "Enable", true),
+    B.Bool("neutralSkinEnabled", "Enable", true),
+    B.Bool("friendlySkinEnabled", "Enable", true),
+    B.Bool("friendlyNpcSkinEnabled", "Enable", true),
+    B.Choice("nativeStyle", "Nameplate style", 2,
         { "Keep Blizzard setting", "Modern (text inside)", "Thin", "Block (text inside)",
           "Health focus", "Cast focus", "Legacy", "Classic" }),
-    B.Choice("nativeSize", "Blizzard plate size (health bar + elements)", 3,
+    B.Choice("nativeSize", "Nameplate size", 3,
         { "Keep Blizzard setting", "Small", "Medium", "Large", "Extra large", "Huge" }),
     B.Choice("classColors", "Player class colors", 2, { "Keep Blizzard setting", "On", "Off" }),
-    B.Choice("personalAuras", "Blizzard personal auras", 1, { "Keep Blizzard setting", "Show all", "Blizzard filter" }),
+    B.Choice("personalAuras", "Personal auras", 1, { "Keep Blizzard setting", "Show all", "Filtered" }),
     B.Bool("auraClickthrough", "Let clicks pass through nameplate auras", false),
     B.Tooltip(B.Choice("friendlyNPCs", "Friendly NPC nameplates", 1,
         { "Keep Blizzard setting", "Show", "Hide", "Names only (world names)" }),
@@ -143,14 +146,23 @@ if NS.Client.isForever then
 end
 B.Section(id, "general", "Basics", generalRules)
 
+B.Section(id, "nativeTextures", "Nameplate textures", {
+    B.Texture("nativeHealthFillTexture", "Nameplate health fill texture"),
+    B.Texture("nativeFocusHealthFillTexture", "Focus nameplate health fill texture"),
+    B.Texture("nativeHealthBackgroundTexture", "Nameplate health background texture"),
+    B.Texture("nativeCastFillTexture", "Nameplate castbar fill texture"),
+    B.Texture("nativeCastBackgroundTexture", "Nameplate castbar background texture"),
+    B.Color("nativeCastFillColor", "Cast color", "", NS.NameplateStyle.SharedCastColor),
+    B.Color("nativeCastLockedColor", "Uninterruptible cast color", "", NS.NameplateStyle.SharedLockedCastColor),
+})
+
 local function AddEnemyNativeRules(appearance)
     appearance[#appearance + 1] = B.Choice("enemyTextMode", "Enemy names and health text", 4,
         { "Keep Blizzard settings", "Always show name + percent", "Always show name + value",
-          "Always show name + value and percent" })
+          "Always show name + value and percent", "Name only" })
     appearance[#appearance + 1] = B.Bool("enemyMirrorHeader", "Show percent left and name right above the health bar", false)
     appearance[#appearance + 1] = B.Choice("enemyRarityIcon", "Blizzard elite / rare icon (all nameplates)", 1,
         { "Keep Blizzard setting", "Show", "Hide" })
-    appearance[#appearance + 1] = B.Bool("enemyRaidIcon", "Blizzard raid target icon on enemy plates", true)
 end
 
 local function AddTargetArrowRules(appearance)
@@ -199,7 +211,7 @@ local function AddFriendlyRules(appearance)
     end
     local friendlyCastFont = B.Font("friendlyCastFont", "Friendly cast font")
     for _, rule in ipairs({
-        B.Number("friendlyCastWidthDelta", "Friendly castbar width change in pixels (0 = automatic)", 0, -30, 160),
+        B.Number("friendlyCastWidthDelta", "Width offset (px)", 0, -30, 160),
         B.Number("friendlyCastHeight", "Friendly castbar height (0 = automatic)", 0, 0, 48),
         B.Number("friendlyCastIconSize", "Friendly spell icon size (0 = automatic)", 0, 0, 72),
         B.Bool("friendlyCastTextEnabled", "Customize friendly cast text", false),
@@ -224,9 +236,6 @@ local function AddDecorRules(appearance, prefix)
         B.Bool(prefix .. "OuterFrame", "Frame around health and cast bars", false),
         B.Number(prefix .. "OuterFrameSize", "Outer frame thickness (px)", 1, 1, 6),
         B.Color(prefix .. "OuterFrameColor", "Outer frame color", "000000"),
-        B.Bool(prefix .. "TextureEnabled", "Use texture finish", false),
-        B.Choice(prefix .. "FillTexture", "Health bar texture finish", 1,
-            { "Soft gradient", "Fine stripes" }),
     }
     for i = 1, #extra do appearance[#appearance + 1] = extra[i] end
     if NS.Client.isForever then
@@ -237,6 +246,8 @@ end
 local function Side(prefix, title, size)
     local font = B.Font(prefix .. "NameFont", "Name font")
     local appearance = {
+        B.Bool(prefix .. "RaidIcon", "Show raid marker", true),
+        B.Number(prefix .. "RaidIconSize", "Raid marker size", 22, 8, 64),
         B.Bool(prefix .. "BackdropEnabled", "Show backdrop", true),
         B.Bool(prefix .. "BorderEnabled", "Show border", true),
         B.Number(prefix .. "BorderSize", "Border size (px)", prefix == "enemy" and 1 or 0, 0, 6),
@@ -247,6 +258,7 @@ local function Side(prefix, title, size)
         B.Bool(prefix .. "LevelEnabled", "Show unit level",
             prefix == "enemy" and NS.Client.isForever),
         B.Number(prefix .. "LevelSize", "Level number size (0 = Blizzard)", 0, 0, 32),
+        B.Choice(prefix .. "LevelAnchor", "Level number anchor", 1, NS.NameplateStyle.AnchorLabels),
         B.Bool(prefix .. "CustomFont", "Override Blizzard font (empty font = MSUF)", true),
         B.Bool(prefix .. "TextShadow", "Text shadow", prefix == "friendly"),
         B.Number(prefix .. "NameSize", "Name font size (0 = Blizzard)", size, 0, 32),
@@ -299,6 +311,31 @@ end
 Side("enemy", "Enemy appearance", 12)
 Side("friendly", "Friendly appearance", 12)
 
+local function AddStatusRules()
+    local status = {}
+    for _, prefix in ipairs({ "enemy", "friendly" }) do
+        for _, item in ipairs(NS.NameplateStyle.Status) do
+            if NS.NameplateStyle.StatusSupported(item, prefix) then
+                local key = prefix .. item.key
+                local label = NS.Text(item.label)
+                local function Add(rule)
+                    rule.enableKey = key
+                    status[#status + 1] = rule
+                end
+                status[#status + 1] = B.Bool(key, NS.Text("Show %s"):format(label), false)
+                Add(B.Number(key .. "Size", NS.Text("%s size"):format(label), item.sample and 11 or 16, 7, 48))
+                Add(B.Choice(key .. "Anchor", NS.Text("%s anchor"):format(label), item.anchor or 2, NS.AnchorLabels))
+                Add(B.Number(key .. "OffsetX", NS.Text("%s X"):format(label), item.x or 0, -POSITION_LIMIT, POSITION_LIMIT))
+                Add(B.Number(key .. "OffsetY", NS.Text("%s Y"):format(label), item.y or 9, -POSITION_LIMIT, POSITION_LIMIT))
+                Add(B.Number(key .. "Layer", NS.Text("%s layer"):format(label), 5, 0, 30))
+                if item.sample then Add(B.Color(key .. "Color", NS.Text("%s color"):format(label), "ffffff")) end
+            end
+        end
+    end
+    B.Section(id, "plateStatus", "Status icons", status)
+end
+AddStatusRules()
+
 local auraRules = {}
 for _, group in ipairs(NS.NameplateStyle.AuraGroups) do
     local prefix, label = group.key, NS.Text(group.label)
@@ -310,10 +347,15 @@ for _, group in ipairs(NS.NameplateStyle.AuraGroups) do
 end
 auraRules[#auraRules + 1] = B.Choice("friendlyNpcDebuffs", "Friendly NPC debuffs", 1,
     { "Keep Blizzard setting", "Show", "Hide" })
-auraRules[#auraRules + 1] = B.Choice("auraScaleMode", "Blizzard aura icon size", 1,
+auraRules[#auraRules + 1] = B.Choice("auraScaleMode", "Aura icon size", 1,
     { "Keep Blizzard setting", "Customize" })
 auraRules[#auraRules + 1] = B.Number("auraScalePercent", "Aura icon size (%)", 100, 70, 140, 10)
-B.Section(id, "auras", "Blizzard auras", auraRules)
+auraRules[#auraRules + 1] = B.Tooltip(B.Number("auraDebuffPadding", "Debuff padding", -1, -1, 50),
+    "Distance above the name or health bar on all nameplates. Set -1 to use the game setting.")
+B.Section(id, "auras", "Auras", auraRules)
+for _, group in ipairs(NS.NameplateStyle.AuraGroups) do
+    NS.SuiteCatalog[id].rules[group.key .. "AuraMode"].hidden = true
+end
 
 B.Section(id, "auraColors", "DoT health colors", {
     B.Bool("auraColorsEnabled", "Color enemy health by your DoTs", false),
@@ -326,7 +368,7 @@ B.Section(id, "auraColors", "DoT health colors", {
 NS.SuiteCatalog[id].rules.auraColorsData.hidden = true
 
 B.Section(id, "signals", "Blizzard indicators", {
-    B.Choice("threatSignalMode", "Blizzard aggro signals", 1,
+    B.Choice("threatSignalMode", "Aggro indicators", 1,
         { "Keep Blizzard setting", "Customize" }),
     B.Bool("threatFlash", "Flash when aggro changes", true),
     B.Bool("threatHighlight", "Aggro glow (grows with threat)", true),
@@ -342,14 +384,33 @@ B.Section(id, "signals", "Blizzard indicators", {
         { "Keep Blizzard setting", "Show", "Hide" }),
     B.Choice("softTargetIconGate", "Soft target icon on nameplates", 1,
         { "Keep Blizzard setting", "Show", "Hide" }),
-    B.Choice("selectionBorder", "Target and focus border", 1, { "Keep Blizzard setting", "Custom colors", "Hide" }),
+    B.Choice("selectionBorder", "Target and focus border", 1, { "Keep Blizzard setting", "Custom colors", "Hide", "On" }),
     B.Color("selectionTargetColor", "Target border", "ffffff"),
     B.Color("selectionFocusColor", "Focus border", "ff66ff"),
-    B.Choice("selectionDim", "Dim other nameplates", 1, { "Keep Blizzard setting", "Custom strength", "Off" }),
+    B.Choice("selectionDim", "Dim other nameplates", 1, { "Keep Blizzard setting", "Custom strength", "Off", "On" }),
     B.Number("selectionDimPercent", "Dim strength (%)", 50, 0, 100, 5),
     B.Bool("mouseoverHighlight", "Highlight the nameplate under the mouse", false),
     B.Color("mouseoverHighlightColor", "Mouseover highlight", "ffffff"),
 })
+
+B.Section(id, "frameOutline", "Frame Outline", {
+    B.Choice("enemyOutlineMode", "Frame Outline", 1, { "Current appearance", "Blizzard", "Custom", "Off" }),
+    B.Choice("friendlyOutlineMode", "Frame Outline", 1, { "Current appearance", "Blizzard", "Custom", "Off" }),
+})
+B.Section(id, "highlightBorders", "Highlight Borders", {
+    B.Bool("highlightTarget", "Target", false),
+    B.Bool("highlightFocus", "Focus", false),
+    B.Bool("highlightAggro", "Aggro", false),
+    B.Bool("highlightAggroOverride", "Custom", false),
+    B.Bool("highlightMouseover", "Mouseover", false),
+    B.Number("highlightBorderSize", "Highlight border thickness", 2, 1, 30),
+    B.Bool("highlightPriority", "Custom highlight priority", false),
+    B.String("highlightOrder", "Priority Order", "1234", 4),
+    B.Color("highlightAggroColor", "Aggro border", "ff5252"),
+    B.Color("highlightMouseoverColor", "Mouseover border", "ffffff"),
+})
+NS.SuiteCatalog[id].rules.highlightOrder.hidden = true
+NS.SuiteCatalog[id].rules.highlightAggroOverride.hidden = true
 
 -- The engine CVar a rule writes (CVars.lua). The module's manifest declares
 -- it, and the rule has no control on a client that does not register it (see
@@ -398,7 +459,7 @@ B.Section(id, "visibility", "Visibility", {
 -- strength). They set the plate frame's own values (CVars.lua) and compose
 -- with "Dim other nameplates" and the larger current target.
 local CUSTOM_ONLY = { "Keep Blizzard setting", "Customize" }
-local FAR_PRESETS = { "Keep Blizzard setting", "None", "Subtle", "Strong" }
+local FAR_PRESETS = { "Keep Blizzard setting", "None", "Subtle", "Strong", "Normal" }
 local FADE_NOTE = "How faint the farthest plates get. Dim other nameplates (Blizzard indicators) is separate and adds to this."
 local SHRINK_NOTE = "How small the farthest plates get. The larger current target (Blizzard plates) is separate."
 B.Section(id, "distance", "Distance and stacking", {
@@ -412,7 +473,7 @@ B.Section(id, "distance", "Distance and stacking", {
     Writes("nameplateOverlapV", B.Number("plateOverlapV", "Vertical overlap (%)", 110, 50, 300, 5)),
     Writes("nameplateOverlapH", B.Number("plateOverlapH", "Horizontal overlap (%)", 80, 20, 300, 5)),
     Writes("nameplateMotionSpeed", B.Choice("plateMotionSpeed", "Stacked plate motion speed", 1,
-        { "Keep Blizzard setting", "Slow", "Fast", "Instant" })),
+        { "Keep Blizzard setting", "Slow", "Fast", "Instant", "Normal" })),
     Writes("nameplateOtherTopInset", B.Choice("plateInsetMode", "Screen edge margins", 1, CUSTOM_ONLY)),
     Writes("nameplateOtherTopInset", B.Number("plateTopInset", "Top margin (% of screen height)", 8, 0, 40)),
     Writes("nameplateOtherBottomInset", B.Number("plateBottomInset", "Bottom margin (% of screen height)", 10, 0, 40)),
@@ -420,19 +481,20 @@ B.Section(id, "distance", "Distance and stacking", {
         { "Keep Blizzard setting", "On", "Off" })),
 })
 
-B.Section(id, "personal", "Personal power bar", {
-    Writes("nameplateShowSelf", B.Choice("personalResource", "Show personal resource display", 1, SHOW_HIDE),
-        "PersonalResourceDisplayDisabled"),
-    B.Bool("personalPowerSkin", "Skin Blizzard personal mana and alternate power bars", false),
-    B.Number("personalPowerBorderSize", "Power border (px)", 1, 0, 3),
-    B.Color("personalPowerBorderColor", "Power border", "000000"),
-    B.Number("personalPowerOffsetX", "Power bar X", 0, -POSITION_LIMIT, POSITION_LIMIT),
-    B.Number("personalPowerOffsetY", "Power bar Y", 0, -POSITION_LIMIT, POSITION_LIMIT),
-})
-
 B.Section(id, "enemyPower", "Enemy power bar", {
     B.Bool("enemyPowerEnabled", "Show enemy power bar", false),
-    B.Bool("enemyPowerSmooth", "Smooth enemy power changes", true),
+    B.Bool("enemyPowerSmooth", "Smooth fill", true),
+    B.Bool("enemyPowerChunked", "Chunked power loss", false),
+    B.Choice("enemyPowerSource", "Displayed resource", 1, { "Current resource", "Mana", "Rage", "Focus", "Energy", "Runic Power" }),
+    B.Bool("enemyPowerEmbed", "Embed into health", false),
+    B.Bool("enemyPowerDetached", "Detach from frame", false),
+    B.Number("enemyPowerDetachedWidth", "Detached width (0 = match health)", 0, 0, 800),
+    B.Number("enemyPowerDetachedHeight", "Detached height", 6, 2, 80),
+    B.Number("enemyPowerDetachedLayer", "Detached layer", 6, 0, 30),
+    B.Bool("enemyPowerBorder", "Power bar border", false),
+    B.Number("enemyPowerBorderSize", "Border thickness", 1, 0, 6),
+    B.Color("enemyPowerBorderColor", "Power bar border color", "000000"),
+    B.Color("enemyPowerLossColor", "Power loss color", "ffffff"),
     B.Number("enemyPowerWidth", "Enemy power bar width change (px)", 0, -20, 120),
     B.Number("enemyPowerHeight", "Enemy power bar height (px)", 4, 2, 18),
     B.Number("enemyPowerOffsetX", "Enemy power bar X", 0, -POSITION_LIMIT, POSITION_LIMIT),
@@ -453,9 +515,9 @@ B.Section(id, "roleColors", "Enemy color rules", toggles)
 
 local castFont = B.Font("enemyCastFont", "Cast font")
 local castRules = {
-    B.Choice("enemyCastEnabled", "Show Blizzard nameplate castbars", 2,
+    B.Choice("enemyCastEnabled", "Show nameplate castbars", 2,
         { "Keep Blizzard setting", "Show", "Hide" }),
-    B.Choice("enemyCastDisplay", "Blizzard castbar details", 2,
+    B.Choice("enemyCastDisplay", "Castbar details", 2,
         { "Keep Blizzard setting", "Custom" }),
     B.Bool("enemyCastSpellName", "Spell name", true),
     B.Bool("enemyCastSpellIcon", "Spell icon", false),
@@ -465,7 +527,7 @@ local castRules = {
     B.Bool("enemyCastTextEnabled", "Customize cast text", true),
     B.Bool("enemyCastTimeEnabled", "Show cast time", true),
     B.Choice("enemyCastTimeFormat", "Cast time format", 1, { "Remaining time", "Elapsed / total" }),
-    B.Number("enemyCastWidthDelta", "Castbar width change in pixels (0 = automatic)", 0, -30, 160),
+    B.Number("enemyCastWidthDelta", "Width offset (px)", 0, -30, 160),
     B.Number("enemyCastHeight", "Castbar height (0 = automatic)", 0, 0, 48),
     B.Number("enemyCastIconSize", "Spell icon size (0 = automatic)", 0, 0, 72),
     B.Bool("enemyCastCustomFont", "Override Blizzard cast font (empty font = MSUF)", true),
@@ -485,7 +547,6 @@ for _, role in ipairs(roles) do colors[#colors + 1] = B.Color("enemy" .. role.ke
 colors[#colors + 1] = B.Color("enemyTargetColor", "Target arrows", "ffffff")
 B.Section(id, "enemyColors", "Enemy colors", colors)
 
--- Capture the existing Jundies preset before applying the supplied Mapko export.
 local spec = NS.SuiteCatalog[id]
 -- The shared font owns typography. Only an explicit preview edit supplies a
 -- local size, so older profiles keep their current inherited appearance.
@@ -495,41 +556,75 @@ for _, key in ipairs({ "enemyNameSize", "friendlyNameSize", "enemyHealthTextSize
     B.Add(id, B.Number(base.previewFontSizeOverride, "Font size", 0, base.min, base.max),
         base.section, base.sectionTitle, { hidden = true, previewOnly = true })
 end
-local appearanceSections = { enemy = true, friendly = true, roleColors = true, castbar = true,
-    enemyColors = true, auras = true, signals = true, personal = true }
-local preset, visual = {}, { nativeStyle = true, nativeSize = true, barGeometry = true, auraClickthrough = true }
-if NS.Client.isForever then visual.levelAppearance = true end
-for key, rule in pairs(spec.rules) do
-    if visual[key] or appearanceSections[rule.section] and not rule.cvar and key ~= "enemyPreviewRole" then
-        preset[key], visual[key] = rule.default, true
-    end
-end
-local mapko = {}
-for key, value in pairs(preset) do mapko[key] = value end
-local fontRoot = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\Fonts\\"
-local overrides = {
-    barGeometry = 2, auraClickthrough = true, enemyLevelEnabled = false,
-    enemyNameFont = fontRoot .. "Expressway ExtraBold.ttf", enemyCastFont = fontRoot .. "Expressway ExtraBold.ttf",
-    friendlyNameFont = fontRoot .. "Expressway Regular.ttf", friendlyCastFont = fontRoot .. "Expressway Regular.ttf",
-    friendlyRealm = 3, enemyAurasOffsetX = 3, enemyAurasOffsetY = 1,
-    enemyCastTextOffsetX = 7, enemyCastTextOffsetY = 13,
-    enemyCastTimeOffsetX = -33, enemyCastTimeOffsetY = 1,
-    enemyControlAuraOffsetX = -29, enemyControlAuraOffsetY = 22,
-    enemyRaidIconOffsetX = -20, enemyTargetOffsetX = 1, enemyTargetOffsetY = 1,
-}
-for key, value in pairs(overrides) do mapko[key] = value end
-for key, value in pairs(mapko) do spec.rules[key].default = value end
-spec.rules.enemyPreviewRole.default = 4
-for key, rule in pairs(spec.rules) do
-    if rule.previewOnly and key:match("SizeOverride$") then native[key] = rule.default end
-end
-spec.look = { key = "look", presets = { [1] = preset, [2] = native, [4] = mapko }, visualKeys = visual, custom = 3 }
-
 -- Settings that act only while another one is on or set. The options page
 -- greys them out with the reason (P.RuleEnabled) instead of leaving inert
 -- controls live. Each pair mirrors the runtime: Text.Configure, Skin.lua
 -- PaintHealth/PaintMarker, Roles.Base, CVars.lua Casts/Auras/Signals,
 -- Threat.lua and Selection.lua.
+local function AddTextDisplayRules()
+    local textDisplay = {}
+    local function TextVisibility(prefix, title)
+        local show = prefix .. "Visible"
+        local hover = prefix .. "Mouseover"
+        textDisplay[#textDisplay + 1] = B.Bool(show, title, prefix ~= "enemyPowerText")
+        local mouse = B.Bool(hover, "Only show on mouseover", false)
+        mouse.enableKey = show
+        textDisplay[#textDisplay + 1] = mouse
+        for _, pair in ipairs({ { "FadeIn", "Fade in (seconds)" }, { "FadeOut", "Fade out (seconds)" } }) do
+            local rule = B.Number(prefix .. pair[1], pair[2], 0.35, 0, 2, 0.05)
+            rule.enableKey = hover
+            textDisplay[#textDisplay + 1] = rule
+        end
+    end
+    for _, side in ipairs({ "enemy", "friendly" }) do
+        TextVisibility(side .. "Name", "Show name")
+        local anchors = { "Default position" }
+        for _, label in ipairs(NS.AnchorLabels) do anchors[#anchors + 1] = label end
+        textDisplay[#textDisplay + 1] = B.Choice(side .. "NameRelativeAnchor", "Anchor", 1, anchors)
+        TextVisibility(side .. "HealthText", "Show HP text")
+    end
+    TextVisibility("enemyPowerText", "Show power text")
+    textDisplay[#textDisplay + 1] = B.Number("friendlyHealthTextSize", "Font size", 0, 0, 32)
+    textDisplay[#textDisplay + 1] = B.Choice("enemyPowerTextMode", "Power value", 1, { "Current value", "Current / maximum", "Percentage" })
+    textDisplay[#textDisplay + 1] = B.Number("enemyPowerTextSize", "Font size", 10, 6, 32)
+    textDisplay[#textDisplay + 1] = B.Choice("enemyPowerTextAnchor", "Anchor", 5, NS.AnchorLabels)
+    textDisplay[#textDisplay + 1] = B.Number("enemyPowerTextOffsetX", "Power text X", 0, -POSITION_LIMIT, POSITION_LIMIT)
+    textDisplay[#textDisplay + 1] = B.Number("enemyPowerTextOffsetY", "Power text Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
+    textDisplay[#textDisplay + 1] = B.Color("enemyPowerTextColor", "Power text color", "ffffff")
+    B.Section(id, "plateTextDisplay", "Text", textDisplay)
+    for _, rule in ipairs(textDisplay) do
+        local key = rule.key
+        rule.requiresChoice = { key = "look", values = { [1] = true, [3] = true, [4] = true } }
+        if key == "enemyPowerTextVisible" then rule.enableKey = "enemyPowerEnabled"
+        elseif key:match("^enemyPowerText") and not rule.enableKey then rule.enableKey = "enemyPowerTextVisible" end
+    end
+end
+AddTextDisplayRules()
+
+local function AddCastPresentationRules()
+    local cast = {}
+    for _, side in ipairs({ "enemy", "friendly" }) do
+        local prefix = side .. "Cast"
+        local function Add(rule, enable)
+            rule.enableKey = enable or side
+            rule.requiresChoice = { key = "enemyCastEnabled", values = { [1] = true, [2] = true } }
+            cast[#cast + 1] = rule
+        end
+        Add(B.Choice(prefix .. "WidthMode", "Width mode", 1, { "Nameplate width with offset", "Match health bar", "Manual width" }))
+        local manual = B.Number(prefix .. "ManualWidth", "Manual width", 160, 30, 600)
+        Add(manual)
+        spec.rules[prefix .. "WidthDelta"].castWidthMode = 1
+        manual.castWidthMode = 3
+        Add(B.Number(prefix .. "IconZoom", "Icon Zoom (%)", 100, 100, 200, 5))
+        Add(B.Bool(prefix .. "IconBorder", "Show icon border", false))
+        Add(B.Number(prefix .. "IconBorderSize", "Border thickness", 1, 1, 6), prefix .. "IconBorder")
+        Add(B.Color(prefix .. "IconBorderColor", "Icon border color", "000000"), prefix .. "IconBorder")
+        Add(B.Number(prefix .. "TimeSize", "Time text size (0 = spell text)", 0, 0, 48), prefix .. "TimeEnabled")
+    end
+    B.Section(id, "castPresentation", "Castbar", cast)
+end
+AddCastPresentationRules()
+
 local nameTextRules = {
     B.Bool("nameFormattingEnabled", "Use name formats on nameplates", false),
     B.Bool("nameTextUseCustomSettings", "Use custom nameplate text settings", false),
@@ -546,6 +641,51 @@ for _, prefix in ipairs({ "enemy", "friendly" }) do
 end
 B.Section(id, "nameText", "Name formats and colors", nameTextRules)
 
+local function BuildLooks()
+    local appearance = { enemy = true, friendly = true, roleColors = true, castbar = true,
+        enemyColors = true, auras = true, signals = true, nativeTextures = true, frameOutline = true,
+        highlightBorders = true, plateStatus = true, plateTextDisplay = true, castPresentation = true, nameText = true }
+    local jundies, mapko = {}, {}
+    local visual = { nativeStyle = true, nativeSize = true, barGeometry = true, auraClickthrough = true,
+        hideHealthBarBorders = true, targetScaleEnabled = true, targetScalePercent = true }
+    if NS.Client.isForever then visual.levelAppearance = true end
+    for key, rule in pairs(spec.rules) do
+        local sizeOverride = rule.previewOnly and key:match("SizeOverride$")
+        if sizeOverride or visual[key] or appearance[rule.section] and not rule.cvar
+            and key ~= "enemyPreviewRole" and not key:match("^enemyPowerText") then
+            jundies[key], mapko[key], visual[key] = rule.default, rule.default, true
+        end
+        if sizeOverride then native[key] = rule.default end
+    end
+    local fontRoot = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\Fonts\\"
+    local overrides = {
+        barGeometry = 2, auraClickthrough = true, enemyLevelEnabled = false,
+        enemyNameFont = fontRoot .. "Expressway ExtraBold.ttf", enemyCastFont = fontRoot .. "Expressway ExtraBold.ttf",
+        friendlyNameFont = fontRoot .. "Expressway Regular.ttf", friendlyCastFont = fontRoot .. "Expressway Regular.ttf",
+        friendlyRealm = 3, enemyAurasOffsetX = 3, enemyAurasOffsetY = 1,
+        enemyCastTextOffsetX = 7, enemyCastTextOffsetY = 13,
+        enemyCastTimeOffsetX = -33, enemyCastTimeOffsetY = 1,
+        enemyControlAuraOffsetX = -29, enemyControlAuraOffsetY = 22,
+        enemyRaidIconOffsetX = -20, enemyTargetOffsetX = 1, enemyTargetOffsetY = 1,
+    }
+    for key, value in pairs(overrides) do mapko[key] = value end
+    for key, value in pairs(mapko) do spec.rules[key].default = value end
+    spec.rules.enemyPreviewRole.default = 4
+    -- Shared is the factory default. Explicitly selecting a skin applies its own highlights.
+    jundies.highlightAggroOverride, mapko.highlightAggroOverride = true, true
+    -- Platynator DEFAULT: the 125 x 15.625 health bar at 150% is about 188 x 23 UI units.
+    jundies.enemyNameFont, jundies.enemyCastFont, jundies.friendlyNameFont = mapko.enemyNameFont, mapko.enemyCastFont, mapko.friendlyNameFont
+    jundies.enemyNameSize, jundies.enemyHealthTextSize, jundies.enemyCastSize, jundies.friendlyNameSize = 14, 14, 14, 13
+    jundies.barGeometry, jundies.enemyHealthWidthDelta, jundies.enemyHealthHeightDelta = 2, -18, 3
+    jundies.enemyOutlineMode, jundies.friendlyOutlineMode = 3, 4
+    jundies.nativeHealthFillTexture, jundies.nativeCastFillTexture, jundies.nativeCastBackgroundTexture = "Solid", "Solid", "Solid"
+    jundies.highlightTarget, jundies.highlightFocus, jundies.highlightBorderSize, jundies.selectionFocusColor = true, true, 4, "00fff5"
+    jundies.mouseoverHighlight, jundies.selectionDim, jundies.selectionDimPercent = true, 2, 25
+    jundies.enemyCastWidthMode, jundies.enemyCastHeight, jundies.enemyCastSpellTarget = 2, 12, true
+    jundies.friendlyQuestMarker = true
+    spec.look = { key = "look", presets = { [1] = jundies, [2] = native, [4] = mapko }, visualKeys = visual, custom = 3 }
+end
+BuildLooks()
 local rules, CUSTOM = spec.rules, { [2] = true }
 local function Requires(keys, choiceKey, values)
     for _, key in ipairs(keys) do rules[key].requiresChoice = { key = choiceKey, values = values or CUSTOM } end
@@ -558,11 +698,10 @@ end
 local SIDE_SWITCHES = {
     { "TextEnabled", "CustomFont", "TextShadow", "NameSize", "TextOutline" },
     { "CustomFont", "NameFont" },
-    { "LevelEnabled", "LevelSize" },
-    { "BorderEnabled", "BorderSize", "BorderColor", "BorderStyle" },
+    { "LevelEnabled", "LevelSize", "LevelAnchor" },
+    { "RaidIcon", "RaidIconSize", "RaidIconOffsetX", "RaidIconOffsetY" },
     { "OuterFrame", "OuterFrameSize", "OuterFrameColor" },
     { "GlowEnabled", "GlowMode", "GlowColor" },
-    { "TextureEnabled", "FillTexture" },
     { "BackdropEnabled", "BackdropColor", "BackdropAlpha" },
     { "EliteMarker", "EliteMarkerAnchor", "EliteMarkerSize" },
     { "QuestMarker", "QuestMarkerAnchor", "QuestMarkerSize" },
@@ -575,7 +714,7 @@ for _, side in ipairs({ "enemy", "friendly" }) do
         for i = 2, #switch do rules[side .. switch[i]].enableKey = side .. switch[1] end
     end
     if NS.Client.isForever then
-        Requires({ side .. "LevelSize" }, "levelAppearance", { [1] = true })
+        Requires({ side .. "LevelSize", side .. "LevelAnchor" }, "levelAppearance", { [1] = true })
     end
     -- Hidden castbars show no text or time (CastTime.Paint).
     Requires({ side .. "CastTextEnabled", side .. "CastTimeEnabled" }, "enemyCastEnabled", { [1] = true, [2] = true })
@@ -597,31 +736,34 @@ for _, role in ipairs(roles) do
     end
     rules["enemy" .. role.key .. "Color"].enableKey = switch
 end
-for _, group in ipairs(NS.NameplateStyle.AuraGroups) do
-    Requires({ group.key .. "Buffs", group.key .. "Debuffs", group.key .. "Control" }, group.key .. "AuraMode")
-end
 Requires({ "auraScalePercent" }, "auraScaleMode")
 Requires({ "enemyCastDisplay" }, "enemyCastEnabled", { [1] = true, [2] = true })
-Requires({ "enemyCastSpellName", "enemyCastSpellIcon", "enemyCastSpellTarget", "enemyCastImportant",
-    "enemyCastTargetHighlight" }, "enemyCastDisplay")
-Requires({ "threatFlash", "threatHighlight" }, "threatSignalMode")
 EnabledBy({ "threatFlashColor" }, "threatFlashColorEnabled")
 EnabledBy({ "threatHighlightColor" }, "threatHighlightColorEnabled")
-Requires({ "selectionTargetColor", "selectionFocusColor" }, "selectionBorder")
+EnabledBy({ "highlightMouseoverColor" }, "highlightMouseover")
 Requires({ "selectionDimPercent" }, "selectionDim")
 Requires({ "plateMaxDistance" }, "plateMaxDistanceMode")
 Requires({ "plateOccludedPercent" }, "plateOccludedMode")
 Requires({ "plateOverlapV", "plateOverlapH" }, "plateSpacingMode")
 Requires({ "plateTopInset", "plateBottomInset" }, "plateInsetMode")
-EnabledBy({ "personalPowerBorderSize", "personalPowerBorderColor" }, "personalPowerSkin")
-local enemyPowerOptions = { "enemyPowerSmooth", "enemyPowerWidth", "enemyPowerHeight", "enemyPowerOffsetX",
-    "enemyPowerOffsetY", "enemyPowerByType", "enemyPowerColor", "enemyPowerBackgroundColor",
-    "enemyPowerBackgroundAlpha" }
-local skinLooks = { [1] = true, [3] = true, [4] = true }
-EnabledBy({ "enemyPowerEnabled" }, "enemy")
-EnabledBy(enemyPowerOptions, "enemyPowerEnabled")
-Requires({ "enemyPowerEnabled" }, "look", skinLooks)
-Requires(enemyPowerOptions, "look", skinLooks)
+local function GatePowerRules()
+    local enemyPowerOptions = {}
+    for key, rule in pairs(spec.rules) do
+        if rule.section == "enemyPower" and key ~= "enemyPowerEnabled" then enemyPowerOptions[#enemyPowerOptions + 1] = key end
+    end
+    local skinLooks = { [1] = true, [3] = true, [4] = true }
+    EnabledBy({ "enemyPowerEnabled" }, "enemy")
+    EnabledBy(enemyPowerOptions, "enemyPowerEnabled")
+    Requires({ "enemyPowerEnabled" }, "look", skinLooks)
+    Requires(enemyPowerOptions, "look", skinLooks)
+    EnabledBy({ "enemyPowerDetachedWidth", "enemyPowerDetachedHeight", "enemyPowerDetachedLayer" }, "enemyPowerDetached")
+    EnabledBy({ "enemyPowerBorderSize", "enemyPowerBorderColor" }, "enemyPowerBorder")
+    EnabledBy({ "enemyPowerLossColor" }, "enemyPowerChunked")
+    spec.rules.enemyPowerEmbed.disabledBy = "enemyPowerDetached"
+    spec.rules.enemyPowerHeight.disabledBy = "enemyPowerDetached"
+    spec.rules.enemyPowerWidth.disabledBy = "enemyPowerDetached"
+end
+GatePowerRules()
 
 EnabledBy({ "targetScalePercent" }, "targetScaleEnabled")
 for _, prefix in ipairs({ "enemy", "friendly" }) do
@@ -642,6 +784,11 @@ EnabledBy({ "enemyFocusMarkerSize", "enemyFocusMarkerColor", "enemyFocusMarkerX"
 -- test is the one Context:CVar makes before a write and Blizzard's own
 -- Settings make for the stacking option: a hidden control could not write.
 spec.controlAvailable = function(rule)
+    if rule.key == "nativeProfileMode" or rule.key == "enemy" or rule.key == "friendly"
+        or rule.key == "enabled" or rule.key == "plateEnemies" or rule.key == "plateFriendlyPlayers"
+        or rule.key == "neutralNpcVisible" or rule.key == "hideHealthBarBorders" then
+        return false
+    end
     if rule.client and rule.client ~= (NS.Client.isForever and "forever" or "retail") then return false end
     if rule.cvar == nil then return true end
     if C_CVar.GetCVar(rule.cvar) == nil then return false end

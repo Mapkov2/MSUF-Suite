@@ -1,12 +1,28 @@
 local _, P = ...
-local S = P.Suite
+local NS, S = P.NS, P.Suite
 local C = P.Chat
 
 local EVENT = "CHAT_MSG_CHANNEL"
+local SYSTEM_EVENT = "CHAT_MSG_SYSTEM"
 local RECENT_LIMIT, DELIVERY_LIMIT = 512, 64
 local PHRASE_LIMIT, MESSAGE_LIMIT = 32, 2048
 local PublicText, Finite = S.PublicText, S.Finite
 local rules, playerGUID
+local systemFilterActive
+
+local function EmptySystemLine(_, _, message)
+    return S.Public(message) and type(message) == "string" and message == ""
+end
+
+local function SetSystemFilter(enabled)
+    if enabled == (systemFilterActive == true) then return end
+    systemFilterActive = enabled
+    if enabled then
+        ChatFrameUtil.AddMessageEventFilter(SYSTEM_EVENT, EmptySystemLine)
+    else
+        ChatFrameUtil.RemoveMessageEventFilter(SYSTEM_EVENT, EmptySystemLine)
+    end
+end
 
 -- The filter runs once per native frame, including frames that later decide
 -- they do not display this channel. Keep the decision keyed by Blizzard's
@@ -125,7 +141,7 @@ local function ClearMemory()
     deliveryCursor, recentCursor = 0, 0
 end
 
-function C.SpamFilterDisable()
+local function DisableChannelFilter()
     if not rules then return end
     rules, playerGUID = nil, nil
     ChatFrameUtil.RemoveMessageEventFilter(EVENT, Filter)
@@ -133,10 +149,18 @@ function C.SpamFilterDisable()
     ClearMemory()
 end
 
+function C.SpamFilterDisable()
+    SetSystemFilter(false)
+    DisableChannelFilter()
+end
+
 function C.SpamFilterRefresh(self)
     local config = self.config
+    -- Forever can deliver empty system messages. Discard them before the
+    -- timestamp formatter turns them into visible lines.
+    SetSystemFilter(config.allTimestamps == true and NS.Client.isForever == true)
     if not config.spamFilter then
-        C.SpamFilterDisable()
+        DisableChannelFilter()
         return
     end
 
@@ -149,7 +173,7 @@ function C.SpamFilterRefresh(self)
     local phrases, channels = CompilePhrases(phraseText), CompileChannels(channelText)
     local scoped = channelText:find("%S") ~= nil
     if (#phrases == 0 and seconds <= 0) or (scoped and not next(channels)) then
-        C.SpamFilterDisable()
+        DisableChannelFilter()
         return
     end
     local registered = rules ~= nil

@@ -175,7 +175,12 @@ end
 local function Count(rec, charges, queried)
     local slot, count = rec.slot, rec.button.Count
     if not count then return end
-    count:SetText(api.DisplayCount(slot))
+    local text = api.DisplayCount(slot)
+    local secret = IsSecret(text)
+    if secret or text == nil or rec.displayCount ~= text then
+        count:SetText(text)
+        rec.displayCount = not secret and text or nil
+    end
     local alpha = 1
     if M.config.hideEmptyCharges and rec.noChargeEpoch ~= chargeEpoch then
         if not queried then charges, queried = api.Charges(slot), true end
@@ -194,7 +199,11 @@ local function Text(rec)
     if not name then return end
     local text = ""
     if api.UsesText(rec.slot) then text = api.Text(rec.slot) end
-    name:SetText(text)
+    local secret = IsSecret(text)
+    if secret or text == nil or rec.actionText ~= text then
+        name:SetText(text)
+        rec.actionText = not secret and text or nil
+    end
 end
 
 local function Equipped(rec)
@@ -573,6 +582,7 @@ local function Clear(rec)
     if rec.quality then rec.quality:Hide() end
     local button = rec.button
     rec.filled = false
+    rec.tex, rec.displayCount, rec.actionText = nil, nil, nil
     if button.icon then
         button.icon:SetTexture(nil)
         button.icon:Hide()
@@ -640,10 +650,15 @@ local function Paint(rec)
     rec.chargeTypeEpoch = nil
     rec.filled = true
     local icon = rec.button.icon
+    -- A macro can change its resolved outputs without changing its action ID.
+    -- Re-read the current values and skip only writes of equal public output.
     local texture = api.Texture(slot)
-    icon:SetTexture(texture)
+    local secret = IsSecret(texture)
+    if secret or texture == nil or rec.tex ~= texture then
+        icon:SetTexture(texture)
+        rec.tex = not secret and texture or nil
+    end
     icon:Show()
-    rec.tex = Public(texture) and texture or nil
     rec.tint = nil
     AcquireRange(rec)
     Usable(rec)

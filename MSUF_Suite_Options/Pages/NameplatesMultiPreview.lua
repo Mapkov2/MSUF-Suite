@@ -1,9 +1,14 @@
 local _, P = ...
 local Multi = {}
 P.NameplatesMultiPreview = Multi
-local WIDTH, HEIGHT = 1080, 360
-local HEALTH = { 83, 49, 21, 66, 100, 35 }
-local ROLES = { 1, 3, 4, 6, 8, 9 }
+local WIDTH, HEIGHT = 1080, 150
+local SAMPLES = {
+    { side = "enemy", scope = "enemy", role = 4, health = 53, cast = true },
+    { side = "enemy", scope = "neutral", role = 8, health = 100 },
+    { side = "friendly", scope = "friendly", health = 83, cast = true },
+    { side = "friendly", scope = "friendlyNpc", health = 100 },
+}
+local LABELS = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly", friendlyNpc = "Friendly NPC" }
 
 local function BindStatic(_, handle)
     handle:EnableMouse(false)
@@ -21,21 +26,26 @@ local function Build(ui)
     frame:SetSize(WIDTH, HEIGHT)
     frame:SetPoint("CENTER", ui.stage, "CENTER", 0, 0)
     local group = { frame = frame, samples = {} }
-    for index = 1, #HEALTH do
+    for index, info in ipairs(SAMPLES) do
         local editor = setmetatable({ stage = frame, sampleCells = {}, renderers = {}, layers = ui.layers,
-            isGroupSample = true, sampleKind = "enemy", Bind = BindStatic, LayerOn = LayerOn,
-            personal = false, enemyPlayer = false, friendlyElite = false, friendlyOutsider = false,
-            targetSample = index == 1, focusSample = index == 2, aggroSample = index == 3,
-            raidMarked = index == 4, raidIndex = 8, softTargetSample = false, uninterruptible = index == 5,
-            previewRole = ROLES[index], previewRoleSource = P.Get("nameplates", "enemyPreviewRole"),
+            isGroupSample = true, sampleKind = info.side, scope = info.scope, Bind = BindStatic, LayerOn = LayerOn,
+            enemyPlayer = false, friendlyElite = info.scope == "friendlyNpc", friendlyOutsider = false,
+            statusSample = false, allStatusSamples = false, statusOffsetSample = false,
+            castSample = false, interruptedSample = false,
+            textSample = false, auraSample = false,
+            targetSample = index == 1, focusSample = false, aggroSample = false, highlightSample = false,
+            raidMarked = false, raidIndex = 8, softTargetSample = false, uninterruptible = false,
+            previewRole = info.role, previewRoleSource = P.Get("nameplates", "enemyPreviewRole"),
         }, { __index = ui })
-        local sample = P.NameplatesPreview.Sample(editor, "enemy", 0)
-        sample.state.health, sample.state.cast = HEALTH[index], index ~= 3 and index ~= 6
-        sample.castProgress:SetValue(20 + index * 11)
+        local sample = P.NameplatesPreview.Sample(editor, info.side, 0)
+        sample.state.health, sample.state.cast = info.health, info.cast == true
+        sample.castProgress:SetValue(57)
         sample.cell:ClearAllPoints()
-        sample.cell:SetPoint("CENTER", frame, "CENTER", ((index - 1) % 3 - 1) * 350,
-            index <= 3 and 85 or -85)
-        group.samples[index] = { editor = editor, sample = sample }
+        sample.cell:SetPoint("CENTER", frame, "CENTER", (index - 2.5) * 270, -8)
+        local button = P.T.Button(frame, LABELS[info.scope], 140, 22)
+        button:SetPoint("BOTTOM", sample.cell, "TOP", 0, -23)
+        button:SetScript("OnClick", function() P.NameplatesWorkspace.Open(info.scope) end)
+        group.samples[index] = { editor = editor, sample = sample, button = button }
     end
     ui.groupPreview = group
     return group
@@ -55,21 +65,21 @@ function Multi.Set(ui, enabled)
         ui.singlePreviewView = nil
     end
     ui.groupPreviewEnabled = enabled
+    ui:Layout()
     ui:Paint()
 end
 
 function Multi.Attach(ui)
-    local button = P.T.Button(ui.tools, "Group preview", 122, 20)
-    button:SetPoint("TOPLEFT", ui.tools, "TOPLEFT", 188, 0)
+    local button = P.T.Button(ui.toolbar or ui.body, "Compare all", 108, 20)
     button:SetScript("OnClick", function() Multi.Set(ui, not ui.groupPreviewEnabled) end)
-    P.NameplatesEditorLayers.Register(button, "groupPreview", "Group preview")
+    P.NameplatesEditorLayers.Register(button, "groupPreview", "Compare all")
     ui.groupPreviewButton = button
 end
 
 function Multi.Paint(ui)
     if not ui.groupPreviewButton then return false end
-    local active = ui.groupPreviewEnabled and not ui.compact
-    ui.groupPreviewButton:SetText(P.Tr(active and "Single preview" or "Group preview"))
+    local active = ui.groupPreviewEnabled
+    P.SetButtonText(ui.groupPreviewButton, P.Tr(active and "Single preview" or "Compare all"))
     ui.samples:SetShown(not ui.compact and not active)
     ui.raidPalette:SetShown(not ui.compact and not active)
     if ui.targetStateButton then
@@ -86,7 +96,9 @@ function Multi.Paint(ui)
         (ui.canvas:GetWidth() - 24) / WIDTH, (ui.canvas:GetHeight() - 32) / HEIGHT)))
     group.frame:Show()
     for index, record in ipairs(group.samples) do
-        record.editor.previewRole, record.editor.previewRoleSource = ROLES[index], P.Get("nameplates", "enemyPreviewRole")
+        record.editor.previewRole, record.editor.previewRoleSource = SAMPLES[index].role, P.Get("nameplates", "enemyPreviewRole")
+        record.editor.enemyPlayer = SAMPLES[index].scope == "enemy" and ui.enemyPlayer == true
+        record.button:SetAlpha(ui.scope == SAMPLES[index].scope and 1 or 0.8)
         P.NameplatesPreview.Render(record.editor, record.sample)
     end
     return true

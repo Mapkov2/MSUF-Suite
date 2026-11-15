@@ -203,16 +203,34 @@ local function ApplyBagForOwners(frame, refreshItems)
     end
 end
 
+local mailBags = Kit.WeakSet()
+local function RefreshMailBags()
+    for frame, refreshItems in pairs(mailBags) do
+        mailBags[frame] = nil
+        if not Kit.IsHidden(frame) then ApplyBagForOwners(frame, refreshItems) end
+    end
+end
+
+local function RefreshBag(frame, refreshItems)
+    if not frame or NS.IsCombatLocked() then return end
+    if NS.Client.isForever and NS.Safety.Read(Field(_G, "MailFrame"), "IsShown") == true then
+        mailBags[frame] = refreshItems or mailBags[frame] == true
+        NS.Registry.QueueJob(RefreshMailBags)
+    else
+        ApplyBagForOwners(frame, refreshItems)
+    end
+end
+
 -- The item buttons wait for the post-hook when it is installed.
 function CommonMenus:OnBagOpened(frame)
-    ApplyBagForOwners(frame, CommonMenus.callbackState.generateHook ~= true)
+    RefreshBag(frame, CommonMenus.callbackState.generateHook ~= true)
 end
 
 -- ContainerFrame_GenerateFrame finishes after search/sort controls, money,
 -- optional add-slot controls and the item update have run. This exact
 -- post-hook complements the earlier OpenBag callback without polling.
 function CommonMenus:OnBagGenerated(frame)
-    ApplyBagForOwners(frame, true)
+    RefreshBag(frame, true)
 end
 
 local function OnContainerGenerated(frame)

@@ -116,7 +116,7 @@ local function InfoDisplay(module, c)
     if textMode ~= KEEP or rarityMode ~= KEEP then
         local flags = Style.CVarFlags(C_CVar.GetCVar("nameplateInfoDisplay"))
         if flags ~= nil then
-            local textBits = textMode == KEEP and flags % 4 or textMode - 1
+            local textBits = textMode == KEEP and flags % 4 or (textMode - 1) % 4
             local currentRarity = flags % 8 - flags % 4
             if rarityMode ~= KEEP and module.rarityBefore == nil then module.rarityBefore = currentRarity end
             local rarityBit = rarityMode == KEEP and (module.rarityBefore or currentRarity)
@@ -167,6 +167,11 @@ local function Auras(module, c)
     else
         module.context:CVar("nameplateAuraScale", string.format("%.1f", c.auraScalePercent / 100))
     end
+    if c.look ~= LOOK_BLIZZARD and (c.auraDebuffPadding or -1) >= 0 then
+        module.context:CVar("nameplateDebuffPadding", tostring(c.auraDebuffPadding))
+    else
+        Restore("nameplateDebuffPadding")
+    end
 end
 
 -- Keep Blizzard's health-color bit and any future flags. The Suite
@@ -192,7 +197,6 @@ local CHOICES = {
     { "friendlyNameClassColor", "nameplateUseClassColorForFriendlyPlayerUnitNames" },
     { "friendlyRealm", "nameplateShowFriendlyRealmName" },
     { "personalAuras", "nameplateShowAllPersonalAuras" },
-    { "friendlyNPCs", "nameplateShowFriendlyNpcs" },
     { "playerGuildNames", "UnitNamePlayerGuild" },
     { "playerTitles", "UnitNamePlayerPVPTitle" },
     { "plateShowAll", "nameplateShowAll" },
@@ -200,9 +204,6 @@ local CHOICES = {
     { "plateEnemyMinus", "nameplateShowEnemyMinus" },
     { "plateFriendlyMinions", "nameplateShowFriendlyPlayerMinions" },
     { "plateOffscreen", "nameplateShowOffscreen" },
-    { "plateEnemies", "nameplateShowEnemies" },
-    { "plateFriendlyPlayers", "nameplateShowFriendlyPlayers" },
-    { "personalResource", "nameplateShowSelf" },
     -- The combined minion choices above keep applying; these set each kind alone.
     { "plateEnemyPets", "nameplateShowEnemyPets" },
     { "plateEnemyGuardians", "nameplateShowEnemyGuardians" },
@@ -226,9 +227,13 @@ local function Names(module, c)
         local choice = CHOICES[i]
         Toggle(module, c[choice[1]] or KEEP, choice[2])
     end
+    local npcs = c.friendlyNpcSkinEnabled ~= false
+    local worldNames = npcs and c.friendlyNPCs == Mode.NPC_NAMES_ONLY
+    Toggle(module, (c.enemySkinEnabled ~= false or c.neutralSkinEnabled ~= false) and SHOW or HIDE, "nameplateShowEnemies")
+    Toggle(module, c.friendlySkinEnabled ~= false and SHOW or HIDE, "nameplateShowFriendlyPlayers")
+    Toggle(module, npcs and not worldNames and SHOW or HIDE, "nameplateShowFriendlyNpcs")
     -- Blizzard's NPC Names = All (SettingsDefinitions_Frame/Nameplates.lua).
-    -- NPC_NAMES_ONLY already writes 0 for friendly plates through CHOICES.
-    Toggle(module, c.friendlyNPCs == Mode.NPC_NAMES_ONLY and SHOW or KEEP, "UnitNameNPC")
+    Toggle(module, worldNames and SHOW or KEEP, "UnitNameNPC")
 end
 
 -- The "Customize" pairs of Distance and stacking: { mode setting, number
@@ -248,9 +253,9 @@ local CUSTOM_VALUES = {
 -- Fast, Instant. Neither touches the current target's scale or the dimming
 -- of other plates (Size, Selection.lua): those are separate values.
 local PRESETS = {
-    { "plateFadeDistance", "nameplateMinAlpha", { [2] = 1, [3] = 0.8, [4] = 0.3 } },
-    { "plateShrinkDistance", "nameplateMinScale", { [2] = 1, [3] = 0.9, [4] = 0.6 } },
-    { "plateMotionSpeed", "nameplateMotionSpeed", { [2] = 0.01, [3] = 0.1, [4] = 1 } },
+    { "plateFadeDistance", "nameplateMinAlpha", { [2] = 1, [3] = 0.8, [4] = 0.3, [5] = 0.6 } },
+    { "plateShrinkDistance", "nameplateMinScale", { [2] = 1, [3] = 0.9, [4] = 0.6, [5] = 0.8 } },
+    { "plateMotionSpeed", "nameplateMotionSpeed", { [2] = 0.01, [3] = 0.1, [4] = 1, [5] = 0.025 } },
 }
 
 local function Space(module, c)

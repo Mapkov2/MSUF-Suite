@@ -189,7 +189,7 @@ local function OnPanelPositionsUpdated()
     Policy.CapturePanels(WindowControls.states)
     if suspendPositionHook or not Enabled() then return end
     for frame, state in pairs(activeStates) do
-        if Controlled(state) and frame:IsShown() and not Policy.DeferMapLayout(state) then
+        if Controlled(state) and frame:IsShown() and not Policy.DeferMailLayout(state) and not Policy.DeferMapLayout(state) then
             if not state.drag then ApplyStoredScale(state) end
             ApplyStoredPosition(state)
             if HasCaption(state) and SafeControls(state) then
@@ -236,7 +236,7 @@ local function Restore(state)
     local allowed, managed = Policy.CanChangeVisibility(state)
     if not allowed then return false end
     if state.profession then return Policy.ReopenProfession(state) end
-    -- A click the secure delegate did not take; only Blizzard's map button reopens the map.
+    -- Native-only panels reopen through Blizzard's buttons.
     if Policy.SecureOnly(state) then return false end
     if managed and not NS.Client.IsGamepadUI() then ShowUIPanel(state.frame) else state.frame:Show() end
     -- OnPanelShow drops the tab. Blizzard can refuse the panel (a center
@@ -261,6 +261,7 @@ local function PrepareMinimize(state)
     -- Native OnHide resets pending changes. Keep the editor open until the
     -- user explicitly applies or cancels them; never write its save flag.
     if state.name == "AddonList" and AddonList_HasAnyChanged() then return false end
+    if not Policy.RememberNativeRestore(state) then return false end
     Chrome.LeaveFit(state)
     local frame, uiScale = state.frame, UIParent:GetEffectiveScale()
     local left, top, frameScale = frame:GetLeft(), frame:GetTop(), frame:GetEffectiveScale()
@@ -281,7 +282,7 @@ local function FinishMinimize(state)
     if state.frame:IsShown() then state.minimized = false else state.restore:Show() end
 end
 
--- A click the secure delegate did not take; only Blizzard's X hides the map.
+-- Native-only panels close through Blizzard's X.
 local function Minimize(state)
     if not state or Policy.SecureOnly(state) or not PrepareMinimize(state) then return end
     local _, managed = Policy.CanChangeVisibility(state)
@@ -562,20 +563,21 @@ end
 
 -- Hooked once per panel. The invisible title strip takes the title area's clicks: it
 -- comes back only while the controls are on, an owner skins and it can be controlled.
-local function OnPanelShow(frame)
+local function OnPanelShow(frame, afterNative)
     local state = WindowControls.states[frame]
     if not state or Safety.IsForbidden(frame) then return end
+    if not afterNative and Policy.DeferMailLayout(state) then return end
     activeStates[frame] = state
     if state.inventory then activeInventory[frame] = Controlled(state) and state or nil end
     if state.restore then state.minimized = false state.restore:Hide() end
-    local deferred = Policy.DeferMapLayout(state)
+    local deferred = Policy.DeferMapLayout(state, afterNative)
     if not deferred and IsCombat() and (not CanChangeFrameGeometry(frame) or not SafeControls(state)) then
         NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
         deferred = true
     end
-    -- Geometry waits for combat's end; the caption is only drawn, so it shows now.
     if deferred then
-        if HasCaption(state) and SafeControls(state) then Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET) end
+        -- In combat the caption can draw while geometry waits.
+        if IsCombat() and HasCaption(state) and SafeControls(state) then Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET) end
         return
     end
     if Controlled(state) then
@@ -597,8 +599,10 @@ local function OnContainerPositionsUpdated()
     for frame, state in pairs(activeInventory) do
         if Controlled(state) then
             if state.customScale or state.customPosition then CaptureNativeBagLayout(state) end
-            if not state.drag then ApplyStoredScale(state) end
-            ApplyStoredPosition(state)
+            if not Policy.DeferMailLayout(state) then
+                if not state.drag then ApplyStoredScale(state) end
+                ApplyStoredPosition(state)
+            end
         elseif IsCombat() and not Policy.CanChangeGeometry(frame) then
             NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
         else
@@ -659,7 +663,7 @@ function WindowControls.Attach(frame, owner)
     TrackInventory(state)
     if frame:IsShown() then activeStates[frame] = state end
     state.replayShow = function()
-        if frame:IsShown() then OnPanelShow(frame)
+        if frame:IsShown() then OnPanelShow(frame, true)
         elseif state.minimized and not Controlled(state) then HideControls(state) end
     end
     state.grip = CreateGrip(state)
@@ -717,7 +721,8 @@ end
 -- controls, a colour write or a profile switch repaints them.
 function WindowControls:OnThemeChanged(domain, key)
     if domain == "profile" or domain == "theme" and key == "look" then NS.Registry.QueueJob(RefreshQueued) end
-    if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" and domain ~= "profile" then return end
+    if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" and domain ~= "profile"
+        and domain ~= "windowAction" then return end
     NS.Registry.QueueJob(RecolorMinimize)
 end
 

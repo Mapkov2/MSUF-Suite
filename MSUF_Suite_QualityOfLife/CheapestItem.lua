@@ -1,8 +1,8 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
--- Delete cheapest item: a button on the open bag that deletes the stack a
--- vendor would pay least for, as players do when the bags are full and loot
--- waits. It works only while the backpack's window is open and out of combat.
+-- Delete cheapest item: a button on the open bag that lists stacks by vendor
+-- value. Left-click adds a shortcut to destroy the three cheapest stacks.
+-- It works only while the backpack's window is open and out of combat.
 --   * Where: in the Suite Bags views beside Filters (Bags makes that button
 --     in its own look and hands it to M:Bind, MSUF_Suite_Bags/
 --     InventoryControls.lua); otherwise on the title of Blizzard's backpack
@@ -21,10 +21,13 @@ local NS, S = P.NS, P.Suite
 --     deletes it in the same click: DeleteCursorItem is a restricted call
 --     (GameCursorDocumentation.lua HasRestrictions, live and forever). A
 --     stack above Poor always asks first; Poor asks while the setting is on.
+--     The three-stack action always asks once, with the exact stacks listed.
 local M = { tools = setmetatable({}, { __mode = "k" }), natives = setmetatable({}, { __mode = "k" }),
     marks = setmetatable({}, { __mode = "k" }), ranked = {}, keep = {} }
 S.CheapestItem = M
 local POOR = Enum.ItemQuality.Poor
+-- Class 7 subclass 12 identifies enchanting materials (dust, essences and shards).
+local ENCHANTING_MATERIALS = 12
 local CHOICE = NS.CheapestItemQuality
 local QUALITY = { [CHOICE.POOR] = POOR, [CHOICE.COMMON] = Enum.ItemQuality.Common,
     [CHOICE.UNCOMMON] = Enum.ItemQuality.Uncommon }
@@ -33,7 +36,10 @@ local QUALITY_NAMES = { [CHOICE.POOR] = { "ITEM_QUALITY0_DESC", "Poor" },
     [CHOICE.COMMON] = { "ITEM_QUALITY1_DESC", "Common" }, [CHOICE.UNCOMMON] = { "ITEM_QUALITY2_DESC", "Uncommon" } }
 local BACKPACK, LAST_BAG = Enum.BagIndex.Backpack, Constants.InventoryConstants.NumBagSlots
 local KEY, LIST, KEEP_LIMIT, KEEP_SCROLL = 1000, 10, 200, 400
+local BATCH_SIZE = 3
 local QUESTION = "suite-delete-cheapest-item"
+local DELETE_ATLAS = "common-icon-delete"
+local PASS_TEXTURE = "Interface\\Buttons\\UI-GroupLoot-Pass-Up"
 local MARK = { 1, .32, .2 }
 local EDGES = { { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
     { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
@@ -150,6 +156,11 @@ end
 -- The slower tests, for the cheapest few only. sets: ReadSets() succeeded.
 local function Allowed(record, sets)
     if QuestItem(record.bag, record.slot) then return false end
+    if NS.Client.isForever and M.config.keepEnchanting ~= false then
+        local _, _, _, _, _, class, subclass = C_Item.GetItemInfoInstant(record.itemID)
+        if not S.Finite(class) or (class == Enum.ItemClass.Tradegoods
+            and (not S.Finite(subclass) or subclass == ENCHANTING_MATERIALS)) then return false end
+    end
     if sets then
         if setSlots[record.bag * KEY + record.slot] then return false end
     else
@@ -199,12 +210,15 @@ local function Unchanged(item)
         and id == item.itemID and link == item.link and count == item.count and locked == false
 end
 
--- Runs in the click that asked for it (a button, a list entry or the
--- question's accept) and deletes only the stack that was offered.
-function M:Delete(item)
-    if not self:Usable() or self.keep[item.itemID] or item.quality > self.highest then return false end
+local function CanDelete(item)
+    if not M:Usable() or M.keep[item.itemID] or item.quality > M.highest then return false end
     local cursor = GetCursorInfo()
-    if not S.Public(cursor) or cursor ~= nil or not Unchanged(item) or not Allowed(item, ReadSets()) then return false end
+    return S.Public(cursor) and cursor == nil and Unchanged(item) and Allowed(item, ReadSets())
+end
+
+-- Runs synchronously in the list entry or the confirmation's click.
+function M:Delete(item)
+    if not CanDelete(item) then return false end
     C_Container.PickupContainerItem(item.bag, item.slot)
     local kind, itemID = GetCursorInfo()
     if not (S.Public(kind) and S.Public(itemID) and kind == "item" and itemID == item.itemID) then
@@ -212,6 +226,8 @@ function M:Delete(item)
         return false
     end
     DeleteCursorItem()
+    local remaining = GetCursorInfo()
+    if not S.Public(remaining) or remaining ~= nil then return false end
     S.Print(string.format(S.Text("Deleted %s (%s)."), Label(item), S.MoneyText(item.value)))
     return true
 end
@@ -226,6 +242,22 @@ local function Forget()
     S.HideQuestion(QUESTION)
 end
 
+local function Ask(data, accept)
+    Forget()
+    asked = data
+    data.showAlert = true
+    data.acceptText, data.cancelText = S.BlizzardText("DELETE", "Delete"), S.BlizzardText("CANCEL", "Cancel")
+    data.callback = function()
+        if asked ~= data then return end
+        asked = false
+        accept()
+    end
+    data.cancelCallback = function()
+        if asked == data then asked = false end
+    end
+    S.Confirm(QUESTION, data)
+end
+
 -- item: a snapshot. Deletes now, or once the player confirms.
 function M:Request(item)
     if not self:Usable() then return end
@@ -233,17 +265,33 @@ function M:Request(item)
         self:Delete(item)
         return
     end
-    asked = true
-    S.Confirm(QUESTION, {
+    Ask({
         text = S.Text("Delete %s (%s)? This cannot be undone."), text_arg1 = Label(item),
-        text_arg2 = S.MoneyText(item.value), showAlert = true,
-        acceptText = S.BlizzardText("DELETE", "Delete"), cancelText = S.BlizzardText("CANCEL", "Cancel"),
-        callback = function()
-            asked = false
-            M:Delete(item)
-        end,
-        cancelCallback = function() asked = false end,
-    })
+        text_arg2 = S.MoneyText(item.value),
+    }, function() M:Delete(item) end)
+end
+
+local function CanDeleteBatch(items)
+    for i = 1, BATCH_SIZE do
+        if not CanDelete(items[i]) then return false end
+    end
+    return true
+end
+
+local function RequestBatch(items)
+    if #items < BATCH_SIZE or not CanDeleteBatch(items) then return end
+    local lines = {}
+    for i = 1, BATCH_SIZE do
+        local item = items[i]
+        lines[i] = string.format(S.Text("%s - %s"), Label(item), S.MoneyText(item.value))
+    end
+    Ask({ text = S.Text("Destroy these three stacks? This cannot be undone.%s"),
+        text_arg1 = "\n\n" .. table.concat(lines, "\n") }, function()
+        if not CanDeleteBatch(items) then return end
+        for i = 1, BATCH_SIZE do
+            if not M:Delete(items[i]) then break end
+        end
+    end)
 end
 
 ------------------------------------------------------------------ the mark
@@ -304,13 +352,15 @@ local function Paint(button)
         Hint(S.Text("Not available in combat."))
     elseif item then
         GameTooltip:AddDoubleLine(Label(item), S.MoneyText(item.value), 1, 1, 1, 1, 1, 1)
-        Hint(Asks(item) and S.Text("Click to delete this stack after you confirm.") or S.Text("Click to delete this stack."))
     else
         Hint(S.Text("No item to delete."))
         Hint(string.format(S.Text("Offered: stacks up to %s quality that a vendor buys."), QualityName()))
         Hint(S.Text("Never offered: quest items, refundable items, items in equipment sets and items you keep."))
     end
-    if not combat then Hint(S.Text("Right-click to choose another stack or to keep an item.")) end
+    if not combat then
+        Hint(S.Text("Left-click for the list with the option to destroy the three cheapest stacks."))
+        Hint(S.Text("Right-click to choose a stack or protect an item from deletion."))
+    end
     GameTooltip:Show()
     M:Mark(item or nil)
 end
@@ -360,24 +410,33 @@ local function Combat(_, event)
     Forget()
 end
 
+function M:OpenCandidates(anchor)
+    if not self:Usable() then return false end
+    S.ContextMenu(anchor, self.BuildMenu)
+    return true
+end
+
 local function Clicked(button, mouseButton)
     if not M:Usable() then return end
-    if mouseButton == "RightButton" then
-        Leave(button)
-        S.ContextMenu(button, M.BuildMenu)
-        return
+    Leave(button)
+    if mouseButton == "RightButton" then M:OpenCandidates(button)
+    else
+        S.ContextMenu(button, M.BuildMenu, true)
     end
-    local item = M:Candidates(1)[1]
-    if item then M:Request(Snapshot(item)) end
 end
 
 -- Gives a button the tool's icon and handlers, once.
 function M:Bind(button)
     if self.tools[button] then return button end
-    local icon = S.CreateTexture(button, nil, "ARTWORK")
+    local icon = S.CreateTexture(button, nil, "OVERLAY")
     icon:SetPoint("TOPLEFT", 3, -3)
     icon:SetPoint("BOTTOMRIGHT", -3, 3)
-    icon:SetAtlas("common-icon-delete")
+    -- The house finder uses the delete atlas on Retail. Both clients ship the group loot texture.
+    if not NS.Client.isForever and C_Texture.GetAtlasInfo(DELETE_ATLAS) then
+        icon:SetAtlas(DELETE_ATLAS)
+    else
+        icon:SetTexture(PASS_TEXTURE)
+    end
     self.tools[button] = icon
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetScript("OnClick", Clicked)
@@ -457,14 +516,19 @@ local function AddKept(root)
     end)
 end
 
--- The right-click list: the ten cheapest stacks, each to delete or keep,
--- and the kept item types, each to offer again.
-function M.BuildMenu(_, root)
-    root:CreateTitle(S.Text("Cheapest items"))
+-- Both clicks show the same list. Only left-click adds the three-stack action.
+function M.BuildMenu(_, root, showBatch)
+    root:CreateTitle(S.Text("Cheapest items to destroy"))
     local list = M:Candidates(LIST)
+    local batch = showBatch and {}
+    if showBatch then
+        local action = root:CreateButton(S.Text("Destroy the three cheapest stacks"), function() RequestBatch(batch) end)
+        action:SetEnabled(#list >= BATCH_SIZE)
+    end
     if #list == 0 then root:CreateTitle(S.Text("No item to delete.")) end
     for i = 1, #list do
         local item = Snapshot(list[i])
+        if batch and i <= BATCH_SIZE then batch[i] = item end
         local entry = root:CreateButton(string.format(S.Text("%s - %s"), Label(item), S.MoneyText(item.value)))
         entry:SetTooltip(function(tooltip) tooltip:SetBagItem(item.bag, item.slot) end)
         entry:CreateButton(S.BlizzardText("DELETE", "Delete"), function() M:Request(item) end)

@@ -1,6 +1,6 @@
 local _, NS = ...
 
--- Blizzard_UIPanels_Game/Mainline/QuestInfo.lua (upstream/forever bd2470ae)
+-- Blizzard_UIPanels_Game/Mainline/QuestInfo.lua (upstream/forever bebcb6bf)
 -- sets parchment-dark text in QuestInfo_Display. Our quest and map adapters
 -- fade that parchment, so recolor only text currently parented to a skinned
 -- quest window. The Blizzard display function remains responsible for content.
@@ -30,14 +30,76 @@ local function CanPaint(region)
     return false
 end
 
--- These two shared objects also belong to the detail page's reading fade.
--- Once Blizzard has moved them into a visible reward page, that old opacity
--- must not conceal the completion text or the native reward choices.
+local function IsDetailReady()
+    if not (NS.Client and NS.Client.isForever and QuestText.roots[QuestFrame]) then return false end
+    if Safety.Read(QuestFrameDetailPanel, "IsVisible") ~= true then return false end
+    local fading = Safety.Field(QuestFrameDetailPanel, "fading")
+    return Safety.Public(fading) and not fading
+end
+
+-- The offer owns the reading fade until Accept is enabled. Completion waits
+-- for native reparenting. In either case only repair a shown, attached region.
 local function IsCurrentReward(region)
-    return QuestText.roots[QuestFrame] ~= nil
-        and Safety.Read(QuestFrameRewardPanel, "IsVisible") == true
-        and Safety.Read(region, "GetParent") == QuestRewardScrollChildFrame
-        and Safety.Read(region, "IsShown") == true
+    if not QuestText.roots[QuestFrame] or Safety.Read(region, "IsShown") ~= true then return false end
+    local parent = Safety.Read(region, "GetParent")
+    if parent and parent == QuestRewardScrollChildFrame then
+        return Safety.Read(QuestFrameRewardPanel, "IsVisible") == true
+    end
+    if parent and parent == QuestDetailScrollChildFrame and IsDetailReady() then
+        return not UIFrameIsFading or UIFrameIsFading(region) == false
+    end
+    return false
+end
+
+local offerReward
+local function RewardAmount(read)
+    if not read then return end
+    local value = read()
+    if Safety.Public(value) and type(value) == "number" and value > 0 then return value end
+end
+
+local function OfferRewardText()
+    local spacer = QuestInfoSpacerFrame
+    if not IsDetailReady() or not spacer or Safety.Read(spacer, "GetParent") ~= QuestDetailScrollChildFrame then return end
+    local shown = Safety.Read(QuestInfoRewardsFrame, "IsShown")
+    if shown == nil or shown and Safety.Read(QuestInfoRewardsFrame, "GetParent") == QuestDetailScrollChildFrame then
+        return
+    end
+    local xp, money = RewardAmount(GetRewardXP), RewardAmount(GetRewardMoney)
+    local experience = xp and (EXPERIENCE_COLON .. " " .. BreakUpLargeNumbers(xp))
+    local coins = money and GetMoneyString(money, false, false)
+    if experience and coins then return experience .. "   " .. coins end
+    return experience or coins
+end
+
+local function CanPaintOfferReward()
+    return Safety.CanCreateRegions(QuestDetailScrollChildFrame, not NS.IsCombatLocked())
+end
+
+local function PaintOfferReward()
+    if NS.IsCombatLocked() then
+        if offerReward and CanPaintOfferReward() then offerReward:Hide() end
+        if offerReward or IsDetailReady() then NS.CombatGate.RunOrDefer(REPAINT_KEY, PaintCurrent) end
+        return
+    end
+    local text = OfferRewardText()
+    if not text then
+        if offerReward and CanPaintOfferReward() then offerReward:Hide() end
+        return
+    end
+    if not CanPaintOfferReward() then return end
+    -- Blizzard can omit the reward block on an offer. Keep the numeric
+    -- rewards returned by the client in the normal scrolling content.
+    if not offerReward then
+        local anchor = QuestInfoSpacerFrame
+        offerReward = QuestDetailScrollChildFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        offerReward:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 1)
+        offerReward:SetWidth(255)
+        offerReward:SetJustifyH("LEFT")
+    end
+    offerReward:SetText(text)
+    offerReward:SetTextColor(NS.Theme.GetColor("text"))
+    offerReward:Show()
 end
 
 local function RevealReward(region)
@@ -197,6 +259,7 @@ PaintCurrent = function()
     PaintGossip()
     RevealReward(QuestInfoRewardText)
     RevealReward(QuestInfoRewardsFrame)
+    PaintOfferReward()
 end
 
 local function PaintPage()
@@ -240,6 +303,7 @@ local globalHooks = {
 local questPanels = {
     "QuestFrameGreetingPanel", "QuestFrameDetailPanel", "QuestFrameProgressPanel", "QuestFrameRewardPanel",
 }
+local offerHooks = false
 local function EnsurePanelShowHooks()
     for index = 1, #questPanels do
         local panel = Safety.Field(_G, questPanels[index])
@@ -247,6 +311,17 @@ local function EnsurePanelShowHooks()
             panel:HookScript("OnShow", PaintCurrentHook)
             QuestText.hooks[panel] = true
         end
+    end
+    if NS.Client and NS.Client.isForever and not offerHooks and QuestFrameDetailPanel then
+        -- Enable() follows the last reading-fade update. The native update
+        -- continues to own the description fade and Accept's enabled state.
+        if Safety.HasMethod(QuestFrameAcceptButton, "Enable") then
+            hooksecurefunc(QuestFrameAcceptButton, "Enable", PaintCurrentHook)
+        end
+        if Safety.HasMethod(QuestFrameDetailPanel, "HookScript") then
+            QuestFrameDetailPanel:HookScript("OnHide", Isolated(PaintOfferReward))
+        end
+        offerHooks = true
     end
 end
 
@@ -283,6 +358,7 @@ function QuestText.Deactivate(root, owner)
     -- Restore while the root is still recognized for parent-chain matching.
     RestoreRoot(root)
     QuestText.roots[root] = nil
+    if root == QuestFrame and offerReward then PaintOfferReward() end
 end
 
 function QuestText.Refresh()

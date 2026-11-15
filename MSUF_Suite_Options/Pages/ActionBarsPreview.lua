@@ -92,9 +92,10 @@ local function NewTile(ui, ordinal)
     tile.glowEdges = Edges(tile.text, "ARTWORK")
     tile.glowRing = tile.text:CreateTexture(nil, "ARTWORK")
     tile.glowing = true
-    tile.key = T.Font(tile.text, "GameFontHighlightSmall", "", T.colors.text)
-    tile.count = T.Font(tile.text, "GameFontHighlightSmall", "", T.colors.text)
-    tile.name = T.Font(tile.text, "GameFontHighlightSmall", "", T.colors.text)
+    -- Gameplay text can be secret. Use native setters that accept it directly.
+    tile.key = tile.text:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    tile.count = tile.text:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    tile.name = tile.text:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     tile.textHit = CreateFrame("Button", nil, tile.text)
     tile.textHit:SetPoint("TOPLEFT")
     tile.textHit:SetPoint("TOPRIGHT")

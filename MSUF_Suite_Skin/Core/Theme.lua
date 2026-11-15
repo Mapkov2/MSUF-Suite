@@ -504,7 +504,14 @@ end
 function Theme.SetAppearance(key, value)
     if NS.IsCombatLocked() then return false end
     if key == "gradient" then return Theme.SetGradient(value) end
-    if key == "menuAnimations" or key == "reduceMotion" or key == "dropdownDimming" or key == "readableValues"
+    if key == "readableValues" then
+        if type(value) ~= "boolean" then return false end
+        NS.DB.theme[key] = value
+        -- Value fonts and symbols are painted by the Suite modules and the
+        -- preview. This setting has no native surface or scroll-motion work.
+        return NS.Registry.NotifyListeners("readability", key)
+    end
+    if key == "menuAnimations" or key == "reduceMotion" or key == "dropdownDimming"
         or key == "windowFocusDimming" or key == "smoothScrolling" or key == "scrollEdgeBounce" then
         if type(value) ~= "boolean" then return false end
         NS.DB.theme[key] = value

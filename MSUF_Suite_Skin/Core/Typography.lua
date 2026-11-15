@@ -160,6 +160,7 @@ function Typography.SetSelection(selection)
         return false
     end
     Typography.ApplyConfigured()
+    NS.Registry.NotifyListeners("typography", "selection")
     return true
 end
 
@@ -377,6 +378,7 @@ local function SetValue(key, value)
     end
     NS.DB.typography[key] = value
     Typography.ApplyConfigured()
+    NS.Registry.NotifyListeners("typography", key)
     return true
 end
 

@@ -24,7 +24,9 @@ local function Quest(model, config)
     if Suite.Public(info) and type(info) == "table" then
         local campaign, frequency = info.campaignID, info.frequency
         if model.kind ~= "complete" and Suite.Finite(campaign) and campaign > 0 then model.kind = "campaign"
-        elseif model.kind ~= "complete" and Suite.Finite(frequency) and frequency > 0 then model.kind = "repeatable" end
+        elseif model.kind ~= "complete" and Suite.Finite(frequency) and frequency > 0 then
+            model.kind = "repeatable"
+        end
     end
     return true
 end
@@ -71,8 +73,11 @@ local function Interest(model, config, kind)
     model.info = Suite.PublicText(description) or Suite.Text("Point of interest")
     local identity
     if kind == Types.MapPin then _, identity = C_SuperTrack.GetSuperTrackedMapPin()
-    elseif kind == Types.Content then _, identity = C_SuperTrack.GetSuperTrackedContent()
-    elseif kind == Types.Vignette then identity = C_SuperTrack.GetSuperTrackedVignette() end
+    elseif kind == Types.Content then
+        _, identity = C_SuperTrack.GetSuperTrackedContent()
+    elseif kind == Types.Vignette then
+        identity = C_SuperTrack.GetSuperTrackedVignette()
+    end
     -- The client may give the name later (GetSuperTrackedItemName may return nothing).
     model.incomplete = not name or not Suite.Public(identity)
     if not Suite.Public(identity) then return false end
@@ -87,7 +92,8 @@ function Navigation.ReadSource(model, config)
     local previousSource, previousID = model.source, model.identity
     local supported = false
     if kind == Types.Quest then supported = Quest(model, config)
-    elseif kind == Types.UserWaypoint then supported = Waypoint(model, config)
+    elseif kind == Types.UserWaypoint then
+        supported = Waypoint(model, config)
     elseif kind == Types.MapPin or kind == Types.Content or kind == Types.Vignette then
         supported = Interest(model, config, kind)
     end
@@ -109,6 +115,7 @@ function Navigation.SetQuests(route)
 end
 
 function Navigation.Clear()
+    if Navigation.StopSleepingBag and Navigation.StopSleepingBag() then return end
     Navigation.generation = (Navigation.generation or 0) + 1
     Navigation.selected, Navigation.selectedSource, Navigation.route, Navigation.travel = nil, nil, nil, nil
     Navigation.SetQuests(nil)

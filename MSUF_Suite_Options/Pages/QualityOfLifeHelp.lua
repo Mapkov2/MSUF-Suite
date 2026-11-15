@@ -36,7 +36,7 @@ local HELP = {
     action_tracker_colors = "Choose a style above or change these colors to make a Custom look. Rows update immediately.",
     repair = "Repairs only when the cost is within your limit. Guild funds are used first when allowed.",
     junk = "Uses Blizzard's Sell All Junk action when a merchant opens, including its per-bag exclusions. Hold Shift while opening the merchant to skip selling. The optional chat line confirms the request, not completed sales.",
-    automation = "Hold the selected key to pause. Quests with a money cost and quests with a reward choice always stay manual.",
+    automation = "Choose whether holding the key pauses automation or enables it for the dialogue. Quests with a money cost and rewards with several choices stay manual.",
     filters = "An empty allow-list includes every quest. Separate quest IDs with spaces or commas. Daily and weekly exclusions leave a quest manual if its frequency cannot be read. Existing profiles keep their previous behavior until you enable an exclusion.",
     merchant_level = "Shows item levels on merchant equipment when Blizzard has loaded its item data. Buyback items and items without an item level stay unchanged.",
     merchant_list = "Replaces the merchant's pages with one list; scroll it with the mouse wheel or the bar. Right-click buys, left-click picks an item up and Shift-click asks for a quantity; linking and previewing work as usual. Purchases paid with currencies or items, or costing at least 150 gold, ask for confirmation first. The buyback tab keeps Blizzard's layout. Drop or click an item from your bags onto the list to sell it; one you can still refund asks whether to refund it.",
@@ -107,6 +107,7 @@ local HELP = {
     player_auras = "Restyles Blizzard's own buff and debuff buttons beside the minimap: icon size, icons per row, spacing, outline, text and where the block sits. Blizzard still owns the auras, their tooltips and right-click cancelling. Set the position and the debuff row offsets here, or drag each row in MSUF Edit Mode; Blizzard's Edit Mode does not place them. Each row's icon skin is chosen on the Icon Skins page.",
     player_aura_skins = "Gives Blizzard's player buffs and debuffs the icon skins you chose on the Icon Skins page, at Blizzard's own size and layout. The skins are painted once, out of combat, and no code runs on aura updates. While Player aura layout is on, it paints the buttons itself and this switch waits.",
     quest_reward_value = "Forever only. When a quest offers a choice of rewards, the one with the highest vendor value, counting its stack size, is marked. Nothing is selected or turned in for you.",
+    auction_price_tooltip = "Show auction prices, vendor sell prices and what a replacement costs after selling the equipped item.",
     mail_recipients = "Remembers your characters that you visit while this helper is on and lists them beside the mail window. Click a name to fill the recipient, right-click to hide or restore it, and search by name. Only characters on your current or connected realms are listed. Sending stays manual.",
     group_finder_tools = "A small panel beside the Group Finder search results. Its Search filters button saves your difficulty, minimum leader rating, role and dungeon choices in Blizzard's advanced search filter for your next manual search. Use Blizzard's Search button to search. It works on dungeon searches at maximum level, outside combat, and signs you up for nothing.",
     group_finder_statistics = "Counts what happens to your Mythic+ applications: applied, invited, accepted, declined, cancelled and expired. Choose whether the numbers cover this session, this character or your whole account; the panel beside the search results shows them and can reset the chosen count.",
@@ -119,11 +120,19 @@ local HELP = {
     sound_pvp = "Battlegrounds and arenas keep your own volumes until you switch this profile on.",
     sound_files = "Silences the game sound files whose IDs you list, such as a mount or summon sound; up to 200. MSUF mutes exactly the files listed here and plays them again when you remove an ID or turn this helper off, and it leaves files muted by other addons alone. Muting works whether or not volume profiles are applied.",
     saved_waypoints = "Save named map points and activate the next stop with a click. Saving never moves you or sets a pin; a point is pinned only when you choose it, and can be tracked in Blizzard's navigation.",
-    notice_history = "Keeps a short local history of the notices the Suite showed, combines repeats that arrive within the chosen time and opens the settings a notice came from.",
+    navigation_basics = "Follow quests, map pins and saved places with a world marker, destination card and direction arrow.",
+    navigation_appearance = "Scale the waypoint with its distance",
+    navigation_sources = "Show the map pin and focused quest on the flight map",
+    navigation_audio = "Sound on entering the destination area",
+    navigation_integrations = "Let guide updates replace a manually selected destination",
+    notice_history = "Keeps a short local history of the notices the Suite showed, combines repeats that arrive "
+        .. "within the chosen time and opens the settings a notice came from.",
+    bnet_toast = "Move Blizzard's Battle.net toast in MSUF Edit Mode and give it a Suite look and font. "
+        .. "Nothing of it runs in combat unless the toast shows.",
     inventoryProtection = "Items you protect are skipped by every sale action of the Suite. With the equipment set switch on, all equippable items are protected while any equipment set exists, because exact set membership is not available to this helper. Manage the protected items in the inventory tool.",
-    cheapestItem = "A button on your open bag deletes the stack a vendor pays least for: beside Filters in the Suite Bags views, "
-        .. "otherwise on the title of Blizzard's bag window. Point at it to see that stack, marked in the bag; click to delete it, "
-        .. "or right-click to choose one of the ten cheapest or to keep an item type from ever being offered. Only Poor items "
+    cheapestItem = "The bag button is beside Filters in Suite Bags or in the title bar of Blizzard's bag window. "
+        .. "Both mouse buttons list the ten cheapest stacks by vendor value. Left-click also offers to destroy the three cheapest "
+        .. "stacks together after confirmation. Use a stack's submenu to destroy it or protect that item type. Only Poor items "
         .. "are offered until you raise the highest quality, never above Uncommon. Quest items, refundable items, items in "
         .. "equipment sets, items protected by Never sell items and items without a vendor price are never offered. A stack "
         .. "above Poor quality always asks first. The button works only while the bag is open and out of combat, and runs "

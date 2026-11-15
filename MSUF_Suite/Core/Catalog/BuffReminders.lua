@@ -126,7 +126,9 @@ NS.SuiteCatalog[id].look = {
         values.borderColor = NS.DataTextLooks[lookIndex].border
     end,
 }
+local shortBuffWarning = Number("personalBuffWarningSeconds", "Class buff warning in seconds (0 = use general warning)", 0, 0, 300)
 B.Section(id, "tracking", "What to remind", {
+    shortBuffWarning,
     Bool("classBuff", "Remind me of my known class raid buff", true),
     Bool("groupBuff", "Remind me when others need my group buff", false),
     Bool("otherClassBuffs", "Remind me of missing buffs from classes in my group", false),
@@ -182,6 +184,7 @@ B.Section(id, "visibility", "When to show", {
     B.Tooltip(Bool("hideResting", "Hide while resting", false),
         "Cities and inns count as resting. The reminders come back when you leave them."),
     Number("remindBeforeMinutes", "Remind before expiration (minutes)", 5, 0, 60),
+
     B.Tooltip(Bool("onlyInRange", "Only remind for allies in range", false),
         "Uses the same group range as the unit frames. Personal reminders still appear."),
     -- Before a keystone starts, buffs can be asked to last the dungeon's own

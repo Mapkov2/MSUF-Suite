@@ -18,13 +18,14 @@ local _, NS = ...
 -- SecureActionButtonTemplate parented to UIParent covers the minimize cell or
 -- the restore tab while the pointer rests on it out of combat. Its hardware
 -- click makes SecureActionButton_OnClick click the window's X (minimize) or
--- the Blizzard button that opens the window (restore, Policy.Opener). No
--- window turns protected. The cell and the tab keep their own handlers for
--- the clicks the delegate does not take (combat, a window without an opener).
+-- the Blizzard button that opens the window (restore, Policy.Opener).
+-- The cell and the tab keep their handlers for clicks the delegate does not
+-- take (combat, a window without an opener).
 local Delegate = {}
 NS.WindowControlDelegate = Delegate
 
 local Safety, Policy = NS.Safety, NS.WindowControlPolicy
+local RELEASE_KEY = "windowControls:releaseDelegate"
 -- Our minimize cell or restore tab -> { state, role, prepare, finish }.
 local bound = setmetatable({}, { __mode = "k" })
 local secure
@@ -38,7 +39,11 @@ end
 -- drag of the tab ends with it, whichever of the drag and click ends first.
 local function Release()
     local owner = secure and secure.owner
-    if not owner or NS.IsCombatLocked() then return end
+    if not owner then return end
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer(RELEASE_KEY, Release)
+        return
+    end
     if secure.dragging then
         secure.dragging = nil
         Forward(owner, "OnDragStop")
@@ -46,12 +51,18 @@ local function Release()
     secure.owner = nil
     secure:Hide()
     secure:ClearAllPoints()
+    secure:SetAttribute("type1", nil)
+    secure:SetAttribute("clickbutton1", nil)
     Forward(owner, "OnLeave")
+end
+
+local function OnLeave(button)
+    if not button.dragging and not button.clicking then Release() end
 end
 
 local function Target(record)
     if record.role == "minimize" then
-        -- The map goes only while Blizzard's map button can bring it back.
+        -- Native-only windows minimize once a native button can bring them back.
         if Policy.SecureOnly(record.state) and not Policy.Opener(record.state) then return nil end
         return record.state.close
     end
@@ -64,8 +75,14 @@ end
 local function PreClick(button, mouseButton)
     button.clicking = true
     local record = bound[button.owner]
-    if not record or record.role ~= "minimize" or mouseButton ~= "LeftButton" then return end
-    if not record.prepare(record.state) and not InCombatLockdown() then button:SetAttribute("type1", nil) end
+    if not record or mouseButton ~= "LeftButton" or InCombatLockdown() then return end
+    -- The window can relayout while the proxy is shown. An old hit rectangle
+    -- must never invoke the native button or prepare a minimize.
+    if Safety.Read(button.owner, "IsMouseOver") ~= true
+        or record.role == "minimize" and not record.prepare(record.state)
+        or record.role == "restore" and Policy.SecureOnly(record.state) and Target(record) ~= button:GetAttribute("clickbutton1") then
+        button:SetAttribute("type1", nil)
+    end
 end
 
 -- Blizzard's X kept the window open: no tab. A right click on the tab is the
@@ -76,7 +93,7 @@ local function PostClick(button, mouseButton)
     local record = bound[owner]
     if record and record.role == "minimize" and record.state.minimized then
         record.finish(record.state)
-    elseif record and mouseButton == "RightButton" then
+    elseif record and mouseButton == "RightButton" and Safety.Read(owner, "IsMouseOver") == true then
         Forward(owner, "OnClick", mouseButton)
     end
     Release()
@@ -91,6 +108,7 @@ end
 local function DragStart(button)
     local record = bound[button.owner]
     if not record or record.role ~= "restore" or InCombatLockdown() then return end
+    if Safety.Read(button.owner, "IsMouseOver") ~= true then return Release() end
     button:SetAttribute("type1", nil)
     button.dragging = true
     Forward(button.owner, "OnDragStart")
@@ -107,7 +125,8 @@ local function Secure()
     secure:RegisterForDrag("LeftButton")
     secure:SetAttribute("useOnKeyDown", false)
     secure:SetScript("OnEnter", function(button) Forward(button.owner, "OnEnter") end)
-    secure:SetScript("OnLeave", Release)
+    secure:SetScript("OnLeave", OnLeave)
+    secure:SetScript("OnHide", Release)
     secure:SetScript("OnMouseDown", function(button) Forward(button.owner, "OnMouseDown") end)
     secure:SetScript("OnMouseUp", function(button) Forward(button.owner, "OnMouseUp") end)
     secure:SetScript("PreClick", PreClick)
@@ -121,18 +140,28 @@ end
 
 local function Attach(owner)
     local record = bound[owner]
-    if not record or NS.IsCombatLocked() or NS.Client.IsGamepadUI() then return end
+    if not record or NS.IsCombatLocked() or NS.Client.IsGamepadUI()
+        or secure and (secure.clicking or secure.dragging) then return end
     local target = Target(record)
     if not target or Safety.IsForbidden(target) then return end
-    -- Over the cell or tab, then the Blizzard button its click runs.
+    local left, top = Safety.Read(owner, "GetLeft"), Safety.Read(owner, "GetTop")
+    local width, height = Safety.Read(owner, "GetWidth"), Safety.Read(owner, "GetHeight")
+    local scale, uiScale = Safety.Read(owner, "GetEffectiveScale"), UIParent:GetEffectiveScale()
+    if not left or not top or not width or not height or width <= 0 or height <= 0
+        or not scale or scale <= 0 or uiScale <= 0 then return end
+    local ratio = scale / uiScale
     local button = Secure()
+    -- Anchoring a secure button to the cell implicitly protects its window.
+    -- Copy the hit rectangle in UIParent units so move/scale/fit stay usable.
     button:ClearAllPoints()
-    button:SetAllPoints(owner)
+    button:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * ratio, top * ratio)
+    button:SetSize(width * ratio, height * ratio)
     button:SetFrameStrata(owner:GetFrameStrata())
     button:SetFrameLevel(owner:GetFrameLevel() + 5)
     button:SetAttribute("type1", "click")
     button:SetAttribute("clickbutton1", target)
     button.owner = owner
+    NS.CombatGate.Cancel(RELEASE_KEY)
     button:Show()
 end
 

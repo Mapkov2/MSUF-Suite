@@ -196,8 +196,11 @@ local tabLayout = { height = TABS, pad = PAD, new = NewTab, place = Place, text 
 
 local function RefreshFonts(view)
     local readable = S.ReadableValues and S.ReadableValues() or false
-    if view.fontRevision == S.FontRevision and view.readableValues == readable then return false end
-    view.fontRevision, view.fontPath, view.readableValues = S.FontRevision, S.GlobalFontPath(), readable
+    local appearance = rawget(NS.Host, "Skin")
+    local override = view.skin and appearance and rawget(appearance, "GetOverrideFont")
+    local path = override and override() or S.GlobalFontPath()
+    if view.fontRevision == S.FontRevision and view.readableValues == readable and view.fontPath == path then return false end
+    view.fontRevision, view.fontPath, view.readableValues = S.FontRevision, path, readable
     for font, size in pairs(view.fonts) do S.SetFont(font, view.fontPath, size, "") end
     local extra = readable and 2 or 0
     for font, size in pairs(view.valueFonts) do S.SetFont(font, view.fontPath, size + extra, "") end
@@ -296,7 +299,7 @@ function View:ApplyHeaderSettings(config)
     if config then self.headerConfig = config end
     GroupLayout.SetReputationStyle(self, self.headerConfig, self.palette[GOLD] or GOLD)
     local reserve = self.nativeRoot and not self.nativeLayout and 0 or CAPTION_WIDTH
-    self.header:Settings(self.headerConfig, self.skin, self.frame:GetWidth() - 2, reserve, self.previewLayers)
+    self.header:Settings(self.headerConfig, self.skin, self.frame:GetWidth() - 2, reserve, self.previewLayers, self.fontPath)
     self.header:Paint(self.headerData, self:IsMinimized())
 end
 
@@ -505,7 +508,13 @@ local function PaintCard(list, card, group, offset)
             GroupLayout.PaintReputationBar(row, values.reputationFill, values.reputationReaction)
         end
         Text(row.left, values.label)
-        Text(row.right, list.view.readableValues and values.value == "—" and "?" or values.value)
+        if values.displayFormat then
+            -- Only the native formatter consumes display-only stat values.
+            row.right.panelText = nil
+            row.right:SetFormattedText(values.displayFormat, values.value, values.displayExtra)
+        else
+            Text(row.right, list.view.readableValues and values.value == "—" and "?" or values.value)
+        end
         Visible(row, true)
     end
     for i = used + 1, #card.rows do Visible(card.rows[i], false) end
@@ -638,6 +647,7 @@ local function PaintGroupMode(view, list, key, groups, reset, combat)
 end
 
 function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups, withModel, combat)
+    local classic = self.characterView == "classic" and self.nativeLayout ~= nil and withModel == true
     if self.nativeLayout then Window.ApplyNativeGearMode(self, right, withModel, GearClick, GearEnter, GearLeave) end
     local reset = self.contentTab ~= self.tab or self.detailSlot ~= selectedSlot
     self.contentTab, self.detailSlot = self.tab, selectedSlot
@@ -651,6 +661,7 @@ function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups,
     PaintSlots(self, self.left, left, INSET, INSET, columnWidth, 0, SLOT_STEP, selectedSlot)
     PaintSlots(self, self.right, right, DOLL_W - INSET - columnWidth, INSET, columnWidth, 0, SLOT_STEP, selectedSlot)
     PaintSlots(self, self.weapons, weapons, INSET, WEAPON_Y, weaponWidth, weaponWidth + GROUP_GAP, 0, selectedSlot)
+    Visible(self.plate, not classic)
     local detailsShown = selectedSlot ~= nil and detailGroups ~= nil and #detailGroups > 0
     local railGroups = detailsShown and detailGroups or groups or GROUP_EMPTY
     PaintGroupMode(self, self.rail, "combatRail", railGroups, reset, combat)

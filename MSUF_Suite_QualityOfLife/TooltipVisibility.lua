@@ -22,7 +22,8 @@ local SCALE_SOURCE = "tooltipVisibility"
 -- revealModifier choice -> the key that shows hidden tooltips (false: none).
 local REVEAL_KEYS = { false, IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown }
 local concealedAlpha
-local watching = false
+local watching, rulesEnabled = false, false
+local buildHooked
 -- Set below: the reveal key listener calls Apply, which starts the listener.
 local StateChanged
 
@@ -89,7 +90,7 @@ end
 
 local function Apply(event, plain)
     local tooltip = GameTooltip
-    if not M.active or not tooltip:IsShown() then return end
+    if not M.active or not rulesEnabled or not tooltip:IsShown() then return end
     local hidden = RulesHide(tooltip, event, plain)
     WatchReveal(hidden)
     if hidden and not RevealHeld() then
@@ -115,7 +116,7 @@ local function Shown()
     Apply()
 end
 local function Built(tooltip)
-    if tooltip == GameTooltip then Apply() end
+    if rulesEnabled and tooltip == GameTooltip then Apply() end
 end
 StateChanged = function(_, event) Apply(event) end
 
@@ -141,7 +142,6 @@ end
 function M:Enable()
     if not self.hooked then
         GameTooltip:HookScript("OnShow", Shown)
-        S.TooltipLines.Add(self, "AllTypes", Built)
         GameTooltip:HookScript("OnHide", Released)
         GameTooltip:HookScript("OnTooltipCleared", Cleared)
         self.hooked = true
@@ -151,6 +151,15 @@ end
 
 function M:Refresh()
     local c, context = self.config, self.context
+    rulesEnabled = c.inCombat or c.inInstances or c.hideItems or c.hideSpells or c.hideUnits
+    -- A scale-only profile has no work on each Blizzard tooltip rebuild.
+    if rulesEnabled and not buildHooked then
+        S.TooltipLines.Add(self, "AllTypes", Built)
+        buildHooked = true
+    elseif not rulesEnabled then
+        Reveal(GameTooltip)
+        WatchReveal(false)
+    end
     WantEvent(context, "PLAYER_REGEN_DISABLED", c.inCombat)
     WantEvent(context, "PLAYER_REGEN_ENABLED", c.inCombat)
     WantEvent(context, "PLAYER_ENTERING_WORLD", c.inInstances)

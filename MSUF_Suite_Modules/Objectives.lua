@@ -268,8 +268,10 @@ local function Event(self, event, ...)
         for i = 1, #SOURCES do Request(self, SOURCES[i]) end
         return
     end
+    -- A subzone change collects the watched quests again unless their list is
+    -- known to be whole and its zone groups still hold (O.CollectDirty).
     if self.config.groupQuestsByZone and (event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS") then
-        Request(self, "quests")
+        Request(self, "questZones")
     end
     RequestEventSources(self, event, ...)
 end
@@ -588,7 +590,8 @@ function M:Disable()
     if self.host then self.host:Hide() end
     for i = 1, #SOURCES do
         local list = self.sources[SOURCES[i]]
-        if list then list.count = 0 end
+        -- An emptied list is no longer what was collected (ObjectivesData.lua, QuestGroupsChanged).
+        if list then list.count, list.known = 0, nil end
     end
     self.previousFlat = nil
     self.flatWork, self.grouped, self.liveEntries = nil, nil, nil

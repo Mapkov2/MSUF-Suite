@@ -82,8 +82,14 @@ end
 function Chrome.PaintBadge(badge, info)
     local path = Kit.FontPath()
     if path ~= badge.path then
+        if badge.text:SetFont(path, 11, "") == false then
+            local fallback = Kit.DEFAULT_FONT
+            local existing = Safety.Read(badge.text, "GetFont")
+            if not existing and fallback and path ~= fallback then
+                badge.text:SetFont(fallback, 11, "")
+            end
+        end
         badge.path = path
-        badge.text:SetFont(path, 11, "")
     end
     local color = info and info.quality and ITEM_QUALITY_COLORS[info.quality]
     if color then

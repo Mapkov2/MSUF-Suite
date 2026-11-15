@@ -84,7 +84,7 @@ function Interaction.Refresh(bar)
         bar._suitePreviewTarget, bar._suitePreviewOpen, bar._suitePreviewLabel = nil, nil, nil
         target = nil
     end
-    P.SetTranslatedText(bar.label, Tr(bar._suitePreviewLabel or HINT))
+    P.SetTranslatedText(bar.label, Tr(bar._suitePreviewLabel or bar.hint or HINT))
     bar.button:SetEnabled(target ~= nil)
     bar.button:SetAlpha(target and 1 or .45)
     -- Thickness 0 names the selection in the bar without outlining it.
@@ -98,21 +98,27 @@ function Interaction.Select(bar, handle, label, open, thickness)
     Interaction.Refresh(bar)
 end
 
-function Interaction.Bar(ctx, parent, width, help)
-    local bar = CreateFrame("Frame", nil, parent)
+function Interaction.SizeBar(bar, width)
     width = math.max(24, width)
     bar:SetSize(width, 24)
+    local buttonWidth = math.min(width - 12, bar.preferredButtonWidth)
+    bar.button:SetWidth(buttonWidth)
+    bar.label:SetWidth(math.max(20, width - buttonWidth - 28))
+    bar.label:SetShown(width - buttonWidth >= 68)
+end
+
+function Interaction.Bar(ctx, parent, width, help)
+    local bar = CreateFrame("Frame", nil, parent)
     bar:EnableMouse(true)
     local chrome = P.M.PreviewHelpers
     if chrome and chrome.ApplyPreviewChrome then chrome.ApplyPreviewChrome(bar, "sidebar", T) end
     bar.label = T.Font(bar, "GameFontHighlightSmall", "Open settings", T.colors.muted, "supporting")
-    local buttonWidth = math.min(width - 12, math.max(100, math.ceil(bar.label:GetUnboundedStringWidth() + 28)))
+    bar.preferredButtonWidth = math.max(100, math.ceil(bar.label:GetUnboundedStringWidth() + 28))
     bar.label:SetPoint("LEFT", bar, "LEFT", 8, 0)
-    bar.label:SetWidth(math.max(20, width - buttonWidth - 28))
     bar.label:SetWordWrap(false)
-    bar.label:SetShown(width - buttonWidth >= 68)
-    bar.button = T.Button(bar, "Open settings", buttonWidth, 18)
+    bar.button = T.Button(bar, "Open settings", bar.preferredButtonWidth, 18)
     bar.button:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
+    Interaction.SizeBar(bar, width)
     HM.SkipHistoryCheckpoint(bar.button)
     HM.AllowCombatClick(bar.button)
     bar.button:SetScript("OnClick", function()
@@ -129,14 +135,27 @@ function Interaction.Bar(ctx, parent, width, help)
     return bar
 end
 
+local LAYER_TITLE_COLOR = { 0.94, 0.81, 0.47, 1 }
+local LAYER_BACKDROP = { bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 }
+function Interaction.LayerRailTitle(rail)
+    local helpers = P.M.PreviewHelpers
+    if helpers and helpers.ApplyPreviewLayerRail then
+        helpers.ApplyPreviewLayerRail(rail)
+    elseif rail.SetBackdrop then
+        rail:SetBackdrop(LAYER_BACKDROP)
+        rail:SetBackdropColor(0.04, 0.06, 0.09, 0.96)
+        rail:SetBackdropBorderColor(0.62, 0.60, 0.50, 1)
+    end
+    return T.Font(rail, "GameFontDisableSmall", "Preview Layers", T.colors.previewLayerTitle or LAYER_TITLE_COLOR, "card")
+end
+
 -- Shared preview layer rail used by the meter and chat. Layer state is local
 -- to the preview; command actions and mouse clicks use the same callbacks.
 function Interaction.BuildLayerRail(owner, parent, specs, toggle, open)
-    local chips = CreateFrame("Frame", nil, parent)
+    local chips = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     owner.chips, owner.layerButtons = chips, {}
     local H = P.M.PreviewHelpers or {}
-    if H.ApplyPreviewChrome then H.ApplyPreviewChrome(chips, "sidebar", T) end
-    local title = T.Font(chips, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
+    local title = Interaction.LayerRailTitle(chips)
     title:SetPoint("TOPLEFT", chips, "TOPLEFT", 10, -5)
     local measure = T.Font(chips, "GameFontDisableSmall", "", T.colors.muted)
     measure:Hide()
@@ -171,7 +190,15 @@ end
 function Interaction.LayoutLayerRail(owner, width)
     local chips, x, row = owner.chips, 10, 0
     for _, button in ipairs(owner.layerButtons) do
-        local size = button:GetWidth()
+        button._suiteLayerWidth = button._suiteLayerWidth or button:GetWidth()
+        local size = math.min(math.max(1, width - 20), button._suiteLayerWidth)
+        if button:GetWidth() ~= size then
+            button:SetWidth(size)
+            if button.fs then
+                button.fs:SetPoint("RIGHT", button, "RIGHT", -5, 0)
+                button.fs:SetWordWrap(false)
+            end
+        end
         if x > 10 and x + size > width - 10 then x, row = 10, row + 1 end
         button:ClearAllPoints()
         button:SetPoint("TOPLEFT", chips, "TOPLEFT", x, -25 - row * 24)

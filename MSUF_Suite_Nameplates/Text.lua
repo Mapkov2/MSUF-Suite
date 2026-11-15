@@ -125,5 +125,21 @@ function Text.Configure(config)
     for _, prefix in ipairs({ "enemy", "friendly", "enemyCast", "friendlyCast" }) do
         result[prefix] = NS.NameplateText.FontStyle(config, prefix, shared)
     end
+    for _, prefix in ipairs({ "enemyCast", "friendlyCast" }) do
+        local style = result[prefix]
+        local size = config[prefix .. "TimeSize"] or 0
+        if size > 0 then
+            local timeStyle = {}
+            if style.enabled then
+                for key, value in pairs(style) do timeStyle[key] = value end
+            else
+                timeStyle.enabled, timeStyle.flags = true, "OUTLINE"
+            end
+            timeStyle.size = size
+            style.time = timeStyle
+        else
+            style.time = style
+        end
+    end
     Text.styles = result
 end

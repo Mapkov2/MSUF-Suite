@@ -11,6 +11,11 @@ local appearanceHooked = false
 local SKINNED_HUD = { "objectives", "runSummary", "announcements", "characterPanel" }
 -- Addons that restyle Blizzard's windows as the skin does (folder names).
 local WINDOW_SKIN_ADDONS = { "ElvUI", "NDui", "Aurora", "DarkMode" }
+-- The Suite's own skin engine while it is loaded.
+local function LoadedEngine()
+    local provider = _G.MapkoSkin
+    return type(provider) == "table" and provider.addonName == "MSUF_Suite_Skin" and provider or nil
+end
 
 local function HookOwnedHUD(api)
     -- hooksecurefunc raises when the hooked field is not a function.
@@ -29,6 +34,12 @@ end
 function Skin.IsAvailable()
     local provider = _G.MapkoSkin
     return type(provider) == "table" and type(provider.GetAPI) == "function"
+end
+
+function Skin.GetWindowCaptionMode()
+    local engine = LoadedEngine()
+    local icons = engine and engine.DB and engine.DB.icons
+    return icons and icons.windowActions and icons.windowActions.glyphMode or "windows"
 end
 
 function Skin.LoadLegacyDatabase()
@@ -89,6 +100,20 @@ function Skin.GetEquipmentReader()
     return Skin.EquipmentReader
 end
 
+function Skin.GetCharacterView()
+    local provider = LoadedEngine()
+    local details = provider and provider.CharacterDetails
+    return details and details.GetView() or "modern"
+end
+
+function Skin.GetOverrideFont()
+    local provider = LoadedEngine()
+    local db = provider and provider.DB
+    if not (Suite.Client.isForever and db and db.enabled and db.typography.enabled) then return nil end
+    local typography = provider.Typography
+    return typography.GetSelectionPath(typography.GetSelection())
+end
+
 -- Explicitly authored menu roots can be registered before the optional
 -- engine loads. The factory calls this again on show or after rendering.
 function Skin.RegisterMenu(frame, moduleID, contentOnly)
@@ -124,12 +149,6 @@ function Skin.SetEnabled(enabled, deferApply)
     if enabled then Skin.NoticeWindowSkinConflicts() end
     if not deferApply and Suite.Suite.started then Suite.Suite.ApplyAll() end
     return true
-end
-
--- The Suite's own skin engine while it is loaded, else nil.
-local function LoadedEngine()
-    local provider = _G.MapkoSkin
-    if type(provider) == "table" and provider.addonName == "MSUF_Suite_Skin" then return provider end
 end
 
 function Skin.ApplyStartupLayout()

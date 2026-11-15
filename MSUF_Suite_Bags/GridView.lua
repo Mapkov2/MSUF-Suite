@@ -64,12 +64,27 @@ end
 local COLLAPSE_ICON, HEADER_HEIGHT = 16, 18
 
 local function HitClicked(hit)
-    hit.toggle(hit.key)
+    if hit.toggle then hit.toggle(hit.key) end
 end
 
 local function HitEnter(hit)
     GameTooltip:SetOwner(hit, "ANCHOR_RIGHT")
-    GameTooltip:SetText(S.Text(hit.collapsed and "Click to show these items" or "Click to hide these items"))
+    GameTooltip:SetText(hit.toggle and S.Text(hit.collapsed and "Click to show these items" or "Click to hide these items")
+        or GridView.GroupLabel(hit.group))
+    if hit.group and not P.NS.InCombat() then
+        local total, complete = 0, true
+        for i = 1, #hit.group.rows do
+            local row = hit.group.rows[i]
+            if hit.group.includeAliases or not row.alias then
+                local price = row.item.sellPrice
+                if S.Finite(price) then total = total + price * row.count else complete = false end
+            end
+        end
+        if total > 0 then
+            local key = complete and "Category vendor value: %s" or "Known category vendor value: %s"
+            GameTooltip:AddLine(S.Text(key):format(S.MoneyText(total)), 0.8, 0.8, 0.8)
+        end
+    end
     GameTooltip:Show()
 end
 
@@ -89,7 +104,7 @@ local function HeaderHit(label, parent)
     return hit
 end
 
-local function PlaceHit(label, parent, anchor, x, y, width, group, toggle)
+local function PlaceHit(label, parent, anchor, x, y, width, group, toggle, price)
     local hit = HeaderHit(label, parent)
     if hit.placeX ~= x or hit.placeY ~= y or hit.placeWidth ~= width or hit.placeAnchor ~= anchor then
         hit:ClearAllPoints()
@@ -97,18 +112,18 @@ local function PlaceHit(label, parent, anchor, x, y, width, group, toggle)
         hit:SetWidth(width)
         hit.placeX, hit.placeY, hit.placeWidth, hit.placeAnchor = x, y, width, anchor
     end
-    local collapsed = group.collapsed == true
+    local collapsed = toggle ~= nil and group.collapsed == true
     if hit.collapsed ~= collapsed then
         hit.collapsed = collapsed
         hit.plus:SetShown(collapsed)
     end
-    hit.key, hit.toggle = group.key, toggle
+    hit.key, hit.toggle, hit.group = group.key, toggle, price and group or nil
     if not hit:IsShown() then hit:Show() end
 end
 
 -- Header label of a group cell, from a pool owned by the view. toggle makes
 -- the header a button that collapses its group.
-function GridView.PaintHeader(pool, index, parent, anchor, x, y, width, group, toggle)
+function GridView.PaintHeader(pool, index, parent, anchor, x, y, width, group, toggle, price)
     local label = pool[index]
     if not label then
         label = GridView.Font(parent)
@@ -124,7 +139,11 @@ function GridView.PaintHeader(pool, index, parent, anchor, x, y, width, group, t
     label:SetWidth(width - shift)
     label:SetText(text)
     label:Show()
-    if toggle then PlaceHit(label, parent, anchor, x, y, width, group, toggle) elseif label.hit then label.hit:Hide() end
+    if toggle or price then
+        PlaceHit(label, parent, anchor, x, y, width, group, toggle, price)
+    elseif label.hit then
+        label.hit:Hide()
+    end
     return label
 end
 

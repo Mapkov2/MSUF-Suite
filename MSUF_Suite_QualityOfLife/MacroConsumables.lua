@@ -129,11 +129,15 @@ end
 
 local function Best(entries, kind, options)
     local best
+    local preferred = options.items and #options.items > 0
     for _, entry in ipairs(entries) do
         if Accepts(entry, kind, options) then
-            if not best or options.preferConjured and entry.conjured and not best.conjured
-                and entry.cooldown <= best.cooldown then best = entry end
-            if best == entry and options.items and #options.items > 0 then return best end
+            if preferred and entry.cooldown == 0 then return entry end
+            if not best or entry.cooldown < best.cooldown
+                or not preferred and options.preferConjured and entry.conjured and not best.conjured
+                    and entry.cooldown == best.cooldown then
+                best = entry
+            end
         end
     end
     return best

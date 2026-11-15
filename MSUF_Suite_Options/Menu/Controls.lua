@@ -14,7 +14,7 @@ function P.SkinSearchRow(ctx, row, section, title, help)
         keywords[#keywords + 1] = value.text
     end
     ctx.searchRows[#ctx.searchRows + 1] = {
-        pageKey = "suite_skin", suiteModuleId = "skin", label = row.label,
+        pageKey = row.pageKey or "suite_skin", suiteModuleId = "skin", label = row.label,
         kind = row.kind, section = title, keywords = keywords, help = help,
         settingKey = row.kind ~= "color" and row.settingKey or nil,
         controlId = row.kind ~= "color" and row.controlId or nil,
@@ -160,13 +160,16 @@ local function Hex(r, g, b)
 end
 
 local function RuleRGB(rule, value)
-    if value == "" and rule.inheritColor then return S.CharacterHeader.PickerColor(rule.inheritColor) end
+    if value == "" and rule.inheritColor then
+        if rule.resolveColor then return rule.resolveColor() end
+        return S.CharacterHeader.PickerColor(rule.inheritColor)
+    end
     return P.RGB(value)
 end
 
 local function RuleHex(rule, r, g, b)
     local value = Hex(r, g, b)
-    if rule.inheritColor and value == Hex(S.CharacterHeader.PickerColor(rule.inheritColor)) then return "" end
+    if rule.inheritColor and value == Hex(RuleRGB(rule, "")) then return "" end
     return value
 end
 
@@ -381,12 +384,15 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
     local rows, pending, strings = built.rows, built.pending, built.strings
     local entries = {}
     if #rows > 0 then
+        local cols = columns or (width >= 560 and 2 or 1)
         local grid = W.SettingsRows(ctx, parent, {
-            x = 16, y = y, width = width, columns = columns or (width >= 560 and 2 or 1), rows = rows,
+            x = 16, y = y, width = width, columns = cols, rows = rows,
         })
-        for _, rule in ipairs(pending) do
+        local layoutColors = pageKey == "colors" and P.LayoutColorRows
+        if layoutColors then grid.bottomY = layoutColors(parent, grid.controls, rows, y, width, cols) end
+        for index, rule in ipairs(pending) do
             local widget = grid.controls[rule.key]
-            entries[#entries + 1] = { rule = rule, widget = widget }
+            entries[#entries + 1] = { rule = rule, widget = widget, row = id == "nameplates" and rows[index] or nil }
             -- A rule's note (rule.tooltip, SuiteCatalog.lua) shows on its control.
             if rule.tooltip and widget then M.AddTooltip(widget, Tr(rule.label), Tr(rule.tooltip), { hook = true }) end
         end
@@ -453,18 +459,18 @@ function P.AttachRowsSummary(ctx, body, rows)
 end
 
 -- Suite accordions use this shortcut as their sole color entry point.
-function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant)
+function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant, extraTargets, extraCount, getValue)
     if not (body and W.AttachContextColorShortcut) then return end
     local colors = {}
     for _, rule in ipairs(rules or {}) do
         if rule.color and not rule.hidden then colors[#colors + 1] = rule end
     end
-    if #colors == 0 then return end
+    if #colors == 0 and not extraTargets then return end
     local shortcut = W.AttachContextColorShortcut(body, {
         title = Tr(title),
-        maxTargets = #colors,
+        maxTargets = #colors + (extraCount or 0),
         getTargets = function()
-            local targets = {}
+            local targets = extraTargets and extraTargets() or {}
             for _, rule in ipairs(colors) do
                 local key = keyFn and keyFn(rule.key) or rule.key
                 local config, profile, epoch = S.Config(id), P.Suite.DB, colorEpoch
@@ -479,10 +485,13 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant)
                     settingKey = "msufsuite." .. id .. "." .. key,
                     isEnabled = isRelevant and function() return isRelevant(rule) end or nil,
                     get = function()
-                        if Current() then return RuleRGB(rule, P.Get(id, key)) end
+                        if Current() then return RuleRGB(rule, getValue and getValue(key) or P.Get(id, key)) end
                         return RuleRGB(rule, config[key])
                     end,
-                    set = function(r, g, b) if Current() then P.Set(id, key, RuleHex(rule, r, g, b)) end end,
+                    set = function(r, g, b)
+                        if getValue and isRelevant and not isRelevant(rule) then return end
+                        if Current() then P.Set(id, key, RuleHex(rule, r, g, b)) end
+                    end,
                 }
             end
             return targets
@@ -541,12 +550,7 @@ function P.TabLazySection(builder, routed)
     end
 end
 
--- A collapsible section built from catalog rules, with optional help text.
--- opts: help, open, keyFn, columns, onEnsureVisible, extra(body, y) -> y,
--- copy (see P.AttachSectionReset), onBuilt(body, entries) once the controls
--- exist. A lazy host builds a closed section's controls on first open, so
--- the returned entries are nil until then. Colors uses the same lazy path;
--- the Suite category has no preview paint targets outside these sections.
+-- Collapsible catalog rules, with lazy content and optional header controls.
 function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     opts = opts or {}
     local built, entries = P.RuleRows(pageKey, id, rules, opts.keyFn, sectionId), nil
@@ -557,16 +561,21 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
             local help = P.Description(body, opts.help, 16, y, width, title)
             y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
         end
-        y, entries = P.RuleGrid(ctx, body, pageKey, id, rules, y, width, opts.keyFn, sectionId, opts.columns, built)
+        if opts.grid then
+            y, entries = opts.grid(body, y, width)
+        else
+            y, entries = P.RuleGrid(ctx, body, pageKey, id, rules, y, width, opts.keyFn, sectionId, opts.columns, built)
+        end
         if opts.extra then y = opts.extra(body, y, width) or y end
-        P.AttachRuleColors(body, title, id, rules, opts.keyFn)
+        if not opts.grid then P.AttachRuleColors(body, title, id, opts.colors or rules, opts.keyFn) end
         return y
     end
     local body = P.LazySection(b, sectionId, title, opts.open, {
         content = Content,
+        head = opts.head,
         shell = function(section)
             P.AttachSectionReset(ctx, section, title, function()
-                return P.ResetRules(id, rules, opts.keyFn, opts.resetKeys)
+                return P.ResetRules(id, opts.resetRules or rules, opts.keyFn, opts.resetKeys)
             end, opts.copy)
             local entry = HM.GetSectionEntry(section)
             if entry and opts.onEnsureVisible then HM.SetSectionEnsureVisible(entry, opts.onEnsureVisible) end

@@ -7,6 +7,11 @@ Text.Suffixes = { "NameFormat", "NameMaxChars", "NameClipSide", "NameNoEllipsis"
 
 Text.StyleSuffixes = { "TextEnabled", "CustomFont", "NameFont", "NameSize", "TextOutline", "TextShadow" }
 
+-- 1 retains the native name layout. Other choices pin the label to the health bar.
+function Text.NameAnchor(config, prefix)
+    return NS.AnchorPoints[(config[prefix .. "NameRelativeAnchor"] or 1) - 1]
+end
+
 function Text.Limited(value) return value == 2 or value == 4 end
 
 local function FontProvider(config)
@@ -15,10 +20,12 @@ local function FontProvider(config)
 end
 
 function Text.UsesSharedFont(config)
+    if config.look == 1 then return false end
     return FontProvider(config) ~= nil or NS.NameplatePortableText.Stored() ~= nil
 end
 
 function Text.Shared(config)
+    if config.look == 1 then return end
     if NS.NameplatePortableText.Stored() then return NS.NameplatePortableText.Resolve() end
     local resolve = FontProvider(config)
     if resolve then return resolve({}) end
@@ -46,7 +53,7 @@ function Text.Compile(config, prefix)
     local provider = NS.HostBridge.NameFormatter()
     local portable = NS.NameplatePortableText.Stored()
     if portable then provider = NS.NameplatePortableText end
-    local nativeScope = provider and (provider.Nameplates ~= nil or portable ~= nil)
+    local nativeScope = config.look ~= 1 and provider and (provider.Nameplates ~= nil or portable ~= nil)
     local formatting = nativeScope or config.nameFormattingEnabled == true
     local formatter = formatting and provider or nil
     local color = not nativeScope and config[prefix .. "NameColorEnabled"] == true
@@ -116,11 +123,12 @@ function Text.FontStyle(config, prefix, shared)
         flags = Style.FontFlags(config[prefix .. (cast and "Outline" or "TextOutline")]),
         shadow = config[prefix .. "TextShadow"] == true,
         size = Text.ResolveSize(config, sizeKey, shared),
-        healthSize = prefix == "enemy" and config.enemyHealthTextSize or 0,
+        healthSize = config[prefix .. "HealthTextSize"] or 0,
         fontScale = formatter and formatter.ApplyScale }
     if shared then
         style.enabled, style.font, style.flags = true, shared.font, shared.fontFlags
-        style.healthSize = prefix == "enemy" and Text.ResolveSize(config, "enemyHealthTextSize", shared) or shared.fontSize
+        style.healthSize = prefix == "enemy" and Text.ResolveSize(config, "enemyHealthTextSize", shared)
+            or (style.healthSize > 0 and style.healthSize or shared.fontSize)
         style.shadow, style.shadowAlpha = shared.fontShadow, shared.fontShadowAlpha
         style.color = shared.textColor
         style.shadowX, style.shadowY = shared.fontShadowX, shared.fontShadowY

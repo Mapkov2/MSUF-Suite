@@ -56,17 +56,20 @@ local function NativeAlpha(uf, frame, hide, locked)
 end
 
 function Level.PaintNative(uf, prefix)
-    if not NS.Client.isForever then return end
     local styled = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix]
-    local hide = styled and (M.config[Key[prefix].LevelEnabled] == false or M.config.levelAppearance ~= LEVEL_BADGE)
     local badge, legacy = uf.PlayerLevelDiffFrame, uf.LevelFrame
+    local forever = NS.Client.isForever
+    local off = styled and M.config[Key[prefix].LevelEnabled] == false
+    local hide = off or forever and styled and M.config.levelAppearance ~= LEVEL_BADGE
+    local hideLegacy = off or forever and styled
+    if not hide and not hideLegacy and not M.nativeLevelAlphas[badge] and not M.nativeLevelAlphas[legacy] then return end
     -- Keep the native fallback if any part of the handoff is protected.
     local locked = NS.IsCombatLocked() and (Protected(uf) or Protected(uf.HealthBarsContainer)
         or Protected(badge) or Protected(legacy))
     NativeAlpha(uf, badge, hide, locked)
     -- Camelot already draws its own badge in Classic style. Keep its legacy
     -- LevelFrame out of the Suite look so the level is never duplicated.
-    NativeAlpha(uf, legacy, styled, locked)
+    NativeAlpha(uf, legacy, hideLegacy, locked)
 end
 
 function Level.RestoreNative()
@@ -133,6 +136,7 @@ local function Label(uf)
     label:SetPoint("RIGHT", container, "LEFT", -4, 0)
     label:SetWidth(24)
     label:SetJustifyH("RIGHT")
+    label._suiteLevelAnchor = 1
     label:SetTextColor(WHITE.r, WHITE.g, WHITE.b)
     label._suiteLevelColor = WHITE
     M.levelLabels[uf] = label
@@ -153,6 +157,24 @@ local function DifficultyColor(unit)
     return GetDifficultyColor(difficulty)
 end
 
+local function Anchor(uf, label, prefix)
+    local choice = M.config[Key[prefix].LevelAnchor] or 1
+    if label._suiteLevelAnchor == choice then return end
+    if NS.IsCombatLocked() and (Protected(uf) or Protected(label)) then
+        M.pendingPlates[uf] = true
+        return
+    end
+    local point = NS.NameplateStyle.Anchors[choice]
+    label:ClearAllPoints()
+    if point then
+        label:SetPoint("CENTER", uf.HealthBarsContainer.healthBar, point)
+    else
+        label:SetPoint("RIGHT", uf.HealthBarsContainer, "LEFT", -4, 0)
+    end
+    label:SetJustifyH(point and "CENTER" or "RIGHT")
+    label._suiteLevelAnchor = choice
+end
+
 function Level.Paint(uf, prefix, unit)
     if not ShowsNumber(uf, prefix, unit) then
         Level.Hide(uf)
@@ -164,6 +186,7 @@ function Level.Paint(uf, prefix, unit)
         M.pendingPlates[uf] = true
         return
     end
+    Anchor(uf, label, prefix)
     local customHeight = M.config[Key[prefix].LevelSize]
     local height = S.Finite(customHeight) and customHeight > 0 and customHeight
         or NamePlateSetupOptions.levelFontHeight or 10

@@ -24,12 +24,12 @@ end
 
 function Profiles.SettingGroup(key, rule)
     local section = rule.section or ""
-    if section == "auraColors" then return "colors" end
+    if section == "auraColors" or section == "barGradients" then return "colors" end
     if section:lower():find("aura", 1, true) or key:find("Auras", 1, true)
         or key:find("Buffs", 1, true) or key:find("ControlAura", 1, true) then return "auras" end
     if key:find("Cast", 1, true) or section:lower():find("cast", 1, true) == 1 then return "casts" end
     if key:match("Offset[XY]$") then return "layout" end
-    if section == "nameText" or section:match("^extraText%d$") or key:find("Font", 1, true)
+    if section == "nameText" or section == "plateExtraText" or key:find("Font", 1, true)
         or key:find("Name", 1, true) or key:find("Text", 1, true) and not key:find("Texture", 1, true) then return "text" end
     if rule.color or section == "roleColors" or section == "signals" then return "colors" end
     return "layout"
@@ -66,13 +66,13 @@ local BUILTINS = {
         enemyCastHeight = 10, targetScaleEnabled = true, targetScalePercent = 115 } },
     { key = "tank", label = "Tank", settings = { enemyTankMode = true, enemyFocusMarker = true,
         enemyThreatTransitionEnabled = true, focusReminderEnabled = true, enemyNameDuringCast = 2,
-        interruptFeedbackEnabled = true, extraText1Source = 6, extraText1Side = 2,
+        interruptFeedbackEnabled = true, enemyExtraTextThreat = true,
         enemyHealthWidthDelta = 150, enemyHealthHeightDelta = 16, targetScaleEnabled = true, targetScalePercent = 120 } },
     { key = "dots", label = "DoT", settings = { enemyHealthWidthDelta = 150, enemyHealthHeightDelta = 14,
         auraDisplayEnabled = true, auraScaleMode = 2, auraScalePercent = 120, executePulseEnabled = true,
-        enemyNameDuringCast = 2, interruptFeedbackEnabled = true, extraText1Source = 10, extraText1Side = 2 } },
+        enemyNameDuringCast = 2, interruptFeedbackEnabled = true, enemyExtraTextForces = true } },
     { key = "pvp", label = "PvP", settings = { enemyFocusMarker = true, focusScaleEnabled = true, focusScalePercent = 115,
-        interruptFeedbackEnabled = true, extraText1Source = 2, extraText1Side = 2, enemyHealthWidthDelta = 155,
+        interruptFeedbackEnabled = true, enemyExtraTextTarget = true, enemyHealthWidthDelta = 155,
         enemyHealthHeightDelta = 16, targetScaleEnabled = true, targetScalePercent = 125 } },
 }
 
@@ -205,7 +205,7 @@ function Profiles.Inspect(text, options)
     local sharedChanges = Changes(SharedValues(shared), SharedValues(NS.ProfileIO.CaptureNameplateShared()))
     local encoded, why = NS.ProfileIO.EncodeNameplateProfile(settings, native, shared, options)
     if not encoded then return nil, why end
-    return { text = encoded, changes = changes, native = native, shared = shared, legacy = not native,
+    return { text = encoded, settings = settings, changes = changes, native = native, shared = shared, legacy = not native,
         nativeChanges = nativeChanges, sharedChanges = sharedChanges }
 end
 

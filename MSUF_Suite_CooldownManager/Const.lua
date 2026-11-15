@@ -69,10 +69,9 @@ K.POINT_X = { 1, 0, -1, 1, 0, -1, 1, 0, -1 }
 K.POINT_Y = { -1, -1, -1, 0, 0, 0, 1, 1, 1 }
 K.JUSTIFY = { "LEFT", "CENTER", "RIGHT", "LEFT", "CENTER", "RIGHT", "LEFT", "CENTER", "RIGHT" }
 
--- Frame levels above the icon frame: a timer bar's charge segments, swipe
--- (with its countdown), recharge edge, glow, text. The swipe moves to top,
--- above the text, for entries that show the countdown on top.
-K.LEVEL = { fill = 1, cd = 2, charge = 3, glow = 4, assist = 5, text = 6, top = 7 }
+-- Frame levels above the icon: charge segments, aura overlay, recharge
+-- edge, glow, assist, then the countdown and stack text in the chosen order.
+K.LEVEL = { fill = 1, cd = 2, charge = 3, glow = 4, assist = 5, countdown = 6, text = 7, top = 8 }
 -- Frame levels above an aura button, bottom to top. Buff bars: the fill,
 -- the stack threshold colour, the stack markers, glows and pandemic edges,
 -- then the countdown and name, then the stacks (Text on top swaps the last

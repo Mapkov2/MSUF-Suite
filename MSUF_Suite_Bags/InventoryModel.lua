@@ -270,7 +270,9 @@ local function MergeKey(item)
 end
 
 local function Add(model, group, item, merge, alias)
-    local mergeKey = merge and item.itemID and not item.locked and (item.maxStack or 1) > 1 and MergeKey(item)
+    local mergeKey = merge and item.itemID and not item.locked
+        and (merge ~= "junk" and (item.maxStack or 1) > 1 or merge ~= "stacks" and item.quality == POOR)
+        and MergeKey(item)
     local row = mergeKey and group.merge[mergeKey]
     if row then
         row.count, row.stacks = row.count + (item.count or 1), row.stacks + 1
@@ -400,6 +402,11 @@ local function ItemGroupWithKeyring(item, config, state, model)
     return ItemGroup(item, config, state, model)
 end
 
+local function PhysicalGroup(item)
+    if item.keyring then return "keyring", item.bagName, 190, nil, false end
+    return "all", "All items", 2, nil, true
+end
+
 local function AddSets(model, config, item, key)
     for j = 1, #item.setNames do
         local name = item.setNames[j]
@@ -431,6 +438,7 @@ end
 local function Arrange(group, selected, collapsed, order)
     local all = not selected or selected == "all"
     group.visible = all or selected == group.key
+    group.includeAliases = not all
     group.collapsed = all and collapsed ~= nil and collapsed[group.key] == true
     group.hidden = 0
     -- Character gear is an aggregate filter; All keeps the original groups.
@@ -463,7 +471,18 @@ function Model.Build(model, items, config, state, context)
         KeyCategories(model)
         if state.collapsed then PruneCollapsed(model, state.collapsed) end
     end
-    local merge = config.mergeStacks and not (context and context.transactions)
+    -- The Forever One Bag renders the same stable slots that Blizzard sorts.
+    -- Other views can group items or show a combined count over multiple slots.
+    local physical = context and context.physicalSlots
+    local merge
+    if not physical and not (context and context.transactions) then
+        if context and context.mergeJunk then
+            -- Forever can group identical junk even when every copy occupies its own slot.
+            merge = config.mergeStacks and "all" or "junk"
+        elseif config.mergeStacks then
+            merge = "stacks"
+        end
+    end
     local selected = context and context.selected
     local categories = config.inventoryView == CATEGORIES
     local showSets = categories and config.groupEquipmentSets and config.category_equipment ~= false
@@ -474,7 +493,7 @@ function Model.Build(model, items, config, state, context)
     end
     -- searching: Blizzard's search marks non-matching slots isFiltered.
     local searching = context and context.searching
-    local groupForItem = context and context.hasKeyring and ItemGroupWithKeyring or ItemGroup
+    local groupForItem = physical and PhysicalGroup or context and context.hasKeyring and ItemGroupWithKeyring or ItemGroup
     for i = 1, #items do
         local item = items[i]
         if not (config.hideEmptySlots and not item.itemID)
@@ -494,7 +513,7 @@ function Model.Build(model, items, config, state, context)
         AddEmptyCategories(model, config)
     end
     sort(model.groups, SortGroups)
-    local order = RowOrder(config, categories)
+    local order = not physical and RowOrder(config, categories) or nil
     -- Collapsing applies to the Categories view; a search shows its matches.
     local collapsed = categories and not query and not searching and state.collapsed or nil
     for i = 1, #model.groups do Arrange(model.groups[i], selected, collapsed, order) end

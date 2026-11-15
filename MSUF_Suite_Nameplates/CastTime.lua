@@ -52,9 +52,14 @@ function CastTime.Restore(cast)
     local state = cast and M.castTimes[cast]
     if not state or not state.unit then return end
     state.unit = nil
-    state.active = false
+    if state.active == false then return end
+    -- A forbidden label still needs to be hidden when the plate is reused.
+    state.active = nil
     state.binding:Disable()
-    if Safe(state.label) then state.label:Hide() end
+    if Safe(state.label) then
+        state.label:Hide()
+        state.active = false
+    end
 end
 
 -- UnitCastingDuration, UnitChannelDuration and UnitEmpoweredChannelDuration
@@ -80,9 +85,12 @@ end
 function CastTime.Refresh(state, unit, event)
     if state.active and (event == "UNIT_SPELLCAST_INTERRUPTIBLE"
         or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE") then return end
-    state.active = false
-    state.binding:Disable()
-    state.label:Hide()
+    if state.active ~= false then
+        state.active = nil
+        state.binding:Disable()
+        state.label:Hide()
+        state.active = false
+    end
     if not unit then return end
     if event == "UNIT_SPELLCAST_CHANNEL_START" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
         ApplyDuration(state, unit, UnitChannelDuration)
@@ -116,7 +124,7 @@ local function Create(cast)
     binding:SetZeroDurationText("")
     binding:SetExpiredText("")
     binding:Disable()
-    return { label = label, binding = binding }
+    return { label = label, binding = binding, active = false }
 end
 
 -- uf: the plate of this castbar; a label combat holds back is made when the
@@ -162,6 +170,8 @@ function CastTime.Repaint()
     for _, uf in pairs(M.activeUnits) do
         local health = Safe(uf) and uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
         local cast = health and uf.CastBarsContainer and uf.CastBarsContainer.castBar
-        if cast then private.KickReady.Paint(cast, private.PlatePrefix(uf), M.units[health]) end
+        if cast and (not private.IsSkinSuppressed or not private.IsSkinSuppressed(uf)) then
+            private.KickReady.Paint(cast, private.PlatePrefix(uf), M.units[health])
+        end
     end
 end

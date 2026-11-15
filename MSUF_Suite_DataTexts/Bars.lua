@@ -89,7 +89,7 @@ local function Click(button, mouse)
     if button.extra then
         Actions.Click(button, mouse or "LeftButton")
     elseif not NS.IsCombatLocked() then
-        Standard.Click(button)
+        Standard.Click(button, mouse)
     end
 end
 

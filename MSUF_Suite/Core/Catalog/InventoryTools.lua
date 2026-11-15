@@ -17,6 +17,7 @@ Module("inventoryArchive", "Inventory archive",
 })
 Module("restockPlanner", "Stock targets", "Set item quantities to keep in your bags and see missing amounts and recorded bank supplies.", false, {
     B.String("targets", "Stock target data", "", 12000),
+    B.Bool("merchantPreview", "Show missing stock at merchants", true),
 })
 Module("craftShopping", "Crafting shopping list",
     "Combine tracked recipe requirements for your chosen craft quantities. Choose material alternatives explicitly.", true, {
@@ -33,6 +34,7 @@ Module("cheapestItem", "Delete cheapest item",
     "A button on the open bag deletes the stack that sells for the least, to make room when your bags are full.", false, {
     B.Choice("quality", "Highest quality to delete", NS.CheapestItemQuality.POOR, { "Poor", "Common", "Uncommon" }),
     B.Bool("confirm", "Ask before deleting Poor items", true),
+    B.Bool("keepEnchanting", "Protect enchanting materials from deletion", true),
     B.String("keep", "Never delete item data", "", 2000),
 })
 NS.SuiteCatalog.cheapestItem.rules.keep.hidden = true

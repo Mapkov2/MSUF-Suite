@@ -156,8 +156,61 @@ local function MapEvent(self, event, name)
     if event == "PLAYER_LEVEL_UP" then Labels.Refresh(self) else QueueRefresh(self.map) end
 end
 
+local FILTERS = {
+    { "flightPoints", "Show flight points" },
+    { "transports", "Show boats, zeppelins and skycutters" },
+    { "dungeonEntrances", "Show dungeon entrances and approaches" },
+    { "zoneRoutes", "Show roads to nearby zones" },
+}
+
+local function FilterMenu(owner)
+    if not M.active or NS.InCombat() then return end
+    S.ContextMenu(owner, function(_, root)
+        for i = 1, #FILTERS do
+            local key, label = FILTERS[i][1], FILTERS[i][2]
+            root:CreateCheckbox(S.Text(label), function() return M.config[key] == true end, function()
+                if M.active and M.map and M.map:IsShown() and not NS.InCombat() then
+                    S.Set("foreverWorldMap", key, not M.config[key])
+                end
+            end)
+        end
+    end)
+end
+
+local function ShowFilters(map)
+    if NS.InCombat() or not map.BorderFrame then return end
+    local border = map.BorderFrame
+    if not M.filters then
+        local button = S.CreateFrame("Button", nil, border.TitleContainer, "UIPanelButtonTemplate")
+        -- Stay above the quest pane and clear the native and Suite window controls.
+        button:SetPoint("TOPRIGHT", border, "TOPRIGHT", -84, -1)
+        button:SetTextToFit(S.Text("Map filters"))
+        button:SetScript("OnClick", FilterMenu)
+        M.filters = button
+    end
+    -- The title drag strip sits 15 levels above the border or its NineSlice.
+    local borderLevel = border:GetFrameLevel()
+    local sliceLevel = border.NineSlice and border.NineSlice:GetFrameLevel()
+    local titleLevel = border.TitleContainer:GetFrameLevel()
+    M.filters:SetFrameLevel(math.max(S.Finite(borderLevel) and borderLevel or 0,
+        S.Finite(sliceLevel) and sliceLevel or 0, S.Finite(titleLevel) and titleLevel or 0) + 16)
+    M.filters:Show()
+end
+
+local function FilterCombat(_, event)
+    if event == "PLAYER_REGEN_ENABLED" and M.map:IsShown() then
+        ShowFilters(M.map)
+    elseif M.filters then
+        S.CloseOwnedContextMenu(M.filters)
+        M.filters:Hide()
+    end
+end
+
 local function MapShown(map)
     if not M.active or map ~= M.map then return end
+    ShowFilters(map)
+    M.context:Event("PLAYER_REGEN_DISABLED", FilterCombat, IN_COMBAT)
+    M.context:Event("PLAYER_REGEN_ENABLED", FilterCombat, IN_COMBAT)
     M.context:Event("TAXI_NODE_STATUS_CHANGED", MapEvent, IN_COMBAT)
     M.context:Event("PLAYER_LEVEL_UP", MapEvent, IN_COMBAT)
     M.context:Event("CVAR_UPDATE", MapEvent, IN_COMBAT)
@@ -167,6 +220,12 @@ end
 
 local function MapHidden(map)
     if map ~= M.map then return end
+    M.context:RemoveEvent("PLAYER_REGEN_DISABLED")
+    M.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    if M.filters then
+        S.CloseOwnedContextMenu(M.filters)
+        M.filters:Hide()
+    end
     M.context:RemoveEvent("TAXI_NODE_STATUS_CHANGED")
     M.context:RemoveEvent("PLAYER_LEVEL_UP")
     M.context:RemoveEvent("CVAR_UPDATE")

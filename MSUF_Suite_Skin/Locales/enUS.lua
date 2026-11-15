@@ -102,6 +102,7 @@ NS.RegisterLocale("enUS", {
     DOSSIER_COLLAPSE = "Collapse equipment details",
     DOSSIER_EXPAND = "Expand equipment details",
     CHARACTER_VIEW = "Character view (reloads UI immediately)",
+    ["Character view"] = "Character view",
     CHARACTER_VIEW_MODERN = "Modern character panel (no extra list)",
     CHARACTER_VIEW_LIST = "Equipment list only",
     CHARACTER_VIEW_CLASSIC = "Blizzard classic layout (MSkin look)",
@@ -334,6 +335,8 @@ NS.RegisterLocale("enUS", {
     ["Chevrons"] = "Chevrons",
     ["Windows style"] = "Windows style",
     ["Takes effect when you switch spellbook tabs."] = "Takes effect when you switch spellbook tabs.",
+    ["To apply immediately, use the rank checkbox in the spellbook settings menu."] =
+        "To apply immediately, use the rank checkbox in the spellbook settings menu.",
     ["Fine"] = "Fine",
     ["Bold"] = "Bold",
     ["Line glyphs"] = "Line glyphs",

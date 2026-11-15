@@ -250,15 +250,30 @@ local function RefreshTooltip(self)
     if GameTooltip:IsOwned(self.host) then Tooltip(self) end
 end
 
+-- The level clock counts only while the host is effectively visible
+-- (hostVisible: the host's own OnShow/OnHide, which also follow UIParent).
+-- A hidden host keeps the /played baseline and its listener; nothing is
+-- scheduled until HostShow repaints the elapsed time and asks for the next
+-- second.
 local function PaintLevelTime(self)
     local seconds = LevelTime(self, self.playedActive)
     Text.PaintLevelTime(self, seconds)
-    if seconds then self.playedJob:Request() end
+    if seconds and self.hostVisible then self.playedJob:Request() end
 end
 
-local function TickLevelTime(self)
+-- The tooltip can be the bar's only while the pointer is over the host
+-- (hovered: the host's own OnEnter/OnLeave/OnHide). Only then is the shared
+-- tooltip asked whether it still belongs to the bar; it is redrawn whole.
+local function RefreshLevelTime(self)
     PaintLevelTime(self)
-    if GameTooltip:IsOwned(self.host) then Tooltip(self) end
+    if self.hovered and GameTooltip:IsOwned(self.host) then Tooltip(self) end
+end
+
+-- HostHide and SyncLevelTime cancel the wait; a run that still arrives for a
+-- hidden host or an ended clock does nothing and asks for no other.
+local function TickLevelTime(self)
+    if not self.hostVisible or not self.playedActive then return end
+    RefreshLevelTime(self)
 end
 
 local function TimePlayed(self, _, _, seconds)
@@ -278,7 +293,7 @@ local function TimePlayed(self, _, _, seconds)
     end
     self.playedLevel, self.playedSeconds, self.playedAt = level, seconds, GetTime()
     self.playedFromLevelUp = nil
-    TickLevelTime(self)
+    RefreshLevelTime(self)
 end
 
 local function SyncLevelTime(self, level)
@@ -303,10 +318,39 @@ local function SyncLevelTime(self, level)
     end
 end
 
-local function HostEnter() Tooltip(M) end
+local function HostEnter()
+    M.hovered = true
+    Tooltip(M)
+end
 
 local function HostLeave(host)
+    M.hovered = nil
     if GameTooltip:IsOwned(host) then GameTooltip:Hide() end
+end
+
+-- OnShow runs inside the SetShown that caused it: PaintProgressValues shows
+-- the host before it starts the level clock, so a clock that is not running
+-- is left to that paint. A running one shows the elapsed time at once; while
+-- the level it counts is not the readable current one, the next second or the
+-- pending level paint writes instead.
+local function HostShow()
+    local self = M
+    self.hostVisible = true
+    local level = self.playedActive
+    if not level then return end
+    local current = UnitLevel("player")
+    if Finite(current) and current == level then
+        PaintLevelTime(self)
+    else
+        self.playedJob:Request()
+    end
+end
+
+local function HostHide(host)
+    local self = M
+    self.hostVisible = false
+    if self.playedJob then self.playedJob:Cancel() end
+    if self.hovered then HostLeave(host) end
 end
 
 local function Create(self)
@@ -317,6 +361,9 @@ local function Create(self)
     if not self.previewParent then
         host:SetScript("OnEnter", HostEnter)
         host:SetScript("OnLeave", HostLeave)
+        host:SetScript("OnShow", HostShow)
+        host:SetScript("OnHide", HostHide)
+        self.hostVisible = host:IsVisible()
     end
     local panel = S.CreateTexture(host, nil, "BACKGROUND")
     panel:SetAllPoints(host)

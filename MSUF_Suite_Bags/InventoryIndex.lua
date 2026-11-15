@@ -4,7 +4,9 @@ local Slots, Loads = P.SlotCache, P.ItemLoads
 local Index = {}
 P.InventoryIndex = Index
 local KEY = Slots.KEY
-local KEYRING_BAG = NS.Client and NS.Client.isForever and KEYRING_CONTAINER or nil
+local IS_FOREVER = NS.Client and NS.Client.isForever
+local KEYRING_BAG = IS_FOREVER and KEYRING_CONTAINER or nil
+local REAGENT_BAG = Enum.BagIndex.ReagentBag
 
 function Index.New()
     return { items = {}, records = setmetatable({}, { __mode = "k" }), metadata = {},
@@ -247,6 +249,12 @@ local function Fresh(item, bag, slot)
     return fresh
 end
 
+local function ExcludesFromRegularCount(bag)
+    if bag == REAGENT_BAG then return true end
+    local _, family = C_Container.GetContainerNumFreeSlots(bag)
+    return S.Finite(family) and family ~= 0
+end
+
 -- The gamepad's keyring sorts before the backpack because its container ID
 -- is negative. Keep its free slots and display stacks separate.
 local function ClassifyKeyring(index, items, free)
@@ -273,12 +281,18 @@ function Index.ReadContainer(index, frame, recent)
     index.filtered = 0
     local now = GetServerTime()
     Index.ExpireRecent(recent, now)
-    local synced, free = nil, 0
+    local synced, free, excluded = nil, 0, 0
+    local firstInBag, excludeBag = 0, false
     for i = 1, #order do
         local key = order[i]
         local bag, slot = math.floor(key / KEY), key % KEY
         if bag ~= synced then
             Slots.Sync(bag)
+            if IS_FOREVER then
+                if excludeBag then excluded = excluded + free - firstInBag end
+                firstInBag = free
+                excludeBag = bag >= 0 and ExcludesFromRegularCount(bag)
+            end
             synced = bag
         end
         local info, quest, version = Slots.Get(bag, slot)
@@ -297,8 +311,9 @@ function Index.ReadContainer(index, frame, recent)
     for itemID in pairs(recent.dismissed) do
         if not index.freshItems[itemID] then recent.dismissed[itemID] = nil end
     end
+    if excludeBag then excluded = excluded + free - firstInBag end
     if KEYRING_BAG then free = ClassifyKeyring(index, items, free) end
-    index.free, index.revision = free, index.revision + 1
+    index.free, index.revision = free - excluded, index.revision + 1
     return items
 end
 

@@ -40,7 +40,7 @@ end
 
 function Decor.Configure(owner)
     module = owner
-    local c = owner.config
+    local c = owner.barSettings or owner.config
     plans = { enemy = Draw.Plan(c, "enemy"), friendly = Draw.Plan(c, "friendly") }
     Decor.inUse = plans.enemy.active or plans.friendly.active
     if not Decor.inUse then Decor.Disable() end

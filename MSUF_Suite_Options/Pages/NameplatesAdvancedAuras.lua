@@ -1,37 +1,48 @@
 local _, P = ...
 local UI = {}
 P.NameplatesAdvancedAuras = UI
-local Model, Style = P.Suite.NameplateAuraDisplay, P.Suite.NameplateStyle
+local Model, Style, DotColors = P.Suite.NameplateAuraDisplay, P.Suite.NameplateStyle, P.NameplatesAuraUI
 local Tr = P.Tr
 local PAGE, ID = "suite_nameplates", "nameplates"
 local SECTION = PAGE .. "_auraWorkspace"
+local DOT_COLOR_KEYS = { "auraColorsEnabled", "auraColorsNoneEnabled", "auraColorsIndividual", "auraColorsAll", "auraColorsNone" }
 local previews = setmetatable({}, { __mode = "k" })
+local EMPTY = {}
 local OUTLINE = { "", "OUTLINE", "THICKOUTLINE" }
-local SAMPLE_TEXTURES = {
-    [1] = { "Interface\\Icons\\Spell_Holy_Renew", "Interface\\Icons\\Spell_Holy_WordFortitude", "Interface\\Icons\\Spell_Nature_Rejuvenation" },
-    [2] = { "Interface\\Icons\\Spell_Shadow_ShadowWordPain", "Interface\\Icons\\Spell_Shadow_VampiricEmbrace",
-        "Interface\\Icons\\Spell_Fire_Immolation" },
-}
--- The preview's own Blizzard aura samples a Visible lane paints over.
-local SAMPLE_HOST = { Buffs = "buffs", Auras = "auras" }
 local LIST_LABELS = {
-    lane = { add = "Add blocked aura", remove = "Remove blocked aura", empty = "No auras blocked." },
     custom = { add = "Add allowed aura", remove = "Remove allowed aura",
         empty = "No spells tracked. Add up to 40 exact SpellIDs." },
     dots = { add = "Add custom tracked aura", remove = "Remove custom tracked aura",
         empty = "No DoT selected. Choose one above or add a custom Spell ID." },
 }
-local LIST_TOOLS = { blacklist = true, whitelist = true, dots = true }
-local WORKSPACE_HINT = "Aura Options, Ordering and Aura Style belong to these plates. Shared icon appearance: Style."
--- The workspace view: which plates, which container and, per container
--- kind, which tool. Menu state only; nothing here is saved.
-local view = { scope = "enemy", container = "buff", tools = { lane = "layout", custom = "setup", dots = "setup" } }
-local selectView, revealWorkspace, nativeHelp
+local view = { scope = "enemy", plate = "enemy", container = "buff", tools = {} }
+local function Container() return Model.Container(view.container) end
+local function Tool(container) return view.tools[container.key] or Model.Tools[container.kind][1] end
+
+local function Containers()
+    local list = {}
+    for _, row in ipairs(Model.NativeRows) do list[#list + 1] = row end
+    for _, row in ipairs(Model.Containers) do list[#list + 1] = row end
+    return list
+end
+
+local selectView, revealWorkspace
+
+function UI.SelectSide(side, plate)
+    plate = plate or side
+    if plate == view.plate or not Model.Scope(side) then return end
+    view.scope, view.plate = side, plate
+    if side ~= "enemy" then view.dotColors = false end
+    if selectView then selectView() end
+end
 
 local function WorkspaceKeys()
     local keys, seen = { "auraDisplayEnabled" }, { auraDisplayEnabled = true }
+    for _, list in ipairs({ Model.NativeShared, Model.AppearanceKeys, DOT_COLOR_KEYS }) do
+        for _, key in ipairs(list) do keys[#keys + 1], seen[key] = key, true end
+    end
     for _, scope in ipairs(Model.Scopes) do
-        for _, container in ipairs(Model.Containers) do
+        for _, container in ipairs(Containers()) do
             for _, tool in ipairs(Model.Tools[container.kind]) do
                 for _, key in ipairs(Model.ToolKeys(scope, container, tool)) do
                     if not seen[key] then keys[#keys + 1], seen[key] = key, true end
@@ -42,13 +53,8 @@ local function WorkspaceKeys()
     return keys
 end
 
--- Every aura setting of the nameplates lives in one workspace, built like
--- MSUF's unit frame Auras: Container, Edit, one tool. Buffs and Debuffs are
--- Blizzard's own lists until they are made Visible; Custom 1-3 and Dots on
--- target are the Suite's containers. help: the page's help texts
--- (help.auras explains Blizzard's settings).
-function UI.Append(sections, help)
-    nativeHelp = help and help.auras
+-- Every aura setting is reached from this one workspace.
+function UI.Append(sections)
     sections[#sections + 1] = { key = "auraWorkspace", area = "auras", title = "Auras", keys = WorkspaceKeys(),
         colors = Model.ColorKeys, build = UI.Build, prepare = UI.PrepareSearch }
 end
@@ -86,33 +92,50 @@ end
 
 -- A list edit writes this client's list only (Model.ListKey). Adding a custom
 -- DoT also selects the custom list as the container's source.
-local function ChangeList(scope, container, id, remove)
-    if P.Combat() or not P.Get(ID, "auraDisplayEnabled") then return end
+local function CanEditList(scope)
+    if P.Combat() or not P.Get(ID, "enabled") then return false end
+    return P.Get(ID, "look") ~= 2 and P.Get(ID, scope.key)
+end
+
+local function ChangeList(scope, container, id, action)
+    if not CanEditList(scope) then return end
     local key = Model.ListKey(scope, container)
     local ids, set = Model.IDs(P.Get(ID, key))
-    if remove then
-        for index = #ids, 1, -1 do if ids[index] == id then table.remove(ids, index) end end
-    elseif not set[id] and #ids < Model.MAX_ICONS then
+    if action == "add" then
+        if set[id] or #ids >= Model.MAX_ICONS then return end
         ids[#ids + 1] = id
+    else
+        for index, spell in ipairs(ids) do
+            if spell == id then
+                if action == "remove" then
+                    table.remove(ids, index)
+                else
+                    local dest = index + (action == "up" and -1 or 1)
+                    if not ids[dest] then return end
+                    ids[index], ids[dest] = ids[dest], ids[index]
+                end
+                break
+            end
+        end
     end
     local value = table.concat(ids, ",")
     local source = Model.Prefix(scope, container) .. "Source"
-    if not remove and P.catalog[ID].rules[source] then return P.SetMany(ID, { [key] = value, [source] = 2 }) end
+    if action == "add" and P.catalog[ID].rules[source] then return P.SetMany(ID, { [key] = value, [source] = 2 }) end
     return P.Set(ID, key, value)
 end
 
-local function ListRow(scope, container, label, remove, lookup)
+local function ListRow(scope, container, label, action, lookup)
     local key = Model.ListKey(scope, container)
-    local row = P.Meta(PAGE, ID, "action." .. key .. (remove and "Remove" or "Add"), "action", SECTION)
-    row.id, row.label, row.kind = key .. (remove and "Remove" or "Add"), Tr(label), "dropdown"
+    local row = P.Meta(PAGE, ID, "action." .. key .. action, "action", SECTION)
+    row.id, row.label, row.kind = key .. action, Tr(label), "dropdown"
     row.get = function() return nil end
     row.values = function()
-        if remove then return SpellValues(Model.IDs(P.Get(ID, key))) end
+        if action ~= "add" then return SpellValues(Model.IDs(P.Get(ID, key))) end
         return Suggestions(lookup.match)
     end
     row.set = function(id)
         if P.Suite.Public(id) and type(id) == "number" and #Model.IDs(tostring(id), 1) == 1 then
-            ChangeList(scope, container, id, remove)
+            ChangeList(scope, container, id, action)
         end
     end
     return row
@@ -143,16 +166,22 @@ local function SpellList(ctx, panel, y, width, scope, container)
         P.Refresh()
     end
     local input = P.M.BindTextInputAt(ctx, panel, Tr("Find aura by name or ID"), 16, y, width,
-        function() return query end, Lookup, true, P.Meta(PAGE, ID, "action." .. key .. "Lookup", "action", SECTION))
-    input:SetOnValueCommitted(Lookup)
+        function() return query end, Lookup, false, P.Meta(PAGE, ID, "action." .. key .. "Lookup", "action", SECTION))
+    input:SetOnValueCommitted(function(value)
+        Lookup(value)
+        if lookup.match then ChangeList(scope, container, lookup.match.value, "add") end
+    end)
     input:SetMaxLetters(128)
     P.SetTranslatedText(found, Tr("Enter a spell name or valid aura ID."))
-    local rows = { ListRow(scope, container, labels.add, false, lookup), ListRow(scope, container, labels.remove, true, lookup) }
+    local rows = {
+        ListRow(scope, container, labels.add, "add", lookup), ListRow(scope, container, labels.remove, "remove", lookup),
+        ListRow(scope, container, "Move aura up", "up", lookup), ListRow(scope, container, "Move aura down", "down", lookup),
+    }
     local grid = P.W.SettingsRows(ctx, panel, { x = 16, y = y - 92, width = width, columns = 2, rows = rows })
     local summary = P.Text(panel, "", 16, grid.bottomY - 8, width)
     local shown
     P.M.TrackRefresh(ctx, function()
-        local enabled = P.Get(ID, "auraDisplayEnabled") and not P.Combat()
+        local enabled = CanEditList(scope)
         for _, row in ipairs(rows) do grid.controls[row.id]:SetEnabled(enabled) end
         local stored = P.Get(ID, key)
         if stored ~= shown then
@@ -163,8 +192,6 @@ local function SpellList(ctx, panel, y, width, scope, container)
     return grid.bottomY - 64
 end
 
--- The rule with its short label: inside the workspace the bars already name
--- the plates and the container. Identity, gates and values stay the rule's.
 local function Short(rule)
     if not rule.short then return rule end
     return setmetatable({ label = rule.short }, { __index = rule })
@@ -174,7 +201,9 @@ local function Grid(ctx, panel, keys, y, width, columns)
     local rules, catalog = {}, P.catalog[ID].rules
     for _, key in ipairs(keys) do
         local rule = catalog[key]
-        if rule and P.catalog[ID].controlAvailable(rule) then rules[#rules + 1] = Short(rule) end
+        if rule and not key:match("[XY]$") and P.catalog[ID].controlAvailable(rule) then
+            rules[#rules + 1] = Short(rule)
+        end
     end
     if #rules == 0 then return y end
     return (P.RuleGrid(ctx, panel, PAGE, ID, rules, y, width, nil, SECTION, columns))
@@ -186,63 +215,120 @@ local function Heading(panel, text, y, width)
     return y - 28
 end
 
--- One tool of one container, in MSUF's control order and with its titles
--- ("Buff Layout", "Custom 1 Setup").
-local function BuildTool(ctx, panel, width, scope, container, tool)
-    local title = Tr(container.title or container.label) .. " " .. Tr(Model.ToolLabels[tool])
-    local keys, y = Model.ToolKeys(scope, container, tool, true), Heading(panel, title, -12, width)
-    if tool == "layout" then
-        -- Visible (a lane), Anchor and Growth in one row, the numbers below.
-        local head, numbers = {}, {}
-        for _, key in ipairs(keys) do
-            local field = key:sub(#Model.Prefix(scope, container) + 1)
-            local list = (field == "Visible" or field == "Anchor" or field == "Growth") and head or numbers
-            list[#list + 1] = key
-        end
-        y = Grid(ctx, panel, head, y, width, width >= 620 and #head or 2)
-        y = Grid(ctx, panel, numbers, y, width, width >= 620 and 4 or 2)
-        local note = P.Text(panel, "Position is controlled by the colored aura handle in the preview.", 16, y - 4, width)
-        return y - 8 - math.max(14, math.ceil(note:GetStringHeight() or 14))
+local function Card(parent)
+    local theme = P.T
+    return theme.Panel(parent, nil, theme.colors.panel2, theme.colors.borderSoft)
+end
+
+local STYLE_PARTS = {
+    { title = "Basics", keys = { "Zoom", "Tooltip", "Alpha", "Padding", "Dispel", "IconSkin" } },
+    { title = "Stack Count", keys = { "StackText", "StackSize", "StackPoint" } },
+    { title = "Cooldown Text", keys = { "TimeText", "Swipe", "TimeSize", "TimePoint", "TimeDecimals", "SwipeDirection" } },
+    { title = "Duration bar", keys = { "DurationBar", "DurationBarHeight", "DurationBarDisplay", "DurationBarPosition",
+        "DurationBarDirection", "DurationBarColor" } },
+    { title = "Pandemic", keys = { "Pandemic" } },
+}
+
+local function AddStyle(parts, prefix)
+    for _, section in ipairs(STYLE_PARTS) do
+        local keys = {}
+        for _, field in ipairs(section.keys) do keys[#keys + 1] = prefix .. field end
+        parts[#parts + 1] = { key = prefix .. section.title, build = function(ctx, panel, width)
+            local y = Grid(ctx, panel, keys, Heading(panel, section.title, -12, width), width, 2)
+            if section.title == "Duration bar" then
+                local rule = P.catalog[ID].rules[prefix .. "DurationBarColor"]
+                P.AttachRuleColors(panel, section.title, ID, { rule })
+            end
+            return y
+        end }
     end
-    y = Grid(ctx, panel, keys, y, width)
-    if LIST_TOOLS[tool] then y = SpellList(ctx, panel, y - 6, width, scope, container) end
-    return y
 end
 
-local function Rules(keys)
-    return function(ctx, panel, width) return Grid(ctx, panel, keys, -4, width) end
+local function BuildTool(ctx, panel, width, scope, container, tool)
+    local title = Tr(container.label) .. " · " .. Tr(Model.ToolLabels[tool])
+    local keys, y = Model.ToolKeys(scope, container, tool, true), Heading(panel, title, -12, width)
+    local prefix = Model.Prefix(scope, container)
+    if tool == "layout" then
+        local numbers = {}
+        for i = 3, #keys do numbers[#numbers + 1] = keys[i] end
+        y = Grid(ctx, panel, { prefix .. "Anchor", prefix .. "Growth" }, y, width, 2)
+        return Grid(ctx, panel, numbers, y, width, width >= 620 and 4 or 2)
+    elseif tool == "setup" and container.kind == "dots" then
+        local setup = {}
+        for _, key in ipairs(keys) do if key ~= prefix .. "Source" then setup[#setup + 1] = key end end
+        return Grid(ctx, panel, setup, y, width)
+    elseif tool == "whitelist" then
+        if container.kind == "dots" and scope.key == "enemy" then
+            y = Grid(ctx, panel, { prefix .. "Source", "auraSunder" }, y, width, 2)
+        end
+        return SpellList(ctx, panel, y - 6, width, scope, container)
+    end
+    return Grid(ctx, panel, keys, y, width)
 end
 
--- Blizzard's own settings under a lane's Layout: which plate kinds show the
--- lane, and the size of the icons while Blizzard draws them.
-local function NativeParts(parts, scope, lane)
-    local modes, switches, shared = Model.NativeKeys(scope, lane)
-    parts[#parts + 1] = { key = "blizzard", build = function(_, panel, width)
-        local y = Heading(panel, "Blizzard auras", -12, width)
-        if not nativeHelp then return y end
-        local text = P.Description(panel, nativeHelp, 16, y, width, Tr("Blizzard auras"))
-        return y - math.max(14, math.ceil(text:GetStringHeight() or 14)) - 8
+local function Unsupported(container)
+    return view.plate == "friendlyNpc" and container.kind == "native" and container.key ~= "debuff"
+end
+
+local function VisibilityKeys(scope, container)
+    if view.plate == "friendlyNpc" then return { "friendlyNpcDebuffs" } end
+    if view.plate == "neutral" then return { "enemyNpc" .. container.native } end
+    return Model.VisibilityKeys(scope, container)
+end
+
+local function NativeSwitch(key, column)
+    return { key = "visible:" .. key, column = column, build = function(ctx, panel, width)
+        local rule = P.catalog[ID].rules[key]
+        local row = P.RuleRow(PAGE, ID, rule, nil, SECTION)
+        local button = P.M.BindSwitchAt(ctx, panel, row.label, 16, 0, width / 2, row.get, row.set, row)
+        P.GateControls(ctx, ID, { { widget = button, rule = rule, checked = row.get } })
+        P.HM.SetSearchTargetPrepare(button, function() UI.PrepareSearch(key) end)
+        return -28
     end }
-    parts[#parts + 1] = { key = "modes:" .. scope.key, build = Rules(modes) }
-    parts[#parts + 1] = { key = "switches:" .. scope.key .. ":" .. lane.key, build = Rules(switches) }
-    parts[#parts + 1] = { key = "shared", build = Rules(shared) }
 end
 
--- The stacked parts of a view: the master switch, the tool, and what the
--- tool shares with other views. A shared part is built once and shown under
--- every view that has it, so each setting keeps exactly one control:
--- Blizzard's settings under a lane's Layout, the shared look under Style.
+local function NativePart(scope, container, tool)
+    return function(ctx, panel, width)
+        local title = Tr(container.label) .. " · " .. Tr(Model.ToolLabels[tool])
+        local y = Heading(panel, title, -12, width)
+        if tool == "layout" then
+            y = y - (width >= 560 and 32 or 60)
+            local keys = Model.ToolKeys(scope, container, tool, true)
+            y = Grid(ctx, panel, keys, y, width, width >= 620 and 4 or 2)
+            local note = P.Text(panel, "The game keeps the anchor, growth, spacing and icon limit for this row.", 16, y - 4, width)
+            return y - 14 - math.ceil(note:GetStringHeight() or 14)
+        end
+        y = Grid(ctx, panel, Model.ToolKeys(scope, container, tool, true), y, width, 2)
+        local message = container.key == "control"
+        local note = P.Text(panel, message and "The game selects, filters and orders the auras in this row."
+            or "A visible tracked slot can hide its matching icon here. Restricted auras stay visible.", 16, y - 4, width)
+        return y - 14 - math.ceil(note:GetStringHeight() or 14)
+    end
+end
+
 local function Parts(scope, container, tool)
-    local parts = {
-        { key = "master", build = Rules({ "auraDisplayEnabled" }) },
-        { key = scope.key .. ":" .. container.key .. ":" .. tool,
-            build = function(ctx, panel, width) return BuildTool(ctx, panel, width, scope, container, tool) end },
-    }
-    if container.kind == "lane" and tool == "layout" then
-        NativeParts(parts, scope, container)
+    if Unsupported(container) then
+        return { { key = "unsupported:" .. container.key, build = function(_, panel, width)
+            local note = P.Description(panel, "This aura row is unavailable for friendly NPCs.", 16, -8, width, Tr(container.label))
+            return -24 - math.max(14, math.ceil(note:GetStringHeight() or 14))
+        end } }
+    end
+    local parts, prefix = {}, Model.Prefix(scope, container)
+    if container.kind == "native" then
+        parts[#parts + 1] = { key = prefix .. tool, build = NativePart(scope, container, tool) }
+        if tool == "layout" then
+            for column, key in ipairs(VisibilityKeys(scope, container)) do parts[#parts + 1] = NativeSwitch(key, column) end
+        end
     elseif tool == "style" then
-        parts[#parts + 1] = { key = "appearance", build = function(ctx, panel, width)
-            return Grid(ctx, panel, Model.AppearanceKeys, Heading(panel, "Shared aura appearance", -12, width), width)
+        AddStyle(parts, prefix)
+    else
+        if tool == "setup" then
+            parts[1] = { key = "tracked:enabled", build = function(ctx, panel, width)
+                return Grid(ctx, panel, { "auraDisplayEnabled" }, -6, width, 2)
+            end }
+        end
+        parts[#parts + 1] = { key = prefix .. tool, build = function(ctx, panel, width)
+            return BuildTool(ctx, panel, width, scope, container, tool)
         end }
     end
     return parts
@@ -272,7 +358,8 @@ end
 local function Bars(ctx, body, width, select)
     local W, top = P.W, -28
     local function Bar(label, values, centerY, get, set)
-        local bar = W.ScopeOverrideBar(ctx, body, { values = values, width = width + 32, label = label, labelWidth = 72,
+        local bar = W.ScopeOverrideBar(ctx, body, { values = values, width = width + 32, startX = 88, maxRight = width + 12,
+            label = label, labelWidth = 72,
             centerY = centerY, getValue = get, setValue = function(value)
                 set(value)
                 select()
@@ -280,20 +367,17 @@ local function Bars(ctx, body, width, select)
         local metrics = bar:GetLayoutMetrics()
         return bar, metrics and metrics.bottomY or centerY - 14
     end
-    local _, bottom = Bar("Plates:", Values(Model.Scopes, "key"), top, function() return view.scope end,
-        function(value) view.scope = value end)
-    top = math.min(top - 34, bottom - 22)
-    _, bottom = Bar("Container:", Values(Model.Containers, "key"), top, function() return view.container end,
-        function(value) view.container = value end)
+    local _, bottom = Bar("Container:", Values(Containers(), "key"), top, function() return view.container end,
+        function(value) view.container, view.appearance, view.dotColors = value, false, false end)
     top = math.min(top - 34, bottom - 22)
     local tools, lowest = {}, top
-    for kind in pairs(Model.Tools) do
-        tools[kind], bottom = Bar("Edit:", ToolValues(kind), top, function() return view.tools[kind] end,
-            function(value) view.tools[kind] = value end)
+    for _, kind in ipairs({ "native", "custom" }) do
+        tools[kind], bottom = Bar("Edit:", ToolValues(kind), top, function() return Tool(Container()) end,
+            function(value) view.tools[view.container], view.appearance, view.dotColors = value, false, false end)
         lowest = math.min(lowest, bottom)
     end
     return lowest - 2, function()
-        for kind, bar in pairs(tools) do SetBarShown(bar, kind == Kind()) end
+        for kind, bar in pairs(tools) do SetBarShown(bar, (kind == "native") == (Kind() == "native") and not Unsupported(Container())) end
     end
 end
 
@@ -309,54 +393,94 @@ local function Dropdowns(ctx, body, width, select)
         return row
     end
     local rows = {
-        Row("Scope", "Plates", function() return Values(Model.Scopes, "key") end, function() return view.scope end,
-            function(value) view.scope = value end),
-        Row("Container", "Container", function() return Values(Model.Containers, "key") end,
-            function() return view.container end, function(value) view.container = value end),
-        Row("Tool", "Edit", function() return ToolValues(Kind()) end, function() return view.tools[Kind()] end,
-            function(value) view.tools[Kind()] = value end),
+        Row("Container", "Container", function() return Values(Containers(), "key") end,
+            function() return view.container end, function(value) view.container, view.appearance, view.dotColors = value, false, false end),
+        Row("Tool", "Edit", function() return ToolValues(Kind()) end, function() return Tool(Container()) end,
+            function(value) view.tools[view.container], view.appearance, view.dotColors = value, false, false end),
     }
     local grid = P.W.SettingsRows(ctx, body, { x = 16, y = -18, width = width, columns = width >= 560 and 3 or 1, rows = rows })
     return grid.bottomY, function() end
 end
 
--- MSUF's footer: the hint and the way to the shared icon appearance, which
--- here is the lower half of the Style tool.
 local function Footer(ctx, body, width, y, select)
-    P.Button(ctx, body, "Global Aura Appearance", width - 154, y, 170, function()
-        view.tools[Kind()] = "style"
+    P.Button(ctx, body, "Global Aura Appearance", 16, y - 4, 170, function()
+        view.appearance, view.dotColors = not view.appearance, false
         select()
     end, nil, P.Meta(PAGE, ID, "action.auraWorkspace.appearance", "action", SECTION))
-    local hint = P.Text(body, WORKSPACE_HINT, 16, y - 4, width - 190)
-    return y - math.max(34, math.ceil(hint:GetStringHeight() or 14) + 10) - 8
+    if not DotColors then return y - 36 end
+    local nextRow = width < 370
+    P.Button(ctx, body, "DoT health colors", nextRow and 16 or 194, y - 4 - (nextRow and 36 or 0), 168, function()
+        view.dotColors, view.appearance = not view.dotColors, false
+        select()
+    end, function() return view.scope == "enemy" end, P.Meta(PAGE, ID, "action.auraWorkspace.dotColors", "action", SECTION))
+    return y - (nextRow and 72 or 36)
+end
+
+local function Appearance(ctx, panel, width)
+    local y = Heading(panel, "Shared aura appearance", -12, width)
+    y = Grid(ctx, panel, Model.NativeShared, y, width, 2)
+    y = Heading(panel, "Tracked auras", y - 8, width)
+    return Grid(ctx, panel, Model.AppearanceKeys, y, width, 2)
 end
 
 local function ContainerOf()
     return Model.Scope(view.scope), Model.Container(view.container)
 end
 
+local function ColorShortcut(body)
+    local colors, catalog = {}, P.catalog[ID].rules
+    for _, key in ipairs(Model.ColorKeys) do colors[#colors + 1] = catalog[key] end
+    P.AttachRuleColors(body, Tr("Auras"), ID, colors, nil, nil, DotColors and function()
+        return view.scope == "enemy" and DotColors.ColorTargets() or {}
+    end, DotColors and P.Suite.NameplateAuraColors.LIMIT + 2)
+end
+
 local function Content(ctx, builder, body)
     local width = math.max(240, (P.HM.GetSectionWidth(body) or builder.width or 720) - 32)
-    local built, top, showTools = {}, nil, nil
+    local built = {}
+    local header = Card(body)
+    header:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+    header:SetWidth(width + 32)
+    local top, showTools
+    local select
     local function Part(part)
         if not built[part.key] and not P.Combat() then
-            local frame = CreateFrame("Frame", nil, body)
-            frame:SetSize(width + 32, 100)
-            local height = -part.build(ctx, frame, width)
+            local frame = part.column and CreateFrame("Frame", nil, body) or Card(body)
+            frame:SetSize(part.column and width / 2 or width + 32, 100)
+            local height = -part.build(ctx, frame, width, function(bottom)
+                frame:SetHeight(-bottom)
+                local entry = built[part.key]
+                if entry then
+                    entry.height = -bottom
+                    if view.dotColors then select() end
+                end
+            end)
             frame:SetHeight(height)
             built[part.key] = { frame = frame, height = height }
         end
         return built[part.key]
     end
-    local function Select(first)
+    select = function(first)
         local scope, container = ContainerOf()
-        local y, shown = top, {}
-        for _, part in ipairs(Parts(scope, container, view.tools[container.kind])) do
+        local y, shown, cardY = top, {}, top
+        local parts = view.dotColors and DotColors and { { key = "dotColors", build = DotColors.Build } }
+            or view.appearance and { { key = "appearance", build = Appearance } }
+            or Parts(scope, container, Tool(container))
+        for _, part in ipairs(parts) do
             local entry = Part(part)
             if entry then
                 entry.frame:ClearAllPoints()
-                entry.frame:SetPoint("TOPLEFT", body, "TOPLEFT", 0, y)
-                shown[entry], y = true, y - entry.height
+                if part.column then
+                    local index = part.column - 1
+                    local columnX = width >= 560 and index * (width / 2) or 0
+                    local rowY = width >= 560 and 0 or index * entry.height
+                    entry.frame:SetFrameLevel(header:GetFrameLevel() + 2)
+                    entry.frame:SetPoint("TOPLEFT", body, "TOPLEFT", columnX, cardY - 37 - rowY)
+                else
+                    entry.frame:SetPoint("TOPLEFT", body, "TOPLEFT", 0, y)
+                    cardY, y = y, y - entry.height - 8
+                end
+                shown[entry] = true
             end
         end
         for _, entry in pairs(built) do entry.frame:SetShown(shown[entry] == true) end
@@ -367,61 +491,105 @@ local function Content(ctx, builder, body)
         end
         return y - 14
     end
-    selectView = function() Select() end
+    selectView = function() select() end
     if P.W.ScopeOverrideBar then
-        top, showTools = Bars(ctx, body, width, selectView)
+        top, showTools = Bars(ctx, header, width, selectView)
     else
-        top, showTools = Dropdowns(ctx, body, width, selectView)
+        top, showTools = Dropdowns(ctx, header, width, selectView)
     end
-    top = Footer(ctx, body, width, top - 8, selectView)
-    local colors, catalog = {}, P.catalog[ID].rules
-    for _, key in ipairs(Model.ColorKeys) do colors[#colors + 1] = catalog[key] end
-    P.AttachRuleColors(body, Tr("Auras"), ID, colors)
-    return Select(true)
+    top = Footer(ctx, header, width, top - 8, selectView)
+    header:SetHeight(-top + 4)
+    top = top - 12
+    ColorShortcut(body)
+    return select(true)
 end
 
--- Resets what the shown container owns. A lane also resets its Blizzard
--- switches and the dragged position it shares with Blizzard's list; the mode
--- of a plate kind stays, the other lane shares it.
+-- Restore the original layout and the dragged position. The display
+-- switches remain independent of a layout reset.
 local function ResetView()
-    local scope, container = ContainerOf()
-    local rules = P.SectionRules(ID, Model.Prefix(scope, container))
-    if container.kind ~= "lane" then return P.ResetRules(ID, rules) end
-    local _, switches = Model.NativeKeys(scope, container)
-    for _, key in ipairs(switches) do
-        local rule = P.catalog[ID].rules[key]
-        if rule then rules[#rules + 1] = rule end
+    if view.dotColors and DotColors then
+        DotColors.ResetColors()
+        return true
     end
-    return P.ResetRules(ID, rules, nil, P.NameplateAuraPositionKeys(scope.key, container.elements))
+    local scope, container = ContainerOf()
+    local prefix = Model.Prefix(scope, container)
+    local rules = P.SectionRules(ID, prefix)
+    if view.appearance then
+        local keys = {}
+        for _, list in ipairs({ Model.NativeShared, Model.AppearanceKeys, Model.ColorKeys }) do
+            for _, key in ipairs(list) do keys[#keys + 1] = key end
+        end
+        return P.ResetRules(ID, {}, nil, keys)
+    end
+    local offsets = container.kind == "native" and P.NameplateAuraPositionKeys(scope.key, { container.element })
+    return P.ResetRules(ID, rules, nil, offsets or nil)
 end
 
 -- A search hit or a preview click on an aura setting opens its view.
 local index
 function UI.PrepareSearch(key)
     if not index then
-        index = { auraDisplayEnabled = { view.scope, view.container, view.tools[Kind()] } }
+        index = { friendlyNpcDebuffs = { "friendly", "debuff", "layout", "friendlyNpc" },
+            auraDisplayEnabled = { "enemy", "custom1", "setup" } }
+        for _, name in ipairs(DOT_COLOR_KEYS) do index[name] = { "enemy", "dots", "setup", nil, false, true } end
+        for _, list in ipairs({ Model.NativeShared, Model.AppearanceKeys, Model.ColorKeys }) do
+            for _, name in ipairs(list) do index[name] = { "enemy", "buff", "layout", nil, true } end
+        end
         for _, scope in ipairs(Model.Scopes) do
-            for _, container in ipairs(Model.Containers) do
+            for _, container in ipairs(Containers()) do
                 for _, tool in ipairs(Model.Tools[container.kind]) do
                     for _, name in ipairs(Model.ToolKeys(scope, container, tool)) do
                         index[name] = index[name] or { scope.key, container.key, tool }
                     end
                 end
+                if container.kind == "dots" and scope.key == "enemy" then
+                    index[Model.Prefix(scope, container) .. "Source"] = { scope.key, container.key, "whitelist" }
+                    index.auraSunder = { scope.key, container.key, "whitelist" }
+                end
             end
         end
-        for _, name in ipairs(Model.ColorKeys) do index[name] = { "enemy", "buff", "style" } end
     end
     local target = index[key]
     if not target then return end
-    view.scope, view.container = target[1], target[2]
-    view.tools[Kind()] = target[3]
+    local workspace = P.NameplatesWorkspace
+    local scope, plate = target[1], target[4]
+    if not plate and workspace and workspace.Side() == scope then
+        plate = workspace.Kind()
+        if plate == "neutral" and key:match("^enemyPlayer") then plate = "enemy" end
+        if plate == "friendlyNpc" and (key:match("^friendlyPlayer") or target[2] ~= "debuff") then plate = "friendly" end
+    end
+    plate = plate or scope
+    view.scope, view.plate, view.container = scope, plate, target[2]
+    view.tools[view.container], view.appearance, view.dotColors = target[3], target[5] == true, target[6] == true
+    if workspace and workspace.Kind() ~= plate then workspace.Open(plate) end
+    if P.ShowNameplatesAuraSample and (key:match("^enemyNpc") or key:match("^enemyPlayer")) then P.ShowNameplatesAuraSample(key) end
     if revealWorkspace then revealWorkspace() end
+end
+
+function UI.Summary()
+    local scope = Model.Scope(view.scope)
+    if not P.Get(ID, "enabled") then return nil end
+    local config = P.S.Config(ID)
+    local group = view.plate == "friendlyNpc" and "friendlyNpc" or scope.key == "enemy" and "enemyNpc" or "friendlyPlayer"
+    local buffs = Model.NativeShown(config, group, "Buffs")
+    local debuffs = Model.NativeShown(config, group, "Debuffs")
+    if view.plate == "enemy" then
+        buffs = buffs or Model.NativeShown(config, "enemyPlayer", "Buffs")
+        debuffs = debuffs or Model.NativeShown(config, "enemyPlayer", "Debuffs")
+    end
+    if buffs and debuffs then return Tr("Buffs and debuffs") end
+    if buffs then return Tr("Buffs") end
+    if debuffs then return Tr("Debuffs") end
+    if Model.NativeShown(config, group, "Control") or view.plate == "enemy" and Model.NativeShown(config, "enemyPlayer", "Control") then
+        return Tr("Control effects")
+    end
 end
 
 function UI.Build(ctx, builder, spec)
     local pageEntry = P.M.cache and P.M.cache[PAGE]
     selectView, revealWorkspace = nil, nil
-    return P.LazySection(builder, SECTION, Tr(spec.title), true, {
+    return P.LazySection(builder, SECTION, Tr(spec.title), spec.open == true, {
+        head = P.NameplatesSectionsLayout.Header(ctx, spec, SECTION),
         content = function(body) return Content(ctx, builder, body) end,
         shell = function(body)
             revealWorkspace = function()
@@ -463,23 +631,40 @@ local function SampleText(part, plan, c, field, sample)
     label:SetShown(values["aura" .. field .. "Text"] and c[field == "Time" and "timeText" or "stackText"])
 end
 
-local function PaintIcon(part, plan, c, index, missing)
+local function PaintIcon(part, plan, c, index, row, missing)
     local values = plan.values
-    local helpful = c.kind == "lane" and c.key == "buff" or values[c.prefix .. "Type"] == 1
-    local textures = SAMPLE_TEXTURES[helpful and 1 or 2]
     part.frame:SetSize(c.width, c.height)
-    part.icon:SetTexture(textures[(index - 1) % #textures + 1])
+    local icon = C_Spell.GetSpellTexture(row.id)
+    part.icon:SetTexture(P.Suite.Public(icon) and icon or 134400)
     part.icon:SetTexCoord(c.crop, 1 - c.crop, c.crop, 1 - c.crop)
+    local look = c.iconSkin and plan.iconLook
+    if look or part.skinned then
+        part.skinned = P.Suite.HostBridge.PaintIconSkin(part.frame, look or nil, c.width, c.height, part.icon, true)
+    end
     part.icon:SetDesaturated(missing)
+    part.icon:SetAlpha(c.barOnly and not missing and 0 or 1)
     part.frame:SetAlpha(missing and c.missingAlpha / 100 or c.alpha)
     part.swipe:SetHeight(c.height * .35)
     part.swipe:SetAlpha(values.auraSwipeAlpha / 100)
-    part.swipe:SetShown(values.auraSwipe and c.swipe and not missing)
-    SampleText(part, plan, c, "Time", index == 1 and "7" or "12")
+    part.swipe:SetShown(not c.barOnly and values.auraSwipe and c.swipe and not missing)
+    SampleText(part, plan, c, "Time", index == 1 and (c.timeDecimals > 2 and "2.4" or "7") or "12")
     SampleText(part, plan, c, "Stack", index == 1 and "3" or "2")
     if missing then
         part.Time:Hide()
         part.Stack:Hide()
+    end
+    local bar = part.durationBar
+    if c.durationBar and not missing then
+        bar = bar or part.frame:CreateTexture(nil, "OVERLAY")
+        part.durationBar = bar
+        local edge, y = c.durationBarTop and "TOPLEFT" or "BOTTOMLEFT", c.durationBarTop and -1 or 1
+        bar:ClearAllPoints()
+        bar:SetPoint(edge, part.frame, edge, 1, y)
+        bar:SetSize((c.width - 2) * (c.durationBarElapsed and .35 or .65), c.durationBarHeight)
+        bar:SetColorTexture(P.RGB(c.durationBarColor))
+        bar:Show()
+    elseif bar then
+        bar:Hide()
     end
     local color
     if index == 1 and values.auraPandemicHighlight and c.pandemic then color = values.auraPandemicColor
@@ -488,106 +673,117 @@ local function PaintIcon(part, plan, c, index, missing)
     part.frame:Show()
 end
 
--- A fixed container shows every slot, the last one missing; a packed one
--- shows up to three active sample auras.
-local function PaintIcons(record, parent, plan, c)
-    local count = c.fixed and c.count or math.min(c.max, 3)
-    for index = 1, count do
-        local part = record.icons[index] or SampleIcon(parent)
-        record.icons[index] = part
-        local missing = c.fixed and index == count and count > 1
-        PaintIcon(part, plan, c, index, missing)
-        local x, y = Model.SlotOffset(c, index)
-        part.frame:ClearAllPoints()
-        part.frame:SetPoint(c.flowPoint, parent, c.flowPoint, x, y)
-        part.frame:SetShown(not missing or c.missing)
+local function PaintIcons(record, parent, plan, c, exclusions, visible)
+    local limit = c.fixed and c.count or math.min(c.max, 3)
+    local count = 0
+    for index, row in ipairs(c.rows) do
+        local missing = c.fixed and index == limit and limit > 1
+        if (not missing or c.missing) and not (exclusions and exclusions[row.id]) then
+            count = count + 1
+            local part = record.icons[count] or SampleIcon(parent)
+            record.icons[count] = part
+            PaintIcon(part, plan, c, count, row, missing)
+            local x, y = Model.SlotOffset(c, c.fixed and index or count)
+            part.frame:ClearAllPoints()
+            part.frame:SetPoint(c.flowPoint, parent, c.flowPoint, x, y)
+            if visible and not missing then visible[row.id] = true end
+        end
+        if count == limit then break end
     end
     for index = count + 1, #record.icons do record.icons[index].frame:Hide() end
 end
 
-local function PaintContainer(record, sample, plan, c, facts)
-    record.frame:SetShown(c.enabled and facts.show ~= false)
+local function PaintTextHandle(record, sample, plan, c, facts, previewText)
+    local part = record.icons[1]
+    if not part or not part.frame:IsShown() then return end
+    local prefix = facts.sharedText and "aura" or c.prefix
+    local text = c.text[previewText]
+    if facts.sharedText then
+        local key = prefix .. previewText
+        text.point = P.Suite.AnchorPoints[plan.values[key .. "Point"]]
+        text.x, text.y = plan.values[key .. "X"], plan.values[key .. "Y"]
+    end
+    SampleText(part, plan, c, previewText, previewText == "Time" and "7" or "3")
+    local label = part[previewText]
+    label:Show()
+    local handles = record.textHandles or {}
+    record.textHandles = handles
+    local handle = handles[previewText]
+    local key = prefix .. previewText
+    if not handle then
+        handle = CreateFrame("Button", nil, record.frame)
+        handle:SetFrameLevel(part.frame:GetFrameLevel() + 3)
+        handles[previewText] = handle
+        local id = sample.prefix .. "." .. c.element .. previewText
+        facts.editor:Bind(handle, id, Tr(previewText == "Time" and "Cooldown Text" or "Stack Count"), key .. "X", key .. "Y", c.prefix)
+    else
+        handle.keyX, handle.keyY = key .. "X", key .. "Y"
+    end
+    handle._npSettingKey = key .. "Size"
+    handle:ClearAllPoints()
+    handle:SetPoint("CENTER", label, "CENTER", 0, 0)
+    handle:SetSize(math.max(16, label:GetStringWidth()), math.max(16, text.size))
+    handle:Show()
+end
+
+local function PaintContainer(record, sample, plan, c, facts, visible)
+    local previewText = facts.element == c.element .. "Time" and "Time"
+        or facts.element == c.element .. "Stack" and "Stack"
+    local selected = previewText or facts.element == c.element
+    local shown = (c.enabled or selected) and facts.show ~= false and (c.kind ~= "dots" or facts.target == true or selected)
+    record.frame:SetShown(shown)
+    for _, handle in pairs(record.textHandles or EMPTY) do handle:Hide() end
+    if not shown then return end
     record.frame:ClearAllPoints()
     record.frame:SetPoint(c.point, sample.bar, c.relative, c.x, c.y)
     record.frame:SetSize(c.gridWidth, c.gridHeight)
-    PaintIcons(record, record.frame, plan, c)
-end
-
--- A Visible lane paints over the preview's own Blizzard sample of its kind:
--- the same host, handle and position. Switched off, the sample returns.
-local function PaintLane(state, sample, plan, c)
-    local host = sample[SAMPLE_HOST[c.element]]
-    local record = state.lanes[c.key]
-    if not c.enabled then
-        if record and record.painted then
-            record.overlay:Hide()
-            host:SetSize(record.width, record.height)
-            for _, original in ipairs(record.originals) do original.region:SetAlpha(original.alpha) end
-            record.painted = false
-        end
-        return
-    end
-    if not record then
-        record = { icons = {}, originals = {}, width = host:GetWidth(), height = host:GetHeight() }
-        for _, region in ipairs({ host:GetRegions() }) do
-            record.originals[#record.originals + 1] = { region = region, alpha = region:GetAlpha() }
-        end
-        record.overlay = CreateFrame("Frame", nil, host)
-        record.overlay:SetAllPoints(host)
-        state.lanes[c.key] = record
-    end
-    for _, original in ipairs(record.originals) do original.region:SetAlpha(0) end
-    host:SetSize(c.gridWidth, c.gridHeight)
-    host:SetScale(1)
-    host:ClearAllPoints()
-    host:SetPoint(c.point, sample.bar, c.relative, c.x, c.y)
-    record.overlay:Show()
-    record.painted = true
-    PaintIcons(record, record.overlay, plan, c)
+    local exclusions = plan.exclusions[sample.prefix]
+    local lane = not selected and visible and c.hideDuplicates and (c.helpful and visible.buff or visible.debuff)
+    if selected and #c.rows == 0 then c.rows[1], c.count = { id = 172 }, 1 end
+    PaintIcons(record, record.frame, plan, c, not selected and exclusions and exclusions[c.key], lane)
+    if previewText and facts.editor then PaintTextHandle(record, sample, plan, c, facts, previewText) end
 end
 
 local function HidePreview(state)
     for _, record in pairs(state.containers) do record.frame:Hide() end
 end
 
--- Call after the ordinary sample renderer. facts.show hides the Suite-only
--- containers; an optional facts.specID chooses a saved DoT selection, else
--- the first saved specialization illustrates it. No live aura,
--- specialization or CVar API is read. Every returned container frame can be
--- bound to the editor's XY handles; a lane keeps Blizzard's handle.
 function UI.Preview(sample, config, facts)
     local state = previews[sample]
-    local on = config.auraDisplayEnabled and config.look ~= 2 and config[sample.prefix]
+    local editing = facts and facts.element and not Model.NativeElement(facts.element)
+    local on = (Model.Active(config) or editing) and config.look ~= 2 and config[sample.prefix]
     if not on and not state then return end
     facts = facts or {}
     local plan = Model.Plan(on and config or {}, facts)
+    if plan.iconSkin then plan.iconLook = P.Suite.HostBridge.IconSkinLook(nil, "RECTANGLE", nil, true) end
     plan.font = P.Suite.ResolveFont(plan.values.auraFont) or P.Suite.GlobalFontPath()
     if not state then
-        state = { containers = {}, lanes = {} }
+        state = { containers = {} }
         previews[sample] = state
     end
-    for _, c in ipairs(plan.scopes[sample.prefix]) do
-        if c.kind == "lane" then
-            PaintLane(state, sample, plan, c)
-        elseif on then
+    local visible = on and plan.exclusions[sample.prefix] and { buff = {}, debuff = {} }
+    state.exclusions = visible or nil
+    if on then
+        for _, c in ipairs(plan.scopes[sample.prefix]) do
             local record = state.containers[c.key]
             if not record then
                 record = { frame = CreateFrame(sample.static and "Frame" or "Button", nil, sample.cell), icons = {} }
                 state.containers[c.key] = record
             end
-            PaintContainer(record, sample, plan, c, facts)
+            PaintContainer(record, sample, plan, c, facts, visible)
         end
     end
     if not on then HidePreview(state) end
     return on and state or nil
 end
 
--- The Dots handle keeps the editor's Tracked element (size and settings
--- shortcuts, NameplatesSize.lua and NameplatesEditor.lua).
 function UI.Render(editor, sample, metrics)
     local facts = sample.auraPreviewFacts or {}
     sample.auraPreviewFacts = facts
-    facts.show = not metrics.namesOnly and editor:LayerOn("auras")
+    facts.target = sample.state and sample.state.target
+    facts.show = not (metrics.namesOnly or metrics.skinDisabled) and editor:LayerOn("auras")
+    facts.element = not sample.static and sample.prefix == editor.sampleKind and editor.auraSample or nil
+    facts.editor, facts.sharedText = not sample.static and editor or nil, editor.sharedAuraText
     local state = UI.Preview(sample, P.S.Config(ID), facts)
     sample.auraPreviewState = state
     if not state or state.bound or sample.static then return end

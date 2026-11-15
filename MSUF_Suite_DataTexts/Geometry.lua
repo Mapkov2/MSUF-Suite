@@ -18,6 +18,18 @@ local function SlotSetting(config, bar, button, index, suffix)
     return config[bar.prefix .. "Slot" .. (button.slot or index) .. suffix]
 end
 
+-- The text and font have one writer (DataTexts.lua). A text update
+-- invalidates its own slot; a style refresh invalidates every slot.
+local function TextWidth(button)
+    local width = button.layoutTextWidth
+    if width == nil then
+        width = ceil(button.label:GetUnboundedStringWidth())
+        button.layoutTextWidth = width
+    end
+    return width
+end
+Geometry.TextWidth = TextWidth
+
 -- Widths of the first count layout slots: equal shares, or (auto layout)
 -- text widths scaled to fill the bar.
 local function SlotWidths(bar, count, config)
@@ -31,7 +43,7 @@ local function SlotWidths(bar, count, config)
     for i = 1, count do
         local button = layoutSlots[i]
         if fit then
-            local textWidth = button.source == "progressBar" and ProgressWidth or ceil(button.label:GetUnboundedStringWidth())
+            local textWidth = button.source == "progressBar" and ProgressWidth or TextWidth(button)
             local demand = textWidth + 2 * style.padding
             if button.extra then demand = demand + P.DataTextSources.IconWidth(button) end
             widths[i] = math.max(44, demand)

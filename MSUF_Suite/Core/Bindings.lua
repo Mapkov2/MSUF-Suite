@@ -13,9 +13,7 @@ function NS.ToggleFriendlyNPCNameplates()
     local suite = NS.Suite
     local config = suite.Config("nameplates")
     if not config.enabled then return false end
-    local value = C_CVar.GetCVar("nameplateShowFriendlyNpcs")
-    if not NS.Public(value) or type(value) ~= "string" or value == "" then return false end
-    return suite.Set("nameplates", "friendlyNPCs", value == "1" and 3 or 2)
+    return suite.Set("nameplates", "friendlyNpcSkinEnabled", config.friendlyNpcSkinEnabled == false)
 end
 
 -- The action bar settings that switch bar `index` off or on (`on` nil flips

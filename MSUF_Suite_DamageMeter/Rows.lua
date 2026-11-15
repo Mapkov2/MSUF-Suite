@@ -458,6 +458,11 @@ function D.PaintSource(row, source, index, session, win)
     end
     if row.hasIcon then
         local spec = source.specIconID
+        local liveSpecs = M.remoteSpecs
+        if liveSpecs and style.iconStyle == ICON.SPEC and not win.sessionID and meterType ~= D.THREAT then
+            local guid = source.sourceGUID
+            if not IsSecret(guid) then spec = liveSpecs[guid] or spec end
+        end
         D.UnitIcon(row, Finite(spec) and spec or 0, class, style.iconStyle)
     end
     -- Threat rows number the members themselves (Threat.lua).

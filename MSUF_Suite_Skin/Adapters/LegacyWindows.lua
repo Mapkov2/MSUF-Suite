@@ -206,10 +206,17 @@ end
 -- pass draws the button and its arrow (GenericWindowsNodes glyph buttons).
 local MERCHANT_PAGE_BUTTONS = { "MerchantPrevPageButton", "MerchantNextPageButton" }
 local PAGE_BACKPLATE = "interface\\buttons\\ui-pagebutton-background"
+local PAGE_BACKPLATE_FILE = 130822
+
+local function IsPageBackplate(texture)
+    return texture == PAGE_BACKPLATE_FILE
+        or type(texture) == "string" and texture:gsub("/", "\\"):lower():gsub("%.blp$", "") == PAGE_BACKPLATE
+end
 
 local function FadePageBackplate(region, group)
-    local path = Read(region, "GetTextureFilePath")
-    if type(path) == "string" and path:gsub("/", "\\"):lower():gsub("%.blp$", "") == PAGE_BACKPLATE then
+    if Read(region, "GetTextureFileID") == PAGE_BACKPLATE_FILE
+        or IsPageBackplate(Read(region, "GetTextureFilePath"))
+        or IsPageBackplate(Read(region, "GetTexture")) then
         Fade(group, region)
     end
 end

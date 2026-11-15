@@ -23,9 +23,13 @@ local function Readout(view, model)
     view.readoutStamp, view.readoutModel = stamp, model
     local format, a, b, c = model.readoutFormat, model.readoutA, model.readoutB, model.readoutC
     if not format then view.distance:SetText("")
-    elseif c ~= nil then view.distance:SetFormattedText(format, a, b, c)
-    elseif b ~= nil then view.distance:SetFormattedText(format, a, b)
-    else view.distance:SetFormattedText(format, a) end
+    elseif c ~= nil then
+        view.distance:SetFormattedText(format, a, b, c)
+    elseif b ~= nil then
+        view.distance:SetFormattedText(format, a, b)
+    else
+        view.distance:SetFormattedText(format, a)
+    end
 end
 
 local function Label(parent)
@@ -229,7 +233,10 @@ end
 -- twentieth of the marker's time asking the client what was shown.
 function Navigation.Paint(view, model, config)
     local mode = model.mode
-    if not mode then Navigation.Hide(view) return end
+    if not mode then
+        Navigation.Hide(view)
+        return
+    end
     Color(view, model.color)
     if view.mode ~= mode then Layout(view, mode, config) end
     ShowBeam(view, mode == Navigation.WAYPOINT and config.beam == true, config.beamPulse)

@@ -241,11 +241,17 @@ local function BeforeQuestLayout(scroll, displayState)
     wipe(list.hidden)
     if NS.IsCombatLocked() then
         if next(list.folded) or next(list.hiddenPins) then
-            NS.CombatGate.RunOrDefer(list, list.relayout)
+            NS.CombatGate.RunOrDefer(list, list.reapply)
         end
         return
     end
-    ApplyFolds(list, Plain(Safety.Field(Plain(displayState), "questInfoContainer")))
+    if NS.Client.isForever then
+        -- The native map open can rebuild the quest log before its protected
+        -- reading emote. Reapply our view after that stack, using the live rows.
+        NS.Registry.QueueJob(list.reapply)
+    else
+        ApplyFolds(list, Plain(Safety.Field(Plain(displayState), "questInfoContainer")))
+    end
 end
 
 local function RevealMapQuest(scroll, questID)
@@ -286,6 +292,9 @@ local function AttachFolds(scroll, state)
             if not NS.IsCombatLocked() and Safety.CanDecorate(contents, true) and ApplyFolds(list) then
                 ResizeQuestList(contents, layout)
             end
+        end
+        list.reapply = function()
+            if list.owner then list.relayout() end
         end
         lists[scroll] = list
         Kit.HookFunction(scroll, "UpdateBackground", Safety.Isolated(BeforeQuestLayout))

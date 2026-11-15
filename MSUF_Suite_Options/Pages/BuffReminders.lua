@@ -44,7 +44,7 @@ P.Gates[ID] = function(rule)
         local _, class = UnitClass("player")
         return P.Suite.Client.isForever == true and P.Suite.Public(class) and class == expected
     end
-    if rule.key == "campfireBuff" then return P.Suite.Client.isForever == true end
+    if rule.key == "campfireBuff" or rule.key == "personalBuffWarningSeconds" then return P.Suite.Client.isForever == true end
     return true
 end
 
