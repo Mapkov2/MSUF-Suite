@@ -22,6 +22,12 @@ function Style.SharedLockedCastColor()
     return select(4, Style.CastFillColors())
 end
 
+function Style.SharedCastbar(look)
+    local bridge = NS.HostBridge
+    local read = bridge and bridge.SharedCastbarStyle
+    if read and look ~= 2 then return read() end
+end
+
 NS.NameplateStyle = Style
 -- Nameplate indicators with data available for the plate's own unit token.
 -- The menu and preview share the same labels, artwork and default placement.
@@ -464,6 +470,15 @@ function Style.PaintBorder(visual, owner, size, color)
         visual.borderShown = true
     end
     visual.borderSize = size
+end
+
+function Style.PaintCastOutline(visual, owner, size, style)
+    Style.PaintBorder(visual, owner, size, "ffffff")
+    if size <= 0 then return end
+    local r, g, b, a = style.outlineR or 0, style.outlineG or 0, style.outlineB or 0, style.outlineA or 1
+    if visual.r == r and visual.g == g and visual.b == b and visual.a == a then return end
+    for _, edge in ipairs(visual.edges) do edge:SetVertexColor(r, g, b, a) end
+    visual.r, visual.g, visual.b, visual.a = r, g, b, a
 end
 
 local BLIZZARD_OUTLINE, CUSTOM_OUTLINE, NO_OUTLINE = 2, 3, 4

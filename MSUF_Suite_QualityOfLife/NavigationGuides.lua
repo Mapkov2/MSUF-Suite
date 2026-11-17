@@ -56,8 +56,12 @@ local function TomTomChanged(_, uid)
 end
 
 local function RXPPoint(owner)
+    if not owner.active or owner.paused then return end
     local arrow = _G.RXPG_ARROW
-    if not owner.config.guideRestedXP or not arrow or not arrow:IsShown() then return end
+    if not owner.config.guideRestedXP or not arrow or not arrow:IsShown() then
+        ClearGuide("RestedXP")
+        return
+    end
     local element = arrow.element
     if not Table(element) or not Suite.Finite(element.x) or not Suite.Finite(element.y) then return end
     local step = Table(element.step) and element.step or nil
@@ -100,16 +104,10 @@ local function APRPoint(_, active, x, y, displayAction)
     Offer("Azeroth Pilot Reloaded", map, px, py, Suite.Text("Guide destination"))
 end
 
-local function RXPVisibility()
+local function RXPChanged()
     local owner = Navigation.owner
-    if not owner or not owner.active then return end
-    owner.context:Cancel(RXPPoint)
-    if owner.config.guideRestedXP and _G.RXPG_ARROW:IsShown() then
-        RXPPoint(owner)
-        if not owner.paused then owner.context:Ticker(.5, RXPPoint) end
-    else
-        ClearGuide("RestedXP")
-    end
+    if not owner or not owner.active or owner.paused or not owner.config.guideRestedXP or not owner.rxpUpdate then return end
+    owner.rxpUpdate:Request()
 end
 
 local function MapzerothVisibility()
@@ -154,8 +152,11 @@ function Navigation.RefreshGuides(owner)
     end
     if owner.config.guideRestedXP and rxp and not installed[rxp] then
         installed[rxp] = true
-        rxp:HookScript("OnShow", RXPVisibility)
-        rxp:HookScript("OnHide", RXPVisibility)
+        rxp:HookScript("OnShow", RXPChanged)
+        rxp:HookScript("OnHide", RXPChanged)
+        -- RestedXP calls SetShown even when replacing one visible step with
+        -- another, then assigns arrow.element. Read it after that call stack.
+        hooksecurefunc(rxp, "SetShown", RXPChanged)
     end
     if owner.config.guideAPR and Table(apr) and Table(apr.Arrow)
         and type(apr.Arrow.SetArrowActive) == "function" and not installed[apr.Arrow] then
@@ -173,7 +174,13 @@ function Navigation.RefreshGuides(owner)
             hooksecurefunc(guide, "Stop", MapzerothVisibility)
         end
     end
-    if rxp then RXPVisibility() else owner.context:Cancel(RXPPoint) end
+    if owner.config.guideRestedXP and rxp then
+        owner.rxpUpdate = owner.context:Coalesce(0, RXPPoint)
+        RXPPoint(owner)
+    else
+        owner.context:Cancel(RXPPoint)
+        ClearGuide("RestedXP")
+    end
     MapzerothVisibility()
 end
 

@@ -90,7 +90,7 @@ local function Row(group, label, value, layout, tooltip, argument, format, extra
         row = {}
         group.pool[index] = row
     end
-    row.label, row.layout = label, layout
+    row.label, row.layout, row.action = label, layout, nil
     row.displayFormat, row.displayExtra = nil, nil
     if not Public(value) or not Public(extra) then
         row.value = "—"
@@ -249,6 +249,19 @@ end
 
 local Model = Host.CharacterTabs
 local NO_DATA = Text("No data available")
+local SETS, NO_SET = Text("Equipment sets"), Text("No equipment set equipped")
+local equipmentSetGroups = setmetatable({}, { __mode = "k" })
+
+function Pages.EquipmentSets(groups, name, index, preview)
+    local group = equipmentSetGroups[groups]
+    if not group then
+        group = { title = SETS, rows = { { label = Text("Active set") } } }
+        equipmentSetGroups[groups] = group
+    end
+    local row = group.rows[1]
+    row.value, row.action = name or NO_SET, not preview and "equipmentSets" or nil
+    table.insert(groups, index, group)
+end
 local REPORT = Text("Report")
 local statChange = { "UNIT_STATS", RESTRICTION_CHANGED }
 local ratingChange = { "UNIT_STATS", "COMBAT_RATING_UPDATE", RESTRICTION_CHANGED }
@@ -323,6 +336,7 @@ end
 
 local providers = {
     itemLevel = { ReadItemLevel, { "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_EQUIPMENT_CHANGED" }, header = "average" },
+    equipmentSets = { function(state) return state.setName or NO_SET end, {}, header = "sets", action = "equipmentSets" },
     durability = { ReadDurability, { "UPDATE_INVENTORY_DURABILITY", "PLAYER_EQUIPMENT_CHANGED" }, durability = true },
     missingEnchants = { function(state) return Pages.AuditCount(state.gear, "missingEnchants") end, auditChange, audit = true },
     emptySockets = { function(state) return Pages.AuditCount(state.gear, "emptySockets") end, auditChange, audit = true },
@@ -451,6 +465,7 @@ function Pages.CustomPlan(definition, reset)
             target.rows[j] = {
                 x = rowX, y = rowY,
                 index = index,
+                action = provider and provider.action,
                 displayFormat = provider and provider.displayFormat,
                 label = row.label ~= "" and row.label or nil,
                 defaultLabel = source and (source.target and ("%s (%d)"):format(source.text, source.target) or source.text) or NO_DATA,
@@ -598,7 +613,9 @@ function Pages.Custom(groups, plan, state, combat, config)
             if row.data then
                 AppendCustomData(group, row, state)
             else
-                Row(group, row.label or labels[row.index] or row.defaultLabel, values[row.index], row, nil, nil, row.displayFormat)
+                local value = Row(group, row.label or labels[row.index] or row.defaultLabel, values[row.index],
+                    row, nil, nil, row.displayFormat)
+                if state and not combat then value.action = row.action end
             end
         end
     end

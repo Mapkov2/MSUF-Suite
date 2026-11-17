@@ -7,7 +7,7 @@ local function Check(value, message)
     checks = checks + 1
 end
 
-for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-7.0" }) do
+for _, host in ipairs({ "MidnightSimpleUnitFrames-7.0" }) do
     for _, forever in ipairs({ false, true }) do
         MSUF2, MSUF_UI, MSUF, MSUFSuiteInstallFrame = nil, nil, nil, nil
         local namespace = { Client = { Flavor = "Mainline", IsForever = forever,

@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Secrets.Install()
 Secrets.GUARD_NAMES.falsy.Public = true
 local errors, calls, returned, translated = {}, 0, nil, false

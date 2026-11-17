@@ -532,7 +532,7 @@ end
 -- every setting of the catalog section "itemLevels" (MSUF_Suite/Core/Catalog/
 -- Bags.lua) except its switches, so a new text option joins it on its own.
 local SLOT_KEYS = { "backgroundColor", "accentColor" }
-local WINDOW_KEYS = { "backgroundOpacity", "windowPresentation" }
+local WINDOW_KEYS = { "look", "backgroundOpacity", "windowPresentation" }
 local LEVEL_KEYS = { "showItemLevel", "showBindBadge", "showBankItemLevel" }
 local GOLD_KEYS = { "showSessionGold", "goldPeriod" }
 local LABEL_KEYS, VISUAL_KEYS = {}, {}

@@ -277,6 +277,7 @@ function Art:Paint(config, scale, layerOn, layers, shown)
     if layers then config = SampleStyle(self, config, layers) end
     local showMap = layerOn("map")
     self.clip:SetShown(showMap)
+    self.clip:SetAlpha((config.mapOpacity or 100) / 100)
     self.mask:SetTexture(round and CIRCLE or SQUARE_MASK)
     PaintTerrain(self, width, showMap)
     self.arrow:SetShown(showMap and layerOn("player"))

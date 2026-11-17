@@ -42,7 +42,7 @@ end
 -- an automation API call in an unflagged module fails the source scan.
 local MODULES = { "qol", "quests", "combatLog", "lootContainers", "trustedPartyInvites", "delveSolePower",
     "professionAppearance", "collectionNewMarkers", "autoUprank", "mythicAutoQueue", "fishingComfort", "autoResponses" }
-local SWITCHES = { "qol.repair", "qol.autoJunk", "loot.quickLoot", "dailyComfort.autoSkipCinematic",
+local SWITCHES = { "damageMeter.inspectRemoteSpecs", "qol.repair", "qol.autoJunk", "loot.quickLoot", "dailyComfort.autoSkipCinematic",
     "groupRaidShortcuts.autoMarkTank", "groupRaidShortcuts.autoMarkHealer", "groupFinderDoubleClick.quickApply",
     "mythicKeyShare.insertKey", "mythicResetReminder.announceReset", "tooltipDetails.inspectHovered", "autoUprank.replaceLowerRanks",
     "autoResponses.acceptSummon", "autoResponses.acceptResurrect", "autoResponses.declineDuel",
@@ -186,8 +186,14 @@ local APIS = {
 }
 -- Calls that run only after the player's own click or confirmation.
 local CONFIRMED = {
+    ["MSUF_Suite_QualityOfLife/KeystoneReadyCheck.lua DoCountdown"] =
+        "the explicit countdown button starts it; cleanup only cancels the countdown owned by that click",
+    ["MSUF_Suite_QualityOfLife/KeystoneReadyCheck.lua DoReadyCheck"] =
+        "the explicit Ready Check button; the ready state and combat restrictions are checked again on click",
     ["MSUF_Suite_DamageMeter/Report.lua SendChatMessage"] =
         "the explicit Report channel selection; SendReport rejects combat, unavailable channels and secret rankings",
+    ["MSUF_Suite_Chat/Messenger.lua SendChatMessage"] =
+        "sending a composed reply from the Suite edit box; received events never send a message",
     ["MSUF_Suite_QualityOfLife/TrainerLearnAll.lua BuyTrainerService"] = "learns after the cost confirmation",
     ["MSUF_Suite_QualityOfLife/LootVendorRules.lua UseContainerItem"] = "sells after the sale confirmation",
     ["MSUF_Suite/Core/Macros/Native.lua CreateMacro"] =

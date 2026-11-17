@@ -18,6 +18,7 @@ local function IsSecret(value)
     return rawequal(value, secret)
 end
 local suite = {
+    Public = function(value) return not IsSecret(value) end,
     PublicText = function(value)
         return not IsSecret(value) and type(value) == "string" and value ~= "" and value or nil
     end,
@@ -36,19 +37,31 @@ end
 wipe = function(t) for k in pairs(t) do t[k] = nil end end
 
 local filter, adds, removes = nil, 0, 0
+local systemFilter, systemAdds, systemRemoves = nil, 0, 0
 ChatFrameUtil = {
     AddMessageEventFilter = function(event, callback)
+        if event == "CHAT_MSG_SYSTEM" then
+            assert(not systemFilter, "duplicate system filter")
+            systemFilter, systemAdds = callback, systemAdds + 1
+            return
+        end
         assert(event == "CHAT_MSG_CHANNEL" and not filter, "unexpected duplicate or broad registration")
         filter, adds = callback, adds + 1
     end,
     RemoveMessageEventFilter = function(event, callback)
+        if event == "CHAT_MSG_SYSTEM" then
+            assert(callback == systemFilter, "wrong system filter removed")
+            systemFilter, systemRemoves = nil, systemRemoves + 1
+            return
+        end
         assert(event == "CHAT_MSG_CHANNEL" and callback == filter, "wrong native filter removed")
         filter, removes = nil, removes + 1
     end,
 }
 
 local chat, self = {}, { config = {} }
-assert(loadfile(source))("MSUF_Suite_Chat", { Suite = suite, Chat = chat })
+local client = { isForever = true }
+assert(loadfile(source))("MSUF_Suite_Chat", { Suite = suite, Chat = chat, NS = { Client = client } })
 local frameA, frameB = {}, {}
 local function Deliver(frame, text, lineID, sender, channel, baseName, guid)
     return filter(frame, "CHAT_MSG_CHANNEL", text, sender or "Speaker-Realm", "", channel or "2. Trade", "", "",
@@ -161,5 +174,28 @@ assert(Deliver(frameA, "carry", 901 + 1), "phrase-only configuration failed")
 chat.SpamFilterDisable()
 chat.SpamFilterDisable()
 assert(not filter and removes == 2, "module disable was not idempotent")
+
+-- Forever can deliver an empty system line through the same native pipeline
+-- as ordinary chat. Drop it before the optional timestamp formatter sees it.
+self.config.spamFilter = false
+self.config.allTimestamps = true
+chat.SpamFilterRefresh(self)
+chat.SpamFilterRefresh(self)
+assert(systemFilter and systemAdds == 1 and not filter, "timestamp filter requires no channel spam rules")
+assert(systemFilter(frameA, "CHAT_MSG_SYSTEM", ""), "empty system line reached the timestamp formatter")
+assert(not systemFilter(frameA, "CHAT_MSG_SYSTEM", "Quest accepted"))
+assert(not systemFilter(frameA, "CHAT_MSG_SYSTEM", " "))
+assert(not systemFilter(frameA, "CHAT_MSG_SYSTEM", secret), "restricted system line was discarded")
+assert(not systemFilter(frameA, "CHAT_MSG_SYSTEM", nil))
+self.config.allTimestamps = false
+chat.SpamFilterRefresh(self)
+assert(not systemFilter and systemRemoves == 1, "timestamp off kept the system filter")
+self.config.allTimestamps = true
+chat.SpamFilterRefresh(self)
+chat.SpamFilterDisable()
+assert(not systemFilter and systemRemoves == 2, "chat disable kept the system filter")
+client.isForever = false
+chat.SpamFilterRefresh(self)
+assert(not systemFilter and systemAdds == 2, "Retail registered Forever's filter")
 
 print("Suite native chat spam filtering contract passed")

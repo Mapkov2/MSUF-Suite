@@ -7,6 +7,7 @@ local hiddenStack = {}
 local bagsOpen = true
 local config = {}
 local nativeAreaHook, nativeSpellWrite
+local addonSpellCloses, addonSpellAreaWrites = 0, 0
 local playerSpells
 local function Check(value, message)
     assert(value, message)
@@ -68,6 +69,7 @@ local defined = "UIPanelLayout-defined"
 function SetUIPanelAttribute(frame, key, value)
     local native = nativeSpellWrite and frame == playerSpells and value ~= nil
     if not native then
+        if frame == playerSpells then addonSpellAreaWrites = addonSpellAreaWrites + 1 end
         assert(not combat and not frame.explicit, "unsafe panel mutation")
         assert(not frame:IsShown() or frame == playerSpells and occupied.center ~= frame, "changed an occupied panel")
     end
@@ -82,9 +84,8 @@ function SetUIPanelAttribute(frame, key, value)
 end
 -- Blizzard keeps this helper local to its panel manager.
 GetUIPanelAttribute = nil
-function UIPanelUpdateScaleForFit(frame, x, y)
-    assert(frame == playerSpells and not combat and x == 200 and y == 140, "unexpected native scale-fit call")
-    frame.fit = true
+function UIPanelUpdateScaleForFit()
+    error("Suite replaced the native spell window's scale-to-fit call")
 end
 function hooksecurefunc(name, callback)
     assert(name == "SetUIPanelAttribute" and not nativeAreaHook, "unexpected native hook")
@@ -145,19 +146,30 @@ local function Escape(casting)
     local hadBags = bagsOpen
     CloseAllBags()
     nativeEscape = true
-    local closed = CloseSpecialWindows()
+    local closed = playerSpells and occupied[NativeArea(playerSpells)] == playerSpells
+    if closed then HideUIPanel(playerSpells) end
+    closed = CloseSpecialWindows() or closed
     nativeEscape = false
     return closed and "window" or hadBags and "bags" or "default"
 end
 InputUtil = { IsGamepadUIEnabled = function() return gamepad end }
 
-local NS = {
+local NS
+NS = {
     Client = { isForever = true },
     Safety = { IsForbidden = function(frame) return frame.forbidden end },
     InCombat = function(event) return event == "PLAYER_REGEN_DISABLED" or combat end,
     Public = function(value) return value ~= hiddenStack end,
     PublicText = function(value) return type(value) == "string" and value end,
-    Dispatch = function(callback, ...) return callback(...) end,
+    Dispatch = function(callback, ...)
+        if NS.Client.isForever and callback == HideUIPanel then
+            Check(not NativeArea((...)), "a Forever addon close called the native panel delegate")
+        end
+        if callback == HideUIPanel and playerSpells and select(1, ...) == playerSpells then
+            addonSpellCloses = addonSpellCloses + 1
+        end
+        return callback(...)
+    end,
 }
 local S = {
     Install = function(id, instance) assert(id == "parallelWindows"); module = instance end,
@@ -329,12 +341,11 @@ module.active = false
 module:Disable()
 Check(NativeArea(map) == "left" and NativeArea(groupFinder) == "left" and next(callbacks) == nil,
     "disabling did not restore the native map and group finder")
--- N loads the native addon and selects its tab before calling ShowUIPanel.
+-- Forever's shared spells root uses Blizzard's panel manager for all tabs.
 HideUIPanel(auction)
 module.active = true
 module:Enable()
 local retained = Panel("NativeCenterTest", "left")
-NativeOpen(retained)
 NativeOpen(auction)
 playerSpells = Panel("PlayerSpellsFrame", "centerOrLeft", true)
 playerSpells.explicit = false
@@ -342,54 +353,40 @@ UIPanelWindows.PlayerSpellsFrame.checkFit = 1
 UIPanelWindows.PlayerSpellsFrame.checkFitExtraWidth = 200
 UIPanelWindows.PlayerSpellsFrame.checkFitExtraHeight = 140
 Fire("ADDON_LOADED")
+Check(playerSpells.attr[defined] == nil, "loading PlayerSpells wrote its panel metadata")
 bagsOpen = true
-NativeSpellArea("center")
-NativeOpen(playerSpells)
-Check(playerSpells:IsShown() and playerSpells.fit and retained:IsShown() and auction:IsShown() and bagsOpen
-    and GetUIPanel("center") == nil, "opening Talents with N closed another native window or skipped scale to fit")
-NativeSpellArea("left")
-HideUIPanel(playerSpells)
-NativeSpellArea("centerOrLeft")
-NativeOpen(playerSpells)
-Check(NativeArea(playerSpells) == nil and playerSpells:IsShown() and retained:IsShown() and auction:IsShown(),
-    "switching or resizing the spellbook returned it to native slots")
-module.active = false
-module:Disable()
-Check(playerSpells:IsShown(), "disable closed an open spell window")
-HideUIPanel(playerSpells)
-HideUIPanel(retained)
-HideUIPanel(auction)
-Flush()
-Check(NativeArea(playerSpells) == "centerOrLeft", "disable did not restore the latest native spell area")
-
-module.active = true
-module:Enable()
-playerSpells.explicit = true
-NativeSpellArea("center")
-Check(NativeArea(playerSpells) == "center", "modified explicitly protected spell root")
-playerSpells.explicit = false
-gamepad = true
-NativeSpellArea("center")
-Check(NativeArea(playerSpells) == "center", "modified native Gamepad spell layout")
-gamepad = false
-combat = true
-NativeSpellArea("center")
-Check(NativeArea(playerSpells) == "center", "modified spell area in combat")
-combat = false
-NativeOpen(playerSpells)
-NativeSpellArea("center")
-Check(GetUIPanel("center") == playerSpells and NativeArea(playerSpells) == "center", "stranded a native spell slot")
-HideUIPanel(playerSpells)
--- Native resizes hide first, update their fit offset, then show internally.
+for _, area in ipairs({ "center", "left", "centerOrLeft" }) do
+    NativeSpellArea(area)
+    Check(NativeArea(playerSpells) == area, "Suite rewrote a native spell tab's area")
+    NativeOpen(playerSpells)
+    Check(playerSpells:IsShown() and auction:IsShown() and bagsOpen and GetUIPanel(area) == playerSpells,
+        "spell tab opening bypassed the native panel slot or closed a floating panel")
+    HideUIPanel(playerSpells)
+    Check(not playerSpells:IsShown() and GetUIPanel(area) == nil, "native spell tab close missed its panel slot")
+end
 nativeSpellWrite = true
 SetUIPanelAttribute(playerSpells, "centerXOffset", 0)
 nativeSpellWrite = false
-NativeOpen(retained)
-NativeOpen(playerSpells)
-Check(retained:IsShown() and NativeArea(playerSpells) == nil, "native resize reopened the spells frame in a managed slot")
-HideUIPanel(retained)
-HideUIPanel(playerSpells)
+Check(NativeArea(playerSpells) == "centerOrLeft" and addonSpellAreaWrites == 0 and nativeAreaHook == nil,
+    "Suite attached a hook or rewrote the native spell panel area during resize")
+HideUIPanel(auction)
+CloseAllBags()
 Flush()
+NativeOpen(auction)
+NativeOpen(playerSpells)
+Check(Escape(false) == "window" and not playerSpells:IsShown() and auction:IsShown(),
+    "native Escape did not close only the managed spells window immediately")
+Flush()
+Check(auction:IsShown() and addonSpellCloses == 0, "one Escape also closed a floating window")
+Check(Escape(false) == "window" and auction:IsShown(), "native spells close did not rearm floating-window Escape")
+Flush()
+Check(not auction:IsShown(), "next Escape did not close the floating window")
+
+module.active = false
+module:Disable()
+Check(NativeArea(playerSpells) == "centerOrLeft", "disable changed the native spell window layout")
+module.active = true
+module:Enable()
 
 -- Opening order includes bags and existing managed panels. Native same-tick
 -- hide/show transitions retain their order; a completed close removes it.
@@ -427,6 +424,45 @@ Flush()
 Check(not auction:IsShown() and quest:IsShown() and map:IsShown(), "cap did not keep closing in opening order")
 
 ResetWindows()
+Limit(2)
+NativeOpen(map)
+Flush()
+NativeOpen(auction)
+Flush()
+NativeOpen(quest)
+Flush()
+Check(map:IsShown() and not auction:IsShown() and quest:IsShown(),
+    "the Forever cap did not preserve the native map and close the oldest floating window")
+
+ResetWindows()
+local character = Panel("CharacterFrame", "left")
+local combined = Panel("ContainerFrameCombinedBags")
+local closeBags = CloseAllBags
+function CloseAllBags()
+    Check(not (gamepad and combined:IsShown() and character:IsShown()),
+        "the Forever cap would run native ToggleCharacter from the combined bags' OnHide")
+    closeBags()
+    HideUIPanel(combined)
+end
+Fire("ADDON_LOADED")
+Limit(3)
+gamepad = true
+NativeOpen(combined)
+Flush()
+NativeOpen(character)
+Flush()
+NativeOpen(quest)
+Flush()
+NativeOpen(auction)
+Flush()
+Check(combined:IsShown() and character:IsShown() and not quest:IsShown() and auction:IsShown(),
+    "the cap did not leave the combined bags and character window to the Gamepad UI")
+gamepad = false
+HideUIPanel(character)
+ResetWindows()
+CloseAllBags = closeBags
+
+ResetWindows()
 NativeOpen(auction)
 Flush()
 NativeOpen(quest)
@@ -445,17 +481,30 @@ NativeOpen(auction)
 Flush()
 NativeOpen(quest)
 Flush()
--- The native spellbook resize hides and reopens its root synchronously.
+-- A same-tick native resize does not detach the spell panel or give it a Suite close path.
 HideUIPanel(playerSpells)
 nativeSpellWrite = true
 SetUIPanelAttribute(playerSpells, "centerXOffset", 0)
 nativeSpellWrite = false
 NativeOpen(playerSpells)
 Flush()
-NativeOpen(map)
+NativeOpen(groupFinder)
 Flush()
-Check(not playerSpells:IsShown() and auction:IsShown() and quest:IsShown() and map:IsShown(),
-    "an internal spellbook resize moved the oldest window to the end")
+Check(playerSpells:IsShown() and not auction:IsShown() and quest:IsShown() and groupFinder:IsShown(),
+    "cap did not count the spell window or skipped the oldest eligible floating window")
+Check(addonSpellCloses == 0, "the cap closed the native spells window")
+
+ResetWindows()
+Limit(1)
+NativeOpen(playerSpells)
+Flush()
+NativeOpen(auction)
+Flush()
+Check(playerSpells:IsShown() and auction:IsShown() and addonSpellCloses == 0,
+    "cap closed the native spells window or the newest opener when neither was eligible")
+HideUIPanel(playerSpells)
+Flush()
+Check(auction:IsShown(), "a native spells close evicted the remaining window")
 
 ResetWindows()
 Limit(2)
@@ -483,8 +532,8 @@ module:Enable()
 Limit(2)
 NativeOpen(quest)
 Flush()
-Check(not auction:IsShown() and bag1:IsShown() and quest:IsShown(),
-    "an existing managed window was counted but excluded from FIFO closure")
+Check(auction:IsShown() and not bag1:IsShown() and quest:IsShown(),
+    "the Forever cap did not count the existing managed window and close the oldest eligible group")
 
 ResetWindows()
 Limit(2)
@@ -513,8 +562,8 @@ module:Refresh()
 NativeSpellArea("center")
 NativeOpen(playerSpells)
 Flush()
-Check(protected:IsShown() and quest:IsShown() and auction:IsShown() and playerSpells:IsShown(),
-    "unlimited mode closed a supported window")
+Check(quest:IsShown() and auction:IsShown() and playerSpells:IsShown() and addonSpellCloses == 0,
+    "unlimited mode closed a supported floating window or the native spells window")
 
 ResetWindows()
 Limit(2)
@@ -549,7 +598,7 @@ Check(not bag1:IsShown() and not bag2:IsShown() and auction:IsShown() and quest:
 Check(watcher.OnUpdate == nil and watcher.OnKeyDown == nil, "window limits installed polling or an input handler")
 -- All opening orders and limits for the same four independent windows.
 local sequence, used = {}, {}
-local candidates = { auction, quest, map, bag1 }
+local candidates = { auction, quest, npcQuest, bag1 }
 local permutations = 0
 local function VerifyOrder()
     for limit = 1, #candidates do
@@ -606,4 +655,12 @@ ChangeMapSize(true)
 ChangeMapSize(false)
 Check(map.point[1] == "TOPLEFT" and map.point[4] == 180 and map.point[5] == -135,
     "Retail map lost its floating compact position")
+ResetWindows()
+Limit(1)
+NativeOpen(playerSpells)
+Flush()
+NativeOpen(auction)
+Flush()
+Check(not playerSpells:IsShown() and auction:IsShown() and addonSpellCloses == 1,
+    "Retail spells lost the existing managed-window cap handling")
 print("Suite parallel windows: " .. checks .. " checks passed")

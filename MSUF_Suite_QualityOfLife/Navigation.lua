@@ -3,7 +3,7 @@ local NS, Suite, Navigation = Private.NS, Private.Suite, Private.Navigation
 local Finite, Public = Suite.Finite, Suite.Public
 local Readout, Mode = Navigation.Readout, Navigation.Mode
 local Module = { geometry = true, model = {}, screen = { age = 0 }, moving = false, settled = false, quiet = 0,
-    running = false, visible = false }
+    running = false, visible = false, camera = {} }
 Module.addons = { Blizzard_QuestNavigation = true, Blizzard_WorldMap = true, TomTom = true,
     RXPGuides = true, APR = true, ["APR-Core"] = true, Mapzeroth = true, ["Mapzeroth-Rebuild"] = true,
     DugisGuideViewerZ = true, SilverDragon = true }
@@ -12,6 +12,7 @@ local SAMPLE_INTERVAL, HIDDEN_INTERVAL, ARROW_INTERVAL = .1, .25, 1 / 30
 -- The pace of a marker shown on screen while the client reports the player
 -- moving (owner decision 2026-11-15; Pace).
 local MOVING_SAMPLE_INTERVAL = 1
+local PROJECTION_SETTLE = .5
 -- At the arrow's pace a tick is a sample once this long has passed since the
 -- last one: just under SAMPLE_INTERVAL, so the third tick counts whatever the
 -- clock (in milliseconds) rounds to.
@@ -23,7 +24,8 @@ local SETTLE_SECONDS = .95
 local STATE_EVENTS = { "SUPER_TRACKING_CHANGED", "USER_WAYPOINT_UPDATED", "QUEST_LOG_UPDATE",
     "NAVIGATION_FRAME_CREATED", "NAVIGATION_FRAME_DESTROYED", "PLAYER_ENTERING_WORLD",
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ADDON_LOADED",
-    "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING" }
+    "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING", "PLAYER_CONTROL_LOST", "PLAYER_CONTROL_GAINED",
+    "UNIT_ENTERED_VEHICLE", "UNIT_EXITED_VEHICLE" }
 if Navigation.RefreshSleepingBag then
     STATE_EVENTS[#STATE_EVENTS + 1] = "QUEST_ACCEPTED"
     STATE_EVENTS[#STATE_EVENTS + 1] = "QUEST_TURNED_IN"
@@ -33,7 +35,7 @@ end
 -- places meanwhile, which fires once and is followed when the pause ends.
 local GATE = { PLAYER_REGEN_DISABLED = true, PLAYER_REGEN_ENABLED = true, PLAYER_ENTERING_WORLD = true }
 local STAYS = { PLAYER_REGEN_ENABLED = true, PLAYER_ENTERING_WORLD = true, USER_WAYPOINT_UPDATED = true }
-local Tick
+local Tick, EndWake
 
 local function RestoreArt(self)
     if not self.native or not self.ownsArt then return end
@@ -88,6 +90,10 @@ end
 -- back only when the pause ends.
 local function Halt(self)
     self.running = false
+    if self.waking then
+        self.waking = nil
+        self.context:Cancel(EndWake)
+    end
     if self.interval then
         self.interval = nil
         self.context:Cancel(Tick)
@@ -353,10 +359,8 @@ end
 -- How often the marker needs attention follows from what it shows: the arrow
 -- of an off-screen destination turns every ARROW_INTERVAL, a marker on screen
 -- is sampled every SAMPLE_INTERVAL and a hidden one every HIDDEN_INTERVAL. One
--- client ticker at that pace takes the place of a frame script, so no code
--- runs in the frames between: at 120 frames per second the script ran 120
--- times a second to sample ten times. The ticker stops with the destination
--- and, like the frame script, while the driver frame is hidden.
+-- Only movement, travel or an active camera input keeps a ticker running.
+-- After an input or a new projection, allow the client to settle briefly.
 -- Accepted trades: a change of pace makes one client ticker object (the frame
 -- script made none; a destination that flickers across the screen edge makes
 -- one per sample). And off screen a sample falls on a tick of the arrow's
@@ -371,12 +375,33 @@ end
 -- (owner decision 2026-11-15, a tenth of the walking samples): what a sample
 -- decides shows up to a second late while walking: the distance and the
 -- travel time, the hover fade, the proximity sound, and the change to the
--- arrow, the card or hidden. The arrow's and the hidden marker's pace do not
--- depend on the movement, and an event samples at once as before.
+-- arrow, the card or hidden. Camera input keeps the arrow cadence.
+local function CameraActive(self)
+    if next(self.camera) then return true end
+    local mouse = IsMouselooking and IsMouselooking()
+    return Public(mouse) and mouse == true
+end
+
+local function CameraStickMoving()
+    local state = C_GamePad.GetDeviceMappedState()
+    if not Public(state) or not state then return false end
+    local count, sticks = state.stickCount, state.sticks
+    if not Finite(count) or not Public(sticks) or not sticks then return false end
+    for i = 1, count do
+        if C_GamePad.StickIndexToConfigName(i - 1) == "Camera" then
+            local stick = sticks[i]
+            return Public(stick) and stick and Finite(stick.len) and stick.len > 0
+        end
+    end
+    return false
+end
+
 local function Pace(self)
     local mode = self.model.mode
     self.paced = mode
-    local interval = self.running and self.visible
+    local active = self.running and self.visible
+    local interval = active and (self.moving or self.traveling or self.waking
+        or CameraActive(self))
         and (mode == Navigation.DIRECTION and ARROW_INTERVAL
             or mode and (self.moving and MOVING_SAMPLE_INTERVAL or SAMPLE_INTERVAL) or HIDDEN_INTERVAL) or nil
     if interval == self.interval then return end
@@ -414,6 +439,13 @@ Tick = function(self)
         end
         self.sampledAt = now
     end
+    -- A modal above the passive stick observer can consume the release.
+    if self.camera.GamePad and not CameraStickMoving() then
+        self.camera.GamePad = nil
+        Paint(self)
+        Pace(self)
+        return
+    end
     if not self.settled then
         Paint(self)
     else
@@ -433,11 +465,64 @@ Tick = function(self)
     if self.model.mode ~= self.paced then Pace(self) end
 end
 
+local function Repaint(self)
+    if not self.running or not self.visible or self.paused then return end
+    Paint(self)
+    Pace(self)
+end
+
+local function RequestSample(self)
+    if self.running and self.visible and not self.paused then self.repaint:Request() end
+end
+
+EndWake = function(self)
+    self.waking = nil
+    Repaint(self)
+end
+
+local function Pulse(self)
+    if not self.running or not self.visible or self.paused then return end
+    self.waking = true
+    self.context:After(PROJECTION_SETTLE, EndWake)
+    Pace(self)
+end
+
+local function CameraInput(self, control, active)
+    if not self.active or self.paused or (self.camera[control] == true) == active then return end
+    self.camera[control] = active and true or nil
+    if active then Pace(self) else Pulse(self) end
+end
+
+-- The stock bindings call these functions even when the player only turns
+-- the camera. Post-hooks observe the gesture without taking mouse input.
+local CAMERA_INPUTS = { "CameraOrSelectOrMove", "TurnOrAction", "TurnLeft", "TurnRight",
+    "PitchUp", "PitchDown", "MoveViewIn", "MoveViewOut", "Mouselook" }
+local CAMERA_STEPS = { CameraZoomIn = "MoveViewIn", CameraZoomOut = "MoveViewOut",
+    NextView = false, PrevView = false, SetView = false, ResetView = false, FlipCameraYaw = false, CenterCamera = false }
+local function HookCamera(self)
+    for _, input in ipairs(CAMERA_INPUTS) do
+        local start, stop = input .. "Start", input .. "Stop"
+        if type(_G[start]) == "function" and type(_G[stop]) == "function" then
+            hooksecurefunc(start, function() Suite.Dispatch(CameraInput, self, input, true) end)
+            hooksecurefunc(stop, function() Suite.Dispatch(CameraInput, self, input, false) end)
+        end
+    end
+    for name, control in pairs(CAMERA_STEPS) do
+        if type(_G[name]) == "function" then
+            hooksecurefunc(name, function()
+                if control then self.camera[control] = nil end
+                if self.active then Suite.Dispatch(Pulse, self) end
+            end)
+        end
+    end
+end
+
 -- The driver frame was shown or hidden (with its parent: the interface, or
 -- the world frame for "Show navigation when the interface is hidden").
 local function Visible(self, visible)
     self.visible, self.settled = visible, false
     Pace(self)
+    if visible and not self.interval then RequestSample(self) end
 end
 
 local function Native(self)
@@ -457,6 +542,7 @@ local function RefreshSource(self)
     if Navigation.quests then Navigation.AdvanceQuests() end
     if Navigation.RefreshSleepingBag then Navigation.RefreshSleepingBag() end
     Navigation.RefreshTaxi(self)
+    local identity, projection = self.model.identity, self.projection
     self.supported = Navigation.ReadSource(self.model, self.config)
     if not self.supported or not Native(self) then
         Stop(self)
@@ -465,6 +551,11 @@ local function RefreshSource(self)
     self.running = true
     Paint(self)
     Pace(self)
+    -- The engine can retain a readable position from the previous target
+    -- until the new projection has made it through a render frame.
+    if not self.interval and (not self.model.valid or identity ~= self.model.identity or projection ~= self.projection) then
+        Pulse(self)
+    end
 end
 
 local function Arrived(self, _, isWaypoint)
@@ -476,6 +567,7 @@ end
 -- parent geometry again, and the next sample runs.
 local function ScreenChanged(self)
     self.screen.valid, self.settled = false, false
+    if not self.interval then RequestSample(self) end
 end
 
 local StateChanged
@@ -500,6 +592,7 @@ end
 
 local function Pause(self)
     self.paused = true
+    for control in pairs(self.camera) do self.camera[control] = nil end
     for _, event in ipairs(STATE_EVENTS) do
         if not STAYS[event] then self.context:RemoveEvent(event) end
     end
@@ -512,8 +605,21 @@ end
 
 -- The movement events were not heard: the next sample reads the speed, and
 -- the screen geometry is read again.
+local function Travel(self)
+    local taxi = UnitOnTaxi and UnitOnTaxi("player")
+    local vehicle = UnitInVehicle and UnitInVehicle("player")
+    self.traveling = (Public(taxi) and taxi == true) or (Public(vehicle) and vehicle == true)
+end
+
+local function ReadMovement(self)
+    local moving = IsPlayerMoving and IsPlayerMoving()
+    self.moving = Public(moving) and moving == true
+    Travel(self)
+end
+
 local function Resume(self)
-    self.paused, self.moving = false, false
+    self.paused = false
+    ReadMovement(self)
     self.screen.valid = false
     Listen(self)
     Navigation.ResumeMap(self)
@@ -528,20 +634,24 @@ local function Gate(self, event)
     return pause
 end
 
-StateChanged = function(self, event)
+StateChanged = function(self, event, unit)
     if GATE[event] and Gate(self, event) then return end
     -- The player's own movement changes what the next sample reads, not the
     -- destination: the source is not read again (a map pin or a quest costs
-    -- client tables on every read), the next tick samples. A running ticker
-    -- takes the pace of the new movement state at once (Pace; a stop brings
-    -- the next sample within SAMPLE_INTERVAL); none is started. Only a
-    -- destination whose data the client could not give in full (a name that
-    -- arrives later, an unreadable source, native art still to hand back) is
-    -- asked again, as every movement event did before.
+    -- client tables on every read). Stopping takes one final visual sample.
     if event == "PLAYER_STARTED_MOVING" or event == "PLAYER_STOPPED_MOVING" then
         self.moving, self.settled = event == "PLAYER_STARTED_MOVING", false
-        if self.interval then Pace(self) end
+        if self.running then
+            Pace(self)
+            if not self.interval then RequestSample(self) end
+        end
         if not self.model.incomplete and not self.restorePending then return end
+    end
+    if event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
+        if not Public(unit) or unit ~= "player" then return end
+        Travel(self)
+    elseif event == "PLAYER_CONTROL_LOST" or event == "PLAYER_CONTROL_GAINED" or event == "PLAYER_ENTERING_WORLD" then
+        ReadMovement(self)
     end
     if event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
         or event == "PLAYER_ENTERING_WORLD" then Navigation.RefreshMap(self) end
@@ -559,17 +669,32 @@ function Module:Enable()
         self.view.root:SetPoint("CENTER", self.host, "CENTER")
         self.view.root:SetFrameStrata("BACKGROUND")
         self.driver = Suite.CreateFrame("Frame")
+        self.driver:SetFrameStrata("BACKGROUND")
         self.driver:SetScript("OnShow", function() Visible(self, true) end)
         self.driver:SetScript("OnHide", function() Visible(self, false) end)
+        if self.driver.EnableGamePadStick and C_GamePad and C_GamePad.GetDeviceMappedState then
+            self.driver:SetScript("OnGamePadStick", function(_, stick, x, y)
+                if Public(stick) and stick == "Camera" and Finite(x) and Finite(y) then
+                    CameraInput(self, "GamePad", x ~= 0 or y ~= 0)
+                end
+                return true
+            end)
+        end
+        self.view.root:SetScript("OnEnter", function() if self.config.fadeOnHover then RequestSample(self) end end)
+        self.view.root:SetScript("OnLeave", function() if self.config.fadeOnHover then RequestSample(self) end end)
         self.view.root:SetScript("OnMouseUp", function(_, button)
             if button == "RightButton" and self.active and self.config.rightClickClear then Navigation.Clear() end
         end)
+        HookCamera(self)
     end
     C_AddOns.LoadAddOn("Blizzard_QuestNavigation")
     self.refresh = self.context:Coalesce(0, RefreshSource)
-    -- The movement events were not heard while disabled (as in Resume): the
-    -- standing pace, and the next sample reads the speed.
-    self.paused, self.moving = false, false
+    self.repaint = self.context:Coalesce(0, Repaint)
+    self.paused = false
+    ReadMovement(self)
+    if self.driver.EnableGamePadStick and C_GamePad and C_GamePad.GetDeviceMappedState then
+        self.driver:EnableGamePadStick(true)
+    end
     Listen(self)
     Navigation.owner = self
     Navigation.RegisterCommand()
@@ -590,6 +715,7 @@ function Module:Refresh()
     self.driver:SetParent(self.config.showWithHiddenUI and WorldFrame or UIParent)
     self.visible = self.driver:IsVisible() == true
     Navigation.Style(self.view, self.config)
+    if self.view.root.EnableMouseMotion then self.view.root:EnableMouseMotion(self.config.fadeOnHover) end
     Navigation.RefreshMap(self)
     Navigation.RefreshGuides(self)
     self.settled = false
@@ -598,6 +724,8 @@ end
 
 function Module:Disable()
     self.paused = false
+    for control in pairs(self.camera) do self.camera[control] = nil end
+    if self.driver.EnableGamePadStick then self.driver:EnableGamePadStick(false) end
     Stop(self)
     Navigation.DisableMap(self)
     Navigation.DisableTaxi(self)

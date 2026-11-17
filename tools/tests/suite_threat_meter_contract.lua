@@ -65,10 +65,16 @@ assert(movers.focus.visible() and movers.main.visible(), "target and focus windo
 assert(sounds==1 and m.windows.main.rows[1].marker.shown,"pull threshold mark or alert missing")
 m:Update(); assert(sounds==1,"alert repeated without crossing its threshold")
 assert(m.windows.main.wheel==true,"more members than rows did not enable scrolling")
-threats.player={true,3,100,100,12000}
+threats.player={true,3,100,147,12000}
+threats.party1={false,2,95,105,10000}
+m.config.numberMode=2
 m:Update()
 assert(not m.windows.main.rows[1].marker.shown and sounds==1,
     "already tanking player received a false takeover threshold or alert")
+assert(m.windows.main.rows[1].text.text:find("100.0% of tank",1,true),
+    "current tank showed the stale percentage after taunt")
+assert(m.records.main[2].raw==105,"a public non-tank lost the actual threat share")
+threats.party1={true,3,100,100,10000}
 threats.player={false,1,90,99,9000}
 m:Update()
 m.windows.main.OnMouseWheel(nil,-1)

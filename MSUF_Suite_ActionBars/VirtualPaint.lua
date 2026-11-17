@@ -384,13 +384,12 @@ local EVENTS = {
     PLAYER_TARGET_CHANGED = Changed,
     SPELL_UPDATE_USES = Changed,
     SPELL_RANGE_CHECK_UPDATE = RangeChanged,
-    EQUIPMENT_SETS_CHANGED = function() AB.Virtual.Sync(true) end,
 }
 local registered = {}
 
 function Virtual.SyncEvents(context)
     local bar = AB.bars[BAR]
-    local items, macro, spell, equipment
+    local items, macro, spell
     if bar and M.config[AB.KEYS[BAR].Visibility] ~= VIS.NEVER then
         for i = 1, #bar.buttons do
             local action = bar.buttons[i].virtualAction
@@ -398,7 +397,6 @@ function Virtual.SyncEvents(context)
             items = items or kind == "item" or kind == "toy"
             macro = macro or kind == "macro"
             spell = spell or kind == "spell" or kind == "mount"
-            equipment = equipment or kind == "equipmentset"
         end
     end
     local range = (spell or macro) and M.config.rangeColoring
@@ -408,7 +406,6 @@ function Virtual.SyncEvents(context)
             or (event == "PLAYER_TARGET_CHANGED" and range)
             or (event == "SPELL_UPDATE_USES" and (spell or macro))
             or (event == "SPELL_RANGE_CHECK_UPDATE" and range)
-            or (event == "EQUIPMENT_SETS_CHANGED" and equipment)
         if wanted and not registered[event] then
             registered[event] = true
             context:Event(event, handler, IN_COMBAT)

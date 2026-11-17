@@ -480,7 +480,7 @@ assert(not m.binding.enabled and Running()==1,"a route with no data invented a c
 Landed(1220)
 assert(state.timings[route]==20,"a missing route could not learn its own time")
 
-local Strict=dofile(root.."/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Strict=dofile(root.."/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Strict.Install()
 Strict.GUARD_NAMES.falsy.Public=true
 Strict.GUARD_NAMES.falsy.Finite=true

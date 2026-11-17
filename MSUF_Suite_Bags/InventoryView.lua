@@ -2,6 +2,8 @@ local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Model, Index, Grid, FreeSlots = P.InventoryModel, P.InventoryIndex, P.GridView, P.FreeSlots
 local VIEW, Keyring = NS.BagsView, P.KeyringInventory
+-- Recorded inventories (OfflineInventory.lua); absent in partial loads.
+local Offline = P.BagOffline
 local POOR = Enum.ItemQuality.Poor
 -- layout: "suite" (Suite grid), "combat" (every slot in physical order, no
 -- Suite controls) or "native" (Blizzard's own grid is showing).
@@ -114,6 +116,13 @@ Render = function(delta)
 end
 
 local function BuildModel(state)
+    -- A recorded inventory (OfflineInventory.lua) builds the same model from
+    -- its display records; the live index stays read for the way back.
+    local recorded = Offline and Offline.Items()
+    if recorded then
+        InventoryView.selected = Offline.Build(InventoryView, state, recorded)
+        return
+    end
     InventoryView.context.transactions = TransactionOpen()
     -- Blizzard's search only dims matching buttons; matches on later pages
     -- would stay unseen, so the Suite grid lists the matches alone.
@@ -189,6 +198,8 @@ local function OnEvent(_, event, value, success)
         return
     end
     if event == "PLAYER_REGEN_DISABLED" then
+        -- A fight shows the live bags: every item button must be reachable.
+        if Offline then Offline.Leave(true) end
         P.BagWindowMotion.Cancel()
         P.BagResize.Cancel()
         InventoryView.transitionPending, InventoryView.categoryTransitionPending = false, false
@@ -210,8 +221,12 @@ local function OnEvent(_, event, value, success)
     end
     if event == "GET_ITEM_INFO_RECEIVED" then
         -- Arriving item data patches the waiting records; no slot is read again.
-        if not Index.ItemDataReceived(InventoryView.index, value, success) then return end
-        Index.Refresh(InventoryView.index, value)
+        local recorded = Offline and Offline.ItemDataReceived(value, success)
+        if Index.ItemDataReceived(InventoryView.index, value, success) then
+            Index.Refresh(InventoryView.index, value)
+        elseif not recorded then
+            return
+        end
     end
     if event == "BAG_UPDATE_DELAYED" then P.EquippedBags.Refresh() end
     if event == "INVENTORY_SEARCH_UPDATE" then InventoryView.scroll = 0 end
@@ -244,6 +259,7 @@ end
 -- (or while protected) its grid is what shows.
 local function WindowHidden()
     P.PhysicalSort.Stop()
+    if Offline then Offline.Leave(true) end
     if Keyring then Keyring.Close() end
     if not InventoryView.active then return end
     InventoryView.layout = "native"
@@ -346,6 +362,8 @@ end
 -- also after a module error stopped the view in combat.
 function InventoryView.Release()
     P.PhysicalSort.Stop()
+    if Offline then Offline.Leave(true) end
+    if InventoryView.list then P.BagList.Hide(InventoryView.list) end
     local wasActive = InventoryView.active
     InventoryView.transitionPending, InventoryView.categoryTransitionPending = false, false
     P.BagWindowMotion.Cancel()
@@ -380,4 +398,6 @@ end
 
 function InventoryView.Disable()
     InventoryView.Release()
+    if Offline then Offline.Reset() end
+    P.QueryEditor.Close()
 end

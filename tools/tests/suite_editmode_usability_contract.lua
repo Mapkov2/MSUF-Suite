@@ -44,4 +44,42 @@ assert(S.RegisterOwnedMover("secondary","child",{label="Child",getFrame=function
 local child=records["MSUFSuite.secondary/child"]
 for _,control in ipairs(child.extraControls) do assert(control.id~="width" and control.id~="height" and control.id~="scale","child mover incorrectly edits parent module size") end
 S.UnregisterEditElements("main");assert(not records["MSUFSuite.main/main"],"removed owner record survived")
+-- Action bars and the Minimap can both be anchored to a screen edge with
+-- local X = 0. Use the host's screen coordinate row when it supports one.
+MSUF_EditModeAPI.GetCapabilities = function() return { positionFields = true } end
+assert(S.RegisterOwnedMover("secondary", "oldEdge", {
+    label = "Old host", getFrame = function() return frame end, xKey = "x", yKey = "y", point = "TOPRIGHT",
+}))
+local oldEdge = records["MSUFSuite.secondary/oldEdge"]
+assert(#oldEdge.extraControls == 2 and oldEdge.extraControls[1].positionAxis == "x",
+    "an older host lost its working owner offset controls")
+MSUF_EditModeAPI.GetCapabilities = function() return { positionFields = true, relativePositionSteps = true } end
+for _, edge in ipairs({ "LEFT", "TOPRIGHT" }) do
+    local id = edge:lower()
+    frame.scale = edge == "LEFT" and 0.8 or 2
+    configs.secondary.x, configs.secondary.y = 0, -12
+    assert(S.RegisterOwnedMover("secondary", id, {
+        label = edge, getFrame = function() return frame end, xKey = "x", yKey = "y",
+        point = edge, sizeKeys = { "width" },
+    }))
+    local registered = records["MSUFSuite.secondary/" .. id]
+    assert(#registered.extraControls == 1 and registered.extraControls[1].id == "width",
+        edge .. " mover still uses local X/Y and hides the host's screen position")
+    assert(configs.secondary.x == 0 and configs.secondary.y == -12, "registration moved a saved edge layout")
+    local state = registered.captureState()
+    local dx = edge == "LEFT" and 1 or -1
+    local delta = dx * math.max(1, frame.scale)
+    local nextX = edge == "LEFT" and 1.3 or -1
+    assert(registered.movePosition({ state = state, deltaX = delta, deltaY = 0, phase = "commit" }))
+    assert(configs.secondary.x == nextX and configs.secondary.y == -12, "scaled screen step lost the original anchor offsets")
+    assert(registered.restoreState(state) and configs.secondary.x == 0, "edge position undo failed")
+end
+frame.scale = 1
+
+local relative = { { id = "relativeX", positionAxis = "x" }, { id = "relativeY", positionAxis = "y" } }
+assert(S.RegisterOwnedMover("secondary", "relative", {
+    label = "Relative", getFrame = function() return frame end, xKey = "x", yKey = "y",
+    quickPosition = false, extraControls = relative,
+}))
+assert(records["MSUFSuite.secondary/relative"].extraControls == relative, "explicit relative controls were replaced")
 print("PASS shared owned mover visibility, explicit sizing, localization, save/discard/profile/combat lifecycle")

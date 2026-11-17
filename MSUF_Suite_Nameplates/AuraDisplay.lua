@@ -33,8 +33,9 @@ local RAMP, FRAME_GRANT = 3, 6
 local ramping = {}
 local waiting, waitCount, snapshot = {}, 0, {}
 local GROUP_NAMES = { "any", "auras" }
-local rampFrame, grantAt, granted = nil, 0, 0
+local rampJob, grantAt, granted = nil, 0, 0
 local RampStep
+local rampBlocked
 
 -- How many of the wanted new allowances this frame's budget still allows.
 -- GetTime does not change within a frame.
@@ -47,24 +48,36 @@ local function Grant(count)
     return n
 end
 
--- The frame runs only while a group waits for its allowance.
+local function QueueRamp()
+    if rampBlocked then return end
+    if not rampJob then rampJob = owner.context:Coalesce(0, RampStep) end
+    rampJob:Request()
+end
+
+-- Native button creation queues the next grant once across all groups.
 local function Ramp(record)
-    if not ramping[record] then
-        -- The order of the waiting list is the order the groups started to wait, so a frame is the same on every run.
-        ramping[record] = true
-        waitCount = waitCount + 1
-        waiting[waitCount] = record
-    end
-    if not rampFrame then rampFrame = CreateFrame("Frame") end
-    rampFrame:SetScript("OnUpdate", RampStep)
+    if not active or ramping[record] then return end
+    ramping[record] = true
+    waitCount = waitCount + 1
+    waiting[waitCount] = record
+    QueueRamp()
+end
+
+local function ResumeRamp()
+    rampBlocked = nil
+    if active and waitCount > 0 then QueueRamp() end
 end
 
 -- Raises each waiting group's limit by what this frame's budget allows, up to
 -- the buttons it has plus RAMP. A group still short of its want stays waiting.
 -- The small groups go first, so the one-button "any" group is never starved.
 RampStep = function()
-    -- The lists are reused: this runs every frame while a group waits. A group
-    -- that still waits after this frame is appended to the waiting list again.
+    if NS.Client.AuraBuildBlocked() then
+        rampBlocked = true
+        NS.Client.AfterAuraBuild(ramping, ResumeRamp)
+        return
+    end
+    -- Only groups that ran out of allowances queue another pass.
     local count = waitCount
     for index = 1, count do
         snapshot[index] = waiting[index]
@@ -75,25 +88,26 @@ RampStep = function()
         local record = snapshot[index]
         snapshot[index] = nil
         ramping[record] = nil
-        for slot = 1, #GROUP_NAMES do
-            local name = GROUP_NAMES[slot]
-            local want = record.want[name]
-            if want then
-                local allowed = record.allowed[name]
-                local need = math.min(want, (record.made[name] or 0) + RAMP) - allowed
-                if need > 0 then
-                    local n = Grant(need)
-                    if n > 0 then
-                        allowed = allowed + n
-                        record.allowed[name] = allowed
-                        record.frame:SetAuraGroupMaxFrameCount(name, allowed)
+        if record.shown then
+            for slot = 1, #GROUP_NAMES do
+                local name = GROUP_NAMES[slot]
+                local want = record.want[name]
+                if want then
+                    local allowed = record.allowed[name]
+                    local need = math.min(want, (record.made[name] or 0) + RAMP) - allowed
+                    if need > 0 then
+                        local n = Grant(need)
+                        if n > 0 then
+                            allowed = allowed + n
+                            record.allowed[name] = allowed
+                            record.frame:SetAuraGroupMaxFrameCount(name, allowed)
+                        end
+                        if n < need then Ramp(record) end
                     end
-                    if n < need then Ramp(record) end
                 end
             end
         end
     end
-    if not next(ramping) then rampFrame:SetScript("OnUpdate", nil) end
 end
 
 local function Accessible(frame)
@@ -211,9 +225,40 @@ local function Any(part)
     return part.anyGroup
 end
 
+-- Same highlights, assets and colours: the next plan keeps the options table,
+-- which is what a button's binding is compared by. Style and the show flags
+-- are constants; every colour key has its asset key.
+local function SameDispel(left, right)
+    local assets, colors = left.customDispelAssetMap, left.customDispelColorMap
+    local otherAssets, otherColors = right.customDispelAssetMap, right.customDispelColorMap
+    for key, color in pairs(colors) do
+        local other, asset = otherColors[key], otherAssets[key]
+        if not other or not asset or asset.asset ~= assets[key].asset
+            or other.r ~= color.r or other.g ~= color.g or other.b ~= color.b then return false end
+    end
+    for key in pairs(otherColors) do if not colors[key] then return false end end
+    return true
+end
+
+-- Blizzard keeps a button's dispel textures and their copied options until
+-- ClearDispelTypeTextures (CustomAuraButton.lua: set in OnLoad_Intrinsic and
+-- there only), through SetUnit and every aura update. part.dispelBound is the
+-- options table the button holds, false for none, nil while unknown.
 local function BindDispel(record, part)
-    if not record.c.dispel then return end
-    part.button:AddDispelTypeTexture(part.dispel, plan.dispel)
+    local want = record.c.dispel and plan.dispel or false
+    part.dispelBound = nil
+    if want then part.button:AddDispelTypeTexture(part.dispel, want) end
+    part.dispelBound = want
+end
+
+-- A restyle that leaves the binding as it is costs no protected call
+-- (2026-11 Forever traces: 0.148-0.871 ms a rebind).
+local function RebindDispel(record, part)
+    local bound = part.dispelBound
+    if bound == (record.c.dispel and plan.dispel or false) then return end
+    part.dispelBound = nil
+    if bound ~= false then part.button:ClearDispelTypeTextures() end
+    BindDispel(record, part)
 end
 
 -- One texture behind the icon, a highlight's width larger on every side: the
@@ -279,7 +324,7 @@ end
 
 local function StylePart(record, part)
     local c, values, button = record.c, plan.values, part.button
-    local mouse = c.tooltip and not values.auraClickthrough
+    local mouse = c.tooltip and not c.clickthrough
     button:SetSize(c.width, c.height)
     button:SetAlpha(c.alpha)
     button:SetMouseClickEnabled(mouse)
@@ -301,8 +346,7 @@ local function StylePart(record, part)
     part.pandemicStyle:SetShown(values.auraPandemicHighlight and c.pandemic)
     if part.bound then
         DurationText(part, c.timeDecimals)
-        button:ClearDispelTypeTextures()
-        BindDispel(record, part)
+        RebindDispel(record, part)
         button:SetApplicationCount(part.Stack, Any(part) and stackOptions or nil)
     end
 end
@@ -549,6 +593,12 @@ local function Show(state, unit, sideKey, target)
             if shown and (record.unit ~= unit or not record.shown) then record.frame:SetUnit(unit) end
             if record.shown ~= shown then
                 record.frame:SetEnabled(shown)
+                if shown then
+                    for _, name in ipairs(GROUP_NAMES) do
+                        local allowed = record.allowed[name]
+                        if allowed and allowed < record.want[name] and (record.made[name] or 0) >= allowed then Ramp(record) end
+                    end
+                end
                 for index, slot in ipairs(record.slots) do slot.anchor:SetShown(shown and c.fixed and index <= #c.rows) end
             end
             record.unit, record.shown = shown and unit or nil, shown
@@ -660,8 +710,6 @@ function Display.Configure(config)
         Display.Release()
         return
     end
-    -- A group still short of its want resumes its ramp after Release stopped the frame.
-    if rampFrame and next(ramping) then rampFrame:SetScript("OnUpdate", RampStep) end
     local nextPlan = Model.Plan(config)
     local bridge = NS.HostBridge
     if bridge and nextPlan.iconSkin then
@@ -672,7 +720,8 @@ function Display.Configure(config)
     end
     if plan and nextPlan.signature == plan.signature and nextPlan.iconLook == plan.iconLook then return end
     nextPlan.font = S.ResolveFont(nextPlan.values.auraFont) or S.GlobalFontPath()
-    nextPlan.dispel = DispelOptions(nextPlan.values)
+    local dispel, held = DispelOptions(nextPlan.values), plan and plan.dispel
+    nextPlan.dispel = held and SameDispel(held, dispel) and held or dispel
     if not stackOptions then
         local formatter = C_StringUtil.CreateNumericRuleFormatter()
         formatter:SetBreakpoints({ { threshold = 0, format = "" }, { threshold = 1, format = "%d" } })
@@ -699,9 +748,15 @@ function Display.Release()
     active, targetUF = false, nil
     if NS.HostBridge and plan and plan.iconSkin then NS.HostBridge.WatchIconSkins("nameplates", false) end
     plan = nil
-    -- Nothing ticks while the feature is off. The waiting groups stay listed,
-    -- so the next Configure that turns the feature on resumes their ramp.
-    if rampFrame then rampFrame:SetScript("OnUpdate", nil) end
+    if rampJob then rampJob:Cancel() end
+    if rampBlocked then
+        NS.Client.CancelAuraBuild(ramping)
+        rampBlocked = nil
+    end
+    for index = 1, waitCount do
+        ramping[waiting[index]], waiting[index] = nil, nil
+    end
+    waitCount = 0
     for uf in pairs(states) do Display.Restore(uf) end
     for uf in pairs(pending) do
         if not states[uf] then pending[uf] = nil end

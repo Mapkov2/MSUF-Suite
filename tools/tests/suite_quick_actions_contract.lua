@@ -81,6 +81,14 @@ local function VerifyLaunch(forever)
     E:Item(0, 1, 123, 2)
     E:Item(0, 2, 999, 3)
     E:Flush()
+    NS.ActionBarSnapshots = {}
+    NS.Menu = { Open = function(page) calls.menuPage = page return true end,
+        FocusSection = function(_, section) calls.menuSection = section return true end }
+    assert(slash("action bar setups"))
+    local setups = assert(FindWindow(E, S.QuickActions))
+    Keyboard(setups, "OnEnterPressed")
+    Check("suite_actionbars", calls.menuPage, "setups shortcut opens the Action Bars page")
+    Check("suite_actionbars_account_transfer", calls.menuSection, "setups shortcut focuses account transfer")
     local characterConfig = S.Config("characterPanel")
     S.instances.characterPanel = { active = true, running = true, config = characterConfig }
     S.OpenCharacterPanelTab = function(tab)

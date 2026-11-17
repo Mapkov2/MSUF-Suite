@@ -8,24 +8,24 @@ local H = dofile(root .. "/tools/tests/suite_bags_harness.lua")
 do
     local rootDB = {}
     local W = H.New(root, { rootDB = rootDB, config = { sortDirection = 2 } })
-    W.sortRightToLeft = true
-    W.Apply()
-    assert(W.sortRightToLeft == false, "Fill from the top did not apply")
-    -- /reload: a new UI session reads the same saved variables.
-    W = H.New(root, { rootDB = rootDB, loginKind = "reload", config = { sortDirection = 2 } })
     W.sortRightToLeft = false
     W.Apply()
+    assert(W.sortRightToLeft == true, "Fill from the top must start at the backpack")
+    -- /reload: a new UI session reads the same saved variables.
+    W = H.New(root, { rootDB = rootDB, loginKind = "reload", config = { sortDirection = 2 } })
+    W.sortRightToLeft = true
+    W.Apply()
     assert(W.S.Set("bags", "sortDirection", 1))
-    assert(W.sortRightToLeft == true, "Blizzard setting must restore the value from before the Suite, also after /reload")
+    assert(W.sortRightToLeft == false, "Blizzard setting must restore the value from before the Suite, also after /reload")
     assert(rootDB.suiteBagSort == nil, "the restored record must be dropped")
     -- A module stop restores as well, per character.
     W = H.New(root, { rootDB = rootDB, config = { sortDirection = 3 } })
-    W.sortRightToLeft = false
+    W.sortRightToLeft = true
     W.Apply()
-    assert(W.sortRightToLeft == true and rootDB.suiteBagSort["Player-1-0001"].before == false)
+    assert(W.sortRightToLeft == false and rootDB.suiteBagSort["Player-1-0001"].before == true)
     W.guid = "Player-1-0002"
     W.S.Set("bags", "enabled", false)
-    assert(W.sortRightToLeft == true and rootDB.suiteBagSort["Player-1-0001"],
+    assert(W.sortRightToLeft == false and rootDB.suiteBagSort["Player-1-0001"],
         "another character must not restore this character's sort direction")
 end
 

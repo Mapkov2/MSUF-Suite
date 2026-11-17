@@ -39,6 +39,7 @@ local NS = {
     },
     Client = { IsAddOnLoaded = function() return true end },
     CombatGate = { RunOrDefer = function() end, Cancel = function() end },
+    Registry = { NotifyListeners = function() end },
     CharacterDetails = { RefreshFonts = function() end },
     CharacterStats = { RefreshFonts = function() end },
     IsCombatLocked = function() return false end,

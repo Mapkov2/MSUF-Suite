@@ -328,6 +328,10 @@ assert(Same(before, config), "a preview layer or target changed the profile")
 
 -- A layer whose settings paint nothing is unavailable and refuses to toggle.
 config.showCounts = false
+opened = nil
+Click(chips.counts)
+assert(opened == "msufsuite.lootRolls.showCounts" and not config.showCounts
+    and editor.layers.counts == nil, "visible roll counts did not open their disabled setting")
 ui.Paint()
 assert(editor.layerAvailable.counts == false and not first.counts[1]:IsShown())
 assert(chips.counts.command.set(false) == false and editor.layers.counts == nil, "unavailable layer toggled")

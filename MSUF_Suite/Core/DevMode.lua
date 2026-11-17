@@ -167,8 +167,17 @@ function Dev.Set(key, value)
     return ok, reason
 end
 
+function Dev.GetTaintReport()
+    local host = Suite.HostBridge
+    if host and host.TaintReport then return host.TaintReport() end
+end
+
 function Dev.SetAll(enabled)
-    if not enabled then Animation.Stop() end
+    if not enabled then
+        Animation.Stop()
+        local report = Dev.GetTaintReport()
+        if report then report.Stop() end
+    end
     local value = enabled and "1" or "0"
     local any, failure, failedKey = false
     if enabled then

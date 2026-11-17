@@ -51,6 +51,10 @@ local function PrepareLayers()
     for key in pairs(DECOR_LAYERS) do LAYER_COLORS[key] = LAYER_COLORS.border end
     LAYERS = {
         { "guides", "Guides", "enemy" }, { "health", "Blizzard health", "enemy" },
+        { "name", "Name", "elements" }, { "healthText", "HP text", "elements" },
+        { "enemyPower", "Enemy power bar", "enemyPower" }, { "cast", "Castbar", "castbar" },
+        { "auras", "Debuffs", "auras" }, { "buffs", "Buffs", "auras" }, { "controlAura", "Control effects", "auras" },
+        { "status", "Status icons", "markers" },
         { "backdrop", "Skin backdrop", "enemy" }, { "border", "Skin border", "enemy" },
         { "highlightBorders", "Highlight Borders", "signals" },
         { "aggroBorder", "Aggro border", "signals" }, { "targetBorder", "Target border", "signals" },
@@ -60,13 +64,9 @@ local function PrepareLayers()
         { "glow", "Glow", "enemy" },
         { "threshold", "Threshold", "enemy" }, { "focusMarker", "Focus diamond", "enemy" },
         { "targetScale", "Target size", "native" },
-        { "name", "Name", "elements" }, { "level", "Level", "elements" },
-        { "healthText", "HP text", "elements" },
-        { "cast", "Castbar", "castbar" }, { "enemyPower", "Enemy power bar", "enemyPower" },
+        { "level", "Level", "elements" },
         { "castText", "Spell name", "castbar" }, { "castTime", "Cast time", "castbar" },
-        { "auras", "Debuffs", "auras" },
-        { "buffs", "Buffs", "auras" }, { "controlAura", "Control effects", "auras" },
-        { "status", "Status icons", "markers" }, { "classification", "Elite / rare", "elements" }, { "raidIcon", "Raid mark", "elements" },
+        { "classification", "Elite / rare", "elements" }, { "raidIcon", "Raid mark", "elements" },
         { "castIcon", "Spell icon", "castbar" }, { "castShield", "Blizzard shield", "castbar" },
         { "castTarget", "Cast target", "castbar" }, { "target", "Target arrows", "enemy" },
         { "eliteMarker", "MSUF elite", "enemy" }, { "questMarker", "MSUF quest", "enemy" },
@@ -198,6 +198,11 @@ function Layers.Available(ui, key)
     return true
 end
 
+local function OutlineSize(config, side)
+    return Style.OutlineSize(config[side .. "OutlineMode"], config[side .. "BorderEnabled"],
+        config[side .. "BorderSize"], config.hideHealthBarBorders)
+end
+
 function Layers.Active(ui, key)
     if not ui:LayerOn(key) or not ui:LayerAvailable(key) then return false end
     if HIGHLIGHT_SAMPLES[key] then
@@ -213,9 +218,7 @@ function Layers.Active(ui, key)
             and P.Get(ID, ui.sampleKind .. "BackdropAlpha") > 0
     end
     if key == "border" then
-        local c, side = ui.barSettings or P.S.Config(ID), ui.sampleKind
-        return Style.OutlineSize(c[side .. "OutlineMode"], c[side .. "BorderEnabled"], c[side .. "BorderSize"],
-            c.hideHealthBarBorders) > 0
+        return OutlineSize(ui.barSettings or P.S.Config(ID), ui.sampleKind) > 0
     end
     if key == "highlightBorders" then
         local c = P.S.Config(ID)
@@ -421,6 +424,68 @@ local function LayerAction(key)
     return LAYER_ACTION[key]
 end
 
+local CAST_LAYERS = { cast = true, castText = true, castTime = true, castIcon = true, castShield = true, castTarget = true }
+
+local function BlockedLiveLayer(ui, key, c)
+    if AURA_KIND[key] and not AuraOn(ui, key) then return AuraSetting(ui, key) end
+    if key == "enemyPower" then
+        if not c.enemy then return "enemy" end
+        if not c.enemyPowerEnabled then return "enemyPowerEnabled" end
+    end
+    if key == "target" and not Markers.TargetActive(ui) then
+        return c.enemyTargetMarker and "enemyTargetHideFriendly" or "enemyTargetMarker"
+    end
+    if key == "softTarget" and not SoftOn(ui) then
+        if not NativeToggle("softTargetIconGate", "SoftTargetNameplateSize") then return "softTargetIconGate" end
+        local name = ui.sampleKind == "enemy" and (ui.softInteract and "Interact" or "Enemy") or "Friend"
+        return "softTarget" .. name
+    end
+    if (key == "threatFlash" or key == "threatHighlight") and not ThreatOn(key) then
+        return c.threatSignalMode == 2 and key or "threatSignalMode"
+    end
+end
+
+local function DisabledHighlight(ui, key, config)
+    local sample = HIGHLIGHT_SAMPLES[key]
+    if sample == "aggro" then
+        if not Style.AggroHighlightEnabled(config) then return "highlightAggro" end
+    elseif sample then
+        local setting = HIGHLIGHT_SETTINGS[sample]
+        if not config[setting] then return setting end
+    elseif key == "highlightBorders" and not (config.highlightTarget or config.highlightFocus or config.highlightMouseover
+        or ui.sampleKind == "enemy" and Style.AggroHighlightEnabled(config)) then
+        return "highlightTarget"
+    end
+end
+
+local function BlockedLayer(ui, key)
+    if key == "guides" then return end
+    if Layers.NPCWorldNames(ui) then return "friendlyNPCs" end
+    local c, side = P.S.Config(ID), ui.sampleKind
+    if c.look == 2 and LayerAction(key) == "live" then return "look" end
+    if key == "healthText" and side == "enemy" and c.look ~= 2 and c.enemyTextMode == 5 then return "enemyTextMode" end
+    if CAST_LAYERS[key] and c.look ~= 2 and c.enemyCastEnabled == 3 then return "enemyCastEnabled" end
+    if not ui:LayerAvailable(key) then
+        if c.look == 2 and (LayerAction(key) or HIGHLIGHT_SAMPLES[key] or key == "highlightBorders") then return "look" end
+        return true
+    end
+    local setting = DecorSetting(ui, key)
+    if key == "level" and c.look ~= 2 then setting = side .. "LevelEnabled" end
+    if key == "eliteMarker" then setting = side .. "EliteMarker" end
+    if key == "questMarker" then setting = side .. "QuestMarker" end
+    if setting and c[setting] == false then return setting end
+    if key == "roleFill" and not c.enemyRoleColors then return "enemyRoleColors" end
+    if key == "backdrop" then
+        if not c[side .. "BackdropEnabled"] then return side .. "BackdropEnabled" end
+        if c[side .. "BackdropAlpha"] == 0 then return side .. "BackdropAlpha" end
+    end
+    if key == "border" then
+        local bars = ui.barSettings or c
+        if OutlineSize(bars, side) <= 0 then return bars.hideHealthBarBorders and "hideHealthBarBorders" or side .. "OutlineMode" end
+    end
+    return DisabledHighlight(ui, key, c) or BlockedLiveLayer(ui, key, c)
+end
+
 local function FocusUnavailableLayer(ui, key)
     for _, layer in ipairs(PrepareLayers()) do
         if layer[1] == key then return FocusLayer(ui, layer[3], key) end
@@ -503,115 +568,67 @@ local function LayerHelp(key)
         or "Click: show or hide preview; right-click: settings"
 end
 
-local CONTEXT_LAYERS = {
-    anchor = { guides = true, health = true, name = true, cast = true, auras = true, buffs = true, status = true,
-        targetBorder = true, focusBorder = true, aggroBorder = true, mouseoverBorder = true },
-    auras = { buffs = true, auras = true, controlAura = true },
-    text = { status = true, name = true, level = true, healthText = true, enemyPower = true },
-    cast = { cast = true, castText = true, castTime = true, castIcon = true, castShield = true, castTarget = true },
-    status = { status = true, level = true, classification = true, raidIcon = true, target = true, eliteMarker = true, questMarker = true,
-        focusMarker = true, softTarget = true, threatFlash = true, threatHighlight = true },
-    opacity = { health = true, backdrop = true, name = true, healthText = true, enemyPower = true },
-    highlight = { health = true, border = true, highlightBorders = true,
-        targetBorder = true, focusBorder = true, aggroBorder = true, mouseoverBorder = true },
-    power = { enemyPower = true },
-}
-
-local GROUPS = {
-    { "Plate", "guides health backdrop border roleFill outerFrame shadow glow targetScale" },
-    { "Highlight Borders", "highlightBorders targetBorder focusBorder aggroBorder mouseoverBorder" },
-    { "Text", "status name level healthText enemyPower" },
-    { "Castbar", "cast castText castTime castIcon castShield castTarget" },
-    { "Auras", "auras buffs controlAura" },
-    { "Status icons", "status classification raidIcon target eliteMarker questMarker focusMarker threshold threatFlash threatHighlight softTarget" },
-}
-for _, group in ipairs(GROUPS) do
-    local keys, members = {}, {}
-    for key in group[2]:gmatch("%S+") do
-        keys[#keys + 1] = key
-        members[key] = true
-    end
-    group[2], group.members = keys, members
-end
-
-local function AddVisible(ui, button)
-    local enemyAggro = button.layerKey ~= "aggroBorder" or ui.sampleKind == "enemy" and ui.scope ~= "neutral"
-    button:SetShown(enemyAggro)
-    if enemyAggro then ui.visibleLayerButtons[#ui.visibleLayerButtons + 1] = button end
+local function ShowInRail(ui, key)
+    -- Individual status actions keep their settings routes and command registrations.
+    if STATUS_LAYERS[key] then return false end
+    if key == "aggroBorder" then return ui.sampleKind == "enemy" and ui.scope ~= "neutral" end
+    if key == "roleFill" or key == "enemyPower" then return ui.sampleKind == "enemy" end
+    if key == "buffs" or key == "controlAura" then return ui.scope ~= "friendlyNpc" end
+    return true
 end
 
 local function VisibleButtons(ui)
     local visible = ui.visibleLayerButtons
     for i = #visible, 1, -1 do visible[i] = nil end
-    if ui.layerGroup then
-        for _, button in ipairs(ui.layerButtons) do
-            if not ui.layerGroup.members[button.layerKey] then button:Hide() end
-        end
-        for _, key in ipairs(ui.layerGroup[2]) do AddVisible(ui, ui.layerByKey[key]) end
-        return visible
-    end
-    local relevant = CONTEXT_LAYERS[ui.layerContext] or CONTEXT_LAYERS.anchor
     for _, button in ipairs(ui.layerButtons) do
-        if relevant[button.layerKey] then AddVisible(ui, button)
-        else button:Hide() end
+        local show = ShowInRail(ui, button.layerKey)
+        button:SetShown(show)
+        if show then visible[#visible + 1] = button end
     end
     return visible
 end
 
-local function ShowGroups(ui, button)
-    if P.Combat() then return end
-    local function Select(group)
-        ui.layerGroup = group
-        ui:Layout()
-        ui:Paint()
-    end
-    P.AnchoredContextMenu(button, function(_, menu)
-        if menu.CreateTitle then menu:CreateTitle(Tr("All layers")) end
-        menu:CreateButton(Tr("Relevant layers"), function() Select(nil) end)
-        for _, group in ipairs(GROUPS) do
-            menu:CreateButton(Tr(group[1]), function() Select(group) end)
-        end
-    end)
+local LAYER_TOP, LAYER_ROW, CHIP_HEIGHT = 29, 26, 22
+local MAX_LAYER_HEIGHT = 5 * LAYER_ROW + CHIP_HEIGHT
+
+local function BuildLayerViewport(rail)
+    local styleScroll = T.StyleScrollFrame
+    local template = not styleScroll and "UIPanelScrollFrameTemplate" or nil
+    local scroll = CreateFrame("ScrollFrame", nil, rail, template)
+    scroll:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, -LAYER_TOP)
+    scroll:SetPoint("TOPRIGHT", rail, "TOPRIGHT", -24, -LAYER_TOP)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(1, 1)
+    if template then scroll.scrollBarHideable = true end
+    scroll:SetScrollChild(content)
+    if styleScroll then styleScroll(scroll, rail) end
+    return scroll, content
 end
 
-local function BuildRailLayout(ui, rail, title)
-    local toggle = T.Button(rail, "Relevant layers", 110, 22)
-    if T.CenterButtonLabel then T.CenterButtonLabel(toggle) end
-    local measure = T.Font(rail, "GameFontDisableSmall", "", T.colors.muted)
-    measure:Hide()
-    toggle:SetPoint("TOPRIGHT", rail, "TOPRIGHT", -8, -6)
-    toggle:SetScript("OnClick", function() ShowGroups(ui, toggle) end)
-    Register(toggle, "layers.all", "All layers")
-    ui.layerGroupButton = toggle
+local function BuildRailLayout(ui, rail, scroll, content)
     function ui:LayoutLayerRail()
-        local width = rail:GetWidth()
-        if not width or width <= 16 then return end
-        local groupName = self.layerGroup and self.layerGroup[1] or "Relevant layers"
-        local caption = Tr(groupName) .. " ▾"
-        P.SetButtonText(toggle, caption)
-        local toggleLabel = HM.GetControlLabel(toggle)
-        local measureWidth = toggleLabel and toggleLabel.GetUnboundedStringWidth
-        if not measureWidth then P.SetTranslatedText(measure, caption) end
-        local textWidth = measureWidth and measureWidth(toggleLabel) or measure:GetStringWidth()
-        toggle:SetWidth(math.min(width - 16, math.max(86, math.ceil(textWidth) + 28)))
-        local titleWidth = title:GetStringWidth()
-        local separate = titleWidth + toggle:GetWidth() + 22 > width
-        toggle:ClearAllPoints()
-        toggle:SetPoint("TOPRIGHT", rail, "TOPRIGHT", -8, separate and -26 or -6)
-        local top = separate and 52 or 32
-        local x = 8
+        local width = scroll:GetWidth()
+        if not width or width < 1 then return end
+        local x, y = 0, 0
         for _, button in ipairs(VisibleButtons(self)) do
             local label = button.fs or HM.GetControlLabel(button)
             local measureWidth = label and (label.GetUnboundedStringWidth or label.GetStringWidth)
             local naturalWidth = measureWidth and math.ceil(measureWidth(label)) + button.labelPadding or button.layerWidth
-            local size = math.min(width - 16, naturalWidth)
-            if x > 8 and x + size > width - 8 then x, top = 8, top + 26 end
+            local size = math.min(width, naturalWidth)
+            if x > 0 and x + size > width then x, y = 0, y + LAYER_ROW end
             button:SetWidth(size)
             button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", rail, "TOPLEFT", x, -top)
+            button:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
             x = x + size + 5
         end
-        rail:SetHeight(top + 28)
+        local height = y + CHIP_HEIGHT
+        local viewport = math.min(height, MAX_LAYER_HEIGHT)
+        scroll:SetHeight(viewport)
+        content:SetSize(width, height)
+        scroll:EnableMouseWheel(height > viewport)
+        content:EnableMouseWheel(height > viewport and T.StyleScrollFrame ~= nil)
+        if scroll:GetVerticalScroll() > height - viewport then scroll:SetVerticalScroll(height - viewport) end
+        rail:SetHeight(LAYER_TOP + viewport + 6)
     end
 end
 
@@ -639,7 +656,7 @@ end
 local function BuildButtons(ui, rail)
     local measure = T.Font(rail, "GameFontDisableSmall", "", T.colors.muted)
     measure:Hide()
-    ui.layerButtons, ui.visibleLayerButtons, ui.layerByKey = {}, {}, {}
+    ui.layerButtons, ui.visibleLayerButtons = {}, {}
     for i, def in ipairs(PrepareLayers()) do
         local key, label, section = def[1], def[2], def[3]
         local button
@@ -647,11 +664,11 @@ local function BuildButtons(ui, rail)
         if H.CreateLayerButton then
             button = H.CreateLayerButton(rail, ui,
                 { key = key, label = label, color = LAYER_COLORS[key] }, i, 95,
-                { Tr = Tr, layout = "chip", height = 22, showOffText = false, quiet = true,
+                { Tr = Tr, layout = "chip", height = CHIP_HEIGHT, showOffText = false, quiet = true,
                     IsAvailable = function(owner, layer) return owner:LayerAvailable(layer) end,
                     IsOn = function(owner, layer) return owner:LayerActive(layer) end })
         else
-            button = T.Button(rail, label, 95, 22)
+            button = T.Button(rail, label, 95, CHIP_HEIGHT)
         end
         P.SetTranslatedText(measure, Tr(label))
         button.labelPadding = adjustable and 52 or 30
@@ -663,15 +680,13 @@ local function BuildButtons(ui, rail)
             text:SetWordWrap(false)
         end
         if adjustable then AddSettingsLink(button, ui, section, key, label) end
-        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         button.layerKey = key
-        button:SetScript("OnClick", function(_, mouseButton)
-            if mouseButton == "RightButton" then
-                if adjustable then FocusLayer(ui, section, key) end
-                return
-            end
-            ToggleLayer(ui, key)
-        end)
+        local function Blocked() return BlockedLayer(ui, key) end
+        P.PreviewInteraction.BindLayerClick(button, function() return ToggleLayer(ui, key) end, function(setting)
+            if not adjustable or P.Combat() then return end
+            if type(setting) == "string" and OpenSetting(setting) then return end
+            return FocusLayer(ui, section, key)
+        end, Blocked)
         HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
             get = function() return ui:LayerActive(key) end,
             set = function(desired)
@@ -679,10 +694,11 @@ local function BuildButtons(ui, rail)
                 if ui:LayerActive(key) ~= desired then ToggleLayer(ui, key) end
                 return ui:LayerActive(key) == desired
             end })
-        if M.AddTooltip then M.AddTooltip(button, label, LayerHelp(key), { hook = true }) end
+        if M.AddTooltip then
+            M.AddTooltip(button, label, LayerHelp(key), { hook = true, enabled = function() return Blocked() == nil end })
+        end
         Register(button, "layer." .. key, Tr("%s preview layer"):format(Tr(label)))
         ui.layerButtons[#ui.layerButtons + 1] = button
-        ui.layerByKey[key] = button
     end
 end
 
@@ -701,7 +717,8 @@ function Layers.Build(ui)
         title = T.Font(rail, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
     end
     title:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, -8)
-    BuildButtons(ui, rail)
-    BuildRailLayout(ui, rail, title)
+    local scroll, content = BuildLayerViewport(rail)
+    BuildButtons(ui, content)
+    BuildRailLayout(ui, rail, scroll, content)
     ui.layerRail = rail
 end

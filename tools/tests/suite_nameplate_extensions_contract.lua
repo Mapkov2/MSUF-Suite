@@ -7,6 +7,18 @@ local secret = setmetatable({}, {
 local function IsSecret(value) return rawequal(value, secret) end
 local function Finite(value) return not IsSecret(value) and type(value) == "number" and value == value end
 local combat, now, target, focus, instance = false, 10, "nameplate1", nil, "none"
+local mounted, resting, stealthed, vehicle, grouped, housing, reaction, fighting =
+    false, false, false, false, false, false, 2, false
+local healthFraction = {}
+IsMounted = function() return mounted end
+IsResting = function() return resting end
+IsStealthed = function() return stealthed end
+UnitHasVehicleUI = function() return vehicle end
+UnitInVehicle = function() return vehicle end
+IsInGroup = function() return grouped end
+C_Housing = { IsInsideHouseOrPlot = function() return housing end }
+UnitReaction = function(unit) return unit == "nameplate2" and reaction or 2 end
+UnitAffectingCombat = function(unit) return unit == "nameplate2" and fighting or false end
 local reads, writes, created, hooks, ranges, casts, identities = {}, 0, 0, {}, {}, {}, {}
 local function Read(key) reads[key] = (reads[key] or 0) + 1 end
 local function CountReads() local count = 0 for _, n in pairs(reads) do count = count + n end return count end
@@ -88,7 +100,11 @@ UIParent = NewFrame()
 CreateFrame = function(_, _, parent) return NewFrame(parent) end
 canaccesstable = function(value) return not IsSecret(value) end
 GetTime = function() return now end
-UnitExists = function(unit) Read("exists") return unit ~= "focus" or focus ~= nil end
+UnitExists = function(unit)
+    Read("exists")
+    if unit == "target" then return target ~= nil end
+    return unit ~= "focus" or focus ~= nil
+end
 UnitCanAttack = function(_, unit) Read("attack") return unit ~= "focus" or focus ~= nil end
 UnitIsUnit = function(unit, other) Read("identity") return unit == (other == "target" and target or focus) end
 UnitCastingDuration = function(unit) Read("cast") return casts[unit] and {} or nil end
@@ -108,14 +124,26 @@ UnitDetailedThreatSituation = function(unit)
     if unit == "player" then return false, 1, secret, 30, 50 end
     return true, 3, 100, 100, 80
 end
-UnitHealthPercent = function(_, predicted, curve) Read("health") assert(curve and predicted == false) return secret end
+UnitHealthPercent = function(unit, predicted, curve)
+    Read("health")
+    assert(curve and predicted == false)
+    local fraction = healthFraction[unit]
+    if IsSecret(fraction) or fraction == nil then return secret end
+    local value
+    for _, point in ipairs(curve.points) do
+        if fraction < point[1] then break end
+        value = point[2]
+    end
+    return value
+end
 GetGuildInfo = function() Read("guild") return "Test Guild" end
 IsInInstance = function() Read("context") return instance ~= "none", instance end
 C_Secrets = { ShouldUnitIdentityBeSecret = function() return identityRestricted end }
 C_ChallengeMode = { IsChallengeModeActive = function() return true end }
 C_ScenarioInfo = { GetUnitCriteriaProgressValues = function() Read("forces") return 5, 1.25 end }
 C_Spell = {
-    DoesSpellExist = function(spell) Read("spell") return spell == 123 end,
+    DoesSpellExist = function(spell) Read("spell") return spell == 123 or spell == 456 end,
+    EnableSpellRangeCheck = function() end,
     IsSpellInRange = function(_, unit) Read("range") return ranges[unit] end,
 }
 C_CurveUtil = { CreateCurve = function()
@@ -135,6 +163,7 @@ C_TooltipInfo = { GetUnit = function()
     } }
 end }
 NamePlateSetupOptions = { useClassicCastBar = false, spellNameInsideCastBar = false, castIconHeight = 12, horizontalScale = 1 }
+NamePlateUnitFrameMixin = { UpdateHitTestArea = function() end }
 hooksecurefunc = function(object, method, callback)
     local original = object[method]
     object[method] = function(...) original(...) callback(...) end
@@ -142,6 +171,11 @@ end
 local NS = {
     IsSecret = IsSecret, Public = function(value) return not IsSecret(value) end, Finite = Finite, RGB = RGB,
     Text = function(value) return value end, IsCombatLocked = function() return combat end,
+    InCombat = function(event)
+        if event == "PLAYER_REGEN_DISABLED" then return true end
+        if event == "PLAYER_REGEN_ENABLED" then return false end
+        return combat
+    end,
     Safety = { IsForbidden = function(frame) return frame and frame:IsForbidden() end },
     Client = { isForever = false }, Dispatch = function(fn, ...) return fn(...) end,
 }
@@ -162,7 +196,8 @@ local P = {
     Text = { styles = { enemy = {}, friendly = {} } },
     Roles = { Quest = function() return true end, Classify = function() return "Caster" end,
         QuestObjectiveIncomplete = function(text) return text == "2/8 enemies defeated" end },
-    Layout = { Reapply = function() end, Restore = function() end, Observe = function() end },
+    Layout = { Reapply = function() end, Restore = function() end, Observe = function() end,
+        CastWidthDelta = function(_, c, side) return c[side .. "CastWidthDelta"] or 0 end },
     HookPlates = function(method, callback) hooks[method] = callback end,
 }
 local jobs, timers, tickers = {}, {}, {}
@@ -189,8 +224,10 @@ P.Power = { SetExtraTextEvents = function(wanted)
         end)
     else ctx:RemoveEvent("UNIT_MAXPOWER") end
 end }
+NS.AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+NS.AnchorLabels = NS.AnchorPoints
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("Core", NS)
-for _, file in ipairs({ "ExtensionLayout", "ExtensionText", "ExtensionEffects", "ExtensionResources", "Extensions" }) do
+for _, file in ipairs({ "ExtensionLayout", "ExtensionText", "ExtensionEffects", "Extensions" }) do
     assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("Plates", P)
 end
 local X = P.Extensions
@@ -207,6 +244,8 @@ local function Plate(unit, friend)
     uf.isFriend, uf.isPlayer, uf.showOnlyName = friend == true, false, false
     uf.name, uf.HealthBarsContainer, uf.CastBarsContainer = NewFrame(uf), NewFrame(uf), NewFrame(uf)
     local health, cast = NewFrame(uf.HealthBarsContainer), NewFrame(uf.CastBarsContainer)
+    health.fill, health.bgTexture, health.totalAbsorb = NewFrame(health), NewFrame(health), NewFrame(health)
+    function health:GetStatusBarTexture() return self.fill end
     uf.HealthBarsContainer.healthBar, uf.CastBarsContainer.castBar = health, cast
     cast.Icon, cast.Text, cast.Border = NewFrame(cast), NewFrame(cast), NewFrame(cast)
     uf.RaidTargetFrame = NewFrame(uf)
@@ -235,12 +274,30 @@ end
 assert(created == beforeCreated and CountReads() == beforeReads and writes == beforeWrites,
     "1000 disabled lifecycle loops have zero native reads, writes and allocations")
 M.config = { enemy = true, friendly = true, look = 2, plateContextEnabled = true, executePulseEnabled = true,
-    focusReminderEnabled = true, plateRangeEnabled = true, plateRangeSpell = 123, targetClassResources = true }
+    focusReminderEnabled = true, plateRangeEnabled = true, plateRangeSpell = 123 }
 X.Configure(M)
 assert(created == beforeCreated and CountReads() == beforeReads and next(tickers) == nil,
     "the Blizzard look keeps saved extension settings dormant")
 M.config = { enemy = true, friendly = true, look = 3 }
+M.config.enemyRaidRelativeAnchor = 2
+local beforeCast = reads.cast or 0
+Refresh()
+assert(not X.usesCasts and (reads.cast or 0) == beforeCast and not cast.hookOnShow and not cast.hookOnHide,
+    "an unrelated extension armed or queried cast effects")
 M.config.enemyNameDuringCast, M.config.enemyNameCastAlpha = 2, 25
+casts.nameplate1 = true
+Refresh()
+assert(X.usesCasts and uf.name.alpha == .25 and cast.hookOnShow and not friendCast.hookOnShow,
+    "turning on cast dimming mid-cast missed its side or installed hooks on the disabled side")
+casts.nameplate1, M.config.enemyNameDuringCast = nil, 1
+Refresh()
+beforeCast = reads.cast or 0
+cast.hookOnShow(cast)
+cast.hookOnHide(cast)
+X.OnCast(M, "UNIT_SPELLCAST_START", "nameplate1", secret, secret, 2)
+assert(not X.usesCasts and (reads.cast or 0) == beforeCast and uf.name.alpha == 1,
+    "turning cast dimming off left work in retained native hooks")
+M.config.enemyRaidRelativeAnchor, M.config.enemyNameDuringCast = 1, 2
 M.config.interruptFeedbackEnabled, M.config.interruptFeedbackDuration, M.config.interruptFeedbackWho = true, 1.2, true
 Refresh()
 X.OnCast(M, "UNIT_SPELLCAST_START", "nameplate1", secret, secret, 42)
@@ -294,26 +351,21 @@ M.config.plateRangeEnabled, M.config.plateRangeSpell, M.config.plateRangeAlpha =
 M.config.plateRangeText = true
 ranges.nameplate1, ranges.nameplate2 = true, false
 Refresh()
-assert(uf.alpha == 1 and uf2.alpha == .35 and registrations[123] == true, "range fade and shared spell registration")
-local rangeReads = reads.range
-beforeWrites, beforeCreated = writes, created
-for _ = 1, 100 do for callback in pairs(tickers) do callback(M) end end
-assert(reads.range == rangeReads + 100, "100 range ticks query only the one eligible non-target enemy")
-assert(writes == beforeWrites and created == beforeCreated, "unchanged range polling performs no native writes or allocations")
+assert(uf.alpha == 1 and uf2.alpha == 1 and registrations[123] == true and next(tickers) == nil,
+    "range must register only the target without polling or fading off-target plates")
 ctx.callbacks.SPELL_RANGE_CHECK_UPDATE(M, "SPELL_RANGE_CHECK_UPDATE", 123, secret, true)
 assert(IsSecret(uf.alpha) and uf.booleanAlpha[1] == 1 and uf.booleanAlpha[2] == .35,
     "secret range reaches the native boolean alpha sink")
 ctx.callbacks.SPELL_RANGE_CHECK_UPDATE(M, "SPELL_RANGE_CHECK_UPDATE", 123, nil, false)
 assert(uf.alpha == 1, "unknown range clears the prior secret range sink")
-combat, uf2.protected, ranges.nameplate2 = true, true, true
-for callback in pairs(tickers) do callback(M) end
-assert(uf2.alpha == 1, "range alpha changes immediately on protected frames during combat")
-combat, uf2.protected = false, false
-ranges.nameplate2 = nil
-for callback in pairs(tickers) do callback(M) end
-assert(uf2.alpha == 1, "unknown range differs from out of range")
-M.config.executePulseEnabled, M.config.extraText1Source, M.config.extraText2Source = true, 8, 9
-M.config.extraText3Source, M.config.extraText4Source = 6, 7
+target = "nameplate2"
+X.OnSelection()
+assert(uf2.alpha == .35 and uf.alpha == 1, "target switch seeds the new target and clears the old target")
+target = "nameplate1"
+X.OnSelection()
+M.config.executePulseEnabled = true
+M.config.enemyExtraTextResource, M.config.enemyExtraTextAbsorb = true, true
+M.config.enemyExtraTextThreat, M.config.enemyExtraTextTankThreat = true, true
 Refresh()
 assert(reads.health > 0, "execute uses native health-to-curve sink")
 ctx.callbacks.UNIT_MAXPOWER(M, "UNIT_MAXPOWER", "nameplate1")
@@ -323,11 +375,13 @@ for _, label in ipairs(uf.labels) do
     if rawequal(label.text, secret) then foundSecret = true elseif label.text == "-30" then foundDifference = true end
 end
 assert(foundSecret and foundDifference, "opaque resources/threat reach text sinks and public threat difference is correct")
-M.config.extraText1Source, M.config.extraText2Source, M.config.extraText3Source, M.config.extraText4Source = 3, 4, 5, 10
+M.config.enemyExtraTextQuest, M.config.enemyExtraTextGuild = true, true
+M.config.enemyExtraTextTitle, M.config.enemyExtraTextForces = true, true
 Refresh()
 local texts = {}
 for _, label in ipairs(uf.labels) do if not IsSecret(label.text) then texts[label.text or ""] = true end end
-assert(texts["2/8 enemies defeated"] and texts["Test Guild"] and texts["Enemy title"] and texts["+1.25%"], "native metadata text sources")
+assert(texts["2/8 enemies defeated"] and texts["Test Guild"] and texts["Enemy title"] and texts["+1.25%"]
+    and texts["-30"], "metadata and threat indicators can run together")
 local oldTooltip = reads.tooltip
 X.OnUnit(M, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
 assert(reads.tooltip == oldTooltip, "threat updates never rescan tooltips")
@@ -337,9 +391,10 @@ X.OnContext(false)
 assert(reads.tooltip == oldTooltip, "unchanged context does not rescan plate metadata")
 X.Restore(uf2)
 M.activeUnits.nameplate2 = nil
-assert(next(tickers) ~= nil, "remaining target retains shared native range interest")
+assert(next(tickers) == nil and registrations[123], "remaining target retains only native range interest")
 X.Restore(uf)
-assert(next(tickers) == nil and registrations[123] == false, "last enemy removal stops polling and releases range")
+assert(next(tickers) == nil and registrations[123] == false and not ctx.callbacks.SPELL_RANGE_CHECK_UPDATE,
+    "target removal releases the native range registration and listener")
 M.activeUnits.nameplate1 = uf
 Apply(uf, health, cast)
 combat, uf.protected = true, true
@@ -355,7 +410,6 @@ local available, reason = NS.NameplateExtensions.Capability("lockout")
 assert(available == false and reason:find("duration"))
 assert(NS.NameplateExtensions.Capability("lineOfSight") == false)
 NS.Client.isForever = true
-assert(NS.NameplateExtensions.Capability("resources") == false)
 assert(NS.NameplateExtensions.Kind(secret, false) == nil and NS.NameplateExtensions.Context(secret) == nil)
 
 -- Settings edits can remove the final feature while the module stays active.
@@ -366,48 +420,6 @@ assert(uf.scale == 1.2)
 M.config.focusScaleEnabled = false
 X.Configure(M)
 assert(uf.scale == 1 and X.inUse == false, "removing the final feature restores every active plate immediately")
-
--- Retail's native mechanic frame follows the target and returns to the
--- personal display. Forever's TOC excludes this class mechanic family.
-NS.Client.isForever, M.active = false, true
-local playerPlate = Plate("player", true)
-local mechanic, driver = NewFrame(playerPlate), NewFrame(UIParent)
-NamePlateDriverFrame = driver
-function driver:GetClassNameplateBar() return mechanic end
-function driver:GetClassNameplateManaBar() end
-function driver:GetClassNameplateAlternatePowerBar() end
-function driver:SetupClassNameplateBars()
-    mechanic:SetParent(playerPlate)
-    mechanic:ClearAllPoints()
-    mechanic:SetPoint("TOP", playerPlate.UnitFrame.HealthBarsContainer, "BOTTOM", 0, -4)
-end
-M.config = { enemy = true, friendly = true, look = 3, targetClassResources = true }
-X.Configure(M)
-assert(mechanic.parent == plate, "Retail native resource bar anchors to target")
-target = "nameplate2"
-driver:SetupClassNameplateBars()
-assert(mechanic.parent == plates.nameplate2, "native setup hook reapplies the current target")
-mechanic:Hide()
-driver:SetupClassNameplateBars()
-assert(not mechanic.shown, "resource anchoring preserves native mechanic visibility")
-combat, mechanic.protected, target = true, true, "nameplate1"
-X.OnSelection()
-assert(mechanic.parent == plates.nameplate2 and mechanic.alpha == 0, "blocked target reparent hides a stale pooled resource bar")
-combat, mechanic.protected = false, false
-X.OnCombatEnded()
-assert(mechanic.parent == plate and mechanic.alpha == 1, "deferred resource anchor restores its original opacity")
-mechanic.restricted, target = true, "nameplate2"
-X.OnSelection()
-assert(mechanic.parent == plate and mechanic.alpha == 0, "restricted anchors defer reparenting outside combat too")
-mechanic.restricted = false
-X.OnCombatEnded()
-assert(mechanic.parent == plates.nameplate2 and mechanic.alpha == 1)
-M.config.targetClassResources = false
-X.Configure(M)
-assert(mechanic.parent == playerPlate and mechanic.points[1][1] == "TOP", "disabling restores the native personal anchor")
-NS.Client.isForever, M.config.targetClassResources = true, true
-X.Configure(M)
-assert(mechanic.parent == playerPlate, "Forever never reanchors unloaded native mechanic bars")
 
 -- Identity markers share the plate lifecycle and respect restricted identities.
 NS.Client.isForever, uf.isPlayer = false, true
@@ -443,7 +455,7 @@ combat = true
 assert(P.ExtensionLayout.Mutable({ uf = protectedFrame, owner = M }, protectedFrame) == false,
     "secret protection status denies geometry writes")
 combat = false
-M.config = { enemy = true, friendly = true, look = 3, extraText1Source = 8, enemyNameDuringCast = 2 }
+M.config = { enemy = true, friendly = true, look = 3, enemyExtraTextResource = true, enemyNameDuringCast = 2 }
 Refresh()
 combat, uf.protected = true, true
 X.Restore(uf)
@@ -457,4 +469,185 @@ combat, uf.protected = false, false
 X.OnCombatEnded()
 Apply(uf, health, cast, "enemy", "nameplate9")
 assert(uf.labels[1].alpha == 1, "the new occupant resumes its own text after a safe rebind")
-print("nameplate extensions contract passed: lifecycle, pooling, secrets, layout, click permission, range budget, text, restoration")
+do
+    local model = NS.NameplateExtensions
+    local inherited = model.Plan({ plateContextEnabled = true, enemyNpcOpacity = 45 })
+    local neutral = model.Plan({ plateContextEnabled = true, enemyNpcOpacity = 45, neutralNpcContextOverride = true, neutralNpcOpacity = 80 })
+    local _, inheritedAlpha = model.Visibility(inherited, "neutralNpc", "World", false)
+    local _, neutralAlpha = model.Visibility(neutral, "neutralNpc", "World", false)
+    assert(inheritedAlpha == 0.45 and neutralAlpha == 0.8, "neutral opacity did not inherit or override correctly")
+    local hidden = model.Plan({ neutralNpcContextOverride = true, neutralNpcWorldVisible = false })
+    assert(not model.Visibility(hidden, "neutralNpc", "World", false) and model.Visibility(hidden, "enemyNpc", "World", false))
+    assert(model.Kind(false, false, 4, false) == "neutralNpc" and model.Kind(false, false, 4, true) == "enemyNpc")
+    local c = { enemyHealthWidthDelta = 30, neutralNpcHealthWidthDelta = 12, neutralNpcSizeOverride = true }
+    assert(model.HealthDimensions(c, "enemy", "neutralNpc") == 12 and model.HealthDimensions(c, "enemy", "enemyNpc") == 30)
+end
+
+do
+    plates.nameplate1, M.activeUnits.nameplate1, M.activeUnits.nameplate9 = plate, uf, nil
+    M.config = { enemy = true, friendly = true, look = 3, enemyHideInCombat = true }
+    plate.hitPoints = { { point = "TOPLEFT", relativePoint = "TOPLEFT", relativeTo = health, offsetX = 0, offsetY = 0 } }
+    reaction = 4
+    Refresh()
+    assert(uf.alpha == 1 and uf2.alpha == 1 and friendUF.alpha == 1)
+    ctx.callbacks.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
+    assert(uf.alpha == 0 and #plate.hitPoints == 0 and uf2.alpha == 1 and friendUF.alpha == 1,
+        "combat rule failed at the event edge or affected a different plate type")
+    X.OnCombatEnded()
+    assert(uf.alpha == 1 and #plate.hitPoints > 0, "leaving combat did not restore the visible plate")
+    local function CheckToggle(key, event, assign, global, unit)
+        M.config.enemyHideInCombat = nil
+        M.config[key] = true
+        Refresh()
+        assign(true)
+        if global then X.OnContext(false, event) else ctx.callbacks[event](M, event, unit) end
+        assert(uf.alpha == 0 and friendUF.alpha == 1, key .. " did not hide only enemies")
+        assign(false)
+        if global then X.OnContext(false, event) else ctx.callbacks[event](M, event, unit) end
+        assert(uf.alpha == 1, key .. " did not restore on change")
+        M.config[key] = nil
+    end
+    CheckToggle("enemyHideMounted", "PLAYER_MOUNT_DISPLAY_CHANGED", function(value) mounted = value end)
+    CheckToggle("enemyHideResting", "PLAYER_UPDATE_RESTING", function(value) resting = value end)
+    CheckToggle("enemyHideStealthed", "UPDATE_STEALTH", function(value) stealthed = value end)
+    CheckToggle("enemyHideInVehicle", "UNIT_ENTERED_VEHICLE", function(value) vehicle = value end, false, "player")
+    CheckToggle("enemyHideInGroup", "GROUP_ROSTER_UPDATE", function(value) grouped = value end, true)
+    CheckToggle("enemyHideSolo", "GROUP_ROSTER_UPDATE", function(value) grouped = not value end, true)
+    CheckToggle("enemyHideInInstance", "ZONE_CHANGED_NEW_AREA", function(value) instance = value and "party" or "none" end, true)
+    NS.Client.isForever = false
+    CheckToggle("enemyHideInHousing", "HOUSE_PLOT_ENTERED", function(value) housing = value end)
+
+    M.config.enemyHideOutOfCombat = true
+    Refresh()
+    assert(uf.alpha == 0, "the out-of-combat rule needs no target change")
+    ctx.callbacks.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
+    assert(uf.alpha == 1)
+    M.config.enemyHideOutOfCombat, M.config.enemyHideNoTarget = nil, true
+    Refresh()
+    target = nil
+    X.OnSelection()
+    assert(uf.alpha == 0, "the no-target rule missed a target loss")
+    target = "nameplate1"
+    X.OnSelection()
+    assert(uf.alpha == 1)
+    M.config.enemyHideNoTarget, M.config.enemyHideOutOfCombatNoTarget = nil, true
+    Refresh()
+    target = nil
+    X.OnSelection()
+    assert(uf.alpha == 0, "the combined rule missed a target change")
+    ctx.callbacks.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
+    assert(uf.alpha == 1, "the combined rule hid enemies at combat start")
+    X.OnCombatEnded()
+    assert(uf.alpha == 0, "the combined rule missed combat end")
+    M.config.enemyHideOutOfCombat = true
+    M.config.enemyShowWhenInjured = true
+    healthFraction.nameplate1 = 1
+    Refresh()
+    assert(not ctx.callbacks.PLAYER_REGEN_DISABLED and uf.alpha == 0 and #plate.hitPoints > 0,
+        "health-only mode must replace the three combat/target conditions and keep native clicks")
+    healthFraction.nameplate1 = .98
+    ctx.callbacks.UNIT_HEALTH(M, "UNIT_HEALTH", "nameplate1")
+    assert(uf.alpha == 1, "injured enemy was not revealed")
+    M.config.plateContextEnabled, M.config.enemyNpcOpacity = true, 60
+    Refresh()
+    assert(uf.alpha == .6, "health gate overwrote the configured opacity")
+    healthFraction.nameplate1 = secret
+    ctx.callbacks.UNIT_MAXHEALTH(M, "UNIT_MAXHEALTH", "nameplate1")
+    assert(IsSecret(uf.alpha) and uf2.alpha == .6 and friendUF.alpha == 1,
+        "only the enemy health curve may receive a secret and must pass it to native alpha")
+    M.config.enemyShowWhenInjured, M.config.enemyHideOutOfCombat, M.config.enemyHideOutOfCombatNoTarget = nil, nil, nil
+    M.config.plateContextEnabled = false
+    Refresh()
+    assert(uf.alpha == 1 and not ctx.callbacks.UNIT_HEALTH and not ctx.callbacks.UNIT_MAXHEALTH,
+        "disabling the visibility rules did not restore alpha or release health subscriptions")
+end
+
+do
+    M.config = { enemy = true, friendly = true, look = 3, enemyFadeHealth = 40, enemyFadeHealthBackground = 65,
+        enemyFadePower = 50, enemyFadePowerBackground = 75, enemyFadeKeepPrediction = true,
+        enemyFadeOutOfCombat = true, enemyFadeOutOfCombatAlpha = 50, plateContextEnabled = true, enemyNpcOpacity = 80 }
+    local power = NewFrame(health)
+    power.fill, power.enemyPowerBackground = NewFrame(power), NewFrame(power)
+    function power:GetStatusBarTexture() return self.fill end
+    P.Power.EnemyBar = function(frame) if frame == uf then return power end end
+    health.fill.alpha, health.bgTexture.alpha = .8, .8
+    Refresh()
+    assert(math.abs(health.fill.alpha - .32) < 1e-6 and math.abs(health.bgTexture.alpha - .52) < 1e-6)
+    assert(uf.alpha == .4 and uf2.alpha == .8 and friendUF.alpha == 1 and health.totalAbsorb.alpha == 1
+        and power.fill.alpha == .5 and power.enemyPowerBackground.alpha == .75,
+        "layer multipliers, exclusions, neutral scope or whole-plate composition are wrong")
+    ctx.callbacks.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
+    assert(uf.alpha == .8 and power.fill.alpha == .5)
+    X.OnCombatEnded()
+    assert(uf.alpha == .4)
+    M.config.enemyFadeKeepPrediction = false
+    Refresh()
+    assert(health.totalAbsorb.alpha == .4)
+    local previous = health.fill
+    health.fill = NewFrame(health)
+    Apply(uf, health, cast)
+    assert(previous.alpha == .8 and health.fill.alpha == .4, "native fill replacement lost restoration")
+    X.Restore(uf)
+    assert(uf.alpha == 1 and health.fill.alpha == 1 and health.bgTexture.alpha == .8 and health.totalAbsorb.alpha == 1
+        and power.fill.alpha == 1 and power.enemyPowerBackground.alpha == 1, "pooled plate kept a layer opacity")
+    M.config = { enemy = true, friendly = true, look = 3 }
+    Refresh()
+    assert(not ctx.callbacks.PLAYER_REGEN_DISABLED and not X.inUse, "inactive opacity kept a combat subscription")
+end
+
+do
+    local config = { enemy = true, friendly = true, look = 3,
+        enemyClickboxEnabled = true, enemyClickboxWidth = 200, neutralClickboxEnabled = true, neutralClickboxWidth = 100,
+        friendlyNpcClickboxEnabled = true, friendlyNpcClickboxWidth = 60,
+        enemyRangeEnabled = true, enemyRangeSpell = 123, enemyRangeAlpha = 35,
+        friendlyNpcRangeEnabled = true, friendlyNpcRangeSpell = 456, friendlyNpcRangeAlpha = 25,
+        enemyExtraTextResource = true, friendlyNpcExtraTextTitle = true }
+    local neutral = plates.nameplate2
+    M.active = true
+    M.config, reaction, fighting, target = config, 4, false, "nameplate1"
+    ranges.nameplate1, ranges.nameplate3 = false, false
+    Refresh()
+    assert(plate.hitPoints[1].offsetX == -100 and neutral.hitPoints[1].offsetX == -50
+        and friendly.hitPoints[1].offsetX == -30, "click areas must respect each plate type")
+    assert(uf.alpha == .35 and uf2.alpha == 1 and friendUF.alpha == 1
+        and registrations[123] and not registrations[456], "range limits leaked between types")
+    local function HasText(frame, value)
+        for _, label in ipairs(frame.labels) do
+            if label.shown and rawequal(label.text, value) then return true end
+        end
+    end
+    assert(HasText(uf, secret) and HasText(friendUF, "Enemy title"), "extra text must use the selected plate type")
+    target = "nameplate3"
+    X.OnSelection()
+    assert(registrations[123] == false and registrations[456] and uf.alpha == 1 and friendUF.alpha == .25,
+        "changing target types must switch the registered spell and fade only the new target")
+    X.Disable()
+end
+do
+    assert(loadfile(root .. "/MSUF_Suite/Core/SuiteMigrations.lua"))("Core", NS)
+    local config = { plateClickboxEnabled = true, plateClickboxWidth = 200, plateRangeEnabled = true,
+        plateRangeSpell = 123, friendlyPlateClickThrough = true, extraText1Source = 5, extraText1Side = 3,
+        friendlyClickboxWidth = 125 }
+    NS.SuiteMigrationSteps.NameplateTypeSettings({ nameplates = config })
+    assert(config.enemyClickboxWidth == 200 and config.neutralClickboxWidth == 200
+        and config.friendlyNpcClickboxWidth == 200 and config.friendlyClickboxWidth == 125)
+    assert(config.enemyRangeSpell == 123 and config.neutralRangeSpell == 123
+        and not config.friendlyRangeEnabled and not config.friendlyNpcRangeEnabled)
+    assert(config.friendlyNpcPlateClickThrough and config.friendlyNpcExtraText1Source == 5
+        and config.friendlyExtraText1Source == 5 and not config.enemyExtraText1Source)
+    config.enemyExtraText2Source, config.enemyExtraText2Color, config.enemyExtraText2X = 8, "abc123", 17
+    config.enemyExtraText3Source, config.enemyExtraText3X = 8, 42
+    config.enemyStatusThreat, config.enemyStatusThreatAnchor, config.enemyStatusThreatSize = true, 4, 36
+    config.enemyStatusThreatLayer = 9
+    config.neutralExtraTextThreat = false
+    NS.SuiteMigrationSteps.NameplateTextIndicators({ nameplates = config })
+    assert(config.friendlyNpcExtraTextTitle and config.friendlyExtraTextTitle and not config.enemyExtraTextTitle)
+    assert(config.enemyExtraTextResource and config.enemyExtraTextResourceColor == "abc123"
+        and config.enemyExtraTextResourceX == 17 and config.enemyExtraTextResourceY == -12
+        and config.enemyExtraTextResourceAnchor == 2)
+    assert(config.enemyExtraTextThreat and config.enemyExtraTextThreatSize == 36 and config.neutralExtraTextThreat == false
+        and config.enemyExtraTextThreatLayer == 9)
+    assert(NS.NameplateExtensions.TextPoints[config.enemyExtraTextThreatAnchor][3] == "LEFT")
+    assert(config.extraText1Source == nil and config.enemyExtraText2Source == nil and config.enemyStatusThreat == nil)
+end
+print("nameplate extensions contract passed: lifecycle, pooling, secrets, layout, click permission, range budget, text, restoration, visibility and opacity")

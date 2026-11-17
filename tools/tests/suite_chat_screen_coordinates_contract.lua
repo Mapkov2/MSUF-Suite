@@ -120,6 +120,7 @@ end
 S.Apply = function(id) if id == "chat" then Paint() end end
 S.Start() -- attach the real profile-history listener; unrelated renderers stay out of this fixture
 local core = F.world.core
+F.world.env.IsAltKeyDown = function() return false end
 core.ApplyService.QueueFlush = function() return true end
 core.ApplyService.Flush, core.ApplyService.Quiesce = function() end, function() end
 core.UF.Apply = function() return true end
@@ -166,7 +167,11 @@ for _, scale in ipairs({ 0.5, 0.711111, 1 }) do
             Paint()
             local x, y = SamePosition()
             if nativeScale == 1 and not sidebar then
-                Check(x == -239 and y == -301, "Chat still reports native origin instead of its painted bounds")
+                local left, _, width = Rect(bounds)
+                local screenLeft, _, screenWidth = Rect(ui)
+                local paintedCenterX = (left + width * 0.5 - screenLeft - screenWidth * 0.5) / uiScale
+                Check(math.abs(x - paintedCenterX) <= 0.5 and y == -301,
+                    "Chat still reports native origin instead of its painted bounds")
             end
             local bottom = frame:GetBottom()
             Set("x", x - 19)
@@ -219,6 +224,28 @@ local unchangedX, unchangedY = frame:GetLeft(), frame:GetBottom()
 Set("x", 0)
 Set("y", 0)
 Check(frame:GetLeft() == unchangedX and frame:GetBottom() == unchangedY, "unchanged displayed coordinates moved the chat")
+-- The horizontal buttons take a relative step through the center of
+-- the painted window, including with the Suite frame scaled above 100%.
+local _, minus = popup.xBox:GetPoint()
+local plus
+for _, widget in ipairs({ popup.xBox:GetParent():GetChildren() }) do
+    local _, relative = widget:GetPoint()
+    if relative == popup.xBox and widget:GetScript("OnClick") then plus = widget end
+end
+assert(plus and minus)
+plus:GetScript("OnClick")(plus)
+local steppedX, steppedY = SamePosition()
+Check(steppedX > 0 and steppedY == 0, "chat plus did not cross X = 0")
+minus:GetScript("OnClick")(minus)
+steppedX, steppedY = SamePosition()
+Check(steppedX == 0 and steppedY == 0, "chat minus did not return to X = 0")
+minus:GetScript("OnClick")(minus)
+steppedX, steppedY = SamePosition()
+Check(steppedX < 0 and steppedY == 0, "chat minus did not cross X = 0")
+for _ = 1, 3 do Check(em.Undo.DoUndo(), "chat X step was not undoable") end
+steppedX, steppedY = SamePosition()
+Check(steppedX == 0 and steppedY == 0, "undo did not restore the painted center")
+
 uiX, uiY, uiScale = 0, 0, .711111
 c = S.Config("chat")
 c.sidebarPanel, c.sidebarSide = true, 1

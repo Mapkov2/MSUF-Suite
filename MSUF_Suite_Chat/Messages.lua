@@ -581,8 +581,35 @@ function C.SuspendMessages(frame)
     if record then record.live, record.ring = nil, nil end
 end
 
+-- A temporary window is reported one frame after Blizzard opened it inside
+-- the whisper event (Suite.ChatState), so it already holds its first lines:
+-- those are formatted once here, as a delivered line would be. A copied
+-- line Blizzard took from another window is formatted already.
+local CATCH_UP = 64
+local catchUpVisits = 0
+local function CatchUpLine(text)
+    catchUpVisits = catchUpVisits + 1
+    local public = catchUpVisits <= CATCH_UP and PublicText(text)
+    if not public then return false end
+    local rendered = Format(public)
+    return rendered ~= public and Format(rendered) == rendered
+end
+
+local function CatchUpFormat(text, ...)
+    return Format(text), ...
+end
+
+local function CatchUp(frame)
+    if not tools.format then return end
+    catchUpVisits = 0
+    frame:TransformMessages(CatchUpLine, CatchUpFormat)
+end
+
 -- The combat log (ChatFrame2) takes the hook only for the idle fade.
-function C.ApplyMessages(_, frame)
+-- AddMessage keeps its hooksecurefunc post-hook: the wrapper reads as secure,
+-- so the message handler's whisper tail (SetLastTellTarget, tellTimer) stays
+-- secure; the hook writes only Suite state and the elevated TransformMessages.
+function C.ApplyMessages(_, frame, catchUp)
     if NS.Safety.IsForbidden(frame) then return end
     local record = hooks[frame]
     local combatLog = frame == ChatFrame2
@@ -595,6 +622,7 @@ function C.ApplyMessages(_, frame)
         hooks[frame] = record
         -- Never replace the native AddMessage: post-hook its elevation barrier.
         hooksecurefunc(frame, "AddMessage", MessageAdded)
+        if catchUp then Dispatch(CatchUp, frame) end
     end
     record.live, record.ring, record.wakeOnly = true, nil, combatLog
     if combatLog then return end

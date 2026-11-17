@@ -119,7 +119,12 @@ local reagentButton = {
 }
 for _, button in ipairs(buttons) do button.IsProtected = function() return true end end
 reagentButton.IsProtected = function() return true end
-UIParent = { GetScaledRect = function() return 0, 0, 1000, 800 end }
+UIParent = {
+    GetScaledRect = function() return 0, 0, 1000, 800 end,
+    GetEffectiveScale = function() return 1 end,
+    GetWidth = function() return 1000 end,
+    GetHeight = function() return 800 end,
+}
 -- Screen rect of a bag anchored by its BOTTOMRIGHT to UIParent's BOTTOMRIGHT
 -- or to another bag's BOTTOMLEFT (Blizzard's next bag column).
 local function BagRect(frame, width, height)
@@ -157,6 +162,8 @@ ContainerFrame6 = {
     PortraitContainer = VisualFrame(), PortraitButton = PortraitButton(),
     scale = 0.9,
     point = { "BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -500, 32 },
+    GetWidth = function() return 180 end,
+    GetHeight = function() return 400 end,
     IsShown = function(self) return self.shown end,
     GetEffectiveScale = function(self) return self.scale end,
     GetScaledRect = function(self) return BagRect(self, 180, 400) end,
@@ -212,9 +219,10 @@ C_Container = {
     GetContainerNumSlots = function(bag) return bag == 0 and #buttons or 0 end,
     GetContainerItemQuestInfo = function() return { isQuestItem = false } end,
 }
-Constants = { InventoryConstants = { NumBagSlots = 4 } }
+GetBindingKey = function() end
+Constants = { InventoryConstants = { NumBagSlots = 4, NumReagentBagSlots = 1 } }
 -- ItemConstantsDocumentation.lua (Retail and Forever).
-Enum = { ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
+Enum = { BagIndex = { ReagentBag = 5 }, ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
     ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 } }
 -- WoW Forever has no global GetItemQualityColor (Retail keeps it only as a
 -- deprecated alias): quality colours come from C_Item on both clients.
@@ -341,7 +349,7 @@ state.Text = function(text) return text end
 for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", state)
 end
-for _, file in ipairs({ "SlotCache", "ItemLoads", "Bags", "CurrencyPicker" }) do
+for _, file in ipairs({ "SlotCache", "ItemLoads", "Bags", "CurrencyPicker", "EquippedBags" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
 end
 -- The sub-modules (their own files, not loaded here) run in Bags.lua's list

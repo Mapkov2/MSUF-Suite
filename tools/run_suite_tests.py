@@ -9,12 +9,11 @@ a filter selects it with "ratchet".
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
-MSUF_MAIN = BRANCH / "MidnightSimpleUnitFrames"
-MSUF_PREVIEW = BRANCH / "MidnightSimpleUnitFrames-7.0"
 MSUF_LEGACY = BRANCH / "_repo_backups" / "6.22"
 # MSUF 7.0: the host with icon skins (MSUF_HostAPI.GetIconSkins).
 MSUF_70 = BRANCH / "MidnightSimpleUnitFrames-7.0"
@@ -26,7 +25,8 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
-    "suite_trainer_learn_all_contract.lua": [[str(MSUF_MAIN / "tools/tests/classpower_secrets.lua")]],
+    "suite_dev_bar_animation_contract.lua": [[str(MSUF_70 / "tools/tests/classpower_secrets.lua")]],
+    "suite_trainer_learn_all_contract.lua": [[str(MSUF_70 / "tools/tests/classpower_secrets.lua")]],
     "suite_bags_audit_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_editor_style_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_player_gear_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -34,6 +34,7 @@ EXTRA = {
     "suite_bags_combat_style_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_live_ui_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_workflow_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_bags_list_query_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_physical_sort_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_merchant_buyback_search_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_tab_selection_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -53,8 +54,7 @@ EXTRA = {
     "suite_bags_caption_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_chat_mover_popup_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_mover_popup_summary_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
-    "suite_chat_screen_coordinates_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
-        for host in (MSUF_MAIN, MSUF_70)],
+    "suite_chat_screen_coordinates_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_cdm_group_buffs_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_self_target_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_native_data_refresh_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -64,30 +64,25 @@ EXTRA = {
     "suite_glimmer_default_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_replacement_aura_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_menu_geometry_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
-    "suite_buff_reminders_layout_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
-        for host in (MSUF_MAIN, MSUF_70)],
+    "suite_buff_reminders_layout_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_nameplates_lazy_tabs_contract.lua": [
-        [flavor, str(host)] + (["fallback"] if fallback else [])
-        for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70) for fallback in (False, True)],
-    "suite_chat_preview_native_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
-        for host in (MSUF_MAIN, MSUF_70)],
-    "suite_chat_snapshot_parity_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
-    "suite_chat_sidebar_parity_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
-    "suite_chat_positions_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
-    "suite_chat_preview_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
-        for host in (MSUF_MAIN, MSUF_70)],
+        [flavor, str(MSUF_70)] + (["fallback"] if fallback else [])
+        for flavor in FLAVORS for fallback in (False, True)],
+    "suite_chat_preview_native_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_chat_snapshot_parity_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_chat_sidebar_parity_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_chat_positions_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_chat_preview_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_damage_meter_recap_visuals_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_damage_meter_remote_spec_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_cold_catalog_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_planner_lod_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_planner_motion_contract.lua": [[flavor] for flavor in FLAVORS],
-    "suite_gameplay_extension_contract.lua": [[flavor] for flavor in FLAVORS]
-        + [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_gameplay_extension_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_qol_navigation_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_loot_roll_menu_contract.lua": [[flavor] for flavor in FLAVORS],
-    "suite_qol_accordions_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
-        for host in (MSUF_MAIN, MSUF_70)],
-    "suite_xp_editor_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
-        for host in (MSUF_MAIN, MSUF_70)],
+    "suite_qol_accordions_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_xp_editor_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_player_aura_menu_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_history_owner_core_contract.lua": [[str(MSUF_70), flavor, mode]
         for flavor in FLAVORS for mode in ("contract", "overlay-contract")],
@@ -110,19 +105,18 @@ EXTRA = {
     "suite_window_action_combat_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_game_menu_combat_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_scroll_motion_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_surface_ensure_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_nameplates_aura_colors_contract.lua": [[], ["secret"]],
     "suite_forever_character_contract.lua": [[], ["secret"]],
     "suite_character_combat_skin_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_hud_contract.lua": [[], ["Forever"]],
     "suite_tracker_sources_contract.lua": [[flavor] for flavor in FLAVORS],
-    "suite_macros_menu_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
-        for host in (MSUF_MAIN, MSUF_70)],
+    "suite_macros_menu_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_options_menu_contract.lua": [[], ["Forever"]],
     "suite_menu_ux_contract.lua": [[], ["Forever"]],
     "suite_buff_reminders_preview_contract.lua": [[], ["Forever"]],
     "suite_meter_menu_preview_contract.lua": [[], ["Forever"]],
-    "suite_meter_native_preview_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
-                                                for host in (MSUF_MAIN, MSUF_70)],
+    "suite_meter_native_preview_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_damage_meter_styling_contract.lua": [[], ["Forever"]],
     "suite_damage_meter_audit_contract.lua": [[], ["Forever"]],
     "suite_damage_meter_work_budget_contract.lua": [[], ["recap"], ["hidden"], ["faded"], ["picker"], ["title"]],
@@ -138,22 +132,22 @@ EXTRA = {
     # The pandemic window search in German (default) and English.
     "suite_cdm_pandemic_search_contract.lua": [[], ["Mainline", "enUS"]],
     "suite_search_findability_contract.lua": [
-        [flavor, locale, str(host)] for host in (MSUF_MAIN, MSUF_70) for flavor in FLAVORS
+        [flavor, locale, str(MSUF_70)] for flavor in FLAVORS
         for locale in ("enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW")
     ],
     "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin"), str(MSUF_LEGACY)],
                                            [str(BRANCH / "MapkoSkin"), "Forever"]],
-    "suite_skin_msuf_bridge_contract.lua": [[str(MSUF_LEGACY), str(MSUF_MAIN), str(MSUF_PREVIEW)]],
+    "suite_skin_msuf_bridge_contract.lua": [[str(MSUF_LEGACY), str(MSUF_70)]],
     # MSUF's real profile store renames with the Suite and skin stores.
-    "suite_profile_rename_contract.lua": [[str(MSUF_MAIN)]],
+    "suite_profile_rename_contract.lua": [[str(MSUF_70)]],
     # Host API v2: the current multi-client Menu2 protocol and Suite link files.
-    "suite_host_api_v2_contract.lua": [[str(MSUF_MAIN)]],
+    "suite_host_api_v2_contract.lua": [[str(MSUF_70)]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_contract.lua": [[flavor] for flavor in FLAVORS],
-    "suite_datatexts_gallery_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
+    "suite_datatexts_gallery_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_datatexts_security_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_load_conditions_contract.lua": [[flavor] for flavor in FLAVORS],
-    "suite_actionbars_contract.lua": [[], ["native"]],
+    "suite_actionbars_contract.lua": [[], ["native"], ["forever"]],
     "suite_actionbar_snapshots_contract.lua": [["Mainline"], ["Forever"]],
     # Icon skins: a recording host, then MSUF 7.0's real skin engine.
     "suite_icon_skins_contract.lua": [[], [str(MSUF_70)]],
@@ -181,10 +175,17 @@ def run_commands(test):
     batch = commands(test)
 
     def run(command):
-        return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, errors="replace")
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        return subprocess.run(command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", env=env)
 
-    for command in batch:
-        yield command, run(command)
+    if test.name == "suite_search_findability_contract.lua":
+        # Every client/locale case uses its own read-only Lua world.
+        with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as pool:
+            yield from zip(batch, pool.map(run, batch))
+    else:
+        for command in batch:
+            yield command, run(command)
 
 
 def ratchet_path():
@@ -245,4 +246,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # Lua contracts emit UTF-8 even on Windows with a legacy console code page.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.exit(main())

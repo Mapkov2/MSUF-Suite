@@ -178,10 +178,29 @@ function D.SyncWindow(win)
     D.ApplyScale(win)
 end
 
+-- A lower-numbered parent makes all saved and imported anchor graphs acyclic.
+function D.AnchorParent(index)
+    local value = M.config[D.KEYS[index].AnchorWindow]
+    local parent = Finite(value) and value - 1 or 0
+    if parent > 0 and parent < index then return D.windows[parent] end
+end
+
+local anchorPoints = {
+    { "TOPRIGHT", "BOTTOMRIGHT", 0, -1 }, { "BOTTOMRIGHT", "TOPRIGHT", 0, 1 },
+    { "BOTTOMLEFT", "BOTTOMRIGHT", 1, 0 }, { "BOTTOMRIGHT", "BOTTOMLEFT", -1, 0 },
+}
+
 function D.PlaceWindow(win)
     local c, keys = M.config, D.KEYS[win.index]
+    local parent = D.AnchorParent(win.index)
     win.frame:ClearAllPoints()
-    win.frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", c[keys.X], c[keys.Y])
+    if parent then
+        local point = anchorPoints[c[keys.AnchorSide]] or anchorPoints[1]
+        local gap = c[keys.AnchorGap] or 8
+        win.frame:SetPoint(point[1], parent.frame, point[2], gap * point[3], gap * point[4])
+    else
+        win.frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", c[keys.X], c[keys.Y])
+    end
     win.placedConfig, win.placedX, win.placedY = c, c[keys.X], c[keys.Y]
 end
 
@@ -211,6 +230,11 @@ function D.Capacity(height)
     local style = M.style
     local capacity = floor((height - M.style.headerSpace - 2 + style.spacing) / (style.barHeight + style.spacing))
     return capacity < 0 and 0 or capacity > 40 and 40 or capacity
+end
+
+function D.RaidRows(win)
+    local rows = M.inRaid and M.config[D.KEYS[win.index].RaidRows]
+    return Finite(rows) and rows > 0 and rows or nil
 end
 
 -- The header buttons shown, counted from the right: Target only for the damage
@@ -292,7 +316,10 @@ function D.StyleWindowLayout(win)
     local c, keys = M.config, D.KEYS[win.index]
     local frame, header, body = win.frame, win.header, win.body
     win.styleGen = M.styleGen
-    local height = c[keys.Height]
+    local rows = D.RaidRows(win)
+    local style = M.style
+    local height = rows and (style.headerSpace + 2 + rows * style.barHeight + (rows - 1) * style.spacing)
+        or c[keys.Height]
     frame:SetSize(c[keys.Width], height)
     header:ClearAllPoints()
     local headerPoint = c.headerVisible ~= false and c.headerOutside and "BOTTOM" or "TOP"
@@ -316,7 +343,7 @@ function D.StyleWindowLayout(win)
     win.status:ClearAllPoints()
     win.status:SetPoint("LEFT", body, "LEFT", 8, M.style.baseline)
     win.status:SetPoint("RIGHT", body, "RIGHT", -8, M.style.baseline)
-    win.capacity = D.Capacity(height)
+    win.capacity = rows or D.Capacity(height)
     for slot, row in pairs(win.rows) do D.AnchorRow(row, body, slot) end
     -- Keep the current fade state through a style refresh. Resetting it would
     -- make ApplyHover fetch and paint once before Refresh's batched paint.
@@ -617,17 +644,21 @@ function D.SaveGeometry(win, sized)
         D.PlaceWindow(win)
         return
     end
-    local values = { [keys.X] = Round(right - parentRight * ratio), [keys.Y] = Round(bottom - parentBottom * ratio) }
+    local values = {}
+    if not D.AnchorParent(win.index) then
+        values[keys.X], values[keys.Y] = Round(right - parentRight * ratio), Round(bottom - parentBottom * ratio)
+    end
     if sized then
         local width, height = frame:GetWidth(), frame:GetHeight()
-        if Finite(width) and Finite(height) then values[keys.Width], values[keys.Height] = Round(width), Round(height) end
+        if Finite(width) then values[keys.Width] = Round(width) end
+        if Finite(height) and not D.RaidRows(win) then values[keys.Height] = Round(height) end
     end
-    if not S.SetMany(M.id, values) then D.PlaceWindow(win) end
+    if not next(values) or not S.SetMany(M.id, values) then D.PlaceWindow(win) end
 end
 
 function D.DragStart(header)
     local win = header.win
-    if not D.CanMove(win) then return end
+    if D.AnchorParent(win.index) or not D.CanMove(win) then return end
     win.moving = true
     D.HideTip()
     win.frame:StartMoving()

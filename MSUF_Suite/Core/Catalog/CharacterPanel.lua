@@ -279,6 +279,7 @@ hiddenTabs.hidden, hiddenInspectTabs.hidden, homeTab.hidden = true, true, true
 Build.Section(ID, "appearance", "Appearance", {
     Build.Choice("mode", "Panel style", MODE.SUITE, { "Basic", "Suite" }),
     Build.Bool("showFullStats", "Show all stats in Overview", true),
+    Build.Bool("showEquipmentSetsInOverview", "Show equipment sets in Overview", true),
     Build.Bool("showAttributesTab", "Show Attributes tab", false),
     tabOrder, inspectTabOrder, headerOrder, customTabs, hiddenTabs, hiddenInspectTabs, homeTab,
 })

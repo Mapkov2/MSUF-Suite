@@ -149,9 +149,20 @@ function Interaction.LayerRailTitle(rail)
     return T.Font(rail, "GameFontDisableSmall", "Preview Layers", T.colors.previewLayerTitle or LAYER_TITLE_COLOR, "card")
 end
 
--- Shared preview layer rail used by the meter and chat. Layer state is local
--- to the preview; command actions and mouse clicks use the same callbacks.
-function Interaction.BuildLayerRail(owner, parent, specs, toggle, open)
+function Interaction.BindLayerClick(button, toggle, open, blocked)
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:SetScript("OnClick", function(_, mouse)
+        local setting = blocked and blocked()
+        if mouse == "RightButton" or setting then return not P.Combat() and open(setting) end
+        return toggle()
+    end)
+    if blocked and P.M.AddTooltip then
+        P.M.AddTooltip(button, "Open settings", nil, { hook = true, enabled = function() return blocked() ~= nil end })
+    end
+end
+
+-- The availability callback returns the setting that keeps a layer off.
+function Interaction.BuildLayerRail(owner, parent, specs, toggle, open, blocked)
     local chips = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     owner.chips, owner.layerButtons = chips, {}
     local H = P.M.PreviewHelpers or {}
@@ -163,6 +174,7 @@ function Interaction.BuildLayerRail(owner, parent, specs, toggle, open)
     if H.LayerChipButtonOpts then
         opts = H.LayerChipButtonOpts(Tr, T.colors, H.PreviewChromePalette(T), {
             IsOn = function(ui, key) return ui.layers[key] ~= false end,
+            IsAvailable = function(_, key) return not (blocked and blocked(key)) end,
         })
     end
     for index, spec in ipairs(specs) do
@@ -174,11 +186,10 @@ function Interaction.BuildLayerRail(owner, parent, specs, toggle, open)
             button = T.Button(chips, label, math.max(64, measure:GetUnboundedStringWidth() + 30), 20)
             button.key = key
         end
-        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        button:SetScript("OnClick", function(_, mouse)
-            if mouse == "RightButton" then return open(spec) end
-            return toggle(key, owner.layers[key] == false)
-        end)
+        local check = blocked and function() return blocked(key) end
+        button._suiteLayerBlocked = check
+        Interaction.BindLayerClick(button, function() return toggle(key, owner.layers[key] == false) end,
+            function(setting) return open(spec, setting) end, check)
         HM.SkipHistoryCheckpoint(button)
         HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
             get = function() return owner.layers[key] ~= false end,
@@ -209,6 +220,10 @@ end
 
 function Interaction.RefreshLayerRail(owner)
     for _, button in ipairs(owner.layerButtons) do
-        if button.Refresh then button:Refresh() else button:SetAlpha(owner.layers[button.key] == false and .42 or 1) end
+        if button.Refresh then button:Refresh()
+        else
+            local blocked = button._suiteLayerBlocked and button._suiteLayerBlocked()
+            button:SetAlpha((blocked or owner.layers[button.key] == false) and .42 or 1)
+        end
     end
 end

@@ -36,7 +36,7 @@ D.ROW_BORDER, D.TEXT_STYLE, D.VALUE_FORMAT = NS.DamageMeterRowBorder, NS.DamageM
 -- concatenate keys.
 local suffixes = { "Type", "Session", "Width", "Height", "X", "Y", "Locked", "HideDungeon", "HideDelve", "HideRaid",
     "HidePvP", "HideWorld", "AutoCurrent", "SyncSession", "MythicSwap", "MythicType", "Scale", "ClickThrough",
-    "RoleTank", "RoleHealer", "RoleDamager" }
+    "RoleTank", "RoleHealer", "RoleDamager", "RaidRows", "AnchorWindow", "AnchorSide", "AnchorGap" }
 for i = 1, D.MAX do
     local keys = {}
     for _, suffix in ipairs(suffixes) do keys[suffix] = "w" .. i .. suffix end
@@ -207,7 +207,7 @@ function D.FetchSource(win, guid, creature)
     else
         source = C_DamageMeter.GetCombatSessionSourceFromType(win.sessionType, win.meterType, guid, creature)
     end
-    return type(source) == "table" and source or nil
+    return Public(source) and type(source) == "table" and source or nil
 end
 
 -- The source getters refuse secret arguments from addon code. Only plain
@@ -270,14 +270,17 @@ local function ByAmount(a, b) return a.amount > b.amount end
 -- caller falls back to the spell list rendered through sinks.
 function D.GroupSpells(source)
     local spells = source and source.combatSpells
+    if not Public(spells) then return nil end
     local count = D.Count(spells)
     if count == 0 then return nil end
     for key in pairs(groupIndex) do groupIndex[key] = nil end
     local n, sum = 0, 0
     for i = 1, count do
         local spell = spells[i]
+        if not Public(spell) or type(spell) ~= "table" then return nil end
         local details = spell.combatSpellDetails
-        local name, amount = details and details.unitName, spell.totalAmount
+        if not Public(details) or type(details) ~= "table" then return nil end
+        local name, amount = details.unitName, spell.totalAmount
         if not Public(name) or type(name) ~= "string" or name == "" or not Finite(amount) then return nil end
         local entry = groupIndex[name]
         if not entry then

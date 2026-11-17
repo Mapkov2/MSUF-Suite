@@ -4,14 +4,37 @@ local Tabs = { hooked = setmetatable({}, { __mode = "k" }) }
 NS.TabMotion = Tabs
 local Safety = NS.Safety
 local methods = { "SetTabSelected", "SetSelected" }
+local mailTabs = {}
 
-local function Update(tab, selected)
+local function PaintSelection(tab, selected)
     local state = NS.ControlSkin.states[tab]
-    if not state or not state.enabled or not Safety.Public(selected) or type(selected) ~= "boolean"
-        or Safety.IsForbidden(tab) or Safety.GetProtection(tab) then return end
+    if not state or not state.enabled or Safety.IsForbidden(tab) or Safety.GetProtection(tab) then return end
     NS.ControlSkin.Refresh(tab, selected)
     if selected then NS.MenuMotion.SelectionChanged(tab) end
 end
+
+local function PaintMailTabs()
+    for tab, selected in pairs(mailTabs) do
+        mailTabs[tab] = nil
+        if Safety.Read(tab, "IsVisible") == true then PaintSelection(tab, selected) end
+    end
+end
+
+local function Update(tab, selected)
+    if not Safety.Public(tab) or not Safety.Public(selected) or type(selected) ~= "boolean" then return end
+    if NS.Client.isForever and tab ~= nil
+        and (tab == Safety.Field(_G, "MailFrameTab1") or tab == Safety.Field(_G, "MailFrameTab2")) then
+        -- MailFrame_Show selects the Inbox tab before its protected reading emote.
+        local state = NS.ControlSkin.states[tab]
+        if state and state.enabled then
+            mailTabs[tab] = selected
+            NS.Registry.QueueJob(PaintMailTabs)
+        end
+    else
+        PaintSelection(tab, selected)
+    end
+end
+
 local function Selected(tab) Update(tab, true) end
 local function Deselected(tab) Update(tab, false) end
 

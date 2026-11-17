@@ -1,9 +1,10 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.Chat
--- Lifecycle, the chat window walk and the cold Blizzard hooks. Chat window
--- events restyle every window; a tab selection only recolors the old and new
--- tab labels and moves the sidebar.
+-- Lifecycle, the chat window walk and Suite.ChatState's reports. Chat window
+-- reports restyle every window; a tab selection only recolors the old and new
+-- tab labels and moves the sidebar. Nothing here runs inside Blizzard's chat
+-- code: no FCF_* post-hook, no script hook on a chat frame or edit box.
 local M = C.M
 local MAX_FRAMES = 64
 local HOST_CHAT = "external:msuf.blizzard:chat"
@@ -18,7 +19,6 @@ local CHAT_ADDONS = {
     ["Prat-3.0"] = true, Chattynator = true, Chatter = true,
 }
 local ApplyWindow, ReleaseWindow, ColorTab, TabSelected = C.ApplyWindow, C.ReleaseWindow, C.ColorTab, C.TabSelected
-local KeepTabVisible = C.KeepTabVisible
 local PlaceSidebar, ReleaseNativeControls, UpdateFriendsCount = C.PlaceSidebar, C.ReleaseNativeControls, C.UpdateFriendsCount
 local HideCopyDialog, DockSelection = C.HideCopyDialog, C.DockSelection
 local Dispatch = S.Dispatch
@@ -125,55 +125,78 @@ local function AddonLoaded(_, _, name)
     end
 end
 
--- Temporary whisper frames are created after the usual chat-window update
--- events. Hook only these cold window paths, never the message path.
+-- A temporary whisper window opens inside the whisper event's handling; the
+-- report that follows arrives on the next frame (Suite.ChatState), so its
+-- message hook catches up on the lines Blizzard already gave it.
 local function ApplyOpenWhisper(self, frame)
-    if S.Public(frame.isTemporary) and frame.isTemporary then C.ApplyMessages(self, frame) end
+    if S.Public(frame.isTemporary) and frame.isTemporary then C.ApplyMessages(self, frame, true) end
 end
 
-local function TemporaryWindowOpened()
-    if not M.active then return end
-    ApplyAll(M, true)
-    -- This post-hook runs after the temporary window's seed copy and before
-    -- Blizzard synchronously delivers the first incoming whisper to it.
-    if not C.LayoutLocked() then ForEachChatFrame(ApplyOpenWhisper, M) end
-end
-
-local function DockSelectionChanged()
-    if M.active then RefreshSelection(M) end
-end
-
-local function TabAlphaUpdated(frame)
-    if M.active and frame then KeepTabVisible(M, frame) end
-end
-
-local function TabFadedIn(frame) C.HoldTabAlpha(frame, true) end
-local function TabFadedOut(frame) C.HoldTabAlpha(frame, false) end
-
-local function TabColorsUpdated(tab, selected)
-    local visual = M.active and tab and M.tabs[tab]
-    if visual then ColorTab(M, visual, selected) end
-end
-
-local function NewWindowOpened()
-    if not M.active then return end
-    if NS.InCombat() then
-        S.Queue("chat")
-        return
+-- Every styled tab after a Blizzard layout pass, which recolored them
+-- (FCFTab_UpdateColors). Their alpha needs nothing: the held tab regions
+-- ignore the tab frame's alpha that FCFTab_UpdateAlpha and the fades write.
+local function RestyleTabs(self)
+    local chat, dock = SELECTED_CHAT_FRAME, DockSelection()
+    for frame, visual in pairs(self.visuals) do
+        if visual.tabLabel then ColorTab(self, visual, TabSelected(frame, chat, dock)) end
+        C.ResizeInput(frame)
     end
-    local frame = DockSelection()
-    if frame then ApplyWindow(M, frame, S.editMode) end
-    RefreshSelection(M)
-    C.RefreshClocks()
-    M.messageWindows:Request()
 end
 
--- The FCF_* targets exist at login on both clients (Blizzard_ChatFrameBase);
--- a post-hook cannot be removed, so each one is installed once.
-local function Hook(self, flag, name, hook)
-    if self[flag] then return end
-    hooksecurefunc(name, hook)
-    self[flag] = true
+local function WindowsReported(self)
+    C.ScanFloatingClosures()
+    if not self.active then return end
+    ApplyAll(self, true)
+    if not C.LayoutLocked() then ForEachChatFrame(ApplyOpenWhisper, self) end
+    C.CheckWindowPosition()
+end
+
+local function SelectionReported(self)
+    if self.active then RefreshSelection(self) end
+end
+
+local function LayoutReported(self)
+    if not self.active then return end
+    C.DockGeometry()
+    RestyleTabs(self)
+    C.CheckWindowPosition()
+end
+
+local function MovedReported(self, frame)
+    C.FloatingDragStopped(frame)
+    if self.active then C.CheckWindowPosition() end
+end
+
+local function ResizedReported(self, frame)
+    if self.active then C.ResizeInput(frame) end
+end
+
+local function HoverReported(self, frame, hovered)
+    if not self.active then return end
+    if hovered then C.HoverStarted(frame) else C.HoverEnded(frame) end
+end
+
+local function BoxReported(self, kind, box)
+    if not self.active then return end
+    C.FadeInput(kind, box)
+    C.InputAnimationEvent(kind, box)
+    C.HistoryBox(kind, box)
+end
+
+local function KeyReported(self, box, key)
+    if self.active then C.HistoryKey(box, key) end
+end
+
+local CHAT_WATCH = {
+    windows = WindowsReported, selection = SelectionReported, layout = LayoutReported, moved = MovedReported,
+    resized = ResizedReported, box = BoxReported, key = KeyReported,
+}
+-- Hover is asked for only while a feature reacts to it (C.HoverWanted): the
+-- core then reads Blizzard's hover flags on a ticker; otherwise idle chat
+-- runs no Suite code at all.
+local HOVER_WATCH = setmetatable({ hover = HoverReported }, { __index = CHAT_WATCH })
+local function Watch(self)
+    NS.ChatState.Watch(self, C.HoverWanted() and HOVER_WATCH or CHAT_WATCH)
 end
 
 function M:Enable()
@@ -183,16 +206,7 @@ function M:Enable()
     self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", NativeWindowsUpdated)
     for _, event in ipairs(FRIEND_EVENTS) do C.ListenInCombat(self.context, event, UpdateFriendsCount) end
     self.context:Event("ADDON_LOADED", AddonLoaded)
-    Hook(self, "hookedTemporary", "FCF_OpenTemporaryWindow", TemporaryWindowOpened)
-    Hook(self, "hookedSelect", "FCFDock_SelectWindow", DockSelectionChanged)
-    Hook(self, "hookedNewWindow", "FCF_OpenNewWindow", NewWindowOpened)
-    C.WatchFloatingClosures()
-    Hook(self, "hookedFloatingDrag", "FCF_StopDragging", C.FloatingDragStopped)
-    Hook(self, "hookedTabAlpha", "FCFTab_UpdateAlpha", TabAlphaUpdated)
-    Hook(self, "hookedTabFadeIn", "FCF_FadeInChatFrame", TabFadedIn)
-    Hook(self, "hookedTabFadeOut", "FCF_FadeOutChatFrame", TabFadedOut)
-    Hook(self, "hookedTabColors", "FCFTab_UpdateColors", TabColorsUpdated)
-    Hook(self, "hookedDockGeometry", "FCFDock_UpdateTabs", C.DockGeometry)
+    C.ScanFloatingClosures()
     self:Refresh()
 end
 
@@ -201,9 +215,11 @@ function M:Refresh()
     C.SpamFilterRefresh(self)
     C.BubblesRefresh(self)
     ApplyAll(self)
+    Watch(self)
 end
 
 function M:Disable()
+    NS.ChatState.Unwatch(self)
     S.SuppressHostElement("chat", HOST_CHAT, false)
     self.hostChatClaim = nil
     if self.moverFrame then self.moverFrame:Hide() end

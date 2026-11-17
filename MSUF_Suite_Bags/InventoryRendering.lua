@@ -125,13 +125,136 @@ local function HideUnplaced()
     InventoryView.positionsDirty = false
 end
 
+-- Whether a recorded inventory (OfflineInventory.lua) is shown. Partial
+-- loads of this file (contracts) run without that file.
+local function Recorded()
+    local offline = P.BagOffline
+    return offline ~= nil and offline.Active()
+end
+
 local function PaintFree()
     local counts = InventoryView.freeSlots
-    if M.config.showFreeSlots and counts.regular then
+    if M.config.showFreeSlots and counts.regular and not Recorded() then
         FreeSlots.Paint(InventoryView.free, counts)
     else
         InventoryView.free:Hide()
     end
+end
+
+------------------------------------------------------------------ list
+-- The list presentation (ListView.lua): the listView setting, and always for
+-- a recorded inventory (OfflineInventory.lua). A live row places Blizzard's
+-- own item button at its left edge exactly as a grid cell does (PaintSlot);
+-- an offline row shows Suite text and icon only.
+local List = P.BagList
+
+function Rendering.Listed(c)
+    return Recorded() or List ~= nil and (c or M.config).listView == true
+end
+
+local function ListSorted(key)
+    if not P.BagLayout.CanRender() or not List.SetSort("bags", key) then return end
+    InventoryView.scroll = 0
+    InventoryView.MoveScroll(0)
+end
+
+local function ListBack()
+    P.BagOffline.Leave()
+end
+
+local function ViewList()
+    local list = InventoryView.list
+    if not list then
+        list = List.New()
+        list.onSort, list.onBack = ListSorted, ListBack
+        InventoryView.list = list
+    end
+    List.Attach(list, InventoryView.chrome)
+    return list
+end
+
+-- Lines of the list: the band, then its entries.
+local function ListLines(c)
+    local _, count = List.Layout(ViewList(), InventoryView.model, List.SortSpec("bags"), c)
+    return count + 1
+end
+
+-- The tools that act on the live bags rest while a recorded inventory shows.
+local function LiveTools(enabled)
+    if InventoryView.liveTools == enabled then return end
+    InventoryView.liveTools = enabled
+    for _, key in ipairs({ "equipped", "cleanup", "clearRecent" }) do
+        local button = InventoryView[key]
+        if button then button:SetEnabled(enabled) end
+    end
+end
+
+local function PaintListHeader(entry, c, x, y, width)
+    InventoryView.labelCount = InventoryView.labelCount + 1
+    local toggle = c.inventoryView == VIEW.CATEGORIES and P.InventoryControls.ToggleGroup or nil
+    Grid.PaintHeader(InventoryView.labels, InventoryView.labelCount, InventoryView.chrome, InventoryView.frame,
+        x, y - 10, width, entry.group, toggle, P.NS.Client.isForever)
+end
+
+local function PaintList(c, columns, visibleRows, sidebar, font)
+    local view, list, spec = InventoryView, ViewList(), List.SortSpec("bags")
+    local entries, count = List.Layout(list, view.model, spec, c)
+    local rows = max(1, visibleRows - 1)
+    view.visibleRows = rows
+    view.scroll, view.maxScroll = List.Clamp(count, view.scroll, rows)
+    local width = columns * CELL - 4
+    local offline = Recorded()
+    LiveTools(not offline)
+    List.FontChanged(list, font)
+    List.Band(list, sidebar, -TOP, width, c, spec, offline and P.BagOffline.Status() or nil)
+    local note = offline and P.BagOffline.Note() or nil
+    local slot = 0
+    for i = view.scroll + 1, min(count, view.scroll + rows) do
+        local entry, y = entries[i], -TOP - (i - view.scroll) * CELL
+        if entry.row then
+            slot = slot + 1
+            if not offline then PaintSlot(entry.row.item, sidebar, y, entry.row, entry.row.count, font) end
+            List.PaintRow(list, slot, sidebar, y, width, entry.row, note)
+        else
+            PaintListHeader(entry, c, sidebar, y, width)
+        end
+    end
+    List.HideRows(list, slot + 1)
+    Grid.PositionText(view.position, view.scroll, rows, count)
+end
+
+local function PaintGrid(layout, g, columns, visibleRows, sidebar, font)
+    if not layout or columns ~= g.columns then layout = Model.Layout(InventoryView.model, columns, g.compact) end
+    InventoryView.visibleRows, InventoryView.maxScroll = visibleRows, max(0, InventoryView.model.lineCount - visibleRows)
+    InventoryView.scroll = min(InventoryView.scroll, InventoryView.maxScroll)
+    if InventoryView.list then List.Hide(InventoryView.list) end
+    LiveTools(true)
+    local scroll = InventoryView.scroll
+    local last = scroll + visibleRows
+    for i = 1, #layout do
+        local cell = layout[i]
+        local line = cell.line
+        if line >= scroll and line < last then
+            PaintCell(cell, scroll, sidebar, columns, font)
+        end
+    end
+    Grid.PositionText(InventoryView.position, InventoryView.scroll, visibleRows, InventoryView.model.lineCount)
+end
+
+local function Measure(c, listed)
+    local g = InventoryView.geometry
+    local available, width, screenHeight = Available()
+    if Presentation.IsPanel(c) then
+        available = screenHeight - 12
+        local companion = Presentation.CompanionWidth(c)
+        if companion > 0 then width = width - companion - 8 end
+    end
+    Presentation.Measure(g, c, width, available, MoneyTop(), nil, P.EquippedBags.frame:IsShown())
+    local layout = not listed and Model.Layout(InventoryView.model, g.columns, g.compact) or nil
+    Presentation.FitRows(g, c, listed and ListLines(c) or InventoryView.model.lineCount)
+    if P.BagResize.active then g.width, g.height = P.BagResize.width, P.BagResize.height end
+    P.BagWindowMotion.Target(g.width, g.height)
+    return layout
 end
 
 function Rendering.Suite(visualPass)
@@ -141,35 +264,20 @@ function Rendering.Suite(visualPass)
         M.combatScale = nil
         M:RefreshWindowLayout()
     end
-    local g, layout = InventoryView.geometry
-    if not visualPass then
-        local available, width, screenHeight = Available()
-        if Presentation.IsPanel(c) then
-            available = screenHeight - 12
-            local companion = Presentation.CompanionWidth(c)
-            if companion > 0 then width = width - companion - 8 end
-        end
-        Presentation.Measure(g, c, width, available, MoneyTop(), nil, P.EquippedBags.frame:IsShown())
-        layout = Model.Layout(InventoryView.model, g.columns, g.compact)
-        Presentation.FitRows(g, c, InventoryView.model.lineCount)
-        if P.BagResize.active then g.width, g.height = P.BagResize.width, P.BagResize.height end
-        P.BagWindowMotion.Target(g.width, g.height)
-    end
+    local listed = Rendering.Listed(c)
+    local g, layout = InventoryView.geometry, nil
+    if not visualPass then layout = Measure(c, listed) end
     TOP = g.top
     local columns, visibleRows = P.BagWindowMotion.Viewport(g)
     local sidebar = g.sidebar
     local categories = c.inventoryView == VIEW.CATEGORIES
-    if not layout or columns ~= g.columns then layout = Model.Layout(InventoryView.model, columns, g.compact) end
-    InventoryView.visibleRows, InventoryView.maxScroll = visibleRows, max(0, InventoryView.model.lineCount - visibleRows)
-    InventoryView.scroll = min(InventoryView.scroll, InventoryView.maxScroll)
     ClearVisible()
     local font = Grid.FontPath()
     InventoryView.countSize = M.config.itemCountSize + (M.readableValues and 2 or 0)
-    for i = 1, #layout do
-        local cell = layout[i]
-        if cell.line >= InventoryView.scroll and cell.line < InventoryView.scroll + visibleRows then
-            PaintCell(cell, InventoryView.scroll, sidebar, columns, font)
-        end
+    if listed then
+        PaintList(c, columns, visibleRows, sidebar, font)
+    else
+        PaintGrid(layout, g, columns, visibleRows, sidebar, font)
     end
     HideUnplaced()
     InventoryView.layout = "suite"
@@ -177,7 +285,6 @@ function Rendering.Suite(visualPass)
     InventoryView.sidebar:SetShown(categories)
     InventoryView.previous:SetEnabled(InventoryView.scroll > 0)
     InventoryView.next:SetEnabled(InventoryView.scroll < InventoryView.maxScroll)
-    Grid.PositionText(InventoryView.position, InventoryView.scroll, visibleRows, InventoryView.model.lineCount)
     PaintFree()
     for view, button in pairs(InventoryView.tabs) do
         P.BagAppearance.Button(button, view == c.inventoryView)

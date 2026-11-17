@@ -49,6 +49,13 @@ Keep all bundled addon folders together when installing or updating. **MSUF Suit
 
 ## Development
 
+Addons that opt into Suite skinning can use `MapkoSkin.GetAPI(2, 2)` and
+`RegisterAddon(addonName)` to obtain an isolated skin scope. Submit a plain
+FontString with `scope:SkinLabel(label)` to follow Suite typography and its
+language fallback. Use `scope:Refresh(label)` after replacing the label's text
+and `scope:Release(label)` to restore it. The existing `SkinFrame`, `SkinButton`
+and `RegisterMenu` methods use the same scope.
+
 See [architecture and validation](docs/ARCHITECTURE.md) for source ownership,
 required host fixtures and the boundary between offline checks and live testing.
 The addon version is declared in `MSUF_Suite/MSUF_Suite_Mainline.toc`.

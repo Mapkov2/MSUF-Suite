@@ -177,29 +177,33 @@ function S.ChatPreviewSnapshot(parts)
 end
 
 local listeners = setmetatable({}, { __mode = "k" })
-local watched = setmetatable({}, { __mode = "k" })
-local hooked
+local watching
 local function NativeChanged()
     for owner, callback in pairs(listeners) do
         if owner:IsVisible() then callback() end
     end
 end
 
--- Only visible previews subscribe; native scripts remain Blizzard-owned.
-function S.ChatWatchPreview(owner, callback, frame)
+-- Native changes arrive from Suite.ChatState: window updates, dock layouts
+-- (tab select, docking, a resize of the primary window), drags and resizes.
+-- No hook on FCF_* functions or the chat frame's own scripts.
+local function WindowsChanged()
+    C.ScanFloatingClosures()
+    NativeChanged()
+end
+local PREVIEW_WATCH = {
+    windows = WindowsChanged, layout = NativeChanged, moved = NativeChanged, resized = NativeChanged,
+}
+
+-- Only subscribed previews keep the watch; native scripts remain Blizzard-owned.
+function S.ChatWatchPreview(owner, callback)
     listeners[owner] = callback
-    if callback and not hooked then
-        C.WatchFloatingClosures()
-        hooked = true
-        hooksecurefunc("FCF_SetChatWindowFontSize", NativeChanged)
-        hooksecurefunc("FCFDock_SelectWindow", NativeChanged)
-        hooksecurefunc("FCFDock_UpdateTabs", NativeChanged)
-        hooksecurefunc("FCF_StopDragging", NativeChanged)
-        hooksecurefunc("FCF_SetWindowName", NativeChanged)
-        hooksecurefunc("FCF_Close", NativeChanged)
-    end
-    if callback and frame and not watched[frame] then
-        watched[frame] = true
-        frame:HookScript("OnSizeChanged", NativeChanged)
+    if callback and not watching then
+        C.ScanFloatingClosures()
+        watching = true
+        P.NS.ChatState.Watch(listeners, PREVIEW_WATCH)
+    elseif watching and not next(listeners) then
+        watching = false
+        P.NS.ChatState.Unwatch(listeners)
     end
 end

@@ -20,11 +20,12 @@ end
 
 local WORKSPACE = { page = PAGE, module = ID, title = "Bags", height = 220,
         tabs = {
-            { id = "bags", label = "Bags", sections = "bags_module organisation finance currencyGoals_module window reagentWindow" },
-            { id = "categories", label = "Categories", sections = "categories collections" },
-            { id = "inventory", label = "Inventory organisation", sections = "inventoryArchive_module restockPlanner_module craftShopping_module" },
-            { id = "bank", label = "Bank organisation", sections = "bank bankWindow bankTransfer_module" },
+            { id = "bags", label = "Basics", sections = "bags_module finance currencyGoals_module" },
             { id = "appearance", label = "Appearance", sections = "look appearance itemLevels" },
+            { id = "layout", label = "Layout", sections = "window reagentWindow" },
+            { id = "inventory", label = "Inventory organisation",
+                sections = "organisation listView categories collections inventoryArchive_module restockPlanner_module craftShopping_module" },
+            { id = "bank", label = "Bank", sections = "bank bankWindow bankTransfer_module" },
         } }
 
 local function ModuleCard(ctx, b)
@@ -49,7 +50,7 @@ end
 local function WorkspaceSpec()
     if #P.SectionRules(ID, "bank", function(rule) return not rule.hidden end) > 0 then return WORKSPACE end
     return { page = PAGE, module = ID, title = "Bags", height = WORKSPACE.height,
-        tabs = { WORKSPACE.tabs[1], WORKSPACE.tabs[2], WORKSPACE.tabs[3], WORKSPACE.tabs[5] } }
+        tabs = { unpack(WORKSPACE.tabs, 1, #WORKSPACE.tabs - 1) } }
 end
 
 -- The built-in category switches, the equipment set grouping and the hiding of
@@ -85,6 +86,20 @@ local function BuildHelpers(ctx, ui)
     if ui then P.QoLOwners.Build(ctx, ui.groups.inventory.builder, PAGE, function() ui.select("inventory") end) end
 end
 
+local function BuildFinance(ctx, b)
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_finance", Tr("Gold and currencies"),
+        P.SectionRules(ID, "finance"), {
+             help = P.Help("Selected currencies appear above the bag footer. Click Gold history for recorded character balances and 30 days of this character's income and spending, by local date. Other characters show their last recorded balance. The history starts when enabled and does not reconstruct earlier transactions; Clear saved character gold removes the history and the balances.",
+                 "Gold today requires the gold history in Suite Bags."),
+            extra = function(body, y, width)
+                P.Button(ctx, body, "Clear saved character gold", 16, y, width, P.ClearCharacterGold,
+                    function() return type(P.Suite.RootDB) == "table" end,
+                    P.Meta(PAGE, ID, "action.clearGold", "action", PAGE .. "_finance"))
+                return y - 40
+            end,
+        })
+end
+
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, WorkspaceSpec())
     P.MenuSamples.Bags(ui)
@@ -100,6 +115,17 @@ local function Build(ctx)
             help = "Keep Blizzard grid, or choose one Suite grid, physical bag groups or categories. Use Edit categories in the bag window to create, rename, reorder or disable your categories; drop items onto a sidebar category to assign them. Sort items by orders every Suite view; Name keeps the order each view has always had. Click a category header to hide or show its items. The footer counts free slots, and Mark items that beat what you wear puts a small arrow on equipment that beats what you wear in its slot. Scroll or use Previous and Next for larger inventories; in combat every slot is shown at once. Combined stack counts are visual only; physical stacks are always restored at the bank, guild bank, mail, trade, auction house and merchant.",
             open = true,
         })
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_listView", Tr("List view"),
+        P.SectionRules(ID, "listView", function(rule) return not rule.hidden end), {
+            help = "The list shows one item per row with its name, item level, count and the columns chosen here, "
+                .. "beside the usual item button: using, dragging and splitting work as in the grid. "
+                .. "Click a column title to sort, click it again to reverse. "
+                .. "Use the List or Grid button in the bag window, or Show as list below the bank. "
+                .. "With Inventory archive on, the Filters menu also shows the recorded bags and bank of your other "
+                .. "characters and the warband bank in the same window, dated and view only; a fight or closing the "
+                .. "bags returns to your live items. Build search visually in the Filters menu combines filters in "
+                .. "All of and Any of groups and writes the usual smart search text.",
+        })
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_categories", Tr("Built-in categories"),
         P.SectionRules(ID, "categories"), {
             help = "Disable a built-in category to keep those items in Other items. Items are never hidden or moved by disabling a category.",
@@ -108,17 +134,7 @@ local function Build(ctx)
         P.SectionRules(ID, "collections"), {
             help = "Drop an item onto Pinned items in the category sidebar to keep it at the top of every view. Recent items lists up to 200 item types this character received, also across logins; each leaves the list once it is older than the hours set here, and Clear recent items empties it sooner. Neither action moves or deletes an item.",
         })
-    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_finance", Tr("Gold and currencies"),
-        P.SectionRules(ID, "finance"), {
-             help = P.Help("Selected currencies appear above the bag footer. Click Gold history for recorded character balances and 30 days of this character's income and spending, by local date. Other characters show their last recorded balance. The history starts when enabled and does not reconstruct earlier transactions; Clear saved character gold removes the history and the balances.",
-                 "Gold today requires the gold history in Suite Bags."),
-            extra = function(body, y, width)
-                P.Button(ctx, body, "Clear saved character gold", 16, y, width, P.ClearCharacterGold,
-                    function() return type(P.Suite.RootDB) == "table" end,
-                    P.Meta(PAGE, ID, "action.clearGold", "action", PAGE .. "_finance"))
-                return y - 40
-            end,
-        })
+    BuildFinance(ctx, b)
     local appearance = P.SectionRules(ID, "appearance")
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_appearance", Tr("Window appearance"), appearance, {
         help = "Choose the bag colors and opacity. Bag animations offers Off, a simple fade or a full staggered reveal. Reduced motion turns animations off. Equipped bags opens the slots for replacing your bags; Clean up bags uses the native cleanup action.",
@@ -131,6 +147,7 @@ local function Build(ctx)
     })
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_window", Tr("Combined bag window"),
         P.SectionRules(ID, "window"), {
+            open = true,
             help = P.Help("Drag the bag title to move it; click for options.", "Fit window to contents removes unused space. Items per row adjusts the width. Visible rows sets the height; turn off Fit window to contents to keep it fixed. Window size scales the whole window. Use full screen height restores the tall panel. These size controls are also available in MSUF Edit Mode."),
         })
     local bankRules = P.SectionRules(ID, "bank", function(rule) return not rule.hidden end)

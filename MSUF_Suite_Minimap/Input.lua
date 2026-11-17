@@ -326,6 +326,7 @@ end
 
 local function NeedsHover(c)
     return c.visibility == VISIBILITY.MOUSEOVER or c.zoomButtons == ZOOM.MOUSEOVER
+        or (c.showTracking and c.trackingMouseover and not S.GamepadUI())
         or (c.hoverResize and c.visibility ~= VISIBILITY.NEVER)
         or (MM.CollectsButtons() and c.drawerMouseover)
         or (c.infoCoordinates and c.infoCoordinatesMode == NS.MinimapCoordinatesMode.MOUSEOVER)
@@ -389,6 +390,15 @@ MM.flushers.rotate = function()
     M.context:CVar("rotateMinimap", rotate == ROTATE.ROTATE and "1" or "0")
 end
 local function LayoutApplied() MM.Queue("rotate") end
+local trackingGamepad
+local function TrackingInputChanged()
+    local pad = S.GamepadUI()
+    if pad == trackingGamepad then return end
+    trackingGamepad = pad
+    MM.Force("input")
+    MM.Force("elements")
+    S.Apply("minimap")
+end
 
 function MM.ApplyInput()
     local c, ctx, map = M.config, M.context, _G.Minimap
@@ -401,6 +411,12 @@ function MM.ApplyInput()
     if c.zoomResetSeconds <= 0 then ctx:Cancel(ResetZoom) end
     PlaceZoom(c.zoomButtons)
     holder:SetShown(c.zoomButtons == ZOOM.ALWAYS or (c.zoomButtons == ZOOM.MOUSEOVER and MM.Revealed()))
+    if c.showTracking and c.trackingMouseover and NS.Client.isForever then
+        trackingGamepad = S.GamepadUI()
+        MM.Listen("GAME_PAD_ACTIVE_CHANGED", "trackingHover", TrackingInputChanged)
+    else
+        MM.Unlisten("GAME_PAD_ACTIVE_CHANGED", "trackingHover")
+    end
     -- 1 leaves Blizzard's own rotation setting alone (and returns a suite write).
     if c.rotate == ROTATE.BLIZZARD then
         S.RestoreCVar("minimap", "rotateMinimap")
@@ -413,6 +429,7 @@ function MM.ApplyInput()
 end
 
 function MM.ReleaseInput()
+    MM.Unlisten("GAME_PAD_ACTIVE_CHANGED", "trackingHover")
     M.context:Cancel(ResetZoom)
     if leaveJob then leaveJob:Cancel() end
     MM.hovered = false

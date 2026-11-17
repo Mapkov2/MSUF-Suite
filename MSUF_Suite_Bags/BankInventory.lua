@@ -147,6 +147,24 @@ local function NextMode()
     S.Set("bags", "bankView", M.config.bankView % #MODES + 1)
 end
 
+-- Grid or list in the organised bank views (the bankListView setting).
+local function ToggleList()
+    if NS.InCombat() then return end
+    BankInventory.scroll = 0
+    S.Set("bags", "bankListView", M.config.bankListView ~= true)
+end
+
+-- The switch below the bank shows in the organised views only.
+local function PaintListButton(organize)
+    local button = BankInventory.listButton
+    local listed = M.config.bankListView == true
+    if button.listed ~= listed then
+        button.listed = listed
+        button:SetText(S.Text(listed and "Show as grid" or "Show as list"))
+    end
+    if button:IsShown() ~= organize then button:SetShown(organize) end
+end
+
 -- The smart search box and its Filters button stand in the title row.
 local function PlaceSearch(edit, button)
     button:SetPoint("TOPRIGHT", -12, NS.Client.isForever and -34 or -7)
@@ -186,8 +204,12 @@ local function Create()
     PaintBackground()
     BankInventory.title = Font(frame, 14)
     BankInventory.title:SetPoint("TOPLEFT", 12, -10)
-    BankInventory.previous = Button(frame, "Previous", 72, function() Scroll(-BankInventory.visibleRows) end)
-    BankInventory.next = Button(frame, "Next", 72, function() Scroll(BankInventory.visibleRows) end)
+    BankInventory.previous = Button(frame, "Previous", 72, function()
+        Scroll(-(BankInventory.pageRows or BankInventory.visibleRows))
+    end)
+    BankInventory.next = Button(frame, "Next", 72, function()
+        Scroll(BankInventory.pageRows or BankInventory.visibleRows)
+    end)
     BankInventory.previous:SetPoint("BOTTOMLEFT", 12, 8)
     BankInventory.next:SetPoint("LEFT", BankInventory.previous, "RIGHT", 6, 0)
     BankInventory.position = Font(frame, 11)
@@ -207,6 +229,8 @@ local function Create()
     -- TabSystem): the search box and Clean Up button stay free in every view.
     BankInventory.modeButton = Button(BankFrame, MODES[BANK_VIEW.TABS], 142, NextMode)
     BankInventory.modeButton:SetPoint("TOPRIGHT", BankFrame, "BOTTOMRIGHT", -22, 2)
+    BankInventory.listButton = Button(BankFrame, "Show as list", 112, ToggleList)
+    BankInventory.listButton:SetPoint("RIGHT", BankInventory.modeButton, "LEFT", -6, 0)
     BankFrame:HookScript("OnShow", function()
         Index.Retry(BankInventory.index)
         Request()
@@ -217,21 +241,9 @@ local function Create()
     end)
 end
 
-local function PaintCell(cell, number, sidebar, font)
-    local x, y = sidebar + cell.column * 40, -GRID_TOP - (cell.line - BankInventory.scroll) * 40
-    if not cell.row then
-        BankInventory.labelCount = BankInventory.labelCount + 1
-        local toggle = M.config.bankView == BANK_VIEW.CATEGORIES and ToggleGroup or nil
-        local label = Grid.PaintHeader(BankInventory.labels, BankInventory.labelCount, BankInventory.frame, BankInventory.frame,
-            x, y - 9, (cell.width or BankInventory.columns) * 40 - 4, cell.group, toggle)
-        local plate = P.BagAppearance.Section(label, BankInventory.frame)
-        local rows = math.min(cell.height, BankInventory.visibleRows - cell.line + BankInventory.scroll)
-        P.BagAppearance.PaintSection(plate, BankInventory.frame, x, y,
-            (cell.width or BankInventory.columns) * 40 - 4, rows * 40 - 5, nil, label)
-        return number
-    end
-    number = number + 1
-    local item, button = cell.row.item, AcquireButton(number)
+-- The pooled item button number shows item at (x, y); returns number.
+local function PaintButton(item, number, x, y, font)
+    local button = AcquireButton(number)
     if button.record ~= item then ButtonHidden(button) end
     button.record = item
     -- Blizzard's Refresh reads the slot again: only after the cached read
@@ -253,30 +265,106 @@ local function PaintCell(cell, number, sidebar, font)
     return number
 end
 
-Render = function()
-    if not BankInventory.active or not BankFrame:IsShown() or NS.IsCombatLocked() then return end
-    local categories = M.config.bankView == BANK_VIEW.CATEGORIES
-    local sidebar = categories and 170 or 12
-    BankInventory.columns = Model.BankColumns(BankInventory.frame:GetWidth(), categories)
-    BankInventory.visibleRows = math.max(2, math.floor((BankInventory.frame:GetHeight() - GRID_TOP - 44) / 40))
+local function PaintCell(cell, number, sidebar, font)
+    local x, y = sidebar + cell.column * 40, -GRID_TOP - (cell.line - BankInventory.scroll) * 40
+    if not cell.row then
+        BankInventory.labelCount = BankInventory.labelCount + 1
+        local toggle = M.config.bankView == BANK_VIEW.CATEGORIES and ToggleGroup or nil
+        local label = Grid.PaintHeader(BankInventory.labels, BankInventory.labelCount, BankInventory.frame, BankInventory.frame,
+            x, y - 9, (cell.width or BankInventory.columns) * 40 - 4, cell.group, toggle)
+        local plate = P.BagAppearance.Section(label, BankInventory.frame)
+        local rows = math.min(cell.height, BankInventory.visibleRows - cell.line + BankInventory.scroll)
+        P.BagAppearance.PaintSection(plate, BankInventory.frame, x, y,
+            (cell.width or BankInventory.columns) * 40 - 4, rows * 40 - 5, nil, label)
+        return number
+    end
+    return PaintButton(cell.row.item, number + 1, x, y, font)
+end
+
+local function RenderGrid(sidebar, font)
+    if BankInventory.list then P.BagList.Hide(BankInventory.list) end
     local layout = Model.Layout(BankInventory.model, BankInventory.columns, BankInventory.config.compactGroups)
     BankInventory.maxScroll = math.max(0, BankInventory.model.lineCount - BankInventory.visibleRows)
     BankInventory.scroll = math.min(BankInventory.scroll, BankInventory.maxScroll)
-    Grid.HideHeaders(BankInventory.labels)
+    BankInventory.pageRows = BankInventory.visibleRows
     local shown = 0
-    BankInventory.labelCount = 0
-    local font = Grid.FontPath()
     for i = 1, #layout do
         local cell = layout[i]
         if cell.line >= BankInventory.scroll and cell.line < BankInventory.scroll + BankInventory.visibleRows then
             shown = PaintCell(cell, shown, sidebar, font)
         end
     end
+    Grid.PositionText(BankInventory.position, BankInventory.scroll, BankInventory.visibleRows, BankInventory.model.lineCount)
+    return shown
+end
+
+------------------------------------------------------------------ list
+-- The bankListView setting (ListView.lua): each row keeps the bank's own
+-- pooled item button (BankActions.lua) at its left edge, so clicks, drags and
+-- the warband tab rules stay those of the grid.
+local function ListSorted(key)
+    if NS.IsCombatLocked() or not P.BagList.SetSort("bank", key) then return end
+    BankInventory.scroll = 0
+    Render()
+end
+
+local function BankList()
+    local list = BankInventory.list
+    if not list then
+        list = P.BagList.New()
+        list.onSort = ListSorted
+        BankInventory.list = list
+    end
+    P.BagList.Attach(list, BankInventory.frame)
+    return list
+end
+
+local function PaintListHeader(entry, x, y, width)
+    BankInventory.labelCount = BankInventory.labelCount + 1
+    local toggle = M.config.bankView == BANK_VIEW.CATEGORIES and ToggleGroup or nil
+    Grid.PaintHeader(BankInventory.labels, BankInventory.labelCount, BankInventory.frame, BankInventory.frame,
+        x, y - 9, width, entry.group, toggle)
+end
+
+local function RenderList(sidebar, font)
+    local List, list, spec = P.BagList, BankList(), P.BagList.SortSpec("bank")
+    local entries, count = List.Layout(list, BankInventory.model, spec, M.config)
+    local rows = math.max(1, BankInventory.visibleRows - 1)
+    BankInventory.scroll, BankInventory.maxScroll = List.Clamp(count, BankInventory.scroll, rows)
+    BankInventory.pageRows = rows
+    local width = BankInventory.columns * 40 - 4
+    List.FontChanged(list, font)
+    List.Band(list, sidebar, -GRID_TOP, width, M.config, spec, nil)
+    local number, slot = 0, 0
+    for i = BankInventory.scroll + 1, math.min(count, BankInventory.scroll + rows) do
+        local entry, y = entries[i], -GRID_TOP - (i - BankInventory.scroll) * 40
+        if entry.row then
+            number, slot = PaintButton(entry.row.item, number + 1, sidebar, y, font), slot + 1
+            List.PaintRow(list, slot, sidebar, y, width, entry.row)
+        else
+            PaintListHeader(entry, sidebar, y, width)
+        end
+    end
+    List.HideRows(list, slot + 1)
+    Grid.PositionText(BankInventory.position, BankInventory.scroll, rows, count)
+    return number
+end
+
+Render = function()
+    if not BankInventory.active or not BankFrame:IsShown() or NS.IsCombatLocked() then return end
+    local categories = M.config.bankView == BANK_VIEW.CATEGORIES
+    local sidebar = categories and 170 or 12
+    BankInventory.columns = Model.BankColumns(BankInventory.frame:GetWidth(), categories)
+    BankInventory.visibleRows = math.max(2, math.floor((BankInventory.frame:GetHeight() - GRID_TOP - 44) / 40))
+    Grid.HideHeaders(BankInventory.labels)
+    BankInventory.labelCount = 0
+    local font = Grid.FontPath()
+    local shown
+    if M.config.bankListView == true then shown = RenderList(sidebar, font) else shown = RenderGrid(sidebar, font) end
     for i = shown + 1, #BankInventory.buttons do BankInventory.buttons[i]:Hide() end
     BankInventory.side:SetShown(categories)
     BankInventory.previous:SetEnabled(BankInventory.scroll > 0)
     BankInventory.next:SetEnabled(BankInventory.scroll < BankInventory.maxScroll)
-    Grid.PositionText(BankInventory.position, BankInventory.scroll, BankInventory.visibleRows, BankInventory.model.lineCount)
     if M.config.showFreeSlots then FreeSlots.Paint(BankInventory.free, BankInventory.freeSlots) else BankInventory.free:Hide() end
     BankInventory.title:SetText(S.Text(MODES[M.config.bankView]))
     BankInventory.frame:Show()
@@ -326,6 +414,7 @@ Flush = function()
     end
     local showMode = not nativeGamepad
     if modeButton:IsShown() ~= showMode then modeButton:SetShown(showMode) end
+    PaintListButton(organize)
     local wasOrganized = BankInventory.active
     BankInventory.active = organize
     M.organizedBankActive = organize
@@ -417,5 +506,7 @@ function BankInventory.Disable()
         BankInventory.frame:Hide()
         BankInventory.nativeBackground:Hide()
         BankInventory.modeButton:Hide()
+        BankInventory.listButton:Hide()
     end
+    if BankInventory.list then P.BagList.Hide(BankInventory.list) end
 end

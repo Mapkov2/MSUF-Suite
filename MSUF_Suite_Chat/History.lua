@@ -229,15 +229,21 @@ function C.ApplyLineLimit(self, frame)
 end
 
 ------------------------------------------------------------------ typed lines
--- The lines typed into the chat input boxes, newest last, at most INPUT_LINES
--- for the character. A box gets them back through its own AddHistoryLine once
--- when its window is set up, and records what is typed through a secure
--- post-hook on that same method: one hook per box, nothing shared. Blizzard's
--- box recalls the 32 newest lines (historyLines in ChatFrameEditBox.xml).
+-- The lines typed into the permanent chat input boxes, newest last, at most
+-- INPUT_LINES for the character. Nothing is fed into or hooked on Blizzard's
+-- own box history: AddHistoryLine from Suite code plants addon text in it,
+-- and a method hook on the box runs inside ParseText and SendText. A line
+-- is read when Enter goes down (Suite.ChatState's OnKeyDown, physical input
+-- only) and Up/Down bring the saved lines back. The box text is then the
+-- Suite's: recall stays off while chat is locked down (encounters, Mythic+,
+-- PvP and forced restrictions refuse such a send) and never offers secure
+-- commands (/cast, /target, /ping), which refuse addon text. Alt+Up/Down
+-- stays Blizzard's own history. Plain Up/Down reach OnKeyDown only with the
+-- box's alt-arrow mode off; the context hands the native mode back.
 local INPUT_LINES, MAX_INPUT_BYTES = 50, 1280
 -- Lines that run code or print values stay out of the file.
 local KEPT_OUT = { script = true, run = true, dump = true }
-local inputBoxes = setmetatable({}, { __mode = "k" })
+local recall = setmetatable({}, { __mode = "k" })
 
 local function InputLines()
     local saved = Store()
@@ -245,36 +251,81 @@ local function InputLines()
     return saved.input
 end
 
+local function SecureCommand(command)
+    local check = IsSecureCmd
+    return not check or check("/" .. command) == true
+end
+
 local function Typed(text)
     local line = PublicText(text)
-    if not line or #line > MAX_INPUT_BYTES then return end
-    local command = line:match("^%s*/(%a+)")
-    if command and KEPT_OUT[command:lower()] then return end
+    if not line or #line > MAX_INPUT_BYTES or not line:find("%S") then return end
+    local command = line:match("^%s*/(%S+)")
+    if command and (KEPT_OUT[command:lower()] or SecureCommand(command)) then return end
     return line
 end
 
--- Post-hook of AddHistoryLine; a hook cannot be removed, so it asks whether
--- the module is still on and recording.
-local function RecordLine(_, text)
-    if not (M.active and M.config.saveInputHistory) then return end
-    local line, lines = Typed(text), InputLines()
+local function RecallLocked()
+    if NS.ChatLocked() or GetCVarBool("addonChatRestrictionsForced") then return true end
+    local mythic = C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive
+    return mythic ~= nil and mythic() == true
+end
+
+local function Record(box)
+    local autocomplete = AutoCompleteBox
+    if autocomplete and autocomplete:IsShown() and autocomplete.parent == box then return end
+    local line, lines = Typed(box:GetText()), InputLines()
     if not line or lines[#lines] == line then return end
     lines[#lines + 1] = line
     if #lines > INPUT_LINES then table.remove(lines, 1) end
 end
 
--- Cold path, per styled window (Window.lua). The hook goes in after the saved
--- lines were fed back, so those are not recorded again.
+-- Up walks back from the draft, Down forward to it again.
+local function Recall(box, older)
+    local lines, state = InputLines(), recall[box]
+    if not state then
+        if not older then return end
+        local draft = box:GetText()
+        if not S.Public(draft) then return end
+        if type(draft) ~= "string" then draft = "" end
+        state = { index = 0, draft = draft }
+        recall[box] = state
+    end
+    local index = state.index + (older and 1 or -1)
+    while index > 0 and index <= #lines and not Typed(lines[#lines - index + 1]) do
+        index = index + (older and 1 or -1)
+    end
+    if index > #lines then return end
+    state.index = math.max(0, index)
+    box:SetText(index > 0 and lines[#lines - index + 1] or state.draft)
+    if index <= 0 then recall[box] = nil end
+end
+
+-- Suite.ChatState key callback for the permanent boxes.
+function C.HistoryKey(box, key)
+    if not (M.active and M.config.saveInputHistory) then return end
+    if key == "ENTER" or key == "NUMPADENTER" then
+        recall[box] = nil
+        Record(box)
+    elseif (key == "UP" or key == "DOWN") and not IsAltKeyDown() and not RecallLocked() then
+        Recall(box, key == "UP")
+    end
+end
+
+-- Suite.ChatState box callback: a released or hidden box starts a new walk.
+function C.HistoryBox(kind, box)
+    if kind == "release" or kind == "hide" then recall[box] = nil end
+end
+
+-- Cold path, per styled window (Window.lua).
 function C.ApplyInputHistory(self, frame)
     local box = frame.editBox
-    if not (box and self.config.saveInputHistory) or inputBoxes[box] then return end
-    inputBoxes[box] = true
-    local lines = InputLines()
-    for i = 1, #lines do
-        local line = Typed(lines[i])
-        if line then box:AddHistoryLine(line) end
+    if not box or not P.NS.ChatState.IsPermanentBox(box) then return end
+    if self.config.saveInputHistory then
+        self.context:Property(box, "GetAltArrowKeyMode", "SetAltArrowKeyMode", false)
+    else
+        self.context:RestoreProperty(box, "SetAltArrowKeyMode")
+        recall[box] = nil
     end
-    hooksecurefunc(box, "AddHistoryLine", RecordLine)
 end
 
 -- Empties this character's rings in place, so styled windows keep writing
@@ -348,4 +399,27 @@ function C.WhisperSnapshot()
         end
     end
     return contacts
+end
+
+-- One archived conversation for the whisper messenger (Messenger*.lua),
+-- oldest first: the newest `limit` lines whose peer passes matches, each
+-- with its visible text and the native line ID of its player link. Read
+-- only; the messenger keeps no archive of its own.
+function C.WhisperLines(matches, limit)
+    local ring, rows = Store().whispers, {}
+    if type(ring) ~= "table" or not Finite(limit) or limit < 1 then return rows end
+    Fit(ring, LineLimit())
+    for offset = 1, ring.count do
+        if #rows >= limit then break end
+        local row = ring.lines[(ring.next - offset - 1) % ring.limit + 1]
+        if type(row) == "table" and PublicText(row.text) and #row.text <= MAX_TEXT and PublicText(row.peer)
+            and matches(row.peer) then
+            rows[#rows + 1] = { text = C.PlainChatMessage(row.text), id = row.text:match("|Hplayer:[^:|%c]+:(%d+):") }
+        end
+    end
+    local count = #rows
+    for index = 1, math.floor(count / 2) do
+        rows[index], rows[count - index + 1] = rows[count - index + 1], rows[index]
+    end
+    return rows
 end

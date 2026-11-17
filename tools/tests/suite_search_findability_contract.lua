@@ -15,7 +15,7 @@
 --     consumables of Buff Reminders, the Mythic+ run history).
 --   lua suite_search_findability_contract.lua <suiteRoot> [Mainline|Forever] [locale] [hostRoot]
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
-local classic = arg[4] or (root .. "/../MidnightSimpleUnitFrames")
+local classic = arg[4] or (root .. "/../MidnightSimpleUnitFrames-7.0")
 local flavor = arg[2] or "Mainline"
 local locale = arg[3] or "enUS"
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
@@ -44,6 +44,9 @@ assert(world.core.FinalizeLocale() == locale, "requested locale was not selected
 local env = world.env
 -- Native slider methods used by the menu's independent sample controls.
 local sliderMethods = getmetatable(env.UIParent).__index
+sliderMethods.EnableKeyboard = sliderMethods.EnableKeyboard or function(self, enabled) self.keyboardEnabled = enabled end
+sliderMethods.SetPropagateKeyboardInput = sliderMethods.SetPropagateKeyboardInput
+    or function(self, propagate) self.propagateKeyboardInput = propagate end
 function sliderMethods:SetObeyStepOnDrag(value) self.obeyStep = value end
 function sliderMethods:SetThumbTexture(path)
     self.thumbTexture = self.thumbTexture or self:CreateTexture()

@@ -7,16 +7,19 @@ local patches = {
     combat = { "ToolbarGeometry", 'or NS.InCombat()', '' },
     profile = { "ToolbarGeometry", 'and M.config == gesture.config', '' },
     inputToggle = { "InputAnimation", 'if not config.animateInput then', 'if false then' },
-    inputIM = { "InputAnimation", 'input:HookScript("OnEditFocusGained", Activated)', 'input:HookScript("OnShow", Activated)' },
+    inputIM = { "InputAnimation", 'if kind == "focus" then', 'if kind == "show" then' },
     inputSquash = { "InputAnimation", 'local slide = group:CreateAnimation("Translation")',
         'local slide = group:CreateAnimation("Scale")' },
     inputSnap = { "InputAnimation", 'record.slide:SetOffset(0, distance)', 'record.slide:SetOffset(0, distance + 8)' },
+    inputDim = { "InputAnimation", 'group:SetToFinalAlpha(true)', '' },
+    inputDraft = { "InputAnimation", 'if S.Public(text) and text ~= "" then return end', '' },
 }
 
 local function Run(flavor)
     local combat, lockdown, protected = false, false, false
     local created, layouts, commits, copies, opened, inputs = 0, 0, 0, 0, 0, 0
     local hooks, waits = {}, {}
+    local secretFocus = {}
     local function Frame(parent)
         created = created + 1
         local frame = { parent = parent, points = {}, scripts = {}, events = {}, shown = true,
@@ -86,10 +89,12 @@ local function Run(flavor)
         function frame:SetTexture(value) self.texture = value end
         function frame:SetColorTexture(...) self.color = {...} end
         function frame:GetName() return self.name end
-        function frame:HasFocus() return self.focused == true end
+        function frame:HasFocus() return self.focusResult or self.focused == true end
         function frame:SetText(value) self.text = value end
+        function frame:GetText() return self.text or "" end
         function frame:CreateAnimationGroup()
             local group = { animations = {}, plays = 0 }
+            function group:SetToFinalAlpha(value) self.toFinalAlpha = value end
             function group:CreateAnimation(kind)
                 local animation = { kind = kind }
                 function animation:SetFromAlpha(value) self.fromAlpha = value end
@@ -125,10 +130,12 @@ local function Run(flavor)
     EditModeManagerFrame = Frame()
     EditModeManagerFrame:Hide()
     CHAT_FRAME_FADE_OUT_TIME = 2
-    hooksecurefunc = function(name, fn) hooks[name] = fn end
+    -- No hook and no Blizzard chat state call: the header follows
+    -- Suite.ChatState and never opens or closes Blizzard's input.
+    hooksecurefunc = function(name) error("the chat header hooked " .. tostring(name)) end
     ChatFrameUtil = {
-        OpenChat = function(_, frame) eq(frame, GENERAL_CHAT_DOCK.selected); inputs = inputs + 1; frame.editBox.focused = true end,
-        DeactivateChat = function(box) box.focused = false end,
+        OpenChat = function() error("the chat header opened Blizzard's input from Suite code") end,
+        DeactivateChat = function() error("the chat header closed Blizzard's input from Suite code") end,
     }
     local canCreate, canOpenPanel = true, true
     FCF_CanOpenNewWindow = function() return canCreate end
@@ -144,19 +151,21 @@ local function Run(flavor)
         eq(frame, nativeTab); eq(source, ChatFrame1); copiesFromDefault = copiesFromDefault + 1
     end
     FCF_DockUpdate = function() end
+    -- Run from Suite code, Blizzard's dock layout would show and hide chat
+    -- frames and write the dock's fields in the Suite's taint.
     FCFDock_UpdateTabs = function()
         layouts = layouts + 1
-        -- The native layout's post-hook re-enters the toolbar layout.
-        if layouts > 8 then error("recursive native tab layout") end
-        if hooks.layout then hooks.layout() end
+        error("the chat header ran Blizzard's dock layout")
     end
     local config = Support.CatalogDefaults(root, "chat")
     config.headerToolbar, config.toolbarLocked = true, true
     local NS = { InCombat = function() return combat end, IsCombatLocked = function() return lockdown end,
-        Safety = { IsForbidden = function(frame) return frame.forbidden == true end }, RestrictedNotice = function() return "combat" end }
+        Safety = { IsForbidden = function(frame) return frame.forbidden == true end }, RestrictedNotice = function() return "combat" end,
+        ChatState = Support.ChatStateMock() }
+    NS.ChatState.IsPermanentBox = function(box) return box == ChatFrame1.editBox end
     local S = {
         Finite = function(value) return type(value) == "number" and value == value end,
-        Public = function() return true end, Text = function(value) return value end,
+        Public = function(value) return not rawequal(value, secretFocus) end, Text = function(value) return value end,
         RGB = function() return 1, 1, 1 end,
         CreateFrame = function(_, _, parent) return Frame(parent) end,
         CreateTexture = function(parent) return Frame(parent) end,
@@ -223,9 +232,10 @@ local function Run(flavor)
     M.active, M.config, M.context = true, config, context
     M.visuals[ChatFrame1] = { frame = ChatFrame1 }
     C.MessageFadeFocus, C.StopFadeAnimation, C.PrepareFadeAnimations = function() end, function() end, function() end
+    -- Window.lua holds the tab regions; this fixture styles no tab.
+    C.TabFollowsFrame, C.KeepTabVisible = function() end, function() end
     C.FadePart = function(visual, index, alpha) visual.fadeParts[index]:SetAlpha(alpha); visual.fadeApplied[index] = alpha end
     C.OpenCopyDialog = function(module, frame) eq(module, M); eq(frame, GENERAL_CHAT_DOCK.selected); copies = copies + 1 end
-    hooks.layout = C.LayoutToolbarDock
     -- The mover bounds use the drawn padding/sidebar, not Blizzard's selection.
     UIParent.width, UIParent.height = 1920, 1080
     M.positionFrame, S.editMode = ChatFrame1, true
@@ -249,9 +259,9 @@ local function Run(flavor)
     config.sidebarPanel, S.editMode = false, false
     ChatFrame1:ClearAllPoints(); ChatFrame1:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 12, 12)
     C.ApplyToolbar(); C.LayoutToolbarDock()
-    eq(#M.toolbar.buttons, 5); eq(GENERAL_CHAT_DOCK:GetWidth(), 372)
+    eq(#M.toolbar.buttons, 4); eq(GENERAL_CHAT_DOCK:GetWidth(), 392)
     eq(select(2, GENERAL_CHAT_DOCK:GetPoint(1)), nativeRelative, "client-native anchor lost")
-    eq(layouts, 1)
+    eq(layouts, 0)
     local frames = created
     collectgarbage("collect"); collectgarbage("stop")
     local before = collectgarbage("count")
@@ -259,7 +269,7 @@ local function Run(flavor)
     local allocated = collectgarbage("count") - before
     collectgarbage("restart")
     assert(allocated < 1, "stable dock layout allocates: " .. allocated)
-    eq(created, frames); eq(layouts, 1, "stable header forced native layouts")
+    eq(created, frames); eq(layouts, 0, "stable header forced native layouts")
     config.tabX, config.tabY = 10, 6
     C.LayoutToolbarDock()
     eq(select(4, GENERAL_CHAT_DOCK:GetPoint(1)), 10, "changed tab offset was ignored")
@@ -268,7 +278,7 @@ local function Run(flavor)
     C.LayoutToolbarDock()
     local sample = Frame()
     C.PaintToolbar(sample, config, false)
-    eq(#sample.buttons, 5); eq(sample.buttons[1].scripts.OnClick, nil, "preview has live actions")
+    eq(#sample.buttons, 4); eq(sample.buttons[1].scripts.OnClick, nil, "preview has live actions")
     eq(sample.buttons[1].strokes[1].width, M.toolbar.buttons[1].strokes[1].width)
     local buttons = M.toolbar.buttons
     buttons[1].scripts.OnClick(buttons[1]); eq(opened, 1)
@@ -287,14 +297,14 @@ local function Run(flavor)
     eq(createdTab, 2, "Gamepad mode could not create a native tab")
     eq(filters, nil, "Gamepad mode tried to open the native filter panel")
     eq(ChatConfigFrame:IsShown(), false, "Gamepad mode showed the native filter panel")
-    buttons[2].scripts.OnClick(buttons[2]); eq(inputs, 1)
-    buttons[2].scripts.OnClick(buttons[2]); eq(ChatFrame1.editBox.focused, false)
+    for _, button in ipairs(buttons) do assert(button.action ~= "input", "the header kept an input tool") end
+    eq(inputs, 0)
     combat = true
     buttons[1].scripts.OnClick(buttons[1]); eq(opened, 1, "tab created during combat")
-    buttons[3].scripts.OnClick(buttons[3]); eq(copies, 1, "public copy unavailable in combat")
-    buttons[4].scripts.OnClick(buttons[4]); eq(config.toolbarLocked, true)
+    buttons[2].scripts.OnClick(buttons[2]); eq(copies, 1, "public copy unavailable in combat")
+    buttons[3].scripts.OnClick(buttons[3]); eq(config.toolbarLocked, true)
     combat = false
-    buttons[4].scripts.OnClick(buttons[4]); eq(config.toolbarLocked, false)
+    buttons[3].scripts.OnClick(buttons[3]); eq(config.toolbarLocked, false)
     C.ApplyToolbarGeometry()
     combat = true
     M.toolbarDrag.scripts.OnDragStart(M.toolbarDrag); eq(M.toolbarGesture, nil, "gesture began at combat edge")
@@ -336,13 +346,14 @@ local function Run(flavor)
     C.ChatActivity(ChatFrame1); eq(M.toolbar:GetAlpha(), 1, "header did not wake")
     config.minimalChrome = true
     C.UpdateMinimalChrome(visual, false); eq(M.toolbar:GetAlpha(), 0)
+    -- Suite.ChatState reports Blizzard's chrome fade (hasBeenFaded).
     C.ToolbarHover(buttons[1], true)
-    hooks.FCF_FadeOutChatFrame(ChatFrame1)
+    C.HoverEnded(ChatFrame1)
     eq(M.toolbar:GetAlpha(), 1, "wrapped controls faded under pointer")
     visual.fadeCallback(); eq(M.toolbar:GetAlpha(), 1, "idle fade ignored toolbar hover")
     C.ToolbarHover(buttons[1], false)
-    hooks.FCF_FadeInChatFrame(ChatFrame1); eq(M.toolbar:GetAlpha(), 1)
-    hooks.FCF_FadeOutChatFrame(ChatFrame1); eq(M.toolbar:GetAlpha(), 0)
+    C.HoverStarted(ChatFrame1); eq(M.toolbar:GetAlpha(), 1)
+    C.HoverEnded(ChatFrame1); eq(M.toolbar:GetAlpha(), 0)
     C.ReleaseToolbar(); eq(M.toolbar:IsShown(), false); eq(M.toolbarResize:IsShown(), false)
     eq(GENERAL_CHAT_DOCK:GetNumPoints(), 2)
     local input = ChatFrame1.editBox
@@ -355,7 +366,7 @@ local function Run(flavor)
     eq(#animation.animations, 3); eq(animation.plays, 0, "refresh unexpectedly animated the live chat")
     input:Hide()
     combat, lockdown = true, true
-    input:Show(); input.scripts.OnEditFocusGained(input)
+    input:Show(); C.InputAnimationEvent("focus", input)
     eq(animation.plays, 1, "input animation failed in combat")
     eq(animation.animations[1].duration, 0.23 * 0.65)
     eq(animation.animations[1].kind, "Alpha"); eq(animation.animations[1].order, 2)
@@ -364,10 +375,10 @@ local function Run(flavor)
     eq(animation.animations[3].kind, "Translation"); eq(animation.animations[3].order, 2)
     eq(animation.animations[3].duration, 0.23); eq(animation.animations[3].offsetY, 24)
     eq(animation.animations[2].offsetY + animation.animations[3].offsetY, 0, "input animation snaps at its end")
-    input:Hide(); eq(animation.playing, false, "hidden input kept animating")
+    input:Hide(); C.InputAnimationEvent("hide", input); eq(animation.playing, false, "hidden input kept animating")
     config.animateInput = false
     C.ApplyInputAnimation(M, input)
-    input:Show(); input.scripts.OnEditFocusGained(input)
+    input:Show(); C.InputAnimationEvent("focus", input)
     eq(animation.plays, 1, "disabled input still animated")
     combat, lockdown = false, false
     config.animateInput = true
@@ -386,11 +397,18 @@ local function Run(flavor)
     S.ChatPreviewInputAnimation(sample, config); eq(preview.playing, false)
     config.animateInput = true
     C.ApplyInputAnimation(M, input)
-    input.scripts.OnEditFocusGained(input)
+    C.InputAnimationEvent("focus", input)
     local activations = animation.plays
-    input.scripts.OnEditFocusLost(input)
-    input.scripts.OnEditFocusGained(input)
+    C.InputAnimationEvent("release", input)
+    C.InputAnimationEvent("focus", input)
     eq(animation.plays, activations + 1, "persistent IM input did not animate on reactivation")
+    -- ActivateChat sets the box to 1 after the focus callback started the
+    -- group; ending on the alpha found at Play left IM boxes dim (0.35).
+    eq(animation.toFinalAlpha, true, "focused input fell back to its pre-ActivateChat alpha")
+    input:SetText("draft"); C.InputAnimationEvent("release", input)
+    eq(animation.playing, true, "active input with text lost its fade-in on a focus loss")
+    input:SetText(""); C.InputAnimationEvent("release", input)
+    eq(animation.playing, false, "empty input kept animating into its deactivation")
     C.StopInputAnimations(); eq(animation.playing, false)
     print(flavor .. " chat header: native anchors/overflow, actions, preview, drag/resize, combat, restoration and idle budget passed")
 end

@@ -29,7 +29,7 @@ local function Tabs(parts, c, top)
     C.OffsetNative(parts.previewOwner, parts.tabGroup, c.tabX or 0, c.tabY or 0)
     parts.tabGroup:SetSize(parts.dockWidth or parts.sample:GetWidth(), parts.dockHeight or c.tabHeight)
     if c.headerToolbar and not C.ToolbarWrap(c, parts.sample) then
-        parts.tabGroup:SetWidth(parts.sample:GetWidth() - 108 - (c.headerClock and 80 or 0))
+        parts.tabGroup:SetWidth(parts.sample:GetWidth() - C.TOOLBAR_WIDTH - 8 - (c.headerClock and 80 or 0))
     end
     for index, tab in ipairs(parts.tabs) do
         local visual = tab.visual

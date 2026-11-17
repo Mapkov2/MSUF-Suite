@@ -6,9 +6,10 @@ P.Status = Status
 
 local plans, wanted = {}, {}
 local plates = setmetatable({}, { __mode = "k" })
-local timers, pending = {}, {}
+local pending = {}
 local raidSizes, raidAlphas = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
-local owner, events, timer, raidEnabled
+local raidTouched = setmetatable({}, { __mode = "k" })
+local owner, events, raidEnabled
 
 local function Flag(fn, unit)
     if not fn then return end
@@ -58,10 +59,9 @@ local function BossNumber(unit)
 end
 
 local function AFKTime(unit, item)
-    if not Flag(UnitIsAFK, unit) then
-        item.since = nil
-        return
-    end
+    local afk = Flag(UnitIsAFK, unit)
+    if afk == false then item.since = nil end
+    if afk ~= true then return end
     local now = GetTime()
     item.since = item.since or now
     local elapsed = math.floor(now - item.since)
@@ -92,11 +92,14 @@ local SIGNALS = {
     StatusLeader = ROSTER, StatusAssist = ROSTER, StatusGroup = ROSTER,
     StatusRace = NAME, StatusClass = NAME,
     StatusDead = { "UNIT_HEALTH", "UNIT_CONNECTION", "UNIT_FLAGS" }, StatusGhost = FLAGS,
-    StatusAFK = PLAYER_FLAGS, StatusAFKTimer = PLAYER_FLAGS, StatusDND = PLAYER_FLAGS,
+    StatusAFK = PLAYER_FLAGS, StatusDND = PLAYER_FLAGS,
+    StatusAFKTimer = { "PLAYER_FLAGS_CHANGED", "UNIT_FLAGS", "UPDATE_MOUSEOVER_UNIT", "PLAYER_TARGET_CHANGED" },
     StatusCombat = FLAGS, StatusRez = { "INCOMING_RESURRECT_CHANGED" },
     StatusPvP = { "UNIT_FACTION", "UNIT_FLAGS" },
     StatusBossNumber = { "INSTANCE_ENCOUNTER_ENGAGE_UNIT" },
 }
+
+local Restore
 
 local function Safe(region)
     return region and not NS.Safety.IsForbidden(region)
@@ -114,17 +117,16 @@ end
 -- Blizzard continues to assign the marker and own its visibility. Size uses
 -- the native container so its classification sibling keeps the right gap.
 function Status.Raid(uf, prefix)
-    local frame = uf.RaidTargetFrame
-    if not Safe(frame) then return end
-    local icon = frame.RaidTargetIcon
-    if not Safe(icon) then return end
     local config = owner.config
     local keys = prefix and P.Key[prefix]
     local styled = keys and owner.active and config.look ~= P.Mode.LOOK_BLIZZARD and config[prefix]
     local hidden = styled and config[keys.RaidIcon] == false
     local size = styled and config[keys.RaidIconSize] or 22
-    if not hidden and size == 22 and not raidSizes[frame] and not raidAlphas[icon] then return end
-    if not Mutable(uf, frame) then return end
+    if not hidden and size == 22 and not raidTouched[uf] then return end
+    local frame = uf.RaidTargetFrame
+    if not Safe(frame) then return end
+    local icon = frame.RaidTargetIcon
+    if not Safe(icon) or not Mutable(uf, frame) then return end
     if hidden and not raidAlphas[icon] then
         local alpha = icon:GetAlpha()
         if S.Finite(alpha) then raidAlphas[icon] = alpha icon:SetAlpha(0) end
@@ -139,6 +141,8 @@ function Status.Raid(uf, prefix)
         frame:SetSize(22, 22)
         raidSizes[frame] = nil
     end
+    raidTouched[uf] = (raidSizes[frame] or raidAlphas[icon]) and true or nil
+    if raidTouched[uf] then Status.Restore = Restore end
 end
 
 local function PaintValue(item, unit)
@@ -156,39 +160,19 @@ local function PaintValue(item, unit)
     item.frame:SetShown(value ~= nil)
 end
 
-local function Tick()
-    for item, unit in pairs(timers) do
-        if Safe(item.frame) then PaintValue(item, unit) else item.since = nil end
-        if not item.since then timers[item] = nil end
-    end
-    if not next(timers) and timer then timer:Cancel() timer = nil end
-end
-
-local function UpdateItem(item, unit)
-    PaintValue(item, unit)
-    if item.since then
-        timers[item] = unit
-        if not timer then timer = owner.context:Ticker(1, Tick) end
-    elseif timers[item] then
-        timers[item] = nil
-        if not next(timers) then timer:Cancel() timer = nil end
-    end
-end
-
 local function Hide(item)
-    item.since, timers[item] = nil, nil
+    item.since = nil
     if Safe(item.frame) then item.frame:Hide() end
-    if timer and not next(timers) then timer:Cancel() timer = nil end
 end
 
 function Status.Release(uf)
     local plate = plates[uf]
     if not plate then return end
-    for _, item in pairs(plate.items) do
-        item.active = nil
+    for key, item in pairs(plate.active) do
+        plate.active[key] = nil
         Hide(item)
     end
-    plate.unit = nil
+    plate.unit, plate.events = nil, nil
 end
 
 local function Region(uf, plate, spec)
@@ -226,7 +210,7 @@ end
 
 function Status.Apply(uf, prefix, unit)
     local plan = prefix and plans[prefix]
-    if not plan or not next(plan) or not unit or not Mutable(uf, uf) then
+    if not plan or not next(plan.items) or not unit or not Mutable(uf, uf) then
         Status.Release(uf)
         return
     end
@@ -238,42 +222,42 @@ function Status.Apply(uf, prefix, unit)
     end
     local plate = plates[uf]
     if not plate then
-        plate = { items = {} }
+        plate = { items = {}, active = {} }
         plates[uf] = plate
     elseif plate.unit ~= unit then
         Status.Release(uf)
     end
-    plate.unit = unit
-    local player = Flag(UnitIsPlayer, unit)
-    for key, item in pairs(plate.items) do
-        if not plan[key] then
-            item.active = nil
-            Hide(item)
-        elseif plan[key].spec.player and player ~= true then
+    local items = plan.items
+    plate.unit, plate.events = unit, plan.events
+    local player = plan.player and Flag(UnitIsPlayer, unit)
+    for key, item in pairs(plate.active) do
+        local entry = items[key]
+        if not entry or entry.spec.player and player ~= true then
+            plate.active[key] = nil
             Hide(item)
         end
     end
-    for key, value in pairs(plan) do
+    for key, value in pairs(items) do
         if not value.spec.player or player == true then
             local item = plate.items[key] or Region(uf, plate, value.spec)
-            item.active = true
+            plate.active[key] = item
             Place(item, uf, value)
-            UpdateItem(item, unit)
+            PaintValue(item, unit)
         end
     end
 end
 
 local function UpdateEvent(uf, unit, event)
-    if not Safe(uf) then return end
     local plate = plates[uf]
-    local enabled = wanted[event]
-    if not plate or plate.unit ~= unit or not enabled then return end
-    local player = Flag(UnitIsPlayer, unit)
+    local enabled = plate and plate.events and plate.events[event]
+    if not enabled or plate.unit ~= unit or not Safe(uf) then return end
+    local player
     for key in pairs(enabled) do
-        local item = plate.items[key]
-        if item and item.active and Safe(item.frame) then
-            if not item.plan.spec.player or player == true then
-                UpdateItem(item, unit)
+        local item = plate.active[key]
+        if item and Safe(item.frame) then
+            if item.plan.spec.player and player == nil then player = Flag(UnitIsPlayer, unit) == true end
+            if not item.plan.spec.player or player then
+                PaintValue(item, unit)
             else
                 Hide(item)
             end
@@ -288,17 +272,35 @@ local function ByToken(event, unit)
         return
     end
     if event ~= "PLAYER_FLAGS_CHANGED" and event ~= "INCOMING_RESURRECT_CHANGED" and event ~= "UNIT_CONNECTION" then return end
-    for token, plate in pairs(owner.activeUnits) do
-        local same = UnitIsUnit(token, unit)
-        if S.Public(same) and same == true then
-            UpdateEvent(plate, token, event)
-            return
+    -- An alias only needs comparing with plates that consume this event.
+    for frame, plate in pairs(plates) do
+        local token = plate.unit
+        if token and plate.events[event] then
+            local same = UnitIsUnit(token, unit)
+            if S.Public(same) and same == true then
+                UpdateEvent(frame, token, event)
+                return
+            end
         end
     end
 end
 
+-- Sample elapsed AFK time on inspection, without reading unrelated badges or
+-- looking for a unit token through every visible plate.
+local function Inspect(unit)
+    local base = C_NamePlate.GetNamePlateForUnit(unit)
+    if not S.Public(base) or not Safe(base) then return end
+    local uf = base.UnitFrame
+    if not S.Public(uf) or not Safe(uf) then return end
+    local plate = plates[uf]
+    local item = plate and plate.active.StatusAFKTimer
+    if item and plate.unit and Safe(item.frame) then PaintValue(item, plate.unit) end
+end
+
 local function OnEvent(_, event, unit)
-    if event == "PLAYER_REGEN_ENABLED" then
+    if event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
+        Inspect(event == "UPDATE_MOUSEOVER_UNIT" and "mouseover" or "target")
+    elseif event == "PLAYER_REGEN_ENABLED" then
         if events then events:UnregisterEvent(event) end
         for uf in pairs(pending) do
             pending[uf] = nil
@@ -320,18 +322,19 @@ local function OnEvent(_, event, unit)
 end
 
 local function Compile(config, prefix)
-    local plan = {}
+    local plan = { items = {}, events = {} }
     if config.look == P.Mode.LOOK_BLIZZARD or not config[prefix] then return plan end
     for _, spec in ipairs(Style.Status or {}) do
         local key = prefix .. spec.key
         if config[key] and Style.StatusSupported(spec, prefix) then
             local point, x, y = Style.StatusPoint(config, prefix, spec)
-            plan[spec.key] = { spec = spec, point = point, x = x, y = y,
+            plan.items[spec.key] = { spec = spec, point = point, x = x, y = y,
                 size = config[key .. "Size"], layer = config[key .. "Layer"], color = config[key .. "Color"] }
+            plan.player = plan.player or spec.player
             for _, event in ipairs(SIGNALS[spec.key] or FLAGS) do
-                local entries = wanted[event] or {}
+                local entries = plan.events[event] or {}
                 entries[spec.key] = true
-                wanted[event] = entries
+                plan.events[event], wanted[event] = entries, true
             end
         end
     end
@@ -339,8 +342,13 @@ local function Compile(config, prefix)
 end
 
 local function Paint(uf, prefix, unit)
-    if raidEnabled or next(raidSizes) or next(raidAlphas) then Status.Raid(uf, prefix) end
+    if raidEnabled or raidTouched[uf] then Status.Raid(uf, prefix) end
     if Status.inUse then Status.Apply(uf, prefix, unit) end
+end
+
+Restore = function(uf)
+    if raidTouched[uf] then Status.Raid(uf) end
+    Status.Release(uf)
 end
 
 local function RaidEnabled(config, side)
@@ -355,7 +363,7 @@ function Status.Configure(module)
     for event in pairs(wanted) do wanted[event] = nil end
     plans.enemy = Compile(module.config, "enemy")
     plans.friendly = Compile(module.config, "friendly")
-    Status.inUse = next(plans.enemy) ~= nil or next(plans.friendly) ~= nil
+    Status.inUse = next(plans.enemy.items) ~= nil or next(plans.friendly.items) ~= nil
     Status.EndRefresh()
     if Status.inUse and not events then
         events = CreateFrame("Frame")
@@ -373,16 +381,18 @@ function Status.Configure(module)
 end
 
 function Status.EndRefresh()
-    Status.Paint = (Status.inUse or raidEnabled or next(raidSizes) or next(raidAlphas)) and Paint or nil
+    local restoring = Status.inUse or next(raidTouched) ~= nil
+    Status.Paint = (restoring or raidEnabled) and Paint or nil
+    Status.Restore = restoring and Restore or nil
 end
 
 function Status.Flush()
-    OnEvent(nil, "PLAYER_REGEN_ENABLED")
+    if next(pending) then OnEvent(nil, "PLAYER_REGEN_ENABLED") end
 end
 
 function Status.Disable()
     if events then events:UnregisterAllEvents() end
-    Status.inUse, Status.Paint, raidEnabled = false, nil, nil
+    Status.inUse, Status.Paint, Status.Restore, raidEnabled = false, nil, nil, nil
     if next(pending) and NS.IsCombatLocked() then
         if not events then
             events = CreateFrame("Frame")

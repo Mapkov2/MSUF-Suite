@@ -20,7 +20,8 @@ local _, NS = ...
 -- click makes SecureActionButton_OnClick click the window's X (minimize) or
 -- the Blizzard button that opens the window (restore, Policy.Opener).
 -- The cell and the tab keep their handlers for clicks the delegate does not
--- take (combat, a window without an opener).
+-- take (combat, the Gamepad UI); for a managed window they refuse
+-- (WindowControlPolicy.SecureOnly), and one without an opener has no minimize.
 local Delegate = {}
 NS.WindowControlDelegate = Delegate
 
@@ -63,7 +64,7 @@ end
 local function Target(record)
     if record.role == "minimize" then
         -- Native-only windows minimize once a native button can bring them back.
-        if Policy.SecureOnly(record.state) and not Policy.Opener(record.state) then return nil end
+        if not Policy.CanRestore(record.state) then return nil end
         return record.state.close
     end
     return Policy.Opener(record.state)
@@ -177,6 +178,14 @@ end
 function Delegate.Bind(state, prepare, finish)
     Bind(state.minimize, state, "minimize", prepare, finish)
     Bind(state.restore, state, "restore")
+end
+
+-- Another Suite module's minimize cell over a window these controls own. It
+-- binds on its first hover, so that hover attaches at once.
+function Delegate.BindMinimize(owner, state, prepare, finish)
+    if not owner or bound[owner] then return end
+    Bind(owner, state, "minimize", prepare, finish)
+    if Safety.Read(owner, "IsMouseOver") == true then Attach(owner) end
 end
 
 return Delegate

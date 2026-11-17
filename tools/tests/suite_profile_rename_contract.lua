@@ -71,7 +71,7 @@ assert(loadfile(hostRoot .. "/MidnightSimpleUnitFrames/State/MSUF_Profiles.lua")
 local suite = {
     Dispatch = dispatch, Finish = function(fn, ...) return true, fn(...) end,
     IsCombatLocked = InCombatLockdown,
-    ProfileIO = {},
+    ProfileIO = { RememberNameplateCVars = noop, ActivateNameplateProfile = function() return true end },
     OnProfileChanged = noop,
     Client = { AddOnEnabled = function() return false end },
 }
@@ -96,6 +96,7 @@ assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DatabaseProfiles.lua"))("MSUF_Sui
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/Profiles.lua"))("MSUF_Suite", suite)
 -- The Suite API (MSUFSuite.API) the host's link prefers.
+suite.Suite = { instances = {} }
 assert(loadfile(root .. "/MSUF_Suite/Core/API.lua"))("MSUF_Suite", suite)
 
 local function Accent(r, g, b) return { theme = { colors = { accent = { r, g, b, 1 } } } } end

@@ -1,15 +1,7 @@
 local root = assert(arg[1], "repository root required")
--- The wait of aura container builds behind Forever's gamepad navigation
--- (MSUF_Suite/Core/Platform.lua AuraBuildBlocked/AfterAuraBuild), with the
--- real Platform.lua against a faithful subset of Blizzard's SmartNavigation
--- (forever 70291 Blizzard_GamepadSmartNavigation/SmartNavigation.lua:
--- GetPanelInfo :726-751, HandlePanelClose :778-780, RemovePanelInfo
--- :782-807) and GroupTargeting's stop order (Blizzard_GamepadTargeting/
--- GroupTargeting.lua:103-123). A closed panel wakes the builds at once; a
--- panel left listed for good (StopTargeting drops nil, :108 then :121, and a
--- host that parks the party frames under a hidden parent never hides them
--- again) costs a check every two seconds after the first five, not four a
--- second all session; the checks stop with the last wait.
+-- Native panel removal/reset wakes deferred aura builds on Forever.
+-- SmartNavigation.lua from Forever 70938: ResetVars and RemovePanelInfo
+-- own the active panel list. Waiting for changes costs no timer callbacks.
 
 MSUF_NS = { Client = { Flavor = "Mainline", IsForever = true } }
 C_EventUtils = { IsEventValid = function() return true end }
@@ -55,6 +47,16 @@ local function Pending()
     return n
 end
 
+function hooksecurefunc(target, key, after)
+    assert(key == "RemovePanelInfo" or key == "ResetVars", "unexpected hook")
+    local original = target[key]
+    target[key] = function(self, ...)
+        local result = original(self, ...)
+        after(self, ...)
+        return result
+    end
+end
+
 local Suite = {}
 assert(loadfile(root .. "/MSUF_Suite/Core/Platform.lua"))("MSUF_Suite", Suite)
 local Client = Suite.Client
@@ -81,6 +83,7 @@ function SmartNavigation:RemovePanelInfo(frame)
     end
     return false
 end
+function SmartNavigation:ResetVars() self.activePanels = {} end
 function SmartNavigation:HandlePanelClose(panel) self:RemovePanelInfo(panel) end
 function SmartNavigation:HandlePanelOpen(panel) self:GetPanelInfo(panel) end
 local GroupTargeting = {}
@@ -117,8 +120,8 @@ SmartNavigation:HandlePanelOpen(character)
 assert(Client.AuraBuildBlocked(), "an open gamepad panel did not block aura builds")
 Client.AfterAuraBuild("bars", function(owner) assert(owner == "bars"); ran = ran + 1 end)
 Client.AfterAuraBuild("bars", function(owner) assert(owner == "bars"); ran = ran + 1 end)
-Advance(1)
-assert(ran == 0, "builds ran under an open gamepad panel")
+Advance(3600)
+assert(ran == 0 and fired == 0 and Pending() == 0, "an open gamepad panel kept checking")
 character:Hide()
 assert(#SmartNavigation.activePanels == 0 and ran == 0, "the builds ran inside the panel's OnHide")
 Advance(0)
@@ -126,42 +129,48 @@ assert(ran == 1, "a closed gamepad panel did not wake the waiting builds at once
 Advance(30)
 assert(Pending() == 0, "aura build checks kept running after the last wait")
 
--- A panel GroupTargeting leaves listed under a hidden parent: one hour of
--- waiting costs the quarter-second checks of the first five seconds and one
--- check every two seconds after that.
+-- An old panel can remain listed under a hidden parent without more OnHide.
 local party = Panel()
 GroupTargeting:StartTargeting(party)
 GroupTargeting:StopTargeting()
-assert(#SmartNavigation.activePanels == 1, "fixture: Blizzard's stop order no longer leaves the panel listed")
+assert(#SmartNavigation.activePanels == 1, "fixture: Blizzard's stop order changed")
 local waited = 0
 Client.AfterAuraBuild("plates", function() waited = waited + 1 end)
 local before = fired
 Advance(3600)
-local checks = fired - before
-assert(waited == 0 and Client.AuraBuildBlocked(), "the stale panel let builds run")
-assert(checks <= 20 + 1800 + 2, "a stale gamepad panel kept four aura build checks a second running: " .. checks)
-assert(Pending() == 1, "the wait for a stale panel stopped checking")
--- The panel leaves the list without an OnHide (the host's group frames come
--- back and go): the next two-second check runs the builds and the chain ends.
+assert(waited == 0 and Client.AuraBuildBlocked() and fired == before and Pending() == 0,
+    "the stale panel caused polling or let builds run")
 SmartNavigation:RemovePanelInfo(party)
-Advance(2)
-assert(waited == 1, "the builds did not run within two seconds of the panel leaving")
-Advance(30)
-assert(Pending() == 0, "aura build checks kept running after the stale panel left")
-
--- In combat no panel is hooked (it may hold secure frames); the first check
--- out of combat hooks it.
-local spells = Panel()
-SmartNavigation:HandlePanelOpen(spells)
-combat = true
-Client.AfterAuraBuild("glows", function() end)
-assert(#spells.hooks == 1, "a gamepad panel was hooked in combat")
-combat = false
-Advance(0.25)
-assert(#spells.hooks == 2, "the gamepad panel was not watched once combat ended")
-spells:Hide()
+assert(waited == 0 and Pending() == 1, "removal did not defer the wake by one frame")
 Advance(0)
-assert(Pending() <= 1, "a closed panel left more than its last check behind")
-Advance(30)
-assert(Pending() == 0, "aura build checks kept running after the last wait")
-print("suite_aura_build_wait_contract: panel wake, stale-panel back-off and self-stopping checks passed")
+assert(waited == 1 and Pending() == 0, "native removal without OnHide did not wake the builds")
+
+-- Only the last removal wakes the queue, even when combat defers the owner.
+local spells, inventory = Panel(), Panel()
+SmartNavigation:HandlePanelOpen(spells)
+SmartNavigation:HandlePanelOpen(inventory)
+combat = true
+local processed = 0
+Client.AfterAuraBuild("glows", function() processed = processed + 1 end)
+Client.AfterAuraBuild("removed", function() error("a cancelled owner resumed") end)
+Client.CancelAuraBuild("removed")
+assert(#spells.hooks == 1 and #inventory.hooks == 1, "the addon hooked script on a Blizzard panel")
+combat = false
+spells:Hide()
+assert(Pending() == 0 and processed == 0, "the first removal woke the builds")
+SmartNavigation:ResetVars()
+assert(Pending() == 1 and processed == 0, "native reset did not schedule the waiting work")
+Advance(0)
+assert(processed == 1 and Pending() == 0, "native reset failed to drain the last owner")
+
+-- A second panel opened before the queued callback must block the waiting builds.
+SmartNavigation:HandlePanelOpen(spells)
+Client.AfterAuraBuild("plates", function() processed = processed + 1 end)
+spells:Hide()
+SmartNavigation:HandlePanelOpen(inventory)
+Advance(0)
+assert(processed == 1 and Pending() == 0, "the old wake crossed a newly opened panel")
+inventory:Hide()
+Advance(0)
+assert(processed == 2 and Pending() == 0, "reopened panel stranded the owner")
+print("suite_aura_build_wait_contract: native close/reset, cancellation and dormant waits passed")

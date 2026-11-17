@@ -271,11 +271,11 @@ rows[2].scripts.OnClick(rows[2],"LeftButton")
 assert(not clicked and not win.bd.open,"a threat row opened a breakdown")
 
 -- Tanking: no pull row.
-threats.player={true,3,100,100,53000}
+threats.player,threats.party1={true,3,100,147,53000},{false,1,85,94,50000}
 Event("UNIT_THREAT_LIST_UPDATE","target")
 RunThreatPaint()
 assert(rows[1].nameText.text=="Me" and Text(rows[1])=="100% (53K)" and rows[4].shown==false,
-    "a tanking player still sees a pull row")
+    "taunting must set the tank share to 100% and remove the pull row")
 
 -- A tank outside the group: the pull row's share still follows the player's
 -- own numbers (96% of the tank at 80% of the pull threshold is 120%).

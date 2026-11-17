@@ -430,6 +430,20 @@ local function World(self, _, isInitialLogin)
     D.RequestPaint()
 end
 local function Roster()
+    local raid = IsInRaid()
+    raid = Public(raid) and raid == true
+    if raid ~= M.inRaid then
+        M.inRaid = raid
+        for i = 1, M.config.windowCount do
+            local win, rows = D.windows[i], M.config[D.KEYS[i].RaidRows]
+            if win and rows and rows > 0 then
+                D.StyleWindowLayout(win)
+                D.PlaceWindow(win)
+                win.dirty = true
+            end
+        end
+        D.RequestPaint()
+    end
     D.ClearIdentities()
     D.SnapshotIdentities()
     D.PruneRemoteSpecs()
@@ -437,6 +451,13 @@ local function Roster()
     if M.config.visibility ~= VISIBILITY.GROUP then return end
     D.EvaluateVisibility()
     D.RequestPaint()
+end
+
+local function WantsRaidRows(c)
+    for i = 1, c.windowCount do
+        if (c[D.KEYS[i].RaidRows] or 0) > 0 then return true end
+    end
+    return false
 end
 local function SpecChanged(_, _, unit)
     if not Public(unit) or type(unit) ~= "string" then return end
@@ -517,7 +538,7 @@ function D.UpdateEvents()
     Want("INSPECT_READY", M.remoteSpecs, D.RemoteSpecReady)
     Want("ZONE_CHANGED_NEW_AREA", possible, World)
     Want("GROUP_ROSTER_UPDATE", (possible and c.visibility == VISIBILITY.GROUP) or (shown and D.WantsGroupDetails())
-        or threat or M.remoteSpecs, Roster)
+        or threat or M.remoteSpecs or possible and WantsRaidRows(c), Roster)
     local mythic = D.WantsMythicEvents()
     Want("CHALLENGE_MODE_START", mythic, KeyStart)
     Want("CHALLENGE_MODE_COMPLETED", mythic, D.MythicEnd)
@@ -603,6 +624,8 @@ end
 
 function M:Refresh()
     local c = self.config
+    local raid = IsInRaid()
+    self.inRaid = Public(raid) and raid == true
     NS.HostBridge.WatchIconSkins("damageMeter", c.iconSkin ~= "CUSTOM")
     SyncHistoryVisibility()
     D.InvalidateTargets()
@@ -683,7 +706,7 @@ local function Movers()
                 local win = D.windows[index]
                 return win and win.frame
             end,
-            isEnabled = function() return index <= M.config.windowCount end,
+            isEnabled = function() return index <= M.config.windowCount and not D.AnchorParent(index) end,
             historyKeys = { keys.Width, keys.Height },
             extraControls = {
                 { id = "width", label = "Width", kind = "number", min = 150, max = 900, step = 1,

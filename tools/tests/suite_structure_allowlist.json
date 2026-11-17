@@ -16,6 +16,66 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_Modules/ObjectivesVoice.lua",
+   "kind": "addon",
+   "reason": "Spoken publishes VoiceOver only when its Quests addon loads.",
+   "symbol": "voice (= VoiceOver)"
+  },
+  {
+   "file": "MSUF_Suite_Modules/ObjectivesVoice.lua",
+   "kind": "addon",
+   "reason": "Optional Spoken Quests tracker API checks pack coverage and the player setting.",
+   "symbol": "overlay.ShowsTrackerButton"
+  },
+  {
+   "file": "MSUF_Suite_Modules/ObjectivesVoice.lua",
+   "kind": "addon",
+   "reason": "Optional Spoken Quests API binds playback to a Suite-owned button.",
+   "symbol": "overlay.BindPlayButton"
+  },
+  {
+   "file": "MSUF_Suite_Modules/ObjectivesVoice.lua",
+   "kind": "addon",
+   "reason": "Optional Spoken Quests API reports the active quest playback state.",
+   "symbol": "overlay.FollowQueue"
+  },
+  {
+   "file": "MSUF_Suite_Modules/ObjectivesVoice.lua",
+   "kind": "addon",
+   "reason": "Optional Spoken Quests API handles its localized playback tooltip.",
+   "symbol": "overlay.ShowPlayTip"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeBars.lua",
+   "kind": "addon",
+   "reason": "MSUF 6.x publishes this optional live castbar pool globally. MSUF 7.x publishes it in PublicGlobals. Clients without matching units may have no pool.",
+   "symbol": "MSUF_BossCastbars"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeBars.lua",
+   "kind": "addon",
+   "reason": "MSUF 6.x publishes this optional live castbar pool globally. MSUF 7.x publishes it in PublicGlobals. Clients without matching units may have no pool.",
+   "symbol": "MSUF_ArenaCastbars"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeBars.lua",
+   "kind": "addon",
+   "reason": "This MSUF live swing timer frame is created only when Swing Timers are enabled on WoW Forever.",
+   "symbol": "main (= MSUF_SwingTimer_main)"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeBars.lua",
+   "kind": "addon",
+   "reason": "This MSUF live swing timer frame is created only when Swing Timers are enabled on WoW Forever.",
+   "symbol": "off (= MSUF_SwingTimer_off)"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeBars.lua",
+   "kind": "addon",
+   "reason": "This MSUF live swing timer frame is created only when Swing Timers are enabled on WoW Forever.",
+   "symbol": "ranged (= MSUF_SwingTimer_ranged)"
+  },
+  {
    "file": "MSUF_Suite_QualityOfLife/KeystoneReadyCheck.lua",
    "kind": "addon",
    "reason": "ChallengesKeystoneFrame belongs to load-on-demand Blizzard_ChallengesUI. Wait for ADDON_LOADED before attaching the optional controls.",
@@ -182,6 +242,12 @@
    "kind": "client",
    "reason": "Retail Command Demon resolution uses C_Spell.GetOverrideSpell (Blizzard_ActionBar/Mainline/AssistedCombatManager.lua). This capability guard mirrors MSUF interrupt readiness: only when the override reader is absent may a known player Spell Lock be used; an available reader remains authoritative. The module returns before this path on Forever. suite_enemy_cast_stack_contract covers absent-reader fallback, wrong demon, secret override and pet precedence.",
    "symbol": "override (= C_Spell.GetOverrideSpell)"
+  },
+  {
+   "file": "MSUF_Suite_DamageMeter/CombatDetails.lua",
+   "kind": "addon",
+   "reason": "Blizzard_PlayerSpells loads on demand. The remote spec refresh waits while the native talents frame uses the shared inspect buffer.",
+   "symbol": "spells (= PlayerSpellsFrame)"
   },
   {
    "file": "MSUF_Suite_DamageMeter/Data.lua",
@@ -2202,12 +2268,6 @@
   {
    "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
    "kind": "addon",
-   "reason": "MSUF2 widget export (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts) that asks whether a docked preview opens expanded; without it the preview keeps its fixed size when the page activates.",
-   "symbol": "M.ShouldExpandFixedPreview"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
-   "kind": "addon",
    "reason": "MSUF2.PreviewSelectionBar (Shell/Menu2/MSUF_Menu2_PreviewSelectionBar.lua on the Main and Classic hosts); without it the preview has no selection bar to show or hide.",
    "symbol": "SB (= P.M.PreviewSelectionBar)"
   },
@@ -2226,26 +2286,8 @@
   {
    "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
    "kind": "addon",
-   "reason": "P.M is MSUF2 (Menu/Bridge.lua). RegisterControlMetadata (Shell/Menu2/MSUF_Menu2_ControlCatalog.lua on the Main and Classic hosts) adds search metadata to Quick Setup; without it the button works unregistered.",
-   "symbol": "P.M.RegisterControlMetadata"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
-   "kind": "state",
-   "reason": "NameplatesEditor.lua Editor.Create sets it only when the page builds a nameplate preview (W.FixedPreviewSection returned a section); without a preview an area switch has no sample to show.",
-   "symbol": "P.ShowNameplatesSample"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
-   "kind": "addon",
    "reason": "W is MSUF2's widget table. AttachStickyPageHeader (Shell/Menu2/MSUF_Menu2_Widgets_PageBuilder.lua on the Classic host) keeps the area header fixed while the page scrolls, as on Class Resources; without it the header scrolls with the page.",
    "symbol": "W.AttachStickyPageHeader"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
-   "kind": "addon",
-   "reason": "W is MSUF2's widget table. RoleButton (Shell/Menu2/MSUF_Menu2_Widgets_Buttons.lua) styles Quick Setup as the green success button of Class Resources; without it Quick Setup is a plain theme button.",
-   "symbol": "W.RoleButton"
   },
   {
    "file": "MSUF_Suite_Options/Pages/QualityOfLife.lua",
@@ -3106,12 +3148,6 @@
    "reason": "Forever-only enum absent on Retail; Enable refuses missing enum before reading All. Shared TOC load with no ActionBarSet is regression-tested."
   },
   {
-   "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
-   "kind": "state",
-   "reason": "Owned preview layout callback is absent during Editor.Create initial layout and installed later by NameplatesPreviewDecor.Build; no native or host method fallback. Current/legacy expanded layout contracts exercise both cold and installed callback states.",
-   "symbol": "self.LayoutDecorTools"
-  },
-  {
    "file": "MSUF_Suite_CooldownManager/Bootstrap.lua",
    "kind": "client",
    "reason": "Retail 12.1.5 and WoW Forever have C_Timer.NewTimedSignalMap (UITimerDocumentation.lua, upstream/live 70448 and upstream/forever 70450); Retail 12.1.0 lacks it. The file keeps its C_Timer.After/NewTimer path there; suite_signal_timers_contract runs the signal map path, the older timer, data scheduler and cooldown manager contracts the C_Timer path.",
@@ -3310,7 +3346,7 @@
    "symbol": "S.ChatDetachedWindows"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/ChatWorkspace.lua",
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export for optional search/keyboard metadata. Older hosts can lack it; the topic buttons still select their groups. Same external-host contract as the existing NameplatesWorkspace selector.",
    "symbol": "P.M.RegisterControlMetadata"
@@ -3532,13 +3568,13 @@
    "symbol": "M.ShowStatusFeedback"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/ChatWorkspace.lua",
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
    "kind": "addon",
    "reason": "The 7.0 MSUF theme provides tab width measurement and layout tracking. The 6.5 and frozen 6.22 hosts use the existing fixed-width layout.",
    "symbol": "P.T.TrackTabLayout"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/ChatWorkspace.lua",
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
    "kind": "addon",
    "reason": "The 7.0 MSUF theme provides tab width measurement and layout tracking. The 6.5 and frozen 6.22 hosts use the existing fixed-width layout.",
    "symbol": "measureWidth (= P.T.MeasureTabWidth)"
@@ -3695,13 +3731,13 @@
   },
   {
    "file": "MSUF_Suite/Core/NameplateExtensions.lua",
-   "symbol": "driver",
+   "symbol": "driver (= NamePlateDriverFrame)",
    "kind": "client",
    "reason": "Retail loads NamePlateDriverFrame and GetClassNameplateBar from Blizzard_NamePlates; the Forever TOC excludes class mechanic bars. This cold capability report can run before the Retail nameplate addon loads. suite_nameplate_extensions_contract covers absent and active native bars."
   },
   {
    "file": "MSUF_Suite/Core/NameplateExtensions.lua",
-   "symbol": "driver.GetClassNameplateBar",
+   "symbol": "driver.GetClassNameplateBar (= NamePlateDriverFrame)",
    "kind": "client",
    "reason": "Retail loads NamePlateDriverFrame and GetClassNameplateBar from Blizzard_NamePlates; the Forever TOC excludes class mechanic bars. This cold capability report can run before the Retail nameplate addon loads. suite_nameplate_extensions_contract covers absent and active native bars."
   },
@@ -3710,6 +3746,36 @@
    "kind": "addon",
    "symbol": "provider.ResolveTypography",
    "reason": "Older MSUF hosts can omit the read-only portable typography resolver. Updated 6.5 and 7.0 providers resolve live inherited font groups, while absent providers retain the portable fallback."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
+   "kind": "addon",
+   "reason": "Hosts without the optional Menu2 SectionSwitch widget display the toggle in the section body.",
+   "symbol": "headerSwitch (= P.W.SectionSwitch)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
+   "kind": "addon",
+   "reason": "Menu2 hosts without SectionSwitch display the Basics switch in the body of the accordion.",
+   "symbol": "P.W.SectionSwitch"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
+   "kind": "addon",
+   "reason": "Menu2 supplies SetOpenImmediate on newer collapsible entries; older entries still build their panel when the section is opened.",
+   "symbol": "entry.SetOpenImmediate"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua",
+   "kind": "addon",
+   "reason": "The MSUF ScopeOverrideBar widget is optional. Aura container and tool selectors use settings rows on older hosts.",
+   "symbol": "P.W.ScopeOverrideBar"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "state",
+   "reason": "Menu2 owns the current page scroll frame. Reset scroll when the native frame is available after switching nameplate type.",
+   "symbol": "scroll.SetVerticalScroll"
   }
  ]
 }

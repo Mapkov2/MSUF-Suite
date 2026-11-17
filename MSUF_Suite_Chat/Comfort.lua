@@ -24,7 +24,7 @@ end
 
 local function ChatWindowsChanged()
     if not M.active or not M.config.noChatFade then return end
-    -- The native window post-hooks can run before the context's event deferral.
+    -- Suite.ChatState reports can arrive in combat.
     if NS.InCombat() then
         S.Queue("chatComfort")
         return
@@ -40,20 +40,20 @@ local function ChatWindowsChanged()
     end
 end
 
+-- New and temporary windows arrive with Suite.ChatState's window report
+-- (chat window events, whisper events and the open-window check), never
+-- through a post-hook on FCF_OpenNewWindow or FCF_OpenTemporaryWindow,
+-- which run inside the tab menu and the whisper router.
+local COMFORT_WATCH = { windows = ChatWindowsChanged }
+
 local function SyncFading(self)
     if not self.config.noChatFade then
         ReleaseFading()
-        self.context:RemoveEvent("UPDATE_CHAT_WINDOWS")
-        self.context:RemoveEvent("UPDATE_FLOATING_CHAT_WINDOWS")
+        NS.ChatState.Unwatch(self)
         return
     end
     ChatWindowsChanged()
-    self.context:Event("UPDATE_CHAT_WINDOWS", ChatWindowsChanged)
-    self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", ChatWindowsChanged)
-    if self.hooked then return end
-    hooksecurefunc("FCF_OpenNewWindow", ChatWindowsChanged)
-    hooksecurefunc("FCF_OpenTemporaryWindow", ChatWindowsChanged)
-    self.hooked = true
+    NS.ChatState.Watch(self, COMFORT_WATCH)
 end
 
 function M:Refresh()
@@ -70,6 +70,7 @@ function M:Enable()
 end
 
 function M:Disable()
+    NS.ChatState.Unwatch(self)
     ReleaseFading()
     self.applied = nil
 end

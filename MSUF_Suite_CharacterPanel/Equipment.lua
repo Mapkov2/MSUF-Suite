@@ -180,6 +180,29 @@ function Gear.ListReport(groups, details, model, reader)
     return groups
 end
 
+function Gear.Demand(tab, custom)
+    local equipment = tab == "overview" or tab == "gear"
+    return equipment or custom and custom.audit, equipment or custom and custom.durability
+end
+
+function Gear.SyncPlayer(state)
+    local custom, model = state.custom, state.gear
+    local wantsGear, wantsDurability = Gear.Demand(state.tab, custom)
+    local refreshGear = wantsGear and state.reader and state.gearStale
+    local refreshDurability = wantsDurability and state.durabilityStale
+    if refreshGear then
+        state.dirtyAll, state.dirtySlot = nil, nil
+        local level = NS.Number(UnitLevel("player"))
+        Gear.Read(state.reader, model, state.unit, state.guid, level)
+    end
+    if refreshDurability then
+        state.dirtyDurability = nil
+        Gear.Durability(model)
+    end
+    if model.auditFocus and (refreshGear or refreshDurability) then Gear.Mark(model, model.auditFocus) end
+    state.gearStale, state.durabilityStale = not wantsGear or not state.reader, not wantsDurability
+end
+
 function Gear.Compare(groups, own, inspect)
     local group = inspect.comparison
     if not group then

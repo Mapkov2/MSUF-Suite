@@ -44,6 +44,7 @@ local DROPDOWN_POPUP_SPEC = {
     maxDepth = 6,
     maxNodes = 320,
     menuPopup = true,
+    fadeOnly = true,
     registerDynamicRows = true,
     allowImplicitProtected = true,
 }
@@ -63,16 +64,20 @@ local function OnMenuOpen(state, dropdown)
     if not Safety.IsCompositorManaged(menu) then
         NS.GenericWindows.ApplyFrame(menu, state.menuOwner, DROPDOWN_POPUP_SPEC)
     end
+    if NS.NativeMenuRows and Safety.IsCompositorManaged(menu)
+        and NS.NativeMenuRows.Track(dropdown, menu, state.menuOwner) then return end
     Checkmarks.TrackFrame(menu, state.menuOwner)
 end
 
 local function OnMenuClose(state, _, menu)
+    if NS.NativeMenuRows then NS.NativeMenuRows.Close(state.button) end
     FocusClose(state, menu)
 end
 
 function Checkmarks.UntrackDropdown(button)
     local state = Checkmarks.dropdowns[button]
     if not state then return false end
+    if NS.NativeMenuRows then NS.NativeMenuRows.Close(button, true) end
     FocusRelease(state)
     if type(button.UnregisterCallback) == "function" then
         button:UnregisterCallback(state.event, state)

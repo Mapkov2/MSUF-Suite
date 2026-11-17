@@ -18,6 +18,10 @@ local function Prepare(owner, config)
     local record = records[owner]
     if not record then
         local group = owner:CreateAnimationGroup()
+        -- The focus callback runs before ActivateChat sets the box to 1;
+        -- without this the group would end on the alpha it found at Play
+        -- (the IM style's 0.35) and the box would stay dim while typing.
+        group:SetToFinalAlpha(true)
         local alpha = group:CreateAnimation("Alpha")
         alpha:SetFromAlpha(0)
         alpha:SetToAlpha(1)
@@ -33,7 +37,6 @@ local function Prepare(owner, config)
         slide:SetSmoothing("OUT")
         record = { group = group, alpha = alpha, start = start, slide = slide }
         records[owner] = record
-        owner:HookScript("OnHide", Stop)
     end
     local duration = config.inputAnimationDuration or 0.18
     local height = owner:GetHeight()
@@ -54,19 +57,38 @@ local function Activated(owner)
     record.group:Play()
 end
 
+-- The live input plays on focus and stops on release or hide. These arrive
+-- from Suite.ChatState's EventRegistry callbacks for permanent windows only;
+-- a script hook on Blizzard's edit box would run inside ActivateChat and
+-- DeactivateChat ahead of their chatType writes. Each callback runs before
+-- Blizzard's own handler: a box that keeps its text stays active when it
+-- loses the focus (ShouldDeactivateChatOnEditFocusLost), so its fade ends
+-- at 1; an empty box stops before Blizzard deactivates or hides it.
+local function Released(input)
+    local text = input:GetText()
+    if S.Public(text) and text ~= "" then return end
+    Stop(input)
+end
+
 function C.ApplyInputAnimation(self, input)
+    if not P.NS.ChatState.IsPermanentBox(input) then return end
     local record = Prepare(input, self.config)
     if not record then return end
     record.context = self.context
-    if not record.hooked then
-        input:HookScript("OnEditFocusGained", Activated)
-        input:HookScript("OnEditFocusLost", Stop)
-        record.hooked = true
+end
+
+function C.InputAnimationEvent(kind, input)
+    if kind == "focus" then
+        Activated(input)
+    elseif kind == "release" then
+        Released(input)
+    elseif kind == "hide" then
+        Stop(input)
     end
 end
 
 -- The sample uses exactly the same native animation group as the live input.
--- Animation transforms neither change anchors nor write the box's base alpha.
+-- Animation transforms never change anchors; the group ends at alpha 1.
 function S.ChatPreviewInputAnimation(owner, config)
     local record = Prepare(owner, config)
     if record then

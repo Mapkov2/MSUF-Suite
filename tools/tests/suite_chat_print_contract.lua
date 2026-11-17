@@ -1,6 +1,11 @@
 -- Suite delivery uses the native AddMessage entry point and its post-hooks.
 -- Compare it with the original print path against a wrapped, full buffer.
 local root = assert(arg[1])
+FCF_IsChatWindowIndexActive = function() return true end
+ChatFrameUtil = {
+    AddMessageEventFilter = function() end,
+    RemoveMessageEventFilter = function() end,
+}
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local function eq(a, b, label) assert(a == b, label .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 local secret = {}
@@ -26,7 +31,7 @@ S.Dispatch = function(callback, ...)
     if not ok then reported = reported + 1; return end
     return result
 end
-local NS = { Suite = S }
+local NS = { Suite = S, Safety = { IsForbidden = function() return false end } }
 local private = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Chat/Shared.lua"))("MSUF_Suite_Chat", private)
 local C, M = private.Chat, private.Chat.M

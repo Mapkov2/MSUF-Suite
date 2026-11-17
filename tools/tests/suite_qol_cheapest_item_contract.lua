@@ -55,6 +55,11 @@ end
 -- Blizzard's side the module reads (ContainerFrame.lua, live and forever)
 -- and the Suite dialogs, chat and the client's delete: recorded.
 local function Client(W)
+    C_Texture = { GetAtlasInfo = function() return W.deleteAtlas and {} or nil end }
+    C_Item.GetItemInfoInstant = function(id)
+        local item = W.data[id]
+        if item then return id, nil, nil, item.equipLoc, nil, item.class, item.subclass end
+    end
     ContainerFrameUtil_GetShownFrameForID = function(id)
         if W.CF.shown and (id == nil or id >= 0 and id <= 4) then return W.CF end
     end
@@ -73,7 +78,9 @@ local function Client(W)
     W.S.Confirm = function(key, data) W.questions[#W.questions + 1] = { key = key, data = data } end
     W.S.HideQuestion = function(key) W.hidden[#W.hidden + 1] = key end
     W.S.Print = function(text) W.prints[#W.prints + 1] = text end
-    W.S.ContextMenu = function(owner, generator) W.menus[#W.menus + 1] = { owner = owner, generator = generator } end
+    W.S.ContextMenu = function(owner, generator, ...)
+        W.menus[#W.menus + 1] = { owner = owner, generator = generator, args = { ... } }
+    end
     DeleteCursorItem = function()
         assert(not W.combat, "an item was deleted in combat lockdown")
         W.deleted[#W.deleted + 1] = W.cursor
@@ -121,6 +128,7 @@ end
 local function World(options)
     options = options or {}
     local W = Harness.New(root, { client = flavor, config = options.bags, unprotectedBags = options.unprotectedBags })
+    W.deleteAtlas = options.deleteAtlas ~= false and flavor == "Mainline"
     Items(W)
     Client(W)
     W.C = QualityOfLife(W, options.tool)
@@ -176,17 +184,24 @@ local function MenuRoot()
     function methods:CreateTitle(text) return Add(self, "title", text) end
     function methods:CreateDivider() return Add(self, "divider") end
     function methods:CreateButton(text, callback) return Add(self, "button", text, callback) end
+    function methods:SetEnabled(enabled) self.enabled = enabled end
     function methods:SetTooltip(fn) self.tooltip = fn end
     function methods:SetScrollMode(extent) self.scroll = extent end
     return setmetatable({ children = {} }, { __index = methods })
 end
 
-local function OpenMenu(W, button)
-    Run(W, button, "OnClick", "RightButton")
-    local menu = assert(W.menus[#W.menus], "right-click opened no list")
+local function OpenMenu(W, button, mouseButton)
+    local count = #W.menus
+    Run(W, button, "OnClick", mouseButton or "RightButton")
+    local menu = assert(W.menus[count + 1], "click opened no list")
     local list = MenuRoot()
-    W.Insecure(menu.generator, menu.owner, list)
+    W.Insecure(menu.generator, menu.owner, list, unpack(menu.args))
     return list
+end
+
+local function RequestFirst(W, button)
+    local menu = OpenMenu(W, button)
+    W.Insecure(menu.children[2].children[1].callback)
 end
 
 local function Find(node, text)
@@ -201,6 +216,12 @@ do
     local C, V = W.C, W.V
     local tool = assert(V.cheapest, "Suite Bags did not show the tool beside Filters")
     assert(tool:IsShown() and C:Usable(), "the tool is missing from the open bag")
+    local icon = assert(C.tools[tool], "the bag tool needs an icon")
+    if flavor == "Forever" then
+        assert(icon.texture == "Interface\\Buttons\\UI-GroupLoot-Pass-Up", "Forever must use the stock pass texture")
+    else
+        assert(icon.atlas == "common-icon-delete", "Retail should use its delete atlas when available")
+    end
     local _, _, _, searchRight = V.smartSearch:GetPoint(2)
     local _, _, _, toolRight = tool:GetPoint(1)
     assert(searchRight == -132 and toolRight == -100, "the tool does not sit between search and Filters")
@@ -238,6 +259,20 @@ do
     assert(#W.taint == 0 and #W.errors == 0, "modeled native failure: " .. table.concat(W.taint, ", "))
 end
 
+if flavor == "Forever" then
+    local W = World({ tool = { quality = 3 } })
+    local dust = 413
+    W.Define(dust, { name = "Strange Dust", quality = 1, sellPrice = 1, class = Enum.ItemClass.Tradegoods, subclass = 12 })
+    W.Put(0, 10, dust, 1)
+    local function OffersDust()
+        for _, row in ipairs(W.C:Candidates(10)) do if row.itemID == dust then return true end end
+        return false
+    end
+    assert(not OffersDust(), "enchanting material is protected with the default enabled")
+    W.S.Set("cheapestItem", "keepEnchanting", false)
+    assert(OffersDust(), "the optional material protection can be disabled")
+end
+
 ------------------------------------------------------------------ hover, mark and deleting
 do
     local W = World({ tool = { confirm = false } })
@@ -250,13 +285,14 @@ do
     assert(mark[1]:IsShown() and #mark == 5, "the mark is incomplete")
     assert(Listens(W, "BAG_UPDATE_DELAYED"), "a hover does not follow bag changes")
 
-    -- A plain click deletes the cheapest Poor stack at once.
-    Run(W, tool, "OnClick", "LeftButton")
+    -- An explicit Delete from the list still honors the Poor confirmation setting.
+    RequestFirst(W, tool)
     assert(#W.questions == 0, "a Poor stack asked although asking is off")
     assert(#W.deleted == 1 and W.deleted[1].id == FANG and not W.Item(0, 1), "the cheapest stack was not deleted")
     assert(W.prints[1] and W.prints[1]:find("5c", 1, true), "the delete was not reported")
     W.Settle()
     W.Advance(.2)
+    Run(W, tool, "OnEnter")
     assert(W.GameTooltip:Has("item:" .. BONE), "the hover did not move on to the next stack")
     assert(not mark[1]:IsShown(), "the deleted slot kept its mark")
     Run(W, tool, "OnLeave")
@@ -264,7 +300,7 @@ do
 
     -- Above Poor the module always asks, and accepts only the unchanged stack.
     W.S.Set("cheapestItem", "quality", W.NS.CheapestItemQuality.COMMON)
-    Run(W, tool, "OnClick", "LeftButton")
+    RequestFirst(W, tool)
     local question = assert(W.questions[1], "a Common stack was deleted without asking")
     assert(question.key == QUESTION and question.data.text_arg1 == "item:" .. LINEN, "the question names the wrong stack")
     W.Put(0, 4, LINEN, 2)
@@ -272,18 +308,18 @@ do
     W.Settle()
     W.Insecure(question.data.callback)
     assert(#W.deleted == 1 and W.Item(0, 4).count == 2, "a stack that changed after the question was deleted")
-    Run(W, tool, "OnClick", "LeftButton")
+    RequestFirst(W, tool)
     W.Insecure(W.questions[2].data.callback)
     assert(#W.deleted == 2 and W.deleted[2].id == LINEN and W.deleted[2].count == 2, "the confirmed stack was not deleted")
 
     -- A busy cursor or a closed bag: nothing is deleted, nothing is picked up.
     local pickups = #W.calls.pickups
     W.cursor = { id = 999, link = "item:999", count = 1 }
-    Run(W, tool, "OnClick", "LeftButton")
+    RequestFirst(W, tool)
     assert(#W.deleted == 2 and #W.calls.pickups == pickups, "a delete ran with an item on the cursor")
     W.cursor = nil
     W.S.Set("cheapestItem", "confirm", true)
-    Run(W, tool, "OnClick", "LeftButton")
+    RequestFirst(W, tool)
     local pending = assert(W.questions[#W.questions], "no question for the next stack")
     W.CloseBags()
     W.Insecure(pending.data.callback)
@@ -292,11 +328,62 @@ do
     assert(#W.taint == 0 and #W.errors == 0, "modeled native failure: " .. table.concat(W.taint, ", "))
 end
 
+------------------------------------------------------------------ three stacks
+do
+    local W = World({ tool = { confirm = false } })
+    local tool = W.V.cheapest
+    local left, right = OpenMenu(W, tool, "LeftButton"), OpenMenu(W, tool)
+    assert(#W.deleted == 0 and #W.questions == 0, "opening either menu must only show the choices")
+    local action = left.children[2]
+    assert(action.text == "Destroy the three cheapest stacks" and action.enabled, "left-click needs the bulk action at the top")
+    assert(#left.children == #right.children + 1 and left.children[1].text == right.children[1].text)
+    for i = 2, #right.children do
+        assert(left.children[i + 1].text == right.children[i].text, "left-click must keep the right-click list")
+    end
+    W.Insecure(action.callback)
+    local question = assert(W.questions[1], "bulk deletion needs a confirmation")
+    for _, id in ipairs({ FANG, BONE, CLOTH }) do
+        assert(question.data.text_arg1:find("item:" .. id, 1, true), "confirmation must name each stack")
+    end
+    assert(#W.deleted == 0, "selecting the bulk action deleted without confirmation")
+    W.Put(0, 2, CLOTH, 3)
+    W.Insecure(question.data.callback)
+    assert(#W.deleted == 0 and #W.calls.pickups == 0, "a changed stack must abort the whole batch before pickup")
+
+    action = OpenMenu(W, tool, "LeftButton").children[2]
+    W.Insecure(action.callback)
+    question = W.questions[2]
+    local delete = DeleteCursorItem
+    DeleteCursorItem = function()
+        if #W.deleted == 0 then delete() end
+    end
+    W.Insecure(question.data.callback)
+    DeleteCursorItem = delete
+    assert(#W.deleted == 1 and #W.calls.pickups == 2 and W.Item(1, 3), "a blocked delete must stop the remaining batch")
+end
+
+do
+    local W = World()
+    local tool = W.V.cheapest
+    local action = OpenMenu(W, tool, "LeftButton").children[2]
+    W.Insecure(action.callback)
+    W.Insecure(W.questions[1].data.cancelCallback)
+    W.Insecure(W.questions[1].data.callback)
+    assert(#W.deleted == 0, "a cancelled confirmation must stay cancelled")
+    W.Insecure(action.callback)
+    W.Insecure(W.questions[2].data.callback)
+    assert(#W.deleted == 3 and W.deleted[1].id == FANG and W.deleted[2].id == BONE and W.deleted[3].id == CLOTH,
+        "the batch must destroy the three displayed stacks in order")
+    assert(W.Item(0, 4).id == LINEN and not OpenMenu(W, tool, "LeftButton").children[2].enabled,
+        "the batch must be disabled with fewer than three eligible stacks")
+end
+
 ------------------------------------------------------------------ the list
 do
     local W = World()
     local C, tool = W.C, W.V.cheapest
     local menu = OpenMenu(W, tool)
+    assert(menu.children[1].text == "Cheapest items to destroy", "the menu title must name the destructive action")
     local entries = {}
     for _, child in ipairs(menu.children) do
         if child.kind == "button" and child.text:find("item:", 1, true) then entries[#entries + 1] = child end
@@ -323,9 +410,10 @@ end
 ------------------------------------------------------------------ Blizzard's bag window
 do
     -- Without Suite Bags: on the title, left of Blizzard's close button.
-    local W = World({ bags = { enabled = false } })
+    local W = World({ bags = { enabled = false }, deleteAtlas = false })
     local C = W.C
     local native = assert(C.natives[W.CF], "no button on Blizzard's bag window")
+    assert(C.tools[native].texture == "Interface\\Buttons\\UI-GroupLoot-Pass-Up", "a missing delete atlas needs a fallback")
     local point, relative, _, x = native:GetPoint(1)
     assert(native:IsShown() and point == "TOPRIGHT" and relative == W.CF and x == -W.CF.CloseButton:GetWidth() - 2,
         "the title button is not left of the close button")
@@ -373,7 +461,8 @@ do
     assert(idle == 0, "bag refreshes ran " .. idle .. " lines of the module without a hover")
 
     Run(W, tool, "OnEnter")
-    Run(W, tool, "OnClick", "LeftButton")
+    local action = OpenMenu(W, tool, "LeftButton").children[2]
+    W.Insecure(action.callback)
     assert(W.questions[1], "no question before combat")
     W.EnterCombat()
     assert(not tool:IsEnabled() and W.hidden[#W.hidden] == QUESTION, "combat left the button usable or its question open")
@@ -399,7 +488,7 @@ do
     W.Insecure(W.questions[1].data.callback)
     Run(W, tool, "OnClick", "LeftButton")
     Run(W, tool, "OnClick", "RightButton")
-    assert(#W.deleted == 0 and #W.menus == 0, "the module acted in combat")
+    assert(#W.deleted == 0 and #W.menus == 1, "the module acted in combat")
     W.LeaveCombat()
     W.Settle()
     assert(tool:IsEnabled() and C:Usable(), "the button did not return after combat")

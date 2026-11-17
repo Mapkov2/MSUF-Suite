@@ -30,8 +30,8 @@ local TOKENS = {
     [GOLD] = "accentBright", [GOLD_LINE] = "accent", [GOLD_LOW] = "active", [HOVER] = "hover",
 }
 local SHELL = { role = "shell", ownedArt = true }
-local PANEL_STYLE = { role = "panel", ownedArt = true }
-local CARD = { role = "card", ownedArt = true }
+local PANEL_STYLE = { role = "panel", ownedArt = true, keepGlassFill = false }
+local CARD = { role = "card", ownedArt = true, keepGlassFill = false }
 local CONTROL = { role = "button", activeRole = "navigationActive", useControlShape = true, ownedArt = true }
 local NAVIGATION = { role = "navigation", activeRole = "navigationActive", useControlShape = true, ownedArt = true, motion = true }
 local CreateFrame, CreateTexture, CreateFontString = S.CreateFrame, S.CreateTexture, S.CreateFontString
@@ -54,12 +54,13 @@ local function Fill(view, parent, layer, color, inset)
     return texture
 end
 
-local function ApplySurface(skin, frame, record)
-    local applied, reason
+local function ApplySurface(view, frame, record)
+    local skin, applied, reason = view.skin
     if skin then applied, reason = skin:SkinFrame(frame, record.style) end
     local themed = applied == true and reason == "applied"
-    if record.border then record.border:SetShown(not themed) end
-    if record.fill then record.fill:SetShown(not themed) end
+    local plain = not themed and not (view.glassLook and record.style.keepGlassFill == false)
+    if record.border then record.border:SetShown(plain) end
+    if record.fill then record.fill:SetShown(plain) end
     if record.hover then record.hover:SetShown(not themed) end
     if frame.underline then frame.underline:SetShown(frame.selected == true and not themed) end
     if themed and frame.selected then skin:SetActive(frame, true) end
@@ -69,7 +70,7 @@ end
 local function TrackSurface(view, frame, border, fill, style, hover)
     local record = { border = border, fill = fill, style = style, hover = hover }
     view.surfaces[frame] = record
-    if view.skin then ApplySurface(view.skin, frame, record) end
+    if view.skin then ApplySurface(view, frame, record) end
 end
 
 local function Surface(view, parent, color, kind, style)
@@ -161,7 +162,7 @@ local function Header(view)
     header:SetPoint("TOPLEFT", 1, -1)
     header:SetPoint("TOPRIGHT", -1, -1)
     header:SetHeight(HEADER - 1)
-    Fill(view, header, "BACKGROUND", PANEL)
+    view.headerFill = Fill(view, header, "BACKGROUND", PANEL)
     Rule(view, header, "TOP", GOLD_LINE)
 
     if not view.embedded and (not view.nativeRoot or view.nativeLayout) then
@@ -232,6 +233,7 @@ end
 
 function View:RefreshAppearance(skin, headerConfig)
     if skin and not skin:IsEnabled() then skin = nil end
+    Window.RefreshGlass(self, skin)
     RefreshPalette(self, skin)
     Window.PaintCaption(self.window)
     if self.skin ~= skin then
@@ -239,13 +241,14 @@ function View:RefreshAppearance(skin, headerConfig)
         self.skin = skin
         -- Authored window: share Basic's opening fade without discovering its children.
         if not self.embedded and skin and skin.RegisterMenu then skin:RegisterMenu(self.frame, true) end
-        for frame, record in pairs(self.surfaces) do ApplySurface(skin, frame, record) end
+        for frame, record in pairs(self.surfaces) do ApplySurface(self, frame, record) end
     elseif skin then
         skin:RefreshAll()
         for frame, record in pairs(self.surfaces) do
-            if not record.themed then ApplySurface(skin, frame, record) end
+            if not record.themed then ApplySurface(self, frame, record) end
         end
     end
+    Window.SyncGlass(self, true)
     if RefreshFonts(self) and self.tabs then self:SetTabs(self.tabs, self.tab, true) end
     self:ApplyHeaderSettings(headerConfig)
 end
@@ -432,7 +435,7 @@ local function PaintSlots(view, buttons, items, startX, startY, width, stepX, st
 end
 
 local function GroupClick(button)
-    if button.action then button.view.callbacks.group(button.action) end
+    if button.action then button.view.callbacks.group(button.action, button) end
 end
 
 local function NewCard(list)
@@ -655,6 +658,7 @@ function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups,
     if self.combatReport then Visible(self.combatReport.canvas, false) end
     Visible(self.gear, true)
     Visible(self.modelHost, withModel == true)
+    Window.SyncGlass(self)
     if self.model and withModel and self.frame:IsShown() then PaintModel(self) end
     local columnWidth = withModel and SLOT_W or WIDE_SLOT_W
     local weaponWidth = (DOLL_W - 2 * INSET - (#weapons - 1) * GROUP_GAP) / max(1, #weapons)
@@ -681,6 +685,7 @@ function View:ShowGroups(groups, combat)
     self.contentTab, self.detailSlot = self.tab, nil
     if self.gear then Visible(self.gear, false) end
     if self.reportCover then Visible(self.reportCover, true) end
+    Window.SyncGlass(self)
     PaintGroupMode(self, self.report, "combatReport", groups or GROUP_EMPTY, reset, combat)
     Text(self.hint, "")
 end
@@ -771,7 +776,7 @@ function View.New(callbacks, parent, nativeRoot, nativeLayout)
     bar:SetPoint("TOPLEFT", 1, -HEADER)
     bar:SetPoint("TOPRIGHT", -1, -HEADER)
     bar:SetHeight(TABS)
-    Fill(view, bar, "BACKGROUND", PANEL)
+    view.tabFill = Fill(view, bar, "BACKGROUND", PANEL)
     Rule(view, bar, "BOTTOM", LINE)
 
     view.body = CreateFrame("Frame", nil, frame)

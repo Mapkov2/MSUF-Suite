@@ -412,6 +412,63 @@ Check(head.insetWrites == 1 and weapon.insetWrites == 1, "the same layout rewrot
 Gear.ApplyLayout(v)
 Check(head.points[1][2] == CharacterFrame and not Gear.IsWide(), "Basic layout competed with the Suite owner")
 
+local surface = Layered(Art("Frame", 1), CharacterFrame, "HIGH")
+local flyout = Layered(Art("Frame", 1), PaperDollFrame, "HIGH")
+_G.EquipmentFlyoutFrame = flyout
+local combatAlpha
+local function AlphaFixture(frame, alpha)
+    local function CheckAlphaWrite(self)
+        local protected = self.IsProtected and self:IsProtected()
+        assert(not locked or combatAlpha and not protected, "protected native alpha write in combat")
+    end
+    frame.alpha = alpha
+    function frame:GetAlpha() return self.alpha end
+    function frame:SetAlpha(value) CheckAlphaWrite(self) self.alpha = value end
+    function frame:IsIgnoringParentAlpha() return self.ignoreAlpha == true end
+    function frame:SetIgnoreParentAlpha(value) CheckAlphaWrite(self) self.ignoreAlpha = value end
+end
+AlphaFixture(CharacterFrame, .9)
+AlphaFixture(head, 1)
+AlphaFixture(weapon, 1)
+AlphaFixture(surface, 1)
+AlphaFixture(model, 1)
+AlphaFixture(flyout, 1)
+AlphaFixture(modelControls, .8)
+local wasForever = NS.Client.isForever
+NS.Client.isForever = true
+Check(geometry.SetGlass(CharacterFrame, surface, true, true, true) and CharacterFrame.alpha == 0
+    and surface.ignoreAlpha and model.ignoreAlpha and flyout.ignoreAlpha and head.ignoreAlpha and modelControls.alpha == 0,
+    "glass did not isolate Suite art, the model and the native equipment flyout")
+Check(geometry.SetGlass(CharacterFrame, surface, true, false, true) and not model.ignoreAlpha and flyout.ignoreAlpha
+    and head.ignoreAlpha, "native equipment pages lost slot feedback or would draw the model through Glass")
+Check(geometry.SetGlass(CharacterFrame, surface, true, false, false) and not head.ignoreAlpha and not weapon.ignoreAlpha,
+    "native slot feedback would show through the reports")
+locked = true
+Check(geometry.SetGlass(CharacterFrame, surface, true, true, true) and not model.ignoreAlpha,
+    "glass changed native model display in combat")
+geometry.SetGlass(CharacterFrame, surface, false, false)
+Check(type(pending) == "function" and CharacterFrame.alpha == 0, "glass restored native art during combat")
+locked = false
+local restoreGlass = pending
+pending = nil
+restoreGlass()
+Check(CharacterFrame.alpha == .9 and not surface.ignoreAlpha and not model.ignoreAlpha and not flyout.ignoreAlpha
+    and modelControls.alpha == .8, "closing Glass did not restore native and Suite alpha ownership")
+locked, combatAlpha = true, true
+function weapon:IsProtected() return true, false end
+Check(not geometry.SetGlass(CharacterFrame, surface, true, true, true) and CharacterFrame.alpha == .9 and not surface.ignoreAlpha,
+    "a protected slot allowed a partial Glass activation in combat")
+weapon.IsProtected = nil
+local alphaReader = CharacterFrame.GetAlpha
+CharacterFrame.GetAlpha = function() end
+Check(not geometry.SetGlass(CharacterFrame, surface, true, true, true) and CharacterFrame.alpha == .9 and not surface.ignoreAlpha,
+    "an unreadable native alpha allowed a partial Glass activation")
+CharacterFrame.GetAlpha = alphaReader
+Check(geometry.SetGlass(CharacterFrame, surface, true, true, true) and CharacterFrame.alpha == 0 and model.ignoreAlpha,
+    "an unprotected first combat open was left opaque")
+combatAlpha = false
+NS.Client.isForever = wasForever
+
 locked = true
 Check(not geometry.Apply(CharacterFrame, plan), "the Suite reapplied native geometry during combat")
 geometry.Release(CharacterFrame)
@@ -437,6 +494,8 @@ Check(closeAnchor == closePoint[1] and closeRelative == closePoint[2] and closeR
     and closeX == closePoint[4] and closeY == closePoint[5] and close.scale == 1 and close.level == 6,
     "Basic did not get its original Close anchor, scale and layer back")
 Check(not geometry.WindowAction(CharacterFrame, "release"), "released geometry still offered native window actions")
+Check(CharacterFrame.alpha == .9 and not surface.ignoreAlpha and not flyout.ignoreAlpha and not model.ignoreAlpha,
+    "releasing native layout retained the Glass backdrop override")
 local _, restoredControlAnchor, _, _, restoredControlY = modelControls:GetPoint(1)
 Check(restoredControlAnchor == leftPane and restoredControlY == -40 and modelControls.level == 51 and modelControls.strata == "MEDIUM"
     and PaperDollInnerBorderBottom2.alpha == 0.6, "stock model controls or borders were left in the Suite layout")

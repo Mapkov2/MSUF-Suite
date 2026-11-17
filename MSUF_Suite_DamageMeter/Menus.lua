@@ -68,6 +68,9 @@ function D.SetWindowType(win, meterType, writes)
     if win.meterType == meterType then return end
     D.ClearTarget(win)
     win.meterType, win.cfgType = meterType, meterType
+    if M.style.numberFormat == D.VALUE_FORMAT.COLUMNS then
+        for _, row in pairs(win.rows) do row.styleGen = nil end
+    end
     if not writes and win.styleGen == M.styleGen then D.StyleHeader(win) end
     D.SyncWatch()
     -- Threat listens only while a shown window shows it.

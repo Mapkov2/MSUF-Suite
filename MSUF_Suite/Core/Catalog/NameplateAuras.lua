@@ -38,6 +38,12 @@ local function Rule(rule, short, fields)
     return rule
 end
 
+local function ClickthroughRule(prefix, name)
+    local label = "Let clicks pass through nameplate auras"
+    return Rule(B.Choice(prefix .. "Clickthrough", NS.Text("%s: %s"):format(name, NS.Text(label)), 1,
+        Model.ClickthroughChoices), label)
+end
+
 local function PointLabels()
     local labels = { "Global setting" }
     for _, label in ipairs(NS.AnchorLabels) do labels[#labels + 1] = label end
@@ -93,7 +99,7 @@ local function BehaviorRules(container, prefix, L)
     }
 end
 
-local function StyleRules(prefix, L)
+local function StyleRules(prefix, L, name)
     local points = PointLabels()
     return {
         Rule(B.Tooltip(B.Bool(prefix .. "IconSkin", L("%s use MSUF icon skin"), false),
@@ -102,6 +108,7 @@ local function StyleRules(prefix, L)
         Rule(B.Number(prefix .. "Zoom", L("%s icon zoom (percent)"), 100, 100, 200, 5), "Icon Zoom (%)"),
         Rule(B.Number(prefix .. "Alpha", L("%s opacity (percent)"), 100, 10, 100, 5), "Opacity"),
         Rule(B.Bool(prefix .. "Tooltip", L("%s tooltip"), true), "Tooltip"),
+        ClickthroughRule(prefix, name),
         Rule(B.Number(prefix .. "Padding", L("%s lane padding"), 0, 0, 16), "Lane Padding"),
         Rule(B.Bool(prefix .. "Dispel", L("%s dispel-type border"), true), "Dispel-type Border"),
         Rule(B.Bool(prefix .. "StackText", L("%s stack count"), true), "Stack count"),
@@ -153,11 +160,15 @@ for _, scope in ipairs(Model.Scopes) do
     for _, row in ipairs(Model.NativeRows) do
         local prefix = Model.Prefix(scope, row)
         local name = NS.Text("%s: %s"):format(NS.Text(scope.label), NS.Text(row.label))
+        local clickthrough = ClickthroughRule(prefix, name)
         B.Section(id, prefix, name, {
             Rule(B.Number(prefix .. "Scale", NS.Text("%s icon size (percent)"):format(name), 100, 50, 200, 5), "Icon size (%)"),
             Rule(B.Number(prefix .. "Layer", NS.Text("%s layer"):format(name), 0, 0, 30), "Layer (0-30)"),
             Rule(B.Number(prefix .. "Alpha", NS.Text("%s opacity (percent)"):format(name), 100, 10, 100, 5), "Opacity"),
+            clickthrough,
         })
+        spec.look.visualKeys[clickthrough.key] = true
+        for _, preset in pairs(spec.look.presets) do preset[clickthrough.key] = clickthrough.default end
     end
     for _, container in ipairs(Model.Containers) do
         local prefix = Model.Prefix(scope, container)
@@ -165,7 +176,7 @@ for _, scope in ipairs(Model.Scopes) do
         local function L(format) return NS.Text(format):format(name) end
         sections[prefix] = true
         for _, list in ipairs({ SetupRules(scope, container, prefix, L), LayoutRules(container, prefix, L),
-            BehaviorRules(container, prefix, L), StyleRules(prefix, L), ListRules(scope, container, name) }) do
+            BehaviorRules(container, prefix, L), StyleRules(prefix, L, name), ListRules(scope, container, name) }) do
             B.Section(id, prefix, name, list)
         end
     end

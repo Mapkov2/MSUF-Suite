@@ -1,12 +1,13 @@
 -- Nameplate auras, laid out like MSUF's unit frame Auras: Buffs, Debuffs,
--- Custom 1-3 and Dots on target for enemy and for friendly plates. Buffs and
--- Debuffs stay Blizzard's lists until they are made Visible; then the Suite
--- draws them and hides Blizzard's list of that kind only. Covers the cold
+-- Control effects, Custom 1-3 and Dots on target. Buffs and Debuffs use
+-- the built-in lists. Covers the cold
 -- model and its catalog rules, the migration of the former tracked DoT
 -- slots, the native aura container runtime and the options workspace with
 -- its preview.
 local root = assert(arg[1], "repository root required")
 local up, out = root, root
+wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
+canaccesstable = function(t) return t.accessible ~= false end
 
 -- Model, catalog and migration
 do
@@ -41,7 +42,7 @@ do
         for _, c in ipairs(plan.scopes[scope]) do if c.key == key then return c end end
     end
     local count = 0 for _ in pairs(spec.rules) do count = count + 1 end
-    assert(count > 350, "container rules are missing")
+    assert(count > 255, "container rules are missing")
     -- every tool key exists, every rule gated
     for _, scope in ipairs(M.Scopes) do for _, c in ipairs(M.Containers) do
         for _, tool in ipairs(M.Tools[c.kind]) do
@@ -49,13 +50,21 @@ do
         end
         assert(spec.rules[M.ListKey(scope, c, "Retail")].client == "retail" and spec.rules[M.ListKey(scope, c, "Forever")].hidden)
     end end
-    for _, rule in ipairs(spec.controls) do
-        if rule.key:find("^aura") and rule.key ~= "auraDisplayEnabled" and rule.key ~= "auraColorsData" then assert(rule.enableKey, rule.key .. " has no gate") end
-    end
+    assert(not spec.rules.auraEnemyDebuffUseLayout and not spec.rules.auraEnemyDebuffBlockRetail)
+    assert(not spec.rules.auraEnemyDebuffScale.enableKey and spec.rules.auraEnemyCustom1Size.enableKey == "auraDisplayEnabled")
     assert(not spec.look.visualKeys.auraEnemyDotsVisible and spec.look.visualKeys.auraFont)
-    -- defaults: nothing used
     local plan = M.Plan({})
-    assert(not plan.used.enemy and not plan.used.friendly, "defaults must build no container")
+    assert(not plan.used.enemy and not plan.used.friendly)
+    local inherited = M.Plan({ auraClickthrough = true, auraEnemyCustom1Clickthrough = 3 })
+    assert(not C(inherited, "enemy", "custom1").clickthrough and C(inherited, "enemy", "custom2").clickthrough
+        and C(inherited, "friendly", "custom1").clickthrough, "tracked rows did not inherit the saved click-through setting independently")
+    local explicit = M.Plan({ auraClickthrough = false, auraFriendlyDotsClickthrough = 2 })
+    assert(C(explicit, "friendly", "dots").clickthrough and not C(explicit, "enemy", "dots").clickthrough,
+        "tracked row did not enable click-through independently")
+    local config = { enemyNpcAuraMode = 2, enemyNpcBuffs = false, enemyNpcControl = true, auraEnemyBuffUseLayout = true }
+    assert(not M.Active(config) and not C(M.Plan(config), "enemy", "buff"))
+    assert(not M.NativeShown(config, "enemyNpc", "Buffs") and M.NativeShown(config, "enemyNpc", "Control"))
+    assert(M.NativeSetting("friendlyNpc", "Debuffs") == "friendlyNpcDebuffs" and not M.NativeSetting("friendlyNpc", "Buffs"))
     -- enemy dots from the health-colour DoTs, fixed slots
     local config = { auraDisplayEnabled = true, auraEnemyDotsVisible = true }
     plan = M.Plan(config)
@@ -64,6 +73,22 @@ do
     assert(dots.rows[1].filter == "HARMFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY" and dots.rows[1].candidate.includeSpellIDs[34914])
     assert(dots.point == "BOTTOM" and dots.relative == "TOP" and dots.y == 46 and dots.missing == true)
     assert(plan.used.enemy and not plan.used.friendly)
+    config.auraEnemyDotsHideDuplicates = true
+    plan = M.Plan(config)
+    assert(not plan.always.enemy and plan.exclusions.enemy.debuff[589] and plan.exclusions.enemy.debuff[34914],
+        "target-only tracking must not allocate containers on other plates")
+    assert(not plan.exclusions.enemy.debuff[172], "a disabled DoT was excluded")
+    config.auraEnemyCustom1Visible, config.auraEnemyCustom1SpellsRetail = true, "589,118"
+    config.auraEnemyCustom2Visible, config.auraEnemyCustom2SpellsRetail = true, "139"
+    config.auraEnemyCustom2Type, config.auraEnemyCustom2HideDuplicates = 1, true
+    local excluded = M.Plan(config).exclusions.enemy
+    assert(not excluded.custom1 and not excluded.dots,
+        "target-only DoT tracking must not exclude other tracked rows on every plate")
+    assert(excluded.buff[139] and not excluded.buff[589] and not excluded.debuff[139],
+        "buff and debuff exclusions were mixed")
+    config.auraEnemyCustom1Visible, config.auraEnemyCustom2Visible = nil, nil
+    config.auraEnemyDotsHideDuplicates = nil
+    plan = M.Plan(config)
     -- custom flow container, client list
     config.auraFriendlyCustom1Visible, config.auraFriendlyCustom1SpellsRetail = true, "774, 8936;33763 x 774"
     config.auraFriendlyCustom1SpellsForever = "1126"
@@ -83,28 +108,9 @@ do
     assert(#dots.rows == 5 and dots.width == 24 and dots.height == 12 and dots.gridWidth == 50 and dots.gridHeight == 40, dots.gridWidth .. "x" .. dots.gridHeight)
     local x, y = M.SlotOffset(dots, 4)
     assert(dots.flowPoint == "TOPRIGHT" and x == -26 and y == -14, x .. "," .. y)
-    -- a lane (Buffs, Debuffs) is off by default; Visible, it takes Blizzard's filter, plate kinds and position
-    assert(not plan.lanes.enemy and not C(plan, "enemy", "debuff").enabled)
-    config.auraEnemyDebuffVisible = true
-    plan = M.Plan(config)
-    local lane = C(plan, "enemy", "debuff")
-    assert(lane.enabled and lane.filter == "HARMFUL|INCLUDE_NAME_PLATE_ONLY|!CROWD_CONTROL|PLAYER" and lane.frame == "DebuffListFrame")
-    assert(lane.kinds.enemyNpc and lane.kinds.enemyPlayer and plan.lanes.enemy and not plan.lanes.friendly)
-    assert(lane.point == "BOTTOMLEFT" and lane.relative == "TOPLEFT" and lane.x == 0 and lane.y == 6 and lane.groupCount == 8 and not lane.fixed)
-    config.enemyNpcAuraMode, config.enemyNpcDebuffs, config.enemyAurasOffsetX = 2, false, 9
-    config.auraEnemyDebuffBlockRetail, config.auraEnemyDebuffFilter, config.auraEnemyDebuffOnlyMine = "17", 4, false
-    lane = C(M.Plan(config), "enemy", "debuff")
-    assert(not lane.kinds.enemyNpc and lane.kinds.enemyPlayer and lane.candidate.excludeSpellIDs[17] and lane.candidate.isStealable
-        and lane.x == 9 and lane.filter == "HARMFUL|INCLUDE_NAME_PLATE_ONLY|!CROWD_CONTROL")
-    config.auraFriendlyBuffVisible = true
-    local buffs = C(M.Plan(config), "friendly", "buff")
-    assert(buffs.filter == "HELPFUL|INCLUDE_NAME_PLATE_ONLY" and buffs.point == "RIGHT" and buffs.x == -6 and buffs.flowPoint == "BOTTOMRIGHT"
-        and buffs.kinds.friendlyPlayer and buffs.kinds.friendlyNpc == nil)
-    -- the tools of a lane are MSUF's: Layout, Ordering, Filters, Blacklist, Style
-    assert(table.concat(M.Tools.lane, " ") == "layout ordering filters blacklist style")
-    assert(M.ToolKeys(M.Scope("enemy"), M.Container("buff"), "layout", true)[1] == "auraEnemyBuffVisible")
-    assert(#M.ToolKeys(M.Scope("enemy"), M.Container("buff"), "style") == #M.ToolKeys(M.Scope("enemy"), M.Container("buff"), "style", true)
-        + #M.AppearanceKeys)
+    assert(not C(plan, "enemy", "buff") and not C(plan, "enemy", "debuff"))
+    assert(table.concat(M.Tools.native, " ") == "layout style")
+    assert(M.ToolKeys(M.Scope("enemy"), M.Container("buff"), "layout", true)[1] == "auraEnemyBuffScale")
     -- text inheritance
     config.auraEnemyDotsTimePoint, config.auraEnemyDotsStackSize = 2, 20
     plan = M.Plan(config)
@@ -112,6 +118,7 @@ do
     assert(dots.text.Time.point == "TOPLEFT" and dots.text.Time.size == 11 and dots.text.Stack.size == 20 and dots.text.Stack.point == "BOTTOMRIGHT" and dots.text.Stack.x == -1)
     -- the other client reads its own list; Sunder joins as an every-player slot
     local F = NewNS(true)
+    F.HostBridge = { ForeverAuraAliases = function(id) if id == 11 then return { 11, 12 } end end }
     local FM = F.NameplateAuraDisplay
     config.auraSunder = true
     local fplan = FM.Plan(config)
@@ -119,8 +126,12 @@ do
     local fdots = C(fplan, "enemy", "dots")
     assert(#fdots.rows == 1 and fdots.rows[1].any and fdots.rows[1].filter == "HARMFUL|INCLUDE_NAME_PLATE_ONLY", "forever dots")
     config.auraEnemyDotsDisplay, config.auraEnemyDotsIDsForever = 2, "11"
+    config.auraFriendlyCustom1SpellsForever = "11,12"
+    local buff = C(FM.Plan(config), "friendly", "custom1")
+    assert(buff.candidate.includeSpellIDs[12] and #buff.rows == 1, "a ranked buff did not resolve to a single tracked row")
     fdots = C(FM.Plan(config), "enemy", "dots")
-    assert(fdots.groupCount == 8 and fdots.anyCount == 1 and fdots.anyCandidate.includeSpellIDs[7386] and fdots.candidate.includeSpellIDs[11])
+    assert(fdots.groupCount == 8 and fdots.anyCount == 1 and fdots.anyCandidate.includeSpellIDs[7386]
+        and fdots.candidate.includeSpellIDs[11] and fdots.candidate.includeSpellIDs[12], "Forever rank was not tracked")
     -- migration
     local NSm = { Client = { isForever = false }, SuiteCatalog = NS.SuiteCatalog }
     load(out .. "/MSUF_Suite/Core/SuiteMigrations.lua", "MSUF_Suite", NSm)
@@ -143,16 +154,17 @@ do
         return assert(loadstring(s:gsub("\r\n", "\n"), "@" .. path:match("[^/]+$")))(...)
     end
     local log, frames, combat, blocked, secret, failLayout = {}, {}, false, false, false, false
+    local publicCombat = false
     local methods, dispelCalls = {}, {}
-    -- the clock (GetTime), the frame that runs a group's ramp (the last OnUpdate owner), whether the clock holds
-    -- for a frame of several plates, and the aura count a group of each key has (default: one aura)
-    local now, holdFrame, updateFrame, presentDefault = 100, false, nil, {}
+    local now, holdFrame, presentDefault = 100, false, {}
+    local rampQueued, rampCallback
+    local buildWaits = {}
     -- Blizzard seals an aura button, and with it everything on it, as soon as
     -- initializeFrame returns (DenyTaintedAccessWhenAurasAreSecret,
     -- Blizzard_AuraContainerFrameProviders.lua CreateFrame). While auras are
     -- secret every call of ours on a sealed object raises.
     local function Refused(frame)
-        if not (combat or secret) then return false end
+        if not (combat and not publicCombat or secret) then return false end
         while frame do
             if rawget(frame, "restricted") then return true end
             frame = rawget(frame, "parent")
@@ -172,6 +184,10 @@ do
         return frame
     end
     function methods:GetFrameLevel() return self.level end
+    function methods:GetScale() return 1 end
+    function methods:GetAlpha() return rawget(self, "alpha") or 1 end
+    function methods:SetAlpha(value) self.alpha, self.SetAlphaArgs = value, { value } end
+    function methods:IsAnchoringRestricted() return false end
     -- Anchors are kept in order per frame (a ClearAllPoints starts over), for the ring and the pandemic edges.
     function methods:ClearAllPoints() self.calls.ClearAllPoints = (self.calls.ClearAllPoints or 0) + 1 self.points = {} end
     function methods:SetPoint(...)
@@ -184,20 +200,36 @@ do
     function methods:ClearDispelTypeTextures() dispelCalls[#dispelCalls + 1] = { button = self } end
     function methods:AddDispelTypeTexture(texture, options) dispelCalls[#dispelCalls + 1] = { button = self, texture = texture, options = options } end
     function methods:SetFrameLevel(v) self.level = v end
-    function methods:IsProtected() return false end
+    function methods:IsProtected() return rawget(self, "protected") == true end
     function methods:CanBeAccessedInContext() return not rawget(self, "sealed") and not Refused(self) end
     local function AuraButton(container, initializeFrame)
         local button = Frame("AuraButton", container)
         initializeFrame(button)
         button.restricted = true
+        return button
     end
     function methods:IsShown() return self.shown end
+    function methods:IsVisible()
+        local parent = rawget(self, "parent")
+        return self.shown and (not parent or parent:IsVisible())
+    end
     function methods:SetShown(v) self.shown = v local cb = self.scripts[v and "OnShow" or "OnHide"] if cb then cb(self) end end
     function methods:Show() self:SetShown(true) end
     function methods:Hide() self:SetShown(false) end
     function methods:HookScript(e, cb) self.scripts[e] = cb end
-    function methods:SetScript(e, cb) self.scripts[e] = cb if e == "OnUpdate" then updateFrame = self end end
+    function methods:GetParent() return self.parent end
+    function methods:IsMouseClickEnabled() return rawget(self, "click") ~= false end
+    function methods:IsMouseMotionEnabled() return rawget(self, "motion") ~= false end
+    function methods:SetMouseClickEnabled(value) self.click = value end
+    function methods:SetMouseMotionEnabled(value) self.motion = value end
+    function methods:SetScript(event, callback)
+        assert(event ~= "OnUpdate" or not callback, "aura allocation attached a frame update script")
+        self.scripts[event] = callback
+    end
+    function methods:RegisterEvent(e) self.events = rawget(self, "events") or {} self.events[e] = true end
+    function methods:UnregisterAllEvents() self.events = {} end
     function methods:CreateTexture(_, layer) local texture = Frame("Texture", self) texture.drawLayer = layer return texture end
+    function methods:CreateMaskTexture() return Frame("MaskTexture", self) end
     function methods:CreateFontString() return Frame("FontString", self) end
     function methods:SetEnabled(v) self.enabled = v end
     function methods:SetUnit(u) self.unit = u end
@@ -205,8 +237,9 @@ do
         self.slots = rawget(self, "slots") or {}
         self.slots[key] = { filter = filter, candidate = options.candidateFilters }
         log[#log + 1] = "slot:" .. key
-        AuraButton(self, options.initializeFrame)
+        self.slots[key].button = AuraButton(self, options.initializeFrame)
     end
+    function methods:GetAuraSlotFrame(key) return self.slots[key].button end
     function methods:SetAuraSlotCandidateFilters(key, c) self.slots[key].candidate = c log[#log + 1] = "slotc:" .. key end
     function methods:SetAuraSlotFilterString(key, f) self.slots[key].filter = f end
     -- Blizzard makes a group's buttons on demand: min(auras, limit). SetAuraGroupMaxFrameCount only stores the limit;
@@ -216,16 +249,19 @@ do
         local want = math.min(presentDefault[key] or 1, group.max)
         while group.made < want do
             group.made = group.made + 1
-            AuraButton(frame, group.init)
+            group.buttons[group.made] = AuraButton(frame, group.init)
         end
     end
     function methods:AddAuraGroup(key, filter, options)
         self.groups = rawget(self, "groups") or {}
-        self.groups[key] = { filter = filter, candidate = options.candidateFilters, max = options.maxFrameCount, init = options.initializeFrame, made = 0 }
+        self.groups[key] = { filter = filter, candidate = options.candidateFilters, max = options.maxFrameCount, init = options.initializeFrame, made = 0,
+            buttons = {} }
         log[#log + 1] = "group:" .. key
         Fill(self, key)
     end
     function methods:SetAuraGroupCandidateFilters(key, c) self.groups[key].candidate = c end
+    function methods:GetAuraGroupFrameCount(key) return self.groups[key].made end
+    function methods:GetAuraGroupFrame(key, index) return self.groups[key].buttons[index] end
     function methods:SetAuraGroupFilterString(key, f) self.groups[key].filter = f end
     function methods:SetAuraGroupMaxFrameCount(key, n) self.groups[key].max = n Fill(self, key) end
     function methods:SetAuraGroupLayout(key, l)
@@ -250,24 +286,46 @@ do
         return color
     end
     AuraUtil = { GetAuraBorderColor = function(k) local c = SOURCE[k] return BlizzardColor(c[1], c[2], c[3]) end }
+    AuraUtil.AuraFilters = { CrowdControl = "CROWD_CONTROL", Important = "IMPORTANT" }
     CreateColor = function(r, g, b, a) return BlizzardColor(r, g, b, a) end
-    Enum = { CustomAuraButtonDispelTypeTextureStyle = { CustomAsset = 1 } }
+    Enum = { CustomAuraButtonDispelTypeTextureStyle = { CustomAsset = 1 },
+        StatusBarTimerDirection = { ElapsedTime = 1, RemainingTime = 2 }, NumericRuleFormatRounding = { Up = 1, Down = 2 } }
     C_Spell = { GetSpellTexture = function(id) return id end }
-    C_Secrets = { ShouldAurasBeSecret = function() return combat or secret end }
-    C_StringUtil = { CreateNumericRuleFormatter = function() return { SetBreakpoints = function() end } end }
+    C_Secrets = { ShouldAurasBeSecret = function() return combat and not publicCombat or secret end }
+    C_StringUtil = { CreateNumericRuleFormatter = function()
+        return { SetBreakpoints = function(formatter, breakpoints) formatter.breakpoints = breakpoints end }
+    end }
     UnitClass = function() return "Mage", "MAGE" end
-    local playerUnit = false
-    UnitIsPlayer = function() return playerUnit end
+    local targetUnit
+    UnitIsUnit = function(unit) return targetUnit == nil or targetUnit == unit end
     hooksecurefunc = function(object, name, hook)
         local original = object[name]
         object[name] = function(...) original(...) hook(...) end
     end
-    local NS = { Client = { isForever = false, AuraBuildBlocked = function() return blocked end, AfterAuraBuild = function() log[#log + 1] = "afterbuild" end,
+    local iconLook, painted, watching = {}, {}, nil
+    local NS = { HostBridge = {
+        ForeverAuraAliases = function() end,
+        IconSkinLook = function(choice, shape, _, allowVariant)
+            assert(choice == nil and shape == "RECTANGLE" and allowVariant)
+            return iconLook
+        end,
+        WatchIconSkins = function(id, on) assert(id == "nameplates") watching = on end,
+        PaintIconSkin = function(button, look, width, height, icon, clip)
+            assert(not Refused(button) and not Refused(icon) and button.kind == "AuraButton" and clip)
+            assert(width == 24 and height == 24)
+            painted[button] = look
+            return look ~= nil
+        end,
+    }, Client = { isForever = false, AuraBuildBlocked = function() return blocked end,
+        AfterAuraBuild = function(owner, callback) log[#log + 1] = "afterbuild"; buildWaits[owner] = callback end,
+        CancelAuraBuild = function(owner) buildWaits[owner] = nil end,
         RealAurasOnly = function() return true end }, Safety = { IsForbidden = function() return false end } }
     NS.Public = function() return true end
+    NS.Finite = function(value) return type(value) == "number" end
     NS.Text = function(s) return s end
     NS.RGB = function() return 1, 1, 1 end
     NS.InCombat = function() return combat end
+    NS.IsCombatLocked = NS.InCombat
     NS.NameplateStyle = { AuraCVar = {}, AuraBits = {}, NativeBit = function() return true end, NativeToggle = function() return false end,
         CreateBorder = function() return {} end, PaintBorder = function() end }
     load(up .. "/MSUF_Suite/Core/SuiteCatalog.lua", "MSUF_Suite", NS)
@@ -282,6 +340,10 @@ do
     load(out .. "/MSUF_Suite/Core/Catalog/NameplateAuras.lua", "MSUF_Suite", NS)
     local S = { SetFont = function() end, ResolveFont = function() return nil end, GlobalFontPath = function() return "font" end }
     local private = { NS = NS, Suite = S, Mode = { LOOK_BLIZZARD = 2 } }
+    S.Public, S.Finite = NS.Public, NS.Finite
+    NamePlateConstants = { AURA_ITEM_HEIGHT = 25 }
+    load(out .. "/MSUF_Suite_Nameplates/Auras.lua", "MSUF_Suite_Nameplates", private)
+    load(out .. "/MSUF_Suite_Nameplates/AuraFilter.lua", "MSUF_Suite_Nameplates", private)
     load(out .. "/MSUF_Suite_Nameplates/AuraDisplay.lua", "MSUF_Suite_Nameplates", private)
     local D = private.AuraDisplay
     -- every Apply is a frame of its own, so each one has its own budget (the holdFrame switch keeps a frame)
@@ -293,13 +355,176 @@ do
         uf.HealthBarsContainer = { healthBar = Frame("StatusBar", uf) }
         uf.AurasFrame = Frame("Frame", uf)
         uf.AurasFrame.BuffListFrame, uf.AurasFrame.DebuffListFrame = Frame("Frame", uf.AurasFrame), Frame("Frame", uf.AurasFrame)
+        uf.AurasFrame.CrowdControlListFrame = Frame("Frame", uf.AurasFrame)
+        function uf.AurasFrame:RefreshList() end
+        function uf.AurasFrame:RefreshAuras()
+            self:RefreshList(self.DebuffListFrame)
+            self:RefreshList(self.BuffListFrame)
+            self:RefreshList(self.CrowdControlListFrame)
+        end
+        uf.isPlayer = false
+        uf.AurasFrame.isActive = true
+        uf.AurasFrame.auraItemScale = 1
+        uf.AurasFrame.DebuffListFrame.stride = 8
+        uf.AurasFrame.BuffListFrame.stride = 10
         return uf
     end
     local active = {}
     local cvarEvent
-    local module = { context = { Event = function(_, _, callback) cvarEvent = callback end, RemoveEvent = function() cvarEvent = nil end } }
+    local module = { active = true,
+        context = { Event = function(_, _, callback) cvarEvent = callback end, RemoveEvent = function() cvarEvent = nil end } }
+    function module.context:Coalesce(delay, callback)
+        assert(delay == 0 and not rampCallback, "the ramp must reuse one job")
+        rampCallback = callback
+        return { Request = function() rampQueued = true end, Cancel = function() rampQueued = false end }
+    end
+    local function RunRamp()
+        if not rampQueued then return end
+        rampQueued = false
+        rampCallback(module)
+    end
+    module.auraHooks, module.auraButtons, module.config = {}, {}, {}
+    private.Auras.Bind(module)
     D.Bind(module, function() repaints = repaints + 1 for uf, a in pairs(active) do D.Apply(uf, a[1], a[2]) end end)
     local function Containers() local n = 0 for _, f in ipairs(frames) do if f.kind == "AuraContainer" then n = n + 1 end end return n end
+
+    do
+        local cfg = { auraDisplayEnabled = true, auraEnemyDotsVisible = true, auraEnemyDotsSource = 2,
+            auraEnemyDotsIDsRetail = "589,34914", auraEnemyDotsHideDuplicates = true }
+        local target, other = Plate(), Plate()
+        local buttons, different = {}, {}
+        for _, uf in ipairs({ target, other }) do
+            local auras = uf.AurasFrame
+            local lane = auras.DebuffListFrame
+            lane.requireSourceIsLocalPlayer = true
+            local duplicate, unrelated = Frame("NativeAuraButton", lane), Frame("NativeAuraButton", lane)
+            duplicate.spellID, unrelated.spellID = 589, 1234
+            buttons[uf], different[uf] = duplicate, unrelated
+            auras.auraItemFramePool = {
+                GetNextActive = function(_, current)
+                    if current == nil then return duplicate end
+                    if current == duplicate then return unrelated end
+                end,
+            }
+        end
+        target.unit, target.isFriend, other.unit, other.isFriend = "nameplate30", false, "nameplate31", false
+        local nativeRefresh = target.AurasFrame.RefreshAuras
+        targetUnit = "nameplate30"
+        D.Configure(cfg)
+        assert(D.Apply(target, "nameplate30", true) and not D.Apply(other, "nameplate31", true))
+        assert(target.AurasFrame.RefreshAuras == nativeRefresh, "dedup wrapped Blizzard's UNIT_AURA entry point")
+        local function Find(plate)
+            for _, frame in ipairs(frames) do
+                if frame.kind == "AuraContainer" and frame.parent.parent == plate and rawget(frame, "slots") then return frame end
+            end
+        end
+        local dots, native, duplicate = assert(Find(target)), target.AurasFrame.DebuffListFrame, buttons[target]
+        local slot = dots.slots.slot1.button
+        local afterAura
+        C_Timer = { After = function(_, callback) afterAura = callback end }
+        local function DrainAuraRefresh()
+            if afterAura then
+                local callback = afterAura
+                afterAura = nil
+                callback()
+            end
+        end
+        local function Refresh()
+            target.AurasFrame:RefreshAuras()
+            DrainAuraRefresh()
+        end
+        local function AuraEvent(event)
+            for _, frame in ipairs(frames) do
+                if rawget(frame, "events") and frame.events[event] then frame.scripts.OnEvent(frame, event) end
+            end
+        end
+        assert(dots.enabled and not Find(other), "target-only DoT display leaked")
+        assert(duplicate:GetAlpha() == 0 and not duplicate:IsMouseClickEnabled()
+            and different[target]:GetAlpha() == 1 and buttons[other]:GetAlpha() == 1 and native:GetAlpha() == 1,
+            "only a confirmed duplicate on the target may be hidden")
+        target.AurasFrame:RefreshAuras()
+        slot:Hide()
+        local callback = assert(afterAura)
+        afterAura = nil
+        callback()
+        assert(duplicate:GetAlpha() == 1 and duplicate:IsMouseClickEnabled(), "empty replacement hid the native icon")
+        slot:Show()
+        duplicate.parent = target.AurasFrame.BuffListFrame
+        Refresh()
+        assert(duplicate:GetAlpha() == 1 and duplicate:IsMouseMotionEnabled(), "recycled buff kept stale aura state")
+        duplicate.parent = native
+        combat = true
+        Refresh()
+        assert(duplicate:GetAlpha() == 1 and different[target]:GetAlpha() == 1, "restricted replacement hid native icons")
+        combat = false
+        Refresh()
+        assert(duplicate:GetAlpha() == 0)
+        AuraEvent("PLAYER_REGEN_DISABLED")
+        assert(duplicate:GetAlpha() == 1, "combat entry left an old native icon hidden")
+        combat, publicCombat = true, true
+        duplicate.protected = true
+        DrainAuraRefresh()
+        assert(duplicate:GetAlpha() == 1, "dedup touched a protected native icon during combat")
+        duplicate.protected = nil
+        Refresh()
+        assert(duplicate:GetAlpha() == 0, "public combat incorrectly skipped confirmed duplicates")
+        secret = true
+        AuraEvent("AURA_DATA_PROVIDER_SWITCH")
+        DrainAuraRefresh()
+        assert(duplicate:GetAlpha() == 1 and duplicate:IsMouseClickEnabled(), "restricted data left a recycled icon hidden")
+        combat, publicCombat, secret = false, false, false
+        AuraEvent("PLAYER_REGEN_ENABLED")
+        DrainAuraRefresh()
+        assert(duplicate:GetAlpha() == 0, "ending combat did not recover dedup without another aura update")
+        cfg.auraEnemyDotsDisplay = 2
+        local auras = { { spellId = 589 } }
+        local auraFilter = "HARMFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
+        C_UnitAuras = { GetUnitAuras = function(unit, filter)
+            assert(unit == "nameplate30" or unit == "nameplate31")
+            assert(filter == auraFilter)
+            return auras
+        end }
+        D.Configure(cfg)
+        assert(D.Apply(target, "nameplate30", true))
+        local group = dots.groups.auras
+        assert(group.made == 1 and duplicate:GetAlpha() == 0, "the packed DoT never took over its native icon")
+        combat, publicCombat = true, true
+        Refresh()
+        assert(duplicate:GetAlpha() == 0, "public combat did not deduplicate the packed DoT")
+        combat, publicCombat = false, false
+        auras[2] = { spellId = 34914 }
+        Refresh()
+        assert(duplicate:GetAlpha() == 1, "a packed group at capacity hid a potentially unrendered aura")
+        auras[2] = nil
+        auras[1].accessible = false
+        Refresh()
+        assert(duplicate:GetAlpha() == 1, "unreadable aura data hid the original")
+        auras[1].accessible = nil
+        group.buttons[1]:Hide()
+        Refresh()
+        assert(duplicate:GetAlpha() == 1, "an empty packed group hid a native icon")
+        group.buttons[1]:Show()
+        Refresh()
+        assert(duplicate:GetAlpha() == 0)
+        targetUnit = "nameplate31"
+        D.TargetChanged(other)
+        assert(not dots.enabled and duplicate:GetAlpha() == 1 and buttons[other]:GetAlpha() == 0,
+            "target switch did not restore the old lane and deduplicate the new one")
+        cfg.auraEnemyDotsType, cfg.auraEnemyDotsOnlyMine = 1, false
+        auraFilter = "HELPFUL|INCLUDE_NAME_PLATE_ONLY"
+        buttons[other].parent = other.AurasFrame.BuffListFrame
+        D.Configure(cfg)
+        assert(D.Apply(other, "nameplate31", true) and buttons[other]:GetAlpha() == 0,
+            "the same packed filter must deduplicate Buffs")
+        cfg.auraEnemyDotsHideDuplicates = false
+        D.Configure(cfg)
+        D.Apply(other, "nameplate31", true)
+        assert(buttons[other]:GetAlpha() == 1 and buttons[other]:IsMouseClickEnabled(), "disabling dedup failed to restore Blizzard")
+        D.Release()
+        targetUnit = nil
+        for index = #frames, 1, -1 do frames[index] = nil end
+        for index = #log, 1, -1 do log[index] = nil end
+    end
 
     -- off: nothing is built
     local uf = Plate()
@@ -512,22 +737,67 @@ do
             assert((i <= 2 and edge.SetHeightArgs or edge.SetWidthArgs)[1] == 2, "pandemic edge " .. i .. " " .. side)
         end
     end
-    -- the highlight follows the thickness, and a restyled button is rebound once: its clear, then one bind
-    local mark = #dispelCalls
-    config.auraHighlightSize = 4
-    D.Configure(config)
-    assert(D.Apply(plate, "nameplate7", true) == true)
-    for _, b in ipairs(buttons) do
-        local sequence = {}
-        for index = mark + 1, #dispelCalls do
-            if dispelCalls[index].button == b then sequence[#sequence + 1] = dispelCalls[index].texture and "add" or "clear" end
+    -- A restyle rebinds a button only when its binding changes. Blizzard keeps the bound texture and its copied
+    -- options until ClearDispelTypeTextures. 2026-11-16, Lua 5.1, protected dispel calls per bound button for a
+    -- restyle that leaves the binding alone: before 2 (clear, add) -> after 0.
+    do
+    local function Restyle(wanted, label)
+        local mark = #dispelCalls
+        D.Configure(config)
+        assert(D.Apply(plate, "nameplate7", true) == true)
+        local last
+        for _, b in ipairs(buttons) do
+            local sequence = {}
+            for index = mark + 1, #dispelCalls do
+                local call = dispelCalls[index]
+                if call.button == b then
+                    sequence[#sequence + 1] = call.texture and "add" or "clear"
+                    last = call.options or last
+                end
+            end
+            assert(table.concat(sequence, ",") == wanted, label .. ": a button was rebound as '" .. table.concat(sequence, ",") .. "'")
         end
-        assert(table.concat(sequence, ",") == "clear,add", "a restyled button was rebound as " .. table.concat(sequence, ","))
+        return last
+    end
+    -- the highlight follows the thickness without a rebind
+    config.auraHighlightSize = 4
+    Restyle("", "thickness")
+    for _, b in ipairs(buttons) do
+        assert(b.calls.SetSize == 2, "the unrelated restyle did not reach the button")
         local texture
         for _, call in ipairs(dispelCalls) do if call.button == b and call.texture then texture = call.texture end end
         local points = rawget(texture, "points")
         assert(points and #points == 2 and Anchor(points[1], "TOPLEFT", b, "TOPLEFT", -4, 4)
             and Anchor(points[2], "BOTTOMRIGHT", b, "BOTTOMRIGHT", 4, -4), "the ring did not follow the thickness")
+    end
+    -- a real change of the maps: one clear, one bind, with the new maps
+    config.auraEnrageHighlight = false
+    local rebound = Restyle("clear,add", "enrage off")
+    assert(rebound ~= dispel and Names(rebound.customDispelColorMap) == "Bleed|Curse|Disease|Magic|Poison", "enrage off kept the old maps")
+    config.auraHighlightSize = 3
+    Restyle("", "thickness after a rebind")
+    -- a changed palette is a real change too
+    local magic = SOURCE.Magic
+    SOURCE.Magic = { .1, .2, .3 }
+    config.auraHighlightSize = 4
+    local recolored = Restyle("clear,add", "palette")
+    assert(recolored ~= rebound and recolored.customDispelColorMap.Magic.r == .1, "a changed palette was not bound")
+    SOURCE.Magic = magic
+    config.auraHighlightSize = 3
+    assert(Restyle("clear,add", "palette back").customDispelColorMap.Magic.r == magic[1])
+    -- off: cleared once; still off: nothing; on again: bound once, nothing to clear
+    config.auraEnemyDotsDispel, config.auraEnemyCustom1Dispel = false, false
+    Restyle("clear", "container highlight off")
+    config.auraHighlightSize = 4
+    Restyle("", "restyle while off")
+    config.auraEnemyDotsDispel, config.auraEnemyCustom1Dispel = true, true
+    Restyle("add", "container highlight on")
+    config.auraEnrageHighlight = true
+    assert(Names(Restyle("clear,add", "enrage on").customDispelColorMap) == "|Bleed|Curse|Disease|Enrage|Magic|Poison")
+    -- the display off and on again: the released plan's options are not trusted, the next restyle binds again
+    D.Configure({})
+    config.auraHighlightSize = 3
+    Restyle("clear,add", "display off and on")
     end
     -- off: no texture is bound; the enrage entries leave the map when enrages are off
     local _, offButtons = Dispel(true, false)
@@ -537,44 +807,59 @@ do
     config.auraDispelHighlight, config.auraEnrageHighlight, config.auraHighlightSize = nil, nil, nil
     config.auraEnemyDotsDispel, config.auraEnemyCustom1Dispel = nil, nil
     D.Configure(config)
-    -- a Visible lane draws Debuffs and hides Blizzard's list of that kind only
     local buffList, debuffList = uf.AurasFrame.BuffListFrame, uf.AurasFrame.DebuffListFrame
-    config.auraEnemyDebuffVisible = true
-    module.config = config
-    D.Configure(config)
-    assert(D.Apply(uf, "nameplate2", true) and debuffList.shown == false and buffList.shown == true)
-    local lane
-    for _, f in ipairs(frames) do
-        if f.kind == "AuraContainer" and rawget(f, "groups") and f.groups.auras.filter:find("!CROWD_CONTROL", 1, true) then lane = f end
-    end
-    assert(lane and lane.enabled and lane.unit == "nameplate2" and lane.groups.auras.filter == "HARMFUL|INCLUDE_NAME_PLATE_ONLY|!CROWD_CONTROL|PLAYER")
-    -- Blizzard asks to show its list while the lane owns it: it stays hidden
-    debuffList:Show()
-    assert(debuffList.shown == false, "Blizzard's list came back under a Visible lane")
-    -- a plate kind Blizzard's switches exclude keeps neither; the player plate of that side gets the lane
-    config.enemyNpcAuraMode, config.enemyNpcDebuffs = 2, false
-    D.Configure(config)
-    assert(D.Apply(uf, "nameplate2", true) and lane.enabled == false and debuffList.shown == true)
-    playerUnit = true
-    assert(D.Apply(uf, "nameplate5", true) and lane.enabled == true and lane.unit == "nameplate5" and debuffList.shown == false)
-    -- Blizzard's own aura switch changes (Keep Blizzard setting): the plan follows the CVar
-    assert(cvarEvent, "the runtime does not follow Blizzard's aura CVars")
-    local before = repaints
-    cvarEvent(module, "CVAR_UPDATE", "nameplateResourceOnTarget")
-    assert(repaints == before)
-    -- the plate turns friendly: the enemy lane lets go of Blizzard's list
-    assert(D.Apply(uf, "nameplate5", false) == false and debuffList.shown == true and lane.enabled == false)
-    assert(D.Apply(uf, "nameplate5", true) and debuffList.shown == false)
-    -- in combat a protected list cannot be handed back at once: it returns after combat
+    assert(buffList.shown and debuffList.shown and not cvarEvent)
+    assert(not next(painted) and watching == nil, "an existing profile opted into icon skins")
+    local plateSkin = Plate()
+    local native = plateSkin.AurasFrame.BuffListFrame
+    local direct = { auraDisplayEnabled = true, auraEnemyCustom1Visible = true,
+        auraEnemyCustom1SpellsRetail = "589", auraEnemyCustom1IconSkin = true,
+        auraEnemyCustom1DurationBar = true, auraEnemyCustom1DurationBarDirection = 2,
+        auraEnemyCustom1DurationBarDisplay = 2, auraEnemyCustom1Padding = 6, auraEnemyCustom1TimeDecimals = 4 }
+    D.Configure(direct)
+    assert(D.Apply(plateSkin, "nameplate11", true) and native.shown)
+    local firstSkin = iconLook
+    local styled = next(painted)
+    assert(styled and painted[styled] == firstSkin and watching == true)
+    assert(styled.SetDurationBarArgs[1].kind == "StatusBar"
+        and styled.SetDurationBarArgs[2].direction == Enum.StatusBarTimerDirection.ElapsedTime)
+    assert(styled.SetIconArgs[1].SetAlphaArgs[1] == 0 and styled.SetDurationCooldownArgs[1].SetAlphaArgs[1] == 0,
+        "bar-only mode kept the aura icon or swipe visible")
+    local timer = styled.SetDurationTextArgs[2].textFormatter
+    assert(timer.breakpoints[1].format == "%.1f" and timer.breakpoints[2].threshold == 4,
+        "timer decimals were not passed to Blizzard's native formatter")
+    assert(styled.parent.SetFlowLayoutPaddingArgs[1] == 6 and styled.parent.SetFlowLayoutPaddingArgs[4] == 6,
+        "packed aura containers did not get their interior padding")
+    iconLook = {}
     combat = true
-    debuffList.IsProtected = function() return true end
-    D.Configure({ auraDisplayEnabled = false })
-    assert(lane.enabled == false and debuffList.shown == false, "a protected list changed in combat")
+    D.Configure(direct)
+    assert(D.Apply(plateSkin, "nameplate11", true) and painted[styled] == firstSkin,
+        "a sealed icon was restyled in combat")
     combat = false
-    D.Resume()
-    assert(debuffList.shown == true, "Blizzard's list was not handed back after combat")
-    -- release
-    assert(dots.enabled == false and custom.enabled == false and D.Apply(uf, "nameplate2", true) == false and cvarEvent == nil)
+    assert(D.Apply(plateSkin, "nameplate11", true) and painted[styled] == iconLook)
+    direct.auraEnemyCustom1IconSkin = false
+    D.Configure(direct)
+    assert(D.Apply(plateSkin, "nameplate11", true) and not next(painted) and watching == false)
+    D.Configure({})
+
+    local dotsOnly = { auraDisplayEnabled = true, auraEnemyDotsVisible = true, auraEnemyDotsSource = 2, auraEnemyDotsIDsRetail = "589" }
+    D.Configure(dotsOnly)
+    local first, second = Plate(), Plate()
+    first.unit, first.isFriend = "nameplate12", false
+    second.unit, second.isFriend = "nameplate13", false
+    targetUnit = first.unit
+    local start = Containers()
+    assert(D.Apply(first, first.unit, true) and Containers() == start + 1)
+    assert(not D.Apply(second, second.unit, true) and Containers() == start + 1)
+    local displayed
+    for _, frame in ipairs(frames) do if frame.kind == "AuraContainer" then displayed = frame end end
+    assert(displayed.enabled)
+    targetUnit = second.unit
+    D.TargetChanged(second)
+    assert(not displayed.enabled and Containers() == start + 2)
+    assert(first.AurasFrame.BuffListFrame.shown and second.AurasFrame.DebuffListFrame.shown)
+    targetUnit = nil
+    D.Configure({})
     -- Ramp. Blizzard makes a group's buttons on demand, min(auras, limit), each at about half a millisecond
     -- (2026-11-11 combat trace). Budget, lua 5.1, 2026-11-11: a plate that gets a unit with ten auras makes
     -- buttons in that frame: before 10 (base: the group's limit is its want) -> after 3 (RAMP), and frames
@@ -599,7 +884,7 @@ do
         for i = 1, count do
             local before = Total(list)
             now = now + 1
-            if updateFrame and updateFrame.scripts.OnUpdate then updateFrame.scripts.OnUpdate(updateFrame) end
+            if rampQueued then RunRamp() end
             made[i] = Total(list) - before
         end
         return made
@@ -610,7 +895,7 @@ do
     D.Configure(ramp)
     -- groups of the earlier sections that the budget left without a button are still waiting: let them finish
     for _ = 1, 20 do
-        if not (updateFrame and updateFrame.scripts.OnUpdate) then break end
+        if not (rampQueued) then break end
         Frames({}, 1)
     end
     -- (a) one plate, ten auras: three buttons in its frame, then three a frame, then the rest
@@ -628,7 +913,7 @@ do
     print(("aura ramp: %d buttons in the frame of a plate with ten auras, %d frames until ten"):format(appliedA, untilTen))
     assert(appliedA == 3, "the frame of a unit made " .. appliedA .. " buttons")
     assert(table.concat(ticksA, ",") == "3,3,1" and Total(boxA) == 10, table.concat(ticksA, ","))
-    assert(boxA[1].groups.auras.max == 10 and updateFrame.scripts.OnUpdate == nil, "the ramp still runs with nothing waiting")
+    assert(boxA[1].groups.auras.max == 10 and not rampQueued, "the ramp still runs with nothing waiting")
     -- (b) one plate, two auras: two buttons at once, a limit of three, and no ramp started
     presentDefault.auras = 2
     local b = Plate()
@@ -636,7 +921,7 @@ do
     assert(D.Apply(b, "nameplate9", true) == true)
     local boxB = Containers(firstB)
     assert(Total(boxB) == 2 and boxB[1].groups.auras.max == 3, "two auras made " .. Total(boxB) .. " buttons")
-    assert(updateFrame.scripts.OnUpdate == nil, "a ramp runs with nothing waiting")
+    assert(not rampQueued, "a ramp runs with nothing waiting")
     -- (c) the plate's unit changes to one with ten auras: the spare allowance makes one button, then three a frame
     presentDefault.auras = 10
     local spare = Total(boxB)
@@ -653,7 +938,7 @@ do
     local boxH = Containers(firstH)
     local hTicks = Frames(boxH, 2)
     assert(table.concat(hTicks, ",") == "1,0" and Total(boxH) == 4 and boxH[1].groups.auras.max == 6, "four auras: " .. table.concat(hTicks, ","))
-    assert(updateFrame.scripts.OnUpdate == nil, "a ramp runs for a group that is not full")
+    assert(not rampQueued, "a ramp runs for a group that is not full")
     -- (d) five plates with ten auras in one frame: three buttons in that frame over all plates, three a frame after
     now = now + 1
     holdFrame = true
@@ -673,7 +958,7 @@ do
     assert(table.concat(sizes, ",") == "6,6,6,6,6,6,6,3,3,2", "five plates made " .. table.concat(sizes, ","))
     for _, size in ipairs(sizes) do assert(size <= 6, "a frame made " .. size .. " buttons") end
     for _, container in ipairs(boxD) do assert(container.groups.auras.max == 10, "a limit of " .. container.groups.auras.max) end
-    assert(updateFrame.scripts.OnUpdate == nil)
+    assert(not rampQueued)
     -- (e) a want of two never allows more than two; a settings change raises it to twelve, and the group goes on
     ramp.auraEnemyCustom1Max = 2
     D.Configure(ramp)
@@ -731,14 +1016,41 @@ do
     local boxG = Containers(firstG)
     local atStop = Total(boxG)
     D.Configure({ auraDisplayEnabled = false })
-    assert(updateFrame.scripts.OnUpdate == nil, "a ramp still ticks after the module stopped")
+    assert(not rampQueued, "a ramp still ticks after the module stopped")
     local idle = Frames(boxG, 2)
     assert(idle[1] == 0 and idle[2] == 0 and Total(boxG) == atStop, "a stopped module made buttons")
     D.Configure(ramp)
-    assert(updateFrame.scripts.OnUpdate ~= nil, "the ramp did not resume after a restart")
+    assert(not rampQueued, "the ramp woke before a plate was attached")
     assert(D.Apply(g, "nameplate51", true) == true)
+    assert(rampQueued, "attaching a plate did not resume its ramp")
     local resumed = Frames(boxG, 3)
     assert(table.concat(resumed, ",") == "3,3,1" and Total(boxG) == 10, "the restarted ramp made " .. table.concat(resumed, ","))
+    -- Releasing a single unit can leave its old request in the shared queue.
+    now = now + 1
+    local removed, firstRemoved = Plate(), #frames + 1
+    assert(D.Apply(removed, "nameplate52", true) and rampQueued)
+    local released = Containers(firstRemoved)
+    local before = Total(released)
+    D.Restore(removed)
+    Frames(released, 1)
+    assert(Total(released) == before and not rampQueued, "a pooled plate continued to allocate aura buttons")
+
+    -- A gamepad panel can appear after the initial grant and before the deferred job.
+    now = now + 1
+    local held, firstHeld = Plate(), #frames + 1
+    assert(D.Apply(held, "nameplate53", true) and rampQueued)
+    local heldBoxes = Containers(firstHeld)
+    local starting = Total(heldBoxes)
+    blocked = true
+    local samples = Frames(heldBoxes, 8)
+    assert(Total(heldBoxes) == starting and not rampQueued and samples[8] == 0, "blocked allocation kept waking")
+    local group
+    for key, wake in pairs(buildWaits) do
+        if key ~= D then group = key; buildWaits[key] = nil; blocked = false; wake(key); break end
+    end
+    assert(group and rampQueued, "closing the gamepad panel did not wake the waiting group")
+    Frames(heldBoxes, 3)
+    assert(Total(heldBoxes) == 10 and not rampQueued, "resumed grants did not finish")
     D.Configure({ auraDisplayEnabled = false })
     presentDefault.auras = nil
     -- (i) the ramp allocates nothing in a frame that makes no button (2026-11-11). Five plates ramp once as a
@@ -758,7 +1070,7 @@ do
     end
     local function Settle(list)
         for _ = 1, 40 do
-            if not (updateFrame and updateFrame.scripts.OnUpdate) then return end
+            if not (rampQueued) then return end
             Frames(list, 1)
         end
         error("the ramp did not finish")
@@ -769,11 +1081,11 @@ do
     collectgarbage("collect")
     collectgarbage("stop")
     for _ = 1, 40 do
-        if not (updateFrame and updateFrame.scripts.OnUpdate) then break end
+        if not (rampQueued) then break end
         Frames(list, 1)
-        if updateFrame.scripts.OnUpdate then
+        if rampQueued then
             local before, kib = Total(list), collectgarbage("count")
-            updateFrame.scripts.OnUpdate(updateFrame)
+            RunRamp()
             local delta = collectgarbage("count") - kib
             if Total(list) == before then
                 measured = measured + 1
@@ -805,10 +1117,12 @@ do
     end
     function methods:GetFrameLevel() return 1 end
     function methods:GetStringHeight() return 14 end
+    function methods:IsShown() return self.shown end
     function methods:SetShown(v) self.shown = v end
     function methods:Show() self.shown = true end
     function methods:Hide() self.shown = false end
     function methods:CreateTexture() return Frame("Texture", self) end
+    function methods:SetTexture(texture) self.texture = texture end
     function methods:CreateFontString() return Frame("FontString", self) end
     CreateFrame = function(kind, _, parent) return Frame(kind, parent) end
     C_Spell = { GetSpellIDForSpellIdentifier = function() return nil end, GetSpellName = function(id) return "Spell" .. id end,
@@ -834,7 +1148,14 @@ do
     B.Add("nameplates", B.Choice("friendlyNpcDebuffs", "Friendly NPC debuffs", 1, { "Keep Blizzard setting", "Show", "Hide" }), "auras")
     B.Add("nameplates", B.Choice("auraScaleMode", "Blizzard aura icon size", 1, { "Keep Blizzard setting", "Customize" }), "auras")
     B.Add("nameplates", B.Number("auraScalePercent", "Aura icon size (%)", 100, 70, 140, 10), "auras")
+    B.Add("nameplates", B.Number("auraDebuffPadding", "Debuff padding", -1, -1, 50), "auras")
     B.Add("nameplates", B.Choice("personalAuras", "Blizzard personal auras", 1, { "Keep Blizzard setting", "Show all", "Blizzard filter" }), "native")
+    for _, key in ipairs({ "auraColorsEnabled", "auraColorsNoneEnabled", "auraColorsIndividual" }) do
+        B.Add("nameplates", B.Bool(key, key, false), "auraColors")
+    end
+    for _, key in ipairs({ "auraColorsAll", "auraColorsNone" }) do
+        B.Add("nameplates", B.Color(key, key, "ffffff"), "auraColors")
+    end
     B.Add("nameplates", B.Bool("auraClickthrough", "Let clicks pass through nameplate auras", false), "native")
     load(out .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua", "MSUF_Suite", NS)
     load(out .. "/MSUF_Suite/Core/Catalog/NameplateAuras.lua", "MSUF_Suite", NS)
@@ -845,11 +1166,18 @@ do
     NS.GlobalFontPath = function() return "font" end
 
     local function NewP(bars)
-        local config, refreshers, grids, P = { auraDisplayEnabled = true }, {}, {}, nil
+        local config, refreshers, grids, P = { auraDisplayEnabled = true, enabled = true }, {}, {}, nil
         P = { Suite = NS, Tr = function(s) return s end, catalog = NS.SuiteCatalog, refreshes = 0, finished = {}, grids = grids, config = config }
         P.Meta = function(_, _, key) return { settingKey = key } end
+        P.T = { colors = {}, Panel = function(parent) return Frame("Panel", parent) end }
         P.Text = function(parent, text) local f = Frame("FontString", parent) f.text = text return f end
-        P.Button = function(_, _, label, _, _, _, onClick) local b = Frame("Button") b.click = onClick P.button = b return b end
+        P.Button = function(_, _, label, _, _, _, onClick)
+            local button = Frame("Button")
+            button.click = onClick
+            P.button = button
+            if label == "Global Aura Appearance" then P.appearanceButton = button end
+            return button
+        end
         P.AttachRuleColors = function(_, _, _, rules) P.colors = #rules end
         P.SetTranslatedText = function(f, text) f.text = text end
         P.Refresh = function() P.refreshes = P.refreshes + 1 for _, fn in ipairs(refreshers) do fn() end end
@@ -858,7 +1186,18 @@ do
         P.Set = function(_, key, value) assert(spec.rules[key], key) config[key] = value return true end
         P.SetMany = function(_, values) for k, v in pairs(values) do assert(spec.rules[k], k) config[k] = v end return true end
         P.M = { cache = {}, TrackRefresh = function(_, fn) refreshers[#refreshers + 1] = fn end,
-            BindTextInputAt = function(_, parent, _, _, _, _, _, set) local i = Frame("EditBox", parent) i.set = set return i end }
+            BindTextInputAt = function(_, parent, _, _, _, _, _, set)
+                local i = Frame("EditBox", parent)
+                i.set, P.input = set, i
+                return i
+            end,
+            BindSwitchAt = function(_, parent, _, _, _, _, _, _, row)
+                assert(not P.gridKeys[row.settingKey], row.settingKey .. " has two controls")
+                P.gridKeys[row.settingKey] = true
+                return Frame("Switch", parent)
+            end }
+        P.RuleRow = function(_, _, rule) return { settingKey = rule.key, label = rule.label } end
+        P.GateControls = function() end
         P.W = { SettingsRows = function(_, parent, s)
             local grid = { controls = {}, bottomY = s.y - 60, rows = s.rows }
             for _, row in ipairs(s.rows) do grid.controls[row.id] = Frame("Control", parent) end
@@ -895,6 +1234,7 @@ do
             return y - 30 * #rules, {}
         end
         P.HM = { GetSectionWidth = function() return 700 end, GetSectionEntry = function() return {} end,
+            SetSearchTargetPrepare = function() end,
             GetSectionEnsureVisible = function() return function() P.revealed = (P.revealed or 0) + 1 end end }
         P.LazySection = function(_, id, _, _, s)
             local body = Frame("Section") body.id = id
@@ -914,18 +1254,19 @@ do
         P.StylePreviewFont = function() end
         P.RGB = function() return 1, 1, 1 end
         P.S = { Config = function() return config end }
+        P.NameplatesEditorLayers = { AuraGroup = function(_, side) return side .. "Npc" end }
+        load(out .. "/MSUF_Suite_Options/Pages/NameplatesSectionsLayout.lua", "MSUF_Suite_Options", P)
         load(out .. "/MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua", "MSUF_Suite_Options", P)
         return P, config
     end
 
     local function BarKind(bar)
         local values = bar.opts.values
-        if #values == 5 then return "lane" end
-        return values[5].value == "whitelist" and "custom" or "dots"
+        return #values == 2 and "native" or "tracked"
     end
     local function SetTool(P, kind, tool)
-        if not P.bars then return P.grids[1].rows[3].set(tool) end
-        for i = 3, 5 do if BarKind(P.bars[i]) == kind then P.bars[i].opts.setValue(tool) end end
+        if not P.bars then return P.grids[1].rows[2].set(tool) end
+        for i = 2, 3 do if BarKind(P.bars[i]) == (kind == "native" and "native" or "tracked") then P.bars[i].opts.setValue(tool) end end
     end
     for _, bars in ipairs({ true, false }) do
         local P, config = NewP(bars)
@@ -936,56 +1277,57 @@ do
         local placed = {}
         for _, key in ipairs(sections[1].keys) do assert(spec.rules[key], key) placed[key] = true end
         assert(placed.auraFriendlyDotsVisible and placed.auraEnemyCustom3StackPoint and placed.auraSunder and not placed.auraEnemyDotsIDsRetail)
-        -- Blizzard's own aura settings, the master switch and the shared look all live in the workspace
-        for _, key in ipairs({ "enemyNpcAuraMode", "enemyPlayerControl", "friendlyPlayerBuffs", "friendlyNpcDebuffs", "auraScalePercent",
-            "personalAuras", "auraClickthrough", "auraDisplayEnabled", "auraFont", "auraHighlightSize", "auraEnemyBuffVisible",
-            "auraFriendlyDebuffFilter" }) do assert(placed[key], key .. " has no place in the workspace") end
+        assert(not placed.enemyNpcAuraMode and not placed.auraEnemyBuffVisible and not placed.auraClickthrough)
+        for _, key in ipairs({ "enemyNpcBuffs", "enemyPlayerControl", "friendlyPlayerBuffs", "friendlyNpcDebuffs", "auraScalePercent",
+            "personalAuras", "auraEnemyBuffClickthrough", "auraFriendlyDebuffClickthrough", "auraEnemyControlClickthrough",
+            "auraFriendlyCustom1Clickthrough", "auraEnemyDotsClickthrough", "auraDisplayEnabled", "auraFont", "auraHighlightSize", "auraEnemyBuffScale",
+            "auraFriendlyDebuffAlpha" }) do assert(placed[key], key .. " has no place in the workspace") end
         local body = sections[1].build({}, { width = 720 }, sections[1])
         assert(#P.finished == 1 and P.finished[1] < -100, "workspace reported no height")
-        -- the page opens on Buffs > Layout: master switch, the lane's layout, then Blizzard's settings for it
-        assert(P.gridKeys.auraDisplayEnabled and P.gridKeys.auraEnemyBuffVisible and P.gridKeys.auraEnemyBuffPerRow
-            and P.gridKeys.enemyNpcAuraMode and P.gridKeys.enemyPlayerBuffs and P.gridKeys.auraScalePercent and not P.gridKeys.enemyNpcDebuffs)
+        -- Buffs opens with direct switches, followed by layout.
+        assert(P.gridKeys.enemyNpcBuffs and P.gridKeys.enemyPlayerBuffs and P.gridKeys.auraEnemyBuffScale and not P.gridKeys.auraEnemyBuffUseLayout
+            and not P.gridKeys.auraDisplayEnabled and not P.gridKeys.auraEnemyBuffVisible
+            and not P.gridKeys.enemyNpcAuraMode and not P.gridKeys.enemyNpcDebuffs and not P.gridKeys.enemyNpcControl)
         assert(P.colors == 3, "the shared aura colors lost their menu")
         if bars then
-            assert(#P.bars == 5 and P.bars[2].opts.label == "Container:" and #P.bars[2].opts.values == 6
-                and P.bars[2].opts.values[1].value == "buff" and P.bars[2].opts.values[6].value == "dots")
+            assert(#P.bars == 3 and P.bars[1].opts.label == "Container:" and #P.bars[1].opts.values == 7
+                and P.bars[1].opts.values[1].value == "buff" and P.bars[1].opts.values[3].value == "control"
+                and P.bars[1].opts.values[7].value == "dots")
             -- only the tool bar of the selected container kind shows
-            for i = 3, 5 do assert(P.bars[i].shown == (BarKind(P.bars[i]) == "lane"), "Edit bar does not follow the container kind") end
-            assert(P.bars[3].opts.label == "Edit:")
-            P.bars[2].opts.setValue("dots")
+            for i = 2, 3 do assert(P.bars[i].shown == (BarKind(P.bars[i]) == "native"), "Edit bar does not follow the container kind") end
+            assert(P.bars[2].opts.label == "Edit:")
+            P.bars[1].opts.setValue("dots")
             assert(P.refreshes == 1 and #P.finished == 2)
-            for i = 3, 5 do
-                local dots = BarKind(P.bars[i]) == "dots"
-                assert(P.bars[i].shown == dots and P.bars[i].buttons[1].shown == dots, "Edit bar does not follow the container kind")
-            end
+            assert(P.bars[1].opts.getValue() == "dots")
         else
-            assert(#P.grids == 1 and #P.grids[1].rows == 3 and #P.grids[1].rows[2].values() == 6 and #P.grids[1].rows[3].values() == 5)
-            P.grids[1].rows[2].set("dots")
-            assert(#P.grids[1].rows[3].values() == 6 and P.grids[1].rows[3].values()[5].value == "dots")
+            assert(#P.grids == 1 and #P.grids[1].rows == 2 and #P.grids[1].rows[1].values() == 7 and #P.grids[1].rows[2].values() == 2)
+            P.grids[1].rows[1].set("dots")
+            assert(#P.grids[1].rows[2].values() == 6 and P.grids[1].rows[2].values()[5].value == "whitelist")
         end
-        -- every Blizzard tab of both plates: each setting keeps exactly one control (P.RuleGrid asserts it)
-        for _, key in ipairs({ "enemyPlayerDebuffs", "friendlyPlayerBuffs", "friendlyNpcDebuffs", "enemyNpcBuffs" }) do sections[1].prepare(key) end
-        assert(P.gridKeys.friendlyPlayerAuraMode and P.gridKeys.enemyNpcControl and P.gridKeys.friendlyPlayerControl)
-        -- a lane resets its own settings, its Blizzard switches and the dragged positions, not the shared mode
+        -- Switching between shared plate types does not duplicate exact controls.
+        UI.SelectSide("enemy", "neutral")
+        UI.SelectSide("enemy", "enemy")
+        for _, key in ipairs({ "enemyPlayerDebuffs", "friendlyPlayerBuffs", "friendlyNpcDebuffs", "enemyNpcBuffs",
+            "enemyNpcControl", "friendlyPlayerControl" }) do sections[1].prepare(key) end
+        assert(P.gridKeys.friendlyNpcDebuffs and P.gridKeys.enemyNpcControl and P.gridKeys.friendlyPlayerControl
+            and not P.gridKeys.friendlyPlayerAuraMode)
+        -- Resetting the layout leaves the direct visibility settings alone.
         sections[1].prepare("enemyPlayerDebuffs")
-        config.enemyNpcAuraMode, config.enemyNpcDebuffs, config.auraEnemyDebuffSize, config.auraEnemyBuffSize = 2, false, 40, 41
+        config.enemyNpcAuraMode, config.enemyNpcDebuffs, config.auraEnemyDebuffScale, config.auraEnemyBuffScale = 2, false, 40, 41
         body.reset()
-        assert(config.enemyNpcDebuffs == nil and config.auraEnemyDebuffSize == nil and config.enemyNpcAuraMode == 2 and config.auraEnemyBuffSize == 41)
-        assert(#P.resetExtra == 4 and P.resetExtra[1] == "enemyAurasOffsetX" and P.resetExtra[4] == "enemyControlAuraOffsetY")
-        -- every Style view shows the shared look below its own; it has one control each
+        assert(config.enemyNpcDebuffs == false and config.auraEnemyDebuffScale == nil and config.enemyNpcAuraMode == 2 and config.auraEnemyBuffScale == 41)
+        assert(#P.resetExtra == 2 and P.resetExtra[1] == "enemyAurasOffsetX")
         sections[1].prepare("auraFont")
-        assert(P.gridKeys.auraFont and P.gridKeys.auraEnemyBuffZoom)
+        assert(P.gridKeys.auraFont)
         sections[1].prepare("auraFriendlyCustom2Zoom")
-        sections[1].prepare("auraEnemyDebuffSort")
-        -- Global Aura Appearance opens the Style tool of the shown container
-        P.button.click()
-        assert(P.gridKeys.auraEnemyDebuffZoom, "Global Aura Appearance did not open Style")
-        -- the Blacklist of a lane edits this client's list
-        sections[1].prepare("auraFriendlyBuffVisible")
-        SetTool(P, "lane", "blacklist")
-        assert(P.grids[#P.grids].rows[1].label == "Add blocked aura")
-        P.grids[#P.grids].rows[1].set(589)
-        assert(config.auraFriendlyBuffBlockRetail == "589")
+        assert(not P.gridKeys.auraFriendlyCustom2StackX and P.gridKeys.auraFriendlyCustom2SwipeDirection)
+        sections[1].prepare("auraEnemyBuffAlpha")
+        assert(P.gridKeys.auraEnemyBuffAlpha and P.gridKeys.auraEnemyBuffClickthrough and not P.gridKeys.auraEnemyBuffZoom)
+        sections[1].prepare("auraFriendlyDebuffClickthrough")
+        sections[1].prepare("auraEnemyControlClickthrough")
+        sections[1].prepare("auraFriendlyCustom1Clickthrough")
+        assert(P.gridKeys.auraFriendlyDebuffClickthrough and P.gridKeys.auraEnemyControlClickthrough
+            and P.gridKeys.auraFriendlyCustom1Clickthrough and not P.gridKeys.auraClickthrough)
         -- search / preview jump selects plates, container and tool
         sections[1].prepare("auraFriendlyCustom2Gap")
         assert(P.revealed and P.refreshes >= 2)
@@ -997,41 +1339,47 @@ do
         SetTool(P, "custom", "whitelist")
         local listGrid = P.grids[#P.grids]
         assert(listGrid.rows[1].label == "Add allowed aura" and #listGrid.rows[1].values() == 2)
-        listGrid.rows[1].set(589)
+        P.input.SetOnValueCommittedArgs[1]("589")
         listGrid.rows[1].set(172)
         listGrid.rows[1].set(589)
         assert(config.auraEnemyCustom1SpellsRetail == "589,172" and config.auraEnemyCustom1SpellsForever == "999")
+        listGrid.rows[4].set(589)
+        assert(config.auraEnemyCustom1SpellsRetail == "172,589")
+        listGrid.rows[3].set(589)
+        assert(config.auraEnemyCustom1SpellsRetail == "589,172")
         listGrid.rows[2].set(589)
         assert(config.auraEnemyCustom1SpellsRetail == "172")
         -- a custom DoT selects the custom list as source
         sections[1].prepare("auraEnemyDotsSource")
-        SetTool(P, "dots", "dots")
+        SetTool(P, "dots", "whitelist")
         P.grids[#P.grids].rows[1].set(34914)
         assert(config.auraEnemyDotsIDsRetail == "34914" and config.auraEnemyDotsSource == 2)
         -- reset: the shown container on this client only
         body.reset()
         assert(config.auraEnemyDotsIDsRetail == nil and config.auraEnemyCustom1SpellsForever == "999" and config.auraEnemyCustom1SpellsRetail == "172")
         -- preview: only enabled containers show, handles bind once per container
-        config.enemy, config.auraEnemyDotsVisible, config.auraEnemyDotsIDsRetail, config.auraEnemyDotsSource = true, true, "1,2,3", 2
-        local sample = { prefix = "enemy", cell = Frame("Frame"), bar = Frame("Frame"), buffs = Frame("Frame"), auras = Frame("Frame") }
+        config.enemy, config.auraEnemyDotsVisible, config.auraEnemyDotsIDsRetail, config.auraEnemyDotsSource = true, true, "589,2944", 2
+        config.auraEnemyDotsDisplay, config.auraEnemyDotsHideDuplicates = 2, true
+        local sample = { prefix = "enemy", state = { target = true }, cell = Frame("Frame"), bar = Frame("Frame"), buffs = Frame("Frame"), auras = Frame("Frame") }
         local bound = {}
         local editor = { LayerOn = function() return true end, Bind = function(_, frame, id, _, kx, ky) bound[id] = { frame, kx, ky } end }
         UI.Render(editor, sample, {})
         UI.Render(editor, sample, {})
         assert(bound["enemy.Tracked"][2] == "auraEnemyDotsOffsetX" and bound["enemy.CustomTwo"][3] == "auraEnemyCustom2OffsetY")
         assert(bound["enemy.Tracked"][1].shown == true and bound["enemy.CustomTwo"][1].shown == false)
-        assert(#sample.auraPreviewState.containers.dots.icons == 3)
+        local state = sample.auraPreviewState
+        assert(#state.containers.dots.icons == 2 and state.exclusions.debuff[589] and state.exclusions.debuff[2944]
+            and not state.exclusions.debuff[34914], "packed preview used generic auras instead of the tracked list")
+        assert(state.containers.dots.icons[1].icon.texture == 589 and state.containers.dots.icons[2].icon.texture == 2944)
+        config.auraEnemyDotsType = 1
+        UI.Render(editor, sample, {})
+        assert(state.exclusions.buff[589] and not state.exclusions.debuff[589], "buff preview filtered the debuff lane")
         assert(NS.NameplateAuraDisplay.Element("enemy.Tracked") and not NS.NameplateAuraDisplay.Element("enemy.Health"))
-        -- a Visible lane paints over the preview's Blizzard sample and keeps Blizzard's handle; off, the sample returns
         assert(not bound["enemy.Buffs"] and not rawget(sample.buffs, "SetPointArgs"))
-        config.auraEnemyBuffVisible = true
+        sample.state.target = false
         UI.Render(editor, sample, {})
-        assert(sample.buffs.SetPointArgs[1] == "RIGHT" and sample.buffs.SetPointArgs[4] == -6 and sample.buffs.SetSizeArgs[2] == 41)
-        local lanes = sample.auraPreviewState.lanes
-        assert(lanes.buff.painted and #lanes.buff.icons == 3 and not lanes.debuff)
-        config.auraEnemyBuffVisible = false
-        UI.Render(editor, sample, {})
-        assert(lanes.buff.painted == false and lanes.buff.overlay.shown == false)
+        assert(not bound["enemy.Tracked"][1].shown and not sample.auraPreviewState.exclusions.debuff[589])
+
     end
     -- short labels reach the grid, the catalog keeps the full ones
     local P = NewP(true)

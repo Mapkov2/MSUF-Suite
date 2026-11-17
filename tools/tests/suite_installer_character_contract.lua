@@ -172,7 +172,7 @@ for _, forever in ipairs({ false, true }) do
     Check(#H.reported == 0, "installer raised: " .. tostring(H.reported[1]))
 end
 -- An unreadable identity cannot become a saved key or certify another player.
-local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Secrets.Install()
 local secretSuite = H.Setup({ root = root, forever = false })
 local secret = Secrets.New("string")

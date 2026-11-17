@@ -17,8 +17,10 @@ end
 
 -- Native Edit Mode can re-anchor the primary window after our refresh.
 -- Coalesce a layout burst after it finishes; never fight a mover drag or
--- write Blizzard's saved layout/position-manager fields.
-local watched = setmetatable({}, { __mode = "k" })
+-- write Blizzard's saved layout/position-manager fields. Suite.ChatState
+-- asks again after Blizzard's chat window updates, dock layouts, drags and
+-- Edit Mode exit (C.CheckWindowPosition): a SetPoint hook on the window
+-- would run inside FCF_RestorePositionAndDimensions and FCF_DockUpdate.
 local pendingContext
 local function CanHoldWindow()
     local m = C.M
@@ -68,7 +70,7 @@ local function WindowAnchorChanged(frame)
     C_Timer.After(0, RecoverWindowPosition)
 end
 
-local function NativeEditClosed() WindowAnchorChanged(C.M.positionFrame) end
+function C.CheckWindowPosition() WindowAnchorChanged(C.M.positionFrame) end
 
 function C.ApplyWindowPosition(self, visual, frame, primary)
     if not primary then return end
@@ -88,18 +90,6 @@ function C.ApplyWindowPosition(self, visual, frame, primary)
         end
     end
     if c.lockWindowPosition then
-        if not self.preview then
-            if not watched[frame] then
-                hooksecurefunc(frame, "SetPoint", WindowAnchorChanged)
-                watched[frame] = true
-            end
-            -- Blizzard_EditMode creates this at startup on both supported clients.
-            local manager = EditModeManagerFrame
-            if not watched[manager] then
-                manager:HookScript("OnHide", NativeEditClosed)
-                watched[manager] = true
-            end
-        end
         if not self.preview and C.LayoutLocked() then
             S.Queue("chat")
             return

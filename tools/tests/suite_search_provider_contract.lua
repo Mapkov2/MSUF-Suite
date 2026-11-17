@@ -14,7 +14,7 @@
 -- refreshes only when the provider registers again).
 -- An MSUF build without the hook gets no rows and no error.
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
-local classic = root .. "/../MidnightSimpleUnitFrames"
+local classic = root .. "/../MidnightSimpleUnitFrames-7.0"
 local searchHost = (arg[3] or classic):gsub("\\", "/"):gsub("/$", "")
 
 local function Check(condition, message)
@@ -206,9 +206,11 @@ do
         if row.kind == "section" then coldSections[row.sectionId] = true end
     end
     for _, suffix in ipairs({ "basic", "material", "shape", "fonts", "icons", "window_controls",
-        "windows", "coverage", "character" }) do
+        "windows", "coverage" }) do
         Check(coldSections["suite_skin_" .. suffix], "unloaded Skin lost its real section: " .. suffix)
     end
+    Check(coldSections.suite_hud_characterPanel_equipment,
+        "unloaded Skin lost its Character and equipment route under HUD")
     Check(loaded.MSUF_Suite_Skin == skinLoadedBefore and env.MapkoSkin == skinBeforeSearch, "cold search loaded the Skin engine")
     Suite.Skin.enabled = true
 
@@ -678,7 +680,14 @@ do
             for _, identity in ipairs(details) do
                 Check(indexed[identity], "disabled module lost a cold detail: " .. id .. " " .. identity)
             end
-            if hadMaster then
+            if id == "nameplates" then
+                for scope, key in pairs(Suite.NameplateExtensions.SkinKeys) do
+                    local record = FindSetting("msufsuite.nameplates." .. key)
+                    Check(record and record.kind == "toggle" and record.exactTarget
+                        and record.exactTarget.sectionId == "suite_nameplates_" .. scope .. "Basics",
+                        "disabled Nameplates lost its " .. scope .. " switch")
+                end
+            elseif hadMaster then
                 Check(FindSetting("msufsuite." .. id .. ".enabled"), "disabled module lost its switch: " .. id)
             else
                 local featureSwitches = 0
@@ -737,7 +746,8 @@ do
     local providerNames={}
     for name in pairs(collectors) do providerNames[#providerNames+1]=name end
     table.sort(providerNames)
-    Check(#providerNames==17,"provider partition cardinality must remain fixed for 256 bars")
+    Check(#providerNames==19 and collectors["MSUF_Suite.Controls.1"] and collectors["MSUF_Suite.Controls.2"],
+        "provider partition cardinality must remain fixed for 256 bars and control overflow")
     local total,maxGroup,baseRows=0,0,0
     local perBar={}
     for _,row in ipairs(dynamicRows) do
@@ -754,7 +764,8 @@ do
         if name=="MSUF_Suite" then baseRows=#part end
     end
     Check(total==#dynamicRows,"provider partitions lost or duplicated Suite rows")
-    print("suite search dynamic coverage: "..#dynamicRows.." rows / 20 configured bars; 17 fixed providers, base "..baseRows..", max part "..maxGroup..", max per bar "..maxPerBar)
+    print("suite search dynamic coverage: "..#dynamicRows.." rows / 20 configured bars; "..#providerNames
+        .." fixed providers, base "..baseRows..", max part "..maxGroup..", max per bar "..maxPerBar)
     Search("data texts") -- Warm actual host context predicates after the profile/configuration changes.
     for name in pairs(collectors) do collectionCalls[name]=0 end
     P.InvalidateSearch()
@@ -1512,11 +1523,14 @@ do
     local addonOffRows = P.SearchRows()
     Check(MaintenanceRows(addonOffRows) == 4, "AddOn-off search lost its maintenance actions")
     local coreMacroRows = 0
+    local developmentPage
     for _, row in ipairs(addonOffRows) do
         if row.pageKey == "suite_macros" and not row.settingKey then coreMacroRows = coreMacroRows + 1
+        elseif row.pageKey == "suite_devMode" and row.kind == "page" then developmentPage = true
         else Check(row.suiteAlways, "disabled AddOn still provided a module row") end
     end
     Check(coreMacroRows > 0, "AddOn-off search lost the core macro workspace")
+    Check(developmentPage, "AddOn-off search lost the core Dev Mode page")
     if M.RegisterSearchAvailability then
         Search("suite")
         local maintenance = 0
@@ -1525,7 +1539,8 @@ do
             if always then maintenance = maintenance + 1 end
             local coreMacro = row.key == "suite_macros" and not (row.settingKey
                 or row.exactTarget and row.exactTarget.settingKey)
-            Check(not row.key:match("^suite_") or always or coreMacro,
+            local coreDevelopment = row.key == "suite_devMode" and row.kind == "page"
+            Check(not row.key:match("^suite_") or always or coreMacro or coreDevelopment,
                 "AddOn-off cache retained " .. row.kind .. " on " .. row.key)
         end
         Check(maintenance == 4, "search does not find maintenance and graphics actions without their module AddOns")

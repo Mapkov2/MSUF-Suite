@@ -527,6 +527,31 @@ if flavor == "Forever" then
     recipient.slots, recipient.independentSlots = secondarySlots, secondaryIndependent
     assert(api.Restore() and recipient.slots[1] == 801 and recipient.independentSlots[1] == 802,
         "the other group's own undo was lost")
+    local sharedName = Character("dest-dual-other", "Dualdest Ember", "DRUID", 105, "group:2", 881)
+    sharedName.identity.group = 2
+    recipient.identity.name = "Dualdest River"
+    Login(source, {})
+    assert(api.Queue(dualPacket, { [2] = "  Dualdest   River - Test Realm  " }, true, false))
+    Drain()
+    assert(#api.Status().pending == 1, "offline full-name target did not queue")
+    Login(sharedName)
+    assert(sharedName.slots[1] == 881 and #api.Status().pending == 1, "a same-first-name alt consumed the transfer")
+    Login(recipient)
+    assert(recipient.slots[1] == 521 and #api.Status().pending == 0, "full-name destination did not receive the transfer")
+    assert(api.Queue(dualPacket, { [1] = "Dualdest" }, true, false))
+    local db = suite.RootDB
+    local pending = db.actionBarTransfers.pending
+    local key, legacyJobs = next(pending)
+    pending[key], pending["dualdest-testrealm"] = nil, legacyJobs
+    legacyJobs[1].target = "dualdest-testrealm"
+    local withoutSurname = Character("dest-dual-legacy", "Dualdest", "DRUID", 105, "group:1", 891)
+    withoutSurname.identity.group = 1
+    Login(withoutSurname)
+    assert(withoutSurname.slots[1] == 891 and #api.Status().pending == 1, "ambiguous legacy transfer auto-applied")
+    assert(api.Cancel(api.Status().pending[1].id), "ambiguous legacy transfer cannot be cancelled")
+    recipient.identity.name = "Dualdest"
+    recipient.independentSlots[1] = 802
+    Login(recipient, {})
     local legacy = Copy(dualPacket)
     legacy.records[1].group, legacy.records[1].independentSlots, legacy.records[2] = nil, nil, nil
     assert(api.Queue(legacy, { "Dualdest" }, true, false))

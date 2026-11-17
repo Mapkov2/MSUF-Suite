@@ -1,5 +1,5 @@
 -- The Skinning page and the Suite's page resets, as a player meets them:
---  * on WoW Forever the character controls are inert and say why;
+--  * Character Panel owns character view and equipment controls;
 --  * "Reset section" on Fonts restores the font choice (followMSUF, face),
 --    not just the face, and the Fonts section shows a font problem;
 --  * "Reset page" on Skinning restores the factory look for the Suite too and
@@ -69,7 +69,7 @@ skin.CharacterDetails = {
 }
 skin.CharacterStats = { SetOption = function(key, value) skin.DB.characterStats[key] = value; return true end,
     RefreshFonts = Noop }
-skin.Registry = { NotifyListeners = Noop, RefreshAll = Noop, QueueRefresh = Noop }
+skin.Registry = { NotifyListeners = Noop, RefreshAll = Noop, QueueRefresh = Noop, AddListener = Noop, RemoveListener = Noop }
 skin.Database = {
     GetProfileNames = function() return { "Default" } end,
     GetActiveProfileName = function() return "Default" end,
@@ -189,30 +189,51 @@ end
 
 ------------------------------------------------------------------ WoW Forever: character controls
 do
-    local retail = Suite.Client.modernEquipment
+    local retail, forever = Suite.Client.modernEquipment, Suite.Client.isForever
+    local section = "suite_hud_characterPanel_equipment"
+    local function BuildEquipment()
+        local ctx = { key = "suite_hud", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+        F.SetCurrent(ctx)
+        local builder = W.PageBuilder(ctx)
+        local original = builder.CollapsibleSection
+        function builder:CollapsibleSection(...)
+            local body = original(self, ...)
+            body._msufSuiteHUDReveal = Noop
+            return body
+        end
+        optionsNS.SkinPageKit.BuildCharacter(ctx, builder)
+        for _, refresh in ipairs(ctx.refreshers) do refresh() end
+        return ControlsOf(ctx, section)
+    end
     Suite.Client.modernEquipment = true
-    local controls = ControlsOf(BuildSkinPage(), "suite_skin_character")
+    local controls = BuildEquipment()
     Check(#controls == 8, "the character section changed: " .. #controls .. " controls")
     for _, widget in ipairs(controls) do
-        Check(widget.enabled and rawget(widget, "disabledReason") == nil,
+        local reason = rawget(widget, "disabledReason")
+        Check(widget.enabled and (not reason or reason() == nil),
             "a Retail character control is gated: " .. tostring(widget.meta.settingKey))
     end
-    Suite.Client.modernEquipment = false
-    local ctx = BuildSkinPage()
-    controls = ControlsOf(ctx, "suite_skin_character")
+    Suite.Client.modernEquipment, Suite.Client.isForever = false, true
+    controls = BuildEquipment()
     Check(#controls == 8, "Forever lost a character control")
     for _, widget in ipairs(controls) do
         local reason = rawget(widget, "disabledReason")
-        Check(widget.enabled == false, "a Forever character control is live: " .. tostring(widget.meta.settingKey))
-        Check(type(reason) == "function" and reason():find("only in Retail", 1, true),
-            "a Forever character control gives no reason: " .. tostring(widget.meta.settingKey))
+        local key = widget.meta.settingKey
+        local retailOnly = key:find("characterStats", 1, true) or key:find("wideLayout", 1, true)
+        Check(widget.enabled == not retailOnly, "incorrect Forever availability for " .. key)
+        Check(not retailOnly or reason and reason():find("only in Retail", 1, true), "missing availability reason for " .. key)
+        if key == "msufsuite.skin.character.view" then
+            widget.set("list")
+            Check(skin.DB.characterDetails.view == "list", "Character view did not write through the moved control")
+        end
     end
     local help
     for _, row in ipairs(optionsNS.SkinSearchRows()) do
-        if row.sectionId == "suite_skin_character" and row.kind == "section" then help = row.help end
+        if row.sectionId == section and row.kind == "section" and row.pageKey == "suite_hud" then help = row.help end
     end
-    Check(help and help:find("only in Retail", 1, true), "the Forever section does not say it is Retail only")
-    Suite.Client.modernEquipment = retail
+    Check(help and help:find("Suite Character Panel", 1, true), "search did not route equipment into Character Panel")
+    Check(#ControlsOf(BuildSkinPage(), section) == 0, "Character controls remain in Skinning")
+    Suite.Client.modernEquipment, Suite.Client.isForever = retail, forever
 end
 
 ------------------------------------------------------------------ Scroll behavior and its independent bounce toggle

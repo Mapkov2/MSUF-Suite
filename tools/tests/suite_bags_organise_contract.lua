@@ -419,7 +419,8 @@ for _, client in ipairs({ "Mainline", "Forever" }) do
         local V = W.P.InventoryView
         local ids = {}
         for i, row in ipairs(Groups(V).all.displayRows) do ids[i] = row.item.itemID end
-        equal(table.concat(ids, ",", 1, 3), "20,21,10", client .. ": quality order in All items")
+        local rankedOrder = client == "Forever" and "10,21,20" or "20,21,10"
+        equal(table.concat(ids, ",", 1, 3), rankedOrder, client .. ": All items slot order with quality selected")
         W.config.sortMode = SORT.NAME
         W.Apply()
         W.Settle()
@@ -432,7 +433,7 @@ for _, client in ipairs({ "Mainline", "Forever" }) do
         W.Settle()
         ids = {}
         for i, row in ipairs(Groups(V).all.displayRows) do ids[i] = row.item.itemID end
-        equal(table.concat(ids, ",", 1, 3), "20,21,10", client .. ": item level order")
+        equal(table.concat(ids, ",", 1, 3), rankedOrder, client .. ": All items slot order with item level selected")
     end
 
     ---------------------------------------------------------------- free slots
@@ -454,6 +455,18 @@ for _, client in ipairs({ "Mainline", "Forever" }) do
         W.Fire("BAG_UPDATE", 5)
         W.Settle()
         equal(V.free.text, "4 free + 2 reagent", client .. ": the count follows bag changes")
+        if client == "Forever" then
+            W.families = { [1] = 32, [5] = 4 }
+            W.BagChanged(1)
+            W.Fire("BAG_UPDATE", 5)
+            W.Settle()
+            equal(V.free.text, "2 free", "Forever specialty bags are not general or reagent space")
+            W.families = nil
+            W.BagChanged(1)
+            W.Fire("BAG_UPDATE", 5)
+            W.Settle()
+            equal(V.free.text, "4 free + 2 reagent", "changing the equipped bag restores the right counts")
+        end
         -- Blizzard's own refresh reads every slot; the count adds no read to it.
         local before = W.calls.info
         W.Native(function() W.CF:UpdateItems() end)
@@ -589,7 +602,16 @@ for _, client in ipairs({ "Mainline", "Forever" }) do
         W.Put(0, 4, 23, 1)  -- plate helm for a cloth wearer
         W.Put(0, 5, 24, 1)  -- a trinket the client says the player cannot use
         W.Put(1, 1, 10, 3)  -- not equipment
+        W.Define(40, { name = "One-hand mace", class = 2, subclass = 4, equipLoc = "INVTYPE_WEAPON", level = 279 })
+        W.Define(41, { name = "Worn mace", class = 2, subclass = 4, equipLoc = "INVTYPE_WEAPON", level = 295 })
+        W.Define(42, { name = "Worn shield", class = 4, subclass = 6, equipLoc = "INVTYPE_SHIELD", level = 272 })
+        W.Define(43, { name = "Off-hand mace", class = 2, subclass = 4, equipLoc = "INVTYPE_WEAPONOFFHAND", level = 285 })
+        W.Put(1, 2, 40, 1)
+        W.Put(1, 3, 43, 1)
         W.worn[1], W.worn[11], W.worn[12] = "item:25", "item:26", "item:27"
+        W.worn[16], W.worn[17] = "item:41", "item:42"
+        local savedDualWield, dualWield = CanDualWield, false
+        CanDualWield = function() return dualWield end
         local playerLevel = 70
         C_PlayerInfo.CanUseItem = function(id) return id ~= 24 or playerLevel >= 80 end
         local links = 0
@@ -613,6 +635,17 @@ for _, client in ipairs({ "Mainline", "Forever" }) do
             W.Settle()
         end
         equal(links, reads, client .. ": worn equipment was read again without an equipment change")
+        assert(not ArrowShown(W, 40), client .. ": lower mace was marked as an upgrade over a shield without dual wield")
+        assert(not ArrowShown(W, 43), client .. ": a weapon restricted to the off hand was marked without dual wield")
+        dualWield = true
+        W.Fire("SPELLS_CHANGED")
+        W.Settle()
+        assert(ArrowShown(W, 40) and ArrowShown(W, 43), client .. ": learning dual wield did not refresh the off-hand comparison")
+        dualWield = false
+        W.Fire("SPELLS_CHANGED")
+        W.Settle()
+        assert(not ArrowShown(W, 40) and not ArrowShown(W, 43), client .. ": losing dual wield left a mace marked")
+        CanDualWield = savedDualWield
         -- The second ring is now worn at 250: the ring of 250 no longer beats the lower worn ring.
         W.worn[12] = "item:21"
         W.Fire("PLAYER_EQUIPMENT_CHANGED", 12, true)

@@ -153,4 +153,19 @@ Check(not captionState.visible and caption.slots.Normal.atlas == "redbutton-exit
 W.Yield(caption, false)
 Check(W.Apply(caption, "caption", "close") == captionState and captionState.visible,
     "a released native could not take the action skin again")
+if NS.Client.isForever then
+    local cell = H.Target("Button", UIParent)
+    local glyph = H.Texture()
+    function cell:CreateTexture() return glyph end
+    settings.style, settings.closeGlyphSize, settings.opacity = "bare", 10, .65
+    Check(W.PaintCaption(cell, "close", "normal") and glyph.width == 10 and glyph:IsShown(),
+        "the owned title button did not use the action glyph")
+    Check(W.SetOption("closeGlyphSize", 14) and W.PaintCaption(cell, "close", "normal") and glyph.width == 14,
+        "the owned title button ignored the live glyph size")
+    H.SetCombat(true)
+    Check(W.PaintCaption(cell, "close", "highlight") and glyph.width == 14, "combat switched the shown caption")
+    H.SetCombat(false)
+    Check(W.SetOption("style", "native") and not W.PaintCaption(cell, "close", "normal") and not glyph:IsShown(),
+        "native styling did not release the owned glyph")
+end
 print("Window action combat parity: " .. checks .. " checks passed (" .. tostring(arg[2]) .. ")")

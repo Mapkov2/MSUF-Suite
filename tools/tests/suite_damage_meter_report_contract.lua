@@ -477,8 +477,10 @@ do
         f.Event("PLAYER_SPECIALIZATION_CHANGED", "player")
     end
     local DAMAGE_TAKEN, HEALING, DPS = TYPE.DamageTaken + 2, TYPE.HealingDone + 2, TYPE.Dps + 2
+    local previousIconStyle = c.iconStyle
     Settings({ windowCount = 2, w1Type = 1, w2Type = 3, w1RoleTank = 1, w1RoleHealer = 1, w1RoleDamager = 1,
-        w2RoleTank = 1, w2RoleHealer = 1, w2RoleDamager = 1, w1MythicType = 1, w2MythicType = 1 })
+        w2RoleTank = 1, w2RoleHealer = 1, w2RoleDamager = 1, w1MythicType = 1, w2MythicType = 1,
+        iconStyle = D.ICON.CLASS })
     assert(not f.Registered("PLAYER_SPECIALIZATION_CHANGED"), "role events must stay off while every role keeps its meter")
     Settings({ w1RoleTank = DAMAGE_TAKEN, w1RoleHealer = HEALING, w2RoleHealer = DPS })
     assert(f.Registered("PLAYER_SPECIALIZATION_CHANGED"), "role events are needed once a role has a meter")
@@ -524,6 +526,7 @@ do
     keyActive = false
     Settings({ w1RoleTank = 1, w1RoleHealer = 1, w2RoleTank = 1, w2RoleHealer = 1 })
     assert(not f.Registered("PLAYER_SPECIALIZATION_CHANGED"), "role events stay registered after the last role meter is gone")
+    Settings({ iconStyle = previousIconStyle })
 end
 
 ------------------------------------------------------------------ preview (last: it switches the module off)

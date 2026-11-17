@@ -18,6 +18,32 @@ Settings({ enabled = true, windowCount = 2, visibility = 1, w1Type = 1, w2Type =
     w1Session = 1, w2Session = 1, showPlayer = false, headerHeight = 22,
     headerSelectors = true, hoverTooltip = true, tooltipRows = 3, inlineRecap = false })
 local win, other = D.windows[1], D.windows[2]
+
+do
+    local raid, savedIsInRaid = false, IsInRaid
+    IsInRaid = function() return raid end
+    local normalRows = win.capacity
+    Settings({ numberFormat = f.NS.DamageMeterValueFormat.COLUMNS, percent = true,
+        w1RaidRows = 12, w2AnchorWindow = 2, w2AnchorGap = 16 })
+    local link = other.frame.points[1]
+    assert(link[2] == win.frame and link[3] == "BOTTOMRIGHT" and link[5] == -16,
+        "second meter did not anchor below the first")
+    local first = win.rows[1]
+    assert(first.columns and first.rateText:IsShown() and first.percentText:IsShown(),
+        "column mode did not lay out the visible row")
+    assert(not D.AnchorParent(1), "window one accepted a forward or self anchor")
+    raid = true
+    f.Event("GROUP_ROSTER_UPDATE")
+    assert(win.capacity == 12, "entering a raid did not use its row count")
+    raid = false
+    f.Event("GROUP_ROSTER_UPDATE")
+    assert(win.capacity == normalRows, "leaving a raid did not restore the normal height")
+    IsInRaid = savedIsInRaid
+    Settings({ numberFormat = 3, percent = false, w1RaidRows = 0, w2AnchorWindow = 1 })
+    assert(not first.rateText:IsShown() and not first.percentText:IsShown(),
+        "switching back left column widgets on the meter")
+end
+
 local boss = { name = "Boss", guid = "Creature-0-99", creature = 99 }
 local add = { name = "Add", guid = "Creature-0-100", creature = 100 }
 

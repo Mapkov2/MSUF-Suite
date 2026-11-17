@@ -191,17 +191,24 @@ local activityBox, activityBar = Controller(activityView), Controller(activityVi
 local activityContent = Frame(nil, activityBox)
 function activityBox:GetScrollTarget() return activityContent end
 activityBox.registeredScrollBar, activityBar.registeredScrollBox = activityBar, activityBox
-Check(NS.ScrollMotion.Track(activityBox, "forever-listing"), "Forever activity list was not adopted")
-Check(NS.ScrollMotion.Track(activityBar, "forever-listing"), "Forever activity bar was not adopted")
+LFGListingFrame = listing
+listing.ActivityView = { ScrollBox = activityBox, ScrollBar = activityBar }
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/ForeverGroupFinder.lua"))("MSUF_Suite_Skin", NS)
+Check(not NS.ScrollMotion.Track(activityBox, "forever-listing"), "skin animated the Forever activity tree")
+Check(not NS.ScrollMotion.Track(activityBar, "forever-listing"), "skin animated the activity tree through its scrollbar")
 Check(writes == 0 and NS.ScrollMotion.states[activityBox] == nil and NS.ScrollMotion.states[activityBar] == nil,
     "Forever Group Finder adoption wrote native ScrollController state")
 activityBox:Fire("scroll", 0, 0.25)
 activityBox:Fire("scroll", 0.01, 0.25)
-Check(activityContent.group and activityContent.group.playing and activityContent.group.move.y == -6,
-    "Forever Group Finder lost finite render easing")
+Check(not activityContent.group, "skin translated activity rows during a native disclosure")
 NS.ScrollMotion.ReleaseOwner("forever-listing")
-Check(writes == 0 and next(activityBox.callbacks.scroll) == nil and not activityContent.group.playing,
+Check(writes == 0 and next(activityBox.callbacks.scroll or {}) == nil and not activityContent.group,
     "Forever Group Finder release wrote native state or retained animation")
+local browse = Controller(foreverParent)
+local browseContent = Frame(nil, browse)
+function browse:GetScrollTarget() return browseContent end
+Check(NS.ScrollMotion.Track(browse, "forever-browse"), "native activity opt-out also disabled the browse results")
+NS.ScrollMotion.ReleaseOwner("forever-browse")
 local ordinary = Controller(Frame("OtherWindow"))
 Check(NS.ScrollMotion.Track(ordinary, "ordinary") and ordinary.canInterpolateScroll,
     "ordinary window lost native smooth scrolling")

@@ -3,7 +3,8 @@ local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
 assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,NameText.lua,Power.lua,Threat.lua,"
     .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Selection.lua,"
-    .. "Mouseover.lua,FriendlyNames.lua,Decor.lua,AuraDisplay.lua,ExtensionLayout.lua,ExtensionText.lua,ExtensionEffects.lua,ExtensionResources.lua,Extensions.lua,Skin.lua",
+    .. "Mouseover.lua,FriendlyNames.lua,Decor.lua,AuraFilter.lua,AuraDisplay.lua,ExtensionLayout.lua,ExtensionText.lua,ExtensionEffects.lua,Extensions.lua,Status.lua,"
+    .. "CastAppearance.lua,CastOutline.lua,CastTextStyle.lua,CastGlowStyle.lua,Absorbs.lua,Textures.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -73,6 +74,8 @@ local function PlayerControlled() return false end
 UnitPlayerControlled = PlayerControlled
 UnitIsDead = function() return false end
 UnitIsConnected = function() return true end
+local afk, now = false, 30
+UnitIsAFK = function() return afk end
 UnitReaction = function() return 2 end
 UnitCanAttack = function() return true end
 UnitIsTrivial = function() return false end
@@ -125,6 +128,7 @@ local function Region()
     function r:GetTexture() return self.texture end
     function r:SetAtlas(value) self.atlas, self.texture = value, "atlas-file" end
     function r:GetAtlas() return self.atlas end
+    function r:ClearTextureSlice() end
     function r:SetTexCoord(...)
         local coords = { ... }
         if #coords == 4 then
@@ -137,6 +141,11 @@ local function Region()
     function r:AddMaskTexture(mask) self.mask = mask end
     function r:RemoveMaskTexture(mask) if self.mask == mask then self.mask = nil end end
     function r:SetColorTexture(...) self.color = { ... } end
+    function r:SetBlendMode(mode) self.blendMode = mode end
+    function r:SetGradient(axis, first, last)
+        self.gradient = { axis, first, last }
+        self.gradientWrites = (self.gradientWrites or 0) + 1
+    end
     function r:SetVertexColor(...)
         self.vertexColor = { ... }
         self.vertexColorWrites = (self.vertexColorWrites or 0) + 1
@@ -159,10 +168,25 @@ local function Region()
     function r:SetHeight(value) self.height = value end
     function r:SetWidth(value) self.width = value end
     function r:SetSize(width, height) self.width, self.height = width, height end
-    function r:Show() self.shown = true end
+    function r:Show()
+        local wasShown = self.shown
+        self.shown = true
+        local hooks = self.scriptHooks and self.scriptHooks.OnShow
+        if not wasShown and hooks then
+            for i = 1, #hooks do hooks[i](self) end
+        end
+    end
+    function r:HookScript(script, callback)
+        self.scriptHooks = self.scriptHooks or {}
+        local hooks = self.scriptHooks[script] or {}
+        self.scriptHooks[script] = hooks
+        hooks[#hooks + 1] = callback
+    end
     function r:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
     function r:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
     function r:UnregisterEvent(event) if self.events then self.events[event] = nil end end
+    function r:UnregisterAllEvents() self.events = {} end
+    function r:IsForbidden() return self.forbidden == true end
     function r:IsProtected() return self.protected == true, false end
     function r:Hide() self.shown = false end
     function r:SetShown(value) self.shown = value end
@@ -200,6 +224,7 @@ local function Region()
     function r:SetShadowColor(...) self.shadow = { ... }; self.shadowColorWrites = (self.shadowColorWrites or 0) + 1 end
     function r:SetShadowOffset(...) self.shadowOffset = { ... }; self.shadowOffsetWrites = (self.shadowOffsetWrites or 0) + 1 end
     function r:SetText(value) self.text = value end
+    function r:SetFormattedText(format, ...) self.text = format:format(...) end
     function r:SetTextHeight(value) self.textHeight = value end
     function r:SetTextColor(...) self.textColor = { ... } end
     function r:SetJustifyH(value) self.justify = value end
@@ -208,7 +233,7 @@ end
 
 CreateFrame = function(_, _, parent) local frame = Region(); frame.parent = parent; return frame end
 MSUF_NS = {}
-assert(loadfile(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
+dofile(root .. "/tools/tests/suite_test_support.lua").LoadBossTargetIndicator(root, MSUF_NS)
 
 local bar, cast, name, aura = Region(), Region(), Region(), Region()
 local raidFrame, raidIcon = Region(), Region()
@@ -232,6 +257,8 @@ aura.auraItemFramePool = {
     GetNumActive = function() return 1 end,
     EnumerateActive = function() error("EnumerateActive allocates an iterator per refresh") end,
 }
+aura.CrowdControlListFrame = {}
+function aura:RefreshList() end
 function aura:RefreshAuras() end
 function aura:RefreshLossOfControl() end
 name:SetFont("native-font", 10)
@@ -309,7 +336,8 @@ local uf = {
     HealthBarsContainer = healthContainer, CastBarsContainer = { castBar = cast },
 }
 uf.CreateTexture, uf.CreateFontString = bar.CreateTexture, bar.CreateFontString
-uf.IsProtected = bar.IsProtected
+uf.IsForbidden, uf.IsProtected, uf.GetFrameLevel = bar.IsForbidden, bar.IsProtected, bar.GetFrameLevel
+uf.GetAlpha, uf.SetAlpha = bar.GetAlpha, bar.SetAlpha
 function uf:UpdateAnchors()
     error("nameplate skin must not reenter native layout")
 end
@@ -339,6 +367,8 @@ C_CVar = { GetCVar = function(key) return liveCVars[key] end,
     end }
 NamePlateUnitFrameMixin = { ApplyFrameOptions = function() error("do not invoke native setup") end,
     UpdateAggroHighlight = function() end }
+NamePlateHealthBarMixin = { UpdateSelectionBorder = function() end }
+bar.UpdateSelectionBorder = NamePlateHealthBarMixin.UpdateSelectionBorder
 -- Client contract: the template copies the mixin's methods into each unit
 -- frame it creates, and the driver pools those frames for the session. uf
 -- was created before the Suite loaded, so it holds the unhooked methods.
@@ -354,11 +384,19 @@ local function SecureWrap(owner, method, callback)
     end
 end
 local layoutCallbacks = {}
--- The aura frame's RefreshAuras/RefreshLossOfControl post-hooks.
+-- The aura frame's RefreshList/RefreshLossOfControl post-hooks.
 local auraHooks = {}
 MSUF_UpdateCastbarVisuals = function() end
 hooksecurefunc = function(frame, method, callback)
-    if type(frame) == "string" then error("do not install cast media hooks") end
+    if type(frame) == "string" then
+        assert(frame == "MSUF_UpdateCastbarVisuals", "unexpected global nameplate hook")
+        SecureWrap(_G, frame, method)
+        return
+    end
+    if method == "UpdateSelectionBorder" and (frame == NamePlateHealthBarMixin or frame == bar) then
+        SecureWrap(frame, method, callback)
+        return
+    end
     if frame == NamePlateUnitFrameMixin and method == "ApplyFrameOptions" then
         fontHook = callback
         SecureWrap(frame, method, callback)
@@ -387,7 +425,7 @@ hooksecurefunc = function(frame, method, callback)
         layoutHook = function(frame) for _, fn in ipairs(layoutCallbacks) do fn(frame) end end
         return
     end
-    assert(frame == aura and (method == "RefreshAuras" or method == "RefreshLossOfControl"),
+    assert(frame == aura and (method == "RefreshList" or method == "RefreshLossOfControl"),
         "nameplate skin must not hook native layout")
     auraHooks[method] = callback
 end
@@ -398,7 +436,8 @@ local NS = {
     -- MSUF without the interrupt-ready engine (the scenario at the end has one).
     HostBridge = { KickReady = function() return nil end },
     -- Retail: no gamepad navigation ever blocks an aura container build.
-    Client = { IsAddOnLoaded = function() return true end, AuraBuildBlocked = function() return false end },
+    Client = { IsAddOnLoaded = function() return true end, AuraBuildBlocked = function() return false end,
+        SupportsEvent = function() return true end },
     MSUFMedia = { barTexture = "fallback-msuf-texture" },
 }
 local cvars, restored = {}, {}
@@ -425,6 +464,7 @@ local context = {
     RemoveEvent = function(_, event) events[event] = nil end,
     -- EventRegistry callbacks (Runtime.lua Context:Callback): once per event.
     Callback = function(_, event, callback) registryCallbacks[event] = callback end,
+    RemoveCallback = function(_, event) registryCallbacks[event] = nil end,
     Event = function(_, event, callback, allowCombat)
         events[event] = callback
         -- Every plate listener also runs in combat (the context's allowCombat).
@@ -433,13 +473,20 @@ local context = {
     CVar = function(_, key, value) cvars[key] = value; liveCVars[key] = value end,
 }
 NS.Suite = S
+NS.IsSecret = function(value) return value == "secret" end
 NS.InCombat = function() return combat end
 NS.RGB, NS.Public, NS.Finite, NS.ResolveFont = S.RGB, S.Public, S.Finite, S.ResolveFont
+NS.ResolveTexture = function(key) return key ~= "" and key or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraColors.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeBars.lua"))("MSUF_Suite", NS)
 NS.HostBridge.KickReady = function() return nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateGradient.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/GlossMaterial.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplatePowerStyle.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("MSUF_Suite", NS)
 NS.HostBridge = NS.HostBridge or {}
 NS.HostBridge.NameFormatter = function() return nil end
@@ -720,7 +767,10 @@ assert(scans == 2 and name.points[1][1] == "CENTER", "event performed a scan or 
 -- 2026-11-10: the disabled optional-extension routing adds three VM
 -- instructions to the 114 baseline, with no extra native calls or allocations.
 do
-    local PLATE_ADDED_BUDGET, THREAT_BUDGET = 1828, 117
+    -- 2026-11-16: 118. The unit route tests the plate map once more for a
+    -- mapped plate; a token without a plate (79 % of the raid trace) ends
+    -- there (budget in the unit event route block at the end of this file).
+    local PLATE_ADDED_BUDGET, THREAT_BUDGET = 1828, 118
     -- Setting keys come from the per-prefix tables: built once, then plain reads.
     assert(private.Key.enemy.BackdropColor == "enemyBackdropColor"
         and rawget(private.Key.friendly, "BackdropColor") == nil
@@ -1010,12 +1060,14 @@ do
     }
     aura.auraItemFramePool = pool
     module.config.auraClickthrough = true
-    local refresh = assert(auraHooks.RefreshAuras, "no RefreshAuras post-hook")
+    local refresh = assert(auraHooks.RefreshList, "no aura-list post-hook")
     local function Show(n)
         for i = #list, 1, -1 do list[i] = nil end
         for i = 1, n do list[i] = created[i] end
         nexts, counts, reads = 0, 0, 0
-        refresh(aura)
+        refresh(aura, {})
+        assert(nexts == 0 and counts == 0 and reads == 0, "work ran before the native pool finished")
+        refresh(aura, aura.CrowdControlListFrame)
     end
     Show(2)
     assert(created[1].mouseClickEnabled == false and created[2].mouseClickEnabled == false and reads == 2,
@@ -1105,6 +1157,7 @@ do
     aura.auraItemFramePool = saved
 end
 module.config.enemyRaidIcon = false
+private.Status.Configure(module)
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(raidIcon:GetAlpha() == 0, "native raid icon was not hidden on an existing enemy plate")
 module.active = false
@@ -1132,6 +1185,111 @@ module.config.enemyRaidIcon = true
 module:Refresh()
 assert(cvars.nameplateInfoDisplay == string.char(1, 71) and raidIcon:GetAlpha() == 0.8,
     "native icon switches did not restore their prior state")
+do
+    uf.isFriend = true
+    module.config.friendlyRaidIcon, module.config.friendlyRaidIconSize = false, 31
+    private.Status.Configure(module)
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(raidIcon:GetAlpha() == 0 and raidFrame.width == 31 and raidFrame.height == 31,
+        "friendly raid marker ignored its toggle or size")
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    assert(raidIcon:GetAlpha() == .8 and raidFrame.width == 22 and raidFrame.height == 22,
+        "recycled plate kept the friendly raid marker appearance")
+    raidFrame.protected = true
+    combat = true
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(raidFrame.width == 22 and raidIcon:GetAlpha() == .8, "protected marker changed in combat")
+    combat = false
+    events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    assert(raidFrame.width == 31 and raidIcon:GetAlpha() == 0, "marker update was lost at combat end")
+    raidFrame.protected = false
+    uf.isFriend = false
+    module.config.friendlyRaidIcon, module.config.friendlyRaidIconSize = true, 22
+    private.Status.Configure(module)
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    local isForbidden = NS.Safety.IsForbidden
+    NS.Safety.IsForbidden = function(region)
+        assert(region ~= raidFrame, "an untouched native raid icon was probed")
+        return isForbidden(region)
+    end
+    private.Status.Raid(uf, "enemy")
+    NS.Safety.IsForbidden = isForbidden
+end
+do
+    local oldCreate, oldGetTime = CreateFrame, GetTime
+    local listener, label
+    CreateFrame = function(kind, name, parent)
+        local frame = oldCreate(kind, name, parent)
+        if not parent then
+            listener = frame
+        elseif parent == uf then
+            local make = frame.CreateFontString
+            frame.CreateFontString = function(self, ...) label = make(self, ...) return label end
+        end
+        return frame
+    end
+    GetTime = function() return now end
+    context.Ticker = function() error("an AFK badge armed a ticker") end
+    module.config.enemyStatusAFKTimer, module.config.enemyStatusAFKTimerSize = true, 11
+    module.config.enemyStatusAFKTimerLayer, module.config.enemyStatusAFKTimerColor = 5, "ffffff"
+    badgeUnit.player, afk = true, true
+    private.Status.Configure(module)
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(label.parent:IsShown() and label.text == "0:00", "AFK timer did not start on the player plate")
+    now = 96
+    assert(label.text == "0:00", "AFK timer advanced between events")
+    assert(listener.events.UPDATE_MOUSEOVER_UNIT and listener.events.PLAYER_TARGET_CHANGED,
+        "inspection events were not registered")
+    local nativeLookup = C_NamePlate.GetNamePlateForUnit
+    C_NamePlate.GetNamePlateForUnit = function(unit)
+        if unit == "mouseover" or unit == "target" then return plate end
+        return nativeLookup(unit)
+    end
+    listener.scripts.OnEvent(listener, "UPDATE_MOUSEOVER_UNIT")
+    assert(label.text == "1:06", "hover did not refresh the AFK sample")
+    afk = "secret"
+    listener.scripts.OnEvent(listener, "PLAYER_FLAGS_CHANGED", "nameplate1")
+    assert(not label.parent:IsShown(), "restricted AFK state kept its timer visible")
+    now, afk = 100, true
+    listener.scripts.OnEvent(listener, "PLAYER_TARGET_CHANGED")
+    assert(label.parent:IsShown() and label.text == "1:10", "selection lost the sample's original start")
+    afk = false
+    listener.scripts.OnEvent(listener, "UNIT_FLAGS", "nameplate1")
+    assert(not label.parent:IsShown(), "leaving AFK did not hide its sample")
+    C_NamePlate.GetNamePlateForUnit = nativeLookup
+    afk = true
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(label.text == "0:00", "recycled plate inherited the previous AFK start")
+    local c, wasFriendly = module.config, module.config.friendly
+    c.friendly, c.friendlyStatusCombat = true, true
+    c.friendlyStatusCombatSize, c.friendlyStatusCombatLayer = 11, 5
+    private.Status.Configure(module)
+    private.Status.Apply(uf, "friendly", "nameplate1")
+    local isPlayer = UnitIsPlayer
+    UnitIsPlayer = function() error("an enemy AFK event inspected a friendly plate with AFK off") end
+    listener.scripts.OnEvent(listener, "PLAYER_FLAGS_CHANGED", "nameplate1")
+    UnitIsPlayer = isPlayer
+    c.friendly, c.friendlyStatusCombat = wasFriendly, false
+
+    private.Status.Apply(uf, "enemy", "nameplate1")
+    c.enemyStatusAFKTimer, c.enemyStatusCombat = false, true
+    c.enemyStatusCombatSize, c.enemyStatusCombatLayer = 11, 5
+    private.Status.Configure(module)
+    private.Status.Apply(uf, "enemy", "nameplate1")
+    assert(not label.parent:IsShown(), "turning AFK off left a badge")
+    local hide = label.parent.Hide
+    label.parent.Hide = function() error("an already disabled badge was hidden again") end
+    private.Status.Apply(uf, "enemy", "nameplate1")
+    listener.scripts.OnEvent(listener, "UNIT_FLAGS", "nameplate1")
+    label.parent.Hide = hide
+
+    c.enemyStatusCombat, badgeUnit.player, afk = false, false, false
+    private.Status.Configure(module)
+    assert(not label.parent:IsShown() and not next(listener.events), "disabled status kept event subscriptions")
+    assert(not private.Status.Paint and not private.Status.Restore, "disabled status kept its paint or restore path")
+    CreateFrame, GetTime, context.Ticker = oldCreate, oldGetTime, nil
+end
 module.config.enemyTextMode, module.config.enemyRarityIcon = 1, 3
 module:Refresh()
 assert(cvars.nameplateInfoDisplay == string.char(1),
@@ -1188,6 +1346,26 @@ assert(module.visuals[bar].fill:IsShown(),
     "first combat appearance deferred the health skin until combat ended")
 assert(name.fontSize == 12 and cvars.nameplateShowCastBars == "1")
 combat = false
+do
+    local visual = module.visuals[bar]
+    local writes = 0
+    local saved = {}
+    for _, texture in ipairs({ visual.back, visual.fill, visual.elite, visual.quest }) do
+        local methods = { Show = texture.Show, Hide = texture.Hide, SetShown = texture.SetShown }
+        saved[texture] = methods
+        for method, original in pairs(methods) do
+            texture[method] = function(self, ...)
+                writes = writes + 1
+                original(self, ...)
+            end
+        end
+    end
+    module:Refresh()
+    assert(writes == 0, "the same style rewrote visibility on Suite-owned textures")
+    for texture, methods in pairs(saved) do
+        for method, original in pairs(methods) do texture[method] = original end
+    end
+end
 
 -- Focus disabled falls back to base type; tapped is independent of quest colors.
 focusUnit = "nameplate1"
@@ -1272,6 +1450,19 @@ events.PLAYER_FOCUS_CHANGED(module, "PLAYER_FOCUS_CHANGED")
 assert(bar.barTexture.atlas == "new-native-atlas", "former focus altered Blizzard's native texture")
 module:Refresh()
 assert(bar.barTexture.atlas == "new-native-atlas", "texture reset lost the latest native atlas")
+
+module.config.nativeHealthFillTexture = "normal-health"
+module.config.nativeFocusHealthFillTexture = "focus-health"
+module:Refresh()
+assert(bar.barTexture.texture == "normal-health")
+focusUnit = "nameplate1"
+events.PLAYER_FOCUS_CHANGED(module, "PLAYER_FOCUS_CHANGED")
+assert(bar.barTexture.texture == "focus-health")
+focusUnit = nil
+events.PLAYER_FOCUS_CHANGED(module, "PLAYER_FOCUS_CHANGED")
+assert(bar.barTexture.texture == "normal-health")
+module.config.nativeHealthFillTexture, module.config.nativeFocusHealthFillTexture = nil, nil
+module:Refresh()
 
 -- Friendly target marker is attached to UnitFrame, also usable with a hidden health bar.
 uf.isFriend, targetUnit = true, "nameplate1"
@@ -1649,12 +1840,13 @@ do
     module:Refresh()
     assert(cast.Text.font == "friendly-native" and cast.CastTargetNameText.font == "friendly-target-native"
         and not visual.elite:IsShown() and not visual.quest:IsShown(), "friendly customizations were not reversible")
-    c.friendlyNPCs, c.playerGuildNames, c.playerTitles = 3, 2, 3
+    c.friendlyNpcSkinEnabled, c.playerGuildNames, c.playerTitles = false, 2, 3
+    NS.IsSecret = function(value) return not NS.Public(value) end
     module:Refresh()
     assert(cvars.nameplateShowFriendlyNpcs == "0" and cvars.UnitNamePlayerGuild == "1" and cvars.UnitNamePlayerPVPTitle == "0")
-    c.friendlyNPCs, c.playerGuildNames, c.playerTitles = 1, 1, 1
+    c.friendlyNpcSkinEnabled, c.playerGuildNames, c.playerTitles = true, 1, 1
     module:Refresh()
-    assert(restored.nameplateShowFriendlyNpcs and restored.UnitNamePlayerGuild and restored.UnitNamePlayerPVPTitle)
+    assert(cvars.nameplateShowFriendlyNpcs == "1" and restored.UnitNamePlayerGuild and restored.UnitNamePlayerPVPTitle)
     c.enemyTargetStyle, c.enemyTargetMarker = 15, true
     uf.isFriend, targetUnit = false, "nameplate1"
     module:Refresh()
@@ -1713,6 +1905,87 @@ do
         "SoftTargetNameplateSize" }) do
         assert(restored[key], "Blizzard CVar was not released: " .. key)
     end
+end
+
+do
+    local c = module.config
+    local look, glow, mode = c.look, c.threatHighlight, c.threatSignalMode
+    local priority, order, highlightTarget = c.highlightPriority, c.highlightOrder, c.highlightTarget
+    local neutralSize, selected, target = c.neutralNpcSizeOverride, bar.isTarget, targetUnit
+    local threat = threatStatus
+    c.look, c.threatHighlight, c.threatSignalMode = 3, false, 2
+    c.highlightAggro, c.highlightAggroColor, c.highlightBorderSize = true, "ff5252", 3
+    c.highlightPriority, c.highlightOrder, c.highlightTarget = true, "3214", true
+    c.neutralNpcSizeOverride = true
+    bar.isTarget, targetUnit = true, "nameplate1"
+    threatStatus = 0
+    module:Refresh()
+    local visual = module.visuals[bar]
+    assert(visual.borderColor == (c.selectionTargetColor or "ffffff"), "the target border should show without aggro")
+    threatStatus = 2
+    events.UNIT_THREAT_LIST_UPDATE(module, "UNIT_THREAT_LIST_UPDATE", "nameplate1")
+    assert(visual.borderColor == "ff5252" and visual.borderSize == 3,
+        "aggro must win over target with neutral sizing enabled and the native glow disabled")
+    c.neutralNpcSizeOverride = false
+    module:Refresh()
+    threatStatus = 1
+    events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "player")
+    assert(visual.borderColor ~= "ff5252" or visual.borderSize ~= 3, "losing aggro left the highlight visible")
+    threatStatus = 3
+    events.UNIT_THREAT_LIST_UPDATE(module, "UNIT_THREAT_LIST_UPDATE", "nameplate1")
+    assert(visual.borderColor == "ff5252", "disabling neutral sizing dropped the aggro handler")
+    do
+        local bridge, override = NS.HostBridge, c.highlightAggroOverride
+        local shared, applies = false, 0
+        NS.HostBridge.SharedAggroBorderEnabled = function() return shared end
+        local controller = NS.Suite
+        NS.Suite = { instances = { nameplates = module }, Apply = function(id)
+            assert(id == "nameplates")
+            applies = applies + 1
+            module:Refresh()
+        end }
+        assert(loadfile(root .. "/MSUF_Suite/Core/API.lua"))("MSUF_Suite", NS)
+        c.highlightAggroOverride = false
+        NS.API.ApplyNameplateHighlightsFromMSUF()
+        assert(applies == 1 and visual.borderColor ~= "ff5252", "Shared Off must clear Nameplates Aggro")
+        c.highlightAggro = false
+        shared = true
+        NS.API.ApplyNameplateHighlightsFromMSUF()
+        NS.API.ApplyNameplateHighlightsFromMSUF()
+        assert(applies == 2 and visual.borderColor == "ff5252", "Shared On must enable and paint Nameplates Aggro once")
+        c.highlightAggroOverride = true
+        module:Refresh()
+        NS.API.ApplyNameplateHighlightsFromMSUF()
+        assert(applies == 2 and visual.borderColor ~= "ff5252", "Nameplates Off must override Shared On")
+        shared, c.highlightAggro = false, true
+        module:Refresh()
+        NS.API.ApplyNameplateHighlightsFromMSUF()
+        assert(applies == 2 and visual.borderColor == "ff5252", "Nameplates On must override Shared Off")
+        bridge.SharedAggroBorderEnabled, c.highlightAggroOverride, NS.Suite = nil, override, controller
+    end
+    local compare, inCombat = UnitIsUnit, UnitAffectingCombat
+    local attacking = true
+    UnitAffectingCombat = function(unit) return unit == "nameplate1" end
+    UnitIsUnit = function(unit, other)
+        if unit == "nameplate1target" and other == "player" then return attacking end
+        return compare(unit, other)
+    end
+    threatStatus = nil
+    attacking = false
+    events.UNIT_TARGET(module, "UNIT_TARGET", "nameplate1")
+    assert(visual.borderColor ~= "ff5252", "the mob changed target but the aggro border stayed")
+    attacking = true
+    events.UNIT_TARGET(module, "UNIT_TARGET", "nameplate1")
+    assert(visual.borderColor == "ff5252" and visual.borderSize == 3, "solo aggro with no threat rank was dropped")
+    attacking = "secret"
+    events.UNIT_TARGET(module, "UNIT_TARGET", "nameplate1")
+    assert(visual.borderColor ~= "ff5252" or visual.borderSize ~= 3, "restricted target became false aggro")
+    UnitIsUnit, UnitAffectingCombat = compare, inCombat
+    c.highlightAggro, c.highlightAggroColor, c.highlightBorderSize = nil, nil, nil
+    c.highlightPriority, c.highlightOrder, c.highlightTarget = priority, order, highlightTarget
+    c.neutralNpcSizeOverride, bar.isTarget, targetUnit = neutralSize, selected, target
+    c.look, c.threatHighlight, c.threatSignalMode, threatStatus = look, glow, mode, threat
+    module:Refresh()
 end
 
 -- Custom warning colors tint Blizzard's existing textures and restore their
@@ -1812,7 +2085,10 @@ do
     assert(label.text == 90 and label:IsShown() and label.offsetX == -8,
         "modern level or its preview offset did not reach the nameplate")
     module.config.enemyLevelSize = 18
+    module.config.enemyLevelAnchor = 3
     module:Refresh()
+    assert(label.points[1][2] == bar and label.points[1][3] == "TOP", "level did not use its selected anchor")
+    module.config.enemyLevelAnchor = 1
     assert(label.textHeight == 18 and label.width == 36,
         "selected Jundies level font size did not reach Retail runtime")
     module.config.enemyLevelSize = 0
@@ -2124,91 +2400,50 @@ end
 -- Personal mana and alternate power remain Blizzard StatusBars. Skin only
 -- their static border and offset, then reapply after native anchoring.
 do
-    local mana, alternate = Region(), Region()
-    local nativeMana = Region()
-    nativeMana:SetTexture("native-mana")
-    function mana:GetStatusBarTexture() return nativeMana end
-    function alternate:GetStatusBarTexture() return Region() end
-    NamePlateDriverFrame = {
-        GetClassNameplateManaBar = function() return mana end,
-        GetClassNameplateAlternatePowerBar = function() return alternate end,
-        SetupClassNameplateBars = function() end,
-    }
-    local displayPower, displayAlt = Region(), Region()
-    PersonalResourceDisplayFrame = {
-        PowerBar = displayPower, AlternatePowerBar = displayAlt, hidePower = false,
-        UpdatePowerBarAnchor = function() displayPower:SetPointsOffset(0, 0) end,
-        UpdateAdditionalBarAnchors = function() displayAlt:SetPointsOffset(0, 0) end,
-    }
-    local c = module.config
-    c.personalPowerSkin, c.personalPowerBorderSize = true, 1
-    c.personalPowerBorderColor = "000000"
-    c.personalPowerOffsetX, c.personalPowerOffsetY = 12, -3
-    private.Power.Enable(module)
-    assert(powerHook and mana.created == 4 and alternate.created == 4
-        and mana.offsetX == 12 and mana.offsetY == -3 and alternate.offsetX == nil
-        and nativeMana.texture == "native-mana",
-        "personal bars were not skinned without replacing native fill")
-    assert(displayPower.created == 4 and displayAlt.created == 4 and displayPower.offsetX == 12
-        and displayAlt.offsetX == nil, "Blizzard PersonalResourceDisplay was not skinned")
-    local display = PersonalResourceDisplayFrame
-    local offsetWrites = displayPower.offsetWrites
-    local edge = displayPower.textures[1]
-    local show, repeatedShows = edge.Show, 0
-    function edge:Show()
-        repeatedShows = repeatedShows + 1
-        show(self)
-    end
-    local driver = NamePlateDriverFrame
-    NamePlateDriverFrame = nil
-    for i = 1, 100 do private.Power.Refresh() end
-    NamePlateDriverFrame = driver
-    assert(displayPower.offsetWrites == offsetWrites and repeatedShows == 0,
-        "unchanged personal power settings repeated native offset or border writes")
-    display:UpdatePowerBarAnchor()
-    assert(displayPower.offsetX == 12 and displayPower.created == 4, "display layout reset lost the power offset")
-    display.hidePower = true
-    display:UpdateAdditionalBarAnchors()
-    assert(displayAlt.offsetX == 12 and displayAlt.offsetY == -3, "standalone alternate display did not move")
-    display.hidePower = false
-    display:UpdateAdditionalBarAnchors()
-    assert(displayAlt.offsetX == 0 and displayAlt.offsetY == 0, "chained display moved the alternate bar twice")
-    mana:Hide()
-    private.Power.Reapply()
-    assert(alternate.offsetX == 12 and alternate.offsetY == -3,
-        "alternate power did not move when Blizzard attached it directly to health")
-    mana:Show()
-    private.Power.Reapply()
-    assert(alternate.offsetX == 0 and alternate.offsetY == 0,
-        "alternate power retained a second offset when attached to mana")
-    local created = mana.created
-    powerHook()
-    assert(mana.created == created and mana.offsetX == 12, "native power reanchor created duplicate skin")
-    c.personalPowerSkin, c.personalPowerOffsetX, c.personalPowerOffsetY = false, 0, 0
-    private.Power.Refresh()
-    assert(mana.offsetX == 0 and mana.offsetY == 0 and not mana.textures[1]:IsShown()
-        and nativeMana.texture == "native-mana", "personal power state was not restored")
-    assert(displayPower.offsetX == 0 and not displayPower.textures[1]:IsShown()
-        and not displayAlt.textures[1]:IsShown(), "native resource display was not restored")
-    PersonalResourceDisplayFrame = nil
-end
-do
     module.config.look, module.config.enemy, module.config.enemyCastTimeEnabled = 1, true, true
     uf.isFriend = false
     module.active = true
     module:Refresh()
     local state = assert(module.castTimes[cast], "duration text binding was not created")
     local label = state.label
+    label:SetFont("native-cast-time", 10, "")
+    local idleFontReads = label.fontReads
+    local originalTimeSize = module.config.enemyCastTimeSize
+    module.config.enemyCastTimeSize = 22
+    module:Refresh()
+    assert(label.fontReads == idleFontReads, "a settings refresh formatted hidden cast time")
     assert(cast.CastTimeText == nil and label.parent == cast and not label:IsShown(),
         "Suite tainted Blizzard's native CastTimeText field")
+
+    local disable, hide = state.binding.Disable, label.Hide
+    local disables, hides = 0, 0
+    function state.binding:Disable() disables = disables + 1; disable(self) end
+    function label:Hide() hides = hides + 1; hide(self) end
+    castDuration, channelDuration, empoweredDuration = nil, nil, nil
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    events.UNIT_SPELLCAST_STOP(module, "UNIT_SPELLCAST_STOP", "nameplate1")
+    assert(disables == 0 and hides == 0 and not state.binding.enabled and not label:IsShown(),
+        "idle cast timer rewrote disabled binding or hidden label")
+    assert(label.fontReads == idleFontReads, "recycling an idle plate formatted hidden cast time")
+
     -- The duration object is opaque: only the engine binding reads it. A
     -- secret result ("secret") never reaches the binding from addon code.
     local opaqueCast = setmetatable({}, { __sub = function() error("secret cast arithmetic") end })
+    cast:Hide()
     castDuration = opaqueCast
     events.UNIT_SPELLCAST_START(module, "UNIT_SPELLCAST_START", "nameplate1")
+    assert(label.fontReads == idleFontReads, "cast timer formatted before Blizzard showed its castbar")
+    cast:Show()
+    assert(label.fontReads ~= idleFontReads and label.fontSize == 22,
+        "the first visible cast did not apply the timer's new font size")
+    local shownFontReads = label.fontReads
+    private.CastTime.Paint(cast, "enemy", "nameplate1", uf)
+    assert(label.fontReads == shownFontReads, "the same cast reformatted its unchanged timer")
     assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown()
         and label.text == "2.3s" and cast.CastTimeText == nil,
         "cast duration did not reach the engine text binding")
+    module.config.enemyCastTimeSize = originalTimeSize
     module.config.enemyCastTimeFormat = 2
     module:Refresh()
     local components = state.binding.components
@@ -2230,11 +2465,12 @@ do
         "interruptibility change hid a valid cast time while duration was unavailable")
     castDuration = opaqueCast
     events.UNIT_SPELLCAST_STOP(module, "UNIT_SPELLCAST_STOP", "nameplate1")
-    assert(not state.binding.enabled and not label:IsShown(), "cast stop left a stale time")
+    assert(disables == 1 and hides == 1 and not state.binding.enabled and not label:IsShown(),
+        "cast stop did not clear the active time exactly once")
     castDuration = "secret"
     events.UNIT_SPELLCAST_START(module, "UNIT_SPELLCAST_START", "nameplate1")
-    assert(not state.binding.enabled and not label:IsShown() and cast.CastTimeText == nil,
-        "secret duration reactivated the unsafe timer")
+    assert(disables == 1 and hides == 1 and not state.binding.enabled and not label:IsShown() and cast.CastTimeText == nil,
+        "secret duration changed the idle timer or reached Blizzard's unsafe timer")
     castDuration = opaqueCast
     events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
     assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown(),
@@ -2290,6 +2526,21 @@ do
     module.config.look = 1
     module:Refresh()
     assert(module.castTimes[cast] == state, "returning from Blizzard look created another binding")
+
+    -- Cleanup disables an active binding even if the pooled label is
+    -- temporarily forbidden. Reuse must finish hiding it before an idle pass.
+    events.UNIT_SPELLCAST_CHANNEL_START(module, "UNIT_SPELLCAST_CHANNEL_START", "nameplate1")
+    assert(state.binding.enabled and label:IsShown(), "forbidden-label fixture needs an active cast")
+    local isForbidden = NS.Safety.IsForbidden
+    NS.Safety.IsForbidden = function(region) return region == label or isForbidden(region) end
+    local beforeHides = hides
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    assert(not state.binding.enabled and hides == beforeHides, "release wrote a forbidden cast label")
+    NS.Safety.IsForbidden = isForbidden
+    channelDuration = nil
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(not state.binding.enabled and not label:IsShown() and hides == beforeHides + 1,
+        "reusing a plate left the formerly forbidden cast label shown")
 end
 module:Disable()
 assert(cast.CastTimeText == nil and not module.castTimes[cast].binding.enabled,
@@ -2307,23 +2558,21 @@ do
     local writes = 0
     S.Config = function(id) assert(id == "nameplates"); return module.config end
     S.Set = function(id, key, value)
-        assert(id == "nameplates" and key == "friendlyNPCs")
+        assert(id == "nameplates" and key == "friendlyNpcSkinEnabled")
         writes = writes + 1
         module.config[key] = value
         return true
     end
     assert(loadfile(root .. "/MSUF_Suite/Core/Bindings.lua"))("MSUF_Suite", NS)
-    module.config.enabled = true
-    liveCVars.nameplateShowFriendlyNpcs = "0"
-    assert(NS.ToggleFriendlyNPCNameplates() and module.config.friendlyNPCs == 2)
-    liveCVars.nameplateShowFriendlyNpcs = "1"
-    assert(NS.ToggleFriendlyNPCNameplates() and module.config.friendlyNPCs == 3)
+    module.config.enabled, module.config.friendlyNpcSkinEnabled = true, false
+    assert(NS.ToggleFriendlyNPCNameplates() and module.config.friendlyNpcSkinEnabled == true)
+    assert(NS.ToggleFriendlyNPCNameplates() and module.config.friendlyNpcSkinEnabled == false)
     combat = true
     assert(not NS.ToggleFriendlyNPCNameplates())
     combat, module.config.enabled = false, false
     assert(not NS.ToggleFriendlyNPCNameplates())
-    module.config.enabled, liveCVars.nameplateShowFriendlyNpcs = true, "secret"
-    assert(not NS.ToggleFriendlyNPCNameplates() and writes == 2)
+    module.config.enabled, module.config.friendlyNpcSkinEnabled = true, true
+    assert(writes == 2)
 end
 
 -- Interrupt readiness through the real plate lifecycle (KickReady.lua; the
@@ -2350,7 +2599,9 @@ do
     NS.HostBridge.KickReady = function() return engine end
     UnitCastingInfo = function() return "Bolt", "", 1, 0, 1, false, 7, false, 1 end
     UnitChannelInfo = function() return nil end
-    local bans = { CreateTexture = cast.CreateTexture, GetStatusBarTexture = cast.GetStatusBarTexture }
+    local bans = { CreateTexture = cast.CreateTexture, GetStatusBarTexture = cast.GetStatusBarTexture,
+        HookScript = cast.HookScript }
+    cast.HookScript = function() end
     local create = Region().CreateTexture
     cast.CreateTexture = function(self, ...)
         local texture = create(self, ...)
@@ -2366,8 +2617,35 @@ do
     castDuration, channelDuration, empoweredDuration = { GetStartTime = function() return 0 end,
         GetEndTime = function() return 1 end }, nil, nil
     uf.isFriend, uf.isPlayer = false, false
+    local c = module.config
+    local oldCastTime, oldFriendlyTime = c.enemyCastTimeEnabled, c.friendlyCastTimeEnabled
+    local oldQuest, oldFriendlyQuest, oldQuestColors = c.enemyQuestMarker, c.friendlyQuestMarker, c.enemyQuestColors
+    c.enemyCastTimeEnabled, c.friendlyCastTimeEnabled = false, false
+    c.enemyQuestMarker, c.friendlyQuestMarker, c.enemyQuestColors = false, false, false
     module.active = true
     module:Refresh()
+    assert(not events.QUEST_LOG_UPDATE, "disabled quests kept an event subscription")
+    assert(not events.UNIT_SPELLCAST_START, "disabled cast features kept an event subscription")
+    c.enemyQuestMarker, c.enemyCastTimeEnabled = true, true
+    module:Refresh()
+    assert(events.QUEST_LOG_UPDATE and events.UNIT_SPELLCAST_START, "enabled quest or cast option missed its event")
+    c.enemyQuestMarker, c.enemyCastTimeEnabled = false, false
+    module:Refresh()
+    assert(not events.QUEST_LOG_UPDATE and not events.UNIT_SPELLCAST_START, "turning the options off kept subscriptions")
+    local oldNameDuringCast = c.enemyNameDuringCast
+    c.enemyNameDuringCast = 2
+    module:Refresh()
+    assert(events.UNIT_SPELLCAST_START and not events.UNIT_SPELLCAST_DELAYED
+        and not events.UNIT_SPELLCAST_INTERRUPTIBLE, "cast dimming subscribed to timing or readiness")
+    c.enemyCastTimeEnabled = true
+    module:Refresh()
+    assert(events.UNIT_SPELLCAST_DELAYED and events.UNIT_SPELLCAST_INTERRUPTIBLE, "cast timing missed its updates")
+    c.enemyCastTimeEnabled = false
+    module:Refresh()
+    assert(events.UNIT_SPELLCAST_START and not events.UNIT_SPELLCAST_DELAYED, "cast timing kept updates or removed another consumer")
+    c.enemyNameDuringCast = oldNameDuringCast
+    module:Refresh()
+    assert(not events.UNIT_SPELLCAST_START, "cast dimming kept the cast event subscription")
     assert(engine.onChange, "the running module did not register with MSUF's engine")
     events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
     assert(module.kicks[cast] == nil, "MSUF's nameplate switch is off, yet the castbar was decorated")
@@ -2375,6 +2653,7 @@ do
     -- MSUF's switch turns on: its settings call repaints the shown plates.
     look.show = true
     engine.onChange("settings")
+    assert(events.UNIT_SPELLCAST_START, "MSUF's readiness switch did not subscribe to cast events")
     local overlay = Overlay()
     assert(overlay and overlay.shown and overlay.allPoints == cast.statusTexture and engine.active,
         "MSUF's switch did not show readiness on a plate mid-cast")
@@ -2406,12 +2685,15 @@ do
     look.show = false
     engine.onChange("settings")
     assert(not edges[1].shown and engine.active == false, "turning MSUF's switch off left readiness on a plate")
+    assert(not events.UNIT_SPELLCAST_START, "turning off the last cast consumer kept event subscriptions")
     look.show = true
     engine.onChange("settings")
     module.active = false
     module:Disable()
     assert(engine.onChange == nil and not edges[1].shown, "disabling the module left readiness registered")
-    cast.CreateTexture, cast.GetStatusBarTexture = bans.CreateTexture, bans.GetStatusBarTexture
+    c.enemyCastTimeEnabled, c.friendlyCastTimeEnabled = oldCastTime, oldFriendlyTime
+    c.enemyQuestMarker, c.friendlyQuestMarker, c.enemyQuestColors = oldQuest, oldFriendlyQuest, oldQuestColors
+    cast.CreateTexture, cast.GetStatusBarTexture, cast.HookScript = bans.CreateTexture, bans.GetStatusBarTexture, bans.HookScript
 end
 print("Suite nameplates: interrupt readiness through the plate lifecycle passed")
 
@@ -2445,8 +2727,6 @@ do
     -- DoT colors build in combat and while auras are secret (AuraColors.lua
     -- markers): nothing waits for a restriction to end.
     assert(events.ADDON_RESTRICTION_STATE_CHANGED == nil, "DoT colors still wait for aura restrictions")
-    module.config.auraColorsEnabled = false
-    module:Refresh()
     -- Blizzard's Edit Mode edges reach the DoT colors (12.1.0 hides them).
     assert(registryCallbacks["EditMode.Enter"] and registryCallbacks["EditMode.Exit"],
         "DoT colors missed Blizzard's Edit Mode edges")
@@ -2455,6 +2735,10 @@ do
     registryCallbacks["EditMode.Enter"](module)
     registryCallbacks["EditMode.Exit"](module)
     assert(editModes[1] == true and editModes[2] == false, "Blizzard's Edit Mode edges missed the DoT colors")
+    module.config.auraColorsEnabled = false
+    module:Refresh()
+    assert(not registryCallbacks["EditMode.Enter"] and not registryCallbacks["EditMode.Exit"],
+        "disabled DoT colors kept Blizzard's Edit Mode callbacks")
     -- Turned on while Edit Mode is open (its edge came while the colors were off).
     editModeOpen, module.config.auraColorsEnabled = true, true
     module:Refresh()
@@ -2525,48 +2809,18 @@ do
         return scans - before
     end
     -- The cast time and level labels held back above: only their plate.
-    -- The personal power bars are written again as before (Power.Reapply).
     private.CastTime.Paint(cast, "enemy", "nameplate1", uf)
     private.Level.Paint(uf, "enemy", "nameplate1")
     combat = false
-    local driver, powerReads = NamePlateDriverFrame, 0
-    local getMana = driver.GetClassNameplateManaBar
-    driver.GetClassNameplateManaBar = function(...) powerReads = powerReads + 1; return getMana(...) end
-    module.config.personalPowerOffsetX = 2
     assert(CombatEnd() == 1 and applied.first == 1 and applied.second == nil,
         "the end of combat applied a plate no write held back")
     assert(module.castTimes[cast] and module.levelLabels[uf] and not Deferred(),
         "the held-back plate did not get its labels after combat")
-    assert(powerReads == 1, "the plate pass skipped the personal power bars")
-    module.config.personalPowerOffsetX = 0
-    private.Power.Refresh()
-    driver.GetClassNameplateManaBar = getMana
     assert(CombatEnd() == 0 and next(applied) == nil, "the end of combat applied plates with nothing held back")
     -- A held-back plate no longer shown has nothing to apply.
     module.pendingPlates[{}] = true
     assert(CombatEnd() == 1 and next(applied) == nil and not Deferred(), "a plate no longer shown was applied")
 
-    -- Blizzard's anchor rebuild in combat holds back its plate (Layout.lua
-    -- OnAnchors). A held-back personal power write (needsRefresh) is Power's
-    -- own: the power bars are written again, the plates stay as they are
-    -- (2026-10-26 M+ trace: it repainted all 16 shown plates every pull).
-    combat = true
-    layoutHook(uf)
-    assert(DeferredPlate(uf), "a combat anchor rebuild held back more than its plate")
-    module.needsRefresh = true
-    combat = false
-    powerReads = 0
-    driver.GetClassNameplateManaBar = function(...) powerReads = powerReads + 1; return getMana(...) end
-    module.config.personalPowerOffsetX = 2
-    assert(CombatEnd() == 1 and applied.first == 1 and applied.second == nil and not Deferred(),
-        "a held-back power write applied plates no write held back")
-    assert(powerReads == 1, "a held-back power write did not write the personal power bars again")
-    module.needsRefresh = true
-    assert(CombatEnd() == 0 and next(applied) == nil and not Deferred() and powerReads == 2,
-        "a held-back power write alone scanned or applied plates, or skipped the power bars")
-    module.config.personalPowerOffsetX = 0
-    private.Power.Refresh()
-    driver.GetClassNameplateManaBar = getMana
     -- Quests to read again with a plate held back: every plate as well.
     combat = true
     layoutHook(uf)
@@ -2638,6 +2892,32 @@ do
 end
 print("Suite nameplates: native target scale apply, restore and combat replay passed")
 
+do
+    local config, label = module.config, uf.name
+    local oldGetPoint, oldGetJustifyH, oldRestricted, oldAccess = label.GetPoint, label.GetJustifyH,
+        label.IsAnchoringRestricted, label.CanBeAccessedInContext
+    local oldLook, oldOnlyName = config.look, uf.showOnlyName
+    config.look, uf.showOnlyName = 4, false
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", bar, "LEFT", 4, 0)
+    label:SetJustifyH("LEFT")
+    label.CanBeAccessedInContext = function() return true end
+    label.IsAnchoringRestricted = function() return false end
+    label.GetJustifyH = function(self) return self.justify end
+    label.GetPoint = function(self, index) return unpack(self.points[index]) end
+    config.enemyNameRelativeAnchor = 10
+    private.Layout.Configure(config)
+    private.Layout.Apply(uf, "enemy", config, true)
+    assert(label.points[1][1] == "BOTTOMRIGHT" and label.points[1][2] == bar and label.justify == "RIGHT")
+    config.enemyNameRelativeAnchor = 1
+    private.Layout.Configure(config)
+    private.Layout.Apply(uf, "enemy", config, true)
+    assert(label.points[1][1] == "LEFT" and label.points[1][4] == 4 and label.justify == "LEFT", "original name anchor was lost")
+    label.GetPoint, label.GetJustifyH, label.IsAnchoringRestricted, label.CanBeAccessedInContext =
+        oldGetPoint, oldGetJustifyH, oldRestricted, oldAccess
+    config.look, uf.showOnlyName = oldLook, oldOnlyName
+end
+
 -- The optional enemy row follows real nameplate events and owns every write.
 do
     local settings, bottom = module.config, uf.CastBarsContainer
@@ -2650,20 +2930,56 @@ do
     uf.IsAnchoringRestricted, bar.IsAnchoringRestricted, bottom.IsAnchoringRestricted = Allowed, Allowed, Allowed
     bottom.IsProtected = bar.IsProtected
     Enum.StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }
-    PowerBarColor = { MANA = { r = 0.1, g = 0.4, b = 1 }, RAGE = { r = 1, g = 0, b = 0 } }
-    UnitPowerType = function() return Enum.PowerType.Mana, token end
-    UnitPowerMax = function() return maximum end
-    UnitPower = function(unit)
+    PowerBarColor = { MANA = { r = 0.1, g = 0.4, b = 1 }, RAGE = { r = 1, g = 0, b = 0 },
+        ENERGY = { r = 1, g = 0.9, b = 0 } }
+    Enum.PowerType.Energy = 3
+    local displayedType = Enum.PowerType.Mana
+    UnitPowerType = function() return displayedType, token end
+    local nativeHasPower, hasPower = UnitHasPowerType, true
+    local presenceReads, queriedTypes = 0, {}
+    UnitHasPowerType = function(unit, powerType)
+        assert(unit == "nameplate1", "resource presence read an unrelated unit")
+        presenceReads = presenceReads + 1
+        queriedTypes[powerType] = (queriedTypes[powerType] or 0) + 1
+        return hasPower
+    end
+    local requested
+    UnitPowerMax = function(_, powerType) requested = powerType; return maximum end
+    local valueType
+    UnitPower = function(unit, powerType)
+        valueType = powerType
         assert(unit == "nameplate1", "enemy power read an unrelated unit")
         reads = reads + 1
         return current
     end
     CreateFrame = function(kind, globalName, parent)
         local frame = nativeCreate(kind, globalName, parent)
+        if kind == "StatusBar" and owned and parent == owned then
+            function frame:SetStatusBarTexture() end
+            function frame:SetStatusBarColor(...) self.tint = { ... } end
+            function frame:SetMinMaxValues(_, max) self.maximum = max end
+            function frame:SetValue(value) self.value = value end
+            local fill = Region()
+            function fill:SetBlendMode(mode) self.blendMode = mode end
+            function frame:GetStatusBarTexture() return fill end
+            function frame:CreateAnimationGroup()
+                local group, alpha = {}, {}
+                function group:CreateAnimation() return alpha end
+                function group:SetScript(_, handler) self.finish = handler end
+                function group:Play() self.playing = true end
+                function group:IsPlaying() return self.playing end
+                function group:Stop() self.playing = false end
+                function alpha:SetFromAlpha() end
+                function alpha:SetToAlpha() end
+                function alpha:SetStartDelay() end
+                function alpha:SetDuration() end
+                return group
+            end
+        end
         if kind ~= "StatusBar" or parent ~= bar then return frame end
         created, owned = created + 1, frame
         frame.rangeWrites, frame.valueWrites, frame.pointWrites = 0, 0, 0
-        frame.IsAnchoringRestricted = Allowed
+        frame.IsAnchoringRestricted = function() return true end
         function frame:IsVisible() error("enemy power must use its owned visibility events") end
         function frame:Show()
             local wasShown = self.shown
@@ -2675,7 +2991,10 @@ do
             assert(event == "UNIT_POWER_UPDATE")
             self.registeredEvent, self.registeredUnit = nil, nil
         end
-        function frame:SetStatusBarTexture(texture) self.texture = texture end
+        local fill = Region()
+        function frame:SetStatusBarTexture(texture) fill:SetTexture(texture) end
+        function frame:GetStatusBarTexture() return fill end
+        function frame:GetValue() return self.value end
         function frame:SetStatusBarColor(r, g, b) self.tint = { r, g, b } end
         function frame:SetMinMaxValues(_, max)
             self.maximum = max
@@ -2703,7 +3022,10 @@ do
     end
     module.active, uf.isFriend, bar.shown = true, false, true
     settings.look, settings.enemy, settings.enemyPowerEnabled = 1, true, false
+    local observe, sharedChanged = NS.HostBridge.ObserveSharedNameplateBars
+    NS.HostBridge.ObserveSharedNameplateBars = function(callback) sharedChanged = callback end
     module:Enable()
+    NS.HostBridge.ObserveSharedNameplateBars = observe
     assert(not events.UNIT_MAXPOWER and created == 0, "disabled enemy power retained work")
     settings.enemyPowerEnabled, settings.enemyPowerSmooth = true, true
     settings.enemyPowerHeight, settings.enemyPowerWidth = 7, 16
@@ -2711,21 +3033,31 @@ do
     module:Refresh()
     assert(events.UNIT_MAXPOWER and created == 0, "a public zero maximum allocated a row")
 
-    maximum, combat, bottom.protected = 100, true, true
+    maximum, hasPower = "secret", false
+    local beforePresence = presenceReads
+    local manaQueries = queriedTypes[Enum.PowerType.Mana] or 0
+    NativeEvent("UNIT_MAXPOWER")
+    assert(created == 0 and reads == 0 and presenceReads == beforePresence + 1
+        and queriedTypes[Enum.PowerType.Mana] == manaQueries + 1,
+        "a mob without mana and with a restricted maximum allocated a resource row")
+
+    maximum, hasPower, combat, bottom.protected = 100, true, true, true
     NativeEvent("UNIT_MAXPOWER")
     assert(created == 0 and module.pendingPlates[uf],
         "enemy power attached to a protected cast container in combat or lost its retry")
     bottom.protected, bar.shown = false, false
+    local function SameFamily() return true end
+    uf.IsAnchoringRestricted, bar.IsAnchoringRestricted, bottom.IsAnchoringRestricted = SameFamily, SameFamily, SameFamily
     local hiddenReads = reads
     NativeEvent("UNIT_MAXPOWER")
     assert(created == 1 and not owned.registeredUnit and reads == hiddenReads,
-        "a row acquired under hidden native health started consuming power events")
+        "an anchor-restricted native family refused its own power row or started hidden updates")
     bar.shown = true
     owned.scripts.OnShow(owned)
     assert(created == 1 and owned.mouse == false and owned.alpha == 1
         and owned.registeredUnit == "nameplate1" and owned.registeredEvent == "UNIT_POWER_UPDATE"
         and owned.maximum == 100 and owned.value == 35 and owned.interpolation == 0, "combat bind did not seed the owned row")
-    assert(owned.height == 7 and owned.texture == "Interface\\Buttons\\WHITE8X8" and owned.tint[1] == 0.1
+    assert(owned.height == 7 and owned:GetStatusBarTexture():GetTexture() == "Interface\\Buttons\\WHITE8X8" and owned.tint[1] == 0.1
         and owned.points[1][2] == bottom and owned.points[1][5] == -5
         and owned.points[2][2] == bar and owned.points[2][4] == 1 and owned.points[3][4] == 17,
         "enemy power appearance and independent row geometry were not applied")
@@ -2734,6 +3066,10 @@ do
     Update("RAGE")
     Update("MANA", "nameplate2")
     assert(reads == before, "unrelated unit or power type reached the power reader")
+    beforePresence = presenceReads
+    current = 0
+    Update("MANA")
+    assert(owned.alpha == 1 and owned.value == 0 and owned.maximum == 100, "empty mana hid an existing resource")
     current = 42
     Update("MANA")
     assert(owned.value == 42 and owned.interpolation == 1, "native interpolation was not applied")
@@ -2750,6 +3086,7 @@ do
     for _ = 1, 100 do RepeatedPower() end
     local growth = collectgarbage("count") - memory
     collectgarbage("restart")
+    assert(presenceReads == beforePresence, "steady power updates rechecked resource presence")
     assert(owned.valueWrites == writes and owned.rangeWrites == 1 and instructions <= 105 and growth < 1,
         "steady power events repeated widget writes or exceeded their hot-path budget")
     print(("Enemy power steady event: %d instructions, %.2f KB per 100"):format(instructions, growth))
@@ -2757,6 +3094,97 @@ do
     local points = owned.pointWrites
     module:Refresh()
     assert(owned.pointWrites == points and owned.valueWrites == writes, "unchanged refresh rewrote the power row")
+
+    CreateColor = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
+    cast.HookScript = function() end
+    for _, region in ipairs({ name, bar.Text, bar.LeftText, bar.RightText }) do
+        region.CanBeAccessedInContext = function() return true end
+    end
+    settings.healthGradientEnabled, settings.powerGradientEnabled = true, true
+    settings.healthGradientDirRight, settings.healthGradientDirDown = false, true
+    settings.powerGradientStrength, settings.powerGradientColor = 60, "ff0000"
+    uf.protected = true
+    module:Refresh()
+    assert(module.pendingPlates[uf] and not module.visuals[bar].gradient, "protected health gradient did not defer")
+    uf.protected, combat = false, false
+    events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    local healthGradient = assert(module.visuals[bar].gradient[4], "deferred health gradient did not paint")
+    local powerGradient = assert(owned.powerGradient[2], "power gradient did not paint")
+    assert(healthGradient.shown and healthGradient.allPoints == bar:GetStatusBarTexture()
+        and healthGradient.gradient[1] == "VERTICAL" and healthGradient.gradient[2].a == .45
+        and healthGradient.gradient[3].a == 0, "health gradient must follow the fill and shade its lower edge")
+    assert(powerGradient.shown and powerGradient.allPoints == owned:GetStatusBarTexture()
+        and powerGradient.gradient[2].a == 0 and powerGradient.gradient[3].r == 1
+        and powerGradient.gradient[3].a == .60, "power gradient must follow the fill with its own color and strength")
+    settings.enemyFadeHealth, settings.enemyFadePower = 50, 80
+    module:Refresh()
+    assert(healthGradient:GetAlpha() == .5 and powerGradient:GetAlpha() == .8, "gradients must follow fill opacity")
+    Update("MANA")
+    assert(healthGradient.gradientWrites == 1 and powerGradient.gradientWrites == 1,
+        "resource ticks and unchanged refreshes must not reconfigure the gradients")
+    local nativeFill = bar.barTexture
+    bar.barTexture = Region()
+    module:Refresh()
+    assert(healthGradient.allPoints == bar.barTexture and healthGradient.gradientWrites == 1,
+        "the gradient did not follow a replaced native fill")
+    bar.barTexture = nativeFill
+    settings.healthGlossEnabled, settings.healthGlossStrength = true, 75
+    settings.powerGlossEnabled, settings.powerGlossStrength = true, 80
+    module:Refresh()
+    local healthGloss = assert(bar.textures[#bar.textures])
+    local powerGloss = assert(owned.textures[#owned.textures])
+    assert(healthGloss.shown and healthGloss.allPoints == nativeFill and healthGloss:GetAlpha() == .5)
+    assert(powerGloss.shown and powerGloss.allPoints == owned:GetStatusBarTexture() and powerGloss:GetAlpha() == .8)
+    assert(healthGloss.gradient[3].a == .75 * .65 and powerGloss.gradient[3].a == .8 * .65,
+        "the fallback gloss did not use independent strengths")
+    assert(healthGradient.gradientWrites == 1 and powerGradient.gradientWrites == 1,
+        "editing gloss rewrote the independent gradients")
+    settings.look = 2
+    module:Refresh()
+    assert(not healthGradient.shown and not healthGloss.shown and owned.alpha == 0, "Blizzard look retained the finish")
+    settings.look = 1
+    settings.healthGradientEnabled, settings.powerGradientEnabled = false, false
+    settings.healthGlossEnabled, settings.powerGlossEnabled = false, false
+    settings.enemyFadeHealth, settings.enemyFadePower = nil, nil
+    module:Refresh()
+    assert(not healthGradient.shown and not powerGradient.shown
+        and healthGradient:GetAlpha() == 1 and powerGradient:GetAlpha() == 1, "reset left gradient art or opacity behind")
+    assert(not healthGloss.shown and not powerGloss.shown, "reset left gloss art behind")
+    local readShared, sharedFill = NS.HostBridge.SharedNameplateBars, "shared-power-fill"
+    NS.HostBridge.SharedNameplateBars = function()
+        return { powerFillTexture = sharedFill, powerBackgroundTexture = "shared-power-background" }
+    end
+    settings.powerFillTexture, settings.powerBackgroundTexture = "local-power-fill", "local-power-background"
+    for _, override in ipairs({ false, true, false }) do
+        settings.barsOverride = override
+        module:Refresh()
+        local prefix = override and "local" or "shared"
+        assert(owned:GetStatusBarTexture():GetTexture() == prefix .. "-power-fill"
+            and owned.enemyPowerBackground:GetTexture() == prefix .. "-power-background",
+            "the live Resource Bar did not switch between its Shared and Nameplates textures")
+    end
+    local apply, applies = S.Apply, 0
+    S.Apply = function(id)
+        assert(id == "nameplates")
+        applies = applies + 1
+        module:Refresh()
+    end
+    local beforeSharedChange = #queuedTimers
+    sharedFill = "updated-shared-power-fill"
+    sharedChanged()
+    sharedChanged()
+    assert(#queuedTimers == beforeSharedChange + 1, "Shared updates did not coalesce")
+    queuedTimers[#queuedTimers]()
+    assert(applies == 1 and owned:GetStatusBarTexture():GetTexture() == sharedFill, "Shared did not repaint a visible plate")
+    sharedChanged()
+    queuedTimers[#queuedTimers]()
+    assert(applies == 1, "an unchanged Shared appearance repainted all plates")
+    S.Apply = apply
+    NS.HostBridge.SharedNameplateBars = readShared
+    settings.powerFillTexture, settings.powerBackgroundTexture, settings.barsOverride = nil, nil, nil
+    module:Refresh()
+    combat = true
+
     settings.enemyPowerSmooth = false
     module:Refresh()
     assert(owned.interpolation == 0 and owned.pointWrites == points, "turning smoothing off did not snap the bar")
@@ -2769,31 +3197,94 @@ do
     assert(owned.registeredUnit == "nameplate1" and owned.value == 51 and owned.interpolation == 0,
         "a shown plate did not reseed after suspension")
 
-    local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+    current, token, displayedType, bottom.protected = 73, "ENERGY", Enum.PowerType.Energy, true
+    local energyQueries = queriedTypes[Enum.PowerType.Energy] or 0
+    NativeEvent("UNIT_DISPLAYPOWER")
+    assert(owned.value == 73 and owned.tint[2] == 0.9 and owned.pointWrites == points
+        and queriedTypes[Enum.PowerType.Energy] == energyQueries + 1,
+        "the plate did not switch to energy without touching protected anchors")
+    bottom.protected = false
+    local oldGlobalFont = NS.GlobalFontPath
+    NS.GlobalFontPath = function() return "font" end
+    settings.enemyPowerTextVisible, settings.enemyPowerTextMode = true, 2
+    module:Refresh()
+    local powerText = assert(owned.enemyPowerText)
+    assert(powerText.text == "73 / 100" and powerText.shown and owned.pointWrites == points)
+    current = 61
+    Update("ENERGY")
+    assert(powerText.text == "61 / 100", "the resource event did not update the owned text")
+    hasPower, maximum = false, "secret"
+    NativeEvent("UNIT_DISPLAYPOWER")
+    local beforeHiddenUpdate = reads
+    Update("ENERGY")
+    assert(owned.alpha == 0 and not owned.registeredUnit and reads == beforeHiddenUpdate
+        and not private.Power.EnemyBar(uf) and not private.Power.TextRegion(uf),
+        "a missing resource left its row, text or power updates active")
+    hasPower, maximum, current = true, 100, 0
+    NativeEvent("UNIT_MAXPOWER")
+    assert(owned.alpha == 1 and owned.registeredUnit == "nameplate1" and powerText.text == "0 / 100" and created == 1,
+        "an empty resource did not restore the existing row and text")
+
+    settings.enemyPowerTextVisible = false
+    module:Refresh()
+    assert(not powerText.shown, "turning the text off did not clear the owned row")
+    NS.GlobalFontPath = oldGlobalFont
+
+    settings.enemyPowerSource, settings.enemyPowerEmbed, settings.enemyPowerBorder = 5, true, true
+    settings.enemyPowerBorderSize, settings.enemyPowerChunked = 2, true
+    energyQueries = queriedTypes[Enum.PowerType.Energy]
+    module:Refresh()
+    assert(requested == 3 and valueType == 3 and queriedTypes[Enum.PowerType.Energy] == energyQueries + 1
+        and owned.enemyPowerToken == "ENERGY" and owned.points[1][2] == bar)
+    assert(owned.enemyPowerBorder.borderSize == 2 and owned.enemyPowerLoss.bar.maximum == 100)
+    local loss = owned.enemyPowerLoss
+    current = 74
+    Update("ENERGY")
+    assert(not loss.bar.shown, "a resource gain left a loss trail")
+    current = 52
+    Update("ENERGY")
+    assert(owned.value == 52 and owned.interpolation == 0 and loss.bar.value == 74 and loss.bar.shown)
+    settings.enemyPowerDetached, settings.enemyPowerDetachedWidth, settings.enemyPowerDetachedHeight = true, 110, 9
+    module:Refresh()
+    assert(owned.points[1][1] == "CENTER" and owned.width == 110 and owned.height == 9)
+    settings.enemyPowerSource, settings.enemyPowerEmbed, settings.enemyPowerDetached = 1, false, false
+    settings.enemyPowerBorder, settings.enemyPowerChunked = false, false
+    module:Refresh()
+    assert(not loss.bar.shown and owned.enemyPowerBorder.borderSize == 0)
+    points = owned.pointWrites
+    current = 61
+    Update("ENERGY")
+    assert(owned.value == 61 and created == 1, "an energy update failed or allocated a new bar")
+
+    local Strict = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
     Strict.Install()
     Strict.GUARD_NAMES.falsy.Public = true
     NS.Public = function(value) return value ~= "secret" and not Strict.IsSecret(value) end
     local secretMax, secretValue, secretToken = Strict.New(), Strict.New(), Strict.New("string")
     local stop = Strict.Watch({
         root .. "/MSUF_Suite_Nameplates/Power.lua",
-        root .. "/MSUF_Suite/Core/NameplateStyle.lua",
+        root .. "/MSUF_Suite/Core/NameplatePowerStyle.lua",
     }, { strict = true })
+    settings.enemyPowerChunked = true
+    module:Refresh()
     local secretProtection = Strict.New("boolean")
     bottom.IsAnchoringRestricted = function() return secretProtection end
     NativeEvent("UNIT_MAXPOWER")
     assert(owned.alpha == 0 and not owned.registeredUnit, "secret anchor restriction allowed an attached row")
     bottom.IsAnchoringRestricted = Allowed
-    current, maximum, token = secretValue, secretMax, secretToken
+    current, maximum, token, hasPower = secretValue, secretMax, secretToken, Strict.New("boolean")
     NativeEvent("UNIT_MAXPOWER")
     Update(secretToken)
     Update("MANA", secretToken)
+    assert(rawequal(loss.bar.value, secretValue), "the loss mask did not receive the previous restricted value")
+    settings.enemyPowerChunked = false
     assert(rawequal(owned.maximum, secretMax) and rawequal(owned.value, secretValue)
         and owned.enemyPowerValue == nil and owned.enemyPowerMaximum == nil and owned.tint[1] ~= 0.1,
         "restricted resource data was not forwarded straight to the native sinks")
     local violations = stop()
     assert(#violations == 0, table.concat(violations, "\n"))
 
-    current, maximum, token = 9, 20, "RAGE"
+    current, maximum, token, hasPower = 9, 20, "RAGE", true
     NativeEvent("NAME_PLATE_UNIT_REMOVED")
     assert(owned.alpha == 0 and not owned.registeredUnit, "recycled plate leaked the previous unit's power")
     NativeEvent("NAME_PLATE_UNIT_ADDED")
@@ -2805,5 +3296,154 @@ do
         "switching to the Blizzard look left the enemy row active")
     combat = false
     module:Disable()
+    UnitHasPowerType = nativeHasPower
 end
 print("Suite enemy nameplate power: combat, ownership, style, secrets, visibility, lifecycle and budget passed")
+
+do
+    NS.IsSecret = function(value) return not NS.Public(value) end
+    UnitCastingDuration, UnitChannelDuration = function() end, function() end
+    cast.HookScript = function() end
+    module.config.enemy, module.config.look, module.active = true, 3, true
+    uf.isFriend = false
+    for _, region in ipairs({ name, bar.Text, bar.LeftText, bar.RightText }) do
+        region.CanBeAccessedInContext = function() return true end
+    end
+    local textAlpha = name:GetAlpha()
+    module.config.enemyFadeHealth, module.config.enemyFadeKeepText = 50, false
+    module:Refresh()
+    assert(name:GetAlpha() == textAlpha * .5, "name did not follow health foreground opacity")
+    module.config.enemyFadeKeepText = true
+    module:Refresh()
+    assert(name:GetAlpha() == textAlpha, "keep text did not restore the native name opacity")
+    module.config.enemyFadeHealth, module.config.enemyFadeKeepText = nil, nil
+    module:Refresh()
+    assert(name:GetAlpha() == textAlpha, "reset left the native name dimmed")
+end
+
+do
+    local oldReaction, oldCombat = UnitReaction, UnitAffectingCombat
+    local reaction, fighting = 2, false
+    UnitReaction = function() return reaction end
+    UnitAffectingCombat = function() return fighting end
+    local config = module.config
+    local baseX = HealthLeft()[4]
+    local oldWidth, oldClick = config.enemyHealthWidthDelta, config.auraClickthrough
+    config.enemyHealthWidthDelta, config.auraClickthrough = 16, true
+    module:Refresh()
+    local styledX = HealthLeft()[4]
+    assert(styledX ~= baseX and auraButton.mouseClickEnabled == false, "fixture did not skin the enemy plate")
+    config.enemySkinEnabled = false
+    module:Refresh()
+    assert(HealthLeft()[4] == baseX and auraButton.mouseClickEnabled == true and uf:GetAlpha() == 0,
+        "disabling enemy skin kept Suite geometry or aura input")
+    reaction = 4
+    events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    assert(HealthLeft()[4] == styledX and auraButton.mouseClickEnabled == false and uf:GetAlpha() == 1,
+        "a neutral unit did not regain its independent skin")
+    fighting = true
+    events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    assert(HealthLeft()[4] == baseX and auraButton.mouseClickEnabled == true,
+        "a neutral unit becoming hostile kept the disabled enemy skin")
+    config.enemySkinEnabled = true
+    module:Refresh()
+    assert(HealthLeft()[4] == styledX and auraButton.mouseClickEnabled == false, "re-enabling the enemy skin did not repaint")
+    config.enemyHealthWidthDelta, config.auraClickthrough = oldWidth, oldClick
+    UnitReaction, UnitAffectingCombat = oldReaction, oldCombat
+    module:Refresh()
+end
+
+-- Unit event route (Skin.lua OnUnitChanged). The seven unit events arrive for
+-- every token; in the 2026-11 raid trace 2,065 of 2,625 were boss/raid/target
+-- tokens without a plate. Such a token costs neither the extension data route
+-- nor a frame safety read, a mapped plate keeps both, in the old order.
+do
+    local Ext, Text, Effects = private.Extensions, private.ExtensionText, private.ExtensionEffects
+    local ROUTE = { "UNIT_THREAT_SITUATION_UPDATE", "UNIT_THREAT_LIST_UPDATE", "UNIT_FACTION", "UNIT_FLAGS",
+        "UNIT_CLASSIFICATION_CHANGED", "UNIT_LEVEL", "UNIT_DISPLAYPOWER" }
+    assert(events.UNIT_FACTION == module.unitEvents, "the unit route is not the registered unit handler")
+    local mapped, inUse, onUnit = module.activeUnits.nameplate1, Ext.inUse, Ext.OnUnit
+    local isForbidden, apply, execute, identity = NS.Safety.IsForbidden, Text.Apply, Effects.Execute, Effects.Identity
+    local nativeClassification = UnitClassification
+    module.activeUnits.nameplate1 = uf
+    local calls, safety, extensionWork, reads, forbidden = {}, 0, 0, 0, nil
+    Ext.inUse = true
+    Ext.OnUnit = function(owner, event, unit)
+        calls[#calls + 1] = { owner, event, unit, safety }
+        return onUnit(owner, event, unit)
+    end
+    NS.Safety.IsForbidden = function(region)
+        safety = safety + 1
+        return region == forbidden or isForbidden(region)
+    end
+    Text.Apply = function(...) extensionWork = extensionWork + 1; return apply(...) end
+    Effects.Execute = function(...) extensionWork = extensionWork + 1; return execute(...) end
+    Effects.Identity = function(...) extensionWork = extensionWork + 1; return identity(...) end
+    UnitClassification = function(unit) reads = reads + 1; return nativeClassification(unit) end
+    local function Fire(event, unit) module.unitEvents(module, event, unit) end
+
+    -- Budget: one event for a token without a plate, counted like the
+    -- threat budget above; then 4 unrelated tokens x 7 events reach nothing.
+    do
+        local UNMAPPED_BUDGET, count = 38, 0
+        debug.sethook(function() count = count + 1 end, "", 1)
+        Fire("UNIT_THREAT_LIST_UPDATE", "boss1")
+        debug.sethook()
+        print(("unit event without a plate: %d instructions"):format(count))
+        assert(count <= UNMAPPED_BUDGET, "a unit event without a plate cost " .. count .. " instructions (budget " .. UNMAPPED_BUDGET .. ")")
+    end
+    for _, unit in ipairs({ "boss1", "raid6", "target", "party1" }) do
+        for _, event in ipairs(ROUTE) do Fire(event, unit) end
+    end
+    assert(#calls == 0 and safety == 0 and reads == 0,
+        ("unmapped unit tokens cost %d extension calls, %d safety reads, %d fact reads"):format(#calls, safety, reads))
+    -- Equivalence: the skipped extension call had no work for those tokens.
+    for _, unit in ipairs({ "boss1", "raid6", "target", "party1", "secret", 7 }) do
+        for _, event in ipairs(ROUTE) do onUnit(module, event, unit) end
+    end
+    assert(extensionWork == 0 and safety == 0, "extension data had work for a token without a plate")
+    -- Secret, non-string and missing tokens stay inert.
+    for _, event in ipairs(ROUTE) do
+        Fire(event, "secret")
+        Fire(event, 7)
+        Fire(event, nil)
+    end
+    assert(#calls == 0 and safety == 0 and reads == 0, "a secret or invalid unit token reached plate work")
+
+    -- A mapped plate: one extension call per event, before the frame safety read.
+    for index, event in ipairs(ROUTE) do
+        local before = safety
+        Fire(event, "nameplate1")
+        local call = calls[index]
+        assert(#calls == index and call[1] == module and call[2] == event and call[3] == "nameplate1",
+            event .. " did not reach extension data once for a mapped plate")
+        assert(call[4] == before and safety > before, event .. " read frame safety before extension data, or not at all")
+    end
+    reads = 0
+    Fire("UNIT_CLASSIFICATION_CHANGED", "nameplate1")
+    assert(reads > 0, "a mapped plate lost its fact refresh")
+
+    -- Permission loss: the mapped but forbidden frame still reaches extension
+    -- data (which checks it itself) and no plate work.
+    calls, reads, forbidden = {}, 0, uf
+    for _, event in ipairs(ROUTE) do Fire(event, "nameplate1") end
+    assert(#calls == #ROUTE and reads == 0 and extensionWork == 0, "a forbidden plate changed its unit event route")
+    forbidden = nil
+
+    -- Mapping lost and regained, extensions idle.
+    calls = {}
+    module.activeUnits.nameplate1 = nil
+    Fire("UNIT_THREAT_LIST_UPDATE", "nameplate1")
+    assert(#calls == 0, "a removed plate kept its unit event route")
+    module.activeUnits.nameplate1 = uf
+    Fire("UNIT_THREAT_LIST_UPDATE", "nameplate1")
+    assert(#calls == 1, "a re-added plate did not regain its unit event route")
+    Ext.inUse, calls, reads = false, {}, 0
+    Fire("UNIT_CLASSIFICATION_CHANGED", "nameplate1")
+    assert(#calls == 0 and reads > 0, "idle extensions changed the skin's own unit event work")
+
+    Ext.inUse, Ext.OnUnit, NS.Safety.IsForbidden = inUse, onUnit, isForbidden
+    Text.Apply, Effects.Execute, Effects.Identity = apply, execute, identity
+    UnitClassification = nativeClassification
+    module.activeUnits.nameplate1 = mapped
+end

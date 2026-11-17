@@ -4,6 +4,7 @@ local Optimizer = {}
 P.ExperienceOptimizer = Optimizer
 local Finite, Public = S.Finite, S.Public
 local Exact, Duration = P.ExperienceBarText.Exact, P.ExperienceBarText.Duration
+local HourlyRate = P.ExperienceBarText.HourlyRate
 local IN_COMBAT = { inCombat = true }
 local QUEST_EVENTS = { "QUEST_LOG_UPDATE", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT" }
 local ITEM_EVENTS = { "BAG_UPDATE_DELAYED", "BAG_UPDATE_COOLDOWN", "PLAYER_EQUIPMENT_CHANGED" }
@@ -399,9 +400,9 @@ function Optimizer.ResetRate(state)
 end
 
 function Optimizer.Rate(state)
+    if state.gained <= 0 then return nil end
     local active = Times(state, GetTime())
-    if active < 60 or state.gained <= 0 then return nil end
-    return state.gained * 3600 / active
+    return HourlyRate(state.gained, active)
 end
 
 function Optimizer.Start(self, level)

@@ -10,6 +10,7 @@ S.Public = function(value) return value ~= secret end
 S.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
 S.Finite = function(value) return S.Public(value) and type(value) == "number" and value == value end
 S.Text = function(value) return value end
+GetLocale = function() return "deDE" end
 S.Dispatch = function(fn, ...) return fn(...) end
 S.Install = function(id, module) modules[id] = module end
 local NS = { Client = { isForever = true }, Safety = { IsForbidden = function() return false end } }
@@ -57,6 +58,12 @@ end
 local row = Paint(4)
 Check(#GameTooltip.result == 1 and row[1] == "Tin Vein (Mining)", "known ore adds exactly one identifiable own line")
 Check(row[2] == "Required: 65 - Current: 60" and row[3] == 1 and row[4] == .2, "insufficient skill is red")
+local copper = { lines = { { leftText = "Kupfervorkommen" } } }
+for _, kind in ipairs({ 4, 21 }) do
+    local localized = Paint(kind, copper)
+    Check(localized and localized[2] == "Required: 1 - Current: 60",
+        "a German node disappeared with English Suite text")
+end
 for _, case in ipairs({ { 65, 1, .5 }, { 90, 1, .85 }, { 115, .25, 1 }, { 165, .6, .6 } }) do
     skill = case[1]
     events.SKILL_LINES_CHANGED(module)

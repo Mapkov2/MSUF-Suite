@@ -181,7 +181,8 @@ assert(not profiles.Delete("compact"), "built-in template was deleted")
 local distinct = {}
 for _, key in ipairs({ "compact", "tank", "dots", "pvp" }) do
     local builtin = Decode(assert(profiles.Read(key)))
-    assert(builtin.nameplateShared.nameplates.fontKey == "EXPRESSWAY" and builtin.nameplateShared.general.kickReadyStyle == "border")
+    assert(builtin.nameplateShared.nameplates.fontKey == "EXPRESSWAY" and builtin.nameplateShared.general.kickReadyShowNameplates == true)
+    assert(builtin.nameplateShared.general.kickReadyStyle == nil, "built-in replaced the shared castbar look")
     assert(builtin.nameplateCVars.nameplateDebuffPadding == "1", "built-in inherited a native setting")
     distinct[key] = builtin.settings
 end
@@ -252,8 +253,9 @@ do
     assert(ok and Suite.DB.nameplateShared.nameplates.fontSize == 21, "staged cast import erased inherited typography")
     available = true
 end
-local textureRule = Suite.SuiteCatalog.nameplates.rules.enemyFillTexture
-assert(profiles.SettingGroup("enemyFillTexture", textureRule) == "layout", "health textures exported as typography")
+assert(not Suite.SuiteCatalog.nameplates.rules.enemyFillTexture, "retired texture finish is still in the catalog")
+local textureRule = Suite.SuiteCatalog.nameplates.rules.nativeHealthFillTexture
+assert(profiles.SettingGroup("nativeHealthFillTexture", textureRule) == "layout", "health textures exported as typography")
 assert(not profiles.Save("Duplicate", saved), "save silently overwrote a named template")
 assert(profiles.Save("Duplicate", saved, true), "explicit template update failed")
 do

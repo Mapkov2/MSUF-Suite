@@ -164,6 +164,15 @@ local function Shown(frame)
     CompleteOpening(watch, covered and frame)
 end
 
+local function SettleMailbox()
+    local frame = Safety.Field(_G, "MailFrame")
+    if Safety.Read(frame, "IsVisible") == true then Shown(frame) end
+end
+
+local function QueueMailboxOpening()
+    NS.Registry.QueueJob(SettleMailbox)
+end
+
 function Content.Watch(frame, owner)
     if not Safety.CanCreateRegions(frame)
         or not Safety.HasMethod(frame, "CreateAnimationGroup") then return false end
@@ -171,7 +180,9 @@ function Content.Watch(frame, owner)
     if not watch then
         watch = { owners = {}, serial = 0, pending = {}, shown = Safety.Read(frame, "IsVisible") == true }
         Content.watchers[frame] = watch
-        frame:HookScript("OnShow", Shown)
+        -- A previously skinned mailbox opens its bags and reads mail after OnShow.
+        local onShow = NS.Client.isForever and frame == Safety.Field(_G, "MailFrame") and QueueMailboxOpening or Shown
+        frame:HookScript("OnShow", onShow)
         if not Content.records[frame] then frame:HookScript("OnHide", Hidden) end
     end
     watch.owners[owner] = true

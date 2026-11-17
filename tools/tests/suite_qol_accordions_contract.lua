@@ -592,6 +592,14 @@ for _, case in ipairs(previewCases) do
         Check(S.Open(id), "preview feature route failed " .. id)
         Settle()
         local ui = assert(contexts[page].qolIndicatorPreviews[id], "indicator preview missing " .. id)
+        if id == "glimmer" then
+            local message = P.Tr("Enable Interact Key in Blizzard's Controls settings to see Glimmer's glow with mouse and keyboard.")
+            local warning
+            for _, region in ipairs({ ui.stage:GetParent():GetRegions() }) do
+                if region:GetObjectType() == "FontString" and region:GetText() == message then warning = region end
+            end
+            Check(warning and warning:IsVisible(), "Glimmer's Interact Key warning is missing")
+        end
         ui.Paint()
         for index = 4, #case do
             local key = case[index]

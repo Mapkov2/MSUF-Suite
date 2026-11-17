@@ -11,6 +11,16 @@ function Layers.Layout(preview)
     P.PreviewInteraction.LayoutLayerRail(preview, preview.availableWidth)
 end
 
+local HEADER_LAYERS = { header = true, title = true, timer = true, buttons = true }
+local function Blocked(layer)
+    local c = P.S.Config("damageMeter")
+    if HEADER_LAYERS[layer] and c.headerVisible == false then return "headerVisible" end
+    if layer == "icon" and c.iconStyle == 1 then return "iconStyle" end
+    if (layer == "timer" or layer == "floatingTimer") and not c.combatTime then return "combatTime" end
+    if layer == "timer" and not c.headerTimer then return "headerTimer" end
+    if layer == "floatingTimer" and not c.timer then return "timer" end
+end
+
 function Layers.Build(preview)
     preview.layers = {}
     for _, spec in ipairs(SPECS) do preview.layers[spec[1]] = spec[1] ~= "details" end
@@ -18,12 +28,18 @@ function Layers.Build(preview)
         preview.layers[key] = enabled
         preview.ui.refreshPreview()
         return true
-    end, function(spec)
+    end, function(spec, setting)
+        if setting then
+            local rule = P.catalog.damageMeter.rules[setting]
+            return P.MeterPreviewEditor.Open(preview, {
+                previewSection = "suite_damageMeter_" .. rule.section, controlKey = setting,
+            })
+        end
         for _, handle in ipairs(preview.handles) do
             if handle._previewLayerKey == spec[1] then return P.MeterPreviewEditor.Open(preview, handle) end
         end
         return false
-    end)
+    end, Blocked)
     Layers.Layout(preview)
 end
 

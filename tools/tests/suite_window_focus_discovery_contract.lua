@@ -11,7 +11,7 @@ local body = [======[
     end
     NS.DB.skins, NS.DB.skinCategories = { playerSpells = false, communities = false }, { social = false }
     local loaded = { Blizzard_UIPanels_Game = true, Blizzard_FriendsFrame = true,
-        Blizzard_SocialUI = true, Blizzard_ItemSocketingUI = true, Blizzard_Professions = false,
+        Blizzard_SocialUI = true, Blizzard_BNet = true, Blizzard_ItemSocketingUI = true, Blizzard_Professions = false,
         Blizzard_Communities = true }
     NS.Client.HasAddOn = function(addon) return loaded[addon] ~= nil end
     NS.Client.IsAddOnLoaded = function(addon) return loaded[addon] == true end
@@ -31,6 +31,10 @@ local body = [======[
     character.explicitProtected, character.protected = true, true
     local friend = Native("FriendsFrame", 550, 100, 400, 500)
     local social = Native("SocialUIFrame", 950, 100, 400, 500)
+    local toast = Native("BNToastFrame", 100, 140, 240, 80)
+    toast.CloseButton = Frame(nil, toast, "Button")
+    toast:SetFrameStrata("LOW")
+    toast:Hide()
     local item = Native("ItemSocketingFrame", 1400, 100, 300, 500)
     UIPanelWindows.ItemSocketingFrame = { area = "left" }
     local spells = Native("PlayerSpellsFrame", 400, 300, 500, 500)
@@ -54,6 +58,11 @@ local body = [======[
     Check(not F.records[communities], "enabled generic category bypassed the disabled dedicated adapter")
     Check(F.records[social].owners["blizzardWindows:social-ui"] ~= nil
         and F.records[social].owners.blizzardWindows == nil, "Social focus used the wrong owner key")
+    Click(character)
+    toast:Show()
+    Check(toast:IsVisible() and F.active.frame == character and not Dimmed(character),
+        "Battle.net toast stole window focus after combat startup")
+    toast:Hide()
     W.DisableOwner("blizzardWindows:social-ui")
     social:Hide(); social:Show()
     Check(F.active.frame ~= social, "normal Social owner release retained cold discovery ownership")
@@ -106,6 +115,7 @@ local body = [======[
     -- The normal adapter's painting callbacks stand in for heavy skin work;
     -- actual ApplyAll retains focus discovery independently of skin ownership.
     NS.DB.enabled, NS.DB.skins.blizzardWindows = true, true
+    NS.DB.skinCategories.social = true
     loaded.Blizzard_Professions, _G.ProfessionsFrame = false, nil
     NS.Adapters.ApplyAll()
     Check(loader.events.ADDON_LOADED, "handoff fixture has no pending cold catalog load")
@@ -141,6 +151,10 @@ local body = [======[
     Click(character)
     Check(F.active and F.active.frame == character and Dimmed(item),
         "cold-to-normal handoff released freshly attached focus ownership")
+    toast:Show()
+    Check(toast:IsVisible() and F.active.frame == character and not Dimmed(character) and Dimmed(item),
+        "Battle.net toast changed the dimming of open windows during normal play")
+    toast:Hide()
     Click(item)
     Check(F.active.frame == item and Dimmed(character), "normal handoff lost mouse focus/MRU promotion")
     NS.DB.enabled = false

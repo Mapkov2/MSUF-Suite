@@ -7,7 +7,9 @@ securecallfunction = function(callback, ...) return callback(...) end
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 -- Shared native spellbook enums exist on both clients; ActionBarSet is Forever-only.
-Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } }
+Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 },
+    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2 }, BagIndex = { Backpack = 0 } }
+Constants = { InventoryConstants = { NumBagSlots = 4 } }
 C_SpellBook = {}
 local frames, loads, featureLoads, optionLoads, loaded = {}, 0, 0, 0, {}
 SlashCmdList = {}

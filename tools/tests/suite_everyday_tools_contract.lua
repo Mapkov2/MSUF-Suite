@@ -107,7 +107,7 @@ earned = E.secret; E:Emit(currency, "CURRENCY_DISPLAY_UPDATE"); E:Flush()
 assert(#messages == beforeCap + 1, "secret lifetime earnings are never compared or formatted")
 
 local setPoint, tracked = nil, false
-local position = { GetXY = function() return .25, .75 end }
+local position = { x = .25, y = .75 }
 C_Map = { GetBestMapForUnit = function() return 84 end, GetPlayerMapPosition = function() return position end,
     GetMapInfo = function() return { name = "City" } end, GetUserWaypoint = function() return E.secret end,
     CanSetUserWaypointOnMap = function() return true end, SetUserWaypoint = function(point) setPoint = point; return true end }

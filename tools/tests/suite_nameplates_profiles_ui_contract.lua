@@ -9,7 +9,7 @@ end
 local function InstallMethods(world)
     local methods = world.widgets.Methods
     for _, name in ipairs({ "SetStartPoint", "SetEndPoint", "SetThickness", "SetTextHeight", "SetPointsOffset",
-        "SetColorWheelTexture", "SetColorValueTexture", "SetColorRGB" }) do
+        "SetColorWheelTexture", "SetColorValueTexture", "SetColorRGB", "ClearTextureSlice", "SetVertexOffset" }) do
         if not methods[name] then methods[name] = function(self, ...) self[name .. "Args"] = { ... } end end
     end
     for _, part in ipairs({ "ColorWheelThumbTexture", "ColorValueThumbTexture" }) do
@@ -87,10 +87,9 @@ local function Verify(host, flavor)
     local mw, P, Suite, MenuWorld = Open(host, flavor)
     local env, M = mw.env, mw.M
     local rows, controls, buttons, dropdowns, preview = {}, {}, {}, {}
-    local input, feedback, promptedName, status
-    local captures, applies, checkpoints, refreshes, prompts, inspections = 0, 0, 0, 0, 0, 0
-    local capture, apply, checkpoint = Suite.ProfileIO.CaptureNameplateShared, Suite.ProfileIO.ApplyNameplateShared,
-        Suite.ProfileWorkbenchBridge.Checkpoint
+    local input, feedback
+    local captures, applies = 0, 0
+    local capture, apply = Suite.ProfileIO.CaptureNameplateShared, Suite.ProfileIO.ApplyNameplateShared
     Suite.ProfileIO.CaptureNameplateShared = function(...)
         captures = captures + 1
         return capture(...)
@@ -99,22 +98,6 @@ local function Verify(host, flavor)
         applies = applies + 1
         return apply(...)
     end
-    Suite.ProfileWorkbenchBridge.Checkpoint = function(...)
-        checkpoints = checkpoints + 1
-        return checkpoint(...)
-    end
-    local refresh, description, inspect = P.Refresh, P.Description, Suite.NameplateProfiles.Inspect
-    P.Refresh = function(...) refreshes = refreshes + 1 return refresh(...) end
-    P.Description = function(parent, text, ...)
-        local label = description(parent, text, ...)
-        local section = P.HM.GetSectionEntry(parent)
-        if section and section.sectionId == "suite_nameplates_profiles" and text == "" then status = label end
-        return label
-    end
-    Suite.NameplateProfiles.Inspect = function(...)
-        inspections = inspections + 1
-        return inspect(...)
-    end
     local grid, button, bindDropdown, textInput, create = P.W.SettingsRows, P.Button, M.BindDropdown, M.BindTextInputAt, P.NameplatesEditor.Create
     M.BindDropdown = function(ctx, widget, ...)
         local setter = widget.SetOnValueChanged
@@ -122,11 +105,6 @@ local function Verify(host, flavor)
         return bindDropdown(ctx, widget, ...)
     end
     P.W.SettingsRows = function(ctx, parent, spec)
-        for _, row in ipairs(spec.rows) do
-            -- A host may initialize a selector by invoking its setter. All
-            -- status/input dependencies must already exist at this point.
-            if row.id == "template" then row.set(row.get()) end
-        end
         local result = grid(ctx, parent, spec)
         for _, row in ipairs(spec.rows) do
             local section = row.sectionId
@@ -150,11 +128,9 @@ local function Verify(host, flavor)
     end
     P.NameplatesEditor.Create = function(...) preview = create(...) return preview end
     M.ShowStatusFeedback = function(text, kind) feedback = { text, kind } end
-    P.AskText = function(_, _, callback) prompts = prompts + 1 callback(assert(promptedName)) end
-    P.Confirm = function(_, _, callback) callback() end
     assert(M.SelectPage("suite_nameplates"))
     local function Expand(section)
-        local body = assert(M.cache.suite_nameplates.sections[section], "missing section " .. section)
+        local body = assert(M.cache[M.activeKey].sections[section], "missing section " .. section)
         P.W.FocusCollapsibleSection(body, { scroll = false, flash = false })
         mw:RunTimers(1000)
         assert(body:IsVisible(), "hidden section " .. section)
@@ -168,117 +144,79 @@ local function Verify(host, flavor)
         if expectedFailure then assert(feedback and feedback[2] == "danger", "expected failure for " .. label)
         else assert(not feedback or feedback[2] ~= "danger", feedback and feedback[1]) end
     end
-    local profiles, fonts = "suite_nameplates_profiles", "suite_nameplates_host_nameplates"
+    local basics = "suite_nameplates_enemyBasics"
+    Expand(basics)
+    assert(rows[basics].look and not rows[basics].nameplatePreset, "Basics must keep Look without the template selector")
+    for _, label in ipairs({ "Quick Setup", "Preview template", "Show original" }) do
+        assert(not (buttons[basics] and buttons[basics][label]), "Basics kept " .. label)
+    end
+    local fonts = "opt_fonts_host_nameplates"
+    assert(not P.NameplatesWorkspace.Open("profiles"), "Templates is still a top-level Nameplates tab")
+    assert(not P.NameplatesWorkspace.Open("shared"), "Shared is still a top-level Nameplates tab")
+    assert(not M.cache.suite_nameplates.sections.suite_nameplates_profiles and not input, "the dedicated profile UI survived")
     -- MSUF's castbar menu owns the interrupt-ready look and switch for castbars
     -- and nameplates alike: this page has no section, row or color for them.
     assert(M.cache.suite_nameplates.sections.suite_nameplates_host_general == nil,
         "nameplates kept an interrupt readiness section of their own")
-    Expand(fonts)
-    local initialOverride = rows[fonts].fontOverride.get()
-    Expand(profiles)
-    assert(input and input:IsVisible(), "profile transfer input was not constructed")
-    assert(status and status:GetText():find("nameplate settings will change", 1, true), "initial template preview lost its status")
-    for _, group in ipairs(Suite.NameplateProfiles.Groups) do
-        local widget = assert(controls[profiles][group.key])
-        assert(rows[profiles][group.key].get() == true)
-        local inspected = inspections
-        widget:GetScript("OnClick")(widget)
-        assert(rows[profiles][group.key].get() == false, "selection group toggle did not update")
-        assert(inspections == inspected + 1, "selection group left its old import preview visible")
-        widget:GetScript("OnClick")(widget)
-        assert(rows[profiles][group.key].get() == true)
-    end
     local config = Suite.Suite.Config("nameplates")
-    local initialWidth = config.enemyHealthWidthDelta
-    local selector = controls[profiles].template
-    dropdowns[selector]("tank")
-    assert(#input:GetText() > 0 and config.enemyHealthWidthDelta == initialWidth, "template selection applied before confirmation")
-    Click(profiles, "Load template")
-    Click(profiles, "Preview import")
-    assert(config.enemyHealthWidthDelta == initialWidth, "import preview changed settings")
-    local refreshed = refreshes
-    Click(profiles, "Apply selection")
-    assert(config.enemyHealthWidthDelta == 150 and config.enemyTankMode, "built-in template did not apply")
-    assert(refreshes > refreshed, "applying a template did not refresh dependent controls")
-    refreshed = refreshes
-    Click(profiles, "Restore previous setup")
-    assert(config.enemyHealthWidthDelta == initialWidth, "previous setup was not restored")
-    assert(refreshes > refreshed, "restoring a template did not refresh dependent controls")
-    promptedName = "UI template"
-    Click(profiles, "Save current setup")
-    local saved = assert(Suite.NameplateProfiles.Read("saved:UI template"))
-    Click(profiles, "Save current setup", true)
-    assert(Suite.NameplateProfiles.Read("saved:UI template") == saved, "saving silently overwrote an existing template")
-    local asked = prompts
-    dropdowns[selector]("saved:missing")
-    Click(profiles, "Duplicate template", true)
-    assert(prompts == asked, "duplicating an invalid source asked for a name and could save the current setup")
-    dropdowns[selector]("saved:UI template")
-    promptedName = "UI duplicate"
-    Click(profiles, "Duplicate template")
-    assert(Suite.NameplateProfiles.Read("saved:UI duplicate") == saved, "template duplication changed the snapshot")
-    config.enemyHealthWidthDelta = 71
-    Click(profiles, "Update saved template")
-    local updatedID, updated = Suite.ProfileIO.PrepareModuleProfile(Suite.NameplateProfiles.Read("saved:UI duplicate"))
-    assert(updatedID == "nameplates" and updated.enemyHealthWidthDelta == 71, "updating a saved template left old settings")
-    Click(profiles, "Export selection")
-    assert(Suite.NameplateProfiles.Inspect(input:GetText()), "export input contains an invalid profile")
-    Click(profiles, "Delete saved template")
-    assert(not Suite.NameplateProfiles.Read("saved:UI duplicate"), "deleting a saved template failed")
-
+    if P.NameplateFonts.HasLinks() then
+        assert(Suite.HostBridge.OpenNameplateFonts(M, "fonts_global_font"), "native Fonts scope is unreachable")
+        assert(M.activeKey == "opt_fonts")
+        return
+    end
+    assert(M.SelectPage("opt_fonts"))
     Expand(fonts)
     local fontRows, fontControls = rows[fonts], controls[fonts]
     assert(fontRows.fontShadowOpacity.step == .01 and fontRows.fontShadowOpacity.roundStep == false
         and fontRows.fontTextAlpha.step == .01 and fontRows.fontTextAlpha.roundStep == false,
         "opacity sliders lost one-percent-point editing")
+    assert(not fontRows.fontSize and not fontRows.nameFontSize, "Fonts still offers nameplate size controls")
     assert(fontRows.fontBaselineOffset.step == 1, "baseline offset lost single-unit editing")
-    assert(fontRows.fontOverride.get() == initialOverride, "restoring the previous setup changed its font override")
     Click(fonts, "Use inherited settings")
     assert(fontRows.fontOverride.get() == false, "font reset retained its scope override")
     assert(not Suite.NameplatePortableText.Stored(), "font reset retained portable typography")
     fontControls.fontOverride:GetScript("OnClick")(fontControls.fontOverride)
     mw:RunTimers(1000)
-    assert(fontRows.fontOverride.get() == true and fontControls.fontSize:IsEnabled(), "font override did not enable typography")
-    MenuWorld.FireScript(fontControls.fontSize, "OnValueChanged", 19)
-    MenuWorld.FireScript(fontControls.nameFontSize, "OnValueChanged", 21)
+    assert(fontRows.fontOverride.get() == true and fontControls.fontBaselineOffset:IsEnabled(), "font override did not enable typography")
+    MenuWorld.FireScript(fontControls.fontBaselineOffset, "OnValueChanged", 0)
     dropdowns[fontControls.nameFormat]("ABBREV_CUT")
     local captured = assert(Suite.ProfileIO.CaptureNameplateShared())
-    assert(captured.nameplates.fontSize == 19 and captured.nameplates.nameFontSize == 21
+    assert(captured.nameplates.fontBaselineOffset == 0
         and captured.nameplates.nameFormat == "ABBREV_CUT", "shared typography edits did not reach the owning model")
     local applied, checkpointed = applies, checkpoints
-    local fontSlider = fontControls.fontSize
+    local fontSlider = fontControls.fontBaselineOffset
     MenuWorld.FireScript(fontSlider, "OnMouseDown", "LeftButton")
-    for value = 20, 30 do MenuWorld.FireScript(fontSlider, "OnValueChanged", value) end
+    for value = 1, 3 do MenuWorld.FireScript(fontSlider, "OnValueChanged", value) end
     assert(applies == applied and checkpoints == checkpointed, "slider ticks applied settings or created checkpoints")
-    assert(capture().nameplates.fontSize == 19, "slider drag changed live typography before release")
+    assert(capture().nameplates.fontBaselineOffset == 0, "slider drag changed live typography before release")
     MenuWorld.FireScript(fontSlider, "OnMouseUp", "LeftButton")
-    MenuWorld.FireScript(fontSlider, "OnValueChanged", 31)
+    MenuWorld.FireScript(fontSlider, "OnValueChanged", 4)
     mw:RunTimers(1000)
-    assert(applies == applied + 1 and capture().nameplates.fontSize == 31, "slider release failed to commit the final native tick once")
+    assert(applies == applied + 1 and capture().nameplates.fontBaselineOffset == 4, "slider release failed to commit the final native tick once")
     assert(checkpoints == checkpointed, "slider release duplicated the host's history checkpoint")
     applied = applies
     MenuWorld.FireScript(fontSlider, "OnMouseDown", "LeftButton")
-    MenuWorld.FireScript(fontSlider, "OnValueChanged", 25)
-    MenuWorld.FireScript(fontSlider, "OnValueChanged", 31)
+    MenuWorld.FireScript(fontSlider, "OnValueChanged", 2)
+    MenuWorld.FireScript(fontSlider, "OnValueChanged", 4)
     MenuWorld.FireScript(fontSlider, "OnMouseUp", "LeftButton")
     mw:RunTimers(1000)
     assert(applies == applied, "unchanged slider drag committed a redundant write")
     MenuWorld.FireScript(fontSlider.editBox, "OnEditFocusGained")
-    fontSlider.editBox:SetText("23")
+    fontSlider.editBox:SetText("1")
     MenuWorld.FireScript(fontSlider.editBox, "OnEnterPressed")
     -- The fixture's SetValue stores the native value without dispatching its
     -- engine event, so deliver that event after the real keyboard handler.
-    assert(fontSlider:GetValue() == 23, "keyboard slider entry did not update the native value")
+    assert(fontSlider:GetValue() == 1, "keyboard slider entry did not update the native value")
     MenuWorld.FireScript(fontSlider, "OnValueChanged", fontSlider:GetValue())
     mw:RunTimers(1000)
-    assert(capture().nameplates.fontSize == 23, "keyboard slider entry failed to commit")
+    assert(capture().nameplates.fontBaselineOffset == 1, "keyboard slider entry failed to commit")
     applied = applies
     env.IsShiftKeyDown = function() return true end
     MenuWorld.FireScript(fontSlider, "OnMouseWheel", 1)
     MenuWorld.FireScript(fontSlider, "OnValueChanged", fontSlider:GetValue())
     env.IsShiftKeyDown = function() return false end
     mw:RunTimers(1000)
-    assert(applies == applied + 1 and capture().nameplates.fontSize > 23, "mouse-wheel slider edit failed to commit once")
+    assert(applies == applied + 1 and capture().nameplates.fontBaselineOffset > 1, "mouse-wheel slider edit failed to commit once")
     local general = M.EnsureDB().general
     general.fontColorR, general.fontColorG, general.fontColorB = .2, .4, .6
     local ok = Suite.ProfileIO.ApplyNameplateShared({ version = 1, nameplates = {
@@ -338,10 +276,10 @@ local function Verify(host, flavor)
     assert(Equal(settingsBefore, config) and Equal(nativeBefore, Suite.ProfileIO.CaptureNameplateCVars()),
         "shared-only edit changed module settings or Blizzard CVars")
     assert(fontRows.fontOverride.get() == false, "failed typography edit kept its override")
-    print("PASS nameplate profile and host UI " .. flavor .. " " .. host:match("([^/]+)$"))
+    print("PASS Nameplates menu and typography " .. flavor .. " " .. host:match("([^/]+)$"))
 end
 
-for _, host in ipairs({ root .. "/../MidnightSimpleUnitFrames", root .. "/../MidnightSimpleUnitFrames-7.0" }) do
+for _, host in ipairs({ root .. "/../MidnightSimpleUnitFrames-7.0" }) do
     for _, flavor in ipairs({ "Mainline", "Forever" }) do
         if not arg[2] or flavor == arg[2] then
             if not arg[3] or host:match("([^/]+)$") == arg[3] then Verify(host, flavor) end

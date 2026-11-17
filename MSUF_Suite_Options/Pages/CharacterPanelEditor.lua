@@ -28,13 +28,13 @@ function Editor.ResetOrder()
     P.ResetRules(ID, { rules.headerOrder, rules.tabOrder, rules.inspectTabOrder })
 end
 
-local function OpenField(ui, field)
+local function OpenField(ui, field, setting)
     if P.Combat() then return end
     local section = ui.ctx.characterHeaderSections and ui.ctx.characterHeaderSections[field.id]
     if not section then return end
     P.EnsureSectionContent(section)
     W.FocusCollapsibleSection(section, { persist = true, scroll = false, flash = false })
-    local key = "msufsuite." .. ID .. "." .. field.prefix .. "Size"
+    local key = "msufsuite." .. ID .. "." .. (setting or field.prefix .. "Size")
     if P.Suite.HostBridge.OpenExactMenuSetting(M, PAGE, Editor.FieldSection(field.id), key) then return end
     W.FocusCollapsibleSection(section, { flash = true })
 end
@@ -333,7 +333,7 @@ local function RefreshLayers(ui, sample, tabs, header)
     ui.layers[TABS_LAYER] = tabs
     for index, field in ipairs(Header.Fields) do
         ui.layers[field.id] = header.buttons[field.id]:IsShown()
-        local available = field.portrait or sample[field.id] ~= nil
+        local available = not header.buttons[field.id].enabled or field.portrait or sample[field.id] ~= nil
         ui.layerButtons[index + 1]:SetEnabled(available)
     end
     Interaction.RefreshLayerRail(ui)
@@ -628,7 +628,7 @@ local function CreateRail(ui)
         ui.overrides[ui.mode][key] = enabled
         Repaint(ui)
         return true
-    end, function(spec)
+    end, function(spec, setting)
         local field = FIELDS[spec[1]]
         if ui.direct then
             if field then ui.direct:SelectField(field.id) else ui.direct:SelectTab(ui.selectedTabs[ui.mode]) end
@@ -638,8 +638,14 @@ local function CreateRail(ui)
             local handle = ui.header.buttons[field.id]
             if handle:IsVisible() then ui.kit:Select(handle) end
         end
-        if field then OpenField(ui, field) end
+        if field then OpenField(ui, field, setting) end
         return true
+    end, function(key)
+        local field = FIELDS[key]
+        if not field then return end
+        local setting = field.prefix .. "Visible"
+        local visible = S.Config(ID)[setting]
+        if visible == false or visible == nil and field.visible == false then return setting end
     end)
     local host = ui.host
     ui.earlier = Arrow(ui, "<", -1)

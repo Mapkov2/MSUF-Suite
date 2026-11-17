@@ -201,6 +201,10 @@ Motion.Track(bar, "addonList")
 Motion.Release(bar, "addonList")
 Motion.Track(bar, "addonList")
 Check(#bar.hooks.OnHide == hooked, "re-enabling duplicated native hooks")
+local readNativeFlag = bar.CanInterpolateScroll
+bar.CanInterpolateScroll = function() error("readability reconciled a native scroll controller") end
+listeners[Motion](Motion, "readability", "readableValues")
+bar.CanInterpolateScroll = readNativeFlag
 -- Same-value foreign writes transfer ownership too; equality is insufficient.
 bar:SetInterpolateScroll(true)
 Motion.ReleaseOwner("addonList")
@@ -441,9 +445,9 @@ do
         function controller:GetParent() return rootFrame end
         function controller:GetHeight() return 300 end
         function controller:GetScrollTarget() return child end
-        function controller:SetInterpolateScroll() error("LFG native interpolation ownership changed") end
-        function controller:SetScrollPercentage() error("LFG native scroll position was written") end
-        function controller:GetScrollInterpolator() error("LFG native interpolator was adopted") end
+        function controller:SetInterpolateScroll() error("native interpolation ownership changed on " .. owner) end
+        function controller:SetScrollPercentage() error("native scroll position was written on " .. owner) end
+        function controller:GetScrollInterpolator() error("native interpolator was adopted on " .. owner) end
         function child:CreateAnimationGroup()
             local group = { scripts = {} }
             self.group = group
@@ -522,6 +526,20 @@ do
     Check(populated <= base + 32, "combat scanned historical hidden LFG scrolls")
     print("BUDGET LFG-scroll hidden64 native=0 VM " .. base .. " -> " .. populated)
     Motion.ReleaseOwner("hidden-lfg")
+    -- The Guild roster initializes pooled rows from the scroll interpolation
+    -- stack with secret member data. Neither its box nor its linked bar can
+    -- adopt addon-owned native interpolation.
+    local roster, rosterContent = LFG("communities", "CommunitiesFrame")
+    local rosterBar = Controller(false, true)
+    rosterBar.registeredScrollBox = roster
+    roster.registeredScrollBar = rosterBar
+    Check(providers.bar[1](rosterBar, "communities-bar"), "Guild roster scrollbar lost its visual renderer")
+    Check(rosterContent.group and rosterContent.group.playing and not Motion.states[roster] and not Motion.states[rosterBar]
+        and roster.canInterpolateScroll == false and rosterBar.canInterpolateScroll == false,
+        "Guild roster or scrollbar acquired addon-owned native interpolation")
+    Motion.ReleaseOwner("communities")
+    Motion.ReleaseOwner("communities-bar")
+    Check(not rosterContent.group.playing and not next(roster.callbacks.scroll), "Guild renderer leaked after disable")
     -- Social lists call protected Battle.net readers from native events.
     -- Skin lifecycle must never seed their native controller/layout fields.
     for _, locked in ipairs({ false, true }) do

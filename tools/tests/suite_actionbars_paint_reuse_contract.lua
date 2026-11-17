@@ -28,6 +28,7 @@ local function New()
     local function Paint(rec)
         w.paints=w.paints+1
         if w.paintHook then w.paintHook(rec) end
+        if rec.wantedFilled~=nil then rec.filled=rec.wantedFilled end
         if rec.fail and rec.fail>0 then rec.fail=rec.fail-1;error("paint sink failure") end
         w.reads=w.reads+1;rec.value=rec.wanted
     end
@@ -35,6 +36,12 @@ local function New()
         w.refills=w.refills+1
         if w.refillHook then w.refillHook(bar) end
         if bar.fail and bar.fail>0 then bar.fail=bar.fail-1;error("refill sink failure") end
+        local count=0
+        for _,rec in ipairs(bar.buttons) do
+            rec.refillFilled=rec.filled
+            if rec.filled then count=count+1;bar.filled[count]=rec end
+        end
+        for i=count+1,#bar.filled do bar.filled[i]=nil end
     end
     local function PaintBar(bar)
         if not bar.owned or bar.native then return end
@@ -164,9 +171,24 @@ do
     local w=New();local b=Bar(w);b.fail=1
     w:Slot(1);w:Fire();assert(w.errors==1)
     cases.overlap(w);w:Fire()
+    b.buttons[1].wantedFilled=false
     b.fail=1;w:Slot(1);w:Fire();assert(w.errors==2)
     w:Counts();w.ab.Mark("state");w:Fire()
     assert(w.refills==1,"fresh refill failure lost its retry after full-bar reuse")
+end
+if candidate then
+    local w=New();local b=Bar(w);local rec=b.buttons[1]
+    w.ab.MarkBar(b);w:Fire();w:Counts()
+    w:Slot(1);w:Fire()
+    assert(w.paints==1 and w.refills==0,"stable membership rebuilt the filled list")
+    rec.wantedFilled,rec.fail=false,1
+    w:Slot(1);w:Fire()
+    assert(w.errors==1 and b.filled[1]==rec,"failed paint changed committed membership")
+    w.ab.Mark("state");w:Fire()
+    assert(w.refills==1 and #b.filled==2 and b.filled[1]~=rec,"retry did not commit the previously failed clear")
+    rec.wantedFilled=true
+    w:Slot(1);w:Fire()
+    assert(w.refills==2 and #b.filled==3 and b.filled[1]==rec,"refilled action never rejoined the walk")
 end
 -- Re-mark from the final refill prevents reuse, even after every button was painted.
 do

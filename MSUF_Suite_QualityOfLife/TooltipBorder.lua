@@ -5,10 +5,8 @@ local NS, S = P.NS, P.Suite
 -- unit's class or reaction. The color is chosen once per tooltip build, from
 -- the item link of the tooltip data or the unit token (TooltipLines.lua), and
 -- given back when the tooltip clears or hides, and when the helper stops.
--- Whoever draws the border paints it. The Suite skin fades Blizzard's border
--- art and draws its own edge on the tooltip (MSUF_Suite_Skin core-tooltips
--- entry), so while it does the color goes to that edge (Skin.TintEdge).
--- Otherwise Blizzard's NineSlice shows the border and takes the color.
+-- The active skin receives the override through Skin.TintEdge. With the
+-- skin off, this helper colors and restores Blizzard's border directly.
 local B = {}
 S.TooltipBorder = B
 -- Values of the "Tooltip border color" choice (1 keeps the border as it is).

@@ -28,7 +28,10 @@ end
 -- Blizzard_ItemUpgradeUI loads on demand.
 CharacterFrame = Frame()
 local panels = Support.UIPanels(function() return combat end)
+local secret = {}
 local NS = {
+    Client = { isForever = false },
+    Public = function(value) return value ~= secret end,
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
     Finish = function(callback, ...) return true, callback(...) end,
@@ -116,4 +119,31 @@ assert(CharacterFrame:IsShown(), "re-enable did not handle an already-open vendo
 ItemUpgradeFrame:Hide()
 assert(not CharacterFrame:IsShown() and panels.blocked == 0 and #reported == 0,
     "the panel manager refused a call or a call raised")
+
+-- Both the item upgrade and ordinary merchant helpers use this owner API.
+-- Forever's public Show/HideUIPanel run the delegate for managed panels.
+NS.Client.isForever = true
+local layout = { ["UIPanelLayout-defined"] = true, ["UIPanelLayout-area"] = "left" }
+function CharacterFrame:GetAttribute(key) return layout[key] end
+local owner = {}
+local shown, hidden = panels.shown, panels.hidden
+assert(not S.OpenCharacterFor(owner) and panels.shown == shown, "Forever auto-open reached the native panel delegate")
+layout["UIPanelLayout-defined"], layout["UIPanelLayout-area"] = nil, nil
+assert(not S.OpenCharacterFor(owner) and panels.shown == shown, "undefined layout was treated as detached")
+layout["UIPanelLayout-defined"], layout["UIPanelLayout-area"] = true, secret
+assert(not S.OpenCharacterFor(owner) and panels.shown == shown, "unreadable layout was treated as detached")
+layout["UIPanelLayout-area"] = nil
+assert(S.OpenCharacterFor(owner) and CharacterFrame:IsShown(), "detached Forever character window did not open")
+S.CloseCharacterFor(owner)
+assert(not CharacterFrame:IsShown() and panels.hidden == hidden + 1, "detached Forever character window did not close")
+
+assert(S.OpenCharacterFor(owner))
+combat = true
+S.CloseCharacterFor(owner)
+layout["UIPanelLayout-area"] = "left"
+combat = false
+watcher.callback(watcher, "PLAYER_REGEN_ENABLED")
+assert(CharacterFrame:IsShown() and panels.hidden == hidden + 1 and not watcher.events.PLAYER_REGEN_ENABLED,
+    "deferred Forever close reached the native panel delegate after the managed layout returned")
+CharacterFrame:Hide()
 print("suite_character_upgrade_window_contract: ok")

@@ -89,7 +89,7 @@ Draw.Paint(s, p, true, true, true)
 assert(s.combined.outer.host:IsVisible() and not s.single.outer.host:IsVisible())
 assert(s.thresholdBar.value == .2 and s.threshold.points[1][3] == "TOPRIGHT")
 assert(s.focusMarker.points[1][3] == "LEFT" and s.focusMarker.points[1][4] == -56)
-assert(s.finish.allPoints == health.fill and s.finish.blend == "MOD" and s.finish.texture:find("Stripes",1,true))
+assert(not s.finish and not p.texture, "a legacy setting revived the retired texture overlay")
 local count, before = #created, calls
 for _ = 1, 100 do Draw.Paint(s, p, true, true, true) end
 assert(#created == count and calls == before, "warm paint created objects or rewrote unchanged native properties")
@@ -129,15 +129,15 @@ NS.Client.isForever, config.barGeometry = true, 1
 assert(not Draw.Plan(config,"enemy").joined, "native Forever badge reservation needs separate frames")
 NS.Client.isForever, config.barGeometry = false, 2
 health.shown = false
-for _, region in ipairs({ s.single.outer.host, s.castOnly.outer.host, s.threshold, s.focusMarker, s.finish }) do
+for _, region in ipairs({ s.single.outer.host, s.castOnly.outer.host, s.threshold, s.focusMarker }) do
     assert(not region:IsVisible() or region == s.castOnly.outer.host, "names-only health retained ghost decoration")
 end
 health.shown, cast.shown = true, false
 -- Preview bars are Buttons, not StatusBars; only the explicit sample fill exists.
 local pu, pb, pc = Plate("Button")
-local ps = { parent = pu, health = pb, cast = pc, fillSource = pb:CreateTexture() }
+local ps = { parent = pu, health = pb, cast = pc }
 Draw.Paint(ps, Draw.Plan(config,"enemy"), true, true, false)
-assert(ps.finish.allPoints == ps.fillSource, "preview queried StatusBar-only API on Button")
+assert(ps.single.glow.host:IsVisible(), "preview frame lost its glow")
 local private = { NS = NS }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Decor.lua"))("Nameplates", private)
 local owner = { config = config, active = true, pendingPlates = {} }

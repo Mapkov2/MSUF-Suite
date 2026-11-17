@@ -102,9 +102,19 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
 
     -- The first visible header after a combat reload can have no controls
     -- yet. Safe fit is independent of the native panel visibility lock.
+    -- A managed window minimizes only through Blizzard's X while its native
+    -- opener can bring it back (CollectionsMicroButton, ToggleCollectionsJournal).
     local settingsPanel = UIPanelWindows.SettingsPanel
-    UIPanelWindows.SettingsPanel = { area = "center" }
-    local caption = Frame("SettingsPanel", UIParent)
+    local collectionsPanel = UIPanelWindows.CollectionsJournal
+    UIPanelWindows.CollectionsJournal = { area = "left" }
+    local findByFrame = NS.BlizzardCatalog.FindByFrame
+    NS.BlizzardCatalog.FindByFrame = function(name)
+        if name == "CollectionsJournal" then return { category = "collections" } end
+        return findByFrame(name)
+    end
+    CollectionsMicroButton = Frame("CollectionsMicroButton", UIParent, "Button")
+    function CollectionsMicroButton:IsEnabled() return true end
+    local caption = Frame("CollectionsJournal", UIParent)
     local close = Frame(nil, caption, "Button")
     close.anchorName, close.left, close.top, close.height = "TOPRIGHT", 668, 803, 26
     function close:GetEffectiveScale() return caption:GetEffectiveScale() end
@@ -129,11 +139,12 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     for key, callback in pairs(H.jobs) do H.jobs[key] = nil; callback() end
     Check(header.minimize.mouseEnabled == true, "combat-end refresh did not re-enable minimize input")
     header.minimize.scripts.OnClick(header.minimize)
-    Check(not caption.shown and header.restore.shown, "minimize did not resume after combat")
-    header.restore.scripts.OnClick(header.restore, "LeftButton")
+    Check(caption.shown and not header.restore.shown and not header.minimized,
+        "the skin's own minimize hid a managed window after combat")
     close.scripts.OnClick(close)
-    Check(not caption.shown and not header.restore.shown, "restored header lost its native close")
+    Check(not caption.shown and not header.restore.shown, "the header lost its native close")
     W.DisableOwner("reload-caption")
+    NS.BlizzardCatalog.FindByFrame, UIPanelWindows.CollectionsJournal = findByFrame, collectionsPanel
 
     local standalone = Frame("SettingsPanel", UIParent)
     UIPanelWindows.SettingsPanel = nil

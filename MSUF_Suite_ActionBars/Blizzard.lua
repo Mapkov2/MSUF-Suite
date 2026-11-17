@@ -10,7 +10,7 @@ local NS, S = P.NS, P.Suite
 --  * MultiBar1-7 move under a permanently hidden, full-screen parent with
 --    their events unregistered. They are never Hide()n: Hide on an Edit Mode
 --    bar routes through protected SetShownBase.
---  * Reused Retail buttons move into suite headers; other Blizzard action
+--  * Reused action buttons move into suite headers; other Blizzard action
 --    buttons stay under their bars and are hidden securely (statehidden).
 --  * The shared broadcasters (ActionBarButtonEventsFrame, ActionBarActions
 --    EventsFrame, range/usable watchers) are left untouched: reused Retail
@@ -139,12 +139,17 @@ end
 -- Under a hidden header native Hide is silent, so only that case needs the
 -- coalesced grid repair. Alpha-only mouseover hiding still counts as visible.
 local suiteBarOf = {}
-local function AfterBlizzardPlan(blizzardBar)
+local function AfterBlizzardPlanHook(blizzardBar)
     local bar = suiteBarOf[blizzardBar]
-    if bar and M.active and not bar.header:IsVisible() then AB.Regrid(bar) end
+    if bar and M.active and not bar.header:IsVisible() then Dispatch(AB.Regrid, bar) end
 end
-local function AfterBlizzardPlanHook(blizzardBar) Dispatch(AfterBlizzardPlan, blizzardBar) end
 local function ReassertHook() Dispatch(Reassert) end
+
+local function ObservePlan(bar, target)
+    if not target or not target.native then return end
+    suiteBarOf[bar] = target
+    hooksecurefunc(bar, "UpdateShownButtons", AfterBlizzardPlanHook)
+end
 
 -- Blizzard's plan shows only buttons without statehidden, which every suite
 -- hide sets (a restricted Hide), so only its hides can disagree with the
@@ -172,11 +177,7 @@ local function DisposeBars(control)
             bars = bars + 1
             SecureHandlerSetFrameRef(control, "bar" .. bars, bar)
             bar:UnregisterAllEvents()
-            local target = AB.bars[index]
-            if target and target.native then
-                suiteBarOf[bar] = target
-                hooksecurefunc(bar, "UpdateShownButtons", AfterBlizzardPlanHook)
-            end
+            ObservePlan(bar, AB.bars[index])
         end
     end
     for _, name in ipairs({ "StanceBar", "PetActionBar" }) do
@@ -205,7 +206,10 @@ local function DisposeButtons(control)
                     -- flyoutDirection attribute (Bars.lua), so Blizzard's
                     -- flyout never asks the hidden bar for a direction.
                     SecureHandlerWrapScript(button, "OnHide", target.header, KEEP_PRE, KEEP_POST)
-                    button:SetAttribute("_childupdate-grid", AB.SNIPPET.BUTTON)
+                    -- The wraps reveal Suite slots in combat, then let Blizzard perform the drag.
+                    SecureHandlerWrapScript(button, "OnDragStart", AB.grid, AB.SNIPPET.NATIVE_DRAG)
+                    SecureHandlerWrapScript(button, "OnReceiveDrag", AB.grid, AB.SNIPPET.NATIVE_RECEIVE)
+                    button:SetAttribute("_childupdate-grid", AB.SNIPPET.NATIVE_BUTTON)
                     SecureHandlerSetFrameRef(control, "reuse" .. reused, button)
                     SecureHandlerSetFrameRef(control, "reuseHeader" .. reused, target.header)
                     control:SetAttribute("reuseIndex" .. reused, i)
@@ -232,7 +236,10 @@ function AB.Dispose()
     DisposeBars(control)
     DisposeButtons(control)
     local main = AB.Frame("MainActionBar")
-    if main then SecureHandlerSetFrameRef(control, "main", main) end
+    if main then
+        ObservePlan(main, AB.bars[1])
+        SecureHandlerSetFrameRef(control, "main", main)
+    end
     SecureHandlerExecute(control, DISPOSE)
     AB.disposed = true
     if main then

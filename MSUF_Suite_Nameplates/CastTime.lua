@@ -1,7 +1,7 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
 local LOOK_BLIZZARD, HIDE = private.Mode.LOOK_BLIZZARD, private.Mode.HIDE
-local Key = private.Key
+local Key, Text = private.Key, private.Text
 -- Nameplate casts can carry secret values. Never assign CastTimeText to the
 -- native bar: its Lua formatter then reads secret StatusBar values in tainted
 -- execution. DurationTextBinding formats the opaque duration in the engine.
@@ -10,6 +10,14 @@ private.CastTime = CastTime
 local M
 local formatter
 local elapsedComponents
+local IN_COMBAT = { inCombat = true }
+local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_EMPOWER_START",
+    "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED",
+    "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_EMPOWER_STOP" }
+local CAST_UPDATES = { "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_CHANNEL_UPDATE", "UNIT_SPELLCAST_EMPOWER_UPDATE",
+    "UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" }
+-- Cast-dependent presentation needs the edges. Timing and readiness also need updates.
+local CAST_GROUPS = { CAST_EVENTS, CAST_UPDATES }
 
 function CastTime.Bind(module) M = module end
 
@@ -72,9 +80,34 @@ end
 -- DurationTextBinding:SetDuration takes secret arguments only from untainted
 -- code (SecretArguments = "AllowedWhenUntainted"). A public object is bound
 -- as it is; a secret one shows no time; a public nil means no such cast.
+local PaintTimeFont
+local function OnCastShown(cast)
+    local state = M.castTimes[cast]
+    if state and state.unit and state.active == true then PaintTimeFont(state, true) end
+end
+
+PaintTimeFont = function(state, shown)
+    local style = state.timeStyle
+    if not style or state.appliedTimeStyle == style then return end
+    local cast = state.cast
+    if not shown then
+        if not Safe(cast) then return end
+        local visible = cast:IsShown()
+        if S.Public(visible) and visible == false then
+            if not state.fontHook then
+                cast:HookScript("OnShow", OnCastShown)
+                state.fontHook = true
+            end
+            return
+        end
+    end
+    if Text.Apply(state.label, style, style.size, true) then state.appliedTimeStyle = style end
+end
+
 local function ApplyDuration(state, unit, getter)
     local duration = getter(unit)
     if not S.Public(duration) or duration == nil then return false end
+    PaintTimeFont(state)
     state.binding:SetDuration(duration)
     state.binding:Enable()
     state.active = true
@@ -124,18 +157,23 @@ local function Create(cast)
     binding:SetZeroDurationText("")
     binding:SetExpiredText("")
     binding:Disable()
-    return { label = label, binding = binding, active = false }
+    return { cast = cast, label = label, binding = binding, active = false }
+end
+
+local function WantsTime(config, prefix)
+    return prefix and config.look ~= LOOK_BLIZZARD and config.enemyCastEnabled ~= HIDE
+        and config[prefix] and config[Key[prefix].CastTimeEnabled] ~= false
 end
 
 -- uf: the plate of this castbar; a label combat holds back is made when the
 -- end of combat applies that plate again (Skin.lua OnCombatEnded).
 function CastTime.Paint(cast, prefix, unit, uf)
-    if not cast or NS.Safety.IsForbidden(cast) then return end
-    if not prefix or M.config.look == LOOK_BLIZZARD or M.config.enemyCastEnabled == HIDE or not M.config[prefix]
-        or M.config[Key[prefix].CastTimeEnabled] == false or not unit then
+    if not cast then return end
+    if not unit or not WantsTime(M.config, prefix) then
         CastTime.Restore(cast)
         return
     end
+    if NS.Safety.IsForbidden(cast) then return end
     local state = M.castTimes[cast]
     if not state then
         if NS.IsCombatLocked() then
@@ -147,21 +185,53 @@ function CastTime.Paint(cast, prefix, unit, uf)
     end
     local format = M.config[Key[prefix].CastTimeFormat] or 1
     if format == 2 or state.elapsed then ApplyFormat(state, format) end
+    local styles = Text and Text.styles
+    state.timeStyle = styles and styles[Key[prefix].Cast].time
     if state.unit ~= unit then
         state.unit = unit
         CastTime.Refresh(state, unit)
+    elseif state.active == true then
+        PaintTimeFont(state)
     end
 end
 
 function CastTime.OnChanged(module, event, unit, ...)
     if not module.active or not S.Public(unit) or type(unit) ~= "string" then return end
-    local uf = module.activeUnits[unit]
-    if not Safe(uf) then return end
-    local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
-    local state = cast and module.castTimes[cast]
-    if state and state.unit == unit then CastTime.Refresh(state, unit, event) end
-    if cast then private.KickReady.OnCast(cast, unit, event) end
-    if private.Extensions.inUse then private.Extensions.OnCast(module, event, unit, ...) end
+    if module.castTimeEvents or module.kickEvents then
+        local uf = module.activeUnits[unit]
+        if not Safe(uf) then return end
+        local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
+        if cast then
+            local state = module.castTimeEvents and module.castTimes[cast]
+            if state and state.unit == unit then CastTime.Refresh(state, unit, event) end
+            if module.kickEvents then private.KickReady.OnCast(cast, unit, event) end
+        end
+    end
+    if private.Extensions.usesCasts then private.Extensions.OnCast(module, event, unit, ...) end
+end
+
+function CastTime.SyncEvents(module)
+    if not module.active then return end
+    local c = module.config
+    local kick = private.KickReady.castEvents and c.look ~= LOOK_BLIZZARD and c.enemy and c.enemyCastEnabled ~= HIDE
+    local time = WantsTime(c, "enemy") or WantsTime(c, "friendly")
+    module.kickEvents, module.castTimeEvents = kick, time
+    local mode = (kick or time) and 2 or private.Extensions.usesCasts and 1 or 0
+    local previous = module.castListening or 0
+    if mode == previous then return end
+    module.castListening = mode
+    for i, events in ipairs(CAST_GROUPS) do
+        local needed = mode >= i
+        if needed ~= (previous >= i) then
+            for _, event in ipairs(events) do
+                if needed then
+                    module.context:Event(event, CastTime.OnChanged, IN_COMBAT)
+                else
+                    module.context:RemoveEvent(event)
+                end
+            end
+        end
+    end
 end
 
 -- MSUF's interrupt-ready settings were applied: repaint the castbars of the

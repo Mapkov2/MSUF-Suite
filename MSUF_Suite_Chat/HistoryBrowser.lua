@@ -1,6 +1,7 @@
 local _, P = ...
 local S = P.Suite
 local C = P.Chat
+C.WhisperArchiveCleared = function() end
 local owner = { active = true }
 local copy
 local TABS = { { key = "messages", label = "Saved chat" }, { key = "whispers", label = "Conversations" } }
@@ -94,6 +95,8 @@ function C.HistoryCleared()
     S.ToolListWindow.Refresh(owner)
     if copy then S.QoLClearCopy(copy) end
     C.HideCopyDialog(C.M.copyDialog)
+    -- The whisper messenger drops the archived lines it showed.
+    C.WhisperArchiveCleared()
 end
 
 local function Closed()

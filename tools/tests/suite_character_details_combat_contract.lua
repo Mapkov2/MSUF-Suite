@@ -83,6 +83,25 @@ Check(not view.active and not view.host:IsShown() and not view.registered and re
 Check(H.Details.GetView() == "list" and H.Details.IsModern() and closeReleases == 0,
     "the handoff altered the Basic preference, native stat styling or close skin")
 
+local originalClient, originalCore = H.NS.Client, H.NS.SuiteCore
+local notify = H.NS.Registry.NotifyListeners
+local applies, reloads = 0, 0
+H.NS.Client = { isForever = true, modernEquipment = false }
+H.NS.SuiteCore = function()
+    return { Suite = { Apply = function(module)
+        assert(module == "characterPanel" and H.Details.GetView() == "classic")
+        applies = applies + 1
+    end } }
+end
+local reload = ReloadUI
+ReloadUI = function() reloads = reloads + 1 end
+H.NS.Registry.NotifyListeners = function(domain, key) assert(domain == "characterDetails" and key == "view") end
+Check(H.Details.SetView("classic") and applies == 1 and reloads == 0,
+    "Forever Suite view change reloaded instead of applying")
+H.NS.Client, H.NS.SuiteCore, ReloadUI = originalClient, originalCore, reload
+H.NS.Registry.NotifyListeners = notify
+H.NS.DB.characterDetails.view = "list"
+
 H.SetCombat(true)
 ownsDossier = false
 local coldRoot, beforeReads = H.Object(), H.Reads()

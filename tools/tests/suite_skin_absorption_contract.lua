@@ -185,6 +185,7 @@ local preexisting = {
 }
 preexisting.legacy = new_frame("Button", "ContractPreexistingPanelButton", UIParent)
 preexisting.legacy:SetScript("OnShow", preexisting.legacyOnShow)
+function preexisting.legacy:GetButtonState() return "NORMAL" end
 function preexisting.legacy:HookScript(script, callback)
     self.hookedScripts = self.hookedScripts or {}
     self.hookedScripts[script] = callback
@@ -1935,6 +1936,7 @@ do
     _G.MicroMenu, _G.MicroMenuContainer = nil, nil
 end
 if simulateForever then
+    assert(namespace.Theme.ApplyLook("foreverGlass"), "Forever Glass cannot be applied to the professions fixture")
     local root = new_frame("Frame", "ProfessionsFrame", UIParent)
     local crafting = new_frame("Frame", "ProfessionsCraftingPage", root)
     local background = crafting:CreateTexture(nil, "BACKGROUND")
@@ -1964,11 +1966,13 @@ if simulateForever then
         "Forever's protected profession shell did not prepare while closed")
     assert(background:GetAlpha() == 0,
         "Forever crafting-page atlas retained its native art")
+    assert(namespace.Registry.GetSurface(root).fill:IsShown(), "the Forever professions glass shell lost its fill")
     for _, card in ipairs(cards) do
-        assert(namespace.Registry.GetSurface(card)
-            and card.Background:GetAlpha() == 0
-            and card.Icon:GetAlpha() == 1,
+        local surface = namespace.Registry.GetSurface(card)
+        assert(surface and card.Background:GetAlpha() == 0 and card.Icon:GetAlpha() == 1,
             "Forever profession book card lost the MSUF surface or native icon")
+        assert(not surface.fill:IsShown() and surface.edge:IsShown(),
+            "Forever profession book card filled over the glass shell or lost its outline")
     end
     local lockdown, applyFrame = InCombatLockdown, namespace.GenericWindows.ApplyFrame
     local bookPasses = 0

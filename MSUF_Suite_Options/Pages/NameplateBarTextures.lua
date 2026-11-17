@@ -32,8 +32,10 @@ local legacy = { enemyBorderEnabled = true, friendlyBorderEnabled = true,
 local highlight = { page = "opt_bars", section = "suite_nameplate_highlights", title = "Highlight Borders", searchBySetting = true, keys = {
     "highlightAggro", "highlightMouseover", "highlightBorderSize", "highlightAggroColor", "highlightMouseoverColor",
     "selectionDim", "selectionDimPercent", "mouseoverHighlight", "mouseoverHighlightColor",
-    "highlightPriority", "highlightOrder", "highlightAggroOverride",
+    "highlightPriority", "highlightOrder", "highlightAggroOverride", "castTargetHighlightStyle",
 } }
+local absorb = { page = "opt_bars", section = "suite_nameplate_absorbs", title = "Absorb Display",
+    searchBySetting = true, keys = { "nameplateAbsorbMode", "nameplateHealAbsorbMode" } }
 local OutlineSuffixes = { "BorderSize", "BorderColor", "BorderStyle", "OuterFrame", "OuterFrameSize", "OuterFrameColor",
     "ShadowEnabled", "GlowEnabled", "GlowMode", "GlowColor", "EffectSize" }
 for _, side in ipairs({ "enemy", "friendly" }) do
@@ -42,7 +44,7 @@ for _, side in ipairs({ "enemy", "friendly" }) do
     end
 end
 local OPEN_CAST = "Open castbar textures"
-local sections = { health, cast, outline, highlight }
+local sections = { health, cast, outline, highlight, absorb }
 
 local inherited = {
     nativeHealthFillTexture = true, nativeHealthBackgroundTexture = true,
@@ -166,18 +168,19 @@ end
 
 function Textures.LegacyRule(key) return legacy[key] == true end
 
-function Textures.OutlineKeys()
+function Textures.BarDetailKeys()
     local keys = {}
-    for _, spec in ipairs({ outline, highlight }) do
+    for _, spec in ipairs({ outline, highlight, absorb }) do
         for _, key in ipairs(spec.keys) do keys[#keys + 1] = key end
     end
     return keys
 end
 
-local function Link(ctx, body, y, width, section, spec, label)
+local function Link(ctx, body, y, width, section, spec, label, target)
     if not spec.registered then return y end
+    target = target or spec.keys[1]
     P.Button(ctx, body, label, 16, y, math.min(width, 240), function()
-        local key = "msufsuite.nameplates." .. spec.keys[1]
+        local key = "msufsuite.nameplates." .. target
         if not Bridge.OpenExactMenuSetting(P.M, spec.page, spec.section, key) then
             P.M.SelectPage(spec.page)
             local page = P.M.cache and P.M.cache[spec.page]
@@ -191,7 +194,7 @@ local function Link(ctx, body, y, width, section, spec, label)
                 entry.SetOpenImmediate(true)
             end
         end
-    end, nil, P.Meta("suite_nameplates", ID, "link." .. spec.keys[1], "action", section))
+    end, nil, P.Meta("suite_nameplates", ID, "link." .. target, "action", section))
     return y - 38
 end
 
@@ -202,6 +205,14 @@ end
 function Textures.LinkOutline(ctx, body, y, width, section)
     y = Link(ctx, body, y, width, section, outline, outline.title)
     return Link(ctx, body, y, width, section, highlight, highlight.title)
+end
+
+function Textures.LinkCastTarget(ctx, body, y, width, section)
+    return Link(ctx, body, y, width, section, highlight, "Cast target highlight style", "castTargetHighlightStyle")
+end
+
+function Textures.LinkAbsorbs(ctx, body, y, width, section)
+    return Link(ctx, body, y, width, section, absorb, absorb.title)
 end
 
 local function Rules(spec)
@@ -480,7 +491,8 @@ local function HighlightGrid(ctx, body, keys, y, width, prepare)
 end
 
 local function HighlightModes(ctx, panel, width, prepare, top)
-    local y = HighlightGrid(ctx, panel, { "highlightBorderSize", "highlightAggro", "highlightMouseover" }, top, width, prepare)
+    local y = HighlightGrid(ctx, panel,
+        { "highlightBorderSize", "highlightAggro", "highlightMouseover", "castTargetHighlightStyle" }, top, width, prepare)
     P.Text(panel, "More Options", 16, y - 10, width, nil, "section")
     return HighlightGrid(ctx, panel, { "selectionDim", "selectionDimPercent", "mouseoverHighlight" },
         y - 36, width, prepare)
@@ -622,13 +634,17 @@ local function Register(spec)
             build(ctx, builder)
             OutlineSection(ctx, builder)
             HighlightSection(ctx, builder)
+            local absorbRules = Rules(absorb)
+            if #absorbRules > 0 then
+                P.RuleSection(ctx, builder, absorb.page, ID, absorb.section, P.Tr(absorb.title), absorbRules, {})
+            end
         end
         provider.reset = function()
             for key in pairs(legacy) do
                 local rule = P.catalog[ID].rules[key]
                 if rule then defaults[key] = rule.default end
             end
-            for _, key in ipairs(Textures.OutlineKeys()) do
+            for _, key in ipairs(Textures.BarDetailKeys()) do
                 local rule = P.catalog[ID].rules[key]
                 if rule then defaults[key] = rule.default end
             end
@@ -636,10 +652,11 @@ local function Register(spec)
         end
         spec.registered = Bridge.RegisterBarsScope(P.M, "suite_nameplates", P.Tr("Nameplates"), provider)
         if spec.registered then
-            outline.registered, highlight.registered = true, true
+            outline.registered, highlight.registered, absorb.registered = true, true, true
             Bridge.RegisterSearchTargetResolver(P.M, "MSUF_Suite.NameplateHealthTextures", function(page, target)
                 local section = target and target.sectionId
-                if page == spec.page and (section == spec.section or section == outline.section or section == highlight.section) then
+                if page == spec.page and (section == spec.section or section == outline.section
+                    or section == highlight.section or section == absorb.section) then
                     return page, target, { accordion = { [page .. ":" .. section] = true } }
                 end
             end)
@@ -647,7 +664,7 @@ local function Register(spec)
         end
     end
     spec.registered = Bridge.RegisterPageTail(P.M, spec.page, "MSUF_Suite." .. spec.section, provider)
-    if spec == health then outline.registered, highlight.registered = spec.registered, spec.registered end
+    if spec == health then outline.registered, highlight.registered, absorb.registered = spec.registered, spec.registered, spec.registered end
 end
 
 function Textures.Register()

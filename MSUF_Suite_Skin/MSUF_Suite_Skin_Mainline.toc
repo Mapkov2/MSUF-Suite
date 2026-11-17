@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Skinning
 ## Notes: Suite-owned MapkoSkin skin engine.
 ## Author: Mapko
-## Version: 0.1.22-alpha
+## Version: 0.1.23-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -33,6 +33,8 @@ Core\BlizzardYellow.lua
 Core\Checkmarks.lua
 Core\CheckmarksMenus.lua
 Core\Typography.lua
+Core\LabelStyle.lua
+Core\NativeMenuRows.lua
 Rendering\Geometry.lua
 Rendering\Surface.lua
 Rendering\Motion.lua
@@ -43,6 +45,7 @@ Rendering\GlyphMotion.lua
 Rendering\FocusVeil.lua
 Rendering\WindowActionSettings.lua
 Rendering\WindowControlPolicy.lua
+Rendering\CaptionTitles.lua
 Rendering\WindowControlChrome.lua
 Rendering\WindowControlDelegate.lua
 Rendering\WindowControls.lua
@@ -68,7 +71,9 @@ Adapters\GenericWindows.lua
 Adapters\GenericWindowsNodes.lua
 Adapters\GenericWindowsFrames.lua
 Adapters\ChatConfig.lua
+Adapters\TooltipChrome.lua
 Adapters\GenericWindowsCatalog.lua
+Adapters\TutorialPointers.lua
 Rendering\ScrollMotion.lua
 Adapters\QuestText.lua
 Adapters\MacroWindow.lua
@@ -94,6 +99,8 @@ Adapters\Commerce.lua
 Adapters\GameMenu.lua
 Adapters\WorldMapQuests.lua
 Adapters\WorldMap.lua
+Adapters\ForeverSpellLearningData.lua
+Adapters\ForeverSpellLearning.lua
 Adapters\PlayerSpells.lua
 Adapters\EncounterJournalPanels.lua
 Adapters\EncounterJournal.lua

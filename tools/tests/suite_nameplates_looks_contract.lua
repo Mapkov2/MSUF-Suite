@@ -9,7 +9,7 @@
 -- reaches native sinks only (a strict secret Watch). Bar textures and Suite
 -- cast colors stay retired (suite_nameplates_parity_contract.lua).
 local root = assert(arg[1], "repository root required")
-local classic = root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames"
+local classic = root .. "/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames"
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 
 ------------------------------------------------------------------ secrets
@@ -56,6 +56,22 @@ local function Region(kind, parent)
     function r:SetHeight(height) Write(self); self.height = height end
     function r:SetAlpha(alpha) Write(self); self.alpha, self.alphaSecret = alpha, false end
     function r:GetAlpha() return self.alpha or 1 end
+    function r:CanBeAccessedInContext() return not self.sealed end
+    function r:CreateAnimationGroup()
+        local region, group, anim = self, {}, {}
+        function group:SetToFinalAlpha() end
+        function group:SetScript(event, fn) self[event] = fn end
+        function group:CreateAnimation() return anim end
+        function group:Play() self.playing = true end
+        function group:Stop() self.playing = false end
+        function group:Finish() region:SetAlpha(anim.target); self:OnFinished() end
+        function anim:GetProgress() return 0.5 end
+        function anim:SetFromAlpha(from) self.from = from end
+        function anim:SetToAlpha(target) self.target = target end
+        function anim:SetDuration(duration) self.duration = duration end
+        self.hoverAnimation, self.hoverAlpha = group, anim
+        return group
+    end
     function r:SetAlphaFromBoolean(value, ifTrue, ifFalse)
         NativeBoolean(value)
         Write(self)
@@ -206,7 +222,7 @@ local NS = {
     -- MSUF without the interrupt-ready engine: KickReady.lua stays idle.
     HostBridge = { KickReady = function() return nil end },
 }
-for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "NameplateExtensions", "Catalog/Nameplates", "Catalog/NameplateExtensions" }) do
+for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "NameplateAuraDisplay", "NameplateExtensions", "Catalog/Nameplates", "Catalog/NameplateExtensions" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
 end
 local spec, Style = NS.SuiteCatalog.nameplates, NS.NameplateStyle
@@ -223,8 +239,9 @@ local TODAY = { mouseoverHighlight = false, mouseoverHighlightColor = "ffffff", 
 for key, value in pairs(TODAY) do
     local rule = assert(spec.rules[key], key .. " is missing from the catalog")
     assert(rule.default == value, key .. " does not start on today's look")
-    for _, preset in pairs(spec.look.presets) do
-        assert(preset[key] == nil or preset[key] == value, "a look preset changes " .. key)
+    for choice, preset in pairs(spec.look.presets) do
+        local expected = choice == 1 and key == "mouseoverHighlight" or value
+        assert(preset[key] == nil or preset[key] == expected, "unexpected preset value for " .. key)
     end
 end
 assert(spec.rules.friendlyCastHeight.requiresChoice.key == "enemyCastEnabled"
@@ -257,6 +274,7 @@ local S = { Public = NS.Public, Finite = NS.Finite, RGB = RGB,
     SetFont = function(region, path, size, flags) region:SetFont(path, size, flags) end,
     Install = function(_, owner) module = owner end }
 NS.Suite = S
+NS.ResolveTexture = function() end
 NS.HostBridge = NS.HostBridge or {}
 NS.HostBridge.NameFormatter = function() return nil end
 NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
@@ -271,16 +289,16 @@ local function Load(file) assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. f
 Load("Modes")
 Load("Geometry")
 Component("Layout", "Bind Configure Apply Restore RestoreAll Observe")
-Component("Roles", "Configure Marker Quest Classify Base Get ClearQuest RefreshContext RetryQuests")
+Component("Roles", "Configure Marker Quest Classify Base Get ClearQuest RefreshContext RetryQuests SyncQuestEvents")
 Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable SetExtraTextEvents")
 Component("Threat", "Enable Apply Restore Disable Refresh")
 Component("CVars", "Apply")
-Component("Auras", "Bind Apply Restore")
-Component("Selection", "Apply Restore Configure RestoreAll")
+Component("Auras", "Bind Configure Apply Restore")
+Component("Selection", "Bind Apply Restore Configure RestoreAll")
 Component("AuraColors", "Bind Configure Apply Restore SetEditMode")
-Component("AuraDisplay", "Bind Configure Apply Restore Release Resume SetEditMode")
+Component("AuraDisplay", "Bind Configure Apply Restore Release Resume SetEditMode TargetChanged")
 for _, file in ipairs({ "Text", "NameText", "Level", "CastTime", "KickReady", "Mouseover", "FriendlyNames", "Decor",
-    "ExtensionLayout", "ExtensionText", "ExtensionEffects", "ExtensionResources", "Extensions", "Skin" }) do
+    "ExtensionLayout", "ExtensionText", "ExtensionEffects", "Extensions", "Status", "Textures", "Skin" }) do
     Load(file)
 end
 local stopWatch = Secrets.Watch(root .. "/MSUF_Suite_Nameplates/Level.lua", { strict = true })
@@ -371,6 +389,40 @@ module:Refresh()
 c.mouseoverHighlight = false
 module:Refresh()
 assert(events.UPDATE_MOUSEOVER_UNIT == nil and not highlightA.shown, "the highlight stayed registered or shown when off")
+
+------------------------------------------------------------------ hover text and lease cleanup
+ufA.name:SetAlpha(0.8)
+c.enemyNameMouseover, c.enemyNameFadeIn, c.enemyNameFadeOut = true, .25, .5
+c.enemyHealthTextVisible = false
+mouseover = nil
+module:Refresh()
+assert(ufA.name:GetAlpha() == 0 and healthA.Text:GetAlpha() == 0 and healthA.RightText:GetAlpha() == 0)
+Hover(plateA)
+assert(ufA.name.hoverAlpha.target == .8 and ufA.name.hoverAlpha.duration == .25 and healthA.Text:GetAlpha() == 0)
+ufA.name.hoverAnimation:Finish()
+Hover(plateB)
+assert(ufA.name.hoverAlpha.target == 0 and ufA.name.hoverAlpha.duration == .5)
+private.Mouseover.Restore(ufA)
+assert(not ufA.name.hoverAnimation.playing and ufA.name:GetAlpha() == .8 and healthA.Text:GetAlpha() == 1,
+    "returning a plate to the pool did not restore its text alpha")
+c.enemyNameMouseover, c.enemyHealthTextVisible, mouseover = false, true, nil
+module:Refresh()
+assert(events.UPDATE_MOUSEOVER_UNIT == nil and healthB.Text:GetAlpha() == 1)
+ufA.name:SetAlpha(1)
+local oldPlayer, oldParty, oldRaid = ufF.isPlayer, UnitInParty, UnitInRaid
+ufF.isPlayer = true
+UnitInParty, UnitInRaid = function() return false end, function() return false end
+c.friendlyNameMouseover = true
+module:Refresh()
+assert(ufF.name:GetAlpha() == 0)
+c.friendlyNamesOnly = private.Mode.GROUP_NAMES_ONLY
+module:Refresh()
+Hover(plateF)
+assert(ufF.name:GetAlpha() == 0, "mouseover revealed a name excluded by the group filter")
+c.friendlyNamesOnly, c.friendlyNameMouseover, mouseover = 1, false, nil
+module:Refresh()
+assert(ufF.name:GetAlpha() == 1, "the group filter captured the transient hover alpha")
+ufF.isPlayer, UnitInParty, UnitInRaid = oldPlayer, oldParty, oldRaid
 
 ------------------------------------------------------------------ level color
 do
@@ -476,21 +528,23 @@ P.ModuleCard = function() end
 local resets = {}
 P.RuleSection = function(_, _, _, _, sectionId, _, _, opts) resets[sectionId] = opts.resetKeys; return {} end
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesWorkspace.lua"))("MSUF_Suite_Options", P)
-P.NameplatesAdvancedAuras = { Append = function() end }
-P.NameplatesProfiles = { Build = function() end }
-P.NameplatesHostOptions = { Build = function() end }
+P.NameplatesAdvancedAuras = { Append = function(specs) specs[#specs + 1] = { key = "auraWorkspace" } end }
+P.NameplateFonts = { TargetForSetting = function() end }
+P.NameplateBarTextures = { LegacyRule = function() return false end, Target = function() return true end }
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesExtensions.lua"))("MSUF_Suite_Options", P)
 -- The page registers a cold exact-target preparer through the host adapter.
 P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
     assert(name == "MSUF_Suite.NameplatesTabs" and type(resolver) == "function")
     return true
 end
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesStatus.lua"))("Options", P)
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesSectionsLayout.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Nameplates.lua"))("MSUF_Suite_Options", P)
 page.build({})
 local function Lists(keys, key)
     for _, listed in ipairs(keys or {}) do if listed == key then return true end end
 end
-local auras, signals = {}, resets.suite_nameplates_signals
+local auras = {}
 for _, side in ipairs({ "enemy", "friendly" }) do
     for _, elements in ipairs({ { "Buffs" }, { "Auras", "ControlAura" } }) do
         for _, key in ipairs(P.NameplateAuraPositionKeys(side, elements)) do auras[#auras + 1] = key end
@@ -502,7 +556,8 @@ for _, side in ipairs({ "enemy", "friendly" }) do
             local key = side .. element .. "Offset" .. axis
             assert(spec.rules[key] and Lists(auras, key), "the Blizzard auras reset keeps " .. key)
         end
-        assert(Lists(signals, side .. "SoftTargetOffset" .. axis), "the Blizzard indicators reset keeps the soft target")
+        assert(Lists(resets["suite_nameplates_" .. side .. "Markers"], side .. "SoftTargetOffset" .. axis),
+            "the Status Icons reset keeps the soft target")
     end
 end
 local written

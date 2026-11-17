@@ -332,22 +332,39 @@ local OnAdoptedArtKitChangedHook = Isolated(OnAdoptedArtKitChanged)
 
 -- Mixin copies and XML key values are plain instance fields: rawget reads them
 -- without running any foreign __index handler.
-local function AdoptFrame(frame)
+local function AdoptFrame(frame, managesAuraButton)
+    -- MSUF Auras3 manages Blizzard's native aura-container buttons, and
+    -- HasAnyForbiddenAspects can raise "forbidden object" on them from addon
+    -- code. The Suite's host bridge answers from the host's raw marker first
+    -- (unreadable counts as managed), so a managed button is left alone.
+    -- managesAuraButton is nil on a Suite that predates that capability.
+    if managesAuraButton and managesAuraButton(frame) then return end
+    -- Candidates are picked without calling anything on the frame: a raw mixin
+    -- handler on any frame type (an unrelated frame's field may be secret), or
+    -- Button's own GetButtonState for the legacy OnShow script. Other frames
+    -- get no further call: HasAnyForbiddenAspects raises on some (Auras3 Cooldowns).
+    local rawArtKit, rawOnShow = rawget(frame, "SetButtonArtKit"), rawget(frame, "OnShow")
+    local hasArtKit = native.setButtonArtKit ~= nil
+        and NS.Safety.Public(rawArtKit) and rawArtKit == native.setButtonArtKit
+    local hasController = native.controllerOnShow ~= nil
+        and NS.Safety.Public(rawOnShow) and rawOnShow == native.controllerOnShow
+    local isButton = native.legacyOnShow ~= nil and type(frame.GetButtonState) == "function"
+    if not hasArtKit and not hasController and not isButton then return end
     -- SmartNavigation's helper forbids script bindings without IsForbidden.
     -- Skip restricted or unreadable objects before inspecting native handlers.
     local forbiddenAspects = Call(frame, "HasAnyForbiddenAspects")
     if not NS.Safety.Public(forbiddenAspects) or forbiddenAspects then return end
-    if native.setButtonArtKit and rawget(frame, "SetButtonArtKit") == native.setButtonArtKit then
+    if hasArtKit then
         hooksecurefunc(frame, "SetButtonArtKit", OnAdoptedArtKitChangedHook)
         -- A later-created button reports its initial art kit from InitButton;
         -- an adopted one is caught up with the kit it already shows.
         local artKit = rawget(frame, "buttonArtKit")
         if NS.Checkmarks.IsRedButtonArtKit(artKit) then OnAdoptedArtKitChanged(frame, artKit) end
     end
-    if native.controllerOnShow and rawget(frame, "OnShow") == native.controllerOnShow then
+    if hasController then
         hooksecurefunc(frame, "OnShow", OnAdoptedControllerShownHook)
     end
-    if native.legacyOnShow and HasMethod(frame, "HookScript")
+    if isButton and HasMethod(frame, "HookScript")
         and frame:GetScript("OnShow") == native.legacyOnShow then
         frame:HookScript("OnShow", OnAdoptedPanelButtonShownHook)
     end
@@ -355,13 +372,19 @@ end
 
 -- One bounded pass over the existing frames, once per session and only after
 -- the feature is first enabled. EnumerateFrames is in neither client's API
--- documentation, so a client without it adopts nothing.
+-- documentation, so a client without it adopts nothing. Host-owned knowledge
+-- (which buttons MSUF Auras3 manages) comes from the Suite's host bridge,
+-- which the Suite publishes on its root table, resolved once per pass. An
+-- older Suite without that capability still adopts; each frame then goes
+-- straight to the candidate filter in AdoptFrame.
 local function AdoptExistingButtons()
     if UIPanelButtons.adopted or type(EnumerateFrames) ~= "function" then return end
+    local managesAuraButton = Field(Field(_G.MSUFSuite, "HostBridge"), "ManagesAuraButton")
+    if type(managesAuraButton) ~= "function" then managesAuraButton = nil end
     UIPanelButtons.adopted = true
     local frame = EnumerateFrames()
     while frame do
-        if not NS.Safety.IsForbidden(frame) then AdoptFrame(frame) end
+        if not NS.Safety.IsForbidden(frame) then AdoptFrame(frame, managesAuraButton) end
         frame = EnumerateFrames(frame)
     end
 end

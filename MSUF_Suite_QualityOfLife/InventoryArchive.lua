@@ -252,6 +252,70 @@ local function Recorded(snapshot)
     return type(snapshot) == "table" and type(snapshot.counts) == "table" and S.Finite(snapshot.at)
 end
 
+------------------------------------------------------------------ read-only consumer API
+-- The Bags offline view (MSUF_Suite_Bags/OfflineInventory.lua) reads the
+-- recorded snapshots through these calls. They never hand out a stored table
+-- and never write: a consumer gets numbers through visit(itemID, count).
+local CONSUMER_SCOPES = { bags = true, bank = true }
+local MAX_VISITED = 10000
+
+local function ConsumerSnapshot(store, region, guid, scope)
+    if scope == "warband" then return store.account[region] end
+    if not CONSUMER_SCOPES[scope] or type(guid) ~= "string" then return nil end
+    local record = store.characters[guid]
+    if not Archived(record, region) then return nil end
+    return record[scope]
+end
+
+-- The characters recorded in this region, by address: guid, address, current
+-- and the times their bags and bank were recorded (nil: never). The second
+-- result is when the region's warband bank was recorded.
+function M:RecordedCharacters()
+    local list = {}
+    local store = Store()
+    local guid, _, region = Data.CurrentCharacter()
+    if not self.active or not store or not region then return list, nil end
+    for id, record in pairs(store.characters) do
+        if type(id) == "string" and Archived(record, region) then
+            list[#list + 1] = { guid = id, address = record.address, current = id == guid,
+                bags = Recorded(record.bags) and record.bags.at or nil,
+                bank = Recorded(record.bank) and record.bank.at or nil }
+        end
+    end
+    table.sort(list, function(a, b) return a.address < b.address end)
+    local account = store.account[region]
+    return list, Recorded(account) and account.at or nil
+end
+
+-- When a snapshot was recorded, or nil. scope: "bags", "bank" or "warband"
+-- (guid is ignored there).
+function M:RecordedAt(guid, scope)
+    local store = Store()
+    local _, _, region = Data.CurrentCharacter()
+    if not self.active or not store or not region then return nil end
+    local snapshot = ConsumerSnapshot(store, region, guid, scope)
+    return Recorded(snapshot) and snapshot.at or nil
+end
+
+-- Visits each valid recorded stack total of a snapshot; returns its time, or
+-- nil when nothing is recorded.
+function M:VisitRecorded(guid, scope, visit)
+    local store = Store()
+    local _, _, region = Data.CurrentCharacter()
+    if not self.active or not visit or not store or not region then return nil end
+    local snapshot = ConsumerSnapshot(store, region, guid, scope)
+    if not Recorded(snapshot) then return nil end
+    local visited = 0
+    for id, count in pairs(snapshot.counts) do
+        if visited >= MAX_VISITED then break end
+        if Whole(id, 2147483647) and id > 0 and Whole(count, 2147483647) and count > 0 then
+            visited = visited + 1
+            visit(id, count)
+        end
+    end
+    return snapshot.at
+end
+
 local function AddRows(rows, owner, scope, snapshot, query, identity)
     if not Recorded(snapshot) then return end
     local title, label = S.Text(scope), S.Text("%s × %d — %s (%s)")

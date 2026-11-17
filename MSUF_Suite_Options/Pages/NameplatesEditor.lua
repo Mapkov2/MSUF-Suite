@@ -7,9 +7,10 @@ local AURA_KIND = Layers.AURA_KIND
 local AURA_ELEMENT = Layers.AuraElement
 local Register, OpenSetting = Layers.Register, Layers.OpenSetting
 local Kit = P.Suite.PreviewKit
+local Layout = P.NameplatesPreviewLayout
 local Editor = {}
 P.NameplatesEditor = Editor
-Editor.Layout = P.NameplatesPreviewLayout.Apply
+Editor.Layout = Layout.Apply
 -- The layer rules of NameplatesEditorLayers.lua, as methods of the preview.
 Editor.LayerOn, Editor.LayerAvailable, Editor.LayerActive = Layers.On, Layers.Available, Layers.Active
 local RAID_MARK_NAMES = { [0] = "Off", [1] = "Star", [2] = "Circle", [3] = "Diamond",
@@ -86,7 +87,8 @@ function Editor:RefreshSelection()
     if SB then SB.Refresh(self.body) end
     if self.elementPicker and selected ~= self.pickerSelection then
         self.pickerSelection = selected
-        P.SetButtonText(self.elementPicker, (selected and selected._label or Tr("Select")) .. " ▾")
+        P.SetButtonText(self.elementPicker, selected and selected._label or Tr("Select"))
+        if not self.compact and not self.groupPreviewEnabled then Layout.Tools(self) end
     end
     if self.RefreshSizeSelection then self:RefreshSizeSelection() end
 end
@@ -190,11 +192,9 @@ function Editor:Paint()
     end
 end
 
-local function Button(ui, parent, key, label, width, x, action)
+local function Button(parent, key, label, width, action)
     local button = T.Button(parent, label, width, 20)
-    if T.CenterButtonLabel then T.CenterButtonLabel(button) end
-    if parent == ui.tools then button:SetPoint("TOPLEFT", parent, "TOPLEFT", x, 0)
-    else button:SetPoint("LEFT", parent, "LEFT", x, 0) end
+    Layout.StyleButton(button)
     button:SetScript("OnClick", action)
     Register(button, key, label)
     return button
@@ -207,26 +207,27 @@ local function BuildZoomTools(ui)
     tools:SetPoint("TOPRIGHT", canvas, "BOTTOMRIGHT", 0, -4)
     ui.tools = tools
     tools:SetHeight(46)
-    Button(ui, tools, "fit", "Fit", 36, 0, function()
+    local fit = Button(tools, "fit", "Fit", 36, function()
         ui.panX, ui.panY = 0, 0
         ui.zoom = ui.groupPreviewEnabled and 1 or Clamp((canvas:GetWidth() - 40) / 600, 0.5, 1)
         ui:Paint()
     end)
-    Button(ui, tools, "actual", "1:1", 36, 40, function()
+    local actual = Button(tools, "actual", "1:1", 36, function()
         ui.zoom = 1
         ui:Paint()
     end)
-    Button(ui, tools, "zoomOut", "-", 24, 80, function()
+    local zoomOut = Button(tools, "zoomOut", "-", 24, function()
         ui.zoom = Clamp(ui.zoom - 0.1, 0.5, 2)
         ui:Paint()
     end)
     ui.zoomLabel = T.Font(tools, "GameFontDisableSmall", "100%", T.colors.text)
-    ui.zoomLabel:SetPoint("TOPLEFT", tools, "TOPLEFT", 112, -4)
-    Button(ui, tools, "zoomIn", "+", 24, 156, function()
+    ui.zoomLabel:SetJustifyH("CENTER")
+    ui.zoomLabel:SetWordWrap(false)
+    local zoomIn = Button(tools, "zoomIn", "+", 24, function()
         ui.zoom = Clamp(ui.zoom + 0.1, 0.5, 2)
         ui:Paint()
     end)
-    return tools
+    ui.zoomControls = { { fit, 36 }, { actual, 36 }, { zoomOut, 24 }, { ui.zoomLabel, 40 }, { zoomIn, 24 } }
 end
 
 -- The row of sample switches in the preview canvas: plate kind, enemy type, quest and friendly options.
@@ -236,22 +237,22 @@ local function BuildSampleButtons(ui)
     ui.samples = samples
     samples:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
     samples:SetSize(540, 20)
-    ui.roleButton = Button(ui, samples, "role", "Enemy type", 88, 0, function()
+    ui.roleButton = Button(samples, "role", "Enemy type", 88, function()
         ui.previewRole = nil
         P.Set(ID, "enemyPreviewRole", P.Get(ID, "enemyPreviewRole") % #P.Suite.NameplateStyle.Roles + 1)
         ui:Paint()
     end)
-    ui.enemyTypeButton = Button(ui, samples, "enemyType", "NPC / player", 112, 94, function()
+    ui.enemyTypeButton = Button(samples, "enemyType", "NPC / player", 112, function()
         ui.enemyPlayer = not ui.enemyPlayer
         ui:Select(nil)
         ui:Paint()
     end)
-    ui.softTypeButton = Button(ui, samples, "softType", "Soft: enemy / interact", 126, 212, function()
+    ui.softTypeButton = Button(samples, "softType", "Soft: enemy / interact", 126, function()
         ui.softInteract = not ui.softInteract
         ui:Select(nil)
         ui:Paint()
     end)
-    ui.questButton = Button(ui, samples, "questSample", "Quest", 58, 344, function()
+    ui.questButton = Button(samples, "questSample", "Quest", 58, function()
         if P.Get(ID, "look") == 2 then
             OpenSetting("look")
             return
@@ -264,10 +265,10 @@ local function BuildSampleButtons(ui)
         if ui.questMarkerHandle and ui.questMarkerHandle:IsShown() then ui:Select(ui.questMarkerHandle) end
     end)
     ui.friendlyButtons = {}
-    ui.friendlyButtons[1] = Button(ui, samples, "friendlyMode", "Friendly player display", 146, 0, function()
+    ui.friendlyButtons[1] = Button(samples, "friendlyMode", "Friendly player display", 146, function()
         OpenSetting("friendlyNamesOnly")
     end)
-    ui.friendlyButtons[2] = Button(ui, samples, "friendlyGroup", "Group / outsider", 114, 152, function()
+    ui.friendlyButtons[2] = Button(samples, "friendlyGroup", "Group / outsider", 114, function()
         ui.friendlyOutsider = not ui.friendlyOutsider
         ui:Paint()
     end)
@@ -284,9 +285,17 @@ local function BuildSampleButtons(ui)
 end
 
 local function BuildTools(ui)
-    local tools = BuildZoomTools(ui)
+    BuildZoomTools(ui)
+    local tools = ui.tools
+    ui.targetStateButton = Button(tools, "targetSample", "Target / non-target", 126, function()
+        ui.targetSample = ui.targetSample == false
+        ui:Paint()
+    end)
+    ui.focusStateButton = Button(tools, "focusSample", "Focus sample", 96, function()
+        ui.focusSample = not ui.focusSample
+        ui:Paint()
+    end)
     BuildSampleButtons(ui)
-    ui.tools = tools
 end
 
 local function BuildRaidPalette(ui)
@@ -332,8 +341,7 @@ end
 
 local function BuildElementPicker(ui, tools)
     local picker = T.Button(tools, "Select", 182, 20)
-    P.SetButtonText(picker, Tr("Select") .. " ▾")
-    picker:SetPoint("TOPRIGHT", tools, "TOPRIGHT", 0, 0)
+    Layout.StyleButton(picker)
     picker:SetScript("OnClick", function()
         if P.Combat() or not ui:CanPickElement() then return end
         P.AnchoredContextMenu(picker, function(_, menu) ui:BuildElementMenu(menu) end)
@@ -482,7 +490,7 @@ function Editor:Edit(context, element, interrupted, sharedAuraText)
     self.auraSample = context == "auras" and element or nil
     self.sharedAuraText = sharedAuraText
     if self.groupPreviewEnabled then P.NameplatesMultiPreview.Set(self, false) end
-    self.layerContext, self.layerGroup = context, nil
+    self.layerContext = context
     local layer = context == "text" and TEXT_LAYERS[element]
     self.textSample = layer and element or nil
     self.editFullPlate = element == "Health" or element == "HealthText" or self.auraSample ~= nil
@@ -513,6 +521,7 @@ function Editor:SampleHighlight(sample, clear, fromLayer)
     end
     self.highlightSample = sample
     self.layers.highlightBorders, self.layers.health = true, true
+    if sample == "aggro" then self.statusSample, self.statusOffsetSample = nil, nil end
     if fromLayer then
         if self.groupPreviewEnabled then P.NameplatesMultiPreview.Set(self, false) end
         self:Paint()
@@ -642,7 +651,11 @@ local function BindPreviewActions(ui)
     P.PreviewNameplateStatus = function(element, all)
         if P.Combat() then return end
         ShowStatusLayers(ui, element, all)
-        ui.statusSample, ui.allStatusSamples = not all and element or nil, all == true
+        if element == "Aggro" then
+            ui.statusSample, ui.aggroSample = nil, true
+        else
+            ui.statusSample, ui.allStatusSamples = not all and element or nil, all == true
+        end
         ui.statusOffsetSample = nil
         ui:Edit("status", element)
     end

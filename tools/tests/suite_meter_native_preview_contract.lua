@@ -2,7 +2,7 @@
 -- Geometry is a deterministic client stand-in; this does not prove native pixels.
 local root = assert(arg[1]):gsub("\\", "/")
 local flavor = arg[2] or "Mainline"
-local host = arg[3] or root .. "/../MidnightSimpleUnitFrames"
+local host = arg[3] or root .. "/../MidnightSimpleUnitFrames-7.0"
 local MenuWorld = assert(loadfile(host .. "/tools/tests/menu_core_world.lua"))()
 local mw = MenuWorld.Open(host, flavor, { open = false, locale = "deDE", clientScriptBindings = true })
 local env, M, world = mw.env, mw.M, mw.world

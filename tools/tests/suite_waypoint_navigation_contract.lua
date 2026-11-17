@@ -104,6 +104,7 @@ local clock = { now = 100, tickers = {}, fired = false }
 GetTime = function() return clock.now end
 IsInInstance = function() return world.instance == true end
 GetUnitSpeed = function() return world.speed end
+IsMouselooking = function() return true end
 PlaySound, PlaySoundFile = function() end, function() end
 SOUNDKIT = { MAP_PING = 1 }
 UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }
@@ -234,6 +235,8 @@ module.config, module.context, module.active = config, context, true
 module:Enable()
 assert(module.view.root:IsShown() and SuperTrackedFrame.Icon:GetAlpha() == 0)
 assert(taxi.enabled == 1 and taxi.refreshed > 0, "enabling navigation did not start the flight map markers")
+-- Prime Lua's call stack before measuring allocations in a warm loop.
+Advance(.1)
 local before, nativeDistanceReads = counters.writes, counters.distance
 collectgarbage("collect")
 collectgarbage("stop")
@@ -550,6 +553,12 @@ do
     assert(tickerStarts == 1 and events.MODIFIER_STATE_CHANGED, "the map did not return after the pause")
     RXPG_ARROW = Frame(UIParent)
     RXPG_ARROW.element = { zone = 84, x = 10, y = 20, step = { title = "Step" } }
+    local changed, pending
+    local originalHook, originalCoalesce = hooksecurefunc, context.Coalesce
+    hooksecurefunc = function(object, name, callback)
+        if object == RXPG_ARROW and name == "SetShown" then changed = callback end
+    end
+    context.Coalesce = function(_, _, fn) return { Request = function() pending = fn end } end
     MapzerothAddon = { Navigation = { IsActive = function() return true end, Start = function() end, Stop = function() end,
         Model = function() return { step = { text = "Travel", path = { { mapID = 84, x = .1, y = .2 } } } } end } }
     config.guideTomTom, config.guideRestedXP, config.guideMapzeroth = false, true, true
@@ -561,6 +570,102 @@ do
     assert(cancelled == 2, "pausing the guides did not stop both polls")
     module.paused = false
     navigation.RefreshGuides(module)
-    assert(tickerStarts == 2, "the guides were not polled again after the pause")
+    assert(tickerStarts == 1, "RestedXP polling restarted or Mapzeroth compatibility polling did not resume")
+    config.replaceManual, config.guideMapzeroth = true, false
+    navigation.RefreshGuides(module)
+    assert(changed and navigation.selectedSource == "RestedXP", "RestedXP change hook or first sample missing")
+    changed()
+    RXPG_ARROW.element = { zone = 84, x = 30, y = 40, step = { title = "Next" } }
+    assert(pending and navigation.selected.x == .1, "RestedXP read a step before its writer completed")
+    pending(module)
+    assert(navigation.selected.x == .3 and navigation.selected.y == .4, "RestedXP lost a new step while its arrow stayed visible")
+    hooksecurefunc, context.Coalesce = originalHook, originalCoalesce
+end
+-- The sleeping bag follows quest progress rather than arrival or mere turn-in.
+do
+    local guide = assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationSleepingBag.lua"))
+    guide("MSUF_Suite_QualityOfLife", private)
+    assert(not navigation.OpenSleepingBag, "the Forever guide loaded on Retail")
+    NS.Client.isForever = true
+    guide("MSUF_Suite_QualityOfLife", private)
+    local faction, level, active, done = "Alliance", 13, {}, {}
+    UnitFactionGroup = function() return faction end
+    UnitLevel = function() return level end
+    C_QuestLog.IsOnQuest = function(id) return active[id] == true end
+    C_QuestLog.IsQuestFlaggedCompleted = function(id) return done[id] == true end
+    C_Map.GetMapInfo = function(id) return { name = tostring(id) } end
+    C_Map.ClearUserWaypoint = function()
+        world.noPin = true
+        if world.kind == Enum.SuperTrackingType.UserWaypoint then world.kind = nil end
+    end
+    local place = C_Map.SetUserWaypoint
+    C_Map.SetUserWaypoint = function(point)
+        world.noPin = false
+        return place(point)
+    end
+    C_SuperTrack.IsSuperTrackingUserWaypoint = function() return world.kind == Enum.SuperTrackingType.UserWaypoint end
+
+    local open, spec
+    local window = { SetStatus = function() end }
+    Suite.ToolListWindow.Open = function(owner, definition)
+        open, spec = owner, definition
+        return window
+    end
+    Suite.ToolListWindow.IsOpen = function(owner) return owner == open end
+    Suite.ToolListWindow.Close = function() open = nil end
+    navigation.owner = module
+    navigation.OpenSleepingBag()
+    assert(window.selected == 1 and #spec.rows() == 7 and not spec.actions[1].enabled(), "level 13 could start")
+    level = 14
+    assert(spec.actions[1].enabled())
+    spec.actions[1].run()
+    assert(world.map == 1436 and navigation.selected.step == 1, "Alliance start must be in Westfall")
+    navigation.QueueNext(module)
+    assert(navigation.selected.step == 1, "arrival advanced without quest credit")
+    active[79008] = true
+    navigation.RefreshSleepingBag()
+    assert(world.map == 1413 and window.selected == 2 and spec.rows()[1].checked, "Alliance second stop must be in the Barrens")
+    active[79008], done[79008] = nil, true
+    navigation.RefreshSleepingBag()
+    assert(window.selected == 2, "guide left the giver before the follow-up was accepted")
+    for i, id in ipairs({ 79192, 79980, 79974, 79975, 79976 }) do
+        active[id] = true
+        navigation.RefreshSleepingBag()
+        assert(window.selected == i + 2 and navigation.selected.step == i + 2)
+        if id == 79975 then assert(world.map == 1424, "the wall approach must begin at the cart in Hillsbrad") end
+    end
+    done[79976] = true
+    navigation.RefreshSleepingBag()
+    assert(not navigation.selected and world.noPin and spec.rows()[7].checked, "completion left the guide pinned")
+    assert(not spec.actions[1].enabled())
+    faction, active, done = "Horde", {}, {}
+    navigation.OpenSleepingBag()
+    spec.actions[1].run()
+    assert(world.map == 1413 and window.selected == 1, "Horde start must be in the Barrens")
+    active[79007] = true
+    navigation.RefreshSleepingBag()
+    assert(world.map == 1436 and window.selected == 2, "Horde second stop must be in Westfall")
+    C_Map.SetUserWaypoint({ map = 10, x = .5, y = .5 })
+    active[79192] = true
+    navigation.RefreshSleepingBag()
+    assert(world.map == 10 and not world.noPin and not navigation.selected, "a newer player pin was overwritten")
+    navigation.OpenSleepingBag()
+    assert(window.selected == 3, "the guide did not resume the character's existing progress")
+    spec.actions[1].run()
+    combat = true
+    active[79980] = true
+    navigation.RefreshSleepingBag()
+    assert(navigation.selected.step == 3, "guide changed the pin in combat")
+    combat = false
+    navigation.RefreshSleepingBag()
+    assert(navigation.selected.step == 4, "guide did not advance after combat")
+    world.kind = Enum.SuperTrackingType.Quest
+    navigation.RefreshSleepingBag()
+    assert(world.kind == Enum.SuperTrackingType.Quest and not navigation.selected, "guide reclaimed focus from a native quest")
+    spec.actions[1].run()
+    navigation.Clear()
+    assert(world.noPin and not navigation.selected, "stop left a guide waypoint active")
+    navigation.DisableSleepingBag()
+    assert(not open, "disabling navigation left the guide open")
 end
 print("PASS navigation: native fallback, lifecycle, stable repaint budget, identity, secrets and atomic import")

@@ -58,7 +58,9 @@ AB.Virtual = {
 Enum = { BindingSet = { Account = 1, Character = 2 }, SpellBookSpellBank = { Player = 0 },
     SpellBookItemType = { Spell = 1 } }
 function UnitGUID() return "Player-1-Example" end
-function UnitName() return "Example" end
+local playerName, playerSurname = "Example", nil
+function UnitName() return playerName, playerSurname end
+Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
 function GetRealmName() return "Test Realm" end
 function UnitClass() return "Mage", "MAGE" end
 DUAL_SPEC_PRIMARY, DUAL_SPEC_SECONDARY = "Primary Talents", "Secondary Talents"
@@ -185,6 +187,13 @@ starter = false
 assert(N.Identity().setup == "group:1" and N.Identity().group == 1 and N.Identity().setupLabel == DUAL_SPEC_PRIMARY)
 specGroup = 2
 assert(N.Identity().setup == "group:2" and N.Identity().group == 2 and N.Identity().setupLabel == DUAL_SPEC_SECONDARY)
+playerSurname = "River"
+assert(N.Identity().name == "Example River", "Forever snapshot identity dropped the surname")
+playerName = "Example River"
+assert(N.Identity().name == "Example River", "Forever snapshot identity doubled a formatted surname")
+playerName, playerSurname = "Example", SECRET
+assert(N.Identity() == nil, "an unreadable surname was treated as a first-name-only identity")
+playerSurname = nil
 specGroup = SECRET
 assert(N.Identity() == nil, "unreadable Forever group was accepted as a snapshot setup")
 specGroup = 3

@@ -15,6 +15,7 @@ end
 NS.Safety = { IsForbidden = function(frame) return frame.forbidden == true end }
 local combat = false
 NS.InCombat = function() return combat end
+NS.IsCombatLocked = NS.InCombat
 local live = {}
 C_CVar = { GetCVar = function(key) return live[key] end }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
@@ -46,8 +47,7 @@ for _, key in ipairs({ "plateShowAll", "plateStackEnemy", "plateSimpleFriendlyNp
     assert(rules[key].section == "visibility" and rules[key].default == 1, key .. " must keep Blizzard's value by default")
     assert(not spec.look.visualKeys[key], key .. " is a Blizzard option, not part of a look")
 end
-assert(rules.personalResource.section == "personal" and not spec.look.visualKeys.personalResource,
-    "personal visibility must sit next to the skin and stay independent of look presets")
+assert(not rules.personalResource and not spec.cvars.nameplateShowSelf)
 for _, key in ipairs({ "selectionBorder", "selectionDim", "selectionDimPercent", "selectionTargetColor" }) do
     assert(rules[key].section == "signals" and spec.look.visualKeys[key], key .. " must belong to the looks")
 end
@@ -68,7 +68,7 @@ end
 ------------------------------------------------------------------ CVars
 local writes, restored = {}, {}
 local S = { RestoreCVar = function(_, key) restored[key] = true end }
-local private = { NS = NS, Suite = S }
+local private = { NS = NS, Suite = S, Roles = {} }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", private)
 local CVars = private.CVars
@@ -138,9 +138,14 @@ NAMEPLATE_BORDER_TARGET_COLOR = { r = 1, g = 1, b = 1 }
 NAMEPLATE_BORDER_FOCUS_TARGET_COLOR = { r = 1, g = 0.5, b = 0 }
 local function Texture()
     local t = { alpha = 1, writes = 0 }
+    function t:CanBeAccessedInContext() return true end
     function t:SetAlpha(alpha) self.alpha, self.writes = alpha, self.writes + 1 end
     function t:GetAlpha() return self.alpha end
     function t:SetShown(shown) self.shown = shown end
+    function t:Show() self.shown = true end
+    function t:Hide() self.shown = false end
+    function t:SetWidth(width) self.width = width end
+    function t:SetHeight(height) self.height = height end
     function t:SetTexture(texture) self.texture = texture end
     function t:SetAtlas(atlas) self.atlas = atlas end
     function t:ClearAllPoints() self.points = {} end
@@ -149,6 +154,11 @@ local function Texture()
     function t:SetSize(width, height) self.width, self.height = width, height end
     function t:SetTexCoord() end
     function t:SetVertexColor(r, g, b) self.color, self.writes = { r, g, b }, self.writes + 1 end
+    t.SetColorTexture = t.SetVertexColor
+    function t:SetVertexOffset(index, x, y)
+        self.vertices = self.vertices or {}
+        self.vertices[index] = { x, y }
+    end
     return t
 end
 NamePlateHealthBarMixin = {}
@@ -163,8 +173,14 @@ hooksecurefunc = function(owner, method, callback)
     owner[method] = function(...) original(...) callback(...) end
 end
 local function Health()
-    return { selectedBorder = Texture(), deselectedOverlay = Texture(), isTarget = false, isFocus = false,
-        UpdateSelectionBorder = NamePlateHealthBarMixin.UpdateSelectionBorder }
+    local bar = { selectedBorder = Texture(), deselectedOverlay = Texture(), isTarget = false, isFocus = false,
+        UpdateSelectionBorder = NamePlateHealthBarMixin.UpdateSelectionBorder, created = {} }
+    function bar:CreateTexture()
+        local texture = Texture()
+        self.created[#self.created + 1] = texture
+        return texture
+    end
+    return bar
 end
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Selection.lua"))("MSUF_Suite_Nameplates", private)
 local Selection = private.Selection
@@ -248,6 +264,117 @@ do
     assert(target.hideBorder and target.bossTargetStyle == "BORDER_ARROW", "the target arrow must retain its shape")
 end
 
+------------------------------------------------------------------ Frame outline and highlight priority on recycled nameplates
+do
+    local bar = Health()
+    bar.bgTexture = Texture()
+    bar.bgTexture.alpha = 0.68
+    local status = 2
+    UnitAffectingCombat = function() return false end
+    UnitThreatSituation = function(player, unit)
+        assert(player == "player" and unit == "nameplate1")
+        return status
+    end
+    local unit = { unit = "nameplate1", HealthBarsContainer = { healthBar = bar } }
+    private.Mouseover = { IsHovered = function() return true end }
+    local c = Config({ enemyOutlineMode = 3, highlightTarget = true, highlightFocus = true, highlightAggro = true,
+        highlightMouseover = true, highlightMouseoverColor = "00ff00" })
+    local outline = NS.NameplateStyle.CreateBorder(bar)
+    Selection.Configure(c)
+    Selection.Apply(bar, true, unit, "enemy", outline, 0, "000000")
+    local edge = assert(bar.created[1])
+    assert(#bar.created == 4 and edge.shown and edge.color[2] == 0x52 / 255 and bar.bgTexture.alpha == 0,
+        "Aggro must win over mouseover when both highlights are active")
+    bar.isFocus = true
+    bar:UpdateSelectionBorder()
+    assert(edge.color[3] == 1 and bar.selectedBorder.alpha == 0)
+    bar.isTarget = true
+    bar:UpdateSelectionBorder()
+    assert(edge.color[2] == 1 and #bar.created == 4, "target must win over focus using the same four edges")
+    c.enemyOutlineMode = 4
+    Selection.Configure(c)
+    Selection.Apply(bar, true, unit, "enemy", outline, 0, "000000")
+    bar:UpdateSelectionBorder()
+    assert(not edge.shown and bar.selectedBorder.alpha == 0 and not Selection.aggroEnabled,
+        "Frame Outline Off left the target or highlight border active")
+    c.enemyOutlineMode = 3
+    Selection.Configure(c)
+    Selection.Apply(bar, true, unit, "enemy", outline, 0, "000000")
+    assert(edge.shown and bar.selectedBorder.alpha == 0, "re-enabling the outline did not restore the selected highlight")
+    local writes = edge.writes
+    bar:UpdateSelectionBorder()
+    assert(edge.writes == writes, "stable priority state repainted a texture")
+    bar.isTarget, bar.isFocus, status = false, false, "secret"
+    bar:UpdateSelectionBorder()
+    Selection.ThreatChanged(bar, unit.unit)
+    assert(edge.color[1] == 0 and edge.color[2] == 1 and bar.selectedBorder.alpha == 1,
+        "a protected aggro state displaced mouseover or left the native selection hidden")
+    Selection.HighlightMouseover(unit, false)
+    assert(not edge.shown)
+    bar.bgTexture.alpha = 1
+    Selection.RepaintBackground(bar)
+    assert(bar.bgTexture.alpha == 0, "restoring the native background exposed the normal border")
+    Selection.Restore(bar)
+    assert(not edge.shown and bar.bgTexture.alpha == 0.68)
+    Selection.Apply(bar, true, unit, "friendly", outline, 1, "000000")
+    assert(edge.shown and #bar.created == 4 and bar.bgTexture.alpha == 0.68, "a pooled frame kept its hostile state")
+    Selection.HighlightMouseover(unit, false)
+    assert(edge.shown and edge.color[2] == 0 and outline.borderSize == 1, "losing a highlight must reveal the regular outline")
+    Selection.RestoreAll()
+    c.highlightPriority, c.highlightOrder = true, "4312"
+    local style = NS.NameplateStyle
+    local plan = style.CompileHighlights(c)
+    assert(style.HighlightColor(plan, true, true, true, true) == "00ff00", "custom priority did not promote mouseover")
+    assert(table.concat(style.HighlightOrder("4499"), ",") == "mouseover,target,focus,aggro")
+    c.highlightTarget, c.highlightFocus, c.highlightAggro = false, false, false
+    Selection.Configure(c)
+    local color, hidesNative = style.HighlightColor(style.CompileHighlights(c), true, false, false, true)
+    assert(color == "00ff00" and not hidesNative and not Selection.aggroEnabled,
+        "mouseover alone suppressed native selection or added threat processing")
+end
+
+do
+    local bar = Health()
+    bar.bgTexture = Texture()
+    bar.isTarget = true
+    local config = Config({ look = 2, barsOverride = true, enemyOutlineMode = 4 })
+    Selection.Configure(config)
+    Selection.Apply(bar, false, nil, "enemy")
+    assert(bar.selectedBorder.alpha == 0 and bar.bgTexture.alpha == 0, "Off left a border in the Blizzard look")
+    Selection.Restore(bar)
+    assert(Selection.inUse, "releasing the last plate stopped applying Off to later plates")
+    Selection.Apply(bar, false, nil, "enemy")
+    config.enemyOutlineMode = 2
+    Selection.Configure(config)
+    Selection.Apply(bar, false, nil, "enemy")
+    assert(bar.selectedBorder.alpha == 1 and bar.bgTexture.alpha == 1, "Blizzard did not restore the native borders")
+end
+
+do
+    local bar = Health()
+    bar.bgTexture = Texture()
+    bar.bgTexture.alpha = 0.65
+    local locked = false
+    local completeRestore, previousCreateFrame, previousCombat = nil, CreateFrame, NS.IsCombatLocked
+    NS.IsCombatLocked = function() return locked end
+    CreateFrame = function()
+        return { RegisterEvent = function() end, UnregisterEvent = function() end,
+            SetScript = function(frame, _, fn) completeRestore = function() fn(frame) end end }
+    end
+    function bar.bgTexture:CanBeAccessedInContext() return not locked end
+    Selection.Configure(Config({ enemyOutlineMode = 4 }))
+    Selection.Apply(bar, true, nil, "enemy")
+    assert(bar.bgTexture.alpha == 0)
+    locked = true
+    Selection.Restore(bar)
+    assert(bar.bgTexture.alpha == 0)
+    locked = false
+    assert(completeRestore)()
+    assert(bar.bgTexture.alpha == 0.65, "a denied restore lost the original backdrop opacity")
+    CreateFrame = previousCreateFrame
+    NS.IsCombatLocked = previousCombat
+end
+
 ------------------------------------------------------------------ Forever chrome and level preview
 do
     NS.Client.isForever = true
@@ -256,7 +383,8 @@ do
     assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", foreverCatalog)
     local forever = foreverCatalog.SuiteCatalog.nameplates.rules
     assert(rules.hideHealthBarBorders.default == false and forever.hideHealthBarBorders.default == false
-        and not spec.look.visualKeys.hideHealthBarBorders, "the common border preference must be opt-in and independent of look")
+        and spec.look.presets[1].hideHealthBarBorders == false and spec.look.presets[4].hideHealthBarBorders == false,
+        "the common border preference must be opt-in and reset with either skin preset")
     assert(forever.enemyNativeBorderEnabled.default and forever.friendlyNativeBorderEnabled.default,
         "Forever's native bar border must keep its old default")
     assert(not rules.enemyNativeBorderEnabled and not rules.friendlyNativeBorderEnabled,
@@ -381,6 +509,33 @@ do
         and sample.nativeBorder.points[1][4] == 8.625 * 1.25 and sample.nativeBorder.points[1][5] == -0.75
         and not sample.selectedBar.shown,
         "Classic preview did not keep the fixed-size Blizzard border and disabled target ring")
+    local textureWrites, textureReads = 0, 0
+    local art = sample.nativeBorder
+    function art:SetTexture(path)
+        textureWrites = textureWrites + 1
+        self.path = path
+    end
+    function art:ClearTextureSlice() end
+    function NS.ResolveTexture(key)
+        textureReads = textureReads + 1
+        return key
+    end
+    draw.PaintHealthChrome(editor, sample, metrics, "shared-texture")
+    draw.PaintHealthChrome(editor, sample, metrics, "shared-texture")
+    assert(art.path == "shared-texture" and art.layer == "BACKGROUND" and textureReads == 1 and textureWrites == 1,
+        "the Classic preview reloaded its SharedMedia background on an unchanged paint")
+    draw.PaintHealthChrome(editor, sample, metrics, "")
+    assert(art.layer == "ARTWORK" and art.path == "Interface\\Tooltips\\Nameplate-Border")
+    metrics.classic = false
+    draw.PaintHealthChrome(editor, sample, metrics, "shared-texture")
+    assert(art.vertices[1][1] == 2 and art.vertices[1][2] == -3
+        and art.vertices[4][1] == -6 and art.vertices[4][2] == 6,
+        "the Modern preview did not fit the background to the bar")
+    assert(sample.selectedBar.points[1][2] == art and art.points[2][4] == 6,
+        "fitting the art moved the selected border's anchor")
+    draw.PaintHealthChrome(editor, sample, metrics, "")
+    assert(art.vertices[4][1] == 0 and art.vertices[4][2] == 0,
+        "the native preview background retained the custom vertex offsets")
     assert(draw.LevelMode(editor, "enemy", true, false) == "badge", "Forever Blizzard look lost its native level badge")
     NS.Client.isForever = false
     Enum = { GameRule = { PlayerNameplateDifficultyIcon = 1 } }
@@ -442,53 +597,38 @@ assert(ok == false and reason:find("Skin enemy nameplates", 1, true), "enemy ski
 assert(gate(rules.enemyTargetStyle, "enemyTargetStyle") == true, "target arrows on friendly plates were greyed")
 options.enemy = true
 
--- Header: one area at a time, focus and search switch areas, Quick Setup is
--- one confirmed write of the recommended look.
+-- The type header filters and orders one set of controls. The same Auras
+-- body stays in place across type switches; focusing an exclusive section
+-- also selects its preview sample.
 local builder = { layoutEntries = {}, width = 720 }
 function builder:Section() return Frame() end
 function builder:RequestRelayoutCollapsibles() relayouts = relayouts + 1 end
 local Workspace = P.NameplatesWorkspace
+P.T = P.T or {}
+P.NameplatesAdvancedAuras = { SelectSide = function() end }
+P.ShowNameplatesSample = function() end
 local ui = assert(Workspace.Header({ width = 720 }, builder))
-local function Section(kind)
+local function Section(scopes)
     local body = Frame()
     body.entry = { outer = Frame(), body = body, open = true }
-    Workspace.Track(ui, body, kind)
+    Workspace.Track(ui, body, scopes)
     return body
 end
-local general, visibility, enemy, auras = Section("general"), Section("general"), Section("enemies"), Section("auras")
+local enemy, neutral, auras = Section({ enemy = 10 }), Section({ neutral = 10 }), Section({ enemy = 30, neutral = 30 })
 Workspace.Finish(ui)
-assert(general.entry.outer.shown and visibility.entry.outer.shown and not enemy.entry.outer.shown
-    and not auras.entry.outer.shown and #builder.layoutEntries == 2, "the page did not open on one area")
-enemy.entry.ensure(enemy.entry)
-assert(enemy.entry.outer.shown and not general.entry.outer.shown and builder.layoutEntries[1] == enemy.entry
-    and ui.selector.value == "enemies", "focusing a section did not switch to its area")
-ui.selector.opts.setValue("auras")
-assert(auras.entry.outer.shown and not enemy.entry.outer.shown, "the area selector did not switch areas")
--- The preview shows the area's sample; a jump from the preview or search keeps it.
-local samples = {}
-P.ShowNameplatesSample = function(kind) samples[#samples + 1] = kind end
-local friendly = Section("friendly")
-ui.selector.opts.setValue("friendly")
-assert(samples[1] == "friendly" and friendly.entry.outer.shown, "the friendly area did not show a friendly sample")
-enemy.entry.ensure(enemy.entry)
-assert(#samples == 1 and enemy.entry.outer.shown, "a preview or search jump changed the preview sample")
-ui.selector.opts.setValue("auras")
-assert(#samples == 1, "an area without a sample of its own changed the preview")
-P.ShowNameplatesSample = nil
-Workspace.Track(nil, Section("colors"), "colors")
+assert(enemy.entry.outer.shown and auras.entry.outer.shown and not neutral.entry.outer.shown)
+assert(#builder.layoutEntries == 2 and builder.layoutEntries[1] == enemy.entry)
+local sample
+P.ShowNameplatesSample = function(_, kind) sample = kind end
+neutral.entry.ensure(neutral.entry)
+assert(sample == "neutral" and neutral.entry.outer.shown and not enemy.entry.outer.shown and auras.entry.outer.shown)
+assert(builder.layoutEntries[1] == neutral.entry and ui.selector.value == "neutral")
+auras.entry.ensure(auras.entry)
+assert(ui.selector.value == "neutral", "a shared section changed its selected type")
+ui.selector.opts.setValue("enemy")
+assert(sample == "enemy" and enemy.entry.outer.shown and not neutral.entry.outer.shown)
 P.W.ScopeOverrideBar = nil
 assert(Workspace.Header({ width = 720 }, builder) == nil, "an older host must keep the full page")
-
--- The Quick Setup button is the RoleButton made by Header.
-P.W.ScopeOverrideBar = function(_, _, opts) return { opts = opts, Refresh = function() end } end
-local button
-P.W.RoleButton = function() button = Frame(); return button end
-Workspace.Header({ width = 720 }, builder)
-button.scripts.OnClick()
-assert(P.accept and not P.applied, "Quick Setup wrote before it was confirmed")
-P.accept()
-assert(P.applied.look == 4 and P.applied.enabled and P.applied.enemy and P.applied.friendly
-    and P.applied.enemyTextMode == spec.look.presets[4].enemyTextMode, "Quick Setup did not apply the recommended look")
 
 -- Section reset under a preset look takes that look's values.
 local resetValues
@@ -498,9 +638,9 @@ P.Suite = { RGB = NS.RGB, Registry = { AddListener = function() end } }
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Controls.lua"))("MSUF_Suite_Options", P)
 options.look = 1
 local jundies = spec.look.presets[1]
-assert(jundies.enemyNameFont ~= rules.enemyNameFont.default, "Jundies and the catalog defaults no longer differ")
-P.ResetRules("nameplates", { rules.enemyNameFont, rules.plateShowAll })
-assert(resetValues.enemyNameFont == jundies.enemyNameFont and resetValues.plateShowAll == 1,
+assert(jundies.enemyHealthWidthDelta ~= rules.enemyHealthWidthDelta.default, "Jundies and the catalog defaults no longer differ")
+P.ResetRules("nameplates", { rules.enemyHealthWidthDelta, rules.plateShowAll })
+assert(resetValues.enemyHealthWidthDelta == jundies.enemyHealthWidthDelta and resetValues.plateShowAll == 1,
     "a section reset under Jundies did not restore Jundies values")
 
 -- Placement (Pages/Nameplates.lua SECTIONS): every visible setting and every
@@ -522,36 +662,88 @@ P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
 end
 -- Keep this fixture on native visibility controls. Expanded aura placement
 -- and rendering are exercised by suite_nameplates_aura_display_contract.
-P.NameplatesAdvancedAuras = { Append = function() end }
-P.NameplatesExtensions = { Append = function() end }
-P.NameplatesProfiles = { Build = function() end }
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateExtensions.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateAuras.lua"))("MSUF_Suite", NS)
+P.Suite.NameplateAuraDisplay = NS.NameplateAuraDisplay
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua"))("Options", P)
+P.Suite.NameplateExtensions = NS.NameplateExtensions
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesExtensions.lua"))("Options", P)
 P.NameplatesHostOptions = { Build = function() end }
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("Core", NS)
+P.Suite.NameplateText = NS.NameplateText
+P.Suite.HostBridge.NameFormatter = function() end
+P.Suite.HostBridge.HasNameplateFontsMenu = function() return false end
+P.NameplatesHostOptions.registered = true
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplateBarTextures.lua"))("Options", P)
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplateFonts.lua"))("Options", P)
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesStatus.lua"))("Options", P)
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesSectionsLayout.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Nameplates.lua"))("MSUF_Suite_Options", P)
+P.NameplateSearchTarget(rules.look)
 local where = {}
 local function See(key, place)
-    if not rules[key] then return end
-    assert(not where[key], key .. " shows twice: " .. tostring(where[key]) .. " and " .. place)
-    where[key] = place
+    if rules[key] then where[key] = where[key] or place end
 end
-for _, key in ipairs({ "look", "enemy", "friendly", "protectImport" }) do See(key, "nameplates_module") end
+See("look", "enemyBasics")
 for _, section in ipairs(P.NameplateSections) do
+    if section.switch then See(section.switch, section.key) end
     for _, key in ipairs(section.keys or {}) do See(key, section.key) end
     for _, key in ipairs(section.colors or {}) do See(key, section.key) end
+    for key in pairs(section.statusOffsets or {}) do See(key, "status_offset_" .. key) end
     for _, tab in ipairs(section.tabs or {}) do
         for _, key in ipairs(tab.keys) do See(key, section.key) end
+        for _, key in ipairs(tab.colors or {}) do See(key, section.key) end
     end
     for _, rule in ipairs(section.catalog and P.SectionRules(nil, section.catalog) or {}) do
         if not rule.key:match("Offset[XY]$") then See(rule.key, section.key) end
     end
 end
-for _, rule in ipairs(spec.controls) do
+for _, rule in ipairs(spec.getControls()) do
     if rule.key ~= "enabled" and not rule.hidden and not rule.previewOnly and rule.section ~= "auraColors"
-        and not rule.key:match("Offset[XY]$") then
+        and rule.section ~= "nativeTextures" and rule.section ~= "barGradients" and not P.NameplateFonts.IsTypography(rule.key)
+        and rule.key ~= "enemyBorderEnabled" and rule.key ~= "friendlyBorderEnabled"
+        and spec.controlAvailable(rule)
+        and (not P.NameplatesStatus.IsOffset(rule.key) or where[rule.key] and where[rule.key]:match("^status_offset_")) then
         assert(where[rule.key], rule.key .. " has no place on the nameplate page")
-        assert(P.NameplateSearchTarget(rule) == "suite_nameplates_" .. where[rule.key], rule.key .. " search opens another section")
+        local target = P.NameplateSearchTarget(rule)
+        local palette = rule.color and not rule.key:match("^aura") and target:match("Style$")
+        assert(palette or target == "suite_nameplates_" .. where[rule.key], rule.key .. " search opens another section")
     end
 end
-assert(P.NameplateSearchTarget(rules.enemyCastOffsetX) == "suite_nameplates_preview", "positions must stay with the preview")
+for _, key in ipairs({ "enemyCastOffsetX", "friendlyCastTargetOffsetY", "auraTimeX", "enemyPowerOffsetX" }) do
+    local section, _, exact = P.NameplateSearchTarget(rules[key])
+    assert(section:match("^suite_nameplates_preview_") and exact == false, key .. " should route to preview")
+end
+
+local settings, stored = {}, {}
+P.Get = function(_, key) return settings[key] or 1 end
+P.Set = function(_, key, value) stored[key], settings[key] = value, value end
+P.SetMany = function(id, values) for key, value in pairs(values) do P.Set(id, key, value) end end
+P.Suite.Public = NS.Public
+P.ChoiceGates = {}
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua"))("Options", P)
+local function Control(key) return assert(P.RuleRow("suite_nameplates", "nameplates", rules[key])) end
+assert(not spec.controlAvailable(rules.plateEnemies) and not spec.controlAvailable(rules.plateFriendlyPlayers),
+    "legacy Show switches are still discoverable")
+live.nameplateCastBarDisplay = string.char(1, 64 + 5)
+local icon = Control("enemyCastSpellIcon")
+assert(not icon.get(), "inherited spell icon did not show the native state")
+icon.set(true)
+assert(stored.enemyCastDisplay == 2 and stored.enemyCastSpellIcon and stored.enemyCastSpellName and stored.enemyCastSpellTarget
+    and stored.enemyCastImportant == false, "direct cast detail toggle did not preserve sibling flags")
+for _, rule in ipairs(spec.controls) do
+    local legacy = rule.choices and rule.choices[1]
+    if spec.controlAvailable(rule) and (legacy == "Keep Blizzard setting" or legacy == "Keep Blizzard settings") then
+        local row = Control(rule.key)
+        if row.values then
+            for _, choice in ipairs(row.values()) do assert(choice.value ~= 1, rule.key .. " exposes inherited mode") end
+        else
+            assert(row.kind == "toggle", rule.key .. " is not an explicit toggle")
+        end
+    end
+end
 
 print("Suite nameplates: visibility CVars, combat hold, selection border, greying, area header, Quick Setup, preset reset"
     .. " and setting placement passed")

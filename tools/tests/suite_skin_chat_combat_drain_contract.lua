@@ -1,12 +1,13 @@
 -- The chat chrome after combat (raid trace 2026-10-11 capture 6 frame
 -- 3681: one combat-end drain re-skinned all ten chat windows, 23.7 ms, for
--- two tab-colour hooks during combat). Real Safety.lua, CombatGate.lua,
+-- two tab-colour repaints during combat). Real Safety.lua, CombatGate.lua,
 -- AdapterKit.lua, Checkmarks.lua and ChatFrames.lua.
---   * A chat hook in combat records the object it touched; after combat the
---     drain replays exactly the hook's out-of-combat work for those objects:
---     two tab-colour hooks give two tab skins and no full pass. A tab keeps
---     its latest selected state; a temporary window keeps its full pass, and
---     what was asked for after it wins over it. Disable drops the records.
+--   * The skin follows Suite.ChatState's reports (MSUF_Suite/Core), never a
+--     hook in Blizzard's chat code. A report in combat records the objects
+--     it touched; after combat the drain replays exactly their out-of-combat
+--     work: a dock layout gives tab skins and no full pass. A tab keeps its
+--     latest selected state; a window report keeps its full pass, and what
+--     was asked for after it wins over it. Disable drops the records.
 --   * A recapture leaves a texture that still shows the skin's colour alone
 --     (no colour or desaturation write) and retracks one Blizzard repainted;
 --     a theme change still repaints (Checkmarks.StillApplied).
@@ -74,8 +75,12 @@ local NS = {
         return color[1], color[2], color[3], color[4]
     end },
     Registry = { AddListener = Noop, QueueJob = Noop },
+    SuiteCore = function() return _G.MSUFSuite end, -- Core/Bootstrap.lua
     WindowActionSkin = { Apply = function() return nil, "owned by another adapter" end, DisableOwner = Noop },
 }
+_G.MSUFSuite = { ChatState = dofile(root .. "/tools/tests/suite_test_support.lua").ChatStateMock() }
+local chatState = _G.MSUFSuite.ChatState
+local Report = chatState.Report
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/CombatGate.lua"))("MSUF_Suite_Skin", NS)
 local Gate, gateFrame = NS.CombatGate, frames[#frames]
@@ -146,7 +151,7 @@ for index = 1, 10 do
     local frame = Chrome({ buttonFrame = Chrome({}) })
     function frame:GetName() return name end
     function frame:IsProtected() return false, false end
-    local editBox = { UpdateHeader = Noop }
+    local editBox = { UpdateHeader = function() error("the chat skin hooked UpdateHeader") end }
     for _, suffix in ipairs({ "Left", "Mid", "Right", "FocusLeft", "FocusMid", "FocusRight" }) do
         editBox[suffix] = Texture()
     end
@@ -157,6 +162,15 @@ for index = 1, 10 do
     function tab:GetName() return name .. "Tab" end
     _G[name], _G[name .. "Tab"] = frame, tab
     windows[index], tabs[index] = frame, tab
+    CHAT_FRAMES[index], frame.isDocked = name, 1
+end
+GENERAL_CHAT_DOCK = { selected = windows[1], DOCKED_CHAT_FRAMES = windows }
+-- A Blizzard dock layout (FCFDock_UpdateTabs): every docked tab repainted
+-- in the native colour, selected by the dock; ChatState reports it after.
+local function DockLayout(selected, kind)
+    GENERAL_CHAT_DOCK.selected = selected
+    for _, tab in ipairs(tabs) do FCFTab_UpdateColors(tab, _G[tab:GetName():sub(1, -4)] == selected) end
+    Report(kind or "layout")
 end
 
 -- Blizzard's own functions (live FloatingChatFrame.lua FCFTab_UpdateColors,
@@ -173,10 +187,17 @@ function FCF_SetWindowColor(frame, r, g, b)
     frame.Background:SetVertexColor(r, g, b)
     for _, suffix in ipairs(BORDERS) do frame[suffix]:SetVertexColor(r, g, b) end
 end
-FCF_OpenTemporaryWindow = Noop
+local hooked = {}
+local hook = hooksecurefunc
+hooksecurefunc = function(target, method, callback)
+    hooked[#hooked + 1] = type(target) == "string" and target or method
+    return hook(target, method, callback)
+end
 ChangeChatColor = Noop
 
 Check(Chat.Apply(windows[1], "chat"), "the chat skin did not apply")
+Check(#hooked == 1 and hooked[1] == "ChangeChatColor" and chatState.owners[Chat],
+    "the chat skin hooked Blizzard's chat code instead of following ChatState: " .. table.concat(hooked, ", "))
 Check(Is(tabs[1].ActiveLeft.vertex, palette.active) and Is(windows[10].Background.vertex, palette.background),
     "the chat skin did not theme the windows")
 
@@ -198,73 +219,80 @@ local function VisitedWindows()
 end
 
 ------------------------------------------------------- scoped deferral
--- Two tab-colour hooks in combat: two tab skins after it, no full pass.
+-- A dock layout in combat: tab skins after it, no full pass.
 Mark()
 locked = true
-FCFTab_UpdateColors(tabs[1], true)
-FCFTab_UpdateColors(tabs[2], false)
+DockLayout(windows[1])
 Check(Gate.IsPending("chat-frames:refresh") and Is(tabs[1].ActiveLeft.vertex, { 1, 0.5, 0.25, 1 }),
-    "the tab hooks did not defer their work in combat")
-Check(#SkinnedTabs() == 0 and VisitedWindows() == 0, "combat chat hooks read chrome before their deferred drain")
+    "the tab reports did not defer their work in combat")
+Check(#SkinnedTabs() == 0 and VisitedWindows() == 0, "combat chat reports read chrome before their deferred drain")
 Mark()
 EndCombat()
 local skinned = SkinnedTabs()
-Check(#skinned == 2 and skinned[1] == 1 and skinned[2] == 2,
-    "two tab-colour hooks in combat skinned " .. #skinned .. " tabs after it")
-Check(VisitedWindows() == 0, "two tab-colour hooks in combat ran a full pass after it")
+Check(#skinned == 10, "a dock layout in combat skinned " .. #skinned .. " of its ten tabs after it")
+Check(VisitedWindows() == 0, "a dock layout in combat ran a full pass after it")
 Check(Is(tabs[1].ActiveLeft.vertex, palette.active) and tabs[1].ActiveLeft.desaturated
     and Is(tabs[2].glow.vertex, palette.warning), "a deferred tab skin did not repaint its tab")
 Check(Is(tabs[1].Text.color, palette.title) and Is(tabs[2].Text.color, palette.text),
-    "a deferred tab skin lost the selected state its hook passed")
+    "a deferred tab skin lost the dock's selected state")
 Check(not Gate.IsPending("chat-frames:refresh"), "the drain left its job pending")
 
--- A tab keeps its latest selected state; an edit box header and a window
--- colour replay their own work, nothing else.
+-- A tab keeps its latest selected state; an edit box header replays its
+-- own work, on the next frame after its focus report (after UpdateHeader).
 locked = true
-FCFTab_UpdateColors(tabs[3], true)
-FCFTab_UpdateColors(tabs[3], false)
-windows[4].editBox:UpdateHeader()
-FCF_SetWindowColor(windows[5], 0.2, 0.3, 0.4)
+DockLayout(windows[3], "selection")
+DockLayout(windows[1])
+Report("box", "focus", windows[4].editBox)
+Check(windows[4].editBox.FocusLeft.reads == 0, "the box report skinned before Blizzard's UpdateHeader ran")
+NextFrame()
 Mark()
 EndCombat()
-Check(Is(tabs[3].Text.color, palette.text), "a tab lost its latest selected state from combat")
-skinned = SkinnedTabs()
-Check(#skinned == 1 and skinned[1] == 3, "the drain skinned tabs nobody asked for")
+Check(Is(tabs[3].Text.color, palette.text) and Is(tabs[1].Text.color, palette.title),
+    "a tab lost its latest selected state from combat")
 Check(windows[4].editBox.FocusLeft.reads > 0 and windows[4].Background.reads == 0,
     "an edit box header from combat was not replayed alone")
-Check(Is(windows[5].Background.vertex, palette.background) and windows[5].buttonFrame.Background.reads > 0
-    and Is(Checkmarks.states[windows[5].Background].original, { 0.2, 0.3, 0.4, 1 }),
-    "a window colour from combat was not recaptured after it")
-Check(VisitedWindows() == 2, "the drain visited windows nobody asked for")
+Check(VisitedWindows() == 1, "the drain visited windows nobody asked for")
+Report("key", windows[6].editBox, "A")
+Report("key", windows[6].editBox, "SPACE")
+Mark()
+NextFrame()
+Check(windows[6].editBox.FocusLeft.reads > 0 and VisitedWindows() == 1,
+    "a chat type typed with Space did not skin its box once")
 
--- A temporary window keeps its full pass. A tab asked for before it gets
--- the full pass's state; one asked for after it keeps its own.
+-- A window report (a temporary window, a window colour) keeps its full
+-- pass. A tab asked for before it gets the full pass's state; one asked for
+-- after it keeps its own.
 locked = true
-FCFTab_UpdateColors(tabs[4], true)
+FCF_SetWindowColor(windows[5], 0.2, 0.3, 0.4)
+DockLayout(windows[4])
 for _, suffix in ipairs({ "ActiveLeft", "ActiveMiddle", "ActiveRight" }) do tabs[4][suffix]:Hide() end
-FCF_OpenTemporaryWindow()
-FCFTab_UpdateColors(tabs[6], false)
-for _, suffix in ipairs({ "ActiveLeft", "ActiveMiddle", "ActiveRight" }) do tabs[6][suffix]:Show() end
+Report("windows")
+GENERAL_CHAT_DOCK.selected = windows[1]
+Report("layout")
 Mark()
 EndCombat()
-Check(VisitedWindows() == 10, "a temporary window from combat lost its full pass")
-Check(Is(tabs[4].Text.color, palette.text), "a tab asked for before the full pass overrode it")
-Check(Is(tabs[6].Text.color, palette.text), "the full pass overrode a tab asked for after it")
+Check(VisitedWindows() == 10, "a window report from combat lost its full pass")
+Check(Is(tabs[4].Text.color, palette.text) and Is(tabs[1].Text.color, palette.title),
+    "the full pass overrode a tab asked for after it")
+Check(Is(windows[5].Background.vertex, palette.background)
+    and Is(Checkmarks.states[windows[5].Background].original, { 0.2, 0.3, 0.4, 1 }),
+    "a window colour from combat was not recaptured after it")
 
--- Disable drops what combat recorded: after a new Apply, a later drain
--- replays only what was asked for since.
+-- Disable drops what combat recorded and the watch: after a new Apply, a
+-- later drain replays only what was asked for since.
 locked = true
-FCFTab_UpdateColors(tabs[9], false)
+DockLayout(windows[1])
 locked = false
-Check(Chat.Disable(nil, "chat") and not Gate.IsPending("chat-frames:refresh"),
-    "disable kept the deferred chat job")
-Check(Chat.Apply(windows[1], "chat"), "the chat skin did not apply again")
+Check(Chat.Disable(nil, "chat") and not Gate.IsPending("chat-frames:refresh") and not chatState.owners[Chat],
+    "disable kept the deferred chat job or the ChatState watch")
+Check(Chat.Apply(windows[1], "chat") and chatState.owners[Chat], "the chat skin did not apply again")
 locked = true
-FCFTab_UpdateColors(tabs[10], true)
+Report("box", "focus", windows[10].editBox)
+NextFrame()
 Mark()
 EndCombat()
 skinned = SkinnedTabs()
-Check(#skinned == 1 and skinned[1] == 10, "a drain replayed a tab recorded before disable")
+Check(#skinned == 0 and VisitedWindows() == 1, "a drain replayed a tab recorded before disable")
 
 ------------------------------------------------- recapture of unchanged art
 -- A full pass recaptures: art that still shows the skin's colour gets no
@@ -273,8 +301,8 @@ local repainted, unchanged = windows[7].Background, windows[8].Background
 repainted:SetVertexColor(0.5, 0.5, 0.5)
 local unchangedState = Checkmarks.states[unchanged]
 Mark()
-FCF_OpenTemporaryWindow()
-Check(VisitedWindows() == 10, "a temporary window did not run the full pass")
+Report("windows")
+Check(VisitedWindows() == 10, "a window report did not run the full pass")
 local recaptureWrites = 0
 for index, frame in ipairs(windows) do
     for _, object in ipairs({ frame, frame.buttonFrame }) do
@@ -327,7 +355,7 @@ locked = false
 palette.background = { 0.05, 0.2, 0.1, 1 }
 Check(not Checkmarks.StillApplied(unchanged, "chat", "background", false), "a stale theme colour counted as applied")
 Mark()
-FCF_OpenTemporaryWindow()
+Report("windows")
 Check(Is(unchanged.vertex, palette.background) and unchanged.writes > 0 and unchanged.desaturated,
     "a recapture after a theme change kept the previous colour")
 Check(#reported == 0, "the chat skin raised: " .. table.concat(reported, "; "))

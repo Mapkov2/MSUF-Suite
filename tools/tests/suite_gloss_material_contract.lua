@@ -72,6 +72,21 @@ end
 
 local gloss = Load(recording)
 Check(gloss.Available(), "current host capability not available")
+do
+    local owner, target = New("Frame"), New("Texture")
+    local beforeReads = fillReads
+    gloss.Fill(owner, target, 75, .6)
+    local upper, lower = owner.children[1], owner.children[2]
+    Check(upper.target == target and lower.target == target and upper.path == recording.GlossTexture(),
+        "explicit fill skipped the host gloss material")
+    local beforeWrites = writes
+    gloss.Fill(owner, target, 75, .6)
+    Check(writes == beforeWrites and fillReads == beforeReads, "stable explicit fill queried or repainted its bar")
+    gloss.SetBarOpacity(owner, .2)
+    Check(upper.alpha == .2 and lower.alpha == .2, "both reflections must follow foreground opacity")
+    gloss.Fill(owner)
+    Check(not upper.shown and not lower.shown, "explicit fill release left a reflection")
+end
 local bar, fill = New("StatusBar"), New("Texture")
 bar.fill = fill
 local before, reads = creations, fillReads

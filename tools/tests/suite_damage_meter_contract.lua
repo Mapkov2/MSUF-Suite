@@ -920,7 +920,20 @@ roster[25].isLocal,roster[5].isLocal=nil,true
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0);RunPaint()
 assert(Row(win,1).rankText.text=="5." and Row(win,1).separator.shown,"own row not pinned into the first slot")
 assert(Row(win,2).rankText.text==tostring(win.offset+1)..".","list below a top pin starts at the offset")
+local oldHeight=S.Config("damageMeter").w1Height
+roster[5].isLocal,roster[25].isLocal=nil,true
+S.Set("damageMeter","w1Height",50)
+assert(win.capacity==1,"minimum height must fit a single row with the test style")
+win.offset=0
+D.Render(win)
+assert(Row(win,1).rankText.text=="25.","keep your own bar visible must pin the player in a one-row window")
+win.body.scripts.OnMouseWheel(win.body,-1)
+assert(Row(win,1).rankText.text=="25.","scrolling must keep the player visible in a one-row window")
 S.Set("damageMeter","showPlayer",false)
+win.offset=0
+D.Render(win)
+assert(Row(win,1).rankText.text=="1.","turning off the pin restores the normal one-row list")
+S.Set("damageMeter","w1Height",oldHeight)
 
 ------------------------------------------------------------------ availability
 api.available,api.reason=false,"Not available here"
@@ -1300,7 +1313,7 @@ do
         {"outline",Suite.DamageMeterTextStyle,{SHADOW="Shadow",OUTLINE="Outline",THICK="Thick outline",NONE="None",
             OUTLINE_SHADOW="Outline + shadow",THICK_SHADOW="Thick outline + shadow"}},
         {"numberFormat",Suite.DamageMeterValueFormat,{RATE="Per second only",PRIMARY="Primary value only",
-            PARENTHESES="Primary (secondary)",BAR="Primary | secondary",CUSTOM="Custom layout"}},
+            PARENTHESES="Primary (secondary)",BAR="Primary | secondary",CUSTOM="Custom layout",COLUMNS="Columns"}},
     }
     for _,entry in ipairs(NAMES) do
         local choices,count=rules[entry[1]].choices,0

@@ -619,7 +619,7 @@ local function PaintRow(self, row, item, c, width, y)
         row.cachedText = item.text
     end
     row.kind, row.group, row.collapseKey = item.kind, item.group, item.collapseKey
-    local rightInset = PaintRowWidgets(self, row, item, color, size)
+    local rightInset = O.PaintQuestVoice(row, item, PaintRowWidgets(self, row, item, color, size), color)
     local leftInset = O.PaintQuestIcon(self, row, item, c, color)
     row.text:ClearAllPoints()
     row.text:SetPoint("LEFT", row, "LEFT", leftInset, 0)
@@ -647,6 +647,7 @@ local function ReleaseUnusedRows(self, used)
             if row.findGroupButton then row.findGroupButton:Hide() end
             if row.timer then row.timer:Hide() end
             row.collapse:Hide()
+            O.ReleaseQuestVoice(row)
             self.rows[key] = nil
             self.freeRows[#self.freeRows + 1] = row
         end

@@ -1,6 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
--- Blizzard's reused buttons (bars 2-8 on Retail). Blizzard paints them; the
+-- Blizzard's reused buttons (bars 1-8). Blizzard paints them; the
 -- suite only adds what its settings change: range tint, hidden empty
 -- charge counts, cast highlight off, cooldown feedback, countdown numbers
 -- and the pixel proc glow. Post-hooks on Blizzard's button code keep those
@@ -38,11 +38,6 @@ local function NativeCooldownPost(rec, info, chargeInfo, lossInfo)
     end
     if not inactive or rec.feedbackSlot ~= rec.slot then rec.feedbackNeutral = nil end
     rec.feedbackInactive, rec.feedbackSlot = inactive, rec.slot
-end
-
-local function NativeInvalidatePost(button)
-    local rec = AB.records[button]
-    if rec and rec.native then InvalidateFeedback(rec) end
 end
 
 local function NativeFeedback(rec)
@@ -164,7 +159,11 @@ local function NativeCooldownHook(normal, info, charge, chargeInfo, loss, lossIn
     local rec = cooldownOwners[normal]
     if rec and not rec.bar.paintDormant then Dispatch(NativeCooldownPost, rec, info, chargeInfo, lossInfo) end
 end
-local function NativeInvalidateHook(button) Dispatch(NativeInvalidatePost, button) end
+local function NativeInvalidateHook(button)
+    if not M.active or AB.directDuration then return end
+    local rec = AB.records[button]
+    if rec and rec.native then InvalidateFeedback(rec) end
+end
 
 -- Shared button hooks, present on both clients and installed with the first
 -- reused bar; foreign cooldowns never enter the isolated observer.
@@ -219,7 +218,8 @@ function AB.RefreshNativeBar(bar)
 end
 
 function AB.RefreshNative()
-    for index = 2, 8 do
+    AB.nativeSlotEffects = M.config.hideEmptyCharges or M.config.procGlow == PROC_PIXEL
+    for index = 1, 8 do
         AB.RefreshNativeBar(AB.bars[index])
     end
 end

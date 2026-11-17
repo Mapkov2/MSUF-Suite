@@ -40,6 +40,16 @@ ess.glowStyle, ess.behaviorGen = 1, ess.behaviorGen + 1
 overlayed[100] = true
 E.Proc(b1, true)
 assert(icon.glow and icon.glow.shown and not icon.glow.lines and not icon.glow.linesOn, "style 1: no lines")
+ess.textTop = K.TEXT_TOP.COUNTDOWN == 1 and 2 or 1
+C.Icons.StyleIcon(icon, ess)
+assert(icon.glow.level < icon.cd.level and icon.cd.level < icon.over.level,
+    "stacks on top should still leave the countdown above the glow")
+ess.textTop = K.TEXT_TOP.COUNTDOWN
+C.Icons.StyleIcon(icon, ess)
+assert(icon.glow.level < icon.over.level and icon.over.level < icon.cd.level,
+    "countdown on top should still stay above the stacks")
+ess.textTop = 1
+C.Icons.StyleIcon(icon, ess)
 overlayed[100] = nil
 E.Proc(b1, false)
 
@@ -118,6 +128,8 @@ icon.level = icon.level + 3
 ess.styleGen = ess.styleGen + 1
 I.Style("ess")
 assert(set[1].mover.level == icon.level + K.LEVEL.glow and set.frame.level == icon.level + K.LEVEL.glow, "lines follow the level")
+assert(icon.glow.level < icon.cd.level and icon.cd.level < icon.over.level,
+    "raising the icon's base level left its countdown beneath the glow")
 overlayed[100] = nil
 E.Proc(b1, false)
 ess.glowLines, ess.glowSpeed, ess.glowStyle, ess.behaviorGen = 8, 100, 1, ess.behaviorGen + 1

@@ -234,8 +234,9 @@ local function OnGossipFontString(region)
 end
 
 -- Every hook runs inside Blizzard's own call (QuestInfo_Display, the NPC
--- greeting setup, GossipFrame's row setup), so each paint is its own error
--- boundary and Blizzard's display goes on.
+-- greeting setup, GossipFrame's row setup), so each hook body is its own
+-- error boundary and Blizzard's display goes on. The quest page hooks only
+-- request a later paint (RequestPaint); GossipFrame's row hooks still paint.
 local Isolated = Safety.Isolated
 
 local function EnsureGossipHooks(root)
@@ -262,11 +263,38 @@ PaintCurrent = function()
     PaintOfferReward()
 end
 
+-- Every native hook below fires partway through a page build: QuestInfo_Display
+-- returns into QuestFrameRewardPanel_OnShow before its scroll reset, portrait
+-- and fade (Mainline/QuestFrame.lua, upstream/forever bebcb6bf and upstream/live
+-- 297d7aaa), and the panel OnShow, the setters and Forever's detail OnHide all
+-- run inside QuestFrame_OnEvent before ShowUIPanel. The hooks only remember
+-- the request; one paint follows on the next frame, after the whole build,
+-- against the regions' current (possibly reparented) owners. Registry.QueueJob
+-- waits for the end of combat, and quest text is shown and painted in combat.
+local pendingRegions = setmetatable({}, { __mode = "k" })
+local settleQueued = false
+
+-- Each paint is its own error boundary (Safety.Dispatch).
+local function Settle()
+    settleQueued = false
+    Safety.Dispatch(PaintCurrent)
+    for region, role in pairs(pendingRegions) do
+        pendingRegions[region] = nil
+        Safety.Dispatch(Paint, region, role)
+    end
+end
+
+local function RequestPaint()
+    if settleQueued or not next(QuestText.roots) and not next(QuestText.colors) then return end
+    settleQueued = true
+    C_Timer.After(0, Settle)
+end
+
 local function PaintPage()
     PaintCurrent()
     -- Shared widgets can be reparented/repainted again later in the native
     -- page callback. Recheck their current owner once after that callback.
-    if next(QuestText.roots) then NS.Registry.QueueJob(PaintCurrent) end
+    if next(QuestText.roots) then RequestPaint() end
 end
 
 local function RestoreRoot(root)
@@ -276,18 +304,26 @@ local function RestoreRoot(root)
     end
 end
 
--- NPC greeting text uses these native setters outside QuestInfo_Display.
+-- NPC greeting and progress text use these native setters outside
+-- QuestInfo_Display, inside the panel's OnShow.
+local function RequestRegion(region, role)
+    if not Safety.Public(region) or type(region) ~= "table" then return end
+    if not next(QuestText.roots) and not next(QuestText.colors) then return end
+    pendingRegions[region] = role
+    RequestPaint()
+end
+
 local function OnGreetingText(region)
-    Paint(region, "text")
+    RequestRegion(region, "text")
 end
 
 local function OnGreetingTitle(region)
-    Paint(region, "title")
+    RequestRegion(region, "title")
 end
 
 -- These Blizzard functions are called through their globals. QUEST_LOG_UPDATE
 -- also refreshes the greeting list through QuestFrameGreetingPanel_OnShow.
-local PaintCurrentHook = Isolated(PaintPage)
+local PaintCurrentHook = Isolated(RequestPaint)
 local globalHooks = {
     { "QuestInfo_Display", PaintCurrentHook },
     { "QuestInfo_ShowRewards", PaintCurrentHook },
@@ -313,13 +349,18 @@ local function EnsurePanelShowHooks()
         end
     end
     if NS.Client and NS.Client.isForever and not offerHooks and QuestFrameDetailPanel then
-        -- Enable() follows the last reading-fade update. The native update
-        -- continues to own the description fade and Accept's enabled state.
-        if Safety.HasMethod(QuestFrameAcceptButton, "Enable") then
-            hooksecurefunc(QuestFrameAcceptButton, "Enable", PaintCurrentHook)
+        -- Enable() follows the last reading-fade update, after the Disable()
+        -- in QuestFrameDetailPanel_OnShow, so the button's OnEnable fires.
+        -- Observed as a script hook: no member of the native button changes.
+        -- The native update continues to own the description fade and
+        -- Accept's enabled state.
+        if Safety.HasMethod(QuestFrameAcceptButton, "HookScript") then
+            QuestFrameAcceptButton:HookScript("OnEnable", PaintCurrentHook)
         end
+        -- The detail page hides inside the next page's OnShow; the fallback
+        -- line goes with its hidden parent and is settled after that build.
         if Safety.HasMethod(QuestFrameDetailPanel, "HookScript") then
-            QuestFrameDetailPanel:HookScript("OnHide", Isolated(PaintOfferReward))
+            QuestFrameDetailPanel:HookScript("OnHide", PaintCurrentHook)
         end
         offerHooks = true
     end

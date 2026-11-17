@@ -749,6 +749,7 @@ local NS = { Client = { isForever = false, isMainline = true }, Text = function(
     Public = function() return true end, InCombat = function() return false end,
     Safety = { IsForbidden = function() return false end } }
 local S = { Install = function(_, m) module = m end,
+    Public = NS.Public,
     RestoreCVar = function(_, key)
         if saved[key] ~= nil then live[key], saved[key] = saved[key], nil end
     end }
@@ -761,9 +762,10 @@ assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite"
 local P = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", P)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", P)
-for _, name in ipairs({ "Layout", "Roles", "Text", "NameText", "Power", "Threat", "Level", "CastTime", "Auras", "KickReady", "Selection", "AuraColors", "AuraDisplay", "Extensions", "Geometry", "Mouseover", "FriendlyNames" }) do P[name] = helper() end
+for _, name in ipairs({ "Layout", "Roles", "Text", "NameText", "Power", "Threat", "Level", "CastTime", "Auras", "KickReady", "Selection", "AuraColors", "AuraDisplay", "Extensions", "Status", "Geometry", "Mouseover", "FriendlyNames" }) do P[name] = helper() end
 P.Extensions.inUse = false
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Decor.lua"))("MSUF_Suite_Nameplates", P)
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/Textures.lua"))("MSUF_Suite_Nameplates", P)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Skin.lua"))("MSUF_Suite_Nameplates", P)
 module.context = { CVar = function(_, key, value)
     if saved[key] == nil then saved[key] = live[key] end

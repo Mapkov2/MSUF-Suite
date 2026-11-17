@@ -11,7 +11,7 @@ UnitIsGameObject = function() return object end
 UnitIsFriend, UnitIsPlayer = function() return false end, function() return false end
 NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
 local private = { NS = NS, Extensions = { OnAnchors = function() end } }
-for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "NameplateText" }) do
+for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "NameplateText", "NameplateAuraDisplay" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
 end
 for _, file in ipairs({ "Modes", "Geometry", "Layout" }) do
@@ -35,7 +35,7 @@ local function Frame()
     return f
 end
 hooksecurefunc = function(uf, _, callback) uf.hook = callback end
-local module = { active = true, levelLabels = {}, castTimes = {}, pendingPlates = {} }
+local module = { active = true, activeUnits = {}, levelLabels = {}, castTimes = {}, pendingPlates = {} }
 private.Layout.Bind(module)
 for _, persist in ipairs({ false, true }) do
 persistOffsets = persist
@@ -71,6 +71,7 @@ for _, forever in ipairs({ false, true }) do
             health.Text:SetPoint("BOTTOMRIGHT", health.RightText, "BOTTOMLEFT", 2, 0)
             health.Text.visible, health.LeftText.visible, health.RightText.visible = true, false, false
             uf.CastBarsContainer.castBar = Frame(); uf.CastBarsContainer.castBar.Icon = Frame()
+            module.activeUnits[uf.unit] = uf
             local value = health.TextString
             local nativeSides = health.RightText.points
             local config = { look = 3, barGeometry = 1, enemy = true, enemyMirrorHeader = true, enemyTextMode = 2,

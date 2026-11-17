@@ -14,10 +14,11 @@ local HOST_ELEMENT = "external:msuf.blizzard:minimap"
 local CATEGORIES = {
     { name = "geometry", sections = { "hover_size" }, extra = { "size", "shape" } },
     { name = "position", extra = { "point", "x", "y" } },
+    { name = "opacity", extra = { "mapOpacity" } },
     { name = "border", sections = { "shape", "style_presets", "style_art", "style_glow", "style_backdrop" },
         extra = { "size" } },
     { name = "input", sections = { "behavior" }, extra = { "hoverResize", "showLanding", "collectButtons",
-        "drawerMouseover", "infoCoordinates", "infoCoordinatesMode" } },
+        "drawerMouseover", "infoCoordinates", "infoCoordinatesMode", "showTracking", "trackingMouseover" } },
     { name = "elements", sections = { "elements", "landing", "dungeon" }, extra = { "infoDifficulty", "borderSize" } },
     { name = "drawer", sections = { "addons" }, extra = { "elementRow", "elementSize", "elementSpacing",
         "elementDistance", "borderSize", "borderColor", "borderClassColor" } },
@@ -152,6 +153,7 @@ function M:Refresh()
     MM.EnsureFrames()
     local dirty = Dirty(self)
     if dirty.geometry or dirty.position then MM.ApplyHost() end
+    if dirty.opacity then MM.clip:SetAlpha((self.config.mapOpacity or 100) / 100) end
     if dirty.geometry then
         if self.mapOwned then MM.ApplyMap(true) end
         MM.RefreshIcons()

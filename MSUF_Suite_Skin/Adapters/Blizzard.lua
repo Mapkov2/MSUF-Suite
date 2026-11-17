@@ -485,6 +485,13 @@ Adapters.Register({
     resolve = function() return NS.BlizzardCatalog end,
     apply = function(_, owner)
         local genericApplied, genericReason = RunPart("GenericWindows", "ApplyAll", owner)
+        if NS.TutorialPointers then
+            if NS.GenericWindows.IsCategoryEnabled("tutorial") then
+                NS.Safety.Dispatch(NS.TutorialPointers.Enable)
+            else
+                NS.Safety.Dispatch(NS.TutorialPointers.Disable)
+            end
+        end
         if NS.GenericWindows.IsCategoryEnabled("character") then
             RunPart("MacroWindow", "Start", owner)
         end
@@ -498,6 +505,7 @@ Adapters.Register({
     end,
     disable = function(_, owner)
         local failed, combat = DisableWindowParts(owner)
+        if NS.TutorialPointers then NS.Safety.Dispatch(NS.TutorialPointers.Disable) end
         local finished, disabled, reason = NS.Safety.Dispatch(Finish, CallPart, "GenericWindows", "Disable", owner)
         if failed or not finished then
             return false, "error"
@@ -507,13 +515,14 @@ Adapters.Register({
     end,
 })
 
+local colorPickerMode = { role = "popup", fadeOnly = true, primarySection = "Footer", primaryButton = "OkayButton" }
 Adapters.Register({
     id = "colorPicker",
     labelKey = "SKIN_COLOR_PICKER",
     resolve = function() return _G.ColorPickerFrame end,
     apply = function(frame, owner)
         -- OpacityFrame ships in the same addon (ColorPickerFrame.xml).
-        local applied, reason = NS.GenericWindows.ApplyFrame(frame, owner, "dialog")
+        local applied, reason = NS.GenericWindows.ApplyFrame(frame, owner, colorPickerMode)
         NS.GenericWindows.ApplyFrame(_G.OpacityFrame, owner, "dialog")
         return applied, reason
     end,

@@ -5,7 +5,6 @@ local M, Finite = C.M, P.Suite.Finite
 -- Both supported clients currently expose ten persistent chat slots.
 local CHAT_WINDOW_LIMIT = 10
 local generations = {}
-local watchingClosures
 
 function C.MaxFloatingWindows()
     return math.min(Constants.ChatFrameConstants.MaxChatWindows, CHAT_WINDOW_LIMIT)
@@ -283,11 +282,33 @@ function C.FloatingWindowClosed(frame, fallback)
     end
 end
 
-function C.WatchFloatingClosures()
-    if watchingClosures then return end
-    hooksecurefunc("FCF_Close", C.FloatingWindowClosed)
-    watchingClosures = true
+-- Closed windows are found by comparing which windows are open after each
+-- Suite.ChatState window report (the chat module's and the options
+-- preview's watch both scan). A post-hook on FCF_Close would run inside the
+-- tab menu's own close and FCF_PopInWindow, and taint the isLocked field
+-- FCF_DockFrame writes after it.
+local open = setmetatable({}, { __mode = "k" })
+local function WindowOpen(frame)
+    if frame.isTemporary then return frame.inUse == true end
+    local index = frame:GetID()
+    local active = Finite(index) and FCF_IsChatWindowIndexActive(index)
+    return active == true or active == 1
 end
+
+function C.ScanFloatingClosures()
+    local frames = _G.CHAT_FRAMES
+    if type(frames) ~= "table" then return end
+    for index = 1, math.min(#frames, 64) do
+        local frame = _G[frames[index]]
+        if frame and frame ~= DEFAULT_CHAT_FRAME and not NS.Safety.IsForbidden(frame) then
+            local now = WindowOpen(frame)
+            if open[frame] and not now then C.FloatingWindowClosed(frame) end
+            open[frame] = now
+        end
+    end
+end
+
+C.WatchFloatingClosures = C.ScanFloatingClosures
 
 function C.FloatingDragStopped(frame)
     if not M.active then return end

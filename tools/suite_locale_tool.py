@@ -53,7 +53,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
-HOST_CLASSIC = BRANCH / "MidnightSimpleUnitFrames"
+HOST_CLASSIC = BRANCH / "MidnightSimpleUnitFrames-7.0"
 HOST_MAIN = BRANCH / "_repo_backups" / "6.22"
 LOCALE_DIR = ROOT / "MSUF_Suite" / "Locales"
 DEFAULT_OUT = ROOT / "_local_workflows" / "locale" / "suite_strings.tsv"

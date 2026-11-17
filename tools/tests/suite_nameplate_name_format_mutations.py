@@ -8,9 +8,9 @@ files = {"runtime": root / "MSUF_Suite_Nameplates/NameText.lua", "helper": root 
 cases = [
     ("secret restore", "runtime", "    if not S.Public(current) then\n        ForgetPlain(state)\n        return\n    end", ""),
     ("pooled identity", "runtime", "    Clear(state)\nend\n", "end\n"),
-    ("deferred replay", "runtime", "    if not safe then\n        state.look = nil\n", "    if not safe then\n"),
-    ("mapped owner", "runtime", "not M.config[prefix] or M.activeUnits[unit] ~= uf", "not M.config[prefix]"),
-    ("side switch", "runtime", "not M.config[prefix] or M.activeUnits[unit] ~= uf", "M.activeUnits[unit] ~= uf"),
+    ("deferred replay", "runtime", "M.pendingPlates[uf], state.look = true, nil", "M.pendingPlates[uf] = true"),
+    ("mapped owner", "runtime", "M.activeUnits[unit] ~= uf or not M.config[prefix]", "not M.config[prefix]"),
+    ("side switch", "runtime", "M.activeUnits[unit] ~= uf or not M.config[prefix]", "M.activeUnits[unit] ~= uf"),
     ("restricted color", "runtime", "(look.customColor or look.shared) and state.r", "(look.customColor or look.shared)"),
     ("shared opacity", "helper", "look.shared and look.shared.textColor.a or 1", "1"),
     ("warm work", "runtime", "    if enabled and state and state.unit == unit and state.look == look then return end", ""),

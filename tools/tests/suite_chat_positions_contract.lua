@@ -141,17 +141,18 @@ Check(visual.input.allPoints == input or select(2, visual.input:GetPoint(1)) == 
 c.inputX, c.inputY = 30, 12
 C.ApplyInputLayout(M, visual, frame, input)
 At(input, "TOPLEFT", frame, "BOTTOMLEFT", 26, 6, "input offset preserves aligned origin")
-local resize = frame:GetScript("OnSizeChanged")
-Check(resize ~= nil, "input has no native resize callback")
+-- Suite.ChatState reports the resize (Controller ResizedReported); no
+-- script hook on Blizzard's chat frame.
+Check(not frame:GetScript("OnSizeChanged"), "the input hooked the native frame's size script")
 frame:SetWidth(650)
-resize(frame, 650, 180)
+C.ResizeInput(frame)
 Check(input:GetWidth() == 658, "automatic input width did not follow resize")
 c.inputWidth, c.inputHeight = 312, 38
 C.ApplyInputLayout(M, visual, frame, input)
-Check(frame:GetScript("OnSizeChanged") == resize, "input resize callback installed twice")
+Check(not frame:GetScript("OnSizeChanged"), "the input hooked the native frame's size script")
 Check(input:GetWidth() == 312 and input:GetHeight() == 38, "custom dimensions did not reach native input")
 frame:SetWidth(700)
-resize(frame, 700, 180)
+C.ResizeInput(frame)
 Check(input:GetWidth() == 312, "chat resize overwrote the explicit input width")
 c.inputTop, c.inputWidth = true, 0
 C.ApplyInputLayout(M, visual, frame, input)
@@ -197,7 +198,7 @@ C.DockGeometry()
 Check(queued > 0, "combat native tab rebuild schedules offset recovery without padding/gap")
 local beforeQueue = queued
 frame:SetWidth(650)
-resize(frame, 650, 180)
+C.ResizeInput(frame)
 Check(queued > beforeQueue and input:GetWidth() == 708, "input resize wrote at combat start")
 frame.displayCallback(frame)
 At(line, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "message display moved at combat start")
@@ -221,16 +222,13 @@ function primary:SetPoint(...)
     writes = writes + 1
     return rawPoint(self, ...)
 end
-env.hooksecurefunc = function(object, method, callback)
-    Check(object == primary and method == "SetPoint", "only primary position writer is observed")
+-- No SetPoint hook on Blizzard's window: Suite.ChatState asks again after
+-- Blizzard's window updates, dock layouts, drags and Edit Mode exit.
+env.hooksecurefunc = function(object, method)
     hookCount = hookCount + 1
-    positionHook = callback
-    local original = object[method]
-    object[method] = function(self, ...)
-        original(self, ...)
-        callback(self, ...)
-    end
+    error("chat hooked " .. tostring(method) .. " of " .. tostring(object))
 end
+positionHook = function() C.CheckWindowPosition() end
 env.C_Timer = { After = function(delay, callback)
     Check(delay == 0, "position recovery must be a one-shot layout drain")
     timers[#timers + 1] = callback
@@ -241,16 +239,18 @@ local function Drain()
     for _, callback in ipairs(callbacks) do callback() end
     Check(#timers == 0, "own anchor scheduled another correction")
 end
+-- Blizzard re-anchors the window and ChatState reports it.
 local function Native(y)
     primary:ClearAllPoints()
     primary:SetPoint("BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, y)
+    C.CheckWindowPosition()
 end
 c.lockWindowPosition, c.windowX, c.windowY = true, 12, 52
 S.editMode = false
 C.ApplyWindowPosition(M, primaryVisual, primary, true)
 At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 12, 52, "initial window placement")
 for _ = 1, 100 do C.ApplyWindowPosition(M, primaryVisual, primary, true) end
-Check(hookCount == 1 and #timers == 0, "warm refresh rehooks the anchor or schedules recovery")
+Check(hookCount == 0 and #timers == 0, "warm refresh hooks the anchor or schedules recovery")
 local stableWrites = writes
 for i = 1, 20 do Native(120 + i) end
 local instructions = 0
@@ -272,6 +272,7 @@ Check(allocated < 1, "coalesced layout callback allocates per event")
 print("Chat anchor burst budget: " .. instructions .. " VM/1000, " .. allocated .. " KB/1000")
 Check(#timers == 1 and writes == stableWrites + 20, "native layout burst was not deferred/coalesced")
 primary:SetPoint("TOPRIGHT", env.UIParent, "TOPRIGHT", -40, -100)
+C.CheckWindowPosition()
 Drain()
 At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 12, 52, "native late layout recovers without Edit Mode")
 Check(primary:GetNumPoints() == 1, "late second native point survived recovery")
@@ -318,13 +319,15 @@ manager:Show()
 Native(215)
 Check(#timers == 0, "native Edit Mode drag scheduled a snap-back")
 manager:Hide()
-manager:GetScript("OnHide")(manager)
+Check(not manager:GetScript("OnHide"), "chat hooked Blizzard's Edit Mode manager")
+C.CheckWindowPosition() -- ChatState: EditMode.Exit, then the window report
 Check(#timers == 1, "native Edit Mode exit did not schedule recovery")
 Drain()
 At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 44, 66, "native Edit Mode exit restores Suite anchor")
 env.EditModeManagerFrame = hiddenManager
 -- A native no-op layout burst must not cause extra position writes.
 primary:SetPoint("BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 44, 66)
+C.CheckWindowPosition()
 stableWrites = writes
 Drain()
 Check(writes == stableWrites, "already-correct native layout rewrote the anchor")

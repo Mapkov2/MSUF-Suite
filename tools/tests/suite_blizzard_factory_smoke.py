@@ -317,7 +317,7 @@ for _, forever in ipairs({ false, true }) do
         local plates = modules.nameplates
         assert(plates.enabled and plates.nativeStyle == 5 and plates.enemyTextMode == 2)
         assert(plates.enemyTargetMarker and plates.enemyTargetColor == "fff14a" and not plates.enemyRoleColors)
-        assert(not plates.enemyNpcControl and not plates.enemyNpcDebuffs and plates.personalResource == 3)
+        assert(plates.enemyNpcAuraMode == 2 and not plates.enemyNpcControl and not plates.enemyNpcDebuffs)
         assert(modules.damageMeter.w1Session == 2 and modules.damageMeter.w2Type == 1)
         assert(modules.objectives.colorStyle == 2 and modules.objectives.groupUnderlines)
         assert(not modules.objectives.enabled, "reference must keep Blizzard's native gold tracker")
@@ -558,7 +558,7 @@ def main():
             fixtures[text[7:] if module else text] = decode(text, 'MSUFM1:MSUF3:' if module else 'MSUF3:')
     frame = decode(literal(core / 'BlizzardFactory.lua', 'Suite.BlizzardFramesCompact'), 'MSUF3:')
     skin = decode(literal(core / 'BlizzardFactory.lua', 'Suite.BlizzardSkinCompact'), 'MSKIN1:')
-    for name in ('MidnightSimpleUnitFrames', 'MidnightSimpleUnitFrames-7.0'):
+    for name in ('MidnightSimpleUnitFrames-7.0',):
         path = root.parent / name / 'MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_Shell.lua'
         if path.exists() and 'MSUF.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT =' in path.read_text(encoding='utf-8-sig'):
             text = literal(path, 'MSUF.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT')
@@ -566,7 +566,7 @@ def main():
     script = CHECK.replace('FIXTURES', lua_literal(fixtures), 1).replace('FRAMES', lua_literal(frame), 1)
     script = script.replace('SKIN', lua_literal(skin), 1)
     script = script.replace('SuiteModuleKey', lua_literal(literal(core / 'BlizzardFactory.lua', 'Suite.BlizzardModuleCompact')[7:]))
-    for name in ('MidnightSimpleUnitFrames', 'MidnightSimpleUnitFrames-7.0'):
+    for name in ('MidnightSimpleUnitFrames-7.0',):
         host = root.parent / name
         if not host.exists():
             continue

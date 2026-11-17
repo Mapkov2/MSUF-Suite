@@ -371,6 +371,7 @@ local function SkinSpellBookControls(state, spellBook)
     if paged and not Safety.IsForbidden(paged) then
         SkinPagingControls(state, PublicField(paged, "PagingControls"))
         SkinRanksToggle(state, spellBook, paged)
+        if NS.Client.isForever then NS.SpellLearning.Attach(state, spellBook, paged) end
     end
 end
 
@@ -702,6 +703,7 @@ end
 -- Once per frame of settings writes.
 function PlayerSpellsSkin:OnThemeChanged()
     NS.Registry.QueueJob(RefreshActiveColors)
+    if NS.Client.isForever then NS.Registry.QueueJob(NS.SpellLearning.RefreshSetting) end
 end
 
 local function UnregisterCallbacks()
@@ -734,6 +736,7 @@ local function RestoreState(state)
     if state.portraitBadge then state.portraitBadge:Hide() end
     Kit.HidePortraitBezels(state.owner)
     if state.ranksToggle then state.ranksToggle:Hide() end
+    if NS.Client.isForever then NS.SpellLearning.Hide(state) end
     state.surfaces = Kit.WeakSet()
     for glyph in pairs(state.glyphs) do
         glyph:Hide()

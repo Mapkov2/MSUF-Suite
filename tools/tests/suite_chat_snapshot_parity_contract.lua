@@ -209,24 +209,33 @@ frame.GetEffectiveScale = function() return 1 end
 dock.GetEffectiveScale = function() return 1 end
 P.ChatPreviewPaint.Refresh(ui)
 
--- Exercise the actual observer callback installed on the native frame.
+-- Exercise the preview's real Suite.ChatState watch: a resize report (the
+-- core's follower measured the native frame; no script hook on it).
+local ChatState = F.Suite.ChatState
+local function ReportResize()
+    for owner, handlers in pairs(ChatState.owners) do
+        if handlers.resized then handlers.resized(owner, frame) end
+    end
+end
+Check(not frame.GetScript or not frame:GetScript("OnSizeChanged"), "the preview hooked the native frame's size script")
 c.sidebarPanel = true
 P.ChatPreviewPaint.Refresh(ui)
 local handle = ui.targets.sidebarButton1
 handle:GetScript("OnMouseDown")(handle, "LeftButton")
 Check(ui.kit.drag ~= nil, "native-change drag fixture did not start")
 frame:SetSize(720, 300)
-frame:GetScript("OnSizeChanged")(frame, 720, 300)
+ReportResize()
 Check(ui.kit.drag == nil, "native geometry change does not cancel held preview drag")
 Check(ui.parts.sample:GetWidth() == 720 and ui.parts.sample:GetHeight() == 300, "native resize observer does not repaint geometry")
 local listeners = assert(Upvalue(S.ChatWatchPreview, "listeners"), "preview observer registry missing")
+Check(ChatState.owners[listeners], "the preview does not follow Suite.ChatState")
 ui.ctx.wrapper:Hide()
 local hidden = ui.ctx.wrapper:GetScript("OnHide")
 if hidden then hidden(ui.ctx.wrapper) end
 Check(listeners[ui.viewport] == nil, "hidden preview remains subscribed")
 local oldEpoch = ui.parts.nativeEpoch
 frame:SetSize(730, 310)
-frame:GetScript("OnSizeChanged")(frame, 730, 310)
+ReportResize()
 Check(ui.parts.nativeEpoch == oldEpoch, "hidden native observer still paints")
 ui.ctx.wrapper:Show()
 local shown = ui.ctx.wrapper:GetScript("OnShow")

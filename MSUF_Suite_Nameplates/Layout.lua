@@ -67,10 +67,12 @@ local function AuraAnchor(state, uf, region, point, owner, relative, x, y, dx, d
     Point(region, point, owner, relative, x + dx, y + dy)
 end
 
-local function RestoreLinks(state, uf)
+local function RestoreLinks(state, uf, recycled)
     for i = #state.links, 1, -1 do
         local link = state.links[i]
-        if Accessible(link[1]) then
+        if recycled and not link.nativeFixed then
+            table.remove(state.links, i)
+        elseif Accessible(link[1]) then
             Point(unpack(link))
             table.remove(state.links, i)
         else
@@ -248,20 +250,41 @@ local function ApplyNameAnchor(state, uf, plan)
     return true
 end
 
-function Layout.Restore(uf)
+-- The cold-layout handoff. A pass that may write the cast's geometry (its
+-- size in Geometry.Apply and Geometry.Restore, its anchors in CastOffsets)
+-- returns true, and the entry point that ran the pass reports the plate once,
+-- after its last write, so the castbar's spark is sized from the final
+-- geometry (Textures.OnLayout). A pass that returns at its combat or
+-- generation gate wrote nothing and returns nothing. The result belongs to
+-- its call: a native setter can run the layout of another plate inside this
+-- pass, which reports that plate and leaves this one's result alone.
+-- Blizzard's own rebuild is reported by Textures.OnAnchors.
+local function Settle(uf)
+    local textures = private.Textures
+    if textures and textures.inUse then textures.OnLayout(uf) end
+end
+
+local function Restore(uf, recycled)
     local state = states[uf]
     if not state then return end
     if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
         Defer(uf)
         return
     end
-    if not RestoreNameAnchor(state, uf) or not RestoreHeader(state, uf) then return end
-    RestoreLinks(state, uf)
-    RestoreHealthSize(state, uf)
+    if recycled then
+        -- ApplyFrameOptions and UpdateAnchors rebuild these sizes, anchors
+        -- and justification before the pooled frame represents a new unit.
+        state.geometry, state.healthSize = nil, nil
+        state.nameAnchor, state.header = nil, nil
+    elseif not RestoreNameAnchor(state, uf) or not RestoreHeader(state, uf) then
+        return true
+    end
+    RestoreLinks(state, uf, recycled)
+    if not recycled then RestoreHealthSize(state, uf) end
     RestoreAuraStyles(state, uf)
     if state.iconZoom and not Geometry.RestoreIconZoom(state) then Defer(uf) end
     if state.castIconBorder then Geometry.HideCastIconBorder(state) end
-    if not Geometry.Restore(state, uf, NamePlateSetupOptions) then Defer(uf) end
+    if state.geometry and not Geometry.Restore(state, uf, NamePlateSetupOptions) then Defer(uf) end
     for region in pairs(state.offsets) do
         if Accessible(region) then
             region:SetPointsOffset(0, 0)
@@ -272,6 +295,11 @@ function Layout.Restore(uf)
     end
     if not next(state.offsets) and #state.links == 0 and not state.healthSize and not state.geometry
         and not state.iconZoom and not (state.auraStyles and next(state.auraStyles)) then states[uf] = nil end
+    return true
+end
+
+function Layout.Restore(uf, recycled)
+    if Restore(uf, recycled) then Settle(uf) end
 end
 
 local function OnAnchors(uf)
@@ -547,12 +575,13 @@ local function ApplyAuraStyles(state, uf, styles)
 end
 
 -- Lays one plate out, once per settings generation (Layout.Configure).
--- force (Layout.Reapply) writes every offset again.
-local function Apply(uf, prefix, config, force)
+-- force (Layout.Reapply) writes every offset again. true: the pass reached
+-- the cast's geometry (see Settle), also when it stopped after that.
+local function Lay(uf, prefix, config, force)
     local plan, state = plans[prefix], states[uf]
     local enabled = plan and plan.active and config.look ~= Mode.LOOK_BLIZZARD and config[prefix]
     if not enabled then
-        if state then Layout.Restore(uf) end
+        if state then return Restore(uf) end
         return
     end
     if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
@@ -589,7 +618,7 @@ local function Apply(uf, prefix, config, force)
     local baseHeight = Geometry.Apply(state, uf, setup, config, force, prefix, delta)
     if not baseHeight then
         Defer(uf)
-        return
+        return true
     end
     HealthSize(state, uf, setup, width, height, force or geometryChanged, baseHeight)
     if plan.nameAnchor then Offset(state, uf.name, 0, 0, true) end
@@ -598,21 +627,26 @@ local function Apply(uf, prefix, config, force)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
     if not anchored then
         local mirrored = MirrorHeader(state, uf, prefix, plan, setup, config)
-        if mirrored == nil then return end
+        if mirrored == nil then return true end
         if not mirrored then NameLink(state, uf, plan, setup, badgeShown) end
     end
     AuraAnchors(state, uf, plan)
     ControlAuraAnchors(state, uf, plan, setup, config, badgeShown)
     DebuffPaddingAnchor(state, uf, plan, setup)
     if plan.auraStyles or state.auraStyles then ApplyAuraStyles(state, uf, plan.auraStyles) end
-    if not CastOffsets(state, uf, plan, setup, force, delta) then return end
+    if not CastOffsets(state, uf, plan, setup, force, delta) then return true end
     if (plan.castIconStyle or state.castIconStyle) and not Geometry.CastIconStyle(state, uf, plan) then
         Defer(uf)
-        return
+        return true
     end
     state.generation, state.prefix, state.kind = generation, prefix, kind
     state.nativeReset = nil
     Layout.Observe(uf)
+    return true
+end
+
+local function Apply(uf, prefix, config, force)
+    if Lay(uf, prefix, config, force) then Settle(uf) end
 end
 Layout.Apply = Apply
 

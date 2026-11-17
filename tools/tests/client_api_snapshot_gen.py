@@ -22,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-MIRROR = r"C:\MSUF Beta Branch\MidnightSimpleUnitFrames\_local_workflows\references\wow-ui-source"
+MIRROR = r"C:\MSUF Beta Branch\MidnightSimpleUnitFrames-7.0\_local_workflows\references\wow-ui-source"
 # TOC interface number -> (client name, mirror ref). The snapshot covers the
 # numbers the Suite TOCs declare (read from their ## Interface lines); a new
 # number needs its mirror ref here first.

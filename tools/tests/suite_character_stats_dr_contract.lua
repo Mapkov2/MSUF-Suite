@@ -125,7 +125,7 @@ suiteCore.ReadCharacterRating(1, crit, true)
 assert(next(crit) == nil and curveCalls == beforeRead + 2)
 combatStarting = false
 do
-    local strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+    local strict = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
     local savedIsSecret, savedToNumber, savedToString = issecretvalue, tonumber, tostring
     strict.Install()
     strict.GUARD_NAMES.falsy.Finite = true

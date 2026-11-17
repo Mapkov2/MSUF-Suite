@@ -74,6 +74,7 @@ local S = {
     Install = function(id, instance) assert(id == "lootToastFilter"); module = instance end,
 }
 local NS = {
+    Client = { isForever = false },
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
     Dispatch = function(callback, ...) return callback(...) end,
@@ -121,11 +122,18 @@ clock.Advance(3)
 Toast("item", "item:100", 1, true)
 Toast("item", "item:100", 1, true)
 Toast("item", "item:100", 1, true)
-assert(#frames == 3, "toast pool exceeded three frames")
+assert(#frames == 1 and frames[1].count.text == "x5", "repeated drops did not reuse one toast")
 clock.Advance(2.5)
-assert(frames[1]:IsShown() and frames[2].link ~= nil, "stale timer hid a reused toast")
+assert(frames[1]:IsShown(), "the original timeout hid a merged toast")
 clock.Advance(2.6)
 assert(not frames[1]:IsShown() and not frames[1].link, "a toast outlived its five seconds")
+
+Toast("item", "item:100:1", 1, true)
+Toast("item", "item:100:2", 1, true)
+Toast("item", "item:100:3", 1, true)
+Toast("item", "item:100:4", 1, true)
+assert(#frames == 3 and frames[1].link == "item:100:3" and frames[2].link == "item:100:4",
+    "different item variants were merged or escaped the pool limit")
 
 module.config.itemIDs = "101"
 module.config.minQuality = 3
@@ -133,7 +141,7 @@ module:Refresh()
 Toast("item", "item:100", 1, true)
 assert(frames[1].name.text == "Epic item", "item ID allowlist did not filter")
 Toast("item", "item:101", 1, true)
-assert(frames[2].name.text == "Rare item", "allowed item ID was hidden")
+assert(frames[3].name.text == "Rare item", "allowed item ID was hidden")
 
 module.config.itemIDs, module.config.minQuality = "", 4
 module.config.kindFilter = 2
@@ -163,6 +171,7 @@ module:Refresh()
 -- waits for GET_ITEM_INFO_RECEIVED of that item and is shown then.
 local waitShows = shows
 Toast("item", "item:104", 1, true)
+Toast("item", "item:104", 2, true)
 assert(shows == waitShows and context.events.GET_ITEM_INFO_RECEIVED,
     "a loot toast for an uncached item was dropped instead of waiting for its data")
 context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 999, true)
@@ -173,8 +182,8 @@ local arrivedToast
 for _, frame in ipairs(frames) do
     if frame:IsShown() and frame.name.text == "New mount item" then arrivedToast = frame end
 end
-assert(shows == waitShows + 1 and arrivedToast and not context.events.GET_ITEM_INFO_RECEIVED,
-    "the loot toast did not show once its item data arrived")
+assert(shows == waitShows + 1 and arrivedToast and arrivedToast.count.text == "x3"
+    and not context.events.GET_ITEM_INFO_RECEIVED, "the waiting drops did not merge when item data arrived")
 Toast("item", "item:105", 1, true)
 assert(context.events.GET_ITEM_INFO_RECEIVED, "the second uncached item did not wait")
 
@@ -187,4 +196,28 @@ frames[2].shown = true
 clock.Advance(6)
 assert(frames[2]:IsShown(), "a cancelled toast timeout still ran after disable")
 frames[2].shown = false
+NS.Client.isForever = true
+LOOT_ITEM_SELF = "You receive loot: %s."
+LOOT_ITEM_SELF_MULTIPLE = "%2$d times: %1$s."
+module.active = true
+module:Enable()
+assert(context.events.CHAT_MSG_LOOT and not context.events.SHOW_LOOT_TOAST,
+    "Forever did not use its personal loot chat source exclusively")
+local function Chat(message)
+    context.events.CHAT_MSG_LOOT(module, "CHAT_MSG_LOOT", message)
+end
+local link = "|cff9f50ff|Hitem:100|h[Epic item]|h|r"
+local before = shows
+Chat("secret")
+Chat("Another player receives loot: " .. link .. ".")
+Chat("You receive loot: |Hcurrency:12|h[Currency]|h.")
+assert(shows == before, "Forever showed secret data, currency or someone else's loot")
+Chat("You receive loot: " .. link .. ".")
+Chat("3 times: " .. link .. ".")
+local item
+for _, frame in ipairs(frames) do if frame.link == link then item = frame end end
+assert(shows == before + 1 and item and item.count.text == "x4",
+    "Forever drops and localized stacked count did not merge")
+module:Disable()
+assert(not context.events.CHAT_MSG_LOOT, "Forever left its loot listener active")
 print("suite_loot_toast_filter_contract: ok")

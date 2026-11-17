@@ -25,8 +25,8 @@ local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local BAR_COUNT, BUTTONS = NS.ActionBarCount, 12
 AB.BAR_COUNT, AB.BUTTONS = BAR_COUNT, BUTTONS
 local BAR, START, FLYOUT = AB.ENUM.BAR, AB.ENUM.START, AB.ENUM.FLYOUT
--- Retail reuses Blizzard's buttons on bars 2-8; Forever keeps suite buttons.
-AB.nativeReuse = not NS.Client.isForever
+-- Both clients ship Blizzard's action buttons for bars 1-8.
+AB.nativeReuse = true
 
 -- Slot of button 1 per owned bar; bar 1 pages from slot 1.
 AB.FIRST_SLOT = NS.ActionBarFirstSlots
@@ -41,7 +41,8 @@ AB.NATIVE_BUTTONS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBotto
 -- Setting names per bar, built once so hot paths never concatenate keys.
 -- Every per-bar catalog rule has its suffix here (the action bar contract
 -- checks it against Core/Catalog/ActionBars.lua).
-local SUFFIXES = { "Visibility", "HideGamepad", "GroupOnly", "ResumeVisibility", "Layer",
+local SUFFIXES = { "Visibility", "CondCombine", "CondCombat", "CondMounted", "CondTarget", "CondMouseover", "Paging",
+    "HideGamepad", "GroupOnly", "ResumeVisibility", "Layer",
     "Alpha", "FadeAlpha", "FadeDuration", "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty",
     "FlyoutDirection", "ClickThrough", "Tooltip", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize",
     "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX",
@@ -141,12 +142,14 @@ end
 -- filled unless empty slots are shown or a drag reveal bit (2 and up) is
 -- set. Press-and-hold follows the spell and keeps its value when the
 -- action identity is unreadable, so empower casts never flip mid-fight.
-AB.SNIPPET.BUTTON = [[
+AB.SNIPPET.NATIVE_BUTTON = [[
 local bar=self:GetParent()
 local action=self:GetAttribute("action")
 local show=action and (self:GetAttribute("index") or 1)<=(bar:GetAttribute("count") or 12)
 if show and not bar:GetAttribute("showempty") and (bar:GetAttribute("gridmask") or 0)<2 and not HasAction(action) then show=false end
 if show then self:Show() else self:Hide() end
+]]
+AB.SNIPPET.BUTTON = AB.SNIPPET.NATIVE_BUTTON .. [[
 if action and IsPressHoldReleaseSpell then
     local kind,id=GetActionInfo(action)
     local hold
@@ -185,27 +188,28 @@ if key then return "LeftButton" end
 ]]
 -- Pickups mirror Blizzard's rule (unlocked bars or the pickup modifier)
 -- and reveal empty slots on every owned bar, also in combat.
-AB.SNIPPET.DRAG = [[
-if control:GetAttribute("unlocked") or IsModifiedClick("PICKUPACTION") then
-    local action=self:GetAttribute("action")
-    if action and HasAction(action) then
-        control:RunAttribute("msuf-reveal",4,true)
-        return "action",action
-    end
+AB.SNIPPET.NATIVE_DRAG = [[
+local action=self:GetAttribute("action")
+local pickup=action and (control:GetAttribute("unlocked") or IsModifiedClick("PICKUPACTION")) and HasAction(action)
+if pickup then
+    control:RunAttribute("msuf-reveal",4,true)
 end
+]]
+AB.SNIPPET.DRAG = AB.SNIPPET.NATIVE_DRAG .. [[
+if pickup then return "action",action end
 return false
 ]]
 -- Drops place the cursor into the slot. Dropping on an empty slot ends the
 -- drag, so the reveal clears; the target itself stays shown for its action.
-AB.SNIPPET.RECEIVE = [[
+AB.SNIPPET.NATIVE_RECEIVE = [[
 local action=self:GetAttribute("action")
-if kind and action then
-    if not HasAction(action) then
-        control:RunAttribute("msuf-reveal",4,false)
-        self:Show()
-    end
-    return "action",action
+if kind and action and not HasAction(action) then
+    control:RunAttribute("msuf-reveal",4,false)
+    self:Show()
 end
+]]
+AB.SNIPPET.RECEIVE = AB.SNIPPET.NATIVE_RECEIVE .. [[
+if kind and action then return "action",action end
 ]]
 -- Re-runs BUTTON on every button of one header.
 AB.SNIPPET.GRID = [[self:ChildUpdate("grid")]]
@@ -231,7 +235,7 @@ local function NewHeader(index)
     header:SetAttribute("_onstate-vis", AB.SNIPPET.VIS)
     local background = S.CreateTexture(header, nil, "BACKGROUND", nil, -8)
     background:Hide()
-    local native = AB.nativeReuse and index >= BAR.FIRST_NATIVE and index <= BAR.LAST_NATIVE
+    local native = AB.nativeReuse and index >= BAR.MAIN and index <= BAR.LAST_NATIVE
     if native then
         for i = 1, BUTTONS do
             if not AB.Frame(AB.NATIVE_BUTTONS[index] .. i) then

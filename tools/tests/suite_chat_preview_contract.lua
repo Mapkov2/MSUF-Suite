@@ -56,8 +56,8 @@ local function File(path, addon, ns)
         messageHover = { "ChatPreview.lua", "local highlighted = hovered or selected", "local highlighted = selected" },
         messageLayer = { "ChatPreviewLayers.lua", "for _, handle in ipairs(ui.messageHandles) do Mask(ui, handle) end", "" },
         nativeDrag = { "ChatPreview.lua", "manualDrag = true, ", "" },
-        demoTopic = { "ChatWorkspace.lua", 'sections = "tools historyRules spamFilterRules text chatComfort_module sounds highlight"',
-            'sections = "tools historyRules spamFilterRules chatComfort_module sounds highlight"' },
+        demoTopic = { "ChatWorkspace.lua", 'sections = "tools historyRules spamFilterRules text sounds highlight keywordAlerts_module"',
+            'sections = "tools historyRules spamFilterRules sounds highlight keywordAlerts_module"' },
         clickThreshold = { "ChatPreview.lua", "pixels = true, threshold = 4", "threshold = 2" },
         follow = { "ChatPreview.lua", 'follow = handle.follow, ', '' },
         layerMask = { "ChatPreviewLayers.lua", 'if layers.input == false then Mask(ui, parts.input) end', '' },
@@ -72,8 +72,8 @@ local function File(path, addon, ns)
         profile = { "ChatPreview.lua", 'token.current() and token.config == P.S.Config(ID)', 'true' },
         legacy = { "ChatPreview.lua", 'if P.W.FocusCollapsibleSection and P.W.FocusCollapsibleSection(body, { persist = true, flash = true }) then return true end', '' },
         sectionJump = { "ChatPreview.lua", 'if P.ChatPreviewLinks.Open(ui, spec) then return true end', '' },
-        toolLink = { "ChatPreviewLinks.lua", '"headerToolbar", "animateInput", "copyMessages"',
-            '"headerToolbar", "inputHeight", "copyMessages"' },
+        toolLink = { "ChatPreviewLinks.lua", '"headerToolbar", "copyMessages", "toolbarLocked"',
+            '"headerToolbar", "inputHeight", "toolbarLocked"' },
         clockLink = { "ChatPreviewLinks.lua", 'handle:SetShown(region:IsShown())', '' },
         legacyPersistence = { "ChatPreview.lua", 'persist = true, flash = true', 'flash = true' },
         navigationPlacement = { "ChatPreview.lua", 'handle.canMove and handle:IsVisible()',
@@ -233,7 +233,7 @@ do
         local meta = P.Meta("suite_chat", "chatComfort", key, "setting", section)
         local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_chat", meta)
         Check(called and opened and focused and widget and widget:IsVisible()
-            and ui.ctx.chatWorkspace.selected == "messages", "legacy bookmark missed Chat behavior: " .. key)
+            and ui.ctx.chatWorkspace.selected == "basics", "legacy bookmark missed Chat behavior: " .. key)
     end
     local daily = P.S.Config("dailyComfort")
     local comfort = P.S.Config("chatComfort")
@@ -546,6 +546,7 @@ end
 parts.input.IsProtected = function() return false end
 world.widgets.Methods.CreateAnimationGroup = function(owner)
     local group = { animations = {}, plays = 0 }
+    function group:SetToFinalAlpha(value) self.toFinalAlpha = value end
     function group:CreateAnimation(kind)
         local animation = { kind = kind }
         function animation:SetFromAlpha(value) self.from = value end
@@ -569,7 +570,7 @@ world.widgets.Methods.CreateAnimationGroup = function(owner)
 end
 Check(P.Set("chat", "look", 8), "compact preset failed")
 mw:RunTimers()
-Check(parts.toolbar and parts.toolbar:IsShown() and #parts.toolbar.buttons == 5, "compact tools missing from preview")
+Check(parts.toolbar and parts.toolbar:IsShown() and #parts.toolbar.buttons == 4, "compact tools missing from preview")
 Check(not parts.toolbar.buttons[1]:GetScript("OnClick"), "preview tools can create live chat tabs")
 local function CheckLink(region, key, section, topic)
     local handle = ui.extraLinks and ui.extraLinks[region]
@@ -592,9 +593,9 @@ local function CheckLink(region, key, section, topic)
     Check(not next(runtime.Chat.M.visuals), "preview settings link activated native Chat")
 end
 for index, target in ipairs({
-    { "headerToolbar", "tabs", "appearance" }, { "animateInput", "input", "input" },
+    { "headerToolbar", "tabs", "appearance" },
     { "copyMessages", "tools", "messages" }, { "toolbarLocked", "tabs", "appearance" },
-    { "look", "look", "basics" },
+    { "look", "look", "appearance" },
 }) do CheckLink(parts.toolbar.buttons[index], target[1], target[2], target[3]) end
 Check(not ui.extraLinks[parts.resizeGrip]:IsShown(), "locked resize grip intercepts preview clicks")
 Check(not parts.copy:IsShown(), "duplicate copy control in compact preview")
@@ -617,7 +618,7 @@ mw:RunTimers()
 Check(not animation.playing, "turning animation off did not stop the sample")
 Check(P.Set("chat", "toolbarLocked", false), "unlock refused")
 mw:RunTimers()
-Check(parts.resizeGrip:IsShown() and not parts.toolbar.buttons[4].strokes[4]:IsShown(), "unlocked grip/state missing from preview")
+Check(parts.resizeGrip:IsShown() and not parts.toolbar.buttons[3].strokes[4]:IsShown(), "unlocked grip/state missing from preview")
 CheckLink(parts.resizeGrip, "lockWindowSize", "window", "basics")
 Check(P.Set("chat", "headerClock", true), "clock fixture refused")
 mw:RunTimers()
@@ -639,7 +640,7 @@ Check(not P.Get("chat", "hideNativeButtons"), "compact look left native controls
 
 -- Topic navigation keeps one preview and reveals exact targets in hidden groups.
 local topics = assert(ui.ctx.chatWorkspace, "Chat has no topic workspace")
-Check(#topics.tabs.items == 5, "Chat topics are not directly selectable")
+Check(#topics.tabs.items == 4, "Chat topics are not directly selectable")
 local function CheckTopicHighlight(expected)
     for _, item in ipairs(topics.tabs.items) do
         Check(item.button._msuf2Active == (item.id == expected), "Chat topic has the wrong active highlight: " .. item.id)
@@ -667,10 +668,10 @@ for _, key in ipairs({ "enabled", "party" }) do
     prepared.prepareKind, prepared.prepareValue = "suiteWorkspace", key
     topics.select("basics")
     local record, preparedWidget, reason = M.RuntimeControlCatalog.ResolveExactTarget("suite_chat", prepared)
-    Check(record and preparedWidget and preparedWidget:IsVisible() and topics.selected == "extras", "prepared keyword search failed: " .. tostring(reason))
-    Check(called and opened and focused and topics.selected == "extras" and widget and widget:IsVisible(),
+    Check(record and preparedWidget and preparedWidget:IsVisible() and topics.selected == "messages", "prepared keyword search failed: " .. tostring(reason))
+    Check(called and opened and focused and topics.selected == "messages" and widget and widget:IsVisible(),
         "keyword notice search remained hidden: " .. key .. "/" .. tostring(called) .. "/" .. tostring(opened) .. "/" .. tostring(focused) .. "/" .. tostring(topics.selected) .. "/" .. tostring(widget and widget:IsVisible()) .. "/section=" .. tostring(topics.sections.suite_chat_keywordAlerts_module ~= nil))
-    CheckTopicHighlight("extras")
+    CheckTopicHighlight("messages")
     Check(P.Get("keywordAlerts", "enabled") == before, "search enabled keyword notices")
 end
 local originalWidth, originalWidthGetter = ui.header:GetWidth(), ui.header.GetWidth
@@ -908,7 +909,7 @@ mw:RunTimers()
 Check(Toggle("tools", "RightButton"), "buttons layer did not route to the copy setting")
 mw:RunTimers()
 Check(topics.selected == "messages", "buttons layer missed the copy button's topic")
-Check(Toggle("tools") and P.Set("chat", "headerToolbar", toolbar), "buttons layer cleanup refused")
+Check(P.Set("chat", "headerToolbar", true) and Toggle("tools") and P.Set("chat", "headerToolbar", toolbar), "buttons layer cleanup refused")
 Check(Toggle("window") and not ui.targets.window:IsShown() and parts.input:IsVisible(), "window layer hid other layers")
 Check(Toggle("window") and ui.targets.window:IsShown(), "window layer did not restore its handle")
 Check(P.Set("chat", "headerClock", true), "layer clock fixture refused")
@@ -918,7 +919,13 @@ local clockLink = ui.extraLinks[clock]
 Check(Toggle("clock") and not clock:IsShown() and not clockLink:IsShown(), "clock layer left an invisible hit target")
 Check(P.Set("chat", "headerClock", false), "clock off fixture refused")
 mw:RunTimers()
+topics.select("basics")
 Check(Toggle("clock") and not clock:IsShown() and not clockLink:IsShown(), "layer restored art disabled in settings")
+mw:RunTimers()
+local _, clockToggle = M.RuntimeControlCatalog.ResolveExactTarget("suite_chat",
+    P.Meta("suite_chat", "chat", "headerClock", "setting", "suite_chat_tabs"))
+Check(topics.selected == "appearance" and clockToggle and clockToggle:IsVisible() and not P.Get("chat", "headerClock"),
+    "disabled Clock chip did not open its enable switch")
 Check(P.Set("chat", "inputWidth", before), "input width cleanup refused")
 mw:RunTimers()
 Check(parts.input:GetWidth() == parts.sample:GetWidth() + 2 * P.Get("chat", "padding"), "auto width does not match the padded preview")

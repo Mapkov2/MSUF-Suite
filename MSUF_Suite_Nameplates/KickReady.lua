@@ -31,6 +31,10 @@ local registered, shown = false, false
 -- repaint: the skin's pass over the castbars of its shown plates.
 function Kick.Bind(module, repaint) M, RepaintCasts = module, repaint end
 
+local function SetShown(enabled)
+    shown, Kick.castEvents = enabled, enabled
+end
+
 local function Safe(region)
     return region and not NS.Safety.IsForbidden(region)
 end
@@ -258,6 +262,8 @@ local function PaintProjections(cast, state, engine, look, showing, notInterrupt
     if count > 0 then
         local startTime, endTime = duration:GetStartTime(), duration:GetEndTime()
         local reverse = state.kind == "channel"
+        local visualReverse = cast.GetReverseFill and cast:GetReverseFill()
+        if Public(visualReverse) and visualReverse == true then reverse = not reverse end
         for index = 1, count do
             local cooldown = engine.Cooldown(index)
             if cooldown then
@@ -365,7 +371,8 @@ local function OnEngineChange(reason)
     local look = engine.Look()
     if reason == "settings" then
         if private.Textures then private.Textures.RefreshCastColors() end
-        shown = look.show == true
+        SetShown(look.show == true)
+        if private.CastTime then private.CastTime.SyncEvents(M) end
         if shown then RepaintCasts() else RestoreAll() end
         return
     end
@@ -388,12 +395,12 @@ function Kick.Configure()
     end
     local nextShown = engine ~= nil and engine.Look().show == true
     if shown and not nextShown then RestoreAll() end
-    shown = nextShown
+    SetShown(nextShown)
 end
 
 function Kick.Disable()
     RestoreAll()
-    shown = false
+    SetShown(false)
     if not registered then return end
     registered = false
     NS.HostBridge.KickReady().Unregister(OWNER)

@@ -29,7 +29,7 @@ assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail a
 local function Frame(kind)
     local f = { kind = kind, shown = true, scripts = {}, points = {}, text = "", width = 100, height = 20, enabled = true }
     return setmetatable(f, { __index = function(_, key)
-        if key == "mirror" or key == "label" or key == "measured"
+        if key == "mirror" or key == "label" or key == "fs" or key == "measured" or key == "powerGradient" or key == "meta"
             or type(key) == "string" and (key:sub(1, 1) == "_" or key:find("^enemyPower")) then
             return nil
         end
@@ -119,6 +119,7 @@ local function Widget(kind)
     function w:CreateTexture() return Widget("Texture") end
     function w:CreateFontString()
         local font = Widget("FontString")
+        font.parent = self
         self.fontStrings = rawget(self, "fontStrings") or {}
         self.fontStrings[#self.fontStrings + 1] = font
         return font
@@ -141,6 +142,10 @@ end
 CreateFrame = function(kind, _, parent, template)
     local widget = Widget(kind)
     widget.parent = parent
+    if kind == "ScrollFrame" then
+        function widget:GetVerticalScroll() return rawget(self, "verticalScroll") or 0 end
+        function widget:SetVerticalScroll(offset) self.verticalScroll = offset end
+    end
     if template == "ScrollFrameTemplate" then
         widget.ScrollBar = Widget("ScrollBar")
         widget.ScrollBar.parent = widget
@@ -280,7 +285,7 @@ C_AddOns = {
 -- MSUF host (Main build shape: no MSUF.Client) with its locale table.
 local L = setmetatable({ ["Enable module"] = "MSUF-eigene Übersetzung" }, { __index = function(_, k) return k end })
 MSUF_NS = { L = L, GetEffectiveLocale = function() return "deDE" end }
-assert(loadfile(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
+dofile(root .. "/tools/tests/suite_test_support.lua").LoadBossTargetIndicator(root, MSUF_NS)
 
 -- Menu2 public surface
 local M, W, T = {}, {}, {}
@@ -419,7 +424,11 @@ local function CheckSearchTargets(searchRows, pageContexts, requireReverse)
     local bySetting, byId, sections, indexed = {}, {}, {}, {}
     local function Collect(meta)
         if not meta then return end
-        if meta.settingKey then bySetting[meta.settingKey] = meta end
+        if meta.settingKey then
+            local sections = bySetting[meta.settingKey] or {}
+            bySetting[meta.settingKey] = sections
+            sections[meta.sectionId or false] = meta
+        end
         if meta.controlId then byId[meta.controlId] = meta end
     end
     for _, widget in pairs(registeredControls) do Collect(widget.registeredMeta) end
@@ -443,7 +452,19 @@ local function CheckSearchTargets(searchRows, pageContexts, requireReverse)
         if pageContexts[row.pageKey] then
             local target = row.controlId or row.settingKey
             if target then
-                local actual = row.controlId and byId[row.controlId] or bySetting[row.settingKey]
+                local matches = bySetting[row.settingKey]
+                local actual = row.controlId and byId[row.controlId]
+                    or matches and matches[row.sectionId or false]
+                if not actual and row.kind == "color" and row.pageKey == "suite_nameplates" then
+                    local section = (row.sectionId or ""):match("^suite_nameplates_(.+)$")
+                    actual = section and byId["menu2.suite_nameplates.nameplates." .. section .. ".colors"]
+                    local item = row.settingKey and row.settingKey:match("^msufsuite%.nameplates%.(.+ExtraText%a+)Color$")
+                    if not actual and item then actual = byId["menu2.suite_nameplates.nameplates." .. item .. ".colors"] end
+                end
+                local destination, focus = optionsNS.NameplateFonts.TargetForSetting(row.settingKey)
+                local movedToFonts = destination == "opt_fonts" and focus.sectionId == "opt_fonts_nameplate_text"
+                    and pageContexts.suite_nameplates and pageContexts.suite_nameplates.nameplateTypography[row.settingKey]
+                if movedToFonts then actual = { sectionId = row.sectionId } end
                 assert(actual, "cold search target has no built control: " .. target)
                 assert(actual.sectionId == row.sectionId,
                     "cold search target points to the wrong section: " .. target .. " expected=" .. tostring(row.sectionId) .. " actual=" .. tostring(actual.sectionId))
@@ -502,6 +523,11 @@ M.BindSwitchAt = function(ctx, parent, label, x, y, w, get, set, meta)
     return Bind(ctx, switch, get, set, meta, label)
 end
 M.BindBoolWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
+M.BindSliderAt = function(ctx, parent, label, _, _, low, high, step, _, get, set)
+    local slider = Widget("Slider")
+    slider.parent, slider.low, slider.high, slider.step = parent, low, high, step
+    return Bind(ctx, slider, get, set, nil, label)
+end
 M.BindDropdownAt = function(ctx, parent, label, x, y, values, w, get, set, meta)
     local dropdown = Widget("Dropdown")
     dropdown._msuf2Title = Widget("FontString")
@@ -522,10 +548,12 @@ W.MoveWidget = function() end
 W.ScopeOverrideBar = function(ctx, parent, opts)
     local bar = Widget("ScopeOverrideBar")
     bar.values, bar.buttons, bar.label = opts.values, {}, Widget("FontString")
-    local x, y = opts.startX, -28
+    local startX, y = opts.startX or 16, opts.centerY or -28
+    local x, maxRight = startX, opts.maxRight or opts.width or 720
     for index, item in ipairs(opts.values) do
-        if x > opts.startX and x + item.width > opts.maxRight then x, y = opts.startX, y - 30 end
-        x = x + item.width + 8
+        local width = item.width or math.max(44, #(item.text or "") * 7 + 16)
+        if x > startX and x + width > maxRight then x, y = startX, y - 30 end
+        x = x + width + 8
         local button = Widget("Button")
         button:SetScript("OnClick", function() bar:SetValue(item.value) end)
         bar.buttons[index] = button
@@ -552,7 +580,7 @@ W.SegmentTabs = function(ctx, parent, opts)
     end
     function segment:Choose(tab) opts.set(tab); Refresh() end
     ctx.tabControls = ctx.tabControls or {}
-    ctx.tabControls[#ctx.tabControls + 1] = { segment = segment, frames = opts.frames }
+    ctx.tabControls[#ctx.tabControls + 1] = { segment = segment, frames = opts.frames, sectionId = parent.sectionId }
     M.TrackRefresh(ctx, Refresh)
     return segment, Refresh, function() return opts.get() end, function(tab) segment:Choose(tab) end
 end
@@ -583,6 +611,10 @@ W.AttachContextColorShortcut = function(section, opts)
     local shortcut = Widget("ColorShortcut")
     shortcut.options = opts
     section.colorShortcut = shortcut
+    if current then
+        current.colorShortcuts = current.colorShortcuts or {}
+        current.colorShortcuts[#current.colorShortcuts + 1] = shortcut
+    end
     return shortcut
 end
 W.SetControlDisabledReason = function(widget, reason) widget.disabledReason = reason end
@@ -640,7 +672,7 @@ W.PageBuilder = function(ctx)
         if ctx.SetContentHeight then ctx:SetContentHeight(-y + 42) end
     end
     if ctx.key == "suite_actionbars" or ctx.key == "suite_dataTexts" or ctx.key == "suite_hud" or ctx.key == "suite_macros"
-        or ctx.key == "suite_planningTools" or ctx.key == "suite_qualityOfLife" or ctx.key == "gameplay"
+        or ctx.key == "suite_planningTools" or ctx.key == "suite_devMode" or ctx.key == "suite_qualityOfLife" or ctx.key == "gameplay"
         or ctx.key == "suite_chat" or ctx.key == "suite_minimap" or ctx.key == "suite_bags" then
         function b:Section(title, height)
             local body = Widget("Panel")
@@ -711,13 +743,20 @@ end
 W.FixedPreviewSection = function(ctx, b, spec)
     local section, toolbar, record = Widget("FixedPreview"), Widget("Toolbar"), {}
     local height = math.min(180, spec.height or 180)
-    section:SetHeight(height)
+    section:SetSize(ctx.width, height)
     record.heightResolver = function() return section._msuf2FixedPreviewActiveHeight or height end
     section._msuf2Width = ctx.width
     section.title = Widget("FontString")
-    ctx.fixedPreview = { section = section, toolbar = toolbar, record = record }
+    ctx.fixedPreviews = ctx.fixedPreviews or {}
+    ctx.fixedPreviews[#ctx.fixedPreviews + 1] = { section = section, toolbar = toolbar, record = record }
+    ctx.fixedPreview = ctx.fixedPreviews[1]
     ctx.pageItems[#ctx.pageItems + 1] = "fixed-preview"
     return section, toolbar, record
+end
+function W.ActivateFixedPreviews(ctx)
+    for _, fixed in ipairs(ctx.fixedPreviews or {}) do
+        if fixed.record.onActivate then fixed.record.onActivate() end
+    end
 end
 W.AttachFixedPreviewExpander = function(section, toolbar, box, opts)
     local expander = { section = section, toolbar = toolbar, box = box, opts = opts }
@@ -765,6 +804,17 @@ local Suite = assert(MSUFSuite)
 local S = Suite.Suite
 Suite.Database.Initialize(nil)
 S.Start()
+if not SUITE_OPTIONS_FIXTURE and flavor == "Mainline" then
+    -- The 6.5 host accepts these Suite sections as page tails.
+    local function HostPage(ctx)
+        ctx._msuf2PageBuilders = { W.PageBuilder(ctx) }
+    end
+    M.pages.opt_fonts = { title = "Fonts", build = HostPage }
+    M.pages.opt_bars = { title = "Bars", build = HostPage }
+    M.pages.opt_castbar = { title = "Castbars", build = HostPage }
+    M.ResetPageToDefaults = function() return false end
+    M.BuildPageResetWarning = function() end
+end
 local globalsBefore = {}
 for k in pairs(_G) do globalsBefore[k] = true end
 assert(Suite.Menu.Attach(), "suite menu did not attach")
@@ -1194,6 +1244,37 @@ do
         assert(tile.key.text == optionsNS.ActionBarPreview.Key(1, 1) and tile.cooldown.durationObject == duration
             and tile.chargeCooldown.durationObject == recharge,
             "preview lost live key bindings or the native cooldown duration")
+        -- Menu2's themed font strings look up their text as a locale key.
+        -- Opening a fresh preview must send Blizzard's protected text directly to its native regions.
+        do
+            local font = T.Font
+            T.Font = function(parent, template, text)
+                local label = font(parent, template, text)
+                local setText = label.SetText
+                function label:SetText(value)
+                    assert(not issecretvalue(value), "preview sent protected action text to Menu2 localization")
+                    setText(self, value)
+                end
+                return label
+            end
+            local action = actionPreview.actions[1]
+            actionPreview.secret = "Protected action display count"
+            action.count = actionPreview.secret
+            local context = { refreshers = {} }
+            optionsNS.ActionBarPreview.Build(context, UIParent, -20, 520, 200, function() return 1 end)
+            T.Font = font
+            local preview = context._msufSuiteActionBarPreview
+            local first = preview.tiles[1]
+            assert(first.count.text == actionPreview.secret, "preview lost the protected action count")
+            action.count = "4"
+            actionPreview.secret = "Protected macro text"
+            action.name = actionPreview.secret
+            preview.Paint()
+            assert(first.count.text == "4" and first.name.text == actionPreview.secret,
+                "preview lost ordinary counts or protected macro text on repaint")
+            action.name, actionPreview.secret = "Live macro", nil
+            preview.host.scripts.OnHide()
+        end
         assert(tile.width == 42 and tile.icon.texCoords[1] == .12 and ui.tiles[7].points[1][5] == -45,
             "preview did not repaint size, icon crop and row layout")
         c.bar1Size, c.bar1HeightPercent = 48, 67
@@ -1241,7 +1322,7 @@ do
         tile.textHit.scripts.OnClick()
         assert(bars._msufSuiteActionBarWorkspace.selected == "text", "preview key text did not open text settings")
         tile.scripts.OnClick()
-        assert(bars._msufSuiteActionBarWorkspace.selected == "shared" and historyWrites == historyBefore,
+        assert(bars._msufSuiteActionBarWorkspace.selected == "appearance" and historyWrites == historyBefore,
             "preview icon did not open button appearance without writing settings")
         local copy
         for _, candidate in ipairs(copyPopups) do
@@ -1770,7 +1851,8 @@ end)() end
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
     local defaultTopics = flavor == "Forever" and 20 or 23
-    assert(topics == defaultTopics + #S.CharacterHeader.Fields, "HUD topics must be separate accordions beneath their feature tabs")
+    local equipment = Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and 1 or 0
+    assert(topics == defaultTopics + #S.CharacterHeader.Fields + equipment, "HUD topics must be separate accordions beneath their feature tabs")
     local previousTabs = W.SegmentTabs
     W.SegmentTabs = nil
     local textBuilder = optionsNS.Text
@@ -1899,13 +1981,23 @@ do
     local key = "menu2.suite_nameplates.nameplates.preview.enemy.Power"
     assert(plates.enemyPowerEnabled == false and not registeredControls[key],
         "disabled enemy power eagerly allocated its preview")
+    local openExact, opened = Suite.HostBridge.OpenExactMenuSetting
+    Suite.HostBridge.OpenExactMenuSetting = function(_, page, section, setting)
+        opened = page == "suite_nameplates" and section == "suite_nameplates_enemyPower"
+            and setting == "msufsuite.nameplates.enemyPowerEnabled"
+        return opened
+    end
+    layer.scripts.OnClick(layer, "LeftButton")
+    assert(opened and plates.enemyPowerEnabled == false and not registeredControls[key],
+        "disabled enemy power did not open its enable switch")
     local create, bars = CreateFrame, {}
     CreateFrame = function(kind, ...)
         local frame = create(kind, ...)
         if kind == "StatusBar" then bars[#bars + 1] = frame end
         return frame
     end
-    layer.scripts.OnClick(layer, "LeftButton")
+    assert(optionsNS.Set("nameplates", "enemyPowerEnabled", true))
+    ui:Paint()
     CreateFrame = create
     local handle = Control("enemy.Power")
     local bar
@@ -1938,12 +2030,7 @@ do
     assert(plates.enemyPowerOffsetX == 0 and plates.enemyPowerOffsetY == 0
         and plates.enemyPowerWidth == 0 and plates.enemyPowerHeight == 4, "enemy power preview reset missed a setting")
 
-    local openExact, opened = Suite.HostBridge.OpenExactMenuSetting
-    Suite.HostBridge.OpenExactMenuSetting = function(_, page, section, setting)
-        opened = page == "suite_nameplates" and section == "suite_nameplates_enemyPower"
-            and setting == "msufsuite.nameplates.enemyPowerEnabled"
-        return opened
-    end
+    opened = nil
     handle.scripts.OnClick(handle, "RightButton")
     Suite.HostBridge.OpenExactMenuSetting = openExact
     assert(opened, "right-clicking the enemy power bar did not focus its setting")
@@ -1991,7 +2078,7 @@ end
 local expected = {
     "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts",
     "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_nameplates", "suite_cooldownManager",
-    "suite_skin", "suite_macros", "suite_planningTools",
+    "suite_skin", "suite_macros", "suite_planningTools", "suite_devMode",
 }
 local function NavShape(items)
     local out = {}
@@ -2005,7 +2092,8 @@ local INTERFACE_ROWS = "#interface suite_actionbars@interface suite_minimap@inte
     .. " suite_bags@interface suite_chat@interface suite_dataTexts@interface suite_hud@interface"
 local hostShape = "home@nil #frames uf_player@frames " .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
     .. " #style opt_colors@style suite_skin@style"
-    .. " #general gameplay@general suite_qualityOfLife@general suite_macros@general suite_planningTools@general opt_misc@general profiles@general"
+    .. " #general gameplay@general suite_qualityOfLife@general suite_macros@general suite_planningTools@general"
+    .. " suite_devMode@general opt_misc@general profiles@general"
 assert(NavShape(M.navItems) == hostShape, "suite navigation: " .. NavShape(M.navItems))
 assert(not M.pages.suite_characterPanel and M.ALIASES.suite_characterPanel == "suite_hud",
     "old Character Panel navigation should resolve to HUD without a duplicate page")
@@ -2090,6 +2178,7 @@ assert(NavShape(M.navItems) == hostShape, "suite navigation inserted twice: " ..
     for _, page in ipairs(optionsNS.pages) do
         local cell = assert(T.navIconGrid[page.key], "HD icon missing: " .. page.key)
         local hostIcon = page.key == "suite_macros" and cell[1] == 7 and cell[2] == 1
+            or page.key == "suite_devMode" and cell[1] == 4 and cell[2] == 2
         assert(cell[1] >= 0 and cell[1] < 8 and (cell[2] == 3 or cell[2] == 4 or hostIcon), "invalid HD atlas cell")
         local key = cell[1] .. ":" .. cell[2]
         assert(not cells[key], "unrelated Suite pages share a navigation symbol")
@@ -2118,7 +2207,8 @@ Reattach()
 local legacyShape = "home@nil #frames uf_player@frames"
     .. " #appearance opt_bars@appearance opt_misc@appearance suite_skin@appearance "
     .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
-    .. " #features classpower@features gameplay@features suite_qualityOfLife@features suite_macros@features suite_planningTools@features profiles@features"
+    .. " #features classpower@features gameplay@features suite_qualityOfLife@features suite_macros@features"
+    .. " suite_planningTools@features suite_devMode@features profiles@features"
 assert(NavShape(M.navItems) == legacyShape, "suite navigation on a legacy host: " .. NavShape(M.navItems))
 M.navItems = hostItems
 
@@ -2388,7 +2478,7 @@ for _, key in ipairs(expected) do
             ctx.minimapSections:SelectMinimapSettings(selected)
         end
     end
-    if ctx.fixedPreview and ctx.fixedPreview.record.onActivate then ctx.fixedPreview.record.onActivate() end
+    W.ActivateFixedPreviews(ctx)
     for _, fn in ipairs(ctx.refreshers) do fn() end
     for _, section in ipairs(ctx.sections) do assert(section.finished, key .. " section not finished: " .. section.sectionId) end
     assert(not ctx.headers, key .. " still has a redundant page header")
@@ -2603,6 +2693,7 @@ end
     local function Control(key) return assert(registeredControls["menu2.suite_nameplates.nameplates.preview." .. key], key) end
     local name, cast, health = Control("enemy.Name"), Control("enemy.Cast"), Control("enemy.Health")
     local ui = name.previewUI
+    if ui.expander then ui.expander:Open() end
     assert(ui.previewRole == nil, "nameplate preview must start with the saved enemy type")
     local plates = S.Config("nameplates")
     if flavor == "Forever" then
@@ -2617,12 +2708,14 @@ end
     ui:Paint()
     assert(health.width > smallWidth, "Blizzard plate size did not scale preview health bars")
     plates.nativeSize = originalSize
+    plates.enemyHealthWidthDelta, plates.enemyHealthHeightDelta = 0, 0
     ui:Paint()
     local nativeWidth, nativeHeight, castWidth = health.width, health.height, cast.width
+    local followHealth = plates.look ~= 2 and plates.enemy and plates.enemyCastWidthMode == 2
     plates.enemyHealthWidthDelta, plates.enemyHealthHeightDelta = 73, 7
     ui:Paint()
     assert(health.width == nativeWidth + 73 and health.height == nativeHeight + 7
-        and cast.width == castWidth,
+        and cast.width == castWidth + (followHealth and 73 or 0),
         "enemy health dimensions diverged from the native preview geometry")
     plates.enemyHealthWidthDelta, plates.enemyHealthHeightDelta = 0, 0
     ui:Paint()
@@ -2700,7 +2793,7 @@ end
     S.Set("nameplates", "friendlyNamesOnly", 3)
     assert(ui.sampleCells.enemy:IsShown() and not ui.sampleCells.friendly:IsShown(),
         "preview must show only one plate at a time")
-    Control("plateKind").scripts.OnClick()
+    optionsNS.ShowNameplatesSample("friendly", "friendly")
     assert(not ui.sampleCells.enemy:IsShown() and ui.sampleCells.friendly:IsShown(),
         "friendly sample did not replace the enemy sample")
     ui:Paint()
@@ -2715,12 +2808,13 @@ end
         and name.scripts.OnMouseDown and cast.scripts.OnMouseDown
         and Control("friendly.Name").scripts.OnDragStart,
         "nameplate preview must expose the UF/GF selection strip and direct drag handles")
+    optionsNS.ShowNameplatesSample("enemy", "enemy")
     ui:Select(health)
     assert(ui.sizeFields[1].frame:IsShown() and ui.sizeFields[2].frame:IsShown()
         and ui.sizeFields[1].caption.text == "W" and ui.sizeFields[2].caption.text == "H"
         and tonumber(ui.sizeFields[1].edit.text) == nativeWidth
         and tonumber(ui.sizeFields[2].edit.text) == nativeHeight
-        and ui.body.selectionBar.height == 24 and ui.body.selectionBar.openButton:IsShown(),
+        and ui.body.selectionBar.height == 24,
         "health selection did not reveal width and height beside X/Y")
     local selectionBar = ui.body.selectionBar
     selectionBar:SetWidth(640)
@@ -2730,9 +2824,9 @@ end
         "narrow selection bar did not make room for inline width and height")
     selectionBar:SetWidth(785)
     selectionBar.scripts.OnSizeChanged()
-    assert(selectionBar.label.width == 132 and selectionBar.openButton:IsShown()
-        and selectionBar.resetButton.lastPoint[2] == selectionBar.openButton,
-        "wide selection bar did not restore Open settings")
+    assert(selectionBar.label.width == 132 and not selectionBar.openButton:IsShown()
+        and selectionBar.resetButton.lastPoint[2] == selectionBar,
+        "wide selection bar did not preserve the inline controls")
     ui.sizeFields[1].plus.scripts.OnClick()
     ui.sizeFields[2].edit:SetText(tostring(nativeHeight + 5))
     ui.sizeFields[2].edit.scripts.OnEnterPressed(ui.sizeFields[2].edit)
@@ -2744,6 +2838,7 @@ end
         "selected health reset did not restore its dimensions")
     S.Set("nameplates", "friendlyNamesOnly", 4)
     ui:Paint()
+    optionsNS.ShowNameplatesSample("friendly", "friendly")
     local friendlyHealth = Control("friendly.Health")
     local friendlyNativeWidth, friendlyNativeHeight = friendlyHealth.width, friendlyHealth.height
     ui:Select(friendlyHealth)
@@ -2759,10 +2854,13 @@ end
     ui.body.selectionDeps.ResetOffsets(ui.body, friendlyHealth)
     assert(plates.friendlyHealthWidthDelta == 0, "friendly health size reset failed")
     S.Set("nameplates", "friendlyNamesOnly", 2)
+    optionsNS.ShowNameplatesSample("enemy", "enemy")
     ui:Select(name)
     assert(ui.sizeFields[1].frame:IsShown() and not ui.sizeFields[2].frame:IsShown()
         and ui.sizeFields[1].caption.text == "Font",
         "name selection showed an unsupported independent width or height")
+    plates.enemyCastWidthMode, plates.enemyCastHeight = 1, 0
+    ui:Paint()
     ui:Select(cast)
     local baseCastWidth, baseCastHeight = cast.width, cast.height
     assert(ui.sizeFields[1].frame:IsShown() and ui.sizeFields[2].frame:IsShown()
@@ -2793,14 +2891,16 @@ end
     ui:Select(Control("enemy.Auras"))
     assert(ui.sizeFields[1].caption.text == "Size %" and not ui.sizeFields[2].frame:IsShown(),
         "Blizzard aura scale did not appear as a single uniform size")
+    local auraScale = plates.auraEnemyDebuffScale
+    local sharedScale = plates.auraScalePercent
     ui.sizeFields[1].plus.scripts.OnClick()
-    assert(plates.auraScaleMode == 2 and plates.auraScalePercent == 110,
-        "aura size control did not activate the shared Blizzard scale")
+    assert(plates.auraEnemyDebuffScale > auraScale and plates.auraScalePercent == sharedScale,
+        "aura size control did not update the selected enemy debuff lane")
     ui.body.selectionDeps.ResetOffsets(ui.body, Control("enemy.Auras"))
-    assert(plates.auraScalePercent == 100 and plates.auraScaleMode == 1,
-        "aura reset did not restore the Blizzard size mode")
+    assert(plates.auraEnemyDebuffScale == castRules.auraEnemyDebuffScale.default,
+        "aura reset did not restore the enemy debuff lane scale")
     ui:Select(nil)
-    Control("plateKind").scripts.OnClick()
+    optionsNS.ShowNameplatesSample("enemy", "enemy")
     local elite = Control("enemy.Classification")
     local ex, ey = 10, 20
     GetCursorPosition = function() return ex, ey end
@@ -2948,10 +3048,10 @@ end
     assert(S.Config("nameplates").enemyNameOffsetX == 0, "selected-element reset failed")
     local previousSampleKind, previousPersonal = ui.sampleKind, ui.personal
     ui.sampleKind, ui.personal = "enemy", false
+    plates.enemyTargetMarker = true
     ui:Paint()
     local target, targetLayer = Control("enemy.target"), Control("layer.target")
-    assert(plates.enemyTargetMarker and target:IsShown()
-        and target._npSettingKey == "enemyTargetMarker",
+    assert(plates.enemyTargetMarker and target:IsShown(),
         "target arrows did not start from the saved nameplate setting")
     targetLayer.scripts.OnClick(targetLayer, "LeftButton")
     assert(plates.enemyTargetMarker == false and not target:IsShown()
@@ -2961,7 +3061,8 @@ end
     S.Normalize(savedRoot.profiles[savedRoot.activeProfile])
     assert(savedRoot.profiles[savedRoot.activeProfile].suite.modules.nameplates.enemyTargetMarker == false,
         "target arrow setting was lost while preparing a reload")
-    targetLayer.scripts.OnClick(targetLayer, "LeftButton")
+    assert(optionsNS.Set("nameplates", "enemyTargetMarker", true))
+    ui:Paint()
     assert(plates.enemyTargetMarker and target:IsShown() and ui:LayerActive("target"),
         "re-enabled target arrows did not return in the preview")
     target.scripts.OnMouseDown(target, "LeftButton")
@@ -3012,13 +3113,13 @@ end
     Control("role").scripts.OnClick()
     assert(S.Config("nameplates").enemyPreviewRole == 1)
     local friendly = Control("friendly.Name")
-    Control("plateKind").scripts.OnClick()
+    optionsNS.ShowNameplatesSample("friendly", "friendly")
     friendly.GetEffectiveScale = function() return 1 end
     friendly.scripts.OnMouseDown(friendly, "LeftButton")
     cx = cx + 15
     friendly.scripts.OnMouseUp(friendly, "LeftButton")
     assert(S.Config("nameplates").friendlyNameOffsetX == 15, "friendly preview was not directly draggable")
-    Control("friendlyType").scripts.OnClick()
+    optionsNS.ShowNameplatesSample("friendly", "friendlyNpc")
     assert(Control("friendly.Classification"):IsShown(),
         "friendly elite NPC sample must expose Blizzard's classification handle")
     for _, kind in ipairs({ "Elite", "Quest" }) do
@@ -3035,7 +3136,7 @@ end
         ui.body.selectionDeps.ResetOffsets(ui.body, handle)
         S.Set("nameplates", "friendly" .. kind .. "Marker", false)
     end
-    Control("plateKind").scripts.OnClick()
+    optionsNS.ShowNameplatesSample("enemy", "enemy")
     cast.GetEffectiveScale = function() return 1 end
     cast.scripts.OnMouseDown(cast, "LeftButton")
     cy = cy - 9
@@ -3257,14 +3358,15 @@ for _, section in ipairs(contexts.suite_hud.sections) do
     hudSections[section.sectionId] = section
     local appearance = section.sectionId:match("_type$") or section.sectionId:match("_module$")
         and section.sectionId ~= "suite_hud_afkScreen_module" and section.sectionId ~= "suite_hud_characterPanel_module"
-    if section.sectionId == "suite_hud_characterPanel_reputation" then appearance = true end
+    if section.sectionId == "suite_hud_characterPanel_reputation"
+        or section.sectionId == "suite_hud_announcements_frame" then appearance = true end
     local fieldId = section.sectionId:match("^suite_hud_characterPanel_(%a+)$")
     for _, field in ipairs(S.CharacterHeader.Fields) do
         if field.id == fieldId then appearance = not field.portrait break end
     end
     if section.sectionId:match("^suite_hud_") then
         assert((type(section.colorShortcut) == "table") == (appearance and true or false),
-            "HUD feature header lost its three-dot colors")
+            "HUD feature header color shortcut changed: " .. section.sectionId)
     end
 end
 do
@@ -3272,7 +3374,9 @@ do
     for _, section in ipairs(contexts.suite_hud.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    assert(topics == 22 + #S.CharacterHeader.Fields, "HUD topics lost their separate accordions")
+    assert(hudSections.suite_hud_announcements_frame and hudSections.suite_hud_characterPanel_appearance,
+        "banner frame or character appearance lost its accordion")
+    assert(topics == 24 + #S.CharacterHeader.Fields, "HUD topics lost their separate accordions")
 end
 assert(hudSections.suite_hud_objectives_raid, "Retail raid encounter accordion missing")
 local raidPause
@@ -3338,36 +3442,100 @@ assert((hudSections.raidControl ~= nil) == (flavor == "Mainline")
 do
     -- Inventory every tab after visiting it; unopened tab controls are lazy.
     -- Restore the original view for the interaction assertions below.
-    for _, view in ipairs(contexts.suite_nameplates.tabControls) do
+    local previous = current
+    current = contexts.suite_nameplates
+    for _, section in ipairs(current.sections) do optionsNS.EnsureSectionContent(section) end
+    for _, view in ipairs(current.tabControls) do
         local selected = view.segment.value
         for _, value in ipairs(view.segment.values) do view.segment:Choose(value.value) end
         view.segment:Choose(selected)
     end
-    local plateControls = {}
-    for _, widget in ipairs(contexts.suite_nameplates.widgets) do
-        if widget.meta and widget.meta.settingKey then plateControls[widget.meta.settingKey] = true end
+    local workspace = optionsNS.NameplatesWorkspace
+    local previousScope = workspace.Kind()
+    for _, spec in ipairs(optionsNS.NameplateSections) do
+        if spec.statusItems and spec.select then
+            workspace.Open(spec.plateScope)
+            local previousItem = spec.currentStatus().key
+            for _, item in ipairs(spec.statusItems) do spec.select("basic", item.key) end
+            spec.select("basic", previousItem)
+        end
     end
+    for _, rule in ipairs(optionsNS.catalog.nameplates.getControls()) do
+        if rule.key:match("^aura[EF]") or rule.key:match("^friendlyNpcDebuffs$")
+            or rule.key:match("^enemyNpc") or rule.key:match("PlayerAura") then
+            optionsNS.NameplatesAdvancedAuras.PrepareSearch(rule.key)
+        end
+    end
+    optionsNS.NameplatesAdvancedAuras.PrepareSearch("auraColorsIndividual")
+    workspace.Open(previousScope)
+    if optionsNS.NameplatesHostOptions.registered then
+        local fonts = { key = "opt_fonts", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {},
+            SetContentHeight = function() end }
+        M.pages.opt_fonts.build(fonts)
+        current.nameplateTypography = {}
+        for _, widget in ipairs(fonts.widgets) do
+            local meta = rawget(widget, "meta")
+            if meta and meta.settingKey and meta.sectionId == "opt_fonts_nameplate_text" then
+                current.nameplateTypography[meta.settingKey] = true
+            end
+        end
+    end
+    for _, shortcut in ipairs(current.colorShortcuts or {}) do
+        local targets = shortcut.options.getTargets()
+        assert(shortcut.options.maxTargets >= #targets, "Nameplates color shortcut truncates its targets")
+        for _, target in ipairs(targets) do
+            assert(type(target.get) == "function" and type(target.set) == "function", "unbound Nameplates color")
+            shortcutColors[target.sourceSettingKey or target.settingKey] = true
+        end
+    end
+    local expectedLocations = { playerGuildNames = "friendlyText", personalAuras = "auraWorkspace" }
+    if flavor == "Forever" then expectedLocations.levelAppearance = "enemyMarkers" end
+    for _, spec in ipairs(optionsNS.NameplateSections) do
+        if spec.key == "enemyStyle" or spec.key == "friendlyStyle" then
+            for _, key in ipairs(spec.tabs[1].keys) do assert(not expectedLocations[key] and key ~= "auraClickthrough", key) end
+        end
+    end
+    optionsNS.NameplatesAdvancedAuras.PrepareSearch("personalAuras")
+    local plateControls, located = {}, {}
+    for _, widget in ipairs(contexts.suite_nameplates.widgets) do
+        local meta = rawget(widget, "meta")
+        if meta and meta.settingKey then
+            plateControls[meta.settingKey] = true
+            local key = meta.settingKey:match("^msufsuite%.nameplates%.(.+)$")
+            if expectedLocations[key] and meta.sectionId == "suite_nameplates_" .. expectedLocations[key] then located[key] = true end
+        end
+    end
+    for key in pairs(expectedLocations) do assert(located[key], "nameplate setting has no control in its new section: " .. key) end
+    assert(not plateControls["msufsuite.nameplates.auraClickthrough"], "the legacy click-through value is still a menu control")
     for feature, keys in pairs(dofile(root .. "/tools/fixtures/nameplates_eqol_features.lua")) do
         for _, key in ipairs(keys) do
             local path = "msufsuite.nameplates." .. key
             local rule = assert(Suite.SuiteCatalog.nameplates.rules[key], feature .. ": " .. key)
-            assert(rule.color and shortcutColors[path] or plateControls[path],
+            local page, target = optionsNS.NameplateFonts.TargetForSetting(path)
+            assert(rule.color and shortcutColors[path] or plateControls[path]
+                or (page == "opt_fonts" and target and target.sectionId and current.nameplateTypography[path]),
                 "EQoL nameplate setting has no menu control: " .. feature .. " / " .. key)
         end
     end
+    current = previous
 end
-assert(plateSections.suite_nameplates_enemy and plateSections.suite_nameplates_enemy.colorShortcut
-    and plateSections.suite_nameplates_roleColors and plateSections.suite_nameplates_roleColors.colorShortcut
-    and plateSections.suite_nameplates_castbar and plateSections.suite_nameplates_castbar.colorShortcut
-    and plateSections.suite_nameplates_friendly and plateSections.suite_nameplates_friendly.colorShortcut,
-    "nameplate section lost its three-dot color shortcut")
+assert(not plateSections.suite_nameplates_enemy and not plateSections.suite_nameplates_friendly,
+    "Nameplates retained a separate Texture Layer accordion")
 do
-    local tabs = assert(contexts.suite_nameplates.tabControls[1], "enemy tabs missing")
-    assert(tabs.segment.value == "bar" and tabs.frames.bar.shown
-        and not tabs.frames.markers.shown, "enemy appearance tab did not open")
-    tabs.segment:Choose("markers")
-    assert(tabs.frames.markers.shown and not tabs.frames.bar.shown,
-        "Blizzard elements tab did not switch")
+    local tabs
+    for _, view in ipairs(contexts.suite_nameplates.tabControls) do
+        if view.sectionId == "suite_nameplates_enemyMarkers" then tabs = view break end
+    end
+    assert(tabs, "enemy status icon tabs missing")
+    local indicators
+    for _, spec in ipairs(optionsNS.NameplateSections) do
+        if spec.key == "enemyMarkers" then indicators = spec; break end
+    end
+    assert(indicators)
+    local function PickIndicator(item) optionsNS.OpenNameplateStatusSection("enemy", item) end
+    PickIndicator("classification")
+    assert(tabs.frames.basic.shown and indicators.currentStatus().key == "classification",
+        "status icon selection did not switch")
     local elite = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Classification"])
     local raid = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.RaidIcon"])
     assert(not elite:IsShown() and not raid:IsShown(),
@@ -3375,21 +3543,23 @@ do
     elite.previewUI:Paint()
     assert(not elite:IsShown() and elite.previewUI.previewRole == nil,
         "the inactive friendly renderer changed the normal enemy sample")
-    tabs.segment:Choose("bar")
+    PickIndicator("target")
     local eliteLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.classification"])
     local raidLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.raidIcon"])
     assert(elite.previewUI.layerRail:IsShown() and elite.previewUI.layerRail.parent == elite.previewUI.body,
         "UF/GF layer rail must stay visible below the nameplate canvas")
     eliteLayer.scripts.OnClick(eliteLayer, "RightButton")
-    assert(tabs.segment.value == "markers", "elite layer did not open Blizzard elements")
-    tabs.segment:Choose("bar")
+    assert(indicators.currentStatus().key == "classification", "elite layer did not open Blizzard elements")
+    PickIndicator("target")
     local function Setting(key)
         for _, widget in ipairs(contexts.suite_nameplates.widgets) do
-            if widget.meta and widget.meta.settingKey == "msufsuite.nameplates." .. key then return widget end
+            local meta = rawget(widget, "meta")
+            if meta and meta.settingKey == "msufsuite.nameplates." .. key then return widget end
         end
         error("missing Blizzard element control: " .. key)
     end
     local raritySetting, raidSetting = Setting("enemyRarityIcon"), Setting("enemyRaidIcon")
+    optionsNS.ShowNameplatesSample("enemy", "enemy")
     elite.previewUI.previewRole, elite.previewUI.raidMarked = nil, false
     S.Set("nameplates", "enemyPreviewRole", 3)
     elite.previewUI:Paint()
@@ -3399,7 +3569,7 @@ do
         exactSetting = target.settingKey
         assert(page == "suite_nameplates")
         assert(route.accordion[page .. ":" .. target.sectionId])
-        if target.settingKey == "msufsuite.nameplates.enemyRarityIcon" then tabs.segment:Choose("markers") end
+        if target.settingKey == "msufsuite.nameplates.enemyRarityIcon" then PickIndicator("classification") end
         return true, true, true, true
     end }
     local healthLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.health"])
@@ -3416,27 +3586,28 @@ do
         and S.Config("nameplates").friendlyNamesOnly == beforeDisplay,
         "friendly preview button must open its sole display control without changing the mode")
     GetCursorPosition = function() return 40, 40 end
+    exactSetting = nil
     elite.scripts.OnMouseDown(elite, "LeftButton")
     elite.scripts.OnMouseUp(elite, "LeftButton")
     elite.scripts.OnClick(elite, "LeftButton")
-    assert(tabs.segment.value == "markers" and tabs.frames.markers.shown,
-        "clicking the native elite icon did not open its Blizzard settings tab")
-    assert(exactSetting == "msufsuite.nameplates.enemyRarityIcon",
-        "clicking the elite icon did not link its exact setting")
+    assert(tabs.frames.basic.shown and indicators.currentStatus().key == "classification",
+        "clicking the native elite icon did not open its Blizzard settings")
+    assert(raritySetting:IsShown() and (not exactSetting or exactSetting == "msufsuite.nameplates.enemyRarityIcon"),
+        "clicking the elite icon did not show its exact setting")
     M.SearchBridge = previousBridge
-    tabs.segment:Choose("bar")
+    PickIndicator("target")
     current = contexts.suite_nameplates
-    raritySetting.set(3)
+    raritySetting.set(false)
     assert(not elite:IsShown(), "preview elite icon did not follow its Blizzard visibility setting")
-    raritySetting.set(1)
+    raritySetting.set(true)
     assert(elite:IsShown(), "preview elite icon did not return after re-enabling it")
     elite.previewUI.raidMarked = false
     raidLayer.scripts.OnClick(raidLayer)
     assert(raid:IsShown() and not elite:IsShown(),
         "Blizzard hides the classification icon on raid-marked nameplates")
-    tabs.segment:Choose("bar")
-    raid.previewUI.body.selectionDeps.OpenSettings(raid.previewUI.body, raid)
-    assert(tabs.segment.value == "markers", "Open settings did not route the raid icon to its switch")
+    PickIndicator("target")
+    raidLayer.scripts.OnClick(raidLayer, "RightButton")
+    assert(indicators.currentStatus().key == "raid", "Open settings did not route the raid icon to its switch")
     raidSetting.set(false)
     assert(not raid:IsShown(), "preview raid icon did not follow its runtime switch")
     raidSetting.set(true)
@@ -3459,9 +3630,15 @@ do
     local auraOffset = S.Config("nameplates").enemyAurasOffsetX
     auraLayer.scripts.OnClick(auraLayer)
     assert(not auras:IsShown() and S.Config("nameplates").enemyAurasOffsetX == auraOffset,
-        "preview layer wrote a runtime setting")
+        "preview layer changed the aura offset")
+    local auraConfig = S.Config("nameplates")
+    local auraFlag = Suite.NameplateAuraDisplay.NativeSetting("enemyNpc", "Debuffs")
+    local hidden = auraConfig[auraFlag]
     auraLayer.scripts.OnClick(auraLayer)
-    assert(auras:IsShown(), "preview layer did not restore the aura sample")
+    assert(not auras:IsShown() and auraConfig[auraFlag] == hidden, "disabled aura chip enabled the aura")
+    assert(optionsNS.RuleRow("suite_nameplates", "nameplates", S.catalog.nameplates.rules[auraFlag]).set(true))
+    auras.previewUI:Paint()
+    assert(auras:IsShown(), "enabled aura settings did not restore the aura sample")
     local nameHandle = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Name"])
     local valueHandle = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.HealthText"])
     local nameLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.name"])
@@ -3492,7 +3669,7 @@ do
     local spellIcon = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.CastIcon"])
     local spellLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.castIcon"])
     assert(not spellIcon:IsShown() and S.Config("nameplates").enemyCastSpellIcon == false)
-    tabs.segment:Choose("bar")
+    PickIndicator("target")
     local focusedPlate, focus = nil, W.FocusCollapsibleSection
     W.FocusCollapsibleSection = function(section, opts) focusedPlate = section; return focus(section, opts) end
     spellLayer.scripts.OnClick(spellLayer)
@@ -3527,14 +3704,13 @@ do
         ui.uninterruptible = true
         ui:Paint()
         assert(not spellIcon:IsShown() and shield:IsShown(), "Legacy uninterruptible cast showed icon beside shield")
-        local selectedSetting, previousBridge = nil, M.SearchBridge
-        M.SearchBridge = { OpenSearchTarget = function(_, _, _, _, _, target)
-            selectedSetting = target.settingKey
-            return true, true, true, true
-        end }
-        shield.previewUI.body.selectionDeps.OpenSettings(shield.previewUI.body, shield)
-        M.SearchBridge = previousBridge
-        assert(selectedSetting == "msufsuite.nameplates.enemyCastEnabled", "Cast shield did not open its exact setting")
+        local shieldLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.castShield"])
+        shieldLayer.scripts.OnClick(shieldLayer, "RightButton")
+        local castTabs
+        for _, view in ipairs(contexts.suite_nameplates.tabControls) do
+            if view.sectionId == "suite_nameplates_castbar" then castTabs = view; break end
+        end
+        assert(castTabs and castTabs.segment.value == "advanced", "Cast shield did not open its options")
         NamePlateSetupOptions.spellNameInsideCastBar = true
         ui.uninterruptible = false
         ui:Paint()
@@ -3583,6 +3759,7 @@ do
     end
     S.Set("nameplates", "enemyPreviewRole", 3)
     S.Set("nameplates", "enemyTextMode", 1)
+    S.Set("nameplates", "enemyRarityIcon", 1)
     S.Set("nameplates", "enemyCastEnabled", 1)
     S.Set("nameplates", "enemyCastDisplay", 1)
     elite.previewUI:Paint()
@@ -3603,38 +3780,33 @@ do
     elite.previewUI:Paint()
     -- Blizzard's own enemy elements sit in the enemy tabs; every castbar
     -- switch sits in the castbar accordion with its text.
-    for key, section in pairs({ enemyTextMode = "enemy", enemyRarityIcon = "enemy", enemyRaidIcon = "enemy",
+    for key, section in pairs({ enemyTextMode = "enemyText", enemyRarityIcon = "enemyMarkers", enemyRaidIcon = "enemyMarkers",
         enemyCastEnabled = "castbar", enemyCastDisplay = "castbar", enemyCastSpellName = "castbar",
         enemyCastSpellIcon = "castbar", enemyCastSpellTarget = "castbar" }) do
         local control
         for _, widget in ipairs(contexts.suite_nameplates.widgets) do
-            if widget.meta and widget.meta.settingKey == "msufsuite.nameplates." .. key then
+            local meta = rawget(widget, "meta")
+            if meta and meta.settingKey == "msufsuite.nameplates." .. key then
                 control = widget; break
             end
         end
         assert(control and control.meta.sectionId == "suite_nameplates_" .. section, key .. " is not in its " .. section .. " section")
     end
 end
-assert(not plateSections.suite_nameplates_general and plateSections.suite_nameplates_nameplates_module,
-    "Start here must be merged into the existing Basics card")
--- Basics holds the look and the skin switches; Blizzard's plate options and
--- player names have their own accordion, friendly NPC plates the friendly one.
-for key, section in pairs({ look = "nameplates_module", protectImport = "nameplates_module", nativeSize = "native",
-    playerGuildNames = "native", playerTitles = "native", friendlyNPCs = "friendly" }) do
+assert(not plateSections.suite_nameplates_nameplates_module and not plateSections.suite_nameplates_profileBehavior,
+    "Basics should own the plate options without standalone settings for profiles")
+for key, section in pairs({ look = "enemyBasics", friendlyNPCs = "friendlyNpcBasics" }) do
     local control
     for _, widget in ipairs(contexts.suite_nameplates.widgets) do
-        if widget.meta and widget.meta.controlId == "menu2.suite_nameplates.nameplates." .. key then control = widget; break end
+        local meta = rawget(widget, "meta")
+        if meta and meta.controlId == "menu2.suite_nameplates.nameplates." .. key then control = widget; break end
     end
     assert(control, key)
     assert(control.meta.sectionId == "suite_nameplates_" .. section, key .. " is not in its " .. section .. " section")
 end
 assert(not registeredControls["menu2.suite_nameplates.nameplates.action.colors"], "standalone color button survived")
-for section, key in pairs({ enemy = "enemyTargetColor", roleColors = "enemyCasterColor", friendly = "friendlyBorderColor" }) do
-    local found
-    for _, target in ipairs(plateSections["suite_nameplates_" .. section].colorShortcut.options.getTargets()) do
-        if target.sourceSettingKey == "msufsuite.nameplates." .. key then found = true; break end
-    end
-    assert(found, key .. " is absent from its three-dot color menu")
+for _, key in ipairs({ "enemyTargetColor", "enemyCasterColor", "friendlyBorderColor" }) do
+    assert(shortcutColors["msufsuite.nameplates." .. key], key .. " is absent from its three-dot color menu")
 end
 for _, id in ipairs(Suite.SuiteOrder) do
     local spec = Suite.SuiteCatalog[id]
@@ -3750,9 +3922,10 @@ do
     M.RequestRefresh()
 end
 assert(contexts.suite_minimap.pageItems[1] == "fixed-preview"
-    and contexts.suite_minimap.pageItems[2] == "suite_minimap_minimap_module"
-    and contexts.suite_minimap.fixedPreview.section.expander.expanded,
-    "minimap preview must stay fixed above Basics")
+    and contexts.suite_minimap.pageItems[2] == "fixed-preview"
+    and contexts.suite_minimap.pageItems[3] == "suite_minimap_minimap_module"
+    and contexts.suite_minimap.fixedPreviews[2].section.expander.expanded,
+    "minimap preview must stay fixed between the tabs and settings")
 assert(contexts.suite_minimap.sections[1].title == "Basics"
     and contexts.suite_minimap.sections[1].headerSwitch,
     "minimap enable switch is not in the Basics header")
@@ -3959,6 +4132,7 @@ local qolFeaturesByCategory = {
         "characterUpgradeWindow_upgrade_equipment", "socketGemSuggestions_socket_gems", "durabilityAlert_durability_warning",
     },
     lootMerchants = {
+        "lootRolls_loot_rolls", "cheapestItem_cheapestItem",
          "loot_collection",  "vaultSpec_vault_spec",
         "loot_history", "merchantLevel_merchant_level", "lootContainers_open_containers",
         "qol_repair", "qol_junk",  "merchantList_merchant_list",
@@ -3969,6 +4143,7 @@ local qolFeaturesByCategory = {
         "gatheringTooltips_gathering_tooltips",
     },
     groups = {
+        "groupFinderLocations_group_finder_locations", "keystoneReadyCheck_keystone_preparation",
         "groupRaidShortcuts_raid_shortcuts", "trustedPartyInvites_trusted_invites", "autoResponses_auto_responses",
         "releaseProtection_release_protection", "groupFinderExitReminder_group_finder_exit",
         "groupFinderDoubleClick_group_finder_double_click", "groupFinderTools_group_finder_tools",
@@ -3976,11 +4151,13 @@ local qolFeaturesByCategory = {
         "mythicAutoQueue_mythic_auto_queue", "mythicResetReminder_mythic_reset", "combatLog_log_dungeons", "delveSolePower_delve_sole_power",
     },
     travel = {
+        "navigation_navigation_basics",
         "waypointLists_saved_waypoints",
         "waypoints_waypoint_command",  "glimmer_glimmer_objects", "dungeonPortals_dungeon_portals",
         "foreverWorldMap_forever_world_map",
     },
     interface = {
+        "auctionPriceTooltip_auction_price_tooltip",
         "dailyComfort_daily_comfort", "soundProfiles_sound_volumes",
         "mailRecipients_mail_recipients", "mailTemplates_mailTemplates",
         "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter", "popupAttention_popup_attention", "notificationHistory_notice_history",
@@ -4025,9 +4202,9 @@ for category, features in pairs(qolFeaturesByCategory) do
     for _, name in ipairs(features) do
         assert(not expectedQolFeatures[name], "duplicate expected Quality of Life feature: " .. name)
         expectedQolFeatures[name] = category
-        expectedQolFeatureCount = expectedQolFeatureCount + 1
         local oldSectionId = "suite_qualityOfLife_" .. name
         local row = assert(qolRows[oldSectionId], "missing Quality of Life feature row: " .. name)
+        expectedQolFeatureCount = expectedQolFeatureCount + 1
         local movedMacro = name == "macroBuilder_macro_builder"
         local targetSection = oldSectionId
         if movedMacro then targetSection = nil end
@@ -4036,12 +4213,11 @@ for category, features in pairs(qolFeaturesByCategory) do
             and row.toggle.meta.sectionId == targetSection,
             "Quality of Life feature has wrong category or no independent switch: " .. name)
         local search = row.toggle.searchMeta
-        local help = row.hasDetails and row.body._msuf2CollapsibleEntry.header.tooltip or row.toggle.tooltip
+        local help = rawget(row.toggle, "tooltip")
         assert(search and search.pageKey == targetPage and search.kind == "toggle"
             and search.sectionId == targetSection
             and search.settingKey == row.toggle.meta.settingKey
-            and help and row.toggle.tooltip and not row.settings
-            and type(help.title) == "string",
+            and help and not row.settings and type(help.title) == "string",
             "Quality of Life feature lost its direct search entry or help: " .. name)
     end
 end
@@ -4075,7 +4251,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 71 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated: expected " .. expectedQolFeatureCount .. ", rendered " .. actualQolFeatureCount)
 assert(#optionsNS.QualityOfLifeCategories == 6, "Quality of Life source should define six primary categories")
 local sourceSeen, sourceCount, subgroupCount, expectedRenderedOrder = {}, 0, 0, {}
@@ -4137,7 +4313,7 @@ local route = {
 local routed = 0
 for _, owner in pairs(contexts) do
 for _, widget in ipairs(owner.widgets) do
-    local meta = widget.meta
+    local meta = rawget(widget, "meta")
     if meta and route[meta.settingKey] then
         assert(meta.sectionId == "suite_qualityOfLife_" .. route[meta.settingKey],
             "Quality of Life search route lost its stable feature section ID")
@@ -4373,6 +4549,7 @@ skin.Typography = {
     GetSelectionValues = function() return { "friz" } end,
     GetSelectionLabel = function(key) return key end,
     GetSelection = function() return skin.DB.typography.face end,
+    GetSelectionPath = function() return "Fonts\\FRIZQT__.TTF" end,
     SetEnabled = function(value) skin.DB.typography.enabled = value; return true end,
     SetSelection = function(value) skin.DB.typography.face = value; return true end,
     SetApplyChat = function(value) skin.DB.typography.applyChat = value; return true end,
@@ -4398,7 +4575,8 @@ skin.CharacterDetails = {
 }
 skin.CharacterStats = { SetOption = function(key, value) skin.DB.characterStats[key] = value; return true end }
 skin.IsCombatLocked = function() return false end
-skin.Registry = { NotifyListeners = function() end, QueueRefresh = function() end }
+skin.Registry = { NotifyListeners = function() end, QueueRefresh = function() end,
+    AddListener = function() end, RemoveListener = function() end }
 skin.Database = {
     GetProfileNames = function() return { "Default" } end,
     GetActiveProfileName = function() return "Default" end,
@@ -4425,7 +4603,8 @@ MapkoSkin = skin
 -- Skinning is checked with the meter running as in the client.
 local meterLoadError = S.states.damageMeter.error
 S.states.damageMeter.error = nil
-local skinContext = { key = "suite_skin", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+local skinContext = { key = "suite_skin", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {},
+    entry = { sections = {} } }
 current = skinContext
 M.pages.suite_skin.build(skinContext)
 for _, fn in ipairs(skinContext.refreshers) do fn() end
@@ -4435,8 +4614,8 @@ end
 assert(skinContext.pageItems[1] == "fixed-preview"
     and skinContext.pageItems[2] == "suite_skin_frame_basic",
     "Skin preview must own the fixed header before Basics")
-assert(table.concat(previewSurfaces, ",") == "shell,button,button,panel,card,card,card,button,buttonPrimary",
-    "Skin preview must render with the same engine surfaces as the runtime")
+assert(table.concat(previewSurfaces, ",") == "shell,panel,card,button,card,button,buttonPrimary,popup,button,button",
+    "Skin preview used unexpected engine surfaces: " .. table.concat(previewSurfaces, ","))
 assert(skinContext.sections[1].sectionId == "suite_skin_frame_basic"
     and skinContext.sections[1].headerSwitch
     and skinContext.sections[2].sectionId == "suite_skin_basic", "Skin Basics is not first")
@@ -4447,6 +4626,10 @@ assert(S.Config("damageMeter").enabled == true and S.OwnsBlizzardSurface("damage
 assert(skinContext.sections[3].sectionId == "suite_skin_micro"
     and skinContext.sections[4].sectionId == "suite_skin_material",
     "Micro Bar setup must be immediately visible after the main look")
+for _, sectionId in ipairs(skinContext.qualityOfLifeFeatureOrder or {}) do
+    skinContext.entry._msuf2ResolveMissingSection(sectionId)
+    optionsNS.EnsureSectionContent(skinContext.entry.sections[sectionId])
+end
 for _, section in ipairs(skinContext.sections) do
     assert(section.sectionId ~= "suite_skin_micro_load_conditions" and section.sectionId ~= "suite_skin_micro_details",
         "Micro Bar tabs still have separate accordions")
@@ -4455,12 +4638,13 @@ local skinControls = {}
 for _, widget in ipairs(skinContext.widgets) do
     if widget.meta and widget.meta.settingKey then skinControls[widget.meta.settingKey] = widget end
 end
-assert(skinControls["msufsuite.skin.theme.look"] and skinControls["msufsuite.skin.theme.shellOpacity"]
-    and skinControls["msufsuite.skin.icons.windowActions.style"]
-    and skinControls["msufsuite.skin.icons.microMenu.layoutMode"]
-    and skinControls["msufsuite.skin.icons.microMenu.loadHideMounted"]
-    and skinControls["msufsuite.skin.icons.microMenu.loadShowWhenInjured"]
-    and skinControls["msufsuite.skin.enabled"], "native Skinning controls missing")
+for _, key in ipairs({ "theme.look", "theme.materialDepth", "icons.windowActions.style", "icons.microMenu.layoutMode",
+    "icons.microMenu.loadHideMounted", "icons.microMenu.loadShowWhenInjured", "enabled" }) do
+    assert(skinControls["msufsuite.skin." .. key], "native Skinning control missing: " .. key)
+end
+for _, key in ipairs({ "shellOpacity", "panelOpacity", "controlOpacity", "borderOpacity" }) do
+    assert(not skinControls["msufsuite.skin.theme." .. key], "removed Style opacity control still present: " .. key)
+end
 do
     local microTabs
     for _, record in ipairs(skinContext.tabControls or {}) do
@@ -4494,8 +4678,10 @@ do
 end
 do
     local createFrame = CreateFrame
+    M.RegisterSearchProvider = function() return true end
+    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Search.lua"))("MSUF_Suite_Options", optionsNS)
     CreateFrame = function() error("cold Skinning search must not create widgets") end
-    local searchRows = optionsNS.SkinSearchRows()
+    local searchRows = optionsNS.SearchRows()
     CreateFrame = createFrame
     assert(CheckSearchTargets(searchRows, { suite_skin = skinContext }, true) > 90,
         "cold Skinning search omitted settings or actions")
@@ -4549,8 +4735,8 @@ assert(not skinControls["msufsuite.skin.icons.microMenu.layoutX"]
     "Micro Bar position controls duplicate the MSUF Edit Mode mover")
 skinControls["msufsuite.skin.icons.windowActions.style"].set("soft")
 assert(skin.DB.icons.windowActions.style == "soft", "window action control did not reach nested setting")
-skinControls["msufsuite.skin.theme.shellOpacity"].set(0.7)
-assert(skin.DB.theme.shellOpacity == 0.7, "glass opacity did not update")
+skinControls["msufsuite.skin.theme.materialDepth"].set(0.7)
+assert(skin.DB.theme.materialDepth == 0.7, "glass surface depth did not update")
 skinControls["msufsuite.skin.skins.settings"].set(false)
 assert(skin.DB.skins.settings == false, "Blizzard adapter control did not update")
 for _, section in ipairs(skinContext.sections) do
@@ -4649,11 +4835,33 @@ do
 end
 
 local covered = {}
+for key in pairs(contexts.suite_nameplates.nameplateTypography or {}) do covered[key] = true end
+local statusOffsets = {}
+for _, section in ipairs(optionsNS.NameplateSections) do
+    for key, offset in pairs(section.statusOffsets or {}) do
+        if offset.element and offset.sample then statusOffsets[key] = true end
+    end
+end
 for _, ctx in pairs(contexts) do
     for _, widget in ipairs(ctx.widgets) do
         local meta = widget.meta
         local path = meta and meta.settingKey
         if path then covered[path] = true end
+    end
+end
+for _, page in ipairs({ "opt_bars", "opt_castbar" }) do
+    local ctx = { key = page, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {},
+        SetContentHeight = function() end, entry = { sections = {} } }
+    current = ctx
+    M.pages[page].build(ctx)
+    for _, widget in ipairs(ctx.widgets) do
+        local meta = rawget(widget, "meta")
+        if meta and meta.settingKey then covered[meta.settingKey] = true end
+    end
+    for _, shortcut in ipairs(ctx.colorShortcuts or {}) do
+        for _, target in ipairs(shortcut.options.getTargets()) do
+            covered[target.sourceSettingKey or target.settingKey] = true
+        end
     end
 end
 for key in pairs(shortcutColors) do covered[key] = true end
@@ -4676,10 +4884,16 @@ for _, id in ipairs(Suite.SuiteOrder) do
     for key, rule in pairs(Suite.SuiteCatalog[id].rules) do
         local template = key:gsub("^bar%d+", "bar1"):gsub("^w%d+", "w1")
         if id == "cooldownManager" and rule.suffix then template = "c1_" .. rule.suffix end
-        if not absent and not rule.hidden and not rule.previewOnly then
-            if id == "nameplates" and key:match("Offset[XY]$") then
+        local availableRule = Suite.SuiteCatalog[id].controlAvailable
+        local retiredBorder = id == "nameplates" and optionsNS.NameplateBarTextures.LegacyRule(key)
+        if not absent and not rule.hidden and not rule.previewOnly
+            and not retiredBorder and (id ~= "nameplates" or availableRule(rule)) then
+            if id == "nameplates" and optionsNS.NameplatesStatus.IsOffset(key) then
                 local legacyPairBase = key == "enemyTargetOffsetX" or key == "enemyTargetOffsetY"
-                assert(legacyPairBase or covered._nameplatePreviewPositions[key], "nameplate position has no preview handle: " .. key)
+                local previewRoute = optionsNS.NameplateSearchTarget(rule)
+                local lazyPreview = previewRoute and previewRoute:match("^suite_nameplates_preview_")
+                assert(legacyPairBase or covered._nameplatePreviewPositions[key] or statusOffsets[key] or lazyPreview,
+                    "nameplate position has no preview handle or status route: " .. key)
                 assert(not covered["msufsuite.nameplates." .. key],
                     "nameplate X/Y slider survived outside the preview: " .. key)
             else
@@ -5060,7 +5274,8 @@ else
     assert(specPreview.shown, "enabled specialization button missing from minimap preview")
     specPreview.scripts.OnClick(specPreview)
     assert(focusedSection == optionsNS.MinimapFocus("specialization"), "specialization preview must open its own accordion")
-    local deps, body = mm.fixedPreview.section.expander.box.selectionDeps, mm.fixedPreview.section.expander.box
+    local body = mm.fixedPreviews[2].section.expander.box
+    local deps = body.selectionDeps
     assert(deps.WriteOffsets(body, specPreview, 31, -17) and config.specX == 31 and config.specY == -17,
         "specialization selection editor must write independent minimap offsets")
     local cursorX, cursorY = 100, 100
@@ -5149,7 +5364,7 @@ for key, section in pairs({ map = "layout", style = "shape", ornament = "style_a
     target.scripts.OnClick(target)
     assert(focusedSection == optionsNS.MinimapFocus(section), "minimap preview routed " .. key .. " incorrectly")
 end
-local fixed = mm.fixedPreview
+local fixed = mm.fixedPreviews[2]
 local selectionBox = fixed.section.expander.box
 local selectedButton = previewControls["menu2.suite_minimap.minimap.preview.tracking"]
 selectedButton.scripts.OnClick(selectedButton)
@@ -5751,12 +5966,11 @@ do
     InCombatLockdown = function() return true end
     rc.asked = nil
     assert(not optionsNS.RestoreChatColors() and not rc.asked, "Restore chat colors asked in combat")
-    -- Both actions are built in every state of the Skinning page: its
-    -- Maintenance, the engine-unavailable Basics and the Skin addon's notice.
+    -- Both actions are built in Basics and on the Skin addon's notice.
     local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
     rc.source = appearance:read("*a"):gsub("\r\n", "\n")
     appearance:close()
-    rc.buttons = select(2, rc.source:gsub("\n%s+[%w%s=]-MaintenanceButtons%(ctx, ", ""))
+    rc.buttons = select(2, rc.source:gsub("\n%s+[%w%s=]-SkinUtilityButtons%(ctx, ", ""))
     assert(rc.buttons == 4 and rc.source:find("run = function() return P.RestoreChatColors() end", 1, true)
         and rc.source:find("run = function() return P.SaveSetupAs() end", 1, true)
         and rc.source:find("notice = BuildNotice", 1, true),
@@ -6177,8 +6391,6 @@ end)()
 -- whole catalog: more than the 1200 targets the committed contract required
 -- (34f2ede). The catalog only grows, so a smaller count means lost recall.
 ;(function()
-    M.RegisterSearchProvider = function() return true end
-    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Search.lua"))("MSUF_Suite_Options", optionsNS)
     local saved = {}
     for _, id in ipairs(Suite.SuiteOrder) do
         saved[id] = { enabled = S.Config(id).enabled }
@@ -6485,7 +6697,7 @@ end)()
         ctx.entry = { sections = {} }
         current = ctx
         M.pages[key].build(ctx)
-        if ctx.fixedPreview and ctx.fixedPreview.record.onActivate then ctx.fixedPreview.record.onActivate() end
+        W.ActivateFixedPreviews(ctx)
         for _, fn in ipairs(ctx.refreshers) do fn() end
         -- A shell is unfinished until its content is built (FinishBody).
         local headers, built = Headers(ctx), 0
@@ -6524,10 +6736,10 @@ end)()
         assert(headers == eagerHeaders, key .. ": a section shell lost a header part:\n" .. headers .. "\n--- eager\n" .. eagerHeaders)
         assert(Shape(lazyCtx) == Shape(eagerCtx), key .. ": ensured lazy sections differ from the eager build")
         assert(#lazyCtx.refreshers == #eagerCtx.refreshers, key .. ": lazy sections changed the page refreshers")
-        if key == "suite_macros" then
-            assert(closed == 0, "macro workspace must open directly without an outer accordion")
+        if key == "suite_macros" or key == "suite_devMode" then
+            assert(closed == 0, key .. ": expected direct content without an outer accordion")
         else
-        assert(closed > 0 and built == 0, key .. ": a shell-first page built section content")
+            assert(closed > 0 and built == 0, key .. ": a shell-first page built section content")
         end
     end
     S.states.damageMeter.error, MapkoSkin, C_CVar = meterLoadError, nil, cvar

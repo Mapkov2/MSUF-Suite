@@ -184,7 +184,7 @@ local function HostTheme(hostRoot, surfaceFile, after)
     return theme
 end
 local hosts = {
-    { "MidnightSimpleUnitFrames", "MSUF_Menu2_Theme.lua", "local function ClampMotionDuration" },
+    { "MidnightSimpleUnitFrames-7.0", "MSUF_Menu2_Theme.lua", "local function ClampMotionDuration" },
     { "MidnightSimpleUnitFrames-7.0", "MSUF_Menu2_Theme_Surfaces.lua", "local function GlassTexture" },
 }
 for _, host in ipairs(hosts) do

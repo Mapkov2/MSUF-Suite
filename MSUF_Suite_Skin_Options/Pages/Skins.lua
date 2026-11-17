@@ -19,7 +19,8 @@ local function AdapterLabel(definitions, id)
 end
 
 local function BuildToggleList(page, order, definitions)
-    local listScroll, list = O.CreateLeftColumn(page, 500, (#order + 1) * 46 + 10, LIST_WIDTH)
+    local extras = NS.Client.isForever and 1 or 0
+    local listScroll, list = O.CreateLeftColumn(page, 500, (#order + 1 + extras) * 46 + 10, LIST_WIDTH)
     page._mskinSkinListScroll = listScroll
     page._mskinSkinListContent = list
 
@@ -40,6 +41,15 @@ local function BuildToggleList(page, order, definitions)
         end, LIST_WIDTH)
         toggle:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -8)
         previous = toggle
+        if id == "playerSpells" and extras > 0 then
+            local learning = O.CreateToggle(list, L["Spells to Learn"], function()
+                return NS.DB.foreverSpellLearning ~= false
+            end, function(value)
+                NS.SpellLearning.SetEnabled(value)
+            end, LIST_WIDTH)
+            learning:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -8)
+            previous = learning
+        end
     end
 end
 

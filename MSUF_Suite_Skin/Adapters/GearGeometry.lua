@@ -176,6 +176,7 @@ local CharacterGeometry = {}
 NS.SuiteCore().Skin.CharacterGeometry = CharacterGeometry
 local layout
 local RELEASE_KEY = "suite-character-geometry"
+local GLASS_KEY = "suite-character-glass"
 
 function Geometry.Owns(root)
     return layout and layout.root == root
@@ -364,6 +365,7 @@ function CharacterGeometry.Apply(root, plan)
     NS.CombatGate.Cancel(RELEASE_KEY)
     local v = layout or { root = root, geometry = {} }
     layout, v.applying, v.plan, v.levelBase = v, true, plan, base
+    v.model, v.controls, v.slots = model, controls, slots
     plan.rootLevel = base
     ApplyModel(v, model, plan, modelRatio, controls)
     for _, slot in ipairs(slots) do ApplySlot(v, slot, plan) end
@@ -374,10 +376,88 @@ function CharacterGeometry.Apply(root, plan)
     return true
 end
 
+-- Keep the native panel, equipment hit targets and flyout scripts in place.
+-- Camelot parents the model to PaperDollFrame and its equipment flyout there
+-- on open. Preserve both renderers and the cooldown and text layers of the
+-- original equipment slots under the Suite view.
+local function SetGlassAlpha(record, frame, ignore)
+    if record.applied ~= ignore then
+        frame:SetIgnoreParentAlpha(ignore)
+        record.applied = ignore
+    end
+end
+
+local function ClearGlass(v)
+    local glass = v.glass
+    if not glass then return end
+    for frame, record in pairs(glass.alpha) do
+        if Safety.HasMethod(frame, "SetIgnoreParentAlpha")
+            and Read(frame, "IsIgnoringParentAlpha") == record.applied then
+            frame:SetIgnoreParentAlpha(record.original)
+        end
+    end
+    if not Safety.IsForbidden(v.root) then NS.Cosmetics.Restore(v.root, glass) end
+    if glass.controls and not Safety.IsForbidden(glass.controls) then NS.Cosmetics.Restore(glass.controls, glass) end
+    v.glass = nil
+end
+
+local function CaptureGlassAlpha(glass, frame)
+    local original = Read(frame, "IsIgnoringParentAlpha")
+    if type(original) ~= "boolean" or not CanLayout(frame) or not Safety.HasMethod(frame, "SetIgnoreParentAlpha") then return false end
+    glass.alpha[frame] = { original = original, applied = original }
+    return true
+end
+
+local function StartGlass(v, surface)
+    if not CanLayout(v.root) or Read(surface, "GetParent") ~= v.root then return end
+    local flyout = Safety.Field(_G, "EquipmentFlyoutFrame")
+    local glass = { alpha = {}, surface = surface, model = v.model, slots = v.slots }
+    if not CaptureGlassAlpha(glass, surface) or not CaptureGlassAlpha(glass, v.model) then return end
+    if flyout and not CaptureGlassAlpha(glass, flyout) then return end
+    for _, slot in ipairs(glass.slots) do
+        if not CaptureGlassAlpha(glass, slot.frame) then return end
+    end
+    if not NS.Cosmetics.Fade(v.root, glass) then return end
+    if CanLayout(v.controls) and NS.Cosmetics.Fade(v.controls, glass) then glass.controls = v.controls end
+    SetGlassAlpha(glass.alpha[surface], surface, true)
+    if flyout then SetGlassAlpha(glass.alpha[flyout], flyout, true) end
+    v.glass = glass
+end
+
+function CharacterGeometry.SetGlass(root, surface, enabled, modelVisible, gearVisible)
+    local v = layout
+    if not NS.Client.isForever or not v or v.root ~= root then return false end
+    local glass = v.glass
+    -- A cold open may use the normal preflight in combat. CanLayout then
+    -- requires every target to be unprotected, and Fade needs public alpha.
+    if NS.IsCombatLocked() and (glass or not enabled) then
+        if not enabled and glass then
+            NS.CombatGate.RunOrDefer(GLASS_KEY, function() ClearGlass(v) end)
+        elseif enabled then NS.CombatGate.Cancel(GLASS_KEY) end
+        return glass ~= nil, glass and glass.alpha[glass.model].applied, glass and glass.gearVisible
+    end
+    NS.CombatGate.Cancel(GLASS_KEY)
+    if not enabled then
+        ClearGlass(v)
+        return false
+    end
+    if glass and (glass.surface ~= surface or glass.model ~= v.model) then ClearGlass(v) end
+    if not v.glass then StartGlass(v, surface) end
+    glass = v.glass
+    if not glass then return false end
+    SetGlassAlpha(glass.alpha[glass.model], glass.model, modelVisible)
+    if glass.gearVisible ~= gearVisible then
+        for _, slot in ipairs(glass.slots) do SetGlassAlpha(glass.alpha[slot.frame], slot.frame, gearVisible) end
+        glass.gearVisible = gearVisible
+    end
+    return true, modelVisible, gearVisible
+end
+
 local function ReleaseLayout()
     local v = layout
     if not v or v.releasing or Safety.IsForbidden(v.root) then return end
     v.releasing = true
+    ClearGlass(v)
     for frame, record in pairs(v.geometry) do
         if RestoreFrame(frame, record) then v.geometry[frame] = nil end
     end
@@ -394,7 +474,7 @@ function CharacterGeometry.Present(root, surface)
     NS.WindowFocus.Present(root, surface)
 end
 
-function CharacterGeometry.WindowAction(root, action)
+function CharacterGeometry.WindowAction(root, action, control)
     if not layout or layout.root ~= root then return false end
-    return NS.WindowControls.SuiteAction(root, layout.plan, action)
+    return NS.WindowControls.SuiteAction(root, layout.plan, action, control)
 end

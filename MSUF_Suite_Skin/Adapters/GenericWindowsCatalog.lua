@@ -250,6 +250,12 @@ local function PaintEntryFrame(request, index)
     end
     request.frames[index] = request.frames[index] or {}
     request.frames[index].pending = nil
+    if entry.id == "core-tooltips" then
+        request.ownerState.coreTooltips = true
+        local ok, reason = NS.TooltipChrome.Apply(frame, owner)
+        StoreFrameResult(request, index, ok, reason)
+        return
+    end
     NS.WindowControls.TrackFocus(frame, owner)
     if NS.IsCombatLocked() and not CanSkin(frame) then
         StoreFrameResult(request, index, false, "waiting")
@@ -483,6 +489,10 @@ local function DisableNow(owner)
         ownerState.chatConfig = nil
         NS.ChatConfigSkin.Disable(owner)
     end
+    if ownerState.coreTooltips then
+        ownerState.coreTooltips = nil
+        NS.TooltipChrome.DisableOwner(owner)
+    end
     NS.WindowControls.DisableOwner(owner)
     DeactivateOwner(owner)
 
@@ -560,6 +570,9 @@ end
 
 loadFrame:SetScript("OnEvent", function(self, event, addon)
     local bucket = event == "ADDON_LOADED" and pendingAddons[addon]
+    if bucket and NS.TutorialPointers and (addon == "Blizzard_TutorialManager" or addon == "Blizzard_BoostTutorial") then
+        NS.Safety.Dispatch(NS.TutorialPointers.AddonLoaded, addon)
+    end
     if not bucket then
         return
     end

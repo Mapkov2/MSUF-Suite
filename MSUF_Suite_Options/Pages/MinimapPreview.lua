@@ -15,7 +15,7 @@ local Clamp, Tint, SetIcon = Data.Clamp, Data.Tint, Data.SetIcon
 local OffsetKeys, PaintElements = Data.OffsetKeys, Data.PaintElements
 local Kit = Suite.PreviewKit
 
--- Right-clicking a layer chip opens the accordion that styles it.
+-- Each layer can reopen the settings that control it.
 local LAYER_SECTIONS = { map = "layout", border = "shape", shadow = "shape", ornament = "style_art",
     glow = "style_glow", backdrop = "style_backdrop", text = "info_colors", blizzard = "elements",
     folio = "landing", addons = "addons", specialization = "specialization", player = "shape",
@@ -24,6 +24,52 @@ local LAYER_SECTIONS = { map = "layout", border = "shape", shadow = "shape", orn
     tracking = "elements", calendar = "elements", mail = "elements", crafting = "elements",
     compartment = "elements", externalEvent = "elements", difficulty = "elements", queueStatus = "elements",
     zoom = "behavior", compass = "behavior" }
+local LAYER_CONTROLS = {
+    map = "visibility", border = "borderSize", shadow = "shadowSize", ornament = "styleTexture",
+    glow = "styleGlow", backdrop = "styleBackdrop", text = "infoStatusColors", blizzard = "elementRow",
+    zoom = "zoomButtons", compass = "rotate",
+}
+
+local function LayerControl(layer, config)
+    local key = LAYER_CONTROLS[layer]
+    if layer == "border" and (config.borderSize or 0) > 0 then return "borderAlpha" end
+    if layer == "shadow" and (config.shadowSize or 0) > 0 then return "shadowAlpha" end
+    if layer == "ornament" and config.styleTexture ~= Suite.MinimapStyleTexture.NONE then return "styleAlpha" end
+    if layer == "glow" and config.styleGlow and config.styleGlowAlpha == 0 then return "styleGlowAlpha" end
+    if layer == "backdrop" and config.styleBackdrop and config.styleBackdropAlpha == 0 then return "styleBackdropAlpha" end
+    if layer == "specialization" and config.specButton and not config.specShowSpec and not config.specShowLoot then return "specShowSpec" end
+    return key
+end
+
+local function BlockedLayer(layer)
+    local c = S.Config(ID)
+    local key = LayerControl(layer, c)
+    if not key then return end
+    local value = c[key]
+    if layer == "difficulty" and value and c.infoDifficulty then return "infoDifficulty" end
+    if value == false and layer ~= "text" then return key end
+    if layer == "map" and value == Suite.MinimapVisibility.NEVER
+        or layer == "zoom" and value == Suite.MinimapZoomButtons.HIDE
+        or layer == "compass" and value == Suite.MinimapRotate.NORTH_UP
+        or layer == "folio" and not Suite.Client.isForever and value == Suite.MinimapLanding.NEVER
+        or layer == "ornament" and key == "styleTexture" and value == Suite.MinimapStyleTexture.NONE then return key end
+    if layer == "border" then
+        if value == 0 and (c.outerBorderSize or 0) <= 0 then return key end
+    elseif value == 0 then
+        return key
+    end
+end
+
+local function IndexLayerControls()
+    for _, spec in ipairs(TEXTS) do
+        local layer = spec[1] == "Difficulty" and "difficultyText" or spec[3]
+        LAYER_CONTROLS[layer] = "info" .. spec[1]
+    end
+    for _, spec in ipairs(ICONS) do
+        LAYER_CONTROLS[spec[1] == "drawer" and "addons" or spec[1]] = spec[4] or nil
+    end
+end
+
 ------------------------------------------------------------------ offsets
 local function WriteOffsets(key, x, y)
     if P.Combat() then return false end
@@ -52,8 +98,19 @@ local function SetArrowBindings(ui, enabled)
 end
 
 local function FocusSection(ui, section)
+    if not section then return end
     local target = ui.sections.ResolveMinimapSection(section)
     if target and W.FocusCollapsibleSection then W.FocusCollapsibleSection(target, { persist = true, flash = true }) end
+end
+
+local function OpenLayerSettings(ui, layer, setting)
+    if P.Combat() then return false end
+    setting = setting or LayerControl(layer, S.Config(ID))
+    local rule = setting and P.catalog[ID].rules[setting]
+    local section = rule and rule.section or LAYER_SECTIONS[layer]
+    if rule and section
+        and Suite.HostBridge.OpenExactMenuSetting(M, PAGE, PAGE .. "_" .. section, "msufsuite." .. ID .. "." .. setting) then return true end
+    return FocusSection(ui, section)
 end
 
 -- Selects a preview element and opens the accordion that edits it.
@@ -470,7 +527,7 @@ local function SetLayer(ui, key, shown)
     return ui.ChipOn(key) == shown
 end
 
--- Layer switches affect this preview; right-click opens the existing settings.
+-- A disabled setting opens its editor. Available layers toggle this preview.
 local function BuildLayerChips(ui)
     local H = ui.chrome or {}
     local chips = CreateFrame("Frame", nil, ui.body, "BackdropTemplate")
@@ -485,6 +542,7 @@ local function BuildLayerChips(ui)
     if H.LayerChipButtonOpts then
         opts = H.LayerChipButtonOpts(Tr, T.colors, H.PreviewChromePalette(T), {
             IsOn = function(owner, key) return owner.ChipOn(key) end,
+            IsAvailable = function(_, key) return BlockedLayer(key) == nil end,
         })
     end
     for i, entry in ipairs(LAYERS) do
@@ -499,11 +557,8 @@ local function BuildLayerChips(ui)
             button = T.Button(chips, entry[2], buttonWidth, 20)
             button.key = layer
         end
-        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        button:SetScript("OnClick", function(_, mouseButton)
-            if mouseButton == "RightButton" then FocusSection(ui, LAYER_SECTIONS[layer])
-            else SetLayer(ui, layer, not ui.ChipOn(layer)) end
-        end)
+        P.PreviewInteraction.BindLayerClick(button, function() return SetLayer(ui, layer, not ui.ChipOn(layer)) end,
+            function(setting) return OpenLayerSettings(ui, layer, setting) end, function() return BlockedLayer(layer) end)
         HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
             get = function() return ui.ChipOn(layer) end,
             set = function(value) return SetLayer(ui, layer, value == true) end })
@@ -635,6 +690,7 @@ end
 -- elements whose offsets write the minimap settings.
 function P.BuildMinimapPreview(ctx, b, sections)
     TEXTS, ICONS, LAYERS = Data.Texts(), Data.Icons(), Data.Layers()
+    IndexLayerControls()
     local ui = { sections = sections }
     if not BuildCanvas(ui, ctx, b) then return end
     local initialSize = math.max(100, P.Get(ID, "size") or P.catalog[ID].rules.size.default)

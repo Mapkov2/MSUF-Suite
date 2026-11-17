@@ -97,6 +97,7 @@ function F.New(root, forever)
         CanBeRefunded = function() return E.refundable or false end,
         IsEquippableItem = function(id) return id == 99 end,
     }
+    NUM_TOTAL_EQUIPPED_BAG_SLOTS = 5
     _G.C_Container = {
         GetContainerNumSlots = function(bag) E.calls.scan = E.calls.scan + 1; return E.bags[bag] and 8 or 0 end,
         GetContainerItemInfo = function(bag, slot) return E.bags[bag] and E.bags[bag][slot] end,
@@ -142,6 +143,7 @@ function F.New(root, forever)
         module.context = { events = {} }
         function module.context:Event(event, fn) self.events[event] = fn end
         function module.context:RemoveEvent(event) self.events[event] = nil end
+        function module.context:Callback(event, fn) self.events[event] = fn end
         function module.context:After(_, fn) E.timers[fn] = module end
         function module.context:Cancel(fn) E.timers[fn] = nil end
         function module.context:Coalesce(_, fn)

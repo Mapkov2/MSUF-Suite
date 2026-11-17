@@ -65,6 +65,15 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             local toggle = panel.MaximizeMinimizeButton
             toggle.MaximizeButton, toggle.MinimizeButton = Frame(nil, toggle, "Button"), Frame(nil, toggle, "Button")
             toggle.MaximizeButton.shown = false
+            panel.SpellBookFrame = Frame("SpellBookFrame", panel)
+            if NS.Client.isForever then
+                SpellbookMicroButton = Frame("SpellbookMicroButton", UIParent, "Button")
+                function SpellbookMicroButton:IsEnabled() return true end
+            else
+                -- A managed window minimizes only with a native way back.
+                PlayerSpellsMicroButton = Frame("PlayerSpellsMicroButton", UIParent, "Button")
+                function PlayerSpellsMicroButton:IsEnabled() return true end
+            end
         end
         local nativeClick = function() end
         panel.CloseButton:SetScript("OnClick", nativeClick)
@@ -140,7 +149,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local spellbook = panels[3]
     local children = {}
     for _, key in ipairs({ "SpecFrame", "TalentsFrame", "SpellBookFrame" }) do
-        local child = Frame(key, spellbook)
+        local child = spellbook[key] or Frame(key, spellbook)
         spellbook[key], children[#children + 1] = child, child
         child.dragHandler = function() end
         child:SetScript("OnDragStart", child.dragHandler)

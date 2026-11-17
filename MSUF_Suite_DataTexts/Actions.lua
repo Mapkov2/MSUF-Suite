@@ -640,6 +640,8 @@ function Actions.Click(button, mouse)
         Actions.MicroMenu(button)
     elseif kind == "travel" then
         Actions.TravelMenu(button)
+    else
+        Sources.Click(kind, button, mouse)
     end
 end
 

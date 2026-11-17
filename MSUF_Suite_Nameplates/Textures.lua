@@ -1,24 +1,101 @@
 local _, private = ...
-local Selection = private.Selection
+local Selection, Absorbs = private.Selection, private.Absorbs
 local NS = private.NS
+local Style = NS.NameplateStyle
 local Textures = {}
 private.Textures = Textures
 
 local healthFill, healthBack, castFill, castBack, focusFill, baseTextures, focusHealth, findFocus
-local darkCastBackground
+local darkCastBackground, sharedCastStyle
 local nativeEnemyOutline, nativeFriendlyOutline
 local healthStates = setmetatable({}, { __mode = "k" })
 local castStates = setmetatable({}, { __mode = "k" })
+-- Nameplates are pooled and every release hands a plate back untextured, so a
+-- plate's state ends with each cycle. Its table waits here, emptied, for the
+-- same unit frame or castbar: texturing a recycled plate allocates nothing
+-- (replay: 320 B of state tables per added plate before).
+local spareHealth = setmetatable({}, { __mode = "k" })
+local spareCast = setmetatable({}, { __mode = "k" })
 local castHooks = setmetatable({}, { __mode = "k" })
+local backgroundHooks = setmetatable({}, { __mode = "k" })
 local painted = setmetatable({}, { __mode = "k" })
 local deferred = setmetatable({}, { __mode = "k" })
 local generation, restoreFrame = 0, nil
 local Defer
 local listening = false
-local textureKeys = {}
+local textureKeys, targetHighlightOnly = {}, { targetHighlight = true }
 local visuals
 function Textures.Bind(plateVisuals) visuals = plateVisuals end
+local function SettingsChanged(previous, current)
+    if not previous or not current then return previous ~= current end
+    for key, value in pairs(current) do
+        if value ~= rawget(previous, key) then return true end
+    end
+    for key in pairs(previous) do
+        if rawget(current, key) == nil then return true end
+    end
+    return false
+end
 
+function Textures.SharedCastbar(config, previous)
+    local current = Style.SharedCastbar(config.look)
+    if config.look ~= 2 and config.castTargetHighlightStyle == 1
+        and (config.enemyCastDisplay ~= 2 or config.enemyCastTargetHighlight) then
+        local style = targetHighlightOnly
+        if current then
+            style = { targetHighlight = true }
+            for key, value in pairs(current) do style[key] = value end
+        end
+        current = style
+    end
+    if SettingsChanged(previous, current) then return current end
+    return previous
+end
+
+local function RefreshNameplates()
+    private.Suite.Apply("nameplates")
+    if NS.Options then NS.Dispatch(NS.Options.RefreshAll) end
+end
+
+local function ApplySharedBars(module)
+    local config = module.config
+    if not module.active or config.look == 2 then return end
+    if Absorbs and Absorbs.SharedChanged(config) then return RefreshNameplates() end
+    if config.barsOverride then return end
+    local previous = module.barSettings or config
+    local current = Style.BarSettings(config, Style.SharedBars())
+    local changed
+    if previous == config or current == config then
+        changed = previous ~= current
+    else
+        changed = SettingsChanged(previous, current)
+    end
+    if changed or module:AggroHighlightSettingChanged() then RefreshNameplates() end
+end
+local function ApplySharedCastbar(module)
+    if module.active and Textures.SharedCastbar(module.config, module.castbarStyle) ~= module.castbarStyle then
+        RefreshNameplates()
+    end
+end
+
+function Textures.ObserveHostStyles(module)
+    local bridge = NS.HostBridge
+    if not bridge then return end
+    if bridge.ObserveSharedNameplateBars then
+        module.barsJob = module.context:Coalesce(0, ApplySharedBars)
+        bridge.ObserveSharedNameplateBars(function()
+            if module.active and module.config.look ~= 2 and (not module.config.barsOverride or Absorbs and Absorbs.shared) then
+                module.barsJob:Request()
+            end
+        end)
+    end
+    if bridge.ObserveSharedCastbarStyle then
+        module.castbarJob = module.context:Coalesce(0, ApplySharedCastbar)
+        bridge.ObserveSharedCastbarStyle(function()
+            if module.active and module.config.look ~= 2 then module.castbarJob:Request() end
+        end)
+    end
+end
 local function TintFocusVisual(health, path)
     local visual = visuals and private.Suite.Public(health) and visuals[health]
     if visual then visual.focusFill = path end
@@ -55,7 +132,7 @@ local function SetAsset(region, path, keepSlice)
     return true
 end
 
-local function PaintHealthBackground(back, state, path, classic)
+local function PaintHealthBackground(back, state, path, classic, reset)
     if not Writable(back) then return false end
     if path then
         if not SetAsset(back, path) then return false end
@@ -75,7 +152,7 @@ local function PaintHealthBackground(back, state, path, classic)
         back:SetVertexColor(1, 1, 1)
     end
     local fit = path ~= nil and not classic
-    if fit or state.backFitted then NS.NameplateStyle.FitModernHealthBackground(back, fit) end
+    if fit ~= (state.backFitted == true) or fit and reset then NS.NameplateStyle.FitModernHealthBackground(back, fit) end
     state.back, state.backFitted = path, fit
     return true
 end
@@ -89,8 +166,11 @@ local function ApplyHealth(uf, health, reset, healthFill, healthBack)
     if not Writable(health) then return false end
     local classic = NamePlateSetupOptions.useClassicHealthBar
     if not NS.Public(classic) then return false end
-    state = state or {}
-    healthStates[uf] = state
+    if not state then
+        state = spareHealth[uf]
+        if state then spareHealth[uf] = nil else state = {} end
+        healthStates[uf] = state
+    end
     local complete = true
     local fill, back = health.barTexture, health.bgTexture
     if not NS.Public(fill) or not NS.Public(back) then return false end
@@ -109,13 +189,17 @@ local function ApplyHealth(uf, health, reset, healthFill, healthBack)
         end
     end
     if back and (state.back ~= healthBack or reset and healthBack) then
-        if PaintHealthBackground(back, state, healthBack, classic) then
+        if PaintHealthBackground(back, state, healthBack, classic, reset) then
             if not healthBack then Selection.RepaintBackground(health) end
         else
             complete = false
         end
     end
-    if not (state.fill or state.back) then healthStates[uf] = nil end
+    if not (state.fill or state.back) then
+        healthStates[uf] = nil
+        state.backFitted = nil
+        spareHealth[uf] = state
+    end
     return complete
 end
 
@@ -170,15 +254,15 @@ end
 local function PaintCastFill(cast, state)
     local kind = cast.barType
     if state.usesColorFill or NS.Public(kind) and kind == "empowered" then return true end
-    local fill = cast:GetStatusBarTexture()
-    if not NS.Public(fill) then return false end
-    if not fill then return true end
-    if not Writable(fill) then return false end
-    -- The selected texture is public, even when Blizzard's cast type is secret.
-    -- Set it through the status bar so progress uses the custom asset's coordinates.
+    -- The public asset can be set on the bar without accessing its old texture.
     local ok = cast:SetStatusBarTexture(castFill)
-    if not NS.Public(ok) or ok == false then return false end
+    if not NS.Public(ok) or ok == false then
+        ApplyCastBarColor(cast, state)
+        state.colorOnly = true
+        return false
+    end
     state.fill = castFill
+    state.colorOnly = nil
     state.colorRevision = nil
     return RecolorCastFill(cast, state)
 end
@@ -186,7 +270,7 @@ end
 local function AfterCastFill(cast, full)
     local state = castStates[cast]
     if not state then return end
-    state.fill = nil
+    state.fill, state.colorOnly = nil, nil
     state.full = not NS.Public(full) or full == true
     if not state.full then state.usesColorFill, state.notInterruptible, state.interrupted = nil, nil, nil end
     local uf = state.owner
@@ -197,7 +281,7 @@ end
 
 local function AfterCastColorFill(cast)
     local state = castStates[cast]
-    if state then state.fill, state.usesColorFill = nil, true end
+    if state then state.fill, state.colorOnly, state.usesColorFill = nil, nil, true end
 end
 
 local function AfterCastEvent(cast, event)
@@ -215,7 +299,16 @@ local function AfterInterrupt(cast)
     local state = castStates[cast]
     if not state or not state.enabled then return end
     state.interrupted = true
-    if state.fill and (not Writable(cast) or not RecolorCastFill(cast, state)) then Defer(state.owner, false) end
+    if not (state.fill or state.colorOnly) then return end
+    if not Writable(cast) then
+        Defer(state.owner, false)
+        return
+    end
+    if state.colorOnly then
+        ApplyCastBarColor(cast, state)
+    elseif not RecolorCastFill(cast, state) then
+        Defer(state.owner, false)
+    end
 end
 
 local function AfterFinish(cast)
@@ -228,48 +321,64 @@ end
 local function RestoreCastFill(cast, state)
     local classic, kind = cast.classicStyleCastBar, cast.barType
     if not NS.Public(classic) then return false end
+    if state.colorOnly and not state.fill and not classic then
+        -- The native atlas never changed, and Modern uses white for every type.
+        cast:SetStatusBarColor(1, 1, 1, 1)
+        state.colorOnly = nil
+        return true
+    end
     -- The next native update restores restricted cast art using its original type.
     if not NS.Public(kind) then
-        state.fill = nil
+        state.fill, state.colorOnly = nil, nil
         return true
     end
     local info = CastingBarTypeInfo[kind or "standard"]
     local asset = classic and CLASSIC_CAST_FILL or info and (state.full and info.full or info.filling)
     if not asset or asset == "" then
-        state.fill = nil
+        state.fill, state.colorOnly = nil, nil
         return true
     end
-    local fill = cast:GetStatusBarTexture()
-    if not Writable(fill) then return false end
-    local ok = cast:SetStatusBarTexture(asset)
-    if not NS.Public(ok) or ok == false then return false end
-    fill = cast:GetStatusBarTexture()
-    if not Writable(fill) then return false end
-    if classic and info and info.classicFillColor then
-        local color = state.full and info.classicFullColor or info.classicFillColor
-        local r, g, b = color:GetRGB()
-        cast:SetStatusBarColor(r, g, b, 1)
-        fill:SetVertexColor(r, g, b, 1)
-    elseif not classic then
-        cast:SetStatusBarColor(1, 1, 1, 1)
-        fill:SetVertexColor(1, 1, 1, 1)
+    local fill
+    if state.fill then
+        if not Writable(cast:GetStatusBarTexture()) then return false end
+        local ok = cast:SetStatusBarTexture(asset)
+        if not NS.Public(ok) or ok == false then return false end
+        fill = cast:GetStatusBarTexture()
+        if not Writable(fill) then return false end
     end
-    state.fill = nil
+    local color = classic and info and (state.full and info.classicFullColor or info.classicFillColor)
+    local r, g, b = 1, 1, 1
+    if color then r, g, b = color:GetRGB() end
+    if color or not classic then
+        cast:SetStatusBarColor(r, g, b, 1)
+        if fill then fill:SetVertexColor(r, g, b, 1) end
+    end
+    state.fill, state.colorOnly = nil, nil
     return true
 end
 
-local function ApplyCastBackground(cast, state, path, jundies)
+local function ApplyCastBackground(cast, state)
     local back = cast.Background
     if not NS.Public(back) then return false end
-    if not back then return true end
+    if not back then
+        state.backApplied, state.backPending = nil, nil
+        return true
+    end
     if not Writable(back) then return false end
+    local path, jundies, style = state.back, state.darkBack, state.backStyle
     if path then
         if not SetAsset(back, path) then return false end
         back:SetTexCoord(0, 1, 0, 1)
-        if jundies then back:SetVertexColor(0, 0, 0, .5)
+        if style then
+            back:SetVertexColor(style.backgroundR, style.backgroundG, style.backgroundB, style.backgroundA)
+        elseif jundies then
+            back:SetVertexColor(0, 0, 0, .5)
         else
             back:SetVertexColor(.16, .16, .16, 1)
         end
+    elseif style then
+        back:SetVertexColor(1, 1, 1, 1)
+        back:SetColorTexture(style.backgroundR, style.backgroundG, style.backgroundB, style.backgroundA)
     else
         local classic = cast.classicStyleCastBar
         if not NS.Public(classic) then return false end
@@ -280,18 +389,61 @@ local function ApplyCastBackground(cast, state, path, jundies)
             back:SetAtlas(CAST_BACKGROUND)
         end
     end
-    state.back, state.darkBack = path, jundies
+    state.backApplied, state.backPending = (path or style) and true or nil, nil
     return true
 end
 
-local function ApplyCast(uf, cast, reset, useFill, castBack)
+local function OnCastBackgroundShown(cast)
+    local state = NS.Public(cast) and castStates[cast]
+    local uf = state and state.owner
+    if not uf or not state.backPending or not painted[uf] then return end
+    if Writable(cast) then
+        local visible = cast:IsVisible()
+        if NS.Public(visible) and visible == false then return end
+        if ApplyCastBackground(cast, state) then return end
+    end
+    if painted[uf] and state.owner == uf then
+        painted[uf] = 0
+        Defer(uf, false)
+    end
+end
+
+local function UpdateCastBackground(cast, state, path, style, reset)
+    local dark = path and darkCastBackground or nil
+    local changed = state.back ~= path or state.darkBack ~= dark or state.backStyle ~= style
+    state.back, state.darkBack, state.backStyle = path, dark, style
+    if not (path or style) then
+        state.backPending = nil
+        return not state.backApplied or ApplyCastBackground(cast, state)
+    end
+    if not (changed or reset or state.backPending) then return true end
+    state.backPending = true
+    local visible = cast:IsVisible()
+    if not NS.Public(visible) or visible then return ApplyCastBackground(cast, state) end
+    local protected = cast:IsProtected()
+    if not NS.Public(protected) or protected then return ApplyCastBackground(cast, state) end
+    if not backgroundHooks[cast] then
+        cast:HookScript("OnShow", OnCastBackgroundShown)
+        backgroundHooks[cast] = true
+    end
+    return true
+end
+
+local function ApplyCastDetails(component, cast, style, reset, deferSpark)
+    if not component then return true end
+    if style then return component.Apply(cast, style, reset, deferSpark) end
+    return component.Restore(cast)
+end
+
+local function ApplyCast(uf, cast, reset, useFill, castBack, style, deferSpark)
     if not NS.Public(cast) then return false end
     local state = castStates[cast]
-    if not cast or not state and not (useFill or castBack) then return true end
+    if not cast or not state and not (useFill or castBack or style) then return true end
     if state then state.enabled = useFill ~= nil end
     if not Writable(cast) then return false end
     if not state then
-        state = {}
+        state = spareCast[cast]
+        if state then spareCast[cast] = nil else state = {} end
         castStates[cast] = state
     end
     state.enabled = useFill ~= nil
@@ -305,31 +457,41 @@ local function ApplyCast(uf, cast, reset, useFill, castBack)
     end
     state.owner = uf
     local complete = true
-    if castHooks[cast] and (state.fill ~= useFill or useFill and state.colorRevision ~= castColorRevision) then
-        if useFill then
+    if castHooks[cast] then
+        if useFill and (state.colorOnly or state.fill ~= useFill or state.colorRevision ~= castColorRevision) then
             local shown = cast:IsShown()
             if NS.Public(shown) and shown then
-                if state.fill == useFill then
+                if not state.colorOnly and state.fill == useFill then
                     complete = RecolorCastFill(cast, state)
                 else
                     complete = PaintCastFill(cast, state)
                 end
             end
-        elseif state.fill then
+        elseif not useFill and (state.fill or state.colorOnly) then
             complete = RestoreCastFill(cast, state)
         end
     end
-    local dark = castBack and darkCastBackground or nil
-    if state.back ~= castBack or state.darkBack ~= dark or reset and castBack then
-        if not ApplyCastBackground(cast, state, castBack, dark) then complete = false end
+    local backgroundStyle = style and style.backgroundR ~= nil and style or nil
+    if not UpdateCastBackground(cast, state, castBack, backgroundStyle, reset) then complete = false end
+    if style or state.style then
+        if not ApplyCastDetails(private.CastAppearance, cast, style, reset, deferSpark and not state.style) then complete = false end
+        if not ApplyCastDetails(private.CastTextStyle, cast, style, reset) then complete = false end
+        if not ApplyCastDetails(private.CastGlowStyle, cast, style, reset) then complete = false end
+        state.style = style or not complete and state.style or nil
     end
-    if not (useFill or state.fill or state.back) then castStates[cast] = nil end
+    if not (useFill or state.fill or state.colorOnly or state.back or state.backStyle or state.backApplied or state.style) then
+        castStates[cast] = nil
+        -- Nothing of the finished cycle (owner, cast kind, interrupt) may reach the next plate.
+        for key in next, state do state[key] = nil end
+        spareCast[cast] = state
+    end
     return complete
 end
 
 local function Resolve(previousKey, previousPath, key)
+    if not key or key == "" then return end
     if key == previousKey and previousPath then return previousPath end
-    if key and key ~= "" then return NS.ResolveTexture(key) end
+    return NS.ResolveTexture(key)
 end
 
 local function SetCastRGB(color, r, g, b)
@@ -338,11 +500,13 @@ local function SetCastRGB(color, r, g, b)
     return true
 end
 
-local function ReadCastColors()
+local function ReadCastColors(style)
     local r, g, b, nr, ng, nb = NS.NameplateStyle.CastFillColors(castColorOverride, lockedColorOverride)
     local normal = SetCastRGB(castColors.standard, r, g, b)
     local locked = SetCastRGB(castColors.uninterruptable, nr, ng, nb)
-    if not normal and not locked then return false end
+    local interrupt = SetCastRGB(castColors.interrupted, style and style.interruptR or 1,
+        style and style.interruptG or .25, style and style.interruptB or .25)
+    if not normal and not locked and not interrupt then return false end
     castColorRevision = castColorRevision + 1
     castColorObject, lockedColorObject = nil, nil
     generation = generation + 1
@@ -358,20 +522,24 @@ function Textures.CastFillColorObjects()
 end
 
 function Textures.RefreshCastColors()
-    if not castFill or not ReadCastColors() then return end
+    if not castFill or not ReadCastColors(sharedCastStyle) then return end
     for uf in pairs(painted) do Textures.Apply(uf) end
 end
 
-function Textures.Configure(config)
-    local hadTextures = Textures.inUse
+function Textures.Configure(config, style)
+    local hadTextures, absorbChanged = Textures.inUse, Absorbs and Absorbs.Configure(config)
     local fill, back, cast, background = config.nativeHealthFillTexture, config.nativeHealthBackgroundTexture,
         config.nativeCastFillTexture, config.nativeCastBackgroundTexture
     local hpFill = Resolve(textureKeys[1], healthFill, fill)
     local hpBack = Resolve(textureKeys[2], healthBack, back)
     local spellFill = Resolve(textureKeys[3], castFill, cast)
     local spellBack = Resolve(textureKeys[4], castBack, background)
+    if style then
+        spellFill = spellFill or style.fill
+        spellBack = spellBack or style.background
+    end
     castColorOverride, lockedColorOverride = config.nativeCastFillColor, config.nativeCastLockedColor
-    if spellFill then ReadCastColors() end
+    if spellFill then ReadCastColors(style) end
     local dark = config.look == 1 and background == "Solid" or nil
     local focusKey = config.nativeFocusHealthFillTexture
     local focus = Resolve(textureKeys[5], focusFill, focusKey)
@@ -380,19 +548,19 @@ function Textures.Configure(config)
     local enemyOutline = NS.NameplateStyle.UsesNativeOutline(config, "enemy")
     local friendlyOutline = NS.NameplateStyle.UsesNativeOutline(config, "friendly")
     if hpFill ~= healthFill or hpBack ~= healthBack or spellFill ~= castFill or spellBack ~= castBack or focus ~= focusFill
-        or enemyOutline ~= nativeEnemyOutline or friendlyOutline ~= nativeFriendlyOutline or dark ~= darkCastBackground then
+        or enemyOutline ~= nativeEnemyOutline or friendlyOutline ~= nativeFriendlyOutline or dark ~= darkCastBackground
+        or sharedCastStyle ~= style or absorbChanged then
         generation = generation + 1
     end
     nativeEnemyOutline, nativeFriendlyOutline = enemyOutline, friendlyOutline
     healthFill, healthBack, castFill, castBack = hpFill, hpBack, spellFill, spellBack
-    darkCastBackground = dark
+    darkCastBackground, sharedCastStyle = dark, style
     focusFill = focus
-    baseTextures = healthFill or healthBack or castFill or castBack
+    baseTextures = healthFill or healthBack or castFill or castBack or sharedCastStyle or Absorbs and Absorbs.inUse
     Textures.inUse, Textures.focusFill = baseTextures or focusFill, focusFill
     Textures.healthFill, Textures.healthBack, Textures.castFill = healthFill, healthBack, castFill
     return hadTextures and not Textures.inUse
 end
-
 function Textures.HealthBackground(prefix)
     if prefix == "enemy" and nativeEnemyOutline or prefix == "friendly" and nativeFriendlyOutline then return nil end
     return healthBack
@@ -463,8 +631,9 @@ function Textures.RefreshFocus(module, current, setRole, paint)
 end
 
 function Textures.Paint(uf, paint)
-    Textures.Apply(uf)
+    local finishSpark = Textures.Apply(uf, nil, true)
     paint(uf)
+    if finishSpark then Textures.OnLayout(uf, true) end
     if uf ~= Textures.focusUF then return end
     -- The initial presentation pass may have allocated the role texture.
     -- Update it once when the focus nameplate first gets a visual.
@@ -480,19 +649,26 @@ function Textures.PaintAdded(uf, paint)
     Textures.Paint(uf, paint)
 end
 
-local function Apply(uf, reset, useTextures, background)
+local function Apply(uf, reset, useTextures, background, deferSpark)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
+    local absorbDone = not Absorbs or Absorbs.Apply(uf, health, useTextures, Writable)
     if not useTextures then
         local healthDone = ApplyHealth(uf, health)
         local castDone = ApplyCast(uf, cast)
-        return healthDone and castDone
+        return healthDone and castDone and absorbDone
     end
-    local healthDone = ApplyHealth(uf, health, reset, Textures.HealthFill(uf), background)
-    local castDone = ApplyCast(uf, cast, reset, castFill, castBack)
-    return healthDone and castDone
+    local fill = Textures.HealthFill(uf)
+    if fill then
+        -- Both clients rebuild anchors when names-only mode changes. The
+        -- fill is invisible there. Background ownership still feeds Selection.
+        local namesOnly = uf.showOnlyName
+        if NS.Public(namesOnly) and namesOnly == true then fill = nil end
+    end
+    local healthDone = ApplyHealth(uf, health, reset, fill, background)
+    local castDone = ApplyCast(uf, cast, reset, castFill, castBack, sharedCastStyle, deferSpark)
+    return healthDone and castDone and absorbDone
 end
-
 local function FlushDeferred(frame)
     if NS.IsCombatLocked() then return end
     frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
@@ -518,7 +694,7 @@ Defer = function(uf, restore)
     listening = true
 end
 
-function Textures.Apply(uf, reset)
+function Textures.Apply(uf, reset, paintedWithLayout)
     -- Plate entry points supply a public unit frame. A stable generation
     -- costs a table lookup on presentation events and touches no region.
     local version = painted[uf]
@@ -542,14 +718,52 @@ function Textures.Apply(uf, reset)
     end
     if not version then private.Layout.Observe(uf) end
     painted[uf] = 0
-    if Apply(uf, reset or version == 0, useTextures, background) then
-        painted[uf], deferred[uf] = useTextures and generation or nil, nil
+    -- This paint answers the plate's own earlier deferral. One made while it
+    -- runs (DeferCast: a cast height the client withheld in combat) is new,
+    -- stays with this plate and survives a complete paint. A paint of another
+    -- plate inside this one touches only that plate's key.
+    local owed = deferred[uf]
+    deferred[uf] = nil
+    -- On a new lease Paint already owns the final layout boundary. Leave
+    -- only Spark sizing until that synchronous pass has finished.
+    local deferSpark = paintedWithLayout and not version and useTextures and sharedCastStyle ~= nil
+    if Apply(uf, reset or version == 0, useTextures, background, deferSpark) then
+        painted[uf] = useTextures and generation or nil
     else
         Defer(uf, false)
+        -- Outside combat nothing new is kept: the earlier deferral stands.
+        if deferred[uf] == nil then deferred[uf] = owed end
+    end
+    return deferSpark
+end
+
+-- A castbar paint that waits for the end of combat: a cast height the client
+-- withheld at a layout edge, or a cast event its castbar denied. The combat
+-- end applies the plate again (FlushDeferred). Outside combat nothing is kept:
+-- the next layout edge or cast event is the retry.
+function Textures.DeferCast(cast)
+    if not NS.IsCombatLocked() then return end
+    local state = castStates[cast]
+    local uf = state and state.owner
+    if not uf then return end
+    Defer(uf, false)
+end
+
+-- The cold-layout handoff (Layout.lua Settle): the plate's geometry is final
+-- after a layout pass of the Suite. The styled castbar samples its height once.
+function Textures.OnLayout(uf, finishSpark)
+    if not painted[uf] then return end
+    local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
+    local state = NS.Public(cast) and cast and castStates[cast]
+    local appearance = private.CastAppearance
+    if not state or not state.style or not appearance then return end
+    if appearance.OnLayout(cast, finishSpark) == false and finishSpark and painted[uf] then
+        painted[uf] = 0
+        if deferred[uf] ~= true then Defer(uf, false) end
     end
 end
 
-function Textures.Restore(uf)
+function Textures.Restore(uf, recycled)
     if uf == Textures.focusUF then
         Textures.SetFocus(nil)
         findFocus = focusFill ~= nil
@@ -557,6 +771,13 @@ function Textures.Restore(uf)
     if not painted[uf] and deferred[uf] == nil then return end
     painted[uf], deferred[uf] = nil, nil
     if NS.Safety.IsForbidden(uf) then return end
+    local state = recycled and healthStates[uf]
+    if state then
+        -- Both clients replace this asset in UpdateAnchors during acquire.
+        -- The background still owes its tint, geometry and texture.
+        state.fill = nil
+        if not state.back then healthStates[uf], spareHealth[uf] = nil, state end
+    end
     if not Accessible(uf) or not Apply(uf) then Defer(uf, true) end
 end
 

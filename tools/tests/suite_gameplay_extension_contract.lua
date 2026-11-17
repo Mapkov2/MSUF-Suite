@@ -22,6 +22,12 @@ local disabled = {}
 local Support = assert(loadfile(suiteRoot .. "/tools/tests/suite_test_support.lua"))()
 env.C_SpecializationInfo.GetNumSpecializationsForClassID = function() return 0 end
 env.C_SpecializationInfo.GetSpecialization = env.C_SpecializationInfo.GetSpecialization or function() return nil end
+env.C_EventUtils = env.C_EventUtils or {}
+local isEventValid = env.C_EventUtils.IsEventValid
+env.C_EventUtils.IsEventValid = function(event)
+    if event == "UNIT_COMBAT" then return flavor == "Forever" end
+    return not isEventValid or isEventValid(event)
+end
 local getCVar = env.C_CVar.GetCVar
 env.C_CVar.GetCVar = function(key) if key == "combinedBags" then return "1" end return getCVar(key) end
 env.C_AddOns = {
@@ -139,7 +145,7 @@ for id in pairs(features) do
     moved = moved + 1
     Check(P.GameplayPage.Relocated(id), "module not relocated: " .. id)
 end
-Check(moved == 14, "wrong Gameplay inventory")
+Check(moved == 15, "wrong Gameplay inventory")
 local rows = {}
 for _, row in ipairs(P.SearchRows()) do
     local id = row.suiteModuleId
@@ -151,6 +157,12 @@ for _, row in ipairs(P.SearchRows()) do
 end
 local key = "msufsuite.actionTracker.enabled"
 Check(rows[key], "combat feature missing from cold search")
+local floatingTextKey = "msufsuite.floatingCombatText.enabled"
+local floatingTextAvailable, floatingTextReason = S.Availability("floatingCombatText")
+Check(floatingTextAvailable == (flavor == "Forever"), tostring(floatingTextReason))
+Check((rows[floatingTextKey] ~= nil) == floatingTextAvailable, "wrong floating combat text search visibility")
+Check((rows["msufsuite.floatingCombatText.font"] ~= nil) == floatingTextAvailable,
+    "floating combat text font picker is missing from Gameplay search")
 local original = { pageKey = "suite_qualityOfLife", settingKey = key,
     sectionId = "suite_qualityOfLife_actionTracker_action_tracker" }
 local page, target = P.GameplayPage.Resolve(original.pageKey, original)
@@ -159,6 +171,7 @@ Check(original.pageKey == "suite_qualityOfLife", "saved search was mutated")
 Select("gameplay")
 Check(Widget("gameplay.enableCombatTimer"), "extension replaced core Gameplay controls")
 Check(Widget(key), "Suite feature toggle missing")
+Check(Widget(floatingTextKey), "floating combat text row missing")
 local contextFunction = M.Search.Text.ControlContext
 local version = M.pages.gameplay.version
 P.GameplayPage.Register()
@@ -304,7 +317,7 @@ local function CheckCastbarArtwork()
         local found = {}
         local function Walk(frame)
             local action = frame._msuf2CommandAction
-            if action then found[action.settingKey] = true end
+            if action and action.settingKey then found[action.settingKey] = true end
             for _, child in ipairs(frame.children or {}) do if child.parent == frame then Walk(child) end end
         end
         Walk(M.cache.opt_castbar.wrapper)
@@ -323,6 +336,30 @@ local function CheckCastbarArtwork()
         end
     end
 end
+
+local function CheckNameplateBarTextures()
+    for _, key in ipairs({ "nativeHealthFillTexture", "nativeFocusHealthFillTexture", "nativeCastBackgroundTexture" }) do
+        local spec = assert(P.NameplateBarTextures.Target(key))
+        Select(spec.page)
+        local body = assert(M.cache[spec.page].sections[spec.section])
+        M.Widgets.EnsureSectionContent(body)
+        Settle()
+        Check(Widget("msufsuite.nameplates." .. key), "the native texture picker is missing from " .. spec.page)
+        local found
+        for _, row in ipairs(P.SearchRows()) do
+            if row.settingKey == "msufsuite.nameplates." .. key then
+                found = row.pageKey == spec.page and row.sectionId == spec.section
+            end
+        end
+        Check(found, "the texture search target does not open its host menu")
+        Select("home")
+        Check(NS.HostBridge.OpenExactMenuSetting(M, spec.page, spec.section, "msufsuite.nameplates." .. key),
+            "the Nameplates link did not focus the texture picker")
+        Settle()
+        Check(M.activeKey == spec.page, "the Nameplates link opened the wrong menu")
+    end
+end
+CheckNameplateBarTextures()
 CheckCastbarArtwork()
 
 -- Existing destinations own all relocated settings, links and resets together.

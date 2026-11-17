@@ -194,7 +194,7 @@ UpdateUIPanelPositions = function(frame)
         panelSlots.left = frame
         frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30 / frame.scale, -90 / frame.scale)
     end
-    if panelPositionHook then panelPositionHook() end
+    if panelPositionHook then panelPositionHook(frame) end
 end
 hooksecurefunc = function(name, callback, method)
     if type(name) == "table" then
@@ -238,6 +238,7 @@ local NS = {
     Theme = { GetColor = function() return 0.2, 0.3, 0.4, 1 end },
     Surface = { SkinOwnedButton = function(button, spec) button.surfaceSpec = spec; return true end },
     Registry = { AddListener = function() end, QueueJob = QueueJob },
+    SuiteOwnership = { OwnsWindowGeometry = function() return false end },
     BlizzardCatalog = { FindByFrame = function(name)
         if name == "CharacterFrame" or name == "InspectFrame" then return { category = "character" } end
         if name == "WorldMapFrame" then return { category = "map" } end
@@ -271,7 +272,7 @@ end
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
-assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(arg[5] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)
 local chromeFrames = #createdFrames
 assert(loadfile(arg[3] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrome.lua"))("MSUF_Suite_Skin", NS)
 -- The frame that looks at opening windows (WindowControlChrome.lua); one frame passes.
@@ -279,6 +280,42 @@ local watcher = createdFrames[chromeFrames + 1]
 local function Watch(elapsed) watcher.scripts.OnUpdate(watcher, elapsed) end
 assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlDelegate.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
+
+-- Managed windows minimize and restore only through the secure delegate
+-- (WindowControlDelegate.lua): the client's SecureActionButtonTemplate clicks
+-- Blizzard's X or opener button. The plain cell and tab handlers refuse them,
+-- since ShowUIPanel/HideUIPanel from skin code run the panel manager tainted.
+local plainCreateFrame = CreateFrame
+CreateFrame = function(kind, name, parent, template)
+    local frame = plainCreateFrame(kind, name, parent, template)
+    if template == "SecureActionButtonTemplate" then
+        frame.template, frame.attributes = template, {}
+        function frame:SetAttribute(key, value) self.attributes[key] = value end
+        function frame:GetAttribute(key) return self.attributes[key] end
+    end
+    return frame
+end
+RegisterStateDriver = function(frame) frame.stateDriver = true end
+NS.CombatGate.Cancel = NS.CombatGate.Cancel or function(key) combatJobs[key] = nil end
+-- Hover the cell or tab, then the client's secure click: PreClick, the
+-- target's own OnClick ("type1"/"clickbutton1"), PostClick.
+local function SecureClickThrough(cell)
+    function cell:IsMouseOver() return true end
+    for _, hook in ipairs(cell.hooks.OnEnter or {}) do hook(cell) end
+    local delegate
+    for _, frame in ipairs(createdFrames) do
+        if frame.template == "SecureActionButtonTemplate" then delegate = frame end
+    end
+    if delegate and delegate.shown and delegate.owner == cell then
+        if delegate.scripts.PreClick then delegate.scripts.PreClick(delegate, "LeftButton") end
+        if delegate:GetAttribute("type1") == "click" then
+            local target = delegate:GetAttribute("clickbutton1")
+            target.scripts.OnClick(target, "LeftButton")
+        end
+        if delegate.scripts.PostClick then delegate.scripts.PostClick(delegate, "LeftButton") end
+    end
+    function cell:IsMouseOver() return false end
+end
 
 -- Safety helpers always return a value, even when they refuse to read.
 local Safety = NS.Safety
@@ -297,6 +334,13 @@ Check(select(2, Safety.Call({ Pair = function() return 1, 2 end }, "Pair")) == 2
 
 local character = Frame("CharacterFrame", UIParent)
 character.CloseButton = Frame(nil, character, "Button")
+character.CloseButton.scripts.OnClick = function() HideUIPanel(character) end
+-- Its native opener: CharacterMicroButtonMixin:OnClick runs ToggleCharacter.
+CharacterMicroButton = Frame("CharacterMicroButton", UIParent, "Button")
+function CharacterMicroButton:IsEnabled() return true end
+CharacterMicroButton.scripts.OnClick = function()
+    if character:IsShown() then HideUIPanel(character) else ShowUIPanel(character) end
+end
 -- The Character window reads back the anchor it was given, as the client does.
 function character:GetPoint()
     if self.point then return unpack(self.point) end
@@ -357,14 +401,22 @@ character:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -90)
 character:Show()
 Check(character.point[4] == NS.DB.windowControls.positions.CharacterFrame.x / character.scale,
     "reopening the panel lost its saved position")
+-- The plain handlers never hide or show a managed window; the delegate's
+-- secure click of Blizzard's X and CharacterMicroButton does.
 state.minimize.scripts.OnClick(state.minimize)
+Check(character.shown and not state.restore.shown and not state.minimized,
+    "the skin's own minimize hid a managed panel")
+SecureClickThrough(state.minimize)
 Check(not character.shown and state.restore.shown, "minimize did not leave a restore tab")
 state.restore.scripts.OnClick(state.restore, "LeftButton")
+Check(not character.shown and state.restore.shown, "the skin's own restore showed a managed panel")
+SecureClickThrough(state.restore)
 Check(character.shown and not state.restore.shown, "restore did not reopen the panel")
 -- WoW Forever's Gamepad UI: its frame controls manager follows ShowUIPanel and
 -- HideUIPanel in the caller's context, so the skin never drives the panel
 -- manager then (SetPreferredGamepadInteractTarget stayed blocked otherwise).
-state.minimize.scripts.OnClick(state.minimize)
+-- No delegate there: a tab left from before waits, its right click dismisses it.
+SecureClickThrough(state.minimize)
 local panelCalls = 0
 local nativeShow, nativeHide, nativeUpdate = ShowUIPanel, HideUIPanel, UpdateUIPanelPositions
 ShowUIPanel = function(frame) panelCalls = panelCalls + 1; nativeShow(frame) end
@@ -372,8 +424,11 @@ HideUIPanel = function(frame) panelCalls = panelCalls + 1; nativeHide(frame) end
 UpdateUIPanelPositions = function(frame) panelCalls = panelCalls + 1; nativeUpdate(frame) end
 NS.Client.IsGamepadUI = function() return true end
 state.restore.scripts.OnClick(state.restore, "LeftButton")
-Check(character.shown and not state.restore.shown and panelCalls == 0,
+Check(not character.shown and state.restore.shown and panelCalls == 0,
     "restore drove the panel manager under the Gamepad UI")
+state.restore.scripts.OnClick(state.restore, "RightButton")
+Check(not state.restore.shown and not state.minimized, "the restore tab's right click did not dismiss it")
+character:Show()
 NS.WindowControls.Refresh()
 Check(not state.minimize.shown, "the Gamepad UI kept the skin's minimize button")
 state.minimize.scripts.OnClick(state.minimize)
@@ -660,10 +715,15 @@ do
             -- or y13 when minimized. Calculate the grip's actual rectangle.
             local anchor = controls.grip.point
             Check(anchor[2] == panel and anchor[3] == "BOTTOMRIGHT", "profession grip uses an unexpected anchor")
-            local left = anchor[4] - (anchor[1] == "BOTTOMRIGHT" and controls.grip.width or 0)
-            local top = anchor[5] + (anchor[1] == "TOPLEFT" and 0 or controls.grip.height)
+            local left = anchor[4] - (anchor[1]:match("RIGHT$") and controls.grip.width or 0)
+            local top = anchor[5] + (anchor[1]:match("^TOP") and 0 or controls.grip.height)
             local right, bottom = left + controls.grip.width, top - controls.grip.height
-            Check(left >= 0 and top <= 0, "profession grip overlaps the right tab column or lower footer")
+            if NS.Client.isForever then
+                Check(anchor[1] == "TOPRIGHT" and right == 0 and top == 3,
+                    "Forever profession grip is not docked to the lower right border")
+            else
+                Check(left >= 0 and top <= 0, "profession grip overlaps the right tab column or lower footer")
+            end
             for _, createBottom in ipairs({ 7, 13 }) do
                 Check(right <= -89 or left >= -9 or top <= createBottom or bottom >= createBottom + 28,
                     "profession grip intercepts the native Create button")
@@ -755,6 +815,15 @@ do
     UIPanelWindows.LFGParentFrame = { area = "left", pushable = 7, whileDead = 1 }
     LFGParentFrameCloseButton = Frame("LFGParentFrameCloseButton", lfg, "Button")
     LFGParentFrameCloseButton.anchorName = "TOPRIGHT"
+    LFGParentFrameCloseButton.scripts.OnClick = function() HideUIPanel(lfg) end
+    -- LFDMicroButtonMixin:OnClick runs ToggleGroupFinderFrame; Forever's
+    -- GetToggledFrame names the vanilla-style LFGParentFrame.
+    LFDMicroButton = Frame("LFDMicroButton", UIParent, "Button")
+    function LFDMicroButton:IsEnabled() return true end
+    function LFDMicroButton:GetToggledFrame() return lfg end
+    LFDMicroButton.scripts.OnClick = function()
+        if lfg:IsShown() then HideUIPanel(lfg) else ShowUIPanel(lfg) end
+    end
     Check(not NS.WindowControls.Attach(lfg, owner), "Forever LFG geometry was enabled on Retail")
     NS.Client.isForever = true
     Check(NS.WindowControls.Attach(lfg, owner), "Forever LFG container was excluded from window controls")
@@ -783,12 +852,20 @@ do
     Check(scale > 1 and NS.DB.windowControls.scales.LFGParentFrame == scale
         and lfg.width == 458 and lfg.height == 535 and not lfgState.grip.scripts.OnUpdate,
         "Forever grip did not persist scale while retaining the native pane layout")
-    lfgState.minimize.scripts.OnClick(lfgState.minimize)
+    SecureClickThrough(lfgState.minimize)
     Check(not lfg.shown and lfgState.restore.shown, "Forever LFG window did not minimize")
     Check(lfgState.restoreLabel.text == LFG_TITLE .. "  +", "Forever restore bar exposed the internal parent name")
-    lfgState.restore.scripts.OnClick(lfgState.restore, "LeftButton")
+    SecureClickThrough(lfgState.restore)
     Check(lfg.shown and not lfgState.restore.shown and lfg.scale == scale,
         "Forever LFG window did not restore with its saved scale")
+    -- A micro button that toggles another window is no way back: no minimize.
+    local otherFinder = Frame("PVEFrame", UIParent)
+    function LFDMicroButton:GetToggledFrame() return otherFinder end
+    NS.WindowControls.Refresh()
+    Check(not lfgState.minimize.shown, "LFG offered minimize through a micro button for another window")
+    function LFDMicroButton:GetToggledFrame() return lfg end
+    NS.WindowControls.Refresh()
+    Check(lfgState.minimize.shown, "LFG minimize did not come back with its own opener")
     combat = true
     lfgState.titleDrag.scripts.OnDragStart(lfgState.titleDrag)
     lfgState.grip.scripts.OnMouseDown(lfgState.grip, "LeftButton")
@@ -797,7 +874,8 @@ do
     lfgState.grip.scripts.OnMouseUp(lfgState.grip)
     lfgState.titleDrag.scripts.OnDragStop(lfgState.titleDrag)
     combat = false
-    lfgState.minimize.scripts.OnClick(lfgState.minimize)
+    SecureClickThrough(lfgState.minimize)
+    Check(not lfg.shown and lfgState.minimized, "Forever LFG window did not minimize before combat")
     combat = true
     lfg:Show() -- Native secure code can reopen a panel during combat.
     Check(not lfgState.minimized and not lfgState.restore.shown,
@@ -823,11 +901,13 @@ end
 -- (Blizzard_WorldMap.xml / AttachQuestLog). Own controls must follow the
 -- visible border, and the grip must leave the native scrollbar arrow clear.
 do
-    local previousForever = NS.Client.isForever
+    local previousForever, previousMap = NS.Client.isForever, WorldMapFrame
     UIPanelWindows.WorldMapFrame = { area = "left", pushable = 0 }
     for _, flavor in ipairs({ "Retail", "Forever" }) do
-        NS.Client.isForever = flavor == "Forever"
+        local forever = flavor == "Forever"
+        NS.Client.isForever = forever
         local map = Frame("WorldMapFrame", UIParent)
+        WorldMapFrame = map
         map.width, map.height = 1035, 534
         map:SetFrameStrata("LOW")
         map.BorderFrame = Frame(nil, map)
@@ -839,7 +919,20 @@ do
         map.QuestLog:SetFrameStrata("HIGH")
         map.QuestLog:SetFrameLevel(100)
         local owner = "worldMap:" .. flavor
+        NS.DB.windowControls.scales.WorldMapFrame = 1.2
+        NS.DB.windowControls.positions.WorldMapFrame = { x = 160, y = -90 }
+        map:Hide()
         Check(NS.WindowControls.Attach(map, owner), flavor .. " map did not attach")
+        if forever then Check(map.geometryWrites == nil, "hidden Forever map received saved layout on attach") end
+        map:Show()
+        if forever then Check(map.geometryWrites == nil, "Forever map wrote geometry during native open") end
+        NextFrame()
+        Check(map.scale == 1.2 and map.point[4] == 160 / 1.2,
+            flavor .. " map did not restore its saved layout after open")
+        NS.DB.windowControls.scales.WorldMapFrame = nil
+        NS.DB.windowControls.positions.WorldMapFrame = nil
+        NS.WindowControls.Refresh()
+        NextFrame()
         local controls = NS.WindowControls.states[map]
         for _, control in ipairs({ controls.grip, controls.titleDrag }) do
             Check(control:GetFrameStrata() == "HIGH"
@@ -867,10 +960,12 @@ do
         Check(#controls.grip.lines == 2, flavor .. " map grip style duplicated its icon")
         NS.DB.windowControls.positions.WorldMapFrame = { x = UIParent.width, y = -100 }
         NS.WindowControls.Refresh()
+        NextFrame()
         Check(map.point[4] + map.width + 21 <= UIParent.width,
             flavor .. " saved map position clamps its grip over the native scrollbar")
         NS.DB.windowControls.positions.WorldMapFrame = nil
         NS.WindowControls.Refresh()
+        NextFrame()
         cursorX, cursorY = 500, 500
         controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
         cursorX, cursorY = 700, 400
@@ -884,10 +979,45 @@ do
         map:SetScale(1) -- Native panel fit before a reopen.
         map:Hide()
         map:Show()
+        if forever then Check(map.scale == 1, "Forever native show applied custom scale before returning") end
+        NextFrame()
         Check(map.scale == scale and controls.grip:GetFrameStrata() == "HIGH",
             flavor .. " map reopen lost scale or control strata")
+        if forever then
+            NS.DB.windowControls.positions.WorldMapFrame = { x = 160, y = -90 }
+            local writes = map.geometryWrites
+            UpdateUIPanelPositions(map)
+            UpdateUIPanelPositions(map)
+            Check(map.geometryWrites == writes + 2 and map.point[4] == 30 / scale,
+                "Forever panel reflow wrote over Blizzard's anchors in its own stack")
+            NextFrame()
+            Check(map.geometryWrites == writes + 4 and map.point[4] == 160 / scale,
+                "Forever map replays only the latest native layout once per frame")
+            UpdateUIPanelPositions(map)
+            combatEdge = true
+            writes = map.geometryWrites
+            NextFrame()
+            Check(map.geometryWrites == writes and combatJobs[controls.replayKey], "Forever map replay crossed the combat edge")
+            combatEdge = false
+            local replay = combatJobs[controls.replayKey]
+            combatJobs[controls.replayKey] = nil
+            replay()
+            Check(map.geometryWrites == writes + 2 and map.point[4] == 160 / scale,
+                "Forever map did not replay layout after combat")
+            UpdateUIPanelPositions(map)
+            map:Hide()
+            writes = map.geometryWrites
+            NextFrame()
+            Check(map.geometryWrites == writes, "closed Forever map received a queued layout")
+            map:Show()
+            NextFrame()
+            NS.DB.windowControls.positions.WorldMapFrame = nil
+            NS.WindowControls.Refresh()
+            NextFrame()
+        end
         map.BorderFrame.NineSlice:SetFrameLevel(250)
         NS.WindowControls.Refresh()
+        NextFrame()
         Check(controls.grip:GetFrameLevel() > 250 and controls.titleDrag:GetFrameLevel() > 250,
             flavor .. " map controls did not follow refreshed border levels")
         local previousColor = NS.Theme.GetColor
@@ -910,8 +1040,27 @@ do
             flavor .. " map owner release left controls or custom scale")
         NS.DB.windowControls.scales.WorldMapFrame = nil
     end
-    NS.Client.isForever = previousForever
+    NS.Client.isForever, WorldMapFrame = previousForever, previousMap
     UIPanelWindows.WorldMapFrame = nil
+end
+
+do
+    local previousForever, previousMap = NS.Client.isForever, WorldMapFrame
+    local previousLeft, previousCenter, previousRight = panelSlots.left, panelSlots.center, panelSlots.right
+    local panel = Frame("CharacterFrame", UIParent)
+    local map = Frame("WorldMapFrame", UIParent)
+    local other = Frame("OtherPanel", UIParent)
+    map.GetPoint = function() return "TOPLEFT", UIParent, "TOPLEFT", 600, -90 end
+    other.GetPoint = function() return "TOPLEFT", UIParent, "TOPLEFT", 800, -90 end
+    panelSlots.left, panelSlots.center, panelSlots.right = panel, map, other
+    WorldMapFrame, NS.Client.isForever = map, true
+    NS.WindowControlPolicy.ShiftFollowers(panel, 20)
+    Check(map.geometryWrites == nil and other.point[4] == 820, "Forever panel resize moved the map alongside other followers")
+    NS.Client.isForever = false
+    NS.WindowControlPolicy.ShiftFollowers(panel, 20)
+    Check(map.point[4] == 620, "Retail lost native map follower placement")
+    NS.Client.isForever, WorldMapFrame = previousForever, previousMap
+    panelSlots.left, panelSlots.center, panelSlots.right = previousLeft, previousCenter, previousRight
 end
 
 -- The map gets the Windows caption too: cells on its border (above the map
@@ -932,6 +1081,12 @@ do
     toggle.MaximizeButton, toggle.MinimizeButton = Frame(nil, toggle, "Button"), Frame(nil, toggle, "Button")
     toggle.MinimizeButton.shown = false
     border.MaximizeMinimizeFrame = toggle
+    -- The map's opener (MinimapZoneTextButtonMixin:OnClick runs ToggleWorldMap):
+    -- without one the map offers no minimize.
+    local previousCluster = MinimapCluster
+    MinimapCluster = Frame("MinimapCluster", UIParent)
+    MinimapCluster.ZoneTextButton = Frame(nil, MinimapCluster, "Button")
+    function MinimapCluster.ZoneTextButton:IsEnabled() return true end
     -- Blizzard's art regions and the corner socket that frames its buttons.
     local function Art()
         local region = { alpha = 1 }
@@ -1013,6 +1168,35 @@ do
     Check(not state.toggleCell.shown and state.closeCell.shown, "combat kept the cell of a hidden size toggle")
     toggle:Show()
     Check(state.toggleCell.shown and toggle.alpha == 0, "combat lost the cell of the returning size toggle")
+
+    -- Forever also switches these buttons from inside native map opening.
+    -- The deferred paint must still work while forced restrictions are active.
+    local previousForever, previousTimer = NS.Client.isForever, C_Timer
+    NS.Client.isForever = true
+    local timers = 0
+    C_Timer = { After = function(_, job) timers = timers + 1 QueueJob(job) end }
+    local nativeToggle = Frame(nil, border)
+    nativeToggle.MaximizeButton = Frame(nil, nativeToggle, "Button")
+    nativeToggle.MinimizeButton = Frame(nil, nativeToggle, "Button")
+    NS.WindowControlChrome.FollowSizeToggle(state, nativeToggle)
+    nativeToggle:Hide()
+    nativeToggle:Show()
+    nativeToggle.MaximizeButton:Show()
+    nativeToggle:Hide()
+    Check(state.toggleCell.shown, "Forever repainted the caption inside a native size-toggle script")
+    Check(timers == 1, "Forever did not coalesce repeated size-toggle scripts")
+    NextFrame()
+    Check(not state.toggleCell.shown and state.closeCell.shown, "Forever missed the settled combat visibility")
+    nativeToggle:Show()
+    NextFrame()
+    Check(state.toggleCell.shown and nativeToggle.alpha == 0, "Forever lost the returning size toggle after settling")
+    nativeToggle:Hide()
+    map:Hide()
+    NextFrame()
+    Check(state.toggleCell.shown, "Forever repainted a caption on a closed map")
+    map:Show()
+    NS.Client.isForever, C_Timer = previousForever, previousTimer
+
     _G.combatEdge, map.GetWidth = false, mapWidth
     combatJobs[state.replayKey], combatJobs["windowControls:captions"] = nil, nil
     NS.WindowControlChrome.ShowCaption(state, state.captionLevel)
@@ -1024,7 +1208,7 @@ do
     Check(art.alpha == 1 and corner.alpha == 1 and not NS.WindowControlChrome.IsFaded(close),
         "releasing the map left Blizzard's caption art or its socket faded")
     NS.WindowActionSkin = actions
-    UIPanelWindows.WorldMapFrame = nil
+    UIPanelWindows.WorldMapFrame, MinimapCluster = nil, previousCluster
 end
 
 -- Forever's profession window gets our minimize too. It casts its open
@@ -1053,6 +1237,27 @@ do
     state.minimize.scripts.OnClick(state.minimize)
     state.restore.scripts.OnClick(state.restore, "LeftButton")
     Check(professions.shown and #opened == 1 and not state.restore.shown, "the profession book did not come back")
+    -- The client registers the window with the panel manager: its X closes it
+    -- (the secure delegate) and the trade skill API reopens a crafting page.
+    -- Any other page has no way back but ShowUIPanel, which the skin may not run.
+    UIPanelWindows.ProfessionsFrame = { area = "left", pushable = 1 }
+    close.scripts.OnClick = function() HideUIPanel(professions) end
+    professions.CraftingPage:Show()
+    NS.WindowControls.Refresh()
+    state.minimize.scripts.OnClick(state.minimize)
+    Check(professions.shown and not state.minimized, "the skin's own minimize hid the managed profession window")
+    SecureClickThrough(state.minimize)
+    Check(not professions.shown and state.restore.shown, "the managed profession window did not minimize")
+    state.restore.scripts.OnClick(state.restore, "LeftButton")
+    Check(#opened == 2 and not professions.shown, "the managed profession did not reopen through the trade skill API")
+    professions:Show()
+    professions.CraftingPage:Hide()
+    NS.WindowControls.Refresh()
+    Check(not state.minimize.shown, "a managed profession book offered minimize without a way back")
+    SecureClickThrough(state.minimize)
+    Check(professions.shown and not state.minimized, "a managed profession book minimized without a way back")
+    UIPanelWindows.ProfessionsFrame = nil
+    if watcher.shown then Watch(3) end -- the opening look of those layouts ends
     professions:Hide()
     NS.WindowControls.DisableOwner("professions")
     C_TradeSkillUI = nil
@@ -1240,6 +1445,12 @@ do
         local nativeClick = function() HideUIPanel(panel) end
         panel.CloseButton.scripts.OnClick = nativeClick
         UIPanelWindows[name] = { area = "left", pushable = 1, allowOtherPanels = 1 }
+        -- LegacyMicroButtonMixin:OnClick runs ToggleLegacySystemUI.
+        LegacyMicroButton = Frame("LegacyMicroButton", UIParent, "Button")
+        function LegacyMicroButton:IsEnabled() return true end
+        LegacyMicroButton.scripts.OnClick = function()
+            if panel:IsShown() then HideUIPanel(panel) else ShowUIPanel(panel) end
+        end
         local owner = "contract:" .. name
         Check(NS.WindowControls.Attach(panel, owner), name .. " did not attach")
         local controls = NS.WindowControls.states[panel]
@@ -1251,9 +1462,9 @@ do
             Check(controls.minimize and controls.restore and controls.minimize:GetFrameLevel() > 500,
                 "Legacy minimize/restore is missing or behind its portrait chrome")
             Check(controls.minimize.point[2] == panel.CloseButton, "Legacy minimize misses the native X anchor")
-            controls.minimize.scripts.OnClick(controls.minimize)
+            SecureClickThrough(controls.minimize)
             Check(not panel.shown and controls.restore.shown, "Legacy window did not minimize")
-            controls.restore.scripts.OnClick(controls.restore, "LeftButton")
+            SecureClickThrough(controls.restore)
             Check(panel.shown and not controls.restore.shown, "Legacy window did not restore")
         else
             Check(not controls.minimize and not controls.restore, "stable gained an NPC-closing minimize")
@@ -1330,6 +1541,18 @@ do
         "caption lost a horizontal one-pixel bar")
     Check(square[3].width == 1 and square[5].width == 1,
         "maximize lost a vertical one-pixel bar")
+    local function SelectGlyphs(mode)
+        core.Skin = { GetWindowCaptionMode = function() return mode end }
+        NS.WindowControls:OnThemeChanged("windowAction", "glyphMode")
+        NextFrame()
+    end
+    SelectGlyphs("plusMinus")
+    Check(square[2].shown and square[3].shown and not square[4].shown,
+        "open Blizzard window kept the maximize square when plus/minus was selected")
+    SelectGlyphs("chevrons")
+    Check(dash[3].shown and square[4].shown, "open Blizzard window did not update to chevrons")
+    Check(dash[1].color[4] == 0 and square[1].color[4] == 0, "idle Blizzard captions picked up a backdrop")
+    SelectGlyphs("windows")
     -- Glyphs sit on whole screen pixels at any scale (here 1.25 units per
     -- pixel), also where a cell itself sits between pixels: no rotated bars,
     -- no edge on part of a pixel, and no engine rounding that could drop one.
@@ -1383,4 +1606,39 @@ do
     NS.WindowControls.DisableOwner("caption")
 end
 
+do
+    local previousMail, previousForever = MailFrame, NS.Client.isForever
+    local previousBags = ContainerFrameCombinedBags
+    local mailbox = Frame("MailFrame", UIParent, "Frame")
+    MailFrame, NS.Client.isForever = mailbox, true
+    ContainerFrameCombinedBags = bags
+    mailbox:SetSize(400, 500)
+    mailbox:Hide()
+    UIPanelWindows.MailFrame = { area = "left" }
+    NS.BlizzardCatalog.FindByFrame = (function(find)
+        return function(name) if name == "MailFrame" then return { category = "social" } end return find(name) end
+    end)(NS.BlizzardCatalog.FindByFrame)
+    NS.DB.windowControls.scales.MailFrame = 1.2
+    NS.DB.windowControls.scales.ContainerFrameCombinedBags = 1.15
+    NS.DB.windowControls.enabled = true
+    Check(NS.WindowControls.Attach(mailbox, "mailbox"), "mailbox could not attach")
+    Check(NS.WindowControls.Attach(bags, "mailbox"), "already open native bags could not attach")
+    bags:SetScale(1)
+    local writes = bags.geometryWrites
+    UpdateUIPanelPositions(mailbox)
+    Check(not mailbox:IsShown() and bags.geometryWrites == writes,
+        "mailbox layout changed the existing bag before native MailFrame:Show")
+    mailbox:SetScale(1)
+    mailbox:Show()
+    Check(mailbox:GetScale() == 1, "Forever mailbox scale was overwritten during native OnShow")
+    NextFrame()
+    Check(mailbox:GetScale() == 1.2, "the deferred mailbox layout lost its stored scale")
+    NextFrame()
+    Check(bags:GetScale() == 1.15, "native bag layout did not settle after the mailbox opened")
+    NS.WindowControls.DisableOwner("mailbox")
+    mailbox:Hide()
+    NS.DB.windowControls.scales.ContainerFrameCombinedBags = nil
+    ContainerFrameCombinedBags = previousBags
+    MailFrame, NS.Client.isForever = previousMail, previousForever
+end
 print("Suite window controls: " .. checks .. " checks passed")

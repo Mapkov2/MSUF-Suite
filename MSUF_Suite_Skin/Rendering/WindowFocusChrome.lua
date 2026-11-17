@@ -47,11 +47,13 @@ local function Enqueue(state, depth, ...)
     end
 end
 
-local function Exterior(state, frame, depth)
-    local art, circle, nativeArt = Contour.Artwork(state.frame, frame)
-    local kind = Safety.Read(frame, "GetObjectType")
+-- Only the two shallowest levels can extend the shell: a deeper node is
+-- rejected before any read, and its object type is the one Inspect read.
+local function Exterior(state, frame, depth, kind)
+    if depth > 2 then return false end
+    local art, circle, nativeArt = Contour.Artwork(state.anchors, frame)
     local frameTab = kind == "Frame" and Safety.Read(frame, "GetScript", "OnMouseDown") ~= nil
-    if depth > 2 or (kind ~= "Button" and kind ~= "CheckButton" and not frameTab and not nativeArt) then return false end
+    if kind ~= "Button" and kind ~= "CheckButton" and not frameTab and not nativeArt then return false end
     local rect, root = state.chromeScratch, state.rect
     local slot = state.extentCount + 1
     local saved = state.extents[slot]
@@ -83,13 +85,14 @@ local function Exterior(state, frame, depth)
 end
 
 local function Inspect(state, frame, depth)
-    if Safety.Read(frame, "GetObjectType") == "GameTooltip" or Hidden(frame) then return end
+    local kind = Safety.Read(frame, "GetObjectType")
+    if kind == "GameTooltip" or Hidden(frame) then return end
     if frame == state.presentation or NS.WindowFocus.records[frame] then return end
     local layer, level = Safety.Read(frame, "GetFrameStrata"), Safety.Read(frame, "GetFrameLevel")
     local rank = ranks[layer]
     local raised = rank and type(level) == "number" and (rank > state.rank or rank == state.rank and level >= state.level)
     local shown = Safety.Read(frame, "IsVisible") == true
-    local exterior = shown and not state.presentation and Exterior(state, frame, depth)
+    local exterior = shown and not state.presentation and Exterior(state, frame, depth, kind)
     if depth <= 2 or raised or exterior then Observe(frame, state) end
     if shown and raised then
         if rank > state.chromeRank then state.chromeStrata, state.chromeRank, state.chromeLevel = layer, rank, level + 1
@@ -103,6 +106,7 @@ local function Discover(state)
     state.queue, state.depths = state.queue or {}, state.depths or {}
     state.extents, state.chromeScratch = state.extents or {}, state.chromeScratch or {}
     state.extentCount, state.queueCount = 0, 0
+    state.anchors = Contour.Anchors(state.frame, state.anchors or {})
     state.chromeStrata, state.chromeRank, state.chromeLevel = state.strata, state.rank, state.level
     Enqueue(state, 1, Safety.Call(state.frame, "GetChildren"))
     local index = 1

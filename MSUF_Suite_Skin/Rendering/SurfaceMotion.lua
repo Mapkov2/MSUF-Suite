@@ -18,11 +18,23 @@ local function Enabled(target)
     return not Safety.HasMethod(target, "IsEnabled") or Safety.Read(target, "IsEnabled") == true
 end
 
+-- Runs once per animated frame. ReadUnprotected answers forbidden, protection
+-- and visibility in one pass; only a readable, unprotected target returns true.
+-- The enabled read below reuses that pass instead of asking IsForbidden a
+-- second and third time. Every answer is asked again on the next frame and
+-- nothing is kept. Enabled above stays the entry check of a gesture, which has
+-- no such answer yet.
+local Public, IsCompositorManaged = Safety.Public, Safety.IsCompositorManaged
+local ReadableMethod = Safety.ReadableMethod
 local function Safe(record)
     local state = record.state
-    return state.visible ~= false and Safety.ReadUnprotected(state.target, "IsVisible") == true
-        and not Safety.IsCompositorManaged(state.target)
-        and Enabled(state.target)
+    local target = state.target
+    if state.visible == false or Safety.ReadUnprotected(target, "IsVisible") ~= true
+        or IsCompositorManaged(target) then return false end
+    local enabled = ReadableMethod(target, "IsEnabled")
+    if not enabled then return true end
+    enabled = enabled(target)
+    return Public(enabled) and enabled == true
 end
 
 local function Anchor(region, state, x, y, width, height, press)
@@ -144,20 +156,30 @@ local function Show(target)
     local record = Record(target)
     if not record then return end
     record.checked = Safety.Read(target, "GetChecked")
-    if not record.window then return end
+    if not record.window or NS.IsCombatLocked() then return end
     -- ContentMotion loads later; native OnShow runs after the complete load graph.
     -- Resolve here and use registration, independent of the OnShow hook order.
-    local completeFade = NS.ContentMotion.HasOpeningFade(target)
+    local fadeOnly = record.state.spec.fadeOnly
+    local completeFade = not fadeOnly and NS.ContentMotion.HasOpeningFade(target)
     Motion.Set(record, 7, 1, completeFade and 1 or 0)
-    Motion.Set(record, 2, 0, -3)
+    if not fadeOnly then Motion.Set(record, 2, 0, -3) end
     Motion.Play(record, 0.16)
+end
+
+local function SettleMailbox()
+    local frame = Safety.Field(_G, "MailFrame")
+    if Safety.Read(frame, "IsVisible") == true then Show(frame) end
+end
+
+local function QueueMailboxOpening()
+    NS.Registry.QueueJob(SettleMailbox)
 end
 
 local hoverHooks = { OnEnter = Enter, OnLeave = Leave }
 -- Native SetEnabled can receive secret Booleans. A skin OnDisable or
 -- OnEnable handler would make the client reject those state changes.
 local hooks = {
-    OnHide = Hide, OnShow = Show,
+    OnHide = Hide,
     OnEditFocusGained = FocusIn, OnEditFocusLost = FocusOut,
     OnClick = Click,
 }
@@ -191,6 +213,11 @@ local function Bind(state)
         Anchor(state.hoverOverlay, state, 0, 0, 0, 0, 0)
     end
     HookAll(target, hooks)
+    if target:HasScript("OnShow") then
+        local onShow = window and NS.Client.isForever and target == Safety.Field(_G, "MailFrame")
+            and QueueMailboxOpening or Show
+        target:HookScript("OnShow", onShow)
+    end
     -- Mouse hooks can opt passive tooltips into hit testing. Preserve their
     -- native input policy while retaining the owned opening animation.
     if control or Safety.Read(target, "IsMouseMotionEnabled") == true then HookAll(target, hoverHooks) end

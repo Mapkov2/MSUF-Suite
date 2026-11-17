@@ -21,7 +21,10 @@ local HELP, ESSENTIAL, COPY_CATEGORIES, copyScopes
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
     { id = "visibility", title = "When the selected bar appears",
-        suffixes = { "Visibility", "HideGamepad", "GroupOnly", "Alpha", "FadeAlpha", "FadeDuration", "ClickThrough", "Tooltip" } },
+        suffixes = { "Visibility", "CondCombine", "CondCombat", "CondMounted", "CondTarget", "CondMouseover", "HideGamepad",
+            "GroupOnly", "Alpha", "FadeAlpha", "FadeDuration", "ClickThrough", "Tooltip" } },
+    -- Never copied: a paging text names pages of its own bar.
+    { id = "paging", title = "Paging for the selected bar", suffixes = { "Paging" } },
     { id = "layout", title = "Layout for the selected bar",
         suffixes = { "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty", "FlyoutDirection",
         "Layer", "Point", "X", "Y" } },
@@ -48,12 +51,18 @@ local function InitEditorData()
         text = "Fonts, outlines, shadows and Smooth/Sharp/Slug rendering for keybinds, macro names, counts and cooldown numbers. Sizes are set per bar below. Slug has no shadow.",
         behavior = "Paging switches bar 1 between pages, like Blizzard's own main bar. Key bindings keep using Blizzard's commands.",
         editor = "Select a bar to adjust its layout and visibility.",
+        visibility = P.Help("The quick switch above remembers this mode when you turn the bar off. Choose Never to keep it hidden.",
+            "Custom conditions combine combat, mount and target with Any or All; Reveal on mouseover fades the bar until you point at it. Pet battles and vehicles still hide the bar."),
+        paging = P.Help("Pages the selected bar with macro conditions, for example [mod:shift] 2; [@target,harm] 3.",
+            "Conditions: mod, combat, mounted, flying, swimming, stealth, indoors, outdoors, resting, group, pet, exists, dead, help, harm, channeling, flyable, form, stance, bonusbar, bar and spec, each also with no in front, and @target, @focus, @mouseover, @player or @pet. Vehicle, override, possess, pet battle and form paging keep their priority. A bar pages to its own page or to a page from 2 to 6 that no enabled bar owns; bar 1 also to its form pages 7 to 11. Changes apply out of combat; invalid text is never applied and the bar keeps its own page."),
     }
     ESSENTIAL = {
         layout = { Buttons = true, Rows = true, Size = true, HeightPercent = true, Spacing = true, Vertical = true, ShowEmpty = true },
         text = { Keybind = true, KeybindSize = true, Macro = true, MacroSize = true,
             CountSize = true, CooldownSize = true, CooldownAutoSize = true },
-        visibility = { Visibility = true, GroupOnly = true, Alpha = true, FadeAlpha = true, FadeDuration = true, Tooltip = true },
+        visibility = { Visibility = true, CondCombine = true, CondCombat = true, CondMounted = true, CondTarget = true,
+            CondMouseover = true, GroupOnly = true, Alpha = true, FadeAlpha = true, FadeDuration = true, Tooltip = true },
+        paging = { Paging = true },
         ornaments = { LeftEndcap = true, LeftEndcapSize = true, RightEndcap = true, RightEndcapSize = true },
         background = { Background = true, BackgroundAlpha = true, BackgroundPadding = true, BackgroundBorder = true },
     }
@@ -497,9 +506,44 @@ local function BuildEditor(ctx, b)
     })
 end
 
+-- One status line under a section's controls, refreshed with the page.
+local function StatusLine(ctx, describe)
+    return function(body, y, width)
+        local status = P.Text(body, "", 16, y - 4, width, T.colors.dim or T.colors.muted)
+        local function Update() P.SetTranslatedText(status, describe()) end
+        M.TrackRefresh(ctx, Update)
+        Update()
+        return y - 44
+    end
+end
+
+-- What the selected bar's custom paging does now, or why it is not applied
+-- (the same check the runtime makes: Core/Catalog/ActionBars.lua).
+local function PagingStatus()
+    local home = Suite.ActionBarHomePages[selected]
+    if not home then return Tr("Custom paging is not available for this bar.") end
+    local parsed, why, a, b = Suite.ActionBarPaging(S.Config(ID), selected)
+    if parsed == false then
+        if BarOff(selected) then return Tr("This bar is off; its paging applies once it is on.") end
+        return string.format(Tr("No custom paging: the bar stays on page %d."), home)
+    end
+    if not parsed then return string.format(Tr("Not applied: %s"), string.format(Tr(why), a, b)) end
+    return string.format(Tr("Applied: %s"), parsed.driver)
+end
+
+-- The secure rule a bar on Custom conditions follows ("fade" shows it on
+-- mouseover).
+local function ConditionStatus()
+    if P.Get(ID, "bar" .. selected .. "Visibility") ~= Suite.ActionBarEnum.VISIBILITY.CUSTOM then
+        return Tr("Choose Custom conditions to combine the conditions above.")
+    end
+    return string.format(Tr("Custom rule: %s"), Suite.ActionBarConditionBody(S.Config(ID), selected))
+end
+
 -- Per-bar controls follow the selected bar; bars missing on this client and
 -- options that do not exist for a bar (macro names on stance/pet) are disabled.
 P.Gates[ID] = function(rule, key)
+    if key == "masque" and not Suite.Client.IsAddOnLoaded("Masque") then return false, "Masque is not loaded." end
     local index = tonumber(key:match("^bar(%d+)"))
     if not index then return true end
     local live = Rule(key)
@@ -545,7 +589,8 @@ local function Build(ctx)
     P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
-            help = "Choose the shared button colors and frame. Layout, bindings and visibility stay as set. Changing an individual color switches the label to Custom.",
+            help = P.Help("Shared settings affect every action bar.",
+                "Choose the shared button colors and frame. Layout, bindings and visibility stay as set. Changing an individual color switches the label to Custom."),
             extra = P.LookPresetButtons(ctx, PAGE, ID, "suite_actionbars_look"),
         })
     local templates = P.SectionRules(ID, "bar1")
@@ -554,9 +599,12 @@ local function Build(ctx)
         for _, rule in ipairs(templates) do
             if GroupOf(rule.key:sub(5)) == group.id then rules[#rules + 1] = rule end
         end
+        local paging = group.id == "paging"
+        local status = paging and PagingStatus or group.id == "visibility" and ConditionStatus or nil
         P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_bar_" .. group.id, Tr(group.title), rules,
-            { keyFn = BarKey, open = false, copy = SectionCopy(group.id), essential = ESSENTIAL[group.id],
-              help = group.id == "visibility" and "The quick switch above remembers this mode when you turn the bar off. Choose Never to keep it hidden." or nil })
+            { keyFn = BarKey, open = false, copy = not paging and SectionCopy(group.id) or nil, essential = ESSENTIAL[group.id],
+              help = (paging or group.id == "visibility") and HELP[group.id] or nil,
+              extra = status and StatusLine(ctx, status) or nil })
     end
     BuildEditor(ctx, b)
     for _, section in ipairs({ "appearance", "cooldowns", "text", "behavior" }) do

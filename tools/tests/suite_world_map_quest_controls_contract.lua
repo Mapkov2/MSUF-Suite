@@ -3,7 +3,8 @@ local checks = 0
 local function Check(value, message) assert(value, message) checks = checks + 1 end
 local function Noop() end
 
-local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
+local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, HoldSkinJobs, FlushSkinJobs, External, CombatRebuild)
+    local forever = NS.Client.isForever
     local zone = { isHeader = true, isCollapsed = false, headerSortKey = "Redridge Mountains" }
     local otherZone = { isHeader = true, isCollapsed = false, headerSortKey = "Darkshore" }
     local header, other, objective, pin = Frame(contents), Frame(contents), Frame(contents), Frame(contents)
@@ -15,6 +16,11 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     row.info.header = zone
     other.info = { questID = 99, header = otherZone }
     objective.questID = row.info.questID
+    local textHeight, nativeTitleHeight = 16, 63
+    local compactTitleHeight = textHeight + 18
+    other.height = 54
+    function row.Text:GetHeight() return textHeight end
+    function row:SetHeight(height) self.height = height end
     local pinQuestID = objective.questID
     pin.GetQuestID = function() return pinQuestID end
     pin:SetAlpha(0.75)
@@ -42,10 +48,13 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     local query = ""
     scroll.SearchBox.GetText = function() return query end
     function contents:SetSize(width, height)
-        self.width, self.visibleQuests = width, height
+        self.width, self.height = width, height
+        self.visibleQuests = (row:IsShown() and 1 or 0) + (other:IsShown() and 1 or 0)
+        self.visibleObjectives = objective:IsShown() and 1 or 0
     end
     function contents:GetLayoutChildren()
-        return (row:IsShown() and 1 or 0) + (other:IsShown() and 1 or 0)
+        -- The native title contains the objective space even after objective rows hide.
+        return (row:IsShown() and row:GetHeight() or 0) + (other:IsShown() and other:GetHeight() or 0)
     end
     contents.rowWidth = 280
     function contents:LayoutChildren(children, expandToWidth)
@@ -64,9 +73,12 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     local function NativeRebuild()
         -- Native releases the pools, then shows only rows belonging to open headers.
         local shown = not zone.isCollapsed
-        active[row], activeObjectives[objective], activePins[pin] = shown or nil, shown or nil, shown or nil
-        if shown then row:Show() objective:Show() nativeShow(pin)
-        else row:Hide() objective:Hide() nativeHide(pin) end
+        local showObjective = shown and (not forever or GetCVar("showQuestObjectivesInLog") == "1")
+        active[row], activeObjectives[objective], activePins[pin] = shown or nil, showObjective or nil, shown or nil
+        row.height = showObjective and nativeTitleHeight or compactTitleHeight
+        if shown then row:Show() nativeShow(pin)
+        else row:Hide() nativeHide(pin) end
+        if showObjective then objective:Show() else objective:Hide() end
         header.CollapseButton.collapsed = zone.isCollapsed
         normal:SetAtlas(shown and minus or plus)
         highlight:SetAtlas(shown and minus or plus)
@@ -103,10 +115,57 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     active[other] = true
     NativeRebuild()
     Check(NS.WorldMapSkin.Apply(map, "map-quests"), "map fold adapter did not attach")
+    if forever then
+        Check(row:IsShown() and not objective:IsShown() and contents.visibleObjectives == 0 and PinVisible(),
+            "Compact did not locally mask and reflow only the objective rows")
+        Check(row:GetHeight() == compactTitleHeight and contents.height == compactTitleHeight + other:GetHeight(),
+            "Compact left blank objective space inside the native quest title")
+        HoldSkinJobs()
+        nativeTitleHeight = 78
+        NativeRebuild()
+        Check(objective:IsShown() and row:GetHeight() == nativeTitleHeight and contents.visibleObjectives == 1,
+            "Compact changed the native rebuild inline")
+        FlushSkinJobs()
+        Check(not objective:IsShown() and contents.visibleObjectives == 0 and row:GetHeight() == compactTitleHeight
+            and contents.height == compactTitleHeight + other:GetHeight(), "Compact did not reflow rebuilt objectives")
+        CombatRebuild(NativeRebuild, function()
+            Check(objective:IsShown() and row:GetHeight() == nativeTitleHeight,
+                "Compact changed the rebuilt objectives or title during lockdown")
+        end)
+        Check(not objective:IsShown() and row:GetHeight() == compactTitleHeight,
+            "Compact did not reapply objective masking after lockdown")
+        NS.WorldMapQuests.SetLayout("blizzard")
+        Check(objective:IsShown() and contents.visibleObjectives == 1 and row:GetHeight() == nativeTitleHeight
+            and contents.height == nativeTitleHeight + other:GetHeight(), "Blizzard layout did not restore native objectives")
+        NS.WorldMapQuests.SetLayout("compact")
+        row:SetHeight(nativeTitleHeight + 7)
+        NS.WorldMapQuests.SetLayout("blizzard")
+        Check(row:GetHeight() == nativeTitleHeight + 7, "releasing Compact overwrote a later native title height")
+        NS.WorldMapQuests.SetLayout("compact")
+        External("0")
+        NativeRebuild()
+        NS.WorldMapQuests.SetLayout("blizzard")
+        Check(not objective:IsShown() and row:GetHeight() == compactTitleHeight
+            and GetCVar("showQuestObjectivesInLog") == "0", "Blizzard layout ignored the user's disabled objectives")
+        External("1")
+        NativeRebuild()
+        Check(objective:IsShown() and row:GetHeight() == nativeTitleHeight,
+            "native objectives did not return after the user enabled them")
+        NS.WorldMapQuests.SetLayout("compact")
+        Check(not objective:IsShown() and contents.visibleObjectives == 0, "returning to Compact lost the objective mask")
+    end
     Click("LeftButton", true)
     Folded("external expand-all reopened a manually folded zone or left a stray row")
     Check(guideReads == 1 and externalExpands == 1 and explicitExpands == 0 and not zone.isCollapsed,
         "fold masking changed the quest data used by a guide")
+    if forever then
+        HoldSkinJobs()
+        ExpandQuestHeader(0)
+        Check(row:IsShown() and objective:IsShown() and contents.visibleQuests == 2,
+            "fold masking ran inside the native quest rebuild")
+        FlushSkinJobs()
+        Folded("deferred fold masking did not reflow the rows")
+    end
     ExpandQuestHeader(0)
     Folded("next native pool rebuild lost the fold")
     pinQuestID = other.info.questID
@@ -130,7 +189,7 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     rebuildImmediately = false
     contents.dirty, header.dirty = true, true
     Click("LeftButton", false)
-    Check(row:IsShown() and objective:IsShown() and PinVisible() and explicitExpands == 1
+    Check(row:IsShown() and objective:IsShown() == (not forever) and PinVisible() and explicitExpands == 1
         and normal:GetAtlas() == minus, "second click did not expand the locally folded zone")
     Check(row.labels[2]:IsShown(), "local reopen left a blank compact quest until native rebuild")
     Check(contents.visibleQuests == 2 and contents.width == 304, "local reopen did not lay out the expanded rows")
@@ -148,6 +207,10 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     return function()
         Check(row:IsShown() and objective:IsShown() and PinVisible() and normal:GetAtlas() == minus
             and contents.visibleQuests == 2, "disabling skin left quest rows hidden or the disclosure changed")
+        if forever then
+            Check(row:GetHeight() == nativeTitleHeight and contents.height == nativeTitleHeight + other:GetHeight(),
+                "disabling skin did not restore the latest native quest height")
+        end
         Check(contents.dirty == true, "disabling the skin cleared Blizzard's pending layout state")
     end
 end
@@ -157,6 +220,8 @@ local function Run(flavor)
     local H = assert(loadfile(root .. "/tools/tests/suite_skin_menu_transitions_contract.lua"))()
     arg[3] = nil
     local NS, Frame, Load = H.NS, H.Frame, H.Load
+    local forever = NS.Client.isForever
+    local compactCVar = forever and "1" or "0"
     local combat, lockdown, delayed, cvar, objectiveReads = false, false, {}, "1", 0
     NS.IsCombatLocked = function() return combat end
     InCombatLockdown = function() return lockdown end
@@ -166,10 +231,23 @@ local function Run(flavor)
     NS.Theme = { GetColor = function() return color, 0.6, 0.8, 1 end,
         GetMaterialOpacity = function() return opacity end }
     NS.L = setmetatable({}, { __index = function(_, key) return key end })
-    NS.WindowControls = { Refresh = Noop }
+    local captionRefreshes = 0
+    NS.WindowControls = { Refresh = function() captionRefreshes = captionRefreshes + 1 end }
     NS.QuestText = { Activate = Noop, Deactivate = Noop }
     NS.Registry.NotifyListeners = function(domain)
         for owner, callback in pairs(H.listeners) do callback(owner, domain) end
+    end
+    local holdSkinJobs, skinJobs
+    NS.Registry.QueueJob = function(job)
+        if holdSkinJobs then skinJobs[job] = true else job() end
+    end
+    local function HoldSkinJobs()
+        holdSkinJobs, skinJobs = true, {}
+    end
+    local function FlushSkinJobs()
+        holdSkinJobs = false
+        for job in pairs(skinJobs) do job() end
+        skinJobs = nil
     end
     NS.Surface = { Attach = function(_, spec) return { spec = spec } end, SetVisible = Noop }
     local searchSkins, buttonSkins = {}, {}
@@ -204,8 +282,12 @@ local function Run(flavor)
         return frame
     end
     local asyncEvents, asynchronous = {}, false
+    local detailsOpen, objectiveCVarWrites = false, 0
     GetCVar = function(name) Check(name == "showQuestObjectivesInLog", "unexpected CVar read") return cvar end
     SetCVar = function(name, value)
+        objectiveCVarWrites = objectiveCVarWrites + 1
+        Check(not forever, detailsOpen and "Forever's Compact refreshed native quest details by writing the CVar"
+            or "Forever's Compact wrote the native quest objectives CVar")
         cvar = tostring(value)
         if asynchronous then asyncEvents[#asyncEvents + 1] = { name, cvar }
         else cvarEvents:Fire("OnEvent", "CVAR_UPDATE", name, cvar) end
@@ -335,9 +417,45 @@ local function Run(flavor)
     opacity = 1
     External("0")
     External("1")
-    Check(NS.WorldMapQuests.SetLayout("compact") and cvar == "0", "compact layout failed after native CVar edits")
+    detailsOpen = true
+    Check(NS.WorldMapQuests.SetLayout("compact") and cvar == compactCVar, "compact layout failed after native CVar edits")
+    detailsOpen = false
     Check(#row.labels == 3, "compact quest columns missing")
     Check(nativeRebuilds == 2, "switching layouts invoked the native quest pool rebuild from addon code")
+    -- A map change rebuilds the quest log inside WorldMapMixin:OnShow before
+    -- Blizzard calls the protected reading emote on both clients.
+    EventRegistry:TriggerEvent("WorldMapOnShow")
+    holdSkinJobs, skinJobs = true, {}
+    row.Text:SetText("New map quest")
+    local beforeOpen = enumerations
+    QuestLogQuests_Update()
+    QuestLogQuests_Update()
+    Check(enumerations == beforeOpen and row.labels[2]:GetText() == "Quest 1",
+        flavor .. ": skin touched native quest rows while the map was still opening")
+    EventRegistry:TriggerEvent("WorldMapOnShow")
+    FlushSkinJobs()
+    Check(enumerations == beforeOpen + 1 and row.labels[2]:GetText() == "New map quest",
+        flavor .. ": deferred skin did not paint the latest quest list once")
+    if NS.Client.isForever then
+        HoldSkinJobs()
+        local beforeSizeChange = captionRefreshes
+        EventRegistry:TriggerEvent("WorldMapMaximized")
+        EventRegistry:TriggerEvent("WorldMapMinimized")
+        Check(captionRefreshes == beforeSizeChange, "native map size change refreshed window controls inline")
+        searchSkins[search] = nil
+        EventRegistry:TriggerEvent("QuestLog.SetDisplayMode")
+        Check(searchSkins[search] == nil, "mode change painted before the native map finished opening")
+        row.mouseOver = false
+        row:Fire("OnLeave")
+        row.mouseOver = true
+        row:Fire("OnShow")
+        Check(not row.plate.shown, "pooled quest row repainted inline during native OnShow")
+        FlushSkinJobs()
+        Check(captionRefreshes == beforeSizeChange + 1, "map size changes did not settle window controls once")
+        Check(searchSkins[search] and row.plate.shown, "deferred mode and row paints were lost")
+    end
+    row.Text:SetText("Quest 1")
+    QuestLogQuests_Update()
     row.Text:SetTextColor(1, 0.8, 0)
     Check(not row.Text:IsShown(), "native color repaint exposed a second quest title")
     row.Text:SetTextColor(0.8, 0.1, 0.1, 0)
@@ -414,7 +532,7 @@ local function Run(flavor)
     cvarEvents:Fire("OnEvent", "PLAYER_LOGOUT")
     Check(cvar == "1", "logout/reload did not restore native objective preference")
     NS.WorldMapQuests.Refresh()
-    Check(cvar == "0", "compact preference did not reacquire after reload boundary")
+    Check(cvar == compactCVar, "unexpected native preference after Compact refreshed at the reload boundary")
     NS.WorldMapQuests.SetLayout("blizzard")
     local historyKey, historyCount = nil, 0
     local P = { Suite = {}, M = {}, W = {}, HM = {}, Combat = function() return combat end,
@@ -452,18 +570,18 @@ local function Run(flavor)
     Check(radios.blizzard.label == "Blizzard" and radios.compact.label == "Compact"
         and radios.blizzard.selected("blizzard"), "map gear did not expose both layouts and current selection")
     radios.compact.select("compact")
-    Check(gearHistory == 1 and setting.get() == "compact" and cvar == "0", "map gear did not switch to compact")
+    Check(gearHistory == 1 and setting.get() == "compact" and cvar == compactCVar, "map gear did not switch to compact")
     radios.blizzard.select("blizzard")
     Check(gearHistory == 2 and setting.get() == "blizzard" and cvar == "1", "map gear did not restore Blizzard layout")
     setting.set("compact")
-    Check(historyCount == 1 and historyKey == "suite:skin.questLog.layout" and cvar == "0",
+    Check(historyCount == 1 and historyKey == "suite:skin.questLog.layout" and cvar == compactCVar,
         "Skinning switch did not record exactly one menu history change")
     NS.DB.questLog = { layout = "blizzard" }
     NS.Registry.NotifyListeners("profile")
     Check(cvar == "1" and row.Text:IsShown(), "Undo/profile restore retained compact quest presentation")
     NS.DB.questLog = { layout = "compact" }
     NS.Registry.NotifyListeners("profile")
-    Check(cvar == "0" and not row.Text:IsShown(), "Redo/profile restore did not restore compact presentation")
+    Check(cvar == compactCVar and not row.Text:IsShown(), "Redo/profile restore did not restore compact presentation")
     local originalSetText, dispatch, reported = row.labels[1].SetText, NS.Safety.Dispatch, 0
     NS.Safety.Dispatch = function(callback, ...)
         local ok, value = pcall(callback, ...)
@@ -538,14 +656,36 @@ local function Run(flavor)
     map.shown = true
     NS.WorldMapSkin:OnWorldMapShown()
     Check(not row.Text:IsShown() and row.labels[2]:IsShown(), "reopened quest log did not restore Compact")
-    local checkReleasedFolds = CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
+    local function CombatRebuild(rebuild, verify)
+        combat, lockdown = true, true
+        rebuild()
+        verify()
+        combat, lockdown = false, false
+        for key, callback in pairs(delayed) do delayed[key] = nil callback() end
+    end
+    local checkReleasedFolds = CheckZoneFolds(NS, Frame, map, scroll, contents, row, active,
+        HoldSkinJobs, FlushSkinJobs, External, CombatRebuild)
+    holdSkinJobs, skinJobs = true, {}
+    QuestLogQuests_Update()
     NS.WorldMapSkin.Disable(map, "map-quests")
+    visits = enumerations
+    FlushSkinJobs()
+    Check(enumerations == visits, "queued quest paint walked the released adapter")
     Check(not cvarEvents.events.PLAYER_REGEN_DISABLED and not cvarEvents.events.PLAYER_REGEN_ENABLED,
         "released quest log retained its combat events")
     checkReleasedFolds()
     Check(cvar == "1" and row.Text:IsShown() and row.HighlightTexture.alpha == 1,
         "disable did not restore native quest presentation")
     Check(not row.labels[1].shown and not row.plate.shown, "disable retained owned quest visuals")
+    if forever then
+        detailsOpen = true
+        Check(NS.WorldMapSkin.Apply(map, "map-quests"), "Compact did not activate with native quest details open")
+        Check(not row.Text:IsShown() and cvar == "1", "activating Compact disturbed native details or lost its columns")
+        cvarEvents:Fire("OnEvent", "PLAYER_LOGOUT")
+        Check(NS.WorldMapSkin.Disable(map, "map-quests"), "Compact did not release with native quest details open")
+        Check(objectiveCVarWrites == 0 and cvar == "1", "Compact layout lifecycle wrote the native objective preference")
+        checkReleasedFolds()
+    end
     Check(#created > framesBefore, "contract did not exercise owned visual creation")
     _G.WorldMapFrame, _G.QuestLogQuests_Update, _G.QuestUtilsOverrides = nil, nil, nil
     Menu = oldMenu

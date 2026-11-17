@@ -441,8 +441,7 @@ end
 -- keeps its full pass: objects asked for before it are replayed before that
 -- pass, later ones after it, so each ends as its last request leaves it.
 local function NewDeferred()
-    return { serial = 0, tabs = Kit.WeakSet(), windows = Kit.WeakSet(), editBoxes = Kit.WeakSet(),
-        args = Kit.WeakSet() }
+    return { serial = 0, tabs = Kit.WeakSet(), editBoxes = Kit.WeakSet(), args = Kit.WeakSet() }
 end
 local deferred, DrainDeferred = NewDeferred()
 
@@ -465,21 +464,27 @@ end
 
 local function SkinEditBoxNow(state, editBox) SkinEditBox(state, editBox, true) end
 
--- ChatFrameEditBoxMixin is copied onto each edit box when it is created, so
--- a hook on the mixin table never reaches the edit boxes that existed before
--- this load-on-demand addon. Hook each skinned instance instead.
 local function OnEditBoxHeader(editBox)
     if DeferIfCombat(deferred.editBoxes, editBox) then return end
     ForActive(SkinEditBoxNow, editBox)
 end
 
--- Every chat hook runs inside Blizzard's own call (FCFTab_UpdateColors runs
--- once per tab in FCFDock_UpdateTabs's loop), so each is its own error boundary.
-local function OnEditBoxHeaderHook(editBox)
-    Dispatch(OnEditBoxHeader, editBox)
+-- Blizzard repaints a box's header in UpdateHeader (a focus, a chat type
+-- typed with Space or cycled with Tab). Suite.ChatState reports those and
+-- the box is skinned on the next frame, after UpdateHeader ran: a method
+-- hook there would run inside ActivateChat ahead of its chatType write.
+local queuedBoxes = Kit.WeakSet()
+local function DrainEditBoxes()
+    for editBox in pairs(queuedBoxes) do
+        queuedBoxes[editBox] = nil
+        Dispatch(OnEditBoxHeader, editBox)
+    end
 end
 
-local hookedEditBoxes = setmetatable({}, { __mode = "k" })
+local function QueueEditBox(editBox)
+    if not next(queuedBoxes) then C_Timer.After(0, DrainEditBoxes) end
+    queuedBoxes[editBox] = true
+end
 
 SkinEditBox = function(state, editBox, recapture)
     if not editBox then return end
@@ -487,10 +492,6 @@ SkinEditBox = function(state, editBox, recapture)
     TrackSuffixes(state, editBox, editBoxFocusSuffixes, "active", recapture)
     TrackButtonTextures(state, NamedRegion(editBox, "Language"),
         "checkmark", "pressed", "hover")
-    if not hookedEditBoxes[editBox] and HasMethod(editBox, "UpdateHeader") then
-        hooksecurefunc(editBox, "UpdateHeader", OnEditBoxHeaderHook)
-        hookedEditBoxes[editBox] = true
-    end
 end
 
 local function SkinChatFrame(state, frame, recapture)
@@ -582,11 +583,6 @@ local function OnTabColors(tab, selected)
     ForActive(SkinTabNow, tab, selected)
 end
 
-local function OnWindowColor(frame)
-    if DeferIfCombat(deferred.windows, frame) then return end
-    ForActive(SkinWindowNow, frame)
-end
-
 local function OnTemporaryWindow()
     if DeferIfCombat(nil) then return end
     RefreshAll()
@@ -603,7 +599,6 @@ end
 
 local function ReplayKinds(record, before)
     Replay(record, record.tabs, SkinTabNow, before)
-    Replay(record, record.windows, SkinWindowNow, before)
     Replay(record, record.editBoxes, SkinEditBoxNow, before)
 end
 
@@ -661,14 +656,31 @@ local function OnPickerHidden()
         NS.Registry.QueueJob(RefreshThemeColors)
     end
 end
--- These Blizzard functions are called through their globals, so a global
--- post-hook reaches every chat window, including ones created earlier.
+-- ChangeChatColor (the chat settings' colour API) runs outside the windows'
+-- own code; its global post-hook sees every caller.
 local globalHooks = {
-    { "FCFTab_UpdateColors", function(tab, selected) Dispatch(OnTabColors, tab, selected) end },
-    { "FCF_SetWindowColor", function(frame) Dispatch(OnWindowColor, frame) end },
-    { "FCF_OpenTemporaryWindow", function() Dispatch(OnTemporaryWindow) end },
     { "ChangeChatColor", function(chatType, r, g, b) Dispatch(OnMessageColorChanged, chatType, r, g, b) end },
 }
+
+-- Docked tab colours follow Blizzard's dock layouts (FCFDock_UpdateTabs
+-- repaints them), window chrome its window reports: Suite.ChatState reports
+-- both after Blizzard's code ran. Hooks on FCFTab_UpdateColors,
+-- FCF_SetWindowColor or FCF_OpenTemporaryWindow run inside FCF_Tab_OnClick.
+local function ChatTabs()
+    local docked = AnyActive() and Field(GENERAL_CHAT_DOCK, "DOCKED_CHAT_FRAMES")
+    if type(docked) ~= "table" then return end
+    local selected = Field(GENERAL_CHAT_DOCK, "selected")
+    for index = 1, math.min(#docked, MAX_CHAT_FRAMES) do
+        local tab = NamedRegion(docked[index], "Tab")
+        if tab then Dispatch(OnTabColors, tab, docked[index] == selected) end
+    end
+end
+
+local function ChatWindows() if AnyActive() then Dispatch(OnTemporaryWindow) end end
+local function ChatBox(_, kind, box) if AnyActive() and (kind == "focus" or kind == "show") then QueueEditBox(box) end end
+local function ChatKey(_, box, key) if AnyActive() and (key == "SPACE" or key == "TAB") then QueueEditBox(box) end end
+
+local CHAT_WATCH = { box = ChatBox, key = ChatKey, selection = ChatTabs, layout = ChatTabs, windows = ChatWindows }
 
 local function PickerShown() Dispatch(OnPickerShown) end
 local function PickerHidden() Dispatch(OnPickerHidden) end
@@ -694,6 +706,7 @@ local function RegisterHooks()
         end
     end
     HookColorPicker()
+    NS.SuiteCore().ChatState.Watch(ChatFramesSkin, CHAT_WATCH)
 end
 
 -- Recaptures native colors first: every caller follows a Blizzard update.
@@ -752,6 +765,7 @@ function ChatFramesSkin.Disable(_, owner)
     if not AnyActive() then
         NS.CombatGate.Cancel(REFRESH_KEY)
         deferred = NewDeferred()
+        NS.SuiteCore().ChatState.Unwatch(ChatFramesSkin)
     end
     return true
 end

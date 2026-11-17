@@ -2,18 +2,21 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.Chat
 local M = C.M
-local SIZE, WIDTH = 20, 100
+local SIZE = 20
 local ARROW_WIDTH, ARROW_HEIGHT, ARROW_GAP = 36, 18, 2
+-- No input tool: opening or closing Blizzard's edit box from a Suite click
+-- runs ChatFrameUtil.OpenChat/DeactivateChat in the Suite's taint, which
+-- writes the box's chatType attribute that every later send reads.
 local TOOLS = {
     { title = S.Text("New tab"), action = "new" },
-    { title = S.Text("Chat input"), action = "input" },
     { title = S.Text("Copy chat"), action = "copy" },
     { title = S.Text("Lock chat movement and resizing"), action = "lock" },
     { title = S.Text("Chat settings"), action = "settings" },
 }
+local WIDTH = #TOOLS * SIZE
+C.TOOLBAR_WIDTH = WIDTH
 local STROKES = {
     { {0, 0, 10, 1}, {0, 0, 1, 10} },
-    { {0, 4, 11, 1}, {-5, 0, 1, 7}, {5, 0, 1, 7}, {1, -3, 8, 1}, {-3, -4, 1, 3} },
     { {-2, 3, 8, 1}, {-5, -1, 1, 8}, {-2, -5, 8, 1}, {2, -1, 1, 8},
       {1, 6, 8, 1}, {5, 2, 1, 8} },
     { {0, -2, 10, 7}, {-3, 4, 1, 6}, {0, 7, 7, 1}, {3, 4, 1, 6} },
@@ -71,14 +74,6 @@ local function Click(button)
         C.OpenCopyDialog(M, frame)
         return
     end
-    if action == "input" then
-        if C.InputHasFocus(frame) then
-            ChatFrameUtil.DeactivateChat(frame.editBox)
-        else
-            ChatFrameUtil.OpenChat(nil, frame)
-        end
-        return
-    end
     if NS.InCombat() then
         S.Print(NS.RestrictedNotice())
         return
@@ -131,7 +126,7 @@ function C.PaintToolbar(owner, config, live)
         button.config = config
         local iconColor = index == 1 and "4fc27c" or config.tabActiveColor
         for _, stroke in ipairs(button.strokes) do C.Tint(stroke, iconColor, 100) end
-        if index == 4 then button.strokes[4]:SetShown(config.toolbarLocked == true) end
+        if button.action == "lock" then button.strokes[4]:SetShown(config.toolbarLocked == true) end
         C.Tint(button.fill, config.panelColor, 0)
     end
 end
@@ -248,7 +243,6 @@ local function ReleaseDockWidth(dock)
     M.context:RestorePoints(dock)
     M.toolbarDockAnchor, M.toolbarDockOwned, M.whisperArrowY = nil, nil, nil
     M.toolbarDockX, M.toolbarDockY = nil, nil
-    FCFDock_UpdateTabs(dock, true)
     M.toolbarLayingOut = nil
 end
 
@@ -274,6 +268,11 @@ local function LayoutNativeDock(dock, xOffset, yOffset)
     end
 end
 
+-- The dock keeps the owned anchor and width between Blizzard's layouts, so
+-- each later FCFDock_UpdateTabs (tab select, docking, a resize) sizes the tabs
+-- to it. The Suite never calls FCFDock_UpdateTabs itself: run from Suite
+-- code it shows and hides chat frames, sets tab alphas and writes the dock's
+-- fields in the Suite's taint, and every later tab click reads them.
 function C.LayoutToolbarDock()
     if M.toolbarLayingOut or not M.active or C.LayoutLocked() then return end
     local dock, c = GENERAL_CHAT_DOCK, M.config
@@ -312,7 +311,6 @@ function C.LayoutToolbarDock()
         M.context:Property(dock, "GetWidth", "SetWidth", width)
         RememberDockAnchor(point, relative, edge, x, y, xOffset, yOffset)
         M.toolbarDockOwned = true
-        FCFDock_UpdateTabs(dock, true)
     else
         M.whisperArrowY = nil
     end
@@ -334,8 +332,9 @@ function C.ReleaseToolbar()
     ReleaseDockWidth(GENERAL_CHAT_DOCK)
 end
 
-local function SelectWhisper(button)
-    if not M.active or NS.InCombat() then return end
+-- The tab an arrow selects next: the neighbor of the selected whisper tab,
+-- else the last (previous) or first (next) docked whisper tab.
+local function WhisperTarget(button)
     local alpha = button:GetEffectiveAlpha()
     if not S.Finite(alpha) or alpha <= 0 then return end
     local selected = C.DockSelection()
@@ -353,11 +352,63 @@ local function SelectWhisper(button)
         end
     end
     local tab = neighbor or (button.previous and last or first)
-    if tab and tab ~= selectedTab then FCF_Tab_OnClick(tab, "LeftButton") end
+    if tab ~= selectedTab then return tab end
 end
 
-local function WakeWhisperArrows()
-    if M.active then C.ChatActivity(C.DockSelection() or ChatFrame1) end
+-- An arrow selects its tab through a secure "click" delegate laid over it
+-- out of combat: FCF_Tab_OnClick run from Suite code would write
+-- SELECTED_CHAT_FRAME and LAST_ACTIVE_CHAT_EDIT_BOX in the Suite's taint,
+-- and the next Enter would open chat from them. The delegate clicks
+-- Blizzard's own tab in a secure execution (left button only: a right
+-- click would open the tab menu) and aims again after each click.
+local arrowDelegate
+local function AimArrow(button)
+    local delegate = arrowDelegate
+    if not delegate or NS.InCombat() then return end
+    local tab = M.active and button and WhisperTarget(button)
+    if not tab then
+        delegate.owner = nil
+        delegate:Hide()
+        return
+    end
+    delegate.owner = button
+    delegate:SetAttribute("clickbutton", tab)
+    delegate:SetFrameStrata(button:GetFrameStrata())
+    delegate:SetFrameLevel(button:GetFrameLevel() + 5)
+    delegate:ClearAllPoints()
+    delegate:SetAllPoints(button)
+    delegate:Show()
+end
+
+local function ReleaseArrow(delegate)
+    if NS.InCombat() then return end
+    delegate.owner = nil
+    delegate:Hide()
+end
+
+local function ArrowClicked(delegate) AimArrow(delegate.owner) end
+
+local function ArrowDelegate()
+    if arrowDelegate then return arrowDelegate end
+    local delegate = S.CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
+    delegate:SetAttribute("type", "click")
+    delegate:SetAttribute("useOnKeyDown", false)
+    delegate:RegisterForClicks("LeftButtonUp")
+    delegate:SetScript("PostClick", ArrowClicked)
+    delegate:SetScript("OnLeave", ReleaseArrow)
+    delegate:Hide()
+    RegisterStateDriver(delegate, "visibility", "[combat] hide")
+    arrowDelegate = delegate
+    return delegate
+end
+
+local function WakeWhisperArrows(button)
+    if not M.active then return end
+    C.ChatActivity(C.DockSelection() or ChatFrame1)
+    -- A secure frame is created and aimed out of combat only.
+    if NS.InCombat() then return end
+    ArrowDelegate()
+    AimArrow(button)
 end
 
 local function WhisperArrows(frame)
@@ -376,7 +427,6 @@ local function WhisperArrows(frame)
         label:SetPoint("CENTER", button, "CENTER")
         label:SetText(glyph)
         button.fill, button.previous = fill, index == 1
-        button:SetScript("OnClick", SelectWhisper)
         button:SetScript("OnEnter", WakeWhisperArrows)
         arrows.buttons[index] = button
     end
@@ -415,6 +465,7 @@ function C.UpdateWhisperArrows(dock)
     local arrows = M.whisperArrows
     if NS.Safety.IsForbidden(frame) or M.whisperArrowY == nil or not WhisperArrowFits(dock) or not WhisperOverflow(dock) then
         if arrows and arrows:IsShown() then arrows:Hide() end
+        if arrowDelegate and arrowDelegate:IsShown() then ReleaseArrow(arrowDelegate) end
         return
     end
     local c = M.config

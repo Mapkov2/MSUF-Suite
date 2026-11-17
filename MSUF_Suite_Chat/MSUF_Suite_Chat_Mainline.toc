@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Chat
 ## Notes: Optional native chat styling for Retail and Forever.
 ## Author: Mapko
-## Version: 0.1.22-alpha
+## Version: 0.1.23-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -35,3 +35,6 @@ PreviewSnapshot.lua
 Preview.lua
 Bubbles.lua
 Controller.lua
+MessengerData.lua
+MessengerWindow.lua
+Messenger.lua

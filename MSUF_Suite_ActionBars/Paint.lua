@@ -1,14 +1,8 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
--- Paint passes of the suite's own buttons: range tint, usability, checked
--- state, counts, text, equipped border, cooldowns and proc glows, plus the
--- slot -> buttons map and the walks over visible filled buttons. The
--- dirty mask and the next-frame flush are in Flush.lua, the event map in
--- Events.lua, Blizzard's reused buttons in NativeButtons.lua; they resolve
--- what they use from here (AB.Painter) once at load. No per-event
--- allocation. Secret values (12.x) only reach C sinks: cooldowns through
--- duration objects, counts and text through SetText, desaturation and alpha
--- through curve evaluations. Only NeverSecret fields are compared.
+-- Paint the Suite's buttons and maintain the slot map and filled lists.
+-- Flush, Events and NativeButtons resolve AB.Painter once at load.
+-- Secret durations, text and curve results go straight to native sinks.
 local AB = P.ActionBars
 local M, Virtual = AB.M, AB.VirtualPaint
 local ENUM = AB.ENUM
@@ -27,6 +21,8 @@ local chargeEpoch = 0
 local rangeRefs = {}
 local feedbackDesaturate, feedbackAlpha
 local WalkNative
+-- Distinguish a previously applied public nil from a secret count.
+local NO_COUNT = {}
 -- Blizzard keeps the vehicle/override page (133-144) alive separately.
 local SPECIAL_FIRST, SPECIAL_LAST = 133, 144
 
@@ -91,7 +87,6 @@ local function Tint(rec)
     local style, code = AB.style, rec.usable or USABLE_OK
     local key = rec.outOfRange and OUT_OF_RANGE or code
     if rec.tint == key then return end
-    rec.tint = key
     if key == OUT_OF_RANGE then
         icon:SetVertexColor(style.rr, style.rg, style.rb)
     else
@@ -99,6 +94,7 @@ local function Tint(rec)
         local color = style.tints[key] or style.tints[UNUSABLE]
         icon:SetVertexColor(color[1], color[2], color[3])
     end
+    rec.tint = key
 end
 
 local function ReleaseRange(rec)
@@ -156,7 +152,7 @@ local function Usable(rec, usable, noMana)
     Tint(rec)
 end
 
-local function State(rec)
+local function State(rec, slotPaint)
     local slot, checked = rec.slot, false
     if M.config.castHighlight then
         local current = api.Current(slot)
@@ -167,6 +163,11 @@ local function State(rec)
             checked = not IsSecret(repeating) and repeating or false
         end
     end
+    -- A check button can toggle itself on click, independently of action state.
+    if slotPaint and rec.decorChecked == checked then
+        local shown = rec.button:GetChecked()
+        if not IsSecret(shown) and (shown == true) == checked then return end
+    end
     rec.button:SetChecked(checked)
     rec.decorChecked = checked
     AB.UpdateDecorState(rec)
@@ -176,10 +177,10 @@ local function Count(rec, charges, queried)
     local slot, count = rec.slot, rec.button.Count
     if not count then return end
     local text = api.DisplayCount(slot)
-    local secret = IsSecret(text)
-    if secret or text == nil or rec.displayCount ~= text then
+    local seen = not IsSecret(text) and (text == nil and NO_COUNT or text) or nil
+    if seen == nil or rec.displayCount ~= seen then
         count:SetText(text)
-        rec.displayCount = not secret and text or nil
+        rec.displayCount = seen
     end
     local alpha = 1
     if M.config.hideEmptyCharges and rec.noChargeEpoch ~= chargeEpoch then
@@ -190,7 +191,9 @@ local function Count(rec, charges, queried)
         if not IsSecret(maximum) and type(maximum) == "number" and maximum > 1
             and not IsSecret(current) and current == 0 then alpha = 0 end
     end
-    count:SetAlpha(alpha)
+    -- Style.lua can show the count again. Hiding must still write each time.
+    if alpha == 0 or not rec.countShown then count:SetAlpha(alpha) end
+    rec.countShown = alpha == 1
     return charges, queried
 end
 
@@ -211,10 +214,12 @@ local function Equipped(rec)
     if not border then return end
     local equipped = api.Equipped(rec.slot)
     if Public(equipped) and equipped then
+        rec.borderHidden = nil
         border:SetVertexColor(0, 1, 0, .5)
         border:Show()
-    else
+    elseif not rec.borderHidden then
         border:Hide()
+        rec.borderHidden = true
     end
 end
 
@@ -256,10 +261,7 @@ local function CooldownFeedback(rec, active)
     end
 end
 
--- The duration getters are documented as never nil, but the 12.1 client
--- returns nothing for some action slots (BugSack: GetActionChargeDuration on a
--- proven charge action). Without an object the swipe clears instead of
--- erroring. Returns the new shown flag.
+-- Some 12.1 slots return no duration, including known charge actions.
 local function Swipe(frame, duration)
     if duration then
         frame:SetCooldownFromDurationObject(duration)
@@ -269,10 +271,8 @@ local function Swipe(frame, duration)
     return nil
 end
 
--- Duration objects paint every swipe and drive the optional feedback; an
--- inactive cooldown needs no info table, and secret remaining times stay
--- inside Blizzard's C sinks.
-local function Cooldown(rec, charges, chargesQueried)
+-- Duration objects also drive optional feedback and keep remaining times opaque.
+local function Cooldown(rec, charges, chargesQueried, slotPaint)
     local slot, button = rec.slot, rec.button
     local cooldown, charge, loc = button.cooldown, button.chargeCooldown, button.lossOfControlCooldown
     local replace = false
@@ -291,10 +291,7 @@ local function Cooldown(rec, charges, chargesQueried)
         rec.locCooldownShown = nil
     end
     if charge and rec.noChargeEpoch ~= chargeEpoch then
-        -- Once this action's public maximum proves it has charges, the native
-        -- duration can paint and clear the recharge without another info table.
-        -- Charge, spell and action changes invalidate that proof; counts still
-        -- read their current answer when their own work is marked.
+        -- Reuse public charge-type proof until a charge, spell or action change.
         if not chargesQueried and rec.chargeTypeEpoch == chargeEpoch then
             if not replace then
                 rec.chargeCooldownShown = Swipe(charge, api.ChargeDuration(slot))
@@ -327,8 +324,14 @@ local function Cooldown(rec, charges, chargesQueried)
         end
     end
     if not replace then
-        -- clearIfZero defaults to true: a ready action clears its swipe.
-        rec.cooldownShown = Swipe(cooldown, api.CooldownDuration(slot))
+        local duration = api.CooldownDuration(slot)
+        -- The native setter clears zero spans. Skip redundant public clears.
+        if slotPaint and duration and not duration:HasSecretValues() and duration:IsZero() then
+            if rec.cooldownShown then cooldown:Clear() end
+            rec.cooldownShown = nil
+        else
+            rec.cooldownShown = Swipe(cooldown, duration)
+        end
     elseif rec.cooldownShown then
         cooldown:Clear()
         rec.cooldownShown = nil
@@ -581,8 +584,7 @@ end
 local function Clear(rec)
     if rec.quality then rec.quality:Hide() end
     local button = rec.button
-    rec.filled = false
-    rec.tex, rec.displayCount, rec.actionText = nil, nil, nil
+    rec.filled, rec.tex, rec.displayCount, rec.actionText, rec.iconShown = false, nil, nil, nil, nil
     if button.icon then
         button.icon:SetTexture(nil)
         button.icon:Hide()
@@ -638,7 +640,7 @@ local function ProfessionQuality(rec)
     SetQuality(rec, Public(item) and item and api.Quality(rec.slot))
 end
 
-local function Paint(rec)
+local function Paint(rec, slotPaint)
     local slot = rec.slot
     local has = slot and api.HasAction(slot)
     if not (Public(has) and has) then
@@ -650,34 +652,29 @@ local function Paint(rec)
     rec.chargeTypeEpoch = nil
     rec.filled = true
     local icon = rec.button.icon
-    -- A macro can change its resolved outputs without changing its action ID.
-    -- Re-read the current values and skip only writes of equal public output.
     local texture = api.Texture(slot)
     local secret = IsSecret(texture)
     if secret or texture == nil or rec.tex ~= texture then
         icon:SetTexture(texture)
         rec.tex = not secret and texture or nil
     end
-    icon:Show()
-    rec.tint = nil
+    if not rec.iconShown then icon:Show() end
+    rec.iconShown = true
+    if rec.tintGen ~= AB.styleGen then rec.tint, rec.tintGen = nil, AB.styleGen end
     AcquireRange(rec)
     Usable(rec)
-    State(rec)
+    State(rec, slotPaint)
     local charges, chargesQueried = Count(rec)
     Text(rec)
     Equipped(rec)
     ProfessionQuality(rec)
-    Cooldown(rec, charges, chargesQueried)
+    Cooldown(rec, charges, chargesQueried, slotPaint)
     GlowCheck(rec)
     RouteSpell(rec)
-    -- The recommendation ring follows the action the paint just cached.
     UpdateAssist(rec)
 end
 
--- Icon storms (forms, spell overrides): only buttons whose texture changed
--- get the full repaint. A spell action keeping its icon is still repainted
--- when its spell ID or that spell's override changed (an override with the
--- same art): its cooldown route follows both.
+-- The cooldown route can change even when the icon does not.
 local function Icon(rec)
     local texture = api.Texture(rec.slot)
     if rec.tex ~= nil and Public(texture) and texture == rec.tex then
@@ -693,6 +690,7 @@ local function Refill(bar)
     local filled, count = bar.filled, 0
     for i = 1, #bar.buttons do
         local rec = bar.buttons[i]
+        rec.refillFilled = rec.filled
         if rec.filled and i <= (bar.count or 12) then
             count = count + 1
             filled[count] = rec
@@ -777,7 +775,7 @@ local function Walk(fn)
 end
 
 WalkNative = function(fn)
-    for index = 2, 8 do
+    for index = 1, 8 do
         local bar = AB.bars[index]
         if bar and bar.native and Visible(bar) then
             for i = 1, #bar.buttons do

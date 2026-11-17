@@ -24,6 +24,19 @@ P.M.SetMenuStateValue = function(field, value) P.M[field] = value end
 local function LoadHost(host)
     local dir = root .. '/../' .. host .. '/MidnightSimpleUnitFrames_Options/Shell/Menu2/'
     local path = dir .. 'MSUF_Menu2_Widgets_PreviewDock.lua'
+    if host == "MidnightSimpleUnitFrames-7.0" then
+        P.M.Theme = P.T
+        P.M.Widgets = P.W
+        P.W.RegisterSearchObject = function() end
+        local function Require(name)
+            assert(name == "MSUF_PixelLayoutRegion", name)
+            return function(region) return region end
+        end
+        -- Exercise the dock geometry with the host's reduced-motion setting enabled.
+        P.T.ReducedMotionEnabled = function() return true end
+        assert(loadfile(path))("MSUF", { MSUF2 = P.M, Require = Require })
+        return
+    end
     local file = io.open(path, 'rb')
     if not file then path = dir .. 'MSUF_Menu2_Widgets.lua'; file = assert(io.open(path, 'rb')) end
     local source = file:read('*a'); file:close()
@@ -110,12 +123,12 @@ local function Build(width, host, mode)
     fixed:Deactivate()
     print('CDM compact lifecycle',host,mode,width,'passed')
 end
-for _,host in ipairs({'_repo_backups/6.22','MidnightSimpleUnitFrames'}) do
+for _,host in ipairs({'_repo_backups/6.22','MidnightSimpleUnitFrames-7.0'}) do
     LoadHost(host)
     for _,mode in ipairs({'legacy','host'}) do
         P.M.HOST_API_VERSION=nil
         if mode=='host' then
-            assert(loadfile(root..'/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_HostProtocol.lua'))('MSUF',{MSUF2=P.M})
+            assert(loadfile(root..'/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_HostProtocol.lua'))('MSUF',{MSUF2=P.M})
         end
         local suite={HostBridge={}}
         assert(loadfile(root..'/MSUF_Suite/Core/HostBridgeMenu.lua'))('MSUF_Suite',suite)

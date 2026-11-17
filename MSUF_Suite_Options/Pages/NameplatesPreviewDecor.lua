@@ -490,35 +490,9 @@ function Preview.FilterAuras(sample)
     FilterAuraRow(sample.buffs, AURA_SAMPLE_IDS.buff, excluded and excluded.buff, true)
 end
 
-function Preview.Build(editor, sample)
+function Preview.Build(_, sample)
     sample.decor = { parent = sample.cell, health = sample.bar, cast = sample.cast }
     hovers[sample.bar] = sample
-    if editor.targetStateButton then return end
-    local button = P.T.Button(editor.tools, "Target / non-target", 126, 20)
-    button:SetPoint("RIGHT", editor.tools, "RIGHT", -114, 0)
-    button:SetScript("OnClick", function()
-        editor.targetSample = editor.targetSample == false
-        editor:Paint()
-    end)
-    P.NameplatesEditorLayers.Register(button, "targetSample", "Target / non-target")
-    editor.targetStateButton = button
-    local focus = P.T.Button(editor.tools, "Focus sample", 96, 20)
-    focus:SetPoint("RIGHT", editor.tools, "RIGHT", 0, 0)
-    focus:SetScript("OnClick", function()
-        editor.focusSample = not editor.focusSample
-        editor:Paint()
-    end)
-    P.NameplatesEditorLayers.Register(focus, "focusSample", "Focus sample")
-    editor.focusStateButton = focus
-    local function LayoutTools()
-        button:ClearAllPoints()
-        focus:ClearAllPoints()
-        button:SetPoint("BOTTOMRIGHT", editor.tools, "BOTTOMRIGHT", -102, 0)
-        focus:SetPoint("BOTTOMRIGHT", editor.tools, "BOTTOMRIGHT", 0, 0)
-    end
-    editor.LayoutDecorTools = LayoutTools
-    editor.tools:HookScript("OnSizeChanged", LayoutTools)
-    LayoutTools()
 end
 
 function Preview.Hover(handle, on)
@@ -530,50 +504,85 @@ local function HeaderPoint(region, ...)
     region:SetPoint(...)
 end
 
-local function PaintCastTextures(editor, sample, metrics, get)
+local function PaintCastTextures(editor, sample, metrics, get, style)
     local fillKey = not metrics.skinDisabled and get(ID, "nativeCastFillTexture") or ""
     local backKey = not metrics.skinDisabled and get(ID, "nativeCastBackgroundTexture") or ""
     local locked = editor.uninterruptible
-    local resetFill = sample.castFillKey ~= fillKey or sample.castLocked ~= locked
+    local fill = P.Suite.ResolveTexture(fillKey) or style and style.fill
+    local resetFill = not sample.castFillReady or sample.castFillPath ~= fill or sample.castLocked ~= locked
     if resetFill then
-        sample.castFillKey, sample.castLocked = fillKey, locked
-        sample.castFillPath = P.Suite.ResolveTexture(fillKey)
+        sample.castFillReady = true
+        sample.castFillPath, sample.castLocked = fill, locked
         local atlas = locked and "ui-castingbar-uninterruptable" or "ui-castingbar-filling-standard"
         sample.castProgress:SetStatusBarTexture(sample.castFillPath or atlas)
     end
     local r, g, b = 1, 1, 1
-    if sample.castFillPath then
+    if fill then
         local nr, ng, nb
         r, g, b, nr, ng, nb = Style.CastFillColors(get(ID, "nativeCastFillColor"), get(ID, "nativeCastLockedColor"))
         if locked then r, g, b = nr, ng, nb end
+        if style and editor.interruptedSample and style.interruptR then r, g, b = style.interruptR, style.interruptG, style.interruptB end
     end
     if resetFill or sample.castR ~= r or sample.castG ~= g or sample.castB ~= b then
         sample.castR, sample.castG, sample.castB = r, g, b
+        sample.castProgress:SetStatusBarColor(r, g, b, 1)
         sample.castProgress:GetStatusBarTexture():SetVertexColor(r, g, b, 1)
     end
     local dark = get(ID, "look") == 1 and backKey == "Solid"
-    if sample.castBackgroundKey == backKey and sample.castBackgroundClassic == metrics.classicCast
-        and sample.castBackgroundDark == dark then return end
-    sample.castBackgroundKey, sample.castBackgroundClassic = backKey, metrics.classicCast
-    sample.castBackgroundDark = dark
-    local back = P.Suite.ResolveTexture(backKey)
+    local back = P.Suite.ResolveTexture(backKey) or style and style.background
     local texture = sample.castBack
-    if back then
-        texture:SetTexture(back)
-        texture:ClearTextureSlice()
-        texture:SetTexCoord(0, 1, 0, 1)
-        if dark then texture:SetVertexColor(0, 0, 0, .5)
-        else texture:SetVertexColor(.16, .16, .16, 1) end
-    else
-        texture:SetVertexColor(1, 1, 1, 1)
-        if metrics.classicCast then texture:SetColorTexture(0, 0, 0, .5)
-        else texture:SetAtlas("ui-castingbar-background") end
+    local flat = not back and (style or metrics.classicCast) and true or false
+    local resetBack = not sample.castBackReady or sample.castBackgroundPath ~= back
+        or sample.castBackgroundFlat ~= flat
+    if resetBack then
+        sample.castBackReady = true
+        sample.castBackgroundPath, sample.castBackgroundFlat = back, flat
+        if back then
+            texture:SetTexture(back)
+            texture:ClearTextureSlice()
+            texture:SetTexCoord(0, 1, 0, 1)
+        elseif not flat then
+            texture:SetAtlas("ui-castingbar-background")
+        end
+    end
+    local br, bg, bb, ba = 1, 1, 1, 1
+    if style then br, bg, bb, ba = style.backgroundR, style.backgroundG, style.backgroundB, style.backgroundA
+    elseif back and not dark then br, bg, bb = .16, .16, .16
+    elseif dark or metrics.classicCast then br, bg, bb, ba = 0, 0, 0, .5 end
+    if resetBack or sample.castBackR ~= br or sample.castBackG ~= bg or sample.castBackB ~= bb or sample.castBackA ~= ba then
+        sample.castBackR, sample.castBackG, sample.castBackB, sample.castBackA = br, bg, bb, ba
+        if flat then
+            texture:SetVertexColor(1, 1, 1, 1)
+            texture:SetColorTexture(br, bg, bb, ba)
+        else
+            texture:SetVertexColor(br, bg, bb, ba)
+        end
     end
 end
 
+local function PaintCastOutline(sample, style)
+    local size = style and style.outlineSize or 0
+    if size > 0 and not sample.castOutline then sample.castOutline = Style.CreateBorder(sample.castProgress) end
+    local outline = sample.castOutline
+    if outline then Style.PaintCastOutline(outline, sample.castProgress, size, style) end
+end
+
 function Preview.CastPresentation(editor, sample, metrics, get)
-    if sample.castBack then PaintCastTextures(editor, sample, metrics, get) end
+    local style = not metrics.skinDisabled and Style.SharedCastbar(get(ID, "look"))
+    if sample.castBack then PaintCastTextures(editor, sample, metrics, get, style) end
+    PaintCastOutline(sample, style)
+    if sample.castProgress and sample.castProgress.SetReverseFill then
+        local reverse = style and style.reverseFill == true or false
+        if sample.castReverse ~= reverse then
+            sample.castProgress:SetReverseFill(reverse)
+            sample.castReverse = reverse
+        end
+    end
     local side = sample.prefix
+    if sample.castText and style and style.textR and style.textG and style.textB
+        and (get(ID, side .. "CastTextEnabled") ~= false or P.Suite.NameplateText.Shared(CONFIG)) then
+        sample.castText:SetTextColor(style.textR, style.textG, style.textB, style.textA)
+    end
     local enabled = not metrics.skinDisabled and get(ID, "look") ~= 2 and get(ID, side)
     sample.castBaseLevel = sample.castBaseLevel or sample.cast:GetFrameLevel()
     local level = sample.castBaseLevel

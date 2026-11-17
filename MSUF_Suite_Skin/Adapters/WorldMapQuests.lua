@@ -1,7 +1,7 @@
 local _, NS = ...
 
--- Compact presentation stays on Blizzard's pooled quest buttons. The native
--- objective CVar supplies their compact layout; owned labels add columns.
+-- Compact presentation stays on Blizzard's pooled quest buttons. Owned
+-- labels add columns and Forever masks the objective rows in this view.
 -- Native search, header collapse, tracking, links, menus and tooltips remain.
 local Quests = {}
 NS.WorldMapQuests = Quests
@@ -40,6 +40,7 @@ local function OwnCVarEvent(value)
 end
 
 local function RestoreObjectives()
+    if NS.Client.isForever then return end
     local original = originalObjectives
     originalObjectives = nil
     yieldedObjectives = nil
@@ -47,6 +48,9 @@ local function RestoreObjectives()
 end
 
 local function SyncObjectives()
+    -- Forever's CVAR_UPDATE refreshes the native quest pane and may recreate
+    -- protected map pins from inside the addon's SetCVar call.
+    if NS.Client.isForever then return end
     if not Compact() then
         RestoreObjectives()
         return
@@ -99,18 +103,52 @@ local function MaskRow(row, list, hide)
     end
 end
 
-local function MaskTitle(row, list)
-    local info = Plain(Safety.Field(row, "info"))
-    local key = HeaderKey(Plain(Safety.Field(info, "header")))
-    local hide = list.masking and key ~= nil and list.folded[key] == true
-    local questID = Plain(Safety.Field(info, "questID"))
-    if hide and type(questID) == "number" then list.hiddenQuests[questID] = true end
-    if MaskRow(row, list, hide) and list.owner then Quests.PaintRow(row, list.owner) end
+local function SetCompactTitleHeight(row, list, compact)
+    local record = list.titleHeights[row]
+    if not (compact or record) or not Safety.CanDecorate(row, true) then return end
+    local current = Safety.Read(row, "GetHeight")
+    if type(current) ~= "number" then return end
+    if not compact then
+        list.titleHeights[row] = nil
+        if current == record.applied then
+            row:SetHeight(record.native)
+            list.changed = true
+        end
+        return
+    end
+    local textHeight = Safety.Read(Safety.Field(row, "Text"), "GetHeight")
+    if type(textHeight) ~= "number" or textHeight <= 0 then return end
+    -- QuestLogQuests_AddQuestButton includes objectives in the title's height.
+    -- Its objective-free baseline adds 8 for text, 4 for spacing and 6 for the POI.
+    local height = textHeight + 18
+    if current ~= height then
+        if not record or current ~= record.applied then
+            record = { native = current }
+            list.titleHeights[row] = record
+        end
+        record.applied = height
+        row:SetHeight(height)
+        list.changed = true
+    elseif record and current ~= record.applied then
+        list.titleHeights[row] = nil
+    end
 end
 
-local function MaskObjective(row, list)
-    local questID = Plain(Safety.Field(row, "questID"))
-    MaskRow(row, list, type(questID) == "number" and list.hiddenQuests[questID] == true)
+local function MaskTitle(row, list, compact)
+    if list.masking or list.hidden[row] then
+        local info = Plain(Safety.Field(row, "info"))
+        local key = HeaderKey(Plain(Safety.Field(info, "header")))
+        local hide = list.masking and key ~= nil and list.folded[key] == true
+        local questID = Plain(Safety.Field(info, "questID"))
+        if hide and type(questID) == "number" then list.hiddenQuests[questID] = true end
+        if MaskRow(row, list, hide) and list.owner then Quests.PaintRow(row, list.owner) end
+    end
+    SetCompactTitleHeight(row, list, compact)
+end
+
+local function MaskObjective(row, list, compact)
+    local questID = not compact and Plain(Safety.Field(row, "questID"))
+    MaskRow(row, list, compact or type(questID) == "number" and list.hiddenQuests[questID] == true)
 end
 
 -- Native POI visibility scripts change the shared supertracking callbacks.
@@ -221,14 +259,20 @@ end
 
 local function ApplyFolds(list, questInfo)
     list.masking = list.owner ~= nil and next(list.folded) ~= nil and not SearchActive(list)
+    local compact = list.owner ~= nil and NS.Client.isForever and Compact()
+    local masked = list.masking or next(list.hidden) ~= nil
     list.changed = false
     Kit.ForEachActive(Safety.Field(list.scroll, "headerFramePool"), FOLD_ROW_LIMIT, TrackHeader, list, questInfo)
-    if list.masking or next(list.hidden) then
+    if masked or compact or next(list.titleHeights) then
         wipe(list.hiddenQuests)
-        Kit.ForEachActive(Safety.Field(list.scroll, "titleFramePool"), FOLD_ROW_LIMIT, MaskTitle, list)
+        Kit.ForEachActive(Safety.Field(list.scroll, "titleFramePool"), FOLD_ROW_LIMIT, MaskTitle, list, compact)
+        if list.masking then
+            Kit.ForEachActive(Safety.Field(list.contents, "buttonPool"), FOLD_ROW_LIMIT, MaskPin, list)
+        end
+    end
+    if compact or masked then
         local objectives = Safety.Field(list.scroll, "objectiveFramePool")
-        Kit.ForEachActive(objectives, Safety.Read(objectives, "GetNumActive") or FOLD_ROW_LIMIT, MaskObjective, list)
-        Kit.ForEachActive(Safety.Field(list.contents, "buttonPool"), FOLD_ROW_LIMIT, MaskPin, list)
+        Kit.ForEachActive(objectives, Safety.Read(objectives, "GetNumActive") or FOLD_ROW_LIMIT, MaskObjective, list, compact)
     end
     RestoreUnmaskedPins(list)
     return list.changed
@@ -239,8 +283,9 @@ local function BeforeQuestLayout(scroll, displayState)
     if not list or not list.owner then return end
     -- Blizzard has reset its pools and is about to lay out shown rows.
     wipe(list.hidden)
+    wipe(list.titleHeights)
     if NS.IsCombatLocked() then
-        if next(list.folded) or next(list.hiddenPins) then
+        if next(list.folded) or next(list.hiddenPins) or NS.Client.isForever and Compact() then
             NS.CombatGate.RunOrDefer(list, list.reapply)
         end
         return
@@ -286,7 +331,7 @@ local function AttachFolds(scroll, state)
         local layout = setmetatable({ skipChildLayout = true }, { __index = contents })
         list = {
             scroll = scroll, contents = contents, folded = {}, hidden = Kit.WeakSet(),
-            hiddenQuests = {}, hiddenPins = Kit.WeakSet(),
+            hiddenQuests = {}, hiddenPins = Kit.WeakSet(), titleHeights = Kit.WeakSet(),
         }
         list.relayout = function()
             if not NS.IsCombatLocked() and Safety.CanDecorate(contents, true) and ApplyFolds(list) then
@@ -472,9 +517,14 @@ local function RefreshRows()
 end
 
 local function RefreshNow()
-    -- Blizzard rebuilds its own POI pool on quest-log updates. Forever also
-    -- rebuilds on this CVar change. Keep native visibility scripts in that path.
-    SyncObjectives()
+    if NS.Client.isForever then
+        for state in pairs(contexts) do
+            local list = state.questFolds
+            if list then list.reapply() end
+        end
+    else
+        SyncObjectives()
+    end
     if not Compact() then return RefreshRows() end
     for state, scroll in pairs(contexts) do
         Kit.ForEachActive(Safety.Field(scroll, "titleFramePool"), FOLD_ROW_LIMIT, Quests.PaintRow, state)
@@ -566,8 +616,10 @@ local function RestoreCombatTitles()
     end
 end
 
-events:RegisterEvent("PLAYER_LOGOUT")
-events:RegisterEvent("CVAR_UPDATE")
+if not NS.Client.isForever then
+    events:RegisterEvent("PLAYER_LOGOUT")
+    events:RegisterEvent("CVAR_UPDATE")
+end
 events:SetScript("OnEvent", function(_, event, name, value)
     if event == "PLAYER_LOGOUT" then
         RestoreObjectives()

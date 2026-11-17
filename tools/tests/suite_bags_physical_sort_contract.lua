@@ -4,15 +4,11 @@ local H = dofile(root .. "/tools/tests/suite_bags_harness.lua")
 local function World()
     local W = H.New(root, { client = arg[2] or "Mainline" })
     local protectedBags = {}
-    Enum.BagSlotFlags = { DisableAutoSort = 1 }
-    NUM_TOTAL_BAG_FRAMES = Constants.InventoryConstants.NumBagSlots + Constants.InventoryConstants.NumReagentBagSlots
     C_Container.GetBackpackAutosortDisabled = function() return protectedBags[0] == true end
     C_Container.GetBagSlotFlag = function(bag, flag)
         assert(flag == Enum.BagSlotFlags.DisableAutoSort)
         return protectedBags[bag] == true
     end
-    SpellCanTargetItem = function() return false end
-    SpellCanTargetItemID = function() return false end
     W.S.Print = function(message) W.errors[#W.errors + 1] = message end
     W.families = {}
     W.protectedBags = protectedBags
@@ -68,6 +64,51 @@ end
 
 local function Subscribers(W)
     return #(W.events.CURSOR_CHANGED or {})
+end
+
+if arg[2] == "Forever" then
+    local W = World()
+    W.sizes[0], W.sizes[1], W.sizes[2], W.sizes[3], W.sizes[4], W.sizes[5] = 2, 2, 2, 2, 2, 2
+    W.families[2] = 64
+    W.protectedBags[3] = true
+    W.Put(0, 2, 103)
+    W.Put(1, 2, 104)
+    W.Put(2, 1, 105)
+    W.Put(3, 2, 105)
+    W.Put(4, 2, 102)
+    W.Put(5, 2, 101, 3)
+    local pickup = C_Container.PickupContainerItem
+    local rejecting = true
+    C_Container.PickupContainerItem = function(bag, slot)
+        if rejecting and W.cursor then
+            -- One dropped request, rolled back by the client's ClearCursor.
+            rejecting = false
+            W.calls.pickups[#W.calls.pickups + 1] = { bag, slot }
+            return
+        end
+        pickup(bag, slot)
+    end
+    Open(W)
+    local idle = Subscribers(W)
+    assert(W.P.InventoryActions.Cleanup() and #W.calls.pickups == 2)
+    assert(not W.Item(0, 1) and not W.cursor, "a rejected drop returns its item to the source")
+    Has(W, 4, 2, 102)
+    W.Advance(3)
+    Has(W, 0, 1, 102)
+    Update(W)
+    Has(W, 1, 1, 104)
+    assert(not W.Item(1, 2) and not W.Item(4, 2), "cleanup packs general bags before attempting swaps")
+    W.Fire("BAG_UPDATE", 1)
+    W.Settle()
+    for _ = 1, 4 do Update(W) end
+    Has(W, 0, 1, 102)
+    Has(W, 0, 2, 103)
+    Has(W, 1, 1, 104)
+    Has(W, 2, 1, 105)
+    Has(W, 3, 2, 105)
+    Has(W, 5, 2, 101, 3)
+    assert(Subscribers(W) == idle and not W.calls.cleanup and not W.cursor and #W.errors == 0,
+        "cleanup leaves the reagent window and protected bags alone")
 end
 
 do
@@ -166,6 +207,8 @@ do
     W.cursor = { id = 999, link = "item:999" }
     assert(not W.P.PhysicalSort.Start() and W.cursor.id == 999)
     W.cursor = nil
+    W.S.Set("bags", "inventoryView", W.NS.BagsView.BY_BAG)
+    W.Settle()
     assert(W.P.InventoryActions.Cleanup() and W.calls.cleanup == 1, "native cleanup is still available")
 end
 

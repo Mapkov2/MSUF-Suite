@@ -8,6 +8,7 @@ local combat = false
 local Suite = { IsSecret = function(value) return type(value) == "table" and value.secret == true end,
     InCombat = function() return combat end, IsCombatLocked = function() return combat end }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeBars.lua"))("MSUF_Suite", Suite)
 assert(loadfile(arg[2] or root .. "/MSUF_Suite/Core/NameplateHostSettings.lua"))("MSUF_Suite", Suite)
 local bridge = Suite.HostBridge
 Check(not bridge.HasCoreAPI(), "missing Core API can arrive after initial lookup")
@@ -16,6 +17,7 @@ MSUF_HostAPI = { version = 1, ApplyUIScaleProfile = function() end, SetResourceS
 Check(bridge.HasCoreAPI(), "late Core API publication is discovered after a miss")
 MSUF_HostAPI = nil
 Check(not bridge.HasNameplateSettings() and not bridge.HasNameplateFontSettings(), "older hosts expose missing capability")
+Check(bridge.SharedAggroBorderEnabled() == nil, "Shared Aggro is optional on older hosts")
 local payload = { version = 1, general = { kickReadyShowNameplates = true, kickReadyStyle = "fill" },
     nameplates = { fontOverride = true, fontKey = "EXPRESSWAY", fontSize = 16, nameFontSize = 18,
         textBackdrop = true, fontTextAlpha = 0.9 } }
@@ -31,6 +33,10 @@ local provider = { version = 1, HasFontScope = function() return true end,
     Apply = function(value) applied = applied + 1 return true, { snapshot = value } end }
 MSUF_HostAPI = { GetNameplateSettings = function() return provider end }
 Check(bridge.HasNameplateSettings() and bridge.HasNameplateFontSettings(), "late host publication is discovered")
+provider.SharedAggroBorderEnabled = function() return false end
+Check(bridge.SharedAggroBorderEnabled() == false, "the optional provider preserves explicit Shared Off")
+provider.SharedAggroBorderEnabled = function() return true end
+Check(bridge.SharedAggroBorderEnabled() == true, "the optional provider reads Shared On")
 local capture, why, snapshot = bridge.CaptureNameplateSettings("Other")
 Check(capture ~= captured and capture.version == captured.version and why == nil and snapshot and profileName == "Other", "named capture and rollback state pass through")
 ok, reason = bridge.ApplyNameplateSettings(payload)

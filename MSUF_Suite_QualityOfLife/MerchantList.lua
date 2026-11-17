@@ -25,8 +25,12 @@ local function LevelsShown()
     return levels ~= nil and levels.active == true
 end
 
+-- The fade is applied again on every paint, so on every merchant update (a
+-- sale's BAG_UPDATE runs MerchantFrame_Update): offers whose alpha was written
+-- back meanwhile would otherwise show through the list until the tab or the
+-- window changes. Context:HideControl keeps the original it recorded first.
 local function Conceal(self, hidden)
-    if self.concealed == hidden then return end
+    if not hidden and not self.concealed then return end
     local context = self.context
     for i = 1, MERCHANT_ITEMS_PER_PAGE do context:HideControl(_G["MerchantItem" .. i], hidden) end
     for _, name in ipairs(PAGE_CONTROLS) do context:HideControl(_G[name], hidden) end

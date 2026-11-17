@@ -193,6 +193,7 @@ function Sources.Register(kind, provider, events)
     Sources.kinds[kind], FORMAT[kind], providers[kind] = true, provider.Format, provider
     provider.Rebind, provider.Disable, provider.Lines = provider.Rebind or Nothing, provider.Disable or Nothing,
         provider.Lines or Nothing
+    provider.Click = provider.Click or Nothing
     for _, event in ipairs(events) do
         EVENTS[event] = EVENTS[event] or {}
         EVENTS[event][kind] = true
@@ -330,9 +331,17 @@ end
 ------------------------------------------------------------------ events
 local function Refresh(kind)
     if not owner or not owner.active then return end
+    local sampled
+    local provider = providers[kind]
     for key in pairs(owner.activeSources or {}) do
         local binding = Sources.bindings[key]
-        if binding and binding.kind == kind then owner:UpdateSource(key, true) end
+        if binding and binding.kind == kind then
+            if not sampled and provider and provider.Sample then
+                provider.Sample()
+                sampled = true
+            end
+            owner:UpdateSource(key, not (provider and provider.Sample))
+        end
     end
 end
 
@@ -367,6 +376,11 @@ function Sources.AddLines(kind, tooltip, button)
     if provider then provider.Lines(tooltip, button) end
 end
 
+function Sources.Click(kind, button, mouse)
+    local provider = providers[kind]
+    if provider then provider.Click(button, mouse) end
+end
+
 local function ActiveKind(kind)
     if not owner or not owner.active then return false end
     for key in pairs(owner.activeSources or {}) do
@@ -393,7 +407,7 @@ local function WantsCrestItems()
     return false
 end
 
-function Sources.Changed(_, event)
+function Sources.Changed(_, event, ...)
     if event == "ITEM_UPGRADE_MASTER_SET_ITEM" then
         local previous = WantsCrestItems()
         Sources.ObserveSeasonCosts()
@@ -403,7 +417,12 @@ function Sources.Changed(_, event)
     end
     local kinds = EVENTS[event]
     if kinds then
-        for kind in pairs(kinds) do Request(kind) end
+        for kind in pairs(kinds) do
+            local provider = providers[kind]
+            if not provider or not provider.Event or ActiveKind(kind) and provider.Event(event, ...) ~= false then
+                Request(kind)
+            end
+        end
     end
     if event == "BAG_UPDATE_DELAYED" and WantsCrestItems() then Refresh("crests") end
     if event == "BAG_UPDATE_DELAYED" or event == "TOYS_UPDATED" then Sources.HearthsMayHaveChanged() end
@@ -472,6 +491,10 @@ function Sources.Rebind(module, resample)
     end
     if wantedKinds.crests then SeasonSelection(module.config) end
     for kind, provider in pairs(providers) do
+        if provider.Sample and wantedKinds[kind] and (not provider.sampled or resample) then
+            provider.Sample()
+        end
+        provider.sampled = wantedKinds[kind] == true
         provider.Rebind(module, wantedKinds[kind] == true)
     end
     local lib = Broker()
@@ -638,7 +661,10 @@ function Sources.Paint(button, relayout)
 end
 
 function Sources.Disable()
-    for _, provider in pairs(providers) do provider.Disable() end
+    for _, provider in pairs(providers) do
+        provider.sampled = nil
+        provider.Disable()
+    end
     if broker and Sources.brokerRegistered then broker.UnregisterAllCallbacks(Sources) end
     Sources.brokerRegistered = nil
     owner = nil

@@ -15,6 +15,7 @@ local function Frame(parent)
     return setmetatable({ shown = true, parent = parent, alpha = 1, scale = 1, scripts = {}, width = 100, height = 100 }, { __index = methods })
 end
 function methods:SetScript(key, fn) self.scripts[key] = fn end
+function methods:EnableGamePadStick(active) self.stickEnabled = active end
 function methods:CreateTexture() return Frame(self) end
 function methods:CreateFontString() return Frame(self) end
 -- A frame's own show or hide runs its OnShow or OnHide script, as the client does.
@@ -101,12 +102,24 @@ for _, key in ipairs({ "Icon", "Arrow", "DistanceText", "IconBorder" }) do Super
 Enum = { SuperTrackingType = { Quest = 1, UserWaypoint = 2, MapPin = 3, Content = 4, Vignette = 5, Corpse = 6 },
     NavigationState = { Invalid = 0, Occluded = 1, InRange = 2, Disabled = 3 } }
 CreateColor = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
-hooksecurefunc = function() end
+TurnOrActionStart, TurnOrActionStop, CameraZoomIn = function() end, function() end, function() end
+MoveViewInStart, MoveViewInStop = function() end, function() end
+hooksecurefunc = function(name, callback)
+    if type(name) ~= "string" then return end
+    local fn = _G[name]
+    _G[name] = function(...) fn(...); callback(...) end
+end
 -- The client's clock: Advance (below) lets a frame of dt seconds pass.
 local clock = { now = 100, tickers = {}, fired = false }
 GetTime = function() return clock.now end
 IsInInstance = function() return world.instance == true end
 GetUnitSpeed = function() return world.speed end
+-- Exercise the existing sample budgets while an input keeps the view moving.
+IsMouselooking = function() return world.mouselook ~= false end
+C_GamePad = {
+    GetDeviceMappedState = function() return { stickCount = 1, sticks = { { len = world.cameraStick or 0 } } } end,
+    StickIndexToConfigName = function() return "Camera" end,
+}
 PlaySound, PlaySoundFile = function() end, function() end
 SOUNDKIT = { MAP_PING = 1 }
 UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }
@@ -201,7 +214,10 @@ local alwaysRuns = {}
 function context:Event(event, fn, always) events[event] = fn alwaysRuns[event] = always end
 function context:RemoveEvent(event) events[event], alwaysRuns[event] = nil, nil end
 function context:Coalesce(_, fn) return { Request = function() fn(module) end } end
-function context:After(_, fn) self.pending = fn end
+function context:After(delay, fn)
+    if delay == .5 then clock.wake, clock.wakeAt = fn, clock.now + delay
+    else self.pending = fn end
+end
 -- The runtime's tickers (MSUF_Suite_Modules/Timers.lua over C_Timer.NewTicker):
 -- a ticker fires in the first frame in which its interval has passed since it
 -- last fired, at most once a frame. Asking for a running ticker at its own
@@ -212,12 +228,20 @@ function context:Ticker(interval, fn)
     if ticker and ticker.interval == interval then return end
     clock.tickers[fn] = { interval = interval, waited = 0 }
 end
-function context:Cancel(fn) clock.tickers[fn] = nil end
+function context:Cancel(fn)
+    clock.tickers[fn] = nil
+    if clock.wake == fn then clock.wake = nil end
+end
 -- One frame of dt seconds; clock.fired says whether a ticker fired in it.
 -- clock.inside is true while a ticker's callback runs, so an instruction
 -- budget can count the product's side of a frame without the clock's own.
 local function Advance(dt)
     clock.now, clock.fired = clock.now + dt, false
+    if clock.wake and clock.now >= clock.wakeAt then
+        local fn = clock.wake
+        clock.wake = nil
+        fn(module)
+    end
     for fn, ticker in pairs(clock.tickers) do
         ticker.waited = ticker.waited + dt
         if ticker.waited >= ticker.interval then
@@ -763,4 +787,432 @@ for _, travelTime in ipairs({ true, false }) do
 end
 view.distance.SetFormattedText = nil
 config.showETA = false
-print("PASS navigation pause, display and pace: instanced combat runs nothing, off-screen choice, beam and pulse, ticker, readout")
+
+------------------------------------------------------------------ 6. a walking player
+-- The 2026-11-15 outdoor walk: the destination on screen, the distance falling, the text changing on every
+-- second sample. The readout's formats are read once and not on each change, and while the client reports
+-- the player moving and no travel time shows, the speed is not asked for. Every sample still reads the
+-- position (the four C_Navigation calls) and writes a changed text.
+-- Counts: instructions = the product's only (a hook on every instruction that counts while the ticker's
+-- callback runs); speed reads = GetUnitSpeed; lookups = Suite.Text; writes = SetFormattedText on the readout.
+-- Another tree's counts are printed, not held to this tree's budget:
+-- lua suite_navigation_pause_contract.lua <that tree> <this tree>.
+local function Budget(ok, message)
+    if ok then return end
+    if base == root then error(message, 2) end
+    print("  not within this tree's budget: " .. message)
+end
+local walked = { speed = 0, lookups = 0, formatted = 0 }
+local realSpeed, realText, realFormatted = GetUnitSpeed, Suite.Text, view.distance.SetFormattedText
+GetUnitSpeed = function(...) walked.speed = walked.speed + 1 return realSpeed(...) end
+Suite.Text = function(...) walked.lookups = walked.lookups + 1 return realText(...) end
+view.distance.SetFormattedText = function(...) walked.formatted = walked.formatted + 1 return realFormatted(...) end
+-- samples a frame of dt seconds apart (0.1 s, or the second of a player the client reports moving: section
+-- 6b), each step yards nearer; every sample shows what Shown(distance) says.
+local function Walk(samples, step, Shown, dt)
+    walked.speed, walked.lookups, walked.formatted = 0, 0, 0
+    local nav, instructions = navCalls, 0
+    debug.sethook(function() if clock.inside then instructions = instructions + 1 end end, "", 1)
+    for sample = 1, samples do
+        world.distance = world.distance - step
+        Advance(dt or .1)
+        assert(clock.fired and view.root.shown and view.distance.text == Shown(world.distance),
+            ("walking sample %d at %s yd shows '%s', not '%s'"):format(sample, world.distance, tostring(view.distance.text), Shown(world.distance)))
+    end
+    debug.sethook()
+    return { instructions = instructions, nav = navCalls - nav, speed = walked.speed, lookups = walked.lookups,
+        formatted = walked.formatted }
+end
+local function Yards(distance) return ("%d yd"):format(math.floor(distance + .5)) end
+local function TravelTime(speed)
+    return function(distance)
+        local seconds = math.floor(distance / speed + .5)
+        if seconds >= 60 then return ("%s · %d min %02d sec"):format(Yards(distance), math.floor(seconds / 60), seconds % 60) end
+        return ("%s · %d sec"):format(Yards(distance), seconds)
+    end
+end
+-- (a) No travel time (the default). 2026-11-15, Lua 5.1, 1000 samples, before -> after: 466500 -> 424500
+-- instructions, 500 -> 0 lookups, 1000 -> 0 speed reads; 4000 C_Navigation reads and 500 writes both.
+-- The work of one sample is the same since; the samples are a second apart (section 6b).
+config.showDistance, config.showETA, config.units = true, false, 1
+Start(false, 900)
+Fire("PLAYER_STARTED_MOVING")
+local walk = Walk(1000, .5, Yards, 1)
+print(("walking budget, 1000 samples: %d instructions, %d C_Navigation reads, %d speed reads, %d lookups, %d writes"):format(
+    walk.instructions, walk.nav, walk.speed, walk.lookups, walk.formatted))
+assert(walk.nav == 4000, "a walking player's marker was not read on every sample: " .. walk.nav .. " C_Navigation reads")
+assert(walk.formatted == 500, "a walking player's readout was written " .. walk.formatted .. " times, not on each of its 500 changes")
+assert(not module.settled and module.model.mode == navigation.WAYPOINT, "a walking player's marker settled or changed its display")
+Budget(walk.lookups == 0, "a walking player's readout looked its formats up " .. walk.lookups .. " times")
+Budget(walk.speed == 0, "a walking player without a travel time had the speed read " .. walk.speed .. " times")
+Budget(walk.instructions <= 424500 * 1.02, "a walking player exceeds the instruction budget: " .. walk.instructions)
+-- (b) With the travel time the speed is read on every sample, and a changed speed shows on the next one.
+config.showETA = true
+Start(false, 900)
+walk = Walk(200, .5, TravelTime(7), 1)
+assert(walk.speed == 200 and walk.nav == 800, "a walking player's travel time did not read the speed on every sample")
+Budget(walk.lookups == 0, "a walking player's travel time looked its formats up " .. walk.lookups .. " times")
+world.speed = 14
+walk = Walk(20, .5, TravelTime(14), 1)
+assert(walk.speed == 20, "a faster player's travel time did not follow the speed")
+-- Too slow for a travel time: the distance alone.
+world.speed = 1
+Walk(4, .5, Yards, 1)
+world.speed = 7
+Walk(4, .5, TravelTime(7), 1)
+-- The kilometre and the metre readouts of a walking player.
+world.distance, config.units = 1400, 2
+Walk(4, .5, function(distance)
+    return ("%.1f km · %d min %02d sec"):format(math.floor(distance * .9144 / 100 + .5) / 10, math.floor(math.floor(distance / 7 + .5) / 60),
+        math.floor(distance / 7 + .5) % 60)
+end, 1)
+config.units, config.showETA = 1, false
+-- (c) The player stops: the standing pace is back at once, the next sample (0.1 s later) reads the speed
+-- and settles the marker; turning the camera then
+-- moves the projection, and the next tick is a full sample again.
+Start(false, 900)
+world.speed = 0
+Fire("PLAYER_STOPPED_MOVING")
+walk = Walk(1, 0, Yards)
+assert(walk.speed == 1 and module.settled == true, "the sample after the player stopped did not read the speed and settle")
+walk = Walk(3, 0, Yards)
+assert(walk.nav == 0 and walk.speed == 0, "a settled marker was sampled")
+SuperTrackedFrame.GetCenter = function() return 1300, 320 end
+walk = Walk(1, 0, Yards)
+assert(walk.nav == 4 and walk.speed == 1 and module.settled == true, "a camera turn of a standing player was not sampled")
+SuperTrackedFrame.GetCenter = nil
+-- (d) Movement the client reported no event for (the speed alone): the speed is read on every sample and
+-- the marker does not settle.
+world.speed = 7
+Start(false, 900)
+walk = Walk(20, .5, Yards)
+assert(walk.speed == 20 and walk.nav == 80 and not module.settled, "a player moving without a movement event was not sampled with the speed")
+-- (e) After a pause the movement events were not heard: the speed is read again.
+Fire("PLAYER_STARTED_MOVING")
+world.instance = true
+Fire("PLAYER_REGEN_DISABLED")
+world.instance = false
+Fire("PLAYER_REGEN_ENABLED")
+walk = Walk(5, .5, Yards)
+assert(walk.speed == 5 and module.moving == false, "the samples after a pause did not read the speed")
+GetUnitSpeed, Suite.Text, view.distance.SetFormattedText = realSpeed, realText, nil
+
+------------------------------------------------------------------ 6b. a walking player's second
+-- 2026-11-15, owner decision: while the client reports the player moving, a marker shown on screen is
+-- sampled once a second, not ten times. The marker itself stays on Blizzard's projection frame, which the
+-- client moves; what a sample decides (distance and travel time, hover fade, proximity sound, the change
+-- to the arrow or to hidden) follows up to a second later. Measured in elapsed time, at 20 frames per
+-- second, where the 0.1 s and the 1 s tickers both fire on whole frames. Ten seconds, before -> after:
+-- 100 -> 10 samples, 400 -> 40 C_Navigation reads; with the travel time 100 -> 10 speed reads.
+-- Unchanged, and held here: the arrow's and the hidden marker's pace while moving, the standing pace, a
+-- destination or settings change at once, no destination, the interface hidden, the pause.
+do
+    local FRAME = .05
+    local function Ticker()
+        local found
+        for _, ticker in pairs(clock.tickers) do found = ticker end
+        return found
+    end
+    local sourceReads, speedReads, centerReads = 0, 0, 0
+    local realKind, realSpeed = C_SuperTrack.GetHighestPrioritySuperTrackingType, GetUnitSpeed
+    C_SuperTrack.GetHighestPrioritySuperTrackingType = function(...) sourceReads = sourceReads + 1 return realKind(...) end
+    GetUnitSpeed = function(...) speedReads = speedReads + 1 return realSpeed(...) end
+    local center = { 1400, 300 }
+    SuperTrackedFrame.GetCenter = function() centerReads = centerReads + 1 return center[1], center[2] end
+    -- frames of 0.05 s, each step yards nearer: the samples (one distance read each), the C_Navigation and
+    -- speed reads, and the frames the samples fell on.
+    local function Run(frames, step)
+        local samples, nav, speed, on = counters.distance, navCalls, speedReads, {}
+        for frame = 1, frames do
+            world.distance = world.distance - step
+            local before = counters.distance
+            Advance(FRAME)
+            if counters.distance > before then on[#on + 1] = frame end
+        end
+        return { samples = counters.distance - samples, nav = navCalls - nav, speed = speedReads - speed, on = table.concat(on, ",") }
+    end
+    local function Yd(distance) return ("%d yd"):format(math.floor(distance + .5)) end
+    config.showDistance, config.showETA, config.units = true, false, 1
+
+    -- (a) The standing pace is as before: a player the client does not report moving (here with a speed
+    -- and no event, 6 (d)) is sampled every 0.1 s.
+    if module.moving then Fire("PLAYER_STOPPED_MOVING") end
+    Start(false, 900)
+    assert(module.moving == false and Pace() == .1)
+    local ten = Run(200, .35)
+    assert(ten.samples == 100 and ten.nav == 400 and ten.speed == 100,
+        ("ten seconds without a movement event: %d samples, %d C_Navigation reads, %d speed reads"):format(ten.samples, ten.nav, ten.speed))
+
+    -- (b) The movement event changes the pace of the running ticker at once. It reads nothing: not the
+    -- destination, not the position, not the projection, and it writes nothing.
+    local nav, source, writes, centers = navCalls, sourceReads, counters.writes, centerReads
+    Fire("PLAYER_STARTED_MOVING")
+    assert(navCalls == nav and sourceReads == source and counters.writes == writes and centerReads == centers,
+        "the movement event sampled the marker or read the destination again")
+    -- Ten seconds: ten samples, each a second after the last, and no speed read without a travel time.
+    local speedBefore = speedReads
+    ten = Run(200, .35)
+    print(("walking player on screen, 10 s at 20 frames per second: a tick every %g s, %d samples, %d C_Navigation reads, %d speed reads"):format(
+        Pace(), ten.samples, ten.nav, ten.speed))
+    assert(Pace() == 1, "a walking player's marker on screen is ticked every " .. tostring(Pace()) .. " s, not every second")
+    assert(ten.samples == 10 and ten.nav == 40, ("ten walking seconds: %d samples, %d C_Navigation reads"):format(ten.samples, ten.nav))
+    assert(ten.on == "20,40,60,80,100,120,140,160,180,200", "the walking samples fell on frames " .. ten.on)
+    assert(ten.speed == 0 and speedReads == speedBefore, "a walking player without a travel time had the speed read")
+    assert(view.distance.text == Yd(world.distance) and not module.settled)
+    -- One second, frame by frame: no sample, no read and no write before it is over, while the distance
+    -- falls and the client moves the projection. The marker hangs on the projection frame.
+    nav, source, writes, centers = navCalls, sourceReads, counters.writes, centerReads
+    local text = view.distance.text
+    for frame = 1, 19 do
+        world.distance = world.distance - .35
+        center[1], center[2] = center[1] - 3, center[2] + 1
+        Advance(FRAME)
+        assert(navCalls == nav and sourceReads == source and centerReads == centers,
+            "frame " .. frame .. " of a walking second read the position, the destination or the projection")
+        assert(counters.writes == writes and view.distance.text == text, "frame " .. frame .. " of a walking second wrote")
+        assert(module.host.point[1] == "CENTER" and module.host.point[2] == SuperTrackedFrame and module.host.point[3] == "CENTER"
+            and module.host.point[4] == nil and module.anchor == SuperTrackedFrame, "the marker left Blizzard's projection frame")
+    end
+    world.distance = world.distance - .35
+    Advance(FRAME)
+    assert(navCalls - nav == 4 and view.distance.text == Yd(world.distance) and view.distance.text ~= text,
+        "the sample after a walking second did not read the position once and show the distance")
+    assert(sourceReads == source and centerReads == centers and module.host.point[2] == SuperTrackedFrame
+        and view.root.shown and module.model.mode == navigation.WAYPOINT, "the walking sample read the destination or moved the marker")
+    -- The event again (a jump, another key) leaves the running ticker alone.
+    for _ = 1, 5 do Advance(FRAME) end
+    local ticker = Ticker()
+    nav = navCalls
+    Fire("PLAYER_STARTED_MOVING")
+    assert(Ticker() == ticker and ticker.waited > 0 and navCalls == nav, "a second movement event started the ticker anew or sampled")
+    for _ = 1, 14 do Advance(FRAME) end
+    assert(navCalls == nav, "probe: the second is not over")
+    Advance(FRAME)
+    assert(navCalls - nav == 4, "the sample did not come a second after the last one")
+
+    -- (c) With the travel time the speed is read with each sample, so once a second; switching the option
+    -- on (Module:Refresh) shows it at once.
+    config.showETA = true
+    world.distance, nav = 875, navCalls
+    module:Refresh()
+    assert(navCalls - nav == 4 and view.distance.text == "875 yd · 2 min 05 sec" and Pace() == 1,
+        "a settings change of a walking player was not shown at once: " .. tostring(view.distance.text))
+    ten = Run(200, .35)
+    print(("walking player on screen with the travel time, 10 s: %d samples, %d C_Navigation reads, %d speed reads"):format(
+        ten.samples, ten.nav, ten.speed))
+    assert(ten.samples == 10 and ten.nav == 40 and ten.speed == 10,
+        ("ten walking seconds with the travel time: %d samples, %d C_Navigation reads, %d speed reads"):format(ten.samples, ten.nav, ten.speed))
+    config.showETA = false
+    module:Refresh()
+
+    -- (d) A destination event does not wait for the second: a new destination shows at once, a lost one
+    -- hides at once and stops the ticker, an arrival is asked about at once. The pace stays the walking one.
+    for _ = 1, 3 do Advance(FRAME) end
+    world.distance, nav = 500, navCalls
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(navCalls - nav == 4 and view.distance.text == "500 yd" and Pace() == 1, "a walking player's new destination waited for a sample")
+    world.valid = false
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(not view.root.shown and not Running(), "a walking player's lost destination was not hidden at once")
+    world.valid = true
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(view.root.shown and Pace() == 1, "a walking player's destination did not come back at the walking pace")
+    world.distance, nav = 20, navCalls
+    Fire("NAVIGATION_DESTINATION_REACHED", true)
+    assert(navCalls - nav == 4 and module.model.mode == navigation.CARD and view.card.shown and Pace() == 1,
+        "a walking player's arrival waited for a sample")
+    world.distance = 500
+    Fire("QUEST_LOG_UPDATE")
+    assert(module.model.mode == navigation.WAYPOINT and view.distance.text == "500 yd")
+
+    -- (e) The player stops: the standing pace at once, without a sample by the event; the sample 0.1 s
+    -- later reads the speed and settles the marker.
+    nav, source = navCalls, sourceReads
+    world.speed = 0
+    Fire("PLAYER_STOPPED_MOVING")
+    assert(Pace() == .1 and navCalls == nav and sourceReads == source, "the stop did not bring the standing pace back at once, or sampled")
+    Advance(FRAME)
+    assert(navCalls == nav, "probe: a standing sample before 0.1 s")
+    speedBefore = speedReads
+    Advance(FRAME)
+    assert(navCalls - nav == 4 and speedReads - speedBefore == 1 and module.settled == true,
+        "the sample 0.1 s after the stop did not read the speed and settle")
+    -- A settled marker starts walking: no sample is skipped at the walking pace.
+    world.speed = 7
+    Fire("PLAYER_STARTED_MOVING")
+    assert(Pace() == 1 and not module.settled)
+    ten = Run(60, .35)
+    assert(ten.samples == 3 and ten.on == "20,40,60", "a marker that had settled was sampled on frames " .. ten.on .. " of three walking seconds")
+
+    -- (f) Off screen a walking player's arrow keeps its pace and its samples: 1/30 s, a sample every 0.1 s
+    -- (section 4), and the arrow turns between two samples. The movement events leave that ticker alone.
+    assert(Samples(30, 10) == 10, "30 frames per second off screen, walking: " .. Samples(30, 10) .. " samples a second")
+    assert(Samples(20, 10) == 10, "20 frames per second off screen, walking: " .. Samples(20, 10) .. " samples a second")
+    assert(module.moving == true and module.model.mode == navigation.DIRECTION and Pace() == 1 / 30,
+        "a walking player's off-screen destination is not ticked at the arrow's pace")
+    ticker = Ticker()
+    Fire("PLAYER_STOPPED_MOVING")
+    Fire("PLAYER_STARTED_MOVING")
+    assert(Ticker() == ticker and Pace() == 1 / 30, "a movement event started the arrow's ticker anew")
+    local angle = view.tip.angle
+    center[1], center[2] = 1400, 900
+    Advance(1 / 30)
+    assert(view.tip.angle ~= angle and view.tip.angle == module.model.angle, "a walking player's arrow did not turn with the next tick")
+    center[1], center[2] = 1400, 300
+    -- A hidden marker keeps its 0.25 s while the player walks.
+    config.hideDistance = 500
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(module.model.mode == nil and Pace() == .25, "a walking player's hidden marker is not ticked every 0.25 s")
+    nav = navCalls
+    for _ = 1, 8 do Advance(.25) end
+    assert(navCalls - nav == 32, "a walking player's hidden marker was sampled " .. (navCalls - nav) / 4 .. " times in two seconds, not 8")
+    config.hideDistance = 0
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(module.model.mode == navigation.DIRECTION and Pace() == 1 / 30)
+    -- The pace follows what the sample finds: back on screen the walking second, off screen (found by the
+    -- sample, so up to a second later: the accepted trade) the arrow's pace.
+    world.clamped = false
+    for _ = 1, 4 do Advance(1 / 30) end
+    assert(module.model.mode == navigation.WAYPOINT and Pace() == 1, "the destination back on screen did not get the walking pace")
+    world.clamped = true
+    for _ = 1, 19 do Advance(FRAME) end
+    assert(module.model.mode == navigation.WAYPOINT and Pace() == 1, "probe: the walking second is not over")
+    Advance(FRAME)
+    assert(module.model.mode == navigation.DIRECTION and Pace() == 1 / 30 and view.tip.shown,
+        "the walking sample that found the destination off screen kept the pace")
+    world.clamped = false
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(module.model.mode == navigation.WAYPOINT and Pace() == 1)
+
+    -- (g) Nothing runs that did not run before: a movement event starts no ticker without a destination,
+    -- under a hidden interface or in the pause (where it is not heard), and samples in none of them.
+    world.kind = Enum.SuperTrackingType.Corpse
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(not Running(), "probe: no destination kept a ticker")
+    nav = navCalls
+    Fire("PLAYER_STOPPED_MOVING")
+    Fire("PLAYER_STARTED_MOVING")
+    assert(not Running() and navCalls == nav, "a movement event without a destination started a ticker or sampled")
+    world.kind = Enum.SuperTrackingType.UserWaypoint
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(Pace() == 1)
+    UIParent.shown = false
+    module.driver.scripts.OnHide(module.driver)
+    nav, source = navCalls, sourceReads
+    Fire("PLAYER_STOPPED_MOVING")
+    Fire("PLAYER_STARTED_MOVING")
+    assert(not Running() and navCalls == nav and sourceReads == source, "a movement event under a hidden interface started a ticker or sampled")
+    UIParent.shown = true
+    module.driver.scripts.OnShow(module.driver)
+    assert(Pace() == 1, "the interface shown again did not bring a walking player's pace back")
+    world.instance = true
+    Fire("PLAYER_REGEN_DISABLED")
+    assert(module.paused == true and not Running() and events.PLAYER_STARTED_MOVING == nil and events.PLAYER_STOPPED_MOVING == nil,
+        "the pause kept a ticker or hears the player's movement")
+    world.instance = false
+    Fire("PLAYER_REGEN_ENABLED")
+    -- The movement events of the fight were not heard: the standing pace, with the speed read, until the next one.
+    assert(module.moving == false and Pace() == .1, "the pause did not end at the standing pace")
+    Fire("PLAYER_STARTED_MOVING")
+    assert(Pace() == 1)
+    -- Disabled while walking: no ticker. The player stops meanwhile, which a disabled module does not hear:
+    -- enabled again the movement is unknown, so the standing pace with the speed read (as after a pause),
+    -- and the standing marker settles. The next movement event brings the walking pace.
+    module:Disable()
+    assert(not Running(), "disabling a walking player's navigation kept the ticker")
+    world.speed = 0
+    module:Enable()
+    assert(module.moving == false and Pace() == .1 and view.root.shown and module.settled == true,
+        "navigation enabled again kept the movement state from before it was disabled")
+    nav = navCalls
+    for _ = 1, 8 do Advance(FRAME) end
+    assert(navCalls == nav and module.settled == true, "a standing player's marker was sampled after navigation was enabled again")
+    world.speed = 7
+    Fire("PLAYER_STARTED_MOVING")
+    assert(Pace() == 1)
+    Fire("PLAYER_STOPPED_MOVING")
+    assert(Pace() == .1)
+    C_SuperTrack.GetHighestPrioritySuperTrackingType, GetUnitSpeed, SuperTrackedFrame.GetCenter = realKind, realSpeed, nil
+end
+
+------------------------------------------------------------------ 7. the readout in another language
+-- The formats are the translated ones, in every combination, and a format without a translation stays English.
+do
+    local translations = { ["%d yd"] = "%d Yards", ["%.1f kyd"] = "%.1f Tsd. Yards", ["%.1f km"] = "%.1f Kilometer",
+        ["%d sec"] = "%d Sek.", ["%d min %02d sec"] = "%d Min. %02d Sek.", ["%s · %s"] = "%s | %s" }
+    local translated = setmetatable({ Text = function(text) return translations[text] or text end }, { __index = Suite })
+    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationModel.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = translated })
+    local readout, model = translated.Navigation.Readout, {}
+    local function Reads(distance, speed, units, showDistance, showETA, expected)
+        model.rounded = nil
+        readout(model, { units = units, showDistance = showDistance, showETA = showETA }, distance, speed)
+        local text = model.readoutFormat and model.readoutFormat:format(model.readoutA, model.readoutB, model.readoutC) or ""
+        assert(text == expected, ("the translated readout of %s yd shows '%s', not '%s'"):format(distance, text, expected))
+    end
+    Reads(437.4, 7, 1, true, false, "437 Yards")
+    Reads(1234.4, 7, 1, true, false, "1.2 Tsd. Yards")
+    Reads(437.4, 7, 2, true, false, "400 m")
+    Reads(1234.4, 7, 2, true, false, "1.1 Kilometer")
+    Reads(140, 7, 1, true, true, "140 Yards | 20 Sek.")
+    Reads(437.4, 7, 1, true, true, "437 Yards | 1 Min. 02 Sek.")
+    Reads(1234.4, 7, 2, true, true, "1.1 Kilometer | 2 Min. 56 Sek.")
+    Reads(437.4, 7, 2, true, true, "400 m | 1 Min. 02 Sek.")
+    Reads(140, 7, 1, false, true, "20 Sek.")
+    Reads(437.4, 7, 1, false, true, "1 Min. 02 Sek.")
+    Reads(437.4, 7, 1, false, false, "")
+end
+do
+    world.mouselook = false
+    Start(true, 900)
+    world.speed = 0
+    Fire("SUPER_TRACKING_CHANGED")
+    for _ = 1, 30 do Advance(.025) end
+    assert(view.root.shown and module.model.mode == navigation.DIRECTION and not Running(), "a parked off-screen arrow kept a ticker")
+    local before, writes = navCalls, counters.writes
+    for _ = 1, 1200 do Advance(.025) end
+    assert(navCalls == before and counters.writes == writes and not Running(), "standing for 30 seconds performed navigation work")
+    world.distance = 840
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(module.model.distance == 840 and not Running(), "a new target needed a standing timer")
+    world.x = .65
+    Fire("USER_WAYPOINT_UPDATED")
+    assert(Running(), "a switched waypoint did not give the native projection time to catch up")
+    world.distance = 830
+    for _ = 1, 30 do Advance(.025) end
+    assert(module.model.distance == 830 and not Running(), "a readable but stale projection survived the waypoint swap")
+    TurnOrActionStart()
+    assert(Pace() == 1 / 30, "turning the camera in place did not wake the arrow")
+    TurnOrActionStop()
+    for _ = 1, 30 do Advance(.025) end
+    assert(not Running(), "releasing the camera left a ticker")
+    MoveViewInStart()
+    CameraZoomIn()
+    assert(Running(), "camera zoom did not wake the arrow")
+    for _ = 1, 30 do Advance(.025) end
+    assert(not Running(), "camera zoom left a ticker")
+    world.cameraStick = 1
+    assert(module.driver.scripts.OnGamePadStick(module.driver, "Camera", 1, 0) and Pace() == 1 / 30,
+        "the camera stick did not wake the arrow or its input was consumed")
+    world.cameraStick = 0
+    for _ = 1, 10 do Advance(.025) end
+    assert(not Running(), "the GamePad camera kept ticking after an unrelated frame consumed the release")
+    world.speed = 7
+    Fire("PLAYER_STARTED_MOVING")
+    assert(Pace() == 1 / 30, "walking did not restart the smooth arrow")
+    Advance(.1)
+    world.speed = 0
+    Fire("PLAYER_STOPPED_MOVING")
+    assert(not Running() and view.root.shown, "stopping left the timer running or hid the arrow")
+    world.clamped = false
+    Fire("SUPER_TRACKING_CHANGED")
+    assert(not Running() and view.root.shown, "a stationary on-screen marker kept a ticker")
+    local getFrame = C_Navigation.GetFrame
+    C_Navigation.GetFrame = function() return SuperTrackedFrame end
+    world.valid = false
+    Fire("NAVIGATION_FRAME_CREATED")
+    world.valid = true
+    for _ = 1, 30 do Advance(.025) end
+    assert(view.root.shown and not Running(), "late native projection did not recover and park")
+    C_Navigation.GetFrame = getFrame
+end
+print("PASS navigation pause, display and pace: stationary zero ticks; movement, targeting, native projection, readout and pause")

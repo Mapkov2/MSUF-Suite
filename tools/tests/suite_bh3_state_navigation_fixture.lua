@@ -1,21 +1,28 @@
 local function LoadNameplatePage(P, root, opened)
     P.Help = function() return "" end
-    P.NameplatesAdvancedAuras = { Append = function() end }
-    P.NameplatesExtensions = { Append = function() end }
+    P.NameplatesAdvancedAuras = { Append = function(sections)
+        sections[#sections + 1] = { key = "auraWorkspace", keys = { "enemyNpcDebuffs", "enemyNpcBuffs", "enemyNpcControl" } }
+    end }
     P.RegisterPage = function() end
     P.Combat = function() return false end
-    P.Suite.NameplateStyle.Roles = {}
+    P.Suite.NameplateStyle.Roles, P.Suite.NameplateStyle.Elements = {}, {}
+    P.Suite.AnchorPoints, P.Suite.AnchorLabels = {}, {}
+    assert(loadfile(root .. "../../MSUF_Suite/Core/NameplateExtensions.lua"))("MSUF_Suite", P.Suite)
+    P.NameplatesProfiles = { Basics = function() end }
+    P.Gates = {}
     local rules = {}
     for _, key in ipairs({ "enemyNpcDebuffs", "enemyNpcBuffs", "enemyNpcControl",
         "softTargetEnemy", "friendlyCastTimeEnabled" }) do
         rules[key] = { key = key }
     end
-    P.catalog = { nameplates = { rules = rules } }
+    P.catalog = { nameplates = { rules = rules, controls = {}, controlAvailable = function() return true end } }
     P.Suite.HostBridge = { RegisterSearchTargetResolver = function() end, OpenExactMenuSetting = function(_, page, section, key)
         assert(page == "suite_nameplates" and section)
         return opened(key, section)
     end }
-    assert(loadfile(root .. "Nameplates.lua"))("MSUF_Suite_Options", P)
+    for _, file in ipairs({ "NameplateBarTextures", "NameplatesWorkspace", "NameplatesExtensions", "NameplatesStatus", "NameplatesSectionsLayout", "Nameplates" }) do
+        assert(loadfile(root .. file .. ".lua"))("MSUF_Suite_Options", P)
+    end
 end
 
 BH3("S04-A2",function()
@@ -81,7 +88,7 @@ for _, case in ipairs({
   local h = Handle()
   Editor.Bind(ui, h, case[1], case[1], case[1] .. "X", case[1] .. "Y", case[2])
   h.scripts.OnClick(h, "RightButton")
-  assert(h._npSettingKey ~= nil and opened[1] == "msufsuite.nameplates." .. case[3],
+  assert(opened[1] == "msufsuite.nameplates." .. case[3],
     "S04-A2: aura handle focused the wrong exact setting " .. tostring(opened[1]))
 end
 
@@ -112,14 +119,14 @@ end)
 assert(loadfile(ROOT .. "NameplatesEditorLayers.lua"))("MSUF_Suite_Options", P)
 local L = P.NameplatesEditorLayers
 local ui = { sampleKind = "friendly", layers = {},
-  sections = { castbar = "SECTION:castbar", friendly = "SECTION:friendly" } }
+  sections = { castbar = "SECTION:castbar", friendlyCast = "SECTION:friendlyCast" } }
 function ui:LayerOn(k) return L.On(self, k) end
 function ui:LayerAvailable(k) return L.Available(self, k) end
 L.Focus(ui, "castbar", "castTime")
-assert(reachedSection == "suite_nameplates_friendly" and opened[1] == "msufsuite.nameplates.friendlyCastTimeEnabled"
+assert(reachedSection == "suite_nameplates_friendlyCast" and opened[1] == "msufsuite.nameplates.friendlyCastTimeEnabled"
     and not focused[1], "S04-A3: friendly cast-time chip opened enemy controls")
 canOpen = false
 L.Focus(ui, "castbar", "castTime")
-assert(focused[1] == "SECTION:friendly", "S04-A3: exact-open failure lost its local section fallback")
+assert(focused[1] == "SECTION:friendlyCast", "S04-A3: exact-open failure lost its local section fallback")
 
 end)

@@ -398,6 +398,27 @@ rows[1].scripts.OnEnter(rows[1])
 Check(tooltip.owner == rows[1] and tooltip.index == 1 and tooltip.cursor == "BUY_CURSOR",
     "hovering an offer did not show its merchant tooltip")
 
+------------------------------------------------------------------ sale refresh
+-- A sale: BAG_UPDATE runs MerchantFrame_Update on the same tab and page
+-- (MerchantFrame_OnEvent), which never writes the offers' alpha. A fade lost
+-- before it (alpha and mouse written back by other code) is applied again by
+-- the repaint that follows, with the originals still the ones to restore.
+local faded = { MerchantPrevPageButton, MerchantNextPageButton, MerchantPageText }
+for i = 1, MERCHANT_ITEMS_PER_PAGE do faded[#faded + 1] = _G["MerchantItem" .. i] end
+for _, frame in ipairs(faded) do frame:SetAlpha(1) end
+MerchantPrevPageButton:EnableMouse(true)
+local updates = nativeUpdates
+MerchantFrame_Update()
+Check(nativeUpdates == updates + 1 and #deferred == 1 and MerchantItem1.alpha == 1,
+    "the sale refresh did not run as one deferred repaint on the same page")
+RunFrame()
+local showing = 0
+for _, frame in ipairs(faded) do
+    if frame.alpha ~= 0 then showing = showing + 1 end
+end
+Check(panel.shown and showing == 0 and not MerchantPrevPageButton.mouse and MerchantItem1.shown,
+    "Blizzard's offers showed through the list after a sale refresh: " .. showing)
+
 ------------------------------------------------------------------ buyback tab
 MerchantFrame.selectedTab = 2
 MerchantFrame_Update()

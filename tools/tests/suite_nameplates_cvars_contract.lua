@@ -1,6 +1,6 @@
 -- Nameplates: the Distance and stacking section and the split unit visibility
 -- choices (Catalog/Nameplates.lua, CVars.lua Space and CHOICES). Each setting
--- reaches its Blizzard CVar through the module context, Keep Blizzard setting
+-- reaches its Blizzard CVar through the module context, Automatic
 -- writes nothing, releasing the context (the module turned off, Runtime.lua)
 -- hands every CVar back, the combined minion choices still apply, the target
 -- scale and the dimming of other plates stay their own values, and a control
@@ -28,7 +28,7 @@ local function Catalog()
     end
     NS.Safety = { IsForbidden = function(frame) return frame.forbidden == true end }
     NS.InCombat = function() return combat end
-    for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "Catalog/Nameplates" }) do
+    for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "NameplateExtensions", "NameplateAuraDisplay", "Catalog/Nameplates" }) do
         assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
     end
     return NS, NS.SuiteCatalog.nameplates
@@ -90,7 +90,7 @@ end
 -- value in its unit) and names the CVar it writes in the module's manifest.
 local NEW = {
     plateEnemies = { 1, "nameplateShowEnemies" }, plateFriendlyPlayers = { 1, "nameplateShowFriendlyPlayers" },
-    personalResource = { 1, "nameplateShowSelf" }, plateEnemyPets = { 1, "nameplateShowEnemyPets" },
+    plateEnemyPets = { 1, "nameplateShowEnemyPets" },
     plateEnemyGuardians = { 1, "nameplateShowEnemyGuardians" }, plateEnemyTotems = { 1, "nameplateShowEnemyTotems" },
     plateFriendlyPets = { 1, "nameplateShowFriendlyPlayerPets" },
     plateFriendlyGuardians = { 1, "nameplateShowFriendlyPlayerGuardians" },
@@ -112,7 +112,7 @@ for key, expected in pairs(NEW) do
         assert(not (spec.look.presets[index] and spec.look.presets[index][key]) and not spec.look.visualKeys[key],
             key .. " is a Blizzard option, not part of a look or Quick Setup")
     end
-    assert(rule.section == "distance" or rule.section == "visibility" or key == "personalResource" and rule.section == "personal",
+    assert(rule.section == "distance" or rule.section == "visibility",
         key .. " sits outside the Blizzard options sections")
     manifestSize = manifestSize + 1
 end
@@ -123,7 +123,7 @@ assert(rules.plateMaxDistance.requiresChoice.key == "plateMaxDistanceMode" and r
 assert(rules.plateOverlapH.requiresChoice.key == "plateSpacingMode" and rules.plateBottomInset.requiresChoice.key == "plateInsetMode"
     and rules.plateOccludedPercent.requiresChoice.key == "plateOccludedMode", "a Customize number is not gated")
 for _, key in ipairs({ "plateFadeDistance", "plateShrinkDistance" }) do
-    assert(#rules[key].choices == 4 and rules[key].choices[1] == "Keep Blizzard setting", key .. " lost its presets")
+    assert(#rules[key].choices == 5 and rules[key].choices[5] == "Normal", key .. " lost its explicit presets")
 end
 assert(rules.plateEnemies.sectionTitle == "Visibility" and rules.plateMaxDistance.sectionTitle == "Distance and stacking")
 
@@ -137,9 +137,9 @@ assert(spec.cvars.nameplateShowEnemyMinions and spec.cvars.nameplateShowFriendly
 ------------------------------------------------------------------ keep writes nothing
 Reset()
 Apply()
-assert(setCalls == 0, "Keep Blizzard setting wrote a CVar")
-Same(BLIZZARD, "Keep Blizzard setting changed")
-assert(next(NS.RootDB) == nil, "Keep Blizzard setting left a recovery record")
+assert(setCalls == 0, "Automatic wrote a CVar")
+Same(BLIZZARD, "Automatic changed")
+assert(S.CVarBaseline("nameplates", "nameplateShowEnemies", live.nameplateShowEnemies) == "1")
 
 ------------------------------------------------------------------ friendly NPC world names
 assert(rules.friendlyNPCs.default == 1 and #rules.friendlyNPCs.choices == 4
@@ -151,7 +151,7 @@ assert(live.nameplateShowFriendlyNpcs == "0" and live.UnitNameNPC == "1",
 Apply({ friendlyNPCs = 2 })
 assert(live.nameplateShowFriendlyNpcs == "1" and live.UnitNameNPC == "0", "Show did not restore world names")
 Apply({ friendlyNPCs = 4 })
-Apply({ friendlyNPCs = 3 })
+Apply({ friendlyNpcSkinEnabled = false, friendlyNPCs = 4 })
 assert(live.nameplateShowFriendlyNpcs == "0" and live.UnitNameNPC == "0", "Hide kept the names-only override")
 Apply({ friendlyNPCs = 4 })
 Apply()
@@ -171,6 +171,12 @@ Apply()
 assert(live.UnitNameNPC == "1", "Keep lost a previously enabled native name setting")
 Reset()
 
+live.nameplateDebuffPadding = "7"
+Apply({ auraDebuffPadding = 18 })
+assert(live.nameplateDebuffPadding == "18")
+Apply({ auraDebuffPadding = -1 })
+assert(live.nameplateDebuffPadding == "7")
+
 ------------------------------------------------------------------ native NPC preview
 do
     -- Inspect the real renderer's helpers without constructing the full menu.
@@ -184,7 +190,8 @@ do
     end
     local values = Config({ friendlyNPCs = 4, friendlyNamesOnly = 2, friendlyTextEnabled = true })
     local preview = { M = {}, Tr = NS.Text, Get = function(_, key) return values[key] end,
-        Suite = { NameplateStyle = NS.NameplateStyle, Public = NS.Public, Client = NS.Client } }
+        S = { Config = function() return values end }, Suite = NS }
+    assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", preview)
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", preview)
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreview.lua"))("Options", preview)
     local render = Upvalue(Upvalue(preview.BuildNameplatesPreview, "Sample"), "Render")
@@ -196,20 +203,21 @@ do
     local editor = { friendlyElite = true, LayerOn = function() return true end }
     local function Region()
         local function Noop() end
-        return { SetShown = function(self, shown) self.shown = shown end, SetScale = Noop,
-            ClearAllPoints = Noop, SetPoint = Noop, SetWidth = Noop, SetTexture = Noop, SetAtlas = Noop,
-            SetText = Noop, GetHeight = function() return 14 end }
+        return { SetShown = function(self, shown) self.shown = shown end, SetScale = Noop, SetAlpha = Noop, SetFrameLevel = Noop,
+            ClearAllPoints = Noop, SetPoint = Noop, SetWidth = Noop, SetSize = Noop, SetTexture = Noop, SetAtlas = Noop,
+            SetText = Noop, Hide = Noop, GetHeight = function() return 14 end }
     end
-    local sample = { prefix = "friendly", state = { cast = true }, bar = Region(), cast = Region(),
+    local sample = { prefix = "friendly", state = { cast = true }, cell = { GetFrameLevel = function() return 1 end }, bar = Region(), cast = Region(),
         auras = Region(), buffs = Region(), control = Region() }
     for _, key in ipairs({ "raid", "raidTexture", "classificationBase", "classification", "nativeElite",
-        "castName", "castTime", "castTimeText", "name", "softTarget", "power", "cell" }) do sample[key] = Region() end
+        "castName", "castTime", "castTimeText", "name", "softTarget", "power" }) do sample[key] = Region() end
     sample.powerBorder = function() end
     for _, forever in ipairs({ false, true }) do
         NS.Client.isForever = forever
         for _, look in ipairs({ 2, 4 }) do
             values.look = look
-            local m = metrics(editor, sample, {})
+            sample.metrics = {}
+            local m = metrics(editor, sample, sample.metrics)
             assert(m.npcWorldName and m.namesOnly and not m.nativeLevel, "NPC world-name preview kept its level or bars")
             visibility(editor, sample, m)
             assert(not sample.bar.shown and not sample.cast.shown and not sample.auras.shown
@@ -227,15 +235,30 @@ do
             assert(not metrics(editor, sample, {}).namesOnly, "NPC Show still previews names-only")
             values.friendlyNPCs, sample.prefix = 4, "enemy"
             assert(not metrics(editor, sample, {}).namesOnly, "NPC world names changed the enemy preview")
-            sample.prefix, editor.personal = "friendly", true
-            assert(not metrics(editor, sample, {}).namesOnly, "NPC world names changed the personal preview")
-            editor.personal, editor.friendlyElite = false, false
+            sample.prefix, editor.friendlyElite = "friendly", false
             local player = metrics(editor, sample, {})
             assert(player.namesOnly and not player.npcWorldName, "NPC choice changed the friendly player preview")
             editor.friendlyElite = true
         end
     end
     NS.Client.isForever = false
+
+    -- The shared preview uses three independent switches on the same sample.
+    values = Config({ look = 4, enemyNpcAuraMode = 2, enemyNpcBuffs = false,
+        enemyNpcDebuffs = true, enemyNpcControl = true })
+    sample.prefix, editor.friendlyElite = "enemy", false
+    visibility(editor, sample, metrics(editor, sample, {}))
+    assert(not sample.buffs.shown and sample.auras.shown and sample.control.shown,
+        "Buffs hid an unrelated aura row in the shared preview")
+    values.enemyNpcBuffs, values.enemyNpcDebuffs, values.enemyNpcControl = true, false, false
+    visibility(editor, sample, metrics(editor, sample, {}))
+    assert(sample.buffs.shown and not sample.auras.shown and not sample.control.shown,
+        "Debuffs or Control effects changed the Buffs row")
+    values.friendlyNpcDebuffs = 2
+    sample.prefix, editor.friendlyElite = "friendly", true
+    visibility(editor, sample, metrics(editor, sample, {}))
+    assert(not sample.buffs.shown and sample.auras.shown and not sample.control.shown,
+        "Friendly NPCs should only have the native Debuffs row")
 end
 
 ------------------------------------------------------------------ values reach their CVars
@@ -243,7 +266,7 @@ local ALL = {
     plateMaxDistanceMode = 2, plateMaxDistance = 80, plateOccludedMode = 2, plateOccludedPercent = 25,
     plateFadeDistance = 4, plateShrinkDistance = 3, plateSpacingMode = 2, plateOverlapV = 150, plateOverlapH = 60,
     plateMotionSpeed = 3, plateInsetMode = 2, plateTopInset = 5, plateBottomInset = 12, plateClampTarget = 2,
-    plateEnemies = 3, plateFriendlyPlayers = 2, personalResource = 3,
+    enemySkinEnabled = false, neutralSkinEnabled = false,
     plateEnemyPets = 3, plateEnemyGuardians = 2, plateEnemyTotems = 2,
     plateFriendlyPets = 2, plateFriendlyGuardians = 3, plateFriendlyTotems = 2,
 }
@@ -251,7 +274,7 @@ local WRITTEN = {
     nameplateMaxDistance = "80", nameplateOccludedAlphaMult = "0.25", nameplateMinAlpha = "0.3", nameplateMinScale = "0.9",
     nameplateOverlapV = "1.5", nameplateOverlapH = "0.6", nameplateMotionSpeed = "0.1",
     nameplateOtherTopInset = "0.05", nameplateOtherBottomInset = "0.12", clampTargetNameplateToScreen = "1",
-    nameplateShowEnemies = "0", nameplateShowFriendlyPlayers = "1", nameplateShowSelf = "0",
+    nameplateShowEnemies = "0", nameplateShowFriendlyPlayers = "1", nameplateShowSelf = "1",
     nameplateShowEnemyPets = "0", nameplateShowEnemyGuardians = "1", nameplateShowEnemyTotems = "1",
     nameplateShowFriendlyPlayerPets = "1", nameplateShowFriendlyPlayerGuardians = "0", nameplateShowFriendlyPlayerTotems = "1",
 }
@@ -267,7 +290,7 @@ for _, expected in pairs(NEW) do assert(covered[expected[2]], expected[2] .. " i
 -- preset writes the far-end value of its own CVar.
 Reset()
 Apply({ plateMaxDistance = 90, plateOccludedPercent = 10, plateOverlapV = 200, plateTopInset = 30 })
-assert(setCalls == 0, "a number wrote while its choice stayed on Keep Blizzard setting")
+assert(setCalls == 0, "a number wrote while its choice stayed on Automatic")
 for choice, expected in pairs({ [2] = "1", [3] = "0.8", [4] = "0.3" }) do
     Apply({ plateFadeDistance = choice })
     assert(live.nameplateMinAlpha == expected, "fade preset " .. choice .. " wrote " .. tostring(live.nameplateMinAlpha))
@@ -289,10 +312,10 @@ Reset()
 Apply(ALL)
 local moved = {}
 for key, value in pairs(ALL) do moved[key] = value end
-moved.plateMaxDistanceMode, moved.plateEnemies = 1, 1
+moved.plateMaxDistanceMode, moved.neutralSkinEnabled = 1, true
 Apply(moved)
-assert(live.nameplateMaxDistance == "60" and live.nameplateShowEnemies == "1", "Keep did not hand the CVar back")
-assert(live.nameplateOccludedAlphaMult == "0.25" and live.nameplateShowSelf == "0", "Keep on one setting moved another")
+assert(live.nameplateMaxDistance == "60" and live.nameplateShowEnemies == "1", "enabled neutral plates lost the native hostile lane")
+assert(live.nameplateOccludedAlphaMult == "0.25" and live.nameplateShowSelf == "1", "Keep on one setting moved another")
 
 ------------------------------------------------------------------ turning the module off
 -- Context:Release is what Disable ends with (and Suite.lua Stop repeats it).
@@ -337,12 +360,14 @@ Apply({ plateShrinkDistance = 4, plateFadeDistance = 4 })
 assert(live.nameplateSelectedScale == BLIZZARD.nameplateSelectedScale, "the target scale stayed after it was switched off")
 local overlay = { alpha = 1 }
 function overlay:SetAlpha(alpha) self.alpha = alpha end
+function overlay:CanBeAccessedInContext() return true end
 NamePlateHealthBarMixin = { UpdateSelectionBorder = function() end }
 hooksecurefunc = function() end
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Selection.lua"))("MSUF_Suite_Nameplates", private)
 local calls = setCalls
 private.Selection.Configure(Config({ selectionDim = 2, selectionDimPercent = 30, plateFadeDistance = 4, plateShrinkDistance = 4 }))
-private.Selection.Apply({ selectedBorder = { SetAlpha = function() end, SetVertexColor = function() end },
+private.Selection.Apply({ selectedBorder = { SetAlpha = function() end, SetVertexColor = function() end,
+        CanBeAccessedInContext = function() return true end },
     deselectedOverlay = overlay, UpdateSelectionBorder = function() end }, true)
 assert(math.abs(overlay.alpha - 0.3) < 1e-9 and setCalls == calls, "dimming other plates changed or wrote a CVar")
 
@@ -365,22 +390,17 @@ assert(live.nameplateMotionSpeed == nil and live.nameplateOverlapH == nil and li
 local records = NS.RootDB.suiteRecovery["Realm/Tester"].nameplates
 assert(records.nameplateMaxDistance and not records.nameplateMotionSpeed and not records.nameplateOverlapH,
     "a CVar the client lacks left a recovery record")
-local _, lacking = Catalog()
+local limitedNS, lacking = Catalog()
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateExtensions.lua"))("MSUF_Suite", limitedNS)
 local controls, kept = lacking.getControls(), {}
 for _, rule in ipairs(controls) do kept[rule.key] = true end
 assert(not kept.plateMotionSpeed and not kept.plateOverlapH and not kept.plateClampTarget,
     "a control for a CVar the client lacks stayed")
-assert(kept.plateMaxDistance and kept.plateEnemies and kept.plateFadeDistance and kept.look and kept.enemyNameSize,
+assert(kept.plateMaxDistance and kept.enemySkinEnabled and kept.plateFadeDistance and kept.look and kept.enemyNameSize,
     "available controls were dropped")
 assert(lacking.controlAvailable(lacking.rules.plateMotionSpeed) == false and lacking.controlAvailable(lacking.rules.look) == true)
--- Personal resource display: also gone where the game rule disables it.
-assert(kept.personalResource, "the personal resource display was dropped with its CVar present")
-gameRules[PRD_DISABLED] = true
-local _, ruled = Catalog()
-local ruledKept = {}
-for _, rule in ipairs(ruled.getControls()) do ruledKept[rule.key] = true end
-assert(not ruledKept.personalResource and ruledKept.plateEnemies, "the disabled personal resource display still has a control")
-gameRules[PRD_DISABLED] = nil
+assert(not kept.personalResource and not lacking.cvars.nameplateShowSelf,
+    "Suite still exposes or claims the personal resource display")
 
 ------------------------------------------------------------------ the page
 local P = { Gates = {}, SearchPreparers = {}, catalog = { nameplates = lacking }, Suite = { NameplateStyle = NS.NameplateStyle, HostBridge = {} } }
@@ -396,7 +416,6 @@ local built, page = {}, nil
 P.RegisterPage = function(registered) page = registered end
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Controls.lua"))("MSUF_Suite_Options", P)
 -- The page hands each accordion's rule list to P.RuleSection.
-P.ModuleCard = function() end
 P.RuleSection = function(_, _, _, _, sectionId, _, shown) built[sectionId] = shown; return {} end
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesWorkspace.lua"))("MSUF_Suite_Options", P)
 -- The page registers a cold exact-target preparer through the host adapter.
@@ -406,10 +425,20 @@ P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
 end
 -- This fixture isolates native CVar controls. The native aura expansion has
 -- its own model, UI and runtime contract in suite_nameplates_aura_display.
-P.NameplatesAdvancedAuras = { Append = function() end }
-P.NameplatesExtensions = { Append = function() end }
-P.NameplatesProfiles = { Build = function() end }
-P.NameplatesHostOptions = { Build = function() end }
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateExtensions.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateAuras.lua"))("MSUF_Suite", NS)
+P.Suite.NameplateAuraDisplay = NS.NameplateAuraDisplay
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua"))("Options", P)
+P.NameplatesAdvancedAuras.Build = function() end
+P.Suite.NameplateExtensions = NS.NameplateExtensions
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesExtensions.lua"))("Options", P)
+P.NameplateFonts = { TargetForSetting = function() return "opt_fonts" end }
+P.NameplateBarTextures = { Target = function(key) return key == "hideHealthBarBorders" or key == "selectionBorder" end,
+    LegacyRule = function() return false end,
+    BarDetailKeys = function() return {} end }
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesStatus.lua"))("Options", P)
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesSectionsLayout.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Nameplates.lua"))("MSUF_Suite_Options", P)
 page.build({})
 local function Keys(sectionId)
@@ -417,14 +446,25 @@ local function Keys(sectionId)
     for _, rule in ipairs(built[sectionId] or {}) do keys[rule.key] = true end
     return keys
 end
-local distance, visibility, more = Keys("suite_nameplates_distance"), Keys("suite_nameplates_visibility"), Keys("suite_nameplates_more")
+local distance, more = Keys("suite_nameplates_enemyRange"), Keys("suite_nameplates_more")
 assert(distance.plateMaxDistance and distance.plateFadeDistance and distance.plateTopInset and not distance.plateMotionSpeed
     and not distance.plateOverlapH and not distance.plateClampTarget,
     "the Distance and stacking section lacks a control, or shows one the client lacks")
-assert(visibility.plateEnemies and visibility.plateFriendlyPlayers and visibility.plateEnemyPets and visibility.plateFriendlyTotems
-    and visibility.plateEnemyMinions and visibility.plateFriendlyMinions, "the Visibility section lacks a control")
+local enemy, friendly = Keys("suite_nameplates_enemyBasics"), Keys("suite_nameplates_friendlyBasics")
+local conditions = Keys("suite_nameplates_enemyVisibility")
+assert(distance.plateShowAll and not enemy.plateShowAll and enemy.plateContextEnabled and not enemy.plateEnemies and not friendly.plateFriendlyPlayers
+    and not enemy.enabled and not friendly.enabled and not enemy.plateMaxDistance
+    and enemy.plateEnemyPets and friendly.plateFriendlyTotems and enemy.plateEnemyMinions and friendly.plateFriendlyMinions,
+    "the type-specific Basics sections lack a display control")
+assert(enemy.enemyNpcWorldVisible and enemy.enemyPlayerCastVisibility and friendly.friendlyPlayerPvPVisible,
+    "existing location and cast controls must stay available under Basics")
+assert(conditions.enemyHideInCombat and conditions.enemyShowWhenInjured and not conditions.plateEnemyPets,
+    "Visibility must contain the Unitframe-style conditions")
+assert(P.NameplateSearchTarget(lacking.rules.plateEnemyPets) == "suite_nameplates_enemyBasics"
+    and P.NameplateSearchTarget(lacking.rules.enemyHideInCombat) == "suite_nameplates_enemyVisibility",
+    "search did not follow the moved display controls and new visibility rules")
 for key in pairs(NEW) do assert(not more[key], key .. " fell into More settings") end
 assert(next(more) == nil, "a setting is placed nowhere: " .. tostring(next(more)))
-assert(P.NameplateSearchTarget(rules.plateFadeDistance) == "suite_nameplates_distance")
+assert(P.NameplateSearchTarget(rules.plateFadeDistance) == "suite_nameplates_enemyRange")
 
 print("Suite nameplates: distance, fade, stacking and unit visibility CVars, Keep, release, combined minions and missing CVars passed")

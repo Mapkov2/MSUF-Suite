@@ -23,9 +23,9 @@ local BY_KEY = {}
 for _, layer in ipairs(LAYERS) do BY_KEY[layer[1]] = layer end
 Editor.Layers = LAYERS
 
-function Editor.Open(editor, layer)
+function Editor.Open(editor, layer, setting)
     if not layer or not editor.ui.stage:IsVisible() then return false end
-    return editor.ui.OpenTarget(layer[3])
+    return editor.ui.OpenTarget(setting or layer[3])
 end
 
 -- Hovering a chip outlines every part of that layer in the preview, as MSUF's
@@ -172,11 +172,17 @@ local function MaskRow(editor, row)
     end
 end
 
--- A layer whose settings paint nothing is shown as unavailable on the rail.
+local function LayerEnabled(config, key)
+    if key == "details" then return config.showItemLevel == true or config.showBind == true end
+    if key == "counts" or key == "result" then return config[BY_KEY[key][3]] == true end
+    return true
+end
+
 local function Availability(editor, config)
     local available = editor.layerAvailable
-    available.details = config.showItemLevel == true or config.showBind == true
-    available.counts = config.showCounts == true
+    available.details = LayerEnabled(config, "details")
+    available.counts = LayerEnabled(config, "counts")
+    available.result = LayerEnabled(config, "result")
 end
 
 local function Toggle(editor, key, enabled)
@@ -208,7 +214,10 @@ function Editor.Build(ui, parent, y, width)
     y = P.LootRollPreviewProperties.Build(editor, parent, y, width)
     Interaction.BuildLayerRail(editor, parent, LAYERS,
         function(key, enabled) return Toggle(editor, key, enabled) end,
-        function(layer) return Editor.Open(editor, layer) end)
+        function(layer, setting) return Editor.Open(editor, layer, setting) end,
+        function(key)
+            if not LayerEnabled(S.Config(ID), key) then return BY_KEY[key][3] end
+        end)
     HookChips(editor)
     editor.chips:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
     Interaction.LayoutLayerRail(editor, width)

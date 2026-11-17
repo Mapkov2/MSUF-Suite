@@ -387,14 +387,7 @@ function Status.More(ctx, parent, y, width, sectionId, spec)
     end
     local note = P.Text(parent, "Player status icons require a player nameplate. The AFK timer starts when the plate first sees the player go AFK.",
         16, y - 6, width)
-    y = y - math.max(16, math.ceil(note:GetStringHeight() or 16)) - 18
-    if P.Suite.Client.isForever then
-        P.Button(ctx, parent, "Level appearance", 16, y, 175, function()
-            P.OpenNameplateSetting("levelAppearance")
-        end)
-        y = y - 34
-    end
-    return y
+    return y - math.max(16, math.ceil(note:GetStringHeight() or 16)) - 18
 end
 
 local function IndicatorChoices(spec)

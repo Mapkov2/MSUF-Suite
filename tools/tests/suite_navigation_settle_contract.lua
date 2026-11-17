@@ -106,6 +106,8 @@ local clock = { now = 100, tickers = {}, fired = false }
 GetTime = function() return clock.now end
 IsInInstance = function() return world.instance == true end
 GetUnitSpeed = function() return world.speed end
+-- Exercise the existing sample budgets while an input keeps the view moving.
+IsMouselooking = function() return true end
 PlaySound, PlaySoundFile = function() end, function() end
 SOUNDKIT = { MAP_PING = 1 }
 UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }
@@ -240,9 +242,13 @@ module:Enable()
 -- Settle contract. A completed sample of a player who stands still is skipped
 -- while nothing it reads can have changed (Navigation.lua, Settle and Still).
 -- The harness above (lines 3-238 of this file) is the geometry contract's, copied unchanged.
--- Counts: samples = Navigation.Paint calls (wrapped), C_Navigation reads = the
--- four C_Navigation calls, parent reads = host:GetParent and the parent's
--- geometry calls, projection reads = SuperTrackedFrame:GetCenter.
+-- Counts: samples = distance reads (every sample reads the position once), paints =
+-- Navigation.Paint calls (wrapped), C_Navigation reads = the four C_Navigation
+-- calls, parent reads = host:GetParent and the parent's geometry calls,
+-- projection reads = SuperTrackedFrame:GetCenter.
+-- 2026-11-15: a settled marker's sample reads the position and paints only what
+-- changed (Navigation.lua, Resample), so a sample is no longer a paint. An event,
+-- a refresh and every sample of a marker that is not settled still paint in full.
 
 local main = { cx = 640, cy = 360, width = 1000, height = 500, scale = 1.25 }
 local proj = { x = 1400, y = 300 }
@@ -313,16 +319,22 @@ local function Reset(clamped, distance)
 end
 
 -- 1. Settling. One completed sample, then 10 s of 0.1 s ticks: samples on ticks 10, 20, ... 100.
+-- A sample that finds what the marker shows reads the position, the pointer and the centre once
+-- each and writes nothing: no paint, no placement.
 Reset(false, 400)
 Sample()
 assert(Settled(), "one completed sample of a still player did not settle the marker")
 local onscreen = {}
 for tick = 1, 100 do
+    local writes = counters.writes
     local d = Step(.1)
     assert(d.due, "tick " .. tick .. " of 0.1 s was not a due tick")
-    if d.paints > 0 then
+    assert(d.paints == 0 and counters.writes == writes, "tick " .. tick .. " of an unchanged settled marker painted or wrote")
+    if d.distance > 0 then
         onscreen[#onscreen + 1] = tick
-        assert(d.distance == 1, "the settled sample on tick " .. tick .. " did not read the distance once")
+        assert(d.distance == 1 and d.nav == 4, "the settled sample on tick " .. tick .. " did not read the position once")
+        assert(d.projection == 1 and d.mouse == 1 and d.parent == 0,
+            "the settled sample on tick " .. tick .. " read the centre " .. d.projection .. " and the pointer " .. d.mouse .. " times")
     else
         assert(d.distance == 0 and d.nav == 0, "skipped tick " .. tick .. " read C_Navigation")
         assert(d.projection == 1, "skipped tick " .. tick .. " read the projection " .. d.projection .. " times, not 1")
@@ -333,18 +345,24 @@ assert(table.concat(onscreen, ",") == "10,20,30,40,50,60,70,80,90,100",
     "settled samples at 0.1 s ticks fell on " .. table.concat(onscreen, ","))
 
 -- 1b. Clamped direction arrow at 1/30 s ticks: 10 s give exactly 10 samples, on ticks 30, 60, ... 300.
--- Every other tick reads the projection once (an arrow tick, or a skipped due tick); a sample reads it twice
--- (placement and the settle read). Total: 290 * 1 + 10 * 2 = 310.
+-- Every tick reads the projection once: an arrow tick, a skipped due tick, and a sample, whose settle
+-- uses the centre its placement read (2026-11-15; before, a sample read it twice: 310). Total: 300.
+-- The sample reads the parent geometry (the safeguard) and, finding it unchanged, computes no placement.
 Reset(true, 400)
 Sample()
 assert(Settled() and module.model.mode == navigation.DIRECTION, "the clamped marker did not settle as a direction arrow")
 local clamped, arrowTicks, projectionTotal = {}, 0, 0
+local realAtan2, formulas = math.atan2, 0
+math.atan2 = function(...) formulas = formulas + 1 return realAtan2(...) end
 for tick = 1, 300 do
+    local writes = counters.writes
     local d = Step(1 / 30)
     projectionTotal = projectionTotal + d.projection
-    if d.paints > 0 then
+    assert(d.paints == 0 and counters.writes == writes, "tick " .. tick .. " of an unchanged settled arrow painted or wrote")
+    if d.distance > 0 then
         clamped[#clamped + 1] = tick
-        assert(d.projection == 2, "the settled sample on tick " .. tick .. " read the projection " .. d.projection .. " times, not 2")
+        assert(d.projection == 1, "the settled sample on tick " .. tick .. " read the projection " .. d.projection .. " times, not 1")
+        assert(d.parent == 5, "the settled sample on tick " .. tick .. " read the parent geometry " .. d.parent .. " times, not 5")
     elseif d.due then
         assert(d.distance == 0 and d.nav == 0 and d.projection == 1, "skipped due tick " .. tick .. " read more than the projection once")
     else
@@ -355,8 +373,10 @@ for tick = 1, 300 do
 end
 assert(table.concat(clamped, ",") == "30,60,90,120,150,180,210,240,270,300",
     "clamped settled samples at 1/30 s ticks fell on " .. table.concat(clamped, ","))
+math.atan2 = realAtan2
 assert(arrowTicks > 0, "the arrow ticks did not run between the settled samples")
-assert(projectionTotal == 310, "300 clamped ticks read the projection " .. projectionTotal .. " times, not 310")
+assert(projectionTotal == 300, "300 clamped ticks read the projection " .. projectionTotal .. " times, not 300")
+assert(formulas == 0, "300 ticks of an unmoved settled arrow computed the placement " .. formulas .. " times")
 
 -- 2. Hover. With fadeOnHover every due tick makes exactly one IsMouseOver call, skipped or not.
 Reset(false, 400)
@@ -385,22 +405,37 @@ for tick = 1, 30 do
     assert(d.mouse == 0, "with fadeOnHover off, tick " .. tick .. " made " .. d.mouse .. " IsMouseOver calls")
 end
 
--- 3. Projection move. A moved projection centre makes the next due tick a full sample, and the marker settles again.
+-- 3. Projection move. A moved projection centre makes the next due tick a sample, and the marker settles again.
+-- The sample reads the position; the tick has read the centre and the pointer already (the skip check), and
+-- neither is read a second time. A camera turn that changes nothing the marker shows paints nothing.
 Reset(false, 400)
 Sample()
 for _ = 1, 25 do Step(.1) end
 proj.x = proj.x + 100
 local moved = Step(.1)
-assert(moved.due and moved.paints == 1 and moved.distance == 1, "the due tick after the on-screen projection moved was not a full sample")
+assert(moved.due and moved.distance == 1 and moved.nav == 4, "the due tick after the on-screen projection moved was not a sample")
+assert(moved.projection == 1 and moved.mouse == 1,
+    "the sample after a camera turn read the centre " .. moved.projection .. " and the pointer " .. moved.mouse .. " times, not once each")
+assert(moved.paints == 0, "a camera turn that changed nothing the marker shows painted it")
 assert(Settled(), "the sample after the on-screen projection moved did not settle again")
-assert(Step(.1).paints == 0, "the marker did not skip again after the on-screen projection moved")
+assert(Step(.1).distance == 0, "the marker did not skip again after the on-screen projection moved")
+-- A camera turn that also changes what the marker shows (here the distance) paints it, in the same tick.
+do
+    local shownBefore = module.view.distance.text
+    proj.x, world.distance = proj.x + 100, 380
+    local turned = Step(.1)
+    assert(turned.distance == 1 and turned.paints == 1 and turned.projection == 1 and turned.mouse == 1,
+        "a camera turn with a changed distance was not painted once from one read")
+    assert(module.view.distance.text ~= shownBefore and Settled(), "the changed distance was not shown: " .. tostring(module.view.distance.text))
+    world.distance = 400
+end
 -- A move of the y coordinate alone is a move too.
 Reset(false, 400)
 Sample()
 for _ = 1, 25 do Step(.1) end
 proj.y = proj.y + 100
 local movedY = Step(.1)
-assert(movedY.due and movedY.paints == 1, "the due tick after the on-screen projection moved in y was not a full sample")
+assert(movedY.due and movedY.distance == 1, "the due tick after the on-screen projection moved in y was not a sample")
 assert(Settled(), "the sample after the on-screen projection moved in y did not settle again")
 Reset(true, 400)
 Sample()
@@ -408,22 +443,63 @@ for _ = 1, 40 do Step(1 / 30) end
 proj.x = proj.x + 100
 local movedClamped
 repeat movedClamped = Step(1 / 30) until movedClamped.due
-assert(movedClamped.paints == 1, "the due tick after the clamped projection moved was not a full sample")
+assert(movedClamped.distance == 1 and movedClamped.paints == 0, "the due tick after the clamped projection moved was not a sample")
 CheckFormula("the sample after the clamped projection moved did not place the marker by the formula")
+assert(module.view.tip.angle == module.model.angle, "the arrow does not point where the moved projection is")
 assert(Settled(), "the sample after the clamped projection moved did not settle again")
 local afterMove
 repeat afterMove = Step(1 / 30) until afterMove.due
-assert(afterMove.paints == 0, "the clamped marker did not skip again after the projection move")
+assert(afterMove.distance == 0, "the clamped marker did not skip again after the projection move")
+-- What a settled marker shows is painted by the sample that finds it changed, each from one position read:
+-- the line of sight (the marker fades), and the destination leaving the screen (the arrow, placed by the formula).
+do
+    Reset(false, 400)
+    Sample()
+    assert(Settled() and module.model.mode == navigation.WAYPOINT, "probe: the far marker did not settle on screen")
+    local clearAlpha = module.view.root.alpha
+    for _ = 1, 3 do Step(.1) end
+    -- The next sample of the settled marker, within its safeguard second.
+    local function NextSample()
+        for _ = 1, 10 do
+            local d = Step(.1)
+            if d.distance > 0 then return d end
+        end
+        error("a settled marker was not sampled within a second")
+    end
+    local state = Enum.NavigationState.Occluded
+    C_Navigation.GetTargetState = function() navCalls = navCalls + 1 return state end
+    local faded = NextSample()
+    assert(faded.distance == 1 and faded.paints == 1 and module.view.root.alpha < clearAlpha,
+        "a destination that went behind a wall did not fade the settled marker at its next sample")
+    assert(Settled() and Step(.1).distance == 0, "the faded marker did not settle again")
+    state = Enum.NavigationState.InRange
+    local cleared = NextSample()
+    assert(cleared.paints == 1 and module.view.root.alpha == clearAlpha, "a destination back in sight did not clear the fade")
+    world.clamped = true
+    local offscreen = NextSample()
+    assert(offscreen.distance == 1 and offscreen.paints == 1 and module.model.mode == navigation.DIRECTION and module.view.tip.shown,
+        "a destination that left the screen did not become the arrow at the settled marker's next sample")
+    CheckFormula("the arrow of a destination that left the screen was not placed by the formula")
+    assert(module.view.tip.angle == module.model.angle and Settled(), "the new arrow does not point at the destination or did not settle")
+    world.clamped = false
+end
 
 -- 4. Own movement. While the player moves every due tick is a sample; with speed 7 and no events too.
+-- A marker on screen of a player the client reports moving is ticked once a second (2026-11-15,
+-- suite_navigation_pause_contract.lua, section 6b): no tick, and nothing read, in the 0.1 s frames between.
 Reset(false, 400)
 Sample()
 assert(Settled(), "probe: the marker did not settle before the movement")
 events.PLAYER_STARTED_MOVING(module, "PLAYER_STARTED_MOVING")
 assert(module.moving == true and not Settled(), "a moving player's marker stayed settled")
 for tick = 1, 40 do
-    local d = Step(.1)
+    local d = Step(1)
     assert(d.due and d.paints == 1, "a due tick while the player moves was not a sample (tick " .. tick .. ")")
+end
+for frame = 1, 9 do
+    local d = Step(.1)
+    assert(not d.due and d.paints == 0 and d.nav == 0 and d.projection == 0 and d.mouse == 0,
+        "frame " .. frame .. " within a moving player's second ticked or read")
 end
 events.PLAYER_STOPPED_MOVING(module, "PLAYER_STOPPED_MOVING")
 assert(module.moving == false and not Settled(), "the stop event itself settled the marker")
@@ -449,7 +525,7 @@ do
         "a movement event read the destination again: source " .. sourceReads .. ", pin " .. pinReads)
     assert(d.paints == 0 and d.nav == 0 and d.projection == 0 and d.parent == 0, "a movement event sampled the marker")
     assert(module.moving == true and not Settled(), "a movement event left the marker settled")
-    d = Step(.1)
+    d = Step(1)
     assert(d.due and d.paints == 1 and d.distance == 1, "the tick after a movement event was not a sample")
     C_SuperTrack.GetHighestPrioritySuperTrackingType, C_Map.GetUserWaypoint = realKind, realPin
     events.PLAYER_STOPPED_MOVING(module, "PLAYER_STOPPED_MOVING")
@@ -562,9 +638,10 @@ main.width = 700
 local safeguardAt
 for tick = 1, 30 do
     local d = Step(1 / 30)
-    if d.paints > 0 then
+    if d.distance > 0 then
         safeguardAt = tick
         assert(d.parent == 5, "the safeguard sample read the parent geometry " .. d.parent .. " times, not 5")
+        assert(d.paints == 0, "the safeguard sample painted an arrow that only moved")
         break
     end
     assert(module.host.point == placed, "skipped tick " .. tick .. " placed the marker by the changed parent geometry")
@@ -662,7 +739,8 @@ local hiddenSamples = {}
 for tick = 1, 16 do
     local d = Step(.25)
     assert(d.due, "0.25 s tick " .. tick .. " was not a due tick")
-    if d.paints > 0 then hiddenSamples[#hiddenSamples + 1] = tick end
+    assert(d.paints == 0, "0.25 s tick " .. tick .. " painted a settled hidden marker")
+    if d.distance > 0 then hiddenSamples[#hiddenSamples + 1] = tick end
 end
 assert(table.concat(hiddenSamples, ",") == "4,8,12,16", "settled hidden samples fell on " .. table.concat(hiddenSamples, ","))
 assert(module.model.mode == nil, "the hidden marker was shown while settled")
@@ -696,7 +774,7 @@ assert(scaled.parent == 5, "the tick after a UI_SCALE_CHANGED read the parent ge
 assert(module.host.point ~= beforeScale, "the tick after a UI_SCALE_CHANGED did not move the marker")
 CheckPlacedBy(side, "the tick after a UI_SCALE_CHANGED did not place the marker by the new scale")
 assert(Settled(), "the marker did not settle again after UI_SCALE_CHANGED")
-assert(Step(.1).paints == 0, "the marker did not skip again after UI_SCALE_CHANGED")
+assert(Step(.1).distance == 0, "the marker did not skip again after UI_SCALE_CHANGED")
 main.scale = 1.25
 -- DISPLAY_SIZE_CHANGED: the same check with the parent's own size changed.
 Reset(true, 400)
@@ -711,7 +789,7 @@ assert(sized.parent == 5, "the tick after a DISPLAY_SIZE_CHANGED read the parent
 assert(module.host.point ~= beforeSize, "the tick after a DISPLAY_SIZE_CHANGED did not move the marker")
 CheckPlacedBy(main, "the tick after a DISPLAY_SIZE_CHANGED did not place the marker by the new size")
 assert(Settled(), "the marker did not settle again after DISPLAY_SIZE_CHANGED")
-assert(Step(.1).paints == 0, "the marker did not skip again after DISPLAY_SIZE_CHANGED")
+assert(Step(.1).distance == 0, "the marker did not skip again after DISPLAY_SIZE_CHANGED")
 main.width = 1000
 
 -- 9. Budget, per settled second (2026-11-10, Lua 5.1). Exact sample and read counts; instructions with a count
@@ -724,6 +802,10 @@ main.width = 1000
 -- 2026-11-11, the ticker: the instructions are the product's only (a hook on every instruction that counts while
 -- a ticker callback runs), so they are not the numbers above. Same measure, frame script -> ticker: a settled
 -- clamped second 5093 -> 4788, a settled on-screen second 1771 -> 1586. Samples and reads did not change.
+-- 2026-11-15, the settled sample writes only what changed: paints per settled second 1 -> 0 (both), projection
+-- reads of a settled clamped second 31 -> 30, and the placement of an unmoved arrow is not computed again.
+-- Samples, C_Navigation and parent reads did not change. The instruction limits are the ones above: the
+-- settled second may only get cheaper.
 local function Measure(dt, seconds)
     local ticks = math.floor(seconds / dt + .5)
     local a = Snap()
@@ -732,8 +814,8 @@ local function Measure(dt, seconds)
     for _ = 1, ticks do Advance(dt) end
     debug.sethook()
     local d = Diff(a, Snap())
-    return { samples = d.paints / seconds, nav = d.nav / seconds, parent = d.parent / seconds,
-        projection = d.projection / seconds, instructions = instructions / seconds }
+    return { samples = d.distance / seconds, paints = d.paints / seconds, nav = d.nav / seconds, parent = d.parent / seconds,
+        projection = d.projection / seconds, mouse = d.mouse / seconds, instructions = instructions / seconds }
 end
 Reset(true, 400)
 Sample()
@@ -747,8 +829,10 @@ print(("settle budget per settled second: clamped 1/30 samples %g nav %g parent 
     .. "on-screen 0.1 samples %g nav %g parent %g projection %g instructions %g"):format(
     perClamped.samples, perClamped.nav, perClamped.parent, perClamped.projection, perClamped.instructions,
     perOnscreen.samples, perOnscreen.nav, perOnscreen.parent, perOnscreen.projection, perOnscreen.instructions))
-assert(perClamped.samples == 1 and perClamped.nav == 4 and perClamped.parent == 5 and perClamped.projection == 31,
+assert(perClamped.samples == 1 and perClamped.nav == 4 and perClamped.parent == 5 and perClamped.projection == 30,
     "a settled clamped second changed its sample or read counts")
+assert(perClamped.paints == 0 and perOnscreen.paints == 0, "a settled second painted an unchanged marker")
+assert(perClamped.mouse == 10 and perOnscreen.mouse == 10, "a settled second did not read the pointer once per due tick")
 assert(perClamped.instructions <= 4788 * 1.02, "a settled clamped second exceeds the instruction budget: " .. perClamped.instructions)
 assert(perOnscreen.samples == 1 and perOnscreen.nav == 4 and perOnscreen.parent == 0 and perOnscreen.projection == 10,
     "a settled on-screen second changed its sample or read counts")

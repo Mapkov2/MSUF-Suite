@@ -1,7 +1,7 @@
 local root = assert(arg[1], "Suite root required")
 securecallfunction = function(callback, ...) return callback(...) end
 local events, hooks, frames, buttons, faded = {}, {}, {}, {}, {}
-local surfaces, checked, deferred = {}, {}, {}
+local surfaces, checked, deferred, textTracked = {}, {}, {}, {}
 local inCombat = false
 InCombatLockdown = function() return inCombat end
 local categoryEnabled = true
@@ -109,6 +109,7 @@ local namespace = {
         FadeNineSlice = function() end,
         SuppressVertexAlpha = function(region, owner) faded[region] = owner end,
     },
+    BlizzardYellow = { TrackFrame = function(frame) textTracked[frame] = true end },
     Surface = {
         Attach = function(frame, spec)
             assert(not inCombat or not (frame.IsProtected and frame:IsProtected()), "protected surface paint during combat")
@@ -185,6 +186,18 @@ end
 local roleArt, roleIcon = Texture("groupfinder-roles-background"), Texture("groupfinder-icon-role-large-tank")
 local cardArt, cardLabel = {}, {}
 local card = { Icon = cardArt, Cover = {}, Label = cardLabel, HighlightTexture = {} }
+local chosen, sounds = nil, 0
+local categoryNames = { "Dungeons", "Quests & Zones", "Battlegrounds", "Custom" }
+local categoryCards = { card }
+for index, name in ipairs(categoryNames) do
+    local button = categoryCards[index] or { Icon = {}, Cover = {}, Label = {}, HighlightTexture = {} }
+    button.Label.text = name
+    button.OnClick = function()
+        chosen = name
+        sounds = sounds + 1
+    end
+    categoryCards[index] = button
+end
 local rolesSection = { GetRegions = function() return roleArt, roleIcon end }
 local listingInset = { CustomBG = {}, Border = {} }
 local divider = {}
@@ -204,7 +217,7 @@ _G.LFGListingFrame = {
     Inset = listingInset,
     DividerFrame = { Divider = divider },
     ActivityView = activityView,
-    CategoryView = { CategoryButtons = { card } },
+    CategoryView = { CategoryButtons = categoryCards },
     BackButton = Button(), PostButton = Button(),
     GroupRoleButtons = { RolePollButton = Button(), RoleDropdown = Button(), RoleIcon = Button() },
     SoloRoleButtons = { RoleButtons = { Button(), Button(), Button() } },
@@ -255,8 +268,13 @@ assert(frames[_G.LFGParentFrame].role == "shell"
     and frames[_G.LFGBrowseFrame].role == "panel"
     and frames[_G.LFGWhoListFrame].role == "panel")
 assert(faded[roleArt] and not faded[roleIcon]
-    and buttons[card].role == "card" and not faded[cardLabel],
+    and textTracked[card] and not buttons[card] and not faded[cardArt] and not faded[cardLabel],
     "decorative LFG art or semantic controls were misidentified")
+for index, button in ipairs(categoryCards) do
+    assert(textTracked[button] and not faded[button.Icon] and not faded[button.Cover] and not buttons[button])
+    button.OnClick()
+    assert(chosen == categoryNames[index] and sounds == index, "category click or sound changed")
+end
 -- Role buttons: the coloured halo is decoration; the role icon (normal
 -- texture) and the not-recommended cover carry meaning. Role checkboxes and
 -- the new-player checkbox take the window's checkmark colours.
@@ -333,10 +351,10 @@ browseTab:SetChecked(false)
 assert(surfaces[browseTab].active == false, "side tab selection did not follow Blizzard")
 
 local later = { Icon = {}, Cover = {}, Label = {}, HighlightTexture = {} }
-_G.LFGListingFrame.CategoryView.CategoryButtons[2] = later
+_G.LFGListingFrame.CategoryView.CategoryButtons[5] = later
 hooks.LFGListingCategorySelection_UpdateCategoryButtons()
-assert(buttons[later] and buttons[later].role == "card",
-    "newly created category cards did not receive the skin")
+assert(textTracked[later] and not buttons[later] and not faded[later.Icon] and not faded[later.Cover],
+    "new category card lost the native art or text skinning")
 local browseRow = { ResultBG = {}, Selected = Texture(), Highlight = {}, Name = {}, PartyIcon = {},
     DataDisplay = { DelistButton = Button(), Enumerate = { Icon1 = {} } } }
 local whoRow = { Background = {}, Selected = Texture(), Name = {}, InviteButton = Button(),
@@ -353,7 +371,8 @@ assert(buttons[grouping] and not faded[grouping.ExpandIcon] and not faded[groupi
     "the Groups header was not skinned or lost its collapse controls")
 assert(buttons[browseRow.DataDisplay.DelistButton] and buttons[whoRow.InviteButton],
     "pooled row action buttons missed the skin")
-assert(checked[activityRow], "activity checkboxes were not tracked")
+assert(not checked[activityRow] and not checked[activityRow.CheckButton] and not checked[activityRow.ExpandOrCollapseButton]
+    and next(activityView.ScrollBox.callbacks) == nil, "skin claims native activity tree inputs")
 _G.LFGBrowseSearchEntry_SetSelection(browseRow, true)
 assert(hooks.LFGBrowseSearchEntry_SetSelection, "browse selection has no native post-hook")
 hooks.LFGBrowseSearchEntry_SetSelection(browseRow, true)
@@ -403,9 +422,9 @@ assert(next(_G.LFGBrowseFrame.ScrollBox.callbacks) == nil
     and next(_G.LFGWhoListFrame.ScrollBox.callbacks) == nil
     and next(activityView.ScrollBox.callbacks) == nil,
     "group finder row callbacks survived disable")
-buttons[later] = nil
+textTracked[later] = nil
 hooks.LFGListingCategorySelection_UpdateCategoryButtons()
-assert(buttons[later] == nil, "disabled skin repainted a card")
+assert(not textTracked[later], "disabled skin repainted a card")
 local disabledActive = surfaces[browseTab].active
 browseTab:SetChecked(false)
 assert(surfaces[browseTab].active == disabledActive and surfaces[browseTab].visible == false,

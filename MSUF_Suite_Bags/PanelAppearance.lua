@@ -87,10 +87,9 @@ end
 
 -- Static gradients; opening motion animates the Suite shell only. There is
 -- no particle driver, native item animation or per-frame decoration work.
-function Panel.Paint(t, c)
+function Panel.Paint(t, c, opacity)
     local r, g, b = S.RGB(c.backgroundColor)
     local ar, ag, ab = S.RGB(c.accentColor)
-    local opacity = c.backgroundOpacity / 100
     t.feather:SetColorTexture(1, 1, 1)
     t.feather:SetGradient("HORIZONTAL", CreateColor(r, g, b, 0), CreateColor(r, g, b, opacity))
     t.ribbon:SetColorTexture(1, 1, 1)

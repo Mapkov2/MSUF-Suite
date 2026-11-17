@@ -49,6 +49,10 @@ local function Widget(parent, fontString)
             fn(...)
         end
     end
+    function w:Click(mouseButton)
+        if self.PreClick then self:PreClick(mouseButton or "LeftButton") end
+        if self.OnClick then self:OnClick(mouseButton or "LeftButton") end
+    end
     function w:SetAttribute(key, value)
         self.attributes = self.attributes or {}
         self.attributes[key] = value
@@ -139,6 +143,14 @@ QuestMapFrame_OpenToQuestDetails = function(id)
     openedLog = openedLog + 1
     openedQuest = id
 end
+local questDetailsButton = Widget(UIParent)
+function questDetailsButton:Click() QuestMapFrame_OpenToQuestDetails(42) end
+QuestObjectiveTracker = { GetExistingBlock = function(_, id)
+    return id == 42 and { used = true, HeaderButton = questDetailsButton } or nil
+end }
+QuestLogMicroButton = Widget(UIParent)
+function QuestLogMicroButton:Click() OpenQuestLog() end
+function QuestLogMicroButton:IsEnabled() return true end
 local lastMenu, stoppedQuest, stoppedWorld, stoppedAchievement, superTracked, shared, abandoned
 local modifiedWatchClick, shiftDown = false, false
 IsModifiedClick = function(binding)
@@ -544,12 +556,12 @@ else
 end
 assert(movers.objectives.element == "tracker" and tracker.rows["entry:quests:42"])
 assert(tracker.host.shown and tracker.count.text == "1" and questUpdates == 1)
-tracker.rows["entry:quests:42"].OnClick(tracker.rows["entry:quests:42"])
+tracker.rows["entry:quests:42"]:Click()
 assert(openedLog == 1 and openedQuest == 42, "quest title did not open its quest details")
 openedQuest = nil
-tracker.rows["line:quests:42:1"].OnClick(tracker.rows["line:quests:42:1"])
+tracker.rows["line:quests:42:1"]:Click()
 assert(openedLog == 2 and openedQuest == 42, "objective line did not open its quest details")
-tracker.headerClick.OnClick(tracker.headerClick, "LeftButton")
+tracker.headerClick:Click()
 assert(openedLog == 3, "tracker header did not open the quest log")
 local questRow = tracker.rows["entry:quests:42"]
 -- Row data clicked through a live row's handler. On Forever the rows are
@@ -578,7 +590,7 @@ assert(GameTooltip.owner == scenarioHover and GameTooltip.text == "Delve", "a sc
 questRow.OnLeave(questRow)
 assert(GameTooltip.shown, "leaving another row hid a tooltip it does not own")
 questRow.OnLeave(scenarioHover)
-questRow.OnClick(questRow, "RightButton")
+questRow:Click("RightButton")
 assert(lastMenu.title == "A New Hope" and lastMenu.buttons["Stop tracking"]
     and lastMenu.buttons["Share quest"] and lastMenu.buttons["Abandon quest"]
     and openedLog == 3, "quest right-click did not open its context menu")
@@ -616,7 +628,7 @@ assert(lastMenu and lastMenu.buttons["Stop super tracking"],
 lastMenu.buttons["Stop super tracking"]()
 assert(superTracked == 0, "stop-focus must clear Blizzard super tracking")
 C_SuperTrack.GetSuperTrackedQuestID = superTrackGetter
-tracker.rows["line:quests:42:1"].OnClick(tracker.rows["line:quests:42:1"], "RightButton")
+tracker.rows["line:quests:42:1"]:Click("RightButton")
 assert(lastMenu.title == "A New Hope", "objective line must use its parent quest menu")
 questRow.OnClick(RowData { questID = 77, group = "world", tracked = true, menuTitle = "World Task" }, "RightButton")
 assert(lastMenu.buttons["Stop tracking"] and not lastMenu.buttons["Abandon quest"])
@@ -629,7 +641,7 @@ assert(stoppedWorld == 77 and openedLog == 3,
     "Shift-left-click must use the world quest untrack API")
 shiftDown = false
 questRow.OnClick(RowData { questID = 88, group = "bonus", menuTitle = "Bonus" }, "RightButton")
-assert(lastMenu.buttons["Show on map"] and not lastMenu.buttons["Stop tracking"],
+assert(lastMenu.buttons["Super track quest"] and not lastMenu.buttons["Stop tracking"],
     "automatic bonus objective must not offer an invalid untrack action")
 questRow.OnClick(RowData { achievementID = 99, group = "achievements", menuTitle = "Heroic" }, "RightButton")
 assert(lastMenu.buttons["View achievement"] and lastMenu.buttons["Stop tracking"])
@@ -661,8 +673,8 @@ S.Print = function(text) printed[#printed + 1] = text end
 suite.RestrictedNotice = function() return "Blizzard blocks this right now." end
 combatLocked = true
 local logBefore = openedLog
-questRow.OnClick(questRow, "LeftButton")
-tracker.headerClick.OnClick(tracker.headerClick, "LeftButton")
+questRow:Click("LeftButton")
+tracker.headerClick:Click("LeftButton")
 assert(openedLog == logBefore and printed[1] == "Blizzard blocks this right now.",
     "a row or header click in combat ran Blizzard's panel manager from the Suite (KS-2)")
 local enabled = {}
@@ -677,7 +689,7 @@ MenuUtil.CreateContextMenu = function(owner, build)
     lastMenu = root
 end
 questRow.OnClick(questRow, "RightButton")
-assert(enabled[OBJECTIVES_VIEW_IN_QUESTLOG] == false, "the quest menu offered its window action in combat")
+assert(not lastMenu.buttons[OBJECTIVES_VIEW_IN_QUESTLOG], "the quest menu offered its window action in combat")
 assert(enabled["Abandon quest"] ~= false, "Abandon quest must stay available outside the Gamepad UI")
 combatLocked = false
 -- WoW Forever's Gamepad UI: a row's left click clicks Blizzard's own button
@@ -1674,7 +1686,7 @@ C_ChallengeMode = {
     GetAffixInfo = function(id) return id == 1 and "Fortified" or "Bursting" end,
     GetDeathCount = function() return deaths, penalty end,
     GetChallengeCompletionInfo = function()
-        return { time = 1100000, keystoneUpgradeLevels = 2, onTime = true }
+        return { mapChallengeModeID = 500, level = 15, time = 1100000, keystoneUpgradeLevels = 2, onTime = true }
     end,
 }
 local priorSubzone = GetSubZoneText
@@ -1805,7 +1817,7 @@ assert(splitRecords.mythicSplits["500:15"].time == 1100
     and splitRecords.mythicSplits["500:all"].time == 1000)
 local splitSerial = splitRecords.mythicSplitSerial
 C_ChallengeMode.GetChallengeCompletionInfo = function()
-    return { time = 1100000, keystoneUpgradeLevels = 3, onTime = true }
+    return { mapChallengeModeID = 500, level = 15, time = 1100000, keystoneUpgradeLevels = 3, onTime = true }
 end
 tracker.context.events.CHALLENGE_MODE_COMPLETED_REWARDS(tracker, "CHALLENGE_MODE_COMPLETED_REWARDS")
 assert(tracker.mplus.remaining.text == "COMPLETE  +3" and ticker.cancelled,
@@ -2215,7 +2227,11 @@ C_QuestLog.IsComplete = function(id) return id == 95413 and questComplete or fal
 local completionActions, offeredRewards = {}, nil
 -- The tracker method also marks Blizzard's tracker dirty in the caller's
 -- code; the client function only removes the popup.
-QuestObjectiveTracker = { RemoveAutoQuestPopUp = function()
+local completedQuestDetails = Widget(UIParent)
+function completedQuestDetails:Click() QuestMapFrame_OpenToQuestDetails(95413) end
+QuestObjectiveTracker = { GetExistingBlock = function(_, id)
+    return id == 95413 and { used = true, HeaderButton = completedQuestDetails } or nil
+end, RemoveAutoQuestPopUp = function()
     error("the Suite called Blizzard's tracker method from addon code")
 end }
 RemoveAutoQuestPopUp = function(id)
@@ -2250,17 +2266,16 @@ completedRow.OnClick(completedRow, "LeftButton")
 shiftDown = false
 assert(stoppedQuest == 95413 and not offeredRewards and openedLog == logBeforeComplete,
     "Shift-click completed an auto quest instead of untracking it")
-completedRow.OnClick(completedRow, "RightButton")
-lastMenu.buttons["View in Quest Log"]()
-assert(not offeredRewards and openedQuest == 95413 and openedLog == logBeforeComplete + 1,
-    "explicit quest-details menu action opened reward selection")
+completedRow:Click("RightButton")
+assert(not offeredRewards and openedLog == logBeforeComplete and not lastMenu.buttons["View in Quest Log"],
+    "the auto-quest menu opened a protected window")
 autoComplete = false
-completedRow.OnClick(completedRow, "LeftButton")
-assert(not offeredRewards and openedLog == logBeforeComplete + 2,
+completedRow:Click("LeftButton")
+assert(not offeredRewards and openedLog == logBeforeComplete + 1,
     "completed NPC quest incorrectly used automatic turn-in")
 autoComplete, questComplete = true, false
-completedRow.OnClick(completedRow, "LeftButton")
-assert(not offeredRewards and openedLog == logBeforeComplete + 3,
+completedRow:Click("LeftButton")
+assert(not offeredRewards and openedLog == logBeforeComplete + 2,
     "stale completed row offered rewards for an incomplete auto quest")
 questComplete = secret
 assert(not private.Objectives.CanCompleteQuest(95413), "secret completion enabled automatic turn-in")

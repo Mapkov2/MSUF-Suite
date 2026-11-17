@@ -592,6 +592,11 @@ local function Duration(slot,ignoreGCD)
     local action=actions[slot]
     local object={duration=true,slot=slot,ignoreGCD=ignoreGCD,
         zero=not (action and action.cooldown and action.cooldown.isActive)}
+    function object:HasSecretValues() return action and action.secretDuration == true or false end
+    function object:IsZero()
+        assert(not self:HasSecretValues(),"opaque duration was inspected")
+        return self.zero
+    end
     function object:EvaluateRemainingDuration(curve)
         assert(curve and curve.points,"curve required")
         if secretEval then return Secret() end
@@ -796,7 +801,11 @@ hooksecurefunc=function(target,method,hook)
     _G[name]=function(...) original(...);hook(...) end
 end
 local native={}
-ActionButtonDown=function(id) native[#native+1]="down"..id end
+ActionButtonDown=function(id)
+    native[#native+1]="down"..id
+    local button=MainActionBar and MainActionBar.actionButtons[id]
+    native.slot=button and button:CalculateAction()
+end
 ActionButtonUp=function(id) native[#native+1]="up"..id end
 MultiActionButtonDown=function(bar,id) native[#native+1]=bar..id end
 MultiActionButtonUp=function() end
@@ -832,7 +841,20 @@ local function Buttons(prefix,parent,count,small)
         button.UpdateState=function(self)
             self:SetChecked(C_ActionBar.IsCurrentAction(self.attrs.action))
         end
-        button.UpdateAction=function() end
+        function button:CalculateAction()
+            local page=self.attrs.actionpage or (self.bar or self.parent).attrs.actionpage or barPage
+            return self.nativeID+(page-1)*12
+        end
+        function button:UpdateAction()
+            self.action=self:CalculateAction()
+        end
+        button.scripts.OnAttributeChanged=button.UpdateAction
+        button.scripts.OnDragStart=function(self)
+            if not cvars.lockActionBars or modified.PICKUPACTION then pickups[#pickups+1]=self.action end
+        end
+        button.scripts.OnReceiveDrag=function(self)
+            pickups[#pickups+1]=self.action
+        end
         button:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
     end
 end
@@ -857,15 +879,15 @@ Buttons("ActionButton",MainBar,12)
 local multibars={"MultiBarBottomLeft","MultiBarBottomRight","MultiBarRight","MultiBarLeft","MultiBar5","MultiBar6","MultiBar7"}
 for index,name in ipairs(multibars) do
     local bar=NewFrame("Frame",name,UIParent)
+    bar.attrs.actionpage=({6,5,3,4,13,14,15})[index]
     bar.implicit=true
     bar:RegisterEvent("ACTIONBAR_SHOWGRID")
     bar.cx,bar.cy,bar.numRows,bar.numButtonsShowable,bar.isHorizontal,bar.buttonPadding=300+index,80,1,12,true,2
     Buttons(name.."Button",bar,12)
 end
 MultiBarBottomLeft.visibility="InCombat"
-for _,name in ipairs(multibars) do
-    local bar=_G[name]
-    function bar:UpdateShownButtons()
+do
+    local function UpdateShownButtons(self)
         secure=secure+1
         for _,button in ipairs(self.actionButtons) do
             local grid=(button.attrs.showgrid or 0)>0
@@ -874,6 +896,8 @@ for _,name in ipairs(multibars) do
         end
         secure=secure-1
     end
+    MainBar.UpdateShownButtons=UpdateShownButtons
+    for _,name in ipairs(multibars) do _G[name].UpdateShownButtons=UpdateShownButtons end
 end
 MultiBarRight.isHorizontal,MultiBarRight.numRows,MultiBarRight.numButtonsShowable=false,2,10
 for _,name in ipairs({"StanceBar","PetActionBar"}) do
@@ -953,6 +977,7 @@ end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil));Suite.Suite.Normalize(Suite.DB)
 local private={}
+Suite.Client.isForever=arg[2]=="forever"
 local before=created
 assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
@@ -965,7 +990,7 @@ C_SpecializationInfo={
     GetActiveSpecGroup=function() return specGroup end,
 }
 local RUNTIME={"Bootstrap","Bars","Decorations","Blizzard","Paging","VirtualActions","SnapshotNative","Snapshots","Visibility",
-    "Bindings","KeyAudit","Style","VirtualPaint","Paint","NativeButtons","Flush","Events","Controller"}
+    "Bindings","KeyAudit","Style","Masque","VirtualPaint","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(RUNTIME) do
     assert(loadfile((file=="Paint" and os.getenv("MSUF_ACTIONBARS_PAINT_SOURCE"))
         or root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private)
@@ -1024,12 +1049,12 @@ end
 local S,AB=Suite.Suite,private.ActionBars
 -- The original full-feature contract exercises the suite-painted fallback.
 -- The Retail native-reuse path has a separate branch below.
-local nativeReuse=arg[2]=="native"
-AB.nativeReuse=nativeReuse
+local nativeReuse=arg[2]=="native" or arg[2]=="forever"
+if not nativeReuse then AB.nativeReuse=false end
 Suite.Client.isForever=true
 assert(S.catalog.actionbars.available==nil and S.Availability("actionbars"),
     "Forever availability must not run the broken compiler or hard-block the module")
-Suite.Client.isForever=false
+Suite.Client.isForever=arg[2]=="forever"
 local M=AB.M
 local c=S.Config("actionbars")
 if arg[3]=="capture" then
@@ -1410,6 +1435,35 @@ local function TestSlotChangeDedupe()
         Fire(62)
         local ran=Unchanged(12)
         print(("slot change, native: %d plans in 12 unchanged events"):format(ran))
+        do
+            local snapshot, snapshots = AB.snapshotChanged, 0
+            AB.snapshotChanged = function() snapshots = snapshots + 1 end
+            local timersBefore = #timers
+            Event("ACTIONBAR_SLOT_CHANGED",62)
+            assert(#timers==timersBefore and snapshots==1, "stable native-only slot queued painter or skipped snapshot")
+            AB.snapshotChanged = snapshot
+        end
+        do
+            local runs, errorsBefore = 0, #dispatch.errors
+            SecureHandlerExecute = function(frame, body)
+                if frame == Bar(2).header and body == AB.SNIPPET.GRID then
+                    runs = runs + 1
+                    if runs == 1 then error("test: one failed grid unit") end
+                end
+                return execute(frame, body)
+            end
+            dispatch.expect = true
+            AB.Regrid(Bar(2));RunTimers()
+            assert(runs==1 and #dispatch.errors==errorsBefore+1 and #timers==0,
+                "raising grid unit scheduled its own retry")
+            Fire(62)
+            assert(runs==2,"stable native slot did not wake the failed grid unit")
+            dispatch.expect = false
+            SecureHandlerExecute = function(frame,body)
+                if body==AB.SNIPPET.GRID then plans=plans+1 end
+                return execute(frame,body)
+            end
+        end
         assert(ran==0,("native slot change: %d plans in 12 unchanged events, expected 0"):format(ran))
         actions[62]=nil
         assert(Count(function() Fire(62) end)==1,"native: a removal did not run one plan")
@@ -1452,6 +1506,204 @@ local function TestSlotChangeDedupe()
     Budget("unchanged slot change",per,SLOT_EVENT_BUDGET)
     -- a. The same macro, twelve more events.
     assert(Unchanged(12)==0,"a: unchanged macro slot ran a plan")
+    do
+        local button=list[1].button
+        actions[62].count,actions[62].text="7","Old name"
+        Fire(62)
+        local texture,name,count,swipe=button.icon.SetTexture,button.Name.SetText,button.Count.SetText,
+            button.cooldown.SetCooldownFromDurationObject
+        local textures,names,counts,swipes=0,0,0,0
+        function button.icon:SetTexture(value) textures=textures+1;texture(self,value) end
+        function button.Name:SetText(value) names=names+1;name(self,value) end
+        function button.Count:SetText(value) counts=counts+1;count(self,value) end
+        function button.cooldown:SetCooldownFromDurationObject(value) swipes=swipes+1;swipe(self,value) end
+        local used=Cost(function() for _=1,12 do Fire(62) end end)
+        print(("stable macro paints: %d VM instructions, writes icon %d / name %d / count %d, cooldown %d")
+            :format(used,textures,names,counts,swipes))
+        assert(textures==0 and names==0 and counts==0 and swipes==0,"unchanged public macro art or ready swipe was rewritten")
+        local action=actions[62]
+        action.texture,action.text,action.count=64,"New name","8"
+        action.cooldown={isActive=true,isEnabled=true,startTime=now,duration=30,modRate=1}
+        action.charges={isActive=true,maxCharges=3,currentCharges=2}
+        local chargeReads=calls.chargesBySlot[62] or 0
+        Fire(62)
+        assert(textures==1 and names==1 and counts==1 and swipes==1 and (calls.chargesBySlot[62] or 0)>chargeReads
+            and button.icon.texture==64 and button.Name.text=="New name" and button.Count.text=="8"
+            and button.cooldown.object and button.chargeCooldown.object, "same-ID macro kept old visual or cooldown data")
+        action.texture,action.text,action.count=Secret(),Secret(),Secret()
+        Fire(62);Fire(62)
+        assert(textures==3 and names==3 and counts==3 and IsSecret(button.icon.texture)
+            and IsSecret(button.Name.text) and IsSecret(button.Count.text), "secret macro output was suppressed or compared")
+        action.texture,action.text,action.count=64,"New name","8"
+        Fire(62);Fire(62)
+        assert(textures==4 and names==4 and counts==4, "public macro output did not recover and dedupe after a secret")
+        local active=action.cooldown
+        local clears=button.cooldown.clears or 0
+        action.cooldown=nil
+        Fire(62);Fire(62)
+        assert(not button.cooldown.object and button.cooldown.clears==clears+1,"a ready cooldown did not clear the old swipe once")
+        local before=swipes
+        action.secretDuration=true
+        Fire(62);Fire(62)
+        assert(swipes==before+2,"an opaque duration did not reach the native sink")
+        action.secretDuration,action.cooldown=nil,active
+        Fire(62)
+        button.icon.SetTexture,button.Name.SetText,button.Count.SetText=texture,name,count
+        button.cooldown.SetCooldownFromDurationObject=swipe
+    end
+    -- a2. 2026-11-16 Ironforge idle trace (Forever, 29.5 s): every pointer
+    -- move over a unit sent ACTIONBAR_SLOT_CHANGED for the macro slots and one
+    -- ACTIONBAR_UPDATE_COOLDOWN in the same frame. The flush painted each macro
+    -- button whole (216 paints, each with its cooldown) and the cooldown walk
+    -- of the same flush then read the same buttons again (186 more reads).
+    -- Lua 5.1, this harness, slot 62 before -> after: cooldown swipes of the
+    -- button in such a flush 2 -> 1; a walk in any later flush still reads it.
+    do
+        local button=list[1].button
+        local swipe=button.cooldown.SetCooldownFromDurationObject
+        local swipes=0
+        function button.cooldown:SetCooldownFromDurationObject(value) swipes=swipes+1;swipe(self,value) end
+        local function Reads(fn)
+            RunTimers();now=now+1
+            local reads=calls.duration
+            swipes=0;fn();RunTimers()
+            return calls.duration-reads
+        end
+        local paint=Reads(function() Event("ACTIONBAR_SLOT_CHANGED",62) end)
+        assert(swipes==1,"a2: a slot paint did not paint its cooldown once")
+        local walk=Reads(function() Event("ACTIONBAR_UPDATE_COOLDOWN") end)
+        assert(swipes==1 and walk>=1,"a2: the action bar cooldown walk does not reach the macro button")
+        local both=Reads(function() Event("ACTIONBAR_SLOT_CHANGED",62);Event("ACTIONBAR_UPDATE_COOLDOWN") end)
+        print(("slot paint and cooldown walk in one flush: %d cooldown reads (paint %d, walk %d), %d swipes of the painted button")
+            :format(both,paint,walk,swipes))
+        assert(swipes==1 and both==paint+walk-1,"a2: the walk read a button again that the same flush had just painted")
+        -- The count mark of the same frame is covered by that paint as well.
+        both=Reads(function()
+            Event("BAG_UPDATE_DELAYED");Event("ACTIONBAR_SLOT_CHANGED",62);Event("ACTIONBAR_UPDATE_COOLDOWN")
+        end)
+        assert(swipes==1 and both==paint+walk-1,"a2: the combined cooldown and count walk read a painted button again")
+        -- A walk the cap moved to a later flush reads the button again.
+        Reads(function() Event("ACTIONBAR_UPDATE_COOLDOWN") end)
+        swipes=0
+        Event("ACTIONBAR_SLOT_CHANGED",62);Event("ACTIONBAR_UPDATE_COOLDOWN");RunDue()
+        assert(swipes==1,"a2: the capped flush did not paint the slot at once")
+        RunTimers()
+        assert(swipes==2,"a2: the trailing cooldown walk skipped a button painted in an earlier flush")
+        -- So does the walk of the next frame.
+        Reads(function() Event("ACTIONBAR_SLOT_CHANGED",62) end)
+        Reads(function() Event("ACTIONBAR_UPDATE_COOLDOWN") end)
+        assert(swipes==1,"a2: a later cooldown event skipped a button painted before")
+        -- A paint that raised painted no cooldown: the walk still reads it.
+        do
+            local icon=button.icon
+            local setTexture,errorsBefore=icon.SetTexture,#dispatch.errors
+            function icon:SetTexture() error("test: one failed slot paint") end
+            local texture=actions[62].texture
+            actions[62].texture=161
+            dispatch.expect=true
+            Reads(function() Event("ACTIONBAR_SLOT_CHANGED",62);Event("ACTIONBAR_UPDATE_COOLDOWN") end)
+            dispatch.expect=false
+            icon.SetTexture=setTexture
+            assert(#dispatch.errors==errorsBefore+1 and swipes==1,
+                "a2: a raising slot paint kept the cooldown walk off its button")
+            actions[62].texture=texture
+            Fire(62);Fire(62)
+        end
+        button.cooldown.SetCooldownFromDurationObject=swipe
+    end
+    -- a3. Same trace: each of the 216 slot paints wrote the icon's Show and
+    -- vertex color, the count's text (216 :SetText at Paint.lua:181) and alpha
+    -- and the equipped border's Hide again with what the button already had:
+    -- 1,080 widget writes, 0.85 ms of the paints' 9.14 ms. Only a write of the
+    -- suite's own last public value is skipped. Check the live checked state
+    -- (clicks can toggle it) and retain native writes for opaque durations.
+    -- Lua 5.1, 12 unchanged paints of slot 62 with a public nil count and a
+    -- ready cooldown, widget writes: 84 originally, then 24, now zero.
+    do
+        local button=list[1].button
+        local icon,count,border=button.icon,button.Count,button.Border
+        local writes,restore={},{}
+        local function Watch(label,object,method)
+            local real=object[method]
+            writes[label]=0
+            restore[#restore+1]={object,method,rawget(object,method)}
+            object[method]=function(...) writes[label]=writes[label]+1;return real(...) end
+        end
+        Watch("iconShow",icon,"Show");Watch("tint",icon,"SetVertexColor")
+        Watch("count",count,"SetText");Watch("alpha",count,"SetAlpha")
+        Watch("borderHide",border,"Hide");Watch("borderShow",border,"Show")
+        Watch("checked",button,"SetChecked");Watch("swipe",button.cooldown,"SetCooldownFromDurationObject")
+        local api=AB.Painter.api
+        local displayCount,hideEmpty=api.DisplayCount,M.config.hideEmptyCharges
+        -- The client's answer as it is, nil included.
+        api.DisplayCount=function(slot) local a=actions[slot];return a and a.count end
+        local action={kind="macro",id=2052,sub="spell",texture=62}
+        actions[62]=action
+        M.config.hideEmptyCharges=false
+        Fire(62)
+        assert(count.text==nil and count.alpha==1 and icon.shown and not border.shown,"a3: the first paint left stale art")
+        for label in pairs(writes) do writes[label]=0 end
+        for _=1,12 do Fire(62) end
+        local total=0
+        for _,n in pairs(writes) do total=total+n end
+        print(("unchanged macro paints, nil count: %d widget writes in 12 paints (show %d, tint %d, count %d, alpha %d, border %d, checked %d, swipe %d)")
+            :format(total,writes.iconShow,writes.tint,writes.count,writes.alpha,writes.borderHide,writes.checked,writes.swipe))
+        assert(writes.iconShow==0 and writes.tint==0 and writes.count==0 and writes.alpha==0 and writes.borderHide==0,
+            "a3: an unchanged paint repeated a write of its own last public value")
+        assert(writes.checked==0 and writes.swipe==0 and writes.borderShow==0,"a3: stable checked state or ready swipe was rewritten")
+        button.checked=true
+        Fire(62);Fire(62)
+        assert(writes.checked==1 and button.checked==false,"a3: an external checked-state toggle was not corrected")
+        -- Count: a string, a public nil and a secret stay apart.
+        action.count="3";Fire(62);Fire(62)
+        assert(writes.count==1 and count.text=="3","a3: a count after a nil one was not written once")
+        action.count=nil;Fire(62);Fire(62)
+        assert(writes.count==2 and count.text==nil,"a3: a nil count after a string did not clear the text once")
+        action.count=Secret();Fire(62);Fire(62)
+        assert(writes.count==4 and IsSecret(count.text),"a3: a secret count after a nil one was suppressed or compared")
+        action.count=nil;Fire(62);Fire(62)
+        assert(writes.count==5 and count.text==nil,"a3: a nil count after a secret did not clear the text once")
+        -- Equipped border: shown per paint, hidden once.
+        action.equipped=true;Fire(62)
+        assert(writes.borderShow==1 and border.shown,"a3: the equipped border was not shown")
+        action.equipped=nil;Fire(62);Fire(62)
+        assert(writes.borderHide==1 and not border.shown,"a3: the equipped border was not hidden once")
+        -- Tint: a new usability and a new style generation both repaint it.
+        action.usable=false;Fire(62);Fire(62)
+        assert(writes.tint==1 and icon.vertex[1]==.4,"a3: an unusable action kept its tint")
+        action.usable=nil;Fire(62)
+        assert(writes.tint==2 and icon.vertex[1]==1,"a3: a usable action kept the unusable tint")
+        AB.BuildStyle();Fire(62);Fire(62)
+        assert(writes.tint==3,"a3: a slot paint after a style change kept the tint of the old colors")
+        -- Count alpha: a hidden count is written on every paint, a shown one once.
+        M.config.hideEmptyCharges=true
+        action.charges={isActive=false,maxCharges=2,currentCharges=0}
+        writes.alpha=0;Fire(62);Fire(62)
+        assert(writes.alpha==2 and count.alpha==0,"a3: an empty charge count was not hidden on each paint")
+        -- The style pass shows the count again; the next paint hides it.
+        count:SetAlpha(1);Fire(62)
+        assert(writes.alpha==4 and count.alpha==0,"a3: a hidden count stayed shown after another writer showed it")
+        action.charges=nil;Fire(62);Fire(62)
+        assert(writes.alpha==5 and count.alpha==1,"a3: a refilled charge count was not shown once")
+        M.config.hideEmptyCharges=hideEmpty
+        -- An emptied and refilled slot shows its icon again; a Show that raised
+        -- is repeated by the next paint.
+        actions[62]=nil;Fire(62)
+        assert(not icon.shown,"a3: an emptied slot kept its icon")
+        local show,errorsBefore=icon.Show,#dispatch.errors
+        icon.Show=function() error("test: one failed icon show") end
+        actions[62]=action
+        dispatch.expect=true
+        Fire(62)
+        dispatch.expect=false
+        icon.Show=show
+        assert(#dispatch.errors==errorsBefore+1 and not icon.shown,"a3: the raising Show was not reported")
+        writes.iconShow=0;Fire(62);Fire(62)
+        assert(writes.iconShow==1 and icon.shown,"a3: a refilled slot did not show its icon once")
+        for i=1,#restore do restore[i][1][restore[i][2]]=restore[i][3] end
+        api.DisplayCount=displayCount
+        Fire(62)
+    end
     -- b. The macro's resolved spell changes; the slot itself does not.
     actions[62]={kind="macro",id=2053,sub="spell",texture=62}
     assert(Unchanged(12)==0,"b: a macro slot's resolved spell alone ran a plan")
@@ -1491,7 +1743,28 @@ local function TestSlotChangeDedupe()
     Page(2)
     assert(not slotMap[1] or #slotMap[1]==0,"e: bar 1 page 2 still shows slot 1")
     actions[1]=nil
+    local timersBefore=#timers
+    Event("ACTIONBAR_SLOT_CHANGED",1)
+    assert(#timers==timersBefore,"e: unmapped slot scheduled an empty paint")
     assert(Count(function() Fire(1) end)==0,"e: an event for an unmapped slot ran a plan")
+    do
+        local icon=list[1].button.icon
+        local setTexture, runs, errorsBefore=icon.SetTexture,0,#dispatch.errors
+        function icon:SetTexture(value)
+            runs=runs+1
+            if runs==1 then error("test: one failed slot paint") end
+            setTexture(self,value)
+        end
+        actions[62].texture=160
+        dispatch.expect=true
+        Fire(62)
+        assert(runs==1 and #dispatch.errors==errorsBefore+1 and #timers==0,
+            "raising slot paint scheduled its own retry")
+        Fire(1)
+        assert(runs==2 and icon.texture==160,"unmapped slot did not wake the failed paint")
+        dispatch.expect=false
+        icon.SetTexture=setTexture
+    end
     actions[1]={kind="spell",id=1001,texture=101}
     Page(1)
     assert(slotMap[1] and #slotMap[1]>0 and Button(1,1).slot==1,"e: slot 1 is not shown again")
@@ -1838,11 +2111,10 @@ if nativeReuse then
             "adopted native buttons lost the flat geometry or crop")
         assert(S.SetMany("actionbars",before))
     end
-    assert(not Bar(1).native and not Bar(9).native and not Bar(10).native,
-        "custom paging and extra bars lost their suite buttons")
-    for index=2,8 do
+    assert(not Bar(9).native and not Bar(10).native,"extra bars lost their suite buttons")
+    for index=1,8 do
         local bar=Bar(index)
-        assert(bar.native,"Retail bar did not choose native buttons: "..index)
+        assert(bar.native,"bar did not choose native buttons: "..index)
         assert(_G[AB.NATIVE_BARS[index]].numButtonsShowable==(index==4 and 10 or 12),
             "the suite wrote Blizzard's icon count (a tainted value its secure pass reads)")
         for i=1,12 do
@@ -1858,6 +2130,7 @@ if nativeReuse then
             assert(button.bar==_G[AB.NATIVE_BARS[index]],"a reused button lost Blizzard's bar field")
             assert(button.attrs.action==AB.FIRST_SLOT[index]+i-1 and button.attrs.index==i,
                 "native button lost its action slot")
+            assert(button:CalculateAction()==rec.slot,"native binding and slot attributes diverged")
             assert(not button.strippedEvents,"native painter lost its events")
             assert(math.floor((button.attrs.showgrid or 0)/8)%2==1,
                 "native showgrid guard missing")
@@ -1986,6 +2259,20 @@ if nativeReuse then
     c.procGlow=2;overlayed[61]=true;M:Refresh()
     assert(Button(2,1).glow and Button(2,1).glowEdges and Button(2,1).button.SpellActivationAlert.alpha==0,
         "pixel proc glow must replace Blizzard's glow")
+    do
+        local rec, action, hide=Button(2,1),actions[61],c.hideEmptyCharges
+        assert(S.Set("actionbars","hideEmptyCharges",true))
+        actions[61]={kind="spell",id=997,texture=61,charges={maxCharges=2,currentCharges=0}}
+        Event("ACTIONBAR_SLOT_CHANGED",61);RunTimers()
+        assert(not rec.glow and rec.button.Count.alpha==0,"native replacement kept the old proc or missed an empty charge count")
+        actions[61]={kind="spell",id=998,texture=61}
+        Event("ACTIONBAR_SLOT_CHANGED",61);RunTimers()
+        assert(rec.button.Count.alpha==1,"native replacement kept the previous hidden charge count")
+        actions[61]=action
+        Event("ACTIONBAR_SLOT_CHANGED",61);RunTimers()
+        assert(rec.glow,"native replacement missed an already active proc")
+        assert(S.Set("actionbars","hideEmptyCharges",hide))
+    end
     c.procGlow=3;M:Refresh()
     assert(not Button(2,1).glow and Button(2,1).button.SpellActivationAlert.alpha==0,
         "none proc glow must hide native alert")
@@ -2078,7 +2365,7 @@ if nativeReuse then
     actions[61].remaining=0;AB.RefreshNative()
     assert(Button(2,1).button.icon.desaturation==0 and Button(2,1).button.alpha==1,
         "native duration feedback did not clear when ready")
-    assert(Button(1,1).button.name=="MSUFSuiteBar1Button1" and Button(9,1).button.name=="MSUFSuiteBar9Button1")
+    assert(Button(1,1).button.name=="ActionButton1" and Button(9,1).button.name=="MSUFSuiteBar9Button1")
     assert(not AB.ClickRouted(Button(3,1)),"adopted flyout still routed to a second button")
     assert(overrides["CTRL-BUTTON4"]=="MSUFSuiteBar9Button1" and not overrides.F,
         "native commands and extra-bar routing diverged")
@@ -2088,6 +2375,65 @@ if nativeReuse then
     assert(calls.texture==painted,"suite repainted a native button")
     now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
     assert(calls.texture==painted,"native cooldown event repainted textures through suite")
+    do
+        local rec=Button(1,1)
+        local saves={}
+        for _,key in ipairs({"bar1Visibility","bar3Visibility","bar4Visibility","bar5Visibility","pagingTarget","pageFriendly",
+                "pagingModifiers","pageShift","disableFormPaging","disableMoonkinPaging"}) do
+            saves[key]=c[key]
+        end
+        assert(S.SetMany("actionbars",{bar1Visibility=1,bar3Visibility=6,bar4Visibility=6,bar5Visibility=6,
+            pagingTarget=true,pageFriendly=3,pagingModifiers=true,pageShift=4,
+            disableFormPaging=false,disableMoonkinPaging=false}))
+        local function Page(page)
+            Drivers()
+            local slot=(page-1)*12+1
+            assert(rec.slot==slot and rec.button.attrs.action==slot and rec.button.action==slot,
+                ("page %d disagrees across slot map, secure attribute and native painter (%s/%s/%s)"):format(
+                    page,tostring(rec.slot),tostring(rec.button.attrs.action),tostring(rec.button.action)))
+            if rec.bar.header:IsShown() then
+                ActionButtonDown(1)
+                assert(native.slot==slot and not overrides["1"],"native main key fired a slot different from the displayed page")
+                ActionButtonUp(1)
+            end
+            RunTimers()
+        end
+        combat=true
+        conditions.help=true;Page(3)
+        conditions["mod:shift"]=true;Page(4)
+        conditions.vehicleui=true;special.vehicle=true;Page(12)
+        assert(not rec.bar.header:IsShown(),"vehicle state did not yield to Blizzard's vehicle controls")
+        conditions.vehicleui,special.vehicle,conditions.help,conditions["mod:shift"]=nil,nil,nil,nil
+        conditions.overridebar=true;special.override=true;Page(18)
+        conditions.overridebar,special.override=nil,nil
+        conditions["bonusbar:1"]=true;Page(7)
+        conditions["bonusbar:1"]=nil
+        conditions["bonusbar:4"]=true;Page(10)
+        conditions["bonusbar:4"]=nil;Page(1)
+        combat=false
+        assert(S.SetMany("actionbars",saves));RunTimers()
+    end
+    do
+        local rec, target=Button(1,1),Button(2,2)
+        local bar=target.bar
+        local saved={bar1Visibility=c.bar1Visibility,bar2Visibility=c.bar2Visibility,bar2ShowEmpty=c.bar2ShowEmpty}
+        assert(actions[rec.slot] and not actions[target.slot],"native drag fixture requires a filled source and an empty target")
+        assert(S.SetMany("actionbars",{bar1Visibility=1,bar2Visibility=1,bar2ShowEmpty=false}));RunTimers()
+        combat=true
+        local before=#pickups
+        Fire(rec.button,"OnDragStart","LeftButton")
+        assert(#pickups==before and not target.button:IsVisible(),"locked native drag revealed slots")
+        modified.PICKUPACTION=true
+        Fire(rec.button,"OnDragStart","LeftButton")
+        assert(#pickups==before+1 and pickups[#pickups]==rec.slot and target.button:IsVisible(),
+            "native drag failed to reveal Suite slots or duplicated the pickup")
+        cursor="spell"
+        Fire(target.button,"OnReceiveDrag","LeftButton")
+        assert(#pickups==before+2 and pickups[#pickups]==target.slot and (bar.header.attrs.gridmask or 0)<4,
+            "native drop failed to clear Suite reveal or duplicated the drop")
+        cursor,modified.PICKUPACTION,combat=nil,nil,false
+        assert(S.SetMany("actionbars",saved));RunTimers()
+    end
     -- Exercise the actual secure-header attribute route, not UpdateAlpha
     -- called directly: hidden native state must catch up on driver reveal.
     do
@@ -2107,7 +2453,7 @@ if nativeReuse then
     TestQuickKeybindExit()
     TestDragLayout()
     TestGridCap()
-    for index=2,8 do assert(S.Set("actionbars","bar"..index.."Visibility",6)) end
+    for index=1,8 do assert(S.Set("actionbars","bar"..index.."Visibility",6)) end
     assert(AB.nativeFeedbackVisible==false,"hidden native bars kept the shared observer awake")
     assert(S.Set("actionbars","bar6Visibility",2))
     cursor="spell";AB.ApplyDrag()
@@ -2118,7 +2464,19 @@ if nativeReuse then
         "ending drag left hidden native bars awake")
     TestSlotChangeDedupe()
     TestRevealCache()
-    print("Action bars native reuse: Retail bars 2-8 adopted, suite painter skipped, custom bars retained, routing passed")
+    do
+        local main=Button(1,1).button
+        assert(S.SetMany("actionbars",{pagingTarget=true,pageFriendly=3,bar1Visibility=1}))
+        conditions.help=true;Drivers();RunTimers()
+        assert(main.attrs.actionpage==3 and main:CalculateAction()==25,"native test did not select its custom page")
+        assert(S.Set("actionbars","enabled",false))
+        MainBar.attrs.actionpage=5
+        assert(main.attrs.actionpage==nil and main:CalculateAction()==49,"disabled Suite left native keys on its custom page")
+        assert(S.Set("actionbars","enabled",true))
+        RunTimers()
+        assert(main.attrs.actionpage==3 and main:CalculateAction()==25,"re-enabled Suite failed to restore the current custom page")
+    end
+    print("Action bars native reuse: bars 1-8 adopted, native page and bindings agree, suite painter skipped")
     return
 end
 
@@ -3449,6 +3807,44 @@ do
     Suite.Client.isForever=false
     AB.Virtual.Start(context)
     assert(not rec.button.attrs.spell,"Forever assignments leaked into the Retail specialization fixture")
+end
+-- Equipment set IDs start at zero, and the secure binding uses the current name.
+do
+    local setName = "Raid"
+    local oldEquipment, oldCursor, oldClear = C_EquipmentSet, GetCursorInfo, ClearCursor
+    C_EquipmentSet = {
+        GetEquipmentSetIDs = function() return setName and { 0 } or {} end,
+        GetEquipmentSetInfo = function(id) if setName and id == 0 then return setName, 134400, 0, false end end,
+        GetEquipmentSetID = function(name) if name == setName then return 0 end end,
+    }
+    local held
+    GetCursorInfo = function() if held ~= nil then return "equipmentset", held end end
+    ClearCursor = function() held = nil end
+    local rec = Button(10, 2)
+    held = "Raid"
+    rec.button:GetScript("OnReceiveDrag")(rec.button)
+    assert(held == nil and rec.button.attrs.type == "equipmentset" and rec.button.attrs.equipmentset == "Raid",
+        "the free bar rejected the first native set ID")
+    setName = "Raid B"
+    Broadcast("EQUIPMENT_SETS_CHANGED")
+    assert(rec.button.attrs.equipmentset == "Raid B", "renaming a set left a stale secure action")
+
+    specID = 105
+    Broadcast("PLAYER_SPECIALIZATION_CHANGED", "player")
+    assert(not rec.button.attrs.equipmentset, "equipment shortcut leaked to another spec")
+    held = 0
+    rec.button:GetScript("OnReceiveDrag")(rec.button)
+    assert(held == nil and rec.button.attrs.equipmentset == "Raid B", "a numeric equipment cursor was rejected")
+    setName, combat = nil, true
+    Broadcast("EQUIPMENT_SETS_CHANGED")
+    assert(rec.button.attrs.equipmentset == "Raid B", "deleting a set wrote protected attributes in combat")
+    combat = false
+    Broadcast("PLAYER_REGEN_ENABLED")
+    assert(not rec.button.attrs.equipmentset and not rec.virtualAction, "deleted set left a stale free-bar button")
+    setName, specID = "New set", 102
+    Broadcast("PLAYER_SPECIALIZATION_CHANGED", "player")
+    assert(not rec.button.attrs.equipmentset, "a recycled ID replaced a deleted set on an inactive spec")
+    C_EquipmentSet, GetCursorInfo, ClearCursor = oldEquipment, oldCursor, oldClear
 end
 bindings.ACTIONBUTTON3={"3"}
 assert(S.ActionBarsBindingForSpell(2075)=="3","form pages take bar 1's keys")

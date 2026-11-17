@@ -366,4 +366,41 @@ Y.Rebind(module)
 eq(Y.brokerRegistered, nil, "no library registers no callbacks")
 local label, value = Y.Format(lonely)
 eq(label .. "/" .. value, "One/" .. DASH, "no library shows the configured plugin name and the placeholder")
+
+-- Two visible places of one source share its native read on activation and
+-- on UPDATE_PENDING_MAIL; hidden places perform neither a read nor a paint.
+local mailReads, newMail, senderReads = 0, true, 0
+HasNewMail = function()
+    mailReads = mailReads + 1
+    return newMail
+end
+GetLatestThreeSenders = function()
+    senderReads = senderReads + 1
+    return "secret", "Sender", nil
+end
+NS.InCombat = function() return false end
+Load("UtilitySources", bare)
+local first = Y.Bind(Button(), c, 2, 1, "mail")
+local second = Y.Bind(Button(), c, 2, 2, "mail")
+local paints = 0
+module.activeSources = { [first] = true, [second] = true }
+module.context = { Cancel = function() end }
+module.UpdateSource = function() paints = paints + 1 end
+Y.Rebind(module)
+eq(mailReads, 1, "one activation sample for two slots")
+eq(select(2, Y.Format(first)), "New mail")
+eq(select(2, Y.Format(second)), "New mail")
+eq(senderReads, 0, "no sender read while painting")
+local tooltip = { AddLine = function(_, value) eq(value, "Sender", "only public sender names") end }
+Y.AddLines("mail", tooltip, {})
+eq(senderReads, 1, "senders read on demand")
+newMail = false
+Y.Changed(module, "UPDATE_PENDING_MAIL")
+eq(mailReads, 2, "one sample for the mail event")
+eq(paints, 2, "both visible slots refreshed")
+eq(select(2, Y.Format(first)), "No mail")
+module.activeSources = {}
+Y.Rebind(module)
+Y.Changed(module, "UPDATE_PENDING_MAIL")
+eq(mailReads, 2, "no source sample while hidden")
 print("datatext sources PASS")

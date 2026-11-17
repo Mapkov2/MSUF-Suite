@@ -39,6 +39,12 @@ local function BuildLogging(ctx, builder)
         local unavailable = P.Text(body, "Taint logging is unavailable on this client.", 16, y, width)
         y = y - 10 - math.ceil(unavailable:GetStringHeight())
     end
+    local report = Dev.GetTaintReport()
+    if report then
+        local button = P.Button(ctx, body, "Taint Report", 16, y, width, report.Show, nil,
+            P.Meta(PAGE, "devMode", "taintReport", "ephemeral", LOG_SECTION))
+        y = y - button:GetHeight() - 12
+    end
     P.FinishBody(builder, body, y)
 end
 

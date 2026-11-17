@@ -43,7 +43,7 @@ do
     -- Every native invalidation route stays cheap even during event bursts.
     local changes = { "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED", "COOLDOWN_VIEWER_DATA_LOADED",
         "COOLDOWN_VIEWER_TABLE_HOTFIXED", "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", "PLAYER_EQUIPMENT_CHANGED",
-        "PLAYER_ENTERING_WORLD", "SPELL_UPDATE_ICON" }
+        "PLAYER_ENTERING_WORLD", "SPELL_UPDATE_ICON", "ACTIVE_TALENT_GROUP_CHANGED", "ACTIVE_COMBAT_CONFIG_CHANGED" }
     for _, event in ipairs(changes) do
         local prior = C.Catalog.generation
         infos[13].isKnown = not infos[13].isKnown

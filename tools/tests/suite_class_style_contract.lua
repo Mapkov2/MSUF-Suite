@@ -49,6 +49,7 @@ local legacy = {
     actionTracker = { "Classic UI", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" },
     cursorEffects = { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern", "Custom" },
     qol = { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern" },
+    bnetToast = { "Blizzard", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern" },
 }
 legacy.combatStatsHUD = legacy.cursorEffects
 for _, id in ipairs(mage.SuiteOrder) do

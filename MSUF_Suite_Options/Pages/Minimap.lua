@@ -1,6 +1,24 @@
 local _, P = ...
 local Suite, S, W, M, T, Tr, HM = P.Suite, P.S, P.W, P.M, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_minimap", "minimap"
+local function MinimapTabs(ui, values, choose)
+    local row, selectTab = P.MenuWorkspace.WrappingTabs(ui, values, choose)
+    local function Fit()
+        P.MenuWorkspace.FitHeader(ui, row:GetHeight() + 24)
+    end
+    row:HookScript("OnSizeChanged", Fit)
+    Fit()
+    return row, selectTab
+end
+
+local WORKSPACE = { page = PAGE, module = ID, title = "Minimap", height = 50,
+    buildSelector = MinimapTabs, tabs = {
+    { id = "basics", label = "Basics", sections = "minimap_module behavior navigation" },
+    { id = "appearance", label = "Appearance", sections = "style_presets shape decoration" },
+    { id = "layout", label = "Layout", sections = "layout" },
+    { id = "buttons", label = "Buttons", sections = "buttons addons" },
+    { id = "information", label = "Information displays", sections = "information info_tooltips" },
+} }
 local WEATHER, SHAPE, TOOLTIP = Suite.MinimapWeatherDisplay, Suite.MinimapShape, Suite.MinimapInfoTooltip
 
 local HELP = {
@@ -98,7 +116,7 @@ end
 
 local function BuildStylePresets(ctx, b)
     local rules = P.SectionRules(ID, "style_presets")
-    return P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_style_presets", Tr("Choose a look"), rules, {
+    return P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_minimap_style_presets", Tr("Choose a look"), rules, {
         help = HELP.style_presets,
         open = true,
         extra = function(body, y, width)
@@ -131,11 +149,14 @@ local function SkinStatus(ctx)
 end
 
 local function Build(ctx)
-    local b = W.PageBuilder(ctx)
-    local sections = {}
-    -- FixedPreviewSection releases the first builder slot from scroll flow.
-    -- Build it before any accordion so it stays docked above Basics.
-    P.BuildMinimapPreview(ctx, b, sections)
+    local builder, sections = W.PageBuilder(ctx), {}
+    local spec = setmetatable({ builder = builder }, { __index = WORKSPACE })
+    -- Dock both headers before the workspace adds the scrolling settings body.
+    spec.header, spec.toolbar = W.FixedPreviewSection(ctx, builder, {
+        title = Tr(WORKSPACE.title), height = WORKSPACE.height,
+    })
+    P.BuildMinimapPreview(ctx, builder, sections)
+    local b, ui = P.MenuWorkspace.Builder(ctx, spec)
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Collect addon buttons again", function() if S.MinimapRescanButtons then S.MinimapRescanButtons() end end,
           function() return S.MinimapRescanButtons ~= nil and P.MinimapDrawerOpen() end, key = "rescan" },
@@ -149,7 +170,7 @@ local function Build(ctx)
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
     })
     sections.style_presets = BuildStylePresets(ctx, b)
-    P.MinimapSections.BuildMinimapSections(ctx, b, sections, HELP, SkinStatus(ctx))
+    P.MinimapSections.BuildMinimapSections(ctx, b, sections, HELP, SkinStatus(ctx), ui)
     P.RuleSection(ctx, b, PAGE, "navigation", "suite_minimap_navigation", Tr("Navigation & waypoints"), {}, {
       extra = function(body, y, width)
         P.Button(ctx, body, "Open navigation settings", 16, y, width - 32, function()
@@ -158,7 +179,8 @@ local function Build(ctx)
         return y - 38
       end,
     })
-    P.QoLOwners.Build(ctx, b, PAGE)
+    P.QoLOwners.Build(ctx, ui and ui.groups.basics.builder or b, PAGE, ui and function() ui.select("basics") end)
+    P.MenuWorkspace.Finish(ui)
 end
 
 P.RegisterPage({ key = PAGE, label = "Minimap", title = "Minimap", build = Build, icon = { 2, 0 },

@@ -3,36 +3,87 @@ local M, W, SB = P.M, P.W, P.M.PreviewSelectionBar
 local Layout = {}
 P.NameplatesPreviewLayout = Layout
 
-local function FitPicker(ui)
-    local picker, tools = ui.elementPicker, ui.tools
-    local width = ui.body:GetWidth()
-    if not width or width < 1 then return end
-    local label = P.HM.GetControlLabel(picker)
+local TOOL_HEIGHT, TOOL_GAP = 20, 6
+local LABEL_INSET = 8
+
+function Layout.StyleButton(button)
+    local label = P.HM.GetControlLabel(button)
+    if not label then return end
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", button, "LEFT", LABEL_INSET, 0)
+    label:SetPoint("RIGHT", button, "RIGHT", -LABEL_INSET, 0)
+    label:SetJustifyH("CENTER")
+    label:SetWordWrap(false)
+    label:SetMaxLines(1)
+end
+
+local function TextWidth(label)
     local measure = label and (label.GetUnboundedStringWidth or label.GetStringWidth)
-    local naturalWidth = measure and math.ceil(measure(label)) + 24 or 182
-    local size = math.min(width, math.max(96, naturalWidth))
-    local wrap = width < size + 186
-    tools:SetHeight(wrap and 70 or 46)
-    picker:SetWidth(size)
-    picker:ClearAllPoints()
-    picker:SetPoint("TOPRIGHT", tools, "TOPRIGHT", 0, wrap and -24 or 0)
+    return measure and math.ceil(measure(label)) or 0
+end
+
+function Layout.FitButton(button, available, minimum)
+    local width = math.min(available, math.max(minimum, TextWidth(P.HM.GetControlLabel(button)) + 2 * LABEL_INSET + 4))
+    button:SetWidth(width)
+    return width
+end
+
+local function PlaceTool(control, tools, point, x, y)
+    control:ClearAllPoints()
+    control:SetPoint(point, tools, point, x, y)
+end
+
+function Layout.Tools(ui)
+    local tools, width = ui.tools, ui.body:GetWidth()
+    if not width or width < 1 then return end
+    local x, y = 0, 0
+    local step = TOOL_HEIGHT + TOOL_GAP
+    for _, entry in ipairs(ui.zoomControls) do
+        local control, minimum = entry[1], entry[2]
+        local size
+        if control == ui.zoomLabel then
+            size = math.min(width, math.max(minimum, TextWidth(control) + 4))
+            control:SetWidth(size)
+        else
+            size = Layout.FitButton(control, width, minimum)
+        end
+        if x + size > width then x, y = 0, y - step end
+        PlaceTool(control, tools, "TOPLEFT", x, control == ui.zoomLabel and y - 4 or y)
+        x = x + size + TOOL_GAP
+    end
+    local pickerSize = Layout.FitButton(ui.elementPicker, width, 96)
+    local pickerWrapped = x + pickerSize > width
+    if pickerWrapped then y = y - step end
+    PlaceTool(ui.elementPicker, tools, "TOPRIGHT", 0, y)
+
+    local targetSize = Layout.FitButton(ui.targetStateButton, width, 126)
+    local focusSize = Layout.FitButton(ui.focusStateButton, width, 96)
+    if targetSize + TOOL_GAP + focusSize <= width then
+        y = y - step
+        PlaceTool(ui.targetStateButton, tools, "TOPRIGHT", -focusSize - TOOL_GAP, y)
+    elseif pickerWrapped and targetSize + TOOL_GAP + pickerSize <= width then
+        PlaceTool(ui.targetStateButton, tools, "TOPRIGHT", -pickerSize - TOOL_GAP, y)
+        y = y - step
+    else
+        PlaceTool(ui.targetStateButton, tools, "TOPRIGHT", 0, y - step)
+        y = y - 2 * step
+    end
+    PlaceTool(ui.focusStateButton, tools, "TOPRIGHT", 0, y)
+    tools:SetHeight(TOOL_HEIGHT - y)
 end
 
 function Layout.Samples(ui)
-    FitPicker(ui)
+    Layout.Tools(ui)
     local width, height = ui.canvas:GetWidth(), ui.canvas:GetHeight()
     if not width or width <= 24 or not height or height <= 0 then return end
     local firstRow = width - (ui.backgroundButton and ui.backgroundButton:GetWidth() + 22 or 16)
     local x, y, available = 0, 0, firstRow
     for _, button in ipairs(ui.sampleButtons) do
         if button:IsShown() then
-            local label = P.HM.GetControlLabel(button)
-            local measured = label and (label.GetUnboundedStringWidth or label.GetStringWidth)
-            local size = math.min(width - 16, measured and math.ceil(measured(label)) + 20 or button:GetWidth())
+            local size = Layout.FitButton(button, width - 16, 20)
             if x + size > available then
                 x, y, available = 0, y - 24, width - 16
             end
-            button:SetWidth(size)
             button:ClearAllPoints()
             button:SetPoint("TOPLEFT", ui.samples, "TOPLEFT", x, y)
             x = x + size + 5
@@ -60,7 +111,6 @@ function Layout.Apply(self)
         return
     end
     self:LayoutLayerRail()
-    if self.LayoutDecorTools then self:LayoutDecorTools() end
     -- Anchor each row above the actual wrapped rail, leaving all remaining
     -- height to the canvas. Width changes therefore need no guessed row count.
     local anchor = rail

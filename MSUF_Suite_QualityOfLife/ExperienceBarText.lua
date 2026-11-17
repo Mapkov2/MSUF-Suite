@@ -163,6 +163,12 @@ local function NumberText(state, current, maximum)
     return LABELS.xp:format(state.number(current), state.maximumText)
 end
 
+-- A short sample uses a one-minute floor to avoid dividing by zero or
+-- projecting a single gain over the first few seconds of a session.
+function Text.HourlyRate(gained, elapsed)
+    return gained * 3600 / max(60, elapsed)
+end
+
 function Text.PaintXP(view, level, current, maximum, gained, rate, fraction)
     if view.textXPSource ~= true then Text.Source(view, true) end
     local states, state = view.xpTexts, view.xpTexts.level
@@ -189,7 +195,12 @@ function Text.PaintXP(view, level, current, maximum, gained, rate, fraction)
         Write(state, state.format == 3 and ("+" .. value) or LABELS.session:format(value))
         state.currentInput = gained
     end
-    state = states.rate
+    Text.PaintRates(view, current, maximum, rate)
+end
+
+function Text.PaintRates(view, current, maximum, rate)
+    local states = view.xpTexts
+    local state = states.rate
     if state.enabled and (state.dirty or state.currentInput ~= rate) then
         local value = rate and state.number(rate) or "--"
         Write(state, state.format == 3 and value or LABELS.rate:format(value))

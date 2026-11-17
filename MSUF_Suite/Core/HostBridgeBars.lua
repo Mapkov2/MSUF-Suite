@@ -8,6 +8,72 @@ function HostBridge.SharedCastFillColors()
     if type(resolve) == "function" then return resolve() end
 end
 
+local function CastbarValue(host, name)
+    local exports = host.PublicGlobals
+    local get = exports and exports[name] or _G[name]
+    if type(get) == "function" then return get() end
+end
+
+local function ColorComponent(value, default)
+    local number = tonumber(value)
+    if Suite.Finite(number) then return math.max(0, math.min(1, number)) end
+    return default
+end
+
+function HostBridge.SharedCastbarStyle()
+    local host, db = HostBridge.Namespace(), HostBridge.CurrentFrameProfile()
+    local g = type(db) == "table" and db.general
+    if not host or type(g) ~= "table" then return end
+    local bgR, bgG, bgB, bgA = CastbarValue(host, "MSUF_GetCastbarBackgroundColor")
+    local textR, textG, textB = CastbarValue(host, "MSUF_GetCastbarTextColor")
+    local interruptR, interruptG, interruptB = CastbarValue(host, "MSUF_ResolveInterruptFeedbackCastColor")
+    local fillR, fillG, fillB, lockedR, lockedG, lockedB = HostBridge.SharedCastFillColors()
+    return {
+        fill = CastbarValue(host, "MSUF_GetCastbarTexture") or Suite.ResolveTexture(g.castbarTexture),
+        background = CastbarValue(host, "MSUF_GetCastbarBackgroundTexture")
+            or Suite.ResolveTexture(g.castbarBackgroundTexture),
+        fillR = fillR, fillG = fillG, fillB = fillB, lockedR = lockedR, lockedG = lockedG, lockedB = lockedB,
+        backgroundR = ColorComponent(bgR or g.castbarBgR, .10),
+        backgroundG = ColorComponent(bgG or g.castbarBgG, .10),
+        backgroundB = ColorComponent(bgB or g.castbarBgB, .10),
+        backgroundA = ColorComponent(bgA or g.castbarBgA, .85),
+        outlineSize = math.max(0, math.min(12, math.floor((tonumber(g.castbarOutlineThickness) or 1) + .5))),
+        outlineR = ColorComponent(g.castbarBorderR, 0), outlineG = ColorComponent(g.castbarBorderG, 0),
+        outlineB = ColorComponent(g.castbarBorderB, 0), outlineA = ColorComponent(g.castbarBorderA, 1),
+        reverseFill = g.castbarFillDirection == "RTL",
+        showSpark = g.castbarShowSpark == true, sparkOverflow = g.castbarSparkOverflow ~= false,
+        glow = g.castbarShowGlow == true,
+        artwork = g.castbarArtworkEnabled == true, artworkNamePanel = g.castbarArtworkNamePanel ~= false,
+        textR = ColorComponent(textR or g.castbarFontR), textG = ColorComponent(textG or g.castbarFontG),
+        textB = ColorComponent(textB or g.castbarFontB), textA = 1,
+        shortenName = tonumber(g.castbarSpellNameShortening) == 1,
+        nameMax = math.max(6, math.min(30, math.floor(tonumber(g.castbarSpellNameMaxLen) or 30))),
+        nameReserve = math.max(0, math.min(30, tonumber(g.castbarSpellNameReservedSpace) or 8)),
+        showPushback = g.castbarShowPushback == true,
+        interruptR = ColorComponent(interruptR), interruptG = ColorComponent(interruptG),
+        interruptB = ColorComponent(interruptB),
+        interruptShake = g.castbarInterruptShake ~= false,
+        shakeStrength = math.max(0, math.min(30, tonumber(g.castbarShakeStrength) or 8)),
+        interruptDuration = math.max(0, math.min(5, tonumber(g.castbarInterruptFeedbackDuration) or .5)),
+    }
+end
+
+local castbarWatcher
+function HostBridge.ObserveSharedCastbarStyle(callback)
+    if castbarWatcher then return end
+    local host = HostBridge.Namespace()
+    if not host then return end
+    castbarWatcher = true
+    local exports = host.PublicGlobals
+    for _, key in ipairs({ "MSUF_Castbars_OnSettingsChanged", "MSUF_UpdateCastbarTextures_Immediate",
+        "MSUF_UpdateCastbarVisuals", "MSUF_UpdateCastbarVisuals_Immediate", "MSUF_ApplyAllCastbarsAndSync" }) do
+        if exports and type(exports[key]) == "function" then hooksecurefunc(exports, key, callback) end
+        if type(_G[key]) == "function" then hooksecurefunc(key, callback) end
+    end
+    local config = host.Castbars and host.Castbars.Config
+    if config and type(config.Refresh) == "function" then hooksecurefunc(config, "Refresh", callback) end
+end
+
 function HostBridge.SharedAggroBorderEnabled()
     local get = HostBridge.NameplateSettingsGetter()
     local settings = type(get) == "function" and get()
@@ -40,6 +106,27 @@ local function ReadBarFinish(out, uf, general, kind)
         local gloss = uf.ResolveBarGloss(nil, general, kind)
         out[kind .. "GlossEnabled"], out[kind .. "GlossStrength"] = gloss.enabled, gloss.strength * 100
     end
+end
+
+function HostBridge.SharedNameplateAbsorbs()
+    local db = HostBridge.CurrentFrameProfile()
+    local g = type(db) == "table" and db.general
+    if type(g) ~= "table" then return end
+    local mode = tonumber(g.absorbTextMode)
+    local positive = g.enableAbsorbBar
+    if positive == nil then positive = mode == nil or mode == 2 or mode == 3 end
+    local fallback = Suite.ResolveTexture(g.barTexture or "Blizzard")
+    return {
+        r = ColorComponent(g.absorbBarColorR, 1), g = ColorComponent(g.absorbBarColorG, 1),
+        b = ColorComponent(g.absorbBarColorB, 1),
+        a = positive ~= false and ColorComponent(g.absorbBarOpacity or g.absorbBarColorA, .75) or 0,
+        texture = Suite.ResolveTexture(g.absorbBarTexture, fallback),
+    }, {
+        r = ColorComponent(g.healAbsorbBarColorR, .7), g = ColorComponent(g.healAbsorbBarColorG, 0),
+        b = ColorComponent(g.healAbsorbBarColorB, 0),
+        a = g.healAbsorbEnabled ~= false and ColorComponent(g.healAbsorbBarOpacity or g.healAbsorbBarColorA, 1) or 0,
+        texture = Suite.ResolveTexture(g.healAbsorbBarTexture, fallback),
+    }
 end
 
 function HostBridge.SharedNameplateBars()
@@ -86,13 +173,20 @@ function HostBridge.ObserveSharedNameplateBars(callback)
         if not scope or scope == "shared" or scope == "*" or scope == "all" or scope == "global" then callback() end
     end
     local public = host.PublicGlobals
-    for _, key in ipairs({ "MSUF_UpdateAllBarTextures_Immediate", "MSUF_UpdateAllBarGradients", "MSUF_ApplyBarOutlineThickness_All" }) do
+    for _, key in ipairs({ "MSUF_UpdateAllBarTextures_Immediate", "MSUF_UpdateAllBarGradients",
+        "MSUF_ApplyBarOutlineThickness_All", "MSUF_RefreshAllFrameColors" }) do
         if public and type(public[key]) == "function" then hooksecurefunc(public, key, Changed) end
         if type(_G[key]) == "function" then hooksecurefunc(key, Changed) end
     end
     local uf = host.UF
     if uf and type(uf.RefreshBorders) == "function" then hooksecurefunc(uf, "RefreshBorders", Changed) end
     if uf and type(uf.RefreshColors) == "function" then hooksecurefunc(uf, "RefreshColors", Changed) end
+    local colors = host.Public and host.Public.Colors or host._colorsAPI
+    if colors then
+        for _, key in ipairs({ "SetAbsorbOverlayColor", "SetHealAbsorbOverlayColor" }) do
+            if type(colors[key]) == "function" then hooksecurefunc(colors, key, callback) end
+        end
+    end
 end
 
 function HostBridge.LiveHealthStyle(owner, detached)

@@ -80,11 +80,16 @@ end
 -- The profession window casts its open profession again as it shows, which
 -- only Blizzard's own path may do. Minimizing notes the open profession; the
 -- restore tab reopens it through the trade skill API, so Blizzard shows the
--- window from its own event. The book page simply shows again.
+-- window from its own event. Forever's overview has a native micro button.
+local function OpenProfession(state)
+    if state.name ~= "ProfessionsFrame"
+        or Safety.Read(Safety.Field(state.frame, "CraftingPage"), "IsShown") ~= true then return nil end
+    local info = C_TradeSkillUI.GetBaseProfessionInfo()
+    return info and Safety.Public(info.professionID) and info.professionID or nil
+end
+
 function Policy.NoteProfession(state)
-    local info = state.name == "ProfessionsFrame" and C_TradeSkillUI.GetBaseProfessionInfo()
-    local crafting = Safety.Read(Safety.Field(state.frame, "CraftingPage"), "IsShown") == true
-    state.profession = crafting and info and Safety.Public(info.professionID) and info.professionID or nil
+    state.profession = OpenProfession(state)
 end
 
 function Policy.ReopenProfession(state)
@@ -97,7 +102,7 @@ local minimizable = {
     ProfessionsFrame = true, CollectionsJournal = true, EncounterJournal = true, SettingsPanel = true, AddonList = true,
     CommunitiesFrame = true, LFGParentFrame = true, LegacySystemFrame = true, PlayerSpellsFrame = true,
     WorldMapFrame = true, AchievementFrame = true, QuestLogFrame = true, MacroFrame = true, CalendarFrame = true,
-    InspectFrame = true, DressUpFrame = true, HelpFrame = true,
+    InspectFrame = true, DressUpFrame = true, HelpFrame = true, BankFrame = true,
 }
 function Policy.IsMinimizable(name) return minimizable[name] == true end
 
@@ -107,29 +112,47 @@ function Policy.IsMinimizable(name) return minimizable[name] == true end
 -- (Blizzard_MicroMenu/Mainline/MainMenuBarMicroButtons.lua) ToggleCharacter
 -- ("PaperDollFrame"), ToggleProfessionsBook, ToggleAchievementFrame,
 -- ToggleCollectionsJournal, ToggleEncounterJournal and, on WoW Forever,
--- ToggleLegacySystemUI. The restore tab clicks one of them from secure code
--- (WindowControlDelegate.lua). A hidden micro button still takes the click.
+-- ToggleLegacySystemUI, ToggleGroupFinderFrame. The restore tab clicks one of
+-- them from secure code (WindowControlDelegate.lua). A hidden micro button
+-- still takes the click. A micro button that names its toggled frame
+-- (GetToggledFrame: LFD names PVEFrame on live, LFGParentFrame on Forever's
+-- vanilla-style finder) opens only that window.
 local openers = {
     WorldMapFrame = { "MinimapCluster", "ZoneTextButton" }, CharacterFrame = { "CharacterMicroButton" },
     ProfessionsBookFrame = { "ProfessionMicroButton" }, AchievementFrame = { "AchievementMicroButton" },
     CollectionsJournal = { "CollectionsMicroButton" }, EncounterJournal = { "EJMicroButton" },
     LegacySystemFrame = { "LegacyMicroButton" },
+    PVEFrame = { "LFDMicroButton" }, LFGParentFrame = { "LFDMicroButton" },
+    -- Live: PlayerSpellsMicroButtonMixin:OnClick runs TogglePlayerSpellsFrame.
+    -- Forever chooses its spell book or talent button (PlayerSpellsOpener).
+    PlayerSpellsFrame = { "PlayerSpellsMicroButton" },
 }
 local spellbookOpener, talentsOpener = { "SpellbookMicroButton" }, { "TalentMicroButton" }
 local function IsForeverPlayerSpells(state)
     return NS.Client.isForever and state.name == "PlayerSpellsFrame"
 end
 
-local function PlayerSpellsOpener(state)
-    if not IsForeverPlayerSpells(state) then return end
-    if state.minimized then return state.playerSpellsRestorePath end
+local function UsesPageOpener(state)
+    return NS.Client.isForever and (state.name == "PlayerSpellsFrame" or state.name == "ProfessionsFrame")
+end
+
+local function PageOpener(state)
+    if state.minimized then return state.pageRestorePath end
+    if state.name == "ProfessionsFrame" then
+        -- The Camelot micro button reports ProfessionsFrame as its target.
+        -- Its OnShow selects the overview again when no profession is selected.
+        if Safety.Read(Safety.Field(state.frame, "BookPage"), "IsShown") == true then return openers.ProfessionsBookFrame end
+        return
+    end
     if Safety.Read(Safety.Field(state.frame, "SpellBookFrame"), "IsShown") == true then return spellbookOpener end
     if Safety.Read(Safety.Field(state.frame, "TalentsFrame"), "IsShown") == true
         and Safety.Read(state.frame, "IsInspecting") == false then return talentsOpener end
 end
 
 function Policy.Opener(state)
-    local path = not state.profession and (openers[state.name] or PlayerSpellsOpener(state))
+    local path
+    if UsesPageOpener(state) then path = PageOpener(state)
+    else path = openers[state.name] end
     if not path then return nil end
     local button = Safety.Field(_G, path[1])
     for index = 2, #path do button = Safety.Field(button, path[index]) end
@@ -137,26 +160,109 @@ function Policy.Opener(state)
         or Safety.Read(button, "GetObjectType") ~= "Button" or Safety.Read(button, "IsEnabled") ~= true then
         return nil
     end
+    local toggled = Safety.Call(button, "GetToggledFrame")
+    if toggled ~= nil and (not Safety.Public(toggled) or toggled ~= state.frame) then return nil end
     return button, path
 end
 
--- These windows' native show/hide scripts update protected quest pins or
--- action bar buttons. The caption delegates visibility to Blizzard's buttons.
+-- The skin never shows or hides these windows itself; the caption delegates
+-- visibility to Blizzard's X and opener buttons. Managed windows: ShowUIPanel
+-- and HideUIPanel (and a managed window's OnShow, which calls
+-- UpdateUIPanelPositions) run the panel manager inside the caller's call. From
+-- skin code its slots were written under MSUF_Suite_Skin's taint, the next M
+-- showed the map from that pass and its OnShow registered QuestDataProvider's
+-- Supertracking.OnChanged callback tainted: every quest pin's
+-- SetPassThroughButtons (MapCanvasMixin:AcquirePin) was then blocked in combat.
+-- The map and Forever's spell book also update protected pins or action
+-- buttons from their own show/hide scripts.
 function Policy.SecureOnly(state)
-    return state.name == "WorldMapFrame" or IsForeverPlayerSpells(state)
+    return state.name == "WorldMapFrame" or IsForeverPlayerSpells(state) or Policy.HasManagedVisibility(state)
+end
+
+-- A secure-only window comes back through its opener or, for a profession's
+-- crafting page, the trade skill API. Without one it offers no minimize.
+function Policy.CanRestore(state)
+    return not Policy.SecureOnly(state) or Policy.Opener(state) ~= nil or OpenProfession(state) ~= nil
 end
 
 function Policy.OffersMinimize(state)
-    return not IsForeverPlayerSpells(state) or Policy.Opener(state) ~= nil
+    return state.name == "BankFrame" or Policy.CanRestore(state)
+end
+
+-- BankFrame's native OnHide closes the interaction on both clients. Park the
+-- shown panel below the viewport, including its item hit boxes, until restore.
+-- Forever bebcb6bf, Mainline/BankFrameTemplates.lua; live 297d7aaa, Mainline/BankFrame.lua.
+local BANK_PARK_Y = -96
+
+function Policy.HoldBankPark(state)
+    local frame, park = state.frame, state.bankPark
+    if not state.minimized then return end
+    local top = Safety.Read(frame, "GetTop")
+    if type(top) == "number" and top <= BANK_PARK_Y / 2 and Safety.Read(frame, "GetNumPoints") == 1 then return end
+    if NS.IsCombatLocked() then return NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow) end
+    if not Policy.CanChangeGeometry(frame) then return end
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", park.x, BANK_PARK_Y)
+end
+
+function Policy.ParkBank(state, capturePoints, installLayoutHook)
+    local frame = state.frame
+    local points, left = capturePoints(frame), Safety.Read(frame, "GetLeft")
+    if not points or type(left) ~= "number" or state.moving or state.drag or not frame:IsShown() then
+        state.minimized = false
+        return
+    end
+    local clamped = Safety.Read(frame, "IsClampedToScreen") == true
+    state.bankPark = { points = points, x = left, clamped = clamped }
+    if clamped then frame:SetClampedToScreen(false) end
+    installLayoutHook()
+    Policy.HoldBankPark(state)
+    state.restore:Show()
+end
+
+function Policy.RestoreBank(state)
+    local frame, park = state.frame, state.bankPark
+    if NS.IsCombatLocked() then return NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow) end
+    if not Policy.CanChangeGeometry(frame) then return false end
+    state.bankPark, state.minimized = nil, false
+    state.restore:Hide()
+    frame:ClearAllPoints()
+    for _, point in ipairs(park.points) do frame:SetPoint(unpack(point)) end
+    if park.clamped then frame:SetClampedToScreen(true) end
+    return true
+end
+
+function Policy.ResumeBank(state, controlled)
+    if state.minimized and (controlled or NS.IsCombatLocked()) and not NS.Client.IsGamepadUI() then
+        Policy.HoldBankPark(state)
+        return true
+    end
+    return not Policy.RestoreBank(state)
+end
+
+function Policy.BankClosed(state)
+    state.minimized = false
+    state.restore:Hide()
+    NS.Registry.QueueJob(state.replayShow)
+end
+
+-- Camelot/BankFrame.lua anchors the page tabs to the window's right edge.
+local bankTabWidth
+function Policy.ExteriorWidth(state, default)
+    if state.name ~= "BankFrame" or not NS.Client.isForever then return default end
+    if not bankTabWidth then
+        local atlas = Safety.Field(C_Texture, "GetAtlasInfo")
+        bankTabWidth = Safety.Field(atlas and atlas("common-sidetab"), "width") or 0
+    end
+    return type(bankTabWidth) == "number" and math.max(bankTabWidth, default) or default
 end
 
 -- Capture the current page before the native close can change its state.
 function Policy.RememberNativeRestore(state)
-    if not Policy.SecureOnly(state) then return true end
+    if state.name == "BankFrame" or not Policy.SecureOnly(state) then return true end
     local button, path = Policy.Opener(state)
-    if not button then return false end
-    if IsForeverPlayerSpells(state) then state.playerSpellsRestorePath = path end
-    return true
+    if UsesPageOpener(state) then state.pageRestorePath = path end
+    return button ~= nil or OpenProfession(state) ~= nil
 end
 
 -- Blizzard's panel manager places the windows of its slots
@@ -194,7 +300,7 @@ function Policy.CapturePanels(states)
     for _, slot in ipairs(SLOTS) do
         local frame = GetUIPanel(slot)
         local state = frame and states[frame]
-        if state then state.panelLayout = PanelLayout(frame, state.panelLayout or {}) end
+        if state and not state.bankPark then state.panelLayout = PanelLayout(frame, state.panelLayout or {}) end
     end
 end
 
@@ -242,6 +348,22 @@ function Policy.DeferMapLayout(state, afterNative)
     if afterNative then return false end
     NS.Registry.QueueJob(state.replayShow)
     return true
+end
+
+-- Blizzard switches the map's native size buttons while opening the panel.
+-- Settle the caption after that stack, also under forced combat restrictions.
+function Policy.MapCaptionCallback(state, repaint)
+    if state.name ~= "WorldMapFrame" or not NS.Client.isForever then return repaint end
+    local queued = false
+    local function Settle()
+        queued = false
+        if Safety.Read(state.frame, "IsVisible") == true then repaint() end
+    end
+    return function()
+        if queued then return end
+        queued = true
+        C_Timer.After(0, Settle)
+    end
 end
 
 -- Forever opens all native bags and refreshes the inbox before its protected

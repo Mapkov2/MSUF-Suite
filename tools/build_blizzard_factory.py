@@ -302,7 +302,7 @@ def modules():
         enemyCastSpellTarget=False, enemyCastImportant=False, enemyCastTargetHighlight=False,
         enemyBorderColor="807865", enemyBorderSize=1, enemyBorderEnabled=True,
         targetScaleEnabled=True, targetScalePercent=130, selectionBorder=3,
-        friendlyNamesOnly=2, personalResource=3, auraScaleMode=2, auraScalePercent=70,
+        friendlyNamesOnly=2, auraScaleMode=2, auraScalePercent=70,
         enemyNpcAuraMode=2, enemyNpcBuffs=False, enemyNpcDebuffs=False, enemyNpcControl=False,
         enemyPlayerAuraMode=2, enemyPlayerBuffs=False, enemyPlayerDebuffs=False, enemyPlayerControl=False)
     return encode(envelope, "MSUFM1:MSUF3:")

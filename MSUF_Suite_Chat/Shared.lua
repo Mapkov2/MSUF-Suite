@@ -10,8 +10,6 @@ local C = {}
 P.Chat = C
 local M = {
     visuals = setmetatable({}, { __mode = "k" }), tabs = setmetatable({}, { __mode = "k" }),
-    hookedTemporary = false, hookedNewWindow = false,
-    hookedSelect = false, hookedTabAlpha = false, hookedTabColors = false,
 }
 C.M = M
 local WHITE = "Interface\\Buttons\\WHITE8X8"

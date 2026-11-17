@@ -550,7 +550,7 @@ function H.New(root, options)
     local W = { root = root, unprotectedBags = options.unprotectedBags == true, secure = false, combat = false, taint = {}, combatLayout = {}, timers = {},
         now = 1000, events = {}, calls = { info = 0, quest = 0, newItem = 0, itemInfo = 0, splits = {}, pickups = {},
         uses = {}, setTab = 0, sort = {} }, items = {}, sizes = {}, data = {}, newItems = {}, postCalls = {},
-        frames = {}, updates = {}, cursor = nil, money = options.money or 500000, popups = {}, errors = {} }
+        frames = {}, updates = {}, cursor = nil, money = options.money or 500000, popups = {}, errors = {}, messages = {} }
     W.client = options.client or "Mainline"
     local forever = W.client == "Forever"
 
@@ -991,8 +991,12 @@ function H.New(root, options)
         if frame.scripts.PostClick then Insecure(frame.scripts.PostClick, frame, mouseButton) end
     end
     RegisterStateDriver = function(frame, state, value) frame.stateDrivers = frame.stateDrivers or {}; frame.stateDrivers[state] = value end
+    GetBindingKey = function() end
+    SetOverrideBinding = function() end
+    ClearOverrideBindings = function() end
     InCombatLockdown = function() return W.combat end
     UnitAffectingCombat = function(unit) return unit == "player" and (W.combat or W.fighting == true) end
+    UnitIsDeadOrGhost = function() return W.dead == true end
     securecallfunction = function(fn, ...) return fn(...) end
     issecretvalue = options.isSecret
     hooksecurefunc = function(target, key, hook)
@@ -1033,6 +1037,7 @@ function H.New(root, options)
     end
     UnitClass = function() return "Mage", "MAGE", 8 end
     C_PlayerInfo = { CanUseItem = function() return true end }
+    CanDualWield = function() return false end
     C_ToyBox = { GetToyInfo = function(id) return W.data[id] and W.data[id].toy and id or nil end }
     UnitName = function() return W.playerName or "Tester", nil end
     UnitFullName = function() return W.playerName or "Tester", W.realmShort or "TestRealm" end
@@ -1054,6 +1059,9 @@ function H.New(root, options)
     END_REFUND = "The item will no longer be refundable."
     CONTAINER_OFFSET_Y = 85
     CursorHasItem = function() return W.cursor ~= nil end
+    SpellCanTargetItem = function() return false end
+    SpellCanTargetItemID = function() return false end
+    DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) W.messages[#W.messages + 1] = text end }
     GetCursorInfo = function()
         if W.cursor then return "item", W.cursor.id, W.cursor.link end
     end
@@ -1074,9 +1082,11 @@ function H.New(root, options)
     STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
     CONTAINER_OFFSET_Y = 85
     NUM_BAG_FRAMES = 4
+    NUM_TOTAL_BAG_FRAMES = 5
     NUM_TOTAL_EQUIPPED_BAG_SLOTS = 5
     Constants = { InventoryConstants = { NumBagSlots = 4, NumReagentBagSlots = 1 } }
     Enum = { BankType = { Character = 1, Account = 2 }, TooltipDataType = { Item = 0 },
+        BagSlotFlags = { DisableAutoSort = 1, ClassEquipment = 2 },
         ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
             ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 },
         ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
@@ -1210,6 +1220,8 @@ function H.New(root, options)
             W.calls.uses[#W.calls.uses + 1] = { bag, slot, bankType }
         end,
         ContainerIDToInventoryID = function(bag) return 19 + bag end,
+        GetBackpackAutosortDisabled = function() return false end,
+        GetBagSlotFlag = function() return false end,
         SortBags = function() W.calls.cleanup = (W.calls.cleanup or 0) + 1 end,
         GetSortBagsRightToLeft = function() return W.sortRightToLeft == true end,
         SetSortBagsRightToLeft = function(value)
@@ -1240,6 +1252,10 @@ function H.New(root, options)
             if not data or not data.cached then return nil end
             return data.name, link, data.quality, data.level, 1, "Type", data.subclassName or "Sub", data.maxStack,
                 data.equipLoc, 1, data.sellPrice or 1, data.class, data.subclass, data.bind or 0, data.expansion or 10, nil, data.reagent
+        end,
+        GetItemInfoInstant = function(id)
+            local data = Data(id)
+            return id, "Type", "Sub", data.equipLoc, 1, data.class, data.subclass
         end,
         RequestLoadItemDataByID = function(id) W.requested = W.requested or {}; W.requested[id] = (W.requested[id] or 0) + 1 end,
         GetDetailedItemLevelInfo = function(link)

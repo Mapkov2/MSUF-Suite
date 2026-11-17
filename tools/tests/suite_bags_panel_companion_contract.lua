@@ -52,10 +52,10 @@ for _, width in ipairs({600,960,1920}) do
         W.Settle()
         Inside(W,W.CF)
         Inside(W,ContainerFrame6)
-        W.S.SetMany("bags",{reagentWindowMoved=true,reagentWindowX=-200,reagentWindowY=80})
+        W.S.SetMany("bags",{reagentWindowMoved=true,reagentWindowX=-100,reagentWindowY=80})
         W.Settle()
         local point, _, _, px, py=ContainerFrame6:GetPoint()
-        assert(point=="BOTTOMRIGHT" and px==-200 and py==80, "panel overwrites custom reagent placement")
+        assert(point=="BOTTOMRIGHT" and px==-100 and py==80, "panel overwrites custom reagent placement")
         W.S.Set("bags","reagentWindowMoved",false)
         W.Settle()
         W.Native(function() ContainerFrame6:Hide();UpdateContainerFrameAnchors() end)
@@ -94,5 +94,30 @@ do
         "restoring the skin must hide owned art and leave the native bag visible")
     W.M:StyleWindows()
     assert(skin[2]:IsShown() and skin[3]:IsShown(), "re-enabling skin leaves reagent art hidden")
+end
+-- Existing profile offsets can come from a larger display or a different UI scale.
+do
+    local W = H.New(root, { client = arg[2] or "Mainline", catalogPresentation = true,
+        screenWidth = 960, screenHeight = 600,
+        config = { reagentWindowMoved = true, reagentWindowX = -1600, reagentWindowY = -800 } })
+    W.sizes[0], W.sizes[5] = 20, 32
+    W.Apply()
+    W.OpenBags()
+    W.Native(function()
+        W.Reagent:SetScale(1.2)
+        W.Reagent:Show()
+        UpdateContainerFrameAnchors()
+    end)
+    W.Settle()
+    Inside(W, W.Reagent)
+    W.S.SetMany("bags", { reagentWindowX = 1300, reagentWindowY = 1400 })
+    W.Settle()
+    Inside(W, W.Reagent)
+    assert(W.config.reagentWindowX == 1300 and W.config.reagentWindowY == 1400,
+        "viewport fitting overwrote the saved reagent position")
+    W.S.SetMany("bags", { reagentWindowX = -24, reagentWindowY = 40 })
+    W.Settle()
+    local _, _, _, x, y = W.Reagent:GetPoint()
+    assert(x == -24 and y == 40, "on-screen reagent offsets should be preserved")
 end
 print("Default reagent companion fit, native anchor stability, custom placement and restoration passed: "..(arg[2] or "Mainline"))

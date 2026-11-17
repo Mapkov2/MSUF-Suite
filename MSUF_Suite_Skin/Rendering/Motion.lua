@@ -8,6 +8,7 @@ local Safety = NS.Safety
 local exp, abs = math.exp, math.abs
 local clock = CreateFrame("Frame")
 clock:Hide()
+local driving = false
 
 function Motion.Enabled(spec)
     local db = NS.DB
@@ -50,6 +51,7 @@ local function Remove(record)
     record.index = nil
     Motion.count = Motion.count - 1
     if Motion.count == 0 then
+        driving = false
         clock:SetScript("OnUpdate", nil)
         clock:Hide()
     end
@@ -156,8 +158,13 @@ function Motion.Play(record, duration)
         Motion.active[Motion.count] = record
     end
     record.paint(record)
-    clock:SetScript("OnUpdate", Step)
-    clock:Show()
+    -- A retarget joins the running driver. The flag is set only after the
+    -- driver is attached, so a paint that raised leaves the next Play to start it.
+    if not driving and Motion.count > 0 then
+        clock:SetScript("OnUpdate", Step)
+        clock:Show()
+        driving = true
+    end
 end
 
 function Motion.StopAll(preservePalette)

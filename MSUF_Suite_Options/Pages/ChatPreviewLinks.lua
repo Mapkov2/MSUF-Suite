@@ -1,7 +1,8 @@
 local _, P = ...
 local E, PAGE, ID = {}, "suite_chat", "chat"
 P.ChatPreviewLinks = E
-local TOOL_KEYS = { "headerToolbar", "animateInput", "copyMessages", "toolbarLocked", "look" }
+-- One key per header tool, in Toolbar.lua's TOOLS order: new, copy, lock, settings.
+local TOOL_KEYS = { "headerToolbar", "copyMessages", "toolbarLocked", "look" }
 
 -- Resolve the catalog identity, not a translated label or the current topic.
 -- Exact search owns the one scroll; section focus only persists the accordion.

@@ -42,6 +42,7 @@ local S = {
 local NS = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
+    ChatState = Support.ChatStateMock(),
 }
 local slash = Support.SlashRegistry()
 Support.QoLStyleFixture(root, S)
@@ -54,10 +55,9 @@ ChatFrame1.groups.GUILD = true
 ChatFrame2.groups.SAY = true
 FCF_OpenNewWindow = function() end
 FCF_OpenTemporaryWindow = function() end
-hooksecurefunc = function(name, callback)
-    assert(not hooks[name], "window hook installed twice")
-    hooks[name] = callback
-end
+-- New and temporary windows arrive as Suite.ChatState window reports; the
+-- tab menu's and whisper router's FCF_* functions are never hooked.
+hooksecurefunc = function(name) error("guild privacy hooked " .. tostring(name)) end
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GuildChatPrivacy.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local events = {}
@@ -98,7 +98,7 @@ assert(not module.covered, "the left-click choice still asked for a key")
 module.config.revealClick = 2
 assert(slash.Type("/msufguildprivacy"))
 ChatFrame2.groups.OFFICER = true
-hooks.FCF_OpenTemporaryWindow()
+NS.ChatState.Report("windows")
 assert(module.overlays[ChatFrame2].shown, "new officer chat window was left exposed")
 ChatFrame1.groups.GUILD = false
 events.UPDATE_CHAT_WINDOWS(module)
@@ -116,12 +116,13 @@ module:Disable()
 assert(not SlashCmdList.MSUFSUITEGUILDPRIVACY and not module.control.shown
     and not module.overlays[ChatFrame2].shown,
     "disable left the privacy command or visual cover active")
+assert(not NS.ChatState.owners[module], "disable kept following chat windows")
 assert(not slash.Type("/msufguildprivacy") and not module.covered,
     "the disabled privacy cover kept its typed command")
 module.active = true
 module:Enable()
-assert(hooks.FCF_OpenNewWindow and hooks.FCF_OpenTemporaryWindow,
-    "native window hooks were not installed")
+assert(NS.ChatState.owners[module] and NS.ChatState.owners[module].windows,
+    "new chat windows are not followed")
 
 -- Blizzard_Communities loads on demand; its chat pane is covered only while
 -- the guild is the selected club, through the frame's own ClubSelected.

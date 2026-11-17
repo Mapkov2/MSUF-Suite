@@ -64,6 +64,8 @@ local function Texture()
     function texture:IsVisible() return self.shown and (not self.owner or self.owner:IsShown()) end
     function texture:SetAlpha(alpha) self.alpha = alpha end
     function texture:GetAlpha() return self.alpha end
+    function texture:SetIgnoreParentAlpha(ignore) self.ignoreParent = ignore end
+    function texture:IsIgnoringParentAlpha() return self.ignoreParent == true end
     function texture:Show() self.shown = true end
     function texture:Hide() self.shown = false end
     textures[#textures + 1] = texture
@@ -71,9 +73,19 @@ local function Texture()
 end
 local function Frame(name)
     local frame = { name = name, font = { "Fonts/FRIZQT__.TTF", 12, "" }, shown = true, alpha = 1, mouse = true }
-    function frame:CreateTexture() local texture = Texture(); texture.owner = self; return texture end
+    function frame:GetID() return (self.name and tonumber(self.name:match("^ChatFrame(%d+)$") or "")) or 0 end
+    -- GetRegions: every texture and font string created on the frame.
+    function frame:GetRegions() return unpack(self.regions or {}) end
+    local function Own(owner, region)
+        owner.regions = owner.regions or {}
+        owner.regions[#owner.regions + 1] = region
+        return region
+    end
+    function frame:CreateTexture() local texture = Texture(); texture.owner = self; return Own(self, texture) end
     function frame:CreateFontString()
-        return { SetPoint = function(label, ...) label.points = label.points or {}; label.points[#label.points + 1] = { ... } end,
+        return Own(self, { SetIgnoreParentAlpha = function(label, ignore) label.ignoreParent = ignore end,
+            IsIgnoringParentAlpha = function(label) return label.ignoreParent == true end,
+            SetPoint = function(label, ...) label.points = label.points or {}; label.points[#label.points + 1] = { ... } end,
             ClearAllPoints = function(label) label.points = {} end,
             SetText = function(label, value) label.value = value end,
             SetShadowColor = function(label, ...) label.shadowColor = { ... } end,
@@ -92,7 +104,7 @@ local function Frame(name)
             GetFont = function(label) return unpack(label.font or { "Fonts/FRIZQT__.TTF", 12, "" }) end,
             SetAlpha = function(label, alpha) label.alpha = alpha end,
             GetAlpha = function(label) return label.alpha or 1 end,
-            SetMaxLines = function(label, lines) label.maxLines = lines end }
+            SetMaxLines = function(label, lines) label.maxLines = lines end })
     end
     function frame:GetName() return self.name end
     function frame:GetSpacing() return self.spacing or 2 end
@@ -153,12 +165,10 @@ local function Frame(name)
     function frame:SetFocus() self.focused = true end
     function frame:ClearFocus() self.focused = false end
     function frame:HasFocus() return self.focused == true end
-    -- Only the input line's focus is followed (Fade.lua), never another script.
-    function frame:HookScript(script, callback)
-        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost" or script == "OnSizeChanged" or script == "OnShow" or script == "OnHide", "chat hooked the " .. script .. " script")
-        self.hooks = self.hooks or {}
-        assert(not self.hooks[script], "chat hooked " .. script .. " twice")
-        self.hooks[script] = callback
+    -- Blizzard dispatches a chat frame's or edit box's scripts from its own
+    -- chat code (Show, SetFocus, SetText): chat follows Suite.ChatState.
+    function frame:HookScript(script)
+        error("chat hooked the " .. script .. " script of " .. tostring(self.name))
     end
     function frame:HighlightText() self.highlighted = true end
     function frame:SetText(value) self.text = value end
@@ -176,9 +186,11 @@ local function Frame(name)
     function frame:ScrollToBottom() self.scrolled = (self.scrolled or 0) + 1 end
     return frame
 end
+local secureButtons = {}
 CreateFrame = function(_, _, parent, template)
     local frame = Frame(nil)
     frame.parent, frame.template = parent, template
+    if template == "SecureActionButtonTemplate" then secureButtons[#secureButtons + 1] = frame end
     if template == "InputBoxInstructionsTemplate" then frame.Instructions = frame:CreateFontString() end
     if template == "InputScrollFrameTemplate,BackdropTemplate" then
         for _, key in ipairs({ "TopLeftTex", "TopTex", "TopRightTex", "LeftTex", "MiddleTex", "RightTex",
@@ -279,27 +291,57 @@ function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, an
 function GameTooltip:IsOwned(frame) return self.owner == frame end
 EditModeManagerFrame = Frame("EditModeManagerFrame")
 EditModeManagerFrame:Hide()
-local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook, dockTabsHook
+-- Suite.ChatState drives the module (MSUF_Suite/Core/ChatState.lua): its
+-- reports stand in for what Blizzard just did. Each driver below is named
+-- after the Blizzard function whose effect it reports.
+local chatState = dofile(root .. "/tools/tests/suite_test_support.lua").ChatStateMock()
+NS.ChatState = chatState
+local Report = chatState.Report
+local function temporaryHook() Report("windows") end
+local function newWindowHook() Report("windows") end
+local function selectHook()
+    Report("selection")
+    Report("layout")
+end
+local function tabAlphaHook() Report("layout") end
+local function dockTabsHook() Report("layout") end
+-- Blizzard recolors a tab as (un)selected in its dock layout; the module
+-- recolors every styled tab after it from the dock's own selection. In
+-- combat the dock geometry waits, as it did after FCFDock_UpdateTabs.
+local function tabColorsHook(tab, selected)
+    local frame = _G[tab:GetName():sub(1, -4)]
+    local before, queue = GENERAL_CHAT_DOCK.selected, S.Queue
+    GENERAL_CHAT_DOCK.selected = selected and frame or nil
+    if lockdown then S.Queue = function() end end
+    Report("layout")
+    GENERAL_CHAT_DOCK.selected, S.Queue = before, queue
+end
 -- Blizzard's chrome fades (FCF_FadeInChatFrame, FCF_FadeOutChatFrame in
--- Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua) start UIFrameFadeIn
--- or UIFrameFadeOut on the tab, from its alpha toward its mouse-over or
--- no-mouse alpha. Live reads those from the tab's own fields; Forever reads
--- them from ChatFrameUtil.GetTabAlphas, side tables that only Forever's
--- FCFTab_UpdateAlpha fills (Shared/ChatFrameUtil.lua), so a field written on
--- the tab never reaches a Forever fade. The post-hooks run next, in the order
--- they were installed; UIFrameFade_OnUpdate then ends every fade still in
--- FADEFRAMES at its end alpha (Blizzard_SharedXMLBase/FrameUtil.lua).
-local fadeInHooks, fadeOutHooks, FADEFRAMES = {}, {}, {}
+-- Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua) set hasBeenFaded
+-- and run UIFrameFadeIn or UIFrameFadeOut on the tab, from its alpha toward
+-- its mouse-over or no-mouse alpha. Live reads those from the tab's own
+-- fields; Forever reads them from ChatFrameUtil.GetTabAlphas, side tables
+-- that only Forever's FCFTab_UpdateAlpha fills (Shared/ChatFrameUtil.lua),
+-- so a field written on the tab never reaches a Forever fade. ChatState
+-- reports the hover change, then every frame while the fade runs; the fade
+-- ends at its end alpha (Blizzard_SharedXMLBase/FrameUtil.lua).
 local foreverTabAlphas = {}
-UIFrameFadeRemoveFrame = function(frame) FADEFRAMES[frame] = nil end
+UIFrameFadeRemoveFrame = function() error("chat rewrote Blizzard's shared fade list") end
+-- What the player reads: a held label ignores the tab frame's alpha.
+local function Readable(tab)
+    local label = tab.Text
+    local alpha = label.alpha or 1
+    if label.ignoreParent then return alpha end
+    return alpha * tab:GetAlpha()
+end
 local function ChromeFade(frame, hovered, client)
     local tab = _G[frame:GetName() .. "Tab"]
     local mouseOverAlpha, noMouseAlpha = tab.mouseOverAlpha, tab.noMouseAlpha
     if client == "forever" then mouseOverAlpha, noMouseAlpha = unpack(foreverTabAlphas[tab]) end
-    FADEFRAMES[tab] = hovered and mouseOverAlpha or noMouseAlpha
-    for _, hook in ipairs(hovered and fadeInHooks or fadeOutHooks) do hook(frame) end
-    if FADEFRAMES[tab] then tab:SetAlpha(FADEFRAMES[tab]); FADEFRAMES[tab] = nil end
-    return tab:GetAlpha()
+    frame.hasBeenFaded = hovered or nil
+    Report("hover", frame, hovered)
+    tab:SetAlpha(hovered and mouseOverAlpha or noMouseAlpha)
+    return Readable(tab)
 end
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
@@ -321,35 +363,35 @@ S.RestoreCVar = function() end
 S.RefreshOwnedMovers = function() end
 -- Styling alone never hooks the message path; the opt-in idle fade adds a
 -- post-hook on AddMessage and follows Blizzard's chrome fade.
-local messageHooks = 0
+local messageHooks, hooksByFrame = 0, {}
+local function closedHook() Report("windows") end
+local messageTicks = {}
+C_Timer = { After = function(delay, callback)
+    assert(delay == 0, "unexpected timer before exercising idle fade")
+    messageTicks[#messageTicks + 1] = callback
+end }
+local function FlushWindowUpdates()
+    local pending = messageTicks
+    messageTicks = {}
+    for _, callback in ipairs(pending) do callback() end
+end
+FCF_IsChatWindowIndexActive = function(id)
+    local frame = _G["ChatFrame" .. id]
+    return frame and frame.nativeOpen ~= false
+end
+-- AddMessage keeps its secure post-hook (the wrapper reads as secure); no
+-- global chat function and no other chat frame method is hooked.
 hooksecurefunc = function(name, callback)
-    if type(name) == "table" then
-        if callback == "SetPoint" then
-            assert(name == ChatFrame1, "position hook escaped the primary chat")
-            return
-        end
-        assert(callback == "AddMessage", "chat hooked a native chat frame method other than AddMessage")
-        messageHooks = messageHooks + 1
-        return
-    end
-    assert(name == "FCF_OpenTemporaryWindow" or name == "FCF_OpenNewWindow"
-        or name == "FCFDock_SelectWindow" or name == "FCFTab_UpdateAlpha"
-        or name == "FCFTab_UpdateColors" or name == "FCFDock_UpdateTabs"
-        or name == "FCF_Close" or name == "FCF_StopDragging"
-        or name == "FCF_FadeInChatFrame" or name == "FCF_FadeOutChatFrame",
-        "chat touched the message path")
-    if name == "FCF_OpenTemporaryWindow" then temporaryHook = callback
-    elseif name == "FCF_OpenNewWindow" then newWindowHook = callback
-    elseif name == "FCFTab_UpdateAlpha" then tabAlphaHook = callback
-    elseif name == "FCFTab_UpdateColors" then tabColorsHook = callback
-    elseif name == "FCFDock_SelectWindow" then selectHook = callback
-    elseif name == "FCFDock_UpdateTabs" then dockTabsHook = callback
-    elseif name == "FCF_FadeInChatFrame" then fadeInHooks[#fadeInHooks + 1] = callback
-    elseif name == "FCF_FadeOutChatFrame" then fadeOutHooks[#fadeOutHooks + 1] = callback end
+    assert(type(name) == "table", "chat hooked the global " .. tostring(name))
+    assert(callback == "AddMessage", "chat hooked a native chat frame method other than AddMessage")
+    messageHooks = messageHooks + 1
+    assert(not hooksByFrame[name], "a permanent post-hook was installed twice")
+    hooksByFrame[name] = true
 end
 
 function S.Install(id, module)
     if id == "chatComfort" then S.comfort = module return end
+    if id == "chatMessenger" then S.messenger = module return end
     assert(id == "chat")
     S.module = module
 end
@@ -362,7 +404,8 @@ local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
 NS.ChatBubbleSources, NS.ChatSoundChannels = catalogNS.ChatBubbleSources, catalogNS.ChatSoundChannels
 NS.ChatLineLimits = catalogNS.ChatLineLimits
 local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "HeaderClock.lua", "InputAnimation.lua", "Appearance.lua", "Comfort.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "HistoryBrowser.lua", "Fade.lua",
-    "Messages.lua", "SpamFilter.lua", "Positions.lua", "Floating.lua", "ToolbarGeometry.lua", "Toolbar.lua", "CompleteMessages.lua", "Window.lua", "PreviewSnapshot.lua", "Preview.lua", "Bubbles.lua", "Controller.lua" }
+    "Messages.lua", "SpamFilter.lua", "Positions.lua", "Floating.lua", "ToolbarGeometry.lua", "Toolbar.lua", "CompleteMessages.lua", "Window.lua", "PreviewSnapshot.lua", "Preview.lua", "Bubbles.lua", "Controller.lua",
+    "MessengerData.lua", "MessengerWindow.lua", "Messenger.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
 for i = 1, #CHAT_FILES do
@@ -381,6 +424,7 @@ Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true }
 local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
 assert(S.comfort and S.comfort ~= module, "Chat behavior did not register independently")
+assert(S.messenger and S.messenger ~= module, "Whisper messenger did not register independently")
 local ctx = { callbacks = {}, combat = {}, restored = 0, original = {}, properties = {} }
 function ctx:Event(event, fn, options)
     self.callbacks[event], self.combat[event] = fn, Support.InCombatOption(options) or nil
@@ -399,6 +443,10 @@ function ctx:RestoreProperty(frame, setter)
     end
 end
 function ctx:Alpha(frame, value) self:Property(frame, "GetAlpha", "SetAlpha", value) end
+function ctx:UnprotectedProperty(frame, getter, setter, value)
+    self:Property(frame, getter, setter, value)
+    return true
+end
 -- The plain-field writer chat tabs once used (Context:Field, since removed
 -- from MSUF_Suite_Modules/Runtime.lua). It stays in the fixture so a return to
 -- field writes is judged by what each client's fade does with them; the
@@ -485,6 +533,8 @@ module:Enable()
 assert(module.visuals[ChatFrame1] and module.visuals[ChatFrame1].input,
     "combat reload did not apply chat and input chrome before lockdown")
 inCombat, NS.startingBeforeLockdown = false, nil
+FlushWindowUpdates()
+assert(#messageTicks == 0, "idle chat scheduled another timer")
 -- Modern Dark's panel geometry must not depend on a previous native layout.
 local nativeChatPoints, otherChatPoints = ChatFrame1.points, ChatFrame1Tab.points
 module.config.lockWindowPosition, module.config.windowX, module.config.windowY = true, 12, 12
@@ -567,7 +617,8 @@ assert(ChatFrame1.font[1] == globalFont, "default chat font did not inherit MSUF
 assert(ChatFrame1Tab.Text.font[1] == globalFont and ChatFrame1Tab.Text.font[2] == 12,
     "native chat tab title did not inherit MSUF font and Blizzard's size")
 assert(ctx.callbacks.UPDATE_CHAT_WINDOWS and ctx.callbacks.UPDATE_FLOATING_CHAT_WINDOWS
-    and temporaryHook and newWindowHook and selectHook and tabAlphaHook and tabColorsHook)
+    and chatState.owners[module] and chatState.owners[module].windows and chatState.owners[module].layout,
+    "chat does not follow Suite.ChatState's window and layout reports")
 assert(not ctx.callbacks.CHAT_MSG_SAY and not ctx.callbacks.CHAT_MSG_CHANNEL)
 assert(ChatFrame1.font[2] == 15)
 assert(module.visuals[ChatFrame1].panel.shown and module.visuals[ChatFrame1].tabLine.shown)
@@ -577,15 +628,17 @@ assert(module.visuals[ChatFrame1].panel.owner == ChatFrame1
 AssertJoinedDockShell()
 -- Blizzard's tab alphas feed UIFrameFade and its shared FADEFRAMES list
 -- (FloatingChatFrame.lua; Forever keeps them in ChatFrameUtil side tables):
--- the Suite never writes them and holds the readable alpha after each fade.
+-- the Suite never writes them. The tab's regions ignore the tab frame's
+-- alpha and hold the readable one, so no fade needs a Suite hook or poll.
 -- Forever's FCFTab_UpdateAlpha gives the selected tab 1 and 0.4.
 foreverTabAlphas[ChatFrame1Tab] = { 1, 0.4 }
-assert(ChatFrame1Tab:GetAlpha() >= 0.8, "ordinary chat tabs were left unreadably dim")
-assert(ChromeFade(ChatFrame1, false, "forever") == 0.8 and ChromeFade(ChatFrame1, true, "forever") == 1,
+assert(Readable(ChatFrame1Tab) >= 0.8, "ordinary chat tabs were left unreadably dim")
+assert(ChromeFade(ChatFrame1, false, "forever") == 1 and ChromeFade(ChatFrame1, true, "forever") == 1,
     "Forever's chrome fade (ChatFrameUtil side-table alphas) left the tab unreadably dim")
-assert(ChromeFade(ChatFrame1, false) == 0.8 and ChromeFade(ChatFrame1, true) == 1
+assert(ChromeFade(ChatFrame1, false) == 1 and ChromeFade(ChatFrame1, true) == 1
     and ChatFrame1Tab.noMouseAlpha == 0.4 and ChatFrame1Tab.mouseOverAlpha == 1 and next(ctx.fields) == nil,
     "Blizzard's chrome fade left the tab unreadably dim or its fade fields were written")
+assert(not chatState.owners[module].hover, "default chat asked for hover reads")
 assert(module.visuals[ChatFrame1].input.shown)
 assert(module.visuals[ChatFrame1].sidebar.shown
     and module.visuals[ChatFrame1].headerRule.shown)
@@ -1277,7 +1330,7 @@ ChatFrame4.isTemporary = true
 ChatFrame4.chatType = "WHISPER"
 ChatFrame4.editBox = Frame("ChatFrame4EditBox")
 ChatFrame4Tab = Frame("ChatFrame4Tab")
-ChatFrame4Tab.Left = Texture()
+ChatFrame4Tab.Left = ChatFrame4Tab:CreateTexture()
 ChatFrame4Tab.Text = ChatFrame4Tab:CreateFontString()
 ChatFrame4Tab.Text:SetText("secret")
 ChatFrame4Tab.noMouseAlpha = 0.2
@@ -1296,11 +1349,11 @@ assert(ChatFrame4Tab.Text:GetAlpha() == 1 and ChatFrame4Tab.Left.alpha == 0
     and not module.visuals[ChatFrame4].tabOverlay,
     "a new whisper window hid its native tab")
 assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
-    and ChatFrame4Tab:GetAlpha() == 0.8,
+    and Readable(ChatFrame4Tab) == 1 and ChatFrame4Tab.Text.ignoreParent and ChatFrame4Tab.Left.ignoreParent,
     "an idle whisper tab remained too dark to find")
-assert(ChromeFade(ChatFrame4, true, "forever") == 1 and ChromeFade(ChatFrame4, false, "forever") == 0.8,
+assert(ChromeFade(ChatFrame4, true, "forever") == 1 and ChromeFade(ChatFrame4, false, "forever") == 1,
     "Forever's chrome fade (ChatFrameUtil side-table alphas) dimmed the whisper tab")
-assert(ChromeFade(ChatFrame4, true) == 1 and ChromeFade(ChatFrame4, false) == 0.8
+assert(ChromeFade(ChatFrame4, true) == 1 and ChromeFade(ChatFrame4, false) == 1
     and ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6,
     "Blizzard's chrome fade dimmed the whisper tab or its fade fields were written")
 -- Regression: selecting a new whisper hides the primary chat frame. The Suite
@@ -1317,7 +1370,7 @@ assert(not sidebar.panel:IsVisible() and module.visuals[ChatFrame4].panel:IsVisi
     "selecting a whisper removed the Suite chat body or sidebar")
 AssertJoinedDockShell()
 assert(ChatFrame4Tab:IsMouseEnabled() and ChatFrame4Tab.Text:GetAlpha() == 1
-    and ChatFrame4Tab:GetAlpha() >= 0.8 and not module.visuals[ChatFrame4].tabOverlay,
+    and Readable(ChatFrame4Tab) >= 0.8 and not module.visuals[ChatFrame4].tabOverlay,
     "selected whisper tab is hidden, dimmed or covered")
 ChatFrame4Tab:Click("LeftButton")
 assert(ChatFrame4Tab.clicks == 1, "selected whisper tab cannot be clicked")
@@ -1342,9 +1395,47 @@ ChatFrame4Tab.noMouseAlpha = 0.2
 ChatFrame4Tab.mouseOverAlpha = 0.6
 ChatFrame4Tab:SetAlpha(0.2)
 tabAlphaHook(ChatFrame4)
-assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab:GetAlpha() == 0.8,
+assert(ChatFrame4Tab.noMouseAlpha == 0.2 and Readable(ChatFrame4Tab) == 1,
     "Blizzard's tab update dimmed the whisper again")
+FlushWindowUpdates()
 assert(messageHooks == 0, "chat styling without message tools hooked the message path")
+do
+    Constants.ChatFrameConstants.MaxChatWindows = 10
+    ChatFrame4.isTemporary, ChatFrame4.nativeOpen = nil, false
+    ChatFrame11.isTemporary, ChatFrame11.inUse = true, false
+    ChatTypeInfo = {}
+    module.config.coloredUnreadTabs = true
+    module:Refresh()
+    FlushWindowUpdates()
+    assert(hooksByFrame[ChatFrame1], "primary chat never installed its observer")
+    assert(not hooksByFrame[ChatFrame4] and not hooksByFrame[ChatFrame11], "closed slot was hooked")
+    CHAT_FRAMES[11] = "ChatFrame11"
+    CHAT_FRAMES[4] = "ChatFrame4"
+    ChatFrame4.nativeOpen = true
+    newWindowHook()
+    assert(not hooksByFrame[ChatFrame4], "synchronous hook could enter a permanent pop-out copy")
+    ChatFrame11.inUse = true
+    ctx.callbacks.UPDATE_CHAT_WINDOWS(module, "UPDATE_CHAT_WINDOWS")
+    assert(not hooksByFrame[ChatFrame11], "a native window event hooked inside Blizzard's whisper setup")
+    newWindowHook()
+    assert(hooksByFrame[ChatFrame11], "the window report missed the open whisper")
+    temporaryHook()
+    assert(hooksByFrame[ChatFrame11], "first live whisper missed the message observer")
+    assert(#messageTicks == 1, "window notifications did not coalesce")
+    FlushWindowUpdates()
+    assert(hooksByFrame[ChatFrame4] and #messageTicks == 0, "permanent pop-out discovery or idle jobs regressed")
+    ChatFrame11.inUse = false
+    closedHook(ChatFrame11)
+    ChatFrame11.inUse = true
+    temporaryHook()
+    FlushWindowUpdates()
+    assert(#messageTicks == 0, "reusing a whisper slot started recurring work")
+    module.config.coloredUnreadTabs = false
+    ChatFrame4.isTemporary, ChatFrame4.nativeOpen = true, nil
+    Constants.ChatFrameConstants.MaxChatWindows = 1
+    module:Refresh()
+    FlushWindowUpdates()
+end
 -- An idle-faded window keeps its faded tab when Blizzard updates the tab's
 -- alpha; turning the fade off hands back the window and the Suite minimum.
 local fadeTimers = {}
@@ -1358,8 +1449,11 @@ assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001 and math.abs(ChatFrame4:
     "the idle fade did not fade the window and its tab")
 -- The input line is a child of the window and fades with it, never twice.
 assert(ChatFrame4.editBox:GetAlpha() == 1, "the idle fade faded the input line on its own")
-assert(ChatFrame4.editBox.hooks.OnEditFocusGained and ChatFrame4.editBox.hooks.OnEditFocusLost,
-    "the idle fade does not follow the input line's focus")
+-- A temporary whisper box holds a secret tell target: its focus is never
+-- followed, only the permanent windows' boxes are (ChatState box reports).
+Report("box", "focus", ChatFrame4.editBox)
+assert(not module.visuals[ChatFrame4].inputFocused, "a temporary whisper box drove the idle fade")
+Report("box", "release", ChatFrame4.editBox)
 tabAlphaHook(ChatFrame4)
 assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001, "Blizzard's tab update undid the idle fade")
 -- The sidebar sits on the selected whisper window (PlaceSidebar) and fades
@@ -1388,7 +1482,8 @@ GENERAL_CHAT_DOCK.selected, SELECTED_CHAT_FRAME = ChatFrame4, ChatFrame4
 selectHook()
 module.config.idleSeconds = 0
 module:Refresh()
-assert(ChatFrame4Tab:GetAlpha() == 0.8 and ChatFrame4:GetAlpha() == 1, "turning the fade off kept the window faded")
+assert(Readable(ChatFrame4Tab) == 1 and ChatFrame4Tab.Text.ignoreParent and ChatFrame4:GetAlpha() == 1,
+    "turning the fade off kept the window faded")
 local speechIcon = sidebar.buttons[3].button
 speechIcon.scripts.OnEnter(speechIcon)
 assert(module.panelDelegate.shown and module.panelDelegate:GetAttribute("clickbutton") == TextToSpeechButton,
@@ -1415,6 +1510,7 @@ do
         frame.chatType = ({ "WHISPER", "PET_BATTLE_COMBAT_LOG", "BN_WHISPER", "WHISPER" })[index]
         local tab = Frame(frame.name .. "Tab")
         tab.chatFrame = frame
+        tab:SetScript("OnClick", function(self, mouseButton) FCF_Tab_OnClick(self, mouseButton) end)
         _G[tab.name] = tab
         Bounds(tab, (index - 1) * 60, index * 60, 0, 22)
     end
@@ -1487,25 +1583,41 @@ do
     viewport = 150
     dockTabsHook(dock)
     local previous, nextTab = unpack(arrows.buttons)
-    nextTab:Click("LeftButton")
+    -- The pointer aims the arrows' secure delegate over the arrow (out of
+    -- combat; its state driver hides it in combat); the click selects
+    -- Blizzard's tab from secure code and the delegate aims again.
+    local function ArrowClick(button)
+        assert(not button.scripts.OnClick, "an arrow selects a native tab from Suite code")
+        button.scripts.OnEnter(button)
+        for _, delegate in ipairs(secureButtons) do
+            if delegate.owner == button and delegate.shown and not inCombat then
+                assert(stateDrivers[delegate] and stateDrivers[delegate].values == "[combat] hide",
+                    "the arrow delegate stays clickable in combat")
+                SecureClick(delegate, "LeftButton")
+                delegate.scripts.PostClick(delegate, "LeftButton")
+                return
+            end
+        end
+    end
+    ArrowClick(nextTab)
     assert(dock.selected == first, "right arrow did not select the first whisper from General")
-    nextTab:Click("LeftButton")
+    ArrowClick(nextTab)
     assert(dock.selected == second, "right arrow skipped Battle.net whispers or selected another chat type")
     assert(arrows:GetParent() == second, "arrows did not follow the selected window's visibility and fade")
-    previous:Click("LeftButton")
+    ArrowClick(previous)
     assert(dock.selected == first, "left arrow did not select the previous whisper")
-    previous:Click("LeftButton")
+    ArrowClick(previous)
     assert(dock.selected == third, "left arrow did not wrap to the last whisper")
     third:SetAlpha(0)
-    nextTab:Click("LeftButton")
+    ArrowClick(nextTab)
     assert(dock.selected == third, "an invisible arrow intercepted a click")
     third:SetAlpha(1)
     inCombat = true
-    nextTab:Click("LeftButton")
+    ArrowClick(nextTab)
     inCombat = false
     assert(dock.selected == third, "arrow selected a native tab at the combat edge")
     table.remove(dock.DOCKED_CHAT_FRAMES, 5)
-    nextTab:Click("LeftButton")
+    ArrowClick(nextTab)
     assert(dock.selected == first, "arrow retained a closed whisper or did not wrap")
     viewport = 245
     dockTabsHook(dock)
@@ -1658,13 +1770,18 @@ do
     assert(clock.points[1][5] > 0, "header clock overlaps messages without a tab-strip background")
     newWindowHook()
     assert(clock:GetText() == "09:28" and not task.cancelled, "new window did not refresh the clock")
+    -- Hidden windows keep their minute tick: a window shown again by a tab
+    -- switch shows the current time without a Show hook on Blizzard's frame.
     for frame in pairs(module.visuals) do frame:Hide() end
-    local before = reads
+    S.ReadInfoSource = function(key)
+        reads = reads + 1
+        if key == "clockTime" then return 9, 29 end
+        if key == "clockStamp" then return 125 end
+    end
     private.Chat.RefreshClocks()
-    assert(task.cancelled and reads == before, "hidden clocks kept a read/timer")
+    assert(not task.cancelled and clock:GetText() == "09:29", "a hidden window's clock fell behind")
     ChatFrame1:Show()
-    ChatFrame1.hooks.OnShow()
-    assert(not task.cancelled and clock:GetText() == "09:28")
+    assert(not ChatFrame1.hooks, "the header clock hooked Blizzard's chat frame")
     module.config.headerClock = false
     module:Refresh()
     assert(not clock:IsShown() and task.cancelled, "disabled header clock kept painting")
@@ -1684,7 +1801,8 @@ for i = 2, #CHAT_FILES do
     if file == "Shared.lua" then
         assert(source:find("\nlocal C = {}\nP.Chat = C\n", 1, true), "Shared.lua does not create P.Chat")
     else
-        assert(file == "Comfort.lua" or third == "local C = P.Chat", file .. " does not read P.Chat in its header")
+        assert(file == "Comfort.lua" or file == "Messenger.lua" or third == "local C = P.Chat",
+            file .. " does not read P.Chat in its header")
     end
     assert(not source:find(":CreateTexture%(") and not source:find(":CreateFontString%("),
         file .. " creates regions without S.CreateTexture/S.CreateFontString")
@@ -1696,7 +1814,7 @@ for i = 2, #CHAT_FILES do
         or source:match("if not (_G%.GameTooltip)") or source:match("if (_G%.GameTooltip) then")
         or source:match("(NUM_CHAT_WINDOWS)") or source:match("(GetFontString)")
     assert(not guarded, file .. " guards " .. tostring(guarded) .. " as if a client lacked it")
-    assert(file == "Controller.lua" or file == "Comfort.lua" or not source:find("S.Install(", 1, true),
+    assert(file == "Controller.lua" or file == "Comfort.lua" or file == "Messenger.lua" or not source:find("S.Install(", 1, true),
         file .. " installs the module")
 end
 print("Chat styling, whisper tab and joined dock regression, native font restore and event-only refresh passed")

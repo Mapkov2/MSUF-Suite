@@ -35,6 +35,7 @@ function suite.Install(id, module)
 end
 local owner = {
     IsCombatLocked = function() return combat end,
+    InCombat = function(event) return combat or event == "PLAYER_REGEN_DISABLED" end,
     Print = function(message) messages[#messages + 1] = message end,
 }
 dofile(root .. "/tools/tests/suite_inventory_tools_fixture.lua").DisabledProtection(root, owner, suite)
@@ -184,6 +185,17 @@ C_GossipInfo = {
     SelectActiveQuest = function(id) selected[#selected + 1] = "turnin:" .. id end,
     SelectAvailableQuest = function(id) selected[#selected + 1] = "accept:" .. id end,
 }
+local greetingActive, greetingAvailable = {}, {}
+GetNumActiveQuests = function() return #greetingActive end
+GetActiveQuestID = function(index) return greetingActive[index].questID end
+GetActiveTitle = function(index) return "Active", greetingActive[index].isComplete end
+GetNumAvailableQuests = function() return #greetingAvailable end
+GetAvailableQuestInfo = function(index)
+    local info = greetingAvailable[index]
+    return info.isTrivial, info.frequency, nil, nil, info.questID
+end
+SelectActiveQuest = function(index) selected[#selected + 1] = "greeting-active:" .. index end
+SelectAvailableQuest = function(index) selected[#selected + 1] = "greeting-available:" .. index end
 
 local quests = assert(suite.instances.quests)
 quests.active = true
@@ -234,6 +246,21 @@ Fire(quests, "QUEST_FINISHED")
 Fire(quests, "QUEST_COMPLETE")
 shift = false
 assert(#rewards == 1, "a reward choice, a money cost, a secret cost or Shift was automated")
+
+-- Holding to automate applies to each eligible stage and never spends money.
+quests.config.questModifierMode = 2
+Fire(quests, "QUEST_FINISHED")
+Fire(quests, "QUEST_COMPLETE")
+assert(#rewards == 1, "hold mode must leave the dialogue manual without the key")
+shift = true
+Fire(quests, "QUEST_COMPLETE")
+assert(#rewards == 2, "hold mode must accept the single reward with the key held")
+Fire(quests, "QUEST_FINISHED")
+questCost = 100
+Fire(quests, "QUEST_COMPLETE")
+assert(#rewards == 2, "holding the key must not authorize spending")
+shift, questCost, quests.config.questModifierMode = false, 0, nil
+rewards[#rewards] = nil
 
 -- Filters: skipped IDs, an only-list, and account-completed quests.
 Fire(quests, "QUEST_FINISHED")
@@ -316,6 +343,33 @@ active = {}
 Fire(quests, "GOSSIP_SHOW")
 assert(#selected == 2 and selected[2] == "accept:406", "gossip did not pick the offered quest")
 Fire(quests, "GOSSIP_CLOSED")
+
+-- QuestFrame's old greeting lists use indexes, unlike C_GossipInfo.
+greetingActive = { { questID = 701, isComplete = false }, { questID = 702, isComplete = true } }
+greetingAvailable = { { questID = 703, frequency = 1 }, { questID = 704, frequency = 0 } }
+Fire(quests, "QUEST_GREETING")
+Fire(quests, "QUEST_GREETING")
+assert(#selected == 3 and selected[3] == "greeting-active:2", "native greeting did not select the ready quest once")
+Fire(quests, "QUEST_FINISHED")
+greetingActive = {}
+quests.config.skipDaily = true
+quests:Refresh()
+shift = true
+Fire(quests, "QUEST_GREETING")
+shift = false
+combat = true
+Fire(quests, "QUEST_GREETING")
+combat = false
+assert(#selected == 3, "native greeting bypassed pause or combat")
+Fire(quests, "QUEST_GREETING")
+assert(#selected == 4 and selected[4] == "greeting-available:2", "native greeting did not skip the daily offer")
+questID = 704
+Fire(quests, "QUEST_DETAIL")
+assert(accepted == 6, "native greeting lost offer frequency before accepting")
+Fire(quests, "QUEST_FINISHED")
+quests.config.gossip = false
+quests:Refresh()
+assert(not registered.QUEST_GREETING, "dialogue selection off kept the native greeting event")
 
 -- Turning the actions off releases their events.
 quests.config.accept, quests.config.complete, quests.config.reward = false, false, false

@@ -20,7 +20,7 @@ local Painter, Dirty, Virtual = AB.Painter, AB.Dirty, AB.VirtualPaint
 local slotMap, Visible, NewChargeEpoch = Painter.slotMap, Painter.Visible, Painter.NewChargeEpoch
 local spellButtons = Painter.spellButtons
 local Tint, Usable, Cooldown, ReleaseRange = Painter.Tint, Painter.Usable, Painter.Cooldown, Painter.ReleaseRange
-local CacheAction, ActionSpell, SetGlow, GlowCheck = Painter.CacheAction, Painter.ActionSpell, Painter.SetGlow, Painter.GlowCheck
+local ActionSpell, SetGlow, GlowCheck = Painter.ActionSpell, Painter.SetGlow, Painter.GlowCheck
 local GLOW_SPELL, GLOW_DYNAMIC, GLOW_FLYOUT = Painter.GLOW_SPELL, Painter.GLOW_DYNAMIC, Painter.GLOW_FLYOUT
 local Walk, WalkNative, MapButton, UnmapButton, Remap, AllKeyTexts = Painter.Walk, Painter.WalkNative, Painter.MapButton, Painter.UnmapButton,
     Painter.Remap, Painter.AllKeyTexts
@@ -62,8 +62,7 @@ local function SlotChanged(_, _, slot)
     end
     -- A filled or emptied slot changes which buttons show; a slot becoming or
     -- ceasing to be a flyout changes key routing. Suite buttons re-read their
-    -- action when repainted; Blizzard paints the native ones, so their proc
-    -- glow match is re-read here while the pixel glow follows it.
+    -- action when repainted. Native buttons need only their enabled effects.
     local list = slotMap[slot]
     -- A slot's list outlives its buttons (Remap empties it), so an empty list
     -- is a slot no button shows.
@@ -74,13 +73,13 @@ local function SlotChanged(_, _, slot)
     end
     local kind, id = GetActionInfo(slot)
     local flyout = Public(kind) and kind == "flyout"
-    local nativeGlow = M.config.procGlow == PROC_PIXEL
+    local nativeEffects = AB.nativeSlotEffects
     local changed = GridChanged(slot, kind, id)
     for i = 1, #list do
         local rec = list[i]
         if changed then gridBars[rec.bar] = true end
         if rec.native then
-            if nativeGlow then CacheAction(rec) end
+            if nativeEffects and not rec.bar.paintDormant then dirtySlots[slot] = true end
         else
             dirtySlots[slot] = true
             if rec.flyout ~= flyout then
@@ -414,10 +413,8 @@ end
 -- releases its range checks and is skipped by every walk.
 local function Shown(header)
     local bar = M.active and AB.headers[header]
-    if bar then
-        AB.MarkBar(bar)
-        if bar.native then AB.RefreshNativeBar(bar) end
-    end
+    if not bar then return end
+    if bar.native then AB.RefreshNativeBar(bar) else AB.MarkBar(bar) end
 end
 local function Hidden(header)
     local bar = AB.headers[header]
@@ -425,19 +422,20 @@ local function Hidden(header)
     for i = 1, #bar.buttons do ReleaseRange(bar.buttons[i]) end
 end
 
--- Page changes arrive from the restricted page handler, also in combat.
--- Only bar 1's twelve buttons move in the slot map. The bars' own paging
--- (target, modifier, opt-outs) fires no ACTIONBAR_PAGE_CHANGED, so the
--- cooldown manager's glows on bar 1 learn of it from ActionsChanged.
+-- Page changes arrive from the restricted page handlers, also in combat.
+-- Bar 1's buttons and those of a custom paged bar (Paging.lua) move in the
+-- slot map. The bars' own paging (target, modifier, custom, opt-outs) fires
+-- no ACTIONBAR_PAGE_CHANGED, so the cooldown manager's glows learn of it
+-- from ActionsChanged.
 local ACTIONS_CHANGED = "MSUFSuite.ActionBars.ActionsChanged"
 function AB.OnHeaderAttribute(bar, name, value)
     if not M.active then return end
-    if name == "actionpage" and bar.index == MAIN_BAR then
+    if name == "actionpage" and (bar.index == MAIN_BAR or bar.customPage) then
         local buttons = bar.buttons
         for i = 1, #buttons do UnmapButton(buttons[i]) end
         AB.PageSlots(bar, value)
         for i = 1, #buttons do MapButton(buttons[i]) end
-        protected.routing = true
+        if bar.index == MAIN_BAR and not bar.native then protected.routing = true end
         AB.MarkBar(bar)
         EventRegistry:TriggerEvent(ACTIONS_CHANGED)
     elseif name == "state-vis" then
@@ -476,8 +474,10 @@ function AB.StartDispatcher()
             cooldown:HookScript("OnCooldownDone", CooldownDone)
         end
     end
-    local bar = AB.bars[1]
-    if bar then AB.PageSlots(bar, bar.header:GetAttribute("actionpage")) end
+    for index = 1, AB.ENUM.BAR.LAST_ACTION do
+        local bar = AB.bars[index]
+        if bar and (index == MAIN_BAR or bar.customPage) then AB.PageSlots(bar, bar.header:GetAttribute("actionpage")) end
+    end
     Remap()
     AB.MarkAll()
 end

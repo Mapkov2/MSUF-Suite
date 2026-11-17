@@ -267,8 +267,50 @@ local function Painted(region, role, field)
     return true
 end
 
+-- Managed windows minimize and restore only through the secure delegate
+-- (WindowControlDelegate.lua): the client's SecureActionButtonTemplate clicks
+-- Blizzard's X or opener button; the plain cell and tab handlers refuse them.
+local plainCreateFrame = CreateFrame
+CreateFrame = function(kind, name, parent, template)
+    local frame = plainCreateFrame(kind, name, parent, template)
+    frame.GetFrameStrata = frame.GetFrameStrata or function() return "MEDIUM" end
+    frame.GetScript = frame.GetScript or function(self, script) return self.scripts[script] end
+    if template == "SecureActionButtonTemplate" then
+        frame.template, frame.attributes = template, {}
+        function frame:SetAttribute(key, value) self.attributes[key] = value end
+        function frame:GetAttribute(key) return self.attributes[key] end
+        secureDelegate = frame
+    end
+    return frame
+end
+RegisterStateDriver = function(frame) frame.stateDriver = true end
+NS.CombatGate.Cancel = function(key) deferred[key] = nil end
+-- Hover the cell or tab, then the client's secure click: PreClick, the
+-- target's own OnClick ("type1"/"clickbutton1"), PostClick.
+local function SecureClickThrough(cell)
+    function cell:IsMouseOver() return true end
+    for _, hook in ipairs(cell.hooks.OnEnter or {}) do hook(cell) end
+    local delegate = secureDelegate
+    if delegate and delegate.shown and delegate.owner == cell then
+        if delegate.scripts.PreClick then delegate.scripts.PreClick(delegate, "LeftButton") end
+        if delegate:GetAttribute("type1") == "click" then
+            local target = delegate:GetAttribute("clickbutton1")
+            target.scripts.OnClick(target, "LeftButton")
+        end
+        if delegate.scripts.PostClick then delegate.scripts.PostClick(delegate, "LeftButton") end
+    end
+    function cell:IsMouseOver() return false end
+end
+
 local character = Frame("CharacterFrame", UIParent)
 character.CloseButton = Frame(nil, character, "Button")
+character.CloseButton.scripts.OnClick = function() HideUIPanel(character) end
+-- CharacterMicroButtonMixin:OnClick runs ToggleCharacter.
+CharacterMicroButton = Frame("CharacterMicroButton", UIParent, "Button")
+function CharacterMicroButton:IsEnabled() return true end
+CharacterMicroButton.scripts.OnClick = function()
+    if character:IsShown() then HideUIPanel(character) else ShowUIPanel(character) end
+end
 ShowUIPanel(character)
 Check(WindowControls.Attach(character, "blizzardWindows"), "the Character window was not attached")
 local characterState = WindowControls.states[character]
@@ -372,13 +414,18 @@ HideUIPanel(menu)
 -- ShowUIPanel refuses the minimized Character window while the Game Menu is
 -- open: its restore tab stays for another try.
 minimize.scripts.OnClick(minimize)
+Check(character.shown and not characterState.minimized, "the skin's own minimize hid the Character window")
+SecureClickThrough(minimize)
 Check(not character.shown and restore.shown and characterState.minimized, "the Character window did not minimize")
 ShowUIPanel(menu)
 restore.scripts.OnClick(restore, "LeftButton")
+SecureClickThrough(restore)
 Check(not character.shown, "the model let a left panel open over the Game Menu")
 Check(restore.shown and characterState.minimized, "a refused restore lost the window's restore tab")
 HideUIPanel(menu)
 restore.scripts.OnClick(restore, "LeftButton")
+Check(not character.shown, "the skin's own restore showed the Character window")
+SecureClickThrough(restore)
 Check(character.shown and not restore.shown and not characterState.minimized,
     "the restore tab did not bring the window back once the Game Menu closed")
 

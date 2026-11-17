@@ -5,7 +5,7 @@ local source = file:read("*a")
 file:close()
 local stop = assert(source:find('assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))', 1, true))
 local fixture = source:sub(1, stop - 1) .. [[
-return { NS = NS, Frame = Frame, frames = createdFrames, jobs = combatJobs,
+return { NS = NS, Frame = Frame, frames = createdFrames, jobs = combatJobs, panelSlots = panelSlots,
     NextFrame = NextFrame, reported = reported }
 ]]
 local checks = 0
@@ -18,6 +18,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local H = assert(loadstring(fixture, "@native_inventory_fixture"))()
     local NS, Frame = H.NS, H.Frame
     NS.Client.isForever = flavor == "Forever"
+    C_Texture = { GetAtlasInfo = function(atlas) return atlas == "common-sidetab" and { width = 72 } or nil end }
     NS.DB.theme = { look = "midnight" }
     MSUFSuite = { Suite = { OwnsBlizzardSurface = function() return false end } }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/SuiteOwnership.lua"))("MSUF_Suite_Skin", NS)
@@ -96,8 +97,8 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         end
     end
     local nativeHook = hooksecurefunc
-    hooksecurefunc = function(name, callback)
-        if name ~= "UpdateContainerFrameAnchors" then return nativeHook(name, callback) end
+    hooksecurefunc = function(name, callback, method)
+        if name ~= "UpdateContainerFrameAnchors" then return nativeHook(name, callback, method) end
         local original = _G[name]
         _G[name] = function(...) original(...); callback(...) end
     end
@@ -126,6 +127,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         frame.NineSlice = Frame(nil, frame)
         frame.NineSlice.frameLevel = 500
         frame.CloseButton = Frame(nil, frame, "Button")
+        if name == "BankFrame" then
+            Instrument(frame.CloseButton):SetSize(28, 28)
+            frame.CloseButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 3)
+        end
         frame.TitleContainer = Frame(nil, frame)
         frame.TitleContainer.OnMouseDown = function() frame.nativeMenuOpened = true end
         UIPanelWindows[name] = name == "BankFrame" and { area = "left" } or nil
@@ -141,6 +146,61 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         VisibleChrome(frame, state)
         frame.TitleContainer.OnMouseDown()
         Check(frame.nativeMenuOpened, name .. " native title dropdown input was replaced")
+    end
+    if flavor == "Forever" then
+        local bank, state = BankFrame, W.states[BankFrame]
+        local nativeCloses = 0
+        bank:HookScript("OnHide", function()
+            if H.panelSlots.left == bank then H.panelSlots.left = nil end
+            nativeCloses = nativeCloses + 1
+        end)
+        function bank:IsClampedToScreen() return self.clamped == true end
+        bank:SetClampedToScreen(true)
+        Check(state.closeCell and state.closeCell:IsShown() and bank.CloseButton:GetAlpha() == 0
+            and state.minimize:IsShown() and state.maximize:IsShown(), "Forever bank did not get the Suite caption")
+        Check(NS.WindowControlChrome.Footprint(state) == 72, "bank fit omitted the native side tabs")
+        local native, scale = bank.anchors[1], bank.scale
+        state.maximize.scripts.OnClick(state.maximize)
+        Check(state.fit and bank.anchors[1][1] == "CENTER", "bank maximize did not fit the window")
+        state.maximize.scripts.OnClick(state.maximize)
+        Check(not state.fit and bank.scale == scale and bank.anchors[1][4] == native[4], "bank restore lost its geometry")
+        local function Minimize()
+            state.minimize.scripts.OnClick(state.minimize)
+            Check(state.restore:IsShown() and bank:IsShown() and not bank:IsClampedToScreen()
+                and Bounds(bank)[4] < 0, "bank minimize closed the session or left the window in the viewport")
+        end
+        Minimize()
+        UpdateUIPanelPositions(bank)
+        W.Refresh()
+        Check(Bounds(bank)[4] < 0 and state.restore:IsShown(), "native layout or refresh lost the bank's minimized state")
+        state.restore.scripts.OnClick(state.restore, "LeftButton")
+        Check(not state.restore:IsShown() and bank:IsShown() and bank:IsClampedToScreen()
+            and Bounds(bank)[4] > 0 and nativeCloses == 0, "bank restore restarted the session or lost clamping")
+        Minimize()
+        state.restore.scripts.OnClick(state.restore, "RightButton")
+        Check(not state.restore:IsShown() and Bounds(bank)[4] > 0, "the restore tab discarded a live minimized bank")
+
+        Minimize()
+        _G.combatEdge = true
+        bank:Hide() -- The native interaction can end while minimized, including in combat.
+        H.NextFrame()
+        Check(not state.restore:IsShown() and nativeCloses == 1, "ending the native bank interaction left a restore tab")
+        _G.combatEdge = false
+        for key, job in pairs(H.jobs) do H.jobs[key] = nil; job() end
+        Check(bank:IsClampedToScreen() and Bounds(bank)[4] > 0, "closing in combat did not restore bank geometry later")
+        bank:Show()
+        H.NextFrame()
+        Minimize()
+        W.SetEnabled(false)
+        Check(not state.restore:IsShown() and Bounds(bank)[4] > 0 and bank.CloseButton:GetAlpha() == 1,
+            "disabling controls stranded a minimized bank")
+        NS.DB.windowControls.enabled = true
+        W.Refresh()
+        bank.CloseButton:SetScript("OnClick", function() bank:Hide() end)
+        Check(state.closeCell:GetScript("OnClick") == nil, "the drawn X took the native close click")
+        bank.CloseButton.scripts.OnClick(bank.CloseButton)
+        Check(not bank:IsShown() and nativeCloses == 2, "the Suite X failed to keep Blizzard's close path")
+        bank:Show()
     end
     UpdateContainerFrameAnchors()
     for index = 2, #panels do

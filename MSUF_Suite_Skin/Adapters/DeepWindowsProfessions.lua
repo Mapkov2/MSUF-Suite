@@ -64,7 +64,9 @@ local FOREVER_BOOK_MODE = {
 }
 
 local FOREVER_CARD_MODE = {
-    role = "card", maxDepth = 0, maxNodes = 1,
+    -- The five overview cards tile the window. Let the glass shell provide
+    -- their background and keep the card outlines.
+    role = "card", maxDepth = 0, maxNodes = 1, keepGlassFill = false,
     childSurfaces = false, registerDynamicRows = false,
     allowImplicitProtected = true,
 }

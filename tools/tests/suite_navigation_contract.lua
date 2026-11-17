@@ -139,7 +139,7 @@ C_AddOns = {
 -- Main MSUF host shape (no MSUF.Client); the locale table returns English.
 local L = setmetatable({}, { __index = function(_, k) return k end })
 MSUF_NS = { L = L, GetEffectiveLocale = function() return "enUS" end }
-assert(loadfile(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
+dofile(root .. "/tools/tests/suite_test_support.lua").LoadBossTargetIndicator(root, MSUF_NS)
 
 -- Menu2 public surface
 local M, W, T = {}, {}, {}
@@ -258,7 +258,8 @@ local function NavShape()
     end
     return table.concat(out, " ")
 end
-assert(NavShape():find("#general gameplay@general suite_qualityOfLife@general suite_macros@general suite_planningTools@general opt_misc@general", 1, true),
+assert(NavShape():find("#general gameplay@general suite_qualityOfLife@general suite_macros@general"
+    .. " suite_planningTools@general suite_devMode@general opt_misc@general", 1, true),
     "Quality of Life / Macros / Adventure planner order differs in General: " .. NavShape())
 local rows = {}
 for _, item in ipairs(M.navItems) do if item.key then rows[item.key] = item end end

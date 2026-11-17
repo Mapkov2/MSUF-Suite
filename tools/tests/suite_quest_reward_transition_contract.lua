@@ -20,6 +20,7 @@ local function NativeFrame(parent)
         if not self.shown then return end
         self.shown = false
         if self.onHide then self.onHide(self) end
+        if self.hooks.OnHide then self.hooks.OnHide(self) end
     end
     function frame:Show()
         if self.shown then return end
@@ -43,6 +44,36 @@ QuestFrameProgressPanel = NativeFrame(quest)
 QuestFrameRewardPanel = NativeFrame(quest)
 QuestDetailScrollChildFrame = NativeFrame(QuestFrameDetailPanel)
 QuestRewardScrollChildFrame = NativeFrame(QuestFrameRewardPanel)
+QuestInfoSpacerFrame = NativeFrame(QuestDetailScrollChildFrame)
+local offerXP, rewardXP, rewardMoney = nil, 0, 0
+function QuestDetailScrollChildFrame:CreateFontString()
+    local region = NativeFrame(self)
+    function region:SetPoint(_, owner) self.anchor = owner end
+    function region:SetWidth() end
+    function region:SetJustifyH() end
+    function region:SetText(text) self.text = text end
+    function region:SetTextColor() end
+    offerXP = region
+    return region
+end
+function GetRewardXP() return rewardXP end
+function GetRewardMoney() return rewardMoney end
+function GetMoneyString(value) return tostring(value) .. " coins" end
+function BreakUpLargeNumbers(value) return tostring(value) end
+EXPERIENCE_COLON = "Experience:"
+-- A native Button fires OnEnable when Enable() changes its state. The skin
+-- observes that script; it must not replace the button's Enable member.
+local nativeEnable
+QuestFrameAcceptButton = { enabled = true, scriptHooks = {},
+    IsEnabled = function(self) return self.enabled end,
+    Enable = function(self)
+        local changed = not self.enabled
+        self.enabled = true
+        if changed and self.scriptHooks.OnEnable then self.scriptHooks.OnEnable(self) end
+    end,
+    HookScript = function(self, event, callback) self.scriptHooks[event] = callback end,
+}
+nativeEnable = QuestFrameAcceptButton.Enable
 WithOpacity(QuestInfoRewardText, QuestDetailScrollChildFrame)
 WithOpacity(QuestInfoTitleHeader, QuestDetailScrollChildFrame)
 local rewards = NativeFrame(QuestDetailScrollChildFrame)
@@ -76,11 +107,13 @@ local function NativeDisplay(parent)
 end
 QuestInfo_Display = NativeDisplay
 QuestInfo_ShowRewards = function() rewards.shown = true end
-QuestFrameDetailPanel.onShow = function()
+QuestFrameDetailPanel.onShow = function(self)
     QuestFrameRewardPanel:Hide()
     QuestFrameProgressPanel:Hide()
     NativeDisplay(QuestDetailScrollChildFrame)
     if nativeFades then
+        self.fading = 1
+        QuestFrameAcceptButton.enabled = false
         QuestInfoRewardText:SetAlpha(0)
         rewards:SetAlpha(0)
     end
@@ -131,7 +164,37 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     NextFrame()
     local expected = nativeFades and 0 or 1
     Check(QuestInfoRewardText.alpha == expected and rewards.alpha == expected, "native detail opacity overridden")
+    Check(callbacks[QuestFrameAcceptButton] == nil and QuestFrameAcceptButton.Enable == nativeEnable,
+        "a member of the native Accept button was hooked")
+    if nativeFades then
+        QuestFrameDetailPanel.fading = nil
+        QuestFrameAcceptButton:Enable()
+        NextFrame()
+        Check(rewards.alpha == 1 and QuestInfoRewardText.alpha == 1, "offer rewards stayed transparent after reading")
+        rewardXP, rewards.shown = 3950, false
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(offerXP and offerXP:IsVisible() and offerXP.anchor == QuestInfoSpacerFrame
+            and offerXP.text == "Experience: 3950", "XP-only offer did not show the reward returned by the client")
+        rewards.shown = true
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(not offerXP:IsShown(), "fallback duplicated Blizzard's reward")
+        rewards.shown, rewardXP = false, 0.375
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(not offerXP:IsShown(), "secret XP was formatted")
+        rewardXP, rewardMoney = 0, 1250
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(offerXP:IsShown() and offerXP.text == "1250 coins", "offer without XP lost its money reward")
+        rewardMoney = 0
+    end
     QuestFrameProgressPanel:Show()
+    -- The fallback line hides with its parent page at once and is settled after the build.
+    if nativeFades then Check(not offerXP:IsVisible(), "offer summary stayed visible on progress") end
+    NextFrame()
+    if nativeFades then Check(not offerXP:IsShown(), "offer summary survived the move to progress") end
     Check(rewards.alpha == 1, "fixture lost native detail OnHide restoration")
     QuestFrameCompleteButton.click()
     NextFrame()
@@ -140,6 +203,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     -- claim the ordinary native sequence above creates this stale state itself.
     Stale()
     callbacks.QuestInfo_Display()
+    NextFrame()
     Recovered("already-stale shared widgets")
     for _ = 1, 12 do callbacks.QuestInfo_Display() end
     Check(#queuedJobs == 1, "page burst queued multiple settlements")
@@ -149,8 +213,8 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Check(#queuedJobs == 0, "settlement became a polling loop")
     Stale()
     callbacks.QuestInfo_ShowRewards()
-    Recovered("late reward item data")
     NextFrame()
+    Recovered("late reward item data")
     Check(QuestInfoFrame.itemChoice == 0 and completed == 0, "skin chose or completed a reward")
     Check(choices[1].click == firstClick and choices[2].click == secondClick
         and QuestFrameCompleteQuestButton.click == Complete, "native click scripts changed")
@@ -192,6 +256,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     QuestInfoRewardText.IsProtected = rewards.IsProtected
     locked = true
     callbacks.QuestInfo_Display()
+    NextFrame()
     Check(rewards.alpha == 0 and QuestInfoRewardText.alpha == 0, "protected recovery ran in combat")
     Check(deferred["quest-text:repaint"] ~= nil, "protected reward recovery was not deferred")
     locked = false
@@ -240,6 +305,103 @@ Check(QuestInfoRewardText.color[1] == 0.18 and QuestInfoRewardText.color[3] == 0
     "alpha-only native update replaced original RGB with Suite RGB")
 Check(QuestInfoRewardText.color[4] == 0.4, "disable restored stale alpha")
 Check(continued == 2 and #reported == 0, "unexpected action or isolated quest error")
+
+-- The reported hand-in, in Blizzard's order (Mainline/QuestFrame.lua,
+-- upstream/forever bebcb6bf and upstream/live 297d7aaa): QUEST_PROGRESS shows
+-- the progress page, whose OnShow sets its text colors through the global
+-- setters; Continue raises QUEST_COMPLETE, and QuestFrameRewardPanel_OnShow
+-- runs QuestInfo_Display and only then scrolls, sets the portrait and starts
+-- the fade. No skin write may land inside either build; one settlement on the
+-- next frame paints the regions where Blizzard left them.
+local writes, skinWrites, building = 0, 0, false
+local function Counted(region, method)
+    local native = region[method]
+    region[method] = function(self, ...)
+        writes = writes + 1
+        return native(self, ...)
+    end
+end
+local function Guard(callback)
+    if not callback then return nil end
+    return function(...)
+        local before = writes
+        callback(...)
+        if building then skinWrites = skinWrites + writes - before end
+    end
+end
+QuestProgressTitleText = Text(QuestFrameProgressPanel, 0.20, 0.12, 0.05)
+QuestProgressText = Text(QuestFrameProgressPanel, 0.18, 0.12, 0.06)
+local painted = { QuestInfoRewardText, QuestInfoTitleHeader, rewards.ItemChooseText, QuestProgressTitleText, QuestProgressText }
+for _, region in ipairs(painted) do
+    Counted(region, "SetTextColor")
+    Counted(region, "SetFixedColor")
+end
+for _, region in ipairs({ QuestInfoRewardText, QuestInfoTitleHeader, rewards }) do Counted(region, "SetAlpha") end
+if offerXP then
+    for _, method in ipairs({ "Show", "Hide", "SetText", "SetTextColor" }) do Counted(offerXP, method) end
+end
+for name, callback in pairs(callbacks) do
+    if type(name) == "string" then callbacks[name] = Guard(callback) end
+end
+for _, panel in ipairs({ QuestFrameDetailPanel, QuestFrameProgressPanel, QuestFrameRewardPanel }) do
+    for event, callback in pairs(panel.hooks) do panel.hooks[event] = Guard(callback) end
+end
+QuestFrameAcceptButton.scriptHooks.OnEnable = Guard(QuestFrameAcceptButton.scriptHooks.OnEnable)
+local progressShow, rewardShow, tails = QuestFrameProgressPanel.onShow, QuestFrameRewardPanel.onShow, 0
+QuestFrameProgressPanel.onShow = function(self)
+    progressShow(self)
+    QuestProgressTitleText.color = { 0.20, 0.12, 0.05, 1 }
+    callbacks.QuestFrame_SetTitleTextColor(QuestProgressTitleText)
+    QuestProgressText.color = { 0.18, 0.12, 0.06, 1 }
+    callbacks.QuestFrame_SetTextColor(QuestProgressText)
+end
+QuestFrameRewardPanel.onShow = function(self)
+    -- QuestInfo_Display's material colors precede its element pass.
+    local color = QuestInfoRewardText.color
+    color[1], color[2], color[3] = 0.24, 0.22, 0.16
+    rewardShow(self)
+    tails = tails + 1
+end
+for _, flavor in ipairs({ "Mainline", "Forever" }) do
+    NS.Client = { isForever = flavor == "Forever" }
+    nativeFades = NS.Client.isForever
+    QuestFrameDetailPanel:Hide()
+    QuestFrameProgressPanel:Hide()
+    QuestFrameRewardPanel:Hide()
+    QuestRewardScrollChildFrame.alpha = 1
+    Check(NS.QuestText.Activate(quest, "quest"), flavor .. ": quest root not activated")
+    NextFrame()
+    skinWrites, building = 0, true
+    QuestFrameProgressPanel:Show()
+    building = false
+    Check(skinWrites == 0, flavor .. ": skin wrote inside the native progress page build")
+    Check(#queuedJobs == 1, flavor .. ": progress build did not request exactly one settlement")
+    NextFrame()
+    Check(QuestProgressTitleText.color[1] == theme.title[1] and QuestProgressText.color[1] == theme.text[1],
+        flavor .. ": progress text stayed parchment-dark after the build")
+    Stale()
+    local tailsBefore = tails
+    skinWrites, building = 0, true
+    QuestFrameCompleteButton.click()
+    building = false
+    Check(tails == tailsBefore + 1, flavor .. ": fixture did not finish the native reward page")
+    Check(skinWrites == 0, flavor .. ": skin wrote inside QuestFrameRewardPanel_OnShow")
+    Check(#queuedJobs == 1, flavor .. ": reward build did not request exactly one settlement")
+    NextFrame()
+    Recovered(flavor .. ": settled reward page")
+    Check(QuestInfoRewardText.color[1] == theme.text[1] and QuestInfoRewardText.parent == QuestRewardScrollChildFrame,
+        flavor .. ": settled reward text was not painted on its current page")
+    Check(QuestInfoFrame.itemChoice == 0 and completed == 0, flavor .. ": skin chose or completed a reward")
+    choices[2].click()
+    QuestFrameCompleteQuestButton.click()
+    Check(QuestInfoFrame.itemChoice == 2 and completed == 1, flavor .. ": native reward selection/completion failed")
+    QuestInfoFrame.itemChoice, completed = 0, 0
+    NS.QuestText.Deactivate(quest, "quest")
+    NextFrame()
+    Check(QuestProgressText.color[1] == 0.18 and QuestInfoRewardText.color[1] == 0.24,
+        flavor .. ": disable did not restore the native colors")
+end
+Check(#reported == 0, "isolated quest error during the hand-in")
 print("suite quest reward transition contract: " .. checks .. " checks passed")
 ]======]
 assert(loadstring(source:sub(1, stop - 1) .. body, "@suite_quest_reward_transition_contract"))()

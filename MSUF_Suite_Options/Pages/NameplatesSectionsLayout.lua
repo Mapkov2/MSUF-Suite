@@ -145,7 +145,8 @@ end
 
 local function Text(sections, side, scopes)
     local name = TextTab("name", "Name", side .. "Name", { side .. "NameSize" },
-        { side .. "NameRelativeAnchor", side .. "NameOffsetX", side .. "NameOffsetY" }, {})
+        { side .. "NameRelativeAnchor", side .. "NameOffsetX", side .. "NameOffsetY" },
+        side == "friendly" and { "playerGuildNames" } or {})
     local healthFormat = side == "enemy" and { "enemyTextMode", "enemyMirrorHeader" } or {}
     local health = TextTab("hp", "HP Text", side .. "HealthText", { side .. "HealthTextSize" },
         { side .. "HealthTextOffsetX", side .. "HealthTextOffsetY" }, healthFormat)
@@ -531,7 +532,7 @@ local function StyleAppearance(side, frame, health, combat, threat)
     tabs[1].colors, tabs[1].help, tabs[2].help = colors, health and "roleColors" or nil, frame.help
     local textures = P.NameplateBarTextures
     if not textures.Target("enemyOutlineMode") then
-        local fallback = textures.OutlineKeys()
+        local fallback = textures.BarDetailKeys()
         for _, key in ipairs(fallback) do
             if key:match("^" .. side) or not key:match("^enemy") and not key:match("^friendly") then
                 tabs[2].keys[#tabs[2].keys + 1] = key
@@ -545,9 +546,11 @@ end
 local function PlaceStyle(sections, scope, native, appearance, sharedAppearance)
     local style = Tab("style", "Style", native.keys)
     style.shared = scope ~= "enemy"
-    style.extra = function(ctx, body, y, width)
+    style.extra = function(ctx, body, y, width, section)
         local hint = P.Text(body, "Nameplate style and size apply to all nameplate types.", 16, y - 8, width)
-        return y - 18 - math.ceil(hint:GetStringHeight() or 14)
+        y = y - 18 - math.ceil(hint:GetStringHeight() or 14)
+        y = P.NameplateBarTextures.LinkCastTarget(ctx, body, y, width, section)
+        return P.NameplateBarTextures.LinkAbsorbs(ctx, body, y, width, section)
     end
     local tabs = { style }
     for _, source in ipairs(appearance) do
@@ -563,7 +566,7 @@ local function StatusSections(sections, by, side, identity, target, options)
     local alternate = side == "enemy" and "neutral" or "friendlyNpc"
     for _, scope in ipairs({ side, alternate }) do
         local spec = { positionSide = side, plateScope = scope }
-        local more = Tab("more", "More Options", {}, P.NameplatesStatus.More)
+        local more = Tab("more", "More Options", { "levelAppearance" }, P.NameplatesStatus.More)
         P.NameplatesStatus.Configure(spec, side, identity, target, more, by.signals, options)
         Add(sections, scope .. "Markers", "Status icons", { [scope] = true }, 70, spec)
     end

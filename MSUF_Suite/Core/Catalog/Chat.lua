@@ -25,6 +25,31 @@ B.Section("chatComfort", "chatComfort_module", "Chat behavior", {
     B.Bool("noChatFade", "Keep chat messages visible"),
 })
 
+-- A Suite window for whispers (Chat's Messenger*.lua). Blizzard's chat keeps
+-- delivering and showing every whisper; restricted whispers stay only there.
+-- Character conversations of earlier sessions come from the whisper archive
+-- under Chat tools; Battle.net conversations last for the session.
+B.Module("chatMessenger", {
+    title = "Whisper messenger",
+    description = "Whispers from characters and Battle.net friends in their own window, one tab per conversation, with a reply line. Blizzard chat keeps showing every whisper.",
+    page = "suite_chat", optIn = true, defaultEnabled = false,
+})
+B.Section("chatMessenger", "chatMessenger_module", "Whisper messenger", {
+    B.Bool("character", "Character whispers", true),
+    B.Bool("battleNet", "Battle.net whispers", true),
+    B.Bool("openOnWhisper", "Open on a new whisper", false),
+    B.Tooltip(B.Bool("hideInCombat", "Hide during combat", true),
+        "The window hides when combat starts and returns when it ends. The button keeps counting unread whispers."),
+    B.Bool("launcher", "Show the messenger button", true),
+    B.Tooltip(B.Bool("showArchive", "Show saved character whispers", true),
+        "Reads the whisper archive of Chat tools (Archive whispers by character name). Battle.net whispers are never saved."),
+    B.Number("maxTabs", "Open conversations", 8, 2, 12),
+    B.Number("maxLines", "Lines per conversation", 100, 20, 200, 10),
+    B.Number("fontSize", "Text size", 12, 8, 20),
+    B.Number("width", "Window width", 480, 380, 1000, 10),
+    B.Number("height", "Window height", 360, 340, 800, 10),
+})
+
 local id = "chat"
 local midnight = {
     panelColor = "0a1220", panelAlpha = 74,

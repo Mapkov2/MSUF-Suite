@@ -11,8 +11,8 @@ local CLOCK = NS.DataTextClockSource
 local settings, fpsLimit, latencyLimit, durabilityLimit, coordinateFormat
 
 -- The built-in DataTexts: the shared data source each one reads, how often a
--- sampled one refreshes, the events that change them, their labels and the
--- Blizzard window a click opens. DataTexts.lua drives them; Sources.lua and
+-- timed one refreshes, the events that change or refresh them, their labels and
+-- the Blizzard window a click opens. DataTexts.lua drives them; Sources.lua and
 -- Actions.lua own the additional sources.
 local Standard = {}
 P.DataTextStandard = Standard
@@ -22,8 +22,13 @@ Standard.SOURCES = {
     fps = true, latency = true, coordinates = true, location = true, xp = true,
     date = true, fpsLatency = true, memory = true, homeLatency = true, progressBar = true,
 }
-Standard.SAMPLED = { clock = true, fps = true, latency = true, homeLatency = true, coordinates = true, date = true, fpsLatency = true, memory = true }
-Standard.INTERVAL = { fps = 2, latency = 5, homeLatency = 5, coordinates = 0.5, fpsLatency = 2, memory = 30 }
+Standard.SAMPLED = { clock = true, coordinates = true, date = true, memory = true }
+Standard.INTERVAL = { coordinates = 0.5, memory = 30 }
+-- Frame rate and latency retain the last reading between player and pointer
+-- events. World and combat visibility routes also sample when a bar shows.
+Standard.TELEMETRY = { fps = true, latency = true, homeLatency = true, fpsLatency = true }
+local TELEMETRY_KEYS = { "fps", "latency", "homeLatency", "fpsLatency" }
+Standard.TELEMETRY_KEYS = TELEMETRY_KEYS
 -- Displays that read another shared data source.
 Standard.READER = { clock = "clockTime", sessionGold = "gold", homeLatency = "latency", progressBar = "xp" }
 Standard.EVENT_SOURCES = {
@@ -33,7 +38,9 @@ Standard.EVENT_SOURCES = {
     PLAYER_EQUIPMENT_CHANGED = { "durability" },
     ZONE_CHANGED = { "location", "coordinates" },
     ZONE_CHANGED_INDOORS = { "location", "coordinates" },
-    ZONE_CHANGED_NEW_AREA = { "location", "coordinates" },
+    ZONE_CHANGED_NEW_AREA = { "location", "coordinates", "fps", "latency", "homeLatency", "fpsLatency" },
+    PLAYER_STARTED_MOVING = TELEMETRY_KEYS,
+    PLAYER_STOPPED_MOVING = TELEMETRY_KEYS,
     PLAYER_XP_UPDATE = { "xp", "progressBar" },
     PLAYER_LEVEL_UP = { "xp", "progressBar" },
     UPDATE_EXHAUSTION = { "xp", "progressBar" },
@@ -156,8 +163,8 @@ local FORMATTERS = {
     end,
 }
 
--- The frame rate and latency places are sampled on a timer and mostly find
--- the number they already show. Each reader returns the whole numbers its
+-- The frame rate and latency places are read on player events and the pointer
+-- (Standard.TELEMETRY) and often find the number they already show. Each reader returns the whole numbers its
 -- place shows and the severity, and nothing while the client gives no value.
 -- The raw values decide the severity (a rate of 29.6 shows 30 and still warns
 -- below 30), so the numbers alone do not say it. No text is built here:

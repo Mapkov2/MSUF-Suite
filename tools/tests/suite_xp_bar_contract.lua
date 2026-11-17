@@ -25,6 +25,14 @@ local function Widget(parent)
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetShown(value) self.shown = value end
     function w:IsShown() return self.shown end
+    function w:IsVisible()
+        local widget = self
+        while widget do
+            if not widget.shown then return false end
+            widget = widget.parent
+        end
+        return true
+    end
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:SetText(value) self.text = value end
@@ -36,8 +44,46 @@ local function Widget(parent)
     return w
 end
 
+-- Frames that run OnShow/OnHide as the client does: synchronously, for the
+-- frame and every descendant whose effective visibility changes. Opt-in
+-- (eventFrames), so the VM budgets below keep measuring the plain widgets.
+local function Collect(widget, list)
+    list[#list + 1] = widget
+    list[#list + 1] = widget:IsVisible()
+    for _, child in ipairs(widget.children or {}) do Collect(child, list) end
+end
+local function SetVisible(widget, value)
+    value = value and true or false
+    if widget.shown == value then return end
+    local list = {}
+    Collect(widget, list)
+    widget.shown = value
+    for index = 1, #list, 2 do
+        local changed, visible = list[index], list[index]:IsVisible()
+        if visible ~= list[index + 1] then
+            local script = visible and changed.OnShow or changed.OnHide
+            if script then script(changed) end
+        end
+    end
+end
+local eventFrames = false
+local function EventFrame(parent)
+    local frame = Widget(parent)
+    if parent then
+        parent.children = parent.children or {}
+        parent.children[#parent.children + 1] = frame
+    end
+    frame.SetShown = SetVisible
+    function frame:Show() SetVisible(self, true) end
+    function frame:Hide() SetVisible(self, false) end
+    return frame
+end
+
 UIParent = Widget()
-CreateFrame = function(_, _, parent) return Widget(parent) end
+CreateFrame = function(_, _, parent)
+    if eventFrames then return EventFrame(parent) end
+    return Widget(parent)
+end
 GetServerTime = function() return now end
 UnitLevel = function() return level end
 UnitXP = function() return xp end
@@ -76,7 +122,8 @@ function tooltip:Hide() self.shown = false end
 local uncappedRules = { IsPlayerAtEffectiveMaxLevel = function() return false end }
 GameRulesUtil = uncappedRules
 C_Timer = { After = function(seconds, callback)
-    assert(seconds == 60 or seconds == .2 or seconds == 1, "unexpected XP bar timer")
+    -- The session-readiness retry is the only timer in the base XP bar.
+    assert(seconds == .2, "unexpected XP bar timer")
     timers[#timers + 1] = { callback = callback, seconds = seconds }
 end }
 
@@ -262,11 +309,9 @@ local dividerPaints = module.segments[1].colorWrites
 local textGeometry = {}
 for id, state in pairs(module.xpTexts) do textGeometry[id] = { state.region.anchors, state.region.font } end
 local fillTextureWrites, backgroundTextureWrites = module.fill.textureWrites, module.background.textureWrites
--- Six independently formatted regions replace three combined strings. The expanded
--- changed event measured 949 VM/3 native text writes against 900/3 before this feature;
--- an unchanged event improves 843/3 to 761/0. Freeze that explicit feature trade,
--- alongside the font/anchor/texture invariants below. These are offline VM budgets.
--- Login generation adds3/2VM (changed/unchanged) within these same limits.
+-- The first gain now draws its rate and ETA immediately (1001 instructions,
+-- 5 text writes). The unchanged event needs 688 instructions and no writes.
+-- Preserve the geometry invariants and guard both offline budgets.
 local vmCount, textWrites = 0, 0
 for _, key in ipairs({ "levelText", "xpText", "percentText", "sessionText", "rateText", "etaText", "details" }) do
     local region = module[key]
@@ -276,12 +321,12 @@ end
 debug.sethook(function() vmCount = vmCount + 1 end, "", 1)
 events.PLAYER_XP_UPDATE(module, "PLAYER_XP_UPDATE", "player")
 debug.sethook()
-assert(vmCount <= 967 and textWrites <= 3, "changed XP event exceeded expanded text VM/native budget")
+assert(vmCount <= 1021 and textWrites == 5, "first XP event exceeded the rate and ETA paint budget")
 vmCount, textWrites = 0, 0
 debug.sethook(function() vmCount = vmCount + 1 end, "", 1)
 events.PLAYER_XP_UPDATE(module, "PLAYER_XP_UPDATE", "player")
 debug.sethook()
-assert(vmCount <= 776 and textWrites == 0, "unchanged XP event exceeded text VM/native budget")
+assert(vmCount <= 702 and textWrites == 0, "unchanged XP event exceeded text VM/native budget")
 assert(nativeSyncCalls == syncCalls, "an XP update walked Blizzard containers")
 assert(module.session.gained == 150 and savedRoot.suiteXP["Player-test"].gained == 150)
 assert(module.segments[1].anchors == dividerAnchors and savedRoot.suiteXP["Player-test"] == savedRecord,
@@ -294,6 +339,8 @@ end
 assert(module.fill.textureWrites == fillTextureWrites and module.background.textureWrites == backgroundTextureWrites,
     "XP event reset a SharedMedia texture")
 assert(module.sessionText.text:find("Session +150", 1, true))
+assert(now - module.session.started < 60 and module.rateText.text ~= "XP/h --"
+    and module.etaText.text ~= "To level --", "the first XP gain left the ETA unavailable")
 -- Hovering the bar lists the progress and this session; a rested change
 -- while it is open redraws it, leaving hides it.
 module.host.OnEnter(module.host)
@@ -310,7 +357,7 @@ module.host.OnLeave(module.host)
 rested = 300
 events.UPDATE_EXHAUSTION(module, "UPDATE_EXHAUSTION")
 assert(not tooltip.shown and tooltip.draws == draws + 1, "a hidden XP tooltip was redrawn")
-assert(#timers == 1, "one rate refresh timer")
+assert(#timers == 0, "earning XP or showing a tooltip scheduled a rate refresh")
 xp = 900
 events.PLAYER_XP_UPDATE(module, "PLAYER_XP_UPDATE", "target")
 assert(module.session.gained == 150, "other unit ignored")
@@ -324,11 +371,16 @@ assert(module.session.gained == 800 and module.session.lastXP == 900)
 level, maximum = 11, 1200
 events.PLAYER_LEVEL_UP(module, "PLAYER_LEVEL_UP")
 assert(module.session.gained == 980 and module.session.levelUps == 1)
+local idleRate, idleETA = module.rateText.text, module.etaText.text
 now = now + 3600
-timers[1].callback()
+assert(module.rateText.text == idleRate and module.etaText.text == idleETA and #timers == 0,
+    "the XP rate or ETA changed while idle")
+module.host.OnEnter(module.host)
 assert(module.rateText.text:find("XP/h 980", 1, true))
 assert(module.etaText.text:find("To level <", 1, true) and #formatted > 0,
-    "time to level did not use the client's seconds formatter")
+    "hover did not refresh time to level using the client's seconds formatter")
+assert(tooltip.lines[#tooltip.lines - 1] == "Time to level | <4114s>", "bar and tooltip used different ETA samples")
+module.host.OnLeave(module.host)
 
 -- The effective maximum level can change without a level change (party sync,
 -- Timewalking, a new cap): world entry and Refresh read it again.
@@ -559,6 +611,7 @@ do
     RequestTimePlayed = function() requests = requests + 1 end
     level, xp, maximum = 21, 11108, 25200
     local played, playedRuntime, playedEvents = Load("login")
+    local waits = #timers
     assert(not playedEvents.TIME_PLAYED_MSG and requests == 0, "disabled level time requested /played")
     played.config.showLevelTime = true
     played:Refresh()
@@ -572,12 +625,16 @@ do
     assert(played.levelTimeText.text == "This level <3465s>", "level time used the wrong /played field")
     played.host.OnEnter(played.host)
     assert(tooltip.lines[#tooltip.lines] == "Time played this level | <3465s>", "tooltip did not show played time separately")
-    local tick = timers[#timers]
-    assert(tick.seconds == 1, "played time did not start its clock")
+    -- The shown time is a sample: no wait is scheduled for it, and it moves
+    -- on with the next event of the bar, row and open tooltip together.
     now = now + 1
-    tick.callback()
-    assert(played.levelTimeText.text == "This level <3466s>"
-        and tooltip.lines[#tooltip.lines] == "Time played this level | <3466s>", "played time did not advance")
+    assert(#timers == waits and played.levelTimeText.text == "This level <3465s>"
+        and tooltip.lines[#tooltip.lines] == "Time played this level | <3465s>",
+        "played time scheduled a wait or moved without an event")
+    playedEvents.PLAYER_XP_UPDATE(played, "PLAYER_XP_UPDATE", "player")
+    assert(#timers == waits and played.levelTimeText.text == "This level <3466s>"
+        and tooltip.lines[#tooltip.lines] == "Time played this level | <3466s>",
+        "played time did not advance with the next XP event")
     played.host.OnLeave(played.host)
     level, xp, maximum = 22, 42, 27400
     playedEvents.PLAYER_LEVEL_UP(played, "PLAYER_LEVEL_UP", 22)
@@ -615,11 +672,224 @@ do
     played:Refresh()
     assert(not playedEvents.TIME_PLAYED_MSG and not played.levelTimeText:IsShown(),
         "turning off level time retained its listener or text")
-    local queuedTick = timers[#timers]
-    local timerCount = #timers
-    queuedTick.callback()
-    assert(#timers == timerCount, "turning off level time retained its clock")
+    assert(not playedEvents.ZONE_CHANGED_NEW_AREA, "level time kept a sampling event after it was turned off")
     played:Disable()
+end
+
+-- The level time is a sample: it wakes nothing. Left alone the bar schedules
+-- no wait and reads no clock, however long; the row moves on with the bar's
+-- own events (experience, /played reply, zone change), when the bar is
+-- shown and when the pointer enters it. A hidden
+-- host keeps the baseline and the listener and is sampled when shown. The
+-- shared tooltip is asked for its owner only while the pointer is on the bar.
+do
+    local requests, reads = 0, 0
+    GetTime = function()
+        reads = reads + 1
+        return now
+    end
+    RequestTimePlayed = function() requests = requests + 1 end
+    GameRulesUtil = uncappedRules
+    level, xp, maximum = 30, 500, 40000
+    eventFrames = true
+    local idle, _, idleEvents = Load("login")
+    eventFrames = false
+    local host, row = idle.host, idle.levelTimeText
+    local base, baseline
+    local function Elapsed() return "<" .. baseline + now - base .. "s>" end
+    local function Shown() return "This level " .. Elapsed() end
+    local ownerChecks, isOwned = 0, tooltip.IsOwned
+    tooltip.IsOwned = function(self, owner)
+        ownerChecks = ownerChecks + 1
+        return isOwned(self, owner)
+    end
+    tooltip:Hide()
+    -- Every write of the row, to tell a repaint from an unchanged text.
+    local writes, setText = {}, row.SetText
+    row.SetText = function(self, value)
+        writes[#writes + 1] = value
+        return setText(self, value)
+    end
+    -- Time passing with no event and no input: nothing scheduled, read or written.
+    local function Idle(seconds, message)
+        local waits, clockReads, rowWrites, draws, text = #timers, reads, #writes, tooltip.draws, row.text
+        ownerChecks = 0
+        now = now + seconds
+        assert(#timers == waits and reads == clockReads and #writes == rowWrites and tooltip.draws == draws
+            and row.text == text and ownerChecks == 0, message)
+    end
+    -- One event or input: the row shows the current elapsed time from one clock read.
+    local function Sampled(message)
+        assert(row.text == Shown() and reads == 1, message)
+    end
+
+    local waits = #timers
+    idle.config.showLevelTime = true
+    idle:Refresh()
+    assert(requests == 1 and idleEvents.TIME_PLAYED_MSG and #timers == waits and row.text == "This level --",
+        "a level time without a baseline scheduled a wait or invented a value")
+    assert(idleEvents.ZONE_CHANGED_NEW_AREA and not idleEvents.UNIT_AURA and not host.OnUpdate,
+        "the level time has the wrong sampling events")
+    base, baseline = now, 120
+    idleEvents.TIME_PLAYED_MSG(idle, "TIME_PLAYED_MSG", 500000, 120)
+    assert(row.text == Shown() and #timers == waits, "the /played reply was not shown at once or scheduled a wait")
+    idle:Refresh()
+    assert(#timers == waits and requests == 1, "a repaint scheduled a wait or asked /played again")
+
+    -- Idle, visible: ten minutes pass and the bar does nothing at all.
+    Idle(600, "an idle visible level time woke: a wait, a clock read, a repaint or a tooltip check")
+
+    -- A zone change samples once without touching the unhovered tooltip.
+    reads, ownerChecks, waits = 0, 0, #timers
+    idleEvents.ZONE_CHANGED_NEW_AREA(idle, "ZONE_CHANGED_NEW_AREA")
+    Sampled("a zone change did not show the current level time from one read")
+    assert(ownerChecks == 0 and #timers == waits, "the zone change accessed the tooltip or scheduled a wait")
+    Idle(45, "the level time kept running after a zone change")
+    reads = 0
+    idleEvents.PLAYER_XP_UPDATE(idle, "PLAYER_XP_UPDATE", "player")
+    Sampled("an XP event did not show the current level time from one read")
+    Idle(30, "the level time kept running after an XP event")
+
+    -- First hover: one read repaints the row and fills the whole tooltip.
+    local draws = tooltip.draws
+    reads = 0
+    host.OnEnter(host)
+    local contents = table.concat(tooltip.lines, "\n")
+    Sampled("the first hover did not repaint the row from one read")
+    assert(tooltip.owner == host and tooltip.draws == draws + 1
+        and tooltip.lines[#tooltip.lines] == "Time played this level | " .. Elapsed()
+        and contents:find("Session XP | +0", 1, true) and contents:find("XP per hour | --", 1, true)
+        and contents:find("Time to level | --", 1, true), "the hovered XP tooltip lost a line or showed an old time")
+    -- Resting on the bar wakes nothing either: the tooltip keeps what it showed.
+    local held = tooltip.lines[#tooltip.lines]
+    Idle(90, "a hovered level time woke")
+    assert(tooltip.lines[#tooltip.lines] == held, "the open tooltip changed without an event")
+    -- Hovered: an event redraws the whole tooltip once, with the row's sample.
+    draws, reads, ownerChecks = tooltip.draws, 0, 0
+    idleEvents.ZONE_CHANGED_NEW_AREA(idle, "ZONE_CHANGED_NEW_AREA")
+    contents = table.concat(tooltip.lines, "\n")
+    Sampled("a hovered event did not sample once")
+    assert(ownerChecks == 1 and tooltip.draws == draws + 1
+        and tooltip.lines[#tooltip.lines] == "Time played this level | " .. Elapsed()
+        and contents:find("Session XP | +0", 1, true) and contents:find("XP per hour | --", 1, true)
+        and contents:find("Time to level | --", 1, true),
+        "a hovered event did not redraw the whole tooltip once")
+
+    -- Another owner took the shared tooltip under the pointer: it is left alone.
+    local other = Widget()
+    tooltip:SetOwner(other)
+    tooltip:ClearLines()
+    tooltip:AddLine("Other")
+    tooltip:Show()
+    draws = tooltip.draws
+    now = now + 1
+    idleEvents.ZONE_CHANGED_NEW_AREA(idle, "ZONE_CHANGED_NEW_AREA")
+    assert(tooltip.owner == other and tooltip.draws == draws and #tooltip.lines == 1 and tooltip.lines[1] == "Other"
+        and row.text == Shown(), "an event redrew or took a tooltip another frame owns")
+    host.OnLeave(host)
+    assert(tooltip.shown and tooltip.owner == other, "leaving the bar hid another frame's tooltip")
+    tooltip:Hide()
+
+    -- UIParent hidden: zone changes leave the hidden bar alone.
+    local listener = idleEvents.TIME_PLAYED_MSG
+    SetVisible(UIParent, false)
+    assert(host:IsShown() and not host:IsVisible(), "the fixture did not hide the host through its parent")
+    local frozen, rowWrites = row.text, #writes
+    reads, ownerChecks, waits = 0, 0, #timers
+    now = now + 1
+    idleEvents.ZONE_CHANGED_NEW_AREA(idle, "ZONE_CHANGED_NEW_AREA")
+    assert(row.text == frozen and #writes == rowWrites and reads == 0 and ownerChecks == 0 and #timers == waits,
+        "a hidden level time was sampled by a zone change")
+    assert(idleEvents.TIME_PLAYED_MSG == listener and idle.playedActive == 30 and requests == 1,
+        "hiding dropped the level time's baseline or listener")
+    Idle(300, "a hidden level time woke")
+    now = now + 30
+    reads = 0
+    SetVisible(UIParent, true)
+    Sampled("showing did not repaint the elapsed time at once from one read")
+    assert(requests == 1, "showing asked /played again")
+    Idle(60, "a shown level time started a wait")
+
+    -- The host itself hidden under the pointer: its tooltip goes, hover ends.
+    host.OnEnter(host)
+    assert(tooltip.shown and tooltip.owner == host)
+    host:Hide()
+    assert(not tooltip.shown, "a hidden bar kept its tooltip")
+    Idle(4, "a level time hidden under the pointer woke")
+    reads = 0
+    host:Show()
+    Sampled("showing the host did not sample the level time")
+    now = now + 1
+    reads, ownerChecks = 0, 0
+    idleEvents.ZONE_CHANGED_NEW_AREA(idle, "ZONE_CHANGED_NEW_AREA")
+    Sampled("an event after the show did not sample")
+    assert(ownerChecks == 0 and not tooltip.shown, "hover state survived the hide: an event asked for the tooltip owner")
+
+    -- After gaining XP, both ETA and level time stay quiet until an event.
+    xp = 600
+    reads, waits = 0, #timers
+    idleEvents.PLAYER_XP_UPDATE(idle, "PLAYER_XP_UPDATE", "player")
+    Sampled("an XP gain did not sample the level time")
+    assert(idle.rateText.text ~= "XP/h --" and idle.etaText.text ~= "To level --" and #timers == waits,
+        "an XP gain left either estimate empty or started a wait")
+    local idleRate, idleETA = idle.rateText.text, idle.etaText.text
+    Idle(600, "XP gain started background work")
+    assert(idle.rateText.text == idleRate and idle.etaText.text == idleETA,
+        "the estimate changed without a trigger")
+    reads = 0
+    host.OnEnter(host)
+    Sampled("the first hover after XP did not show the current level time")
+    assert(idle.rateText.text ~= idleRate and idle.etaText.text ~= idleETA and #timers == waits,
+        "hover did not refresh both estimates without a timer")
+    assert(tooltip.lines[#tooltip.lines - 2] == "Time to level | " .. idle.etaText.text:sub(10),
+        "bar and tooltip ETA diverged after an idle span")
+    host.OnLeave(host)
+
+    -- An ended level time (capped) gives up its events and ignores the host's show.
+    idle.config.hideAtMax = true
+    GameRulesUtil = { IsPlayerAtEffectiveMaxLevel = function() return true end }
+    idle:Refresh()
+    assert(not host:IsShown() and not idle.playedActive and not idleEvents.TIME_PLAYED_MSG
+        and not idleEvents.ZONE_CHANGED_NEW_AREA, "a capped XP bar kept its level time or a sampling event")
+    rowWrites, reads, waits = #writes, 0, #timers
+    now = now + 1
+    host:Show()
+    host:Hide()
+    assert(#writes == rowWrites and reads == 0 and #timers == waits, "an ended level time painted or read on show")
+    -- Back below the cap: the host is shown before the level time starts again.
+    now = now + 5
+    GameRulesUtil = uncappedRules
+    idle:Refresh()
+    assert(host:IsShown() and row:IsShown() and row.text == Shown() and requests == 1
+        and idleEvents.TIME_PLAYED_MSG and idleEvents.ZONE_CHANGED_NEW_AREA,
+        "the level time did not resume from its baseline with its events")
+    for index = rowWrites + 1, #writes do
+        assert(writes[index] ~= "This level --", "showing the host painted a level time before it started")
+    end
+
+    -- A level-up while hidden: the new level's time is ready when shown.
+    SetVisible(UIParent, false)
+    level, xp, maximum = 31, 10, 42000
+    idleEvents.PLAYER_LEVEL_UP(idle, "PLAYER_LEVEL_UP", 31)
+    base, baseline = now, 0
+    assert(idle.playedActive == 31 and requests == 1, "a hidden level-up lost its level or asked /played again")
+    now = now + 7
+    reads = 0
+    SetVisible(UIParent, true)
+    Sampled("the new level's time was not shown at once")
+    idleEvents.TIME_PLAYED_MSG(idle, "TIME_PLAYED_MSG", 500200, 500)
+    assert(row.text == Shown(), "an old level's reply replaced the level-up clock")
+
+    -- Disabled: every event of the level time is gone and a later show samples nothing.
+    idle:Disable()
+    rowWrites, reads = #writes, 0
+    host:Show()
+    host:Hide()
+    assert(#writes == rowWrites and reads == 0 and not host:IsShown() and not idleEvents.TIME_PLAYED_MSG
+        and not idleEvents.ZONE_CHANGED_NEW_AREA, "a disabled XP bar kept or restarted its level time")
+    row.SetText = setText
+    tooltip.IsOwned = isOwned
+    GetTime = function() return now end
 end
 
 local config = {}
@@ -840,6 +1110,25 @@ do
     bar:Refresh()
     bar:Disable()
     assert(not bar.optimizer and not liveEvents.UNIT_AURA, "disabling the bar did not stop the optimizer")
+
+    local resumed, _, resumedEvents = Load("reload", true)
+    assert(resumed.session.gained > 0, "reload fixture lost its earned session XP")
+    resumed.config.foreverOptimizer = true
+    resumed:Refresh()
+    assert(resumed.optimizer.gained == 0 and resumed.etaText.text ~= "To level --",
+        "a fresh optimizer hid the ETA despite a recovered session rate")
+    resumed.host.OnEnter(resumed.host)
+    assert(table.concat(tooltip.lines, "\n"):find("XP per hour | ", 1, true)
+        and not table.concat(tooltip.lines, "\n"):find("Active XP per hour", 1, true),
+        "the session fallback was labelled active XP per hour")
+    xp = xp + 25
+    resumedEvents.PLAYER_XP_UPDATE(resumed, "PLAYER_XP_UPDATE", "player")
+    assert(resumed.optimizer.gained == 25 and resumed.etaText.text ~= "To level --"
+        and table.concat(tooltip.lines, "\n"):find("Active XP per hour | 1500", 1, true),
+        "the first fresh active XP did not replace the fallback estimate")
+    resumed:Disable()
+    Advance(1)
+
     local retail, _, retailEvents = Load("login")
     retail.config.foreverOptimizer = true
     retail:Refresh()
@@ -906,6 +1195,25 @@ do
     live:Disable()
     assert(not button:IsShown() and route.questsChanged == nil, "disabling the bar left the button or its route hook")
     UIParent.right = nil
+    -- The level time can coexist with Forever's optimizer on the same context.
+    local shared, _, sharedEvents = Load("login", true)
+    shared.config.showLevelTime = true
+    shared:Refresh()
+    local sample = sharedEvents.ZONE_CHANGED_NEW_AREA
+    assert(sample and not sharedEvents.PLAYER_REGEN_DISABLED and not sharedEvents.PLAYER_REGEN_ENABLED,
+        "level time took ownership of the optimizer's events")
+    shared.config.foreverOptimizer = true
+    shared:Refresh()
+    assert(shared.optimizer and sharedEvents.PLAYER_REGEN_DISABLED and sharedEvents.PLAYER_REGEN_ENABLED
+        and sharedEvents.ZONE_CHANGED_NEW_AREA == sample, "optimizer or level time lost its events")
+    shared.config.foreverOptimizer = false
+    shared:Refresh()
+    assert(not shared.optimizer and not sharedEvents.PLAYER_REGEN_DISABLED
+        and not sharedEvents.PLAYER_REGEN_ENABLED and sharedEvents.ZONE_CHANGED_NEW_AREA == sample,
+        "stopping the optimizer removed level time events or kept combat listeners")
+    shared:Disable()
+    assert(not sharedEvents.ZONE_CHANGED_NEW_AREA and not sharedEvents.TIME_PLAYED_MSG,
+        "disabling the bar left a level time event")
     local violations = stopWatching()
     assert(#violations == 0, table.concat(violations, "\n"))
 end

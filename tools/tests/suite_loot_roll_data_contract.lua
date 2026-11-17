@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local path = arg[2] or root .. "/MSUF_Suite_QualityOfLife/LootRollData.lua"
-local Secrets = dofile(arg[3] or root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(arg[3] or root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Secrets.Install()
 for _, name in ipairs({ "Public", "Finite", "Key", "Positive", "PublicTable", "True" }) do
     Secrets.GUARD_NAMES.falsy[name] = true
@@ -92,7 +92,7 @@ Check(D.ReadRoll(7, nil, 100).duration == 10, "remaining duration supplies the m
 for _, field in ipairs({ "lootListID", "lootListKey" }) do
     local info = { itemHyperlink = "item:history", rollInfos = {
         { playerName = "Main", playerClass = "MAGE", state = 0 },
-        { playerName = "Off", state = 1, isSelf = true },
+        { playerName = "Off", state = 1, isSelf = true, roll = 72 },
         { playerName = "Mog", state = 2 },
         { playerName = "Greed", state = 3 },
         { playerName = "Undecided", state = 4 },
@@ -106,10 +106,15 @@ for _, field in ipairs({ "lootListID", "lootListKey" }) do
         field .. ": map main/off need, greed, transmog and pass to action keys")
     Check(entry.counts[3] == 0 and not entry.rollNames[0]:find("Undecided", 1, true),
         field .. ": pending choice is not a pass and history cannot invent disenchant")
-    Check(entry.selfChoice == 1 and entry.status == "leader" and not entry.finished and entry.statusRoll == 88,
+    Check(entry.selfChoice == 1 and entry.selfRoll == 72 and entry.status == "leader"
+        and not entry.finished and entry.statusRoll == 88,
         field .. ": self choice and pending leader stay separate from completed winner")
     Check(entry.statusName == "|cff40c7ebMain|r" and entry.rollNames[1]:find("|cff40c7ebMain|r", 1, true),
         field .. ": class-color names in status and participant tooltip")
+    info.playerRollState = 5
+    info.rollInfos = { { playerName = "Someone else", state = 3 } }
+    Check(D.ReadDrop(1, 11).selfChoice == 0, field .. ": the top-level state identifies the player's Pass")
+    info.playerRollState = secretNumber
     info.isTied = true
     entry = D.ReadDrop(1, 11)
     Check(entry.status == "waiting" and entry.statusName == nil, field .. ": ties do not invent a unique leader")

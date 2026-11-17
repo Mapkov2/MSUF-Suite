@@ -26,15 +26,49 @@ local M
 -- pool's peak; Restore hands clicks back and forgets every peak.
 local peaks = setmetatable({}, { __mode = "k" })
 local duplicateStates = setmetatable({}, { __mode = "k" })
+-- The lane each observed aura frame refreshes last: its CrowdControlListFrame,
+-- a parentKey child from Blizzard_NamePlates.xml that no client code assigns
+-- again (Retail and Forever), checked once by Observe. The 2026-11-15 raid
+-- trace ran AfterList 6,339 times in 158 s, two of three for a lane that is
+-- not the last: those cost one check of the lane and one table read instead
+-- of a frame field read and two checks.
+local lastLanes = setmetatable({}, { __mode = "k" })
 local hidden = setmetatable({}, { __mode = "k" })
 local pending = {}
 local refreshQueue, refreshPending = {}, false
 local restoreFrame, secrecyFrame, watchingSecrecy
 local clickOwners = setmetatable({}, { __mode = "k" })
+local clickFrames = setmetatable({}, { __mode = "k" })
+local nativePolicies
 
-local function Clickthrough(auras)
-    return M.active and M.config.auraClickthrough
-        and (not private.IsSkinSuppressed or not private.IsSkinSuppressed(M.auraHooks[auras]))
+local function SkinAllowed(auras)
+    return not private.IsSkinSuppressed or not private.IsSkinSuppressed(M.auraHooks[auras])
+end
+
+-- A boolean covers the common case. Only mixed choices need a lane lookup
+-- when Blizzard moves a recycled button to another row.
+local function CompilePolicy(config, side, fallback)
+    local choose = NS.NameplateAuraDisplay.Clickthrough
+    local buff = choose(config["aura" .. side .. "BuffClickthrough"], fallback)
+    local debuff = choose(config["aura" .. side .. "DebuffClickthrough"], fallback)
+    local control = choose(config["aura" .. side .. "ControlClickthrough"], fallback)
+    if buff == debuff and buff == control then return buff end
+    return { buff = buff, debuff = debuff, control = control }
+end
+
+function Auras.Configure(config)
+    local fallback = config.auraClickthrough == true
+    local enemy = CompilePolicy(config, "Enemy", fallback)
+    local friendly = CompilePolicy(config, "Friendly", fallback)
+    nativePolicies = (enemy ~= fallback or friendly ~= fallback)
+        and { enemy = enemy, friendly = friendly, fallback = fallback } or nil
+end
+
+local function Policy(auras, uf)
+    if not nativePolicies then return M.config.auraClickthrough == true end
+    uf = uf or M.auraHooks[auras]
+    local side = uf and private.PlatePrefix(uf)
+    return nativePolicies[side or "fallback"]
 end
 
 function Auras.Bind(module) M = module end
@@ -62,14 +96,26 @@ local function Writable(button, unprotectedOnly)
     return S.Public(allowed) and allowed == true and CanChange(button, unprotectedOnly)
 end
 
+local function ButtonPolicy(button, auras, policy)
+    local lane = button:GetParent()
+    if not S.Public(lane) or not lane then return end
+    local buff, debuff, control = auras.BuffListFrame, auras.DebuffListFrame, auras.CrowdControlListFrame
+    if S.Public(buff) and lane == buff then return policy.buff end
+    if S.Public(debuff) and lane == debuff then return policy.debuff end
+    if S.Public(control) and lane == control then return policy.control end
+end
+
 local function RestoreIcon(button, saved)
     if not Writable(button) then return false end
     local alpha = button:GetAlpha()
     if not S.Finite(alpha) then return false end
     if alpha == 0 then button:SetAlpha(saved[2]) end
     button:SetMouseMotionEnabled(saved[3])
-    if Clickthrough(saved[1]) then
-        if saved[4] then M.auraButtons[button], clickOwners[button] = true, saved[1] end
+    local auras = saved[1]
+    local policy = M.active and SkinAllowed(auras) and Policy(auras)
+    if policy and policy ~= true then policy = ButtonPolicy(button, auras, policy) end
+    if policy then
+        if saved[4] then M.auraButtons[button], clickOwners[button], clickFrames[auras] = true, auras, true end
     else
         button:SetMouseClickEnabled(M.auraButtons[button] or saved[4])
         M.auraButtons[button], clickOwners[button] = nil, nil
@@ -207,15 +253,23 @@ local function RestoreButton(button, enabled)
     return true
 end
 
+local function RestorePlateClicks(uf, auras)
+    local pool = auras.auraItemFramePool
+    if S.Public(pool) and pool then peaks[pool] = nil end
+    if not clickFrames[auras] then return end
+    local waiting
+    for button, owner in pairs(clickOwners) do
+        if owner == auras and not RestoreButton(button, M.auraButtons[button]) then waiting = true end
+    end
+    clickFrames[auras] = waiting
+    if waiting then M.pendingPlates[uf] = true end
+end
+
 function Auras.RestorePlate(uf)
     local auras = uf.AurasFrame
     if not Safe(auras) then return end
     Auras.SetDuplicateState(uf, nil)
-    local pool = auras.auraItemFramePool
-    if S.Public(pool) and pool then peaks[pool] = nil end
-    for button, owner in pairs(clickOwners) do
-        if owner == auras and not RestoreButton(button, M.auraButtons[button]) then M.pendingPlates[uf] = true end
-    end
+    RestorePlateClicks(uf, auras)
 end
 
 function Auras.RestoreClicks()
@@ -224,7 +278,10 @@ function Auras.RestoreClicks()
     for button, enabled in pairs(M.auraButtons) do
         if not RestoreButton(button, enabled) then waiting = true end
     end
-    if not waiting then return end
+    if not waiting then
+        for auras in pairs(clickFrames) do clickFrames[auras] = nil end
+        return
+    end
     if not M.auraRestoreFrame then
         M.auraRestoreFrame = CreateFrame("Frame")
         M.auraRestoreFrame:SetScript("OnEvent", OnCombatEnd)
@@ -254,19 +311,46 @@ local function SetClickthrough(button, auras)
         M.pendingPlates[M.auraHooks[auras]] = true
         return false
     end
-    M.auraButtons[button], clickOwners[button] = current, auras
+    M.auraButtons[button], clickOwners[button], clickFrames[auras] = current, auras, true
     button:SetMouseClickEnabled(false)
     return true
+end
+
+local function ApplyButtonPolicy(button, auras, enabled)
+    if enabled then return SetClickthrough(button, auras) end
+    local original = M.auraButtons[button]
+    if original and not RestoreButton(button, original) then
+        M.pendingPlates[M.auraHooks[auras]] = true
+    end
+end
+
+local function ApplyMixedPool(pool, auras, policy)
+    local button = pool:GetNextActive()
+    while S.Public(button) and button do
+        if Safe(button) then
+            local enabled = ButtonPolicy(button, auras, policy)
+            if enabled ~= nil then ApplyButtonPolicy(button, auras, enabled) end
+        end
+        button = pool:GetNextActive(button)
+    end
 end
 
 -- GetNextActive (Blizzard_SharedXMLBase Pools.lua, both clients) visits the
 -- active buttons without the iterator closure EnumerateActive allocates;
 -- GetNumActive is on the same pool proxy (ObjectPoolProxyMixin, both clients).
-local function ApplyPool(pool, auras)
+local function ApplyPool(pool, auras, policy)
     if not S.Public(pool) or not pool then return end
-    if not M.active or not M.config.auraClickthrough then
+    if not M.active or not policy then
         peaks[pool] = nil
+        if M.active and nativePolicies and clickFrames[auras] then
+            RestorePlateClicks(M.auraHooks[auras], auras)
+        end
         return
+    end
+    if policy ~= true then
+        -- The same active count can now contain buttons in different rows.
+        peaks[pool] = nil
+        return ApplyMixedPool(pool, auras, policy)
     end
     local count = pool:GetNumActive()
     if not S.Public(count) or type(count) ~= "number" then count = nil end
@@ -282,15 +366,15 @@ local function ApplyPool(pool, auras)
 end
 
 local function LossOfControlItem(auras)
-    return auras.LossOfControlFrame and auras.LossOfControlFrame.AuraItemFrame
+    local frame = auras.LossOfControlFrame
+    return S.Public(frame) and frame and frame.AuraItemFrame
 end
 
 local function AfterList(auras, lane)
     -- Both clients refresh Debuffs, Buffs and then Crowd Control, even when
     -- that last lane is hidden. Observe the completed pool without hooking
     -- RefreshAuras itself or looking at the aura list or UNIT_AURA payload.
-    local last = auras.CrowdControlListFrame
-    if not S.Public(lane) or not S.Public(last) or lane ~= last then return end
+    if not S.Public(lane) or lane ~= lastLanes[auras] then return end
     local state = duplicateStates[auras]
     if state then
         if AuraDataReadable() then
@@ -301,21 +385,27 @@ local function AfterList(auras, lane)
             RestoreIcons(auras)
         end
     end
-    if not private.IsSkinSuppressed or not private.IsSkinSuppressed(M.auraHooks[auras]) then
-        ApplyPool(auras.auraItemFramePool, auras)
+    if SkinAllowed(auras) then
+        ApplyPool(auras.auraItemFramePool, auras, Policy(auras))
     end
 end
 
-local function OnRefreshLossOfControl(auras)
-    if not Clickthrough(auras) then return end
+local function ApplyLossOfControl(auras, policy)
+    if policy and policy ~= true then policy = policy.control end
+    if not policy and not clickFrames[auras] then return end
     local item = LossOfControlItem(auras)
-    if item then SetClickthrough(item, auras) end
+    if S.Public(item) and item then ApplyButtonPolicy(item, auras, policy) end
+end
+
+local function OnRefreshLossOfControl(auras)
+    if M.active and SkinAllowed(auras) then ApplyLossOfControl(auras, Policy(auras)) end
 end
 
 local function Observe(uf, auras)
     if M.auraHooks[auras] then return true end
     local refresh, lane = auras.RefreshList, auras.CrowdControlListFrame
     if not S.Public(refresh) or type(refresh) ~= "function" or not Safe(lane) then return false end
+    lastLanes[auras] = lane
     hooksecurefunc(auras, "RefreshList", AfterList)
     local control = auras.RefreshLossOfControl
     if S.Public(control) and type(control) == "function" then
@@ -343,13 +433,18 @@ function Auras.SetDuplicateState(uf, state, exclusions)
 end
 
 function Auras.Apply(uf)
-    if not M.config.auraClickthrough then
+    if not nativePolicies and not M.config.auraClickthrough then
         if next(M.auraButtons) then Auras.RestoreClicks() end
         return
     end
     local auras = uf.AurasFrame
-    if not Safe(auras) or not Observe(uf, auras) then return end
-    ApplyPool(auras.auraItemFramePool, auras)
-    local item = LossOfControlItem(auras)
-    if item then SetClickthrough(item, auras) end
+    if not Safe(auras) then return end
+    local policy = Policy(auras, uf)
+    if not policy then
+        if clickFrames[auras] then RestorePlateClicks(uf, auras) end
+        return
+    end
+    if not Observe(uf, auras) then return end
+    ApplyPool(auras.auraItemFramePool, auras, policy)
+    ApplyLossOfControl(auras, policy)
 end

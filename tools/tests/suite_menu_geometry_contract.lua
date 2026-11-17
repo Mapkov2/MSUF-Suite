@@ -32,6 +32,14 @@ local mw = MenuWorld.Open(host, flavor, { locale = "deDE", clientScriptBindings 
         end
     end })
 local env, M, world = mw.env, mw.M, mw.world
+world.widgets.Methods.ClearTextureSlice = function(self)
+    self.textureSliceMargins = nil
+    self.textureSliceMode = nil
+end
+world.widgets.Methods.SetVertexOffset = function(self, index, x, y)
+    self.vertexOffsets = self.vertexOffsets or {}
+    self.vertexOffsets[index] = { x, y }
+end
 world.widgets.Methods.GetUnboundedStringWidth = function(self) return self:GetStringWidth() end
 world.widgets.Methods.SetTextHeight = function(self, value) self.textHeight=value end
 world.widgets.Methods.SetPointsOffset = function(self,x,y) self.pointsOffset={x,y} end
@@ -173,6 +181,56 @@ world.widgets.Methods.SetSwipeColor = world.widgets.Methods.SetSwipeColor or fun
 world.widgets.Methods.GetCountdownFontString = world.widgets.Methods.GetCountdownFontString or function(self)
     if not self.countdownFont then self.countdownFont = self:CreateFontString(nil, "OVERLAY") end
     return self.countdownFont
+end
+-- The two Minimap headers must reserve only their visible height and normal gap.
+do
+    local page = "suite_minimap"
+    local expanded = M.fixedPreviewExpanded
+    M.fixedPreviewExpanded = false
+    for _, size in ipairs({ 370, 1300 }) do
+        M.SelectPage("home")
+        M.InvalidatePage(page)
+        width = size
+        Check(M.SelectPage(page), "could not open Minimap settings")
+        mw:RunTimers(1000)
+        local entry = M.cache[page]
+        local tabs, preview = unpack(entry.pageHeaders)
+        Check(tabs.section == entry.context.suiteWorkspace.header and preview.previewExpander,
+            "Minimap tabs must sit above the preview")
+        local function CheckGap()
+            local _, tabParent, _, _, tabTop = tabs.section:GetPoint(1)
+            local _, previewParent, _, _, previewTop = preview.section:GetPoint(1)
+            Check(tabParent == previewParent, "Minimap tabs and preview must share the sticky header")
+            local gap = tabTop - tabs.section:GetHeight() - previewTop
+            Check(math.abs(gap - tabs.stickyGap) < .01, ("Minimap preview gap is %.1f, expected %.1f"):format(gap, tabs.stickyGap))
+        end
+        CheckGap()
+        M.RestoreFixedPreview(page, entry)
+        mw:RunTimers(1000)
+        Check(preview.previewExpander.expanded, "Minimap preview did not expand")
+        CheckGap()
+        if size == 1300 then
+            local config = P.S.Config("minimap")
+            local savedFPS = config.infoFPS
+            config.infoFPS = false
+            local workspace = entry.context.suiteWorkspace
+            local view = preview.previewExpander.box.previewUI
+            workspace.select("appearance")
+            view.Paint()
+            for _, chip in ipairs(view.layerButtons) do
+                if chip.key == "fps" then MenuWorld.FireScript(chip, "OnClick", "LeftButton") break end
+            end
+            mw:RunTimers(1000)
+            local exact = P.Meta(page, "minimap", "infoFPS", "setting", "suite_minimap_info_fps")
+            local _, setting = M.RuntimeControlCatalog.ResolveExactTarget(page, exact)
+            local highlight = entry.wrapper._msuf2SearchHighlight
+            Check(workspace.selected == "information" and setting and setting:IsVisible() and highlight and highlight:IsShown(),
+                "disabled Minimap FPS chip did not reveal and highlight its Show FPS control")
+            Check(config.infoFPS == false, "clicking the disabled FPS chip enabled the setting")
+            config.infoFPS = savedFPS
+        end
+    end
+    M.fixedPreviewExpanded = expanded
 end
 for _,page in ipairs({"suite_actionbars", "suite_hud"}) do
     for _,size in ipairs({1300, 620}) do

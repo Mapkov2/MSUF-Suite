@@ -48,6 +48,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             FontFlags = function(value) return value == 2 and "THICKOUTLINE" or "OUTLINE" end },
         HostBridge = { NameFormatter = function() return provider end },
         Safety = { IsForbidden = function(f) checks = checks + 1 return f.forbidden == true end },
+        IsSecret = function(v) return rawequal(v, secret) end,
         IsCombatLocked = function() return combat end }
     NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
     assert(loadfile(os.getenv("SUITE_NAME_TEXT_HELPER_OVERRIDE") or root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
@@ -69,8 +70,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     function label:SetVertexColor(r,g,b,a) writes = writes + 1 self.r,self.g,self.b,self.a = r,g,b,a or 1 end
     label.SetTextColor = label.SetVertexColor
     function label:IsShown() reads = reads + 1 return self.shown end
+    label.IsForbidden = NS.Safety.IsForbidden
     function label:IsProtected() return self.protected == true end
     local uf = { name = label }
+    uf.IsForbidden = NS.Safety.IsForbidden
     function uf:IsProtected() return self.protected == true end
     module.activeUnits.nameplate1 = uf
     Names.Configure(config)

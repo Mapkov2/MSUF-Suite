@@ -74,6 +74,12 @@ function L.Layout(ui, offset)
     return chips:GetHeight() + 8
 end
 
+local function Blocked(key)
+    if key == "sidebar" and not P.Get("chat", "sidebarPanel") then return "sidebarPanel" end
+    if key == "clock" and not P.Get("chat", "headerClock") then return "headerClock" end
+    if key == "tools" and not P.Get("chat", "copyMessages") and not P.Get("chat", "headerToolbar") then return "copyMessages" end
+end
+
 function L.Build(ui, toggle, open)
     ui.layers, ui.masked = {}, {}
     Interaction.BuildLayerRail(ui, ui.header, LAYERS, toggle, function(spec)
@@ -81,5 +87,5 @@ function L.Build(ui, toggle, open)
             return open({ section = "tabs", control = "headerToolbar" })
         end
         return open({ section = spec[3], control = spec[4] })
-    end)
+    end, Blocked)
 end

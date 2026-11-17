@@ -68,7 +68,12 @@ function frame:RefreshConsolidationFrameVisibility()end
 frame.UpdateAuraButtons=NativeBuffUpdate
 function frame:UpdateGridLayout()for _,b in ipairs(self.auraFrames)do b:SetSize(30,40)end end
 _G.BuffFrame=frame
-local P={NS={IsCombatLocked=function()return false end,IsSecret=function(v)return type(v)=='table' and v.secret==true end,
+local combat, queued=false, nil
+local P={NS={IsCombatLocked=function()return combat end,IsSecret=function(v)return type(v)=='table' and v.secret==true end,
+ Dispatch=function(fn,...)
+  local ok, result=pcall(fn,...)
+  return ok and result or nil
+ end, Finish=function(fn,...)return true,fn(...)end,
  Safety={IsForbidden=function(r)return r.forbidden==true end},
  HostBridge={IconSkinLook=function()end,PaintIconSkin=function()return false end,WatchIconSkins=function()end}},Suite={}}
 local S=P.Suite
@@ -78,7 +83,7 @@ S.CreateTexture=function()return Region()end
 S.RGB=function()return 0,0,0 end
 S.PlaceEdges=function()end
 S.ResolveFont=function()return 'modern.ttf' end
-S.Queue=function()end
+S.Queue=function(id)queued=id end
 S.Install=function(id,m)captured=m end
 hooksecurefunc=function(obj,key,callback)local old=obj[key];obj[key]=function(self,...)local out={old(self,...)};callback(self,...);return unpack(out)end end
 P.PlayerAuraSkins={Yield=function()end} -- the skin-only piece (PlayerAuraSkins.lua)
@@ -107,7 +112,11 @@ if arg[2] then
  elseif mode=='forbidden' then b.forbidden=true
  else error('Unknown geometry mode: '..mode) end
  captured:Enable()
- assert(frame.auraFrames[2].width==52,'one unavailable aura prevented the remaining row from laying out')
+ if mode:match('^level_') then
+  assert(frame.auraFrames[2].width==52,'an unreadable frame level prevented layout')
+ else
+  assert(frame.auraFrames[2].width==30,'an unreadable aura left the row partly laid out')
+ end
  if not mode:match('^level_') then
   assert(b.width==30 and b.scale==1 and #b.points==1 and b.points[1][4]==7,
    'unavailable original geometry was overwritten')
@@ -144,6 +153,80 @@ assert(frame.ConsolidatedBuffs.points[1][4]==0 and frame.auraFrames[1].points[1]
 frame.ConsolidatedBuffs:Hide()
 frame:UpdateGridLayout()
 assert(frame.auraFrames[1].points[1][4]==0,'hidden consolidated button left an empty slot')
+-- A later shown button can fail after earlier buttons have already been
+-- placed. Restore all of them and retry once that button is readable.
+local sizeGrid=frame.UpdateGridLayout
+frame.UpdateGridLayout=function(self)
+ for slot, button in ipairs(self.auraFrames) do
+  button:ClearAllPoints()
+  button:SetPoint('TOPRIGHT', self.AuraContainer, 'TOPRIGHT', -35*(slot-1), 0)
+ end
+ sizeGrid(self)
+end
+local third=Button(false)
+frame.auraFrames[3]=third
+local before=third.Icon.GetTexCoord
+third.Icon.GetTexCoord=function()return {},0,0,1,1,0,1,1 end
+frame.auraInfo={{},{},{}}
+frame:UpdateAuraButtons()
+assert(frame.auraFrames[1].width==30 and frame.auraFrames[2].width==30 and third.width==30,
+ 'a late placement failure left Blizzard and Suite geometry mixed')
+assert(frame.auraFrames[1].points[1][4]==0 and frame.auraFrames[2].points[1][4]==-35
+ and third.points[1][4]==-70,'native fallback left an empty slot')
+assert(frame.auraFrames[1].Duration.font[2]==10,'fallback left the custom duration style on Blizzard geometry')
+frame:UpdateAuraButtons()
+assert(frame.auraFrames[1].width==30,'fallback did not hold while the aura was still unreadable')
+third.Icon.GetTexCoord=before
+frame:UpdateAuraButtons()
+assert(frame.auraFrames[1].points[1][4]==0 and frame.auraFrames[2].points[1][4]==-56
+ and third.points[1][4]==-112,'recovered row left an empty slot')
+-- A new failure during combat queues a rollback. The earlier known buttons
+-- must not be restored through Blizzard's grid while combat is locked.
+local fourth=Button(false)
+frame.auraFrames[4]=fourth
+fourth.Icon.GetTexCoord=function()return {secret=true},0,0,1,1,0,1,1 end
+combat=true
+frame.auraInfo={{},{},{},{}}
+frame:UpdateAuraButtons()
+assert(queued=='playerAuras' and frame.auraFrames[1].width==52 and fourth.width==30,
+ 'failed in-combat placement did not defer native restoration')
+combat=false
+captured:Refresh()
+assert(frame.auraFrames[1].width==30 and third.width==30,
+ 'queued failure did not restore the whole native row')
+frame.auraFrames[4]=nil
+frame.auraInfo={{},{},{}}
+fourth:Hide()
+frame:UpdateAuraButtons()
+assert(third.width==52 and third.points[1][4]==-112,'row did not recover after the failed buff left')
+-- A button without an icon fails the same way and recovers when hidden.
+frame.auraFrames[3]=Button(true)
+frame.auraFrames[3].Icon=nil
+frame:UpdateAuraButtons()
+assert(frame.auraFrames[1].width==30,'a button with no icon left the row partly laid out')
+frame.auraInfo={{},{}}
+frame:UpdateAuraButtons()
+assert(frame.auraFrames[1].width==52 and frame.auraFrames[2].points[1][4]==-56,
+ 'a failed button leaving the row did not allow the layout to recover')
+frame.auraFrames[3]=nil
+-- A native layout error must release the re-entry guard and let the next
+-- refill retry the rollback, then apply the Suite layout.
+local getCoords=frame.auraFrames[2].Icon.GetTexCoord
+captured:Disable()
+frame.auraFrames[2].Icon.GetTexCoord=function()return nil end
+local updateGrid=frame.UpdateGridLayout
+local failedLayout=false
+frame.UpdateGridLayout=function(self)
+ failedLayout=true
+ error('test native layout failure')
+end
+captured:Enable()
+assert(failedLayout,'fallback did not try the native layout')
+frame.UpdateGridLayout=updateGrid
+frame.auraFrames[2].Icon.GetTexCoord=getCoords
+frame:UpdateAuraButtons()
+assert(frame.auraFrames[1].width==52 and frame.auraFrames[2].points[1][4]==-56,
+ 'a native layout error left the row unable to recover')
 -- Temporary enchants have no DebuffBorder; their native border still resizes.
 -- Native code never resizes it, so the configured size is painted with the style.
 frame.auraFrames[2].DebuffBorder=nil

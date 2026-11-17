@@ -263,7 +263,7 @@ local buttonFamilies = {
         matches = IsMinimalTab,
         apply = "ApplyMinimalTab",
         specs = SpecPair({
-            role = "navigation", activeRole = "navigationActive",
+            role = "navigation", activeRole = "navigationActive", activeEdge = true,
             useControlShape = true, pillHeight = 28, inset = 1,
         }),
     },
@@ -274,7 +274,7 @@ local buttonFamilies = {
         end,
         apply = "ApplyTab",
         specs = SpecPair({
-            role = "navigation", activeRole = "navigationActive",
+            role = "navigation", activeRole = "navigationActive", activeEdge = true,
             useControlShape = true, pillHeight = 28, inset = 1,
         }),
     },

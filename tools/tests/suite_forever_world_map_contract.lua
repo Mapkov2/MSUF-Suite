@@ -23,6 +23,8 @@ local function Widget()
     function w:SetFormattedText(...) self:SetText(string.format(...)) end
     function w:GetText() return self.text end
     function w:SetSize(x, y) self.width, self.height = x, y end
+    function w:GetFrameLevel() return self.level or (self.parent and self.parent:GetFrameLevel() + 1) or 1 end
+    function w:SetFrameLevel(level) self.level = level end
     function w:SetTexture(texture) self.texture = texture end
     function w:SetAtlas(atlas) self.atlas = atlas end
     function w:Show() self.shown = true end
@@ -31,7 +33,8 @@ local function Widget()
     function w:IsShown() calls = calls + 1; return self.shown end
     return w
 end
-local S = { Text = function(text) return text end,
+local filterLabel = "Filtros do mapa"
+local S = { Text = function(text) return text == "Map filters" and filterLabel or text end,
     CreateTexture = Widget, SetFont = function() fontWrites = fontWrites + 1 end,
     GlobalFontPath = function() return "font" end, GamepadUI = function() return gamepad end,
     Install = function(id, module) modules[id] = module end }
@@ -41,6 +44,17 @@ function S.CreateFontString(parent)
     return label
 end
 function S.CreateFrame(_, _, parent, template)
+    if template == "UIPanelButtonTemplate" then
+        local button = Widget()
+        button.parent = parent
+        button:SetSize(40, 22)
+        function button:SetTextToFit(text)
+            self:SetText(text)
+            self.width = #text * 6 + 40
+        end
+        function button:SetScript(event, script) self[event] = script end
+        return button
+    end
     if parent == WorldMapFrame and template == nil then
         local holder = Widget()
         holder.parent = parent
@@ -139,6 +153,11 @@ function GameTooltip:Hide() self.shown = false end
 function GameTooltip:IsShown() return self.shown end
 
 WorldMapFrame = Widget()
+WorldMapFrame.BorderFrame = Widget()
+WorldMapFrame.BorderFrame.NineSlice = Widget()
+WorldMapFrame.BorderFrame.NineSlice:SetFrameLevel(500)
+WorldMapFrame.BorderFrame.TitleContainer = Widget()
+WorldMapFrame.BorderFrame.TitleContainer:SetFrameLevel(510)
 WorldMapFrame.id, WorldMapFrame.activePins = 1429, {}
 local nativeName = Widget()
 nativeName.text = "Elwynn"
@@ -201,6 +220,58 @@ Check(not module.map, "unrelated addon cannot attach the marker layer")
 mapLoaded = true
 waiting.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_WorldMap")
 Check(not waiting.ADDON_LOADED, "map attachment releases the startup listener")
+local choices = {}
+S.ContextMenu = function(owner, generator)
+    generator(owner, { CreateCheckbox = function(_, label, selected, change)
+        choices[label] = { selected = selected, change = change }
+    end })
+end
+S.CloseOwnedContextMenu = function() end
+S.Set = function(id, key, value)
+    Check(id == "foreverWorldMap", "pin filter uses its existing settings owner")
+    module.config[key] = value
+end
+Check(module.filters:IsShown(), "map filters appear when the map opens")
+local border = WorldMapFrame.BorderFrame
+local point, relative, anchor, x, y = unpack(module.filters.point)
+Check(point == "TOPRIGHT" and relative == border and anchor == "TOPRIGHT",
+    "map filters are anchored to the same title bar with or without the quest log")
+Check(y <= 0 and y - module.filters.height > -25, "map filters stay above the quest log and map navigation")
+Check(x <= -76, "map filters leave room for close, maximize and Suite minimize controls")
+Check(module.filters.parent == border.TitleContainer, "map filters inherit the native title layer")
+Check(module.filters.text == filterLabel and module.filters.width == #filterLabel * 6 + 40,
+    "map filters size to the localized label with padding")
+local function ClickTitleAt(cursorX)
+    -- Coordinates relative to the map's right edge. Model the actual Suite
+    -- drag strip ending at -110 at NineSlice frame level + 15.
+    local dragLevel = border.NineSlice:GetFrameLevel() + 15
+    if cursorX <= -110 and module.filters:GetFrameLevel() <= dragLevel then return end
+    if cursorX >= x - module.filters.width and cursorX <= x and module.filters:IsShown() then
+        module.filters:OnClick()
+    end
+end
+ClickTitleAt(x - 1)
+Check(choices["Show flight points"], "the right edge of the filter button opens the menu")
+wipe(choices)
+ClickTitleAt(x - module.filters.width + 1)
+Check(choices["Show flight points"], "the drag strip cannot steal clicks from the left edge of the filter button")
+local flights = choices["Show flight points"]
+Check(flights and flights.selected(), "map filter reads the existing option")
+flights.change()
+Check(module.config.flightPoints == false, "map filter saves the existing option")
+flights.change()
+combat = true
+waiting.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+Check(not module.filters:IsShown(), "map filters hide during combat")
+flights.change()
+Check(module.config.flightPoints == true, "previously opened menu cannot change a setting during combat")
+combat = false
+border.NineSlice:SetFrameLevel(550)
+waiting.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+Check(module.filters:IsShown(), "map filters return after combat")
+wipe(choices)
+ClickTitleAt(x - module.filters.width + 1)
+Check(choices["Show flight points"], "filter clicks still win after the native chrome rises")
 local nativeProviders = 0
 for _ in pairs(WorldMapFrame.dataProviders) do nativeProviders = nativeProviders + 1 end
 Check(nativeProviders == 1, "Suite registered a provider in Blizzard's native refresh loop")
@@ -394,7 +465,7 @@ Flush()
 Check(module.map == WorldMapFrame and #WorldMapFrame.activePins > 0, "re-enable repaints the marker layer")
 
 do
-    local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+    local Strict = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
     local public = S.Public
     S.Public = function(value) return not Strict.IsSecret(value) and public(value) end
     local guidCalls, inside = 0, false

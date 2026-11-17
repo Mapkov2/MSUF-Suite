@@ -1,9 +1,8 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 
--- Supplemental alerts for Blizzard's personal item-loot-toast event, in and
--- out of combat like Blizzard's own toasts. Ordinary bag gains have no
--- equivalent public payload, so they are not inferred here.
+-- Supplemental alerts from the client's personal loot messages on Forever
+-- and Blizzard's personal item-loot-toast event on Retail.
 local ID = "lootToastFilter"
 local M = { toasts = {}, ids = {}, waiting = {}, waitingCount = 0 }
 local MAX_TOASTS = 3
@@ -68,10 +67,24 @@ local ItemArrived
 -- GET_ITEM_INFO_RECEIVED of that item and is filtered and shown then, once.
 local function Wait(self, itemLink, quantity)
     local itemID = C_Item.GetItemInfoInstant(itemLink)
-    if not S.Finite(itemID) or self.waiting[itemID] or self.waitingCount >= MAX_TOASTS then return end
-    self.waiting[itemID] = { itemLink, quantity }
+    if not S.Finite(itemID) then return end
+    local bucket = self.waiting[itemID]
+    if bucket then
+        for _, pending in ipairs(bucket) do
+            if pending.link == itemLink then
+                pending.quantity = pending.quantity + quantity
+                return
+            end
+        end
+    end
+    if self.waitingCount >= MAX_TOASTS then return end
+    if not bucket then
+        bucket = {}
+        self.waiting[itemID] = bucket
+    end
+    bucket[#bucket + 1] = { link = itemLink, quantity = quantity }
     self.waitingCount = self.waitingCount + 1
-    self.context:Event("GET_ITEM_INFO_RECEIVED", ItemArrived)
+    if self.waitingCount == 1 then self.context:Event("GET_ITEM_INFO_RECEIVED", ItemArrived) end
 end
 
 local function StopWaiting(self)
@@ -95,14 +108,31 @@ local function Slot(self, index)
         frame = MakeToast(self.host, index)
         frame.expire = function()
             frame:Hide()
-            frame.link = nil
+            frame.link, frame.quantity = nil, nil
         end
         self.toasts[index] = frame
     end
     return frame
 end
 
+local function SetQuantity(frame, quantity)
+    frame.quantity = quantity
+    frame.count:SetText(quantity > 1 and "x" .. quantity or "")
+end
+
+local function MergeToast(self, itemLink, quantity)
+    for _, frame in ipairs(self.toasts) do
+        if frame.link == itemLink and frame.quantity then
+            SetQuantity(frame, frame.quantity + quantity)
+            self.context:After(POPUP_SECONDS, frame.expire)
+            return true
+        end
+    end
+    return false
+end
+
 local function ShowToast(self, itemLink, quantity, arrived)
+    if MergeToast(self, itemLink, quantity) then return end
     local name, _, quality, _, _, _, _, _, _, icon = C_Item.GetItemInfo(itemLink)
     if not arrived and S.Public(name) and name == nil then return Wait(self, itemLink, quantity) end
     local minQuality = self.config.minQuality
@@ -134,24 +164,27 @@ local function ShowToast(self, itemLink, quantity, arrived)
     frame.link = itemLink
     frame.icon:SetTexture(icon)
     frame.name:SetText(name)
-    frame.count:SetText(quantity > 1 and "x" .. quantity or "")
+    SetQuantity(frame, quantity)
     frame:Show()
     self.context:After(POPUP_SECONDS, frame.expire)
 end
 
 ItemArrived = function(self, _, itemID, success)
-    local entry = S.Finite(itemID) and self.waiting[itemID]
-    if not entry then return end
+    local bucket = S.Finite(itemID) and self.waiting[itemID]
+    if not bucket then return end
     self.waiting[itemID] = nil
-    self.waitingCount = self.waitingCount - 1
+    self.waitingCount = self.waitingCount - #bucket
     if self.waitingCount == 0 then self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
-    if success == true then ShowToast(self, entry[1], entry[2], true) end
+    if not S.Public(success) or success ~= true then return end
+    for _, pending in ipairs(bucket) do
+        ShowToast(self, pending.link, pending.quantity, true)
+    end
 end
 
 local function HideAll(self)
     for _, frame in ipairs(self.toasts) do
         self.context:Cancel(frame.expire)
-        frame.link = nil
+        frame.link, frame.quantity = nil, nil
         frame:Hide()
     end
 end
@@ -177,12 +210,52 @@ local function LootToast(self, _, kind, itemLink, quantity, _, _, personal)
     ShowToast(self, itemLink, quantity)
 end
 
+local function Escape(text)
+    return (text:gsub("([%%%^%$%(%)%.%[%]%*%+%-%?])", "%%%1"))
+end
+
+-- The localized stack message may put its quantity before the hyperlink.
+local function LootPattern(format)
+    if not S.PublicText(format) then return end
+    local parts = { "^" }
+    local cursor, fields, linkIndex = 1, 0, nil
+    while true do
+        local first, last, kind = format:find("%%%d*%$?([sd])", cursor)
+        if not first then break end
+        fields = fields + 1
+        parts[#parts + 1] = Escape(format:sub(cursor, first - 1))
+        parts[#parts + 1] = kind == "s" and "(.+)" or "(%d+)"
+        if kind == "s" then linkIndex = fields end
+        cursor = last + 1
+    end
+    parts[#parts + 1] = Escape(format:sub(cursor)) .. "$"
+    if linkIndex and fields <= 2 then return table.concat(parts), linkIndex end
+end
+
+local function ChatLoot(self, _, message)
+    if not self.active or not S.PublicText(message) or not message:find("|Hitem:", 1, true) then return end
+    local link, count
+    if self.lootMultiple then
+        local first, second = message:match(self.lootMultiple)
+        if self.lootLinkIndex == 1 then link, count = first, tonumber(second)
+        else link, count = second, tonumber(first) end
+    end
+    if not link and self.lootSingle then link, count = message:match(self.lootSingle), 1 end
+    if link and count and count > 0 then ShowToast(self, link, count) end
+end
+
 function M:Enable()
     self.host = self.host or CreateFrame("Frame", nil, UIParent)
     self.host:SetSize(TOAST_WIDTH, (MAX_TOASTS - 1) * TOAST_STEP + TOAST_HEIGHT)
     S.PlaceHost(self.host, self.config)
     self.ids = S.QoLParseIDs(self.config.itemIDs, MAX_IDS)
-    self.context:Event("SHOW_LOOT_TOAST", LootToast)
+    if NS.Client.isForever then
+        self.lootSingle = LootPattern(LOOT_ITEM_SELF)
+        self.lootMultiple, self.lootLinkIndex = LootPattern(LOOT_ITEM_SELF_MULTIPLE)
+        self.context:Event("CHAT_MSG_LOOT", ChatLoot)
+    else
+        self.context:Event("SHOW_LOOT_TOAST", LootToast)
+    end
     if S.editMode then ShowSamples(self) end
 end
 
@@ -201,7 +274,7 @@ function M:HideEditPreview()
 end
 
 function M:Disable()
-    self.context:RemoveEvent("SHOW_LOOT_TOAST")
+    self.context:RemoveEvent(NS.Client.isForever and "CHAT_MSG_LOOT" or "SHOW_LOOT_TOAST")
     HideAll(self)
     StopWaiting(self)
     self.ids = {}

@@ -33,12 +33,23 @@ QuestFrameGreetingPanel_OnShow = function() end
 
 local locked = false
 local deferred = {}
--- Registry.QueueJob runs a job once on the next frame (Core/Registry.lua).
+-- Registry.QueueJob runs a job once on the next frame (Core/Registry.lua),
+-- or after combat when the frame's flush finds combat.
 local queuedJobs = {}
+local registryHeld = {}
 local function QueueJob(job)
+    if locked then
+        registryHeld[#registryHeld + 1] = job
+        return
+    end
     for _, pending in ipairs(queuedJobs) do if pending == job then return end end
     queuedJobs[#queuedJobs + 1] = job
 end
+-- C_Timer.After(0, callback) also runs on the next frame, once per call.
+C_Timer = { After = function(delay, callback)
+    assert(delay == 0, "quest text settles on the next frame")
+    queuedJobs[#queuedJobs + 1] = callback
+end }
 local function NextFrame()
     local jobs = queuedJobs
     queuedJobs = {}
@@ -134,14 +145,19 @@ assert(QuestInfoRewardText.color[1] == 0.24, "unskinned quest changed")
 
 QuestInfoObjectivesText = Text(details, 0.37, 0.23, 0.12)
 callbacks.QuestInfo_Display()
+-- The hook runs inside Blizzard's page build: it only requests the paint.
+assert(QuestInfoObjectivesText.color[1] == 0.37, "QuestInfo_Display hook wrote during the native build")
+NextFrame()
 assert(QuestInfoObjectivesText.color[1] == theme.text[1], "shared objective text stayed dark")
 QuestInfoObjectivesText.parent = other
 callbacks.QuestInfo_Display()
+NextFrame()
 assert(QuestInfoObjectivesText.color[1] == 0.37,
     "shared text stayed light after moving to unskinned parchment")
 
 QuestInfoDescriptionText:SetTextColor(0.18, 0.17, 0.16, 0.8)
 callbacks.QuestInfo_Display()
+NextFrame()
 assert(QuestInfoDescriptionText.color[1] == theme.text[1], "native quest refresh was not repaired")
 theme.text = { 0.84, 0.86, 0.88 }
 listener(nil, "theme", "look")
@@ -153,16 +169,21 @@ assert(greetingButtonText.color[1] == 0.84, "existing NPC quest list stayed dark
 assert(greetingButtonText.fixedColor == true, "dark-skin quest title color must stay fixed")
 greeting:SetTextColor(0.28, 0.25, 0.19)
 callbacks.QuestFrame_SetTextColor(greeting)
+assert(greeting.color[1] == 0.28, "QuestFrame_SetTextColor hook wrote inside the panel's OnShow")
+NextFrame()
 assert(greeting.color[1] == 0.84, "NPC greeting stayed dark")
 callbacks.QuestFrame_SetTitleTextColor(greeting)
+NextFrame()
 assert(greeting.color[1] == theme.title[1], "NPC greeting title stayed dark")
 greetingButtonText:SetTextColor(0.32, 0.26, 0.19)
 local greetingShown = QuestFrameGreetingPanel.scriptHooks and QuestFrameGreetingPanel.scriptHooks.OnShow
 assert(greetingShown, "opening the NPC greeting is not observed on the panel")
 greetingShown(QuestFrameGreetingPanel)
+NextFrame()
 assert(greetingButtonText.color[1] == 0.84, "the NPC quest list shown on opening stayed dark")
 greetingButtonText:SetTextColor(0.31, 0.25, 0.18)
 callbacks.QuestFrameGreetingPanel_OnShow()
+NextFrame()
 assert(greetingButtonText.color[1] == 0.84, "refreshed NPC quest list stayed dark")
 
 -- The hooks run inside Blizzard's display calls: a raising paint is
@@ -171,14 +192,17 @@ local raisingText = Text(details, 0.3, 0.2, 0.1)
 function raisingText:SetTextColor() error("contract: quest text raised") end
 QuestInfoTimerText = raisingText
 local before = #reported
-assert(pcall(callbacks.QuestInfo_Display) and #reported == before + 1,
-    "a raising quest text paint escaped into QuestInfo_Display")
+assert(pcall(callbacks.QuestInfo_Display) and #reported == before,
+    "a quest text paint ran inside QuestInfo_Display")
+assert(pcall(NextFrame) and #reported == before + 1,
+    "a raising quest text paint escaped its next-frame settlement")
 QuestInfoTimerText = nil
 
 -- A color Blizzard paints close to ours is Blizzard's own: it is neither
 -- mistaken for our paint nor overwritten on restore.
 QuestInfoGroupSize = Text(details, 0.30, 0.20, 0.10)
 callbacks.QuestInfo_Display()
+NextFrame()
 assert(QuestInfoGroupSize.color[1] == 0.84, "group size text stays dark")
 QuestInfoGroupSize:SetTextColor(0.85, 0.87, 0.89)
 
@@ -231,6 +255,9 @@ local guarded = Text(details, 0.22, 0.18, 0.12)
 function guarded:IsProtected() return true, false end
 QuestInfoTimerText = guarded
 callbacks.QuestInfo_Display()
+assert(QuestInfoDescriptionText.color[1] == 0.19, "quest text was painted inside the native build in combat")
+-- The settlement is the next frame, not the end of combat.
+NextFrame()
 assert(QuestInfoDescriptionText.color[1] == theme.text[1], "quest text shown in combat stayed dark")
 assert(QuestInfoObjectivesFrame.Objectives[1].color[1] == theme.text[1], "an objective shown in combat stayed dark")
 assert(guarded.color[1] == 0.22 and deferred["quest-text:repaint"],

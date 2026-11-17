@@ -136,6 +136,22 @@ local function EditCategories()
     P.InventoryEditor.Show()
 end
 
+-- Grid or list (ListView.lua): the listView setting, so the choice stays.
+local function ToggleList()
+    if NS.InCombat() then return end
+    InventoryView.scroll = 0
+    S.Set("bags", "listView", M.config.listView ~= true)
+end
+
+local function ListTip(button)
+    if button.bagTool then return end
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    GameTooltip:SetText(S.Text(M.config.listView and "Show as grid" or "Show as list"))
+    GameTooltip:AddLine(S.Text("The list shows name, item level, track, count, binding and vendor value. Click a column title to sort."),
+        .8, .8, .8, true)
+    GameTooltip:Show()
+end
+
 -- Footer controls stand on Blizzard's money row, which moves up when tracked
 -- currencies are shown (ContainerFrameTokenWatcherMixin:UpdateCurrencyFrames).
 local function MakeFooter(frame)
@@ -186,6 +202,10 @@ function Controls.Create()
     if P.EquippedBags.frame:GetParent() ~= InventoryView.chrome then P.EquippedBags.frame:SetParent(InventoryView.chrome) end
     InventoryView.equipped = Button(InventoryView.chrome, "Equipped bags", 116, P.EquippedBags.Toggle)
     InventoryView.equipped:SetPoint("TOPRIGHT", -12, -62)
+    InventoryView.listToggle = Button(InventoryView.chrome, "List", 52, ToggleList)
+    InventoryView.listToggle:SetPoint("TOPLEFT", 288, -62)
+    InventoryView.listToggle:HookScript("OnEnter", ListTip)
+    InventoryView.listToggle:HookScript("OnLeave", GameTooltip_Hide)
     P.InventorySearch.Create(InventoryView, Request)
     InventoryView.sidebar, InventoryView.sidebarChild = P.BagWidgets.Scroll(InventoryView.chrome, 142)
     InventoryView.sidebar:SetPoint("TOPLEFT", 12, -122)
@@ -287,6 +307,16 @@ local function Tools(panel)
     appearance.Tool(view.clearRecent, "Clear recent items", "Interface\\Icons\\INV_Misc_PocketWatch_01", nil, panel)
 end
 
+-- The grid/list switch names what a click shows; its look marks the list.
+local function ListToggle(panel)
+    local button, listed = InventoryView.listToggle, M.config.listView == true
+    if button.listed == listed and button.panel == panel then return end
+    button.listed, button.panel = listed, panel
+    P.BagAppearance.Tool(button, listed and "Show as grid" or "Show as list", "Interface\\Icons\\INV_Misc_Note_01", nil, panel)
+    if not panel then button:SetText(S.Text(listed and "Grid" or "List")) end
+    P.BagAppearance.Button(button, listed)
+end
+
 local function PanelControls(g)
     local view, frame = InventoryView, InventoryView.frame
     for mode, button in pairs(view.tabs) do
@@ -299,6 +329,7 @@ local function PanelControls(g)
     Place(view.cleanup, frame, "TOPRIGHT", -right - 32, -16, 24, 24)
     Place(view.manage, frame, "TOPRIGHT", -right - 64, -16, 24, 24)
     Place(view.clearRecent, frame, "TOPRIGHT", -right - 96, -16, 24, 24)
+    Place(view.listToggle, frame, "TOPRIGHT", -right - 128, -16, 24, 24)
     view.free:ClearAllPoints()
     view.free:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 12)
     view.free:SetSize(96, 32)
@@ -331,6 +362,7 @@ local function WindowControls(g)
     end
     Place(view.equipped, frame, "TOPRIGHT", -12, -62, 116, 22)
     Place(view.clearRecent, frame, "TOPRIGHT", -136, -62, 140, 22)
+    Place(view.listToggle, frame, "TOPLEFT", 288, -62, 52, 22)
     Place(view.manage, frame.MoneyFrame, "BOTTOMRIGHT", -4, 13, 108, 22)
     Place(view.cleanup, view.manage, "TOPLEFT", -113, 0, 108, 22)
     view.free:ClearAllPoints()
@@ -360,6 +392,7 @@ end
 function Controls.Layout(g)
     local view = InventoryView
     P.BagResize.Refresh(view.resize)
+    ListToggle(g.panel)
     if view.controlPanel == g.panel and view.controlTop == g.top then
         P.BagTabSelection.Refresh(view, M.config)
         return

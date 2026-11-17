@@ -104,6 +104,8 @@ local clock = { now = 100, tickers = {}, fired = false }
 GetTime = function() return clock.now end
 IsInInstance = function() return world.instance == true end
 GetUnitSpeed = function() return world.speed end
+-- The geometry follows a camera held active, even with zero player speed.
+IsMouselooking = function() return true end
 PlaySound, PlaySoundFile = function() end, function() end
 SOUNDKIT = { MAP_PING = 1 }
 UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }

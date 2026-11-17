@@ -6,7 +6,7 @@ P.GameplayPage = Gameplay
 -- These features stay in the Suite catalogue and profile. Only their menu
 -- destination changes when the host supports appending to its Gameplay page.
 local MODULES = {
-    "actionTracker", "selfCombatText", "combatStatsHUD", "targetDistance", "threatMeter",
+    "actionTracker", "selfCombatText", "floatingCombatText", "combatStatsHUD", "targetDistance", "threatMeter",
     "burningRushCue", "combatMovementCue", "combatPetStatus", "cursorEffects",
     "battleRes", "groupBloodlust", "groupDeathAlert", "innervateCue", "enemyCastStack",
 }

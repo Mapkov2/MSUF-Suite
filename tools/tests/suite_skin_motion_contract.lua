@@ -71,6 +71,12 @@ local function Target(kind, parent, x, y, width, height)
     function target:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
     function target:IsShown() return self.shown end
     function target:IsEnabled() return self.enabled end
+    function target:SetEnabled(value)
+        if issecretvalue(value) then
+            assert(not (self.hooks.OnEnable or self.hooks.OnDisable), "secret enabled state met an add-on script")
+        end
+        self.enabled = value
+    end
     function target:HasScript(event)
         return event == "OnShow" or event == "OnHide" or self.kind == "Button" or self.kind == "CheckButton"
             or self.kind == "EditBox"
@@ -186,10 +192,32 @@ Check(NS.ControlSkin.Disable(button), "disable failed")
 Check(Motion.count == 0 and not state.hoverOverlay:IsShown(), "skin disable did not cancel motion")
 Check(button:GetHighlightTexture() == nativeHighlight, "disable lost native highlight ownership")
 Check(NS.ControlSkin.Enable(button), "re-enable failed")
-button.enabled = false
-button:Fire("OnDisable"); button:Fire("OnEnter")
+button:SetEnabled(false)
+button:Fire("OnEnter")
 Check(Motion.count == 0, "disabled tooltip hover restarted motion")
-button.enabled = true
+-- The gesture entry refuses a disabled control itself, before the per-frame
+-- safety pass (a second, independent enabled read) is asked about it.
+local coldDisabled = Target("Button", parent)
+Surface.Attach(coldDisabled, { role = "button" })
+coldDisabled:SetEnabled(false)
+local entryPasses, entryVisible = 0, coldDisabled.IsVisible
+function coldDisabled:IsVisible()
+    entryPasses = entryPasses + 1
+    return entryVisible(self)
+end
+coldDisabled:Fire("OnEnter")
+Check(Motion.count == 0 and entryPasses == 0,
+    "disabled tooltip hover restarted motion or reached the animation safety pass")
+coldDisabled.IsVisible = entryVisible
+button:SetEnabled(true)
+button:Fire("OnMouseDown")
+Tick(2)
+Check(NS.Theme.SetAppearance("readableValues", true) and Motion.count > 0,
+    "readability interrupted an active button animation")
+button:SetEnabled(secret)
+Tick()
+Check(Motion.count == 0 and state.fill.points.BOTTOMLEFT.x == 0, "secret disabled state retained a pressed surface")
+button:SetEnabled(true)
 button:Fire("OnEnter"); Tick(2); button:Hide()
 Check(Motion.count == 0 and not state.hoverOverlay:IsShown(), "OnHide did not cancel motion")
 button:Show()
@@ -310,6 +338,116 @@ Tick()
 Check(window:IsShown() and foreignWrites == 0, "window opening touched native visibility/geometry")
 window:Hide()
 Check(Motion.count == 0, "window close was delayed")
+-- An opening window asks each safety question once per animated frame and
+-- again on the next frame. The 2026-11-16 Ironforge trace spent 4.56 ms of
+-- Step's 11.79 ms there: IsForbidden ran twice per window frame (three times
+-- for a control). Accepted trade: none; every answer is still read per frame.
+do
+    local probe = Target("Frame", UIParent)
+    probe.IsEnabled = nil -- A native Frame or GameTooltip has no IsEnabled.
+    local probeState = Surface.Attach(probe, { role = "popup" })
+    local calls, natives = {}, {}
+    for _, name in ipairs({ "IsForbidden", "IsProtected", "IsVisible" }) do
+        local native = probe[name]
+        calls[name], natives[name] = 0, native
+        probe[name] = function(self, ...)
+            calls[name] = calls[name] + 1
+            return native(self, ...)
+        end
+    end
+    local function Open(frames)
+        probe:Hide(); probe:Show()
+        Check(Motion.count == 1, "safety probe window did not start its opening")
+        for name in pairs(calls) do calls[name] = 0 end
+        Tick(frames)
+    end
+    local function Rested(message)
+        Check(Motion.count == 0 and clock:GetScript("OnUpdate") == nil, message .. " kept the driver")
+        Check(probeState.fill.points.BOTTOMLEFT.y == 0 and probeState.fill:GetAlpha() == 1,
+            message .. " left transformed artwork")
+    end
+    Open(3)
+    Check(Motion.count == 1 and probeState.fill.points.BOTTOMLEFT.y < 0, "opening window did not travel")
+    Check(calls.IsForbidden == 3 and calls.IsProtected == 3 and calls.IsVisible == 3,
+        "single object safety pass budget exceeded or a per-frame read was skipped: " .. calls.IsForbidden .. "/"
+        .. calls.IsProtected .. "/" .. calls.IsVisible)
+    probe.protected = true
+    Tick(1)
+    Rested("a window protected during its opening")
+    probe.protected = false
+    Open(2)
+    function probe:IsVisible() return secret end
+    Tick(1)
+    Rested("a secret visibility answer")
+    function probe:IsVisible() return natives.IsVisible(self) end
+    Open(2)
+    probe.IsVisible = nil
+    Tick(1)
+    Rested("a window without a visibility getter")
+    function probe:IsVisible() return natives.IsVisible(self) end
+    Open(2)
+    function probe:IsProtected() return secret, false end
+    Tick(1)
+    Rested("a secret protection answer")
+    function probe:IsProtected() return natives.IsProtected(self) end
+    Open(2)
+    probe.AttachTexture, probe.AttachFontString, probe.AttachFrame, probe.AttachTemplate = Noop, Noop, Noop, Noop
+    Tick(1)
+    Rested("a window that became compositor managed")
+    probe.AttachTexture, probe.AttachFontString, probe.AttachFrame, probe.AttachTemplate = nil, nil, nil, nil
+    -- A forbidden object rejects every member but IsForbidden.
+    Open(2)
+    local members = {}
+    for key, value in pairs(probe) do
+        if key ~= "IsForbidden" then members[key], probe[key] = value, nil end
+    end
+    setmetatable(probe, { __index = function(_, key)
+        if key ~= "forbidden" then error("forbidden window member was read: " .. tostring(key)) end
+        return true
+    end })
+    Tick(1)
+    Check(Motion.count == 0 and clock:GetScript("OnUpdate") == nil, "a forbidden window kept the driver")
+    setmetatable(probe, nil)
+    for key, value in pairs(members) do probe[key] = value end
+    probe.forbidden = nil
+    probe:Hide()
+    -- A control keeps its fresh enabled read on every frame.
+    local enabledReads, isEnabled = 0, button.IsEnabled
+    function button:IsEnabled()
+        enabledReads = enabledReads + 1
+        return isEnabled(self)
+    end
+    -- A retarget joins the running driver; a settled one detaches it again.
+    local attached, setScript = 0, clock.SetScript
+    function clock:SetScript(event, callback)
+        if event == "OnUpdate" and callback then attached = attached + 1 end
+        setScript(self, event, callback)
+    end
+    button:Fire("OnEnter")
+    Check(Motion.count == 1 and attached == 1, "hover did not attach the driver once")
+    enabledReads = 0
+    Tick(2)
+    Check(enabledReads == 2, "animated control frame skipped or repeated its enabled read")
+    button:Fire("OnMouseDown"); Tick(1); button:Fire("OnMouseUp")
+    Check(Motion.count == 1 and attached == 1 and clock:GetScript("OnUpdate") ~= nil,
+        "retarget during a running gesture attached the driver again")
+    button:Fire("OnLeave"); Tick()
+    Check(Motion.count == 0 and clock:GetScript("OnUpdate") == nil, "retargeted gesture retained the driver")
+    button:Fire("OnEnter")
+    Check(Motion.count == 1 and attached == 2 and clock:GetScript("OnUpdate") ~= nil,
+        "a gesture after rest did not attach the driver")
+    button:Fire("OnLeave"); Tick()
+    clock.SetScript, button.IsEnabled = setScript, isEnabled
+end
+-- A native callback can stop a gesture during its first paint.
+do
+    local record = Motion.New({}, Motion.Clear, function() return true end, Noop)
+    Motion.Set(record, 7, 0)
+    Motion.Play(record)
+    Check(Motion.count == 0 and clock:GetScript("OnUpdate") == nil,
+        "a gesture that stopped during paint started an empty driver")
+end
+
 -- Forever's SmartNavigation reads GetScript("OnMouseUp"/"OnMouseDown") of every
 -- frame it scans that is not a Button or EditBox (Blizzard_GamepadSmartNavigation/
 -- Utility.lua:196-206): a skin hook there taints that secure scan. A plain Frame
@@ -525,6 +663,9 @@ Tick()
 Check(action.glyphs.normal.rotation == 0 and action.glyphs.normal.width == 12, "disclosure did not settle")
 disclosure:Fire("OnMouseDown"); Tick(4)
 Check(action.glyphs.normal.width < 12, "bare action click had no motion")
+disclosure:SetEnabled(secret)
+Tick()
+Check(action.glyphs.normal.width == 12 and Motion.count == 0, "secret disabled state retained a pressed glyph")
 NS.WindowActionSkin.Disable(disclosure, "disclosure")
 Check(action.glyphs.normal.width == 12 and Motion.count == 0, "glyph release left a transformed native slot")
 Check(foreignWrites == 0 and clock:GetScript("OnUpdate") == nil, "finished world retained foreign writes/idle motion")
@@ -601,6 +742,63 @@ for _, contentFirst in ipairs({ false, true }) do
     opening:Hide()
 end
 NS.ContentMotion.UnwatchOwner(openingOwner)
+
+local function HoldNextFrame()
+    local earlier, pending = C_Timer.After, {}
+    C_Timer.After = function(delay, callback)
+        Check(delay == 0, "mail work was not scheduled for the next frame")
+        pending[#pending + 1] = callback
+    end
+    return pending, function()
+        C_Timer.After = earlier
+        for _, callback in ipairs(pending) do callback() end
+    end
+end
+
+-- Native mailbox opening still has to run Blizzard's protected reading emote
+-- after OnShow. Exercise already-installed motion hooks in both bind orders.
+do
+    local previousMailbox = MailFrame
+    for _, contentFirst in ipairs({ false, true }) do
+        local mailbox = Target("Frame", UIParent)
+        MailFrame = mailbox
+        if contentFirst then NS.ContentMotion.Watch(mailbox, openingOwner) end
+        local skin = Surface.Attach(mailbox, { role = "shell" })
+        if not contentFirst then NS.ContentMotion.Watch(mailbox, openingOwner) end
+        mailbox:Hide()
+        mailbox:Show()
+        local fade = assert(NS.ContentMotion.records[mailbox], "warm mailbox never acquired its native fade")
+        local plays = fade.group.plays
+        mailbox:Hide()
+        local pending, flush = HoldNextFrame()
+        mailbox:Show()
+        if NS.Client.isForever then
+            Check(fade.group.plays == plays, "mailbox content faded inside the native opening")
+            Check(not skin.motion.index and skin.fill.points.BOTTOMLEFT.y == 0,
+                "mailbox shell painted inside the native opening")
+            mailbox:Hide()
+            Check(#pending == 1, "mailbox motion did not share one next-frame flush")
+            flush()
+            Check(fade.group.plays == plays and not skin.motion.index, "closed mailbox played a queued opening")
+
+            pending, flush = HoldNextFrame()
+            mailbox:Show()
+            mailbox:Hide()
+            mailbox:Show()
+            Check(fade.group.plays == plays and #pending == 1, "rapid mailbox opens did not coalesce")
+            flush()
+        else
+            Check(fade.group.plays == plays + 1 and skin.motion.index and #pending == 0,
+                "Retail mailbox motion did not start inside its ordinary OnShow")
+            flush()
+        end
+        Check(fade.group.plays == plays + 1 and fade.group:IsPlaying() and skin.motion.index
+            and skin.fill:GetAlpha() == 1, "mailbox opening lost its shared fade or shell motion")
+        mailbox:Hide()
+        NS.ContentMotion.Unwatch(openingOwner, mailbox)
+    end
+    MailFrame = previousMailbox
+end
 
 -- A second content-ready signal continues from the displayed opacity.
 local rapid = Target("Frame", UIParent)
@@ -712,6 +910,53 @@ NS.CollapseCollections = { Track = Noop }
 NS.AddonListMotion = { DisableOwner = Noop }
 NS.Checkmarks.SetSettingsMotionProvider = Noop
 Load("Rendering/MenuMotion.lua")
+do
+    local mailbox = Target("Frame", UIParent)
+    local first, second, peer = Target("Button", mailbox), Target("Button", mailbox), Target("Button", mailbox)
+    local previousMailbox, previousFirst, previousSecond = MailFrame, MailFrameTab1, MailFrameTab2
+    local previousHook = hooksecurefunc
+    local refresh, selection = NS.ControlSkin.Refresh, NS.MenuMotion.SelectionChanged
+    MailFrame, MailFrameTab1, MailFrameTab2 = mailbox, first, second
+    local installedHooks, refreshed, animated = {}, {}, {}
+    hooksecurefunc = function(name, callback) installedHooks[name] = callback end
+    Load("Rendering/TabMotion.lua")
+    hooksecurefunc = previousHook
+    NS.ControlSkin.Refresh = function(tab, selected)
+        local log = refreshed[tab] or {}
+        refreshed[tab] = log
+        log[#log + 1] = selected
+    end
+    NS.MenuMotion.SelectionChanged = function(tab) animated[tab] = (animated[tab] or 0) + 1 end
+    for _, tab in ipairs({ first, second, peer }) do NS.ControlSkin.states[tab] = { enabled = true } end
+    local selectTab = assert(installedHooks.PanelTemplates_SelectTab)
+    local deselectTab = assert(installedHooks.PanelTemplates_DeselectTab)
+    local pending, flush = HoldNextFrame()
+    selectTab(second)
+    deselectTab(second)
+    selectTab(first)
+    selectTab(peer)
+    Check(refreshed[peer][1] == true and animated[peer] == 1, "native non-mail tab repaint was delayed")
+    if NS.Client.isForever then
+        Check(not refreshed[first] and not refreshed[second] and not animated[second] and #pending == 1,
+            "mail tab repaint or selection fade ran before the native opening finished")
+        flush()
+        Check(#refreshed[first] == 1 and refreshed[first][1] == true and animated[first] == 1
+            and #refreshed[second] == 1 and refreshed[second][1] == false and not animated[second],
+            "queued mail tabs did not keep only their latest selection state")
+        pending, flush = HoldNextFrame()
+        selectTab(second)
+        mailbox:Hide()
+        flush()
+        Check(#refreshed[second] == 1 and not animated[second], "closed mail tab was painted by an old job")
+    else
+        Check(refreshed[first][1] == true and refreshed[second][1] == true and refreshed[second][2] == false
+            and animated[first] == 1 and animated[second] == 1 and #pending == 0, "Retail mail tab repaint was delayed")
+        flush()
+    end
+    NS.ControlSkin.Refresh, NS.MenuMotion.SelectionChanged = refresh, selection
+    for _, tab in ipairs({ first, second, peer }) do NS.ControlSkin.states[tab] = nil end
+    MailFrame, MailFrameTab1, MailFrameTab2 = previousMailbox, previousFirst, previousSecond
+end
 local nestedRoot, nestedBody = Target("Frame", UIParent), Target("Frame")
 nestedRoot.Content, nestedBody.parent = nestedBody, nestedRoot
 local nestedClient = assert(api:RegisterAddon("NestedContentProbe"))

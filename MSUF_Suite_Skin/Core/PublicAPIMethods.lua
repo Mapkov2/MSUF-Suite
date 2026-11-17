@@ -43,6 +43,7 @@ local nineSlicePieces = {
 
 local capabilities = {
     menuMotion = true,
+    labels = true,
     windowActions = true,
     appearanceSignal = true,
     combatCoalescing = true,
@@ -161,6 +162,14 @@ function ScopeMethods:RegisterMenu(frame, contentOnly)
         return false, "unsupported-frame"
     end
     return RequestVisual(self, frame, "menu", contentOnly == true and "content" or true, true)
+end
+
+-- Style an explicitly supplied FontString. Its addon owns text and layout.
+function ScopeMethods:SkinLabel(label)
+    if not NS.LabelStyle.CanStyle(label) then
+        return false, "unsupported-label"
+    end
+    return RequestVisual(self, label, "label", true, false)
 end
 
 function ScopeMethods:SkinFrame(frame, options)
@@ -404,6 +413,10 @@ function ScopeMethods:GetLook()
     return NS.DB and NS.DB.theme and NS.DB.theme.look or "midnight"
 end
 
+function ScopeMethods:HasTranslucentShell()
+    return NS.Surface.UsesGlassCompositing()
+end
+
 function ScopeMethods:GetAppearance(key)
     local value = NS.DB and NS.DB.theme and NS.DB.theme[key]
     return type(value) ~= "table" and value or nil
@@ -632,6 +645,13 @@ local function OnRegistryChanged(_, domain, key)
     NextSettingsGeneration()
     if domain == "profile" or (domain == "adapter" and key == "master") then
         for _, record in pairs(clients) do NS.Safety.Dispatch(QueueClientSync, record) end
+    end
+    if domain == "typography" then
+        for _, scope in pairs(scopeRecords) do
+            for target, entry in pairs(scope.targets) do
+                if entry.label then QueueEntry(scope, target, entry) end
+            end
+        end
     end
     QueueAppearanceSignal(domain, key)
 end

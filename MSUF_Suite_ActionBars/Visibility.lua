@@ -51,7 +51,9 @@ AB.HasForms = HasForms
 function AB.VisibilityDriver(index, mode, forms, gamepad, reveal)
     if gamepad and M.config[AB.KEYS[index].HideGamepad] then return "hide" end
     if mode == VIS.NEVER then return "hide" end
-    local body = MODES[mode] or "show"
+    -- Custom conditions only add fixed macro tests (Core/Catalog/ActionBars.lua);
+    -- the implicit pet battle, vehicle, group and reveal prefixes stay first.
+    local body = mode == VIS.CUSTOM and NS.ActionBarConditionBody(M.config, index) or MODES[mode] or "show"
     if reveal then body = "[nocombat] show; " .. body end
     if M.config[AB.KEYS[index].GroupOnly] then body = "[nogroup] hide; " .. body end
     if index == BAR.STANCE then
@@ -106,7 +108,7 @@ end
 -- Recompute only on a visibility edge, never in the shared cooldown hook.
 -- With every reused bar asleep, the hook needs no native secret tests at all.
 local function UpdateFeedbackVisibility()
-    for index = 2, 8 do
+    for index = 1, 8 do
         local bar = AB.bars[index]
         if bar and bar.native and not bar.paintDormant then
             AB.nativeFeedbackVisible = true
@@ -378,7 +380,7 @@ local function ApplyBarVisibility(bar, config, forms, gamepad)
     ApplyVisibilityDriver(bar, config, forms, gamepad)
     -- The driver only re-runs the handler when its state changes.
     if forced then AB.Execute(bar.header, AB.SNIPPET.VIS) end
-    local fade = mode == VIS.MOUSEOVER or mode == VIS.MOUSEOVER_OR_COMBAT
+    local fade = NS.ActionBarFades(config, bar.index)
     -- EnableMouseMotion alone leaves the header non-interactive on
     -- Forever. Buttons continue to receive their own clicks.
     bar.header:EnableMouse(fade and not config[keys.ClickThrough])

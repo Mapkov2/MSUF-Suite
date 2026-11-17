@@ -17,12 +17,21 @@ function Contour.Skin(frame)
     if surface and surface.visible ~= false then return surface end
 end
 
-function Contour.Artwork(root, frame)
+-- The root's native artwork hosts are the same for every node of one
+-- discovery walk: they are read once per walk and compared by identity per
+-- node. Nothing is kept across walks, so a later walk sees a replaced host.
+function Contour.Anchors(root, anchors)
     local border = Field(root, "BorderFrame")
-    if frame == Field(root, "PortraitContainer") or frame == Field(border, "PortraitContainer") then
+    anchors.portrait, anchors.borderPortrait = Field(root, "PortraitContainer"), Field(border, "PortraitContainer")
+    anchors.tutorial = Field(border, "Tutorial")
+    return anchors
+end
+
+function Contour.Artwork(anchors, frame)
+    if frame == anchors.portrait or frame == anchors.borderPortrait then
         return Field(frame, "portrait"), Field(frame, "CircleMask"), true
     end
-    if frame == Field(border, "Tutorial") then return Field(frame, "I"), nil, true end
+    if frame == anchors.tutorial then return Field(frame, "I"), nil, true end
 end
 
 local function CopyUV(target, ...)

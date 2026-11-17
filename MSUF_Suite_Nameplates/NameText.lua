@@ -119,32 +119,52 @@ local function Paint(state, label, look)
     state.look = look
 end
 
+-- A name can become readable before the next native update. Keep the
+-- combat-end replay even when the current text would be secret.
+local function Defer(uf, state, label)
+    M.pendingPlates[uf], state.look = true, nil
+    if not uf.UpdateNameOverride then
+        local shown = label:IsShown()
+        if not IsSecret(shown) and shown then state.nativeDirty = true end
+    end
+end
+
 -- Hidden and override calls can return without a native write. Only a shown
 -- ordinary update can replace the saved baseline with fresh native values.
+-- ReadLabel and Protected are repeated inline, same queries in the same
+-- order: a secret name in a raid ends here without painting, so the hook
+-- runs as one Lua frame (2026-11-15 raid trace: 10,213 of 24,848 hook runs
+-- passed the mapping test, 10,153 read a secret name).
 local function OnNativeName(uf)
     local state = states[uf]
-    if not state or not M.active or not Names.inUse then return end
+    if not state or not M.active then return end
     local unit, prefix = state.unit, state.prefix
     if not unit or M.activeUnits[unit] ~= uf or not M.config[prefix] then return end
-    local label = ReadLabel(uf)
-    if not label then
+    -- looks holds owning sides only; this test stands in for Names.inUse.
+    -- Read once here and reused after the label read.
+    local look = looks[prefix]
+    if not look then return end
+    local flag = uf:IsForbidden()
+    if IsSecret(flag) or flag then
         state.look = nil
         return
     end
-    if IsCombatLocked() and Protected(uf, label) then
-        -- A name can become readable before the next native update. Keep
-        -- the combat-end replay even when the current text would be secret.
-        M.pendingPlates[uf], state.look = true, nil
-        if not uf.UpdateNameOverride then
-            local shown = label:IsShown()
-            if not IsSecret(shown) and shown then state.nativeDirty = true end
-        end
+    local label = uf.name
+    if label then flag = label:IsForbidden() end
+    if not label or IsSecret(flag) or flag then
+        state.look = nil
         return
     end
+    if IsCombatLocked() then
+        flag = uf:IsProtected()
+        if IsSecret(flag) or flag then return Defer(uf, state, label) end
+        flag = label:IsProtected()
+        if IsSecret(flag) or flag then return Defer(uf, state, label) end
+    end
     if uf.UpdateNameOverride then return end
-    local shown = label:IsShown()
-    if IsSecret(shown) or not shown then return end
-    local raw, look = label:GetText(), looks[prefix]
+    flag = label:IsShown()
+    if IsSecret(flag) or not flag then return end
+    local raw = label:GetText()
     if IsSecret(raw) then
         if state.captured then ForgetPlain(state) end
         state.look, state.nativeDirty = look, nil
@@ -171,11 +191,36 @@ function Names.FlushRestores()
     if Names.pendingRestore then RestoreInactive() end
 end
 
+-- A side owns the native name only when its look formats or colors it.
+local function Owning(look)
+    if look.enabled or look.customColor or look.shared ~= nil then return look end
+end
+
+-- A side that stopped owning gives back what it wrote and loses its unit
+-- mapping, so the native hook leaves at the mapping test. A restore blocked
+-- by protection keeps the owned values and the unit for the pending-plate
+-- replay (Apply restores and unmaps it then); the hook's side test keeps
+-- that state untouched meanwhile.
+local function ReleaseDormant()
+    for uf, state in pairs(states) do
+        local prefix = state.prefix
+        if prefix and not looks[prefix] then
+            if (state.formatted or state.tinted) and Safe(uf) then Restore(state, uf.name) end
+            state.look = nil
+            if not state.formatted and not state.tinted then state.unit, state.prefix = nil, nil end
+        end
+    end
+end
+
 function Names.Configure(config)
-    looks = { enemy = Text.Compile(config, "enemy"), friendly = Text.Compile(config, "friendly") }
-    Names.inUse = looks.enemy.enabled or looks.friendly.enabled or looks.enemy.customColor or looks.friendly.customColor
-        or looks.enemy.shared ~= nil or looks.friendly.shared ~= nil
-    if not Names.inUse then RestoreInactive() end
+    local enemy, friendly = Text.Compile(config, "enemy"), Text.Compile(config, "friendly")
+    looks = { enemy = Owning(enemy), friendly = Owning(friendly) }
+    Names.inUse = looks.enemy ~= nil or looks.friendly ~= nil
+    if not Names.inUse then
+        RestoreInactive()
+    elseif not looks.enemy or not looks.friendly then
+        ReleaseDormant()
+    end
     if Names.inUse and not hooked then
         hooked = true
         hooksecurefunc("CompactUnitFrame_UpdateName", OnNativeName)
@@ -194,6 +239,8 @@ function Names.Apply(uf, prefix, unit)
     if not enabled then
         Restore(state, label)
         state.look = nil
+        -- A dormant side's replayed restore ends its unit mapping.
+        if Names.inUse and prefix and not look then state.unit, state.prefix = nil, nil end
         return
     end
     if uf.UpdateNameOverride then return end

@@ -56,6 +56,13 @@ local BANK_TAB_SPEC = {
     allowImplicitProtected = true,
 }
 
+local BANK_SLOT_SPEC = {
+    role = "button", radius = 4, inset = 1, interactive = false, motion = false,
+}
+local BANK_PAGE_SPEC = Kit.SurfaceSpec("navigation", 6, 1, false, false, true, "navigationActive")
+BANK_PAGE_SPEC.selectionEdge = true
+local BANK_MONEY_SPEC = Kit.SurfaceSpec("status", 4)
+
 local WARBAND_CARD_SPEC = {
     role = "card",
     activeRole = "navigationActive",
@@ -269,20 +276,38 @@ local function SkinBankTab(state, tab, panel)
     return NS.ControlSkin.ApplyTab(tab, state.owner, BANK_TAB_SPEC) ~= nil
 end
 
-local function SkinBankItem(state, button, panel)
-    if not state or not state.active or not button or not panel
-        or not Kit.ParentIs(button, panel) or NS.IsCombatLocked()
-        or not CategoryEnabled("inventory") then
-        return false
+local function SkinBankSlot(state, button, parent)
+    if not Kit.ParentIs(button, parent) then return false end
+
+    -- The bank refreshes an existing texture's atlas in place. Keep its
+    -- native click states, lock badge and overlays and replace only the plate.
+    if not state.surfaces[button] then
+        if not Kit.Ensure(state, button, BANK_SLOT_SPEC) then return false end
+        Fade(state, Safety.Call(button, "GetNormalTexture"))
+        Fade(state, Field(button, "Background"))
     end
 
-    -- Current BankPanelItemButtonMixin uses the inherited lowercase item icon
-    -- and the inherited IconBorder updated by SetItemButtonQuality. Cooldown,
-    -- SearchOverlay, IconQuestTexture, Background and itemLocation stay native.
+    -- SetItemButtonQuality repaints an owned border when the contents change.
+    if NS.IconSkin.GetOwner(button) == state.owner then return true end
     local icon = Field(button, "icon")
     local qualityBorder = Field(button, "IconBorder")
-    if not icon or not qualityBorder then return false end
-    return Kit.SkinItemIcon(button, state.owner, icon, qualityBorder, true)
+    if icon and qualityBorder then Kit.SkinItemIcon(button, state.owner, icon, qualityBorder, true) end
+    return true
+end
+
+local function SkinBankPage(state, tab, bank)
+    if not Kit.ParentIs(tab, bank) then return false end
+    local selected = Field(tab, "SelectedTexture")
+    if not state.surfaces[tab] then
+        local painted, surface = Kit.Ensure(state, tab, BANK_PAGE_SPEC)
+        if not painted then return false end
+        Kit.FitSideTab(tab, surface)
+        Fade(state, Field(tab, "Background"))
+        Fade(state, selected)
+        Kit.SuppressVertexAlpha(state, Field(tab, "TabGlow"))
+    end
+    NS.Surface.SetActive(tab, Safety.Read(selected, "IsShown") == true)
+    return true
 end
 
 -- Skins at most limit active pool objects; returns how many were skinned.
@@ -297,18 +322,33 @@ local function SkinPool(state, pool, panel, limit, skin)
     return decorated
 end
 
+local function SkinBankChrome(state, bank, panel)
+    if state.bankChrome == bank then return end
+    state.bankChrome = bank
+    if NS.Client.isForever then Kit.FadeAtlas(state, bank, "bank-divider") end
+    local border = Path(panel, "MoneyFrame", "Border")
+    if Kit.Ensure(state, border, BANK_MONEY_SPEC) then Kit.FadeNativeTextures(state, border) end
+    NS.WindowActionSkin.Apply(Field(bank, "CloseButton"), state.owner, "close")
+end
+
 local function ApplyBank(state)
     if not state or not state.active then return false, "disabled" end
     if not CategoryEnabled("inventory") then return true, "disabled" end
     if NS.IsCombatLocked() then return false, "combat" end
-    local panel = Path(_G.BankFrame, "BankPanel")
+    local bank = Field(_G, "BankFrame")
+    local panel = Field(bank, "BankPanel")
     if not panel then return false, "missing" end
+    if Kit.IsHidden(bank) then return true, "waiting" end
 
-    local decorated = SkinBankTab(state, Field(panel, "PurchaseTab"), panel) and 1 or 0
+    SkinBankChrome(state, bank, panel)
+    local decorated = SkinPool(state, Field(panel, "itemButtonPool"), panel, BANK_ITEM_LIMIT, SkinBankSlot)
+    if NS.Client.isForever then
+        decorated = decorated + SkinPool(state, Field(bank, "itemButtonBagPool"), bank, BANK_TAB_LIMIT, SkinBankSlot)
+        decorated = decorated + SkinPool(state, Field(bank, "bankPageTabPool"), bank, BANK_TAB_LIMIT, SkinBankPage)
+    end
+    if SkinBankTab(state, Field(panel, "PurchaseTab"), panel) then decorated = decorated + 1 end
     decorated = decorated + SkinPool(state, Field(panel, "bankTabPool"), panel,
         BANK_TAB_LIMIT, SkinBankTab)
-    decorated = decorated + SkinPool(state, Field(panel, "itemButtonPool"), panel,
-        BANK_ITEM_LIMIT, SkinBankItem)
     return true, decorated > 0 and "applied" or "waiting"
 end
 
@@ -319,16 +359,34 @@ local function RefreshBankTab(tab)
     end
 end
 
-local function RefreshBankItem(button)
-    local panel = Path(_G.BankFrame, "BankPanel")
-    if panel and Kit.ParentIs(button, panel) then
-        ForActiveOwners("inventory", SkinBankItem, button, panel)
+local function RepaintBank()
+    ForActiveOwners("inventory", ApplyBank)
+end
+
+local function QueueBankPaint()
+    if next(DeepWindows.owners) and CategoryEnabled("inventory") then
+        NS.Registry.QueueJob(RepaintBank)
+    end
+end
+
+local function HookBankRebuild(target, method)
+    if not DeepWindows.hooks[method] and Kit.HookFunction(target, method, QueueBankPaint) then
+        DeepWindows.hooks[method] = true
     end
 end
 
 local function InstallBankHooks()
+    -- Gethe live 297d7aaa: Mainline/BankFrame.lua and BankFrame.xml.
+    -- Forever bebcb6bf: Mainline/BankFrameTemplates.lua/.xml and Camelot/BankFrame.lua/.xml.
+    -- Static XML instances already copied their mixins. Queue a single pass
+    -- after native generation, including the nested page and bag rebuilds.
+    local bank = Field(_G, "BankFrame")
+    HookBankRebuild(Field(bank, "BankPanel"), "GenerateItemSlotsForSelectedTab")
+    if NS.Client.isForever then
+        HookBankRebuild(bank, "RefreshBagButtons")
+        HookBankRebuild(bank, "RefreshPageTabs")
+    end
     HookMixin("bank-tab-init", "BankPanelTabMixin", "Init", RefreshBankTab)
-    HookMixin("bank-item-init", "BankPanelItemButtonMixin", "Init", RefreshBankItem)
     -- RefreshAllItemsForSelectedTab refreshes each button's border in place.
     DeepWindows.InstallItemQualityHook()
 end
@@ -557,6 +615,7 @@ local function DisableNow(state)
     SetQuestText(state, false)
     NS.ControlSkin.DisableOwner(state.owner)
     NS.IconSkin.DisableOwner(state.owner)
+    NS.WindowActionSkin.DisableOwner(state.owner)
     HideWarbandCards(state)
     for target in pairs(state.surfaces) do NS.Surface.SetVisible(target, false) end
     Kit.HidePortraitBezels(state.owner)

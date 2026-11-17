@@ -332,7 +332,10 @@ local function TipContent(frame, win, source, session)
     local detail = D.FetchSource(win, guid, creature)
     local targetGroups, targetCount, targetSum = D.TargetGroups(win, source, detail)
     local spellGroups, spellCount, spellSum
-    if win.meterType == D.TYPE.EnemyDamageTaken then spellGroups, spellCount, spellSum = D.GroupSpells(detail) end
+    if win.meterType == D.TYPE.EnemyDamageTaken then
+        spellGroups, spellCount, spellSum = D.GroupSpells(detail)
+        if not spellGroups and NS.InCombat() then return 0, D.Blocked() end
+    end
     local spells = not spellGroups and detail and detail.combatSpells
     if not spellGroups then spellCount = D.Count(spells) end
     local spellShown = min(spellCount, M.config.tooltipRows)

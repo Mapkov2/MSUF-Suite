@@ -130,4 +130,29 @@ NS.DB.enabled = true
 music:EvaluateState(true)
 assert(yellow.Restore())
 assert(Matches(music.Text, gold) and Matches(slider.RightText, gold), "global restore lost the native colors")
+-- Blizzard places the scrollbar at the right edge of the category viewport,
+-- with its lower anchor one UI unit to the left of that edge.
+local rowRight, scrollbarLeft = 183, 182
+local texture = { GetAtlas = function() return "Options_List_Active" end }
+local row = { Texture = texture }
+local paintedRight, selected
+NS.Cosmetics = { Fade = Noop }
+NS.ControlSkin = { ApplyButton = function(button, _, spec)
+    assert(button == row, "non-category frame was skinned as a category")
+    paintedRight = rowRight - spec.inset
+    return true
+end }
+NS.Surface = { SetActive = function(_, active) selected = active end }
+local categoryBox = {
+    RegisterCallback = scroll.RegisterCallback,
+    UnregisterCallback = scroll.UnregisterCallback,
+    ForEachFrame = function(_, visit) visit(row) end,
+}
+local categoryList = { ScrollBox = categoryBox }
+assert(marks.TrackSettingsCategories(categoryList, "settings-highlight", {}))
+assert(selected and paintedRight < scrollbarLeft, "selected category edge meets the scrollbar")
+paintedRight, selected = nil, nil
+categoryBox.init(categoryBox.state, row)
+assert(selected and paintedRight < scrollbarLeft, "recycled category edge meets the scrollbar")
+
 print("Suite Settings text state passed")

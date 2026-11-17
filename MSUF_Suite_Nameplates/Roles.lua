@@ -24,6 +24,25 @@ function Roles.Configure(config)
     Roles.RefreshContext()
 end
 
+local IN_COMBAT = { inCombat = true }
+
+function Roles.SyncQuestEvents(module, callback, metadata)
+    local c = module.config
+    local quest = c.look ~= private.Mode.LOOK_BLIZZARD and (c.enemy and (c.enemyQuestMarker
+        or c.enemyRoleColors and c.enemyQuestColors and c.enemyQuestEnabled ~= false)
+        or c.friendly and c.friendlyQuestMarker) and true or false
+    if module.usesQuests ~= quest then Roles.ClearQuest() end
+    module.usesQuests = quest
+    local listen = quest or metadata or false
+    if listen == (module.questListening or false) then return end
+    module.questListening = listen
+    if listen then
+        module.context:Event("QUEST_LOG_UPDATE", callback, IN_COMBAT)
+    else
+        module.context:RemoveEvent("QUEST_LOG_UPDATE")
+    end
+end
+
 -- The other tanks of the player's group (unit tokens), read on group and role
 -- events only. Threat events then ask at most these units per plate. Returns
 -- a key that changes whenever the list does.

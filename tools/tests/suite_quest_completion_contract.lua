@@ -150,7 +150,7 @@ function foreign:GetName() return "QuestRewardScrollFrameScrollBar" end
 Check(Motion.Track(foreign, "foreign") and foreign.canInterpolateScroll,
     "a same-named foreign scrollbar lost normal smoothing")
 Motion.ReleaseOwner("foreign")
-local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Secrets.Install()
 Secrets.GUARD_NAMES.falsy.Public = true
 secret = Secrets.New("table")

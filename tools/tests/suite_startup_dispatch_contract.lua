@@ -9,7 +9,7 @@ local function Check(value, message)
 end
 local function Noop() end
 
-local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, recovery, skinLoaded)
+local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, recovery, skinLoaded, diagnostics)
     local frames, timers, starts = {}, {}, 0
     local loggedIn, loadOwner = false, nil
     local earlyRecovery = recovery == "early-regen" or recovery == "early-reentry"
@@ -99,8 +99,20 @@ local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, reco
         Check(startBeforeLockdown and suite.startingBeforeLockdown and not locked and starts == 1,
             "early skin refresh was outside the completed module pass")
     end
+    local logRestores, restrictionRestores = 0, 0
+    suite.DevMode = {
+        RestoreLogging = function()
+            Check(dispatching == "ADDON_LOADED" and starts == 0 and MSUFSuiteDB == suite.RootDB,
+                "taint logger did not restore during addon load after database initialization")
+            logRestores = logRestores + 1
+        end,
+        RestoreRestrictions = function()
+            Check(starts == 1 and not locked, "restriction restore ran before startup or during lockdown")
+            restrictionRestores = restrictionRestores + 1
+        end,
+    }
     suite.Database.Initialize = function()
-        suite.RootDB = { skinEnabled = skinLoaded == true }
+        suite.RootDB = { skinEnabled = skinLoaded == true, devModeCVars = diagnostics and {} or nil }
         return true, "ready", 0
     end
     local layoutRepairs, startupRetries = 0, 0
@@ -146,6 +158,7 @@ local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, reco
     if not listenerFirst then ForeignListener() end
     loggedIn = late
     Emit("ADDON_LOADED", "MSUF_Suite")
+    Check(logRestores == (diagnostics and 1 or 0) and restrictionRestores == 0, "incorrect early diagnostics restore")
     if not late then
         loggedIn = true
         Emit("PLAYER_LOGIN")
@@ -282,6 +295,7 @@ local function Scenario(late, combatAtFlush, listenerFirst, installerFirst, reco
     Check(suite.startingModules == nil, "module startup left its catch-up window open")
     Check(suite.startingBeforeLockdown == nil, "startup leaked its pre-lockdown layout scope")
     Check(installerCalls == 1, "queued startup did not make the installer attempt")
+    Check(restrictionRestores == (diagnostics and 1 or 0), "saved restrictions did not restore once after startup")
     Emit("PLAYER_LOGIN")
     Emit("PLAYER_REGEN_ENABLED")
     Check(starts == 1 and installerCalls == 1 and #timers == 0, "startup or installer ran again after completion")
@@ -315,4 +329,6 @@ for _, skinLoaded in ipairs({ false, true }) do
     Scenario(false, false, true, false, "mainline-combat-edge", skinLoaded)
     Scenario(false, false, true, false, "forever-combat-login", skinLoaded)
 end
+Scenario(false, false, true, false, "mainline-combat-reload", false, true)
+Scenario(false, false, true, false, "forever-combat-reload", false, true)
 print("Suite startup dispatch: " .. checks .. " lifecycle checks passed")

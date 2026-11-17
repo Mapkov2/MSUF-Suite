@@ -97,6 +97,8 @@ local function ApplyFill(texture, material, state, alphaScale)
     end
 end
 
+Surface.PaintFill = ApplyFill
+
 local function RoleForState(state)
     if state.active and state.spec.activeRole then
         return state.spec.activeRole
@@ -132,7 +134,7 @@ local function RefreshDepth(state, geometry, material, suppressFill)
     end
 end
 
-local function UsesGlassCompositing()
+function Surface.UsesGlassCompositing()
     -- Looks and color palettes are independently selectable. Resolve the
     -- actual shell material instead of coupling compositing to either name:
     -- a Glass look with another palette and an opaque look with a translucent
@@ -194,7 +196,7 @@ end
 local function SuppressNestedGlassFill(state)
     return FlattensNestedFill(state)
         and state.spec.listItem ~= true
-        and UsesGlassCompositing()
+        and Surface.UsesGlassCompositing()
         and HasFilledStructuralSurfaceAncestor(state)
 end
 
@@ -667,7 +669,11 @@ end
 -- combat does not matter.
 function Surface.TintEdge(target, r, g, b)
     local state = NS.Registry.GetSurface(target)
-    if not state or not state.edge:IsShown() then return false end
+    if not state then
+        local chrome = NS.TooltipChrome
+        return chrome ~= nil and chrome.TintEdge(target, r, g, b)
+    end
+    if not state.edge:IsShown() then return false end
     if r == nil then
         local material = NS.Theme.GetMaterial(RoleForState(state))
         SetVertexColor(state.edge, material.border, NS.Theme.GetBorderOpacity())

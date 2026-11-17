@@ -19,14 +19,15 @@ IsInInstance = function() return instance, instance and "party" or "none" end
 Enum = { TooltipDataType = { Item = 1, Spell = 2, Unit = 3 } }
 -- GameTooltip as addon code meets it: Hide() would run GameTooltip_OnHide in
 -- the caller's context, so the helper must never call it.
-local built
+local built, buildHooks, ownerReads = nil, 0, 0
 suite.TooltipLines = { Add = function(_, kind, callback)
     assert(kind == "AllTypes")
     built = callback
+    buildHooks = buildHooks + 1
 end }
 local tooltip = { shown = false, alpha = 1, scripts = {}, hooks = {} }
 function tooltip:IsShown() return self.shown end
-function tooltip:GetOwner() return self.owner end
+function tooltip:GetOwner() ownerReads = ownerReads + 1; return self.owner end
 function tooltip:GetAlpha() return self.alpha end
 function tooltip:SetAlpha(value) self.alpha = value end
 function tooltip:IsTooltipType(kind)
@@ -78,8 +79,14 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipVisibility.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 assert(module)
 module.active, module.context = true, context
-module.config = { inCombat = true, inInstances = false, scale = 100 }
+module.config = { inCombat = false, inInstances = false, scale = 100 }
 module:Enable()
+for _ = 1, 20 do tooltip:Show() end
+assert(buildHooks == 0 and ownerReads == 0, "scale-only tooltip registered visibility work")
+tooltip:NativeHide()
+module.config.inCombat = true
+module:Refresh()
+assert(buildHooks == 1, "enabling the first visibility rule did not register rebuild handling")
 assert(context.events.PLAYER_REGEN_DISABLED and context.events.PLAYER_REGEN_ENABLED
     and not context.events.PLAYER_ENTERING_WORLD, "combat-only tooltip listener was not selective")
 tooltip:Show()
@@ -191,6 +198,21 @@ tooltip:NativeHide()
 tooltip.owner._msufA3CastTooltip = "secret"
 tooltip:Show()
 assert(tooltip.alpha == 0, "a restricted owner field exempted a foreign tooltip")
+-- Turning off the last rule restores a tooltip already concealed by it.
+tooltip.owner = nil
+tooltip:Show()
+assert(tooltip.alpha == 0)
+for _, option in ipairs({ "inCombat", "inInstances", "hideItems", "hideSpells", "hideUnits" }) do
+    module.config[option] = false
+end
+module:Refresh()
+assert(tooltip.alpha == 1 and next(context.events) == nil, "last rule left a tooltip or listener hidden")
+local reads = ownerReads
+for _ = 1, 20 do tooltip:Show() end
+assert(ownerReads == reads and tooltip.alpha == 1, "registered callback repeated inactive visibility work")
+module.config.inInstances = true
+module:Refresh()
+assert(buildHooks == 1 and tooltip.alpha == 0, "reenabling a rule lost or duplicated its rebuild handling")
 module.active = false
 module:Disable()
 assert(tooltip.alpha == 1, "disable left the tooltip concealed")

@@ -4,17 +4,17 @@ local rendering=tonumber(arg[2]) or 3
 local W=H.New(root,{config={inventoryView=1,fontRendering=rendering,font=arg[3] == "inherit" and "" or arg[3] or "",itemCountSize=13}})
 -- The host's actual MSUF_SetFontChecked passes explicit flags to SetFont;
 -- its other global font rendering settings are not consulted by that boundary.
-local file=assert(io.open(root.."/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/Kernel/MSUF_Libs.lua","rb"))
+local file=assert(io.open(root.."/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames/Kernel/MSUF_Libs.lua","rb"))
 local source=file:read("*a"):gsub("\r\n","\n");file:close()
 local checked=assert(source:match("(local function MSUF_SetFontChecked%b()%s+.-\nend)"))
 MSUF_SetFontChecked=assert(loadstring("local SETFONT_RESULT_IS_READY=true\n"..checked.."\nreturn MSUF_SetFontChecked"))()
 MSUF_GetFontPath=function() return "Interface/Fonts/Global.ttf" end
 MSUF_ResolveFontKeyPath=function(key) return key=="Explicit" and "Interface/Fonts/Explicit.ttf" end
 MSUF_DB={general={fontMonochrome=rendering~=2,fontSlug=rendering~=3}}
-file=assert(io.open(root.."/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/Castbars/MSUF_Castbars_Core.lua","rb"))
+file=assert(io.open(root.."/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames/Runtime/MSUF_Fonts.lua","rb"))
 source=file:read("*a"):gsub("\r\n","\n");file:close()
-local flagsBody=assert(source:match("(GetGlobalFontFlags = function%b()%s+.-\nend)"))
-MSUF_GetFontFlags=assert(loadstring("local EnsureDB=function() return MSUF_DB end\nlocal GetGlobalFontFlags\n"..flagsBody.."\nreturn GetGlobalFontFlags"))()
+local flagsBody=assert(source:match("(local function GetGlobalFontFlags%b()%s+.-\nend)"))
+MSUF_GetFontFlags=assert(loadstring("local EnsureDB=function() return MSUF_DB end\n"..flagsBody.."\nreturn GetGlobalFontFlags"))()
 W.sizes[0]=2;W.Define(101,{name="Potion",class=0});W.Put(0,1,101,5)
 W.Apply();W.OpenBags();W.Settle()
 local actual

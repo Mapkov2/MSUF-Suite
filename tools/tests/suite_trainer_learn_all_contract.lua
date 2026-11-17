@@ -91,6 +91,7 @@ local suite = {
 local ns = {
     Client = { isForever = false },
     IsCombatLocked = function() return combat end,
+    InCombat = function() return combat end,
     Safety = { IsForbidden = function() return false end },
     Print = function(value) messages[#messages + 1] = value end,
     Finish = function(callback, ...) return true, callback(...) end,
@@ -245,6 +246,7 @@ events = {}
 chunk("MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 module = assert(installed)
 suite.instances.trainerLearnAll = module
+module.config = {}
 module:Enable()
 assert(not module.budget and not events.PLAYER_MONEY, "closed trainer did budget work")
 ClassTrainerFrame = trainerFrame
@@ -261,11 +263,15 @@ Emit("PLAYER_MONEY")
 assert(serviceReads == reads and budget.textWrites == writes, "unchanged funds reread services or rewrote text")
 gold = 501
 Emit("PLAYER_MONEY")
-assert(budget.text == "2 paid · 500c" and serviceReads == reads, "balance update rescanned or kept outdated shortfall")
+assert(budget.text == "2 paid · 500c\n1c left after training" and serviceReads == reads, "balance update rescanned or kept outdated shortfall")
 services[4][2] = "used"
 Emit("TRAINER_UPDATE")
 Flush()
-assert(budget.text == "1 paid · 300c", "changed trainer list kept stale costs")
+assert(budget.text == "1 paid · 300c\n201c left after training", "changed trainer list kept stale costs")
+module.config.reserveSilver = 3
+Emit("PLAYER_MONEY")
+assert(budget.text:find("99c short of your reserve", 1, true), "reserve deficit must use remaining gold")
+module.config.reserveSilver = 0
 services[3][5] = secretCost
 Emit("TRAINER_UPDATE")
 Flush()

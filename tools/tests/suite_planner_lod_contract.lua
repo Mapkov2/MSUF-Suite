@@ -1,7 +1,7 @@
 -- Real Core, shared runtime, Options and standalone Planner TOCs. The optional
 -- QoL addon is deliberately unavailable throughout this boot.
 local root, flavor = assert(arg[1]), arg[2] or "Mainline"
-local host = root .. "/../MidnightSimpleUnitFrames"
+local host = root .. "/../MidnightSimpleUnitFrames-7.0"
 assert(flavor == "Mainline" or flavor == "Forever")
 local checks = 0
 local function Check(value, message) assert(value, message) checks = checks + 1 end

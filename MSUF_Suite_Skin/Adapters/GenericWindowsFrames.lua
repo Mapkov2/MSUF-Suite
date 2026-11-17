@@ -353,10 +353,13 @@ local function RootSpec(mode, allowImplicitProtected)
     if not spec then
         spec = {
             role = RootRole(mode),
+            motion = ModeValue(mode, "motion", nil),
+            fadeOnly = ModeValue(mode, "fadeOnly", nil),
             radius = ModeValue(mode, "radius", 8),
             inset = ModeValue(mode, "inset", 0),
             border = ModeValue(mode, "border", nil),
             fillVisible = ModeValue(mode, "fillVisible", true) ~= false,
+            keepGlassFill = ModeValue(mode, "keepGlassFill", nil),
             listItem = ModeValue(mode, "listItem", false) == true,
             allowImplicitProtected = allowImplicitProtected,
         }
@@ -403,6 +406,21 @@ local function OwnedMode(frame, mode)
     return mode
 end
 
+local primaryButtonSpec = { role = "buttonPrimary", motion = false }
+local function StylePrimaryButton(frame, owner, mode)
+    local key = ModeValue(mode, "primaryButton", nil)
+    if not key or NS.IsCombatLocked() then return end
+    local section = ModeValue(mode, "primarySection", nil)
+    local parent = frame
+    if section then parent = Field(frame, section) end
+    if not Safety.Public(parent) then return end
+    local button = Field(parent, key)
+    if Safety.Public(button) and button == nil and not section then button = Field(_G, key) end
+    if Safety.Public(button) and Safety.CanDecorate(button) then
+        NS.ControlSkin.ApplyButton(button, owner, primaryButtonSpec)
+    end
+end
+
 local function ApplyFrameNow(frame, owner, mode)
     if not frame then return false, "invalid", nil end
     NS.WindowControls.TrackFocus(frame, owner)
@@ -433,6 +451,7 @@ local function ApplyFrameNow(frame, owner, mode)
         SkinExplicitFields(frame, owner, metrics)
     end
     TraverseTree(frame, owner, metrics, TraversalLimits(mode))
+    StylePrimaryButton(frame, owner, mode)
 
     local ownerState = OwnerState(owner)
     ownerState.active = true

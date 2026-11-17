@@ -399,6 +399,60 @@ do
     assert(not ButtonFor(W, 2, 7).shown, "stacks merge again after the guild bank closed")
 end
 
+---------------------------------------------------------------- Forever junk
+for _, client in ipairs({ "Mainline", "Forever" }) do
+    local W = H.New(root, { client = client, config = { inventoryView = 3, mergeStacks = false } })
+    local forever = client == "Forever"
+    W.sizes[0], W.sizes[1] = 4, 3
+    W.Define(100, { quality = Enum.ItemQuality.Poor, maxStack = 1 })
+    W.Define(101, { quality = Enum.ItemQuality.Common, maxStack = 1 })
+    W.Put(0, 1, 100)
+    local duplicate = W.Put(1, 1, 100)
+    W.Put(1, 2, 100, 1, { link = "item:100:variant" })
+    W.Put(1, 3, 100, 1, { bound = true })
+    W.Put(0, 2, 101)
+    W.Put(0, 3, 101)
+    W.Apply()
+    W.OpenBags()
+    W.Settle()
+    local first, second = ButtonFor(W, 0, 1), ButtonFor(W, 1, 1)
+    assert(first.shown and second.shown == (not forever), client .. " must use its own junk display")
+    assert(first.Count.shown == forever and (not forever or first.Count.text == "2"), "junk total must match its slots")
+    assert(ButtonFor(W, 1, 2).shown and ButtonFor(W, 1, 3).shown, "junk variants and binding states stay separate")
+    assert(ButtonFor(W, 0, 2).shown and ButtonFor(W, 0, 3).shown, "ordinary items stay separate")
+    W.Hover(first)
+    assert(W.GameTooltip:Has("Combined: 2 items in 2 stacks") == forever, "the tooltip must explain the total")
+
+    if forever then
+        duplicate.locked = true
+        W.Fire("ITEM_LOCK_CHANGED", 1, 1)
+        W.Settle()
+        assert(second.shown and not first.Count.shown, "a locked junk slot must stay separate")
+        duplicate.locked = false
+        W.Fire("ITEM_LOCK_CHANGED", 1, 1)
+        W.Settle()
+        assert(not second.shown and first.Count.text == "2", "unlocked junk must regroup")
+        W.OpenGuildBank()
+        W.Settle()
+        assert(second.shown and not first.Count.shown, "transfers must expose every junk slot")
+        W.CloseGuildBank()
+        W.Settle()
+        assert(not second.shown and first.Count.text == "2", "junk must regroup after transfers close")
+        W.Native(MerchantFrame.Show, MerchantFrame)
+        W.Fire("MERCHANT_SHOW")
+        W.Settle()
+        assert(second.shown and not first.Count.shown, "the merchant must show each slot separately")
+        W.Native(MerchantFrame.Hide, MerchantFrame)
+        W.Fire("MERCHANT_CLOSED")
+        W.Settle()
+        assert(not second.shown and first.Count.text == "2", "junk must regroup after the merchant closes")
+        W.Native(first.Click, first, "LeftButton")
+        W.Settle()
+        assert(W.cursor.count == 1 and W.Item(1, 1) == duplicate and second.shown and not second.Count.shown,
+            "clicking grouped junk must pick up only the displayed slot and reveal the remaining copy")
+    end
+end
+
 ---------------------------------------------------------------- custom category limit
 do
     local ids = {}

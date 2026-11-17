@@ -52,8 +52,8 @@ local ENEMY = { key = "enemy", area = "enemies", title = "Enemy appearance", ope
 local function BaseSections()
     return {
         { key = "native", area = "general", title = "Nameplate styling",
-          keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry", "levelAppearance",
-                "classColors", "playerGuildNames", "playerTitles", "personalAuras", "auraClickthrough" } },
+          keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry",
+                "classColors", "playerTitles" } },
         { key = "distance", area = "general", catalog = "distance" },
         ENEMY,
         { key = "castbar", area = "casts", catalog = "castbar", positions = "castbar" },

@@ -89,8 +89,9 @@ local function Check(client)
     assert(W.S.Set("bags", "desaturateInactiveQuestItems", false))
     W.Settle()
     local events = W.P.InventoryView.events
-    assert(not events:IsEventRegistered("QUEST_REMOVED") and not events:IsEventRegistered("ITEM_LOCK_CHANGED"),
-        "disabling the tint must unregister its view events")
+    assert(not events:IsEventRegistered("QUEST_REMOVED"), "disabling the tint must unregister the quest event")
+    assert(events:IsEventRegistered("ITEM_LOCK_CHANGED") == (client == "Forever"),
+        "only Forever still needs lock updates for junk after disabling the tint")
     Gray(1, false, "turning off the option must clear the tint immediately")
     Gray(4, true, "a locked slot must remain gray")
     Gray(8, true, "the separate junk setting must remain in effect")

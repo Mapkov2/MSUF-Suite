@@ -11,7 +11,7 @@
 -- a Lua read of a secret raises here, and a compare or truth test on one in
 -- KickReady.lua is recorded.
 local root = assert(arg[1], "repository root required")
-local classic = root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames"
+local classic = root .. "/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames"
 
 ------------------------------------------------------------------ secrets
 -- Classic MSUF's strict helper: type() answers a secret's kind,
@@ -542,7 +542,7 @@ local function Has(header, call, source)
     assert(Body(header, source):find(call, 1, true), header .. " must call " .. call)
 end
 Has("local function Paint(uf)", "KickReady.Paint(cast, prefix, unit)")
-Has("local function RestorePlate(uf)", "KickReady.Restore(cast)")
+Has("local function RestorePlate(", "KickReady.Restore(cast)")
 Has("function CastTime.OnChanged(module, event, unit, ...)", "private.KickReady.OnCast(cast, unit, event)", castTime)
 Has("function CastTime.Repaint()", "private.KickReady.Paint(cast, private.PlatePrefix(uf), M.units[health])", castTime)
 Has("function M:Disable()", "KickReady.Disable()")

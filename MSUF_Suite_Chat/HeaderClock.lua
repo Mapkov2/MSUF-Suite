@@ -36,7 +36,7 @@ function C.PaintClock(visual, frame, config, top, text)
     label:SetShadowOffset(1, -1)
     label:ClearAllPoints()
     local tools = config.headerToolbar and (visual.previewToolbar or frame == ChatFrame1 or frame.isDocked)
-    label:SetPoint("RIGHT", frame, "TOPRIGHT", tools and -108 or config.copyMessages and -56 or -8,
+    label:SetPoint("RIGHT", frame, "TOPRIGHT", tools and -(C.TOOLBAR_WIDTH + 8) or config.copyMessages and -56 or -8,
         math.max(21, top) - (config.tabHeight or 24) / 2 + (config.tabY or 0))
     label:SetWidth(tools and 80 or 94)
     label:SetJustifyH("RIGHT")
@@ -52,8 +52,8 @@ function C.RefreshClocks()
     end
     if not M.active or not M.config.headerClock then return end
     local any
-    for frame, visual in pairs(M.visuals) do
-        if visual.headerClock and frame:IsVisible() then
+    for _, visual in pairs(M.visuals) do
+        if visual.headerClock then
             any = true
             break
         end
@@ -66,8 +66,10 @@ function C.RefreshClocks()
         hour, minute = S.ReadInfoSource("clockTime")
     end
     local text = C.ClockText(M.config, hour, minute)
-    for frame, visual in pairs(M.visuals) do
-        if visual.headerClock and frame:IsVisible() then visual.headerClock:SetText(text) end
+    -- Hidden windows' labels too: no Show/Hide hook on Blizzard's frames,
+    -- which FCFDock_SelectWindow and FCF_OpenTemporaryWindow dispatch.
+    for _, visual in pairs(M.visuals) do
+        if visual.headerClock then visual.headerClock:SetText(text) end
     end
     local stamp = S.ReadInfoSource("clockStamp")
     local delay = S.Finite(stamp) and 60 - stamp % 60 or 60
@@ -76,11 +78,6 @@ end
 
 function C.ApplyClock(visual, frame, config, top)
     C.PaintClock(visual, frame, config, top)
-    if config.headerClock and not visual.clockHooked then
-        frame:HookScript("OnShow", C.RefreshClocks)
-        frame:HookScript("OnHide", C.RefreshClocks)
-        visual.clockHooked = true
-    end
 end
 
 function C.DisableClock()

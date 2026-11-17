@@ -168,7 +168,7 @@ end
 -- by their own contracts).
 local function SuiteNamespace()
     local suite = {
-        Database = { StageFactoryReset = Logger("StageFactoryReset", true) },
+        Database = { StageFactoryReset = Logger("StageFactoryReset", true), GetActiveProfileName = function() return "A" end },
         GetOverview = Logger("GetOverview", { version = "1.0" }),
         Changelog = { entries = { { version = "1.0" } } },
         Installer = { Open = Logger("Open", true), MaybeShow = Logger("MaybeShow"),

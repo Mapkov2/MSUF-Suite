@@ -20,8 +20,7 @@ P.SetTranslatedText=function(font,text) font:SetText(text) end
 local level
 for _,button in ipairs(ui.layerButtons) do if button.layerKey=='level' then level=button end end
 assert(level,'real level chip missing')
-level.scripts.OnEnter(level)
-local hint=ui.hint:GetText()
+local hint=assert(level.tooltipText,'level chip did not register a native tooltip')
 level.scripts.OnClick(level,'LeftButton')
 assert(changed and enabled==false,'real level chip did not change live setting')
 print('level tooltip:',hint,'live enemyLevelEnabled after click:',enabled)

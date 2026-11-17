@@ -1,7 +1,7 @@
 -- Native LFG data, pooled rows and the visible/outdoor lifetime of the in-row labels.
 local root = assert(arg[1], "Suite root required")
 local runtime = arg[2] or root .. "/MSUF_Suite_QualityOfLife/GroupFinderLocations.lua"
-local Secrets = assert(loadfile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua"))()
+local Secrets = assert(loadfile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua"))()
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 Secrets.Install()
 Secrets.GUARD_NAMES.falsy.Public, Secrets.GUARD_NAMES.falsy.Finite = true, true

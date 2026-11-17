@@ -221,18 +221,16 @@ local function ChatChanged(module) module:Sync() end
 local function NewWindow()
     if M.active then M:Sync() end
 end
+-- New and temporary windows arrive with Suite.ChatState's window report on
+-- the next frame. A post-hook on FCF_OpenNewWindow or FCF_OpenTemporaryWindow
+-- would run inside the tab menu and the whisper router.
+local PRIVACY_WATCH = { windows = NewWindow }
 
 function M:Enable()
     S.RegisterSlash(COMMAND, Toggle, "/msufguildprivacy")
     self.context:Event("UPDATE_CHAT_WINDOWS", ChatChanged)
     self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", ChatChanged)
-    -- Blizzard calls both window openers by name (FloatingChatFrame.lua,
-    -- ChatFrameUtil.lua, UnitPopupSharedButtonMixins.lua).
-    if not self.hooked then
-        hooksecurefunc("FCF_OpenNewWindow", NewWindow)
-        hooksecurefunc("FCF_OpenTemporaryWindow", NewWindow)
-        self.hooked = true
-    end
+    NS.ChatState.Watch(self, PRIVACY_WATCH)
     Watch(self)
     self:Sync()
 end
@@ -244,6 +242,7 @@ end
 
 function M:Disable()
     S.UnregisterSlash(COMMAND, Toggle)
+    NS.ChatState.Unwatch(self)
     Unwatch(self)
     self.covered = false
     for _, overlay in pairs(self.overlays) do overlay:Hide() end

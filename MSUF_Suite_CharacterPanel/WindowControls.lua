@@ -89,12 +89,56 @@ local function NativeRailGap(root, right, scale)
     return max(0, railRight * railScale - right * scale)
 end
 
+local function SetMaskAlpha(mask, alpha)
+    if NS.Number(mask:GetAlpha()) ~= alpha then mask:SetAlpha(alpha) end
+end
+
+function Window.SyncGlass(view, force)
+    if not (view.glassLook or view.glassApplied) or not view.nativeLayout then return end
+    local geometry = NS.Host.Skin.CharacterGeometry
+    if not geometry or not geometry.SetGlass then return end
+    local enable = view.glassLook and view.frame:IsVisible() and view.characterView ~= "classic" and not NS.Suite.GamepadUI()
+        and view.surfaces[view.frame].themed
+    local withGear = view.gear:IsShown()
+    local withModel = withGear and view.modelHost:IsShown()
+    if not force and enable == view.glassEnabled and withModel == view.glassWithModel and withGear == view.glassWithGear then return end
+    view.glassEnabled, view.glassWithModel, view.glassWithGear = enable, withModel, withGear
+    local glass, modelAbove, slotsAbove = geometry.SetGlass(view.nativeRoot, view.frame, enable, withModel, withGear)
+    if view.glassApplied ~= glass and view.closeArt then
+        -- Glass already hides the native X artwork via the host's alpha.
+        view.closeArt.caption.base:SetShown(not glass)
+    end
+    view.glassApplied = glass
+    SetMaskAlpha(view.artMask, glass and 0 or 1)
+    local modelMask = not glass or modelAbove
+    SetMaskAlpha(view.reportMask, (modelMask or slotsAbove) and 1 or 0)
+    SetMaskAlpha(view.gearMask, modelMask and 1 or 0)
+end
+
+local function HasTranslucentShell(skin)
+    if not NS.Host.Client.isForever or not skin then return false end
+    if skin.HasTranslucentShell then return skin:HasTranslucentShell() end
+    return skin.GetLook and skin:GetLook() == "foreverGlass" or false
+end
+
+function Window.RefreshGlass(view, skin)
+    local glass = HasTranslucentShell(skin)
+    if glass ~= (view.glassLook == true) then
+        view.glassLook = glass
+        local alpha = glass and .24 or 1
+        SetMaskAlpha(view.headerFill, alpha)
+        SetMaskAlpha(view.tabFill, alpha)
+    end
+end
+
 function Window.HostNativeView(view)
     local frame, root, plan = view.frame, view.nativeRoot, view.nativeLayout
     frame:SetParent(root)
     frame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
     frame:SetFrameStrata(plan.strata)
     frame:SetFrameLevel((plan.rootLevel or 0) + plan.artLevel)
+    frame:HookScript("OnShow", function() Window.SyncGlass(view) end)
+    frame:HookScript("OnHide", function() Window.SyncGlass(view) end)
 end
 
 function Window.CreateChild(view, kind, parent)
@@ -420,7 +464,14 @@ Window.CaptionActions = {
 
 local function NativeAction(button, action)
     local callback = button.view.callbacks.windowAction
-    if callback then return callback(action) end
+    if callback then return callback(action, button) end
+end
+
+-- Blizzard's panel manager runs inside HideUIPanel, so Suite code never
+-- minimizes the native Character window: on hover the skin lays its secure
+-- delegate over this cell, which clicks Blizzard's X (WindowControlDelegate).
+local function BindSecureMinimize(button)
+    if not button.secureMinimize then button.secureMinimize = NativeAction(button, "bindMinimize") == true end
 end
 
 Window.NativeCaptionActions = {
@@ -461,6 +512,9 @@ function Window.CreateCaption(view, header, close, tooltip, text, base)
         local action = index == 1 and close or actions[entry[1]]
         if action and not view.embedded then cell:SetScript("OnClick", action) end
         tooltip(cell, NS.Text(entry[2]))
+        if view.nativeLayout and entry[1] == "minimize" and not view.embedded then
+            cell:HookScript("OnEnter", BindSecureMinimize)
+        end
         cells[index] = cell
     end
     window.captionCells, window.maximize, window.minimize = cells, cells[2], cells[3]

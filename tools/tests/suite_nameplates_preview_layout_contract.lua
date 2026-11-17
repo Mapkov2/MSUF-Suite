@@ -45,7 +45,21 @@ Frame = function(parent)
     function f:GetHeight() local a, b = Resolve(self, 2); return b - a end
     function f:SetText(t) self.text = t end
     function f:GetText() return self.text or "" end
-    function f:GetStringWidth() return #self:GetText() * 6 end
+    function f:GetStringWidth() return #self:GetText() * (self.charWidth or 6) end
+    f.GetUnboundedStringWidth = f.GetStringWidth
+    function f:SetWordWrap(wrap) self.wordWrap = wrap end
+    function f:EnableMouseWheel(enabled) self.mouseWheel = enabled end
+    function f:SetScrollChild(child)
+        self.scrollChild = child
+        child:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+    end
+    function f:GetVerticalScroll() return self.scrollOffset or 0 end
+    function f:GetVerticalScrollRange() return math.max(0, self.scrollChild:GetHeight() - self:GetHeight()) end
+    function f:SetVerticalScroll(offset)
+        self.scrollOffset = offset
+        self.scrollChild:ClearAllPoints()
+        self.scrollChild:SetPoint("TOPLEFT", self, "TOPLEFT", 0, offset)
+    end
     function f:SetScript(key, fn) self.scripts[key] = fn end
     function f:GetScript(key) return self.scripts[key] end
     function f:HookScript(key, fn)
@@ -90,15 +104,19 @@ Frame = function(parent)
 end
 
 local function LoadFixedHeaderAPI(host, M, W, T)
-    -- Classic moved the docked-preview widgets into their own file; Retail
-    -- still keeps them in MSUF_Menu2_Widgets.lua.
     local dir = root .. "/../" .. host .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/"
     local path = dir .. "MSUF_Menu2_Widgets_PreviewDock.lua"
     local file = io.open(path, "rb")
-    if not file then
-        path = dir .. "MSUF_Menu2_Widgets.lua"
-        file = assert(io.open(path, "rb"))
+    if file then
+        file:close()
+        M.Widgets, M.Theme = W, T
+        W.RegisterSearchObject = Noop
+        T.ReducedMotionEnabled = function() return true end
+        assert(loadfile(path))("MSUF", { MSUF2 = M, Require = function() return function(region) return region end end })
+        return
     end
+    path = dir .. "MSUF_Menu2_Widgets.lua"
+    file = assert(io.open(path, "rb"))
     local source = file:read("*a"); file:close()
     local first = assert(source:find("function W.AttachStickyPageHeader(", 1, true))
     local last = assert(source:find("function M.CloseFixedPreviewExpander(", first, true))
@@ -124,8 +142,20 @@ local function CheckAbove(upper, lower, gap, message)
     local _, _, _, lt = Rect(lower)
     assert(ub >= lt + gap, message)
 end
+local function CheckSeparate(first, second, message)
+    local l, b, r, t = Rect(first)
+    local sl, sb, sr, st = Rect(second)
+    assert(r <= sl or sr <= l or t <= sb or st <= b, message)
+end
+local function CheckButtonLabel(button, expected)
+    local label = button._msuf2Label
+    assert(label:GetText() == expected, "unexpected button caption: " .. label:GetText())
+    assert(label.wordWrap == false, "button label can wrap: " .. expected)
+    assert(label:GetWidth() >= label:GetUnboundedStringWidth(), "button label clips: " .. expected)
+    CheckInside(label, button, "button label escaped its frame: " .. expected)
+end
 
-for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
+for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) do
     local shared = { Fallbacks = { Identity = function(v) return v end } }
     assert(loadfile(root .. "/../" .. host
         .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_PreviewHelpers.lua"))("MSUF", {
@@ -133,13 +163,21 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         })
     for _, useShared in ipairs({ true, false }) do
         local M, W, T = {}, {}, { colors = { muted = {}, text = {} } }
+        function M.AddTooltip(widget, _, body) widget.tooltipText = body end
         M.PreviewHelpers = useShared and {
             FlowLayerChips = shared.PreviewHelpers.FlowLayerChips,
             CreateLayerButton = shared.PreviewHelpers.CreateLayerButton,
         } or {}
         T.Font = function(parent, _, text) local f = Frame(parent); f:SetText(text); return f end
         T.Button = function(parent, text, width, height)
-            local f = Frame(parent); f:SetText(text); f:SetSize(width, height); return f
+            local f = Frame(parent)
+            f:SetSize(width, height)
+            local label = T.Font(f, nil, text)
+            label:SetHeight(14)
+            label:SetPoint("LEFT", f, "LEFT", 12, 0)
+            label:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+            f._msuf2Label = label
+            return f
         end
         M.TrackRefresh = Noop
         M.SetMenuStateValue = function(field, value) M[field] = value end
@@ -147,12 +185,6 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
             Create = function(body, options)
                 body.selectionOptions = options
                 local bar = Frame(body); bar:SetHeight(24); body.selection = bar; return bar
-            end,
-            CreatePicker = function(body, tools)
-                local picker = Frame(tools)
-                picker:SetSize(152, 20)
-                body.picker = picker
-                return picker
             end,
             SetShown = function(body, shown) body.selection:SetShown(shown) end,
             Refresh = Noop,
@@ -175,6 +207,10 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", styleProvider)
         local style = {
             LevelMode = styleProvider.NameplateStyle.LevelMode,
+            OutlineSize = styleProvider.NameplateStyle.OutlineSize,
+            AggroHighlightEnabled = styleProvider.NameplateStyle.AggroHighlightEnabled,
+            BarSettings = styleProvider.NameplateStyle.BarSettings,
+            SharedBars = styleProvider.NameplateStyle.SharedBars,
             CreateBorder = function() return {} end, PaintBorder = Noop,
             NativeBit = function() return false end, NativeToggle = function() return false end,
             ClassicNativePlate = function() return false end,
@@ -185,21 +221,29 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         local core = { IsSecret = function() return false end, Number = function(v) return type(v) == "number" end,
             InCombat = function() return false end }
         assert(loadfile(root .. "/MSUF_Suite/Core/PreviewKit.lua"))("MSUF_Suite", core)
+        local opened
         local P = { M = M, W = W, T = T, Tr = function(v) return v end,
             Get = function(_, key) if values[key] ~= nil then return values[key] end; return 1 end,
             Set = function(_, key, value) values[key] = value; writes = writes + 1 end,
             Combat = function() return false end,
+            SetTranslatedText = function(label, text) label:SetText(text) end,
+            SetButtonText = function(button, text) button._msuf2Label:SetText(text) end,
             Suite = { NameplateStyle = style, Client = {}, Public = function() return true end,
                 PreviewKit = core.PreviewKit },
+            S = { Config = function() return values end },
             NameplatesEditorMarkers = { TargetActive = function() return false end },
             NameplatesSize = { Build = Noop },
-            OpenNameplateSetting = Noop,
+            OpenNameplateSetting = function(key) opened = key return true end,
+            OpenNameplateStatusSection = function(side) opened = side .. ".status" end,
+            OpenNameplateStatusItem = Noop,
+            OpenNameplateCastDetail = function(side, tab) opened = side .. "." .. tab return true end,
         }
+        assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", P.Suite)
         local bridge = { HostBridge = {} }
         assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", bridge)
         P.HM = bridge.HostBridge.Menu2(M)
         assert(loadfile(arg[2] or root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua"))("Options", P)
-        assert(loadfile(root .. "/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options", P)
+        assert(loadfile(arg[4] or root .. "/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options", P)
         assert(loadfile(arg[3] or root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesMultiPreview.lua"))("Options", P)
@@ -214,15 +258,11 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         end
         values.look, ui.sampleKind = 4, "enemy"
         values.enemyGlowMode, values.enemyGlowEnabled = 2, true
-        values.enemyFillTexture, values.enemyTextureEnabled = 2, true
-        for _, key in ipairs({ "glow", "fillTexture" }) do
-            local button = Layer(key)
-            button.scripts.OnClick(button, "LeftButton")
-            button.scripts.OnClick(button, "LeftButton")
-        end
-        assert(values.enemyGlowMode == 2 and values.enemyFillTexture == 2,
-            "live layer toggle replaced selected glow or texture mode")
-        assert(values.enemyGlowEnabled and values.enemyTextureEnabled)
+        local glow = Layer("glow")
+        glow.scripts.OnClick(glow, "LeftButton")
+        glow.scripts.OnClick(glow, "LeftButton")
+        assert(values.enemyGlowMode == 2 and values.enemyGlowEnabled, "live layer toggle replaced selected glow mode")
+        for _, button in ipairs(ui.layerButtons) do assert(button.layerKey ~= "fillTexture", "retired texture chip remains") end
         ui.sampleKind = "friendly"
         local before = writes
         for _, key in ipairs({ "focusMarker", "threshold" }) do
@@ -277,10 +317,9 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
             "compact preview retained expanded controls")
         CheckInside(ui.canvas, body, "compact canvas escaped its body")
         fixed:Activate(headerHost, 0)
-        if host == "MidnightSimpleUnitFrames" then
-            assert(not M.ShouldExpandFixedPreview(), "native 6.5 lost its compact default")
+        if host == "MidnightSimpleUnitFrames-7.0" then
             fixed.onActivate()
-            assert(expander.expanded and not ui.compact, "Suite Nameplates did not open expanded by default")
+            assert(not expander.expanded and ui.compact, "Suite Nameplates did not open compact by default")
             expander:Close("FIXED_PREVIEW_COMMAND")
         else
             M.SetFixedPreviewExpandedPreference(false)
@@ -300,68 +339,146 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         assert(select(4, Rect(section)) == anchorY, "scrolling the settings moved the preview")
         M.SetFixedPreviewExpandedPreference(true)
         fixed.onActivate()
+        assert(ui.compact, "global preference overrode the compact nameplate default")
+        ui:Edit("anchor")
         assert(expander.expanded and section:GetHeight() == 526 and not ui.compact,
-            "page activation did not expand the fixed header")
-        if host == "MidnightSimpleUnitFrames" then
+            "Edit in preview did not expand the fixed header")
+        assert(Layer("castTarget"):IsShown() and Layer("enemyPower"):IsShown() and Layer("status"):IsShown(),
+            "editable layers are hidden behind a context filter")
+        CheckButtonLabel(ui.elementPicker, "Select")
+        local status = Layer("status")
+        local content = status:GetParent()
+        local scroll = content:GetParent()
+        assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreview.lua"))("Options", P)
+        local RenderTarget = Upvalue(P.NameplatesPreview.Render, "RenderTarget")
+        local targetSample = { level = Frame(), state = { target = true } }
+        local targeted
+        P.NameplatesEditorMarkers.PaintTarget = function(_, shown) targeted = shown end
+        local statusKeys = { "level", "classification", "raidIcon", "target", "eliteMarker", "questMarker",
+            "focusMarker", "threshold", "softTarget", "threatFlash", "threatHighlight" }
+        status.scripts.OnClick(status, "LeftButton")
+        for _, key in ipairs(statusKeys) do
+            assert(not Layer(key):IsShown(), "individual status chip still shown: " .. key)
+            assert(not ui:LayerOn(key), "Status icons toggle missed " .. key)
+        end
+        RenderTarget(ui, targetSample, {})
+        assert(not targeted, "target arrows remained visible with Status icons disabled")
+        assert(ui:LayerOn("cast") and ui:LayerOn("name"), "Status icons toggle hid other elements")
+        status.scripts.OnClick(status, "LeftButton")
+        for _, key in ipairs(statusKeys) do assert(ui:LayerOn(key), "Status icons toggle did not restore " .. key) end
+        RenderTarget(ui, targetSample, {})
+        assert(targeted, "Status icons toggle did not restore the target arrows")
+        local beforeStatus = writes
+        status.settingsLink.scripts.OnClick(status.settingsLink)
+        assert(opened == "enemy.status" and writes == beforeStatus, "Status icons link did not open its settings")
+
+        P.PreviewNameplateStatus("RaidIcon")
+        assert(ui.statusSample == "RaidIcon", "previewing a status icon stopped selecting it")
+        ui.aggroSample = false
+        P.PreviewNameplateStatus("Aggro")
+        assert(ui.aggroSample and not ui.statusSample and writes == beforeStatus, "Aggro isolated the status sample or changed settings")
+        assert(Layer("name"):IsShown() and Layer("castTarget"):IsShown() and Layer("status"):IsShown(),
+            "Aggro changed which layers are offered")
+        P.PreviewNameplateStatus("RaidIcon")
+        local aggro = Layer("aggroBorder")
+        aggro.scripts.OnClick(aggro, "LeftButton")
+        assert(ui.highlightSample == "aggro" and not ui.statusSample, "Aggro border left an isolated status sample")
+        local link = assert(Layer("castTarget").settingsLink, "the layer lacks a visible settings link")
+        local beforeLink = writes
+        link.scripts.OnClick(link)
+        assert(opened == "enemyCastSpellTarget" and writes == beforeLink, "settings link toggled a layer or opened the wrong control")
+        ui.sampleKind = "friendly"
+        ui:Paint()
+        assert(not Layer("enemyPower"):IsShown() and not Layer("aggroBorder"):IsShown() and Layer("castTarget"):IsShown(),
+            "friendly scope shows enemy controls or misses its own layers")
+        link.scripts.OnClick(link)
+        assert(opened == "friendly.spell" and writes == beforeLink, "friendly cast link jumped to enemy settings")
+        ui.sampleKind = "enemy"
+        ui:Edit("anchor")
+        if host == "MidnightSimpleUnitFrames-7.0" then
             local click = expander.button:GetScript("OnClick")
             click()
-            local driver = assert(expander.motion, "Compact click needs a height transition")
-            assert(driver.duration == 0.150 and section:GetHeight() == 526 and section:DoesClipChildren())
-            driver:GetScript("OnUpdate")(driver, 0.075)
-            local midway = section:GetHeight()
-            assert(midway > 162 and midway < 526 and select(4, Rect(section)) == anchorY)
-            assert(not ui.compact and body:GetHeight() == 480, "motion tick rebuilt the preview")
-            click()
-            assert(driver.duration > 0.150 and section:GetHeight() == midway, "Expand must reverse from its current height")
-            driver:GetScript("OnUpdate")(driver, driver.duration)
-            assert(section:GetHeight() == 526 and not section:DoesClipChildren())
-            click()
-            driver:GetScript("OnUpdate")(driver, 0.150)
             assert(ui.compact and section:GetHeight() == 162 and not section:DoesClipChildren())
-            assert(not driver:GetScript("OnUpdate"), "completed Compact kept its motion tick")
             click()
-            driver:GetScript("OnUpdate")(driver, 0.100)
-            click()
-            fixed:Deactivate()
-            assert(ui.compact and not driver:GetScript("OnUpdate") and not section:DoesClipChildren(),
-                "leaving during Compact kept motion or expanded presentation")
-            M.SetFixedPreviewExpandedPreference(true)
-            fixed:Activate(headerHost, 0)
-            fixed.onActivate()
+            assert(not ui.compact and section:GetHeight() == 526 and not section:DoesClipChildren())
+            assert(select(4, Rect(section)) == anchorY, "toggling the preview moved the fixed header")
         end
-        local originalWidths = {}
-        for i, button in ipairs(ui.layerButtons) do originalWidths[i] = button:GetWidth() end
-        for _, width in ipairs({ 640, 885, 1120, 700, 885 }) do
+        for _, width in ipairs({ 280, 360, 525, 640, 885, 1120, 360 }) do
             section:SetWidth(width + 28)
             fixed.originalWidth = width + 28
             expander:Open()
             body.scripts.OnSizeChanged(body)
+            local pickerCaption = "Enemy Name"
+            local targetCaption, focusCaption = "Target / non-target", "Focus sample"
+            local fit = ui.zoomControls[1][1]
+            handle._label = pickerCaption
             for _, fontScale in ipairs({ 1, 1.35 }) do
-                for i, button in ipairs(ui.layerButtons) do button:SetWidth(originalWidths[i] * fontScale) end
-                ui:Paint()
-                if not useShared and fontScale ~= 1 then
-                    -- The legacy fallback has fixed-width buttons.
-                    for i, button in ipairs(ui.layerButtons) do button:SetWidth(originalWidths[i]) end
-                    ui:Paint()
+                body._selectedHandle = nil
+                ui:RefreshSelection()
+                for _, button in ipairs({ ui.elementPicker, ui.targetStateButton, ui.focusStateButton, fit }) do
+                    button._msuf2Label.charWidth = 6 * fontScale
                 end
+                local fitCaption = fontScale > 1 and "Einpassen" or "Fit"
+                fit._msuf2Label:SetText(fitCaption)
+                if fontScale > 1 then
+                    targetCaption, focusCaption = "Bersaglio / altro", "Aperçu de focalisation"
+                    ui.targetStateButton._msuf2Label:SetText(targetCaption)
+                    ui.focusStateButton._msuf2Label:SetText(focusCaption)
+                end
+                body._selectedHandle = handle
+                ui:RefreshSelection()
+                CheckButtonLabel(ui.elementPicker, pickerCaption)
+                for _, button in ipairs(ui.layerButtons) do
+                    if button.fs then button.fs.charWidth = 6 * fontScale end
+                end
+                local label = Layer("health").fs
+                if label then label:SetText(fontScale > 1 and "Langer lokalisierter Lebensbalken" or "Blizzard health") end
+                ui:Paint()
+                CheckButtonLabel(ui.targetStateButton, targetCaption)
+                CheckButtonLabel(ui.focusStateButton, focusCaption)
+                CheckButtonLabel(fit, fitCaption)
                 CheckInside(ui.layerRail, body, "layer rail overlaps settings at width " .. width)
                 CheckInside(ui.canvas, body, "canvas escaped preview at width " .. width)
+                CheckInside(scroll, ui.layerRail, "scroll viewport escapes its rail")
+                CheckInside(ui.raidPalette, ui.canvas, "raid marker palette clipped")
                 CheckAbove(ui.selection, ui.layerRail, 6, "selection overlaps layers")
                 CheckAbove(ui.tools, ui.selection, 5, "zoom tools overlap selection")
                 CheckAbove(ui.canvas, ui.tools, 4, "canvas overlaps toolbar")
-                assert(ui.canvas:GetHeight() > 80, "layer flow left no usable canvas")
+                assert(ui.canvas:GetHeight() > 80, ("canvas was %.0f at width %d, font scale %.2f (tools %.0f, layers %.0f)")
+                    :format(ui.canvas:GetHeight(), width, fontScale, ui.tools:GetHeight(), ui.layerRail:GetHeight()))
                 assert(not ui.contextButton, "preview still has the outdoor/dungeon switch")
-                for _, control in ipairs({ ui.targetStateButton, ui.focusStateButton, body.picker }) do
+                for _, control in ipairs({ ui.targetStateButton, ui.focusStateButton, ui.elementPicker }) do
                     CheckInside(control, ui.tools, "preview toolbar child clipped")
                 end
-                local _, fbottom, _, ftop = Rect(ui.focusStateButton)
-                local _, pbottom = Rect(body.picker)
-                assert(ftop <= pbottom, "sample controls overlap the element picker")
-                for _, button in ipairs(ui.layerButtons) do
-                    CheckInside(button, ui.layerRail, "layer button escapes its rail: " .. button.layerKey)
-                    CheckInside(button, body, "layer button is clipped by the preview: " .. button.layerKey)
+                CheckSeparate(ui.targetStateButton, ui.elementPicker, "target control overlaps the element picker")
+                CheckSeparate(ui.focusStateButton, ui.elementPicker, "focus control overlaps the element picker")
+                CheckSeparate(ui.targetStateButton, ui.focusStateButton, "target and focus controls overlap")
+                local previous
+                for _, entry in ipairs(ui.zoomControls) do
+                    local control = entry[1]
+                    CheckInside(control, ui.tools, "zoom control clips")
+                    CheckSeparate(control, ui.elementPicker, "zoom control overlaps the element picker")
+                    if previous then CheckSeparate(previous, control, "zoom controls overlap") end
+                    previous = control
+                end
+                for _, button in ipairs(ui.visibleLayerButtons or ui.layerButtons) do
+                    CheckInside(button, content, "layer button escapes its scroll content: " .. button.layerKey)
+                    if button.settingsLink then CheckInside(button.settingsLink, button, "settings link was clipped") end
+                end
+                local scrollRange = scroll:GetVerticalScrollRange()
+                if width == 280 then assert(scrollRange > 0, "narrow layers did not scroll") end
+                if width >= 885 then assert(scrollRange == 0, "wide layers still require scrolling") end
+                assert(scroll:GetVerticalScroll() <= scrollRange, "resize retained an out-of-range scroll offset")
+                assert(scroll.mouseWheel == (scrollRange > 0), "rail grabs the wheel without overflow")
+                scroll:SetVerticalScroll(scrollRange)
+                CheckInside(ui.visibleLayerButtons[#ui.visibleLayerButtons], scroll, "last layer cannot be reached by scrolling")
+                for _, button in ipairs(ui.sampleButtons) do
+                    if button:IsShown() then CheckInside(button, ui.canvas, "sample toolbar clipped") end
                 end
             end
+            ui.targetStateButton._msuf2Label:SetText("Target / non-target")
+            ui.focusStateButton._msuf2Label:SetText("Focus sample")
+            body._selectedHandle = nil
             expander:Close()
             CheckInside(ui.canvas, body, "collapse retained expanded canvas anchors")
             assert(not ui.selection:IsShown() and not ui.tools:IsShown() and not ui.layerRail:IsShown(),
@@ -382,7 +499,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         assert(not section:IsShown() and not expander.expanded, "leaving the page retained its fixed preview")
         fixed:Activate(headerHost, 0)
         fixed.onActivate()
-        assert(section:IsShown() and expander.expanded and section:GetParent() == headerHost,
+        assert(section:IsShown() and ui.compact and section:GetParent() == headerHost,
             "returning to the page did not restore the fixed preview")
         print("ok " .. host .. (useShared and " shared chip flow" or " legacy chip flow"))
     end

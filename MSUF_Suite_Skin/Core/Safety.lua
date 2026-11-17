@@ -70,11 +70,18 @@ local function Call(target, name, ...)
 end
 Safety.Call = Call
 
+-- Returns a callable member of a target the caller has already proved readable.
+local function ReadableMethod(target, name)
+    local method = target[name]
+    if type(method) == "function" then return method end
+end
+Safety.ReadableMethod = ReadableMethod
+
 -- Calls target:name(...) for its side effect. True when the call happened.
 function Safety.Invoke(target, name, ...)
     if type(target) ~= "table" or IsForbidden(target) then return false end
-    local method = target[name]
-    if type(method) ~= "function" then return false end
+    local method = ReadableMethod(target, name)
+    if not method then return false end
     method(target, ...)
     return true
 end

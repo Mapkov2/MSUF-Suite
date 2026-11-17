@@ -17,7 +17,6 @@ local CanChangeFrameGeometry = Policy.CanControl
 local positionedStates = setmetatable({}, { __mode = "k" })
 local activeStates = setmetatable({}, { __mode = "k" })
 local activeInventory = setmetatable({}, { __mode = "k" })
--- Our grip, drag strip, minimize and restore frames -> panel state (shared handlers).
 local controlStates = setmetatable({}, { __mode = "k" })
 
 local FOREVER_CHARACTER_DOCK = { x = 0, y = 0 }
@@ -58,7 +57,6 @@ local function SafeControls(state)
     return true
 end
 
--- Windows caption (Chrome.ShowCaption): minimize, our maximize or Blizzard's size toggle, X (alone on a fixed window).
 local function HasCaption(state) return state.maximize or state.minimize or state.sizeToggle or state.closeOnly end
 
 local function Maximized(state) return state.name == "WorldMapFrame" and Safety.Read(state.frame, "IsMaximized") == true end
@@ -148,6 +146,7 @@ end
 
 local function ApplyStoredPosition(state)
     if not CanChangeFrameGeometry(state.frame) or not Enabled() or state.moving or Maximized(state) then return end
+    if state.bankPark then return Policy.HoldBankPark(state) end
     if state.fit then return Chrome.Fit(state) end
     local positions = NS.DB and NS.DB.windowControls and NS.DB.windowControls.positions
     local point = positions and positions[state.name]
@@ -184,10 +183,12 @@ end
 local positionHooked = false
 local suspendPositionHook = false
 
--- Blizzard's panel layout re-anchors open panels; ours move back after it.
-local function OnPanelPositionsUpdated()
+-- Blizzard positions the mailbox while it is still hidden.
+local function OnPanelPositionsUpdated(currentFrame)
     Policy.CapturePanels(WindowControls.states)
     if suspendPositionHook or not Enabled() then return end
+    if NS.Client.isForever and Safety.Public(currentFrame) and currentFrame
+        and currentFrame == Safety.Field(_G, "MailFrame") then return NS.Registry.QueueJob(WindowControls.Refresh) end
     for frame, state in pairs(activeStates) do
         if Controlled(state) and frame:IsShown() and not Policy.DeferMailLayout(state) and not Policy.DeferMapLayout(state) then
             if not state.drag then ApplyStoredScale(state) end
@@ -232,16 +233,12 @@ local function SavePosition(state)
 end
 
 local function Restore(state)
-    if not state or not state.minimized then return false end
-    local allowed, managed = Policy.CanChangeVisibility(state)
-    if not allowed then return false end
+    if not state or not state.minimized or not Policy.CanChangeVisibility(state) then return false end
+    if state.bankPark then return Policy.RestoreBank(state) end
     if state.profession then return Policy.ReopenProfession(state) end
-    -- Native-only panels reopen through Blizzard's buttons.
     if Policy.SecureOnly(state) then return false end
-    if managed and not NS.Client.IsGamepadUI() then ShowUIPanel(state.frame) else state.frame:Show() end
-    -- OnPanelShow drops the tab. Blizzard can refuse the panel (a center
-    -- panel such as the Game Menu is open): the tab stays for another try.
-    return state.frame:IsShown() == true
+    state.frame:Show()
+    return state.frame:IsShown() == true -- OnPanelShow drops the tab.
 end
 
 local function ToggleFit(state)
@@ -253,8 +250,6 @@ local function ToggleFit(state)
     end
 end
 
--- What minimize does around the hide; false while the window may not go. The
--- secure delegate runs it before Blizzard's X (WindowControlDelegate.lua).
 local function PrepareMinimize(state)
     if NS.Client.IsGamepadUI() or not state or state.minimized or not Controlled(state) then return false end
     if not Policy.CanChangeVisibility(state) then Chrome.SyncMinimize(state) return false end
@@ -264,9 +259,10 @@ local function PrepareMinimize(state)
     if not Policy.RememberNativeRestore(state) then return false end
     Chrome.LeaveFit(state)
     local frame, uiScale = state.frame, UIParent:GetEffectiveScale()
-    local left, top, frameScale = frame:GetLeft(), frame:GetTop(), frame:GetEffectiveScale()
+    local left, top = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop")
+    local frameScale = Safety.Read(frame, "GetEffectiveScale")
     state.restore:ClearAllPoints()
-    if type(left) == "number" and type(top) == "number" and uiScale > 0 then
+    if type(left) == "number" and type(top) == "number" and type(frameScale) == "number" and uiScale > 0 then
         state.restore:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * frameScale / uiScale, top * frameScale / uiScale)
     else
         state.restore:SetPoint("TOP", UIParent, "TOP", 0, -80)
@@ -282,18 +278,17 @@ local function FinishMinimize(state)
     if state.frame:IsShown() then state.minimized = false else state.restore:Show() end
 end
 
--- Native-only panels close through Blizzard's X.
 local function Minimize(state)
-    if not state or Policy.SecureOnly(state) or not PrepareMinimize(state) then return end
-    local _, managed = Policy.CanChangeVisibility(state)
-    if managed then HideUIPanel(state.frame) else state.frame:Hide() end
+    if not state or (state.name ~= "BankFrame" and Policy.SecureOnly(state)) or not PrepareMinimize(state) then return end
+    if state.name == "BankFrame" then return Policy.ParkBank(state, CaptureNativePoints, InstallPanelPositionHook) end
+    state.frame:Hide()
     FinishMinimize(state)
 end
 
 local function OnRestoreClick(bar, mouseButton)
     local state = controlStates[bar]
     if not state then return end
-    if mouseButton == "RightButton" then
+    if mouseButton == "RightButton" and not state.bankPark then
         state.minimized = false
         activeStates[state.frame] = state.frame:IsShown() and state or nil
         bar:Hide()
@@ -533,7 +528,8 @@ local function HideControls(state, releasing)
     end
     if state.moving then EndMove(state) end
     if state.drag then EndDrag(state) end
-    if state.minimized then Restore(state) end
+    if state.bankPark then Policy.RestoreBank(state)
+    elseif state.minimized then Restore(state) end
     Chrome.LeaveFit(state)
     state.titleDrag:Hide()
     state.grip:Hide()
@@ -554,19 +550,18 @@ local function EnsureCaption(state)
         controlStates[state.restore] = state
         state.minimize = Chrome.CreateMinimize(state, state.close, CONTROL_LEVEL_OFFSET, OnMinimizeClick)
         controlStates[state.minimize] = state
-        Delegate.Bind(state, PrepareMinimize, FinishMinimize)
+        if name ~= "BankFrame" then Delegate.Bind(state, PrepareMinimize, FinishMinimize) end
     end
     if toggle and not state.sizeToggle then Chrome.FollowSizeToggle(state, toggle) end
     local button = Chrome.CreateCaption(state, CONTROL_LEVEL_OFFSET, OnMaximizeClick)
     if button then controlStates[button] = state end
 end
 
--- Hooked once per panel. The invisible title strip takes the title area's clicks: it
--- comes back only while the controls are on, an owner skins and it can be controlled.
 local function OnPanelShow(frame, afterNative)
     local state = WindowControls.states[frame]
     if not state or Safety.IsForbidden(frame) then return end
     if not afterNative and Policy.DeferMailLayout(state) then return end
+    if state.bankPark and Policy.ResumeBank(state, Controlled(state)) then return end
     activeStates[frame] = state
     if state.inventory then activeInventory[frame] = Controlled(state) and state or nil end
     if state.restore then state.minimized = false state.restore:Hide() end
@@ -581,9 +576,7 @@ local function OnPanelShow(frame, afterNative)
         return
     end
     if Controlled(state) then
-        -- Blizzard fits checkFit panels (PlayerSpellsFrame, ProfessionsFrame,
-        -- Settings) to the screen with SetScale(1) as they open: the stored
-        -- scale comes back first, then the position, which depends on it.
+        -- Restore scale first because the saved position depends on it.
         if not state.drag then ApplyStoredScale(state) end
         ApplyStoredPosition(state)
         EnsureCaption(state)
@@ -624,6 +617,7 @@ end
 local function OnPanelHide(frame)
     local state = WindowControls.states[frame]
     if not state then return end
+    if state.bankPark then Policy.BankClosed(state) end
     positionedStates[frame] = nil
     activeInventory[frame] = nil
     if not state.minimized then activeStates[frame] = nil end
@@ -664,6 +658,7 @@ function WindowControls.Attach(frame, owner)
     if frame:IsShown() then activeStates[frame] = state end
     state.replayShow = function()
         if frame:IsShown() then OnPanelShow(frame, true)
+        elseif state.bankPark then Policy.RestoreBank(state)
         elseif state.minimized and not Controlled(state) then HideControls(state) end
     end
     state.grip = CreateGrip(state)
@@ -782,7 +777,7 @@ function WindowControls.ResetLayout()
     return scaled and moved
 end
 
-function WindowControls.SuiteAction(frame, bounds, action)
+function WindowControls.SuiteAction(frame, bounds, action, control)
     local state = WindowControls.states[frame]
     if action == "moveStop" then return state and EndMove(state) end
     if action == "scaleStop" then return state and state.grip and EndDrag(state) end
@@ -800,6 +795,11 @@ function WindowControls.SuiteAction(frame, bounds, action)
     local prepare = state.suiteBounds == nil
     state.suiteBounds = bounds
     if prepare then ApplyStoredPosition(state) end
+    -- The Suite's own cell (control) minimizes as ours: Blizzard's X through the delegate.
+    if action == "bindMinimize" then
+        if control and state.restore then Delegate.BindMinimize(control, state, PrepareMinimize, FinishMinimize) end
+        return control ~= nil and state.restore ~= nil
+    end
     if action == "maximize" then ToggleFit(state)
     elseif action == "minimize" and state.restore then
         Minimize(state)

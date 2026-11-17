@@ -34,7 +34,16 @@ Display.Containers = {
     { key = "dots", id = "Dots", label = "Dots on target", kind = "dots", list = "IDs", y = 46, element = "Tracked" },
 }
 Display.NativeGroups = { enemy = { "enemyNpc", "enemyPlayer" }, friendly = { "friendlyPlayer" } }
-Display.NativeShared = { "auraScaleMode", "auraScalePercent", "auraDebuffPadding", "personalAuras", "auraClickthrough" }
+Display.NativeShared = { "auraScaleMode", "auraScalePercent", "auraDebuffPadding", "personalAuras" }
+Display.ClickthroughChoices = { "Global setting", "On", "Off" }
+
+function Display.Clickthrough(choice, fallback)
+    if Public(choice) then
+        if choice == 2 then return true end
+        if choice == 3 then return false end
+    end
+    return fallback == true
+end
 
 function Display.NativeSetting(group, kind)
     if group == "friendlyNpc" then return kind == "Debuffs" and "friendlyNpcDebuffs" or nil end
@@ -68,7 +77,7 @@ Display.Tools = {
     custom = { "setup", "layout", "ordering", "filters", "whitelist", "style" },
 }
 Display.Tools.dots = Display.Tools.custom
-Display.NativeFields = { layout = { "Scale", "Layer" }, style = { "Alpha" } }
+Display.NativeFields = { layout = { "Scale", "Layer" }, style = { "Alpha", "Clickthrough" } }
 Display.ToolLabels = { setup = "Setup", layout = "Layout", ordering = "Ordering", filters = "Filters",
     whitelist = "Whitelist", style = "Style" }
 -- The settings of each tool, in control order. A container lacks the fields
@@ -79,8 +88,9 @@ Display.ToolFields = {
     ordering = { "Sort", "Order" },
     filters = { "OnlyMine", "HidePermanent", "MaxDuration" },
     whitelist = {},
-    style = { "IconSkin", "Pandemic", "Zoom", "Alpha", "Tooltip", "Padding", "Dispel", "StackText", "StackPoint", "StackSize", "StackX", "StackY",
-        "TimeText", "TimePoint", "TimeSize", "TimeX", "TimeY", "TimeDecimals", "Swipe", "SwipeDirection",
+    style = { "IconSkin", "Pandemic", "Zoom", "Alpha", "Tooltip", "Clickthrough", "Padding", "Dispel",
+        "StackText", "StackPoint", "StackSize", "StackX", "StackY", "TimeText", "TimePoint", "TimeSize", "TimeX", "TimeY",
+        "TimeDecimals", "Swipe", "SwipeDirection",
         "DurationBar", "DurationBarDisplay", "DurationBarHeight", "DurationBarPosition", "DurationBarDirection", "DurationBarColor" },
 }
 Display.Types = { "Buffs", "Debuffs" }
@@ -388,6 +398,7 @@ local function Compile(config, values, scope, container, preview)
     c.missing, c.missingAlpha = c.fixed and V("Missing"), V("MissingAlpha")
     c.crop = .07 + (1 - 100 / V("Zoom")) * .43
     c.alpha, c.tooltip, c.dispel, c.pandemic, c.swipe = V("Alpha") / 100, V("Tooltip"), V("Dispel"), V("Pandemic"), V("Swipe")
+    c.clickthrough = Display.Clickthrough(V("Clickthrough"), values.auraClickthrough)
     c.swipeReverse = V("SwipeDirection") ~= 2
     c.durationBar = V("DurationBar")
     c.barOnly = c.durationBar and V("DurationBarDisplay") == 2

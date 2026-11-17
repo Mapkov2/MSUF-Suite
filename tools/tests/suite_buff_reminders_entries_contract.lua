@@ -168,13 +168,13 @@ kind=weapon id=457 aura=nil slot=17 poison=nil poisonRank=nil restock=false cate
     [2] = [[
 kind=item id=241325 aura=1235057 slot=nil poison=nil poisonRank=nil restock=false category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases={1235057,1235108,1235110,1235111} candidates=-
 kind=food id=250010 aura=nil slot=nil poison=nil poisonRank=nil restock=false category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases=- candidates=-
-kind=item id=259085 aura=1264426 slot=nil poison=nil poisonRank=nil restock=false category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases={1264426,1242347,1234969,453250,393438,347901} candidates=-
+kind=item id=259085 aura=1295329 slot=nil poison=nil poisonRank=nil restock=false category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases={1295329,1264426,1242347,1234969,453250,393438,347901} candidates=-
 kind=weapon id=243733 aura=nil slot=16 poison=nil poisonRank=nil restock=false category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases=- candidates=-
 kind=weapon id=243733 aura=nil slot=17 poison=nil poisonRank=nil restock=false category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases=- candidates=-]],
     [3] = [[
 kind=item id=245933 aura=1235057 slot=nil poison=nil poisonRank=nil restock=true category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases={1235057,1235108,1235110,1235111} candidates=-
 kind=food id=250001 aura=nil slot=nil poison=nil poisonRank=nil restock=true category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases=- candidates=-
-kind=item id=259085 aura=1264426 slot=nil poison=nil poisonRank=nil restock=true category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases={1264426,1242347,1234969,453250,393438,347901} candidates=-
+kind=item id=259085 aura=1295329 slot=nil poison=nil poisonRank=nil restock=true category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases={1295329,1264426,1242347,1234969,453250,393438,347901} candidates=-
 kind=weapon id=243738 aura=nil slot=16 poison=nil poisonRank=nil restock=true category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases=- candidates=-
 kind=weapon id=243738 aura=nil slot=17 poison=nil poisonRank=nil restock=true category=consumable group=nil notice=nil ranked=nil spellName=nil bit=nil present=nil actionID=nil count=nil aliases=- candidates=-]],
     [4] = [[

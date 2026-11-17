@@ -112,6 +112,7 @@ for key, rule in pairs(rules) do config[key] = rule.default end
 local locked, module = false, nil
 local P = { NS = {
     IsCombatLocked = function() return locked end, InCombat = function() return locked end,
+    Dispatch = function(fn, ...) return fn(...) end, Finish = function(fn, ...) return true, fn(...) end,
     IsSecret = function() return false end, DB = {},
     Safety = { IsForbidden = function(r) return r.forbidden == true end },
     HostBridge = { IconSkinLook = function() end, PaintIconSkin = function() return false end,
@@ -242,6 +243,9 @@ assert(Ids(debuffs) == "debuffX,debuffOffset,iconWidth,iconHeight,iconZoom,perRo
     "debuff controls: " .. Ids(debuffs))
 -- Their size is in those controls: the host's W/H readout of the block goes.
 assert(buffs.sizeSummary == false and debuffs.sizeSummary == false, "the movers keep the W/H readout")
+assert(debuffs.extraControls[1].id == "debuffX" and debuffs.extraControls[1].positionAxis == "x"
+    and debuffs.extraControls[2].id == "debuffOffset" and debuffs.extraControls[2].positionAxis == "y",
+    "debuff offsets did not replace the host's generic position row")
 
 -- Icon zoom: the artwork cut per side. 7 is the crop the layout always had
 -- (52x26 icons: a .43 half width, .215 half height of the artwork).
@@ -368,7 +372,7 @@ local blocked = Region()
 blocked.forbidden = true
 BuffFrame.points = { { "TOPRIGHT", blocked, "TOPRIGHT", 0, 0 } }
 module:Enable()
-assert(buffs.getFrame(), "the buff mover lost its handle")
+assert(not buffs.getFrame() and not buffs.isEnabled(), "the buff mover offered an unplaced row")
 assert(Drag(buffs, 6, 6, "preview", buffs.captureState()) == false, "an unplaced buff row previewed")
 Shifted(DebuffFrame, 0, 0, "debuff row after a refused buff preview")
 module:Disable()

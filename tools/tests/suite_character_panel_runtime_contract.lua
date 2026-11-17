@@ -18,6 +18,30 @@ local nativeHardware, nativeSlots, nativeModel, nativePanes, gearProxy
 local groupReads = 0
 local setReads, setUses = 0, 0
 local inspectAllowed, currentSet, setMenu, equippedSet
+local equipmentSets = {}
+function equipmentSets.FindMenu(menu, text)
+    for _, entry in ipairs(menu) do
+        if entry.text == text then return entry end
+    end
+    error("menu missing: " .. text)
+end
+
+function equipmentSets.Menu(list)
+    return {
+        CreateTitle = function(_, title) list[#list + 1] = { text = title } end,
+        CreateButton = function(_, text, pick, data)
+            local children = {}
+            list[#list + 1] = { text = text, pick = pick, data = data, children = children }
+            return equipmentSets.Menu(children)
+        end,
+        CreateRadio = function(_, text, selected, pick, data)
+            list[#list + 1] = { text = text, selected = selected, pick = pick, data = data }
+        end,
+        CreateCheckbox = function(_, text, selected, pick, data)
+            list[#list + 1] = { text = text, selected = selected, pick = pick, data = data }
+        end,
+    }
+end
 local itemWorn = true
 local frames = {}
 local externalKeys, otherKeys, overrideKeys, bindingOwner, bindingWrites
@@ -31,15 +55,51 @@ function PlaySound(kit)
 end
 C_CurrencyInfo = { GetCurrencyListSize = function() return 2 end }
 C_EquipmentSet = {
+    CanUseEquipmentSets = function() return true end,
     GetEquipmentSetIDs = function()
         setReads = setReads + 1
-        return { 0, secret, 1 }
+        local ids = { secret }
+        for id = 0, 2 do if equipmentSets.sets[id] then ids[#ids + 1] = id end end
+        return ids
     end,
     GetEquipmentSetInfo = function(id)
-        assert(id == 0 or id == 1, "invalid equipment set ID reached the API")
-        return id == 0 and "Dungeons" or "PvP", nil, id, id == currentSet
+        local set = equipmentSets.sets[id]
+        if set then return set.name, set.icon, id, id == currentSet end
     end,
+    GetEquipmentSetID = function(name)
+        for id, set in pairs(equipmentSets.sets) do if set.name == name then return id end end
+    end,
+    GetNumEquipmentSets = function() return #equipmentSets.sets + 1 end,
+    GetEquipmentSetAssignedSpec = function(id) return equipmentSets.sets[id].spec end,
+    AssignSpecToEquipmentSet = function(id, index) equipmentSets.sets[id].spec = index end,
+    UnassignEquipmentSetSpec = function(id) equipmentSets.sets[id].spec = nil end,
+    GetIgnoredSlots = function(id) return equipmentSets.sets[id].slots end,
+    IsSlotIgnoredForSave = function(slot) return equipmentSets.ignoredSlots[slot] end,
+    IgnoreSlotForSave = function(slot) equipmentSets.ignoredSlots[slot] = true end,
+    UnignoreSlotForSave = function(slot) equipmentSets.ignoredSlots[slot] = false end,
+    CreateEquipmentSet = function(name, icon)
+        assert(not locked and not equipmentSets.sets[2] and not equipmentSets.ignoredSlots[1], "create leaked combat or Blizzard's ignore mask")
+        equipmentSets.sets[2] = { name = name, icon = tonumber(icon), slots = {} }
+    end,
+    SaveEquipmentSet = function(id)
+        assert(not locked)
+        equipmentSets.sets[id].saved = true
+        equipmentSets.sets[id].slots = { [1] = equipmentSets.ignoredSlots[1], [2] = equipmentSets.ignoredSlots[2] }
+    end,
+    ModifyEquipmentSet = function(id, name, icon)
+        equipmentSets.sets[id].name, equipmentSets.sets[id].icon = name, tonumber(icon)
+    end,
+    DeleteEquipmentSet = function(id)
+        assert(not locked)
+        equipmentSets.sets[id] = nil
+    end,
+    PickupEquipmentSet = function(id) equipmentSets.setCursor = id end,
 }
+function GetCursorInfo()
+    if equipmentSets.setCursor ~= nil then return "equipmentset", equipmentSets.setCursor end
+end
+function GetNumSpecializations() return 2 end
+function GetInventoryItemTexture(_, slot) if slot == 1 then return 135001 end end
 function EquipmentManager_EquipSet(id)
     assert(not locked, "equipment sets bypassed the combat gate")
     equippedSet, currentSet, setUses = id, id, setUses + 1
@@ -272,6 +332,8 @@ end
 
 local function Run(forever)
     local runtime, controller
+    local decimalSeparator = forever and "," or "."
+    DECIMAL_SEPERATOR = decimalSeparator
     externalKeys, otherKeys, overrideKeys, bindingOwner, bindingWrites = {
         TOGGLEPROFESSIONBOOK = { "F7", "CTRL-F7" },
         TOGGLECHARACTER4 = { "F8" },
@@ -281,7 +343,9 @@ local function Run(forever)
     local preferences, boundPreferences = {}, nil
     local lastContext, lastReport, lastGearSummary, lastHeader, lastTabs, lastRail
     local armor, armorReads, averageItemLevel = 42, 0, 19
+    local shownItemLevel
     local statReads, critReads, lastCombatRail = 0, 0, nil
+    local secretStats
     local xp, xpReads = 25, 0
     function UnitXP(unit)
         assert(unit == "player", "custom XP used a foreign unit")
@@ -298,23 +362,27 @@ local function Run(forever)
     HEALTH, MANA, DEFENSE = "Health", "Mana", "Defense"
     STAT_CRITICAL_STRIKE, STAT_HASTE, STAT_MASTERY, STAT_VERSATILITY = "Crit", "Haste", "Mastery", "Versatility"
     STAT_ARMOR, STAT_DODGE, STAT_AVOIDANCE = "Armor", "Dodge", "Avoidance"
-    C_SpecializationInfo = { GetSpecialization = function() return nil end }
+    MELEE, RANGED, SPELLS, MANA_REGEN = "Melee", "Ranged", "Spells", "Mana Regen"
+    C_SpecializationInfo = {
+        GetSpecialization = function() return nil end,
+        GetSpecializationInfo = function(index) return index, index == 1 and "Holy" or "Shadow" end,
+    }
     function UnitHealthMax() return 595 end
     function UnitPowerType() return 0, "MANA" end
     BASE_MOVEMENT_SPEED = 7
-function GetManaRegen() return 0, 0 end
-function UnitPowerMax() return 1264 end
-    function UnitStat(_, id) statReads = statReads + 1 return id, id * 10 end
-    function UnitArmor() armorReads = armorReads + 1 return 0, armor end
-    function GetCritChance() critReads = critReads + 1 return 1 end
+    function GetManaRegen() return 0, secretStats and secret or 0 end
+    function UnitPowerMax() return 1264 end
+    function UnitStat(_, id) statReads = statReads + 1 return id, secretStats and secret or id * 10 end
+    function UnitArmor() armorReads = armorReads + 1 return 0, secretStats and secret or armor end
+    function GetCritChance() critReads = critReads + 1 return secretStats and secret or 1 end
     function GetRangedCritChance() return 0 end
     function GetSpellCritChance() return 0 end
     function GetMeleeHaste() return 2 end
-    function GetRangedHaste() return 0, 0 end
+    function GetRangedHaste() return secretStats and secret or 0, 0 end
     function UnitSpellHaste() return 0 end
-    function GetDodgeChance() return 2 end
+    function GetDodgeChance() return secretStats and secret or 2 end
     function GetAvoidance() return 3 end
-    function UnitDefenseSkill() return 100, 5 end
+    function UnitDefenseSkill() return 100, secretStats and secret or 5 end
     local zoneReads, guildReads = 0, 0
     local auraReads, speedReads, railPaints = 0, 0, 0
     local currentAura, currentSpeed, restricted
@@ -358,6 +426,7 @@ function UnitPowerMax() return 1264 end
     function GetGuildInfo() guildReads = guildReads + 1 return secret end
     function GetMinimapZoneText() zoneReads = zoneReads + 1 return "Stormwind" end
     currentSet, inspectAllowed, itemWorn = 0, true, true
+    equipmentSets.sets, equipmentSets.ignoredSlots, equipmentSets.setCursor = { [0] = { name = "Dungeons", icon = 111 }, [1] = { name = "PvP" } }, {}, nil
     controller = {
         CreateFrame = CreateFrame, GamepadUI = function() return pad end,
         ShowPanel = function(panel)
@@ -372,12 +441,11 @@ function UnitPowerMax() return 1264 end
         Finish = function(callback, ...) return true, callback(...) end,
         ContextMenu = function(owner, generator, ...)
             setMenu = {}
-            generator(owner, {
-                CreateRadio = function(_, text, selected, pick, data)
-                    setMenu[#setMenu + 1] = { text = text, selected = selected, pick = pick, data = data }
-                end,
-            }, ...)
+            generator(owner, equipmentSets.Menu(setMenu), ...)
         end,
+        Print = function() end,
+        Confirm = function(_, question) equipmentSets.setQuestion = question end,
+        AskText = function(_, question) equipmentSets.setQuestion = question end,
         ModuleState = function(id)
             assert(id == "characterPanel")
             return preferences
@@ -393,9 +461,13 @@ function UnitPowerMax() return 1264 end
     local layout = { width = 940, height = 552 }
     local reader = {
         SpecializationName = function(kind) lastKind = kind end,
-        AverageItemLevel = function() return averageItemLevel end,
+        AverageItemLevel = function(kind)
+            if kind == "character" then return averageItemLevel end
+            if not forever then return 31.25 end
+        end,
         ClearPending = function(_, pending) wipe(pending) end,
     }
+    local characterView = "modern"
     MSUFSuite = {
         Suite = controller, Text = function(text) return text end, Client = { isForever = forever, isMainline = not forever },
         InCombat = function(event) return locked or event == "PLAYER_REGEN_DISABLED" end, Public = function(value) return not rawequal(value, secret) end,
@@ -405,6 +477,7 @@ function UnitPowerMax() return 1264 end
         end,
         PublicText = function(value) return type(value) == "string" and value or nil end,
         Skin = {
+            GetCharacterView = function() return characterView end,
             Acquire = function(id) assert(id == "characterPanelInspect" or id == "characterPanelDock") end,
             CharacterGeometry = {
                 Present = function(root, frame)
@@ -503,7 +576,10 @@ function UnitPowerMax() return 1264 end
         Read = function(_, gear, unit, _, _, slot)
             gearReads, lastSlot = gearReads + 1, slot
             gear.missingLinks = unit == "target" and missingLinks
-            if unit == "target" then gear.pending[123] = true end
+            if unit == "target" then
+                gear.pending[123] = true
+                gear.visibleAverage = 29.38
+            end
             gear.rows[1].name, gear.rows[2].name = "Helm", "Robe"
             gear.rows[1].level = unit == "target" and 24 or 18
             gear.rows[2].level = unit == "player" and 20 or nil
@@ -513,6 +589,7 @@ function UnitPowerMax() return 1264 end
             assert(InspectFrame.unit == nil and ids[123], "snapshot read requires cached links")
             snapshotReads = snapshotReads + 1
             gear.pending[123] = nil
+            gear.visibleAverage = 29.62
         end,
     }
     local ns = {
@@ -542,7 +619,9 @@ function UnitPowerMax() return 1264 end
                             assert(visible.skills and visible.pvp and visible.statistics)
                         end
                     end,
-                    SetHeader = function(_, _, _, _, unit, _, data) lastUnit, lastHeader = unit, data end,
+                    SetHeader = function(_, _, _, itemLevel, unit, _, data)
+                        lastUnit, lastHeader, shownItemLevel = unit, data, itemLevel
+                    end,
                     SetContextAction = function(_, label) lastContext = label end,
                     ShowGear = function(_, _, _, _, groups, _, details, withModel, combat)
                         lastWithModel, lastCombatRail = withModel, combat
@@ -677,12 +756,13 @@ function UnitPowerMax() return 1264 end
     local function FindRow(label, groups)
         for _, group in ipairs(groups or lastRail) do
             for _, row in ipairs(group.rows) do
-                if row.label == label then return row.value end
+                if row.label == label then return row.value, row end
             end
         end
     end
     local statEvent = forever and "SKILL_LINES_CHANGED" or "AVOIDANCE_UPDATE"
-    assert(lastRail[1].title == "Attributes" and lastRail[2].title == "Enhancements" and lastRail[3].title == "Defense",
+    assert(lastRail[1].title == "Attributes" and lastRail[2].title == "Equipment sets"
+        and lastRail[3].title == "Enhancements" and lastRail[4].title == "Defense",
         "default Overview did not move all three Stats groups to the rail")
     assert(FindRow("Health") == 595 and FindRow("Mana") == 1264 and FindRow("Armor") == 42 and FindRow("Durability"),
         "full stats displaced vitals or the equipment audit")
@@ -847,16 +927,19 @@ function UnitPowerMax() return 1264 end
         assert(lastTab == "custom1" and callbacks.PLAYER_XP_UPDATE and xpReads == 5
             and lastReport[1].rows[1].value == "80 / 100" and gearReads == gearBeforeCustom,
             "live hosted source reread hidden equipment or missed the selected data")
-        averageItemLevel = 20
+        averageItemLevel = 319.75
         Event(runtime, "PLAYER_AVG_ITEM_LEVEL_UPDATE")
         actions.tab("custom2")
         Flush()
         assert(not callbacks.PLAYER_XP_UPDATE and callbacks.UPDATE_INVENTORY_DURABILITY
             and (callbacks.ITEM_DATA_LOAD_RESULT ~= nil) == not forever,
             "source subscription did not switch to supported equipment data")
-        assert(gearReads == gearBeforeCustom + (forever and 0 or 1) and lastReport[1].rows[1].value == "20"
+        assert(gearReads == gearBeforeCustom + (forever and 0 or 1)
             and lastReport[1].rows[2].value == "100%" and lastReport[1].rows[3].value == (forever and "—" or 1),
             "custom gear sources did not reuse a fresh audit and durability cache")
+        local expectedItemLevel = "319" .. decimalSeparator .. "75"
+        assert(lastReport[1].rows[1].value == expectedItemLevel, "custom item level row dropped the decimal places")
+        assert(shownItemLevel == expectedItemLevel, "character header dropped the decimal places")
         InstallCustom(progress)
         assert(lastTab == "overview" and not callbacks.PLAYER_XP_UPDATE and lastRail[1].title == "Attributes",
             "deleting the live selected custom tab did not return to Overview")
@@ -894,10 +977,48 @@ function UnitPowerMax() return 1264 end
         InstallCustom(audit)
     end
 
+    actions.tab("overview")
+    assert(FindRow("Active set", lastRail) == "Dungeons" and callbacks.EQUIPMENT_SETS_CHANGED,
+        "Overview did not show the equipped set by default")
+    actions.group("equipmentSets", {})
+    assert(equipmentSets.FindMenu(setMenu, "Manage equipment sets"), "Overview row did not open the working manager")
+    runtime.config.showEquipmentSetsInOverview = false
+    runtime:Refresh()
+    Flush()
+    assert(not FindRow("Active set", lastRail) and not callbacks.EQUIPMENT_SETS_CHANGED,
+        "hiding the Overview section kept its UI or native set listener")
+    local initialCustom = runtime.config.customTabs
+    runtime.config.customTabs = assert(ns.Host.CharacterTabs.Encode({ { id = "custom8", name = "Sets", cards = {
+        { title = "Gear", rows = { { source = "equipmentSets", label = "My set" } } },
+    } } }))
+    runtime:Refresh()
+    Flush()
+    local equipmentBeforeSetTab = gearReads
+    actions.tab("custom8")
+    assert(FindRow("My set", lastReport) == "Dungeons" and lastReport[1].rows[1].action == "equipmentSets"
+        and callbacks.EQUIPMENT_SETS_CHANGED and gearReads == equipmentBeforeSetTab,
+        "custom source did not reuse the manager or scanned equipped items")
+    local reads = setReads
+    Event(runtime, "EQUIPMENT_SETS_CHANGED")
+    Event(runtime, "EQUIPMENT_SWAP_FINISHED")
+    Flush()
+    assert(setReads == reads + 1, "set events did not coalesce")
+    currentSet = nil
+    Event(runtime, "PLAYER_EQUIPMENT_CHANGED", 1)
+    Flush()
+    assert(FindRow("My set", lastReport) == "No equipment set equipped" and gearReads == equipmentBeforeSetTab,
+        "changing a single slot did not invalidate the active set independently of the gear model")
+    currentSet = 0
+    actions.group("equipmentSets", {})
+    assert(equipmentSets.FindMenu(setMenu, "New equipment set"), "custom row action did not open the native set menu")
+    runtime.config.customTabs, runtime.config.showEquipmentSetsInOverview = initialCustom, nil
+    runtime:Refresh()
+    Flush()
+
     actions.tab("gear")
     assert(lastContext == "Equipment set: Dungeons" and callbacks.EQUIPMENT_SETS_CHANGED)
     actions.contextAction({})
-    assert(#setMenu == 2 and setMenu[1].selected(setMenu[1].data), "menu did not reflect the native active set")
+    assert(setMenu[1].selected(setMenu[1].data), "menu did not reflect the native active set")
     local beforeUses = setUses
     locked = true
     setMenu[2].pick(setMenu[2].data)
@@ -908,6 +1029,49 @@ function UnitPowerMax() return 1264 end
     Event(runtime, "EQUIPMENT_SWAP_FINISHED")
     Flush()
     assert(lastContext == "Equipment set: PvP", "finished swap did not refresh the active set")
+    local function Pick(entry) entry.pick(entry.data) end
+    local function OpenManager()
+        actions.contextAction({})
+        return equipmentSets.FindMenu(setMenu, "Manage equipment sets").children
+    end
+    local savedSet = equipmentSets.FindMenu(OpenManager(), "Dungeons").children
+    Pick(equipmentSets.FindMenu(savedSet, "Pick up for action bar"))
+    assert(equipmentSets.setCursor == 0, "native equipment-set ID zero was not picked up")
+    equipmentSets.setCursor = nil
+    local specs = equipmentSets.FindMenu(savedSet, "Assign specialization").children
+    Pick(equipmentSets.FindMenu(specs, "Shadow"))
+    assert(equipmentSets.sets[0].spec == 2, "set was not assigned to the native spec index")
+    Pick(equipmentSets.FindMenu(specs, "None"))
+    assert(equipmentSets.sets[0].spec == nil, "native spec assignment was not removed")
+
+    equipmentSets.ignoredSlots[1] = true
+    Pick(equipmentSets.FindMenu(equipmentSets.FindMenu(setMenu, "New equipment set").children, "New equipment set"))
+    equipmentSets.setQuestion.callback("Dungeons")
+    assert(not equipmentSets.sets[2], "creating a set overwrote an existing name")
+    equipmentSets.setQuestion.callback("  Raid  ")
+    assert(equipmentSets.sets[2].name == "Raid" and equipmentSets.ignoredSlots[1], "create did not restore Blizzard's ignored slots")
+
+    savedSet = equipmentSets.FindMenu(OpenManager(), "Raid").children
+    local save = equipmentSets.FindMenu(savedSet, "Save current equipment").children
+    local slots = equipmentSets.FindMenu(save, "Ignored equipment slots").children
+    Pick(slots[1])
+    Pick(equipmentSets.FindMenu(save, "Save current equipment"))
+    assert(not equipmentSets.sets[2].saved, "save did not wait for confirmation")
+    equipmentSets.setQuestion.callback()
+    assert(equipmentSets.sets[2].saved and equipmentSets.sets[2].slots[1] and equipmentSets.ignoredSlots[1], "save did not apply the staged ignore mask")
+    Pick(equipmentSets.FindMenu(savedSet, "Rename"))
+    equipmentSets.setQuestion.callback("Raid B")
+    assert(equipmentSets.sets[2].name == "Raid B" and equipmentSets.sets[2].icon == 134400, "rename lost the set icon")
+    Pick(equipmentSets.FindMenu(savedSet, "Delete"))
+    assert(equipmentSets.sets[2], "stale menu acted on a renamed set")
+    savedSet = equipmentSets.FindMenu(OpenManager(), "Raid B").children
+    Pick(equipmentSets.FindMenu(savedSet, "Delete"))
+    locked = true
+    equipmentSets.setQuestion.callback()
+    assert(equipmentSets.sets[2], "queued delete wrote in combat")
+    locked = false
+    equipmentSets.setQuestion.callback()
+    assert(not equipmentSets.sets[2], "confirmed delete missed the native set")
     actions.tab("reputation")
     assert(lastGroup == "reputation" and callbacks.UPDATE_FACTION and not callbacks.UNIT_STATS)
     assert(not callbacks.QUEST_TURNED_IN, "plain Reputation listens to Paragon reward events")
@@ -968,6 +1132,8 @@ function UnitPowerMax() return 1264 end
     Flush()
     assert(requests == beforeRequests + 2 and not callbacks.INSPECT_READY, "issued or retained an Inspect request")
     assert(not InspectFrame:IsShown() and runtime.view.frame:IsShown() and lastKind == "inspect" and lastUnit == "target")
+    assert(shownItemLevel == (forever and "29,38" or "31.25"),
+        "Inspect must show the native average or the visible gear estimate as a decimal number")
     assert(lastTabs[1].id == "overview" and boundPreferences == preferences,
         "Inspect lost its independent tab order or free position")
     assert(callbacks.UNIT_AURA and callbacks.ADDON_RESTRICTION_STATE_CHANGED and not next(tickers)
@@ -1049,6 +1215,8 @@ function UnitPowerMax() return 1264 end
     runtime.view:SetMinimized(false)
     assert(snapshotReads == beforeSnapshot + 1 and not callbacks.ITEM_DATA_LOAD_RESULT,
         "Inspect restore did not resolve cached snapshot data")
+    assert(shownItemLevel == (forever and "29,62" or "31.25"),
+        "Inspect must refresh its estimate when pending gear resolves and prefer the native average when available")
     actions.tab("overview")
     assert(lastGearSummary[3].value == "100%" and next(tickers), "returning to Overview did not resume mounted speed")
     runtime.view:SetMinimized(true)
@@ -1139,6 +1307,39 @@ function UnitPowerMax() return 1264 end
     assert(hostedView.frame:IsShown() and CharacterFrame:IsVisible(), "combat exit changed the active window")
     assert(not lastCombatRail and FindRow("Crit") == "1.00%" and FindRow("Armor") == 55,
         "public stats did not return after combat")
+    if forever then
+        local function CheckDisplay(label, format, expected, extra, groups)
+            local value, row = FindRow(label, groups)
+            assert(row and row.displayFormat == format and rawequal(value, expected)
+                and rawequal(row.displayExtra, extra), "restricted " .. label .. " was lost or exposed to Lua")
+        end
+        Event(runtime, "ADDON_RESTRICTION_STATE_CHANGED", 0, Enum.AddOnRestrictionState.Activating)
+        secretStats = true -- The event precedes enforcement. The queued paint sees the new state.
+        Flush()
+        for _, label in ipairs({ "Strength", "Agility", "Stamina", "Intellect", "Spirit", "Armor" }) do
+            CheckDisplay(label, "%d", secret)
+        end
+        CheckDisplay("Dodge", "%.2f%%", secret)
+        CheckDisplay("Mana Regen", "%.2f/s", secret)
+        CheckDisplay("Crit (Melee)", "%.2f%%", secret)
+        CheckDisplay("Haste (Ranged)", "%.2f%% %+.2f%%", secret, 0)
+        CheckDisplay("Defense", "%d (%+d)", 100, secret)
+        assert(FindRow("Crit (Spells)") == "0.00%" and FindRow("Haste (Melee)") == "2.00%"
+            and not FindRow("Crit") and not FindRow("Haste"), "restricted stats invented a combined total")
+        local overview = ns.Pages.Overview({}, false, false)
+        CheckDisplay("Spirit", "%d", secret, nil, overview)
+        local definition = { cards = { { title = "Stats", rows = { { source = "spirit", label = "Custom Spirit" } } } } }
+        local customPlan = ns.Pages.CustomPlan(definition)
+        local custom = ns.Pages.Custom({}, customPlan, {}, false)
+        CheckDisplay("Custom Spirit", "%d", secret, nil, custom)
+        secretStats = false
+        Event(runtime, "ADDON_RESTRICTION_STATE_CHANGED", 0, Enum.AddOnRestrictionState.Inactive)
+        Flush()
+        local spirit, spiritRow = FindRow("Spirit")
+        assert(spirit == 50 and spiritRow.tooltip and not spiritRow.displayFormat and not spiritRow.displayExtra
+            and FindRow("Crit") == "1.00%" and FindRow("Haste") == "2.00%" and FindRow("Defense") == 105
+            and not FindRow("Crit (Melee)"), "restriction release kept a stale display row")
+    end
     missingLinks = true
     RequestInspect("target")
     InspectFrame:Show()
@@ -1164,6 +1365,19 @@ function UnitPowerMax() return 1264 end
     actions.close()
     Flush()
     assert(hostedView.frame:IsShown() and CharacterFrame:IsVisible(), "closing Inspect did not resume the already visible character dock")
+    if forever then
+        if not CharacterFrame:IsShown() then Press("C") end
+        actions.tab("overview")
+        for _, layoutName in ipairs({ "list", "classic", "modern" }) do
+            characterView = layoutName
+            lastReport = nil
+            runtime:Refresh()
+            Flush()
+            assert(runtime.view == hostedView and hostedView.characterView == layoutName,
+                "open Suite character window ignored the profile's " .. layoutName .. " view")
+            assert((lastReport ~= nil) == (layoutName == "list"), "the equipment list did not replace the model")
+        end
+    end
     runtime.config.mode = 1
     runtime:Refresh()
     assert(CharacterFrame:IsVisible() and not hostedView.frame:IsShown() and not callbacks.INSPECT_READY
@@ -1531,4 +1745,4 @@ end
 Run(false)
 Run(true)
 assert(nativeHides == 8) -- three Inspect handoffs per client, plus the reopen after the UI hide
-print("Character Panel: both clients, audit navigation, native sets, Inspect comparison and native-hosted combat model and equipment passed")
+print("Character Panel: both clients, audit navigation, native equipment sets, Inspect comparison and native-hosted combat model and equipment passed")

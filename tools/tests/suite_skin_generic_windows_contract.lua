@@ -1119,6 +1119,103 @@ Section("deep windows", function()
     _G.ProfessionsMixin, _G.ProfessionsCraftingPageMixin, _G.GenericTraitFrameMixin = nil, nil, nil
 end)
 
+local function CheckBankChrome(isForever)
+    local client = setmetatable({ isForever = isForever }, { __index = NS.Client })
+    local deepNS = setmetatable({ Client = client }, { __index = NS })
+    Load("DeepWindows.lua", deepNS)
+    local bank, panel = Frame("BankFrame"), Frame("BankPanel")
+    bank.BankPanel = panel
+    function bank:IsShown() return self.shown end
+    local function Slot(parent)
+        local button = Frame(nil)
+        button.icon, button.IconBorder, button.Background, button.NormalTexture = {}, {}, {}, {}
+        button.parent, button.DisabledOverlay = parent, {}
+        function button:GetParent() return self.parent end
+        function button:GetNormalTexture() return self.NormalTexture end
+        return button
+    end
+    local item, bag, tab = Slot(panel), Slot(bank), Slot(bank)
+    tab.Icon, tab.SelectedTexture = {}, { IsShown = function() return tab.selected end }
+    local divider = { GetAtlas = function() return "bank-divider" end }
+    local otherArt = { GetAtlas = function() return "bank-other-art" end }
+    function bank:GetRegions() return divider, otherArt end
+    local moneyBorder = Frame(nil)
+    local goldTrim = { GetObjectType = function() return "Texture" end }
+    function moneyBorder:GetRegions() return goldTrim end
+    panel.MoneyFrame = { Border = moneyBorder }
+    local function Pool(owner, key, object)
+        owner[key] = { EnumerateActive = function() return next, { [object] = true } end }
+    end
+    function panel:GenerateItemSlotsForSelectedTab() Pool(panel, "itemButtonPool", item) end
+    function bank:RefreshBagButtons() Pool(bank, "itemButtonBagPool", bag) end
+    function bank:RefreshPageTabs() Pool(bank, "bankPageTabPool", tab) end
+
+    local oldBank, fade, restore = BankFrame, NS.Cosmetics.Fade, NS.Cosmetics.RestoreOwner
+    local queue, iconApply = NS.Registry.QueueJob, NS.IconSkin.Apply
+    local faded, jobs, painted = {}, {}, {}
+    NS.Cosmetics.Fade = function(region, owner) faded[region] = owner return true end
+    NS.Cosmetics.RestoreOwner = function(owner)
+        for region, painter in pairs(faded) do if painter == owner then faded[region] = nil end end
+    end
+    NS.IconSkin.Apply = function(button, _, spec)
+        painted[button] = spec.icon == button.icon and spec.nativeBorder == button.IconBorder
+        return {}
+    end
+    NS.Registry.QueueJob = function(job) jobs[job] = true end
+    local function Flush()
+        for job in pairs(jobs) do jobs[job] = nil job() end
+    end
+
+    BankFrame, bank.shown = bank, false
+    deepNS.DeepWindows.Apply("bank")
+    bank.shown, tab.selected = true, true
+    bank:RefreshBagButtons()
+    bank:RefreshPageTabs()
+    panel:GenerateItemSlotsForSelectedTab()
+    Expect(next(faded) == nil, "bank paint ran inside a native rebuild")
+    Flush()
+    Expect(item.surfaceSpec and item.surfaceSpec.role == "button" and painted[item]
+        and faded[item.NormalTexture] and faded[item.Background], "bank item slots kept their native plates")
+    Expect(faded[goldTrim] and moneyBorder.surfaceSpec and moneyBorder.surfaceSpec.role == "status"
+        and not faded[otherArt], "bank skin did not replace only the gold trim")
+    if isForever then
+        Expect(bag.surfaceSpec and painted[bag] and faded[bag.NormalTexture] and faded[bag.Background]
+            and not faded[bag.DisabledOverlay], "Forever bag slot kept its border or lost its lock indicator")
+        Expect(tab.surfaceActive == true and faded[tab.SelectedTexture] and faded[tab.Background]
+            and faded[divider] and not faded[tab.Icon], "Forever bank chrome kept gold art or lost its icon")
+        tab.selected = false
+        bank:RefreshPageTabs()
+        Flush()
+        Expect(tab.surfaceActive == false, "Forever bank page change left a stale selection")
+    else
+        Expect(not bag.surfaceSpec and not tab.surfaceSpec and not faded[divider], "Retail used the Camelot bank paint")
+    end
+
+    item = Slot(panel)
+    panel:GenerateItemSlotsForSelectedTab()
+    Flush()
+    Expect(painted[item], "bank page change left unskinned slots")
+
+    local releasedItem = item
+    item = Slot(panel)
+    panel:GenerateItemSlotsForSelectedTab()
+    bank.shown = false
+    Flush()
+    Expect(not painted[item], "a queued bank pass painted a closed bank")
+    bank.shown = true
+    panel:GenerateItemSlotsForSelectedTab()
+    deepNS.DeepWindows.Disable("bank")
+    Flush()
+    Expect(not next(faded) and not painted[item] and releasedItem.surfaceVisible == false,
+        "disabling the bank skin failed to restore art or cancel pending paint")
+
+    BankFrame, NS.Cosmetics.Fade, NS.Cosmetics.RestoreOwner = oldBank, fade, restore
+    NS.Registry.QueueJob, NS.IconSkin.Apply = queue, iconApply
+end
+
+Section("Forever bank chrome", function() CheckBankChrome(true) end)
+Section("Retail bank chrome", function() CheckBankChrome(false) end)
+
 Section("common menus", function()
     Load("DeepWindows.lua")
     Load("DeepWindowsProfessions.lua")
@@ -1217,6 +1314,18 @@ Section("common menus", function()
         "reopening a bag re-skinned more than its new item buttons")
     Expect(items[1].skinnedQuality == "epic",
         "a reused bag button kept the quality border of its old contents")
+    local previousMail, previousForever, queueJob = MailFrame, NS.Client.isForever, NS.Registry.QueueJob
+    local jobs = {}
+    MailFrame, NS.Client.isForever = { IsShown = function() return true end }, true
+    NS.Registry.QueueJob = function(job) jobs[job] = true end
+    items[1].contents = "uncommon"
+    _G.ContainerFrame_GenerateFrame(bag, 16, 0)
+    Expect(items[1].IconBorder.quality == "uncommon" and items[1].skinnedQuality == "epic",
+        "Forever bag skin wrote to a bag during the mailbox opening stack")
+    for job in pairs(jobs) do job() end
+    Expect(next(jobs) and items[1].skinnedQuality == "uncommon", "the queued mailbox bag pass lost the current item")
+    MailFrame, NS.Client.isForever, NS.Registry.QueueJob = previousMail, previousForever, queueJob
+
     -- Initialize gives a button moved into the combined bag an ItemSlotBackground.
     items[2].ItemSlotBackground = {}
     _G.ContainerFrame_GenerateFrame(bag, 16, 0)
@@ -1290,12 +1399,16 @@ Section("legacy windows", function()
         return region
     end
     local prevPlate = Region("Texture", "Interface/Buttons/UI-PageButton-Background.blp")
-    local nextPlate = Region("Texture", "INTERFACE\\BUTTONS\\UI-PAGEBUTTON-BACKGROUND")
+    local nextPlate = Region("Texture")
+    function nextPlate:GetTextureFileID() return 130822 end
+    local fallbackPlate = Region("Texture")
+    function fallbackPlate:GetTexture() return 130822 end
     local arrow = Region("Texture", "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
     local fileID = Region("Texture", 136040)
+    function fileID:GetTextureFileID() return 136040 end
     local label = Region("FontString")
     for name, regions in pairs({ MerchantPrevPageButton = { label, prevPlate, arrow },
-        MerchantNextPageButton = { nextPlate, fileID } }) do
+        MerchantNextPageButton = { nextPlate, fallbackPlate, fileID } }) do
         local button = Frame(name)
         function button:GetRegions() return unpack(regions) end
         _G[name] = button
@@ -1307,7 +1420,7 @@ Section("legacy windows", function()
     Expect(ok and applied and state == "partial" and merchantItem.surfaceSpec ~= nil
         and #reported == before + 1,
         "a raising legacy window group stopped the other groups")
-    Expect(faded[prevPlate] and faded[nextPlate], "a merchant page button kept its stone backplate")
+    Expect(faded[prevPlate] and faded[nextPlate] and faded[fallbackPlate], "a merchant page button kept its stone backplate")
     Expect(not faded[arrow] and not faded[fileID] and not faded[label],
         "the merchant page buttons lost more than their backplates")
     NS.Cosmetics.Fade = fade
@@ -1316,9 +1429,9 @@ Section("legacy windows", function()
     _G.MerchantPrevPageButton, _G.MerchantNextPageButton = nil, nil
 end)
 
--- A generic arrow glyph reads muted while its button is disabled (a pager on
--- its first page) and bright once Blizzard enables it again.
-Section("glyph buttons follow their enabled state", function()
+-- Native pagers can receive secret Booleans. Paint their glyphs using the
+-- public state available during the skin pass without binding script events.
+Section("glyph buttons can keep a native enabled state", function()
     local glyph = { shown = false }
     function glyph:SetPoint() end
     function glyph:SetText(text) self.text = text end
@@ -1339,14 +1452,12 @@ Section("glyph buttons follow their enabled state", function()
     local ok, message = pcall(function()
         Expect(GenericWindows.ApplyFrame(window, "pager-glyph", MODE) and glyph.text == ">" and glyph.shown
             and glyph.role == "muted", "a disabled pager showed its arrow as active")
-        local onEnable, onDisable = button.hooks.OnEnable, button.hooks.OnDisable
-        Expect(onEnable and onDisable, "the arrow glyph did not follow its button's state")
-        if not (onEnable and onDisable) then return end
+        Expect(not (button.hooks.OnEnable or button.hooks.OnDisable),
+            "the arrow glyph installed a script that blocks secret enabled state")
         button.enabled = true
-        onEnable(button)
+        GenericWindows.ApplyFrame(window, "pager-glyph", MODE)
         Expect(glyph.role == "accentBright", "an enabled pager kept its muted arrow")
         button.enabled = false
-        onDisable(button)
         listener(nil, "theme")
         Expect(glyph.role == "muted", "a theme repaint brightened a disabled pager's arrow")
     end)
@@ -1697,16 +1808,18 @@ Section("player spells tab colors", function()
         "a tab refresh recaptured our own color as the native one")
 end)
 
--- Forever: Classic's "Show All Spell Ranks" option on the page, as a themed
--- toggle chip (not Blizzard's yellow checkbox). It flips only Blizzard's own
--- setting and never refreshes Blizzard's spell list.
+-- The Forever footer uses the existing Blizzard responder as the hardware OnClick.
 Section("forever spellbook ranks toggle", function()
+    NS.SpellLearning = { Attach = function() end, Hide = function() end, RefreshSetting = function() end }
     Load("PlayerSpells.lua")
     local forever, gamepad, create = NS.Client.isForever, NS.Client.IsGamepadUI, CreateFrame
     local saved = { GetCVarBool, SetCVar, UnitClass, SHOW_ALL_SPELL_RANKS,
-        GameTooltip, GameTooltip_SetTitle, GameTooltip_AddNormalLine, GameTooltip_Hide, NS.ControlSkin.Refresh }
+        GameTooltip, GameTooltip_SetTitle, GameTooltip_AddNormalLine, GameTooltip_Hide, NS.ControlSkin.Refresh,
+        issecurevariable }
     NS.Client.isForever, NS.Client.IsGamepadUI = true, function() return false end
     local cvars, tooltip, class, active = { ShowAllSpellRanks = "0" }, {}, "MAGE", {}
+    local clickPhase, secureResponder, selectable = nil, true, true
+    issecurevariable = function(_, key) return key ~= "responder" or secureResponder end
     GetCVarBool = function(name) return cvars[name] == "1" end
     SetCVar = function(name, value) cvars[name] = value end
     UnitClass = function() return "Class", class end
@@ -1751,8 +1864,22 @@ Section("forever spellbook ranks toggle", function()
         return spells, book
     end
     local spells, book = Book()
-    local refreshes = 0
-    function book:UpdateDisplayedSpells() refreshes = refreshes + 1 end
+    local refreshes, entries = 0, 1
+    local function NativeRanksResponder()
+        Expect(clickPhase == "OnClick", "the native responder ran from an addon click wrapper")
+        cvars.ShowAllSpellRanks = cvars.ShowAllSpellRanks == "1" and "0" or "1"
+        entries = cvars.ShowAllSpellRanks == "1" and 3 or 1
+        refreshes = refreshes + 1
+        NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+    end
+    local rankOption = { text = SHOW_ALL_SPELL_RANKS, responder = NativeRanksResponder }
+    function rankOption:IsCheckbox() return true end
+    function rankOption:CanSelect() return selectable end
+    local description = { tag = "MENU_SPELL_BOOK_SETTINGS" }
+    function description:GetTag() return self.tag end
+    function description:EnumerateElementDescriptions() return ipairs({ rankOption }) end
+    book.SettingsDropdown = Frame(nil)
+    function book.SettingsDropdown:GetMenuDescription() return description end
     NS.PlayerSpellsSkin.Apply(spells, "ranks")
     local toggle
     for _, frame in ipairs(created) do
@@ -1763,16 +1890,62 @@ Section("forever spellbook ranks toggle", function()
         "Forever's spellbook lacks the Show All Spell Ranks toggle button")
     Expect(toggle and active[toggle] == false and toggle.on == false, "the ranks toggle does not show Blizzard's setting")
     if toggle then
-        toggle.scripts.OnClick(toggle)
-        Expect(cvars.ShowAllSpellRanks == "1" and refreshes == 0 and active[toggle] == true,
-            "the ranks toggle did not set Blizzard's setting, light up, or refreshed the spell list itself")
+        local originalQueue, queued = NS.Registry.QueueJob, nil
+        NS.Registry.QueueJob = function(job) queued = job end
+        cvars.ShowAllSpellRanks = "1"
+        NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+        NS.PlayerSpellsSkin:OnFrameTabSet(spells)
+        NS.Registry.QueueJob = originalQueue
+        Expect(queued and active[toggle] == false, "Forever spellbook repainted during Blizzard's native callback")
+        if queued then queued() end
+        Expect(active[toggle] == true, "queued native spellbook refresh did not synchronize the toggle")
         cvars.ShowAllSpellRanks = "0"
         toggle.scripts.OnShow(toggle)
-        Expect(active[toggle] == false, "the ranks toggle missed a change from Blizzard's menu")
+        local function Click(expectedHandler)
+            clickPhase = "PreClick"
+            if toggle.scripts.PreClick then toggle.scripts.PreClick(toggle, "LeftButton", false) end
+            local handler = toggle.scripts.OnClick
+            if expectedHandler then
+                Expect(handler == expectedHandler, "the bottom toggle did not bind Blizzard's original native click handler")
+            end
+            clickPhase = handler == NativeRanksResponder and "OnClick" or "addon"
+            if handler then handler(toggle, "LeftButton", false) end
+            clickPhase = "PostClick"
+            if toggle.scripts.PostClick then toggle.scripts.PostClick(toggle, "LeftButton", false) end
+            clickPhase = nil
+        end
+        Click(NativeRanksResponder)
+        Expect(toggle.scripts.OnClick == nil, "a successful native click kept its handler armed")
+        Expect(entries == 3 and refreshes == 1 and active[toggle] == true,
+            "the first bottom click did not immediately show all ranks")
+        Click(NativeRanksResponder)
+        Expect(entries == 1 and refreshes == 2 and active[toggle] == false,
+            "the second bottom click did not immediately hide the lower ranks")
+        cvars.ShowAllSpellRanks = "1"
+        NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+        Expect(active[toggle] == true, "the ranks toggle missed a native setting change")
+        cvars.ShowAllSpellRanks = "0"
+        Click(NativeRanksResponder)
+        Expect(entries == 3 and refreshes == 3, "the next click used stale selection state")
+        locked = true
+        Click()
+        locked = false
+        selectable = false
+        Click()
+        selectable = true
+        Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1",
+            "the ranks filter changed while locked or disabled by the native menu")
+        secureResponder = false
+        Click()
+        secureResponder = true
+        Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1", "a tainted responder changed the ranks")
+        description.tag = "OTHER_MENU"
+        Click()
+        Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1" and toggle.scripts.OnClick == nil,
+            "a foreign menu rebuilt the native spellbook or left an armed click handler")
         toggle.scripts.OnEnter(toggle)
-        Expect(tooltip.shown and tooltip.title == "Show All Spell Ranks"
-            and tooltip.line == "Takes effect when you switch spellbook tabs.",
-            "the ranks toggle tooltip does not say when the setting applies")
+        Expect(tooltip.line == "To apply immediately, use the rank checkbox in the spellbook settings menu.",
+            "a missing native handler did not expose the fallback hint")
         NS.PlayerSpellsSkin.Disable(spells, "ranks")
         Expect(toggle.shown == false, "disabling the spellbook skin left the ranks toggle visible")
     end
@@ -1789,7 +1962,7 @@ Section("forever spellbook ranks toggle", function()
     CreateFrame, NS.Client.isForever, NS.Client.IsGamepadUI = create, forever, gamepad
     GetCVarBool, SetCVar, UnitClass, SHOW_ALL_SPELL_RANKS = saved[1], saved[2], saved[3], saved[4]
     GameTooltip, GameTooltip_SetTitle, GameTooltip_AddNormalLine, GameTooltip_Hide = saved[5], saved[6], saved[7], saved[8]
-    NS.ControlSkin.Refresh = saved[9]
+    NS.ControlSkin.Refresh, issecurevariable = saved[9], saved[10]
 end)
 
 Section("prepared Forever spells window combat artwork", function()
@@ -3280,14 +3453,20 @@ Section("world map", function()
     Expect(not Outlined(combatRow), "a quest row was skinned in combat")
     NS.WorldMapSkin:OnWorldMapShown()
     Expect(Outlined(combatRow), "a quest row acquired in combat had no outline after reopening")
-    -- The update hook runs inside Blizzard's call: a raising row is reported.
+    -- Blizzard returns before the queued paint. A raising row is reported
+    -- through the registry's job boundary.
     local raisingRow = AcquireRow()
     function raisingRow:GetObjectType() error("contract: quest row raised") end
     local before = #reported
+    local queueJob, deferred = NS.Registry.QueueJob
+    NS.Registry.QueueJob = function(job) deferred = job end
     local updated = pcall(_G.QuestLogQuests_Update)
+    NS.Registry.QueueJob = queueJob
+    Expect(updated and deferred and #reported == before, "quest paint ran inside QuestLogQuests_Update")
+    if deferred then NS.Safety.Dispatch(deferred) end
+    Expect(#reported == before + 1, "a queued quest-row paint error went unreported")
     activeRows[raisingRow] = nil
     table.remove(contents.children)
-    Expect(updated and #reported == before + 1, "a raising quest row escaped into QuestLogQuests_Update")
     NS.Surface.Attach = countingAttach
 
     for owner, callback in pairs(listeners) do callback(owner, "theme", "look") end
@@ -3634,6 +3813,98 @@ Section("adapter file structure", function()
         "the shared search box skin did not restore the native text colors")
 end)
 
+Section("chat item reference closes through its Suite caption in combat", function()
+    local priorTooltip, priorLockdown, priorFade = ItemRefTooltip, InCombatLockdown, NS.Cosmetics.Fade
+    local priorRestore, priorCaption, priorCreate = NS.Cosmetics.RestoreOwner, MSUFSuite.WindowCaption, CreateFrame
+    local tooltip = Frame("ItemRefTooltip")
+    function tooltip:IsVisible() return self.shown == true end
+    function tooltip:HookScript() end
+    local close = Frame(nil)
+    function close:GetParent() return tooltip end
+    function close:GetFrameLevel() return 510 end
+    function close:IsShown() return true end
+    local hooks = {}
+    function close:HookScript(script, callback) hooks[script] = callback end
+    tooltip.CloseButton, ItemRefTooltip = close, tooltip
+
+    local cell, alpha, panelCalls, hides = nil, 1, 0, 0
+    function tooltip:Hide()
+        assert(not self:IsProtected(), "protected tooltip was hidden")
+        self.shown = false
+        hides = hides + 1
+    end
+    function tooltip:IsProtected() return self.protected, self.protected end
+    -- ItemRef.xml calls HideUIPanel, which refuses an insecure combat call.
+    local function NativeClick()
+        panelCalls = panelCalls + 1
+        if not locked then tooltip:Hide() end
+    end
+    close.OnClick = NativeClick
+    function close:SetScript() error("the native click handler was replaced") end
+    CreateFrame = function(kind, name, parent)
+        assert(name == nil and parent == nil)
+        assert(not cell, "the caption was recreated")
+        cell = NewFrame()
+        function cell:EnableMouse(enabled) self.mouseEnabled = enabled end
+        function cell:RegisterForClicks(button) self.clickButton = button end
+        function cell:SetAllPoints(relative) self.relative = relative end
+        function cell:SetFrameLevel(level) self.level = level end
+        function cell:SetShown(shown) self.shown = shown end
+        return cell
+    end
+    MSUFSuite.WindowCaption = { SetKind = function() end, Dress = function(frame, kind) frame.kind = kind end }
+    local owner = "chat-item-reference"
+    NS.Cosmetics.Fade = function(target, source)
+        if target == close and source == owner then alpha = 0 end
+        return true
+    end
+    NS.Cosmetics.RestoreOwner = function(source) if source == owner then alpha = 1 end end
+    InCombatLockdown = function() return locked end
+    local entry = NS.BlizzardCatalog.FindByFrame("ItemRefTooltip")
+    locked = true
+    tooltip.shown = true
+    function close:IsProtected() return true, true end
+    GenericWindows.ApplyEntry(entry, owner)
+    Expect(not cell and alpha == 1, "an explicitly protected item reference button was modified")
+    function close:IsProtected() return false, false end
+    GenericWindows.ApplyEntry(entry, owner)
+    Expect(cell and cell.kind == "close" and cell.relative == close and cell.level == 511 and cell.shown
+        and cell.mouseEnabled == true and cell.clickButton == "LeftButtonUp" and alpha == 0,
+        "the first combat item link did not get a clickable caption")
+    if cell then
+        local function ClickX()
+            if cell.shown and cell.mouseEnabled then cell.scripts.OnClick(cell)
+            else close.OnClick() end
+        end
+        Expect(close.OnClick == NativeClick and not hooks.OnClick, "the native handler was altered")
+        ClickX()
+        Expect(hides == 1 and not tooltip.shown and panelCalls == 0, "the Suite X did not close the tooltip in combat")
+        hooks.OnHide()
+        Expect(not cell.shown, "a hidden native button left its caption visible")
+        tooltip.shown = true
+        hooks.OnShow()
+        Expect(cell.shown, "combat reopening lost the caption")
+        tooltip.protected = true
+        ClickX()
+        Expect(tooltip.shown and hides == 1, "the Suite X tried to hide a protected tooltip")
+        tooltip.protected = false
+        locked = false
+        ClickX()
+        Expect(hides == 2 and not tooltip.shown and panelCalls == 0, "the Suite X did not close the tooltip out of combat")
+    end
+    locked = false
+    GenericWindows.Disable(owner)
+    if cell then
+        hooks.OnShow()
+        tooltip.shown = true
+        if cell.scripts.OnClick then cell.scripts.OnClick(cell) end
+        Expect(tooltip.shown and hides == 2, "a disabled caption closed the tooltip")
+    end
+    Expect(cell and not cell.shown and alpha == 1, "disabling the skin did not restore the native X")
+    ItemRefTooltip, InCombatLockdown, NS.Cosmetics.Fade = priorTooltip, priorLockdown, priorFade
+    NS.Cosmetics.RestoreOwner, MSUFSuite.WindowCaption, CreateFrame = priorRestore, priorCaption, priorCreate
+end)
+
 
 Section("hidden windows defer cosmetic work until visible", function()
     local function Window(name)
@@ -3655,6 +3926,21 @@ Section("hidden windows defer cosmetic work until visible", function()
         return frame
     end
     local function Paints() return counters.attach + counters.yellow end
+    do
+        local previousMail, previousForever, queueJob = MailFrame, NS.Client.isForever, NS.Registry.QueueJob
+        local queued
+        local mailbox = Window("MailFrame")
+        MailFrame, NS.Client.isForever = mailbox, true
+        NS.Registry.QueueJob = function(job) queued = job end
+        local entry = NS.BlizzardCatalog.FindByFrame("MailFrame")
+        GenericWindows.ApplyEntry(entry, "mail-opening")
+        mailbox:Display(true)
+        Expect(not mailbox.surfaceSpec and queued, "Forever mailbox painted before its native reading emote")
+        if queued then queued() end
+        Expect(mailbox.surfaceSpec, "the mailbox did not receive its deferred skin")
+        GenericWindows.Disable("mail-opening")
+        MailFrame, NS.Client.isForever, NS.Registry.QueueJob = previousMail, previousForever, queueJob
+    end
     Load("SocialUI.lua")
     local social = Window("SocialUIFrame")
     social.FriendsList = { ScrollBox = RowBox() }

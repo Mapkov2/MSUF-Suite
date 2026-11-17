@@ -31,6 +31,8 @@ local function Accessible(frame)
 end
 
 local function IsFree(frame)
+    local defined = frame:GetAttribute(DEFINED)
+    if not NS.Public(defined) or defined ~= true then return false end
     local area = frame:GetAttribute(AREA)
     return NS.Public(area) and area == nil
 end
@@ -58,13 +60,20 @@ local function Visible(frame)
 end
 
 local function CanClose(frame, managed)
+    -- A Forever managed close from addon execution can taint the panel
+    -- delegate's shared slots, which the native Edit Mode also reads.
+    local canCloseManaged = managed and not NS.Client.isForever
     -- Forever's spell window updates protected action bars in its native show and hide scripts.
     return frame and (frame ~= playerSpells or not NS.Client.isForever)
-        and shown[frame] and Visible(frame) and CanFloat(frame) and (managed or IsFree(frame))
+        and (frame ~= _G.CharacterFrame or not NS.Client.isForever or not S.GamepadUI())
+        and shown[frame] and Visible(frame) and CanFloat(frame) and (canCloseManaged or IsFree(frame))
 end
 
 local function CanCloseBags()
     if shownBags == 0 then return false end
+    -- Forever's combined bag OnHide calls ToggleCharacter in Gamepad UI.
+    if NS.Client.isForever and bagFrames[_G.ContainerFrameCombinedBags]
+        and Visible(_G.CharacterFrame) and S.GamepadUI() then return false end
     for frame, open in pairs(bagFrames) do
         if open then
             if not Accessible(frame) then return false end
@@ -297,7 +306,7 @@ local function Attach(name, index)
     -- The native API treats a panel with no area as a floating window and
     -- still runs the original Show/Hide scripts, close buttons and events.
     SetUIPanelAttribute(frame, "area", nil)
-    if frame:GetAttribute(DEFINED) == true and IsFree(frame) then
+    if IsFree(frame) then
         record.area, ownedCount = info.area, ownedCount + 1
         if name == "WorldMapFrame" then
             map = frame

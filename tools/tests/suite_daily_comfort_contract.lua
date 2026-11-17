@@ -142,7 +142,8 @@ assert(module.context.applied.showTutorials == "0"
     and module.context.applied.Sound_EnableMusic == "0"
     and not module.context.applied.whisperMode and ChatFrame1.fading,
     "selected native settings were not applied")
-local chatNS = { NS = ns, Suite = suite, Chat = {} }
+local chatNS = { NS = ns, Suite = suite }
+assert(loadfile(root .. "/MSUF_Suite_Chat/Shared.lua"))("MSUF_Suite_Chat", chatNS)
 assert(loadfile(root .. "/MSUF_Suite_Chat/Appearance.lua"))("MSUF_Suite_Chat", chatNS)
 assert(loadfile(root .. "/MSUF_Suite_Chat/Comfort.lua"))("MSUF_Suite_Chat", chatNS)
 chat.id, chat.active, chat.context = "chatComfort", true, Context()

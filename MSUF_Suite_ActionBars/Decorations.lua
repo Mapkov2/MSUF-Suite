@@ -256,6 +256,18 @@ local function HostShape(rec, style)
         button.NewActionTexture, button.SpellHighlightTexture)
     rec.hostShaped = style.round or nil
 end
+-- Takes the Suite's shape, frame art and hover ring off a button before
+-- Masque skins it (Masque.lua); the next full style pass puts them back.
+local FLAT = { shape = "RECTANGLE", round = false }
+function AB.ClearDecoration(rec)
+    if rec.circleMasked then LegacyCircle(rec, false) end
+    if rec.hostShaped then HostShape(rec, FLAT) end
+    rec.decorFancy = false
+    if rec.borderArt then rec.borderArt:Hide() end
+    AB.UpdateDecorState(rec)
+    if rec.hoverRing then rec.hoverRing:Hide() end
+end
+
 function AB.StyleDecoration(rec, size)
     local c, button, style = M.config, rec.button, AB.style
     local circle, round = style.legacyCircle, style.round

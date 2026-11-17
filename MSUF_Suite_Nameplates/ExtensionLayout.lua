@@ -20,14 +20,26 @@ function L.Mutable(state, region)
     return true
 end
 
+-- The layout preflight has no writes. Read the owner's combat protection
+-- once here and keep the fresh guards by the individual native edits.
+local function ProtectedPartMutable(state, region)
+    local protected = region:IsProtected()
+    if not NS.IsSecret(protected) and protected == false then return true end
+    state.owner.pendingPlates[state.uf] = true
+    return false
+end
+
 local function PartMutable(state, region)
-    return not Safe(region) or L.Mutable(state, region)
+    return not Safe(region) or ProtectedPartMutable(state, region)
 end
 
 local function LayoutMutable(state)
     local uf, cast = state.uf, state.cast
-    return L.Mutable(state, uf) and PartMutable(state, uf.name) and PartMutable(state, uf.RaidTargetFrame)
-        and PartMutable(state, cast) and (not cast or PartMutable(state, cast.Icon) and PartMutable(state, cast.Text))
+    if not Safe(uf) then return false end
+    if not NS.IsCombatLocked() then return true end
+    return ProtectedPartMutable(state, uf) and PartMutable(state, uf.name) and PartMutable(state, uf.RaidTargetFrame)
+        and (not Safe(cast) or ProtectedPartMutable(state, cast)
+            and PartMutable(state, cast.Icon) and PartMutable(state, cast.Text))
 end
 
 local function HealthCurve(alpha)

@@ -128,22 +128,45 @@ Refresh(ctx)
 assert(paints == prior, "hidden bags preview repainted")
 -- The skin preview owns these engine states. Its wrapper must stop native
 -- paint calls when the sample is hidden, without changing runtime states.
-local states, skinPaints = {}, 0
+local states, statesByFrame, skinPaints = {}, {}, 0
 local function Attach(frame)
     local state = { target = frame, refresh = function() skinPaints = skinPaints + 1 end }
     states[#states + 1] = state
+    statesByFrame[frame] = state
     return state
 end
-local skin = { Surface = { Attach = Attach, SkinOwnedButton = Attach },
+local skin = { Surface = { Attach = Attach, SkinOwnedButton = Attach,
+    Refresh = function(frame) local state = statesByFrame[frame]; state.refresh(state) end },
+    Registry = { AddListener = function() end, RemoveListener = function() end },
     Theme = { GetColor = function() return 1, 1, 1 end }, LookPresets = {}, DB = { theme = { look = "custom" } } }
 local skinCtx = Context("suite_skin")
 P.BuildSkinMenuPreview(skinCtx, P.W.PageBuilder(skinCtx), skin)
 local section = skinCtx.skinPreview.section
 local skinFocus, priorWorkspace = nil, skinCtx.suiteWorkspace
 skinCtx.suiteWorkspace = { Focus = function(_, target) skinFocus = target end }
-skinCtx.skinPreview.normal.scripts.OnClick()
-assert(skinFocus == "suite_skin_fonts", "Fonts sample opened shape settings")
+local fonts
+for _, entry in ipairs(skinCtx.skinPreview.labels) do
+    if entry.region:GetText() == "Fonts" then fonts = entry.region:GetParent() end
+end
+assert(fonts and fonts.scripts.OnClick, "the Fonts preview link is missing")
+fonts.scripts.OnClick(fonts, "LeftButton")
+assert(skinFocus == "suite_skin_fonts", "the Fonts sample did not open font settings directly")
 skinCtx.suiteWorkspace = priorWorkspace
+do
+    local bridge, exact = P.Suite.HostBridge
+    local open = bridge.OpenExactMenuSetting
+    bridge.OpenExactMenuSetting = function(_, page, section, setting)
+        exact = page .. ":" .. section .. ":" .. setting
+        return true
+    end
+    skin.DB.theme.iconBorderStyle = "off"
+    for _, chip in ipairs(skinCtx.skinPreview.layerButtons) do
+        if chip.key == "item" then chip.scripts.OnClick(chip, "LeftButton") break end
+    end
+    bridge.OpenExactMenuSetting = open
+    assert(exact == "suite_skin:suite_skin_icons:msufsuite.skin.theme.iconBorderStyle"
+        and skin.DB.theme.iconBorderStyle == "off", "disabled item border did not open its style control")
+end
 for _, state in ipairs(states) do state.refresh(state) end
 prior = skinPaints
 section:Hide()

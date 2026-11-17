@@ -96,6 +96,8 @@ local function SanitizeSpec(source)
         local value = ReadOption(source, key)
         if type(value) == "boolean" then spec[key] = value end
     end
+    local keepGlassFill = rawget(source, "keepGlassFill")
+    if NS.Safety.Public(keepGlassFill) and type(keepGlassFill) == "boolean" then spec.keepGlassFill = keepGlassFill end
     local motion = rawget(source, "motion")
     if type(motion) == "boolean" then spec.motion = motion end
     local group = ReadOption(source, "motionGroup")
@@ -215,6 +217,7 @@ end
 local function ValidateEntry(entry)
     local safe, reason = SafeTarget(entry.target, EntryNeedsRegions(entry))
     if not safe then return false, reason end
+    if entry.label and not NS.LabelStyle.CanStyle(entry.target) then return false, "protected-target" end
     if entry.icon then
         safe, reason = SafeTarget(entry.icon.icon, false)
         if not safe then return false, reason end
@@ -250,6 +253,7 @@ local function CleanupNow(entry)
     if not safe then return false, reason end
     PublicAPI.ReleaseMenu(entry.owner, entry.target)
     PublicAPI.StopContent(entry.owner, entry.target)
+    if entry.label then NS.LabelStyle.Release(entry.target, entry.owner) end
     ControlSkin.DisableOwner(entry.owner)
     WindowActionSkin.DisableOwner(entry.owner)
     IconSkin.DisableOwner(entry.owner)
@@ -399,6 +403,7 @@ local function ReconcileNow(scope, target, entry)
     end
     entry.applied = true
     if entry.menu then PublicAPI.TrackMenu(target, entry.owner, entry.menu == "content") end
+    if entry.label then NS.LabelStyle.Apply(target, entry.owner) end
     entry.appliedControl, entry.appliedFor = entry.control, settingsGeneration
     return true, "applied"
 end

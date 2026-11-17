@@ -11,7 +11,20 @@ local function Finite(value) return Public(value) and type(value) == "number" en
 local function Nothing() end
 local function Region()
     local r = { shown = true, alpha = .7, path = "native", size = 10, flags = "" }
-    function r:Show() self.shown = true end
+    function r:Show()
+        local wasShown = self.shown
+        self.shown = true
+        local hooks = self.scriptHooks and self.scriptHooks.OnShow
+        if not wasShown and hooks then
+            for i = 1, #hooks do hooks[i](self) end
+        end
+    end
+    function r:HookScript(script, callback)
+        self.scriptHooks = self.scriptHooks or {}
+        local hooks = self.scriptHooks[script] or {}
+        self.scriptHooks[script] = hooks
+        hooks[#hooks + 1] = callback
+    end
     function r:Hide() self.shown = false end
     function r:SetShown(value) self.shown = value end
     function r:IsShown() return self.shown end
@@ -88,6 +101,9 @@ local Style = {
         return { edges = { Region(), Region(), Region(), Region() } }
     end,
 }
+local SharedStyle = { AnchorPoints = {}, AnchorLabels = {} }
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", SharedStyle)
+setmetatable(Style, { __index = SharedStyle.NameplateStyle })
 local NS = { NameplateStyle = Style, Client = {}, Finite = Finite, IsSecret = function(value) return not Public(value) end,
     IsCombatLocked = function() return true end, Safety = {
     IsForbidden = function(frame) return frame.forbidden end,
@@ -110,13 +126,14 @@ Component("Threat", "Enable Apply Restore Disable Refresh")
 Component("Level", "Bind PaintNative Paint Hide RestoreNative")
 Component("CastTime", "Bind Paint Restore Refresh")
 Component("CVars", "Apply")
-Component("Auras", "Bind Apply Restore")
+Component("Auras", "Bind Configure Apply Restore")
 Component("KickReady", "Bind Paint Restore Configure Disable OnCast")
 Component("Mouseover", "Bind Configure Restore Disable")
-Component("Selection", "Apply Restore Configure RestoreAll")
+Component("Selection", "Bind Apply Restore Configure RestoreAll")
 Component("Decor", "Configure Paint Restore Disable TargetChanged")
 Component("AuraColors", "Bind Configure Apply Restore SetEditMode")
-Component("AuraDisplay", "Bind Configure Apply Restore Release Resume SetEditMode")
+Component("AuraDisplay", "Bind Configure Apply Restore Release Resume SetEditMode TargetChanged")
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", NS)
 private.AuraColors.Apply = function(frame)
     assert(not frame.forbidden and not frame.HealthBarsContainer.healthBar.forbidden,
         "specialization applied aura colors to a forbidden plate")
@@ -137,10 +154,13 @@ local castPresentation = private.CastTime
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CastTime.lua"))("nameplates", private)
 private.CastTime.Paint, private.CastTime.Restore = castPresentation.Paint, castPresentation.Restore
 private.CastTime.Refresh = castPresentation.Refresh
+NS.AnchorPoints, NS.AnchorLabels = {}, {}
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("Suite", NS)
-for _, file in ipairs({ "ExtensionLayout", "ExtensionText", "ExtensionEffects", "ExtensionResources", "Extensions" }) do
+for _, file in ipairs({ "ExtensionLayout", "ExtensionText", "ExtensionEffects", "Extensions", "Status" }) do
     assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("nameplates", private)
 end
+NS.ResolveTexture = function() end
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/Textures.lua"))("nameplates", private)
 assert(loadfile(override or root .. "/MSUF_Suite_Nameplates/Skin.lua"))("nameplates", private)
 local applyText = private.Text.Apply
 private.Text.Apply = function(...) Count("Text.Apply"); return applyText(...) end
@@ -155,6 +175,7 @@ module.config = {
 }
 module.context = {
     Event = function(_, event, callback) events[event] = callback end,
+    RemoveEvent = function(_, event) events[event] = nil end,
     Coalesce = function() return { Cancel = Nothing, Request = Nothing } end,
     Cancel = Nothing,
 }
@@ -198,7 +219,10 @@ local function Event(event, unit)
     counts = {}
     debug.sethook(function()
         local info = debug.getinfo(2, "nS")
-        if info.source:match("Skin.lua$") and (info.name == "Paint" or info.name == "PaintFonts") then Count(info.name) end
+        if info.source:match("Skin.lua$") then
+            if info.name == "PaintAdded" then Count("Paint")
+            elseif info.name == "Paint" or info.name == "PaintFonts" then Count(info.name) end
+        end
     end, "c")
     events[event](module, event, unit)
     debug.sethook()

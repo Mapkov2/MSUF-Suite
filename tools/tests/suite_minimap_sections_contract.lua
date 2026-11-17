@@ -77,22 +77,51 @@ local function CheckPerformanceColors(menu, config)
         Check(not fps[target.settingKey], "clock acquired unrelated performance colors")
     end
 end
-for _, width in ipairs({ 360, 720, 1100 }) do
+local function CheckTabs(ctx, workspace, width)
+    local expected = { "basics", "appearance", "layout", "buttons", "information" }
+    local row = assert(workspace.tabs)
+    Check(#row.items == #expected, "Minimap has the wrong number of tabs")
+    Check(ctx.pageItems[1] == "fixed-preview" and ctx.pageItems[2] == "fixed-preview",
+        "preview and tabs must precede the scrolling sections")
+    Check(ctx.fixedPreviews[1].section == workspace.header, "tabs must be docked above the interactive preview")
+    Check(ctx.fixedPreviews[2].section.expander, "the second dock must contain the interactive preview")
+    Check(workspace.header:GetHeight() >= row:GetHeight() + 24, "tab row exceeds the header")
+    Check((row:GetHeight() > 26) == (width == 320), "tab row did not fit the available width")
+    for i, id in ipairs(expected) do
+        local item = row.items[i]
+        Check(item.id == id, "Minimap tab out of order: " .. id)
+        item.button.scripts.OnClick()
+        Check(workspace.selected == id and workspace.groups[id].frame:IsShown(), "tab click did not reveal " .. id)
+        for other, group in pairs(workspace.groups) do
+            Check(group.frame:IsShown() == (other == id), "multiple Minimap tabs visible")
+        end
+    end
+    workspace.select("basics")
+    Check(workspace.sections.suite_minimap_behavior.title == P.Tr("Map behavior"), "map behavior header has no label")
+end
+
+for _, width in ipairs({ 320, 720, 1100 }) do
     local ctx = { key = "suite_minimap", width = width, refreshers = {}, widgets = {}, sections = {},
         pageItems = {}, entry = { sections = {} } }
     F.SetCurrent(ctx)
     M.pages.suite_minimap.build(ctx)
     local menu = assert(ctx.minimapSections, "Minimap needs grouped sections")
+    local workspace = assert(ctx.suiteWorkspace, "Minimap needs settings tabs")
     local owned = 0
     for _, section in ipairs(ctx.sections) do
         if section.sectionId:match("^suite_minimap_") then owned = owned + 1 end
     end
-    Check(owned == 10, "expected nine settings accordions plus the module card")
+    local navigation
+    for _, section in ipairs(ctx.sections) do
+        if section.sectionId == "suite_minimap_navigation" then navigation = section end
+    end
+    Check(owned == 11 and navigation, "expected nine settings accordions, the module card and navigation")
     Check(ctx.pageItems[1] == "fixed-preview", "preview no longer precedes settings")
     Check(menu.groups.information and menu.groups.buttons and menu.groups.decoration, "group missing")
     local config, before = S.Config("minimap"), {}
     config.enabled = false
     for key, value in pairs(config) do before[key] = value end
+    CheckTabs(ctx, workspace, width)
     local info = menu.groups.information
     Check(info.views.info_weather == nil, "unselected information controls built eagerly")
     for _, section in ipairs({ "info_clock", "info_fps", "info_location", "info_weather", "info_difficulty", "info_colors" }) do
@@ -104,8 +133,10 @@ for _, width in ipairs({ 360, 720, 1100 }) do
     CheckPerformanceColors(menu, config)
     Same(config, before)
     local resolver = P.HM.GetMissingSectionResolver(ctx.entry)
+    workspace.select("layout")
     local parent = assert(resolver("suite_minimap_info_clock"), "cold section link did not resolve")
-    Check(parent == info.body and info.selected == "info_clock", "section link selected wrong display")
+    Check(parent == info.body and workspace.selected == "information" and info.selected == "info_clock",
+        "section link selected wrong tab or display")
     menu:SelectMinimapSettings("info_weather")
     Check(Widget(ctx, "infoWeather").enabled == false, "new editor ignored initial module gating")
     Check(info.popup, "closed information reset does not name its selected item")
@@ -113,12 +144,14 @@ for _, width in ipairs({ 360, 720, 1100 }) do
     info.popup:Show()
     Check(info.popup.heading.text == P.Tr("Weather"), "reset popup names the wrong display")
     local clock = assert(Widget(ctx, "infoClock24Hour"), "clock setting missing")
+    workspace.select("buttons")
     P.HM.GetSearchTargetPrepare(clock)()
-    Check(info.selected == "info_clock", "warm search did not select clock")
+    Check(workspace.selected == "information" and info.selected == "info_clock", "warm search did not reveal clock")
     Check(info.popup.heading.text == P.Tr("Clock"), "open reset popup kept a stale selected display")
     local fps = assert(F.registeredControls["menu2.suite_minimap.minimap.preview.infoFPS"])
+    workspace.select("appearance")
     fps.scripts.OnClick(fps, "LeftButton")
-    Check(info.selected == "info_fps", "clicking the preview did not select its information editor")
+    Check(workspace.selected == "information" and info.selected == "info_fps", "preview did not reveal the information editor")
     menu:SelectMinimapSettings("info_weather")
     config.infoWeatherSize, config.infoClockSize = 21, 19
     config.infoWeatherX, config.infoClockX = 45, 63
@@ -151,4 +184,4 @@ for _, width in ipairs({ 360, 720, 1100 }) do
     Check(F.registeredControls["menu2.suite_minimap.minimap.style.preset.12"], "Class Style tile is missing")
     for _, fn in ipairs(ctx.refreshers) do fn() end
 end
-print("Minimap grouped sections: nine accordions, narrow widths, lazy editors, exact routes and scoped reset passed")
+print("Minimap tabs, preview, narrow widths, lazy editors, exact routes and scoped reset passed")

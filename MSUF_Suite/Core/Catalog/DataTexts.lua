@@ -19,7 +19,9 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" }, { "Addon memory", "memory" },
     { "Great Vault", "vault" }, { "Supplies", "supplies" }, { "Friends online", "friends" },
     { "Guild online", "guild" }, { "Secondary stat", "secondaryStat" }, { "Mythic+ rating", "mythicRating" },
-    { "Home latency", "homeLatency" }, { "XP / reputation bar", "progressBar" }, { "Gold today", "todayGold" } }) do
+    { "Home latency", "homeLatency" }, { "XP / reputation bar", "progressBar" }, { "Gold today", "todayGold" },
+    { "Equipment set", "equipmentSet" }, { "Talent loadout", "talentLoadout" }, { "Mail", "mail" },
+    { "Mythic+ Keystone", "keystone" }, { "Time played", "timePlayed" } }) do
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
@@ -29,6 +31,7 @@ for index, key in ipairs(NS.DataTextSourceKeys) do
     if key then NS.DataTextSourceIndex[key] = index end
 end
 function NS.DataTextSourceAvailable(key)
+    if key == "talentLoadout" or key == "keystone" then return not NS.Client.isForever end
     if key == "vault" then return not NS.Client.isForever and NS.Client.HasAddOn("Blizzard_WeeklyRewards") end
     if key == "supplies" then return NS.Client.isForever == true end
     if key == "specLoot" then return not NS.Client.isForever end

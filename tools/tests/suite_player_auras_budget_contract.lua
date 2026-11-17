@@ -354,14 +354,17 @@ _G.BuffFrame, _G.DebuffFrame, Minimap = BuffFrame, DebuffFrame, Widget("Frame", 
 
 -- EditModeSystemMixin:OnSystemLoad replaces SetPoint and ClearAllPoints with
 -- Lua overrides; each SetPoint marks Edit Mode's anchors dirty.
-local anchorDirty, screen = 0, Widget("Frame", 1920, 1080)
+local anchorDirty, snapClears, screen = 0, 0, Widget("Frame", 1920, 1080)
 local function EditModeSystem(frame, x, y)
-    local setPoint, clearAllPoints = Methods.Frame.SetPoint, Methods.Frame.ClearAllPoints
+    frame.SetPointBase, frame.ClearAllPointsBase = frame.SetPoint, frame.ClearAllPoints
     frame.SetPoint = Native("SetPoint", function(self, ...)
-        setPoint(self, ...)
+        self:SetPointBase(...)
         anchorDirty = anchorDirty + 1
     end)
-    frame.ClearAllPoints = Native("ClearAllPoints", function(self) clearAllPoints(self) end)
+    frame.ClearAllPoints = Native("ClearAllPoints", function(self)
+        self:ClearAllPointsBase()
+        snapClears = snapClears + 1
+    end)
     function frame:ApplySystemAnchor()
         self:ClearAllPoints()
         self:SetPoint("TOPRIGHT", screen, "TOPRIGHT", x, y)
@@ -436,6 +439,7 @@ S.Queue = function(id) queued[id] = true end
 S.Install = function(_, instance) module = instance end
 -- NS.IsCombatLocked is InCombatLockdown() (MSUF_Suite_Skin/Core/Bootstrap.lua).
 local NS = { IsSecret = issecretvalue, IsCombatLocked = Native("InCombatLockdown", function() return combat end),
+    Dispatch = function(fn, ...) return fn(...) end, Finish = function(fn, ...) return true, fn(...) end,
     Safety = { IsForbidden = function() return false end },
     MSUFMedia = { font = "msuf.ttf" },
     -- No MSUF host here: no icon skin look, nothing paints.
@@ -600,6 +604,7 @@ end
 module:Enable()
 UnitAura(20, 5)
 SameAsFullRepaint("enable")
+assert(anchorDirty == 0 and snapClears == 0, "Suite adoption used the native Edit Mode anchor overrides")
 assert(DebuffFrame.UpdateAuraButtons == DebuffFrameMixin.UpdateAuraButtons,
     "DebuffFrame.UpdateAuraButtons is hooked although its UpdateGridLayout hook sees every refill")
 
@@ -642,6 +647,7 @@ UnitAura(2, 0)
 SameAsFullRepaint("most auras gone")
 BuffFrame:UpdateGridLayout()
 SameAsFullRepaint("native buff relayout")
+local dirtyBeforeNative, clearsBeforeNative = anchorDirty, snapClears
 StatusTrayManager.UpdateTrayAndBuffFrameLayout()
 SameAsFullRepaint("status tray re-anchor")
 -- A spec or layout change applies the Edit Mode layout: the frames move, then
@@ -649,6 +655,8 @@ SameAsFullRepaint("status tray re-anchor")
 BuffFrame:UpdateSystem()
 DebuffFrame:UpdateSystem()
 SameAsFullRepaint("edit mode layout applied")
+assert(anchorDirty == dirtyBeforeNative + 3 and snapClears == clearsBeforeNative + 3,
+    "Suite re-anchoring wrote native Edit Mode state after Blizzard's layout")
 UnitAura(0, 0)
 BuffFrame:UpdateGridLayout()
 SameAsFullRepaint("native relayout with no auras")
@@ -663,6 +671,7 @@ SameAsFullRepaint("consolidation hidden")
 
 -- Edit Mode resets every Duration font object (EditModeManager RefreshAuraFrame:
 -- SetIsEditing, then UpdateAuraButtons); the module paints its font again.
+dirtyBeforeNative, clearsBeforeNative = anchorDirty, snapClears
 for _, frame in ipairs({ BuffFrame, DebuffFrame }) do
     frame:SetIsEditing(true)
     frame:UpdateAuraButtons()
@@ -677,6 +686,8 @@ for _, frame in ipairs({ BuffFrame, DebuffFrame }) do
     frame:Update()
 end
 SameAsFullRepaint("edit mode exit")
+assert(anchorDirty == dirtyBeforeNative and snapClears == clearsBeforeNative,
+    "Suite repaints inside native Edit Mode enter or exit wrote native anchor state")
 -- With no auras: ExitEditMode reverts the layout (UpdateSystems) while still
 -- editing, then OnEditModeExit refills (EditModeManager.lua 111-114).
 UnitAura(0, 0)
@@ -741,7 +752,10 @@ SameAsFullRepaint("after combat, protected button")
 -- Disable puts back only what the module wrote: Edit Mode's opacity on the
 -- frame stays, and no FontString is given a fixed size.
 BuffFrame:SetAlpha(.5)
+dirtyBeforeNative, clearsBeforeNative = anchorDirty, snapClears
 module:Disable()
+assert(anchorDirty == dirtyBeforeNative and snapClears == clearsBeforeNative,
+    "restoring the original aura anchors used the native Edit Mode overrides")
 assert(BuffFrame.alpha == .5, "disable put back a frame alpha the module never wrote")
 for _, button in ipairs(BuffFrame.auraFrames) do
     assert(not (button.Count.sized or button.Duration.sized), "disable gave an aura FontString a fixed size")

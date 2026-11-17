@@ -287,6 +287,7 @@ B.Section(id, "style_backdrop", "Background plate", {
 })
 B.Section(id, "behavior", "Map behavior", {
     Choice("visibility", "Show the minimap", 1, { "Always", "In combat", "Out of combat", "Mouseover", "Never" }),
+    Number("mapOpacity", "Map opacity (percent)", 100, 10, 100),
     Choice("rotate", "Map rotation", 1, { "Blizzard setting", "Rotate with the player", "North stays up" }),
     Bool("scrollZoom", "Scroll to zoom", true),
     Number("zoomResetSeconds", "Reset zoom after manual zoom (seconds, 0: never)", 0, 0, 15),
@@ -301,6 +302,7 @@ for _, name in ipairs({ "zoomIn", "zoomOut" }) do
 end
 B.Section(id, "elements", "Blizzard buttons", {
     Bool("showTracking", "Tracking button", true),
+    Bool("trackingMouseover", "Show the tracking button only on mouseover", false),
     Bool("showCalendar", "Calendar button", true),
     Bool("showDayNight", "Day/night indicator", false),
     Bool("showMail", "Mail indicator", true),
@@ -522,6 +524,7 @@ rules.queueStatusSize.enableKey = "queueStatusEnabled"
 rules.landingIcon.requiresChoice = { key = "showLanding", values = { [1] = true, [2] = true } }
 rules.zoomResetSeconds.enableKey = "scrollZoom"
 rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverResize"
+rules.trackingMouseover.enableKey = "showTracking"
 rules.drawerKeep.hidden = true
 for _, key in ipairs({ "drawerRow", "drawerButtonSize", "drawerColumns", "drawerMouseover", "drawerKeep" }) do
     rules[key].enableKey = "collectButtons"

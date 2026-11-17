@@ -133,6 +133,27 @@ local function BuildInputTools(ctx, b)
         })
 end
 
+-- The whisper messenger runs in the Chat addon; the button opens or closes
+-- its window while the module is on.
+local MESSENGER = "chatMessenger"
+local function ToggleMessenger()
+    if P.Combat() then return end
+    local messenger = P.S.instances[MESSENGER]
+    if messenger and messenger.active then messenger:Toggle() end
+end
+
+local function BuildMessenger(ctx, b)
+    local rules = P.SectionRules(MESSENGER, MESSENGER .. "_module")
+    P.ModuleCard(ctx, b, PAGE, MESSENGER, {
+        { "Open whisper messenger", ToggleMessenger,
+            function() return not P.Combat() and P.S.Status(MESSENGER) == "Active" end, key = "open" },
+    }, {
+        title = "Whisper messenger", open = false, rules = rules,
+        help = "Replies go to the selected tab. Restricted whispers and whispers during chat lockdown stay in Blizzard chat. Shift-drag the Whispers button to move it.",
+        reset = function() return P.ResetRules(MESSENGER, rules) end,
+    })
+end
+
 local function Build(ctx)
     local b, workspace, preview = P.ChatWorkspace.Begin(ctx)
     P.ModuleCard(ctx, b, PAGE, ID, {
@@ -164,6 +185,7 @@ local function Build(ctx)
         title = "Chat behavior", open = false, rules = comfort,
         reset = function() return P.ResetRules("chatComfort", comfort) end,
     })
+    BuildMessenger(ctx, b)
     BuildInputTools(ctx, b)
     BuildMessageSections(ctx, b)
     P.ChatWorkspace.Helpers(ctx, b, workspace)

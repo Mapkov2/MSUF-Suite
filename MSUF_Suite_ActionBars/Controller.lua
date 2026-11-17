@@ -155,6 +155,8 @@ Global({ "procGlow" }, { style = true, events = true, repaint = true, native = t
 Global({ "mouseoverShowAll" }, { alpha = true })
 Global({ "pageArrows", "pageArrowSide" }, { allLayout = true })
 Global({ "showOnDrag" }, { drag = true })
+-- Masque takes or returns the Suite-made buttons, then the style pass runs.
+Global({ "masque" }, { style = true, masque = true })
 Global({ "disableFormPaging", "disableMoonkinPaging", "disableSkyridingPaging", "pagingModifiers", "pageShift", "pageCtrl",
     "pageAlt", "pagingTarget", "pageFriendly", "pageHostile" }, { paging = true })
 
@@ -168,6 +170,14 @@ local BAR_WORK = {
     HeightPercent = { layout = true, style = true },
     ClickThrough = { layout = true, visible = true },
     Visibility = { visible = true, paging = true },
+    -- "Custom conditions" parts: only the bar's driver string changes.
+    CondCombine = { visible = true },
+    CondCombat = { visible = true },
+    CondMounted = { visible = true },
+    CondTarget = { visible = true },
+    CondMouseover = { visible = true },
+    -- Custom paging text: every bar's page claims can move (Paging.lua).
+    Paging = { pageText = true },
     HideGamepad = { visible = true, events = true },
     GroupOnly = { visible = true },
     ResumeVisibility = {},
@@ -195,7 +205,7 @@ end
 local NO_WORK = { enabled = true, imported = true, look = true, pickupModifier = true }
 local FULL = {
     style = true, curves = true, events = true, native = true, repaint = true, paging = true, alpha = true,
-    drag = true, visible = true, panels = true, assist = true,
+    drag = true, visible = true, panels = true, assist = true, masque = true,
 }
 local FULL_BAR = { layout = true, style = true, visible = true, paint = true }
 AB.BAR_WORK, AB.GLOBAL_WORK = BAR_WORK, GLOBAL_WORK
@@ -255,6 +265,7 @@ local function Collect(config)
             if index ~= 0 and flags.paging and (previous == VIS.NEVER) ~= (value == VIS.NEVER) then
                 work.paging = true
             end
+            if flags.pageText then work.paging = true end
         end
     end
     if all then
@@ -370,6 +381,11 @@ local function AnyBarWork(flag)
     return false
 end
 
+-- Masque reskins a bar's buttons after its look or geometry changed.
+local function MasqueReskin(index)
+    return work.style or work.allGeometry or barWork[index].layout or barWork[index].style or false
+end
+
 local function ClearWork()
     for flag in pairs(work) do work[flag] = nil end
     for index = 1, AB.BAR_COUNT do
@@ -421,6 +437,7 @@ function M:Refresh()
     if work.curves then AB.UpdateCurves() end
     ApplyLayout()
     ApplyStyle()
+    if work.masque or AB.Masque.Active() then AB.Masque.Sync(MasqueReskin) end
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
         if bar and (work.allLayout or barWork[index].layout) then AB.LayoutDecorations(bar) end
@@ -448,6 +465,7 @@ end
 -- runs isolated (Dispatch), as Context:Release does: one that raises is
 -- reported and every later step still runs.
 function M:Disable()
+    Dispatch(AB.Masque.Release)
     Dispatch(AB.StopSnapshots)
     Dispatch(AB.Virtual.Stop, self.context)
     Dispatch(AB.StopAssist)
@@ -507,16 +525,21 @@ local function OrientationControl(keys, vertical)
     }
 end
 
--- Mouseover on/off keeps the combat part of the current mode.
-local function MouseoverControl(key)
+-- Mouseover on/off keeps the combat part of the current mode; a bar on
+-- Custom conditions switches its own mouseover condition instead.
+local function MouseoverControl(keys)
+    local key, custom = keys.Visibility, keys.CondMouseover
     return {
         id = "mouseover", label = S.Text("Show on mouseover"), kind = "toggle",
         get = function()
-            local mode = S.Config("actionbars")[key]
+            local config = S.Config("actionbars")
+            local mode = config[key]
+            if mode == VIS.CUSTOM then return config[custom] == true end
             return mode == VIS.MOUSEOVER or mode == VIS.MOUSEOVER_OR_COMBAT
         end,
         set = function(on)
             local mode = S.Config("actionbars")[key]
+            if mode == VIS.CUSTOM then return S.Set("actionbars", custom, on == true) end
             local value
             if on then
                 value = (mode == VIS.COMBAT or mode == VIS.MOUSEOVER_OR_COMBAT) and VIS.MOUSEOVER_OR_COMBAT or VIS.MOUSEOVER
@@ -549,9 +572,9 @@ local function Mover(index)
         extraControls = {
             ButtonCountControl(keys), NumberControl("rows", keys.Rows), NumberControl("size", keys.Size),
             NumberControl("spacing", keys.Spacing), OrientationControl(keys, false), OrientationControl(keys, true),
-            MouseoverControl(keys.Visibility),
+            MouseoverControl(keys),
         },
-        historyKeys = { keys.Buttons, keys.Rows, keys.Size, keys.Spacing, keys.Vertical, keys.Visibility },
+        historyKeys = { keys.Buttons, keys.Rows, keys.Size, keys.Spacing, keys.Vertical, keys.Visibility, keys.CondMouseover },
     }
 end
 

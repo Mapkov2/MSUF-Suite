@@ -440,7 +440,7 @@ def main():
                 fixtures[value[7:]] = decode(value, 'MSUFM1:MSUF3:')
             elif value.startswith('MSUF3:'):
                 fixtures[value] = decode(value, 'MSUF3:')
-    default = literal(root.parent / 'MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_Shell.lua', 'MSUF.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT')
+    default = literal(root.parent / 'MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_Shell.lua', 'MSUF.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT')
     fixtures[default] = decode(default, 'MSUF3:')
     skin = decode(literal(core / 'DarkRaidFactory.lua', 'Suite.DarkRaidSkinCompact'), 'MSKIN1:')[b'payload']
     micro = skin[b'icons'][b'microMenu']
@@ -451,7 +451,7 @@ def main():
     fixtures[lists] = decode(lists, 'MSUF3:')
     frame = decode(literal(core / 'DarkRaidFactory.lua', 'Suite.DarkRaidFramesCompact'), 'MSUF3:')
     script = CHECK.replace('FIXTURES', lua_literal(fixtures), 1).replace('FRAMES', lua_literal(frame), 1)
-    host = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else root.parent / 'MidnightSimpleUnitFrames'
+    host = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else root.parent / 'MidnightSimpleUnitFrames-7.0'
     result = subprocess.run([LUA, '-', str(root), str(host)], input=script,
                             text=True, capture_output=True, cwd=root)
     print(result.stdout, end='')

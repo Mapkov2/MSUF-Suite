@@ -41,8 +41,14 @@ local function AddSaved(menu, edit)
     end
 end
 
+-- A recorded inventory (OfflineInventory.lua) is shown only: nothing moves.
+local function Recorded(view)
+    return view == P.InventoryView and P.BagOffline.Active()
+end
+
 local function TransferSource(view, transfer)
-    if not transfer or not view.context.transactions or view.context.query ~= view.smartQuery then return end
+    if not transfer or Recorded(view) then return end
+    if not view.context.transactions or view.context.query ~= view.smartQuery then return end
     local ready, bankType = transfer:CanBatch()
     if not ready then return end
     local selected = view.selected
@@ -99,15 +105,17 @@ local function AddInventoryTools(menu, button, view)
             if archive.active then archive:Browse(isBag and "bags" or "bank") end
         end)
     end
-    if isBag then
+    if isBag and not Recorded(view) then
         menu:CreateButton(S.Text("Sort bag slots"), function() P.InventoryActions.SortMenu(button) end)
     end
     if isBag or archive and archive.active or bankType then menu:CreateDivider() end
+    if isBag and P.BagOffline.AddMenu(menu) then menu:CreateDivider() end
 end
 
 function Search.Menu(button, edit, view)
     P.BagFilterMenu.Show(button, function(_, menu)
         if view then AddInventoryTools(menu, button, view) end
+        menu:CreateButton(S.Text("Build search visually"), function() P.QueryEditor.Open(edit) end)
         menu:CreateTitle(S.Text("Smart search presets"))
         for i = 1, #PRESETS do
             local preset = PRESETS[i]

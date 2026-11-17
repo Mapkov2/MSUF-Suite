@@ -117,6 +117,7 @@ local function Bridge(withHost)
     -- Out of combat here; suite_combat_start_contract covers the combat start.
     Suite.InCombat = function() return false end
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeBars.lua"))("MSUF_Suite", Suite)
     return Suite.HostBridge
 end
 
@@ -454,5 +455,40 @@ Check(Source("MSUF_Suite/Core/Installer.lua"):find("Suite.HostBridge.ApplyScale(
     and Source("MSUF_Suite/Core/Profiles.lua"):find('Suite.HostBridge.SetResourceStack("cooldown", force == true)', 1, true)
     and Source("MSUF_Suite_Options/Menu/Register.lua"):find("Suite.HostBridge.RegisterPageResets(M,", 1, true),
     "a caller does not go through the bridge")
+
+do
+    local previous = _G.MSUF_NS
+    _G.MSUF_NS = { UF = {
+        ResolveBarGradient = function(scope, general, flag)
+            Check(scope == nil and general == MSUF_DB.general, "nameplates read the selected unit settings instead of Shared")
+            return { enabled = flag == "enableGradient", strength = .71, r = 1, g = 0, b = 0,
+                left = false, right = true, up = true, down = false }
+        end,
+        ResolveBarGloss = function(_, _, kind) return { enabled = kind == "power", strength = .85 } end,
+    } }
+    _G.MSUF_DB = { general = { barTexture = "Health art", barBackgroundTexture = "", aggroOutlineMode = 0 },
+        bars = { powerBarTexture = "Power art", barOutlineThickness = 3 }, player = { enableGradient = false } }
+    local view = assert(bridge.SharedNameplateBars())
+    Check(view.nativeHealthFillTexture == "Health art" and view.nativeHealthBackgroundTexture == "Health art"
+        and view.powerFillTexture == "Power art" and view.powerBackgroundTexture == "Health art",
+        "Shared nameplate textures did not use the host's foreground/background fallback")
+    Check(view.healthGradientEnabled and not view.powerGradientEnabled and view.healthGradientDirUp
+        and view.healthGradientColor == "ff0000" and view.healthGradientStrength == 71
+        and view.powerGlossEnabled and view.powerGlossStrength == 85 and view.enemyBorderSize == 3,
+        "the Shared nameplate appearance lost host settings")
+    Check(bridge.SharedAggroBorderEnabled() == false, "shared aggro off was ignored on the legacy host")
+    local hook = hooksecurefunc
+    local hooks = {}
+    _G.MSUF_NS.PublicGlobals = { MSUF_UpdateAllBarGradients = function() end }
+    hooksecurefunc = function(owner, key, callback)
+        if type(owner) == "table" then hooks[key] = callback end
+    end
+    local changes = 0
+    bridge.ObserveSharedNameplateBars(function() changes = changes + 1 end)
+    assert(hooks.MSUF_UpdateAllBarGradients)("player")
+    hooks.MSUF_UpdateAllBarGradients("shared")
+    Check(changes == 1, "Shared appearance watcher missed Shared or reacted to a unit override")
+    hooksecurefunc, _G.MSUF_NS = hook, previous
+end
 
 print("Suite host bridge: " .. checks .. " checks passed")

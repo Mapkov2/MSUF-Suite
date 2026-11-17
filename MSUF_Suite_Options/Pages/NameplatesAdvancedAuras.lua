@@ -221,7 +221,7 @@ local function Card(parent)
 end
 
 local STYLE_PARTS = {
-    { title = "Basics", keys = { "Zoom", "Tooltip", "Alpha", "Padding", "Dispel", "IconSkin" } },
+    { title = "Basics", keys = { "Zoom", "Tooltip", "Clickthrough", "Alpha", "Padding", "Dispel", "IconSkin" } },
     { title = "Stack Count", keys = { "StackText", "StackSize", "StackPoint" } },
     { title = "Cooldown Text", keys = { "TimeText", "Swipe", "TimeSize", "TimePoint", "TimeDecimals", "SwipeDirection" } },
     { title = "Duration bar", keys = { "DurationBar", "DurationBarHeight", "DurationBarDisplay", "DurationBarPosition",

@@ -16,7 +16,6 @@ local Fill, Tint, CombatLogBar, HeaderTop = C.Fill, C.Tint, C.CombatLogBar, C.He
 local OwnBorderedParts = C.OwnBorderedParts
 local DockSelection, ApplySidebar, ApplyCopyButton = C.DockSelection, C.ApplySidebar, C.ApplyCopyButton
 local RGB, Finite = S.RGB, S.Finite
-local TAB_MIN_ALPHA = 0.8
 
 local function CreateVisual(frame)
     local visual = { frame = frame }
@@ -148,44 +147,67 @@ function C.TabSelected(frame, _, dock)
 end
 local TabSelected = C.TabSelected
 
--- Hands the tab's alpha back to Blizzard.
-local function ReleaseTabAlpha(context, tab)
-    context:RestoreProperty(tab, "SetAlpha")
+-- Blizzard fades the tab frame itself: FCF_FadeIn/OutChatFrame run
+-- UIFrameFade on it from FCF_OnUpdate toward its mouse-over or no-mouse alpha
+-- (Forever keeps those in ChatFrameUtil side tables), and FCFTab_UpdateAlpha
+-- sets it in each dock layout. With the tab style, the tab's regions -- its
+-- label, its art and the Suite strip -- ignore that alpha and show at their
+-- own, so neither a hook on those fades nor a poll is needed: idle chat runs
+-- no Suite code. The glow keeps Blizzard's alert flash. Ignore-parent-alpha
+-- is a widget state of unprotected regions, set in or out of combat and
+-- handed back on release; no Blizzard field or fade list is written. An
+-- idle-faded window's regions follow the tab frame again (Fade.lua).
+local function ReleaseTabRegions(visual)
+    local held = visual.heldTab
+    if not held then return end
+    for region, ignore in pairs(held) do
+        region:SetIgnoreParentAlpha(ignore)
+        held[region] = nil
+    end
 end
 
--- Blizzard fades idle tabs to 0.2 alpha. The Suite strip keeps their labels
--- readable while leaving the native title, target and click behavior intact.
--- Blizzard's tab alphas (noMouseAlpha and mouseOverAlpha; Forever keeps them
--- in ChatFrameUtil side tables) feed UIFrameFade and its shared FADEFRAMES
--- list, so the Suite never writes them: it raises the tab's alpha instead.
+local function HoldTabRegions(visual, tab)
+    local held = visual.heldTab or {}
+    visual.heldTab = held
+    local regions, glow = { tab:GetRegions() }, tab.glow
+    for _, region in ipairs(regions) do
+        if region ~= glow then
+            if held[region] == nil then
+                local ignore = region:IsIgnoringParentAlpha()
+                if S.Public(ignore) then held[region] = ignore == true end
+            end
+            if held[region] ~= nil then region:SetIgnoreParentAlpha(true) end
+        end
+    end
+end
+
+-- Hands the tab's alpha back to Blizzard (the tab frame and its regions).
+local function ReleaseTabAlpha(context, tab, visual)
+    context:RestoreProperty(tab, "SetAlpha")
+    if visual then ReleaseTabRegions(visual) end
+end
+
+-- Cold path (ApplyWindow) and Fade.lua's wake.
 function C.KeepTabVisible(self, frame)
-    local tab = _G[frame:GetName() .. "Tab"]
-    local context = self.context
-    if not C.HasTabStyle(self.config) then
-        ReleaseTabAlpha(context, tab)
+    local tab, visual = _G[frame:GetName() .. "Tab"], self.visuals[frame]
+    if not (visual and C.HasTabStyle(self.config)) then
+        ReleaseTabAlpha(self.context, tab, visual)
         return
     end
     -- An idle-faded window keeps its faded tab (Fade.lua hands it back).
-    local visual = self.visuals[frame]
-    if visual and visual.faded then return end
-    local alpha = tab:GetAlpha()
-    if Finite(alpha) and alpha < TAB_MIN_ALPHA then
-        context:Alpha(tab, TAB_MIN_ALPHA)
-    end
+    if visual.faded then return end
+    HoldTabRegions(visual, tab)
 end
 local KeepTabVisible = C.KeepTabVisible
 
--- Post-hooks of FCF_FadeInChatFrame (hover) and FCF_FadeOutChatFrame (pointer
--- gone): Blizzard has just started fading the tab toward its own alpha. The
--- Suite ends that fade (UIFrameFadeRemoveFrame runs securely) and shows the
--- tab at 1 or at its readable minimum. Chat tabs are not protected, so this
--- also runs in combat.
-function C.HoldTabAlpha(frame, hovered)
-    local c, visual = M.config, M.active and frame and M.visuals[frame]
-    local tab = visual and visual.tab
-    if not (tab and C.HasTabStyle(c)) or (visual.faded and not hovered) then return end
-    UIFrameFadeRemoveFrame(tab)
-    tab:SetAlpha(hovered and 1 or TAB_MIN_ALPHA)
+-- Fade.lua, before an idle fade: the regions follow the tab frame again,
+-- and the fade starts from the alpha they showed (1). The context owns that
+-- alpha (an unprotected tab, also in combat) and hands Blizzard's back.
+function C.TabFollowsFrame(visual)
+    local tab = visual.tab
+    if not (tab and visual.heldTab and next(visual.heldTab)) then return end
+    ReleaseTabRegions(visual)
+    M.context:UnprotectedProperty(tab, "GetAlpha", "SetAlpha", 1)
 end
 
 local function ChosenFont(key)
@@ -400,23 +422,26 @@ local function ApplyInput(self, visual, frame, input)
     end
 end
 
-local function ResizeInput(frame)
+-- Suite.ChatState layout and window callbacks (a window's size follows
+-- Blizzard's layout, a drag or Edit Mode): no OnSizeChanged hook on the
+-- chat frame, whose resize Blizzard's own dock code dispatches.
+function C.ResizeInput(frame)
     local visual = M.visuals[frame]
     if not M.active or not visual or not visual.input or (M.config.inputWidth or 0) ~= 0 then return end
+    local current = frame:GetWidth()
+    if current == visual.inputFollowWidth then return end
     if C.LayoutLocked() then
         S.Queue("chat")
         return
     end
     local width = InputWidth(M.config, frame)
     if width then M.context:Property(frame.editBox, "GetWidth", "SetWidth", width) end
+    visual.inputFollowWidth = current
 end
 
 function C.ApplyInputLayout(self, visual, frame, input)
     ApplyInput(self, visual, frame, input)
-    if visual.input and not visual.inputSizeHooked then
-        frame:HookScript("OnSizeChanged", ResizeInput)
-        visual.inputSizeHooked = true
-    end
+    if not self.preview then visual.inputFollowWidth = frame:GetWidth() end
 end
 
 -- An empty Suite choice follows MSUF; Blizzard's chat font remains an
@@ -546,7 +571,7 @@ function C.ReleaseWindow(self, visual)
         self.context:RestoreTuple(visual.tabLabel, "SetFont")
     end
     M.tabs[tab] = nil
-    ReleaseTabAlpha(self.context, tab)
+    ReleaseTabAlpha(self.context, tab, visual)
 end
 
 -- tabGap > 0: docked tabs keep that much room between them. Blizzard's

@@ -46,7 +46,8 @@ for _, height in ipairs({600, 768, 1080}) do
             W.S.Set("bags", "accentColor", "ff0000"); W.Settle()
             assert(not t[1]:IsShown() and t.feather:IsShown(), "same-mode restyle resurrects compact shadow")
             W.S.Set("bags", "backgroundOpacity", 40); W.Settle()
-            assert(not t[1]:IsShown() and t.feather.gradient[3].a == .4, "panel opacity restyle loses feather")
+            local featherAlpha = W.config.look == 3 and t[2].gradient and t[2].gradient[2].a or .4
+            assert(not t[1]:IsShown() and t.feather.gradient[3].a == featherAlpha, "panel opacity restyle loses feather")
             Inside(W, V.free, W.CF)
             Inside(W, t.goldLabel, W.CF)
             local initialHeight, initialWidth = W.CF:GetHeight(), W.CF:GetWidth()
@@ -98,5 +99,23 @@ do
     W.S.Set("bags", "windowPresentation", W.NS.BagsPresentation.WINDOW)
     W.Settle()
     assert(W.CF.TitleContainer.TitleText:GetAlpha()==.4, "compact handback overwrites native title's previous alpha")
+end
+do
+    local W = H.New(root, { client = arg[2] or "Mainline", catalogPresentation = true,
+        config = { look = 3, backgroundOpacity = 98 } })
+    Fill(W)
+    local t = W.M.windows[W.CF]
+    local gradient = assert(t[2].gradient, "the Forever bag body used a flat panel")
+    assert(gradient[1] == "HORIZONTAL" and gradient[2].a < .8 and gradient[3].a < .9,
+        "the Forever bag body is opaque or has the wrong gradient")
+    assert(t.feather.gradient[3].a == gradient[2].a and t[3].color[4] == 0 and t[5].color[4] == 0,
+        "the Forever feather or header/footer introduced a second background")
+    W.S.Set("bags", "windowPresentation", W.NS.BagsPresentation.WINDOW); W.Settle()
+    assert(t[2].gradient[1] == "VERTICAL" and t[1].color[4] < .12 and t[3].color[4] < .12 and t[5].color[4] < .12,
+        "the compact Forever layout stacked opaque chrome over Glass")
+    W.S.Set("bags", "look", 2); W.Settle()
+    local flat = t[2].gradient
+    assert(flat[2].a == flat[3].a and flat[2].a == W.config.backgroundOpacity / 100,
+        "switching out of Forever left the former glass gradient attached")
 end
 print("Side panel footprint/scale/native transitions/combat/warm reuse passed: " .. (arg[2] or "Mainline"))

@@ -2,7 +2,13 @@
 -- request; four settings from UIOptions/Profiles/Bindings are also included.
 -- Snapshot audited 2026-09-27; schema coverage only. Runtime behavior has separate tests.
 return {
-    auraClickthrough = { "auraClickthrough" },
+    auraClickthrough = {
+        "auraEnemyBuffClickthrough", "auraEnemyDebuffClickthrough", "auraEnemyControlClickthrough",
+        "auraFriendlyBuffClickthrough", "auraFriendlyDebuffClickthrough", "auraFriendlyControlClickthrough",
+        "auraEnemyCustom1Clickthrough", "auraEnemyCustom2Clickthrough", "auraEnemyCustom3Clickthrough",
+        "auraFriendlyCustom1Clickthrough", "auraFriendlyCustom2Clickthrough", "auraFriendlyCustom3Clickthrough",
+        "auraEnemyDotsClickthrough", "auraFriendlyDotsClickthrough",
+    },
     slugOutline = { "enemyTextEnabled", "friendlyTextEnabled", "enemyCastTextEnabled", "friendlyCastTextEnabled" },
     textCustomFont = { "enemyCustomFont", "friendlyCustomFont", "enemyCastCustomFont", "friendlyCastCustomFont" },
     textFont = { "enemyNameFont", "friendlyNameFont", "enemyCastFont", "friendlyCastFont" },

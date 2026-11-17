@@ -3,6 +3,26 @@ local S = P.Suite
 local Appearance = { buttons = setmetatable({}, { __mode = "k" }) }
 P.BagAppearance = Appearance
 
+local FOREVER_LOOK = 3
+local GLASS_SOFT_ALPHA, GLASS_DARK_ALPHA = .70, .76
+
+local function PaintBody(t, glass, panel, r, g, b, opacity)
+    local body = t[2]
+    if glass then
+        t.bodyGradient = true
+        body:SetColorTexture(1, 1, 1, 1)
+        local soft = CreateColor(r, g, b, opacity * GLASS_SOFT_ALPHA)
+        local dark = CreateColor(r * .85, g * .85, b * .85, opacity * GLASS_DARK_ALPHA)
+        body:SetGradient(panel and "HORIZONTAL" or "VERTICAL", soft, dark)
+    elseif t.bodyGradient then
+        body:SetColorTexture(1, 1, 1, 1)
+        local flat = CreateColor(r, g, b, opacity)
+        body:SetGradient("HORIZONTAL", flat, flat)
+    else
+        body:SetColorTexture(r, g, b, opacity)
+    end
+end
+
 -- Shared painters for the live bags, bank and menu sample. All regions passed
 -- here belong to the Suite; Blizzard retains the item buttons and their actions.
 function Appearance.Window(t, c)
@@ -11,11 +31,12 @@ function Appearance.Window(t, c)
     local r, g, b = S.RGB(c.backgroundColor)
     local ar, ag, ab = S.RGB(c.accentColor)
     local opacity = c.backgroundOpacity / 100
-    t[1]:SetColorTexture(0, 0, 0, .5 * opacity)
-    t[2]:SetColorTexture(r, g, b, opacity)
-    t[3]:SetColorTexture(r + .025, g + .025, b + .025, opacity)
+    local glass = t.combined and c.look == FOREVER_LOOK
+    t[1]:SetColorTexture(0, 0, 0, (glass and .10 or .5) * opacity)
+    PaintBody(t, glass, panel, r, g, b, opacity)
+    t[3]:SetColorTexture(r + .025, g + .025, b + .025, glass and .10 * opacity or opacity)
     t[4]:SetColorTexture(ar, ag, ab, .24)
-    if t[5] then t[5]:SetColorTexture(r * .7, g * .7, b * .7, opacity) end
+    if t[5] then t[5]:SetColorTexture(r * .7, g * .7, b * .7, glass and .10 * opacity or opacity) end
     t[6]:SetColorTexture(ar, ag, ab, .45)
     for i = 7, 9 do t[i]:SetColorTexture(.28, .31, .36, .55) end
     if t.goldLabel then
@@ -23,7 +44,7 @@ function Appearance.Window(t, c)
         S.SetFont(t.goldLabel, font, 11, "OUTLINE")
         if t.dailyGoldLabel then S.SetFont(t.dailyGoldLabel, font, 11, "OUTLINE") end
     end
-    if panel then P.BagPanelAppearance.Paint(t, c) end
+    if panel then P.BagPanelAppearance.Paint(t, c, glass and opacity * GLASS_SOFT_ALPHA or opacity) end
 end
 
 function Appearance.Button(button, selected)

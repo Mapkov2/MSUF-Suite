@@ -93,6 +93,8 @@ local function Click(button, mouse)
     end
 end
 
+local TELEMETRY = Standard.TELEMETRY
+
 -- Mouseover bars: only a real hover change rebinds the sampled sources.
 local function SetHover(bar, hovered)
     if M.config[bar.visibilityKey] ~= VISIBILITY.MOUSEOVER or bar.hover == hovered then return end
@@ -101,8 +103,11 @@ local function SetHover(bar, hovered)
     M:Rebind()
 end
 
+-- Frame rate and latency have no timer: the pointer on their place or on a
+-- bar reads them (M:SampleTelemetry), before the tooltip shows the value.
 local function SlotEnter(button)
     SetHover(button.bar, true)
+    if TELEMETRY[button.source] then M:SampleTelemetry() end
     Actions.hovered = button
     Actions.Attach(button)
     Tooltip(button)
@@ -117,7 +122,10 @@ local function SlotLeave(button)
 end
 Actions.enter, Actions.leave = SlotEnter, SlotLeave
 
-local function BarEnter(frame) SetHover(frame.bar, true) end
+local function BarEnter(frame)
+    SetHover(frame.bar, true)
+    M:SampleTelemetry()
+end
 
 local function BarLeave(frame)
     if not frame:IsMouseOver() then SetHover(frame.bar, false) end

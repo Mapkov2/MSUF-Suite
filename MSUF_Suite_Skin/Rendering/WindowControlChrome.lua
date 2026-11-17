@@ -41,7 +41,7 @@ function Chrome.Footprint(state)
     end
     if state.inventory and state.name ~= "BankFrame" then return 0, 0, 8 end
     local outside = outsideGrips[state.name] or state.inventory
-    return (outside or state.name == "WorldMapFrame") and 21 or 0,
+    return NS.WindowControlPolicy.ExteriorWidth(state, (outside or state.name == "WorldMapFrame") and 21 or 0),
         outside and 21 or 0, state.inventory and state.name ~= "BankFrame" and 18 or 0
 end
 
@@ -49,8 +49,14 @@ local function ExteriorGrip(grip, state)
     local frame = state.frame
     local ratio = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
     local right, bottom = Safety.Read(frame, "GetRight"), Safety.Read(frame, "GetBottom")
-    local leftSide = right ~= nil and (right + 21) * ratio > UIParent:GetWidth()
     local topSide = bottom ~= nil and (bottom - 21) * ratio < 0
+    if NS.Client.isForever and state.name == "ProfessionsFrame" and not topSide then
+        -- Dock under the lower border. Camelot's Create button starts at y=7,
+        -- and the profession tabs sit beyond the right edge.
+        grip:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, 3)
+        return
+    end
+    local leftSide = right ~= nil and (right + 21) * ratio > UIParent:GetWidth()
     local corner = (topSide and "TOP" or "BOTTOM") .. (leftSide and "LEFT" or "RIGHT")
     local point = (topSide and "BOTTOM" or "TOP") .. (leftSide and "RIGHT" or "LEFT")
     grip:SetPoint(point, frame, corner, leftSide and -1 or 1, topSide and 1 or -1)
@@ -152,7 +158,6 @@ local function TitleRegion(frame)
     return Safety.Field(Safety.Field(frame, "TitleContainer"), "TitleText")
 end
 
--- The window's own (localized) title, else a name derived from its frame.
 function Chrome.Title(state)
     local text = Safety.Read(TitleRegion(state.frame), "GetText")
     -- Forever's outer container has no title region; all three child panes
@@ -161,7 +166,6 @@ function Chrome.Title(state)
     if type(text) == "string" and text ~= "" then return text end
     return (state.name:gsub("Frame$", ""):gsub("(%l)(%u)", "%1 %2"))
 end
-
 local captionArt = setmetatable({}, { __mode = "k" })
 local function PaintCaption(button, refreshGlyph)
     local art = captionArt[button]
@@ -240,10 +244,10 @@ local function TitleRight(frame, scale)
 end
 
 local function CaptionObstacle(state, scale, right, low, high, ...)
-    local obstacle = 0
+    local obstacle, titleLimit = 0, right
     for index = 1, select("#", ...) do
         local child = select(index, ...)
-        if not Safety.Public(child) then return right end
+        if not Safety.Public(child) then return right, nil end
         local kind = Safety.Read(child, "GetObjectType")
         if child ~= state.close and child ~= state.minimize and child ~= state.maximize
             and (kind == "Button" or kind == "CheckButton") and Safety.Read(child, "IsShown") then
@@ -254,11 +258,12 @@ local function CaptionObstacle(state, scale, right, low, high, ...)
                 local ratio = childScale / scale
                 if bottom * ratio < high and top * ratio > low and left * ratio < right then
                     obstacle = math.max(obstacle, x * ratio + 2)
+                    if x * ratio >= (state.captionLeft or 0) then titleLimit = math.min(titleLimit, left * ratio) end
                 end
             end
         end
     end
-    return obstacle
+    return obstacle, titleLimit
 end
 
 -- Windows caption, right to left: close, maximize/restore, minimize. One
@@ -286,16 +291,17 @@ function Chrome.CaptionSize(state)
     local width, height = math.min(30, closeRight - closeLeft), math.min(26, closeTop - closeBottom)
     if width < 14 or height < 14 then return nil, nil, 0 end
     local cellLeft, low = closeRight - width, closeTop - height
-    local obstacle = CaptionObstacle(state, scale, cellLeft, low, closeTop, Safety.Call(frame, "GetChildren"))
+    state.captionLeft = left + frameWidth / 2
+    local obstacle, limit = CaptionObstacle(state, scale, cellLeft, low, closeTop, Safety.Call(frame, "GetChildren"))
     local closeParent = Safety.Read(close, "GetParent")
     if closeParent and closeParent ~= frame then
-        obstacle = math.max(obstacle, CaptionObstacle(state, scale, cellLeft, low, closeTop, Safety.Call(closeParent, "GetChildren")))
+        local edge, start = CaptionObstacle(state, scale, cellLeft, low, closeTop, Safety.Call(closeParent, "GetChildren"))
+        obstacle, limit = math.max(obstacle, edge), limit and start and math.min(limit, start)
     end
     state.captionX, state.captionY = closeRight - right, closeTop - top
     local room = cellLeft - math.max(left + 54, TitleRight(frame, scale) + 6, obstacle)
-    return width, height, room, right - cellLeft + width * 2 + 4
+    return width, height, room, right - cellLeft + width * 2 + 4, limit, right, scale
 end
-
 local PlaceMinimize
 
 function Chrome.SyncMinimize(state)
@@ -460,6 +466,7 @@ end
 
 local CELLS = { "closeCell", "toggleCell", "maximize", "minimize" }
 function Chrome.HideCaption(state)
+    if NS.CaptionTitles then NS.CaptionTitles.Restore(state) end
     for _, key in ipairs(CELLS) do
         if state[key] then state[key]:Hide() end
     end
@@ -467,7 +474,6 @@ function Chrome.HideCaption(state)
     RefreshFocus(state.frame)
 end
 
--- The glyph is laid out on the cell's final place (whole screen pixels).
 local function PlaceCell(cell, anchor, width, height, level, kind)
     cell:SetSize(width, height)
     cell:SetFrameLevel(level)
@@ -496,11 +502,11 @@ end
 
 function Chrome.ShowCaption(state, level)
     Chrome.SyncMinimize(state)
-    local width, height, room, inset = Chrome.CaptionSize(state)
+    local width, height, room, inset, limit, right, scale = Chrome.CaptionSize(state)
     local gamepad = NS.Client.IsGamepadUI()
     if state.fit and (not width or gamepad) then
         Chrome.LeaveFit(state)
-        width, height, room, inset = Chrome.CaptionSize(state)
+        width, height, room, inset, limit, right, scale = Chrome.CaptionSize(state)
     end
     local cells = width and not gamepad and FadeNative(state, state.close)
     -- Combat leaves a shown caption where it is (a protected window can read
@@ -524,6 +530,7 @@ function Chrome.ShowCaption(state, level)
         PlaceMinimize(minimize, state, state.close)
         return PlaceCell(minimize, nil, 22, 22, level, "minimize")
     end
+    if NS.CaptionTitles then NS.CaptionTitles.Fit(state, limit, right, scale) end
     state.captionInset, state.captionPath = inset, "cells"
     for _, native in ipairs({ state.close, state.sizeToggle }) do
         local nativeLevel = Safety.Read(native, "GetFrameLevel")
@@ -623,8 +630,7 @@ function Chrome.RecolorCaption(state)
     end
 end
 
--- Fixed-size native panels fill the available area by scaling uniformly.
--- Keep a small screen margin and include exterior resize handles in the fit.
+-- Fixed-size native panels fit uniformly, including exterior resize handles.
 local function NativeFitExtra(frame, key)
     if NS.IsCombatLocked() then
         -- The panel manager's getter can seed native attributes on first read.
@@ -738,9 +744,8 @@ function Chrome.NativeSizeToggle(frame, close)
     end
 end
 
--- Blizzard shows the toggle's other button after a size change and hides
--- the toggle on tabs without a small layout (our maximize stands in): the
--- caption follows.
+-- Follow Blizzard's size buttons, and use our maximize cell on tabs
+-- where Blizzard hides its toggle.
 function Chrome.FollowSizeToggle(state, toggle)
     state.sizeToggle = toggle
     local function Relayout()
@@ -749,6 +754,7 @@ function Chrome.FollowSizeToggle(state, toggle)
             Chrome.ShowCaption(state, state.captionLevel)
         end
     end
+    Relayout = NS.WindowControlPolicy.MapCaptionCallback(state, Relayout)
     toggle:HookScript("OnShow", Relayout)
     toggle:HookScript("OnHide", Relayout)
     for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
@@ -798,7 +804,7 @@ function Chrome.CreateRestore(state, click)
 end
 
 function Chrome.CreateCaption(state, level, click)
-    if state.maximize or state.inventory then return end
+    if state.maximize or state.inventory and state.name ~= "BankFrame" then return end
     if not NS.WindowControlPolicy.CanFit(state) then state.closeOnly = true return end
     local parent = Chrome.Parent(state)
     local button = Safety.CreateChildFrame("Button", parent)

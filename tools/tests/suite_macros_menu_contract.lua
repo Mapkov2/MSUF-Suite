@@ -1,5 +1,5 @@
 local root = assert(arg[1], "repository root required")
-local host = arg[3] or root .. "/../MidnightSimpleUnitFrames"
+local host = arg[3] or root .. "/../MidnightSimpleUnitFrames-7.0"
 local combat, loads, publications, pickups, occupied = false, 0, 0, 0, false
 local function Frame(parent)
     local frame = { scripts = {}, events = {}, shown = true, parent = parent, text = "", width = 720 }
@@ -40,6 +40,8 @@ local function Frame(parent)
     function frame:SetActive(value) self.active = value end
     function frame:SetChecked(value) self.checked = value end
     function frame:GetChecked() return self.checked end
+    function frame:EnableKeyboard(value) self.keyboard = value end
+    function frame:RegisterForClicks(clicks) self.clicks = clicks end
     function frame:GetFrameLevel() return 1 end
     function frame:SetPoint(...) self.point = { ... } end
     function frame:CreateTexture() return Frame(self) end
@@ -57,6 +59,25 @@ for _, file in ipairs({ "Model", "Compile", "Templates" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/Macros/" .. file .. ".lua"))("MSUF_Suite", NS)
 end
 local saved, serial, native = {}, 0, {}
+local appliedBinding, occupiedBinding, bindingChanged, heldModifiers, restored, deleted
+NS.Macros.Native = {
+    BindingInput = function(raw, isMouse)
+        if isMouse then return { button = raw, modifiers = heldModifiers or 0 } end
+        if raw ~= "LSHIFT" and raw ~= "LCTRL" and raw ~= "LALT" then return { key = raw } end
+    end,
+    BindingLabel = function(input) return input.button or input.key end,
+    IsReservedClick = function(input) return input.modifiers == 0 and (input.button == "LeftButton" or input.button == "RightButton") end,
+    BindingState = function() return { occupied = occupiedBinding } end,
+    CheckBinding = function()
+        if bindingChanged then return nil, "The binding changed. Choose the button again." end
+        return {}
+    end,
+    ApplyBinding = function(input, _, entry)
+        appliedBinding = { input = input, entry = entry }
+        return true
+    end,
+    RemoveBindings = function(entry, reserved) restored = { entry = entry, reserved = reserved } return true end,
+}
 NS.Macros.Store = {
     Preview = function(document) return NS.Macros.Compile(document) end,
     List = function() return saved end,
@@ -80,6 +101,8 @@ NS.Macros.Store = {
         return true
     end,
     Native = function() return native end,
+    ResolvePublished = function() return native[1] end,
+    DeleteNative = function(entry) deleted = entry native[1] = nil return true end,
     Delete = function(id) saved[id] = nil end,
 }
 NS.Client = { IsAddOnLoaded = function() return true end, isForever = arg[2] == "Forever" }
@@ -617,4 +640,89 @@ page.PickRank(rankButton, "spell", spellName, function() error("combat rank call
 staleRank(ranked)
 assert(scans == beforeScans and slotReads == readsBeforeFilter
     and page.document.steps[1].branches[1].value == spellName, "combat blocks rank lookup and stale selection")
+-- Run the same builder action for a new macro, an existing macro and MMO inputs.
+combat = false
+local bindingContext = Context()
+P.registered.build(bindingContext)
+page.helpers.New("mouseover", function(doc)
+    doc.name, doc.steps[1].branches[1].value = "Click Heal", "Heal"
+end)
+local function BeginBinding(isKey)
+    local button = assert(isKey and page.ui.bindKey or page.ui.bindClick, "missing binding control in the macro builder")
+    assert(button.enabled and button:IsVisible(), "a valid macro cannot be bound")
+    button.scripts.OnClick(button, "LeftButton")
+    assert(button.keyboard and button.clicks == (isKey and "LeftButtonUp" or "AnyUp"), "wrong capture mode")
+    return button
+end
+local beforeBinding = publications
+local callback, confirmationText
+P.Confirm = function(_, text, accept) confirmationText, callback = text, accept end
+local bindingButton = BeginBinding()
+bindingButton.scripts.OnClick(bindingButton, "RightButton")
+assert(publications == beforeBinding and not appliedBinding and not callback and page.message:find("Hold Shift", 1, true))
+assert(bindingButton.keyboard and bindingButton.clicks == "AnyUp", "a plain click ended mouse capture")
+bindingButton.scripts.OnClick(bindingButton, "LeftButton")
+assert(publications == beforeBinding and not appliedBinding, "plain left click was saved")
+heldModifiers = 3
+bindingButton.scripts.OnClick(bindingButton, "RightButton")
+heldModifiers = nil
+assert(publications == beforeBinding + 1 and page.pickupReady, "binding did not create the WoW macro")
+assert(appliedBinding.input.button == "RightButton" and appliedBinding.entry.name == "Click Heal")
+assert(not bindingButton.keyboard and bindingButton.clicks == "LeftButtonUp", "capture was left active")
+
+bindingButton = BeginBinding()
+bindingButton.scripts.OnClick(bindingButton, "Button12")
+assert(appliedBinding.input.button == "Button12" and publications == beforeBinding + 1)
+assert(page.ui.restoreClicks.enabled, "published macro has no recovery action")
+page.ui.restoreClicks.action()
+assert(restored.entry == native[1] and restored.reserved == true, "recovery must only remove reserved clicks")
+bindingButton = BeginBinding(true)
+bindingButton.scripts.OnKeyDown(bindingButton, "LSHIFT")
+assert(appliedBinding.input.button == "Button12" and bindingButton.keyboard, "Shift alone was bound")
+bindingButton.scripts.OnKeyDown(bindingButton, "F11")
+assert(appliedBinding.input.key == "F11" and publications == beforeBinding + 1)
+
+bindingButton = BeginBinding()
+bindingButton.scripts.OnKeyDown(bindingButton, "F11")
+assert(appliedBinding.input.key == "F11" and bindingButton.keyboard, "keyboard input entered click casting")
+heldModifiers = 3
+assert(bindingButton.scripts.OnMouseDown, "modifier state is not captured when the mouse is pressed")
+bindingButton.scripts.OnMouseDown(bindingButton, "LeftButton")
+heldModifiers = nil
+bindingButton.scripts.OnClick(bindingButton, "LeftButton")
+assert(appliedBinding.input.button == "LeftButton" and appliedBinding.input.modifiers == 3)
+
+heldModifiers = 12
+bindingButton.scripts.OnMouseDown(bindingButton, "LeftButton")
+heldModifiers = nil
+bindingButton.scripts.OnClick(bindingButton, "LeftButton")
+assert(appliedBinding.input.button == "LeftButton" and appliedBinding.input.modifiers == 12 and not bindingButton.keyboard,
+    "a modified click directly on the binding button did not bind")
+
+bindingButton = BeginBinding(true)
+bindingButton.scripts.OnClick(bindingButton, "LeftButton")
+assert(appliedBinding.input.modifiers == 12 and not bindingButton.keyboard, "a mouse click entered keyboard bindings")
+
+local applied = appliedBinding
+bindingButton = BeginBinding()
+bindingButton.scripts.OnKeyDown(bindingButton, "ESCAPE")
+assert(appliedBinding == applied and not bindingButton.keyboard, "escape committed a binding")
+
+occupiedBinding = true
+bindingButton = BeginBinding()
+bindingButton.scripts.OnClick(bindingButton, "MiddleButton")
+assert(appliedBinding == applied and confirmationText:find("MiddleButton", 1, true), "existing binding was overwritten without confirmation")
+bindingChanged = true
+callback()
+assert(appliedBinding == applied, "stale confirmation overwrote the new binding")
+bindingChanged = false
+P.Confirm = function(_, _, accept) accept() end
+
+page.ui.pools.button["tab:library"].action()
+page.ui.pools.button["library:native:1:delete"].action()
+assert(deleted and not native[1] and not page.bound, "WoW macro deletion did not reach the store")
+page.ui.pools.button["tab:rules"].action()
+bindingButton = BeginBinding()
+page.ui.body.scripts.OnEvent(page.ui.body, "PLAYER_REGEN_DISABLED")
+assert(appliedBinding == applied and not bindingButton.keyboard, "combat entry left capture active")
 print("suite_macros_menu_contract: passed")

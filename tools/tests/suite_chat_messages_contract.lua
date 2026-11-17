@@ -10,11 +10,27 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local function eq(a, b, label) assert(a == b, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 
 local combat = false
+FCF_IsChatWindowIndexActive = function() return true end
+local messageFilters = {}
+ChatFrameUtil = {
+    AddMessageEventFilter = function(event, filter)
+        assert(not messageFilters[event], "a body filter registered twice")
+        messageFilters[event] = filter
+    end,
+    RemoveMessageEventFilter = function(event, filter)
+        eq(messageFilters[event], filter, "body filter ownership")
+        messageFilters[event] = nil
+    end,
+}
+local censoredID
+C_ChatInfo = { IsChatLineCensored = function(id) return id == censoredID end }
 -- Blizzard's general dock (FloatingChatFrame.xml) exists at login on both
 -- clients; nothing is selected in it here.
 GENERAL_CHAT_DOCK = {}
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end,
-    RootDB = {} }
+    RootDB = {}, ChatState = dofile(root .. "/tools/tests/suite_test_support.lua").ChatStateMock() }
+-- The windows here are permanent; their input lines are followed.
+NS.ChatState.IsPermanentBox = function(box) return box.window ~= nil and not box.window.isTemporary end
 local S = {
     Public = function(v) return v ~= "secret" end,
     Finite = function(v) return type(v) == "number" and v == v and v > -math.huge and v < math.huge end,
@@ -113,13 +129,9 @@ local function RunTimers(untilTime)
         end
     end
 end
-local securePostHooks, fcfHooks = {}, {}
+local securePostHooks = {}
 hooksecurefunc = function(frame, method, callback)
-    if type(frame) == "string" then
-        assert(frame == "FCF_FadeInChatFrame" or frame == "FCF_FadeOutChatFrame", "unexpected global hook " .. frame)
-        fcfHooks[frame] = method
-        return
-    end
+    assert(type(frame) ~= "string", "unexpected global hook " .. tostring(frame))
     eq(method, "AddMessage", "only the native message post-hook")
     frame.securePostHooks = frame.securePostHooks or {}
     frame.securePostHooks[#frame.securePostHooks + 1] = callback
@@ -128,21 +140,26 @@ end
 
 -- A window's input line: FloatingChatFrameTemplate's editBox, a child of
 -- the window (FloatingChatFrame.xml, live and forever), so the window's
--- alpha multiplies its own. The idle fade only follows its focus scripts.
+-- alpha multiplies its own. The idle fade follows its focus through
+-- Suite.ChatState's box reports (Blizzard's EventRegistry triggers), never
+-- through a script hook.
+local boxReport
 local function EditBox(window)
-    local box = { alpha = 1, window = window, hooks = {} }
+    local box = { alpha = 1, window = window }
     function box:GetAlpha() return self.alpha end
     function box:SetAlpha(alpha) self.alpha = alpha end
     function box:GetEffectiveAlpha() return self.alpha * self.window.alpha end
     function box:HasFocus() return self.focused == true end
-    function box:HookScript(script, callback)
-        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost", "the idle fade hooked the input line's " .. script)
-        assert(not self.hooks[script], "the input line's " .. script .. " was hooked twice")
-        self.hooks[script] = callback
+    function box:HookScript(script) error("the idle fade hooked the input line's " .. script) end
+    -- ChatFrame.OnEditBoxFocusGained/Lost fire first in Blizzard's handlers.
+    function box:SetFocus()
+        self.focused = true
+        if boxReport then boxReport("focus", self) end
     end
-    -- Blizzard's own focus change, then the post-hooks.
-    function box:SetFocus() self.focused = true; if self.hooks.OnEditFocusGained then self.hooks.OnEditFocusGained(self) end end
-    function box:ClearFocus() self.focused = false; if self.hooks.OnEditFocusLost then self.hooks.OnEditFocusLost(self) end end
+    function box:ClearFocus()
+        self.focused = false
+        if boxReport then boxReport("release", self) end
+    end
     return box
 end
 
@@ -189,8 +206,48 @@ ChatFrame2 = Frame(2)
 local saved
 local M, handlers
 C, M, handlers = LoadChat(nil)
-assert(handlers.msufurl, "URL clicks did not register Blizzard's link handler")
 C.MessagesRefresh(M)
+assert(handlers.msufurl, "URL clicks did not register Blizzard's link handler")
+do
+    local body = "visit https://example.org/20%20."
+    local event = "CHAT_MSG_SAY"
+    local filter = assert(messageFilters[event], "ordinary chat never got the pre-insert URL filter")
+    assert(not messageFilters.CHAT_MSG_SYSTEM and not messageFilters.CHAT_MSG_CHANNEL_NOTICE,
+        "filter registered on a token-bearing event")
+    local metadata = { [1] = "Player", [7] = 0, [10] = 31, [13] = false }
+    local discard, linked, sender, _, _, _, _, _, channel, _, _, lineID, _, _, mobile =
+        filter(nil, event, body, unpack(metadata, 1, 13))
+    eq(discard, false, "URL filter discarded a line")
+    eq(sender, "Player", "sender changed")
+    eq(channel, 0, "channel changed")
+    eq(lineID, 31, "line identity changed")
+    eq(mobile, false, "trailing metadata changed")
+    eq(linked, "visit |Hmsufurl:https://example.org/20%20|h[https://example.org/20%20]|h.")
+    eq(filter(nil, event, linked, unpack(metadata, 1, 13)), nil, "an existing link was rewritten")
+    config.spamFilter = true
+    eq(messageFilters.CHAT_MSG_CHANNEL(nil, "CHAT_MSG_CHANNEL", body, unpack(metadata, 1, 13)), nil,
+        "the URL filter changed raw text needed by spam matching")
+    config.spamFilter = false
+    censoredID = 31
+    eq(filter(nil, event, body, unpack(metadata, 1, 13)), nil, "censored body was modified")
+    censoredID = nil
+    eq(filter(nil, event, "secret", unpack(metadata, 1, 13)), nil, "secret body was modified")
+    eq(filter(nil, event, body), nil, "an unidentified line was transformed before native censoring")
+    local frame = Frame(6)
+    C.ApplyMessages(M, frame)
+    frame:AddMessage("Player: " .. linked, 1, 1, 1, 1, 2, 3, event)
+    eq(frame.transforms, nil, "a preformatted URL still scanned the native buffer")
+    config.allTimestamps = true
+    C.MessagesRefresh(M)
+    local loot = assert(messageFilters.CHAT_MSG_LOOT)
+    local _, stamped, kept = loot(frame, "CHAT_MSG_LOOT", "You receive loot.", "sender")
+    eq(stamped, "[12:34] You receive loot.")
+    eq(kept, "sender")
+    frame:AddMessage(stamped, 1, 1, 1)
+    eq(frame.transforms, nil, "verbatim loot formatting scanned the native buffer")
+    config.allTimestamps = false
+    C.MessagesRefresh(M)
+end
 assert(events.GROUP_ROSTER_UPDATE and not events.CHAT_MSG_WHISPER,
     "message events did not follow the enabled tools")
 -- Chat is a geometry module: these text and sound listeners must also run
@@ -213,7 +270,7 @@ local formatWindow
 local function Rendered(text)
     if not formatWindow then
         formatWindow = Frame(9)
-        formatWindow.isTemporary = true
+        formatWindow.isTemporary = true; formatWindow.inUse = true
         C.ApplyMessages(M, formatWindow)
     end
     formatWindow:AddMessage(text)
@@ -394,7 +451,7 @@ local transforms = restored.transforms
 restored:AddMessage("history only")
 eq(restored.transforms, transforms, "history-only capture does not scan or transform the native buffer")
 local temporary = Frame(5)
-temporary.isTemporary = true
+temporary.isTemporary = true; temporary.inUse = true
 C.ApplyMessages(M, temporary)
 temporary:AddMessage("temporary whisper")
 eq(saved.tabs["ChatFrame5:Other"], nil, "temporary conversations excluded")
@@ -423,7 +480,9 @@ local visual = { frame = restored }
 M.visuals[restored] = visual
 for i = #timers, 1, -1 do timers[i] = nil end
 C.ApplyInactivity(M, visual)
-assert(fcfHooks.FCF_FadeInChatFrame and fcfHooks.FCF_FadeOutChatFrame, "pointer activity is not followed")
+boxReport = function(kind, box) C.FadeInput(kind, box) end
+-- Window.lua holds the tab regions; this fixture styles no tab.
+C.TabFollowsFrame, C.KeepTabVisible = function() end, function() end
 eq(#timers, 1, "arming the fade did not start one countdown")
 for i = 1, 30 do now = i * 0.1; restored:AddMessage("busy " .. i) end
 eq(#timers, 1, "every line started its own timer")
@@ -459,14 +518,14 @@ restored:AddMessage("wake after typing")
 eq(restored.alpha, 1, "a line did not wake the window after typing")
 RunTimers(now + 5)
 -- Blizzard's fade-in on mouse-over wakes the window and holds the fade.
-fcfHooks.FCF_FadeInChatFrame(restored)
+C.HoverStarted(restored) -- Suite.ChatState: hasBeenFaded turned true
 eq(restored.alpha, 1, "mouse-over did not wake the window")
 eq(tab.alpha, .2, "waking on mouse-over fought Blizzard's own tab fade-in")
 tab.alpha = 1 -- Blizzard's fade-in animation reached mouseOverAlpha
 RunTimers(now + 30)
 eq(restored.alpha, 1, "the window faded under the pointer")
 tab.alpha = 0.8 -- Blizzard's fade-out animation reached noMouseAlpha
-fcfHooks.FCF_FadeOutChatFrame(restored)
+C.HoverEnded(restored) -- Suite.ChatState: hasBeenFaded cleared
 RunTimers(now + 5)
 eq(restored.alpha, .2, "the countdown did not start again after the pointer left")
 -- Blizzard changes the input line's own alpha: the fade never touches it.
@@ -670,16 +729,14 @@ do
         S.Finite = function(value) return not strict.IsSecret(value) and finite(value) end
     end
     local hidden = strict and strict.New("string") or "secret"
-    ChatFrameUtil = {
-        AddSenderNameFilter = function(fn)
-            assert(not senderFilter, "duplicate native sender filter")
-            senderFilter = fn
-        end,
-        RemoveSenderNameFilter = function(fn)
-            eq(fn, senderFilter, "wrong native sender filter released")
-            senderFilter = nil
-        end,
-    }
+    ChatFrameUtil.AddSenderNameFilter = function(fn)
+        assert(not senderFilter, "duplicate native sender filter")
+        senderFilter = fn
+    end
+    ChatFrameUtil.RemoveSenderNameFilter = function(fn)
+        eq(fn, senderFilter, "wrong native sender filter released")
+        senderFilter = nil
+    end
     RAID_CLASS_COLORS = { MAGE = {} }
     GetClassAtlas = function(class) return "classicon-" .. class end
     GetPlayerInfoByGUID = function(value)

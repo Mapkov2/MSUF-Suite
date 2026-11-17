@@ -31,6 +31,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         end
         Load("Rendering/WindowControls.lua")
         Load("Adapters/AdapterKit.lua")
+        Load("Adapters/ForeverSpellLearning.lua")
         Load("Adapters/PlayerSpells.lua", os.getenv("SUITE_PLAYER_SPELLS_ENTRY_SOURCE"))
         NS.ForeverLegacyTree = { Apply = function() return true end }
         Load("Adapters/Blizzard.lua", os.getenv("SUITE_BLIZZARD_ENTRY_SOURCE"))

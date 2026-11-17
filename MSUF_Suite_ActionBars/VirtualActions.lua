@@ -9,6 +9,7 @@ AB.Virtual = Virtual
 -- action pages. Open SavedVariables on enable, after the LoD addon's load.
 -- The old page 10 belongs to forms and is never read or written here.
 local assignments, activeSpec, pending, specEvent
+local equipmentContext, watchingSets
 local ATTRIBUTE = {
     spell = "spell", item = "item", macro = "macro", flyout = "spell",
     toy = "toy", equipmentset = "equipmentset", outfit = "outfit-index",
@@ -27,7 +28,7 @@ local function ValidAction(action)
         return type(id) == "string" and #id > 0 and #id <= 64 and action or nil
     elseif kind == "battlepet" then
         return type(id) == "string" and #id <= 64 and id:match("^BattlePet%-%x[%x%-]+$") and action or nil
-    elseif kind == "outfit" and id == 0 then
+    elseif (kind == "outfit" or kind == "equipmentset") and id == 0 then
         return action
     end
     return ValidID(id) and action or nil
@@ -45,16 +46,21 @@ local function SpecKey()
     if ValidID(spec) then return spec end
 end
 
-local function CurrentAssignments(spec)
+local function SavedAssignments()
     local saved = _G.MSUFSuiteIndependentBar
     if type(saved) ~= "table" then
         saved = {}
         _G.MSUFSuiteIndependentBar = saved
     end
-    local slots = saved[spec]
+    return saved
+end
+
+local function CurrentAssignments(spec)
+    local perSpec = SavedAssignments()
+    local slots = perSpec[spec]
     if type(slots) ~= "table" then
         slots = {}
-        saved[spec] = slots
+        perSpec[spec] = slots
     end
     return slots
 end
@@ -94,6 +100,7 @@ local function Apply(rec, action)
     end
     if attribute and button:GetAttribute(attribute) ~= value then button:SetAttribute(attribute, value) end
     if button:GetAttribute("type") ~= kind then button:SetAttribute("type", kind) end
+    if not kind and action and action.kind == "equipmentset" then action = nil end
     local filled = action ~= nil
     if button:GetAttribute("independentfilled") ~= filled then button:SetAttribute("independentfilled", filled) end
     rec.virtualAttribute, rec.virtualAction = attribute, action
@@ -127,7 +134,7 @@ function Virtual.Resume()
 end
 
 local function SpecChanged(_, event, unit)
-    if event == "ACTIVE_COMBAT_CONFIG_CHANGED" or unit == "player" then Virtual.Sync() end
+    if event == "ACTIVE_COMBAT_CONFIG_CHANGED" or S.Public(unit) and unit == "player" then Virtual.Sync() end
 end
 
 local function MacroChanged()
@@ -135,16 +142,66 @@ local function MacroChanged()
 end
 
 local IN_COMBAT = { inCombat = true }
+
+local function DropMissingSets()
+    local ids = C_EquipmentSet.GetEquipmentSetIDs()
+    if not S.Public(ids) or type(ids) ~= "table" then return end
+    local present = {}
+    for index = 1, #ids do
+        local id = ids[index]
+        if not S.Finite(id) then return end
+        present[id] = true
+    end
+    for _, slots in pairs(SavedAssignments()) do
+        if type(slots) == "table" then
+            for index, entry in pairs(slots) do
+                local action = ValidAction(entry)
+                if action and action.kind == "equipmentset" and not present[action.id] then slots[index] = nil end
+            end
+        end
+    end
+end
+
+local SyncSetEvents
+local function EquipmentSetsChanged()
+    DropMissingSets()
+    Virtual.Sync(true)
+    SyncSetEvents()
+end
+
+function SyncSetEvents()
+    local wanted = false
+    for _, slots in pairs(SavedAssignments()) do
+        if type(slots) == "table" then
+            for _, entry in pairs(slots) do
+                local action = ValidAction(entry)
+                if action and action.kind == "equipmentset" then wanted = true break end
+            end
+        end
+        if wanted then break end
+    end
+    if wanted and not watchingSets then
+        equipmentContext:Event("EQUIPMENT_SETS_CHANGED", EquipmentSetsChanged, IN_COMBAT)
+    elseif not wanted and watchingSets then
+        equipmentContext:RemoveEvent("EQUIPMENT_SETS_CHANGED")
+    end
+    watchingSets = wanted
+end
+
 function Virtual.Start(context)
     specEvent = NS.Client.isForever and "ACTIVE_COMBAT_CONFIG_CHANGED" or "PLAYER_SPECIALIZATION_CHANGED"
     context:Event(specEvent, SpecChanged, IN_COMBAT)
     context:Event("UPDATE_MACROS", MacroChanged, IN_COMBAT)
+    equipmentContext = context
+    SyncSetEvents()
     Virtual.Sync()
 end
 
 function Virtual.Stop(context)
     if specEvent then context:RemoveEvent(specEvent) end
     context:RemoveEvent("UPDATE_MACROS")
+    if watchingSets then context:RemoveEvent("EQUIPMENT_SETS_CHANGED") end
+    equipmentContext, watchingSets = nil, nil
     assignments, activeSpec, pending, specEvent = nil, nil, nil, nil
 end
 
@@ -234,8 +291,10 @@ local function Editable(button)
 end
 
 local function Set(rec, action)
+    local previous = ValidAction(assignments[rec.index])
     assignments[rec.index] = action
     Apply(rec, action)
+    if action and action.kind == "equipmentset" or previous and previous.kind == "equipmentset" then SyncSetEvents() end
     Repaint(rec.bar)
     if AB.snapshotChanged then AB.snapshotChanged() end
 end

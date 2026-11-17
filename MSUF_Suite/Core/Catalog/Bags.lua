@@ -136,6 +136,18 @@ B.Section("bags", "organisation", "Inventory organisation", {
     B.Number("itemCountSize", "Item count text size", 12, 8, 20),
     B.String("customCategories", "Custom category data", "", 16000),
 })
+-- The list presentation of the Suite bag and organised bank views
+-- (MSUF_Suite_Bags/ListView.lua). Rows keep Blizzard's item buttons; a click
+-- on a column title sorts and is kept in the module state, not here.
+B.Section("bags", "listView", "List view", {
+    B.Bool("listView", "Show bag items as a sortable list"),
+    B.Bool("bankListView", "Show bank items as a sortable list"),
+    B.Bool("listShowTrack", "List: show the upgrade track", true),
+    B.Bool("listShowBinding", "List: show the binding", true),
+    B.Bool("listShowValue", "List: show the vendor value", true),
+    B.Bool("listShowType", "List: show the item type"),
+    B.String("listColumnOrder", "List column order", "", 80),
+})
 B.Section("bags", "categories", "Built-in categories", {
     B.Bool("category_myArmorSlot", "My Armor Slot", true),
     B.Bool("category_equipment", "Equipment category", true),
@@ -203,6 +215,16 @@ for _, key in ipairs({ "bankGroupEquipmentSlots", "bankGroupExpansions", "bankGr
     rules[key].requiresChoice = bankCategoriesOnly
 end
 rules.panelFullHeight.requiresChoice = { key = "windowPresentation", values = { [NS.BagsPresentation.PANEL] = true } }
+-- The bag list replaces a Suite grid; Blizzard's own grid has none.
+rules.listView.requiresChoice = { key = "inventoryView", values = {
+    [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,
+} }
+rules.bankListView.requiresChoice = { key = "bankView", values = {
+    [NS.BagsBankView.CHARACTER] = true, [NS.BagsBankView.WARBANK] = true, [NS.BagsBankView.CATEGORIES] = true,
+} }
+-- Upgrade tracks are read from C_Item.GetItemUpgradeInfo on Retail only.
+rules.listShowTrack.hidden = NS.Client.isForever
+rules.listColumnOrder.hidden = true
 rules.showKeystoneDetails.hidden = NS.Client.isForever
 rules.keystoneLevelSize.hidden = NS.Client.isForever
 rules.keystoneDungeonSize.hidden = NS.Client.isForever

@@ -46,6 +46,18 @@ local waiting = {}
 -- Slots ACTION_USABLE_CHANGED has named: the client tracks their usability.
 local reported = {}
 local CAP = 0.1
+-- The number of the running flush. A slot paint that completed leaves it on
+-- its button (rec.paintedPass): Paint has just read that button's cooldown,
+-- charges and count, and nothing in the client changes inside one flush, so
+-- the action bar cooldown walk of the same flush passes it by (the full
+-- cooldown walk still reads it). A walk in any later flush (the cap's trailing one too) reads it
+-- again. 2026-11-16 Ironforge idle trace (Forever, 29.5 s): every pointer move
+-- over a unit sent ACTIONBAR_SLOT_CHANGED for the macro slots together with
+-- ACTIONBAR_UPDATE_COOLDOWN; 216 slot paints, then 186 cooldown reads of
+-- buttons off the spell routes, six a flush on both sides. paintedIn is the
+-- last flush that painted a slot: a walk without one keeps its plain
+-- per-button function and its instruction budget.
+local pass, paintedIn = 0, 0
 
 ------------------------------------------------------------------ flush
 -- Every unit of flush work (a paint kind, one bar, one slot, one bar's
@@ -132,13 +144,31 @@ local function VirtualActionbarCooldownAndCount(rec)
     spellCooldowns[rec] = nil
     Virtual.CooldownAndCount(rec)
 end
+-- The same two walks in a flush that painted slots: a button painted in it
+-- is current (pass, above) and done for the flush like one the walk paints.
+local function UnpaintedCooldown(rec)
+    if rec.paintedPass == pass then
+        spellCooldowns[rec] = nil
+        return
+    end
+    OtherCooldown(rec)
+end
+local function UnpaintedCooldownAndCount(rec)
+    if rec.paintedPass == pass then
+        spellCooldowns[rec] = nil
+        return
+    end
+    OtherCooldownAndCount(rec)
+end
 local function ActionbarCooldownWalk()
+    -- A native call during paint can queue newer data for the next flush.
+    local painted = paintedIn == pass and not scheduled
     if dirty.count then
-        Walk(OtherCooldownAndCount)
+        Walk(painted and UnpaintedCooldownAndCount or OtherCooldownAndCount)
         if M.config.hideEmptyCharges then WalkNative(NativeCount) end
         dirty.count = false
     else
-        Walk(OtherCooldown)
+        Walk(painted and UnpaintedCooldown or OtherCooldown)
     end
     if not AB.directDuration then WalkNative(NativeFeedback) end
 end
@@ -203,10 +233,14 @@ end
 
 local function PaintVisibleBar(bar)
     if not Visible(bar) then return end
+    if bar.native then
+        if bar.index == AB.ENUM.BAR.MAIN then AB.RefreshNativeBar(bar) end
+        return
+    end
     PaintBar(bar)
     -- A completed owned-bar paint already refilled it. A new mark schedules
     -- another pass and prevents reuse, including marks raised during paint.
-    if bar.owned and not bar.native and not scheduled and next(dirtySlots) and refillBars[bar] == nil then
+    if bar.owned and not scheduled and next(dirtySlots) and refillBars[bar] == nil then
         refillBars[bar] = false
     end
 end
@@ -216,9 +250,16 @@ local function PaintSlot(slot)
     if not list then return end
     for i = 1, #list do
         local rec = list[i]
-        if not rec.native and (refillBars[rec.bar] ~= false or scheduled) and Visible(rec.bar) then
-            Paint(rec)
-            refillBars[rec.bar] = true
+        if rec.native then
+            if AB.nativeSlotEffects and Visible(rec.bar) then
+                if M.config.hideEmptyCharges then NativeCount(rec) end
+                if M.config.procGlow == PROC_PIXEL then GlowCheck(rec) end
+            end
+        elseif (refillBars[rec.bar] ~= false or scheduled) and Visible(rec.bar) then
+            Paint(rec, true)
+            -- Only a paint that returned: a raising one leaves the walks on it.
+            rec.paintedPass, paintedIn = pass, pass
+            if rec.refillFilled ~= rec.filled then refillBars[rec.bar] = true end
         end
     end
 end
@@ -311,17 +352,19 @@ local function FlushProtected()
             if bar then gridBars[bar] = true end
         end
     end
-    local budget = GRID_PER_FLUSH
-    for index = 1, 10 do
-        local bar = AB.bars[index]
-        if bar and gridBars[bar] then
-            if budget == 0 then
-                Schedule()
-                break
+    if next(gridBars) then
+        local budget = GRID_PER_FLUSH
+        for index = 1, 10 do
+            local bar = AB.bars[index]
+            if bar and gridBars[bar] then
+                if budget == 0 then
+                    Schedule()
+                    break
+                end
+                budget = budget - 1
+                gridBars[bar] = nil
+                Run(gridBars, bar, true, GridUnit, bar)
             end
-            budget = budget - 1
-            gridBars[bar] = nil
-            Run(gridBars, bar, true, GridUnit, bar)
         end
     end
     if protected.routing then
@@ -336,6 +379,7 @@ end
 Flush = function()
     scheduled = false
     if not M.active then return end
+    pass = pass + 1
     local now = GetTime()
     local nativeFull = dirty.full
     if nativeFull then ExpandFull() end
@@ -395,6 +439,7 @@ if Virtual then
     Virtual.walk = {
         [Cooldown] = Virtual.Cooldown, [CooldownAndCount] = Virtual.CooldownAndCount,
         [OtherCooldown] = VirtualActionbarCooldown, [OtherCooldownAndCount] = VirtualActionbarCooldownAndCount,
+        [UnpaintedCooldown] = VirtualActionbarCooldown, [UnpaintedCooldownAndCount] = VirtualActionbarCooldownAndCount,
         [Usable] = Virtual.Usable, [UsableIfUnreported] = Virtual.Usable,
         [Count] = Virtual.Count, [State] = Virtual.State, [Icon] = Virtual.Paint,
     }

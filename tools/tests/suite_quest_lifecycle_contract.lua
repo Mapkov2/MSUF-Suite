@@ -56,19 +56,25 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     for _, name in ipairs(pages) do
         local shown = _G[name].scriptHooks.OnShow
         Check(shown ~= nil, "native XML-bound page OnShow is not observed: " .. name)
-        -- XML holds the original function. Its native layout and reparenting
-        -- finish before HookScript; the skin sees the final content owner.
+        -- XML holds the original function. HookScript still runs inside
+        -- QuestFrame_OnEvent, so the skin paints the final content owner on
+        -- the next frame.
         QuestInfoRewardText:SetTextColor(0.1, 0.1, 0.1)
         shown(_G[name])
+        Check(QuestInfoRewardText.color[1] == 0.1, "page OnShow hook wrote inside the native event")
+        NextFrame()
         Check(QuestInfoRewardText.color[1] == theme.text[1], "page transition left reward text dark")
     end
     Check(callbacks.QuestInfo_ShowRewards and callbacks.QuestFrameProgressItems_Update,
         "late native quest updates bypass the text skin")
     heading:SetTextColor(0.12, 0.1, 0.08)
     callbacks.QuestInfo_ShowRewards()
+    NextFrame()
     Check(heading.color[1] == theme.text[1], "late QUEST_ITEM_UPDATE left a recycled reward heading dark")
     QuestProgressRequiredMoneyText:SetTextColor(0, 0, 0)
     callbacks.QuestFrameProgressItems_Update()
+    Check(QuestProgressRequiredMoneyText.color[1] == 0, "progress item update hook wrote inside the native update")
+    NextFrame()
     Check(QuestProgressRequiredMoneyText.color[1] == theme.text[1], "native progress update darkened the money requirement")
     Check(choice == 0 and completed == 0 and continued == 0, "skin performed a quest action")
     buttons[1].script()

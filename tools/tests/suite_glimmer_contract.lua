@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local combat, object, cursor, related = false, true, 1, false
 local inReach, plateAvailable, dead = false, true, false
-local cvars = { SoftTargetInteractOnlyInRange = "1", SoftTargetIconGameObject = "0", SoftTargetInteractArc = "0",
+local cvars = { SoftTargetInteract = "3", SoftTargetInteractOnlyInRange = "1", SoftTargetIconGameObject = "0", SoftTargetInteractArc = "0",
     outlineModeShowLootEffectWhenDisabled = "0", graphicsOutlineMode = "2", raidGraphicsOutlineMode = "1" }
 local savedBefore, tooltip = {}, nil
 local cursorReads, tooltipReads = 0, 0
@@ -51,6 +51,7 @@ local secret = {}
 local plate = setmetatable({ IsForbidden = function() return false end },
     { __newindex = function() error("native frame write") end })
 C_NamePlate = { GetNamePlateForUnit = function()
+    if cvars.SoftTargetInteract ~= "3" then return nil end
     if plateAvailable and (inReach or cvars.SoftTargetInteractOnlyInRange == "0") then return plate end
 end }
 -- World objects do not need to exist as normal units (native CompactUnitFrame_UpdateVisible).
@@ -102,6 +103,7 @@ module.context = { Event = function(_, key, callback) events[key] = callback end
     After = function(_, delay, callback) assert(delay == 1 or delay == 0.1); timers[callback] = true end,
     Cancel = function(_, callback) timers[callback] = nil end,
     CVar = function(_, key, value, adoptCurrent)
+        assert(key ~= "SoftTargetInteract", "Glimmer must leave Enable Interact Key to the player")
         writes[#writes + 1] = {key, value}
         if savedBefore[key] == nil or adoptCurrent then savedBefore[key] = cvars[key] end
         cvars[key] = tostring(value)
@@ -111,14 +113,14 @@ module.context = { Event = function(_, key, callback) events[key] = callback end
 module:Enable()
 assert(module.host.shown and module.host.point[2] == plate,
     "game-object ore was rejected while UnitExists is false or before direct interaction range")
-assert(#writes == 7 and cvars.SoftTargetInteractOnlyInRange == "0" and cvars.SoftTargetInteractArc == "2",
+assert(#writes == 6 and cvars.SoftTargetInteractOnlyInRange == "0" and cvars.SoftTargetInteractArc == "2",
     "native object range or camera selection was not configured")
 assert(module.host.strata == "BACKGROUND", "world glimmer renders above ordinary UI windows")
 local baseline = created
 local tooltipBaseline = tooltipReads
 local nativeBaseline, startsBaseline = nativeWrites, animationStarts
 for i = 1, 20 do events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED") end
-assert(created == baseline and #writes == 7, "events allocate surfaces or rewrite CVars")
+assert(created == baseline and #writes == 6, "events allocate surfaces or rewrite CVars")
 assert(tooltipReads == tooltipBaseline, "recognized gathering targets queried tooltip data")
 assert(nativeWrites == nativeBaseline and animationStarts == startsBaseline,
     "unchanged events repainted the effect or restarted its animation")
@@ -347,6 +349,15 @@ module:Refresh()
 assert(not next(timers) and cvars.outlineModeShowLootEffectWhenDisabled == "0", "disabling native sparkle did not restore it")
 module.config.questSparkle = true
 module:Refresh()
+-- An older release's override is handed back, including on an already enabled module.
+savedBefore.SoftTargetInteract = "1"
+module:Refresh()
+assert(cvars.SoftTargetInteract == "1" and savedBefore.SoftTargetInteract == nil and not module.host.shown,
+    "Glimmer did not release the old Interact Key override")
+assert(cvars.outlineModeShowLootEffectWhenDisabled == "1", "turning off Interact Key disabled native quest sparkle")
+cvars.SoftTargetInteract = "3"
+events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+assert(module.host.shown, "enabling Interact Key did not resume the glow")
 -- Native mapping still exists during the removal event. An unrelated
 -- removal cannot hide this overlay, while the current plate must release.
 local getPlate=C_NamePlate.GetNamePlateForUnit

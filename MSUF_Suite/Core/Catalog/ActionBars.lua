@@ -24,7 +24,13 @@ NS.ActionBarCommands = { "ACTIONBUTTON", "MULTIACTIONBAR1BUTTON", "MULTIACTIONBA
 -- bars from FIRST_EXTRA on have no Blizzard counterpart bar, bars up to
 -- LAST_ACTION have suite-owned buttons, then stance and pet.
 local ENUM = {
-    VISIBILITY = { ALWAYS = 1, COMBAT = 2, OUT_OF_COMBAT = 3, MOUSEOVER = 4, MOUSEOVER_OR_COMBAT = 5, NEVER = 6 },
+    -- CUSTOM combines the per-bar conditions below (NS.ActionBarConditionBody).
+    VISIBILITY = { ALWAYS = 1, COMBAT = 2, OUT_OF_COMBAT = 3, MOUSEOVER = 4, MOUSEOVER_OR_COMBAT = 5, NEVER = 6, CUSTOM = 7 },
+    -- "Custom conditions": how the chosen conditions combine, and the
+    -- choices of the combat, mount and target conditions.
+    COMBINE = { ANY = 1, ALL = 2 },
+    CONDITION = { IGNORE = 1, YES = 2, NO = 3 },
+    TARGET_CONDITION = { IGNORE = 1, EXISTS = 2, NONE = 3, HOSTILE = 4, FRIENDLY = 5 },
     PROC_GLOW = { BLIZZARD = 1, PIXEL = 2, NONE = 3 },
     -- MSUF's icon shapes from ROUNDED on (MSUF 7.0; older hosts draw them
     -- square). STAR is left out: its ring is a silhouette that only works
@@ -183,6 +189,12 @@ B.Section(id, "appearance", "Button appearance", {
     -- MSUF's icon skin of every button, chosen on MSUF's Icon Skins page:
     -- DEFAULT follows its default skin, CUSTOM keeps the look above.
     B.String("iconSkin", "Icon skin", "DEFAULT", 64),
+    -- Opt-in: only buttons the Suite creates itself join Masque
+    -- (MSUF_Suite_ActionBars/Masque.lua); reused Blizzard buttons never do.
+    B.Tooltip(Bool("masque", "Skin Suite-made buttons with Masque", false),
+        "Hands the frame, icon and highlight art of the buttons the Suite creates itself (action bars 9 and 10, and bar 1 "
+            .. "where Blizzard's buttons cannot be reused) to Masque, one Masque group per bar. Bars that reuse Blizzard's "
+            .. "buttons keep the Suite look. Turning it off restores the Suite look at once."),
 })
 B.Section(id, "cooldowns", "Cooldowns and states", {
     Bool("cooldownNumbers", "Show cooldown numbers", true),
@@ -246,6 +258,14 @@ ENUM.POINT = { CENTER = anchorIndex.CENTER }
 NS.ActionBarAnchorPoints = NS.AnchorPoints
 local TEXT_ANCHORS = { "Default" }
 for _, label in ipairs(NS.AnchorLabels) do TEXT_ANCHORS[#TEXT_ANCHORS + 1] = label end
+-- Saved profiles store the index, so new modes only ever append. The hidden
+-- resume list mirrors it, so switching a Custom bar off and on keeps Custom.
+local VISIBILITY_LABELS = { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat", "Never",
+    "Custom conditions" }
+local CONDITION, TARGET_CONDITION = ENUM.CONDITION, ENUM.TARGET_CONDITION
+local PAGING_TIP = "Macro conditions with page numbers, for example [mod:shift] 2; [@target,harm] 3. Vehicle, override, "
+    .. "possess, pet battle and form paging keep their priority; otherwise the bar returns to its own page. Invalid text is "
+    .. "never applied."
 
 for i = 1, BAR_COUNT do
     local p = "bar" .. i
@@ -254,12 +274,18 @@ for i = 1, BAR_COUNT do
     local maxButtons = d[2]
     local special = i > ENUM.BAR.LAST_ACTION
     B.Section(id, p, title, {
-        Choice(p .. "Visibility", "Show this bar", d[1],
-            { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat", "Never" }),
+        Choice(p .. "Visibility", "Show this bar", d[1], VISIBILITY_LABELS),
+        Choice(p .. "CondCombine", "Show when", ENUM.COMBINE.ANY, { "Any condition is met", "All conditions are met" }),
+        Choice(p .. "CondCombat", "Combat condition", CONDITION.YES, { "Ignore", "In combat", "Out of combat" }),
+        Choice(p .. "CondMounted", "Mount condition", CONDITION.IGNORE, { "Ignore", "Mounted", "Not mounted" }),
+        Choice(p .. "CondTarget", "Target condition", TARGET_CONDITION.IGNORE,
+            { "Ignore", "Has a target", "No target", "Hostile target", "Friendly target" }),
+        Bool(p .. "CondMouseover", "Reveal on mouseover", true),
         Bool(p .. "HideGamepad", "Hide with an active connected gamepad (Forever)"),
         Bool(p .. "GroupOnly", "Show only while grouped"),
         Choice(p .. "ResumeVisibility", "Visibility when turned on", d[1] == VISIBILITY.NEVER and VISIBILITY.ALWAYS or d[1],
-            { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat" }),
+            VISIBILITY_LABELS),
+        B.Tooltip(B.String(p .. "Paging", "Custom paging (macro conditions)", "", 255), PAGING_TIP),
         Number(p .. "Alpha", "Bar opacity (percent)", 100, 0, 100, 5),
         Number(p .. "FadeAlpha", "Opacity without mouseover (percent)", 0, 0, 100, 5),
         Number(p .. "FadeDuration", "Fade duration (seconds; 0 is instant)", 0, 0, 2, 0.05),
@@ -354,11 +380,19 @@ for i = 1, BAR_COUNT do
     -- Only Forever has a gamepad interface to hide bars for
     -- (InputUtil.IsGamepadUIEnabled); Retail never applies the option.
     rules[p .. "HideGamepad"].hidden = not NS.Client.isForever or nil
-    -- The fade options apply to the mouseover modes.
+    -- The fade options apply to the mouseover modes (Custom conditions fade
+    -- while "Reveal on mouseover" is on).
     local mouseover = { key = p .. "Visibility",
-        values = { [VISIBILITY.MOUSEOVER] = true, [VISIBILITY.MOUSEOVER_OR_COMBAT] = true } }
+        values = { [VISIBILITY.MOUSEOVER] = true, [VISIBILITY.MOUSEOVER_OR_COMBAT] = true, [VISIBILITY.CUSTOM] = true } }
     rules[p .. "FadeAlpha"].requiresChoice = mouseover
     rules[p .. "FadeDuration"].requiresChoice = mouseover
+    local custom = { key = p .. "Visibility", values = { [VISIBILITY.CUSTOM] = true } }
+    for _, suffix in ipairs({ "CondCombine", "CondCombat", "CondMounted", "CondTarget", "CondMouseover" }) do
+        rules[p .. suffix].requiresChoice = custom
+    end
+    -- Paging needs a native page of its own: bars 1 to 9 (bar 10 stores
+    -- independent actions; stance and pet buttons have no pages).
+    rules[p .. "Paging"].hidden = not NS.ActionBarFirstSlots[i] or nil
     -- Blizzard's stance and pet buttons open no spell flyouts.
     rules[p .. "FlyoutDirection"].hidden = i > ENUM.BAR.LAST_ACTION or nil
     rules[p .. "KeybindSize"].enableKey = p .. "Keybind"
@@ -379,4 +413,221 @@ for i = 1, BAR_COUNT do
         -- Blizzard's stance and pet buttons have no macro names.
         for _, suffix in ipairs({ "Macro", "MacroSize", "MacroPoint", "MacroX", "MacroY" }) do rules[p .. suffix].hidden = true end
     end
+end
+
+------------------------------------------------------------------ custom visibility
+-- The state driver body of a bar in "Custom conditions" mode: "show",
+-- "fade" (shown while hovered) or "hide", built only from fixed macro
+-- conditions the secure state driver evaluates itself, also in combat. The
+-- target unit leads its bracket, as the macro syntax wants it. Shared by the
+-- runtime driver (MSUF_Suite_ActionBars/Visibility.lua) and the menu.
+local COMBAT_TESTS = { [CONDITION.YES] = "combat", [CONDITION.NO] = "nocombat" }
+local MOUNT_TESTS = { [CONDITION.YES] = "mounted", [CONDITION.NO] = "nomounted" }
+local TARGET_TESTS = { [TARGET_CONDITION.EXISTS] = "@target,exists", [TARGET_CONDITION.NONE] = "@target,noexists",
+    [TARGET_CONDITION.HOSTILE] = "@target,harm", [TARGET_CONDITION.FRIENDLY] = "@target,help" }
+function NS.ActionBarConditionBody(config, index)
+    local p = "bar" .. index
+    local tests = {}
+    tests[#tests + 1] = TARGET_TESTS[config[p .. "CondTarget"]]
+    tests[#tests + 1] = COMBAT_TESTS[config[p .. "CondCombat"]]
+    tests[#tests + 1] = MOUNT_TESTS[config[p .. "CondMounted"]]
+    local hover = config[p .. "CondMouseover"] == true
+    if #tests == 0 then return hover and "fade" or "show" end
+    -- All: every condition holds (and the bar is hovered, with mouseover).
+    if config[p .. "CondCombine"] == ENUM.COMBINE.ALL then
+        return "[" .. table.concat(tests, ",") .. "] " .. (hover and "fade" or "show") .. "; hide"
+    end
+    -- Any: one condition holds, or the bar is hovered, with mouseover.
+    local body = {}
+    for i = 1, #tests do body[i] = "[" .. tests[i] .. "] show" end
+    body[#body + 1] = hover and "fade" or "hide"
+    return table.concat(body, "; ")
+end
+
+-- Whether a bar's mode can fade (its header then takes hover).
+function NS.ActionBarFades(config, index)
+    local mode = config["bar" .. index .. "Visibility"]
+    if mode == VISIBILITY.MOUSEOVER or mode == VISIBILITY.MOUSEOVER_OR_COMBAT then return true end
+    return mode == VISIBILITY.CUSTOM and config["bar" .. index .. "CondMouseover"] == true
+end
+
+------------------------------------------------------------------ custom paging
+-- A bar's paging text is a whitelisted subset of the macro option syntax:
+-- clauses "[conditions] page" separated by ";". Every accepted clause is
+-- rebuilt from known words, so a state driver only ever sees normalized
+-- text. Anything else refuses the whole text (the bar keeps its own page),
+-- imported profiles included. Native states are not in the whitelist: the
+-- runtime keeps vehicle, override, possess, pet battle and form paging ahead
+-- of every custom clause (MSUF_Suite_ActionBars/Paging.lua).
+local HOME_PAGES, PAGE_OWNERS = {}, {}
+for index, slot in ipairs(NS.ActionBarFirstSlots) do
+    local page = math.floor((slot - 1) / 12) + 1
+    HOME_PAGES[index] = page
+    if page <= 6 then PAGE_OWNERS[page] = index end
+end
+NS.ActionBarHomePages = HOME_PAGES
+local MAX_CLAUSES = 16
+local function Trim(text) return (text:gsub("^%s+", ""):gsub("%s+$", "")) end
+local function Word(set) return function(arg) return set[arg] == true end end
+local function Within(low, high)
+    return function(arg)
+        local n = arg:find("^%d%d?$") and tonumber(arg)
+        return n ~= nil and n >= low and n <= high
+    end
+end
+local MODIFIER = Word({ shift = true, ctrl = true, alt = true, lshift = true, rshift = true, lctrl = true, rctrl = true,
+    lalt = true, ralt = true })
+-- word -> { arg = check of one value, needs = a value is required }
+local PAGING_TESTS = {
+    mod = { arg = MODIFIER }, modifier = { arg = MODIFIER }, group = { arg = Word({ party = true, raid = true }) },
+    form = { arg = Within(0, 10) }, stance = { arg = Within(0, 10) }, bonusbar = { arg = Within(1, 5) },
+    bar = { arg = Within(1, 6), needs = true }, actionbar = { arg = Within(1, 6), needs = true },
+    spec = { arg = Within(1, 4), needs = true },
+}
+for _, word in ipairs({ "combat", "mounted", "flying", "swimming", "stealth", "indoors", "outdoors", "resting", "pet",
+    "exists", "dead", "help", "harm", "channeling", "flyable" }) do PAGING_TESTS[word] = {} end
+local PAGING_UNITS = { target = true, focus = true, mouseover = true, player = true, pet = true }
+
+local function ParseTest(token)
+    local word, args = token:match("^(%a+)%s*:%s*(.-)$")
+    word = word or token:match("^%a+$")
+    local test = word and PAGING_TESTS[word]
+    local negated = ""
+    if word and not test and word:sub(1, 2) == "no" then
+        negated, word = "no", word:sub(3)
+        test = PAGING_TESTS[word]
+    end
+    if not test then return nil, "Unknown condition: %s", token end
+    if not args or args == "" then
+        if test.needs then return nil, "The condition %s needs a value.", word end
+        return negated .. word
+    end
+    if not test.arg then return nil, "The condition %s takes no value.", word end
+    local list = {}
+    for arg in (args .. "/"):gmatch("([^/]*)/") do
+        arg = Trim(arg)
+        if not test.arg(arg) then return nil, "Unsupported value for %s: %s", word, arg end
+        list[#list + 1] = arg
+    end
+    return negated .. word .. ":" .. table.concat(list, "/")
+end
+
+local function ParseGroup(inner)
+    local tokens = {}
+    for raw in (inner .. ","):gmatch("([^,]*),") do
+        local token = Trim(raw)
+        if token == "" then return nil, "A condition list has an empty entry." end
+        local unit = token:match("^@(%w+)$") or token:match("^target%s*=%s*(%w+)$")
+        if unit then
+            if #tokens > 0 or not PAGING_UNITS[unit] then return nil, "Unsupported unit: %s", unit end
+            tokens[1] = "@" .. unit
+        else
+            local test, why, a, b = ParseTest(token)
+            if not test then return nil, why, a, b end
+            tokens[#tokens + 1] = test
+        end
+    end
+    return "[" .. table.concat(tokens, ",") .. "]"
+end
+
+-- One clause: its normalized conditions ("" for none) and its page.
+local function ParseClause(clause)
+    local groups, rest = {}, clause
+    while rest:sub(1, 1) == "[" do
+        local close = rest:find("]", 2, true)
+        if not close then return nil, "A condition is missing its closing bracket." end
+        local group, why, a, b = ParseGroup(rest:sub(2, close - 1))
+        if not group then return nil, why, a, b end
+        groups[#groups + 1] = group
+        rest = Trim(rest:sub(close + 1))
+    end
+    local page = rest:find("^%d%d?$") and tonumber(rest)
+    if not page then return nil, "Each clause ends with a page number: %s", clause end
+    return table.concat(groups), page
+end
+
+-- The normalized clauses of a paging text, the pages they name and whether
+-- the last one has no condition; else nil, a message and its values.
+local function ParsePaging(text)
+    if #text > 255 or text:find("[^%w%s%[%]@,:/;=]") then
+        return nil, "Use only macro conditions, page numbers and semicolons."
+    end
+    local clauses, pages, final = {}, {}, false
+    for raw in (text:lower() .. ";"):gmatch("([^;]*);") do
+        local clause = Trim(raw)
+        if clause ~= "" then
+            if final then return nil, "Nothing can follow a clause without conditions." end
+            if #clauses >= MAX_CLAUSES then return nil, "Use at most %d clauses.", MAX_CLAUSES end
+            local conditions, page, a, b = ParseClause(clause)
+            if not conditions then return nil, page, a, b end
+            final = conditions == ""
+            clauses[#clauses + 1] = final and tostring(page) or conditions .. " " .. page
+            pages[#pages + 1] = page
+        end
+    end
+    if #clauses == 0 then return nil, "Add at least one clause." end
+    return { driver = table.concat(clauses, "; "), pages = pages, final = final }
+end
+
+-- Whether an enabled bar keeps manual page `page` (2 to 6) as its own.
+function NS.ActionBarPageOwned(config, page)
+    local owner = PAGE_OWNERS[page]
+    if not owner or owner == 1 then return false end
+    local mode = config["bar" .. owner .. "Visibility"]
+    return mode ~= nil and mode ~= VISIBILITY.NEVER
+end
+
+-- One owner per page: a bar's own page; for bar 1 also the form and bonus
+-- pages 7 to 11 it shows anyway; for any bar a manual page 2 to 6 that no
+-- enabled bar owns and no lower bar's custom paging claimed first.
+local function PageAllowed(config, index, page, claims)
+    if page == HOME_PAGES[index] or (index == 1 and page >= 7 and page <= 11) then return true end
+    if page < 2 or page > 6 then
+        if index == 1 then return false, "Bar 1 pages to pages 1 to 11." end
+        return false, "This bar pages to its own page or to a free page from 2 to 6."
+    end
+    if NS.ActionBarPageOwned(config, page) then
+        return false, "Page %d belongs to action bar %d.", page, PAGE_OWNERS[page]
+    end
+    local claim = claims[page]
+    if claim and claim ~= index then return false, "Page %d is already paged by action bar %d.", page, claim end
+    return true
+end
+
+local function Check(config, index, claims)
+    local text = config["bar" .. index .. "Paging"]
+    if type(text) ~= "string" or not text:find("%S") then return false end
+    if not HOME_PAGES[index] then return nil, "Custom paging is not available for this bar." end
+    local parsed, why, a, b = ParsePaging(text)
+    if not parsed then return nil, why, a, b end
+    for i = 1, #parsed.pages do
+        local ok, reason, c, d = PageAllowed(config, index, parsed.pages[i], claims)
+        if not ok then return nil, reason, c, d end
+    end
+    return parsed
+end
+
+-- Pages 2 to 6 that bars 2 to 9 page to besides their own, by page. A lower
+-- bar's valid claim wins; switched-off bars claim nothing.
+function NS.ActionBarPageClaims(config)
+    local claims = {}
+    for index = 2, #HOME_PAGES do
+        local parsed = config["bar" .. index .. "Visibility"] ~= VISIBILITY.NEVER and Check(config, index, claims)
+        if parsed then
+            for i = 1, #parsed.pages do
+                local page = parsed.pages[i]
+                if page ~= HOME_PAGES[index] then claims[page] = index end
+            end
+        end
+    end
+    return claims
+end
+
+-- The custom paging of bar `index`: false while it has none or is switched
+-- off; the parsed text ({ driver, pages, final }) when every page is free
+-- for it; else nil, a message (a format) and up to two values for it.
+-- claims: NS.ActionBarPageClaims(config), computed when omitted.
+function NS.ActionBarPaging(config, index, claims)
+    if config["bar" .. index .. "Visibility"] == VISIBILITY.NEVER then return false end
+    return Check(config, index, claims or NS.ActionBarPageClaims(config))
 end

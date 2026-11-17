@@ -176,17 +176,22 @@ local function Rate(self)
     local session = self.session
     local now = Clock()
     local elapsed = max(0, now - (session and session.started or now))
-    if self.optimizer then return Optimizer.Rate(self.optimizer), elapsed end
-    if elapsed < 60 or not session or session.gained <= 0 then return nil, elapsed end
-    return session.gained * 3600 / elapsed, elapsed
+    if self.optimizer then
+        local active = Optimizer.Rate(self.optimizer)
+        if active then return active, elapsed, true end
+    end
+    if not session or session.gained <= 0 or now == 0 then return nil, elapsed end
+    return Text.HourlyRate(session.gained, elapsed), elapsed
 end
 
-local function AddSessionLines(self, remaining)
-    local rate, elapsed = Rate(self)
+local function AddSessionLines(self, current, maximum, refreshRates)
+    local rate, elapsed, active = Rate(self)
+    if refreshRates then Text.PaintRates(self, current, maximum, rate) end
+    local remaining = max(0, maximum - current)
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine(TEXT.sessionXP, "+" .. Exact(self.session.gained), 1, 1, 1, 1, 1, 1)
     GameTooltip:AddDoubleLine(TEXT.sessionTime, Duration(elapsed), 1, 1, 1, 1, 1, 1)
-    GameTooltip:AddDoubleLine(self.optimizer and Optimizer.rateLabel or TEXT.perHour,
+    GameTooltip:AddDoubleLine(active and Optimizer.rateLabel or TEXT.perHour,
         rate and Exact(rate) or "--", 1, 1, 1, 1, 1, 1)
     GameTooltip:AddDoubleLine(TEXT.timeToLevel, rate and rate > 0 and Duration(remaining * 3600 / rate) or "--",
         1, 1, 1, 1, 1, 1)
@@ -216,7 +221,7 @@ local function TrackedTooltip(self)
     GameTooltip:Show()
 end
 
-local function Tooltip(self)
+local function Tooltip(self, refreshRates)
     if not self.host or not self.host:IsShown() then return end
     if self.source and self.source ~= Tracked.XP then return TrackedTooltip(self) end
     local level, current, maximum = XP()
@@ -235,10 +240,12 @@ local function Tooltip(self)
                 and Exact(current + rested) .. " / " .. Exact(maximum) or TEXT.nextLevel,
                 1, 1, 1, 0.65, 0.82, 1)
         end
-        if self.session then AddSessionLines(self, remaining) end
+        if self.session then AddSessionLines(self, current, maximum, refreshRates) end
         if self.optimizer then Optimizer.Tooltip(self.optimizer, GameTooltip, restedReadable and rested, maximum) end
         if self.playedActive then
-            GameTooltip:AddDoubleLine(TEXT.levelTime, Duration(LevelTime(self, level)), 1, 1, 1, 1, 1, 1)
+            -- The row's sample: the tooltip and the row always show one value.
+            GameTooltip:AddDoubleLine(TEXT.levelTime,
+                Duration(self.playedShownLevel == level and self.playedShown or nil), 1, 1, 1, 1, 1, 1)
         end
     else
         GameTooltip:AddLine(TEXT.noProgress, 1, 1, 1)
@@ -250,15 +257,11 @@ local function RefreshTooltip(self)
     if GameTooltip:IsOwned(self.host) then Tooltip(self) end
 end
 
--- The level clock counts only while the host is effectively visible
--- (hostVisible: the host's own OnShow/OnHide, which also follow UIParent).
--- A hidden host keeps the /played baseline and its listener; nothing is
--- scheduled until HostShow repaints the elapsed time and asks for the next
--- second.
 local function PaintLevelTime(self)
-    local seconds = LevelTime(self, self.playedActive)
+    local level = self.playedActive
+    local seconds = LevelTime(self, level)
+    self.playedShown, self.playedShownLevel = seconds, level
     Text.PaintLevelTime(self, seconds)
-    if seconds and self.hostVisible then self.playedJob:Request() end
 end
 
 -- The tooltip can be the bar's only while the pointer is over the host
@@ -269,11 +272,8 @@ local function RefreshLevelTime(self)
     if self.hovered and GameTooltip:IsOwned(self.host) then Tooltip(self) end
 end
 
--- HostHide and SyncLevelTime cancel the wait; a run that still arrives for a
--- hidden host or an ended clock does nothing and asks for no other.
-local function TickLevelTime(self)
-    if not self.hostVisible or not self.playedActive then return end
-    RefreshLevelTime(self)
+local function SampleLevelTime(self)
+    if self.hostVisible and self.playedActive then RefreshLevelTime(self) end
 end
 
 local function TimePlayed(self, _, _, seconds)
@@ -300,14 +300,15 @@ local function SyncLevelTime(self, level)
     if not level then
         if self.playedActive then
             self.playedActive, self.playedPending = nil, nil
+            self.playedShown, self.playedShownLevel = nil, nil
             self.context:RemoveEvent("TIME_PLAYED_MSG")
-            self.playedJob:Cancel()
+            self.context:RemoveEvent("ZONE_CHANGED_NEW_AREA")
         end
         return
     end
     if not self.playedActive then
-        self.playedJob = self.context:Coalesce(1, TickLevelTime)
         self.context:Event("TIME_PLAYED_MSG", TimePlayed, IN_COMBAT)
+        self.context:Event("ZONE_CHANGED_NEW_AREA", SampleLevelTime, IN_COMBAT)
     end
     self.playedActive = level
     PaintLevelTime(self)
@@ -320,7 +321,8 @@ end
 
 local function HostEnter()
     M.hovered = true
-    Tooltip(M)
+    if M.playedActive then PaintLevelTime(M) end
+    Tooltip(M, true)
 end
 
 local function HostLeave(host)
@@ -328,28 +330,25 @@ local function HostLeave(host)
     if GameTooltip:IsOwned(host) then GameTooltip:Hide() end
 end
 
--- OnShow runs inside the SetShown that caused it: PaintProgressValues shows
--- the host before it starts the level clock, so a clock that is not running
--- is left to that paint. A running one shows the elapsed time at once; while
--- the level it counts is not the readable current one, the next second or the
--- pending level paint writes instead.
+-- SetShown can run before PaintProgressValues switches to the new level.
+-- Sample here only when the current baseline still belongs to this level.
 local function HostShow()
     local self = M
     self.hostVisible = true
-    local level = self.playedActive
-    if not level then return end
-    local current = UnitLevel("player")
-    if Finite(current) and current == level then
-        PaintLevelTime(self)
-    else
-        self.playedJob:Request()
+    local showingRates = self.source == Tracked.XP and self.session and (self.config.showRate or self.config.showETA)
+    if showingRates then
+        local level, current, maximum = XP()
+        if level and maximum > 0 then Text.PaintRates(self, current, maximum, (Rate(self))) end
+        if level and level == self.playedActive then PaintLevelTime(self) end
+    elseif self.playedActive then
+        local level = UnitLevel("player")
+        if Finite(level) and level == self.playedActive then PaintLevelTime(self) end
     end
 end
 
 local function HostHide(host)
     local self = M
     self.hostVisible = false
-    if self.playedJob then self.playedJob:Cancel() end
     if self.hovered then HostLeave(host) end
 end
 
@@ -518,31 +517,7 @@ local function Layout(self)
     end
 end
 
--- XP per hour and the time to level move with the clock, not with XP events:
--- while either shows and the session has gained XP, a paint asks for the next
--- one RATE_REFRESH seconds later (self.rateJob). A run already due stays, so
--- XP events never postpone it.
-local RATE_REFRESH = 60
-local function CancelRateTimer(self)
-    self.rateJob:Cancel()
-end
-
-local PaintValues
-local function KeepRateCurrent(self)
-    if not self.active or not self.host:IsShown()
-        or not self.session or (self.optimizer and self.optimizer.gained or self.session.gained) <= 0
-        or not (self.config.showRate or self.config.showETA) then
-        return
-    end
-    if self.optimizer and self.optimizer.afk ~= false then
-        CancelRateTimer(self)
-        return
-    end
-    self.rateJob:Request()
-end
-
 local function HideProgress(self, levelText, percentText, detailsText)
-    CancelRateTimer(self)
     self.fill:Hide()
     self.rested:Hide()
     self.restedMarker:Hide()
@@ -593,7 +568,6 @@ end
 
 local function PaintTracked(self, source)
     local host = self.host
-    CancelRateTimer(self)
     local label, current, maximum, color, name, capped = Tracked.Read(source)
     if not label then
         HideProgress(self, TEXT.nothing, "", "")
@@ -629,7 +603,6 @@ local function PaintProgressValues(self, level, current, maximum)
         return
     end
     host:SetShown(S.editMode or not (c.hideAtMax and capped))
-    if not host:IsShown() then CancelRateTimer(self) end
     if maximum <= 0 then
         HideProgress(self, TEXT.levelValue:format(level), TEXT.maxLevel, S.editMode and TEXT.preview or "")
         return
@@ -639,7 +612,8 @@ local function PaintProgressValues(self, level, current, maximum)
     self.fill:SetShown(fraction > 0)
     PaintRested(self, fraction, maximum, capped)
     if self.optimizer then Optimizer.Paint(self, fraction, maximum, self.optimizer.questXP) end
-    Text.PaintXP(self, level, current, maximum, self.session and self.session.gained or 0, Rate(self), fraction)
+    local rate = (c.showRate or c.showETA) and Rate(self) or nil
+    Text.PaintXP(self, level, current, maximum, self.session and self.session.gained or 0, rate, fraction)
     if playedLevel then
         SyncLevelTime(self, playedLevel)
     elseif c.showLevelTime then
@@ -647,10 +621,9 @@ local function PaintProgressValues(self, level, current, maximum)
     end
     -- An open tooltip follows the new values.
     if GameTooltip:IsOwned(host) then Tooltip(self) end
-    KeepRateCurrent(self)
 end
 
-PaintValues = function(self)
+local function PaintValues(self)
     PaintProgressValues(self, XP())
 end
 
@@ -715,7 +688,6 @@ end
 
 function M:Enable()
     self.optimizerPaint, self.optimizerTooltip = PaintValues, RefreshTooltip
-    self.rateJob = self.context:Coalesce(RATE_REFRESH, PaintValues)
     self.sessionJob = self.context:Coalesce(.2, SessionReady)
     self.sessionAttempts = 5
     Create(self)
@@ -742,7 +714,6 @@ function M:Disable()
     self.sessionAttempts = 0
     self.sessionJob:Cancel()
     Native.Sync(self, false)
-    CancelRateTimer(self)
     Optimizer.Stop(self)
     if self.questStripShown then Optimizer.Paint(self) end
     SyncLevelTime(self)

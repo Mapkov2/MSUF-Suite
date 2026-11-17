@@ -137,7 +137,7 @@ for _, bind in ipairs({ 0, 2, 9 }) do
 end
 -- Unknown existence stays retryable, just like unknown instance binding.
 local itemExists = C_Item.DoesItemExist
-local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Secrets.Install()
 Secrets.GUARD_NAMES.falsy.Public = true
 secret = Secrets.New("boolean")

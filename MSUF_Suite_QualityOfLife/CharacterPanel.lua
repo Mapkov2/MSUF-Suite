@@ -1,21 +1,22 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 
--- The character window, opened for the player by QoL helpers (merchant
--- visits, item upgrades). ShowUIPanel and HideUIPanel hand the panel to
--- Blizzard's secure FramePositionDelegate (Blizzard_UIParentPanelManager),
--- so it opens and closes as if the player had done it; ToggleCharacter would
--- run CharacterFrame's tab and sub-frame code from addon code. The window
--- opens on the tab the player used last. Each helper owns only an opening it
--- made: the window closes once no owner holds it, and never after the player
--- or anything else closed it in between.
--- These openings follow events (MERCHANT_SHOW, the upgrade window), which no
--- secure click can follow. Under WoW Forever's Gamepad UI (S.GamepadUI) the
--- panel manager would run Blizzard's frame controls manager in the Suite's
--- call and leave the gamepad's focus and binding state tainted
--- (MSUF_Suite_Modules/Dialogs.lua), so there the helpers open nothing, and a
--- window they opened before the Gamepad UI came on stays with the player.
+-- Merchant and upgrade helpers open the character window on its last tab.
+-- Each helper owns only an opening it made. The window closes when the last
+-- owner releases it, unless the player already closed it in between.
 local owners, watcher = {}, nil
+
+local function CanDrive()
+    if S.GamepadUI() then return false end
+    if not NS.Client.isForever then return true end
+    -- The native panel delegate runs in the caller and writes shared slots
+    -- also used by Blizzard Edit Mode. Only a defined floating area takes
+    -- ShowUIPanel and HideUIPanel's direct path. Recheck it on deferred close.
+    local defined = CharacterFrame:GetAttribute("UIPanelLayout-defined")
+    if not NS.Public(defined) or defined ~= true then return false end
+    local area = CharacterFrame:GetAttribute("UIPanelLayout-area")
+    return NS.Public(area) and area == nil
+end
 
 local function CancelPendingClose()
     if watcher then watcher:UnregisterEvent("PLAYER_REGEN_ENABLED") end
@@ -28,7 +29,7 @@ end
 
 local function CloseUnowned()
     CancelPendingClose()
-    if next(owners) == nil and CharacterFrame:IsShown() and not S.GamepadUI() then
+    if next(owners) == nil and CharacterFrame:IsShown() and CanDrive() then
         S.Dispatch(NS.Finish, HideUIPanel, CharacterFrame)
     end
 end
@@ -43,7 +44,7 @@ end
 -- Opens the window for owner outside combat. True when owner now holds it;
 -- a window the player opened stays the player's.
 function S.OpenCharacterFor(owner)
-    if InCombatLockdown() or S.GamepadUI() or CharacterFrame:IsShown() then return owners[owner] == true end
+    if InCombatLockdown() or not CanDrive() or CharacterFrame:IsShown() then return owners[owner] == true end
     Watch()
     S.Dispatch(NS.Finish, ShowUIPanel, CharacterFrame)
     if not CharacterFrame:IsShown() then return false end

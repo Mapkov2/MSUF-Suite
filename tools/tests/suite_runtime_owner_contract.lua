@@ -1,5 +1,5 @@
 local root = assert(arg[1], "repository root required")
-local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 issecretvalue = Secrets.IsSecret
 local Suite, frames, skinReleases = {}, {}, 0
 -- The client's securecallfunction reports an error to the error handler and
@@ -111,7 +111,8 @@ for id in pairs(Suite.Suite.instances) do
 end
 -- The shared notice owner and supported QoL tools are available on Forever.
 -- Craft shopping and mail templates remain Retail-only.
-assert(count == 87 and Suite.Suite.instances.bnetToast and Suite.Suite.instances.cheapestItem
+assert(count == 88 and Suite.Suite.instances.auctionPriceTooltip
+    and Suite.Suite.instances.bnetToast and Suite.Suite.instances.cheapestItem
     and Suite.Suite.instances.lootRolls and Suite.Suite.instances.navigation and Suite.Suite.instances.foreverWorldMap and Suite.Suite.instances.gatheringTooltips
     and Suite.Suite.instances.groupFinderLocations
     and not Suite.Suite.instances.castbarArt and Suite.Suite.instances.glimmer and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras

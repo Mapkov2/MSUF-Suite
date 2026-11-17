@@ -138,11 +138,6 @@ local function PaintEnemyBar(bar, plan)
     bar.enemyPowerSmooth = plan.interpolation
 end
 
-local function ReadEnemyToken(unit)
-    local _, token = UnitPowerType(unit)
-    if NS.Public(token) and type(token) == "string" then return token end
-end
-
 local function SetEnemyMaximum(bar, maxPower)
     if not NS.Public(maxPower) then
         bar.enemyPowerMaximum = nil
@@ -164,13 +159,25 @@ local function RefreshEnemyResource(state, health, unit, source)
         ReleaseEnemyBar(state.bar)
         return
     end
+    local displayedType = powerType
+    if displayedType == nil then
+        displayedType, token = UnitPowerType(unit)
+        if not NS.Public(token) or type(token) ~= "string" then token = nil end
+    end
+    if UnitHasPowerType and NS.Public(displayedType) and type(displayedType) == "number" then
+        local hasPower = UnitHasPowerType(unit, displayedType)
+        if NS.Public(hasPower) and hasPower == false then
+            ReleaseEnemyBar(state.bar)
+            return
+        end
+    end
     local bar = state.bar
     if not bar then
         bar = CreateEnemyBar(health)
         state.bar = bar
     end
     bar.enemyPowerType = powerType
-    bar.enemyPowerToken = token or ReadEnemyToken(unit)
+    bar.enemyPowerToken = token
     SetEnemyMaximum(bar, maxPower)
     return bar, maxPower
 end

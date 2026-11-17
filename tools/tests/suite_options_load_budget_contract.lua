@@ -64,8 +64,8 @@ for pass = 1, 2 do
     local P = world.optionsNS
     local sections = P.NameplateSections
     assert(#sections == 0, "hidden nameplate sections were allocated during Options attach")
-    local rule = P.catalog.nameplates.rules.auradebuffSize
-    assert(P.NameplateSearchTarget(rule) == "suite_nameplates_auraGroups", "cold aura search missed its lazy section")
+    local rule = assert(P.catalog.nameplates.rules.auraEnemyDebuffScale)
+    assert(P.NameplateSearchTarget(rule) == "suite_nameplates_auraWorkspace", "cold aura search missed its lazy section")
     local sectionCount = #sections
     assert(sectionCount > 0 and P.NameplateSections == sections, "lazy nameplate sections changed their shared identity")
     P.NameplateSearchTarget(rule)

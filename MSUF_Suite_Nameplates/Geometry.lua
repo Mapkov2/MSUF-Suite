@@ -185,10 +185,17 @@ local function Ready(uf, setup)
     return container, health, cast
 end
 
-local function CastSize(container, cast, inside, height, iconWidth, iconHeight)
-    container:SetHeight(height + (inside and 0 or iconHeight))
-    cast:SetHeight(height)
-    cast.Icon:SetSize(iconWidth, iconHeight)
+local function CastSize(container, cast, setup, height, iconWidth, iconHeight, old, force)
+    local inside = setup.spellNameInsideCastBar
+    local previousHeight = old and old.castHeight or setup.castBarHeight
+    local previousIconHeight = old and old.iconHeight or setup.castIconHeight
+    if force or height + (inside and 0 or iconHeight) ~= previousHeight + (inside and 0 or previousIconHeight) then
+        container:SetHeight(height + (inside and 0 or iconHeight))
+    end
+    if force or height ~= previousHeight then cast:SetHeight(height) end
+    if force or iconWidth ~= (old and old.iconWidth or setup.castIconWidth) or iconHeight ~= previousIconHeight then
+        cast.Icon:SetSize(iconWidth, iconHeight)
+    end
 end
 
 local function CastBorderSize(cast, setup, width, height)
@@ -214,7 +221,7 @@ function G.Restore(state, uf, setup)
         G.Point(health, "BOTTOMRIGHT", container, "TOPRIGHT", -reserve, setup.castBarToHealthBarSpacing)
         health:SetHeight(setup.healthBarHeight)
     end
-    CastSize(container, cast, setup.spellNameInsideCastBar, setup.castBarHeight, setup.castIconWidth, setup.castIconHeight)
+    CastSize(container, cast, setup, setup.castBarHeight, setup.castIconWidth, setup.castIconHeight, old)
     state.geometry = nil
     return true
 end
@@ -248,7 +255,8 @@ function G.Apply(state, uf, setup, config, force, prefix, width)
     local borderWidth = classicBorder and width or nil
     if force or not old or old.inset ~= inset or old.healthHeight ~= healthHeight or old.castHeight ~= castHeight
         or old.iconWidth ~= iconWidth or old.iconHeight ~= iconHeight or old.borderWidth ~= borderWidth then
-        if borderWidth or old and old.borderWidth then
+        if (borderWidth or old and old.borderWidth)
+            and (force or not old or old.borderWidth ~= borderWidth or old.castHeight ~= castHeight) then
             local borderHeight = borderWidth and castHeight - setup.castBarHeight or 0
             if not CastBorderSize(cast, setup, borderWidth or 0, borderHeight) then return end
         end
@@ -259,7 +267,7 @@ function G.Apply(state, uf, setup, config, force, prefix, width)
             G.Point(health, "BOTTOMRIGHT", container, "TOPRIGHT", 0, setup.castBarToHealthBarSpacing)
             if force or not old or old.inset == nil or old.healthHeight ~= healthHeight then health:SetHeight(healthHeight) end
         end
-        CastSize(container, cast, setup.spellNameInsideCastBar, castHeight, iconWidth, iconHeight)
+        CastSize(container, cast, setup, castHeight, iconWidth, iconHeight, old, force)
         old = old or {}
         old.inset, old.healthHeight, old.castHeight = inset, healthHeight, castHeight
         old.iconWidth, old.iconHeight, old.borderWidth = iconWidth, iconHeight, borderWidth

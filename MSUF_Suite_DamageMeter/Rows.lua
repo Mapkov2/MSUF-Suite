@@ -45,6 +45,65 @@ local customPatterns = {
     { "%s", "%s - %s", "%s - %s - %s" },
 }
 
+local function NewValueColumn(parent)
+    local text = S.CreateFontString(parent, nil, "OVERLAY")
+    text:SetJustifyH("RIGHT")
+    text:SetWordWrap(false)
+    return text
+end
+
+local function PlaceValueColumn(text, reference, point, x, y, width, size)
+    text:ClearAllPoints()
+    text:SetWidth(width)
+    text:SetPoint("RIGHT", reference, point, x, y)
+    D.FontStyle(text, size, "values")
+    text:Show()
+end
+
+local function StyleValueColumns(row, vx, vy, size)
+    local style, c, win = M.style, M.config, row.win
+    local meterType = win and win.meterType
+    local enabled = row.kind == "list" and win and VALUE_FORMAT.COLUMNS and style.numberFormat == VALUE_FORMAT.COLUMNS
+        and meterType ~= D.THREAT and meterType ~= TYPE.Deaths
+    local total = row.valueText
+    row.columns = enabled
+    if not enabled then
+        if row.rateText then
+            total:SetWidth(0)
+            row.rateText:Hide()
+            row.percentText:Hide()
+        end
+        return
+    end
+    local parent = row.valueHost or row.bar
+    if not row.rateText then
+        row.rateText = NewValueColumn(parent)
+        row.percentText = NewValueColumn(parent)
+    end
+    local rate, percent = row.rateText, row.percentText
+    local totalWidth = c.totalColumnWidth or 48
+    local rateWidth = not D.countOnly[meterType] and (c.rateColumnWidth or 44) or 0
+    local percentWidth = style.percent and (c.percentColumnWidth or 34) or 0
+    local width = win.frame:GetWidth()
+    local scale = Finite(width) and math.min(1, math.max(1, width - 64) / (totalWidth + rateWidth + percentWidth)) or 1
+    total:SetWidth(totalWidth * scale)
+    local edge, point, x, y = row.bar, "RIGHT", -3 + vx, style.baseline + vy
+    if percentWidth > 0 then
+        PlaceValueColumn(percent, edge, point, x, y, percentWidth * scale, size)
+        edge, point, x, y = percent, "LEFT", -4, 0
+    else
+        percent:Hide()
+    end
+    if rateWidth > 0 then
+        PlaceValueColumn(rate, edge, point, x, y, rateWidth * scale, size)
+        edge, point, x, y = rate, "LEFT", -4, 0
+    else
+        rate:Hide()
+    end
+    total:ClearAllPoints()
+    total:SetPoint("RIGHT", edge, point, x, y)
+end
+
 function D.Atlas(texture, atlas)
     if C_Texture.GetAtlasInfo(atlas) then
         texture:SetAtlas(atlas)
@@ -104,6 +163,7 @@ end
 function D.ClearMemo(row)
     row.rank, row.rawName, row.class, row.iconKey, row.spellID = nil, nil, nil, nil, nil
     row.mA, row.mB, row.mP, row.mF, row.mO, row.mS = nil, nil, nil, nil, nil, nil
+    row.percentPainted = nil
     row.mMax, row.mVal, row.full, row.mDeath = nil, nil, nil, nil
 end
 
@@ -233,6 +293,7 @@ function D.StyleRow(row)
     name:ClearAllPoints()
     value:ClearAllPoints()
     value:SetPoint("RIGHT", bar, "RIGHT", -3 + vx, style.baseline + vy)
+    StyleValueColumns(row, vx, vy, right)
     if list and style.rank then
         rank:SetPoint("LEFT", bar, "LEFT", 3 + nx, style.baseline + ny)
         rank:Show()
@@ -246,6 +307,14 @@ function D.StyleRow(row)
 end
 
 -- Bar and text colors follow the NeverSecret class token.
+local function ValueColor(row, r, g, b)
+    row.valueText:SetTextColor(r, g, b)
+    if row.columns then
+        row.rateText:SetTextColor(r, g, b)
+        row.percentText:SetTextColor(r, g, b)
+    end
+end
+
 function D.RowColors(row, class)
     local style = M.style
     local r, g, b
@@ -263,9 +332,9 @@ function D.RowColors(row, class)
         row.rankText:SetTextColor(style.leftR, style.leftG, style.leftB)
     end
     if style.rightClass and r then
-        row.valueText:SetTextColor(r, g, b)
+        ValueColor(row, r, g, b)
     else
-        row.valueText:SetTextColor(style.rightR, style.rightG, style.rightB)
+        ValueColor(row, style.rightR, style.rightG, style.rightB)
     end
 end
 
@@ -349,6 +418,24 @@ local function Percent(total, denominator, shown)
     end
 end
 
+local function PaintValueColumns(row, meterType, total, rate, denominator)
+    local showRate = not D.countOnly[meterType]
+    local percent = Percent(total, denominator, M.style.percent)
+    local plainTotal, plainRate = not IsSecret(total), not IsSecret(rate)
+    if not plainTotal or row.mA ~= total then
+        row.valueText:SetText(Abbreviate(total))
+        row.mA = plainTotal and total or nil
+    end
+    if showRate and (not plainRate or row.mB ~= rate) then
+        row.rateText:SetText(Abbreviate(rate))
+        row.mB = plainRate and rate or nil
+    end
+    if not row.percentPainted or row.mP ~= percent then
+        row.percentText:SetText(percent and format("%d%%", percent) or "")
+        row.mP, row.percentPainted = percent, true
+    end
+end
+
 -- Custom layout keeps values in their chosen order. A secret value is only
 -- passed through AbbreviateNumbers and SetFormattedText, never formatted in Lua.
 local function SetCustomValueText(row, meterType, total, perSecond, denominator, alwaysPercent)
@@ -404,6 +491,10 @@ function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPer
     local style = M.style
     local fmt = style.numberFormat
     total, perSecond = Num(total), Num(perSecond)
+    if fmt == VALUE_FORMAT.COLUMNS then
+        if row.columns then return PaintValueColumns(row, meterType, total, perSecond, denominator) end
+        fmt = VALUE_FORMAT.PARENTHESES
+    end
     if fmt == VALUE_FORMAT.CUSTOM then
         return SetCustomValueText(row, meterType, total, perSecond, denominator, alwaysPercent)
     end

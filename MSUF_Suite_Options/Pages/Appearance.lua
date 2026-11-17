@@ -574,6 +574,14 @@ local function BuildWindows(ctx, b, skin)
                 function(value)
                     Change(skin, label, "skins." .. id, function() return skin.Adapters.SetEnabled(id, value) end)
                 end)
+            if id == "playerSpells" and Suite.Client.isForever then
+                windows[#windows + 1] = Row("toggle", "Spells to Learn", "foreverSpellLearning", "windows",
+                    function() return skin.DB.foreverSpellLearning ~= false end,
+                    function(value)
+                        Change(skin, "Spells to Learn", "foreverSpellLearning",
+                            function() return skin.SpellLearning.SetEnabled(value) end)
+                    end)
+            end
         end
     end
     Section(ctx, b, "windows", "Blizzard windows",

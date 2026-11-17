@@ -28,6 +28,7 @@ end
 env.GetCursorPosition = function() return 300, 400 end
 env.IsShiftKeyDown = function() return false end
 env.IsControlKeyDown = function() return false end
+env.IsAltKeyDown = function() return false end
 w:LoadGraph("MidnightSimpleUnitFrames", World.Graph(host, World.CoreTOC(w.client.tocSuffix or flavor),
     "enUS", w.client.isForever and "camelot" or nil), ns)
 Check(w:FirstFailure() == nil, "core graph failed")
@@ -79,6 +80,14 @@ xBox:GetScript("OnEnterPressed")(xBox)
 Check(values.x == 60 and values.y == 84 and writes == 1, "typed owner coordinate was not one write")
 Check(em.Undo.DoUndo() == true and values.x == 22, "owner coordinate undo failed")
 Check(em.Undo.DoRedo() == true and values.x == 60, "owner coordinate redo failed")
+values.x = -0.25
+em.ExternalPopup.Sync()
+for _, widget in ipairs({ xBox:GetParent():GetChildren() }) do
+    local _, relative = widget:GetPoint()
+    if relative == xBox and widget:GetScript("OnClick") then widget:GetScript("OnClick")(widget) end
+end
+Check(values.x == 0.75 and values.y == 84 and xBox:GetText() == "0.75",
+    "the owner X step rounded away the saved fractional offset")
 f = Popup(generic)
 Check(f._positionRow:IsShown() and f:GetHeight() == 304, "generic popup lost position row")
 Check(f._activeControlSet ~= ownerSet, "different coordinate metadata reused cached rows")

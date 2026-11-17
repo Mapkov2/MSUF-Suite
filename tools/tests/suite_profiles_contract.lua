@@ -1120,8 +1120,10 @@ do
     assert(P.ImportModule(module))
     assert(S.Config("nameplates").enemyNameOffsetX == 49 and live.nameplateDebuffPadding == "5")
     assert(live.nameplateStackingTypes == version .. "B", "import reused old Keep flags when composing its new baseline")
-    assert(live.nameplateShowEnemies == "0" and live.cameraDistanceMaxZoomFactor == "2.6" and not live.nameplateShowAll,
-        "invalid, unrelated or missing CVars were written")
+    assert(live.nameplateShowEnemies == "1" and live.cameraDistanceMaxZoomFactor == "2.6" and not live.nameplateShowAll,
+        "import lost the Enable state or wrote unrelated or missing CVars")
+    assert(S.CVarBaseline("nameplates", "nameplateShowEnemies", live.nameplateShowEnemies) == "0",
+        "the invalid import replaced the native visibility baseline")
     S.RestoreSaved("nameplates")
     assert(live.nameplateSize == "3" and live.nameplateStackingTypes == version .. "C", "release restored a pre-import baseline")
 

@@ -55,6 +55,9 @@ local function FillGear(preview)
         if preview.mode == OWN then
             if preview.tab == OVERVIEW then Pages.Overview(groups, preview.fullStats, preview.combat) end
             Pages.EquipmentSummary(groups, model)
+            if preview.tab == OVERVIEW and preview.showSets and not preview.combat then
+                Pages.EquipmentSets(groups, nil, math.min(2, #groups + 1), true)
+            end
         else
             local sample = preview.samples[preview.mode]
             local group = preview.inspectSummary
@@ -133,14 +136,16 @@ function Preview:Paint(config, mode, order, tab, overrides, width)
 
     local definition = mode == OWN and Model.Find(config, tab)
     local fullStats = config.showFullStats ~= false
+    local showSets = config.showEquipmentSetsInOverview ~= false
     local combat = mode == OWN and (tab == OVERVIEW or tab == ATTRIBUTES) and Host.InCombat()
     local reputationKey = mode == OWN and Pages.ReputationKey(tab, config, definition and Pages.CustomPlan(definition))
     local switched = self.mode ~= mode or self.tab ~= tab
     if switched then self.slot = nil end
     if switched or self.definition ~= definition or self.fullStats ~= fullStats or self.combat ~= combat
+        or self.showSets ~= showSets
         or self.reputationKey ~= reputationKey or self.reopen then
         self.mode, self.tab, self.definition, self.fullStats, self.combat = mode, tab, definition, fullStats, combat
-        self.config, self.reputationKey = config, reputationKey
+        self.config, self.reputationKey, self.showSets = config, reputationKey, showSets
         self.reopen = nil
         PaintBody(self)
     end

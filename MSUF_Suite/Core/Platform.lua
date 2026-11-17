@@ -164,23 +164,15 @@ function Suite.Client.AuraBuildBlocked()
     return type(panels) == "table" and panels[1] ~= nil
 end
 
--- callback(owner) once no panel blocks aura builds; one entry per owner.
--- SmartNavigation drops a panel in that panel's own OnHide hook (:735-741,
--- :782-807) and tells nobody else, so each blocking panel gets an OnHide
--- hook of ours as well (once per frame; it only looks a frame later, after
--- SmartNavigation's own hook ran). A panel may also stay listed while hidden
--- for good: GroupTargeting's StopTargeting clears its container before it
--- asks to drop it (GroupTargeting.lua:108, :121), and a host that parks the
--- party or raid frames under a hidden parent never hides them again. A
--- check chain covers that: every quarter second for the first five seconds
--- of a wait, then every two seconds, and it stops with the last wait.
+-- Forever removes listed panels in SmartNavigation:RemovePanelInfo, or
+-- replaces the list in ResetVars. Wake pending builds after either native
+-- call and outside its secure stack. A listed panel has no periodic check.
 local waitingBuilds, runningBuilds = {}, {}
-local waitSince, checkArmed = nil, false
-local watchedPanels = setmetatable({}, { __mode = "k" })
+local observedNavigation, buildArmed
 
 local function RunWaitingBuilds()
+    buildArmed = nil
     if next(waitingBuilds) == nil or Suite.Client.AuraBuildBlocked() then return end
-    waitSince = nil
     waitingBuilds, runningBuilds = runningBuilds, waitingBuilds
     for owner, callback in pairs(runningBuilds) do
         runningBuilds[owner] = nil
@@ -188,42 +180,25 @@ local function RunWaitingBuilds()
     end
 end
 
-local function PanelHidden()
-    if next(waitingBuilds) ~= nil then C_Timer.After(0, RunWaitingBuilds) end
-end
-
--- HookScript only, and out of combat: nothing is written onto Blizzard's
--- panels, and a panel holding secure frames is never touched in combat (the
--- check chain covers that time).
-local function WatchPanels()
-    local navigation = SmartNavigation
-    local panels = type(navigation) == "table" and navigation.activePanels
-    if type(panels) ~= "table" or InCombatLockdown() then return end
-    for _, info in ipairs(panels) do
-        local frame = type(info) == "table" and info.frame
-        if frame and frame.HookScript and not watchedPanels[frame] and not Suite.Safety.IsForbidden(frame) then
-            watchedPanels[frame] = true
-            frame:HookScript("OnHide", PanelHidden)
-        end
-    end
-end
-
-local function CheckWaitingBuilds()
-    checkArmed = false
-    RunWaitingBuilds()
-    if next(waitingBuilds) == nil then return end
-    WatchPanels()
-    checkArmed = true
-    C_Timer.After(GetTime() - waitSince < 5 and 0.25 or 2, CheckWaitingBuilds)
+local function WakeAuraBuilds()
+    if buildArmed or next(waitingBuilds) == nil or Suite.Client.AuraBuildBlocked() then return end
+    buildArmed = true
+    C_Timer.After(0, RunWaitingBuilds)
 end
 
 function Suite.Client.AfterAuraBuild(owner, callback)
     waitingBuilds[owner] = callback
-    waitSince = waitSince or GetTime()
-    if checkArmed then return end
-    WatchPanels()
-    checkArmed = true
-    C_Timer.After(0.25, CheckWaitingBuilds)
+    local navigation = SmartNavigation
+    if navigation ~= observedNavigation and navigation and not Suite.Safety.IsForbidden(navigation) then
+        if navigation.RemovePanelInfo then hooksecurefunc(navigation, "RemovePanelInfo", WakeAuraBuilds) end
+        if navigation.ResetVars then hooksecurefunc(navigation, "ResetVars", WakeAuraBuilds) end
+        observedNavigation = navigation
+    end
+    WakeAuraBuilds()
+end
+
+function Suite.Client.CancelAuraBuild(owner)
+    waitingBuilds[owner], runningBuilds[owner] = nil, nil
 end
 
 -- Blizzard's Edit Mode feeds every aura container sample auras while it is

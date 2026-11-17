@@ -1,7 +1,7 @@
 -- Per-category tab capture and a distinct opt-in whisper archive.
 local repo = arg[1] or "."
 local root = repo .. "/MSUF_Suite_Chat/"
-local Secrets = dofile(repo .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(repo .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Secrets.Install()
 local IsSecret = Secrets.IsSecret
 local secret = Secrets.New("number")

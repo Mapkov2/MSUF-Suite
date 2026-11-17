@@ -4,6 +4,11 @@
 -- Chat text can be a restricted value on 12.1: SECRET stands for one and
 -- raises on any string operation, so a gate that comes late fails here.
 local root = assert(arg[1])
+FCF_IsChatWindowIndexActive = function() return true end
+ChatFrameUtil = {
+    AddMessageEventFilter = function() end,
+    RemoveMessageEventFilter = function() end,
+}
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local function eq(a, b, label) assert(a == b, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 local SECRET = setmetatable({}, { __tostring = function() return "<secret>" end })
@@ -77,9 +82,21 @@ hooksecurefunc = function(target, method, callback)
     end
 end
 
-local function EditBox()
-    local box = { history = {} }
-    function box:AddHistoryLine(text) self.history[#self.history + 1] = text end
+-- Blizzard's chat input: its own history is never written or hooked by the
+-- Suite (AddHistoryLine would plant Suite text; a method hook runs inside
+-- ParseText and SendText). Plain Up/Down reach OnKeyDown with the box's
+-- alt-arrow mode off (ChatFrameEditBox.xml sets ignoreArrows).
+local function EditBox(id)
+    local box = { name = "ChatFrame" .. id .. "EditBox", text = "", altArrows = true, sets = 0 }
+    function box:GetName() return self.name end
+    function box:GetText() return self.text end
+    function box:SetText(text)
+        self.text = text
+        self.sets = self.sets + 1
+    end
+    function box:GetAltArrowKeyMode() return self.altArrows end
+    function box:SetAltArrowKeyMode(value) self.altArrows = value end
+    function box:AddHistoryLine() error("the Suite wrote Blizzard's own input history") end
     return box
 end
 
@@ -89,7 +106,7 @@ end
 -- oldest line while there is room.
 local function ChatFrame(id, maxLines)
     local frame = { id = id, lines = {}, payloads = {}, max = maxLines or 128, infoCalls = 0,
-        securePostHooks = {}, editBox = EditBox() }
+        securePostHooks = {}, editBox = EditBox(id) }
     function frame:GetName() return "ChatFrame" .. self.id end
     function frame:GetID() return self.id end
     function frame:GetFrameLevel() return 1 end
@@ -169,8 +186,12 @@ Suite.Finite = function(value) return Suite.Number(value) and value > -math.huge
 Suite.PublicText = function(value)
     if value ~= SECRET and type(value) == "string" and value ~= "" then return value end
 end
+local chatLocked = false
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end,
-    ChatSoundChannels = catalogNS.ChatSoundChannels, ChatLineLimits = catalogNS.ChatLineLimits }
+    ChatSoundChannels = catalogNS.ChatSoundChannels, ChatLineLimits = catalogNS.ChatLineLimits,
+    ChatLocked = function() return chatLocked end, ChatState = Support.ChatStateMock() }
+-- A temporary whisper box (its window's isTemporary) is never a permanent box.
+NS.ChatState.IsPermanentBox = function(box) return box.temporary ~= true end
 local themed
 NS.HostBridge = {
     MenuEditBox = function() end,
@@ -402,71 +423,123 @@ do
     local handle = assert(io.open(root .. "/MSUF_Suite_Chat/Window.lua", "rb"))
     local window = handle:read("*a")
     handle:close()
-    local limit, messages = window:find("C.ApplyLineLimit(self, frame)", 1, true), window:find("C.ApplyMessages(self, frame)", 1, true)
-    assert(limit and messages and limit < messages, "ApplyWindow must set the limit before it applies the messages")
+    local controller = assert(io.open(root .. "/MSUF_Suite_Chat/Controller.lua", "r"))
+    local source = controller:read("*a")
+    controller:close()
+    assert(window:find("C.ApplyLineLimit(self, frame)", 1, true)
+        and not window:find("C.ApplyMessages(self, frame)", 1, true)
+        and source:find("self.context:Coalesce(0, RefreshMessageWindows)", 1, true),
+        "apply the native line limit before the deferred message observer")
     config.saveHistory, config.maxLines = false, 1
 end
 
 ------------------------------------------------------------------ typed lines
 do
+    local alt, forced, mythic = false, false, false
+    IsAltKeyDown = function() return alt end
+    GetCVarBool = function(name) return name == "addonChatRestrictionsForced" and forced end
+    C_ChallengeMode = { IsChallengeModeActive = function() return mythic end }
+    IsSecureCmd = function(command) return command:upper() == "/CAST" or command:upper() == "/PING" end
+    AutoCompleteBox = { shown = false, IsShown = function(self) return self.shown end }
     config.saveInputHistory = true
     local saved = { tabs = {}, clock = 0, input = { "hello", 7, "/w Bob hi", "" } }
     C, M = LoadChat(saved)
     local first = ChatFrame(1)
     C.ApplyInputHistory(M, first)
-    eq(table.concat(first.editBox.history, "|"), "hello|/w Bob hi", "the saved lines come back, oldest first")
-    eq(#saved.input, 4, "feeding the lines back recorded them again")
-    eq(hooked[first.editBox], 1, "the input box hook")
+    eq(first.editBox.altArrows, false, "plain Up/Down never reach the recall")
     C.ApplyInputHistory(M, first)
-    eq(hooked[first.editBox], 1, "a second pass hooked the box again")
-    eq(#first.editBox.history, 2, "a second pass fed the lines again")
+    eq(#saved.input, 4, "styling a window recorded or fed lines")
     saved.input = { "hello", "/w Bob hi" }
 
+    local function Enter(box, text)
+        box.text = text
+        C.HistoryKey(box, "ENTER")
+    end
     for _, line in ipairs({ "typed once", "typed once", "/script print(1)", "/RUN x()", "/dump y", "  /Script z",
-        "/scripts" }) do
-        first.editBox:AddHistoryLine(line)
+        "/scripts", "/cast Fireball", "/PING" }) do
+        Enter(first.editBox, line)
     end
     eq(table.concat(saved.input, "|"), "hello|/w Bob hi|typed once|/scripts",
-        "typed lines: code and dump commands stay out, a repeat is one line")
-    first.editBox:AddHistoryLine(SECRET)
-    first.editBox:AddHistoryLine(string.rep("x", 1281))
-    eq(#saved.input, 4, "a restricted or oversized line was kept")
-    for i = 1, 60 do first.editBox:AddHistoryLine("line " .. i) end
+        "typed lines: code, dump and secure commands stay out, a repeat is one line")
+    Enter(first.editBox, SECRET)
+    Enter(first.editBox, string.rep("x", 1281))
+    AutoCompleteBox.shown, AutoCompleteBox.parent = true, first.editBox
+    Enter(first.editBox, "/w Bo")
+    AutoCompleteBox.shown = false
+    eq(#saved.input, 4, "a restricted, oversized or autocompleting line was kept")
+    for i = 1, 60 do Enter(first.editBox, "line " .. i) end
     eq(#saved.input, 50, "at most 50 lines are kept")
     eq(saved.input[1], "line 11", "the oldest lines go first")
     eq(saved.input[50], "line 60", "the newest line is last")
 
-    -- Each box has its own hook and gets every saved line.
-    local second = ChatFrame(3)
-    C.ApplyInputHistory(M, second)
-    eq(#second.editBox.history, 50, "another window's box")
-    eq(hooked[second.editBox], 1, "another window's hook")
-    eq(second.editBox.history[50], "line 60", "newest last in the box")
-    eq(#saved.input, 50, "feeding a second box recorded lines")
+    -- Up walks back from the draft, Down returns to it.
+    local box = first.editBox
+    box.text = "draft"
+    C.HistoryKey(box, "UP")
+    eq(box.text, "line 60", "Up did not bring the newest line")
+    C.HistoryKey(box, "UP")
+    eq(box.text, "line 59", "a second Up did not walk back")
+    C.HistoryKey(box, "DOWN")
+    eq(box.text, "line 60", "Down did not walk forward")
+    C.HistoryKey(box, "DOWN")
+    eq(box.text, "draft", "Down did not return to the draft")
+    C.HistoryKey(box, "DOWN")
+    eq(box.text, "draft", "Down past the draft changed the text")
+    -- Alt+Up/Down stays Blizzard's own history; a locked chat refuses addon
+    -- text, so recall stays off there (encounter, Mythic+, PvP, forced).
+    local sets = box.sets
+    alt = true
+    C.HistoryKey(box, "UP")
+    alt = false
+    for _, lock in ipairs({ "chat", "mythic", "forced" }) do
+        chatLocked, mythic, forced = lock == "chat", lock == "mythic", lock == "forced"
+        C.HistoryKey(box, "UP")
+    end
+    chatLocked, mythic, forced = false, false, false
+    eq(box.sets, sets, "recall wrote the box during Alt or chat lockdown")
+    -- An old saved secure command is never offered; a release starts anew.
+    saved.input[#saved.input + 1] = "/cast Fireball"
+    C.HistoryKey(box, "UP")
+    eq(box.text, "line 60", "recall offered a secure command")
+    C.HistoryBox("release", box)
+    box.text = "next"
+    C.HistoryKey(box, "UP")
+    C.HistoryKey(box, "DOWN")
+    eq(box.text, "next", "a released box kept its previous walk")
+    table.remove(saved.input)
 
-    -- The hook stays after it is switched off, and records nothing then.
+    -- A temporary whisper box is left alone.
+    local whisper = ChatFrame(11)
+    whisper.editBox.temporary = true
+    C.ApplyInputHistory(M, whisper)
+    eq(whisper.editBox.altArrows, true, "a temporary whisper box was changed")
+
+    -- Off or disabled: nothing is recorded and the native mode comes back.
     config.saveInputHistory = false
-    first.editBox:AddHistoryLine("while off")
+    Enter(box, "while off")
+    C.ApplyInputHistory(M, first)
+    eq(box.altArrows, true, "turning the setting off kept the alt-arrow mode")
     M.active = false
     config.saveInputHistory = true
-    first.editBox:AddHistoryLine("while disabled")
+    Enter(box, "while disabled")
     M.active = true
     eq(saved.input[50], "line 60", "a line was recorded while the module or the setting was off")
-    first.editBox:AddHistoryLine("while on")
+    Enter(box, "while on")
     eq(saved.input[50], "while on", "recording resumed")
 
     -- The next session, over the same saved variable.
     C, M = LoadChat(saved)
     local reloaded = ChatFrame(1)
     C.ApplyInputHistory(M, reloaded)
-    eq(reloaded.editBox.history[50], "while on", "the lines of the last session were not kept")
-    -- Off by default: no hook, nothing fed back.
+    reloaded.editBox.text = ""
+    C.HistoryKey(reloaded.editBox, "UP")
+    eq(reloaded.editBox.text, "while on", "the lines of the last session were not kept")
+    -- Off by default: the box keeps Blizzard's mode.
     config.saveInputHistory = false
     C, M = LoadChat(saved)
     local plain = ChatFrame(1)
     C.ApplyInputHistory(M, plain)
-    eq(hooked[plain.editBox], nil, "the default hooked the input box")
-    eq(#plain.editBox.history, 0, "the default fed lines back")
+    eq(plain.editBox.altArrows, true, "the default changed the alt-arrow mode")
     config.saveInputHistory = true
     C.ClearHistory()
     eq(saved.input, nil, "Clear saved chat history keeps the typed lines")
@@ -537,7 +610,7 @@ do
     config.highlightKeywords, config.highlightWords = false, "LFM, wts ; tank"
     C.MessagesRefresh(M)
     local window = ChatFrame(9, 5000)
-    window.isTemporary = true
+    window.isTemporary = true; window.inUse = true
     local function Reconfigure()
         C.MessagesRefresh(M)
         C.ApplyMessages(M, window)
@@ -611,7 +684,7 @@ do
     config.highlightWords = "LFM, wts, tank, boost"
     Reconfigure()
     local probe = ChatFrame(8)
-    probe.isTemporary = true
+    probe.isTemporary = true; probe.inUse = true
     probe.AddMessage = function(self, text, ...)
         self.last = text
         for i = 1, #self.securePostHooks do self.securePostHooks[i](self, text, ...) end

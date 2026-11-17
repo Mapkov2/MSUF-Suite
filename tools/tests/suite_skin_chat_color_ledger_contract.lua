@@ -153,6 +153,7 @@ local function Session(skinOn)
         IsCombatLocked = function() return locked end,
         Dispatch = securecallfunction,
         Finish = function(callback, ...) return true, callback(...) end,
+        ChatState = dofile(root .. "/tools/tests/suite_test_support.lua").ChatStateMock(),
     }
     function Suite.PublicText(value) return type(value) == "string" and value ~= "" and value or nil end
     function Suite.Finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end

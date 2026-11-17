@@ -24,7 +24,7 @@ expected = {
     "profile": "profile epoch revived a stale drag",
     "legacy": "legacy preview click did not open its accordion",
     "sectionJump": "Chat preview exact settings scroll was overwritten",
-    "toolLink": "preview extra link has wrong settings identity: animateInput",
+    "toolLink": "preview extra link has wrong settings identity: copyMessages",
     "clockLink": "locked resize grip intercepts preview clicks",
     "legacyPersistence": "legacy preview link closed on page refresh",
     "navigationPlacement": "Open settings is disabled for the unlocked chat window",

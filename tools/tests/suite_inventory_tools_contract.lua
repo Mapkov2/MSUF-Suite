@@ -362,19 +362,75 @@ BankFrame:Show()
 forever:Emit(foreverTransfer, "BANKFRAME_OPENED")
 forever:Item(0, 1, 12)
 forever:Item(5, 1, 13)
-eq(#foreverTransfer:Rows(), 1, "Forever's first bank bag is excluded from carried rows")
+forever:Item(6, 1, 14)
+eq(#foreverTransfer:Rows(), 2, "Forever includes the fifth carried bag and excludes the first bank tab")
 eq(foreverTransfer:CanBatch(), true, "Forever supports grouped bank transfers")
 local foreverQuestion
 forever.S.Confirm = function(_, data) foreverQuestion = data end
 forever:Click(foreverTransfer, foreverTransfer.Batch, {
     { bag = 0, slot = 1, itemID = 12, count = 1 },
     { bag = 5, slot = 1, itemID = 13, count = 1 },
+    { bag = 6, slot = 1, itemID = 14, count = 1 },
 }, "deposit")
-eq(foreverQuestion.text_arg1, 1, "Forever never deposits a slot of its own bank")
+eq(foreverQuestion.text_arg1, 2, "Forever accepts the fifth equipped bag and never deposits a bank slot")
 forever:Click(foreverTransfer, function() foreverQuestion.callback() end)
-eq(#forever.writes, 1, "Forever confirm issues one native deposit")
-eq(forever.writes[1][2], 0, "Forever deposit uses the actual carried slot")
+eq(#forever.writes, 2, "Forever confirm issues two native deposits")
+eq(forever.writes[1][2], 0, "Forever deposit uses the actual backpack slot")
+eq(forever.writes[2][2], 5, "Forever deposit includes the fifth equipped bag")
 BankFrame:Hide()
+MerchantFrame = forever.S.CreateFrame("Frame")
+MerchantFrame.selectedTab = 1
+MerchantFrame:Show()
+forever.NS.Safety = { IsForbidden = function() return false end }
+canaccesstable = function() return true end
+local offersRead = 0
+GetMerchantNumItems = function() return 2 end
+GetMerchantItemID = function(index) return index == 1 and 12 or 13 end
+C_MerchantFrame.GetItemInfo = function(index)
+    offersRead = offersRead + 1
+    return { name = index == 1 and "Thread" or "Stone", isPurchasable = true,
+        stackCount = 5, numAvailable = -1, hasExtendedCost = false, price = 450 }
+end
+forever.S.MoneyText = tostring
+forever.S.Config = function() return {} end
+local stock = forever:Start("restockPlanner", { targets = "12=4" })
+assert(stock.merchantBadge and stock.merchantBadge:IsShown(), "a stocked deficit appears at the open merchant")
+eq(stock.merchantBadge:GetText(), "Thread — missing 3", "merchant preview matches listed item and live bag deficit")
+stock.merchantBadge:Click()
+local stockWindow
+for _, frame in ipairs(forever.frames) do
+    if frame.owner == stock.merchantPreviewOwner then stockWindow = frame end
+end
+eq(stockWindow.filtered[1].detail, "5 per pack · 450", "preview distinguishes pack size and purchase price")
+local merchantReads = offersRead
+forever.combat = true
+forever:Emit(stock, "PLAYER_REGEN_DISABLED")
+forever:Emit(stock, "MERCHANT_UPDATE")
+forever:Emit(stock, "BAG_UPDATE_DELAYED")
+eq(offersRead, merchantReads, "merchant offer APIs stay asleep during combat")
+eq(stock.merchantBadge:IsShown(), false, "combat hides the preview button")
+eq(stockWindow:IsShown(), false, "combat closes the preview")
+forever.combat = false
+forever:Emit(stock, "PLAYER_REGEN_ENABLED")
+eq(stock.merchantBadge:IsShown(), true, "an open merchant resumes outside combat")
+MerchantFrame.selectedTab = 2
+forever:Emit(stock, "MerchantFrame.BuyBackTabShow")
+eq(stock.merchantBadge:IsShown(), false, "buyback has no shopping preview")
+stock:Open()
+local stockTargets
+for _, frame in ipairs(forever.frames) do
+    if frame.owner == stock and frame.actions then stockTargets = frame end
+end
+forever.cursor = { kind = "item", id = 13 }
+ClearCursor = function() forever.cursor = nil end
+stockTargets.actions[1].scripts.OnReceiveDrag(stockTargets.actions[1])
+local stockEditor
+for _, frame in ipairs(forever.frames) do
+    if frame.owner == stock and frame.input then stockEditor = frame end
+end
+assert(stockEditor and stockEditor:IsShown(), "dropping a bag item opens the quantity editor")
+eq(forever.cursor, nil, "the drop releases the item cursor")
+eq(forever.bags[5][1].itemID, 13, "the drop never moved the physical item")
 eq(forever.S.instances.mailTemplates, nil, "mail templates Retail-only")
 eq(forever.S.instances.craftShopping, nil, "recipe shopping Retail-only")
 print("inventory tools: " .. checks .. " behavior checks")

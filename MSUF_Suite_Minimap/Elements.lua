@@ -15,6 +15,7 @@ local mine, watched = setmetatable({}, weak), setmetatable({}, weak)
 local slots, items = {}, {}
 local BASE_SIZE = 21
 local landingBadge, landingButton, queueFrame
+local trackingButton
 local QUEUE = { key = "QueueStatus", frame = Native.QueueStatus }
 
 -- Retail and WoW Forever share these names: MinimapCluster's parent keys
@@ -273,6 +274,33 @@ local function HideSlot(key)
     if slot and not Locked(slot) then slot:Hide() end
 end
 
+local function RevealTracking()
+    local slot = slots.Tracking
+    if not M.active or not slot or Locked(slot) then return end
+    local open = trackingButton and trackingButton:IsMenuOpen()
+    slot:SetShown(not trackingButton or MM.Revealed() or S.Public(open) and open == true)
+end
+
+local function TrackingClose()
+    MM.HoverLeave()
+    RevealTracking()
+end
+
+local function ObserveTracking(c)
+    local frame = c and c.showTracking and c.trackingMouseover and not S.GamepadUI() and Native.Tracking()
+    local button = MM.Usable(frame) and frame.Button
+    if not (MM.Usable(button) and button.RegisterCallback and button.UnregisterCallback and button.IsMenuOpen) then
+        button = nil
+    end
+    if trackingButton == button then return end
+    if trackingButton then trackingButton:UnregisterCallback("OnMenuClose", MM) end
+    trackingButton = button
+    if button then
+        button:RegisterCallback("OnMenuClose", TrackingClose, MM)
+        MM.HookHover(button)
+    end
+end
+
 local function LayoutQueue()
     local frame, c = Native.QueueStatus(), M.config
     if queueFrame and (queueFrame ~= frame or not c.queueStatusEnabled) then
@@ -309,6 +337,7 @@ end
 function MM.LayoutElements()
     LayoutQueue()
     local c = M.config
+    ObserveTracking(c)
     local size, count = MM.Snap(c.elementSize, MM.Pixel()), 0
     for i = 1, #SPECS do
         local spec = SPECS[i]
@@ -327,7 +356,7 @@ function MM.LayoutElements()
             shown = not S.Public(shown) or shown
             if not Locked(slot) then
                 slot:SetSize(size, size)
-                slot:Show()
+                if spec.key ~= "Tracking" then slot:Show() end
                 Own(frame, slot, "CENTER", slot, "CENTER", 0, 0, Fit(frame, size))
                 if not shown then
                     -- Kept shown so Blizzard's later Show still fires OnShow.
@@ -349,6 +378,7 @@ function MM.LayoutElements()
         MM.rowCount = count
         if MM.CollectsButtons() and c.drawerRow == c.elementRow then MM.Queue("drawer") end
     end
+    if c.showTracking then RevealTracking() end
 end
 
 MM.flushers.rows = MM.LayoutElements
@@ -356,6 +386,7 @@ MM.flushers.rows = MM.LayoutElements
 MM.OnHover(function(shown)
     local slot = slots.Landing
     if slot and M.active and M.config.showLanding == LANDING.MOUSEOVER and not Locked(slot) then slot:SetShown(shown) end
+    if trackingButton then RevealTracking() end
 end)
 
 -- Blizzard re-anchors some of these buttons after loading screens.
@@ -381,6 +412,7 @@ local function ReleaseDiel(ring)
 end
 
 function MM.ReleaseElements()
+    ObserveTracking()
     if landingBadge then landingBadge:Hide() end
     local ring = Native.DayNight()
     for frame in pairs(mine) do

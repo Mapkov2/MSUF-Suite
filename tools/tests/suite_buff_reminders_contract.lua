@@ -1,5 +1,5 @@
 local root = assert(arg[1], "repository root required")
-local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Secrets.GUARD_NAMES.falsy.Public = true
 local combat, auraReads, itemReads, foodReads = false, 0, 0, 0
 local attributeWrites, textureWrites, enchantReads = 0, 0, 0
@@ -427,7 +427,7 @@ assert(module.view.buttons[5].attributes.type1 == "item" and module.view.buttons
 assert(module.view.mask == 30 and foodReads == 5, "missing default consumables were not shown")
 -- The augment rune is a separate consumable. Its primary-stat aura must not
 -- satisfy the flask reminder when no flask aura is active.
-auras[1264426] = { spellId = 1264426, auraInstanceID = 81 }
+auras[1295329] = { spellId = 1295329, auraInstanceID = 81 }
 -- Rune auras run from the highest spell ID down, like the item lists: the
 -- current rune is found with one lookup.
 do
@@ -440,13 +440,25 @@ do
     C_UnitAuras.GetPlayerAuraBySpellID = lookup
 end
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player",
-    { addedAuras = { auras[1264426] } })
+    { addedAuras = { auras[1295329] } })
 assert(module.view.mask == 22 and module.view.buttons[2].shown and not module.view.buttons[4].shown,
     "augment rune suppressed the missing-flask reminder")
-auras[1264426] = nil
+auras[1295329] = nil
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs = { 81 } })
 assert(module.view.mask == 30 and module.view.buttons[2].shown and module.view.buttons[4].shown,
     "removing the rune did not restore its reminder alongside the flask")
+-- A Tidesworn-only inventory can use the rune and its aura clears the reminder.
+inventory[259085], inventory[274797] = 0, 1
+eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
+assert(module.list.entries[4].id == 274797 and module.view.buttons[4].attributes.item1 == "item:274797",
+    "a Tidesworn rune in the bags was not selected")
+auras[1295329] = { spellId = 1295329, auraInstanceID = 82 }
+eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras = { auras[1295329] } })
+assert(not module.view.buttons[4].shown and module.view.buttons[2].shown,
+    "Tidesworn did not satisfy only the rune reminder")
+auras[1295329], inventory[274797], inventory[259085] = nil, nil, 3
+eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs = { 82 } })
+eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
 local beforeAura, beforeEnchant, beforeTexture = auraReads, enchantReads, textureWrites
 beforeAttributes = attributeWrites
 local compiled, compile = 0, module.Compile
@@ -1521,6 +1533,19 @@ do
     now = now + 1500
     FireNext()
     assert(module.view.mask % (entry.bit * 2) >= entry.bit, "the group buff's advance warning did not fire")
+    module.config.personalBuffWarningSeconds = 30
+    local previousAfter = C_Timer.After
+    C_Timer.After = function(delay, callback)
+        if delay == 0.1 then return previousAfter(delay, callback) end
+        scheduled[#scheduled + 1] = { due = now + delay, callback = callback }
+    end
+    module:Refresh()
+    RunAfter()
+    assert(module.view.mask == 0 and module.list.thresholdAt == auras[1459].expirationTime - 30,
+        "an explicit class threshold replaces the general threshold")
+    FireNext()
+    assert(module.view.mask % (entry.bit * 2) >= entry.bit, "the class warning did not fire at 30 seconds")
+    C_Timer.After = previousAfter
     module.config.classBuff = false
     module:Refresh()
     RunAfter()
@@ -1574,7 +1599,8 @@ do
     -- 2026-11-05: missing-only class auras and remembered armor add 23 VM
     -- instructions to the current 6078 combat-end case (6101, +0.38%).
     -- No additional native reads or allocations; no recompile at combat end.
-    local COMBAT_END_BUDGET = 6101
+    -- The additional Tidesworn aura alias costs five VM instructions here.
+    local COMBAT_END_BUDGET = 6106
     local roster = { player = "MAGE", party1 = "PRIEST", party2 = "WARRIOR", party3 = "DRUID", party4 = "ROGUE" }
     UnitClass = function(unit) return roster[unit], roster[unit] end
     knownSpell = function(id) return id == 1459 end

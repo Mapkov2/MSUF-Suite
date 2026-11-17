@@ -292,8 +292,8 @@ def main():
         fixtures[value[7:] if is_module else value] = decode(value, "MSUFM1:MSUF3:" if is_module else "MSUF3:")
     value = literal(core / "ModernDarkFactory.lua", "Suite.ModernDarkFramesCompact")
     frame = fixtures[value]
-    native_path = root.parent / "MidnightSimpleUnitFrames/MidnightSimpleUnitFrames_Options/State/MSUF_Defaults_ModernDark.lua"
-    default_path = root.parent / "MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_Shell.lua"
+    native_path = root.parent / "MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames_Options/State/MSUF_Defaults_ModernDark.lua"
+    default_path = root.parent / "MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_Shell.lua"
     default_text = literal(default_path, "MSUF.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT")
     fixtures[default_text] = decode(default_text, "MSUF3:")
     if native_path.exists():
@@ -302,7 +302,7 @@ def main():
     skin = decode(literal(core / "ModernDarkFactory.lua", "Suite.ModernDarkSkinCompact"), "MSKIN1:")
     script = CHECK.replace("FIXTURES", lua_literal(fixtures), 1).replace("FRAME", lua_literal(copy.deepcopy(frame)), 1)
     script = script.replace("SKIN", lua_literal(skin), 1)
-    run = subprocess.run([LUA, "-", str(root), str(root.parent / "MidnightSimpleUnitFrames")], input=script, text=True, capture_output=True, cwd=root)
+    run = subprocess.run([LUA, "-", str(root), str(root.parent / "MidnightSimpleUnitFrames-7.0")], input=script, text=True, capture_output=True, cwd=root)
     print(run.stdout, end="")
     if run.returncode: print(run.stderr, file=sys.stderr, end="")
     return run.returncode

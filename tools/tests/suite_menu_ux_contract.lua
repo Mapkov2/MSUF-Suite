@@ -18,8 +18,8 @@ local mutations = {
         "if ui.retained == group and ui.rows[V.FeatureSectionId(group)].hasDetails then return true end" },
     filterTitle = { "Pages/QualityOfLifeNavigation.lua", "P.HideControlTitle(ui.filterControl)", "-- visible title" },
     copyWrap = { "Pages/ActionBars.lua", "popup:SetHeight(math.max(340, 264 + (popup.suiteCopySummary:GetStringHeight() or 42)))", "-- missing wrapped height" },
-    meterDefault = { "Pages/DamageMeter.lua", '{ id = "shared", label = "General settings", sections = "damageMeter_module look general details" },',
-        '{ id = "window", label = "Window settings", sections = "windows" },\n            { id = "shared", label = "General settings", sections = "damageMeter_module look general details" },' },
+    meterDefault = { "Pages/DamageMeter.lua", '{ id = "shared", label = "Basics", sections = "damageMeter_module general details" },',
+        '{ id = "window", label = "Layout", sections = "windows" },\n            { id = "shared", label = "Basics", sections = "damageMeter_module general details" },' },
     reminderRelease = { "Pages/BuffRemindersPreview.lua", "S.BuffRemindersReleasePreview(stage)", "do end" },
     reminderScale = { "Pages/BuffRemindersPreview.lua", "stage:SetScale(nativeScale * fit)", "stage:SetScale(.25)" },
     reminderIdle = { "Pages/BuffRemindersPreview.lua", "viewport:UnregisterAllEvents()", "-- kept hidden listeners" },
@@ -408,10 +408,10 @@ if (arg[2] or "Mainline") == "Mainline" then
     assert(skin, "skin fixture missing")
     MapkoSkin = skin
     local _, ui = Build("suite_skin", 340)
-    assert(ui and #ui.spec.tabs == 4 and ui.chooseTab and not ui.selector and ui.header:GetHeight() >= 240,
+    assert(ui and #ui.spec.tabs == 2 and ui.chooseTab and not ui.selector and ui.header:GetHeight() >= 240,
         "skinning lacks direct tabs or preview space")
-    assert(ui:Focus("suite_skin_character") and ui.selected == "character", "skinning character link opened another tab")
-    assert(ui:Focus("suite_skin_advanced") and ui.selected == "maintenance", "skinning maintenance link opened another tab")
+    assert(ui:Focus("suite_skin_icons") and ui.selected == "style", "window symbols did not open in Style")
+    assert(ui:Focus("suite_skin_window_controls") and ui.selected == "windows", "window position did not open in Blizzard windows")
     MapkoSkin = nil
 end
 -- Override discovery includes shared/current-spec entries only and opens

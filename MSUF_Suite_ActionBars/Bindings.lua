@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
--- Key routing. Bars 2-8 keep Blizzard's native command on their adopted
--- buttons. Bar 1 keeps the native command while it follows Blizzard's page.
+-- Adopted buttons keep Blizzard's native command on bars 1-8.
+-- A suite-painted bar 1 keeps it while it follows Blizzard's page.
 -- These are the queue-safe routes for empower and press-and-hold spells.
 -- One owner frame routes keys to the suite buttons with override click
 -- bindings where a native command cannot express the slot: bars 9/10 (their

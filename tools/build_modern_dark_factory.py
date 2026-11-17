@@ -389,7 +389,7 @@ def write(path, text, check):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--classic-root", type=Path, default=ROOT.parent / "MidnightSimpleUnitFrames")
+    parser.add_argument("--classic-root", type=Path, default=ROOT.parent / "MidnightSimpleUnitFrames-7.0")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     frame = frames(args.classic_root)

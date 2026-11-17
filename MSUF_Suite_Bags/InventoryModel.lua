@@ -463,6 +463,9 @@ function Model.Build(model, items, config, state, context)
     Clear(model.groups)
     Clear(model.groupsByKey)
     model.rowCount, model.groupCount = 0, 0
+    -- Each build is a new revision: the list view (ListView.lua) keeps its
+    -- sorted lines while the revision stays.
+    model.revision = (model.revision or 0) + 1
     model.expansionFirst = config.expansionFirst == true
     model.optional = EnabledOptional(config, model.optional or {})
     if model.customText ~= config.customCategories then

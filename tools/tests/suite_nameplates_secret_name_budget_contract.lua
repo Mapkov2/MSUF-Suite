@@ -6,10 +6,11 @@ local root = assert(arg[1], "repository root required"):gsub("\\", "/")
 -- its unit mapping (ForgetPlain) every time, a pairs() walk that removes
 -- nothing new after the first one. This contract holds:
 --   * budget: a secret native update of a plate that holds no captured name
---     runs at most SECRET_BUDGET VM instructions in NameText.lua (101 before,
---     86 after; +2 %), walks no table (no pairs() and its next() C calls) and asks
---     the client exactly the seven questions it asked before (forbidden x2,
---     protected x2, combat, shown, text);
+--     stays under the VM instruction budgets in NameText.lua and the shared safety wrappers, walks no table
+--     (no pairs()/next()) and keeps the same native safety and text queries;
+--   * frames: that update runs the hook alone, no other Lua function of
+--     NameText.lua (2026-11-15 raid trace: 10,213 of 24,848 hook runs each
+--     entered ReadLabel, 10,169 Protected; 10,153 then read a secret name);
 --   * premise: a state without the captured mark (a Capture that succeeded
 --     since the last Clear; raw alone is not it, a shown label without text
 --     captures nil) holds no field but unit, prefix, look and nativeDirty,
@@ -20,8 +21,8 @@ local root = assert(arg[1], "repository root required"):gsub("\\", "/")
 --     same label text, colors, writes and state.
 local SOURCE = root .. "/MSUF_Suite_Nameplates/NameText.lua"
 local SECRET = setmetatable({}, { __tostring = function() return "<secret>" end })
-local SECRET_BUDGET = 88
-local spent
+local IDLE_BUDGET, COMBAT_BUDGET = 63, 79
+local idleSpent, combatSpent
 local checks = 0
 local function Check(value, message)
     checks = checks + 1
@@ -38,8 +39,16 @@ end
 -- One NameText instance with its own frames, counters and settings.
 local function Instance(text, name)
     local world = { combat = false, natives = 0, writes = 0, gen = 0 }
+    local isSecret = function(v) return rawequal(v, SECRET) end
+    local function Public(value) return not isSecret(value) end
+    local function IsForbidden(frame)
+        return frame and type(frame.IsForbidden) == "function" and frame:IsForbidden() == true
+    end
+    -- Count the Lua wrappers that the old path called. The client mock
+    -- methods and its secret predicate stand in for C functions.
+    local wrappers = { [Public] = true, [IsForbidden] = true }
     local S = {
-        Public = function(v) return not rawequal(v, SECRET) end,
+        Public = Public,
         Finite = function(v) return not rawequal(v, SECRET) and type(v) == "number" and v == v end,
     }
     -- Compiled looks carry an id so two instances compare by meaning; the
@@ -48,7 +57,8 @@ local function Instance(text, name)
     local Text = {}
     function Text.Compile(config, prefix)
         world.gen = world.gen + 1
-        return { id = prefix .. world.gen, enabled = config.format == true, customColor = config.color == true,
+        return { id = prefix .. world.gen, enabled = config.format == true,
+            customColor = config.color == true or config[prefix .. "Color"] == true,
             shared = config.shared and { id = "shared" .. world.gen } or nil }
     end
     -- A label without text formats to nil, as the host's (Portable.Format).
@@ -66,18 +76,25 @@ local function Instance(text, name)
     end
     local NS = {
         Suite = S, NameplateText = Text,
-        Safety = { IsForbidden = function(frame) world.natives = world.natives + 1 return frame.forbidden == true end },
+        IsSecret = function(v) return rawequal(v, SECRET) end, IsSecret = isSecret,
+        Safety = { IsForbidden = IsForbidden },
         IsCombatLocked = function() world.natives = world.natives + 1 return world.combat end,
     }
     local label = { value = "Ravenous Shadowcaster", r = .9, g = .7, b = .5, a = 1, shown = true }
-    function label:GetText() world.natives = world.natives + 1 return self.value end
+    function label:GetText()
+        world.natives = world.natives + 1
+        world.textReads = (world.textReads or 0) + 1
+        return self.value
+    end
     function label:SetText(v) world.writes = world.writes + 1 self.value = v end
     function label:GetTextColor() world.natives = world.natives + 1 return self.r, self.g, self.b, self.a end
     function label:SetVertexColor(r, g, b, a) world.writes = world.writes + 1 self.r, self.g, self.b, self.a = r, g, b, a or 1 end
     function label:IsShown() world.natives = world.natives + 1 return self.shown end
-    function label:IsProtected() world.natives = world.natives + 1 return self.protected == true end
+    function label:IsForbidden() world.natives = world.natives + 1 return self.forbidden or false end
+    function label:IsProtected() world.natives = world.natives + 1 return self.protected or false end
     local uf = { name = label }
-    function uf:IsProtected() world.natives = world.natives + 1 return self.protected == true end
+    uf.IsForbidden = label.IsForbidden
+    function uf:IsProtected() world.natives = world.natives + 1 return self.protected or false end
     local callback
     hooksecurefunc = function(hooked, fn)
         assert(hooked == "CompactUnitFrame_UpdateName")
@@ -91,6 +108,7 @@ local function Instance(text, name)
     local module = { active = true, config = config, pendingPlates = {}, activeUnits = { nameplate1 = uf } }
     Names.Bind(module)
     Names.Configure(config)
+    world.wrappers = wrappers
     world.Names, world.config, world.module, world.label, world.uf, world.source = Names, config, module, label, uf, "@" .. name
     function world.Native() callback(uf) end
     return world
@@ -104,38 +122,158 @@ local function Plain(state)
 end
 
 ------------------------------------------------------------------ budget
+local function Measure(w, budget, nativeBudget)
+    local instructions, walks, frames, source = 0, 0, 0, w.source
+    local natives, writes = w.natives, w.writes
+    debug.sethook(function(event)
+        if event == "call" then
+            local info = debug.getinfo(2, "Sf")
+            local fn = info.func
+            if fn == pairs or fn == next then walks = walks + 1 end
+            if info.source == source then frames = frames + 1 end
+        else
+            local info = debug.getinfo(2, "Sf")
+            if info.source == source or w.wrappers[info.func] then instructions = instructions + 1 end
+        end
+    end, "c", 1)
+    w.Native()
+    debug.sethook()
+    Check(walks == 0, "repeated secret updates must not walk the state table")
+    Check(frames == 1, "secret update entered " .. frames .. " Lua functions of NameText.lua (the hook alone is 1)")
+    Check(w.natives - natives == nativeBudget, "repeated secret update made an unexpected number of native calls")
+    Check(instructions > 0 and instructions <= budget, "secret update ran " .. instructions
+        .. " VM instructions (budget " .. budget .. ")")
+    Check(rawequal(w.label.value, SECRET) and w.writes == writes, "a secret name was written over")
+    return instructions
+end
+
 local text = ReadSource()
 do
     local w = Instance(text, "NameText.lua")
     w.Names.Apply(w.uf, "enemy", "nameplate1")
     Check(w.label.value == "<Ravenous Shadowcaster>", "the public name was not formatted")
-    -- In combat, as in the trace: neither frame is protected, so both are asked.
-    w.combat, w.label.value = true, SECRET
-    local writes = w.writes
+    Check(w.textReads == 1, "initial application reread a public native name")
+    w.label.value = SECRET
     w.Native()
     local state = w.Names.states[w.uf]
     Check(state.raw == nil and state.unit == "nameplate1" and state.look ~= nil and Plain(state),
         "a secret name did not drop the state to its unit mapping")
+    idleSpent = Measure(w, IDLE_BUDGET, 5)
+    -- Neither widget is protected in this case, so both checks run.
+    w.combat = true
+    combatSpent = Measure(w, COMBAT_BUDGET, 7)
+end
+
+do
+    local w = Instance(text, "NameText.lua")
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    w.combat, w.label.protected = true, true
+    -- Blizzard writes the same raw name but a new color during lockdown.
+    -- The public name comparison alone cannot detect that native change.
+    w.label.value, w.label.r, w.label.g, w.label.b, w.label.a = "Ravenous Shadowcaster", .5, .5, .5, .8
+    local writes = w.writes
     w.Native()
-    local instructions, walks, source = 0, 0, w.source
-    local natives = w.natives
-    debug.sethook(function(event)
-        if event == "call" then
-            local fn = debug.getinfo(2, "f").func
-            if fn == pairs or fn == next then walks = walks + 1 end
-        elseif debug.getinfo(2, "S").source == source then
-            instructions = instructions + 1
-        end
-    end, "c", 1)
+    Check(w.module.pendingPlates[w.uf] and w.writes == writes, "protected native update was not deferred")
+    w.combat, w.label.protected = false, false
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    w.config.format, w.config.color = false, false
+    w.Names.Configure(w.config)
+    Check(w.label.value == "Ravenous Shadowcaster" and w.label.r == .5 and w.label.g == .5
+        and w.label.b == .5 and w.label.a == .8, "protected replay lost the new native color for the same name")
+end
+
+do
+    local w = Instance(text, "NameText.lua")
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    w.combat, w.uf.protected, w.label.value = true, true, SECRET
+    local writes, reads = w.writes, w.textReads
     w.Native()
-    debug.sethook()
-    Check(walks == 0, "a secret native update of a plain plate walked its state (" .. walks .. " pairs/next calls)")
-    Check(w.natives - natives == 7, "a secret native update asked the client " .. (w.natives - natives) .. " times, not 7")
-    Check(instructions > 0, "the instruction filter counted nothing")
-    Check(instructions <= SECRET_BUDGET, "a secret native update of a plain plate ran " .. instructions
-        .. " VM instructions (budget " .. SECRET_BUDGET .. ")")
-    Check(rawequal(w.label.value, SECRET) and w.writes == writes, "a secret name was written over")
-    spent = instructions
+    Check(w.module.pendingPlates[w.uf] and w.writes == writes and w.textReads == reads,
+        "protected secret update was not deferred without reading or writing the label")
+    w.combat, w.uf.protected = false, false
+    -- The client exposes the name before a new native update is observed.
+    w.label.value, w.label.r = "Ravenous Shadowcaster", .6
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    Check(w.label.value == "<Ravenous Shadowcaster>", "combat replay skipped a newly readable name")
+    w.config.format, w.config.color = false, false
+    w.Names.Configure(w.config)
+    Check(w.label.r == .6, "combat replay retained the previous native color")
+end
+
+do
+    local w = Instance(text, "NameText.lua")
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    local writes, reads = w.writes, w.textReads
+    for _, object in ipairs({ w.uf, w.label }) do
+        object.forbidden = true
+        w.Native()
+        object.forbidden = SECRET
+        w.Native()
+        w.Names.Apply(w.uf, "enemy", "nameplate1")
+        object.forbidden = nil
+    end
+    w.label.shown = SECRET
+    w.Names.Invalidate(w.uf)
+    w.Native()
+    w.Names.Apply(w.uf, "enemy", "nameplate1")
+    w.label.shown, w.combat = true, true
+    for _, object in ipairs({ w.uf, w.label }) do
+        object.protected = SECRET
+        w.Native()
+        Check(w.module.pendingPlates[w.uf], "secret protection did not defer the update")
+        w.module.pendingPlates[w.uf], object.protected = nil, nil
+    end
+    Check(w.writes == writes and w.textReads == reads, "an inaccessible label's text was read or written")
+end
+
+------------------------------------------------------------------ mixed sides
+-- Only one side colors its names: the other side stays native and must not
+-- touch the plate at all, from the skin pass or from the native hook.
+do
+    local w = Instance(text, "NameText.lua")
+    local cfg, l, uf = w.config, w.label, w.uf
+    cfg.format, cfg.color, cfg.enemyColor = false, false, true
+    w.Names.Configure(cfg)
+    local natives, writes = w.natives, w.writes
+    for _ = 1, 100 do
+        w.Names.Apply(uf, "friendly", "nameplate1")
+        w.Native()
+    end
+    Check(w.natives == natives and w.writes == writes and w.Names.states[uf] == nil,
+        "a native-only side read, wrote or mapped the plate")
+    w.Names.Apply(uf, "enemy", "nameplate1")
+    Check(l.r == .1 and l.value == "Ravenous Shadowcaster", "the owning side did not color the name")
+    l.r, l.g, l.b = .9, .7, .5
+    natives = w.natives
+    w.Native()
+    Check(w.natives > natives and l.r == .1, "the owning side's native update was not repainted")
+    -- Ownership moves to the other side: exact restore, mapping gone.
+    cfg.enemyColor, cfg.friendlyColor = false, true
+    w.Names.Configure(cfg)
+    local state = w.Names.states[uf]
+    Check(l.r == .9 and l.g == .7 and l.b == .5 and state.unit == nil and not state.tinted,
+        "a side that stopped owning was not restored and unmapped")
+    natives, writes = w.natives, w.writes
+    for _ = 1, 100 do
+        w.Names.Apply(uf, "enemy", "nameplate1")
+        w.Native()
+    end
+    Check(w.natives == natives and w.writes == writes, "the released side still touched the plate")
+    w.Names.Apply(uf, "friendly", "nameplate1")
+    Check(l.r == .1, "the newly owning side did not color the name")
+    -- Protection blocks the restore: owned values wait for the replay.
+    w.combat, l.protected = true, true
+    cfg.enemyColor, cfg.friendlyColor = true, false
+    writes = w.writes
+    w.Names.Configure(cfg)
+    Check(state.tinted and l.r == .1 and w.writes == writes and w.module.pendingPlates[uf],
+        "a blocked release dropped its owned values or wrote a protected label")
+    natives = w.natives
+    w.Native()
+    Check(w.natives == natives and state.tinted, "the native hook touched a side waiting for its restore")
+    w.combat, l.protected = false, false
+    w.Names.Apply(uf, "friendly", "nameplate1")
+    Check(l.r == .9 and not state.tinted and state.unit == nil, "the replay did not restore and unmap the released side")
 end
 
 ------------------------------------------------------------------ premise and equivalence
@@ -254,5 +392,5 @@ do
         "the walk reached the secret plain-state path only " .. plainSecret .. " times (" .. dirtySecret
         .. " with a nativeDirty mark), a name-less capture " .. nilSecret .. " (" .. tintedSecret .. " tinted)")
 end
-print("Nameplates secret names: " .. checks .. " checks passed (secret update " .. spent .. "/" .. SECRET_BUDGET
-    .. " VM instructions, premise, equivalence with the full clear)")
+print("Nameplates secret names: " .. checks .. " checks passed (secret update " .. idleSpent .. "/" .. IDLE_BUDGET
+    .. " VM instructions idle, " .. combatSpent .. "/" .. COMBAT_BUDGET .. " in combat)")

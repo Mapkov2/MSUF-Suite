@@ -135,6 +135,7 @@ local S = {
     Install = function(_, instance) module = instance end,
 }
 local NS = { IsCombatLocked = function() return combat end, IsSecret = function() return false end,
+    Dispatch = function(fn, ...) return fn(...) end, Finish = function(fn, ...) return true, fn(...) end,
     Safety = { IsForbidden = function() return false end },
     MSUFMedia = { font = "msuf.ttf" }, HostBridge = bridge }
 -- The skin-only piece (PlayerAuraSkins.lua) lets go of the buttons while this
@@ -267,6 +268,50 @@ Check(yields[#yields].on == false, "the cleanup gives the buttons back to the sk
 Check(watched.playerAuras == false, "a disabled module stops watching")
 Check(PaintsOf(debuff)[#PaintsOf(debuff)].look == nil and debuff.Duration.layer == "BACKGROUND",
     "disabling leaves no skin and puts every duration back")
+
+-- A native fallback changes the geometry but still uses the layout module's
+-- chosen look, even if the separate skin-only module has yielded.
+local function LastPaint(button)
+    local list = PaintsOf(button)
+    return list[#list]
+end
+config.buffSkin = "DEFAULT"
+local blocked = Button(true, BuffFrame.AuraContainer)
+local getTexCoord = blocked.Icon.GetTexCoord
+blocked.Icon.GetTexCoord = function() return nil end
+BuffFrame.auraFrames[6] = blocked
+local pooled = Button(false, BuffFrame.AuraContainer)
+BuffFrame.auraFrames[7] = pooled
+module:Enable()
+local native = LastPaint(buff)
+Check(native and native.look == LOOKS.DEFAULT and native.w == 30 and native.h == 40
+    and native.anchor == buff.Icon and buff.Duration.layer == "OVERLAY",
+    "a failed layout must keep the Buffs skin at native icon size")
+Check(LastPaint(blocked).look == LOOKS.DEFAULT and LastPaint(pooled).look == LOOKS.DEFAULT,
+    "native skin must cover the failed button and the hidden pool")
+Check(LastPaint(BuffFrame.ConsolidatedBuffs).look == LOOKS.DEFAULT,
+    "native skin must cover the consolidation button")
+local fallbackPaints = #paints
+BuffFrame:UpdateAuraButtons()
+Check(#paints == fallbackPaints, "a native refill during fallback must not repaint")
+config.buffSkin = "DARK2"
+module:Refresh()
+Check(LastPaint(buff).look == LOOKS.DARK2 and LastPaint(buff).w == 30,
+    "the native fallback must update when the Buffs look changes")
+config.buffSkin = "CUSTOM"
+module:Refresh()
+Check(LastPaint(buff).look == nil and buff.Duration.layer == "BACKGROUND",
+    "No skin must clear the native fallback look")
+config.buffSkin = "DEFAULT"
+module:Refresh()
+blocked.Icon.GetTexCoord = getTexCoord
+BuffFrame:UpdateAuraButtons()
+Check(LastPaint(buff).look == LOOKS.DEFAULT and LastPaint(buff).w == config.iconWidth
+    and buff.Duration.layer == "OVERLAY", "layout recovery must resize the skin without losing it")
+module:Disable()
+Check(LastPaint(pooled).look == nil and pooled.Duration.layer == "BACKGROUND",
+    "disabling must release a skin on a button prepainted during fallback")
+
 -- The aura update path stays Suite main's code (owner, 2026-10-17): Sync,
 -- Place, Style, Border and the adoption never look at a skin; StyleSkinned
 -- runs in Style's stead only while a skin is set or still drawn.
@@ -283,7 +328,7 @@ do
         local body = Body(head):lower()
         Check(not body:find("skin", 1, true) and not body:find("look", 1, true), head .. " must run Suite main's code")
     end
-    Check(Body("local function Sync("):find("Place(button, icon, slot, frame.AuraContainer, c, list)", 1, true),
-        "Sync must place a button as Suite main does")
+    Check(Body("local function Sync("):find("Place(button, button.Icon, slot, frame.AuraContainer, c)", 1, true),
+        "Sync must use the shared placement path")
 end
 print("suite player auras skin contract passed")

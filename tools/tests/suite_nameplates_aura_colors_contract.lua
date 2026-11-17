@@ -135,6 +135,7 @@ local function Region(parent)
     function r:SetMouseClickEnabled(value) assert(not self.sealed and value == false); self.clicks = value end
     function r:SetMouseMotionEnabled(value) assert(not self.sealed and value == false); self.motion = value end
     function r:SetTexture(path) self.path = path end
+    function r:SetVertexColor(...) self.tint = { ... } end
     function r:SetColorTexture(...) self.color = { ... }; writes = writes + 1 end
     function r:AddMaskTexture(mask) self.mask = mask end
     function r:Show() assert(not self.native); self.shown = true; writes = writes + 1 end
@@ -231,6 +232,17 @@ C.Configure(cfg)
 C.Apply(uf, "nameplate1", true)
 assert(creations == 2 and #textures == 3 * A.LIMIT and #containers == 1)
 local container = containers[1]
+do
+    local before = writes
+    private.Textures = { focusFill = "focus", HealthFill = function(frame) if frame == uf then return "focus" end end }
+    C.Apply(uf, "nameplate1", true)
+    local found
+    for _, texture in ipairs(textures) do if texture.path == "focus" then found = true end end
+    assert(found and writes == before, "focus texture repainted aura geometry or visibility")
+    private.Textures.focusFill = nil
+    C.Apply(uf, "nameplate1", true)
+    private.Textures = nil
+end
 -- Cold trade: prepare all mask variants/public tail markers so growth never
 -- names a sealed marker. Native count and individual predicates remain
 -- demand-built, preserving filtering budgets (maximum16) and warm no-ops.
@@ -641,7 +653,7 @@ print("Native DoT masks, curated host IDs, spec/profile/combat lifecycle and war
 
 -- Use each real host's bindings, whose normal callbacks refuse combat.
 -- Feature-owned callbacks must reach the draft without touching the DB.
-for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
+for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) do
     GetNumSpecializations = function() return 2 end
     C_Spell = { GetSpellName = function(id) return "Spell " .. id end, GetSpellTexture = function() return 1 end }
     local controls, metas, fonts = {}, {}, {}
@@ -753,7 +765,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
     config.auraColorsData = A.Encode({ [101] = { saved[101][1] }, [102] = saved[102] })
     local baseline, before = config.auraColorsData, changes
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesAuraColors.lua"))("MSUF_Suite_Options", P)
-    P.NameplatesAuraUI.Build({ key = "suite_nameplates", refreshers = {} }, { width = 720 }, Widget())
+    P.NameplatesAuraUI.Build({ key = "suite_nameplates", refreshers = {} }, Widget(), 688, function() end)
     assert(#fonts > 1, host .. ": nameplate labels bypassed the real theme")
     for _, font in ipairs(fonts) do
         local color, text = font.textColor, M.Theme.colors.text
@@ -787,17 +799,10 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
     -- Resolve this feature's real targets through the host's actual contextual
     -- picker bridge. Exercise repeated drags and the cancel/restore callback.
     local shortcut, owners
-    P.HM.ReleaseColorShortcut = function(button) shortcut = button end
-    P.AttachSectionReset = function() end
-    P.LazySection = function(_, _, _, _, options)
-        local body = Widget()
-        options.shell(body)
-        return body
-    end
     W.OpenColorContextPicker = function(_, targets) owners = targets end
     config.auraColorsIndividual, config.auraColorsNoneEnabled = true, true
     config.auraColorsData = A.Encode({ [101] = { saved[101][1] }, [102] = saved[102] })
-    P.BuildNameplatesAuraColors({ refreshers = {} }, { width = 720 }, {})
+    shortcut = W.AttachContextColorShortcut(Widget(), { getTargets = P.NameplatesAuraUI.ColorTargets, maxTargets = A.LIMIT + 2 })
     shortcut.scripts.OnClick(shortcut)
     assert(owners and #owners == 3, host .. ": feature picker lost global/individual color targets")
     local palette = { "04e18a", "f3027c", "126bd9" }
@@ -837,14 +842,9 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
     C.Apply(uf, "nameplate4", true)
     NativePass({ [589] = true, [34914] = true })
     assert(VisibleColor() == palette[1], host .. ": picker all color differs from runtime")
-    -- An older host's widgets without the contextual picker, or one that
-    -- makes no shortcut: the page still builds and releases nothing.
-    local attach, release = W.AttachContextColorShortcut, P.HM.ReleaseColorShortcut
-    P.HM.ReleaseColorShortcut = function(button) assert(button, host .. ": released a shortcut the host never made") end
-    W.AttachContextColorShortcut = function() return nil end
-    P.BuildNameplatesAuraColors({ refreshers = {} }, { width = 720 }, {})
+    local attach = W.AttachContextColorShortcut
     W.AttachContextColorShortcut = nil
-    P.BuildNameplatesAuraColors({ refreshers = {} }, { width = 720 }, {})
-    W.AttachContextColorShortcut, P.HM.ReleaseColorShortcut = attach, release
+    P.NameplatesAuraUI.Build({ key = "suite_nameplates", refreshers = {} }, Widget(), 688, function() end)
+    W.AttachContextColorShortcut = attach
 end
 print("Actual Retail/Classic themes and callbacks: numeric fonts, drafts, picker RGB persistence and runtime/preview colors passed")

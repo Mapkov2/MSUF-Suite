@@ -3,11 +3,15 @@ local NS = { Client = { isForever = false, isMainline = true }, Text = function(
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateAuras.lua"))("MSUF_Suite", NS)
 local spec = assert(NS.SuiteCatalog.nameplates)
 local forever = { Client = { isForever = true, isMainline = true }, Text = NS.Text }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", forever)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", forever)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", forever)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", forever)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateAuras.lua"))("MSUF_Suite", forever)
 assert(forever.SuiteCatalog.nameplates.look.presets[1].enemyLevelEnabled == true
     and forever.SuiteCatalog.nameplates.look.presets[1].friendlyLevelEnabled == false,
     "Forever Jundies should show enemy levels without forcing friendly levels")
@@ -43,8 +47,13 @@ for _, key in ipairs(RETIRED) do
         assert(not source:find('"' .. key .. '"', 1, true), name .. " still offers retired " .. key)
     end
 end
--- No texture picker at all on the nameplates: every one would be a bar texture.
-for key, rule in pairs(spec.rules) do assert(not rule.texture, "nameplate texture picker returned: " .. key) end
+-- Only the shared Bars/Castbar settings may replace the native textures.
+local nativeTextures = { nativeHealthFillTexture = true, nativeHealthBackgroundTexture = true,
+    nativeFocusHealthFillTexture = true,
+    nativeCastFillTexture = true, nativeCastBackgroundTexture = true }
+for key, rule in pairs(spec.rules) do
+    if rule.texture then assert(nativeTextures[key] and rule.default == "", "unexpected nameplate texture: " .. key) end
+end
 assert(not NS.NameplateStyle.Decor.Media and not NS.NameplateStyle.Tint, "a nameplate texture path returned to the painter")
 local fixture = dofile(root .. "/tools/fixtures/nameplates_eqol_features.lua")
 local count = 0
@@ -53,6 +62,7 @@ for feature, keys in pairs(fixture) do
     for _, key in ipairs(keys) do
         assert(spec.rules[key], feature .. " has no Suite setting: " .. key)
         assert(spec.rules[key].section, key .. " has no options section")
+        assert(forever.SuiteCatalog.nameplates.rules[key], feature .. " has no Forever setting: " .. key)
     end
 end
 assert(count == 49, "EQoL coverage must retain the requested controls except retired health textures")
@@ -73,7 +83,7 @@ for key, value in pairs({
     enemyTextOutline = 4, enemyCastOutline = 4, enemyTextShadow = false, friendlyTextShadow = true,
     enemyQuestMarker = true, enemyQuestMarkerAnchor = 5, enemyQuestOffsetX = -14, enemyQuestOffsetY = 0,
     enemyNpcAuraMode = 1, enemyPlayerAuraMode = 1, friendlyPlayerAuraMode = 1,
-    threatSignalMode = 1, softTargetIconGate = 1, personalPowerSkin = false,
+    threatSignalMode = 1, softTargetIconGate = 1,
     threatFlashColorEnabled = false, threatFlashColor = "ffff00",
     threatHighlightColorEnabled = false, threatHighlightColor = "ffe93a",
 }) do Default(key, value) end
@@ -97,10 +107,11 @@ end
 for _, catalog in ipairs({ spec, forever.SuiteCatalog.nameplates }) do
     for _, key in ipairs({ "enemyHealthWidthDelta", "enemyHealthHeightDelta",
         "friendlyHealthWidthDelta", "friendlyHealthHeightDelta" }) do
-        assert(catalog.rules[key].default == 0 and catalog.look.presets[1][key] == 0
-            and catalog.look.presets[2][key] == 0,
-            key .. " must preserve native dimensions until the user changes them")
+        assert(catalog.rules[key].default == 0 and catalog.look.presets[2][key] == 0,
+            key .. " must preserve the default and Blizzard dimensions")
     end
+    assert(catalog.look.presets[1].enemyHealthWidthDelta == -18 and catalog.look.presets[1].enemyHealthHeightDelta == 3,
+        "Jundies must apply the reference health bar dimensions")
     assert(catalog.rules.enemyLevelSize.default == 0 and catalog.rules.friendlyLevelSize.default == 0,
         "Jundies level sizing changed the native default")
 end

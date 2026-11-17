@@ -407,7 +407,7 @@ local function Layout(preview, fallbackWidth)
     end
 end
 
-local function BuildControls(preview)
+local function BuildControls(preview, skin)
     local section = preview.section
     local specs = {}
     for _, spec in ipairs(LAYERS) do
@@ -423,10 +423,13 @@ local function BuildControls(preview)
     end, function(spec)
         local open = preview.links[targets[spec[1]]]
         if open then return open() end
+    end, function(key)
+        if key == "item" and skin.DB.theme.iconBorderStyle == "off" then return "theme.iconBorderStyle" end
     end)
     if P.M.AddTooltip then
         for index, button in ipairs(preview.layerButtons) do
-            P.M.AddTooltip(button, Tr(specs[index][2]), Tr("Right-click to open its settings."), { hook = true })
+            P.M.AddTooltip(button, Tr(specs[index][2]), Tr("Right-click to open its settings."), { hook = true,
+                enabled = function() return not button._suiteLayerBlocked or not button._suiteLayerBlocked() end })
         end
     end
 end
@@ -504,7 +507,7 @@ function P.BuildSkinMenuPreview(ctx, b, skin)
     if preview.forever and skin.WindowActionSkin and skin.WindowActionSkin.PaintCaption then
         AddActionSamples(preview, skin)
     end
-    BuildControls(preview)
+    BuildControls(preview, skin)
     SetLayers(preview)
     section:HookScript("OnSizeChanged", function(_, width)
         if preview.lastWidth == width then return end

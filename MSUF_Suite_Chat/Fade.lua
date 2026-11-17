@@ -6,10 +6,13 @@ local C = P.Chat
 -- the primary window, the sidebar. Its input line is a child of the window
 -- (FloatingChatFrameTemplate's editBox, live and forever), so it fades with
 -- the window and is never faded on its own. A new line or Blizzard's own
--- mouse-over fade-in (FCF_FadeInChatFrame) wakes it; the countdown starts
--- again when Blizzard fades its chrome out (FCF_FadeOutChatFrame). While its
--- input line has the focus the window stays awake: gaining the focus wakes
--- it and losing it starts the countdown again.
+-- mouse-over fade-in wakes it; the countdown starts again when Blizzard fades
+-- its chrome out. Both arrive from Suite.ChatState (MSUF_Suite/Core), which
+-- reads Blizzard's hasBeenFaded flag: a hook on FCF_FadeInChatFrame would run
+-- inside FCF_OnUpdate and taint every window's fade state. While its input
+-- line has the focus the window stays awake: gaining the focus wakes it and
+-- losing it starts the countdown again (ChatState's EventRegistry callbacks,
+-- never a script hook on Blizzard's edit box).
 -- Chat frames, tabs and edit boxes are not protected, so this also runs in
 -- combat and never waits for the module to apply again. Each part's alpha
 -- before the fade is kept here and handed back on waking, unless Blizzard
@@ -21,7 +24,7 @@ local Finite = S.Finite
 -- on: the selected dock window, else the primary window; PlaceSidebar).
 local TAB, PARTS = 2, 6
 local delay = 0
--- edit box -> its window's visual; each box takes its focus hooks once.
+-- edit box -> its window's visual (permanent windows only).
 local inputs = setmetatable({}, { __mode = "k" })
 
 -- The countdown never ends before Blizzard's own tab fade-out
@@ -33,6 +36,8 @@ end
 local function FadeOut(visual)
     local alpha = M.config.idleAlpha / 100
     local parts, before = visual.fadeParts, visual.fadeBefore
+    -- The held tab regions follow the tab frame for the fade (Window.lua).
+    if not visual.unreadType then C.TabFollowsFrame(visual) end
     for i = 1, PARTS do
         local part = parts[i]
         if part and not (i == TAB and visual.unreadType) then
@@ -63,6 +68,7 @@ local function Wake(visual, skip)
         end
         before[i], applied[i] = nil, nil
     end
+    C.KeepTabVisible(M, visual.frame)
 end
 
 local function Expired(visual)
@@ -81,7 +87,7 @@ function C.ChatActivity(frame)
 end
 
 -- Blizzard shows the window's chrome while the pointer is over it.
-local function HoverStarted(chatFrame)
+function C.HoverStarted(chatFrame)
     local visual = M.active and M.visuals[chatFrame]
     if not visual then return end
     visual.hovered = true
@@ -90,7 +96,7 @@ local function HoverStarted(chatFrame)
     if visual.fadeArmed then Wake(visual, TAB) end
 end
 
-local function HoverEnded(chatFrame)
+function C.HoverEnded(chatFrame)
     local visual = M.active and M.visuals[chatFrame]
     if not visual then return end
     visual.hovered = nil
@@ -120,13 +126,18 @@ local function InputReleased(editBox)
     C.ChatActivity(visual.frame)
 end
 
+-- ChatState box callback: focus and release of a permanent input line.
+function C.FadeInput(kind, editBox)
+    if kind == "focus" then
+        InputFocused(editBox)
+    elseif kind == "release" then
+        InputReleased(editBox)
+    end
+end
+
 local function TrackInput(visual)
     local input = visual.frame.editBox
-    if not inputs[input] then
-        input:HookScript("OnEditFocusGained", InputFocused)
-        input:HookScript("OnEditFocusLost", InputReleased)
-    end
-    inputs[input] = visual
+    if input and P.NS.ChatState.IsPermanentBox(input) then inputs[input] = visual end
 end
 
 function C.ReleaseFade(visual)
@@ -148,12 +159,6 @@ function C.ApplyInactivity(self, visual)
         return
     end
     delay = Delay(seconds)
-    if not M.hookedFade then
-        -- FloatingChatFrame.lua defines both at login on Retail and Forever.
-        hooksecurefunc("FCF_FadeInChatFrame", HoverStarted)
-        hooksecurefunc("FCF_FadeOutChatFrame", HoverEnded)
-        M.hookedFade = true
-    end
     local frame = visual.frame
     if not visual.fadeCallback then
         visual.fadeParts, visual.fadeBefore, visual.fadeApplied = {}, {}, {}
@@ -174,6 +179,12 @@ function C.ApplyInactivity(self, visual)
     M.context:Cancel(visual.fadeCallback)
     visual.fadeArmed = true
     C.ChatActivity(frame)
+end
+
+-- Idle fade, minimal chrome and message fade react to Blizzard's hover.
+function C.HoverWanted()
+    local c = M.config
+    return c.minimalChrome == true or (c.idleSeconds or 0) > 0 or c.messageFading == true
 end
 
 function C.FadeDisable()

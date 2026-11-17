@@ -1,11 +1,9 @@
 local _, NS = ...
 local B = NS.CatalogBuild.ForAddon("MSUF_Suite_Nameplates")
-
 local function Available()
     if not NS.Client.isMainline then return false, "Nameplate skinning needs Retail or WoW Forever" end
     return true
 end
-
 B.Module("nameplates", {
     title = "Nameplates",
     description = "The Mapko skin for Blizzard nameplates. Blizzard keeps health, threat, casts, auras, selection and click handling.",
@@ -131,7 +129,6 @@ local generalRules = {
         { "Keep Blizzard setting", "Small", "Medium", "Large", "Extra large", "Huge" }),
     B.Choice("classColors", "Player class colors", 2, { "Keep Blizzard setting", "On", "Off" }),
     B.Choice("personalAuras", "Personal auras", 1, { "Keep Blizzard setting", "Show all", "Filtered" }),
-    B.Bool("auraClickthrough", "Let clicks pass through nameplate auras", false),
     B.Tooltip(B.Choice("friendlyNPCs", "Friendly NPC nameplates", 1,
         { "Keep Blizzard setting", "Show", "Hide", "Names only (world names)" }),
         "Uses Blizzard's world names and hides friendly NPC bars. NPC world names also affect enemies and use Blizzard's font."),
@@ -145,6 +142,8 @@ if NS.Client.isForever then
         { "Level number", "Blizzard badge" }))
 end
 B.Section(id, "general", "Basics", generalRules)
+-- The previous setting remains the default for rows with no explicit choice.
+B.Add(id, B.Bool("auraClickthrough", "Let clicks pass through nameplate auras", false), "general", "Basics", { hidden = true })
 
 B.Section(id, "nativeTextures", "Nameplate textures", {
     B.Texture("nativeHealthFillTexture", "Nameplate health fill texture"),
@@ -155,7 +154,10 @@ B.Section(id, "nativeTextures", "Nameplate textures", {
     B.Color("nativeCastFillColor", "Cast color", "", NS.NameplateStyle.SharedCastColor),
     B.Color("nativeCastLockedColor", "Uninterruptible cast color", "", NS.NameplateStyle.SharedLockedCastColor),
 })
-
+B.Section(id, "barAbsorbs", "Absorb Display", {
+    B.Choice("nameplateAbsorbMode", "Absorb (positive)", 1, { "Blizzard", "Shared", "Off" }),
+    B.Choice("nameplateHealAbsorbMode", "Absorb (negative)", 1, { "Blizzard", "Shared", "Off" }),
+})
 local function AddEnemyNativeRules(appearance)
     appearance[#appearance + 1] = B.Choice("enemyTextMode", "Enemy names and health text", 4,
         { "Keep Blizzard settings", "Always show name + percent", "Always show name + value",
@@ -164,7 +166,6 @@ local function AddEnemyNativeRules(appearance)
     appearance[#appearance + 1] = B.Choice("enemyRarityIcon", "Blizzard elite / rare icon (all nameplates)", 1,
         { "Keep Blizzard setting", "Show", "Hide" })
 end
-
 local function AddTargetArrowRules(appearance)
     appearance[#appearance + 1] = B.Bool("enemyTargetMarker", "Show target arrows", true)
     appearance[#appearance + 1] = B.Bool("enemyTargetHideFriendly", "Hide target arrows on friendly plates", true)
@@ -398,6 +399,7 @@ B.Section(id, "frameOutline", "Frame Outline", {
     B.Choice("friendlyOutlineMode", "Frame Outline", 1, { "Current appearance", "Blizzard", "Custom", "Off" }),
 })
 B.Section(id, "highlightBorders", "Highlight Borders", {
+    B.Choice("castTargetHighlightStyle", "Cast target highlight style", 1, { "Suite", "Blizzard" }),
     B.Bool("highlightTarget", "Target", false),
     B.Bool("highlightFocus", "Focus", false),
     B.Bool("highlightAggro", "Aggro", false),

@@ -8,6 +8,7 @@ local root = assert(arg[1], "repository root required")
 dofile(root .. "/tools/tests/suite_bh3_state_support.lua").Run("suite_cooldown_manager_options_contract.lua", [=[
 do (function()
 local KEYS = CDM.KEYS
+Page.CompleteFields()
 local function Section(id)
     for _, spec in ipairs(Page.SECTIONS) do
         if spec.id == id then return table.concat(spec.suffixes, ",") .. "," end

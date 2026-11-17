@@ -6207,6 +6207,1150 @@
       "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua; tools/tests/suite_waypoint_navigation_contract.lua",
       "reason": "The native /way command now supports both Retail and Forever; the former Retail-only refusal is unreachable. Coordinate parsing and native navigation remain available on both supported clients.",
       "date": "2026-11-10"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:nameplates.personalAuras\",3,\"Blizzard filter\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Filtered. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:nameplates.personalAuras\",3,\"Blizzard filter\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Filtered. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.auraScaleMode\",\"Blizzard aura icon size\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Aura icon size. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyCastDisplay\",\"Blizzard castbar details\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Castbar details. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyCastEnabled\",\"Show Blizzard nameplate castbars\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Show nameplate castbars. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.nativeSize\",\"Blizzard plate size (health bar + elements)\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Nameplate size. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.nativeStyle\",\"Blizzard plate style\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Nameplate style. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.personalAuras\",\"Blizzard personal auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Personal auras. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.threatSignalMode\",\"Blizzard aggro signals\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Aggro indicators. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.auraScaleMode\",\"Blizzard aura icon size\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Aura icon size. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyCastDisplay\",\"Blizzard castbar details\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Castbar details. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyCastEnabled\",\"Show Blizzard nameplate castbars\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Show nameplate castbars. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.nativeSize\",\"Blizzard plate size (health bar + elements)\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Nameplate size. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.nativeStyle\",\"Blizzard plate style\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Nameplate style. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.personalAuras\",\"Blizzard personal auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Personal auras. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.threatSignalMode\",\"Blizzard aggro signals\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Aggro indicators. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard aggro signals",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Aggro indicators. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard aura icon size",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Aura icon size. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard castbar details",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Castbar details. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard filter",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Filtered. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard owns the aura icons and updates. Choose Keep Blizzard setting or Customize for each unit type. Buffs, debuffs and control effects can be selected and dragged separately in the preview. Aura size uses Blizzard's own setting.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/Nameplates.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The matching Auras, Castbar or Friendly help now describes the direct controls in the unit-type tabs.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard personal auras",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Personal auras. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard plate size (health bar + elements)",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Nameplate size. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard plate style",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Nameplate style. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard supplies the castbar texture, colors, progress and interrupts. Customize its text and details here. Select and move each cast element in the preview; positions apply outside combat.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/Nameplates.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The matching Auras, Castbar or Friendly help now describes the direct controls in the unit-type tabs.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Drag to move; click for Blizzard settings",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua, NameplatesEditor.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The top-level unit selector and Edit in preview actions share one preview. Personal power opens its sample from Shared.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Enemy / Friendly / Personal",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua, NameplatesEditor.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The top-level unit selector and Edit in preview actions share one preview. Personal power opens its sample from Shared.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Enemy plate",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua, NameplatesEditor.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The top-level unit selector and Edit in preview actions share one preview. Personal power opens its sample from Shared.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Friendly plate",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua, NameplatesEditor.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The top-level unit selector and Edit in preview actions share one preview. Personal power opens its sample from Shared.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Friendly player display chooses Blizzard's setting, names for all friendly players, names for party / raid only, or health bars. Names only hides Blizzard bars, casts and auras for friendly players; it does not change NPC or enemy plates. Group / outsider in the preview only changes the sample. Blizzard can forbid changes to friendly plates in instances; those frames stay under Blizzard's control.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/Nameplates.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The matching Auras, Castbar or Friendly help now describes the direct controls in the unit-type tabs.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Personal plate",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua, NameplatesEditor.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The top-level unit selector and Edit in preview actions share one preview. Personal power opens its sample from Shared.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Player / elite NPC",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua, NameplatesEditor.lua and NameplatesSectionsLayout.lua.",
+      "reason": "The top-level unit selector and Edit in preview actions share one preview. Personal power opens its sample from Shared.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Show Blizzard nameplate castbars",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua.",
+      "reason": "Renamed to Show nameplate castbars. The setting key and stored values are preserved.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.enemyTextMode\",\"choice\",false,1,4,1,\"\"]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Nameplates/CVars.lua; tools/tests/suite_nameplates_cvars_contract.lua.",
+      "reason": "Add Name only as choice 5. Choices 1 through 4 retain their values and behavior.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.enemyTextMode\",\"choice\",false,1,4,1,\"\"]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua; MSUF_Suite_Nameplates/CVars.lua; tools/tests/suite_nameplates_cvars_contract.lua.",
+      "reason": "Add Name only as choice 5. Choices 1 through 4 retain their values and behavior.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.auraScaleMode\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.auraScalePercent\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.enemyNpcAuraMode\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.enemyNpcBuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.enemyNpcControl\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.enemyNpcDebuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.enemyPlayerAuraMode\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.enemyPlayerBuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.enemyPlayerControl\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.enemyPlayerDebuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.friendlyNpcDebuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.friendlyPlayerAuraMode\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.friendlyPlayerBuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.friendlyPlayerControl\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.friendlyPlayerDebuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.enemyNpcAuraMode\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua and tools/tests/suite_nameplates_lazy_tabs_contract.lua.",
+      "reason": "Hide the legacy selector. The direct toggles still use its stored values to distinguish inherited and explicit visibility.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.enemyPlayerAuraMode\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua and tools/tests/suite_nameplates_lazy_tabs_contract.lua.",
+      "reason": "Hide the legacy selector. The direct toggles still use its stored values to distinguish inherited and explicit visibility.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.friendlyPlayerAuraMode\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua and tools/tests/suite_nameplates_lazy_tabs_contract.lua.",
+      "reason": "Hide the legacy selector. The direct toggles still use its stored values to distinguish inherited and explicit visibility.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.auraScaleMode\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.auraScalePercent\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.enemyNpcAuraMode\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.enemyNpcBuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.enemyNpcControl\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.enemyNpcDebuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.enemyPlayerAuraMode\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.enemyPlayerBuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.enemyPlayerControl\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.enemyPlayerDebuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.friendlyNpcDebuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.friendlyPlayerAuraMode\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.friendlyPlayerBuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.friendlyPlayerControl\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.friendlyPlayerDebuffs\",\"auras\",\"Blizzard auras\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua.",
+      "reason": "The section is named Auras. The setting key, values and native behavior are retained.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.enemyNpcAuraMode\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua and tools/tests/suite_nameplates_lazy_tabs_contract.lua.",
+      "reason": "Hide the legacy selector. The direct toggles still use its stored values to distinguish inherited and explicit visibility.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.enemyPlayerAuraMode\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua and tools/tests/suite_nameplates_lazy_tabs_contract.lua.",
+      "reason": "Hide the legacy selector. The direct toggles still use its stored values to distinguish inherited and explicit visibility.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.friendlyPlayerAuraMode\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua and tools/tests/suite_nameplates_lazy_tabs_contract.lua.",
+      "reason": "Hide the legacy selector. The direct toggles still use its stored values to distinguish inherited and explicit visibility.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard auras",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua and NameplatesEditorLayers.lua.",
+      "reason": "The Auras accordion and Control effects tab present these controls.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Crowd control",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesAdvancedAuras.lua and NameplatesEditorLayers.lua.",
+      "reason": "The Auras accordion and Control effects tab present these controls.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:nameplates.personalPowerBorderColor\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:nameplates.personalPowerBorderSize\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:nameplates.personalPowerOffsetX\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:nameplates.personalPowerOffsetY\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:nameplates.personalPowerSkin\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:nameplates.personalPowerBorderColor\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:nameplates.personalPowerBorderSize\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:nameplates.personalPowerOffsetX\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:nameplates.personalPowerOffsetY\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:nameplates.personalPowerSkin\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:nameplates.personalPowerBorderColor\",\"string\",\"000000\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:nameplates.personalPowerBorderSize\",\"number\",1]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:nameplates.personalPowerOffsetX\",\"number\",0]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:nameplates.personalPowerOffsetY\",\"number\",0]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:nameplates.personalPowerSkin\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:nameplates.personalPowerBorderColor\",\"string\",\"000000\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:nameplates.personalPowerBorderSize\",\"number\",1]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:nameplates.personalPowerOffsetX\",\"number\",0]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:nameplates.personalPowerOffsetY\",\"number\",0]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:nameplates.personalPowerSkin\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyRaidIcon\",\"Blizzard raid target icon on enemy plates\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesStatus.lua.",
+      "reason": "The raid marker switch now uses the Status icons selector. Castbar options have their own accordion.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.personalPowerBorderColor\",\"Power border\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.personalPowerBorderSize\",\"Power border (px)\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.personalPowerOffsetX\",\"Power bar X\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.personalPowerOffsetY\",\"Power bar Y\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.personalPowerSkin\",\"Skin Blizzard personal mana and alternate power bars\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyRaidIcon\",\"Blizzard raid target icon on enemy plates\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesStatus.lua.",
+      "reason": "The raid marker switch now uses the Status icons selector. Castbar options have their own accordion.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.personalPowerBorderColor\",\"Power border\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.personalPowerBorderSize\",\"Power border (px)\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.personalPowerOffsetX\",\"Power bar X\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.personalPowerOffsetY\",\"Power bar Y\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.personalPowerSkin\",\"Skin Blizzard personal mana and alternate power bars\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.personalPowerBorderColor\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.personalPowerBorderSize\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.personalPowerOffsetX\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.personalPowerOffsetY\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:nameplates.personalPowerSkin\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.personalPowerBorderColor\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.personalPowerBorderSize\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.personalPowerOffsetX\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.personalPowerOffsetY\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:nameplates.personalPowerSkin\",\"personal\",\"Personal power bar\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.personalPowerBorderColor\",\"color\",false,\"\",\"\",\"\",6]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.personalPowerBorderSize\",\"number\",false,0,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.personalPowerOffsetX\",\"number\",false,-2048,2048,1,\"\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.personalPowerOffsetY\",\"number\",false,-2048,2048,1,\"\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.personalPowerSkin\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.personalPowerBorderColor\",\"color\",false,\"\",\"\",\"\",6]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.personalPowerBorderSize\",\"number\",false,0,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.personalPowerOffsetX\",\"number\",false,-2048,2048,1,\"\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.personalPowerOffsetY\",\"number\",false,-2048,2048,1,\"\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.personalPowerSkin\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard owns these elements. The rarity icon setting applies to all nameplates; raid target icons are hidden only on enemy plates. Castbar details control Blizzard's own castbar. The preview and live plates use the same switches.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesStatus.lua.",
+      "reason": "The raid marker switch now uses the Status icons selector. Castbar options have their own accordion.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard raid target icon on enemy plates",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Options/Pages/NameplatesStatus.lua.",
+      "reason": "The raid marker switch now uses the Status icons selector. Castbar options have their own accordion.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Power bar X",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Power bar Y",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Power border",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Power border (px)",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Power skin",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Skin Blizzard personal mana and alternate power bars",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Skin only Blizzard's own personal mana and alternate-power status bars. Blizzard still owns their values, fill and visibility. Class-specific resource points retain Blizzard's layout. Select and drag the power bar in the personal preview.",
+      "basis": "owner",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua and MSUF_Suite_Nameplates/Power.lua.",
+      "reason": "The owner explicitly removed the Personal power bar feature from Nameplates. The enemy resource bar is still supported.",
+      "date": "2026-11-13"
+    },
+  {
+      "category": "locale",
+      "item": "PERSONAL / PLAYER",
+      "basis": "owner",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesEditor.lua and MSUF_Suite_Options/Pages/NameplatesPreview.lua.",
+      "reason": "The owner explicitly removed the personal power bar and its preview.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Personal power bar",
+      "basis": "owner",
+      "evidence": "MSUF_Suite_Options/Pages/NameplatesEditor.lua and MSUF_Suite_Options/Pages/NameplatesPreview.lua.",
+      "reason": "The owner explicitly removed the personal power bar and its preview.",
+      "date": "2026-11-13"
+    },
+    {
+      "category": "locale",
+      "item": "Maintenance",
+      "basis": "owner",
+      "evidence": "MSUF_Suite_Options/Pages/Appearance.lua builds a header refresh, utility actions in Basics, and Style and Blizzard windows tabs.",
+      "reason": "The owner requested removal of the Maintenance tab and a refresh at the top of Skinning.",
+      "date": "2026-11-14"
+    },
+    {
+      "category": "locale",
+      "item": "Refresh newly opened Blizzard windows. Use Reset page in the menu toolbar to restore this skin profile.",
+      "basis": "moved",
+      "evidence": "Appearance.lua RefreshButton and Menu/Register.lua PageResetHandlers.",
+      "reason": "The refresh moved to the header alongside the host's existing page reset, making the old section description redundant.",
+      "date": "2026-11-14"
+    },
+    {
+      "category": "locale",
+      "item": "Character panel and stats",
+      "basis": "moved",
+      "evidence": "AppearanceKit.lua BuildCharacter uses Character and equipment in the Character Panel tab.",
+      "reason": "The character settings moved to the Character Panel with a new section title, keeping their stored keys.",
+      "date": "2026-11-14"
+    },
+    {
+      "category": "locale",
+      "item": "Choose a look below; this sample follows your changes.",
+      "basis": "dead",
+      "evidence": "AppearancePreview.lua Refresh displays a shortcut hint and the sample updates on registry notifications.",
+      "reason": "The upgraded preview replaces this hint with an instruction for opening settings directly.",
+      "date": "2026-11-14"
+    },
+    {
+      "category": "locale",
+      "item": "Your own colors, materials and shape.",
+      "basis": "dead",
+      "evidence": "AppearancePreview.lua Refresh shows the preset name and the interaction hint.",
+      "reason": "The generic preset description was removed to leave room for live samples and navigation.",
+      "date": "2026-11-14"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.auraClickthrough\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/NameplateAuras.lua and tools/tests/suite_nameplates_lifecycle_contract.lua",
+      "reason": "Each aura row now has a click-through choice. The original Boolean remains a hidden fallback for existing profiles and look presets.",
+      "date": "2026-11-16"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.auraClickthrough\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/NameplateAuras.lua and tools/tests/suite_nameplates_lifecycle_contract.lua",
+      "reason": "Each aura row now has a click-through choice. The original Boolean remains a hidden fallback for existing profiles and look presets.",
+      "date": "2026-11-16"
     }
   ]
 }

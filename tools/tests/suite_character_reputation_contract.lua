@@ -1,6 +1,6 @@
 local root = assert(arg[1], "Suite checkout required")
 local addon = root .. "/MSUF_Suite_CharacterPanel/"
-local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Strict = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 local secret = Strict.New("number")
 local function Public(value) return not Strict.IsSecret(value) end
 local function Finite(value) return Public(value) and type(value) == "number" and value == value and math.abs(value) < math.huge end
@@ -67,6 +67,7 @@ C_GossipInfo = { GetFriendshipReputation = function(id)
 end }
 
 assert(loadfile(root .. "/MSUF_Suite_Modules/PlayerReaders.lua"))("MSUF_Suite_Modules", { Suite = S })
+assert(loadfile(addon .. "Stats.lua"))("MSUF_Suite_CharacterPanel", NS)
 assert(loadfile(addon .. "Reputation.lua"))("MSUF_Suite_CharacterPanel", NS)
 assert(loadfile(addon .. "Pages.lua"))("MSUF_Suite_CharacterPanel", NS)
 local stopSecretWatch = Strict.Watch(addon .. "Pages.lua", { strict = true })

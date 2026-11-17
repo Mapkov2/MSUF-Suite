@@ -19,6 +19,7 @@ local PrepareProgress, PaintProgress = NS.PrepareDataTextProgress, NS.PaintDataT
 local SOURCES, SAMPLED, INTERVAL = Standard.SOURCES, Standard.SAMPLED, Standard.INTERVAL
 local READER, EVENT_SOURCES = Standard.READER, Standard.EVENT_SOURCES
 local SAMPLES, SampleText = Standard.SAMPLES, Standard.SampleText
+local TELEMETRY, TELEMETRY_KEYS = Standard.TELEMETRY, Standard.TELEMETRY_KEYS
 local NO_VALUE = P.NO_VALUE
 local floor = math.floor
 local Finite = S.Finite
@@ -95,7 +96,7 @@ end
 -- force repaints unchanged values: a bar that just became visible still
 -- shows whatever it displayed before it was hidden.
 -- A sampled rate (Standard.SAMPLES: frame rate, latency) is compared by the
--- whole numbers it shows and its severity, before any text exists: a tick
+-- whole numbers it shows and its severity, before any text exists: a reading
 -- that finds both unchanged builds no string. The 2026-11-15 standing trace
 -- formatted and compared the text of every tick.
 function M:UpdateSource(key, force)
@@ -196,8 +197,12 @@ end
 
 TickDataTexts = function() M:Tick() end
 
+-- Frame rate and latency keep their shared reading (S.ReadSharedData holds it
+-- for 0.05 s): the Minimap texts answer the same events, and whichever display
+-- comes second in a frame reuses the client call of the first.
 local invalidated, invalidationMark = {}, 0
 local function Invalidate(key)
+    if TELEMETRY[key] then return end
     local raw = READER[key] or key
     if invalidated[raw] ~= invalidationMark then
         S.InvalidateSharedData(raw)
@@ -211,9 +216,9 @@ local function EnteredWorld(self)
     for key in pairs(self.activeSources or {}) do self:UpdateSource(key) end
 end
 
-local function OnEvent(self, event, unit)
+local function OnEvent(self, event, unit, ...)
     if event == "PLAYER_XP_UPDATE" and unit and unit ~= "player" then return end
-    Extra.Changed(self, event)
+    Extra.Changed(self, event, unit, ...)
     if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         if unit == "player" then
             for i = 1, #healthBars do GateHealth(healthBars[i]) end
@@ -247,6 +252,18 @@ local function OnEvent(self, event, unit)
                 self:Schedule()
             end
         end
+    end
+end
+
+-- The pointer entered a bar or a frame rate or latency place (Bars.lua): the
+-- player is looking, so those places read again. They have no timer; a reading
+-- that shows the same numbers writes nothing (M:UpdateSource).
+function M:SampleTelemetry()
+    local active = self.activeSources
+    if not active or self.paused then return end
+    for i = 1, #TELEMETRY_KEYS do
+        local key = TELEMETRY_KEYS[i]
+        if active[key] then self:UpdateSource(key) end
     end
 end
 
@@ -304,9 +321,10 @@ local function PaintToday(self)
     self:UpdateSource("todayGold")
 end
 
--- Recomputes which sources visible bars show. Sampled sources that stay
+-- Recomputes which sources visible bars show. Timed sources that stay
 -- active keep their deadlines, so the shared timer is re-armed only when
--- the sampled set changes.
+-- the timed set changes. Frame rate and latency are read here once (a bar
+-- showed, was rebuilt or combat ended) and arm nothing.
 function M:Rebind(resample)
     if not self.active or self.styling or self.paused then return end
     local previous = self.activeSources

@@ -98,6 +98,35 @@ do
     print("Minimap ownership, one-frame-late claim, capture-once, shapes, masks, HybridMinimap and GetMinimapShape passed")
 end
 
+do
+    local W = H.New(root, "Mainline")
+    W.editModeReady = true
+    local tracking = W.New("Frame", nil, W.cluster)
+    W.cluster.Tracking = tracking
+    local button = W.New("Button", nil, tracking)
+    tracking.Button = button
+    function button:RegisterCallback(event, callback) self[event] = callback end
+    function button:UnregisterCallback(event) self[event] = nil end
+    function button:IsMenuOpen() return self.menuOpen == true end
+    H.Enable(W, { captured = true, showTracking = true, trackingMouseover = true, mapOpacity = 55 })
+    W.Step()
+    local slot = tracking:GetParent()
+    check(W.MM.clip:GetAlpha() == .55 and W.map:GetAlpha() == 1, "opacity did not stay on the owned map clip")
+    check(not slot:IsShown(), "tracking was shown while idle")
+    W.Fire(W.MM.catcher, "OnEnter")
+    check(slot:IsShown(), "hover did not reveal tracking")
+    button.menuOpen = true
+    W.Fire(W.MM.catcher, "OnLeave")
+    W.Advance(.2)
+    check(slot:IsShown(), "leaving the map hid the open tracking menu")
+    button.menuOpen = false
+    button.OnMenuClose()
+    W.Advance(.2)
+    check(not slot:IsShown(), "closing the tracking menu left the button exposed")
+    assert(W.S.Set("minimap", "enabled", false))
+    check(button.OnMenuClose == nil and tracking:GetParent() == W.cluster, "disable kept tracking ownership")
+end
+
 -- Mouseover size is opt-in, deferred from native hover scripts, and restores
 -- its original geometry on leave, in Edit Mode, and when disabled.
 do

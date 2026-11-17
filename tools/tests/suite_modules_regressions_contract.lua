@@ -148,6 +148,7 @@ Case("objective-deadline", function()
     local cached = owner.sources.quests[1]
     assert(cached.timerEnd == 160, "source did not capture one absolute deadline")
     Load("MSUF_Suite_Modules/ObjectivesRows.lua", private)
+    Load("MSUF_Suite_Modules/ObjectivesVoice.lua", private)
     Load("MSUF_Suite_Modules/ObjectivesTracker.lua", private)
     local paint = assert(Upvalue(objectives.Render, "PaintRowWidgets"))
     local timer = { Show = function(self) self.shown = true end, Hide = function(self) self.shown = false end,

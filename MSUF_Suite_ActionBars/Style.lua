@@ -328,20 +328,30 @@ local function StyleCooldowns(rec, size, fontScale)
 end
 
 -- Applies the static look to one button; all writes are idempotent and
--- nothing here runs from events.
+-- nothing here runs from events. A button Masque skins (Masque.lua) keeps
+-- only the Suite's texts and cooldowns: icon, frame, interaction art, shape
+-- and icon skin are Masque's then.
 function AB.StyleButton(rec)
     local button, bar = rec.button, rec.bar
     local size = bar.size or M.config[bar.key.Size]
-    local border = AB.style.border
+    local masqued = rec.masqued == true
+    local border = masqued and 0 or AB.style.border
     local fontScale = rec.owned and 0 or 2
-    StyleIcon(rec, border)
-    StyleInteractions(rec, size, border)
+    if not masqued then
+        StyleIcon(rec, border)
+        StyleInteractions(rec, size, border)
+    end
     StyleTexts(rec, size, border, fontScale)
     StyleCooldowns(rec, math.min(size, bar.height or size), fontScale)
     -- The skin's layers are textures of the button around its icon, under
     -- the cooldown swipe and texts; drawn here only (out of combat, like the
     -- whole style pass), never by a paint or an event.
     local skin = AB.style.skin
+    if masqued then
+        rec.styleGen, rec.barStyleGen = AB.styleGen, bar.styleGen
+        AB.RecolorGlow(rec)
+        return
+    end
     if skin or rec.skinned then rec.skinned = NS.HostBridge.PaintIconSkin(button, skin, size, bar.height or size) or nil end
     AB.StyleDecoration(rec, size)
     if rec.owned and button.Border then

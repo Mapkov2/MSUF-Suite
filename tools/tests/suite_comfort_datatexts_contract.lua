@@ -63,6 +63,19 @@ supplies.Disable(); supplies.Rebind(owner, true); supplies.Format({ icons = {} }
 local previousFormats = formats
 meta[1001] = true; e:NativeEvent("GET_ITEM_INFO_RECEIVED", 1001, true); e:Flush()
 assert(formats == previousFormats + 1, "reopening while item data is pending must restore the completion listener")
+GetInventoryItemID = function() return 2001 end
+owner.config.ammoWarning = 100
+e:NativeEvent("PLAYER_EQUIPMENT_CHANGED")
+e:Flush()
+local _, _, severity = supplies.Format({ icons = {} })
+assert(severity == "bad", "equipped ammunition below the threshold uses the warning color")
+e:Combat(true)
+_, _, severity = supplies.Format({ icons = {} })
+assert(severity == nil, "the new warning color stays silent in combat")
+e:Combat(false)
+owner.config.ammoWarning = 99
+_, _, severity = supplies.Format({ icons = {} })
+assert(severity == nil, "the threshold warns only below the configured amount")
 supplies.Disable()
 for _, frame in ipairs(e.frames) do assert(not next(frame.events), "disable leaves no supplies listener") end
 print("comfort supplies: explicit priority, zero stock, bounded data, burst coalescing and hidden zero work passed")

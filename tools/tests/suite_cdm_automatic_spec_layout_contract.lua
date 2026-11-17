@@ -39,9 +39,10 @@ assert(S.Set(ID,"enabled",true))
 S.Apply(ID)
 local function Settle() Run();Run() end
 local function Data() return Codec.DecodePositions(config.positionsData) end
-local function Spec(index)
+local function Spec(index, event)
     specIndex=index
-    assert(Fire("ACTIVE_PLAYER_SPECIALIZATION_CHANGED"),"spec event must be registered")
+    event=event or "ACTIVE_PLAYER_SPECIALIZATION_CHANGED"
+    assert(Fire(event),"spec event must be registered: "..event)
     Settle()
 end
 local FREE=Suite.CDM.ANCHOR.FREE
@@ -83,6 +84,19 @@ S.CooldownManagerSpec()
 assert(Fire("SPELLS_CHANGED"))
 Settle()
 assert(config.ess_x==100 and Data().spec==63,"early menu spec reads still restore the proper layout")
+
+-- Blizzard's Forever viewer uses both events for talent group and combat
+-- configuration changes. Exercise each without an editor read or spell event.
+assert(S.Set(ID,"listsData",assert(Codec.EncodeLists({specs={
+    [62]={ess={"b14","b11"}}, [63]={ess={"b11","b14"}},
+}}))))
+Settle()
+Spec(1,"ACTIVE_TALENT_GROUP_CHANGED")
+assert(config.ess_x==222 and Data().spec==62,"Forever dual spec restores the other saved layout")
+assert(C.plans.ess.entries[1].key=="b14","Forever dual spec restores the other spell order")
+Spec(2,"ACTIVE_COMBAT_CONFIG_CHANGED")
+assert(config.ess_x==100 and Data().spec==63,"Forever dual spec restores the original saved layout")
+assert(C.plans.ess.entries[1].key=="b11","Forever dual spec restores the original spell order")
 
 -- A catalog event with a temporarily missing specialization does not claim
 -- or discard any layout, and learning/talent events on the same spec do not

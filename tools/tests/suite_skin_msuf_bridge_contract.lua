@@ -1,5 +1,5 @@
 local retail = assert(arg[1], "Retail MSUF root required")
-local classic = assert(arg[2], "Classic MSUF root required")
+local core = assert(arg[2], "MSUF 7.0 root required")
 
 local function Check(root, motionPolicy)
     local eventFrame, registrations = nil, 0
@@ -90,11 +90,10 @@ local function Check(root, motionPolicy)
 end
 
 Check(retail)
-Check(classic)
-Check(assert(arg[3], "MSUF 7.0 root required"), true)
+Check(core, true)
 -- Exercise both real dropdown scroll paths with the independent scroll policy.
 do
-    local root = assert(arg[3])
+    local root = core
     local file = assert(io.open(root .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_Dropdowns.lua", "rb"))
     local source = file:read("*a"):gsub("\r\n", "\n")
     file:close()

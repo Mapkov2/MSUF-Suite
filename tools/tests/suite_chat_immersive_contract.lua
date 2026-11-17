@@ -2,8 +2,9 @@
 -- the documented message-fade setters are changed. No Lua animation tick.
 local root = assert(arg[1])
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local secret = {}
-local function Public(value) return not rawequal(value, secret) end
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local secret, secretFocus = Secrets.New("number"), Secrets.New("boolean")
+local function Public(value) return not Secrets.IsSecret(value) end
 local function Finite(value)
     return Public(value) and type(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
@@ -59,12 +60,9 @@ local function Frame(name)
     function frame:SetTimeVisible(value) self.timeVisible = value end
     function frame:GetFadeDuration() return self.duration end
     function frame:SetFadeDuration(value) self.duration = value end
-    function frame:HasFocus() return self.focus == true end
-    function frame:HookScript(kind, fn)
-        assert(not self.hooks[kind], "duplicate focus hook")
-        assert(kind == "OnEditFocusGained" or kind == "OnEditFocusLost", "unexpected native script hook")
-        self.hooks[kind] = fn
-    end
+    function frame:HasFocus() return self.focus end
+    -- Focus and hover arrive as Suite.ChatState reports: no script hook.
+    function frame:HookScript(kind) error("unexpected native script hook " .. kind) end
     frame.editBox = { focus = false, hooks = {}, HasFocus = frame.HasFocus, HookScript = frame.HookScript }
     return frame
 end
@@ -73,18 +71,18 @@ ChatFrame1Tab, ChatFrame2Tab, ChatFrame3Tab = Frame("ChatFrame1Tab"), Frame("Cha
 GENERAL_CHAT_DOCK = { selected = ChatFrame1 }
 CHAT_FRAME_FADE_OUT_TIME = 2
 ChatTypeInfo = { GUILD = { id = 4, r = 0.2, g = 1, b = 0.2 }, WHISPER = { id = 7, r = 1, g = 0.5, b = 1 } }
-local hooks = {}
-hooksecurefunc = function(name, fn)
-    assert(not hooks[name], "duplicate fade hook")
-    hooks[name] = fn
-end
+hooksecurefunc = function(name) error("unexpected chat hook " .. tostring(name)) end
 local timers = {}
 local S = { Public = Public, Finite = Finite, CreateTexture = Texture, RGB = function() return 0.1, 0.2, 0.3 end }
-local P = { Suite = S }
+local chatState = Support.ChatStateMock()
+chatState.IsPermanentBox = function(box) return box ~= nil and box.temporary ~= true end
+local P = { Suite = S, NS = { ChatState = chatState } }
 for _, file in ipairs({ "Shared.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Fade.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Chat/" .. file))("MSUF_Suite_Chat", P)
 end
 local Chat, module = P.Chat, P.Chat.M
+-- Window.lua holds the tab regions; this fixture loads no Window.lua.
+Chat.TabFollowsFrame, Chat.KeepTabVisible = function() end, function() end
 local config, catalog = Support.CatalogDefaults(root, "chat")
 eq(config.look, catalog.Client.isForever and 3 or 2, "Immersive silently replaced the existing default")
 eq(config.panelGradient, false)
@@ -122,20 +120,46 @@ eq(ChatFrame3.fading, true)
 eq(ChatFrame3.timeVisible, 20)
 eq(ChatFrame3.duration, 3)
 Chat.ApplyInactivity(module, visual)
-ChatFrame3.editBox.hooks.OnEditFocusGained(ChatFrame3.editBox)
+Chat.FadeInput("focus", ChatFrame3.editBox)
 eq(ChatFrame3.fading, false, "typing did not keep messages visible")
-ChatFrame3.editBox.hooks.OnEditFocusLost(ChatFrame3.editBox)
+Chat.FadeInput("release", ChatFrame3.editBox)
 eq(ChatFrame3.fading, true)
-hooks.FCF_FadeInChatFrame(ChatFrame3)
+Chat.HoverStarted(ChatFrame3)
 eq(ChatFrame3.fading, false, "hover did not keep messages visible")
 Chat.ApplyMessageFade(visual, config)
 Chat.ApplyInactivity(module, visual)
 eq(ChatFrame3.fading, false, "refresh enabled fading under the pointer")
 eq(visual.hovered, true, "idle-only release discarded message hover state")
-ChatFrame3.editBox.hooks.OnEditFocusLost(ChatFrame3.editBox)
+Chat.FadeInput("release", ChatFrame3.editBox)
 eq(ChatFrame3.fading, false, "focus release lost the ongoing hover")
-hooks.FCF_FadeOutChatFrame(ChatFrame3)
+Chat.HoverEnded(ChatFrame3)
 eq(ChatFrame3.fading, true)
+-- Retail can make the result of HasFocus secret during Blizzard's fade-out.
+local input = ChatFrame3.editBox
+local chatRoot = root .. "/MSUF_Suite_Chat/"
+local stop = Secrets.Watch({ chatRoot .. "Appearance.lua", chatRoot .. "Fade.lua",
+    chatRoot .. "MinimalChrome.lua", chatRoot .. "Shared.lua" }, { strict = true })
+input.focus = secretFocus
+Chat.HoverStarted(ChatFrame3)
+Chat.HoverEnded(ChatFrame3)
+local violations = stop()
+eq(#violations, 0, table.concat(violations, "\n"))
+eq(ChatFrame3.fading, true, "restricted focus discarded the last known blur")
+Chat.FadeInput("focus", input)
+Chat.HoverEnded(ChatFrame3)
+eq(ChatFrame3.fading, false, "restricted focus discarded the focus-gained event")
+Chat.ApplyMessageFade(visual, config)
+eq(ChatFrame3.fading, false, "settings refresh enabled fading while typing")
+Chat.FadeInput("release", input)
+eq(ChatFrame3.fading, true, "restricted focus discarded the focus-lost event")
+module.active = false
+Chat.FadeInput("focus", input)
+module.active = true
+Chat.ApplyMessageFade(visual, config)
+eq(ChatFrame3.fading, false, "re-enable lost focus gained while the module was inactive")
+input.focus = false
+Chat.ApplyMessageFade(visual, config)
+eq(ChatFrame3.fading, true, "a public focus result did not replace the cached state")
 ChatFrame3.timeVisible = 33 -- another addon took this property
 Chat.ReleaseMessageFade(visual)
 eq(ChatFrame3.fading, false, "native fading was not restored")
@@ -176,20 +200,28 @@ eq(left.width, 50)
 eq(right.gradient[3].a, 0)
 Chat.UpdateMinimalChrome(visual)
 eq(left.alpha, 0, "minimal background stayed visible outside chat")
+input.focus = secretFocus
+Chat.UpdateMinimalChrome(visual)
+eq(left.alpha, 0, "restricted focus showed chrome after the edit box lost focus")
+Chat.FadeInput("focus", input)
+Chat.HoverEnded(ChatFrame3)
+eq(left.alpha, 1, "restricted focus hid chrome while typing")
+Chat.FadeInput("release", input)
+input.focus = false
 Chat.ChatActivity(ChatFrame3)
 eq(left.alpha, 0, "a new line revealed an empty background box")
-hooks.FCF_FadeInChatFrame(ChatFrame3)
+Chat.HoverStarted(ChatFrame3)
 eq(left.alpha, 1, "hover did not reveal the background")
 Chat.ApplyInactivity(module, visual)
 Chat.UpdateMinimalChrome(visual)
 eq(left.alpha, 1, "idle-only refresh lost minimal hover")
-ChatFrame3.editBox.hooks.OnEditFocusLost(ChatFrame3.editBox)
+Chat.FadeInput("release", ChatFrame3.editBox)
 eq(left.alpha, 1, "blur hid the background while still hovered")
-hooks.FCF_FadeOutChatFrame(ChatFrame3)
+Chat.HoverEnded(ChatFrame3)
 eq(left.alpha, 0)
-ChatFrame3.editBox.hooks.OnEditFocusGained(ChatFrame3.editBox)
+Chat.FadeInput("focus", ChatFrame3.editBox)
 eq(left.alpha, 1, "typing did not reveal the input's background")
-ChatFrame3.editBox.hooks.OnEditFocusLost(ChatFrame3.editBox)
+Chat.FadeInput("release", ChatFrame3.editBox)
 eq(left.alpha, 0)
 -- The one dock background follows the selected window, including focus in
 -- another docked chat and refreshes of the hidden primary window.
@@ -197,20 +229,20 @@ module.dockStrip = Texture()
 module.visuals[ChatFrame1] = { frame = ChatFrame1 }
 GENERAL_CHAT_DOCK.selected = ChatFrame3
 ChatFrame3.editBox.focus = true
-ChatFrame3.editBox.hooks.OnEditFocusGained(ChatFrame3.editBox)
+Chat.FadeInput("focus", ChatFrame3.editBox)
 eq(module.dockStrip.alpha, 1, "typing in a selected secondary chat did not reveal the dock")
 Chat.UpdateMinimalChrome(module.visuals[ChatFrame1])
 eq(module.dockStrip.alpha, 1, "primary refresh hid the focused secondary dock")
 ChatFrame3.editBox.focus = false
-ChatFrame3.editBox.hooks.OnEditFocusLost(ChatFrame3.editBox)
+Chat.FadeInput("release", ChatFrame3.editBox)
 eq(module.dockStrip.alpha, 0, "secondary blur kept the shared dock visible")
-hooks.FCF_FadeInChatFrame(ChatFrame3)
-hooks.FCF_FadeOutChatFrame(ChatFrame1)
+Chat.HoverStarted(ChatFrame3)
+Chat.HoverEnded(ChatFrame1)
 eq(module.dockStrip.alpha, 1, "primary mouse leave hid the hovered secondary dock")
 GENERAL_CHAT_DOCK.selected = ChatFrame1
 Chat.UpdateMinimalChrome(module.visuals[ChatFrame1])
 eq(module.dockStrip.alpha, 0, "dock selection retained another window's hover")
-hooks.FCF_FadeOutChatFrame(ChatFrame3)
+Chat.HoverEnded(ChatFrame3)
 local marker = Texture()
 Chat.PlaceTabMarker(marker, ChatFrame3Tab, config)
 eq(marker.points[1][1], "TOPLEFT", "minimal selected marker stayed below the tab")
@@ -236,9 +268,14 @@ eq(ChatFrame3:GetAlpha(), 0, "finished idle fade did not commit its final alpha"
 Chat.ChatActivity(ChatFrame3)
 eq(ChatFrame3:GetAlpha(), 1, "new activity did not restore visibility")
 visual.fadeCallback()
-ChatFrame3.editBox.hooks.OnEditFocusGained(ChatFrame3.editBox)
+Chat.FadeInput("focus", ChatFrame3.editBox)
 assert(not groups[1].playing and not groups[2].playing, "focus left an idle animation running")
 eq(ChatFrame3:GetAlpha(), 1)
+input.focus = secretFocus
+visual.fadeCallback()
+assert(not groups[1].playing and not groups[2].playing, "restricted focus let idle fade hide the active input")
+Chat.FadeInput("release", input)
+input.focus = false
 -- A later alpha owner wins even when a fade reaches its end.
 visual.fadeCallback()
 ChatFrame3:SetAlpha(0.6)

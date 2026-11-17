@@ -12,7 +12,7 @@ TEST = ROOT / "tools/tests/suite_skin_generic_windows_contract.lua"
 MUTANTS = (
     ("completed combat job", "current.active and current.pendingRefresh and", "current.active and"),
     ("hidden combat job", ' and Safety.Read(current.frame, "IsShown") ~= false', ""),
-    ("show refresh", "    elseif state and state.pendingRefresh then\n        PlayerSpellsSkin:QueueRefresh(frame)\n    end",
+    ("show refresh", "    elseif state and state.pendingRefresh then\n        PlayerSpellsSkin:QueueRefresh(frame, nil, NS.Client.isForever)\n    end",
      "    end"),
     ("cold native events", "    Activate(state)\nend\n\nlocal function OnShown", "end\n\nlocal function OnShown"),
     ("independent page surface", "local function HasPageSurface(state, page)\n",

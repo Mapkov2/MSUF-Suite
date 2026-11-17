@@ -43,6 +43,17 @@ end
 
 function HostBridge.HasCoreAPI() return CoreAPI() ~= nil end
 
+-- MSUF Auras3 marks each Blizzard aura-container button it manages with this
+-- raw field. HasAnyForbiddenAspects can raise "forbidden object" on such a
+-- native button from addon code, so only the raw marker is read and nothing
+-- is called. An unreadable marker counts as managed; a false or missing one
+-- is not. Internal to the Suite's own addons (the skin's button adoption).
+function HostBridge.ManagesAuraButton(frame)
+    local managed = rawget(frame, "_msufA3ManagedAuraButton")
+    if not Suite.Public(managed) then return true end
+    return managed and true or false
+end
+
 -- Read-only profile assignments. A character without a spec binding still
 -- appears, but its unknown class/spec is never guessed from the current player.
 function HostBridge.ProfileCharacters(profile)
@@ -809,6 +820,13 @@ function HostBridge.BossTargetIndicator() return _G.MSUF_NS.BossTargetIndicator 
 function HostBridge.ProfileWorkbench()
     local api = CoreAPI()
     return api and api.GetProfileWorkbench and api.GetProfileWorkbench() or nil
+end
+function HostBridge.TaintReport()
+    local api = HostTable()
+    local get = api and api.GetTaintReport
+    if type(get) ~= "function" then return nil end
+    local report = get()
+    if type(report) == "table" and report.version == 1 then return report end
 end
 function HostBridge.NameplateSettingsGetter()
     local api = HostTable()

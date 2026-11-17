@@ -248,6 +248,7 @@ local function Test(initialPreview)
     end }
     P.PreviewCanvas = { Runtime = function(_, key) return P.S[key] ~= nil end }
     Load("MSUF_Suite_Options/Menu/PreviewInteraction.lua", P)
+    P.SkinPageKit = { BuildCharacter = function() end } -- skin controls have a separate contract
     Load("MSUF_Suite_Options/Pages/CharacterPanelEditor.lua", P)
     Load("MSUF_Suite_Options/Pages/CharacterPanel.lua", P)
     Load("MSUF_Suite_Options/Pages/HUD.lua", P)
@@ -346,8 +347,17 @@ local function Test(initialPreview)
     before = #writes
     assert(not config.headerGuildVisible and not buttons[6]:IsShown())
     toggles.Guild:Fire("OnClick", "LeftButton")
-    assert(buttons[6]:IsShown() and not config.headerGuildVisible and #writes == before,
-        "preview layer did not expose the sample independently of live visibility")
+    assert(not buttons[6]:IsShown() and not config.headerGuildVisible and #writes == before
+        and paths[#paths]:find("headerGuildVisible", 1, true), "disabled guild layer did not jump to its Show switch")
+    config.headerGuildVisible = true
+    refresh()
+    assert(buttons[6]:IsShown(), "enabled guild display did not reach the preview")
+    config.headerGuildVisible = false
+    toggles.Guild:Fire("OnClick", "LeftButton")
+    assert(paths[#paths]:find("headerGuildVisible", 1, true) and #writes == before,
+        "a previously painted guild example overrode the saved visibility setting")
+    config.headerGuildVisible = true
+    refresh()
     toggles.Tabs:Fire("OnClick", "LeftButton")
     assert(not reputation:IsShown() and #writes == before, "tab layer leaked into profile")
     toggles.Tabs:Fire("OnClick", "LeftButton")

@@ -1,6 +1,13 @@
 local _, NS = ...
 
 NS.RegisterLocale("enUS", {
+    ["Spells to Learn"] = "Spells to Learn",
+    ["Unlearned spells and ranks by required level"] = "Unlearned spells and ranks by required level",
+    ["Rank %d"] = "Rank %d",
+    ["No spells to show"] = "No spells to show",
+    ["Class trainer"] = "Class trainer",
+    ["Class quest"] = "Class quest",
+    ["Requires a talent"] = "Requires a talent",
     ["Mouseover"] = "Mouseover",
     ["Individual bar scale"] = "Individual bar scale",
     ["Rows"] = "Rows",

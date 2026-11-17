@@ -140,8 +140,10 @@ end
 local function RestoreRegion(region, state)
     if not state then return end
     if state.points then
-        region:ClearAllPoints()
-        for _, point in ipairs(state.points) do Put(region, "SetPoint", point) end
+        local clear = region.ClearAllPointsBase or region.ClearAllPoints
+        local set = region.SetPointBase or region.SetPoint
+        clear(region)
+        for _, point in ipairs(state.points) do set(region, unpack(point, 1, point.n)) end
     end
     Put(region, "SetSize", state.size)
     Put(region, "SetScale", state.scale)
@@ -318,19 +320,20 @@ local function Place(button, icon, slot, container, c)
     return true
 end
 
--- The container that holds the rows, and the frame beside the minimap. The
--- frame is an Edit Mode system whose SetPoint and ClearAllPoints are Lua
--- overrides that mark Edit Mode's anchors dirty (EditModeSystemTemplates.lua
--- 9-17, 147-156), so it moves only after Blizzard moved it. The debuff row's
--- offsets count from the buff row.
+-- Place the frame beside the minimap and lay out the container it holds.
+-- Blizzard's Edit Mode overrides change snap data and the manager's shared
+-- dirty flag. Use the underlying setters for Suite placement and restoration.
+-- The debuff offsets count from the buff row.
 local function Anchor(frame, list, count)
     local c, container = M.config, frame.AuraContainer
     if not saved[container] and not Remember(container, CONTAINER) then return end
     if not list.framed then
         if not Remember(frame, FRAME) then return end
         local debuff = debuffs[frame]
-        frame:ClearAllPoints()
-        frame:SetPoint("TOPRIGHT", Minimap, "TOPLEFT", debuff and c.x + c.debuffX or c.x,
+        local clear = frame.ClearAllPointsBase or frame.ClearAllPoints
+        local set = frame.SetPointBase or frame.SetPoint
+        clear(frame)
+        set(frame, "TOPRIGHT", Minimap, "TOPLEFT", debuff and c.x + c.debuffX or c.x,
             debuff and c.y - c.debuffOffset or c.y)
         list.framed = true
     end

@@ -506,7 +506,12 @@ local function RaidCombatEvent(self, event)
 end
 
 local function NativeAddonLoaded(module, _, name)
+    if not Public(name) or type(name) ~= "string" then return end
     if name == "Blizzard_ObjectiveTracker" then module:SuppressNative() end
+    if name:match("^Spoken") then
+        module.retheme = true
+        module.flushJob:Request()
+    end
     if Raid and module.raidActive then Raid.Bind(module) end
 end
 

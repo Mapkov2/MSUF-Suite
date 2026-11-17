@@ -28,6 +28,7 @@ local FIGHT_KEYS = { Session = true, SyncSession = true }
 -- The selected window is shared by the window controls below; their rules use
 -- window 1's keys as templates and resolve to the selected window at runtime.
 local selected = 1
+P.ChoiceGates[ID] = { w1AnchorWindow = function(value) return value <= selected end }
 -- Exact navigation follows the explicit picker, including retained windows
 -- above windowCount. Their controls keep the existing disabled-state hint.
 P.SearchPreparers[ID] = function() return selected end
@@ -143,7 +144,11 @@ local function BuildWindows(ctx, b)
             local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
             P.Button(ctx, body, "Move this window", 16, y - 4, math.floor((width - 12) / 2),
                 function() P.MoveOnScreen(ID, "window" .. selected) end,
-                function() return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount") end,
+                function()
+                    local anchor = P.Get(ID, "w" .. selected .. "AnchorWindow") or 1
+                    return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount")
+                        and (anchor == 1 or anchor > selected)
+                end,
                 P.Meta(PAGE, ID, "window.move", "action", "suite_damageMeter_windows"))
             M.TrackRefresh(ctx, function()
                 local count = P.Get(ID, "windowCount")
@@ -159,12 +164,12 @@ end
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Damage meter", height = 264,
         tabs = {
-            { id = "shared", label = "General settings", sections = "damageMeter_module look general details" },
-            { id = "appearance", label = "Appearance", sections = "bars window surfaces borders iconBorder separators "
+            { id = "shared", label = "Basics", sections = "damageMeter_module general details" },
+            { id = "appearance", label = "Appearance", sections = "look bars window surfaces borders iconBorder separators "
                 .. "button_settings button_reset button_session button_type button_target" },
-            { id = "text", label = "Text", sections = "text namesFont valuesFont headerFont detailsFont timerFont" },
-            { id = "timer", label = "Combat timer", sections = "timer timerDock" },
-            { id = "window", label = "Window settings", sections = "windows" },
+            { id = "window", label = "Layout", sections = "windows" },
+            { id = "text", label = "Text", sections = "text namesFont valuesFont headerFont detailsFont" },
+            { id = "timer", label = "Combat timer", sections = "timer timerDock timerFont" },
         } })
     P.MenuSamples.Meter(ui, function() return selected end, function(value) selected = value
                 P.Refresh() end)

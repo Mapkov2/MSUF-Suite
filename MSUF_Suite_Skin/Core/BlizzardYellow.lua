@@ -297,7 +297,7 @@ function BlizzardYellow.TrackDropdown(button)
 end
 
 function BlizzardYellow.TrackMenuSelection(row)
-    local description = Safety.Call(row, "GetElementDescription")
+    local description = Safety.Read(row, "GetElementDescription")
     if type(description) ~= "table" or Safety.Read(description, "IsSelected") ~= true
         or Safety.Read(description, "IsEnabled") == false then
         return 0

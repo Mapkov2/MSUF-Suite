@@ -23,7 +23,9 @@ end
 
 local sectionTitles = {}
 for _, rule in ipairs(P.catalog[ID].controls) do
-    if rule.section then sectionTitles[rule.section] = rule.sectionTitle end
+    if rule.section and rule.sectionTitle and rule.sectionTitle ~= "" then
+        sectionTitles[rule.section] = rule.sectionTitle
+    end
 end
 sectionTitles.info_calendarday = "Calendar day"
 local function MinimapTitle(source)
@@ -153,6 +155,10 @@ local function BuildMinimapGroup(menu, id, title, label, sources)
     return group
 end
 
+local function RevealTab(menu, body)
+    if menu.workspace and body then menu.workspace.select(body._suiteWorkspaceTab) end
+end
+
 function Menu:SelectMinimapSettings(source)
     local group = self.routes[source]
     if not group then return false end
@@ -162,10 +168,12 @@ function Menu:SelectMinimapSettings(source)
             return false
         end
         group.selected, selections[group.id] = source, source
+        RevealTab(self, group.body)
         if group.draw then group.draw(source) else P.EnsureSectionContent(group.body) end
         return group.views[source] ~= nil
     end
     if P.Combat() and group.body._suiteMinimapReady ~= true then return false end
+    RevealTab(self, group.body)
     P.EnsureSectionContent(group.body)
     return true
 end
@@ -173,6 +181,7 @@ end
 function Menu:ResolveMinimapSection(source)
     if not self.routes[source] then
         local body = self.sections[source]
+        RevealTab(self, body)
         P.EnsureSectionContent(body)
         return body
     end
@@ -194,9 +203,9 @@ local function BuildMinimapSection(menu, source, sources, extra)
     end
 end
 
-function Menu.BuildMinimapSections(ctx, builder, sections, help, skinStatus)
+function Menu.BuildMinimapSections(ctx, builder, sections, help, skinStatus, workspace)
     local menu = setmetatable({ ctx = ctx, builder = builder, sections = sections, helpBySection = help,
-        routes = {}, groups = {} }, { __index = Menu })
+        routes = {}, groups = {}, workspace = workspace }, { __index = Menu })
     ctx.minimapSections = menu
     BuildMinimapSection(menu, "layout", { "layout", "hover_size" })
     BuildMinimapSection(menu, "shape", { "shape" }, skinStatus)

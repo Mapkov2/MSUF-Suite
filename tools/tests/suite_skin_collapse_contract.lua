@@ -251,7 +251,7 @@ local function CheckQuestCaptureBudget()
     print(("Quest warm repool (12 updates): %d region walks, %d forbidden checks, %d snapshot writes")
         :format(regionReads, safetyChecks, writes))
     Check(writes == 0, "unchanged quest repool rewrote the snapshot")
-    Check(regionReads == 36 and safetyChecks <= 468, "quest refresh repeated a region walk or its read guards")
+    Check(regionReads == 36 and safetyChecks <= 432, "quest refresh repeated a region walk or its read guards")
     Check(state.records[partial].ghost and state.records[offscreen].ghost,
         "quest capture dropped artwork that can move into the viewport")
 
@@ -578,6 +578,77 @@ local function CheckOpeningAndTextures()
     CreateFrame = oldCreate
 end
 CheckOpeningAndTextures()
+
+-- Reopening a window recaptures every row. Unchanged native art must cost
+-- reads only; art changed while hidden must still reach the closing copy.
+local function CheckWarmReopenCapture()
+    local writes = 0
+    local setters = { "SetText", "SetFont", "SetTextColor", "SetPoint", "ClearAllPoints", "SetSize", "SetAlpha",
+        "Show", "Hide", "SetTexture", "SetAtlas", "SetVertexColor", "SetDesaturated" }
+    local function CountWrites(copy)
+        for _, list in ipairs({ copy.fonts, copy.textures }) do
+            for _, region in ipairs(list) do
+                for _, name in ipairs(setters) do
+                    local native = region[name]
+                    if native then region[name] = function(self, ...) writes = writes + 1 return native(self, ...) end end
+                end
+            end
+        end
+    end
+    local function Reopen(root)
+        root:Hide()
+        root:Show()
+        root:Fire("OnShow")
+    end
+
+    local list = List(UIParent, true)
+    function list:GetEffectiveAlpha() return 1 end
+    local parent, child = Node({}, nil, 1), Node({})
+    child.parent = parent
+    local c = Row(list, child, 380, "warm label")
+    function c.label:GetEffectiveAlpha() return 1 end
+    list.rows = { Row(list, parent, 400), c }
+    NS.GenericWindows.trackContent(list, "warm-reopen")
+    local copy = NS.AddonListMotion.scrollStates[list].records[c].ghost
+    Check(copy and copy.fonts[1].text == "warm label", "generic reopen fixture did not capture its row")
+    local guards = 0
+    c.label.IsForbidden = function() guards = guards + 1 return false end
+    CountWrites(copy)
+    for _ = 1, 6 do Reopen(list) end
+    Check(writes == 0, "reopening an unchanged list rewrote its closing copies")
+    Check(guards <= 72, "reopened row repeated per-capture reads for every region")
+    list:Hide()
+    c.label.text, c.label.color = "changed while hidden", { 0.2, 0.6, 0.4, 1 }
+    list:Show(); list:Fire("OnShow")
+    Check(copy.fonts[1].text == "changed while hidden" and copy.fonts[1].color[2] == 0.6,
+        "reopened list kept stale closing artwork")
+    NS.GenericWindows.releaseContent("warm-reopen")
+
+    local addons = Frame(UIParent, true)
+    local addonBox = List(addons, true)
+    addons.ScrollBox = addonBox
+    local top = Node({})
+    local group = Node({ category = "Group" }, top, 1)
+    local entry = Node({ addonIndex = 1 }, group)
+    local function Depth(node) return node.parent and node.parent:GetDepth() + 1 or 0 end
+    top.GetDepth, group.GetDepth, entry.GetDepth = Depth, Depth, Depth
+    local entryRow = Row(addonBox, entry, 380, "Addon title")
+    entryRow.Title = entryRow.label
+    addonBox.rows = { Row(addonBox, group, 400), entryRow }
+    Check(NS.AddonListMotion.Attach(addons, "addon-reopen"), "AddOns reopen fixture could not attach")
+    local addonCopy = NS.AddonListMotion.states[addons].records[entryRow].ghost
+    Check(addonCopy and addonCopy.fonts[1].text == "Addon title", "AddOns reopen fixture did not capture its row")
+    writes = 0
+    CountWrites(addonCopy)
+    for _ = 1, 6 do Reopen(addons) end
+    Check(writes == 0, "reopening the unchanged AddOns list rewrote its closing copies")
+    addons:Hide()
+    entryRow.label.text = "Reloaded title"
+    addons:Show(); addons:Fire("OnShow")
+    Check(addonCopy.fonts[1].text == "Reloaded title", "reopened AddOns list kept a stale title")
+    NS.AddonListMotion.DisableOwner("addon-reopen")
+end
+CheckWarmReopenCapture()
 
 Check(H.ForeignWrites() == 0, "extended collapse paths changed native anchors or alpha")
 

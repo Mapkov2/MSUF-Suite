@@ -14,6 +14,8 @@ local GROUPS = {
             "auktionshaus", "ah preis", "händlererlös", "haendlererloes", "aufpreis" } },
     { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
         keywords = { "SCT", "FCT", "floating combat text", "Kampftext", "Schadenszahlen", "Heilungszahlen" } },
+    { id = "floatingCombatText", title = "Floating combat text", switch = "enabled", sections = { "floating_combat_text" },
+        keywords = { "SCT", "FCT", "damage numbers", "nameplate damage", "Kampftext", "Schadenszahlen" } },
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
     { id = "actionTracker", title = "Action tracker", switch = "enabled",
         sections = { "action_tracker", "action_tracker_visibility", "action_tracker_colors" },
@@ -200,7 +202,8 @@ return {
 end
 local function GameplayGroups()
 return {
-    Subgroup("combatInformation", "Combat information", "actionTracker selfCombatText combatStatsHUD targetDistance threatMeter"),
+    Subgroup("combatInformation", "Combat information",
+        "actionTracker selfCombatText floatingCombatText combatStatsHUD targetDistance threatMeter"),
     Subgroup("combatCues", "Combat cues", "burningRushCue combatMovementCue combatPetStatus cursorEffects"),
     Subgroup("groupCombat", "Group combat", "battleRes groupBloodlust groupDeathAlert innervateCue enemyCastStack"),
 }

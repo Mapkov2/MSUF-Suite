@@ -5,7 +5,10 @@ local NS = {
     Public = function(v) return v ~= "secret" end,
     Finite = function(v) return type(v) == "number" and v == v end,
     IsCombatLocked = function() return combat end,
-    Safety = { IsForbidden = function(r) return r.forbidden == true end },
+    Safety = { IsForbidden = function(r)
+        if r.forbiddenChecks then r.forbiddenChecks = r.forbiddenChecks + 1 end
+        return r.forbidden == true
+    end },
     HostBridge = { NameFormatter = function() end },
 }
 C_CVar = { GetCVar = function() return tostring(style) end, GetCVarBool = function() return false end }
@@ -15,9 +18,20 @@ PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
 UnitIsGameObject = function(unit) assert(unit == "nameplate1"); return false end
 UnitIsFriend = function(_, unit) assert(unit == "nameplate1"); return false end
 UnitIsPlayer = function(unit) assert(unit == "nameplate1"); return false end
-local private = { NS = NS, Extensions = { OnAnchors = function() end } }
+local textureAnchors, extensionAnchors = 0, 0
+-- The cold-layout handoff: the plate and the cast height it had when the
+-- layout owner reported its final geometry.
+local layouts, layoutPlate, layoutHeight = 0, nil, nil
+local private = { NS = NS,
+    Textures = { inUse = true, OnAnchors = function() textureAnchors = textureAnchors + 1 end,
+        OnLayout = function(uf)
+            layouts, layoutPlate = layouts + 1, uf
+            layoutHeight = uf.CastBarsContainer.castBar.height
+        end },
+    Extensions = { OnAnchors = function() extensionAnchors = extensionAnchors + 1 end } }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", NS)
 NS.NameplatePortableText = { Stored = function() end, Resolve = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
@@ -33,12 +47,21 @@ local function Frame()
     function f:SetSize(w, h) calls = calls + 1; self.width, self.height = w, h end
     function f:SetPointsOffset(x, y) calls = calls + 1; self.x, self.y = x, y end
     function f:IsShown() return self.shown end
+    function f:CanBeAccessedInContext() return not self.restricted end
+    function f:GetScale() return self.scale or 1 end
+    function f:SetScale(v) calls = calls + 1; self.scale = v end
+    function f:GetAlpha() return self.alpha or 1 end
+    function f:SetAlpha(v) calls = calls + 1; self.alpha = v end
+    function f:GetFrameLevel() return self.layer or 4 end
+    function f:SetFrameLevel(v) calls = calls + 1; self.layer = v end
     function f:GetPoint() error("restricted anchor read") end
     function f:GetWidth() error("restricted dimension read") end
+    function f:GetTexCoord() return unpack(self.coords or { 0, 0, 0, 1, 1, 0, 1, 1 }) end
+    function f:SetTexCoord(...) self.coords = { ... } end
     return f
 end
 hooksecurefunc = function(uf, method, callback) uf.hook = callback end
-local module = { active = true, levelLabels = {}, castTimes = {}, pendingPlates = {} }
+local module = { active = true, activeUnits = {}, levelLabels = {}, castTimes = {}, pendingPlates = {} }
 private.Layout.Bind(module)
 local setup
 local function Native(uf)
@@ -95,18 +118,43 @@ for _, forever in ipairs({ false, true }) do
             NamePlateSetupOptions = setup
             local uf = Frame()
             uf.unit, uf.showOnlyName, uf.isFriend, uf.UpdateAnchors = "nameplate1", false, false, function() end
+            module.activeUnits[uf.unit] = uf
             uf.HealthBarsContainer, uf.CastBarsContainer = Frame(), Frame()
             uf.HealthBarsContainer.healthBar = Frame()
             uf.CastBarsContainer.castBar = Frame()
             uf.CastBarsContainer.castBar.Icon, uf.CastBarsContainer.castBar.Border = Frame(), Frame()
             uf.PlayerLevelDiffFrame = Frame(); uf.PlayerLevelDiffFrame.shown = true
-            uf.AurasFrame = { CrowdControlListFrame = Frame(), LossOfControlFrame = Frame() }
+            uf.AurasFrame = Frame()
+            local auras = uf.AurasFrame
+            auras.BuffListFrame, auras.DebuffListFrame = Frame(), Frame()
+            auras.CrowdControlListFrame, auras.LossOfControlFrame = Frame(), Frame()
             Native(uf)
             local config = { look = 4, barGeometry = 2, nativeStyle = style + 2, enemy = true,
                 enemyHealthWidthDelta = 41, enemyHealthHeightDelta = 7 }
             module.config = config
             private.Layout.Configure(config)
+            local firstLayout = layouts
             private.Layout.Apply(uf, "enemy", config)
+            assert(layouts == firstLayout + 1 and layoutPlate == uf
+                and layoutHeight == uf.CastBarsContainer.castBar.height,
+                "the first layout pass did not hand its final cast geometry over exactly once")
+            if selected == 0 and scale == 1 then
+                local buff, debuff = auras.BuffListFrame, auras.DebuffListFrame
+                local cc, loc = auras.CrowdControlListFrame, auras.LossOfControlFrame
+                cc.restricted = true
+                config.auraEnemyBuffScale, config.auraEnemyControlAlpha, config.auraEnemyControlLayer = 150, 65, 3
+                private.Layout.Configure(config)
+                private.Layout.Apply(uf, "enemy", config)
+                assert(buff.scale == 1.5 and not buff.alpha and not buff.layer and not debuff.scale)
+                assert(loc.alpha == .65 and loc.layer == 7 and not cc.alpha and module.pendingPlates[uf])
+                cc.restricted = false
+                private.Layout.Reapply(uf, "enemy", config)
+                assert(cc.alpha == .65 and cc.layer == 7 and loc.layer == 7)
+                config.auraEnemyBuffScale, config.auraEnemyControlAlpha, config.auraEnemyControlLayer = 100, 100, 0
+                private.Layout.Configure(config)
+                private.Layout.Apply(uf, "enemy", config)
+                assert(buff.scale == 1 and cc.alpha == 1 and cc.layer == 4 and loc.alpha == 1 and loc.layer == 4)
+            end
             local cast, health = uf.CastBarsContainer, uf.HealthBarsContainer
             local function Near(a, b) assert(math.abs(a - b) < .00001, tostring(a) .. " ~= " .. tostring(b)) end
             local function Check()
@@ -122,9 +170,88 @@ for _, forever in ipairs({ false, true }) do
                     "invisible native badge still displaces portable control aura")
             end
             Check()
-            local writes = calls
-            private.Layout.Apply(uf, "enemy", config)
+            local writes, settled = calls, layouts
+            for _ = 1, 100 do private.Layout.Apply(uf, "enemy", config) end
             assert(calls == writes, "unchanged plate repeated geometry writes")
+            assert(layouts == settled, "an unchanged plate repeated the cold-layout handoff")
+            if selected == 0 and scale == 1 then
+                -- Native SetUnit runs ApplyFrameOptions and OnUnitSet before
+                -- the Suite receives NAME_PLATE_UNIT_ADDED for the reused frame.
+                module.activeUnits[uf.unit] = nil
+                local beforeRelease = calls
+                private.Layout.Restore(uf, true)
+                Near(cast.castBar.height, (largeCast and 16 or 10) * scale)
+                local expected = 0
+                assert(calls - beforeRelease == expected, "recycling rewrote geometry that Blizzard resets")
+                local textures, extensions, skippedWrites, instructions = textureAnchors, extensionAnchors, 0, 0
+                local pooledLayouts = layouts
+                for _ = 1, 3 do
+                    Native(uf)
+                    local nativeWrites = calls
+                    debug.sethook(function() instructions = instructions + 1 end, "", 1)
+                    uf.hook(uf)
+                    debug.sethook()
+                    skippedWrites = skippedWrites + calls - nativeWrites
+                end
+                print(("Pooled native setup (%s), three hooks: %d geometry writes, %d Lua instructions")
+                    :format(forever and "Forever" or "Retail", skippedWrites, instructions))
+                assert(skippedWrites == 0, "pooled setup repeated Suite geometry writes before add")
+                assert(instructions < 350, "pooled setup exceeded the anchor hook instruction budget")
+                assert(textureAnchors == textures + 3 and extensionAnchors == extensions + 3,
+                    "pooled setup stopped notifying texture and extension owners")
+                -- Blizzard's rebuild alone is the texture owner's edge (OnAnchors).
+                assert(layouts == pooledLayouts, "a pass that wrote no Suite geometry handed a layout over")
+                module.activeUnits[uf.unit] = uf
+                private.Layout.Apply(uf, "enemy", config)
+                Check()
+                -- A recycled frame can still own fixed XML links after a
+                -- combat-time removal could not restore its layout.
+                local debuffs = auras.DebuffListFrame
+                debuffs:SetPoint("LEFT", uf.HealthBarsContainer, "LEFT", 0, 0)
+                config.enemyAurasOffsetX = 7
+                GetCVarNumberOrDefault = function() return 0 end
+                NamePlateConstants.DEBUFF_PADDING_CVAR = "padding"
+                private.Layout.Configure(config)
+                private.Layout.Apply(uf, "enemy", config)
+                assert(debuffs.points.LEFT[3] == 7)
+                local unit = uf.unit
+                local combatLayouts = layouts
+                combat = true
+                module.activeUnits[unit] = nil
+                private.Layout.Restore(uf)
+                Native(uf)
+                uf.hook(uf)
+                assert(module.pendingPlates[uf] and debuffs.points.LEFT[3] == 7,
+                    "combat reset lost its deferred fixed link")
+                assert(layouts == combatLayouts, "a combat-locked pass handed a layout over")
+                combat = false
+                Native(uf)
+                uf.hook(uf)
+                assert(debuffs.points.LEFT[3] == 0, "recycled native reset did not restore the fixed XML link")
+                config.enemyAurasOffsetX = 0
+                private.Layout.Configure(config)
+                module.activeUnits[unit] = uf
+                private.Layout.Apply(uf, "enemy", config)
+                Check()
+                local soft = Frame()
+                soft.forbiddenChecks, soft.forbidden, uf.SoftTargetFrame = 0, true, soft
+                private.Layout.Reapply(uf, "enemy", config)
+                assert(soft.forbiddenChecks == 0, "untouched zero offset probed native access")
+                config.enemySoftTargetOffsetX = 8
+                private.Layout.Configure(config)
+                private.Layout.Apply(uf, "enemy", config)
+                assert(soft.forbiddenChecks == 1 and soft.x == nil, "forbidden target marker was moved")
+                soft.forbidden = false
+                private.Layout.Reapply(uf, "enemy", config)
+                assert(soft.forbiddenChecks == 2 and soft.x == 8, "allowed marker was not moved")
+                private.Layout.Configure(config)
+                private.Layout.Apply(uf, "enemy", config)
+                assert(soft.forbiddenChecks == 2, "already applied offset probed native access")
+                config.enemySoftTargetOffsetX = 0
+                private.Layout.Configure(config)
+                private.Layout.Apply(uf, "enemy", config)
+                assert(soft.forbiddenChecks == 3 and soft.x == 0, "reset skipped native access or left the offset")
+            end
             Native(uf); uf.hook(uf); Check()
             -- Dragging changes the preset label, never the saved size basis.
             config.look = 3
@@ -159,20 +286,45 @@ for _, forever in ipairs({ false, true }) do
                 if classic then Near(cast.castBar.Border.width, setup.castBarBorderWidth + delta) end
             end
             Near(cast.castBar.height, 28); Near(cast.castBar.Icon.width, 40); Near(cast.castBar.Icon.height, 40)
+            assert(layoutPlate == uf, "a Suite cast size was not handed over")
+            Near(layoutHeight, 28) -- Handed over after the Suite sized the cast, not before.
             CheckCastWidth(36)
+            if selected == 2 and scale == 1 then
+                local icon = cast.castBar.Icon
+                config.enemyCastWidthMode, config.enemyCastManualWidth, config.enemyCastIconZoom = 3, 185, 200
+                private.Layout.Configure(config); private.Layout.Apply(uf, "enemy", config)
+                CheckCastWidth(185 - (230 - 24))
+                assert(icon.coords[1] == .25 and icon.coords[6] == .25 and icon.coords[7] == .75)
+                config.enemyCastWidthMode, config.enemyCastIconZoom = 2, 100
+                private.Layout.Configure(config); private.Layout.Apply(uf, "enemy", config)
+                CheckCastWidth(41)
+                assert(icon.coords[1] == 0 and icon.coords[7] == 1)
+                config.enemyCastWidthMode = 1
+                private.Layout.Configure(config); private.Layout.Apply(uf, "enemy", config)
+                CheckCastWidth(36)
+            end
             Near(cast.height, 28 + (setup.spellNameInsideCastBar and 0 or 40))
             Near(health.height, (largeHealth and 20 or 10) * scale + 7)
-            local customWrites = calls
+            local customWrites, customLayouts = calls, layouts
             private.Layout.Apply(uf, "enemy", config)
             assert(calls == customWrites, "unchanged custom cast dimensions repeated writes")
+            assert(layouts == customLayouts, "unchanged custom cast dimensions repeated the layout handoff")
+            -- Blizzard's rebuild returns the native cast height first: the
+            -- handoff follows the Suite's reapplied height, once.
+            layoutHeight = nil
             Native(uf); uf.hook(uf)
             Near(cast.castBar.height, 28); Near(cast.castBar.Icon.height, 40)
+            assert(layouts == customLayouts + 1 and layoutPlate == uf, "a native rebuild was not handed over once")
+            Near(layoutHeight, 28)
             CheckCastWidth(36)
             combat = true; private.Layout.Restore(uf)
             -- Held back for this plate only (Skin.lua OnCombatEnded applies it again).
             assert(module.pendingPlates[uf] and not module.needsRefresh and health.height ~= setup.healthBarHeight)
+            assert(layouts == customLayouts + 1, "a restore held back by combat handed a layout over")
             module.pendingPlates[uf] = nil
             combat = false; private.Layout.Restore(uf)
+            assert(layouts == customLayouts + 2, "a restored cast size was not handed over once")
+            Near(layoutHeight, setup.castBarHeight)
             Near(health.height, setup.healthBarHeight)
             Near(cast.castBar.height, setup.castBarHeight)
             CheckCastWidth(0)
@@ -198,4 +350,34 @@ for _, forever in ipairs({ false, true }) do
         end
     end
 end
+-- With native geometry, a cast-height slider must leave the icon alone.
+-- Inside bars also keep the container height when only the icon changes.
+do
+    local setup = { insetWidth = 12, castBarToHealthBarSpacing = 1, healthBarHeight = 10,
+        castBarHeight = 14, castIconWidth = 12, castIconHeight = 12, horizontalScale = 1,
+        verticalScale = 1, spellNameInsideCastBar = true, useClassicCastBar = false }
+    local cast, container, icon = Frame(), Frame(), Frame()
+    local uf = { HealthBarsContainer = Frame(), CastBarsContainer = container }
+    container.castBar, cast.Icon = cast, icon
+    container:SetHeight(14)
+    cast:SetHeight(14)
+    icon:SetSize(12, 12)
+    local config = { barGeometry = 1, enemyCastHeight = 18 }
+    local state, before = {}, calls
+    private.Geometry.Apply(state, uf, setup, config, false, "enemy")
+    assert(calls - before == 2 and container.height == 18 and cast.height == 18 and icon.height == 12,
+        "changing height also sized the unchanged cast icon")
+    before = calls
+    private.Geometry.Restore(state, uf, setup)
+    assert(calls - before == 2 and container.height == 14 and cast.height == 14, "height restore sized the unchanged icon")
+    config.enemyCastHeight, config.enemyCastIconSize = 0, 17
+    before = calls
+    private.Geometry.Apply(state, uf, setup, config, false, "enemy")
+    assert(calls - before == 1 and container.height == 14 and cast.height == 14 and icon.height == 17,
+        "sizing the inside icon also sized the castbar")
+    before = calls
+    private.Geometry.Restore(state, uf, setup)
+    assert(calls - before == 1 and icon.height == 12, "icon restore sized an unchanged castbar")
+end
+
 print("Mapko dimensions: Retail/Forever, seven styles, four scales, native rebuild, Custom, combat and restoration passed")

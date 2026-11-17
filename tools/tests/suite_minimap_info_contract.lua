@@ -129,8 +129,9 @@ do
     print("Minimap Forever weather: default, event updates, visibility and API gate passed")
 end
 
--- Sampled texts share one timer, hidden texts do no work, coordinates park
--- without a position, and event-only texts never poll.
+-- Timed texts share one timer, hidden texts do no work, coordinates park
+-- without a position, and event-only texts never poll. FPS and latency have
+-- no timer (2026-11-16): player events and the pointer read them.
 do
     local reads = { clock = 0, fps = 0, latency = 0, coordinates = 0, durability = 0, zone = 0 }
     local fps, home, world, mapID, x, y, inside = 80, 30, 50, 1, .5234, .4801, false
@@ -212,22 +213,50 @@ do
         setFPSInsets(self, ...)
     end
     local clockReads, fpsReads, latencyReads = reads.clock, reads.fps, reads.latency
-    W.Advance(.5)
-    check(reads.clock == clockReads and reads.fps == fpsReads and reads.latency == latencyReads, "independent intervals")
+    local events = M.context.callbacks
+    check(events.PLAYER_ENTERING_WORLD and events.ZONE_CHANGED_NEW_AREA and events.PLAYER_REGEN_DISABLED
+        and events.PLAYER_REGEN_ENABLED and events.PLAYER_STARTED_MOVING and events.PLAYER_STOPPED_MOVING
+        and not events.UNIT_AURA and not M.context.frame.scripts.OnUpdate and not frame.scripts.OnUpdate,
+        "FPS and latency refresh events")
     local writes = entries.Coordinates.label.textWrites
-    fps = 20
-    W.Advance(.5)
+    fps, world = 20, 400
+    W.Advance(30)
+    check(reads.clock == clockReads and reads.fps == fpsReads and reads.latency == latencyReads
+        and entries.FPS.label.text == "80 BpS" and entries.Latency.label.text == "50 Ms",
+        "FPS or latency was read while idle")
+    W.Event("PLAYER_STOPPED_MOVING")
+    check(reads.fps == fpsReads + 1 and reads.latency == latencyReads + 1, "one read per value and event")
     check(entries.FPS.label.text == "20 BpS" and entries.FPS.label.textColor[1] == 1, "status colour")
+    check(entries.Latency.label.text == "400 Ms" and entries.Latency.label.textColor[1] == 1, "latency status colour")
+    local fpsWrites, latencyWrites = entries.FPS.label.textWrites, entries.Latency.label.textWrites
+    fps, world = 20.4, 50
+    W.Advance(.1)
+    W.Event("PLAYER_STARTED_MOVING")
+    check(reads.fps == fpsReads + 1 and reads.latency == latencyReads + 1,
+        "automatic reads ignored the configured minimum intervals")
+    W.Advance(5)
+    W.Event("PLAYER_STOPPED_MOVING")
+    check(reads.fps == fpsReads + 2 and entries.FPS.label.textWrites == fpsWrites
+        and entries.Latency.label.textWrites == latencyWrites + 1 and entries.Latency.label.text == "50 Ms",
+        "an unchanged FPS number was written again or latency did not follow")
+    fps = 20
     check(entries.Coordinates.label.textWrites == writes, "unchanged coordinates rewritten")
     check(hitWrites == 0, "a value change at the same width must not rewrite the hit rectangle")
     -- Hidden: nothing samples; visible again: sampling resumes.
     assert(S.Set("minimap", "visibility", 5))
     check(W.Pending() == 0, "hidden texts kept a timer")
     local coordinateReads = reads.coordinates
+    fpsReads, latencyReads = reads.fps, reads.latency
+    fps = 33
     W.Advance(10)
-    check(reads.coordinates == coordinateReads, "hidden texts sampled")
+    W.Event("PLAYER_STOPPED_MOVING")
+    W.Event("PLAYER_REGEN_DISABLED")
+    check(reads.coordinates == coordinateReads and reads.fps == fpsReads and reads.latency == latencyReads,
+        "hidden texts sampled")
     assert(S.Set("minimap", "visibility", 1))
     check(W.Pending() == 1 and reads.coordinates > coordinateReads, "texts did not resume")
+    check(entries.FPS.label.text == "33 BpS" and reads.fps == fpsReads + 1 and reads.latency == latencyReads + 1,
+        "shown texts did not read FPS and latency once")
     -- Coordinates park without a position and resume on the next zone change.
     mapID = nil
     W.Advance(1)
@@ -244,6 +273,8 @@ do
     check(entries.Coordinates.label.text == "--", "secret position")
     fps = W.secret
     W.Advance(1)
+    check(entries.FPS.label.text == "33 BpS", "FPS was read without an event")
+    W.Event("PLAYER_STARTED_MOVING")
     check(entries.FPS.label.text == "--", "secret framerate")
     left, right = fpsButton:GetHitRectInsets()
     check(left == 0 and right == c.infoFPSWidth - entries.FPS.label:GetStringWidth() - 2,
@@ -255,10 +286,25 @@ do
     coordinateReads = reads.coordinates
     W.Advance(3)
     check(reads.coordinates == coordinateReads, "hidden coordinates sampled")
+    fpsReads, latencyReads = reads.fps, reads.latency
     W.Fire(MM.catcher, "OnEnter")
     check(entries.Coordinates.button.shown and reads.coordinates == coordinateReads + 1, "hover did not sample coordinates")
+    check(entries.FPS.label.text == "60 BpS" and reads.fps == fpsReads + 1 and reads.latency == latencyReads + 1,
+        "the pointer on the map did not read FPS and latency once")
     W.Fire(MM.catcher, "OnLeave"); W.Advance(.2)
     check(not entries.Coordinates.button.shown, "coordinates stayed after leave")
+    check(reads.fps == fpsReads + 1 and reads.latency == latencyReads + 1, "leaving the map read FPS or latency")
+    -- The pointer on the text reads before its tooltip shows the text.
+    fps = 61
+    W.Advance(.1)
+    W.Fire(fpsButton, "OnEnter")
+    check(entries.FPS.label.text == "61 BpS" and reads.fps == fpsReads + 2 and G.GameTooltip.shown
+        and G.GameTooltip.lines[2] == "61 BpS", "the pointer on the FPS text did not read before its tooltip")
+    W.Fire(fpsButton, "OnLeave")
+    fps = 60
+    W.Advance(.1)
+    W.Event("ZONE_CHANGED_NEW_AREA")
+    check(entries.FPS.label.text == "60 BpS", "a new zone did not read FPS")
     assert(S.Set("minimap", "infoCoordinatesMode", 2))
     -- Formats and anchors: above/below the map sit outside the border.
     assert(S.SetMany("minimap", { infoClockSource = 3, infoClockSeconds = true, infoCoordinatesDecimals = 2, infoLatencySource = 3 }))
@@ -304,10 +350,17 @@ do
     inside = false
     W.Event("PLAYER_ENTERING_WORLD")
     check(entries.Coordinates.button.shown, "coordinates did not return")
+    -- Without an FPS or latency text their events go; the others stay.
+    assert(S.SetMany("minimap", { infoFPS = false, infoLatency = false }))
+    check(not events.PLAYER_STARTED_MOVING and not events.PLAYER_STOPPED_MOVING and not events.PLAYER_REGEN_ENABLED
+        and events.PLAYER_ENTERING_WORLD and events.ZONE_CHANGED_NEW_AREA, "FPS and latency events without a text")
+    assert(S.Set("minimap", "infoLatency", true))
+    check(events.PLAYER_STOPPED_MOVING and entries.Latency.label.text == "30 / 50 Ms", "latency text did not return")
     assert(S.Set("minimap", "enabled", false))
     check(not M.infoTimer and W.ContextPending(M.context) == 0 and not frame.shown and not frame.scripts.OnUpdate,
         "disable left sampling work")
-    print("Minimap information: shared scheduling, intervals, visibility, parking, mouseover, anchors, boxes, clicks and disable passed")
+    check(not events.PLAYER_STOPPED_MOVING and not events.PLAYER_STARTED_MOVING, "disable left FPS and latency events")
+    print("Minimap information: shared scheduling, event-driven FPS/latency, visibility, parking, mouseover, anchors, boxes, clicks and disable passed")
 end
 
 -- Event-only texts (durability, location), difficulty text and the invite mark.

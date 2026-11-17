@@ -1,8 +1,8 @@
 -- DataTexts paint cost budget, against the client model of
 -- suite_minimap_harness.lua with the real Suite core and the FULL DataTexts
 -- TOC loaded. One repaint per event (gold, bag space, durability) and per
--- sampled tick (FPS) is pinned with two deterministic measures, never
--- wall-clock time:
+-- FPS reading (a movement event since 2026-11-16; FPS has no timer) is pinned
+-- with two deterministic measures, never wall-clock time:
 --   * Lua VM instructions per repaint (count hook on every instruction);
 --   * kilobytes allocated per repaint, with the collector stopped.
 -- Two bars: six equal places, and an auto-sized ("Fit text") bar whose
@@ -28,10 +28,7 @@ local BUDGETS = {
     { name = "gold", instructions = 3025, kilobytes = 2.68 },
     { name = "bag space", instructions = 1410, kilobytes = 0.91 },
     { name = "durability", instructions = 4856, kilobytes = 2.71 },
-    -- Collected-task cancellation needs a generation check (+24 VM
-    -- instructions per two-owner cycle); native timer and allocation counts
-    -- are unchanged. This bound accepts that specific correctness cost.
-    { name = "sampled FPS tick", instructions = 3555, kilobytes = 2.90 },
+    { name = "FPS movement event", instructions = 3555, kilobytes = 2.90 },
     -- The account total (trackAltGold) also records this character's gold.
     { name = "gold with account total", instructions = 3168, kilobytes = 2.75, altGold = true },
     -- A bar shown only below full health follows every player health event
@@ -104,9 +101,11 @@ local REPAINTS = {
         state.durability = step % 2 == 0 and 70 or 80
         W.Event("UPDATE_INVENTORY_DURABILITY")
     end,
-    ["sampled FPS tick"] = function(step)
+    -- The shared reading lasts 0.05 s: the clock moves before the event.
+    ["FPS movement event"] = function(step)
         state.fps = step % 2 == 0 and 41 or 59
-        W.Advance(2)
+        W.Advance(.1)
+        W.Event("PLAYER_STOPPED_MOVING")
     end,
 }
 REPAINTS["gold with account total"] = REPAINTS.gold

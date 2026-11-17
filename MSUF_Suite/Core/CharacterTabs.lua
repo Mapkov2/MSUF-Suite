@@ -28,6 +28,7 @@ watched.kind = "faction"
 
 Model.Sources = {
     Source("itemLevel", "Item Level", "Equipment", "712"),
+    Source("equipmentSets", "Equipment sets", "Equipment", "—"),
     Source("durability", "Durability", "Equipment", "88%"),
     Source("missingEnchants", "Missing enchants", "Equipment", "1", RETAIL),
     Source("emptySockets", "Empty sockets", "Equipment", "2", RETAIL),
@@ -88,6 +89,7 @@ end
 
 Model.Groups = {
     Group("equipment", "Equipment check", "itemLevel", "durability", "missingEnchants", "emptySockets"),
+    Group("equipmentSets", "Equipment sets", "equipmentSets"),
     Group("attributes", "Attributes", "health", "resource", "strength", "agility", "stamina", "intellect", "spirit"),
     Group("enhancements", "Enhancements", "crit", "haste", "mastery", "versatility"),
     Group("defense", "Defense", "armor", "dodge", "defense", "avoidance"),

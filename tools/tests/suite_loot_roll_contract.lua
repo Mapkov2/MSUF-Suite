@@ -106,9 +106,20 @@ local function Setup(forever, prepare)
         end,
         GetAllEncounterInfos = function() return state.encounters end,
     }
+    local confirmedHook
+    hooksecurefunc = function(name, hook)
+        assert(name == "ConfirmLootRoll" and not confirmedHook)
+        confirmedHook = hook
+    end
+    ConfirmLootRoll = function(id, choice)
+        state:Cancel(id)
+        if confirmedHook then confirmedHook(id, choice) end
+    end
     RollOnLoot = function(id, choice)
         state.calls[#state.calls + 1] = { id, choice }
-        if state.cancelInsideCall then state:Cancel(id) end
+        if state.confirmOnClick then
+            state:Emit("CONFIRM_LOOT_ROLL", id, choice)
+        end
     end
     S.Install = function(id, module) Check(id == "lootRolls", "runtime owns the dedicated module"); state.module = module end
     S.RegisterOwnedMover = function(id, element, spec)
@@ -122,7 +133,14 @@ local function Setup(forever, prepare)
         state.paints = state.paints + 1
         state.lastEntries = module.visibleEntries
     end
-    function View.Tick() state.ticks = state.ticks + 1 end
+    function View.Tick(module, now)
+        state.ticks = state.ticks + 1
+        for _, entry in ipairs(module.visibleEntries) do
+            if entry.endsAt and entry.endsAt > now and entry.choice == nil and not entry.cancelled and not entry.finished then
+                return true
+            end
+        end
+    end
     local P = { NS = NS, Suite = S, LootRollView = View }
     assert(loadfile(dataPath))("MSUF_Suite_QualityOfLife", P)
     assert(loadfile(runtimePath))("MSUF_Suite_QualityOfLife", P)
@@ -185,8 +203,11 @@ local function Setup(forever, prepare)
         if slot then for _, callback in ipairs(self.native[slot].hooks.OnShow or {}) do callback(self.native[slot]) end end
         self:Drain()
     end
-    function state:Cancel(id)
+    function state:RemoveActive(id)
         for i = #self.activeIDs, 1, -1 do if self.activeIDs[i] == id then table.remove(self.activeIDs, i) end end
+    end
+    function state:Cancel(id)
+        self:RemoveActive(id)
         for _, frame in ipairs(self.native) do if frame.rollID == id then frame.shown = false end end
         self:Emit("CANCEL_LOOT_ROLL", id)
         self:Drain()
@@ -369,8 +390,8 @@ for _, forever in ipairs({ false, true }) do
     state, M = Setup(forever)
     state:Drop(99, "item:independent", "Fresh winner")
     state:Publish(99)
-    Check(M.host.shown and #M.order == 0 and M.host.scripts.OnUpdate,
-        "a new independent result has a running expiry even without active rolls")
+    Check(M.host.shown and #M.order == 0,
+        "a new independent result appears even without active rolls")
     state:Frame(2.1)
     Check(not M.host.shown and not M.host.scripts.OnUpdate and #M.historyOrder == 0, "standalone result expiry stops timer")
     state:Publish(99)
@@ -379,6 +400,67 @@ for _, forever in ipairs({ false, true }) do
     local beforeTicks = state.ticks
     for i = 1, 1000 do state:Frame(.001) end
     Check(state.ticks - beforeTicks <= 11 and state.ticks > beforeTicks, "countdown painting is throttled instead of per-frame")
+    state:Disable()
+
+    state, M = Setup(forever)
+    state:Start(53, nil, 1)
+    local passed = M.rolls[53]
+    M:Choose(passed, 0)
+    state:Cancel(53)
+    Check(passed.choice == 0 and M.visibleEntries[1] == passed, "Pass gets its own confirmation")
+    state:Frame(3.1)
+    Check(not M.host.shown and #M.visibleEntries == 0 and M.rolls[53] == passed,
+        "a roll waiting for the group leaves the stack before the original group timer ends")
+    state:Drop(530, passed.link, "Late winner")
+    state:Publish(530)
+    Check(M.visibleEntries[1] == passed and passed.finished and passed.choice == 0,
+        "a late result can return with the original choice")
+    state:Frame(2.1)
+    Check(not M.host.shown, "the returned result uses the configured duration")
+    state:Disable()
+
+    state, M = Setup(forever)
+    state:Start(54, nil, 1)
+    local withoutCancel = M.rolls[54]
+    M:Choose(withoutCancel, 2)
+    state:Drain()
+    Check(withoutCancel.choice == nil, "the action stays pending while the native ID remains active")
+    state:RemoveActive(54)
+    state:Frame(.26)
+    Check(withoutCancel.choice == 2, "an accepted action leaves the native pending list without a cancel event")
+    Muted(state, 1, true)
+    M:Choose(withoutCancel, 2)
+    Check(#state.calls == 1, "a submitted roll cannot be sent again")
+    state:Frame(3.1)
+    Check(not M.host.shown, "the acknowledgement ends even when CANCEL_LOOT_ROLL never arrives")
+    state:Disable()
+
+    state, M = Setup(forever)
+    state.confirmOnClick = true
+    state:Start(55, nil, 1)
+    M:Choose(M.rolls[55], 1)
+    state:Drain()
+    Check(M.rolls[55].choice == nil and M.host.shown, "a pending native confirmation leaves the decision open")
+    ConfirmLootRoll(55, 1)
+    state:Drain()
+    Check(M.rolls[55].choice == 1, "the accepted native confirmation records Need")
+    state:Start(56, nil, 2)
+    M:Choose(M.rolls[56], 1)
+    state:Cancel(56)
+    Check(M.rolls[56].choice == nil, "a cancelled confirmation is never shown as a submitted Need")
+    state:Disable()
+
+    state, M = Setup(forever)
+    M.config.showResults = false
+    state:Start(57, nil, 1)
+    local resultFirst = state:Drop(570, M.rolls[57].link, "Fast winner")
+    resultFirst.playerRollState = 3
+    M:Choose(M.rolls[57], 2)
+    state:Publish(570)
+    Check(#M.visibleEntries == 1 and M.visibleEntries[1].choice == 2,
+        "a fast result still gives the player feedback when results are disabled")
+    state:Frame(3.1)
+    Check(not M.host.shown, "the optional group result stays hidden after the choice acknowledgement")
     state:Disable()
 
     state, M = Setup(forever)

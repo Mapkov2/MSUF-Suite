@@ -1,8 +1,9 @@
 local root = assert(arg[1])
 local path = root .. "/MSUF_Suite_CharacterPanel/"
-local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Strict = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 local writes, frames, modelReads, modelRefreshes, playerModels = 0, 0, 0, 0, 0
 local liveCombat, identityRestricted, secretIdentityChecked = false, false, false
+local rejectNativeScrollTemplate = false
 local secretIdentity = newproxy()
 local fontPath, modelReady = "First.ttf", false
 local skinEnabled, skinRefreshes, releases = true, 0, 0
@@ -20,7 +21,7 @@ local methods = {
         Write()
     end,
     SetWidth = function(self, width) self.width = width Write() end,
-    SetClipsChildren = Write,
+    SetClipsChildren = function(self, enabled) self.clipsChildren = enabled Write() end,
     SetSize = function(self, width, height) self.width, self.height = width, height Write() end,
     GetWidth = function(self) return self.width end,
     GetHeight = function(self) return self.height end,
@@ -51,6 +52,22 @@ local methods = {
     RegisterForClicks = function(self, ...) self.registeredClicks = { ... } Write() end,
     EnableMouse = function(self, enabled) self.mouseEnabled = enabled Write() end,
     EnableMouseWheel = Write, SetAtlas = Write, SetScrollChild = Write, ClearModel = Write,
+    SetOrientation = Write, SetAlpha = Write, SetNormalAtlas = Write, SetHighlightAtlas = Write, SetPushedAtlas = Write,
+    SetThumbTexture = function(self, thumb) self.thumb = thumb Write() end,
+    SetMinMaxValues = function(self, low, high)
+        assert(not Strict.IsSecret(low) and not Strict.IsSecret(high) and low <= high, "secret slider bounds")
+        self.low, self.high = low, high
+        self:SetValue(self.value or low)
+    end,
+    SetValue = function(self, value)
+        assert(not Strict.IsSecret(value), "secret slider value")
+        value = math.max(self.low, math.min(value, self.high))
+        if self.value == value then return end
+        self.value = value
+        Write()
+        local change = self.scripts.OnValueChanged
+        if change then change(self, value) end
+    end,
     SetRotation = function(self, angle) self.angle = angle Write() end,
     SetPortraitZoom = function(self, zoom) self.zoom = zoom Write() end,
     SetColorTexture = function(self, ...) self.color = { ... } Write() end,
@@ -81,9 +98,22 @@ local methods = {
         Write()
     end,
     IsShown = function(self) return self.shown == true end,
+    IsVisible = function(self) return self:IsShown() end,
+    GetAlpha = function(self) return self.alpha or 1 end,
+    SetAlpha = function(self, alpha) self.alpha = alpha Write() end,
     Hide = function(self) self:SetShown(false) end,
     Show = function(self) self:SetShown(true) end,
-    SetText = function(self, value) assert(self.fontPath, "font before text") self.text = value Write() end,
+    SetText = function(self, value)
+        assert(self.fontPath and not Strict.IsSecret(value), "font before text and public text only")
+        self.text = value
+        Write()
+    end,
+    SetFormattedText = function(self, format, value, extra)
+        assert(self.fontPath, "font before formatted text")
+        self.formatted = { format, value, extra }
+        self.text = nil
+        Write()
+    end,
     GetUnboundedStringWidth = function(self) return #self.text * 6 end,
     GetVerticalScroll = function(self) return self.offset or 0 end,
     GetVerticalScrollRange = function(self) return self.range or 1000 end,
@@ -96,10 +126,12 @@ local methods = {
         if hook then hook(self, offset) end
     end,
 }
-local function Create(kind, name, parent)
+local function Create(kind, name, parent, template)
+    assert(not rejectNativeScrollTemplate or template ~= "ScrollFrameTemplate",
+        "Button:SetEnabled(): Cannot be called with secrets due to existing script handlers")
     frames = frames + 1
     if kind == "PlayerModel" then playerModels = playerModels + 1 end
-    return setmetatable({ kind = kind, name = name, scripts = {}, parent = parent }, { __index = methods })
+    return setmetatable({ kind = kind, name = name, scripts = {}, parent = parent, template = template }, { __index = methods })
 end
 CreateFrame = Create
 methods.CreateTexture = function() return Create("Texture") end
@@ -505,6 +537,29 @@ assert(report.cards[1].panelX == 0 and report.cards[1].panelY == 0 and report.ca
     "stock report reused the custom card or row displacement")
 
 do
+    local value = Strict.New("number")
+    local entry = { label = "Spirit", value = 38 }
+    local sample = { { title = "Attributes", rows = { entry } } }
+    view:ShowGroups(sample)
+    local right = report.cards[1].rows[1].right
+    assert(right.text == 38)
+    view.readableValues = true
+    entry.value, entry.displayFormat = value, "%d"
+    view:ShowGroups(sample)
+    assert(right.formatted[1] == "%d" and rawequal(right.formatted[2], value) and not right.panelText,
+        "restricted stat did not reach the font formatter")
+    entry.value, entry.displayFormat, entry.displayExtra = 100, "%d (%+d)", value
+    view:ShowGroups(sample)
+    assert(right.formatted[1] == "%d (%+d)" and right.formatted[2] == 100 and rawequal(right.formatted[3], value),
+        "restricted stat modifier did not reach the font formatter")
+    entry.value, entry.displayFormat, entry.displayExtra = 38, nil, nil
+    view:ShowGroups(sample)
+    assert(right.text == 38, "the public text cache kept the restricted text on a recycled row")
+    view.readableValues = nil
+    view:ShowGroups(groups)
+end
+
+do
     liveCombat = true
     C_Secrets = {
         ShouldUnitIdentityBeSecret = function(unit)
@@ -738,6 +793,7 @@ do
     hosted:ShowGroups(groups)
     assert(hosted.report.scroll:IsShown() and hosted.report.columns == 1 and hosted.report.cards[1].title.label.text == "Quick",
         "the native host dropped the Suite report")
+    assert(hosted.report.scroll.template == "ScrollFrameTemplate", "the Retail host lost native scrolling")
     liveCombat = true
     hosted.moreTab.scripts.OnClick(hosted.moreTab)
     menu[#menu].pick(menu[#menu].data)
@@ -771,6 +827,13 @@ do
     assert(#violations == 0, table.concat(violations, " | "))
     assert(frame.point[4] == 66, "restricted geometry lost the stock Forever rail clearance")
     assert(playerModels == beforeModels, "hosted layout created a duplicate model")
+
+    rejectNativeScrollTemplate = true
+    local foreverDock = ns.View.New({ tab = Noop, group = Noop }, nil, native)
+    rejectNativeScrollTemplate = false
+    foreverDock:ShowGroups(groups)
+    assert(foreverDock.report.slider and foreverDock.report.scroll:IsShown()
+        and foreverDock.report.cards[1].title.label.text == "Quick", "the Forever dock lost its report")
 end
 
 do
@@ -805,6 +868,7 @@ do
 
     local beforeModels = playerModels
     local clicked, actions = nil, {}
+    liveCombat, rejectNativeScrollTemplate = true, true
     local full = ns.View.New({
         frameName = "StandaloneInspect",
         windowAction = function(action)
@@ -817,6 +881,7 @@ do
             clicked = slot
         end,
     }, nil, native, layout)
+    liveCombat, rejectNativeScrollTemplate = false, false
     local frame = full.frame
     assert(full.nativeLayout == layout and frame.parent == native and not frame.name and not frame.mouseEnabled
         and frame.width == layout.width and frame.height == layout.height and frame:GetFrameLevel() == nativeLevel + layout.artLevel
@@ -855,6 +920,12 @@ do
     assert(full.header.rightReserve == suite.CharacterHeader.CaptionWidth, "the full window shifted the original header fields")
     full:SetTabs(tabs, "overview")
     full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    full.characterView = "classic"
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    assert(not full.plate:IsShown(), "Classic did not reveal the Blizzard model and slot artwork")
+    full.characterView = "modern"
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    assert(full.plate:IsShown(), "Modern did not restore the Suite equipment artwork")
     local card = full.left[1]
     assert(card.texture == head.icon and card.name.text == head.name and card.level.text == head.level,
         "the full native panel lost the original card icon, name, or item level")
@@ -982,6 +1053,124 @@ do
     assert(frame:GetEffectiveScale() == .9 and not frame.scale and playerModels == beforeModels,
         "full native mode lost inherited scale or allocated a duplicate model")
     liveCombat = false
+
+    local translucent = true
+    transparent.GetLook = function() return "custom" end
+    transparent.HasTranslucentShell = function() return translucent end
+    local modelVisible, gamepad
+    suite.GamepadUI = function() return gamepad == true end
+    local previousSkin = ns.Host.Skin
+    ns.Host.Skin = { CharacterGeometry = {
+        SetGlass = function(root, surface, enabled, withModel)
+            assert(root == native and surface == full.frame, "glass changed an unrelated native window")
+            modelVisible = enabled and withModel
+            return enabled, modelVisible
+        end,
+    } }
+    close.caption.base:Show()
+    full:RefreshAppearance(transparent)
+    assert(not close.caption.base:IsShown() and close.caption.fill.color[4] == 0
+        and close.caption.bars[1]:IsShown() and not close.mouseEnabled,
+        "the Glass close glyph kept its resting tile or lost its native click path")
+    suite.WindowCaption.SetHover(close, true)
+    assert(not close.caption.base:IsShown() and close.caption.fill.color[4] > 0,
+        "hover lost the close feedback or brought back the resting tile")
+    suite.WindowCaption.SetHover(close, false)
+    assert(full.artMask:GetAlpha() == 0 and full.headerFill:GetAlpha() < 1 and full.tabFill:GetAlpha() < 1 and modelVisible,
+        "a custom palette with the same translucent shell retained opaque header bands and backing")
+    assert(full.surfaces[full.plate].style.keepGlassFill == false
+        and full.surfaces[full.rail.cards[1]].style.keepGlassFill == false,
+        "the gear plate and stats cards filled over Forever Glass")
+    full:ShowGroups(groups)
+    assert(full.reportMask:GetAlpha() == 0 and not modelVisible and full.reportCover:IsShown(),
+        "Forever Glass left the model behind the report or lost the report hit shield")
+    local reportCard = full.report.cards[1]
+    local reportSurface = full.surfaces[reportCard]
+    local originalPainter = transparent.SkinFrame
+    transparent.SkinFrame = function(self, target, style)
+        if target == reportCard then return true, "deferred" end
+        return originalPainter(self, target, style)
+    end
+    reportSurface.themed = false
+    full:RefreshAppearance(transparent)
+    assert(not reportSurface.fill:IsShown() and not reportSurface.border:IsShown(),
+        "a deferred combat report skin put a solid card back over the translucent shell")
+    transparent.SkinFrame = originalPainter
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(full.gearMask:GetAlpha() == 0 and not modelVisible and full.gearMask:IsShown(),
+        "Forever Glass kept an opaque block when switching to Equipment")
+    gamepad = true
+    full:RefreshAppearance(transparent)
+    assert(full.artMask:GetAlpha() == 1 and full.gearMask:GetAlpha() == 1,
+        "the gamepad presentation did not restore native art")
+    gamepad = false
+    translucent = false
+    transparent.GetLook = function() return "foreverGlass" end
+    full:RefreshAppearance(transparent)
+    assert(full.artMask:GetAlpha() == 1 and full.headerFill:GetAlpha() == 1 and close.caption.base:IsShown(),
+        "the opaque shell or its native close cover was treated as Glass")
+    full:RefreshAppearance(nil)
+    assert(full.artMask:GetAlpha() == 1 and full.gearMask:GetAlpha() == 1 and full.headerFill:GetAlpha() == 1,
+        "turning off Forever Glass did not restore the native covers")
+    ns.Host.Skin = previousSkin
+
+    local longRows = {}
+    for i = 1, 48 do longRows[i] = { label = "Row " .. i, value = i } end
+    local longReport = { { title = "Long report", rows = longRows } }
+    local function CheckOwnedScroll(list)
+        assert(list.scroll.kind == "Frame" and not list.scroll.template and list.canvas.parent.clipsChildren
+            and list.bar:IsShown(), "the Forever list lost its clipped viewport or scroll controls")
+        local slider, offset = list.slider, list.offset
+        assert(offset == 0 and slider.value == 0, "the top of the list placed the thumb at the wrong end")
+        list.scroll.scripts.OnMouseWheel(list.scroll, -1)
+        assert(list.offset == offset + 30 and list.canvas.point[3] == list.offset,
+            "the wheel did not move the report canvas")
+        list.down.scripts.OnClick(list.down)
+        assert(list.offset == offset + 60 and slider.value == list.offset,
+            "the forward stepper did not move the scrollbar with the report")
+        list.up.scripts.OnClick(list.up)
+        assert(list.offset == offset + 30, "the back stepper did not scroll back")
+        local down = list.down
+        down.IsMouseOver = function() return true end
+        down.scripts.OnMouseDown(down, "LeftButton")
+        down.scripts.OnUpdate(down, .31)
+        down.scripts.OnMouseUp(down, "LeftButton")
+        down.scripts.OnClick(down)
+        assert(list.offset == offset + 60 and not down.scripts.OnUpdate,
+            "the held stepper failed to repeat or moved a second time on release")
+        slider:SetValue(list.range)
+        assert(list.offset == list.range and list.cards[1].rows[1].left.text ~= "Row 1",
+            "dragging to the bottom did not repaint the visible rows")
+        local stop = Strict.Watch(path .. "GroupLayout.lua", { strict = true })
+        local hiddenValue = Strict.New("number")
+        list.scroll.scripts.OnMouseWheel(list.scroll, hiddenValue)
+        slider.scripts.OnValueChanged(slider, hiddenValue)
+        local violations = stop()
+        assert(#violations == 0, table.concat(violations, " | "))
+        assert(list.offset == list.range, "restricted input changed the visible offset")
+        list.down.scripts.OnClick(list.down)
+        assert(list.offset == list.range, "the bottom stepper scrolled past the last row")
+        slider:SetValue(0)
+        assert(list.offset == 0 and list.cards[1].rows[1].left.text == "Row 1",
+            "dragging the thumb back up did not return to the first row")
+    end
+    full:ShowGear(gear.left, gear.right, gear.weapons, longReport, nil, empty, true)
+    CheckOwnedScroll(full.rail)
+    full:ShowGroups(longReport)
+    CheckOwnedScroll(full.report)
+    full:ShowGroups(groups)
+    assert(full.report.offset == 0 and full.report.canvas.point[3] == 0 and not full.report.bar:IsShown(),
+        "shortening the report did not clamp its position and hide the scrollbar")
+
+    liveCombat = true
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true, true)
+    assert(not full.rail.scroll:IsShown() and full.combatRail.canvas:IsShown(), "combat did not select the fixed rail")
+    full:ShowGroups(groups, true)
+    assert(not full.report.scroll:IsShown() and full.combatReport.canvas:IsShown(), "combat did not select the fixed report")
+    liveCombat = false
+    full:ShowGroups(longReport)
+    assert(full.report.scroll:IsShown() and full.report.bar:IsShown() and not full.combatReport.canvas:IsShown(),
+        "combat exit did not restore the report scrollbar")
 end
 
 print("Character Panel appearance: full native, hosted fallback, Inspect, preview, fonts, offsets and warm paint passed")

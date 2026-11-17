@@ -143,6 +143,7 @@ chat.StopInputAnimations = function() end
 chat.ApplyClockSettings, chat.RefreshClocks, chat.DisableClock = function() end, function() end, function() end
 chat.DockGeometry, chat.UpdateWindowMoverBounds, chat.DockSelection = function() end, function() end, function() end
 chat.MessagesRefresh, chat.BubblesRefresh = function() end, function() end
+chat.SuspendMessages = function() end
 function suite.Install(id, module) eq(id, "chat"); eq(module, chat.M, "installed module") end
 hooksecurefunc = function() end
 Constants = { ChatFrameConstants = { MaxChatWindows = 0 } }
@@ -188,6 +189,10 @@ module.context = {
     Anchor = function(self, frame, ...)
         if not self.pointsBefore[frame] then self.pointsBefore[frame] = frame.points end
         frame:ClearAllPoints(); frame:SetPoint(...)
+    end,
+    Coalesce = function()
+        -- This controller fixture checks conflict and mover ownership.
+        return { Request = function() end, Cancel = function() end }
     end,
     RestorePoints = function(self, frame)
         if self.pointsBefore[frame] then frame.points = self.pointsBefore[frame]; self.pointsBefore[frame] = nil end

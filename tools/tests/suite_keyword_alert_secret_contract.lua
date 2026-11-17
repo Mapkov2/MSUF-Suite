@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local Fixtures = dofile(root .. "/tools/tests/comfort_fixture.lua")
-local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Secrets.Install()
 
 local path = root .. "/MSUF_Suite_QualityOfLife/KeywordAlerts.lua"

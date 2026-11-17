@@ -555,6 +555,7 @@ function Support.SuiteSkinBoundary(root, suite)
     end
     suite.Dispatch = suite.Dispatch or securecallfunction
     suite.Finish = suite.Finish or function(callback, ...) return true, callback(...) end
+    suite.ChatState = suite.ChatState or Support.ChatStateMock()
     UnitGUID = UnitGUID or function() return "Player-1" end
     if not suite.CharacterData then
         assert(loadfile(root .. "/MSUF_Suite/Core/CharacterData.lua"))("MSUF_Suite", suite)
@@ -618,7 +619,7 @@ function Support.SuitePack(root, locale)
     local pack = {}
     local host = MSUF_NS
     MSUF_NS = { LOCALE = locale, RegisterLocale = function(requested) return requested == locale and pack or {} end }
-    assert(loadfile(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/Locales/" .. locale .. ".lua"))(
+    assert(loadfile(root .. "/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames/Locales/" .. locale .. ".lua"))(
         "MidnightSimpleUnitFrames", {})
     assert(loadfile(root .. "/MSUF_Suite/Locales/" .. locale .. ".lua"))("MSUF_Suite", {})
     MSUF_NS = host
@@ -694,6 +695,52 @@ function Support.BagsWidgetsFixture(P)
         end,
         UpdateScroll = function() end,
     }
+end
+
+function Support.LoadBossTargetIndicator(root, host)
+    local core = root .. "/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames/"
+    local env = setmetatable({}, { __index = _G })
+    env._G = env
+    local setup = {}
+    setfenv(assert(loadfile(core .. "Kernel/MSUF_Bootstrap.lua")), env)("MidnightSimpleUnitFrames", setup)
+    setfenv(assert(loadfile(core .. "Kernel/MSUF_Require.lua")), env)("MidnightSimpleUnitFrames", setup)
+    setup.Client = { IsRetail = true }
+    setfenv(assert(loadfile(core .. "Shell/EditMode/MSUF_EditMode_Geometry.lua")), env)("MidnightSimpleUnitFrames", setup)
+    setfenv(assert(loadfile(core .. "Kernel/MSUF_Util.lua")), env)("MidnightSimpleUnitFrames", setup)
+    local requireBefore = host.Require
+    host.Require = setup.Require
+    assert(loadfile(core .. "UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", host)
+    host.Require = requireBefore
+end
+
+-- Suite.ChatState (MSUF_Suite/Core/ChatState.lua) for chat fixtures: Watch
+-- keeps each owner's handlers and Report delivers one report to every
+-- watcher, as the core's follower, events and EventRegistry callbacks do.
+-- Nothing in a fixture hooks Blizzard's chat code to drive the module.
+function Support.ChatStateMock(maxWindows)
+    local mock = { owners = {}, hovered = {} }
+    function mock.Watch(owner, handlers) mock.owners[owner] = handlers end
+    function mock.Unwatch(owner) mock.owners[owner] = nil end
+    function mock.IsPermanentBox(box)
+        local name = box and box.GetName and box:GetName()
+        local index = type(name) == "string" and tonumber(name:match("^ChatFrame(%d+)EditBox$"))
+        local parent = index and _G["ChatFrame" .. index]
+        return index ~= nil and index <= (maxWindows or 10) and parent ~= nil and parent.isTemporary ~= true
+    end
+    function mock.IsHovered(frame) return mock.hovered[frame] == true end
+    function mock.Report(kind, ...)
+        if kind == "hover" then
+            local frame, on = ...
+            mock.hovered[frame] = on or nil
+        end
+        local owners = {}
+        for owner, handlers in pairs(mock.owners) do owners[#owners + 1] = { owner, handlers } end
+        for _, pair in ipairs(owners) do
+            local handler = pair[2][kind]
+            if handler then handler(pair[1], ...) end
+        end
+    end
+    return mock
 end
 
 return Support

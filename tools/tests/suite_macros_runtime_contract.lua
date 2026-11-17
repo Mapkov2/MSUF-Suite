@@ -15,6 +15,11 @@ local function Run(flavor)
     local NS = { RootDB = {}, Client = { isForever = flavor == "Forever", SupportsEvent = function() return true end } }
     local secret = {}
     NS.IsSecret = function(value) return value == secret end
+    NS.Public = function(value) return value ~= secret end
+    Enum = { ClickBindingType = { Macro = 2, Interaction = 3 }, ClickBindingInteraction = { Target = 1, OpenContextMenu = 2 } }
+    C_ClickBindings = { GetProfileInfo = function() return {} end }
+    InClickBindingMode = function() return false end
+    GetBindingKey = function() end
     NS.Finite = function(value)
         return value ~= secret and type(value) == "number" and value == value and math.abs(value) < math.huge
     end
@@ -169,6 +174,23 @@ local function Run(flavor)
     assert(Store.Save(emptyDocument, emptyDraft))
     Check(Store.Publish(emptyDraft, true) and macros[emptyIndex].body == "/say filled",
         "blank native macro could not be edited after import")
+    local restoreTarget = { type = Enum.ClickBindingType.Macro, actionID = emptyIndex, button = "LeftButton", modifiers = 0 }
+    local clickProfile = { restoreTarget }
+    C_ClickBindings = {
+        GetProfileInfo = function() return clickProfile end,
+        SetProfileByInfo = function(profile) clickProfile = profile end,
+        GetBindingType = function() return clickProfile[1].type end,
+    }
+    DeleteMacro = function(slot)
+        Check(slot == emptyIndex and clickProfile[1].type == Enum.ClickBindingType.Interaction,
+            "WoW macro was deleted before click cleanup")
+        macros[slot] = nil
+    end
+    local savedEmpty = assert(Store.ResolvePublished(emptyDraft))
+    Check(Store.DeleteNative(savedEmpty) and not macros[emptyIndex], "WoW macro deletion failed")
+    Check(not Store.Get(emptyDraft).published and clickProfile[1].actionID == Enum.ClickBindingInteraction.Target,
+        "deletion kept the linked draft published or failed to restore targeting")
+    macros[emptyIndex] = { name = "Other", icon = 134400, body = "/say other" }
     local account = Store.Get(id)
     account.name, account.scope = "Account", "account"
     local accountID = assert(Store.Save(account))
@@ -205,7 +227,15 @@ local function Run(flavor)
     cooldowns[858] = 30
     body = assert(Store.Preview(health))
     Check(body:find("item:5512,item:118,Heal", 1, true), "unready potion displaced a ready one")
+    local preferred = Store.Preview({ mode = "consumable", consumable = {
+        kind = "health", priorities = { "potion" }, items = { 858, 118 },
+    } })
+    Check(preferred and preferred:find("item:118", 1, true), "a preferred potion on cooldown displaced a ready fallback")
     cooldowns[858] = nil
+    preferred = Store.Preview({ mode = "consumable", consumable = {
+        kind = "health", priorities = { "potion" }, items = { 118, 858 },
+    } })
+    Check(preferred and preferred:find("item:118", 1, true), "two ready potions did not keep the configured preference order")
     local healthID = assert(Store.Save(health))
     Check(Store.Publish(healthID), "managed macro failed to publish")
     Check(Store.HasManaged(), "managed binding missing")

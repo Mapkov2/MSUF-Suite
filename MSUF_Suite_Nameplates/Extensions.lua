@@ -212,6 +212,7 @@ local function Retire(state)
     T.Invalidate(state)
     E.Hide(state)
     state.unit, state.plan, state.casting, state.castID, state.interruptExpired = nil, nil, nil, nil, nil
+    state.watchesCast = nil
     state.focus, state.relevant, state.range, state.rangeValue, state.visible = nil, nil, nil, nil, nil
     state.rangeSeed, state.rangeSpell = nil, nil
     state.opacity, state.injured, state.loadHidden = nil, nil, nil
@@ -274,22 +275,36 @@ end
 
 local function NativeCastShown(cast)
     local state = castStates[cast]
-    if not state or restores[state] or not state.unit or not M.active or not plan.enabled or not Safe(state.uf) then return end
+    if not state or not state.watchesCast or state.cast ~= cast or restores[state]
+        or not state.unit or not M.active or not Extensions.usesCasts or not Safe(state.uf) then return end
     state.casting = CastPresent(state.unit)
     Presentation(state)
 end
 
 local function NativeCastHidden(cast)
     local state = castStates[cast]
-    if not state or restores[state] or not state.unit or not M.active or not plan.enabled or not Safe(state.uf) then return end
+    if not state or not state.watchesCast or state.cast ~= cast or restores[state]
+        or not state.unit or not M.active or not Extensions.usesCasts or not Safe(state.uf) then return end
     state.casting = false
     Presentation(state)
 end
 
-local function ObserveCast(state)
+local function ObserveCast(state, changedBar)
+    local kind, side = state.kind, plan[state.prefix]
+    local rule = plan.kinds[kind]
+    local watch = Extensions.usesCasts and (side.nameCast > 1 or plan.interrupt or plan.castScale ~= 1
+        or plan.focusReminder and kind == "enemyNpc" or plan.contextEnabled and rule and rule.castVisibility > 1)
+    if not watch then
+        state.watchesCast, state.casting, state.castID = nil, nil, nil
+        return
+    end
+    if not state.watchesCast or changedBar then state.casting = CastPresent(state.unit) end
+    state.watchesCast = true
     local cast = state.cast
-    if not cast or castStates[cast] then return end
+    if not cast then return end
+    local previous = castStates[cast]
     castStates[cast] = state
+    if previous then return end
     cast:HookScript("OnShow", NativeCastShown)
     cast:HookScript("OnHide", NativeCastHidden)
 end
@@ -323,19 +338,19 @@ function Extensions.Apply(uf, health, cast, prefix, unit)
     local fresh = state.unit == nil
     if fresh then
         state.plate = C_NamePlate.GetNamePlateForUnit(unit)
-        state.casting = CastPresent(unit)
         state.unit = unit
     end
     if state.plan ~= plan or state.prefix ~= prefix then T.Invalidate(state) state.layoutPlan = nil end
+    local previousCast = state.cast
     state.health, state.cast, state.prefix, state.plan = health, Safe(cast) and cast or nil, prefix, plan
     P.Layout.Observe(uf)
-    ObserveCast(state)
     if state.interruptExpired then E.EndInterrupt(state) state.interruptExpired = nil end
     if plan.neutralContext or plan.enemyLoad or plan.opacity or plan.hostileScoped then
         state.kind = X.PlateKind(uf, unit)
     else
         state.kind = X.Kind(uf.isFriend, uf.isPlayer)
     end
+    ObserveCast(state, state.cast ~= previousCast)
     state.focus = (plan.focusScale ~= 1 or plan.focusReminder) and Same(unit, "focus") or false
     SetInteraction(state)
     if plan.range and Same(unit, "target") then targetState = state end
@@ -366,6 +381,7 @@ local function UpdateKind(uf, unit)
     local kind = X.PlateKind(uf, unit)
     if kind == state.kind then return end
     state.kind = kind
+    ObserveCast(state)
     SetInteraction(state)
     if state == targetState then SeedRange(state) end
     PlateLayers(state)
@@ -443,15 +459,15 @@ local STOP = { UNIT_SPELLCAST_STOP = true, UNIT_SPELLCAST_FAILED = true, UNIT_SP
     UNIT_SPELLCAST_CHANNEL_STOP = true, UNIT_SPELLCAST_EMPOWER_STOP = true }
 
 function Extensions.OnCast(_, event, unit, _, _, fourth, fifth, sixth)
-    if not plan or not plan.enabled or not PublicUnit(unit) then return end
+    if not Extensions.usesCasts or not (START[event] or STOP[event]) or not PublicUnit(unit) then return end
     local uf = M.activeUnits[unit]
     local state = uf and states[uf]
-    if not state or restores[state] or state.unit ~= unit or not Safe(uf) then return end
+    if not state or not state.watchesCast or restores[state] or state.unit ~= unit or not Safe(uf) then return end
     if START[event] then
         state.casting = true
         state.castID = not NS.IsSecret(fourth) and fourth or nil
-        E.EndInterrupt(state)
-    elseif STOP[event] then
+        if plan.interrupt then E.EndInterrupt(state) end
+    else
         local castID, interrupter = fourth, nil
         if event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
             castID, interrupter = fifth, fourth
@@ -460,9 +476,9 @@ function Extensions.OnCast(_, event, unit, _, _, fourth, fifth, sixth)
         end
         if not NS.IsSecret(castID) and castID ~= nil and state.castID ~= nil and castID ~= state.castID then return end
         state.casting = false
-        local interrupted = event == "UNIT_SPELLCAST_INTERRUPTED"
+        local interrupted = plan.interrupt and (event == "UNIT_SPELLCAST_INTERRUPTED"
             or not NS.IsSecret(interrupter) and type(interrupter) == "string" and interrupter ~= ""
-            or event == "UNIT_SPELLCAST_EMPOWER_STOP" and not NS.IsSecret(fourth) and fourth == false
+            or event == "UNIT_SPELLCAST_EMPOWER_STOP" and not NS.IsSecret(fourth) and fourth == false)
         if interrupted and L.Mutable(state, uf) then E.Interrupt(state, interrupter) ArmInterrupts() end
     end
     Presentation(state)
@@ -603,6 +619,7 @@ local function Subscriptions()
     Subscribe("CHALLENGE_MODE_START", Extensions.OnMetadata, metadata and sources[10])
     Subscribe("CHALLENGE_MODE_COMPLETED", Extensions.OnMetadata, metadata and sources[10])
     Subscribe("PLAYER_GUILD_UPDATE", Extensions.OnMetadata, metadata and sources[4])
+    Extensions.usesMetadata = metadata or false
     if metadata then
         metadataJob = M.context:Coalesce(.5, MetadataPass)
     elseif metadataJob then
@@ -611,8 +628,20 @@ local function Subscriptions()
     end
 end
 
+local function NeedsCasts()
+    local c = M.config
+    if not plan.enabled or not (c.enemy or c.friendly) then return false end
+    if plan.interrupt or plan.focusReminder and c.enemy or plan.castScale ~= 1
+        or c.enemy and plan.enemy.nameCast > 1 or c.friendly and plan.friendly.nameCast > 1 then return true end
+    if plan.contextEnabled then
+        for _, kind in pairs(plan.kinds) do if kind.castVisibility > 1 then return true end end
+    end
+    return false
+end
+
 function Extensions.Configure(module)
     M = module
+    local hadInterrupt = plan and plan.enabled and plan.interrupt
     plan = X.Plan(module.config)
     plan.enabled = plan.enabled and module.config.look ~= P.Mode.LOOK_BLIZZARD
     if plan.enabled and plan.range then
@@ -625,8 +654,18 @@ function Extensions.Configure(module)
     end
     ReadContext()
     E.Configure(plan)
+    if hadInterrupt and not (plan.enabled and plan.interrupt) then
+        M.context:Cancel(ExpireInterrupts)
+        for _, state in pairs(states) do
+            if state.interruptUntil or state.interruptExpired then
+                E.EndInterrupt(state)
+                state.interruptExpired = nil
+            end
+        end
+    end
     Extensions.inUse = plan.enabled or next(restores) ~= nil
     Extensions.usesRange = plan.enabled and plan.range
+    Extensions.usesCasts = NeedsCasts()
     if not hooked and (P.IsSkinSuppressed or plan.enabled and (plan.contextEnabled or plan.enemyLoad or plan.clickbox))
         and type(NamePlateUnitFrameMixin.UpdateHitTestArea) == "function" then
         hooked = true
@@ -644,7 +683,7 @@ end
 function Extensions.Disable()
     if not M then return end
     plan.enabled, plan.range = false, false
-    Extensions.usesRange = nil
+    Extensions.usesRange, Extensions.usesCasts = nil, nil
     Subscriptions()
     for uf in pairs(states) do Extensions.Restore(uf) end
     targetState = nil

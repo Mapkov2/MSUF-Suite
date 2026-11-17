@@ -62,31 +62,49 @@ local fps
 for _, item in ipairs(ui.textItems) do
     if item.spec[1] == "FPS" then fps = item.button end
 end
+local bridge = P.Suite.HostBridge
+local open, exact = bridge.OpenExactMenuSetting
+bridge.OpenExactMenuSetting = function(_, page, section, key)
+    assert(page == "suite_minimap")
+    exact = section .. ":" .. key
+    return true
+end
 config.infoFPS = false
 ui.Paint()
-assert(not fps:IsShown(), "an inactive text should start hidden")
 Click("fps")
-assert(fps:IsShown() and fps.alpha == 0.38 and config.infoFPS == false,
-    "enabling an inactive layer must show an editable sample without touching the profile")
+assert(exact == "suite_minimap_info_fps:msufsuite.minimap.infoFPS" and not fps:IsShown() and config.infoFPS == false,
+    "an off FPS display must jump to Show FPS without changing the profile or the preview")
+config.infoFPS = true
+ui.Paint()
 Click("text")
-assert(not fps:IsShown(), "text group does not hide an explicitly enabled sample")
+assert(not fps:IsShown(), "text group does not hide an enabled display")
 Click("fps")
-assert(fps:IsShown(), "enabling an individual layer must re-open its group")
+assert(fps:IsShown(), "enabling an individual preview layer must re-open its group")
 Click("fps")
+config.infoFPS = false
 Click("hidden")
-assert(not fps:IsShown(), "Hidden must honor an explicitly disabled layer")
+assert(not fps:IsShown(), "Hidden must honor an explicitly hidden preview layer")
 ui.state.layers.fps = nil
 ui.Paint()
 assert(fps:IsShown(), "Hidden does not reveal automatic inactive layers")
+exact = nil
+Click("fps")
+assert(exact == "suite_minimap_info_fps:msufsuite.minimap.infoFPS" and fps:IsShown() and config.infoFPS == false,
+    "the visible disabled FPS example must still open Show FPS")
 Click("hidden")
 config.styleGlow, config.styleGlowAlpha = false, 0
 ui.Paint()
-assert(not ui.art.style.glow:IsShown(), "disabled glow should start hidden")
 Click("glow")
-assert(ui.art.style.glow:IsShown() and config.styleGlow == false and config.styleGlowAlpha == 0,
-    "enabling the glow layer must show a sample without touching the profile")
+assert(exact == "suite_minimap_style_glow:msufsuite.minimap.styleGlow" and not ui.art.style.glow:IsShown()
+    and config.styleGlow == false and config.styleGlowAlpha == 0, "an off glow must open its own enable switch")
+config.styleGlow = true
 Click("glow")
-assert(not ui.art.style.glow:IsShown(), "disabling the glow layer left its sample behind")
+assert(exact == "suite_minimap_style_glow:msufsuite.minimap.styleGlowAlpha", "a transparent glow must open its opacity")
+config.styleGlowAlpha = 50
+ui.Paint()
+Click("glow")
+assert(not ui.art.style.glow:IsShown() and config.styleGlow, "preview-only hiding affected the glow setting")
+bridge.OpenExactMenuSetting = open
 for _, item in ipairs(ui.textItems) do config["info" .. item.spec[1]] = true end
 ui.Paint()
 for _, item in ipairs(ui.textItems) do
@@ -114,8 +132,12 @@ buttons.player:GetScript("OnClick")(buttons.player, "LeftButton")
 for _, key in ipairs({ "tracking", "calendar", "mail", "crafting", "compartment", "difficulty", "zoom", "compass" }) do
     assert(buttons[key], "native minimap component has no layer: " .. key)
 end
+config.infoDifficulty = false
 for _, item in ipairs(ui.iconItems) do
-    local key = item.spec[1]
+    local key, setting = item.spec[1], item.spec[4]
+    if setting and type(config[setting]) == "boolean" then config[setting] = true end
+    if key == "folio" then config.showLanding = 1 end
+    ui.Paint()
     local layer = key == "drawer" and "addons" or key
     assert(buttons[layer], "icon has no layer: " .. key)
     if not item.button:IsShown() then Click(layer) end

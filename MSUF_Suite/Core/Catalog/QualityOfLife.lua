@@ -643,12 +643,8 @@ B.Module("lootVendorRules", {
 
 B.Module("lootToastFilter", {
     title = "Filtered loot notice",
-    description = "Show extra compact item notices for Blizzard personal loot toasts matching your rarity and item list.",
+    description = "Show compact notices for your loot, filtered by item quality and item list.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function()
-        if NS.Client.isForever then return false, "Filtered loot notice is available only in Retail" end
-        return true
-    end,
     editElement = "notices",
 })
 local toastIDs = String("itemIDs", "Item IDs (empty: all qualifying items)", "", 800)

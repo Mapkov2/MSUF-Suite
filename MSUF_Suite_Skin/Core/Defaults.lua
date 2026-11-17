@@ -208,6 +208,7 @@ NS.Defaults = {
         applyChat = true,
         includeSpecial = true,
     },
+    foreverSpellLearning = true,
     skins = {
         blizzardWindows = true,
         colorPicker = true,

@@ -41,6 +41,9 @@ local semanticChromeMode = {
 
 local safePanelMode = { role = "shell", allowImplicitProtected = false }
 local safeDialogMode = { role = "popup", allowImplicitProtected = false }
+local inviteDialogMode = { role = "popup", motion = false, primaryButton = "LFGInvitePopupAcceptButton" }
+local readyDialogMode = { role = "popup", motion = false, primaryButton = "YesButton" }
+local roleDialogMode = { role = "popup", motion = false, primaryButton = "acceptButton" }
 local hudAccentMode = {
     role = "panel",
     rootSurface = false,
@@ -484,6 +487,7 @@ local entries = {
             "PlunderstormQueueTutorialFrame",
         },
         mode = "dialog",
+        frameModes = { LFGInvitePopup = inviteDialogMode },
     },
     {
         id = "group-finder-status",
@@ -511,7 +515,11 @@ local entries = {
             "InstanceAbandonFrame", "InstanceAbandonPopup",
         },
         mode = safeDialogMode,
-        frameModes = { GroupLootHistoryFrame = safePanelMode },
+        frameModes = {
+            GroupLootHistoryFrame = safePanelMode,
+            ReadyCheckListenerFrame = readyDialogMode,
+            RolePollPopup = roleDialogMode,
+        },
     },
     {
         id = "raid-window",
@@ -1213,6 +1221,13 @@ local entries = {
             "PrestigeLevelUpBanner", "LossOfControlFrame",
         },
         mode = hudAccentMode,
+    },
+    {
+        id = "voice-chat-toasts",
+        category = "hud",
+        addon = "Blizzard_Channels",
+        frames = { "VoiceChatPromptActivateChannel", "VoiceChatChannelActivatedNotification" },
+        mode = { role = "popup", motion = false },
     },
     {
         id = "hud-core-fullscreen",
@@ -1933,15 +1948,15 @@ end
 -- tools/tests/suite_skin_generic_windows_contract.lua until this review and
 -- its classification are updated deliberately; in game, CatalogGlass.lua
 -- (loads next) closes only an entry whose roots it cannot classify.
-local REVIEWED_CATALOG_FINGERPRINT = "71c8992a-6a8e1ad9"
-local REVIEWED_CATALOG_ENTRIES = 241
-local REVIEWED_CATALOG_ROOTS = 464
-local REVIEWED_SOURCE_REVISION = "8ea15b61e45c0ed4eba01439c90757f86eb78d34"
+local REVIEWED_CATALOG_FINGERPRINT = "7ca91e10-3bf0467c"
+local REVIEWED_CATALOG_ENTRIES = 242
+local REVIEWED_CATALOG_ROOTS = 466
+local REVIEWED_SOURCE_REVISION = "297d7aaaa736f346b3e036f38ee088eaf7f8c07f"
 if NS.Client.isForever then
-    REVIEWED_CATALOG_FINGERPRINT = "06f14bca-05ab5ae9"
-    REVIEWED_CATALOG_ENTRIES = 242
-    REVIEWED_CATALOG_ROOTS = 465
-    REVIEWED_SOURCE_REVISION = "9465cb273b5513495d8ecc12fbb19930dd6b8957"
+    REVIEWED_CATALOG_FINGERPRINT = "3f3ff4e6-7a326ab0"
+    REVIEWED_CATALOG_ENTRIES = 243
+    REVIEWED_CATALOG_ROOTS = 467
+    REVIEWED_SOURCE_REVISION = "bebcb6bf309cf41b41bd74f8ca651e6a105b2676"
 end
 
 local dedicatedGlassOwners = {

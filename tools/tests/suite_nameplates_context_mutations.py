@@ -26,10 +26,12 @@ MUTANTS = (
      "if styled and not visual then\n                    FilterFriendlyName(uf, prefix)\n                    Paint(uf)"),
     (SKIN, CONTEXT_TEST, "level transition", "PLAYER_LEVEL_UP = true", "PLAYER_LEVEL_UP = false"),
     (SKIN, CONTEXT_TEST, "specialization kick-ready", 'if event == "PLAYER_SPECIALIZATION_CHANGED" then CastTime.Repaint() end', ""),
-    (TEXT, TEXT_TEST, "no-write font read", "local appliedPath, appliedSize, appliedFlags = path, nativeSize, flags",
-     "local appliedPath, appliedSize, appliedFlags = region:GetFont()"),
-    (TEXT, TEXT_TEST, "post-write font read", "        appliedPath, appliedSize, appliedFlags = region:GetFont()", ""),
-    (TEXT, TEXT_TEST, "pooled recapture", "elseif original.restored then", "elseif false then"),
+    (TEXT, TEXT_TEST, "no-write font read", "    elseif original.appliedShadow == shadowKey then\n        return",
+     "    elseif original.appliedShadow == shadowKey then\n        region:GetFont()\n        return"),
+    (TEXT, TEXT_TEST, "post-write font read", "local appliedPath, appliedSize, appliedFlags = region:GetFont()",
+     "local appliedPath, appliedSize, appliedFlags = face, height, styleFlags"),
+    (TEXT, TEXT_TEST, "pooled recapture", "    if fontChanged then",
+     "    if fontChanged and (not original.restored or original.appliedSize == false) then"),
 )
 
 

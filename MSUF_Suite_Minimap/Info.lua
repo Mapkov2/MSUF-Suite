@@ -4,13 +4,17 @@ local MM = P.Minimap
 local M = MM.M
 local CLOCK, DATE, LATENCY = NS.MinimapClockSource, NS.MinimapDatePosition, NS.MinimapLatencySource
 local TEXT_ANCHOR, BOX = NS.MinimapTextAnchor, NS.MinimapTextBox
--- Information texts on the map. One cancellable timer serves every sampled text
--- (clock, FPS, latency, coordinates); durability, location, weather, difficulty and the
--- calendar invite mark are event-driven. Hidden texts do no work and only
+-- Information texts on the map. One cancellable timer serves every timed text
+-- (clock, calendar day, coordinates); durability, location, weather, difficulty
+-- and the calendar invite mark are event-driven. Hidden texts do no work and only
 -- remember that they are stale; coordinates stop sampling while no position
 -- exists and resume on the next zone change.
+-- FPS and latency retain their last reading between player and pointer events.
+-- The configured intervals bound automatic movement and combat samples.
 local keys = { "CalendarDay", "Clock", "FPS", "Latency", "Coordinates", "Durability", "Location", "Weather" }
-local eventFields = { Durability = true, Location = true, Weather = true }
+local eventFields = { Durability = true, Location = true, Weather = true, FPS = true, Latency = true }
+local TELEMETRY_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_REGEN_DISABLED",
+    "PLAYER_REGEN_ENABLED", "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING" }
 local DURABILITY_EVENTS = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_EQUIPMENT_CHANGED" }
 local ZONE_EVENTS = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA" }
 local DIFFICULTY_EVENTS = { "PLAYER_DIFFICULTY_CHANGED", "GROUP_ROSTER_UPDATE", "INSTANCE_GROUP_SIZE_CHANGED",
@@ -140,14 +144,14 @@ end
 local FPS_TEXT, MS_TEXT = S.Text("%d FPS"), S.Text("%d ms")
 local function FPS(entry)
     local value = S.ReadInfoSource("fps")
-    if not Finite(value) or value < 0 then return "--", entry.interval end
+    if not Finite(value) or value < 0 then return "--" end
     value = math.floor(value + .5)
     if value ~= entry.lastFPS then
         entry.lastFPS = value
         entry.fpsText = FPS_TEXT:format(value)
     end
     local severity = value < M.config.infoFPSWarning and 3 or value < M.config.infoFPSGood and 2 or 1
-    return entry.fpsText, entry.interval, severity
+    return entry.fpsText, nil, severity
 end
 
 local function Latency(entry)
@@ -155,7 +159,7 @@ local function Latency(entry)
     local mode = M.config.infoLatencySource
     home = Finite(home) and home >= 0 and math.floor(home + .5) or nil
     world = Finite(world) and world >= 0 and math.floor(world + .5) or nil
-    if mode ~= LATENCY.WORLD and not home or mode ~= LATENCY.HOME and not world then return "--", entry.interval end
+    if mode ~= LATENCY.WORLD and not home or mode ~= LATENCY.HOME and not world then return "--" end
     if home ~= entry.lastHome or world ~= entry.lastWorld or mode ~= entry.lastMode then
         entry.lastHome, entry.lastWorld, entry.lastMode = home, world, mode
         entry.latencyText = mode == LATENCY.HOME and MS_TEXT:format(home)
@@ -164,7 +168,7 @@ local function Latency(entry)
     end
     local value = mode == LATENCY.HOME and home or mode == LATENCY.WORLD and world or math.max(home, world)
     local severity = value >= M.config.infoLatencyBad and 3 or value >= M.config.infoLatencyWarning and 2 or 1
-    return entry.latencyText, entry.interval, severity
+    return entry.latencyText, nil, severity
 end
 
 -- A nil delay parks the text until a zone change re-arms it (instances and
@@ -383,7 +387,10 @@ end
 local Tick
 Tick = function()
     M.infoTimer = nil
-    if not Visible() then return end
+    if not Visible() then
+        Cancel()
+        return
+    end
     local now, soonest = GetTime(), nil
     for _, key in ipairs(keys) do
         local entry = M.infoEntries[key]
@@ -408,14 +415,13 @@ function MM.UpdateInfoVisibility()
         Cancel()
         return
     end
-    if not M.infoVisible then
-        M.infoVisible = true
-        for key in pairs(eventFields) do
-            local entry = M.infoEntries[key]
-            if entry then entry.dirty = true end
-        end
-        if M.difficultyActive then M.difficultyDirty = true end
+    if M.infoVisible then return end
+    M.infoVisible = true
+    for key in pairs(eventFields) do
+        local entry = M.infoEntries[key]
+        if entry then entry.dirty = true end
     end
+    if M.difficultyActive then M.difficultyDirty = true end
     if not M.infoTimer then Tick() end
 end
 
@@ -449,6 +455,27 @@ local function ZoneChanged()
     Rearm()
     UpdateDifficulty()
 end
+-- One handler for every event and pointer entry that reads FPS and latency.
+-- The DataTexts read the same shared values (S.ReadInfoSource) on the same
+-- events, so the two displays cost one client call per value.
+local function ReadTelemetry(key, now, onDemand)
+    local entry = M.infoEntries[key]
+    if not entry or not entry.active then return end
+    if not onDemand and entry.telemetryAt and now - entry.telemetryAt < entry.interval then return end
+    entry.telemetryAt = now
+    Sample(entry, key)
+end
+
+local function RefreshTelemetry(onDemand)
+    if not M.infoTelemetry or not Visible() then return end
+    local now = GetTime()
+    ReadTelemetry("FPS", now, onDemand)
+    ReadTelemetry("Latency", now, onDemand)
+end
+
+local function TelemetryChanged(_, event)
+    RefreshTelemetry(event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA")
+end
 local function DifficultyChanged() UpdateDifficulty() end
 local function WeatherChanged() EventField("Weather") end
 local function WorldChanged()
@@ -468,12 +495,20 @@ local function WorldChanged()
     end
 end
 
+-- The pointer on the FPS or latency text reads both before the tooltip
+-- (InfoInput.lua) shows the text.
+local function TelemetryEnter(button)
+    RefreshTelemetry(true)
+    MM.InfoScripts.OnEnter(button)
+end
+
 local function CreateEntry(key)
     local button = S.CreateFrame("Button", nil, M.infoFrame)
     button.infoKey = key
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     -- Clicks, tooltips and the secure window overlay: InfoInput.lua.
     for script, handler in pairs(MM.InfoScripts) do button:SetScript(script, handler) end
+    if key == "FPS" or key == "Latency" then button:SetScript("OnEnter", TelemetryEnter) end
     local label = S.CreateFontString(button, nil, "OVERLAY", "GameFontNormalSmall")
     label:SetAllPoints(button)
     label:SetWordWrap(false)
@@ -590,9 +625,10 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
     entry.text = nil
 end
 
-local function Listen(events, handler, wanted)
+local function Listen(events, handler, wanted, key)
+    key = key or "info"
     for i = 1, #events do
-        if wanted then MM.Listen(events[i], "info", handler) else MM.Unlisten(events[i], "info") end
+        if wanted then MM.Listen(events[i], key, handler) else MM.Unlisten(events[i], key) end
     end
 end
 
@@ -625,6 +661,8 @@ local function SyncTextEvents(c)
     Listen(ZONE_EVENTS, ZoneChanged, location or coordinates or difficulty or weather)
     ListenOne("WEATHER_CHANGED", WeatherChanged, weather)
     Listen(DIFFICULTY_EVENTS, DifficultyChanged, difficulty)
+    M.infoTelemetry = c.infoFPS or c.infoLatency
+    Listen(TELEMETRY_EVENTS, TelemetryChanged, M.infoTelemetry, "infoTelemetry")
     ListenOne(INVITE_EVENT, UpdateInvite, M.inviteWanted)
     ListenOne("PLAYER_ENTERING_WORLD", WorldChanged,
         durability or location or coordinates or weather or difficulty or M.inviteWanted)
@@ -755,8 +793,10 @@ function MM.RefreshTexts()
 end
 
 MM.OnHover(function(shown)
+    if not M.active then return end
+    if shown then RefreshTelemetry(true) end
     local entry = M.infoEntries and M.infoEntries.Coordinates
-    if not M.active or not entry or not entry.active or M.config.infoCoordinatesMode ~= NS.MinimapCoordinatesMode.MOUSEOVER then return end
+    if not entry or not entry.active or M.config.infoCoordinatesMode ~= NS.MinimapCoordinatesMode.MOUSEOVER then return end
     entry.button:SetShown(shown)
     if shown then Rearm() end
 end)

@@ -1,5 +1,5 @@
 local root = assert(arg[1]):gsub("\\", "/")
-local host = root .. "/../MidnightSimpleUnitFrames"
+local host = root .. "/../MidnightSimpleUnitFrames-7.0"
 local flavor = arg[2] or "Mainline"
 local MenuWorld = assert(loadfile(host .. "/tools/tests/menu_core_world.lua"))()
 local mw = MenuWorld.Open(host, flavor, { locale = "deDE" })
@@ -384,6 +384,16 @@ x = x + 5
 targets.body:GetScript("OnMouseUp")(targets.body, "LeftButton")
 assert(c.w1X == prior and c.w2X == P.catalog.damageMeter.rules.w2X.default, "preview background moved a live window")
 assert(not preview.kit.drag and not targets.header.canMove, "window/header retained an Edit Mode drag")
+local byLayer = {}
+for _, button in ipairs(preview.layerButtons) do byLayer[button.key] = button end
+local savedHeader, savedIcon, savedTimer, savedCombatTime = c.headerVisible, c.iconStyle, c.timer, c.combatTime
+c.headerVisible, c.iconStyle, c.timer, c.combatTime = false, 1, false, true
+Click(byLayer.header, "headerVisible", "suite_damageMeter_window")
+Click(byLayer.icon, "iconStyle", "suite_damageMeter_bars")
+Click(byLayer.floatingTimer, "timer", "suite_damageMeter_timer")
+assert(c.headerVisible == false and c.iconStyle == 1 and c.timer == false, "preview chip implicitly enabled a setting")
+c.headerVisible, c.iconStyle, c.timer = true, 2, true
+ui.refreshPreview()
 for _, button in ipairs(preview.layerButtons) do
     local key, previous = button.key, preview.layers[button.key]
     button:GetScript("OnClick")(button, "LeftButton")
@@ -402,6 +412,8 @@ for _, button in ipairs(preview.layerButtons) do
     end
     button:GetScript("OnClick")(button, "LeftButton")
 end
+c.headerVisible, c.iconStyle, c.timer, c.combatTime = savedHeader, savedIcon, savedTimer, savedCombatTime
+ui.refreshPreview()
 for _, width in ipairs({ 300, 420, 720 }) do
     preview.availableWidth = width
     P.MeterPreviewLayers.Layout(preview)

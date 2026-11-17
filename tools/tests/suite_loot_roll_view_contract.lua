@@ -1,4 +1,5 @@
 local root = assert(arg[1], "repository root required")
+local viewPath = arg[2] or root .. "/MSUF_Suite_QualityOfLife/LootRollView.lua"
 local writes, nativeReads, subscriptions = 0, 0, 0
 
 local function Write()
@@ -114,7 +115,7 @@ local Suite = {
     end,
 }
 local namespace = { NS = { AnchorPoints = { "CENTER", "TOPLEFT" } }, Suite = Suite }
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootRollView.lua"))("MSUF_Suite_QualityOfLife", namespace)
+assert(loadfile(viewPath))("MSUF_Suite_QualityOfLife", namespace)
 local View = assert(namespace.LootRollView)
 
 local config = {
@@ -193,10 +194,31 @@ View.Paint(module)
 assert(need.button.shown and need.button.mouse and need.count.shown and row.status.shown,
     "waiting rows lost hoverable choices/counts")
 assert(not row.details.shown and row.status.width < config.width - config.rowHeight)
+assert(row.status.text == "Your roll: Need" and need.icon.alpha == 1 and need.check.shown,
+    "the player's choice has a readable label and a checkmark")
+assert(not transmog.check.shown and transmog.icon.alpha < 1 and not row.timer.shown,
+    "other choices are unmarked and the player's countdown is over")
 need.button.scripts.OnEnter(need.button)
 assert(GameTooltip.owner == need.button and GameTooltip.line == active.rollNames[1])
 need.button.scripts.OnClick(need.button)
 assert(calls == 2, "already-chosen row submitted another decision")
+active.finished, active.statusText = true, "Winner: Player B"
+View.Paint(module)
+assert(row.status.text == "Winner: Player B" and need.check.shown and not need.count.shown and not transmog.button.shown,
+    "a completed result retains the player's choice beside the winner")
+active.selfRoll = 72
+View.Paint(module)
+need.button.scripts.OnEnter(need.button)
+assert(need.count.text == 72 and GameTooltip.text == "Your roll: Need (72)",
+    "the winner row shows the player's actual rolled number when the API provides it")
+active.selfRoll = nil
+config.showResults = false
+active.choice = 0
+View.Paint(module)
+assert(row.status.text == "Your roll: Pass" and Action(row, 0).check.shown and not need.check.shown,
+    "a completed roll still acknowledges Pass when group results are disabled")
+config.showResults = true
+active.finished, active.statusText = false, nil
 active.choice, active.cancelled = nil, true
 need.button.scripts.OnClick(need.button)
 assert(calls == 2, "cancelled row submitted another decision")
@@ -243,6 +265,12 @@ config.fontSize = 18
 View.Paint(module)
 assert(row.frame.height == 61 and module.host.height == 126,
     "minimum row height did not expand to fit the largest supported text")
+active.choice = 3
+View.Paint(module)
+assert(row.status.text == "Your roll: Disenchant" and row.status.width >= 170 and Action(row, 3).check.shown,
+    "the chosen action remains readable on a narrow row at the largest base font size")
+active.choice = nil
+View.Paint(module)
 local titleBottom = -row.name.points[1][5] + row.name.height
 local buttonTop = row.frame.height - need.button.points[1][5] - need.button.height
 assert(titleBottom <= buttonTop, "large title overlaps the roll buttons")

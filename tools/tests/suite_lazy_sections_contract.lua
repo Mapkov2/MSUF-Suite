@@ -28,7 +28,9 @@ function Methods:IsShown() return self.shown end
 function Methods:SetHeight(height) self.height = height end
 function Methods:GetHeight() return self.height end
 function Methods:GetStringHeight() return 14 end
+function Methods:GetStringWidth() return 24 end
 function Methods:GetParent() return self.parent end
+function Methods:CreateTexture() return Frame(self) end
 CreateFrame = function(_, _, parent) return Frame(parent) end
 
 local log, combat, combatLocked = {}, false, false
@@ -96,6 +98,8 @@ P.M = {
     TrackRefresh = function(ctx, fn) ctx.refreshers[#ctx.refreshers + 1] = fn end,
     AddTooltip = Noop, RegisterControlMetadata = function() Log("metadata") end,
     BindTextInputAt = function() return Frame() end,
+    BindDropdownAt = function(_, parent) return Frame(parent) end,
+    BindSwitchAt = function(_, parent) return Frame(parent) end,
 }
 P.W = {
     PageBuilder = Builder,
@@ -126,7 +130,9 @@ P.W = {
         return Frame(body), function() spec.afterRefresh(spec.get() or spec.defaultTab) end, nil, Choose
     end,
 }
-P.T = { Button = function(parent) return Frame(parent) end, colors = {} }
+P.T = { Button = function(parent) return Frame(parent) end, Font = Frame, Panel = Frame, colors = {} }
+P.Text = function(parent) return Frame(parent) end
+P.StyleMenuControl = Noop
 P.Combat = function() return combat end
 P.Get = function() return 1 end
 P.Set = Noop
@@ -419,13 +425,15 @@ do
     local facade = P.ActionBarMenu.Builder(ctx)
     Clear()
     local text = P.ActionBarMenu.Rules(ctx, facade, "suite_actionbars_bar_text", "Text", RULES, {})
-    local look, lookEntries = P.ActionBarMenu.Rules(ctx, facade, "suite_actionbars_look", "Look", RULES, {})
+    local look = P.ActionBarMenu.Rules(ctx, facade, "suite_actionbars_look", "Look", RULES, {})
+    local shared, sharedEntries = P.ActionBarMenu.Rules(ctx, facade, "suite_actionbars_cooldowns", "Cooldowns", RULES, {})
     local free = P.ActionBarMenu.Rules(ctx, facade, "suite_actionbars_custom", "Custom", RULES, { open = true })
     local textEntry, lookEntry = text._msuf2CollapsibleEntry, look._msuf2CollapsibleEntry
     Check(textEntry.open and not textEntry.built and text.resets == 1 and text.summaries == 1
         and text._msufSuiteActionBarSectionId == "suite_actionbars_bar_text",
         "an open section on a hidden action bar tab needs its header only")
-    Check(lookEntry.built and lookEntries and Count("workspace search") > 0,
+    Check(lookEntry.open and not lookEntry.built, "the Appearance tab must defer its look controls")
+    Check(shared._msuf2CollapsibleEntry.built and sharedEntries and Count("workspace search") > 0,
         "the selected tab's first section must build at once with its search reveal")
     Check(free._msuf2CollapsibleEntry.lazyOpts.deferWhileHidden == false and free._msuf2CollapsibleEntry.built,
         "a section outside the tabs must not wait for a tab")
@@ -445,11 +453,16 @@ P.SectionRules = function(_, section)
     return { { key = section .. "Size", label = "Size", sectionTitle = section, section = section, default = 1, min = 0, max = 2 } }
 end
 P.ModuleCard, P.BuildNameplatesPreview, P.BuildNameplatesAuraColors = Noop, Noop, Noop
+P.NameplatesPreview = { Metrics = function() return { barWidth = 150, nativeBarHeight = 20, heightDelta = 0 } end }, Noop
 -- Companion areas have dedicated real-host tests. This fixture isolates
 -- the original nameplate accordion's lazy construction and reveal order.
 P.NameplatesAdvancedAuras, P.NameplatesExtensions = { Append = Noop }, { Append = Noop }
-P.NameplatesProfiles, P.NameplatesHostOptions = { Build = Noop }, { Build = Noop }
-P.catalog.nameplates = { rules = {}, controls = {} }
+P.NameplateFonts = { TargetForSetting = Noop }
+P.NameplateBarTextures = { Target = Noop, Link = function(_, _, y) return y end,
+    LegacyRule = Noop,
+    LinkOutline = function(_, _, y) return y end, BarDetailKeys = function() return {} end }
+local function BasicRule(key, default) return { key = key, label = key, default = default } end
+P.catalog.nameplates = { rules = { look = BasicRule("look", 3), enabled = BasicRule("enabled", true) }, controls = {} }
 -- The native-aware catalog always provides its client-filtered controls.
 P.catalog.nameplates.getControls = function() return P.catalog.nameplates.controls end
 P.Gates = P.Gates or {}
@@ -461,28 +474,51 @@ P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
     assert(name == "MSUF_Suite.NameplatesTabs" and type(resolver) == "function")
     return true
 end
+P.NameplatesAdvancedAuras.Append = function(specs) specs[#specs + 1] = { key = "auraWorkspace" } end
+P.Suite.NameplateStyle.Elements = {}
+P.Suite.NameplateStyle.StatusByKey = {}
+P.Suite.NameplateStyle.PaintMarker = Noop
+P.Suite.Client = { isForever = false }
+P.RGB = P.Suite.RGB
+P.Suite.NameplateExtensions = { Kinds = {
+    { key = "enemyNpc", label = "Enemy NPC" }, { key = "enemyPlayer", label = "Enemy player" },
+    { key = "neutralNpc", label = "Neutral" }, { key = "friendlyPlayer", label = "Friendly" },
+    { key = "friendlyNpc", label = "Friendly NPC" },
+}, Contexts = {}, FirstTextSource = 2, LastTextSource = 1,
+    InteractionFields = {}, SkinKeys = { enemy = "enemySkinEnabled", neutral = "neutralSkinEnabled",
+        friendly = "friendlySkinEnabled", friendlyNpc = "friendlyNpcSkinEnabled" } }
+Load("Pages/NameplatesExtensions.lua")
+Load("Pages/NameplatesStatus.lua")
+Load("Pages/NameplatesSectionsLayout.lua")
+P.NameplatesSectionsLayout.TextCards = function() return -80, {} end
+P.NameplatesSectionsLayout.CastCards = P.NameplatesSectionsLayout.TextCards
 Load("Pages/Nameplates.lua")
 -- Every tabbed nameplate accordion (Pages/Nameplates.lua SECTIONS) saved closed.
-local TABBED = { "enemy", "roleColors", "signals", "friendly", "auras" }
+local TABBED = { "enemyMarkers", "neutralMarkers", "friendlyMarkers", "friendlyNpcMarkers",
+    "enemyText", "friendlyText", "friendlyCast", "castbar",
+    "enemyOpacity", "neutralOpacity", "friendlyOpacity", "friendlyNpcOpacity",
+    "enemyBasics", "neutralBasics", "friendlyBasics", "friendlyNpcBasics",
+    "enemyStyle", "neutralStyle", "friendlyStyle", "friendlyNpcStyle",
+    "enemyRange", "neutralRange", "friendlyRange", "friendlyNpcRange" }
 do
     local saved = {}
     for _, key in ipairs(TABBED) do saved["suite_nameplates_" .. key] = false end
     local ctx = Ctx(saved)
     Clear()
     page.build(ctx)
-    Check(Count("tabs") == 0 and Count("lazy suite_nameplates_enemy") == 1, "a closed enemy section built its tabs")
+    Check(Count("tabs") == 0 and Count("lazy suite_nameplates_enemyBasics") == 1, "a closed enemy section built its tabs")
     combat = true
     local body = P.SelectNameplatesEnemyTab("elements")
-    Check(body and body.sectionId == "suite_nameplates_enemy" and Count("tabs") == 0,
+    Check(body and body.sectionId == "suite_nameplates_enemyMarkers" and Count("tabs") == 0,
         "the enemy tab selector must return the section and build nothing in combat")
     combat = false
-    -- The old Blizzard elements tab id opens the markers tab.
-    Check(P.SelectNameplatesEnemyTab("elements") == body and Count("tabs") == 1 and Count("select markers") == 1,
+    -- The legacy preview route now opens Basic with the raid marker selected.
+    Check(P.SelectNameplatesEnemyTab("elements") == body and Count("tabs") == 1 and Count("select basic") == 1,
         "the enemy tab selector must build the section, then select the tab")
     lazyHost = false
     Clear()
     page.build(Ctx())
-    Check(Count("tabs") == #TABBED and P.SelectNameplatesEnemyTab("appearance") and Count("select bar") == 1,
+    Check(Count("tabs") == #TABBED and P.SelectNameplatesEnemyTab("appearance") and Count("select frame") == 1,
         "an old host builds the tabbed sections at once")
 end
 

@@ -1,8 +1,9 @@
 local root = assert(arg[1], "repository root required")
 local flavor = arg[2] or "Mainline"
 local H = dofile(root .. "/tools/tests/suite_minimap_harness.lua")
-local reads = { fps = 0, gold = 0, durability = 0 }
+local reads = { fps = 0, gold = 0, durability = 0, latency = 0 }
 local money, fps = 100000, 80
+local homeLatency, worldLatency = 30, 50
 local function SetupSources(world)
     local G = world.G
     G.GetFramerate = function() reads.fps = reads.fps + 1; return fps end
@@ -16,7 +17,7 @@ local function SetupSources(world)
     end
     G.GetGameTime = function() return 14, 3 end
     G.GetServerTime = function() return 1700000000 + world.now end
-    G.GetNetStats = function() return 0, 0, 30, 50 end
+    G.GetNetStats = function() reads.latency = reads.latency + 1; return 0, 0, homeLatency, worldLatency end
     G.GetPhysicalScreenSize = function() return 1024, 768 end
     G.C_Container = {
         GetContainerNumSlots = function() return 20 end,
@@ -171,8 +172,8 @@ if flavor == "Forever" then
         and custom.suite.modules.buffReminders.borderColor == "123456"
         and custom.suite.modules.cooldownManager.bar_barColor == "654321",
         "custom Forever layout was overwritten")
-    -- The remaining contract exercises the shared sampled FPS path and gold
-    -- events with the same data sources on both client families.
+    -- The remaining contract exercises the shared event-driven FPS path and
+    -- gold events with the same data sources on both client families.
     footer.bar1Slot1, footer.bar1Slot3 = 2, 6
     footer.backgroundOpacity = 82
 elseif flavor == "Mainline" then
@@ -216,14 +217,126 @@ assert(S.states.dataTexts.active and M.bars[1].frame:IsShown()
     "starter bar did not render its selected sources")
 assert(M.bars[1].slots[1].label.font[1] == MEDIA_FONT,
     "DataTexts did not take MSUF's font from the shared media table")
-assert(reads.fps == before and W.Pending() == 1,
-    "minimap and DataTexts did not reuse the FPS sample and timer")
+-- 2026-11-16 (Suite owner): FPS and latency have no timer in the DataTexts or
+-- the Minimap texts. They are read on player events (world entry, new zone,
+-- starting and stopping to move, combat end, a bar that shows) and when the
+-- pointer enters a bar, a place or the text. Idle, nothing wakes up for them.
+local mapFPS = W.M.infoEntries.FPS
+local fpsSlot = M.bars[1].slots[3]
+-- Beyond the default minimap interval, one client read serves both displays.
+local function Moved(event)
+    W.Advance(1.1)
+    W.Event(event or "PLAYER_STOPPED_MOVING")
+end
+assert(reads.fps == before and W.Pending() == 0,
+    "minimap and DataTexts did not reuse the FPS sample, or an FPS display armed a timer")
+assert(not M.timer and not W.M.infoTimer, "an FPS display holds a data tick")
 local fpsRecord = M.values.fps
 fps = 40
-W.Advance(2)
-assert(reads.fps == before + 1 and M.bars[1].slots[3].text == "FPS: 40" and W.Pending() == 1,
-    "shared timer did not read FPS once for both displays")
+W.Advance(600)
+assert(reads.fps == before and fpsSlot.text == "FPS: 80" and mapFPS.label.text == "80 FPS" and W.Pending() == 0,
+    "an idle FPS display read the frame rate or armed a timer")
+for _, context in ipairs({ M.context, W.M.context }) do
+    assert(context.callbacks.PLAYER_STOPPED_MOVING and context.callbacks.PLAYER_STARTED_MOVING
+        and context.callbacks.ZONE_CHANGED_NEW_AREA and context.callbacks.PLAYER_ENTERING_WORLD,
+        "an FPS display lacks one of its refresh events")
+    assert(not context.callbacks.UNIT_AURA and not context.frame.scripts.OnUpdate,
+        "an FPS display listens to an event flood or runs per frame")
+end
+Moved()
+assert(reads.fps == before + 1 and fpsSlot.text == "FPS: 40" and mapFPS.label.text == "40 FPS" and W.Pending() == 0,
+    "the next movement event did not read FPS once for both displays")
 assert(M.values.fps == fpsRecord, "a changed sample allocated a new value record")
+for index, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_STARTED_MOVING",
+    "PLAYER_STOPPED_MOVING" }) do
+    local samples = reads.fps
+    fps = 40 + index
+    Moved(event)
+    assert(reads.fps == samples + 1 and fpsSlot.text == "FPS: " .. fps and mapFPS.label.text == fps .. " FPS",
+        event .. " did not read FPS once for both displays")
+end
+-- Combat pauses the DataTexts as before; the fight's end reads again.
+do
+    local samples = reads.fps
+    fps = 50
+    Moved("PLAYER_REGEN_DISABLED")
+    W.combat = true
+    assert(reads.fps == samples + 1 and mapFPS.label.text == "50 FPS" and fpsSlot.text == "FPS: 44",
+        "combat start did not read FPS for the minimap alone")
+    fps = 51
+    W.Advance(30)
+    assert(reads.fps == samples + 1, "FPS was read during the fight without an event")
+    W.combat = false
+    W.Event("PLAYER_REGEN_ENABLED")
+    assert(reads.fps == samples + 2 and fpsSlot.text == "FPS: 51" and mapFPS.label.text == "51 FPS",
+        "combat end did not read FPS once for both displays")
+end
+-- The pointer: a bar, an FPS place (before its tooltip) and the minimap text
+-- read; another place does not.
+do
+    local samples, tip = reads.fps, W.G.GameTooltip
+    fps = 60
+    W.Advance(.1)
+    W.Fire(M.bars[1].frame, "OnEnter")
+    assert(reads.fps == samples + 1 and fpsSlot.text == "FPS: 60", "the pointer on a bar did not read FPS")
+    fps = 61
+    W.Advance(.1)
+    W.Fire(fpsSlot, "OnEnter")
+    assert(reads.fps == samples + 2 and fpsSlot.text == "FPS: 61" and tip.lines[2] == "FPS: 61",
+        "the pointer on the FPS place did not read FPS before its tooltip")
+    W.Fire(fpsSlot, "OnLeave")
+    fps = 62
+    W.Advance(.1)
+    W.Fire(M.bars[1].slots[1], "OnEnter")
+    W.Fire(M.bars[1].slots[1], "OnLeave")
+    assert(reads.fps == samples + 2 and fpsSlot.text == "FPS: 61", "the pointer on the gold place read FPS")
+    W.Fire(mapFPS.button, "OnEnter")
+    assert(reads.fps == samples + 3 and mapFPS.label.text == "62 FPS", "the pointer on the minimap FPS text did not read")
+    W.Fire(mapFPS.button, "OnLeave")
+    W.Fire(M.bars[1].frame, "OnLeave")
+    W.Advance(600)
+    assert(reads.fps == samples + 3 and W.Pending() == 0, "a pointer reading left a timer behind")
+    fps = 40
+    Moved()
+end
+-- 2026-11-15: a read rate is compared by the whole number it shows and its severity before any
+-- text is built (Standard.SAMPLES, M:UpdateSource). The same number with the same severity formats
+-- nothing. The severity follows the raw rate, not the number shown: 29.6 and 30.2 both show 30, and
+-- only the first is below the warning (30). A forced update still paints an unchanged value.
+do
+    local fpsBar, slot = M.bars[1], M.bars[1].slots[3]
+    local display, displays = fpsBar.display, 0
+    fpsBar.display = function(...)
+        displays = displays + 1
+        return display(...)
+    end
+    local samples, shown = reads.fps, slot.display
+    local labelWrites, mapWrites = slot.label.textWrites, mapFPS.label.textWrites
+    fps = 40.3
+    Moved()
+    assert(reads.fps == samples + 1, "the FPS event did not sample once")
+    assert(displays == 0 and slot.display == shown and M.values.fps.first == 40 and W.Pending() == 0,
+        "an FPS event that shows the same number formatted its text again or armed a timer")
+    assert(slot.label.textWrites == labelWrites and mapFPS.label.textWrites == mapWrites,
+        "an FPS event that shows the same number wrote a text again")
+    fps = 29.6
+    Moved()
+    local warned = slot.display
+    assert(slot.text == "FPS: 30" and displays == 1 and warned ~= shown, "a rate below the warning did not repaint")
+    fps = 30.2
+    Moved()
+    assert(slot.text == "FPS: 30" and displays == 2 and slot.display ~= warned,
+        "the same whole number above the warning kept the warning colour")
+    fps = 30.4
+    Moved()
+    assert(displays == 2 and W.Pending() == 0, "an unchanged FPS event formatted its text again or armed a timer")
+    M:UpdateSource("fps", true)
+    assert(displays == 3 and slot.text == "FPS: 30", "a forced update skipped an unchanged sampled value")
+    fpsBar.display = display
+    fps = 40
+    Moved()
+    assert(slot.text == "FPS: 40" and reads.fps == samples + 5, "the FPS place did not follow its next event")
+end
 local bar = M.bars[1]
 local textureWrites, fontWrites = 0, 0
 local setTexture, setFont = bar.background.SetTexture, bar.slots[1].label.SetFont
@@ -291,9 +404,12 @@ G.UIParent:SetScale(1)
 W.Event("UI_SCALE_CHANGED")
 assert(S.SetMany("dataTexts", pixelBefore))
 local styledTextureWrites, styledFontWrites = textureWrites, fontWrites
-W.Advance(2)
-assert(textureWrites == styledTextureWrites and fontWrites == styledFontWrites,
-    "sampled data update repeated cold-path texture or font styling")
+fps = 41
+Moved()
+assert(M.bars[1].slots[3].text == "FPS: 41" and textureWrites == styledTextureWrites
+    and fontWrites == styledFontWrites, "sampled data update repeated cold-path texture or font styling")
+fps = 40
+Moved()
 local dataMover = assert(W.movers["MSUFSuite.dataTexts/bar1"], "DataTexts bar is missing in Edit Mode")
 assert(not dataMover.centerPopup, "DataTexts popup must leave the centered bar accessible for dragging")
 assert(#dataMover.extraControls == 4
@@ -391,9 +507,19 @@ assert(M.bars[1].frame.alpha == 0, "mouseover bar was still visible")
 assert(S.Set("dataTexts", "bar2Enabled", false))
 assert(S.Set("minimap", "infoFPS", false))
 assert(W.Pending() == 0, "hidden bars kept a sampled data timer")
+-- Hidden FPS displays drop their refresh events and read nothing.
+local hiddenReads = reads.fps
+assert(not M.context.callbacks.PLAYER_STOPPED_MOVING and not M.context.callbacks.PLAYER_STARTED_MOVING
+    and not W.M.context.callbacks.PLAYER_STOPPED_MOVING and not W.M.context.callbacks.PLAYER_REGEN_ENABLED,
+    "hidden FPS displays kept their refresh events")
+fps = 45
+Moved()
+Moved("ZONE_CHANGED_NEW_AREA")
+assert(reads.fps == hiddenReads, "a hidden FPS place was read")
 W.Fire(M.bars[1].frame, "OnEnter")
-assert(M.bars[1].frame.alpha == 1 and W.Pending() == 1,
-    "mouse entry did not resume sampled data")
+assert(M.bars[1].frame.alpha == 1 and W.Pending() == 0 and reads.fps == hiddenReads + 1
+    and M.bars[1].slots[3].text == "FPS: 45" and M.context.callbacks.PLAYER_STOPPED_MOVING,
+    "mouse entry did not read the frame rate once or armed a timer")
 local rebinds, rebind = 0, M.Rebind
 M.Rebind = function(...) rebinds = rebinds + 1; return rebind(...) end
 M.bars[1].frame.mouseOver = true
@@ -403,12 +529,52 @@ W.Fire(M.bars[1].slots[2], "OnEnter")
 W.Fire(M.bars[1].slots[2], "OnLeave")
 M.bars[1].frame.mouseOver = nil
 M.Rebind = rebind
-assert(rebinds == 0 and M.bars[1].frame.alpha == 1 and W.Pending() == 1,
+assert(rebinds == 0 and M.bars[1].frame.alpha == 1 and W.Pending() == 0,
     "moving between slots of a hovered bar rebound its data sources")
 W.Fire(M.bars[1].frame, "OnLeave")
-assert(M.bars[1].frame.alpha == 0 and W.Pending() == 0,
-    "mouse exit did not cancel sampled data")
--- Auto-layout bars relayout on every changed value, so the relayout itself
+assert(M.bars[1].frame.alpha == 0 and W.Pending() == 0 and not M.context.callbacks.PLAYER_STOPPED_MOVING,
+    "mouse exit did not release the frame rate events")
+fps = 40
+-- A same-width FPS change should repaint its text without moving the bar.
+do
+    local savedFPS, config = fps, S.Config("dataTexts")
+    local visibility, layout = config.bar1Visibility, config.bar1Layout
+    assert(S.SetMany("dataTexts", { bar1Visibility = 1, bar1Layout = W.Suite.DataTextLayout.FIT }))
+    local bar = M.bars[1]
+    local button
+    for _, slot in ipairs(bar.slots) do
+        if slot.source == "fps" then button = slot break end
+    end
+    assert(button, "Fit-width fixture needs an FPS slot")
+    local setPoint, width = button.SetPoint, button.label.GetUnboundedStringWidth
+    local moves, readsWidth, size = 0, 0, 30
+    button.SetPoint = function(self, ...)
+        moves = moves + 1
+        return setPoint(self, ...)
+    end
+    button.label.GetUnboundedStringWidth = function()
+        readsWidth = readsWidth + 1
+        return size
+    end
+    fps = fps + 1
+    for i = 1, 3 do
+        S.InvalidateSharedData("fps")
+        M:UpdateSource("fps")
+        fps = fps + 1
+    end
+    print(("Fit text, three equal widths: %d moves / %d width reads"):format(moves, readsWidth))
+    assert(moves <= 1 and readsWidth == 3, "equal-width changes moved an unchanged slot")
+    moves, readsWidth, size = 0, 0, 200
+    S.InvalidateSharedData("fps")
+    M:UpdateSource("fps")
+    assert(moves == 1 and readsWidth == 1, "a new width failed to move the slot or was measured twice")
+    button.SetPoint, button.label.GetUnboundedStringWidth = setPoint, width
+    fps = savedFPS
+    S.InvalidateSharedData("fps")
+    assert(S.SetMany("dataTexts", { bar1Visibility = visibility, bar1Layout = layout }))
+end
+
+-- Auto-layout bars can relayout on value changes, so the relayout itself
 -- must not allocate. The widgets are allocation-free stand-ins here.
 do
     local Layout
@@ -460,7 +626,7 @@ assert(not M.bars[1].frame:IsShown() and not M.bars[2].frame:IsShown()
     "disabling DataTexts left a frame or money event active")
 assert(W.Pending() == 0, "disabled information displays kept a timer")
 -- New choices append to the existing index table so saved slot selections
--- retain their meaning. Both sampled values share the active bar's timer.
+-- retain their meaning. The date keeps its timer; FPS / World adds none.
 G.date = function(format)
     assert(format == "*t", "the Date place did not read the local date parts")
     return { day = 26, month = 9, year = 2026, hour = 15, min = 3, sec = 20 }
@@ -558,6 +724,27 @@ assert(strip[1].display:find("Home.tga", 1, true) and strip[2].display:find("Wor
 assert(strip[3].display:find("|cffffd54a", 1, true) and strip[3].display:find(" fps", 1, true))
 assert(strip[4].display:find("Location.tga", 1, true) and strip[5].display:find("Durability.tga", 1, true))
 assert(not strip[1].extra and not strip[2].extra, "standard source clicks changed to broker actions")
+-- Latency has no timer either: Home and World share one client read per event
+-- and warn from their own value.
+do
+    local netReads, fpsReads, limit = reads.latency, reads.fps, S.Config("dataTexts").latencyWarning
+    homeLatency, worldLatency = limit - 1, limit
+    W.Advance(600)
+    assert(reads.latency == netReads and reads.fps == fpsReads and strip[1].text == "30 ms" and W.Pending() == 0,
+        "idle latency places read the client or armed a timer")
+    W.Event("PLAYER_STARTED_MOVING")
+    assert(reads.latency == netReads + 1 and reads.fps == fpsReads + 1,
+        "a movement event did not read latency and FPS once each for every place")
+    assert(strip[1].text == (limit - 1) .. " ms" and strip[2].text == limit .. " ms"
+        and M.values.homeLatency.severity == nil and M.values.latency.severity == "bad",
+        "latency places did not follow the event or lost their own warning")
+    homeLatency, worldLatency = 30, 50
+    W.Advance(.1)
+    W.Fire(strip[2], "OnEnter")
+    assert(reads.latency == netReads + 2 and strip[1].text == "30 ms" and strip[2].text == "50 ms"
+        and M.values.latency.severity == nil, "the pointer on a latency place did not read it")
+    W.Fire(strip[2], "OnLeave")
+end
 assert(S.Set("dataTexts", "bar1SourceIcons", false))
 assert(not M.bars[1].slots[1].display:find("|T", 1, true), "old icon markup remained after disabling")
 assert(S.Set("dataTexts", "enabled", false) and W.Pending() == 0)
@@ -694,9 +881,15 @@ if flavor == "Forever" then
     end
     cold.G.UnitAffectingCombat = function() return false end
     cold.combat = false
+    local shownFPS = fps
+    fps = fps + 7
+    cold.Advance(.1)
     cold.Event("PLAYER_REGEN_ENABLED")
     assert(not module.paused and module.activeSources.fps and module.timer and clears == 0,
         "DataTexts did not resume live samples from the first layout")
+    assert(bar.slots[1].text:find(tostring(fps), 1, true) and module.context.callbacks.PLAYER_STOPPED_MOVING
+        and not module.due.fps, "combat end did not read FPS or gave it a deadline")
+    fps = shownFPS
 end
 
 -- Retail and WoW Forever always have the APIs DataTexts calls. The one
@@ -724,4 +917,4 @@ do
     local _, hideKeys = code:gsub('%.%. "LoadCondHideIn', "")
     assert(enabledKeys == 1 and hideKeys == 2, "DataTexts concatenates per-bar setting keys outside BAR_KEYS")
 end
-print("Suite DataTexts: starter bars, shared samples/timer, events, secrets, Edit Mode and disable passed: " .. flavor)
+print("Suite DataTexts: starter bars, event-driven FPS/latency, shared samples, events, secrets, Edit Mode and disable passed: " .. flavor)

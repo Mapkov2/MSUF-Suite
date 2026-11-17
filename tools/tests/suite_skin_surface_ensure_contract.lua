@@ -54,7 +54,7 @@ end
 
 local NS = {
     path = "",
-    Client = { isForever = false },
+    Client = { isForever = arg[2] == "Forever" },
     IsCombatLocked = function() return false end,
     BlizzardYellow = { TrackFrame = Noop },
 }
@@ -145,6 +145,30 @@ Surface.Refresh(readingPanel)
 Check(readingFill.gradientStartAlpha == 1 and readingFill.gradientEndAlpha == 1,
     "a reading gradient let the world show through")
 NS.DB.theme.panelOpacity, NS.DB.theme.gradient = opacity, gradient
+
+if NS.Client.isForever then
+    local rootFrame, child = Target(), Target()
+    function child:GetParent() return rootFrame end
+    local window = Surface.Attach(rootFrame, { role = "shell", radius = 4 })
+    local content = Surface.Attach(child, { role = "panel", radius = 4 })
+    local theme = NS.DB.theme
+    local shell, background, ink = theme.shellOpacity, theme.colors.background, theme.colors.ink
+    theme.colors.background, theme.colors.ink = { .031, .043, .051, .92 }, { .031, .043, .051, .92 }
+    NS.Theme.SetAppearance("shellOpacity", .9)
+    Check(theme.look == "custom" and Surface.UsesGlassCompositing(), "editing a translucent shell disabled Glass compositing")
+    theme.colors.background, theme.colors.ink = { .08, .09, .1, 1 }, { .08, .09, .1, 1 }
+    NS.Theme.SetAppearance("shellOpacity", 1)
+    Check(not Surface.UsesGlassCompositing(), "the actual opaque shell was classified as Glass")
+    theme.shellOpacity, theme.colors.background, theme.colors.ink = shell, background, ink
+    NS.Theme.SetAppearance("shellOpacity", 0.5)
+    NS.Theme.SetAppearance("gradient", false)
+    NS.Theme.SetGeometry("radius", 12)
+    Check(window.geometry.radius == 12 and content.geometry.radius == 4, "Forever window ignored global radius")
+    NS.Theme.SetAppearance("panelOpacity", 0.85)
+    local before = content.fill.vertexAlpha
+    NS.Theme.SetAppearance("panelOpacity", 0.4)
+    Check(content.fill.shown and content.fill.vertexAlpha < before, "Forever glass masked content opacity")
+end
 
 ------------------------------------------------------------------ hot callers
 -- Each hot path attaches through Ensure.

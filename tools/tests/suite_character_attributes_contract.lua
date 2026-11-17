@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local panel = root .. "/MSUF_Suite_CharacterPanel/"
-local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Strict = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 local secret = Strict.New("number")
 local Forever = false
 local statReads, ratingReads = 0, 0
@@ -189,6 +189,18 @@ for _, isForever in ipairs({ false, true }) do
     rows = Index(ns.Pages.Overview(groups, true))
     armor = Hover(rows.Armor)
     primary = Hover(rows.Strength)
+    local button = { SetScript = function(self, event, callback) self[event] = callback end, EnableMouse = function() end }
+    GameTooltip = {
+        SetOwner = function() end, SetText = function() end, Show = function() end,
+        AddDoubleLine = function(_, label, value)
+            assert(label ~= TOTAL and Public(value), "the tooltip tried to print a display-only stat")
+        end,
+        AddLine = function() end, IsOwned = function() return true end, Hide = function() end,
+    }
+    ns.Stats.BindTooltip(button)
+    ns.Stats.UpdateTooltip(button, rows.Strength)
+    button:OnEnter()
+    button:OnLeave()
     stop()
     assert(not (rows.Block or armor.Base or primary.Base), "secret input reached a displayed breakdown")
     statsRestricted = false

@@ -171,7 +171,7 @@ assert(Suite.Suite.Config("parallelWindows").windowLimit == 0, "window limit fac
 for _, id in ipairs(Suite.SuiteOrder) do
     assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "actionTracker"
         and id ~= "durabilityAlert" and id ~= "battleRes" and id ~= "innervateCue"
-        and id ~= "lootRolls"
+        and id ~= "lootRolls" and id ~= "bnetToast" and id ~= "auctionPriceTooltip" and id ~= "cheapestItem"
         and id ~= "merchantLevel" and id ~= "vaultSpec" and id ~= "tooltipIDs"
         and id ~= "itemCounts" and id ~= "loadoutReminder" and id ~= "quietPopups"
         and id ~= "navigation" and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "chatComfort" and id ~= "groupDeathAlert" and id ~= "releaseProtection"

@@ -659,6 +659,13 @@ function Context:Callback(event, callback)
     return true
 end
 
+function Context:RemoveCallback(event)
+    local callbacks = self.registryCallbacks
+    if not callbacks or not callbacks[event] then return end
+    EventRegistry:UnregisterCallback(event, self)
+    callbacks[event] = nil
+end
+
 ------------------------------------------------------------------ release
 local function ReleaseEvents(self)
     if self.frame then self.frame:UnregisterAllEvents() end
@@ -672,10 +679,7 @@ local function ReleaseEvents(self)
     for key in pairs(self.callbacks) do self.callbacks[key] = nil end
     for key in pairs(self.combatEvents) do self.combatEvents[key] = nil end
     if self.registryCallbacks then
-        for event in pairs(self.registryCallbacks) do
-            EventRegistry:UnregisterCallback(event, self)
-            self.registryCallbacks[event] = nil
-        end
+        for event in pairs(self.registryCallbacks) do self:RemoveCallback(event) end
     end
 end
 

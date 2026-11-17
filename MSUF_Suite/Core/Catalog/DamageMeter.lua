@@ -26,7 +26,7 @@ NS.DamageMeterSession = { CURRENT = 1, OVERALL = 2 }
 NS.DamageMeterIconStyle = { NONE = 1, SPEC = 2, CLASS = 3 }
 NS.DamageMeterRowBorder = { NONE = 1, FULL = 2, FILLED = 3 }
 NS.DamageMeterTextStyle = { SHADOW = 1, OUTLINE = 2, THICK = 3, NONE = 4, OUTLINE_SHADOW = 5, THICK_SHADOW = 6 }
-NS.DamageMeterValueFormat = { RATE = 1, PRIMARY = 2, PARENTHESES = 3, BAR = 4, CUSTOM = 5 }
+NS.DamageMeterValueFormat = { RATE = 1, PRIMARY = 2, PARENTHESES = 3, BAR = 4, CUSTOM = 5, COLUMNS = 6 }
 NS.DamageMeterClickThrough = { NEVER = 1, COMBAT = 2, ALWAYS = 3 }
 NS.DamageMeterSmoothFill = { OFF = 1, ON = 2 }
 -- The lines of a chat report, by the position of its choice.
@@ -168,7 +168,12 @@ B.Section(id, "text", "Text and numbers", {
     Number("nameMaxChars", "Shorten names after characters (0 = off)", 0, 0, 40),
     Bool("nameEllipsis", "Add ... to shortened names", true),
     Bool("rank", "Show rank numbers", true),
-    Choice("numberFormat", "Value format", 3, { "Per second only", "Primary value only", "Primary (secondary)", "Primary | secondary", "Custom layout" }),
+    Choice("numberFormat", "Value format", 3, {
+        "Per second only", "Primary value only", "Primary (secondary)", "Primary | secondary", "Custom layout", "Columns",
+    }),
+    Number("totalColumnWidth", "Total column width", 48, 24, 180),
+    Number("rateColumnWidth", "Per second column width", 44, 24, 180),
+    Number("percentColumnWidth", "Percent column width", 34, 24, 180),
     Choice("valueOrder", "Value order", 1, {
         "Total, per second, percent", "Total, percent, per second",
         "Per second, total, percent", "Per second, percent, total",
@@ -315,6 +320,10 @@ local defaultTypes = { 1, 3, 8, 6, 10 }
 -- A choice of any meter, or none: the Mythic+ start and each role.
 local meterOrKeep = { "Keep selected meter", unpack(NS.DamageMeterTypeLabels) }
 local ROLE_TIP = "Applies at login and when a specialization change brings this role. A Mythic+ meter keeps its window during a keystone."
+local windowAnchors = { "Screen" }
+for index = 1, MAX_WINDOWS - 1 do
+    windowAnchors[index + 1] = NS.Text("Window %d"):format(index)
+end
 for i = 1, MAX_WINDOWS do
     local p = "w" .. i
     local title = NS.Text("Window %d"):format(i)
@@ -323,6 +332,11 @@ for i = 1, MAX_WINDOWS do
         Choice(p .. "Session", "Fight", 1, { "Current fight", "Overall" }),
         Number(p .. "Width", "Width", NS.Client.isForever and 340 or 260, 150, 900),
         Number(p .. "Height", "Height", 170, 50, 900),
+        Number(p .. "RaidRows", "Rows in raids (0 uses the window height)", 0, 0, 30),
+        B.Tooltip(Choice(p .. "AnchorWindow", "Anchor to", 1, windowAnchors),
+            "Attach this window to a lower-numbered meter. Move that meter to move both windows."),
+        Choice(p .. "AnchorSide", "Position relative to the other meter", 1, { "Below", "Above", "Right", "Left" }),
+        Number(p .. "AnchorGap", "Space between windows", 8, 0, 100),
         Number(p .. "Scale", "Window scale (percent)", 100, 50, 200, 5),
         Number(p .. "Layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
         Number(p .. "X", "Horizontal position", -20, -4000, 4000),
@@ -381,6 +395,9 @@ rules.shadowDistance.requiresChoice = { key = "outline", values = SHADOWED }
 local CUSTOM = { [NS.DamageMeterValueFormat.CUSTOM] = true }
 rules.valueOrder.requiresChoice = { key = "numberFormat", values = CUSTOM }
 rules.valueSeparator.requiresChoice = { key = "numberFormat", values = CUSTOM }
+for _, key in ipairs({ "totalColumnWidth", "rateColumnWidth", "percentColumnWidth" }) do
+    rules[key].requiresChoice = { key = "numberFormat", values = { [NS.DamageMeterValueFormat.COLUMNS] = true } }
+end
 rules.englishDecimals.enableKey = "englishNumbers"
 rules.englishKDecimals.enableKey = "englishNumbers"
 rules.headerTimer.enableKey = "combatTime"
@@ -406,6 +423,12 @@ for i = 1, MAX_WINDOWS do
     rules["w" .. i .. "X"].category = "advanced"
     rules["w" .. i .. "Y"].category = "advanced"
     rules["w" .. i .. "ClickThrough"].requiresChoice = NOT_MOUSEOVER
+    local prefix = "w" .. i
+    local targets = {}
+    for choice = 2, i do targets[choice] = true end
+    for _, key in ipairs({ "AnchorSide", "AnchorGap" }) do
+        rules[prefix .. key].requiresChoice = { key = prefix .. "AnchorWindow", values = targets }
+    end
 end
 
 -- Delves used to hide with "Hide in dungeons" (the client calls them

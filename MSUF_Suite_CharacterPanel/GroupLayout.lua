@@ -53,32 +53,165 @@ end
 
 local CreateFrame, CreateTexture = NS.Suite.CreateFrame, NS.Suite.CreateTexture
 local Number = NS.Number
+local SCROLL_STEP, SCROLL_WIDTH = 30, 16
+local STEP_DELAY, STEP_INTERVAL = .3, .06
 
 local function VerticalScroll(scroll, offset)
     local list = scroll.panelList
     if list.content and not list.layingOut and Number(offset) then list.paint(list, offset) end
 end
 
-function Layout.NewList(view, parent, width, height, columns, paint, fixed)
-    local scroll, canvas
-    if fixed then
-        canvas = NS.Window.CreateChild(view, "Frame", parent)
-        canvas:SetPoint("TOPLEFT")
-        canvas:SetSize(width - 16, height)
-        canvas:SetClipsChildren(true)
-    else
-        scroll = CreateFrame("ScrollFrame", nil, parent, "ScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT")
-        scroll:SetSize(width - 16, height)
-        canvas = CreateFrame("Frame", nil, scroll)
-        canvas:SetSize(width - 16, 1)
-        scroll:SetScrollChild(canvas)
+local function MoveCanvas(list, offset)
+    offset = max(0, min(list.range, offset))
+    if list.offset == offset then return false end
+    list.offset = offset
+    list.canvas:SetPoint("TOPLEFT", 0, offset)
+    return true
+end
+
+local function PaintSteppers(list)
+    list.up:SetAlpha(list.offset > 0 and 1 or .45)
+    list.down:SetAlpha(list.offset < list.range and 1 or .45)
+end
+
+local function SyncSlider(list, rangeChanged)
+    list.layingOut = true
+    if rangeChanged then
+        list.slider:SetMinMaxValues(0, max(1, list.range))
+        list.bar:SetShown(list.range > 0)
     end
+    -- Vertical sliders use zero at the top, like Blizzard's scroll frames.
+    list.slider:SetValue(list.offset)
+    list.layingOut = false
+    PaintSteppers(list)
+end
+
+local function ScrollOwnedList(list, offset)
+    if not MoveCanvas(list, offset) then return end
+    SyncSlider(list, false)
+    list.paint(list, list.offset)
+end
+
+local function StopStepper(button)
+    button:SetScript("OnUpdate", nil)
+end
+
+local function MakeStepper(view, bar, edge, icon, step)
+    local button = NS.Window.CreateChild(view, "Button", bar)
+    button:SetPoint(edge)
+    button:SetSize(16, 11)
+    button:SetNormalAtlas(icon)
+    button:SetHighlightAtlas(icon .. "-over")
+    button:SetPushedAtlas(icon .. "-down")
+    local delay, repeated
+    local function Repeat(self, elapsed)
+        delay = delay - elapsed
+        if delay > 0 then return end
+        local over = self:IsMouseOver()
+        if not NS.Public(over) or not over then return end
+        step()
+        delay, repeated = STEP_INTERVAL, true
+    end
+    button:SetScript("OnMouseDown", function(self, key)
+        if not NS.Public(key) or key ~= "LeftButton" then return end
+        delay, repeated = STEP_DELAY, false
+        self:SetScript("OnUpdate", Repeat)
+    end)
+    button:SetScript("OnMouseUp", StopStepper)
+    button:SetScript("OnHide", StopStepper)
+    button:SetScript("OnClick", function()
+        if not repeated then step() end
+        repeated = false
+    end)
+    return button
+end
+
+-- Forever's ScrollFrameTemplate runs Blizzard's scrollbar update during
+-- construction and range changes. Its steppers and thumb reject secret
+-- enabled states. Hosted reports use the list's own public pixel offsets.
+local function MakeOwnedScroll(list)
+    local view, width, height = list.view, list.width, list.height
+    local child = NS.Window.CreateChild
+    local scroll = child(view, "Frame", list.parent)
+    scroll:SetPoint("TOPLEFT")
+    scroll:SetSize(width + SCROLL_WIDTH, height)
+
+    local viewport = child(view, "Frame", scroll)
+    viewport:SetPoint("TOPLEFT")
+    viewport:SetSize(width, height)
+    viewport:SetClipsChildren(true)
+    local canvas = child(view, "Frame", viewport)
+    canvas:SetPoint("TOPLEFT")
+    canvas:SetSize(width, 1)
+
+    local bar = child(view, "Frame", scroll)
+    bar:SetPoint("TOPRIGHT")
+    bar:SetSize(SCROLL_WIDTH, height)
+    bar:Hide()
+    local slider = child(view, "Slider", bar)
+    slider:SetOrientation("VERTICAL")
+    slider:EnableMouse(true)
+    slider:SetPoint("TOP", 0, -13)
+    slider:SetPoint("BOTTOM", 0, 13)
+    slider:SetWidth(10)
+    slider:SetMinMaxValues(0, 1)
+    local track = CreateTexture(slider, nil, "BACKGROUND")
+    track:SetAtlas("!minimal-scrollbar-track-middle")
+    track:SetAllPoints(slider)
+    local thumb = CreateTexture(slider, nil, "ARTWORK")
+    thumb:SetAtlas("minimal-scrollbar-small-thumb-middle")
+    thumb:SetSize(8, 23)
+    slider:SetThumbTexture(thumb)
+
+    list.scroll, list.canvas, list.bar, list.slider = scroll, canvas, bar, slider
+    list.offset, list.range = 0, 0
+    list.up = MakeStepper(view, bar, "TOP", "minimal-scrollbar-arrow-top", function()
+        ScrollOwnedList(list, list.offset - SCROLL_STEP)
+    end)
+    list.down = MakeStepper(view, bar, "BOTTOM", "minimal-scrollbar-arrow-bottom", function()
+        ScrollOwnedList(list, list.offset + SCROLL_STEP)
+    end)
+    local function Wheel(_, delta)
+        delta = Number(delta)
+        if delta then ScrollOwnedList(list, list.offset - delta * SCROLL_STEP) end
+    end
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", Wheel)
+    slider:EnableMouseWheel(true)
+    slider:SetScript("OnMouseWheel", Wheel)
+    slider:SetScript("OnValueChanged", function(_, value)
+        if list.layingOut then return end
+        value = Number(value)
+        if value and MoveCanvas(list, value) then
+            PaintSteppers(list)
+            list.paint(list, list.offset)
+        end
+    end)
+end
+
+function Layout.NewList(view, parent, width, height, columns, paint, fixed)
     local list = {
-        view = view, parent = parent, scroll = scroll, canvas = canvas, groups = {}, paint = paint,
-        columns = columns, height = height, width = width - 16, cards = {}, offsets = {}, heights = {},
+        view = view, parent = parent, groups = {}, paint = paint,
+        columns = columns, height = height, width = width - SCROLL_WIDTH, cards = {}, offsets = {}, heights = {},
     }
-    if scroll then
+    if not fixed and view.nativeRoot and NS.Host.Client.isForever then
+        MakeOwnedScroll(list)
+        return list
+    end
+    if fixed then
+        local canvas = NS.Window.CreateChild(view, "Frame", parent)
+        canvas:SetPoint("TOPLEFT")
+        canvas:SetSize(list.width, height)
+        canvas:SetClipsChildren(true)
+        list.canvas = canvas
+    else
+        local scroll = CreateFrame("ScrollFrame", nil, parent, "ScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT")
+        scroll:SetSize(list.width, height)
+        local canvas = CreateFrame("Frame", nil, scroll)
+        canvas:SetSize(list.width, 1)
+        scroll:SetScrollChild(canvas)
+        list.scroll, list.canvas = scroll, canvas
         scroll.panelList = list
         scroll:HookScript("OnVerticalScroll", VerticalScroll)
     end
@@ -180,7 +313,21 @@ function Layout.SetReputationStyle(view, config, accent)
     end
 end
 
+local function UpdateOwnedScroll(list, content, reset)
+    if list.content ~= content then
+        list.content = content
+        list.canvas:SetHeight(content)
+    end
+    local range = max(0, content - list.height)
+    local rangeChanged = list.range ~= range
+    list.range = range
+    local moved = MoveCanvas(list, reset and 0 or list.offset)
+    if moved or rangeChanged then SyncSlider(list, rangeChanged) end
+    return list.offset
+end
+
 function Layout.UpdateScroll(list, content, reset)
+    if list.slider then return UpdateOwnedScroll(list, content, reset) end
     local scroll = list.scroll
     if not scroll then return 0 end
     local oldOffset = Number(scroll:GetVerticalScroll())

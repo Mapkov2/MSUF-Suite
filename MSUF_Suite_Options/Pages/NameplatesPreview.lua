@@ -579,7 +579,7 @@ local function RenderTarget(editor, s, m)
     local leftGap = level:IsShown() and (m.levelMode == "number" and m.forever and level:GetWidth() + 4
         or m.levelMode == "badge" and not m.forever and level:GetWidth() + 4) or 0
     local status = editor.statusSample
-    local targeted = not m.npcWorldName and (not status or status == "target")
+    local targeted = not m.npcWorldName and editor:LayerOn("target") and (not status or status == "target")
         and (s.state.target or status == "target" or editor.allStatusSamples)
     Markers.PaintTarget(s, not m.skinDisabled and targeted, rightGap, leftGap, editor.statusOffsetSample, m.barSettings)
 end
@@ -726,9 +726,10 @@ local function Render(editor, s)
     m.barSettings = editor.barSettings or P.S.Config(ID)
     if editor.statusSample and editor.statusSample ~= "Level" then m.levelMode = nil end
     local sample = editor.highlightSample
-    s.state.target = sample == "target" or not sample
+    local normalSelection = not sample or sample == "aggro"
+    s.state.target = sample == "target" or normalSelection
         and (editor.targetSample == true or s.prefix == "enemy" and editor.targetSample ~= false)
-    s.state.focus = sample == "focus" or not sample and editor.focusSample == true
+    s.state.focus = sample == "focus" or normalSelection and editor.focusSample == true
     RenderFrames(editor, s, m)
     RenderTitle(editor, s, m)
     RenderVisibility(editor, s, m)

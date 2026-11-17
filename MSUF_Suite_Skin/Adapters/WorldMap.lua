@@ -438,7 +438,10 @@ function WorldMapSkin:OnQuestLogModeChanged()
 end
 
 local function MapDisplayChanged()
-    NS.WindowControls.Refresh()
+    -- The initial display state can change inside WorldMapMixin:OnShow,
+    -- before the protected emote and before Blizzard finishes its layout.
+    if NS.Client.isForever then NS.Registry.QueueJob(NS.WindowControls.Refresh)
+    else NS.WindowControls.Refresh() end
 end
 
 local function RegisterCallbacks()

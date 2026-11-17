@@ -602,10 +602,33 @@ do
     charges[200].isActive=true
     T.Refresh(b2,"cooldown")
     assert(b2.cooling and b2.icon.chargeCd.running,"recharge edge runs while recharging")
+    assert(b2.icon.chargeCd.last.SetHideCountdownNumbers==true, "two countdowns would be visible with no charges left")
     now=145
     Info(200,false,false)
     T.Refresh(b2,"charges")
     assert(b2.cooling==true and not ready.b2,"one charge back is not ready yet")
+    local charge = b2.icon.chargeCd
+    assert(charge.running and charge.last.SetHideCountdownNumbers==false,
+        "the remaining recharge loses its countdown when the first charge returns")
+    assert(b2.icon.cd.last.SetHideCountdownNumbers==false and not b2.icon.cd.running,
+        "only the recharge should still be running")
+    b2.ov={timeText=3}
+    T.Refresh(b2,"full")
+    assert(charge.last.SetHideCountdownNumbers==true,"per-spell countdown Off leaked recharge numbers")
+    b2.ov=C.EMPTY
+    T.Refresh(b2,"full")
+    assert(charge.last.SetHideCountdownNumbers==false,"returning to the bar setting did not restore recharge numbers")
+    b2.ov={threshold=5}
+    T.Refresh(b2,"full")
+    assert(charge.formatter and charge.formatter==b2.icon.cd.formatter,"recharge did not inherit the spell formatter")
+    ess.cooldownDuration=true
+    I.StyleIcon(b2.icon,ess)
+    assert(charge:GetCountdownFontString().last.SetPoint=="RIGHT","recharge text was not placed on the timer bar")
+    ess.cooldownDuration=false
+    I.StyleIcon(b2.icon,ess)
+    assert(charge:GetCountdownFontString().last.SetPoint=="CENTER","recharge text did not return to the icon")
+    b2.ov=C.EMPTY
+    T.Refresh(b2,"full")
     charges[200].isActive=false
     b2.icon.cd.scripts.OnCooldownDone(b2.icon.cd)
     assert(b2.cooling==false and ready.b2==1 and not b2.icon.chargeCd.running)
@@ -1729,7 +1752,7 @@ do
     local icon=b1.icon
     local cd,count=icon.cd,icon.count
     local level=icon.level
-    assert(icon.lastTime==true and icon.stackOn==true and icon.lastTop==true and cd.level==level+K.LEVEL.cd
+    assert(icon.lastTime==true and icon.stackOn==true and icon.lastTop==true and cd.level==level+K.LEVEL.countdown
         and icon.over.level==level+K.LEVEL.text,"bar defaults: countdown and stacks shown, stacks on top")
     assert(K.LEVEL.top>K.LEVEL.text and K.LEVEL.text>K.LEVEL.glow,"countdown on top sits above the text frame")
     local function Choose(ov) b1.ov=ov;I.Apply(b1) end
@@ -1778,13 +1801,13 @@ do
     Choose({textTop=3})
     assert(Calls(cd,"SetFrameLevel")==levels,"the same choice writes no level")
     Choose({textTop=2})
-    assert(cd.level==level+K.LEVEL.cd,"spell: stacks on top")
+    assert(cd.level==level+K.LEVEL.countdown,"spell: stacks on top")
     ess.textTop=2;ess.styleGen=ess.styleGen+1
     Choose(C.EMPTY)
     assert(cd.level==level+K.LEVEL.top,"bar: countdown on top")
     ess.textTop=1;ess.styleGen=ess.styleGen+1
     Choose(C.EMPTY)
-    assert(cd.level==level+K.LEVEL.cd and (not icon.chargeCd or icon.chargeCd.level==level+K.LEVEL.charge),"back")
+    assert(cd.level==level+K.LEVEL.countdown and (not icon.chargeCd or icon.chargeCd.level==level+K.LEVEL.charge),"back")
 end
 
 ------------------------------------------------------------------ preview and release

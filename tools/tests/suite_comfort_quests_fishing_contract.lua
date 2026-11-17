@@ -19,11 +19,14 @@ QuestInfoFrame = { questLog = false, rewardsFrame = rewards }
 choices = { { id = 101, count = 4 }, { id = 102, count = 1 } }
 prices = { [101] = 5, [102] = 30, ["reward:1"] = 20, ["reward:2"] = 50 }
 e:Load("MSUF_Suite_QualityOfLife/QuestRewardValue.lua")
+e.S.MoneyText = tostring
 local m = e:Start("questRewardValue", {})
 local function Winner()
     for button, marker in pairs(m.markers) do if marker.shown then return button.id end end
 end
 assert(Winner() == 1, "contextual reward price times stack size must choose first reward")
+assert(m.values[rewards.RewardButtons[1]].text == "80", "reward value is for the full stack")
+assert(m.values[rewards.RewardButtons[2]].text == "50", "each priced choice receives its own value")
 assert(not _G.GetQuestReward, "the marker has no reward-selection dependency")
 -- All choices must be priced before claiming a winner.
 quest = 11; prices["reward:2"], prices[102] = nil, nil
@@ -56,6 +59,18 @@ e:Load("MSUF_Suite_QualityOfLife/SoundProfiles.lua")
 e:Load("MSUF_Suite_QualityOfLife/FishingComfort.lua")
 local c = { rod = "1000", lure = "2000", audio = true, music = 10, ambience = 20, effects = 90 }
 m = e:Start("fishingComfort", c)
+local messages, instance = 0, 42
+GetInstanceInfo = function() return nil, instance and "party" or "none", nil, nil, nil, nil, nil, instance end
+GetInventoryItemLink = function() return "item:1000" end
+e.NS.Print = function() messages = messages + 1 end
+e:Emit(m, "PLAYER_ENTERING_WORLD")
+e:Emit(m, "PLAYER_ENTERING_WORLD")
+assert(messages == 1, "the same instance entry warns once")
+instance = 43
+e:Combat(true); e:Emit(m, "PLAYER_ENTERING_WORLD"); e:Combat(false)
+assert(messages == 1, "entering during combat never checks the rod")
+e:Emit(m, "PLAYER_ENTERING_WORLD")
+assert(messages == 2, "entering another instance can show the warning")
 function m.context:CVar(key, value) volumes[key] = value end
 assert(m.button.attrs.macrotext1:find("/equip item:1000", 1, true), "selected verified rod is equipped by hardware macro")
 assert(m.lure.attrs.macrotext1 == "/stopmacro [combat]\n/use item:2000\n/use 16", "lure remains a separate hardware action")
