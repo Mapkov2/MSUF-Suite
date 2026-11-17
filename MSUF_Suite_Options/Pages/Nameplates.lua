@@ -539,6 +539,10 @@ local function KickReadyLink(ctx)
     return function(body, y, width, section)
         local textures = P.NameplateBarTextures
         if textures then y = textures.Link(ctx, body, y, width, section, true) end
+        P.Button(ctx, body, "Open shared castbar settings", 16, y, math.min(width, 360), function()
+            P.Suite.HostBridge.OpenExactMenuSetting(P.M, "opt_castbar", "castbar_behavior", "general.castbarInterruptShake")
+        end, nil, P.Meta(PAGE, ID, "action.sharedCastbars", "action", section))
+        y = y - 40
         if section ~= PAGE .. "_castbar" or not P.Suite.HostBridge.KickReady() then return y end
         local button = P.Button(ctx, body, "Open interrupt settings", 16, y, math.min(width, 220), function()
             P.Suite.HostBridge.OpenExactMenuSetting(P.M, "opt_castbar", "castbar_interrupt_ready", KICK_SWITCH)

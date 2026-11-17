@@ -594,6 +594,9 @@ function Support.CatalogDefaults(root, id, file, client)
     assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", ns)
     file = file or (id:sub(1, 1):upper() .. id:sub(2))
     assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/" .. file .. ".lua"))("MSUF_Suite", ns)
+    if file == "ActionBars" then
+        assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/ActionBarConditions.lua"))("MSUF_Suite", ns)
+    end
     local config = {}
     for key, rule in pairs(ns.SuiteCatalog[id].rules) do config[key] = rule.default end
     return config, ns
@@ -719,6 +722,9 @@ end
 -- Nothing in a fixture hooks Blizzard's chat code to drive the module.
 function Support.ChatStateMock(maxWindows)
     local mock = { owners = {}, hovered = {} }
+    function mock.RequestGeometry() end
+    function mock.GeometryRepaired() end
+    function mock.IsMoving() return false end
     function mock.Watch(owner, handlers) mock.owners[owner] = handlers end
     function mock.Unwatch(owner) mock.owners[owner] = nil end
     function mock.IsPermanentBox(box)

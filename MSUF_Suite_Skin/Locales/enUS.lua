@@ -6,6 +6,8 @@ NS.RegisterLocale("enUS", {
     ["Rank %d"] = "Rank %d",
     ["No spells to show"] = "No spells to show",
     ["Class trainer"] = "Class trainer",
+    ["Training cost (before discounts)"] = "Training cost (before discounts)",
+    ["Training cost not recorded"] = "Training cost not recorded",
     ["Class quest"] = "Class quest",
     ["Requires a talent"] = "Requires a talent",
     ["Mouseover"] = "Mouseover",
@@ -639,4 +641,15 @@ NS.RegisterLocale("enUS", {
     ["Quiet graphite surfaces, compact corners and no decorative shading."] = "Quiet graphite surfaces, compact corners and no decorative shading.",
     ["Cool gray layers with monochrome controls and thin borders."] = "Cool gray layers with monochrome controls and thin borders.",
     ["Steel panels, technical blue controls and safety-yellow details."] = "Steel panels, technical blue controls and safety-yellow details.",
+
+    ["Addon skins"] = "Addon skins",
+    ["Skin other addons"] = "Skin other addons",
+    ["AceGUI / AceConfig windows"] = "AceGUI / AceConfig windows",
+    ["Addon status"] = "Addon status",
+    ["Not installed"] = "Not installed",
+    ["Waiting for addon"] = "Waiting for addon",
+    ["Ready"] = "Ready",
+    ["Skinned"] = "Skinned",
+    ["Apply your current skin to supported addon windows. Enable the addons you want to skin."] =
+        "Apply your current skin to supported addon windows. Enable the addons you want to skin.",
 })

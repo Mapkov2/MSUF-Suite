@@ -1641,4 +1641,28 @@ do
     ContainerFrameCombinedBags = previousBags
     MailFrame, NS.Client.isForever = previousMail, previousForever
 end
+do
+    local name = "MSUFSuiteSpellLearningFrame"
+    local learning = Frame(name, UIParent)
+    learning:SetSize(390, 420)
+    NS.DB.windowControls.enabled = true
+    NS.DB.windowControls.scales[name] = 1.25
+    Check(NS.WindowControls.Attach(learning, "spellLearning"), "the owned spell-learning window was refused")
+    local controls = NS.WindowControls.states[learning]
+    Check(learning:GetScale() == 1.25 and controls.grip:IsShown(), "the learning window lost its saved scale or grip")
+    cursorX, cursorY = 500, 500
+    controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
+    cursorX, cursorY = 550, 450
+    controls.grip.scripts.OnUpdate(controls.grip)
+    controls.grip.scripts.OnMouseUp(controls.grip)
+    Check(learning:GetScale() > 1.25 and NS.DB.windowControls.scales[name] == learning:GetScale(),
+        "the shared grip did not persist the learning window's scale")
+    Check(not controls.grip.scripts.OnUpdate, "the learning grip kept updating after release")
+    learning:Hide()
+    learning:SetScale(1)
+    learning:Show()
+    Check(learning:GetScale() == NS.DB.windowControls.scales[name], "reopening lost the learning window's saved scale")
+    NS.WindowControls.DisableOwner("spellLearning")
+    learning:Hide()
+end
 print("Suite window controls: " .. checks .. " checks passed")

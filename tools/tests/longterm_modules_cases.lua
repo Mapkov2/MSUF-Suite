@@ -830,6 +830,7 @@ P.S.Config=function() return P.Suite.DB end
 P.Suite.DB=scenario=='default' and {} or {bar1BackgroundColor='102030',bar2BackgroundColor='203040',barIds='1,2'}
 P.Get=function(_,key) return P.S.Config()[key] or P.catalog.actionbars.rules[key].default end
 P.Set=function(_,key,value) writes=key;P.S.Config()[key]=value;return true end
+assert(loadfile(root..'/MSUF_Suite_Options/Menu/MediaValues.lua'))('MSUF_Suite_Options',P)
 assert(loadfile(root..'/MSUF_Suite_Options/Menu/Controls.lua'))('MSUF_Suite_Options',P)
 P.AttachRuleColors({},'Bar colors',moduleID,{{key='bar1BackgroundColor',label='Background color',color=true}},
     function(key) return key:gsub('^bar1','bar'..selected) end)

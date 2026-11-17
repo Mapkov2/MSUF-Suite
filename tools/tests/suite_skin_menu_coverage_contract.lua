@@ -30,7 +30,7 @@ hooksecurefunc = function(target, key, callback)
 end
 PanelTemplates_SelectTab, PanelTemplates_DeselectTab = Noop, Noop
 local nativeTracks, nativeReleases = {}, {}
-NS.ScrollMotion = { IsQuestScroll = function() return false end,
+NS.ScrollMotion = { IsQuestScroll = function() return false end, IsMailScroll = function() return false end,
     Track = function(target, owner) nativeTracks[target] = owner end,
     ReleaseOwner = function(owner) nativeReleases[owner] = true end }
 NS.GenericWindows.SetMenuMotionProvider = function(track, release)
@@ -358,6 +358,8 @@ local function Widget(kind)
 end
 local existing = Widget("Frame")
 dialog.OpenFrames.Existing = existing
+NS.AddonSkins = { IsEnabled = function() return NS.DB.enabled end, ResolveApp = Noop, Origin = Noop, cooperative = {} }
+NS.AceWidgets = { Apply = Noop, Release = Noop }
 Load("Adapters/AddonMenus.lua")
 Flush()
 Check(paints[existing.frame] == 1, "already open AceConfig menu was missed")

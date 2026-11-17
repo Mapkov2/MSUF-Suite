@@ -4,7 +4,6 @@ local Mode, Key, RoleKey = private.Mode, private.Key, private.RoleKey
 local LOOK_BLIZZARD = Mode.LOOK_BLIZZARD
 local Style = NS.NameplateStyle
 local Gradient = Style.Gradient
-local Border = Style.PaintBorder
 local outlineSizes = {}
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
 local Level, CastTime, CVars, Auras, Status = private.Level, private.CastTime, private.CVars, private.Auras, private.Status
@@ -14,8 +13,6 @@ local FilterFriendlyName, RestoreFriendlyName = Names.Filter, Names.Restore
 local NameText = private.NameText
 local AuraDisplay, Extensions = private.AuraDisplay, private.Extensions
 local Textures = private.Textures
-local healthFill
-local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local IN_COMBAT = { inCombat = true }
 local M = {
     visuals = setmetatable({}, { __mode = "k" }),
@@ -39,22 +36,7 @@ local function Safe(frame)
     return frame and not NS.Safety.IsForbidden(frame)
 end
 
-local function Color(texture, hex, alpha)
-    local r, g, b = S.RGB(hex)
-    texture:SetVertexColor(1, 1, 1, 1)
-    texture:SetColorTexture(r, g, b, alpha or 1)
-end
-
-local RestoreFont = Text.Restore
-
-local function RestorePlateFonts(uf, health, cast)
-    RestoreFont(uf.name)
-    Text.RestoreHealth(health)
-    if cast then
-        Text.RestoreCast(cast)
-        CastTime.Restore(cast)
-    end
-end
+local RestorePlateFonts = private.HealthAppearance.RestoreFonts
 
 -- The color overlay follows Blizzard's filled StatusBar texture. No health,
 -- cast progress or aura value is read or cached by this module.
@@ -148,98 +130,7 @@ local function SetRole(uf, unit)
     M.roles[health] = facts.colored and Roles.Get(facts, unit, uf) or nil
 end
 
-local function PaintMarker(texture, health, kind, enabled, size, x, y, color, anchor, variant)
-    if not enabled then return ShowVisual(texture, false) end
-    Style.PaintMarker(texture, kind, size, color, variant)
-    if texture._msufX ~= x or texture._msufY ~= y or texture._msufAnchor ~= anchor then
-        Style.PlaceMarker(texture, health, kind, x, y, anchor)
-        texture._msufX, texture._msufY, texture._msufAnchor = x, y, anchor
-    end
-    ShowVisual(texture, true)
-end
-
-local function PaintFill(health, visual, prefix)
-    local role = prefix == "enemy" and M.config.enemyRoleColors and M.roles[health]
-    if role and M.config[RoleKey[role].enabled] == false then role = nil end
-    local fillTexture = health:GetStatusBarTexture()
-    if not role or not Safe(fillTexture) then
-        return ShowVisual(visual.fill, false)
-    end
-    if visual.fillTarget ~= fillTexture then
-        visual.fill:ClearAllPoints()
-        visual.fill:SetAllPoints(fillTexture)
-        visual.fillTarget = fillTexture
-    end
-    local hex = M.config[RoleKey[role].color]
-    local path = visual.focusFill or healthFill
-    if visual.fillColor ~= hex or visual.fillPath ~= path then Textures.TintRole(visual, hex, path) end
-    ShowVisual(visual.fill, true)
-end
-
-local function PaintHealth(health, visual, prefix)
-    local c, keys = M.config, Key[prefix]
-    local backColor = c[keys.BackdropColor]
-    local backAlpha = (c[keys.BackdropAlpha] or 100) / 100
-    if visual.backColor ~= backColor or visual.backAlpha ~= backAlpha then
-        Color(visual.back, backColor, backAlpha)
-        visual.backColor, visual.backAlpha = backColor, backAlpha
-    end
-    local borderSize = outlineSizes[prefix]
-    local borderColor = M.barSettings[keys.BorderColor]
-    if not Selection.highlights then Border(visual, health, borderSize, borderColor) end
-    local customBackground = Textures.healthBack and Textures.HealthBackground(prefix)
-    ShowVisual(visual.back, not customBackground and c[keys.BackdropEnabled] ~= false and backAlpha > 0)
-    PaintFill(health, visual, prefix)
-    local facts = M.facts[health]
-    local marker, quest = facts and facts.marker, facts and facts.quest
-    PaintMarker(visual.elite, health, "elite", c[keys.EliteMarker] and marker,
-        c[keys.EliteMarkerSize] or 14, c[keys.EliteOffsetX] or -13,
-        c[keys.EliteOffsetY] or 0, c.enemyMinibossColor, c[keys.EliteMarkerAnchor], marker)
-    PaintMarker(visual.quest, health, "quest", c[keys.QuestMarker] and quest,
-        c[keys.QuestMarkerSize] or 15, c[keys.QuestOffsetX] or 0,
-        c[keys.QuestOffsetY] or 17, c.enemyQuestColor, c[keys.QuestMarkerAnchor])
-    return borderSize, borderColor
-end
-
--- The arrows keep clear of the level badge or number beside the bar.
-local function TargetGaps(uf, unit)
-    local prefix = Prefix(uf)
-    if prefix and M.config[Key[prefix].LevelEnabled] == false then return 0, 0 end
-    local setup = NamePlateSetupOptions
-    local badge = not NS.Client.isForever or M.config.levelAppearance == Mode.LEVEL_BADGE
-    local classic = badge and S.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
-    local width = classic and setup.levelIconWidth
-    local rightGap = S.Finite(width) and width + 4 or classic and 19 or 0
-    local leftWidth = setup.playerLevelDiffWidth
-    local diffBadge = badge and LevelBadgeShown(uf, unit) == true or not badge and Level.NativeBadgeVisible(uf)
-    local diffGap = diffBadge
-        and (S.Finite(leftWidth) and leftWidth > 0 and leftWidth + (NS.Client.isForever and 5 or 4)
-            or (NS.Client.isForever and 33 or 20)) or 0
-    if not NS.Client.isForever then return rightGap, diffGap end
-    local label = M.levelLabels[uf]
-    local number = Safe(label) and label:IsShown()
-    local nativeAnchor = not label or label._suiteLevelAnchor == 1
-    return math.max(rightGap, diffGap), number and nativeAnchor and (label._suiteLevelWidth or 24) + 4 or 0
-end
-
-local function PaintTarget(uf, health, visual, prefix)
-    local unit = M.units[health]
-    local target = unit and UnitIsUnit(unit, "target")
-    local visible = M.config.enemyTargetMarker and (prefix == "enemy" or M.config.enemyTargetHideFriendly == false)
-        and S.Public(target) and target == true
-    if visible then M.targetUF = uf elseif M.targetUF == uf then M.targetUF = nil end
-    local rightGap, leftGap
-    if visible then rightGap, leftGap = TargetGaps(uf, unit) end
-    local config = prefix == "enemy" and M.targetConfig or M.friendlyTargetConfig
-    Style.PaintTarget(visual, health, visible, config, uf, rightGap, leftGap)
-end
-
-local function PaintFonts(uf, health, cast, prefix)
-    local nameStyle = Text.styles[prefix]
-    Text.Apply(uf.name, nameStyle, nameStyle.size)
-    Text.ApplyHealth(health, nameStyle, uf.showOnlyName)
-    if cast then Text.ApplyCast(cast, Text.styles[Key[prefix].Cast]) end
-end
+local PaintHealth, PaintTarget, PaintFonts = private.HealthAppearance.Bind(M, ShowVisual, outlineSizes, Safe)
 
 local function Paint(uf)
     if not M.active or not Safe(uf) then return end
@@ -281,6 +172,7 @@ local function Paint(uf)
     -- DoT colors are applied after the role tint.
     AuraColors.Apply(uf, unit, prefix == "enemy")
     if NameText.inUse then NameText.Apply(uf, prefix, unit) end
+    if M.extras then private.EasyFeatures.Paint(uf, health, cast, prefix, unit, styled, M.roles[health]) end
     AuraDisplay.Apply(uf, unit, prefix == "enemy")
     if Extensions.inUse then Extensions.Apply(uf, health, cast, prefix, unit) end
 end
@@ -293,6 +185,7 @@ local function PaintFocusAdded(uf) Textures.PaintAdded(uf, PaintPlate) end
 local PaintAdded = PaintPlate
 
 local function RestorePlate(uf, keepUnit, recycled)
+    if M.extras then private.EasyFeatures.Restore(uf, not keepUnit) end
     if Textures.inUse then Textures.Restore(uf, recycled) end
     if Power.enemyEnabled then Power.RestoreEnemy(uf) end
     if keepUnit then NameText.Suspend(uf) else NameText.Release(uf) end
@@ -415,6 +308,7 @@ local function OnAdded(self, _, unit)
     self.activeUnits[unit] = uf
     BeginName(uf)
     SetRole(uf, unit)
+    if self.extras then private.EasyFeatures.Added() end
     PaintAdded(uf)
     ApplyAuras(uf)
     if Roles.learnedLieutenant then AfterClassify(self) end
@@ -447,6 +341,7 @@ local function RefreshRole(uf)
         return
     end
     PaintHealth(health, visual, prefix)
+    if M.extras then private.EasyFeatures.Role(uf, M.roles[health]) end
 end
 
 local function RefreshTarget(uf)
@@ -504,6 +399,7 @@ local function OnQuestLogChanged(module)
 end
 
 local function OnTargetChanged(self)
+    if self.extras then private.EasyFeatures.Selection("target") end
     Extensions.OnSelection()
     local previous = self.targetUF
     local plate = C_NamePlate.GetNamePlateForUnit("target")
@@ -599,6 +495,7 @@ local function OnContextChanged(module, event)
 end
 
 local function OnFocusChanged(module)
+    if module.extras then private.EasyFeatures.Selection("focus") end
     Extensions.OnSelection()
     local plate = C_NamePlate.GetNamePlateForUnit("focus")
     local current = Safe(plate) and plate.UnitFrame or nil
@@ -655,6 +552,7 @@ local function OnCombatEnded(module)
     Extensions.OnCombatEnded()
     Status.Flush()
     AuraDisplay.Resume()
+    NS.SyncFriendlyNameplates(module)
     -- CVar writes held back for combat (CVars.Apply).
     if module.cvarsPending then CVars.Apply(module) end
     NameText.FlushRestores()
@@ -776,6 +674,7 @@ function M:Enable()
     self.unitEvents, self.castListening, self.questListening = nil, nil, nil
     for _, event in ipairs(CONTEXT_EVENTS) do Listen(self, event, OnContextChanged) end
     Listen(self, "PLAYER_REGEN_ENABLED", OnCombatEnded)
+    Listen(self, "CVAR_UPDATE", NS.SyncFriendlyNameplates)
     Power.Enable(self)
     Threat.Enable(self)
     self:Refresh()
@@ -792,7 +691,6 @@ function M:Refresh()
     outlineSizes.friendly = Style.OutlineSize(bars.friendlyOutlineMode, bars.friendlyBorderEnabled, bars.friendlyBorderSize, bars.hideHealthBarBorders)
     scopedSkins, ApplyAuras = scopes.Configure()
     local repaintTextures = Textures.Configure(bars, self.castbarStyle)
-    healthFill = Textures.healthFill
     Textures.PrepareFocus()
     Paint = Textures.inUse and PaintTexturedPlate or PaintPlate
     PaintAdded = Textures.focusFill and PaintFocusAdded or Paint
@@ -813,6 +711,8 @@ function M:Refresh()
     Threat.Refresh()
     KickReady.Configure()
     Selection.Configure(bars)
+    if private.EasyFeatures then private.EasyFeatures.Configure(self) end
+    self.extras = private.EasyFeatures and private.EasyFeatures.enabled
     Mouseover.Configure()
     AuraColors.Configure(self.config)
     AuraDisplay.Configure(self.config)
@@ -823,7 +723,8 @@ function M:Refresh()
     ConfigureUnitEvents(self)
     local auraListeners = self.config.auraColorsEnabled or NS.NameplateAuraDisplay.Active(self.config)
     for _, event in ipairs(AURA_CONFIG_EVENTS) do
-        if auraListeners or event == "SPELLS_CHANGED" and Extensions.usesRange then
+        if auraListeners or Extensions.usesRange and (event == "SPELLS_CHANGED" or event == "TRAIT_CONFIG_UPDATED"
+            or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED") then
             Listen(self, event, OnAuraSpellsChanged)
         elseif self.auraSpellsListening or self.rangeSpellsListening then
             self.context:RemoveEvent(event)
@@ -857,6 +758,8 @@ end
 function M:Disable()
     CancelQuestRefresh(self)
     self.active = false
+    self.friendlyVisibility, self.friendlyVisibilityPending, self.friendlyVisibilityWriting, self.friendlyNpcNamesOnly = nil, nil, nil, nil
+    if private.EasyFeatures then private.EasyFeatures.Configure(self) end
     self.castbarStyle = nil
     scopes.Disable()
     scopedSkins = nil

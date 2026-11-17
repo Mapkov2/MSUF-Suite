@@ -67,14 +67,12 @@ function Panel.Geometry(t, panel, both)
     if t.panel == panel then return end
     t.panel = panel
     if panel then Extras(t) end
-    local rail = panel and Presentation.RAIL or 0
-    Inset(t[2], rail, 0)
-    Inset(t[3], rail, 0, panel and 50 or (t.combined and 62 or 40))
+    Inset(t[2], 0, 0)
+    Inset(t[3], 0, 0, panel and 50 or (t.combined and 62 or 40))
     t[1]:SetShown(not panel)
-    for i = 6, 8 do t[i]:SetShown(not panel) end
     if t[5] then
         t[5]:ClearAllPoints()
-        t[5]:SetPoint("BOTTOMLEFT", rail, 0)
+        t[5]:SetPoint("BOTTOMLEFT")
         t[5]:SetPoint("BOTTOMRIGHT")
     end
     if t.feather then
@@ -88,18 +86,14 @@ end
 -- Static gradients; opening motion animates the Suite shell only. There is
 -- no particle driver, native item animation or per-frame decoration work.
 function Panel.Paint(t, c, opacity)
-    local r, g, b = S.RGB(c.backgroundColor)
     local ar, ag, ab = S.RGB(c.accentColor)
     t.feather:SetColorTexture(1, 1, 1)
-    t.feather:SetGradient("HORIZONTAL", CreateColor(r, g, b, 0), CreateColor(r, g, b, opacity))
+    t.feather:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, .12 * opacity), CreateColor(0, 0, 0, 0))
     t.ribbon:SetColorTexture(1, 1, 1)
-    t.ribbon:SetGradient("HORIZONTAL", CreateColor(ar, ag, ab, 0), CreateColor(ar, ag, ab, .8))
+    t.ribbon:SetGradient("HORIZONTAL", CreateColor(ar, ag, ab, 0), CreateColor(ar, ag, ab, .32))
     t.glow:SetColorTexture(1, 1, 1)
-    t.glow:SetGradient("HORIZONTAL", CreateColor(ar, ag, ab, 0), CreateColor(ar, ag, ab, .08))
-    t[3]:SetColorTexture(r, g, b, 0)
+    t.glow:SetGradient("HORIZONTAL", CreateColor(ar, ag, ab, 0), CreateColor(ar, ag, ab, .025))
     t[4]:SetColorTexture(ar, ag, ab, .12)
-    t[5]:SetColorTexture(r, g, b, 0)
-    t[9]:SetColorTexture(ar, ag, ab, .16)
     t.heading:SetTextColor(.94, .95, .98)
     S.SetFont(t.heading, S.ResolveFont(c.font) or S.GlobalFontPath(), 22, "")
     t.heading:SetText(S.Text("Backpack"))

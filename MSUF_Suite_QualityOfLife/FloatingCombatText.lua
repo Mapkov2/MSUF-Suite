@@ -34,10 +34,13 @@ end
 
 local function NewText(frame)
     local text = S.CreateFontString(frame, nil, "OVERLAY")
-    text:SetAllPoints(frame)
+    -- One anchor lets the native FontString fit the complete amount, including
+    -- secret numbers. Opposing anchors would truncate it to the holder's width.
+    text:SetPoint("CENTER", frame, "CENTER")
     text:SetJustifyH("CENTER")
     text:SetJustifyV("MIDDLE")
     text:SetWordWrap(false)
+    text:SetNonSpaceWrap(false)
     text:SetTextColor(1, 0.82, 0)
     return text
 end
@@ -49,6 +52,7 @@ local function Create(self)
         local frame = S.CreateFrame("Frame", nil, UIParent)
         frame:SetFrameStrata("HIGH")
         frame:EnableMouse(false)
+        frame:SetClipsChildren(false)
         local normal, critical = NewText(frame), NewText(frame)
         critical:Hide()
         local animation = frame:CreateAnimationGroup()

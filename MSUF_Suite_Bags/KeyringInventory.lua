@@ -3,6 +3,7 @@ local NS, S = P.NS, P.Suite
 if not NS.Client or not NS.Client.isForever or not S.Finite(KEYRING_CONTAINER) then return end
 
 local Index, Slots = P.InventoryIndex, P.SlotCache
+local Bags = P.BagsModule
 local BAG = KEYRING_CONTAINER
 local Keyring = {}
 P.KeyringInventory = Keyring
@@ -104,6 +105,7 @@ function Keyring.Append(index, frame, inCombat)
             versions[slot] = version
             Paint(button, item, info)
         end
+        Bags:StyleSlot(button)
     end
     Trim(size)
     index.hasKeyring = size > 0

@@ -59,6 +59,7 @@ local function New(isolate)
     local function Load(path)
         local chunk = assert(loadfile(path)); setfenv(chunk, env); chunk("MSUF_Suite_ActionBars", P)
     end
+    Load(root .. "/MSUF_Suite_ActionBars/RangeText.lua")
     Load(root .. "/MSUF_Suite_ActionBars/Paint.lua")
     AB.ResolveAPI(); AB.UpdateCurves()
     local button = { cooldown = {}, chargeCooldown = {}, lossOfControlCooldown = {}, icon = {}, checked = false,
@@ -418,3 +419,46 @@ assert(w.siblingShown == true and not sibling.nativeStateDirty and w.boundaries 
 w.ab.UpdateDecorState = update; w.ab.RefreshNativeBar(w.rec.bar)
 assert(not w.rec.nativeStateDirty and w.decorShown, "native state retry failed")
 print("ActionBars native dormant post-hooks: immediate reveal, visibility, secrets and retry pass")
+
+-- Use the real native hook and tint walk after selecting a different painter.
+-- Key-only warnings preserve Blizzard's just-painted usability color without
+-- reading it a second time; a cold mode change must clear an old icon warning.
+w = New()
+local AB, rec = w.ab, w.rec
+local keyWrites, keyR, queries = 0, nil, 0
+rec.keyText = { SetTextColor = function(_, r) keyWrites, keyR = keyWrites + 1, r end }
+AB.style.tints = { { 1, 1, 1 }, { .5, .5, 1 }, { .4, .4, .4 } }
+AB.style.kr, AB.style.kg, AB.style.kb = .8, .8, .8
+AB.style.rangeKey, AB.style.rangeIcon, AB.styleGen = true, false, 1
+AB.M.config.rangeColoring, w.inRange = true, false
+AB.Painter.api.Usable = function() queries = queries + 1; return false, true end
+AB.ConfigureRangeTint()
+rec.tint = 4
+AB.NativeButtons.Color(rec)
+assert(w.tintR == .5 and w.tintB == 1 and keyR == 1 and queries == 1,
+    "key-only mode change retained range icon tint or lost mana color")
+local nativeTintWrites = w.tints
+w.tintR, w.tintG, w.tintB = .4, .4, .4 -- Blizzard's native unusable paint.
+w.hooks.UpdateUsable(w.button)
+assert(w.tintR == .4 and w.tints == nativeTintWrites and queries == 1,
+    "key-only native post-hook overwrote usability or duplicated its query")
+rec.native, rec.usable = false, nil
+AB.NativeButtons.Retint(rec)
+assert(w.tintR == .5 and queries == 2, "owned key-only tint failed to resolve unknown usability")
+rec.native, rec.usable, rec.tint = true, nil, nil
+AB.style.rangeIcon, AB.styleGen = true, 2
+w.hooks.UpdateUsable(w.button)
+assert(w.tintR == 1 and w.tintB == 0 and queries == 2,
+    "combined mode did not reach the selected painter in the native hook")
+rec.outOfRange, rec.usable = nil, 2
+AB.NativeButtons.Retint(rec)
+assert(w.tintR == .5 and keyR == .8 and keyWrites == 3,
+    "native tint walk retained a warning in range")
+AB.style.rangeIcon, w.inRange = false, false
+AB.NativeButtons.Color(rec)
+assert(keyR == 1, "key-only warning did not become active")
+AB.M.config.rangeColoring = false
+AB.NativeButtons.Color(rec)
+assert(keyR == .8 and rec.outOfRange == nil and w.tintR == .5,
+    "disabling range coloring retained a native hotkey warning")
+print("ActionBars selected native range painter preserves usability and query budgets")

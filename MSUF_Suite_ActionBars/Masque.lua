@@ -99,13 +99,20 @@ local function Leave(rec, group)
     if AB.style then AB.StyleButton(rec) end
 end
 
+local function Reskinned()
+    if M.active and M.config.masque then EventRegistry:TriggerEvent("MSUFSuite.ActionBars.StyleChanged") end
+end
+
 local function Install(lib, bar, reskin)
     local index = bar.index
     local group, changed = groups[index], false
     for i = 1, #bar.buttons do
         local rec = bar.buttons[i]
         if Eligible(rec) and not rec.masqued then
-            group = group or lib:Group("MSUF Suite", S.Text(NS.ActionBarTitles[index]), "actionbar" .. index)
+            if not group then
+                group = lib:Group("MSUF Suite", S.Text(NS.ActionBarTitles[index]), "actionbar" .. index)
+                hooksecurefunc(group, "ReSkin", Reskinned)
+            end
             groups[index] = group
             Join(rec, group)
             changed = true

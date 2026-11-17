@@ -191,8 +191,19 @@ local function WindowsChanged()
     C.ScanFloatingClosures()
     NativeChanged()
 end
+local geometryQueued
+local function FlushGeometry()
+    geometryQueued = nil
+    NativeChanged()
+end
+local function GeometryChanged()
+    if geometryQueued then return end
+    geometryQueued = true
+    C_Timer.After(0, FlushGeometry)
+end
 local PREVIEW_WATCH = {
     windows = WindowsChanged, layout = NativeChanged, moved = NativeChanged, resized = NativeChanged,
+    geometry = GeometryChanged, settled = GeometryChanged,
 }
 
 -- Only subscribed previews keep the watch; native scripts remain Blizzard-owned.

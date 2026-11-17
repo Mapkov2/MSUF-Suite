@@ -45,9 +45,24 @@ function AB.SyncQuickKeybind(open)
     end
 end
 
--- Short key text, shared with the cooldown icons (S.KeyText). No range dot.
+local function KeyText(key)
+    if M.config.shortKeybinds ~= false then return S.KeyText(key) end
+    if type(key) ~= "string" or key == "" then return "" end
+    return GetBindingText(key)
+end
+
+-- The displayed key is also used by the cooldown icons. No range dot.
 function AB.BindingText(rec)
-    return S.KeyText((GetBindingKey(rec.command)))
+    return KeyText((GetBindingKey(rec.command)))
+end
+
+-- Read-only presentation metadata for action-button aura displays. The
+-- cooldown owner knows the precise swipe fill even for an atlas mask.
+function S.ActionBarButtonSwipe(button)
+    if not M.active or not Public(button) then return nil end
+    local rec = AB.records[button]
+    if not rec or rec.masqued then return nil end
+    return AB.style and AB.style.round and AB.style.fill or nil
 end
 
 -- Key text of the suite button that presses a spell, for the cooldown
@@ -77,10 +92,10 @@ local function PageKey(main, page, modifier)
         if spellSlots[first + i] then
             local key = GetBindingKey(main.buttons[i].command)
             if Public(key) and type(key) == "string" and key ~= "" then
-                if not modifier then return S.KeyText(key) end
+                if not modifier then return KeyText(key) end
                 if not Modified(key) then
                     local action = GetBindingAction(modifier .. key, true)
-                    if Public(action) and action == "" then return S.KeyText(modifier .. key) end
+                    if Public(action) and action == "" then return KeyText(modifier .. key) end
                 end
             end
         end

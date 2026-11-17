@@ -429,12 +429,16 @@ function C.ResizeInput(frame)
     local visual = M.visuals[frame]
     if not M.active or not visual or not visual.input or (M.config.inputWidth or 0) ~= 0 then return end
     local current = frame:GetWidth()
-    if current == visual.inputFollowWidth then return end
+    local width = InputWidth(M.config, frame)
+    local applied = frame.editBox:GetWidth()
+    if S.Finite(width) and S.Finite(applied) and math.abs(applied - width) < .01 then
+        visual.inputFollowWidth = current
+        return
+    end
     if C.LayoutLocked() then
         S.Queue("chat")
         return
     end
-    local width = InputWidth(M.config, frame)
     if width then M.context:Property(frame.editBox, "GetWidth", "SetWidth", width) end
     visual.inputFollowWidth = current
 end
@@ -442,6 +446,27 @@ end
 function C.ApplyInputLayout(self, visual, frame, input)
     ApplyInput(self, visual, frame, input)
     if not self.preview then visual.inputFollowWidth = frame:GetWidth() end
+end
+
+-- Inspect our actual applied anchor, including native screen clamping. A
+-- native input reset can leave the window itself completely unchanged.
+function C.InputGeometryChanged(frame)
+    local m, input = M, frame.editBox
+    local visual = m.visuals[frame]
+    if not visual or not visual.input or not input or NS.Safety.IsForbidden(input) then return false end
+    local width, current = InputWidth(m.config, frame), input:GetWidth()
+    if not S.Finite(width) or not S.Finite(current) then return false end
+    if math.abs(width - current) >= .01 then return true end
+    local height = input:GetHeight()
+    if m.config.inputHeight > 0 and S.Finite(height) and math.abs(height - m.config.inputHeight) >= .01 then return true end
+    local record = m.context.points and m.context.points[input]
+    if not record or not S.Finite(record.x) or not S.Finite(record.y) then return true end
+    local point, relative, edge, x, y = input:GetPoint(1)
+    local count = input:GetNumPoints()
+    if not (S.Public(point) and S.Public(relative) and S.Public(edge)
+        and S.Finite(x) and S.Finite(y) and S.Finite(count)) then return false end
+    return count ~= 1 or point ~= record.point or relative ~= record.relative
+        or edge ~= record.relativePoint or math.abs(x - record.x) >= .01 or math.abs(y - record.y) >= .01
 end
 
 -- An empty Suite choice follows MSUF; Blizzard's chat font remains an
@@ -497,6 +522,16 @@ local function ApplySizeLock(self, visual, frame, primary)
     end
 end
 
+-- Size and position settle before the input reads its followed width. The
+-- same input painter is used by the live window and the options preview.
+function C.ApplyWindowGeometry(self, visual, frame, keepPosition)
+    local primary = frame == self.positionFrame
+    if frame == _G.ChatFrame1 then primary = true end
+    ApplySizeLock(self, visual, frame, primary)
+    if not keepPosition then C.ApplyWindowPosition(self, visual, frame, primary) end
+    if frame.editBox then C.ApplyInputLayout(self, visual, frame, frame.editBox) end
+end
+
 -- Every chat window is a ChatFrameN from Blizzard's floating chat frame
 -- template: a ChatFrameNTab tab (created with it) and an editBox parent key.
 function C.ApplyWindow(self, frame, keepPosition)
@@ -514,7 +549,7 @@ function C.ApplyWindow(self, frame, keepPosition)
     if primary then ApplySidebar(self, visual, frame) end
     ApplyCopyButton(self, visual, frame, top)
     C.ApplyClock(visual, frame, c, top)
-    C.ApplyInputLayout(self, visual, frame, input)
+    C.ApplyWindowGeometry(self, visual, frame, keepPosition)
     if c.animateInput or visual.inputAnimated then
         C.ApplyInputAnimation(self, input)
         visual.inputAnimated = c.animateInput
@@ -527,8 +562,6 @@ function C.ApplyWindow(self, frame, keepPosition)
         self.context:RestoreProperty(frame, "SetSpacing")
     end
     visual.customSpacing = spacing
-    ApplySizeLock(self, visual, frame, primary)
-    if not keepPosition then C.ApplyWindowPosition(self, visual, frame, primary) end
     C.ApplyCompleteMessages(self, frame)
     -- The scrollback limit comes first: the saved ring replays into its room.
     C.ApplyLineLimit(self, frame)

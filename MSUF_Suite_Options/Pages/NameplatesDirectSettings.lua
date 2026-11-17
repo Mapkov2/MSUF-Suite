@@ -4,6 +4,21 @@ local Style = P.Suite.NameplateStyle
 local RuleRow = P.RuleRow
 local GateControls = P.GateControls
 
+-- Both the section switch and NPC display selector are deliberate visibility
+-- actions. Keep their native write in the same history point as the settings.
+function P.SetFriendlyNameplateVisibility(scope, on, values)
+    local key = P.Suite.NameplateExtensions.SkinKeys[scope]
+    local ok, reason
+    P.WithHistory(P.catalog[ID].rules[key].label, "suite:nameplates." .. key, function()
+        ok, reason = P.Suite.SetFriendlyNameplates(scope, on, values)
+        return ok
+    end)
+    if ok == nil then ok, reason = false, "Finish combat before editing the suite" end
+    P.feedback[ID] = not ok and reason or nil
+    P.Refresh()
+    return ok, reason
+end
+
 local function SyncSwitch(entry, read, keyFn, editWhileOff)
     local widget = entry.widget
     local function Sync()
@@ -134,6 +149,13 @@ function P.RuleRow(page, id, rule, keyFn, ...)
             return { { value = 2, text = P.Tr("Health bars") }, { value = 4, text = P.Tr(rule.choices[4]) } }
         end
         row.get = function() return get() == 4 and 4 or 2 end
+        row.set = function(value)
+            if P.Get(ID, "enabled") then
+                return P.SetFriendlyNameplateVisibility("friendlyNpc", P.Suite.FriendlyNameplateShown("friendlyNpc"),
+                    { friendlyNPCs = value })
+            end
+            return P.SetMany(ID, { friendlyNPCs = value, friendlyNpcSkinEnabled = false })
+        end
         return row
     end
     local peer = key == "enemyPowerSmooth" and "enemyPowerChunked" or key == "enemyPowerChunked" and "enemyPowerSmooth"

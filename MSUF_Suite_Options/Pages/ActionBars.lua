@@ -21,7 +21,8 @@ local HELP, ESSENTIAL, COPY_CATEGORIES, copyScopes
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
     { id = "visibility", title = "When the selected bar appears",
-        suffixes = { "Visibility", "CondCombine", "CondCombat", "CondMounted", "CondTarget", "CondMouseover", "HideGamepad",
+        suffixes = { "UseGlobalVisibility", "Visibility", "CondCombine", "CondCombat", "CondMounted", "CondTarget", "CondMouseover",
+            "CondFocus", "CondFlying", "CondGroup", "CondCasting", "CondSkyriding", "CondInstance", "CondHousing", "HideGamepad",
             "GroupOnly", "Alpha", "FadeAlpha", "FadeDuration", "ClickThrough", "Tooltip" } },
     -- Never copied: a paging text names pages of its own bar.
     { id = "paging", title = "Paging for the selected bar", suffixes = { "Paging" } },
@@ -60,7 +61,8 @@ local function InitEditorData()
         layout = { Buttons = true, Rows = true, Size = true, HeightPercent = true, Spacing = true, Vertical = true, ShowEmpty = true },
         text = { Keybind = true, KeybindSize = true, Macro = true, MacroSize = true,
             CountSize = true, CooldownSize = true, CooldownAutoSize = true },
-        visibility = { Visibility = true, CondCombine = true, CondCombat = true, CondMounted = true, CondTarget = true,
+        visibility = { UseGlobalVisibility = true, Visibility = true, CondCombine = true, CondCombat = true,
+            CondMounted = true, CondTarget = true,
             CondMouseover = true, GroupOnly = true, Alpha = true, FadeAlpha = true, FadeDuration = true, Tooltip = true },
         paging = { Paging = true },
         ornaments = { LeftEndcap = true, LeftEndcapSize = true, RightEndcap = true, RightEndcapSize = true },
@@ -98,7 +100,7 @@ local function GroupOf(suffix)
     end
 end
 local function BarTitle(index) return Tr(Suite.ActionBarTitles[index]) end
-local function BarOff(index) return P.Get(ID, "bar" .. index .. "Visibility") == NEVER end
+local function BarOff(index) return Suite.ActionBarVisibilityMode(S.Config(ID), index) == NEVER end
 
 -- Blizzard_EditMode loads at startup on every supported client; the button
 -- only reads whether Blizzard would enter its Edit Mode now.
@@ -200,6 +202,9 @@ local function BuildQuick(ctx, body, y, width)
             end
             local mode = P.Get(ID, key)
             local label = Rule(key).choices[mode]
+            if mode ~= NEVER and P.Get(ID, "bar" .. bar .. "UseGlobalVisibility") then
+                label = Rule("globalVisibility").choices[P.Get(ID, "globalVisibility")]
+            end
             if mode == NEVER then
                 local previous = P.Get(ID, "bar" .. bar .. "ResumeVisibility")
                 P.SetTranslatedText(status, string.format(Tr("Off - restores %s"), Tr(Rule(key).choices[previous])))
@@ -469,7 +474,7 @@ local function EditorContent(ctx, b, body)
     end
     y = y - 40
     P.Button(ctx, body, "Move selected bar", 16, y, half, function() P.MoveOnScreen(ID, "bar" .. selected) end,
-        function() return P.Get(ID, "enabled") and Available(selected) and P.Get(ID, "bar" .. selected .. "Visibility") ~= NEVER end,
+        function() return P.Get(ID, "enabled") and Available(selected) and not BarOff(selected) end,
         P.Meta(PAGE, ID, "editor.move", "action", "suite_actionbars_editor"))
     P.Button(ctx, body, "Key bindings", 28 + half, y, half, function() if S.OpenQuickKeybind then S.OpenQuickKeybind() end end,
         function() return S.OpenQuickKeybind ~= nil end,
@@ -534,7 +539,7 @@ end
 -- The secure rule a bar on Custom conditions follows ("fade" shows it on
 -- mouseover).
 local function ConditionStatus()
-    if P.Get(ID, "bar" .. selected .. "Visibility") ~= Suite.ActionBarEnum.VISIBILITY.CUSTOM then
+    if Suite.ActionBarVisibilityMode(S.Config(ID), selected) ~= Suite.ActionBarEnum.VISIBILITY.CUSTOM then
         return Tr("Choose Custom conditions to combine the conditions above.")
     end
     return string.format(Tr("Custom rule: %s"), Suite.ActionBarConditionBody(S.Config(ID), selected))
@@ -607,7 +612,7 @@ local function Build(ctx)
               extra = status and StatusLine(ctx, status) or nil })
     end
     BuildEditor(ctx, b)
-    for _, section in ipairs({ "appearance", "cooldowns", "text", "behavior" }) do
+    for _, section in ipairs({ "appearance", "cooldowns", "text", "behavior", "global_visibility" }) do
         local rules = P.SectionRules(ID, section, section == "behavior" and Visible or nil)
         P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_" .. section, Tr(rules[1].sectionTitle), rules,
             { help = HELP[section], open = false, extra = section == "appearance" and SkinStatus(ctx) or nil })

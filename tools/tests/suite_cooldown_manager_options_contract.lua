@@ -614,8 +614,8 @@ InstallRuntime = function()
             n = 3
         end
         for i = #frame.keys, n + 1, -1 do frame.keys[i], frame.dim[i] = nil, nil end
-        local cap = Config()[slot .. "_maxIcons"]
-        local count = type(cap) == "number" and cap > 0 and math.min(cap, n) or n
+        -- The menu canvas includes entries beyond the live icon cap.
+        local count = n
         frame.items = kind == 3 and frame.rows or frame.icons
         for i = 1, count do frame.items[i] = frame.items[i] or Widget(kind == 3 and "Row" or "Icon", frame) end
         frame.count, frame.kind = count, kind
@@ -649,7 +649,7 @@ local globalsBefore = {}
 for key in pairs(_G) do globalsBefore[key] = true end
 local P = {}
 local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) error("options page wrote global " .. tostring(key), 2) end })
-for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/PreviewClasses.lua", "Menu/PreviewInteraction.lua", "Menu/SectionActions.lua",
+for _, file in ipairs({ "Menu/Bridge.lua", "Menu/MediaValues.lua", "Menu/Controls.lua", "Menu/PreviewClasses.lua", "Menu/PreviewInteraction.lua", "Menu/SectionActions.lua",
     "Pages/DataTextsWorkspace.lua",
     "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua", "Pages/CooldownManagerTarget.lua",
     "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerFrames.lua", "Pages/CooldownManagerSections.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
@@ -720,6 +720,11 @@ assert(runtime.frame.points[1][1] == "CENTER", "preview frame is not centered on
 local ui = Page.ui
 assert(ui.chips.ess.shown and ui.chips.ess.active and ui.chips.c1.shown == false and ui.addChip.shown,
     "bar chips must show enabled bars, the selection and + Add bar")
+assert(ui.addChip.role == "success"
+    and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"].role == "success",
+    "both Add bar buttons must use the green success action")
+assert(ui.chips.c1.chevron and ui.chips.c6.chevron and not ui.chips.ess.chevron,
+    "custom bar actions need a visible dropdown arrow")
 assert(registered["menu2." .. PAGE .. ".cooldownManager.preview.bar.ess"] == ui.chips.ess
     and registered["menu2." .. PAGE .. ".cooldownManager.preview.simulate"]
     and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"], "preview and bar actions lack search metadata")
@@ -892,7 +897,7 @@ assert(ctx.sections[2]._msuf2CollapsibleEntry.label.text == "Basics: Utility coo
     and ctx.sections[5]._msuf2CollapsibleEntry.label.text:find("Utility cooldowns", 1, true),
     "section headers do not name the selected bar")
 -- Basics holds the most used settings of the bar, the attachment complete.
-for _, suffix in ipairs({ "on", "size", "perRow", "anchor", "side", "gap", "align", "alpha" }) do
+for _, suffix in ipairs({ "on", "size", "perRow", "laterPerRow", "laterSize", "maxIcons", "anchor", "side", "gap", "align", "alpha" }) do
     assert(Control(suffix).parent == ctx.sections[2], "Basics lacks " .. suffix)
 end
 assert(Control("grow").parent == ctx.sections[5] and Control("zoom").parent == ctx.sections[6],
@@ -2764,6 +2769,14 @@ local function BarMenu(owner, button)
     Fire(owner, "OnClick", button)
     return assert(lastDropdown and lastDropdown.owner == owner and lastDropdown, "bar actions did not open")
 end
+do
+    local beforeCustomClick, customSelection = historyWrites, Page.selected
+    local customMenu = BarMenu(ui.chips.c1, "LeftButton")
+    assert(Page.selected == "c1" and Page.menuSlot == "c1" and Config().c1_on
+        and historyWrites == beforeCustomClick and customMenu.values[5].value == "delete",
+        "left-click must select the custom bar and expose Delete without changing its settings")
+    Page.Select(customSelection)
+end
 local menu = BarMenu(ui.chips.c1, "RightButton")
 local menuValues = {}
 for i, item in ipairs(menu.values) do menuValues[i] = tostring(item.value) end
@@ -2810,14 +2823,16 @@ assert(Config().uti_on, "showing a bar failed")
 focused = nil
 BarMenu(ui.chips.c1, "RightButton").onSelect("rename")
 assert(Page.selected == "c1" and focused == PAGE .. "_cooldownManager_module", "rename did not open the bar's name")
--- Delete, from Basics: the slot is free again, the page moves on, Undo.
+-- Delete through the visible custom-bar dropdown: free the slot, move on, Undo.
 local actionsButton = registered["menu2." .. PAGE .. ".cooldownManager.editor.actions"]
 local reusedLists = Lists()
 reusedLists.specs[62].c1 = { "s133" }
 Config().listsData = CDM.Codec.EncodeLists(reusedLists)
 local listsWithC1 = Config().listsData
 writes = historyWrites
-BarMenu(actionsButton).onSelect("delete")
+BarMenu(actionsButton)
+assert(Page.menuSlot == "c1", "Basics actions must still target the selected bar")
+BarMenu(ui.chips.c1, "LeftButton").onSelect("delete")
 assert(not Config().c1_on and Config().c1_name == "" and Config().c1_kind == 1 and not Lists().specs[62].c1
     and Page.selected == "ess" and historyWrites == writes + 1 and Page.note == "Deleted Buffs 1.", "deleting a bar failed")
 M.RequestRefresh()
@@ -3150,6 +3165,11 @@ Click(grid.tiles[1], "MiddleButton")
 Fire(grid.tiles[1], "OnMouseDown", "LeftButton")
 assert(host.scripts.OnUpdate == nil, "drag armed in combat")
 lastDropdown = nil
+do
+    local selectedInCombat = Page.selected
+    Fire(ui.chips.c1, "OnClick", "LeftButton")
+    assert(Page.selected == selectedInCombat and lastDropdown == nil, "custom bar click opened actions in combat")
+end
 Fire(ui.chips.ess, "OnClick", "RightButton")
 assert(lastDropdown == nil and not Page.OpenBarMenu(ui.chips.ess, "ess") and not Page.OpenAddBar(ui.addChip)
     and not Page.CopyBarSettings("uti", "ess") and not Page.ResetBar("ess") and not Page.DeleteBar("c1")
@@ -3206,7 +3226,8 @@ do
     end }
     C.Layout = {
         Offsets = function(view, n, out)
-            local count = view.maxIcons and math.min(n, view.maxIcons) or n
+            local cap = view.maxIcons
+            local count = type(cap) == "number" and cap > 0 and math.min(n, cap) or n
             for i = 1, count do out[2 * i - 1], out[2 * i] = (i - 1) * 40, 0 end
             return count * 40, 36, count
         end,
@@ -3234,7 +3255,7 @@ do
     chunk("MSUF_Suite_CooldownManager", { NS = { IsCombatLocked = function() return false end }, Suite = suite, CDM = C })
     local stage = Widget("Frame")
     local holder = assert(C.Preview.Render(stage, "ess", 400, 100), "canvas missing")
-    assert(holder.count == 2 and holder.kind == 1 and holder.items == holder.icons and holder.items[2].shown
+    assert(holder.count == 3 and holder.kind == 1 and holder.items == holder.icons and holder.items[3].shown
         and holder.keys[1] == "s1" and holder.keys[2] == "s2" and holder.keys[3] == "s3"
         and holder.dim[1] == false and holder.dim[2] == true, "the canvas must publish its items, keys and dim flags")
     assert(holder.fakes[1].applied and holder.fakes[1].ov == C.spells.e.s1

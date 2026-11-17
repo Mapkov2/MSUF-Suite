@@ -222,7 +222,7 @@ C_Container = {
 GetBindingKey = function() end
 Constants = { InventoryConstants = { NumBagSlots = 4, NumReagentBagSlots = 1 } }
 -- ItemConstantsDocumentation.lua (Retail and Forever).
-Enum = { BagIndex = { ReagentBag = 5 }, ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
+Enum = { BagIndex = { ReagentBag = 5 }, ItemQuality = {Common=1}, ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
     ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 } }
 -- WoW Forever has no global GetItemQualityColor (Retail keeps it only as a
 -- deprecated alias): quality colours come from C_Item on both clients.
@@ -349,7 +349,7 @@ state.Text = function(text) return text end
 for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", state)
 end
-for _, file in ipairs({ "SlotCache", "ItemLoads", "Bags", "CurrencyPicker", "EquippedBags" }) do
+for _, file in ipairs({ "SlotCache", "ItemLoads", "SlotAppearance", "Bags", "CurrencyPicker", "EquippedBags" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
 end
 -- The sub-modules (their own files, not loaded here) run in Bags.lua's list
@@ -466,10 +466,10 @@ module.context, module.active = context, true
 module:Enable()
 assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or hooks missing")
 -- The explicit sub-module list replaces the files' post-hooks on the module.
-local REFRESH_ORDER = { "PlayerGear.Refresh", "UpgradeMarker.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
+local REFRESH_ORDER = { "PlayerGear.Refresh", "UpgradeMarker.Refresh", "ReagentInventory.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
     "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh", "BuybackSearch.Refresh", "BagCaption.Refresh",
     "BagsIdle.Refresh" }
-local STOP_ORDER = { "PlayerGear.Disable", "UpgradeMarker.Disable", "PhysicalSort.Stop", "InventoryView.Disable", "BankInventory.Disable",
+local STOP_ORDER = { "PlayerGear.Disable", "UpgradeMarker.Disable", "PhysicalSort.Stop", "ReagentInventory.Release", "InventoryView.Disable", "BankInventory.Disable",
     "BankWindow.Disable", "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore", "BuybackSearch.Disable",
     "BagCaption.Release", "BagsIdle.Disable" }
 local function Ran(order)
@@ -486,7 +486,7 @@ for _, file in ipairs({ "PlayerGear", "UpgradeMarker", "InventoryView", "BankInv
     handle:close()
     assert(not source:find("hooksecurefunc%(%s*M%s*,"), file .. ".lua hooks the Bags module instead of joining its list")
 end
-assert(#textures == 23 and module.windows[ContainerFrameCombinedBags]
+assert(#textures == 35 and module.windows[ContainerFrameCombinedBags]
     and module.windows[ContainerFrame6] and textures[2].color[4] == 0.98,
     "combined and reagent bag backgrounds were not styled on enable")
 local combinedStyle, reagentStyle = module.windows[ContainerFrameCombinedBags], module.windows[ContainerFrame6]
@@ -548,10 +548,10 @@ for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
 end
 -- Blizzard reads emptyBackgroundAtlas on every refresh (ItemButtonTemplate
 -- SetItemButtonTexture): the Suite never writes it. An empty slot's Suite
--- surface covers the native icon (BORDER sublevel 0) instead.
+-- surface covers the native icon and Forever's ARTWORK EmptyBagIcon instead.
 local function OverIcon(record)
-    return record.slotOuter.layer == "BORDER" and record.slotOuter.sublevel == 1
-        and record.slotInner.layer == "BORDER" and record.slotInner.sublevel == 2
+    return record.slotOuter.layer == "ARTWORK" and record.slotOuter.sublevel == 1
+        and record.slotInner.layer == "ARTWORK" and record.slotInner.sublevel == 2
         and record.slotOuter.color[4] == 1 and record.slotInner.color[4] == 1
 end
 local function BelowIcon(record)
@@ -567,7 +567,7 @@ assert(buttons[1].emptyBackgroundAtlas == "bags-item-slot64" and buttons[1].text
     "styling replaced or covered a loaded item icon")
 ContainerFrame6.shown = true
 hooks.ReagentOnShow()
-assert(#textures == 25 and reagentButton.emptyBackgroundAtlas == "bags-item-slot64"
+assert(#textures == 41 and reagentButton.emptyBackgroundAtlas == "bags-item-slot64"
     and reagentButton.textureCalls == nil and module.overlays[reagentButton].slotOuter.shown
     and OverIcon(module.overlays[reagentButton]),
     "reagent bag slots did not receive the Suite background")

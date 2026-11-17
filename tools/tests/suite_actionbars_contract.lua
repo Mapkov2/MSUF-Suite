@@ -970,7 +970,7 @@ MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() re
 SlashCmdList={}
 MSUF_PixelLayoutRegion=function(frame) return frame end
 -- HostBridge: the bars ask it for MSUF's icon skin (none here: no MSUF_HostAPI).
-for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings",
+for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings","Catalog/ActionBarConditions",
     "Catalog/DataTexts","NameplateStyle","SuiteMigrations","Suite","HostBridge"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
@@ -990,7 +990,7 @@ C_SpecializationInfo={
     GetActiveSpecGroup=function() return specGroup end,
 }
 local RUNTIME={"Bootstrap","Bars","Decorations","Blizzard","Paging","VirtualActions","SnapshotNative","Snapshots","Visibility",
-    "Bindings","KeyAudit","Style","Masque","VirtualPaint","Paint","NativeButtons","Flush","Events","Controller"}
+    "Bindings","KeyAudit","Style","Masque","RangeText","MediaBorder","ExtraButtons","VirtualPaint","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(RUNTIME) do
     assert(loadfile((file=="Paint" and os.getenv("MSUF_ACTIONBARS_PAINT_SOURCE"))
         or root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private)
@@ -4242,4 +4242,21 @@ RunTimers()
 assert(created==count,"re-enable reuses frames")
 assert(Bar(1).header.shown and overrides["CTRL-BUTTON4"]=="MSUFSuiteBar9Button1" and S.Status("actionbars")=="Active")
 assert(MultiBarBottomLeft.reparented==1 and ActionButton5.hideCalls==1,"disposal ran once per session")
+do
+    local rec=Bar(9).buttons[1]
+    local round,fill,masqued=AB.style.round,AB.style.fill,rec.masqued
+    AB.style.round,AB.style.fill,rec.masqued=true,"owner-swipe",nil
+    assert(S.ActionBarButtonSwipe(rec.button)=="owner-swipe","owner swipe metadata")
+    combat=true
+    assert(S.ActionBarButtonSwipe(rec.button)=="owner-swipe","combat changed read-only swipe metadata")
+    combat=false
+    rec.masqued=true
+    assert(S.ActionBarButtonSwipe(rec.button)==nil,"Masque swipe guessed from global shape")
+    rec.masqued=nil
+    assert(S.ActionBarButtonSwipe({})==nil and S.ActionBarButtonSwipe(Secret())==nil,
+        "foreign or secret button reached owner metadata")
+    AB.style.round=false
+    assert(S.ActionBarButtonSwipe(rec.button)==nil,"square button received a round swipe")
+    AB.style.round,AB.style.fill,rec.masqued=round,fill,masqued
+end
 print("Action bars: secure disposal, import, owned buttons, paging (vehicle, forms, opt-outs, modifiers), routing, click and drag wraps, grid reveal, visibility and mouseover, dispatcher dedupe/cap/secrets, range, glows, style, movers, quick keybind, disable and re-enable passed")

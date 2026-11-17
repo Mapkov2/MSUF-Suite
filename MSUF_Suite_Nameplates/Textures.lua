@@ -23,7 +23,7 @@ local deferred = setmetatable({}, { __mode = "k" })
 local generation, restoreFrame = 0, nil
 local Defer
 local listening = false
-local textureKeys, targetHighlightOnly = {}, { targetHighlight = true }
+local textureKeys = {}
 local visuals
 function Textures.Bind(plateVisuals) visuals = plateVisuals end
 local function SettingsChanged(previous, current)
@@ -38,16 +38,7 @@ local function SettingsChanged(previous, current)
 end
 
 function Textures.SharedCastbar(config, previous)
-    local current = Style.SharedCastbar(config.look)
-    if config.look ~= 2 and config.castTargetHighlightStyle == 1
-        and (config.enemyCastDisplay ~= 2 or config.enemyCastTargetHighlight) then
-        local style = targetHighlightOnly
-        if current then
-            style = { targetHighlight = true }
-            for key, value in pairs(current) do style[key] = value end
-        end
-        current = style
-    end
+    local current = private.CastSettings.Read(config)
     if SettingsChanged(previous, current) then return current end
     return previous
 end

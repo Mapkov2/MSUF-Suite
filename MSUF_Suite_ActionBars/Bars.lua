@@ -42,6 +42,7 @@ AB.NATIVE_BUTTONS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBotto
 -- Every per-bar catalog rule has its suffix here (the action bar contract
 -- checks it against Core/Catalog/ActionBars.lua).
 local SUFFIXES = { "Visibility", "CondCombine", "CondCombat", "CondMounted", "CondTarget", "CondMouseover", "Paging",
+    "UseGlobalVisibility", "CondFocus", "CondFlying", "CondGroup", "CondCasting", "CondSkyriding", "CondInstance", "CondHousing",
     "HideGamepad", "GroupOnly", "ResumeVisibility", "Layer",
     "Alpha", "FadeAlpha", "FadeDuration", "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty",
     "FlyoutDirection", "ClickThrough", "Tooltip", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize",

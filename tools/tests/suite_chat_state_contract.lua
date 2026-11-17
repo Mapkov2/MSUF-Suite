@@ -38,6 +38,10 @@ end
 hooksecurefunc = function(name) error("ChatState hooked " .. tostring(name)) end
 local reported = {}
 local Suite = {
+    Public = function(value) return value ~= "secret" end,
+    Finite = function(value) return type(value) == "number" and value == value and math.abs(value) < math.huge end,
+    Safety = { IsForbidden = function() return false end },
+    Client = { SupportsEvent = function(event) return event ~= "ACTIVE_COMBAT_CONFIG_CHANGED" end },
     Dispatch = function(callback, ...)
         local ok, problem = pcall(callback, ...)
         if not ok then reported[#reported + 1] = problem end
@@ -69,9 +73,11 @@ local function ChatFrame(index, temporary)
     function frame:IsShown() return self.shown end
     function frame:GetWidth() return self.width end
     function frame:GetHeight() return self.height end
+    function frame:GetNumPoints() return 0 end
     function frame:HookScript() error("ChatState hooked a chat frame script") end
     local box = { name = "ChatFrame" .. index .. "EditBox", hooks = {} }
     function box:GetName() return self.name end
+    function box:GetNumPoints() return 0 end
     function box:HookScript(script, callback)
         Check(script == "OnKeyDown", "ChatState hooked the input line's " .. script)
         Check(not self.hooks[script], "a box took its key hook twice")
@@ -82,6 +88,17 @@ local function ChatFrame(index, temporary)
     return frame
 end
 local first, second = ChatFrame(1), ChatFrame(2)
+UIParent = {}
+local function Geometry(region, parent)
+    region.nativeX, region.nativeY = 12, 52
+    function region:GetNumPoints() return 1 end
+    function region:GetPoint() return "BOTTOMLEFT", parent, "BOTTOMLEFT", self.nativeX, self.nativeY end
+    function region:GetEffectiveScale() return 1 end
+    region.GetWidth = region.GetWidth or function() return 400 end
+    region.GetHeight = region.GetHeight or function() return 32 end
+end
+Geometry(first, UIParent)
+Geometry(first.editBox, first)
 CHAT_FRAMES = { "ChatFrame1", "ChatFrame2" }
 GENERAL_CHAT_DOCK = { selected = first, DOCKED_CHAT_FRAMES = { first, second } }
 SELECTED_CHAT_FRAME = first
@@ -220,6 +237,51 @@ registry.callbacks["EditMode.Exit"]()
 RunNextFrame()
 for _ = 1, 40 do Tick() end
 Check(not follower.shown, "the follower kept running after Edit Mode")
+
+-------------------------------------------------------------- native geometry
+handlers.geometry = Record("geometry")
+State.Watch(seen, handlers)
+Tick()
+for _ = 1, 50 do Tick() end
+-- Only the first native frame needs geometry methods for these focused reads.
+second.GetNumPoints = function() return 0 end
+Check(not events.events.ACTIVE_COMBAT_CONFIG_CHANGED, "unsupported geometry event was registered")
+for _, event in ipairs({ "PLAYER_LEVEL_UP", "PLAYER_LEVEL_CHANGED", "PLAYER_ENTERING_WORLD",
+    "LOADING_SCREEN_DISABLED", "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_SPECIALIZATION_CHANGED" }) do
+    Check(events.events[event], event .. " cannot wake geometry observation")
+    local count = Count("geometry")
+    events.OnEvent(events, event, "player")
+    Tick(.2)
+    first.nativeX = first.nativeX + 1
+    Tick(.2)
+    Check(Count("geometry") > count and Last("geometry")[2] == first,
+        event .. " missed a late pure anchor change")
+    for _ = 1, 150 do Tick() end
+    Check(not follower.shown, event .. " left permanent geometry polling")
+end
+local count = Count("geometry")
+events.OnEvent(events, "PLAYER_SPECIALIZATION_CHANGED", "party1")
+Check(not follower.shown, "another unit's specialization armed chat")
+registry.callbacks["ChatFrame.OnEditBoxShow"](first.editBox)
+first.editBox.nativeY = first.editBox.nativeY + 7
+Tick(.2)
+Check(Count("geometry") > count and Last("geometry")[2] == first, "input-only native anchor reset was missed")
+count = Count("geometry")
+first.editBox.nativeX = "secret"
+Tick(.2)
+Check(Count("geometry") == count, "restricted input coordinates were compared or reported")
+first.editBox.nativeX = 12
+for _ = 1, 150 do Tick() end
+Check(not follower.shown, "input geometry left permanent polling")
+local conflictOwner = {}
+State.Watch(conflictOwner, { geometry = function() State.GeometryRepaired() end })
+events.OnEvent(events, "PLAYER_LEVEL_UP")
+for _ = 1, 200 do
+    first.nativeX = first.nativeX + 1
+    Tick()
+end
+Check(not follower.shown, "repairs extended one native event into permanent polling")
+State.Unwatch(conflictOwner)
 
 -------------------------------------------------------------- hover
 local hovers = {}

@@ -15,6 +15,7 @@ local max, min, ceil, floor, format = math.max, math.min, math.ceil, math.floor,
 local MODULE_SECTION = PAGE .. "_" .. ID .. "_module"
 
 local HELP = {
+    rows = "Cooldown bars: Icons per row sets row 1. Later rows can use different counts and sizes. Maximum icons limits the whole bar.",
     general = "These apply to every bar. The standalone assisted icon follows Blizzard's assisted combat highlight; enable that highlight in the game's Combat options. Its position is available in MSUF Edit Mode. Action bar presses show on cooldown icons only with the MSUF Suite action bars.",
     bars = "The preview and every section below edit this bar. Shared custom groups start with a separate list for explicit spell, aura and item IDs; disabling sharing restores the existing per-specialization list.",
     basics = "Center keeps the whole visible cooldown row centered as icons appear or disappear. Enable Keep first icon centered for alternating growth around the first icon. Buff icons then keep fixed places, with gaps for inactive buffs. Attach the bar to another bar or to your player frame; Gap controls the space between them.",
@@ -32,10 +33,10 @@ local HELP = {
 -- rest start closed. The bar's name and type sit in Basics.
 local function SectionDefinitions()
     return {
-        { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "anchorFrame", "side", "gap", "align",
-            "alpha", "cooldownDuration", "shareContents" } },
-        { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "cooldownFixed", "centerFirst", "overflow",
-            "laterPerRow", "laterSize", "vertical", "grow", "x", "y" } },
+        { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "laterSize", "perRow", "laterPerRow", "maxIcons",
+            "anchor", "anchorFrame", "side", "gap", "align", "alpha", "cooldownDuration", "shareContents" } },
+        { id = "layout", title = "Layout", suffixes = { "height", "spacing", "cooldownFixed", "centerFirst", "overflow",
+            "vertical", "grow", "x", "y" } },
         { id = "look", title = "Look", suffixes = { "iconShape", "masque", "zoom", "border", "borderColor", "borderClass", "swipeAlpha",
             "swipeColor", "swipeClass", "edge", "strata", "layer" } },
         { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackText", "stackSize", "textTop",
@@ -368,6 +369,9 @@ local function BuildSection(ctx, b, ui, spec)
     local function Content(body)
         local width = max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
         local y = Help(body, HELP[spec.id], -18, width)
+        if spec.id == "basics" then
+            y = Help(body, HELP.rows, y, width)
+        end
         local unused = P.Text(body, "", 16, y, width, T.colors.dim or T.colors.muted)
         y = y - 20
         if spec.id == "look" then y = SkinStatus(ctx, body, y, width) end
@@ -513,6 +517,7 @@ local function BuildBars(ctx, b, ui, body)
         P.Meta(PAGE, ID, "editor.selected", "ephemeral", MODULE_SECTION))
     local buttonWidth = floor((half - 8) / 2)
     local add = Page.Button(body, "+ Add bar", buttonWidth, 24, function(self) Page.OpenAddBar(self) end)
+    T.SkinSuccessButton(add)
     add:SetPoint("TOPLEFT", body, "TOPLEFT", 28 + half, y - 24)
     local actions = Page.Button(body, "Bar actions", buttonWidth, 24, function(self) Page.OpenBarMenu(self, Page.selected) end)
     actions:SetPoint("TOPLEFT", body, "TOPLEFT", 36 + half + buttonWidth, y - 24)

@@ -522,6 +522,12 @@ function Extensions.OnContext(changed, event)
 end
 
 function Extensions.RangeSpellChanged()
+    local bridge = NS.HostBridge
+    if bridge and bridge.NameplateRangeSpell then
+        for _, entry in pairs(plan.interaction) do
+            if entry.rangeAuto then entry.rangeSpell = bridge.NameplateRangeSpell(entry.friendly) end
+        end
+    end
     if not targetState then return end
     ReseedTarget()
     if targetState and Safe(targetState.uf) then Presentation(targetState) end

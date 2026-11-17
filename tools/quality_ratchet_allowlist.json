@@ -5,6 +5,13 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite/Core/Catalog/QualityOfLife.lua",
+   "metric": "g_reads",
+   "max": 1,
+   "reason": "Read EQoL's public EnhanceQoL namespace to inspect active merchant automation instead of treating a loaded addon as ownership. The table, configuration, flags and include-list key are guarded against secrets; no foreign state is written. Covered for Retail and Forever by suite_merchant_availability_contract.lua.",
+   "date": "2026-11-17"
+  },
+  {
    "file": "MSUF_Suite_Skin/Adapters/ForeverGroupFinder.lua",
    "metric": "g_reads",
    "max": 7,

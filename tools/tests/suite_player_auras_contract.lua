@@ -53,6 +53,9 @@ local function Region(w,h)
 end
 local function Button(shown)
  local b=Region();b.Icon=Region();b.Icon.kind="Texture";b.Count=Region();b.Duration=Region();b.DebuffBorder=Region(40,40);b.TempEnchantBorder=Region(32,32);b.shown=shown
+ b.consolidatedAuraCount=shown and 1 or 0
+ function b:IsEnabled()return self.enabled~=false end
+ function b:ShouldShow()return self:IsEnabled() and self.consolidatedAuraCount>0 end
  function b:Update()self.Count.text='2' end
  return b
 end
@@ -61,12 +64,29 @@ StatusTrayManager={UpdateTrayAndBuffFrameLayout=function()end}
 InputUtil={IsGamepadUIEnabled=function()return false end}
 AuraFrameEditModeMixin={UpdateAuraButtons=NativeAuraUpdate}
 local frame=Region();frame.AuraContainer=Region();frame.auraFrames={Button(true),Button(false)}
+local container=frame.AuraContainer
+container.isHorizontal,container.iconStride,container.iconPadding=true,12,5
+container.addIconsToRight,container.addIconsToTop=false,false
+container.currentGridLayoutInfo={isHorizontal=true,iconStride=12,iconPadding=5,
+ addIconsToRight=false,addIconsToTop=false,anchor={},layout={}}
+AuraContainerMixin={UpdateGridLayout=function(self,auras)
+ local cache=self.currentGridLayoutInfo
+ for slot,button in ipairs(auras)do
+  button:SetSize(30,40)
+  if cache.layout.spacing then
+   button:ClearAllPoints()
+   button:SetPoint('TOPRIGHT',container,'TOPRIGHT',-cache.layout.spacing*(slot-1),0)
+  end
+ end
+ self.currentGridLayoutInfo={isHorizontal=self.isHorizontal,iconStride=self.iconStride,iconPadding=self.iconPadding,
+  addIconsToRight=self.addIconsToRight,addIconsToTop=self.addIconsToTop,anchor=cache.anchor,layout=cache.layout}
+end}
 function frame:ShouldShowAura()return true end
 function frame:IsEditing()return self.editing end
 function frame:SetIsEditing(editing)self.editing=editing end
 function frame:RefreshConsolidationFrameVisibility()end
 frame.UpdateAuraButtons=NativeBuffUpdate
-function frame:UpdateGridLayout()for _,b in ipairs(self.auraFrames)do b:SetSize(30,40)end end
+function frame:UpdateGridLayout()AuraContainerMixin.UpdateGridLayout(self.AuraContainer,self.auraFrames)end
 _G.BuffFrame=frame
 local combat, queued=false, nil
 local P={NS={IsCombatLocked=function()return combat end,IsSecret=function(v)return type(v)=='table' and v.secret==true end,
@@ -87,9 +107,13 @@ S.Queue=function(id)queued=id end
 S.Install=function(id,m)captured=m end
 hooksecurefunc=function(obj,key,callback)local old=obj[key];obj[key]=function(self,...)local out={old(self,...)};callback(self,...);return unpack(out)end end
 P.PlayerAuraSkins={Yield=function()end} -- the skin-only piece (PlayerAuraSkins.lua)
-assert(loadfile(root .. '/MSUF_Suite_QualityOfLife/PlayerAuras.lua'))('MSUF_Suite_QualityOfLife',P)
+assert(loadfile(arg[3] or root .. '/MSUF_Suite_QualityOfLife/PlayerAuras.lua'))('MSUF_Suite_QualityOfLife',P)
 captured.config={iconWidth=52,iconHeight=26,iconZoom=7,perRow=12,spacing=4,rowSpacing=8,x=-12,y=0,debuffOffset=80,debuffX=0,borderColor='000000',borderSize=2,font='x',fontSize=16,showDuration=true}
 captured.context={Event=function()end}
+if arg[2] == 'harness' then
+ return { frame=frame, Region=Region, Button=Button, module=captured, private=P,
+  SetCombat=function(value)combat=value end }
+end
 if arg[2] then
  local mode=arg[2]
  local b=frame.auraFrames[1]
@@ -151,11 +175,13 @@ assert(frame.ConsolidatedBuffs.width==52 and frame.ConsolidatedBuffs.height==26)
 assert(frame.ConsolidatedBuffs.points[1][4]==0 and frame.auraFrames[1].points[1][4]==-56,
  'consolidation and first buff must occupy different slots')
 frame.ConsolidatedBuffs:Hide()
+frame.ConsolidatedBuffs.consolidatedAuraCount=0
 frame:UpdateGridLayout()
 assert(frame.auraFrames[1].points[1][4]==0,'hidden consolidated button left an empty slot')
 -- A later shown button can fail after earlier buttons have already been
 -- placed. Restore all of them and retry once that button is readable.
 local sizeGrid=frame.UpdateGridLayout
+frame.AuraContainer.currentGridLayoutInfo.layout={spacing=35}
 frame.UpdateGridLayout=function(self)
  for slot, button in ipairs(self.auraFrames) do
   button:ClearAllPoints()
@@ -214,15 +240,16 @@ frame.auraFrames[3]=nil
 local getCoords=frame.auraFrames[2].Icon.GetTexCoord
 captured:Disable()
 frame.auraFrames[2].Icon.GetTexCoord=function()return nil end
-local updateGrid=frame.UpdateGridLayout
+local updateGrid=AuraContainerMixin.UpdateGridLayout
 local failedLayout=false
-frame.UpdateGridLayout=function(self)
+AuraContainerMixin.UpdateGridLayout=function(self)
+ assert(self~=frame.AuraContainer,'fallback used the real native layout receiver')
  failedLayout=true
  error('test native layout failure')
 end
 captured:Enable()
 assert(failedLayout,'fallback did not try the native layout')
-frame.UpdateGridLayout=updateGrid
+AuraContainerMixin.UpdateGridLayout=updateGrid
 frame.auraFrames[2].Icon.GetTexCoord=getCoords
 frame:UpdateAuraButtons()
 assert(frame.auraFrames[1].width==52 and frame.auraFrames[2].points[1][4]==-56,
@@ -238,6 +265,10 @@ assert(frame.auraFrames[1].width==30 and frame.auraFrames[1].Icon.width==30,'dis
 assert(frame.auraFrames[1].Duration.font[2]==10 and frame.auraFrames[1].DebuffBorder.width==40,'native font/border were not restored')
 -- Blizzard setup seats both native containers at the minimap, independent of saved Edit Mode positions.
 local debuff=Region();debuff.AuraContainer=Region();debuff.auraFrames={Button(true)}
+debuff.AuraContainer.isHorizontal,debuff.AuraContainer.iconStride,debuff.AuraContainer.iconPadding=true,12,5
+debuff.AuraContainer.addIconsToRight,debuff.AuraContainer.addIconsToTop=false,false
+debuff.AuraContainer.currentGridLayoutInfo={isHorizontal=true,iconStride=12,iconPadding=5,
+ addIconsToRight=false,addIconsToTop=false,anchor={},layout={}}
 debuff.ShouldShowAura=frame.ShouldShowAura;debuff.IsEditing=frame.IsEditing;debuff.SetIsEditing=frame.SetIsEditing
 debuff.UpdateAuraButtons=NativeAuraUpdate;debuff.UpdateGridLayout=frame.UpdateGridLayout
 _G.DebuffFrame=debuff

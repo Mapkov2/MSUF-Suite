@@ -949,14 +949,39 @@ do
         "the native model escaped its original stage")
     assert(not full.model and full.modelHost:IsShown() and not full.reportCover:IsShown()
         and full.rail.cards[1].title.label.text == "Quick", "native gear or the original stats rail is missing")
-    local camera, zoom, resets = { yaw = 0 }, 0, 0
-    function camera:GetYaw() return self.yaw end
-    function camera:SetYaw(yaw) self.yaw = yaw end
-    function camera:OnMouseWheel(delta) zoom = zoom + delta end
+    local zoom, resets = 0, 0
+    -- OrbitCameraMixin zoom semantics (live 297d7aaa, Forever bebcb6bf):
+    -- zoom percent is clamped, and equal distances make wheel input invisible.
+    local function NewCamera(near, far, distance)
+        local camera = { yaw = 0, near = near, far = far, percent = 0 }
+        function camera:GetYaw() return self.yaw end
+        function camera:SetYaw(yaw) self.yaw = yaw end
+        function camera:GetMinZoomDistance() return self.near end
+        function camera:GetMaxZoomDistance() return self.far end
+        function camera:GetZoomDistance() return self.near + (self.far - self.near) * self.percent end
+        function camera:SetZoomDistance(value)
+            self.percent = self.near == self.far and 0 or math.max(0, math.min(1, (value - self.near) / (self.far - self.near)))
+        end
+        function camera:SetMinZoomDistance(value)
+            self.near = value
+            self:SetZoomDistance(self:GetZoomDistance())
+        end
+        function camera:SetMaxZoomDistance(value)
+            self.far = value
+            self:SetZoomDistance(self:GetZoomDistance())
+        end
+        function camera:OnMouseWheel(delta)
+            zoom = zoom + delta
+            self.percent = math.max(0, math.min(1, self.percent - delta * .1))
+        end
+        camera:SetZoomDistance(distance)
+        return camera
+    end
+    local camera = NewCamera(6, 6, 6)
     CharacterModelScene = {
         IsVisible = function() return true end,
         GetActiveCamera = function() return camera end,
-        Reset = function() resets = resets + 1 end,
+        Reset = function() resets = resets + 1 camera = NewCamera(6, 6, 6) end,
     }
     local toolbarButtons, toolbarCount = {}, 0
     for control in pairs(full.surfaces) do
@@ -975,11 +1000,11 @@ do
         button.scripts.OnClick(button)
     end
     ClickModelButton("common-icon-zoomin")
-    assert(zoom == 1, "the zoom-in button did not use the native camera")
+    assert(zoom == 1 and camera:GetZoomDistance() < 6, "zoom-in did not move the fixed native camera")
     ClickModelButton("common-icon-zoomout")
-    assert(zoom == 0, "the zoom-out button did not use the native camera")
+    assert(zoom == 0 and math.abs(camera:GetZoomDistance() - 6) < 1e-9, "zoom-out did not recover the native framing")
     ClickModelButton("common-icon-rotateright")
-    assert(camera.yaw > 0, "the rotate-right button did not turn the model")
+    assert(camera.yaw < 0, "rotate-right used model rotation instead of the opposite camera orbit")
     ClickModelButton("common-icon-rotateleft")
     assert(camera.yaw == 0, "the rotate-left button did not turn the model back")
     ClickModelButton("common-icon-undo")
@@ -995,7 +1020,39 @@ do
     input.scripts.OnUpdate(input)
     input.scripts.OnMouseUp(input, "LeftButton")
     input.scripts.OnMouseWheel(input, 1)
-    assert(camera.yaw > 0 and zoom == 1 and not input.scripts.OnUpdate, "the center did not rotate/zoom the native 3D model")
+    assert(camera.yaw < 0 and zoom == 1 and camera:GetZoomDistance() < 6 and not input.scripts.OnUpdate,
+        "the center did not follow native dressing-room rotation and zoom after reset")
+    input.scripts.OnMouseWheel(input, -100)
+    assert(camera:GetZoomDistance() > 6 and camera:GetZoomDistance() == camera:GetMaxZoomDistance(),
+        "wheel-down could not zoom out, or escaped the far limit")
+    input.scripts.OnMouseWheel(input, 100)
+    assert(camera:GetZoomDistance() > 0 and camera:GetZoomDistance() == camera:GetMinZoomDistance(),
+        "wheel-up escaped the near limit")
+    local previousCamera = camera
+    camera = NewCamera(2, 12, 7)
+    input.scripts.OnMouseWheel(input, 1)
+    assert(camera.near == 2 and camera.far == 12 and math.abs(camera:GetZoomDistance() - 6) < 1e-9,
+        "working native zoom limits were replaced")
+    assert(previousCamera:GetZoomDistance() == previousCamera:GetMinZoomDistance(), "a stale camera received the wheel")
+    input.scripts.OnMouseDown(input, "LeftButton")
+    cursorX = cursorX - 20
+    input.scripts.OnUpdate(input)
+    assert(camera.yaw > 0, "drag-left did not follow the native camera direction")
+    mouseDown = false
+    input.scripts.OnUpdate(input)
+    assert(not input.scripts.OnUpdate, "native drag kept polling after release outside its viewport")
+    mouseDown = true
+    input.scripts.OnMouseDown(input, "LeftButton")
+    input.scripts.OnHide(input)
+    assert(not input.scripts.OnUpdate, "hidden native input kept polling")
+    local wheelCalls = zoom
+    camera.near = secretIdentity
+    input.scripts.OnMouseWheel(input, 1)
+    assert(zoom == wheelCalls, "secret camera limits reached native Lua zoom arithmetic")
+    CharacterModelScene.IsVisible = function() return false end
+    camera = NewCamera(6, 6, 6)
+    input.scripts.OnMouseWheel(input, 1)
+    assert(zoom == wheelCalls and camera.near == camera.far, "hidden native scene was changed")
     liveCombat = false
     CharacterModelScene = nil
     local overviewWidth, overviewLevel = full.right[1].panelWidth, full.right[1]:GetFrameLevel()

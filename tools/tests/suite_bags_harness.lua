@@ -33,6 +33,8 @@ local function ItemButton(W, env, parent, index, button)
     button.Count.shown = false
     button.Count.font = { "Fonts/ARIALN.TTF", 14, "OUTLINE,THICK" }
     button.icon = button:CreateTexture(nil, "BORDER")
+    button.NormalTexture = button:CreateTexture(nil, "ARTWORK")
+    button.IconBorder = button:CreateTexture(nil, "OVERLAY")
     button.ItemSlotBackground = button:CreateTexture(nil, "BACKGROUND")
     button.emptyBackgroundAtlas = "bags-item-slot64"
     -- ContainerFrame.xml (live and forever): BattlepayItemTexture is shown and
@@ -221,7 +223,30 @@ local function ReagentBag(W, env)
     frame.CloseButton = H.CloseButton(env, frame)
     frame.Items = {}
     function frame:EnumerateValidItems() return ipairs(self.Items) end
-    function frame:UpdateItems() end
+    function frame:UpdateItemSlots()
+        local size = W.sizes[5] or 0
+        self.pool = self.pool or {}
+        Clear(self.Items)
+        for slot = 1, size do
+            local button = self.pool[slot] or ItemButton(W, env, self, slot)
+            self.pool[slot], self.Items[slot] = button, button
+            button.bagID, button.id = 5, slot
+        end
+    end
+    function frame:UpdateItems()
+        for _, button in self:EnumerateValidItems() do
+            local info = C_Container.GetContainerItemInfo(5, button:GetID())
+            button.hasItem = info and info.iconFileID
+            button:SetItemButtonTexture(info and info.iconFileID)
+            W.SetItemButtonCount(button, info and info.stackCount)
+        end
+    end
+    function frame:UpdateItemLayout()
+        for i, button in self:EnumerateValidItems() do
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", self, "TOPLEFT", 8 + (i - 1) % 4 * 40, -40 - math.floor((i - 1) / 4) * 40)
+        end
+    end
     return frame
 end
 
@@ -502,6 +527,15 @@ function H.BuildClient(W, env)
         end
     end
     -- OpenAllBags -> ContainerFrame_GenerateFrame (native, also in combat).
+    function OpenBag(bag)
+        assert(bag == 5, "reagent fixture only opens the reagent bag")
+        if not W.sizes[5] or W.sizes[5] == 0 then return end
+        local frame = W.Reagent
+        frame:UpdateItemSlots()
+        frame:Show()
+        frame:UpdateItems()
+        frame:UpdateItemLayout()
+    end
     function W.OpenBags()
         W.Native(function()
             local frame = W.CF
@@ -599,6 +633,15 @@ function H.New(root, options)
     function Widget:GetName() return self.name end
     function Widget:GetObjectType() return self.kind end
     function Widget:GetParent() return self.parent end
+    function Widget:GetChildren()
+        local children = {}
+        for _, child in ipairs(W.frames) do
+            if child.parent == self and child.kind ~= "Texture" and child.kind ~= "FontString" then
+                children[#children + 1] = child
+            end
+        end
+        return unpack(children)
+    end
     function Widget:SetParent(parent) self.parent = parent end
     function Widget:IsForbidden() return false end
     function Widget:IsProtected()

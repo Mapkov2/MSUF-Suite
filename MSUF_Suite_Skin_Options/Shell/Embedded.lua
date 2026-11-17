@@ -5,7 +5,7 @@ local L = NS.L
 -- The MSUF left navigation has one Skinning entry. This second rail exposes
 -- every MapkoSkin editor page inside that entry without opening another UI.
 local PAGE_KEYS = { "dashboard", "looks", "icons", "colors", "typography", "geometry",
-    "skins", "coverage", "hud", "profiles", "advanced" }
+    "skins", "addonSkins", "coverage", "hud", "profiles", "advanced" }
 local RAIL_WIDTH = 174
 local SEARCH_ROWS = 6
 

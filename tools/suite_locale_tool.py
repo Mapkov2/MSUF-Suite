@@ -1275,6 +1275,8 @@ class Extractor:
                 for field, rng, owner in f.fields:
                     if field == "summary" and f.rel.startswith("MSUF_Suite/Core/Catalog/"):
                         continue  # Catalog summary ranks setting keys; it is not displayed prose.
+                    if field == "label" and f.rel == "MSUF_Suite/Core/AddonSkinCatalog.lua":
+                        continue  # Addon product names retain their authors' spelling in every locale.
                     self.current = (f.rel, f.tokens[rng[0]].line, "field:" + field)
                     for shape in list(table.get(field, ())):
                         self.apply(shape, f, rng, owner, "field:" + field, direct=False)

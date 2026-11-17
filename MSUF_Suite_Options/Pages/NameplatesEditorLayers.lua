@@ -599,6 +599,7 @@ local function BuildLayerViewport(rail)
     scroll:SetPoint("TOPRIGHT", rail, "TOPRIGHT", -24, -LAYER_TOP)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(1, 1)
+    content:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
     if template then scroll.scrollBarHideable = true end
     scroll:SetScrollChild(content)
     if styleScroll then styleScroll(scroll, rail) end
@@ -625,6 +626,7 @@ local function BuildRailLayout(ui, rail, scroll, content)
         local viewport = math.min(height, MAX_LAYER_HEIGHT)
         scroll:SetHeight(viewport)
         content:SetSize(width, height)
+        scroll:UpdateScrollChildRect()
         scroll:EnableMouseWheel(height > viewport)
         content:EnableMouseWheel(height > viewport and T.StyleScrollFrame ~= nil)
         if scroll:GetVerticalScroll() > height - viewport then scroll:SetVerticalScroll(height - viewport) end

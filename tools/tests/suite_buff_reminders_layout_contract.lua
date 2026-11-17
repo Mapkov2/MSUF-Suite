@@ -66,6 +66,31 @@ for _,height in ipairs({94, 180, 38, 120}) do
     Check(reminderPaints == paints, "unchanged reminder preview repainted")
 end
 local unitClass = env.UnitClass
+local ui = contexts[M.cache.suite_buffReminders].suiteWorkspace
+local settingsRows, anchorRow, pointRow = P.W.SettingsRows
+P.W.SettingsRows = function(ctx, body, options)
+    for _, row in ipairs(options.rows or {}) do
+        if row.id == "anchorTarget" then anchorRow = row end
+        if row.id == "point" then pointRow = row end
+    end
+    return settingsRows(ctx, body, options)
+end
+Check(ui:Focus("suite_buffReminders_position"), "anchor controls are not reachable under Appearance")
+P.W.SettingsRows = settingsRows
+local hasAnchor
+for _, section in pairs(ui.sections) do
+    if section._suiteWorkspaceSection == "suite_buffReminders_position" then hasAnchor = section end
+end
+Check(hasAnchor ~= nil, "anchor settings section is missing")
+local anchorChoices = P.Suite.HostBridge.EditAnchorChoices("external:msufsuite.buffreminders:buffs")
+Check(#anchorChoices > 1 and anchorChoices[1].value == "", "disabled runtime modules lost their anchor picker")
+Check(anchorRow and anchorRow.kind == "dropdown" and #anchorRow.values() > 1,
+    "the anchor setting is not a usable target dropdown")
+Check(pointRow and pointRow.label == P.Tr("Reminder point"), "own reminder point was not labeled")
+local savedAnchor = anchorRow.get()
+anchorRow.set("player")
+Check(anchorRow.get() == "player" and P.Get("buffReminders", "anchorTarget") == "player", "selected anchor was not saved by key")
+anchorRow.set(savedAnchor)
 for _, class in ipairs({ "MAGE", "PRIEST", "DRUID", "WARRIOR" }) do
     env.UnitClass = function() return class, class end
     Check(P.Gates.buffReminders({ key = "classMageArmor" }) == (arg[2] == "Forever" and class == "MAGE"),

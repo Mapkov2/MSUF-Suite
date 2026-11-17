@@ -46,8 +46,8 @@ for _, height in ipairs({600, 768, 1080}) do
             W.S.Set("bags", "accentColor", "ff0000"); W.Settle()
             assert(not t[1]:IsShown() and t.feather:IsShown(), "same-mode restyle resurrects compact shadow")
             W.S.Set("bags", "backgroundOpacity", 40); W.Settle()
-            local featherAlpha = W.config.look == 3 and t[2].gradient and t[2].gradient[2].a or .4
-            assert(not t[1]:IsShown() and t.feather.gradient[3].a == featherAlpha, "panel opacity restyle loses feather")
+            assert(not t[1]:IsShown() and Near(t.feather.gradient[2].a, .048) and t.feather.gradient[3].a == 0,
+                "panel rail tint ignored background opacity")
             Inside(W, V.free, W.CF)
             Inside(W, t.goldLabel, W.CF)
             local initialHeight, initialWidth = W.CF:GetHeight(), W.CF:GetWidth()
@@ -106,12 +106,13 @@ do
     Fill(W)
     local t = W.M.windows[W.CF]
     local gradient = assert(t[2].gradient, "the Forever bag body used a flat panel")
-    assert(gradient[1] == "HORIZONTAL" and gradient[2].a < .8 and gradient[3].a < .9,
-        "the Forever bag body is opaque or has the wrong gradient")
-    assert(t.feather.gradient[3].a == gradient[2].a and t[3].color[4] == 0 and t[5].color[4] == 0,
-        "the Forever feather or header/footer introduced a second background")
+    local _, _, _, bodyLeft = t[2]:GetPoint(1)
+    assert(gradient[1] == "HORIZONTAL" and gradient[2].a >= .85 and gradient[3].a < 1 and bodyLeft == 0,
+        "the Forever bag does not have a darker continuous backdrop under the rail")
+    assert(t[3].color[4] > .2 and t[5].color[4] > .4 and t[8]:IsShown(),
+        "the Forever panel still has a transparent header, footer or open border")
     W.S.Set("bags", "windowPresentation", W.NS.BagsPresentation.WINDOW); W.Settle()
-    assert(t[2].gradient[1] == "VERTICAL" and t[1].color[4] < .12 and t[3].color[4] < .12 and t[5].color[4] < .12,
+    assert(t[2].gradient[1] == "VERTICAL" and t[1].color[4] < .12 and t[3].color[4] < .30 and t[5].color[4] < .50,
         "the compact Forever layout stacked opaque chrome over Glass")
     W.S.Set("bags", "look", 2); W.Settle()
     local flat = t[2].gradient

@@ -228,6 +228,7 @@ do
     P.Tr = function(key) return dictionary[key] or key end
     P.M.TrackRefresh = function(_, callback) refresh = callback end
     P.W.SetCollapsibleSummary = function(_, text) summary = text end
+    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/MediaValues.lua"))("MSUF_Suite_Options", P)
     assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Controls.lua"))("MSUF_Suite_Options", P)
     P.AttachRowsSummary({}, { _msuf2CollapsibleEntry = {} }, {
         { summary = 1, kind = "dropdown", label = "Icon size", get = function() return 1 end,

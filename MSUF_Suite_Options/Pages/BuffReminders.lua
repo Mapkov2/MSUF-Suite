@@ -10,7 +10,8 @@ local HELP = {
     recommended = P.Help("Reminders for missing poisons and consumables.", "Mainline covers Rogue poisons, this season's flasks, augment runes and weapon oils, and the Well Fed food buff. Each category clicks the first matching item in your bags; an item you enter for it is tried first. Food is found in your bags by the game's eating spells: the food you enter comes first, then the newest one. With the gray reminder on, a category with nothing left stays visible without a click action. Assassination prefers Deadly Poison; Outlaw and Subtlety prefer Instant Poison. Dragon-Tempered Blades allows two poisons per category. Oils target equipped weapons; known Shaman or Paladin imbues suppress automatic oils."),
     visibility = P.Help("Show missing or expiring buffs outside combat.", "Reminders appear only outside combat. The advance setting also shows active buffs, food and weapon enchants when their remaining time reaches the chosen number of minutes; 0 shows only missing effects. A single scheduled wakeup handles the next threshold. Reminders hide in arenas and battlegrounds, where aura data can be restricted."),
     appearance = "Click a reminder to cast its spell or use its item. Aura checks run on relevant events; there is no repeating scan.",
-    position = "Move the reminder row in MSUF Edit Mode or set its offsets here.",
+    position = P.Help("Move the reminder row in MSUF Edit Mode or set its offsets here.",
+        "Choose an MSUF or Suite element to follow, then set the reminder point, anchor point and offsets."),
     readycheck = "When a ready check starts outside combat and your mana as a healer is low, a short note shows how much you have; it turns red below half of your limit. Only your own mana is read.",
 }
 HELP.visibility = P.Help("Show missing or expiring buffs outside combat.", "Pick the places where reminders may show; arenas and battlegrounds never show them. Before a keystone starts, buffs can be asked to last the dungeon's timer or a number of minutes; once the key starts, the normal warning time applies again. One scheduled wakeup handles the next expiry.")
@@ -33,7 +34,7 @@ local SECTIONS = {
     { "personalVisibility", "Personal spell reminders" },
     { "consumableVisibility", "Consumable and weapon reminders" },
     { "appearance", "Icons" },
-    { "position", "Position" },
+    { "position", "Anchors" },
 }
 
 -- Forever's standalone class reminders show only to their own class.
@@ -66,6 +67,33 @@ local function SkinStatus(ctx)
     end
 end
 
+local function AnchorGrid(ctx, rules)
+    return function(body, y, width)
+        local section = PAGE .. "_position"
+        local built = P.RuleRows(PAGE, ID, rules, nil, section)
+        for i = #built.strings, 1, -1 do
+            local rule = built.strings[i]
+            if rule.key == "anchorTarget" then
+                table.remove(built.strings, i)
+                local row = P.Meta(PAGE, ID, rule.key, "setting", section)
+                row.id, row.label, row.kind = rule.key, Tr(rule.label), "dropdown"
+                row.get = function() return P.Get(ID, "anchorTarget") end
+                row.set = function(value) return P.Set(ID, "anchorTarget", value) end
+                row.values = function()
+                    local values = P.Suite.HostBridge.EditAnchorChoices("external:msufsuite.buffreminders:buffs")
+                    local current, found = P.Get(ID, "anchorTarget"), false
+                    for _, value in ipairs(values) do if value.value == current then found = true end end
+                    if not found then values[#values + 1] = { value = current, text = Tr("Unavailable") } end
+                    return values
+                end
+                table.insert(built.rows, 1, row)
+                table.insert(built.pending, 1, rule)
+            end
+        end
+        return P.RuleGrid(ctx, body, PAGE, ID, rules, y, width, nil, section, nil, built)
+    end
+end
+
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Buff Reminders", height = 202,
         tabs = {
@@ -88,7 +116,8 @@ local function Build(ctx)
             else
                 P.MenuWorkspace.Rules(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),
                     P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = false,
-                        extra = section[1] == "appearance" and SkinStatus(ctx) or nil })
+                        extra = section[1] == "appearance" and SkinStatus(ctx) or nil,
+                        grid = section[1] == "position" and AnchorGrid(ctx, P.SectionRules(ID, "position")) or nil })
             end
         end
     end

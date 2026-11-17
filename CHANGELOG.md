@@ -1,5 +1,30 @@
 # MSUF Suite Changelog
 
+## 0.1.24 Alpha - 2026-11-17
+
+Includes the accumulated Suite fixes and changes since 0.1.23 Alpha. Distributed through the Beta channel for Retail and WoW Forever.
+
+### Changes
+
+- Added optional skins for supported third-party addon windows, including Spoken, RestedXP, Enhance QoL and AceGUI/AceConfig. The feature starts disabled; each integration has its own switch. Improved addon menus, spellbook and spell-learning panels, mail scrolling, window controls and native button styling.
+  <!-- msuf-menu-link: {"pageKey":"suite_skin","sectionId":"suite_skin_addon_skins","label":"Addon skins"} -->
+- Expanded Action Bars with special buttons, automatic class range text, additional border media and improvements to visibility rules, paging and key handling.
+  <!-- msuf-menu-link: {"pageKey":"suite_actionbars","sectionId":"suite_actionbars_behavior","label":"Action bar behavior"} -->
+- Added Buff Reminder anchoring options and refined reminder layout, cursor placement, coverage and visual updates.
+  <!-- msuf-menu-link: {"pageKey":"suite_buffReminders","sectionId":"suite_buffReminders_position","label":"Buff reminders"} -->
+- Improved reagent inventory merging, item slot borders, bag and bank previews, inventory refreshes and physical sorting.
+  <!-- msuf-menu-link: {"pageKey":"suite_bags","sectionId":"suite_bags_listView","label":"Bags and inventory"} -->
+- Improved chat position recovery, toolbar geometry, preview snapshots, chat bubbles and shared chat state.
+  <!-- msuf-menu-link: {"pageKey":"suite_chat","sectionId":"suite_chat_window","label":"Chat window"} -->
+- Expanded trinket and action overlay support in the Cooldown Manager, with updated row settings, editor controls and preview behavior.
+  <!-- msuf-menu-link: {"pageKey":"suite_cooldownManager","sectionId":"suite_cooldownManager_cooldownManager_module","label":"Cooldown Manager"} -->
+- Expanded native nameplate options and health appearance, target resource display, cast settings and media controls. Refined friendly visibility, aura handling, cast outlines, mouseover behavior, roles, power bars and pooled plate updates.
+  <!-- msuf-menu-link: {"pageKey":"suite_nameplates","sectionId":"suite_nameplates_enemyStyle","label":"Enemy nameplate style"} -->
+- Updated world map and quest controls, player aura handling and floating combat text behavior. Refined Forever spell-rank updates, merchant availability checks and related gameplay settings.
+  <!-- msuf-menu-link: {"pageKey":"suite_skin","sectionId":"suite_skin_windows","label":"Window skins"} -->
+- Updated profile import and variants, host integration, appearance controls, settings navigation and translations across all Suite language packs.
+  <!-- msuf-menu-link: {"pageKey":"suite_skin","sectionId":"suite_skin_windows","label":"Suite appearance"} -->
+
 ## 0.1.23 Alpha - 2026-11-17
 
 Changes since November 16, 2026 at around 12:00 CET.

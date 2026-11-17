@@ -1808,18 +1808,23 @@ Section("player spells tab colors", function()
         "a tab refresh recaptured our own color as the native one")
 end)
 
--- The Forever footer uses the existing Blizzard responder as the hardware OnClick.
+-- The footer selects the native menu description; it never extracts the responder.
 Section("forever spellbook ranks toggle", function()
     NS.SpellLearning = { Attach = function() end, Hide = function() end, RefreshSetting = function() end }
     Load("PlayerSpells.lua")
     local forever, gamepad, create = NS.Client.isForever, NS.Client.IsGamepadUI, CreateFrame
     local saved = { GetCVarBool, SetCVar, UnitClass, SHOW_ALL_SPELL_RANKS,
         GameTooltip, GameTooltip_SetTitle, GameTooltip_AddNormalLine, GameTooltip_Hide, NS.ControlSkin.Refresh,
-        issecurevariable }
+        issecurevariable, MenuInputContext }
     NS.Client.isForever, NS.Client.IsGamepadUI = true, function() return false end
     local cvars, tooltip, class, active = { ShowAllSpellRanks = "0" }, {}, "MAGE", {}
-    local clickPhase, secureResponder, selectable = nil, true, true
-    issecurevariable = function(_, key) return key ~= "responder" or secureResponder end
+    local clickPhase, secureResponder, securePick, selectable, hasResponder = nil, true, true, true, true
+    issecurevariable = function(_, key)
+        if key == "responder" then return secureResponder end
+        if key == "Pick" then return securePick end
+        return true
+    end
+    MenuInputContext = { MouseButton = "native mouse input" }
     GetCVarBool = function(name) return cvars[name] == "1" end
     SetCVar = function(name, value) cvars[name] = value end
     UnitClass = function() return "Class", class end
@@ -1866,15 +1871,31 @@ Section("forever spellbook ranks toggle", function()
     local spells, book = Book()
     local refreshes, entries = 0, 1
     local function NativeRanksResponder()
-        Expect(clickPhase == "OnClick", "the native responder ran from an addon click wrapper")
+        Expect(clickPhase == "native menu", "native cooldown rebuild bypassed the menu description dispatch")
         cvars.ShowAllSpellRanks = cvars.ShowAllSpellRanks == "1" and "0" or "1"
         entries = cvars.ShowAllSpellRanks == "1" and 3 or 1
         refreshes = refreshes + 1
         NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
     end
-    local rankOption = { text = SHOW_ALL_SPELL_RANKS, responder = NativeRanksResponder }
+    local rankOption = setmetatable({ text = SHOW_ALL_SPELL_RANKS }, { __index = function(_, key)
+        if key == "responder" then error("addon code extracted the native ranks responder") end
+    end })
+    local picks = 0
+    function rankOption:Pick(context, buttonName)
+        Expect(context == MenuInputContext.MouseButton and buttonName == "LeftButton",
+            "rank selection did not use the native mouse input context")
+        if not selectable then return false end
+        picks = picks + 1
+        -- Model the public Menu.lua dispatch; this fixture does not emulate WoW taint.
+        local previous = clickPhase
+        clickPhase = "native menu"
+        NativeRanksResponder()
+        clickPhase = previous
+        return true
+    end
     function rankOption:IsCheckbox() return true end
     function rankOption:CanSelect() return selectable end
+    function rankOption:HasResponder() return hasResponder end
     local description = { tag = "MENU_SPELL_BOOK_SETTINGS" }
     function description:GetTag() return self.tag end
     function description:EnumerateElementDescriptions() return ipairs({ rankOption }) end
@@ -1901,31 +1922,29 @@ Section("forever spellbook ranks toggle", function()
         Expect(active[toggle] == true, "queued native spellbook refresh did not synchronize the toggle")
         cvars.ShowAllSpellRanks = "0"
         toggle.scripts.OnShow(toggle)
-        local function Click(expectedHandler)
-            clickPhase = "PreClick"
-            if toggle.scripts.PreClick then toggle.scripts.PreClick(toggle, "LeftButton", false) end
+        local clickHandler = toggle.scripts.OnClick
+        local function Click(mouseButton, down)
+            clickPhase = "addon"
+            if toggle.scripts.PreClick then toggle.scripts.PreClick(toggle, mouseButton or "LeftButton", down or false) end
             local handler = toggle.scripts.OnClick
-            if expectedHandler then
-                Expect(handler == expectedHandler, "the bottom toggle did not bind Blizzard's original native click handler")
-            end
-            clickPhase = handler == NativeRanksResponder and "OnClick" or "addon"
-            if handler then handler(toggle, "LeftButton", false) end
-            clickPhase = "PostClick"
-            if toggle.scripts.PostClick then toggle.scripts.PostClick(toggle, "LeftButton", false) end
+            if handler then handler(toggle, mouseButton or "LeftButton", down or false) end
+            if toggle.scripts.PostClick then toggle.scripts.PostClick(toggle, mouseButton or "LeftButton", down or false) end
             clickPhase = nil
         end
-        Click(NativeRanksResponder)
-        Expect(toggle.scripts.OnClick == nil, "a successful native click kept its handler armed")
+        Expect(clickHandler and not toggle.scripts.PreClick and not toggle.scripts.PostClick,
+            "rank toggle still transplants the responder during a hardware click")
+        Click()
+        Expect(toggle.scripts.OnClick == clickHandler and picks == 1, "rank toggle did not use the native menu description")
         Expect(entries == 3 and refreshes == 1 and active[toggle] == true,
             "the first bottom click did not immediately show all ranks")
-        Click(NativeRanksResponder)
+        Click()
         Expect(entries == 1 and refreshes == 2 and active[toggle] == false,
             "the second bottom click did not immediately hide the lower ranks")
         cvars.ShowAllSpellRanks = "1"
         NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
         Expect(active[toggle] == true, "the ranks toggle missed a native setting change")
         cvars.ShowAllSpellRanks = "0"
-        Click(NativeRanksResponder)
+        Click()
         Expect(entries == 3 and refreshes == 3, "the next click used stale selection state")
         locked = true
         Click()
@@ -1939,10 +1958,27 @@ Section("forever spellbook ranks toggle", function()
         Click()
         secureResponder = true
         Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1", "a tainted responder changed the ranks")
+        hasResponder = false
+        Click()
+        toggle.scripts.OnEnter(toggle)
+        Expect(refreshes == 3 and tooltip.line == "To apply immediately, use the rank checkbox in the spellbook settings menu.",
+            "missing native responder changed ranks or hid the fallback hint")
+        hasResponder = true
+        securePick = false
+        Click()
+        securePick = true
+        Expect(refreshes == 3, "a replaced menu Pick handler rebuilt the native spellbook")
+        local pick = rankOption.Pick
+        rankOption.Pick = nil
+        Click()
+        rankOption.Pick = pick
+        Click("RightButton")
+        Click("LeftButton", true)
+        Expect(refreshes == 3, "missing native API, right click or mouse-down rebuilt the spellbook")
         description.tag = "OTHER_MENU"
         Click()
-        Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1" and toggle.scripts.OnClick == nil,
-            "a foreign menu rebuilt the native spellbook or left an armed click handler")
+        Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1" and toggle.scripts.OnClick == clickHandler,
+            "a foreign menu rebuilt the native spellbook or replaced the owned handler")
         toggle.scripts.OnEnter(toggle)
         Expect(tooltip.line == "To apply immediately, use the rank checkbox in the spellbook settings menu.",
             "a missing native handler did not expose the fallback hint")
@@ -1962,7 +1998,7 @@ Section("forever spellbook ranks toggle", function()
     CreateFrame, NS.Client.isForever, NS.Client.IsGamepadUI = create, forever, gamepad
     GetCVarBool, SetCVar, UnitClass, SHOW_ALL_SPELL_RANKS = saved[1], saved[2], saved[3], saved[4]
     GameTooltip, GameTooltip_SetTitle, GameTooltip_AddNormalLine, GameTooltip_Hide = saved[5], saved[6], saved[7], saved[8]
-    NS.ControlSkin.Refresh, issecurevariable = saved[9], saved[10]
+    NS.ControlSkin.Refresh, issecurevariable, MenuInputContext = saved[9], saved[10], saved[11]
 end)
 
 Section("prepared Forever spells window combat artwork", function()
@@ -3410,6 +3446,7 @@ Section("world map", function()
     _G.QuestLogQuests_Update = function() end
     local firstRow = AcquireRow()
     local map = Frame("WorldMapFrame")
+    function map:HookScript(key, callback) self.scripts = self.scripts or {} self.scripts[key] = callback end
     map.visible = true
     function map:IsVisible() return self.visible end
     map.QuestLog = questLog
@@ -3507,6 +3544,7 @@ Section("world map", function()
         local mapLog = Linked(Frame(name .. "QuestLog", { mapQuests }))
         mapLog.QuestsFrame = mapQuests
         local mapFrame = Frame(name)
+        function mapFrame:HookScript(key, callback) self.scripts = self.scripts or {} self.scripts[key] = callback end
         function mapFrame:IsVisible() return true end
         mapFrame.QuestLog = mapLog
         return mapFrame

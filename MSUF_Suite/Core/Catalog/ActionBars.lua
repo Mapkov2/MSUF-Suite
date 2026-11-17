@@ -102,6 +102,7 @@ B.Module("actionbars", {
     title = "Action bars",
     description = "Ten action bars plus stance and pet bars with free layout, paging, visibility rules and button styling. Key bindings keep using Blizzard's commands.",
     core = true, defaultEnabled = true,
+    cvars = { AutoPushSpellToActionBar = true },
     page = "suite_actionbars",
     conflicts = { "ElvUI", "Bartender4", "Dominos", "EllesmereUIActionBars", "ConsolePort_Bar" },
     summary = "look barVisibility barButtons barRows barCooldownSize barKeybind barBackground"
@@ -166,6 +167,14 @@ B.Section(id, "appearance", "Button appearance", {
     Choice("borderArt", "Button frame style", ENUM.BORDER_ART.PIXEL, { "Pixel border", "Blizzard frame" }),
     Number("borderScale", "Button frame scale (percent)", 100, 70, 160, 5),
     Number("borderExpansion", "Button frame expansion", 0, -8, 20),
+    B.String("mediaBorder", "SharedMedia border", "", 260),
+    Number("mediaBorderSize", "SharedMedia edge size", 16, 1, 32),
+    Number("mediaBorderPadding", "SharedMedia border padding", 0, -12, 20),
+    Bool("styleSpecialButtons", "Style Extra Action and Zone Ability buttons", false),
+    Bool("hideSpecialArtwork", "Hide Extra Action and Zone Ability artwork", false),
+    Bool("specialKeybind", "Show Extra Action keybind", true),
+    Number("specialKeybindSize", "Extra Action keybind size", 12, 6, 30),
+    Number("specialCooldownSize", "Special button cooldown text size", 16, 6, 30),
     -- Blizzard's own highlight reaches only Blizzard's buttons, which bar 1
     -- does not reuse; the Suite's ring covers every bar.
     Choice("assistStyle", "Rotation recommendation", ENUM.ASSIST_STYLE.RING, { "Blizzard", "Ring", "Fill", "Ring and fill" }),
@@ -204,6 +213,7 @@ B.Section(id, "cooldowns", "Cooldowns and states", {
     Bool("desaturateCooldown", "Desaturate buttons on cooldown", false),
     Number("cooldownAlpha", "Button opacity while on cooldown (percent)", 100, 0, 100, 5),
     Bool("rangeColoring", "Color out-of-range buttons", true),
+    Choice("rangeIndicator", "Range warning on", 1, { "Icon", "Keybind", "Icon and keybind" }),
     Color("rangeColor", "Out-of-range color", "cc1a1a"),
     -- The defaults are Blizzard's own button tints (S.USABLE_TINT, shared with
     -- the cooldown manager): 1/1/1, .5/.5/1 and .4/.4/.4.
@@ -217,8 +227,22 @@ B.TextSection(id, {
     Color("macroColor", "Macro name color", initial.macroColor),
     Color("countColor", "Count color", initial.countColor),
     Color("cooldownColor", "Cooldown number color", initial.cooldownColor),
+    Bool("keybindFontOverride", "Customize the keybind font", false),
+    B.Font("keybindFont", "Keybind font"),
+    Choice("keybindFontOutline", "Keybind outline", 1, { "Outline", "Thick outline", "None" }),
+    Bool("macroFontOverride", "Customize the macro name font", false),
+    B.Font("macroFont", "Macro name font"),
+    Choice("macroFontOutline", "Macro name outline", 1, { "Outline", "Thick outline", "None" }),
+    Bool("countFontOverride", "Customize the count font", false),
+    B.Font("countFont", "Count font"),
+    Choice("countFontOutline", "Count outline", 1, { "Outline", "Thick outline", "None" }),
+    Bool("cooldownFontOverride", "Customize the cooldown font", false),
+    B.Font("cooldownFont", "Cooldown font"),
+    Choice("cooldownFontOutline", "Cooldown outline", 1, { "Outline", "Thick outline", "None" }),
 })
 B.Section(id, "behavior", "Behavior", {
+    Bool("shortKeybinds", "Shorten keybind text", true),
+    Choice("autoAddSpells", "Add newly learned spells to action bars", 1, { "Use Blizzard setting", "Enable", "Disable" }),
     Choice("pickupModifier", "Move actions while holding (all action bars)", 1,
         { "Use Blizzard setting", "Shift", "Ctrl", "Alt", "No modifier" }),
     Bool("mouseoverShowAll", "Hovering one mouseover bar reveals all of them", false),
@@ -345,6 +369,15 @@ for i = 1, BAR_COUNT do
 end
 
 local rules = NS.SuiteCatalog.actionbars.rules
+rules.mediaBorder.border = true
+for _, key in ipairs({ "specialKeybind", "specialKeybindSize", "specialCooldownSize" }) do
+    rules[key].enableKey = "styleSpecialButtons"
+end
+for _, prefix in ipairs({ "keybind", "macro", "count", "cooldown" }) do
+    rules[prefix .. "Font"].enableKey = prefix .. "FontOverride"
+    rules[prefix .. "Font"].defaultLabel = "Shared action bar font"
+    rules[prefix .. "FontOutline"].enableKey = prefix .. "FontOverride"
+end
 rules.imported.hidden = true
 -- The key bindings travel with profile strings only while this is on
 -- (ProfileIO.lua). The choice itself stays with this profile: no export or
@@ -357,6 +390,7 @@ rules.disableMoonkinPaging.disabledBy = "disableFormPaging"
 rules.borderColor.disabledBy = "borderClassColor"
 rules.interactionColor.disabledBy = "interactionClassColor"
 rules.rangeColor.enableKey = "rangeColoring"
+rules.rangeIndicator.enableKey = "rangeColoring"
 -- Recharge numbers are cooldown numbers (Style.lua needs both switches on).
 rules.rechargeNumbers.enableKey = "cooldownNumbers"
 -- Assisted combat exists on Retail only (Forever's Camelot UI has none:
@@ -413,42 +447,6 @@ for i = 1, BAR_COUNT do
         -- Blizzard's stance and pet buttons have no macro names.
         for _, suffix in ipairs({ "Macro", "MacroSize", "MacroPoint", "MacroX", "MacroY" }) do rules[p .. suffix].hidden = true end
     end
-end
-
------------------------------------------------------------------- custom visibility
--- The state driver body of a bar in "Custom conditions" mode: "show",
--- "fade" (shown while hovered) or "hide", built only from fixed macro
--- conditions the secure state driver evaluates itself, also in combat. The
--- target unit leads its bracket, as the macro syntax wants it. Shared by the
--- runtime driver (MSUF_Suite_ActionBars/Visibility.lua) and the menu.
-local COMBAT_TESTS = { [CONDITION.YES] = "combat", [CONDITION.NO] = "nocombat" }
-local MOUNT_TESTS = { [CONDITION.YES] = "mounted", [CONDITION.NO] = "nomounted" }
-local TARGET_TESTS = { [TARGET_CONDITION.EXISTS] = "@target,exists", [TARGET_CONDITION.NONE] = "@target,noexists",
-    [TARGET_CONDITION.HOSTILE] = "@target,harm", [TARGET_CONDITION.FRIENDLY] = "@target,help" }
-function NS.ActionBarConditionBody(config, index)
-    local p = "bar" .. index
-    local tests = {}
-    tests[#tests + 1] = TARGET_TESTS[config[p .. "CondTarget"]]
-    tests[#tests + 1] = COMBAT_TESTS[config[p .. "CondCombat"]]
-    tests[#tests + 1] = MOUNT_TESTS[config[p .. "CondMounted"]]
-    local hover = config[p .. "CondMouseover"] == true
-    if #tests == 0 then return hover and "fade" or "show" end
-    -- All: every condition holds (and the bar is hovered, with mouseover).
-    if config[p .. "CondCombine"] == ENUM.COMBINE.ALL then
-        return "[" .. table.concat(tests, ",") .. "] " .. (hover and "fade" or "show") .. "; hide"
-    end
-    -- Any: one condition holds, or the bar is hovered, with mouseover.
-    local body = {}
-    for i = 1, #tests do body[i] = "[" .. tests[i] .. "] show" end
-    body[#body + 1] = hover and "fade" or "hide"
-    return table.concat(body, "; ")
-end
-
--- Whether a bar's mode can fade (its header then takes hover).
-function NS.ActionBarFades(config, index)
-    local mode = config["bar" .. index .. "Visibility"]
-    if mode == VISIBILITY.MOUSEOVER or mode == VISIBILITY.MOUSEOVER_OR_COMBAT then return true end
-    return mode == VISIBILITY.CUSTOM and config["bar" .. index .. "CondMouseover"] == true
 end
 
 ------------------------------------------------------------------ custom paging

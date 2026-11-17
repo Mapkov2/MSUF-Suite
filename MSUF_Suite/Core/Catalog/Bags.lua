@@ -78,6 +78,8 @@ B.Section("bags", "appearance", "Window appearance", {
     B.Color("backgroundColor", "Background color", initial.backgroundColor),
     B.Number("backgroundOpacity", "Background opacity (percent)", initial.backgroundOpacity, 0, 100, 1),
     B.Color("accentColor", "Accent color", initial.accentColor),
+    B.Number("slotBorderWidth", "Item slot border thickness", 1, 0, 4, 1),
+    B.Number("emptySlotBorderWidth", "Empty slot border thickness", 1, 0, 4, 1),
     B.Choice("animationMode", "Bag animations", NS.BagsAnimation.SIMPLE, { "Off", "Simple", "Full" }),
 })
 
@@ -107,6 +109,7 @@ B.Section("bags", "window", "Combined bag window", {
 })
 B.Section("bags", "organisation", "Inventory organisation", {
     B.Choice("inventoryView", "Default inventory view", NS.BagsView.ALL, { "All items", "By bag", "Categories", "Blizzard grid" }),
+    B.Bool("combineReagentBag", "Combine reagent bag with backpack"),
     B.Choice("sortMode", "Sort items by", NS.BagsSort.NAME,
         { "Name", "Quality", "Item level", "Type", "Expansion", "Stack count", "Vendor price" }),
     B.Number("inventoryColumns", "Items per row", 12, 8, 20),
@@ -195,6 +198,9 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 })
 
 local rules = NS.SuiteCatalog.bags.rules
+rules.combineReagentBag.requiresChoice = { key = "inventoryView", values = {
+    [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,
+} }
 rules.category_ammo.hidden = not NS.Client.isForever
 rules.desaturateInactiveQuestItems.requiresChoice = { key = "inventoryView", values = {
     [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,

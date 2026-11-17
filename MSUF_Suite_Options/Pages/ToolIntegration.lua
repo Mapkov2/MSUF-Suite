@@ -26,6 +26,22 @@ function P.ExtendQoLTools(groups, categories)
 end
 
 function P.BuildNewToolActions(ctx, details, id, section, y, width)
+    if id == "autoUprank" then
+        local function Running()
+            local helper = S.instances.autoUprank
+            return helper ~= nil and helper.active == true
+        end
+        local page = P.QoLOwners.PageFor(id) or "suite_qualityOfLife"
+        local help = P.Description(details,
+            [[Updates eligible placed ranks to your highest learned rank.
+Turn on Also replace deliberately lower ranks to include ranks you placed on purpose. Exceptions always apply.]],
+            16, y, width)
+        y = y - math.max(14, help:GetStringHeight() or 14) - 12
+        P.Button(ctx, details, "Update placed spell ranks now", 16, y, width,
+            function() if Running() then S.instances.autoUprank:UpdatePlacedRanks() end end, Running,
+            P.Meta(page, id, "action.updateRanks", "action", section))
+        return y - 38
+    end
     if id == "macroBuilder" then
         P.Button(ctx, details, "Open macro workshop", 16, y, width,
             function() P.Suite.Menu.Open("suite_macros") end, nil,
@@ -116,6 +132,9 @@ function P.AppendToolSearchActions(Add)
         Add("groupFinderTools", "action.planner.lfg", "Group finder workspaces", "suite_qualityOfLife_groupFinderTools_group_finder_tools")
     end
     Add("cooldownManager", "action.inspectVisibility", "Check visibility settings", "suite_cooldownManager_visibility")
+    if P.Suite.Client.isForever then
+        Add("autoUprank", "action.updateRanks", "Update placed spell ranks now", "suite_qualityOfLife_autoUprank_auto_uprank")
+    end
     Add("chat", "searchHistory", "Search saved chat", "suite_chat_tools")
     Add("inventoryProtection", "action.open", "Open inventory tool", "suite_qualityOfLife_inventoryProtection_inventoryProtection")
     Add("mailTemplates", "action.open", "Open inventory tool", "suite_qualityOfLife_mailTemplates_mailTemplates")

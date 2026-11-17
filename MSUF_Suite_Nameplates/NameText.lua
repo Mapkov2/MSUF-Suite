@@ -6,7 +6,7 @@ local IsCombatLocked = NS.IsCombatLocked
 local states = setmetatable({}, { __mode = "k" })
 local Names = { states = states, inUse = false }
 private.NameText = Names
-local M, looks, hooked
+local M, looks, hooked, threatHooked
 
 function Names.Bind(module) M = module end
 
@@ -213,6 +213,7 @@ local function ReleaseDormant()
 end
 
 function Names.Configure(config)
+    Names.threatNames = private.EasyFeatures and config.look ~= 2 and config.threatNameColor == true
     local enemy, friendly = Text.Compile(config, "enemy"), Text.Compile(config, "friendly")
     looks = { enemy = Owning(enemy), friendly = Owning(friendly) }
     Names.inUse = looks.enemy ~= nil or looks.friendly ~= nil
@@ -221,9 +222,13 @@ function Names.Configure(config)
     elseif not looks.enemy or not looks.friendly then
         ReleaseDormant()
     end
-    if Names.inUse and not hooked then
+    if (Names.inUse or Names.threatNames) and not hooked then
         hooked = true
         hooksecurefunc("CompactUnitFrame_UpdateName", OnNativeName)
+    end
+    if Names.threatNames and not threatHooked then
+        threatHooked = true
+        hooksecurefunc("CompactUnitFrame_UpdateName", private.EasyFeatures.NativeName)
     end
 end
 

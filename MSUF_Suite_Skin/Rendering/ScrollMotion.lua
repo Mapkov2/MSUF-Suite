@@ -174,7 +174,7 @@ local questScrollNames = {
     "QuestDetailScrollFrame", "QuestProgressScrollFrame", "QuestRewardScrollFrame",
     "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame",
 }
-local function IsQuestFrame(target, name)
+local function IsScrollFrame(target, name)
     local frame = Safety.Field(_G, name)
     if not Safety.Public(frame) or type(frame) ~= "table" then return false end
     local bar = Safety.Field(frame, "ScrollBar")
@@ -182,7 +182,7 @@ local function IsQuestFrame(target, name)
 end
 
 local function IsNativeQuestList(target)
-    return NS.Client.isForever and IsQuestFrame(target, "QuestScrollFrame")
+    return NS.Client.isForever and IsScrollFrame(target, "QuestScrollFrame")
 end
 
 -- The second result also excludes Forever's map-side list from legacy
@@ -191,9 +191,16 @@ function ScrollMotion.IsQuestScroll(target)
     if not Safety.Public(target) or target == nil then return false end
     if IsNativeQuestList(target) then return true, true end
     for index = 1, #questScrollNames do
-        if IsQuestFrame(target, questScrollNames[index]) then return true end
+        if IsScrollFrame(target, questScrollNames[index]) then return true end
     end
     return false
+end
+-- MailFrame_Show refreshes the bars before its protected reading emote.
+-- Native setters/cancellation write fields that ScrollBar:Update later reads;
+-- mailbox easing must therefore use the render-only ScrollFrame observer.
+function ScrollMotion.IsMailScroll(target)
+    if not NS.Client.isForever or not Safety.Public(target) or target == nil then return false end
+    return IsScrollFrame(target, "SendMailScrollFrame") or IsScrollFrame(target, "OpenMailScrollFrame")
 end
 local visible, pendingRestore, pendingPause = {}, {}, {}
 
@@ -562,11 +569,12 @@ Partner = function(target)
 end
 
 function ScrollMotion.Track(target, owner, ownedPreview)
-    if owner == nil or ScrollMotion.IsQuestScroll(target) or not Supported(target) then return false end
+    if owner == nil or ScrollMotion.IsQuestScroll(target) or ScrollMotion.IsMailScroll(target)
+        or not Supported(target) then return false end
     local partner = Partner(target)
     local groupFinder = NS.ForeverGroupFinder
     local isActivityList = groupFinder and groupFinder.IsActivityList
-    if partner and IsNativeQuestList(partner)
+    if partner and (IsNativeQuestList(partner) or ScrollMotion.IsMailScroll(partner))
         or isActivityList and (isActivityList(target) or isActivityList(partner)) then
         return false
     end

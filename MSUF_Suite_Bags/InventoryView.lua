@@ -129,6 +129,7 @@ local function BuildModel(state)
     InventoryView.context.searching = InventoryView.index.filtered > 0
     InventoryView.context.query = InventoryView.smartQuery
     InventoryView.context.hasKeyring = InventoryView.index.hasKeyring
+    InventoryView.context.hasReagent = P.ReagentInventory and P.ReagentInventory.active
     InventoryView.selected = Grid.Build(Model, InventoryView.model, InventoryView.index.items, M.config, state, InventoryView.context, InventoryView.selected)
 end
 
@@ -148,6 +149,9 @@ Flush = function(event)
     end
     local state = State()
     if not state then return end
+    if P.ReagentInventory and (M.config.combineReagentBag or P.ReagentInventory.active) then
+        P.ReagentInventory.Prepare()
+    end
     Index.ReadContainer(InventoryView.index, InventoryView.frame, Index.Recent())
     if Keyring then Keyring.Append(InventoryView.index, InventoryView.frame, inCombat) end
     P.InventoryDetails.Index(InventoryView.index, InventoryView.smartQuery)
@@ -241,6 +245,7 @@ end
 
 -- Blizzard re-acquires and re-anchors its item buttons; slot order is read again.
 local function NativeLayoutChanged()
+    M.slotStyle = (M.slotStyle or 0) + 1
     InventoryView.positionsDirty = true
     -- Blizzard also moves hidden slots, which the next Suite pass may skip.
     for _, slot in pairs(InventoryView.slotState) do slot.x, slot.y = nil, nil end
@@ -258,6 +263,7 @@ end
 -- Blizzard lays the bag out again when it opens; until the Suite's own pass
 -- (or while protected) its grid is what shows.
 local function WindowHidden()
+    if P.ReagentInventory then P.ReagentInventory.Release() end
     P.PhysicalSort.Stop()
     if Offline then Offline.Leave(true) end
     if Keyring then Keyring.Close() end
@@ -346,6 +352,7 @@ end
 
 -- Blizzard's own layout of the combined bag, from the native methods.
 RestoreLayout = function()
+    if P.ReagentInventory then P.ReagentInventory.Release() end
     if Keyring then Keyring.Hide() end
     InventoryView.restorePending = false
     if not InventoryView.active and InventoryView.events then InventoryView.events:UnregisterAllEvents() end
@@ -361,6 +368,7 @@ end
 -- return at once (neither is protected); the layout follows when combat ends,
 -- also after a module error stopped the view in combat.
 function InventoryView.Release()
+    if P.ReagentInventory then P.ReagentInventory.Release() end
     P.PhysicalSort.Stop()
     if Offline then Offline.Leave(true) end
     if InventoryView.list then P.BagList.Hide(InventoryView.list) end

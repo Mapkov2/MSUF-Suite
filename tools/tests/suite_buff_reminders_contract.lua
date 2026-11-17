@@ -207,7 +207,7 @@ local NS = { IsCombatLocked=function() return combat end,
 -- Data, readers, entry selection and the controller load in TOC order into
 -- one private table (Bootstrap only fills it from _G.MSUFSuite).
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local BR_FILES = { "Bootstrap.lua", "Data.lua", "State.lua", "Readers.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Visuals.lua", "RaidOverview.lua", "Preview.lua", "Special.lua", "Cursor.lua", "Controller.lua" }
+local BR_FILES = { "Bootstrap.lua", "Data.lua", "State.lua", "Readers.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Visuals.lua", "RaidOverview.lua", "Preview.lua", "Special.lua", "Cursor.lua", "Anchors.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_BuffReminders")
 assert(#tocFiles == #BR_FILES, "the BuffReminders TOC must list " .. #BR_FILES .. " files")
 for i = 1, #BR_FILES do
@@ -383,7 +383,7 @@ auras[888] = { secret=true }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
 assert(module.view.mask == 2 and not module.view.buttons[3].shown, "secret aura result created a false reminder")
 module:RegisterMovers()
-assert(mover and #mover.extraControls==3 and #mover.historyKeys==3
+assert(mover and #mover.extraControls==3 and #mover.historyKeys==5
     and mover.extraControls[1].get()==38 and mover.extraControls[3].get()==6,
     "buff reminder popup omitted icon layout controls")
 local beforeAttributes = attributeWrites

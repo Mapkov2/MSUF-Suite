@@ -391,7 +391,7 @@ local function Offer(rec, slot, hidden, out, n)
     local equip = rec.family == FAMILY.COOLDOWN and rec.equipSlot
     local home = equip and slotHome[equip]
     local stand = rec.spellCategory and standIn[rec.spellCategory]
-    if not used[key] and not hidden[key] and (owner == nil or owner == slot)
+    if not used[key] and not hidden[key] and not (equip and hidden["e" .. equip]) and (owner == nil or owner == slot)
         and not (equip and (usedSlot[equip] or (home ~= nil and home ~= slot)))
         and not (stand and claimed[stand] ~= nil) then
         used[key] = true

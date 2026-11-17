@@ -4,7 +4,7 @@ local Appearance = { buttons = setmetatable({}, { __mode = "k" }) }
 P.BagAppearance = Appearance
 
 local FOREVER_LOOK = 3
-local GLASS_SOFT_ALPHA, GLASS_DARK_ALPHA = .70, .76
+local GLASS_SOFT_ALPHA, GLASS_DARK_ALPHA = .88, .94
 
 local function PaintBody(t, glass, panel, r, g, b, opacity)
     local body = t[2]
@@ -34,17 +34,17 @@ function Appearance.Window(t, c)
     local glass = t.combined and c.look == FOREVER_LOOK
     t[1]:SetColorTexture(0, 0, 0, (glass and .10 or .5) * opacity)
     PaintBody(t, glass, panel, r, g, b, opacity)
-    t[3]:SetColorTexture(r + .025, g + .025, b + .025, glass and .10 * opacity or opacity)
+    t[3]:SetColorTexture(r + .025, g + .025, b + .025, (glass or panel) and .28 * opacity or opacity)
     t[4]:SetColorTexture(ar, ag, ab, .24)
-    if t[5] then t[5]:SetColorTexture(r * .7, g * .7, b * .7, glass and .10 * opacity or opacity) end
-    t[6]:SetColorTexture(ar, ag, ab, .45)
+    if t[5] then t[5]:SetColorTexture(r * .7, g * .7, b * .7, (glass or panel) and .46 * opacity or opacity) end
+    t[6]:SetColorTexture(ar, ag, ab, panel and .22 or .45)
     for i = 7, 9 do t[i]:SetColorTexture(.28, .31, .36, .55) end
     if t.goldLabel then
         local font = S.ResolveFont(c.font)
         S.SetFont(t.goldLabel, font, 11, "OUTLINE")
         if t.dailyGoldLabel then S.SetFont(t.dailyGoldLabel, font, 11, "OUTLINE") end
     end
-    if panel then P.BagPanelAppearance.Paint(t, c, glass and opacity * GLASS_SOFT_ALPHA or opacity) end
+    if panel then P.BagPanelAppearance.Paint(t, c, opacity) end
 end
 
 function Appearance.Button(button, selected)

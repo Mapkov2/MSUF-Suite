@@ -11,6 +11,7 @@ end
 -- A default reagent window remains a separate native root. Its width is
 -- reserved before choosing columns; custom reagent placement stays independent.
 function Presentation.CompanionWidth(c)
+    if P.ReagentInventory and P.ReagentInventory.active then return 0 end
     if not Presentation.IsPanel(c) or c.reagentWindowMoved or not ContainerFrame6:IsShown()
         or not ContainerFrameCombinedBags:IsShown() then return 0 end
     return ContainerFrame6:GetWidth()

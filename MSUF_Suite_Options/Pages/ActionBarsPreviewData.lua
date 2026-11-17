@@ -20,9 +20,10 @@ local function Slot(bar, ordinal)
     return ((Number(page) and page or 1) - 1) * 12 + ordinal
 end
 
-function Preview.Key(bar, ordinal)
+function Preview.Key(bar, ordinal, config)
     local key = GetBindingKey(Suite.ActionBarCommands[bar] .. ordinal)
     if IsSecret(key) or type(key) ~= "string" then return "" end
+    if config and config.shortKeybinds == false then return GetBindingText(key) end
     return S.KeyText and S.KeyText(key) or GetBindingText(key)
 end
 
@@ -57,7 +58,7 @@ local function LegacyCooldown(cooldown, start, duration, enabled)
 end
 
 function Preview.Read(tile, bar, ordinal, config)
-    tile.key:SetText(Preview.Key(bar, ordinal))
+    tile.key:SetText(Preview.Key(bar, ordinal, config))
     tile.count:SetText("")
     tile.count:SetAlpha(1)
     tile.name:SetText("")

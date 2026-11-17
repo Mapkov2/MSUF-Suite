@@ -25,6 +25,7 @@ C_MerchantFrame = {
 }
 
 local suite = { instances = {} }
+suite.Availability = function(id) assert(id == "qol"); return true end
 suite.Public = function(value) return not issecretvalue(value) end
 suite.Number = function(value) return suite.Public(value) and type(value) == "number" and value == value end
 suite.Finite = function(value) return suite.Number(value) and value > -math.huge and value < math.huge end

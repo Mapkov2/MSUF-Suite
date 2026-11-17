@@ -225,6 +225,47 @@ local function EditLists(edit)
     return Page.Commit(label, lists)
 end
 
+-- A tracked equipment slot and Blizzard's cooldown record name the same
+-- item. Keep one selectable entry and remove both names in one gesture.
+local function EquipmentKeys(key)
+    local kind = CDM.EntryKind(key)
+    if kind ~= "e" and kind ~= "b" then return end
+    local rows = Page.Catalog(FAMILY.COOLDOWN) or EMPTY
+    local equip = kind == "e" and CDM.EntryID(key) or nil
+    if not equip then
+        for _, row in ipairs(rows) do
+            if EntryKey(row) == key then
+                equip = Page.Plain(row.equipSlot)
+                break
+            end
+        end
+    end
+    if type(equip) ~= "number" then return end
+    local aliases = { [key] = true, ["e" .. equip] = true }
+    for _, row in ipairs(rows) do
+        local alias = EntryKey(row)
+        if alias and Page.Plain(row.equipSlot) == equip then aliases[alias] = true end
+    end
+    return aliases
+end
+
+-- Remove alternate identities while preserving an insertion point.
+local function StripAliases(list, aliases, keep, index)
+    local first, removed = nil, 0
+    for i = #list, 1, -1 do
+        if list[i] ~= keep and aliases[list[i]] then
+            table.remove(list, i)
+            first, removed = i, removed + 1
+            if index and i < index then index = index - 1 end
+        end
+    end
+    return first, removed, index
+end
+
+local function UnclaimAliases(lists, spec, aliases, keep)
+    for key in pairs(aliases) do Unclaim(lists, spec, key, keep) end
+end
+
 function Page.AddEntry(slot, key, family)
     return EditLists(function(lists, spec)
         if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
@@ -235,12 +276,18 @@ function Page.AddEntry(slot, key, family)
         if wrong then return false, wrong end
         local hidden = lists.hidden[spec]
         local list = Materialize(lists, spec, slot)
-        if IndexOf(list, key) and not (hidden and hidden[key]) then return true end
+        local aliases = EquipmentKeys(key)
+        local insertAt = aliases and StripAliases(list, aliases, key)
+        if IndexOf(list, key) and not insertAt and not (hidden and hidden[key]) then return true end
         if not IndexOf(list, key) then
             if #list >= CDM.LIMITS.entries then return false, "This bar is full." end
-            list[#list + 1] = key
+            table.insert(list, insertAt or #list + 1, key)
         end
-        Unclaim(lists, spec, key, slot)
+        if aliases then
+            UnclaimAliases(lists, spec, aliases, slot)
+        else
+            Unclaim(lists, spec, key, slot)
+        end
         return "Add to cooldown bar"
     end)
 end
@@ -281,17 +328,25 @@ function Page.RemoveEntry(slot, key)
     return EditLists(function(lists, spec)
         local slots = ListSlots(lists, spec, slot)
         local list = slots and slots[slot]
-        local at = IndexOf(list, key)
-        if at then table.remove(list, at) end
-        -- Blizzard entries and preset spells come back unless hidden for this spec.
+        local aliases = EquipmentKeys(key)
+        local removed = aliases or { [key] = true }
+        local at
+        for i = list and #list or 0, 1, -1 do
+            if removed[list[i]] then
+                table.remove(list, i)
+                at = i
+            end
+        end
+        -- Both names must stay hidden when the built-in list fills again.
         local info = Page.SlotInfo(slot)
-        if not info.custom and (CDM.EntryKind(key) == "b" or info.preset
+        if not info.custom and (aliases or CDM.EntryKind(key) == "b" or info.preset
             or not at and slot == "ess" and SpecDefaults(spec)) then
             local hidden = lists.hidden[spec] or {}
             local count = 0
             for _ in pairs(hidden) do count = count + 1 end
-            if count >= CDM.LIMITS.hidden then return false, "Too many removed spells." end
-            hidden[key] = true
+            for alias in pairs(removed) do if not hidden[alias] then count = count + 1 end end
+            if count > CDM.LIMITS.hidden then return false, "Too many removed spells." end
+            for alias in pairs(removed) do hidden[alias] = true end
             lists.hidden[spec] = hidden
         elseif not at then
             return false, "It is not on this bar."
@@ -309,19 +364,18 @@ function Page.MoveEntry(key, slot, beforeKey, family)
         end
         local wrong = WrongFamily(family, slot)
         if wrong then return false, wrong end
-        if beforeKey == key then return true end
+        local aliases = EquipmentKeys(key)
+        if beforeKey == key and not aliases then return true end
         local list = Materialize(lists, spec, slot)
         local at = IndexOf(list, key)
-        if at then
-            table.remove(list, at)
-        elseif #list >= CDM.LIMITS.entries then
-            return false, "This bar is full."
-        end
-        local index = beforeKey and beforeKey ~= key and IndexOf(list, beforeKey) or (#list + 1)
+        local anchor = beforeKey and IndexOf(list, beforeKey) or #list + 1
+        aliases = aliases or { [key] = true }
+        local _, removed, index = StripAliases(list, aliases, nil, anchor)
+        if #list >= CDM.LIMITS.entries then return false, "This bar is full." end
         local hidden = lists.hidden[spec]
-        if at and index == at and not (hidden and hidden[key]) then return true end
+        if at and removed == 1 and index == at and not (hidden and hidden[key]) then return true end
         table.insert(list, index, key)
-        Unclaim(lists, spec, key, slot)
+        UnclaimAliases(lists, spec, aliases, slot)
         return at and "Reorder cooldown bar" or "Move to another bar"
     end)
 end

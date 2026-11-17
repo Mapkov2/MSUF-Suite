@@ -107,6 +107,7 @@ local registered, applied, events, combat = {}, {}, {}, false
 local ns = { DB = {}, IsCombatLocked = function() return combat end,
     InCombat = function() return combat end,
     Safety = { IsForbidden = function() return false end } }
+ns.ChatState = Support.ChatStateMock()
 local suite = { catalog = catalogNS.SuiteCatalog, states = { chat = { active = true } }, instances = {},
     Text = function(text) return text end, Config = function() return config end,
     Finite = function(value) return type(value) == "number" and value == value end,
@@ -140,6 +141,7 @@ local chatNS = { NS = ns, Suite = suite }
 assert(loadfile(root .. "/MSUF_Suite_Chat/Shared.lua"))("MSUF_Suite_Chat", chatNS)
 local chat = chatNS.Chat
 chat.StopInputAnimations = function() end
+chat.HoverWanted = function() return false end
 chat.ApplyClockSettings, chat.RefreshClocks, chat.DisableClock = function() end, function() end, function() end
 chat.DockGeometry, chat.UpdateWindowMoverBounds, chat.DockSelection = function() end, function() end, function() end
 chat.MessagesRefresh, chat.BubblesRefresh = function() end, function() end
@@ -153,7 +155,8 @@ local cornerPatches = {
     firstMove = { "Controller", 'moveValues = { lockWindowPosition = true }',
         'isEnabled = function() return self.config.lockWindowPosition == true end, moveValues = {}' },
     adoptAnchor = { "Controller", 'moveValues = { lockWindowPosition = true }', 'moveValues = {}' },
-    undoAnchor = { "Controller", 'historyKeys = { "lockWindowPosition" }', 'historyKeys = {}' },
+    undoAnchor = { "Controller", 'historyKeys = { "lockWindowPosition", "lockWindowSize", "windowWidth", "windowHeight" }',
+        'historyKeys = {}' },
 }
 local function LoadChat(name)
     local path = root .. "/MSUF_Suite_Chat/" .. name .. ".lua"

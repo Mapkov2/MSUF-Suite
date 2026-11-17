@@ -160,7 +160,9 @@ for _, file in ipairs({ "ExtensionLayout", "ExtensionText", "ExtensionEffects", 
     assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("nameplates", private)
 end
 NS.ResolveTexture = function() end
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/CastSettings.lua"))("Nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Textures.lua"))("nameplates", private)
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/HealthAppearance.lua"))("nameplates", private)
 assert(loadfile(override or root .. "/MSUF_Suite_Nameplates/Skin.lua"))("nameplates", private)
 local applyText = private.Text.Apply
 private.Text.Apply = function(...) Count("Text.Apply"); return applyText(...) end
@@ -219,7 +221,7 @@ local function Event(event, unit)
     counts = {}
     debug.sethook(function()
         local info = debug.getinfo(2, "nS")
-        if info.source:match("Skin.lua$") then
+        if info.source:match("Skin.lua$") or info.source:match("HealthAppearance.lua$") then
             if info.name == "PaintAdded" then Count("Paint")
             elseif info.name == "Paint" or info.name == "PaintFonts" then Count(info.name) end
         end

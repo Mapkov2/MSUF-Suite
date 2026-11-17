@@ -6,6 +6,7 @@ NS.ModelControls = Controls
 local BUTTON_SIZE, GAP, ICON_SIZE = 20, 3, 12
 local FULL_TURN, BUTTON_TURN, DRAG_TURN = 2 * math.pi, math.pi / 12, .01
 local ZOOM_STEP, MAX_ZOOM = .15, .8
+local NATIVE_ZOOM_NEAR, NATIVE_ZOOM_FAR = .2, 1.5
 local Number, min, max = NS.Number, math.min, math.max
 
 function Controls.CanBindUnit(unit)
@@ -51,12 +52,23 @@ local function NativeRotate(amount)
     local camera = NativeCamera()
     if not camera or type(camera.GetYaw) ~= "function" or type(camera.SetYaw) ~= "function" then return end
     local yaw = Number(camera:GetYaw())
-    if yaw then camera:SetYaw(yaw + amount) end
+    -- Orbiting the camera turns the view opposite to rotating a PlayerModel.
+    if yaw then camera:SetYaw(yaw - amount) end
 end
 
 local function NativeZoom(amount)
     local camera = NativeCamera()
-    if camera then camera:OnMouseWheel(amount) end
+    if not camera then return end
+    local near, far = Number(camera:GetMinZoomDistance()), Number(camera:GetMaxZoomDistance())
+    if not near or not far or far <= 0 or near < 0 or far < near then return end
+    -- Character-sheet presets can lock both distances. Open a relative range
+    -- on interaction, preserving their framing and the native wheel behavior.
+    if near == far then
+        camera:SetMaxZoomDistance(far * NATIVE_ZOOM_FAR)
+        camera:SetMinZoomDistance(near * NATIVE_ZOOM_NEAR)
+        camera:SetZoomDistance(near)
+    end
+    camera:OnMouseWheel(amount)
 end
 
 local function StopDrag(model)

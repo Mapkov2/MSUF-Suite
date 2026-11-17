@@ -61,7 +61,7 @@ local function Merchant(self, event)
         self.saleRequested = false
         return
     end
-    if self.merchantOpen or NS.IsCombatLocked() then return end
+    if self.merchantOpen or NS.IsCombatLocked() or not S.Availability("qol") then return end
     self.merchantOpen = true
     self.saleRequested = false
     Repair(self)

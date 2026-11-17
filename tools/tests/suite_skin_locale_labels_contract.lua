@@ -77,6 +77,10 @@ assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Theme.lua"))("MSUF_Suite_Skin", N
 Check(NS.Theme.GetClassLookLabel() == "Klasse: Paladin",
     "the Class Style label is not localized: " .. tostring(NS.Theme.GetClassLookLabel()))
 local options = { GetPageDefinition = function() return nil end }
+local addonCatalog = {}
+assert(loadfile(root .. "/MSUF_Suite/Core/AddonSkinCatalog.lua"))("MSUF_Suite", addonCatalog)
+NS.SuiteCore = function() return addonCatalog end
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/AddonSkinsCatalog.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin_Options/Shell/Search.lua"))("MSUF_Suite_Skin_Options",
     { NS = NS, Options = options })
 local found = false
@@ -111,6 +115,8 @@ Check(ReadFile("MSUF_Suite_Skin_Options/Pages/Looks.lua"):find("L[selected.descr
 local function Prose(literal)
     return literal:find("%a") ~= nil and not literal:match("^[%u%d_]+$") and not literal:match("^[%l%d_%-]+$")
 end
+local addonNames = {}
+for _, entry in ipairs(NS.AddonSkinDefinitions) do addonNames[entry.label] = true end
 local rules = {
     ":SetText%(%s*\"([^\"]*)\"", ":AddLine%(%s*\"([^\"]*)\"", "%f[%w]label%s*=%s*\"([^\"]*)\"",
     "%f[%w]group%s*=%s*\"([^\"]*)\"", "WithHistory%(%s*\"([^\"]*)\"",
@@ -138,7 +144,8 @@ for _, folder in ipairs({ "MSUF_Suite_Skin", "MSUF_Suite_Skin_Options" }) do
                 local code = line:gsub("%-%-.*$", "")
                 for _, rule in ipairs(rules) do
                     for literal in code:gmatch(rule) do
-                        if Prose(literal) then
+                        local productName = path:find("/Adapters/AddonSkinsCatalog.lua", 1, true) and addonNames[literal]
+                        if Prose(literal) and not productName then
                             literals[#literals + 1] = path:match("MSUF_Suite_Skin.*$") .. ":" .. number .. ": " .. literal
                         end
                     end

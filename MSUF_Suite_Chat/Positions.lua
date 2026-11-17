@@ -24,16 +24,44 @@ end
 local pendingContext
 local function CanHoldWindow()
     local m = C.M
-    return m.active and m.context and m.config.lockWindowPosition and not S.editMode
-        and not EditModeManagerFrame:IsShown() and not m.toolbarGesture
+    return m.active and m.context and not S.editMode
+        and not EditModeManagerFrame:IsShown() and not m.toolbarGesture and not NS.ChatState.IsMoving()
 end
 
 local function WindowAtPosition(frame, x, y)
     local point, relative, relativePoint, px, py = frame:GetPoint(1)
+    local count = frame:GetNumPoints()
     return S.Public(point) and S.Public(relative) and S.Public(relativePoint)
-        and S.Finite(px) and S.Finite(py) and frame:GetNumPoints() == 1
+        and S.Finite(px) and S.Finite(py) and S.Finite(count) and count == 1
         and point == "BOTTOMLEFT" and relative == UIParent and relativePoint == "BOTTOMLEFT"
-        and px == x and py == y
+        and math.abs(px - x) < .01 and math.abs(py - y) < .01
+end
+
+function C.WindowGeometryChanged(frame)
+    local m = C.M
+    if not frame or NS.Safety.IsForbidden(frame) then return false end
+    local c = m.config
+    if frame == m.positionFrame then
+        if c.lockWindowPosition and not WindowAtPosition(frame, c.windowX or 12, c.windowY or 12) then return true end
+        local width, height = frame:GetWidth(), frame:GetHeight()
+        if c.lockWindowSize and S.Finite(width) and S.Finite(height)
+            and (math.abs(width - (c.windowWidth or 420)) >= .01 or math.abs(height - (c.windowHeight or 180)) >= .01) then
+            return true
+        end
+    end
+    return C.InputGeometryChanged(frame)
+end
+
+-- Native window notifications can refresh the paint before the deferred
+-- position check runs. Mark that foreign anchor before it is overwritten;
+-- an ordinary settings/mover commit must keep its original restore base.
+function C.NoteNativeWindowPosition()
+    local m = C.M
+    local frame = m.positionFrame
+    if CanHoldWindow() and m.config.lockWindowPosition and frame and not NS.Safety.IsForbidden(frame)
+        and not WindowAtPosition(frame, m.config.windowX or 12, m.config.windowY or 12) then
+        m.nativePositionContext = m.context
+    end
 end
 
 local function RecoverWindowPosition()
@@ -44,33 +72,51 @@ local function RecoverWindowPosition()
         if m.nativePositionContext == context then m.nativePositionContext = nil end
         return
     end
-    local frame = m.positionFrame
-    if not frame or NS.Safety.IsForbidden(frame) then return end
     if NS.InCombat() then
         S.Queue("chat")
         return
     end
-    if WindowAtPosition(frame, m.config.windowX or 12, m.config.windowY or 12) then
-        m.nativePositionContext = nil
-        return
+    -- The primary may have changed since an input-only callback scheduled
+    -- this drain. Capture the foreign base at the last safe moment too.
+    C.NoteNativeWindowPosition()
+    local repaired = false
+    local primary = m.positionFrame
+    local visual = primary and m.visuals[primary]
+    if visual and C.WindowGeometryChanged(primary) then
+        C.ApplyWindowGeometry(m, visual, primary)
+        repaired = true
     end
-    C.ApplyWindowPosition(m, m.visuals[frame], frame, true)
+    for frame, visual in pairs(m.visuals) do
+        if frame ~= primary and C.WindowGeometryChanged(frame) then
+            C.ApplyWindowGeometry(m, visual, frame)
+            repaired = true
+        end
+    end
+    m.nativePositionContext = nil
+    if repaired then NS.ChatState.GeometryRepaired() end
 end
 
 local function WindowAnchorChanged(frame)
     local m = C.M
-    if not CanHoldWindow() or frame ~= m.positionFrame or m.positionApplying then return end
-    m.nativePositionContext = m.context
+    if not CanHoldWindow() or m.positionApplying or pendingContext then return end
+    if not C.WindowGeometryChanged(frame) then return end
+    C.NoteNativeWindowPosition()
     if NS.InCombat() then
         S.Queue("chat")
         return
     end
-    if pendingContext then return end
     pendingContext = m.context
     C_Timer.After(0, RecoverWindowPosition)
 end
 
 function C.CheckWindowPosition() WindowAnchorChanged(C.M.positionFrame) end
+function C.CheckWindowGeometry(frame)
+    if frame then
+        WindowAnchorChanged(frame)
+    else
+        for window in pairs(C.M.visuals) do WindowAnchorChanged(window) end
+    end
+end
 
 function C.ApplyWindowPosition(self, visual, frame, primary)
     if not primary then return end

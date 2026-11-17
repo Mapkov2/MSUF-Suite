@@ -35,7 +35,7 @@ expected = {
 }
 for case, message in expected.items():
     command = [lua, str(root / "tools/tests/suite_chat_preview_contract.lua"), str(root), "Mainline",
-               str(root.parent / "MidnightSimpleUnitFrames"), case]
+               str(root.parent / "MidnightSimpleUnitFrames-7.0"), case]
     result = subprocess.run(command, cwd=root, capture_output=True, text=True, errors="replace")
     assert result.returncode and message in result.stderr, f"{case}: unexpected result\n{result.stdout}\n{result.stderr}"
 print("Chat interactive preview: 25 causal regressions rejected")
@@ -49,7 +49,7 @@ for case, message in {
     "inputOverhang": "default input overhangs the chat panel",
 }.items():
     command = [lua, str(root / "tools/tests/suite_chat_positions_contract.lua"), str(root), "Mainline",
-               str(root.parent / "MidnightSimpleUnitFrames"), case]
+               str(root.parent / "MidnightSimpleUnitFrames-7.0"), case]
     result = subprocess.run(command, cwd=root, capture_output=True, text=True, errors="replace")
     assert result.returncode and message in result.stdout, f"{case}: unexpected result\n{result.stdout}\n{result.stderr}"
 print("Chat native positions: six causal regressions rejected")

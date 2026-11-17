@@ -162,6 +162,19 @@ local function RestoreSuite(snapshot)
     Suite.OnProfileChanged(name)
 end
 
+-- Visibility switches change Blizzard's preference directly. Ordinary menu
+-- history restores those two choices while preserving later native edits to
+-- every other nameplate setting.
+local FRIENDLY_VISIBILITY = { "nameplateShowFriendlyPlayers", "nameplateShowFriendlyNpcs" }
+local function RestoreFriendlyVisibility(snapshot)
+    local saved = snapshot.nameplateCVars
+    if not saved then return true end
+    local values = {}
+    for _, key in ipairs(FRIENDLY_VISIBILITY) do values[key] = saved[key] end
+    if not next(values) then return true end
+    return IO.ApplyNameplateCVars(values)
+end
+
 local function ApplyWorkbenchSnapshot(snapshot, historyReason, source)
     if snapshot.present then
         local ok, reason = RestoreSkin(snapshot, historyReason)
@@ -179,6 +192,9 @@ local function ApplyWorkbenchSnapshot(snapshot, historyReason, source)
                 Suite.DB.nameplateSharedPending = snapshot.nameplateSharedPending
             end
             IO.RememberNameplateCVars(nil, snapshot.nameplateCVars)
+        else
+            local ok, reason = RestoreFriendlyVisibility(snapshot)
+            if not ok then return false, reason end
         end
     end
     return true

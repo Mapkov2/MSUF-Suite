@@ -1,0 +1,43 @@
+local _, NS = ...
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_Nameplates")
+local id, keys = "nameplates", {}
+local spec = NS.SuiteCatalog[id]
+local rules = {
+    B.Bool("questReactionColors", "Separate neutral and hostile quest colors", false),
+    B.Color("questNeutralColor", "Neutral quest enemy", "ffa633"),
+    B.Color("questHostileColor", "Hostile quest enemy", "ff4da6"),
+    B.Bool("targetClassResource", "Show your class resource on the target nameplate", false),
+    B.Number("targetClassResourceWidth", "Class resource width (px)", 100, 30, 300),
+    B.Number("targetClassResourceHeight", "Class resource height (px)", 5, 2, 30),
+    B.Number("targetClassResourceY", "Class resource vertical offset", -6, -200, 200),
+    B.Bool("castHealthColors", "Color enemy health while casting", false),
+    B.Color("castHealthInterruptible", "Interruptible caster health", "4fb3ff"),
+    B.Color("castHealthLocked", "Uninterruptible caster health", "f39200"),
+    B.Bool("threatNameColor", "Use threat colors on the enemy name", false),
+    B.Bool("threatFrameColor", "Use threat colors on the health frame outline", false),
+    B.Bool("castIconCombinedHeight", "Spell icon spans health and cast bars", false),
+    B.Bool("castSeamLine", "Show a line between health and cast bars", false),
+}
+rules[1].enableKey = "enemyQuestColors"
+for _, index in ipairs({ 2, 3 }) do rules[index].enableKey = "questReactionColors" end
+for _, index in ipairs({ 5, 6, 7 }) do rules[index].enableKey = "targetClassResource" end
+for _, index in ipairs({ 9, 10 }) do rules[index].enableKey = "castHealthColors" end
+for _, index in ipairs({ 11, 12 }) do rules[index].enableKey = "enemyRoleColors" end
+for _, entry in ipairs({ { "target", "Target" }, { "focus", "Focus" }, { "hover", "Mouseover" } }) do
+    local kind, label = entry[1], NS.Text(entry[2])
+    rules[#rules + 1] = B.Texture(kind .. "PatternTexture", NS.Text("%s pattern texture"):format(label))
+    rules[#rules + 1] = B.Number(kind .. "PatternAlpha", NS.Text("%s pattern opacity (%%)"):format(label), 35, 0, 100, 5)
+end
+local scopes = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly", friendlyNpc = "Friendly NPC" }
+for _, scope in ipairs(NS.NameplateExtensions.OpacityScopes) do
+    local label = NS.Text("%s: automatic class range spell"):format(NS.Text(scopes[scope]))
+    rules[#rules + 1] = B.Bool(scope .. "RangeAuto", label, false)
+    spec.rules[scope .. "RangeSpell"].disabledBy = scope .. "RangeAuto"
+end
+B.Section(id, "plateExtras", "Extra nameplate features", rules)
+for _, rule in ipairs(rules) do
+    keys[#keys + 1] = rule.key
+    spec.look.visualKeys[rule.key] = true
+    for _, preset in pairs(spec.look.presets) do preset[rule.key] = rule.default end
+end
+NS.NameplateExtraKeys = keys

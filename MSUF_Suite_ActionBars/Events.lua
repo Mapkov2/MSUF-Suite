@@ -19,7 +19,7 @@ local MAIN_BAR = AB.ENUM.BAR.MAIN
 local Painter, Dirty, Virtual = AB.Painter, AB.Dirty, AB.VirtualPaint
 local slotMap, Visible, NewChargeEpoch = Painter.slotMap, Painter.Visible, Painter.NewChargeEpoch
 local spellButtons = Painter.spellButtons
-local Tint, Usable, Cooldown, ReleaseRange = Painter.Tint, Painter.Usable, Painter.Cooldown, Painter.ReleaseRange
+local Usable, Cooldown, ReleaseRange = Painter.Usable, Painter.Cooldown, Painter.ReleaseRange
 local ActionSpell, SetGlow, GlowCheck = Painter.ActionSpell, Painter.SetGlow, Painter.GlowCheck
 local GLOW_SPELL, GLOW_DYNAMIC, GLOW_FLYOUT = Painter.GLOW_SPELL, Painter.GLOW_DYNAMIC, Painter.GLOW_FLYOUT
 local Walk, WalkNative, MapButton, UnmapButton, Remap, AllKeyTexts = Painter.Walk, Painter.WalkNative, Painter.MapButton, Painter.UnmapButton,
@@ -127,7 +127,7 @@ local function RangeChanged(_, _, slot, inRange, checksRange)
             if not out then
                 Usable(rec)
             else
-                Tint(rec)
+                Painter.Tint(rec)
             end
         end
     end
@@ -299,7 +299,10 @@ end
 -- Blizzard button (C_ActionBar.RegisterActionUIButton) is not documented:
 -- ACTIONBAR_UPDATE_USABLE re-reads the suite buttons on slots it never named.
 local EVENTS = {
-    ADDON_LOADED = function() AB.SyncPanelReveal() end,
+    ADDON_LOADED = function()
+        AB.SyncPanelReveal()
+        AB.SyncSpecialButtons()
+    end,
     ACTIONBAR_SLOT_CHANGED = SlotChanged,
     ACTIONBAR_UPDATE_COOLDOWN = function() Mark("actionbarCooldown") end,
     SPELL_UPDATE_COOLDOWN = SpellCooldown,
@@ -340,6 +343,7 @@ local EVENTS = {
         AB.MarkAll()
     end,
     PLAYER_ENTERING_WORLD = function()
+        AB.VisibilityZoneChanged()
         AB.Virtual.Sync()
         if AB.snapshotReady then AB.snapshotReady() end
         NewChargeEpoch()

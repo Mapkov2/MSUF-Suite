@@ -51,7 +51,7 @@ hooksecurefunc=function(target,method,fn)
 end
 ActionButtonSpellAlertManager={}
 
-for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings",
+for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings","Catalog/ActionBarConditions",
     "Catalog/DataTexts","NameplateStyle","SuiteMigrations","Suite","HostBridge"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end

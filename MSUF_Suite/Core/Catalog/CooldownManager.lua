@@ -281,8 +281,10 @@ local function IconRules(Add, p, d)
     Add(Number(p .. "size", "Icon size", d.size, 12, 96), "size")
     Add(Number(p .. "height", "Icon height (percent)", d.height or 100, 40, 100, 5), "height")
     Add(Number(p .. "spacing", "Icon spacing", 2, -2, 30), "spacing")
-    Add(Number(p .. "perRow", "Icons per row", d.perRow, 1, 40), "perRow")
-    Add(Number(p .. "maxIcons", "Maximum icons (0 = all)", 0, 0, 40), "maxIcons")
+    Add(B.Tooltip(Number(p .. "perRow", "Icons per row", d.perRow, 1, 40),
+        "Icons per row. Cooldown bars can use a different count from the second row onward."), "perRow")
+    Add(B.Tooltip(Number(p .. "maxIcons", "Maximum icons (0 = all)", 0, 0, 40),
+        "Total icon limit across all rows of this bar. 0 shows all icons. This does not set the number of icons per row."), "maxIcons")
     Add(Bool(p .. "vertical", "Vertical", false), "vertical")
     Add(Choice(p .. "align", "Alignment", d.align or CDM.ALIGN.CENTER, { "Center", "Start", "End" }), "align")
     Add(B.Tooltip(Bool(p .. "centerFirst", "Keep first icon centered", false),
@@ -314,8 +316,10 @@ local function CooldownRules(Add, p, d)
     Add(Bool(p .. "hideReady", "Hide icons that are ready", false), "hideReady")
     Add(Bool(p .. "cooldownFixed", "Keep hidden cooldown icons in fixed places", false), "cooldownFixed")
     Add(Choice(p .. "overflow", "Send excess cooldowns to", CDM.OVERFLOW.OFF, OVERFLOW_LABELS), "overflow")
-    Add(Number(p .. "laterPerRow", "Icons in later rows (0 = first row)", 0, 0, 40), "laterPerRow")
-    Add(Number(p .. "laterSize", "Later row icon size (0 = first row)", 0, 0, 96), "laterSize")
+    Add(B.Tooltip(Number(p .. "laterPerRow", "Icons in later rows (0 = first row)", 0, 0, 40),
+        "Icons per row from the second row onward. 0 uses Icons per row. Maximum icons still limits the whole bar."), "laterPerRow")
+    Add(B.Tooltip(Number(p .. "laterSize", "Later row icon size (0 = first row)", 0, 0, 96),
+        "Icon size from the second row onward. 0 uses Icon size. This is a size, not an icon count."), "laterSize")
     Add(Bool(p .. "procGlow", "Spell alert glow", true), "procGlow")
     Add(Bool(p .. "readyGlow", "Glow when ready", false), "readyGlow")
     Add(Bool(p .. "readyResources", "Ready glow requires enough resources", false), "readyResources")

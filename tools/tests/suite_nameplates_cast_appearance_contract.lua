@@ -498,6 +498,26 @@ assert(appearance.Apply(interrupted, feedback))
 interrupted:PlayInterruptAnims()
 assert(shake.plays == 1 and not shake:IsPlaying())
 
+-- Custom feedback can outlive the hidden native cast: animate the visible
+-- overlay with the shared shake, and never animate both bars.
+local native, overlay = Cast(), Cast()
+local custom = { interruptShake = true, shakeStrength = 8, customFeedback = true }
+assert(appearance.Apply(native, custom))
+native:PlayInterruptAnims()
+local nativeShake = assert(native.shake)
+SetVisible(native, false)
+appearance.ShakeFeedback(native, overlay)
+local feedbackShake = assert(overlay.shake)
+assert(feedbackShake.plays == 1 and feedbackShake.animations[2].offset[1] == -8)
+native:PlayInterruptAnims()
+assert(not nativeShake:IsPlaying() and feedbackShake:IsPlaying(), "both interrupt surfaces were animated")
+appearance.StopFeedback(native)
+assert(not feedbackShake:IsPlaying())
+custom.shakeStrength = 0
+assert(appearance.Apply(native, custom))
+appearance.ShakeFeedback(native, overlay)
+assert(feedbackShake.plays == 1, "zero shake strength still animated the feedback")
+
 local protectedInterrupt = Cast()
 SetVisible(protectedInterrupt, false)
 protectedInterrupt.protected = true

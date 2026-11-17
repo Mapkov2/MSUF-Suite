@@ -28,14 +28,14 @@ local function ClearPending(self)
 end
 
 -- An empty slot shows a quiet Suite surface instead of the bag artwork, and
--- Blizzard's item button keeps all its handlers. Blizzard draws the empty-slot
--- atlas (ContainerFrame.xml emptyBackgroundAtlas) in the item icon, BORDER
--- sublevel 0 (ItemButtonTemplate.xml, SetItemButtonTexture). The Suite never
--- writes that field, which Blizzard reads on every refresh: an empty slot
--- lifts the Suite surface above the icon instead, and an item puts it back
--- below. Both surface textures are opaque, so the atlas never shows.
+-- Blizzard's item button keeps all its handlers. Forever bebcb6bf enables
+-- EmptyBagIcon for combined bags (Camelot/ContainerFrame.lua). Its ARTWORK
+-- region sits above the empty atlas painted in the BORDER icon on both clients
+-- (Mainline/ContainerFrame.xml and Blizzard_ItemButton/Shared/ItemButtonTemplate.xml).
+-- Empty slots lift the opaque Suite plate above both. Filled slots keep it
+-- below the item icon and native highlights in either state.
 local SURFACE_BELOW_ICON = { "BACKGROUND", -5, -4 }
-local SURFACE_OVER_ICON = { "BORDER", 1, 2 }
+local SURFACE_OVER_ICON = { "ARTWORK", 1, 2 }
 
 local function LayerSurface(record, empty)
     record.slotEmpty = empty
@@ -44,8 +44,10 @@ local function LayerSurface(record, empty)
     record.slotInner:SetDrawLayer(layer[1], layer[3])
 end
 
-local function StyleSlot(self, button)
+function M:StyleSlot(button)
     local record = self.overlays[button]
+    if record and record.slotNativeActive and record.slotEmpty and record.slotStyle == self.slotStyle
+        and record.nativeBg == button.ItemSlotBackground and not button:HasItem() then return end
     if not record then
         record = {}
         self.overlays[button] = record
@@ -75,21 +77,31 @@ local function StyleSlot(self, button)
     -- Our own textures: their layer may change in combat, as items are used.
     -- HasItem is 1 or nil (ContainerFrameItemButtonMixin:SetHasItem), never secret.
     local empty = not button:HasItem()
-    if record.slotEmpty ~= empty then LayerSurface(record, empty) end
+    if record.slotEmpty ~= empty then
+        LayerSurface(record, empty)
+        record.slotStyle = nil
+    end
     if button.ItemSlotBackground and (activating or record.nativeBg ~= button.ItemSlotBackground) then
         Private.BagLayout.Alpha(self.context, button.ItemSlotBackground, 0)
         record.nativeBg = button.ItemSlotBackground
     end
-    if record.slotStyle ~= self.slotStyle then
-        record.slotOuter:SetColorTexture(self.slotOuterR, self.slotOuterG, self.slotOuterB, 1)
-        record.slotInner:SetColorTexture(self.slotInnerR, self.slotInnerG, self.slotInnerB, 1)
+    if record.slotStyle ~= self.slotStyle or not empty and record.strokeVersion ~= Slots.version[record.strokeKey] then
+        Private.BagSlotAppearance.Native(self, button, record, empty, activating)
         record.slotStyle = self.slotStyle
     end
 end
 
 local function StyleVisibleSlots(self, frame)
     if not frame:IsShown() then return end
-    for _, button in frame:EnumerateValidItems() do StyleSlot(self, button) end
+    local synced
+    for _, button in frame:EnumerateValidItems() do
+        local bag = button:GetBagID()
+        if S.Finite(bag) and bag ~= synced then
+            Slots.Sync(bag)
+            synced = bag
+        end
+        self:StyleSlot(button)
+    end
 end
 
 -- A text on a Blizzard item button, above its count and icon art and with a
@@ -374,7 +386,7 @@ function M:UpdateVisible()
     ClearPending(self)
     for bag = 0, Constants.InventoryConstants.NumBagSlots do Slots.Sync(bag) end
     for _, button in frame:EnumerateValidItems() do
-        StyleSlot(self, button)
+        self:StyleSlot(button)
         local bag, slot = button:GetBagID(), button:GetID()
         local info = S.Finite(bag) and S.Finite(slot) and Slots.Get(bag, slot)
         if not info then
@@ -490,6 +502,7 @@ local SUBMODULES = {
     { "PlayerGear", "Refresh", "Disable" },                   -- cached character eligibility
     { "UpgradeMarker", "Refresh", "Disable" },                -- worn equipment, for the upgrade arrow
     { "PhysicalSort", nil, "Stop" },
+    { "ReagentInventory", "Refresh", "Release" },             -- native reagent slots in the Suite grid
     { "InventoryView", "Refresh", "Disable" },                -- the Suite grid of the combined bag
     { "BankInventory", "Refresh", "Disable" }, -- the organized bank view
     { "BankWindow", "Refresh", "Disable", retail = true },    -- the bank window's size and place
@@ -531,7 +544,7 @@ end
 -- The settings each refresh step repaints from. The item level text reads
 -- every setting of the catalog section "itemLevels" (MSUF_Suite/Core/Catalog/
 -- Bags.lua) except its switches, so a new text option joins it on its own.
-local SLOT_KEYS = { "backgroundColor", "accentColor" }
+local SLOT_KEYS = { "backgroundColor", "accentColor", "slotBorderWidth", "emptySlotBorderWidth" }
 local WINDOW_KEYS = { "look", "backgroundOpacity", "windowPresentation" }
 local LEVEL_KEYS = { "showItemLevel", "showBindBadge", "showBankItemLevel" }
 local GOLD_KEYS = { "showSessionGold", "goldPeriod" }
@@ -607,12 +620,6 @@ function M:Refresh()
         self.labelStyle = (self.labelStyle or 0) + 1
     end
     if slotChanged then
-        local r, g, b = S.RGB(c.backgroundColor)
-        local accentR, accentG, accentB = S.RGB(c.accentColor)
-        self.slotOuterR, self.slotOuterG, self.slotOuterB =
-            accentR * 0.18 + r * 0.82, accentG * 0.18 + g * 0.82, accentB * 0.18 + b * 0.82
-        self.slotInnerR, self.slotInnerG, self.slotInnerB =
-            r + (1 - r) * 0.05, g + (1 - g) * 0.05, b + (1 - b) * 0.05
         self.slotStyle = (self.slotStyle or 0) + 1
     end
     local deferredItems = self.needsItemRefresh
@@ -646,6 +653,9 @@ function M:Disable()
         if record.slotOuter then
             record.slotOuter:Hide()
             record.slotInner:Hide()
+            if record.slotEdges then
+                for i = 1, #record.slotEdges do record.slotEdges[i]:Hide() end
+            end
             record.slotNativeActive = false
             record.nativeBg = nil
         end

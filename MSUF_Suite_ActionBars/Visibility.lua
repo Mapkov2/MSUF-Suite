@@ -53,6 +53,8 @@ function AB.VisibilityDriver(index, mode, forms, gamepad, reveal)
     if mode == VIS.NEVER then return "hide" end
     -- Custom conditions only add fixed macro tests (Core/Catalog/ActionBars.lua);
     -- the implicit pet battle, vehicle, group and reveal prefixes stay first.
+    if M.config[AB.KEYS[index].UseGlobalVisibility] then mode = NS.ActionBarVisibilityMode(M.config, index) end
+    if mode == VIS.NEVER then return "hide" end
     local body = mode == VIS.CUSTOM and NS.ActionBarConditionBody(M.config, index) or MODES[mode] or "show"
     if reveal then body = "[nocombat] show; " .. body end
     if M.config[AB.KEYS[index].GroupOnly] then body = "[nogroup] hide; " .. body end
@@ -100,7 +102,10 @@ end
 local function AnyHover()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
-        if bar and bar.hover and bar.header:GetAttribute("state-vis") == "fade" then return true end
+        if bar and bar.hover then
+            local state = bar.header:GetAttribute("state-vis")
+            if state == "fade" or state == "context" and bar.contextHover then return true end
+        end
     end
     return false
 end
@@ -184,13 +189,16 @@ function AB.UpdateAlpha(bar)
     local alpha = config[keys.Alpha] / 100
     local textAlpha = 1
     local state = bar.header:GetAttribute("state-vis")
-    local inFade = state == "fade"
+    local inContext = state == "context"
+    local inFade = state == "fade" or inContext
     -- The panel reveal lives in the driver: out of combat it shows instead of
     -- fading, so a fade state never means an open spellbook.
-    local faded = inFade and not (S.editMode or AB.dragging or bar.hover
-        or (config.mouseoverShowAll and AnyHover()))
+    local allowHover = not inContext or bar.contextHover and (not bar.contextRequiresHover or bar.contextPass)
+    local contextShown = inContext and bar.contextPass and not bar.contextRequiresHover
+    local faded = inFade and not (S.editMode or AB.dragging or contextShown
+        or allowHover and (bar.hover or (config.mouseoverShowAll and AnyHover())))
     if faded then
-        local fadeAlpha = config[keys.FadeAlpha] / 100
+        local fadeAlpha = allowHover and config[keys.FadeAlpha] / 100 or 0
         textAlpha = fadeAlpha == 0 and 0 or 1
         -- Zero-alpha secure frames do not reliably take hover in Forever.
         -- Keep the hit target, but fully fade the template's separate text
@@ -375,7 +383,7 @@ end
 -- re-registered only when its string changes (re-registering blinks the bar).
 local function ApplyBarVisibility(bar, config, forms, gamepad)
     local keys = bar.key
-    local mode = config[keys.Visibility]
+    local mode = NS.ActionBarVisibilityMode(config, bar.index)
     local forced = SetForced(bar, "forceshow", S.editMode and mode ~= VIS.NEVER)
     ApplyVisibilityDriver(bar, config, forms, gamepad)
     -- The driver only re-runs the handler when its state changes.
@@ -383,8 +391,10 @@ local function ApplyBarVisibility(bar, config, forms, gamepad)
     local fade = NS.ActionBarFades(config, bar.index)
     -- EnableMouseMotion alone leaves the header non-interactive on
     -- Forever. Buttons continue to receive their own clicks.
-    bar.header:EnableMouse(fade and not config[keys.ClickThrough])
-    bar.header:EnableMouseMotion(fade)
+    local p = NS.ActionBarVisibilityPrefix(config, bar.index)
+    local hover = fade and (mode ~= VIS.CUSTOM or config[p .. "CondMouseover"] == true)
+    bar.header:EnableMouse(hover and not config[keys.ClickThrough])
+    bar.header:EnableMouseMotion(hover)
     AB.HookHover(bar.header)
     for i = 1, #bar.buttons do AB.HookHover(bar.buttons[i].button) end
     if not fade then bar.hover = nil end
@@ -396,6 +406,7 @@ end
 -- the placement preview reveal).
 function AB.ApplyVisibility(only)
     if NS.IsCombatLocked() then return end
+    AB.SyncVisibilityContexts()
     local config, forms, gamepad = M.config, HasForms(), AB.GamepadHideActive()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
@@ -405,6 +416,7 @@ function AB.ApplyVisibility(only)
 end
 
 function AB.StopVisibility()
+    AB.StopVisibilityContexts()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
         if bar then
@@ -496,4 +508,107 @@ function AB.SyncPanelReveal()
     AB.panelsOpen = open
     AB.Reveal(16, open)
     AB.ApplyVisibility()
+end
+
+-- Cast, instance and gliding conditions affect only the existing alpha
+-- owner. Secure unit/macro conditions continue owning protected visibility.
+-- One shared snapshot per event; listeners exist only for requested inputs.
+local contextBars, contextEvents = {}, {}
+local visibilityContext = { casting = false, skyriding = false, inInstance = false, instanceType = "none" }
+local castWanted, instanceWanted, glideWanted = false, false, false
+local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED",
+    "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP",
+    "UNIT_SPELLCAST_EMPOWER_START", "UNIT_SPELLCAST_EMPOWER_STOP" }
+local CONTEXT_IN_COMBAT = { inCombat = true }
+
+local function ApplyContext(bar)
+    local config, index = M.config, bar.index
+    local p = NS.ActionBarVisibilityPrefix(config, index)
+    bar.contextPass = NS.ActionBarContextPasses(config, index, visibilityContext)
+    bar.contextRequiresHover = config[p .. "CondCombine"] == ENUM.COMBINE.ALL and config[p .. "CondMouseover"] == true
+    bar.contextHover = config[p .. "CondMouseover"] == true and (not bar.contextRequiresHover or bar.contextPass)
+end
+
+local function ContextChanged()
+    for i = 1, #contextBars do
+        local bar = contextBars[i]
+        ApplyContext(bar)
+        AB.UpdateAlpha(bar)
+    end
+end
+
+local function ReadCasting()
+    -- UnitDocumentation marks isTradeskill (return 6) NeverSecret on both
+    -- APIs. False still means a cast exists; names can be secret in combat.
+    local cast = select(6, UnitCastingInfo("player"))
+    local channel = select(6, UnitChannelInfo("player"))
+    if S.Public(cast) and S.Public(channel) then visibilityContext.casting = cast ~= nil or channel ~= nil end
+end
+
+local function CastChanged(_, event)
+    if not M.active then return end
+    -- Event identity supplies the initial state even when names are secret.
+    visibilityContext.casting = event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START"
+        or event == "UNIT_SPELLCAST_EMPOWER_START"
+    ReadCasting()
+    ContextChanged()
+end
+
+local function ReadZone()
+    if instanceWanted then
+        local inside, kind = IsInInstance()
+        visibilityContext.inInstance = S.Public(inside) and inside == true
+        visibilityContext.instanceType = S.Public(kind) and type(kind) == "string" and kind or "none"
+    end
+    if glideWanted then
+        local gliding = C_PlayerInfo.GetGlidingInfo()
+        visibilityContext.skyriding = S.Public(gliding) and gliding == true
+    end
+end
+
+function AB.VisibilityZoneChanged()
+    if not castWanted and not instanceWanted and not glideWanted then return end
+    if castWanted then ReadCasting() end
+    ReadZone()
+    ContextChanged()
+end
+
+local function ListenContext(event, wanted, handler, unit)
+    if wanted and not contextEvents[event] then
+        M.context:Event(event, handler, CONTEXT_IN_COMBAT, unit)
+        contextEvents[event] = true
+    elseif not wanted and contextEvents[event] then
+        M.context:RemoveEvent(event)
+        contextEvents[event] = nil
+    end
+end
+
+function AB.SyncVisibilityContexts()
+    for i = #contextBars, 1, -1 do contextBars[i] = nil end
+    castWanted, instanceWanted, glideWanted = false, false, false
+    for index = 1, AB.BAR_COUNT do
+        local bar, config = AB.bars[index], M.config
+        if bar and NS.ActionBarVisibilityMode(config, index) == VIS.CUSTOM and NS.ActionBarHasContext(config, index) then
+            local p = NS.ActionBarVisibilityPrefix(config, index)
+            contextBars[#contextBars + 1] = bar
+            castWanted = castWanted or (config[p .. "CondCasting"] or 1) > 1
+            instanceWanted = instanceWanted or (config[p .. "CondInstance"] or 1) > 1
+            glideWanted = glideWanted or not NS.Client.isForever and (config[p .. "CondSkyriding"] or 1) > 1
+        end
+    end
+    if castWanted then ReadCasting() end
+    ReadZone()
+    for i = 1, #contextBars do ApplyContext(contextBars[i]) end
+    for i = 1, #CAST_EVENTS do ListenContext(CAST_EVENTS[i], castWanted, CastChanged, "player") end
+    ListenContext("ZONE_CHANGED_NEW_AREA", instanceWanted or glideWanted, AB.VisibilityZoneChanged)
+    ListenContext("PLAYER_IS_GLIDING_CHANGED", glideWanted, AB.VisibilityZoneChanged)
+end
+
+function AB.StopVisibilityContexts()
+    for event in pairs(contextEvents) do
+        M.context:RemoveEvent(event)
+        contextEvents[event] = nil
+    end
+    for i = #contextBars, 1, -1 do contextBars[i] = nil end
+    castWanted, instanceWanted, glideWanted = false, false, false
 end

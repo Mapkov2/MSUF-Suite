@@ -86,6 +86,8 @@ local function System()
     function frame:GetTop() return self.rect and self.rect[3] end
     function frame:GetBottom() return self.rect and self.rect[4] end
     function frame:GetClampRectInsets() return unpack(self.insets or { 0, 0, 0, 0 }) end
+    -- AuraFrame_OnLoad applies the native grid before the addon can adopt it.
+    frame:UpdateGridLayout()
     return frame
 end
 _G.UIParent, _G.Minimap = Region(1920, 1080), Region()
@@ -418,7 +420,7 @@ module.active = false
 S.states.playerAuras.active = false
 module:Disable()
 assert(not buffs.isEnabled() and not debuffs.isEnabled(), "the movers outlived the layout")
--- Blizzard's original frame anchor (none in this model) and its own relayout.
+-- Blizzard's original frame anchor (none in this model) and container anchor.
 assert(#BuffFrame.points == 0, "Disable left the Suite's frame anchor behind")
 Shifted(BuffFrame, 0, 0, "Disable")
 module.active = true

@@ -11,6 +11,62 @@ local SHELL = { role = "shell", inset = 0 }
 local BUTTON = { role = "button", ownedArt = true }
 local PRIMARY = { role = "buttonPrimary", pillHeight = 28, ownedArt = true }
 local SEARCH = { role = "input", pillHeight = 25 }
+local PLAYER_BANK = Enum.SpellBookSpellBank.Player
+local SPELL_ITEM = Enum.SpellBookItemType.Spell
+local ROMAN_VALUES = { I = 1, V = 5, X = 10, L = 50, C = 100, D = 500, M = 1000 }
+
+local function FamilyName(name, rank)
+    local suffix = rank > 0 and name:match(" ([IVXLCDM]+)$")
+    if not suffix then return name end
+    local total, previous = 0, 0
+    for index = #suffix, 1, -1 do
+        local value = ROMAN_VALUES[suffix:sub(index, index)]
+        total = total + (value < previous and -value or value)
+        previous = math.max(previous, value)
+    end
+    return total == rank and name:sub(1, -#suffix - 2) or name
+end
+
+local function NoteRank(learned, name, rank)
+    local family = FamilyName(name, rank)
+    learned[family] = math.max(learned[family] or 0, rank)
+end
+
+local function LearnedRanks(panel, learned)
+    local count = C_SpellBook.GetNumSpellBookSkillLines()
+    if not Public(count) or type(count) ~= "number" then return learned end
+    for line = 1, count do
+        local info = C_SpellBook.GetSpellBookSkillLineInfo(line)
+        if Public(info) and type(info) == "table" then
+            local offset, items = info.itemIndexOffset, info.numSpellBookItems
+            if Public(offset) and Public(items) and type(offset) == "number" and type(items) == "number" then
+                for slot = offset + 1, offset + items do
+                    local item = C_SpellBook.GetSpellBookItemInfo(slot, PLAYER_BANK)
+                    if Public(item) and type(item) == "table" and Public(item.itemType) and item.itemType == SPELL_ITEM then
+                        local name, subName = item.name, item.subName
+                        if Public(name) and type(name) == "string" and name ~= "" and Public(subName) then
+                            local rank = type(subName) == "string" and tonumber(subName:match("%d+"))
+                            if not rank then
+                                local id = item.spellID
+                                if Public(id) and type(id) == "number" then rank = panel.ranksByID[id] end
+                                if rank == nil then rank = panel.ranksByName[name] end
+                            end
+                            NoteRank(learned, name, rank or 0)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function AvailabilityColor(entry, level)
+    if not Public(level) or type(level) ~= "number" or level < 1 then return NS.Theme.GetColor("muted") end
+    if entry.source == 4 and not entry.hasTalent then return RED_FONT_COLOR:GetRGB() end
+    if entry.level <= level then return GREEN_FONT_COLOR:GetRGB() end
+    if entry.level <= level + 2 then return YELLOW_FONT_COLOR:GetRGB() end
+    return RED_FONT_COLOR:GetRGB()
+end
 
 local function Label(parent, font)
     local label = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
@@ -56,12 +112,32 @@ local function ReadIndex()
     local data = Public(class) and NS.ForeverSpellLearningData[class]
     local entries = {}
     if not data then return entries end
+    local costs = {}
+    local prices = NS.ForeverSpellLearningCosts and NS.ForeverSpellLearningCosts[class]
+    if prices then
+        for id, copper in prices:gmatch("(%d+):(%d+) ") do costs[tonumber(id)] = tonumber(copper) end
+    end
     for id, level, rank, source, low, high in data:gmatch("(%d+):(%d+):(%d+):(%d+):?(%d*):?(%d*) ") do
         if AllowedRace(race, low, high) then
-            entries[#entries + 1] = { id = tonumber(id), level = tonumber(level), rank = tonumber(rank), source = tonumber(source) }
+            local spell = tonumber(id)
+            entries[#entries + 1] = { id = spell, level = tonumber(level), rank = tonumber(rank),
+                source = tonumber(source), cost = costs[spell] }
         end
     end
     return entries
+end
+
+local function TrainingCost(row)
+    if not row.isTraining then return end
+    local red, green, blue = NS.Theme.GetColor("muted")
+    if row.cost ~= nil then
+        local money = C_CurrencyInfo.GetCoinTextureString(row.cost)
+        if Public(money) and type(money) == "string" then
+            GameTooltip:AddDoubleLine(NS.L["Training cost (before discounts)"], money, red, green, blue, 1, 1, 1)
+        end
+    else
+        GameTooltip:AddLine(NS.L["Training cost not recorded"], red, green, blue)
+    end
 end
 
 local function ToolTip(row)
@@ -73,9 +149,10 @@ local function ToolTip(row)
         GameTooltip:AddLine(NS.L["Class trainer"], NS.Theme.GetColor("accentBright"))
     elseif source == 2 then
         GameTooltip:AddLine(NS.L["Class quest"], NS.Theme.GetColor("accentBright"))
-    elseif source == 4 then
+    elseif source == 4 and row.requiresTalent then
         GameTooltip:AddLine(NS.L["Requires a talent"], NS.Theme.GetColor("accentBright"))
     end
+    TrainingCost(row)
     GameTooltip:Show()
 end
 
@@ -116,20 +193,22 @@ local function Paint(panel)
     local maxPage = math.max(1, math.ceil(#shown / ROWS))
     panel.page = math.min(maxPage, math.max(1, panel.page))
     local level = UnitLevel("player")
-    local levelReadable = Public(level) and type(level) == "number"
     for index = 1, ROWS do
         local row = panel.rows[index]
         local entry = shown[(panel.page - 1) * ROWS + index]
         if entry then
-            local tone = levelReadable and level >= entry.level and "accentBright" or "muted"
+            local red, green, blue, alpha = AvailabilityColor(entry, level)
             row.spellID, row.source = entry.id, entry.source
+            row.requiresTalent = entry.source == 4 and not entry.hasTalent
+            row.cost = entry.cost
+            row.isTraining = entry.source == 1 or entry.source == 4 and entry.rank > 1
             row.icon:SetTexture(entry.icon)
             row.name:SetText(entry.name)
-            row.name:SetTextColor(NS.Theme.GetColor("text"))
+            row.name:SetTextColor(red, green, blue, alpha or 1)
             row.rank:SetText(entry.rank > 0 and NS.L["Rank %d"]:format(entry.rank) or "")
-            row.rank:SetTextColor(NS.Theme.GetColor("muted"))
+            row.rank:SetTextColor(red, green, blue, alpha or 1)
             row.level:SetText(NS.L["Level %d"]:format(entry.level))
-            row.level:SetTextColor(NS.Theme.GetColor(tone))
+            row.level:SetTextColor(red, green, blue, alpha or 1)
             row:Show()
             if row:IsMouseOver() and Read(GameTooltip, "IsOwned", row) == true then ToolTip(row) end
         else
@@ -163,17 +242,32 @@ end
 local function Refresh(panel)
     if not panel:IsShown() or NS.IsCombatLocked() then return end
     panel.entries = panel.entries or ReadIndex()
+    local learned = {}
+    panel.ranksByID, panel.ranksByName = {}, {}
+    for _, entry in ipairs(panel.entries) do
+        local known = C_SpellBook.IsSpellKnownOrInSpellBook(entry.id, PLAYER_BANK, false)
+        entry.known = not Public(known) or known ~= false
+        local name = entry.name or C_Spell.GetSpellName(entry.id)
+        if Public(name) and type(name) == "string" and name ~= "" then
+            if not entry.name then
+                local icon = C_Spell.GetSpellTexture(entry.id)
+                entry.name, entry.searchName = name, name:lower()
+                entry.icon = Public(icon) and icon or nil
+                entry.family = FamilyName(name, entry.rank)
+            end
+            panel.ranksByID[entry.id] = entry.rank
+            local rank = panel.ranksByName[name]
+            panel.ranksByName[name] = rank == nil and entry.rank or rank == entry.rank and rank or false
+            if Public(known) and known == true then NoteRank(learned, name, entry.rank) end
+        end
+    end
+    LearnedRanks(panel, learned)
     local count = 0
     for _, entry in ipairs(panel.entries) do
-        local known = C_SpellBook.IsSpellKnown(entry.id)
-        if Public(known) and known == false then
-            local name = entry.name or C_Spell.GetSpellName(entry.id)
-            if Public(name) and type(name) == "string" and name ~= "" then
-                if not entry.name then
-                    local icon = C_Spell.GetSpellTexture(entry.id)
-                    entry.name, entry.searchName = name, name:lower()
-                    entry.icon = Public(icon) and icon or nil
-                end
+        if entry.name and not entry.known then
+            local rank = learned[entry.family]
+            entry.hasTalent = rank ~= nil
+            if rank == nil or entry.rank > rank then
                 count = count + 1
                 panel.available[count] = entry
             end
@@ -189,14 +283,20 @@ local function Advance(panel, delta)
 end
 
 local function Position(panel)
+    local controls = NS.WindowControls.states[panel]
+    if controls and controls.customPosition then return end
     local book = panel.book
     local edge, left = Read(book, "GetRight"), Read(book, "GetLeft")
     local scale = Read(book, "GetEffectiveScale")
+    local panelScale = Read(panel, "GetEffectiveScale")
+    local uiScale = Read(UIParent, "GetEffectiveScale")
+    if type(panelScale) ~= "number" or type(uiScale) ~= "number" or uiScale <= 0 then return end
+    local width = WIDTH * panelScale / uiScale
     panel:ClearAllPoints()
     if type(edge) == "number" and type(scale) == "number"
-        and edge * scale / UIParent:GetEffectiveScale() + WIDTH + 8 <= UIParent:GetWidth() then
+        and edge * scale / uiScale + width + 8 <= UIParent:GetWidth() then
         panel:SetPoint("TOPLEFT", book, "TOPRIGHT", 8, 0)
-    elseif type(left) == "number" and type(scale) == "number" and left * scale / UIParent:GetEffectiveScale() >= WIDTH + 8 then
+    elseif type(left) == "number" and type(scale) == "number" and left * scale / uiScale >= width + 8 then
         panel:SetPoint("TOPRIGHT", book, "TOPLEFT", -8, 0)
     else
         panel:SetPoint("TOP", book, "TOP", 0, -49)
@@ -231,10 +331,12 @@ end
 
 local function OnPanelShow(panel)
     panel:RegisterEvent("SPELLS_CHANGED")
+    panel:RegisterEvent("SPELL_TEXT_UPDATE")
     panel:RegisterEvent("PLAYER_LEVEL_UP")
     panel:RegisterEvent("PLAYER_REGEN_DISABLED")
     panel:RegisterEvent("UI_SCALE_CHANGED")
     panel:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    NS.WindowControls.Attach(panel, OWNER)
     Position(panel)
     PaintPanelTheme(panel)
     Refresh(panel)
@@ -246,7 +348,7 @@ local function OnPanelHide(panel)
 end
 
 local function CreatePanel(book)
-    local panel = CreateFrame("Frame", nil, UIParent)
+    local panel = CreateFrame("Frame", "MSUFSuiteSpellLearningFrame", UIParent)
     panel:SetSize(WIDTH, HEIGHT)
     panel:SetFrameStrata("DIALOG")
     panel:SetClampedToScreen(true)
@@ -261,6 +363,7 @@ local function CreatePanel(book)
     panel.title:SetPoint("TOPLEFT", 16, -14)
     panel.title:SetPoint("RIGHT", panel.close, "LEFT", -10, 0)
     panel.title:SetText(NS.L["Spells to Learn"])
+    function panel:GetTitleText() return self.title end
     panel.caption = Label(panel)
     panel.caption:SetPoint("TOPLEFT", 16, -40)
     panel.caption:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
@@ -282,13 +385,14 @@ local function CreatePanel(book)
     panel.previous = Button(panel, "<", 29, function() Advance(panel, -1) end)
     panel.previous:SetPoint("BOTTOMLEFT", 16, 10)
     panel.next = Button(panel, ">", 29, function() Advance(panel, 1) end)
-    panel.next:SetPoint("BOTTOMRIGHT", -16, 10)
+    panel.next:SetPoint("BOTTOMRIGHT", -36, 10)
     panel.status = Label(panel)
     panel.status:SetPoint("BOTTOM", 0, 16)
     panel:SetScript("OnMouseWheel", function(_, delta) Advance(panel, delta < 0 and 1 or -1) end)
     panel:SetScript("OnEvent", OnPanelEvent)
     panel:SetScript("OnShow", OnPanelShow)
     panel:SetScript("OnHide", OnPanelHide)
+    Position(panel)
     return panel
 end
 

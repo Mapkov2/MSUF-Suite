@@ -3534,6 +3534,7 @@ do
     local slots={[5]={"spell",123,"spell"},[6]={"macro",123,"spell"},[77]={"spell",999,"spell"}}
     rawset(_G,"GetActionInfo",function(slot) local a=slots[slot];if a then return a[1],a[2],a[3] end end)
     local visits=0
+    S.ActionBarButtonSwipe=function()return nil end
     S.ForEachActionBarButtonForSpell=function(spell,callback)
         assert(not COMBAT and spell==123,"only a public OOC action route is queried")
         visits=visits+1

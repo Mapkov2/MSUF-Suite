@@ -2,7 +2,7 @@
 -- the documented message-fade setters are changed. No Lua animation tick.
 local root = assert(arg[1])
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 local secret, secretFocus = Secrets.New("number"), Secrets.New("boolean")
 local function Public(value) return not Secrets.IsSecret(value) end
 local function Finite(value)

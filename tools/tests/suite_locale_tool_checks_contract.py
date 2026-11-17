@@ -84,6 +84,12 @@ with tempfile.TemporaryDirectory() as directory:
     projection = tree / "MSUF_Suite/Core/Projection.lua"
     projection.write_text('local Display = {}\nfunction Display.Text(config) return config[selector] end\n'
                           'local translated = NS.Text("Visible translator caption")\nNS.Text(translated)\n', encoding="utf-8")
+    addon_names = tree / "MSUF_Suite/Core/AddonSkinCatalog.lua"
+    addon_names.write_text('local _, Suite = ...\nSuite.AddonSkinDefinitions = { '
+                           '{ label = "Journey Guides", help = "Visible addon skin help" } }\n', encoding="utf-8")
+    catalog.write_text(catalog.read_text(encoding="utf-8") +
+                       'NS.Text(entry.label)\nNS.Text(entry.help)\n'
+                       'local control = { label = "Visible addon skin control" }\nNS.Text(control.label)\n', encoding="utf-8")
     extractor = tool.Extractor(tree).run()
     found = extractor.found
     check("Visible color label" in found and "Visible texture label" in found, "catalog color or texture labels disappeared")
@@ -95,6 +101,9 @@ with tempfile.TemporaryDirectory() as directory:
     check("ARTWORK" not in found and "OVERLAY" not in found, "rendering color helpers were treated as catalog labels")
     check("width height privateKey" not in found, "catalog ranking keys were treated as translated prose")
     check("Visible help summary" in found, "authored help summary stopped being translated")
+    check("Journey Guides" not in found, "an addon product name became translated prose")
+    check("Visible addon skin help" in found and "Visible addon skin control" in found,
+          "addon name classification hid real help or controls")
     check("Set a hostile focus" in found, "nameplate runtime feedback was excluded from locale extraction")
     check(not any(definition.name == "Display.Text" for definition in extractor.param_sinks),
           "a translator was resolved to an unrelated Text projection")

@@ -228,7 +228,9 @@ NS.AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BO
 NS.AnchorLabels = NS.AnchorPoints
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("Core", NS)
 for _, file in ipairs({ "ExtensionLayout", "ExtensionText", "ExtensionEffects", "Extensions" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("Plates", P)
+    local path = file == "ExtensionEffects" and os.getenv("SUITE_EFFECTS_OVERRIDE")
+        or root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"
+    assert(loadfile(path))("Plates", P)
 end
 local X = P.Extensions
 X.Bind(M)
@@ -649,5 +651,39 @@ do
         and config.enemyExtraTextThreatLayer == 9)
     assert(NS.NameplateExtensions.TextPoints[config.enemyExtraTextThreatAnchor][3] == "LEFT")
     assert(config.extraText1Source == nil and config.enemyExtraText2Source == nil and config.enemyStatusThreat == nil)
+end
+do
+    local chosen, resolves = 123, 0
+    NS.HostBridge = { NameplateRangeSpell = function(friendly)
+        resolves = resolves + 1
+        return friendly and 0 or chosen
+    end }
+    M.active, target = true, "nameplate1"
+    M.config = { look = 3, enemy = true, friendly = true, enemyRangeEnabled = true, enemyRangeAuto = true }
+    Refresh()
+    assert(registrations[123], "automatic range did not use the native target subscription")
+    local n = resolves
+    for _ = 1, 100 do Apply(uf, health, cast) end
+    assert(resolves == n, "plate paints repeatedly resolved the class spell")
+    chosen = 456
+    X.RangeSpellChanged()
+    assert(registrations[123] == false and registrations[456], "class spell change retained the previous native subscription")
+    X.Disable()
+    M.active = true
+    M.config = { look = 3, enemy = true, friendly = true, interruptFeedbackEnabled = true }
+    M.castbarStyle = { interruptDuration = .25, interruptR = .1, interruptG = .2, interruptB = .3 }
+    local shakes, surface = 0, nil
+    P.CastAppearance = { StopFeedback = function() end, ShakeFeedback = function(bar, overlay)
+        assert(bar == cast and overlay.shown)
+        shakes, surface = shakes + 1, overlay
+    end }
+    Refresh()
+    X.OnCast(M, "UNIT_SPELLCAST_START", "nameplate1", nil, nil, 100)
+    X.OnCast(M, "UNIT_SPELLCAST_INTERRUPTED", "nameplate1", nil, nil, "Interrupter", 100)
+    local at = next(timers)
+    assert(at and timers[at] == now + .25, "custom interrupt text ignored the shared duration")
+    assert(shakes == 1 and surface, "visible custom interrupt feedback missed the shared shake")
+    X.Disable()
+    M.castbarStyle = nil
 end
 print("nameplate extensions contract passed: lifecycle, pooling, secrets, layout, click permission, range budget, text, restoration, visibility and opacity")

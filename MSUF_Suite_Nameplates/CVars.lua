@@ -230,8 +230,18 @@ local function Names(module, c)
     local npcs = c.friendlyNpcSkinEnabled ~= false
     local worldNames = npcs and c.friendlyNPCs == Mode.NPC_NAMES_ONLY
     Toggle(module, (c.enemySkinEnabled ~= false or c.neutralSkinEnabled ~= false) and SHOW or HIDE, "nameplateShowEnemies")
-    Toggle(module, c.friendlySkinEnabled ~= false and SHOW or HIDE, "nameplateShowFriendlyPlayers")
-    Toggle(module, npcs and not worldNames and SHOW or HIDE, "nameplateShowFriendlyNpcs")
+    if c.friendlySkinEnabled == false then
+        Toggle(module, HIDE, "nameplateShowFriendlyPlayers")
+    else
+        S.ForgetCVar("nameplates", "nameplateShowFriendlyPlayers")
+    end
+    if not npcs or worldNames then
+        Toggle(module, HIDE, "nameplateShowFriendlyNpcs")
+    else
+        if module.friendlyNpcNamesOnly then Restore("nameplateShowFriendlyNpcs") end
+        S.ForgetCVar("nameplates", "nameplateShowFriendlyNpcs")
+    end
+    module.friendlyNpcNamesOnly = worldNames
     -- Blizzard's NPC Names = All (SettingsDefinitions_Frame/Nameplates.lua).
     Toggle(module, worldNames and SHOW or KEEP, "UnitNameNPC")
 end
@@ -281,6 +291,9 @@ function CVars.Apply(module)
         module.cvarsPending = true
         return
     end
+    -- The controller's queued refresh may run before the module's regen
+    -- event. Reconcile the native action before either path reapplies Off.
+    if module.friendlyVisibilityPending then NS.SyncFriendlyNameplates(module) end
     module.cvarsPending = nil
     module.flagsBefore = module.flagsBefore or {}
     local c = module.config
@@ -290,6 +303,10 @@ function CVars.Apply(module)
     Casts(module, c)
     Auras(module, c)
     Signals(module, c)
+    local visibilityWriting = module.friendlyVisibilityWriting
+    module.friendlyVisibilityWriting = true
     Names(module, c)
+    NS.CaptureFriendlyNameplates(module)
+    module.friendlyVisibilityWriting = visibilityWriting
     Space(module, c)
 end

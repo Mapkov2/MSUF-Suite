@@ -19,6 +19,9 @@ CLASSES = {
     8: (6, 8, 237), 9: (354, 355, 593), 11: (134, 573, 574),
 }
 TELEPORTS = {3561, 3562, 3563, 3565, 3566, 3567, 10059, 11416, 11417, 11418, 11419, 11420}
+# These Forever trainer families retain obsolete talent labels in the export.
+# Resolve names from the base IDs so the correction includes every rank.
+TRAINER_BASE_SPELLS = {5: (15237, 15407)}
 # The spells awarded by the class quest chains, including the follow-up
 # commands taught alongside taming. Client SpellLevels supplies the level.
 QUESTS = {
@@ -83,11 +86,40 @@ def read_trainers(folder, build):
     return outcomes, evidence
 
 
+def read_training_costs(evidence):
+    """Retain observed undiscounted copper prices, never infer a discount."""
+    prices = {}
+    for path in evidence:
+        snapshot = json.loads(path.read_text(encoding="utf-8-sig"))
+        assert snapshot["meta"]["product"] == "wowf"
+        observed = defaultdict(set)
+        for trainer in snapshot["trainers"].values():
+            if trainer.get("tradeskill"):
+                continue
+            for service in trainer["services"].values():
+                spell = service.get("spellId")
+                if type(spell) is not int or spell <= 0:
+                    continue
+                # The dataset separates Legacy Bartering. Neutral/Friendly
+                # observations have no reputation discount; higher ranks do.
+                for standing, copper in service.get("costs", {}).items():
+                    if standing in {"4", "5"} and type(copper) is int and 0 <= copper <= 2**53 - 1:
+                        observed[spell].add(copper)
+        for spell, costs in observed.items():
+            if len(costs) == 1:
+                prices[spell] = costs.pop()
+            else:
+                prices.pop(spell, None)
+    return prices
+
+
 def generate(folder, build):
     trainers, evidence = read_trainers(folder, build)
     spell_levels = {int(row["SpellID"]): int(row["SpellLevel"]) for row in rows(folder, "SpellLevels")
                     if row["DifficultyID"] == "0"}
     spell_names = {int(row["ID"]): row["Name_lang"] for row in rows(folder, "SpellName")}
+    trainer_names = {class_id: {spell_names[spell] for spell in spells}
+                     for class_id, spells in TRAINER_BASE_SPELLS.items()}
     spell_ranks = {}
     for row in rows(folder, "Spell"):
         match = RANK.fullmatch(row["NameSubtext_lang"].strip())
@@ -126,6 +158,8 @@ def generate(folder, build):
         source = preview[2] if preview else 0
         if spell in QUESTS:
             source = 2
+        elif spell_names[spell] in trainer_names.get(class_id, ()):
+            source = 1
         elif source in {0, 3} and (spell in trainers or spell in TELEPORTS):
             source = 1
         elif source == 3 and row["AcquireMethod"] == "2":
@@ -167,6 +201,7 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("MSUF_Suite_Skin/Adapters/ForeverSpellLearningData.lua"))
     args = parser.parse_args()
     classes, evidence = generate(args.folder, args.build)
+    costs = read_training_costs(evidence)
     assert set(classes) == set(CLASSES)
     lines = [
         "local _, NS = ...",
@@ -192,6 +227,16 @@ def main():
             entries.append(":".join(str(value) for value in compact))
         for index in range(0, len(entries), 6):
             lines.append("        .. " + '"' + " ".join(entries[index:index + 6]) + ' "')
+        lines[-1] += ","
+    lines += ["}", "", "-- Observed class-training prices in copper, before reputation or Legacy discounts.",
+              "-- Missing entries have no confirmed undiscounted price; zero is an observed free service.",
+              "NS.ForeverSpellLearningCosts = {"]
+    for class_id, items in sorted(classes.items()):
+        entries = [f"{spell}:{costs[spell]}" for spell, values in sorted(items.items())
+                   if spell in costs and (values[2] == 1 or values[2] == 4 and values[1] > 1)]
+        lines.append(f'    [{class_id}] = ""')
+        for index in range(0, len(entries), 8):
+            lines.append('        .. "' + " ".join(entries[index:index + 8]) + ' "')
         lines[-1] += ","
     # A single encoded string per class keeps the index small and defers work
     # to the first time this character opens the preview.

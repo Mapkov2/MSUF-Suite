@@ -135,8 +135,48 @@ local function PaintItem(slot, item, c, bank, native)
     S.BagsStylePreviewLabel(slot.level, c)
     local r, g, b = C_Item.GetItemQualityColor(item.quality)
     slot.border:SetColorTexture(r, g, b, 1)
+    if bank then
+        if slot.slotEdges then
+            for i = 1, #slot.slotEdges do slot.slotEdges[i]:Hide() end
+        end
+        slot.icon:ClearAllPoints()
+        slot.icon:SetPoint("TOPLEFT", 1, -1)
+        slot.icon:SetPoint("BOTTOMRIGHT", -1, 1)
+    else
+        S.BagsPaintPreviewSlot(slot, c, item)
+    end
     slot.level:SetTextColor(c.qualityColor and r or 1, c.qualityColor and g or 1, c.qualityColor and b or 1)
     S.SetFont(slot.count, S.ResolveFont(c.font) or S.GlobalFontPath(), c.itemCountSize, "OUTLINE")
+end
+
+local function PaintBorderExamples(ui, preview, c, bank)
+    local examples = preview.borderExamples
+    if not examples then
+        examples = CreateFrame("Frame", nil, ui.header)
+        examples:SetSize(preview.width, 44)
+        examples.item = Slot(preview, ui, examples)
+        examples.empty = Slot(preview, ui, examples)
+        examples.item:SetPoint("TOPLEFT", examples, "TOPLEFT", 0, 0)
+        local half = math.floor(preview.width / 2)
+        examples.empty:SetPoint("TOPLEFT", examples, "TOPLEFT", half, 0)
+        for _, slot in ipairs({ examples.item, examples.empty }) do
+            slot:SetScript("OnClick", function() ui:Focus("suite_bags_appearance") end)
+        end
+        K.Text(examples, "Equipment", 44, -10, half - 48)
+        K.Text(examples, "Empty slots", half + 44, -10, half - 48)
+        preview.borderExamples = examples
+    end
+    examples:SetShown(not bank)
+    if bank then return end
+    examples:ClearAllPoints()
+    examples:SetPoint("TOPLEFT", preview.window, "BOTTOMLEFT", 0, -10)
+    PaintItem(examples.item, preview.snapshot.items[1], c, false)
+    S.BagsPaintPreviewSlot(examples.empty, c, EMPTY)
+    examples.empty.level:Hide()
+    examples.empty.count:Hide()
+    examples.empty.arrow:Hide()
+    preview.footer:ClearAllPoints()
+    preview.footer:SetPoint("TOPLEFT", examples, "BOTTOMLEFT", -4, -4)
 end
 
 local function Header(preview, number, cell, x, y, width, c)
@@ -385,11 +425,13 @@ local function Paint(ui, preview)
     local title = bank and P.catalog.bags.rules.bankView.choices[c.bankView] or "Bags"
     P.SetTranslatedText(preview.title, native and (BANK or Tr("Bank")) or Tr(title))
     PaintLayout(ui, preview, c, bank, native)
+    PaintBorderExamples(ui, preview, c, bank)
     preview.free:SetShown(not native and c.showFreeSlots)
     preview.freeJump:SetShown(not native and c.showFreeSlots)
     preview.free:SetText(string.format(bank and Tr("%d free") or Tr("%d free + %d reagent"), 22, 4))
     P.SetTranslatedText(preview.footer, Tr("Sample values. Click an element to open its settings."))
-    P.MenuWorkspace.FitHeader(ui, math.max(406, 102 + preview.window:GetHeight()) + math.ceil(preview.footer:GetStringHeight() or 14))
+    P.MenuWorkspace.FitHeader(ui, math.max(406, 102 + preview.window:GetHeight())
+        + (bank and 0 or 48) + math.ceil(preview.footer:GetStringHeight() or 14))
 end
 
 local function WatchViewport(ui)

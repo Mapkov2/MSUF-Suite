@@ -48,6 +48,7 @@ local addonKinds = {
     Blizzard_QueueStatusFrame = { "queue-status" },
     Blizzard_PlayerChoice = { "player-choice" },
     Blizzard_CharacterCustomize = { "character-customize" },
+    Blizzard_BarbershopUI = { "character-customize" },
     Blizzard_CombatLog = { "combat-log" },
 }
 
@@ -94,6 +95,8 @@ local CHARACTER_CUSTOMIZE_MODE = {
     maxNodes = 1000,
     allowImplicitProtected = false,
 }
+local CUSTOMIZATION_PANEL_SPEC = { role = "panel", radius = 8, inset = 0, allowImplicitProtected = false }
+local CUSTOMIZATION_PANEL_ART = { "Frame", "FrameTopRight", "FrameBottomRight", "Backdrop" }
 
 local RAID_MODE = {
     role = "shell",
@@ -277,7 +280,18 @@ end
 
 local function SkinCharacterCustomize(state)
     if not NS.GenericWindows.IsCategoryEnabled("character") then return false end
-    return ApplyGeneric(_G.CharCustomizeFrame, state.owner, CHARACTER_CUSTOMIZE_MODE)
+    local root = _G.CharCustomizeFrame
+    local applied = ApplyGeneric(root, state.owner, CHARACTER_CUSTOMIZE_MODE)
+    -- Camelot has a separate bronze options wrapper; Retail places options
+    -- directly under the fullscreen interaction layer. SmallButtons is shared.
+    for _, key in ipairs({ "CustomizeOptionsContainerFrame", "SmallButtons" }) do
+        local panel = Field(root, key)
+        if Safety.CanCreateRegions(panel) then
+            applied = Kit.Attach(state, panel, CUSTOMIZATION_PANEL_SPEC) or applied
+            Kit.FadeFields(state, panel, CUSTOMIZATION_PANEL_ART)
+        end
+    end
+    return applied
 end
 
 local function SkinCombatLog(state)

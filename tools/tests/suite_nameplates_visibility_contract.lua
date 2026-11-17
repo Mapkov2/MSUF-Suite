@@ -67,7 +67,11 @@ end
 
 ------------------------------------------------------------------ CVars
 local writes, restored = {}, {}
-local S = { RestoreCVar = function(_, key) restored[key] = true end }
+local S = { RestoreCVar = function(_, key) restored[key] = true end, ForgetCVar = function() end }
+NS.Suite = S
+NS.ActionBarTitles = {}
+for bar = 1, 12 do NS.ActionBarTitles[bar] = "Action bar " .. bar end
+assert(loadfile(root .. "/MSUF_Suite/Core/Bindings.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S, Roles = {} }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", private)
@@ -635,6 +639,7 @@ local resetValues
 P.S = { ResetKeys = function(_, values) resetValues = values; return true end }
 P.T, P.WithHistory, P.Refresh = {}, function(_, _, fn) return fn() end, function() end
 P.Suite = { RGB = NS.RGB, Registry = { AddListener = function() end } }
+assert(loadfile(root .. "/MSUF_Suite_Options/Menu/MediaValues.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Controls.lua"))("MSUF_Suite_Options", P)
 options.look = 1
 local jundies = spec.look.presets[1]

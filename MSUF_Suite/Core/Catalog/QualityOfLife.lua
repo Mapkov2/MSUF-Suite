@@ -100,11 +100,40 @@ B.Section("actionTracker", "action_tracker_colors", "Colors", {
 -- spending, automation, or combat logging. automation marks a module that acts
 -- for the player (spends, sells, uses or cancels things, changes Blizzard
 -- settings, sends requests): an imported profile never switches it on.
+local MERCHANT_AUTOMATION = { "sellAllJunk", "vendorPoorEnable",
+    "vendorCommonEnable", "vendorUncommonEnable", "vendorRareEnable", "vendorEpicEnable" }
+local function EnhanceQoLMerchantAutomation(vendorLoaded)
+    local addon = _G.EnhanceQoL
+    if NS.IsSecret(addon) or type(addon) ~= "table" then return true end
+    local config = addon.db
+    if NS.IsSecret(config) or type(config) ~= "table" then return true end
+    local repair = config.autoRepair
+    if NS.IsSecret(repair) or repair then return true end
+    if not vendorLoaded then return false end
+    for _, key in ipairs(MERCHANT_AUTOMATION) do
+        local value = config[key]
+        if NS.IsSecret(value) or value then return true end
+    end
+    local include = config.vendorIncludeSellList
+    if NS.IsSecret(include) then return true end
+    if type(include) ~= "table" then return false end
+    local first = next(include)
+    return NS.IsSecret(first) or first ~= nil
+end
+local function MerchantAvailable()
+    -- EQoL loads Vendor even when every repair and sale option is off.
+    local vendorLoaded = NS.Client.IsAddOnLoaded("EnhanceQoLVendor")
+    if (vendorLoaded or NS.Client.IsAddOnLoaded("EnhanceQoL")) and EnhanceQoLMerchantAutomation(vendorLoaded) then
+        return false, NS.FormatStatus("Managed by %s", vendorLoaded and "EnhanceQoLVendor" or "EnhanceQoL")
+    end
+    return true
+end
 B.Module("qol", {
     title = "Merchant helpers",
     description = "Repair equipment and sell poor-quality items when a merchant opens. Hold Shift to skip selling.",
     optIn = true, automation = true, page = "suite_qualityOfLife",
-    conflicts = { "EnhanceQoLVendor", "Scrap", "SellJunk" },
+    available = MerchantAvailable,
+    conflicts = { "Scrap", "SellJunk" },
 })
 -- The page switches Repair and Junk independently; the shared addon gate is
 -- derived from those two feature switches rather than shown as a third toggle.
@@ -672,9 +701,15 @@ B.Module("autoUprank", {
         return C_SpellBook.IsSpellBookItemLowRank ~= nil and Enum.ActionBarSet ~= nil
     end,
 })
+-- Exceptions name exact ranks: the setter accepts only digits, spaces and commas.
+local uprankExceptions = String("exceptSpellIDs", "Never replace these spell IDs (exact ranks, separated by commas)", "", 600)
+uprankExceptions.ids = true
+uprankExceptions.help = "A slot holding a listed rank keeps it, and a listed rank is never placed for you. "
+    .. "This applies to automatic updates and to Update placed spell ranks now."
 B.Section("autoUprank", "auto_uprank", "New spell ranks", {
     B.Automation(Bool("replaceLowerRanks", "Also replace deliberately lower ranks", false)),
     Bool("report", "Report updated action slots", true),
+    uprankExceptions,
 })
 
 B.Module("trainerLearnAll", {

@@ -5,7 +5,15 @@ P.PhysicalSort = Sort
 local Finite, Public = S.Finite, S.Public
 local job, events
 local Step, MoveTimeout
-local EVENTS = { "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "CURSOR_CHANGED", "PLAYER_REGEN_DISABLED" }
+local EVENTS = { "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "CURSOR_CHANGED", "PLAYER_REGEN_DISABLED", "MERCHANT_SHOW" }
+
+local function MerchantOpen()
+    return MerchantFrame and MerchantFrame:IsShown()
+end
+
+local function MerchantMessage()
+    return S.Text("Sorting stopped until the merchant window is closed.")
+end
 
 local function IgnoredSlots(create)
     local root = NS.RootDB
@@ -269,7 +277,11 @@ local function SlotState(position, expected)
 end
 
 local function Timeout()
-    Sort.Stop(S.Text("Physical bag sorting stopped."))
+    if MerchantOpen() then
+        Sort.Stop(MerchantMessage())
+    else
+        Sort.Stop(S.Text("Physical bag sorting stopped."))
+    end
 end
 
 function Sort.Stop(message)
@@ -389,6 +401,10 @@ end
 local function Event(_, event, bag, slot)
     local active = job
     if not active then return end
+    if event == "MERCHANT_SHOW" then
+        Sort.Stop(MerchantMessage())
+        return
+    end
     if event == "PLAYER_REGEN_DISABLED" then
         Timeout()
         return
@@ -410,6 +426,10 @@ local function Event(_, event, bag, slot)
 end
 
 local function Start(cleanup)
+    if MerchantOpen() then
+        S.Print(MerchantMessage())
+        return false
+    end
     if job then return false end
     if not CanSort() then
         if cleanup then S.Print(S.Text("Physical bag sorting stopped.")) end
@@ -443,6 +463,10 @@ function Sort.Start()
 end
 
 function Sort.Cleanup()
+    if MerchantOpen() then
+        S.Print(MerchantMessage())
+        return false
+    end
     if job then return false end
     local equipped, excluded = 0, 0
     local cleanup = NS.Client.isForever and M.config.inventoryView == NS.BagsView.ALL
@@ -492,6 +516,7 @@ local function SlotsMenu(_, root)
 end
 
 function Sort.AddMenu(owner, root)
+    if MerchantOpen() then root:CreateTitle(MerchantMessage()) end
     local action = root:CreateButton(S.Text("Sort bag slots"), Sort.Start)
     action:SetEnabled(not job and CanSort())
     local exclude = root:CreateButton(S.Text("Exclude slots from custom sort"), function()

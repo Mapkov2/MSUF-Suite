@@ -21,6 +21,12 @@ function Layout.CanRender(event)
     for i = 1, #items do
         if not Layout.Frame(items[i]) then return false end
     end
+    if P.ReagentInventory and P.ReagentInventory.active then
+        if not Layout.Frame(ContainerFrame6) then return false end
+        for _, button in ContainerFrame6:EnumerateValidItems() do
+            if not Layout.Frame(button) then return false end
+        end
+    end
     return true
 end
 

@@ -44,6 +44,9 @@ NS.Skin = { Release = function() end }
 local S = { catalog = NS.SuiteCatalog, instances = {} }
 NS.Suite = S
 MSUFSuite = NS
+NS.ActionBarTitles = {}
+for bar = 1, 12 do NS.ActionBarTitles[bar] = "Action bar " .. bar end
+assert(loadfile(root .. "/MSUF_Suite/Core/Bindings.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
 local private = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
@@ -141,6 +144,24 @@ assert(setCalls == 0, "Automatic wrote a CVar")
 Same(BLIZZARD, "Automatic changed")
 assert(S.CVarBaseline("nameplates", "nameplateShowEnemies", live.nameplateShowEnemies) == "1")
 
+-- Styling does not opt the player into Blizzard visibility. This includes a
+-- repeated refresh and a new profile with the default skin switches enabled.
+Reset()
+live.nameplateShowFriendlyPlayers, live.nameplateShowFriendlyNpcs = "0", "0"
+Apply()
+Apply({ look = private.Mode.LOOK_BLIZZARD })
+assert(live.nameplateShowFriendlyPlayers == "0" and live.nameplateShowFriendlyNpcs == "0",
+    "default/Blizzard styling forced native friendly Off to On")
+NS.RootDB.suiteRecovery = { ["Realm/Tester"] = { nameplates = {
+    nameplateShowFriendlyPlayers = { before = "1", applied = "0" },
+    nameplateShowFriendlyNpcs = { before = "1", applied = "0" },
+} } }
+Apply()
+context:Release()
+assert(live.nameplateShowFriendlyPlayers == "0" and live.nameplateShowFriendlyNpcs == "0",
+    "stale visibility recovery resurrected native friendly nameplates")
+Reset()
+
 ------------------------------------------------------------------ friendly NPC world names
 assert(rules.friendlyNPCs.default == 1 and #rules.friendlyNPCs.choices == 4
     and rules.friendlyNPCs.choices[2] == "Show" and rules.friendlyNPCs.choices[3] == "Hide"
@@ -193,7 +214,7 @@ do
         S = { Config = function() return values end }, Suite = NS }
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", preview)
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", preview)
-    assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreview.lua"))("Options", preview)
+    assert(loadfile(arg[3] or root .. "/MSUF_Suite_Options/Pages/NameplatesPreview.lua"))("Options", preview)
     local render = Upvalue(Upvalue(preview.BuildNameplatesPreview, "Sample"), "Render")
     local metrics, visibility = Upvalue(render, "Metrics"), Upvalue(render, "RenderVisibility")
     local raid, details = Upvalue(render, "RenderRaid"), Upvalue(render, "RenderCastAndAuras")
@@ -259,6 +280,61 @@ do
     visibility(editor, sample, metrics(editor, sample, {}))
     assert(not sample.buffs.shown and sample.auras.shown and not sample.control.shown,
         "Friendly NPCs should only have the native Debuffs row")
+
+    -- Disabling any skin scope keeps Blizzard's native font sizes in the
+    -- preview. RenderFonts must return numeric sizes for the edit handles.
+    local fonts = Upvalue(render, "RenderFonts")
+    preview.StylePreviewFont = function(region, path, size) region.fontSize, region.nativeFont = size, true end
+    local originalText = NS.NameplateText
+    NS.NameplateText = { PaintFont = function(region, _, _, size)
+        region.fontSize, region.nativeFont = size + 6, false
+        return region.fontSize
+    end, Shared = function() end }
+    local function FontRegion()
+        return { SetShadowColor = function(self, ...) self.shadow = { ... } end,
+            SetShadowOffset = function(self, ...) self.shadowOffset = { ... } end,
+            SetTextColor = function() end,
+            SetHeight = function(self, height) self.height = height end }
+    end
+    for _, key in ipairs({ "nameText", "castText", "castTimeText", "castTargetText", "value",
+        "castName", "castTime", "castTarget", "healthText" }) do sample[key] = FontRegion() end
+    for _, forever in ipairs({ false, true }) do
+        NS.Client.isForever = forever
+        for _, scope in ipairs({ "enemy", "neutral", "friendly", "friendlyNpc" }) do
+            values = Config({ look = 4 })
+            values[NS.NameplateExtensions.SkinKeys[scope]] = false
+            editor.scope, editor.friendlyElite = scope, scope == "friendlyNpc"
+            for _, prefix in ipairs({ "enemy", "friendly" }) do
+                sample.prefix = prefix
+                local m = metrics(editor, sample, sample.metrics)
+                assert(m.skinDisabled, "disabled scope kept Suite styling in the sample")
+                for _ = 1, 5 do fonts(sample, metrics(editor, sample, m)) end
+                assert(sample.castTarget.height >= 14 and sample.castTime.height >= 14
+                    and sample.healthText.height >= 18, "native font preview lost numeric handle sizes")
+                assert(sample.castText.fontSize == 10 * m.vertical,
+                    "disabled skin did not use the native cast font size")
+                local key = NS.NameplateExtensions.SkinKeys[scope]
+                values[key] = true
+                fonts(sample, metrics(editor, sample, m))
+                assert(not m.skinDisabled and sample.castText.nativeFont == false
+                    and sample.castText.fontSize == 10 * m.vertical + 6,
+                    "re-enabling a scope retained the native font branch")
+                values[key] = false
+            end
+        end
+        values = Config({ enabled = false })
+        fonts(sample, metrics(editor, sample, {}))
+        assert(sample.castTarget.height >= 14 and sample.healthText.height >= 18,
+            "disabled module lost native font preview geometry")
+        values = Config({ friendlyNPCs = 4 })
+        editor.scope, editor.friendlyElite, sample.prefix = "friendlyNpc", true, "friendly"
+        local m = metrics(editor, sample, sample.metrics)
+        fonts(sample, m)
+        assert(m.npcWorldName and sample.nameText.nativeFont == true and sample.castText.nativeFont == false,
+            "native NPC names-only preview lost its native name font or custom cast font")
+    end
+    NS.Client.isForever = false
+    NS.NameplateText = originalText
 end
 
 ------------------------------------------------------------------ values reach their CVars
@@ -414,6 +490,7 @@ P.Suite.Registry = { AddListener = function() end }
 P.BuildNameplatesPreview, P.BuildNameplatesAuraColors = function() end, function() end
 local built, page = {}, nil
 P.RegisterPage = function(registered) page = registered end
+assert(loadfile(root .. "/MSUF_Suite_Options/Menu/MediaValues.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Controls.lua"))("MSUF_Suite_Options", P)
 -- The page hands each accordion's rule list to P.RuleSection.
 P.RuleSection = function(_, _, _, _, sectionId, _, shown) built[sectionId] = shown; return {} end

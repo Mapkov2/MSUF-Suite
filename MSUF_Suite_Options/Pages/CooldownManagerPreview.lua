@@ -94,8 +94,10 @@ function Page.HighlightChip(slot)
     end
 end
 
--- Left click selects the bar, right click opens its actions.
+-- Custom bars show a dropdown arrow and open their actions on either click.
+-- A left click also selects the bar for the editor below.
 local function ChipClick(self, button)
+    if P.Combat() then return end
     if self.add then
         Page.OpenAddBar(self)
         return
@@ -105,6 +107,7 @@ local function ChipClick(self, button)
         return
     end
     Page.Select(self.slot)
+    if Page.SlotInfo(self.slot).custom then Page.OpenBarMenu(self, self.slot) end
 end
 local function ChipEnter(self)
     if self.add then
@@ -113,13 +116,23 @@ local function ChipEnter(self)
     end
     local slot = self.slot
     local state = Page.KindName(Page.Kind(slot)) .. (Page.IsOn(slot) and "" or ("  -  " .. Tr("off")))
-    Page.ShowTip(self, Page.BarName(slot), state,
-        Tr("Click to edit this bar, right-click for its actions. Drop a spell here to move it to this bar."))
+    local hint
+    if Page.SlotInfo(slot).custom then
+        hint = Tr("Click to select this bar and open its actions. Drop a spell here to move it to this bar.")
+    else
+        hint = Tr("Click to edit this bar, right-click for its actions. Drop a spell here to move it to this bar.")
+    end
+    Page.ShowTip(self, Page.BarName(slot), state, hint)
 end
 local function ChipLeave(self) Page.HideTip(self) end
 local function NewChip(ui, slot)
     local chip = Page.Button(ui.strip, "", 96, 26, ChipClick)
-    if slot then HM.MarkSegmentChoice(chip) end
+    if slot then
+        HM.MarkSegmentChoice(chip)
+        if Page.SlotInfo(slot).custom then Page.Chevron(chip) end
+    else
+        T.SkinSuccessButton(chip)
+    end
     if chip.RegisterForClicks then chip:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
     chip.slot = slot
     chip.drop = chip:CreateTexture(nil, "OVERLAY")

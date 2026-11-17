@@ -70,6 +70,13 @@ P.Gates[ID] = function(rule)
     local panel = P.Get(ID, "windowPresentation") == P.Suite.BagsPresentation.PANEL
         and P.Get(ID, "inventoryView") ~= P.Suite.BagsView.BLIZZARD_GRID
     if rule.key == "panelFullHeight" and not panel then return false, Tr("Unavailable with the current settings.") end
+    if rule.key == "combineReagentBag" and not OpensBags() then
+        return false, Tr("Unavailable with the current settings.")
+    end
+    if rule.section == "reagentWindow" and P.Get(ID, "combineReagentBag")
+        and P.Get(ID, "inventoryView") ~= P.Suite.BagsView.BLIZZARD_GRID and OpensBags() then
+        return false, Tr("Turn off reagent bag integration to position its separate window.")
+    end
     if (rule.key == "inventoryRows" or rule.key == "autoSizeWindow") and panel and P.Get(ID, "panelFullHeight") then
         return false, string.format(Tr("Turn off \"%s\" to change this."), Tr("Use full screen height"))
     end
@@ -100,6 +107,20 @@ local function BuildFinance(ctx, b)
         })
 end
 
+local function BuildAppearance(ctx, b)
+    local appearance = P.SectionRules(ID, "appearance")
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_appearance", Tr("Window appearance"), appearance, {
+        help = P.Help("Choose the bag colors and opacity. Bag animations offers Off, a simple fade or a full staggered reveal. Reduced motion turns animations off. Equipped bags opens the slots for replacing your bags; Clean up bags uses the native cleanup action.",
+            "Set separate border thicknesses for occupied and empty bag slots. Zero hides the border; the preview updates immediately."),
+        open = true,
+    })
+    local rules = P.SectionRules(ID, "itemLevels")
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_itemLevels", Tr("Item levels"), rules, {
+        help = "Equipment item levels appear in the upper right of each slot. Choose a font, outline, shadow and Smooth, Sharp or Slug rendering. Slug has no shadow. Missing item data appears when the client provides it.",
+        open = true,
+    })
+end
+
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, WorkspaceSpec())
     P.MenuSamples.Bags(ui)
@@ -112,7 +133,8 @@ local function Build(ctx)
     -- Hidden rules are data (custom categories): never rendered, never reset.
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_organisation", Tr("Inventory organisation"),
         P.SectionRules(ID, "organisation", function(rule) return not rule.hidden end), {
-            help = "Keep Blizzard grid, or choose one Suite grid, physical bag groups or categories. Use Edit categories in the bag window to create, rename, reorder or disable your categories; drop items onto a sidebar category to assign them. Sort items by orders every Suite view; Name keeps the order each view has always had. Click a category header to hide or show its items. The footer counts free slots, and Mark items that beat what you wear puts a small arrow on equipment that beats what you wear in its slot. Scroll or use Previous and Next for larger inventories; in combat every slot is shown at once. Combined stack counts are visual only; physical stacks are always restored at the bank, guild bank, mail, trade, auction house and merchant.",
+            help = P.Help("Keep Blizzard grid, or choose one Suite grid, physical bag groups or categories. Use Edit categories in the bag window to create, rename, reorder or disable your categories; drop items onto a sidebar category to assign them. Sort items by orders every Suite view; Name keeps the order each view has always had. Click a category header to hide or show its items. The footer counts free slots, and Mark items that beat what you wear puts a small arrow on equipment that beats what you wear in its slot. Scroll or use Previous and Next for larger inventories; in combat every slot is shown at once. Combined stack counts are visual only; physical stacks are always restored at the bank, guild bank, mail, trade, auction house and merchant.",
+                "Show reagent bag slots at the end of the backpack, or keep the separate reagent bag window."),
             open = true,
         })
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_listView", Tr("List view"),
@@ -135,16 +157,7 @@ local function Build(ctx)
             help = "Drop an item onto Pinned items in the category sidebar to keep it at the top of every view. Recent items lists up to 200 item types this character received, also across logins; each leaves the list once it is older than the hours set here, and Clear recent items empties it sooner. Neither action moves or deletes an item.",
         })
     BuildFinance(ctx, b)
-    local appearance = P.SectionRules(ID, "appearance")
-    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_appearance", Tr("Window appearance"), appearance, {
-        help = "Choose the bag colors and opacity. Bag animations offers Off, a simple fade or a full staggered reveal. Reduced motion turns animations off. Equipped bags opens the slots for replacing your bags; Clean up bags uses the native cleanup action.",
-        open = true,
-    })
-    local rules = P.SectionRules(ID, "itemLevels")
-    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_itemLevels", Tr("Item levels"), rules, {
-        help = "Equipment item levels appear in the upper right of each slot. Choose a font, outline, shadow and Smooth, Sharp or Slug rendering. Slug has no shadow. Missing item data appears when the client provides it.",
-        open = true,
-    })
+    BuildAppearance(ctx, b)
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_window", Tr("Combined bag window"),
         P.SectionRules(ID, "window"), {
             open = true,

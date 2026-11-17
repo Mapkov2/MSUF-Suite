@@ -88,7 +88,8 @@ end
 -- What the runtime reads for each choice's first entry (the menu's 0).
 local FIRST = { swipe = CDM.SWIPE.NORMAL, desat = CDM.CHOICE.BAR, timeText = CDM.CHOICE.BAR,
     stackText = CDM.CHOICE.BAR, textTop = CDM.CHOICE.BAR, auraUnit = 1, actionGlowUnit = 1,
-    actionGlowMode = CDM.ACTION_GLOW.PRESENT, stackGlowOp = CDM.STACK_OP.AT_LEAST, glowStyle = 0 }
+    actionGlowMode = CDM.ACTION_GLOW.PRESENT, actionAuraDisplay = CDM.ACTION_AURA.GLOW, actionAuraGlow = CDM.ACTION_AURA_GLOW.SHOW,
+    stackGlowOp = CDM.STACK_OP.AT_LEAST, glowStyle = 0 }
 function tests.F01_choice()
     local pop, row = SpecField("swipe", 2)
     Pick(row, 0)

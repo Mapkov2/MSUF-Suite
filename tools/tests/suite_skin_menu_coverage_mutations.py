@@ -21,7 +21,7 @@ CASES = (
      'if leaf then\n',
      'if false then\n', 'pooled row was scanned for full-menu rediscovery'),
     ("modern ScrollFrame delegation", "Rendering/LegacyScrollMotion.lua",
-     'if not nativeQuest and Safety.HasMethod(bar, "CanInterpolateScroll") then',
+     'if not renderOnly and Safety.HasMethod(bar, "CanInterpolateScroll") then',
      'if false then', 'native modern ScrollFrame controller was smoothed twice'),
     ("legacy thumb drag", "Rendering/LegacyScrollMotion.lua",
      'if Safety.CanCreateRegions(bar) and Safety.Read(bar, "IsMouseOver") == true then',
@@ -57,7 +57,7 @@ CASES = (
      'NS.ContentMotion.Unwatch(state.contentOwner, Safety.Field(widget, "content"))',
      '-- pooled child retains stale content owner', 'pooled Ace TabGroup cannot fade under a different config root'),
     ("Ace master disable", "Adapters/AddonMenus.lua",
-     'if not Enabled() then Release(state) return end',
+     'if not Enabled(state) then Release(state) return end',
      '-- disable boundary ignored', 'master disable retained external menu skins'),
 )
 

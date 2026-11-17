@@ -2,6 +2,22 @@
   "removed": [
     {
       "category": "module_traits",
+      "item": "[\"forever:qol\",\"conflicts\",[[1,\"EnhanceQoLVendor\"],[2,\"Scrap\"],[3,\"SellJunk\"]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua MerchantAvailable and tools/tests/suite_merchant_availability_contract.lua",
+      "reason": "EQoL repair and sale ownership moved from addon-loaded alone to live automation settings. Active conflicts remain blocked; inactive vendor helpers no longer hide Repair. Scrap and SellJunk are unchanged.",
+      "date": "2026-11-17"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:qol\",\"conflicts\",[[1,\"EnhanceQoLVendor\"],[2,\"Scrap\"],[3,\"SellJunk\"]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua MerchantAvailable and tools/tests/suite_merchant_availability_contract.lua",
+      "reason": "EQoL repair and sale ownership moved from addon-loaded alone to live automation settings. Active conflicts remain blocked; inactive vendor helpers no longer hide Repair. Scrap and SellJunk are unchanged.",
+      "date": "2026-11-17"
+    },
+    {
+      "category": "module_traits",
       "item": "[\"forever:trainerLearnAll\",\"description\",\"Review the total cost, then learn available non-profession abilities at a trainer.\"]",
       "basis": "moved",
       "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua and suite_trainer_learn_all_contract.lua",

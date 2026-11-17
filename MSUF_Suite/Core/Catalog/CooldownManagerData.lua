@@ -68,6 +68,14 @@ CDM.DESAT = { NEVER = 2, ALWAYS = 3 }
 CDM.SWIPE = { NORMAL = 1, REVERSED = 2, HIDDEN = 3 }
 CDM.STACK_OP = { AT_LEAST = 1, EXACTLY = 2, MORE_THAN = 3, BELOW = 4, AT_MOST = 5 }
 CDM.ACTION_GLOW = { PRESENT = 1, STACKS = 2 }
+-- actionAuraDisplay: what the action-bar buttons show of the aura beside its
+-- glow: 1 nothing more (absent), 2 its icon, 3 the full aura (icon, duration
+-- swipe, duration text and stacks), 4 the duration swipe, 5 the duration
+-- text, 6 the stacks.
+CDM.ACTION_AURA = { GLOW = 1, ICON = 2, FULL = 3, SWIPE = 4, TIME = 5, STACKS = 6 }
+-- actionAuraGlow: whether those buttons glow: 1 yes (absent), 2 no (only the
+-- display shows; without a display nothing does).
+CDM.ACTION_AURA_GLOW = { SHOW = 1, HIDE = 2 }
 -- glowStyle (1 Blizzard alert, 2 Marching ants, 3 Pulse, 4 Border, 5 Pixel, 6 Autocast) and
 -- glowColor style every glow of the entry: ready, spell alert, "glow while
 -- active" and the stack glow; absent, the bar's glow style and tint apply.
@@ -92,6 +100,7 @@ CDM.SPELL_FIELDS = {
     timeText = Range(1, 3), stackText = Range(1, 3), textTop = Range(1, 3),
     showGCD = Bool01, actionGlowSpell = Range(1, 2147483647), actionGlowMode = Range(1, 2),
     actionGlowRequireSpell = Range(1, 2147483647), actionGlowUnit = Range(1, 2), actionUsableGlow = Bool01,
+    actionAuraDisplay = Range(1, 6), actionAuraGlow = Range(1, 2),
     requireSpell1 = Range(1, 2147483647), requireSpell2 = Range(1, 2147483647), requireSpell3 = Range(1, 2147483647),
     excludeSpell1 = Range(1, 2147483647), excludeSpell2 = Range(1, 2147483647), excludeSpell3 = Range(1, 2147483647),
     -- Cooldown icons that show only while usable or during the spell alert;

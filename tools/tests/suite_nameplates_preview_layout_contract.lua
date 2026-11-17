@@ -51,10 +51,12 @@ Frame = function(parent)
     function f:EnableMouseWheel(enabled) self.mouseWheel = enabled end
     function f:SetScrollChild(child)
         self.scrollChild = child
-        child:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
     end
     function f:GetVerticalScroll() return self.scrollOffset or 0 end
-    function f:GetVerticalScrollRange() return math.max(0, self.scrollChild:GetHeight() - self:GetHeight()) end
+    function f:UpdateScrollChildRect()
+        self.scrollRectWidth, self.scrollRectHeight = self.scrollChild:GetWidth(), self.scrollChild:GetHeight()
+    end
+    function f:GetVerticalScrollRange() return math.max(0, (self.scrollRectHeight or 0) - self:GetHeight()) end
     function f:SetVerticalScroll(offset)
         self.scrollOffset = offset
         self.scrollChild:ClearAllPoints()
@@ -256,12 +258,20 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
             for _, button in ipairs(ui.layerButtons) do if button.layerKey == key then return button end end
             error("missing layer " .. key)
         end
+        local status = Layer("status")
+        local content = status:GetParent()
+        local scroll = content:GetParent()
+        local point, relative, relativePoint, x, y = content:GetPoint(1)
+        assert(point == "TOPLEFT" and relative == scroll and relativePoint == "TOPLEFT" and x == 0 and y == 0,
+            "preview layer content is unanchored in its scroll viewport")
         values.look, ui.sampleKind = 4, "enemy"
         values.enemyGlowMode, values.enemyGlowEnabled = 2, true
         local glow = Layer("glow")
         glow.scripts.OnClick(glow, "LeftButton")
         glow.scripts.OnClick(glow, "LeftButton")
-        assert(values.enemyGlowMode == 2 and values.enemyGlowEnabled, "live layer toggle replaced selected glow mode")
+        assert(values.enemyGlowMode == 2 and values.enemyGlowEnabled == false and opened == "enemyGlowEnabled",
+            "disabled glow layer did not open its setting or replaced the selected mode")
+        values.enemyGlowEnabled = true
         for _, button in ipairs(ui.layerButtons) do assert(button.layerKey ~= "fillTexture", "retired texture chip remains") end
         ui.sampleKind = "friendly"
         local before = writes
@@ -346,9 +356,6 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         assert(Layer("castTarget"):IsShown() and Layer("enemyPower"):IsShown() and Layer("status"):IsShown(),
             "editable layers are hidden behind a context filter")
         CheckButtonLabel(ui.elementPicker, "Select")
-        local status = Layer("status")
-        local content = status:GetParent()
-        local scroll = content:GetParent()
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreview.lua"))("Options", P)
         local RenderTarget = Upvalue(P.NameplatesPreview.Render, "RenderTarget")
         local targetSample = { level = Frame(), state = { target = true } }
@@ -381,6 +388,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
             "Aggro changed which layers are offered")
         P.PreviewNameplateStatus("RaidIcon")
         local aggro = Layer("aggroBorder")
+        values.highlightAggro = true
         aggro.scripts.OnClick(aggro, "LeftButton")
         assert(ui.highlightSample == "aggro" and not ui.statusSample, "Aggro border left an isolated status sample")
         local link = assert(Layer("castTarget").settingsLink, "the layer lacks a visible settings link")
@@ -466,6 +474,8 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
                     if button.settingsLink then CheckInside(button.settingsLink, button, "settings link was clipped") end
                 end
                 local scrollRange = scroll:GetVerticalScrollRange()
+                assert(scroll.scrollRectWidth == content:GetWidth() and scroll.scrollRectHeight == content:GetHeight(),
+                    "preview layer scroll bounds did not follow the content layout")
                 if width == 280 then assert(scrollRange > 0, "narrow layers did not scroll") end
                 if width >= 885 then assert(scrollRange == 0, "wide layers still require scrolling") end
                 assert(scroll:GetVerticalScroll() <= scrollRange, "resize retained an out-of-range scroll offset")

@@ -96,6 +96,7 @@ local function Region(atlas)
 end
 
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("Suite", private.NS)
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/CastSettings.lua"))("Nameplates", private)
 assert(loadfile((arg and arg[2]) or root .. "/MSUF_Suite_Nameplates/Textures.lua"))("Nameplates", private)
 local T = private.Textures
 local health = { barTexture = Region("native-health"), bgTexture = Region("native-background") }

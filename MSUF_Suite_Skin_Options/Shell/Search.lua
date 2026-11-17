@@ -13,6 +13,7 @@ local pageMeta = {
     typography = { group = "design", simple = true, keywords = "font typeface sharedmedia chat quest mail accessibility" },
     geometry = { group = "design", simple = false, keywords = "corner curve round continuous squircle radius border shape hover" },
     skins = { group = "coverage", simple = true, keywords = "blizzard windows adapters game menu settings map spellbook chat" },
+    addonSkins = { group = "coverage", simple = true, keywords = "addon skins addons acegui aceconfig windows fenster" },
     coverage = { group = "coverage", simple = false, keywords = "categories character inventory npc quest social group profession economy map housing" },
     hud = { group = "coverage", simple = false, keywords = "damage meter combat rows headers" },
     profiles = { group = "manage", simple = true, keywords = "profile copy delete import export share backup" },
@@ -52,6 +53,8 @@ local EXPERT = true
 -- { page, label, extra keywords, EXPERT or nil }. Labels are the visible
 -- control names on that page, so a result reads like the control it opens.
 local entries = {
+    { "addonSkins", L["Skin other addons"], "addon skins addons fremde addons" },
+    { "addonSkins", L["AceGUI / AceConfig windows"], "acegui aceconfig ace3 settings options" },
     { "dashboard", NS.L.MASTER_ENABLE, "master on off engine" },
     { "looks", L["Style preset"], "complete coordinated authored look " .. lookCatalogKeywords },
     { "looks", L["Shaded surfaces"], "material gradient on off", EXPERT },
@@ -121,6 +124,11 @@ local entries = {
     { "advanced", NS.L.RESET_ALL, "reset all defaults" },
     { "advanced", L["Runtime contract"], "no polling ticker onupdate combat performance" },
 }
+
+for index = 1, #NS.AddonSkinDefinitions do
+    local entry = NS.AddonSkinDefinitions[index]
+    entries[#entries + 1] = { "addonSkins", entry.label, "addon skin " .. table.concat(entry.addons, " ") }
+end
 
 function O.GetPageMeta(key)
     return pageMeta[key] or defaultMeta

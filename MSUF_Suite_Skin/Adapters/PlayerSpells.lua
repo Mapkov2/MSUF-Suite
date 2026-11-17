@@ -272,9 +272,9 @@ local function SkinPagingControls(state, pagingControls)
     SkinGlyphButton(state, PublicField(pagingControls, "NextPageButton"), ">", NEXT_PAGE_SPEC)
 end
 
--- Forever's footer runs Blizzard's rank checkbox through the button's
--- hardware OnClick. Calling the responder from addon Lua can taint the
--- spell rows it rebuilds for subsequent casts and drags.
+-- Select the native rank-checkbox description through Blizzard's menu API.
+-- Copying its responder into an addon button's OnClick bypasses the native
+-- Pick dispatch and taints the secret cooldown update during the rebuild.
 local RANKS_CVAR = "ShowAllSpellRanks"
 local classesWithoutRanks = { ROGUE = true, WARRIOR = true }
 local RANKS_SPEC = { role = "button", activeRole = "navigationActive", useControlShape = true, ownedArt = true }
@@ -287,35 +287,33 @@ local function SyncRanksToggle(button)
     button.Dot:SetColorTexture(NS.Theme.GetColor(on and "accentBright" or "border"))
 end
 
-local function GetRanksResponder(book)
+local function GetRanksOption(book)
     local menu = Safety.Read(PublicField(book, "SettingsDropdown"), "GetMenuDescription")
     if Safety.Read(menu, "GetTag") ~= "MENU_SPELL_BOOK_SETTINGS"
         or not Safety.HasMethod(menu, "EnumerateElementDescriptions") then return end
     for _, option in menu:EnumerateElementDescriptions() do
         if PublicField(option, "text") == SHOW_ALL_SPELL_RANKS and Safety.Read(option, "IsCheckbox") == true then
-            if Safety.Read(option, "CanSelect") == true and issecurevariable(option, "responder")
-                and Safety.HasMethod(option, "responder") then return PublicField(option, "responder") end
+            if Safety.Read(option, "CanSelect") == true and Safety.Read(option, "HasResponder") == true
+                and issecurevariable(option, "responder")
+                and issecurevariable(option, "Pick") and Safety.HasMethod(option, "Pick") then return option end
             return
         end
     end
 end
 
-local function PrepareRanksClick(button, mouseButton, down)
-    local book = button:GetParent()
-    local responder
-    if mouseButton == "LeftButton" and not down and not NS.IsCombatLocked() then responder = GetRanksResponder(book) end
-    button:SetScript("OnClick", responder)
-end
-
-local function FinishRanksClick(button)
-    button:SetScript("OnClick", nil)
+local function OnRanksToggleClick(button, mouseButton, down)
+    if mouseButton ~= "LeftButton" or down or NS.IsCombatLocked() then return end
+    local option = GetRanksOption(button:GetParent())
+    if not option then return end
+    -- Pick keeps retrieval and execution of the native responder inside Menu.lua.
+    option:Pick(MenuInputContext.MouseButton, mouseButton)
     if button.on ~= (GetCVarBool(RANKS_CVAR) == true) then SyncRanksToggle(button) end
 end
 
 local function OnRanksToggleEnter(button)
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip_SetTitle(GameTooltip, SHOW_ALL_SPELL_RANKS)
-    if not GetRanksResponder(button:GetParent()) then
+    if not GetRanksOption(button:GetParent()) then
         GameTooltip_AddNormalLine(GameTooltip, NS.L["To apply immediately, use the rank checkbox in the spellbook settings menu."], true)
     end
     GameTooltip:Show()
@@ -335,8 +333,7 @@ local function CreateRanksToggle(spellBook, paged)
     button.Text:SetText(SHOW_ALL_SPELL_RANKS)
     button:SetSize(math.ceil((Safety.Read(button.Text, "GetStringWidth") or 120) + 37), 24)
     button:RegisterForClicks("LeftButtonUp")
-    button:SetScript("PreClick", PrepareRanksClick)
-    button:SetScript("PostClick", FinishRanksClick)
+    button:SetScript("OnClick", OnRanksToggleClick)
     button:SetScript("OnShow", SyncRanksToggle)
     button:SetScript("OnEnter", OnRanksToggleEnter)
     button:SetScript("OnLeave", GameTooltip_Hide)

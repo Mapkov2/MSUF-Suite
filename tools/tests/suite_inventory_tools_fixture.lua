@@ -11,6 +11,7 @@ function F.New(root, forever)
         calls = { scan = 0 }, cursor = nil, recipes = {}, schematics = {}, hardware = false }
     E.secret = setmetatable({}, { __tostring = function() error("secret formatted") end })
     local S = { instances = {}, Text = function(v) assert(type(v) == "string"); return v end }
+    S.Availability = function(id) assert(id == "qol"); return true end
     S.Public = function(v) return v ~= E.secret end
     S.Finite = function(v) return v ~= E.secret and type(v) == "number" and v == v and v > -math.huge and v < math.huge end
     S.PublicText = function(v) return v ~= E.secret and type(v) == "string" and v ~= "" and v or nil end

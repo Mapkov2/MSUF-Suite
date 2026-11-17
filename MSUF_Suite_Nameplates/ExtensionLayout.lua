@@ -130,6 +130,7 @@ local function RestoreLayers(state)
     if visual and visual.gradient then NS.NameplateStyle.Gradient.SetAlpha(visual.gradient, 1) end
     local bar = P.Power.EnemyBar and P.Power.EnemyBar(state.uf)
     if bar and bar.powerGradient then NS.NameplateStyle.Gradient.SetAlpha(bar.powerGradient, 1) end
+    if P.EasyFeatures then P.EasyFeatures.SetOpacity(state.uf, 1) end
     state.layerFade, state.layerFill = nil, nil
 end
 
@@ -160,6 +161,7 @@ function L.Layers(state, fade, force)
         Layer(records, bar.enemyPowerLoss and bar.enemyPowerLoss.bar, fade.power)
     end
     if P.AuraColors and P.AuraColors.SetOpacity then P.AuraColors.SetOpacity(uf, fade.health) end
+    if P.EasyFeatures then P.EasyFeatures.SetOpacity(uf, fade.health) end
     state.layers, state.layerFade = next(records) and records or nil, fade
 end
 

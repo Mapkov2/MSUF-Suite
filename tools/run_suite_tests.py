@@ -25,6 +25,9 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_anchor_popup_choices_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_nameplates_friendly_visibility_contract.lua": [[], ["Forever"]],
+    "suite_nameplate_extras_contract.lua": [[], ["Forever"]],
     "suite_dev_bar_animation_contract.lua": [[str(MSUF_70 / "tools/tests/classpower_secrets.lua")]],
     "suite_trainer_learn_all_contract.lua": [[str(MSUF_70 / "tools/tests/classpower_secrets.lua")]],
     "suite_bags_audit_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -37,6 +40,7 @@ EXTRA = {
     "suite_bags_list_query_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_physical_sort_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_merchant_buyback_search_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_merchant_availability_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_tab_selection_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_qol_cheapest_item_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_resize_transition_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -51,6 +55,8 @@ EXTRA = {
     "suite_bags_panel_companion_contract.lua": [[], ["Forever"]],
     "suite_bags_panel_contract.lua": [[], ["Forever"]],
     "suite_bags_menu_preview_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_bags_reagent_merge_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_bags_slot_border_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_caption_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_chat_mover_popup_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_mover_popup_summary_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
@@ -72,6 +78,7 @@ EXTRA = {
     "suite_chat_snapshot_parity_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_chat_sidebar_parity_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_chat_positions_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_chat_geometry_recovery_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_chat_preview_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_damage_meter_recap_visuals_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_damage_meter_remote_spec_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -98,6 +105,8 @@ EXTRA = {
     "suite_skin_collapse_budget_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_menu_coverage_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_addon_skins_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_barbershop_skin_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_menu_discovery_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_menu_transitions_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_combat_cold_contract.lua": [[flavor] for flavor in FLAVORS],

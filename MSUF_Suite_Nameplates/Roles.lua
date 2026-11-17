@@ -272,6 +272,7 @@ end
 -- Read on plate setup and on flag, level, classification and quest changes.
 function Roles.Base(facts, unit, uf)
     facts.eligible, facts.focus, facts.neutral, facts.rest = false, false, false, false
+    facts.questNeutral = nil
     local c = Roles.config
     if not Roles.allowed or not c.enemyRoleColors or not S.Public(uf.isFriend) or uf.isFriend ~= false
         or not S.Public(uf.isPlayer) or uf.isPlayer ~= false then return end
@@ -285,6 +286,7 @@ function Roles.Base(facts, unit, uf)
         facts.rest = c.enemyTappedEnabled ~= false and "Tapped"
     elseif c.enemyQuestColors and c.enemyQuestEnabled ~= false and facts.quest == true then
         facts.rest = "Quest"
+        if c.questReactionColors then facts.questNeutral = Read(UnitReaction, unit, "player") == 4 end
     elseif Read(UnitReaction, unit, "player") == 4 then
         facts.neutral = true
     elseif Read(UnitCanAttack, "player", unit) ~= false then

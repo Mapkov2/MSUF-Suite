@@ -364,4 +364,13 @@ Check(Database.GetProfile("Motion Import").theme.menuAnimations == nil
     and Database.GetProfile("Motion Import").theme.smoothScrolling == nil
     and Database.GetProfile("Motion Import").theme.windowFocusDimming == nil,
     "copying absent settings retained stale motion overrides")
+local addonProfile = Profile(0.4)
+addonProfile.addonSkins.enabled = true
+addonProfile.addonSkins.questie = false
+Check(Database.SetProfile("Addon skins", addonProfile), "addon skin profile creation failed")
+local addonText = assert(IO.ExportProfile("Addon skins"))
+Check(IO.ImportProfile(addonText, "Addon skin import"), "addon skin profile import failed")
+local addonImported = Database.GetProfile("Addon skin import").addonSkins
+Check(addonImported.enabled == true and addonImported.questie == false and addonImported.bugSack == true,
+    "addon skin choices were lost in export/import")
 print("Suite skin profile import: " .. checks .. " checks passed")

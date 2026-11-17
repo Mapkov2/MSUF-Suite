@@ -49,11 +49,46 @@ local function Drain()
     for key, callback in pairs(jobs) do jobs[key] = nil; callback() end
     H.SetCombat(true)
 end
+-- Addon close buttons often retain separate artwork fields or an X label.
+local custom = Button()
+custom.NormalTexture, custom.HoverTexture, custom.Icon = Texture(custom), Texture(custom), Texture(custom)
+custom.NormalTexture.alpha = .7
+local nativeX = Texture(custom)
+function nativeX:GetText() return "X" end
+function custom:GetFontString() return nativeX end
+local originalClick = function() end
+custom:SetScript("OnClick", originalClick)
+local originalNormal = custom.slots.Normal
+local customState = W.Apply(custom, "custom", "close")
+Check(customState and custom.NormalTexture.alpha == 0 and custom.HoverTexture.alpha == 0
+    and custom.Icon.alpha == 0 and nativeX.alpha == 0, "custom addon close art remained beneath the Suite X")
+Check(custom.scripts.OnClick == originalClick, "close decoration changed the native click handler")
+custom.HoverTexture.alpha = .35 -- A newer foreign change must survive our release.
+Check(W.Disable(custom, "custom") and custom.NormalTexture.alpha == .7 and custom.HoverTexture.alpha == .35
+    and custom.Icon.alpha == 1 and nativeX.alpha == 1 and custom.slots.Normal == originalNormal
+    and originalNormal.alpha == 1, "close release lost native state, alpha or newer foreign artwork")
+local labeled = Button()
+local closeLabel = Texture(labeled)
+function closeLabel:GetText() return "Close" end
+function labeled:GetFontString() return closeLabel end
+W.Apply(labeled, "labeled", "close")
+Check(closeLabel.alpha == 1, "ordinary Close text was hidden as if it were an X glyph")
+W.Disable(labeled, "labeled")
+local textFieldClose = Button()
+textFieldClose.Text = Texture(textFieldClose)
+function textFieldClose.Text:GetText() return "X" end
+W.Apply(textFieldClose, "text-field", "close")
+Check(textFieldClose.Text.alpha == 0, "framework Text-field X label remained over the replacement glyph")
+W.Disable(textFieldClose, "text-field")
+Check(textFieldClose.Text.alpha == 1, "framework Text-field X label was not restored")
 H.SetCombat(true)
 local button = Button()
 local state = W.Apply(button, "combat", "close")
 Check(state and W.HasOwnedStates(button) and next(jobs) == nil, "cold safe combat action stayed native or queued work")
 local nativeNormal = state.native.normal
+for _, key in ipairs({ "normal", "pushed", "disabled", "highlight" }) do
+    Check(state.native[key]:GetAlpha() == 0, "native close texture remains visible beneath the replacement: " .. key)
+end
 state.glyphs.normal.atlas, state.glyphs.pushed.atlas = "redbutton-expand", "redbutton-expand-Pressed"
 Check(W.SyncNativeVisual(button, "combat", "maximize") == state and nativeNormal.atlas == "redbutton-expand",
     "safe native visual reset did not synchronize in combat")

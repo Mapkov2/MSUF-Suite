@@ -81,20 +81,9 @@ end
 local function Visible(bar) return not bar.paintDormant and bar.header:IsVisible() end
 
 ------------------------------------------------------------------ range
-local function Tint(rec)
-    local icon = rec.button.icon
-    if not icon then return end
-    local style, code = AB.style, rec.usable or USABLE_OK
-    local key = rec.outOfRange and OUT_OF_RANGE or code
-    if rec.tint == key then return end
-    if key == OUT_OF_RANGE then
-        icon:SetVertexColor(style.rr, style.rg, style.rb)
-    else
-        -- AB.style.tints: the usability colors (Style.lua), Blizzard's own by default.
-        local color = style.tints[key] or style.tints[UNUSABLE]
-        icon:SetVertexColor(color[1], color[2], color[3])
-    end
-    rec.tint = key
+local Tint = AB.TintIcon
+function AB.SetTint(painter)
+    Tint, AB.Painter.Tint = painter, painter
 end
 
 local function ReleaseRange(rec)
@@ -811,7 +800,7 @@ end
 AB.Painter = {
     api = api, slotMap = slotMap, Visible = Visible, NewChargeEpoch = NewChargeEpoch,
     spellButtons = spellButtons, SpellRouted = SpellRouted,
-    Tint = Tint, ReleaseRange = ReleaseRange, AcquireRange = AcquireRange,
+    Tint = Tint, SetTint = AB.SetTint, ReleaseRange = ReleaseRange, AcquireRange = AcquireRange,
     Usable = Usable, State = State, Count = Count, Cooldown = Cooldown, CooldownFeedback = CooldownFeedback,
     CacheAction = CacheAction, ActionSpell = ActionSpell, ButtonSpell = ButtonSpell, SetGlow = SetGlow, GlowCheck = GlowCheck,
     Clear = Clear, RouteSpell = RouteSpell, SetQuality = SetQuality,

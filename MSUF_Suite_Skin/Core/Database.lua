@@ -387,6 +387,10 @@ local function NormalizeToggleSet(settings, defaults)
 end
 
 local function NormalizeToggles(db)
+    db.addonSkins.enabled = db.addonSkins.enabled == true
+    for key in pairs(NS.Defaults.addonSkins) do
+        if key ~= "enabled" then db.addonSkins[key] = db.addonSkins[key] ~= false end
+    end
     NormalizeToggleSet(db.skins, NS.Defaults.skins)
     NormalizeToggleSet(db.skinCategories, NS.Defaults.skinCategories)
     NormalizeToggleSet(db.hud, NS.Defaults.hud)

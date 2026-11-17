@@ -4,7 +4,7 @@ local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
 assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,NameText.lua,Power.lua,Threat.lua,"
     .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Selection.lua,"
     .. "Mouseover.lua,FriendlyNames.lua,Decor.lua,AuraFilter.lua,AuraDisplay.lua,ExtensionLayout.lua,ExtensionText.lua,ExtensionEffects.lua,Extensions.lua,Status.lua,"
-    .. "CastAppearance.lua,CastOutline.lua,CastTextStyle.lua,CastGlowStyle.lua,Absorbs.lua,Textures.lua,Skin.lua",
+    .. "CastSettings.lua,CastAppearance.lua,CastOutline.lua,CastTextStyle.lua,CastGlowStyle.lua,Absorbs.lua,TargetResource.lua,EasyFeatures.lua,Textures.lua,HealthAppearance.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -442,6 +442,7 @@ local NS = {
 }
 local cvars, restored = {}, {}
 local S = {
+    instances = {},
     Public = function(value) return value ~= "secret" end,
     Finite = function(value) return type(value) == "number" and value == value end,
     RGB = function(hex)
@@ -454,6 +455,12 @@ local S = {
     RestoreCVar = function(_, key)
         restored[key] = true
         if key == "nameplateInfoDisplay" then liveCVars[key] = string.char(1, 68) end
+    end,
+    ForgetCVar = function() end,
+    CommitCVar = function(_, key, value)
+        if combat or liveCVars[key] == nil or liveCVars[key] == "secret" then return false end
+        cvars[key], liveCVars[key] = value, value
+        return true
     end,
     Install = function(_, module) installed = module end,
 }
@@ -477,6 +484,10 @@ NS.IsSecret = function(value) return value == "secret" end
 NS.InCombat = function() return combat end
 NS.RGB, NS.Public, NS.Finite, NS.ResolveFont = S.RGB, S.Public, S.Finite, S.ResolveFont
 NS.ResolveTexture = function(key) return key ~= "" and key or nil end
+NS.Text = function(value) return value end
+NS.ActionBarTitles = {}
+for index = 1, 12 do NS.ActionBarTitles[index] = "Action bar " .. index end
+assert(loadfile(root .. "/MSUF_Suite/Core/Bindings.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraColors.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
@@ -508,6 +519,15 @@ for _, file in ipairs(toc) do
     end
 end
 local module = assert(installed)
+S.instances.nameplates = module
+S.Config = function(id) assert(id == "nameplates"); return module.config end
+S.SetMany = function(id, values)
+    assert(id == "nameplates")
+    if combat then return false end
+    for key, value in pairs(values) do module.config[key] = value end
+    private.CVars.Apply(module)
+    return true
+end
 -- Work held back for the end of combat (Skin.lua OnCombatEnded): the plates
 -- a write named (pendingPlates) or a write no plate owns (needsRefresh).
 local function Deferred() return module.needsRefresh or next(module.pendingPlates) ~= nil end
@@ -1846,7 +1866,8 @@ do
     assert(cvars.nameplateShowFriendlyNpcs == "0" and cvars.UnitNamePlayerGuild == "1" and cvars.UnitNamePlayerPVPTitle == "0")
     c.friendlyNpcSkinEnabled, c.playerGuildNames, c.playerTitles = true, 1, 1
     module:Refresh()
-    assert(cvars.nameplateShowFriendlyNpcs == "1" and restored.UnitNamePlayerGuild and restored.UnitNamePlayerPVPTitle)
+    assert(cvars.nameplateShowFriendlyNpcs == "0" and restored.UnitNamePlayerGuild and restored.UnitNamePlayerPVPTitle,
+        "skin refresh forced previously disabled friendly NPC plates On")
     c.enemyTargetStyle, c.enemyTargetMarker = 15, true
     uf.isFriend, targetUnit = false, "nameplate1"
     module:Refresh()
@@ -2550,29 +2571,29 @@ fontHook(uf)
 assert(name.fontReads == disabledFontReads, "disabled nameplate hook still inspected plate fonts")
 print("Suite nameplates: native lifecycle, cast customization, masks, friendly features, layout and restoration passed")
 
--- Keybinding is a manual Suite setting change, with no work in combat/off.
+-- The binding toggles effective native visibility, including native Off with
+-- an already enabled Suite skin, with no work in combat/module-off.
 do
-    NS.Text = function(value) return value end
-    NS.ActionBarTitles = {}
-    for bar = 1, 12 do NS.ActionBarTitles[bar] = "Action bar " .. bar end
     local writes = 0
-    S.Config = function(id) assert(id == "nameplates"); return module.config end
-    S.Set = function(id, key, value)
-        assert(id == "nameplates" and key == "friendlyNpcSkinEnabled")
+    local setMany = S.SetMany
+    S.SetMany = function(id, values)
         writes = writes + 1
-        module.config[key] = value
-        return true
+        return setMany(id, values)
     end
-    assert(loadfile(root .. "/MSUF_Suite/Core/Bindings.lua"))("MSUF_Suite", NS)
-    module.config.enabled, module.config.friendlyNpcSkinEnabled = true, false
-    assert(NS.ToggleFriendlyNPCNameplates() and module.config.friendlyNpcSkinEnabled == true)
-    assert(NS.ToggleFriendlyNPCNameplates() and module.config.friendlyNpcSkinEnabled == false)
+    local previousNpcMode = module.config.friendlyNPCs
+    module.config.enabled, module.config.friendlyNpcSkinEnabled, module.config.friendlyNPCs = true, true, 2
+    liveCVars.nameplateShowFriendlyNpcs = "0"
+    assert(NS.ToggleFriendlyNPCNameplates() and module.config.friendlyNpcSkinEnabled == true
+        and liveCVars.nameplateShowFriendlyNpcs == "1", "NPC binding did not enable native Off on the first press")
+    assert(NS.ToggleFriendlyNPCNameplates() and module.config.friendlyNpcSkinEnabled == false
+        and liveCVars.nameplateShowFriendlyNpcs == "0", "NPC binding did not disable native plates")
     combat = true
     assert(not NS.ToggleFriendlyNPCNameplates())
     combat, module.config.enabled = false, false
     assert(not NS.ToggleFriendlyNPCNameplates())
     module.config.enabled, module.config.friendlyNpcSkinEnabled = true, true
     assert(writes == 2)
+    module.config.friendlyNPCs, S.SetMany = previousNpcMode, setMany
 end
 
 -- Interrupt readiness through the real plate lifecycle (KickReady.lua; the

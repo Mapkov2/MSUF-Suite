@@ -209,6 +209,18 @@ NS.Defaults = {
         includeSpecial = true,
     },
     foreverSpellLearning = true,
+    addonSkins = {
+        enabled = false,
+        aceGUI = true,
+        bugSack = true, campingKit = true, dialogueUI = true, doesItDie = true,
+        dungeonJournal = true, foreverFishing = true, foreverLevelingBiS = true,
+        journeyGuides = true, keepOrToss = true, layerSwap = true, lootTriage = true,
+        oneForAll = true, openMap = true, polestar = true, questie = true,
+        rareScanner = true, shortestPath = true, spoken = true, totalRP3 = true,
+        trueshotLodge = true,
+        enhanceQoL = true,
+        restedXP = true,
+    },
     skins = {
         blizzardWindows = true,
         colorPicker = true,

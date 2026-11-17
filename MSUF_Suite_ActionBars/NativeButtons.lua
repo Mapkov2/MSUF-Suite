@@ -13,7 +13,7 @@ local Painter = AB.Painter
 local api = Painter.api
 local PROC_BLIZZARD, PROC_PIXEL = AB.ENUM.PROC_GLOW.BLIZZARD, AB.ENUM.PROC_GLOW.PIXEL
 local OUT_OF_RANGE = S.USABLE.OUT_OF_RANGE
-local Tint, AcquireRange, Usable, CooldownFeedback = Painter.Tint, Painter.AcquireRange, Painter.Usable, Painter.CooldownFeedback
+local AcquireRange, Usable, CooldownFeedback = Painter.AcquireRange, Painter.Usable, Painter.CooldownFeedback
 local GlowCheck, SetGlow = Painter.GlowCheck, Painter.SetGlow
 local cooldownOwners = {}
 
@@ -97,7 +97,7 @@ local function NativeUsablePost(button, usable, noMana)
     if rec.bar.paintDormant then return end
     if rec.outOfRange then
         rec.tint = nil
-        Tint(rec)
+        Painter.Tint(rec, true)
     elseif AB.style.customTints then
         -- Custom usability colors: Blizzard's payload says which one, so
         -- only an update without payload (it read the answer itself) asks again.
@@ -178,7 +178,7 @@ end
 local function NativeColor(rec)
     local wasRangeTint = rec.tint == OUT_OF_RANGE
     AcquireRange(rec)
-    if M.config.rangeColoring or wasRangeTint or AB.style.customTints then
+    if M.config.rangeColoring or wasRangeTint or AB.style.customTints or rec.keyRange == true then
         rec.tint = nil
         Usable(rec)
     end
@@ -230,7 +230,7 @@ end
 local function Retint(rec)
     if rec.native and rec.tint == nil and not AB.style.customTints then return end
     rec.tint = nil
-    if rec.native then Usable(rec) else Tint(rec) end
+    if rec.native then Usable(rec) else Painter.Tint(rec) end
 end
 
 AB.NativeButtons = {

@@ -146,6 +146,8 @@ end
 
 Snapshot = function(source)
     local out = {}
+    -- Resolve once per snapshot; every value still uses the current validator.
+    local CheckValue = Suite.Suite.CheckProfileValue
     for id, config in pairs(source) do
         if Allowed(id) then
             if type(config) ~= "table" then return nil, false end
@@ -155,7 +157,7 @@ Snapshot = function(source)
             for key, value in pairs(config) do
                 local rule = rules[key]
                 if rule and not rule.automation then
-                    local checked = Suite.Suite.CheckProfileValue(rule, value)
+                    local checked = CheckValue(rule, value)
                     if checked == nil then return nil, false end
                     values[key] = checked
                 end

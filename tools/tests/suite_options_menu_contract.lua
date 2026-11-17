@@ -673,7 +673,7 @@ W.PageBuilder = function(ctx)
     end
     if ctx.key == "suite_actionbars" or ctx.key == "suite_dataTexts" or ctx.key == "suite_hud" or ctx.key == "suite_macros"
         or ctx.key == "suite_planningTools" or ctx.key == "suite_devMode" or ctx.key == "suite_qualityOfLife" or ctx.key == "gameplay"
-        or ctx.key == "suite_chat" or ctx.key == "suite_minimap" or ctx.key == "suite_bags" then
+        or ctx.key == "suite_chat" or ctx.key == "suite_minimap" or ctx.key == "suite_bags" or ctx.key == "suite_skin" then
         function b:Section(title, height)
             local body = Widget("Panel")
             body.title, body.parent = Widget("FontString"), ctx.wrapper

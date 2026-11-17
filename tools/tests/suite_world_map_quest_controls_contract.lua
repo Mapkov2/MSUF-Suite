@@ -120,14 +120,27 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
             "Compact did not locally mask and reflow only the objective rows")
         Check(row:GetHeight() == compactTitleHeight and contents.height == compactTitleHeight + other:GetHeight(),
             "Compact left blank objective space inside the native quest title")
+        -- A new native opening has not reached its protected reading emote.
+        map:Hide()
+        map:Show()
         HoldSkinJobs()
         nativeTitleHeight = 78
         NativeRebuild()
         Check(objective:IsShown() and row:GetHeight() == nativeTitleHeight and contents.visibleObjectives == 1,
-            "Compact changed the native rebuild inline")
+            "Compact changed the native opening before WorldMapOnShow")
+        NS.WorldMapSkin:OnWorldMapShown()
         FlushSkinJobs()
         Check(not objective:IsShown() and contents.visibleObjectives == 0 and row:GetHeight() == compactTitleHeight
             and contents.height == compactTitleHeight + other:GetHeight(), "Compact did not reflow rebuilt objectives")
+        -- Quest consumers rebuild the completed map repeatedly. Native Layout
+        -- must never see an objective-bearing intermediate frame in this phase.
+        HoldSkinJobs()
+        for _ = 1, 25 do
+            NativeRebuild()
+            Check(not objective:IsShown() and contents.visibleObjectives == 0 and row:GetHeight() == compactTitleHeight,
+                "an open-map quest scan flashed the native objective layout")
+        end
+        FlushSkinJobs()
         CombatRebuild(NativeRebuild, function()
             Check(objective:IsShown() and row:GetHeight() == nativeTitleHeight,
                 "Compact changed the rebuilt objectives or title during lockdown")
@@ -161,10 +174,9 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
     if forever then
         HoldSkinJobs()
         ExpandQuestHeader(0)
-        Check(row:IsShown() and objective:IsShown() and contents.visibleQuests == 2,
-            "fold masking ran inside the native quest rebuild")
+        Folded("an open-map quest scan flashed an externally reopened group")
         FlushSkinJobs()
-        Folded("deferred fold masking did not reflow the rows")
+        Folded("queued row styling changed the completed compact layout")
     end
     ExpandQuestHeader(0)
     Folded("next native pool rebuild lost the fold")

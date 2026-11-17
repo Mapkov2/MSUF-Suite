@@ -44,11 +44,13 @@ NS.SuiteCatalog[id].rules.barsOverrideSaved.hidden = true
 
 local casting = {
     B.Bool("interruptFeedbackEnabled", "Customize interrupted-cast feedback", false),
+    Enabled(B.Bool("interruptFeedbackShared", "Use shared interrupt color and duration", true), "interruptFeedbackEnabled"),
     Enabled(B.Number("interruptFeedbackDuration", "Interrupted feedback duration (seconds)", 1.2, .1, 5, .1), "interruptFeedbackEnabled"),
     Enabled(B.Color("interruptFeedbackColor", "Interrupted feedback color", "ff5050"), "interruptFeedbackEnabled"),
     Enabled(B.Bool("interruptFeedbackFlash", "Flash interrupted-cast feedback", false), "interruptFeedbackEnabled"),
     Enabled(B.Bool("interruptFeedbackWho", "Show who interrupted the cast", true), "interruptFeedbackEnabled"),
 }
+casting[3].disabledBy, casting[4].disabledBy = "interruptFeedbackShared", "interruptFeedbackShared"
 for _, prefix in ipairs({ "enemy", "friendly" }) do
     casting[#casting + 1] = B.Choice(prefix .. "NameDuringCast", prefix == "enemy" and "Enemy name while casting" or "Friendly name while casting",
         1, { "Keep name visible", "Dim name", "Hide name" })

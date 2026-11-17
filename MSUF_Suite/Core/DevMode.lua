@@ -290,3 +290,116 @@ end
 
 SLASH_MSUFSUITEDEVMODE1 = "/msufdev"
 SlashCmdList.MSUFSUITEDEVMODE = Command
+
+-- Temporary root-cause probe: metadata only, no chat text is retained.
+do
+    local BOX_FIELDS = {
+        "GetText", "SetText", "Insert", "AddHistoryLine", "GetAttribute", "SetAttribute",
+        "ParseText", "HandleChatType", "ProcessChatType", "SendText", "SendMessage",
+        "OnEnterPressed", "OnTextChanged", "OnTextSet", "OnUpdate", "OnChar", "OnSpacePressed",
+        "ClearChat", "Deactivate", "UpdateHeader", "ResetChatType", "ResetChatTypeToSticky",
+        "OnEditFocusGained", "OnEditFocusLost", "Show", "Hide", "SetFocus", "ClearFocus",
+        "setText", "text", "header", "chatFrame", "autoCompleteSource", "autoCompleteParams",
+    }
+    local GLOBAL_FIELDS = {
+        "ChatFrameEditBoxBaseMixin", "ChatFrameEditBoxMixin", "ChatFrameUtil",
+        "hash_ChatTypeInfoList", "hash_SlashCmdList", "SlashCmdList", "ChatTypeInfo",
+        "ACTIVE_CHAT_EDIT_BOX", "LAST_ACTIVE_CHAT_EDIT_BOX", "CHAT_FOCUS_OVERRIDE", "DEFAULT_CHAT_FRAME",
+        "strmatch", "strupper", "strsub", "strfind", "strlen", "AutoCompleteEditBox_OnEnterPressed",
+    }
+    local UTIL_FIELDS = {
+        "ImportAllListsToHash", "OpenChat", "ActivateChat", "DeactivateChat", "ChooseBoxForSend", "SetLastActiveWindow",
+    }
+    local SOURCE_FIELDS = { "GetText", "SetText", "SetScript", "HookScript", "OnEnterPressed", "ParseText", "ProcessChatType" }
+
+    local function Primitive(value)
+        if Suite.IsSecret(value) then return "<secret>" end
+        local kind = type(value)
+        if kind == "boolean" or kind == "number" or kind == "string" then return value end
+    end
+
+    local function Origins(target, fields, shadows)
+        if Suite.IsSecret(target) or type(target) ~= "table" then return {} end
+        local found = {}
+        for _, key in ipairs(fields) do
+            local clean, addon = issecurevariable(target, key)
+            local origin = { secure = Primitive(clean), addon = Primitive(addon) }
+            if shadows then
+                local raw = rawget(target, key)
+                origin.shadow = not Suite.IsSecret(raw) and raw ~= nil
+            end
+            found[key] = origin
+        end
+        return found
+    end
+
+    local function Source(callback)
+        if Suite.IsSecret(callback) or type(callback) ~= "function" then return end
+        local info = debug.getinfo(callback, "S")
+        if Suite.IsSecret(info) or type(info) ~= "table" then return end
+        local source = Primitive(info.source)
+        if type(source) ~= "string" then return end
+        -- Only addon file identifiers; dynamic Lua source can contain user text.
+        local file = source:match("^@?(Interface/AddOns/[^%s]+%.lua)$")
+            or source:match("^@?(Interface/AddOns/[^%s]+%.xml)$")
+        return { file = file or "<dynamic-or-native>", line = Primitive(info.linedefined) }
+    end
+
+    local function Capture(phase, box)
+        if Dev.Read("addonChatRestrictionsForced") ~= "1" or not Suite.RootDB then return end
+        local log = Suite.RootDB.devChatTaintProbe
+        if type(log) ~= "table" then
+            log = { version = 1, entries = {} }
+            Suite.RootDB.devChatTaintProbe = log
+        end
+        local entries = log.entries
+        if #entries >= 24 then table.remove(entries, 1) end
+        local record = { phase = phase, at = date("%Y-%m-%d %H:%M:%S"), flags = {} }
+        entries[#entries + 1] = record
+        for _, entry in ipairs(Dev.restrictions) do record.flags[entry.key] = Dev.Read(entry.key) end
+        record.globals = Origins(_G, GLOBAL_FIELDS)
+        record.util = Origins(ChatFrameUtil, UTIL_FIELDS)
+        record.baseMixin = Origins(ChatFrameEditBoxBaseMixin, BOX_FIELDS)
+        record.mixin = Origins(ChatFrameEditBoxMixin, BOX_FIELDS)
+        record.hashSecret = Primitive(issecrettable(hash_ChatTypeInfoList))
+        record.hashAccessible = Primitive(canaccesstable(hash_ChatTypeInfoList))
+        record.commandSlots = Origins(hash_ChatTypeInfoList, { "/RELOAD", "/RL", "/SAY", "/MSUFDEV", "/MSUF", "/PVP" })
+        record.slashSlots = Origins(hash_SlashCmdList, { "/RELOAD", "/RL", "/SAY", "/MSUFDEV", "/MSUF", "/PVP" })
+        record.loaded = {}
+        for _, addon in ipairs({ "MSUF_Suite_Chat", "MSUF_Suite_Skin", "EllesmereUIChat", "DaylightUI_Chat", "Aurora" }) do
+            record.loaded[addon] = Primitive(C_AddOns.IsAddOnLoaded(addon))
+        end
+        if Suite.IsSecret(box) or type(box) ~= "table" then return end
+        local forbidden = box:IsForbidden()
+        if Suite.IsSecret(forbidden) or forbidden then record.boxUnavailable = true return end
+        record.box = Origins(box, BOX_FIELDS, true)
+        record.processSource = Source(box.ProcessChatType)
+        record.scripts = {}
+        for _, key in ipairs({ "OnEnterPressed", "OnTextChanged", "OnTextSet", "OnUpdate", "OnChar", "OnKeyDown" }) do
+            record.scripts[key] = Source(box:GetScript(key))
+        end
+        local name = box:GetName()
+        record.boxName = not Suite.IsSecret(name) and type(name) == "string" and name:match("^ChatFrame%d+EditBox$") or "<unavailable>"
+        record.textSecret = Suite.IsSecret(box:GetText())
+        record.objectSecrets = Primitive(box:HasSecretValues())
+        record.aspects = Primitive(box:HasAnySecretAspect())
+        record.chatTypeSecret = Suite.IsSecret(box:GetAttribute("chatType"))
+        record.stickyTypeSecret = Suite.IsSecret(box:GetAttribute("stickyType"))
+        record.tellTargetSecret = Suite.IsSecret(box:GetAttribute("tellTarget"))
+        record.header = Origins(box.header, SOURCE_FIELDS)
+        record.chatFrame = Origins(box.chatFrame, { "AddMessage", "OnEditFocusGained", "OnEditFocusLost", "SetGamepadFocus", "ClearGamepadFocus" })
+        record.complete = true
+    end
+
+    local function Focused(_, box)
+        if Dev.Read("addonChatRestrictionsForced") ~= "1" or not Suite.RootDB then return end
+        Suite.Dispatch(Capture, "before-activation", box)
+        C_Timer.After(0, function() Suite.Dispatch(Capture, "after-activation", box) end)
+        C_Timer.After(1, function() Suite.Dispatch(Capture, "after-input", box) end)
+        C_Timer.After(4, function() Suite.Dispatch(Capture, "after-input-4s", box) end)
+    end
+
+    if Suite.Client.isForever then
+        EventRegistry:RegisterCallback("ChatFrame.OnEditBoxFocusGained", Focused, "MSUF_Suite.DevMode.RootProbe")
+    end
+end

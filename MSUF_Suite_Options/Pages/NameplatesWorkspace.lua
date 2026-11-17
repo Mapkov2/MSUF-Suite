@@ -53,7 +53,7 @@ end
 -- Blizzard settings that apply under any look (CVars.lua Names) or only
 -- change the preview.
 local SKIN_SECTIONS = { enemy = "enemy", roleColors = "enemy", enemyColors = "enemy", friendly = "friendly",
-    castbar = true, auras = true, signals = true, auraColors = true, auraDisplay = true, barAbsorbs = true }
+    castbar = true, auras = true, signals = true, auraColors = true, auraDisplay = true, barAbsorbs = true, plateExtras = true }
 local ANY_LOOK = { friendlyNamesOnly = true, friendlyNameClassColor = true, friendlyRealm = true,
     enemyPreviewRole = true }
 local LOOK_REASON = "Choose a nameplate look other than Blizzard under Look."

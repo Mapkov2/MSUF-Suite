@@ -80,6 +80,24 @@ local function WriteNameplateValues(values)
     return true
 end
 
+-- Imports and history may restore temporary baselines before writing their
+-- intended native values. None of those intermediate events are a new user
+-- action. Dispatch also guarantees that a rejected write releases this guard.
+local function WriteGuardedNameplateValues(values)
+    local instance = Suite.Suite.instances[NAMEPLATES]
+    local previous = instance and instance.friendlyVisibilityWriting
+    if instance then
+        instance.friendlyVisibilityWriting = true
+        instance.friendlyVisibilityPending = nil
+    end
+    local ran, ok, reason, key = Suite.Dispatch(Suite.Finish, WriteNameplateValues, values)
+    if instance then
+        instance.friendlyVisibilityWriting = previous
+        Suite.CaptureFriendlyNameplates(instance)
+    end
+    return ran, ok, reason, key
+end
+
 -- Read back the native values before the skin reapplies its own overrides.
 -- A rejected setter and a raising setter both restore the previous baseline.
 function IO.ApplyNameplateCVars(values, transition)
@@ -108,9 +126,9 @@ function IO.ApplyNameplateCVars(values, transition)
         return true, nil, report
     end
     local before = IO.CaptureNameplateCVars()
-    local ran, ok, reason, key = Suite.Dispatch(Suite.Finish, WriteNameplateValues, changes)
+    local ran, ok, reason, key = WriteGuardedNameplateValues(changes)
     if not ran or not ok then
-        local restored, restoreOK = Suite.Dispatch(Suite.Finish, WriteNameplateValues, before or {})
+        local restored, restoreOK = WriteGuardedNameplateValues(before or {})
         report.failed, report.rollbackFailed = key, not restored or not restoreOK
         IO.lastNameplateReport = report
         if report.rollbackFailed then return false, "Nameplate restore failed; restore the previous settings", report end

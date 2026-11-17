@@ -38,6 +38,7 @@ P.RegisterSummary=function() end
 P.SummaryPriority=function() end
 P.Refresh=function() end
 P.WithHistory=function(_,_,fn) return fn() end
+assert(loadfile(root..'/MSUF_Suite_Options/Menu/MediaValues.lua'))('MSUF_Suite_Options',P)
 assert(loadfile(root..'/MSUF_Suite_Options/Menu/Controls.lua'))('MSUF_Suite_Options',P)
 assert(loadfile(root..'/MSUF_Suite_Options/Pages/AppearanceKit.lua'))('MSUF_Suite_Options',P)
 local host=root:gsub('/MSUF%-Suite$','/MidnightSimpleUnitFrames')

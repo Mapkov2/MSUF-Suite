@@ -5,6 +5,8 @@ local F = dofile(root .. "/tools/tests/suite_chat_preview_contract.lua")
 arg = savedArgs
 local C, env, S = F.runtime.Chat, F.env, F.Suite.Suite
 local mutations = {
+    nativeBaseline = { "Positions", "        m.nativePositionContext = m.context", "" },
+    pendingNative = { "Positions", "    C.NoteNativeWindowPosition()\n    local repaired", "    local repaired" },
     messageRestore = { "Positions", "        self.context:RestorePoints(line)", "" },
     tabRecovery = { "Window", '        S.Queue("chat")\n        return\n    end\n    -- A width change',
         '        return\n    end\n    -- A width change' },
@@ -385,6 +387,61 @@ do
     C.ApplyInputLayout(M, visual, frame, input)
     Check(not input:IsClampedToScreen(), "unlocked chat retained Suite input clamping")
 end
+
+-- A synchronous native window refresh paints before its later position
+-- callback. Its preflight must capture the latest foreign base first.
+M.context, M.active, S.editMode = S.NewContext("chat"), true, false
+env.EditModeManagerFrame = hiddenManager
+c.lockWindowPosition, c.windowX, c.windowY = true, 44, 66
+primary:ClearAllPoints()
+primary:SetPoint("BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 280)
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+primary:ClearAllPoints()
+primary:SetPoint("BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 330)
+C.NoteNativeWindowPosition()
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+c.lockWindowPosition = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 330, "native refresh preflight retains latest restore base")
+
+-- The primary can change after an input-only callback scheduled the drain.
+c.lockWindowPosition = true
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+frame.editBox, M.visuals[frame] = input, visual
+C.ApplyInputLayout(M, visual, frame, input)
+env.C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+input:SetWidth(input:GetWidth() + 40)
+C.CheckWindowGeometry(frame)
+primary:ClearAllPoints()
+primary:SetPoint("BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 370)
+Drain()
+c.lockWindowPosition = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 370, "pending input drain captures later native primary base")
+
+-- The deferred toolbar refresh uses the productive Context and Timers
+-- prototype, not just the controller's lightweight context fixture.
+local timerContext = S.NewContext("chat")
+local loadTimers = assert(loadfile(root .. "/MSUF_Suite_Modules/Timers.lua"))
+setfenv(loadTimers, env)("MSUF_Suite_Modules", { NS = F.Suite, Suite = S, Context = getmetatable(timerContext) })
+Check(type(timerContext.After) == "function", "productive context has no deferred After method")
+local oldInstance, oldRefresh, oldPrimary = S.instances.chat, M.Refresh, env.ChatFrame1
+local refreshed = 0
+S.instances.chat, env.ChatFrame1 = M, primary
+M.Refresh = function() refreshed = refreshed + 1 end
+M.context, M.config, M.active = timerContext, c, true
+local proxy = Region("NativeTimerToolbarProxy")
+function proxy:StopMovingOrSizing() end
+function proxy:UnregisterEvent() end
+M.toolbarProxy = proxy
+for _ = 1, 2 do
+    M.toolbarGesture, M.toolbarRefreshPending = { context = timerContext, config = c }, true
+    timerContext:Anchor(primary, "BOTTOMLEFT", proxy, "BOTTOMLEFT", 0, 0)
+    C.StopToolbarGesture(false)
+    Drain()
+end
+Check(refreshed == 2 and not M.toolbarRefreshContext, "productive timer lost or repeated the deferred toolbar refresh")
+S.instances.chat, M.Refresh, env.ChatFrame1 = oldInstance, oldRefresh, oldPrimary
 
 print("Chat native positions: " .. checks .. " checks, " .. failures .. " failures")
 if failures > 0 then error("native ownership regression") end

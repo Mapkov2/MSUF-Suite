@@ -35,11 +35,8 @@ local function ReturnToAnchor(self)
     if not cursor.driver then return end
     R.StopCursor(self)
     if not cursor.displaced or NS.IsCombatLocked() then return end
-    local point = R.ScreenPoint(self.config)
-    local host = self.view.host
-    host:ClearAllPoints()
-    host:SetPoint(point, UIParent, point, self.config.x, self.config.y)
     cursor.displaced = nil
+    R.PlaceAnchor(self)
 end
 
 -- Cursor movement has no event. Only visible, opted-in OOC reminders attach

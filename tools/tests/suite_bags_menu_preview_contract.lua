@@ -162,5 +162,24 @@ end
 before=paints;ui.header:Hide();W.config.accentColor="00ff00";ui.refreshPreview()
 assert(paints==before,"hidden preview repaints")
 ui.header:Show();ui.refreshPreview();assert(paints>before,"reshown preview fails to refresh")
+ui.selected="appearance"
+W.config.slotBorderWidth=0;W.config.emptySlotBorderWidth=0
+ui.refreshPreview()
+local examples=preview.borderExamples
+assert(examples and examples:IsShown(),"border samples are missing")
+for _,sample in ipairs({examples.item,examples.empty}) do
+ for _,edge in ipairs(sample.slotEdges) do assert(not edge:IsShown(),"zero border is still drawn in preview") end
+end
+local ix,iy,iw,ih=W.Rect(examples.item.icon)
+local sx,sy,sw,sh=W.Rect(examples.item)
+assert(ix==sx and iy==sy and iw==sw and ih==sh,"zero border preview retains an inset outline")
+W.config.slotBorderWidth=2;W.config.emptySlotBorderWidth=4
+ui.refreshPreview()
+assert(examples.item.slotEdges[1]:GetHeight()==2 and examples.empty.slotEdges[1]:GetHeight()==4,
+ "preview ignores independent border widths")
+W.config.combineReagentBag=true;ui.refreshPreview()
+assert(preview.snapshot.model.groupsByKey.reagentBag,"combined reagent section missing from preview")
+W.config.combineReagentBag=false;ui.refreshPreview()
+assert(not preview.snapshot.model.groupsByKey.reagentBag,"disabled integration persists in preview")
 assert(W.calls.info==0 and W.calls.quest==0,"representative menu preview scans inventory")
 print("independent Bags menu geometry/routing/cold/hidden/provider checks passed: "..(arg[2] or "Mainline"))

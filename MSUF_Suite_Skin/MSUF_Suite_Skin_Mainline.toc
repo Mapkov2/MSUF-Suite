@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Skinning
 ## Notes: Suite-owned MapkoSkin skin engine.
 ## Author: Mapko
-## Version: 0.1.23-alpha
+## Version: 0.1.24-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -131,7 +131,18 @@ Rendering\CollapseCollectionRows.lua
 Rendering\CollapseCollections.lua
 Rendering\MenuMotion.lua
 Rendering\TabMotion.lua
+Adapters\AddonSkinVisuals.lua
+Adapters\AddonSkinCompendium.lua
+Adapters\AddonSkinRestedXP.lua
+Adapters\AddonSkinEnhanceQoL.lua
+Adapters\AceWidgets.lua
 Adapters\AddonMenus.lua
+Adapters\AddonSkinsCatalog.lua
+Adapters\AddonSkins.lua
+Adapters\AddonSkinTriggers.lua
+Adapters\AddonSkinDiscovery.lua
+Adapters\AddonSkinSettings.lua
+Adapters\AddonSkinSpoken.lua
 Shell\OptionsLoader.lua
 Core\Lifecycle.lua
 Core\Finalize.lua

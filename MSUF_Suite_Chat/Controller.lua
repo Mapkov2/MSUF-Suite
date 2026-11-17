@@ -63,6 +63,21 @@ local function ApplyAll(self, nativeRefresh)
         S.Queue("chat")
         return
     end
+    if nativeRefresh and NS.ChatState.IsMoving() then
+        self.nativeDragRefreshPending = true
+        return
+    end
+    -- Native window discovery must not interrupt a player's drag. Settings
+    -- refreshes cancel before applying the final geometry, never afterward.
+    if self.toolbarGesture then
+        if nativeRefresh then
+            self.toolbarRefreshPending = true
+            return
+        end
+        C.StopToolbarGesture(false, true)
+    end
+    self.toolbarRefreshPending, self.toolbarRefreshContext, self.nativeDragRefreshPending = nil, nil, nil
+    if nativeRefresh then C.NoteNativeWindowPosition() end
     C.ApplyClockSettings()
     ForEachChatFrame(nativeRefresh and S.editMode and ApplyNativeWindow or ApplyWindow, self)
     if self.config.headerToolbar or self.toolbar then C.ApplyToolbar() end
@@ -73,6 +88,7 @@ local function ApplyAll(self, nativeRefresh)
     self.selectedDock = DockSelection()
     C.RefreshClocks()
     self.messageWindows:Request()
+    NS.ChatState.RequestGeometry()
 end
 
 local function NativeWindowsUpdated(self)
@@ -164,11 +180,21 @@ end
 
 local function MovedReported(self, frame)
     C.FloatingDragStopped(frame)
-    if self.active then C.CheckWindowPosition() end
+    if self.active then
+        if self.nativeDragRefreshPending then ApplyAll(self, true) end
+        C.CheckWindowGeometry()
+    end
 end
 
 local function ResizedReported(self, frame)
-    if self.active then C.ResizeInput(frame) end
+    if self.active then
+        C.ResizeInput(frame)
+        C.CheckWindowGeometry(frame)
+    end
+end
+
+local function GeometryReported(self, frame)
+    if self.active then C.CheckWindowGeometry(frame) end
 end
 
 local function HoverReported(self, frame, hovered)
@@ -189,7 +215,7 @@ end
 
 local CHAT_WATCH = {
     windows = WindowsReported, selection = SelectionReported, layout = LayoutReported, moved = MovedReported,
-    resized = ResizedReported, box = BoxReported, key = KeyReported,
+    resized = ResizedReported, geometry = GeometryReported, box = BoxReported, key = KeyReported,
 }
 -- Hover is asked for only while a feature reacts to it (C.HoverWanted): the
 -- core then reads Blizzard's hover flags on a ticker; otherwise idle chat
@@ -220,6 +246,7 @@ end
 
 function M:Disable()
     NS.ChatState.Unwatch(self)
+    self.toolbarRefreshPending, self.toolbarRefreshContext, self.nativeDragRefreshPending = nil, nil, nil
     S.SuppressHostElement("chat", HOST_CHAT, false)
     self.hostChatClaim = nil
     if self.moverFrame then self.moverFrame:Hide() end

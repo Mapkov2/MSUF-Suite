@@ -20,25 +20,57 @@ local function AttachSummary(ctx, body, read)
     end
     Refresh()
     P.M.TrackRefresh(ctx, Refresh)
+    return Refresh
+end
+
+local function FriendlyScope(rule)
+    if rule.key == X.SkinKeys.friendly then return "friendly" end
+    if rule.key == X.SkinKeys.friendlyNpc then return "friendlyNpc" end
 end
 
 local function SetHeaderSwitch(spec, rule, row, on)
     if not P.RuleEnabled(ID, rule, nil, false, spec.enableModule) then return end
+    local scope, values = FriendlyScope(rule)
     if spec.enableModule and on and not P.Get(ID, "enabled") then
-        local values = { enabled = true }
+        values = { enabled = true }
         for _, key in pairs(X.SkinKeys) do values[key] = key == rule.key end
-        return P.SetMany(ID, values)
     end
+    if scope then return P.SetFriendlyNameplateVisibility(scope, on, values) end
+    if values then return P.SetMany(ID, values) end
     return row.set(on)
 end
 
-local function AttachSwitch(ctx, body, spec, sectionId)
+-- Blizzard settings and key bindings can change visibility while the menu is
+-- open. Only the visible header listens; repainting it never writes a profile.
+local function WatchFriendlySwitch(button, read, summary)
+    local events = CreateFrame("Frame", nil, button)
+    local function Sync()
+        button:SetChecked(read() == true)
+        if summary then summary() end
+    end
+    local function Activate()
+        events:RegisterEvent("CVAR_UPDATE")
+        Sync()
+    end
+    events:SetScript("OnShow", Activate)
+    events:SetScript("OnHide", events.UnregisterAllEvents)
+    events:SetScript("OnEvent", function(_, _, name)
+        if not P.Suite.Public(name) or type(name) ~= "string" then return end
+        name = name:lower()
+        if name == "nameplateshowfriendlyplayers" or name == "nameplateshowfriendlynpcs" or name == "unitnamenpc" then Sync() end
+    end)
+    if events:IsVisible() then Activate() end
+end
+
+local function AttachSwitch(ctx, body, spec, sectionId, summary)
     local rule = spec.switch and P.catalog[ID].rules[spec.switch]
     if not rule then return end
     local row = P.RuleRow(PAGE, ID, rule, nil, sectionId)
     local meta = row
     if spec.sharedSwitch then meta = P.Meta(PAGE, ID, spec.key .. ".visibility", "action", sectionId) end
+    local scope = FriendlyScope(rule)
     local function Checked()
+        if scope then return P.Suite.FriendlyNameplateShown(scope) end
         return P.Get(ID, "enabled") and row.get() == true
     end
     local button = P.BindSectionSwitch(ctx, body, { label = row.label, displayLabel = Tr(spec.switchLabel or "Enable"),
@@ -47,14 +79,15 @@ local function AttachSwitch(ctx, body, spec, sectionId)
         meta = meta,
     })
     P.GateControls(ctx, ID, { { widget = button, rule = rule, checked = Checked } }, nil, spec.enableModule)
+    if scope then WatchFriendlySwitch(button, Checked, summary) end
 end
 
 function Layout.Header(ctx, spec, sectionId)
     if not spec.switch and not spec.summary then return end
     return function(body)
-        if spec.switch and W.SectionSwitch then AttachSwitch(ctx, body, spec, sectionId) end
         if spec.summary then body._msufSuiteSkipSummary = true end
-        AttachSummary(ctx, body, spec.summary)
+        local summary = AttachSummary(ctx, body, spec.summary)
+        if spec.switch and W.SectionSwitch then AttachSwitch(ctx, body, spec, sectionId, summary) end
     end
 end
 
@@ -63,6 +96,7 @@ function Layout.Dimensions(scope)
     local sample = { prefix = enemy and "enemy" or "friendly" }
     local state, metrics = { scope = scope, friendlyElite = scope == "friendlyNpc" }, {}
     return function()
+        if FRIENDLY[scope] and not P.Suite.FriendlyNameplateShown(scope) then return Tr("Off") end
         if not P.Get(ID, "enabled") or P.Get(ID, X.SkinKeys[scope]) == false then return Tr("Off") end
         local m = P.NameplatesPreview.Metrics(state, sample, metrics)
         if m.namesOnly then return Tr("Name only") end
@@ -265,7 +299,7 @@ end
 local SHARED_CAST_SETTINGS = {
     enemyCastDisplay = true, enemyCastSpellName = true, enemyCastSpellIcon = true, enemyCastSpellTarget = true,
     enemyCastImportant = true, enemyCastTargetHighlight = true, interruptFeedbackEnabled = true, interruptFeedbackWho = true,
-    interruptFeedbackDuration = true, interruptFeedbackFlash = true, interruptFeedbackColor = true,
+    interruptFeedbackDuration = true, interruptFeedbackFlash = true, interruptFeedbackColor = true, interruptFeedbackShared = true,
 }
 local CAST_LABELS = {
     interruptFeedbackEnabled = "Show interrupt", interruptFeedbackWho = "Show interrupter name",
@@ -296,7 +330,7 @@ local function CastTabs(side)
     local time = CastTab("time", "Time Text", timeCard)
     local behavior = CastCard("Spell Text Behavior", { side .. "NameDuringCast", side .. "NameCastAlpha" })
     local layer = CastCard("Whole Castbar Layer", { p .. "Foreground" })
-    local feedback = CastCard("Interrupted casts", { "interruptFeedbackDuration", "interruptFeedbackFlash" })
+    local feedback = CastCard("Interrupted casts", { "interruptFeedbackShared", "interruptFeedbackDuration", "interruptFeedbackFlash" })
     local details = CastCard("Castbar details", { "enemyCastImportant", "enemyCastTargetHighlight" })
     for _, card in ipairs({ behavior, layer, feedback, details }) do card.group = true end
     local advanced = CastTab("advanced", "Advanced", behavior, layer, feedback, details)
@@ -552,7 +586,9 @@ local function PlaceStyle(sections, scope, native, appearance, sharedAppearance)
         y = P.NameplateBarTextures.LinkCastTarget(ctx, body, y, width, section)
         return P.NameplateBarTextures.LinkAbsorbs(ctx, body, y, width, section)
     end
-    local tabs = { style }
+    local extras = Tab("extras", "More Options", P.Suite.NameplateExtraKeys or {})
+    extras.shared = scope ~= "enemy"
+    local tabs = { style, extras }
     for _, source in ipairs(appearance) do
         local tab = Tab(source.id, source.label, source.keys)
         tab.colors, tab.help, tab.shared = source.colors, source.help, sharedAppearance

@@ -74,6 +74,9 @@ do
     local W = World(true)
     local keys = Keys(W)
     assert(keys[1] and keys[2] and keys[3], "keyring slots are missing")
+    local occupied, empty = W.M.overlays[keys[1]], W.M.overlays[keys[2]]
+    assert(occupied and occupied.slotOuter.layer == "BACKGROUND" and empty and empty.slotOuter.layer == "ARTWORK",
+        "keyring did not reuse the bag slot surface above empty art and below real icons")
     for slot = 1, 3 do
         assert(keys[slot]:IsVisible(), "keyring slot " .. slot .. " is hidden")
         assert(not Glows(keys[slot]), "keyring slot " .. slot .. " glows as a new item")
@@ -85,6 +88,8 @@ do
     W.BagChanged(BAG)
     W.Settle()
     keys = Keys(W)
+    assert(keys[2] and W.M.overlays[keys[2]] == empty and empty.slotOuter.layer == "BACKGROUND",
+        "a reused keyring slot covered the newly acquired key")
     assert(Glows(keys[2]) and keys[2].NewItemTexture:IsShown(), "a new key does not glow")
     assert(not keys[2].BattlepayItemTexture:IsShown(), "a new key glows as a store item")
     assert(not Glows(keys[1]) and not Glows(keys[3]), "old keys glow with the new one")

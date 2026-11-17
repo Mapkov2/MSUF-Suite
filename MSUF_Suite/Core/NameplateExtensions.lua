@@ -234,10 +234,14 @@ local function Interaction(c, plan)
             clickHeight = Number(c[click .. "ClickboxHeight"], 40, 5, 200),
             range = c[range .. "RangeEnabled"] == true and (range ~= "plate" or not friendly),
             rangeSpell = Number(c[range .. "RangeSpell"], 0, 0, 10000000),
+            rangeAuto = c[range .. "RangeAuto"] == true,
             rangeAlpha = Number(c[range .. "RangeAlpha"], 40, 0, 100) / 100,
             rangeUnknownAlpha = Number(c[range .. "RangeUnknownAlpha"], 100, 0, 100) / 100,
             rangeText = c[range .. "RangeText"] == true,
         }
+        if entry.rangeAuto and NS.HostBridge and NS.HostBridge.NameplateRangeSpell then
+            entry.rangeSpell = NS.HostBridge.NameplateRangeSpell(friendly)
+        end
         TextIndicators(c, plan, scope, entry)
         plan.interaction[scope] = entry
         plan.range = plan.range or entry.range
@@ -253,6 +257,7 @@ function X.Plan(c)
         enemy = Side(c, "enemy"), friendly = Side(c, "friendly"), interaction = {}, sources = {}, kinds = {},
         contextEnabled = c.plateContextEnabled == true, enemyLoad = EnemyLoad(c),
         interrupt = c.interruptFeedbackEnabled == true,
+        interruptShared = c.interruptFeedbackShared ~= false,
         interruptDuration = Number(c.interruptFeedbackDuration, 1.2, .1, 5),
         interruptColor = c.interruptFeedbackColor or "ff5050", interruptFlash = c.interruptFeedbackFlash == true,
         interruptWho = c.interruptFeedbackWho ~= false, focusReminder = c.focusReminderEnabled == true,

@@ -24,6 +24,7 @@ env.CreateFrame = function(kind, name, parent, ...)
     return create(kind, name, parent, ...)
 end
 env.InCombatLockdown, env.UnitAffectingCombat = function() return combat end, function() return false end
+env.MOVING_CHATFRAME = false
 env.GetCurrentKeyBoardFocus = function() return nil end
 env.IsControlKeyDown, env.IsShiftKeyDown = function() return false end, function() return false end
 env.GetCursorPosition = function() return cursorX, cursorY end

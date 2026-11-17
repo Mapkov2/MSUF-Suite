@@ -599,27 +599,31 @@ local function StopShake(state)
     end
 end
 
-local function PlayShake(cast)
+local function RunShake(cast, target, feedback)
     local state = NS.Public(cast) and states[cast]
     local settings = state and state.settings
-    if not settings or settings.interruptShake ~= true or not Mutable(cast) then return end
-    local shown = cast:IsShown()
+    if not settings or settings.interruptShake ~= true or not feedback and state.feedbackActive then return end
+    if not Mutable(cast) or not Mutable(target) then return end
+    local shown = target:IsShown()
     if not NS.Public(shown) or shown ~= true then return end
     local strength = settings.shakeStrength or 8
     if strength <= 0 then return end
-    local shake = state.shake
-    if not shake then
-        local group = cast:CreateAnimationGroup()
-        shake = { group = group }
+    local key = feedback and "feedbackShake" or "nativeShake"
+    local shake = state[key]
+    if not shake or shake.target ~= target then
+        StopShake(state)
+        local group = target:CreateAnimationGroup()
+        shake = { group = group, target = target }
         for i = 1, #SHAKE_TIMES do
             local move = group:CreateAnimation("Translation")
             move:SetOrder(i)
             move:SetDuration(SHAKE_TIMES[i])
             shake[i] = move
         end
-        state.shake = shake
+        state[key] = shake
     end
     StopShake(state)
+    state.shake = shake
     if shake.strength ~= strength then
         for i = 1, #SHAKE_OFFSETS do shake[i]:SetOffset(strength * SHAKE_OFFSETS[i], 0) end
         shake.strength = strength
@@ -628,11 +632,24 @@ local function PlayShake(cast)
     shake.group:Play()
 end
 
+local function PlayShake(cast) RunShake(cast, cast, false) end
+function CastAppearance.ShakeFeedback(cast, target)
+    local state = Public(cast) and states[cast]
+    if state then state.feedbackActive = true RunShake(cast, target, true) end
+end
+function CastAppearance.StopFeedback(cast)
+    local state = Public(cast) and states[cast]
+    if state then
+        state.feedbackActive = nil
+        if state.shake == state.feedbackShake then StopShake(state) end
+    end
+end
+
 local function InterruptStopped(cast)
     local state = NS.Public(cast) and states[cast]
     if not state or not (state.originalHold or state.shaking or state.interrupt and (state.seen or not state.interruptPending)) then return end
     if not Mutable(cast) then return end
-    StopShake(state)
+    if not state.feedbackActive then StopShake(state) end
     SetInterruptHold(cast, state)
 end
 
@@ -751,6 +768,7 @@ function CastAppearance.Restore(cast)
     local state = states[cast]
     if not state then return true end
     state.settings, state.motion, state.sizing, state.seen = nil, nil, nil, nil
+    state.feedbackActive = nil
     state.interrupt, state.interruptPending = nil, nil
     state.sparkPending, state.prepaintSpark = nil, nil
     state.castHeight, state.sparkSize, state.heightOwed, state.stale = nil, nil, nil, nil

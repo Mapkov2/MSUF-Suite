@@ -48,6 +48,18 @@ function Cosmetics.Fade(region, owner)
     return true
 end
 
+-- Call only after a known native alpha writer. A native zero is meaningful
+-- too; a general repaint cannot distinguish it from our own suppression.
+function Cosmetics.CaptureNativeAlpha(region, owner)
+    if type(region) ~= "table" or NS.Safety.IsForbidden(region) then return false end
+    local state = Cosmetics.states[region]
+    if not state or state.kind ~= "alpha" or state.owner ~= owner then return false end
+    local alpha = AccessibleAlpha(region)
+    if alpha == nil then return false end
+    state.alpha = alpha
+    return true
+end
+
 function Cosmetics.SuppressVertexAlpha(region, owner)
     if type(region) ~= "table" or type(region.SetVertexColor) ~= "function"
         or NS.Safety.IsForbidden(region) then

@@ -260,7 +260,9 @@ B.Section(id, "position", "Position", {
     Bool("followCursor", "Keep the reminders beside the cursor outside combat", false),
     Number("cursorOffsetX", "Distance from the cursor, horizontal", 24, -300, 300),
     Number("cursorOffsetY", "Distance from the cursor, vertical", 24, -300, 300),
-    Choice("point", "Screen anchor", 2, screenAnchors),
+    B.String("anchorTarget", "Attach to", "", 160),
+    Choice("point", "Reminder point", 2, screenAnchors),
+    Choice("relativePoint", "Anchor point", 5, NS.AnchorLabels),
     Number("x", "Horizontal offset", 0, -4000, 4000),
     Number("y", "Vertical offset", -145, -3000, 3000),
 })

@@ -17,6 +17,7 @@ PublicAPI.PlayContent = function() return false end
 PublicAPI.StopContent = function() return false end
 PublicAPI.TrackMenu = function() return false end
 PublicAPI.ReleaseMenu = function() end
+PublicAPI.OnRegistrationChanged = function() end
 
 -- The rendering modules load before this file (TOC order).
 local ControlSkin = NS.ControlSkin
@@ -121,6 +122,7 @@ end
 -- Public input is untrusted: forbidden, protected (explicitly or through a
 -- secure descendant) and compositor-managed targets are refused.
 local function SafeTarget(target, needsRegions)
+    if not NS.Safety.Public(target) then return false, "secret-target" end
     if target == nil then return false, "invalid-target" end
     local Safety = NS.Safety
     -- GetProtection checks forbidden status before reading any other method.

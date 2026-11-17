@@ -753,7 +753,7 @@ function Catalog.List(family)
             n = n + 1
             rows[n] = { key = rec.key, name = Catalog.RecordName(rec), texture = Catalog.RecordTexture(rec), known = rec.known,
                 category = rec.category, family = family, slot = placed and placed.slot or nil,
-                spell = rec.spell, override = rec.override, tooltip = rec.tooltip }
+                spell = rec.spell, override = rec.override, tooltip = rec.tooltip, equipSlot = rec.equipSlot }
         end
     end
     return rows

@@ -30,6 +30,8 @@ R.STATE = {
     -- Following the cursor (Cursor): the OnUpdate driver (it runs while the
     -- host follows) and whether the host left its saved anchor.
     cursor = { "driver", "displaced" },
+    -- Named anchor following (Anchors): probes watch geometry outside combat.
+    anchor = { "target", "probes", "driver", "changed", "placing" },
     -- The known food auras (Readers): ids holds one snapshot per aura
     -- instance; known is nil until a rescan, false while unreadable;
     -- scanKeys is the rescan's reused key list.

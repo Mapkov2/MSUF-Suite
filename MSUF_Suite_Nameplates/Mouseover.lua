@@ -211,7 +211,12 @@ local function OnMouseover()
         if outline then private.Selection.HighlightMouseover(hovered, false) end
         Reveal(hovered, false)
     end
+    local previous = hovered
     hovered = current
+    if private.EasyFeatures then
+        if previous then private.EasyFeatures.Hover(previous) end
+        if current then private.EasyFeatures.Hover(current) end
+    end
     if current then
         if highlight then Show(current) end
         if outline then private.Selection.HighlightMouseover(current, true) end
@@ -260,7 +265,8 @@ function Hover.Configure()
     end
     highlight = c.mouseoverHighlight == true and c.look ~= LOOK_BLIZZARD
     outline = c.highlightMouseover == true and c.look ~= LOOK_BLIZZARD
-    local on = highlight or outline or Mouse(enemy) or Mouse(friendly)
+    local pattern = c.look ~= LOOK_BLIZZARD and c.hoverPatternTexture and c.hoverPatternTexture ~= ""
+    local on = highlight or outline or pattern or Mouse(enemy) or Mouse(friendly)
     color = c.mouseoverHighlightColor or "ffffff"
     if on and not listening then
         M.context:Event("UPDATE_MOUSEOVER_UNIT", OnMouseover, IN_COMBAT)

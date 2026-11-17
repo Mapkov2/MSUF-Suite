@@ -130,7 +130,7 @@ end
 
 local function Remember(region, aspects)
     if not saved[region] then saved[region] = Snapshot(region, aspects) end
-    return saved[region] ~= nil
+    return saved[region]
 end
 
 local function Put(region, setter, values)
@@ -139,6 +139,7 @@ end
 
 local function RestoreRegion(region, state)
     if not state then return end
+    if NS.Safety.IsForbidden(region) then saved[region] = nil return end
     if state.points then
         local clear = region.ClearAllPointsBase or region.ClearAllPoints
         local set = region.SetPointBase or region.SetPoint
@@ -378,8 +379,36 @@ local function PaintNativeSkins(frame)
     if collect then PaintNativeSkin(collect, look) end
 end
 
--- Native layout recomputes the current grid, including consolidation and
--- hidden slots. Suppress our post-hook while it runs.
+-- Restore native geometry while keeping the layout cache on an owned receiver.
+local GRID_KEYS = { "isHorizontal", "iconStride", "iconPadding", "addIconsToRight", "addIconsToTop" }
+local function RestoreGrid(frame)
+    if NS.Safety.IsForbidden(frame) or NS.Safety.IsForbidden(frame.AuraContainer) then return end
+    local container = frame.AuraContainer
+    local cache = container.currentGridLayoutInfo
+    if IsSecret(cache) or type(cache) ~= "table" then return end
+    local anchor, layout = cache.anchor, cache.layout
+    if IsSecret(anchor) or IsSecret(layout) or not anchor or not layout then return end
+    -- Reuse the last native layout even while new settings are pending.
+    local proxy = { currentGridLayoutInfo = cache, iconScale = container.iconScale,
+        GetParent = function() return frame end }
+    for _, key in ipairs(GRID_KEYS) do
+        local value = cache[key]
+        if IsSecret(value) then return end
+        proxy[key] = value
+    end
+    local icons, collect = frame.auraFrames, frame.ConsolidatedBuffs
+    local include = collect and collect:ShouldShow()
+    if IsSecret(include) then return end
+    if include then
+        icons = { collect }
+        for _, button in ipairs(frame.auraFrames) do icons[#icons + 1] = button end
+    end
+    for _, button in ipairs(icons) do
+        if not button.Icon or not button.Duration or NS.Safety.IsForbidden(button)
+            or NS.Safety.IsForbidden(button.Icon) or NS.Safety.IsForbidden(button.Duration) then return end
+    end
+    AuraContainerMixin.UpdateGridLayout(proxy, icons, frame.doNotAnchorDisabledFrames)
+end
 local function RestoreNative(frame, list)
     RestoreRegion(frame, saved[frame])
     local container, collect = frame.AuraContainer, frame.ConsolidatedBuffs
@@ -388,11 +417,7 @@ local function RestoreNative(frame, list)
     for _, button in ipairs(frame.auraFrames) do RestoreButton(button) end
     shifted[frame] = nil
     list.n, list.framed, list.anchored = 0, false, false
-    -- Blizzard's grid requires an Icon on every button it lays out.
-    if not NS.Safety.IsForbidden(frame)
-        and (list.failed == frame or (list.failed.Icon and not NS.Safety.IsForbidden(list.failed))) then
-        frame:UpdateGridLayout()
-    end
+    RestoreGrid(frame)
     PaintNativeSkins(frame)
 end
 
@@ -472,7 +497,7 @@ local function Sync(frame)
         end
     end
     list.n = slot
-    if not (seated or slot ~= valid or not list.anchored) then return end
+    if not seated and slot == valid and list.anchored then return end
     if locked == nil then
         locked = NS.IsCombatLocked()
         if locked and Refused(frame, list, slot + 1) then return end
@@ -485,6 +510,16 @@ end
 local function Relayout(frame)
     local list = laid[frame]
     if list then
+        local container = frame.AuraContainer
+        local cache = container.currentGridLayoutInfo
+        if cache and (list.nativeLayout ~= cache.layout or list.nativeAnchor ~= cache.anchor) then
+            local original = saved[container]
+            local points = original and Points(container)
+            if not original or points then
+                if original then original.points = points end
+                list.nativeLayout, list.nativeAnchor = cache.layout, cache.anchor
+            end
+        end
         list.n, list.anchored = 0, false
     end
     Sync(frame)
@@ -501,9 +536,11 @@ end
 -- Blizzard placed the frame itself: Edit Mode applies a layout or a reset
 -- (ApplySystemAnchor, EditModeSystemTemplates.lua:350; UpdateSystem lays the
 -- auras out afterwards, 1945-1948).
-local function Moved(frame)
+local function Moved(frame, keepAnchor)
     local list = laid[frame]
     if list then
+        local original = saved[frame]
+        if original and not keepAnchor then original.points = Points(frame) or original.points end
         list.anchored, list.framed = false, false
     end
     Sync(frame)
@@ -514,7 +551,7 @@ end
 -- .lua:36-43): after Edit Mode lays out its systems (EditModeManager.lua
 -- 187-191) and when a tray shows.
 local function Reanchor()
-    for frame in pairs(laid) do Moved(frame) end
+    for frame in pairs(laid) do Moved(frame, frame ~= buffFrame or not frame:IsInDefaultPosition()) end
 end
 
 -- DebuffFrame's UpdateAuraButtons ends in UpdateGridLayout, so its layout hook
@@ -589,7 +626,7 @@ local function FinishCleanup()
     for _, list in pairs(laid) do
         list.failed, list.restoring, list.rollback = nil, nil, nil
     end
-    for frame in pairs(hooked) do frame:UpdateGridLayout() end
+    for frame in pairs(hooked) do NS.Dispatch(RestoreGrid, frame) end
     -- The skin-only piece paints the buttons again (if it runs).
     P.PlayerAuraSkins.Yield(false)
 end

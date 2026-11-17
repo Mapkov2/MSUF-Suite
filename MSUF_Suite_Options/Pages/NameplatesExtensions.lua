@@ -73,7 +73,7 @@ function UI.Append(sections, help)
     AddHelp(help)
     sections[#sections + 1] = { key = "castExtensions", area = "casts", title = "Interrupted casts",
         colors = { "interruptFeedbackColor" }, help = "castFeedback", keys = {
-            "interruptFeedbackEnabled", "interruptFeedbackDuration", "interruptFeedbackFlash", "interruptFeedbackWho" } }
+            "interruptFeedbackEnabled", "interruptFeedbackShared", "interruptFeedbackDuration", "interruptFeedbackFlash", "interruptFeedbackWho" } }
     sections[#sections + 1] = { key = "combatExtensions", area = "enemies", title = "Combat emphasis",
         colors = { "focusReminderColor", "executePulseColor" }, keys = {
             "focusScaleEnabled", "focusScalePercent", "castingScaleEnabled", "castingScalePercent", "focusReminderEnabled",

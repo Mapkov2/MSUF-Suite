@@ -191,6 +191,18 @@ assert(AB.VisibilityDriver(1, VIS.NEVER, true) == "hide", "Never")
 
 ------------------------------------------------------------------ Masque
 local lib, joined = nil, {}
+local styleEvents = 0
+EventRegistry = { TriggerEvent = function(_, event)
+    assert(event == "MSUFSuite.ActionBars.StyleChanged", "unexpected action bar event")
+    styleEvents = styleEvents + 1
+end }
+hooksecurefunc = function(target, method, callback)
+    local original = assert(target[method])
+    target[method] = function(self, ...)
+        original(self, ...)
+        callback(self, ...)
+    end
+end
 local function NewGroup()
     local group = { buttons = {}, reskins = 0 }
     function group:AddButton(button, regions, kind, strict)

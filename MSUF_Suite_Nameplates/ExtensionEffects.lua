@@ -81,10 +81,17 @@ end
 
 function E.Interrupt(state, guid)
     if not state.plan.interrupt then return end
+    local plan = state.plan
+    local shared = plan.interruptShared and state.owner.castbarStyle
+    local duration = shared and shared.interruptDuration or plan.interruptDuration
+    if duration <= 0 then return E.EndInterrupt(state) end
     local visual = InterruptVisual(state)
     if not visual then return end
-    local plan = state.plan
-    visual.fill:SetColorTexture(S.RGB(plan.interruptColor))
+    if shared and shared.interruptR ~= nil then
+        visual.fill:SetColorTexture(shared.interruptR, shared.interruptG, shared.interruptB)
+    else
+        visual.fill:SetColorTexture(S.RGB(plan.interruptColor))
+    end
     visual.text:SetText(NS.Text("Interrupted"))
     if plan.interruptWho and (NS.IsSecret(guid) or type(guid) == "string" and guid ~= "") then
         -- UnitNameFromGUID explicitly allows tainted callers with secret
@@ -97,10 +104,12 @@ function E.Interrupt(state, guid)
     if plan.interruptFlash then visual.animation:Play() else visual.animation:Stop() end
     visual.frame:SetAlpha(1)
     visual.frame:Show()
-    state.interruptUntil = GetTime() + plan.interruptDuration
+    if P.CastAppearance then P.CastAppearance.ShakeFeedback(state.cast, visual.frame) end
+    state.interruptUntil = GetTime() + duration
 end
 
 function E.EndInterrupt(state)
+    if P.CastAppearance then P.CastAppearance.StopFeedback(state.cast) end
     local visual = state.interruptVisual
     if visual then
         visual.animation:Stop()

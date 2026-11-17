@@ -295,6 +295,7 @@ local changed = { entries = false, anchor = false, geometry = false, color = fal
 -- Compares the layout settings with the ones applied last.
 local function ReadLayoutChanges(layout, c)
     changed.anchor = not layout or layout.point ~= c.point or layout.x ~= c.x or layout.y ~= c.y
+        or layout.anchorTarget ~= c.anchorTarget or layout.relativePoint ~= c.relativePoint
     changed.geometry = not layout or layout.size ~= c.size or layout.spacing ~= c.spacing
         or layout.columns ~= c.columns
     changed.color = not layout or layout.borderColor ~= c.borderColor
@@ -308,6 +309,7 @@ end
 
 local function RememberLayout(layout, c)
     layout.point, layout.x, layout.y = c.point, c.x, c.y
+    layout.anchorTarget, layout.relativePoint = c.anchorTarget, c.relativePoint
     layout.size, layout.spacing, layout.columns = c.size, c.spacing, c.columns
     layout.borderColor = c.borderColor
     layout.look, layout.shape = changed.look, changed.shape
@@ -387,11 +389,7 @@ function M:Compile()
         if changed.geometry then view.mask = nil end
     end
     if changed.entries then IndexEntries(self, entries) end
-    if changed.anchor then
-        view.host:ClearAllPoints()
-        local point = R.ScreenPoint(c)
-        view.host:SetPoint(point, UIParent, point, c.x, c.y)
-    end
+    if changed.anchor then R.PlaceAnchor(self) end
     LayoutButtons(self, entries)
     if self.raid.rows then R.LayoutRaidOverview(self) end
     return changed.entries
@@ -756,6 +754,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    R.WatchAnchor(self, true)
     NS.HostBridge.WatchIconSkins("buffReminders", self.config.iconSkin ~= "CUSTOM")
     ReadInstance(self)
     self.readyCheck.enabled = self.config.readyCheckMana or self.config.readyCheckIssues
@@ -770,6 +769,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    R.WatchAnchor(self, false)
     NS.HostBridge.WatchIconSkins("buffReminders", false)
     R.StopCursor(self)
     CancelThreshold(self)
@@ -797,20 +797,12 @@ end
 function M:RegisterMovers()
     S.RegisterOwnedMover("buffReminders", "buffs", {
         label = "Buff reminders", order = 620, getFrame = function() return self.view.host end,
-        xKey = "x", yKey = "y", pointKey = "point",
+        xKey = "x", yKey = "y", pointKey = "point", screenPosition = false,
         point = function() return R.ScreenPoint(self.config) end,
-        historyKeys = { "size", "spacing", "columns" },
-        extraControls = {
-            { id = "size", label = "Icon size", kind = "number", min = 22, max = 72, step = 1,
-                get = function() return S.Config("buffReminders").size end,
-                set = function(value) return S.Set("buffReminders", "size", value) end },
-            { id = "spacing", label = "Spacing", kind = "number", min = 0, max = 20, step = 1,
-                get = function() return S.Config("buffReminders").spacing end,
-                set = function(value) return S.Set("buffReminders", "spacing", value) end },
-            { id = "columns", label = "Per row", kind = "number", min = 1, max = 12, step = 1,
-                get = function() return S.Config("buffReminders").columns end,
-                set = function(value) return S.Set("buffReminders", "columns", value) end },
-        },
+        place = function(x, y) return R.PlaceAnchor(self, x, y) end,
+        historyKeys = { "size", "spacing", "columns", "anchorTarget", "relativePoint" },
+        resetKeys = { "anchorTarget", "relativePoint" },
+        extraControls = R.AnchorControls(),
     })
 end
 

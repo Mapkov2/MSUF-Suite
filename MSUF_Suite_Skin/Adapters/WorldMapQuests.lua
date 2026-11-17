@@ -290,11 +290,13 @@ local function BeforeQuestLayout(scroll, displayState)
         end
         return
     end
-    if NS.Client.isForever then
+    if NS.Client.isForever and not list.owner.questMapReady then
         -- The native map open can rebuild the quest log before its protected
         -- reading emote. Reapply our view after that stack, using the live rows.
         NS.Registry.QueueJob(list.reapply)
     else
+        -- A completed map opening may be rebuilt repeatedly by quest scans.
+        -- Filter the native layout inputs now; Blizzard owns the Layout below.
         ApplyFolds(list, Plain(Safety.Field(Plain(displayState), "questInfoContainer")))
     end
 end
@@ -346,7 +348,8 @@ local function AttachFolds(scroll, state)
         Kit.HookFunction(scroll, "ExpandHeaderForQuest", Safety.Isolated(RevealMapQuest))
     end
     state.questFolds, list.owner = list, state
-    list.relayout()
+    if NS.Client.isForever and not state.questMapReady then NS.Registry.QueueJob(list.reapply)
+    else list.relayout() end
 end
 
 local function ReleaseFolds(state)

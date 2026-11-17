@@ -70,6 +70,12 @@ skin.CharacterDetails = {
 skin.CharacterStats = { SetOption = function(key, value) skin.DB.characterStats[key] = value; return true end,
     RefreshFonts = Noop }
 skin.Registry = { NotifyListeners = Noop, RefreshAll = Noop, QueueRefresh = Noop, AddListener = Noop, RemoveListener = Noop }
+local addonWrites = {}
+skin.AddonSkins = { SetOption = function(key, value)
+    addonWrites[#addonWrites + 1] = key
+    skin.DB.addonSkins[key] = value == true
+    return true
+end }
 skin.Database = {
     GetProfileNames = function() return { "Default" } end,
     GetActiveProfileName = function() return "Default" end,
@@ -234,6 +240,59 @@ do
     Check(help and help:find("Suite Character Panel", 1, true), "search did not route equipment into Character Panel")
     Check(#ControlsOf(BuildSkinPage(), section) == 0, "Character controls remain in Skinning")
     Suite.Client.modernEquipment, Suite.Client.isForever = retail, forever
+end
+
+------------------------------------------------------------------ Addon skins in the actual Suite menu
+do
+    local ctx = BuildSkinPage()
+    local ui = assert(ctx.suiteWorkspace)
+    Check(ui.groups.addons ~= nil, "the Suite Skinning page has no Addon skins tab")
+    local controls, rows = {}, {}
+    for _, widget in ipairs(ControlsOf(ctx, "suite_skin_addon_skins")) do
+        if widget.row then
+            controls[widget.row.id] = widget
+            rows[#rows + 1] = widget.row
+        end
+    end
+    Check(#rows == 24, "the real Suite page must expose master, AceGUI and all 22 addons")
+    local master = assert(controls["addonSkins.enabled"])
+    Check(master.get() == false, "the new addon master is not opt-in")
+    master.set(true)
+    Check(skin.DB.addonSkins.enabled and addonWrites[#addonWrites] == "enabled",
+        "the visible master did not call the addon skin owner")
+    for _, entry in ipairs(Suite.AddonSkinDefinitions) do
+        local widget = controls["addonSkins." .. entry.id]
+        Check(widget and widget.get() == true, "missing addon toggle: " .. entry.label)
+        widget.set(false)
+        Check(widget.get() == false and addonWrites[#addonWrites] == entry.id,
+            "an addon toggle did not use the addon skin owner: " .. entry.label)
+        ui.select("style")
+        local prepare = optionsNS.HM.GetSearchTargetPrepare(widget)
+        Check(prepare and prepare() ~= false and ui.selected == "addons",
+            "search did not reveal the Addon skins tab for " .. entry.label)
+    end
+    local current, ensure, create = MapkoSkin, Suite.Skin.EnsureEngine, CreateFrame
+    MapkoSkin = nil
+    Suite.Skin.EnsureEngine = function() error("cold addon search loaded the skin") end
+    CreateFrame = function() error("cold addon search created a frame") end
+    local indexed = {}
+    for _, row in ipairs(optionsNS.SkinSearchRows()) do
+        if row.sectionId == "suite_skin_addon_skins" and row.settingKey then indexed[row.settingKey] = true end
+    end
+    MapkoSkin, Suite.Skin.EnsureEngine, CreateFrame = current, ensure, create
+    for _, key in ipairs(addonWrites) do
+        Check(indexed["msufsuite.skin.addonSkins." .. key], "cold search lost addon setting: " .. key)
+    end
+    Check(indexed["msufsuite.skin.addonSkins.aceGUI"], "cold search lost AceGUI")
+    local notified, notify = {}, skin.Registry.NotifyListeners
+    skin.Registry.NotifyListeners = function(domain) notified[domain] = true end
+    Check(optionsNS.SkinPageKit.ResetSkinSection(skin, "addon_skins", rows), "addon section reset failed")
+    skin.Registry.NotifyListeners = notify
+    Check(not skin.DB.addonSkins.enabled and skin.DB.addonSkins.aceGUI, "addon reset lost factory flags")
+    for _, entry in ipairs(Suite.AddonSkinDefinitions) do
+        Check(skin.DB.addonSkins[entry.id], "addon reset lost " .. entry.label)
+    end
+    Check(notified.addonSkins, "addon reset did not refresh discovery and AceGUI ownership")
 end
 
 ------------------------------------------------------------------ Scroll behavior and its independent bounce toggle

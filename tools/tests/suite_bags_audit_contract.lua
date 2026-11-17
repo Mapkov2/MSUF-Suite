@@ -230,7 +230,10 @@ do
         WindowCaption = { Dress = function(cell, kind) cell.caption = { kind = kind } end,
             SetKind = function(cell, kind) cell.caption.kind = kind end },
         SetFont = function() end, ResolveFont = function() end, GlobalFontPath = function() return "Global.ttf" end,
-        BagsNewPreview = function() return { width = 700, items = {}, model = {lineCount=2}, config = { inventoryColumns = 12 } } end,
+        BagsNewPreview = function() return { width = 700, items = {
+            {itemID=1,icon=135274,itemLevel=450,count=1,quality=4}},
+            model = {lineCount=2}, config = { inventoryColumns = 12 } } end,
+        BagsPaintPreviewSlot = function() end,
         BagsPreviewLayout = function() return {} end,
         BagsPreviewIsPanel = function() return false end,
         BagsFitPreviewRows = function() end,
@@ -244,7 +247,7 @@ do
         BagsStylePreviewLabel = function() end }
     local methods = {}
     local function Noop() end
-    local function Region() return setmetatable({}, { __index = function(_, key) return methods[key] or Noop end }) end
+    local function Region() return setmetatable({slotEdges=false}, { __index = function(_, key) return methods[key] or Noop end }) end
     function methods:CreateTexture() return Region() end
     function methods:GetStringHeight() return 14 end
     function methods:GetHeight() return 304 end

@@ -22,6 +22,7 @@ local fixedPanels = { TradeFrame = true }
 function Policy.CanFit(state) return not fixedPanels[state.name] end
 
 local specialPanels = {
+    MSUFSuiteSpellLearningFrame = true,
     SettingsPanel = true, AddonList = true, PlayerSpellsFrame = true,
     GameMenuFrame = true, ProfessionsFrame = true,
     SocialUIFrame = true, FriendsFrame = true, FriendsFriendsFrame = true,

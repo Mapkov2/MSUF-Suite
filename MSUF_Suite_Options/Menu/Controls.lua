@@ -173,43 +173,6 @@ local function RuleHex(rule, r, g, b)
     return value
 end
 
--- MSUF's own font list (keys or paths) plus the inherited choice; a saved font
--- that is no longer installed stays selectable so it is not silently lost.
-function P.FontValues(selected, defaultLabel)
-    local values = { { value = "", text = Tr(defaultLabel or "MSUF global font (default)") } }
-    local seen = { [""] = true }
-    local source = M.GlobalPage and M.GlobalPage.FontValues and M.GlobalPage.FontValues(false) or {}
-    for _, entry in ipairs(source) do
-        if entry.value ~= nil and not seen[entry.value] then
-            values[#values + 1] = { value = entry.value, text = entry.text }
-            seen[entry.value] = true
-        end
-    end
-    if type(selected) == "string" and selected ~= "" and not seen[selected] then
-        values[#values + 1] = { value = selected, text = Tr("Unavailable font: %s"):format(selected) }
-    end
-    return values
-end
-
-function P.TextureValues(selected)
-    local items = M.StatusBarTextureItems and M.StatusBarTextureItems(Tr("Module default")) or {}
-    local values, seen = {}, {}
-    if not (items[1] and items[1].value == "") then
-        values[1] = { value = "", text = Tr("Module default") }
-        seen[""] = true
-    end
-    for _, entry in ipairs(items) do
-        if entry.value ~= nil and not seen[entry.value] then
-            values[#values + 1] = entry
-            seen[entry.value] = true
-        end
-    end
-    if type(selected) == "string" and selected ~= "" and not seen[selected] then
-        values[#values + 1] = { value = selected, text = Tr("Unavailable texture: %s"):format(selected) }
-    end
-    return values
-end
-
 local function ChoiceValues(rule)
     if not rule._suiteMenuValues then
         local values = {}
@@ -273,15 +236,15 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
     local function Key() return keyFn and keyFn(rule.key) or rule.key end
     local row = P.Meta(pageKey, id, rule.key, "setting", sectionId)
     row.id, row.label = rule.key, Tr(rule.label)
-    row.summary = not rule.font and not rule.texture and not rule.color and P.SummaryPriority(id, rule.key)
+    row.summary = not rule.font and not rule.texture and not rule.border and not rule.color and P.SummaryPriority(id, rule.key)
     row.summaryEnabled = function() return P.RuleEnabled(id, rule, keyFn) end
     if rule.color then
         row.kind = "color"
         row.get = function() return RuleRGB(rule, P.Get(id, Key())) end
         row.set = function(r, g, b) P.Set(id, Key(), RuleHex(rule, r, g, b)) end
-    elseif rule.font or rule.texture then
+    elseif rule.font or rule.texture or rule.border then
         row.kind = "dropdown"
-        local list = rule.font and P.FontValues or P.TextureValues
+        local list = rule.font and P.FontValues or rule.border and P.BorderValues or P.TextureValues
         row.values = function()
             local selected = P.Get(id, Key())
             local values = list(selected == "__BLIZZARD_CHAT_FONT__" and "" or selected, rule.defaultLabel)

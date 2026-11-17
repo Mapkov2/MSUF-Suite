@@ -52,6 +52,7 @@ local workbench = {
 MSUF_HostAPI = { version = 1, ApplyUIScaleProfile = function() end, SetResourceStack = function() end,
     GetProfileWorkbench = function() return workbench end }
 Support.Load(root, "MSUF_Suite", Suite, "Core/ProfileVariants.lua")
+if arg[2] then assert(loadfile(arg[2]))("MSUF_Suite", Suite) end
 local P, IO = Suite.SuiteProfiles, Suite.ProfileIO
 local provider = assert(providers.suiteSkin, "the Suite did not register its workbench provider")
 
@@ -158,10 +159,10 @@ end)
 Case("review 1 epoch from an earlier load", function()
     for _, earlier in ipairs({ 3, 0 }) do
         engine, skinProfile, epoch, now = fakeSkin, { accent = 1 }, earlier, now + 100
-        assert(loadfile(root .. "/MSUF_Suite/Core/ProfileWorkbenchBridge.lua"))("MSUF_Suite", Suite)
+        assert(loadfile(arg[2] or root .. "/MSUF_Suite/Core/ProfileWorkbenchBridge.lua"))("MSUF_Suite", Suite)
         local point = assert(providers.suiteSkin.Capture())
         now = now + 100
-        assert(loadfile(root .. "/MSUF_Suite/Core/ProfileWorkbenchBridge.lua"))("MSUF_Suite", Suite)
+        assert(loadfile(arg[2] or root .. "/MSUF_Suite/Core/ProfileWorkbenchBridge.lua"))("MSUF_Suite", Suite)
         provider = providers.suiteSkin
         skinProfile, epoch = { accent = 2 }, 0
         assert(provider.Restore(Suite.CopyValue(point), "MSUF2_GUIDED_TOUR_RESTORE", "guided_tour:restore_point"))
@@ -299,6 +300,86 @@ Case("Blizzard nameplate settings transfer and restore", function()
     assert(partial.suite.modules.nameplates.look == nil and partial.suite.modules.chat == nil,
         "workbench preparation mutated the caller's restore point")
     C_CVar = defaultCVars
+end)
+
+-- A visibility switch writes Blizzard directly. Ordinary menu history must
+-- restore that native choice, without replaying unrelated native settings.
+Case("Friendly visibility ordinary history undo and redo", function()
+    local runtime, oldRuntime = Suite.Suite, {}
+    for key, value in pairs(runtime) do oldRuntime[key] = value end
+    local saved = { cvars = C_CVar, profile = Suite.OnProfileChanged,
+        namespace = MSUFSuite, unit = UnitName, realm = GetRealmName,
+        recovery = Suite.RootDB.suiteRecovery, instance = runtime.instances.nameplates }
+    local cvars = { nameplateShowFriendlyPlayers = "0", nameplateShowFriendlyNpcs = "0",
+        nameplateDebuffPadding = "7", UnitNameNPC = "0" }
+    local instance = { active = true, config = Suite.DB.suite.modules.nameplates, ResetCVarBaseline = function() end }
+    runtime.instances.nameplates = instance
+    C_CVar = { GetCVar = function(key) return cvars[key] end, SetCVar = function(key, value)
+        cvars[key] = value
+        Suite.SyncFriendlyNameplates(instance, "CVAR_UPDATE", key)
+    end }
+    MSUFSuite, UnitName, GetRealmName = Suite, function() return "Tester" end, function() return "Realm" end
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
+    local private = { NS = Suite, Suite = runtime }
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", private)
+    instance.context = runtime.NewContext("nameplates")
+    runtime.Apply = function() private.CVars.Apply(instance) end
+    runtime.SetMany = function(_, values)
+        for key, value in pairs(values) do instance.config[key] = value end
+        runtime.Apply()
+        return true
+    end
+    Suite.OnProfileChanged = function()
+        instance.config = Suite.DB.suite.modules.nameplates
+        runtime.Apply()
+    end
+    local done, why = pcall(function()
+        instance.config.enabled, instance.config.friendlySkinEnabled = true, true
+        instance.config.friendlyNpcSkinEnabled, instance.config.friendlyNPCs = true, 2
+        runtime.Apply()
+        local offPoint = assert(provider.Capture())
+        assert(Suite.SetFriendlyNameplates("friendly", true))
+        local onPoint = assert(provider.Capture())
+        cvars.nameplateDebuffPadding, cvars.UnitNameNPC = "9", "1"
+        assert(provider.Restore(offPoint, "MSUF2_SUITE_HISTORY"))
+        assert(cvars.nameplateShowFriendlyPlayers == "0" and instance.config.friendlySkinEnabled,
+            "undo failed to restore native Off with an enabled skin")
+        assert(cvars.nameplateDebuffPadding == "9" and cvars.UnitNameNPC == "1",
+            "ordinary visibility undo replaced an unrelated Blizzard choice")
+        assert(provider.Restore(onPoint, "MSUF2_SUITE_HISTORY"))
+        assert(cvars.nameplateShowFriendlyPlayers == "1" and instance.config.friendlySkinEnabled,
+            "redo failed to restore native On")
+        assert(Suite.SetFriendlyNameplates("friendly", false))
+        assert(provider.Restore(onPoint, "MSUF2_SUITE_HISTORY"))
+        assert(cvars.nameplateShowFriendlyPlayers == "1" and instance.config.friendlySkinEnabled,
+            "undo of Suite Off failed to enable the native plate")
+        local npcOff = assert(provider.Capture())
+        assert(Suite.SetFriendlyNameplates("friendlyNpc", true))
+        assert(provider.Restore(npcOff, "MSUF2_SUITE_HISTORY"))
+        assert(cvars.nameplateShowFriendlyNpcs == "0" and instance.config.friendlyNpcSkinEnabled,
+            "NPC undo failed or its native event rewrote the restored skin flag")
+        cvars.nameplateShowFriendlyNpcs, cvars.UnitNameNPC = "1", "0"
+        instance.config.friendlyNPCs = 4
+        runtime.Apply()
+        assert(cvars.nameplateShowFriendlyNpcs == "0" and cvars.UnitNameNPC == "1")
+        local importIO = IO
+        if arg[3] then
+            assert(loadfile(arg[3]))("MSUF_Suite", Suite)
+            importIO, Suite.ProfileIO = Suite.ProfileIO, IO
+        end
+        assert(importIO.ApplyNameplateCVars({ nameplateShowFriendlyNpcs = "0", nameplateDebuffPadding = "6" }))
+        assert(instance.config.friendlyNPCs == 4 and instance.config.friendlyNpcSkinEnabled
+            and cvars.nameplateShowFriendlyNpcs == "0" and cvars.UnitNameNPC == "1",
+            "own import baseline restore event exited NPC Names-only")
+    end)
+    for key in pairs(runtime) do runtime[key] = nil end
+    for key, value in pairs(oldRuntime) do runtime[key] = value end
+    runtime.instances.nameplates = saved.instance
+    C_CVar, Suite.OnProfileChanged = saved.cvars, saved.profile
+    MSUFSuite, UnitName, GetRealmName = saved.namespace, saved.unit, saved.realm
+    Suite.RootDB.suiteRecovery = saved.recovery
+    assert(done, why)
 end)
 
 -- Profile strings carry the action bar key map while the player chose so

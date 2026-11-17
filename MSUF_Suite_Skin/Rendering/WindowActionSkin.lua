@@ -400,7 +400,8 @@ local function AssignGlyphStates(button, state)
 end
 
 local function FadeExtraRegion(state, region)
-    if type(Field(region, "SetAlpha")) ~= "function" then return end
+    if not CanStyle(region) or type(Field(region, "SetAlpha")) ~= "function" then return end
+    for _, glyph in pairs(state.glyphs or {}) do if region == glyph then return end end
     local current = AccessibleAlpha(region)
     if current == nil then return end
     local snapshot = state.extraRegions[region]
@@ -414,8 +415,19 @@ local function FadeExtraRegion(state, region)
 end
 
 local function RefreshExtraRegions(button, state)
+    -- Replacing a Button state slot does not detach its old Texture region.
+    -- Hide every captured state as well, including native pressed/hover art.
+    for index = 1, #specialTextures do
+        FadeExtraRegion(state, state.native[specialTextures[index].key])
+    end
     if state.kind == "close" or state.kind == "minimize" then
-        FadeExtraRegion(state, Field(button, "Border"))
+        for _, key in ipairs({ "Border", "Icon", "icon", "NormalTexture", "PushedTexture", "DisabledTexture",
+            "HighlightTexture", "HoverTexture", "Bg" }) do FadeExtraRegion(state, Field(button, key)) end
+        local label = Getter(button, "GetFontString") or Field(button, "Label") or Field(button, "Text") or Field(button, "text")
+        local text = Safety.Read(label, "GetText")
+        if Safety.Public(text) and (text == "X" or text == "x" or text == "×" or text == "✕") then
+            FadeExtraRegion(state, label)
+        end
     end
     if state.kind == "expand" or state.kind == "collapse" then
         FadeExtraRegion(state, Field(button, "Icon"))

@@ -871,6 +871,8 @@ local entries = {
         category = "character",
         addon = "Blizzard_BarbershopUI",
         frames = { "BarberShopFrame" },
+        mode = { rootSurface = false, preserveRootArt = true,
+            maxDepth = 10, maxNodes = 1000, allowImplicitProtected = false },
     },
     {
         id = "character-customization",
@@ -2005,7 +2007,7 @@ local homogeneousGlassKinds = {
             "end-of-match", "plunderstorm-basics", "pet-battle",
             "islands-party-pose", "match-celebration-party-pose",
             "warfronts-party-pose", "spectate", "perks-program", "catalog-shop",
-            "character-customization", "splash-frame",
+            "character-customization", "barbershop", "splash-frame",
             "wow-survey", "housing-controls",
         },
     },

@@ -398,6 +398,7 @@ local function ItemGroup(item, config, state, model)
 end
 
 local function ItemGroupWithKeyring(item, config, state, model)
+    if item.reagentBag then return "reagentBag", "Reagent bag", 210, nil, true end
     if item.keyring then return "keyring", item.bagName, 190, nil, false end
     return ItemGroup(item, config, state, model)
 end
@@ -405,6 +406,11 @@ end
 local function PhysicalGroup(item)
     if item.keyring then return "keyring", item.bagName, 190, nil, false end
     return "all", "All items", 2, nil, true
+end
+
+local function PhysicalReagentGroup(item)
+    if item.reagentBag then return "reagentBag", "Reagent bag", 210, nil, true end
+    return PhysicalGroup(item)
 end
 
 local function AddSets(model, config, item, key)
@@ -496,7 +502,9 @@ function Model.Build(model, items, config, state, context)
     end
     -- searching: Blizzard's search marks non-matching slots isFiltered.
     local searching = context and context.searching
-    local groupForItem = physical and PhysicalGroup or context and context.hasKeyring and ItemGroupWithKeyring or ItemGroup
+    local special = context and (context.hasKeyring or context.hasReagent)
+    local groupForItem = physical and (context.hasReagent and PhysicalReagentGroup or PhysicalGroup)
+        or special and ItemGroupWithKeyring or ItemGroup
     for i = 1, #items do
         local item = items[i]
         if not (config.hideEmptySlots and not item.itemID)

@@ -298,7 +298,7 @@ Component("Selection", "Bind Apply Restore Configure RestoreAll")
 Component("AuraColors", "Bind Configure Apply Restore SetEditMode")
 Component("AuraDisplay", "Bind Configure Apply Restore Release Resume SetEditMode TargetChanged")
 for _, file in ipairs({ "Text", "NameText", "Level", "CastTime", "KickReady", "Mouseover", "FriendlyNames", "Decor",
-    "ExtensionLayout", "ExtensionText", "ExtensionEffects", "Extensions", "Status", "Textures", "Skin" }) do
+    "ExtensionLayout", "ExtensionText", "ExtensionEffects", "Extensions", "Status", "CastSettings", "Textures", "HealthAppearance", "Skin" }) do
     Load(file)
 end
 local stopWatch = Secrets.Watch(root .. "/MSUF_Suite_Nameplates/Level.lua", { strict = true })
@@ -523,6 +523,7 @@ P.Suite.RGB, P.Suite.Registry = RGB, { AddListener = function() end }
 P.BuildNameplatesPreview, P.BuildNameplatesAuraColors = function() end, function() end
 local page
 P.RegisterPage = function(registered) page = registered end
+assert(loadfile(root .. "/MSUF_Suite_Options/Menu/MediaValues.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Controls.lua"))("MSUF_Suite_Options", P)
 P.ModuleCard = function() end
 local resets = {}

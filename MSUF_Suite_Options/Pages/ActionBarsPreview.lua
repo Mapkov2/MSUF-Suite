@@ -106,7 +106,12 @@ local function NewTile(ui, ordinal)
 end
 
 local function Font(label, config, prefix, group, default, x, y, size, color, shown, owner)
-    P.StylePreviewFont(label, Suite.ResolveFont(config.font), math.max(6, size), OUTLINES[config.fontOutline] or "",
+    local kind = group:lower()
+    local custom = config[kind .. "FontOverride"]
+    local chosen = custom and config[kind .. "Font"]
+    local font = chosen and chosen ~= "" and chosen or config.font
+    local outline = custom and config[kind .. "FontOutline"] or config.fontOutline
+    P.StylePreviewFont(label, Suite.ResolveFont(font), math.max(6, size), OUTLINES[outline] or "",
         config.fontRendering, config.fontShadow, config.fontShadowOpacity, config.fontShadowDistance)
     local point = Suite.AnchorPoints[(config[prefix .. group .. "Point"] or 1) - 1]
     if point then x, y = 0, 0 else point = default end

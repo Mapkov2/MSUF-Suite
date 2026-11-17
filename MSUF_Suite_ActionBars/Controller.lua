@@ -141,6 +141,12 @@ Global({ "iconZoom", "borderSize", "borderColor", "borderClassColor", "slotColor
     "rechargeNumbers", "font", "fontOutline", "fontRendering", "fontShadow", "fontShadowOpacity",
     "fontShadowDistance", "keybindColor", "macroColor", "countColor", "cooldownColor" }, { style = true })
 Global({ "borderArt", "borderScale", "borderExpansion", "iconSkin" }, { style = true })
+Global({ "mediaBorder", "mediaBorderSize", "mediaBorderPadding" }, { style = true })
+Global({ "styleSpecialButtons", "hideSpecialArtwork", "specialKeybind", "specialKeybindSize", "specialCooldownSize" }, { extras = true })
+for _, prefix in ipairs({ "keybind", "macro", "count", "cooldown" }) do
+    Global({ prefix .. "FontOverride", prefix .. "Font", prefix .. "FontOutline" }, { style = true })
+end
+Global({ "shortKeybinds" }, { keys = true })
 Global({ "buttonShape" }, { style = true, allLayout = true, allGeometry = true })
 -- Endcaps and bar background borders wear the resolved border color too.
 Global({ "borderColor", "borderClassColor" }, { style = true, allLayout = true })
@@ -151,8 +157,13 @@ Global({ "castHighlight" }, { state = true, native = true })
 Global({ "hideEmptyCharges" }, { count = true, native = true })
 Global({ "desaturateCooldown", "cooldownAlpha" }, { curves = true, cooldown = true, native = true })
 Global({ "rangeColoring" }, { events = true, repaint = true, native = true })
+Global({ "rangeIndicator" }, { style = true, tint = true, native = true })
 Global({ "procGlow" }, { style = true, events = true, repaint = true, native = true })
 Global({ "mouseoverShowAll" }, { alpha = true })
+for _, suffix in ipairs({ "Visibility", "CondCombine", "CondCombat", "CondMounted", "CondTarget", "CondMouseover",
+    "CondFocus", "CondFlying", "CondGroup", "CondCasting", "CondSkyriding", "CondInstance", "CondHousing" }) do
+    Global({ "global" .. suffix }, { visible = true })
+end
 Global({ "pageArrows", "pageArrowSide" }, { allLayout = true })
 Global({ "showOnDrag" }, { drag = true })
 -- Masque takes or returns the Suite-made buttons, then the style pass runs.
@@ -176,6 +187,14 @@ local BAR_WORK = {
     CondMounted = { visible = true },
     CondTarget = { visible = true },
     CondMouseover = { visible = true },
+    UseGlobalVisibility = { visible = true },
+    CondFocus = { visible = true },
+    CondFlying = { visible = true },
+    CondGroup = { visible = true },
+    CondCasting = { visible = true },
+    CondSkyriding = { visible = true },
+    CondInstance = { visible = true },
+    CondHousing = { visible = true },
     -- Custom paging text: every bar's page claims can move (Paging.lua).
     Paging = { pageText = true },
     HideGamepad = { visible = true, events = true },
@@ -202,7 +221,7 @@ end
 -- Settings without runtime work; any other setting nobody listed above
 -- rebuilds everything (a per-bar one: everything of its bar), so a new
 -- setting is never silently ignored.
-local NO_WORK = { enabled = true, imported = true, look = true, pickupModifier = true }
+local NO_WORK = { enabled = true, imported = true, look = true, pickupModifier = true, autoAddSpells = true }
 local FULL = {
     style = true, curves = true, events = true, native = true, repaint = true, paging = true, alpha = true,
     drag = true, visible = true, panels = true, assist = true, masque = true,
@@ -249,6 +268,17 @@ end
 
 local function Merge(into, from)
     for flag in pairs(from) do into[flag] = true end
+end
+
+-- Recovery is owned by the module context and survives reloads, including
+-- startup with this optional addon disabled.
+local function ApplyAutoAdd(config)
+    local choice = config.autoAddSpells
+    if choice ~= 2 and choice ~= 3 then
+        S.RestoreCVar("actionbars", "AutoPushSpellToActionBar")
+        return
+    end
+    M.context:CVar("AutoPushSpellToActionBar", choice == 2 and "1" or "0")
 end
 
 local function Collect(config)
@@ -328,7 +358,10 @@ local function ApplyStyle()
             any = true
         end
     end
-    if any then AB.StyleAll(work.style) end
+    if any then
+        AB.StyleAll(work.style)
+        AB.ConfigureRangeTint()
+    end
 end
 
 -- Paint walks a setting can ask for (Flush.lua dirty kinds).
@@ -426,6 +459,7 @@ function M:Refresh()
         return
     end
     ApplyPickupModifier(config)
+    ApplyAutoAdd(config)
     if captureRetry then
         local retry = captureRetry
         captureRetry = nil
@@ -437,6 +471,14 @@ function M:Refresh()
     if work.curves then AB.UpdateCurves() end
     ApplyLayout()
     ApplyStyle()
+    if work.extras or work.style or rebuild or AB.specialPending then
+        AB.specialEpoch = (AB.specialEpoch or 0) + 1
+        AB.SyncSpecialButtons()
+    end
+    if work.keys then
+        AB.Painter.AllKeyTexts()
+        BindingsChanged()
+    end
     if work.masque or AB.Masque.Active() then AB.Masque.Sync(MasqueReskin) end
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
@@ -454,6 +496,9 @@ function M:Refresh()
         AB.UpdateRouting()
         BindingsChanged()
     end
+    if work.style or work.masque or AnyBarWork("style") or AnyBarWork("layout") then
+        EventRegistry:TriggerEvent("MSUFSuite.ActionBars.StyleChanged")
+    end
     if work.drag or AB.dragPending then AB.ApplyDrag() end
     ClearWork()
     rebuild = false
@@ -465,6 +510,8 @@ end
 -- runs isolated (Dispatch), as Context:Release does: one that raises is
 -- reported and every later step still runs.
 function M:Disable()
+    Dispatch(AB.StopSpecialButtons)
+    Dispatch(S.RestoreCVar, "actionbars", "AutoPushSpellToActionBar")
     Dispatch(AB.Masque.Release)
     Dispatch(AB.StopSnapshots)
     Dispatch(AB.Virtual.Stop, self.context)
@@ -527,26 +574,32 @@ end
 
 -- Mouseover on/off keeps the combat part of the current mode; a bar on
 -- Custom conditions switches its own mouseover condition instead.
-local function MouseoverControl(keys)
+local function MouseoverControl(keys, index)
     local key, custom = keys.Visibility, keys.CondMouseover
     return {
         id = "mouseover", label = S.Text("Show on mouseover"), kind = "toggle",
         get = function()
             local config = S.Config("actionbars")
-            local mode = config[key]
-            if mode == VIS.CUSTOM then return config[custom] == true end
+            local mode = NS.ActionBarVisibilityMode(config, index)
+            if mode == VIS.CUSTOM then return config[NS.ActionBarVisibilityPrefix(config, index) .. "CondMouseover"] == true end
             return mode == VIS.MOUSEOVER or mode == VIS.MOUSEOVER_OR_COMBAT
         end,
         set = function(on)
-            local mode = S.Config("actionbars")[key]
-            if mode == VIS.CUSTOM then return S.Set("actionbars", custom, on == true) end
+            local config = S.Config("actionbars")
+            local mode = NS.ActionBarVisibilityMode(config, index)
+            local values = NS.ActionBarLocalVisibility(config, index)
+            if mode == VIS.CUSTOM then
+                values[custom] = on == true
+                return S.SetMany("actionbars", values)
+            end
             local value
             if on then
                 value = (mode == VIS.COMBAT or mode == VIS.MOUSEOVER_OR_COMBAT) and VIS.MOUSEOVER_OR_COMBAT or VIS.MOUSEOVER
             else
                 value = mode == VIS.MOUSEOVER_OR_COMBAT and VIS.COMBAT or mode == VIS.MOUSEOVER and VIS.ALWAYS or mode
             end
-            return S.Set("actionbars", key, value)
+            values[key] = value
+            return S.SetMany("actionbars", values)
         end,
     }
 end
@@ -572,7 +625,7 @@ local function Mover(index)
         extraControls = {
             ButtonCountControl(keys), NumberControl("rows", keys.Rows), NumberControl("size", keys.Size),
             NumberControl("spacing", keys.Spacing), OrientationControl(keys, false), OrientationControl(keys, true),
-            MouseoverControl(keys),
+            MouseoverControl(keys, index),
         },
         historyKeys = { keys.Buttons, keys.Rows, keys.Size, keys.Spacing, keys.Vertical, keys.Visibility, keys.CondMouseover },
     }

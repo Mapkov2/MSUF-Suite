@@ -12,7 +12,7 @@ local SAMPLES = {
 }
 
 function S.BagsNewPreview()
-    local preview = { model = Model.New(), items = {}, config = {}, state = {} }
+    local preview = { model = Model.New(), items = {}, reagentItems = {}, config = {}, state = {} }
     for i = 1, #SAMPLES do
         local sample = SAMPLES[i]
         preview.items[i] = {
@@ -23,12 +23,22 @@ function S.BagsNewPreview()
             slotName = sample[6] and _G[sample[6]], name = tostring(i),
         }
     end
+    for i = 1, 3 do
+        local item = {}
+        for key, value in pairs(preview.items[i + 5]) do item[key] = value end
+        item.itemID, item.key, item.slot = #SAMPLES + i, #SAMPLES + i, i
+        item.bag, item.bagName, item.reagentBag = Enum.BagIndex.ReagentBag, S.Text("Reagent bag"), true
+        preview.reagentItems[i] = item
+    end
     return preview
 end
 
 function S.BagsPreviewLayout(preview, config, bank, geometry)
     local c = preview.config
     for key, value in pairs(config) do c[key] = value end
+    for i = 1, #preview.reagentItems do
+        preview.items[#SAMPLES + i] = not bank and c.combineReagentBag and preview.reagentItems[i] or nil
+    end
     if bank then
         Model.BankConfig(c, config)
         local view = P.BankInventory
@@ -39,6 +49,8 @@ function S.BagsPreviewLayout(preview, config, bank, geometry)
         if geometry then c.inventoryColumns = geometry.columns end
         if P.BagPresentation.IsPanel(c) then c.compactGroups = false end
     end
-    Model.Build(preview.model, preview.items, c, preview.state)
+    preview.context = preview.context or {}
+    preview.context.hasReagent = not bank and c.combineReagentBag
+    Model.Build(preview.model, preview.items, c, preview.state, preview.context)
     return Model.Layout(preview.model, c.inventoryColumns, c.compactGroups)
 end

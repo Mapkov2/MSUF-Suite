@@ -356,6 +356,7 @@ _G.BuffFrame, _G.DebuffFrame, Minimap = BuffFrame, DebuffFrame, Widget("Frame", 
 -- Lua overrides; each SetPoint marks Edit Mode's anchors dirty.
 local anchorDirty, snapClears, screen = 0, 0, Widget("Frame", 1920, 1080)
 local function EditModeSystem(frame, x, y)
+    function frame:IsInDefaultPosition() return true end
     frame.SetPointBase, frame.ClearAllPointsBase = frame.SetPoint, frame.ClearAllPoints
     frame.SetPoint = Native("SetPoint", function(self, ...)
         self:SetPointBase(...)

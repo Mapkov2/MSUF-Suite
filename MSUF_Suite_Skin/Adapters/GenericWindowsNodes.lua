@@ -425,7 +425,11 @@ local function SkinIconButtonBase(button, owner, metrics, hint)
     -- meaning cannot be reconstructed from a verified name.
     local specs = objectType == "Button" and iconButtonSpecs or iconCheckSpecs
     local attached = Attach(owner, button, specs[allowImplicitProtected], metrics)
-    if attached and objectType == "CheckButton" then
+    -- RingedMaskedButtonMixin uses the normal/pushed slots for the category,
+    -- body type or alternate-form icon, independently of its selection ring.
+    local maskedIcon = Field(button, "CircleMask") and Field(button, "Ring")
+        and Safety.HasMethod(button, "SetIconAtlas")
+    if attached and objectType == "CheckButton" and not maskedIcon then
         Fade(owner, Call(button, "GetNormalTexture"))
     end
     return attached

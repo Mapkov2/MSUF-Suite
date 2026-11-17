@@ -34,6 +34,50 @@ local frameStates = setmetatable({}, { __mode = "k" })
 local activeFrames = setmetatable({}, { __mode = "k" })
 local callbacksRegistered = false
 local questLogUpdateHooked = false
+local completedMapOpens = setmetatable({}, { __mode = "k" })
+local observedMapHides = setmetatable({}, { __mode = "k" })
+local readinessOwner = {}
+
+local function ObserveMapHide(frame)
+    if observedMapHides[frame] then return end
+    observedMapHides[frame] = true
+    frame:HookScript("OnHide", function()
+        completedMapOpens[frame] = nil
+        local state = frameStates[frame]
+        if state then
+            state.questMapReady, state.questReadyQueued = nil, nil
+            state.questOpenEpoch = (state.questOpenEpoch or 0) + 1
+        end
+    end)
+end
+
+local function MarkMapReady(frame)
+    if not Safety.Public(frame) or Safety.Read(frame, "IsShown") ~= true then return end
+    ObserveMapHide(frame)
+    completedMapOpens[frame] = true
+    local state = frameStates[frame]
+    if state then state.questMapReady = true end
+end
+
+local function AdoptCompletedMapOpen(frame, state)
+    if state.questMapReady or state.questReadyQueued ~= nil or Safety.Read(frame, "IsShown") ~= true then return end
+    local epoch = state.questOpenEpoch or 0
+    state.questReadyQueued = epoch
+    -- A LoD skin can first load while the map is already open. A real native
+    -- timer, rather than the render queue, guarantees the opening stack ended.
+    C_Timer.After(0, function()
+        if state.questReadyQueued ~= epoch then return end
+        state.questReadyQueued = nil
+        if frameStates[frame] ~= state or not state.active or (state.questOpenEpoch or 0) ~= epoch
+            or Safety.Read(frame, "IsShown") ~= true then return end
+        MarkMapReady(frame)
+        if state.questFolds then NS.Registry.QueueJob(state.questFolds.reapply) end
+    end)
+end
+
+-- Record completion even while the skin is disabled or combat blocks paint.
+-- This observer changes only our external readiness state, never map data.
+EventRegistry:RegisterCallback(SHOW_CALLBACK, function() MarkMapReady(Field(_G, "WorldMapFrame")) end, readinessOwner)
 
 local SHELL_SPEC = { role = "shell", radius = 8, inset = 0 }
 local TITLE_SPEC = { role = "navigation", radius = 6, inset = 0 }
@@ -400,6 +444,7 @@ end
 -- QuestLogQuests_Update its pooled rows. Rows Blizzard acquired in combat,
 -- when that hook stays quiet, take their pass now.
 function WorldMapSkin:OnWorldMapShown()
+    for frame in pairs(activeFrames) do MarkMapReady(frame) end
     if NS.IsCombatLocked() then return end
     for frame, state in pairs(activeFrames) do
         if state.active then
@@ -472,10 +517,13 @@ function WorldMapSkin.Apply(frame, owner)
     if not state then
         state = { surfaces = Kit.WeakSet(), questRows = Kit.WeakSet() }
         frameStates[frame] = state
+        ObserveMapHide(frame)
     end
+    state.questMapReady = completedMapOpens[frame]
     state.owner = owner
     state.active = true
     activeFrames[frame] = state
+    if NS.Client.isForever then AdoptCompletedMapOpen(frame, state) end
     NS.WorldMapQuests.Activate(state, frame)
 
     local applied, reason = SkinFrame(frame, state)

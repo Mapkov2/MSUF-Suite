@@ -50,10 +50,10 @@ B.Module("nameplates", {
     },
     summary = "look nativeStyle nativeSize enemyTextMode enemyNameSize friendlyNamesOnly friendlyNameSize",
 })
-
 local id = "nameplates"
--- Native settings that the Suite does not write itself. The remaining
--- transferable CVars are already declared by the Nameplates module above.
+-- Discard old visibility recovery; new NPC names-only overrides still restore.
+NS.SuiteCatalog[id].cvarRecoveryVersions = { nameplateShowFriendlyPlayers = 1, nameplateShowFriendlyNpcs = 1 }
+-- Native settings the Suite does not write; its other transferable CVars are declared by the module above.
 NS.SuiteCatalog[id].nativeProfileCVars = {
     ShowQuestUnitCircles = true,
     UnitNameOwn = true,

@@ -168,6 +168,7 @@ function P.HideControlTitle(widget)
     if title then title:Hide() end
 end
 local function Load(file) assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))("MSUF_Suite_Options", P) end
+Load("Menu/MediaValues.lua")
 Load("Menu/Controls.lua")
 Load("Menu/Colors.lua")
 local function Ctx(saved)

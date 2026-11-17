@@ -42,6 +42,7 @@ local nineSlicePieces = {
 }
 
 local capabilities = {
+    batches = true,
     menuMotion = true,
     labels = true,
     windowActions = true,
@@ -109,6 +110,20 @@ local function NewScope(client, key)
     return scope
 end
 
+local function QueueVisual(scope, target, entry)
+    if scope.batchDeferred then
+        if not entry.batchJob then
+            entry.batchJob = function()
+                if scope.targets[target] == entry and not scope.released and not scope.client.released
+                    and not scope.client.unregisterPending then QueueEntry(scope, target, entry) end
+            end
+        end
+        NS.Registry.QueueJob(entry.batchJob)
+        return true, "queued"
+    end
+    return QueueEntry(scope, target, entry)
+end
+
 local function RequestVisual(facade, target, aspect, value, needsRegions)
     local scope, reason = GetScope(facade)
     if not scope then return false, reason end
@@ -124,7 +139,7 @@ local function RequestVisual(facade, target, aspect, value, needsRegions)
     entry.release = nil
     entry.keepEpoch = scope.releaseEpoch
     entry[aspect] = value
-    return QueueEntry(scope, target, entry)
+    return QueueVisual(scope, target, entry)
 end
 
 local function ContentOwner(scope, frame)
@@ -270,7 +285,7 @@ function ScopeMethods:SkinIcon(button, options)
     entry.release = nil
     entry.keepEpoch = scope.releaseEpoch
     entry.icon = spec
-    return QueueEntry(scope, button, entry)
+    return QueueVisual(scope, button, entry)
 end
 
 function ScopeMethods:Fade(region)
@@ -302,6 +317,47 @@ function ScopeMethods:FadeNineSlice(nineSlice)
         end
     end
     return result, reason
+end
+
+-- Explicit bounded target lists for construction/acquire paths. Each target
+-- uses the same coalesced queue and ownership checks as individual calls.
+-- No callbacks, frame discovery or background traversal enter this API.
+local batchMethods = {
+    frame = "SkinFrame", button = "SkinButton", tab = "SkinTab", input = "SkinSearchBox",
+    ["label"] = "SkinLabel", icon = "SkinIcon", menu = "RegisterMenu", fade = "Fade",
+}
+local MAX_BATCH_TARGETS = 256
+
+function ScopeMethods:SkinBatch(items)
+    local scope, scopeReason = GetScope(self)
+    if not scope then return false, scopeReason, 0 end
+    if not NS.Safety.Public(items) or type(items) ~= "table" or getmetatable(items) ~= nil then
+        return false, "invalid-batch", 0
+    end
+    -- Validate the complete shape before accepting any new visual requests.
+    local count = 0
+    for key, item in pairs(items) do
+        if not NS.Safety.Public(key) or type(key) ~= "number" or key % 1 ~= 0
+            or key < 1 or key > MAX_BATCH_TARGETS then return false, "invalid-batch", 0 end
+        if not NS.Safety.Public(item) or type(item) ~= "table" or getmetatable(item) ~= nil then
+            return false, "invalid-entry", 0
+        end
+        local kind = rawget(item, "kind")
+        if not NS.Safety.Public(kind) or not batchMethods[kind] then return false, "invalid-kind", 0 end
+        count = count + 1
+    end
+    for index = 1, count do
+        if rawget(items, index) == nil then return false, "sparse-batch", 0 end
+    end
+    for index = 1, count do
+        local item = rawget(items, index)
+        local method = batchMethods[rawget(item, "kind")]
+        scope.batchDeferred = true
+        local accepted, reason = GuardedCall(ScopeMethods[method], self, rawget(item, "target"), rawget(item, "options"))
+        scope.batchDeferred = nil
+        if not accepted then return false, reason, index - 1 end
+    end
+    return true, "queued", count
 end
 
 function ScopeMethods:SetActive(target, active)
@@ -462,6 +518,7 @@ local function UnregisterClientNow(record)
     record.released = true
     record.unregisterPending = false
     clients[record.name] = nil
+    NS.Safety.Dispatch(PublicAPI.OnRegistrationChanged, record.name, false)
     NS.CombatGate.Cancel(record.mainScope.pendingKey)
     return true, "unregistered"
 end
@@ -508,6 +565,7 @@ function API:RegisterAddon(name, options)
     if options ~= nil and type(options) ~= "table" then return nil, "invalid-options" end
     if clients[name] and not clients[name].released then return nil, "already-registered" end
     local record = NewClient(name, options)
+    NS.Safety.Dispatch(PublicAPI.OnRegistrationChanged, name, true)
     return record.facade, PublicAPI.playerReady and "registered" or "pending"
 end
 

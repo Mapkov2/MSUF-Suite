@@ -178,6 +178,9 @@ function Page.Relevant(slot, suffix)
     local key = KEYS[slot] and KEYS[slot][suffix]
     if not key or RULES[key].hidden then return false end
     local kind = Page.Kind(slot)
+    if suffix == "laterPerRow" or suffix == "laterSize" then
+        return kind == KIND.COOLDOWN and P.Get(ID, KEYS[slot].cooldownDuration) ~= true
+    end
     if suffix == "centerFirst" then return kind == KIND.AURA_ICON
         or kind == KIND.COOLDOWN and P.Get(ID, KEYS[slot].cooldownDuration) ~= true end
     if suffix == "barStacks" or suffix == "barStackMax" or suffix == "barStackEach" or suffix == "barStackMarks"
@@ -222,6 +225,15 @@ function Page.Conceals(slot, how)
     if how == "fade" and (P.Get(ID, keys.oocAlpha) or 100) < (P.Get(ID, keys.alpha) or 100) then return true end
     return false, "Nothing hides or fades this bar."
 end
+-- A total cap at or below the first-row count leaves no later row.
+function Page.LaterRowsReason(slot)
+    if not Page.Relevant(slot, "laterPerRow") then return end
+    local keys = KEYS[slot]
+    local cap, first = P.Get(ID, keys.maxIcons), P.Get(ID, keys.perRow)
+    if cap > 0 and cap <= first then
+        return "Maximum icons prevents a second row. Raise the limit or set it to 0."
+    end
+end
 -- The sound channel means nothing while the module's sounds are muted.
 P.Gates[ID] = function(rule)
     if rule.key == "soundChannel" then return P.Get(ID, "muteSounds") ~= true end
@@ -235,6 +247,10 @@ P.Gates[ID] = function(rule)
     end
     if not TEMPLATE_SUFFIX[rule.key] then return true end
     if rule.suffix == "masque" and not Suite.Client.IsAddOnLoaded("Masque") then return false, "Masque is not loaded." end
+    if rule.suffix == "laterPerRow" or rule.suffix == "laterSize" then
+        local reason = Page.LaterRowsReason(Page.selected)
+        if reason then return false, reason end
+    end
     local how = CONCEALS[rule.suffix]
     if how then return Page.Conceals(Page.selected, how) end
     return Page.Relevant(Page.selected, rule.suffix)

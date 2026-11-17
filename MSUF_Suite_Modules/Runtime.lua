@@ -141,9 +141,14 @@ local function OwnsCVar(id, key)
     return instance ~= nil and instance.cvars ~= nil and instance.cvars[key] == true
 end
 
-local function ValidRecord(entry)
+local function RecoveryVersion(id, key)
+    local spec = S.catalog[id]
+    return spec and spec.cvarRecoveryVersions and spec.cvarRecoveryVersions[key]
+end
+
+local function ValidRecord(entry, id, key)
     return type(entry) == "table" and type(entry.before) == "string" and #entry.before < 64
-        and type(entry.applied) == "string"
+        and type(entry.applied) == "string" and entry.version == RecoveryVersion(id, key)
 end
 
 -- The Blizzard value under a still-owned override. An external edit after
@@ -153,7 +158,7 @@ function S.CVarBaseline(id, key, current)
     local recovery = Recovery(false)
     local owned = recovery and recovery[id]
     local entry = type(owned) == "table" and owned[key]
-    if ValidRecord(entry) and current == entry.applied then return entry.before end
+    if ValidRecord(entry, id, key) and current == entry.applied then return entry.before end
     return current
 end
 
@@ -169,7 +174,7 @@ function S.RestoreSaved(id, onlyKey)
     else
         for key, entry in pairs(saved) do
             if not onlyKey or key == onlyKey then
-                if not ValidRecord(entry) then
+                if not ValidRecord(entry, id, key) then
                     saved[key] = nil
                 elseif OwnsCVar(id, key) then
                     local current = CVars.GetCVar(key)
@@ -189,6 +194,31 @@ function S.RestoreCVar(id, key)
     S.RestoreSaved(id, key)
 end
 
+-- A deliberate native setting change belongs to the player. Drop the old
+-- temporary override without restoring a value from before that decision.
+function S.ForgetCVar(id, key)
+    if not OwnsCVar(id, key) then return false end
+    local recovery = Recovery(false)
+    local saved = recovery and recovery[id]
+    if type(saved) == "table" then
+        saved[key] = nil
+        if not next(saved) then recovery[id] = nil end
+        if not next(recovery) then NS.RootDB.suiteRecovery[recoveryKey] = nil end
+    end
+    return true
+end
+
+function S.CommitCVar(id, key, value)
+    if NS.InCombat() or not OwnsCVar(id, key) then return false end
+    local current = CVars.GetCVar(key)
+    if not Public(current) or type(current) ~= "string" then return false end
+    if not Public(value) or type(value) ~= "string" then return false end
+    S.ForgetCVar(id, key)
+    if current ~= value then CVars.SetCVar(key, value) end
+    local applied = CVars.GetCVar(key)
+    return Public(applied) and applied == value
+end
+
 -- Sets a CVar the module declared. The first value seen is kept as the one
 -- to restore; adoptCurrent remembers a later external edit before reapplying.
 function Context:CVar(key, value, adoptCurrent)
@@ -204,8 +234,8 @@ function Context:CVar(key, value, adoptCurrent)
         recovery[self.id] = owned
     end
     local record = owned[key]
-    if type(record) ~= "table" then
-        record = { before = current }
+    if not ValidRecord(record, self.id, key) then
+        record = { before = current, version = RecoveryVersion(self.id, key) }
         owned[key] = record
     end
     if adoptCurrent then record.before = current end

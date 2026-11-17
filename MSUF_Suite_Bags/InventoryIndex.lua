@@ -227,6 +227,7 @@ local function SortButtons(index, frame)
             buttons[key], order[#order + 1] = button, key
         end
     end
+    if P.ReagentInventory then P.ReagentInventory.AppendButtons(buttons, order) end
     table.sort(order)
     index.ordered = true
 end
@@ -288,7 +289,7 @@ function Index.ReadContainer(index, frame, recent)
         local bag, slot = math.floor(key / KEY), key % KEY
         if bag ~= synced then
             Slots.Sync(bag)
-            if IS_FOREVER then
+            if IS_FOREVER or bag == REAGENT_BAG then
                 if excludeBag then excluded = excluded + free - firstInBag end
                 firstInBag = free
                 excludeBag = bag >= 0 and ExcludesFromRegularCount(bag)
@@ -298,6 +299,7 @@ function Index.ReadContainer(index, frame, recent)
         local info, quest, version = Slots.Get(bag, slot)
         local item = Index.ReadButton(index, index.buttons[key], info, quest, version, bag, slot)
         item.bagName = BagName(index, bag)
+        if bag == REAGENT_BAG then item.reagentBag = P.ReagentInventory and P.ReagentInventory.active or nil end
         if not item.itemID then
             free = free + 1
         elseif Fresh(item, bag, slot) then

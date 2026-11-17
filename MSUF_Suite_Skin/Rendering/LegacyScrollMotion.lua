@@ -39,8 +39,9 @@ local function Changed(frame, offset)
     if not state or not next(state.owners) or not Safety.Public(offset) or type(offset) ~= "number" then return end
     local previous = state.offset
     state.offset = offset
-    -- Quest page resets must reveal the new text/reward choices immediately.
-    if state.nativeQuest and offset == 0 then Stop(state) return end
+    if state.nativeMail and Safety.Read(state.bar, "CanInterpolateScroll") == true then Stop(state) return end
+    -- Quest/mail page resets must reveal the new content immediately.
+    if state.snapToTop and offset == 0 then Stop(state) return end
     if previous == nil or previous == offset then return end
     local child = Safety.Read(frame, "GetScrollChild")
     if not Enabled() or state.dragging or not Safety.CanCreateRegions(frame)
@@ -136,9 +137,11 @@ function Legacy.Track(frame, owner, bar)
         or not Safety.HasMethod(frame, "GetScrollChild") then return false end
     local nativeQuest, nativeOnly = NS.ScrollMotion.IsQuestScroll(frame)
     if nativeOnly then return false end
+    local nativeMail = NS.ScrollMotion.IsMailScroll(frame)
+    local renderOnly = nativeQuest or nativeMail
     bar = bar or Safety.Field(frame, "ScrollBar") or Safety.Field(frame, "scrollBar")
     local state = Legacy.states[frame]
-    if not nativeQuest and Safety.HasMethod(bar, "CanInterpolateScroll") then
+    if not renderOnly and Safety.HasMethod(bar, "CanInterpolateScroll") then
         if state then wipe(state.owners) Stop(state) end
         return NS.ScrollMotion.Track(bar, owner)
     end
@@ -149,7 +152,7 @@ function Legacy.Track(frame, owner, bar)
         frame:HookScript("OnScrollRangeChanged", RangeChanged)
         frame:HookScript("OnHide", Hidden)
     end
-    state.nativeQuest = nativeQuest
+    state.snapToTop, state.nativeMail = renderOnly, nativeMail
     state.owners[owner] = true
     if Safety.CanCreateRegions(bar) and Safety.HasMethod(bar, "HookScript") then
         state.bar = bar

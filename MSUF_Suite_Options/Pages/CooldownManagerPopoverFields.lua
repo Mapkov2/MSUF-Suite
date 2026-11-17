@@ -20,6 +20,8 @@ local CHARGE_FADE_HELP =
 "Fade the charge spell while at least one charge is usable. Its space stays reserved; the native cooldown controls the opacity without exposing charge counts."
 local ACTION_GLOW_HELP =
 "Enter a spell name or ID on MSUF action bars. Its buttons glow from the aura and unit selected below. A page change in combat pauses the glow until combat ends."
+local ACTION_AURA_HELP =
+"Also show the aura on those buttons while it lasts: its icon, the full aura (swipe, duration, stacks) or one part. The game draws it, also in combat."
 local function BuildFields()
     return {
         { key = "procGlow", label = "Spell alert glow", kind = "bool", cd = true, spellOnly = true, bar = "procGlow",
@@ -88,6 +90,14 @@ end
 
 local function RemainingFields()
     return {
+        -- Sorted into the action-bar rows by its section.
+        { key = "actionAuraDisplay", label = "Action-bar aura display", kind = "choice", stack = true,
+          values = { { 0, "Glow only" }, { 2, "Aura icon" }, { 3, "Full aura" }, { 4, "Duration swipe" }, { 5, "Duration text" },
+              { 6, "Stack count" } },
+          help = ACTION_AURA_HELP },
+        { key = "actionAuraGlow", label = "Action-bar aura glow", kind = "choice", stack = true,
+          values = { { 0, "Show" }, { 2, "Hide" } },
+          help = "Hide the glow to show only the aura display above. With Glow only and a hidden glow the buttons show nothing." },
         { key = "stackColorAt", label = "Color stacks from", kind = "number", stack = true, off = true, step = 1, max = 99,
           color = "stackColor", help = "From this many stacks the number shows in the color on the right." },
         { key = "pandemic", label = "Pandemic window", kind = "bool", stack = true, bar = "pandemic",
@@ -241,7 +251,9 @@ function Page.PreparePopoverFields()
           keys = "showGCD chargeSwipe chargeEdge swipe desat hideReady hideAvailableCharges usableOnly procOnly readyAlpha cdAlpha "
               .. "showMissing barColor barText icon" },
         { label = "Buff and stacks", keys = "showAura replaceAura itemAura auraUnit stackGlow stackGlowOp stackColorAt pandemic activeBorder" },
-        { label = "Action bars", keys = "actionUsableGlow actionGlowSpell actionGlowUnit actionGlowMode actionGlowRequireSpell" },
+        { label = "Action bars",
+          keys = "actionUsableGlow actionGlowSpell actionGlowUnit actionGlowMode actionGlowRequireSpell actionAuraDisplay "
+              .. "actionAuraGlow" },
         { label = "Text", keys = "timeText stackText textTop threshold" },
         { label = "Custom timer", keys = "timerDuration timerSpell" },
         { label = "Sounds", keys = "sound lossSound usedSound chargeSound tts" },

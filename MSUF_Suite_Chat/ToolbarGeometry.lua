@@ -3,6 +3,17 @@ local NS, S = P.NS, P.Suite
 local C = P.Chat
 local M = C.M
 
+local function RefreshAfterGesture(self)
+    local context = self.toolbarRefreshContext
+    self.toolbarRefreshContext = nil
+    if not self.active or self.context ~= context then return end
+    if self.toolbarGesture then
+        self.toolbarRefreshPending = true
+    else
+        self:Refresh()
+    end
+end
+
 -- Only this owned proxy moves/sizes. Native movable/locked/layout fields and
 -- scripts stay with Blizzard. There is no idle or gesture OnUpdate script.
 local function ResizeProxy(proxy)
@@ -14,7 +25,7 @@ local function ResizeProxy(proxy)
     M.context:Property(ChatFrame1, "GetHeight", "SetHeight", height)
 end
 
-function C.StopToolbarGesture(save)
+function C.StopToolbarGesture(save, skipRefresh)
     local gesture = M.toolbarGesture
     if not gesture then return end
     local proxy, context = M.toolbarProxy, gesture.context
@@ -43,6 +54,11 @@ function C.StopToolbarGesture(save)
     M.toolbarGesture = nil
     proxy:Hide()
     if commit and not S.CommitEditPosition("chat", values) then S.Queue("chat") end
+    if M.toolbarRefreshPending and not skipRefresh then
+        M.toolbarRefreshPending = nil
+        M.toolbarRefreshContext = context
+        context:After(0, RefreshAfterGesture)
+    end
 end
 
 local function Released() C.StopToolbarGesture(true) end

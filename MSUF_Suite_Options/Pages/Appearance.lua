@@ -694,19 +694,6 @@ SkinUtilityButtons = function(ctx, body, y, width, sectionId)
     return y
 end
 
-local function RefreshButton(ctx, header, skin)
-    local button = Button(ctx, header, "Refresh Blizzard skins", 20, 0, 226, function()
-        skin.Adapters.ApplyAll()
-        skin.Typography.ApplyConfigured()
-        skin.Registry.RefreshAll()
-        if ctx.skinPreview then ctx.skinPreview.Paint() end
-    end, function() return not P.Combat() end, P.Meta(PAGE, "skin", "maintenance.refresh", "action"), { height = 21 })
-    if button then
-        button:ClearAllPoints()
-        button:SetPoint("TOPRIGHT", header, "TOPRIGHT", -16, -5)
-    end
-end
-
 -- Basics without the skin engine: its notice, then the maintenance actions.
 local function BuildBasicsWithoutEngine(ctx, b, notice)
     Section(ctx, b, "frame_basic", "Basics", notice, {}, true, function(body, y, width)
@@ -730,19 +717,11 @@ local function BuildSections(ctx, b, skin)
     BuildWindows(ctx, b, skin)
     P.BuildSkinQuestLogSection(ctx, b, skin)
     BuildCoverage(ctx, b, skin)
+    P.BuildSkinAddonSection(ctx, b, skin)
 end
 
 -- Also while the Skin addon is off: its maintenance actions stay findable
 -- (on the notice, outside any section, then).
-local coldSections
-local function ColdSkinSections()
-    coldSections = coldSections or {
-        { "basic", "Choose a look" }, { "material", "Glass and surfaces" }, { "shape", "Corners and hover" }, { "fonts", "Fonts" },
-        { "icons", "Window buttons and icon borders" }, { "window_controls", "Window position, size and minimize" },
-        { "windows", "Blizzard windows" }, { "coverage", "Window categories" },
-    }
-    return coldSections
-end
 function P.SkinSearchRows()
     local ctx, b = { searchRows = {} }, {}
     local skin = _G.MapkoSkin
@@ -753,9 +732,10 @@ function P.SkinSearchRows()
             "suite_skin_frame_basic", Tr("Basics"))
         if Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then
             BuildBasicsWithoutEngine(ctx, b, nil)
+            P.BuildSkinAddonSection(ctx, b)
             -- These sections exist when the page loads the engine. Collection
             -- stays metadata-only and never fabricates a setting identity.
-            for _, section in ipairs(ColdSkinSections()) do
+            for _, section in ipairs(Kit.ColdSections()) do
                 ctx.searchRows[#ctx.searchRows + 1] = {
                     pageKey = PAGE, kind = "section", label = Tr(section[2]),
                     sectionId = PAGE .. "_" .. section[1], keywords = { section[2], Tr(section[2]) },
@@ -767,7 +747,7 @@ function P.SkinSearchRows()
         return ctx.searchRows
     end
     BuildSections(ctx, b, skin)
-    RefreshButton(ctx, nil, skin)
+    Kit.RefreshButton(ctx, nil, skin)
     return ctx.searchRows
 end
 
@@ -789,6 +769,7 @@ local function Build(ctx)
         builder = b, header = header, toolbar = toolbar, height = 62, tabY = -8, tabs = {
             { id = "style", label = "Style", sections = "frame_basic basic material shape fonts icons" },
             { id = "windows", label = "Blizzard windows", sections = "micro hud window_controls windows coverage" },
+            { id = "addons", label = "Addon skins", sections = "addon_skins" },
         } })
     local skinPreview = rawget(ctx, "skinPreview")
     if ui and skinPreview then
@@ -797,7 +778,7 @@ local function Build(ctx)
             skinPreview.Paint()
         end
     end
-    if header then RefreshButton(ctx, header, skin) end
+    if header then Kit.RefreshButton(ctx, header, skin) end
     BuildSections(ctx, workspace, skin)
     -- Suite modules that style a Blizzard window (QualityOfLifeOwners.lua:
     -- the Battle.net toast) follow Blizzard's windows on their tab.

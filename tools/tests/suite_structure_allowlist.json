@@ -1468,7 +1468,7 @@
    "symbol": "skin.Theme.ResetColors"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "file": "MSUF_Suite_Options/Menu/MediaValues.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
    "symbol": "M.StatusBarTextureItems"

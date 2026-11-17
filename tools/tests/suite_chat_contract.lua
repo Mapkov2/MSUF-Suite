@@ -462,15 +462,17 @@ function ctx:RestoreFields(frame)
     local record = self.fields[frame]
     if record then for key, value in pairs(record) do frame[key] = value end; self.fields[frame] = nil end
 end
-ctx.anchors = {}
+ctx.anchors, ctx.points = {}, {}
 function ctx:Anchor(frame, point, relative, relativePoint, x, y)
     self.anchors[frame] = self.anchors[frame] or { points = frame.points }
     frame:ClearAllPoints()
     frame:SetPoint(point, relative, relativePoint, x, y)
+    self.points[frame] = { point = point, relative = relative, relativePoint = relativePoint, x = x, y = y }
 end
 function ctx:RestorePoints(frame)
     local record = self.anchors[frame]
     if record then frame.points, self.anchors[frame] = record.points, nil end
+    self.points[frame] = nil
 end
 function ctx:HideControl(frame, hidden)
     if hidden then
@@ -527,6 +529,11 @@ module.config = {
 }
 for key, value in pairs(chatDefaults) do
     if module.config[key] == nil then module.config[key] = value end
+end
+if arg[4] == "geometry" then
+    return { Chat = private.Chat, NS = NS, Suite = S, module = module, context = ctx, Frame = Frame,
+        state = chatState, flush = FlushWindowUpdates, reports = reports,
+        combat = function(on) inCombat, lockdown = on, on end }
 end
 inCombat, NS.startingBeforeLockdown = true, true
 module:Enable()

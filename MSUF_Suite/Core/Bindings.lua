@@ -7,13 +7,120 @@ local _, NS = ...
 -- right before this file.
 local Text = NS.Text
 
-_G.BINDING_NAME_MSUFSUITE_TOGGLE_FRIENDLY_NPCS = Text("Toggle friendly NPC nameplates")
-function NS.ToggleFriendlyNPCNameplates()
-    if NS.IsCombatLocked() then return false end
+-- Friendly visibility belongs to Blizzard. Suite switches make deliberate
+-- native changes; a normal skin refresh must not turn nameplates back on.
+local FRIENDLY_SCOPES = {
+    friendly = { key = "friendlySkinEnabled", cvar = "nameplateShowFriendlyPlayers" },
+    friendlyNpc = { key = "friendlyNpcSkinEnabled", cvar = "nameplateShowFriendlyNpcs" },
+}
+local FRIENDLY_CVARS = {
+    nameplateshowfriendlyplayers = "friendly", nameplateshowfriendlynpcs = "friendlyNpc",
+}
+local NPC_NAMES_ONLY = 4
+
+local function FriendlyNativeValue(key)
+    local value = C_CVar.GetCVar(key)
+    if not NS.Public(value) or type(value) ~= "string" then return nil end
+    local number = tonumber(value)
+    if number then return number > 0 and "1" or "0" end
+end
+
+function NS.FriendlyNameplateShown(scope, config)
+    if not NS.Public(scope) then return false end
+    local spec = FRIENDLY_SCOPES[scope]
+    if not spec then return false end
+    config = config or NS.Suite.Config("nameplates")
+    if config.enabled ~= true or config[spec.key] == false then return false end
+    local key = scope == "friendlyNpc" and config.friendlyNPCs == NPC_NAMES_ONLY and "UnitNameNPC" or spec.cvar
+    return FriendlyNativeValue(key) == "1"
+end
+
+function NS.CaptureFriendlyNameplates(module)
+    if not module then return end
+    local seen = module.friendlyVisibility or {}
+    module.friendlyVisibility = seen
+    for scope, spec in pairs(FRIENDLY_SCOPES) do
+        local value = FriendlyNativeValue(spec.cvar)
+        if value then seen[scope] = value end
+    end
+end
+
+function NS.SetFriendlyNameplates(scope, on, values)
+    if NS.InCombat() or not NS.Public(scope) or not NS.Public(on) then return false end
+    local spec = FRIENDLY_SCOPES[scope]
+    if not spec or type(on) ~= "boolean" or not FriendlyNativeValue(spec.cvar) then return false end
+    if not NS.Public(values) or (values ~= nil and type(values) ~= "table") then return false end
+    local settings = {}
+    for key, value in pairs(values or {}) do settings[key] = value end
+    settings[spec.key] = on
     local suite = NS.Suite
     local config = suite.Config("nameplates")
+    if not NS.Public(settings.enabled) then return false end
+    if config.enabled ~= true and settings.enabled ~= true then return false end
+    local ok, reason = suite.SetMany("nameplates", settings)
+    if not ok then return ok, reason end
+    config = suite.Config("nameplates")
+    local namesOnly = scope == "friendlyNpc" and config.friendlyNPCs == NPC_NAMES_ONLY
+    local value = on and not namesOnly and "1" or "0"
+    local module = suite.instances.nameplates
+    if not module or not module.active then return false end
+    module.friendlyVisibility = module.friendlyVisibility or {}
+    module.friendlyVisibility[scope] = value
+    local committed = suite.CommitCVar("nameplates", spec.cvar, value)
+    NS.CaptureFriendlyNameplates(module)
+    return committed
+end
+
+local function FriendlySettings(settings, scope, value, config)
+    settings[FRIENDLY_SCOPES[scope].key] = value == "1"
+    -- Blizzard's explicit NPC On requests health bars instead of world names.
+    if scope == "friendlyNpc" and value == "1" and config.friendlyNPCs == NPC_NAMES_ONLY then
+        settings.friendlyNPCs = 2
+    end
+end
+
+function NS.SyncFriendlyNameplates(module, event, key)
+    if not module.active or module.friendlyVisibilityWriting or not NS.Public(key) then return false end
+    local seen = module.friendlyVisibility
+    if not seen then
+        NS.CaptureFriendlyNameplates(module)
+        return false
+    end
+    local pending = module.friendlyVisibilityPending
+    if key ~= nil then
+        if type(key) ~= "string" then return false end
+        local scope = FRIENDLY_CVARS[key:lower()]
+        if not scope then return false end
+        local value = FriendlyNativeValue(FRIENDLY_SCOPES[scope].cvar)
+        if not value or value == seen[scope] then return false end
+        seen[scope] = value
+        pending = pending or {}
+        module.friendlyVisibilityPending = pending
+        pending[scope] = value
+    end
+    if not pending or NS.InCombat(event) then return false end
+    local settings, remaining = {}, nil
+    for scope in pairs(pending) do
+        local value = FriendlyNativeValue(FRIENDLY_SCOPES[scope].cvar)
+        if value then
+            seen[scope] = value
+            FriendlySettings(settings, scope, value, module.config)
+        else
+            remaining = remaining or {}
+            remaining[scope] = pending[scope]
+        end
+    end
+    module.friendlyVisibilityPending = remaining
+    if not next(settings) then return false end
+    return NS.Suite.SetMany("nameplates", settings)
+end
+
+_G.BINDING_NAME_MSUFSUITE_TOGGLE_FRIENDLY_NPCS = Text("Toggle friendly NPC nameplates")
+function NS.ToggleFriendlyNPCNameplates()
+    if NS.InCombat() then return false end
+    local config = NS.Suite.Config("nameplates")
     if not config.enabled then return false end
-    return suite.Set("nameplates", "friendlyNpcSkinEnabled", config.friendlyNpcSkinEnabled == false)
+    return NS.SetFriendlyNameplates("friendlyNpc", not NS.FriendlyNameplateShown("friendlyNpc", config))
 end
 
 -- The action bar settings that switch bar `index` off or on (`on` nil flips

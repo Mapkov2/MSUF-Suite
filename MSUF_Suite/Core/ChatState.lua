@@ -25,6 +25,8 @@ local _, Suite = ...
 --   layout(owner)              Blizzard finished laying out the dock tabs.
 --   moved(owner, frame)        a dragged chat window was let go.
 --   resized(owner, frame)      a chat window's size changed.
+--   geometry(owner, frame)     a window or permanent input changed its anchor,
+--     dimensions or scale during a bounded native-layout observation.
 --   hover(owner, frame, on)    Blizzard faded a window's chrome in or out
 --     (its own hasBeenFaded flag, set by FCF_FadeIn/OutChatFrame).
 -- Idle chat costs nothing. The follower, an owned OnUpdate that only reads
@@ -39,6 +41,7 @@ Suite.ChatState = ChatState
 local owners = ChatState.owners
 local Dispatch = Suite.Dispatch
 local ARM_SECONDS, WINDOW_CHECK, HOVER_PROBE, MAX_FRAMES = 0.5, 0.5, 0.1, 64
+local GEOMETRY_SECONDS, GEOMETRY_CHECK = 2, 0.1
 local BOX_EVENTS = {
     ["ChatFrame.OnEditBoxShow"] = "show", ["ChatFrame.OnEditBoxHide"] = "hide",
     ["ChatFrame.OnEditBoxFocusGained"] = "focus", ["ChatFrame.OnEditBoxFocusLost"] = "release",
@@ -51,10 +54,19 @@ local ARM_EVENTS = {
     GLOBAL_MOUSE_DOWN = true, GLOBAL_MOUSE_UP = true, CHAT_MSG_WHISPER = true, CHAT_MSG_WHISPER_INFORM = true,
     CHAT_MSG_BN_WHISPER = true, CHAT_MSG_BN_WHISPER_INFORM = true,
 }
+local GEOMETRY_EVENTS = {
+    EDIT_MODE_LAYOUTS_UPDATED = true, PLAYER_SPECIALIZATION_CHANGED = true,
+    PLAYER_ENTERING_WORLD = true, LOADING_SCREEN_DISABLED = true,
+    PLAYER_LEVEL_UP = true, PLAYER_LEVEL_CHANGED = true,
+    ACTIVE_TALENT_GROUP_CHANGED = true, ACTIVE_COMBAT_CONFIG_CHANGED = true,
+    INPUT_DEVICE_INTERFACE_TRANSITION = true,
+}
 local permanent = setmetatable({}, { __mode = "k" })
 local keyed = setmetatable({}, { __mode = "k" })
 local hovered = setmetatable({}, { __mode = "k" })
 local sizes = setmetatable({}, { __mode = "k" })
+local geometry = setmetatable({}, { __mode = "k" })
+local geometryWanted, geometryDue, sinceGeometry = false, false, 0
 local follower, events, probe, windowsDue, layoutDue, checkDue, editMode
 local lastSelected, lastChat, lastDocked, lastFrames, lastMoving, lastWindows = false, false, -1, -1, nil, nil
 local armedUntil, sinceCheck = 0, 0
@@ -87,11 +99,20 @@ function ChatState.IsHovered(frame)
     return hovered[frame] == true
 end
 
+function ChatState.IsMoving()
+    return not not _G.MOVING_CHATFRAME
+end
+
 local function Arm(seconds)
     if not (follower and next(owners)) then return end
     armedUntil = math.max(armedUntil, GetTime() + (seconds or ARM_SECONDS))
+    geometryDue = true
     follower:Show()
 end
+
+-- A repair can finish after the follower's final read. Observe its result so
+-- subscribed previews receive the settled geometry as well.
+function ChatState.RequestGeometry() Arm() end
 
 local function Flush()
     windowsDue = false
@@ -147,6 +168,51 @@ local function CheckSizes()
     end
 end
 
+local function RegionChanged(region)
+    if not region or Suite.Safety.IsForbidden(region) then return false end
+    local count = region:GetNumPoints()
+    if not Suite.Finite(count) or count < 1 then return false end
+    local point, relative, edge, x, y = region:GetPoint(1)
+    local width, height, scale = region:GetWidth(), region:GetHeight(), region:GetEffectiveScale()
+    if not (Suite.Public(point) and Suite.Public(relative) and Suite.Public(edge)
+        and Suite.Finite(x) and Suite.Finite(y) and Suite.Finite(width)
+        and Suite.Finite(height) and Suite.Finite(scale)) then return false end
+    local record = geometry[region]
+    if not record then
+        record = {}
+        geometry[region] = record
+    end
+    if record.count == count and record.point == point and record.relative == relative and record.edge == edge
+        and record.x == x and record.y == y and record.width == width and record.height == height and record.scale == scale then
+        return false
+    end
+    record.count, record.point, record.relative, record.edge = count, point, relative, edge
+    record.x, record.y, record.width, record.height, record.scale = x, y, width, height, scale
+    return true
+end
+
+local function CheckGeometry(silent)
+    if not geometryWanted then return end
+    local frames = _G.CHAT_FRAMES
+    if type(frames) ~= "table" then return end
+    for index = 1, math.min(#frames, MAX_FRAMES) do
+        local frame = _G[frames[index]]
+        if frame and not Suite.Safety.IsForbidden(frame) then
+            local changed = RegionChanged(frame)
+            local box = frame.editBox
+            if box and ChatState.IsPermanentBox(box) then changed = RegionChanged(box) or changed end
+            if changed and not silent then Notify("geometry", frame) end
+        end
+    end
+end
+
+-- Store our applied state before another native reset can repeat the same
+-- coordinates. Inform previews without rearming or triggering a repair loop.
+function ChatState.GeometryRepaired()
+    CheckGeometry(true)
+    Notify("settled")
+end
+
 local function FollowDock(dock)
     local selected, chat = dock and dock.selected or false, _G.SELECTED_CHAT_FRAME or false
     if selected ~= lastSelected or chat ~= lastChat then
@@ -182,6 +248,11 @@ local function Follow(self, elapsed)
     elseif stopping or IsMouseButtonDown("LeftButton") then
         CheckSizes()
     end
+    sinceGeometry = sinceGeometry + (elapsed or 0)
+    if geometryDue or stopping or sinceGeometry >= GEOMETRY_CHECK then
+        geometryDue, sinceGeometry = false, 0
+        CheckGeometry()
+    end
     if stopping then self:Hide() end
 end
 
@@ -201,11 +272,10 @@ end
 
 local function SyncProbe()
     local wanted
+    geometryWanted = false
     for _, handlers in pairs(owners) do
-        if handlers.hover then
-            wanted = true
-            break
-        end
+        if handlers.hover then wanted = true end
+        if handlers.geometry then geometryWanted = true end
     end
     if wanted and not probe then
         probe = C_Timer.NewTicker(HOVER_PROBE, ProbeHover)
@@ -215,14 +285,15 @@ local function SyncProbe()
     end
 end
 
-local function OnEvent(_, event)
+local function OnEvent(_, event, unit)
+    if event == "PLAYER_SPECIALIZATION_CHANGED" and (not Suite.Public(unit) or unit ~= "player") then return end
     if WINDOW_EVENTS[event] then
         checkDue = true
         QueueWindows()
     elseif event ~= "GLOBAL_MOUSE_DOWN" and event ~= "GLOBAL_MOUSE_UP" then
         checkDue = true
     end
-    Arm()
+    Arm(GEOMETRY_EVENTS[event] and GEOMETRY_SECONDS or ARM_SECONDS)
 end
 
 local function BoxEvent(event, box)
@@ -266,6 +337,9 @@ local function Create()
     events = CreateFrame("Frame")
     for event in pairs(WINDOW_EVENTS) do events:RegisterEvent(event) end
     for event in pairs(ARM_EVENTS) do events:RegisterEvent(event) end
+    for event in pairs(GEOMETRY_EVENTS) do
+        if Suite.Client.SupportsEvent(event) then events:RegisterEvent(event) end
+    end
     events:SetScript("OnEvent", OnEvent)
     local registry = _G.EventRegistry
     if registry and registry.RegisterCallback then

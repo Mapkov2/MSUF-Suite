@@ -177,6 +177,7 @@ C_Timer = { After = RunAtOnce }
 local PAGE_FILES = {
     dashboard = "Dashboard", looks = "Looks", icons = "Icons", colors = "Colors",
     typography = "Typography", geometry = "Geometry", skins = "Skins", coverage = "Coverage",
+    addonSkins = "AddonSkins",
     hud = "HUD", profiles = "Profiles", advanced = "Advanced",
 }
 local function PageSource(key)
@@ -209,6 +210,10 @@ local searchNS = {
 assert(loadfile("MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", searchNS)
 assert(loadfile("MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", searchNS)
 local searchOptions = { GetPageDefinition = function() return nil end }
+local addonCatalog = {}
+assert(loadfile("MSUF_Suite/Core/AddonSkinCatalog.lua"))("MSUF_Suite", addonCatalog)
+searchNS.SuiteCore = function() return addonCatalog end
+assert(loadfile("MSUF_Suite_Skin/Adapters/AddonSkinsCatalog.lua"))("MSUF_Suite_Skin", searchNS)
 assert(loadfile("MSUF_Suite_Skin_Options/Shell/Search.lua"))("MSUF_Suite_Skin_Options", {
     NS = searchNS,
     Options = searchOptions,

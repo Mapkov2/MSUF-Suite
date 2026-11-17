@@ -55,12 +55,21 @@ function AB.BuildStyle()
     style.flags = OUTLINES[config.fontOutline] or ""
     style.rendering, style.shadow = config.fontRendering, config.fontShadow
     style.shadowOpacity, style.shadowDistance = config.fontShadowOpacity, config.fontShadowDistance
+    style.texts = style.texts or {}
+    for _, key in ipairs({ "keybind", "macro", "count", "cooldown" }) do
+        local text = style.texts[key] or {}
+        style.texts[key] = text
+        local custom = config[key .. "FontOverride"]
+        text.font = custom and S.ResolveFont(config[key .. "Font"]) or style.font
+        text.flags = custom and OUTLINES[config[key .. "FontOutline"]] or style.flags
+    end
     style.zoom = config.iconZoom / 100
     AB.ResolveShape(style, config)
     -- MSUF's icon skin for the button shape (a shaped button takes skins of
     -- its shape over its mask) draws the border in place of the Suite's own.
     style.skin = NS.HostBridge.IconSkinLook(config.iconSkin, style.shape)
-    style.border = style.skin and 0 or config.borderSize
+    style.mediaBorder = config.mediaBorder and config.mediaBorder ~= "" and AB.ResolveMediaBorder(config.mediaBorder) or nil
+    style.border = (style.skin or style.mediaBorder) and 0 or config.borderSize
     local classR, classG, classB = S.ClassRGB(Class())
     if config.borderClassColor and classR then
         style.br, style.bg, style.bb = classR, classG, classB
@@ -82,6 +91,8 @@ function AB.BuildStyle()
     style.swipeAlpha = config.swipeAlpha / 100
     style.highlight, style.pushed = config.highlightStyle, config.pushedStyle
     style.rr, style.rg, style.rb = S.RGB(config.rangeColor)
+    style.rangeKey = config.rangeIndicator == 2 or config.rangeIndicator == 3
+    style.rangeIcon = config.rangeIndicator ~= 2
     BuildTints(style, config)
     AB.styleGen = AB.styleGen + 1
     return style
@@ -146,10 +157,11 @@ local function StyleInteraction(rec, key, texture, mode, alpha)
     end
 end
 
-local function Text(fontString, size, r, g, b, shown)
+local function Text(fontString, size, r, g, b, shown, kind)
     if not fontString then return end
     local style = AB.style
-    S.SetStyledFont(fontString, style.font, size, style.flags, style.rendering,
+    local text = kind and style.texts[kind] or style
+    S.SetStyledFont(fontString, text.font, size, text.flags, style.rendering,
         style.shadow, style.shadowOpacity, style.shadowDistance)
     fontString:SetTextColor(r, g, b)
     fontString:SetAlpha(shown and 1 or 0)
@@ -258,7 +270,7 @@ local function CooldownText(text, rec, size, fontScale)
     local fontSize = max(6, c[rec.bar.key.CooldownSize] - fontScale)
     if c[rec.bar.key.CooldownAutoSize] ~= false then fontSize = math.min(fontSize, max(6, floor(size * .42))) end
     AnchorText(text, rec, "Cooldown", "CENTER", 0, 0)
-    Text(text, fontSize, style.dr, style.dg, style.db, true)
+    Text(text, fontSize, style.dr, style.dg, style.db, true, "cooldown")
 end
 
 local function StyleTexts(rec, size, border, fontScale)
@@ -278,13 +290,17 @@ local function StyleTexts(rec, size, border, fontScale)
         local keySize = max(6, config[keys.KeybindSize] - fontScale)
         hotkey:SetWordWrap(false)
         hotkey:SetSize(max(1, size - 2), keySize + 2)
-        Text(hotkey, keySize, style.kr, style.kg, style.kb, config[keys.Keybind])
+        Text(hotkey, keySize, style.kr, style.kg, style.kb, config[keys.Keybind], "keybind")
+        if style.rangeKey then
+            rec.keyRangeStyle = nil
+            AB.RangeKey(rec)
+        end
     end
     local count = button.Count
     if count then
         count:ClearAllPoints()
         AnchorText(count, rec, "Count", "BOTTOMRIGHT", -1 - border, 2 + border)
-        Text(count, config[keys.CountSize], style.cr, style.cg, style.cb, true)
+        Text(count, config[keys.CountSize], style.cr, style.cg, style.cb, true, "count")
     end
     local name = button.Name
     if name then
@@ -293,7 +309,7 @@ local function StyleTexts(rec, size, border, fontScale)
         name:SetWidth(max(1, size - 2))
         name:SetHeight(config[keys.MacroSize] + 2)
         name:SetWordWrap(false)
-        Text(name, config[keys.MacroSize], style.mr, style.mg, style.mb, rec.owned and config[keys.Macro])
+        Text(name, config[keys.MacroSize], style.mr, style.mg, style.mb, rec.owned and config[keys.Macro], "macro")
     end
 end
 
@@ -343,6 +359,7 @@ function AB.StyleButton(rec)
     end
     StyleTexts(rec, size, border, fontScale)
     StyleCooldowns(rec, math.min(size, bar.height or size), fontScale)
+    if AB.style.mediaBorder or rec.mediaBorderFrame then AB.StyleMediaBorder(rec) end
     -- The skin's layers are textures of the button around its icon, under
     -- the cooldown swipe and texts; drawn here only (out of combat, like the
     -- whole style pass), never by a paint or an event.

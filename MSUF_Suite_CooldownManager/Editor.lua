@@ -321,13 +321,15 @@ local function Offer(context, slot, key, seen, rows, explicit, listed)
     key = listed and context.alias[key] or key
     local claim = ClaimKey(context, key)
     local row, owner = context.records[key], context.claims[claim]
-    local hidden = (context.lists.hidden[context.spec] or EMPTY)[key]
+    local hiddenKeys = context.lists.hidden[context.spec] or EMPTY
+    local hidden = hiddenKeys[key]
     if not row or row.family ~= Family(context, slot) or seen[claim] or (owner and owner ~= slot) then return end
     if listed and owner ~= slot or hidden and not explicit then return end
     local stand = row.spellCategory and context.stand[row.spellCategory]
     if not listed and stand and context.claims[stand] then return end
-    local equip = row.equipSlot
-    if equip and (seen["e" .. equip] or context.slotHome[equip] and context.slotHome[equip] ~= slot) then return end
+    local equip = row.family == CDM.FAMILY.COOLDOWN and row.equipSlot
+    if equip and (not explicit and hiddenKeys["e" .. equip]
+        or seen["e" .. equip] or context.slotHome[equip] and context.slotHome[equip] ~= slot) then return end
     seen[claim] = true
     rows[#rows + 1] = row
 end

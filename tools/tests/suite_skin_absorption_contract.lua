@@ -260,7 +260,7 @@ assert(_G.MapkoSkin == namespace and namespace.Suite == nil)
 local lifecycle
 for index = legacyFrameCount + 1, #created_frames do
     local frame = created_frames[index]
-    if frame.events.ADDON_LOADED and frame.events.PLAYER_LOGIN then lifecycle = frame; break end
+    if frame.events.ADDON_LOADED and frame.events.PLAYER_LOGIN and frame.events.PLAYER_LOGOUT then lifecycle = frame; break end
 end
 assert(lifecycle, "Suite skin lifecycle missing")
 lifecycle.scripts.OnEvent(lifecycle, "ADDON_LOADED", "MSUF_Suite_Skin")

@@ -11,9 +11,10 @@ local secret = setmetatable({}, {
     __lt = function() error("secret compared in Lua") end,
     __le = function() error("secret compared in Lua") end,
 })
+local wideAmount = "12345678901234567890"
 local methods = {
-    SetSize = NOOP, SetFrameStrata = NOOP, EnableMouse = NOOP, SetAllPoints = NOOP,
-    SetJustifyH = NOOP, SetJustifyV = NOOP, SetWordWrap = NOOP, SetTextColor = NOOP,
+    SetFrameStrata = NOOP, EnableMouse = NOOP,
+    SetJustifyH = NOOP, SetJustifyV = NOOP, SetTextColor = NOOP,
     SetOrder = NOOP, SetOffset = NOOP, SetFromAlpha = NOOP, SetToAlpha = NOOP,
     SetDuration = NOOP, SetStartDelay = NOOP,
 }
@@ -31,16 +32,22 @@ function methods:UnregisterAllEvents() wipe(self.events) end
 function methods:Hide() self.shown = false end
 function methods:Show() self.shown = true end
 function methods:ClearAllPoints() self.anchor = nil end
-function methods:SetPoint(_, plate)
+function methods:SetSize(width, height) self.width, self.height = width, height end
+function methods:SetAllPoints(frame) self.bounds = frame end
+function methods:SetWordWrap(value) self.wordWrap = value end
+function methods:SetNonSpaceWrap(value) self.nonSpaceWrap = value end
+function methods:SetClipsChildren(value) self.clipsChildren = value end
+function methods:SetPoint(point, plate)
     assert(not plate.forbidden)
-    self.anchor, anchors = plate, anchors + 1
+    self.point, self.anchor, anchors = point, plate, anchors + 1
 end
 function methods:CreateAnimationGroup() return New() end
 function methods:CreateAnimation() return New() end
 function methods:Play() self.playing = true end
 function methods:Stop() assert(self.playing); self.playing = false end
 function methods:SetFormattedText(format, amount)
-    assert(format == "%s" and rawequal(amount, secret), "Amount must reach the native sink unchanged")
+    assert(format == "%s" and (rawequal(amount, secret) or amount == wideAmount),
+        "Amount must reach the native sink unchanged")
     self.amount, paints = amount, paints + 1
 end
 
@@ -102,6 +109,18 @@ M.config = {}
 for key, rule in pairs(spec.rules) do M.config[key] = rule.default end
 M.context, M.active = S.NewContext(id), true
 M:Enable()
+local function CheckTextGeometry()
+    for _, slot in ipairs(M.slots) do
+        assert(slot.frame.clipsChildren == false, "Animation holder can clip its text")
+        for _, text in ipairs({ slot.normal, slot.critical }) do
+            assert(text.point == "CENTER" and text.anchor == slot.frame and not text.bounds,
+                "Text has fixed anchor bounds that truncate large amounts")
+            assert(not text.width and not text.height, "Text must retain native content sizing")
+            assert(text.wordWrap == false and text.nonSpaceWrap == false, "Damage numbers can wrap")
+        end
+    end
+end
+CheckTextGeometry()
 local context = M.context
 local function EmitOn(frame, event, ...)
     local unit = frame.events[event]
@@ -119,7 +138,8 @@ Hit("target")
 assert(paints == 0 and clockReads == 0, "An unmatched hit spent work or appeared")
 Emit("PLAYER_SWING", 2, Enum.PlayerSwingType.MainHand)
 Hit("target", "CRITICAL")
-assert(paints == 1 and M.slots[1].text.fontSize > M.config.fontSize)
+assert(paints == 1 and M.slots[1].text == M.slots[1].critical
+    and M.slots[1].text.fontSize == M.config.fontSize * M.config.critScale / 100)
 Hit("target")
 assert(paints == 1, "One swing admitted a second hit")
 Emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 99)
@@ -188,6 +208,20 @@ assert(M.slots[1].normal.fontPath == font and M.slots[1].critical.fontPath == fo
 M.config.hideBlizzard = true
 M:Refresh()
 assert(cvar == "0")
+for _, override in ipairs({ "", "CombatTextFont" }) do
+    M.config.font, M.config.fontSize, M.config.critScale = override, 48, 200
+    M:Refresh()
+    for index = 1, 48 do
+        local flag = index <= 24 and "CRITICAL" or ""
+        Emit("UNIT_COMBAT", "target", "WOUND", flag, wideAmount, 1)
+        local entry = M.slots[M.cursor]
+        local expected = flag == "CRITICAL" and entry.critical or entry.normal
+        assert(entry.text == expected and entry.text.shown ~= false)
+        assert(entry.text.amount == wideAmount and entry.text.fontSize == (flag == "CRITICAL" and 96 or 48),
+            "Pool reuse lost the full amount or critical size")
+        CheckTextGeometry()
+    end
+end
 M.active = false
 M:Disable()
 context:Release()

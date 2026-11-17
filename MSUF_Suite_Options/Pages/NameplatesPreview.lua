@@ -137,6 +137,7 @@ local function PreviewFont(region, prefix, nativeSize, nativeOnly, health)
     P.StylePreviewFont(region, NATIVE_TEXT_FONT, nativeSize, "OUTLINE")
     region:SetShadowColor(0, 0, 0, 0)
     region:SetShadowOffset(0, 0)
+    return nativeSize
 end
 
 local function Place(s, frame, point, owner, relative, x, y, key)

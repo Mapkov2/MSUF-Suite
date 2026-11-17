@@ -528,6 +528,17 @@ local function ClassContent(holder, sample)
     return 3
 end
 
+-- The menu must keep every selected entry reachable, including items past
+-- the live bar's cap. A per-holder view changes layout only, never settings.
+local function EditorLayout(holder, view)
+    if not holder.layoutView then
+        holder.layoutMeta = {}
+        holder.layoutView = setmetatable({ maxIcons = 0 }, holder.layoutMeta)
+    end
+    holder.layoutMeta.__index = view
+    return holder.layoutView
+end
+
 function Preview.Render(parent, slot, maxWidth, maxHeight, classSample)
     local view = parent and C.views[slot]
     if not view then return nil end
@@ -562,7 +573,7 @@ function Preview.Render(parent, slot, maxWidth, maxHeight, classSample)
             holder.n = n
         end
     end
-    local width, height, count = C.Layout.Offsets(view, n, holder.out)
+    local width, height, count = C.Layout.Offsets(EditorLayout(holder, view), n, holder.out)
     Rest(holder, kind ~= KIND.AURA_BAR and count or 0)
     if kind == KIND.AURA_BAR then
         Rows(holder, view, count)

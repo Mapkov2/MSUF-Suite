@@ -1,13 +1,36 @@
 local _, P = ...
 local Suite, M, W, Tr, HM = P.Suite, P.M, P.W, P.Tr, P.HM
 local PAGE = "suite_skin"
-local SearchRow = P.SkinSearchRow
+local SearchRow, Button = P.SkinSearchRow, P.SkinSearchButton
 
 -- The toolkit Appearance.lua builds the Skinning page with: the on-demand
 -- engine, history-wrapped skin writes, row metadata and dropdown values, the
 -- section accordion and its reset to the factory profile.
 local Kit = {}
 P.SkinPageKit = Kit
+
+local coldSections
+function Kit.ColdSections()
+    coldSections = coldSections or {
+        { "basic", "Choose a look" }, { "material", "Glass and surfaces" }, { "shape", "Corners and hover" }, { "fonts", "Fonts" },
+        { "icons", "Window buttons and icon borders" }, { "window_controls", "Window position, size and minimize" },
+        { "windows", "Blizzard windows" }, { "coverage", "Window categories" },
+    }
+    return coldSections
+end
+
+function Kit.RefreshButton(ctx, header, skin)
+    local button = Button(ctx, header, "Refresh Blizzard skins", 20, 0, 226, function()
+        skin.Adapters.ApplyAll()
+        skin.Typography.ApplyConfigured()
+        skin.Registry.RefreshAll()
+        if ctx.skinPreview then ctx.skinPreview.Paint() end
+    end, function() return not P.Combat() end, P.Meta(PAGE, "skin", "maintenance.refresh", "action"), { height = 21 })
+    if button then
+        button:ClearAllPoints()
+        button:SetPoint("TOPRIGHT", header, "TOPRIGHT", -16, -5)
+    end
+end
 
 -- The skin engine loads on demand (never in combat) the first time this page
 -- is built.
@@ -184,7 +207,7 @@ local function ResetSkinSection(skin, id, rows, contextRows)
         skin.Typography.ApplyConfigured()
         skin.Adapters.ApplyAll()
         skin.Registry.RefreshAll()
-        skin.Registry.NotifyListeners("theme", "section-reset")
+        skin.Registry.NotifyListeners(id == "addon_skins" and "addonSkins" or "theme", "section-reset")
         return true
     end)
 end
