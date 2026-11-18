@@ -7,26 +7,35 @@ local Menus = { widgets = setmetatable({}, { __mode = "k" }), libraries = {} }
 NS.AddonMenus = Menus
 local Safety = NS.Safety
 local roots = { Frame = true, Window = true }
+local paintedRoots = setmetatable({}, { __mode = "k" })
 local mode = { role = "shell", allowImplicitProtected = false, maxDepth = 0, maxNodes = 0, registerDynamicRows = false }
 
 local function Enabled(state)
-    return NS.AddonSkins.IsEnabled("aceGUI")
+    return NS.AddonSkins and NS.AddonSkins.IsEnabled("aceGUI")
         and (not state or not state.addonID or NS.AddonSkins.IsEnabled(state.addonID))
         and (not state or not state.addonID or not NS.AddonSkins.cooperative[state.addonID])
 end
 
+local function ReleaseWidget(state)
+    if not state.hasWidgetArt then return end
+    NS.AceWidgets.Release(state.widget, state.owner)
+    state.hasWidgetArt = nil
+end
+
 local function Release(state)
+    if not paintedRoots[state] then return end
     NS.GenericWindows.Disable(state.owner)
     NS.MenuMotion.Release(state.owner)
     for widget in pairs(state.members or {}) do
         local member = Menus.widgets[widget]
         if member and member.rootState == state then
-            NS.AceWidgets.Release(widget, member.owner)
+            ReleaseWidget(member)
             member.rootState = nil
         end
         state.members[widget] = nil
     end
     state.applied = false
+    paintedRoots[state] = nil
 end
 
 local Registered, Schedule
@@ -35,8 +44,10 @@ local function PaintWidget(widget, root, budget, depth)
     local state = Menus.widgets[widget]
     if not state then Registered(nil, widget) state = Menus.widgets[widget] end
     if not state or state.released then return budget - 1 end
+    if state.rootState and state.rootState ~= root then state.rootState.members[widget] = nil end
     state.rootState = root
     root.members[widget] = true
+    state.hasWidgetArt = true
     NS.AceWidgets.Apply(widget, state.owner)
     local children = Safety.Field(widget, "children") or Safety.Field(widget, "items")
     if type(children) == "table" then
@@ -52,12 +63,19 @@ end
 
 local function Paint(state)
     state.queued = false
+    if not state.root or state.released then return end
+    if not Enabled() then Release(state) return end
+    if state.pendingApp then
+        state.addonID = NS.AddonSkins.ResolveApp(state.pendingApp)
+        state.pendingApp = nil
+    end
     local frame = Safety.Field(state.widget, "frame")
     state.addonID = state.addonID or NS.AddonSkins.Origin(frame)
-    if not state.root or state.released then return end
     if not Enabled(state) then Release(state) return end
     if not Safety.CanCreateRegions(frame) or Safety.GetProtection(frame)
         or Safety.Read(frame, "IsVisible") ~= true or NS.Motion.combat or NS.IsCombatLocked() then return end
+    -- An interrupted first paint may already have acquired a visual lease.
+    paintedRoots[state] = true
     NS.GenericWindows.ApplyFrame(frame, state.owner, mode)
     state.members = state.members or setmetatable({}, { __mode = "k" })
     PaintWidget(state.widget, state, 512, 0)
@@ -67,6 +85,8 @@ local function Paint(state)
 end
 
 Schedule = function(state, invalidate)
+    if state.released then return end
+    if not paintedRoots[state] and NS.AddonSkins and NS.DB and not Enabled(state) then return end
     if invalidate ~= false then state.dirty = true end
     if state.queued or state.applied and not state.dirty then return end
     state.queued = true
@@ -93,9 +113,11 @@ end
 local function Acquired(widget)
     local state = Menus.widgets[widget]
     if state then
-        if state.rootState and state.rootState ~= state then state.rootState.members[widget] = nil end
-        state.released, state.addonID, state.rootState = false, nil, nil
+        -- Some widgets call OnAcquire again while live. A pool release or
+        -- adoption by a different root owns the previous membership cleanup.
+        state.released, state.addonID, state.pendingApp = false, nil, nil
     end
+    if not NS.AddonSkins or not NS.AddonSkins.IsEnabled() then return end
     local kind = Safety.Field(widget, "type")
     if Safety.Public(kind) and type(kind) == "string" and kind:find("^RXPV2") then
         NS.RestedXPSkin.Acquired(widget)
@@ -106,6 +128,7 @@ local function Acquired(widget)
 end
 
 local function ChildAdded(widget)
+    if not NS.AddonSkins or not NS.AddonSkins.IsEnabled() then return end
     local kind = Safety.Field(widget, "type")
     if Safety.Public(kind) and type(kind) == "string" and kind:find("^RXPV2") then NS.RestedXPSkin.Acquired(widget) return end
     for _ = 1, 16 do
@@ -147,8 +170,9 @@ local function Released(_, widget)
     local state = Menus.widgets[widget]
     if state then
         state.released = true
-        NS.AceWidgets.Release(widget, state.owner)
+        ReleaseWidget(state)
         if state.rootState and state.rootState ~= state then state.rootState.members[widget] = nil end
+        state.rootState = nil
     end
     if state and state.contentOwner then
         NS.ContentMotion.Unwatch(state.contentOwner, Safety.Field(widget, "content"))
@@ -158,11 +182,16 @@ local function Released(_, widget)
 end
 
 local function Opened(dialog, name, container)
-    local widget = container or Safety.Field(Safety.Field(dialog, "OpenFrames"), name)
+    if not Safety.Public(name) or not Safety.Public(container) then return end
+    local widget = type(container) == "table" and container or Safety.Field(Safety.Field(dialog, "OpenFrames"), name)
     if widget then
         Registered(dialog, widget, true)
         local state = Menus.widgets[widget]
-        if state then state.addonID = NS.AddonSkins.ResolveApp(name) end
+        if state then
+            state.pendingApp = not NS.AddonSkins and name or nil
+            state.addonID = NS.AddonSkins and NS.AddonSkins.ResolveApp(name)
+            Schedule(state)
+        end
     end
 end
 
@@ -223,6 +252,10 @@ end
 local function Refresh(_, domain)
     if domain ~= "addonSkins" and domain ~= "profile" and domain ~= "adapter" and domain ~= "theme"
         and domain ~= "color" and domain ~= "appearance" and domain ~= "geometry" and domain ~= "typography" then return end
+    if not Enabled() then
+        for state in pairs(paintedRoots) do Schedule(state) end
+        return
+    end
     for _, state in pairs(Menus.widgets) do
         if state.root then Schedule(state) end
     end

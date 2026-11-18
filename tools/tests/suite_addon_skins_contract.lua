@@ -6,6 +6,7 @@ local function Check(value, why) checks = checks + 1 assert(value, why) end
 local function Noop() end
 local frames, queue, listeners, surfaces, paints, labels = {}, {}, {}, {}, {}, {}
 local paintCounts = {}
+local paintModes = {}
 local releasedOwners = {}
 C_Timer = { After = function(_, job) queue[job] = true end }
 local function Frame(kind, parent, source)
@@ -81,7 +82,8 @@ local NS = {
         DisableOwner = function(owner) releasedOwners[owner] = true end },
     ScrollBarSkin = { Apply = function(frame) paints[frame] = "scrollbar" end, DisableOwner = Noop },
     MenuMotion = { Release = Noop, OwnerFor = Noop },
-    WindowActionSkin = { Apply = function(button) paints[button] = "close" return {} end, DisableOwner = Noop },
+    WindowActionSkin = { ApplyExplicit = function(button) paints[button] = "close" return {} end,
+        IsApplied = function() return false end, DisableOwner = Noop },
     Checkmarks = { GetWindowAction = function(frame) return frame.action end },
     ContentMotion = { Watch = Noop, Unwatch = Noop, Play = Noop }, Motion = {},
     PublicAPI = {}, AddonSettings = { IsApplied = function() return false end, ReleaseAddon = Noop },
@@ -104,8 +106,9 @@ Load("Core/Cosmetics.lua")
 Load("Core/Defaults.lua")
 NS.DB = { enabled = true, skins = { blizzardWindows = false }, addonSkins = NS.CopyValue(NS.Defaults.addonSkins) }
 NS.GenericWindows = {
-    ApplyFrame = function(frame)
+    ApplyFrame = function(frame, _, mode)
         paints[frame] = "shell"
+        paintModes[frame] = mode
         paintCounts[frame] = (paintCounts[frame] or 0) + 1
         return true
     end,
@@ -125,8 +128,11 @@ end }
 Load("Adapters/AddonSkinVisuals.lua")
 Load("Adapters/AddonSkinCompendium.lua")
 Load("Adapters/AddonSkinRestedXP.lua")
+Load("Adapters/AddonSkinProfiler.lua")
 Load("Adapters/AddonSkinEnhanceQoL.lua")
 Load("Adapters/AceWidgets.lua")
+local preopened = { type = "Frame", frame = Frame(), children = {} }
+dialog.OpenFrames.BugSack = preopened
 Load("Adapters/AddonMenus.lua")
 local addonCatalog = {}
 assert(loadfile(root .. "/MSUF_Suite/Core/AddonSkinCatalog.lua"))("MSUF_Suite", addonCatalog)
@@ -152,7 +158,7 @@ local function Event(name, ...)
     end
 end
 Check(NS.DB.addonSkins.enabled == false, "addon skins must start opt-in")
-Check(#NS.AddonSkinDefinitions == 22, "the requested addon catalog is incomplete")
+Check(#NS.AddonSkinDefinitions == 23, "the requested addon catalog is incomplete")
 local windows = {}
 for _, entry in ipairs(NS.AddonSkinDefinitions) do
     local window = Frame("Frame", UIParent, "@Interface/AddOns/" .. entry.addons[1] .. "/Settings.lua:10")
@@ -162,6 +168,10 @@ end
 Event("PLAYER_LOGIN") Flush()
 Check(not next(paints), "disabled addon skins painted a foreign window")
 assert(NS.AddonSkins.SetOption("enabled", true)) Flush()
+Check(NS.AddonMenus.widgets[preopened].addonID == "bugSack" and paints[preopened.frame] == "shell",
+    "AceConfig window already open during engine loading lost its addon identity or skin")
+gui:Release(preopened)
+dialog.OpenFrames.BugSack = nil
 for id, frame in pairs(windows) do
     Check(paints[frame] == "shell" and frame.Center.alpha == 0, id .. " window/chrome was not skinned")
 end
@@ -221,13 +231,115 @@ local viewerPaints, secondaryReads, secondaryChildren = paintCounts[DoesItDieLea
 for _ = 1, 100 do viewButton.scripts.OnClick(viewButton) Flush() end
 Check(paintCounts[DoesItDieLearnedTicks] == viewerPaints and sourceReads == secondaryReads and childReads == secondaryChildren,
     "DoesItDie's known secondary window triggered discovery or repeated painting")
-local function Widget(kind)
-    local widget = { type = kind, frame = Frame(), children = {}, content = Frame(), OnAcquire = Noop }
+local function Widget(kind, selectTab)
+    local widget = { type = kind, frame = Frame(), children = {}, content = Frame(), OnAcquire = Noop, SelectTab = selectTab }
     widget.frame.obj = widget
     function widget:AddChild(child) self.children[#self.children + 1] = child child.parent = self end
     gui:RegisterAsContainer(widget)
     widget:OnAcquire()
     return widget
+end
+do
+    NS.AddonSkins.SetOption("enabled", false) Flush()
+    local releaseWidget, releases = NS.AceWidgets.Release, {}
+    NS.AceWidgets.Release = function(widget, owner)
+        releases[widget] = (releases[widget] or 0) + 1
+        releaseWidget(widget, owner)
+    end
+    local enqueue, requests = NS.Registry.QueueJob, 0
+    NS.Registry.QueueJob = function(job) requests = requests + 1 enqueue(job) end
+    local live, hidden, unused = Widget("Frame"), Widget("Window"), Widget("Frame")
+    local child, nested = Widget("SimpleGroup"), Widget("Button")
+    child.label = Frame("FontString")
+    live:AddChild(child)
+    hidden.frame:Hide()
+    gui:Release(live)
+    live:OnAcquire()
+    gui:Release(unused)
+    local tab, selected, unwatched = Widget("TabGroup", Noop), false, false
+    local motionOwner = {}
+    NS.MenuMotion.OwnerFor = function(content) if content == tab.content then return motionOwner end end
+    NS.ContentMotion.Play = function(content, owner, token)
+        selected = content == tab.content and owner == motionOwner and token == "example"
+        return selected
+    end
+    NS.ContentMotion.Unwatch = function(owner, content) unwatched = owner == motionOwner and content == tab.content end
+    tab:SelectTab("example")
+    gui:Release(tab)
+    NS.MenuMotion.OwnerFor, NS.ContentMotion.Play, NS.ContentMotion.Unwatch = Noop, Noop, Noop
+    Check(selected and unwatched, "disabled widget art interrupted independent content motion ownership")
+    Check(not next(releases), "pool released visual owners for unpainted widgets while disabled")
+    local reads, children = sourceReads, childReads
+    local field, parentReads = NS.Safety.Field, 0
+    NS.Safety.Field = function(target, key)
+        if key == "parent" then parentReads = parentReads + 1 end
+        return field(target, key)
+    end
+    for _ = 1, 100 do
+        live.frame:Show()
+        live:OnAcquire()
+        child:AddChild(nested)
+        child.children[1] = nil
+        Flush()
+    end
+    NS.Safety.Field = field
+    NS.Registry.QueueJob = enqueue
+    Check(sourceReads == reads and childReads == children and parentReads == 0 and requests == 0,
+        "disabled Ace root lifecycle queued discovery or walked a child parent chain")
+    child:AddChild(nested)
+    NS.AddonSkins.SetOption("enabled", true) Flush()
+    Check(paints[live.frame] == "shell" and labels[child.label] and not paints[hidden.frame] and not paints[unused.frame],
+        "re-enable missed a standalone pooled Ace window or painted a hidden/released one")
+    hidden.frame:Show() Flush()
+    Check(paints[hidden.frame] == "shell", "hidden Ace window failed first visible paint after enable")
+    -- Native ownership moves the same live child to the second root.
+    live.children = {}
+    hidden:AddChild(child) Flush()
+    gui:Release(live)
+    Check(not releases[child] and labels[child.label], "old root released a widget adopted by another window")
+    child:OnAcquire()
+    gui:Release(hidden)
+    gui:Release(child)
+    gui:Release(nested)
+    gui:Release(hidden)
+    Check(releases[live] == 1 and releases[hidden] == 1 and releases[child] == 1 and releases[nested] == 1
+        and not labels[child.label], "applied Ace art did not release exactly once across root and individual teardown")
+
+    local partial = Widget("Window")
+    local owner = NS.AddonMenus.widgets[partial].owner
+    local apply, disable = NS.GenericWindows.ApplyFrame, NS.GenericWindows.Disable
+    local released = false
+    NS.GenericWindows.ApplyFrame = function(frame, ...)
+        apply(frame, ...)
+        if frame == partial.frame then error("partial Ace paint") end
+    end
+    NS.GenericWindows.Disable = function(lease)
+        if lease == owner then released = true end
+        disable(lease)
+    end
+    local ok, err = pcall(Flush)
+    NS.GenericWindows.ApplyFrame = apply
+    Check(not ok and tostring(err):find("partial Ace paint", 1, true), "partial paint fixture did not acquire its lease")
+    NS.AddonSkins.SetOption("enabled", false) Flush()
+    Check(released, "disabling Ace lost the lease left by an interrupted first paint")
+    gui:Release(partial)
+    NS.GenericWindows.Disable = disable
+    NS.AddonSkins.SetOption("enabled", true) Flush()
+
+    local interrupted, interruptedChild = Widget("Frame"), Widget("Button")
+    interrupted:AddChild(interruptedChild)
+    local applyWidget = NS.AceWidgets.Apply
+    NS.AceWidgets.Apply = function(widget, ...)
+        applyWidget(widget, ...)
+        if widget == interruptedChild then error("partial Ace widget art") end
+    end
+    ok, err = pcall(Flush)
+    NS.AceWidgets.Apply = applyWidget
+    Check(not ok and tostring(err):find("partial Ace widget art", 1, true), "widget art interruption was not reached")
+    gui:Release(interrupted)
+    gui:Release(interruptedChild)
+    Check(releases[interrupted] == 1 and releases[interruptedChild] == 1, "partial Ace widget art lost its single release")
+    NS.AceWidgets.Release = releaseWidget
 end
 local config = Widget("Frame")
 config.frame.backdrop, config.frame.Center = {}, Frame("Texture")
@@ -275,7 +387,7 @@ function nativeBox:ForEachFrame(callback) callback(nativeRow) end
 local category = { GetName = function() return "One For All" end }
 SettingsPanel = { GetCurrentCategory = function() return category end,
     GetSettingsList = function() return { ScrollBox = nativeBox } end }
-EventRegistry = { RegisterCallback = Noop }
+EventRegistry = { RegisterCallback = Noop, UnregisterCallback = Noop }
 NS.AdapterKit = { RegisterRowCallback = function() return "initialized" end, UnregisterRowCallback = Noop }
 NS.GenericWindows.ApplyDescendant = function(row) paints[row] = "native-addon-row" return true end
 NS.DB.skins.settings = false
@@ -596,6 +708,124 @@ local popupPaints = paintCounts[popup.frame]
 popup:OnAcquire() Flush()
 Check(paintCounts[popup.frame] == popupPaints + 1, "native root pool acquisition did not refresh its rebuilt controls")
 
+-- Numy's UI is lazy. Neither profiling ticks nor repeated value/pool updates
+-- may perform Suite work; only a new FontString has a construction callback.
+NS.AddonSkins.SetOption("addonProfiler", false) Flush()
+local profilerTicks = 0
+local profilerTick = function() profilerTicks = profilerTicks + 1 end
+local function ProfilerRow(parent)
+    local row = Frame("Button", parent)
+    function row:CreateFontString()
+        local label = Frame("FontString")
+        self.regions[#self.regions + 1] = label
+        return label
+    end
+    row.UpdateColumns = profilerTick
+    return row
+end
+NumyAddonProfiler = { InitUI = function(self)
+    self.ProfilerFrame = Frame("Frame", UIParent)
+    self.ProfilerFrame:SetScript("OnUpdate", profilerTick)
+    self.ProfilerFrame.TotalRow = ProfilerRow(self.ProfilerFrame)
+    self.ProfilerFrame.ResizeButton = Frame("Button", self.ProfilerFrame)
+    self.ProfilerFrame.ScrollBox = Frame("Frame", self.ProfilerFrame)
+    self.visibleRow = ProfilerRow(self.ProfilerFrame.ScrollBox)
+    function self.ProfilerFrame.ScrollBox:ForEachFrame(callback) callback(NumyAddonProfiler.visibleRow) end
+    self.PinContainer = Frame("Frame", UIParent)
+    self.PinContainer:SetScript("OnUpdate", profilerTick)
+    self.PinContainer.regions = { Frame("Texture") }
+    self.PinContainer.regions[1].alpha = .75
+    self.PinContainer.Header = ProfilerRow(self.PinContainer)
+    self.PinContainer.Header.BG = Frame("Texture")
+    self.PinContainer.pinnedAddons = {}
+    function self.PinContainer:PinAddon(name)
+        self.pinnedAddons[name] = self.pinnedAddons[name] or ProfilerRow(self)
+    end
+end, ToggleFrame = function(self)
+    if self.ProfilerFrame:IsShown() then self.ProfilerFrame:Hide() else self.ProfilerFrame:Show() end
+end, CollectData = profilerTick }
+-- Mirror Numy's installed launcher routes. Right clicks and non-UI slash
+-- commands affect profiling or preferences without opening a window.
+local function ProfilerClick(_, button)
+    if button == "LeftButton" then NumyAddonProfiler:ToggleFrame() else profilerTick() end
+end
+local function ProfilerSlash(command)
+    if command == "" or command == "ui" then NumyAddonProfiler:ToggleFrame() else profilerTick() end
+end
+SlashCmdList.NUMY_ADDON_PROFILER = ProfilerSlash
+NumyAddonProfiler_OnAddonCompartmentClick = ProfilerClick
+local profilerBroker = broker:NewDataObject("NumyAddonProfiler", { OnClick = ProfilerClick })
+local profilerToggle = NumyAddonProfiler.ToggleFrame
+C_AddOns.GetAddOnMetadata = function(addon, key)
+    if addon ~= "!!AddonProfiler" then return end
+    if key == "AddonCompartmentFunc" then return "NumyAddonProfiler_OnAddonCompartmentClick" end
+    if key == "Title" then return "Localized profiler title" end
+end
+NS.AddonSkins.SetOption("addonProfiler", true) Flush()
+local profilerReads = sourceReads
+combat = true
+NumyAddonProfiler:InitUI() Flush()
+local profiler = NumyAddonProfiler
+local nativePin = profiler.PinContainer.PinAddon
+profiler.ProfilerFrame:Hide()
+Check(not NS.AddonSkins.roots[profiler.ProfilerFrame] and not NS.AddonSkins.roots[profiler.PinContainer],
+    "profiler construction attached a root in combat")
+combat = false
+Flush()
+Check(profiler.PinContainer.PinAddon ~= nativePin and not paints[profiler.ProfilerFrame],
+    "profiler pin hook was not deferred or the hidden profiler was painted")
+SlashCmdList.NUMY_ADDON_PROFILER("ui") Flush()
+Check(NS.AddonSkins.ResolveApp("!!AddonProfiler") == "addonProfiler"
+    and NS.AddonSkins.ResolveApp("Numy's Addon Profiler") == "addonProfiler", "Numy's profiler identity was missed")
+Check(NS.AddonSkins.ResolveApp("Localized profiler title") == "addonProfiler", "profiler title alias was lost")
+Check(NumyAddonProfiler_OnAddonCompartmentClick == ProfilerClick and SlashCmdList.NUMY_ADDON_PROFILER == ProfilerSlash
+    and profilerBroker.OnClick == ProfilerClick, "skin hooked a generic profiler launcher")
+Check(profiler.ToggleFrame == profilerToggle, "skin hooked the warm profiler toggle")
+Check(NS.AddonSkins.roots[profiler.ProfilerFrame] and NS.AddonSkins.roots[profiler.PinContainer],
+    "lazy profiler construction missed its main or pin window")
+Check(sourceReads == profilerReads, "known profiler construction scanned the global UI")
+Check(paintModes[profiler.ProfilerFrame].registerDynamicRows == false,
+    "profiling list acquired recurring row-initialization callbacks")
+Check(profiler.PinContainer.regions[1].alpha == 0 and profiler.PinContainer.Header.BG.alpha == 0,
+    "the separate profiler pin background retained native art")
+local totalLabel = profiler.ProfilerFrame.TotalRow:CreateFontString()
+local mainRowLabel = profiler.visibleRow:CreateFontString()
+Check(labels[totalLabel] and labels[mainRowLabel], "new profiler columns missed cold construction styling")
+profiler.visibleRow = ProfilerRow(profiler.ProfilerFrame.ScrollBox)
+profiler.ProfilerFrame.ResizeButton.scripts.OnMouseUp(profiler.ProfilerFrame.ResizeButton) Flush()
+local resizedLabel = profiler.visibleRow:CreateFontString()
+Check(labels[resizedLabel], "new rows created by native window resizing missed construction styling")
+profiler.PinContainer:PinAddon("Example") Flush()
+local pinLabel = profiler.PinContainer.pinnedAddons.Example:CreateFontString()
+Check(labels[pinLabel], "a late pinned row missed construction styling")
+local profilerPaints, pinPaints, profilerChildren = paintCounts[profiler.ProfilerFrame], paintCounts[profiler.PinContainer], childReads
+for _ = 1, 1000 do
+    profiler:CollectData()
+    profiler.visibleRow:UpdateColumns()
+    profiler.PinContainer.scripts.OnUpdate()
+end
+for _ = 1, 100 do
+    SlashCmdList.NUMY_ADDON_PROFILER("ui")
+    SlashCmdList.NUMY_ADDON_PROFILER("reset")
+    profilerBroker.OnClick(nil, "LeftButton")
+    profilerBroker.OnClick(nil, "RightButton")
+    NumyAddonProfiler_OnAddonCompartmentClick(nil, "LeftButton")
+    NumyAddonProfiler_OnAddonCompartmentClick(nil, "RightButton")
+end
+Check(not next(queue), "profiler launchers queued work after its windows were skinned")
+Flush()
+Check(paintCounts[profiler.ProfilerFrame] == profilerPaints and paintCounts[profiler.PinContainer] == pinPaints
+    and childReads == profilerChildren and sourceReads == profilerReads, "warm profiler work repainted or scanned windows")
+Check(profiler.CollectData == profilerTick and profiler.visibleRow.UpdateColumns == profilerTick
+    and profiler.ProfilerFrame.scripts.OnUpdate == profilerTick and profiler.PinContainer.scripts.OnUpdate == profilerTick,
+    "Suite wrapped native profiling or data updates")
+NS.AddonSkins.SetOption("addonProfiler", false) Flush()
+Check(profiler.PinContainer.regions[1].alpha == .75 and not labels[pinLabel], "profiler disable failed to restore its owned art")
+local offLabel = profiler.PinContainer.pinnedAddons.Example:CreateFontString()
+Check(not labels[offLabel], "disabled profiler construction still received a skin")
+NS.AddonSkins.SetOption("addonProfiler", true) Flush()
+Check(labels[offLabel] and profiler.PinContainer.regions[1].alpha == 0, "profiler re-enable missed its existing pool")
+
 local protected = Frame()
 protected.protected = true
 Check(not NS.AddonSkins.Watch(protected, "bugSack"), "protected window was accepted")
@@ -606,7 +836,9 @@ Check(not NS.AddonSkins.SetOption("enabled", false), "combat setting mutation wa
 combat = false
 NS.AddonSkins.SetOption("enabled", false) Flush()
 for _, frame in ipairs(frames) do
-    Check(not frame.scripts.OnUpdate or frame == spokenPlayer and frame.scripts.OnUpdate == nativeTick,
+    Check(not frame.scripts.OnUpdate or frame == spokenPlayer and frame.scripts.OnUpdate == nativeTick
+        or frame == profiler.ProfilerFrame and frame.scripts.OnUpdate == profilerTick
+        or frame == profiler.PinContainer and frame.scripts.OnUpdate == profilerTick,
         "addon skin introduced idle polling")
 end
 print("Suite addon skins (" .. (arg[2] or "Mainline") .. "): " .. checks .. " checks passed")

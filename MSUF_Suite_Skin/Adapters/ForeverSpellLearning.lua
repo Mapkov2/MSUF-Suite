@@ -13,6 +13,8 @@ local PRIMARY = { role = "buttonPrimary", pillHeight = 28, ownedArt = true }
 local SEARCH = { role = "input", pillHeight = 25 }
 local PLAYER_BANK = Enum.SpellBookSpellBank.Player
 local SPELL_ITEM = Enum.SpellBookItemType.Spell
+local SOURCE = { automatic = 0, trainer = 1, quest = 2, unconfirmed = 3, talent = 4, item = 5, portal = 6 }
+local lastCombatNotice
 local ROMAN_VALUES = { I = 1, V = 5, X = 10, L = 50, C = 100, D = 500, M = 1000 }
 
 local function FamilyName(name, rank)
@@ -43,11 +45,12 @@ local function LearnedRanks(panel, learned)
                 for slot = offset + 1, offset + items do
                     local item = C_SpellBook.GetSpellBookItemInfo(slot, PLAYER_BANK)
                     if Public(item) and type(item) == "table" and Public(item.itemType) and item.itemType == SPELL_ITEM then
+                        local id = item.spellID
+                        if Public(id) and type(id) == "number" and id > 0 then panel.bookIDs[id] = true end
                         local name, subName = item.name, item.subName
                         if Public(name) and type(name) == "string" and name ~= "" and Public(subName) then
                             local rank = type(subName) == "string" and tonumber(subName:match("%d+"))
                             if not rank then
-                                local id = item.spellID
                                 if Public(id) and type(id) == "number" then rank = panel.ranksByID[id] end
                                 if rank == nil then rank = panel.ranksByName[name] end
                             end
@@ -62,7 +65,9 @@ end
 
 local function AvailabilityColor(entry, level)
     if not Public(level) or type(level) ~= "number" or level < 1 then return NS.Theme.GetColor("muted") end
-    if entry.source == 4 and not entry.hasTalent then return RED_FONT_COLOR:GetRGB() end
+    if entry.requiresTalent or entry.requiresQuest or entry.pendingQuest or entry.source == SOURCE.unconfirmed then
+        return RED_FONT_COLOR:GetRGB()
+    end
     if entry.level <= level then return GREEN_FONT_COLOR:GetRGB() end
     if entry.level <= level + 2 then return YELLOW_FONT_COLOR:GetRGB() end
     return RED_FONT_COLOR:GetRGB()
@@ -101,9 +106,12 @@ local function Rule(parent, point, y, inset)
 end
 
 local function AllowedRace(race, low, high)
-    if low == "" and high == "" then return true end
-    if not Public(race) or type(race) ~= "number" or race < 1 or race > 64 then return false end
-    return bit.band(tonumber(race < 33 and low or high) or 0, bit.lshift(1, (race - 1) % 32)) ~= 0
+    low, high = tonumber(low) or 0, tonumber(high) or 0
+    if low == 0 and high == 0 then return true end
+    if not Public(race) or type(race) ~= "number" then return false end
+    local raceBit = NS.ForeverSpellLearningRaceBits[race]
+    if not raceBit then return false end
+    return bit.band(raceBit < 32 and low or high, bit.lshift(1, raceBit % 32)) ~= 0
 end
 
 local function ReadIndex()
@@ -113,15 +121,28 @@ local function ReadIndex()
     local entries = {}
     if not data then return entries end
     local costs = {}
-    local prices = NS.ForeverSpellLearningCosts and NS.ForeverSpellLearningCosts[class]
+    local prices = NS.ForeverSpellLearningCosts[class]
     if prices then
         for id, copper in prices:gmatch("(%d+):(%d+) ") do costs[tonumber(id)] = tonumber(copper) end
     end
-    for id, level, rank, source, low, high in data:gmatch("(%d+):(%d+):(%d+):(%d+):?(%d*):?(%d*) ") do
+    local pending = {}
+    local pendingData = NS.ForeverSpellLearningPendingQuests[class]
+    if pendingData then
+        for id, quest in pendingData:gmatch("(%d+):(%d+) ") do pending[tonumber(id)] = tonumber(quest) end
+    end
+    local quests, variants = {}, NS.ForeverSpellLearningQuestSources[class]
+    if variants and Public(race) and type(race) == "number" then
+        for id, variantRace, level in variants:gmatch("(%d+):(%d+):(%d+) ") do
+            if tonumber(variantRace) == race then quests[tonumber(id)] = tonumber(level) end
+        end
+    end
+    local pattern = "(%d+):(%d+):(%d+):(%d+):?(%d*):?(%d*):?(%d*):?(%d*) "
+    for id, level, rank, source, low, high, talent, quest in data:gmatch(pattern) do
         if AllowedRace(race, low, high) then
             local spell = tonumber(id)
-            entries[#entries + 1] = { id = spell, level = tonumber(level), rank = tonumber(rank),
-                source = tonumber(source), cost = costs[spell] }
+            entries[#entries + 1] = { id = spell, level = quests[spell] or tonumber(level), rank = tonumber(rank),
+                source = quests[spell] and SOURCE.quest or tonumber(source), cost = costs[spell],
+                requiredTalent = tonumber(talent), requiredQuest = tonumber(quest), pendingQuest = pending[spell] }
         end
     end
     return entries
@@ -145,13 +166,25 @@ local function ToolTip(row)
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     GameTooltip:SetSpellByID(row.spellID)
     local source = row.source
-    if source == 1 then
+    if source == SOURCE.trainer then
         GameTooltip:AddLine(NS.L["Class trainer"], NS.Theme.GetColor("accentBright"))
-    elseif source == 2 then
-        GameTooltip:AddLine(NS.L["Class quest"], NS.Theme.GetColor("accentBright"))
-    elseif source == 4 and row.requiresTalent then
+    elseif source == SOURCE.quest then
+        local hint = row.pendingQuest and NS.L["Class quest #%d (availability unconfirmed)"]:format(row.pendingQuest)
+            or NS.L["Class quest"]
+        GameTooltip:AddLine(hint, NS.Theme.GetColor("accentBright"))
+    elseif source == SOURCE.portal then
+        GameTooltip:AddLine(NS.L["Portal trainer"], NS.Theme.GetColor("accentBright"))
+    elseif source == SOURCE.item then
+        GameTooltip:AddLine(NS.L["Tome or item"], NS.Theme.GetColor("accentBright"))
+    elseif source == SOURCE.unconfirmed then
+        GameTooltip:AddLine(NS.L["Learning source not confirmed"], NS.Theme.GetColor("accentBright"))
+    elseif source == SOURCE.automatic then
+        GameTooltip:AddLine(NS.L["Learned automatically"], NS.Theme.GetColor("accentBright"))
+    end
+    if row.requiresTalent then
         GameTooltip:AddLine(NS.L["Requires a talent"], NS.Theme.GetColor("accentBright"))
     end
+    if row.requiresQuest then GameTooltip:AddLine(NS.L["Requires a class quest"], NS.Theme.GetColor("accentBright")) end
     TrainingCost(row)
     GameTooltip:Show()
 end
@@ -199,9 +232,10 @@ local function Paint(panel)
         if entry then
             local red, green, blue, alpha = AvailabilityColor(entry, level)
             row.spellID, row.source = entry.id, entry.source
-            row.requiresTalent = entry.source == 4 and not entry.hasTalent
+            row.requiresTalent, row.requiresQuest = entry.requiresTalent, entry.requiresQuest
+            row.pendingQuest = entry.pendingQuest
             row.cost = entry.cost
-            row.isTraining = entry.source == 1 or entry.source == 4 and entry.rank > 1
+            row.isTraining = entry.source == SOURCE.trainer or entry.source == SOURCE.portal
             row.icon:SetTexture(entry.icon)
             row.name:SetText(entry.name)
             row.name:SetTextColor(red, green, blue, alpha or 1)
@@ -239,14 +273,31 @@ local function Filter(panel)
     Paint(panel)
 end
 
+local function KnowsUnlock(panel, learned, id)
+    if not id or id == 0 then return true end
+    local cached = panel.unlocks[id]
+    if cached ~= nil then return cached end
+    local entry = panel.byID[id]
+    local known = panel.bookIDs[id] or entry and entry.learned
+    if not entry then
+        known = C_SpellBook.IsSpellKnownOrInSpellBook(id, PLAYER_BANK, false)
+        known = Public(known) and known == true
+    end
+    local unlocked = known == true or entry and learned[entry.family] ~= nil or false
+    panel.unlocks[id] = unlocked
+    return unlocked
+end
+
 local function Refresh(panel)
     if not panel:IsShown() or NS.IsCombatLocked() then return end
     panel.entries = panel.entries or ReadIndex()
     local learned = {}
-    panel.ranksByID, panel.ranksByName = {}, {}
+    panel.ranksByID, panel.ranksByName, panel.byID, panel.unlocks, panel.bookIDs = {}, {}, {}, {}, {}
     for _, entry in ipairs(panel.entries) do
         local known = C_SpellBook.IsSpellKnownOrInSpellBook(entry.id, PLAYER_BANK, false)
         entry.known = not Public(known) or known ~= false
+        entry.learned = Public(known) and known == true
+        panel.byID[entry.id] = entry
         local name = entry.name or C_Spell.GetSpellName(entry.id)
         if Public(name) and type(name) == "string" and name ~= "" then
             if not entry.name then
@@ -264,10 +315,16 @@ local function Refresh(panel)
     LearnedRanks(panel, learned)
     local count = 0
     for _, entry in ipairs(panel.entries) do
-        if entry.name and not entry.known then
+        if entry.name and not entry.known and not panel.bookIDs[entry.id] then
             local rank = learned[entry.family]
-            entry.hasTalent = rank ~= nil
-            if rank == nil or entry.rank > rank then
+            local talent = entry.requiredTalent or (entry.source == SOURCE.talent and entry.id)
+            entry.requiresTalent = not KnowsUnlock(panel, learned, talent)
+            local quest = entry.requiredQuest and panel.byID[entry.requiredQuest]
+            entry.requiresQuest = quest and quest.source == SOURCE.quest
+                and not KnowsUnlock(panel, learned, entry.requiredQuest) or false
+            -- An unranked spell can be a separate appearance (Polymorph),
+            -- so only numbered ranks may be replaced by a same-name rank.
+            if rank == nil or entry.rank == 0 or entry.rank > rank then
                 count = count + 1
                 panel.available[count] = entry
             end
@@ -402,7 +459,8 @@ function Learning.Hide(state)
 end
 
 local function Enabled()
-    return NS.DB.enabled ~= false and NS.DB.skins.playerSpells ~= false and NS.DB.foreverSpellLearning ~= false
+    return NS.DB.enabled ~= false and NS.DB.blizzardWindowsEnabled ~= false
+        and NS.DB.skins.playerSpells ~= false and NS.DB.foreverSpellLearning ~= false
         and not NS.Client.IsGamepadUI()
 end
 
@@ -414,11 +472,25 @@ local function CreateLearningButton(book, paged, onClick)
     return button
 end
 
+local function RefuseCombatOpen()
+    -- Click refusals include the combat edge and the early-startup window;
+    -- the skin's protected-write guard intentionally differs in that window.
+    if not NS.SuiteCore().InCombat() then return false end
+    local now = GetTime()
+    if not lastCombatNotice or now - lastCombatNotice >= 1.25 then
+        lastCombatNotice = now
+        local message = NS.L["Finish combat first."]
+        if not Safety.IsForbidden(UIErrorsFrame) then UIErrorsFrame:AddMessage(message, 1, .82, .1) end
+        NS.Print(message)
+    end
+    return true
+end
+
 function Learning.Attach(state, book, paged)
     if not Enabled() or NS.IsCombatLocked() or Safety.IsForbidden(book) or Safety.IsForbidden(paged) then return end
     if not state.learningButton then
         local function Toggle()
-            if NS.IsCombatLocked() or not Enabled() or Read(book, "IsVisible") ~= true then return end
+            if not Enabled() or Read(book, "IsVisible") ~= true or RefuseCombatOpen() then return end
             local panel = state.learningPanel
             if not panel then
                 panel = CreatePanel(book)

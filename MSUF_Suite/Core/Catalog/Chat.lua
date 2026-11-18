@@ -159,6 +159,8 @@ B.Section(id, "window", "Chat window", {
     B.Number("idleSeconds", "Fade after inactivity (seconds; 0 disables)", 0, 0, 300),
     B.Number("idleAlpha", "Idle panel opacity (percent)", 20, 0, 100),
     B.Number("idleFadeDuration", "Idle fade duration (seconds; 0 is instant)", 0, 0, 2, 0.05),
+    B.Tooltip(B.Bool("idleIgnoreProgress", "Keep loot and progress messages from waking idle chat", false),
+        "Loot, money, XP, reputation and skill-up messages leave the idle fade unchanged. Messages stay in chat and saved history."),
     B.Bool("panelGradient", "Fade background edges to transparent", false),
     B.Bool("minimalChrome", "Minimal chat style", false),
     B.Color("panelColor", "Background color", initial.panelColor),

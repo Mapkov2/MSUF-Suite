@@ -17,7 +17,7 @@ local C = P.Chat
 local NS = P.NS
 local PublicText, Public = S.PublicText, S.Public
 local HistoryRing, HistoryStore, HistoryReplay = C.HistoryRing, C.HistoryStore, C.HistoryReplay
-local ChatActivity = C.ChatActivity
+local MessageActivity = C.MessageActivity
 local Dispatch = S.Dispatch
 local URL = "https?://[^%s|<>]+"
 local NAME = "[%a\128-\255][%w\128-\255]*"
@@ -435,6 +435,7 @@ function C.CompileMessages(config)
     C.CompileHistory(config)
     HistoryStore = C.HistoryStore
     tools.fade = config.idleSeconds > 0
+    C.CompileIdleWake(config)
     tools.unread = config.coloredUnreadTabs
     tools.any = tools.format or tools.history or tools.fade or tools.unread
     C.CompileUnread(config)
@@ -505,11 +506,11 @@ local function MessageAdded(frame, text, r, g, b, chatTypeID)
     local record = hooks[frame]
     if not record.live or record.source then return end
     if record.wakeOnly then
-        ChatActivity(frame)
+        MessageActivity(frame, chatTypeID)
         return
     end
     if tools.unread then C.MessageUnread(frame, chatTypeID) end
-    if tools.fade then ChatActivity(frame) end
+    if tools.fade then MessageActivity(frame, chatTypeID) end
     local public = PublicText(text)
     if not public then return end
     local rendered = public

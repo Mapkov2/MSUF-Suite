@@ -57,7 +57,7 @@ local loadFrame = CreateFrame("Frame")
 local Refresh
 
 local function Enabled()
-    return NS.DB.enabled ~= false and NS.DB.skins.blizzardWindows ~= false
+    return NS.DB.enabled ~= false and NS.DB.blizzardWindowsEnabled ~= false and NS.DB.skins.blizzardWindows ~= false
         and NS.GenericWindows.IsCategoryEnabled("character")
 end
 

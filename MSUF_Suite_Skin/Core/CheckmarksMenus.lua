@@ -443,6 +443,10 @@ function Checkmarks:OnLegacyDropdownShown(listFrame)
 end
 
 function Checkmarks.RegisterLegacyDropdowns()
+    if NS.DB.blizzardWindowsEnabled == false then
+        if Checkmarks.legacyRegistered then Checkmarks.ReleaseLegacyDropdowns() end
+        return false
+    end
     if Checkmarks.legacyRegistered then return true end
     EventRegistry:RegisterCallback(LEGACY_DROPDOWN_EVENT, Checkmarks.OnLegacyDropdownShown, Checkmarks)
     Checkmarks.legacyRegistered = true
@@ -465,6 +469,10 @@ function Checkmarks.ReleaseMenus()
     for index = 1, #categoryLists do
         Checkmarks.UntrackSettingsCategories(categoryLists[index])
     end
+    Checkmarks.ReleaseLegacyDropdowns()
+end
+
+function Checkmarks.ReleaseLegacyDropdowns()
     if Checkmarks.legacyRegistered then
         EventRegistry:UnregisterCallback(LEGACY_DROPDOWN_EVENT, Checkmarks)
     end

@@ -19,6 +19,7 @@ end
 -- Search never loads the optional engine or creates the legacy skin editor.
 function P.BuildSkinAddonSection(ctx, builder, skin)
     local rows = {
+        Option(skin, "Skin registered addons", "registered"),
         Option(skin, "Skin other addons", "enabled"),
         Option(skin, "AceGUI / AceConfig windows", "aceGUI"),
     }

@@ -87,8 +87,8 @@ local function SampleAction(preview, skin, parent, x, kind)
         native:SetShown(not custom)
     end
     local close = kind == "close"
-    Link(preview, cell, close and "Window action style" or "Maximize/minimize symbols", "icons",
-        close and "icons.windowActions.style" or "icons.windowActions.glyphMode")
+    Link(preview, cell, close and "Close X style" or "Maximize/minimize symbols", "icons",
+        close and "icons.windowActions.closeStyle" or "icons.windowActions.glyphMode")
     record.paint = Paint
     cell:HookScript("OnEnter", function() record.hover = true Paint() end)
     cell:HookScript("OnLeave", function() record.hover, record.down = nil, nil Paint() end)
@@ -318,7 +318,7 @@ local function AddWindowDemo(preview, skin)
         cell:ClearAllPoints()
         cell:SetPoint("TOPRIGHT", preview.shell, "TOPRIGHT", x, -6)
         if kind == "close" then
-            Link(preview, cell, label, "icons", "icons.windowActions.style", action)
+            Link(preview, cell, label, "icons", "icons.windowActions.closeStyle", action)
         else
             Link(preview, cell, label, "window_controls", "windowControls.enabled", action)
         end

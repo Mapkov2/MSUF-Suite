@@ -215,17 +215,18 @@ end
 -- The Skinning page uses these functions for its switch.
 function P.SkinningEnabled()
     local skin = _G.MapkoSkin
-    if Suite.Skin.enabled == true then return true end
-    return type(skin) == "table" and skin.addonName == "MSUF_Suite_Skin" and type(skin.DB) == "table"
-        and skin.DB.enabled == true
+    if type(skin) == "table" and skin.addonName == "MSUF_Suite_Skin" and type(skin.DB) == "table" then
+        return skin.DB.enabled == true
+    end
+    return Suite.Skin.enabled == true
 end
 
 function P.SetSkinningEnabled(value)
     local skin = Engine()
     return Change(skin, "Skinning", "enabled", function()
-        local windows = skin.Adapters.SetMasterEnabled(value)
-        if not windows then return false end
-        return Suite.Skin.SetEnabled(value)
+        if not skin.Adapters.SetMasterEnabled(value) then return false end
+        if Suite.Suite.started then Suite.Suite.ApplyAll() end
+        return true
     end)
 end
 
@@ -233,10 +234,10 @@ local function BuildFrameBasics(ctx, b, skin)
     local basics = Section(ctx, b, "frame_basic", "Basics",
         "Switch the whole Skinning module here, or adjust Blizzard and Suite windows separately below.", {
             Row("toggle", "Skin Blizzard windows", "enabled.windows", "frame_basic",
-                function() return skin.DB.enabled end,
+                function() return skin.DB.blizzardWindowsEnabled ~= false end,
                 function(value)
                     Change(skin, "Skin Blizzard windows", "enabled.windows",
-                        function() return skin.Adapters.SetMasterEnabled(value) end)
+                        function() return skin.Adapters.SetBlizzardWindowsEnabled(value) end)
                 end),
             Row("toggle", "Skin Suite windows and buttons", "suiteEnabled", "frame_basic",
                 function() return Suite.Skin.enabled end,
@@ -483,10 +484,29 @@ local function BuildFonts(ctx, b, skin)
         end)
 end
 
+local function WindowActionUnavailable(skin, key)
+    local options = skin.DB.icons.windowActions
+    local style, closeStyle = options.style, options.closeStyle or "bare"
+    if closeStyle == "global" then closeStyle = style end
+    if key == "surfaceShape" or key == "surfaceRadius" or key == "surfaceInset" then
+        if style ~= "soft" and style ~= "outline" and closeStyle ~= "soft" and closeStyle ~= "outline" then
+            return Tr("Requires the Soft or Outline window action style.")
+        end
+        if key == "surfaceRadius" and options.surfaceShape == "global" and skin.DB.geometry.controlShape == "pill" then
+            return Tr("Requires rounded action buttons.")
+        end
+    elseif key == "closeGlyphSize" and closeStyle == "native" then
+        return Tr("Choose a custom close X style to change its glyph.")
+    elseif style == "native" and (key == "glyphSize" or closeStyle == "native") then
+        return Tr("Choose a custom window action style to change its glyphs.")
+    end
+end
+
 local function BuildIcons(ctx, b, skin)
     local icons = {}
     for _, spec in ipairs({
         { "Window action style", "style", "dropdown", skin.WindowActionStyles },
+        { "Close X style", "closeStyle", "dropdown", skin.WindowCloseStyles },
         { "Maximize/minimize symbols", "glyphMode", "dropdown", skin.WindowActionGlyphModes },
         { "Line weight", "weight", "dropdown", skin.WindowActionWeights },
         { "Maximize/minimize size", "glyphSize", "slider", nil, 8, 18, 1 },
@@ -506,20 +526,8 @@ local function BuildIcons(ctx, b, skin)
                     function() return skin.WindowActionSkin.SetOption(key, value) end)
             end,
             kind == "dropdown" and Values(spec[4]) or nil, spec[5], spec[6], spec[7])
-        if key ~= "style" and key ~= "glyphMode" then
-            row.unavailable = function()
-                local options = skin.DB.icons.windowActions
-                if key == "surfaceShape" or key == "surfaceRadius" or key == "surfaceInset" then
-                    if options.style ~= "soft" and options.style ~= "outline" then
-                        return Tr("Requires the Soft or Outline window action style.")
-                    end
-                    if key == "surfaceRadius" and options.surfaceShape == "global" and skin.DB.geometry.controlShape == "pill" then
-                        return Tr("Requires rounded action buttons.")
-                    end
-                elseif options.style == "native" then
-                    return Tr("Choose a custom window action style to change its glyphs.")
-                end
-            end
+        if key ~= "style" and key ~= "closeStyle" and key ~= "glyphMode" then
+            row.unavailable = function() return WindowActionUnavailable(skin, key) end
         end
         icons[#icons + 1] = row
     end
@@ -603,13 +611,13 @@ local function BuildCoverage(ctx, b, skin)
         "Narrow general Blizzard window coverage by category.", categories, false)
 end
 
--- The factory profile and look come back; the player's two Skinning switches
--- (Blizzard windows, Suite windows) stay as they were. The Suite follows the
+-- The factory profile and look come back with the player's Skinning switches. The Suite follows the
 -- factory look like it follows any look chosen on this page.
-local function ResetSkinProfile(skin, windowsEnabled)
+local function ResetSkinProfile(skin)
+    local enabled, windowsEnabled = skin.DB.enabled, skin.DB.blizzardWindowsEnabled
     local characterDetails, characterStats = skin.DB.characterDetails, skin.DB.characterStats
     skin.Database.ResetAll()
-    skin.DB.enabled = windowsEnabled
+    skin.DB.enabled, skin.DB.blizzardWindowsEnabled = enabled, windowsEnabled
     skin.DB.characterDetails, skin.DB.characterStats = characterDetails, characterStats
     P.S.ApplyGlobalLook(skin.DB.theme.look)
     skin.Typography.ApplyConfigured()
@@ -622,7 +630,7 @@ P.ResetSkinPage = function()
     local skin = Engine()
     if not skin or P.Combat() then return false end
     local suiteWindows = Suite.Skin.enabled
-    if not ResetSkinProfile(skin, skin.DB.enabled) then return false end
+    if not ResetSkinProfile(skin) then return false end
     return Suite.Skin.SetEnabled(suiteWindows)
 end
 

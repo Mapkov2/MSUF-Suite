@@ -9,6 +9,9 @@ local function Noop() end
 CreateFrame, hooksecurefunc = Unused, Unused
 C_Timer = setmetatable({}, { __index = Unused })
 SlashCmdList = {}
+EventRegistry = { RegisterCallback = function(_, event, callback, owner)
+    assert(event == "ChatFrame.OnEditBoxFocusGained" and type(callback) == "function" and type(owner) == "string")
+end }
 C_CVar = {
     GetCVar = function(key) reads = reads + 1; return values[key] end,
     GetCVarInfo = function(key) return values[key], "0", false, false, false, key == locked, false end,

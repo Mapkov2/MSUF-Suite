@@ -206,6 +206,7 @@ local function NextFrame()
     queued = {}
     for _, job in ipairs(jobs) do job() end
 end
+C_Timer = { After = function(_, job) queued[#queued + 1] = job end }
 local NS = {
     L = setmetatable({}, { __index = function(_, key) return key end }),
     DB = { enabled = true, skins = { blizzardWindows = true }, theme = { look = "midnight" },

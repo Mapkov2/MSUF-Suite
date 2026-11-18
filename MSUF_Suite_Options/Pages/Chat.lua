@@ -4,7 +4,9 @@ local PAGE, ID = "suite_chat", "chat"
 P.Gates[ID] = function(rule)
     if rule.key == "panelTexture" then return not P.Get(ID, "panelGradient") end
     -- The fade acts only while a delay is set; 0 is off, which an enableKey cannot say.
-    if rule.key == "idleAlpha" or rule.key == "idleFadeDuration" then return P.Get(ID, "idleSeconds") > 0 end
+    if rule.key == "idleAlpha" or rule.key == "idleFadeDuration" or rule.key == "idleIgnoreProgress" then
+        return P.Get(ID, "idleSeconds") > 0
+    end
     if rule.key == "fontShadow" or rule.key == "fontShadowOpacity"
         or rule.key == "fontShadowDistance" then
         return P.Get(ID, "fontRendering") ~= P.Suite.FontRendering.SLUG

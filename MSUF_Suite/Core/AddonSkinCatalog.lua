@@ -50,6 +50,11 @@ Suite.AddonSkinDefinitions = {
     { id = "restedXP", label = "RestedXP", addons = { "RXPGuides" },
         aliases = { "RestedXP Guides", "RXP Guides" },
         roots = { "RXPFrame", "RXPG_MenuFrame" }, paths = { { "RXPV2GuideWindow", "frame" } } },
+    { id = "addonProfiler", label = "AddonProfiler", addons = { "!!AddonProfiler" },
+        aliases = { "Numy Addon Profiler", "Numy's Addon Profiler", "NumyAddonProfiler" },
+        roots = { "NumyAddonProfilerFrame", "NumyAddonProfiler_PinContainer" },
+        paths = { { "NumyAddonProfiler", "ProfilerFrame" }, { "NumyAddonProfiler", "PinContainer" } },
+        slash = { "NUMY_ADDON_PROFILER" } },
 }
 
 local slashKeys = {

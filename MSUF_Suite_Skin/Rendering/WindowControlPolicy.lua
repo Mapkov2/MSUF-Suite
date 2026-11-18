@@ -5,6 +5,7 @@ local _, NS = ...
 local Policy = {}
 NS.WindowControlPolicy = Policy
 local Safety = NS.Safety
+local function PublicNumber(value) return Safety.Public(value) and type(value) == "number" end
 local inventoryRoots = {
     BankFrame = true, ContainerFrameCombinedBags = true,
     ContainerFrame1 = true, ContainerFrame2 = true, ContainerFrame3 = true,
@@ -46,6 +47,11 @@ local function IsBag(name)
         or name:find("^Bag") or name:find("^Bags")
 end
 
+local function NativeBook(frame, name)
+    return (name == "PlayerSpellsFrame" or name == "ProfessionsBookFrame"
+        or name == "ProfessionsFrame" and NS.Client.isForever) and frame == Safety.Field(_G, name)
+end
+
 function Policy.CanChangeGeometry(frame)
     if Safety.IsForbidden(frame) then return false end
     local name = Safety.Read(frame, "GetName")
@@ -55,9 +61,7 @@ function Policy.CanChangeGeometry(frame)
     if explicit then return false end
     -- Secure spell buttons make these plain native book containers implicit.
     -- Forever embeds the profession book in its main profession window.
-    local nativeBook = name == "PlayerSpellsFrame" or name == "ProfessionsBookFrame"
-        or name == "ProfessionsFrame" and NS.Client.isForever
-    return not protected or (not NS.IsCombatLocked() and (inventory or nativeBook and frame == Safety.Field(_G, name)))
+    return not protected or (not NS.IsCombatLocked() and (inventory or NativeBook(frame, name)))
 end
 
 -- Geometry release may run just after another Suite module claims the root.
@@ -65,6 +69,108 @@ end
 function Policy.CanControl(frame)
     if Policy.IsInventory(frame) and NS.SuiteOwnership.OwnsWindowGeometry(frame) then return false end
     return Policy.CanChangeGeometry(frame)
+end
+
+-- Blizzard can lay out its secure books and bags during combat. Set the screen
+-- clamp while their geometry is writable so native slot changes keep the same
+-- displayed top-left. Insets are signed edge deltas in the frame's own units
+-- (Blizzard_EditMode/Shared/EditModeSystemTemplates.lua, UpdateClampOffsets;
+-- live 297d7aaa, forever 3d8abb1d).
+function Policy.ReleasePositionClamp(state)
+    local clamp = state.positionClamp
+    if not clamp or not Policy.CanChangeGeometry(state.frame) then return end
+    state.frame:SetClampRectInsets(clamp[1], clamp[2], clamp[3], clamp[4])
+    state.frame:SetClampedToScreen(clamp.enabled)
+    state.positionClamp = nil
+end
+
+function Policy.UsesPositionClamp(state)
+    return state.inventory or NativeBook(state.frame, state.name)
+end
+
+local function PinPosition(state, left, right, top, bottom)
+    local frame = state.frame
+    if not Policy.UsesPositionClamp(state) or NS.IsCombatLocked() and not state.positionClamp then return end
+    local l, r, t, b = Safety.Call(frame, "GetClampRectInsets")
+    local enabled = Safety.Read(frame, "IsClampedToScreen")
+    if enabled == nil or not (PublicNumber(l) and PublicNumber(r) and PublicNumber(t) and PublicNumber(b)) then return end
+    if not state.positionClamp then state.positionClamp = { l, r, t, b, enabled = enabled } end
+    if math.abs(l - left) > 0.001 or math.abs(r - right) > 0.001
+        or math.abs(t - top) > 0.001 or math.abs(b - bottom) > 0.001 then
+        frame:SetClampRectInsets(left, right, top, bottom)
+    end
+    if not enabled then frame:SetClampedToScreen(true) end
+end
+
+function Policy.ScreenPosition(frame)
+    local left, top = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop")
+    local scale = Safety.Read(frame, "GetEffectiveScale")
+    local uiHeight, uiScale = UIParent:GetHeight(), UIParent:GetEffectiveScale()
+    if not (PublicNumber(left) and PublicNumber(top) and PublicNumber(scale) and PublicNumber(uiHeight)
+        and PublicNumber(uiScale)) or uiScale <= 0 or scale <= 0 then return end
+    local ratio = scale / uiScale
+    return { x = math.floor(left * ratio + 0.5), y = math.floor(top * ratio - uiHeight + 0.5) }
+end
+
+-- The panel's own anchors when all are readable (secret-anchored layout returns secrets).
+function Policy.CaptureNativePoints(frame)
+    local count = Safety.Read(frame, "GetNumPoints")
+    if type(count) ~= "number" or count < 1 or count > 8 then return nil end
+    local Public = Safety.Public
+    local points = {}
+    for index = 1, count do
+        local point, relativeTo, relativePoint, x, y = frame:GetPoint(index)
+        if not Public(point) or not Public(relativeTo) or not Public(relativePoint)
+            or not Public(x) or not Public(y) or type(point) ~= "string" then
+            return nil
+        end
+        points[index] = { point, relativeTo, relativePoint, x, y }
+    end
+    return points
+end
+
+local function AtPosition(frame, x, y)
+    if Safety.Read(frame, "GetNumPoints") ~= 1 then return false end
+    local point, parent, relative, dx, dy = frame:GetPoint(1)
+    local public = Safety.Public
+    return public(point) and public(parent) and public(relative) and PublicNumber(dx) and PublicNumber(dy)
+        and point == "TOPLEFT" and parent == UIParent and relative == "TOPLEFT"
+        and math.abs(dx - x) < 0.001 and math.abs(dy - y) < 0.001
+end
+
+function Policy.PlaceWindow(state, point)
+    local frame = state.frame
+    local uiWidth, uiHeight = UIParent:GetWidth(), UIParent:GetHeight()
+    local uiScale = UIParent:GetEffectiveScale()
+    local scale, width, height = frame:GetEffectiveScale(), frame:GetWidth(), frame:GetHeight()
+    if not (PublicNumber(uiWidth) and PublicNumber(uiHeight) and PublicNumber(uiScale) and PublicNumber(scale)
+        and PublicNumber(width) and PublicNumber(height) and PublicNumber(point.x) and PublicNumber(point.y))
+        or uiScale <= 0 or scale <= 0 then return end
+    local ratio = scale / uiScale
+    local right, bottom, top = NS.WindowControlChrome.Footprint(state)
+    local x = math.max(0, math.min(uiWidth - (width + right) * ratio, point.x)) / ratio
+    local y = math.max(-math.max(0, uiHeight - (height + bottom) * ratio), math.min(-top * ratio, point.y)) / ratio
+    PinPosition(state, -x, uiWidth / ratio - x - width, -y, height - uiHeight / ratio - y)
+    if not AtPosition(frame, x, y) then
+        state.placing = true
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
+        state.placing = nil
+    end
+    return true
+end
+
+-- Some native layout paths change the root without going through the public
+-- panel-manager hook. Only observe a root after the player has placed it.
+function Policy.WatchPosition(state, queue)
+    if state.positionWatched then return end
+    state.positionWatched = true
+    local function Changed()
+        if state.customPosition and not state.placing then queue(state) end
+    end
+    hooksecurefunc(state.frame, "SetPoint", Changed)
+    hooksecurefunc(state.frame, "SetScale", Changed)
+    state.frame:HookScript("OnSizeChanged", Changed)
 end
 
 function Policy.HasManagedVisibility(state)
@@ -213,6 +319,7 @@ function Policy.ParkBank(state, capturePoints, installLayoutHook)
         state.minimized = false
         return
     end
+    Policy.ReleasePositionClamp(state)
     local clamped = Safety.Read(frame, "IsClampedToScreen") == true
     state.bankPark = { points = points, x = left, clamped = clamped }
     if clamped then frame:SetClampedToScreen(false) end
@@ -313,6 +420,47 @@ function Policy.RestorePanel(state)
     frame:ClearAllPoints()
     frame:SetPoint(layout[1], layout[2], layout[3], layout.scaled and layout[4] * ratio or layout[4], layout[5] * ratio)
     return true
+end
+
+function Policy.CaptureNativeBagLayout(state)
+    if state.name == "BankFrame" or not state.nativePoints or #state.nativePoints ~= 1 then return end
+    local frame, saved = state.frame, state.nativePoints[1]
+    local point, relative, relativePoint, x, y = frame:GetPoint(1)
+    local public = Safety.Public
+    if not public(point) or not public(relative) or not public(relativePoint) or not public(x) or not public(y) then return end
+    saved[1], saved[2], saved[3], saved[4], saved[5] = point, relative, relativePoint, x, y
+    state.originalScale = frame:GetScale()
+end
+
+function Policy.RestoreNativePosition(state, releasing)
+    local mayChange = releasing and Policy.CanChangeGeometry or Policy.CanControl
+    if not mayChange(state.frame) then return end
+    Policy.ReleasePositionClamp(state)
+    local panel = state.panel
+    if panel and Safety.Read(state.frame, "GetAttribute", "UIPanelLayout-defined") == true then
+        local area = Safety.Call(state.frame, "GetAttribute", "UIPanelLayout-area")
+        if Safety.Public(area) and area == nil then panel = nil end
+    end
+    if NS.IsCombatLocked() and panel and not panel.centerFrameSkipAnchoring and not NS.Client.IsGamepadUI() then
+        NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
+        return
+    end
+    state.customPosition = false
+    state.defaultPosition = false
+    -- The panel manager never anchors the Game Menu (centerFrameSkipAnchoring). Its
+    -- own pass placed the panel (Policy.RestorePanel); it never runs from here.
+    if panel and not panel.centerFrameSkipAnchoring then
+        if not NS.Client.IsGamepadUI() then Policy.RestorePanel(state) end
+    elseif state.nativePoints then
+        state.frame:ClearAllPoints()
+        for index = 1, #state.nativePoints do
+            local point = state.nativePoints[index]
+            state.frame:SetPoint(point[1], point[2], point[3], point[4], point[5])
+        end
+    else
+        state.frame:ClearAllPoints()
+        state.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
 end
 
 -- A window that changed width moves the windows Blizzard laid out after it by

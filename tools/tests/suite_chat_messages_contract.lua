@@ -799,4 +799,87 @@ do
     end
 end
 
+
+-- Optional quiet progress: the native type ID controls only the idle wake.
+-- Text, metadata, saved history, whispers and unread delivery remain intact.
+do
+    local ids = { LOOT = 28, MONEY = 30, COMBAT_XP_GAIN = 35, COMBAT_FACTION_CHANGE = 37, SKILL = 27 }
+    ChatTypeInfo = { GUILD = { id = 4 }, WHISPER = { id = 7 }, BN_WHISPER = { id = 52 } }
+    for name, id in pairs(ids) do ChatTypeInfo[name] = { id = id } end
+    config.idleSeconds, config.idleAlpha, config.idleFadeDuration = 5, 20, 0
+    config.idleIgnoreProgress, config.coloredUnreadTabs, config.saveHistory = false, true, true
+    config.allTimestamps, config.copyOnTimestamp = false, false
+    config.linkURLs, config.colorMentionNames, config.showClassIcons, config.showItemIcons = false, false, false, false
+    config.historyConversations, config.highlightKeywords, config.shortenChannels = false, false, false
+    local chat, module = LoadChat(nil)
+    local window = Frame(1)
+    local visual = { frame = window }
+    module.visuals[window] = visual
+    _G.ChatFrame1Tab = Frame(0, "ChatFrame1Tab")
+    chat.TabFollowsFrame, chat.KeepTabVisible = function() end, function() end
+    local unread = {}
+    chat.MessageUnread = function(frame, id) unread[#unread + 1] = { frame, id } end
+    chat.MessagesRefresh(module)
+    chat.ApplyMessages(module, window)
+    for index = #timers, 1, -1 do timers[index] = nil end
+    chat.ApplyInactivity(module, visual)
+    RunTimers(now + 5)
+    eq(window.alpha, .2, "quiet progress fixture did not fade")
+    window:AddMessage("loot with the option off", 1, 1, 1, ids.LOOT)
+    eq(window.alpha, 1, "disabled quiet progress changed the default wake")
+    config.idleIgnoreProgress = true
+    chat.MessagesRefresh(module)
+    RunTimers(now + 5)
+    eq(window.alpha, .2)
+    local saved = assert(MSUFSuiteChatHistory.tabs["ChatFrame1:General"])
+    local kept = saved.count
+    local args = setmetatable({}, { __index = function() error("private event metadata inspected") end })
+    for name, id in pairs(ids) do
+        local message = "native " .. name
+        local delivered = #window.lines
+        local queued = #timers
+        window:AddMessage(message, .2, .3, .4, id, 123, 456, "CHAT_MSG_" .. name, args)
+        eq(window.alpha, .2, name .. " woke the idle window")
+        eq(#timers, queued, name .. " scheduled an extra timer")
+        eq(#window.lines, delivered + 1, name .. " was discarded")
+        eq(window.lines[#window.lines], message, name .. " text changed")
+        local payload = window.payloads[#window.payloads]
+        eq(payload[4], id, name .. " type changed")
+        eq(payload[5], 123, name .. " access ID changed")
+        eq(payload[6], 456, name .. " line ID changed")
+        eq(payload[8], args, name .. " event args changed")
+        kept = kept + 1
+        eq(saved.count, kept, name .. " left saved history")
+        eq(unread[#unread][1], window, name .. " changed unread destination")
+        eq(unread[#unread][2], id, name .. " bypassed unread handling")
+    end
+    -- A quiet line also cannot extend an already running idle deadline.
+    chat.ChatActivity(window)
+    local deadline, queued = now + 5, #timers
+    now = now + 2
+    window:AddMessage("no deadline reset", 1, 1, 1, ids.MONEY)
+    eq(#timers, queued, "quiet line added a timer to the active countdown")
+    RunTimers(deadline)
+    eq(window.alpha, .2, "quiet line postponed the existing idle deadline")
+    for _, id in ipairs({ 7, 52, 1, 9999 }) do
+        window:AddMessage("wake normal category", 1, 1, 1, id)
+        eq(window.alpha, 1, "whisper/system/unknown category failed to wake chat")
+        eq(unread[#unread][2], id, "whisper lost its unread alert")
+        RunTimers(now + 5)
+    end
+    window:AddMessage("untyped addon line")
+    eq(window.alpha, 1, "untyped addon line failed to wake chat")
+    RunTimers(now + 5)
+    local secretID = strict and strict.New("number") or "secret"
+    window:AddMessage("restricted type", 1, 1, 1, secretID)
+    eq(window.alpha, 1, "restricted type failed to wake conservatively")
+    config.idleIgnoreProgress = false
+    chat.MessagesRefresh(module)
+    RunTimers(now + 5)
+    window:AddMessage("loot after disabling", 1, 1, 1, ids.LOOT)
+    eq(window.alpha, 1, "disabling quiet progress retained the ID filter")
+    chat.MessagesDisable()
+    chat.FadeDisable()
+end
+
 print("chat messages PASS")

@@ -20,7 +20,7 @@ local FOODS = {
 }
 local SOURCES = {
     { label = S.Text("XP food"), level = 1, warn = true },
-    { label = S.Text("Cozy Sleeping Bag"), level = 14, item = 211527, warn = true },
+    { label = S.Text("Cozy Sleeping Bag"), level = 14, item = 211527, warn = true, maxStacks = 3 },
     { label = S.Text("Camp Tent"), level = 1, item = 279978 },
     { label = S.Text("Undead XP pendant"), level = 30, item = 273049 },
 }
@@ -36,6 +36,7 @@ local TEXT = {
     stacks = S.Text("%d / 3 stacks (%s)"), lowRested = S.Text("Low rested XP"),
     afk = S.Text("AFK time"), rate = S.Text("Active XP per hour"),
     missingWarning = S.Text("XP bonus missing: %s."), expiresWarning = S.Text("XP bonus expiring soon: %s."),
+    stacksWarning = S.Text("XP bonus not fully stacked: %s (%d / 3)."),
     routeStart = S.Text("Turn-in route (%d)"), routeStop = S.Text("Stop route"),
     routeStartHelp = S.Text("Guides you to every quest that is ready to turn in, nearest first."),
     routeStopHelp = S.Text("Stops the route and clears its map pin."),
@@ -109,14 +110,19 @@ end
 local function Warn(row, source, state, now, canRemind)
     local warning
     if row.up then
-        if row.expires and row.expires - now <= WARNING_LEAD then warning = TEXT.expiresWarning end
+        if row.expires and row.expires - now <= WARNING_LEAD then
+            warning = TEXT.expiresWarning
+        elseif state.aurasReadable and source.maxStacks and row.stacks
+            and row.stacks > 0 and row.stacks < source.maxStacks then
+            warning = TEXT.stacksWarning
+        end
     elseif state.aurasReadable and row.owned and not row.cooldown and not row.cooldownUnknown then
         warning = TEXT.missingWarning
     end
     if not warning then row.warned = nil end
     if not warning or not canRemind then return end
     if row.warned ~= warning and now >= (row.nextWarning or 0) then
-        S.Print(warning:format(source.label))
+        S.Print(warning:format(source.label, row.stacks))
         row.warned, row.nextWarning = warning, now + REMINDER_INTERVAL
     elseif row.warned ~= warning then
         return row.nextWarning

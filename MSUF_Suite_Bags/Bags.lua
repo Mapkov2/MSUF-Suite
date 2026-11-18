@@ -500,6 +500,7 @@ end
 -- Retail only. Their files load after this one.
 local SUBMODULES = {
     { "PlayerGear", "Refresh", "Disable" },                   -- cached character eligibility
+    { "BagTransmog", "Refresh", "Disable" },                  -- item collection labels and tooltip lines
     { "UpgradeMarker", "Refresh", "Disable" },                -- worn equipment, for the upgrade arrow
     { "PhysicalSort", nil, "Stop" },
     { "ReagentInventory", "Refresh", "Release" },             -- native reagent slots in the Suite grid

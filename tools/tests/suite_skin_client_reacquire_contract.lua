@@ -54,6 +54,7 @@ local NS = {
     IsCombatLocked = function() return locked end,
     ControlSkin = { DisableOwner = Noop, GetOwner = Noop },
     WindowActionSkin = { DisableOwner = Noop, GetOwner = Noop },
+    ScrollBarSkin = { GetState = Noop },
     IconSkin = { DisableOwner = Noop, GetOwner = Noop },
     Cosmetics = {
         GetOwner = function(target) return cosmeticOwners[target] end,
@@ -82,7 +83,7 @@ local NS = {
     DB = { enabled = true, theme = { look = "midnightDark" } },
 }
 
-for _, file in ipairs({ "Safety", "CombatGate", "PublicAPI", "PublicAPIMethods", "Finalize" }) do
+for _, file in ipairs({ "Safety", "CombatGate", "PublicAPIControls", "PublicAPI", "PublicAPIMethods", "Finalize" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. file .. ".lua"))("MSUF_Suite_Skin", NS)
 end
 NS.EnsureDatabaseReady = Noop

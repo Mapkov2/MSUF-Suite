@@ -2368,6 +2368,30 @@
    "symbol": "native (= ExpansionLandingPageMinimapButton)"
   },
   {
+   "file": "MSUF_Suite_CharacterPanel/ReputationBar.lua",
+   "kind": "lod",
+   "reason": "The Suite XP bar is optional and its Quality of Life addon may not be loaded. Use native XP bounds when no Suite bar is available.",
+   "symbol": "S.ExperienceBarPlacement"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/ReputationBar.lua",
+   "kind": "addon",
+   "reason": "The native experience enumeration is provided by the Blizzard status tracking addon and may be absent before its UI loads.",
+   "symbol": "info (= StatusTrackingBarInfo)"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/ReputationBar.lua",
+   "kind": "addon",
+   "reason": "Blizzard owns the native tracking manager. Its visible geometry is read only when the manager exists.",
+   "symbol": "manager (= StatusTrackingBarManager)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/ExperienceBar.lua",
+   "kind": "lod",
+   "reason": "The Character Panel addon may be absent when the experience bar changes layout or visibility.",
+   "symbol": "S.SyncReputationBarPlacement"
+  },
+  {
    "file": "MSUF_Suite_QualityOfLife/NativeExperienceBar.lua",
    "kind": "addon",
    "reason": "The same native Blizzard addon defines the experience-bar enumeration together with its manager. suite_xp_native_contract covers late loading without either global.",

@@ -70,16 +70,23 @@ local function Paint(record)
     local overlay = state.hoverOverlay
     if overlay and record.hoverAlpha then
         local alpha = record.hoverAlpha * clamp(channels[5].value, 0, 1)
-        overlay:SetVertexColor(record.hoverR, record.hoverG, record.hoverB, alpha)
-        if alpha > 0 and state.hoverEnabled then overlay:Show() else overlay:Hide() end
+        if record.paintedHoverAlpha ~= alpha then
+            overlay:SetVertexColor(record.hoverR, record.hoverG, record.hoverB, alpha)
+            record.paintedHoverAlpha = alpha
+        end
+        local shown = alpha > 0 and state.hoverEnabled
+        if record.hoverShown ~= shown then
+            if shown then overlay:Show() else overlay:Hide() end
+            record.hoverShown = shown
+        end
     end
 end
 
-local function Record(target)
+local function Record(target, readOnly)
     local state = NS.Registry.GetSurface(target)
     local record = state and state.motion
     if record and record.enabled and Motion.Enabled(state.spec) and Enabled(target) then
-        if not record.channels then Motion.New(state, Paint, Safe, Motion.Restore, record) end
+        if not readOnly and not record.channels then Motion.New(state, Paint, Safe, Motion.Restore, record) end
         return record
     end
 end
@@ -88,6 +95,8 @@ local function Hover(target, entered)
     local record = Record(target)
     if not record then return end
     local state = record.state
+    -- The static hover hook may already have shown or hidden this texture.
+    record.hoverShown = nil
     state.hovered = entered
     Motion.Set(record, 5, (entered or record.focused) and state.hoverEnabled and 1 or 0)
     Motion.Play(record, 0.12)
@@ -146,6 +155,7 @@ local function Hide(target)
     local state = NS.Registry.GetSurface(target)
     local record = state and state.motion
     if not record then return end
+    record.paintedHoverAlpha, record.hoverShown = nil, nil
     record.focused, record.state.hovered = false, false
     if record.channels then Motion.Clear(record) else Motion.Restore(record) end
     record.lastActive = nil
@@ -153,10 +163,11 @@ local function Hide(target)
 end
 
 local function Show(target)
-    local record = Record(target)
+    local record = Record(target, true)
     if not record then return end
     record.checked = Safety.Read(target, "GetChecked")
     if not record.window or NS.IsCombatLocked() then return end
+    if not record.channels then Motion.New(record.state, Paint, Safe, Motion.Restore, record) end
     -- ContentMotion loads later; native OnShow runs after the complete load graph.
     -- Resolve here and use registration, independent of the OnShow hook order.
     local fadeOnly = record.state.spec.fadeOnly
@@ -317,6 +328,8 @@ end
 function SurfaceMotion.Refresh(state)
     local record = state.motion
     if record then
+        -- The base surface reapplies static hover color and visibility before us.
+        record.paintedHoverAlpha, record.hoverShown = nil, nil
         record.paintedFillAlpha = Safety.Read(state.fill, "GetAlpha")
         record.paintedEdgeAlpha = Safety.Read(state.edge, "GetAlpha")
         record.paintedDepthAlpha = Safety.Read(state.depth, "GetAlpha")

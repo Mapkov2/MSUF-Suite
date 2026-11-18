@@ -11,6 +11,28 @@ local openingWatches = 0
 local modelWindow
 local cursorX, cursorY, mouseDown = 320, 260, true
 local function Write() writes = writes + 1 end
+
+local function StringWidth(font, text)
+    return #text * (font:GetEffectiveScale() < .9 and 6.2 or 6)
+end
+
+local function StringHeight(font)
+    assert(font.wordWrap and font.nonSpaceWrap, "the measuring font must use the same wrap rules as report text")
+    local lines, used = 1, 0
+    for word in font.text:gmatch("%S+") do
+        local width = StringWidth(font, word)
+        local gap = used > 0 and StringWidth(font, " ") or 0
+        if used + gap + width > font.width and used > 0 then
+            lines, used, gap = lines + 1, 0, 0
+        end
+        used = used + gap + width
+        while used > font.width do
+            lines, used = lines + 1, used - font.width
+        end
+    end
+    return lines * font.fontSize
+end
+
 local methods = {
     SetPoint = function(self, ...) self.point = { ... } Write() end,
     GetPoint = function(self) return unpack(self.point or {}) end,
@@ -25,7 +47,10 @@ local methods = {
     SetSize = function(self, width, height) self.width, self.height = width, height Write() end,
     GetWidth = function(self) return self.width end,
     GetHeight = function(self) return self.height end,
-    SetJustifyH = Write, SetWordWrap = Write, SetTexCoord = Write, SetAllPoints = Write,
+    SetJustifyH = Write, SetTexCoord = Write, SetAllPoints = Write,
+    SetWordWrap = function(self, wrap) self.wordWrap = wrap Write() end,
+    SetNonSpaceWrap = function(self, wrap) self.nonSpaceWrap = wrap Write() end,
+    SetMaxLines = function(self, lines) self.maxLines = lines Write() end,
     SetSnapToPixelGrid = Write, SetTexelSnappingBias = Write,
     SetFrameStrata = function(self, strata) self.strata = strata Write() end,
     SetParent = function(self, parent) self.parent = parent Write() end,
@@ -114,7 +139,9 @@ local methods = {
         self.text = nil
         Write()
     end,
-    GetUnboundedStringWidth = function(self) return #self.text * 6 end,
+    GetUnboundedStringWidth = function(self) return StringWidth(self, self.text) end,
+    GetUnboundedStringWidthForText = StringWidth,
+    GetStringHeight = StringHeight,
     GetVerticalScroll = function(self) return self.offset or 0 end,
     GetVerticalScrollRange = function(self) return self.range or 1000 end,
     SetVerticalScroll = function(self, offset)
@@ -135,7 +162,7 @@ local function Create(kind, name, parent, template)
 end
 CreateFrame = Create
 methods.CreateTexture = function() return Create("Texture") end
-methods.CreateFontString = function() return Create("FontString") end
+methods.CreateFontString = function(self) return Create("FontString", nil, self) end
 function wipe(values) for key in pairs(values) do values[key] = nil end end
 UIParent = { GetWidth = function() return 1600 end, GetHeight = function() return 900 end,
     GetEffectiveScale = function() return 1 end, GetRect = function() return 0, 0, 1600, 900 end }
@@ -144,6 +171,7 @@ function GetCursorPosition() return cursorX, cursorY end
 function IsMouseButtonDown() return mouseDown end
 SetPortraitTexture = Write
 ITEM_QUALITY_COLORS = { [2] = { r = 0, g = 1, b = 0 } }
+FACTION_BAR_COLORS = {}
 local menu, chosenTab
 local suite = {
     ContextMenu = function(anchor, generate, ...)
@@ -156,8 +184,8 @@ local suite = {
     end,
     CreateFrame = Create,
     CreateTexture = function() return Create("Texture") end,
-    CreateFontString = function() return Create("FontString") end,
-    SetFont = function(font, path) font.fontPath = path or fontPath Write() end,
+    CreateFontString = function(parent) return Create("FontString", nil, parent) end,
+    SetFont = function(font, path, size) font.fontPath, font.fontSize = path or fontPath, size Write() end,
     GlobalFontPath = function() return fontPath end,
     FontRevision = 0,
     RGB = function(hex)
@@ -170,7 +198,11 @@ MSUFSuite = { Suite = suite }
 local function Number(value)
     if not Strict.IsSecret(value) then return tonumber(value) end
 end
+local function PublicText(value)
+    if not Strict.IsSecret(value) and type(value) == "string" and value ~= "" then return value end
+end
 local ns = { Text = function(value) return value end, Number = Number, Suite = suite, Client = {},
+    String = PublicText, IsSecret = Strict.IsSecret,
     Routing = { HoverGearTab = function() end, ReleaseGearClick = function() end },
     Host = { Client = {}, InCombat = function() return liveCombat end } }
 ns.Public = function(value)
@@ -248,8 +280,11 @@ local scaled = view.frame.scale
 assert(scaled > 1 and view.frame.point[1] == "TOPLEFT", "scaling did not keep the top left")
 grip.scripts.OnMouseUp(grip, "LeftButton")
 assert(preferences.scale == scaled and not grip.scripts.OnUpdate, "scale was not saved and polling did not stop")
+assert(view.header.scale == scaled and view.reportMetrics.scale == scaled, "resizing did not reflow visible text on release")
 window.maximize.scripts.OnClick(window.maximize)
 assert(view.frame.scale > scaled and view.frame.point[1] == "CENTER" and not grip.shown)
+assert(view.header.scale == view.frame.scale and view.reportMetrics.scale == view.frame.scale,
+    "maximizing did not reflow the visible text")
 window.maximize.scripts.OnClick(window.maximize)
 assert(view.frame.scale == scaled and view.frame.point[1] == "TOPLEFT" and grip.shown)
 -- Docking left with its buttons; a saved dock still places the window.
@@ -358,6 +393,28 @@ assert(fields.level.text.text == "Level 22", "header rendered an unlabelled leve
 beforeWrites = writes
 view:SetHeader("Mapko", nil, "19", "player", "guid", data)
 assert(writes == beforeWrites, "unchanged header wrote widget state")
+
+do
+    local sample = { level = 3, class = "Paladin" }
+    local savedScale = view.window.requestedScale
+    view.window.requestedScale = 1
+    view:FitScreen()
+    view:SetHeader("Hayato", nil, "0.00", "player", "guid", sample)
+    local originalWidth = fields.name.width
+    view.window.requestedScale = .8
+    view:FitScreen()
+    for _, key in ipairs({ "name", "level", "class", "itemLevel" }) do
+        local field = fields[key]
+        local width = key == "itemLevel" and field.text.width or field.width
+        assert(width >= field.text:GetUnboundedStringWidth() + 4,
+            "the fractional-scale header clips " .. key)
+    end
+    assert(fields.name.width > originalWidth, "the header reused measurements from the old scale")
+    view.window.requestedScale = savedScale
+    view:FitScreen()
+    view:SetHeader("Mapko", nil, "19", "player", "guid", data)
+end
+
 local order = suite.CharacterHeader.Order({ tabOrder = "bad,pvp,stats,gear,pvp" }, "tab")
 assert(#order == 7 and order[1].id == "pvp" and order[2].id == "gear" and order[3].id == "overview")
 
@@ -375,7 +432,9 @@ for _, field in ipairs(header.Fields) do
     assert(region.baseX + dx + region.width <= header.PreviewWidth and region.baseY - dy == 0,
         field.id .. " could overlap the window controls")
 end
-assert(fields.name.width == #"Mapko" * 6, "the name hit area extended beyond its text")
+local nameWidth = fields.name.text:GetUnboundedStringWidth()
+assert(fields.name.width >= nameWidth and fields.name.width <= math.ceil(nameWidth + 4 / view.frame:GetEffectiveScale()) + 1,
+    "the name hit area did not stay close to its text")
 local preview = header.Create(view.frame)
 local previewConfig = { headerGuildVisible = false, headerNameX = 6, headerNameY = -5 }
 preview:Render(previewConfig, data, skin, header.PreviewWidth, 0)
@@ -473,6 +532,9 @@ do
     view:RefreshAppearance(nil, { reputationBarHeight = 8, reputationBarColor = "ff6600" })
     assert(track.height == 8 and row.left.point[5] == 5 and bar.color[1] == 1 and bar.color[2] == .4,
         "a visual settings change did not restyle the visible row")
+    view:RefreshAppearance(skin, { reputationBarHeight = 8, reputationBarColor = "ff6600", reputationColorFriendly = "33cc66" })
+    assert(bar.color[2] == .8 and card.rows[3].reputationBar.color[2] == .4,
+        "rank override should take precedence over the shared bar color")
     view:RefreshAppearance(skin, { reputationBarHeight = 8 })
     assert(bar.color[2] == .7 and card.rows[3].reputationBar.color[1] == color,
         "removing the override did not restore standing and theme colors")
@@ -1171,6 +1233,28 @@ do
         "turning off Forever Glass did not restore the native covers")
     ns.Host.Skin = previousSkin
 
+    local noSet = "No equipment set equipped"
+    local wrappedRows = {
+        { label = "Movement Speed", value = "100.00%" },
+        { label = "Active set", value = noSet },
+        { label = "Following row", value = "100" },
+    }
+    local wrappedReport = { { title = "Equipment sets", rows = wrappedRows } }
+    local left = { { slot = 1, name = "Long Enchanted Helm of the Alliance", label = "Head" } }
+    full:ShowGear(left, empty, empty, wrappedReport, nil, empty, true)
+    local first, wrapped, nextRow = unpack(full.rail.cards[1].rows)
+    assert(full.left[1].name.wordWrap and full.left[1].name.maxLines == 2, "gear names cannot use both lines")
+    assert(wrapped.right.text == noSet and wrapped.right.wordWrap and wrapped.right.nonSpaceWrap,
+        "the equipment set value has no word wrap")
+    assert(wrapped.textSplit < first.textSplit and wrapped.panelHeight > first.panelHeight
+        and nextRow.panelY == wrapped.panelY + wrapped.panelHeight,
+        "the set value did not get horizontal room and push the next row down")
+    local expandedHeight = full.rail.content
+    wrappedRows[2].value = "Set 1"
+    full:ShowGear(left, empty, empty, wrappedReport, nil, empty, true)
+    assert(wrapped.panelHeight == first.panelHeight and full.rail.content < expandedHeight,
+        "shorter text retained the wrapped row height")
+
     local longRows = {}
     for i = 1, 48 do longRows[i] = { label = "Row " .. i, value = i } end
     local longReport = { { title = "Long report", rows = longRows } }
@@ -1178,6 +1262,11 @@ do
         assert(list.scroll.kind == "Frame" and not list.scroll.template and list.canvas.parent.clipsChildren
             and list.bar:IsShown(), "the Forever list lost its clipped viewport or scroll controls")
         local slider, offset = list.slider, list.offset
+        local trackHeight = list.height - 30
+        local expectedHeight = math.floor(trackHeight * list.height / list.content + .5)
+        assert(slider.thumb.height == expectedHeight and slider.thumb.width >= 9
+            and slider.width >= 16 and slider.thumb.color,
+            "the thumb does not reflect visible content or lost its high-contrast treatment")
         assert(offset == 0 and slider.value == 0, "the top of the list placed the thumb at the wrong end")
         list.scroll.scripts.OnMouseWheel(list.scroll, -1)
         assert(list.offset == offset + 30 and list.canvas.point[3] == list.offset,
@@ -1215,6 +1304,11 @@ do
     CheckOwnedScroll(full.rail)
     full:ShowGroups(longReport)
     CheckOwnedScroll(full.report)
+    local smallThumb = full.report.slider.thumb.height
+    for i = #longRows, 20, -1 do longRows[i] = nil end
+    full:ShowGroups(longReport)
+    assert(full.report.range > 0 and full.report.slider.thumb.height > smallThumb,
+        "the thumb did not grow as the scroll range shortened")
     full:ShowGroups(groups)
     assert(full.report.offset == 0 and full.report.canvas.point[3] == 0 and not full.report.bar:IsShown(),
         "shortening the report did not clamp its position and hide the scrollbar")

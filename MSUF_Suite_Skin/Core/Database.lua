@@ -124,6 +124,7 @@ end
 
 local WINDOW_ACTION_CHOICES = {
     { "style", "WindowActionStyles" },
+    { "closeStyle", "WindowCloseStyles" },
     { "glyphMode", "WindowActionGlyphModes" },
     { "weight", "WindowActionWeights" },
     { "surfaceShape", "WindowActionShapes" },
@@ -617,10 +618,20 @@ local function NormalizeMicroMenu(microMenu)
     KeepListedNumber(microMenu, "radius", NS.GeometryRadii, defaults.radius)
 end
 
+-- Older profiles used enabled for Blizzard windows. The old main switch
+-- turned both that flag and the Suite window switch off.
+local function MigrateWindowSwitch(profile, result)
+    if type(profile.blizzardWindowsEnabled) == "boolean" then return end
+    result.blizzardWindowsEnabled = profile.enabled ~= false
+    local suite = _G.MSUFSuiteDB
+    result.enabled = result.blizzardWindowsEnabled or (type(suite) == "table" and suite.skinEnabled ~= false)
+end
+
 function Database.Normalize(db)
     if type(db) ~= "table" then return nil end
     local revision = tonumber(db.revision) or 0
     local classicOptOut = IsClassicDetailsOptOut(db.characterDetails)
+    MigrateWindowSwitch(db, db)
     MergeDefaults(db, NS.Defaults)
     db.revision = NS.Defaults.revision
     db.enabled = db.enabled ~= false
@@ -696,6 +707,7 @@ end
 function Database.SanitizeProfile(profile)
     if type(profile) ~= "table" then return nil end
     local safe = SanitizeValue(profile, NS.Defaults)
+    MigrateWindowSwitch(profile, safe)
     CopyMotionOptions(profile.theme, safe.theme)
     CopyAdapterSwitches(profile.skins, safe.skins)
     local windowControls = profile.windowControls

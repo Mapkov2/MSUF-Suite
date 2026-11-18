@@ -23,7 +23,7 @@ local NS = {
     DB = { enabled = true }, IsCombatLocked = InCombatLockdown,
     Theme = { GetColor = function() return unpack(desired) end },
     Registry = { AddListener = Noop }, BlizzardFontNames = {},
-    WindowActionSkin = { HasOwnedStates = Noop, IsApplied = Noop, DisableOwner = Noop },
+    WindowActionSkin = { HasOwnedStates = Noop, GetExplicitKind = Noop, IsApplied = Noop, DisableOwner = Noop },
 }
 for _, path in ipairs({ "Safety", "BlizzardYellow", "Checkmarks", "CheckmarksMenus" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. path .. ".lua"))("MSUF_Suite_Skin", NS)

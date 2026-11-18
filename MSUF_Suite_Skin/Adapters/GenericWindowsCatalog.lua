@@ -90,7 +90,7 @@ local function Enabled()
     if not NS.DB then
         return true
     end
-    return NS.DB.enabled ~= false
+    return NS.DB.enabled ~= false and NS.DB.blizzardWindowsEnabled ~= false
         and (not NS.DB.skins or NS.DB.skins.blizzardWindows ~= false)
 end
 

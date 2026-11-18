@@ -412,8 +412,12 @@ B.Section("uiErrorFilter", "ui_error_filter", "UI error messages", {
     Bool("target", "Hide no valid target"),
     Bool("mana", "Hide not enough mana"),
     Bool("item", "Hide item cooldown and cannot use item"),
+    Bool("throttle", "Hide doing that too fast"),
+    Bool("facing", "Hide facing and position errors"),
     Bool("resources", "Hide other resource errors (energy, rage, etc.)"),
+    Bool("spellCooldown", "Hide spell and ability cooldown errors"),
 })
+NS.SuiteCatalog.uiErrorFilter.rules.spellCooldown.hidden = not NS.Client.isForever
 
 B.Module("cursorEffects", {
     title = "Cursor highlight",

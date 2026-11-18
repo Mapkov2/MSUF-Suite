@@ -15,16 +15,19 @@ function Adapters.SetMenuMotionProvider(track, release) TrackMenuMotion, Release
 local TrackCatalogFocus, StopCatalogFocus = function() end, function() end
 function Adapters.SetWindowFocusDiscovery(discover, stop) TrackCatalogFocus, StopCatalogFocus = discover, stop end
 
+local externalAdapters = {}
+
 local function IsValidDefinition(definition)
     return type(definition) == "table" and type(definition.id) == "string"
         and type(definition.resolve) == "function"
 end
 
-function Adapters.Register(definition)
+function Adapters.Register(definition, external)
     if not IsValidDefinition(definition) or Adapters.definitions[definition.id] then
         return false
     end
     Adapters.definitions[definition.id] = definition
+    if external then externalAdapters[definition.id] = true end
     Adapters.order[#Adapters.order + 1] = definition.id
     return true
 end
@@ -107,6 +110,7 @@ local function DisableDefinition(definition, frame)
 end
 
 local function DefinitionEnabled(definition)
+    if NS.DB.blizzardWindowsEnabled == false and not externalAdapters[definition.id] then return false end
     local configured = NS.DB.skins[definition.id]
     if configured == nil then
         return definition.defaultEnabled ~= false
@@ -287,6 +291,8 @@ local function AttachCombatWindow(definition)
     if definition and definition.id == "playerSpells" and NS.DB.enabled and DefinitionEnabled(definition) then
         local frame = NS.Safety.Field(_G, "PlayerSpellsFrame")
         if frame then NS.PlayerSpellsSkin.AttachWindowControls(frame, definition.id) end
+    elseif definition and definition.id == "worldMap" and NS.DB.enabled and DefinitionEnabled(definition) then
+        NS.WorldMapSkin.AttachCombatQuestLog(NS.Safety.Field(_G, "WorldMapFrame"), definition.id)
     end
 end
 
@@ -324,6 +330,7 @@ function Adapters.ApplyAll()
         for id in pairs(focusRoots) do TrackCombatFocus(Adapters.definitions[id]) end
         TrackCombatFocus(Adapters.definitions.blizzardWindows)
         AttachCombatWindow(Adapters.definitions.playerSpells)
+        AttachCombatWindow(Adapters.definitions.worldMap)
         NS.CombatGate.RunOrDefer("adapters:all", Adapters.ApplyAll)
         return false
     end
@@ -356,19 +363,27 @@ end
 
 -- Each stage is its own boundary: a stage that raises is reported and the
 -- later stages still apply (or release) the skin and notify the listeners.
-function Adapters.SetMasterEnabled(enabled)
-    if NS.IsCombatLocked() then
-        return false
-    end
-    NS.DB.enabled = enabled == true
+local function ApplySwitch(key)
     local dispatch = NS.Safety.Dispatch
     dispatch(NS.BlizzardYellow.Apply)
     dispatch(NS.Checkmarks.Apply)
     dispatch(NS.Typography.ApplyConfigured)
     dispatch(Adapters.ApplyAll)
     dispatch(NS.Registry.RefreshAll)
-    NS.Registry.NotifyListeners("adapter", "master")
+    NS.Registry.NotifyListeners("adapter", key)
     return true
+end
+
+function Adapters.SetMasterEnabled(enabled)
+    if NS.IsCombatLocked() then return false end
+    NS.DB.enabled = enabled == true
+    return ApplySwitch("master")
+end
+
+function Adapters.SetBlizzardWindowsEnabled(enabled)
+    if NS.IsCombatLocked() then return false end
+    NS.DB.blizzardWindowsEnabled = enabled == true
+    return ApplySwitch("blizzardWindowsEnabled")
 end
 
 function Adapters.GetDefinitions()

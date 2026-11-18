@@ -17,6 +17,7 @@ local function Expect(value, message)
 end
 
 local function Section(name, body)
+    if arg[3] == "bag-slots" and name ~= "common menus" then return end
     local ok, message = pcall(body)
     if not ok then failures[#failures + 1] = name .. ": " .. tostring(message) end
 end
@@ -293,6 +294,7 @@ NS = {
         TrackButton = function() return true end,
     },
     WindowActionSkin = {
+        GetExplicitKind = function() return nil end,
         Apply = function() return nil end,
         SyncNativeVisual = function() return nil end,
         DisableOwner = function() end,
@@ -1373,6 +1375,45 @@ Section("common menus", function()
     NS.IconSkin.Apply = iconApply
     Expect(ok and items[1].IconBorder.quality == "epic" and #reported == before + 1,
         "a raising bag border repaint escaped into Blizzard's item update")
+    -- The Bags module's stroke painter owns these native item buttons. Test
+    -- both discovery paths: generic child traversal and the bag pool pass.
+    -- Initialize records containerFrame on both supported clients, including
+    -- reagent buttons whose parent the Suite later changes to the Backpack.
+    local previousBag, previousItems = bag, items
+    local previousCombined, previousReagent = ContainerFrameCombinedBags, ContainerFrame6
+    local previousOwned, previousClient = suiteOwned.bagWindows, NS.Client.isForever
+    for _, forever in ipairs({false,true}) do
+        NS.Client.isForever = forever
+        for _, reagent in ipairs({false,true}) do
+            bag, items = Frame(reagent and "ContainerFrame6" or "ContainerFrameCombinedBags"), {}
+            bag.itemButtonPool = previousBag.itemButtonPool
+            if reagent then ContainerFrame6=bag else ContainerFrameCombinedBags=bag end
+            suiteOwned.bagWindows = true
+            local ownedItem = Item()
+            ownedItem.containerFrame = bag
+            ownedItem.NormalTexture = {}
+            ownedItem.name = "ContainerFrameCombinedBagsItem1"
+            function ownedItem:GetObjectType() return "Button" end
+            function ownedItem:SetItemButtonQuality() end
+            bag.children = items
+            GenericWindows.ApplyFrame(bag,"owned-slots",MODE)
+            Expect(not ownedItem.surfaceSpec and not iconStates[ownedItem],
+                "generic traversal drew an extra surface or icon border over a Suite bag slot")
+            _G.ContainerFrame_GenerateFrame(bag,16,0)
+            Expect(not itemSkins[ownedItem] and not iconStates[ownedItem],
+                "bag pool skin drew an extra border over a Suite-owned slot")
+            _G.SetItemButtonQuality(ownedItem,"rare")
+            Expect(not iconStates[ownedItem],"quality update reintroduced the generic border on a Suite bag slot")
+            suiteOwned.bagWindows = false
+            _G.ContainerFrame_GenerateFrame(bag,16,0)
+            Expect(itemSkins[ownedItem] and iconStates[ownedItem],
+                "turning Bags off did not return native slots to the general skin")
+            GenericWindows.Disable("owned-slots")
+        end
+    end
+    bag,items = previousBag,previousItems
+    ContainerFrameCombinedBags,ContainerFrame6 = previousCombined,previousReagent
+    suiteOwned.bagWindows,NS.Client.isForever = previousOwned,previousClient
     NS.CommonMenus.Disable("menus")
     Expect(items[1].surfaceVisible == false, "disabling the bag skin left a slot surface visible")
     NS.Surface.Attach, NS.ControlSkin.ApplyButton, NS.Cosmetics.Fade = attach, applyButton, fade

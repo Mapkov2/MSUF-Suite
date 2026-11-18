@@ -140,7 +140,9 @@ local function PaintQuestHover(row)
     end
     local visible = record.state.active and theme.hoverStyle ~= "off"
         and Safety.Read(row, "IsVisible") == true
-        and (Safety.Read(row, "IsMouseOver") == true or Safety.Read(record.highlight, "IsShown") == true)
+        -- Native OnLeave hides this even while IsMouseOver still reports true.
+        -- The same texture also carries Blizzard's map-pin callout state.
+        and Safety.Read(record.highlight, "IsShown") == true
     if visible then
         local r, g, b, a = NS.Theme.GetColor("hover")
         local opacity = NS.Theme.GetMaterialOpacity(QUEST_HOVER_MATERIAL)
@@ -445,7 +447,7 @@ end
 -- when that hook stays quiet, take their pass now.
 function WorldMapSkin:OnWorldMapShown()
     for frame in pairs(activeFrames) do MarkMapReady(frame) end
-    if NS.IsCombatLocked() then return end
+    if NS.IsCombatLocked() then return NS.WorldMapQuests.QueueCombatRefresh() end
     for frame, state in pairs(activeFrames) do
         if state.active then
             if state.generation == Kit.SkinGeneration() then
@@ -461,7 +463,7 @@ end
 -- WorldMapMixin:OnShow can rebuild the list before its protected reading
 -- emote. Queue the row writes after the native map open and coalesce rebuilds.
 local function OnQuestLogUpdatedHook()
-    if NS.IsCombatLocked() then return end
+    if NS.IsCombatLocked() then return NS.WorldMapQuests.QueueCombatRefresh() end
     for frame, state in pairs(activeFrames) do
         if state.generation ~= nil and Safety.Read(frame, "IsVisible") == true then
             NS.Registry.QueueJob(OnQuestLogUpdated)
@@ -505,6 +507,30 @@ local function UnregisterCallbacksIfIdle()
     EventRegistry:UnregisterCallback("WorldMapMinimized", WorldMapSkin)
     EventRegistry:UnregisterCallback(SHOW_CALLBACK, WorldMapSkin)
     EventRegistry:UnregisterCallback(DISPLAY_MODE_CALLBACK, WorldMapSkin)
+end
+
+-- Cold combat opens can prepare the plain quest list while all map chrome,
+-- window controls and protected work remain in the adapter's combat queue.
+function WorldMapSkin.AttachCombatQuestLog(frame, owner)
+    if not frame or not NS.IsCombatLocked() or Safety.IsForbidden(frame) then return false end
+    local state = frameStates[frame]
+    if state and state.active and state.owner ~= (owner or "worldMap") then return false end
+    if not state then
+        state = { surfaces = Kit.WeakSet(), questRows = Kit.WeakSet() }
+        frameStates[frame] = state
+        ObserveMapHide(frame)
+    end
+    state.owner, state.active = owner or "worldMap", true
+    state.questMapReady = completedMapOpens[frame]
+    activeFrames[frame] = state
+    if NS.Client.isForever then AdoptCompletedMapOpen(frame, state) end
+    NS.WorldMapQuests.Activate(state, frame)
+    RegisterCallbacks()
+    if not questLogUpdateHooked then
+        questLogUpdateHooked = Kit.HookGlobal("QuestLogQuests_Update", OnQuestLogUpdatedHook)
+    end
+    NS.WorldMapQuests.QueueCombatRefresh()
+    return true
 end
 
 function WorldMapSkin.Apply(frame, owner)

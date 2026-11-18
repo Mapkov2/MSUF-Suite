@@ -11,6 +11,58 @@ NS.WindowActionSkinShared = nil
 local Settings = Shared.Settings
 local IsListed = NS.IsListed
 local forever = (rawget(NS, "Client") or {}).isForever == true
+local stateGetters = { normal = "GetNormalTexture", pushed = "GetPushedTexture",
+    disabled = "GetDisabledTexture", highlight = "GetHighlightTexture" }
+
+-- The close X has its own style. Older profiles may intentionally keep native
+-- expand/minimize art; that choice no longer leaves the X outside our skin.
+-- One read-only view is reused on these construction/settings paths. Renderers
+-- copy its values into their own specs and never retain this shared view.
+local closeSettings = setmetatable({}, { __index = function(options, key) return options.source[key] end })
+function WindowActionSkin.ResolveSettings(kind)
+    local settings = Settings()
+    if kind ~= "close" then return settings end
+    local style = settings.closeStyle or NS.Defaults.icons.windowActions.closeStyle
+    if style == "global" then return settings end
+    closeSettings.source, closeSettings.style = settings, style
+    return closeSettings
+end
+
+-- Exact addon members and cooperative targets keep their action meaning in
+-- Native mode too. Inferred actions still follow their current native art.
+function WindowActionSkin.OrientGlyphs(glyphs, slots, cell, direction)
+    if direction ~= "left" and direction ~= "right" then return end
+    local l, r = cell / slots, (cell + 1) / slots
+    for _, glyph in pairs(glyphs) do
+        if direction == "left" then glyph:SetTexCoord(r, 0, l, 0, r, 1, l, 1)
+        else glyph:SetTexCoord(l, 1, r, 1, l, 0, r, 0) end
+    end
+end
+
+function WindowActionSkin.ApplyExplicit(button, owner, kind, motion, options)
+    return WindowActionSkin.Apply(button, owner, kind, motion, true, options)
+end
+
+function WindowActionSkin.GetExplicitKind(button)
+    local state = WindowActionSkin.GetState(button)
+    return state and state.explicitKind or nil
+end
+
+function WindowActionSkin.HasOwnedStates(button)
+    local state = WindowActionSkin.states[button]
+    if not state or not state.glyphs or not state.nativeCaptured then return false end
+    for key, getter in pairs(stateGetters) do
+        if NS.Safety.Call(button, getter) ~= state.glyphs[key] then return false end
+    end
+    return true
+end
+
+function WindowActionSkin.Track(button, owner, kind)
+    local explicit = WindowActionSkin.GetExplicitKind(button)
+    if explicit then return WindowActionSkin.ApplyExplicit(button, owner, explicit) end
+    kind = kind or NS.Checkmarks.GetWindowAction(button)
+    return WindowActionSkin.Apply(button, owner, kind)
+end
 
 -- Owned caption cells can mirror the native button's mouse state without
 -- assigning any scripts or textures to that native button.
@@ -28,7 +80,7 @@ function WindowActionSkin.PaintCaption(button, kind, visualState)
     if not forever then return false end
     if NS.IsCombatLocked() then return captionVisuals[button] and captionVisuals[button].active == true end
     if not NS.Safety.CanCreateRegions(button) then return false end
-    local settings, visual = Settings(), captionVisuals[button]
+    local settings, visual = WindowActionSkin.ResolveSettings(kind), captionVisuals[button]
     if settings.style == "native" then
         WindowActionSkin.ClearCaption(button)
         return false
@@ -65,6 +117,8 @@ function WindowActionSkin.SetOption(key, value)
     local settings = Settings()
     if key == "style" then
         if not IsListed(NS.WindowActionStyles, value) then return false, "invalid value" end
+    elseif key == "closeStyle" then
+        if not IsListed(NS.WindowCloseStyles, value) then return false, "invalid value" end
     elseif key == "glyphMode" then
         if not IsListed(NS.WindowActionGlyphModes, value) then return false, "invalid value" end
     elseif key == "weight" then
@@ -135,7 +189,7 @@ function WindowActionSkin.GetStatus()
     for _, state in pairs(WindowActionSkin.states) do
         if state.visible then count = count + 1 end
     end
-    return { applied = count, style = Settings().style }
+    return { applied = count, style = Settings().style, closeStyle = Settings().closeStyle }
 end
 
 -- The color roles ColorRole gives the glyphs. The action surfaces follow the

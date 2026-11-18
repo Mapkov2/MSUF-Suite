@@ -26,7 +26,15 @@ local NATIVE_R, NATIVE_G, NATIVE_B = 1.000, 0.820, 0.000
 -- pooled rows can be tracked without allocating.
 local desired = { 0, 0, 0, 1 }
 
+local nativeWindows = true
 local function RefreshDesiredColor()
+    -- Drop the previous native window regions once. The active addon adapters
+    -- and API clients submit their own regions again after a window switch.
+    local windows = NS.DB.blizzardWindowsEnabled ~= false
+    if nativeWindows ~= windows and not NS.IsCombatLocked() then
+        if not windows then BlizzardYellow.Restore() end
+        nativeWindows = windows
+    end
     desired[1], desired[2], desired[3], desired[4] = NS.Theme.GetColor("blizzardYellow")
 end
 
@@ -316,7 +324,7 @@ function BlizzardYellow.Apply()
     RefreshDesiredColor()
     local names = NS.BlizzardFontNames
     local count = 0
-    for index = 1, #names do
+    for index = 1, nativeWindows and #names or 0 do
         local object = CatalogFont(names[index])
         if object and ApplyObject(object, BlizzardYellow.states) then
             count = count + 1

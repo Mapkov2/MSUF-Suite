@@ -775,7 +775,7 @@ end
 function Details.SetOption(key, value)
     if NS.IsCombatLocked() or not OPTION_KEYS[key] or type(value) ~= "boolean" then return false end
     NS.DB.characterDetails[key] = value
-    if NS.DB.enabled and NS.DB.skins.blizzardWindows ~= false
+    if NS.DB.enabled and NS.DB.blizzardWindowsEnabled ~= false and NS.DB.skins.blizzardWindows ~= false
         and NS.GenericWindows.IsCategoryEnabled("character") then
         NS.CharacterPanel.Apply("blizzardWindows")
         NS.InspectPanel.Apply("blizzardWindows")

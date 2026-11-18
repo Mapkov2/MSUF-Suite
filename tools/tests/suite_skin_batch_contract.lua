@@ -49,4 +49,19 @@ assert(skin:ReleaseAll()) Flush()
 Check(world.cleaned == 256, "batch release retained targets")
 Check(skin:SkinBatch(entries), "released batch could not be acquired again") Flush()
 Check(world.attempts == 768, "reacquired targets did not repaint")
+local ns = world.NS
+ns.DB.skins = {}
+ns.Client = {}
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/Blizzard.lua"))("MSUF_Suite_Skin", ns)
+ns.Adapters.order = {}
+local noop = function() end
+ns.BlizzardYellow, ns.Checkmarks = { Apply = noop }, { Apply = noop }
+ns.Typography.ApplyConfigured = noop
+Check(ns.Adapters.SetBlizzardWindowsEnabled(false) and world.api:IsEnabled(), "Blizzard toggle suspended the API")
+local target = entries[1].target
+local function Visible() return ns.Registry.GetSurface(target).visible end
+Check(Visible() and skin:Refresh(target), "registered addon lost its surface")
+Check(ns.Adapters.SetMasterEnabled(false) and not world.api:IsEnabled() and not Visible(), "master did not suspend")
+Check(ns.Adapters.SetMasterEnabled(true) and Visible() and ns.DB.blizzardWindowsEnabled == false,
+    "master failed to resume the client with native windows off")
 print("Suite skin batch: " .. checks .. " checks passed")

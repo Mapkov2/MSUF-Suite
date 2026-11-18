@@ -98,6 +98,11 @@ B.Section("bags", "itemLevels", "Item levels", {
 })
 B.LinkFontShadow(NS.SuiteCatalog.bags.rules)
 
+B.Section("bags", "transmog", "Transmog collection", {
+    B.Bool("showTransmogStatus", "Show transmog collection status in item tooltips"),
+    B.Bool("showTransmogBadges", "Mark missing transmog appearances and sources in Suite bag and bank views", true),
+})
+
 B.Section("bags", "window", "Combined bag window", {
     B.Choice("windowPresentation", "Bag presentation", NS.BagsPresentation.PANEL, { "Compact window", "Side panel" }),
     B.Bool("panelFullHeight", "Use full screen height", false),
@@ -240,6 +245,7 @@ rules.keystoneLevelSize.enableKey = "showKeystoneDetails"
 rules.keystoneDungeonSize.enableKey = "showKeystoneDetails"
 rules.customCategories.hidden = true
 rules.recentHours.enableKey = "showRecent"
+rules.showTransmogBadges.enableKey = "showTransmogStatus"
 rules.showBindBadge.hidden = NS.Client.isForever
 rules.itemLevelSize.enableKey = "showItemLevel"
 rules.qualityColor.enableKey = "showItemLevel"

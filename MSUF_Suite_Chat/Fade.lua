@@ -6,7 +6,8 @@ local C = P.Chat
 -- the primary window, the sidebar. Its input line is a child of the window
 -- (FloatingChatFrameTemplate's editBox, live and forever), so it fades with
 -- the window and is never faded on its own. A new line or Blizzard's own
--- mouse-over fade-in wakes it; the countdown starts again when Blizzard fades
+-- mouse-over fade-in wakes it; optional loot/progress lines leave idle state
+-- alone. The countdown starts again when Blizzard fades
 -- its chrome out. Both arrive from Suite.ChatState (MSUF_Suite/Core), which
 -- reads Blizzard's hasBeenFaded flag: a hook on FCF_FadeInChatFrame would run
 -- inside FCF_OnUpdate and taint every window's fade state. While its input
@@ -24,6 +25,27 @@ local Finite = S.Finite
 -- on: the selected dock window, else the primary window; PlaceSidebar).
 local TAB, PARTS = 2, 6
 local delay = 0
+-- Native AddMessage type IDs, compiled only when settings change. The
+-- notification stays in its window and history; only idle activity is skipped.
+local PROGRESS_TYPES = { "LOOT", "MONEY", "COMBAT_XP_GAIN", "COMBAT_FACTION_CHANGE", "SKILL" }
+local progressTypes, ignoreProgress = {}, false
+
+function C.CompileIdleWake(config)
+    ignoreProgress = config.idleIgnoreProgress == true
+    for id in pairs(progressTypes) do progressTypes[id] = nil end
+    if not ignoreProgress then return end
+    for _, name in ipairs(PROGRESS_TYPES) do
+        local info = ChatTypeInfo[name]
+        if info and Finite(info.id) then progressTypes[info.id] = true end
+    end
+end
+
+-- Unknown or restricted type IDs still wake chat. Never infer a type from text.
+function C.MessageActivity(frame, chatTypeID)
+    if ignoreProgress and Finite(chatTypeID) and progressTypes[chatTypeID] then return end
+    C.ChatActivity(frame)
+end
+
 -- edit box -> its window's visual (permanent windows only).
 local inputs = setmetatable({}, { __mode = "k" })
 

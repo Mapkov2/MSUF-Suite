@@ -451,7 +451,7 @@ local marks = {
     -- BlizzardYellow loads before, WindowActionSkin after these files; no
     -- button here is a window action.
     BlizzardYellow = { TrackDropdown = function() end },
-    WindowActionSkin = { HasOwnedStates = NoAction, IsApplied = NoAction },
+    WindowActionSkin = { HasOwnedStates = NoAction, GetExplicitKind = NoAction, IsApplied = NoAction },
 }
 for _, file in ipairs({ "Core/Checkmarks.lua", "Core/CheckmarksMenus.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", marks)
@@ -500,6 +500,12 @@ assert(Adapters.SetMasterEnabled(true) and table.concat(masterStages, ",") == "c
     and masterHeard == "master" and Reported("gold text stage failed"),
     "a failing master switch stage stopped the stages after it")
 
+assert(Adapters.SetBlizzardWindowsEnabled(false) and NS.DB.enabled and masterHeard == "blizzardWindowsEnabled",
+    "native switch disabled the public engine")
+assert(Adapters.GetStatus("after") == "disabled", "native switch left a native adapter on")
+assert(Adapters.SetMasterEnabled(false) and Adapters.SetMasterEnabled(true) and NS.DB.blizzardWindowsEnabled == false,
+    "master cycle lost the native window preference")
+
 -- Profile activation and the look: each stage is its own boundary, and the
 -- Suite's look callback is foreign code.
 local engine = {
@@ -516,6 +522,17 @@ end
 engine.RootDB = { activeProfile = "Default", profiles = {
     Default = engine.CopyValue(engine.Defaults), Raid = engine.CopyValue(engine.Defaults) } }
 engine.DB = engine.RootDB.profiles.Default
+local savedSuiteDB = MSUFSuiteDB
+for _, suiteWindows in ipairs({ true, false }) do
+    MSUFSuiteDB = { skinEnabled = suiteWindows }
+    for _, normalize in ipairs({ engine.Database.Normalize, engine.Database.SanitizeProfile }) do
+        local migrated = normalize({ enabled = false })
+        assert(migrated.enabled == suiteWindows and migrated.blizzardWindowsEnabled == false, "old switch migration")
+        migrated.enabled = true
+        assert(normalize(migrated).blizzardWindowsEnabled == false, "lost saved native preference")
+    end
+end
+MSUFSuiteDB = savedSuiteDB
 local profileStages = {}
 engine.Typography = {
     Restore = function() end,

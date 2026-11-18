@@ -6,7 +6,10 @@ NS.AddonSkins = Skins
 local Safety, Visuals = NS.Safety, NS.AddonSkinVisuals
 local mode = { role = "shell", allowImplicitProtected = false, maxDepth = 6, maxNodes = 480 }
 local restedMode = { role = "shell", allowImplicitProtected = true, maxDepth = 6, maxNodes = 480 }
+local profilerMode = { role = "shell", allowImplicitProtected = false, maxDepth = 6, maxNodes = 480,
+    registerDynamicRows = false }
 local events = CreateFrame("Frame")
+local active
 
 for index = 1, #Skins.definitions do
     local entry = Skins.definitions[index]
@@ -30,6 +33,7 @@ function Skins.ResolveApp(name)
 end
 
 local function Release(state)
+    if state.id == "addonProfiler" then NS.AddonProfilerSkin.Release(state.owner) end
     if state.id == "spoken" and not NS.SpokenSkin.CanTouch(state.frame) then
         state.releasePending = true
         NS.SpokenSkin.Defer(state.frame, state.paint)
@@ -63,7 +67,7 @@ local function Paint(state)
         return
     end
     local appearance = state.id == "spoken" and NS.SpokenSkin.Mode(state.frame, mode)
-        or state.id == "restedXP" and restedMode or mode
+        or state.id == "restedXP" and restedMode or state.id == "addonProfiler" and profilerMode or mode
     Visuals.Close(state.frame, state.owner, state.id == "restedXP")
     state.applied = NS.GenericWindows.ApplyFrame(state.frame, state.owner, appearance) == true
     if state.applied then
@@ -72,6 +76,7 @@ local function Paint(state)
         else
             Visuals.Tree(state.frame, state.owner, nil, state.id == "restedXP")
             if state.id == "restedXP" then NS.RestedXPSkin.Paint(state.frame, state.owner) end
+            if state.id == "addonProfiler" then NS.AddonProfilerSkin.Paint(state.frame, state.owner) end
             if state.id == "enhanceQoL" or type(Safety.Field(state.frame, "_LibSettingsDesignerState")) == "table" then
                 NS.AddonSkinDesigner.Paint(state.frame, state.owner, state.id)
             end
@@ -89,7 +94,9 @@ end
 
 local function Shown(frame)
     local state = Skins.roots[frame]
-    if state then Queue(state) end
+    if state and (not state.applied or state.dirty) and Skins.IsEnabled(state.id) and not Skins.cooperative[state.id] then
+        Queue(state)
+    end
 end
 
 function Skins.Watch(frame, id)
@@ -193,14 +200,25 @@ local function Repaint()
 end
 
 local function Refresh()
+    if not NS.DB then return end
+    local enabled = Skins.IsEnabled() == true
+    if active ~= enabled then
+        if enabled then events:RegisterEvent("ADDON_LOADED") else events:UnregisterEvent("ADDON_LOADED") end
+    end
+    local release = active
+    active = enabled
+    if not enabled then
+        if release then Repaint() end
+        return
+    end
     Repaint()
     for index = 1, #Skins.definitions do
         local entry = Skins.definitions[index]
         if Skins.IsEnabled(entry.id) then NamedRoots(entry) end
     end
-    if Skins.IsEnabled() then Skins.InstallTriggers() end
+    Skins.InstallTriggers()
     if Skins.IsEnabled("spoken") then NS.SpokenSkin.Install() end
-    if Skins.IsEnabled() then Skins.Discover() end
+    Skins.Discover()
 end
 
 function Skins.SetOption(key, value)
@@ -211,8 +229,14 @@ function Skins.SetOption(key, value)
     return true
 end
 
-NS.Registry.AddListener(Skins, function(_, domain)
-    if domain == "addonSkins" or domain == "profile" or domain == "adapter" then
+NS.Registry.AddListener(Skins, function(_, domain, key)
+    if domain == "addonSkins" and key == "registered" then return end
+    local enabled = Skins.IsEnabled() == true
+    if enabled ~= active then
+        NS.Registry.QueueJob(Refresh)
+    elseif not enabled then
+        return
+    elseif domain == "addonSkins" or domain == "profile" or domain == "adapter" then
         NS.Registry.QueueJob(Refresh)
     elseif domain == "theme" or domain == "color" or domain == "appearance"
         or domain == "geometry" or domain == "typography" then
@@ -221,8 +245,11 @@ NS.Registry.AddListener(Skins, function(_, domain)
 end)
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
-events:SetScript("OnEvent", function(_, event, addon)
-    if event == "PLAYER_LOGIN" or addon == NS.addonName or Skins.ResolveApp(addon) then
+events:SetScript("OnEvent", function(self, event, addon)
+    if event == "PLAYER_LOGIN" then
+        self:UnregisterEvent(event)
+        if active ~= false or Skins.IsEnabled() then NS.Registry.QueueJob(Refresh) end
+    elseif addon == NS.addonName or (active and Skins.ResolveApp(addon)) then
         NS.Registry.QueueJob(Refresh)
     end
 end)

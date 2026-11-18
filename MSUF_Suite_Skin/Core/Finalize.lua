@@ -49,7 +49,7 @@ function LegacyAPI.RemoveThemeListener(owner)
 end
 
 function LegacyAPI.RegisterAdapter(definition)
-    return NS.Adapters.Register(definition)
+    return NS.Adapters.Register(definition, true)
 end
 
 local function GetAPI(first, second, third)

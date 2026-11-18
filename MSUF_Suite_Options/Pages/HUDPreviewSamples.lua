@@ -71,14 +71,17 @@ local function Group(ui, group, y)
     local text = { Color(c, "textColor", TEXT, "text") }
     local symbol = c.questIconStyle == 1 and "" or c.questIconStyle == 2 and "! "
         or "|TInterface\\GossipFrame\\AvailableQuestIcon:16:16|t "
-    DrawText(ui, symbol .. Tr("Example Quest"), 18, y, width - 36, c.entrySize, text)
+    local titleColor = group == TRACKER_GROUPS.focused and c.focusedTitleColor and color or text
+    DrawText(ui, symbol .. Tr("Example Quest"), 18, y, width - 36, c.entrySize, titleColor)
     y = y - c.entrySize - 9
     local entryBottom = y
     DrawText(ui, "3/8  " .. Tr("Collect supplies"), 28, y, width - 42, c.objectiveSize, text)
     y = y - c.objectiveSize - 7
-    DrawText(ui, "5/5  " .. Tr("Defeat enemies"), 28, y, width - 42, c.objectiveSize,
-        { Color(c, "completeColor", { .49, .75, .53 }) })
-    y = y - c.objectiveSize - 7
+    if not c.hideCompletedObjectives then
+        DrawText(ui, "5/5  " .. Tr("Defeat enemies"), 28, y, width - 42, c.objectiveSize,
+            { Color(c, "completeColor", { .49, .75, .53 }) })
+        y = y - c.objectiveSize - 7
+    end
     if c.showTimers then
         DrawText(ui, "2:34", 28, y, width - 42, c.objectiveSize, { Color(c, "mutedColor", MUTED, "muted") })
         y = y - c.objectiveSize - 7
@@ -157,18 +160,28 @@ local ANNOUNCEMENTS = {
     zone = { title = "Example Dungeon", subtitle = "NEW AREA" },
     quest = { title = "Example Quest", subtitle = "QUEST COMPLETE" },
     achievement = { title = "Example Achievement", subtitle = "ACHIEVEMENT EARNED" },
-    level = { title = "LEVEL %d", subtitle = "LEVEL UP" },
+    level = { title = "LEVEL %d" },
     scenario = { title = "SCENARIO COMPLETE", subtitle = "Example Scenario" },
     notice = { title = "Example Event", subtitle = "Example Dungeon" },
 }
-local SAMPLE_LEVEL = 70
+local SAMPLE_LEVEL = 28
 local function Announcement(ui, mode)
     local kind = ANNOUNCEMENTS[mode] and mode or "zone"
     local sample, art = ANNOUNCEMENTS[kind], ui.bannerArt
-    local title = kind == "level" and Tr(sample.title):format(SAMPLE_LEVEL) or Tr(sample.title)
-    Art.Theme(art, ui.config, V.Skin())
-    Art.Show(art, ui.config, kind, title, Tr(sample.subtitle))
-    return Art.WIDTH, Art.HEIGHT
+    local level = kind == "level"
+    local title = Tr(sample.title)
+    local subtitle
+    if level then
+        title = title:format(SAMPLE_LEVEL)
+        local gains = Art.LevelGains(38, 24, 1, 0, 1, 2, 3, 2, P.Suite.Client.isForever and 1 or nil)
+        subtitle = Art.LevelDetails(ui.config, gains)
+    else
+        subtitle = Tr(sample.subtitle)
+    end
+    Art.Theme(art, ui.config, V.Skin(), level)
+    Art.Show(art, ui.config, kind, title, subtitle)
+    ui.levelDetails = level and subtitle or nil
+    return Art.WIDTH, art.cleanLevel and Art.LEVEL_HEIGHT or Art.HEIGHT
 end
 
 V.Render = { objectives = Tracker, runSummary = Summary, announcements = Announcement }

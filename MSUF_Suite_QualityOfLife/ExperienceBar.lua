@@ -335,6 +335,7 @@ end
 local function HostShow()
     local self = M
     self.hostVisible = true
+    if S.SyncReputationBarPlacement then S.SyncReputationBarPlacement() end
     local showingRates = self.source == Tracked.XP and self.session and (self.config.showRate or self.config.showETA)
     if showingRates then
         local level, current, maximum = XP()
@@ -349,6 +350,7 @@ end
 local function HostHide(host)
     local self = M
     self.hostVisible = false
+    if S.SyncReputationBarPlacement then S.SyncReputationBarPlacement() end
     if self.hovered then HostLeave(host) end
 end
 
@@ -630,6 +632,7 @@ end
 local function Render(self)
     Layout(self)
     PaintValues(self)
+    if S.SyncReputationBarPlacement then S.SyncReputationBarPlacement() end
 end
 
 -- The events the track setting and the shown source need (ExperienceTrack.lua).
@@ -791,6 +794,12 @@ function S.ResetXPSession()
     Save(M)
     PaintValues(M)
     return true
+end
+
+function S.ExperienceBarPlacement()
+    if M.active and M.hostVisible and M.textLayoutRevision then
+        return M.host, Text.VerticalOverflow(M)
+    end
 end
 
 S.Install(ID, M)

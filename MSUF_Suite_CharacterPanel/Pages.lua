@@ -100,6 +100,7 @@ local function Row(group, label, value, layout, tooltip, argument, format, extra
     end
     row.tooltip, row.tooltipArgument = tooltip, argument
     row.reputationFill, row.reputationReaction = nil, nil
+    row.factionID, row.factionName = nil, nil
     group.rows[index], group.count = row, index
     return row
 end
@@ -631,14 +632,14 @@ local function ReadReputation(buffer, config)
         local info = C_Reputation.GetFactionDataByIndex(index)
         local name = IsTable(info) and String(info.name)
         if name then
-            if Flag(info.isHeader) then
-                group = Group(buffer, name, index, Flag(info.isCollapsed), Flag(info.isChild) and 1 or 0)
-                if Flag(info.isHeaderWithRep) then
-                    Reputation.Populate(Row(group, Text("Reputation")), info, sex, showBars, valueMode, goal)
-                end
-            else
+            local header = Flag(info.isHeader)
+            if header then group = Group(buffer, name, index, Flag(info.isCollapsed), Flag(info.isChild) and 1 or 0) end
+            if not header or Flag(info.isHeaderWithRep) then
                 group = group or Group(buffer, Text("Reputation"))
-                Reputation.Populate(Row(group, name), info, sex, showBars, valueMode, goal)
+                local row = Row(group, header and Text("Reputation") or name)
+                local id = Number(info.factionID)
+                if id and id > 0 then row.action, row.factionID, row.factionName = "reputation", id, name end
+                Reputation.Populate(row, info, sex, showBars, valueMode, goal)
             end
         end
     end

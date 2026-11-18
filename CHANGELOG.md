@@ -1,5 +1,47 @@
 # MSUF Suite Changelog
 
+## 0.1.25 Alpha - 2026-11-18
+
+Distributed through the Beta channel for Retail and WoW Forever.
+
+### World Map and Objective Tracker
+
+- On Retail, enable World quests to browse quests in the current map area, see their rewards and time remaining, and filter by gold, reputation, currency or gear.
+  <!-- msuf-menu-link: {"pageKey":"suite_qualityOfLife","sectionId":"suite_qualityOfLife_worldQuestTab_world_quest_tab","label":"World quests","client":"retail","fallbackSectionId":"suite_qualityOfLife_category_lootMerchants"} -->
+- The Objective Tracker can hide completed objective lines and apply the focus color to the focused quest title.
+  <!-- msuf-menu-link: {"pageKey":"suite_hud","sectionId":"suite_hud_objectives_content","label":"Objective Tracker content"} -->
+- Compact quest lists and folded groups now defer protected map updates until combat ends. The map restores the native objective display when the skin gives up control.
+  <!-- msuf-menu-link: {"pageKey":"suite_skin","sectionId":"suite_skin_quests","label":"Quest list layout","settingKey":"msufsuite.skin.questLog.layout"} -->
+
+### Character Panel, Bags and HUD
+
+- Select a faction in the Character Panel to show a movable Reputation Bar. It can sit beside or below the XP bar and follows the Character Panel's configurable standing colors.
+  <!-- msuf-menu-link: {"pageKey":"suite_hud","sectionId":"suite_hud_characterPanel_appearance","label":"Character Panel appearance"} -->
+- Retail Bags can show transmog collection status in item tooltips, with optional badges on item slots.
+  <!-- msuf-menu-link: {"pageKey":"suite_bags","sectionId":"suite_bags_transmog","label":"Transmog collection status","settingKey":"msufsuite.bags.showTransmogStatus","client":"retail","fallbackSectionId":"suite_bags_listView"} -->
+- The level-up banner has a compact layout and separate switches for health, power, talent points and attributes.
+  <!-- msuf-menu-link: {"pageKey":"suite_hud","sectionId":"suite_hud_announcements_levelUp","label":"Level-up banner"} -->
+- Chat can stay faded when loot, money, XP, reputation or skill messages arrive. The messages still appear in chat and history.
+  <!-- msuf-menu-link: {"pageKey":"suite_chat","sectionId":"suite_chat_window","label":"Chat window","settingKey":"msufsuite.chat.idleIgnoreProgress"} -->
+
+### WoW Forever
+
+- Spells to Learn distinguishes class quests, talents, items, portal trainers and spells learned automatically. It accounts for race-specific quests and rank prerequisites and shows trainer prices where available.
+  <!-- msuf-menu-link: {"pageKey":"suite_skin","sectionId":"suite_skin_windows","label":"Spells to Learn","settingKey":"msufsuite.skin.foreverSpellLearning","client":"forever","fallbackSectionId":"suite_skin_windows"} -->
+- Floating damage text uses separate lanes above each enemy nameplate to keep simultaneous hits readable.
+  <!-- msuf-menu-link: {"pageKey":"gameplay","sectionId":"suite_qualityOfLife_floatingCombatText_floating_combat_text","label":"Floating combat text","settingKey":"msufsuite.floatingCombatText.enabled","client":"forever","fallbackSectionId":"suite_qualityOfLife_category_gameplay"} -->
+- The XP Optimizer can remind you when the Cozy Sleeping Bag bonus is active and still below three stacks.
+  <!-- msuf-menu-link: {"pageKey":"suite_hud","sectionId":"suite_qualityOfLife_xpBar_xp_bar","label":"Experience bar"} -->
+
+### Skinning and Quality of Life
+
+- Choose a separate style and glyph size for the close button. Updated window controls and scrollbars keep their skin through window transitions.
+  <!-- msuf-menu-link: {"pageKey":"suite_skin","sectionId":"suite_skin_window_controls","label":"Window controls"} -->
+- Added an optional skin for Numy's Addon Profiler and expanded the skinning API for participating addons to style their own captions, widgets and window controls.
+  <!-- msuf-menu-link: {"pageKey":"suite_skin","sectionId":"suite_skin_addon_skins","label":"Addon skins"} -->
+- The UI error filter can hide action throttling and facing or position errors. WoW Forever also has a switch for spell and ability cooldown errors.
+  <!-- msuf-menu-link: {"pageKey":"suite_qualityOfLife","sectionId":"suite_qualityOfLife_uiErrorFilter_ui_error_filter","label":"UI error messages"} -->
+
 ## 0.1.24 Alpha - 2026-11-17
 
 Includes the accumulated Suite fixes and changes since 0.1.23 Alpha. Distributed through the Beta channel for Retail and WoW Forever.

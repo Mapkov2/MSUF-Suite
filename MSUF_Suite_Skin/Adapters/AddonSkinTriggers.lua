@@ -9,11 +9,15 @@ local secondaryRoots, secondaryButtons = setmetatable({}, { __mode = "k" }), set
 local brokerNames = {}
 local designerOwners = setmetatable({}, { __mode = "k" })
 for _, entry in ipairs(Skins.definitions) do
-    brokerNames[entry.label:lower():gsub("[^%w]", "")] = entry.id
-    for _, addon in ipairs(entry.addons) do brokerNames[addon:lower():gsub("[^%w]", "")] = entry.id end
     local id = entry.id
-    callbacks[id] = function()
-        if Skins.IsEnabled(id) then Skins.RefreshAddon(id) Skins.Discover(id) end
+    -- The profiler constructs both named windows in InitUI. Its launchers
+    -- also control data collection, which never requires skin discovery.
+    if id ~= "addonProfiler" then
+        brokerNames[entry.label:lower():gsub("[^%w]", "")] = id
+        for _, addon in ipairs(entry.addons) do brokerNames[addon:lower():gsub("[^%w]", "")] = id end
+        callbacks[id] = function()
+            if Skins.IsEnabled(id) then Skins.RefreshAddon(id) Skins.Discover(id) end
+        end
     end
 end
 
@@ -114,21 +118,49 @@ function Skins.ObserveRestedXP()
     Hook(window, "UpdateSubTheme", RestedChanged)
 end
 
+local function ProfilerPinned()
+    if not Skins.IsEnabled("addonProfiler") then return end
+    local frame = Safety.Field(rawget(_G, "NumyAddonProfiler"), "PinContainer")
+    if frame and Skins.Watch(frame, "addonProfiler") then Skins.RefreshFrame(frame) end
+end
+
+local function ProfilerBuilt()
+    if not Skins.IsEnabled("addonProfiler") then return end
+    if NS.IsCombatLocked() then NS.Registry.QueueJob(ProfilerBuilt) return end
+    local addon = rawget(_G, "NumyAddonProfiler")
+    Hook(Safety.Field(addon, "PinContainer"), "PinAddon", ProfilerPinned)
+    Skins.CheckNamedRoots("addonProfiler")
+end
+
+local function ObserveProfiler()
+    if not Skins.IsEnabled("addonProfiler") then return end
+    local addon = rawget(_G, "NumyAddonProfiler")
+    Hook(addon, "InitUI", ProfilerBuilt)
+    -- Enabling the skin after InitUI adopts existing roots in the same refresh.
+    Hook(Safety.Field(addon, "PinContainer"), "PinAddon", ProfilerPinned)
+end
+
 function Skins.InstallTriggers()
     for _, entry in ipairs(Skins.definitions) do
         if Skins.IsEnabled(entry.id) then
-            for _, key in ipairs(entry.slash or {}) do Hook(SlashCmdList, key, callbacks[entry.id]) end
+            local callback = callbacks[entry.id]
+            if callback then
+                for _, key in ipairs(entry.slash or {}) do Hook(SlashCmdList, key, callback) end
+            end
             for _, addon in ipairs(entry.addons) do
                 if NS.Client.HasAddOn(addon) then
-                    ObserveDesigner(addon, entry.id)
                     local title = C_AddOns.GetAddOnMetadata(addon, "Title")
                     if Safety.Public(title) and type(title) == "string" then Skins.byTitle[title:lower()] = entry.id end
-                    local key = C_AddOns.GetAddOnMetadata(addon, "AddonCompartmentFunc")
-                    if Safety.Public(key) and type(key) == "string" then Hook(_G, key, callbacks[entry.id]) end
+                    if callback then
+                        ObserveDesigner(addon, entry.id)
+                        local key = C_AddOns.GetAddOnMetadata(addon, "AddonCompartmentFunc")
+                        if Safety.Public(key) and type(key) == "string" then Hook(_G, key, callback) end
+                    end
                 end
             end
         end
     end
     InstallBroker()
     Skins.ObserveRestedXP()
+    ObserveProfiler()
 end

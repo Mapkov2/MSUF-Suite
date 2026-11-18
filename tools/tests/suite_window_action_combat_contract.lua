@@ -158,7 +158,7 @@ local caption = Button()
 local captionState = W.Apply(caption, "caption", "maximize")
 for _, glyph in pairs(captionState.glyphs) do
     function glyph:SetTexture(path) self.file = path end
-    function glyph:SetTexCoord(left, right) self.left, self.right = left, right end
+    function glyph:SetTexCoord(...) self.coords, self.left, self.right = { ... }, ... end
 end
 local function Glyph(kind, mode)
     settings.glyphMode = mode
@@ -179,6 +179,18 @@ Check(path:find("MapkoSkinWindowActionsFine", 1, true) and left == 1 / 8, "plus/
 settings.weight = "bold"
 path = Glyph("minimize", "windows")
 Check(path:find("MapkoSkinWindowCaptionBold", 1, true), "bold weight lost the bold restore squares")
+local explicit = W.ApplyExplicit(caption, "caption", "expand", false, { direction = "left" })
+local mark = explicit.glyphs.normal
+Check(mark.file:find("ActionsBold", 1, true) and #mark.coords == 8 and mark.coords[1] == 4 / 8
+    and mark.coords[3] == 3 / 8, "left chevron lost its orientation or configured weight")
+W.Refresh(caption)
+Check(#mark.coords == 8 and mark.coords[1] == 4 / 8, "refresh lost explicit direction")
+W.ApplyExplicit(caption, "caption", "collapse", false, { direction = "right" })
+Check(#mark.coords == 8 and mark.coords[2] == 1 and mark.coords[1] == 3 / 8, "right chevron")
+W.ApplyExplicit(caption, "caption", "expand", false, { direction = "down" })
+Check(#mark.coords == 4 and mark.coords[1] == 4 / 8, "down chevron retained a sideways rotation")
+W.ApplyExplicit(caption, "caption", "restore", false, {})
+Check(mark.file:find("CaptionBold", 1, true) and #mark.coords == 4 and mark.coords[1] == .5, "standalone restore glyph")
 settings.weight = "fine"
 -- A button our Windows caption cell stands for drops the action skin at once
 -- and takes none while the cell is there; released, it can be skinned again.

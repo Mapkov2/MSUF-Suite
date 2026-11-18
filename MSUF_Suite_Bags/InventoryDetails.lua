@@ -172,17 +172,20 @@ end
 -- Blizzard rebuilds a bag or bank item tooltip every 0.2 s (GameTooltip_OnUpdate
 -- calls the button's UpdateTooltip, which runs SetBagItem again), so lines
 -- added once on enter vanish. Item tooltip post-calls run on every rebuild.
-local function Tooltip(tooltip)
+local transmogTooltip
+local function Tooltip(tooltip, data)
     if not M.active or tooltip ~= GameTooltip then return end
     local record = Details.overlays[tooltip:GetOwner()]
     local item = record and record.item
-    if not item then return end
-    if item.setName and M.config.showEquipmentSetNames then
-        tooltip:AddLine(item.setLabel or item.setName, 0.5, 0.85, 1, true)
+    if item then
+        if item.setName and M.config.showEquipmentSetNames then
+            tooltip:AddLine(item.setLabel or item.setName, 0.5, 0.85, 1, true)
+        end
+        if item.upgrade and M.config.showUpgradeTrack then
+            tooltip:AddLine((item.upgradeTrack and item.upgradeTrack .. " " or "") .. item.upgrade, 0.8, 0.8, 0.8)
+        end
     end
-    if item.upgrade and M.config.showUpgradeTrack then
-        tooltip:AddLine((item.upgradeTrack and item.upgradeTrack .. " " or "") .. item.upgrade, 0.8, 0.8, 0.8)
-    end
+    if transmogTooltip then transmogTooltip(tooltip, data) end
 end
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, Tooltip)
 
@@ -217,7 +220,7 @@ local function PaintText(label, value, font, size)
 end
 
 -- font: the bag font, read once per render (GridView.FontPath).
-function Details.Paint(button, item, font)
+local function PaintDetails(button, item, font)
     local c = M.config
     local name = c.showEquipmentSetNames and (item.setLabel or item.setName)
     local upgrade = c.showUpgradeTrack and item.upgrade
@@ -238,6 +241,20 @@ function Details.Paint(button, item, font)
     PaintText(record.upgrade, upgrade, font, c.upgradeTextSize)
     PaintText(record.keyLevel, keyLevel and tostring(keyLevel), font, c.keystoneLevelSize)
     PaintText(record.keyMap, keyLevel and item.keyMap, font, c.keystoneDungeonSize)
+end
+
+Details.Paint = PaintDetails
+
+local function PaintWithTransmog(button, item, font)
+    PaintDetails(button, item, font)
+    P.BagTransmog.Paint(button, item)
+end
+
+-- Keep the original slot painter installed when disabled or in combat. The
+-- permanent Blizzard item post-call above also drops the feature at that edge.
+function Details.SetTransmog(tooltip, badge)
+    transmogTooltip = tooltip and P.BagTransmog.Tooltip or nil
+    Details.Paint = badge and PaintWithTransmog or PaintDetails
 end
 
 function Details.HideMarkers()

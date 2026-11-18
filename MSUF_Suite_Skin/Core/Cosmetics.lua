@@ -112,6 +112,19 @@ local function RestoreRegion(region, state)
     Cosmetics.states[region] = nil
 end
 
+-- A pooled part may already belong to a different frame. Relinquish the
+-- ledger without writing into its new owner's visual state.
+function Cosmetics.Forget(region, owner)
+    local state = Cosmetics.states[region]
+    if not state or state.owner ~= owner then return end
+    Cosmetics.states[region] = nil
+    local set = Cosmetics.owners[owner]
+    if set then
+        set[region] = nil
+        if not next(set) then Cosmetics.owners[owner] = nil end
+    end
+end
+
 function Cosmetics.Restore(region, owner)
     local state = region and Cosmetics.states[region]
     if not state or state.owner ~= owner then return false end

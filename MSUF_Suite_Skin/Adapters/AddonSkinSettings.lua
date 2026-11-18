@@ -8,8 +8,10 @@ NS.AddonSettings = SettingsSkin
 local Skins, Safety = NS.AddonSkins, NS.Safety
 local state = { owner = "addon-skin:native-settings" }
 local mode = { rootSurface = false, allowImplicitProtected = false, maxDepth = 4, maxNodes = 96 }
+local listening = false
 
 local function Release()
+    if not state.id then return end
     if state.scrollBox then NS.AdapterKit.UnregisterRowCallback(state.scrollBox, state.event, state) end
     NS.GenericWindows.Disable(state.owner)
     NS.AddonSkinVisuals.Release(state.owner)
@@ -24,8 +26,18 @@ local function Row(_, row)
     end
 end
 
-local function Refresh()
+local Refresh
+local function CategoryChanged() NS.Registry.QueueJob(Refresh) end
+
+Refresh = function()
+    local enabled = Skins.IsEnabled() == true
+    if enabled ~= listening then
+        if enabled then EventRegistry:RegisterCallback("Settings.CategoryChanged", CategoryChanged, SettingsSkin)
+        else EventRegistry:UnregisterCallback("Settings.CategoryChanged", SettingsSkin) end
+        listening = enabled
+    end
     Release()
+    if not enabled then return end
     local panel = rawget(_G, "SettingsPanel")
     local category = Safety.Read(panel, "GetCurrentCategory")
     local id = Skins.ResolveApp(Safety.Read(category, "GetName"))
@@ -33,7 +45,7 @@ local function Refresh()
     state.id = id
     -- The native Settings adapter already owns these controls when enabled.
     -- Let its skin win; disabling an addon skin never steals that owner.
-    if NS.DB.skins.settings ~= false then state.applied = true return end
+    if NS.DB.blizzardWindowsEnabled ~= false and NS.DB.skins.settings ~= false then state.applied = true return end
     local list = Safety.Read(panel, "GetSettingsList")
     local scrollBox = Safety.Field(list, "ScrollBox")
     if not NS.AddonSkinVisuals.Safe(scrollBox) or not Safety.HasMethod(scrollBox, "ForEachFrame") then return end
@@ -45,10 +57,11 @@ end
 function SettingsSkin.IsApplied(id) return state.id == id and state.applied == true end
 function SettingsSkin.ReleaseAddon(id)
     if state.id == id then Release() end
-    if not Skins.cooperative[id] then NS.Registry.QueueJob(Refresh) end
+    if Skins.IsEnabled() and not Skins.cooperative[id] then NS.Registry.QueueJob(Refresh) end
 end
 
-local function Changed() NS.Registry.QueueJob(Refresh) end
-EventRegistry:RegisterCallback("Settings.CategoryChanged", Changed, SettingsSkin)
+local function Changed()
+    if listening or Skins.IsEnabled() then NS.Registry.QueueJob(Refresh) end
+end
 NS.Registry.AddListener(SettingsSkin, Changed)
-Changed()
+NS.Registry.QueueJob(Refresh)

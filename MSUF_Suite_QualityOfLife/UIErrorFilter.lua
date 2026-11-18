@@ -10,6 +10,8 @@ local MESSAGE_TYPES = {
     target = { "LE_GAME_ERR_GENERIC_NO_VALID_TARGETS" },
     mana = { "LE_GAME_ERR_OUT_OF_MANA" },
     item = { "LE_GAME_ERR_ITEM_COOLDOWN", "LE_GAME_ERR_CANT_USE_ITEM" },
+    throttle = { "LE_GAME_ERR_GENERIC_THROTTLE" },
+    facing = { "LE_GAME_ERR_BADATTACKFACING", "LE_GAME_ERR_BADATTACKPOS", "LE_GAME_ERR_PET_SPELL_NOT_BEHIND" },
     -- Forever replaces Mainline's default blacklist, so these can be visible there.
     resources = {
         "LE_GAME_ERR_OUT_OF_ENERGY",
@@ -31,6 +33,10 @@ local MESSAGE_TYPES = {
         "LE_GAME_ERR_OUT_OF_POWER_DISPLAY",
     },
 }
+-- Retail already suppresses these; Forever loads its own much smaller list.
+if NS.Client and NS.Client.isForever then
+    MESSAGE_TYPES.spellCooldown = { "LE_GAME_ERR_SPELL_COOLDOWN", "LE_GAME_ERR_ABILITY_COOLDOWN" }
+end
 local QUERY_SENTINEL = {}
 
 local function Usable(frame)

@@ -6,7 +6,7 @@ local Render = {}
 Render.__index = Render
 
 local MARGIN, FIELD_GAP = 14, 10
-local max, min, floor = math.max, math.min, math.floor
+local max, min, floor, ceil = math.max, math.min, math.floor, math.ceil
 local LEVEL_FORMAT = NS.Text("Level %d")
 local DEFAULT_COLORS = {
     text = { .941, .922, .886 },
@@ -93,9 +93,13 @@ local function Text(text, value)
     text:SetText(value)
 end
 
-local function Measure(text)
-    if not text.measured then text.measured = math.ceil(text:GetUnboundedStringWidth()) end
-    return text.measured
+local function Measure(renderer, text)
+    if not text.measured or text.measuredScale ~= renderer.scale then
+        local width = text:GetUnboundedStringWidth()
+        text.measured = not NS.IsSecret(width) and ceil(width) or 0
+        text.measuredScale = renderer.scale
+    end
+    return text.measured + renderer.textPadding
 end
 
 local function NewText(button, align)
@@ -189,12 +193,15 @@ end
 local function DrawItemLevel(renderer, button, value, right, compact)
     if not Present(button, not compact and value ~= nil) then return right end
     Text(button.text, value)
-    local textWidth = Measure(button.text)
-    local labelWidth = Measure(button.label)
+    local textWidth = Measure(renderer, button.text)
+    local labelWidth = Measure(renderer, button.label)
     local width = textWidth + labelWidth + 8
-    if width ~= button.textWidth then
-        button.textWidth = width
+    if textWidth ~= button.textWidth then
+        button.textWidth = textWidth
         button.text:SetWidth(textWidth)
+    end
+    if labelWidth ~= button.labelWidth then
+        button.labelWidth = labelWidth
         button.label:SetWidth(labelWidth)
     end
     local height = max(17, button.size + 5)
@@ -214,7 +221,7 @@ local function DrawMetadata(renderer, data, left, room, y, compact)
                     button.raw = value
                     Text(button.text, field.id == "level" and type(value) == "number" and LEVEL_FORMAT:format(value) or value)
                 end
-                natural, count = natural + Measure(button.text), count + 1
+                natural, count = natural + Measure(renderer, button.text), count + 1
             end
         end
     end
@@ -224,7 +231,7 @@ local function DrawMetadata(renderer, data, left, room, y, compact)
         if field.lane == "meta" then
             local button = renderer.buttons[field.id]
             if button.participates then
-                local width = floor(Measure(button.text) * ratio)
+                local width = max(1, floor(Measure(renderer, button.text) * ratio))
                 PlaceField(renderer, button, left, y, width, 21)
                 left = left + width + FIELD_GAP
             end
@@ -233,6 +240,13 @@ local function DrawMetadata(renderer, data, left, room, y, compact)
 end
 
 function Render:Paint(data, compact)
+    -- The tightly fitted fields need room for glyph and anchor rounding at fractional scales.
+    local scale = self.frame:GetEffectiveScale()
+    if NS.IsSecret(scale) or scale <= 0 then scale = 1 end
+    if self.scale ~= scale then
+        self.scale = scale
+        self.textPadding = ceil(4 / min(1, scale))
+    end
     local buttons = self.buttons
     local left = DrawPortrait(self, buttons.portrait, data.portrait, data.identity)
     local right = DrawItemLevel(self, buttons.itemLevel, data.itemLevel, self.width - self.rightReserve - MARGIN, compact)
@@ -241,7 +255,7 @@ function Render:Paint(data, compact)
     local named = Present(name, data.name ~= nil)
     if named then
         Text(name.text, data.name)
-        PlaceField(self, name, left, 4, min(room, max(8, Measure(name.text))), 32)
+        PlaceField(self, name, left, 4, min(room, max(8, Measure(self, name.text))), 32)
     end
     DrawMetadata(self, data, left, room, named and 34 or 20, compact)
 end

@@ -405,6 +405,7 @@ do
         Registry = { AddListener = function() end },
         BlizzardYellow = { TrackDropdown = function() end },
         WindowActionSkin = {
+            GetExplicitKind = NoAction,
             HasOwnedStates = NoAction,
             IsApplied = NoAction,
             Restore = function() actionRestores = actionRestores + 1 end,

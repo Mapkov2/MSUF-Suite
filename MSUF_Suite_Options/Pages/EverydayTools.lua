@@ -13,6 +13,7 @@ P.EverydayToolGroups = {
 local ACTIONS = {
     keyAudit = "Review actions and keys", currencyGoals = "Manage currency goals", keywordAlerts = "Manage keyword alerts",
     waypointLists = "Open saved waypoint lists", notificationHistory = "Open notice history",
+    worldQuestTab = "Open world quests",
 }
 function P.BuildEverydayToolActions(ctx, body, id, section, y, width)
     local title = ACTIONS[id]

@@ -309,6 +309,19 @@ end
 local ColorMatches = Safety.ColorMatches
 local COLOR_OWN = Safety.COLOR_OWN
 
+local publicFields = { "track", "thumb", "back", "forward", "background", "backTexture", "forwardTexture", "backOverlay", "forwardOverlay" }
+local publicLists = { "trackRegions", "thumbRegions", "backgroundRegions" }
+function ScrollBarSkin.PublicParts(target)
+    local contract = DetectContract(target)
+    if not contract or not CanDecorate(contract) then return end
+    local result = {}
+    for _, key in ipairs(publicFields) do result[#result + 1] = contract[key] end
+    for _, key in ipairs(publicLists) do
+        for _, region in ipairs(contract[key]) do result[#result + 1] = region end
+    end
+    return result, contract
+end
+
 local function TintRegion(state, region, role, alphaScale)
     local held = ScrollBarSkin.regionOwners[region]
     if held and held ~= state then return false end
@@ -358,10 +371,14 @@ local function ApplyTints(state)
     return true
 end
 
+local function StillOwned(state, region)
+    return not state.visualOnly or NS.PublicWidgets.Safe(region) and NS.PublicWidgets.Belongs(state.target, region)
+end
+
 local function RestoreTints(state)
     for region, tint in pairs(state.tints) do
         local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
-        if r and tint.applied[1] and ColorMatches(tint.applied, r, g, b, a, COLOR_OWN) then
+        if StillOwned(state, region) and r and tint.applied[1] and ColorMatches(tint.applied, r, g, b, a, COLOR_OWN) then
             local original = tint.original
             region:SetVertexColor(original[1], original[2], original[3], original[4])
         end
@@ -422,6 +439,11 @@ local function ClearPendingTarget(target, cancel)
 end
 
 local function RestoreNative(state)
+    if state.visualOnly then
+        for _, part in ipairs(state.contract.trackRegions) do
+            if not StillOwned(state, part) then NS.Cosmetics.Forget(part, state.cosmeticOwner) end
+        end
+    end
     NS.Cosmetics.RestoreOwner(state.cosmeticOwner)
     RestoreTints(state)
 end
@@ -430,7 +452,7 @@ local function RestoreState(target, state)
     if not state then return end
     ReleaseScrollMotion(target, state.owner)
     RestoreNative(state)
-    if state.contract and NS.Registry.GetSurface(state.contract.track) == state.surface then
+    if state.contract and StillOwned(state, state.contract.track) and NS.Registry.GetSurface(state.contract.track) == state.surface then
         NS.Surface.SetVisible(state.contract.track, false)
     end
     local owner = state.owner
@@ -440,7 +462,7 @@ local function RestoreState(target, state)
         if next(owned) == nil then ScrollBarSkin.owners[owner] = nil end
     end
     state.enabled = false
-    state.owner = nil
+    state.owner, state.publicParts, state.visualOnly = nil, nil, nil
 end
 
 local function RefreshNow(target, state)
@@ -453,6 +475,9 @@ local function RefreshNow(target, state)
     end
     local contract = state.contract
     if not CanDecorate(contract) then return false, "protected" end
+    if state.visualOnly then
+        for region in pairs(state.publicParts) do if not StillOwned(state, region) then return false, "protected" end end
+    end
     if not FadeTrack(state) or not ApplyTints(state) then return false, "native ownership" end
     if NS.Registry.GetSurface(contract.track) ~= state.surface then
         return false, "surface ownership"
@@ -462,10 +487,11 @@ local function RefreshNow(target, state)
     return true
 end
 
-local function ApplyNow(target, owner)
-    local detected, reason = DetectContract(target, scratchContract)
+local function ApplyNow(target, owner, publicParts, verified)
+    local detected, reason = verified
+    if not detected then detected, reason = DetectContract(target, scratchContract) end
     if not detected then return nil, reason end
-    if not CanDecorate(detected) then return nil, "protected" end
+    if not verified and not CanDecorate(detected) then return nil, "protected" end
 
     local state = ScrollBarSkin.states[target]
     if state and state.enabled ~= false and state.owner ~= owner then
@@ -481,7 +507,7 @@ local function ApplyNow(target, owner)
         if NS.Registry.GetSurface(detected.track) then return nil, "surface already owned" end
         state = {
             target = target,
-            contract = DetectContract(target),
+            contract = verified or DetectContract(target),
             cosmeticOwner = {},
             tints = setmetatable({}, { __mode = "k" }),
             enabled = false,
@@ -491,6 +517,7 @@ local function ApplyNow(target, owner)
     end
 
     local contract = state.contract
+    state.visualOnly, state.publicParts = publicParts ~= nil, publicParts
     local wasEnabled = state.enabled ~= false
     if not FadeTrack(state) or not ApplyTints(state) then
         if not wasEnabled then RestoreNative(state) end
@@ -535,22 +562,25 @@ local TINT_SETTINGS = {
     },
 }
 
-local function ApplyAndListen(target, owner)
-    local state, reason = ApplyNow(target, owner)
+local function ApplyAndListen(target, owner, publicParts, verified)
+    local state, reason = ApplyNow(target, owner, publicParts, verified)
     if state then
         WatchSettings(RefreshAll, TINT_SETTINGS)
-        TrackScrollMotion(target, owner)
+        if not publicParts then TrackScrollMotion(target, owner) end
     end
     return state, reason
 end
 
-function ScrollBarSkin.Apply(target, owner)
+function ScrollBarSkin.Apply(target, owner, publicParts, verified)
     if not target then return nil, "invalid target" end
     if owner == nil then return nil, "invalid owner" end
-    local contract, reason = DetectContract(target, scratchContract)
-    if not contract then return nil, reason end
-    if not CanDecorate(contract) then return nil, "protected" end
-
+    -- The public facade has already identified and claimed every part this
+    -- turn. A combat-delayed request always validates the current template.
+    if not verified then
+        local contract, reason = DetectContract(target, scratchContract)
+        if not contract then return nil, reason end
+        if not CanDecorate(contract) then return nil, "protected" end
+    end
     NS.CombatGate.Cancel(OwnerKey(owner))
     if NS.IsCombatLocked() then
         ClearPendingTarget(target, true)
@@ -564,13 +594,13 @@ function ScrollBarSkin.Apply(target, owner)
         NS.CombatGate.RunOrDefer(TargetKey(target), function()
             if ScrollBarSkin.pendingTargets[target] ~= owner then return end
             ClearPendingTarget(target, false)
-            ApplyAndListen(target, owner)
+            ApplyAndListen(target, owner, publicParts)
         end)
         return nil, "combat"
     end
 
     ClearPendingTarget(target, true)
-    return ApplyAndListen(target, owner)
+    return ApplyAndListen(target, owner, publicParts, verified)
 end
 
 function ScrollBarSkin.Refresh(target)

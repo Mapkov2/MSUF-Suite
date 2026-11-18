@@ -146,4 +146,14 @@ NextFrame()
 Check(nativeWrites == FONTS, ("a frame of colour writes made %d native colour writes for %d fonts")
     :format(nativeWrites, FONTS))
 
+NS.DB.blizzardWindowsEnabled = false
+NS.BlizzardYellow.Apply()
+local explicit = FontObject()
+explicit.GetObjectType = function() return "FontString" end
+local addonWindow = { GetRegions = function() return explicit end }
+Check(_G.ContractGameFont1.color[2] == 0.82 and NS.BlizzardYellow.TrackFrame(addonWindow) == 1,
+    "native windows switch prevented explicit addon text styling")
+NS.BlizzardYellow.Apply()
+Check(_G.ContractGameFont1.color[2] == 0.82 and explicit.color[2] == yellow[2],
+    "global refresh leaked across the native and addon text scopes")
 print("Suite skin notification coalescing: " .. checks .. " checks passed")

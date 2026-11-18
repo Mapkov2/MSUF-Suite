@@ -20,6 +20,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         NS.Client.HasAddOn = function() return true end
         NS.Client.IsAddOnLoaded = function() return false end
         NS.SuiteOwnership = { Owns = function() return false end }
+        Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } }
         local continuation, traversals = nil, 0
         EventUtil = { ContinueOnAddOnLoaded = function(_, callback) continuation = callback end }
         local function Heavy() traversals = traversals + 1; error("heavy spell skin ran during combat") end
@@ -34,6 +35,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Load("Adapters/ForeverSpellLearning.lua")
         Load("Adapters/PlayerSpells.lua", os.getenv("SUITE_PLAYER_SPELLS_ENTRY_SOURCE"))
         NS.ForeverLegacyTree = { Apply = function() return true end }
+        NS.WorldMapSkin = { AttachCombatQuestLog = function(frame) assert(frame == nil) end }
         Load("Adapters/Blizzard.lua", os.getenv("SUITE_BLIZZARD_ENTRY_SOURCE"))
         if route == "loadOnDemand" then
             Check(not NS.Adapters.Apply("playerSpells") and continuation, "missing spellbook did not schedule native loading")

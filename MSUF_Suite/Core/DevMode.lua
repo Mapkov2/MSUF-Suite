@@ -335,7 +335,12 @@ do
 
     local function Source(callback)
         if Suite.IsSecret(callback) or type(callback) ~= "function" then return end
-        local info = debug.getinfo(callback, "S")
+        -- Function-source metadata is optional; WoW does not expose Lua's debug library.
+        local debugger = debug
+        if Suite.IsSecret(debugger) or type(debugger) ~= "table" then return end
+        local getinfo = debugger.getinfo
+        if Suite.IsSecret(getinfo) or type(getinfo) ~= "function" then return end
+        local info = getinfo(callback, "S")
         if Suite.IsSecret(info) or type(info) ~= "table" then return end
         local source = Primitive(info.source)
         if type(source) ~= "string" then return end

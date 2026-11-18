@@ -165,6 +165,8 @@ local function BuildAnnouncements(ctx, b)
             help = "MSUF replaces Blizzard's zone text and event banners. Quest, achievement and scenario alert frames are hidden when their MSUF announcements are enabled. Turning a type off restores Blizzard's corresponding alert.",
             open = true,
         })
+    AddSection(sections, "suite_hud_announcements_levelUp",
+        Tr("Level-up banner"), P.SectionRules("announcements", "levelUp"), {})
     AddSection(sections, "suite_hud_announcements_layout",
         Tr("Timing and position"), P.SectionRules("announcements", "layout"), {
             help = "Drag announcements in MSUF Edit Mode, or set their timing, scale and exact position here.",
@@ -193,6 +195,10 @@ local function Build(ctx)
     BuildSummary(ctx, b)
     BuildAnnouncements(ctx, b)
     P.BuildHUDCharacterPanel(ctx, b)
+    local reputationActions = {
+        { "Character Panel colors", function() P.HUDMenu.OpenColors("characterPanel") end, key = "colors" },
+    }
+    P.ModuleCard(ctx, b, PAGE, "reputationBar", reputationActions, { title = "Reputation bar" })
     P.HUDMenu.BuildHelpers(ctx)
     P.HUDMenu.Finish(ctx)
 end

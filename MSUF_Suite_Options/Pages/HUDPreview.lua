@@ -8,11 +8,26 @@ local modes = { objectives = "quests", runSummary = "raid", announcements = "zon
 -- accordion of the HUD workspace (HUDWorkspace.lua).
 local ARTWORK = { label = "Banner artwork", section = "artwork" }
 local FRAME = { label = "Banner frame", section = "bannerFrame" }
+local LEVEL_KEYS = { "levelClean", "levelHealth", "levelPower", "levelTalents", "levelAttributes" }
+local LEVEL_UP_SOUNDKIT = 888 -- Blizzard's LEVELUP sound kit
 local FRAME_EDGE, MIN_PICKER_WIDTH = 10, 120
 -- Above the canvas, the banner's targets layer as the banner draws its parts:
 -- text over artwork over frame.
 local LEVEL = { frame = 2, artwork = 3, text = 4 }
 local SyncBanner
+
+local function OpenLevelDetails(owner)
+    local id = "announcements"
+    if P.Combat() then return end
+    P.ContextMenu(owner, function(_, menu)
+        for _, key in ipairs(LEVEL_KEYS) do
+            local setting = key
+            local label = P.catalog[id].rules[setting].label
+            menu:CreateCheckbox(Tr(label), function() return P.Get(id, setting) == true end,
+                function() P.Set(id, setting, not P.Get(id, setting)) end)
+        end
+    end)
+end
 
 function Preview.Stop(ui)
     if ui.dismissTimer then
@@ -53,13 +68,14 @@ local function Animation(ui)
     ui.animation, ui.leave = group, leave
 end
 
-function Preview.Play(ui)
+function Preview.Play(ui, withSound)
     if ui.id ~= "announcements" or not ui.host:IsVisible() then return end
     Preview.Stop(ui)
     if not ui.animation then Animation(ui) end
     local duration = S.Config("announcements").duration
     ui.lastDuration, ui.playing = duration, true
     ui.animation:Play()
+    if withSound and modes.announcements == "level" then PlaySound(LEVEL_UP_SOUNDKIT) end
     -- Match the actual banner: fade-in and the display clock start together;
     -- only the one-shot deadline starts the independent fade-out group.
     local timer
@@ -76,7 +92,7 @@ end
 -- display its example.
 function Preview.Skin()
     local provider = _G.MapkoSkin
-    if not Suite.Skin.enabled or type(provider) ~= "table" or type(provider.GetAPI) ~= "function" then return nil end
+    if not Suite.Skin.WindowsEnabled() or type(provider) ~= "table" or type(provider.GetAPI) ~= "function" then return nil end
     return provider.GetAPI(2, 0)
 end
 
@@ -131,11 +147,13 @@ local function Paint(ui)
     local art = ui.bannerArt
     local previousArt = art and art.revision
     local previousOpacity = art and art.backgroundOpacity
+    local previousLevelDetails = ui.levelDetails
     local width, height = Preview.Render[ui.id](ui, modes[ui.id])
     if ui.id == "announcements" then
         -- An artwork or frame edit after playback brings back the sample.
         art = ui.bannerArt
-        if previousArt ~= art.revision or previousOpacity ~= art.backgroundOpacity then Preview.Stop(ui) end
+        if previousArt ~= art.revision or previousOpacity ~= art.backgroundOpacity
+            or previousLevelDetails ~= ui.levelDetails then Preview.Stop(ui) end
     elseif art then
         Art.Clear(art)
     end
@@ -192,6 +210,7 @@ local function Select(ui, id)
         ui.host:Hide()
         ui.selection:Hide()
         ui.playButton:Hide()
+        ui.levelDetailsButton:Hide()
         P.W.SetControlShown(ui.artPicker, false)
         if ui.framePicker then P.W.SetControlShown(ui.framePicker, false) end
         for _, picker in pairs(ui.pickers) do P.W.SetControlShown(picker, false) end
@@ -252,6 +271,7 @@ local function TextHandle(ui, key, label)
     local art, region = ui.bannerArt, CreateFrame("Button", nil, ui.canvas)
     region:SetPoint("CENTER", art[key], "CENTER")
     Target(ui, region, { label = label, section = "appearance" }, LEVEL.text)
+    region.textKey = key
     ui.texts[key], ui.marks[#ui.marks + 1] = region, region
     local function Read() return Art.TextOffset(S.Config("announcements"), key) end
     ui.handles:Add(key, region, Read, function(x, y) return WriteOffset(key, x, y) end, {
@@ -300,8 +320,18 @@ end
 -- follow the parts the style shows, and the marks follow both.
 SyncBanner = function(ui)
     local art, banner = ui.bannerArt, ui.id == "announcements"
+    local level = banner and modes.announcements == "level"
+    ui.levelDetailsButton:SetShown(level)
+    P.W.SetControlShown(ui.artPicker, banner and not art.cleanLevel)
+    if ui.framePicker then P.W.SetControlShown(ui.framePicker, banner and not art.cleanLevel) end
+    for _, region in ipairs(ui.bannerTargets) do
+        if region.target == FRAME then region:SetShown(banner and not art.cleanLevel) end
+    end
     for key, region in pairs(ui.texts) do
         local text = art[key]
+        if key == "subtitle" then
+            region:SetShown(banner and (not level or ui.levelDetails ~= ""))
+        end
         region:SetSize(math.max(24, text:GetStringWidth() + 12), math.max(12, text:GetStringHeight() + 6))
     end
     for index, accent in ipairs(art.accents) do
@@ -311,13 +341,22 @@ SyncBanner = function(ui)
     if banner then MarkBanner(ui) end
 end
 
+local function ClickBannerPart(ui, region, moved)
+    if moved then return end
+    if region.textKey == "subtitle" and modes.announcements == "level" then
+        OpenLevelDetails(region)
+    else
+        Focus(ui, region.target)
+    end
+end
+
 local function BannerEditor(ui)
     ui.bannerArt, ui.bannerTargets, ui.texts, ui.artwork, ui.marks = Art.Create(ui.canvas), {}, {}, {}, {}
     ui.handles = P.PreviewInteraction.Handles(ui.kit, {
         owner = ui.host, threshold = 2,
         tip = function(region, entering) MarkBanner(ui, entering and region.target or nil) end,
         select = function(region) if region then SelectTarget(ui, region.target, true) end end,
-        click = function(region, _, moved) if not moved then Focus(ui, region.target) end end,
+        click = function(region, _, moved) ClickBannerPart(ui, region, moved) end,
         drag = function(region, phase) if phase == "done" then Focus(ui, region.target) end end,
         escape = function() ui.handles:Release() end,
     })
@@ -409,7 +448,12 @@ function Preview.Build(ctx, parent, width)
     ui.playButton:SetPoint("TOPLEFT", width - 130, -66)
     HM.SkipHistoryCheckpoint(ui.playButton)
     HM.AllowCombatClick(ui.playButton)
-    ui.playButton:SetScript("OnClick", function() Preview.Play(ui) end)
+    ui.playButton:SetScript("OnClick", function() Preview.Play(ui, true) end)
+    ui.levelDetailsButton = P.T.Button(parent, Tr("Level-up details"), math.min(160, width - 156), 26)
+    ui.levelDetailsButton:SetPoint("TOPLEFT", 16, -66)
+    HM.SkipHistoryCheckpoint(ui.levelDetailsButton)
+    ui.levelDetailsButton:Hide()
+    ui.levelDetailsButton:SetScript("OnClick", OpenLevelDetails)
     ui.selection = P.PreviewInteraction.Bar(ctx, parent, width, "Sample preview. Changes update here even when the feature is off.")
     ui.selection:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, -291)
     local height = 326

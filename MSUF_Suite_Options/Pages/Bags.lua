@@ -21,7 +21,7 @@ end
 local WORKSPACE = { page = PAGE, module = ID, title = "Bags", height = 220,
         tabs = {
             { id = "bags", label = "Basics", sections = "bags_module finance currencyGoals_module" },
-            { id = "appearance", label = "Appearance", sections = "look appearance itemLevels" },
+            { id = "appearance", label = "Appearance", sections = "look appearance itemLevels transmog" },
             { id = "layout", label = "Layout", sections = "window reagentWindow" },
             { id = "inventory", label = "Inventory organisation",
                 sections = "organisation listView categories collections inventoryArchive_module restockPlanner_module craftShopping_module" },
@@ -119,6 +119,12 @@ local function BuildAppearance(ctx, b)
         help = "Equipment item levels appear in the upper right of each slot. Choose a font, outline, shadow and Smooth, Sharp or Slug rendering. Slug has no shadow. Missing item data appears when the client provides it.",
         open = true,
     })
+    local transmog = P.SectionRules(ID, "transmog", function(rule) return not rule.hidden end)
+    if #transmog > 0 then
+        P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_transmog", Tr("Transmog collection"), transmog, {
+            help = "An exclamation mark means the appearance is missing. A plus means the appearance is known but this source is missing.",
+        })
+    end
 end
 
 local function Build(ctx)

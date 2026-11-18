@@ -1,11 +1,14 @@
 local _, NS = ...
 local Art = { WIDTH = 660, HEIGHT = 130 }
 NS.AnnouncementArt = Art
+-- Room for wrapped localized gains at the largest subtitle size.
+Art.LEVEL_HEIGHT = 212
 
 -- Indices match the announcement artStyle choices. Each part specifies its
 -- top-left offset and size. Blizzard's tutorial and event toast atlases are
 -- available on Retail and Forever.
 local ARROWS = 2
+local LEVEL_LINES = 5
 local PANEL_INSET, PANEL_TOP, PANEL_BOTTOM = 65, 8, 11
 local PANEL_WIDTH, PANEL_HEIGHT = Art.WIDTH - 2 * PANEL_INSET, Art.HEIGHT - PANEL_TOP - PANEL_BOTTOM
 -- The panel the background fills and the frame outlines; the menu preview
@@ -23,6 +26,7 @@ local STYLES = {
         { 97, -108, 466, 10, alpha = .90, atlas = "levelup-bar-gold" },
     },
     { { 120, -9, 420, 79, alpha = .45, atlas = "levelup-glow-gold" }, DIVIDER },
+    { { 216, -68, 228, 1, alpha = .72 } },
 }
 
 -- frameStyle: Full box, Top and bottom lines, Corner brackets;
@@ -34,6 +38,7 @@ local GOLD_R, GOLD_G, GOLD_B = .96, .81, .44
 local CORNER_LENGTH = 24
 -- Layout without settings (the menu preview of another HUD) draws nothing.
 local HIDDEN = { showBoxArt = false, showFrame = false }
+local CLEAN_LEVEL = { showFrame = false, artStyle = LEVEL_LINES }
 -- colorStyle: Suite skin + default accents, Custom colors.
 local CUSTOM_COLORS = 2
 -- The headline color of each banner kind, and its setting under Custom colors.
@@ -65,7 +70,7 @@ function Art.Create(parent, createTexture, createFontString)
     local background = createTexture(parent, nil, "BACKGROUND")
     background:SetPoint("TOPLEFT", PANEL_INSET, -PANEL_TOP)
     background:SetPoint("BOTTOMRIGHT", -PANEL_INSET, PANEL_BOTTOM)
-    return { parent = parent, createTexture = createTexture, background = background, accents = {}, inset = 14,
+    return { parent = parent, createTexture = createTexture, background = background, accents = {}, inset = 14, cleanLevel = false,
         border = {}, frameCount = 0, revision = 0,
         title = Text(parent, createFontString), subtitle = Text(parent, createFontString) }
 end
@@ -191,6 +196,7 @@ function Art.Layout(art, config)
         texture:SetAlpha(part.atlas and part.alpha * opacity or 1)
         texture:Show()
     end
+    for index = #STYLES[style] + 1, #art.accents do art.accents[index]:Hide() end
 end
 
 -- The headline color of the banner on show: it tints the plain accents and,
@@ -219,7 +225,13 @@ end
 -- x and y. The menu preview draws a dragged row here before it is saved.
 function Art.PlaceText(art, key, x, y)
     local text, pad = art[key], art.inset + (key == "subtitle" and SUBTITLE_PAD or 0)
-    local top = (key == "subtitle" and SUBTITLE_TOP or TITLE_TOP) + y
+    local top
+    if art.cleanLevel then
+        top = key == "subtitle" and -80 or -15
+    else
+        top = key == "subtitle" and SUBTITLE_TOP or TITLE_TOP
+    end
+    top = top + y
     text:ClearAllPoints()
     text:SetPoint("TOPLEFT", pad + x, top)
     text:SetPoint("TOPRIGHT", x - pad, top)
@@ -239,13 +251,22 @@ end
 
 -- Fonts, colors, background, artwork and text rows from the settings.
 -- skin: the Suite skin's palette (GetColor, GetLook), nil while it is off.
-function Art.Theme(art, config, skin)
+function Art.UseCleanLevel(config, level)
+    return level == true and config.levelClean ~= false
+end
+
+function Art.Theme(art, config, skin, level)
+    local clean = Art.UseCleanLevel(config, level)
+    if art.cleanLevel ~= clean then
+        art.cleanLevel, art.placed = clean, nil
+        art.subtitle:SetWordWrap(clean)
+    end
     local font, setFont = NS.ResolveFont(config.font) or NS.GlobalFontPath(), NS.Suite.SetStyledFont
-    setFont(art.title, font, config.titleSize or 31, NS.HUDTextArgs(config, "banner"))
+    setFont(art.title, font, (config.titleSize or 31) + (clean and 6 or 0), NS.HUDTextArgs(config, "banner"))
     setFont(art.subtitle, font, config.subtitleSize or 16, NS.HUDTextArgs(config, "subtitle"))
-    Art.Layout(art, config)
+    Art.Layout(art, clean and CLEAN_LEVEL or config)
     local dark = not skin or not skin.GetLook or skin:GetLook() == "midnightDark"
-    local opacity = (config.backgroundOpacity or (dark and 57 or 50)) / 100
+    local opacity = clean and 0 or (config.backgroundOpacity or (dark and 57 or 50)) / 100
     if config.colorStyle == CUSTOM_COLORS then
         local r, g, b = NS.RGB(config.backgroundColor)
         Art.PaintBackground(art, r, g, b, opacity)
@@ -262,8 +283,9 @@ function Art.Theme(art, config, skin)
 end
 
 -- The headline color of a banner kind; an unknown kind takes the zone's.
-function Art.KindColor(config, kind)
+function Art.KindColor(config, kind, clean)
     if config.colorStyle == CUSTOM_COLORS then return NS.RGB(config[COLOR_KEYS[kind] or COLOR_KEYS.zone]) end
+    if clean then return .99, .86, .60 end
     local color = KIND_COLORS[kind] or KIND_COLORS.zone
     return color[1], color[2], color[3]
 end
@@ -271,13 +293,60 @@ end
 -- One banner: its texts, the headline in its kind's color, which also tints
 -- the plain accents and a headline-colored frame.
 function Art.Show(art, config, kind, title, subtitle)
-    local r, g, b = Art.KindColor(config, kind)
+    local r, g, b = Art.KindColor(config, kind, art.cleanLevel)
     art.title:SetText(title)
     art.title:SetTextColor(r, g, b)
     art.subtitle:SetText(subtitle or "")
     art.title:Show()
     art.subtitle:Show()
     Art.Tint(art, r, g, b)
+end
+
+-- PLAYER_LEVEL_UP delivers deltas in this order on both clients, with Spirit
+-- appended on Forever. Keep only public, positive gains on the queued item.
+local function Positive(value)
+    if NS.Finite(value) and value > 0 then return value end
+end
+
+function Art.LevelGains(health, power, talents, _, strength, agility, stamina, intellect, spirit)
+    return {
+        health = Positive(health), power = Positive(power), talents = Positive(talents),
+        strength = Positive(strength), agility = Positive(agility), stamina = Positive(stamina),
+        intellect = Positive(intellect), spirit = Positive(spirit),
+    }
+end
+
+local function Gain(parts, value, label)
+    if value then
+        parts[#parts + 1] = ("+%d %s"):format(value, label)
+    end
+end
+
+function Art.LevelDetails(config, gains)
+    local main, attributes = {}, {}
+    if config.levelHealth ~= false then Gain(main, gains.health, HEALTH or NS.Text("Health")) end
+    if config.levelPower ~= false then Gain(main, gains.power, NS.Text("Resource")) end
+    if config.levelTalents ~= false then
+        local talents = gains.talents
+        if talents == 1 then
+            main[#main + 1] = NS.Text("1 new talent point")
+        elseif talents then
+            main[#main + 1] = NS.Text("%d new talent points"):format(talents)
+        end
+    end
+    if config.levelAttributes == true then
+        Gain(attributes, gains.strength, SPELL_STAT1_NAME or NS.Text("Strength"))
+        Gain(attributes, gains.agility, SPELL_STAT2_NAME or NS.Text("Agility"))
+        Gain(attributes, gains.stamina, SPELL_STAT3_NAME or NS.Text("Stamina"))
+        Gain(attributes, gains.intellect, SPELL_STAT4_NAME or NS.Text("Intellect"))
+        Gain(attributes, gains.spirit, SPELL_STAT5_NAME or NS.Text("Spirit"))
+    end
+    local primary, secondary = table.concat(main, "  ·  "), table.concat(attributes, "  ·  ")
+    if primary == "" then
+        if secondary == "" and config.levelClean == false then return NS.Text("LEVEL UP") end
+        return secondary
+    end
+    return secondary == "" and primary or primary .. "\n" .. secondary
 end
 
 -- Nothing of the banner shows (the menu preview of another HUD).

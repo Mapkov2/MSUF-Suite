@@ -656,7 +656,7 @@ end
 local function OnShown(frame)
     local state = PlayerSpellsSkin.states[frame]
     if state and state.windowControlsRequested and frame == Field(_G, "PlayerSpellsFrame")
-        and NS.DB.enabled ~= false and NS.DB.skins.playerSpells ~= false then
+        and NS.DB.enabled ~= false and NS.DB.blizzardWindowsEnabled ~= false and NS.DB.skins.playerSpells ~= false then
         if NS.IsCombatLocked() then PrepareCombatPages(state) end
         if NS.WindowControls.Attach(frame, state.owner) then state.windowControlsRequested = nil end
     end

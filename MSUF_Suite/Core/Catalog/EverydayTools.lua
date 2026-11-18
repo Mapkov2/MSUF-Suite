@@ -80,3 +80,9 @@ Shared.Section("notificationHistory", "notice_history", "Suite notice history", 
     Shared.Number("limit", "Maximum saved notices", 60, 10, 100, 10),
     Shared.Number("mergeSeconds", "Combine repeated notices within (seconds)", 60, 5, 300, 5),
 })
+Shared.Module("worldQuestTab", { title = "World quests",
+    description = "Browse world quests and their rewards for the area shown on your map.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function() return not NS.Client.isForever, "Available only in Retail" end,
+})
+Shared.Section("worldQuestTab", "world_quest_tab", "World quests", {})

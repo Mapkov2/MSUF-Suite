@@ -296,7 +296,7 @@ local function ScheduleLateFonts()
             Typography.waiting[addon] = true
             EventUtil.ContinueOnAddOnLoaded(addon, function()
                 Typography.waiting[addon] = nil
-                if NS.DB and NS.DB.enabled and NS.DB.typography.enabled then
+                if NS.DB and NS.DB.enabled and NS.DB.blizzardWindowsEnabled ~= false and NS.DB.typography.enabled then
                     NS.CombatGate.RunOrDefer("typography:late", ApplyConfigured)
                 end
             end)
@@ -308,7 +308,7 @@ local function ScheduleStartupSettle()
     if Typography.startupSettleScheduled then return end
     Typography.startupSettleScheduled = true
     EventUtil.ContinueAfterAllEvents(function()
-        if NS.DB and NS.DB.enabled and NS.DB.typography.enabled then
+        if NS.DB and NS.DB.enabled and NS.DB.blizzardWindowsEnabled ~= false and NS.DB.typography.enabled then
             NS.CombatGate.RunOrDefer("typography:startup-settle", ApplyConfigured)
         end
     end, "PLAYER_ENTERING_WORLD")
@@ -322,7 +322,7 @@ function Typography.ApplyConfigured()
         NS.CombatGate.RunOrDefer("typography:apply", ApplyConfigured)
         return false, "combat"
     end
-    if not NS.DB.enabled or not NS.DB.typography.enabled then
+    if not NS.DB.enabled or NS.DB.blizzardWindowsEnabled == false or not NS.DB.typography.enabled then
         return Typography.Restore()
     end
     local path = ConfiguredPath()

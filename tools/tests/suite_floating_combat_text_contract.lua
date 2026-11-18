@@ -15,7 +15,7 @@ local wideAmount = "12345678901234567890"
 local methods = {
     SetFrameStrata = NOOP, EnableMouse = NOOP,
     SetJustifyH = NOOP, SetJustifyV = NOOP, SetTextColor = NOOP,
-    SetOrder = NOOP, SetOffset = NOOP, SetFromAlpha = NOOP, SetToAlpha = NOOP,
+    SetOrder = NOOP, SetFromAlpha = NOOP, SetToAlpha = NOOP,
     SetDuration = NOOP, SetStartDelay = NOOP,
 }
 local function New()
@@ -37,10 +37,12 @@ function methods:SetAllPoints(frame) self.bounds = frame end
 function methods:SetWordWrap(value) self.wordWrap = value end
 function methods:SetNonSpaceWrap(value) self.nonSpaceWrap = value end
 function methods:SetClipsChildren(value) self.clipsChildren = value end
-function methods:SetPoint(point, plate)
+function methods:SetPoint(point, plate, _, x, y)
     assert(not plate.forbidden)
     self.point, self.anchor, anchors = point, plate, anchors + 1
+    self.x, self.y = x, y
 end
+function methods:SetOffset(x, y) self.offsetX, self.offsetY = x, y end
 function methods:CreateAnimationGroup() return New() end
 function methods:CreateAnimation() return New() end
 function methods:Play() self.playing = true end
@@ -130,8 +132,28 @@ local function Emit(event, ...)
     EmitOn(context.frame, event, ...)
     EmitOn(context.directFrame, event, ...)
 end
+local function CheckSpacing()
+    for index, entry in ipairs(M.slots) do
+        if entry.plate then
+            local visible = 0
+            for otherIndex, other in ipairs(M.slots) do
+                if entry.plate == other.plate then
+                    visible = visible + 1
+                    if otherIndex > index then
+                        local top = entry.frame.y + entry.frame.height + entry.move.offsetY
+                        local otherTop = other.frame.y + other.frame.height + other.move.offsetY
+                        assert(top < other.frame.y or otherTop < entry.frame.y,
+                            "Damage numbers share overlapping animation paths")
+                    end
+                end
+            end
+            assert(visible <= 4, "Damage burst grew beyond four reserved lines")
+        end
+    end
+end
 local function Hit(unit, flag)
     Emit("UNIT_COMBAT", unit, "WOUND", flag or "", secret, 1)
+    CheckSpacing()
 end
 assert(cvar == "0" and context.frame.events.UNIT_COMBAT == "target")
 Hit("target")
@@ -192,6 +214,69 @@ Emit("NAME_PLATE_UNIT_REMOVED", "nameplate1")
 assert(not M.activePlates[first])
 for _, entry in ipairs(M.slots) do assert(not entry.frame.shown) end
 
+-- Reserve complete animation paths, reuse the oldest burst entry and fill holes.
+local function CheckOwners()
+    for plate, head in pairs(M.firstSlots) do
+        local mask, count, entry, previous = 0, 0, head, nil
+        while entry do
+            assert(entry.plate == plate and entry.older == previous, "Broken plate queue")
+            mask, count = mask + entry.lineBit, count + 1
+            assert(count <= 4, "Plate queue has a cycle or too many entries")
+            previous, entry = entry, entry.newer
+        end
+        assert(mask == M.activePlates[plate] and previous == M.lastSlots[plate], "Stale plate ownership")
+    end
+    for plate in pairs(M.activePlates) do assert(M.firstSlots[plate] and M.lastSlots[plate]) end
+    for _, entry in ipairs(M.slots) do
+        if entry.plate then
+            local linked = M.firstSlots[entry.plate]
+            while linked and linked ~= entry do linked = linked.newer end
+            assert(linked, "Active slot is missing from its plate queue")
+        else
+            assert(not entry.older and not entry.newer, "Released slot retained links")
+        end
+    end
+    CheckSpacing()
+end
+local function Finish(entry)
+    entry.animation.playing = false
+    entry.animation.scripts.OnFinished(entry.animation)
+    CheckOwners()
+end
+for _ = 1, 4 do Hit("target", "CRITICAL") end
+CheckOwners()
+local oldest = M.firstSlots[second]
+local oldestLine = oldest.line
+Hit("target")
+assert(M.lastSlots[second] == oldest and oldest.line == oldestLine, "Full burst did not reuse its oldest line")
+CheckOwners()
+local middle = M.firstSlots[second].newer
+local freeLine = middle.line
+Finish(middle)
+Hit("target", "CRITICAL")
+assert(M.slots[M.cursor].line == freeLine, "A finished middle line was not reused")
+CheckOwners()
+-- More than six simultaneous enemies forces global pool recycling as well.
+for index = 4, 11 do
+    local unit = "nameplate" .. index
+    plates[unit] = Plate(unit)
+    Emit("NAME_PLATE_UNIT_ADDED", unit)
+    for _ = 1, 5 do Hit(unit, "CRITICAL"); CheckOwners() end
+end
+for index = #M.slots, 1, -1 do
+    local entry = M.slots[index]
+    if entry.plate then Finish(entry) end
+end
+assert(not next(M.activePlates) and not next(M.firstSlots) and not next(M.lastSlots),
+    "Animation completion retained a plate queue")
+for _ = 1, 4 do Hit("target") end
+Emit("NAME_PLATE_UNIT_REMOVED", "nameplate2")
+CheckOwners()
+assert(not next(M.activePlates) and not next(M.firstSlots) and not next(M.lastSlots),
+    "Nameplate removal retained reserved lines")
+Emit("NAME_PLATE_UNIT_ADDED", "nameplate2")
+Emit("PLAYER_TARGET_CHANGED")
+
 font = "New MSUF profile.ttf"
 M.config.hideBlizzard = false
 M:Refresh()
@@ -220,10 +305,13 @@ for _, override in ipairs({ "", "CombatTextFont" }) do
         assert(entry.text.amount == wideAmount and entry.text.fontSize == (flag == "CRITICAL" and 96 or 48),
             "Pool reuse lost the full amount or critical size")
         CheckTextGeometry()
+        CheckSpacing()
     end
 end
 M.active = false
 M:Disable()
+CheckOwners()
+assert(not next(M.activePlates) and not next(M.firstSlots) and not next(M.lastSlots))
 context:Release()
 assert(cvar == "1" and not next(context.directFrame.events) and not next(context.frame.events))
 print("Floating combat text lifecycle and render budget passed")

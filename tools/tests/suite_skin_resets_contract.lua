@@ -47,6 +47,7 @@ skin.Theme = {
 }
 local masterSwitches = 0
 skin.Adapters = {
+    SetBlizzardWindowsEnabled = function(value) skin.DB.blizzardWindowsEnabled = value; return true end,
     SetMasterEnabled = function(value) masterSwitches = masterSwitches + 1; skin.DB.enabled = value; return true end,
     SetEnabled = function(key, value) skin.DB.skins[key] = value; return true end,
     GetDefinitions = function() return { "settings" }, { settings = { labelKey = "SETTINGS" } } end,
@@ -254,7 +255,7 @@ do
             rows[#rows + 1] = widget.row
         end
     end
-    Check(#rows == 24, "the real Suite page must expose master, AceGUI and all 22 addons")
+    Check(#rows == 25, "the real Suite page must expose master, AceGUI and all 23 addons")
     local master = assert(controls["addonSkins.enabled"])
     Check(master.get() == false, "the new addon master is not opt-in")
     master.set(true)
@@ -293,6 +294,28 @@ do
         Check(skin.DB.addonSkins[entry.id], "addon reset lost " .. entry.label)
     end
     Check(notified.addonSkins, "addon reset did not refresh discovery and AceGUI ownership")
+end
+
+------------------------------------------------------------------ The close X remains editable under Native window buttons
+do
+    skin.DB.icons.windowActions.style, skin.DB.icons.windowActions.closeStyle = "native", "bare"
+    local ctx = BuildSkinPage()
+    local controls = {}
+    for _, widget in ipairs(ControlsOf(ctx, "suite_skin_icons")) do
+        if widget.row then controls[widget.row.id] = widget end
+    end
+    local close = assert(controls["icons.windowActions.closeStyle"])
+    Check(close.enabled and close.get() == "bare", "Native actions disabled the independent X style")
+    Check(controls["icons.windowActions.closeGlyphSize"].enabled, "Suite X size is disabled under Native actions")
+    Check(not controls["icons.windowActions.glyphSize"].enabled, "Native maximize/minimize size became editable")
+    close.set("native")
+    Check(not controls["icons.windowActions.closeGlyphSize"].enabled, "Native X still exposes a custom glyph size")
+    close.set("soft")
+    Check(controls["icons.windowActions.surfaceInset"].enabled, "a Soft X cannot edit its own surface under Native actions")
+    local rows = {}
+    for _, widget in pairs(controls) do rows[#rows + 1] = widget.row end
+    Check(optionsNS.SkinPageKit.ResetSkinSection(skin, "icons", rows), "window-button section reset failed")
+    Check(skin.DB.icons.windowActions.closeStyle == "bare", "window-button reset did not restore the Suite X")
 end
 
 ------------------------------------------------------------------ Scroll behavior and its independent bounce toggle
@@ -353,6 +376,25 @@ do
     T.Font = font
 end
 
+-- Master, Blizzard windows and Suite windows retain distinct preferences.
+do
+    local controls = {}
+    for _, widget in ipairs(BuildSkinPage().widgets) do
+        if widget.meta and widget.meta.settingKey then controls[widget.meta.settingKey] = widget end
+    end
+    controls["msufsuite.skin.enabled.windows"].set(false)
+    Check(optionsNS.SkinningEnabled() and not skin.DB.blizzardWindowsEnabled, "native switch disabled the engine")
+    Suite.Skin.SetEnabled(false)
+    optionsNS.SetSkinningEnabled(false)
+    optionsNS.SetSkinningEnabled(true)
+    Check(not Suite.Skin.WindowsEnabled() and not skin.DB.blizzardWindowsEnabled,
+        "master cycle overwrote a window preference")
+    Suite.Skin.SetEnabled(true)
+    optionsNS.SetSkinningEnabled(false)
+    Check(not Suite.Skin.Acquire("masterProbe") and not Suite.Skin.WindowsEnabled(), "cached Suite skin ignored master")
+    optionsNS.SetSkinningEnabled(true)
+end
+
 ------------------------------------------------------------------ Skinning: Reset page
 do
     local factoryLook = skin.Defaults.theme.look
@@ -360,13 +402,13 @@ do
         local windows, suiteWindows = switches[1], switches[2]
         Check(S.ApplyGlobalLook("midnight") and Suite.DB.suite.globalLook == "midnight", "fixture: look not set")
         skin.DB.theme.look = "midnight"
-        skin.DB.enabled = windows
+        skin.DB.enabled, skin.DB.blizzardWindowsEnabled = windows, not windows
         Check(Suite.Skin.SetEnabled(suiteWindows), "fixture: the Suite windows switch was refused")
         Check(optionsNS.ResetSkinPage(), "Reset page was refused")
         Check(skin.DB.theme.look == factoryLook, "Reset page kept the old skin look")
         Check(Suite.DB.suite.globalLook == factoryLook, "Reset page left the Suite on the old look: "
             .. tostring(Suite.DB.suite.globalLook))
-        Check(skin.DB.enabled == windows and Suite.Skin.enabled == suiteWindows
+        Check(skin.DB.enabled == windows and skin.DB.blizzardWindowsEnabled == (not windows) and Suite.Skin.enabled == suiteWindows
             and Suite.RootDB.skinEnabled == suiteWindows,
             ("Reset page changed the Skinning switches (%s/%s)"):format(tostring(windows), tostring(suiteWindows)))
     end

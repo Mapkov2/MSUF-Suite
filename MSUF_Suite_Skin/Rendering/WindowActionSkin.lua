@@ -36,7 +36,7 @@ local captionAtlases = {
 
 local validKinds = {
     close = true,
-    maximize = true,
+    maximize = true, restore = true,
     minimize = true,
     add = true,
     remove = true,
@@ -304,12 +304,12 @@ end
 
 local function GlyphKey(kind, glyphMode, caption)
     if kind == "close" then return "close" end
+    if kind == "restore" then return "restoreWindow" end
     if kind == "add" then return "plus" end
     if kind == "remove" then return "minus" end
     -- Blizzard's maximize/minimize pair toggles a window's large and small
     -- size: Windows shows that as maximize and restore.
     if caption and glyphMode == "windows" then
-        if kind == "restore" then return "restoreWindow" end
         if kind == "minimize" then return "minus" end
     end
     if glyphMode == "windows" and (kind == "maximize" or kind == "minimize") then
@@ -368,8 +368,8 @@ local function GlyphLayout(button, kind, settings)
     return size, math.max(-roomX, math.min(x, roomX)), math.max(-roomY, math.min(y, roomY))
 end
 
-local function GlyphAsset(kind, settings, caption)
-    local glyphKey = GlyphKey(kind, settings.glyphMode, caption)
+local function GlyphAsset(kind, settings, caption, direction)
+    local glyphKey = direction and (direction == "down" and "down" or "up") or GlyphKey(kind, settings.glyphMode, caption)
     local weight = settings.weight == "bold" and "bold" or "fine"
     local cell, atlas = captionCells[glyphKey], captionAtlases[weight]
     if not cell then cell, atlas = glyphCells[glyphKey], actionAtlases[weight] end
@@ -377,7 +377,7 @@ local function GlyphAsset(kind, settings, caption)
 end
 
 local function ConfigureGlyphs(button, state, settings)
-    local atlas, cell = GlyphAsset(state.kind, settings)
+    local atlas, cell = GlyphAsset(state.kind, settings, nil, state.direction)
     local size, x, y = GlyphLayout(button, state.kind, settings)
     local idle = tonumber(settings.opacity) or 0.78
     AnchorGlyphs(button, state, x, y)
@@ -389,6 +389,7 @@ local function ConfigureGlyphs(button, state, settings)
         ColorRole(state.kind, "disabled"), math.min(idle, 0.55))
     ConfigureGlyph(state.glyphs.highlight, atlas, cell, size,
         ColorRole(state.kind, "highlight"), math.max(0.35, 1 - idle + 0.35))
+    if state.direction then WindowActionSkin.OrientGlyphs(state.glyphs, atlas.slots, cell, state.direction) end
     return size
 end
 
@@ -423,6 +424,15 @@ local function RefreshExtraRegions(button, state)
     if state.kind == "close" or state.kind == "minimize" then
         for _, key in ipairs({ "Border", "Icon", "icon", "NormalTexture", "PushedTexture", "DisabledTexture",
             "HighlightTexture", "HoverTexture", "Bg" }) do FadeExtraRegion(state, Field(button, key)) end
+        for _, key in ipairs({ "Top", "Bottom", "Left", "Right" }) do
+            FadeExtraRegion(state, Field(Field(button, "BorderParts"), key))
+        end
+        local backdrop = Getter(button, "GetBackdrop")
+        for _, key in ipairs({ "Center", "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
+            "TopEdge", "BottomEdge", "LeftEdge", "RightEdge" }) do
+            if backdrop then FadeExtraRegion(state, Field(button, key)) end
+            FadeExtraRegion(state, Field(Field(button, "NineSlice"), key))
+        end
         local label = Getter(button, "GetFontString") or Field(button, "Label") or Field(button, "Text") or Field(button, "text")
         local text = Safety.Read(label, "GetText")
         if Safety.Public(text) and (text == "X" or text == "x" or text == "×" or text == "✕") then
@@ -464,24 +474,12 @@ local function RefreshSurface(button, settings)
     return true
 end
 
-function WindowActionSkin.HasOwnedStates(button)
-    local state = WindowActionSkin.states[button]
-    if not state or not state.glyphs or not state.nativeCaptured then return false end
-    for index = 1, #specialTextures do
-        local definition = specialTextures[index]
-        if Getter(button, definition.getter) ~= state.glyphs[definition.key] then
-            return false
-        end
-    end
-    return true
-end
-
 -- Blizzard's caption buttons that a Windows caption cell stands for
 -- (WindowControlChrome): they keep their native art, faded under our cell,
 -- and take no action skin of their own while the cell is there.
 local yielded = setmetatable({}, { __mode = "k" })
 
-local function ApplyNow(button, owner, kind, motion)
+local function ApplyNow(button, owner, kind, motion, explicit, options)
     if yielded[button] then return nil, "caption cell" end
     if not CanApply(button, owner) then return nil, "protected control" end
     if not validKinds[kind] then return nil, "unknown action" end
@@ -502,7 +500,9 @@ local function ApplyNow(button, owner, kind, motion)
         BindOwner(button, state, owner)
     elseif state.nativeCaptured and not WindowActionSkin.HasOwnedStates(button) then
         local detected = Checkmarks.DetectWindowAction(button)
-        if detected then
+        if explicit then
+            RestoreNative(button, state)
+        elseif detected then
             RebaseNative(state)
             kind = detected
         else
@@ -510,9 +510,11 @@ local function ApplyNow(button, owner, kind, motion)
         end
     end
     state.kind = kind
+    if explicit then state.explicitKind = kind end
+    if options then state.direction = options.direction end
     if motion ~= nil then state.motionPolicy = motion end
 
-    local settings = Settings()
+    local settings = WindowActionSkin.ResolveSettings(kind)
     state.style = settings.style
     state.glyphMode = settings.glyphMode
     state.weight = settings.weight
@@ -543,25 +545,16 @@ local function ApplyNow(button, owner, kind, motion)
     return state
 end
 
-function WindowActionSkin.Apply(button, owner, kind, motion)
+function WindowActionSkin.Apply(button, owner, kind, motion, explicit, options)
     if not button then return nil, "invalid control" end
     BeginOwnerRequest(owner)
     if NS.IsCombatLocked() and not CanApply(button, owner) then
         local _, reason = DeferOwnerRequest("window-action:" .. tostring(button), owner, function()
-            ApplyNow(button, owner, kind, motion)
+            ApplyNow(button, owner, kind, motion, explicit, options)
         end)
         return nil, reason or "combat"
     end
-    return ApplyNow(button, owner, kind, motion)
-end
-
-function WindowActionSkin.Track(button, owner, kind)
-    if kind == nil then
-        kind = Checkmarks.DetectWindowAction(button)
-            or (WindowActionSkin.HasOwnedStates(button)
-                and WindowActionSkin.GetKind(button) or nil)
-    end
-    return WindowActionSkin.Apply(button, owner, kind)
+    return ApplyNow(button, owner, kind, motion, explicit, options)
 end
 
 local function SyncNativeVisualNow(button, owner, kind)
@@ -644,7 +637,7 @@ local function DisableNow(button, state)
     -- WoW cannot delete regions; dropping this weak state would allocate four
     -- more textures on every disable/enable or profile cycle.
     state.owner = nil
-    state.motionPolicy = nil
+    state.motionPolicy, state.explicitKind, state.direction = nil, nil, nil
     return true
 end
 
@@ -791,6 +784,7 @@ function WindowActionSkin.OnNativeChanged(button)
         end)
         return false, reason or "combat"
     end
+    if state.explicitKind then return WindowActionSkin.ApplyExplicit(button, state.owner, state.explicitKind) ~= nil end
     local kind = Checkmarks.DetectWindowAction(button)
     if not kind then return WindowActionSkin.Disable(button, state.owner) end
     return WindowActionSkin.Apply(button, state.owner, kind) ~= nil

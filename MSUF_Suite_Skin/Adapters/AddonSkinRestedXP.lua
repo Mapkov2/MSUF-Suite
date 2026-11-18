@@ -53,7 +53,7 @@ local function Visit(frame, owner, remaining, depth)
         Visuals.Fade(Safety.Field(widget, "banner"), owner, true)
         Visuals.Fade(Safety.Field(widget, "footerBackground"), owner, true)
         local close = Safety.Field(widget, "closebutton")
-        if Visuals.Safe(close, true) then NS.WindowActionSkin.Apply(close, owner, "close") end
+        if Visuals.Safe(close, true) then NS.WindowActionSkin.ApplyExplicit(close, owner, "close") end
     end
     for _, child in ipairs({ Safety.Call(frame, "GetChildren") }) do
         if remaining <= 0 then break end

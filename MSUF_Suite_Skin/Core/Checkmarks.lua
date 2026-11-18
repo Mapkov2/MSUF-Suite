@@ -387,7 +387,7 @@ function Checkmarks.GetWindowAction(button)
     if NS.WindowActionSkin.HasOwnedStates(button) then
         return NS.WindowActionSkin.GetKind(button)
     end
-    return nil
+    return NS.WindowActionSkin.GetExplicitKind(button)
 end
 
 local function Field(object, name)
@@ -508,6 +508,7 @@ function Checkmarks.TrackButton(button, owner)
     if not actionKind and NS.WindowActionSkin.HasOwnedStates(button) then
         actionKind = NS.WindowActionSkin.GetKind(button)
     end
+    actionKind = actionKind or NS.WindowActionSkin.GetExplicitKind(button)
     local changed, recognized = false, false
     if scan then
         changed, recognized = ApplyArtRoles(button, owner, normal)

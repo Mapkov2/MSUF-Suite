@@ -9,7 +9,7 @@ local initialized, active, pendingCount = false, false, 0
 local loader = CreateFrame("Frame")
 
 local function Enabled()
-    return NS.DB.enabled ~= false and NS.DB.skins.blizzardWindows ~= false
+    return NS.DB.enabled ~= false and NS.DB.blizzardWindowsEnabled ~= false and NS.DB.skins.blizzardWindows ~= false
 end
 
 local function EntryEnabled(entry)

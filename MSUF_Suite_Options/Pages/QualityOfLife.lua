@@ -184,11 +184,7 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
     if group.id == "navigation" then
         return P.BuildNavigationDetails(ctx, details, group, sectionId, width, sections, allRules, keywords, RegisterFeatureRuleSearch)
     end
-    if #allRules == 0 and group.id ~= "mailTemplates" and not EDIT_ELEMENTS[group.id]
-        and group.id ~= "xpBar" and group.id ~= "innervateCue" and group.id ~= "loadoutReminder"
-        and group.id ~= "macroBuilder" then
-        return nil, 0
-    end
+    if not V.HasDetails(group, allRules) then return nil, 0 end
     details._msufSuiteSkipSummary = true
     AddFeatureHelp(details, group, sections)
     local y = -18
@@ -289,7 +285,7 @@ V.BindFeatureSwitch, V.BuildFeatureDetails = BindFeatureSwitch, BuildFeatureDeta
 function V.HasDetails(group, rules)
     return #rules > 0 or group.id == "mailTemplates" or group.id == "macroBuilder"
         or EDIT_ELEMENTS[group.id] ~= nil or group.id == "xpBar"
-        or group.id == "innervateCue" or group.id == "loadoutReminder"
+        or group.id == "innervateCue" or group.id == "loadoutReminder" or group.id == "worldQuestTab"
 end
 
 local function Build(ctx)

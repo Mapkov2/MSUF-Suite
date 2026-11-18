@@ -61,7 +61,10 @@ function Widget:GetWidth() return 1000 end
 function Widget:RegisterEvent(event) self.events[event] = true end
 function Widget:UnregisterAllEvents() self.events = {} end
 
-local combat, queries, playerLevel = false, 0, 20
+local combat, queries, playerLevel, playerRace = false, 0, 20, 1
+local combatEdge, forbiddenErrors, clockTime = false, false, 0
+local notices, errorNotices, frameCreations = {}, {}, 0
+GetTime = function() return clockTime end
 local known = { [120] = true }
 local inBook, bookItems, spellNames = {}, {}, {}
 local pending, preset = nil, .45
@@ -76,14 +79,20 @@ local function Color(red, green, blue)
 end
 GREEN_FONT_COLOR, YELLOW_FONT_COLOR, RED_FONT_COLOR = Color(.1, 1, .1), Color(1, .82, 0), Color(1, .1, .1)
 UIParent, CLOSE, GameTooltip = New(), "Close", New()
+UIErrorsFrame = New()
+UIErrorsFrame.AddMessage = function(_, message, red, green, blue)
+    assert(not forbiddenErrors and red == 1 and green == .82 and blue == .1, "combat feedback lost the standard error style")
+    errorNotices[#errorNotices + 1] = message
+end
 CreateFrame = function(_, name, parent, template)
+    frameCreations = frameCreations + 1
     local frame = New(parent)
     frame.frameName = name
     if template == "SearchBoxTemplate" then frame.Instructions = New(frame) end
     return frame
 end
 UnitClass = function() return "Mage", "MAGE", 8 end
-UnitRace = function() return "Human", "Human", 1 end
+UnitRace = function() return "Race", "Race", playerRace end
 UnitLevel = function() return playerLevel end
 bit = {
     lshift = function(number, shift) return number * 2 ^ shift end,
@@ -111,7 +120,7 @@ local ns = {
     DB = { skins = { playerSpells = true } },
     Safety = {
         Public = function(value) return value ~= "secret" end,
-        IsForbidden = function() return false end,
+        IsForbidden = function(frame) return frame == UIErrorsFrame and forbiddenErrors end,
         Isolated = function(callback) return callback end,
         CreateChildFrame = function(kind, parent)
             assert(kind == "Button" and parent ~= UIParent, "the launcher became a separate root")
@@ -121,6 +130,8 @@ local ns = {
         Field = function(obj, key) return obj[key] end,
     },
     IsCombatLocked = function() return combat end,
+    SuiteCore = function() return { InCombat = function() return combat or combatEdge end } end,
+    Print = function(message) notices[#notices + 1] = message end,
     Surface = { Ensure = function(frame, spec) frame.skinRole = spec.role end },
     ControlSkin = {
         ApplyButton = function(button, owner, spec)
@@ -158,25 +169,48 @@ end })
 assert(skinStrings["Training cost (before discounts)"] == "Training cost (before discounts)"
     and skinStrings["Training cost not recorded"] == "Training cost not recorded",
     "the cost labels are absent from the canonical skin locale catalog")
+assert(skinStrings["Finish combat first."] == "Finish combat first.", "combat refusal is absent from the skin locale catalog")
+for _, key in ipairs({"Portal trainer", "Tome or item", "Learning source not confirmed",
+    "Learned automatically", "Requires a class quest", "Class quest #%d (availability unconfirmed)"}) do
+    assert(skinStrings[key] == key, "an acquisition label is absent from the canonical skin catalog")
+end
 Load(prefix .. "Data.lua", ns)
 assert(ns.ForeverSpellLearningCosts[5]:find("14914:2100 ", 1, true), "Holy Fire's recorded base price is missing")
 assert(not ns.ForeverSpellLearningCosts[5]:find("15237:", 1, true), "an unrecorded trainer price became an invented cost")
-for _, spell in ipairs({ 15237, 15430, 15431, 27799, 27800, 27801, 15407, 17311, 17312, 17313, 17314, 18807 }) do
-    local found
-    for id, source in ns.ForeverSpellLearningData[5]:gmatch("(%d+):%d+:%d+:(%d+)") do
-        if tonumber(id) == spell then found = tonumber(source) break end
+local function Entry(class, id)
+    for token in ns.ForeverSpellLearningData[class]:gmatch("%S+") do
+        local fields = {}
+        for value in token:gmatch("%d+") do fields[#fields + 1] = tonumber(value) end
+        if fields[1] == id then return fields end
     end
-    assert(found == 1, "a Holy Nova or Mind Flay rank still requires a talent instead of class training")
+    error("spell missing: " .. id)
 end
+for _, spell in ipairs({15237, 15407}) do assert(Entry(5, spell)[4] == 4, "first talent rank became ordinary training") end
+assert(Entry(5, 15430)[4] == 1 and Entry(5, 15430)[7] == 15237, "Holy Nova's trainer rank lost its talent prerequisite")
+assert(Entry(5, 17311)[4] == 1 and Entry(5, 17311)[7] == 15407, "Mind Flay's trainer rank lost its talent prerequisite")
+for class, spells in pairs({[1] = {355, 7386, 20252}, [2] = {7328}, [3] = {1515, 883, 2641},
+    [4] = {2842}, [5] = {10797}, [7] = {8071, 3599, 5394}, [8] = {10140, 28272, 1297659},
+    [9] = {688, 697, 713, 23161}, [11] = {5487, 768, 8946, 1066}}) do
+    for _, id in ipairs(spells) do assert(Entry(class, id)[4] == 2, "class quest was misclassified: " .. id) end
+end
+for _, spell in ipairs({5504, 5505, 5506, 6127, 10138, 10139, 118, 12824, 12825, 12826}) do
+    assert((Entry(8, spell)[8] or 0) == 0, "ordinary Mage training requires a late or alternate quest reward")
+end
+assert((Entry(11, 1082)[7] or 0) == 0 and (Entry(11, 3029)[7] or 0) == 0, "Claw acquired a passive talent prerequisite")
+assert(Entry(4, 1804)[2] == 16 and Entry(8, 1296017)[2] == 6, "class skills outside the main spell lines are missing")
+assert(Entry(8, 1297659)[2] == 50 and ns.ForeverSpellLearningPendingQuests[8]:find("1297659:96828 ", 1, true),
+    "Teleport: Dalaran lost its quest evidence or unconfirmed availability")
+assert(not ns.ForeverSpellLearningCosts[8]:find("1297659:", 1, true), "Teleport: Dalaran acquired an invented trainer price")
 assert(ns.ForeverSpellLearningData[5]:find("10060:40:0:4", 1, true), "a genuine talent was reclassified as a trainer spell")
 assert(ns.ForeverSpellLearningData[4]:find("1329283:24:1:", 1, true), "Forever rogue Shank rank 1 is missing")
 assert(ns.ForeverSpellLearningData[4]:find("1329549:44:2:", 1, true), "Forever rogue Shank rank 2 is missing")
 assert(ns.ForeverSpellLearningData[2]:find("19742:", 1, true), "Paladin Holy spells were not indexed")
 assert(not ns.ForeverSpellLearningData[3]:find("17253:", 1, true), "hunter pet ranks leaked into player preview")
-ns.ForeverSpellLearningData[8] = "120:10:1:0 121:16:2:1 122:20:1:1:1 123:30:1:2:2 124:30:3:4 "
+ns.ForeverSpellLearningData[8] = "120:10:1:0 121:16:2:1 122:20:1:1:1 123:30:1:2:2 124:30:3:1:0:0:120 "
 ns.ForeverSpellLearningCosts[8] = "121:12345 122:0 124:32100 213:99999 "
 Load(prefix .. ".lua", ns)
 ns.L = setmetatable({}, { __index = function(_, key) return key end })
+ns.L["Finish combat first."] = "Beende zuerst den Kampf."
 ns.SpellLearning.Attach(state, book, paged)
 assert(state.learningButton:IsShown() and not state.learningPanel and queries == 0, "opening the book scanned spells")
 local launcher = state.learningButton
@@ -189,6 +223,18 @@ assert(launcher.label.color[1] == 1 and launcher.label.color[2] == .8 and launch
     "the launcher label lost the full-opacity accent of the spellbook controls")
 assert(launcher.anchor[1] == "TOPRIGHT" and launcher.anchor[2] == paged and launcher.anchor[3] == "TOPRIGHT",
     "the training action overlaps the native footer")
+-- A cold combat-edge click must explain the refusal before creating a panel
+-- or reading spells, even while the protected-write guard still says false.
+local coldFrames, coldQueries = frameCreations, queries
+combatEdge = true
+launcher.scripts.OnClick()
+assert(#notices == 1 and notices[1] == "Beende zuerst den Kampf." and errorNotices[1] == notices[1],
+    "a cold combat click was silently ignored or not localized")
+assert(not state.learningPanel and frameCreations == coldFrames and queries == coldQueries,
+    "a refused cold click built or scanned the dialog")
+launcher.scripts.OnClick()
+assert(#notices == 1 and #errorNotices == 1, "repeated combat clicks spammed feedback")
+combatEdge = false
 launcher.scripts.OnClick()
 local panel = assert(state.learningPanel)
 assert(panel:IsShown() and panel.events.SPELLS_CHANGED and panel.events.SPELL_TEXT_UPDATE and not panel.scripts.OnUpdate)
@@ -260,7 +306,7 @@ bookItems = {
 }
 inBook[209], known[210], known[211], known[216] = true, true, "secret", true
 ns.ForeverSpellLearningData[8] = "201:10:1:1 202:14:2:1 203:18:3:1 204:21:4:1 205:22:5:1 206:23:6:1 "
-    .. "207:24:0:1 208:25:0:1 209:10:1:1 210:10:1:1 211:10:1:1 212:20:2:4 213:10:1:2 "
+    .. "207:24:0:1 208:25:0:1 209:10:1:1 210:10:1:1 211:10:1:1 212:20:2:1:0:0:218 213:10:1:2 "
     .. "214:1:0:1 215:10:1:1 216:18:3:1 217:22:4:1 "
 panel.entries = nil
 panel.search:SetText("")
@@ -286,7 +332,8 @@ assert(moneyQueries == beforeUnknown, "an unknown price reached the money format
 AssertColor(panel.rows[6], RED_FONT_COLOR)
 GameTooltip.lines = {}
 panel.rows[6].scripts.OnEnter(panel.rows[6])
-assert(GameTooltip.lines[1] == "Requires a talent", "a missing genuine talent lost its requirement hint")
+assert(GameTooltip.lines[1] == "Class trainer" and GameTooltip.lines[2] == "Requires a talent",
+    "a trainer rank lost its genuine talent prerequisite or its training source")
 AssertColor(panel.rows[7], GREEN_FONT_COLOR)
 local beforeQuest = moneyQueries
 panel.rows[7].scripts.OnEnter(panel.rows[7])
@@ -306,6 +353,7 @@ AssertColor(panel.rows[1], YELLOW_FONT_COLOR)
 AssertColor(panel.rows[2], YELLOW_FONT_COLOR)
 AssertColor(panel.rows[3], RED_FONT_COLOR)
 bookItems[#bookItems + 1] = { name = "Talent Spark I", subName = "Rang 1", itemType = Enum.SpellBookItemType.Spell }
+known[218] = true
 UpdateSpells()
 AssertColor(panel.rows[5], GREEN_FONT_COLOR)
 GameTooltip.lines = {}
@@ -332,14 +380,104 @@ panel:SetPoint("CENTER", UIParent, "CENTER", 30, 20)
 panel.scripts.OnEvent(panel, "UI_SCALE_CHANGED")
 assert(panel.anchor[1] == "CENTER", "automatic docking overwrote the user's saved window position")
 
+-- Acquisition and prerequisites are independent, including native alias
+-- ranks, unranked appearances and the nonsequential Skyborne race IDs.
+spellNames = {
+    [301] = "Talent Echo I", [302] = "Talent Echo II", [303] = "Quest Stance", [304] = "Quest Strike",
+    [305] = "Portal", [306] = "Polymorph", [307] = "Polymorph", [308] = "Polymorph",
+    [309] = "Automatic", [310] = "Unconfirmed", [311] = "High Order", [312] = "Starting Spell", [313] = "Windshaper",
+}
+bookItems, inBook, known = {}, {}, { [308] = true }
+ns.ForeverSpellLearningData[8] = "301:20:1:4 302:20:2:1:0:0:301 303:10:0:2 304:20:0:1:0:0:0:303 "
+    .. "305:20:0:6 306:20:0:5 307:20:0:2 308:8:1:1 309:1:0:0 310:1:0:3 "
+    .. "311:20:0:1:0:1 312:1:0:0 313:20:0:1:0:2 "
+ns.ForeverSpellLearningCosts[8] = "304:200 305:10000 306:99999 "
+ns.ForeverSpellLearningQuestSources[8] = "312:5:2 "
+ns.ForeverSpellLearningPendingQuests[8] = "307:96828 "
+local function Reindex()
+    panel.entries = nil
+    panel.search:SetText("")
+    UpdateSpells()
+end
+local function Row(id)
+    for _, row in ipairs(panel.rows) do if row:IsShown() and row.spellID == id then return row end end
+    error("visible spell missing: " .. id)
+end
+local function Available(id)
+    for _, entry in ipairs(panel.available) do if entry.id == id then return entry end end
+end
+Reindex()
+AssertColor(Row(302), RED_FONT_COLOR)
+Row(302).scripts.OnEnter(Row(302))
+assert(GameTooltip.lines[1] == "Class trainer" and GameTooltip.lines[2] == "Requires a talent")
+AssertColor(Row(304), RED_FONT_COLOR)
+Row(304).scripts.OnEnter(Row(304))
+assert(GameTooltip.lines[1] == "Class trainer" and GameTooltip.lines[2] == "Requires a class quest",
+    "a missing class quest was reported as a talent")
+Row(305).scripts.OnEnter(Row(305))
+assert(GameTooltip.lines[1] == "Portal trainer" and GameTooltip.doubleLines[1][2] == "coins:10000")
+Row(306).scripts.OnEnter(Row(306))
+assert(GameTooltip.lines[1] == "Tome or item" and #GameTooltip.doubleLines == 0)
+assert(Available(306) and Available(307), "a learned basic Polymorph hid unlearned alternate appearances")
+AssertColor(Row(307), RED_FONT_COLOR)
+Row(307).scripts.OnEnter(Row(307))
+assert(GameTooltip.lines[1] == "Class quest #96828 (availability unconfirmed)" and #GameTooltip.doubleLines == 0,
+    "an unconfirmed quest appeared trainable now or lost its quest identity")
+AssertColor(Row(310), RED_FONT_COLOR)
+assert(Available(312).source == 0 and Available(312).level == 1, "a racial quest leaked onto another race")
+bookItems[1] = { name = "Talent Echo I", subName = "Rank 1", spellID = 999, itemType = Enum.SpellBookItemType.Spell }
+UpdateSpells()
+assert(not Available(301), "a learned native alias left the first talent rank visible")
+AssertColor(Row(302), GREEN_FONT_COLOR)
+Row(302).scripts.OnEnter(Row(302))
+assert(#GameTooltip.lines == 2 and GameTooltip.lines[2] == "Training cost not recorded",
+    "an already learned talent retained the missing-prerequisite warning")
+bookItems[2] = { name = "Polymorph", subName = "", spellID = 306, itemType = Enum.SpellBookItemType.Spell }
+UpdateSpells()
+assert(not Available(306) and Available(307), "native spell identity hid the wrong unranked appearance")
+known[303] = true
+UpdateSpells()
+assert(not Available(303), "a known class-quest spell remained visible")
+AssertColor(Row(304), GREEN_FONT_COLOR)
+known[303] = "secret"
+UpdateSpells()
+AssertColor(Row(304), RED_FONT_COLOR)
+playerRace = 95
+Reindex()
+assert(Available(311) and not Available(313), "High Order Skyborne used race ID instead of PlayableRaceBit")
+playerRace = 96
+Reindex()
+assert(Available(313) and not Available(311), "Windshaper Skyborne used the wrong race mask")
+playerRace = 5
+Reindex()
+assert(Available(312).source == 2 and Available(312).level == 2, "the racial quest source or minimum level was lost")
+known[307] = true
+UpdateSpells()
+assert(not Available(307), "an already learned reward remained visible because its quest availability is unconfirmed")
+
 panel.scripts.OnEvent(panel, "PLAYER_REGEN_DISABLED")
 assert(not panel:IsShown() and next(panel.events) == nil, "combat left preview event work running")
 combat = true
+clockTime = 2
 local beforeCombatMoney = moneyQueries
 panel.rows[1].scripts.OnEnter(panel.rows[1])
 assert(moneyQueries == beforeCombatMoney, "hover formatted costs in combat")
+local warmQueries, warmFrames = queries, frameCreations
 state.learningButton.scripts.OnClick()
 assert(not panel:IsShown(), "combat opened the preview")
+assert(#notices == 2 and #errorNotices == 2, "a warm combat click did not explain the refusal")
+assert(queries == warmQueries and frameCreations == warmFrames, "a warm combat refusal did work on the dialog")
+forbiddenErrors, clockTime = true, 4
+state.learningButton.scripts.OnClick()
+assert(#notices == 3 and #errorNotices == 2 and not panel:IsShown(), "a forbidden error frame lost the chat fallback")
+forbiddenErrors, combat = false, false
+combatEdge, clockTime = true, 6
+state.learningButton.scripts.OnClick()
+assert(#notices == 4 and not panel:IsShown() and queries == warmQueries,
+    "the combat edge bypassed the warm-dialog refusal")
+combatEdge = false
+state.learningButton.scripts.OnClick()
+assert(panel:IsShown() and #notices == 4, "the existing dialog did not reopen after combat")
 combat = false
 book:Hide()
 assert(not state.learningButton:IsShown())

@@ -7,8 +7,8 @@ local Quests = {}
 NS.WorldMapQuests = Quests
 local Safety, Kit = NS.Safety, NS.AdapterKit
 local rows, contexts = Kit.WeakSet(), Kit.WeakSet()
-local lists, headers = Kit.WeakSet(), Kit.WeakSet()
-local originalObjectives, yieldedObjectives, refreshing
+local lists, headers, titleSizes = Kit.WeakSet(), Kit.WeakSet(), Kit.WeakSet()
+local originalObjectives, yieldedObjectives, refreshing, combatRefreshQueued
 local pendingValues, pendingHead, pendingTail = {}, 1, 0
 local CVAR = "showQuestObjectivesInLog"
 local REPLAY = "world-map-quest-layout"
@@ -21,6 +21,36 @@ end
 
 local function Compact()
     return NS.DB and NS.DB.enabled ~= false and Quests.GetLayout() == "compact" and next(contexts) ~= nil
+end
+
+-- Keep the normal protection checks, including the combat edge before
+-- InCombatLockdown turns true. Plain quest rows can still paint and reflow.
+local function CanPaint(target, list, implicit)
+    if implicit == nil then implicit = not NS.IsCombatLocked() and not NS.SuiteCore().startingBeforeLockdown end
+    local allowed = Safety.CanDecorate(target, implicit)
+    if not allowed and list and NS.IsCombatLocked() then list.refused = true end
+    return allowed
+end
+
+local function HasCombatView()
+    if Compact() then return true end
+    for state in pairs(contexts) do
+        local list = state.questFolds
+        if list and (next(list.folded) or next(list.hiddenPins)) then return true end
+    end
+    return false
+end
+
+local function ReplayList(list)
+    if list.replayPending then return end
+    list.replayPending = true
+    NS.CombatGate.RunOrDefer(list, list.replay)
+end
+
+local function DeferList(list)
+    list.stale = true
+    if NS.IsCombatLocked() then Quests.QueueCombatRefresh()
+    else NS.Registry.QueueJob(list.reapply) end
 end
 
 local function WriteObjectives(value)
@@ -50,7 +80,7 @@ end
 local function SyncObjectives()
     -- Forever's CVAR_UPDATE refreshes the native quest pane and may recreate
     -- protected map pins from inside the addon's SetCVar call.
-    if NS.Client.isForever then return end
+    if NS.Client.isForever or NS.IsCombatLocked() or NS.SuiteCore().startingBeforeLockdown then return end
     if not Compact() then
         RestoreObjectives()
         return
@@ -87,7 +117,7 @@ local function SearchActive(list)
 end
 
 local function MaskRow(row, list, hide)
-    if not Safety.CanDecorate(row, true) then return end
+    if not CanPaint(row, list, list.implicit) then return end
     local shown = Safety.Read(row, "IsShown")
     if hide and shown == true then
         row:Hide()
@@ -105,7 +135,7 @@ end
 
 local function SetCompactTitleHeight(row, list, compact)
     local record = list.titleHeights[row]
-    if not (compact or record) or not Safety.CanDecorate(row, true) then return end
+    if not (compact or record) or not CanPaint(row, list, list.implicit) then return end
     local current = Safety.Read(row, "GetHeight")
     if type(current) ~= "number" then return end
     if not compact then
@@ -123,7 +153,12 @@ local function SetCompactTitleHeight(row, list, compact)
     local height = textHeight + 18
     if current ~= height then
         if not record or current ~= record.applied then
-            record = { native = current }
+            record = titleSizes[row]
+            if not record then
+                record = {}
+                titleSizes[row] = record
+            end
+            record.native = current
             list.titleHeights[row] = record
         end
         record.applied = height
@@ -155,7 +190,7 @@ end
 -- Keep the button shown and suppress only its artwork and mouse input.
 local function MaskPin(pin, list)
     local questID = Safety.Read(pin, "GetQuestID")
-    if type(questID) ~= "number" or not list.hiddenQuests[questID] or not Safety.CanDecorate(pin, true) then return end
+    if type(questID) ~= "number" or not list.hiddenQuests[questID] or not CanPaint(pin, list, list.implicit) then return end
     local record = list.hiddenPins[pin]
     if not record then
         local alpha = Safety.Read(pin, "GetAlpha")
@@ -175,7 +210,7 @@ local function RestoreUnmaskedPins(list)
     for pin, record in pairs(list.hiddenPins) do
         if record.masked then
             record.masked = nil
-        elseif Safety.CanDecorate(pin, true) then
+        elseif CanPaint(pin, list, list.implicit) then
             pin:SetAlpha(record.alpha)
             pin:SetMouseClickEnabled(record.clicks)
             pin:SetMouseMotionEnabled(record.motion)
@@ -194,7 +229,7 @@ local function PaintDisclosure(header, record, folded)
     local button = Safety.Field(header, "CollapseButton")
     local nativeOpen = Plain(Safety.Field(button, "collapsed")) == false
     local override = folded and nativeOpen
-    if (override or record.disclosure) and nativeOpen and Safety.CanDecorate(button, true) then
+    if (override or record.disclosure) and nativeOpen and CanPaint(button, record.list, record.list.implicit) then
         ChangeDisclosureAtlas(Safety.Field(button, "Icon"), override)
         ChangeDisclosureAtlas(Safety.Read(button, "GetHighlightTexture"), override)
     end
@@ -206,7 +241,7 @@ local function BeforeHeaderClick(header, button)
     if not record then return end
     record.clickKey, record.reopenIndex = nil, nil
     local list = record.list
-    if button ~= "LeftButton" or not list.owner or NS.IsCombatLocked() or SearchActive(list) then return end
+    if button ~= "LeftButton" or not list.owner or not CanPaint(header) or SearchActive(list) then return end
     local index = Plain(Safety.Field(header, "questLogIndex"))
     local info = HeaderInfo(index)
     local key = HeaderKey(info)
@@ -228,7 +263,7 @@ local function AfterHeaderClick(header)
     if not record or record.clickKey == nil then return end
     local key, index, list = record.clickKey, record.reopenIndex, record.list
     record.clickKey, record.reopenIndex = nil, nil
-    if not list.owner or NS.IsCombatLocked() then return end
+    if not list.owner or not CanPaint(header) then return end
     local info = HeaderInfo(index)
     if HeaderKey(info) == key and Plain(Safety.Field(info, "isCollapsed")) == true then
         ExpandQuestHeader(index)
@@ -238,7 +273,7 @@ end
 
 local function TrackHeader(header, list, questInfo)
     local record = headers[header]
-    if not record and list.owner and Safety.CanDecorate(header, true)
+    if not record and list.owner and CanPaint(header)
         and Safety.Read(header, "HasScript", "PreClick") == true
         and Safety.Read(header, "HasScript", "PostClick") == true then
         record = { list = list }
@@ -259,9 +294,10 @@ end
 
 local function ApplyFolds(list, questInfo)
     list.masking = list.owner ~= nil and next(list.folded) ~= nil and not SearchActive(list)
-    local compact = list.owner ~= nil and NS.Client.isForever and Compact()
+    local compact = list.owner ~= nil and Compact() and (NS.Client.isForever or GetCVar(CVAR) ~= "0")
     local masked = list.masking or next(list.hidden) ~= nil
-    list.changed = false
+    list.changed, list.refused = false, false
+    list.implicit = not NS.IsCombatLocked() and not NS.SuiteCore().startingBeforeLockdown
     Kit.ForEachActive(Safety.Field(list.scroll, "headerFramePool"), FOLD_ROW_LIMIT, TrackHeader, list, questInfo)
     if masked or compact or next(list.titleHeights) then
         wipe(list.hiddenQuests)
@@ -275,6 +311,7 @@ local function ApplyFolds(list, questInfo)
         Kit.ForEachActive(objectives, Safety.Read(objectives, "GetNumActive") or FOLD_ROW_LIMIT, MaskObjective, list, compact)
     end
     RestoreUnmaskedPins(list)
+    if list.refused then ReplayList(list) end
     return list.changed
 end
 
@@ -284,20 +321,17 @@ local function BeforeQuestLayout(scroll, displayState)
     -- Blizzard has reset its pools and is about to lay out shown rows.
     wipe(list.hidden)
     wipe(list.titleHeights)
-    if NS.IsCombatLocked() then
-        if next(list.folded) or next(list.hiddenPins) or NS.Client.isForever and Compact() then
-            NS.CombatGate.RunOrDefer(list, list.reapply)
-        end
-        return
-    end
+    list.stale = true
+    if Safety.Read(scroll, "IsVisible") ~= true then return end
     if NS.Client.isForever and not list.owner.questMapReady then
         -- The native map open can rebuild the quest log before its protected
         -- reading emote. Reapply our view after that stack, using the live rows.
-        NS.Registry.QueueJob(list.reapply)
+        DeferList(list)
     else
         -- A completed map opening may be rebuilt repeatedly by quest scans.
         -- Filter the native layout inputs now; Blizzard owns the Layout below.
         ApplyFolds(list, Plain(Safety.Field(Plain(displayState), "questInfoContainer")))
+        list.stale = false
     end
 end
 
@@ -336,19 +370,26 @@ local function AttachFolds(scroll, state)
             hiddenQuests = {}, hiddenPins = Kit.WeakSet(), titleHeights = Kit.WeakSet(),
         }
         list.relayout = function()
-            if not NS.IsCombatLocked() and Safety.CanDecorate(contents, true) and ApplyFolds(list) then
-                ResizeQuestList(contents, layout)
-            end
+            list.refused = false
+            if CanPaint(contents, list) then
+                if ApplyFolds(list) then ResizeQuestList(contents, layout) end
+                list.stale = false
+            elseif list.refused then ReplayList(list) end
         end
         list.reapply = function()
             if list.owner then list.relayout() end
+        end
+        list.replay = function()
+            list.replayPending = false
+            list.reapply()
         end
         lists[scroll] = list
         Kit.HookFunction(scroll, "UpdateBackground", Safety.Isolated(BeforeQuestLayout))
         Kit.HookFunction(scroll, "ExpandHeaderForQuest", Safety.Isolated(RevealMapQuest))
     end
     state.questFolds, list.owner = list, state
-    if NS.Client.isForever and not state.questMapReady then NS.Registry.QueueJob(list.reapply)
+    if NS.IsCombatLocked() or NS.Client.isForever and not state.questMapReady then
+        DeferList(list)
     else list.relayout() end
 end
 
@@ -458,7 +499,7 @@ end
 
 local function RefreshTitle(row)
     local record = rows[row]
-    if record and record.visible and Safety.CanDecorate(row, true) then CopyTitleColor(record) end
+    if record and record.visible and CanPaint(row) then CopyTitleColor(record) end
 end
 
 local function HideNativeTitle(record)
@@ -470,14 +511,13 @@ local function HideNativeTitle(record)
     end
 end
 
-function Quests.PaintRow(row, state)
-    if NS.IsCombatLocked() or NS.SuiteCore().startingBeforeLockdown then return end
+function Quests.PaintRow(row, state, implicit)
     local record = rows[row]
     if not Compact() or not state.active then
-        if record and Safety.CanDecorate(row, true) then RestoreRow(record) end
+        if record and CanPaint(row, nil, implicit) then RestoreRow(record) end
         return
     end
-    if not Safety.CanDecorate(row, true) then return end
+    if not CanPaint(row, nil, implicit) then return end
     if Safety.Read(row, "IsVisible") ~= true then
         if record then ShowColumns(record, false) end
         return
@@ -505,9 +545,20 @@ function Quests.PaintRow(row, state)
     UpdateFont(record)
     local level = Plain(info.difficultyLevel)
     if type(level) ~= "number" then level = Plain(info.level) end
-    record.level:SetText(type(level) == "number" and level > 0 and level or "")
-    record.title:SetText(title)
-    record.progress:SetText(Progress(questID, index))
+    level = type(level) == "number" and level > 0 and level or ""
+    local progress = Progress(questID, index)
+    if record.levelValue ~= level then
+        record.level:SetText(level)
+        record.levelValue = level
+    end
+    if record.titleValue ~= title then
+        record.title:SetText(title)
+        record.titleValue = title
+    end
+    if record.progressValue ~= progress then
+        record.progress:SetText(progress)
+        record.progressValue = progress
+    end
     CopyTitleColor(record)
     record.level:SetTextColor(NS.Theme.GetColor("text"))
     record.progress:SetTextColor(NS.Theme.GetColor("text"))
@@ -520,29 +571,48 @@ local function RefreshRows()
 end
 
 local function RefreshNow()
-    if NS.Client.isForever then
-        for state in pairs(contexts) do
-            local list = state.questFolds
-            if list then list.reapply() end
-        end
-    else
-        SyncObjectives()
-    end
-    if not Compact() then return RefreshRows() end
+    if not NS.Client.isForever then SyncObjectives() end
+    local compact, combat = Compact(), NS.IsCombatLocked()
+    local implicit = not combat and not NS.SuiteCore().startingBeforeLockdown
     for state, scroll in pairs(contexts) do
-        Kit.ForEachActive(Safety.Field(scroll, "titleFramePool"), FOLD_ROW_LIMIT, Quests.PaintRow, state)
+        local list = state.questFolds
+        if list and (list.stale or not combat) then list.reapply() end
+        if compact then
+            Kit.ForEachActive(Safety.Field(scroll, "titleFramePool"), FOLD_ROW_LIMIT, Quests.PaintRow, state, implicit)
+        end
     end
+    if not compact then RefreshRows() end
 end
 
 function Quests.Refresh()
     if refreshing then return end
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not HasCombatView() then
         NS.CombatGate.RunOrDefer(REPLAY, Quests.Refresh)
         return
     end
     refreshing = true
     Safety.Dispatch(RefreshNow)
     refreshing = false
+end
+
+local function HasVisibleList()
+    for _, scroll in pairs(contexts) do
+        if Safety.Read(scroll, "IsVisible") == true then return true end
+    end
+    return false
+end
+
+local function RefreshCombatLayout()
+    combatRefreshQueued = false
+    if HasCombatView() and HasVisibleList() then Quests.Refresh() end
+end
+
+-- Registry jobs wait for combat to end. This separate, coalesced pass touches
+-- only the quest view's unprotected rows after Blizzard's native rebuild.
+function Quests.QueueCombatRefresh()
+    if combatRefreshQueued or not HasCombatView() or not HasVisibleList() then return end
+    combatRefreshQueued = true
+    C_Timer.After(0, RefreshCombatLayout)
 end
 
 function Quests.Activate(state, frame)
@@ -553,14 +623,14 @@ function Quests.Activate(state, frame)
     local scroll = Kit.Path(frame, "QuestLog", "QuestsFrame", "ScrollFrame")
     contexts[state] = scroll or false
     SyncObjectives()
-    if Safety.CanDecorate(frame, true) then AttachFolds(scroll, state) end
+    if CanPaint(scroll) then AttachFolds(scroll, state) end
 end
 
 function Quests.Release(state)
     ReleaseFolds(state)
     contexts[state] = nil
     for row, record in pairs(rows) do
-        if record.state == state and Safety.CanDecorate(row, true) then RestoreRow(record) end
+        if record.state == state and CanPaint(row) then RestoreRow(record) end
     end
     if not next(contexts) then
         events:UnregisterEvent("PLAYER_REGEN_DISABLED")
@@ -571,7 +641,7 @@ end
 
 function Quests.SetLayout(value)
     if value ~= "blizzard" and value ~= "compact" then return false, "invalid-layout" end
-    if not NS.DB or NS.IsCombatLocked() then return false, "combat" end
+    if not NS.DB or NS.IsCombatLocked() or NS.SuiteCore().startingBeforeLockdown then return false, "combat" end
     NS.DB.questLog = NS.DB.questLog or {}
     if NS.DB.questLog.layout == value then return false end
     NS.DB.questLog.layout = value
@@ -585,7 +655,7 @@ local function IsLayoutSelected(value)
 end
 
 local function SelectLayout(value)
-    if not next(contexts) or NS.IsCombatLocked() or IsLayoutSelected(value) then return end
+    if not next(contexts) or NS.IsCombatLocked() or NS.SuiteCore().startingBeforeLockdown or IsLayoutSelected(value) then return end
     NS.SuiteCore().HostBridge.WithMenuHistory(NS.L["Quest list layout"], "suite:skin.questLog.layout", function()
         return Quests.SetLayout(value)
     end)
@@ -595,7 +665,7 @@ local function AddLayoutMenu(_, description)
     if not next(contexts) then return end
     description:CreateDivider()
     description:CreateTitle(NS.L["Quest list layout"])
-    local enabled = not NS.IsCombatLocked()
+    local enabled = not NS.IsCombatLocked() and not NS.SuiteCore().startingBeforeLockdown
     description:CreateRadio(NS.L["Blizzard"], IsLayoutSelected, SelectLayout, "blizzard"):SetEnabled(enabled)
     description:CreateRadio(NS.L["Compact"], IsLayoutSelected, SelectLayout, "compact"):SetEnabled(enabled)
 end
@@ -610,10 +680,10 @@ end
 NS.Registry.AddListener(Quests, OnSettings)
 
 local function RestoreCombatTitles()
-    -- Blizzard can recycle hidden rows without showing their Text regions.
-    -- Release Compact's visibility ownership before lockdown takes effect.
+    -- Only protected rows need native-title ownership before lockdown.
+    -- Ordinary pooled rows keep their Compact columns and continue updating.
     for row, record in pairs(rows) do
-        if (record.visible or record.nativeHidden) and Safety.CanDecorate(row, true) then
+        if Safety.GetProtection(row) and (record.visible or record.nativeHidden) and Safety.CanDecorate(row, true) then
             RestoreRow(record)
         end
     end

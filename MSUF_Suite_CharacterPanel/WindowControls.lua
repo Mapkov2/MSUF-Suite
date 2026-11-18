@@ -429,6 +429,11 @@ local function BindNativeGrip(view, grip)
     grip:HookScript("OnHide", function() action("scaleStop") end)
 end
 
+local function ScaleSettled(view)
+    local scale = Number(view.frame:GetEffectiveScale())
+    if scale and scale ~= view.header.scale then view:ReflowText() end
+end
+
 function Window.CreateGrip(view, tooltip, paint)
     local state = view.window
     local grip = NS.Suite.CreateFrame("Button", nil, state.frame)
@@ -446,8 +451,11 @@ function Window.CreateGrip(view, tooltip, paint)
         vertical:SetPoint("BOTTOMRIGHT", -offset, offset)
         paint(vertical)
     end
-    if view.nativeLayout then BindNativeGrip(view, grip)
-    elseif not view.embedded then Window.BindGrip(state, grip) end
+    if view.embedded then return end
+    if view.nativeLayout then BindNativeGrip(view, grip) else Window.BindGrip(state, grip) end
+    grip:HookScript("OnMouseUp", function(_, button)
+        if NS.Public(button) and button == "LeftButton" then ScaleSettled(view) end
+    end)
 end
 
 Window.CaptionActions = {
@@ -459,6 +467,7 @@ Window.CaptionActions = {
             if view.window.maximized or not view.frame:IsShown() then return end
         end
         Window.ToggleMaximized(view.window)
+        ScaleSettled(view)
     end,
 }
 
@@ -486,6 +495,7 @@ Window.NativeCaptionActions = {
         if type(maximized) ~= "boolean" then return end
         Caption().SetKind(button, maximized and "restore" or "maximize")
         button.tooltip = NS.Text(maximized and "Restore window" or "Maximize window")
+        ScaleSettled(button.view)
     end,
 }
 

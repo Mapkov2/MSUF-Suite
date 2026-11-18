@@ -57,8 +57,8 @@ CASES = (
      'NS.ContentMotion.Unwatch(state.contentOwner, Safety.Field(widget, "content"))',
      '-- pooled child retains stale content owner', 'pooled Ace TabGroup cannot fade under a different config root'),
     ("Ace master disable", "Adapters/AddonMenus.lua",
-     'if not Enabled(state) then Release(state) return end',
-     '-- disable boundary ignored', 'master disable retained external menu skins'),
+     'if not Enabled() then Release(state) return end',
+     'if not Enabled() then return end', 'master disable retained external menu skins'),
 )
 
 

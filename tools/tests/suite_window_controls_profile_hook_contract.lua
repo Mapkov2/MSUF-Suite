@@ -145,6 +145,7 @@ local function NewSession(forever, look)
     GetUIPanel = function(slot) return slot == "left" and character:IsShown() and character or nil end
 
     local listeners, jobs = {}, {}
+    C_Timer = { After = function(_, job) jobs[#jobs + 1] = job end }
     local NS = {
         L = setmetatable({}, { __index = function(_, key) return key end }),
         IsCombatLocked = function() return InCombatLockdown() end,

@@ -81,6 +81,9 @@ assert(alliance.title == "Alliance" and alliance.action == 1 and #alliance.rows 
 assert(guildGroup.title == "Guild" and guildGroup.action == #factions and guildGroup.collapsed)
 assert(guildGroup.rows[1].label == "Reputation" and guildGroup.rows[1].value == "Friendly")
 local city, unusual, unknown, complete, major, friend, paragon, hostile = unpack(alliance.rows)
+assert(city.action == "reputation" and city.factionID == 1 and city.factionName == "Stormwind")
+assert(guildGroup.rows[1].factionID == 12 and guildGroup.rows[1].factionName == "Guild",
+    "a header with reputation lost its faction identity")
 assert(city.value == "Neutral" and major.value == "Renown 5" and friend.value == "Friend" and paragon.value == "Exalted")
 assert(city.reputationFill == nil and city.tooltip == nil)
 

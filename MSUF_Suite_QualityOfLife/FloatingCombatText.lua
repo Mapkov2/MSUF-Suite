@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID, CAPACITY = "floatingCombatText", 24
+local PLATE_LINES, TRAVEL, LINE_GAP = 4, 42, 8
 local DAMAGE_CVAR = "floatingCombatTextCombatDamage_v2"
 local DIRECT = { inCombat = true, direct = true }
 local FULL_MITIGATION = { ABSORB = true, BLOCK = true, RESIST = true }
@@ -9,14 +10,18 @@ local MELEE_WINDOW, RANGED_WINDOW, CAST_WINDOW = 1.3, 2, 2.5
 local OFF_HAND, RANGED = 1, 2
 local M = {}
 
-local function ReleasePlateSlot(self, plate)
-    local count = self.activePlates[plate]
-    self.activePlates[plate] = count > 1 and count - 1 or nil
+local function ReleasePlateSlot(self, slot)
+    local plate = slot.plate
+    local mask = self.activePlates[plate] - slot.lineBit
+    self.activePlates[plate] = mask > 0 and mask or nil
+    if slot.older then slot.older.newer = slot.newer else self.firstSlots[plate] = slot.newer end
+    if slot.newer then slot.newer.older = slot.older else self.lastSlots[plate] = slot.older end
+    slot.older, slot.newer = nil, nil
 end
 
 local function Finished(animation)
     local slot, owner = animation.slot, animation.owner
-    ReleasePlateSlot(owner, slot.plate)
+    ReleasePlateSlot(owner, slot)
     slot.plate = nil
     slot.frame:Hide()
 end
@@ -48,6 +53,7 @@ end
 local function Create(self)
     if self.slots then return end
     self.slots, self.plates, self.activePlates = {}, {}, {}
+    self.firstSlots, self.lastSlots = {}, {}
     for i = 1, CAPACITY do
         local frame = S.CreateFrame("Frame", nil, UIParent)
         frame:SetFrameStrata("HIGH")
@@ -59,13 +65,13 @@ local function Create(self)
         animation:SetScript("OnFinished", Finished)
         local move = animation:CreateAnimation("Translation")
         move:SetOrder(1)
-        move:SetOffset(0, 42)
+        move:SetOffset(0, TRAVEL)
         local fade = animation:CreateAnimation("Alpha")
         fade:SetOrder(1)
         fade:SetFromAlpha(1)
         fade:SetToAlpha(0)
         local slot = { frame = frame, normal = normal, critical = critical, text = normal,
-            animation = animation, move = move, fade = fade, x = ((i - 1) % 3 - 1) * 14 }
+            animation = animation, move = move, fade = fade, index = i }
         animation.slot, animation.owner = slot, self
         self.slots[i] = slot
         frame:Hide()
@@ -78,6 +84,8 @@ local function Style(self)
     local c = self.config
     local critSize = c.fontSize * c.critScale / 100
     local font = S.ResolveFont(c.font) or S.GlobalFontPath()
+    -- Reserve the largest glyph height and its entire upward animation path.
+    self.lineStep = critSize * 1.5 + TRAVEL + LINE_GAP
     for i = 1, CAPACITY do
         local slot = self.slots[i]
         slot.anchor = nil
@@ -92,19 +100,35 @@ local function Style(self)
 end
 
 local function Paint(self, plate, flag, amount)
-    self.cursor = self.cursor % CAPACITY + 1
-    local slot = self.slots[self.cursor]
-    local previous = slot.plate
-    if previous then slot.animation:Stop() end
-    if previous ~= plate then
-        if previous then ReleasePlateSlot(self, previous) end
-        self.activePlates[plate] = (self.activePlates[plate] or 0) + 1
-        slot.plate = plate
+    local mask = self.activePlates[plate] or 0
+    local line, lineBit = 0, 1
+    while mask % 2 == 1 do
+        line, lineBit, mask = line + 1, lineBit * 2, math.floor(mask / 2)
     end
-    if slot.anchor ~= plate then
+    local slot
+    if line == PLATE_LINES then
+        -- A full plate reuses its oldest number without growing the stack.
+        slot = self.firstSlots[plate]
+        line, lineBit = slot.line, slot.lineBit
+    else
+        slot = self.slots[self.cursor % CAPACITY + 1]
+    end
+    self.cursor = slot.index
+    local previous = slot.plate
+    if previous then
+        slot.animation:Stop()
+        ReleasePlateSlot(self, slot)
+    end
+    self.activePlates[plate] = (self.activePlates[plate] or 0) + lineBit
+    slot.plate, slot.line, slot.lineBit = plate, line, lineBit
+    local tail = self.lastSlots[plate]
+    slot.older = tail
+    if tail then tail.newer = slot else self.firstSlots[plate] = slot end
+    self.lastSlots[plate] = slot
+    if slot.anchor ~= plate or slot.anchorLine ~= line then
         slot.frame:ClearAllPoints()
-        slot.frame:SetPoint("BOTTOM", plate, "TOP", slot.x, self.config.offset)
-        slot.anchor = plate
+        slot.frame:SetPoint("BOTTOM", plate, "TOP", 0, self.config.offset + line * self.lineStep)
+        slot.anchor, slot.anchorLine = plate, line
     end
     local critical = flag == "CRITICAL" or flag == "CRUSHING"
     local text = critical and slot.critical or slot.normal

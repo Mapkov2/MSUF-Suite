@@ -79,16 +79,25 @@ function Skin.EnsureEngine()
     return false, tostring(reason or loaded or "skin-engine-unavailable")
 end
 
+function Skin.WindowsEnabled()
+    local engine = LoadedEngine()
+    return Skin.enabled and not (engine and engine.DB and engine.DB.enabled == false)
+end
+
 function Skin.Acquire(moduleID)
     if not Skin.enabled or type(moduleID) ~= "string" or not moduleID:match("^[%a][%w_]*$") then
         return nil
     end
+    if not clients[moduleID] and not Skin.EnsureEngine() then return nil end
+    if not Skin.WindowsEnabled() then return nil end
     if clients[moduleID] then return clients[moduleID] end
-    if not Skin.EnsureEngine() then return nil end
     local api = _G.MapkoSkin.GetAPI(2, 0)
     if not api or type(api.RegisterAddon) ~= "function" then return nil end
     HookOwnedHUD(api)
-    local client = api:RegisterAddon("MSUF_Suite_" .. moduleID)
+    local engine, client = LoadedEngine()
+    if engine and engine.PublicAPI and engine.PublicAPI.RegisterSuiteAddon then
+        client = engine.PublicAPI.RegisterSuiteAddon(moduleID)
+    else client = api:RegisterAddon("MSUF_Suite_" .. moduleID) end
     if client then clients[moduleID] = client end
     return client
 end
@@ -155,7 +164,7 @@ function Skin.ApplyStartupLayout()
     local engine = LoadedEngine()
     if not engine then return end
     local adapters = engine.Adapters
-    if Skin.enabled and adapters and adapters.PrepareReloadWindows then Suite.Dispatch(adapters.PrepareReloadWindows) end
+    if adapters and adapters.PrepareReloadWindows then Suite.Dispatch(adapters.PrepareReloadWindows) end
     if engine.EnsureLoginApplied then engine.EnsureLoginApplied() end
 end
 
@@ -182,7 +191,8 @@ end
 -- other addon is ever switched off for the player.
 function Skin.NoticeWindowSkinConflicts()
     local root, provider = Suite.RootDB, LoadedEngine()
-    if not (root and provider and type(provider.DB) == "table" and provider.DB.enabled == true) then return end
+    if not (root and provider and type(provider.DB) == "table" and provider.DB.enabled == true
+        and provider.DB.blizzardWindowsEnabled ~= false) then return end
     for _, name in ipairs(WINDOW_SKIN_ADDONS) do
         if Suite.Client.IsAddOnLoaded(name) then TellOnce(root, name) end
     end

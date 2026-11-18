@@ -9,6 +9,7 @@ local NS = { DB = { enabled = true }, IsCombatLocked = function() return combat 
     Theme = { GetColor = function() return .2, .4, .7, 1 end },
     Registry = { AddListener = function() end }, BlizzardFontNames = {},
     WindowActionSkin = { HasOwnedStates = function() return false end,
+        GetExplicitKind = function() return nil end,
         IsApplied = function() return false end, Track = function() end },
     CombatGate = { RunOrDefer = function() error("target refresh queued global work") end } }
 local function Load(name) return assert(loadfile(root .. "/MSUF_Suite_Skin/" .. name .. ".lua"))("MSUF_Suite_Skin", NS) end

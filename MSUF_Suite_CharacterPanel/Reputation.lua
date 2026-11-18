@@ -1,5 +1,5 @@
 local _, NS = ...
-local Number, Text = NS.Number, NS.Text
+local Number, Public, Text = NS.Number, NS.Public, NS.Text
 local ReadFactionReputation = NS.Suite.ReadFactionReputation
 local StandingLabel = NS.Suite.ReputationStandingLabel
 local Reputation = {}
@@ -73,6 +73,12 @@ local function Display(mode, standing, details, fill)
     return standing
 end
 
+function Reputation.Reaction(kind, reaction)
+    if kind == "standing" and reaction and threshold[reaction] then return reaction end
+    if kind == "friendship" then return 5 end
+    return 0
+end
+
 function Reputation.Populate(row, info, sex, showBars, valueMode, goal)
     local detailed = showBars or valueMode ~= STANDING or goal ~= NEXT
     local kind, standing, current, maximum, capped, nextLevel, pending = ReadFactionReputation(info, sex, detailed)
@@ -105,8 +111,8 @@ function Reputation.Populate(row, info, sex, showBars, valueMode, goal)
     local fill = current / maximum
     if showBars then
         row.reputationFill = fill
-        if kind == "standing" and reaction and threshold[reaction] then row.reputationReaction = reaction
-        elseif kind == "friendship" then row.reputationReaction = 5 end
+        local color = Reputation.Reaction(kind, reaction)
+        row.reputationReaction = color > 0 and color or nil
     end
     local details = row.reputationDetails
     if not details then
@@ -118,6 +124,37 @@ function Reputation.Populate(row, info, sex, showBars, valueMode, goal)
     details.nextGoal, details.nextRemaining = nextGoal, nextRemaining
     row.value = Display(valueMode, standing, details, fill)
     row.tooltip, row.tooltipArgument = Tooltip, details
+end
+
+local function FactionData(info)
+    if Public(info) and type(info) == "table" then return info end
+end
+
+local function WarState(info)
+    if not info then return end
+    local canToggle, atWar = info.canToggleAtWar, info.atWarWith
+    if Public(canToggle) and canToggle == true and Public(atWar) and type(atWar) == "boolean" then return atWar end
+end
+
+local function IsAtWar(id)
+    return WarState(FactionData(C_Reputation.GetFactionDataByID(id)))
+end
+
+local function ToggleWar(id)
+    if NS.Host.InCombat() then return end
+    -- Menus capture the faction ID. The Blizzard action takes the current
+    -- sort index, which can change while the menu is open.
+    for index = 1, Number(C_Reputation.GetNumFactions()) or 0 do
+        local info = FactionData(C_Reputation.GetFactionDataByIndex(index))
+        if info and Number(info.factionID) == id then
+            if WarState(info) ~= nil then C_Reputation.ToggleFactionAtWar(index) end
+            return
+        end
+    end
+end
+
+function Reputation.AddWarOption(root, id)
+    if IsAtWar(id) ~= nil then root:CreateCheckbox(AT_WAR, IsAtWar, ToggleWar, id) end
 end
 
 local sample = { reaction = 4, currentReactionThreshold = 0, nextReactionThreshold = 3000, currentStanding = 640 }

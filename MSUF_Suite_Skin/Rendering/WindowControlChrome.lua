@@ -182,7 +182,7 @@ local function PaintCaption(button, refreshGlyph)
         art.fill:SetColorTexture(1, 1, 1, active and (art.down and 0.17 or 0.10) or 0)
     end
 end
-
+Chrome.PaintActionCell = PaintCaption
 local function LayoutCaption(button, kind)
     local art = captionArt[button]
     art.kind = kind
@@ -227,8 +227,8 @@ function Chrome.Control(button, kind, offset, disabled)
         button:SetScript("OnMouseUp", CaptionUp)
         button:SetScript("OnHide", CaptionLeave)
     end
+    return captionArt[button]
 end
-
 local function TitleRight(frame, scale)
     local title = TitleRegion(frame)
     local width, right = Safety.Read(title, "GetStringWidth"), Safety.Read(title, "GetRight")
@@ -323,8 +323,6 @@ local function DriveEnter(button)
     local cell = drivers[button]
     if not cell then return end
     CaptionEnter(cell)
-    -- Blizzard's button shows again under its cell and the pointer: the
-    -- caption fades it.
     local state = cellStates[cell]
     if state and state.settle and cell:IsShown() and (Safety.Read(button, "GetAlpha") or 0) ~= 0 then
         state.settle("hover")
@@ -357,24 +355,27 @@ local function DrawnCell(state, key)
     return cell
 end
 
--- Blizzard's caption buttons under our cells fade, the button and every art
--- region of it (a size toggle: both of its buttons too), so an alpha written to
--- the button later, or an animation of it, still finds no art. While faded, a
--- hook puts 0 back on any alpha write. The alphas they had come back with the
--- caption's end. The window's focus outline leaves faded buttons out.
-local faded = setmetatable({}, { __mode = "k" })
-local alphaHooked = setmetatable({}, { __mode = "k" })
+-- A native button or texture can acquire a secret alpha even after its public
+-- alpha was captured. Keep its native value until its owner supplies a public one.
+local nativeAlphas = setmetatable({}, { __mode = "k" })
+local fadeOwners = setmetatable({}, { __mode = "k" }) -- false after release; the hook remains
 local RefreshFocus = function() end
 function Chrome.SetFocusRefresh(callback) RefreshFocus = callback end
-function Chrome.IsFaded(region) return faded[region] ~= nil end
+function Chrome.IsFaded(region) return nativeAlphas[region] ~= nil end
 
--- Alpha is no protected action: a faded part stays faded in combat too.
+local function FadePublicAlpha(region)
+    local alpha = Safety.Read(region, "GetAlpha")
+    if alpha == nil then nativeAlphas[region] = nil return end
+    nativeAlphas[region] = nativeAlphas[region] or alpha
+    if alpha ~= 0 then region:SetAlpha(0) end
+end
 local function KeepFaded(region, alpha)
-    if faded[region] and alpha ~= 0 and not Safety.IsForbidden(region) then region:SetAlpha(0) end
+    if not fadeOwners[region] then return end
+    if not Safety.Public(alpha) then nativeAlphas[region] = nil
+    elseif alpha ~= 0 or nativeAlphas[region] == nil then FadePublicAlpha(region) end
 end
 
--- The old action skin (box and glyph) leaves Blizzard's buttons while our
--- cells stand for them, so nothing of it can show through.
+-- Remove the old action skin while our cells cover Blizzard's buttons.
 local function Yield(target, yield)
     NS.WindowActionSkin.Yield(target, yield)
     for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
@@ -398,28 +399,22 @@ end
 
 local function Fade(state, region)
     if not Safety.Public(region) or not Safety.HasMethod(region, "SetAlpha") then return end
-    if state.nativeAlpha[region] == nil then state.nativeAlpha[region] = region:GetAlpha() end
-    if not alphaHooked[region] then
-        alphaHooked[region] = true
-        hooksecurefunc(region, "SetAlpha", KeepFaded)
-    end
-    faded[region] = state
-    region:SetAlpha(0)
+    if fadeOwners[region] == nil then hooksecurefunc(region, "SetAlpha", KeepFaded) end
+    fadeOwners[region] = state
+    FadePublicAlpha(region)
 end
 
 -- Alpha only, so combat too; the old action skin lets go outside combat.
 local function FadeNative(state, target)
     if type(target) ~= "table" or Safety.IsForbidden(target) then return false end
     if Safety.CanDecorate(target, not NS.IsCombatLocked()) then Yield(target, true) end
-    state.nativeAlpha = state.nativeAlpha or setmetatable({}, { __mode = "k" })
     state.nativeRoots = state.nativeRoots or setmetatable({}, { __mode = "k" })
     state.nativeRoots[target] = true
     for _, region in ipairs(NativeParts(target)) do Fade(state, region) end
     return true
 end
 
--- Blizzard's top right corner art holds a socket for each native caption
--- button: it fades with them, on the window and on panes laid over it.
+-- Fade matching socket art on the native window and its overlaid panes.
 local function FadeSockets(state)
     local frame = state.frame
     local right, top = Safety.Read(frame, "GetRight"), Safety.Read(frame, "GetTop")
@@ -441,11 +436,10 @@ local function RestoreNative(state, target)
     state.restores = (state.restores or 0) + 1
     Yield(target, false)
     for _, region in ipairs(NativeParts(target)) do
-        local alpha = state.nativeAlpha[region]
-        if alpha ~= nil then
-            if faded[region] == state then faded[region] = nil end
-            region:SetAlpha(alpha)
-            state.nativeAlpha[region] = nil
+        if Safety.Public(region) and fadeOwners[region] == state then
+            local alpha = nativeAlphas[region]
+            fadeOwners[region], nativeAlphas[region] = false, nil
+            if alpha ~= nil and Safety.Read(region, "GetAlpha") ~= nil then region:SetAlpha(alpha) end
         end
     end
 end
@@ -460,7 +454,7 @@ local function Report(state, moment)
     if not alpha or alpha == 0 or not Safety.Read(native, "IsShown") then return end
     state.reported = true
     NS.Print(("caption check: %s %s, %s alpha %.2f, faded %s, owned %s, path %s, restores %d"):format(state.name,
-        tostring(moment or "next frame"), native == close and "X" or "toggle", alpha, tostring(faded[native] ~= nil),
+        tostring(moment or "next frame"), native == close and "X" or "toggle", alpha, tostring(Chrome.IsFaded(native)),
         tostring(state.nativeRoots and state.nativeRoots[native] == true), tostring(state.captionPath), state.restores or 0))
 end
 

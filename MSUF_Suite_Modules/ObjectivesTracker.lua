@@ -569,6 +569,8 @@ local function PaintRowState(self, row, item, color)
         row.text:SetTextColor(color[1], color[2], color[3])
     elseif item.kind == "line" then
         row.text:SetTextColor(unpack(item.done and self.completeRGB or self.mutedRGB))
+    elseif item.group == "focused" and self.config.focusedTitleColor then
+        row.text:SetTextColor(color[1], color[2], color[3])
     else
         row.text:SetTextColor(unpack(self.textRGB))
     end

@@ -138,7 +138,7 @@ local function SkinDefault(defaults, id)
         or id == "theme.windowFocusDimming" or id == "theme.smoothScrolling" or id == "theme.scrollEdgeBounce" then return true end
     if id == "theme.reduceMotion" then return false end
     if id == "suiteEnabled" then return true end
-    if id == "enabled.windows" then return defaults.enabled end
+    if id == "enabled.windows" then return defaults.blizzardWindowsEnabled ~= false end
     if id == "font.face" then return defaults.typography.face end
     if id:sub(1, 5) == "font." then id = "typography." .. id:sub(6) end
     if id:sub(1, 10) == "character." then id = "characterDetails." .. id:sub(11) end
@@ -186,8 +186,9 @@ local function ResetSkinSection(skin, id, rows, contextRows)
             local path = item.row.id
             if path == "suiteEnabled" then
                 Suite.Skin.SetEnabled(item.value == true)
+            elseif path == "enabled.windows" then
+                skin.Adapters.SetBlizzardWindowsEnabled(item.value)
             else
-                if path == "enabled.windows" then path = "enabled" end
                 if path == "theme.smoothScrolling" then skin.DB.theme.adaptiveScrolling = nil end
                 if path:sub(1, 5) == "font." then path = "typography." .. path:sub(6) end
                 if path:sub(1, 10) == "character." then path = "characterDetails." .. path:sub(11) end

@@ -1544,8 +1544,36 @@ do (function()
     assert(art.title.text == optionsNS.Tr("Example Achievement") and art.subtitle.text == optionsNS.Tr("ACHIEVEMENT EARNED"),
         "the achievement sample is not shaped like the runtime's banner")
     preview.pickers.announcements.set("level")
-    assert(art.title.text == optionsNS.Tr("LEVEL %d"):format(70) and art.subtitle.text == optionsNS.Tr("LEVEL UP"),
-        "the level sample is not shaped like the runtime's banner")
+    do
+        local artOwner = optionsNS.Suite.AnnouncementArt
+        local gains = artOwner.LevelGains(38, 24, 1, 0, 1, 2, 3, 2, flavor == "Forever" and 1 or nil)
+        assert(art.title.text == optionsNS.Tr("LEVEL %d"):format(28)
+            and art.subtitle.text == artOwner.LevelDetails(announcement, gains)
+            and art.cleanLevel and not art.background.shown and not art.accents[2].shown
+            and preview.levelDetailsButton.shown and not preview.artPicker.shown,
+            "the level-up sample must use the clean shared banner with example gains")
+        local oldMenu, toggles = optionsNS.ContextMenu, {}
+        optionsNS.ContextMenu = function(owner, generate)
+            assert(owner == preview.levelDetailsButton, "level-up menu attached to the wrong control")
+            generate(nil, { CreateCheckbox = function(_, label, get, set)
+                toggles[label] = { get = get, set = set }
+            end })
+        end
+        preview.levelDetailsButton.scripts.OnClick(preview.levelDetailsButton)
+        optionsNS.ContextMenu = oldMenu
+        assert(toggles[optionsNS.Tr("Show health gained")].get(), "health should be enabled by default")
+        local attributes = assert(toggles[optionsNS.Tr("Show attributes gained")])
+        local levelHistory = historyWrites
+        assert(not attributes.get())
+        attributes.set()
+        assert(announcement.levelAttributes == true and art.subtitle.text:find("\n", 1, true),
+            "the interactive menu must put added attributes into the visible preview")
+        attributes.set()
+        assert(not announcement.levelAttributes and not art.subtitle.text:find("\n", 1, true),
+            "the interactive menu must remove unchecked attributes from the visible preview")
+        assert(historyWrites == levelHistory + 2, "each preview toggle should write one undo step")
+        historyBefore = historyWrites
+    end
     preview.pickers.announcements.set("quest")
     do
         local rule = optionsNS.catalog.announcements.rules.showBoxArt
@@ -1850,7 +1878,7 @@ end)() end
     for _, section in ipairs(hudCtx.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    local defaultTopics = flavor == "Forever" and 20 or 23
+    local defaultTopics = flavor == "Forever" and 21 or 24
     local equipment = Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and 1 or 0
     assert(topics == defaultTopics + #S.CharacterHeader.Fields + equipment, "HUD topics must be separate accordions beneath their feature tabs")
     local previousTabs = W.SegmentTabs
@@ -3374,9 +3402,9 @@ do
     for _, section in ipairs(contexts.suite_hud.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    assert(hudSections.suite_hud_announcements_frame and hudSections.suite_hud_characterPanel_appearance,
-        "banner frame or character appearance lost its accordion")
-    assert(topics == 24 + #S.CharacterHeader.Fields, "HUD topics lost their separate accordions")
+    assert(hudSections.suite_hud_announcements_frame and hudSections.suite_hud_characterPanel_appearance
+        and hudSections.suite_hud_announcements_levelUp, "expected HUD accordion is missing")
+    assert(topics == 25 + #S.CharacterHeader.Fields, "HUD topics lost their separate accordions")
 end
 assert(hudSections.suite_hud_objectives_raid, "Retail raid encounter accordion missing")
 local raidPause
@@ -4536,6 +4564,7 @@ skin.Theme = {
     SetColor = function(key, r, g, b, a) skin.DB.theme.colors[key] = { r, g, b, a }; return true end,
 }
 skin.Adapters = {
+    SetBlizzardWindowsEnabled = function(value) skin.DB.blizzardWindowsEnabled = value; return true end,
     SetMasterEnabled = function(value) skin.DB.enabled = value; return true end,
     SetEnabled = function(key, value) skin.DB.skins[key] = value; return true end,
     GetDefinitions = function() return { "settings" }, { settings = { labelKey = "SETTINGS" } } end,
@@ -4638,7 +4667,7 @@ local skinControls = {}
 for _, widget in ipairs(skinContext.widgets) do
     if widget.meta and widget.meta.settingKey then skinControls[widget.meta.settingKey] = widget end
 end
-for _, key in ipairs({ "theme.look", "theme.materialDepth", "icons.windowActions.style", "icons.microMenu.layoutMode",
+for _, key in ipairs({ "theme.look", "theme.materialDepth", "icons.windowActions.style", "icons.windowActions.closeStyle", "icons.microMenu.layoutMode",
     "icons.microMenu.loadHideMounted", "icons.microMenu.loadShowWhenInjured", "enabled" }) do
     assert(skinControls["msufsuite.skin." .. key], "native Skinning control missing: " .. key)
 end
@@ -4724,17 +4753,24 @@ for _, key in ipairs({ "preset", "scale", "loadHideMounted", "spacing" }) do
         "Micro Bar reset omitted a tab setting: " .. key)
 end
 end
+skinControls["msufsuite.skin.enabled.windows"].set(false)
+assert(skin.DB.blizzardWindowsEnabled == false and skin.DB.enabled and optionsNS.SkinningEnabled(),
+    "Blizzard windows switch disabled the skin engine")
 skinControls["msufsuite.skin.enabled"].set(false)
-assert(skin.DB.enabled == false and Suite.Skin.enabled == false,
+assert(skin.DB.enabled == false and not Suite.Skin.WindowsEnabled(),
     "Skinning header switch did not disable Blizzard and Suite surfaces")
 skinControls["msufsuite.skin.enabled"].set(true)
 assert(skin.DB.enabled == true and Suite.Skin.enabled == true,
     "Skinning header switch did not restore the module")
+assert(skin.DB.blizzardWindowsEnabled == false, "main switch overwrote the Blizzard preference")
 assert(not skinControls["msufsuite.skin.icons.microMenu.layoutX"]
     and not skinControls["msufsuite.skin.icons.microMenu.layoutY"],
     "Micro Bar position controls duplicate the MSUF Edit Mode mover")
 skinControls["msufsuite.skin.icons.windowActions.style"].set("soft")
 assert(skin.DB.icons.windowActions.style == "soft", "window action control did not reach nested setting")
+skinControls["msufsuite.skin.icons.windowActions.closeStyle"].set("outline")
+assert(skin.DB.icons.windowActions.closeStyle == "outline" and skin.DB.icons.windowActions.style == "soft",
+    "close X control did not keep the other window-button style independent")
 skinControls["msufsuite.skin.theme.materialDepth"].set(0.7)
 assert(skin.DB.theme.materialDepth == 0.7, "glass surface depth did not update")
 skinControls["msufsuite.skin.skins.settings"].set(false)

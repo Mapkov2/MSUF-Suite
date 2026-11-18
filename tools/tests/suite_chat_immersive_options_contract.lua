@@ -55,6 +55,7 @@ local config = S.Config("chat")
 assert(config.look == 7 and config.panelGradient and config.messageFading and config.coloredUnreadTabs,
     "clicking Immersive did not apply its complete preset")
 assert(not P.Gates.chat(P.catalog.chat.rules.panelTexture), "gradient ignored an enabled texture selector")
+assert(P.Gates.chat(P.catalog.chat.rules.idleIgnoreProgress), "idle quiet progress unavailable while idle fade is on")
 local visual = ctx.chatPreview.visual
 local gradients = { visual.gradientLeft, visual.gradientRight }
 assert(#gradients == 2 and gradients[1]:IsShown() and gradients[2]:IsShown(), "preview did not show two gradient halves")
@@ -72,6 +73,7 @@ assert(not config.panelGradient and not config.minimalChrome and not config.mess
     "returning to a normal look kept Immersive behavior")
 assert(not gradients[1]:IsShown() and not gradients[2]:IsShown(), "flat look retained its preview gradient")
 assert(P.Gates.chat(P.catalog.chat.rules.panelTexture), "flat look did not restore the texture selector")
+assert(not P.Gates.chat(P.catalog.chat.rules.idleIgnoreProgress), "idle quiet progress enabled without an idle fade")
 local combat = InCombatLockdown
 InCombatLockdown = function() return true end
 button.scripts.OnClick(button)

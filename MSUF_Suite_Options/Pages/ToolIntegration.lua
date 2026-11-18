@@ -140,4 +140,5 @@ function P.AppendToolSearchActions(Add)
     Add("mailTemplates", "action.open", "Open inventory tool", "suite_qualityOfLife_mailTemplates_mailTemplates")
     Add("waypointLists", "action.open", "Open saved waypoint lists", "suite_qualityOfLife_waypointLists_saved_waypoints")
     Add("notificationHistory", "action.open", "Open notice history", "suite_qualityOfLife_notificationHistory_notice_history")
+    Add("worldQuestTab", "action.open", "Open world quests", "suite_qualityOfLife_worldQuestTab_world_quest_tab")
 end

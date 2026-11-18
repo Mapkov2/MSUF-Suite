@@ -47,7 +47,8 @@ local SCREEN_CENTER = 2
 
 local function Theme(self)
     local c = self.config
-    Art.Theme(self.art, c, self.context and self.context:Skin())
+    local level = not S.editMode and self.current ~= nil and self.current.levelGains ~= nil
+    Art.Theme(self.art, c, self.context and self.context:Skin(), level)
     self.host:SetScale(c.scale / 100)
     self.host:ClearAllPoints()
     local point = c.anchor == SCREEN_CENTER and "CENTER" or "TOP"
@@ -55,7 +56,17 @@ local function Theme(self)
 end
 
 local function Paint(self, item)
-    Art.Show(self.art, self.config, item.kind, item.title, item.subtitle)
+    local gains = item.levelGains
+    if self.art.cleanLevel ~= Art.UseCleanLevel(self.config, gains ~= nil) then
+        Art.Theme(self.art, self.config, self.context and self.context:Skin(), gains ~= nil)
+    end
+    local height = self.art.cleanLevel and Art.LEVEL_HEIGHT or Art.HEIGHT
+    if (self.bannerHeight or Art.HEIGHT) ~= height then
+        self.bannerHeight = height
+        self.host:SetHeight(height)
+    end
+    local subtitle = gains and Art.LevelDetails(self.config, gains) or item.subtitle
+    Art.Show(self.art, self.config, item.kind, item.title, subtitle)
 end
 
 -- The banner on screen fades out after its duration (ctx:After);
@@ -126,23 +137,23 @@ local function ReserveQueue(self, kind)
     return false
 end
 
-local function Enqueue(self, kind, title, subtitle, key)
+local function Enqueue(self, kind, title, subtitle, key, levelGains)
     if not self.active or not Text(title) then return false end
     if key and (kind == "quest" or kind == "achievement") and HasQueuedKey(self, key) then return true end
     local now = GetTime()
     if kind ~= "achievement" and key and self.lastKey == key and now - (self.lastTime or 0) < 2 then return true end
     if not ReserveQueue(self, kind) then return false end
     self.lastKey, self.lastTime = key, now
-    self.queue[#self.queue + 1] = { kind = kind, title = title, subtitle = subtitle, key = key }
+    self.queue[#self.queue + 1] = { kind = kind, title = title, subtitle = subtitle, key = key, levelGains = levelGains }
     self:Next()
     return true
 end
 
 -- Direct events win over the matching Blizzard toast that follows them.
-local function Direct(self, kind, title, subtitle, key)
+local function Direct(self, kind, title, subtitle, key, levelGains)
     self.lastDirect = self.lastDirect or {}
     self.lastDirect[kind] = GetTime()
-    Enqueue(self, kind, title, subtitle, key)
+    Enqueue(self, kind, title, subtitle, key, levelGains)
 end
 
 local function RecentlyDirect(self, kind)
@@ -207,8 +218,11 @@ local function Event(self, event, ...)
                 event .. ":" .. id)
         end
     elseif event == "PLAYER_LEVEL_UP" and self.config.level then
-        local level = ...
-        if Number(level) then Direct(self, "level", Tr("LEVEL %d"):format(level), Tr("LEVEL UP"), "level:" .. level) end
+        local level, health, power, talents, pvp, strength, agility, stamina, intellect, spirit = ...
+        if S.Finite(level) then
+            local gains = Art.LevelGains(health, power, talents, pvp, strength, agility, stamina, intellect, spirit)
+            Direct(self, "level", Tr("LEVEL %d"):format(level), nil, "level:" .. level, gains)
+        end
     elseif event == "SCENARIO_COMPLETED" and self.config.scenario then
         Direct(self, "scenario", Tr("SCENARIO COMPLETE"), ReadText(C_Scenario.GetInfo), "scenario")
     end

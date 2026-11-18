@@ -202,6 +202,8 @@ local function OnEvent(_, event, value, success)
         return
     end
     if event == "PLAYER_REGEN_DISABLED" then
+        -- This frame may get the combat edge before the Bags context does.
+        if M.config.showTransmogStatus then P.BagTransmog.Pause() end
         -- A fight shows the live bags: every item button must be reachable.
         if Offline then Offline.Leave(true) end
         P.BagWindowMotion.Cancel()
@@ -386,6 +388,7 @@ function InventoryView.Release()
     P.InventoryEditor.Hide()
     P.EquippedBags.Close()
     P.InventoryDetails.Hide()
+    if M.config.showTransmogStatus then P.BagTransmog.HideBadges(true) end
     local frame = InventoryView.frame
     if frame and InventoryView.nativeMouseWheel ~= nil then
         frame:EnableMouseWheel(InventoryView.nativeMouseWheel)

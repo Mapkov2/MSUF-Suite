@@ -386,7 +386,7 @@ local function ContentSignature(c)
         .. tostring(c.showQuestItems) .. ":" .. tostring(c.showTimers) .. ":" .. tostring(c.questIconStyle) .. ":"
         .. tostring(c.showCollectibles) .. ":" .. tostring(c.showZoneEvents) .. ":"
         .. tostring(c.showTravelersLog) .. ":" .. tostring(c.showEndeavors) .. ":" .. tostring(c.showRecipes)
-        .. ":" .. tostring(c.groupQuestsByZone)
+        .. ":" .. tostring(c.groupQuestsByZone) .. ":" .. tostring(c.hideCompletedObjectives)
 end
 
 local TRACKER_EVENTS = {

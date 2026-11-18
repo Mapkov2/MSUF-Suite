@@ -16,6 +16,8 @@ local objectiveContent = {
     B.Bool("hideDuringBoss", "Hide tracker during raid boss encounters", false),
     B.Bool("showHeader", "Show tracker heading", true),
     B.Bool("groupUnderlines", "Underline tracker group headings", false),
+    B.Tooltip(B.Bool("focusedTitleColor", "Use focus color for the focused quest title", false),
+        "Uses the existing Focused quest color for its title as well as its group heading."),
     B.Bool("animateQuestCollapse", "Animate quest expansion and collapse", true),
     B.Choice("questIconStyle", "Quest type symbols", 1, { "Off", "Suite symbols", "Blizzard symbols" }),
     B.Bool("showAchievements", "Tracked achievements", true),
@@ -24,6 +26,8 @@ local objectiveContent = {
     B.Bool("showZoneEvents", "Zone event progress", true),
     B.Bool("showWorldQuests", "World quests", true),
     B.Bool("groupQuestsByZone", "Group watched quests by current zone", false),
+    B.Tooltip(B.Bool("hideCompletedObjectives", "Hide completed quest objectives", false),
+        "Hides completed quest objective lines while keeping quest titles, timers, usable items and completion actions."),
     B.Bool("showBonus", "Nearby bonus objectives", true),
     B.Bool("showQuestItems", "Usable quest items", true),
     B.Bool("showTimers", "Objective countdowns", true),
@@ -222,6 +226,13 @@ B.Section("announcements", "content", "Announcements", {
     B.Bool("achievements", "Achievements", true),
     B.Bool("level", "Level up", true),
     B.Bool("scenario", "Scenario complete", true),
+})
+B.Section("announcements", "levelUp", "Level-up banner", {
+    B.Bool("levelClean", "Minimal level-up banner", true),
+    B.Bool("levelHealth", "Show health gained", true),
+    B.Bool("levelPower", "Show power gained", true),
+    B.Bool("levelTalents", "Show new talent points", true),
+    B.Bool("levelAttributes", "Show attributes gained", false),
 })
 B.Section("announcements", "layout", "Timing and position", {
     B.Number("duration", "Display time (seconds)", 4, 2, 8),

@@ -104,6 +104,8 @@ local GROUPS = {
     { id = "lootContainers", title = "Open new containers (Retail)", switch = "enabled",
         sections = { "open_containers" } },
     { id = "quests", title = "Quest helpers", switch = "enabled", sections = { "automation", "filters" } },
+    { id = "worldQuestTab", title = "World quests", switch = "enabled", sections = { "world_quest_tab" },
+        aliases = { "world quest tab", "world quest rewards", "weltquest", "weltquestbelohnungen" } },
     { id = "quietPopups", title = "Quiet Blizzard popups", switch = "enabled", sections = { "quiet_popups" } },
     { id = "uiErrorFilter", title = "Quiet repeated errors", switch = "enabled", sections = { "ui_error_filter" } },
     { id = "groupRaidShortcuts", title = "Raid shortcuts (Retail)", switch = "enabled",
@@ -178,7 +180,7 @@ return {
         Subgroup("merchants", "Merchants", "merchantLevel qol.repair qol.autoJunk lootVendorRules merchantList inventoryProtection"),
     } },
     { id = "questsProfessions", title = "Quests & Professions", subgroups = {
-        Subgroup("quests", "Quests", "quests questRewardValue"),
+        Subgroup("quests", "Quests", "quests questRewardValue worldQuestTab"),
         Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips"),
     } },
     { id = "groups", title = "Groups", subgroups = {

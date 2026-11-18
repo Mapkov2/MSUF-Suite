@@ -38,6 +38,7 @@ local function PublicWorld()
         Clamp = function(value, low, high) return math.max(low, math.min(high, tonumber(value) or low)) end,
         ControlSkin = { GetOwner = Noop, DisableOwner = Noop, states = {} },
         WindowActionSkin = { GetOwner = Noop, DisableOwner = Noop },
+        ScrollBarSkin = { GetState = Noop },
         IconSkin = { GetOwner = Noop, DisableOwner = Noop },
         Cosmetics = { GetOwner = Noop, RestoreOwner = Noop },
         CombatGate = { Cancel = Noop, RunOrDefer = function(_, callback) callback() end },
@@ -64,7 +65,7 @@ local function PublicWorld()
         end,
         SetNativeStateSync = Noop,
     }
-    for _, name in ipairs({ "Safety", "Registry", "PublicAPI", "PublicAPIMethods" }) do
+    for _, name in ipairs({ "Safety", "Registry", "PublicAPIControls", "PublicAPI", "PublicAPIMethods" }) do
         assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. name .. ".lua"))("MSUF_Suite_Skin", NS)
     end
     world.NS, world.api = NS, NS.PublicAPI.API

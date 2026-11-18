@@ -14,7 +14,7 @@ local BODY_W, BODY_H = WIDTH - 2 * PAD, HEIGHT - HEADER - TABS - FOOTER - 2 * PA
 local RAIL_W = 202
 local DOLL_W = BODY_W - PAD - RAIL_W
 local SLOT_W, SLOT_H, SLOT_STEP, INSET, ICON = 215, 38, 42, 8, 30
-local WEAPON_Y, GROUP_HEADER, GROUP_ROW, GROUP_GAP = 353, 30, 24, 8
+local WEAPON_Y, GROUP_HEADER, GROUP_GAP = 353, GroupLayout.HeaderHeight, GroupLayout.Gap
 local BODY_Y, MODEL_X = HEADER + TABS + PAD, SLOT_W + INSET + 7
 local MODEL_W, MODEL_H = DOLL_W - 2 * MODEL_X, WEAPON_Y - 2 * INSET
 local WIDE_SLOT_W = (DOLL_W - 2 * INSET - GROUP_GAP) / 2
@@ -35,7 +35,7 @@ local CARD = { role = "card", ownedArt = true, keepGlassFill = false }
 local CONTROL = { role = "button", activeRole = "navigationActive", useControlShape = true, ownedArt = true }
 local NAVIGATION = { role = "navigation", activeRole = "navigationActive", useControlShape = true, ownedArt = true, motion = true }
 local CreateFrame, CreateTexture, CreateFontString = S.CreateFrame, S.CreateTexture, S.CreateFontString
-local ceil, floor, max, min = math.ceil, math.floor, math.max, math.min
+local ceil, max, min = math.ceil, math.max, math.min
 local function Tint(view, target, fallback, isText)
     local tints = isText and view.textTints or view.textureTints
     tints[target] = fallback
@@ -249,8 +249,10 @@ function View:RefreshAppearance(skin, headerConfig)
         end
     end
     Window.SyncGlass(self, true)
-    if RefreshFonts(self) and self.tabs then self:SetTabs(self.tabs, self.tab, true) end
+    local reflow, barHeight = RefreshFonts(self), self.reputationHeight
+    if reflow and self.tabs then self:SetTabs(self.tabs, self.tab, true) end
     self:ApplyHeaderSettings(headerConfig)
+    if reflow or barHeight ~= self.reputationHeight then GroupLayout.Refresh(self) end
 end
 
 local function ActiveTab(view, tab, active)
@@ -371,11 +373,13 @@ local function NewSlot(view)
     button.level:SetPoint("RIGHT", -7, 0)
     button.level:SetWidth(34)
     button.label = Font(view, button, 10, MUTED)
-    button.label:SetPoint("TOPLEFT", 42, -5)
-    button.label:SetPoint("TOPRIGHT", -47, -5)
+    button.label:SetPoint("TOPLEFT", 42, -4)
+    button.label:SetPoint("TOPRIGHT", -47, -4)
     button.name = Font(view, button, 12, TEXT)
-    button.name:SetPoint("BOTTOMLEFT", 42, 5)
-    button.name:SetPoint("BOTTOMRIGHT", -47, 5)
+    GroupLayout.Wrap(button.name)
+    button.name:SetMaxLines(2)
+    button.name:SetPoint("TOPLEFT", 42, -14)
+    button.name:SetPoint("BOTTOMRIGHT", -47, 2)
     button.marker = CreateTexture(button, nil, "OVERLAY")
     button.marker:SetPoint("TOPLEFT", 1, -1)
     button.marker:SetPoint("BOTTOMLEFT", 1, 1)
@@ -435,6 +439,7 @@ local function PaintSlots(view, buttons, items, startX, startY, width, stepX, st
 end
 
 local function GroupClick(button)
+    if button.factionID then return NS.OpenReputationMenu(button) end
     if button.action then button.view.callbacks.group(button.action, button) end
 end
 
@@ -448,6 +453,8 @@ local function NewCard(list)
     title:EnableMouse(false)
     title:SetScript("OnClick", GroupClick)
     title.label = Font(list.view, title, 12, GOLD)
+    GroupLayout.Wrap(title.label)
+    title.label:SetMaxLines(2)
     title.sign = Font(list.view, title, 12, GOLD, "CENTER")
     title.sign:SetPoint("RIGHT", -3, 0)
     card.title, card.rows = title, {}
@@ -461,14 +468,17 @@ local function NewValueRow(list, card)
     row:SetScript("OnClick", GroupClick)
     Stats.BindTooltip(row)
     Fill(list.view, row, "HIGHLIGHT", HOVER, 1)
-    row.left = Font(list.view, row, 11, MUTED)
-    row.right = Font(list.view, row, 11, TEXT, "RIGHT", true)
-    GroupLayout.PositionValueText(row, 0)
+    local size = GroupLayout.ValueSize
+    row.left = Font(list.view, row, size, MUTED)
+    row.right = Font(list.view, row, size, TEXT, "RIGHT", true)
+    GroupLayout.Wrap(row.left)
+    GroupLayout.Wrap(row.right)
     Rule(list.view, row, "TOP", LINE)
     return row
 end
 
-local function PaintCard(list, card, group, offset)
+local function PaintCard(list, card, index, offset)
+    local group, geometry = list.groups[index], list.rowLayouts[index]
     local title = card.title
     if title.action ~= group.action then
         title.action = group.action
@@ -484,13 +494,14 @@ local function PaintCard(list, card, group, offset)
     Text(title.label, group.title)
     Text(title.sign, group.action and (group.collapsed and "+" or "−") or "")
 
-    local top = card.panelY + GROUP_HEADER
+    local top = offset - card.panelY
     local position = group.layout
     local above, below = position and position.rowUp or 0, position and position.rowDown or 0
-    local first = max(1, floor((offset - top - below) / GROUP_ROW) + 1)
-    local last = min(#group.rows, ceil((offset + list.height - top + above) / GROUP_ROW))
-    local used = 0
-    for i = first, last do
+    local first = GroupLayout.FirstRow(geometry, #group.rows, top - below)
+    local bottom, used = top + list.height + above, 0
+    for i = first, #group.rows do
+        local bounds = geometry[i]
+        if bounds.top >= bottom then break end
         used = used + 1
         local row = card.rows[used]
         if not row then
@@ -499,14 +510,15 @@ local function PaintCard(list, card, group, offset)
         end
         local values = group.rows[i]
         Stats.UpdateTooltip(row, values)
-        if row.action ~= values.action then
-            row.action = values.action
-            Tint(list.view, row.right, values.action and GOLD or TEXT, true)
+        if row.action ~= values.action or row.factionID ~= values.factionID or row.factionName ~= values.factionName then
+            if row.action ~= values.action then Tint(list.view, row.right, values.action and GOLD or TEXT, true) end
+            row.action, row.factionID, row.factionName = values.action, values.factionID, values.factionName
         end
         local movement = values.layout
-        local x, y = list.rowInset, GROUP_HEADER + (i - 1) * GROUP_ROW
+        local x, y = list.rowInset, bounds.top
         if movement then x, y = x + movement.x, y - movement.y end
-        Place(row, x, y, list.rowWidth, GROUP_ROW)
+        Place(row, x, y, list.rowWidth, bounds.height)
+        GroupLayout.PositionValueText(row, row.textLift or 0, bounds.split)
         if values.reputationFill ~= nil or row.reputationProgress ~= nil then
             GroupLayout.PaintReputationBar(row, values.reputationFill, values.reputationReaction)
         end
@@ -554,7 +566,7 @@ local function PaintList(list, offset)
             local x = list.cardInset + ((i - 1) % list.columns) * (list.cardWidth + GROUP_GAP)
                 + (position and position.x or 0)
             Place(card, x, y, list.cardWidth, height)
-            local firstRow = PaintCard(list, card, groups[i], offset)
+            local firstRow = PaintCard(list, card, i, offset)
             if preview then card.previewCardIndex, card.previewFirstRow = i, firstRow end
             Visible(card, true)
         end
@@ -579,7 +591,7 @@ function View:VisitReport(visitor)
         for i, row in ipairs(card.rows) do
             if not row.panelShown then break end
             local top = card.panelY + row.panelY
-            if top < bottom and top + GROUP_ROW > offset then
+            if top < bottom and top + row.panelHeight > offset then
                 local rowIndex = card.previewFirstRow + i - 1
                 row.previewRowIndex = rowIndex
                 visitor("row", row, index, rowIndex, row, list.canvas)
@@ -588,9 +600,10 @@ function View:VisitReport(visitor)
     end
 end
 
-local function PaintGroups(list, groups, reset)
-    local content = GroupLayout.Build(list, groups, GROUP_HEADER, GROUP_ROW, GROUP_GAP)
-    PaintList(list, GroupLayout.UpdateScroll(list, content, reset))
+local function NewList(view, parent, width, height, columns)
+    local list = GroupLayout.NewList(view, parent, width, height, columns, PaintList)
+    if list.thumb then Tint(view, list.thumb, GOLD_LINE) end
+    return list
 end
 
 local function CloseDetails(button)
@@ -624,29 +637,11 @@ local function GearBody(view)
     local rail = CreateFrame("Frame", nil, view.gear)
     rail:SetPoint("TOPRIGHT")
     rail:SetSize(RAIL_W, BODY_H)
-    view.rail = GroupLayout.NewList(view, rail, RAIL_W, BODY_H - 32, 1, PaintList)
+    view.rail = NewList(view, rail, RAIL_W, BODY_H - 32, 1)
     view.dismiss = ClickLabel(view, rail, NS.Text("Close"), CloseDetails)
     view.dismiss.view = view
     view.dismiss:SetPoint("BOTTOMLEFT")
     view.dismiss:SetSize(82, 24)
-end
-
-local function PaintGroupMode(view, list, key, groups, reset, combat)
-    local fixed = view[key]
-    if combat then
-        -- The native scroll template recalculates the protected range in its scripts.
-        Visible(list.scroll, false)
-        if not fixed then
-            fixed = GroupLayout.NewList(view, list.parent, list.width + 16, list.height, 1, PaintList, true)
-            view[key] = fixed
-        end
-        PaintGroups(fixed, groups, false)
-        Visible(fixed.canvas, true)
-    else
-        if fixed then Visible(fixed.canvas, false) end
-        PaintGroups(list, groups, reset)
-        Visible(list.scroll, true)
-    end
 end
 
 function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups, withModel, combat)
@@ -668,14 +663,14 @@ function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups,
     Visible(self.plate, not classic)
     local detailsShown = selectedSlot ~= nil and detailGroups ~= nil and #detailGroups > 0
     local railGroups = detailsShown and detailGroups or groups or GROUP_EMPTY
-    PaintGroupMode(self, self.rail, "combatRail", railGroups, reset, combat)
+    self.combatRail = GroupLayout.ShowList(self.rail, self.combatRail, railGroups, reset, combat, Visible)
     Visible(self.dismiss, detailsShown)
     Text(self.hint, self.gearHint)
 end
 
 function View:RefreshInspectSummary(groups, relayout)
     local rail = self.rail
-    if relayout then return PaintGroups(rail, groups, false) end
+    if relayout then return GroupLayout.Paint(rail, groups, false) end
     rail.groups = groups
     PaintList(rail, NS.Number(rail.scroll:GetVerticalScroll()) or 0)
 end
@@ -686,13 +681,20 @@ function View:ShowGroups(groups, combat)
     if self.gear then Visible(self.gear, false) end
     if self.reportCover then Visible(self.reportCover, true) end
     Window.SyncGlass(self)
-    PaintGroupMode(self, self.report, "combatReport", groups or GROUP_EMPTY, reset, combat)
+    self.combatReport = GroupLayout.ShowList(self.report, self.combatReport, groups or GROUP_EMPTY, reset, combat, Visible)
     Text(self.hint, "")
 end
 
+function View:ReflowText()
+    self.header:Paint(self.headerData, self:IsMinimized())
+    GroupLayout.Refresh(self)
+end
+
 function View:FitScreen()
-    if self.nativeLayout then return end
-    if self.nativeRoot then Window.FitHosted(self.window, self.nativeRoot) else Window.Fit(self.window) end
+    if not self.nativeLayout then
+        if self.nativeRoot then Window.FitHosted(self.window, self.nativeRoot) else Window.Fit(self.window) end
+    end
+    self:ReflowText()
 end
 
 function View:ApplyWindowPreferences(preferences)
@@ -785,8 +787,7 @@ function View.New(callbacks, parent, nativeRoot, nativeLayout)
     if not nativeRoot or nativeLayout then GearBody(view) end
     local reportParent = Window.ReportParent(view)
     if view.reportCover then view.reportMask = Fill(view, reportParent, "BACKGROUND", BG) end
-    view.report = GroupLayout.NewList(view, reportParent, view.bodyWidth, BODY_H,
-        nativeRoot and not nativeLayout and 1 or 2, PaintList)
+    view.report = NewList(view, reportParent, view.bodyWidth, BODY_H, nativeRoot and not nativeLayout and 1 or 2)
 
     local footer = CreateFrame("Frame", nil, frame)
     view.footer = footer

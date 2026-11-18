@@ -37,8 +37,9 @@ local clients = {}
 local clientRecords = setmetatable({}, { __mode = "k" })
 local scopeRecords = setmetatable({}, { __mode = "k" })
 local claims = setmetatable({}, { __mode = "k" })
+local registeredWindows = setmetatable({}, { __mode = "k" })
 local showHooks = setmetatable({}, { __mode = "k" })
-local QueueEntry
+local QueueEntry, ReconcileEntry, ReleaseEntry
 
 local materialRoles = {
     shell = true, panel = true, card = true, popup = true, input = true,
@@ -64,10 +65,15 @@ local function ClampOption(value, minimum, maximum)
     return value
 end
 
--- Raw option read: caller metatables never run. False reads as unset.
+-- Read declarative options without invoking caller metatables.
+local Public = NS.Safety.Public
+local function OptionValue(options, key)
+    local value = rawget(options, key)
+    if type(value) ~= "nil" and Public(value) then return value end
+end
+
 local function ReadOption(options, key)
-    if type(options) ~= "table" then return nil end
-    return rawget(options, key) or nil
+    if type(options) == "table" and Public(options) then return OptionValue(options, key) end
 end
 
 -- ownedArt: the caller built this control itself, with no native state
@@ -80,34 +86,40 @@ local specFlags = { "active", "forceEdge", "listItem", "slice", "useControlShape
 -- region arrays, callbacks, functions, internal owner tokens, or the reviewed
 -- allowImplicitProtected exception used by a few built-in Blizzard adapters.
 local function SanitizeSpec(source)
-    source = type(source) == "table" and source or {}
     local spec = { allowImplicitProtected = false }
-    local role = ReadOption(source, "role")
-    local activeRole = ReadOption(source, "activeRole")
-    local shape = ReadOption(source, "shape")
+    if type(source) ~= "table" or not Public(source) then return spec end
+    local role = OptionValue(source, "role")
+    local activeRole = OptionValue(source, "activeRole")
+    local shape = OptionValue(source, "shape")
     if materialRoles[role] then spec.role = role end
     if materialRoles[activeRole] then spec.activeRole = activeRole end
     if shapes[shape] then spec.shape = shape end
-    spec.inset = ClampOption(ReadOption(source, "inset"), -16, 32)
-    spec.radius = ClampOption(ReadOption(source, "radius"), 4, 12)
-    spec.border = ClampOption(ReadOption(source, "border"), 0, 2)
-    spec.pillHeight = ClampOption(ReadOption(source, "pillHeight"), 20, 32)
+    spec.inset = ClampOption(OptionValue(source, "inset"), -16, 32)
+    spec.radius = ClampOption(OptionValue(source, "radius"), 4, 12)
+    spec.border = ClampOption(OptionValue(source, "border"), 0, 2)
+    spec.pillHeight = ClampOption(OptionValue(source, "pillHeight"), 20, 32)
     for index = 1, #specFlags do
         local key = specFlags[index]
-        local value = ReadOption(source, key)
+        local value = OptionValue(source, key)
         if type(value) == "boolean" then spec[key] = value end
     end
     local keepGlassFill = rawget(source, "keepGlassFill")
-    if NS.Safety.Public(keepGlassFill) and type(keepGlassFill) == "boolean" then spec.keepGlassFill = keepGlassFill end
-    local motion = rawget(source, "motion")
+    if type(keepGlassFill) == "boolean" and Public(keepGlassFill) then spec.keepGlassFill = keepGlassFill end
+    local motion = OptionValue(source, "motion")
     if type(motion) == "boolean" then spec.motion = motion end
-    local group = ReadOption(source, "motionGroup")
+    local group = OptionValue(source, "motionGroup")
     if type(group) == "string" and #group <= 80 then spec.motionGroup = group end
     return spec
 end
 
-local function RuntimeEnabled()
-    return PublicAPI.playerReady == true and NS.DB and NS.DB.enabled == true
+local function ScopeAllowed(scope)
+    if not scope or scope.client.internal then return true end
+    local settings = NS.DB and NS.DB.addonSkins
+    return not settings or settings.registered ~= false
+end
+
+local function RuntimeEnabled(scope)
+    return PublicAPI.playerReady == true and NS.DB and NS.DB.enabled == true and ScopeAllowed(scope)
 end
 
 -- Counts settings notifications (theme, colours, geometry, profile, adapters,
@@ -172,7 +184,8 @@ local function ResolveIconSpec(button, options)
 end
 
 local function ExistingOwner(target)
-    return ControlSkin.GetOwner(target) or WindowActionSkin.GetOwner(target)
+    local bar = NS.ScrollBarSkin.GetState(target)
+    return (bar and bar.enabled ~= false and bar.owner) or ControlSkin.GetOwner(target) or WindowActionSkin.GetOwner(target)
         or IconSkin.GetOwner(target) or Cosmetics.GetOwner(target)
 end
 
@@ -191,11 +204,12 @@ local function TargetEntry(scope, target, needsRegions)
     if surface and surface.visible ~= false then return nil, "already-owned" end
     entry = {
         owner = {},
-        target = target,
+        scope = scope, target = target,
         pendingKey = "public-target:" .. scope.key .. ":" .. tostring(target),
         dependencies = WeakSet(),
     }
     scope.targets[target] = entry
+    if scope.outcomes then scope.outcomes[target] = nil end
     claims[target] = entry
     return entry
 end
@@ -212,8 +226,31 @@ local function ClaimDependency(entry, target)
     return true
 end
 
+-- Check every named child before assigning any part of a composite widget.
+local function ClaimParts(entry, parts)
+    local previous = entry.parts
+    local bar = entry.widget and entry.widget.plan.nativeBar and NS.ScrollBarSkin.GetState(entry.target)
+    for part in pairs(parts) do
+        if claims[part] and claims[part] ~= entry then return false, "already-owned" end
+        local owner = ExistingOwner(part)
+        if owner and owner ~= entry.owner and not (bar and bar.owner == entry.owner and owner == bar.cosmeticOwner) then
+            return false, "already-owned"
+        end
+        local surface = Registry.GetSurface(part)
+        if surface and surface.visible ~= false and not (previous and previous[part]) then return false, "already-owned" end
+    end
+    if previous then
+        for part in pairs(previous) do
+            if not parts[part] and claims[part] == entry and not entry.dependencies[part] then claims[part] = nil end
+        end
+    end
+    for part in pairs(parts) do claims[part] = entry end
+    entry.parts = parts
+    return true
+end
+
 local function EntryNeedsRegions(entry)
-    return entry.surface ~= nil or entry.control ~= nil or entry.icon ~= nil or entry.menu ~= nil
+    return entry.surface ~= nil or entry.control ~= nil or entry.icon ~= nil or entry.menu ~= nil or entry.window ~= nil
 end
 
 local function ValidateEntry(entry)
@@ -250,9 +287,37 @@ local function GuardedCall(callback, ...)
     return ok, reason
 end
 
+local function ReleaseClose(entry)
+    local close = entry.ownedClose
+    if not close then return true end
+    if close.sponsor == entry then
+        local ok, reason = ReleaseEntry(entry.scope, close.target, close)
+        if not ok then return false, reason end
+    elseif close.captionHost == entry then
+        close.captionHost = nil
+        local scope = entry.scope
+        if scope.targets[close.target] == close and not scope.suspended and not scope.client.unregisterPending and RuntimeEnabled(scope) then
+            local ok, reason = ReconcileEntry(scope, close.target, close)
+            if not ok then return false, reason end
+        end
+    end
+    entry.ownedClose = nil
+    return true
+end
+
 local function CleanupNow(entry)
     local safe, reason = ValidateEntry(entry)
     if not safe then return false, reason end
+    if entry.ownedClose then
+        local ok, why = ReleaseClose(entry)
+        if not ok then return false, why end
+    end
+    if entry.addonWindow then
+        local ok, why = NS.AddonWindowControls.Release(entry)
+        if not ok then return false, why end
+    end
+    if entry.caption then NS.PublicCaption.Release(entry) end
+    if entry.widget then NS.PublicWidgets.Release(entry) end
     PublicAPI.ReleaseMenu(entry.owner, entry.target)
     PublicAPI.StopContent(entry.owner, entry.target)
     if entry.label then NS.LabelStyle.Release(entry.target, entry.owner) end
@@ -279,10 +344,18 @@ local function DropEntry(scope, target, entry)
     for dependency in pairs(entry.dependencies or {}) do
         if claims[dependency] == entry then claims[dependency] = nil end
     end
+    if entry.parts then
+        for part in pairs(entry.parts) do if claims[part] == entry then claims[part] = nil end end
+    end
+    local parent = entry.sponsor or entry.captionHost
+    if parent then parent.ownedClose = nil end
+    registeredWindows[entry] = nil
     scope.targets[target] = nil
+    scope.outcomes = scope.outcomes or WeakSet()
+    scope.outcomes[target] = true
 end
 
-local function ReleaseEntry(scope, target, entry)
+ReleaseEntry = function(scope, target, entry)
     local cleaned, reason = CleanupEntry(entry)
     if not cleaned then
         if entry.applied ~= true then
@@ -299,8 +372,26 @@ local function ApplyControl(target, entry)
     local control = entry.control
     if not control then return true end
     local method
-    if control.kind == "windowAction" then
-        local state, reason = WindowActionSkin.Apply(target, entry.owner, control.action, control.motion ~= false)
+    if control.widget then
+        local plan, reason = NS.PublicWidgets.Describe(target, control.kind, control.spec)
+        if not plan then return false, reason end
+        local claimed
+        claimed, reason = ClaimParts(entry, plan.parts)
+        if not claimed then return false, reason end
+        return NS.PublicWidgets.Apply(entry, plan)
+    elseif control.kind == "windowAction" then
+        if control.caption or entry.captionHost then
+            entry.nativeAction = nil
+            if WindowActionSkin.GetOwner(target) == entry.owner then WindowActionSkin.Disable(target, entry.owner) end
+            local parts = NS.PublicCaption.Parts(target)
+            if not parts then return false, "invalid-caption-art" end
+            local claimed, reason = ClaimParts(entry, parts)
+            if not claimed then return false, reason end
+            return NS.PublicCaption.Apply(entry, parts)
+        end
+        if entry.caption then NS.PublicCaption.Release(entry) ClaimParts(entry, {}) end
+        local state, reason = WindowActionSkin.ApplyExplicit(target, entry.owner, control.action, control.motion ~= false, control.options)
+        entry.nativeAction = state and state.style == "native"
         return state ~= nil, reason
     elseif control.kind == "button" then
         method = ControlSkin.ApplyButton
@@ -331,7 +422,10 @@ end
 
 local function FailEntry(scope, target, entry, reason)
     local cleaned = CleanupEntry(entry)
-    if cleaned or entry.applied ~= true then DropEntry(scope, target, entry) end
+    if cleaned or entry.applied ~= true then
+        DropEntry(scope, target, entry)
+        scope.outcomes[target] = reason or "error"
+    end
     return false, reason
 end
 
@@ -357,14 +451,48 @@ local function DeferHidden(scope, target, entry)
     return true
 end
 
+local function ApplyWindow(scope, entry)
+    local options = entry.window
+    local valid, why = NS.AddonWindowControls.Validate(entry.target, options)
+    if not valid then return false, why end
+    local close = NS.AddonWindowControls.Enabled() and options.closeButton
+    if entry.ownedClose and entry.ownedClose.target ~= close then
+        local ok, reason = ReleaseClose(entry)
+        if not ok then return false, reason end
+    end
+    if close and not entry.skipClose then
+        local child, reason = TargetEntry(scope, close, true)
+        if not child then return false, reason end
+        if not child.control then
+            if child.surface then return false, "kind-conflict" end
+            child.control = { kind = "windowAction", action = "close", caption = true }
+            child.sponsor, entry.ownedClose = entry, child
+            local ok
+            ok, reason = ReconcileEntry(scope, close, child)
+            if not ok then return false, reason end
+        elseif child.control.kind ~= "windowAction" or child.control.action ~= "close" then
+            return false, "kind-conflict"
+        elseif not child.control.caption and not child.captionHost then
+            child.captionHost, entry.ownedClose = entry, child
+            local ok, why = ReconcileEntry(scope, close, child)
+            if not ok then return false, why end
+        end
+    end
+    return NS.AddonWindowControls.Apply(entry, options, scope.client.name)
+end
+
 local function ReconcileNow(scope, target, entry)
     if scope.released or scope.client.released or scope.client.unregisterPending
         or entry.release then
         return ReleaseEntry(scope, target, entry)
     end
+    -- A hidden host surface already has its OnShow hook. Later setters only
+    -- change the requested state. Recheck all parts when painting is possible.
+    if entry.pendingVisible and not scope.suspended and RuntimeEnabled(scope)
+        and NS.Safety.ReadUnprotected(target, "IsVisible") == false then return true, "applied" end
     local safe, reason = ValidateEntry(entry)
     if not safe then return FailEntry(scope, target, entry, reason) end
-    if scope.suspended or not RuntimeEnabled() then
+    if scope.suspended or not RuntimeEnabled(scope) then
         local cleaned, cleanReason = CleanupEntry(entry)
         return cleaned, cleaned and "suspended" or cleanReason
     end
@@ -403,6 +531,14 @@ local function ReconcileNow(scope, target, entry)
         applied, reason = NS.Surface.SetVisible(target, entry.visible)
         if not applied then return FailEntry(scope, target, entry, reason or "unsupported-state") end
     end
+    if entry.window then
+        applied, reason = ApplyWindow(scope, entry)
+        if not applied then return FailEntry(scope, target, entry, reason or "unsupported-window") end
+        if reason == "suspended" and not (entry.surface or entry.control or entry.icon or entry.label or entry.menu or entry.cosmetic) then
+            entry.applied = false
+            return true, reason
+        end
+    end
     entry.applied = true
     if entry.menu then PublicAPI.TrackMenu(target, entry.owner, entry.menu == "content") end
     if entry.label then NS.LabelStyle.Apply(target, entry.owner) end
@@ -410,8 +546,14 @@ local function ReconcileNow(scope, target, entry)
     return true, "applied"
 end
 
-local function ReconcileEntry(scope, target, entry)
-    return GuardedCall(ReconcileNow, scope, target, entry)
+ReconcileEntry = function(scope, target, entry)
+    local previous = entry.status
+    local ok, reason = GuardedCall(ReconcileNow, scope, target, entry)
+    entry.status = ok and (entry.pendingVisible and "pending-visible" or reason == "applied" and entry.nativeAction and "native" or reason) or "failed"
+    entry.failure = not ok and reason or nil
+    if scope.notifyTargets and (previous == "queued" or previous == "pending" or previous == "deferred" or previous == "pending-visible")
+        and entry.status ~= "pending-visible" then NS.Registry.QueueJob(scope.signalJob) end
+    return ok, reason
 end
 
 -- Suite's authored Character Panel tabs only paint addon artwork. Their
@@ -421,15 +563,19 @@ local function OwnedCharacterNavigation(scope, entry)
     return spec and spec.ownedArt and spec.motion == true and spec.role == "navigation"
         and scope.client.name == "MSUF_Suite_characterPanel"
         and not (entry.control or entry.icon or entry.cosmetic or entry.menu or entry.release)
-        and entry.visible == nil and not scope.suspended and scope.pendingOperation ~= "release" and RuntimeEnabled()
+        and entry.visible == nil and not scope.suspended and scope.pendingOperation ~= "release" and RuntimeEnabled(scope)
 end
 
 QueueEntry = function(scope, target, entry)
-    if not PublicAPI.playerReady then return true, "pending" end
+    if not PublicAPI.playerReady then entry.status = "pending" return true, "pending" end
     if NS.IsCombatLocked() and not (OwnedCharacterNavigation(scope, entry) and ValidateEntry(entry)) then
-        NS.CombatGate.RunOrDefer(entry.pendingKey, function()
-            ReconcileEntry(scope, target, entry)
-        end)
+        entry.status = "deferred"
+        if not entry.afterCombat then
+            entry.afterCombat = function()
+                if scope.targets[target] == entry then ReconcileEntry(scope, target, entry) end
+            end
+        end
+        NS.CombatGate.RunOrDefer(entry.pendingKey, entry.afterCombat)
         return true, "deferred"
     end
     local applied, reason = ReconcileEntry(scope, target, entry)
@@ -469,7 +615,7 @@ local function SelectEntry(scope, target, entry)
         and entry.applied == true and entry.appliedFor == settingsGeneration
         and not (entry.surface or entry.icon or entry.cosmetic) and entry.visible == nil
         and PublicAPI.playerReady and not NS.IsCombatLocked()
-        and not scope.suspended and RuntimeEnabled()
+        and not scope.suspended and RuntimeEnabled(scope)
         and PaintedButton(target, entry.owner) and ValidateEntry(entry)
         and NS.Surface.SetActive(target, entry.active, true) then
         return true, "applied"
@@ -481,6 +627,8 @@ end
 -- off NS again.
 NS.PublicAPIShared = {
     clients = clients,
+    ScopeAllowed = ScopeAllowed,
+    registeredWindows = registeredWindows,
     GuardedCall = GuardedCall,
     clientRecords = clientRecords,
     scopeRecords = scopeRecords,

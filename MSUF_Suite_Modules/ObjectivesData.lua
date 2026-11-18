@@ -91,6 +91,11 @@ local function AddLine(entry, text, done, percent)
 end
 O.NextEntry, O.AddLine = NextEntry, AddLine
 
+-- Completion actions use AddLine directly; only ordinary objectives pass here.
+local function AddQuestObjective(entry, text, done, percent, hideCompleted)
+    if hideCompleted ~= true or done ~= true then AddLine(entry, text, done, percent) end
+end
+
 local function QuestIndex(questID)
     local index = Detail(C_QuestLog.GetLogIndexForQuestID, questID)
     return Finite(index) and index >= 1 and index or nil
@@ -151,7 +156,7 @@ end
 
 -- A quest whose objectives or one of their texts cannot be read keeps the lines
 -- that can; the collection is partial (the lines come back once readable).
-local function AddObjectiveLines(entry, questID)
+local function AddObjectiveLines(entry, questID, hideCompleted)
     local objectives = Detail(C_QuestLog.GetQuestObjectives, questID)
     if type(objectives) ~= "table" then
         partial = true
@@ -176,7 +181,7 @@ local function AddObjectiveLines(entry, questID)
                 else
                     done, partial = false, true
                 end
-                AddLine(entry, line, done, percent)
+                AddQuestObjective(entry, line, done, percent, hideCompleted)
             elseif not Public(objective.text) or objective.text == nil then
                 partial = true
             end
@@ -214,7 +219,7 @@ local function AddQuest(list, c, id, title, group, tracked, task, complete)
         entry.questGroupSearch = Finite(activityID) and activityID > 0 or nil
     end
     entry.findGroup = not P.NS.Client.isForever and (group == "world" or entry.questGroupSearch)
-    AddObjectiveLines(entry, id)
+    AddObjectiveLines(entry, id, c.hideCompletedObjectives)
     local showItem = c.showQuestItems ~= false
     local showCompletion = not task and complete
     local index = (showItem or showCompletion) and QuestIndex(id)
@@ -386,8 +391,8 @@ local function CollectBonus(list, c)
                     local line, kind, done = GetQuestObjectiveInfo(id, j, false)
                     if Text(line) then
                         local percent = Text(kind) == "progressbar" and Read(GetQuestProgressBarPercent, id) or nil
-                        AddLine(entry, line, Public(done) and done == true,
-                            Finite(percent) and math.max(0, math.min(100, percent)) or nil)
+                        AddQuestObjective(entry, line, Public(done) and done == true,
+                            Finite(percent) and math.max(0, math.min(100, percent)) or nil, c.hideCompletedObjectives)
                     end
                 end
                 if c.showTimers ~= false then entry.timeLeft = QuestTimeLeft(id, true) end

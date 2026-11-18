@@ -5,6 +5,7 @@ local function Noop() end
 
 local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, HoldSkinJobs, FlushSkinJobs, External, CombatRebuild)
     local forever = NS.Client.isForever
+    row.protected = false
     local zone = { isHeader = true, isCollapsed = false, headerSortKey = "Redridge Mountains" }
     local otherZone = { isHeader = true, isCollapsed = false, headerSortKey = "Darkshore" }
     local header, other, objective, pin = Frame(contents), Frame(contents), Frame(contents), Frame(contents)
@@ -142,8 +143,8 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
         end
         FlushSkinJobs()
         CombatRebuild(NativeRebuild, function()
-            Check(objective:IsShown() and row:GetHeight() == nativeTitleHeight,
-                "Compact changed the rebuilt objectives or title during lockdown")
+            Check(not objective:IsShown() and row:GetHeight() == compactTitleHeight,
+                "Compact lost its objective mask or title height during combat")
         end)
         Check(not objective:IsShown() and row:GetHeight() == compactTitleHeight,
             "Compact did not reapply objective masking after lockdown")
@@ -169,6 +170,33 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
     end
     Click("LeftButton", true)
     Folded("external expand-all reopened a manually folded zone or left a stray row")
+    -- A protected pin restore must replay after combat on either client.
+    function pin:IsProtected() return self.protected == true, false end
+    pin.protected, query = true, "Quest"
+    CombatRebuild(NativeRebuild, function()
+        Check(pin:GetAlpha() == 0, "combat changed a protected pin")
+    end)
+    Check(PinVisible(), "protected pin restore was lost after combat")
+    pin.protected, query = false, ""
+    NativeRebuild()
+    Folded("pin restore lost the player's folded header")
+    -- Folds also work when Compact is off and a map opening has not settled.
+    NS.WorldMapQuests.SetLayout("blizzard")
+    map:Hide()
+    map:Show()
+    local oldAfter, pending = C_Timer.After, {}
+    C_Timer.After = function(_, callback) pending[#pending + 1] = callback end
+    CombatRebuild(function()
+        NativeRebuild()
+        QuestLogQuests_Update()
+        local batch = pending
+        pending = {}
+        for _, callback in ipairs(batch) do callback() end
+        Folded("Blizzard-layout folds were lost during an unready combat open")
+    end, Noop)
+    C_Timer.After = oldAfter
+    NS.WorldMapSkin:OnWorldMapShown()
+    NS.WorldMapQuests.SetLayout("compact")
     Check(guideReads == 1 and externalExpands == 1 and explicitExpands == 0 and not zone.isCollapsed,
         "fold masking changed the quest data used by a guide")
     if forever then
@@ -244,7 +272,9 @@ local function Run(flavor)
         GetMaterialOpacity = function() return opacity end }
     NS.L = setmetatable({}, { __index = function(_, key) return key end })
     local captionRefreshes = 0
-    NS.WindowControls = { Refresh = function() captionRefreshes = captionRefreshes + 1 end }
+    NS.WindowControls = { TrackFocus = Noop, Attach = Noop, DisableOwner = Noop,
+        Refresh = function() captionRefreshes = captionRefreshes + 1 end }
+    NS.Checkmarks.TrackControlTree = Noop
     NS.QuestText = { Activate = Noop, Deactivate = Noop }
     NS.Registry.NotifyListeners = function(domain)
         for owner, callback in pairs(H.listeners) do callback(owner, domain) end
@@ -410,9 +440,13 @@ local function Run(flavor)
     row.mouseOver = true
     row:Fire("OnEnter")
     Check(tooltip == 1 and row.plate.shown, "row hover lost native tooltip or full-row highlight")
-    row.mouseOver = false
+    -- OnLeave is authoritative even if the geometric mouse query still
+    -- reports the row (for example when motion transfers to a child).
     row:Fire("OnLeave")
-    Check(tooltip == nil and not row.plate.shown, "row leave retained tooltip/highlight")
+    Check(tooltip == nil and not row.plate.shown, "row leave retained tooltip/highlight while IsMouseOver stayed true")
+    NS.Registry.NotifyListeners("theme")
+    Check(not row.plate.shown, "theme repaint revived a departed row's highlight")
+    row.mouseOver = false
     row.HighlightTexture:Show()
     QuestLogQuests_Update()
     Check(row.plate.shown, "map-pin hover lost native quest-row callout")
@@ -464,7 +498,9 @@ local function Run(flavor)
         Check(not row.plate.shown, "pooled quest row repainted inline during native OnShow")
         FlushSkinJobs()
         Check(captionRefreshes == beforeSizeChange + 1, "map size changes did not settle window controls once")
-        Check(searchSkins[search] and row.plate.shown, "deferred mode and row paints were lost")
+        Check(searchSkins[search] and not row.plate.shown, "deferred mode paint revived a departed row's highlight")
+        row:Fire("OnEnter")
+        Check(row.plate.shown, "native hover did not highlight the shown row")
     end
     row.Text:SetText("Quest 1")
     QuestLogQuests_Update()
@@ -601,12 +637,82 @@ local function Run(flavor)
         return value
     end
     row.labels[1].SetText = function() error("contract: compact quest paint failed") end
+    local oldLevel = row.info.level
+    row.info.level = oldLevel + 1
     NS.WorldMapQuests.Refresh()
+    row.info.level = oldLevel
     row.labels[1].SetText = originalSetText
     NS.WorldMapQuests.SetLayout("blizzard")
     Check(reported == 1 and cvar == "1" and row.Text:IsShown(), "paint error latched future layout restoration")
     NS.WorldMapQuests.SetLayout("compact")
     NS.Safety.Dispatch = dispatch
+    -- Plain pooled rows keep Compact at the combat edge and after native
+    -- progress updates, releases and fresh acquisitions. No full skin pass.
+    local nativeAfter, combatTimers = C_Timer.After, {}
+    C_Timer.After = function(delay, callback)
+        Check(delay == 0, "combat quest paint scheduled a recurring timer")
+        combatTimers[#combatTimers + 1] = callback
+    end
+    local function FlushCombatTimers()
+        local batch = combatTimers
+        combatTimers = {}
+        for _, callback in ipairs(batch) do callback() end
+    end
+    local savedInfo, savedIndex, savedText = row.info, row.questLogIndex, row.Text:GetText()
+    local writesBeforeCombat = objectiveCVarWrites
+    combat, lockdown = true, false
+    cvarEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
+    Check(not row.Text:IsShown() and row.labels[2]:IsShown(), "combat edge disabled Compact on an unprotected row")
+    Check(not NS.WorldMapSkin.AttachCombatQuestLog(map, "worldMap"), "combat attach took over a different active owner")
+    lockdown = true
+    local combatRow
+    nativePoolUpdate = function()
+        row:Hide()
+        row.info, row.questLogIndex = { questID = 4, title = "Combat quest", level = 21 }, 4
+        row.Text:SetText("Combat quest")
+        row:Show()
+        combatRow = Acquire(17)
+    end
+    visits = enumerations
+    QuestLogQuests_Update()
+    nativePoolUpdate = nil
+    for _ = 1, 25 do QuestLogQuests_Update() end
+    Check(enumerations == visits and #combatTimers == 1 and #combatRow.labels == 0,
+        "combat rebuilds painted inline or failed to coalesce")
+    FlushCombatTimers()
+    Check(enumerations == visits + 1 and not row.Text:IsShown() and row.labels[2]:GetText() == "Combat quest",
+        "combat recycle retained an old quest or exposed the native title")
+    Check(#combatRow.labels == 3 and not combatRow.Text:IsShown() and combatRow.labels[2]:GetText() == "Quest 17",
+        "fresh combat row did not receive Compact columns")
+    Check(next(delayed) == nil, "ordinary combat paint queued a redundant combat-exit refresh")
+    local complete = C_QuestLog.IsComplete
+    C_QuestLog.IsComplete = function(id) return id == 4 or complete(id) end
+    QuestLogQuests_Update()
+    FlushCombatTimers()
+    Check(row.labels[3]:GetText() == "Ready", "combat quest progress did not refresh")
+    C_QuestLog.IsComplete = complete
+    Check(objectiveCVarWrites == writesBeforeCombat, "combat Compact wrote the native objective CVar")
+    row:Fire("OnClick")
+    row:Fire("OnEnter")
+    row:Fire("OnLeave")
+    Check(clicked == 2 and tooltip == nil and not row.plate.shown, "combat Compact broke native actions or hover leave")
+    map.shown = false
+    visits = enumerations
+    QuestLogQuests_Update()
+    Check(#combatTimers == 0 and enumerations == visits, "closed combat map queued or walked quest rows")
+    map.shown = true
+    NS.WorldMapSkin:OnWorldMapShown()
+    Check(#combatTimers == 1, "combat map opening did not queue a Compact refresh")
+    FlushCombatTimers()
+    Check(row.labels[2]:IsShown() and not row.Text:IsShown(), "combat map opening lost Compact")
+    combat, lockdown = false, false
+    cvarEvents:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
+    for key, callback in pairs(delayed) do delayed[key] = nil callback() end
+    row.info, row.questLogIndex = savedInfo, savedIndex
+    row.Text:SetText(savedText)
+    active[combatRow] = nil
+    combatRow:Hide()
+    NS.WorldMapQuests.Refresh()
     local showTitle = row.Text.Show
     function row.Text:Show()
         Check(not lockdown or not row.protected, "compact restored a protected title during lockdown")
@@ -614,6 +720,7 @@ local function Run(flavor)
     end
     row.protected = true
     function row:IsProtected() return self.protected, false end
+    hiddenRow.protected, hiddenRow.IsProtected = true, row.IsProtected
     hiddenRow:Hide()
     combat, lockdown = true, true
     if cvarEvents.events.PLAYER_REGEN_DISABLED then cvarEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
@@ -628,7 +735,10 @@ local function Run(flavor)
     -- A Forever reload can prepare the skin before lockdown even when the player is in combat.
     local core = NS.SuiteCore()
     core.startingBeforeLockdown, combat = true, false
+    local edgeWrites = objectiveCVarWrites
+    Check(not NS.WorldMapQuests.SetLayout("blizzard"), "pre-lockdown startup changed the layout")
     NS.WorldMapQuests.Refresh()
+    Check(objectiveCVarWrites == edgeWrites, "pre-lockdown startup wrote the native objective CVar")
     Check(row.Text:IsShown() and not row.labels[2]:IsShown(), "pre-lockdown startup hid the native quest title")
     core.startingBeforeLockdown, combat, lockdown = nil, true, true
     visits = enumerations
@@ -644,10 +754,10 @@ local function Run(flavor)
         "native combat recycle kept a stale or hidden title")
     row.protected = false
     NS.Registry.NotifyListeners("theme")
-    Check(row.Text:IsShown() and not row.labels[2]:IsShown(), "combat theme refresh hid the native quest title")
+    Check(not row.Text:IsShown() and row.labels[2]:IsShown(), "unprotected combat refresh did not restore Compact")
 
     for _ = 1, 25 do QuestLogQuests_Update() end
-    Check(enumerations == visits, "combat quest log update walked native rows")
+    Check(enumerations == visits, "combat quest log update walked native rows inline")
     Check(not NS.WorldMapQuests.SetLayout("blizzard"), "combat changed quest layout")
     row.protected = true
     row.mouseOver = false
@@ -675,6 +785,7 @@ local function Run(flavor)
         combat, lockdown = false, false
         for key, callback in pairs(delayed) do delayed[key] = nil callback() end
     end
+    FlushCombatTimers()
     local checkReleasedFolds = CheckZoneFolds(NS, Frame, map, scroll, contents, row, active,
         HoldSkinJobs, FlushSkinJobs, External, CombatRebuild)
     holdSkinJobs, skinJobs = true, {}
@@ -698,6 +809,73 @@ local function Run(flavor)
         Check(objectiveCVarWrites == 0 and cvar == "1", "Compact layout lifecycle wrote the native objective preference")
         checkReleasedFolds()
     end
+    -- Cold load while the root map is implicitly protected: prepare only
+    -- plain quest rows through the real adapter combat route.
+    FlushCombatTimers()
+    C_Timer.After = nativeAfter
+    local coldMap, coldLog, coldQuests, coldScroll = Frame(UIParent), Frame(), Frame(), Frame()
+    coldMap.QuestLog, coldLog.QuestsFrame, coldQuests.ScrollFrame = coldLog, coldQuests, coldScroll
+    coldLog.parent, coldQuests.parent, coldScroll.parent = coldMap, coldLog, coldQuests
+    function coldMap:IsProtected() return true, false end
+    local coldContents = Frame(coldScroll)
+    coldScroll.Contents, coldScroll.SearchBox = coldContents, Frame(coldScroll)
+    coldScroll.UpdateBackground = Noop
+    function coldContents:GetLayoutChildren() return 80 end
+    function coldContents:LayoutChildren(height) return 304, height, false end
+    function coldContents:CalculateFrameSize(width, height) return width, height end
+    local coldObjective = Frame(coldContents)
+    coldScroll.objectiveFramePool = { EnumerateActive = function() return pairs({ [coldObjective] = true }) end }
+    local coldRow = Acquire(27)
+    active[coldRow], coldRow.parent = nil, coldContents
+    coldRow.height = 80
+    function coldRow:SetHeight(height) self.height = height end
+    function coldRow.Text:GetHeight() return 16 end
+    local coldVisits = 0
+    coldScroll.titleFramePool = { EnumerateActive = function()
+        coldVisits = coldVisits + 1
+        return pairs({ [coldRow] = true })
+    end }
+    local oldAfter, coldTimers = C_Timer.After, {}
+    C_Timer.After = function(_, callback) coldTimers[#coldTimers + 1] = callback end
+    local function FlushColdTimers()
+        local batch = coldTimers
+        coldTimers = {}
+        for _, callback in ipairs(batch) do callback() end
+    end
+    _G.WorldMapFrame = coldMap
+    NS.DB.skins.worldMap = true
+    combat, lockdown = true, true
+    local coldCVarWrites = objectiveCVarWrites
+    local oldOrder = NS.Adapters.order
+    NS.Adapters.order = { "worldMap" }
+    NS.ForeverLegacyTree = { Apply = Noop }
+    NS.Client.HasAddOn = function() return false end
+    Check(not NS.Adapters.ApplyAll(), "combat startup applied the full map skin")
+    Check(coldObjective:IsShown() and coldRow:GetHeight() == 80, "cold combat changed native layout inline")
+    FlushColdTimers()
+    Check(#coldRow.labels == 3 and coldRow.labels[2]:GetText() == "Quest 27" and not coldRow.Text:IsShown(),
+        "first combat opening did not prepare Compact quest rows: " .. #coldRow.labels .. "/" .. NS.WorldMapQuests.GetLayout())
+    Check(not coldObjective:IsShown() and coldRow:GetHeight() == 34,
+        "cold combat Compact retained native objectives or blank objective space")
+    Check(searchSkins[coldScroll.SearchBox] == nil and objectiveCVarWrites == coldCVarWrites,
+        "cold combat applied map chrome or wrote the native objective CVar")
+    combat, lockdown = false, false
+    for key, callback in pairs(delayed) do delayed[key] = nil callback() end
+    Check(searchSkins[coldScroll.SearchBox] ~= nil, "cold combat did not complete the full skin after combat")
+    local afterApplyVisits = coldVisits
+    QuestLogQuests_Update()
+    Check(coldVisits > afterApplyVisits, "cold combat view did not adopt normal quest updates after combat")
+    Check(NS.WorldMapSkin.Disable(coldMap, "worldMap"), "cold combat view did not release after combat")
+    Check(coldRow.Text:IsShown() and not coldRow.labels[2]:IsShown(), "cold combat release retained Compact text")
+    NS.DB.skins.worldMap = false
+    combat, lockdown = true, true
+    NS.Adapters.Apply("worldMap")
+    Check(#coldTimers == 0 and coldRow.Text:IsShown(), "disabled map skin prepared a combat quest view")
+    combat, lockdown = false, false
+    for key, callback in pairs(delayed) do delayed[key] = nil callback() end
+    FlushColdTimers()
+    Check(coldRow.Text:IsShown() and not coldRow.labels[2]:IsShown(), "stale combat job revived a released view")
+    C_Timer.After, NS.Adapters.order = oldAfter, oldOrder
     Check(#created > framesBefore, "contract did not exercise owned visual creation")
     _G.WorldMapFrame, _G.QuestLogQuests_Update, _G.QuestUtilsOverrides = nil, nil, nil
     Menu = oldMenu

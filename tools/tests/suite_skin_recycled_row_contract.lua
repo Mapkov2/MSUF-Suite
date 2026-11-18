@@ -57,6 +57,7 @@ local NS = {
     },
     BlizzardFontNames = {},
     WindowActionSkin = {
+        GetExplicitKind = function() return nil end,
         HasOwnedStates = function() return false end,
         GetKind = function() return nil end,
         IsApplied = function() return false end,

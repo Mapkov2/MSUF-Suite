@@ -121,6 +121,9 @@ end
 -- ContainerFrame item buttons come from its itemButtonPool (Retail and
 -- Forever: Blizzard_UIPanels_Game/Mainline/ContainerFrame.lua).
 local function RefreshBagItems(state, frame, generation)
+    -- Bags paints slot fills and strokes on these two native containers.
+    -- Its existing ownership handoff also restores the general skin on stop.
+    if NS.SuiteOwnership.IsBagShell(frame) and NS.SuiteOwnership.Owns("bagWindows") then return 0 end
     local pool = Field(frame, "itemButtonPool")
     if type((Field(pool, "EnumerateActive"))) ~= "function" then return 0 end
     local count, visited = 0, 0

@@ -2,6 +2,7 @@ local _, NS = ...
 
 NS.RegisterLocale("enUS", {
     ["Spells to Learn"] = "Spells to Learn",
+    ["Finish combat first."] = "Finish combat first.",
     ["Unlearned spells and ranks by required level"] = "Unlearned spells and ranks by required level",
     ["Rank %d"] = "Rank %d",
     ["No spells to show"] = "No spells to show",
@@ -643,6 +644,7 @@ NS.RegisterLocale("enUS", {
     ["Steel panels, technical blue controls and safety-yellow details."] = "Steel panels, technical blue controls and safety-yellow details.",
 
     ["Addon skins"] = "Addon skins",
+    ["Skin registered addons"] = "Skin registered addons",
     ["Skin other addons"] = "Skin other addons",
     ["AceGUI / AceConfig windows"] = "AceGUI / AceConfig windows",
     ["Addon status"] = "Addon status",
@@ -652,4 +654,10 @@ NS.RegisterLocale("enUS", {
     ["Skinned"] = "Skinned",
     ["Apply your current skin to supported addon windows. Enable the addons you want to skin."] =
         "Apply your current skin to supported addon windows. Enable the addons you want to skin.",
+    ["Portal trainer"] = "Portal trainer",
+    ["Tome or item"] = "Tome or item",
+    ["Learning source not confirmed"] = "Learning source not confirmed",
+    ["Learned automatically"] = "Learned automatically",
+    ["Requires a class quest"] = "Requires a class quest",
+    ["Class quest #%d (availability unconfirmed)"] = "Class quest #%d (availability unconfirmed)",
 })

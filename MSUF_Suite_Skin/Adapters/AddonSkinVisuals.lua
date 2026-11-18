@@ -39,6 +39,7 @@ end
 
 function Visuals.Surface(target, owner, role, allowImplicitProtected)
     if not Visuals.Safe(target, allowImplicitProtected) then return false end
+    if NS.WindowActionSkin.IsApplied(target) then return NS.WindowActionSkin.GetOwner(target) == owner end
     local styles = allowImplicitProtected and implicitSpecs or specs
     if not NS.Surface.Attach(target, styles[role] or styles.panel) then return false end
     NS.Surface.SetVisible(target, true)
@@ -101,7 +102,7 @@ function Visuals.Close(frame, owner, allowImplicitProtected)
         if Visuals.Safe(button, allowImplicitProtected) and Safety.Read(button, "GetObjectType") == "Button" then
             local text = Safety.Read(button, "GetText")
             if text == nil or text == "" or text == "X" or text == "x" or text == "×" or text == "✕" then
-                NS.WindowActionSkin.Apply(button, owner, "close")
+                NS.WindowActionSkin.ApplyExplicit(button, owner, "close")
             end
         end
     end
@@ -110,6 +111,7 @@ end
 -- Only call for a reviewed decorative panel; semantic pictures are excluded.
 function Visuals.Panel(frame, owner, role, allowImplicitProtected)
     if not Visuals.Safe(frame, allowImplicitProtected) then return end
+    if NS.WindowActionSkin.IsApplied(frame) then return end
     Visuals.Backdrop(frame, owner, role, allowImplicitProtected)
     for _, key in ipairs({ "Bg", "Background", "background", "backgroundTexture",
         "SidebarBackgroundTexture", "ContentBackgroundTexture" }) do
@@ -138,6 +140,7 @@ end
 
 function Visuals.Backdrop(frame, owner, role, allowImplicitProtected)
     if not Visuals.Safe(frame, allowImplicitProtected) or not Safety.Read(frame, "GetBackdrop") then return false end
+    if NS.WindowActionSkin.IsApplied(frame) then return NS.WindowActionSkin.GetOwner(frame) == owner end
     -- BackdropTemplate owns these nine texture members. Never hide the frame:
     -- its text, icons and mouse targets must remain visible and functional.
     for index = 1, #pieces do
@@ -167,6 +170,7 @@ Visit = function(frame, owner, depth, budget, allowImplicitProtected)
     if budget <= 0 then return budget end
     budget = budget - 1
     if not Visuals.Safe(frame, allowImplicitProtected) then return budget end
+    if NS.WindowActionSkin.IsApplied(frame) then return budget end
     Visuals.Backdrop(frame, owner, depth == 0 and "shell" or "panel", allowImplicitProtected)
     for _, key in ipairs({ "backdrop", "backgroundTexture" }) do
         local region = Safety.Field(frame, key)

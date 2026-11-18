@@ -20,8 +20,9 @@ O.RegisterPage("addonSkins", L["Addon skins"], function(page)
     O.CreateSectionTitle(page, L["Addon skins"],
         L["Apply your current skin to supported addon windows. Enable the addons you want to skin."])
     local definitions = NS.AddonSkinDefinitions
-    local _, content = O.CreateLeftColumn(page, 500, (#definitions + 2) * 46 + 10, WIDTH)
-    local previous = Toggle(content, L["Skin other addons"], "enabled")
+    local _, content = O.CreateLeftColumn(page, 500, (#definitions + 3) * 46 + 10, WIDTH)
+    local previous = Toggle(content, L["Skin registered addons"], "registered")
+    previous = Toggle(content, L["Skin other addons"], "enabled", previous)
     previous = Toggle(content, L["AceGUI / AceConfig windows"], "aceGUI", previous)
     local card = O.CreatePanel(page, "card")
     card:SetPoint("TOPLEFT", 524, -70)

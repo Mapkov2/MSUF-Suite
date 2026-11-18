@@ -35,6 +35,7 @@ local listenerActive = false
 
 local ScopeMethods = {}
 local ClientMethods = {}
+local ActionOptions
 
 local nineSlicePieces = {
     "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
@@ -42,6 +43,9 @@ local nineSlicePieces = {
 }
 
 local capabilities = {
+    dropdowns = true, checkButtons = true, sliders = true, scrollBars = true,
+    directionalWindowActions = true, captionActions = true, registeredWindows = true,
+    targetStatus = true, targetNotifications = true, menuStyleTokens = true, registeredAddonSwitch = true,
     batches = true,
     menuMotion = true,
     labels = true,
@@ -112,6 +116,7 @@ end
 
 local function QueueVisual(scope, target, entry)
     if scope.batchDeferred then
+        entry.status = "queued"
         if not entry.batchJob then
             entry.batchJob = function()
                 if scope.targets[target] == entry and not scope.released and not scope.client.released
@@ -133,11 +138,16 @@ local function RequestVisual(facade, target, aspect, value, needsRegions)
     if aspect == "surface" and entry.control then return false, "kind-conflict" end
     if aspect == "control" and entry.surface then return false, "kind-conflict" end
     if aspect == "control" and entry.control and entry.control.kind ~= value.kind
-        and (entry.control.kind == "windowAction" or value.kind == "windowAction") then
+        and (entry.control.kind == "windowAction" or value.kind == "windowAction" or entry.control.widget or value.widget) then
         return false, "kind-conflict"
     end
     entry.release = nil
     entry.keepEpoch = scope.releaseEpoch
+    if aspect == "window" then Shared.registeredWindows[entry], entry.skipClose = true, nil end
+    local parent = entry.sponsor or entry.captionHost
+    if aspect == "control" and parent then
+        parent.ownedClose, parent.skipClose, entry.sponsor, entry.captionHost = nil, true, nil, nil
+    end
     entry[aspect] = value
     return QueueVisual(scope, target, entry)
 end
@@ -166,7 +176,7 @@ function ScopeMethods:AnimateContent(frame, token)
     if not NS.Safety.Public(token) or token == nil then return false, "invalid-token" end
     local owner = ContentOwner(scope, frame)
     if token == false then PublicAPI.StopContent(owner, frame) return true end
-    if not RuntimeEnabled() or scope.suspended then return false, "inactive" end
+    if not RuntimeEnabled(scope) or scope.suspended then return false, "inactive" end
     return PublicAPI.PlayContent(frame, owner, token)
 end
 
@@ -219,13 +229,23 @@ end
 function ScopeMethods:SkinWindowAction(button, kind, options)
     local safe, reason = SafeTarget(button, true)
     if not safe then return false, reason end
-    if kind ~= "close" and kind ~= "minimize" and kind ~= "maximize"
+    if not NS.Safety.Public(kind) then return false, "invalid-action" end
+    if kind ~= "close" and kind ~= "minimize" and kind ~= "maximize" and kind ~= "restore"
         and kind ~= "expand" and kind ~= "collapse" then return false, "invalid-action" end
     for index = 1, #windowActionSetters do
         if not HasMethod(button, windowActionSetters[index]) then return false, "unsupported-control" end
     end
+    local style
+    style, reason = ActionOptions(kind, options)
+    if not style then return false, reason end
+    local motion = ReadOption(options, "motion")
+    if type(motion) ~= "boolean" then
+        local scope = GetScope(self)
+        motion = not (scope and scope.client.name == "MidnightSimpleUnitFrames")
+    end
     return RequestVisual(self, button, "control", {
-        kind = "windowAction", action = kind, motion = VisualSpec(self, options).motion,
+        kind = "windowAction", action = kind, motion = motion,
+        caption = style.appearance == "caption", options = style,
     }, true)
 end
 
@@ -324,7 +344,8 @@ end
 -- No callbacks, frame discovery or background traversal enter this API.
 local batchMethods = {
     frame = "SkinFrame", button = "SkinButton", tab = "SkinTab", input = "SkinSearchBox",
-    ["label"] = "SkinLabel", icon = "SkinIcon", menu = "RegisterMenu", fade = "Fade",
+    dropdown = "SkinDropdown", checkButton = "SkinCheckButton", slider = "SkinSlider", scrollBar = "SkinScrollBar",
+    window = "RegisterWindow", windowAction = "SkinWindowAction", ["label"] = "SkinLabel", icon = "SkinIcon", menu = "RegisterMenu", fade = "Fade",
 }
 local MAX_BATCH_TARGETS = 256
 
@@ -353,7 +374,10 @@ function ScopeMethods:SkinBatch(items)
         local item = rawget(items, index)
         local method = batchMethods[rawget(item, "kind")]
         scope.batchDeferred = true
-        local accepted, reason = GuardedCall(ScopeMethods[method], self, rawget(item, "target"), rawget(item, "options"))
+        local target, options = rawget(item, "target"), rawget(item, "options")
+        local accepted, reason
+        if method == "SkinWindowAction" then accepted, reason = GuardedCall(ScopeMethods[method], self, target, rawget(item, "action"), options)
+        else accepted, reason = GuardedCall(ScopeMethods[method], self, target, options) end
         scope.batchDeferred = nil
         if not accepted then return false, reason, index - 1 end
     end
@@ -402,6 +426,8 @@ function ScopeMethods:Release(target)
     local content = PublicAPI.StopContent(ContentOwner(scope, target), target)
     local entry = scope.targets[target]
     if not entry then return content, content and "released" or "unknown-target" end
+    local parent = entry.sponsor or entry.captionHost
+    if parent then parent.skipClose = true end
     entry.release = true
     entry.keepEpoch = nil
     return QueueEntry(scope, target, entry)
@@ -479,7 +505,8 @@ function ScopeMethods:GetAppearance(key)
 end
 
 function ScopeMethods:IsEnabled()
-    return RuntimeEnabled()
+    local scope = GetScope(self)
+    return scope ~= nil and RuntimeEnabled(scope) == true
 end
 
 function ScopeMethods:IsReady()
@@ -489,7 +516,10 @@ end
 local function SuspendScopeNow(scope)
     scope.suspended = true
     PublicAPI.StopContent(scope)
-    for _, entry in pairs(scope.targets) do CleanupEntry(entry) end
+    for _, entry in pairs(scope.targets) do
+        local ok, reason = CleanupEntry(entry)
+        entry.status, entry.failure = ok and "suspended" or "failed", reason
+    end
 end
 
 local function ResumeScopeNow(scope)
@@ -518,7 +548,7 @@ local function UnregisterClientNow(record)
     record.released = true
     record.unregisterPending = false
     clients[record.name] = nil
-    NS.Safety.Dispatch(PublicAPI.OnRegistrationChanged, record.name, false)
+    if record.cooperative then NS.Safety.Dispatch(PublicAPI.OnRegistrationChanged, record.name, false) end
     NS.CombatGate.Cancel(record.mainScope.pendingKey)
     return true, "unregistered"
 end
@@ -542,12 +572,15 @@ function ClientMethods:Unregister()
     return unregistered == true, detail
 end
 
+ActionOptions = NS.InstallPublicControls(ScopeMethods, GetScope, SafeTarget, RequestVisual, RuntimeEnabled)
+NS.InstallPublicControls = nil
 for name, method in pairs(ScopeMethods) do ClientMethods[name] = method end
 
-local function NewClient(name, options)
+local function NewClient(name, options, internal)
     local facade = setmetatable({}, { __index = ClientMethods })
     local record = {
         facade = facade,
+        internal = internal or name == "MidnightSimpleUnitFrames",
         integrationVersion = math.floor(NS.Clamp(
             ReadOption(options, "integrationVersion"), 1, 2147483647)),
         name = name,
@@ -559,14 +592,23 @@ local function NewClient(name, options)
     return record
 end
 
-function API:RegisterAddon(name, options)
-    if self ~= API then options, name = name, self end
+local function RegisterAddon(name, options, internal)
     if not ValidIdentifier(name) then return nil, "invalid-addon" end
     if options ~= nil and type(options) ~= "table" then return nil, "invalid-options" end
     if clients[name] and not clients[name].released then return nil, "already-registered" end
-    local record = NewClient(name, options)
-    NS.Safety.Dispatch(PublicAPI.OnRegistrationChanged, name, true)
+    local record = NewClient(name, options, internal)
+    record.cooperative = Shared.ScopeAllowed(record.mainScope)
+    if record.cooperative then NS.Safety.Dispatch(PublicAPI.OnRegistrationChanged, name, true) end
     return record.facade, PublicAPI.playerReady and "registered" or "pending"
+end
+
+function API:RegisterAddon(name, options)
+    if self ~= API then options, name = name, self end
+    return RegisterAddon(name, options)
+end
+
+function PublicAPI.RegisterSuiteAddon(moduleID)
+    return RegisterAddon("MSUF_Suite_" .. moduleID, nil, true)
 end
 
 function API:GetRegisteredAddons()
@@ -656,13 +698,16 @@ function API:OnAppearanceChanged() end
 
 local function SyncClientNow(record)
     if record.released or record.unregisterPending then return end
-    if record.mainScope.pendingOperation then
-        RunScopeOperation(record.mainScope)
-    elseif RuntimeEnabled() then
-        ResumeScopeNow(record.mainScope)
-    else
-        SuspendScopeNow(record.mainScope)
-    end
+    local scope = record.mainScope
+    local cooperative = Shared.ScopeAllowed(scope)
+    if cooperative and not record.cooperative then NS.Safety.Dispatch(PublicAPI.OnRegistrationChanged, record.name, true) end
+    if scope.pendingOperation then
+        scope.suspended = not RuntimeEnabled(scope)
+        RunScopeOperation(scope)
+    elseif RuntimeEnabled(scope) then ResumeScopeNow(scope)
+    else SuspendScopeNow(scope) end
+    if not cooperative and record.cooperative then NS.Safety.Dispatch(PublicAPI.OnRegistrationChanged, record.name, false) end
+    record.cooperative = cooperative
 end
 
 local function QueueClientSync(record)
@@ -701,8 +746,14 @@ end
 local function OnRegistryChanged(_, domain, key)
     -- First, so the client syncs below record the new settings.
     NextSettingsGeneration()
-    if domain == "profile" or (domain == "adapter" and key == "master") then
+    if domain == "profile" or domain == "adapter" and (key == "master" or key == "blizzardWindowsEnabled") then
         for _, record in pairs(clients) do NS.Safety.Dispatch(QueueClientSync, record) end
+    elseif domain == "addonSkins" and key == "registered" then
+        for _, record in pairs(clients) do
+            if record.cooperative ~= Shared.ScopeAllowed(record.mainScope) then NS.Safety.Dispatch(QueueClientSync, record) end
+        end
+    elseif domain == "windowControls" then
+        for entry in pairs(Shared.registeredWindows) do QueueEntry(entry.scope, entry.target, entry) end
     end
     if domain == "typography" then
         for _, scope in pairs(scopeRecords) do
@@ -734,7 +785,7 @@ end
 local function RefreshAllNow()
     local success, reason = true, "applied"
     for _, record in pairs(clients) do
-        record.mainScope.suspended = not RuntimeEnabled()
+        record.mainScope.suspended = not RuntimeEnabled(record.mainScope)
         local applied, detail = GuardedCall(QueueScopeOperation, record.mainScope, "refresh")
         if not applied then success, reason = false, detail end
     end

@@ -1,0 +1,2020 @@
+{
+  "build": "1.60.1.70938",
+  "sources": {
+    "class_spellbooks": {
+      "url": "https://talentsforever.com/",
+      "license": "CC BY 4.0",
+      "build": "1.60.1.70755"
+    },
+    "quest_observations": {
+      "url": "https://github.com/JIVESCORP/eg-link-output-wowf/tree/6ff5612b54191f297eb77ca8eda81de029d9d6f0/data/wowf",
+      "license": "CC BY 4.0",
+      "build": "1.60.1.70938",
+      "sha256": "22846c0d06eac1777b6d7db98284b5e9a6471255d3f3994887b73a87ea314c43"
+    },
+    "acquisition_crosscheck": {
+      "url": "https://github.com/fusionpit/WhatsTraining/tree/6e289b0c2acd1c933f5a6317d960ff67a01da118/Classes/Camelot",
+      "license": "MIT",
+      "note": "Quest variants, class-skill levels and quest prerequisites adapted from and cross-checked with What's Training (MIT); no addon implementation code copied."
+    },
+    "race_bits": {
+      "url": "https://wago.tools/db2/ChrRaces/csv?build=1.60.1.70938",
+      "sha256": "8d61c45ec7d23535c3916642ae4b3a8341e38ac0cdca817144536b954488bd23"
+    },
+    "dalaran_quest_reward": {
+      "url": "https://forever-tool.com/de/quests/96828/",
+      "origin": "Blizzard Battle.net quest data as published by Forever Tool",
+      "quest": 96828,
+      "spell": 1297659,
+      "quest_name": "Special Access",
+      "note": "The published reward names Teleport: Dalaran. NPC, quest level and active availability are not supplied.",
+      "data_date": "2026-11-04",
+      "build": "1.60.1.70399"
+    },
+    "dalaran_availability": {
+      "url": "https://raw.githubusercontent.com/JIVESCORP/eg-link-output-wowf/06b4cc7b814c1cb16ff56b746181c2c62944fbc9/data/wowf/1.60.1.70938/quest_scan.json",
+      "sha256": "006806bcffffa4269e575787bed8d494b6f3e6dd4f1bb7de6ad9c3b95a493908",
+      "build": "1.60.1.70938",
+      "observed_through": "2026-11-17",
+      "note": "Quest 96828 is in noData, not described. No active giver or acquisition has been verified. Absence of a response is not proof of permanent unavailability."
+    }
+  },
+  "race_bits": {
+    "1": 0,
+    "2": 1,
+    "3": 2,
+    "4": 3,
+    "5": 4,
+    "6": 5,
+    "7": 6,
+    "8": 7,
+    "95": 32,
+    "96": 33
+  },
+  "classes": {
+    "1": {
+      "quests": {
+        "71": [
+          {
+            "races": [
+              2,
+              6,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              1498
+            ],
+            "observed_rewards": [
+              1498
+            ]
+          },
+          {
+            "races": [
+              5
+            ],
+            "level": 10,
+            "quests": [
+              1819
+            ],
+            "observed_rewards": [
+              1819
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              1665
+            ],
+            "observed_rewards": [
+              1665
+            ]
+          },
+          {
+            "races": [
+              3,
+              7
+            ],
+            "level": 10,
+            "quests": [
+              1678
+            ],
+            "observed_rewards": [
+              1678
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              1683
+            ],
+            "observed_rewards": [
+              1683
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94003
+            ],
+            "observed_rewards": [
+              94003
+            ]
+          }
+        ],
+        "355": [
+          {
+            "races": [
+              2,
+              6,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              1498
+            ],
+            "observed_rewards": [
+              1498
+            ]
+          },
+          {
+            "races": [
+              5
+            ],
+            "level": 10,
+            "quests": [
+              1819
+            ],
+            "observed_rewards": [
+              1819
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              1665
+            ],
+            "observed_rewards": [
+              1665
+            ]
+          },
+          {
+            "races": [
+              3,
+              7
+            ],
+            "level": 10,
+            "quests": [
+              1678
+            ],
+            "observed_rewards": [
+              1678
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              1683
+            ],
+            "observed_rewards": [
+              1683
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94003
+            ],
+            "observed_rewards": [
+              94003
+            ]
+          }
+        ],
+        "7386": [
+          {
+            "races": [
+              2,
+              6,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              1498
+            ],
+            "observed_rewards": [
+              1498
+            ]
+          },
+          {
+            "races": [
+              5
+            ],
+            "level": 10,
+            "quests": [
+              1819
+            ],
+            "observed_rewards": [
+              1819
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              1665
+            ],
+            "observed_rewards": [
+              1665
+            ]
+          },
+          {
+            "races": [
+              3,
+              7
+            ],
+            "level": 10,
+            "quests": [
+              1678
+            ],
+            "observed_rewards": [
+              1678
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              1683
+            ],
+            "observed_rewards": [
+              1683
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94003
+            ],
+            "observed_rewards": [
+              94003
+            ]
+          }
+        ],
+        "2458": [
+          {
+            "races": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              95,
+              96
+            ],
+            "level": 30,
+            "quests": [
+              1719
+            ],
+            "observed_rewards": [
+              1719
+            ]
+          }
+        ],
+        "20252": [
+          {
+            "races": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              95,
+              96
+            ],
+            "level": 30,
+            "quests": [
+              1719
+            ],
+            "observed_rewards": [
+              1719
+            ]
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [],
+      "quest_requirements": {
+        "6572": 71,
+        "2565": 71,
+        "676": 71,
+        "7405": 7386,
+        "6574": 71,
+        "871": 71,
+        "18499": 2458,
+        "7379": 71,
+        "8380": 7386,
+        "1680": 2458,
+        "6552": 2458,
+        "20616": 20252,
+        "11600": 71,
+        "11596": 7386,
+        "1719": 2458,
+        "20617": 20252,
+        "11601": 71,
+        "6554": 2458,
+        "11597": 7386
+      },
+      "extra_training": {
+        "3127": 6,
+        "674": 20,
+        "750": 40
+      }
+    },
+    "2": {
+      "quests": {
+        "635": [
+          {
+            "races": [
+              5
+            ],
+            "level": 2,
+            "quests": [
+              90902
+            ],
+            "observed_rewards": [
+              90902
+            ]
+          }
+        ],
+        "7328": [
+          {
+            "races": [
+              3
+            ],
+            "level": 12,
+            "quests": [
+              1785
+            ],
+            "observed_rewards": [
+              1785
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 12,
+            "quests": [
+              1788
+            ],
+            "observed_rewards": [
+              1788
+            ]
+          },
+          {
+            "races": [
+              5
+            ],
+            "level": 12,
+            "quests": [
+              94441
+            ],
+            "observed_rewards": [
+              94441
+            ]
+          }
+        ],
+        "5502": [
+          {
+            "races": [
+              1,
+              3
+            ],
+            "level": 20,
+            "quests": [
+              1652
+            ],
+            "observed_rewards": [
+              1652
+            ]
+          }
+        ],
+        "13819": [
+          {
+            "races": [
+              1,
+              3
+            ],
+            "level": 40,
+            "quests": [
+              1661
+            ],
+            "observed_rewards": [
+              1661
+            ]
+          }
+        ],
+        "23214": [
+          {
+            "races": [
+              1,
+              3
+            ],
+            "level": 60,
+            "quests": [
+              7647
+            ],
+            "observed_rewards": [
+              7647
+            ]
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [
+        635
+      ],
+      "quest_requirements": {
+        "639": 635,
+        "647": 635,
+        "1026": 635,
+        "10322": 7328,
+        "1042": 635,
+        "10324": 7328,
+        "3472": 635,
+        "10328": 635,
+        "20772": 7328,
+        "10329": 635,
+        "20773": 7328
+      },
+      "extra_training": {
+        "3127": 8,
+        "750": 40
+      }
+    },
+    "3": {
+      "quests": {
+        "1515": [
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              6082
+            ],
+            "observed_rewards": [
+              6082
+            ]
+          },
+          {
+            "races": [
+              6
+            ],
+            "level": 10,
+            "quests": [
+              6088
+            ],
+            "observed_rewards": [
+              6088
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 10,
+            "quests": [
+              6085
+            ],
+            "observed_rewards": [
+              6085
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              6102
+            ],
+            "observed_rewards": [
+              6102
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94013
+            ],
+            "observed_rewards": [
+              94013
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              94864
+            ],
+            "observed_rewards": [
+              94864
+            ]
+          }
+        ],
+        "5149": [
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              6081
+            ],
+            "observed_rewards": [
+              6081
+            ]
+          },
+          {
+            "races": [
+              6
+            ],
+            "level": 10,
+            "quests": [
+              6089
+            ],
+            "observed_rewards": [
+              6089
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 10,
+            "quests": [
+              6086
+            ],
+            "observed_rewards": [
+              6086
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              6103
+            ],
+            "observed_rewards": [
+              6103
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94050
+            ],
+            "observed_rewards": [
+              94050
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              94793
+            ],
+            "observed_rewards": []
+          }
+        ],
+        "883": [
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              6082
+            ],
+            "observed_rewards": [
+              6082
+            ]
+          },
+          {
+            "races": [
+              6
+            ],
+            "level": 10,
+            "quests": [
+              6088
+            ],
+            "observed_rewards": [
+              6088
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 10,
+            "quests": [
+              6085
+            ],
+            "observed_rewards": [
+              6085
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              6102
+            ],
+            "observed_rewards": [
+              6102
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94013
+            ],
+            "observed_rewards": [
+              94013
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              94864
+            ],
+            "observed_rewards": [
+              94864
+            ]
+          }
+        ],
+        "2641": [
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              6082
+            ],
+            "observed_rewards": [
+              6082
+            ]
+          },
+          {
+            "races": [
+              6
+            ],
+            "level": 10,
+            "quests": [
+              6088
+            ],
+            "observed_rewards": [
+              6088
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 10,
+            "quests": [
+              6085
+            ],
+            "observed_rewards": [
+              6085
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              6102
+            ],
+            "observed_rewards": [
+              6102
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94013
+            ],
+            "observed_rewards": [
+              94013
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              94864
+            ],
+            "observed_rewards": [
+              94864
+            ]
+          }
+        ],
+        "6991": [
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              6081
+            ],
+            "observed_rewards": [
+              6081
+            ]
+          },
+          {
+            "races": [
+              6
+            ],
+            "level": 10,
+            "quests": [
+              6089
+            ],
+            "observed_rewards": [
+              6089
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 10,
+            "quests": [
+              6086
+            ],
+            "observed_rewards": [
+              6086
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              6103
+            ],
+            "observed_rewards": [
+              6103
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94050
+            ],
+            "observed_rewards": [
+              94050
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              94793
+            ],
+            "observed_rewards": []
+          }
+        ],
+        "982": [
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              6081
+            ],
+            "observed_rewards": [
+              6081
+            ]
+          },
+          {
+            "races": [
+              6
+            ],
+            "level": 10,
+            "quests": [
+              6089
+            ],
+            "observed_rewards": [
+              6089
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 10,
+            "quests": [
+              6086
+            ],
+            "observed_rewards": [
+              6086
+            ]
+          },
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              6103
+            ],
+            "observed_rewards": [
+              6103
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94050
+            ],
+            "observed_rewards": [
+              94050
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              94793
+            ],
+            "observed_rewards": []
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [],
+      "quest_requirements": {
+        "136": 1515,
+        "3111": 1515,
+        "3661": 1515,
+        "3662": 1515,
+        "13542": 1515,
+        "13543": 1515,
+        "13544": 1515
+      },
+      "extra_training": {
+        "3127": 8,
+        "674": 20,
+        "8737": 40
+      }
+    },
+    "4": {
+      "quests": {
+        "2842": [
+          {
+            "races": [
+              1,
+              3,
+              4,
+              7,
+              95
+            ],
+            "level": 20,
+            "quests": [
+              2359
+            ],
+            "observed_rewards": [
+              2359
+            ]
+          },
+          {
+            "races": [
+              2,
+              5,
+              8
+            ],
+            "level": 20,
+            "quests": [
+              2480
+            ],
+            "observed_rewards": [
+              2480
+            ]
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [],
+      "quest_requirements": {},
+      "extra_training": {
+        "674": 10,
+        "3127": 12,
+        "1804": 16
+      }
+    },
+    "5": {
+      "quests": {
+        "13908": [
+          {
+            "races": [
+              3
+            ],
+            "level": 10,
+            "quests": [
+              5635,
+              5637,
+              5638,
+              5639,
+              5640,
+              5634,
+              5636
+            ],
+            "observed_rewards": [
+              5635,
+              5637,
+              5638,
+              5639,
+              5640,
+              5634,
+              5636
+            ]
+          }
+        ],
+        "13896": [
+          {
+            "races": [
+              1
+            ],
+            "level": 20,
+            "quests": [
+              5676,
+              5677,
+              5678
+            ],
+            "observed_rewards": [
+              5676,
+              5677,
+              5678
+            ]
+          }
+        ],
+        "10797": [
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              5627,
+              5628,
+              5629,
+              5630,
+              5631,
+              5632,
+              5633
+            ],
+            "observed_rewards": [
+              5627,
+              5628,
+              5629,
+              5630,
+              5631,
+              5632,
+              5633
+            ]
+          }
+        ],
+        "2651": [
+          {
+            "races": [
+              4
+            ],
+            "level": 20,
+            "quests": [
+              5672,
+              5673,
+              5674,
+              5675
+            ],
+            "observed_rewards": [
+              5672,
+              5673,
+              5674,
+              5675
+            ]
+          }
+        ],
+        "2652": [
+          {
+            "races": [
+              5
+            ],
+            "level": 10,
+            "quests": [
+              5658,
+              5660,
+              5661,
+              5662,
+              5663
+            ],
+            "observed_rewards": [
+              5658,
+              5660,
+              5661,
+              5662,
+              5663
+            ]
+          }
+        ],
+        "9035": [
+          {
+            "races": [
+              8
+            ],
+            "level": 10,
+            "quests": [
+              5652,
+              5654,
+              5655,
+              5656,
+              5657
+            ],
+            "observed_rewards": [
+              5652,
+              5654,
+              5655,
+              5656,
+              5657
+            ]
+          }
+        ],
+        "18137": [
+          {
+            "races": [
+              8
+            ],
+            "level": 20,
+            "quests": [
+              5642,
+              5643,
+              5680
+            ],
+            "observed_rewards": [
+              5642,
+              5643,
+              5680
+            ]
+          }
+        ],
+        "1277370": [
+          {
+            "races": [
+              1
+            ],
+            "level": 10,
+            "quests": [
+              94773,
+              94774,
+              94775,
+              94776,
+              94777,
+              94778,
+              94779
+            ],
+            "observed_rewards": [
+              94773,
+              94774,
+              94775,
+              94776,
+              94777,
+              94778,
+              94779
+            ]
+          }
+        ],
+        "1277331": [
+          {
+            "races": [
+              3
+            ],
+            "level": 20,
+            "quests": [
+              5641,
+              5645,
+              5647
+            ],
+            "observed_rewards": [
+              5641,
+              5645,
+              5647
+            ]
+          }
+        ],
+        "1277324": [
+          {
+            "races": [
+              5
+            ],
+            "level": 20,
+            "quests": [
+              5644,
+              5646,
+              5679
+            ],
+            "observed_rewards": [
+              5644,
+              5646,
+              5679
+            ]
+          }
+        ],
+        "1277455": [
+          {
+            "races": [
+              7
+            ],
+            "level": 10,
+            "quests": [
+              94817,
+              94821,
+              94822,
+              94823,
+              94824,
+              94825,
+              94826
+            ],
+            "observed_rewards": [
+              94817,
+              94821,
+              94822,
+              94823,
+              94824,
+              94825,
+              94826
+            ]
+          }
+        ],
+        "1277462": [
+          {
+            "races": [
+              7
+            ],
+            "level": 20,
+            "quests": [
+              94818,
+              94819,
+              94820
+            ],
+            "observed_rewards": [
+              94818,
+              94819,
+              94820
+            ]
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [],
+      "quest_requirements": {
+        "1277371": 1277370,
+        "19236": 13908,
+        "19296": 10797,
+        "19261": 2652,
+        "19281": 9035,
+        "1277372": 1277370,
+        "19238": 13908,
+        "19299": 10797,
+        "19308": 18137,
+        "19271": 13896,
+        "19262": 2652,
+        "19282": 9035,
+        "1277325": 1277324,
+        "1277332": 1277331,
+        "1277634": 1277462,
+        "1277374": 1277370,
+        "19240": 13908,
+        "19302": 10797,
+        "19309": 18137,
+        "19273": 13896,
+        "19264": 2652,
+        "19283": 9035,
+        "1277326": 1277324,
+        "1277333": 1277331,
+        "1277638": 1277462,
+        "1277376": 1277370,
+        "19241": 13908,
+        "19303": 10797,
+        "19310": 18137,
+        "1277377": 1277370,
+        "19274": 13896,
+        "19242": 13908,
+        "19265": 2652,
+        "19284": 9035,
+        "19304": 10797,
+        "1277327": 1277324,
+        "1277334": 1277331,
+        "1277639": 1277462,
+        "19311": 18137,
+        "1277378": 1277370,
+        "19243": 13908,
+        "19305": 10797,
+        "19275": 13896,
+        "19266": 2652,
+        "19285": 9035,
+        "19312": 18137,
+        "1277328": 1277324,
+        "1277335": 1277331,
+        "1277640": 1277462
+      },
+      "extra_training": {}
+    },
+    "7": {
+      "quests": {
+        "8071": [
+          {
+            "races": [
+              2,
+              6
+            ],
+            "level": 4,
+            "quests": [
+              1518,
+              1521
+            ],
+            "observed_rewards": [
+              1518,
+              1521
+            ]
+          },
+          {
+            "races": [
+              8
+            ],
+            "level": 4,
+            "quests": [
+              1518
+            ],
+            "observed_rewards": [
+              1518
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 4,
+            "quests": [
+              94375
+            ],
+            "observed_rewards": [
+              94375
+            ]
+          },
+          {
+            "races": [
+              96
+            ],
+            "level": 3,
+            "quests": [
+              92468
+            ],
+            "observed_rewards": [
+              92468
+            ]
+          }
+        ],
+        "3599": [
+          {
+            "races": [
+              2,
+              6,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              1527
+            ],
+            "observed_rewards": [
+              1527
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 10,
+            "quests": [
+              94468
+            ],
+            "observed_rewards": [
+              94468
+            ]
+          },
+          {
+            "races": [
+              96
+            ],
+            "level": 10,
+            "quests": [
+              97257
+            ],
+            "observed_rewards": [
+              97257
+            ]
+          }
+        ],
+        "5394": [
+          {
+            "races": [
+              2,
+              6,
+              8
+            ],
+            "level": 20,
+            "quests": [
+              96
+            ],
+            "observed_rewards": [
+              96
+            ]
+          },
+          {
+            "races": [
+              3
+            ],
+            "level": 20,
+            "quests": [
+              94505
+            ],
+            "observed_rewards": [
+              94505
+            ]
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [],
+      "quest_requirements": {
+        "8154": 8071,
+        "6363": 3599,
+        "8155": 8071,
+        "6375": 5394,
+        "6364": 3599,
+        "10406": 8071,
+        "6377": 5394,
+        "6365": 3599,
+        "10407": 8071,
+        "10462": 5394,
+        "10437": 3599,
+        "10408": 8071,
+        "10463": 5394,
+        "10438": 3599
+      },
+      "extra_training": {
+        "8737": 40
+      }
+    },
+    "8": {
+      "quests": {
+        "28272": [
+          {
+            "races": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              95,
+              96
+            ],
+            "level": 60,
+            "quests": [
+              9364
+            ],
+            "observed_rewards": [
+              9364
+            ]
+          }
+        ],
+        "10140": [
+          {
+            "races": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              95,
+              96
+            ],
+            "level": 60,
+            "quests": [
+              7463
+            ],
+            "observed_rewards": [
+              7463
+            ]
+          }
+        ],
+        "1297659": [
+          {
+            "races": [
+              1,
+              3,
+              4,
+              7,
+              95
+            ],
+            "level": 50,
+            "quests": [
+              96828
+            ],
+            "observed_rewards": [],
+            "note": "Level/races from the matching client; reward from published quest data. Availability remains unconfirmed."
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [],
+      "quest_requirements": {},
+      "extra_training": {
+        "1296017": 6
+      },
+      "pending_quests": {
+        "1297659": 96828
+      }
+    },
+    "9": {
+      "quests": {
+        "688": [
+          {
+            "races": [
+              5
+            ],
+            "level": 1,
+            "quests": [
+              1470
+            ],
+            "observed_rewards": [
+              1470
+            ]
+          },
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 1,
+            "quests": [
+              1485
+            ],
+            "observed_rewards": [
+              1485
+            ]
+          },
+          {
+            "races": [
+              1
+            ],
+            "level": 1,
+            "quests": [
+              1598
+            ],
+            "observed_rewards": [
+              1598
+            ]
+          },
+          {
+            "races": [
+              7
+            ],
+            "level": 1,
+            "quests": [
+              1599
+            ],
+            "observed_rewards": [
+              1599
+            ]
+          }
+        ],
+        "697": [
+          {
+            "races": [
+              5
+            ],
+            "level": 10,
+            "quests": [
+              1471
+            ],
+            "observed_rewards": [
+              1471
+            ]
+          },
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 10,
+            "quests": [
+              1504
+            ],
+            "observed_rewards": [
+              1504
+            ]
+          },
+          {
+            "races": [
+              1,
+              7
+            ],
+            "level": 10,
+            "quests": [
+              1689
+            ],
+            "observed_rewards": [
+              1689
+            ]
+          }
+        ],
+        "712": [
+          {
+            "races": [
+              5
+            ],
+            "level": 20,
+            "quests": [
+              1474
+            ],
+            "observed_rewards": [
+              1474
+            ]
+          },
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 20,
+            "quests": [
+              1513
+            ],
+            "observed_rewards": [
+              1513
+            ]
+          },
+          {
+            "races": [
+              1,
+              7
+            ],
+            "level": 20,
+            "quests": [
+              1739
+            ],
+            "observed_rewards": [
+              1739
+            ]
+          }
+        ],
+        "713": [
+          {
+            "races": [
+              5
+            ],
+            "level": 20,
+            "quests": [
+              65597
+            ],
+            "observed_rewards": [
+              65597
+            ]
+          },
+          {
+            "races": [
+              2,
+              8
+            ],
+            "level": 20,
+            "quests": [
+              65604
+            ],
+            "observed_rewards": [
+              65604
+            ]
+          },
+          {
+            "races": [
+              1,
+              7
+            ],
+            "level": 20,
+            "quests": [
+              65603
+            ],
+            "observed_rewards": [
+              65603
+            ]
+          }
+        ],
+        "691": [
+          {
+            "races": [
+              1,
+              2,
+              5,
+              7,
+              8
+            ],
+            "level": 30,
+            "quests": [
+              1795
+            ],
+            "observed_rewards": [
+              1795
+            ]
+          }
+        ],
+        "5784": [
+          {
+            "races": [
+              1,
+              2,
+              5,
+              7,
+              8
+            ],
+            "level": 40,
+            "quests": [
+              4490
+            ],
+            "observed_rewards": [
+              4490
+            ]
+          }
+        ],
+        "1122": [
+          {
+            "races": [
+              1,
+              2,
+              5,
+              7,
+              8
+            ],
+            "level": 50,
+            "quests": [
+              7603
+            ],
+            "observed_rewards": [
+              7603
+            ]
+          }
+        ],
+        "18540": [
+          {
+            "races": [
+              1,
+              2,
+              5,
+              7,
+              8
+            ],
+            "level": 60,
+            "quests": [
+              7583
+            ],
+            "observed_rewards": []
+          }
+        ],
+        "23161": [
+          {
+            "races": [
+              1,
+              2,
+              5,
+              7,
+              8
+            ],
+            "level": 60,
+            "quests": [
+              7631
+            ],
+            "observed_rewards": [
+              7631
+            ]
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [],
+      "quest_requirements": {},
+      "extra_training": {}
+    },
+    "11": {
+      "quests": {
+        "5487": [
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              6001
+            ],
+            "observed_rewards": [
+              6001
+            ]
+          },
+          {
+            "races": [
+              6
+            ],
+            "level": 10,
+            "quests": [
+              6002
+            ],
+            "observed_rewards": [
+              6002
+            ]
+          },
+          {
+            "races": [
+              95,
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94638
+            ],
+            "observed_rewards": [
+              94638
+            ]
+          }
+        ],
+        "18960": [
+          {
+            "races": [
+              4
+            ],
+            "level": 10,
+            "quests": [
+              5921
+            ],
+            "observed_rewards": []
+          },
+          {
+            "races": [
+              6
+            ],
+            "level": 10,
+            "quests": [
+              5922
+            ],
+            "observed_rewards": []
+          },
+          {
+            "races": [
+              96
+            ],
+            "level": 10,
+            "quests": [
+              94913
+            ],
+            "observed_rewards": []
+          },
+          {
+            "races": [
+              95
+            ],
+            "level": 10,
+            "quests": [
+              94914
+            ],
+            "observed_rewards": []
+          }
+        ],
+        "768": [
+          {
+            "races": [
+              4,
+              95
+            ],
+            "level": 20,
+            "quests": [
+              98397
+            ],
+            "observed_rewards": [
+              98397
+            ]
+          },
+          {
+            "races": [
+              6,
+              96
+            ],
+            "level": 20,
+            "quests": [
+              98362
+            ],
+            "observed_rewards": [
+              98362
+            ]
+          }
+        ],
+        "8946": [
+          {
+            "races": [
+              4,
+              95
+            ],
+            "level": 14,
+            "quests": [
+              6125
+            ],
+            "observed_rewards": [
+              6125
+            ]
+          },
+          {
+            "races": [
+              6,
+              96
+            ],
+            "level": 14,
+            "quests": [
+              6130
+            ],
+            "observed_rewards": [
+              6130
+            ]
+          }
+        ],
+        "1066": [
+          {
+            "races": [
+              4,
+              95
+            ],
+            "level": 16,
+            "quests": [
+              5061
+            ],
+            "observed_rewards": [
+              5061
+            ]
+          },
+          {
+            "races": [
+              6,
+              96
+            ],
+            "level": 16,
+            "quests": [
+              31
+            ],
+            "observed_rewards": [
+              31
+            ]
+          }
+        ]
+      },
+      "quest_only_for_listed_races": [],
+      "quest_requirements": {
+        "99": 5487,
+        "5229": 5487,
+        "5211": 5487,
+        "779": 5487,
+        "1735": 5487,
+        "5221": 768,
+        "1328618": 768,
+        "1822": 768,
+        "780": 5487,
+        "1850": 768,
+        "5209": 5487,
+        "8998": 768,
+        "6798": 5487,
+        "6800": 768,
+        "9490": 5487,
+        "22568": 768,
+        "1328829": 768,
+        "6785": 768,
+        "5225": 768,
+        "1823": 768,
+        "769": 5487,
+        "22842": 5487,
+        "9005": 768,
+        "8992": 768,
+        "9000": 768,
+        "9634": 5487,
+        "20719": 768,
+        "22827": 768,
+        "9747": 5487,
+        "6787": 768,
+        "1824": 768,
+        "9754": 5487,
+        "8983": 5487,
+        "9821": 768,
+        "9823": 768,
+        "9829": 768,
+        "22828": 768,
+        "9866": 768,
+        "9892": 768,
+        "9898": 5487,
+        "9904": 768,
+        "9830": 768,
+        "9908": 5487,
+        "22829": 768,
+        "9827": 768,
+        "9867": 768
+      },
+      "extra_training": {}
+    }
+  }
+}

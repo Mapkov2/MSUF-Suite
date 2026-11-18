@@ -234,6 +234,22 @@ function Text.Message(view, level, percent, details)
     view.details:SetText(details)
 end
 
+-- Cold layout query for the second progress bar. Reserve a line for each
+-- enabled text, including custom anchors and text that becomes visible later.
+function Text.VerticalOverflow(view)
+    local height, padding = view.config.height, Shared.BottomPadding(view.config)
+    local bottom, top = -padding, height
+    for _, spec in ipairs(Shared.Texts) do
+        local state = view.xpTexts[spec.id]
+        if state.enabled then
+            local line = state.size + 4
+            local y = Shared.Points[state.relative][2] * height + state.y - Shared.Points[state.point][2] * line
+            bottom, top = min(bottom, y), max(top, y + line)
+        end
+    end
+    return -bottom - padding, top - height
+end
+
 -- Only menu samples measure text. Live XP events never measure or move it.
 function Text.PreviewBounds(view)
     local width, height = view.config.width, view.config.height

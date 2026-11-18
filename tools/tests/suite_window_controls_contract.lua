@@ -227,6 +227,7 @@ local function NextFrame()
     queuedJobs = {}
     for _, job in ipairs(jobs) do job() end
 end
+C_Timer = { After = function(_, callback) QueueJob(callback) end }
 local printed = {}
 local NS = {
     Print = function(message) printed[#printed + 1] = message end,
@@ -237,7 +238,7 @@ local NS = {
         windowControls = { enabled = true, scales = {}, positions = {} } },
     Theme = { GetColor = function() return 0.2, 0.3, 0.4, 1 end },
     Surface = { SkinOwnedButton = function(button, spec) button.surfaceSpec = spec; return true end },
-    Registry = { AddListener = function() end, QueueJob = QueueJob },
+    Registry = { AddListener = function() end, QueueJob = QueueJob, NotifyListeners = function() end },
     SuiteOwnership = { OwnsWindowGeometry = function() return false end },
     BlizzardCatalog = { FindByFrame = function(name)
         if name == "CharacterFrame" or name == "InspectFrame" then return { category = "character" } end
@@ -763,6 +764,8 @@ do
             controls.titleDrag.scripts.OnDragStart(controls.titleDrag)
             Check(panel.moving and panel.movable, "implicit spellbook root could not move outside combat")
             local writes = panel.geometryWrites
+            panel.left, panel.top = 415, 780
+            local stoppedX = math.floor(panel.left * panel:GetEffectiveScale() + 0.5)
             combatEdge = true -- Suite refuses before InCombatLockdown changes.
             controls.titleDrag.scripts.OnDragStop(controls.titleDrag)
             combatEdge, combat = false, true
@@ -770,6 +773,7 @@ do
             panel:Show()
             NS.WindowControls.Attach(panel, "foreverBooks")
             NS.WindowControls.Refresh()
+            panel.left, panel.top = 30, 900 -- Blizzard reflowed the book during lockdown.
             Check(panel.geometryWrites == writes and panel.moving
                 and combatJobs["windowControls:move:PlayerSpellsFrame"],
                 "ending spellbook movement during combat wrote protected geometry instead of deferring")
@@ -778,7 +782,7 @@ do
             combatJobs["windowControls:move:PlayerSpellsFrame"] = nil
             pending()
             Check(not panel.moving and not panel.movable
-                and NS.DB.windowControls.positions[name], "deferred move did not restore native movability/save position")
+                and NS.DB.windowControls.positions[name].x == stoppedX, "native combat reflow overwrote the interrupted drag")
             Check(page.AssistedCombatRotationSpellFrame.Button.geometryWrites == nil,
                 "spellbook controls mutated the native secure button")
         end
@@ -869,8 +873,8 @@ do
     combat = true
     lfgState.titleDrag.scripts.OnDragStart(lfgState.titleDrag)
     lfgState.grip.scripts.OnMouseDown(lfgState.grip, "LeftButton")
-    Check(lfg.moving and lfgState.grip.scripts.OnUpdate and lfg.scale == scale,
-        "safe Forever geometry controls were disabled in combat")
+    Check(not lfg.moving and lfgState.grip.scripts.OnUpdate and lfg.scale == scale,
+        "Forever combat title lock or scale grip changed unexpectedly")
     lfgState.grip.scripts.OnMouseUp(lfgState.grip)
     lfgState.titleDrag.scripts.OnDragStop(lfgState.titleDrag)
     combat = false
@@ -908,6 +912,10 @@ do
         NS.Client.isForever = forever
         local map = Frame("WorldMapFrame", UIParent)
         WorldMapFrame = map
+        function map:GetPoint()
+            if self.point then return unpack(self.point) end
+            return "CENTER", UIParent, "CENTER", 0, 0
+        end
         map.width, map.height = 1035, 534
         map:SetFrameStrata("LOW")
         map.BorderFrame = Frame(nil, map)
@@ -997,7 +1005,8 @@ do
             combatEdge = true
             writes = map.geometryWrites
             NextFrame()
-            Check(map.geometryWrites == writes and combatJobs[controls.replayKey], "Forever map replay crossed the combat edge")
+            Check(map.geometryWrites == writes + 2 and map.point[4] == 160 / scale and combatJobs[controls.replayKey],
+                "crossing the combat edge lost safe root placement or the deferred full map layout")
             combatEdge = false
             local replay = combatJobs[controls.replayKey]
             combatJobs[controls.replayKey] = nil
@@ -1094,8 +1103,11 @@ do
         function region:SetAlpha(value) self.alpha = value end
         return region
     end
-    local art, corner = Art(), Art()
-    function close:GetRegions() return art end
+    local art, corner, privateArt = Art(), Art(), Art()
+    local privateAlpha = {}
+    secretValues[privateAlpha] = true
+    privateArt.alpha = privateAlpha
+    function close:GetRegions() return art, privateArt end
     map.NineSlice = { TopRightCorner = corner }
     function map:GetRight() return self.left + self.width end
     local yielded, actions = {}, NS.WindowActionSkin
@@ -1105,6 +1117,20 @@ do
         "Blizzard's caption buttons kept the old action skin under the cells")
     Check(art.alpha == 0 and corner.alpha == 0 and NS.WindowControlChrome.IsFaded(close),
         "Blizzard's caption art or its corner socket shows under the cells")
+    Check(rawequal(privateArt.alpha, privateAlpha) and not NS.WindowControlChrome.IsFaded(privateArt),
+        "the caption overwrote an unreadable initial alpha")
+    local getPrivateAlpha = privateArt.GetAlpha
+    function privateArt:GetAlpha() return privateAlpha end
+    privateArt:SetAlpha(.875)
+    Check(privateArt.alpha == .875 and not NS.WindowControlChrome.IsFaded(privateArt),
+        "a public setter argument made the caption take over a still-private alpha aspect")
+    privateArt.GetAlpha = getPrivateAlpha
+    privateArt:SetAlpha(.75)
+    Check(privateArt.alpha == 0 and NS.WindowControlChrome.IsFaded(privateArt),
+        "the caption did not fade the region once its owner supplied a public alpha")
+    privateArt:SetAlpha(privateAlpha)
+    Check(rawequal(privateArt.alpha, privateAlpha) and not NS.WindowControlChrome.IsFaded(privateArt),
+        "a secret SetAlpha argument was overwritten by the caption")
     -- Guild, the AddOn list and Settings show Blizzard's buttons again while
     -- they open, past any alpha write: the next frame of the opening fades
     -- them again, and says so once in chat.
@@ -1127,7 +1153,13 @@ do
     Check(close.alpha == 0 and #Reports() == 1, "Blizzard's X stayed visible under the pointer")
     -- Back without its fade (the caption let it go) under a shown cell: faded too.
     local mapState = NS.WindowControls.states[map]
+    corner.alpha = privateAlpha -- native changes can bypass the hooked setter
     NS.WindowControlChrome.HideCaption(mapState)
+    Check(rawequal(privateArt.alpha, privateAlpha), "release restored a stale public alpha over a private one")
+    Check(rawequal(corner.alpha, privateAlpha) and not NS.WindowControlChrome.IsFaded(corner),
+        "release replaced a native alpha that became secret outside its setter")
+    corner:SetAlpha(1)
+    privateArt:SetAlpha(.625)
     mapState.closeCell:Show()
     Check(close.alpha == 1, "the caption did not let Blizzard's X go")
     Watch(0.02)
@@ -1201,6 +1233,10 @@ do
     combatJobs[state.replayKey], combatJobs["windowControls:captions"] = nil, nil
     NS.WindowControlChrome.ShowCaption(state, state.captionLevel)
     NS.WindowControls.DisableOwner("map-caption")
+    Check(privateArt.alpha == .625, "release lost a public fractional alpha after reacquiring the region")
+    privateArt:SetAlpha(.375)
+    Check(privateArt.alpha == .375 and not NS.WindowControlChrome.IsFaded(privateArt),
+        "a later native public write was lost after releasing the previously private region")
     Check(close.alpha == 1 and toggle.alpha == 1 and not state.closeCell.shown, "releasing the map left its caption")
     close:SetAlpha(.5)
     Check(close.alpha == .5 and yielded[close] == false and yielded[toggle.MinimizeButton] == false,
@@ -1486,7 +1522,7 @@ do
         combatEdge = true
         controls.titleDrag.scripts.OnDragStart(controls.titleDrag)
         controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
-        Check(panel.moving and controls.grip.scripts.OnUpdate, name .. " lost safe controls at combat edge")
+        Check(not panel.moving and controls.grip.scripts.OnUpdate, name .. " combat title lock or scale grip failed")
         controls.grip.scripts.OnMouseUp(controls.grip)
         controls.titleDrag.scripts.OnDragStop(controls.titleDrag)
         combatEdge = false

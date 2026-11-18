@@ -170,6 +170,7 @@ NS.MicroMenuMaxButtonsPerLine = NS.Client.isForever and 14 or 13
 NS.Defaults = {
     revision = 53,
     enabled = true,
+    blizzardWindowsEnabled = true,
     characterDetails = { view = "modern", enabled = true, expanded = true, styleEQoL = true, inlineGear = true, wideLayout = true },
     characterStats = { enabled = true, diminishingReturns = true },
     windowControls = { enabled = true, scales = {}, positions = {} },
@@ -210,7 +211,7 @@ NS.Defaults = {
     },
     foreverSpellLearning = true,
     addonSkins = {
-        enabled = false,
+        enabled = false, registered = true,
         aceGUI = true,
         bugSack = true, campingKit = true, dialogueUI = true, doesItDie = true,
         dungeonJournal = true, foreverFishing = true, foreverLevelingBiS = true,
@@ -220,6 +221,7 @@ NS.Defaults = {
         trueshotLodge = true,
         enhanceQoL = true,
         restedXP = true,
+        addonProfiler = true,
     },
     skins = {
         blizzardWindows = true,
@@ -263,6 +265,7 @@ NS.Defaults = {
     icons = {
         windowActions = {
             style = "bare",
+            closeStyle = "bare",
             glyphMode = "windows",
             weight = "fine",
             glyphSize = 12,
@@ -385,6 +388,7 @@ NS.GradientDirections = { "VERTICAL", "HORIZONTAL" }
 NS.HoverStyles = { "outline", "softFill", "solidFill", "off" }
 NS.IconBorderStyles = { "quality", "theme", "off" }
 NS.WindowActionStyles = { "bare", "soft", "outline", "native" }
+NS.WindowCloseStyles = { "bare", "soft", "outline", "native", "global" }
 NS.WindowActionGlyphModes = { "windows", "plusMinus", "chevrons" }
 NS.WindowActionWeights = { "fine", "bold" }
 NS.WindowActionShapes = { "global", "round", "continuous", "squircle" }

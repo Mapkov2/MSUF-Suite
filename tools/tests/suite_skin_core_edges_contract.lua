@@ -47,6 +47,7 @@ local NS = {
     FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" },
     GenericWindows = { Disable = function() end, ApplyFrame = function() end },
     WindowActionSkin = { Restore = function() end, HasOwnedStates = function() return false end,
+        GetExplicitKind = function() return nil end,
         DisableOwner = function() end },
 }
 -- Safety reads issecretvalue at load; the button walk below assigns it later.

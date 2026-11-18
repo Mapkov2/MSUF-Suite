@@ -668,7 +668,7 @@ function Stats.SetOption(key, value)
         return false
     end
     Config()[key] = value
-    if NS.DB.enabled and NS.DB.skins.blizzardWindows ~= false
+    if NS.DB.enabled and NS.DB.blizzardWindowsEnabled ~= false and NS.DB.skins.blizzardWindows ~= false
         and NS.GenericWindows.IsCategoryEnabled("character") then
         NS.CharacterPanel.Apply("blizzardWindows")
     end

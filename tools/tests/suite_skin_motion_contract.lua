@@ -129,6 +129,8 @@ end
 Load("Core/Defaults.lua")
 Load("Core/DefaultsLooks.lua")
 NS.DB = NS.CopyValue(NS.Defaults)
+-- This fixture tests global styles; the independent close-style contract covers its default.
+NS.DB.icons.windowActions.closeStyle = "global"
 for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Core/Theme.lua", "Rendering/Geometry.lua",
     "Rendering/Surface.lua", "Rendering/Motion.lua", "Rendering/SurfaceMotion.lua" }) do Load(file) end
 NS.Checkmarks = { GetWindowAction = Noop, TrackButton = Noop, TrackDropdown = Noop,
@@ -136,10 +138,12 @@ NS.Checkmarks = { GetWindowAction = Noop, TrackButton = Noop, TrackDropdown = No
 Load("Rendering/WindowActionSkin.lua")
 Load("Rendering/GlyphMotion.lua")
 Load("Rendering/WindowActionSettings.lua")
+NS.ScrollBarSkin = { GetState = Noop }
 NS.IconSkin = { GetOwner = Noop, Disable = Noop, DisableOwner = Noop }
 NS.Cosmetics = { GetOwner = Noop, RestoreOwner = Noop }
 NS.CombatGate = { Cancel = Noop }
 Load("Rendering/ControlSkin.lua")
+Load("Core/PublicAPIControls.lua")
 Load("Core/PublicAPI.lua")
 Load("Core/PublicAPIMethods.lua")
 -- Runtime events start after ContentMotion, as in the complete native TOC.
@@ -162,6 +166,61 @@ button:SetHighlightTexture(nativeHighlight)
 Check(NS.ControlSkin.ApplyButton(button, "native", { role = "button" }) ~= nil, "native button did not skin")
 local state = NS.Registry.GetSurface(button)
 Check(state.motion and clock:GetScript("OnUpdate") == nil, "new idle control installed a ticking driver")
+do
+    local toggle = Target("CheckButton", parent)
+    function toggle:GetChecked() return self.checked end
+    local surface = Surface.Attach(toggle, { role = "button" })
+    Check(not surface.motion.channels, "cold surface allocated spring channels")
+    toggle:Hide()
+    toggle.checked = true
+    toggle:Show()
+    Check(surface.motion.checked == true and not surface.motion.channels and Motion.count == 0,
+        "passive checkbox show missed its current value or allocated a spring")
+    toggle.checked = false
+    toggle:Fire("OnClick")
+    Check(Motion.count == 1 and surface.fill:GetAlpha() < 1, "first actual checkbox change lost its reveal")
+    Tick()
+end
+do
+    local overlay = state.hoverOverlay
+    local colorWrites, visibilityWrites = 0, 0
+    local color, show, hide = overlay.SetVertexColor, overlay.Show, overlay.Hide
+    function overlay:SetVertexColor(...) colorWrites = colorWrites + 1 color(self, ...) end
+    function overlay:Show() visibilityWrites = visibilityWrites + 1 show(self) end
+    function overlay:Hide() visibilityWrites = visibilityWrites + 1 hide(self) end
+    for _ = 1, 100 do
+        button:Fire("OnMouseDown")
+        Tick()
+        button:Fire("OnMouseUp")
+        Tick()
+    end
+    Check(colorWrites == 0 and visibilityWrites == 0,
+        ("unchanged press hover used %d tint and %d visibility writes"):format(colorWrites, visibilityWrites))
+    button:Fire("OnEnter")
+    Tick()
+    Check(colorWrites > 1 and visibilityWrites < colorWrites and overlay:IsShown(),
+        "hover interpolation lost color steps or repeated its visibility write on each step")
+    overlay:Hide()
+    overlay:SetVertexColor(0, 0, 0, 0)
+    Surface.Refresh(button)
+    Check(overlay:IsShown() and overlay.color[1] == state.motion.hoverR and overlay.color[4] == state.motion.hoverAlpha,
+        "full refresh failed to restore hover after another paint")
+    button:Fire("OnLeave")
+    Tick()
+    overlay.SetVertexColor, overlay.Show, overlay.Hide = color, show, hide
+end
+do
+    local control = Target("Button", parent)
+    local surface = Surface.Attach(control, { role = "navigation" })
+    control:Fire("OnEnter")
+    Tick()
+    control:Fire("OnLeave")
+    Check(surface.hoverOverlay:IsShown(), "static leave hook hid the animated fade-out")
+    Tick()
+    surface.hoverOverlay:Show()
+    control:Hide()
+    Check(not surface.hoverOverlay:IsShown(), "hiding the control missed a previously shown overlay")
+end
 button:Fire("OnEnter")
 Check(Motion.count == 1 and state.motion.channels[5].target == 1, "hover did not start owned artwork")
 Tick(4)

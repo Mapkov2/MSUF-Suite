@@ -241,7 +241,7 @@ function context:RestoreProperty(frame, setter)
     owned[frame][setter] = nil
 end
 
-local FILES = { "Shared.lua", "Unread.lua", "Copy.lua", "History.lua", "Messages.lua" }
+local FILES = { "Shared.lua", "Unread.lua", "Copy.lua", "History.lua", "Fade.lua", "Messages.lua" }
 -- A new session of the character: the files load again over the saved variable.
 local function LoadChat(saved)
     MSUFSuiteChatHistory = saved

@@ -466,10 +466,10 @@ module.context, module.active = context, true
 module:Enable()
 assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or hooks missing")
 -- The explicit sub-module list replaces the files' post-hooks on the module.
-local REFRESH_ORDER = { "PlayerGear.Refresh", "UpgradeMarker.Refresh", "ReagentInventory.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
+local REFRESH_ORDER = { "PlayerGear.Refresh", "BagTransmog.Refresh", "UpgradeMarker.Refresh", "ReagentInventory.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
     "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh", "BuybackSearch.Refresh", "BagCaption.Refresh",
     "BagsIdle.Refresh" }
-local STOP_ORDER = { "PlayerGear.Disable", "UpgradeMarker.Disable", "PhysicalSort.Stop", "ReagentInventory.Release", "InventoryView.Disable", "BankInventory.Disable",
+local STOP_ORDER = { "PlayerGear.Disable", "BagTransmog.Disable", "UpgradeMarker.Disable", "PhysicalSort.Stop", "ReagentInventory.Release", "InventoryView.Disable", "BankInventory.Disable",
     "BankWindow.Disable", "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore", "BuybackSearch.Disable",
     "BagCaption.Release", "BagsIdle.Disable" }
 local function Ran(order)
@@ -479,7 +479,7 @@ local function Ran(order)
 end
 assert(Ran(REFRESH_ORDER), "a refresh did not run the sub-modules in Bags.lua's order: "
     .. table.concat(submoduleCalls, ", "))
-for _, file in ipairs({ "PlayerGear", "UpgradeMarker", "InventoryView", "BankInventory", "BankWindow", "Finance", "AutoSplit",
+for _, file in ipairs({ "PlayerGear", "TransmogStatus", "UpgradeMarker", "InventoryView", "BankInventory", "BankWindow", "Finance", "AutoSplit",
     "StackSplitter", "SortDirection" }) do
     local handle = assert(io.open(root .. "/MSUF_Suite_Bags/" .. file .. ".lua", "rb"))
     local source = handle:read("*a")

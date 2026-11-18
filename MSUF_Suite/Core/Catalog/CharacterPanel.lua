@@ -266,6 +266,18 @@ Build.Module(ID, {
     prepareConfig = PrepareConfig,
 })
 
+Build.Module("reputationBar", {
+    title = "Reputation bar",
+    description = "Choose a faction in the Character Panel to show its reputation as a movable bar.",
+    optIn = true, defaultEnabled = false, page = "suite_hud", editElement = "reputationBar", follows = ID,
+})
+Build.Section("reputationBar", "reputation_bar", "Reputation bar", {
+    Build.Number("factionID", "Reputation", 0, 0, 2147483647),
+    Build.Number("x", "Horizontal position", 0, -4000, 4000, .1),
+    Build.Number("y", "Vertical position", 160, -3000, 3000, .1),
+    Build.Bool("manualPosition", "Use a custom position", false),
+}, { hidden = true })
+
 local tabOrder = Build.String("tabOrder", "Tab order", "", 256)
 local customTabs = Build.String("customTabs", "Custom tabs", "", CustomTabs.MaxBytes)
 customTabs.hidden = true
@@ -286,6 +298,54 @@ Build.Section(ID, "appearance", "Appearance", {
 
 Bindings.RegisterSettings(Build, ID)
 
+local rankNames = { "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }
+local rankColorKeys = {}
+
+local function RankColor(reaction, r, g, b)
+    local color = FACTION_BAR_COLORS[reaction]
+    if color then return color.r, color.g, color.b end
+    return r, g, b
+end
+
+local function StoreColor(palette, reaction, r, g, b)
+    local color = palette[reaction]
+    if not color then
+        palette[reaction] = { r, g, b }
+        return true
+    end
+    if color[1] == r and color[2] == g and color[3] == b then return false end
+    color[1], color[2], color[3] = r, g, b
+    return true
+end
+
+-- Both displays cache this palette on appearance refresh. Index zero is the
+-- theme fallback for progress without a standard standing, such as renown.
+function Header.UpdateReputationColors(palette, config, r, g, b)
+    local hex = config.reputationBarColor
+    local override = hex and hex ~= ""
+    if override then r, g, b = NS.Suite.RGB(hex) end
+    local changed = StoreColor(palette, 0, r, g, b)
+    for reaction, key in ipairs(rankColorKeys) do
+        local custom = config[key]
+        local red, green, blue = r, g, b
+        if custom and custom ~= "" then
+            red, green, blue = NS.Suite.RGB(custom)
+        elseif not override then
+            red, green, blue = RankColor(reaction, r, g, b)
+        end
+        changed = StoreColor(palette, reaction, red, green, blue) or changed
+    end
+    return changed
+end
+
+local function InheritedRankColor(reaction)
+    local hex = NS.Suite.Config(ID).reputationBarColor
+    if hex and hex ~= "" then return NS.Suite.RGB(hex) end
+    local r, g, b = RankColor(reaction)
+    if r then return r, g, b end
+    return Header.PickerColor("accentBright")
+end
+
 local reputationColor = Build.Color("reputationBarColor", "Bar color", "")
 reputationColor.inheritColor = "accentBright"
 Build.Section(ID, "reputation", "Reputation", {
@@ -300,6 +360,12 @@ Build.Section(ID, "reputation", "Reputation", {
     Build.Number("reputationBarHeight", "Bar height", 3, 2, 8),
     reputationColor,
 })
+
+for reaction, name in ipairs(rankNames) do
+    local key = "reputationColor" .. name
+    rankColorKeys[reaction] = key
+    Build.Add(ID, Build.Color(key, name, "", function() return InheritedRankColor(reaction) end), "reputationColors", "Reputation")
+end
 
 for i = 1, #Header.Fields do
     local field = Header.Fields[i]

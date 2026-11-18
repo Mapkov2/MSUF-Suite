@@ -576,6 +576,12 @@ end
 -- Checkmarks child pass (TrackNode) already tracked its button textures.
 local function SkinNode(frame, owner, metrics, isRoot, buttonTracked)
     local objectType = Kit.ObjectType(frame)
+    -- Native container identity survives the Suite's reagent-slot reparenting.
+    if objectType == "Button" then
+        local container = Field(frame, "containerFrame")
+        if Safety.Public(container) and NS.SuiteOwnership.IsBagShell(container)
+            and NS.SuiteOwnership.Owns("bagWindows") then return end
+    end
     local name = ObjectName(frame)
     TrackNode(frame, owner, metrics, buttonTracked)
     if LooksLikeScrollBox(frame, name) then
