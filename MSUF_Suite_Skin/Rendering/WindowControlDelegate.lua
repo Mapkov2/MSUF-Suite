@@ -20,8 +20,8 @@ local _, NS = ...
 -- click makes SecureActionButton_OnClick click the window's X (minimize) or
 -- the Blizzard button that opens the window (restore, Policy.Opener).
 -- The cell and the tab keep their handlers for clicks the delegate does not
--- take (combat, the Gamepad UI); for a managed window they refuse
--- (WindowControlPolicy.SecureOnly), and one without an opener has no minimize.
+-- take. Windows without a reversible native click use their own geometry
+-- path where available.
 local Delegate = {}
 NS.WindowControlDelegate = Delegate
 
@@ -63,15 +63,15 @@ end
 
 local function Target(record)
     if record.role == "minimize" then
-        -- Native-only windows minimize once a native button can bring them back.
-        if not Policy.CanRestore(record.state) then return nil end
-        return record.state.close
+        if Policy.CanNativeMinimize(record.state) then return record.state.close end
+    elseif record.state.minimized and not record.state.park
+        and Safety.Read(record.state.frame, "IsShown") == false then
+        return Policy.Opener(record.state)
     end
-    return Policy.Opener(record.state)
 end
 
--- Minimize first does what the skin's own minimize did before its hide (the
--- tab's place, the profession). A window that may not go now gets no click.
+-- Place the restore tab before the native close changes the layout.
+-- A window that may not go now gets no click.
 -- While Blizzard's click runs the delegate stays: PostClick lets it go.
 local function PreClick(button, mouseButton)
     button.clicking = true
@@ -79,9 +79,9 @@ local function PreClick(button, mouseButton)
     if not record or mouseButton ~= "LeftButton" or InCombatLockdown() then return end
     -- The window can relayout while the proxy is shown. An old hit rectangle
     -- must never invoke the native button or prepare a minimize.
-    if Safety.Read(button.owner, "IsMouseOver") ~= true
-        or record.role == "minimize" and not record.prepare(record.state)
-        or record.role == "restore" and Policy.SecureOnly(record.state) and Target(record) ~= button:GetAttribute("clickbutton1") then
+    if NS.IsCombatLocked() or Safety.Read(button.owner, "IsMouseOver") ~= true
+        or Target(record) ~= button:GetAttribute("clickbutton1")
+        or record.role == "minimize" and not record.prepare(record.state) then
         button:SetAttribute("type1", nil)
     end
 end
@@ -149,12 +149,11 @@ local function Attach(owner)
     local width, height = Safety.Read(owner, "GetWidth"), Safety.Read(owner, "GetHeight")
     local scale, uiScale = Safety.Read(owner, "GetEffectiveScale"), UIParent:GetEffectiveScale()
     if not left or not top or not width or not height or width <= 0 or height <= 0
-        or not scale or scale <= 0 or uiScale <= 0 then return end
+        or not scale or scale <= 0 or not Safety.Public(uiScale) or uiScale <= 0 then return end
     local ratio = scale / uiScale
     local button = Secure()
     -- Anchoring a secure button to the cell implicitly protects its window.
-    -- Copy the hit rectangle in UIParent units so move/scale/fit stay usable.
-    button:ClearAllPoints()
+    -- Copy the hit rectangle in UIParent units and update its single anchor in place.
     button:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * ratio, top * ratio)
     button:SetSize(width * ratio, height * ratio)
     button:SetFrameStrata(owner:GetFrameStrata())
@@ -164,6 +163,13 @@ local function Attach(owner)
     button.owner = owner
     NS.CombatGate.Cancel(RELEASE_KEY)
     button:Show()
+    return true
+end
+
+-- The detached hit area must follow a caption moved under a stationary cursor.
+function Delegate.Refresh(owner)
+    if not secure or secure.owner ~= owner or secure.clicking or secure.dragging or NS.IsCombatLocked() then return end
+    if Safety.Read(owner, "IsMouseOver") ~= true or not Attach(owner) then Release() end
 end
 
 local function Bind(owner, state, role, prepare, finish)

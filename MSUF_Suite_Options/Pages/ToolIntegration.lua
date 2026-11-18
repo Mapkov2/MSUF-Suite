@@ -25,7 +25,91 @@ function P.ExtendQoLTools(groups, categories)
     end
 end
 
+local function NativeZoneMapControl(ctx, details, page, id, section, y, width)
+    local cvar, label = "showBattlefieldMinimap", P.Tr("Show Blizzard's small zone map")
+    local function Shown()
+        local value = C_CVar.GetCVar(cvar)
+        if P.Suite.Public(value) and type(value) == "string" then return value == "1" end
+    end
+    local function CanToggle()
+        local blocked = DISALLOW_FRAME_TOGGLING
+        return not P.Combat() and P.Suite.Public(blocked) and not blocked
+    end
+    local row = P.Meta(page, id, "action.zoneMap", "action", section)
+    row.id, row.label, row.kind, row.get = "nativeZoneMap", label, "toggle", Shown
+    row.set = function(wanted)
+        if not CanToggle() then return end
+        local current = Shown()
+        if current ~= nil and current ~= wanted then ToggleBattlefieldMap() end
+    end
+    local grid = P.W.SettingsRows(ctx, details, { x = 16, y = y, width = width, columns = 1, rows = { row } })
+    local toggle = grid.controls.nativeZoneMap
+    P.M.RegisterControlMetadata(toggle, row, label, "toggle")
+    local function Refresh()
+        local shown = Shown()
+        toggle:SetChecked(shown == true)
+        P.W.SetControlEnabled(toggle, shown ~= nil and CanToggle())
+    end
+    local function OnShow()
+        toggle:RegisterEvent("CVAR_UPDATE")
+        Refresh()
+    end
+    toggle:SetScript("OnEvent", function(_, _, name)
+        local key = P.Suite.PublicText(name)
+        if key and key:lower() == "showbattlefieldminimap" then Refresh() end
+    end)
+    toggle:HookScript("OnShow", OnShow)
+    toggle:HookScript("OnHide", function() toggle:UnregisterEvent("CVAR_UPDATE") end)
+    if toggle:IsVisible() then OnShow() else Refresh() end
+    P.M.TrackRefresh(ctx, Refresh)
+    return grid.bottomY
+end
+
+local function NavigationHUDActions(ctx, details, id, section, y, width)
+    local page, Text, PublicText = "suite_qualityOfLife", P.Tr, P.Suite.PublicText
+    local command, defaultKey = "MSUFSUITE_TOGGLE_MAP_OVERLAY", "SHIFT-M"
+    local function Ready() return S.Status(id) == "Active" end
+    local function HasMover(element)
+        return Ready() and S.HasOwnedMover(id, element)
+    end
+    P.Button(ctx, details, "Toggle map overlay", 16, y, width, function() P.Suite.ToggleMapOverlay() end,
+        Ready, P.Meta(page, id, "action.toggleMap", "action", section))
+    local keys = P.Button(ctx, details, "Open Blizzard key bindings", 16, y - 34, width, function()
+        Settings.OpenToCategory(Settings.KEYBINDINGS_CATEGORY_ID, "MSUF Suite")
+    end, nil,
+        P.Meta(page, id, "action.mapShortcut", "action", section), { wrap = true })
+    local function UpdateKeyLabel()
+        local key = GetBindingKey and PublicText((GetBindingKey(command)))
+        if Ready() and PublicText(GetBindingAction(defaultKey, true)) == command then
+            key = defaultKey
+        end
+        local label = key and GetBindingText and PublicText(GetBindingText(key)) or key or Text("No shortcut assigned")
+        local text = Text("Map overlay shortcut (%s)"):format(label)
+        if keys.mapShortcutLabel ~= text then
+            P.SetButtonText(keys, text)
+            keys.mapShortcutLabel = text
+        end
+    end
+    local function KeyRowShown()
+        keys:RegisterEvent("UPDATE_BINDINGS")
+        UpdateKeyLabel()
+    end
+    keys:SetScript("OnEvent", UpdateKeyLabel)
+    keys:HookScript("OnShow", KeyRowShown)
+    keys:HookScript("OnHide", function() keys:UnregisterEvent("UPDATE_BINDINGS") end)
+    if keys:IsVisible() then KeyRowShown() else UpdateKeyLabel() end
+    P.M.TrackRefresh(ctx, UpdateKeyLabel)
+    y = NativeZoneMapControl(ctx, details, page, id, section, y - 44 - keys:GetHeight(), width) - 8
+    P.Button(ctx, details, "Move map overlay", 16, y, width, function() P.MoveOnScreen(id, "map", true) end,
+        function() return HasMover("map") end, P.Meta(page, id, "action.moveMap", "action", section))
+    P.Button(ctx, details, "Move compass", 16, y - 34, width, function() P.MoveOnScreen(id, "compass", true) end,
+        function() return P.Get(id, "showCompass") and HasMover("compass") end,
+        P.Meta(page, id, "action.moveCompass", "action", section))
+    return y - 74
+end
+
 function P.BuildNewToolActions(ctx, details, id, section, y, width)
+    if id == "navigationHUD" then return NavigationHUDActions(ctx, details, id, section, y, width) end
     if id == "autoUprank" then
         local function Running()
             local helper = S.instances.autoUprank

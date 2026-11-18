@@ -1,6 +1,7 @@
 local _, P = ...
 local Suite, S, M, T, Tr, HM = P.Suite, P.S, P.M, P.T, P.Tr, P.HM
 local Data = P.DataTextsPreviewData
+local Compass = Suite.Compass
 local Preview = {}
 P.DataTextsPreview = Preview
 local ID, PAGE = "dataTexts", "suite_dataTexts"
@@ -221,7 +222,7 @@ local function PaintBackdrop(ui, style, inset)
     ui.badge:SetPoint("LEFT", ui.sample, "LEFT", Data.Snap(4, ui.pixel), 0)
 end
 
-local function Entries(ui, config, style)
+local function Entries(ui, config, style, vertical)
     local entries, prefix = {}, "bar" .. ui.bar .. "Slot"
     local font = Suite.ResolveFont(style.font) or Suite.GlobalFontPath()
     for slot = 1, ui.maxSlots do
@@ -229,19 +230,23 @@ local function Entries(ui, config, style)
         local choice = config[block]
         button.dataKey, button.dataChoice = block, choice
         local source = choice and Suite.DataTextSourceKeys[choice]
+        local compass = source == "compass"
+        if not compass and button.dataCompass then Compass.ClearSlot(button) end
         button:SetShown(source ~= nil and source ~= false)
         button.divider:Hide()
         if source then
             P.StylePreviewFont(button.label, font, style.fontSize, OUTLINES[style.textOutline] or "OUTLINE",
                 style.fontRendering, style.fontShadow, style.fontShadowOpacity, style.fontShadowDistance)
             button.label:SetJustifyH(ALIGN[style.textAlign] or "CENTER")
-            button.label:SetText(Data.Text(source, style, config, block))
+            if not compass then button.label:SetText(Data.Text(source, style, config, block)) end
             local progress = source == "progressBar"
             if progress then Suite.PrepareDataTextProgress(button, button.CreateTexture)
             elseif button.dataProgress then Suite.PaintDataTextProgress(button) end
-            local textWidth = progress and Suite.DataTextProgressWidth or button.label:GetUnboundedStringWidth()
+            local textWidth = compass and (vertical and Compass.fallbackWidth or Compass.slotWidth)
+                or progress and Suite.DataTextProgressWidth or button.label:GetUnboundedStringWidth()
             entries[#entries + 1] = { button = button, block = block, textWidth = textWidth, progress = progress,
-                placement = config[block .. "Placement"], limit = source == "broker" and config[block .. "MaxWidth"] or nil }
+                compass = compass, placement = config[block .. "Placement"],
+                limit = source == "broker" and config[block .. "MaxWidth"] or nil }
             Metadata(ui, button, "Slot" .. slot .. ".preview", Tr("Choose data for place %d"):format(slot))
         end
     end
@@ -271,6 +276,9 @@ local function PaintSlot(ui, entry, config, style, ordinal, count, vertical, wid
     if entry.progress then
         Suite.LayoutDataTextProgress(button, available, padding, pixel / scale)
         Suite.PaintDataTextProgress(button, .32, .42)
+    elseif entry.compass then
+        Compass.LayoutSlot(button, available, button:GetHeight(), padding, pixel / scale, style.accentColor)
+        Compass.PaintSlot(button, 90, CreateFrame, button.CreateTexture)
     end
     local r, g, b = P.RGB(config[block .. "Background"] or "101010")
     button.fill:SetColorTexture(r, g, b, (config[block .. "Alpha"] or 0) / 100)
@@ -433,7 +441,7 @@ local function Paint(ui)
     if vertical then style.bagBadge = false end
     ValueColor(style)
     ui.pixel = S.PixelUnit and S.PixelUnit() or 1
-    local entries = Entries(ui, config, style)
+    local entries = Entries(ui, config, style, vertical)
     local span = vertical and UIParent:GetHeight() or UIParent:GetWidth()
     local width, height, inset = Data.Layout(entries, config, bar, style, ui.pixel, span)
     local badge = style.bagBadge and style.bagBadgeSize or 0

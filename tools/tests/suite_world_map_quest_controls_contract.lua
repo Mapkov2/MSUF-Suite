@@ -3,7 +3,61 @@ local checks = 0
 local function Check(value, message) assert(value, message) checks = checks + 1 end
 local function Noop() end
 
-local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, HoldSkinJobs, FlushSkinJobs, External, CombatRebuild)
+local function MountSpoken(Frame, scroll, row, other)
+    local overlay = { questPlayButtons = {}, questContributeButtons = {}, displayedButtons = {}, enabled = true }
+    local function Button()
+        local button = Frame(scroll)
+        button.kind, button.clicks, button.motion = "Button", true, true
+        function button:IsMouseClickEnabled() return self.clicks end
+        function button:SetMouseClickEnabled(value) self.clicks = value end
+        function button:IsMouseMotionEnabled() return self.motion end
+        function button:SetMouseMotionEnabled(value) self.motion = value end
+        button:Hide()
+        return button
+    end
+    for _, title in ipairs({ row, other }) do
+        title.Checkbox = title.Checkbox or Frame(title)
+        local play = Button()
+        play.questID = title.info.questID
+        overlay.questPlayButtons[play.questID] = play
+    end
+    function overlay:GetPlayButtonParent() return scroll end
+    function overlay:ShowsQuestLogButtons() return self.enabled end
+    function overlay:UpdateQuestTitle(title, button)
+        button:ClearAllPoints()
+        button:SetPoint("RIGHT", title.Checkbox, "LEFT", -3, 0)
+    end
+    function overlay:Update()
+        for _, button in ipairs(self.displayedButtons) do button:Hide() end
+        wipe(self.displayedButtons)
+        if not self:ShowsQuestLogButtons() then return end
+        for title in scroll.titleFramePool:EnumerateActive() do
+            local id = title.questID
+            if self.questPlayButtons[id] then
+                local button = self.questPlayButtons[id]
+                if id == self.contribution then
+                    self.questContributeButtons[id] = self.questContributeButtons[id] or Button()
+                    button = self.questContributeButtons[id]
+                end
+                button:SetParent(title:GetParent())
+                self:UpdateQuestTitle(title, button)
+                button:Show()
+                table.insert(self.displayedButtons, button)
+            end
+        end
+    end
+    _G.VoiceOver = { AddonFolder = "Spoken_Quests", QuestOverlayUI = overlay }
+    return overlay
+end
+
+local function CheckSpokenButton(button, shown, message)
+    local visible = button:IsVisible() and button:GetAlpha() > 0 or false
+    local clickable = button:IsVisible() and button:IsMouseClickEnabled() or false
+    local hoverable = button:IsVisible() and button:IsMouseMotionEnabled() or false
+    Check(visible == shown and clickable == shown and hoverable == shown, message)
+end
+
+local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, HoldSkinJobs, FlushSkinJobs, External, CombatRebuild, events)
     local forever = NS.Client.isForever
     row.protected = false
     local zone = { isHeader = true, isCollapsed = false, headerSortKey = "Redridge Mountains" }
@@ -24,6 +78,9 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
     function row:SetHeight(height) self.height = height end
     local pinQuestID = objective.questID
     pin.GetQuestID = function() return pinQuestID end
+    -- The C frame parent is Contents; Blizzard's separate Lua .parent points at the title.
+    function pin:GetParent() return contents end
+    function pin:IsVisible() return self.shown and contents:IsVisible() end
     pin:SetAlpha(0.75)
     local nativeShow, nativeHide = pin.Show, pin.Hide
     function pin:Show() error("addon showed a native POI button") end
@@ -71,20 +128,28 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
     end
     local plus, minus = "common-button-list-plus", "common-button-list-minus"
     local displayState = { questInfoContainer = { [6] = zone } }
-    local function NativeRebuild()
+    local spoken
+    if forever then _G.QuestScrollFrame = scroll end
+    local function NativeRebuild(hideActiveTitle)
         -- Native releases the pools, then shows only rows belonging to open headers.
         local shown = not zone.isCollapsed
         local showObjective = shown and (not forever or GetCVar("showQuestObjectivesInLog") == "1")
         active[row], activeObjectives[objective], activePins[pin] = shown or nil, showObjective or nil, shown or nil
+        row.questID, other.questID = row.info.questID, other.info.questID
+        pin.parent = pinQuestID == row.questID and row or other
+        pin:ClearAllPoints()
+        pin:SetPoint("TOPLEFT", pin.parent, 6, -4)
         row.height = showObjective and nativeTitleHeight or compactTitleHeight
         if shown then row:Show() nativeShow(pin)
         else row:Hide() nativeHide(pin) end
+        if hideActiveTitle then row:Hide() end
         if showObjective then objective:Show() else objective:Hide() end
         header.CollapseButton.collapsed = zone.isCollapsed
         normal:SetAtlas(shown and minus or plus)
         highlight:SetAtlas(shown and minus or plus)
         scroll:UpdateBackground(displayState)
         contents:Layout()
+        if spoken then spoken:Update() end
     end
     local originalExpand = ExpandQuestHeader
     local explicitExpands, externalExpands, guideReads = 0, 0, 0
@@ -170,6 +235,43 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
     end
     Click("LeftButton", true)
     Folded("external expand-all reopened a manually folded zone or left a stray row")
+    if forever then
+        NativeRebuild(true)
+        Folded("a second filter hiding the folded title revealed its native POI before Spoken loaded")
+        NativeRebuild()
+        -- Spoken may build its buttons during initialization, before its ADDON_LOADED event.
+        spoken = MountSpoken(Frame, scroll, row, other)
+        spoken:Update()
+        events:Fire("OnEvent", "ADDON_LOADED", "Spoken_Quests")
+        local id = row.questID
+        CheckSpokenButton(spoken.questPlayButtons[id], false, "Spoken Play overlays the header of a folded quest")
+        CheckSpokenButton(spoken.questPlayButtons[other.questID], true, "folding a zone took Play from its visible neighbor")
+        Check(spoken.questContributeButtons[id] == nil, "expected a quest without a cached Contribute button")
+        spoken.contribution = id
+        spoken:Update()
+        CheckSpokenButton(spoken.questContributeButtons[id], false, "Spoken refreshed Contribute over a folded quest")
+        spoken.enabled = false
+        spoken:Update()
+        query = "Quest"
+        NativeRebuild()
+        CheckSpokenButton(spoken.questContributeButtons[id], false, "search resurrected a button disabled in Spoken")
+        spoken.enabled = true
+        spoken:Update()
+        CheckSpokenButton(spoken.questContributeButtons[id], true, "the visible search result lost Spoken Contribute")
+        query = ""
+        NativeRebuild()
+        CheckSpokenButton(spoken.questContributeButtons[id], false, "clearing search left a floating Contribute button")
+        -- A native pool rebuild can exchange the two row objects between quests.
+        -- The original quest's button follows it to the visible row.
+        row.questID, other.questID = other.questID, row.questID
+        row.info.questID, other.info.questID = row.questID, other.questID
+        NativeRebuild()
+        CheckSpokenButton(spoken.questContributeButtons[id], true, "Contribute kept the old row's suppression after reuse")
+        CheckSpokenButton(spoken.questPlayButtons[row.questID], false, "Play escaped its new folded row after reuse")
+        row.questID, other.questID = other.questID, row.questID
+        row.info.questID, other.info.questID = row.questID, other.questID
+        NativeRebuild()
+    end
     -- A protected pin restore must replay after combat on either client.
     function pin:IsProtected() return self.protected == true, false end
     pin.protected, query = true, "Quest"
@@ -232,9 +334,28 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
     Check(row:IsShown() and objective:IsShown() == (not forever) and PinVisible() and explicitExpands == 1
         and normal:GetAtlas() == minus, "second click did not expand the locally folded zone")
     Check(row.labels[2]:IsShown(), "local reopen left a blank compact quest until native rebuild")
+    if spoken then
+        CheckSpokenButton(spoken.questContributeButtons[row.questID], true, "local reopen left Spoken Contribute missing")
+    end
     Check(contents.visibleQuests == 2 and contents.width == 304, "local reopen did not lay out the expanded rows")
     Check(contents.dirty == true, "local reopen cleared Blizzard's pending layout state")
     Check(header.dirty == true and contents.skipChildLayout == nil, "local reopen changed native child layout state")
+    if spoken then
+        spoken.contribution = nil
+        NativeRebuild(true)
+        Check(active[row] and not row:IsShown() and normal:GetAtlas() == minus, "expected an active hidden quest under an open header")
+        Check(pin:IsVisible() and pin:GetAlpha() == 0 and not pin:IsMouseClickEnabled() and not pin:IsMouseMotionEnabled(),
+            "the native POI of an active hidden quest overlaps the header")
+        CheckSpokenButton(spoken.questPlayButtons[row.questID], false, "Spoken Play outlived its externally hidden title")
+        CheckSpokenButton(spoken.questPlayButtons[other.questID], true, "an externally hidden title masked its visible neighbor")
+        row:Show()
+        spoken:Update()
+        CheckSpokenButton(spoken.questPlayButtons[row.questID], true, "Spoken's own refresh left a newly visible title muted")
+        NativeRebuild()
+        Check(PinVisible(), "the POI of a newly visible title did not recover its mouse and alpha values")
+        spoken.contribution = row.questID
+        spoken:Update()
+    end
     rebuildImmediately = true
     Click("LeftButton", true)
     scroll:ExpandHeaderForQuest(objective.questID)
@@ -252,6 +373,9 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
                 "disabling skin did not restore the latest native quest height")
         end
         Check(contents.dirty == true, "disabling the skin cleared Blizzard's pending layout state")
+        if spoken then
+            CheckSpokenButton(spoken.questContributeButtons[row.questID], true, "disabling the skin kept Contribute suppressed")
+        end
     end
 end
 
@@ -787,7 +911,7 @@ local function Run(flavor)
     end
     FlushCombatTimers()
     local checkReleasedFolds = CheckZoneFolds(NS, Frame, map, scroll, contents, row, active,
-        HoldSkinJobs, FlushSkinJobs, External, CombatRebuild)
+        HoldSkinJobs, FlushSkinJobs, External, CombatRebuild, cvarEvents)
     holdSkinJobs, skinJobs = true, {}
     QuestLogQuests_Update()
     NS.WorldMapSkin.Disable(map, "map-quests")
@@ -844,6 +968,7 @@ local function Run(flavor)
     end
     _G.WorldMapFrame = coldMap
     NS.DB.skins.worldMap = true
+    NS.DB.skins.blizzardWindows = false
     combat, lockdown = true, true
     local coldCVarWrites = objectiveCVarWrites
     local oldOrder = NS.Adapters.order
@@ -878,6 +1003,7 @@ local function Run(flavor)
     C_Timer.After, NS.Adapters.order = oldAfter, oldOrder
     Check(#created > framesBefore, "contract did not exercise owned visual creation")
     _G.WorldMapFrame, _G.QuestLogQuests_Update, _G.QuestUtilsOverrides = nil, nil, nil
+    _G.VoiceOver, _G.QuestScrollFrame = nil, nil
     Menu = oldMenu
 end
 

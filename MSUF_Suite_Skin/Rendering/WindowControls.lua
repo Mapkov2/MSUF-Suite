@@ -13,6 +13,7 @@ local Policy = NS.WindowControlPolicy
 local Chrome = NS.WindowControlChrome
 local Delegate = NS.WindowControlDelegate
 local CanChangeFrameGeometry = Policy.CanControl
+local function PublicNumber(value) return Safety.Public(value) and type(value) == "number" end
 
 local activeStates = setmetatable({}, { __mode = "k" })
 local activeInventory = setmetatable({}, { __mode = "k" })
@@ -23,7 +24,6 @@ local FOREVER_CHARACTER_DOCK = { x = 0, y = 0 }
 local CONTROL_LEVEL_OFFSET = 15
 local GRIP_LEVEL_OFFSET = 20
 local function IsCombat() return NS.IsCombatLocked() end
-
 local function Enabled()
     local db = NS.DB
     return db and db.enabled ~= false and db.blizzardWindowsEnabled ~= false and db.windowControls
@@ -64,24 +64,24 @@ local InstallPanelPositionHook
 
 local function ApplyStoredScale(state)
     if not CanChangeFrameGeometry(state.frame) or state.fit then return end
-    if Maximized(state) then
-        if state.frame:GetScale() ~= state.originalScale then state.frame:SetScale(state.originalScale) end
-        return
+    local frame, scale = state.frame, state.originalScale
+    if not Maximized(state) then
+        local limits = NS.WindowLayoutLimits
+        local scales = NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales
+        local stored = scales and scales[state.name]
+        if type(stored) == "number" and stored >= limits.minScale and stored <= limits.maxScale then
+            scale = stored
+            state.customScale = true
+            InstallPanelPositionHook()
+        elseif state.customScale then
+            state.customScale = false
+        else
+            return
+        end
     end
-    local limits = NS.WindowLayoutLimits
-    local scales = NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales
-    local stored = scales and scales[state.name]
-    local scale
-    if type(stored) == "number" and stored >= limits.minScale and stored <= limits.maxScale then
-        scale = stored
-        state.customScale = true
-        InstallPanelPositionHook()
-    elseif state.customScale then
-        scale = state.originalScale
-        state.customScale = false
-    end
-    if type(scale) == "number" and state.frame:GetScale() ~= scale then
-        state.frame:SetScale(scale)
+    if type(scale) == "number" then
+        local current = frame:GetScale()
+        if PublicNumber(current) and current ~= scale then frame:SetScale(scale) end
     end
 end
 
@@ -94,12 +94,12 @@ end
 -- Forever map and mailbox can finish opening before this callback runs.
 local function QueuePosition(state)
     if state.positionQueued or activeStates[state.frame] ~= state or state.moving or state.drag
-        or state.fit or state.bankPark or not StoredPoint(state)
+        or state.fit or state.park or not StoredPoint(state)
         or not Controlled(state) or Safety.Read(state.frame, "IsShown") ~= true then return end
     if not state.replayPosition then
         state.replayPosition = function()
             state.positionQueued = nil
-            if activeStates[state.frame] ~= state or state.moving or state.drag or state.fit or state.bankPark or not Controlled(state)
+            if activeStates[state.frame] ~= state or state.moving or state.drag or state.fit or state.park or not Controlled(state)
                 or Safety.Read(state.frame, "IsShown") ~= true or Maximized(state) then return end
             local point = StoredPoint(state)
             if point and Policy.PlaceWindow(state, point) then
@@ -114,7 +114,7 @@ end
 
 local function ApplyStoredPosition(state)
     if not CanChangeFrameGeometry(state.frame) or not Enabled() or state.moving or Maximized(state) then return end
-    if state.bankPark then return Policy.HoldBankPark(state) end
+    if state.park then return Policy.HoldPark(state) end
     if state.fit then
         Policy.ReleasePositionClamp(state)
         return Chrome.Fit(state)
@@ -148,7 +148,9 @@ local function OnPanelPositionsUpdated(currentFrame)
     if NS.Client.isForever and Safety.Public(currentFrame) and currentFrame
         and currentFrame == Safety.Field(_G, "MailFrame") then return NS.Registry.QueueJob(WindowControls.Refresh) end
     for frame, state in pairs(activeStates) do
-        if Controlled(state) and frame:IsShown() and not Policy.DeferMailLayout(state) and not Policy.DeferMapLayout(state) then
+        if state.park then
+            Policy.HoldPark(state)
+        elseif Controlled(state) and frame:IsShown() and not Policy.DeferMailLayout(state) and not Policy.DeferMapLayout(state) then
             if not state.drag then ApplyStoredScale(state) end
             ApplyStoredPosition(state)
             if HasCaption(state) and SafeControls(state) then
@@ -184,12 +186,11 @@ end
 
 local function Restore(state)
     if not state or not state.minimized or not Policy.CanChangeVisibility(state) then return false end
-    if state.bankPark then
-        local restored = Policy.RestoreBank(state)
+    if state.park then
+        local restored = Policy.RestorePark(state)
         if restored then ApplyStoredPosition(state) end
         return restored
     end
-    if state.profession then return Policy.ReopenProfession(state) end
     if Policy.SecureOnly(state) then return false end
     state.frame:Show()
     return state.frame:IsShown() == true -- OnPanelShow drops the tab.
@@ -201,40 +202,29 @@ local function ToggleFit(state)
     if Chrome.ToggleFit(state, Policy.CaptureNativePoints) then
         if state.fit then InstallPanelPositionHook() end
         WindowControls.Refresh()
+        if state.fit then state.fit.initialScale, state.fit.initialX, state.fit.initialY = nil, nil, nil end
     end
 end
-
 local function PrepareMinimize(state)
-    if NS.Client.IsGamepadUI() or not state or state.minimized or not Controlled(state) then return false end
+    if not state or state.minimized or state.moving or state.drag or NS.Client.IsGamepadUI()
+        or not Controlled(state) or Safety.Read(state.frame, "IsShown") ~= true then return false end
     if not Policy.CanChangeVisibility(state) then Chrome.SyncMinimize(state) return false end
-    -- Native OnHide resets pending changes. Keep the editor open until the
-    -- user explicitly applies or cancels them; never write its save flag.
-    if state.name == "AddonList" and AddonList_HasAnyChanged() then return false end
-    if not Policy.RememberNativeRestore(state) then return false end
-    Chrome.LeaveFit(state)
-    local frame, uiScale = state.frame, UIParent:GetEffectiveScale()
-    local left, top = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop")
-    local frameScale = Safety.Read(frame, "GetEffectiveScale")
-    state.restore:ClearAllPoints()
-    if type(left) == "number" and type(top) == "number" and type(frameScale) == "number" and uiScale > 0 then
-        state.restore:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * frameScale / uiScale, top * frameScale / uiScale)
-    else
-        state.restore:SetPoint("TOP", UIParent, "TOP", 0, -80)
-    end
-    state.restoreLabel:SetText(Chrome.Title(state) .. "  +")
-    Policy.NoteProfession(state)
-    state.minimized = true
-    return true
+    return Policy.PrepareRestoreTab(state)
 end
-
--- Blizzard kept the window open: no tab.
 local function FinishMinimize(state)
-    if state.frame:IsShown() then state.minimized = false else state.restore:Show() end
+    if state.frame:IsShown() then
+        state.minimized = false
+    else
+        state.restore:Show()
+    end
 end
 
 local function Minimize(state)
-    if not state or (state.name ~= "BankFrame" and Policy.SecureOnly(state)) or not PrepareMinimize(state) then return end
-    if state.name == "BankFrame" then return Policy.ParkBank(state, Policy.CaptureNativePoints, InstallPanelPositionHook) end
+    if not state then return end
+    local park = Policy.NeedsPark(state)
+    if park and (IsCombat() or Policy.CanNativeMinimize(state) or not Policy.CanPark(state)) then return end
+    if not PrepareMinimize(state) then return end
+    if park then return Policy.Park(state, InstallPanelPositionHook) end
     state.frame:Hide()
     FinishMinimize(state)
 end
@@ -242,7 +232,7 @@ end
 local function OnRestoreClick(bar, mouseButton)
     local state = controlStates[bar]
     if not state then return end
-    if mouseButton == "RightButton" and not state.bankPark then
+    if mouseButton == "RightButton" and not state.park then
         state.minimized = false
         activeStates[state.frame] = state.frame:IsShown() and state or nil
         bar:Hide()
@@ -254,7 +244,6 @@ end
 local function OnMinimizeClick(button)
     Minimize(controlStates[button])
 end
-
 local function OnMaximizeClick(button)
     ToggleFit(controlStates[button])
 end
@@ -272,7 +261,7 @@ local function EndDrag(state)
     local scale = state.frame:GetScale()
     -- A press that changed nothing (a click, or A on the grip under Forever's
     -- Gamepad UI) stores nothing and leaves no history entry.
-    if scale == drag.scale then return end
+    if not PublicNumber(scale) or scale == drag.scale then return end
     if NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales then
         local value = math.floor(scale * 100 + 0.5) / 100
         CommitWithHistory(NS.L["Scale %s"]:format(Chrome.Title(state)), "scales." .. state.name, function()
@@ -303,10 +292,12 @@ local function UpdateDrag(state)
     end
     local x, y = GetCursorPosition()
     if type(x) ~= "number" or type(y) ~= "number" then return end
+    local current = state.frame:GetScale()
+    if not PublicNumber(current) then return end
     local delta = ((x - drag.x) + (drag.y - y)) * 0.5
     local scale = ClampScale(drag.scale + delta / drag.pixels)
     scale = math.floor(scale * 100 + 0.5) / 100
-    if scale ~= state.frame:GetScale() then state.frame:SetScale(scale) end
+    if scale ~= current then state.frame:SetScale(scale) end
 end
 
 local function OnGripUpdate(grip)
@@ -323,16 +314,18 @@ local function BeginDrag(state)
     if state.inventory and not state.customScale and not state.customPosition then Policy.CaptureNativeBagLayout(state) end
     local x, y = GetCursorPosition()
     local frame = state.frame
-    local width, height = frame:GetWidth(), frame:GetHeight()
-    if state.suiteBounds then width, height = state.suiteBounds.width, state.suiteBounds.height end
-    local parentScale = frame:GetEffectiveScale() / frame:GetScale()
-    if type(x) ~= "number" or type(y) ~= "number"
-        or not width or not height or not parentScale or parentScale <= 0 then return end
+    local width, height
+    if state.suiteBounds then width, height = state.suiteBounds.width, state.suiteBounds.height
+    else width, height = frame:GetWidth(), frame:GetHeight() end
+    local effective, scale = frame:GetEffectiveScale(), frame:GetScale()
+    if type(x) ~= "number" or type(y) ~= "number" or not (PublicNumber(width) and PublicNumber(height)
+        and PublicNumber(effective) and PublicNumber(scale)) or effective <= 0 or scale <= 0 then return end
+    local pixels = math.max(width, height) * effective / scale
+    if pixels <= 0 then return end
     local drag = state.dragStart or {}
     state.dragStart = drag
     drag.x, drag.y = x, y
-    drag.scale = frame:GetScale()
-    drag.pixels = math.max(width, height) * parentScale
+    drag.scale, drag.pixels = scale, pixels
     state.drag = drag
     state.grip:SetScript("OnUpdate", OnGripUpdate)
 end
@@ -487,14 +480,19 @@ end
 
 local function HideControls(state, releasing)
     activeInventory[state.frame] = nil
-    if IsCombat() and (not CanChangeFrameGeometry(state.frame) or not SafeControls(state)) then
+    if IsCombat() and (state.park or not CanChangeFrameGeometry(state.frame) or not SafeControls(state)) then
         NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
         return
     end
     if state.moving then EndMove(state) end
     if state.drag then EndDrag(state) end
-    if state.bankPark then Policy.RestoreBank(state)
-    elseif state.minimized then Restore(state) end
+    if state.park then Policy.RestorePark(state)
+    elseif state.minimized then
+        Restore(state)
+        state.minimized = false
+        state.restore:Hide()
+        activeStates[state.frame] = state.frame:IsShown() and state or nil
+    end
     Chrome.LeaveFit(state)
     Policy.ReleasePositionClamp(state)
     state.titleDrag:Hide()
@@ -508,15 +506,18 @@ local function EnsureCaption(state)
     local frame, name = state.frame, state.name
     if state.maximize or state.closeOnly or NS.Client.IsGamepadUI() then return end
     if not state.close then state.close = Chrome.FindClose(frame, name) end
-    if not state.close then return end
-    local toggle = state.sizeToggle or Chrome.NativeSizeToggle(frame, state.close)
-    if not toggle and Chrome.HasNativeCaption(frame, name, state.close) then return end
     if not state.minimize and Policy.IsMinimizable(name) then
         state.restore = Chrome.CreateRestore(state, OnRestoreClick)
         controlStates[state.restore] = state
         state.minimize = Chrome.CreateMinimize(state, state.close, CONTROL_LEVEL_OFFSET, OnMinimizeClick)
         controlStates[state.minimize] = state
-        if name ~= "BankFrame" then Delegate.Bind(state, PrepareMinimize, FinishMinimize) end
+        Delegate.Bind(state, PrepareMinimize, FinishMinimize)
+    end
+    if not state.close then return end
+    local toggle = state.sizeToggle or Chrome.NativeSizeToggle(frame, state.close)
+    if not toggle and Chrome.HasNativeCaption(frame, name, state.close) then
+        state.nativeCaption = true
+        return
     end
     if toggle and not state.sizeToggle then Chrome.FollowSizeToggle(state, toggle) end
     local button = Chrome.CreateCaption(state, CONTROL_LEVEL_OFFSET, OnMaximizeClick)
@@ -526,7 +527,7 @@ end
 local function OnPanelShow(frame, afterNative)
     local state = WindowControls.states[frame]
     if not state or Safety.IsForbidden(frame) then return end
-    if state.bankPark and Policy.ResumeBank(state, Controlled(state)) then return end
+    if state.park and Policy.ResumePark(state, Controlled(state)) then return end
     activeStates[frame] = state
     if not afterNative and Policy.DeferMailLayout(state) then
         if IsCombat() then QueuePosition(state) end
@@ -566,7 +567,9 @@ end
 -- owned, visible native inventory roots participate; closed history stays cold.
 local function OnContainerPositionsUpdated()
     for frame, state in pairs(activeInventory) do
-        if Controlled(state) then
+        if state.park then
+            Policy.HoldPark(state)
+        elseif Controlled(state) then
             if state.customScale or state.customPosition then Policy.CaptureNativeBagLayout(state) end
             if not Policy.DeferMailLayout(state) then
                 if not state.drag then ApplyStoredScale(state) end
@@ -593,7 +596,7 @@ end
 local function OnPanelHide(frame)
     local state = WindowControls.states[frame]
     if not state then return end
-    if state.bankPark then Policy.BankClosed(state) end
+    if state.park and not frame:IsShown() then Policy.ParkClosed(state) end
     activeInventory[frame] = nil
     if not state.minimized then activeStates[frame] = nil end
     if state.drag then EndDrag(state) end
@@ -603,7 +606,7 @@ local function OnPanelHide(frame)
 end
 
 local function PrepareHiddenPosition(state)
-    if IsCombat() or not Policy.UsesPositionClamp(state) or state.bankPark then return end
+    if IsCombat() or not Policy.UsesPositionClamp(state) or state.park then return end
     if not Controlled(state) then return Policy.ReleasePositionClamp(state) end
     if state.positionClamp or StoredPoint(state) then
         ApplyStoredScale(state)
@@ -632,7 +635,7 @@ function WindowControls.Attach(frame, owner)
         name = name,
         panel = panel,
         inventory = Policy.IsInventory(frame),
-        originalScale = frame:GetScale(),
+        originalScale = Safety.Read(frame, "GetScale"),
         nativePoints = Policy.CaptureNativePoints(frame),
         replayKey = "windowControls:show:" .. name,
         owners = { [owner or "blizzardWindows"] = true },
@@ -642,7 +645,7 @@ function WindowControls.Attach(frame, owner)
     if frame:IsShown() then activeStates[frame] = state end
     state.replayShow = function()
         if frame:IsShown() then OnPanelShow(frame, true)
-        elseif state.bankPark then Policy.RestoreBank(state)
+        elseif state.park then Policy.RestorePark(state)
         elseif (state.minimized or state.positionClamp) and not Controlled(state) then HideControls(state, not next(state.owners)) end
     end
     state.grip = CreateGrip(state)
@@ -707,8 +710,7 @@ local function RecolorMinimize()
     end
 end
 
--- Once per frame of settings writes: a profile or look switch rebuilds the
--- controls, a colour write or a profile switch repaints them.
+-- Coalesce settings writes before repainting the visible windows.
 function WindowControls:OnThemeChanged(domain, key)
     if domain == "profile" or domain == "theme" and key == "look" then NS.Registry.QueueJob(RefreshQueued) end
     if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" and domain ~= "profile"
@@ -733,7 +735,6 @@ function WindowControls.ResetScales()
     return true
 end
 
--- RestoreNativePosition runs Blizzard's panel layout; true when it finished.
 local function FinishRestore(state)
     Policy.RestoreNativePosition(state)
     return true
@@ -744,6 +745,7 @@ function WindowControls.ResetPositions()
     for _, state in pairs(WindowControls.states) do
         if state.moving then EndMove(state) end
         if state.fit then Chrome.LeaveFit(state) end
+        if state.park then Policy.RestorePark(state) end
     end
     NS.DB.windowControls.positions = {}
     -- Blizzard's layout pass must not move panels back while they return

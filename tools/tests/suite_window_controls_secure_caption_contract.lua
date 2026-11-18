@@ -17,7 +17,7 @@ local source = file:read("*a")
 file:close()
 local stop = assert(source:find('assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))', 1, true))
 local fixture = source:sub(1, stop - 1):gsub('arg%[[35]%] or ', '') .. [[
-return { NS = NS, Frame = Frame, frames = createdFrames, jobs = combatJobs }
+return { NS = NS, Frame = Frame, frames = createdFrames, jobs = combatJobs, NextFrame = NextFrame }
 ]]
 fixture = fixture:gsub('loadfile%(root %.%. "/MSUF_Suite_Skin/Rendering/WindowControlDelegate.lua"%)',
     'loadfile(arg[3] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlDelegate.lua")')
@@ -64,6 +64,9 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             self.attributes[key] = value
         end
         function frame:GetAttribute(key) return self.attributes[key] end
+        function frame:GetNumPoints() return self.point and 1 or 0 end
+        function frame:GetPoint() return unpack(self.point or {}) end
+        function frame:UnregisterAllEvents() self.events = nil end
         function frame:SetAllPoints(target) self:SetPoint("TOPLEFT", target, "TOPLEFT") end
         local hide = frame.Hide
         function frame:Hide()
@@ -73,6 +76,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         end
         return frame
     end
+    local core, dataTexts = NS.SuiteCore(), { showMinimizedWindows = false }
+    core.Suite.Config = function(id) assert(id == "dataTexts"); return dataTexts end
+    assert(loadfile(root .. "/MSUF_Suite/Core/MinimizedWindows.lua"))("MSUF_Suite", core)
+    local taskbar = core.MinimizedWindows
     RegisterStateDriver = function(frame, state, values) frame.stateDriver = { state, values } end
     assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
     local W = NS.WindowControls
@@ -209,25 +216,53 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Check(not delegate.shown and delegate.owner == nil, flavor .. ": a hidden cell kept the delegate")
     state.minimize:Show()
 
-    -- Options: a secure anchor protects its target and that frame's ancestors.
-    -- A managed window without a native opener (Settings) has no way back but
-    -- ShowUIPanel, which the skin may not run: it offers no minimize, and the
-    -- plain cell and tab never drive the panel manager.
+    -- Settings have no reversible native click. Park the actual window and
+    -- keep unsaved controls live. The taskbar reuses both kinds of restore tab.
     UIPanelWindows.SettingsPanel = { area = "center", checkFit = 1 }
     local plainSettings = Frame("SettingsPanel", UIParent)
     plainSettings.ClosePanelButton = Frame(nil, plainSettings, "Button")
     plainSettings.ClosePanelButton.scripts.OnClick = function() HideUIPanel(plainSettings) end
     Check(W.Attach(plainSettings, "plainSettings"), flavor .. ": Settings did not attach")
     local plain = W.states[plainSettings]
-    Check(plain.minimize and not plain.minimize.shown, flavor .. ": Settings offered minimize without a native opener")
-    plain.minimize.scripts.OnClick(plain.minimize)
+    Check(plain.minimize and plain.minimize.shown, flavor .. ": Settings lost minimize without a native opener")
     Hover(plain.minimize)
-    Check(plainSettings.shown and not plain.minimized and not delegate.shown and #skinCalls == 0,
-        flavor .. ": Settings minimized without a secure way back")
-    plain.minimized = true
+    Check(not delegate.shown, flavor .. ": Settings bound a native toggle without a restore target")
+    plain.minimize.scripts.OnClick(plain.minimize)
+    Check(plainSettings.shown and plain.minimized and plain.restore.shown and plainSettings.point[3] == "BOTTOMLEFT",
+        flavor .. ": Settings did not keep its native session when minimized")
+    plainSettings:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    H.NextFrame()
+    Check(plainSettings.point[3] == "BOTTOMLEFT", flavor .. ": native layout unparked the Settings window")
+    Hover(state.minimize)
+    SecureClick(delegate, "LeftButton")
+    local legacyMap, legacyPlain = state.restore.point, plain.restore.point
+    Check(legacyMap[2] == UIParent and legacyPlain[2] == UIParent, "taskbar was enabled by default")
+    dataTexts.showMinimizedWindows = true
+    taskbar.Refresh()
+    local strip = state.restore.point[2]
+    Check(strip ~= UIParent and plain.restore.point[2] == strip and plain.restore.point[4] ~= state.restore.point[4],
+        flavor .. ": the two restore buttons did not share the taskbar")
+    local previousWidth = UIParent.width
+    UIParent.width = 270
+    strip.scripts.OnEvent(strip, "DISPLAY_SIZE_CHANGED")
+    Check(plain.restore.point[5] ~= state.restore.point[5], "narrow taskbar did not wrap its rows")
+    UIParent.width = previousWidth
+    dataTexts.showMinimizedWindows = false
+    taskbar.Refresh()
+    Check(state.restore.point[2] == legacyMap[2] and state.restore.point[4] == legacyMap[4]
+        and plain.restore.point[2] == legacyPlain[2] and plain.restore.point[5] == legacyPlain[5],
+        "turning off the taskbar did not return the individual tabs")
+    dataTexts.showMinimizedWindows = true
+    taskbar.Refresh()
+    Hover(state.restore)
+    SecureClick(delegate, "LeftButton")
+    Check(map.shown and not state.restore.shown and not taskbar.IsDocked(state.restore),
+        "the docked map entry did not restore or remove itself")
     plain.restore.scripts.OnClick(plain.restore, "LeftButton")
-    plain.minimized = false
-    Check(#skinCalls == 0, flavor .. ": a Settings restore tab ran ShowUIPanel from the skin")
+    Check(plainSettings.shown and not plain.restore.shown and plainSettings.point[3] == "CENTER" and not strip.events,
+        "the docked Settings entry did not restore or stop taskbar updates")
+    Check(#skinCalls == 0, flavor .. ": a Settings restore ran the panel manager from addon code")
+    dataTexts.showMinimizedWindows = false
     W.DisableOwner("plainSettings")
     plainSettings:Hide()
 
@@ -275,6 +310,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         and delegate.width == minimize:GetWidth() * ratio and delegate.height == minimize:GetHeight() * ratio
         and delegate:GetFrameStrata() == "HIGH",
         flavor .. ": the secure delegate missed the scaled Collections minimize cell")
+    minimize.left = minimize.left + 6
+    W.Refresh()
+    Check(delegate.shown and delegate.owner == minimize and delegate.point[4] == minimize:GetLeft() * ratio,
+        flavor .. ": the hover hit area did not follow the native panel relayout")
     Fire(options.titleDrag, "OnDragStart")
     Check(settings.moving, flavor .. ": hovering minimize blocked Collections movement")
     Fire(options.titleDrag, "OnDragStop")
@@ -354,112 +393,123 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         flavor .. ": the Suite-minimized Character window did not come back through its micro button")
     W.SuiteAction(character, nil, "release")
 
-    if flavor == "Forever" then
-        UIPanelWindows.PlayerSpellsFrame = { area = "left" }
-        local spells = Frame("PlayerSpellsFrame", UIParent)
-        _G.PlayerSpellsFrame = spells
-        spells.CloseButton, spells.SpellBookFrame = Frame(nil, spells, "Button"), Frame(nil, spells)
-        spells.TalentsFrame, spells.SpecFrame = Frame(nil, spells), Frame(nil, spells)
-        function spells:IsInspecting() return self.inspecting == true end
-        spells.CloseButton.scripts.OnClick = function()
-            HideUIPanel(spells)
-            spells.SpellBookFrame.shown, spells.TalentsFrame.shown = false, false
-        end
-        local book = Frame("SpellbookMicroButton", UIParent, "Button")
-        local talents = Frame("TalentMicroButton", UIParent, "Button")
-        _G.SpellbookMicroButton, _G.TalentMicroButton = book, talents
-        function book:IsEnabled() return not self.disabled end
-        talents.IsEnabled = book.IsEnabled
-        for _, opener in ipairs({ book, talents }) do
-            opener.scripts.OnClick = function()
-                spells.SpellBookFrame.shown, spells.TalentsFrame.shown = opener == book, opener == talents
-                ShowUIPanel(spells)
-            end
-        end
-        spells.SpellBookFrame.shown, spells.TalentsFrame.shown, spells.SpecFrame.shown = false, false, true
-        Check(W.Attach(spells, "playerSpells"), "spellbook controls did not attach")
-        local panel = W.states[spells]
+    -- Exercise a click delivered to the caption with the native opener available.
+    local function CheckPageMinimize(root, owner, page)
+        Check(W.Attach(root, owner), root.name .. " controls did not attach")
+        local panel = W.states[root]
+        Check(panel.minimize.shown, root.name .. " lost its minimize button")
+        Hover(panel.minimize)
         panel.minimize.scripts.OnClick(panel.minimize, "LeftButton")
-        Check(spells.shown and #skinCalls == 0, "the skin hid the specialization view from addon code")
-        Check(not panel.minimize.shown, "the specialization view offered minimize without a native restore button")
-        spells.TalentsFrame.shown, spells.SpecFrame.shown, spells.inspecting = true, false, true
-        Check(W.Attach(spells, "playerSpells"), "inspected talent controls did not attach")
-        panel.minimize.scripts.OnClick(panel.minimize, "LeftButton")
-        Check(spells.shown and #skinCalls == 0, "the skin hid inspected talents from addon code")
-        Check(not panel.minimize.shown, "inspected talents offered minimize without a native restore button")
-        spells.inspecting = false
-        for _, opener in ipairs({ book, talents }) do
-            spells.SpellBookFrame.shown, spells.TalentsFrame.shown = opener == book, opener == talents
-            Check(W.Attach(spells, "playerSpells") and panel.minimize.shown, "a supported spell page lost minimize")
-            panel.minimize.scripts.OnClick(panel.minimize, "LeftButton")
-            Check(spells.shown and #skinCalls == 0, "the skin hid the spellbook from addon code")
-            Hover(panel.minimize)
-            Check(delegate:GetAttribute("clickbutton1") == spells.CloseButton, "spellbook minimize skipped Blizzard's close")
-            opener.disabled = true
-            SecureClick(delegate, "LeftButton")
-            Check(spells.shown and not panel.restore.shown, "a stale hover minimized the spellbook without a native restore button")
-            opener.disabled = false
-            Hover(panel.minimize)
-            SecureClick(delegate, "LeftButton")
-            panel.restore.scripts.OnClick(panel.restore, "LeftButton")
-            Check(not spells.shown and #skinCalls == 0, "the skin reopened the spellbook from addon code")
-            Hover(panel.restore)
-            Check(delegate:GetAttribute("clickbutton1") == opener, "spellbook restore skipped the active native page")
-            opener.disabled = true
-            SecureClick(delegate, "LeftButton")
-            Check(not spells.shown and panel.restore.shown, "a stale hover clicked a disabled spellbook opener")
-            opener.disabled = false
-            Hover(panel.restore)
-            SecureClick(delegate, "LeftButton")
-            Check(spells.shown and #skinCalls == 0, "spellbook restore did not use Blizzard's button")
-        end
+        Check(panel.park and panel.restore.shown and root.shown and root.point[3] == "BOTTOMLEFT",
+            root.name .. " ignored a click on the minimize cell")
+        Check(not delegate.shown and page.shown and not root:IsClampedToScreen(),
+            root.name .. " changed pages, kept clamping, or armed a native click")
+        W.Refresh()
+        Check(panel.park and root.point[3] == "BOTTOMLEFT", root.name .. " reappeared during a UI layout pass")
+        Hover(panel.restore)
+        panel.restore.scripts.OnClick(panel.restore, "LeftButton")
+        Check(not panel.park and not panel.restore.shown and root.shown and root.point[3] == "CENTER",
+            root.name .. " did not restore the original anchor")
+        Check(not delegate.shown and page.shown and root:IsClampedToScreen(),
+            root.name .. " did not restore the clamp and current page")
     end
 
-    -- Camelot's overview lives inside ProfessionsFrame and uses the native
-    -- profession micro button. A crafting page still needs its spell route.
+    local nativeClicks = 0
+    local function NativeClick() nativeClicks = nativeClicks + 1 end
+    UIPanelWindows.PlayerSpellsFrame = { area = "left" }
+    local spells = Frame("PlayerSpellsFrame", UIParent)
+    _G.PlayerSpellsFrame = spells
+    spells.protected, spells.clamped = true, true
+    spells.CloseButton = Frame(nil, spells, "Button")
+    spells.CloseButton.scripts.OnClick = NativeClick
+    spells.SpellBookFrame, spells.TalentsFrame, spells.SpecFrame = Frame(nil, spells), Frame(nil, spells), Frame(nil, spells)
+    function spells:IsInspecting() return false end
+    for _, name in ipairs({ "SpellbookMicroButton", "TalentMicroButton", "PlayerSpellsMicroButton" }) do
+        local opener = Frame(name, UIParent, "Button")
+        opener.scripts.OnClick = NativeClick
+        function opener:IsEnabled() return true end
+        _G[name] = opener
+    end
+    local spellPages = { spells.SpellBookFrame, spells.TalentsFrame, spells.SpecFrame }
+    for _, activePage in ipairs(spellPages) do
+        for _, page in ipairs(spellPages) do page:SetShown(page == activePage) end
+        CheckPageMinimize(spells, "playerSpells", activePage)
+    end
+    spells:Hide()
+
+    -- Forever embeds the overview in its crafting window. Retail has a
+    -- separate overview and both clients can have a recipe selected.
     UIPanelWindows.ProfessionsFrame = { area = "left" }
     local professions = Frame("ProfessionsFrame", UIParent)
     _G.ProfessionsFrame = professions
+    professions.clamped = true
     professions.CloseButton = Frame(nil, professions, "Button")
-    professions.BookPage = Frame(nil, professions)
-    professions.CraftingPage = Frame(nil, professions)
+    professions.CloseButton.scripts.OnClick = NativeClick
+    professions.BookPage, professions.CraftingPage = Frame(nil, professions), Frame(nil, professions)
     professions.CraftingPage:Hide()
-    professions.CloseButton.scripts.OnClick = function()
-        HideUIPanel(professions)
-        professions.BookPage:Hide()
+    local professionBook = Frame("ProfessionsBookFrame", UIParent)
+    _G.ProfessionsBookFrame = professionBook
+    professionBook.clamped = true
+    professionBook.CloseButton = Frame(nil, professionBook, "Button")
+    professionBook.CloseButton.scripts.OnClick = NativeClick
+    UIPanelWindows.ProfessionsBookFrame = { area = "left" }
+    NS.BlizzardCatalog.FindByFrame = function(name)
+        if name == "ProfessionsBookFrame" then return { category = "profession" } end
+        return findByFrame(name)
     end
     local professionMicro = Frame("ProfessionMicroButton", UIParent, "Button")
     _G.ProfessionMicroButton = professionMicro
     function professionMicro:IsEnabled() return true end
     function professionMicro:GetToggledFrame()
-        if flavor == "Forever" then return professions end
+        return flavor == "Forever" and professions or professionBook
     end
-    professionMicro.scripts.OnClick = function()
-        professions.BookPage:Show()
-        ShowUIPanel(professions)
-    end
-    Check(W.Attach(professions, "professions"), "professions caption did not attach")
-    local professionCaption = W.states[professions]
+    professionMicro.scripts.OnClick = NativeClick
+    C_TradeSkillUI = {
+        GetBaseProfessionInfo = function() return { professionID = 164 } end,
+        OpenTradeSkill = NativeClick,
+    }
     if flavor == "Forever" then
-        Check(professionCaption.minimize.shown, "the Forever professions overview did not offer minimize")
-        Hover(professionCaption.minimize)
-        Check(delegate:GetAttribute("clickbutton1") == professions.CloseButton, "profession minimize skipped Blizzard's X")
-        SecureClick(delegate, "LeftButton")
-        Check(not professions.shown and professionCaption.restore.shown, "the minimized profession overview lost its restore tab")
-        Hover(professionCaption.restore)
-        Check(delegate:GetAttribute("clickbutton1") == professionMicro, "the overview restore skipped Blizzard's professions button")
-        SecureClick(delegate, "LeftButton")
-        Check(professions.shown and professions.BookPage.shown and not professionCaption.restore.shown,
-            "the native restore did not return to the professions overview")
-        professions.BookPage:Hide()
-        Check(NS.WindowControlPolicy.Opener(professionCaption) == nil,
-            "a hidden overview incorrectly supplied the crafting page's opener")
+        CheckPageMinimize(professions, "professions", professions.BookPage)
     else
-        Check(not professionCaption.minimize.shown, "Retail ProfessionsFrame used the standalone book's opener")
+        CheckPageMinimize(professionBook, "professions", professionBook)
     end
-    _G.ProfessionMicroButton, _G.ProfessionsFrame, UIPanelWindows.ProfessionsFrame = nil, nil, nil
+    professions.BookPage:Hide()
+    professions.CraftingPage:Show()
+    CheckPageMinimize(professions, "professions", professions.CraftingPage)
+    Check(nativeClicks == 0, "minimizing a page ran a native close or recast")
 
-    -- The AddOn list keeps unapplied changes: no click reaches its X.
+    local professionCaption = W.states[professions]
+    professionCaption.minimize.scripts.OnClick(professionCaption.minimize, "LeftButton")
+    professions:Hide()
+    H.NextFrame()
+    Check(not professionCaption.park and not professionCaption.restore.shown,
+        "a native close left a minimized professions tab behind")
+    _G.ProfessionMicroButton, _G.ProfessionsFrame, _G.ProfessionsBookFrame = nil, nil, nil
+    UIPanelWindows.ProfessionsFrame, UIPanelWindows.ProfessionsBookFrame = nil, nil
+
+    if flavor == "Forever" then
+        UIPanelWindows.LegacySystemFrame = { area = "left" }
+        local legacy = Frame("LegacySystemFrame", UIParent)
+        _G.LegacySystemFrame = legacy
+        legacy.clamped = true
+        legacy.CloseButton = Frame(nil, legacy, "Button")
+        legacy.CloseButton.scripts.OnClick = NativeClick
+        local legacyMicro = Frame("LegacyMicroButton", UIParent, "Button")
+        _G.LegacyMicroButton = legacyMicro
+        function legacyMicro:IsEnabled() return true end
+        legacyMicro.scripts.OnClick = NativeClick
+        NS.BlizzardCatalog.FindByFrame = function(name)
+            if name == "LegacySystemFrame" then return { category = "character" } end
+            return findByFrame(name)
+        end
+        local challenges = Frame(nil, legacy)
+        CheckPageMinimize(legacy, "legacy", challenges)
+        Check(nativeClicks == 0, "minimizing Legacy called the native close or reopened the window")
+        legacy:Hide()
+        UIPanelWindows.LegacySystemFrame, _G.LegacySystemFrame, _G.LegacyMicroButton = nil, nil, nil
+    end
+
+    -- The AddOn list can be parked with pending changes: no click reaches its X.
     local addons = Frame("AddonList", UIParent)
     _G.AddonList = addons
     UIPanelWindows.AddonList = { area = "center" }
@@ -470,9 +520,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Check(W.Attach(addons, "blizzardWindows"), flavor .. ": the AddOn list did not attach")
     local list = W.states[addons]
     Hover(list.minimize)
-    SecureClick(delegate, "LeftButton")
-    Check(addons.shown and closes == 0 and not list.minimized and not list.restore.shown,
-        flavor .. ": minimize closed the AddOn list over unapplied changes")
+    Check(not delegate.shown, "AddonList bound a native click instead of preserving pending changes")
+    list.minimize.scripts.OnClick(list.minimize, "LeftButton")
+    Check(addons.shown and closes == 0 and list.minimized and list.restore.shown,
+        flavor .. ": minimize cleared the AddOn list's unapplied changes")
+    list.restore.scripts.OnClick(list.restore, "LeftButton")
     Check(#skinCalls == 0, flavor .. ": the skin drove the panel manager: " .. table.concat(skinCalls, ", "))
 end
 print("Window controls secure caption: " .. checks .. " checks passed")

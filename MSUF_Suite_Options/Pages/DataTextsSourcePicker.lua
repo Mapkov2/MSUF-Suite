@@ -30,7 +30,7 @@ local GROUPS = {
     { "Social", { "friends", "guild" } },
     { "Character", { "xp", "progress", "progressBar", "itemLevel", "secondaryStat", "mythicRating", "specialization", "specLoot",
         "professions", "vault", "supplies" } },
-    { "Travel and menus", { "travel", "hearth", "portals", "microMenu" } },
+    { "Travel and menus", { "travel", "hearth", "portals", "microMenu", "compass" } },
     { "Currencies", { "currency", "crests" } },
     { "System", { "fps", "latency", "fpsLatency", "memory", "audio" } },
     { "Addons", { "broker" } },

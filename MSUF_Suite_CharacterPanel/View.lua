@@ -610,6 +610,14 @@ local function CloseDetails(button)
     button.view.callbacks.slot(nil)
 end
 
+local SET_STYLE = {
+    width = RAIL_W, height = BODY_H, gap = PAD, muted = MUTED, accent = GOLD_LINE, selected = GOLD_LOW, text = TEXT, title = GOLD,
+    Panel = function(view, parent) return Surface(view, parent, PANEL, nil, CARD) end,
+    Row = function(view, parent) return Surface(view, parent, RAISED, "Button", CONTROL) end,
+    Input = function(view, parent) return Surface(view, parent, MODEL, "EditBox", CARD) end,
+    Button = ClickLabel, Font = Font, Texture = CreateTexture, Fill = Fill, Tint = Tint, Place = Place, Text = Text, Visible = Visible,
+}
+
 local function GearBody(view)
     view.gear = CreateFrame("Frame", nil, view.body)
     view.gear:SetAllPoints()
@@ -663,7 +671,7 @@ function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups,
     Visible(self.plate, not classic)
     local detailsShown = selectedSlot ~= nil and detailGroups ~= nil and #detailGroups > 0
     local railGroups = detailsShown and detailGroups or groups or GROUP_EMPTY
-    self.combatRail = GroupLayout.ShowList(self.rail, self.combatRail, railGroups, reset, combat, Visible)
+    self.combatRail = GroupLayout.ShowList(self.rail, self.combatRail, railGroups, reset, combat, Visible, SET_STYLE)
     Visible(self.dismiss, detailsShown)
     Text(self.hint, self.gearHint)
 end
@@ -681,7 +689,7 @@ function View:ShowGroups(groups, combat)
     if self.gear then Visible(self.gear, false) end
     if self.reportCover then Visible(self.reportCover, true) end
     Window.SyncGlass(self)
-    self.combatReport = GroupLayout.ShowList(self.report, self.combatReport, groups or GROUP_EMPTY, reset, combat, Visible)
+    self.combatReport = GroupLayout.ShowList(self.report, self.combatReport, groups or GROUP_EMPTY, reset, combat, Visible, SET_STYLE)
     Text(self.hint, "")
 end
 
@@ -715,16 +723,7 @@ function View:SetMinimized(minimized, tab, silent)
 end
 
 function View:SetContextAction(label)
-    Visible(self.contextAction, label ~= nil)
-    if label and (self.contextLabel.panelText ~= label or self.contextAction.fontRevision ~= self.fontRevision) then
-        Text(self.contextLabel, label)
-        self.contextAction.fontRevision = self.fontRevision
-        local width = math.min(420, math.ceil(self.contextLabel:GetUnboundedStringWidth()) + 14)
-        if self.contextAction.panelWidth ~= width then
-            self.contextAction.panelWidth = width
-            self.contextAction:SetWidth(width)
-        end
-    end
+    Window.SetContextAction(self, label, Visible, Text)
 end
 
 function View:CancelWindowGestures()

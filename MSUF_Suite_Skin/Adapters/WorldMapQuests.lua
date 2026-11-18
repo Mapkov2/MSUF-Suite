@@ -36,7 +36,7 @@ local function HasCombatView()
     if Compact() then return true end
     for state in pairs(contexts) do
         local list = state.questFolds
-        if list and (next(list.folded) or next(list.hiddenPins)) then return true end
+        if list and (next(list.folded) or next(list.hiddenButtons)) then return true end
     end
     return false
 end
@@ -170,13 +170,19 @@ local function SetCompactTitleHeight(row, list, compact)
 end
 
 local function MaskTitle(row, list, compact)
+    local folded
     if list.masking or list.hidden[row] then
         local info = Plain(Safety.Field(row, "info"))
         local key = HeaderKey(Plain(Safety.Field(info, "header")))
-        local hide = list.masking and key ~= nil and list.folded[key] == true
+        folded = list.masking and key ~= nil and list.folded[key] == true
+        if MaskRow(row, list, folded) and list.owner then Quests.PaintRow(row, list.owner) end
+    end
+    -- An active title can also be hidden by another quest-log filter. Its
+    -- sibling buttons would then sit at the top of the list, outside layout.
+    if folded or list.spoken and Safety.Read(row, "IsShown") == false then
+        local info = Plain(Safety.Field(row, "info"))
         local questID = Plain(Safety.Field(info, "questID"))
-        if hide and type(questID) == "number" then list.hiddenQuests[questID] = true end
-        if MaskRow(row, list, hide) and list.owner then Quests.PaintRow(row, list.owner) end
+        if type(questID) == "number" then list.hiddenQuests[questID] = true end
     end
     SetCompactTitleHeight(row, list, compact)
 end
@@ -186,36 +192,84 @@ local function MaskObjective(row, list, compact)
     MaskRow(row, list, compact or type(questID) == "number" and list.hiddenQuests[questID] == true)
 end
 
--- Native POI visibility scripts change the shared supertracking callbacks.
--- Keep the button shown and suppress only its artwork and mouse input.
-local function MaskPin(pin, list)
-    local questID = Safety.Read(pin, "GetQuestID")
-    if type(questID) ~= "number" or not list.hiddenQuests[questID] or not CanPaint(pin, list, list.implicit) then return end
-    local record = list.hiddenPins[pin]
+-- POIs and Spoken controls are siblings of the quest title. Leave Show/Hide
+-- to their owners (POI visibility scripts also change supertracking).
+local function HoldButton(button, list, implicit)
+    if not button or not CanPaint(button, list, implicit) then return end
+    local record = list.hiddenButtons[button]
     if not record then
-        local alpha = Safety.Read(pin, "GetAlpha")
-        local clicks = Safety.Read(pin, "IsMouseClickEnabled")
-        local motion = Safety.Read(pin, "IsMouseMotionEnabled")
+        local alpha = Safety.Read(button, "GetAlpha")
+        local clicks = Safety.Read(button, "IsMouseClickEnabled")
+        local motion = Safety.Read(button, "IsMouseMotionEnabled")
         if type(alpha) ~= "number" or type(clicks) ~= "boolean" or type(motion) ~= "boolean" then return end
         record = { alpha = alpha, clicks = clicks, motion = motion }
-        list.hiddenPins[pin] = record
-        pin:SetAlpha(0)
-        pin:SetMouseClickEnabled(false)
-        pin:SetMouseMotionEnabled(false)
+        list.hiddenButtons[button] = record
+        button:SetAlpha(0)
+        button:SetMouseClickEnabled(false)
+        button:SetMouseMotionEnabled(false)
     end
-    record.masked = true
+    return record
 end
 
-local function RestoreUnmaskedPins(list)
-    for pin, record in pairs(list.hiddenPins) do
+local function MaskButton(button, list)
+    local record = HoldButton(button, list, list.implicit)
+    if record then record.masked = true end
+end
+
+local function MaskPin(pin, list)
+    local questID = Safety.Read(pin, "GetQuestID")
+    if type(questID) == "number" and list.hiddenQuests[questID] then MaskButton(pin, list) end
+end
+
+local function ReleaseButton(button, record, list, implicit)
+    if not CanPaint(button, list, implicit) then return end
+    button:SetAlpha(record.alpha)
+    button:SetMouseClickEnabled(record.clicks)
+    button:SetMouseMotionEnabled(record.motion)
+    list.hiddenButtons[button] = nil
+end
+
+local function RestoreUnmaskedButtons(list)
+    for button, record in pairs(list.hiddenButtons) do
         if record.masked then
             record.masked = nil
-        elseif CanPaint(pin, list, list.implicit) then
-            pin:SetAlpha(record.alpha)
-            pin:SetMouseClickEnabled(record.clicks)
-            pin:SetMouseMotionEnabled(record.motion)
-            list.hiddenPins[pin] = nil
+        else
+            ReleaseButton(button, record, list, list.implicit)
         end
+    end
+end
+
+-- Spoken 3.10 also positions fresh Play/Contribute buttons on independent
+-- overlay refreshes. The hook runs after positioning and before Spoken's Show.
+local spokenOverlay
+local function OnSpokenTitle(_, row, button)
+    local list = lists[QuestScrollFrame]
+    if not list or not list.owner or not Safety.Public(row) or not Safety.Public(button) or not button
+        or Safety.Read(row, "GetParent") ~= list.contents then return end
+    local shown = Safety.Read(row, "IsShown")
+    if shown == false then HoldButton(button, list)
+    elseif shown == true and list.hiddenButtons[button] then
+        ReleaseButton(button, list.hiddenButtons[button], list)
+    end
+    if list.refused then ReplayList(list) end
+end
+
+local function AttachSpoken()
+    local voice = rawget(_G, "VoiceOver")
+    if Plain(Safety.Field(voice, "AddonFolder")) ~= "Spoken_Quests" then return end
+    local overlay = Plain(Safety.Field(voice, "QuestOverlayUI"))
+    if overlay and overlay ~= spokenOverlay and Kit.HookFunction(overlay, "UpdateQuestTitle", Safety.Isolated(OnSpokenTitle)) then
+        spokenOverlay = overlay
+        events:UnregisterEvent("ADDON_LOADED")
+    end
+end
+
+local function MaskSpokenButtons(list)
+    local play = Plain(Safety.Field(spokenOverlay, "questPlayButtons"))
+    local contribute = Plain(Safety.Field(spokenOverlay, "questContributeButtons"))
+    for id in pairs(list.hiddenQuests) do
+        MaskButton(Plain(Safety.Field(play, id)), list)
+        MaskButton(Plain(Safety.Field(contribute, id)), list)
     end
 end
 
@@ -294,23 +348,25 @@ end
 
 local function ApplyFolds(list, questInfo)
     list.masking = list.owner ~= nil and next(list.folded) ~= nil and not SearchActive(list)
+    list.spoken = list.owner ~= nil and spokenOverlay ~= nil and list.scroll == QuestScrollFrame
     local compact = list.owner ~= nil and Compact() and (NS.Client.isForever or GetCVar(CVAR) ~= "0")
     local masked = list.masking or next(list.hidden) ~= nil
     list.changed, list.refused = false, false
     list.implicit = not NS.IsCombatLocked() and not NS.SuiteCore().startingBeforeLockdown
     Kit.ForEachActive(Safety.Field(list.scroll, "headerFramePool"), FOLD_ROW_LIMIT, TrackHeader, list, questInfo)
-    if masked or compact or next(list.titleHeights) then
+    if masked or compact or list.spoken or next(list.titleHeights) then
         wipe(list.hiddenQuests)
         Kit.ForEachActive(Safety.Field(list.scroll, "titleFramePool"), FOLD_ROW_LIMIT, MaskTitle, list, compact)
-        if list.masking then
+        if next(list.hiddenQuests) then
             Kit.ForEachActive(Safety.Field(list.contents, "buttonPool"), FOLD_ROW_LIMIT, MaskPin, list)
+            if list.spoken then MaskSpokenButtons(list) end
         end
     end
     if compact or masked then
         local objectives = Safety.Field(list.scroll, "objectiveFramePool")
         Kit.ForEachActive(objectives, Safety.Read(objectives, "GetNumActive") or FOLD_ROW_LIMIT, MaskObjective, list, compact)
     end
-    RestoreUnmaskedPins(list)
+    RestoreUnmaskedButtons(list)
     if list.refused then ReplayList(list) end
     return list.changed
 end
@@ -367,7 +423,7 @@ local function AttachFolds(scroll, state)
         local layout = setmetatable({ skipChildLayout = true }, { __index = contents })
         list = {
             scroll = scroll, contents = contents, folded = {}, hidden = Kit.WeakSet(),
-            hiddenQuests = {}, hiddenPins = Kit.WeakSet(), titleHeights = Kit.WeakSet(),
+            hiddenQuests = {}, hiddenButtons = Kit.WeakSet(), titleHeights = Kit.WeakSet(),
         }
         list.relayout = function()
             list.refused = false
@@ -617,9 +673,11 @@ end
 
 function Quests.Activate(state, frame)
     if not next(contexts) then
+        if not spokenOverlay then events:RegisterEvent("ADDON_LOADED") end
         events:RegisterEvent("PLAYER_REGEN_DISABLED")
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
     end
+    AttachSpoken()
     local scroll = Kit.Path(frame, "QuestLog", "QuestsFrame", "ScrollFrame")
     contexts[state] = scroll or false
     SyncObjectives()
@@ -633,6 +691,7 @@ function Quests.Release(state)
         if record.state == state and CanPaint(row) then RestoreRow(record) end
     end
     if not next(contexts) then
+        events:UnregisterEvent("ADDON_LOADED")
         events:UnregisterEvent("PLAYER_REGEN_DISABLED")
         events:UnregisterEvent("PLAYER_REGEN_ENABLED")
         RestoreObjectives()
@@ -694,7 +753,13 @@ if not NS.Client.isForever then
     events:RegisterEvent("CVAR_UPDATE")
 end
 events:SetScript("OnEvent", function(_, event, name, value)
-    if event == "PLAYER_LOGOUT" then
+    if event == "ADDON_LOADED" then
+        if name == "Spoken_Quests" then
+            AttachSpoken()
+            local list = lists[QuestScrollFrame]
+            if list and list.owner and (not NS.Client.isForever or list.owner.questMapReady) then DeferList(list) end
+        end
+    elseif event == "PLAYER_LOGOUT" then
         RestoreObjectives()
     elseif event == "PLAYER_REGEN_DISABLED" then
         RestoreCombatTitles()

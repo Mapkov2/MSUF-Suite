@@ -55,6 +55,14 @@ end
 
 ---------------------------------------------------------------- the caption
 local W = World()
+local dataTexts = { showMinimizedWindows = false }
+local readConfig = W.S.Config
+function W.S.Config(id)
+    if id == "dataTexts" then return dataTexts end
+    return readConfig(id)
+end
+assert(loadfile(root .. "/MSUF_Suite/Core/MinimizedWindows.lua"))("MSUF_Suite", W.NS)
+local taskbar = W.NS.MinimizedWindows
 local Caption, X = W.P.BagCaption, W.CF.CloseButton
 local state = assert(Caption.states[W.CF], "the combined bag has no caption")
 local close, maximize, minimize = state.close, state.maximize, state.minimize
@@ -111,65 +119,81 @@ assert(W.config.panelFullHeight == false and not V.geometry.fullHeight and maxim
     "restore did not give the panel its own height back")
 
 ---------------------------------------------------------------- minimize
-W.RunScript(minimize, "OnEnter")
-local delegate = assert(Delegate(W, X), "minimize has no secure click on Blizzard's X")
-assert(delegate:IsShown() and delegate:GetParent() == W.UIParent and delegate.points[1][2] == minimize
-    and delegate:GetAttribute("type1") == "click", "the secure minimize click is not over the minimize cell")
+local function Click(frame, button, x, y)
+    local left, bottom, width, height = W.Rect(frame)
+    W.mouseX, W.mouseY = x or left + width / 2, y or bottom + height / 2
+    W.SecureClick(frame, button)
+end
+local delegate = assert(Delegate(W, X), "minimize is unarmed until the mouse moves")
+assert(delegate:IsShown() and delegate:GetParent() == W.UIParent and delegate.points[1][2] == W.UIParent
+    and delegate:GetAttribute("type1") == "click", "the secure minimize click anchors to the native bag")
+assert(delegate:IsMouseEnabled() and not minimize:IsMouseEnabled(), "the painted minus can take the secure click")
+assert(delegate:GetFrameStrata() == "HIGH", "the native bag header can cover the minimize click")
+SameRect(W, delegate, minimize, "the secure click is not over the minimize cell")
+Click(delegate, "LeftButton", -10, -10)
+assert(W.CF:IsShown(), "an old hit rectangle minimized the bag")
+W.RunScript(delegate, "OnEnter")
 assert(minimize.caption.hover, "the minimize cell does not light under the pointer")
-W.SecureClick(delegate)
+W.RunScript(delegate, "OnLeave")
+assert(delegate:IsShown() and not minimize.caption.hover, "moving off the minus unarmed it or left it highlighted")
+Click(delegate)
 assert(not W.CF:IsShown() and #W.taint == 0, "minimize did not close the bag through Blizzard's X")
 local tab = assert(RestoreTab(W), "minimize left no restore tab")
 assert(tab:IsShown() and tab:GetFrameStrata() == "DIALOG", "the restore tab does not show")
-assert(not delegate:IsShown() and delegate:GetNumPoints() == 0, "the secure minimize click outlived its click")
+assert(delegate:IsShown() and Delegate(W, W.Backpack) == delegate and not Delegate(W, X),
+    "the secure input did not move to the restore tab")
 local tx, ty, _, th = W.Rect(tab)
 assert(Near(tx, fx) and Near(ty + th, fy + fh), "the restore tab does not take the window's place")
-W.RunScript(tab, "OnEnter")
+dataTexts.showMinimizedWindows = true
+taskbar.Refresh()
+assert(taskbar.IsDocked(tab), "the Bags restore button did not appear on the DataTexts taskbar")
 local reopen = assert(Delegate(W, W.Backpack), "the restore tab has no secure click on Blizzard's backpack button")
-assert(reopen == delegate and reopen.points[1][2] == tab, "the restore click is not over the tab")
-W.SecureClick(reopen)
+assert(reopen == delegate and reopen.points[1][2] == W.UIParent, "the restore uses a secure anchor to the tab")
+SameRect(W, reopen, tab, "the restore click is not over the tab")
+Click(reopen)
 W.Settle()
 assert(W.CF:IsShown() and not tab:IsShown() and #W.taint == 0, "the restore tab did not reopen the bag cleanly")
-assert(not reopen:IsShown(), "the restore click outlived its click")
+assert(reopen:IsShown() and Delegate(W, X) == reopen and not taskbar.IsDocked(tab),
+    "restoring did not rearm minimize or left a docked entry")
+dataTexts.showMinimizedWindows = false
 -- The right button dismisses the tab and leaves the bag closed.
-W.RunScript(minimize, "OnEnter")
-W.SecureClick(delegate)
+Click(delegate)
 assert(tab:IsShown(), "a second minimize left no tab")
-W.RunScript(tab, "OnEnter")
-W.SecureClick(delegate, "RightButton")
-assert(not tab:IsShown() and not W.CF:IsShown() and #W.taint == 0, "the right button did not dismiss the tab")
+Click(delegate, "RightButton")
+assert(not tab:IsShown() and not W.CF:IsShown() and not delegate:IsShown() and #W.taint == 0,
+    "the right button did not dismiss the tab and its click area")
 -- The player's own key opens the bag: the tab goes.
-W.RunScript(minimize, "OnLeave")
 W.OpenBags(); W.Settle()
-W.RunScript(minimize, "OnEnter")
-W.SecureClick(delegate)
+Click(delegate)
 assert(tab:IsShown(), "minimize left no tab")
 W.OpenBags(); W.Settle()
 assert(not tab:IsShown(), "the restore tab outlived the bag's own opening")
 
 ---------------------------------------------------------------- combat
-W.RunScript(minimize, "OnEnter")
 assert(delegate:IsShown(), "minimize lost its secure click")
 local layout = #W.combatLayout
+local px, py, pw, ph = W.Rect(delegate)
+W.mouseX, W.mouseY = px + pw / 2, py + ph / 2
+W.RunScript(delegate, "OnMouseDown", "LeftButton")
 W.EnterCombat()
 assert(not delegate:IsShown() and delegate:GetNumPoints() == 0, "the secure click survived the combat start")
 assert(close:IsVisible() and X.alpha == 0, "combat brought Blizzard's X back over the caption")
 assert(minimize.bagDisabled and maximize.bagDisabled and not minimize:IsMouseEnabled() and not maximize:IsMouseEnabled(),
     "minimize and maximize take clicks in combat")
 assert(minimize.caption.bars[1].color[1] < .6, "disabled cells keep their bright glyphs")
-W.RunScript(minimize, "OnEnter")
-assert(not delegate:IsShown(), "minimize attached its secure click in combat")
+assert(not delegate:IsShown(), "minimize armed its secure click in combat")
 X:SetAlpha(.5)
 assert(X.alpha == 0, "a combat alpha write brought Blizzard's X art back")
 W.CloseBags(); W.OpenBags(); W.Settle()
 assert(close:IsVisible() and #W.combatLayout == layout, "the caption moved the protected bag window in combat")
 W.LeaveCombat(); W.Settle()
-assert(not minimize.bagDisabled and not maximize.bagDisabled and minimize:IsMouseEnabled(),
-    "minimize and maximize stayed disabled after combat")
+assert(not minimize.bagDisabled and not maximize.bagDisabled and delegate:IsShown() and Delegate(W, X) == delegate,
+    "minimize or maximize failed to resume after combat")
 
 ---------------------------------------------------------------- MSUF Edit Mode
 W.S.editMode = true
 W.M:Refresh()
-assert(minimize.bagDisabled and maximize.bagDisabled, "MSUF Edit Mode can minimize or maximize the bag")
+assert(minimize.bagDisabled and maximize.bagDisabled and not delegate:IsShown(), "MSUF Edit Mode can minimize or maximize the bag")
 W.S.editMode = false
 W.M:Refresh()
 assert(not minimize.bagDisabled, "minimize stayed disabled after MSUF Edit Mode")
@@ -178,7 +202,8 @@ assert(not minimize.bagDisabled, "minimize stayed disabled after MSUF Edit Mode"
 -- Blizzard hides its X there (ContainerFrameCombinedBagsMixin:InitializeGamepad).
 W.S.GamepadUI = function() return true end
 W.Native(function() X:Hide() end)
-assert(not close:IsShown() and not maximize:IsShown() and not minimize:IsShown(), "the caption stayed under the Gamepad UI")
+assert(not close:IsShown() and not maximize:IsShown() and not minimize:IsShown() and not delegate:IsShown(),
+    "the caption or its click area stayed under the Gamepad UI")
 W.S.GamepadUI = function() return false end
 W.Native(function() X:Show() end)
 assert(close:IsShown() and minimize:IsShown(), "the caption did not return with Blizzard's X")
@@ -201,6 +226,7 @@ local point = X.points[1]
 assert(point[1] == "TOPRIGHT" and point[4] == (flavor == "Forever" and 0 or 1) and point[5] == (flavor == "Forever" and 3 or 0),
     "the stop did not give Blizzard's X its own place back")
 assert(not close:IsShown() and not minimize:IsShown(), "the caption outlived the module")
+assert(not delegate:IsShown() and delegate:GetNumPoints() == 0, "the secure click outlived the module")
 X:SetAlpha(.4)
 assert(X.alpha == .4, "a stopped caption still fades Blizzard's X")
 

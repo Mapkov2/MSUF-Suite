@@ -70,7 +70,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
                 SpellbookMicroButton = Frame("SpellbookMicroButton", UIParent, "Button")
                 function SpellbookMicroButton:IsEnabled() return true end
             else
-                -- A managed window minimizes only with a native way back.
+                -- Retail has one native button shared by both pages.
                 PlayerSpellsMicroButton = Frame("PlayerSpellsMicroButton", UIParent, "Button")
                 function PlayerSpellsMicroButton:IsEnabled() return true end
             end
@@ -112,8 +112,9 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             Check(toggleCell.shown and not maximize.shown and minimize.point[2] == toggleCell and toggle.alpha == 0,
                 name .. " caption lost the returning size toggle")
         else
-            Check(not state.minimize and not state.maximize,
-                name .. " custom caption covers the native maximize/minimize control")
+            Check(state.minimize and state.minimize.shown and state.minimize.point[2] == panel
+                and not state.maximize and panel.MaximizeMinimizeButton.shown,
+                name .. " did not keep a separate minimize beside the native size control")
         end
         Check(not state.grip.scripts.OnUpdate, name .. " idle grip retained an updater")
     end

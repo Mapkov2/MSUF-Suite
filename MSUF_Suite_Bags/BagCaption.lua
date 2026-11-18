@@ -11,9 +11,9 @@ local Layout = P.BagLayout
 -- own code (ContainerFrame_OnCloseButtonClicked). Minimize closes the bag
 -- through that same X from a secure click and leaves a restore tab, which
 -- reopens it through Blizzard's backpack button the same way. As for the
--- drawer's keyring (EquippedBags.lua), one secure button covers the minimize
--- cell or the tab only while the pointer rests on it out of combat: no bag
--- window turns protected, and Blizzard's list of open bags
+-- drawer's keyring (EquippedBags.lua), the secure button stays detached from
+-- the native window. It tracks the visible minimize cell or restore tab
+-- before mouse input arrives. Blizzard's list of open bags
 -- (ContainerFrameSettingsManager) never comes from the Suite's code.
 -- Maximize turns the side panel's full screen height on and off. Built once,
 -- laid out when a window shows or moves; in combat the caption stays and
@@ -33,6 +33,7 @@ Caption.PANEL_TITLE = Caption.PANEL_TOOLS + 3 * 32 + 24 + 12
 local TEXT, MUTED = { .94, .95, .98, 1 }, { .45, .48, .53, 1 }
 local states, natives = Caption.states, setmetatable({}, { __mode = "k" })
 local delegate, tab, events
+local SyncDelegate, ShowTab
 
 local function Painter() return S.WindowCaption end
 
@@ -71,15 +72,21 @@ end
 -- driver already, and the combat end lets its points go.
 local function Detach()
     local owner = delegate and delegate.owner
-    if not owner or NS.IsCombatLocked() then return end
-    delegate.owner = nil
+    if not owner or delegate.clicking or NS.IsCombatLocked() then return end
+    delegate.owner, delegate.minimizeClick = nil, nil
     delegate:Hide()
     delegate:ClearAllPoints()
+    delegate:SetAttribute("type1", nil)
+    delegate:SetAttribute("clickbutton1", nil)
     Hover(owner, false)
 end
 
 local function DelegateEnter(button)
     if button.owner then Hover(button.owner, true) end
+end
+
+local function DelegateLeave(button)
+    if button.owner then Hover(button.owner, false) end
 end
 
 local function Press(button, down)
@@ -93,16 +100,42 @@ local function TopLeft(frame)
     local left, top = frame:GetLeft(), frame:GetTop()
     local scale, parent = frame:GetEffectiveScale(), UIParent:GetEffectiveScale()
     if not (S.Finite(left) and S.Finite(top) and S.Finite(scale) and S.Finite(parent)) or parent <= 0 then return nil end
-    return left * scale / parent, top * scale / parent
+    local ratio = scale / parent
+    return left * ratio, top * ratio, ratio
+end
+
+local function CursorOver(owner)
+    local left, bottom, width, height = owner:GetScaledRect()
+    local x, y = GetCursorPosition()
+    if not (S.Finite(left) and S.Finite(bottom) and S.Finite(width) and S.Finite(height) and S.Finite(x) and S.Finite(y)) then
+        return false
+    end
+    return x >= left and x <= left + width and y >= bottom and y <= bottom + height
 end
 
 -- The restore tab takes the place of the window's top left corner. While
 -- Blizzard's click runs, the delegate stays where it is: PostClick ends it.
 local function PreClick(button, mouseButton)
     button.clicking = true
-    local state = button.owner and button.owner.bagCaption
-    if state and button.owner == state.minimize and mouseButton == "LeftButton" then
-        state.minimizing = true
+    local owner = button.owner
+    if not owner or mouseButton ~= "LeftButton" or InCombatLockdown() then return end
+    local state = owner.bagCaption
+    local rejects = NS.InCombat() or not owner:IsVisible() or not CursorOver(owner)
+    if owner == tab and not rejects then
+        -- A bag toggle can close open bags or handle a held item or modifier.
+        local held, modified = CursorHasItem and CursorHasItem(), IsModifiedClick and IsModifiedClick()
+        rejects = not tab.state or tab.state.frame:IsShown() or not NS.Public(held) or held
+            or not NS.Public(modified) or modified or button:GetAttribute("clickbutton1") ~= Backpack()
+    elseif not rejects then
+        rejects = not state or not state.owned or not state.frame:IsShown() or not state.native:IsShown()
+    end
+    button.minimizeClick = nil
+    if rejects then
+        button:SetAttribute("type1", nil)
+        return
+    end
+    if state and owner == state.minimize and state.owned and state.frame:IsShown() then
+        button.minimizeClick = true
         state.tabX, state.tabY = TopLeft(state.frame)
     end
 end
@@ -110,24 +143,46 @@ end
 local function PostClick(button, mouseButton)
     button.clicking = nil
     local owner = button.owner
-    local state = owner and owner.bagCaption
-    if state then state.minimizing = nil end
+    local state = owner and (owner.bagCaption or owner.state)
+    local minimized = mouseButton == "LeftButton" and button.minimizeClick
+        and state and state.owned and P.BagsModule.active and not state.frame:IsShown()
+    Detach()
+    if minimized then return ShowTab(state) end
     if owner and owner == tab and (mouseButton == "RightButton" or tab.state and tab.state.frame:IsShown()) then
         tab:Hide()
     end
-    Detach()
+    if state then SyncDelegate(state) end
+end
+
+local function MouseDown(button, mouseButton)
+    Press(button, true)
+    if mouseButton == "LeftButton" then PreClick(button, mouseButton) end
+end
+
+local function MouseUp(button)
+    Press(button, false)
+    -- A release outside the button may not produce a click.
+    if button.clicking then
+        C_Timer.After(0, function()
+            if button.clicking then
+                button.minimizeClick = nil
+                PostClick(button)
+            end
+        end)
+    end
 end
 
 local function Delegate()
     if delegate then return delegate end
     local button = S.CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:EnableMouse(true)
     button:SetAttribute("useOnKeyDown", false)
     button:SetAttribute("type1", "click")
     button:SetScript("OnEnter", DelegateEnter)
-    button:SetScript("OnLeave", Detach)
-    button:SetScript("OnMouseDown", function(self) Press(self, true) end)
-    button:SetScript("OnMouseUp", function(self) Press(self, false) end)
+    button:SetScript("OnLeave", DelegateLeave)
+    button:SetScript("OnMouseDown", MouseDown)
+    button:SetScript("OnMouseUp", MouseUp)
     button:SetScript("PreClick", PreClick)
     button:SetScript("PostClick", PostClick)
     button:Hide()
@@ -138,15 +193,40 @@ end
 
 -- target is the Blizzard button the delegate clicks from secure code.
 local function Attach(owner, target)
-    if not target or NS.InCombat() or S.GamepadUI() or S.editMode then return end
+    if not target or NS.Safety.IsForbidden(target) then return end
+    local left, top, ratio = TopLeft(owner)
+    local width, height = owner:GetWidth(), owner:GetHeight()
+    if not left or not S.Finite(width) or not S.Finite(height) or width <= 0 or height <= 0 then return end
     local button = Delegate()
+    local strata, level = owner:GetFrameStrata(), owner:GetFrameLevel() + 5
+    width, height = width * ratio, height * ratio
+    if button.owner == owner and button:IsShown() and button:GetAttribute("type1") == "click"
+        and button:GetAttribute("clickbutton1") == target and button.left == left and button.top == top
+        and button:GetWidth() == width and button:GetHeight() == height
+        and button:GetFrameStrata() == strata and button:GetFrameLevel() == level then return true end
     button.owner = owner
+    button.left, button.top = left, top
+    button:SetAttribute("type1", "click")
     button:SetAttribute("clickbutton1", target)
-    button:SetFrameStrata(owner:GetFrameStrata())
-    button:SetFrameLevel(owner:GetFrameLevel() + 5)
-    button:ClearAllPoints()
-    button:SetAllPoints(owner)
+    button:SetFrameStrata(strata)
+    button:SetFrameLevel(level)
+    -- A secure anchor to the bag cell would also protect the native bag.
+    button:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+    button:SetSize(width, height)
     button:Show()
+    return true
+end
+
+SyncDelegate = function(state, event)
+    if not state.minimize or delegate and delegate.clicking or NS.IsCombatLocked() then return end
+    if state.owned and P.BagsModule.active and not (NS.InCombat(event) or S.GamepadUI() or S.editMode) then
+        if tab and tab.state == state and tab:IsVisible() and not state.frame:IsShown() then
+            if Attach(tab, Backpack()) then return end
+        elseif not state.minimize.bagDisabled and state.minimize:IsVisible() then
+            if Attach(state.minimize, state.native) then return end
+        end
+    end
+    Detach()
 end
 
 ------------------------------------------------------------------ restore tab
@@ -160,13 +240,12 @@ function Caption.PaintTab(hover)
     tab.rule:SetColorTexture(ar, ag, ab, hover and 1 or .7)
 end
 
-local function TabEnter(button)
+local function TabEnter()
     Caption.PaintTab(true)
-    Attach(button, Backpack())
 end
 
-local function TabLeave(button)
-    if not (delegate and delegate.owner == button) then Caption.PaintTab(false) end
+local function TabLeave()
+    Caption.PaintTab(false)
 end
 
 -- A click the delegate did not take: the right button dismisses the tab.
@@ -202,10 +281,14 @@ local function Tab()
     tab:SetScript("OnClick", TabClick)
     tab:SetScript("OnHide", TabHidden)
     tab:Hide()
+    hooksecurefunc(tab, "SetPoint", function(button)
+        if button.state and button:IsVisible() then SyncDelegate(button.state) end
+    end)
+    if NS.MinimizedWindows then NS.MinimizedWindows.Track(tab) end
     return tab
 end
 
-local function ShowTab(state)
+ShowTab = function(state)
     local button = Tab()
     button.state = state
     Caption.PaintTab(false)
@@ -217,13 +300,14 @@ local function ShowTab(state)
         button:SetPoint("TOP", UIParent, "TOP", 0, -80)
     end
     button:Show()
+    SyncDelegate(state)
 end
 
 ------------------------------------------------------------------ cells
 local function SetDisabled(cell, disabled)
     if cell.bagDisabled == disabled then return end
     cell.bagDisabled = disabled
-    cell:EnableMouse(not disabled)
+    cell:EnableMouse(not disabled and cell == cell.bagCaption.maximize)
     Painter().SetHover(cell, false)
 end
 
@@ -243,7 +327,7 @@ function Caption.Sync(state, event)
     local module = P.BagsModule
     local shown = module.active and state.owned and not S.GamepadUI() and state.native:IsShown() == true
     for _, cell in ipairs(state.cells) do cell:SetShown(shown) end
-    if not shown then return end
+    if not shown then return SyncDelegate(state, event) end
     if state.minimize then
         local c, held = module.config, NS.InCombat(event) or S.editMode
         local panel = P.BagPresentation.IsPanel(c) and P.InventoryView.layout ~= "combat"
@@ -253,18 +337,13 @@ function Caption.Sync(state, event)
         SetDisabled(state.minimize, held or not Backpack())
     end
     if state.frame:IsVisible() then Snap(state) end
+    SyncDelegate(state, event)
 end
 
 local function Maximize(cell)
     local module = P.BagsModule
     if cell.bagDisabled or not module.active or NS.InCombat() then return end
     if P.BagPresentation.IsPanel(module.config) then S.Set("bags", "panelFullHeight", not module.config.panelFullHeight) end
-end
-
-local function MinimizeEnter(cell)
-    local state = cell.bagCaption
-    if cell.bagDisabled or not state.owned or not P.BagsModule.active or not Backpack() then return end
-    Attach(cell, state.native)
 end
 
 local function NewCell(state, kind, frameType)
@@ -332,15 +411,11 @@ local function WindowShown(frame)
     Caption.Sync(state)
 end
 
--- A minimize click hid the window: its tab takes the window's place.
+-- The delegate confirms its own native close in PostClick.
 local function WindowHidden(frame)
     local state = states[frame]
     if not state then return end
-    local minimizing = state.minimizing
-    state.minimizing = nil
-    if minimizing and P.BagsModule.active then
-        ShowTab(state)
-    elseif delegate and not delegate.clicking and delegate.owner and delegate.owner.bagCaption == state then
+    if delegate and delegate.owner and delegate.owner.bagCaption == state then
         Detach()
     end
 end
@@ -359,7 +434,9 @@ local function New(frame, t)
         state.maximize:SetScript("OnClick", Maximize)
         state.maximize:SetPoint("TOPRIGHT", state.close, "TOPLEFT", 0, 0)
         state.minimize = NewCell(state, "minimize", "Button")
-        state.minimize:HookScript("OnEnter", MinimizeEnter)
+        -- The native bag header has HIGH-strata controls.
+        state.minimize:SetFrameStrata("HIGH")
+        state.minimize:EnableMouse(false)
         state.minimize:SetPoint("TOPRIGHT", state.maximize, "TOPLEFT", 0, 0)
         state.cells[2], state.cells[3] = state.maximize, state.minimize
     end
@@ -375,6 +452,7 @@ end
 
 local function CombatChanged(_, event)
     -- PLAYER_REGEN_DISABLED runs before the lockdown: the delegate lets go.
+    if delegate then delegate.clicking = nil end
     Detach()
     for _, state in pairs(states) do Caption.Sync(state, event) end
 end
@@ -398,7 +476,10 @@ end
 -- A window layout pass moved or scaled a window.
 function Caption.Moved()
     for _, state in pairs(states) do
-        if state.owned and state.close:IsVisible() then Snap(state) end
+        if state.owned and state.close:IsVisible() then
+            Snap(state)
+            SyncDelegate(state)
+        end
     end
 end
 
@@ -414,10 +495,11 @@ end
 -- The module stops: its context hands Blizzard's X back afterwards.
 function Caption.Release()
     for _, state in pairs(states) do
-        state.owned, state.minimizing = false, nil
+        state.owned = false
         for _, cell in ipairs(state.cells) do cell:Hide() end
     end
     if tab then tab:Hide() end
+    if delegate then delegate.clicking = nil end
     Detach()
     if events then events:UnregisterAllEvents() end
 end

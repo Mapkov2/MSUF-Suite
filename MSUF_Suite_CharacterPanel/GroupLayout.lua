@@ -448,7 +448,11 @@ function Layout.Paint(list, groups, reset)
     list.paint(list, Layout.UpdateScroll(list, content, reset))
 end
 
-function Layout.ShowList(list, fixed, groups, reset, combat, show)
+function Layout.ShowList(list, fixed, groups, reset, combat, show, setStyle)
+    local view = list.view
+    if setStyle and (view.setManager or view.setPane and view.setPane.panelShown) then
+        return NS.GearSetsView.ShowList(list, fixed, groups, reset, combat, setStyle)
+    end
     if combat then
         -- The native scroll template recalculates the protected range in its scripts.
         show(list.scroll, false)
@@ -469,7 +473,8 @@ function Layout.Refresh(view)
     if view.gear and view.gear.panelShown then
         list, fixed = view.rail, view.combatRail
     else
-        list, fixed = view.report, view.combatReport
+        list = view.setReport and view.setReport.scroll.panelShown and view.setReport or view.report
+        fixed = view.combatReport
     end
     if fixed and fixed.canvas.panelShown then
         Layout.Paint(fixed, fixed.groups, false)

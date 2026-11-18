@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Shared runtime
 ## Notes: Shared runtime required by enabled Suite modules.
 ## Author: Mapko
-## Version: 0.1.26-alpha
+## Version: 0.1.27-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -17,6 +17,7 @@ WorldQuestRewards.lua
 WorldQuestTab.lua
 SuiteNotices.lua
 PreparationStatus.lua
+CompassHeading.lua
 MicroMenu.lua
 QuickActions.lua
 DataSources.lua

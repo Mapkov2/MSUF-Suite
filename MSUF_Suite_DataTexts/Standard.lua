@@ -20,7 +20,7 @@ P.DataTextStandard = Standard
 Standard.SOURCES = {
     gold = true, sessionGold = true, todayGold = true, bags = true, durability = true, clock = true,
     fps = true, latency = true, coordinates = true, location = true, xp = true,
-    date = true, fpsLatency = true, memory = true, homeLatency = true, progressBar = true,
+    date = true, fpsLatency = true, memory = true, homeLatency = true, progressBar = true, compass = true,
 }
 Standard.SAMPLED = { clock = true, coordinates = true, date = true, memory = true }
 Standard.INTERVAL = { coordinates = 0.5, memory = 30 }

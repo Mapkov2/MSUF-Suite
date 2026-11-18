@@ -21,7 +21,7 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     { "Guild online", "guild" }, { "Secondary stat", "secondaryStat" }, { "Mythic+ rating", "mythicRating" },
     { "Home latency", "homeLatency" }, { "XP / reputation bar", "progressBar" }, { "Gold today", "todayGold" },
     { "Equipment set", "equipmentSet" }, { "Talent loadout", "talentLoadout" }, { "Mail", "mail" },
-    { "Mythic+ Keystone", "keystone" }, { "Time played", "timePlayed" } }) do
+    { "Mythic+ Keystone", "keystone" }, { "Time played", "timePlayed" }, { "Compass", "compass" } }) do
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
@@ -195,6 +195,9 @@ B.Section("dataTexts", "textStyle", "Shared text style", textStyle)
 -- After the dependency table, which would clear the shadow's enable keys;
 -- each bar's own style copies the linked rules below.
 B.LinkFontShadow(NS.SuiteCatalog.dataTexts.rules)
+B.Section("dataTexts", "minimizedWindows", "Minimized windows", {
+    Bool("showMinimizedWindows", "Show minimized windows", false),
+})
 B.Section("dataTexts", "bags", "Blizzard bag buttons", {
     Bool("hideBlizzardBagBar", "Hide Blizzard bag buttons; use the Bag space DataText", true),
 })

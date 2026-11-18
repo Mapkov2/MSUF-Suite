@@ -251,7 +251,7 @@ function M:Disable()
     self.hostChatClaim = nil
     if self.moverFrame then self.moverFrame:Hide() end
     C.HideFloatingMovers(self)
-    if self.whisperArrows then self.whisperArrows:Hide() end
+    if self.whisperArrows then C.HideWhisperArrows() end
     if self.toolbar or self.toolbarDockOwned then C.ReleaseToolbar() end
     C.StopInputAnimations()
     C.DisableClock()

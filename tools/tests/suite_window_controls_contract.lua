@@ -68,6 +68,7 @@ local function Frame(name, parent, kind)
     end
     function frame:SetFrameStrata(value) self.strata = value end
     function frame:SetClampedToScreen(value) self.clamped = value end
+    function frame:IsClampedToScreen() return self.clamped == true end
     function frame:SetMovable(value) GeometryWrite(self); self.movable = value end
     function frame:IsMovable() return self.movable end
     function frame:RegisterForDrag() end
@@ -358,6 +359,30 @@ Check(parentedCreates == 0,
     "window controls passed a Blizzard window to CreateFrame (SmartNavigation rescans it tainted)")
 Check(SkinHandlerSeenBySmartNavigation(character) == nil,
     "a skin Frame inside a Blizzard window has a mouse handler SmartNavigation reads (FV-2)")
+do
+    -- Client secrets keep the underlying Lua type. Use numeric stand-ins so
+    -- these assertions depend on Safety.Public, not a mismatched Lua type.
+    local secret, normalScale, normalWidth = 73129, character.GetScale, character.GetWidth
+    secretValues[secret] = true
+    character.GetWidth = function() return secret end
+    state.grip.scripts.OnMouseDown(state.grip, "LeftButton")
+    Check(not state.drag and not state.grip.scripts.OnUpdate, "secret width armed a grip drag")
+    character.GetWidth = normalWidth
+    character.GetScale = function() return secret end
+    state.grip.scripts.OnMouseDown(state.grip, "LeftButton")
+    Check(not state.drag and not state.grip.scripts.OnUpdate, "secret scale armed a grip drag")
+    character.GetScale = normalScale
+    state.grip.scripts.OnMouseDown(state.grip, "LeftButton")
+    Check(state.drag ~= nil, "a grip did not recover after public geometry returned")
+    local before, historyBefore = character.geometryWrites, historyCalls
+    character.GetScale = function() return secret end
+    state.grip.scripts.OnUpdate(state.grip)
+    Check(character.geometryWrites == before, "an active grip wrote a scale after the native scale became secret")
+    state.grip.scripts.OnMouseUp(state.grip)
+    Check(not state.drag and not state.grip.scripts.OnUpdate and historyCalls == historyBefore
+        and NS.DB.windowControls.scales.CharacterFrame == nil, "the grip saved a secret scale or left its transient update")
+    character.GetScale, secretValues[secret] = normalScale, nil
+end
 -- The title strip's release net without a mouse handler: GLOBAL_MOUSE_UP,
 -- registered only while the panel moves.
 state.titleDrag.scripts.OnDragStart(state.titleDrag)
@@ -464,9 +489,14 @@ NS.WindowControls:OnThemeChanged("profile")
 NextFrame()
 
 local merchant = Frame("MerchantFrame", UIParent)
-Check(NS.WindowControls.Attach(merchant, "blizzardWindows")
-    and not NS.WindowControls.states[merchant].minimize,
-    "transactional NPC panel should scale without a destructive minimize or close-button dependency")
+Check(NS.WindowControls.Attach(merchant, "blizzardWindows"), "merchant did not attach")
+local merchantState = NS.WindowControls.states[merchant]
+merchantState.minimize.scripts.OnClick(merchantState.minimize)
+Check(merchant:IsShown() and merchantState.restore:IsShown() and merchant.point[3] == "BOTTOMLEFT",
+    "merchant minimize ended the native interaction")
+merchantState.restore.scripts.OnClick(merchantState.restore, "LeftButton")
+Check(merchant:IsShown() and not merchantState.restore:IsShown() and merchant.point[3] == "CENTER",
+    "merchant restore did not return to the original anchor")
 local settings = Frame("SettingsPanel")
 settings.resizable = true
 settings.ClosePanelButton = Frame(nil, settings, "Button")
@@ -710,7 +740,8 @@ do
         Check(controls.grip:GetFrameLevel() > panel.NineSlice:GetFrameLevel()
             and controls.titleDrag:GetFrameLevel() > panel.NineSlice:GetFrameLevel(),
             name .. " controls stayed beneath native portrait chrome/content")
-        Check(not controls.minimize, name .. " gained a minimize without its X")
+        Check(controls.minimize and controls.minimize.shown and controls.minimize.point[2] == panel,
+            name .. " lost an independent minimize when its X is unavailable")
         if name == "ProfessionsFrame" then
             -- Native Create button: width80, height28, BOTTOMRIGHT(-9,+7)
             -- or y13 when minimized. Calculate the grip's actual rectangle.
@@ -815,6 +846,7 @@ do
     LFG_TITLE = "Native localized group finder"
     local owner = "blizzardWindows:forever-group-finder"
     local lfg = Frame("LFGParentFrame", UIParent)
+    LFGParentFrame = lfg
     lfg.width, lfg.height, lfg.movable = 458, 535, false
     UIPanelWindows.LFGParentFrame = { area = "left", pushable = 7, whileDead = 1 }
     LFGParentFrameCloseButton = Frame("LFGParentFrameCloseButton", lfg, "Button")
@@ -830,7 +862,9 @@ do
     end
     Check(not NS.WindowControls.Attach(lfg, owner), "Forever LFG geometry was enabled on Retail")
     NS.Client.isForever = true
-    Check(NS.WindowControls.Attach(lfg, owner), "Forever LFG container was excluded from window controls")
+    lfg.protected = true
+    Check(NS.WindowControls.Attach(lfg, owner), "the implicitly protected Forever LFG root was excluded")
+    lfg.protected = false
     local lfgState = NS.WindowControls.states[lfg]
     Check(lfgState.titleDrag and lfgState.grip and lfgState.minimize and lfgState.restore,
         "Forever group finder lacks move, scale or minimize/restore controls")
@@ -862,11 +896,17 @@ do
     SecureClickThrough(lfgState.restore)
     Check(lfg.shown and not lfgState.restore.shown and lfg.scale == scale,
         "Forever LFG window did not restore with its saved scale")
-    -- A micro button that toggles another window is no way back: no minimize.
+    -- The other finder cannot reopen this root. Use its geometry instead.
     local otherFinder = Frame("PVEFrame", UIParent)
     function LFDMicroButton:GetToggledFrame() return otherFinder end
     NS.WindowControls.Refresh()
-    Check(not lfgState.minimize.shown, "LFG offered minimize through a micro button for another window")
+    Check(lfgState.minimize.shown, "LFG lost minimize without a matching native opener")
+    lfgState.minimize.scripts.OnClick(lfgState.minimize)
+    Check(lfg.shown and lfgState.restore.shown and lfg.point[3] == "BOTTOMLEFT",
+        "LFG ran the wrong toggle or failed to park")
+    lfgState.restore.scripts.OnClick(lfgState.restore, "LeftButton")
+    Check(lfg.shown and not lfgState.restore.shown and lfg.point[4] == 350 / scale,
+        "LFG parking lost the saved position")
     function LFDMicroButton:GetToggledFrame() return lfg end
     NS.WindowControls.Refresh()
     Check(lfgState.minimize.shown, "LFG minimize did not come back with its own opener")
@@ -892,11 +932,11 @@ do
         and lfg.scale == 1, "disabled Forever owner left controls or custom scale active")
     Check(NS.WindowControls.Attach(lfg, owner) and lfg.scale == scale
         and NS.WindowControls.states[lfg] == lfgState, "Forever re-enable lost stored scale or duplicated controls")
-    lfg.protected = true
+    lfg.protected, lfg.explicitProtected = true, true
     NS.WindowControls.Refresh()
     Check(not lfgState.titleDrag.shown and not lfgState.grip.shown,
-        "protected LFG container kept geometry controls")
-    lfg.protected = false
+        "explicitly protected LFG container kept geometry controls")
+    lfg.protected, lfg.explicitProtected = false, false
     NS.WindowControls.DisableOwner(owner)
     NS.Client.isForever = previousForever
 end
@@ -1247,10 +1287,7 @@ do
     UIPanelWindows.WorldMapFrame, MinimapCluster = nil, previousCluster
 end
 
--- Forever's profession window gets our minimize too. It casts its open
--- profession again as it shows, which our restore tab may not do: the tab
--- reopens that profession through the trade skill API (Blizzard shows the
--- window from its own event); the book page just shows again.
+-- The current crafting session stays open with or without native panel registration.
 do
     local opened = {}
     C_TradeSkillUI = {
@@ -1258,41 +1295,27 @@ do
         OpenTradeSkill = function(skillLine) opened[#opened + 1] = skillLine return true end,
     }
     local professions = Frame("ProfessionsFrame", UIParent)
+    _G.ProfessionsFrame = professions
     local close = Frame(nil, professions, "Button")
     professions.CloseButton, professions.CraftingPage = close, Frame(nil, professions)
     close.left, close.top, close.width, close.height = 676, 800, 24, 24
+    professions.CraftingPage.selectedRecipeID = 301
+    professions:HookScript("OnHide", function() professions.CraftingPage.selectedRecipeID = nil end)
     local state = NS.WindowControls.Attach(professions, "professions") and NS.WindowControls.states[professions]
     Check(state and state.minimize and state.minimize.shown, "the profession window has no minimize")
     state.minimize.scripts.OnClick(state.minimize)
-    Check(not professions.shown and state.restore.shown, "minimize left the profession window open")
+    Check(professions.shown and state.park and state.restore.shown, "detached professions did not minimize")
     state.restore.scripts.OnClick(state.restore, "LeftButton")
-    Check(opened[1] == 164 and not professions.shown, "the profession was shown outside Blizzard's own path")
-    professions:Show()
-    Check(not state.restore.shown and not state.minimized, "the reopened profession kept its restore tab")
-    professions.CraftingPage:Hide()
-    state.minimize.scripts.OnClick(state.minimize)
-    state.restore.scripts.OnClick(state.restore, "LeftButton")
-    Check(professions.shown and #opened == 1 and not state.restore.shown, "the profession book did not come back")
-    -- The client registers the window with the panel manager: its X closes it
-    -- (the secure delegate) and the trade skill API reopens a crafting page.
-    -- Any other page has no way back but ShowUIPanel, which the skin may not run.
+    Check(not state.park and not state.restore.shown, "detached professions retained a restore tab")
     UIPanelWindows.ProfessionsFrame = { area = "left", pushable = 1 }
     close.scripts.OnClick = function() HideUIPanel(professions) end
-    professions.CraftingPage:Show()
     NS.WindowControls.Refresh()
     state.minimize.scripts.OnClick(state.minimize)
-    Check(professions.shown and not state.minimized, "the skin's own minimize hid the managed profession window")
-    SecureClickThrough(state.minimize)
-    Check(not professions.shown and state.restore.shown, "the managed profession window did not minimize")
+    Check(professions.shown and state.park and state.restore.shown, "managed professions did not minimize")
     state.restore.scripts.OnClick(state.restore, "LeftButton")
-    Check(#opened == 2 and not professions.shown, "the managed profession did not reopen through the trade skill API")
-    professions:Show()
-    professions.CraftingPage:Hide()
-    NS.WindowControls.Refresh()
-    Check(not state.minimize.shown, "a managed profession book offered minimize without a way back")
-    SecureClickThrough(state.minimize)
-    Check(professions.shown and not state.minimized, "a managed profession book minimized without a way back")
-    UIPanelWindows.ProfessionsFrame = nil
+    Check(not state.park and not state.restore.shown and #opened == 0
+        and professions.CraftingPage.selectedRecipeID == 301, "restore lost the open crafting session")
+    UIPanelWindows.ProfessionsFrame, _G.ProfessionsFrame = nil, nil
     if watcher.shown then Watch(3) end -- the opening look of those layouts ends
     professions:Hide()
     NS.WindowControls.DisableOwner("professions")
@@ -1414,9 +1437,11 @@ InspectFrame.width, InspectFrame.height = 338, 424
 UIPanelWindows.InspectFrame = { area = "left", pushable = 0 }
 inspectLoaded()
 local inspectState = NS.WindowControls.states[InspectFrame]
-Check(inspectState and inspectState.grip and inspectState.titleDrag
-    and not inspectState.minimize and not inspectState.restore,
-    "the dedicated Inspect adapter omitted scaling or added destructive minimize")
+Check(inspectState and inspectState.grip and inspectState.titleDrag and inspectState.minimize.shown,
+    "the dedicated Inspect adapter omitted scaling or minimize")
+inspectState.minimize.scripts.OnClick(inspectState.minimize)
+Check(InspectFrame.shown and inspectState.restore.shown, "Inspect minimize ended the native session")
+inspectState.restore.scripts.OnClick(inspectState.restore, "LeftButton")
 cursorX, cursorY = 500, 500
 inspectState.grip.scripts.OnMouseDown(inspectState.grip, "LeftButton")
 cursorX, cursorY = 650, 400
@@ -1498,12 +1523,14 @@ do
             Check(controls.minimize and controls.restore and controls.minimize:GetFrameLevel() > 500,
                 "Legacy minimize/restore is missing or behind its portrait chrome")
             Check(controls.minimize.point[2] == panel.CloseButton, "Legacy minimize misses the native X anchor")
-            SecureClickThrough(controls.minimize)
-            Check(not panel.shown and controls.restore.shown, "Legacy window did not minimize")
-            SecureClickThrough(controls.restore)
-            Check(panel.shown and not controls.restore.shown, "Legacy window did not restore")
+            controls.minimize.scripts.OnClick(controls.minimize)
+            Check(panel.shown and controls.park and controls.restore.shown, "Legacy window did not minimize")
+            controls.restore.scripts.OnClick(controls.restore, "LeftButton")
+            Check(panel.shown and not controls.park and not controls.restore.shown, "Legacy window did not restore")
         else
-            Check(not controls.minimize and not controls.restore, "stable gained an NPC-closing minimize")
+            controls.minimize.scripts.OnClick(controls.minimize)
+            Check(panel.shown and controls.restore.shown, "stable minimize ended its NPC session")
+            controls.restore.scripts.OnClick(controls.restore, "LeftButton")
         end
         panel.NineSlice:SetFrameLevel(900)
         panel:Hide()
@@ -1616,16 +1643,38 @@ do
         and state.minimize:GetFrameLevel() > 510, "the caption cells sit under Blizzard's raised X")
     close.frameLevel = nil
     NS.WindowControls.Refresh()
-    GetUIPanelAttribute = function(frame, key)
-        return frame == panel and key == "checkFitExtraHeight" and 60 or nil
+    local fitReads, nativeExtraHeight = 0, 60
+    local previousGetter, previousRegistration = GetUIPanelAttribute, UIPanelWindows.SettingsPanel
+    GetUIPanelAttribute = function() error("fit entered the panel manager's initializing getter") end
+    function panel:GetAttribute(key)
+        if key == "UIPanelLayout-checkFitExtraWidth" or key == "UIPanelLayout-checkFitExtraHeight" then
+            fitReads = fitReads + 1
+        end
+        if key == "UIPanelLayout-checkFitExtraHeight" then return nativeExtraHeight end
     end
+    local width, getScale, before, secret = panel.GetWidth, panel.GetScale, panel.geometryWrites, 73129
+    secretValues[secret] = true
+    panel.GetWidth = function() return secret end
+    state.maximize.scripts.OnClick(state.maximize)
+    Check(not state.fit and panel.geometryWrites == before, "secret width entered fit or changed native geometry")
+    panel.GetWidth = width
+    panel.GetScale = function() return secret end
+    state.maximize.scripts.OnClick(state.maximize)
+    Check(not state.fit and panel.geometryWrites == before, "secret scale entered fit or changed native geometry")
+    panel.GetScale, secretValues[secret] = getScale, nil
     state.maximize.scripts.OnClick(state.maximize)
     Check(state.fit and panel.point[1] == "CENTER" and panel.scale == (1080 - 16) / 560,
         "maximize did not fit the native window and its extra height to the screen")
+    Check(fitReads == 2, "the first fit read native geometry twice")
     Check(square[9].shown, "maximized window needs the overlapping restore glyph")
     state.maximize.scripts.OnClick(state.maximize)
     Check(not state.fit and panel.scale == originalScale and not square[9].shown,
         "restore did not return the original scale and maximize glyph")
+    nativeExtraHeight = nil
+    UIPanelWindows.SettingsPanel = { checkFitExtraHeight = 25 }
+    Check(NS.WindowControlPolicy.FitGeometry(state) == (1080 - 16) / 525,
+        "fit lost the uninitialized panel's registered extra height")
+    UIPanelWindows.SettingsPanel, nativeExtraHeight = previousRegistration, 60
     state.maximize.scripts.OnClick(state.maximize)
     Check(state.fit and NS.WindowControls.ResetScales() and not state.fit and panel.scale == originalScale,
         "scale reset left a transient maximize state or restored its old scale")
@@ -1636,10 +1685,11 @@ do
         "the smaller caption lost a safe minimize action or stayed maximized without Restore")
     neighbor.GetRight = function() return 664 end
     NS.WindowControls.Refresh()
-    Check(not state.maximize.shown and not state.minimize.shown and close.shown,
-        "a tight title must keep the native X clear")
+    Check(not state.maximize.shown and state.minimize.shown and state.minimize.point[2] == panel and close.shown,
+        "a tight title lost minimize or obscured the native X")
     Check(close.scripts.OnClick == nativeClose, "caption replaced the native close handler")
     NS.WindowControls.DisableOwner("caption")
+    GetUIPanelAttribute, UIPanelWindows.SettingsPanel = previousGetter, previousRegistration
 end
 
 do
@@ -1701,4 +1751,28 @@ do
     NS.WindowControls.DisableOwner("spellLearning")
     learning:Hide()
 end
+do
+    local policy = NS.WindowControlPolicy
+    local panel = Frame("SecretRestoreFixture", UIParent)
+    local state, secret = { frame = panel }, 73129
+    local nativeSlot = panelSlots.left
+    panelSlots.left, secretValues[secret] = panel, true
+    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 70, -100)
+    local point, before, x = panel.point, panel.geometryWrites, secret
+    function panel:GetPoint() return "TOPLEFT", UIParent, "TOPLEFT", x, -100 end
+    policy.CapturePanels({ [panel] = state })
+    Check(not state.panelLayout, "the native panel snapshot captured a secret numeric offset")
+    x = 70
+    policy.CapturePanels({ [panel] = state })
+    Check(state.panelLayout and state.panelLayout[4] == 70, "the native panel lost a readable layout")
+    local getScale = panel.GetScale
+    panel.GetScale = function() return secret end
+    Check(not policy.RestorePanel(state) and panel.geometryWrites == before and panel.point == point,
+        "an unreadable scale partially applied a native restore")
+    panel.GetScale = getScale
+    Check(policy.RestorePanel(state) and panel.point[4] == 70 and panel.point[5] == -100,
+        "a readable native layout did not restore after a secret scale")
+    panelSlots.left, secretValues[secret] = nativeSlot, nil
+end
+
 print("Suite window controls: " .. checks .. " checks passed")

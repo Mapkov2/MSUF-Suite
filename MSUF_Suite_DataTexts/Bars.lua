@@ -68,7 +68,9 @@ local function Tooltip(button)
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine(title, 1, .82, .36)
-    if M.paused then
+    if button.source == "compass" then
+        GameTooltip:AddLine(NS.Compass.SlotText(button), 1, 1, 1)
+    elseif M.paused then
         GameTooltip:AddLine(button.text or P.NO_VALUE, 1, 1, 1)
     elseif Standard.TooltipLines(GameTooltip, button, M.config) then
         Actions.GoldTooltip(GameTooltip)

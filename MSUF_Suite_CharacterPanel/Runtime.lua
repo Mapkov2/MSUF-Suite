@@ -50,8 +50,7 @@ end
 local function ClearPendingPaint()
     Module.paintJob:Clear()
     Module.dirtyAll, Module.dirtySlot, Module.dirtyHeader = nil, nil, nil
-    Module.dirtyDurability, Module.dirtyModel, Module.dirtyPage = nil, nil, nil
-    Module.dirtySets = nil
+    Module.dirtyDurability, Module.dirtyModel, Module.dirtyPage, Module.dirtySets = nil, nil, nil, nil
     wipe(Module.inspectItems)
 end
 
@@ -69,6 +68,7 @@ local function OnClose()
     Routing.ReleaseGearClick()
     Module.view:CancelWindowGestures()
     SuspendPaint()
+    GearActions.CloseManager(Module)
     Module.appearanceJob:Clear()
     if Module.gear and Module.reader then Gear.Close(Module.reader, Module.gear) end
     Module.unit, Module.guid, Module.kind, Module.gear, Module.slot = nil, nil, nil, nil, nil
@@ -172,6 +172,8 @@ local function PaintContextAction(event)
     local view = Module.view
     if Module.kind == INSPECT then
         view:SetContextAction(Text("Blizzard Inspect"))
+    elseif Module.setManager and not Host.InCombat(event) then
+        view:SetContextAction(Module.tab == EQUIPMENT and Text("Equipment check") or Text("Close"))
     elseif Module.tab == EQUIPMENT and not Host.InCombat(event) then
         view:SetContextAction(GearActions.SetLabel(Module.setName))
     else
@@ -185,7 +187,7 @@ local function Paint(event)
     local groups, details, combat = Module.groups, Module.details, Module.kind == PLAYER and Host.InCombat(event)
     local gearTab = tab == OVERVIEW or tab == EQUIPMENT
     local listView = Module.kind == PLAYER and gearTab and view.characterView == "list"
-    local showSets = Module.kind == PLAYER and tab == OVERVIEW and Module.showSets and not combat
+    local showSets = GearActions.Present(Module, combat)
     if gearTab then
         wipe(details)
         Gear.Details(details, model, Module.slot, Module.kind == INSPECT)
@@ -266,13 +268,7 @@ local function Flush()
     if Module.gear.auditFocus and (readGear or readDurability) then
         Gear.Mark(Module.gear, Module.gear.auditFocus)
     end
-    if Module.setName ~= nil and Module.dirtySets and not Host.InCombat() then
-        local name = GearActions.ActiveName()
-        if name ~= Module.setName then
-            Module.setName, repaint = name, true
-            if Module.tab == EQUIPMENT then PaintContextAction() end
-        end
-    end
+    if Module.dirtySets and GearActions.Refresh(Module) then repaint = true end
     Module.dirtySets = nil
     if Module.dirtyModel and not custom then Module.view:RefreshModel() end
     if Module.dirtyHeader then
@@ -341,7 +337,7 @@ function Dirty(_, event, first, success)
         Module.dirtyDurability = true
     elseif event == "UNIT_MODEL_CHANGED" then
         Module.dirtyModel = true
-    elseif event == "EQUIPMENT_SETS_CHANGED" or event == "EQUIPMENT_SWAP_FINISHED" then
+    elseif event == "EQUIPMENT_SETS_CHANGED" or event == "EQUIPMENT_SWAP_FINISHED" or event == "BAG_UPDATE_DELAYED" then
         Module.dirtySets = true
     end
     if Module.pageEvents[event] then Module.dirtyPage = true end
@@ -355,6 +351,7 @@ local EQUIPMENT_EVENTS = {
     "PLAYER_EQUIPMENT_CHANGED", "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED",
     "UPDATE_INVENTORY_DURABILITY", "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED",
 }
+
 local function SyncHeaderEvents()
     SetEvents(GUILD_EVENTS, Module.config.headerGuildVisible == true)
     SetEvents(ZONE_EVENTS, Module.config.headerZoneVisible == true)
@@ -366,25 +363,23 @@ local function PaintTabs()
 end
 
 local function SyncSets()
-    local tab, custom = Module.tab, Module.custom
-    local wantsSets = tab == EQUIPMENT or tab == OVERVIEW and Module.showSets or custom and custom.sets
-    if wantsSets and not Host.InCombat() then
-        Module.setName = GearActions.ActiveName()
-        Subscribe(SET_EVENTS)
-        Subscribe(ATTRIBUTE_EVENTS)
-    else
-        Module.setName = nil
-    end
+    if not GearActions.Sync(Module) then return end
+    Subscribe(SET_EVENTS)
+    Subscribe(ATTRIBUTE_EVENTS)
+    if Module.setManager then Subscribe(GearActions.BagEvents) end
 end
 
-local function SelectTab(tab, preserveSlot)
+local function SelectTab(tab, preserveSlot, showAudit)
     if not Module.kind then return end
     HideTooltip()
     local kind, config = TAB_KIND[Module.kind], Module.config
     if not CharacterHeader.TabVisible(config, kind, tab) then tab = CharacterHeader.HomeTab(config, kind) end
     local definition = Module.kind == PLAYER and tab:match("^custom%d+$") and CharacterTabs.Find(config, tab)
     Module.customDefinition, Module.custom = definition, definition and Pages.CustomPlan(definition, true) or nil
-    if not preserveSlot or tab ~= Module.tab then Module.slot = nil end
+    if not preserveSlot or tab ~= Module.tab then
+        Module.slot, Module.wantsSetManager = nil, tab == EQUIPMENT and not showAudit
+        GearActions.CloseManager(Module)
+    end
     Module.tab, Module.dirtyPage, Module.reputationKey = tab, nil, Pages.ReputationKey(tab, config, Module.custom)
     Unsubscribe()
     Subscribe(SCREEN_EVENTS)
@@ -449,17 +444,22 @@ local function ClickSlot(slot, _, mouse)
     Paint()
 end
 
-local function CanSelectSet()
-    local view = Module.view
-    return Module.kind == PLAYER and Module.setName ~= nil and not Host.InCombat()
-        and view.frame:IsShown() and not view:IsMinimized()
+local function ToggleSetManager()
+    if Module.setManager then
+        GearActions.CloseManager(Module)
+    elseif not GearActions.OpenManager(Module) then return end
+    Module.wantsSetManager = Module.setManager ~= nil
+    SetEvents(GearActions.BagEvents, Module.wantsSetManager)
+    PaintContextAction()
+    Paint()
 end
 
-local function GroupClick(index, button)
+local function GroupClick(index)
     if Module.kind ~= PLAYER then return end
     if index == "equipmentSets" then
-        if CanSelectSet() then GearActions.OpenSets(button, CanSelectSet, Module.gear.rows) end
-        return
+        if Host.InCombat() or Module.setManager then return end
+        if Module.tab ~= EQUIPMENT and CharacterHeader.TabVisible(Module.config, "tab", EQUIPMENT) then return SelectTab(EQUIPMENT) end
+        return ToggleSetManager()
     end
     if Module.tab == OVERVIEW or Module.tab == EQUIPMENT then
         local model = Module.gear
@@ -467,7 +467,7 @@ local function GroupClick(index, button)
             if model.auditFocus == index then index = nil end
             Gear.Mark(model, index)
             if Module.tab == OVERVIEW and not Module.view.nativeLayout and CharacterHeader.TabVisible(Module.config, "tab", EQUIPMENT) then
-                return SelectTab(EQUIPMENT)
+                return SelectTab(EQUIPMENT, nil, true)
             end
         elseif model.bySlot[index] then
             if Module.slot == index then index = nil end
@@ -481,9 +481,7 @@ local function GroupClick(index, button)
 end
 
 local function ContextAction(button)
-    if Module.tab == EQUIPMENT and CanSelectSet() then
-        return GearActions.OpenSets(button, CanSelectSet, Module.gear.rows)
-    end
+    if Module.kind == PLAYER and (Module.tab == EQUIPMENT or Module.setManager) then return ToggleSetManager() end
     if Module.kind == PLAYER and Module.tab == OVERVIEW then return GearActions.OpenLootGoals() end
     if Module.kind ~= INSPECT or not NS.CanReplace() or Module.view:IsMinimized() then return end
     local unit = Module.unit
@@ -747,7 +745,9 @@ local function EnterCombat(_, event)
         WindowAction("moveStop")
         WindowAction("scaleStop")
         HideTooltip()
+        GearActions.CloseManager(Module)
         SetEvents(SET_EVENTS, false)
+        SetEvents(GearActions.BagEvents, false)
         if Module.custom and Module.custom.sets and not Module.pageEvents.PLAYER_EQUIPMENT_CHANGED then
             SetEvents(ATTRIBUTE_EVENTS, false)
         end

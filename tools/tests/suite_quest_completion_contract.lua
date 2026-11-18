@@ -40,7 +40,7 @@ for _, frame in ipairs(frames) do
     function frame:UnregisterEvent(event) self.events[event] = nil end
 end
 local pages = { "QuestDetailScrollFrame", "QuestProgressScrollFrame", "QuestRewardScrollFrame",
-    "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame" }
+    "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame", "QuestMapDetailsScrollFrame" }
 for _, flavor in ipairs({ "Mainline", "Forever" }) do
     NS.Client.isForever = flavor == "Forever"
     for _, name in ipairs(pages) do
@@ -56,6 +56,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             scroll:Fire("OnVerticalScroll", scroll.offset)
         end
         function bar:ScrollToBegin(forceImmediate) self:SetScrollPercentage(0, forceImmediate) end
+        local original, writes = bar.SetInterpolateScroll, 0
+        function bar:SetInterpolateScroll(value)
+            writes = writes + 1
+            original(self, value)
+        end
         local reset, setter = bar.ScrollToBegin, bar.SetInterpolateScroll
         -- Both routes run in the real skin: scrollbar cosmetics and menu discovery.
         providers.bar[1](bar, "quest-skin")
@@ -76,8 +81,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Check(bar.ScrollToBegin == reset and scriptWrites == 0, "quest reset or native input scripts were replaced")
         bar:SetScrollPercentage(0.3)
         scroll:Fire("OnHide")
+        bar:Fire("OnHide")
         Check(not state.current.group:IsPlaying(), "hidden quest content kept moving")
         scroll:Fire("OnShow")
+        bar:Fire("OnShow")
         bar:ScrollToBegin()
         NS.DB.theme.reduceMotion = true
         bar:SetScrollPercentage(0.4)
@@ -91,6 +98,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         NS.LegacyScrollMotion.Track(scroll, "quest-skin")
         Check(#scroll.hooks.OnVerticalScroll == hooks, "re-enable duplicated quest scroll observers")
         NS.LegacyScrollMotion.ReleaseOwner("quest-skin")
+        Check(writes == 0, flavor .. ": quest skin wrote the native interpolation flag: " .. name)
         _G[name] = nil
     end
 end

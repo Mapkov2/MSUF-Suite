@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - DataTexts
 ## Notes: Optional information bars for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.26-alpha
+## Version: 0.1.27-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -21,6 +21,7 @@ Stats.lua
 UtilitySources.lua
 Actions.lua
 CombatMenu.lua
+Compass.lua
 Geometry.lua
 Visibility.lua
 NativeBagBar.lua

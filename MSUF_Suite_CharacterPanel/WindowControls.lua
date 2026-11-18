@@ -554,3 +554,16 @@ function Window.ApplyPreferences(state, preferences)
     if not state.dock and not state.freeX then Place(state, "CENTER", 0, 0) end
     Window.Fit(state)
 end
+
+function Window.SetContextAction(self, label, Visible, Text)
+    Visible(self.contextAction, label ~= nil)
+    if label and (self.contextLabel.panelText ~= label or self.contextAction.fontRevision ~= self.fontRevision) then
+        Text(self.contextLabel, label)
+        self.contextAction.fontRevision = self.fontRevision
+        local width = math.min(420, math.ceil(self.contextLabel:GetUnboundedStringWidth()) + 14)
+        if self.contextAction.panelWidth ~= width then
+            self.contextAction.panelWidth = width
+            self.contextAction:SetWidth(width)
+        end
+    end
+end

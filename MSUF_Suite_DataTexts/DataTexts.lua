@@ -6,6 +6,7 @@ local Gold = NS.GoldLedger
 local Standard = P.DataTextStandard
 local Extra = P.DataTextSources
 local Actions = P.DataTextActions
+local Compass, CompassSlots = NS.Compass, P.DataTextCompass
 local Visibility, NativeBagBar = P.DataTextBarVisibility, P.DataTextNativeBagBar
 local healthBars, GateHealth = Visibility.healthBars, Visibility.GateHealthBar
 local M = P.DataTexts
@@ -101,7 +102,7 @@ end
 -- formatted and compared the text of every tick.
 function M:UpdateSource(key, force)
     local list = targets[key]
-    if not list then return end
+    if not list or key == "compass" then return end
     local record, sample = self.values[key], SAMPLES[key]
     -- One call site: a sample returns its two numbers and severity into
     -- label, value, severity; they become texts only past the gate.
@@ -216,6 +217,19 @@ local function EnteredWorld(self)
     for key in pairs(self.activeSources or {}) do self:UpdateSource(key) end
 end
 
+local function OnCompassHealth(self, event, unit, ...)
+    Extra.Changed(self, event, unit, ...)
+    if unit ~= "player" then return end
+    local changed
+    for i = 1, #healthBars do
+        local bar = healthBars[i]
+        local wasVisible = bar.mouseEnabled
+        GateHealth(bar)
+        if bar.hasCompass and wasVisible ~= bar.mouseEnabled then changed = true end
+    end
+    if changed then self:Rebind() end
+end
+
 local function OnEvent(self, event, unit, ...)
     if event == "PLAYER_XP_UPDATE" and unit and unit ~= "player" then return end
     Extra.Changed(self, event, unit, ...)
@@ -303,6 +317,13 @@ local function SyncEvents(self, active)
         wantedEvents.PLAYER_MONEY = true
     end
     WantBarEvents(self)
+    local healthHandler = OnEvent
+    for i = 1, #healthBars do
+        if healthBars[i].hasCompass then
+            healthHandler = OnCompassHealth
+            break
+        end
+    end
     for event in pairs(self.events) do
         if not wantedEvents[event] then
             self.context:RemoveEvent(event)
@@ -310,9 +331,10 @@ local function SyncEvents(self, active)
         end
     end
     for event in pairs(wantedEvents) do
-        if not self.events[event] then
-            self.context:Event(event, OnEvent, IN_COMBAT, PLAYER_UNIT_EVENTS[event] and "player" or nil)
-            self.events[event] = true
+        local handler = (event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH") and healthHandler or OnEvent
+        if self.events[event] ~= handler then
+            self.context:Event(event, handler, IN_COMBAT, PLAYER_UNIT_EVENTS[event] and "player" or nil)
+            self.events[event] = handler
         end
     end
 end
@@ -337,12 +359,15 @@ function M:Rebind(resample)
             local slots = bar.slots
             for i = 1, #slots do
                 local button = slots[i]
-                if button.source then BindTarget(active, button.source, button) end
+                if button.source and (button.source ~= "compass" or bar.mouseEnabled ~= false) then
+                    BindTarget(active, button.source, button)
+                end
             end
         end
     end
     RecycleTargets(active)
     self.activeSources = active
+    CompassSlots.Bind(targets.compass)
     Gold.WatchToday(self, active.todayGold and PaintToday or nil)
     Extra.PruneConfigured(self, SOURCES)
     Extra.Rebind(self, resample)
@@ -425,6 +450,7 @@ local function RefreshSlot(button, c, index, slot, style, font)
     local block = "bar" .. index .. "Slot" .. slot
     local choice = c[block]
     local key = NS.DataTextSourceKeys[choice]
+    if key ~= "compass" and button.dataCompass then Compass.ClearSlot(button) end
     button.extra = nil
     button.source, button.sourceIndex = SOURCES[key] and key or nil, choice
     if Extra.kinds[key] then
@@ -469,10 +495,12 @@ local function RefreshBar(index)
     Appearance.Paint(bar)
     local style = bar.style
     local font = S.ResolveFont(style.font) or S.GlobalFontPath()
+    bar.hasCompass = nil
     for slot = 1, #bar.slots do
         local button = bar.slots[slot]
         S.ApplyOwnedChildLayer(button, frame, layer, 2, restored)
         RefreshSlot(button, c, index, slot, style, font)
+        if button.source == "compass" then bar.hasCompass = true end
     end
     Layout(bar)
     Visibility.Cache(c, bar)
@@ -488,7 +516,7 @@ local function PrimeCombatBars(self, initialSnapshot)
             and (c[bar.visibilityKey] == VISIBILITY.IN_COMBAT or c[prefix .. "HideOutOfCombat"]
                 or c[prefix .. "HideOutOfCombatNoTarget"])) then
             for _, button in ipairs(bar.slots) do
-                if button.source then PaintSlot(bar, button, button.source, Format(button.source)) end
+                if button.source and button.source ~= "compass" then PaintSlot(bar, button, button.source, Format(button.source)) end
             end
             Layout(bar)
         end
@@ -584,6 +612,7 @@ local function Pause(self)
     self.context:RemoveEvent("UI_SCALE_CHANGED")
     self.context:RemoveEvent("DISPLAY_SIZE_CHANGED")
     Extra.Disable()
+    CompassSlots.Bind()
     RecycleTargets()
     self.activeSources = nil
     Clear(self.due)
@@ -643,6 +672,7 @@ function M:Disable()
     Actions.Disable()
     P.DataTextCombatMenu.Disable()
     Extra.Disable()
+    CompassSlots.Bind()
     NativeBagBar.Sync()
     if self.timer then
         self.timer:Cancel()

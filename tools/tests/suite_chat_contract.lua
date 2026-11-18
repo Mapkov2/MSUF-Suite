@@ -120,7 +120,11 @@ local function Frame(name)
     function frame:SetSize(width, height) self.width, self.height = width, height end
     function frame:GetWidth() return self.width or 64 end
     function frame:GetHeight() return self.height or 32 end
-    function frame:SetAllPoints(owner) self.points = { { "TOPLEFT", owner, "TOPLEFT" }, { "BOTTOMRIGHT", owner, "BOTTOMRIGHT" } } end
+    function frame:SetAllPoints(owner)
+        assert(self.template ~= "SecureActionButtonTemplate" or not owner.rejectsProtectedAnchor,
+            "Cannot anchor protected frames to regions")
+        self.points = { { "TOPLEFT", owner, "TOPLEFT" }, { "BOTTOMRIGHT", owner, "BOTTOMRIGHT" } }
+    end
     function frame:SetWidth(width) self.width = width end
     function frame:SetHeight(height) self.height = height end
     function frame:ClearAllPoints() self.points = {} end
@@ -1503,6 +1507,7 @@ do
     local oldChat, oldClick = SELECTED_CHAT_FRAME, FCF_Tab_OnClick
     local primary = module.visuals[ChatFrame1]
     local oldCopy, oldClock = primary.copyButton, primary.headerClock
+    local generalWasShown = ChatFrame1:IsShown()
     local oldFrameRight, oldFrameTop = ChatFrame1.GetRight, ChatFrame1.GetTop
     local oldDockPoint, oldDockWidth = dock.points, dock.width
     local first, second, third, other = Frame("TestWhisper1"), Frame("TestWhisper2"), Frame("TestWhisper3"), Frame("TestPetLog")
@@ -1535,10 +1540,11 @@ do
     Bounds(dock.scrollFrame, 0, viewport, 0, 22)
     function dock.scrollFrame:GetRight() return math.min(viewport, dock:GetWidth()) end
     FCF_Tab_OnClick = function(tab, mouseButton)
-        assert(mouseButton == "LeftButton", "arrows did not use normal native tab selection")
+        assert(secureClick and mouseButton == "LeftButton", "arrows did not use secure native tab selection")
+        -- Selection is immediate. ChatState reports the dock layout on a later frame.
+        dock.selected:Hide()
+        tab.chatFrame:Show()
         dock.selected, SELECTED_CHAT_FRAME = tab.chatFrame, tab.chatFrame
-        dockTabsHook(dock)
-        selectHook()
     end
     dockTabsHook(dock)
     assert(not module.whisperArrows, "a fitting tab row allocated overflow controls")
@@ -1590,27 +1596,61 @@ do
     viewport = 150
     dockTabsHook(dock)
     local previous, nextTab = unpack(arrows.buttons)
+    local rootScale, arrowLeft = UIParent.scale, 100
+    ChatFrame1:Show()
+    UIParent:SetScale(0.75)
+    for _, button in ipairs(arrows.buttons) do
+        button.rejectsProtectedAnchor = true
+        button:SetScale(1.125)
+        function button:GetRect() return arrowLeft, 30, self:GetWidth(), self:GetHeight() end
+        function button:IsVisible() return self:IsShown() and arrows:IsShown() and arrows:GetParent():IsShown() end
+    end
     -- The pointer aims the arrows' secure delegate over the arrow (out of
     -- combat; its state driver hides it in combat); the click selects
     -- Blizzard's tab from secure code and the delegate aims again.
-    local function ArrowClick(button)
+    local function ArmArrow(button)
         assert(not button.scripts.OnClick, "an arrow selects a native tab from Suite code")
+        previous.mouseOver, nextTab.mouseOver = button == previous, button == nextTab
         button.scripts.OnEnter(button)
         for _, delegate in ipairs(secureButtons) do
-            if delegate.owner == button and delegate.shown and not inCombat then
-                assert(stateDrivers[delegate] and stateDrivers[delegate].values == "[combat] hide",
-                    "the arrow delegate stays clickable in combat")
-                SecureClick(delegate, "LeftButton")
-                delegate.scripts.PostClick(delegate, "LeftButton")
-                return
-            end
+            if delegate.owner == button and delegate.shown then return delegate end
         end
     end
-    ArrowClick(nextTab)
+    local function ClickDelegate(delegate)
+        if not delegate or not delegate.shown or inCombat then return end
+        local selected = dock.selected
+        assert(stateDrivers[delegate] and stateDrivers[delegate].values == "[combat] hide",
+            "the arrow delegate stays clickable in combat")
+        if delegate.scripts.PreClick then delegate.scripts.PreClick(delegate, "LeftButton") end
+        if delegate:GetAttribute("clickbutton") then SecureClick(delegate, "LeftButton") end
+        delegate.scripts.PostClick(delegate, "LeftButton")
+        if dock.selected ~= selected then
+            assert(not delegate:IsShown(), "an invisible arrow kept its hit rectangle before deferred layout")
+            dockTabsHook(dock)
+            selectHook()
+        end
+    end
+    local function ArrowClick(button) ClickDelegate(ArmArrow(button)) end
+    local delegate = assert(ArmArrow(nextTab), "the next arrow did not arm")
+    local point, relative, edge, left, bottom = delegate:GetPoint()
+    assert(delegate:GetNumPoints() == 1 and point == "BOTTOMLEFT" and relative == UIParent and edge == "BOTTOMLEFT",
+        "the protected arrow delegate depended on chat frame geometry")
+    assert(left == 150 and bottom == 45 and delegate:GetWidth() == 27 and delegate:GetHeight() == 27,
+        "the arrow delegate did not copy the hit rectangle in UIParent units")
+    arrowLeft = 120
+    dockTabsHook(dock)
+    assert(select(4, delegate:GetPoint()) == 180, "the hit rectangle did not follow the dock layout")
+    ClickDelegate(delegate)
     assert(dock.selected == first, "right arrow did not select the first whisper from General")
-    ArrowClick(nextTab)
+    ClickDelegate(delegate)
     assert(dock.selected == second, "right arrow skipped Battle.net whispers or selected another chat type")
     assert(arrows:GetParent() == second, "arrows did not follow the selected window's visibility and fade")
+    nextTab.mouseOver = false
+    ClickDelegate(delegate)
+    assert(dock.selected == second and not delegate:IsShown(), "a stale hit rectangle still selected a tab")
+    arrowLeft = "secret"
+    assert(not ArmArrow(nextTab), "an unreadable rectangle armed the arrow")
+    arrowLeft = 120
     ArrowClick(previous)
     assert(dock.selected == first, "left arrow did not select the previous whisper")
     ArrowClick(previous)
@@ -1620,15 +1660,21 @@ do
     assert(dock.selected == third, "an invisible arrow intercepted a click")
     third:SetAlpha(1)
     inCombat = true
-    ArrowClick(nextTab)
+    assert(not ArmArrow(nextTab), "the arrow armed at the combat edge")
     inCombat = false
     assert(dock.selected == third, "arrow selected a native tab at the combat edge")
+    ArrowClick(previous)
+    assert(dock.selected == second, "left arrow stopped working after combat")
+    assert(ArmArrow(nextTab):GetAttribute("clickbutton") == _G[third:GetName() .. "Tab"], "the next whisper was not armed")
     table.remove(dock.DOCKED_CHAT_FRAMES, 5)
-    ArrowClick(nextTab)
+    ClickDelegate(delegate)
     assert(dock.selected == first, "arrow retained a closed whisper or did not wrap")
     viewport = 245
     dockTabsHook(dock)
     assert(not arrows:IsShown(), "widening the dock left the arrows visible")
+    assert(not delegate:IsShown() and not delegate:GetAttribute("clickbutton"), "hidden arrows kept an active delegate")
+    UIParent:SetScale(rootScale)
+    ChatFrame1:SetShown(generalWasShown)
     dock.overflowButton:Show()
     dockTabsHook(dock)
     assert(arrows:IsShown() and dock.overflowButton:IsShown(), "native overflow did not retain both navigation paths")

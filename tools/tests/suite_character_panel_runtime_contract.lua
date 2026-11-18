@@ -55,7 +55,8 @@ function PlaySound(kit)
 end
 C_CurrencyInfo = { GetCurrencyListSize = function() return 2 end }
 C_EquipmentSet = {
-    CanUseEquipmentSets = function() return true end,
+    CanUseEquipmentSets = function() return not equipmentSets.unavailable end,
+    EquipmentSetContainsLockedItems = function() return equipmentSets.lockedItem == true end,
     GetEquipmentSetIDs = function()
         setReads = setReads + 1
         local ids = { secret }
@@ -64,7 +65,7 @@ C_EquipmentSet = {
     end,
     GetEquipmentSetInfo = function(id)
         local set = equipmentSets.sets[id]
-        if set then return set.name, set.icon, id, id == currentSet end
+        if set then return set.name, set.icon, id, id == currentSet, 0, 0, 0, set.missing end
     end,
     GetEquipmentSetID = function(name)
         for id, set in pairs(equipmentSets.sets) do if set.name == name then return id end end
@@ -85,6 +86,7 @@ C_EquipmentSet = {
         assert(not locked)
         equipmentSets.sets[id].saved = true
         equipmentSets.sets[id].slots = { [1] = equipmentSets.ignoredSlots[1], [2] = equipmentSets.ignoredSlots[2] }
+        if equipmentSets.clearSaveMask then wipe(equipmentSets.ignoredSlots) end
     end,
     ModifyEquipmentSet = function(id, name, icon)
         equipmentSets.sets[id].name, equipmentSets.sets[id].icon = name, tonumber(icon)
@@ -104,6 +106,8 @@ function EquipmentManager_EquipSet(id)
     assert(not locked, "equipment sets bypassed the combat gate")
     equippedSet, currentSet, setUses = id, id, setUses + 1
 end
+C_EquipmentSet.UseEquipmentSet = EquipmentManager_EquipSet
+function UnitCastingInfo() return equipmentSets.casting end
 function CanInspect() return inspectAllowed end
 function GetInventoryItemDurability(slot)
     if slot == 2 then return itemWorn and 1000 or 1001, 1001 end
@@ -446,6 +450,7 @@ local function Run(forever)
         Print = function() end,
         Confirm = function(_, question) equipmentSets.setQuestion = question end,
         AskText = function(_, question) equipmentSets.setQuestion = question end,
+        HideQuestion = function() equipmentSets.setQuestion = nil end,
         ModuleState = function(id)
             assert(id == "characterPanel")
             return preferences
@@ -980,8 +985,11 @@ local function Run(forever)
     actions.tab("overview")
     assert(FindRow("Active set", lastRail) == "Dungeons" and callbacks.EQUIPMENT_SETS_CHANGED,
         "Overview did not show the equipped set by default")
+    setMenu = nil
     actions.group("equipmentSets", {})
-    assert(equipmentSets.FindMenu(setMenu, "Manage equipment sets"), "Overview row did not open the working manager")
+    assert(runtime.tab == "gear" and runtime.view.setManager and not setMenu,
+        "Overview routed the equipment sets link to a popup instead of the Equipment tab")
+    actions.tab("overview")
     runtime.config.showEquipmentSetsInOverview = false
     runtime:Refresh()
     Flush()
@@ -1010,31 +1018,118 @@ local function Run(forever)
         "changing a single slot did not invalidate the active set independently of the gear model")
     currentSet = 0
     actions.group("equipmentSets", {})
-    assert(equipmentSets.FindMenu(setMenu, "New equipment set"), "custom row action did not open the native set menu")
+    assert(runtime.tab == "gear" and runtime.view.setManager and not setMenu, "custom row did not route to the same set pane")
     runtime.config.customTabs, runtime.config.showEquipmentSetsInOverview = initialCustom, nil
     runtime:Refresh()
     Flush()
 
+    local gearActions = ns.GearActions
+    do
+        local existing = equipmentSets.sets
+        equipmentSets.sets = {}
+        actions.tab("gear")
+        local pane = assert(runtime.view.setManager, "empty Equipment tab did not open the set manager directly")
+        assert(#pane.rows == 0 and pane.canCreate and pane.selected == nil and not setMenu)
+        local draft = assert(gearActions.BeginEditor(pane))
+        assert(not gearActions.SubmitEditor(draft, "  ", 135001) and not next(equipmentSets.sets))
+        assert(gearActions.SubmitEditor(draft, "  First Set  ", 135001) and not setMenu,
+            "the first set could not be made without a menu")
+        Event(runtime, "EQUIPMENT_SETS_CHANGED")
+        Flush()
+        assert(pane.selected.name == "First Set" and pane.selected.icon == 135001)
+        equipmentSets.sets = existing
+    end
+
+    equipmentSets.unavailable = true
     actions.tab("gear")
-    assert(lastContext == "Equipment set: Dungeons" and callbacks.EQUIPMENT_SETS_CHANGED)
-    actions.contextAction({})
-    assert(setMenu[1].selected(setMenu[1].data), "menu did not reflect the native active set")
+    assert(not runtime.view.setManager and FindRow("Active set", lastRail) == "Dungeons", "a locked equipment manager opened")
+    equipmentSets.unavailable = false
+    actions.tab("gear")
+    local manager = assert(runtime.view.setManager, "the Equipment tab did not open the inline manager")
+    assert(manager.selectedID == 0 and lastContext == "Equipment check" and callbacks.BAG_UPDATE_DELAYED
+        and manager.rows[1].id == 0 and manager.rows[1].equipped
+        and manager.rows[2].id == 1 and not manager.rows[2].equipped, "the manager did not show the native sets")
+    gearActions.Select(manager, manager.rows[2])
+    assert(manager.selectedID == 1 and manager.selected == manager.rows[2])
     local beforeUses = setUses
     locked = true
-    setMenu[2].pick(setMenu[2].data)
-    assert(setUses == beforeUses, "a menu opened before combat equipped a set during combat")
+    gearActions.Equip(manager, manager.selected)
     locked = false
-    setMenu[2].pick(setMenu[2].data)
-    assert(setUses == beforeUses + 1 and equippedSet == 1, "selector did not invoke Blizzard's set action")
+    equipmentSets.casting = "Hearthstone"
+    gearActions.Equip(manager, manager.selected)
+    equipmentSets.casting = nil
+    equipmentSets.lockedItem = true
+    gearActions.Equip(manager, manager.selected)
+    equipmentSets.lockedItem = nil
+    assert(setUses == beforeUses, "the manager ignored a swap restriction")
+    gearActions.Equip(manager, manager.selected)
+    assert(setUses == beforeUses + 1 and equippedSet == 1, "the manager did not use Blizzard's equipment set")
+    local beforeFresh, beforeInventory = setReads, gearReads
+    Event(runtime, "EQUIPMENT_SETS_CHANGED")
     Event(runtime, "EQUIPMENT_SWAP_FINISHED")
     Flush()
-    assert(lastContext == "Equipment set: PvP", "finished swap did not refresh the active set")
-    local function Pick(entry) entry.pick(entry.data) end
-    local function OpenManager()
-        actions.contextAction({})
-        return equipmentSets.FindMenu(setMenu, "Manage equipment sets").children
+    assert(manager.selected.equipped and not manager.rows[1].equipped and setReads == beforeFresh + 1
+        and gearReads == beforeInventory, "swap did not refresh the sets once without scanning gear")
+    equipmentSets.sets[0].missing = 1
+    Event(runtime, "BAG_UPDATE_DELAYED")
+    Flush()
+    assert(manager.rows[1].missing == 1 and setReads == beforeFresh + 2 and gearReads == beforeInventory,
+        "moving a set item did not refresh missing items independently of equipped slots")
+    gearActions.Save(manager, manager.selected)
+    local pendingSave = assert(equipmentSets.setQuestion).callback
+    actions.contextAction({})
+    assert(not runtime.view.setManager and not callbacks.BAG_UPDATE_DELAYED and not equipmentSets.setQuestion
+        and lastContext == "Equipment set: PvP")
+    pendingSave()
+    assert(not equipmentSets.sets[1].saved, "a stale save mutated a set after closing the manager")
+    assert(FindRow("Active set", lastRail) == "PvP", "the report did not retain the active set")
+    actions.slot(runtime.gear.rows[1].slot)
+    actions.contextAction({})
+    local combatManager = assert(runtime.view.setManager)
+    assert(runtime.slot == nil, "opening the manager retained an item detail that covers it")
+    gearActions.Select(combatManager, combatManager.rows[2])
+    equipmentSets.sets[1].slots, equipmentSets.ignoredSlots[2], equipmentSets.clearSaveMask = { [2] = true }, true, true
+    gearActions.EditSlots({}, combatManager, combatManager.selected)
+    assert(setMenu[1].text == "Ignored equipment slots" and setMenu[2].pick and not setMenu[2].children,
+        "the ignored slots control opened another level instead of the checkboxes")
+    setMenu[2].pick(setMenu[2].data)
+    gearActions.Save(combatManager, combatManager.selected)
+    equipmentSets.setQuestion.callback()
+    local savedSlots = equipmentSets.sets[1].slots
+    assert(equipmentSets.sets[1].saved and savedSlots[1] and savedSlots[2]
+        and not equipmentSets.ignoredSlots[1] and equipmentSets.ignoredSlots[2],
+        "toolbar save did not restore the whole native mask after the client cleared it")
+    equipmentSets.clearSaveMask, equipmentSets.ignoredSlots[2] = nil, nil
+    local draft = assert(gearActions.BeginEditor(combatManager))
+    assert(draft.icons[1].id == 135001 and not gearActions.SubmitEditor(draft, "Dungeons", 135001))
+    assert(gearActions.SubmitEditor(draft, "Inline set", draft.icons[1].id))
+    Event(runtime, "EQUIPMENT_SETS_CHANGED")
+    Flush()
+    assert(combatManager.selectedID == 2 and combatManager.selected.icon == 135001,
+        "creation did not use the chosen icon or select the new native set")
+    gearActions.Manage({}, combatManager, combatManager.selected)
+    local deleteInline = equipmentSets.FindMenu(setMenu, "Delete")
+    deleteInline.pick(deleteInline.data)
+    equipmentSets.setQuestion.callback()
+    Event(runtime, "EQUIPMENT_SETS_CHANGED")
+    Flush()
+    assert(combatManager.selectedID == 1 and #combatManager.rows == 2, "deleting the selection did not return to the equipped set")
+    locked = true
+    Event(runtime, "PLAYER_REGEN_DISABLED")
+    assert(not runtime.view.setManager and not callbacks.EQUIPMENT_SETS_CHANGED and not callbacks.BAG_UPDATE_DELAYED and lastContext == nil,
+        "combat did not close and suspend the manager")
+    locked = false
+    Event(runtime, "PLAYER_REGEN_ENABLED")
+    gearActions.Equip(combatManager, combatManager.rows[1])
+    assert(setUses == beforeUses + 1, "a manager action survived combat")
+    local resumed = assert(runtime.view.setManager, "combat exit did not return to the open set manager")
+    assert(resumed ~= combatManager and resumed.selectedID == 1 and lastContext == "Equipment check")
+    local function OpenSetOptions(row)
+        gearActions.Manage({}, resumed, row)
+        return setMenu
     end
-    local savedSet = equipmentSets.FindMenu(OpenManager(), "Dungeons").children
+    local function Pick(entry) entry.pick(entry.data) end
+    local savedSet = OpenSetOptions(resumed.rows[1])
     Pick(equipmentSets.FindMenu(savedSet, "Pick up for action bar"))
     assert(equipmentSets.setCursor == 0, "native equipment-set ID zero was not picked up")
     equipmentSets.setCursor = nil
@@ -1045,26 +1140,24 @@ local function Run(forever)
     assert(equipmentSets.sets[0].spec == nil, "native spec assignment was not removed")
 
     equipmentSets.ignoredSlots[1] = true
-    Pick(equipmentSets.FindMenu(equipmentSets.FindMenu(setMenu, "New equipment set").children, "New equipment set"))
-    equipmentSets.setQuestion.callback("Dungeons")
-    assert(not equipmentSets.sets[2], "creating a set overwrote an existing name")
-    equipmentSets.setQuestion.callback("  Raid  ")
+    local raidDraft = assert(gearActions.BeginEditor(resumed))
+    assert(gearActions.SubmitEditor(raidDraft, "  Raid  ", 134400))
     assert(equipmentSets.sets[2].name == "Raid" and equipmentSets.ignoredSlots[1], "create did not restore Blizzard's ignored slots")
-
-    savedSet = equipmentSets.FindMenu(OpenManager(), "Raid").children
-    local save = equipmentSets.FindMenu(savedSet, "Save current equipment").children
-    local slots = equipmentSets.FindMenu(save, "Ignored equipment slots").children
-    Pick(slots[1])
-    Pick(equipmentSets.FindMenu(save, "Save current equipment"))
-    assert(not equipmentSets.sets[2].saved, "save did not wait for confirmation")
-    equipmentSets.setQuestion.callback()
-    assert(equipmentSets.sets[2].saved and equipmentSets.sets[2].slots[1] and equipmentSets.ignoredSlots[1], "save did not apply the staged ignore mask")
-    Pick(equipmentSets.FindMenu(savedSet, "Rename"))
-    equipmentSets.setQuestion.callback("Raid B")
-    assert(equipmentSets.sets[2].name == "Raid B" and equipmentSets.sets[2].icon == 134400, "rename lost the set icon")
+    gearActions.ReleaseEditor(raidDraft)
+    assert(not gearActions.SubmitEditor(raidDraft, "Stale", 134400), "a closed editor submitted a second time")
+    Event(runtime, "EQUIPMENT_SETS_CHANGED")
+    Flush()
+    local raid = resumed.selected
+    savedSet = OpenSetOptions(raid)
+    local rename = assert(gearActions.BeginEditor(resumed, raid))
+    assert(gearActions.SubmitEditor(rename, "Raid B", 135001))
+    assert(equipmentSets.sets[2].name == "Raid B" and equipmentSets.sets[2].icon == 135001,
+        "the edit form did not change name and icon together")
     Pick(equipmentSets.FindMenu(savedSet, "Delete"))
     assert(equipmentSets.sets[2], "stale menu acted on a renamed set")
-    savedSet = equipmentSets.FindMenu(OpenManager(), "Raid B").children
+    Event(runtime, "EQUIPMENT_SETS_CHANGED")
+    Flush()
+    savedSet = OpenSetOptions(resumed.selected)
     Pick(equipmentSets.FindMenu(savedSet, "Delete"))
     locked = true
     equipmentSets.setQuestion.callback()

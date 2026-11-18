@@ -3,6 +3,7 @@ local S = P.Suite
 local LAYOUT, PLACEMENT = P.NS.DataTextLayout, P.NS.DataTextPlacement
 local Geometry = {}
 local ProgressWidth, LayoutProgress = P.NS.DataTextProgressWidth, P.NS.LayoutDataTextProgress
+local Compass = P.NS.Compass
 P.DataTextGeometry = Geometry
 local floor, ceil = math.floor, math.ceil
 local Snap, Color = P.Appearance.Snap, P.Appearance.Color
@@ -43,7 +44,8 @@ local function SlotWidths(bar, count, config)
     for i = 1, count do
         local button = layoutSlots[i]
         if fit then
-            local textWidth = button.source == "progressBar" and ProgressWidth or TextWidth(button)
+            local textWidth = button.source == "compass" and (bar.vertical and Compass.fallbackWidth or Compass.slotWidth)
+                or button.source == "progressBar" and ProgressWidth or TextWidth(button)
             local demand = textWidth + 2 * style.padding
             if button.extra then demand = demand + P.DataTextSources.IconWidth(button) end
             widths[i] = math.max(44, demand)
@@ -139,6 +141,8 @@ local function PlaceSlot(bar, button, index, config, extra)
     button.label:SetPoint("RIGHT", button, "RIGHT", -inset, 0)
     if button.source == "progressBar" then
         LayoutProgress(button, (bar.vertical and height or right - left) / scale, inset, pixel / scale)
+    elseif button.source == "compass" then
+        Compass.LayoutSlot(button, button:GetWidth(), button:GetHeight(), inset, pixel / scale, style.accentColor)
     end
     extra.Paint(button, true)
     return right, height

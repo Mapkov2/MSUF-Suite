@@ -5,6 +5,7 @@ local _, NS = ...
 local Chrome = {}
 NS.WindowControlChrome = Chrome
 local Safety = NS.Safety
+local function PublicNumber(value) return Safety.Public(value) and type(value) == "number" end
 local fills = setmetatable({}, { __mode = "k" })
 
 function Chrome.Parent(state)
@@ -47,25 +48,26 @@ end
 
 local function ExteriorGrip(grip, state)
     local frame = state.frame
-    local ratio = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    local ratio = NS.WindowControlPolicy.ScreenRatio(frame)
     local right, bottom = Safety.Read(frame, "GetRight"), Safety.Read(frame, "GetBottom")
-    local topSide = bottom ~= nil and (bottom - 21) * ratio < 0
+    local topSide = ratio and type(bottom) == "number" and (bottom - 21) * ratio < 0
     if NS.Client.isForever and state.name == "ProfessionsFrame" and not topSide then
         -- Dock under the lower border. Camelot's Create button starts at y=7,
         -- and the profession tabs sit beyond the right edge.
         grip:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, 3)
         return
     end
-    local leftSide = right ~= nil and (right + 21) * ratio > UIParent:GetWidth()
+    local uiWidth = UIParent:GetWidth()
+    local leftSide = ratio and type(right) == "number" and PublicNumber(uiWidth) and (right + 21) * ratio > uiWidth
     local corner = (topSide and "TOP" or "BOTTOM") .. (leftSide and "LEFT" or "RIGHT")
     local point = (topSide and "BOTTOM" or "TOP") .. (leftSide and "RIGHT" or "LEFT")
     grip:SetPoint(point, frame, corner, leftSide and -1 or 1, topSide and 1 or -1)
 end
 
 local function BagHandleEdge(state)
-    local ratio = state.frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
-    local top = Safety.Read(state.frame, "GetTop")
-    local below = top ~= nil and (top + 8) * ratio > UIParent:GetHeight()
+    local ratio = NS.WindowControlPolicy.ScreenRatio(state.frame)
+    local top, uiHeight = Safety.Read(state.frame, "GetTop"), UIParent:GetHeight()
+    local below = ratio and type(top) == "number" and PublicNumber(uiHeight) and (top + 8) * ratio > uiHeight
     return below and "BOTTOM" or "TOP", below and -7 or 1
 end
 
@@ -303,11 +305,11 @@ function Chrome.CaptionSize(state)
     return width, height, room, right - cellLeft + width * 2 + 4, limit, right, scale
 end
 local PlaceMinimize
-
 function Chrome.SyncMinimize(state)
     if not state.minimize then return end
     local art = captionArt[state.minimize]
-    local disabled = NS.IsCombatLocked() and NS.WindowControlPolicy.HasManagedVisibility(state)
+    local policy = NS.WindowControlPolicy
+    local disabled = NS.IsCombatLocked() and (policy.NeedsPark(state) or policy.CanNativeMinimize(state))
     if (art.disabled == true) == disabled then return end
     art.disabled = disabled
     state.minimize:EnableMouse(not disabled)
@@ -459,10 +461,10 @@ local function Report(state, moment)
 end
 
 local CELLS = { "closeCell", "toggleCell", "maximize", "minimize" }
-function Chrome.HideCaption(state)
+function Chrome.HideCaption(state, keepMinimize)
     if NS.CaptionTitles then NS.CaptionTitles.Restore(state) end
     for _, key in ipairs(CELLS) do
-        if state[key] then state[key]:Hide() end
+        if state[key] and (key ~= "minimize" or not keepMinimize) then state[key]:Hide() end
     end
     for target in pairs(state.nativeRoots or {}) do RestoreNative(state, target) end
     RefreshFocus(state.frame)
@@ -477,6 +479,7 @@ local function PlaceCell(cell, anchor, width, height, level, kind)
     end
     LayoutCaption(cell, kind)
     cell:Show()
+    if kind == "minimize" then NS.WindowControlDelegate.Refresh(cell) end
     return cell
 end
 
@@ -494,6 +497,17 @@ local function ToggleCell(state, anchor, width, height, level)
     return PlaceCell(cell, anchor, width, height, level, Safety.Read(maximize, "IsShown") and "maximize" or "restore")
 end
 
+local function ShowStandaloneMinimize(state, level, besideClose)
+    local button, frame = state.minimize, state.frame
+    button:ClearAllPoints()
+    if besideClose then
+        PlaceMinimize(button, state, state.close)
+    else
+        NS.WindowControlPolicy.PlaceExtraCaption(button, frame)
+    end
+    return PlaceCell(button, nil, 22, 22, level, "minimize")
+end
+
 function Chrome.ShowCaption(state, level)
     Chrome.SyncMinimize(state)
     local width, height, room, inset, limit, right, scale = Chrome.CaptionSize(state)
@@ -502,7 +516,7 @@ function Chrome.ShowCaption(state, level)
         Chrome.LeaveFit(state)
         width, height, room, inset, limit, right, scale = Chrome.CaptionSize(state)
     end
-    local cells = width and not gamepad and FadeNative(state, state.close)
+    local cells = width and not gamepad and not state.nativeCaption and FadeNative(state, state.close)
     -- Combat leaves a shown caption where it is (a protected window can read
     -- as unsized there): Blizzard's buttons stay faded, the toggle's cell comes
     -- and goes with the toggle, and the window is laid out once combat ends.
@@ -518,11 +532,10 @@ function Chrome.ShowCaption(state, level)
     if not minimize and state.minimize then state.minimize:Hide() end
     if not cells then
         state.captionPath = not width and "size" or gamepad and "gamepad" or "protected"
-        Chrome.HideCaption(state)
-        if not minimize or gamepad or room ~= nil then return end
-        minimize:ClearAllPoints()
-        PlaceMinimize(minimize, state, state.close)
-        return PlaceCell(minimize, nil, 22, 22, level, "minimize")
+        local showMinimize = minimize and not gamepad and Safety.Read(state.close, "IsShown") ~= false
+        Chrome.HideCaption(state, showMinimize)
+        if not showMinimize then return end
+        return ShowStandaloneMinimize(state, level, state.close and room == nil and not state.nativeCaption)
     end
     if NS.CaptionTitles then NS.CaptionTitles.Fit(state, limit, right, scale) end
     state.captionInset, state.captionPath = inset, "cells"
@@ -557,7 +570,7 @@ function Chrome.ShowCaption(state, level)
     if minimize and room >= width * (middle and 2 or 1) then
         PlaceCell(minimize, middle or close, width, height, level, "minimize")
     elseif minimize then
-        minimize:Hide()
+        ShowStandaloneMinimize(state, level, false)
     end
 end
 
@@ -624,37 +637,21 @@ function Chrome.RecolorCaption(state)
     end
 end
 
--- Fixed-size native panels fit uniformly, including exterior resize handles.
-local function NativeFitExtra(frame, key)
-    if NS.IsCombatLocked() then
-        -- The panel manager's getter can seed native attributes on first read.
-        local value = Safety.Read(frame, "GetAttribute", "UIPanelLayout-" .. key)
-        return type(value) == "number" and value or 0
-    end
-    local read = Safety.Field(_G, "GetUIPanelAttribute")
-    local value = read and read(frame, key)
-    if Safety.Public(value) and type(value) == "number" then return value end
-    return 0
-end
-
 function Chrome.Fit(state)
-    local frame = state.frame
-    if state.fit.applying then return end
-    local right, bottom, top = Chrome.Footprint(state)
-    local extraWidth = NativeFitExtra(frame, "checkFitExtraWidth")
-    local extraHeight = NativeFitExtra(frame, "checkFitExtraHeight")
-    right, bottom = math.max(right, extraWidth), math.max(bottom, extraHeight)
-    local scaleFactor = frame:GetEffectiveScale() / frame:GetScale() / UIParent:GetEffectiveScale()
-    local width, height = frame:GetWidth() + right, frame:GetHeight() + bottom + top
-    if scaleFactor <= 0 or width <= 0 or height <= 0 then return end
-    local uiWidth, uiHeight = UIParent:GetWidth(), UIParent:GetHeight()
-    local scale = math.min((uiWidth - 16) / width, (uiHeight - 16) / height) / scaleFactor
-    if scale <= 0 then return end
-    state.fit.applying = true
-    if frame:GetScale() ~= scale then frame:SetScale(scale) end
+    local fit, frame = state.fit, state.frame
+    if fit.applying then return end
+    local scale, current, x, y = fit.initialScale, fit.scale, fit.initialX, fit.initialY
+    if scale then
+        fit.initialScale, fit.initialX, fit.initialY = nil, nil, nil
+    else
+        scale, current, x, y = NS.WindowControlPolicy.FitGeometry(state)
+        if not scale then return end
+    end
+    fit.applying = true
+    if current ~= scale then frame:SetScale(scale) end
     frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", -right / 2, (bottom - top) / 2)
-    state.fit.applying = nil
+    frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+    fit.applying = nil
 end
 
 local function ValidClose(candidate)
@@ -714,7 +711,9 @@ function Chrome.ToggleFit(state, capturePoints)
     else
         local points = capturePoints(state.frame)
         if not points then return false end
-        state.fit = { points = points, scale = state.frame:GetScale() }
+        local scale, current, x, y = NS.WindowControlPolicy.FitGeometry(state)
+        if not scale then return false end
+        state.fit = { points = points, scale = current, initialScale = scale, initialX = x, initialY = y }
     end
     return true
 end
@@ -769,7 +768,8 @@ function Chrome.CreateMinimize(state, close, level, click)
 end
 
 local function OnRestoreDragStart(bar)
-    if not NS.IsCombatLocked() then bar:StartMoving() end
+    local taskbar = NS.SuiteCore().MinimizedWindows
+    if not NS.IsCombatLocked() and not (taskbar and taskbar.IsDocked(bar)) then bar:StartMoving() end
 end
 
 local function OnRestoreDragStop(bar)
@@ -794,6 +794,8 @@ function Chrome.CreateRestore(state, click)
     state.restoreLabel = label
     bar:SetScript("OnClick", click)
     bar:Hide()
+    local taskbar = NS.SuiteCore().MinimizedWindows
+    if taskbar then taskbar.Track(bar) end
     return bar
 end
 

@@ -172,7 +172,7 @@ local Partner
 -- replacing quest content. Never turn that reset into controller interpolation.
 local questScrollNames = {
     "QuestDetailScrollFrame", "QuestProgressScrollFrame", "QuestRewardScrollFrame",
-    "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame",
+    "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame", "QuestMapDetailsScrollFrame",
 }
 local function IsScrollFrame(target, name)
     local frame = Safety.Field(_G, name)

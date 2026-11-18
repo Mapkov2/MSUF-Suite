@@ -63,6 +63,8 @@ assert(M.GetPageHistoryState().previousPage == "home", "local Back consumed the 
 assert(M.scrollFrame:GetVerticalScroll() == 67, "Back did not restore the editor scroll")
 
 Workspace().choose("shared")
+assert(config.showMinimizedWindows == false and M.cache[PAGE].sections[PAGE .. "_minimizedWindows"],
+    "All bars lacks the opt-in minimized-windows setting")
 M.pageBackStack = {}
 M.RefreshPageHistoryNav()
 Click(Workspace().buttons.add)

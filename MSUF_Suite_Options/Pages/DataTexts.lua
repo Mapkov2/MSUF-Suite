@@ -118,6 +118,8 @@ local function BuiltIn(ctx, b, reveal)
 end
 
 local function Shared(ctx, b, reveal)
+    SharedRules(ctx, b, reveal, PAGE .. "_minimizedWindows", Tr("Minimized windows"),
+        P.SectionRules(ID, "minimizedWindows"), { open = true })
     SharedRules(ctx, b, reveal, PAGE .. "_appearance", Tr("Shared bar style"),
         P.SectionRules(ID, "appearance"), {
             open = true,

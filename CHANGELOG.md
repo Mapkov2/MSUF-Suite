@@ -1,5 +1,27 @@
 # MSUF Suite Changelog
 
+## 0.1.27 Alpha - 2026-11-19
+
+Distributed through the Beta channel for Retail and WoW Forever.
+
+### Map overlay and equipment sets
+
+- Enable Map overlay & compass under Quality of Life to open a click-through map with Shift+M or your own key binding. Adjust map zoom and opacity, show your active waypoint and move the optional compass independently.
+- Add the compass to a DataTexts slot. Wide slots show a heading strip and narrow slots show your heading in degrees.
+- The Character Panel Equipment tab opens the gear-set list directly. Equip or save a set from the list, and create a set with a name, an icon and its own ignored slots.
+
+### Windows and DataTexts
+
+- Improved minimize and restore for supported Blizzard windows, including the spellbook, bags and WoW Forever's Legacy window.
+- Added the optional Show minimized windows taskbar under DataTexts to collect restore buttons in one place.
+- Keep Blizzard windows open now recognizes more native panels and closes the oldest eligible panel when the configured limit is reached.
+
+### Chat and Quests
+
+- Fixed a Lua error when switching whisper tabs with the chat toolbar arrows.
+- Fixed Spoken buttons and quest markers overlapping the quest log when their quest row is hidden.
+- Quest details leave Blizzard's scroll reset in control while retaining visual scroll smoothing.
+
 ## 0.1.26 Alpha - 2026-11-18
 
 Distributed through the Beta channel for Retail and WoW Forever.

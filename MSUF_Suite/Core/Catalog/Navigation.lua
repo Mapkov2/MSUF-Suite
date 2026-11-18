@@ -101,3 +101,25 @@ Build.Tooltip(spec.rules.showInCombat,
 Build.Tooltip(spec.rules.guideTomTom,
     "Also follows Dugi and SilverDragon when they send their destinations through TomTom. Native map pins use Follow map waypoints.")
 Build.Tooltip(spec.rules.pathfinding, "Optional route providers must be installed separately. Plan the selected destination with Plan current route.")
+
+local hud = Build.Module("navigationHUD", {
+    title = "Map overlay & compass", page = "suite_qualityOfLife", optIn = true, defaultEnabled = false,
+    description = "Open a click-through map with a shortcut and add a separate heading compass.",
+})
+Build.Section("navigationHUD", "navigation_hud", "Map overlay & compass", {
+    Choice("shortcutMode", "Map overlay shortcut", 1, { "Shift+M (default)", "Custom key binding" }),
+    Bool("showCompass", "Compass"),
+    Bool("showWaypoint", "Show the active map waypoint", true),
+    Bool("hideInCombat", "Hide in combat", true),
+    Number("mapWidth", "Map overlay width", 360, 200, 600, 10),
+    Number("mapOpacity", "Map opacity (percent)", 55, 15, 95, 5),
+    Choice("mapZoom", "Map overlay zoom", 2, { "Close-up", "Standard view", "Wide view" }),
+    Number("compassWidth", "Compass width", 280, 180, 520, 10),
+    Color("accentColor", "Accent color", "57c7df"),
+    Number("mapX", "Horizontal offset", 0, -4000, 4000),
+    Number("mapY", "Vertical offset", 24, -4000, 4000),
+    Number("compassX", "Horizontal offset", 0, -4000, 4000),
+    Number("compassY", "Vertical offset", -62, -4000, 4000),
+})
+for _, key in ipairs({ "mapX", "mapY", "compassX", "compassY" }) do hud.rules[key].hidden = true end
+hud.rules.compassWidth.enableKey = "showCompass"

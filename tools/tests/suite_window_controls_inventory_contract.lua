@@ -202,6 +202,18 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Check(not bank:IsShown() and nativeCloses == 2, "the Suite X failed to keep Blizzard's close path")
         bank:Show()
     end
+    for index = 2, #panels do
+        local frame = panels[index]
+        local state = W.states[frame]
+        Check(state.minimize and state.minimize:IsShown(), frame.name .. " lost the native inventory minimize")
+        state.minimize.scripts.OnClick(state.minimize)
+        UpdateContainerFrameAnchors()
+        Check(frame:IsShown() and state.restore:IsShown() and Bounds(frame)[4] < 0,
+            frame.name .. " minimize disturbed the native bag or did not survive relayout")
+        state.restore.scripts.OnClick(state.restore, "LeftButton")
+        Check(frame:IsShown() and not state.restore:IsShown() and Bounds(frame)[4] > 0,
+            frame.name .. " restore did not return the same native bag")
+    end
     UpdateContainerFrameAnchors()
     for index = 2, #panels do
         local frame = panels[index]

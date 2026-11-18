@@ -1,6 +1,8 @@
 local _, P = ...
 -- Aliases name feature switches; keywords also describe their detail controls.
 local GROUPS = {
+    { id = "navigationHUD", title = "Map overlay & compass", switch = "enabled", sections = { "navigation_hud" },
+        aliases = { "overlay map", "compass", "minimap", "map keybind", "kartenoverlay", "kompass", "übersichtskarte" } },
     { id = "navigation", title = "Navigation & waypoints", switch = "enabled",
         sections = { "navigation_basics", "navigation_appearance", "navigation_sources", "navigation_audio", "navigation_integrations" },
         aliases = { "waypoint", "navigation", "navigator", "pinpoint", "route", "wegpunkt", "zielfuehrung" } },
@@ -191,7 +193,7 @@ return {
     } },
     { id = "travel", title = "Travel", subgroups = {
         Subgroup("travel", "Map & Travel",
-            "navigation mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists dungeonPortals foreverWorldMap"),
+            "navigationHUD navigation mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists dungeonPortals foreverWorldMap"),
     } },
     { id = "interface", title = "Interface", subgroups = {
         Subgroup("interface", "Interface", "dailyComfort soundProfiles"),

@@ -487,6 +487,7 @@ local function ApplyOne(id)
 end
 function S.Apply(id)
     ApplyOne(id)
+    if id == "dataTexts" and NS.MinimizedWindows then NS.MinimizedWindows.Refresh() end
     -- A module that reads this one's settings (spec.follows) applies after it,
     -- so a write, an undo or a profile change reaches it too; one still queued
     -- for the combat end is left to the queue (catalog order).

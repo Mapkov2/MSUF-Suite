@@ -2,16 +2,23 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = {}
 
--- Reviewed top-level windows. Modal dialogs and secure actions retain native handling.
-local names = {
-    "AuctionHouseFrame", "QuestLogPopupDetailFrame", "QuestFrame", "GossipFrame",
-    "CharacterFrame", "DressUpFrame", "CollectionsJournal", "AchievementFrame",
-    "EncounterJournal", "ProfessionsFrame", "ProfessionsBookFrame", "InspectFrame",
-    "MerchantFrame", "MailFrame", "GuildBankFrame", "TradeFrame",
-    "WorldMapFrame", "LFGParentFrame",
+-- Reviewed windows that may float even when their registration lacks whileDead.
+local reviewed = {
+    AuctionHouseFrame = true, QuestLogPopupDetailFrame = true, QuestFrame = true, GossipFrame = true,
+    CharacterFrame = true, DressUpFrame = true, CollectionsJournal = true, AchievementFrame = true,
+    EncounterJournal = true, ProfessionsFrame = true, ProfessionsBookFrame = true, InspectFrame = true,
+    MerchantFrame = true, MailFrame = true, GuildBankFrame = true, TradeFrame = true,
+    WorldMapFrame = true, LFGParentFrame = true,
 }
+local sideAreas = { left = true, doublewide = true, centerOrLeft = true, right = true }
+local childPanels = {
+    LootFrame = true, PetitionFrame = true, PVPBannerFrame = true, ClubFinderGuildRecruitmentDialog = true,
+    CommunitiesGuildLogFrame = true, CommunitiesGuildTextEditFrame = true, CommunitiesGuildNewsFiltersFrame = true,
+}
+-- These native OnHide scripts only clear the quest detail or play a sound.
+local combatClose = { QuestLogPopupDetailFrame = true, ExpansionLandingPage = true }
 local slots = { "left", "center", "right", "doublewide", "fullscreen" }
-local records, shown, bagFrames = {}, {}, {}
+local records, shown, bagFrames, pendingLayout = {}, {}, {}, {}
 local bagNames = {
     "ContainerFrameCombinedBags", "ContainerFrame1", "ContainerFrame2", "ContainerFrame3",
     "ContainerFrame4", "ContainerFrame5", "ContainerFrame6", "ContainerFrame7",
@@ -19,15 +26,16 @@ local bagNames = {
 local ESCAPE_FRAME = "MSUFSuiteParallelWindowsEscape"
 local AREA = "UIPanelLayout-area"
 local DEFINED = "UIPanelLayout-defined"
-local watcher, reconcile, flush, queued, layoutPending, map, playerSpells
-local latest, pendingClose, pendingCap
+local watcher, prepare, release, flush, queued, map, playerSpells
+local latest, pendingClose, pendingCap, capAfterCombat
 local windowLimit = 0
 local escapeArmed = false
-local serial, ownedCount, shownBags = 0, 0, 0
+local serial, ownedCount, shownBags, openedWindows = 0, 0, 0, 0
+local placementIndex = 0
 local bagOrder
 
 local function Accessible(frame)
-    return frame and not NS.Safety.IsForbidden(frame)
+    return NS.Public(frame) and frame and not NS.Safety.IsForbidden(frame)
 end
 
 local function IsFree(frame)
@@ -44,29 +52,33 @@ local function OccupiesSlot(frame)
     return false
 end
 
-local function EscapeAllowed(event)
-    return not NS.InCombat(event)
-        and not (NS.Client.isForever and S.GamepadUI())
-end
-
-local function CanFloat(frame)
-    local protected, explicit = frame:IsProtected()
-    -- Spellbook buttons can implicitly protect their plain outer container.
-    return not protected or (frame == playerSpells and explicit == false)
+local function EscapeAllowed()
+    return M.active and not (NS.Client.isForever and S.GamepadUI())
 end
 
 local function Visible(frame)
     return Accessible(frame) and frame:IsShown()
 end
 
-local function CanClose(frame, managed)
-    -- A Forever managed close from addon execution can taint the panel
-    -- delegate's shared slots, which the native Edit Mode also reads.
-    local canCloseManaged = managed and not NS.Client.isForever
-    -- Forever's spell window updates protected action bars in its native show and hide scripts.
-    return frame and (frame ~= playerSpells or not NS.Client.isForever)
-        and (frame ~= _G.CharacterFrame or not NS.Client.isForever or not S.GamepadUI())
-        and shown[frame] and Visible(frame) and CanFloat(frame) and (canCloseManaged or IsFree(frame))
+local function NativeOnly(record)
+    return record.nativeOnly or record.foreverOnly and NS.Client.isForever
+end
+
+local function CanClose(frame, managed, combat)
+    if not frame or not shown[frame] then return false end
+    local record = records[frame]
+    local canFloat = record.detachable and not NativeOnly(record)
+    local canCloseManaged = managed and record.retailCap and not NS.Client.isForever and not combat
+    if not (canFloat or canCloseManaged) or not Visible(frame) then return false end
+    local protected, explicit = frame:IsProtected()
+    if protected and (not canCloseManaged or frame ~= playerSpells or explicit ~= false) then return false end
+    if frame == _G.CharacterFrame and NS.Client.isForever and S.GamepadUI() then return false end
+    if combat then
+        -- HideUIPanel is gated even for floating frames. Only use Hide for our own
+        -- detached roots with reviewed native OnHide scripts.
+        return record.combatClose and record.area and frame:GetParent() == UIParent and IsFree(frame)
+    end
+    return canCloseManaged or IsFree(frame)
 end
 
 local function CanCloseBags()
@@ -84,13 +96,13 @@ local function CanCloseBags()
     return true
 end
 
-local function FindCloseTarget(except, oldest)
+local function FindCloseTarget(except, oldest, combat)
     local target, order
     for frame, opened in pairs(shown) do
         local preferred = not order or (oldest and opened < order) or (not oldest and opened > order)
-        if preferred and frame ~= except and CanClose(frame, oldest) then target, order = frame, opened end
+        if preferred and frame ~= except and CanClose(frame, oldest, combat) then target, order = frame, opened end
     end
-    if oldest and except ~= bagFrames and bagOrder and (not order or bagOrder < order) and CanCloseBags() then
+    if oldest and not combat and except ~= bagFrames and bagOrder and (not order or bagOrder < order) and CanCloseBags() then
         return bagFrames
     end
     return target
@@ -113,7 +125,14 @@ end
 
 local function ForgetClosedWindows()
     for frame in pairs(shown) do
-        if not Visible(frame) then shown[frame] = nil end
+        if not Visible(frame) then
+            local record = records[frame]
+            if record.open then
+                record.open = false
+                openedWindows = openedWindows - 1
+            end
+            shown[frame] = nil
+        end
     end
     if shownBags == 0 then bagOrder = nil end
 end
@@ -125,11 +144,12 @@ local function SetEscapeArmed(armed)
 end
 
 local function SyncEscape(event)
-    if not EscapeAllowed(event) or NS.Client.isForever and Visible(playerSpells) then
+    if not EscapeAllowed() or NS.Client.isForever and Visible(playerSpells) then
         SetEscapeArmed(false)
         return
     end
-    if not CanClose(latest) then latest = FindCloseTarget() end
+    local combat = NS.InCombat(event)
+    if not CanClose(latest, false, combat) then latest = FindCloseTarget(nil, false, combat) end
     SetEscapeArmed(latest ~= nil)
 end
 
@@ -139,50 +159,70 @@ local function Queue()
     C_Timer.After(0, flush)
 end
 
+local function WindowCount()
+    return openedWindows + (shownBags > 0 and 1 or 0)
+end
+
 local function QueueCap()
-    if windowLimit == 0 or NS.InCombat() then return end
+    if windowLimit == 0 or WindowCount() <= windowLimit then return end
     pendingCap = true
     Queue()
 end
 
-local function CountWindows()
-    local count = shownBags > 0 and 1 or 0
-    for frame in pairs(records) do
-        if Visible(frame) then count = count + 1 end
+local function CloseWindow(frame, combat)
+    if frame == bagFrames then
+        NS.Dispatch(CloseAllBags)
+        return shownBags == 0
     end
-    return count
+    if combat then
+        NS.Dispatch(frame.Hide, frame)
+    else
+        NS.Dispatch(HideUIPanel, frame)
+    end
+    if Visible(frame) then return false end
+    local record = records[frame]
+    if record.open then
+        record.open = false
+        openedWindows = openedWindows - 1
+    end
+    return true
 end
 
 local function ApplyWindowLimit(pending)
-    if windowLimit == 0 or not pending or NS.InCombat() then return end
+    if windowLimit == 0 or not pending then return end
     local opening = LastOpenWindow()
-    while not NS.InCombat() and CountWindows() > windowLimit do
-        local target = FindCloseTarget(opening, true)
-        if not target then return end
-        if target == bagFrames then
-            NS.Dispatch(CloseAllBags)
-            if shownBags > 0 then return end
-        else
-            NS.Dispatch(HideUIPanel, target)
-            if Visible(target) then return end
+    local count = WindowCount()
+    while count > windowLimit do
+        local combat = NS.InCombat()
+        local target = FindCloseTarget(opening, true, combat)
+        if not target or not CloseWindow(target, combat) or WindowCount() >= count then
+            capAfterCombat = combat
+            return
         end
+        count = WindowCount()
     end
+    capAfterCombat = nil
+end
+
+local function ApplyPendingLayout()
+    for panel in pairs(pendingLayout) do
+        pendingLayout[panel] = nil
+        if M.active then prepare(panel, records[panel]) else release(panel, records[panel]) end
+    end
+    if not M.active and ownedCount == 0 then watcher:UnregisterAllEvents() end
 end
 
 flush = function()
-    queued = false
-    local frame, opening = pendingClose, pendingCap
+    local frame, cap = pendingClose, pendingCap
     pendingClose, pendingCap = nil, nil
     ForgetClosedWindows()
-    if frame and EscapeAllowed() and CanClose(frame) then NS.Dispatch(HideUIPanel, frame) end
-    ApplyWindowLimit(opening)
-    if layoutPending then
-        layoutPending = false
-        reconcile()
-    else
-        SyncEscape()
-    end
-    if pendingCap then Queue() end
+    local combat = NS.InCombat()
+    if frame and EscapeAllowed() and CanClose(frame, false, combat) then CloseWindow(frame, combat) end
+    ApplyWindowLimit(cap)
+    if not NS.InCombat() then ApplyPendingLayout() end
+    queued = false
+    SyncEscape()
+    if pendingCap and not cap and WindowCount() > windowLimit then Queue() end
 end
 
 local function OnEscapeFrameHidden()
@@ -191,7 +231,7 @@ local function OnEscapeFrameHidden()
     -- CloseSpecialWindows also runs when opening some native panels. Only the
     -- Escape dispatcher should close a floating window. Defer the close so
     -- the native handler completes before Suite runs any panel code.
-    local stack = EscapeAllowed() and CanClose(latest) and NS.PublicText(debugstack(2, 12, 0))
+    local stack = EscapeAllowed() and CanClose(latest, false, NS.InCombat()) and NS.PublicText(debugstack(2, 12, 0))
     if stack and stack:find("Blizzard_GameMenuEsc.lua", 1, true) then
         pendingClose = latest
     end
@@ -199,35 +239,37 @@ local function OnEscapeFrameHidden()
 end
 
 local function OnHide(frame)
-    if Visible(frame) then return end
     local record = records[frame]
+    if not record.open or Visible(frame) then return end
     record.open = false
-    -- Native tab and size transitions can hide and re-show within one call.
-    -- Retain their opening order until the deferred pass sees a real close.
-    if latest == frame then SyncEscape() end
-    if M.active or record.area then
-        layoutPending = true
-        Queue()
+    openedWindows = openedWindows - 1
+    -- A native resize can hide and re-show in one stack. Defer ordering and
+    -- only revisit the panel that lost its native slot.
+    if record.detachable and (M.active and not NativeOnly(record) and not record.area
+        or not M.active and record.area) then
+        pendingLayout[frame] = true
     end
+    if latest == frame then SyncEscape() end
+    if M.active or record.area then Queue() end
 end
 
 local function OnShow(frame)
     local record = records[frame]
     if record.open or not Accessible(frame) then return end
     record.open = true
+    openedWindows = openedWindows + 1
+    if not M.active then return end
     ObserveOpen(frame)
     QueueCap()
     if frame == playerSpells and NS.Client.isForever then
-        -- Blizzard closes its managed slots before it closes special windows.
-        -- Keep this watcher disarmed until the existing deferred hide pass.
         SetEscapeArmed(false)
         return
     end
     if not record.area or not IsFree(frame) then return end
-    if CanFloat(frame) then
-        if not CanClose(latest) or shown[frame] > shown[latest] then latest = frame end
-        if not NS.InCombat() and frame:IsToplevel() then frame:Raise() end
-    end
+    local combat = NS.InCombat()
+    if CanClose(frame, false, combat)
+        and (not CanClose(latest, false, combat) or shown[frame] > shown[latest]) then latest = frame end
+    if not combat and not frame:IsProtected() and frame:IsToplevel() then frame:Raise() end
     SyncEscape()
 end
 
@@ -271,59 +313,82 @@ local function MapMinimized()
     RestoreCompactMap()
 end
 
-local function Track(frame)
-    local record = records[frame]
-    if not record then
-        record = { open = frame:IsShown() }
-        records[frame] = record
-        if record.open then ObserveOpen(frame) end
-        frame:HookScript("OnHide", OnHide)
-        frame:HookScript("OnShow", OnShow)
+local function NativePanel(frame)
+    local source = frame.GetSourceLocation and NS.PublicText(frame:GetSourceLocation())
+    if source then
+        local addon = source:match("[Aa]dd[Oo]ns[/\\](Blizzard_[%w_]+)")
+        return addon ~= nil
     end
-    return record
+    return false
 end
 
-local function Attach(name, index)
-    local frame = _G[name]
-    local info = UIPanelWindows[name]
-    if not Accessible(frame) or not info or frame:GetParent() ~= UIParent then return end
-    local canDetach = (info.area == "left" or info.area == "doublewide") and not frame:IsProtected()
-    local record = Track(frame)
-    -- A nil map area bypasses Blizzard's panel delegate. On Forever, that
-    -- direct show/hide path can rebuild quest pins with tainted layout state.
-    if name == "WorldMapFrame" and NS.Client.isForever then return end
-    if not canDetach then return end
-    -- Changing a shown panel would strand its slot in the native manager.
-    -- Let its current close run first, then apply the new layout policy.
-    if record.area or frame:IsShown() or OccupiesSlot(frame) then return end
-    local defined, area = frame:GetAttribute(DEFINED), frame:GetAttribute(AREA)
-    if not NS.Public(defined) or not NS.Public(area) or defined and area ~= info.area then return end
+local function StandardLayout(info)
+    local whileDead, allow, fit = info.whileDead, info.allowOtherPanels, info.checkFit
+    local never, minimize, conditional, failed = info.neverAllowOtherPanels, info.autoMinimizeWithOtherPanels,
+        info.autoMinimizeOnCondition, info.showFailedFunc
+    local ignore = info.ignoreControlLost
+    return NS.Public(whileDead) and whileDead == 1 and NS.Public(allow) and allow ~= 0
+        and NS.Public(fit) and fit ~= 1 and NS.Public(never) and not never
+        and NS.Public(minimize) and not minimize and NS.Public(conditional) and not conditional
+        and NS.Public(failed) and not failed and NS.Public(ignore) and not ignore
+end
 
-    if frame:GetNumPoints() == 0 then
-        local offset = (index - 1) % 7
+prepare = function(frame, record)
+    if not record.detachable or NativeOnly(record) or record.area or not Accessible(frame)
+        or frame:IsShown() or frame:IsProtected() or frame:GetParent() ~= UIParent or OccupiesSlot(frame) then return end
+    local area = record.layout
+    local defined, current = frame:GetAttribute(DEFINED), frame:GetAttribute(AREA)
+    if not NS.Public(defined) or not NS.Public(current) or defined and current ~= area then return end
+
+    local points = frame:GetNumPoints()
+    if NS.Public(points) and points == 0 then
+        local offset = placementIndex % 7
         frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 28 + offset * 40, -100 - offset * 22)
+        placementIndex = placementIndex + 1
     end
-    -- The native API treats a panel with no area as a floating window and
-    -- still runs the original Show/Hide scripts, close buttons and events.
     SetUIPanelAttribute(frame, "area", nil)
-    if IsFree(frame) then
-        record.area, ownedCount = info.area, ownedCount + 1
-        if name == "WorldMapFrame" then
-            map = frame
-            record.maximized = frame:IsMaximized()
-            EventRegistry:RegisterCallback("WorldMapMaximized", MapMaximized, M)
-            EventRegistry:RegisterCallback("WorldMapMinimized", MapMinimized, M)
-        end
+    if not IsFree(frame) then return end
+    record.area, ownedCount = area, ownedCount + 1
+    if frame == _G.WorldMapFrame then
+        map = frame
+        record.maximized = frame:IsMaximized()
+        EventRegistry:RegisterCallback("WorldMapMaximized", MapMaximized, M)
+        EventRegistry:RegisterCallback("WorldMapMinimized", MapMinimized, M)
     end
 end
 
-local function AttachPlayerSpells()
-    if playerSpells then return end
-    local frame = _G.PlayerSpellsFrame
-    if not Accessible(frame) or not UIPanelWindows.PlayerSpellsFrame or frame:GetParent() ~= UIParent then return end
-    playerSpells = frame
-    -- Count the window without rewriting its area. A nil area bypasses Blizzard's panel delegate.
-    Track(frame)
+local function TrackPanel(name, info, combat)
+    if not NS.Public(name) or type(name) ~= "string" or childPanels[name]
+        or not NS.Public(info) or type(info) ~= "table" then return end
+    local frame = _G[name]
+    if not Accessible(frame) or records[frame] or type(frame.HookScript) ~= "function"
+        or frame:GetParent() ~= UIParent then return end
+    local area = info.area
+    if not NS.Public(area) then return end
+    local known = reviewed[name] or name == "PlayerSpellsFrame" or name == "BankFrame"
+    if not known and (not sideAreas[area] or not NativePanel(frame)) then return end
+    local record = {
+        layout = area,
+        open = frame:IsShown(),
+        combatClose = combatClose[name],
+        detachable = sideAreas[area] and (reviewed[name] or StandardLayout(info)),
+        nativeOnly = name == "PlayerSpellsFrame" or name == "BankFrame",
+        -- The Forever map's quest pins and mailbox's emote need the native manager.
+        foreverOnly = name == "MailFrame" or name == "WorldMapFrame",
+        retailCap = reviewed[name] or name == "PlayerSpellsFrame",
+    }
+    records[frame] = record
+    if name == "PlayerSpellsFrame" then playerSpells = frame end
+    if record.open then
+        openedWindows = openedWindows + 1
+        ObserveOpen(frame)
+    elseif combat then
+        if record.detachable and not NativeOnly(record) then pendingLayout[frame] = true end
+    else
+        prepare(frame, record)
+    end
+    frame:HookScript("OnHide", OnHide)
+    frame:HookScript("OnShow", OnShow)
 end
 
 local function OnBagShow(frame)
@@ -346,6 +411,33 @@ local function OnBagHide(frame)
     if shownBags == 0 then Queue() end
 end
 
+-- Observe native calls after their frame scripts, including client builds
+-- without panel events and shows where a frame's OnShow aborted.
+local function OnNativeShow(frame)
+    if not M.active or not NS.Public(frame) or not frame then return end
+    local record = records[frame]
+    if record and record.open or not Visible(frame) then return end
+    if record then
+        OnShow(frame)
+        return
+    end
+    local name = NS.PublicText(frame:GetName())
+    if not name or _G[name] ~= frame then return end
+    TrackPanel(name, UIPanelWindows[name], true)
+    if records[frame] then
+        QueueCap()
+        SyncEscape()
+    end
+end
+
+local function OnNativeHide(frame)
+    if M.active and NS.Public(frame) and frame and records[frame] then OnHide(frame) end
+end
+
+local function OnForceHide(_, frame)
+    OnNativeHide(frame)
+end
+
 local function AttachBagFrames()
     for _, name in ipairs(bagNames) do
         local frame = _G[name]
@@ -358,8 +450,8 @@ local function AttachBagFrames()
     end
 end
 
-local function Release(frame, record)
-    if not record.area or not Accessible(frame) or frame:IsShown() or not CanFloat(frame) then return end
+release = function(frame, record)
+    if not record.area or not Accessible(frame) or frame:IsShown() or frame:IsProtected() then return end
     local current = frame:GetAttribute(AREA)
     if not NS.Public(current) then return end
     if current == nil then SetUIPanelAttribute(frame, "area", record.area) end
@@ -371,32 +463,30 @@ local function Release(frame, record)
     end
 end
 
-reconcile = function(event)
-    if NS.InCombat(event) then
-        SetEscapeArmed(false)
-        return
-    end
-    RestoreCompactMap(event)
-    if M.active then
-        -- The quest log uses WorldMapFrame even when M is set to open the large map.
-        for index, name in ipairs(names) do Attach(name, index) end
-        AttachPlayerSpells()
-        AttachBagFrames()
-    else
-        for frame, record in pairs(records) do Release(frame, record) end
-        if ownedCount == 0 then watcher:UnregisterAllEvents() end
-    end
-    SyncEscape(event)
+local function DiscoverPanels(combat)
+    for name, info in pairs(UIPanelWindows) do TrackPanel(name, info, combat) end
+    AttachBagFrames()
 end
 
 local function OnEvent(_, event, key)
-    if event == "CVAR_UPDATE" then
-        if NS.Public(key) and key == "InputDeviceInterfaceStyle" then SyncEscape(event) end
-    elseif event == "PLAYER_REGEN_DISABLED" or event == "GAME_PAD_ACTIVE_CHANGED" then
-        if event == "PLAYER_REGEN_DISABLED" then pendingCap = nil end
+    if event == "ADDON_LOADED" then
+        local addon = NS.PublicText(key)
+        if addon and addon:find("Blizzard_", 1, true) == 1 then
+            DiscoverPanels(NS.InCombat())
+            QueueCap()
+            SyncEscape()
+        end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        RestoreCompactMap(event)
+        ApplyPendingLayout()
+        if capAfterCombat then QueueCap() end
+        capAfterCombat, latest = nil, nil
         SyncEscape(event)
-    else
-        reconcile(event)
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        pendingClose, latest = nil, nil
+        SyncEscape(event)
+    elseif event == "GAME_PAD_ACTIVE_CHANGED" or NS.Public(key) and key == "InputDeviceInterfaceStyle" then
+        SyncEscape(event)
     end
 end
 
@@ -409,6 +499,8 @@ function M:Enable()
         -- The native close pass already supports addon-owned windows.
         -- Registering an Escape callback would re-sort the shared protected dispatch.
         UISpecialFrames[#UISpecialFrames + 1] = ESCAPE_FRAME
+        hooksecurefunc("ShowUIPanel", OnNativeShow)
+        hooksecurefunc("HideUIPanel", OnNativeHide)
     end
     watcher:RegisterEvent("ADDON_LOADED")
     watcher:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -417,21 +509,43 @@ function M:Enable()
         watcher:RegisterEvent("CVAR_UPDATE")
         watcher:RegisterEvent("GAME_PAD_ACTIVE_CHANGED")
     end
+    EventRegistry:RegisterCallback("UIParentPanelManager.ForcePanelHide", OnForceHide, M)
+    local combat = NS.InCombat()
+    openedWindows = 0
+    -- Windows the player opened while this option was disabled have no known order.
+    for frame, record in pairs(records) do
+        record.open = Visible(frame)
+        if record.open then
+            openedWindows = openedWindows + 1
+            ObserveOpen(frame)
+        elseif record.detachable and not NativeOnly(record) and not record.area then
+            if combat then pendingLayout[frame] = true else prepare(frame, record) end
+        end
+    end
+    DiscoverPanels(combat)
+    SyncEscape()
     self:Refresh()
 end
 
 function M:Refresh()
     local previous = windowLimit
     windowLimit = S.Config("parallelWindows").windowLimit or 0
-    reconcile()
     if windowLimit ~= previous then QueueCap() end
 end
 
 function M:Disable()
-    windowLimit, pendingCap = 0, nil
+    windowLimit, pendingCap, pendingClose, capAfterCombat = 0, nil, nil, nil
     if not watcher then return end
+    SetEscapeArmed(false)
+    latest = nil
+    for frame in pairs(shown) do shown[frame] = nil end
     watcher:UnregisterEvent("ADDON_LOADED")
-    reconcile()
+    EventRegistry:UnregisterCallback("UIParentPanelManager.ForcePanelHide", M)
+    local combat = NS.InCombat()
+    for frame, record in pairs(records) do
+        if combat and record.area then pendingLayout[frame] = true else release(frame, record) end
+    end
+    if ownedCount == 0 then watcher:UnregisterAllEvents() end
 end
 
 S.Install("parallelWindows", M)

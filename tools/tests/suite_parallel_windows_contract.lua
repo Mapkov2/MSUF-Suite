@@ -1,12 +1,13 @@
 local root = assert(arg[1], "Suite root required")
 local checks, combat, gamepad = 0, false, false
-local events, deferred, occupied = {}, {}, {}
+local events, deferred, occupied, callbacks = {}, {}, {}, {}
 local module, watcher, escapeRegistered
 local nativeEscape, stackReads = false, 0
+local directCombatCloses, sourceReads, panelLookups = 0, 0, 0
 local hiddenStack = {}
 local bagsOpen = true
 local config = {}
-local nativeAreaHook, nativeSpellWrite
+local nativeAreaHook, nativeShowHook, nativeHideHook, nativeSpellWrite
 local addonSpellCloses, addonSpellAreaWrites = 0, 0
 local playerSpells
 local function Check(value, message)
@@ -39,17 +40,35 @@ local function Flush()
     for _, job in ipairs(jobs) do job() end
 end
 local function Fire(event, ...)
-    if events[event] then watcher.OnEvent(watcher, event, ...) end
+    if not events[event] then return end
+    if event == "ADDON_LOADED" and select("#", ...) == 0 then
+        watcher.OnEvent(watcher, event, "Blizzard_Test")
+    else
+        watcher.OnEvent(watcher, event, ...)
+    end
 end
 
 UIParent, UIPanelWindows, UISpecialFrames = {}, {}, {}
+local layout = "UIPanelLayout-area"
+local defined = "UIPanelLayout-defined"
 local function Panel(name, area, protected)
     local frame = { name = name, protected = protected, shown = false, attr = {}, scripts = {} }
-    function frame:GetParent() return UIParent end
+    function frame:GetName() return self.name end
+    function frame:GetParent() return self.parent or UIParent end
+    function frame:GetSourceLocation() sourceReads = sourceReads + 1 return self.source end
     function frame:IsProtected() return self.protected, self.explicit end
     function frame:IsShown() return self.shown end
     function frame:IsToplevel() return true end
-    function frame:Raise() self.raised = (self.raised or 0) + 1 end
+    function frame:Raise()
+        assert(not combat, "addon raised a window in combat")
+        self.raised = (self.raised or 0) + 1
+    end
+    function frame:Hide()
+        assert(combat and not self.protected and not self.attr[layout],
+            "direct addon hide touched a protected or managed panel")
+        directCombatCloses = directCombatCloses + 1
+        HideUIPanel(self)
+    end
     function frame:GetAttribute(key) return self.attr[key] end
     function frame:GetNumPoints() return self.point and 1 or 0 end
     function frame:GetPoint() if self.point then return unpack(self.point) end end
@@ -64,8 +83,6 @@ local function Panel(name, area, protected)
     return frame
 end
 
-local layout = "UIPanelLayout-area"
-local defined = "UIPanelLayout-defined"
 function SetUIPanelAttribute(frame, key, value)
     local native = nativeSpellWrite and frame == playerSpells and value ~= nil
     if not native then
@@ -88,10 +105,19 @@ function UIPanelUpdateScaleForFit()
     error("Suite replaced the native spell window's scale-to-fit call")
 end
 function hooksecurefunc(name, callback)
-    assert(name == "SetUIPanelAttribute" and not nativeAreaHook, "unexpected native hook")
-    nativeAreaHook = callback
+    if name == "ShowUIPanel" and not nativeShowHook then
+        nativeShowHook = callback
+    elseif name == "HideUIPanel" and not nativeHideHook then
+        nativeHideHook = callback
+    else
+        assert(name == "SetUIPanelAttribute" and not nativeAreaHook, "unexpected native hook")
+        nativeAreaHook = callback
+    end
 end
-function GetUIPanel(slot) return occupied[slot] end
+function GetUIPanel(slot)
+    panelLookups = panelLookups + 1
+    return occupied[slot]
+end
 local function NativeArea(frame)
     if frame.attr[defined] then return frame.attr[layout] end
     return UIPanelWindows[frame.name].area
@@ -101,7 +127,8 @@ function HideUIPanel(frame)
     local area = NativeArea(frame)
     if area and occupied[area] == frame then occupied[area] = nil end
     frame.shown, frame.closes = false, (frame.closes or 0) + 1
-    if frame.scripts.OnHide then frame.scripts.OnHide(frame) end
+    if frame.scripts.OnHide and not frame.skipHideHook then frame.scripts.OnHide(frame) end
+    if nativeHideHook then nativeHideHook(frame) end
 end
 local function NativeOpen(frame)
     local area = NativeArea(frame)
@@ -112,7 +139,8 @@ local function NativeOpen(frame)
         occupied[area] = frame
     end
     frame.shown = true
-    if frame.scripts.OnShow then frame.scripts.OnShow(frame) end
+    if frame.scripts.OnShow and not frame.skipShowHook then frame.scripts.OnShow(frame) end
+    if nativeShowHook then nativeShowHook(frame) end
 end
 local function NativeSpellArea(area)
     nativeSpellWrite = true
@@ -162,6 +190,9 @@ NS = {
     Public = function(value) return value ~= hiddenStack end,
     PublicText = function(value) return type(value) == "string" and value end,
     Dispatch = function(callback, ...)
+        if callback == HideUIPanel or callback == CloseAllBags then
+            assert(not combat, "addon called a native managed close during combat")
+        end
         if NS.Client.isForever and callback == HideUIPanel then
             Check(not NativeArea((...)), "a Forever addon close called the native panel delegate")
         end
@@ -181,11 +212,11 @@ local quest = Panel("QuestLogPopupDetailFrame", "left")
 local npcQuest = Panel("QuestFrame", "left")
 local protected = Panel("ProfessionsFrame", "left", true)
 local modal = Panel("CinematicFrame", "full")
+local mail = Panel("MailFrame", "left")
 local map = Panel("WorldMapFrame", "left")
 map.preferCompact = true
 function map:IsMaximized() return self.maximized == true end
 function map:ShouldBeMinimized() return self.preferCompact end
-local callbacks = {}
 EventRegistry = {
     RegisterCallback = function(_, name, callback) callbacks[name] = callback end,
     UnregisterCallback = function(_, name) callbacks[name] = nil end,
@@ -217,6 +248,8 @@ module:Enable()
 Check(auction:IsShown() and GetUIPanel("doublewide") == auction, "enabling broke the current auction session")
 Check(NativeArea(map) == "left" and map.attr[defined] == nil,
     "Forever map lost its native panel dispatch before combat")
+Check(NativeArea(mail) == "left" and mail.attr[defined] == nil and mail.point == nil,
+    "Forever mailbox layout was written by the addon before the first native open")
 HideUIPanel(auction)
 Flush()
 NativeOpen(auction)
@@ -269,7 +302,7 @@ Check(Escape(false) == "window", "reopening did not rearm Escape")
 Fire("PLAYER_REGEN_DISABLED")
 combat = true
 Flush()
-Check(npcQuest:IsShown() and not watcher:IsShown(), "a pending Escape close crossed into combat")
+Check(npcQuest:IsShown() and quest:IsShown(), "a pending Escape close crossed into combat")
 combat = false
 Fire("PLAYER_REGEN_ENABLED")
 HideUIPanel(npcQuest)
@@ -277,8 +310,10 @@ Flush()
 Check(NativeArea(protected) == "left" and NativeArea(modal) == "full", "modified a protected or fullscreen window")
 Check(UIPanelWindows.AuctionHouseFrame.area == "doublewide", "wrote to the native registration table")
 
+HideUIPanel(quest)
+Flush()
 Fire("PLAYER_REGEN_DISABLED")
-Check(Escape(false) == "default", "the combat edge consumed Escape before lockdown")
+Check(Escape(false) == "default", "a native-only combat window consumed Escape")
 combat = true
 local journal = Panel("CollectionsJournal", "left")
 Fire("ADDON_LOADED")
@@ -292,6 +327,7 @@ Check(Escape(false) == "default" and auction:IsShown(), "Escape intercepted Game
 gamepad = false
 Fire("GAME_PAD_ACTIVE_CHANGED")
 Check(watcher:IsShown(), "returning to keyboard input did not rearm Escape")
+NativeOpen(quest)
 
 module.active = false
 module:Disable()
@@ -393,7 +429,7 @@ module:Enable()
 local function ResetWindows()
     config.windowLimit = 0
     module:Refresh()
-    for _, frame in ipairs({ auction, quest, npcQuest, protected, map, groupFinder, playerSpells, retained }) do
+    for _, frame in ipairs({ auction, quest, npcQuest, protected, map, groupFinder, playerSpells, retained, mail }) do
         HideUIPanel(frame)
     end
     CloseAllBags()
@@ -433,6 +469,42 @@ NativeOpen(quest)
 Flush()
 Check(map:IsShown() and not auction:IsShown() and quest:IsShown(),
     "the Forever cap did not preserve the native map and close the oldest floating window")
+
+ResetWindows()
+Limit(2)
+-- MailFrame_Show first reads the native layout area in ShowUIPanel, then
+-- opens bags and updates the inbox before its protected reading emote.
+NativeOpen(mail)
+Check(GetUIPanel("left") == mail, "Forever mailbox bypassed the native panel dispatcher")
+Flush()
+NativeOpen(auction)
+Flush()
+NativeOpen(quest)
+Flush()
+Check(mail:IsShown() and not auction:IsShown() and quest:IsShown(),
+    "the cap did not count the native mailbox or close the oldest eligible window")
+HideUIPanel(mail)
+Flush()
+Check(NativeArea(mail) == "left" and mail.attr[defined] == nil,
+    "Forever mailbox layout was rewritten after native close")
+
+ResetWindows()
+Limit(1)
+-- Another addon can detach the mailbox. Neither Suite close path should own it.
+mail.attr[defined] = true
+NativeOpen(mail)
+Flush()
+NativeOpen(auction)
+Flush()
+Check(mail:IsShown() and auction:IsShown(), "the cap addon-closed a floating Forever mailbox")
+Escape(false)
+Flush()
+Escape(false)
+Flush()
+Check(mail:IsShown() and not auction:IsShown(), "Escape did not leave the floating Forever mailbox to Blizzard")
+HideUIPanel(mail)
+Flush()
+mail.attr[defined] = nil
 
 ResetWindows()
 local character = Panel("CharacterFrame", "left")
@@ -552,11 +624,30 @@ NativeOpen(auction)
 Fire("PLAYER_REGEN_DISABLED")
 combat = true
 Flush()
-Check(protected:IsShown() and quest:IsShown() and auction:IsShown(), "a queued cap crossed into combat")
+Check(protected:IsShown() and not quest:IsShown() and auction:IsShown() and directCombatCloses == 1,
+    "combat cap did not close only the detached quest detail")
 combat = false
 Fire("PLAYER_REGEN_ENABLED")
 Flush()
-Check(protected:IsShown() and quest:IsShown() and auction:IsShown(), "combat end replayed a stale cap")
+Check(protected:IsShown() and auction:IsShown(), "combat end replayed a settled cap")
+ResetWindows()
+Limit(2)
+NativeOpen(auction)
+NativeOpen(npcQuest)
+Fire("PLAYER_REGEN_DISABLED")
+combat = true
+NativeOpen(map)
+Flush()
+Check(auction:IsShown() and npcQuest:IsShown() and map:IsShown(), "combat cap closed a native interaction")
+combat = false
+Fire("PLAYER_REGEN_ENABLED")
+Flush()
+Check(not auction:IsShown() and npcQuest:IsShown() and map:IsShown(), "pending cap did not settle after combat")
+HideUIPanel(map)
+HideUIPanel(npcQuest)
+NativeOpen(quest)
+NativeOpen(auction)
+Flush()
 config.windowLimit = 0
 module:Refresh()
 NativeSpellArea("center")
@@ -650,6 +741,9 @@ module:Enable()
 NativeOpen(auction)
 NativeOpen(map)
 Check(NativeArea(map) == nil and map:IsShown() and auction:IsShown(), "Retail map lost floating-window support")
+NativeOpen(mail)
+Check(NativeArea(mail) == nil and mail:IsShown() and auction:IsShown(), "Retail mailbox lost floating-window support")
+
 map:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 180, -135)
 ChangeMapSize(true)
 ChangeMapSize(false)
@@ -663,4 +757,59 @@ NativeOpen(auction)
 Flush()
 Check(not playerSpells:IsShown() and auction:IsShown() and addonSpellCloses == 1,
     "Retail spells lost the existing managed-window cap handling")
+ResetWindows()
+local calendar = Panel("CalendarFrame", "doublewide")
+calendar.skipShowHook, calendar.skipHideHook = true, true
+local social = Panel("SocialUIFrame", "left")
+local macro = Panel("MacroFrame", "left")
+local newWindow = Panel("NativeFutureWindow", "centerOrLeft")
+local nativeInteraction = Panel("UnreviewedInteractionFrame", "left")
+local foreign = Panel("ForeignAddonWindow", "left")
+for _, frame in ipairs({calendar, social, macro, newWindow, nativeInteraction, foreign}) do
+    frame.source = "Interface/AddOns/Blizzard_Future"
+end
+macro.source = "Interface\\AddOns\\Blizzard_MacroUI\\Blizzard_MacroUI.xml"
+foreign.source = "Interface/AddOns/ThirdParty/CustomPanel.xml"
+for _, frame in ipairs({calendar, social, macro, newWindow, foreign}) do
+    UIPanelWindows[frame.name].whileDead = 1
+end
+Fire("ADDON_LOADED", "ThirdParty")
+Check(calendar.attr[defined] == nil, "third-party load triggered native discovery")
+Fire("ADDON_LOADED", "Blizzard_Calendar")
+Check(NativeArea(calendar) == nil and NativeArea(social) == nil and NativeArea(macro) == nil
+    and NativeArea(newWindow) == nil, "new native windows never entered the parallel layout")
+Check(NativeArea(foreign) == "left" and NativeArea(nativeInteraction) == "left",
+    "detached an unowned window or one with native interaction restrictions")
+
+Limit(6)
+local firstSix = {calendar, auction, macro, newWindow, quest, social}
+local lookups, reads = panelLookups, sourceReads
+for _, frame in ipairs(firstSix) do NativeOpen(frame) end
+Check(#deferred == 0, "opens below the cap scheduled a timer")
+NativeOpen(map)
+Check(#deferred == 1, "opening the seventh window did not schedule exactly one cap pass")
+Flush()
+Check(not calendar:IsShown() and auction:IsShown() and macro:IsShown() and map:IsShown(),
+    "limit six ignored dynamic native windows or closed the wrong frame")
+Check(panelLookups == lookups and sourceReads == reads, "a normal open or close rescanned native panel layout")
+for _, frame in ipairs(firstSix) do HideUIPanel(frame) end
+HideUIPanel(map)
+Flush()
+Limit(1)
+NativeOpen(quest)
+Fire("PLAYER_REGEN_DISABLED")
+combat = true
+NativeOpen(calendar)
+Flush()
+Check(not quest:IsShown() and calendar:IsShown() and directCombatCloses == 2,
+    "a native opener did not enforce the safe combat cap")
+HideUIPanel(calendar)
+NativeOpen(quest)
+Check(Escape(false) == "window", "combat Escape did not observe a safe floating quest")
+Flush()
+Check(not quest:IsShown() and directCombatCloses == 3, "combat Escape failed to close the safe quest")
+combat = false
+Fire("PLAYER_REGEN_ENABLED")
+Flush()
+Check(not watcher.OnUpdate and #deferred == 0, "settled windows left polling or pending work")
 print("Suite parallel windows: " .. checks .. " checks passed")

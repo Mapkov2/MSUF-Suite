@@ -335,13 +335,17 @@ end
 -- The tab an arrow selects next: the neighbor of the selected whisper tab,
 -- else the last (previous) or first (next) docked whisper tab.
 local function WhisperTarget(button)
+    if not M.active or not button then return end
+    local visible, over = button:IsVisible(), button:IsMouseOver()
+    if not (S.Public(visible) and visible and S.Public(over) and over) then return end
     local alpha = button:GetEffectiveAlpha()
     if not S.Finite(alpha) or alpha <= 0 then return end
     local selected = C.DockSelection()
     local first, last, selectedTab, neighbor
     for _, frame in ipairs(GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES) do
         local tab = not NS.Safety.IsForbidden(frame) and IsWhisper(frame) and _G[frame:GetName() .. "Tab"]
-        if tab and not NS.Safety.IsForbidden(tab) and tab:IsShown() then
+        local shown = tab and not NS.Safety.IsForbidden(tab) and tab:IsShown()
+        if S.Public(shown) and shown then
             if selected == frame then
                 selectedTab = tab
                 if button.previous then neighbor = last end
@@ -361,32 +365,61 @@ end
 -- and the next Enter would open chat from them. The delegate clicks
 -- Blizzard's own tab in a secure execution (left button only: a right
 -- click would open the tab menu) and aims again after each click.
-local arrowDelegate
-local function AimArrow(button)
-    local delegate = arrowDelegate
-    if not delegate or NS.InCombat() then return end
-    local tab = M.active and button and WhisperTarget(button)
-    if not tab then
-        delegate.owner = nil
-        delegate:Hide()
-        return
-    end
-    delegate.owner = button
-    delegate:SetAttribute("clickbutton", tab)
-    delegate:SetFrameStrata(button:GetFrameStrata())
-    delegate:SetFrameLevel(button:GetFrameLevel() + 5)
-    delegate:ClearAllPoints()
-    delegate:SetAllPoints(button)
-    delegate:Show()
-end
-
+local arrowDelegate, pendingArrow
 local function ReleaseArrow(delegate)
-    if NS.InCombat() then return end
+    if not delegate or not delegate.owner or NS.InCombat() then return end
     delegate.owner = nil
+    delegate:SetAttribute("clickbutton", nil)
     delegate:Hide()
 end
 
-local function ArrowClicked(delegate) AimArrow(delegate.owner) end
+function C.HideWhisperArrows()
+    pendingArrow = nil
+    ReleaseArrow(arrowDelegate)
+    local arrows = M.whisperArrows
+    if arrows and arrows:IsShown() then arrows:Hide() end
+end
+
+local function AimArrow(button)
+    local delegate = arrowDelegate
+    if not delegate or NS.InCombat() then return end
+    local tab = WhisperTarget(button)
+    if not tab then return ReleaseArrow(delegate) end
+    local left, bottom, width, height = button:GetRect()
+    local scale, uiScale = button:GetEffectiveScale(), UIParent:GetEffectiveScale()
+    if not (S.Finite(left) and S.Finite(bottom) and S.Finite(width) and S.Finite(height)
+        and width > 0 and height > 0 and S.Finite(scale) and scale > 0 and S.Finite(uiScale) and uiScale > 0) then
+        return ReleaseArrow(delegate)
+    end
+    -- Keep the secure hit box in UIParent space so it does not anchor into chat.
+    local ratio = scale / uiScale
+    delegate:ClearAllPoints()
+    delegate:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left * ratio, bottom * ratio)
+    delegate:SetSize(width * ratio, height * ratio)
+    delegate:SetFrameStrata(button:GetFrameStrata())
+    delegate:SetFrameLevel(button:GetFrameLevel() + 5)
+    delegate.owner = button
+    delegate:SetAttribute("clickbutton", tab)
+    delegate:Show()
+end
+
+local function BeforeArrowClick(delegate)
+    if NS.InCombat() then return end
+    -- A moved arrow or a tab closed between hover and click can invalidate the target.
+    local tab = WhisperTarget(delegate.owner)
+    delegate:SetAttribute("clickbutton", tab)
+end
+
+local function ArrowClicked(delegate)
+    local button = delegate.owner
+    -- Blizzard hid the previous chat frame. The deferred dock layout will
+    -- move the arrows to the new selection and rearm the one under the pointer.
+    if M.active and button and M.whisperArrows:GetParent() ~= Selected() then
+        pendingArrow = button
+        return ReleaseArrow(delegate)
+    end
+    AimArrow(button)
+end
 
 local function ArrowDelegate()
     if arrowDelegate then return arrowDelegate end
@@ -394,6 +427,7 @@ local function ArrowDelegate()
     delegate:SetAttribute("type", "click")
     delegate:SetAttribute("useOnKeyDown", false)
     delegate:RegisterForClicks("LeftButtonUp")
+    delegate:SetScript("PreClick", BeforeArrowClick)
     delegate:SetScript("PostClick", ArrowClicked)
     delegate:SetScript("OnLeave", ReleaseArrow)
     delegate:Hide()
@@ -464,8 +498,7 @@ function C.UpdateWhisperArrows(dock)
     local frame = C.DockSelection() or ChatFrame1
     local arrows = M.whisperArrows
     if NS.Safety.IsForbidden(frame) or M.whisperArrowY == nil or not WhisperArrowFits(dock) or not WhisperOverflow(dock) then
-        if arrows and arrows:IsShown() then arrows:Hide() end
-        if arrowDelegate and arrowDelegate:IsShown() then ReleaseArrow(arrowDelegate) end
+        C.HideWhisperArrows()
         return
     end
     local c = M.config
@@ -494,4 +527,7 @@ function C.UpdateWhisperArrows(dock)
         arrows.color, arrows.minimal = c.panelColor, c.minimalChrome
     end
     if not arrows:IsShown() then arrows:Show() end
+    local button = arrowDelegate and arrowDelegate.owner or pendingArrow
+    pendingArrow = nil
+    if button then AimArrow(button) end
 end
