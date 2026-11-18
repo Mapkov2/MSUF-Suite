@@ -342,7 +342,9 @@ local function Stop(id)
     Dispatch(S.UnregisterEditElements, id)
     if instance then
         instance.active = false
-        Dispatch(instance.Disable, instance)
+        -- Modules that only use their context need no custom teardown.
+        local disable = instance.Disable
+        if disable then Dispatch(disable, instance) end
         local context = instance.context
         if context then Dispatch(context.Release, context) end
     end

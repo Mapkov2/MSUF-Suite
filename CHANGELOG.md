@@ -1,5 +1,13 @@
 # MSUF Suite Changelog
 
+## 0.1.26 Alpha - 2026-11-18
+
+Distributed through the Beta channel for Retail and WoW Forever.
+
+### Fixes
+
+- Fixed a Lua error when switching to a profile that turns off the Auction House price tooltip on WoW Forever.
+
 ## 0.1.25 Alpha - 2026-11-18
 
 Distributed through the Beta channel for Retail and WoW Forever.
