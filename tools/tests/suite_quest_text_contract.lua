@@ -284,12 +284,14 @@ NS.AdapterKit = {
     WeakSet = function() return setmetatable({}, { __mode = "k" }) end,
     CancelDeferred = function() end,
     NewOwners = kitScope.AdapterKit.NewOwners,
+    SurfaceSpec = kitScope.AdapterKit.SurfaceSpec,
     HidePortraitBezels = kitScope.AdapterKit.HidePortraitBezels,
 }
 NS.GenericWindows = { IsCategoryEnabled = function(category) return category == "quest" end }
 NS.Client = { IsAddOnLoaded = function(addon) return addon == "Blizzard_UIPanels_Game" end }
 NS.ControlSkin = { DisableOwner = function() end }
 NS.IconSkin = { DisableOwner = function() end }
+NS.WindowActionSkin = { DisableOwner = function() end }
 NS.Cosmetics = { RestoreOwner = function() end }
 for _, file in ipairs({ "DeepWindows", "DeepWindowsProfessions" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", NS)

@@ -95,6 +95,52 @@ class InventoryContract(unittest.TestCase):
         self.assertEqual(inventory.count(removed), 0)
         self.assertEqual(added["rules"], {"new setting"})
 
+    def test_appending_choice_ids_preserves_existing_metadata(self):
+        owner = "retail:test.mode"
+        previous = inventory.item(owner, "choice", False, 1, 2, 1, "")
+        expanded = inventory.item(owner, "choice", False, 1, 3, 1, "")
+        existing = {inventory.item(owner, 1, "One"), inventory.item(owner, 2, "Two")}
+        self.before["rule_metadata"], self.before["choices"] = {previous}, existing
+        self.after["rule_metadata"] = {expanded}
+        self.after["choices"] = existing | {inventory.item(owner, 3, "Three")}
+        self.assertEqual(self.result()[0]["rule_metadata"], set())
+        self.assertEqual(self.result()[3], [])
+        for invalid, after in (
+            ("missing appended ID", existing),
+            ("wrong client", existing | {inventory.item("forever:test.mode", 3, "Three")}),
+            ("lost previous ID", {inventory.item(owner, 1, "One"), inventory.item(owner, 3, "Three")}),
+            ("missing earlier choice", existing | {inventory.item(owner, 4, "Four")}),
+            ("duplicate new ID", existing | {inventory.item(owner, 3, "Three"), inventory.item(owner, 3, "Other")}),
+        ):
+            with self.subTest(invalid=invalid):
+                self.after["choices"] = after
+                self.assertEqual(self.result()[0]["rule_metadata"], {previous})
+        self.after["choices"] = existing | {inventory.item(owner, 3, "Three")}
+        for invalid in (
+            inventory.item(owner, "choice", True, 1, 3, 1, ""),
+            inventory.item(owner, "choice", False, 1, 1, 1, ""),
+            inventory.item(owner, "number", False, 1, 3, 1, ""),
+        ):
+            with self.subTest(invalid=invalid):
+                self.after["rule_metadata"] = {invalid}
+                self.assertEqual(self.result()[0]["rule_metadata"], {previous})
+
+    def test_broadening_choice_link_preserves_existing_visibility(self):
+        def link(target, *indexes):
+            return inventory.item("retail:test.visibility", "requiresChoice",
+                                  [["key", target], ["values", [[index, True] for index in indexes]]])
+
+        previous = link("mode", 1, 2)
+        choices = {inventory.item("retail:test.mode", index, str(index)) for index in (1, 2, 3)}
+        self.before["rule_traits"], self.after["rule_traits"] = {previous}, {link("mode", 1, 2, 3)}
+        self.before["choices"] = self.after["choices"] = choices
+        self.assertEqual(self.result()[0]["rule_traits"], set())
+        self.assertEqual(self.result()[3], [])
+        for invalid in (link("mode", 1, 3), link("other", 1, 2, 3), link("mode", 1, 2, 4), link("mode", 1, 2, 3, 3)):
+            with self.subTest(invalid=invalid):
+                self.after["rule_traits"] = {invalid}
+                self.assertEqual(self.result()[0]["rule_traits"], {previous})
+
     def test_stale_allowlist_fails(self):
         self.assertTrue(any("stale" in p for p in self.result([self.entry])[3]))
 

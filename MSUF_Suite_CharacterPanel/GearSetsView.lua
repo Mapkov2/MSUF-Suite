@@ -73,7 +73,7 @@ local function NewRow(list)
     row.label:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
     row.label:SetPoint("RIGHT", -22, 0)
     row.check = style.Texture(row, nil, "OVERLAY")
-    row.check:SetTexture("Interface\Buttons\UI-CheckBox-Check")
+    row.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
     row.check:SetSize(17, 17)
     row.check:SetPoint("RIGHT", -3, 0)
     return row

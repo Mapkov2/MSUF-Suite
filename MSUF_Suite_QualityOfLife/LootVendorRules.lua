@@ -10,8 +10,9 @@ local MAX_IDS = 200
 local ItemGUID = S.QoLItemGUID
 
 local function MerchantOpen(self)
-    return self.active and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1
-        and not NS.IsCombatLocked()
+    if not self.active or NS.InCombat() or not MerchantFrame:IsShown() then return false end
+    local tab = MerchantFrame.selectedTab
+    return S.Public(tab) and tab == 1
 end
 
 -- Blizzard's click sends an item inside its refund window to the refund
@@ -40,7 +41,8 @@ local function Eligible(self, bag, slot)
     local guid = ItemGUID(bag, slot)
     if not guid then return nil end
     if S.InventoryProtection:IsProtected(info.itemID, bag, slot) or Refundable(bag, slot) then return nil end
-    return { bag = bag, slot = slot, id = info.itemID, guid = guid }
+    return { bag = bag, slot = slot, id = info.itemID, guid = guid,
+        count = S.Finite(info.stackCount) and info.stackCount or nil, link = info.hyperlink }
 end
 
 local function Candidates(self)
@@ -70,9 +72,14 @@ local function Sell(self, preview)
     local sold, rejected = 0, false
     S.InventoryProtection:Prepare()
     for i = 1, #preview do
+        if not MerchantOpen(self) or S.QoLItemUseWindow("MerchantFrame") then
+            rejected = true
+            break
+        end
         local expected = preview[i]
         local current = Eligible(self, expected.bag, expected.slot)
-        if current and current.guid == expected.guid and current.id == expected.id then
+        if current and current.guid == expected.guid and current.id == expected.id
+            and current.count == expected.count and current.link == expected.link then
             if not S.QoLRestrictedCall(C_Container.UseContainerItem, current.bag, current.slot) then
                 rejected = true
                 break
@@ -90,18 +97,54 @@ end
 
 -- Blizzard's generic confirmation (S.Confirm, MSUF_Suite_Modules/Dialogs.lua)
 -- asks before the marked stacks are sold.
-local function Click()
-    if not MerchantOpen(M) then return end
-    local preview = Candidates(M)
+local function ConfirmSale(preview)
     if #preview == 0 then return end
+    local profile, visit = NS.DB, M.visit
     S.Confirm(POPUP, {
         text = S.Text("Sell %d marked item stacks to this merchant?"), text_arg1 = #preview,
         acceptText = S.BlizzardText("SELL", "Sell"), cancelText = S.BlizzardText("CANCEL", "Cancel"),
         showAlert = true,
         callback = function()
-            if M.active then Sell(M, preview) end
+            if M.active and NS.DB == profile and M.visit == visit then Sell(M, preview) end
         end,
     })
+end
+
+local function Click()
+    if MerchantOpen(M) then ConfirmSale(Candidates(M)) end
+end
+
+function M:CanSellMatches()
+    return MerchantOpen(self) and next(self.ids) ~= nil and not S.QoLItemUseWindow("MerchantFrame")
+end
+
+local function MerchantTabChanged(self)
+    local ready = self:CanSellMatches()
+    if self.quickReady == ready then return end
+    self.quickReady = ready
+    if S.BagsToolsChanged then S.BagsToolsChanged() end
+end
+
+local function SaleOrder(a, b)
+    return a.bag < b.bag or a.bag == b.bag and a.slot > b.slot
+end
+
+function M:SellMatches(items)
+    if not self:CanSellMatches() then return end
+    local preview = {}
+    S.InventoryProtection:Prepare()
+    for i = 1, #items do
+        local expected = items[i]
+        if S.Finite(expected.bag) and expected.bag >= FIRST_BAG and expected.bag <= LAST_BAG
+            and S.Finite(expected.slot) and expected.slot > 0 then
+            local item = Eligible(self, expected.bag, expected.slot)
+            if item and item.id == expected.itemID and item.count == expected.count and item.link == expected.link then
+                preview[#preview + 1] = item
+            end
+        end
+    end
+    table.sort(preview, SaleOrder)
+    ConfirmSale(preview)
 end
 
 -- OnLeave hides the shared tooltip only while this frame still owns it.
@@ -166,6 +209,7 @@ function M:UpdateButton()
 end
 
 local function MerchantEvent(self, event)
+    self.visit = (self.visit or 0) + 1
     if event == "MERCHANT_CLOSED" then
         if self.button then self.button:Hide() end
         S.HideQuestion(POPUP)
@@ -176,17 +220,25 @@ local function MerchantEvent(self, event)
     self:UpdateButton()
 end
 
+local function StopWatching(self)
+    if S.UnwatchMerchant then S.UnwatchMerchant(self) end
+    self.quickReady = nil
+    self.context:RemoveEvent("MERCHANT_SHOW")
+    self.context:RemoveEvent("MERCHANT_CLOSED")
+    self.context:RemoveEvent("BAG_UPDATE_DELAYED")
+    self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    S.HideQuestion(POPUP)
+    if self.button then self.button:Hide() end
+end
+
 function M:Refresh()
     self.ids = S.QoLParseIDs(self.config.itemIDs, MAX_IDS)
+    if S.BagsToolsChanged then S.BagsToolsChanged() end
     if not next(self.ids) then
-        self.context:RemoveEvent("MERCHANT_SHOW")
-        self.context:RemoveEvent("MERCHANT_CLOSED")
-        self.context:RemoveEvent("BAG_UPDATE_DELAYED")
-        self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-        S.HideQuestion(POPUP)
-        if self.button then self.button:Hide() end
+        StopWatching(self)
         return
     end
+    if S.WatchMerchant then S.WatchMerchant(self, MerchantTabChanged) end
     self.context:Event("MERCHANT_SHOW", MerchantEvent)
     self.context:Event("MERCHANT_CLOSED", MerchantEvent)
     if MerchantFrame:IsShown() then
@@ -198,13 +250,10 @@ end
 function M:Enable() self:Refresh() end
 
 function M:Disable()
-    self.context:RemoveEvent("MERCHANT_SHOW")
-    self.context:RemoveEvent("MERCHANT_CLOSED")
-    self.context:RemoveEvent("BAG_UPDATE_DELAYED")
-    self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    S.HideQuestion(POPUP)
-    if self.button then self.button:Hide() end
     self.ids = {}
+    self.visit = (self.visit or 0) + 1
+    StopWatching(self)
+    if S.BagsToolsChanged then S.BagsToolsChanged() end
 end
 
 S.Install("lootVendorRules", M)

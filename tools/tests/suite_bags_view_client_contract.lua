@@ -558,8 +558,13 @@ do
     W.Apply()
     W.OpenBags()
     W.Settle()
-    local manage = assert(W.P.InventoryView.manage, "the inventory view has no category editor button")
+    local manage = assert(W.P.InventoryView.manage, "the inventory view has no settings button")
     manage:Click("LeftButton")
+    local edit
+    for _, row in ipairs(W.P.BagFilterMenu.rows) do
+        if row.entry and row.entry.node.label == "Edit categories" then edit = row end
+    end
+    assert(edit, "the settings menu has no category editor action"):Click("LeftButton")
     assert(arguments == 0 and W.P.InventoryEditor.frame.shown and not W.P.InventoryEditor.editPins,
         "Edit categories passed its click arguments to the editor")
 end

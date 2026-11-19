@@ -926,4 +926,505 @@ do
         and foreverDock.report.cards[1].title.label.text == "Quick", "the Forever dock lost its report")
 end
 
+do
+    local nativeLevel, scale = 25, .8
+    local native = { GetEffectiveScale = function() return scale end, GetFrameLevel = function() return nativeLevel end }
+    local head = { slot = 1, token = "HeadSlot", label = "Head", name = "Helm", icon = 42, quality = 2, level = 19 }
+    local hand = { slot = 10, token = "HandsSlot", label = "Hands", name = "Gloves", icon = 44, quality = 2, level = 22 }
+    local main = { slot = 16, token = "MainHandSlot", label = "Main Hand", name = "Staff", icon = 46, level = 31 }
+    local off = { slot = 17, token = "SecondaryHandSlot", label = "Off Hand", name = "Shield", icon = 48, level = 27 }
+    local gear = { left = { head }, right = { hand }, weapons = { main, off } }
+
+    ns.Host.Client.isForever = false
+    local layout = ns.View.NativeLayout(gear)
+    layout.rootLevel = nativeLevel
+    assert(layout.width == suite.CharacterHeader.Width and layout.height == 552 and layout.strata == "HIGH",
+        "the full native view changed the old window geometry or sits above the native flyout")
+    assert(layout.artLevel < layout.modelLevel and layout.modelLevel < layout.slotLevel
+        and layout.slotLevel < layout.reportLevel and layout.reportLevel < layout.closeLevel,
+        "the native presentation layers cannot support the native item flyout or report cover")
+    assert(#layout.slots == 4 and layout.slots[1].token == head.token and layout.slots[4].token == off.token,
+        "the layout lost an actual slot")
+    local nativeHand = layout.slots[2]
+    assert(nativeHand.x == 496 and nativeHand.alternateX == 372
+        and not layout.slots[1].alternateX and not layout.slots[4].alternateX,
+        "the two original layouts changed the wrong native slot hit areas")
+    assert(layout.close.x == 912 and layout.close.y == 2 and layout.close.size == 24,
+        "the native close moved away from the original Suite caption")
+    ns.Host.Client.isForever = true
+    local foreverLayout = ns.View.NativeLayout(gear)
+    local ammo = foreverLayout.slots[5]
+    assert(ammo and ammo.optional and ammo.token == "AmmoSlot", "Forever's optional native ammo slot was omitted")
+
+    local beforeModels = playerModels
+    local clicked, actions = nil, {}
+    liveCombat, rejectNativeScrollTemplate = true, true
+    local full = ns.View.New({
+        frameName = "StandaloneInspect",
+        windowAction = function(action)
+            actions[#actions + 1] = action
+            if action == "maximize" or action == "minimize" then return true end
+        end,
+        tab = Noop, group = Noop, enter = Noop, leave = Noop, drop = Noop, drag = Noop,
+        slot = function(slot, _, mouse)
+            assert(mouse == "LeftButton", "the card received a protected equipment action")
+            clicked = slot
+        end,
+    }, nil, native, layout)
+    liveCombat, rejectNativeScrollTemplate = false, false
+    local frame = full.frame
+    assert(full.nativeLayout == layout and frame.parent == native and not frame.name and not frame.mouseEnabled
+        and frame.width == layout.width and frame.height == layout.height and frame:GetFrameLevel() == nativeLevel + layout.artLevel
+        and frame.strata == layout.strata and frame:GetEffectiveScale() == .8 and not frame.scale,
+        "the hosted shell did not share native stacking and inherited scale, or blocked native input")
+    assert(frame.point[1] == "TOPLEFT" and frame.point[2] == native
+        and frame.point[3] == "TOPLEFT" and frame.point[4] == 0 and frame.point[5] == 0,
+        "the art moved independently of the actual slot layout")
+    -- Windows caption: three equal cells flush in the header's corner; the
+    -- close art covers Blizzard's X (opaque, no mouse) and that X keeps the click.
+    local close = full.closeArt
+    assert(close.point[1] == "TOPRIGHT" and close.point[4] == 0 and close.point[5] == -1
+        and close.width == 30 and close.height == layout.close.size and close.caption.base
+        and close:GetFrameLevel() == nativeLevel + layout.closeLevel + 1
+        and not close.mouseEnabled and not close.scripts.OnClick, "the original Close art intercepted native input")
+    local window = full.window
+    assert(window.maximize.point[4] == -30 and window.minimize.point[4] == -60 and not window.dockLeft
+        and window.maximize.caption.kind == "maximize" and window.minimize.caption.kind == "minimize"
+        and close.caption.kind == "close" and window.nativeGrip.point[1] == "BOTTOMRIGHT",
+        "the original titlebar or scale-grip art moved")
+    window.maximize.scripts.OnClick(window.maximize)
+    window.minimize.scripts.OnClick(window.minimize)
+    window.nativeTitleDrag.scripts.OnDragStart()
+    window.nativeTitleDrag.scripts.OnDragStop()
+    window.nativeTitleDrag.scripts.OnHide()
+    window.nativeGrip.scripts.OnMouseDown(window.nativeGrip, "RightButton")
+    window.nativeGrip.scripts.OnMouseDown(window.nativeGrip, "LeftButton")
+    window.nativeGrip.scripts.OnMouseUp(window.nativeGrip, "LeftButton")
+    window.nativeGrip.scripts.OnHide()
+    assert(table.concat(actions, ",") == "maximize,minimize,moveStart,moveStop,moveStop,scaleStart,scaleStop,scaleStop",
+        "the original controls did not call the native geometry owner")
+    assert(window.maximize.caption.kind == "restore" and window.minimize.caption.kind == "restore",
+        "the original caption did not reflect native maximize/minimize state")
+    full.frame:Show()
+    full:SetHeader("Mapko", "Level 22", "31", "player", "player-guid")
+    assert(full.header.rightReserve == suite.CharacterHeader.CaptionWidth, "the full window shifted the original header fields")
+    full:SetTabs(tabs, "overview")
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    full.characterView = "classic"
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    assert(not full.plate:IsShown(), "Classic did not reveal the Blizzard model and slot artwork")
+    full.characterView = "modern"
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    assert(full.plate:IsShown(), "Modern did not restore the Suite equipment artwork")
+    local card = full.left[1]
+    assert(card.texture == head.icon and card.name.text == head.name and card.level.text == head.level,
+        "the full native panel lost the original card icon, name, or item level")
+    assert(#card.registeredClicks == 1 and card.registeredClicks[1] == "LeftButtonUp"
+        and card.insets[1] == 5 + layout.slots[1].size and card.insets[2] == 0
+        and not card.scripts.OnReceiveDrag and not card.scripts.OnDragStart,
+        "the Suite card covered the native icon or replaced its equipment interaction")
+    card.scripts.OnClick(card, "LeftButton")
+    assert(clicked == head.slot, "the original gear card no longer opens item details")
+    head.audit = {
+        sockets = 4, gems = 3,
+        gemInfo = { { id = 601, texture = 123 }, { known = true }, { id = 602 }, { id = 603, texture = 456 } },
+    }
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    local sockets = card.socketIcons
+    assert(sockets and #sockets == 4 and card.level.point[3] > 0, "Overview did not paint sockets below the item level")
+    local emptyArt, unknownArt = "character-emptysocket", "Interface\\Icons\\INV_Misc_QuestionMark"
+    assert(sockets[4].art == 123 and sockets[3].art == emptyArt and sockets[2].art == unknownArt and sockets[1].art == 456,
+        "the indicators lost socket order or confused a loading gem with an empty socket")
+    assert(sockets[4].point[2] - sockets[4].width > card.name.point[2], "socket icons overlap the item name column")
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(card.socketIcons == sockets and sockets[4]:IsShown() and sockets[1].art == 456,
+        "the Equipment grid lost the socket indicators")
+    head.audit.gemInfo[3].texture = 789
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(sockets[2].art == 789, "asynchronous data did not replace the loading gem in the same card")
+    head.audit = { sockets = 1, gemInfo = { {} } }
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(sockets[1].art == unknownArt and sockets[1]:IsShown() and not sockets[2]:IsShown() and not sockets[4]:IsShown(),
+        "an unknown socket was shown as empty or a shorter replacement retained old gems")
+    local details = {}
+    ns.Gear.Details(details, { bySlot = { [head.slot] = head } }, head.slot, false)
+    assert(details[1].rows[3].value == "— / 1", "item details counted restricted gems as empty sockets")
+    head.audit = {}
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    assert(not sockets[1]:IsShown() and card.level.point[3] == 0, "a socketless replacement retained socket artwork or spacing")
+    local bodyX, bodyY = full.body.point[2], -full.body.point[3]
+    local cards = { card, full.right[1], full.weapons[1], full.weapons[2] }
+    for i = 1, #cards do
+        local nativeSlot, suiteCard = layout.slots[i], cards[i]
+        assert(nativeSlot.x == bodyX + suiteCard.panelX + 5
+            and nativeSlot.y == bodyY + suiteCard.panelY + (suiteCard.panelHeight - nativeSlot.size) / 2,
+            "the actual button does not cover the old icon")
+    end
+    assert(layout.model.x == bodyX + full.modelHost.point[2] + 3
+        and layout.model.y == bodyY - full.modelHost.point[3] + 28
+        and layout.model.width == full.modelHost.width - 6 and layout.model.height == full.modelHost.height - 31,
+        "the native model escaped its original stage")
+    assert(not full.model and full.modelHost:IsShown() and not full.reportCover:IsShown()
+        and full.rail.cards[1].title.label.text == "Quick", "native gear or the original stats rail is missing")
+    local zoom, resets = 0, 0
+    -- OrbitCameraMixin zoom semantics (live 297d7aaa, Forever bebcb6bf):
+    -- zoom percent is clamped, and equal distances make wheel input invisible.
+    local function NewCamera(near, far, distance)
+        local camera = { yaw = 0, near = near, far = far, percent = 0 }
+        function camera:GetYaw() return self.yaw end
+        function camera:SetYaw(yaw) self.yaw = yaw end
+        function camera:GetMinZoomDistance() return self.near end
+        function camera:GetMaxZoomDistance() return self.far end
+        function camera:GetZoomDistance() return self.near + (self.far - self.near) * self.percent end
+        function camera:SetZoomDistance(value)
+            self.percent = self.near == self.far and 0 or math.max(0, math.min(1, (value - self.near) / (self.far - self.near)))
+        end
+        function camera:SetMinZoomDistance(value)
+            self.near = value
+            self:SetZoomDistance(self:GetZoomDistance())
+        end
+        function camera:SetMaxZoomDistance(value)
+            self.far = value
+            self:SetZoomDistance(self:GetZoomDistance())
+        end
+        function camera:OnMouseWheel(delta)
+            zoom = zoom + delta
+            self.percent = math.max(0, math.min(1, self.percent - delta * .1))
+        end
+        camera:SetZoomDistance(distance)
+        return camera
+    end
+    local camera = NewCamera(6, 6, 6)
+    CharacterModelScene = {
+        IsVisible = function() return true end,
+        GetActiveCamera = function() return camera end,
+        Reset = function() resets = resets + 1 camera = NewCamera(6, 6, 6) end,
+    }
+    local toolbarButtons, toolbarCount = {}, 0
+    for control in pairs(full.surfaces) do
+        if control.control then
+            toolbarCount = toolbarCount + 1
+            toolbarButtons[control.control.atlas] = control
+            local level = control:GetFrameLevel()
+            assert(control.width == 20 and control.height == 20
+                and level > full.modelInput:GetFrameLevel() and level > full.nativeSlotMasks[1]:GetFrameLevel()
+                and level < full.reportCover:GetFrameLevel(), "native slot hit regions covered the model toolbar")
+        end
+    end
+    assert(toolbarCount == 5, "the native model toolbar lost a button")
+    local function ClickModelButton(icon)
+        local button = assert(toolbarButtons[icon])
+        button.scripts.OnClick(button)
+    end
+    ClickModelButton("common-icon-zoomin")
+    assert(zoom == 1 and camera:GetZoomDistance() < 6, "zoom-in did not move the fixed native camera")
+    ClickModelButton("common-icon-zoomout")
+    assert(zoom == 0 and math.abs(camera:GetZoomDistance() - 6) < 1e-9, "zoom-out did not recover the native framing")
+    ClickModelButton("common-icon-rotateright")
+    assert(camera.yaw < 0, "rotate-right used model rotation instead of the opposite camera orbit")
+    ClickModelButton("common-icon-rotateleft")
+    assert(camera.yaw == 0, "the rotate-left button did not turn the model back")
+    ClickModelButton("common-icon-undo")
+    assert(resets == 1, "the reset button did not reset the native scene")
+    local input = assert(full.modelInput, "the inactive slot mask still overlaps the 3D viewport")
+    assert(input.parent == full.modelHost and input.mouseEnabled and input.width == layout.model.width
+        and input:GetFrameLevel() > nativeLevel + layout.slotLevel + 1
+        and input.point[4] == layout.model.x and input.point[5] == -layout.model.y,
+        "the 3D input region crossed the active slots or remained under their mask")
+    liveCombat = true
+    input.scripts.OnMouseDown(input, "LeftButton")
+    cursorX = cursorX + 20
+    input.scripts.OnUpdate(input)
+    input.scripts.OnMouseUp(input, "LeftButton")
+    input.scripts.OnMouseWheel(input, 1)
+    assert(camera.yaw < 0 and zoom == 1 and camera:GetZoomDistance() < 6 and not input.scripts.OnUpdate,
+        "the center did not follow native dressing-room rotation and zoom after reset")
+    input.scripts.OnMouseWheel(input, -100)
+    assert(camera:GetZoomDistance() > 6 and camera:GetZoomDistance() == camera:GetMaxZoomDistance(),
+        "wheel-down could not zoom out, or escaped the far limit")
+    input.scripts.OnMouseWheel(input, 100)
+    assert(camera:GetZoomDistance() > 0 and camera:GetZoomDistance() == camera:GetMinZoomDistance(),
+        "wheel-up escaped the near limit")
+    local previousCamera = camera
+    camera = NewCamera(2, 12, 7)
+    input.scripts.OnMouseWheel(input, 1)
+    assert(camera.near == 2 and camera.far == 12 and math.abs(camera:GetZoomDistance() - 6) < 1e-9,
+        "working native zoom limits were replaced")
+    assert(previousCamera:GetZoomDistance() == previousCamera:GetMinZoomDistance(), "a stale camera received the wheel")
+    input.scripts.OnMouseDown(input, "LeftButton")
+    cursorX = cursorX - 20
+    input.scripts.OnUpdate(input)
+    assert(camera.yaw > 0, "drag-left did not follow the native camera direction")
+    mouseDown = false
+    input.scripts.OnUpdate(input)
+    assert(not input.scripts.OnUpdate, "native drag kept polling after release outside its viewport")
+    mouseDown = true
+    input.scripts.OnMouseDown(input, "LeftButton")
+    input.scripts.OnHide(input)
+    assert(not input.scripts.OnUpdate, "hidden native input kept polling")
+    local wheelCalls = zoom
+    camera.near = secretIdentity
+    input.scripts.OnMouseWheel(input, 1)
+    assert(zoom == wheelCalls, "secret camera limits reached native Lua zoom arithmetic")
+    CharacterModelScene.IsVisible = function() return false end
+    camera = NewCamera(6, 6, 6)
+    input.scripts.OnMouseWheel(input, 1)
+    assert(zoom == wheelCalls and camera.near == camera.far, "hidden native scene was changed")
+    liveCombat = false
+    CharacterModelScene = nil
+    local overviewWidth, overviewLevel = full.right[1].panelWidth, full.right[1]:GetFrameLevel()
+    local slotMask = full.nativeSlotMasks[1]
+    assert(slotMask.mouseEnabled and slotMask:GetFrameLevel() > nativeLevel + layout.slotLevel
+        and slotMask:GetFrameLevel() < nativeLevel + layout.reportLevel and slotMask.point[4] == nativeHand.alternateX
+        and slotMask.point[5] == -nativeHand.y and slotMask.width == nativeHand.x - nativeHand.alternateX
+        and not slotMask.scripts.OnClick and not full.gearMask:IsShown(), "Overview exposed an inactive slot hit region")
+
+    local transparent = {
+        IsEnabled = function() return true end,
+        GetColor = function() return .2, .3, .4, .25 end,
+        SkinFrame = function(_, target, style)
+            if style.role == "navigation" then target.sharedTabMotion = style.motion end
+            return true, "applied"
+        end,
+        SetActive = Noop, RefreshAll = Noop, ReleaseAll = Noop,
+    }
+    local overviewTab = full.tabButtons[1]
+    assert(overviewTab.underline:IsShown(), "fallback selection lost its underline")
+    full:RefreshAppearance(transparent)
+    assert(overviewTab.sharedTabMotion == true and not overviewTab.underline:IsShown(),
+        "themed tabs did not opt into shared selection motion or kept the snapping underline")
+    assert(full.artMask.color[4] == 1 and full.reportMask.color[4] == 1 and full.gearMask.color[4] == 1,
+        "theme opacity leaked the covered native paper doll through its report")
+    liveCombat = true
+    nativeLevel = nativeLevel + 12
+    full:ShowGroups(groups)
+    assert(not full.gear:IsShown() and full.reportCover:IsShown() and full.reportCover.mouseEnabled
+        and full.reportCover:GetFrameLevel() == nativeLevel + layout.reportLevel and full.report.scroll.parent == full.reportCover
+        and full.report.columns == 2, "the report can click through to native slots")
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(full.gear:IsShown() and not full.modelHost:IsShown() and not full.reportCover:IsShown()
+        and full.gearMask:IsShown() and full.plate:GetFrameLevel() > nativeLevel + layout.modelLevel
+        and full.right[1]:GetFrameLevel() > full.plate:GetFrameLevel()
+        and full.right[1]:GetFrameLevel() < nativeLevel + layout.slotLevel,
+        "Equipment did not hide the model beneath its original wide gear art")
+    assert(full.right[1].panelWidth > overviewWidth and bodyX + full.right[1].panelX + 5 == nativeHand.alternateX
+        and slotMask.point[4] == nativeHand.alternateX + nativeHand.size
+        and slotMask.width == nativeHand.x - nativeHand.alternateX, "Equipment kept the inactive hit rectangle exposed")
+    clicked = nil
+    slotMask.scripts.OnClick(slotMask, "LeftButton")
+    assert(clicked == hand.slot, "the Equipment mask blocked item details over the active card")
+    local settled = writes
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(writes == settled, "unchanged Equipment rewrote native presentation state")
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true)
+    assert(not full.gearMask:IsShown() and full.modelHost:IsShown() and full.right[1]:GetFrameLevel() == overviewLevel + 12
+        and slotMask.point[4] == nativeHand.alternateX and not slotMask.scripts.OnClick,
+        "returning to Overview kept the wider Equipment geometry active")
+    scale = .9
+    full:FitScreen()
+    full:RefreshAppearance(nil)
+    assert(overviewTab.underline:IsShown(), "leaving the skin lost the fallback selection")
+    assert(frame:GetEffectiveScale() == .9 and not frame.scale and playerModels == beforeModels,
+        "full native mode lost inherited scale or allocated a duplicate model")
+    liveCombat = false
+
+    local translucent = true
+    transparent.GetLook = function() return "custom" end
+    transparent.HasTranslucentShell = function() return translucent end
+    local modelVisible, gamepad
+    suite.GamepadUI = function() return gamepad == true end
+    local previousSkin = ns.Host.Skin
+    ns.Host.Skin = { CharacterGeometry = {
+        SetGlass = function(root, surface, enabled, withModel)
+            assert(root == native and surface == full.frame, "glass changed an unrelated native window")
+            modelVisible = enabled and withModel
+            return enabled, modelVisible
+        end,
+    } }
+    close.caption.base:Show()
+    full:RefreshAppearance(transparent)
+    assert(not close.caption.base:IsShown() and close.caption.fill.color[4] == 0
+        and close.caption.bars[1]:IsShown() and not close.mouseEnabled,
+        "the Glass close glyph kept its resting tile or lost its native click path")
+    suite.WindowCaption.SetHover(close, true)
+    assert(not close.caption.base:IsShown() and close.caption.fill.color[4] > 0,
+        "hover lost the close feedback or brought back the resting tile")
+    suite.WindowCaption.SetHover(close, false)
+    assert(full.artMask:GetAlpha() == 0 and full.headerFill:GetAlpha() < 1 and full.tabFill:GetAlpha() < 1 and modelVisible,
+        "a custom palette with the same translucent shell retained opaque header bands and backing")
+    assert(full.surfaces[full.plate].style.keepGlassFill == false
+        and full.surfaces[full.rail.cards[1]].style.keepGlassFill == false,
+        "the gear plate and stats cards filled over Forever Glass")
+    full:ShowGroups(groups)
+    assert(full.reportMask:GetAlpha() == 0 and not modelVisible and full.reportCover:IsShown(),
+        "Forever Glass left the model behind the report or lost the report hit shield")
+    local reportCard = full.report.cards[1]
+    local reportSurface = full.surfaces[reportCard]
+    local originalPainter = transparent.SkinFrame
+    transparent.SkinFrame = function(self, target, style)
+        if target == reportCard then return true, "deferred" end
+        return originalPainter(self, target, style)
+    end
+    reportSurface.themed = false
+    full:RefreshAppearance(transparent)
+    assert(not reportSurface.fill:IsShown() and not reportSurface.border:IsShown(),
+        "a deferred combat report skin put a solid card back over the translucent shell")
+    transparent.SkinFrame = originalPainter
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    assert(full.gearMask:GetAlpha() == 0 and not modelVisible and full.gearMask:IsShown(),
+        "Forever Glass kept an opaque block when switching to Equipment")
+    gamepad = true
+    full:RefreshAppearance(transparent)
+    assert(full.artMask:GetAlpha() == 1 and full.gearMask:GetAlpha() == 1,
+        "the gamepad presentation did not restore native art")
+    gamepad = false
+    translucent = false
+    transparent.GetLook = function() return "foreverGlass" end
+    full:RefreshAppearance(transparent)
+    assert(full.artMask:GetAlpha() == 1 and full.headerFill:GetAlpha() == 1 and close.caption.base:IsShown(),
+        "the opaque shell or its native close cover was treated as Glass")
+    full:RefreshAppearance(nil)
+    assert(full.artMask:GetAlpha() == 1 and full.gearMask:GetAlpha() == 1 and full.headerFill:GetAlpha() == 1,
+        "turning off Forever Glass did not restore the native covers")
+    ns.Host.Skin = previousSkin
+
+    local noSet = "No equipment set equipped"
+    local wrappedRows = {
+        { label = "Movement Speed", value = "100.00%" },
+        { label = "Active set", value = noSet },
+        { label = "Following row", value = "100" },
+    }
+    local wrappedReport = { { title = "Equipment sets", rows = wrappedRows } }
+    local left = { { slot = 1, name = "Long Enchanted Helm of the Alliance", label = "Head" } }
+    full:ShowGear(left, empty, empty, wrappedReport, nil, empty, true)
+    local first, wrapped, nextRow = unpack(full.rail.cards[1].rows)
+    assert(full.left[1].name.wordWrap and full.left[1].name.maxLines == 2, "gear names cannot use both lines")
+    assert(wrapped.right.text == noSet and wrapped.right.wordWrap and wrapped.right.nonSpaceWrap,
+        "the equipment set value has no word wrap")
+    assert(wrapped.textSplit < first.textSplit and wrapped.panelHeight > first.panelHeight
+        and nextRow.panelY == wrapped.panelY + wrapped.panelHeight,
+        "the set value did not get horizontal room and push the next row down")
+    local expandedHeight = full.rail.content
+    wrappedRows[2].value = "Set 1"
+    full:ShowGear(left, empty, empty, wrappedReport, nil, empty, true)
+    assert(wrapped.panelHeight == first.panelHeight and full.rail.content < expandedHeight,
+        "shorter text retained the wrapped row height")
+
+    local longRows = {}
+    for i = 1, 48 do longRows[i] = { label = "Row " .. i, value = i } end
+    local longReport = { { title = "Long report", rows = longRows } }
+    local function CheckOwnedScroll(list)
+        assert(list.scroll.kind == "Frame" and not list.scroll.template and list.canvas.parent.clipsChildren
+            and list.bar:IsShown(), "the Forever list lost its clipped viewport or scroll controls")
+        local slider, offset = list.slider, list.offset
+        local trackHeight = list.height - 30
+        local expectedHeight = math.floor(trackHeight * list.height / list.content + .5)
+        assert(slider.thumb.height == expectedHeight and slider.thumb.width >= 9
+            and slider.width >= 16 and slider.thumb.color,
+            "the thumb does not reflect visible content or lost its high-contrast treatment")
+        assert(offset == 0 and slider.value == 0, "the top of the list placed the thumb at the wrong end")
+        list.scroll.scripts.OnMouseWheel(list.scroll, -1)
+        assert(list.offset == offset + 30 and list.canvas.point[3] == list.offset,
+            "the wheel did not move the report canvas")
+        list.down.scripts.OnClick(list.down)
+        assert(list.offset == offset + 60 and slider.value == list.offset,
+            "the forward stepper did not move the scrollbar with the report")
+        list.up.scripts.OnClick(list.up)
+        assert(list.offset == offset + 30, "the back stepper did not scroll back")
+        local down = list.down
+        down.IsMouseOver = function() return true end
+        down.scripts.OnMouseDown(down, "LeftButton")
+        down.scripts.OnUpdate(down, .31)
+        down.scripts.OnMouseUp(down, "LeftButton")
+        down.scripts.OnClick(down)
+        assert(list.offset == offset + 60 and not down.scripts.OnUpdate,
+            "the held stepper failed to repeat or moved a second time on release")
+        slider:SetValue(list.range)
+        assert(list.offset == list.range and list.cards[1].rows[1].left.text ~= "Row 1",
+            "dragging to the bottom did not repaint the visible rows")
+        local stop = Strict.Watch(path .. "GroupLayout.lua", { strict = true })
+        local hiddenValue = Strict.New("number")
+        list.scroll.scripts.OnMouseWheel(list.scroll, hiddenValue)
+        slider.scripts.OnValueChanged(slider, hiddenValue)
+        local violations = stop()
+        assert(#violations == 0, table.concat(violations, " | "))
+        assert(list.offset == list.range, "restricted input changed the visible offset")
+        list.down.scripts.OnClick(list.down)
+        assert(list.offset == list.range, "the bottom stepper scrolled past the last row")
+        slider:SetValue(0)
+        assert(list.offset == 0 and list.cards[1].rows[1].left.text == "Row 1",
+            "dragging the thumb back up did not return to the first row")
+    end
+    full:ShowGear(gear.left, gear.right, gear.weapons, longReport, nil, empty, true)
+    CheckOwnedScroll(full.rail)
+    full:ShowGroups(longReport)
+    CheckOwnedScroll(full.report)
+    local smallThumb = full.report.slider.thumb.height
+    for i = #longRows, 20, -1 do longRows[i] = nil end
+    full:ShowGroups(longReport)
+    assert(full.report.range > 0 and full.report.slider.thumb.height > smallThumb,
+        "the thumb did not grow as the scroll range shortened")
+    full:ShowGroups(groups)
+    assert(full.report.offset == 0 and full.report.canvas.point[3] == 0 and not full.report.bar:IsShown(),
+        "shortening the report did not clamp its position and hide the scrollbar")
+
+    liveCombat = true
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true, true)
+    assert(not full.rail.scroll:IsShown() and full.combatRail.canvas:IsShown(), "combat did not select the fixed rail")
+    full:ShowGroups(groups, true)
+    assert(not full.report.scroll:IsShown() and full.combatReport.canvas:IsShown(), "combat did not select the fixed report")
+    liveCombat = false
+    full:ShowGroups(longReport)
+    assert(full.report.scroll:IsShown() and full.report.bar:IsShown() and not full.combatReport.canvas:IsShown(),
+        "combat exit did not restore the report scrollbar")
+
+    local sets = { { id = 0, name = "Raid", icon = 135001, equipped = true } }
+    for id = 1, 14 do sets[#sets + 1] = { id = id, name = "Set " .. id, equipped = false } end
+    local session = { rows = {}, canCreate = true, revision = 1 }
+    full.setManager = session
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    local pane = assert(full.setPane, "Gear did not mount its inline set list")
+    assert(pane.blank:IsShown() and pane.new:IsShown() and pane.new.panelY < 70 and not pane.selectedActions:IsShown(),
+        "the empty state did not lead with the New Set action")
+    pane.new.scripts.OnClick(pane.new)
+    local editor = assert(pane.editor, "New Set did not open the name and icon editor")
+    assert(editor:IsShown() and editor.input.focused and not editor.accept.enabled and not pane.main:IsShown())
+    editor.input:SetText("First Set")
+    editor.input.scripts.OnTextChanged(editor.input)
+    assert(editor.accept.enabled and editor.icons[2].fileID == 135001)
+    editor.icons[2].scripts.OnClick(editor.icons[2])
+    editor.input.scripts.OnEnterPressed(editor.input)
+    assert(session.created.name == "First Set" and session.created.icon == 135001
+        and not editor:IsShown() and pane.main:IsShown() and not editor.input.focused)
+    session.rows, session.revision, session.selected, session.selectedID = sets, 2, sets[1], 0
+    full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, false)
+    local list = pane.list
+    local first, second = list.buttons[1], list.buttons[2]
+    assert(pane:IsShown() and full.gear:IsShown() and not full.rail.scroll:IsShown() and not pane.equip.enabled
+        and first.icon.art == 135001 and first.check:IsShown() and not second.check:IsShown())
+    first.scripts.OnClick(first, "LeftButton")
+    assert(session.selectedID == 0 and first.selection:IsShown() and not pane.equip.enabled and pane.selectedActions:IsShown())
+    second.scripts.OnClick(second, "LeftButton")
+    assert(not first.selection:IsShown() and second.selection:IsShown() and pane.equip.enabled)
+    pane.equip.scripts.OnClick(pane.equip)
+    assert(session.used == 1 and pane.equip.panelY < pane.new.panelY)
+    pane.edit.scripts.OnClick(pane.edit)
+    local editEntry = editor.entry
+    assert(editEntry.name == "Set 1" and editor.input:GetText() == "Set 1")
+    editor.input.scripts.OnEscapePressed(editor.input)
+    assert(editEntry.closed and not editor:IsShown() and pane.main:IsShown(), "escape did not cancel the editor")
+    assert(#list.buttons < #sets and list.range > 0, "the set list did not recycle rows or allow scrolling")
+    list.slider:SetValue(list.range)
+    assert(list.buttons[1].set.id > 0 and not list.buttons[1].check:IsShown())
+
+    full:ShowGroups(groups)
+    assert(full.setPane == pane and pane.parent == full.report.parent and pane:IsShown()
+        and full.setReport.scroll:IsShown() and not full.report.scroll:IsShown(), "the list view did not fit slots beside the manager")
+    assert(full.setReport.width < full.report.width)
+    full.setManager = nil
+    full:ShowGroups(groups)
+    assert(not pane:IsShown() and not full.setReport.scroll:IsShown() and full.report.scroll:IsShown(),
+        "leaving the manager did not restore the standard report")
+end
+
 print("Character Panel appearance: full native, hosted fallback, Inspect, preview, fonts, offsets and warm paint passed")

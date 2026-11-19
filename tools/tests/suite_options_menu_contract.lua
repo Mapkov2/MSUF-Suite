@@ -4708,6 +4708,7 @@ end
 do
     local createFrame = CreateFrame
     M.RegisterSearchProvider = function() return true end
+    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/SearchProvider.lua"))("MSUF_Suite_Options", optionsNS)
     assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Search.lua"))("MSUF_Suite_Options", optionsNS)
     CreateFrame = function() error("cold Skinning search must not create widgets") end
     local searchRows = optionsNS.SearchRows()
@@ -6484,7 +6485,7 @@ end)()
     for _, row in ipairs(rows) do row.summary = optionsNS.SummaryPriority("damageMeter", row.id) end
     optionsNS.AttachRowsSummary(ctx, body, rows)
     for _, refresh in ipairs(ctx.refreshers) do refresh() end
-    assert(body.summary == "Meter: Damage · Fight: Current fight", "summary depends on grid order or displays a raw enum/offset")
+    assert(body.summary == "Meter: Damage - Fight: Current fight", "summary depends on grid order or displays a raw enum/offset")
     ctx, body = { refreshers = {} }, { _msuf2CollapsibleEntry = {} }
     local row = { id = "bar2Width", label = "Width", kind = "slider", get = function() return value end,
         summary = optionsNS.SummaryPriority("dataTexts", "bar2Width"), summaryEnabled = function() return enabled end }

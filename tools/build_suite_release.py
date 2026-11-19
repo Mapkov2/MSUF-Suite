@@ -1,6 +1,7 @@
 """Build the tracked Suite addons and Alpha upload metadata without publishing."""
 
 import argparse
+import base64
 import hashlib
 import json
 import posixpath
@@ -8,6 +9,7 @@ import re
 import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from pathlib import Path
 
 
@@ -45,18 +47,26 @@ def validate_addons(root, files, version):
         raise ValueError("MSUF must be the Suite core's required dependency")
     if "MidnightSimpleUnitFrames_Options" not in dependencies.get("MSUF_Suite_Options", []):
         raise ValueError("Suite Options must require MSUF Options")
+    external = {"MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames_Options"}
+    unknown = {name for required in dependencies.values() for name in required} - dependencies.keys() - external
+    if unknown:
+        raise ValueError(f"Missing required addon dependencies: {sorted(unknown)}")
+    visiting, resolved = set(), {name: name == "MidnightSimpleUnitFrames" for name in external}
+
+    def reaches_host(addon):
+        if addon in visiting:
+            raise ValueError(f"Required addon dependency cycle includes {addon}")
+        if addon not in resolved:
+            visiting.add(addon)
+            # Visit the ordinary dependencies even after finding a path to MSUF.
+            required = [reaches_host(name) for name in dependencies[addon]]
+            visiting.remove(addon)
+            resolved[addon] = any(required)
+        return resolved[addon]
+
     for addon in addons:
-        pending, seen = [addon], set()
-        while pending:
-            name = pending.pop()
-            if name not in seen:
-                seen.add(name)
-                pending.extend(dependencies.get(name, []))
-        if "MidnightSimpleUnitFrames" not in seen:
+        if not reaches_host(addon):
             raise ValueError(f"{addon} can load without the required MSUF host")
-        unknown = seen.difference(addons, {"MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames_Options"})
-        if unknown:
-            raise ValueError(f"Missing required addon dependencies: {sorted(unknown)}")
     # One optional language addon carries every canonical, locale-guarded catalog.
     addon = "MSUF_Suite_Locales"
     manifest = f"{addon}/{addon}_Mainline.toc"
@@ -74,6 +84,71 @@ def validate_addons(root, files, version):
     if field(content, "LoadOnDemand") != "1" or entries != expected:
         raise ValueError("Suite Locales must load exactly the ten canonical catalogs on demand")
     return addons
+
+
+_PRESET = re.compile(rb"^Suite\.(\w+Compact)\s*=\s*(.*?)(?=^Suite\.|\Z)", re.MULTILINE | re.DOTALL)
+_PRESET_PREFIXES = (b"MSUFM1:MSUF3:", b"MSKIN1:", b"MSUF3:")
+_ADDON_MEDIA = "interface/addons/"
+_MEDIA_SUFFIXES = {".tga", ".blp", ".png", ".jpg", ".jpeg", ".ttf", ".otf", ".ogg", ".wav", ".mp3"}
+_HOST_ADDONS = {"midnightsimpleunitframes", "midnightsimpleunitframes_options"}
+
+
+def _require_preset_asset(payload, origin, path):
+    path = path.replace("\\", "/")
+    if Path(path).suffix.lower() not in _MEDIA_SUFFIXES:
+        return
+    if re.match(r"^(?:[A-Za-z]:/|//)", path):
+        raise ValueError(f"Preset contains a local media path: {origin}")
+    if not path.lower().startswith(_ADDON_MEDIA):
+        return
+    relative = path[len(_ADDON_MEDIA):]
+    parts = relative.split("/")
+    if not all(parts) or any(part in (".", "..") for part in parts):
+        raise ValueError(f"Invalid preset media path: {origin} -> {path}")
+    if parts[0].lower() not in _HOST_ADDONS and relative not in payload:
+        raise ValueError(f"Missing packaged preset media: {origin} -> {relative}")
+
+
+def validate_preset_media(payload):
+    """Validate actual paths decoded from all the bundled profile variants."""
+    import cbor2
+
+    for path, content in payload.items():
+        if not path.startswith("MSUF_Suite/Core/") or not path.endswith(".lua"):
+            continue
+        for name, literal in _PRESET.findall(content):
+            compact = b"".join(re.findall(rb"\[\[(.*?)\]\]", literal, re.DOTALL))
+            prefix = next((value for value in _PRESET_PREFIXES if compact.startswith(value)), None)
+            if prefix is None:
+                continue
+            origin = f"{path}:{name.decode('ascii')}"
+            remaining = [cbor2.loads(zlib.decompress(base64.b64decode(compact[len(prefix):]), -15))]
+            while remaining:
+                value = remaining.pop()
+                if isinstance(value, dict):
+                    remaining.extend(value.values())
+                elif isinstance(value, (list, tuple)):
+                    remaining.extend(value)
+                elif isinstance(value, bytes):
+                    _require_preset_asset(payload, origin, value.decode("utf-8", errors="replace"))
+                elif isinstance(value, str):
+                    _require_preset_asset(payload, origin, value)
+    # Static art used by the bundled preset features.
+    preset_renderers = (
+        "MSUF_Suite/Core/InstallerScreenshot.lua",
+        "MSUF_Suite/Core/Catalog/ActionBars.lua",
+        "MSUF_Suite_Modules/ObjectivesVoice.lua",
+        "MSUF_Suite_Nameplates/SlantedHealth.lua",
+    )
+    addon_path = r"Interface\\\\AddOns\\\\[^\"\r\n]+"
+    for path in preset_renderers:
+        content = payload.get(path, b"").decode("utf-8")
+        for asset in re.findall(r'"(' + addon_path + r')"', content):
+            _require_preset_asset(payload, path, asset.replace("\\\\", "/"))
+        for name, directory in re.findall(r'(?m)^local (\w+) = "(' + addon_path + r')"', content):
+            pattern = rf'\b{name}\s*\.\.\s*"([^"]+)"'
+            for filename in re.findall(pattern, content):
+                _require_preset_asset(payload, path, directory.replace("\\\\", "/") + filename)
 
 
 def validate_payload(payload):
@@ -101,6 +176,7 @@ def validate_payload(payload):
             target = posixpath.normpath(posixpath.join(posixpath.dirname(path), reference.replace("\\", "/")))
             if target not in payload:
                 raise ValueError(f"Missing packaged load reference: {path} -> {reference}")
+    validate_preset_media(payload)
 
 
 def build(root, output, curseforge_client_beta=False, release_channel="alpha"):

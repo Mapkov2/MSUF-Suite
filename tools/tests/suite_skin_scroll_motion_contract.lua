@@ -52,7 +52,7 @@ hooksecurefunc = function(target, method, callback)
     end
 end
 local listeners, providers = {}, {}
-ScrollBoxListMixin = { Event = { OnLayout = "layout", OnScroll = "scroll" } }
+ScrollBoxListMixin = { Event = { OnLayout = "layout", OnScroll = "scroll", OnInitializedFrame = "initialized" } }
 local NS = { DB = { enabled = true, theme = {} }, Motion = { combat = false },
     IsCombatLocked = InCombatLockdown, Client = { isForever = arg[2] == "Forever" },
     Registry = { AddListener = function(owner, callback) listeners[owner] = callback end },
@@ -196,6 +196,21 @@ Motion.ReleaseOwner("second")
 Check(box.canInterpolateScroll == nil and bar.canInterpolateScroll == false, "release lost exact nil/false native flags")
 Check(not next(bar.thumb.callbacks.OnMouseDown) and not next(bar.thumb.callbacks.OnMouseUp), "thumb callbacks leaked after release")
 Check(not next(box.callbacks.layout), "native layout callback leaked after release")
+do
+    local persistentTarget, owner, remaining = Controller(false), {}, {}
+    local weakOwner = setmetatable({ owner }, { __mode = "v" })
+    Check(Motion.Track(persistentTarget, owner) and Motion.Track(persistentTarget, remaining),
+        "temporary owners could not share the scroll controller")
+    Motion.Release(persistentTarget, owner)
+    Check(Motion.targets[persistentTarget][owner] == nil and Motion.owners[owner] == nil
+        and persistentTarget.canInterpolateScroll == true, "release retained an owner or revoked a concurrent lease")
+    owner = nil
+    collectgarbage()
+    Check(weakOwner[1] == nil, "a live target kept a released owner reachable")
+    Motion.ReleaseOwner(remaining)
+    Check(Motion.targets[persistentTarget] == nil and Motion.owners[remaining] == nil
+        and persistentTarget.canInterpolateScroll == false, "last release retained the target index or native setting")
+end
 local hooked = #bar.hooks.OnHide
 Motion.Track(bar, "addonList")
 Motion.Release(bar, "addonList")
@@ -277,6 +292,51 @@ local pairedUnsafe, unsafe = Controller(false), Controller(false)
 pairedUnsafe.registeredScrollBar, unsafe.protected = unsafe, true
 Check(not Motion.Track(pairedUnsafe, "unsafePair") and not pairedUnsafe.canInterpolateScroll,
     "a safe controller took over an unsafe native pair")
+do
+    local target, partner = Controller(false), Controller(false)
+    target.registeredScrollBar, partner.registeredScrollBox = partner, target
+    local native = target.SetInterpolateScroll
+    function target:SetInterpolateScroll(value)
+        native(self, value)
+        if value then partner.protected = true end
+    end
+    Check(not Motion.Track(target, "protected-pair") and not target.canInterpolateScroll
+        and not partner.canInterpolateScroll and Motion.targets[target] == nil
+        and Motion.owners["protected-pair"] == nil, "new pair kept a lease after its partner became protected")
+
+    target, partner = Controller(false), Controller(false)
+    target.registeredScrollBar, partner.registeredScrollBox = partner, target
+    local function BecomesUnreadable(controller)
+        local reads = 0
+        function controller:CanInterpolateScroll()
+            reads = reads + 1
+            if reads > 1 then return secret end
+            return false
+        end
+    end
+    BecomesUnreadable(target)
+    local partnerWrites = 0
+    native = partner.SetInterpolateScroll
+    function partner:SetInterpolateScroll(value)
+        partnerWrites = partnerWrites + 1
+        native(self, value)
+    end
+    Check(not Motion.Track(target, "private-target") and partnerWrites == 0 and not partner.canInterpolateScroll
+        and Motion.targets[target] == nil and Motion.owners["private-target"] == nil,
+        "a partner was leased after its primary controller became unreadable")
+
+    target, partner = Controller(false), Controller(false)
+    Check(Motion.Track(target, "existing-primary") and target.canInterpolateScroll,
+        "a controller with no partner could not be leased")
+    local existing = Motion.targets[target]["existing-primary"]
+    target.registeredScrollBar, partner.registeredScrollBox = partner, target
+    BecomesUnreadable(partner)
+    Check(not Motion.Track(target, "existing-primary") and target.canInterpolateScroll
+        and not partner.canInterpolateScroll and Motion.targets[target]["existing-primary"] == existing
+        and Motion.owners["existing-primary"][existing], "failed reacquisition discarded an existing primary lease")
+    Motion.Release(target, "existing-primary")
+    Check(not target.canInterpolateScroll, "the previous lease lost its native restoration")
+end
 local secretFlag = Controller(secret)
 Check(not Motion.Track(secretFlag, "secret") and secretFlag.canInterpolateScroll == secret, "secret native flag was adopted")
 Check(Motion.owners.secret == nil, "rejected secret controller retained a lease")
@@ -439,15 +499,18 @@ end
 -- Only its safe rendered child moves, including first registration in combat.
 do
     local stops, probes = 0, 0
-    local function LFG(owner, rootName)
-        local rootFrame, controller, child = Frame(), Controller(false), Frame()
-        function rootFrame:GetName() return rootName or "LFGListFrame" end
-        function controller:GetParent() return rootFrame end
-        function controller:GetHeight() return 300 end
-        function controller:GetScrollTarget() return child end
+    local function KeepControllerNative(controller, owner)
         function controller:SetInterpolateScroll() error("native interpolation ownership changed on " .. owner) end
         function controller:SetScrollPercentage() error("native scroll position was written on " .. owner) end
         function controller:GetScrollInterpolator() error("native interpolator was adopted on " .. owner) end
+        controller.interpolator = { Cancel = function() error("native interpolator cancelled on " .. owner) end }
+    end
+    local function VisualList(owner, parent)
+        local controller, child = Controller(false), Frame()
+        function controller:GetParent() return parent end
+        function controller:GetHeight() return 300 end
+        function controller:GetScrollTarget() return child end
+        KeepControllerNative(controller, owner)
         function child:CreateAnimationGroup()
             local group = { scripts = {} }
             self.group = group
@@ -466,6 +529,12 @@ do
             end
             return group
         end
+        return controller, child
+    end
+    local function LFG(owner, rootName)
+        local rootFrame = Frame()
+        function rootFrame:GetName() return rootName or "LFGListFrame" end
+        local controller, child = VisualList(owner, rootFrame)
         Check(Motion.Track(controller, owner), "safe LFG renderer registration failed")
         controller:Trigger("scroll", 0.1, 0.5)
         controller:Trigger("scroll", 0.2, 0.5)
@@ -568,6 +637,112 @@ do
             "social list retained callbacks after release")
     end
     combat, NS.Motion.combat = false, false
+
+    -- Both clients parent session windows to DamageMeter. Each MinimizeContainer
+    -- hosts a list and a nested SourceWindow with its own list. Either linked
+    -- scrollbar can arrive before the corresponding list's row registration.
+    local meter, session, minimize, source = Frame(), Frame(), Frame(), Frame()
+    function meter:GetName() return "DamageMeter" end
+    function session:GetParent() return meter end
+    function minimize:GetParent() return session end
+    function source:GetParent() return minimize end
+    for _, parent in ipairs({ minimize, source }) do
+        for _, barFirst in ipairs({ false, true }) do
+            local list, content = VisualList("Damage Meter list", parent)
+            local bar = Controller(true, true)
+            KeepControllerNative(bar, "Damage Meter scrollbar")
+            if parent == minimize then
+                function bar:GetParent() return parent end
+                Check(not providers.bar[1](bar, "meter-unlinked") and not Motion.states[bar],
+                    "an unlinked native Damage Meter scrollbar changed its controller")
+            end
+            if not barFirst then
+                Check(providers.generic[1](list, "meter-first"), "the native list could not attach before its scrollbar")
+            end
+            list.registeredScrollBar, bar.registeredScrollBox = bar, list
+            local first = barFirst and providers.bar or providers.generic
+            local second = barFirst and providers.generic or providers.bar
+            local firstTarget = barFirst and bar or list
+            local secondTarget = barFirst and list or bar
+            combat, NS.Motion.combat = barFirst, barFirst
+            Check(first[1](firstTarget, "meter-first") and second[1](secondTarget, "meter-second"),
+                "Damage Meter list or scrollbar lost its visual lease")
+            Check(not Motion.states[list] and not Motion.states[bar] and not next(bar.thumb.callbacks),
+                "Damage Meter joined the native controller or thumb hook path")
+            list:Trigger("scroll", 0.1, 0.5)
+            list:Trigger("scroll", 0.2, 0.5)
+            Check(content.group and content.group.playing and content.group.move.offset == -8,
+                "Damage Meter lost bounded scroll easing")
+            list:Trigger("layout")
+            Check(not content.group.playing, "Damage Meter kept displacement after a native reflow")
+            list:Trigger("scroll", 0.3, 0.5)
+            list:Trigger("scroll", 0.4, 0.5)
+            bar.thumb.down = true
+            list:Trigger("scroll", 0.5, 0.5)
+            Check(not content.group.playing, "Damage Meter eased motion during a late-linked scrollbar drag")
+            bar.thumb.down = false
+            list:Trigger("scroll", 0.6, 0.5)
+            list:Trigger("scroll", 0.7, 0.5)
+            Motion.ReleaseOwner("meter-first")
+            Check(content.group.playing and next(list.callbacks.scroll),
+                "one owner released the other's Damage Meter animation")
+            Motion.ReleaseOwner("meter-second")
+            Check(not content.group.playing and not next(list.callbacks.scroll) and not next(list.callbacks.layout),
+                "Damage Meter retained hooks or animation work after the last owner was released")
+            Check(list.canInterpolateScroll == false and bar.canInterpolateScroll == true,
+                "Damage Meter replaced Blizzard's interpolation preferences")
+        end
+    end
+    combat, NS.Motion.combat = false, false
+
+    -- Follow the actual adapter → row registration → menu motion path.
+    -- The adapter's owner state differs from the public skin ID.
+    NS.DB.hud = { damageMeterDetails = true }
+    NS.GenericWindows.SetContentMotionProvider = Noop
+    NS.GenericWindows.SetMenuMotionProvider = Noop
+    NS.Adapters = { SetMenuMotionProvider = Noop }
+    NS.Checkmarks = { SetSettingsMotionProvider = Noop, UntrackOwner = Noop }
+    NS.PublicAPI = {}
+    NS.SocialUISkin = { SetMotionProvider = Noop }
+    NS.ContentMotion = { Watch = Noop, StopOwner = Noop }
+    NS.CollapseCollections = { Track = Noop }
+    NS.AddonListMotion = { Track = Noop, DisableOwner = Noop }
+    NS.Surface = { Attach = Noop }
+    NS.Cosmetics = { SuppressVertexAlpha = Noop, RestoreOwner = Noop }
+    NS.WindowActionSkin = { DisableOwner = Noop }
+    function meter:ForEachSessionWindow(callback) callback(session) end
+    session.MinimizeContainer, minimize.SourceWindow = minimize, source
+    local function MeterList(parent)
+        local list, content = VisualList("Damage Meter adapter list", parent)
+        function list:GetObjectType() return "Frame" end
+        function list:GetDataProvider() end
+        list.CreateAnimationGroup = Noop
+        parent.ScrollBox = list
+        return list, content
+    end
+    local sessionList, sessionContent = MeterList(minimize)
+    local sourceList, sourceContent = MeterList(source)
+    Load("Adapters/AdapterKit.lua")
+    Load("Rendering/ResultMotion.lua")
+    Load("Rendering/MenuMotion.lua")
+    Load("Adapters/DamageMeter.lua")
+    for _ = 1, 2 do
+        Check(NS.DamageMeterSkin.Apply(meter, "damageMeter"), "Damage Meter adapter did not bind its lists")
+        for _, list in ipairs({ sessionList, sourceList }) do
+            Check(next(list.callbacks.initialized) and next(list.callbacks.scroll) and not Motion.states[list],
+                "Damage Meter adapter did not adopt row and render callbacks independently of the controller")
+            list:Trigger("scroll", 0.1, 0.5)
+            list:Trigger("scroll", 0.2, 0.5)
+        end
+        Check(sessionContent.group.playing and sourceContent.group.playing, "Damage Meter adapter lost scroll easing")
+        Check(NS.DamageMeterSkin.Disable(meter, "damageMeter"), "Damage Meter adapter could not disable")
+        for _, list in ipairs({ sessionList, sourceList }) do
+            Check(not next(list.callbacks.initialized) and not next(list.callbacks.scroll) and not next(list.callbacks.layout),
+                "Damage Meter retained native row or motion callbacks after disable")
+        end
+        Check(not sessionContent.group.playing and not sourceContent.group.playing,
+            "disabled Damage Meter retained scroll animations")
+    end
 end
 Check(scriptWrites == 0, "native wheel/update scripts were replaced")
 for _, frame in ipairs(frames) do Check(frame.scripts.OnUpdate == nil, "Suite installed an idle update loop") end

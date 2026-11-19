@@ -3,6 +3,8 @@ local Tr = P.Tr
 -- The help of each settings section of the Quality of Life page, by section key:
 -- the "?" popup of a feature and the tooltip of its row show it (QualityOfLife.lua).
 local HELP = {
+    navigation_hud = "The map follows you in the open world and lets clicks pass through. "
+        .. "Use the shortcut to open or close it. Move the map and compass in MSUF Edit Mode.",
     keystone_preparation = "Adds ready check and countdown buttons below the keystone window for the group leader or assistant. "
         .. "Left-click starts the normal countdown; right-click starts the short countdown. Click again to cancel. "
         .. "Closing the window cancels your countdown when Blizzard allows it. Start the keystone with Blizzard's Start button.",
@@ -17,7 +19,9 @@ local HELP = {
         .. "quest sparkle keeps its own appearance.",
     auto_uprank = "Updates newly learned ranks after combat with an empty cursor. Lower ranks and macros are preserved by default.",
     self_combat_text = "Shows incoming damage and healing for you or your vehicle. Blizzard's own combat text is hidden while enabled and restored when disabled. Move the display in MSUF Edit Mode. During heavy bursts the oldest of the visible messages is replaced. The game may keep amounts private, so messages are never combined or filtered by their value.",
-    floating_combat_text = "Enemy nameplates must be visible. Estimated hits can miss periodic damage or hits on other targets. All hits includes damage from other players.",
+    floating_combat_text = "Choose where each kind of text scrolls. Click an event to preview its movement.",
+    floating_combat_text_hits = "Nameplate placement requires a visible enemy nameplate. Blizzard's hit event does not identify the attacker.",
+    floating_combat_text_gains = "XP, reputation, honor, resources and combat state can be enabled separately.",
     character_extras = "A small summary sits beside the Character tab of your character sheet and leaves with it. It lists your gear with gem sockets and how many are filled, open ones in amber (click a line to open socketing), the total durability of your gear and, if you like, your PvP item level. Its buttons open the Great Vault and the current expansion page. It updates while the sheet is open, at most once per frame.",
     character_model = "Shows the total durability of your gear on the character model, moved by the two offsets, and crops the edges of the gear slot icons on your character sheet and in the Inspect window.",
     character_flyouts = "Equipment choices (the list that opens from a gear slot) show the item level on each item, so you can compare without hovering. The arrows beside the gear slots can be hidden; hold Alt over a slot to open its choices.",
@@ -103,10 +107,21 @@ local HELP = {
     flight_hud = "Retail only. Shows while Skyriding is available, or only in flight if selected. Choose bars or Blizzard Vigor gems; gem scale and a refill sound are optional. Separate bar heights, Surge icon size and speed-value offsets are under Text and bars. MSUF Edit Mode previews the HUD. Unknown charge values display as dashes.",
     threat_meter = "WoW Forever only. Lists your group's threat on the watched enemy from Blizzard's threat data, highest first; for a friendly target, its enemy is used. Values the game keeps hidden are left out. Turn the mouse wheel over the window when more members are listed than rows fit. The red mark shows where you would take aggro, which is not the point where you match the tank. The meter repaints at most five times a second and reads no combat log.",
     flight_route = "Forever only. Route times are learned from completed flight-master journeys and kept in this profile. A first journey has no invented estimate. Early landing does not overwrite a full-route time. Intermediate stops come from the native taxi map; its tooltip can preview the route. Land at next stop requests the next available landing point.",
+    flight_bar = "Shows the flight as one slim bar instead of the card: the destination on the left, the time left on the right "
+        .. "and a bar the game fills until you arrive. MSUF Forever matches the Forever skin with graphite glass, a "
+        .. "gold-trimmed frame and a gold fill; Modern is the slim dark bar without a frame. The bar follows the Suite "
+        .. "look chosen under Skinning: MSUF Forever there draws MSUF Forever, any other look draws Modern in that "
+        .. "look's accent color. A style chosen here sets its bar color and holds until the Suite look changes. "
+        .. "A route without a known time counts up with an empty bar. Land at next stop is only on the card. "
+        .. "While you fly, the bar can take the place and size of the MSUF experience bar; the experience bar returns "
+        .. "when you land.",
     flight_typography = "Choose an MSUF or SharedMedia font and bar texture. Font size, outline, shadow, Smooth/Sharp/Slug rendering, bar height and spacing update the HUD immediately. Slug has no shadow.",
     flight_colors = "Pick a preset above or use the three color dots in this header for your own colors. Changing a color marks the look as Custom. Panel opacity and empty bar opacity are separate.",
     player_auras = "Restyles Blizzard's own buff and debuff buttons beside the minimap: icon size, icons per row, spacing, outline, text and where the block sits. Blizzard still owns the auras, their tooltips and right-click cancelling. Set the position and the debuff row offsets here, or drag each row in MSUF Edit Mode; Blizzard's Edit Mode does not place them. Each row's icon skin is chosen on the Icon Skins page.",
     player_aura_skins = "Gives Blizzard's player buffs and debuffs the icon skins you chose on the Icon Skins page, at Blizzard's own size and layout. The skins are painted once, out of combat, and no code runs on aura updates. While Player aura layout is on, it paints the buttons itself and this switch waits.",
+    world_quest_tab = "Retail only. Lists the world quests of the area your world map shows, with their rewards. "
+        .. "Filter by reward type or search quests and rewards, and select a quest to track it. "
+        .. "The shortest remaining time comes first.",
     quest_reward_value = "Forever only. When a quest offers a choice of rewards, the one with the highest vendor value, counting its stack size, is marked. Nothing is selected or turned in for you.",
     auction_price_tooltip = "Show auction prices, vendor sell prices and what a replacement costs after selling the equipped item.",
     mail_recipients = "Remembers your characters that you visit while this helper is on and lists them beside the mail window. Click a name to fill the recipient, right-click to hide or restore it, and search by name. Only characters on your current or connected realms are listed. Sending stays manual.",

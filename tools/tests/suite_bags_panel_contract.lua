@@ -34,7 +34,7 @@ for _, height in ipairs({600, 768, 1080}) do
             assert(t.feather:IsShown() and t.heading:IsShown() and not t[1]:IsShown(), "panel decoration missing")
             assert(W.CF.TitleContainer.TitleText:GetAlpha() == 0, "native title duplicates own panel title")
             for _, control in pairs(V.tabs) do Inside(W, control, W.CF) end
-            for _, control in ipairs({V.equipped,V.cleanup,V.manage,V.clearRecent}) do Inside(W, control, W.CF) end
+            for _, control in ipairs({V.equipped,V.cleanup,V.manage,V.listToggle}) do Inside(W, control, W.CF) end
             for _, cell in ipairs(V.model.layout) do
                 if not cell.row then assert(cell.column == 0, "panel categories must stack vertically") end
             end

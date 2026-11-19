@@ -150,7 +150,7 @@ B.Section("durabilityAlert", "durability_warning", "Low durability warning", {
 
 -- The shared battle-resurrection pool is only meaningful during an active
 -- Mythic+ run or raid encounter. Blizzard owns the charge countdown itself.
-B.Module("battleRes", {
+local battleRes = B.Module("battleRes", {
     title = "Battle resurrection",
     description = "Show available shared battle resurrections and the next recharge in Mythic+ and raid encounters.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
@@ -175,6 +175,45 @@ B.Section("battleRes", "battle_res", "Battle resurrection", {
 })
 
 NS.SuiteCatalog.battleRes.rules.glossStrength.enableKey = "glossEnabled"
+
+-- The editor and the display share the layer keys. Empty media selections
+-- inherit the original appearance, and zero dimensions follow the card.
+battleRes.layers = {
+    { "background", "Background", {
+        Number("backgroundOpacity", "Background opacity (percent)", 92, 0, 100),
+        B.Texture("backgroundTexture", "Background texture"),
+        Number("backgroundWidth", "Width (0 = automatic)", 0, 0, 350),
+        Number("backgroundHeight", "Height (0 = automatic)", 0, 0, 180),
+    } },
+    { "border", "Border", {
+        Number("borderOpacity", "Border opacity (percent)", 95, 0, 100),
+        B.Texture("borderTexture", "Border texture"),
+        Number("borderWidth", "Width (0 = automatic)", 0, 0, 350),
+        Number("borderHeight", "Height (0 = automatic)", 0, 0, 180),
+        Number("borderThickness", "Border thickness", 1, 1, 12),
+    } },
+    { "icon", "Icon", {
+        Number("iconSize", "Icon size", 38, 8, 100),
+        B.Tooltip(B.String("iconTexture", "Icon texture path or file ID", "", 260), "Leave blank to use the spell icon."),
+    } },
+    { "title", "Title", { Number("titleSize", "Font size", 11, 6, 48), B.Font("titleFont", "Font") } },
+    { "count", "Charges", { Number("countSize", "Size (0 = automatic)", 0, 0, 48), B.Font("countFont", "Font") } },
+    { "maximum", "Maximum charges", { Number("maximumSize", "Font size", 12, 6, 48), B.Font("maximumFont", "Font") } },
+    { "timer", "Recharge timer", {
+        Number("timerSize", "Timer size (percent)", 100, 40, 250),
+        B.Texture("timerTexture", "Cooldown swipe texture"),
+    } },
+}
+
+for _, layer in ipairs(battleRes.layers) do
+    local key, label, extras = unpack(layer)
+    local rules = { Bool(key .. "Shown", "Show element", true),
+        Number(key .. "X", "Horizontal offset", 0, -160, 160),
+        Number(key .. "Y", "Vertical offset", 0, -120, 120) }
+    for _, rule in ipairs(extras) do rules[#rules + 1] = rule end
+    layer.rules, layer.section = rules, "battle_res_" .. key
+    B.Section("battleRes", layer.section, label, rules)
+end
 
 -- The flight HUD is Retail-only and remains dormant until explicitly enabled.
 B.Module("skyriding", {

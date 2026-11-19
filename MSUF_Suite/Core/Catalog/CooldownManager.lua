@@ -43,6 +43,15 @@ B.Module("cooldownManager", {
 })
 local id = "cooldownManager"
 
+local native = NS.CatalogBuild.ForAddon("MSUF_Suite_Modules").Module("nativeCooldownVisibility", {
+    title = "Hide Blizzard cooldown bars when Suite manager is off",
+    description = "Keep the native cooldown rows out of the layout while the Suite cooldown manager is disabled.",
+    page = "suite_cooldownManager", optIn = true, defaultEnabled = false, follows = id,
+    cvars = { cooldownViewerEnabled = true },
+    conflicts = NS.SuiteCatalog[id].conflicts,
+})
+native.rules.enabled.label = native.title
+
 ------------------------------------------------------------------ slots
 -- Bar kinds, the values of the "Bar type" choice: cooldown icons, aura
 -- (buff) icons and aura bars. Categories are Enum.CooldownViewerCategory

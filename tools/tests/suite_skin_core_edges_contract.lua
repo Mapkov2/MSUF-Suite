@@ -50,12 +50,14 @@ local NS = {
         GetExplicitKind = function() return nil end,
         DisableOwner = function() end },
 }
--- Safety reads issecretvalue at load; the button walk below assigns it later.
+local secretTexture = setmetatable({}, { __index = function() error("contract: indexed a secret texture") end })
+issecretvalue = function(value) return rawequal(value, secretTexture) end
 dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
 for _, file in ipairs({ "Core/Defaults.lua", "Core/DefaultsLooks.lua", "Core/Database.lua", "Core/Safety.lua",
     "Core/Registry.lua", "Core/CombatGate.lua", "Core/Theme.lua", "Core/Checkmarks.lua",
     "Core/CheckmarksMenus.lua" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
+    local override = file == "Core/Checkmarks.lua" and os.getenv("SUITE_CHECKMARKS_SOURCE")
+    assert(loadfile(override or root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 
 ------------------------------------------------------------------ Clamp and NaN
@@ -220,6 +222,24 @@ NS.Checkmarks.TrackButton(close, "walk")
 Check(close.normalReads == 1 and states[closeNormal] and states[closeNormal].colorRole == "blizzardClose"
     and states[closeHighlight] and states[closeHighlight].colorRole == "blizzardCloseHover",
     "button tracking read the normal texture more than once or lost the close and hover roles")
+
+-- A cache miss can encounter an unreadable texture on recycled buttons. It
+-- must neither try to index it nor cache it for later comparisons.
+local unknown = Button(nil)
+function unknown:GetHighlightTexture() return secretTexture end
+for _ = 1, 3 do
+    Check(not NS.Checkmarks.TrackButton(unknown, "secret-cache"), "unreadable texture classified as art")
+end
+
+local unsafeAction = Button(nil)
+function unsafeAction:GetNormalTexture() return secretTexture end
+Check(NS.Checkmarks.DetectWindowAction(unsafeAction) == nil, "unreadable normal texture classified as a window action")
+function unsafeAction:GetNormalTexture() return closeNormal end
+local pushed = Texture("redbutton-exit-pressed")
+function unsafeAction:GetPushedTexture() return pushed end
+Check(NS.Checkmarks.DetectWindowAction(unsafeAction) == "close", "public window action art stopped matching")
+function unsafeAction:GetDisabledTexture() return secretTexture end
+Check(NS.Checkmarks.DetectWindowAction(unsafeAction) == nil, "unreadable disabled texture accepted as a window action")
 
 Check(#reported == 0, "the skin core reported errors: " .. table.concat(reported, "; "))
 

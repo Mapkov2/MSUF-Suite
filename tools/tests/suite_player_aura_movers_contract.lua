@@ -117,7 +117,7 @@ local P = { NS = {
     Dispatch = function(fn, ...) return fn(...) end, Finish = function(fn, ...) return true, fn(...) end,
     IsSecret = function() return false end, DB = {},
     Safety = { IsForbidden = function(r) return r.forbidden == true end },
-    HostBridge = { IconSkinLook = function() end, PaintIconSkin = function() return false end,
+    HostBridge = { PlayerAuraSkin = function() end, PaintIconSkin = function() return false end,
         WatchIconSkins = function() end, SuppressEditElement = function() end,
         RefreshSuppressedEditElements = function() end },
     MSUFMedia = { font = "native.ttf" },
@@ -276,6 +276,9 @@ assert(writes == 0 and config.x == x0 and config.y == y0, "a drag preview wrote 
 AtMinimap(BuffFrame, x0, y0, "buff preview")
 Shifted(BuffFrame, 14, -7, "buff preview")
 Shifted(DebuffFrame, 14, -7, "buff preview carries the debuffs")
+events.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_Collections")
+Shifted(BuffFrame, 14, -7, "an unrelated addon load during the buff preview")
+Shifted(DebuffFrame, 14, -7, "an unrelated addon load during the carried preview")
 -- Blizzard lays the auras out again mid-drag (UNIT_AURA): the preview holds.
 BuffFrame:UpdateGridLayout()
 DebuffFrame:UpdateGridLayout()
@@ -427,5 +430,16 @@ module.active = true
 S.states.playerAuras.active = true
 module:Enable()
 Pinned("enabled again after a preview and Disable")
+
+-- The matching load event adopts frames that were unavailable at enable.
+module:Disable()
+local nativeBuffs, nativeDebuffs = BuffFrame, DebuffFrame
+BuffFrame, DebuffFrame = nil, nil
+module:Enable()
+assert(not buffs.isEnabled() and not debuffs.isEnabled(), "movers used frames from before native loading")
+BuffFrame, DebuffFrame = nativeBuffs, nativeDebuffs
+events.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_BuffFrame")
+assert(buffs.isEnabled() and debuffs.isEnabled(), "the native addon load did not reapply the layout")
+Pinned("native addon loaded")
 print("Player aura movers: Suite handles, preview without system overrides, commit, debuff offsets, scale, range, "
     .. "screen clamp, refused preview, cancel, combat, Edit Mode exit, disable: OK")

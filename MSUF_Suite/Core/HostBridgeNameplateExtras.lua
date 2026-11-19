@@ -39,6 +39,12 @@ function Bridge.NameplateRangeSpell(friendly)
     return 0
 end
 
+function Bridge.TargetResourceFrame()
+    local host = Bridge.Namespace()
+    local frames = host and host.UF and host.UF.frames
+    return frames and frames.target or _G.MSUF_target
+end
+
 function Bridge.NameplateResource()
     local host = Bridge.Namespace()
     local resolver = host and host.CPBuilders and host.CPBuilders.ClassPowerType

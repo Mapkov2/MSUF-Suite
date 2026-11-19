@@ -88,6 +88,13 @@ local function Layout(self, key, host)
     if host.layoutSerial == self.layoutSerial then return end
     host.layoutSerial = self.layoutSerial
     host:SetScale(c.scale / 100)
+    if c.numberMode == 2 then
+        host.valueField, host.valueFormat = "raw", S.Text("%.1f%% of tank")
+    elseif c.numberMode == 3 then
+        host.valueField, host.valueFormat = "scaled", S.Text("%.1f%% of pull")
+    else
+        host.valueField, host.valueFormat = "threat", "%.0f"
+    end
     host:SetSize(c.width, 23 + c.rows * (c.rowHeight + 2))
     host:ClearAllPoints()
     host:SetPoint("CENTER", UIParent, "CENTER", c[key .. "X"], c[key .. "Y"])
@@ -97,6 +104,7 @@ local function Layout(self, key, host)
         bar:ClearAllPoints()
         bar:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -23 - (i - 1) * (c.rowHeight + 2))
         bar:SetSize(c.width, c.rowHeight)
+        bar.marker:SetSize(2, c.rowHeight)
         S.QoLStyleText(bar.text, c, font, c.fontSize)
     end
 end
@@ -148,14 +156,11 @@ local function Collect(self, key, enemy)
     return data, highest, playerScaled, threshold
 end
 
-local function ValueText(c, record)
-    if c.numberMode == 2 then return S.Text("%.1f%% of tank"):format(record.raw) end
-    if c.numberMode == 3 then return S.Text("%.1f%% of pull"):format(record.scaled) end
-    return string.format("%.0f", record.threat)
-end
-
 local function PaintRows(self, host, data, maximum, threshold)
     local c = self.config
+    local marker
+    if c.showThreshold and threshold and threshold > 0 then marker = c.width * math.min(1, threshold / maximum) end
+    local markerShown = marker ~= nil
     for i, bar in ipairs(host.rows) do
         local record = i <= c.rows and data[i + host.offset]
         bar:SetShown(record ~= nil and record ~= false)
@@ -165,13 +170,16 @@ local function PaintRows(self, host, data, maximum, threshold)
             local color = S.Public(class) and RAID_CLASS_COLORS[class]
             bar:SetStatusBarColor(color and color.r or .45, color and color.g or .65, color and color.b or .9)
             local name = UnitName(record.unit)
-            bar.text:SetText((S.Public(name) and name or "--") .. "  " .. ValueText(c, record))
-            local marker = c.showThreshold and threshold and threshold > 0
-            bar.marker:SetShown(marker == true)
-            if marker then
+            local value = string.format(host.valueFormat, record[host.valueField])
+            bar.text:SetText((S.Public(name) and name or "--") .. "  " .. value)
+            if markerShown ~= bar.markerShown then
+                bar.markerShown = markerShown
+                bar.marker:SetShown(markerShown)
+            end
+            if markerShown and marker ~= bar.markerX then
+                bar.markerX = marker
                 bar.marker:ClearAllPoints()
-                bar.marker:SetPoint("LEFT", bar, "LEFT", c.width * math.min(1, threshold / maximum), 0)
-                bar.marker:SetSize(2, c.rowHeight)
+                bar.marker:SetPoint("LEFT", bar, "LEFT", marker, 0)
             end
         end
     end

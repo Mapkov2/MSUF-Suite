@@ -25,6 +25,7 @@ function Navigation.EnableLinks()
 end
 
 function Navigation.Changed()
+    EventRegistry:TriggerEvent("MSUF_Suite.SavedWaypointsChanged")
     local owner = Navigation.owner
     if owner then
         Suite.ToolListWindow.Refresh(owner)
@@ -127,7 +128,7 @@ local function Rows()
     local rows = {}
     for index, point in ipairs(Suite.WaypointPoints() or {}) do
         rows[#rows + 1] = { key = index, point = point, label = point.name,
-            detail = Suite.Text("%s · %.1f, %.1f"):format(point.list, point.x * 100, point.y * 100) }
+            detail = Suite.Text("%s · %.1f, %.1f", true):format(point.list, point.x * 100, point.y * 100) }
     end
     return rows
 end

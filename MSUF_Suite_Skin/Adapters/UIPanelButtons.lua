@@ -348,7 +348,7 @@ local function AdoptFrame(frame, managesAuraButton)
         and NS.Safety.Public(rawArtKit) and rawArtKit == native.setButtonArtKit
     local hasController = native.controllerOnShow ~= nil
         and NS.Safety.Public(rawOnShow) and rawOnShow == native.controllerOnShow
-    local isButton = native.legacyOnShow ~= nil and type(frame.GetButtonState) == "function"
+    local isButton = native.legacyOnShow ~= nil and NS.Safety.ReadableMethod(frame, "GetButtonState") ~= nil
     if not hasArtKit and not hasController and not isButton then return end
     -- SmartNavigation's helper forbids script bindings without IsForbidden.
     -- Skip restricted or unreadable objects before inspecting native handlers.
@@ -379,8 +379,8 @@ end
 -- straight to the candidate filter in AdoptFrame.
 local function AdoptExistingButtons()
     if UIPanelButtons.adopted or type(EnumerateFrames) ~= "function" then return end
-    local managesAuraButton = Field(Field(_G.MSUFSuite, "HostBridge"), "ManagesAuraButton")
-    if type(managesAuraButton) ~= "function" then managesAuraButton = nil end
+    local bridge = Field(Field(_G, "MSUFSuite"), "HostBridge")
+    local managesAuraButton = HasMethod(bridge, "ManagesAuraButton") and bridge.ManagesAuraButton or nil
     UIPanelButtons.adopted = true
     local frame = EnumerateFrames()
     while frame do

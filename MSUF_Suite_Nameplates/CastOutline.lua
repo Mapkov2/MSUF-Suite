@@ -39,8 +39,37 @@ local function BaseColor(settings, visible)
     return color
 end
 
-local function PaintSecret(visual, targeted, normal)
-    for i = 1, 4 do visual.edges[i]:SetVertexColorFromBoolean(targeted, warningColor, normal) end
+local function PaintSecret(state, targeted, normal)
+    if state.slanted then
+        state.rim:SetVertexColorFromBoolean(targeted, warningColor, normal)
+    else
+        for i = 1, 4 do state.visual.edges[i]:SetVertexColorFromBoolean(targeted, warningColor, normal) end
+    end
+end
+
+local function BooleanColor(state, targeted)
+    state.booleanColor = BaseColor(state.settings, state.width > 0)
+    warningColor = warningColor or CreateColor(warning.outlineR, warning.outlineG, warning.outlineB, warning.outlineA)
+    PaintSecret(state, targeted, state.booleanColor)
+end
+
+local function PaintRim(cast, state, size, targeted, known, active)
+    if size == 0 then
+        if state.rim then state.rim:Hide() end
+        return
+    end
+    local rim = state.rim
+    if not rim then
+        rim = private.SlantedHealth.CreateRim(cast, "ARTWORK", 5)
+        state.rim = rim
+    end
+    if known then
+        local color = active and warning or state.settings
+        rim:SetVertexColor(color.outlineR or 0, color.outlineG or 0, color.outlineB or 0, color.outlineA or 1)
+    else
+        BooleanColor(state, targeted)
+    end
+    rim:Show()
 end
 
 local function PaintEdges(cast, state, targeted, known)
@@ -51,6 +80,7 @@ local function PaintEdges(cast, state, targeted, known)
         state.lastTarget = nil
     end
     local size = width > 0 and width or ((active or not known) and state.warningWidth or 0)
+    if state.slanted then return PaintRim(cast, state, size, targeted, known, active) end
     if size == 0 then
         if visual then Style.PaintBorder(visual, cast, 0) end
         return
@@ -65,9 +95,7 @@ local function PaintEdges(cast, state, targeted, known)
         Style.PaintCastOutline(visual, cast, size, active and warning or state.settings)
     else
         Style.PaintBorder(visual, cast, size, "ffffff")
-        state.booleanColor = BaseColor(state.settings, width > 0)
-        warningColor = warningColor or CreateColor(warning.outlineR, warning.outlineG, warning.outlineB, warning.outlineA)
-        PaintSecret(visual, targeted, state.booleanColor)
+        BooleanColor(state, targeted)
         visual.r, visual.g, visual.b, visual.a = nil, nil, nil, nil
     end
 end
@@ -82,7 +110,7 @@ local function OnTargetChanged(cast, targeted)
         return
     end
     if not known and state.booleanColor then
-        PaintSecret(state.visual, targeted, state.booleanColor)
+        PaintSecret(state, targeted, state.booleanColor)
     else
         PaintEdges(cast, state, targeted, known)
     end
@@ -112,15 +140,36 @@ local function PaintNativeTarget(cast, state, replace, reset)
     return true
 end
 
+local function SetShape(cast, state, enabled)
+    local slant = private.SlantedHealth
+    if not slant or not (enabled or state.castMask) then return true end
+    if not slant.MaskCast(cast, state, enabled, Writable) then return false end
+    if enabled ~= state.slanted then
+        if enabled and state.visual then Style.PaintBorder(state.visual, cast, 0) end
+        if not enabled and state.rim then state.rim:Hide() end
+        state.slanted = enabled
+    end
+    return true
+end
+
+function Outline.RefreshShape(cast)
+    local state = Public(cast) and states[cast]
+    if not state or not state.slanted then return true end
+    if not Writable(cast) then return false end
+    return private.SlantedHealth.MaskCast(cast, state, true, Writable, Mutable)
+end
+
 function Outline.Paint(cast, settings, reset)
     local width = settings and settings.outlineSize
     local replace = settings and settings.targetHighlight == true
+    local slanted = settings and settings.slanted == true and private.SlantedHealth ~= nil or false
     local state = states[cast]
     if not state then
-        if width == nil and not replace then return true end
+        if width == nil and not replace and not slanted then return true end
         state = {}
         states[cast] = state
     end
+    local shapeDone = SetShape(cast, state, slanted)
     local targetDone = PaintNativeTarget(cast, state, replace, reset)
     state.targetActive = replace and state.targetRegion ~= nil
     state.settings, state.width = settings, width or 0
@@ -133,5 +182,6 @@ function Outline.Paint(cast, settings, reset)
     local targeted
     if state.targetActive then targeted = cast:GetIsHighlightedCastTarget() end
     PaintEdges(cast, state, targeted, Public(targeted))
-    return NativeAlpha(state, "borderAlpha", cast.Border, width ~= nil, reset) and targetDone
+    local borderDone = NativeAlpha(state, "borderAlpha", cast.Border, width ~= nil or state.slanted == true, reset)
+    return borderDone and targetDone and shapeDone
 end

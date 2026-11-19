@@ -166,10 +166,12 @@ local function Attach(owner)
     return true
 end
 
--- The detached hit area must follow a caption moved under a stationary cursor.
+-- The detached hit area must follow a caption or restore tab under a stationary cursor.
 function Delegate.Refresh(owner)
     if not secure or secure.owner ~= owner or secure.clicking or secure.dragging or NS.IsCombatLocked() then return end
-    if Safety.Read(owner, "IsMouseOver") ~= true or not Attach(owner) then Release() end
+    if Safety.Read(owner, "IsVisible") ~= true or Safety.Read(owner, "IsMouseOver") ~= true or not Attach(owner) then
+        Release()
+    end
 end
 
 local function Bind(owner, state, role, prepare, finish)
@@ -177,6 +179,7 @@ local function Bind(owner, state, role, prepare, finish)
     bound[owner] = { state = state, role = role, prepare = prepare, finish = finish }
     owner:HookScript("OnEnter", Attach)
     owner:HookScript("OnHide", OwnerHidden)
+    if role == "restore" then hooksecurefunc(owner, "SetPoint", Delegate.Refresh) end
 end
 
 -- prepare(state): minimize's bookkeeping, false when the window may not go now.

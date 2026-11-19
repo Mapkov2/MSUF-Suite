@@ -1,7 +1,6 @@
 local _, NS = ...
 
--- The map grip is our own button. Use the same material and hover/pressed
--- states as Suite controls instead of the old unframed chat grabber artwork.
+-- Use Suite material and hover/pressed states for the owned map grip.
 local Chrome = {}
 NS.WindowControlChrome = Chrome
 local Safety = NS.Safety
@@ -483,7 +482,6 @@ local function PlaceCell(cell, anchor, width, height, level, kind)
     return cell
 end
 
--- Blizzard's size toggle shows its maximize or its restore button.
 local function ToggleCell(state, anchor, width, height, level)
     local toggle = state.sizeToggle
     local maximize = Safety.Field(toggle, "MaximizeButton")

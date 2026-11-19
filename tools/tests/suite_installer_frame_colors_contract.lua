@@ -14,6 +14,7 @@ local function Equal(a, b)
     return true
 end
 local MODES = { "class", "dark", "unified" }
+local UNIT_COLOR, GROUP_COLOR = "336699", "cc3366"
 local authored = { general = { barMode = "dark", darkBarGray = .2,
     unifiedBarR = .1, unifiedBarG = .6, unifiedBarB = .9, font = "Expressway" },
     player = { healthColorMode = "DARK", width = 310, offsetX = -320 },
@@ -24,10 +25,21 @@ local authored = { general = { barMode = "dark", darkBarGray = .2,
 
 local function Setup(forever)
     local Suite = H.Setup({ root = root, forever = forever })
+    ColorPickerFrame = H.Widget("Frame")
+    ColorPickerFrame:Hide()
+    function ColorPickerFrame:SetupColorPickerAndShow(info)
+        self.r, self.g, self.b = info.r, info.g, info.b
+        self.swatchFunc, self.cancelFunc = info.swatchFunc, info.cancelFunc
+        self:Show()
+    end
+    function ColorPickerFrame:GetColorRGB() return self.r, self.g, self.b end
     local encoded, serial = {}, 0
     local decode, encode = MSUF_TryDecodeCompactString, MSUF_EncodeCompactTable
     MSUF_TryDecodeCompactString = function(text)
         if encoded[text] then return Copy(encoded[text]) end
+        if text == "MSUF3:frames" then
+            return { addon = "MSUF", fmt = 2, schema = 600, kind = "all", payload = Copy(MSUF_DB) }
+        end
         if text == Suite.ClassicFactoryFramesCompact or text == Suite.ForeverFactoryFramesCompact
             or text == Suite.ModernDarkFramesCompact then
             return { addon = "MSUF", fmt = 2, schema = 1, kind = "all", payload = { player = { width = 1 } },
@@ -67,23 +79,43 @@ local function Setup(forever)
     return Suite, assert(MSUFSuiteInstallFrame)
 end
 
+local function Choice(window, index, mode)
+    for _, button in ipairs(window.layoutPreview.frameColors[index].buttons) do
+        if button.mode == mode then return button end
+    end
+    error("missing color choice " .. mode)
+end
+
+local function Choose(Suite, window, index, mode, cancel)
+    local button = Choice(window, index, mode)
+    assert(button:IsShown(), "frame color control is hidden")
+    button.scripts.OnClick()
+    if mode ~= "unified" then return end
+    local picker = ColorPickerFrame
+    assert(picker:IsShown() and window:GetFrameStrata() == "HIGH", "Unified did not open the picker in front of setup")
+    picker.r, picker.g, picker.b = Suite.RGB(index == 1 and UNIT_COLOR or GROUP_COLOR)
+    picker.swatchFunc()
+    if cancel then picker.cancelFunc() end
+    picker:Hide()
+    assert(window:GetFrameStrata() == "DIALOG", "closing the picker did not restore setup")
+end
+
 for _, forever in ipairs({ false, true }) do
     for _, layout in ipairs({ "classic", "forever", "modernDark" }) do
-        for unitIndex, unit in ipairs(MODES) do
-            for groupIndex, group in ipairs(MODES) do
+        for _, unit in ipairs(MODES) do
+            for _, group in ipairs(MODES) do
                 local Suite, window = Setup(forever)
                 window.next.scripts.OnClick() -- layouts
                 window[layout].scripts.OnClick()
                 window.next.scripts.OnClick() -- modules
                 window.next.scripts.OnClick() -- frame choices + scale
                 local rows = assert(window.layoutPreview.frameColors, "setup has no independent frame color choices")
-                assert(#rows == 2 and #rows[1].buttons == 3 and #rows[2].buttons == 3)
-                assert(rows[1].buttons[1]:IsShown() and rows[2].buttons[3]:IsShown())
+                assert(#rows == 2 and #rows[1].buttons == 4 and #rows[2].buttons == 4)
                 local beforeFrames, beforeSuite = Copy(MSUF_DB), Copy(Suite.RootDB)
                 local source = Suite.HostBridge.FactoryFramePreview(layout)
                 local pristine = Copy(source)
-                rows[1].buttons[unitIndex].scripts.OnClick()
-                rows[2].buttons[groupIndex].scripts.OnClick()
+                Choose(Suite, window, 1, unit)
+                Choose(Suite, window, 2, group)
                 assert(Equal(source, pristine) and Equal(MSUF_DB, beforeFrames)
                     and Equal(Suite.RootDB, beforeSuite), "staging changed the saved or cached profiles")
                 local sample, tot
@@ -92,7 +124,7 @@ for _, forever in ipairs({ false, true }) do
                     if region.label == "Target of Target" then tot = region end
                 end
                 assert(sample, "player preview missing")
-                local expected = unit == "class" and "c79c6e" or unit == "dark" and "333333" or "1a99e6"
+                local expected = unit == "class" and "c79c6e" or unit == "dark" and "333333" or UNIT_COLOR
                 local r, g, b = Suite.RGB(expected)
                 assert(math.abs(sample.fill.color[1] - r) < .00001
                     and math.abs(sample.fill.color[2] - g) < .00001
@@ -123,6 +155,17 @@ for _, forever in ipairs({ false, true }) do
                 end
                 for _, key in ipairs({ "gf_party", "gf_raid", "gf_mythicraid" }) do
                     comparable[key].gfBarMode = authored[key].gfBarMode
+                    if group == "unified" then
+                        local r, g, b = Suite.RGB(GROUP_COLOR)
+                        assert(comparable[key].gfUnifiedR == r and comparable[key].gfUnifiedG == g and comparable[key].gfUnifiedB == b)
+                        comparable[key].gfUnifiedR, comparable[key].gfUnifiedG, comparable[key].gfUnifiedB =
+                            authored[key].gfUnifiedR, authored[key].gfUnifiedG, authored[key].gfUnifiedB
+                    end
+                end
+                if unit == "unified" then
+                    assert(Suite.InstallerFrameColors.HealthFill(MSUF_DB, "unit") == UNIT_COLOR)
+                    comparable.general.unifiedBarR, comparable.general.unifiedBarG, comparable.general.unifiedBarB =
+                        authored.general.unifiedBarR, authored.general.unifiedBarG, authored.general.unifiedBarB
                 end
                 assert(Equal(comparable, authored), "frame colors changed layout, fonts, power bars or custom palette values")
                 assert(Suite.RootDB.installation.frameColors.unit == unit
@@ -136,24 +179,34 @@ for _, forever in ipairs({ false, true }) do
     window.next.scripts.OnClick()
     window.next.scripts.OnClick()
     window.next.scripts.OnClick()
-    window.layoutPreview.frameColors[1].buttons[3].scripts.OnClick()
+    MSUF_DB.player = { width = 310, offsetX = -320 }
     window.keepFrames.scripts.OnClick()
     local before = Copy(MSUF_DB)
+    local old = MSUF_DB
     assert(window.layoutPreview.frameColorHint:IsShown())
-    window.layoutPreview.frameColors[1].buttons[1].scripts.OnClick()
-    assert(Suite.InstallerFrameColors.Choices().unit == "unified", "disabled choice remained interactive")
-    assert(Suite.Installer.Apply() and Equal(MSUF_DB, before), "keep frames recolored the current profile")
-    assert(Suite.RootDB.installation.frameColors == nil)
-    assert(Suite.HostBridge.StyleFrameFactory("MSUF3:bad", { unit = "invalid" }) == nil)
+    Choose(Suite, window, 1, "class")
+    Choose(Suite, window, 1, "unified", true)
+    assert(Suite.InstallerFrameColors.Choices().unit == "class", "Cancel lost the previous choice")
+    Choose(Suite, window, 1, "unified")
+    Choose(Suite, window, 2, "unified")
+    Choose(Suite, window, 2, "profile")
+    assert(Suite.InstallerFrameColors.Choices().group == nil, "Profile colors did not clear the override")
     H.combat = true
     assert(not Suite.Installer.Apply() and Equal(MSUF_DB, before), "combat install mutated frame settings")
+    H.combat = false
+    assert(Suite.Installer.Apply())
+    assert(Equal(old, before) and MSUF_DB ~= old and Equal(MSUF_DB.player,
+        { width = 310, offsetX = -320, healthColorMode = "UNIFIED" }), "keep frames did not preserve the layout in a separate profile")
+    assert(Suite.RootDB.installation.frameColors.unitColor == UNIT_COLOR)
+    assert(Suite.HostBridge.StyleFrameFactory("MSUF3:bad", { unit = "invalid" }) == nil)
+    assert(Suite.HostBridge.StyleFrameFactory("MSUF3:frames", { unit = "unified", unitColor = "bad" }) == nil)
     assert(#H.reported == 0, "frame color setup raised errors")
     H.combat = false
     assert(Suite.Installer.Open())
     window.next.scripts.OnClick()
     window.next.scripts.OnClick()
     window.next.scripts.OnClick()
-    window.layoutPreview.frameColors[1].buttons[2].scripts.OnClick()
+    Choose(Suite, window, 1, "dark")
     local saved = Copy(Suite.RootDB)
     local active = MSUF_ActiveProfile
     local encode = MSUF_EncodeCompactTable
@@ -179,7 +232,7 @@ for _, forever in ipairs({ false, true }) do
         "unoverridden target inherited the player's override instead of the global mode")
     for _, layout in ipairs({ "classic", "forever", "modernDark" }) do
         for scope = 1, 2 do
-            for mode = 1, 3 do
+            for _, mode in ipairs(MODES) do
                 local stagedSuite, stagedWindow = Setup(forever)
                 stagedWindow.next.scripts.OnClick()
                 stagedWindow[layout].scripts.OnClick()
@@ -188,8 +241,8 @@ for _, forever in ipairs({ false, true }) do
                 local source = stagedSuite.HostBridge.FactoryFramePreview(layout)
                 local unchosen = scope == 1 and "group" or "unit"
                 local beforeColor = stagedSuite.InstallerFrameColors.HealthFill(source, unchosen)
-                stagedWindow.layoutPreview.frameColors[scope].buttons[mode].scripts.OnClick()
-                local preview = stagedSuite.InstallerFrameColors.Preview(source, false)
+                Choose(stagedSuite, stagedWindow, scope, mode)
+                local preview = stagedSuite.InstallerFrameColors.Preview(source)
                 assert(stagedSuite.InstallerFrameColors.HealthFill(preview, unchosen) == beforeColor,
                     "single-scope choice changed the other frame preview")
                 assert(stagedSuite.Installer.Apply())

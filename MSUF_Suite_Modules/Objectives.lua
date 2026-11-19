@@ -205,6 +205,11 @@ local function RequestEventSources(self, event, ...)
     for i = 1, #sources do Request(self, sources[i]) end
 end
 
+local function ScaleChanged(self)
+    self.retheme = true
+    if not self.pausedForRaidCombat then Render(self) end
+end
+
 local function Event(self, event, ...)
     if event == "ENCOUNTER_START" or event == "ENCOUNTER_END" then
         EncounterEvent(self, event, ...)
@@ -387,6 +392,9 @@ local function ContentSignature(c)
         .. tostring(c.showCollectibles) .. ":" .. tostring(c.showZoneEvents) .. ":"
         .. tostring(c.showTravelersLog) .. ":" .. tostring(c.showEndeavors) .. ":" .. tostring(c.showRecipes)
         .. ":" .. tostring(c.groupQuestsByZone) .. ":" .. tostring(c.hideCompletedObjectives)
+        .. ":" .. tostring(c.groupQuestsByHeader) .. ":" .. tostring(c.showQuestLevel)
+        .. ":" .. tostring(c.questDifficultyColor) .. ":" .. tostring(c.showDungeonBadge)
+        .. ":" .. tostring(c.showQuestLogCount) .. ":" .. tostring(c.questProgressColumn)
 end
 
 local TRACKER_EVENTS = {
@@ -515,7 +523,24 @@ local function NativeAddonLoaded(module, _, name)
     if Raid and module.raidActive then Raid.Bind(module) end
 end
 
+local function RefreshMinimapDock() S.Apply(ID) end
+
+local function UpdateMinimapDock(self)
+    local dock = S.MinimapDock
+    if self.config.dockBelowMinimap then
+        self.context:Callback(dock.mapChanged, RefreshMinimapDock)
+        self.context:Callback(dock.footerChanged, RefreshMinimapDock)
+        self.wantsMapDock = true
+    elseif self.wantsMapDock then
+        self.context:RemoveCallback(dock.mapChanged)
+        self.context:RemoveCallback(dock.footerChanged)
+        self.wantsMapDock = nil
+    end
+end
+
 function M:Enable()
+    if Raid then Raid.PrepareClock(self) end
+    UpdateMinimapDock(self)
     self.recipeItemsPending, self.recipeItemsNeeded = nil, nil
     self.flushJob = self.context:Coalesce(0, Flush)
     self.countdownJob = self.context:Coalesce(1, O.UpdateTimers)
@@ -526,6 +551,7 @@ function M:Enable()
     self.pausedForRaidCombat = false
     self.context:Event("PLAYER_ENTERING_WORLD", Event, IN_COMBAT)
     self.context:Event("ZONE_CHANGED_NEW_AREA", Event, IN_COMBAT)
+    self.context:Event("UI_SCALE_CHANGED", ScaleChanged, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_DISABLED", RaidCombatEvent, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", RaidCombatEvent, IN_COMBAT)
     self.context:Event("ENCOUNTER_START", Event, IN_COMBAT)
@@ -546,6 +572,8 @@ function M:Enable()
 end
 
 function M:Refresh()
+    if Raid then Raid.PrepareClock(self) end
+    UpdateMinimapDock(self)
     self.retheme = true
     if UpdateRaidCombatPause(self) then return end
     SyncCollectedEvents(self, true)
@@ -586,6 +614,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    self.wantsMapDock = nil
     self.scenarioWidgetSetID, self.scenarioTopWidgetSetID = nil, nil
     O.UpdateQuestItem(self, true)
     if MythicPlus then MythicPlus.Stop(self) end
@@ -603,11 +632,42 @@ function M:Disable()
     self.previousByKey, self.usedRows, self.timedRows = nil, nil, nil
 end
 
+local function CaptureDockedPosition(self, origin)
+    local frame = self.host
+    if not frame or not self.config.dockBelowMinimap or not S.MinimapDock.Anchor(true) then return end
+    -- The dock uses the footer's anchor. Start from the tracker's current
+    -- screen position so the first drag does not jump to its saved offsets.
+    local left, bottom, width, height = frame:GetScaledRect()
+    local rootLeft, rootBottom, rootWidth, rootHeight = UIParent:GetScaledRect()
+    local scale = frame:GetEffectiveScale()
+    if not (Finite(left) and Finite(bottom) and Finite(width) and Finite(height)
+        and Finite(rootLeft) and Finite(rootBottom) and Finite(rootWidth) and Finite(rootHeight)
+        and Finite(scale) and scale > 0) then return end
+    origin.x = (left + width - rootLeft - rootWidth) / scale
+    origin.y = (bottom + height - rootBottom - rootHeight) / scale
+end
+
+local function KeepDockAtDragOrigin(self, request)
+    if request.phase == "commit" or not self.host or not self.config.dockBelowMinimap then return end
+    local dock = S.MinimapDock.Anchor(true)
+    if not dock then return end
+    -- A pointer release within half a screen pixel does not commit in Edit Mode.
+    local scale = UIParent:GetEffectiveScale()
+    if not Finite(scale) or scale <= 0 then return end
+    if math.abs(request.deltaX or 0) * scale > .5 or math.abs(request.deltaY or 0) * scale > .5 then return end
+    O.AnchorTracker(self, dock)
+    return true
+end
+
 function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "tracker", {
         label = "Objective Tracker", order = 625, getFrame = function() return self.host end,
         xKey = "x", yKey = "y", point = "TOPRIGHT",
-        historyKeys = { "width", "height", "scale" },
+        capture = function(origin) CaptureDockedPosition(self, origin) end,
+        move = function(_, _, request) return KeepDockAtDragOrigin(self, request) end,
+        moveValues = { dockBelowMinimap = false },
+        historyKeys = { "width", "height", "scale", "dockBelowMinimap" },
+        resetKeys = { "dockBelowMinimap" },
         extraControls = {
             { id = "width", label = "Width", kind = "number", min = 220, max = 520, step = 5,
                 get = function() return S.Config(ID).width end,

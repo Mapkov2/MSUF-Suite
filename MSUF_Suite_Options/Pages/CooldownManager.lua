@@ -464,7 +464,13 @@ local function BuildGeneral(ctx, card)
     for _, rule in ipairs(P.SectionRules(ID, "general")) do
         if not seen[rule.key] then rules[#rules + 1] = rule end
     end
-    HM.SetSectionCursor(card, RuleGrid(ctx, card, rules, y, width, MODULE_SECTION))
+    y = RuleGrid(ctx, card, rules, y, width, MODULE_SECTION)
+    local native = "nativeCooldownVisibility"
+    local rule = P.catalog[native].rules.enabled
+    local row = P.RuleRow(PAGE, native, rule, nil, MODULE_SECTION)
+    local grid = W.SettingsRows(ctx, card, { x = 16, y = y, width = width, columns = 1, rows = { row } })
+    P.GateControls(ctx, native, { { rule = rule, widget = grid.controls[rule.key] } })
+    HM.SetSectionCursor(card, grid.bottomY)
     P.AttachRuleColors(card, "Basics", ID, rules)
 end
 

@@ -196,10 +196,19 @@ Case("U12", function()
         end
         w.Build(width)
         assert(#requested > 0)
+        local nativeVisibilityRows = 0
         for _, spec in ipairs(requested) do
-            assert(spec.columns == (spec.width >= 560 and 2 or 1),
-                "U12: CDM grid ignored the shared 560px breakpoint at page width " .. width)
+            local row = #spec.rows == 1 and spec.rows[1]
+            if row and row.settingKey == "msufsuite.nativeCooldownVisibility.enabled" then
+                nativeVisibilityRows = nativeVisibilityRows + 1
+                assert(spec.columns == 1 and spec.width == width - 32,
+                    "U12: the native cooldown visibility toggle needs its own full-width row")
+            else
+                assert(spec.columns == (spec.width >= 560 and 2 or 1),
+                    "U12: CDM grid ignored the shared 560px breakpoint at page width " .. width)
+            end
         end
+        assert(nativeVisibilityRows == 1, "U12: missing or duplicate native cooldown visibility row")
     end
 end)
 

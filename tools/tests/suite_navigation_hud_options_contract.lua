@@ -40,17 +40,27 @@ assert(not config.enabled and not config.showCompass, "opening the settings acti
 local function Action(suffix)
     return assert(fixture.registeredControls["menu2.suite_qualityOfLife.navigationHUD.action." .. suffix], suffix)
 end
-local mode
+local mode, markerOptions = nil, {}
 for _, widget in ipairs(ctx.widgets) do
-    if widget.meta and widget.meta.settingKey == "msufsuite.navigationHUD.shortcutMode" then
-        mode = widget
-        break
-    end
+    local key = widget.meta and widget.meta.settingKey
+    if key == "msufsuite.navigationHUD.shortcutMode" then mode = widget end
+    local setting = key and key:match("^msufsuite%.navigationHUD%.(.+)$")
+    if setting then markerOptions[setting] = widget end
 end
 assert(mode and mode.rowKind == "dropdown" and mode.get() == 1)
 assert(mode.row.values[1].text == "Shift+M (default)" and mode.row.values[2].text == "Custom key binding")
 mode.set(2)
 assert(mode.get() == 2 and not config.enabled)
+assert(markerOptions.showMapMarkers.get() and markerOptions.showKnownGathering.get() and not markerOptions.showGatheringMinimap.get())
+markerOptions.showGatheringMinimap.set(true)
+markerOptions.showKnownGathering.set(false)
+assert(config.showGatheringMinimap and not config.showKnownGathering and not config.enabled,
+    "the native minimap option must stay independent of the overlay")
+assert(markerOptions.showMarkers.get())
+markerOptions.showMarkers.set(false)
+assert(not config.showMarkers and config.showGatheringMinimap and not config.showKnownGathering,
+    "the master switch must preserve each marker preference")
+markerOptions.showMarkers.set(true)
 
 local zone = Action("zoneMap")
 assert(zone:IsEnabled() and not zone:GetChecked() and nativeToggles == 0, "native zone map must be independent of the overlay")

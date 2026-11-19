@@ -91,10 +91,10 @@ end
 -- The names of a Quality of Life feature's color rules besides its own switch,
 -- in English and translated; nil when it has none. They are searched on the
 -- feature's color entry: the feature row's own text is cut at the host's limit.
-local function FeatureColorWords(feature)
+local function FeatureColorWords(feature, checkpoint)
     local words
     for _, section in ipairs(feature.sections) do
-        for _, rule in ipairs(P.SectionRules(feature.id, section)) do
+        for _, rule in ipairs(P.SectionRules(feature.id, section, nil, checkpoint)) do
             if rule.color and not rule.hidden and rule.key ~= feature.switch then
                 words = words or {}
                 words[#words + 1], words[#words + 2] = rule.label, Tr(rule.label)
@@ -120,7 +120,7 @@ end
 local SPELL_OPTION_KINDS = { bool = "toggle", choice = "dropdown", number = "slider", color = "color",
     sound = "dropdown", spell = "textinput", icon = "textinput", text = "textinput" }
 local SPELL_ACTIONS = { "Remove from bar", "Move to bar", "Reset this spell", "Copy to all specs" }
-local function AddSpellOptionRows(rows, pagesByKey)
+local function AddSpellOptionRows(rows, pagesByKey, checkpoint)
     local spec, page = P.catalog.cooldownManager, P.CDMPage
     if not (spec and page and page.FIELDS and pagesByKey[spec.page] and P.Suite.Client.HasAddOn(spec.addon)) then return end
     if not page.spellSearchRegistered then
@@ -129,6 +129,7 @@ local function AddSpellOptionRows(rows, pagesByKey)
     end
     local shown = {}
     for _, row in ipairs(rows) do
+        if checkpoint then checkpoint() end
         if row.pageKey == spec.page and row.label then shown[row.label] = true end
     end
     local function Row(label, kind, alternative, key)
@@ -167,7 +168,7 @@ local function AddDataTextBarRows(Add)
     end
 end
 
-local function AddQualityOfLifeRows(Add)
+local function AddQualityOfLifeRows(Add, checkpoint)
     for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
         local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
         -- The Quality of Life page owns which features have an Edit Mode button.
@@ -181,7 +182,7 @@ local function AddQualityOfLifeRows(Add)
             Add("parallelWindows", "enabled", "Keep Blizzard windows open", sectionId, "setting", "toggle", feature)
             Add("parallelWindows", "windowLimit", "Blizzard window limit", sectionId, "setting", "slider", feature)
         end
-        local colorWords = FeatureColorWords(feature)
+        local colorWords = FeatureColorWords(feature, checkpoint)
         if colorWords then
             local label = Tr("%s Colors"):format(Tr(feature.title))
             Add(feature.id, "action.colors." .. feature.switch, label, sectionId, nil, nil, feature, { words = colorWords })
@@ -189,7 +190,7 @@ local function AddQualityOfLifeRows(Add)
     end
 end
 
-function P.AppendSearchActionRows(rows, pagesByKey)
+function P.AppendSearchActionRows(rows, pagesByKey, checkpoint)
     if not MODULE_ACTIONS then
         MODULE_ACTIONS, EDITOR_ACTIONS = PrepareModuleActions(), PrepareEditorActions()
         BAR_ACTIONS, QOL_ACTIONS = PrepareBarActions(), PrepareQoLActions()
@@ -198,6 +199,7 @@ function P.AppendSearchActionRows(rows, pagesByKey)
     P.MeterPreviewProperties.AppendSearchRows(rows, pagesByKey)
     -- extra: optional { words = { ... }, section = "shown section" }.
     local function Add(id, key, label, sectionId, classification, kind, feature, extra)
+        if checkpoint then checkpoint() end
         local spec = P.catalog[id]
         local pageKey = feature and P.QoLView.GetFeaturePage(feature) or P.QoLOwners.PageFor(id) or spec and spec.page
         local extension = pageKey == "gameplay" and P.GameplayPage.registered or pageKey == "opt_misc"
@@ -254,7 +256,7 @@ function P.AppendSearchActionRows(rows, pagesByKey)
         Add("dataTexts", "preset." .. preset.id, preset.title, "suite_dataTexts_presets")
     end
     P.AppendToolSearchActions(Add)
-    AddQualityOfLifeRows(Add)
-    AddSpellOptionRows(rows, pagesByKey)
+    AddQualityOfLifeRows(Add, checkpoint)
+    AddSpellOptionRows(rows, pagesByKey, checkpoint)
     P.AppendGraphicsSearchRows(rows)
 end

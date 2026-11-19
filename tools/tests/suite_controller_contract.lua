@@ -197,13 +197,14 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "groupRaidShortcuts" and id ~= "trainerLearnAll"
         and id ~= "characterUpgradeWindow" and id ~= "lootToastFilter"
         and id ~= "threatMeter" and id ~= "flightTimer" and id ~= "glimmer" and id ~= "characterExtras"
-        and id ~= "merchantList" and id ~= "tooltipDetails" and id ~= "popupAttention"
+        and id ~= "merchantList" and id ~= "tooltipDetails" and id ~= "popupAttention" and id ~= "reputationBar"
         and id ~= "combatMovementCue" and id ~= "professionAppearance"
         and id ~= "trustedPartyInvites" and id ~= "burningRushCue" and id ~= "autoResponses"
         and id ~= "inventoryArchive" and id ~= "restockPlanner" and id ~= "craftShopping"
         and id ~= "inventoryProtection" and id ~= "bankTransfer" and id ~= "mailTemplates" and id ~= "planningTools"
         and id ~= "keyAudit" and id ~= "currencyGoals" and id ~= "keywordAlerts" and id ~= "waypointLists"
-        and id ~= "soundProfiles" and id ~= "notificationHistory"),
+        and id ~= "soundProfiles" and id ~= "notificationHistory" and id ~= "worldQuestTab"
+        and id ~= "navigationHUD" and id ~= "chatMessenger" and id ~= "nativeCooldownVisibility"),
         id .. " factory enable state is wrong")
 end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = false end
@@ -408,6 +409,16 @@ do
             "the combat queue applies a follower after its leader in either catalog order")
     end
     S.Followers = followers
+    local seen = {}
+    for _, id in ipairs(S.order) do
+        local lead = S.catalog[id].follows
+        assert(not lead or seen[lead], "bulk apply requires the leader to come first: " .. id)
+        seen[id] = true
+    end
+    log = {}
+    S.ApplyAll()
+    assert(#log == 2 and log[1] == "minimap" and log[2] == "dataTexts",
+        "bulk apply refreshed a follower a second time")
     local plain = function(self) self.refreshes = (self.refreshes or 0) + 1 end
     module.Refresh, texts.Refresh = plain, plain
     assert(S.Set("dataTexts", "enabled", textsOn) and (texts.active == true) == textsOn)

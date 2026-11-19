@@ -60,6 +60,18 @@ function Widget:GetLeft() return 50 end
 function Widget:GetWidth() return 1000 end
 function Widget:RegisterEvent(event) self.events[event] = true end
 function Widget:UnregisterAllEvents() self.events = {} end
+function Widget:SetupMenu(generator) self.menuGenerator = generator end
+function Widget:OpenMenu()
+    local options = {}
+    self.menuGenerator(self, {
+        CreateRadio = function(_, label, selected, choose, value)
+            options[label] = { selected = selected, choose = choose, value = value }
+        end,
+    })
+    self.menu = options
+    return options
+end
+function Widget:CloseMenu() self.menu = nil end
 
 local combat, queries, playerLevel, playerRace = false, 0, 20, 1
 local combatEdge, forbiddenErrors, clockTime = false, false, 0
@@ -78,16 +90,16 @@ local function Color(red, green, blue)
     return { GetRGB = function() return red, green, blue end }
 end
 GREEN_FONT_COLOR, YELLOW_FONT_COLOR, RED_FONT_COLOR = Color(.1, 1, .1), Color(1, .82, 0), Color(1, .1, .1)
-UIParent, CLOSE, GameTooltip = New(), "Close", New()
+UIParent, GameTooltip = New(), New()
 UIErrorsFrame = New()
 UIErrorsFrame.AddMessage = function(_, message, red, green, blue)
     assert(not forbiddenErrors and red == 1 and green == .82 and blue == .1, "combat feedback lost the standard error style")
     errorNotices[#errorNotices + 1] = message
 end
-CreateFrame = function(_, name, parent, template)
+CreateFrame = function(kind, name, parent, template)
     frameCreations = frameCreations + 1
     local frame = New(parent)
-    frame.frameName = name
+    frame.frameName, frame.frameType, frame.template = name, kind, template
     if template == "SearchBoxTemplate" then frame.Instructions = New(frame) end
     return frame
 end
@@ -143,6 +155,10 @@ local ns = {
             box.skinRole = spec.role
         end,
     },
+    WindowActionSkin = { Apply = function(button, owner, kind)
+        assert(owner == "spellLearning" and kind == "close")
+        button.actionKind = kind
+    end },
     Theme = { GetColor = function(role)
         assert(role ~= "shell", "the surface role was used as a palette color")
         if role == "accentBright" then return 1, .8, .4, .3 end
@@ -170,7 +186,7 @@ assert(skinStrings["Training cost (before discounts)"] == "Training cost (before
     and skinStrings["Training cost not recorded"] == "Training cost not recorded",
     "the cost labels are absent from the canonical skin locale catalog")
 assert(skinStrings["Finish combat first."] == "Finish combat first.", "combat refusal is absent from the skin locale catalog")
-for _, key in ipairs({"Portal trainer", "Tome or item", "Learning source not confirmed",
+for _, key in ipairs({"All", "Unknown", "Portal trainer", "Tome or item", "Learning source not confirmed",
     "Learned automatically", "Requires a class quest", "Class quest #%d (availability unconfirmed)"}) do
     assert(skinStrings[key] == key, "an acquisition label is absent from the canonical skin catalog")
 end
@@ -206,7 +222,7 @@ assert(ns.ForeverSpellLearningData[4]:find("1329283:24:1:", 1, true), "Forever r
 assert(ns.ForeverSpellLearningData[4]:find("1329549:44:2:", 1, true), "Forever rogue Shank rank 2 is missing")
 assert(ns.ForeverSpellLearningData[2]:find("19742:", 1, true), "Paladin Holy spells were not indexed")
 assert(not ns.ForeverSpellLearningData[3]:find("17253:", 1, true), "hunter pet ranks leaked into player preview")
-ns.ForeverSpellLearningData[8] = "120:10:1:0 121:16:2:1 122:20:1:1:1 123:30:1:2:2 124:30:3:1:0:0:120 "
+ns.ForeverSpellLearningData[8] = "120:10:1:0 121:16:2:1 122:20:1:1:1 123:30:1:2:2 124:30:3:1 "
 ns.ForeverSpellLearningCosts[8] = "121:12345 122:0 124:32100 213:99999 "
 Load(prefix .. ".lua", ns)
 ns.L = setmetatable({}, { __index = function(_, key) return key end })
@@ -242,7 +258,17 @@ assert(panel.controlsAttached and panel:GetTitleText() == panel.title, "the wind
 assert(panel.next.anchor[2] == -36, "the scale grip overlaps the next-page button")
 assert(panel.skinRole == "shell" and not panel.bg and panel.search.skinRole == "input")
 assert(panel.title:GetText() == launcher.label:GetText() and panel.caption:GetText() ~= "")
-assert(panel.close.skinRole == "button" and panel.previous.skinRole == "button" and panel.next.skinRole == "button")
+assert(panel.close.template == "UIPanelCloseButtonNoScripts" and panel.close.anchor[1] == "TOPRIGHT"
+    and panel.close.actionKind == "close", "the panel did not replace its text button with the themed close X")
+assert(panel.previous.skinRole == "button" and panel.next.skinRole == "button")
+assert(panel.category.frameType == "DropdownButton" and panel.category.skinRole == "input"
+    and panel.search.anchor[2] == panel.category, "the source selector did not leave room for the search field")
+local initialMenu = panel.category:OpenMenu()
+assert(initialMenu.All.selected(initialMenu.All.value), "the panel did not start with all sources")
+panel.close.scripts.OnClick(panel.close)
+assert(not panel:IsShown() and not panel.category.menu and book:IsShown(), "the X did not close just the preview and its menu")
+launcher.scripts.OnClick()
+assert(panel:IsShown(), "the launcher could not reopen the preview after closing it with X")
 assert(panel.headerRule.textureColor[1] == preset and panel.rows[1].divider.textureColor[1] == preset)
 assert(panel.search.Instructions.color[1] == preset)
 local beforeTheme = queries
@@ -311,8 +337,8 @@ ns.ForeverSpellLearningData[8] = "201:10:1:1 202:14:2:1 203:18:3:1 204:21:4:1 20
 panel.entries = nil
 panel.search:SetText("")
 UpdateSpells()
-local expected = { 204, 205, 206, 207, 208, 212, 213, 214, 217 }
-assert(#panel.available == #expected, "learned, replaced or unreadable spells remained, or future spells disappeared")
+local expected = { 204, 205, 206, 207, 208, 213, 214, 217 }
+assert(#panel.available == #expected, "learned, replaced, talent or unreadable spells remained, or future spells disappeared")
 for index, id in ipairs(expected) do assert(panel.available[index].id == id, "the wrong spell rank was filtered") end
 bookItems[1].subName = ""
 panel.scripts.OnEvent(panel, "SPELL_TEXT_UPDATE")
@@ -329,19 +355,14 @@ panel.rows[4].scripts.OnEnter(panel.rows[4])
 assert(GameTooltip.lines[#GameTooltip.lines] == "Training cost not recorded" and #GameTooltip.doubleLines == 0,
     "an unknown training cost was shown as free")
 assert(moneyQueries == beforeUnknown, "an unknown price reached the money formatter")
-AssertColor(panel.rows[6], RED_FONT_COLOR)
-GameTooltip.lines = {}
-panel.rows[6].scripts.OnEnter(panel.rows[6])
-assert(GameTooltip.lines[1] == "Class trainer" and GameTooltip.lines[2] == "Requires a talent",
-    "a trainer rank lost its genuine talent prerequisite or its training source")
-AssertColor(panel.rows[7], GREEN_FONT_COLOR)
+AssertColor(panel.rows[6], GREEN_FONT_COLOR)
 local beforeQuest = moneyQueries
-panel.rows[7].scripts.OnEnter(panel.rows[7])
+panel.rows[6].scripts.OnEnter(panel.rows[6])
 assert(GameTooltip.lines[1] == "Class quest" and #GameTooltip.lines == 1 and #GameTooltip.doubleLines == 0,
     "a quest spell acquired an unrelated training price")
 assert(moneyQueries == beforeQuest, "a quest spell formatted a training price")
-AssertColor(panel.rows[8], GREEN_FONT_COLOR)
-AssertColor(panel.rows[9], YELLOW_FONT_COLOR)
+AssertColor(panel.rows[7], GREEN_FONT_COLOR)
+AssertColor(panel.rows[8], YELLOW_FONT_COLOR)
 
 -- The newly learned rank disappears, and the next two levels move with the player.
 known[204] = true
@@ -352,15 +373,6 @@ assert(panel.available[1].id == 205, "a newly learned rank stayed visible")
 AssertColor(panel.rows[1], YELLOW_FONT_COLOR)
 AssertColor(panel.rows[2], YELLOW_FONT_COLOR)
 AssertColor(panel.rows[3], RED_FONT_COLOR)
-bookItems[#bookItems + 1] = { name = "Talent Spark I", subName = "Rang 1", itemType = Enum.SpellBookItemType.Spell }
-known[218] = true
-UpdateSpells()
-AssertColor(panel.rows[5], GREEN_FONT_COLOR)
-GameTooltip.lines = {}
-panel.rows[5].scripts.OnEnter(panel.rows[5])
-for _, line in ipairs(GameTooltip.lines) do
-    assert(line ~= "Requires a talent", "an already learned talent was still described as a missing requirement")
-end
 playerLevel = 22
 panel.scripts.OnEvent(panel, "PLAYER_LEVEL_UP")
 pending()
@@ -406,10 +418,19 @@ end
 local function Available(id)
     for _, entry in ipairs(panel.available) do if entry.id == id then return entry end end
 end
+local function CheckCategory(label, ...)
+    local options = panel.category:OpenMenu()
+    local option = assert(options[label], "missing category " .. label)
+    option.choose(option.value)
+    assert(option.selected(option.value) and panel.page == 1, "a category did not select and return to page one")
+    assert(#panel.filtered == select("#", ...), "wrong number of results for " .. label)
+    for index, id in ipairs({ ... }) do
+        assert(panel.filtered[index].id == id, "wrong spell in " .. label)
+    end
+    panel.category:CloseMenu()
+end
 Reindex()
-AssertColor(Row(302), RED_FONT_COLOR)
-Row(302).scripts.OnEnter(Row(302))
-assert(GameTooltip.lines[1] == "Class trainer" and GameTooltip.lines[2] == "Requires a talent")
+assert(not Available(301) and not Available(302), "the talent or its trainer rank survived the permanent filter")
 AssertColor(Row(304), RED_FONT_COLOR)
 Row(304).scripts.OnEnter(Row(304))
 assert(GameTooltip.lines[1] == "Class trainer" and GameTooltip.lines[2] == "Requires a class quest",
@@ -425,13 +446,30 @@ assert(GameTooltip.lines[1] == "Class quest #96828 (availability unconfirmed)" a
     "an unconfirmed quest appeared trainable now or lost its quest identity")
 AssertColor(Row(310), RED_FONT_COLOR)
 assert(Available(312).source == 0 and Available(312).level == 1, "a racial quest leaked onto another race")
+local beforeCategories = queries
+panel.page = 3
+CheckCategory("Class trainer", 304)
+CheckCategory("Class quest", 303, 307)
+CheckCategory("Portal trainer", 305)
+CheckCategory("Tome or item", 306)
+CheckCategory("Learned automatically", 309, 312)
+CheckCategory("Unknown", 310)
+panel.search:SetText("polymorph")
+panel.search.scripts.OnTextChanged()
+CheckCategory("Class quest", 307)
+CheckCategory("Tome or item", 306)
+CheckCategory("All", 306, 307)
+panel.search:SetText("talent echo")
+panel.search.scripts.OnTextChanged()
+assert(#panel.filtered == 0, "search exposed hidden talent spells")
+panel.search:SetText("")
+panel.search.scripts.OnTextChanged()
+assert(queries == beforeCategories, "changing a category rescanned the spellbook")
+
 bookItems[1] = { name = "Talent Echo I", subName = "Rank 1", spellID = 999, itemType = Enum.SpellBookItemType.Spell }
+known[301] = true
 UpdateSpells()
-assert(not Available(301), "a learned native alias left the first talent rank visible")
-AssertColor(Row(302), GREEN_FONT_COLOR)
-Row(302).scripts.OnEnter(Row(302))
-assert(#GameTooltip.lines == 2 and GameTooltip.lines[2] == "Training cost not recorded",
-    "an already learned talent retained the missing-prerequisite warning")
+assert(not Available(301) and not Available(302), "learning a talent made a trainer rank visible")
 bookItems[2] = { name = "Polymorph", subName = "", spellID = 306, itemType = Enum.SpellBookItemType.Spell }
 UpdateSpells()
 assert(not Available(306) and Available(307), "native spell identity hid the wrong unranked appearance")
@@ -455,8 +493,10 @@ known[307] = true
 UpdateSpells()
 assert(not Available(307), "an already learned reward remained visible because its quest availability is unconfirmed")
 
+panel.category:OpenMenu()
 panel.scripts.OnEvent(panel, "PLAYER_REGEN_DISABLED")
 assert(not panel:IsShown() and next(panel.events) == nil, "combat left preview event work running")
+assert(not panel.category.menu, "combat left the category menu visible")
 combat = true
 clockTime = 2
 local beforeCombatMoney = moneyQueries

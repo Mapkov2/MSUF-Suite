@@ -325,6 +325,9 @@ function Dirty(_, event, first, success)
         end
         if not custom or custom.durability then Module.dirtyDurability = true end
         Module.dirtyHeader = Module.dirtyHeader or not custom or Module.pageEvents[event]
+    elseif event == "UNIT_INVENTORY_CHANGED" or event == "SOCKET_INFO_SUCCESS" then
+        if event == "UNIT_INVENTORY_CHANGED" and NS.String(first) ~= "player" then return end
+        Module.dirtyAll = true
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
         if event == "PLAYER_SPECIALIZATION_CHANGED" and NS.String(first) ~= "player" then return end
         if not Module.custom or Module.custom.audit then Module.dirtyAll = true end
@@ -347,10 +350,6 @@ end
 
 local HEADER_EVENTS = { "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED" }
 local ATTRIBUTE_EVENTS = { "PLAYER_EQUIPMENT_CHANGED" }
-local EQUIPMENT_EVENTS = {
-    "PLAYER_EQUIPMENT_CHANGED", "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED",
-    "UPDATE_INVENTORY_DURABILITY", "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED",
-}
 
 local function SyncHeaderEvents()
     SetEvents(GUILD_EVENTS, Module.config.headerGuildVisible == true)
@@ -389,7 +388,7 @@ local function SelectTab(tab, preserveSlot, showAudit)
             Subscribe(HEADER_EVENTS)
             Subscribe(Pages.CustomEvents(custom, Module.reputationKey), true)
         elseif tab == OVERVIEW or tab == EQUIPMENT then
-            Subscribe(EQUIPMENT_EVENTS)
+            Subscribe(Gear.Events)
         else
             local attributes = tab == ATTRIBUTES
             Subscribe(HEADER_EVENTS, attributes)

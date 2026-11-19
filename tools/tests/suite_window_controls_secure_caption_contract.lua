@@ -10,7 +10,7 @@
 -- restore now click Blizzard's own X and opener button through one secure
 -- delegate (WindowControlDelegate.lua); the skin's plain handlers refuse the map.
 -- Usage: lua suite_window_controls_secure_caption_contract.lua <Suite root>
---        [WindowControls.lua] [WindowControlDelegate.lua] [WindowControlPolicy.lua] [WindowControlChrome.lua]
+--        [WindowControls.lua] [WindowControlDelegate.lua] [WindowControlPolicy.lua] [WindowControlChrome.lua] [MinimizedWindows.lua]
 local root = assert(arg[1], "Suite root required")
 local file = assert(io.open(root .. "/tools/tests/suite_window_controls_contract.lua", "rb"))
 local source = file:read("*a")
@@ -77,8 +77,9 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         return frame
     end
     local core, dataTexts = NS.SuiteCore(), { showMinimizedWindows = false }
+    core.AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
     core.Suite.Config = function(id) assert(id == "dataTexts"); return dataTexts end
-    assert(loadfile(root .. "/MSUF_Suite/Core/MinimizedWindows.lua"))("MSUF_Suite", core)
+    assert(loadfile(arg[6] or root .. "/MSUF_Suite/Core/MinimizedWindows.lua"))("MSUF_Suite", core)
     local taskbar = core.MinimizedWindows
     RegisterStateDriver = function(frame, state, values) frame.stateDriver = { state, values } end
     assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
@@ -242,24 +243,50 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local strip = state.restore.point[2]
     Check(strip ~= UIParent and plain.restore.point[2] == strip and plain.restore.point[4] ~= state.restore.point[4],
         flavor .. ": the two restore buttons did not share the taskbar")
+    Check(strip:IsShown() and strip.textures and strip.textures[1].color[1] > 0.8 and strip.mouseEnabled == false,
+        flavor .. ": the taskbar has no visible light background or intercepts mouse input")
+    local wideWidth, wideHeight = strip:GetWidth(), strip:GetHeight()
+    Check(wideWidth > state.restore:GetWidth() + plain.restore:GetWidth() and wideHeight > state.restore:GetHeight(),
+        "the taskbar background does not contain both buttons")
+    function state.restore:GetLeft() return UIParent:GetWidth() / 2 + self.point[4] end
+    Hover(state.restore)
+    local hitX = delegate.point[4]
     local previousWidth = UIParent.width
     UIParent.width = 270
     strip.scripts.OnEvent(strip, "DISPLAY_SIZE_CHANGED")
     Check(plain.restore.point[5] ~= state.restore.point[5], "narrow taskbar did not wrap its rows")
+    Check(strip:GetWidth() < wideWidth and strip:GetHeight() > wideHeight, "the background did not wrap with its buttons")
+    Check(delegate.point[4] ~= hitX and delegate.point[4] == state.restore:GetLeft(),
+        "the secure restore hit area stayed at its old position when the taskbar wrapped")
+    local first, second = plain.restore, state.restore
+    if first.point[5] > second.point[5] then first, second = second, first end
+    dataTexts.minimizedWindowsPoint = 3
+    taskbar.Refresh()
+    Check(strip.point[1] == "TOPRIGHT" and strip.point[2] == UIParent and strip.point[3] == "TOPRIGHT"
+        and strip.point[4] < 0 and strip.point[5] < 0, "the taskbar did not move to the top-right corner")
+    Check(first.point[5] > second.point[5] and taskbar.IsDocked(state.restore),
+        "moving the taskbar did not keep the entries or wrap them down from the top")
+    dataTexts.minimizedWindowsPoint = 7
+    taskbar.Refresh()
+    Check(strip.point[1] == "BOTTOMLEFT" and strip.point[4] > 0 and strip.point[5] > 0 and first.point[5] < second.point[5],
+        "the bottom-left taskbar did not wrap upwards")
     UIParent.width = previousWidth
     dataTexts.showMinimizedWindows = false
     taskbar.Refresh()
     Check(state.restore.point[2] == legacyMap[2] and state.restore.point[4] == legacyMap[4]
         and plain.restore.point[2] == legacyPlain[2] and plain.restore.point[5] == legacyPlain[5],
         "turning off the taskbar did not return the individual tabs")
+    Check(not strip:IsShown() and not strip.events, "turning off the taskbar left its background or resize events active")
     dataTexts.showMinimizedWindows = true
     taskbar.Refresh()
     Hover(state.restore)
     SecureClick(delegate, "LeftButton")
     Check(map.shown and not state.restore.shown and not taskbar.IsDocked(state.restore),
         "the docked map entry did not restore or remove itself")
+    Check(strip:IsShown() and strip:GetWidth() < wideWidth, "restoring one window did not compact the taskbar")
     plain.restore.scripts.OnClick(plain.restore, "LeftButton")
-    Check(plainSettings.shown and not plain.restore.shown and plainSettings.point[3] == "CENTER" and not strip.events,
+    Check(plainSettings.shown and not plain.restore.shown and plainSettings.point[3] == "CENTER"
+        and not strip:IsShown() and not strip.events,
         "the docked Settings entry did not restore or stop taskbar updates")
     Check(#skinCalls == 0, flavor .. ": a Settings restore ran the panel manager from addon code")
     dataTexts.showMinimizedWindows = false
@@ -353,12 +380,32 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     -- The Character window: its X and CharacterMicroButton (ToggleCharacter).
     local character = Frame("CharacterFrame", UIParent)
     _G.CharacterFrame = character
+    local characterPages = {
+        PaperDollFrame = Frame(nil, character),
+        ReputationFrame = Frame(nil, character),
+        TokenFrame = Frame(nil, character),
+    }
+    function character:ShowSubFrame(name)
+        for key, page in pairs(characterPages) do page:SetShown(key == name) end
+        self.activeSubframe = name
+    end
+    character:ShowSubFrame("PaperDollFrame")
+    local characterCloses, characterOpens = 0, 0
     character.CloseButton = Frame(nil, character, "Button")
-    character.CloseButton.scripts.OnClick = function() HideUIPanel(character) end
+    character.CloseButton.scripts.OnClick = function()
+        characterCloses = characterCloses + 1
+        HideUIPanel(character)
+    end
     local micro = Frame("CharacterMicroButton", UIParent, "Button")
     function micro:IsEnabled() return true end
     micro.scripts.OnClick = function()
-        if character:IsShown() then HideUIPanel(character) else ShowUIPanel(character) end
+        if character:IsShown() and character.activeSubframe == "PaperDollFrame" then
+            HideUIPanel(character)
+        else
+            characterOpens = characterOpens + 1
+            character:ShowSubFrame("PaperDollFrame")
+            if not character:IsShown() then ShowUIPanel(character) end
+        end
     end
     CharacterMicroButton = micro
     Check(W.Attach(character, "blizzardWindows"), flavor .. ": the Character window did not attach")
@@ -393,26 +440,86 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         flavor .. ": the Suite-minimized Character window did not come back through its micro button")
     W.SuiteAction(character, nil, "release")
 
-    -- Exercise a click delivered to the caption with the native opener available.
+    local function ClickCaption(cell)
+        Hover(cell)
+        if delegate.shown and delegate.owner == cell then
+            SecureClick(delegate, "LeftButton")
+        else
+            cell.scripts.OnClick(cell, "LeftButton")
+        end
+    end
+
+    -- Exercise the caption's normal click routing with a native opener available.
     local function CheckPageMinimize(root, owner, page)
         Check(W.Attach(root, owner), root.name .. " controls did not attach")
         local panel = W.states[root]
         Check(panel.minimize.shown, root.name .. " lost its minimize button")
-        Hover(panel.minimize)
-        panel.minimize.scripts.OnClick(panel.minimize, "LeftButton")
+        ClickCaption(panel.minimize)
         Check(panel.park and panel.restore.shown and root.shown and root.point[3] == "BOTTOMLEFT",
-            root.name .. " ignored a click on the minimize cell")
+            flavor .. ": " .. root.name .. " did not keep its current page open while minimized")
         Check(not delegate.shown and page.shown and not root:IsClampedToScreen(),
             root.name .. " changed pages, kept clamping, or armed a native click")
         W.Refresh()
         Check(panel.park and root.point[3] == "BOTTOMLEFT", root.name .. " reappeared during a UI layout pass")
-        Hover(panel.restore)
-        panel.restore.scripts.OnClick(panel.restore, "LeftButton")
+        ClickCaption(panel.restore)
         Check(not panel.park and not panel.restore.shown and root.shown and root.point[3] == "CENTER",
             root.name .. " did not restore the original anchor")
         Check(not delegate.shown and page.shown and root:IsClampedToScreen(),
             root.name .. " did not restore the clamp and current page")
     end
+
+    -- The micro button opens PaperDollFrame on both clients. Preserve
+    -- secondary pages and their scroll state without invoking that opener.
+    function character:GetPoint() return unpack(self.point) end
+    character:SetClampedToScreen(true)
+    character:SetPoint("CENTER", UIParent, "CENTER", 27, -13)
+    local closesBefore, opensBefore = characterCloses, characterOpens
+    for _, name in ipairs({ "ReputationFrame", "TokenFrame" }) do
+        character:ShowSubFrame(name)
+        local page = characterPages[name]
+        page.scrollOffset = 42
+        CheckPageMinimize(character, "blizzardWindows", page)
+        Check(character.activeSubframe == name and page.scrollOffset == 42 and character.point[4] == 27
+            and character.point[5] == -13, flavor .. ": Character restore changed its tab, scroll offset, or position")
+        Check(characterCloses == closesBefore and characterOpens == opensBefore and #skinCalls == 0,
+            flavor .. ": minimizing a secondary Character page ran a native panel action")
+    end
+    -- A native click on the character micro button while Reputation is parked
+    -- selects PaperDoll on the same shown root. It should also bring it back.
+    local function ParkOnReputation()
+        character:ShowSubFrame("ReputationFrame")
+        H.NextFrame()
+        ClickCaption(hero.minimize)
+        Check(hero.park and hero.restore.shown, flavor .. ": Reputation did not park before the shortcut")
+    end
+
+    ParkOnReputation()
+    Blizzard(micro.scripts.OnClick, micro)
+    H.NextFrame()
+    Check(character.shown and character.activeSubframe == "PaperDollFrame" and not hero.park
+        and not hero.restore.shown and character.point[4] == 27 and character.point[5] == -13,
+        flavor .. ": native character shortcut left the selected page below the viewport")
+
+    ParkOnReputation()
+    _G.combat = true
+    Blizzard(micro.scripts.OnClick, micro)
+    H.NextFrame()
+    Check(hero.park and H.jobs["windowControls:restoreCharacterPage"],
+        flavor .. ": the shortcut moved the parked frame in combat or lost the pending restore")
+    _G.combat = false
+    Hover(hero.restore)
+    Check(not delegate.shown, flavor .. ": a pending parked restore armed the native micro button")
+    local restorePage = H.jobs["windowControls:restoreCharacterPage"]
+    H.jobs["windowControls:restoreCharacterPage"] = nil
+    restorePage()
+    Check(not hero.park and not hero.restore.shown and character.activeSubframe == "PaperDollFrame",
+        flavor .. ": the shortcut did not restore the selected page after combat")
+
+    ParkOnReputation()
+    Blizzard(HideUIPanel, character)
+    H.NextFrame()
+    Check(not character.shown and not hero.park and not hero.restore.shown,
+        flavor .. ": a native close while parked left a dangling restore tab")
 
     local nativeClicks = 0
     local function NativeClick() nativeClicks = nativeClicks + 1 end

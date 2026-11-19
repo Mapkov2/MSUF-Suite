@@ -658,6 +658,7 @@ function Extensions.Configure(module)
             end
         end
     end
+    if plan.enabled then T.Configure(plan.interaction) end
     ReadContext()
     E.Configure(plan)
     if hadInterrupt and not (plan.enabled and plan.interrupt) then

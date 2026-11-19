@@ -329,16 +329,6 @@ local function BuildTextTargets(ui)
     end
 end
 
-local function AddDrawerDots(button)
-    local dots = {}
-    for index = 1, 4 do
-        local dot = button:CreateTexture(nil, "ARTWORK")
-        Tint(dot, 0.9, 0.9, 0.9, 1)
-        dots[index] = dot
-    end
-    button.previewDots, button.previewDrawerArt = dots, {}
-end
-
 -- A simple open book for the "Simple book" landing icon.
 local function AddBook(button)
     local book = {}
@@ -358,18 +348,21 @@ end
 local function IconTarget(ui, spec)
     local key = spec[1]
     local button = Target(ui, key, spec[2], spec[3], 24, 24)
-    local backdrop = button:CreateTexture(nil, "BACKGROUND")
-    backdrop:SetAllPoints(button)
-    Tint(backdrop, 0.025, 0.035, 0.045, 0.8)
     local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
-    icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
-    SetIcon(icon, spec[6], spec[7])
     button.previewIcon = icon
+    local backdrop
     if key == "drawer" then
-        icon:Hide()
-        AddDrawerDots(button)
-    elseif key == "folio" then
+        icon:SetAllPoints(button)
+        button.previewDrawerArt = {}
+    else
+        backdrop = button:CreateTexture(nil, "BACKGROUND")
+        backdrop:SetAllPoints(button)
+        Tint(backdrop, 0.025, 0.035, 0.045, 0.8)
+        icon:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
+        icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+        SetIcon(icon, spec[6], spec[7])
+    end
+    if key == "folio" then
         AddBook(button)
     elseif key == "difficulty" then
         button.previewNative = {

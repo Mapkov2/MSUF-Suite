@@ -60,7 +60,7 @@ local function Rows()
     for id, target in pairs(Store() or {}) do
         local info = Info(id)
         local name = info and info.name or S.Text("Currency %d"):format(id)
-        local detail = info and S.Text("Current: %d · Goal: %d · Remaining: %d"):format(info.quantity, target, math.max(0, target - info.quantity))
+        local detail = info and S.Text("Current: %d · Goal: %d · Remaining: %d", true):format(info.quantity, target, math.max(0, target - info.quantity))
             or S.Text("This currency is currently unavailable.")
         if info and S.Finite(info.maxQuantity) and info.maxQuantity > 0 then
             detail = detail .. "\n" .. S.Text("Total limit: %d"):format(info.maxQuantity)

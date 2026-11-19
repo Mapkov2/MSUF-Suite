@@ -196,7 +196,10 @@ function Settings.ReadGlobals(config, all)
     end
     if ReadCountdown(config, state) then text = true end
     local gcd = config.showGCD == true
-    if all or state.showGCD ~= gcd then state.showGCD, dirty.cooldowns, dirty.index = gcd, true, true end
+    if all or state.showGCD ~= gcd then
+        state.showGCD, dirty.cooldowns, dirty.index = gcd, true, true
+        C.Index.RefreshGlobalGCD(gcd)
+    end
     local glow = config.readyGlowCombat == true
     if all or state.readyGlowCombat ~= glow then state.readyGlowCombat, dirty.effects = glow, true end
     local allGlows = config.allGlowsCombat == true
@@ -335,7 +338,7 @@ function Settings.ReadViews(config, all, text)
                 view.behaviorGen = view.behaviorGen + 1
                 behavior[slot] = true
             end
-            if hit.index then dirty.index = true end
+            if hit.index then C.Index.SettingsChanged(slot, view) end
             if hit.visible then visible[slot] = true end
             -- Structure: aura containers follow flow, aura and buff bar
             -- settings; cooldown bars only their aura overlays.

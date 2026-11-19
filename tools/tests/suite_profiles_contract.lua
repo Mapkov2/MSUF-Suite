@@ -25,6 +25,8 @@ Minimap = { SetMaskTexture = function() end }
 C_AddOns = { DoesAddOnExist = function() return false end, IsAddOnLoaded = function() return false end }
 MapkoSkin = setmetatable({}, { __index = function() error("profiles read the skin owner") end })
 Enum = { CompressionMethod = { Deflate = 1 } }
+-- Deferred storage scheduling is exercised separately from this synchronous profile fixture.
+C_Timer = { After = function() end }
 C_EncodingUtil = {}
 for _, name in ipairs({ "SerializeCBOR", "DeserializeCBOR", "EncodeBase64", "DecodeBase64", "CompressString", "DecompressString" }) do
     C_EncodingUtil[name] = function() error("native codec must be exercised by the MSUF codec owner") end
@@ -76,8 +78,9 @@ do
     settings.enabled = true
     local encoded = MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 2, module = "dailyComfort",
         revision = step - 1, settings = settings }, "MSUF3")
-    local id, daily, _, chat = IO.PrepareModuleProfile("MSUFM2:" .. encoded)
-    assert(id == "dailyComfort" and daily.muteMusic and daily.whisperWindows == nil and chat.whisperWindows == 3,
+    local id, daily, _, companion = IO.PrepareModuleProfile("MSUFM2:" .. encoded)
+    assert(id == "dailyComfort" and daily.muteMusic and daily.whisperWindows == nil
+        and companion.id == "chatComfort" and companion.settings.whisperWindows == 3,
         "the old standalone Daily UI comforts export lost its chat settings")
 end
 do
@@ -176,6 +179,68 @@ assert(P.Active() == "FactoryRetail" and Suite.DB.suite.modules.qol.repair
     and Suite.DB.suite.modules.combatLog.enabled,
     "trusted factory import lost its selected module values")
 assert(P.Activate("Shared"))
+do
+    local oldDB, notify, onActivated = Suite.DB, Suite.OnProfileChanged, Suite.ProfileVariants.OnActivated
+    local lastApplied = "Shared"
+    Suite.OnProfileChanged = function(name) lastApplied = name end
+    Suite.ProfileVariants.OnActivated = function(name)
+        if name == "Default" then error("injected variant apply fault") end
+        return onActivated(name)
+    end
+    local errors = #reported
+    local ok, reason = DB.Activate("Default")
+    assert(ok == false and reason and #reported == errors + 1 and DB.GetActiveProfileName() == "Shared"
+        and Suite.DB == oldDB and lastApplied == "Shared", "direct activation fault mixed runtime and saved profile")
+    errors = #reported
+    ok, reason = P.Activate("Default")
+    assert(ok == false and reason and #reported == errors + 1 and P.Active() == "Shared"
+        and Suite.DB == oldDB and lastApplied == "Shared", "coordinated activation fault did not roll back both stores")
+    Suite.ProfileVariants.OnActivated = onActivated
+    local switch = MSUF_SwitchProfile
+    MSUF_SwitchProfile = function(name)
+        local switched = switch(name)
+        if name == "Default" then error("injected host switch fault after publication") end
+        return switched
+    end
+    errors = #reported
+    ok, reason = P.Activate("Default")
+    assert(ok == false and reason and #reported == errors + 1 and P.Active() == "Shared"
+        and Suite.DB == oldDB and lastApplied == "Shared", "raising host switch did not restore both stores")
+    local notifications = {}
+    MSUF_SwitchProfile = function(name)
+        local switched = switch(name)
+        if switched then
+            notifications[#notifications + 1] = Suite.suppressProfileSync == true
+            P.SyncActive(name)
+        end
+        return switched
+    end
+    local attempts = 0
+    Suite.ProfileVariants.OnActivated = function(name)
+        if name == "Default" then
+            attempts = attempts + 1
+            error("injected failure in a notifying host")
+        end
+        return onActivated(name)
+    end
+    ok = P.Activate("Default")
+    assert(ok == false and attempts == 1 and P.Active() == "Shared" and Suite.DB == oldDB
+        and #notifications == 2 and notifications[1] and notifications[2] and not Suite.suppressProfileSync,
+        "a host notification hid an activation failure or applied a second time")
+    MSUF_SwitchProfile, Suite.ProfileVariants.OnActivated = switch, onActivated
+    local remember, applyNative, activateNative = IO.RememberNameplateCVars, IO.ApplyNameplateCVars, IO.ActivateNameplateProfile
+    local live = "before"
+    IO.RememberNameplateCVars = function() return { live = live } end
+    IO.ApplyNameplateCVars = function(values) live = values.live; return true end
+    IO.ActivateNameplateProfile = function()
+        live = "after"
+        error("injected native activation fault after write")
+    end
+    assert(not DB.Activate("Default") and live == "before" and Suite.DB == oldDB and lastApplied == "Shared",
+        "native activation fault was not restored from the captured baseline")
+    IO.RememberNameplateCVars, IO.ApplyNameplateCVars, IO.ActivateNameplateProfile = remember, applyNative, activateNative
+    Suite.OnProfileChanged = notify
+end
 local imports = frameImports
 assert(not P.Import("Raid", bundle) and frameImports == imports)
 assert(not P.Import("Broken", "MSUFS2:MSUF3:frames\nMSUFM1:MSUF3:missing"))
@@ -367,6 +432,23 @@ encodings[#encodings + 1] = {
     windowControls = { positions = { CharacterFrame = { x = 1000 } } },
 }
 local modernSkin = "MSKIN1:" .. #encodings
+do
+    local name = "Existing Frames Only"
+    local previousFrames, previousModules, previousSkin = MSUF_ActiveProfile, DB.GetActiveProfileName(), skinActive
+    local previousSuiteDB = Suite.DB
+    MSUF_GlobalDB.profiles[name], MSUF_ActiveProfile = {}, name
+    skinProfiles[name] = { look = "kept" }
+    assert(not DB.HasProfile(name))
+    local ok, reason = P.InstallSuiteFactory(name, raid, modernSkin, nil, function()
+        assert(DB.GetActiveProfileName() == name and skinActive == name and skinProfiles[name].look == "modern")
+        return false, "injected frames-only rollback"
+    end)
+    assert(ok == false and reason == "injected frames-only rollback" and not DB.HasProfile(name)
+        and DB.GetActiveProfileName() == previousModules and Suite.DB == previousSuiteDB
+        and skinActive == previousSkin and skinProfiles[name].look == "kept" and MSUF_ActiveProfile == name,
+        "failed install over frames without a Suite profile left partial Suite or Skin state")
+    MSUF_GlobalDB.profiles[name], MSUF_ActiveProfile, skinProfiles[name] = nil, previousFrames, nil
+end
 local beforeModernFrames = frameImports
 assert(P.InstallSuiteFactory("Default", DB.GetProfile("Raid"), modernSkin))
 assert(frameImports == beforeModernFrames and MSUF_ActiveProfile == "ModuleCopy"
@@ -1202,4 +1284,73 @@ do
     assert(DB.Activate("Native Nameplate Bundle"))
     assert(live.nameplateDebuffPadding == savedPadding, "profile switching did not restore the native snapshot")
     print("Native nameplate transfer: module, bundle, protection, release and legacy compatibility passed")
+end
+
+do
+    local S = Suite.Suite
+    local layout, skins = "playerAuras", "playerAuraSkins"
+    local exported = { buffSkin = "SHADOW1", debuffSkin = "DARK2", enabled = true,
+        x = -43, y = 19, debuffX = 15, debuffOffset = -24, iconWidth = 47, iconZoom = 16, showDuration = false }
+    assert(S.SetMany(layout, exported))
+    assert(S.SetMany(skins, { enabled = true }))
+    local moduleText, layoutText, bundle = assert(P.ExportModule(skins)), assert(P.ExportModule(layout)), assert(P.Export())
+
+    local function ResetDestination()
+        assert(S.SetMany(layout, { buffSkin = "CUSTOM", debuffSkin = "CUSTOM", enabled = false, x = 91, debuffOffset = 73 }))
+        assert(S.SetMany(skins, { enabled = false }))
+    end
+    local function SkinsImported()
+        local settings = S.Config(layout)
+        assert(S.Config(skins).enabled and settings.buffSkin == "SHADOW1" and settings.debuffSkin == "DARK2",
+            "skin-only import lost one or both selected aura skins")
+        assert(not settings.enabled and settings.x == 91 and settings.debuffOffset == 73,
+            "skin-only import changed aura geometry or enabled the layout")
+    end
+
+    ResetDestination()
+    assert(P.ImportModule(moduleText))
+    SkinsImported()
+    ResetDestination()
+    local job = assert(P.BeginImport(moduleText))
+    local done, accepted, why
+    repeat done, accepted, why = job:Step() until done
+    assert(accepted, why)
+    SkinsImported()
+    ResetDestination()
+    assert(P.ImportModuleIntoNew("Player Aura Skin Copy", moduleText))
+    SkinsImported()
+
+    local function LayoutImported()
+        for key, value in pairs(exported) do
+            assert(S.Config(layout)[key] == value, "aura layout import lost " .. key)
+        end
+    end
+    ResetDestination()
+    assert(P.ImportModule(layoutText))
+    LayoutImported()
+    assert(not S.Config(skins).enabled, "layout-only import should preserve the separate skin switch")
+    assert(P.Import("Player Aura Full Copy", bundle))
+    LayoutImported()
+    assert(S.Config(skins).enabled, "full profiles must carry both module switches")
+
+    ResetDestination()
+    local savedSetMany = S.SetMany
+    S.SetMany = function(id, values)
+        if id == layout and values.buffSkin == "SHADOW1" then return false, "test refused skin choice" end
+        return savedSetMany(id, values)
+    end
+    local ok = P.ImportModule(moduleText)
+    S.SetMany = savedSetMany
+    assert(not ok and not S.Config(skins).enabled and S.Config(layout).buffSkin == "CUSTOM",
+        "a failed aura skin import left partial settings")
+
+    local envelope = { addon = "MSUF_Suite", format = 2, module = skins,
+        revision = S.MigrationRevision, settings = { enabled = true } }
+    local function ImportEnvelope() return P.ImportModule("MSUFM2:" .. MSUF_EncodeCompactTable(envelope, "MSUF3")) end
+    envelope.auraSkins = { buffSkin = 8 }
+    assert(not ImportEnvelope() and not S.Config(skins).enabled, "invalid aura skin choice changed the active profile")
+    envelope.auraSkins = nil
+    assert(ImportEnvelope() and S.Config(skins).enabled and S.Config(layout).buffSkin == "CUSTOM",
+        "old skin-only strings should preserve the current skin choices")
+    print("Player aura profiles: layout and skin module transfers, full bundle, rollback and legacy strings passed")
 end

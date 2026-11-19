@@ -29,6 +29,7 @@ SlashCmdList = {}
 InCombatLockdown = function() return false end
 Minimap = { SetMaskTexture = Noop }
 C_AddOns = { DoesAddOnExist = function() return false end, IsAddOnLoaded = function() return false end }
+C_CVar = { GetCVar = Noop }
 MSUF_GlobalDB, MSUF_ActiveProfile = { profiles = { Default = {} } }, "Default"
 
 ------------------------------------------------------------------ core

@@ -79,7 +79,7 @@ function S.PlanningReadiness()
             end
         end
         row.status = missing + restock > 0 and "missing" or (unknown > 0 or #owner.list.entries == 0) and "unknown" or "ready"
-        row.detail = S.Text("%d missing buffs · %d empty supplies · %d unavailable checks"):format(missing, restock, unknown)
+        row.detail = S.Text("%d missing buffs · %d empty supplies · %d unavailable checks", true):format(missing, restock, unknown)
     end
     return { row }
 end

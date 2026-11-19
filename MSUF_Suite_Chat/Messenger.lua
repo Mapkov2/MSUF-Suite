@@ -84,11 +84,13 @@ local function Outgoing(text)
     return body
 end
 
--- Sends a reply to the selected conversation. Returns true once it went
--- out; the reply line keeps refused text.
-function M:Send(text)
+-- The reply box supplies the tab that owns its text. A rejected send keeps
+-- that draft. Character whispers are handed to Blizzard without a result.
+function M:Send(text, expectedTab)
     local tab, body = D.selected, Outgoing(text)
     if not (self.active and tab and body) then return false end
+    if D.byKey[tab.key] ~= tab then return false end
+    if expectedTab and expectedTab ~= tab then return false end
     if NS.ChatLocked() then
         S.Print(S.Text("Chat messages are blocked here right now; your reply was not sent."))
         return false
@@ -175,7 +177,7 @@ end
 function M:Enable()
     W.SetHandlers({
         select = SelectTab, close = CloseTab,
-        send = function(text) return M:Send(text) end,
+        send = function(text, tab) return M:Send(text, tab) end,
         ask = function() AskName(M) end,
         closeAll = function() CloseAll(M) end,
     })

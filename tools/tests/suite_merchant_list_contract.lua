@@ -22,6 +22,7 @@ local function Widget(parent)
     end
     function w:SetShown(value) if value then self:Show() else self:Hide() end end
     function w:IsShown() return self.shown end
+    function w:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
     function w:SetParent(value) self.parent = value end
     function w:GetScript(name) return self.scripts[name] end
     function w:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
@@ -33,6 +34,7 @@ local function Widget(parent)
     function w:EnableMouse(value) self.mouse = value end
     function w:IsMouseEnabled() return self.mouse end
     function w:SetPoint(...) self.points[#self.points + 1] = { ... } end
+    function w:SetAllPoints(relative) self.allPoints = relative or self.parent end
     function w:ClearAllPoints() self.points = {} end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetFrameLevel(level) self.level = level end
@@ -41,6 +43,7 @@ local function Widget(parent)
     function w:SetTextColor(...) self.textColor = { ... } end
     function w:SetVertexColor(...) self.vertex = { ... } end
     function w:SetTexture(value) self.texture = value end
+    function w:SetColorTexture(...) self.color = { ... } end
     function w:SetDesaturated(value) self.desaturated = value end
     function w:SetFont(...) self.font = { ... } end
     function w:SetMinMaxValues(low, high)
@@ -53,7 +56,7 @@ local function Widget(parent)
         self.value = value
         if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, value) end
     end
-    for _, name in ipairs({ "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetWordWrap", "RegisterForClicks",
+    for _, name in ipairs({ "SetJustifyH", "SetWordWrap", "RegisterForClicks",
         "RegisterForDrag", "EnableMouseWheel", "SetOrientation", "SetThumbTexture", "SetValueStep",
         "SetObeyStepOnDrag" }) do
         w[name] = function() end
@@ -186,8 +189,14 @@ S.CreateFrame = function(kind, _, parent, template)
     created[#created + 1] = frame
     return frame
 end
-S.CreateTexture = function(parent) return Widget(parent) end
-S.CreateFontString = S.CreateTexture
+S.CreateTexture = function(parent, _, layer)
+    local texture = Widget(parent)
+    texture.layer = layer
+    parent.textures = parent.textures or {}
+    parent.textures[#parent.textures + 1] = texture
+    return texture
+end
+S.CreateFontString = function(parent) return Widget(parent) end
 S.Install = function(id, module) modules[id] = module end
 local combat = false
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end,
@@ -411,6 +420,17 @@ local updates = nativeUpdates
 MerchantFrame_Update()
 Check(nativeUpdates == updates + 1 and #deferred == 1 and MerchantItem1.alpha == 1,
     "the sale refresh did not run as one deferred repaint on the same page")
+local background = panel.textures and panel.textures[1]
+Check(background and background:IsVisible() and background.layer == "BACKGROUND"
+    and background.allPoints == panel and background.color and background.color[4] == 1,
+    "the native offers can show through before the deferred fade")
+-- Mainline MerchantFrame.xml: the grid starts at (11, -69), the right page
+-- button extends through x=326, and the latest buyback slot starts at y=-374.
+local origin = panel.points[1]
+local bottom = origin[5] - panel.height
+Check(origin[2] == MerchantFrame and origin[4] <= 9 and origin[4] + panel.width >= 326
+    and origin[5] <= -56 and origin[5] >= -69 and bottom <= -364 and bottom > -374,
+    "the merchant list background does not fit between the filter and buyback slot")
 RunFrame()
 local showing = 0
 for _, frame in ipairs(faded) do
@@ -424,6 +444,7 @@ MerchantFrame.selectedTab = 2
 MerchantFrame_Update()
 Check(not panel.shown and MerchantItem1.alpha == 1 and MerchantItem1ItemButton.mouse,
     "the buyback tab did not get Blizzard's offers back at once")
+Check(not background:IsVisible(), "the list background covers the buyback tab")
 Check(not MerchantPrevPageButton.shown and not MerchantNextPageButton.shown and not MerchantPageText.shown
     and MerchantItem11.shown, "the page controls came back on the buyback tab")
 MerchantFrame.selectedTab = 1

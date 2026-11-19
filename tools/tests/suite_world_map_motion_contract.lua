@@ -19,7 +19,8 @@ local function Run(flavor)
     NS.Checkmarks.TrackControlTree = Noop
     NS.QuestText = { Activate = Noop, Deactivate = Noop }
     NS.Cosmetics = { Fade = Noop, RestoreOwner = Noop }
-    NS.ScrollMotion = { IsQuestScroll = function() return false end, Track = Noop, ReleaseOwner = Noop }
+    NS.ScrollBarSkin = { SetScrollMotionProvider = Noop }
+    NS.GenericWindows.SetScrollMotionProvider = Noop
     NS.SocialUISkin = { SetMotionProvider = Noop }
     NS.GenericWindows.SetCollapseMotionProvider = Noop
     NS.GenericWindows.SetMenuMotionProvider = function(track, release)
@@ -35,6 +36,7 @@ local function Run(flavor)
     EventRegistry = Frame()
     QuestLogQuests_Update = nil
     Load("Adapters/AdapterKit.lua")
+    Load("Rendering/ScrollMotion.lua")
     Load("Rendering/LegacyScrollMotion.lua")
     Load("Rendering/CollapseCollectionRows.lua")
     Load("Rendering/CollapseCollections.lua")
@@ -77,7 +79,7 @@ local function Run(flavor)
     local function Loaded(frame) updates = updates + 1 frame.alpha = 1 end
     exploration:SetScript("OnUpdate", Loaded)
     details:SetScript("OnUpdate", Loaded)
-    _G.WorldMapFrame = map
+    _G.WorldMapFrame, _G.QuestMapFrame = map, quest
 
     Check(NS.Adapters.Apply("worldMap"), flavor .. ": map skin failed to apply")
     Flush()
@@ -124,7 +126,7 @@ local function Run(flavor)
     Check(next(Legacy.states[questScroll].owners), "re-enable lost quest scroll ownership")
     Check(Content.HasOpeningFade(map) == not forever, "re-enable changed map motion scope")
     Check(NS.Adapters.SetEnabled("worldMap", false), "final map release failed")
-    _G.WorldMapFrame = nil
+    _G.WorldMapFrame, _G.QuestMapFrame = nil, nil
     Check(H.ForeignWrites() == 0, "map motion wrote native geometry or alpha")
 end
 

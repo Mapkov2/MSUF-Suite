@@ -17,6 +17,18 @@ local function SafeValue(value, allowComma)
     return not value:find("[\001-\031\127]")
 end
 
+function Macros.ExactTargetName(value)
+    if not SafeValue(value, true) then return nil end
+    local name = Trim(value)
+    return name ~= "" and name or nil
+end
+
+local function SafeActionValue(spec, value)
+    if spec.key == "targetexact" then return Macros.ExactTargetName(value) ~= nil end
+    if spec.argument == "text" then return not value:find("[\r\n\001-\031\127]") end
+    return SafeValue(value, false)
+end
+
 local function Unit(value)
     if UNITS[value] then return true end
     local prefix, number, suffix = value:match("^(%a+)(%d+)(%a*)$")
@@ -135,9 +147,8 @@ local function Branches(step, spec)
         if not condition then return nil, errorKey end
         if condition ~= "" and spec.conditional == false then return nil, "This command does not support conditions" end
         local value = Trim(branch.useFirst and step.branches[1].value or branch.value)
-        local safe = spec.argument == "text" and not value:find("[\r\n\001-\031\127]") or SafeValue(value, false)
-        if not safe then return nil, "Invalid macro action value" end
         if value == "" and (spec.argument == "required" or spec.argument == "text") then return nil, "Choose a spell, item or value" end
+        if not SafeActionValue(spec, value) then return nil, "Invalid macro action value" end
         if value ~= "" and spec.argument == "none" then return nil, "This command needs no value" end
         if not ActionValue(step.command, value) then return nil, "Invalid macro action value" end
         if condition == "" and i < #step.branches then return nil, "Place the fallback rule last" end

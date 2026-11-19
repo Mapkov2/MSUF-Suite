@@ -17,6 +17,9 @@ Text("eta", "etaText", "Time to level", "TOPRIGHT", "BOTTOMRIGHT", -6, -4, "show
 Text("levelTime", "levelTimeText", "Time played this level", "TOPRIGHT", "BOTTOMRIGHT", -6, -18, "showLevelTime")
 
 function Layout.BottomPadding(config)
+    local xpOnly = (config.track or 1) == 1
+    if xpOnly and config.displayStyle == 2 and not (config.showSession or config.showRate
+        or config.showETA or config.showLevelTime) then return 0 end
     return config.showLevelTime and 33 or 23
 end
 

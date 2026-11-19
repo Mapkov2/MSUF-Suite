@@ -78,6 +78,9 @@ GetCVarBool = function() return false end
 IsInInstance = function() return false, "none" end
 C_Texture = { GetAtlasInfo = function() return nil end }
 C_Map = { GetBestMapForUnit = function() return nil end }
+C_EventUtils = { IsEventValid = function(event)
+    return event == "UNIT_COMBAT" or event == "COMBAT_TEXT_UPDATE" or event == "PLAYER_XP_UPDATE"
+end }
 IsShiftKeyDown, IsControlKeyDown = function() return false end, function() return false end
 GetCurrentKeyBoardFocus = function() return nil end
 time = os.time

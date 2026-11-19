@@ -2351,10 +2351,10 @@ M.RequestRefresh()
 -- the + tile, on every bar type. The page lays pooled buttons over what the
 -- runtime drew and never hooks the drawing itself.
 do
-    local DOT = " \194\183 "
-    local HINT = "Click a spell for its settings" .. DOT .. "drag to reorder or onto a bar above" .. DOT
-        .. "middle-click removes" .. DOT .. "+ adds"
-    local TIP = "Click: settings" .. DOT .. "Drag: reorder" .. DOT .. "Middle-click: remove"
+    local SEPARATOR = " - "
+    local HINT = "Click a spell for its settings" .. SEPARATOR .. "drag to reorder or onto a bar above" .. SEPARATOR
+        .. "middle-click removes" .. SEPARATOR .. "+ adds"
+    local TIP = "Click: settings" .. SEPARATOR .. "Drag: reorder" .. SEPARATOR .. "Middle-click: remove"
     local listsBefore = Config().listsData
     local hits, drag, canvas = ui.hits, ui.drag, runtime.frame
     local function Idle()

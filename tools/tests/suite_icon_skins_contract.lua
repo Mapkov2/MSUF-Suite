@@ -377,8 +377,9 @@ C.Effects = { Refit = function() end, Shapes = function() end, Reshaped = functi
         local overlay = New("Texture")
         icon.pressPulse = { GetParent = function() return overlay end }
     end }
+C.Ranks = { on = false }
 local P = { NS = NS, Suite = S, CDM = C }
-for _, file in ipairs({ "Const.lua", "Icons.lua", "TrackingBars.lua", "Settings.lua" }) do
+for _, file in ipairs({ "Const.lua", "Icons.lua", "TrackingBars.lua", "Index.lua", "Settings.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_CooldownManager/" .. file))("MSUF_Suite_CooldownManager", P)
 end
 local K, Icons, Settings = C.Const, C.Icons, C.Settings
@@ -727,6 +728,17 @@ if hostRoot then
     Check(#applied == 1 and applied[1] == "cooldownManager", "combat end: one report refreshes the module")
     Check(fresh.IconSkinLook("DEFAULT").signature:find("DARK2", 1, true), "combat end: the new default compiles")
     Check(shared.iconSkinDefault.styleSkin == "DARK2", "the page wrote the live default")
+
+    shared.iconSkinDefault = nil
+    local withoutDefault = Bridge(api)
+    Check(not withoutDefault.IconSkinLook("DEFAULT"), "the reproduced profile has no global icon skin")
+    local fallback, name = withoutDefault.PlayerAuraSkin("DEFAULT")
+    local owner = setmetatable({ kind = "Frame", calls = {}, children = {}, shown = true, level = 1 }, Guarded)
+    local icon = New("Texture", owner)
+    local before = #owner.children
+    Check(fallback and name == "FRAME_BEVEL" and withoutDefault.PaintIconSkin(owner, fallback, 30, 30, icon),
+        "native auras must paint Beveled Trim through the real host when the profile has no global skin")
+    Check(#owner.children > before and not withoutDefault.PlayerAuraSkin("CUSTOM"), "the fallback must draw and leave No skin available")
 end
 
 print("suite icon skins contract passed" .. (hostRoot and " (MSUF 7.0 host)" or " (recording host)"))

@@ -369,7 +369,7 @@ end
 MoveTimeout = function()
     local active = job
     if not active then return end
-    if active.profile == NS.DB and M.config.inventoryView == NS.BagsView.ALL and CanSort() then
+    if active.profile == NS.DB and NS.BagsPhysicalOrder(M.config) and CanSort() then
         if Confirm(active) then
             Step()
             return
@@ -391,7 +391,7 @@ end
 Step = function()
     local active = job
     if not active then return end
-    if active.profile ~= NS.DB or not CanSort() or active.cleanup and M.config.inventoryView ~= NS.BagsView.ALL then
+    if active.profile ~= NS.DB or not CanSort() or active.cleanup and not NS.BagsPhysicalOrder(M.config) then
         Timeout()
         return
     end
@@ -469,7 +469,7 @@ function Sort.Cleanup()
     end
     if job then return false end
     local equipped, excluded = 0, 0
-    local cleanup = NS.Client.isForever and M.config.inventoryView == NS.BagsView.ALL
+    local cleanup = NS.BagsPhysicalOrder(M.config)
     local lastBag = cleanup and NUM_BAG_FRAMES or NUM_TOTAL_BAG_FRAMES
     for bag = Enum.BagIndex.Backpack, lastBag do
         if Size(bag) > 0 then

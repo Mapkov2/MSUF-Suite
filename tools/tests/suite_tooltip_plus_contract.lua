@@ -68,7 +68,7 @@ UIParent = Widget()
 canaccesstable = function(value) return not (type(value) == "table" and value.blocked) end
 Enum = {
     TooltipDataType = { Item = 0, Spell = 1, Unit = 2, Mount = 10 },
-    TooltipDataLineType = { None = 0, UnitName = 2, UnitCriteriaProgress = 50 },
+    TooltipDataLineType = { None = 0, UnitName = 2, UnitCriteriaProgress = 50, ItemName = 5 },
 }
 IsInInstance = function() return false end
 local mods = {}
@@ -229,6 +229,48 @@ local function BuildItem(link)
     tooltip:Clear()
     fixture.Run(Enum.TooltipDataType.Item, tooltip, { id = 4, hyperlink = link })
     tooltip:Show()
+end
+
+------------------------------------------------------------------ item header icons
+do
+    local item = Enum.TooltipDataType.Item
+    local reads = 0
+    local icon = 1250
+    C_Item.GetItemIconByID = function(id) assert(id == 42); reads = reads + 1; return icon end
+    function tooltip:AppendText(text) self.itemAppend = (self.itemAppend or "") .. text end
+    function tooltip:GetPrimaryTooltipData() return self.itemData end
+    ShoppingTooltip1 = { AppendText = tooltip.AppendText, GetPrimaryTooltipData = tooltip.GetPrimaryTooltipData }
+    local other = { AppendText = tooltip.AppendText, GetPrimaryTooltipData = tooltip.GetPrimaryTooltipData }
+    local row = ReadOnly({ type = Enum.TooltipDataLineType.ItemName, lineIndex = 1, leftText = "Sword" })
+    local data = ReadOnly({ id = 42, lines = { row } })
+    local function BuildHeader(frame, current, callData)
+        frame.itemData, frame.itemAppend = current, nil
+        fixture.Run(item, frame, callData or current)
+        return frame.itemAppend
+    end
+    Check(not BuildHeader(tooltip, data) and reads == 0, "existing tooltip settings added an icon")
+    visibility.config.itemHeaderIcon = true
+    visibility:Refresh()
+    visibility:Refresh()
+    local markup = "  |T1250:15:15|t"
+    Check(BuildHeader(tooltip, data) == markup and reads == 1, "the primary item name lacked one icon")
+    Check(BuildHeader(ShoppingTooltip1, data) == markup and reads == 2, "the native comparison lacked its own icon")
+    Check(not BuildHeader(other, data) and reads == 2, "the option decorated an unrelated tooltip")
+    Check(not BuildHeader(tooltip, {}, data) and reads == 2, "an appended item decorated the old header")
+    Check(not BuildHeader(tooltip, ReadOnly({ id = secret, lines = { row } })) and reads == 2,
+        "a restricted item ID was read")
+    local secretName = ReadOnly({ type = Enum.TooltipDataLineType.ItemName, lineIndex = 1, leftText = secret })
+    Check(not BuildHeader(tooltip, ReadOnly({ id = 42, lines = { secretName } })) and reads == 2,
+        "a restricted title was decorated")
+    combat = true
+    Check(not BuildHeader(tooltip, data) and reads == 2, "a combat build touched the item icon")
+    combat = false
+    icon = secret
+    Check(not BuildHeader(tooltip, data) and reads == 3, "a restricted icon entered texture markup")
+    visibility.config.itemHeaderIcon = false
+    visibility:Refresh()
+    Check(not BuildHeader(tooltip, data) and reads == 3, "switching the setting off still looked up item icons")
+    ShoppingTooltip1 = nil
 end
 
 ------------------------------------------------------------------ specialization

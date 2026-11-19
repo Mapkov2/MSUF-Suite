@@ -30,6 +30,7 @@ local ARRAYS = { "cooldown", "gcd", "charged", "counted", "ranged", "usable", "p
     "gated", "totems" }
 local MAPS = { "bySpell", "byBase", "byCategory", "byItem", "byEquip", "byTotem" }
 local pool = {}
+local indexedGlobalGCD
 -- entry -> stamp of the last two-list ForSpell call that reached it.
 local seen, seenStamp = {}, 0
 
@@ -59,6 +60,40 @@ local function Add(map, key, entry)
 end
 local function Push(list, entry) list[#list + 1] = entry end
 
+local function PrepareRules(entry, view)
+    local rules = entry.cooldownRules
+    if not rules or rules.owner ~= entry then rules = { owner = entry } end
+    local ov = entry.ov
+    rules.view = view
+    local showGCD = ov.showGCD
+    if showGCD == nil then showGCD = C.state.showGCD end
+    entry.indexedShowGCD, entry.indexedGCDChoices = showGCD == true, ov
+    rules.readyResources = view and K.Pick(ov, view, "readyResources")
+    rules.readyGlow = view and K.Pick(ov, view, "readyGlow")
+    rules.fullChargeGlow = view and K.Pick(ov, view, "fullChargeGlow")
+    rules.procGlow = view and K.Pick(ov, view, "procGlow")
+    entry.cooldownRules = rules
+    return rules
+end
+
+-- Settings may change between the events that share the queued index pass.
+-- Publish the new rules immediately for entries the old index still holds.
+function Index.SettingsChanged(slot, view)
+    C.Flush.dirty.index = true
+    local plan = C.plans[slot]
+    if not plan then return end
+    for _, entry in ipairs(plan.entries) do
+        if entry.cooldownRules then PrepareRules(entry, view) end
+    end
+end
+
+function Index.RefreshGlobalGCD(on)
+    indexedGlobalGCD = on
+    for _, entry in ipairs(Index.cooldown) do
+        if entry.ov.showGCD == nil and entry.cooldownRules then entry.indexedShowGCD = on end
+    end
+end
+
 local function AddCooldown(entry, view)
     local bySpell = Index.bySpell
     Push(Index.cooldown, entry)
@@ -77,9 +112,11 @@ local function AddCooldown(entry, view)
     Add(Index.byEquip, entry.equipSlot, entry)
     local item = entry.src == "i" or entry.src == "e" or entry.equipSlot ~= nil
     local ov = entry.ov
-    local showGCD = ov.showGCD
-    if showGCD == nil then showGCD = C.state.showGCD end
-    if showGCD then Push(Index.gcd, entry) end
+    local rules = entry.cooldownRules
+    if not rules or rules.owner ~= entry or rules.view ~= view or entry.indexedGCDChoices ~= ov then
+        rules = PrepareRules(entry, view)
+    end
+    if entry.indexedShowGCD then Push(Index.gcd, entry) end
     if entry.charges then Push(Index.charged, entry) end
     -- Use counts (SPELL_UPDATE_USES) only matter where spell counts show
     -- (the entry's or the bar's choice); items and potion categories show
@@ -91,14 +128,14 @@ local function AddCooldown(entry, view)
     if entry.hasRange and view and view.range then Push(Index.ranged, entry) end
     -- Equipment-slot entries have no usable query or tint state to refresh.
     -- Explicit item entries still use IsUsableItem, even with an equip slot.
-    if spell and view and (view.usable or K.Pick(ov, view, "readyResources"))
+    if spell and view and (view.usable or rules.readyResources)
         and (entry.src == "i" or not (entry.equipSlot or entry.src == "e")) then
         Push(Index.usable, entry)
-        if K.Pick(ov, view, "readyResources") then Index.usableInterval = .1 end
+        if rules.readyResources then Index.usableInterval = .1 end
     end
-    if spell and view and K.Pick(ov, view, "procGlow") then Push(Index.proc, entry) end
+    if spell and rules.procGlow then Push(Index.proc, entry) end
     -- Ready glows flip on combat edges only where one is wanted.
-    if view and (K.Pick(ov, view, "readyGlow") or K.Pick(ov, view, "fullChargeGlow")) then Push(Index.ready, entry) end
+    if rules.readyGlow or rules.fullChargeGlow then Push(Index.ready, entry) end
     -- Item, equipment-slot (custom entries, or Blizzard's trinkets on whichever
     -- bar holds them, Essential by default) and potion-category entries follow
     -- bag contents. Healthstone categories also follow bag cooldowns so their
@@ -139,7 +176,9 @@ local function RouteChoices()
                     if ov.usableOnly and spell and (src == "i" or not (entry.equipSlot or src == "e")) then
                         Push(Index.gated, entry)
                     end
-                    if ov.procOnly and spell and not K.Pick(ov, view, "procGlow") then Push(Index.proc, entry) end
+                    local rules = entry.cooldownRules
+                    if ov.procOnly and spell and not (rules and rules.procGlow
+                        or not rules and K.Pick(ov, view, "procGlow")) then Push(Index.proc, entry) end
                     if ov.itemAura and entry.hasAura and entry.auraIDs and not view.cooldownDuration
                         and not K.Pick(ov, view, "showAura") then Push(Index.overlay, entry) end
                 end
@@ -149,6 +188,8 @@ local function RouteChoices()
 end
 
 function Index.Rebuild()
+    local gcd = C.state.showGCD == true
+    if indexedGlobalGCD ~= gcd then Index.RefreshGlobalGCD(gcd) end
     Index.hasSharedTimeSpells = false
     Index.usableInterval = .2
     for i = 1, #MAPS do Release(Index[MAPS[i]]) end

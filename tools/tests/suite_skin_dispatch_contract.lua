@@ -139,6 +139,35 @@ do
     C_LFGList, Enum = groupFinder, enums
 end
 
+-- A skin reload that starts in combat can arm the Social UI's native opening.
+do
+    local calls = 0
+    local windows, gate, isLocked = NS.GenericWindows, NS.CombatGate, NS.IsCombatLocked
+    local social = true
+    NS.GenericWindows = { IsCategoryEnabled = function(name) return name == "social" and social end }
+    NS.CombatGate = { RunOrDefer = function() return false, "combat" end }
+    NS.IsCombatLocked = function() return true end
+    NS.SocialUISkin = { Apply = function(owner)
+        assert(owner == "blizzardWindows", "combat startup changed the Social UI skin owner")
+        calls = calls + 1
+    end }
+    NS.DB.skins.worldMap = false
+    Adapters.Apply("blizzardWindows")
+    assert(calls == 1, "single adapter apply did not arm the Social UI during combat")
+    Adapters.ApplyAll()
+    assert(calls == 2, "combat startup did not arm the Social UI")
+    social = false
+    Adapters.ApplyAll()
+    social = true
+    NS.DB.skins.blizzardWindows = false
+    Adapters.Apply("blizzardWindows")
+    NS.DB.skins.blizzardWindows, NS.DB.enabled = nil, false
+    Adapters.ApplyAll()
+    assert(calls == 2, "combat startup ignored the Social UI skin toggles")
+    NS.DB.skins.worldMap, NS.DB.enabled, NS.SocialUISkin = nil, true, nil
+    NS.GenericWindows, NS.CombatGate, NS.IsCombatLocked = windows, gate, isLocked
+end
+
 -- The icon tree and window controls that follow an adapter's own callbacks
 -- belong to the same boundary: ApplyAll reports them and goes on.
 applied, reported = {}, {}

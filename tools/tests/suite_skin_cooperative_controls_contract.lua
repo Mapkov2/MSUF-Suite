@@ -41,10 +41,20 @@ local function Art(parent, kind, alpha)
     art.GetTextColor, art.SetTextColor = art.GetVertexColor, art.SetVertexColor
     return art
 end
+local secretEnabled = {}
 local function Button(parent, kind)
     local button = Frame(nil, parent, kind or "Button")
     function button:HasScript() return true end
     function button:IsEnabled() return not self.disabled end
+    function button:SetEnabled(value)
+        if value == secretEnabled then
+            assert(not self.hooks.OnEnable and not self.hooks.OnDisable, "skin added forbidden button-state scripts")
+            return
+        end
+        self.disabled = not value
+    end
+    function button:Enable() self.disabled = false end
+    function button:Disable() self.disabled = true end
     function button:GetButtonState() return "NORMAL" end
     function button:GetNormalTexture() return self.normal end
     function button:GetCheckedTexture() return self.checked end
@@ -138,7 +148,8 @@ drop.open = true callbacks.open[1](callbacks.open[2])
 Check(drop.active, "opened dropdown")
 Fire(drop, "OnMouseDown") Fire(drop, "OnMouseUp") Fire(drop, "OnClick")
 drop.open = false callbacks.close[1](callbacks.close[2])
-drop.disabled = true Fire(drop, "OnDisable")
+drop:SetEnabled(secretEnabled)
+drop:Disable()
 Check(selected == 1 and drop.Arrow.color[1] == NS.Defaults.theme.colors.disabled[1], "native dropdown input or disabled state")
 Check(not other:Fade(drop.Arrow), "foreign scope acquired a dropdown part")
 local r, w, a = reads, writes, attaches
@@ -152,7 +163,8 @@ Check(skin:SkinCheckButton(check) and check.checked.color[4] == 0, "hidden radio
 local old = check.checked
 old.parent, check.checked = UIParent, Art(check)
 Check(skin:Refresh(check) and other:Fade(old) and other:Release(old), "detached pooled indicator retained claims")
-check.disabled = true Fire(check, "OnDisable")
+check:SetEnabled(secretEnabled)
+check:SetEnabled(false)
 Check(check.disabledChecked.color[1] == NS.Defaults.theme.colors.disabled[1], "disabled checked art")
 check.checked.color = { .9, .8, .7, .6 }
 Check(skin:Release(check) and check.checked.color[1] == .9 and check.disabledChecked.color[1] == .15, "checked art restore")
@@ -224,6 +236,15 @@ Fire(close, "OnEnter")
 Check(cell.textures[2].color[1] == 1 and cell.textures[1].color[4] == .85, "caption white cross and red hover")
 Fire(close, "OnMouseDown")
 Check(cell.textures[1].color[4] == 1, "caption pressed fill")
+close:SetEnabled(secretEnabled)
+close:Disable()
+Check(cell.textures[1].color[4] < .85, "disabled caption kept pressed art")
+close:Enable()
+Fire(close, "OnEnter")
+Check(cell.textures[1].color[4] == .85, "caption did not repaint after enable")
+local captionReads = reads
+for _ = 1, 1000 do close:SetEnabled(true) end
+Check(reads == captionReads, "unchanged enabled states repainted the caption")
 Check(skin:Refresh(close) and close.normal.alpha == 0, "caption failed own claim on refresh")
 local original = close.normal
 close.normal = Art(close)

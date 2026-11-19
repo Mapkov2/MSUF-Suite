@@ -69,6 +69,13 @@ local function Current(record)
 end
 
 local function Move(record, button, config, animate)
+    if not button or not button:IsShown() then
+        if record.group then record.group:Stop() end
+        record.selected, record.x, record.y = nil, nil, nil
+        record.frame:Hide()
+        return
+    end
+    record.frame:Show()
     local x, y = Current(record)
     local targetX, targetY, width, height = Rect(record.view, button)
     if record.group then record.group:Stop() end
@@ -98,6 +105,7 @@ function Selection.Refresh(view, config, geometryChanged)
     if not record or record.chrome ~= view.chrome then record = New(view) end
     Paint(record, config)
     local target = view.tabs[config.inventoryView]
+    if target and not target:IsShown() then target = nil end
     local reset = geometryChanged or record.needsSnap or record.mode ~= config.animationMode
     record.mode = config.animationMode
     if record.selected == target and not reset then return end
@@ -111,6 +119,7 @@ function Selection.Switch(view, config)
 end
 
 local function Stop(record)
+    if not record.selected then return end
     if record.view.transitionPending and not NS.InCombat() then
         local x, y = Current(record)
         if record.group then record.group:Stop() end

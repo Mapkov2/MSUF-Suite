@@ -6,6 +6,7 @@ local nativeEscape, stackReads = false, 0
 local directCombatCloses, sourceReads, panelLookups = 0, 0, 0
 local hiddenStack = {}
 local bagsOpen = true
+local nativeBagOwner
 local config = {}
 local nativeAreaHook, nativeShowHook, nativeHideHook, nativeSpellWrite
 local addonSpellCloses, addonSpellAreaWrites = 0, 0
@@ -127,6 +128,7 @@ function HideUIPanel(frame)
     local area = NativeArea(frame)
     if area and occupied[area] == frame then occupied[area] = nil end
     frame.shown, frame.closes = false, (frame.closes or 0) + 1
+    if frame.nativeHide then frame:nativeHide() end
     if frame.scripts.OnHide and not frame.skipHideHook then frame.scripts.OnHide(frame) end
     if nativeHideHook then nativeHideHook(frame) end
 end
@@ -139,6 +141,7 @@ local function NativeOpen(frame)
         occupied[area] = frame
     end
     frame.shown = true
+    if frame.nativeShow then frame:nativeShow() end
     if frame.scripts.OnShow and not frame.skipShowHook then frame.scripts.OnShow(frame) end
     if nativeShowHook then nativeShowHook(frame) end
 end
@@ -208,6 +211,8 @@ local S = {
     GamepadUI = function() return InputUtil.IsGamepadUIEnabled() end,
 }
 local auction = Panel("AuctionHouseFrame", "doublewide")
+local encounter = Panel("EncounterJournal", "left")
+local guild = Panel("GuildBankFrame", "left")
 local quest = Panel("QuestLogPopupDetailFrame", "left")
 local npcQuest = Panel("QuestFrame", "left")
 local protected = Panel("ProfessionsFrame", "left", true)
@@ -231,7 +236,9 @@ local function ChangeMapSize(maximized)
 end
 local bag1, bag2 = Panel("ContainerFrame1"), Panel("ContainerFrame2")
 function IsAnyBagOpen() return bagsOpen or bag1:IsShown() or bag2:IsShown() end
-function CloseAllBags()
+function CloseAllBags(frame)
+    if frame and frame ~= nativeBagOwner then return end
+    nativeBagOwner = nil
     bagsOpen = false
     HideUIPanel(bag1)
     HideUIPanel(bag2)
@@ -239,9 +246,9 @@ end
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_QualityOfLife/ParallelWindows.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 
 NativeOpen(auction)
-NativeOpen(quest)
+NativeOpen(encounter)
 Check(not auction:IsShown(), "fixture did not reproduce native eviction")
-HideUIPanel(quest)
+HideUIPanel(encounter)
 NativeOpen(auction)
 module.active = true
 module:Enable()
@@ -253,6 +260,48 @@ Check(NativeArea(mail) == "left" and mail.attr[defined] == nil and mail.point ==
 HideUIPanel(auction)
 Flush()
 NativeOpen(auction)
+
+-- These three native panels all have left/pushable=0. The outgoing frame's
+-- OnHide runs before the next view's OnShow can reuse QuestInfo.
+local questInfoView, dialogueCloses
+npcQuest.nativeShow = function()
+    Check(not quest:IsShown() and not map:IsShown(), "NPC built QuestInfo over another quest view")
+    questInfoView = "offer"
+end
+npcQuest.nativeHide = function()
+    dialogueCloses = (dialogueCloses or 0) + 1
+end
+local function RenderLog()
+    Check(not npcQuest:IsShown(), "quest log replaced the active NPC reward state")
+    questInfoView = "log"
+end
+quest.nativeShow, map.nativeShow = RenderLog, RenderLog
+NativeOpen(npcQuest)
+Check(questInfoView == "offer" and auction:IsShown(), "opening an NPC quest closed an unrelated floating panel")
+questInfoView = "reward"
+Flush()
+Check(npcQuest:IsShown() and questInfoView == "reward" and not dialogueCloses,
+    "standalone hand-in lost access to its native reward choice")
+NativeOpen(encounter)
+Check(npcQuest:IsShown() and questInfoView == "reward" and encounter:IsShown(),
+    "an unrelated floating window disrupted hand-in")
+HideUIPanel(encounter)
+NativeOpen(map)
+Check(not npcQuest:IsShown() and GetUIPanel("left") == map and dialogueCloses == 1 and questInfoView == "log",
+    "native map did not replace the NPC dialogue before reusing QuestInfo")
+NativeOpen(npcQuest)
+Check(not map:IsShown() and GetUIPanel("left") == npcQuest and questInfoView == "offer",
+    "NPC quest dialogue did not replace the native map")
+NativeOpen(quest)
+Check(not npcQuest:IsShown() and quest:IsShown() and GetUIPanel("left") == quest and dialogueCloses == 2,
+    "quest detail popup did not replace the NPC quest dialogue")
+NativeOpen(npcQuest)
+Check(not quest:IsShown() and npcQuest:IsShown(),
+    "NPC quest dialogue did not replace the quest detail popup")
+HideUIPanel(npcQuest)
+npcQuest.nativeShow, npcQuest.nativeHide, quest.nativeShow, map.nativeShow = nil, nil, nil, nil
+Flush()
+
 Fire("PLAYER_REGEN_DISABLED")
 combat = true
 NativeOpen(map)
@@ -270,47 +319,47 @@ ChangeMapSize(false)
 Check(map.point[1] == "TOPLEFT" and map.point[4] == 28 and map.point[5] == -100,
     "Blizzard did not restore the compact map position")
 HideUIPanel(map)
-NativeOpen(quest)
-Check(auction:IsShown() and quest:IsShown() and bagsOpen, "opening a quest detail closed the auction house or bags")
+NativeOpen(encounter)
+Check(auction:IsShown() and encounter:IsShown() and bagsOpen, "opening the encounter journal closed the auction house or bags")
 HideUIPanel(auction)
 Flush()
 Check(NativeArea(auction) == nil and GetUIPanel("doublewide") == nil, "auction did not float on its next open")
 NativeOpen(auction)
-NativeOpen(npcQuest)
-Check(auction:IsShown() and quest:IsShown() and npcQuest:IsShown(), "independent panels evicted one another")
-Check(quest.point[4] ~= auction.point[4] and auction.raised and npcQuest.raised, "floating windows lack independent placement")
-Check(Escape(true) == "cast" and npcQuest:IsShown() and bagsOpen and stackReads == 0,
+NativeOpen(guild)
+Check(auction:IsShown() and encounter:IsShown() and guild:IsShown(), "independent panels evicted one another")
+Check(encounter.point[4] ~= auction.point[4] and auction.raised and guild.raised, "floating windows lack independent placement")
+Check(Escape(true) == "cast" and guild:IsShown() and bagsOpen and stackReads == 0,
     "Escape interrupted native cast handling")
 local readStack = debugstack
 for _, read in ipairs({ function() return hiddenStack end, function() return nil end }) do
     debugstack = read
     CloseSpecialWindows()
     Flush()
-    Check(npcQuest:IsShown() and auction:IsShown(), "unreadable stack closed a floating window")
+    Check(guild:IsShown() and auction:IsShown(), "unreadable stack closed a floating window")
 end
 debugstack = readStack
 CloseSpecialWindows()
 Flush()
-Check(npcQuest:IsShown() and auction:IsShown() and quest:IsShown(), "native panel cleanup closed a floating window")
-Check(Escape(false) == "window" and npcQuest:IsShown() and not bagsOpen,
+Check(guild:IsShown() and auction:IsShown() and encounter:IsShown(), "native panel cleanup closed a floating window")
+Check(Escape(false) == "window" and guild:IsShown() and not bagsOpen,
     "Escape did not finish native cleanup before the floating window close")
 Flush()
-Check(not npcQuest:IsShown() and auction:IsShown() and quest:IsShown(), "Escape did not close only the newest floating window")
+Check(not guild:IsShown() and auction:IsShown() and encounter:IsShown(), "Escape did not close only the newest floating window")
 Check(watcher.OnUpdate == nil and watcher.OnKeyDown == nil, "Escape installed a polling or input handler")
-NativeOpen(npcQuest)
+NativeOpen(guild)
 Check(Escape(false) == "window", "reopening did not rearm Escape")
 Fire("PLAYER_REGEN_DISABLED")
 combat = true
 Flush()
-Check(npcQuest:IsShown() and quest:IsShown(), "a pending Escape close crossed into combat")
+Check(guild:IsShown() and encounter:IsShown(), "a pending Escape close crossed into combat")
 combat = false
 Fire("PLAYER_REGEN_ENABLED")
-HideUIPanel(npcQuest)
+HideUIPanel(guild)
 Flush()
 Check(NativeArea(protected) == "left" and NativeArea(modal) == "full", "modified a protected or fullscreen window")
 Check(UIPanelWindows.AuctionHouseFrame.area == "doublewide", "wrote to the native registration table")
 
-HideUIPanel(quest)
+HideUIPanel(encounter)
 Flush()
 Fire("PLAYER_REGEN_DISABLED")
 Check(Escape(false) == "default", "a native-only combat window consumed Escape")
@@ -327,23 +376,23 @@ Check(Escape(false) == "default" and auction:IsShown(), "Escape intercepted Game
 gamepad = false
 Fire("GAME_PAD_ACTIVE_CHANGED")
 Check(watcher:IsShown(), "returning to keyboard input did not rearm Escape")
-NativeOpen(quest)
+NativeOpen(encounter)
 
 module.active = false
 module:Disable()
-Check(auction:IsShown() and quest:IsShown() and NativeArea(journal) == "left",
+Check(auction:IsShown() and encounter:IsShown() and NativeArea(journal) == "left",
     "disable closed live windows or failed to restore a hidden window")
 HideUIPanel(auction)
-HideUIPanel(quest)
+HideUIPanel(encounter)
 Flush()
-Check(NativeArea(auction) == "doublewide" and NativeArea(quest) == "left", "native layout was not restored after close")
+Check(NativeArea(auction) == "doublewide" and NativeArea(encounter) == "left", "native layout was not restored after close")
 Check(NativeArea(map) == "left" and next(callbacks) == nil, "disabling did not restore the native map")
 Check(next(events) == nil and Escape(false) == "default", "disabled watchers still active")
 NativeOpen(auction)
-NativeOpen(quest)
+NativeOpen(encounter)
 Check(not auction:IsShown(), "disabling did not restore native eviction")
 
-HideUIPanel(quest)
+HideUIPanel(encounter)
 map.preferCompact = false
 ChangeMapSize(true)
 module.active = true
@@ -429,7 +478,7 @@ module:Enable()
 local function ResetWindows()
     config.windowLimit = 0
     module:Refresh()
-    for _, frame in ipairs({ auction, quest, npcQuest, protected, map, groupFinder, playerSpells, retained, mail }) do
+    for _, frame in ipairs({ auction, encounter, guild, quest, npcQuest, protected, map, groupFinder, playerSpells, retained, mail }) do
         HideUIPanel(frame)
     end
     CloseAllBags()
@@ -450,14 +499,14 @@ Flush()
 NativeOpen(auction)
 Flush()
 Check(auction:IsShown() and bag1:IsShown() and bag2:IsShown(), "separate bags counted as multiple windows")
-NativeOpen(quest)
-Check(auction:IsShown() and quest:IsShown() and bag1:IsShown(), "cap ran inside the native show")
+NativeOpen(encounter)
+Check(auction:IsShown() and encounter:IsShown() and bag1:IsShown(), "cap ran inside the native show")
 Flush()
-Check(not bag1:IsShown() and not bag2:IsShown() and auction:IsShown() and quest:IsShown(),
+Check(not bag1:IsShown() and not bag2:IsShown() and auction:IsShown() and encounter:IsShown(),
     "the oldest bag group was counted but never closed")
 NativeOpen(map)
 Flush()
-Check(not auction:IsShown() and quest:IsShown() and map:IsShown(), "cap did not keep closing in opening order")
+Check(not auction:IsShown() and encounter:IsShown() and map:IsShown(), "cap did not keep closing in opening order")
 
 ResetWindows()
 Limit(2)
@@ -465,9 +514,9 @@ NativeOpen(map)
 Flush()
 NativeOpen(auction)
 Flush()
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
-Check(map:IsShown() and not auction:IsShown() and quest:IsShown(),
+Check(map:IsShown() and not auction:IsShown() and encounter:IsShown(),
     "the Forever cap did not preserve the native map and close the oldest floating window")
 
 ResetWindows()
@@ -479,9 +528,9 @@ Check(GetUIPanel("left") == mail, "Forever mailbox bypassed the native panel dis
 Flush()
 NativeOpen(auction)
 Flush()
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
-Check(mail:IsShown() and not auction:IsShown() and quest:IsShown(),
+Check(mail:IsShown() and not auction:IsShown() and encounter:IsShown(),
     "the cap did not count the native mailbox or close the oldest eligible window")
 HideUIPanel(mail)
 Flush()
@@ -523,11 +572,11 @@ NativeOpen(combined)
 Flush()
 NativeOpen(character)
 Flush()
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
 NativeOpen(auction)
 Flush()
-Check(combined:IsShown() and character:IsShown() and not quest:IsShown() and auction:IsShown(),
+Check(combined:IsShown() and character:IsShown() and not encounter:IsShown() and auction:IsShown(),
     "the cap did not leave the combined bags and character window to the Gamepad UI")
 gamepad = false
 HideUIPanel(character)
@@ -537,12 +586,12 @@ CloseAllBags = closeBags
 ResetWindows()
 NativeOpen(auction)
 Flush()
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
 NativeOpen(map)
 Flush()
 Limit(2)
-Check(not auction:IsShown() and quest:IsShown() and map:IsShown(), "lowering the limit did not apply to open windows")
+Check(not auction:IsShown() and encounter:IsShown() and map:IsShown(), "lowering the limit did not apply to open windows")
 
 ResetWindows()
 Limit(3)
@@ -551,7 +600,7 @@ NativeOpen(playerSpells)
 Flush()
 NativeOpen(auction)
 Flush()
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
 -- A same-tick native resize does not detach the spell panel or give it a Suite close path.
 HideUIPanel(playerSpells)
@@ -562,7 +611,7 @@ NativeOpen(playerSpells)
 Flush()
 NativeOpen(groupFinder)
 Flush()
-Check(playerSpells:IsShown() and not auction:IsShown() and quest:IsShown() and groupFinder:IsShown(),
+Check(playerSpells:IsShown() and not auction:IsShown() and encounter:IsShown() and groupFinder:IsShown(),
     "cap did not count the spell window or skipped the oldest eligible floating window")
 Check(addonSpellCloses == 0, "the cap closed the native spells window")
 
@@ -582,7 +631,7 @@ ResetWindows()
 Limit(2)
 NativeOpen(auction)
 Flush()
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
 HideUIPanel(auction)
 Flush()
@@ -590,7 +639,7 @@ NativeOpen(auction)
 Flush()
 NativeOpen(map)
 Flush()
-Check(not quest:IsShown() and auction:IsShown() and map:IsShown(),
+Check(not encounter:IsShown() and auction:IsShown() and map:IsShown(),
     "a manually closed and reopened window retained its old opening order")
 
 ResetWindows()
@@ -602,9 +651,9 @@ NativeOpen(bag1)
 module.active = true
 module:Enable()
 Limit(2)
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
-Check(auction:IsShown() and not bag1:IsShown() and quest:IsShown(),
+Check(auction:IsShown() and not bag1:IsShown() and encounter:IsShown(),
     "the Forever cap did not count the existing managed window and close the oldest eligible group")
 
 ResetWindows()
@@ -613,39 +662,40 @@ NativeOpen(protected)
 Flush()
 NativeOpen(auction)
 Flush()
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
-Check(protected:IsShown() and quest:IsShown() and not auction:IsShown(), "cap closed a protected or newly opened window")
+Check(protected:IsShown() and encounter:IsShown() and not auction:IsShown(), "cap closed a protected or newly opened window")
 NativeOpen(auction)
 HideUIPanel(auction)
 Flush()
-Check(protected:IsShown() and quest:IsShown(), "a window closed before the cap pass still evicted another window")
+Check(protected:IsShown() and encounter:IsShown(), "a window closed before the cap pass still evicted another window")
 NativeOpen(auction)
 Fire("PLAYER_REGEN_DISABLED")
 combat = true
 Flush()
-Check(protected:IsShown() and not quest:IsShown() and auction:IsShown() and directCombatCloses == 1,
-    "combat cap did not close only the detached quest detail")
+Check(protected:IsShown() and encounter:IsShown() and auction:IsShown() and directCombatCloses == 0,
+    "combat cap closed a window without a reviewed combat close path")
 combat = false
 Fire("PLAYER_REGEN_ENABLED")
 Flush()
-Check(protected:IsShown() and auction:IsShown(), "combat end replayed a settled cap")
+Check(protected:IsShown() and not encounter:IsShown() and auction:IsShown(),
+    "pending cap skipped the oldest eligible window after combat")
 ResetWindows()
 Limit(2)
 NativeOpen(auction)
-NativeOpen(npcQuest)
+NativeOpen(guild)
 Fire("PLAYER_REGEN_DISABLED")
 combat = true
 NativeOpen(map)
 Flush()
-Check(auction:IsShown() and npcQuest:IsShown() and map:IsShown(), "combat cap closed a native interaction")
+Check(auction:IsShown() and guild:IsShown() and map:IsShown(), "combat cap closed a native interaction")
 combat = false
 Fire("PLAYER_REGEN_ENABLED")
 Flush()
-Check(not auction:IsShown() and npcQuest:IsShown() and map:IsShown(), "pending cap did not settle after combat")
+Check(not auction:IsShown() and guild:IsShown() and map:IsShown(), "pending cap did not settle after combat")
 HideUIPanel(map)
-HideUIPanel(npcQuest)
-NativeOpen(quest)
+HideUIPanel(guild)
+NativeOpen(encounter)
 NativeOpen(auction)
 Flush()
 config.windowLimit = 0
@@ -653,22 +703,22 @@ module:Refresh()
 NativeSpellArea("center")
 NativeOpen(playerSpells)
 Flush()
-Check(quest:IsShown() and auction:IsShown() and playerSpells:IsShown() and addonSpellCloses == 0,
+Check(encounter:IsShown() and auction:IsShown() and playerSpells:IsShown() and addonSpellCloses == 0,
     "unlimited mode closed a supported floating window or the native spells window")
 
 ResetWindows()
 Limit(2)
 NativeOpen(auction)
-NativeOpen(quest)
+NativeOpen(encounter)
 NativeOpen(map)
 HideUIPanel(map)
 Flush()
-Check(auction:IsShown() and quest:IsShown(), "a closed last opener caused unnecessary eviction")
+Check(auction:IsShown() and encounter:IsShown(), "a closed last opener caused unnecessary eviction")
 NativeOpen(map)
-NativeOpen(npcQuest)
-HideUIPanel(npcQuest)
+NativeOpen(guild)
+HideUIPanel(guild)
 Flush()
-Check(not auction:IsShown() and quest:IsShown() and map:IsShown(),
+Check(not auction:IsShown() and encounter:IsShown() and map:IsShown(),
     "a closed last opener cancelled a required earlier cap")
 
 ResetWindows()
@@ -682,14 +732,14 @@ auction.scripts.OnHide(auction)
 auction.scripts.OnShow(auction)
 Flush()
 Check(auction:IsShown() and bag1:IsShown(), "inherited visibility counted an additional window")
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
-Check(not bag1:IsShown() and not bag2:IsShown() and auction:IsShown() and quest:IsShown(),
+Check(not bag1:IsShown() and not bag2:IsShown() and auction:IsShown() and encounter:IsShown(),
     "opening an extra bag reset the bag group's age")
 Check(watcher.OnUpdate == nil and watcher.OnKeyDown == nil, "window limits installed polling or an input handler")
 -- All opening orders and limits for the same four independent windows.
 local sequence, used = {}, {}
-local candidates = { auction, quest, npcQuest, bag1 }
+local candidates = { auction, encounter, guild, bag1 }
 local permutations = 0
 local function VerifyOrder()
     for limit = 1, #candidates do
@@ -722,14 +772,14 @@ Check(permutations == 24, "opening-order coverage is incomplete")
 ResetWindows()
 NativeOpen(auction)
 Flush()
-NativeOpen(quest)
+NativeOpen(encounter)
 Flush()
 HideUIPanel(auction)
 NativeOpen(auction)
 Flush()
 Escape(false)
 Flush()
-Check(auction:IsShown() and not quest:IsShown(), "a same-tick layout transition changed Escape order")
+Check(auction:IsShown() and not encounter:IsShown(), "a same-tick layout transition changed Escape order")
 
 ResetWindows()
 module.active = false
@@ -743,6 +793,10 @@ NativeOpen(map)
 Check(NativeArea(map) == nil and map:IsShown() and auction:IsShown(), "Retail map lost floating-window support")
 NativeOpen(mail)
 Check(NativeArea(mail) == nil and mail:IsShown() and auction:IsShown(), "Retail mailbox lost floating-window support")
+NativeOpen(quest)
+NativeOpen(npcQuest)
+Check(NativeArea(quest) == nil and NativeArea(npcQuest) == nil and quest:IsShown() and npcQuest:IsShown(),
+    "Retail quest windows lost floating-window support")
 
 map:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 180, -135)
 ChangeMapSize(true)
@@ -782,7 +836,7 @@ Check(NativeArea(foreign) == "left" and NativeArea(nativeInteraction) == "left",
     "detached an unowned window or one with native interaction restrictions")
 
 Limit(6)
-local firstSix = {calendar, auction, macro, newWindow, quest, social}
+local firstSix = {calendar, auction, macro, newWindow, encounter, social}
 local lookups, reads = panelLookups, sourceReads
 for _, frame in ipairs(firstSix) do NativeOpen(frame) end
 Check(#deferred == 0, "opens below the cap scheduled a timer")
@@ -801,15 +855,146 @@ Fire("PLAYER_REGEN_DISABLED")
 combat = true
 NativeOpen(calendar)
 Flush()
-Check(not quest:IsShown() and calendar:IsShown() and directCombatCloses == 2,
+Check(not quest:IsShown() and calendar:IsShown() and directCombatCloses == 1,
     "a native opener did not enforce the safe combat cap")
 HideUIPanel(calendar)
 NativeOpen(quest)
 Check(Escape(false) == "window", "combat Escape did not observe a safe floating quest")
 Flush()
-Check(not quest:IsShown() and directCombatCloses == 3, "combat Escape failed to close the safe quest")
+Check(not quest:IsShown() and directCombatCloses == 2, "combat Escape failed to close the safe quest")
 combat = false
 Fire("PLAYER_REGEN_ENABLED")
 Flush()
 Check(not watcher.OnUpdate and #deferred == 0, "settled windows left polling or pending work")
+
+local merchant = Panel("MerchantFrame", "left")
+Fire("ADDON_LOADED", "Blizzard_UIPanels_Game")
+local function OpenTradingBags(trader)
+    if IsAnyBagOpen() then return end
+    nativeBagOwner = trader
+    NativeOpen(bag1)
+    NativeOpen(bag2)
+end
+
+local function CheckTradingWindows(trader)
+    trader.nativeShow, trader.nativeHide = OpenTradingBags, CloseAllBags
+    NativeOpen(encounter)
+    NativeOpen(trader)
+    Flush()
+    Check(encounter:IsShown() and trader:IsShown() and bag1:IsShown() and bag2:IsShown(),
+        trader.name .. " opening with its bags evicted an existing window at limit two")
+    NativeOpen(guild)
+    Flush()
+    Check(not encounter:IsShown() and trader:IsShown() and guild:IsShown() and bag1:IsShown(),
+        trader.name .. " companion bags took the place of a window in FIFO")
+    HideUIPanel(trader)
+    HideUIPanel(guild)
+    Flush()
+    Check(not IsAnyBagOpen(), "native trader close left its bags open")
+
+    NativeOpen(trader)
+    NativeOpen(encounter)
+    Flush()
+    Check(trader:IsShown() and encounter:IsShown() and bag2:IsShown(), "opening a second window closed the trading bags")
+    CloseAllBags()
+    NativeOpen(bag1)
+    Flush()
+    Check(not trader:IsShown() and encounter:IsShown() and bag1:IsShown(),
+        "manually reopening bags counted them as part of the visible trader")
+    ResetWindows()
+    Limit(2)
+
+    NativeOpen(bag1)
+    NativeOpen(trader)
+    NativeOpen(encounter)
+    Flush()
+    Check(not IsAnyBagOpen() and trader:IsShown() and encounter:IsShown(), "bags opened before the trader were not independent")
+    HideUIPanel(trader)
+    ResetWindows()
+end
+
+local function CheckReopenAfterLimit(frame)
+    Limit(2)
+    NativeOpen(frame)
+    NativeOpen(encounter)
+    Flush()
+    NativeOpen(guild)
+    Flush()
+    Check(not frame:IsShown() and encounter:IsShown() and guild:IsShown(),
+        frame.name .. " was not evicted as the oldest window")
+
+    Flush()
+    NativeOpen(frame)
+    Flush()
+    Check(frame:IsShown() and not encounter:IsShown() and guild:IsShown(),
+        frame.name .. " kept its old position after a cap close and reopened as the oldest")
+    ResetWindows()
+end
+
+for _, isForever in ipairs({ false, true }) do
+    module.active = false
+    module:Disable()
+    NS.Client.isForever = isForever
+    module.active = true
+    module:Enable()
+    for _, trader in ipairs({ merchant, auction }) do
+        Limit(2)
+        CheckTradingWindows(trader)
+    end
+    CheckReopenAfterLimit(auction)
+    CheckReopenAfterLimit(bag1)
+end
+
+-- The native combined bag OnHide toggles a visible character window in Gamepad UI.
+auction.nativeShow = function(trader)
+    nativeBagOwner = trader
+    NativeOpen(combined)
+end
+auction.nativeHide = function(trader)
+    if nativeBagOwner ~= trader then return end
+    CloseAllBags(trader)
+    HideUIPanel(combined)
+end
+combined.nativeHide = function()
+    if gamepad and character:IsShown() then HideUIPanel(character) end
+end
+Limit(2)
+gamepad = true
+NativeOpen(auction)
+NativeOpen(encounter)
+Flush()
+NativeOpen(character)
+Flush()
+Check(auction:IsShown() and combined:IsShown() and character:IsShown() and not encounter:IsShown(),
+    "closing the oldest auction at the cap also closed the Gamepad character window")
+HideUIPanel(auction)
+Check(not character:IsShown() and not combined:IsShown(), "the native attached-bag close did not run")
+Flush()
+
+NativeOpen(auction)
+NativeOpen(character)
+Flush()
+NativeOpen(encounter)
+Flush()
+Check(auction:IsShown() and combined:IsShown() and character:IsShown() and encounter:IsShown(),
+    "the cap closed an unsafe window when no older window could safely close")
+HideUIPanel(auction)
+ResetWindows()
+
+gamepad = false
+NativeOpen(auction)
+-- CloseBackpack does not clear Blizzard's private record of which frame opened the bags.
+HideUIPanel(combined)
+NativeOpen(combined)
+NativeOpen(character)
+Flush()
+gamepad = true
+Limit(3)
+NativeOpen(encounter)
+Flush()
+Check(auction:IsShown() and combined:IsShown() and character:IsShown() and encounter:IsShown(),
+    "the cap closed Gamepad Character through a trader with unobserved native bag ownership")
+HideUIPanel(auction)
+gamepad = false
+ResetWindows()
 print("Suite parallel windows: " .. checks .. " checks passed")

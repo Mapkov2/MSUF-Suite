@@ -177,6 +177,7 @@ local function Scenario(shown, resolveOnShow)
     row.text, row.stripe, row.collapse, row.progress = Frame(row), Frame(row), Frame(row), Frame(row)
     local state = O.M
     state.layoutDirty = nil
+    state.rowSizes, state.rowFontArgs, state.rowPadding = { entry = 15 }, {}, 10
     state.content, state.groupRGB, state.font = UIParent, { scenario = {1,1,1} }, 'font'
     state.textRGB, state.mutedRGB, state.completeRGB = {1,1,1}, {1,1,1}, {1,1,1}
     state.rows, state.freeRows = { entry = row }, {}

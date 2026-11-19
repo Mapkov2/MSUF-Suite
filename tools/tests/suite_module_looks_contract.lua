@@ -192,5 +192,21 @@ Check(S.Set("chat", "enabled", false) and S.Set("chat", "enabled", true) and S.C
     "an older profile's running module was restyled after off and on")
 Check(S.Set("damageMeter", "enabled", true) and S.Config("damageMeter").look == 5,
     "an older profile's unstyled module did not adopt the global look")
+-- The flight route timer's Timer bar (Forever only, so styled here as a profile is) follows the Skinning look
+-- (Catalog/QualityOfLifeDetails.lua): MSUF Forever draws its MSUF Forever bar, every other look the Modern bar
+-- filled in that look's accent, Class Style in the class color.
+local function FlightBar(lookName)
+    local config = Suite.CopyValue(Suite.Defaults.suite.modules.flightTimer)
+    Looks.ApplyToConfig("flightTimer", config, lookName)
+    return config
+end
+local forever, blue, clean, class = FlightBar("foreverGlass"), FlightBar("midnight"), FlightBar("cleanModern"),
+    FlightBar("classColor")
+Check(Looks.Supports("flightTimer") and forever.barLook == 2 and forever.barColor == "d8b66a" and not forever.classStyle,
+    "the MSUF Forever look did not choose the MSUF Forever Timer bar")
+Check(blue.barLook == 1 and blue.barColor == Suite.DataTextLooks[1].accent and clean.barLook == 1
+    and clean.barColor == Suite.DataTextLooks[5].accent, "another look did not choose the Modern Timer bar in its accent")
+Check(class.barLook == 1 and class.classStyle and class.barColor == "40c7eb",
+    "Class Style did not fill the Timer bar in the class color")
 Check(#reported == 0, "a call raised: " .. tostring(reported[1]))
 print("Suite module looks: " .. checks .. " checks passed")

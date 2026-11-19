@@ -113,6 +113,7 @@ C_Map = { GetBestMapForUnit = function() return 84 end, GetPlayerMapPosition = f
     CanSetUserWaypointOnMap = function() return true end, SetUserWaypoint = function(point) setPoint = point; return true end }
 UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }
 C_SuperTrack = { SetSuperTrackedUserWaypoint = function(value) tracked = value end }
+EventRegistry = { TriggerEvent = function(_, event) assert(event == "MSUF_Suite.SavedWaypointsChanged") end }
 E:Load("MSUF_Suite_QualityOfLife/WaypointLists.lua")
 local waypoints = E:Start("waypointLists", { superTrack = true })
 waypoints:Open(); window.spec.actions[1].run(waypoints, nil, window)

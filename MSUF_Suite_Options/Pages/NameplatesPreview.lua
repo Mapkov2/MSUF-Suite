@@ -417,8 +417,8 @@ end
 local function RenderTitle(editor, s, m)
     local prefix, descriptor = s.prefix, m.descriptor
     if descriptor then
-        s.title:SetText(Tr(editor.scope == "neutral" and "Neutral" or "ENEMY / TARGET") .. " · " .. Tr(descriptor.label)
-            .. (editor.raidMarked and " · " .. Tr("Raid marked") or ""))
+        s.title:SetText(Tr(editor.scope == "neutral" and "Neutral" or "ENEMY / TARGET") .. " - " .. Tr(descriptor.label)
+            .. (editor.raidMarked and " - " .. Tr("Raid marked") or ""))
         s.nameText:SetText(Tr(descriptor.sample))
     elseif prefix == "enemy" then
         s.title:SetText(Tr("ENEMY PLAYER / TARGET"))
@@ -758,6 +758,7 @@ local function Render(editor, s)
     P.NameplatesPreviewDecor.ExtraText(editor, s, m)
     P.NameplatesAdvancedAuras.Render(editor, s, m)
     P.NameplatesPreviewDecor.FilterAuras(s)
+    P.NameplatesPreviewLayout.PrioritizeHandles(s)
 end
 
 local function Sample(editor, prefix, x)

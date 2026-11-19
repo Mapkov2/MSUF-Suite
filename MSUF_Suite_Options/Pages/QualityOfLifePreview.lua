@@ -61,6 +61,7 @@ local function Target(ui, host, region, key, priority)
 end
 
 local function BindTargets(ui, host)
+    if ui.editor then return ui.editor.Bind(ui, host, ui.stage.suiteBattleResPreview, S.Config(ui.id)) end
     local spec = TARGETS[ui.id]
     Target(ui, host, host, spec.key, 0)
     if ui.id == "xpBar" then P.XPBarPreviewEditor.Bind(ui, ui.stage.suiteXPPreview) end
@@ -106,6 +107,7 @@ end
 
 local function Paint(ui)
     if not ui.stage:IsVisible() then return end
+    if ui.moves and ui.moves.drag then return ui.moves:Cancel() end
     if not K.Runtime("MSUF_Suite_QualityOfLife", EXPORTS[ui.id]) then
         P.SetTranslatedText(ui.status, Tr("Preview is available outside combat."))
         return
@@ -125,27 +127,37 @@ end
 -- Lazy feature details call this once. Only these sliders' sample table changes;
 -- normal appearance controls still edit the active profile and repaint here.
 function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
+    if id == "floatingCombatText" then
+        if K.Runtime("MSUF_Suite_QualityOfLife", "BuildFloatingCombatTextPreview") then
+            return S.BuildFloatingCombatTextPreview(P, ctx, parent, width, y)
+        end
+        return y
+    end
     if not EXPORTS[id] or RETAIL[id] and P.Suite.Client.isForever then return y end
+    local editor = id == "battleRes" and P.BattleResEditor or nil
     local room = width - 32
     local title = P.Text(parent, "Interactive preview", 16, y, room, P.T.colors.text)
     y = y - math.max(16, math.ceil(title:GetStringHeight() or 16)) - 6
     local note = P.Text(parent, "Sample values. Changes update here even when the feature is off.", 16, y, room)
-    P.SetTranslatedText(note, Tr("Sample values. Changes update here even when the feature is off.")
-        .. "\n" .. Tr("Click an element to open its settings."))
+    local hint = editor and "Drag an element to move it. Click a layer to toggle it or right-click to edit it."
+        or "Click an element to open its settings."
+    P.SetTranslatedText(note, Tr("Sample values. Changes update here even when the feature is off.") .. "\n" .. Tr(hint))
     y = y - math.max(28, math.ceil(note:GetStringHeight() or 28)) - 8
-    local height = id == "xpBar" and 160 or id == "glimmer" and 190 or 230
-    local stage = CreateFrame("Frame", nil, parent)
+    local height = id == "xpBar" and 160 or (editor or id == "glimmer") and 190 or 230
+    local stage = CreateFrame("Frame", nil, parent, editor and "BackdropTemplate" or nil)
     stage:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
     stage:SetSize(room, height)
     stage:SetClipsChildren(true)
-    local ui = { id = id, ctx = ctx, stage = stage, width = room, height = height, sliders = {}, targets = {},
+    local ui = { id = id, ctx = ctx, stage = stage, width = room, height = height, sliders = {}, targets = {}, editor = editor,
         viewport = { width = room, height = height },
         sample = { xp = 62, rested = 25, vigor = 4.5, speed = 760 } }
     ui.status = P.Text(stage, "", 0, -8, room)
     ui.Paint = function() Paint(ui) end
     ui.OpenTarget = function(key) return OpenTarget(ui, key) end
     y = y - height - 8
-    if id == "xpBar" then
+    if editor then
+        y = editor.BuildRail(ui, parent, y, room)
+    elseif id == "xpBar" then
         y = SampleSlider(ui, parent, "xp", "Preview XP (percent)", 100, 1, y)
         y = SampleSlider(ui, parent, "rested", "Preview rested XP (percent)", 100, 1, y)
     elseif id == "skyriding" then
@@ -154,21 +166,28 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
     end
     stage:SetScript("OnShow", function()
         stage:RegisterEvent("PLAYER_REGEN_ENABLED")
+        if editor then stage:RegisterEvent("PLAYER_REGEN_DISABLED") end
         ui.Paint()
     end)
     stage:SetScript("OnHide", function()
         stage:UnregisterAllEvents()
+        if editor then editor.Release(ui) end
         if id == "glimmer" and S.HideGlimmerPreview then S.HideGlimmerPreview(stage) end
     end)
-    stage:SetScript("OnEvent", ui.Paint)
+    stage:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_REGEN_DISABLED" then
+            if ui.moves then ui.moves:Release() end
+        else ui.Paint() end
+    end)
     P.M.TrackRefresh(ctx, ui.Paint)
     ctx.qolIndicatorPreviews = ctx.qolIndicatorPreviews or {}
     ctx.qolIndicatorPreviews[id] = ui
     if stage:IsVisible() then
         stage:RegisterEvent("PLAYER_REGEN_ENABLED")
+        if editor then stage:RegisterEvent("PLAYER_REGEN_DISABLED") end
         ui.Paint()
     end
     if id == "xpBar" then y = P.XPBarPreviewEditor.Build(ui, parent, y, room) end
     if id == "lootRolls" then y = P.LootRollPreviewEditor.Build(ui, parent, y, room) end
-    return y - 14
+    return y - 14, ui
 end

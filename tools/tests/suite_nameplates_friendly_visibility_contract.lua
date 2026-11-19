@@ -61,14 +61,28 @@ local function Apply()
     private.CVars.Apply(module)
 end
 S.Config = function(id) assert(id == "nameplates"); return module.config end
-S.SetMany = function(id, values)
+-- The controller (MSUF_Suite/Core/Suite.lua, SetMany) runs a confirmation
+-- after the module applied the batch and restores the batch when it fails.
+-- startFails models a module that does not start again.
+local startFails = false
+S.SetMany = function(id, values, confirm)
     assert(id == "nameplates")
     if combat then return false end
+    local before = {}
+    for key, value in pairs(module.config) do before[key] = value end
     for key, value in pairs(values) do module.config[key] = value end
-    module.active = module.config.enabled
+    module.active = module.config.enabled and not startFails
     Apply()
-    return true
+    if not confirm then return true end
+    local ok, reason = confirm()
+    if ok then return true end
+    for key in pairs(module.config) do module.config[key] = nil end
+    for key, value in pairs(before) do module.config[key] = value end
+    module.active = module.config.enabled and not startFails
+    Apply()
+    return false, reason
 end
+S.Status = function() return module.active and "Active" or "Stopped after an error" end
 S.Set = function(id, key, value) return S.SetMany(id, { [key] = value }) end
 nativeEvent = function(key) NS.SyncFriendlyNameplates(module, "CVAR_UPDATE", key) end
 local function Reset(values)
@@ -249,6 +263,14 @@ Check(NS.SetFriendlyNameplates("friendly", true, { enabled = true, friendlyNpcSk
     "enabling only the chosen scope from a disabled module failed")
 
 Reset({ friendlySkinEnabled = false })
+module.active, startFails = false, true
+Check(not NS.SetFriendlyNameplates("friendly", true) and module.config.friendlySkinEnabled == false
+    and writes == 0, "a stopped nameplate module saved a visibility switch it could not apply")
+startFails = false
+Check(NS.SetFriendlyNameplates("friendly", true) and module.active and live.nameplateShowFriendlyPlayers == "1",
+    "the switch did not restart a nameplate module after a recoverable error")
+
+Reset({ friendlySkinEnabled = false })
 live.nameplateShowFriendlyPlayers = nil
 Check(not NS.FriendlyNameplateShown("friendly") and not NS.SetFriendlyNameplates("friendly", true),
     "missing native CVar was treated as available")
@@ -268,7 +290,7 @@ Check(not NS.SetFriendlyNameplates("unknown", true), "unknown friendly scope was
 Reset()
 local savedInstance, savedCommit, savedSetMany = S.instances.nameplates, S.CommitCVar, S.SetMany
 S.instances.nameplates, S.CommitCVar = nil, nil
-S.SetMany = function() return true end
+S.SetMany = function(_, _, confirm) return confirm() end
 Check(not NS.SetFriendlyNameplates("friendly", true) and not NS.ToggleFriendlyNPCNameplates(),
     "unavailable optional nameplate runtime accepted a native visibility action")
 Check(writes == 0, "unavailable optional runtime changed native visibility")

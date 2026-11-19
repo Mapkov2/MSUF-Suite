@@ -14,6 +14,8 @@ local function Check(value, message)
     checks = checks + 1
 end
 local function Noop() end
+local secret, secretActive = 73129, false
+issecretvalue = function(value) return secretActive and value == secret end
 
 securecallfunction = function(callback, ...) return callback(...) end
 function hooksecurefunc(target, method, callback)
@@ -233,7 +235,8 @@ NS.MicroMenuSkin = {
 NS.MicroMenuSkin.RefreshNativeReset = NS.MicroMenuSkin.RefreshActive
 for _, file in ipairs({ "Core/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/OwnedMicroBarLayout.lua",
     "Adapters/OwnedMicroBarVisibility.lua", "Adapters/OwnedMicroBarEditMode.lua", "Adapters/OwnedMicroBar.lua" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
+    local path = file == "Adapters/OwnedMicroBarLayout.lua" and arg[2] or root .. "/MSUF_Suite_Skin/" .. file
+    assert(loadfile(path))("MSUF_Suite_Skin", NS)
 end
 local Owned = NS.OwnedMicroBar
 
@@ -242,6 +245,20 @@ local bar = Owned.GetFrames()
 Check(mode == "owned" and target == bar and State(menu).parent == bar, "the owned bar did not take the menu")
 Check(math.abs(State(menu).scale - 0.8) < 1e-9, "the owned scale was not set on the menu")
 Clean("taking the menu")
+do
+    local getCenter, help = buttons[1].GetCenter, State(HelpOpenWebTicketButton)
+    local pointsBefore = #help.points
+    secretActive = true
+    buttons[1].GetCenter = function() return secret, 100 end
+    NS.OwnedMicroBarLayout.AnchorCompanions(menu, settings, true, bar)
+    Check(#help.points == pointsBefore, "a secret horizontal center moved the ticket button")
+    buttons[1].GetCenter = function() return 500, secret end
+    NS.OwnedMicroBarLayout.AnchorCompanions(menu, settings, false, bar)
+    Check(#help.points == pointsBefore, "a secret vertical center moved the ticket button")
+    buttons[1].GetCenter, secretActive = getCenter, false
+    NS.OwnedMicroBarLayout.AnchorCompanions(menu, settings, true, bar)
+    Check(#help.points == pointsBefore + 1, "the ticket button did not recover after centers became readable")
+end
 -- The game rule factor Blizzard's UpdateScale applies stays part of it.
 ruleFactor = 1.25
 Owned.Apply(menu, settings)

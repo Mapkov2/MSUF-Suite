@@ -25,7 +25,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         EventUtil = { ContinueOnAddOnLoaded = function(_, callback) continuation = callback end }
         local function Heavy() traversals = traversals + 1; error("heavy spell skin ran during combat") end
         NS.Surface.Attach, NS.Surface.Ensure = Heavy, Heavy
-        NS.GenericWindows = { ApplyFrame = Heavy, Apply = Heavy, Disable = function() end }
+        NS.GenericWindows = {
+            ApplyFrame = Heavy, Apply = Heavy, Disable = function() end,
+            IsCategoryEnabled = function(category) return category ~= "social" end,
+        }
         NS.Cosmetics = { Fade = Heavy }
         local function Load(path, override)
             assert(loadfile(override or root .. "/MSUF_Suite_Skin/" .. path))("MSUF_Suite_Skin", NS)

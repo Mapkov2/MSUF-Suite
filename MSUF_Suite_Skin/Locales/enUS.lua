@@ -2,6 +2,8 @@ local _, NS = ...
 
 NS.RegisterLocale("enUS", {
     ["Spells to Learn"] = "Spells to Learn",
+    ["All"] = "All",
+    ["Unknown"] = "Unknown",
     ["Finish combat first."] = "Finish combat first.",
     ["Unlearned spells and ranks by required level"] = "Unlearned spells and ranks by required level",
     ["Rank %d"] = "Rank %d",

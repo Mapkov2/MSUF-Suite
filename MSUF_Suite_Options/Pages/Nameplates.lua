@@ -53,7 +53,7 @@ local function BaseSections()
     return {
         { key = "native", area = "general", title = "Nameplate styling",
           keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry",
-                "classColors", "playerTitles" } },
+                "classColors", "playerTitles", "protectImport" } },
         { key = "distance", area = "general", catalog = "distance" },
         ENEMY,
         { key = "castbar", area = "casts", catalog = "castbar", positions = "castbar" },
@@ -383,6 +383,20 @@ local function Tabs(ctx, builder, body, spec, sectionId)
     return refresh, selectTab, selectItem
 end
 
+-- The four DoT actions have control IDs and share a lazily built editor with the color switch.
+local dotActionIds
+local function IsDotEditorAction(target)
+    if target.sectionId ~= PAGE .. "_auraWorkspace" or not target.controlId then return false end
+    if not dotActionIds then
+        dotActionIds = {}
+        for _, action in ipairs({ "action.auraSpec", "action.auraSuggestion", "action.auraCustom", "action.auraSample" }) do
+            local id = P.Meta(PAGE, ID, action, "action", target.sectionId).controlId
+            if id then dotActionIds[id] = true end
+        end
+    end
+    return dotActionIds[target.controlId]
+end
+
 -- Fonts-owned settings route to the host. Suite settings select their tab
 -- before the host looks up widgets that may not exist on a cold page.
 local function PrepareSearch(page, target)
@@ -391,6 +405,7 @@ local function PrepareSearch(page, target)
     local destination, focus, route = fonts.TargetForSetting(target.settingKey)
     if destination then return destination, focus, route end
     local key = (target.settingKey or ""):match("^msufsuite%.nameplates%.(.+)$")
+    if not key and IsDotEditorAction(target) then key = "auraColorsEnabled" end
     local rule = key and P.catalog[ID].rules[key]
     if rule then
         local _, side = P.NameplateSearchTarget(rule)

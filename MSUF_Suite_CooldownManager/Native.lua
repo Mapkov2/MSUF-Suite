@@ -203,6 +203,9 @@ function Native.Apply()
     end
     local ctx = M.context
     if not ctx then return end
+    -- On takeover, restore the player's native setting before saving our
+    -- own override. The layout module then follows this Apply.
+    if applied == nil then S.RestoreCVar("nativeCooldownVisibility", CVAR) end
     local mode = Native.Mode()
     if mode ~= applied and mode == INVISIBLE then
         active = true

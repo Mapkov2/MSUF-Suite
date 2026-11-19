@@ -117,7 +117,7 @@ local function OnRowClick(button, mouseButton)
         return
     end
     if button.kind == "section" then
-        ToggleGroup(M, button.group)
+        ToggleGroup(M, button.collapseKey or button.group)
         return
     end
     if button.secureWindow then
@@ -213,7 +213,7 @@ local function OnCollapseClick(button, mouseButton)
         return
     end
     if owner.kind == "section" then
-        ToggleGroup(M, owner.group)
+        ToggleGroup(M, owner.collapseKey or owner.group)
     elseif owner.collapseKey then
         ToggleEntry(M, owner)
     end
@@ -325,7 +325,7 @@ end
 local function EnsureTimer(row)
     if row.timer then return row.timer end
     local timer = S.CreateFontString(row, nil, "OVERLAY")
-    timer:SetPoint("RIGHT", row, "RIGHT", -5, 0)
+    timer:SetWidth(58)
     timer:SetJustifyH("RIGHT")
     row.timer = timer
     return timer
@@ -377,6 +377,10 @@ local function Theme(self)
     -- Rows restyle their text when this changes (PaintRow, PaintRowWidgets).
     self.textRevision = (self.textRevision or 0) + 1
     self.groupRGB = self.groupRGB or {}
+    if custom or c.groupUnderlines == true then self.dividerRGB = RGB(c.dividerColor) end
+    self.rowPadding = c.compactQuestRows and 5 or 10
+    self.rowSizes = { section = c.sectionSize or 14, entry = c.entrySize or 15, line = c.objectiveSize or 13 }
+    self.rowFontArgs = { NS.HUDTextArgs(c) }
     for group, key in pairs(GROUP_COLOR_KEYS) do
         local spec = GROUP[group]
         self.groupRGB[group] = custom and RGB(c[key]) or { spec[2], spec[3], spec[4] }
@@ -407,7 +411,7 @@ local function Theme(self)
     S.SetStyledFont(self.count, self.font, math.max(9, (c.sectionSize or 14)), outline, rendering, false)
     if custom then
         self.count:SetTextColor(unpack(self.mutedRGB))
-        local r, g, b = S.RGB(c.dividerColor)
+        local r, g, b = unpack(self.dividerRGB)
         self.divider:SetColorTexture(r, g, b, .35)
     elseif skin then
         self.count:SetTextColor(skin:GetColor("muted"))
@@ -416,6 +420,15 @@ local function Theme(self)
     else
         self.count:SetTextColor(.72, .75, .80)
         self.divider:SetColorTexture(.69, .72, .78, .35)
+    end
+end
+
+function O.AnchorTracker(self, dock)
+    local c = self.config
+    self.host:ClearAllPoints()
+    if dock then self.host:SetPoint("TOPRIGHT", dock, "BOTTOMRIGHT", 0, -c.minimapDockGap)
+    else
+        self.host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", c.x, c.y)
     end
 end
 
@@ -430,8 +443,7 @@ local function PlaceHost(self, c, force)
     self.headerClick:SetHeight(self.headerHeight - 5)
     self.host:SetScale(c.scale / 100)
     self.host:SetWidth(c.width)
-    self.host:ClearAllPoints()
-    self.host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", c.x, c.y)
+    O.AnchorTracker(self, c.dockBelowMinimap and S.MinimapDock.Anchor(true))
     self.content:SetWidth(c.width - 14)
     return true
 end
@@ -494,7 +506,7 @@ local function GroupEntries(self)
             local entry = source[i]
             local list = grouped[entry.group]
             if list then
-                list[#list + 1] = entry
+                if not entry.questHeader then list[#list + 1] = entry end
                 liveEntries[EntryBase(entry, entry.group)] = true
             end
         end
@@ -511,8 +523,7 @@ local function PaintRowWidgets(self, row, item, color, size)
     local rightInset = 4
     if item.findGroup and item.kind == "entry" then
         local button = EnsureFindGroupButton(row)
-        button:ClearAllPoints()
-        button:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
+        O.AnchorRowWidget(button, row, rightInset)
         button:Show()
         rightInset = rightInset + 25
     elseif row.findGroupButton then
@@ -525,8 +536,7 @@ local function PaintRowWidgets(self, row, item, color, size)
             button.itemLink = item.itemLink
         end
         button.icon:SetTexture(item.itemIcon)
-        button:ClearAllPoints()
-        button:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
+        O.AnchorRowWidget(button, row, rightInset)
         button:Show()
         rightInset = rightInset + 27
     elseif row.itemButton then
@@ -534,13 +544,8 @@ local function PaintRowWidgets(self, row, item, color, size)
     end
     if Finite(item.timerEnd) and item.timerEnd > GetTime() and item.kind == "entry" then
         local timer = EnsureTimer(row)
-        if row.timerFont ~= self.font or row.timerSize ~= size or row.timerRevision ~= self.textRevision then
-            S.SetStyledFont(timer, self.font, math.max(10, size - 1), NS.HUDTextArgs(self.config))
-            row.timerFont, row.timerSize, row.timerRevision = self.font, size, self.textRevision
-        end
-        timer:ClearAllPoints()
-        timer:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
-        timer:SetWidth(58)
+        O.StyleRowText(self, timer, math.max(10, size - 1))
+        O.AnchorRowWidget(timer, row, rightInset)
         timer:SetTextColor(unpack(self.mutedRGB))
         row.timerEnd = item.timerEnd
         self.timedRows[row] = true
@@ -550,9 +555,8 @@ local function PaintRowWidgets(self, row, item, color, size)
         if row.timer then row.timer:Hide() end
     end
     if item.kind == "section" or (item.kind == "entry" and item.hasLines) then
-        row.collapse:ClearAllPoints()
-        row.collapse:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
-        S.SetStyledFont(row.collapse.glyph, self.font, math.max(10, size), NS.HUDTextArgs(self.config))
+        O.AnchorRowWidget(row.collapse, row, rightInset)
+        O.StyleRowText(self, row.collapse.glyph, math.max(10, size))
         row.collapse.glyph:SetText(item.collapsed and "+" or "-")
         row.collapse.glyph:SetTextColor(color[1], color[2], color[3])
         row.collapse:Show()
@@ -593,48 +597,43 @@ end
 
 local function PaintRow(self, row, item, c, width, y)
     local color = self.groupRGB[item.group]
-    row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -y)
-    row:SetWidth(width)
+    O.AnchorRow(self, row, width, y)
     local underline = c.groupUnderlines == true
     if row.underline ~= underline then
         row.underline = underline
         row.stripe:ClearAllPoints()
         row.stripe:SetPoint(underline and "BOTTOMLEFT" or "TOPLEFT", 2, underline and 1 or -3)
         row.stripe:SetPoint(underline and "BOTTOMRIGHT" or "BOTTOMLEFT", underline and -4 or 2, underline and 1 or 3)
-        row.stripe:SetSize(2, 4)
+        row.stripe:SetSize(2, underline and 1 or 4)
     end
     row.stripe:SetShown(not underline or item.kind == "section")
     if underline then
-        row.stripe:SetColorTexture(S.RGB(c.dividerColor))
+        local r, g, b = unpack(self.dividerRGB)
+        row.stripe:SetColorTexture(r, g, b, .55)
     else
         row.stripe:SetColorTexture(color[1], color[2], color[3], item.kind == "line" and .35 or .95)
     end
-    local size = item.kind == "section" and (c.sectionSize or 14)
-        or item.kind == "entry" and (c.entrySize or 15) or (c.objectiveSize or 13)
-    if row.cachedSize ~= size or row.cachedFont ~= self.font or row.cachedRevision ~= self.textRevision then
-        S.SetStyledFont(row.text, self.font, size, NS.HUDTextArgs(c))
-        row.cachedSize, row.cachedFont, row.cachedRevision = size, self.font, self.textRevision
-    end
+    local size = self.rowSizes[item.kind]
+    O.StyleRowText(self, row.text, size)
     if row.cachedText ~= item.text then
         row.text:SetText(item.text)
         row.cachedText = item.text
     end
     row.kind, row.group, row.collapseKey = item.kind, item.group, item.collapseKey
     local rightInset = O.PaintQuestVoice(row, item, PaintRowWidgets(self, row, item, color, size), color)
+    if item.dungeonBadge or row.questBadge then rightInset = O.PaintQuestBadge(self, row, item, rightInset) end
     local leftInset = O.PaintQuestIcon(self, row, item, c, color)
-    row.text:ClearAllPoints()
-    row.text:SetPoint("LEFT", row, "LEFT", leftInset, 0)
-    -- An explicit width, not a second anchor: a width that follows anchors
-    -- resolves only at the next layout pass, so the height read below would
-    -- measure the wrap of the previous width.
-    row.text:SetWidth(math.max(1, width - leftInset - rightInset - 2))
-    local textHeight = row.text:GetStringHeight()
-    local height = math.max(item.height, Finite(textHeight) and textHeight + 10 or 0)
+    if item.progressText or row.questProgress then rightInset = O.PaintQuestProgress(self, row, item, rightInset, size) end
+    if c.questProgressColumn and item.kind == "line" and item.questID then
+        leftInset = c.questIconStyle == 1 and 18 or 31
+    end
+    local height = O.MeasureRowText(self, row, item, width, leftInset, rightInset)
     height = math.max(height, O.PaintScenarioHeader(row, item, width, height))
-    -- Native size/OnShow hooks may invalidate this cache during either setter.
-    row.layoutY, row.layoutWidth, row.layoutHeight = y, width, height
-    row:SetHeight(height)
+    -- Native size/OnShow hooks may invalidate the previous layout height.
+    if row.layoutHeight ~= height or item.scenarioHeaderSetID then
+        row.layoutHeight = height
+        row:SetHeight(height)
+    end
     PaintRowState(self, row, item, color)
     row:Show()
     return height
@@ -671,8 +670,17 @@ end
 -- number of entries.
 local function BuildFlat(self, c, grouped, closingKey)
     local flat, flatCount, totalEntries = self.flatWork or {}, 0, 0
+    local questSource = self.sources.quests
+    local named = questSource and questSource.namedSections
     for i = 1, #ORDER do
         local group = ORDER[i]
+        if named and group == "quests" then
+            for _, section in ipairs(named) do
+                flatCount = AddFlat(flat, flatCount, group, section.entries, c, self.collapsedGroups,
+                    self.collapsedEntries, GROUP, SECTION_KEYS, closingKey, section)
+                totalEntries = totalEntries + #section.entries
+            end
+        end
         flatCount = AddFlat(flat, flatCount, group, grouped[group], c, self.collapsedGroups,
             self.collapsedEntries, GROUP, SECTION_KEYS, closingKey)
         totalEntries = totalEntries + #grouped[group]
@@ -755,8 +763,11 @@ Render = function(self, finishMotion)
     local flat, flatCount, totalEntries = BuildFlat(self, c, grouped, closingKey)
     local previous = self.previousFlat
     local themeChanged = self.retheme or not self.font
+    local questSource = c.showQuestLogCount and self.sources.quests
+    local logUsage = questSource and questSource.logUsage
     if not LayoutChanged(self, c, flat, flatCount, previous, themeChanged, motion) then
         self.flatWork = flat
+        if c.showQuestLogCount then self.count:SetText(logUsage or tostring(totalEntries)) end
         return
     end
     if body and body.owner then
@@ -769,13 +780,13 @@ Render = function(self, finishMotion)
     self.layoutDirty = nil
     self.retheme = false
     if themeChanged then Theme(self) end
-    self.title:SetText(TITLE.objectives)
+    self.title:SetText(c.groupQuestsByHeader and S.BlizzardText("QUESTS_LABEL", "Quests") or TITLE.objectives)
     PlaceHost(self, c, themeChanged)
     local y = PaintRows(self, c, flat, flatCount, previous, themeChanged)
     self.content:SetHeight(math.max(1, y))
     self.host:SetHeight(math.min(c.height, math.max(S.editMode and 160 or self.headerHeight + 5,
         y + self.headerHeight + 5)))
-    self.count:SetText(tostring(totalEntries))
+    self.count:SetText(logUsage or tostring(totalEntries))
     self.host:SetShown(totalEntries > 0 or S.editMode)
     UpdateTimers(self)
 end

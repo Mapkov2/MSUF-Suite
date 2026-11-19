@@ -249,7 +249,7 @@ end
 local function PlaceControls(preview, c, bank, width, native)
     local g = preview.geometry
     local suite = not bank and c.inventoryView ~= VIEW.BLIZZARD_GRID
-    local categories = bank and c.bankView == BANK_VIEW.CATEGORIES or not bank and c.inventoryView == VIEW.CATEGORIES
+    local categories = bank and c.bankView == BANK_VIEW.CATEGORIES or not bank and g.sidebarShown
     preview.title:SetShown(not g.panel)
     preview.title:ClearAllPoints()
     preview.title:SetPoint("TOPLEFT", preview.content, "TOPLEFT", 12, native and -5 or -10)
@@ -261,16 +261,17 @@ local function PlaceControls(preview, c, bank, width, native)
     preview.categories:SetSize(g.panel and 88 or 148, g.panel and g.height - 318 or (bank and 260 or g.height - g.top - g.bottom))
     preview.categoryLabel:SetWidth(g.panel and 80 or 140)
     preview.search:ClearAllPoints()
-    preview.search:SetPoint("TOPLEFT", preview.content, "TOPLEFT", bank and 240 or (g.panel and 132 or 12), bank and -7 or (g.panel and -58 or -91))
-    preview.search:SetWidth(width - (bank and 252 or (g.panel and 144 or 24)))
-    preview.searchLabel:SetWidth(width - (bank and 268 or (g.panel and 160 or 40)))
+    local searchLeft = bank and 240 or (g.panel and g.rail + 20 or 12)
+    preview.search:SetPoint("TOPLEFT", preview.content, "TOPLEFT", searchLeft, bank and -7 or (g.panel and -58 or -91))
+    preview.search:SetWidth(width - searchLeft - 12)
+    preview.searchLabel:SetWidth(width - searchLeft - 28)
     P.SetTranslatedText(preview.searchLabel, Tr(native and "Search" or "Search items"))
     for i, button in ipairs(preview.viewButtons) do
         button:ClearAllPoints()
         button:SetPoint("TOPLEFT", preview.content, "TOPLEFT", g.panel and 8 or 12 + (i - 1) * 92,
             g.panel and -100 - (i - 1) * 34 or -62)
         button:SetSize(g.panel and 96 or 88, g.panel and 28 or 22)
-        button:SetShown(suite)
+        button:SetShown(suite and not g.hideTabs)
     end
     preview.equipped:SetShown(suite)
     -- The side panel's tools end 8 left of the caption (BagCaption.lua PANEL_TOOLS).

@@ -28,10 +28,13 @@ function Caption.Parts(button)
     return parts
 end
 
-local function Paint(state, layout)
+local function Paint(state, layout, enabledOnly)
     if not state.enabled or NS.IsCombatLocked() or not W.Safe(state.button) then return end
     local art = state.art
-    art.disabled = S.Read(state.button, "IsEnabled") == false
+    local disabled = S.Read(state.button, "IsEnabled") == false
+    if enabledOnly and art.disabled == disabled then return end
+    art.disabled = disabled
+    if art.disabled then art.hover, art.down = false, false end
     if layout then NS.SuiteCore().WindowCaption.UpdateGlyph(state.cell, art, true) end
     NS.WindowControlChrome.PaintActionCell(state.cell)
 end
@@ -43,6 +46,20 @@ local function Event(button, hover, down, layout)
     if down ~= nil then state.art.down = down end
     if layout then NS.Registry.QueueJob(state.refresh)
     elseif NS.IsCombatLocked() then NS.CombatGate.RunOrDefer(state, state.refresh) else Paint(state) end
+end
+
+local function EnabledChanged(button)
+    local state = cache[button]
+    if not state or not state.enabled then return end
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer(state, state.refresh)
+    else
+        Paint(state, false, true)
+    end
+end
+
+local function Shown(button)
+    Event(button)
 end
 
 local function Create(button, kind)
@@ -59,8 +76,8 @@ local function Create(button, kind)
     button:HookScript("OnMouseUp", function(b) Event(b, nil, false) end)
     button:HookScript("OnHide", function(b) Event(b, false, false) end)
     button:HookScript("OnSizeChanged", function(b) Event(b, nil, nil, true) end)
-    button:HookScript("OnEnable", function(b) Event(b) end)
-    button:HookScript("OnDisable", function(b) Event(b, false, false) end)
+    button:HookScript("OnShow", Shown)
+    W.WatchEnabled(button, EnabledChanged)
     return state
 end
 

@@ -339,6 +339,14 @@ local function MarkWindowAction(state, actionKind)
     state.enabled = true
 end
 
+local fixedButtonSpecs = setmetatable({}, { __mode = "k" })
+
+-- The owner supplies an immutable spec; native assets and bindings still refresh.
+function ControlSkin.MarkFixedButtonSpec(spec)
+    fixedButtonSpecs[spec] = true
+    return spec
+end
+
 local function ApplyButtonNow(button, owner, kind, spec)
     -- An ownedArt control has no native asset to track (PublicAPI.lua).
     local actionKind = not spec.ownedArt and TrackNativeAssets(button, owner) or nil
@@ -347,9 +355,12 @@ local function ApplyButtonNow(button, owner, kind, spec)
         return nil, reason
     end
 
-    state.spec = DefaultButtonSpec(kind, spec, state.spec)
-    state.cosmeticSpec = CopyCosmeticSpec(spec, state.cosmeticSpec)
-    state.requestedActive = spec.active
+    if state.fixedSpec ~= spec then
+        state.spec = DefaultButtonSpec(kind, spec, state.spec)
+        state.cosmeticSpec = CopyCosmeticSpec(spec, state.cosmeticSpec)
+        state.requestedActive = spec.active
+        state.fixedSpec = fixedButtonSpecs[spec] and spec or nil
+    end
     if actionKind then
         local action, actionReason = WindowActionSkin.Apply(button, owner, actionKind)
         if not action then return nil, actionReason or "window action unavailable" end

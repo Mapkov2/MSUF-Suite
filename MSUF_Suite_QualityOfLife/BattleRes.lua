@@ -19,6 +19,8 @@ local function ChallengeActive()
 end
 
 local CARD = { width = 146, height = 44, fill = { .06, .07, .09, .92 }, edge = 1, line = { .54, .72, .78, .95 } }
+local WHITE = "Interface\\Buttons\\WHITE8X8"
+local SAMPLE_ICON = "Interface\\Icons\\Spell_Nature_Reincarnation"
 
 local function WatchGloss(self, on)
     if on or self.glossWatch then
@@ -37,41 +39,38 @@ local function Create(self)
     end
 
     local icon = S.CreateTexture(host, nil, "ARTWORK")
-    icon:SetPoint("LEFT", host, "LEFT", 3, 0)
-    icon:SetSize(38, 38)
-    icon:SetTexture(self.previewParent and "Interface\\Icons\\Spell_Nature_Reincarnation" or C_Spell.GetSpellTexture(SPELL_ID))
-
     local cooldown = S.CreateFrame("Cooldown", nil, host, "CooldownFrameTemplate")
-    cooldown:SetAllPoints(icon)
     cooldown:SetDrawEdge(false)
-    cooldown:SetHideCountdownNumbers(false)
+    cooldown:SetHideCountdownNumbers(self.previewParent ~= nil)
     cooldown:SetMinimumCountdownDuration(0)
+    if self.previewParent then
+        local sample = S.CreateFontString(cooldown, nil, "OVERLAY")
+        sample:SetPoint("CENTER")
+        S.SetFont(sample, nil, 12, "OUTLINE")
+        sample:SetText("02:38")
+    end
 
     local title = S.CreateFontString(host, nil, "OVERLAY")
-    title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 7, -2)
+    title:SetJustifyH("LEFT")
+    title:SetWordWrap(false)
     S.SetFont(title, nil, 11, "OUTLINE")
-    title:SetTextColor(.7, .84, .88)
     title:SetText(S.Text("Battle Rez"))
 
     local count = S.CreateFontString(host, nil, "OVERLAY")
-    count:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 7, 0)
-    S.SetFont(count, nil, 22, "OUTLINE")
-    count:SetTextColor(1, 1, 1)
-
     local maximum = S.CreateFontString(host, nil, "OVERLAY")
-    maximum:SetPoint("BOTTOMLEFT", count, "BOTTOMRIGHT", 2, 2)
-    S.SetFont(maximum, nil, 12, "OUTLINE")
-    maximum:SetTextColor(.7, .84, .88)
 
     host:Hide()
     self.host, self.panel, self.edges, self.cooldown, self.title, self.count, self.maximum, self.icon =
         host, panel, edges, cooldown, title, count, maximum, icon
+    self.borderBounds = S.CreateTexture(host, nil, "BACKGROUND")
+    self.spellIcon = self.previewParent and SAMPLE_ICON or C_Spell.GetSpellTexture(SPELL_ID)
 end
 
 local function ClearTimer(self)
-    self.cooldown:Clear()
-    if self.durationBinding then
-        self.durationBinding:Disable()
+    if self.cooldownActive then self.cooldown:Clear() end
+    self.cooldownActive, self.cooldownSample = nil, nil
+    if self.durationBinding then self.durationBinding:Disable() end
+    if self.time then
         self.time:Hide()
         self.separator:Hide()
     end
@@ -81,11 +80,12 @@ local function CreateText(self)
     if self.time then return end
     self.time = S.CreateFontString(self.host, nil, "OVERLAY")
     self.separator = S.CreateFontString(self.host, nil, "OVERLAY")
-    S.SetFont(self.time, self.config.font, self.config.fontSize, "OUTLINE")
-    S.SetFont(self.separator, self.config.font, self.config.fontSize, "OUTLINE")
+    local c = self.config
+    local font = S.ResolveFont(c.font) or (c.font ~= "" and c.font or nil)
+    S.SetFont(self.time, font, c.fontSize, "OUTLINE")
+    S.SetFont(self.separator, font, c.fontSize, "OUTLINE")
     self.separator:SetText("+")
-    self.time:SetPoint("LEFT", self.host, "LEFT", 24, 0)
-    self.separator:SetPoint("LEFT", self.host, "LEFT", 13, 0)
+    if self.previewParent then return end
     local down = Enum.NumericRuleFormatRounding.Down
     local formatter = C_StringUtil.CreateNumericRuleFormatter()
     formatter:SetBreakpoints({ { threshold = 0, format = "%02d:%02d", rounding = down,
@@ -100,37 +100,12 @@ local function CreateText(self)
     self.durationBinding = binding
 end
 
-local function TextLayout(self)
-    local c, compact = self.config, self.config.textOnly == true
-    if compact then CreateText(self) end
-    local method = compact and "Hide" or "Show"
-    self.panel[method](self.panel)
-    self.icon[method](self.icon)
-    self.title[method](self.title)
-    self.maximum[method](self.maximum)
-    self.cooldown[method](self.cooldown)
-    for i = 1, #self.edges do self.edges[i][method](self.edges[i]) end
-    self.count:ClearAllPoints()
-    if compact then
-        self.count:SetPoint("LEFT", self.host, "LEFT", 0, 0)
-        self.time:ClearAllPoints()
-        self.separator:ClearAllPoints()
-        self.time:SetPoint("LEFT", self.host, "LEFT", c.fontSize * 24 / 11, 0)
-        self.separator:SetPoint("LEFT", self.host, "LEFT", c.fontSize * 13 / 11, 0)
-        S.SetFont(self.count, c.font, c.fontSize, "OUTLINE")
-        S.SetFont(self.time, c.font, c.fontSize, "OUTLINE")
-        S.SetFont(self.separator, c.font, c.fontSize, "OUTLINE")
-        self.time:SetTextColor(1, 1, 1)
-        self.separator:SetTextColor(1, 1, 1)
-    else
-        self.count:SetPoint("BOTTOMLEFT", self.icon, "BOTTOMRIGHT", 7, 0)
-        S.SetFont(self.count, nil, 22, "OUTLINE")
-    end
-    ClearTimer(self)
+local function Anchor(region, point, relative, otherPoint, x, y)
+    region:ClearAllPoints()
+    region:SetPoint(point, relative, otherPoint, x, y)
 end
 
 local function BindTime(self, duration)
-    if not self.config.textOnly then return end
     -- The duration's contents may be secret; the object itself must be public
     -- for DurationTextBinding:SetDuration (AllowedWhenUntainted).
     if not S.Public(duration) or duration == nil then return end
@@ -140,20 +115,148 @@ local function BindTime(self, duration)
     self.separator:Show()
 end
 
-local function SampleTime(self)
-    if not self.config.textOnly then return end
-    self.durationBinding:Disable()
-    self.time:SetText("02:38")
-    self.time:Show()
-    self.separator:Show()
+local function SampleTime(self, editMode)
+    if not self.timerShown then return end
+    if self.config.textOnly then
+        if self.durationBinding then self.durationBinding:Disable() end
+        self.time:SetText("02:38")
+        self.time:Show()
+        self.separator:Show()
+    elseif not self.cooldownSample then
+        self.cooldown:SetCooldown(GetTime(), editMode and 90 or 158)
+        self.cooldownActive, self.cooldownSample = true, true
+    end
+end
+
+local function Shown(region, value)
+    if value then region:Show() else region:Hide() end
+end
+
+local function CustomDimension(value, fallback)
+    return value and value > 0 and value or fallback
+end
+
+local function PaintTexture(region, texture, color, alpha)
+    local r, g, b = S.RGB(color)
+    if texture and texture ~= "" then
+        region:SetTexture(S.ResolveTexture(texture, WHITE))
+        region:SetVertexColor(r, g, b, alpha)
+    else
+        region:SetColorTexture(r, g, b, alpha)
+        region:SetVertexColor(1, 1, 1, 1)
+    end
+end
+
+local function PlaceLayer(self, key, x, y)
+    local host, c = self.host, self.config
+    if key == "background" or key == "border" then
+        Anchor(key == "background" and self.panel or self.borderBounds, "CENTER", host, "CENTER", x, y)
+    elseif key == "icon" then
+        Anchor(self.icon, "LEFT", host, "LEFT", 3 + x, y)
+    elseif key == "title" then
+        Anchor(self.title, "TOPLEFT", host, "LEFT", 48 + x, 17 + y)
+    elseif key == "count" then
+        if c.textOnly then Anchor(self.count, "LEFT", host, "LEFT", x, y)
+        else
+            Anchor(self.count, "BOTTOMLEFT", host, "LEFT", 48 + x, -19 + y)
+        end
+    elseif key == "maximum" then
+        Anchor(self.maximum, "BOTTOMLEFT", host, "LEFT", 64 + x, -17 + y)
+    elseif c.textOnly then
+        local separatorX = c.fontSize * 13 / 11 + x
+        Anchor(self.separator, "LEFT", host, "LEFT", separatorX, y)
+        Anchor(self.time, "LEFT", host, "LEFT", separatorX + c.fontSize * (c.timerSize or 100) / 100, y)
+    else
+        local scale = (c.timerSize or 100) / 100
+        Anchor(self.cooldown, "CENTER", host, "LEFT", (22 + x) / scale, y / scale)
+    end
+end
+
+local LAYERS = { "background", "border", "icon", "title", "count", "maximum", "timer" }
+
+local function PaintCard(self, width, height, style)
+    local c, compact = self.config, self.config.textOnly == true
+    local backgroundAlpha = (c.backgroundOpacity or 92) / 100
+    local borderAlpha = (c.borderOpacity or 95) / 100
+    local background = not compact and c.backgroundShown ~= false and backgroundAlpha > 0
+    local border = not compact and c.borderShown ~= false and borderAlpha > 0
+    if background then
+        self.panel:SetSize(CustomDimension(c.backgroundWidth, width), CustomDimension(c.backgroundHeight, height))
+        PaintTexture(self.panel, c.backgroundTexture, style.background, backgroundAlpha)
+    end
+    if border then
+        local bw, bh = CustomDimension(c.borderWidth, width), CustomDimension(c.borderHeight, height)
+        self.borderBounds:SetSize(bw, bh)
+        local thickness = math.min(c.borderThickness or 1, bw / 2, bh / 2)
+        local r, g, b = S.RGB(style.border)
+        S.PlaceEdges(self.edges, self.borderBounds, thickness, r, g, b, borderAlpha)
+        local texture = S.ResolveTexture(c.borderTexture)
+        for _, edge in ipairs(self.edges) do
+            if texture then
+                edge:SetTexture(texture)
+                edge:SetVertexColor(r, g, b, borderAlpha)
+            elseif self.borderTextured then
+                edge:SetVertexColor(1, 1, 1, 1)
+            end
+        end
+        self.borderTextured = texture ~= nil
+    end
+    Shown(self.panel, background)
+    Shown(self.borderBounds, border)
+    for _, edge in ipairs(self.edges) do Shown(edge, border) end
+end
+
+local function PaintElements(self, style)
+    local c, compact = self.config, self.config.textOnly == true
+    local iconSize = c.iconSize or 38
+    self.icon:SetSize(iconSize, iconSize)
+    local customIcon = c.iconTexture
+    local fileID = tonumber(customIcon)
+    if fileID and (fileID < 1 or fileID > 2147483647 or fileID ~= math.floor(fileID)) then customIcon, fileID = nil, nil end
+    if self.icon:SetTexture(fileID or (customIcon ~= "" and customIcon) or self.spellIcon) == false then
+        self.icon:SetTexture(self.spellIcon)
+    end
+    self.cooldown:SetSize(38, 38)
+    self.cooldown:SetScale((c.timerSize or 100) / 100)
+    if c.timerTexture and c.timerTexture ~= "" then
+        self.cooldown:SetSwipeTexture(S.ResolveTexture(c.timerTexture, WHITE), 0.25, 0.25, 0.25, .8)
+        self.customSwipe = true
+    elseif self.customSwipe then
+        self.cooldown:SetSwipeTexture(WHITE, 0, 0, 0, .8)
+        self.customSwipe = nil
+    end
+    local compactFont = compact and (S.ResolveFont(c.font) or (c.font ~= "" and c.font or nil)) or nil
+    S.SetFont(self.title, S.ResolveFont(c.titleFont), c.titleSize or 11, "OUTLINE")
+    self.title:SetWidth(math.ceil(self.title:GetUnboundedStringWidth()) + 4)
+    local countFont = S.ResolveFont(c.countFont) or compactFont
+    local countSize = CustomDimension(c.countSize, compact and c.fontSize or 22)
+    S.SetFont(self.count, countFont, countSize, "OUTLINE")
+    S.SetFont(self.maximum, S.ResolveFont(c.maximumFont), c.maximumSize or 12, "OUTLINE")
+    self.title:SetTextColor(S.RGB(style.muted))
+    self.count:SetTextColor(S.RGB(style.text))
+    self.maximum:SetTextColor(S.RGB(style.muted))
+    self.countShown, self.maximumShown = c.countShown ~= false, not compact and c.maximumShown ~= false
+    self.timerShown = c.timerShown ~= false
+    Shown(self.icon, not compact and c.iconShown ~= false)
+    Shown(self.title, not compact and c.titleShown ~= false)
+    Shown(self.count, self.countShown)
+    Shown(self.maximum, self.maximumShown)
+    Shown(self.cooldown, not compact and self.timerShown)
+    if compact then
+        CreateText(self)
+        local size = c.fontSize * (c.timerSize or 100) / 100
+        S.SetFont(self.time, compactFont, size, "OUTLINE")
+        S.SetFont(self.separator, compactFont, size, "OUTLINE")
+        self.time:SetTextColor(1, 1, 1)
+        self.separator:SetTextColor(1, 1, 1)
+    end
+    if self.compact ~= compact or not self.timerShown then ClearTimer(self) end
+    self.compact = compact
 end
 
 local function Place(self)
     local c = self.config
-    local style = S.PaintQoLCard(ID, c, self.panel, self.edges)
-    self.title:SetTextColor(S.RGB(style.muted))
-    self.count:SetTextColor(S.RGB(style.text))
-    self.maximum:SetTextColor(S.RGB(style.muted))
+    local style = S.QoLStyle(c)
     local width = math.max(c.width, c.textOnly and c.fontSize * 6 or 146)
     local height = math.max(c.height, c.textOnly and c.fontSize + 2 or 44)
     self.host:SetSize(width, height)
@@ -163,17 +266,30 @@ local function Place(self)
     else
         S.PlaceHost(self.host, c)
     end
-    TextLayout(self)
+    PaintCard(self, width, height, style)
+    PaintElements(self, style)
+    self.hasLayers = self.countShown or self.maximumShown or self.timerShown or self.title:IsShown()
+        or self.icon:IsShown() or self.panel:IsShown() or self.borderBounds:IsShown()
+    for _, key in ipairs(LAYERS) do PlaceLayer(self, key, c[key .. "X"] or 0, c[key .. "Y"] or 0) end
     if c.glossEnabled or self.glossIconActive then
         self.glossIconActive = NS.GlossMaterial.Icon(self.host, self.icon,
-            c.glossEnabled and not c.textOnly, c.glossStrength, 38) or nil
+            c.glossEnabled and self.icon:IsShown(), c.glossStrength, c.iconSize or 38) or nil
     end
 end
 
-local function InSharedPool(self)
+local function ReadInstanceType(self)
     local _, instanceType = GetInstanceInfo()
-    if instanceType == "party" then return self.challengeActive == true end
-    if instanceType == "raid" then return self.encounterActive == true end
+    self.instanceType = S.Public(instanceType) and type(instanceType) == "string" and instanceType ~= "" and instanceType or nil
+end
+
+local function InstancePending(self)
+    local kind = self.instanceType
+    return not kind or (kind == "none" and (self.challengeActive or self.encounterActive))
+end
+
+local function InSharedPool(self)
+    if self.instanceType == "party" then return self.challengeActive == true end
+    if self.instanceType == "raid" then return self.encounterActive == true end
     return false
 end
 
@@ -192,15 +308,32 @@ local function WatchCharges(self, watch)
     end
 end
 
+local function UpdateRecharge(self, active)
+    if not self.timerShown or not S.Public(active) or active ~= true then return ClearTimer(self) end
+    local duration = C_Spell.GetSpellChargeDuration(SPELL_ID)
+    if S.Public(duration) and duration == nil then return ClearTimer(self) end
+    if self.compact then
+        ClearTimer(self)
+        BindTime(self, duration)
+    else
+        self.cooldown:SetCooldownFromDurationObject(duration, true)
+        self.cooldownActive, self.cooldownSample = true, nil
+    end
+end
+
 Update = function(self)
     if not self.active then return end
+    if not self.hasLayers then
+        WatchCharges(self, false)
+        self.host:Hide()
+        return
+    end
 
     if S.editMode and not NS.IsCombatLocked() then
         WatchCharges(self, false)
         self.count:SetText("2")
         self.maximum:SetText("/3")
-        self.cooldown:SetCooldown(GetTime(), 90)
-        SampleTime(self)
+        SampleTime(self, true)
         self.host:Show()
         return
     end
@@ -228,27 +361,18 @@ Update = function(self)
         return
     end
 
-    local display = C_Spell.GetSpellDisplayCount(SPELL_ID)
-    if S.Public(display) and (type(display) ~= "string" or display == "") then display = "--" end
-    self.count:SetText(display)
-    self.maximum:SetFormattedText("/%d", math.floor(maximum))
-
-    ClearTimer(self)
-    if info.isActive == true then
-        local duration = C_Spell.GetSpellChargeDuration(SPELL_ID)
-        if not S.Public(duration) or duration ~= nil then
-            self.cooldown:SetCooldownFromDurationObject(duration, true)
-            BindTime(self, duration)
-        else
-            ClearTimer(self)
-        end
-    else
-        ClearTimer(self)
+    if self.countShown then
+        local display = C_Spell.GetSpellDisplayCount(SPELL_ID)
+        if S.Public(display) and (type(display) ~= "string" or display == "") then display = "--" end
+        self.count:SetText(display)
     end
+    if self.maximumShown then self.maximum:SetFormattedText("/%d", math.floor(maximum)) end
+    UpdateRecharge(self, info.isActive)
     self.host:Show()
 end
 
 local function ContextChanged(self, event)
+    ReadInstanceType(self)
     if event == "ENCOUNTER_START" then
         self.encounterActive = true
     elseif event == "ENCOUNTER_END" then
@@ -263,10 +387,13 @@ local function ContextChanged(self, event)
         self.challengeActive = ChallengeActive()
     end
     Update(self)
-    if event == "CHALLENGE_MODE_START" and not self.challengeActive then self.startJob:Request() end
+    if InstancePending(self) or (event == "CHALLENGE_MODE_START" and (not self.challengeActive or self.instanceType ~= "party")) then
+        self.startJob:Request()
+    end
 end
 
 local function RecheckStart(self)
+    ReadInstanceType(self)
     self.challengeActive = ChallengeActive()
     Update(self)
 end
@@ -276,6 +403,7 @@ function M:Enable()
     self.startJob = self.context:Coalesce(START_RECHECK, RecheckStart)
     Create(self)
     Place(self)
+    ReadInstanceType(self)
     self.encounterActive = EncounterActive()
     self.challengeActive = ChallengeActive()
     local context = self.context
@@ -285,15 +413,15 @@ function M:Enable()
         context:Event(event, ContextChanged, IN_COMBAT)
     end
     Update(self)
+    if InstancePending(self) then self.startJob:Request() end
 end
 
 function M:Refresh()
     WatchGloss(self, self.config.glossEnabled == true)
-    S.SetFont(self.title, nil, 11, "OUTLINE")
-    S.SetFont(self.count, nil, 22, "OUTLINE")
-    S.SetFont(self.maximum, nil, 12, "OUTLINE")
     Place(self)
+    ReadInstanceType(self)
     Update(self)
+    if InstancePending(self) then self.startJob:Request() end
 end
 
 -- The context's Release drops a pending key recheck.
@@ -328,10 +456,18 @@ function S.DrawBattleResPreview(parent, config, _, viewport)
     Place(view)
     view.count:SetText("2")
     view.maximum:SetText("/3")
-    view.cooldown:SetCooldown(0, 0)
     SampleTime(view)
     view.host:Show()
     return view.host
+end
+
+function S.MoveBattleResPreviewLayer(view, key, x, y)
+    PlaceLayer(view, key, x, y)
+end
+
+function S.HideBattleResPreview(parent)
+    local view = parent.suiteBattleResPreview
+    if view then ClearTimer(view) end
 end
 
 S.Install(ID, M)

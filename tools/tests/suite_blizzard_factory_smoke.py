@@ -106,7 +106,10 @@ local function CheckFramePaint(world, UF, env, flavor, Host)
         local layer = assert(frame._msufTexLayers and frame._msufTexLayers[1], unit .. " has no chassis")
         assert(layer:IsShown() and layer:GetWidth() == 128 and layer:GetHeight() == 64)
         local artwork = boss and "BossFrame.tga" or "UnitFrame.tga"
-        assert(layer.tex:GetTexture() == "Interface\\AddOns\\MSUF_Suite\\Media\\BlizzardFrames\\" .. artwork)
+        local texturePath = boss
+            and ("Interface\\AddOns\\MSUF_Suite\\Media\\BlizzardFrames\\" .. artwork)
+            or "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\TextureLayers\\UnitFrame.tga"
+        assert(layer.tex:GetTexture() == texturePath, "wrong texture: " .. tostring(layer.tex:GetTexture()))
         local point, owner, relative, x, y = layer:GetPoint()
         assert(point == "CENTER" and owner == frame and relative == "CENTER" and x == 0 and y == (boss and 6 or 7))
         assert(layer:GetFrameLevel() < frame.nameText:GetParent():GetFrameLevel(), "chassis covers name")
@@ -419,11 +422,18 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     end)
     Host("MSUF_InitProfiles")()
     local oldName = Host("MSUF_ActiveProfile")
-    local oldProfile = Copy(Host("MSUF_GlobalDB").profiles[oldName])
+    -- The host compacts defaults when a profile becomes inactive. Compare its values.
+    local function Materialized(profile)
+        return Host("MSUF_NormalizeProfileDefaults")(Copy(profile), false, true)
+    end
+    Host("MSUF_GlobalDB").profiles[oldName].general.castbarTimeFontSize = 19
+    local oldProfile = Materialized(Host("MSUF_GlobalDB").profiles[oldName])
     local ok, why = Host("MSUF_Profiles_ImportIntoNewProfile")("Blizzard imported", "MSUF3:blizzard-factory-import-test")
     assert(ok, tostring(why))
     assert(Host("MSUF_ActiveProfile") == "Blizzard imported", "host did not activate the imported profile")
-    assert(Equal(Host("MSUF_GlobalDB").profiles[oldName], oldProfile), "host import changed the previous profile")
+    local oldRestored = Materialized(Host("MSUF_GlobalDB").profiles[oldName])
+    assert(oldRestored.general.castbarTimeFontSize == 19, "previous profile lost the customized font size")
+    assert(Equal(oldRestored, oldProfile), "host import changed the previous profile after materializing defaults")
     UF.Config.Refresh()
     CheckFramePaint(world, UF, env, flavor, Host)
     local aura = world.core.MSUF_Auras3 or env.MSUF_Auras3
@@ -551,6 +561,7 @@ def main():
         ('RetailProfile.lua', ['RetailProfileModuleCompact']),
         ('ModernDarkFactory.lua', ['ModernDarkFramesCompact', 'ModernDarkModuleCompact']),
         ('BlizzardFactory.lua', ['BlizzardFramesCompact', 'BlizzardModuleCompact']),
+        ('WayfarerFactory.lua', ['WayfarerFramesCompact', 'WayfarerModuleCompact']),
         ('DarkRaidFactory.lua', ['DarkRaidModuleCompact'])):
         for name in names:
             text = literal(core / filename, 'Suite.' + name)

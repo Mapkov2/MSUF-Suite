@@ -358,6 +358,65 @@ do
     Check(kilobytes < 0.5, ("500 recycled row passes allocated %.2f KB"):format(kilobytes))
 end
 
+------------------------------------------------------------------ capture the classified art once
+do
+    local texture = ArtTexture("questlog-unknown")
+    local button = ArtButton({ GetPushedTexture = texture })
+    Checkmarks.TrackButton(button, "snapshot")
+    texture.reads = 0
+    Checkmarks.TrackButton(button, "snapshot")
+    Check(texture.reads == 3, "recording unchanged button art read its texture twice")
+    Check(RoleScans(function() Checkmarks.TrackButton(button, "snapshot") end) == 0,
+        "the classified art did not seed the cache")
+
+    -- The object survives recycling. The changed path must replace its
+    -- negative signature and a later jump to a known path must still paint.
+    texture.path = "Interface\\Buttons\\Unrecognized"
+    texture.reads = 0
+    Checkmarks.TrackButton(button, "snapshot")
+    Check(texture.reads == 6, "updating a negative signature repeated the classification reads")
+    texture.file = "Interface\\Buttons\\UI-CheckBox-Check"
+    Check(Checkmarks.TrackButton(button, "snapshot") and texture.vertexWrites == 1,
+        "a changed texture with an existing signature was not painted")
+    Check(Checkmarks.UntrackButton(button, "snapshot") and texture.r == 1 and texture.g == 1 and texture.b == 1,
+        "disabling the skin did not restore the native tint")
+end
+
+do
+    local texture = ArtTexture("questlog-unknown")
+    local button = ArtButton({ GetPushedTexture = texture })
+    local getTexture = texture.GetTexture
+    Checkmarks.TrackButton(button, "snapshot")
+
+    -- A nested pass can see a role that the outer pass has not seen. The
+    -- outer observation must not suppress its next real scan.
+    local reenter = true
+    function texture:GetTexture()
+        local value = getTexture(self)
+        if reenter then
+            reenter = false
+            self.atlas = "checkmark-minimal"
+            Checkmarks.TrackButton(button, "snapshot")
+        end
+        return value
+    end
+    Checkmarks.TrackButton(button, "snapshot")
+    Check(texture.vertexWrites == 1 and RoleScans(function() Checkmarks.TrackButton(button, "snapshot") end) > 0,
+        "a nested role change was cached as unrecognized")
+end
+
+do
+    local texture = ArtTexture("questlog-unknown")
+    local button = ArtButton({ GetPushedTexture = texture })
+    Checkmarks.TrackButton(button, "snapshot")
+    Checkmarks.TrackButton(button, "snapshot")
+    button.slots.GetPushedTexture = Secret()
+    Check(Checkmarks.TrackButton(button, "snapshot") == false, "a restricted art slot was used as a texture")
+    texture.atlas = "checkmark-minimal"
+    button.slots.GetPushedTexture = texture
+    Check(Checkmarks.TrackButton(button, "snapshot"), "a previously restricted slot could no longer be skinned")
+end
+
 ------------------------------------------------------------------ button art of a recycled row
 do
     local normal, pushed = ArtTexture("questlog-unknown"), ArtTexture("questlog-unknown-pressed")

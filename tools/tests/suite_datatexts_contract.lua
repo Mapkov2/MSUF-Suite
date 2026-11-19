@@ -711,6 +711,28 @@ do
     assert(ornate.accent.points[1][1] == "TOPLEFT", "accent position toggle did not restore")
     assert(S.Set("dataTexts", "bar2Enabled", false))
 end
+-- A minimap footer can reserve space for both performance values while
+-- keeping the map edge and separators stationary.
+do
+    local ns = W.Suite
+    assert(S.SetMany("dataTexts", { bar1Width = 250, bar1Layout = 1, bar1StyleOverride = true,
+        bar1BagBadge = false, bar1Gap = 0, bar1Slot1 = ns.DataTextSourceIndex.gold,
+        bar1Slot2 = ns.DataTextSourceIndex.durability, bar1Slot3 = ns.DataTextSourceIndex.bags,
+        bar1Slot4 = ns.DataTextSourceIndex.fpsLatency, bar1Slot5 = 1, bar1Slot6 = 1,
+        bar1Slot1Weight = 80, bar1Slot2Weight = 75, bar1Slot3Weight = 100, bar1Slot4Weight = 145 }))
+    local footer = M.bars[1]
+    local slots = footer.slots
+    assert(math.abs(footer.frame:GetWidth() - 250) <= 1 and slots[4]:GetWidth() > 88
+        and slots[1]:GetWidth() < 53 and slots[3]:GetWidth() < slots[4]:GetWidth(),
+        "fixed width did not reserve room for the performance values")
+    local widths = ns.DataTextMoveSlotValues(S.Config("dataTexts"), 1, 4, 2)
+    assert(widths.bar1Slot2Weight == 145 and widths.bar1Slot4Weight == 100,
+        "moving a place left its relative width behind")
+    assert(S.SetMany("dataTexts", { bar1Slot1Weight = 100, bar1Slot2Weight = 100, bar1Slot3Weight = 100,
+        bar1Slot4Weight = 100 }))
+    assert(math.abs(slots[1]:GetWidth() - slots[4]:GetWidth()) <= 1,
+        "ordinary fixed width places no longer share the space evenly")
+end
 -- Reference strip: independent Home/World samples, trusted symbols and gold FPS.
 assert(S.SetMany("dataTexts", { enabled = true, bar1Enabled = true, bar1StyleOverride = true,
     bar1Layout = 2, bar1Visibility = 1, bar1CustomColors = true, bar1ValueColor = "ffffff",
@@ -890,6 +912,37 @@ if flavor == "Forever" then
     assert(bar.slots[1].text:find(tostring(fps), 1, true) and module.context.callbacks.PLAYER_STOPPED_MOVING
         and not module.due.fps, "combat end did not read FPS or gave it a deadline")
     fps = shownFPS
+end
+
+-- Docking keeps the normal screen position as a fallback and publishes the
+-- lowest enabled map bar to the objective tracker.
+do
+    local world = H.New(root, flavor, { beforeModules = SetupSources })
+    world.LoadAddon("MSUF_Suite_DataTexts")
+    local controller = world.S
+    local config = controller.Config("dataTexts")
+    config.enabled, config.bar1Enabled, config.bar2Enabled = true, true, true
+    config.bar1MinimapDock, config.bar2MinimapDock = true, true
+    config.bar2MinimapDockGap = 7
+    H.Enable(world, { captured = true })
+    world.Step()
+    local module = controller.instances.dataTexts
+    local first, second = module.bars[1].frame, module.bars[2].frame
+    local point, relative, edge, _, gap = second:GetPoint()
+    assert(point == "TOPRIGHT" and relative == first and edge == "BOTTOMRIGHT" and gap == -7)
+    local _, map = first:GetPoint()
+    assert(map == world.MM.host and controller.MinimapDock.Anchor(true) == second)
+    assert(controller.Set("minimap", "x", -95))
+    local _, moved = first:GetPoint()
+    assert(moved == map, "moving the minimap broke its live footer anchor")
+    assert(controller.Set("minimap", "enabled", false))
+    local _, screen = first:GetPoint()
+    assert(screen == world.G.UIParent and not controller.MinimapDock.Anchor(true), "undocked bars kept a released map")
+    assert(controller.Set("minimap", "enabled", true))
+    world.Step()
+    assert(controller.MinimapDock.Anchor(true) == second)
+    assert(controller.Set("dataTexts", "enabled", false))
+    assert(controller.MinimapDock.Anchor(true) == world.MM.host, "disabled bars remained the tracker anchor")
 end
 
 -- Retail and WoW Forever always have the APIs DataTexts calls. The one

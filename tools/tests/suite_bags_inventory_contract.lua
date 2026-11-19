@@ -18,7 +18,7 @@ do
     local rules = catalog.SuiteCatalog.bags.rules
     local NAMES = {
         { "inventoryView", catalog.BagsView, { ALL = "All items", BY_BAG = "By bag", CATEGORIES = "Categories",
-            BLIZZARD_GRID = "Blizzard grid" } },
+            BLIZZARD_GRID = "Blizzard grid", SINGLE = "One bag" } },
         { "bankView", catalog.BagsBankView, { TABS = "Bank tabs", CHARACTER = "Combined bank",
             WARBANK = "Combined warbank", CATEGORIES = "Bank categories" } },
         { "sortDirection", catalog.BagsSortDirection, { BLIZZARD = "Blizzard setting", FROM_TOP = "Fill from the top",
@@ -186,6 +186,20 @@ assert(loadfile(root .. "/MSUF_Suite_Bags/SlotCache.lua"))("Bags", P)
 assert(loadfile(root .. "/MSUF_Suite_Bags/ItemLoads.lua"))("Bags", P)
 assert(loadfile(root .. "/MSUF_Suite_Bags/InventoryIndex.lua"))("Bags", P)
 local Index, index = P.InventoryIndex, P.InventoryIndex.New()
+do
+    local reads, family, previous = 0, 32, C_Container.GetContainerNumFreeSlots
+    C_Container.GetContainerNumFreeSlots = function() reads = reads + 1; return 7, family end
+    for _ = 1, 100 do assert(Index.BagFamily(index, 1, 10) == 32) end
+    assert(reads == 1, "unchanged bag family was read repeatedly")
+    Index.InvalidateBag(index, 1)
+    family = nil
+    assert(Index.BagFamily(index, 1, 10) == nil)
+    family = 0
+    assert(Index.BagFamily(index, 1, 10) == 0 and reads == 3, "bag replacement retained the old or unknown family")
+    family = 32
+    assert(Index.BagFamily(index, 1, 20) == 32 and reads == 4, "capacity change did not refresh family")
+    C_Container.GetContainerNumFreeSlots = previous
+end
 local button = {}
 -- A changed read (new version) builds the record again; one request per item.
 Index.ReadButton(index, button, { itemID = 101, hyperlink = "missing", stackCount = 1 }, false, 1, 0, 1)

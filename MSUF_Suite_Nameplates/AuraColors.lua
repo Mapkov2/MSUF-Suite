@@ -185,9 +185,7 @@ local function ConfigureState(state, health, path)
     state.container:SetEnabled(false)
     local fill = health:GetStatusBarTexture()
     for i, row in ipairs(rows) do
-        local ids = {}
-        for _, id in ipairs(row.ids) do ids[id] = true end
-        local filter = { includeSpellIDs = ids }
+        local filter = row.filter
         if not state.countSlots[i] then
             local anchor = state.slots[i + 1] or state.container
             Slot(state, "all" .. i, state.slots[i], anchor, i < A.LIMIT and "BOTTOM" or "TOP", 0, filter)
@@ -275,10 +273,19 @@ function Colors.Configure(c, force)
         and plan.warn == c.auraColorsNoneEnabled and plan.individual == c.auraColorsIndividual
         and plan.texture == texture then return end
     local selected = A.Selected(A.Decode(c.auraColorsData)[spec])
+    local rulesChanged = not SameRows(rows, selected)
     local changed = not plan or plan.all ~= c.auraColorsAll or plan.none ~= c.auraColorsNone
         or plan.warn ~= c.auraColorsNoneEnabled or plan.individual ~= c.auraColorsIndividual or plan.texture ~= texture
-        or not SameRows(rows, selected)
-    rows = selected
+        or rulesChanged
+    if rulesChanged then
+        -- Native AuraContainer stores candidate tables and only reads their IDs.
+        for _, row in ipairs(selected) do
+            local ids = {}
+            for _, id in ipairs(row.ids) do ids[id] = true end
+            row.filter = { includeSpellIDs = ids }
+        end
+        rows = selected
+    end
     plan = plan or {}
     plan.spec, plan.data, plan.all, plan.none = spec, c.auraColorsData, c.auraColorsAll, c.auraColorsNone
     plan.warn, plan.individual = c.auraColorsNoneEnabled, c.auraColorsIndividual

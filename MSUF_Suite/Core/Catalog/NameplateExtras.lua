@@ -17,12 +17,18 @@ local rules = {
     B.Bool("threatFrameColor", "Use threat colors on the health frame outline", false),
     B.Bool("castIconCombinedHeight", "Spell icon spans health and cast bars", false),
     B.Bool("castSeamLine", "Show a line between health and cast bars", false),
+    B.Bool("targetUnitFrameResource", "Show your class resource on the MSUF target frame", false),
+    B.Number("targetUnitFrameResourceWidth", "Target frame resource width", 114, 30, 300),
+    B.Number("targetUnitFrameResourceHeight", "Target frame resource height", 5, 2, 30),
+    B.Number("targetUnitFrameResourceY", "Target frame resource vertical offset", -8, -200, 200),
+    B.Bool("enemySlantedHealth", "Slanted enemy health bars", false),
 }
 rules[1].enableKey = "enemyQuestColors"
 for _, index in ipairs({ 2, 3 }) do rules[index].enableKey = "questReactionColors" end
 for _, index in ipairs({ 5, 6, 7 }) do rules[index].enableKey = "targetClassResource" end
 for _, index in ipairs({ 9, 10 }) do rules[index].enableKey = "castHealthColors" end
 for _, index in ipairs({ 11, 12 }) do rules[index].enableKey = "enemyRoleColors" end
+for _, index in ipairs({ 16, 17, 18 }) do rules[index].enableKey = "targetUnitFrameResource" end
 for _, entry in ipairs({ { "target", "Target" }, { "focus", "Focus" }, { "hover", "Mouseover" } }) do
     local kind, label = entry[1], NS.Text(entry[2])
     rules[#rules + 1] = B.Texture(kind .. "PatternTexture", NS.Text("%s pattern texture"):format(label))

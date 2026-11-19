@@ -62,9 +62,45 @@ assert(Workspace().deck.selected == 2 and P.DataTextPage.selections[2].slot == 3
 assert(M.GetPageHistoryState().previousPage == "home", "local Back consumed the Menu2 page history")
 assert(M.scrollFrame:GetVerticalScroll() == 67, "Back did not restore the editor scroll")
 
-Workspace().choose("shared")
-assert(config.showMinimizedWindows == false and M.cache[PAGE].sections[PAGE .. "_minimizedWindows"],
-    "All bars lacks the opt-in minimized-windows setting")
+local shared = assert(Workspace().buttons.shared, "All bars is missing from the top of the page")
+local _, relative, _, _, y = shared:GetPoint()
+assert(relative == Workspace().navigation and y > -30 and shared:GetText() == P.Tr("All bars"),
+    "All bars is missing from the top of the page")
+Click(shared)
+assert(Workspace().deck.selected == "shared" and M.scrollFrame:GetVerticalScroll() == 0,
+    "All bars did not open at the top of its settings")
+local minimized = assert(M.cache[PAGE].sections[PAGE .. "_minimizedWindows"], "minimized-windows section missing")
+local function FindSetting(frame, key)
+    local meta = P.HM.GetControlSearchMeta(frame)
+    if meta and meta.settingKey == "msufsuite.dataTexts." .. key then return frame end
+    for _, child in ipairs({ frame:GetChildren() }) do
+        local match = FindSetting(child, key)
+        if match then return match end
+    end
+end
+local position = assert(FindSetting(minimized, "minimizedWindowsPoint"), "taskbar position control missing")
+local toggle = assert(FindSetting(minimized, "showMinimizedWindows"), "taskbar toggle missing")
+assert(config.showMinimizedWindows == false and position:GetValue() == 8, "legacy taskbar defaults changed")
+local wasEnabled = config.enabled
+assert(P.S.Set("dataTexts", "enabled", false))
+mw:RunTimers(1000)
+assert(position:IsEnabled() and toggle:IsEnabled(), "taskbar settings require enabling individual data bars")
+local restore = F.env.CreateFrame("Button", nil, F.env.UIParent)
+F.MenuWorld.FireVisibilityScripts(restore)
+restore:SetSize(154, 26)
+restore:SetPoint("CENTER", F.env.UIParent, "CENTER")
+restore:Hide()
+P.Suite.MinimizedWindows.Track(restore)
+restore:Show()
+assert(P.S.Set("dataTexts", "showMinimizedWindows", true))
+local _, strip = restore:GetPoint()
+assert(strip:GetPoint() == "BOTTOM", "the default taskbar is not on the bottom edge")
+position._msuf2OnValueChanged(3)
+assert(config.minimizedWindowsPoint == 3 and strip:GetPoint() == "TOPRIGHT",
+    "the menu did not save the position and move the docked window")
+restore:Hide()
+assert(P.S.Set("dataTexts", "showMinimizedWindows", false))
+assert(P.S.Set("dataTexts", "enabled", wasEnabled))
 M.pageBackStack = {}
 M.RefreshPageHistoryNav()
 Click(Workspace().buttons.add)
@@ -109,4 +145,14 @@ local gallery = Gallery()
 Click(gallery[1].button)
 local created = P.Suite.DataTextBarIDs(config)[3]
 assert(created and Workspace().deck.selected == created, "adding a preset did not open the new bar editor")
+local compassChoice = assert(P.DataTextsSourcePicker.Choices("compass")[1])
+assert(compassChoice.available and compassChoice.key == "compass" and compassChoice.index == P.Suite.DataTextSourceIndex.compass)
+local prefix = "bar" .. created
+assert(P.S.SetMany("dataTexts", { [prefix .. "Slot1"] = compassChoice.index, [prefix .. "Width"] = 650,
+    [prefix .. "Height"] = 28 }))
+local editor = assert(Workspace().deck.views[created])
+editor.preview:Refresh()
+local previewSlot = editor.preview.slots[1]
+assert(previewSlot.dataCompass.showing and not previewSlot.label:IsShown(), "the panel preview lost the compass strip")
+assert(P.Suite.Compass.SlotText(previewSlot) == "90\194\176", "the preview did not use the static sample")
 print("DataTexts gallery navigation, window controls and responsive card layout PASS")

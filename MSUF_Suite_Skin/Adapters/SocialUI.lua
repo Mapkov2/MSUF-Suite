@@ -17,8 +17,8 @@ local SocialUISkin = {
 }
 NS.SocialUISkin = SocialUISkin
 
-local Field = NS.Safety.Field
-local Kit = NS.AdapterKit
+local Safety, Kit = NS.Safety, NS.AdapterKit
+local Field = Safety.Field
 
 local DEFAULT_OWNER = "socialUI"
 local TAB_LIMIT = 64
@@ -74,7 +74,7 @@ local broadcastInputBorderFields = {
 
 local SkinSocialCard
 
--- Owner state per parent owner; deferral keys are social-ui:<owner>:<suffix>.
+-- Owner state per parent owner.
 local Owners = Kit.NewOwners({
     prefix = "social-ui",
     default = DEFAULT_OWNER,
@@ -84,8 +84,6 @@ local Owners = Kit.NewOwners({
         state.owner = tostring(parentOwner) .. ":social-ui"
         state.cards = Kit.WeakSet()
         state.tabs = Kit.WeakSet()
-        -- tabs carrying this owner's surface
-        state.skinnedTabs = Kit.WeakSet()
         state.scrollBoxes = Kit.WeakSet()
         state.visitCard = function(card) SkinSocialCard(state, card) end
     end,
@@ -93,8 +91,7 @@ local Owners = Kit.NewOwners({
 SocialUISkin.owners = Owners.owners
 
 local function SkinBattleNetDialog(state, dialog, broadcast)
-    if not dialog then return false end
-    local applied = Kit.Attach(state, dialog, DIALOG_SPEC)
+    if not Kit.Attach(state, dialog, DIALOG_SPEC) then return end
     local border = Field(dialog, "Border")
     if border then
         Kit.FadeNineSlice(state, border)
@@ -102,19 +99,17 @@ local function SkinBattleNetDialog(state, dialog, broadcast)
     end
     if broadcast then
         local editBox = Field(dialog, "EditBox")
-        applied = Kit.SkinControl(state, editBox, SEARCH_SPEC, "ApplySearchBox") or applied
-        Kit.FadeFields(state, editBox, broadcastInputBorderFields)
-        applied = Kit.SkinControl(state, Field(dialog, "UpdateButton"), UPDATE_SPEC) or applied
-        applied = Kit.SkinControl(state, Field(dialog, "CancelButton"), CANCEL_SPEC) or applied
+        if Kit.SkinControl(state, editBox, SEARCH_SPEC, "ApplySearchBox") then
+            Kit.FadeFields(state, editBox, broadcastInputBorderFields)
+        end
+        Kit.SkinControl(state, Field(dialog, "UpdateButton"), UPDATE_SPEC)
+        Kit.SkinControl(state, Field(dialog, "CancelButton"), CANCEL_SPEC)
     end
-    return applied
 end
 
 local function SkinBattleNetBar(state, frame)
     local bar = Field(frame, "BattleNetBar")
-    if not bar then return end
-
-    Kit.Attach(state, bar, BATTLE_NET_BAR_SPEC)
+    if not Kit.Attach(state, bar, BATTLE_NET_BAR_SPEC) then return end
     Kit.Fade(state, Field(bar, "Background"))
 
     local controls = Field(bar, "ControlsContainer")
@@ -135,28 +130,23 @@ end
 
 -- Selection is mirrored later by the SetSelected hook (OnCardSelected).
 SkinSocialCard = function(state, card)
-    if not state or not state.active or not card or not Kit.HasFields(card, SOCIAL_CARD_FIELDS) then
+    if not state.active or not Safety.Public(card) or Safety.IsForbidden(card)
+        or not Kit.HasFields(card, SOCIAL_CARD_FIELDS) then
         return false
     end
+    if not Kit.Ensure(state, card, CARD_SPEC) then return false end
     state.cards[card] = true
-    if NS.IsCombatLocked() then return false end
-    local attached = Kit.Attach(state, card, CARD_SPEC)
     Kit.Fade(state, Field(card, "Background"))
-    return attached
+    return true
 end
 
 local function SkinSocialTab(state, tab)
-    if not state or not state.active or not tab then return false end
+    if not state.active or not Kit.Ensure(state, tab, TAB_SPEC) then return false end
     state.tabs[tab] = true
-    if NS.IsCombatLocked() then return false end
-    local attached = Kit.Attach(state, tab, TAB_SPEC)
     -- Keep Icon, Count, SelectedTexture, TabGlow and HighlightTexture native.
     Kit.Fade(state, Field(tab, "Background"))
-    if attached then
-        state.skinnedTabs[tab] = true
-        NS.Surface.SetActive(tab, Kit.IsShown(Field(tab, "SelectedTexture")))
-    end
-    return attached
+    NS.Surface.SetActive(tab, Kit.IsShown(Field(tab, "SelectedTexture")))
+    return true
 end
 
 local function SkinTabs(state)
@@ -176,13 +166,13 @@ end
 -- The friends ScrollBox reports every new and recycled card here, after
 -- FriendsListSocialCardMixin:Initialize, so this is the one card pass.
 local function OnFriendCardInitialized(state, card)
-    SkinSocialCard(state, card)
+    if state.active and not Kit.IsHidden(state.frame) then SkinSocialCard(state, card) end
 end
 
 local function RegisterFriendCards(state)
     TrackMotion(Kit.Path(state.frame, "RecentAlliesList", "ScrollBox"), state)
     local scrollBox = Kit.Path(state.frame, "FriendsList", "ScrollBox")
-    if not scrollBox then return false end
+    if not Safety.CanDecorate(scrollBox, not NS.IsCombatLocked()) then return false end
     if not state.scrollBoxes[scrollBox] then
         state.scrollBoxes[scrollBox] = Kit.RegisterRowCallback(scrollBox,
             OnFriendCardInitialized, state)
@@ -193,9 +183,9 @@ end
 
 -- Mirrors Blizzard's own selection into the active state of our surface.
 local function SyncActive(target, trackedKey, active)
-    if NS.IsCombatLocked() then return end
+    if not Safety.Public(active) or not Safety.Public(target) then return end
     for _, state in pairs(SocialUISkin.owners) do
-        if state.active and state[trackedKey][target] then
+        if state.active and state[trackedKey][target] and not Kit.IsHidden(state.frame) then
             NS.Surface.SetActive(target, active == true)
         end
     end
@@ -221,7 +211,7 @@ local function SyncTabStates(state)
     for tab in frame:EnumerateTabs() do
         if count >= TAB_LIMIT then break end
         count = count + 1
-        if state.skinnedTabs[tab] then
+        if state.tabs[tab] then
             NS.Surface.SetActive(tab, Kit.IsShown(Field(tab, "SelectedTexture")))
         else
             SkinSocialTab(state, tab)
@@ -234,7 +224,7 @@ end
 -- Both run on SocialUIFrame's own copy of the mixin (Mixin() copied it when
 -- Blizzard_SocialUI created the frame), so the frame instance is hooked.
 local function OnTabsRefreshed(frame, statesOnly)
-    if NS.IsCombatLocked() then return end
+    if Kit.IsHidden(frame) then return end
     for _, state in pairs(SocialUISkin.owners) do
         if state.active and state.frame == frame then
             if statesOnly then SyncTabStates(state) else SkinTabs(state) end
@@ -278,14 +268,14 @@ end
 local ApplyOrDefer
 
 local function ApplyState(state)
-    local frame = state and state.frame
-    if not state or not state.active or not frame then return false, "missing" end
-    if NS.IsCombatLocked() then return false, "combat" end
-    -- Keep hidden social lists cold; Blizzard opens and initializes them first.
-    if Kit.DeferHidden(frame, state, ApplyOrDefer, state, "show") then return true, "deferred" end
-    if not NS.Safety.CanCreateRegions(frame, true) then return false, "protected" end
-    if not Kit.Attach(state, frame, SHELL_SPEC) then return false, "shell" end
-    NS.WindowControls.Attach(frame, state.owner)
+    local frame = state.frame
+    local locked = NS.IsCombatLocked()
+    if not Safety.CanCreateRegions(frame, not locked) then
+        return false, locked and "combat" or "protected"
+    end
+    local shell = Kit.Attach(state, frame, SHELL_SPEC)
+    if shell or locked then NS.WindowControls.Attach(frame, state.owner) end
+    if not shell then return false, "shell" end
 
     Kit.FadeNineSlice(state, Field(frame, "NineSlice"))
     Kit.FadeFields(state, frame, SHELL_FIELDS)
@@ -308,17 +298,21 @@ end
 
 -- The pass a combat request runs afterwards, for the owner's state then.
 local function ApplyAfterCombat(state)
-    local applied, reason = ApplyState(state)
+    local applied, reason = ApplyOrDefer(state)
     if applied == false and reason ~= "missing" then
         NS.ReportError("social UI deferred apply", reason)
     end
 end
 
-ApplyOrDefer = function(state, suffix)
-    if not state or not state.active then return false, "disabled" end
+ApplyOrDefer = function(state)
+    if not state.active then return false, "disabled" end
+    local frame = state.frame
+    if not frame then return false, "missing" end
+    -- The native OnShow initializes the selected tab and list before we paint.
+    if Kit.DeferHidden(frame, state, ApplyOrDefer, state) then return true, "deferred" end
     if NS.IsCombatLocked() then
-        if not Kit.IsHidden(state.frame) then NS.WindowControls.Attach(state.frame, state.owner) end
-        return Owners.RunOrDefer(state, suffix, ApplyAfterCombat)
+        -- Paint unprotected regions now and retry any protected parts after combat.
+        Owners.RunOrDefer(state, "apply", ApplyAfterCombat)
     end
     return ApplyState(state)
 end
@@ -335,7 +329,6 @@ local function DisableNow(state)
     state.scrollBoxes = Kit.WeakSet()
     state.cards = Kit.WeakSet()
     state.tabs = Kit.WeakSet()
-    state.skinnedTabs = Kit.WeakSet()
 
     NS.WindowControls.DisableOwner(state.owner)
     NS.ControlSkin.DisableOwner(state.owner)
@@ -353,8 +346,7 @@ function SocialUISkin.Apply(parentOwner)
     -- Blizzard_SocialUI is not load-on-demand on 12.1.0, 12.1.5 and Forever:
     -- SocialUIFrame exists before this load-on-demand skin loads.
     state.frame = _G.SocialUIFrame
-    if not state.frame then return false, "missing" end
-    return ApplyOrDefer(state, "apply")
+    return ApplyOrDefer(state)
 end
 
 -- In combat the disable runs once afterwards; Apply cancels it first.

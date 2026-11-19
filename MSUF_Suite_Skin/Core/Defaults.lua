@@ -305,6 +305,7 @@ NS.Defaults = {
             layoutRelativePoint = "BOTTOMRIGHT",
             layoutX = -24,
             layoutY = 24,
+            layoutWidth = 0,
             positionPreset = "bottomRight",
             -- Off hides the whole frame around the bar (MicroMenu.lua); the
             -- looks keep their background and border for when it comes back.
@@ -552,6 +553,7 @@ NS.MicroMenuRanges = {
     { "padding", 0, 16, true },
     { "layoutX", -4096, 4096, true },
     { "layoutY", -4096, 4096, true },
+    { "layoutWidth", 0, 800, true },
     { "barBorder", 0, 2, true },
     { "buttonBorder", 0, 2, true },
     { "buttonSize", 20, 32, true },

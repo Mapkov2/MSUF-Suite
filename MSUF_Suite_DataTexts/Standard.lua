@@ -9,6 +9,7 @@ local CLOCK = NS.DataTextClockSource
 -- The module's settings and the limits and format resolved from them, set by
 -- Standard.Configure before the places paint.
 local settings, fpsLimit, latencyLimit, durabilityLimit, coordinateFormat
+local lastCoordinateX, lastCoordinateY, coordinateText
 
 -- The built-in DataTexts: the shared data source each one reads, how often a
 -- timed one refreshes, the events that change or refresh them, their labels and
@@ -150,7 +151,12 @@ local FORMATTERS = {
     end,
     clock = ClockText,
     coordinates = function(x, y)
-        if Finite(x) and Finite(y) then return string.format(coordinateFormat, x * 100, y * 100) end
+        if not Finite(x) or not Finite(y) then return end
+        if not coordinateText or x ~= lastCoordinateX or y ~= lastCoordinateY then
+            lastCoordinateX, lastCoordinateY = x, y
+            coordinateText = string.format(coordinateFormat, x * 100, y * 100)
+        end
+        return coordinateText
     end,
     location = function(zone, subZone)
         if type(subZone) == "string" and subZone ~= "" then return subZone end
@@ -205,12 +211,13 @@ end
 function Standard.Configure(config)
     settings = config
     fpsLimit, latencyLimit, durabilityLimit = config.fpsWarning, config.latencyWarning, config.durabilityWarning / 100
-    coordinateFormat = COORDINATE_FORMATS[config.coordinateDecimals] or COORDINATE_FORMATS[1]
+    local format = COORDINATE_FORMATS[config.coordinateDecimals] or COORDINATE_FORMATS[1]
+    if format ~= coordinateFormat then coordinateFormat, coordinateText = format, nil end
 end
 
 local ClampProgress = NS.ClampDataTextProgress
 local XP_NEXT_LEVEL = S.Text("%d%% to level %d")
-local NAMED_PROGRESS = S.Text("%s · %d%%")
+local NAMED_PROGRESS = S.Text("%s · %d%%", true)
 
 local function FormatProgressBar()
     local level, current, maximum = S.ReadInfoSource("xp")

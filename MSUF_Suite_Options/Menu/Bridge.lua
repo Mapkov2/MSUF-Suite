@@ -50,9 +50,11 @@ function P.W.SettingsRows(ctx, parent, spec)
     return grid
 end
 
-function P.Tr(text)
+function P.Tr(text, plainSeparators)
     if type(text) ~= "string" then return text end
-    return M.Tr and M.Tr(text) or text
+    local translated = M.Tr and M.Tr(text) or text
+    if plainSeparators == true then return Suite.PlainSeparators(translated) end
+    return translated
 end
 local Tr = P.Tr
 

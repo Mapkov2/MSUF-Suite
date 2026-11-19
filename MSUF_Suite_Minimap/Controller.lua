@@ -21,7 +21,7 @@ local CATEGORIES = {
         "drawerMouseover", "infoCoordinates", "infoCoordinatesMode", "showTracking", "trackingMouseover" } },
     { name = "elements", sections = { "elements", "landing", "dungeon" }, extra = { "infoDifficulty", "borderSize" } },
     { name = "drawer", sections = { "addons" }, extra = { "elementRow", "elementSize", "elementSpacing",
-        "elementDistance", "borderSize", "borderColor", "borderClassColor" } },
+        "elementDistance", "borderSize", "borderColor", "borderClassColor", "stylePreset" } },
     { name = "specialization", sections = { "specialization" }, extra = { "borderColor", "borderClassColor" } },
     -- Every information text and its tooltip settings.
     { name = "texts", prefix = "info_", extra = { "borderSize", "borderColor", "borderClassColor", "showCalendar" } },

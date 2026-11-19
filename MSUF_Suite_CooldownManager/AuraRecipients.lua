@@ -10,11 +10,11 @@ local Recipients = { slots = {} }
 C.AuraRecipients = Recipients
 local Public, type, pairs = S.Public, type, pairs
 local Containers = C.AuraContainers
-local records, dirty, units, known = {}, {}, { "player" }, {}
+local records, dirty, changedUnits, units, known = {}, {}, {}, { "player" }, {}
 for i = 1, 4 do units[#units + 1] = "party" .. i end
 for i = 1, 40 do units[#units + 1] = "raid" .. i end
 units[#units + 1], units[#units + 2] = "target", "focus"
-for i = 1, #units do known[units[i]], dirty[units[i]] = true, false end
+for i = 1, #units do known[units[i]] = i end
 local driver, listening, armed, all, generation = nil, false, false, false, 0
 local FILTER = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 
@@ -63,14 +63,33 @@ local function Read(state, unit)
     if eligible and not uncertain then return false end
 end
 
+local function SetMatch(state, index, present)
+    local unit = units[index]
+    if (state.matches[unit] == true) == present then return end
+    state.matches[unit] = present or nil
+    local best = state.firstMatch
+    if present then
+        if best and (best == 0 or index < best) then state.firstMatch = index end
+    elseif best == index then
+        state.firstMatch = nil
+    end
+end
+
+local function FirstMatch(state)
+    local best = state.firstMatch
+    if best == nil then
+        best = 0
+        for i = 1, #units do
+            if state.matches[units[i]] then best = i break end
+        end
+        state.firstMatch = best
+    end
+    return units[best] or "player"
+end
+
 local function Select(rec, state)
     local unit = rec.unit
-    if state.matches[unit] ~= true then
-        unit = "player"
-        for i = 1, #units do
-            if state.matches[units[i]] == true then unit = units[i] break end
-        end
-    end
+    if state.matches[unit] ~= true then unit = FirstMatch(state) end
     local active = state.matches[unit] == true
     if rec.unit ~= unit then
         if state.active and active then C.AuraButtons.Hush(rec) end
@@ -92,60 +111,75 @@ end
 
 local function Refresh(rec, state, full)
     Eligible(state)
-    for i = 1, #units do
-        local unit = units[i]
-        if full or dirty[unit] then
-            local match = Read(state, unit)
-            -- Opaque externals have no verified recipient. Other group buffs
-            -- keep their prior public binding and let the native slot update.
-            if match ~= nil or state.external then state.matches[unit] = match == true end
-        end
+    local count = full and #units or #changedUnits
+    for i = 1, count do
+        local index = full and i or changedUnits[i]
+        local match = Read(state, units[index])
+        -- Opaque externals have no verified recipient. Other group buffs
+        -- keep their prior public binding and let the native slot update.
+        if match ~= nil or state.external then SetMatch(state, index, match == true) end
     end
     Select(rec, state)
 end
 
 local function Flush()
     armed = false
+    if not all and #changedUnits > 1 then table.sort(changedUnits) end
     for rec, state in pairs(records) do
         if Visible(rec) then Refresh(rec, state, all) end
     end
-    for unit in pairs(dirty) do dirty[unit] = false end
+    for i = #changedUnits, 1, -1 do
+        dirty[changedUnits[i]], changedUnits[i] = nil, nil
+    end
     all = false
 end
 local WAKE = C.NewWake(Flush)
+local function QueueUnit(unit)
+    local index = known[unit]
+    if dirty[index] then return index end
+    dirty[index], changedUnits[#changedUnits + 1] = true, index
+    return index
+end
+
+local function ResetUnit(unit)
+    local index = QueueUnit(unit)
+    for _, state in pairs(records) do
+        SetMatch(state, index, false)
+        if state.displayUnit == unit then state.displayUnit = nil end
+    end
+end
+
+local function ResetMatches(state)
+    C.wipe(state.matches)
+    state.firstMatch, state.displayUnit = 0, nil
+end
+
 local function Event(event, unit)
     if not listening then return end
     if event == "UNIT_AURA" then
-        if not Public(unit) or not known[unit] then return end
-        dirty[unit] = true
+        QueueUnit(unit)
     elseif event == "PLAYER_TARGET_CHANGED" then
-        dirty.target = true
-        for _, state in pairs(records) do
-            state.matches.target = false
-            if state.displayUnit == "target" then state.displayUnit = nil end
-        end
+        ResetUnit("target")
     elseif event == "PLAYER_FOCUS_CHANGED" then
-        dirty.focus = true
-        for _, state in pairs(records) do
-            state.matches.focus = false
-            if state.displayUnit == "focus" then state.displayUnit = nil end
-        end
+        ResetUnit("focus")
     else
         all = true
         -- A token may now name a different person, or a previously readable
         -- identity may become restricted. Do not retain stale associations.
         if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
-            for _, state in pairs(records) do
-                state.displayUnit = nil
-                for token in pairs(state.matches) do state.matches[token] = false end
-            end
+            for _, state in pairs(records) do ResetMatches(state) end
         end
     end
     if armed then return end
     armed = true
     C.Wake(WAKE, 0)
 end
-local function OnEvent(_, event, unit) S.Dispatch(Event, event, unit) end
+-- UNIT_AURA also fires for every nameplate. Drop untracked units here, before
+-- the isolated dispatch, instead of inside Event.
+local function OnEvent(_, event, unit)
+    if event == "UNIT_AURA" and not (Public(unit) and known[unit]) then return end
+    S.Dispatch(Event, event, unit)
+end
 
 function Recipients.Watch(refreshed)
     local wanted, newlyVisible = false, false
@@ -192,10 +226,9 @@ local function State(rec, entry)
     local state = records[rec]
     if not state then
         state = { spells = {}, names = {}, eligible = {}, ids = {}, matches = {} }
-        for i = 1, #units do state.matches[units[i]] = false end
         records[rec] = state
     end
-    state.displayUnit = nil
+    ResetMatches(state)
     state.external = entry.src == "g"
     state.named, state.name = state.external and rec.role == "bar", entry.name
     C.wipe(state.spells)
@@ -208,7 +241,6 @@ local function State(rec, entry)
             state.spells[i], state.names[i], state.ids[id] = id, name, true
         end
     end
-    for unit in pairs(state.matches) do state.matches[unit] = false end
     return state
 end
 

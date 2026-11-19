@@ -344,12 +344,22 @@ do
     check(Opened() == 1 and W.panelCalls[1].shown and G.WorldMapFrame.shown, "coordinates click")
     -- Hide in instances: entering one removes the coordinates text until leaving.
     assert(S.Set("minimap", "infoCoordinatesHideInstance", true))
+    local anchors, clear = 0, clock.button.ClearAllPoints
+    function clock.button:ClearAllPoints()
+        anchors = anchors + 1
+        clear(self)
+    end
+    W.Event("PLAYER_ENTERING_WORLD")
+    check(anchors == 0, "world entry repeated the text layout with unchanged visibility")
     inside = true
     W.Event("PLAYER_ENTERING_WORLD")
     check(not entries.Coordinates.button.shown and not entries.Coordinates.active, "instance coordinates")
+    local instanceAnchors = anchors
+    W.Event("PLAYER_ENTERING_WORLD")
+    check(anchors == instanceAnchors, "unchanged instance visibility repeated the text layout")
     inside = false
     W.Event("PLAYER_ENTERING_WORLD")
-    check(entries.Coordinates.button.shown, "coordinates did not return")
+    check(entries.Coordinates.button.shown and anchors > instanceAnchors, "coordinates did not return")
     -- Without an FPS or latency text their events go; the others stay.
     assert(S.SetMany("minimap", { infoFPS = false, infoLatency = false }))
     check(not events.PLAYER_STARTED_MOVING and not events.PLAYER_STOPPED_MOVING and not events.PLAYER_REGEN_ENABLED

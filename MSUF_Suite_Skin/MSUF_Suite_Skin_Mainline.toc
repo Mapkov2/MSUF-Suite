@@ -1,8 +1,8 @@
 ## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Skinning
-## Notes: Suite-owned MapkoSkin skin engine.
+## Notes: Window and addon skinning for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.27-alpha
+## Version: 0.1.28-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1

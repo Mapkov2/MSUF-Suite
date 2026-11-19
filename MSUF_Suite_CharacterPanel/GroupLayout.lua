@@ -448,6 +448,10 @@ function Layout.Paint(list, groups, reset)
     list.paint(list, Layout.UpdateScroll(list, content, reset))
 end
 
+local function NewFixedList(list)
+    return Layout.NewList(list.view, list.parent, list.width + SCROLL_WIDTH, list.height, 1, list.paint, true)
+end
+
 function Layout.ShowList(list, fixed, groups, reset, combat, show, setStyle)
     local view = list.view
     if setStyle and (view.setManager or view.setPane and view.setPane.panelShown) then
@@ -456,10 +460,11 @@ function Layout.ShowList(list, fixed, groups, reset, combat, show, setStyle)
     if combat then
         -- The native scroll template recalculates the protected range in its scripts.
         show(list.scroll, false)
-        fixed = fixed or Layout.NewList(list.view, list.parent, list.width + SCROLL_WIDTH, list.height, 1, list.paint, true)
+        fixed = fixed or NewFixedList(list)
         Layout.Paint(fixed, groups, false)
         show(fixed.canvas, true)
     else
+        if not fixed and setStyle and view.unit == "player" and not view.embedded then fixed = NewFixedList(list) end
         if fixed then show(fixed.canvas, false) end
         Layout.Paint(list, groups, reset)
         show(list.scroll, true)

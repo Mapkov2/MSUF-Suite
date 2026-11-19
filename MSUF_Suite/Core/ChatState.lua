@@ -71,10 +71,32 @@ local follower, events, probe, windowsDue, layoutDue, checkDue, editMode
 local lastSelected, lastChat, lastDocked, lastFrames, lastMoving, lastWindows = false, false, -1, -1, nil, nil
 local armedUntil, sinceCheck = 0, 0
 
-local function Notify(kind, ...)
+local signals = { "box", "key", "windows", "selection", "layout", "moved", "resized", "geometry", "settled", "hover" }
+local subscribers = {}
+
+local function CompileSubscribers()
+    local nextSubscribers = {}
+    for _, kind in ipairs(signals) do nextSubscribers[kind] = {} end
     for owner, handlers in pairs(owners) do
-        local handler = handlers[kind]
-        if handler then Dispatch(handler, owner, ...) end
+        for _, kind in ipairs(signals) do
+            if handlers[kind] then
+                local list = nextSubscribers[kind]
+                list[#list + 1] = { owner = owner, handlers = handlers }
+            end
+        end
+    end
+    subscribers = nextSubscribers
+end
+
+local function Notify(kind, ...)
+    local list = subscribers[kind]
+    if not list then return end
+    for i = 1, #list do
+        local item = list[i]
+        if owners[item.owner] == item.handlers then
+            local handler = item.handlers[kind]
+            if handler then Dispatch(handler, item.owner, ...) end
+        end
     end
 end
 
@@ -126,23 +148,31 @@ local function QueueWindows()
 end
 
 -- A cheap signature of the open windows: count, shown, docked and in use.
+local observedWindows = setmetatable({}, { __mode = "v" })
+local observedCount = 0
 local function WindowSignature()
     local frames, signature = _G.CHAT_FRAMES, 0
-    if type(frames) ~= "table" then return 0 end
-    for index = 1, math.min(#frames, MAX_FRAMES) do
+    local count = type(frames) == "table" and math.min(#frames, MAX_FRAMES) or 0
+    local topologyChanged = count ~= observedCount
+    for index = 1, count do
         local frame = _G[frames[index]]
+        if frame ~= observedWindows[index] then
+            observedWindows[index], topologyChanged = frame, true
+        end
         if frame then
             local state = (frame:IsShown() and 1 or 0) + (frame.isDocked and 2 or 0) + (frame.inUse and 4 or 0)
             signature = (signature * 8 + state) % 2147483629
         end
     end
-    return signature * 64 + math.min(#frames, 63)
+    for index = count + 1, observedCount do observedWindows[index] = nil end
+    observedCount = count
+    return signature * 64 + math.min(count, 63), topologyChanged
 end
 
 local function CheckWindows()
     checkDue, sinceCheck = false, 0
-    local signature = WindowSignature()
-    if signature ~= lastWindows then
+    local signature, topologyChanged = WindowSignature()
+    if signature ~= lastWindows or topologyChanged then
         if lastWindows ~= nil then QueueWindows() end
         lastWindows = signature
     end
@@ -151,11 +181,13 @@ end
 -- Sizes are read while the follower runs: every frame while a button is held
 -- (a resize grip, Edit Mode), else with the open-window check and when the
 -- follower stops. A change since the last read reports once.
-local function CheckSizes()
-    local frames = _G.CHAT_FRAMES
+local function CheckSizes(observed)
+    local frames = observed and observedWindows or _G.CHAT_FRAMES
     if type(frames) ~= "table" then return end
-    for index = 1, math.min(#frames, MAX_FRAMES) do
-        local frame = _G[frames[index]]
+    local count = observed and observedCount or math.min(#frames, MAX_FRAMES)
+    for index = 1, count do
+        local frame = frames[index]
+        if not observed then frame = _G[frame] end
         if frame then
             local width, height, record = frame:GetWidth(), frame:GetHeight(), sizes[frame]
             if not record then
@@ -244,7 +276,7 @@ local function Follow(self, elapsed)
     local stopping = not (layoutDue or moving or editMode) and GetTime() > armedUntil
     if checkDue or sinceCheck >= WINDOW_CHECK then
         CheckWindows()
-        CheckSizes()
+        CheckSizes(true)
     elseif stopping or IsMouseButtonDown("LeftButton") then
         CheckSizes()
     end
@@ -271,12 +303,9 @@ local function ProbeHover()
 end
 
 local function SyncProbe()
-    local wanted
-    geometryWanted = false
-    for _, handlers in pairs(owners) do
-        if handlers.hover then wanted = true end
-        if handlers.geometry then geometryWanted = true end
-    end
+    CompileSubscribers()
+    local wanted = #subscribers.hover > 0
+    geometryWanted = #subscribers.geometry > 0
     if wanted and not probe then
         probe = C_Timer.NewTicker(HOVER_PROBE, ProbeHover)
     elseif not wanted and probe then

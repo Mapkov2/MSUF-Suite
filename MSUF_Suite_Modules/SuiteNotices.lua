@@ -44,7 +44,7 @@ local function Rows()
     local rows = {}
     for _, entry in ipairs(Records() or {}) do
         rows[#rows + 1] = { key = entry.id, entry = entry, checked = entry.read == true,
-            label = S.Text("%s · %s (%d)"):format(date("%H:%M", entry.time), entry.title, entry.count),
+            label = S.Text("%s · %s (%d)", true):format(date("%H:%M", entry.time), entry.title, entry.count),
             detail = entry.detail, search = entry.title .. " " .. entry.detail }
     end
     return rows

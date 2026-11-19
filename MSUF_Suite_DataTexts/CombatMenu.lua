@@ -54,7 +54,9 @@ local function Rect(frame)
         and width > 0 and height > 0) then return end
     local scale = frame:GetEffectiveScale()
     if not S.Finite(scale) or scale <= 0 then return end
-    scale = scale / UIParent:GetEffectiveScale()
+    local rootScale = UIParent:GetEffectiveScale()
+    if not S.Finite(rootScale) or rootScale <= 0 then return end
+    scale = scale / rootScale
     return left * scale, bottom * scale, width * scale, height * scale
 end
 
@@ -67,19 +69,37 @@ local function ConfigureLauncher(index, menu, button, driver)
     if not ax then ax, ay, ah = x, y, height end
     local below = ay > UIParent:GetHeight() - ay - ah
     local launcher = launchers[index] or CreateLauncher(index, menu)
-    launcher:ClearAllPoints()
     local _, _, relative = button.bar.frame:GetPoint()
     relative = relative or "BOTTOMLEFT"
-    launcher:SetPoint("BOTTOMLEFT", UIParent, relative,
-        x - UIParent:GetWidth() * (X[relative] or 0), y - UIParent:GetHeight() * (Y[relative] or 0))
-    launcher:SetSize(width, height)
-    launcher:SetFrameStrata(button:GetFrameStrata())
-    launcher:SetFrameLevel(button:GetFrameLevel() + 5)
-    launcher:SetAttribute("menuPoint", below and "TOPLEFT" or "BOTTOMLEFT")
-    launcher:SetAttribute("menuRelative", below and "BOTTOMLEFT" or "TOPLEFT")
-    launcher:SetAttribute("menuX", ax - x)
-    launcher:SetAttribute("menuY", below and ay - y - 3 or ay + ah - y - height + 3)
-    launcher:SetAttribute("menuWidth", aw or 240)
+    local left = x - UIParent:GetWidth() * (X[relative] or 0)
+    local bottom = y - UIParent:GetHeight() * (Y[relative] or 0)
+    if launcher.relative ~= relative or launcher.left ~= left or launcher.bottom ~= bottom then
+        launcher:ClearAllPoints()
+        launcher:SetPoint("BOTTOMLEFT", UIParent, relative, left, bottom)
+        launcher.relative, launcher.left, launcher.bottom = relative, left, bottom
+    end
+    if launcher.widthApplied ~= width or launcher.heightApplied ~= height then
+        launcher:SetSize(width, height)
+        launcher.widthApplied, launcher.heightApplied = width, height
+    end
+    local strata, level = button:GetFrameStrata(), button:GetFrameLevel()
+    if launcher.strataApplied ~= strata then
+        launcher:SetFrameStrata(strata)
+        launcher.strataApplied = strata
+    end
+    if launcher.levelApplied ~= level then
+        launcher:SetFrameLevel(level + 5)
+        launcher.levelApplied = level
+    end
+    local menuX, menuY, menuWidth = ax - x, below and ay - y - 3 or ay + ah - y - height + 3, aw or 240
+    if launcher.below ~= below or launcher.menuX ~= menuX or launcher.menuY ~= menuY or launcher.menuWidth ~= menuWidth then
+        launcher:SetAttribute("menuPoint", below and "TOPLEFT" or "BOTTOMLEFT")
+        launcher:SetAttribute("menuRelative", below and "BOTTOMLEFT" or "TOPLEFT")
+        launcher:SetAttribute("menuX", menuX)
+        launcher:SetAttribute("menuY", menuY)
+        launcher:SetAttribute("menuWidth", menuWidth)
+        launcher.below, launcher.menuX, launcher.menuY, launcher.menuWidth = below, menuX, menuY, menuWidth
+    end
     if launcher.driver ~= driver then
         if launcher.driver then UnregisterStateDriver(launcher, "visibility") end
         launcher.driver = driver
@@ -120,6 +140,7 @@ local function ReleaseLaunchers(first)
             launcher.driver = nil
             launcher:Hide()
             launcher:ClearAllPoints()
+            launcher.relative = nil
         end
     end
 end

@@ -31,7 +31,9 @@ for _, forever in ipairs({ true, false }) do
     for _, layout in ipairs({ "suite", "classic", "forever", "modernDark", "blizzard", "darkRaid" }) do
         local staged = assert(window.previewProfile(layout))
         local config = staged.suite.modules.floatingCombatText
-        assert(config.enabled == forever and config.font == "", "wrong combat text default for " .. layout)
+        assert(config.enabled and config.font == "", "wrong combat text default for " .. layout)
+        assert(config.hitSide == (forever and 1 or 3) and config.hitSource == (forever and 1 or 3),
+            "wrong combat text placement or hit scope for " .. layout)
     end
     assert(old.enabled == false and old.font == "EXPLICIT_FONT", "preview changed the current profile")
     assert(#H.reported == 0, table.concat(H.reported, "\n"))

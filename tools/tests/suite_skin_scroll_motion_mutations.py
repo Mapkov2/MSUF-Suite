@@ -45,6 +45,8 @@ MUTANTS = (
     ("Settings list native ownership", 'target == Safety.Field(settings, "ScrollBox")', "false"),
     ("Settings category selector native ownership", 'target == Safety.Field(categories, "ScrollBox")', "false"),
     ("Settings scrollbar cannot bypass native ownership", "or partner and NativeList.IsTarget(partner)", ""),
+    ("Damage Meter keeps native controller ownership", " DamageMeter = true,", ""),
+    ("late native thumb connection", "state.bar = bar", ""),
     ("independent edge bounce", "NS.DB.theme.scrollEdgeBounce == false or", "false or"),
 )
 

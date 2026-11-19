@@ -1,6 +1,6 @@
 local root=assert(arg[1])
 local H=dofile(root..'/tools/tests/suite_minimap_harness.lua')
-local W=H.New(root,'Mainline')
+local W=H.New(root,arg[2] or 'Mainline')
 local G,S=W.G,W.S
 W.LoadAddon('MSUF_Suite_DataTexts')
 local M=S.instances.dataTexts
@@ -35,16 +35,41 @@ Layout(bar)
 assert(bar.slots[1].w>300 and bar.slots[1].x+bar.slots[1].w+6<=bar.slots[2].x+1,'fill must consume remaining space')
 bar.vertical=true;c.bar1Slot1Scale=150;Layout(bar)
 assert(bar.slots[1].w==20 and bar.slots[1].h>200 and bar.slots[2].y<0,'vertical sizing must account for block scale')
-assert(W.Suite.DataTextBarLimit==256 and c.bar12Enabled==false,'configuration bounds must protect secure frame creation')
+-- Bar 12 is built on demand: a profile that never showed it stores nothing for it.
+assert(W.Suite.DataTextBarLimit==256 and not c.bar12Enabled
+    and W.Suite.SuiteCatalog.dataTexts.rules.bar12Enabled.default==false,'configuration bounds must protect secure frame creation')
 bar.vertical=false;c.bar1Layout=2;c.bar1Width=44;bar.length=44
 c.bar1Slot1Placement=1;c.bar1Slot1Scale=100;bar.slots[2].source=nil
 bar.slots[1].label.GetUnboundedStringWidth=function() return 60 end
+-- Replacing the fixture text bypasses PaintSlot, which invalidates this cache.
+bar.slots[1].layoutTextWidth = nil
 for _, count in ipairs({0,1,2,32,40}) do
     local icons={};for i=1,count do icons[i]=i end
-    bar.slots[1].extra={kind='profession',icons=icons}
+    bar.slots[1].extra={kind='profession',icons=icons,padding=5}
     Layout(bar)
     local bounded=math.min(count,32)
     local iconWidth=bounded>0 and bounded*14+(bounded-1)*2+4 or 0
     assert(bar.slots[1].w==70+iconWidth,'Fit text did not reserve visible icon width')
 end
+local slot = bar.slots[1]
+slot.extra = nil
+slot.layoutTextWidth = nil
+function slot.label:GetUnboundedStringWidth() return 120 end
+
+local function CheckFits(scale, padding, pixel, withIcon)
+    c.bar1Slot1Scale, c.bar1Slot1Padding = scale, padding
+    bar.pixelUnit = pixel
+    slot.extra = withIcon and { kind = "profession", icons = { 123 }, padding = padding } or nil
+    Layout(bar)
+    local inset = withIcon and slot.iconPadding or slot.labelInset
+    local iconWidth = withIcon and 18 or 0
+    assert(slot.w - 2 * inset - iconWidth >= 120 - 1e-8,
+        ("Fit text clipped a 120-unit label at %d%% scale and %d-unit padding"):format(scale, padding))
+end
+
+CheckFits(100, 5, 1)
+CheckFits(150, 5, 1)
+CheckFits(100, 12, 1)
+CheckFits(125, 7, 0.7)
+CheckFits(155, 12, 0.7, true)
 print('datatext geometry PASS')

@@ -496,7 +496,7 @@ local function MicroBorder(frame)
 end
 
 local function PaintMicroRow(row, skin, look)
-    local enabled = row.entryEnabled and not (row.action and NS.InCombat())
+    local enabled = row.entryEnabled and not (row.action and (row.combatMicro or NS.InCombat()))
     if skin then
         row.label:SetTextColor(skin:GetColor(enabled and "text" or "muted"))
         S.SetStyledFont(row.label, skin:GetFont(), 11, "", 1, false)
@@ -551,8 +551,28 @@ function Actions.MicroMenu(button)
     end
 end
 
-local function PaintCombatMicro(frame)
-    PaintMicro(frame, frame.preparedSkin)
+local MICRO_COLORS = { "popup", "border", "text", "muted" }
+
+local function CombatLookChanged(frame, skin)
+    local look = frame.combatLook
+    local dirty = not frame.microPrepared or frame.microSkin ~= skin or look.fontRevision ~= S.FontRevision
+    look.fontRevision = S.FontRevision
+    if not skin then return dirty end
+    local hover, font = HoverLook(skin), skin:GetFont()
+    local shell, border = skin:GetAppearance("shellOpacity"), skin:GetAppearance("borderOpacity")
+    if look.hover ~= hover or look.font ~= font or look.shell ~= shell or look.border ~= border then
+        look.hover, look.font, look.shell, look.border = hover, font, shell, border
+        dirty = true
+    end
+    for i, token in ipairs(MICRO_COLORS) do
+        local index = 4 * (i - 1)
+        local r, g, b, a = skin:GetColor(token)
+        if look[index + 1] ~= r or look[index + 2] ~= g or look[index + 3] ~= b or look[index + 4] ~= a then
+            look[index + 1], look[index + 2], look[index + 3], look[index + 4] = r, g, b, a
+            dirty = true
+        end
+    end
+    return dirty
 end
 
 local CLOSE_MICRO = [[ control:UnregisterAutoHide(); control:Hide() ]]
@@ -564,12 +584,14 @@ function Actions.PrepareCombatMicro()
         frame = CreatePopup("SecureHandlerBaseTemplate")
         Actions.combatMicroPopup = frame
         MicroBorder(frame)
-        frame:SetScript("OnShow", PaintCombatMicro)
+        frame.combatLook = {}
     end
-    frame.preparedSkin = PopupSkin()
+    local skin = PopupSkin()
+    local styleDirty = CombatLookChanged(frame, skin)
     local height = math.min(26, math.max(1, math.floor((UIParent:GetHeight() - 8) / count)))
     frame:Hide()
-    frame:SetHeight(count * height + 8)
+    local countChanged, heightChanged = frame.microCount ~= count, frame.microRowHeight ~= height
+    if countChanged or heightChanged then frame:SetHeight(count * height + 8) end
     for i = 1, count do
         local row = Row(frame, i)
         if not row.combatMicro then
@@ -578,13 +600,25 @@ function Actions.PrepareCombatMicro()
             row:SetScript("PostClick", nil)
             SecureHandlerWrapScript(row, "OnClick", frame, "return nil, true", CLOSE_MICRO)
         end
-        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4 - (i - 1) * height)
-        row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4 - (i - 1) * height)
-        row:SetHeight(math.max(1, height - 1))
-        FillMicro(row, i)
+        if heightChanged or not row.microLaidOut then
+            row:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4 - (i - 1) * height)
+            row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4 - (i - 1) * height)
+            row:SetHeight(math.max(1, height - 1))
+            row.microLaidOut = true
+        end
+        local entry = micro[i]
+        if row.microButton ~= entry.button or row.action ~= entry.action or row.entryEnabled ~= entry.enabled
+            or row.microLabel ~= entry.label then
+            FillMicro(row, i)
+            row.microButton, row.microLabel = entry.button, entry.label
+            styleDirty = true
+        end
         row:Show()
     end
     for i = count + 1, #frame.rows do frame.rows[i]:Hide() end
+    if styleDirty or countChanged then PaintMicro(frame, skin) end
+    frame.microPrepared = true
+    frame.microCount, frame.microRowHeight = count, height
     return frame
 end
 

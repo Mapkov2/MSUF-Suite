@@ -40,6 +40,14 @@ function P.ResolveToolSearchTarget(page, target)
         end
     end
     if target.prepareKind == "suiteCDMBar" then return P.ResolveCDMInspectionTarget(page, target) end
+    if page == LEGACY_PAGE or page == "gameplay" then
+        local battleResKey = target.controlId and (target.settingKey or ""):match("^msufsuite%.battleRes%.(.+)$")
+        local rule = battleResKey and P.catalog.battleRes.rules[battleResKey]
+        if rule and rule.section and rule.section:match("^battle_res_") then
+            -- The setting route runs the widget's preparation and reveals its layer.
+            return page, RelocatedTarget(target, page, nil, target.sectionId)
+        end
+    end
     if page ~= LEGACY_PAGE then return end
     EnsureLegacyTargets()
     local action = actions[target.controlId]

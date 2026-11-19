@@ -3,6 +3,25 @@ local _, NS = ...
 NS.FinalizeCatalog()
 local S = { states = {}, instances = {}, catalog = NS.SuiteCatalog, order = NS.SuiteOrder, started = false }
 NS.Suite = S
+
+-- Owned Minimap layout anchors stay alive when their owners are moved.
+local dock = { mapChanged = "MSUFSuite.MinimapDock.MapChanged", footerChanged = "MSUFSuite.MinimapDock.FooterChanged" }
+S.MinimapDock = dock
+function dock.Anchor(includeFooter)
+    if dock.map then return includeFooter and dock.footer or dock.map end
+end
+
+function dock.SetMap(frame)
+    if dock.map == frame then return end
+    dock.map, dock.footer = frame, nil
+    EventRegistry:TriggerEvent(dock.mapChanged)
+end
+
+function dock.SetFooter(frame)
+    if dock.footer == frame then return end
+    dock.footer = frame
+    EventRegistry:TriggerEvent(dock.footerChanged)
+end
 S.ApplyOwnedLayer = NS.ApplyOwnedLayer
 S.OwnedElementLevel = NS.OwnedElementLevel
 S.ApplyOwnedChildLayer = NS.ApplyOwnedChildLayer
@@ -22,9 +41,12 @@ end
 
 local Finite = NS.Finite
 
+-- Every stored number of a history snapshot passes here: keep the math
+-- functions as upvalues instead of two table reads per call.
+local max, min, floor = math.max, math.min, math.floor
 local function ClampNumber(rule, value)
-    value = math.max(rule.min, math.min(rule.max, value))
-    if rule.choices or rule.step == 1 then value = math.floor(value) end
+    value = max(rule.min, min(rule.max, value))
+    if rule.choices or rule.step == 1 then value = floor(value) end
     return value
 end
 
@@ -34,7 +56,10 @@ local function CheckedValue(rule, value)
     if not rule or kind ~= type(rule.default) then return nil, "Invalid setting" end
     if kind == "number" then
         if not Finite(value) then return nil, "Invalid number" end
-        return ClampNumber(rule, value)
+        -- ClampNumber inlined: history snapshots check every stored number.
+        value = max(rule.min, min(rule.max, value))
+        if rule.choices or rule.step == 1 then value = floor(value) end
+        return value
     end
     if kind == "string" and not ValidText(rule, value) then return nil, "Invalid setting text" end
     return value
@@ -419,7 +444,7 @@ local SURFACE_MODULES = {
     characterDossier = "characterPanel", battleNetToast = "bnetToast",
 }
 local SURFACE_OWNERS = {}
-for _, id in pairs(SURFACE_MODULES) do SURFACE_OWNERS[id] = true end
+for surface, id in pairs(SURFACE_MODULES) do SURFACE_OWNERS[id] = surface end
 -- True while the owning module is set to run: enabled in the active profile,
 -- available on this client and not failed. It answers before S.Start too, so
 -- the skin's first pass already leaves the surface alone.
@@ -481,13 +506,15 @@ local function ApplyOne(id)
     -- after the module stopped, so neither side records the other's change as
     -- Blizzard's original.
     local surface = SURFACE_OWNERS[id]
-    if surface then Dispatch(NS.Skin.SurfacesChanged, "before") end
+    local dependent = id == "bags" and "bagBar" or nil
+    if surface then Dispatch(NS.Skin.SurfacesChanged, "before", surface, dependent) end
     if not Dispatch(Finish, ApplyModule, id) then Fail(id) end
-    if surface then Dispatch(NS.Skin.SurfacesChanged, "after") end
+    if surface then Dispatch(NS.Skin.SurfacesChanged, "after", surface, dependent) end
 end
-function S.Apply(id)
+function S.Apply(id, catalogPass)
     ApplyOne(id)
     if id == "dataTexts" and NS.MinimizedWindows then NS.MinimizedWindows.Refresh() end
+    if catalogPass then return end
     -- A module that reads this one's settings (spec.follows) applies after it,
     -- so a write, an undo or a profile change reaches it too; one still queued
     -- for the combat end is left to the queue (catalog order).
@@ -516,7 +543,9 @@ function S.Followers(id)
 end
 
 function S.ApplyAll()
-    for i = 1, #S.order do S.Apply(S.order[i]) end
+    -- The catalog puts each follower after its leader. Each already has a
+    -- turn in this pass, so the leader does not apply it again.
+    for i = 1, #S.order do S.Apply(S.order[i], true) end
 end
 
 -- A Forever combat reload can start the controller before lockdown. Retry
@@ -602,11 +631,36 @@ local function StoreValues(spec, id, values)
     return config, clean
 end
 
-local function SetMany(id, values)
+-- A confirmed batch is one change: the module's settings (restored in place, as
+-- a running module keeps its config table), its look record and its CVar
+-- records (kept by the load-on-demand runtime) as they were before it.
+local function SaveBundle(db, id)
+    local records = type(db.moduleLooks) == "table" and db.moduleLooks
+    return { config = NS.CopyValue(S.Config(id)), looks = records and true, look = records and records[id],
+        cvars = S.CVarRecords and S.CVarRecords(id) }
+end
+
+local function RestoreBundle(db, id, bundle)
+    local config = S.Config(id)
+    for key in pairs(config) do config[key] = nil end
+    for key, value in pairs(bundle.config) do config[key] = value end
+    if bundle.looks then
+        Looks.Records(db)[id] = bundle.look
+    elseif type(db.moduleLooks) == "table" then
+        db.moduleLooks[id] = nil
+        if not next(db.moduleLooks) then db.moduleLooks = nil end
+    end
+end
+
+-- confirm (optional) runs after the module applied the batch, before the menu
+-- repaints, and returns true, or false and why. A refusal or an error restores
+-- the batch and applies the module again: the menu only sees what stayed.
+local function SetMany(id, values, confirm)
     local db = ActiveSuite()
     if not db or type(values) ~= "table" then return false, "Invalid settings" end
     local spec = S.catalog[id]
     if not spec then return false, "Unknown module" end
+    local bundle = confirm and SaveBundle(db, id)
     local config, clean = StoreValues(spec, id, values)
     if not config then return false, clean end
     -- A module import carries its own palette. The global look is only a
@@ -620,13 +674,24 @@ local function SetMany(id, values)
     Looks.RefreshConfig(id, config)
     S.states[id].error = nil
     S.Apply(id)
+    if bundle then
+        local finished, ok, reason = Dispatch(Finish, confirm)
+        if not (finished and ok) then
+            RestoreBundle(db, id, bundle)
+            S.Apply(id)
+            -- The records from before the batch keep Blizzard's values under the overrides.
+            if bundle.cvars then S.SetCVarRecords(id, bundle.cvars) end
+            Changed()
+            return false, reason
+        end
+    end
     Changed()
     return true
 end
 
-function S.SetMany(id, values)
+function S.SetMany(id, values, confirm)
     if NS.InCombat() then return false, "Finish combat before editing the suite" end
-    return SetMany(id, values)
+    return SetMany(id, values, confirm)
 end
 
 -- MSUF Edit Mode commits a drag the player still holds when Edit Mode closes

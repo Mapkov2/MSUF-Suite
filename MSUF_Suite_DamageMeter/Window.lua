@@ -47,7 +47,8 @@ local function HeaderButton(win, kind)
 end
 
 function D.NewWindow(parent, index)
-    local win = { index = index, rows = {}, maxRow = 0, offset = 0, count = 0, capacity = 0, bd = { offset = 0 }, dirty = true, buttons = {}, hover = false }
+    local win = { index = index, rows = {}, paintedRows = 0, offset = 0, count = 0, capacity = 0,
+        bd = { offset = 0 }, dirty = true, buttons = {}, hover = false }
     local frame = S.CreateFrame("Frame", nil, parent)
     frame.win, win.frame = win, frame
     frame:Hide()
@@ -463,6 +464,28 @@ function D.UpdateStatus(win, count)
     end
 end
 
+local function CreateListRow(win, slot)
+    local row = D.CreateRow(win.body, win, "list")
+    win.rows[slot] = row
+    D.AnchorRow(row, win.body, slot)
+    return row
+end
+
+-- Cover small lists and standard window sizes. Very tall windows keep lazy
+-- overflow so a large configured height cannot pre-allocate every raid row.
+local INITIAL_ROWS = 12
+function D.PrepareRows(win)
+    if not M.available or M.forced or M.inCombat or win.faded or win.bd.open then return end
+    for slot = 1, min(INITIAL_ROWS, win.capacity) do
+        local row = win.rows[slot]
+        if not row then
+            row = CreateListRow(win, slot)
+            row:Hide()
+        end
+        if row.styleGen ~= M.styleGen then D.StyleRow(row) end
+    end
+end
+
 -- Content pass over the visible slots only; uses the cached session, so
 -- scrolling and resizing never refetch.
 function D.Render(win)
@@ -482,38 +505,29 @@ function D.Render(win)
             pinSlot, pinIndex = capacity, own
         end
     end
+    -- The pinned top row shifts the offset by one; a pinned bottom row may
+    -- occupy the last slot when the scrollable sources are already exhausted.
+    local shown = max(pinSlot, min(capacity, count - offset + (pinSlot == 1 and 1 or 0)))
     local rows = win.rows
-    for slot = 1, capacity do
+    for slot = 1, shown do
         local index = offset + slot
         if slot == pinSlot then index = pinIndex elseif pinSlot == 1 then index = offset + slot - 1 end
-        local row = rows[slot]
-        if index >= 1 and index <= count then
-            if not row then
-                row = D.CreateRow(win.body, win, "list")
-                rows[slot] = row
-                if slot > win.maxRow then win.maxRow = slot end
-                D.AnchorRow(row, win.body, slot)
-            end
-            row.index = index
-            D.PaintSource(row, sources[index], index, session, win)
-            if slot == pinSlot then
-                Separator(row, slot == 1 and "BOTTOM" or "TOP")
-            elseif row.separator then
-                row.separator:Hide()
-            end
-            row:Show()
-        elseif row then
-            row.index = nil
-            row:Hide()
+        local row = rows[slot] or CreateListRow(win, slot)
+        row.index = index
+        D.PaintSource(row, sources[index], index, session, win)
+        if slot == pinSlot then
+            Separator(row, slot == 1 and "BOTTOM" or "TOP")
+        elseif row.separator then
+            row.separator:Hide()
         end
+        row:Show()
     end
-    for slot = capacity + 1, win.maxRow do
+    for slot = shown + 1, win.paintedRows do
         local row = rows[slot]
-        if row then
-            row.index = nil
-            row:Hide()
-        end
+        row.index = nil
+        row:Hide()
     end
+    win.paintedRows = shown
     D.UpdateStatus(win, count)
 end
 
@@ -573,7 +587,10 @@ function D.ApplyHover(win, deferred)
             if resumeIdentities then D.SnapshotIdentities() end
         end
         -- Faded windows skip painting; catch up once they are revealed.
-        if not deferred and not fade and win.shown and win.dirty then D.Paint(win) end
+        if not deferred and not fade and win.shown and win.dirty then
+            D.PrepareRows(win)
+            D.Paint(win)
+        end
         if not deferred and not fade and win.shown then D.UpdateTimers() end
         if not deferred and fade and not D.HasDirtyVisible() then D.CancelPaint() end
         if not deferred then

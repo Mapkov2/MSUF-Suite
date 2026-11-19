@@ -59,3 +59,17 @@ for name in ('Clear', 'Rain', 'Snow', 'Sandstorm'):
     assert alpha[0] == alpha[127] == alpha[-128] == alpha[-1] == 0
     assert max(alpha) == 255 and 1000 < sum(value > 127 for value in alpha) < 12000
 print('Forever weather artwork: WoW texture dimensions, format and transparency passed')
+
+suite_media = Path(sys.argv[1]) / 'MSUF_Suite/Media'
+for style in ('Forever', 'Modern', 'Dark'):
+    data = (suite_media / f'SuiteIcon{style}.tga').read_bytes()
+    width, height = struct.unpack_from('<HH', data, 12)
+    assert data[:3] == bytes((0, 0, 2))
+    assert (width, height, data[16], data[17]) == (64, 64, 32, 0x28)
+    assert len(data) == 18 + width * height * 4
+    alpha = data[21::4]
+    assert all(alpha[y * width + x] == 0 for x in (8, 55) for y in (8, 55)), style
+    assert alpha[32 * width + 32] == 255
+    assert all(alpha[y * width + x] > 127 for x, y in ((5, 32), (58, 32), (32, 5), (32, 58))), style
+    assert 2370 <= sum(value > 127 for value in alpha) <= 2550, style
+print('Addon drawer icons: round artwork and transparent corners passed')

@@ -73,8 +73,7 @@ The integration contracts currently require these sibling source fixtures:
 
 | Fixture | Purpose |
 | --- | --- |
-| `MidnightSimpleUnitFrames` | Supported production host |
-| `MidnightSimpleUnitFrames-7.0` | Development host and real renderer integration |
+| `MidnightSimpleUnitFrames-7.0` | Active MSUF 7.0 host, renderer and integration |
 | `_repo_backups/6.22` | Frozen legacy host compatibility |
 | `MapkoSkin` | Legacy skin migration and compatibility |
 

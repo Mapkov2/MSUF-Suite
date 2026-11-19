@@ -66,7 +66,7 @@ assert(kb < 1, "CanRefreshState allocated without the tracer")
 vm, kb, calls = Measure("RefreshState-100", function()
     for _ = 1, 100 do assert(probeState.refresh(probeState)) end
 end)
-B.Limit(calls, 5600, "surface refresh safety")
+B.Limit(calls, 4300, "surface refresh safety")
 assert(kb < 1, "warmed RefreshState allocated")
 vm, kb, calls = Measure("unchanged-visible-100", function()
     for _ = 1, 100 do assert(Surface.SetVisible(probe, true)) end
@@ -102,7 +102,7 @@ end
 vm, kb, calls = Measure("page-switch-20-selections", function()
     for index = 1, #menuTargets do assert(menuClient:SetActive(menuTargets[index], index == 1)) end
 end, PrepareSelection)
-B.Limit(calls, 850, "selection protection pass")
+B.Limit(calls, 720, "selection protection pass")
 local painted = Upvalue(probeState.refresh, "OnPalettePainted")
 local material = NS.Theme.GetMaterial("button")
 local snapshots

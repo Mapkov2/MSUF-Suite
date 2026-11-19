@@ -168,9 +168,9 @@ local function Summary(window, tab)
     end
     local characters, _, rewards, gold = Plan.Overview.Stats(tab == "characters" and window.items or window.statsRows)
     if P.NS.Client.isForever then
-        window.summary:SetText(S.Text("Characters: %d • Gold: %s"):format(characters, Plan.Matrix.GoldText(gold)))
+        window.summary:SetText(S.Text("Characters: %d • Gold: %s", true):format(characters, Plan.Matrix.GoldText(gold)))
     else
-        window.summary:SetText(S.Text("Characters: %d • Gold: %s • Vault rewards waiting: %d")
+        window.summary:SetText(S.Text("Characters: %d • Gold: %s • Vault rewards waiting: %d", true)
             :format(characters, Plan.Matrix.GoldText(gold), rewards))
     end
 end

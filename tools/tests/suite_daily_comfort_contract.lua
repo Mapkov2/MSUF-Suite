@@ -45,7 +45,8 @@ local ns = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
     InCombat = function() return combat end,
-    Client = { isForever = false },
+    Client = { isForever = false, SupportsEvent = function() return true end },
+    Dispatch = suite.Dispatch,
     Finish = function(callback, ...) return true, callback(...) end,
 }
 local panels = Support.UIPanels(function() return combat end)
@@ -120,6 +121,32 @@ FCF_OpenNewWindow = function()
     CHAT_FRAMES[2] = "ChatFrame2"
 end
 FCF_OpenTemporaryWindow = function() end
+local nativeOpen, nativeTemporary = FCF_OpenNewWindow, FCF_OpenTemporaryWindow
+
+-- The core observes Blizzard's window event and publishes it a frame later.
+local chatEvents, windowReport
+CreateFrame = function()
+    local frame = Frame()
+    function frame:SetScript(script, callback)
+        self[script] = callback
+        if script == "OnEvent" then chatEvents = self end
+    end
+    return frame
+end
+GetTime = function() return 0 end
+C_Timer = { After = function(delay, callback)
+    assert(delay == 0 and not windowReport)
+    windowReport = callback
+end }
+assert(loadfile(root .. "/MSUF_Suite/Core/ChatState.lua"))("MSUF_Suite", ns)
+local function ReportChatWindows()
+    assert(chatEvents:IsEventRegistered("UPDATE_CHAT_WINDOWS"))
+    chatEvents:OnEvent("UPDATE_CHAT_WINDOWS")
+    assert(ChatFrame2.fading, "window state was written while handling Blizzard's event")
+    local report = assert(windowReport)
+    windowReport = nil
+    report()
+end
 
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/CharacterPanel.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
@@ -152,8 +179,11 @@ chat:Enable()
 assert(chat.context.applied.chatMouseScroll == "1" and chat.context.applied.chatClassColorOverride == "0"
     and chat.context.applied.whisperMode == "popout", "Chat behavior did not apply its native settings")
 assert(ChatFrame1.fading == false and ChatFrame1.calls == 1
-    and chat.context.events.UPDATE_CHAT_WINDOWS and not module.context.events.UPDATE_CHAT_WINDOWS,
+    and ns.ChatState.owners[chat] and not ns.ChatState.owners[module]
+    and chatEvents:IsEventRegistered("UPDATE_CHAT_WINDOWS"),
     "chat fading did not transfer to the Chat helper")
+assert(FCF_OpenNewWindow == nativeOpen and FCF_OpenTemporaryWindow == nativeTemporary,
+    "the Chat helper hooked Blizzard's window open functions")
 local initialCVarCalls = chat.context.calls
 chat:Refresh()
 assert(chat.context.calls == initialCVarCalls,
@@ -165,7 +195,8 @@ assert(chat.context.applied.whisperMode == "popout_and_inline"
     "changing the whisper choice did not update its native CVar")
 combat = true
 FCF_OpenNewWindow()
-assert(queued == 1 and ChatFrame2.fading, "native chat hook wrote fading in combat")
+ReportChatWindows()
+assert(queued == 1 and ChatFrame2.fading, "the window report wrote fading in combat")
 combat = false
 chat:Refresh()
 assert(not ChatFrame2.fading, "the deferred Chat refresh did not cover the new window")
@@ -205,6 +236,7 @@ module.config.auctionExpansionHint = false
 module:Refresh()
 assert(not hint.shown, "turning the hint off kept the mark")
 FCF_OpenNewWindow()
+ReportChatWindows()
 assert(ChatFrame2.fading == false, "a new chat window kept fading")
 local edit = { text = nil, SetText = function(self, text) self.text = text end }
 local dialog = { GetEditBox = function() return edit end }
@@ -281,7 +313,8 @@ assert(ChatFrame1.fading == false and ChatFrame2.fading == false and not chat.co
     "chat fade did not apply to the existing chat frames at once")
 chat:Disable()
 chat.active = false
-assert(ChatFrame1.fading and ChatFrame2.fading, "disabling Chat behavior did not release chat fading")
+assert(ChatFrame1.fading and ChatFrame2.fading and not ns.ChatState.owners[chat],
+    "disabling Chat behavior did not release chat fading and its watcher")
 -- Cinematics as the client builds them (Blizzard_FrameXML/Shared/CinematicFrame
 -- .lua/.xml): the frame's OnEvent script is the function CinematicFrame.xml
 -- bound at load, the confirm dialog's Yes runs CinematicFrame_CancelCinematic,

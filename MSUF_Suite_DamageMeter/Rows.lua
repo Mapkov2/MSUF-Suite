@@ -36,6 +36,20 @@ local customOrders = {
     { TOTAL, RATE, PERCENT }, { TOTAL, PERCENT, RATE }, { RATE, TOTAL, PERCENT },
     { RATE, PERCENT, TOTAL }, { PERCENT, TOTAL, RATE }, { PERCENT, RATE, TOTAL },
 }
+-- Select only the configured arguments, keeping their count exact for native text sinks.
+local customArguments = {
+    [1] = function(total) return total end,
+    [12] = function(total, rate) return total, rate end,
+    [13] = function(total, _, percent) return total, percent end,
+    [21] = function(total, rate) return rate, total end,
+    [31] = function(total, _, percent) return percent, total end,
+    [123] = function(total, rate, percent) return total, rate, percent end,
+    [132] = function(total, rate, percent) return total, percent, rate end,
+    [213] = function(total, rate, percent) return rate, total, percent end,
+    [231] = function(total, rate, percent) return rate, percent, total end,
+    [312] = function(total, rate, percent) return percent, total, rate end,
+    [321] = function(total, rate, percent) return percent, rate, total end,
+}
 local customPatterns = {
     { "%s", "%s %s", "%s %s %s" },
     { "%s", "%s (%s)", "%s (%s) (%s)" },
@@ -162,7 +176,7 @@ end
 
 function D.ClearMemo(row)
     row.rank, row.rawName, row.class, row.iconKey, row.spellID = nil, nil, nil, nil, nil
-    row.mA, row.mB, row.mP, row.mF, row.mO, row.mS = nil, nil, nil, nil, nil, nil
+    row.mA, row.mB, row.mP, row.mF = nil, nil, nil, nil
     row.percentPainted = nil
     row.mMax, row.mVal, row.full, row.mDeath = nil, nil, nil, nil
 end
@@ -436,51 +450,49 @@ local function PaintValueColumns(row, meterType, total, rate, denominator)
     end
 end
 
--- Custom layout keeps values in their chosen order. A secret value is only
--- passed through AbbreviateNumbers and SetFormattedText, never formatted in Lua.
+-- Compile the four rate/percent availability combinations for this style.
+function D.BuildValuePlan(style)
+    style.customValues = nil
+    if style.numberFormat ~= VALUE_FORMAT.CUSTOM then return end
+    local order = customOrders[style.valueOrder] or customOrders[1]
+    local patterns = customPatterns[style.valueSeparator] or customPatterns[2]
+    local plans = {}
+    for variant = 1, 4 do
+        local showRate, showPercent = variant > 2, variant % 2 == 0
+        local count, key = 0, 0
+        for _, field in ipairs(order) do
+            if field == TOTAL or (field == RATE and showRate) or (field == PERCENT and showPercent) then
+                count, key = count + 1, key * 10 + field
+            end
+        end
+        plans[variant] = { args = customArguments[key], pattern = patterns[count] }
+    end
+    style.customValues = plans
+end
+
+-- A secret value is only passed through AbbreviateNumbers and SetFormattedText.
 local function SetCustomValueText(row, meterType, total, perSecond, denominator, alwaysPercent)
     local style = M.style
     local countOnly = D.countOnly[meterType]
     local rate
     if not countOnly then rate = perSecond end
     local percent = Percent(total, denominator, alwaysPercent or style.percent)
-    local order, separator = style.valueOrder or 1, style.valueSeparator or 2
+    local plan = style.customValues[(countOnly and 1 or 3) + (percent and 1 or 0)]
     local allPlain = not IsSecret(total) and (countOnly or not IsSecret(rate))
-    if allPlain and total == row.mA and rate == row.mB and percent == row.mP
-        and row.mF == VALUE_FORMAT.CUSTOM and order == row.mO and separator == row.mS then
-        return
-    end
+    if allPlain and total == row.mA and rate == row.mB and percent == row.mP and row.mF == plan then return end
     if allPlain then
-        row.mA, row.mB, row.mP, row.mF, row.mO, row.mS = total, rate, percent, VALUE_FORMAT.CUSTOM, order, separator
+        row.mA, row.mB, row.mP, row.mF = total, rate, percent, plan
     else
-        row.mA, row.mB, row.mP, row.mF, row.mO, row.mS = nil, nil, nil, nil, nil, nil
+        row.mA, row.mB, row.mP, row.mF = nil, nil, nil, nil
     end
+    local totalText = Abbreviate(total)
+    local rateText
+    if not countOnly then rateText = Abbreviate(rate) end
     local percentText = percent and format("%d%%", percent)
-    local first, second, third, count = nil, nil, nil, 0
-    for _, kind in ipairs(customOrders[order] or customOrders[1]) do
-        if kind == TOTAL or (kind == RATE and not countOnly) or (kind == PERCENT and percent ~= nil) then
-            local value
-            if kind == TOTAL then value = total elseif kind == RATE then value = rate else value = percentText end
-            value = kind == PERCENT and value or Abbreviate(value)
-            count = count + 1
-            if count == 1 then first = value elseif count == 2 then second = value else third = value end
-        end
-    end
-    local pattern = (customPatterns[separator] or customPatterns[2])[count]
     if allPlain then
-        if count == 1 then
-            row.valueText:SetText(format(pattern, first))
-        elseif count == 2 then
-            row.valueText:SetText(format(pattern, first, second))
-        else
-            row.valueText:SetText(format(pattern, first, second, third))
-        end
-    elseif count == 1 then
-        row.valueText:SetFormattedText(pattern, first)
-    elseif count == 2 then
-        row.valueText:SetFormattedText(pattern, first, second)
+        row.valueText:SetText(format(plan.pattern, plan.args(totalText, rateText, percentText)))
     else
-        row.valueText:SetFormattedText(pattern, first, second, third)
+        row.valueText:SetFormattedText(plan.pattern, plan.args(totalText, rateText, percentText))
     end
 end
 

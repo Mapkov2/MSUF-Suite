@@ -54,8 +54,10 @@ if scenario ~= "skin" then
     local settings = { enabled = false, muteMusic = true, whisperWindows = 3 }
     local encoded = "MSUFM2:" .. MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 2,
         module = "dailyComfort", revision = revision, settings = settings }, "MSUF3")
-    local id, _, _, chat = IO.PrepareModuleProfile(encoded, true)
-    assert(id == "dailyComfort" and chat.whisperWindows == 3, "legacy chat preference missing")
+    local id, _, _, companion = IO.PrepareModuleProfile(encoded, true)
+    local chat = companion.settings
+    assert(id == "dailyComfort" and companion.id == "chatComfort" and chat.whisperWindows == 3,
+        "legacy chat preference missing")
     assert(chat.enabled == nil and chat.chatWheel == nil and chat.noChatFade == nil
         and chat.chatClassColors == nil, "legacy daily import replaced unspecified chat settings")
     assert(Suite.Suite.SetMany("chatComfort", { enabled = true, chatWheel = true,
@@ -66,9 +68,9 @@ if scenario ~= "skin" then
         "live legacy daily import reset unrelated chat settings")
     local rule = Suite.SuiteCatalog.chatComfort.rules.chatWheel
     rule.personal, settings.chatWheel = true, false
-    _, _, _, chat = IO.PrepareModuleProfile(encoded, true)
+    local _, _, _, personalCompanion = IO.PrepareModuleProfile(encoded, true)
     rule.personal = nil
-    assert(chat.chatWheel == nil, "legacy module imported a character-bound chat preference")
+    assert(personalCompanion.settings.chatWheel == nil, "legacy module imported a character-bound chat preference")
     assert(settings.whisperWindows == 3 and settings.enabled == false, "legacy preparation changed the source")
     print("legacy daily import: sparse chat merge and personal exclusion passed")
 end

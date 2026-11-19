@@ -9,11 +9,13 @@ local stop = assert(source:find("local box, bar = Controller(nil)", 1, true))
 local body = [======[
 wipe = function(values) for key in pairs(values) do values[key] = nil end end
 IsMouseButtonDown = function() return false end
+Load("Adapters/AdapterKit.lua")
 Load("Rendering/LegacyScrollMotion.lua")
 local function AnimationTarget()
     local child = Frame()
     function child:CreateAnimationGroup()
         local group = { scripts = {}, playing = false }
+        child.group = group
         function group:CreateAnimation()
             local animation = {}
             animation.SetDuration, animation.SetSmoothing = Noop, Noop
@@ -39,15 +41,38 @@ end
 for _, frame in ipairs(frames) do
     function frame:UnregisterEvent(event) self.events[event] = nil end
 end
+local function Attach(parent, key, frame)
+    parent[key] = frame
+    function frame:GetParent() return parent end
+    return frame
+end
+WorldMapFrame = Frame()
+QuestMapFrame = Attach(WorldMapFrame, "QuestLog", Frame())
+local quests = Attach(QuestMapFrame, "QuestsFrame", Frame())
+local campaign = Attach(quests, "CampaignOverview", Frame())
+local legend = Attach(QuestMapFrame, "MapLegend", Frame())
+local eventPage = Attach(QuestMapFrame, "EventsFrame", Frame())
 local pages = { "QuestDetailScrollFrame", "QuestProgressScrollFrame", "QuestRewardScrollFrame",
     "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame", "QuestMapDetailsScrollFrame" }
 for _, flavor in ipairs({ "Mainline", "Forever" }) do
     NS.Client.isForever = flavor == "Forever"
+    if NS.Client.isForever then
+        pages[#pages + 1] = "CampaignOverview"
+        pages[#pages + 1] = "MapLegendScrollFrame"
+    end
     for _, name in ipairs(pages) do
         local scroll, child = Frame(), AnimationTarget()
         local bar = Controller(false, true)
         scroll.ScrollBar, scroll.offset, bar.legacy = bar, 0, scroll
-        _G[name] = scroll
+        if name == "CampaignOverview" then
+            Attach(campaign, "ScrollFrame", scroll)
+        elseif name == "MapLegendScrollFrame" then
+            Attach(legend, "ScrollFrame", scroll)
+            _G[name] = scroll
+        else
+            _G[name] = scroll
+        end
+        Attach(scroll, "ScrollBar", bar)
         function scroll:GetScrollChild() return child end
         function scroll:GetVerticalScroll() return self.offset end
         local set = bar.SetScrollPercentageInternal
@@ -63,6 +88,13 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         end
         local reset, setter = bar.ScrollToBegin, bar.SetInterpolateScroll
         -- Both routes run in the real skin: scrollbar cosmetics and menu discovery.
+        if name == "CampaignOverview" or name == "MapLegendScrollFrame" then
+            bar:Fire("OnHide")
+            providers.bar[1](bar, "hidden-page")
+            providers.bar[2](bar, "hidden-page")
+            Check(writes == 0, "releasing an unopened map page wrote the native interpolation flag: " .. name)
+            bar:Fire("OnShow")
+        end
         providers.bar[1](bar, "quest-skin")
         Check(bar.canInterpolateScroll == false and bar.SetInterpolateScroll == setter,
             flavor .. ": quest skin changed native controller state: " .. name)
@@ -99,9 +131,62 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Check(#scroll.hooks.OnVerticalScroll == hooks, "re-enable duplicated quest scroll observers")
         NS.LegacyScrollMotion.ReleaseOwner("quest-skin")
         Check(writes == 0, flavor .. ": quest skin wrote the native interpolation flag: " .. name)
+        if name == "CampaignOverview" or name == "MapLegendScrollFrame" then
+            local outside = Controller(false)
+            outside.registeredScrollBar = bar
+            providers.generic[1](outside, "outside")
+            Changed()
+            Motion.ReleaseOwner("outside")
+            Check(writes == 0, "external controller took the map page's paired scrollbar: " .. name)
+        end
         _G[name] = nil
     end
 end
+local function CheckEventList()
+    local box = Attach(eventPage, "ScrollBox", Controller(false))
+    local bar = Attach(eventPage, "ScrollBar", Controller(false, true))
+    box.registeredScrollBar, bar.registeredScrollBox = bar, box
+    local content = AnimationTarget()
+    function box:GetScrollTarget() return content end
+    function box:GetHeight() return 300 end
+    local writes = 0
+    for _, controller in ipairs({ bar, box }) do
+        local set = controller.SetInterpolateScroll
+        function controller:SetInterpolateScroll(value)
+            writes = writes + 1
+            set(self, value)
+        end
+    end
+    bar:Fire("OnHide")
+    box:Fire("OnHide")
+    providers.bar[1](bar, "hidden-event")
+    providers.bar[2](bar, "hidden-event")
+    Check(writes == 0, "releasing unopened map events wrote a native interpolation flag")
+    bar:Fire("OnShow")
+    box:Fire("OnShow")
+    for _ = 1, 2 do
+        providers.bar[1](bar, "event-style")
+        providers.generic[1](box, "event-motion")
+        Check(writes == 0, "map event-list scroll discovery wrote native controller state")
+        box:Trigger("scroll", 0.1, 0.5)
+        box:Trigger("scroll", 0.2, 0.5)
+        Check(content.group and content.group:IsPlaying(), "map event list lost render-only easing")
+        box:Fire("OnHide")
+        Check(not content.group:IsPlaying(), "hidden map event list kept moving")
+        box:Fire("OnShow")
+        Changed()
+        providers.bar[2](bar, "event-style")
+        providers.generic[2]("event-motion")
+        Check(not next(box.callbacks.scroll) and writes == 0, "map event-list release touched native state or kept its observer")
+    end
+    NS.Client.isForever = false
+    Check(Motion.Track(bar, "retail-event") and bar.canInterpolateScroll and box.canInterpolateScroll,
+        "Retail map event list lost native interpolation")
+    Motion.ReleaseOwner("retail-event")
+    NS.Client.isForever = true
+end
+CheckEventList()
+WorldMapFrame, QuestMapFrame = nil, nil
 -- Forever's list next to the map has a native ScrollFrameTemplate bar.
 -- Cosmetics and menu discovery may see it independently, in either combat state.
 NS.Client.isForever = true

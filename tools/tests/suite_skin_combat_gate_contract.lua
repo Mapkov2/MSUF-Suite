@@ -88,12 +88,12 @@ Gate.Cancel("cancelled")
 EndCombat()
 Check(updates == 1, "a job asked for many times ran " .. updates .. " times")
 
--- The client can deliver regen before the unit flag settles. A single
--- guarded handoff must preserve the pending skin work across that edge.
-local wake, originalTimer = nil, C_Timer
+-- The client can deliver regen before the unit flag settles. The next
+-- frame is free to retry, while further probes wait for a short interval.
+local wake, wakeDelay, originalTimer = nil, nil, C_Timer
 C_Timer = { After = function(delay, callback)
-    Check(delay == 0 and wake == nil, "combat end queued multiple wake-ups")
-    wake = callback
+    Check(wake == nil, "combat end queued multiple wake-ups")
+    wake, wakeDelay = callback, delay
 end }
 local applied = 0
 local function SkinPopup() applied = applied + 1 end
@@ -102,7 +102,8 @@ Gate.RunOrDefer("static-popup", SkinPopup)
 staleUnitCombat = true
 gateFrame:script("PLAYER_REGEN_ENABLED")
 gateFrame:script("PLAYER_REGEN_ENABLED")
-Check(applied == 0 and wake and Gate.IsPending("static-popup"), "early regen stranded or ran the skin job")
+Check(applied == 0 and wake and wakeDelay == 0 and Gate.IsPending("static-popup"),
+    "early regen stranded or ran the skin job")
 local callback = wake
 wake = nil
 -- The next combat starts before the callback. No protected work and no
@@ -113,10 +114,35 @@ Check(applied == 0 and wake == nil and Gate.IsPending("static-popup"), "locked w
 staleUnitCombat = true
 gateFrame:script("PLAYER_REGEN_ENABLED")
 callback, wake = wake, nil
+callback()
+Check(applied == 0 and wake and wakeDelay > 0 and Gate.IsPending("static-popup"),
+    "the gate stranded work when the unit combat flag lingered past the next frame")
+callback, wake = wake, nil
+callback()
+Check(applied == 0 and wake and wakeDelay > 0, "the gate stopped probing while still waiting for the unit flag")
+callback, wake = wake, nil
 locked, staleUnitCombat = false, false
 callback()
 Check(applied == 1 and wake == nil and Gate.GetPendingCount() == 0
-    and not gateFrame.events.PLAYER_REGEN_ENABLED, "first unlocked frame did not finish the skin job")
+    and not gateFrame.events.PLAYER_REGEN_ENABLED and not gateFrame.events.PLAYER_REGEN_DISABLED,
+    "the first settled probe did not finish the skin job or left its event active")
+
+-- A new combat event must stop even a retry that arrives before native
+-- lockdown (and before the unit reports combat), then wait for new regen.
+locked = true
+Gate.RunOrDefer("pending-at-combat-edge", SkinPopup)
+staleUnitCombat = true
+gateFrame:script("PLAYER_REGEN_ENABLED")
+callback, wake = wake, nil
+locked, staleUnitCombat = false, false
+gateFrame:script("PLAYER_REGEN_DISABLED")
+callback()
+Check(applied == 1 and wake == nil and Gate.IsPending("pending-at-combat-edge"),
+    "a retained drain ran on the pre-lockdown combat edge")
+Check(not Gate.RunOrDefer("pending-at-combat-edge", SkinPopup) and applied == 1,
+    "a request during the pre-lockdown combat edge ran immediately")
+EndCombat()
+Check(applied == 2 and Gate.GetPendingCount() == 0, "combat resumption replayed the replaced job")
 
 -- A later regen listener can queue the first job after event dispatch has
 -- already passed the gate. The unit flag still says combat; lockdown ended.
@@ -126,7 +152,7 @@ Check(wake and Gate.IsPending("late-popup"), "first job queued on the unlock edg
 callback, wake = wake, nil
 locked, staleUnitCombat = false, false
 callback()
-Check(applied == 2 and Gate.GetPendingCount() == 0
+Check(applied == 3 and Gate.GetPendingCount() == 0
     and not gateFrame.events.PLAYER_REGEN_ENABLED, "job queued after regen never drained")
 
 locked, staleUnitCombat = true, true
@@ -135,8 +161,38 @@ Gate.Cancel("cancel-before-wake")
 callback, wake = wake, nil
 locked, staleUnitCombat = false, false
 callback()
-Check(applied == 2 and Gate.GetPendingCount() == 0
+Check(applied == 3 and Gate.GetPendingCount() == 0
     and not gateFrame.events.PLAYER_REGEN_ENABLED, "a cancelled job survived the scheduled wake")
+-- When a retry suspended itself in new lockdown, an unlocked caller may
+-- arrive before this frame receives regen. Its old request must not replay.
+local requests = {}
+locked = true
+Gate.RunOrDefer("surface:latest", function() requests[#requests + 1] = "stale" end)
+Gate.RunOrDefer("surface:other", function() requests[#requests + 1] = "other" end)
+staleUnitCombat = true
+gateFrame:script("PLAYER_REGEN_ENABLED")
+callback, wake = wake, nil
+staleUnitCombat = false
+callback()
+locked = false
+Check(Gate.RunOrDefer("surface:latest", function() requests[#requests + 1] = "latest" end),
+    "unlocked request did not apply synchronously")
+Check(wake and wakeDelay == 0, "an unlocked request left unrelated work waiting for another regen event")
+callback, wake = wake, nil
+callback()
+Check(table.concat(requests, ",") == "latest,other" and Gate.GetPendingCount() == 0,
+    "the new unlocked request replayed a superseded callback or dropped unrelated work")
+
+-- Requests made by a callback inside the drain follow the same rule.
+requests = {}
+locked = true
+Gate.RunOrDefer("parent", function()
+    Gate.RunOrDefer("child", function() requests[#requests + 1] = "latest" end)
+end)
+Gate.RunOrDefer("child", function() requests[#requests + 1] = "stale" end)
+EndCombat()
+Check(table.concat(requests, ",") == "latest" and Gate.GetPendingCount() == 0,
+    "a reentrant unlocked request allowed the old child callback to run")
 C_Timer = originalTimer
 
 ------------------------------------------------------------------ window parts

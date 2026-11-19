@@ -1500,12 +1500,22 @@ def lua_quote(text):
 
 
 def write_locale(locale, entries):
+    path = locale_path(locale)
     lines = [HEADER.format(name=LOCALE_NAMES[locale], locale=locale)]
+    # Search reads these locale-scoped values with rawget, outside T() coverage.
+    if path.is_file():
+        metadata = [(key, value) for key, value in pack_entries(read_source(path)).items()
+                    if key.startswith("msufsuite.search.")]
+        if metadata:
+            lines.append("-- Search-only terms for unspaced questions. Semicolons divide required concepts.\n")
+            for key, value in metadata:
+                lines.append(f"L[{lua_quote(key)}] = {lua_quote(value)}\n")
+            lines.append("\n")
     for english in sorted(entries):
         lines.append("T(%s, %s)\n" % (lua_quote(english), lua_quote(entries[english])))
     data = "".join(lines).encode("utf-8")
     LOCALE_DIR.mkdir(parents=True, exist_ok=True)
-    locale_path(locale).write_bytes(data)
+    path.write_bytes(data)
 
 
 # ---------------------------------------------------------------- checks

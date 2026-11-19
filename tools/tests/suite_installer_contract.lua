@@ -112,6 +112,7 @@ Suite.Database = {
     IsProfileName = function(name) return type(name) == "string" and name ~= "" end,
     GetActiveProfileName = function() return "Default" end,
     GetProfile = function(name) return Suite.RootDB.profiles[name] end,
+    HasProfile = function(name) return Suite.RootDB.profiles[name] ~= nil end,
     Activate = function(name)
         assert(Suite.RootDB.profiles[name])
         activations = activations + 1
@@ -414,6 +415,7 @@ end
 local function UseHost(api)
     MSUF_HostAPI = api
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", Suite)
 end
 for _, api in ipairs({ hostAPI, false }) do
     UseHost(api or nil)
@@ -465,7 +467,8 @@ Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
 copies = 0
 local function CheckLayout()
-    local panels = { window.classic, window.forever, window.modernDark, window.blizzard, window.darkRaid, window.cooldowns, window.scaleToggle, window.keepFrames,
+    local panels = { window.classic, window.forever, window.modernDark, window.blizzard, window.darkRaid, window.wayfarer,
+        window.cooldowns, window.scaleToggle, window.keepFrames,
         window.back, window.close, window.next, window.scaleSlider }
     for _, color in ipairs(window.colors) do panels[#panels + 1] = color end
     if rawget(window, "moduleScroll") then

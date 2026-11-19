@@ -24,6 +24,8 @@ For native castbar artwork, update MSUF to 6.508 or a 7.0 build with artwork sup
 On Forever, **Quality of Life > Map & Travel > Glimmer** is enabled by default and highlights the native interact target for herbs, ore and quest objects. Its mini preview shows the selected effect directly above the controls, even while the module is disabled. Choose its categories, range, color and effect; it pauses in combat and restores the interaction settings it owns when disabled.
 
 Modules can be enabled individually. The Suite includes shared profiles, setup presets, and previews in the MSUF options menu.
+Built-in presets ship their custom textures in the Suite or use media supplied by the required MSUF addon.
+If you add a texture from another addon to a profile, install that addon at the same path on the receiving client.
 
 The optional **MSUF Blizzard** setup preset adds compact gold portraits, smooth shaded health fills, rounded inset borders and dark name strips with shadowed white text. Blizzard's native buff and debuff rows sit beside the minimap; target aura rows clear the name and portrait. Party and raid cards use Blizzard's native raid health texture, separate name headers and native role icons. Player buffs and HoTs sit inside the upper part of each card; debuffs and external defensive buffs occupy separate lower corners. Raid layouts use columns of five, with room for 40 players or 20 in Mythic raids. Boss frames have a red name and level header, health and blue power bars, an overlapping gold portrait and a wider castbar underneath. Compact castbars use a yellow patterned fill and a full-width dark spell-name panel below them; uninterruptible casts are grey.
 
@@ -49,8 +51,11 @@ Keep all bundled addon folders together when installing or updating. **MSUF Suit
 
 ## Development
 
-Addons that opt into Suite skinning can use `MapkoSkin.GetAPI(2, 2)` and
-`RegisterAddon(addonName)` to obtain an isolated skin scope. Submit a plain
+The `MSUF_Suite_Skin` module provides the **MSUF Suite Skinning API 2.4**.
+Addons register their own windows and controls with `RegisterAddon(addonName)`.
+See the [integration guide](docs/addon-skin-api.md#msuf-suite-skinning-api-24).
+
+Submit a plain
 FontString with `scope:SkinLabel(label)` to follow Suite typography and its
 language fallback. Use `scope:Refresh(label)` after replacing the label's text
 and `scope:Release(label)` to restore it. The existing `SkinFrame`, `SkinButton`

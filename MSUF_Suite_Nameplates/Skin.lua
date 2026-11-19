@@ -481,7 +481,7 @@ local FULL_CONTEXT = { PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = tru
 local function OnContextChanged(module, event)
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
         AuraColors.Configure(module.config, true)
-        AuraDisplay.Configure(module.config)
+        AuraDisplay.Configure(module.config, true)
     end
     local changed = Roles.RefreshContext()
     Extensions.OnContext(changed, event)
@@ -584,7 +584,7 @@ local function OnAuraSpellsChanged(module)
     if Extensions.usesRange then Extensions.RangeSpellChanged() end
     if not module.auraSpellsListening then return end
     AuraColors.Configure(module.config, true)
-    AuraDisplay.Configure(module.config)
+    AuraDisplay.Configure(module.config, true)
     RepaintAuraColors(module)
 end
 
@@ -805,6 +805,6 @@ Mouseover.Bind(M)
 Names.Bind(M)
 Auras.Bind(M)
 AuraColors.Bind(M, RepaintAuraColors)
-AuraDisplay.Bind(M, RepaintAuraColors)
+AuraDisplay.Bind(M, RepaintAuraColors, Listen)
 Extensions.Bind(M)
 S.Install("nameplates", M)

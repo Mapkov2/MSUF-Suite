@@ -9,6 +9,14 @@ W.sizes[0], W.sizes[1], W.sizes[5] = 8, 4, 8
 W.Define(101, { name = "Inactive quest item", class = Enum.ItemClass.Questitem })
 W.Put(0,1,101,1)
 local unlocked, nativeClicks = false, 0
+local separate = W.NewIndividualBag("ContainerFrame2", KEYRING_CONTAINER)
+local secondWindow = W.NewIndividualBag("ContainerFrame7", KEYRING_CONTAINER)
+local function OpenSeparate(frame)
+    frame:UpdateItemSlots()
+    frame:Show()
+    frame:UpdateItemLayout()
+    frame:UpdateItems()
+end
 GetKeyRingSize = function() return W.sizes[KEYRING_CONTAINER] or 0 end
 local containerSize = C_Container.GetContainerNumSlots
 C_Container.GetContainerNumSlots = function(bag)
@@ -22,6 +30,7 @@ local nativeKeyring = W.NewWidget("Button", "KeyRingButton", nativeBar, true)
 nativeKeyring:SetScript("OnClick", function()
     W.Taint("keyring opened through insecure input")
     nativeClicks = nativeClicks + 1
+    OpenSeparate(separate)
 end)
 W.Apply()
 W.OpenBags()
@@ -39,7 +48,7 @@ if flavor == "Forever" then
     unlocked = true
     local nativeSlots = #W.CF.Items
     W.sizes[KEYRING_CONTAINER] = 2
-    W.Define(201, { name = "Ancient key" })
+    W.Define(201, { name = "Ancient key", quality = 2 })
     W.Put(KEYRING_CONTAINER, 1, 201)
     W.Fire("BAG_UPDATE_DELAYED")
     W.Settle()
@@ -90,7 +99,59 @@ if flavor == "Forever" then
     assert(delegate and delegate:IsShown() and delegate:GetParent() == W.UIParent, "secure keyring delegate is missing")
     assert(GameTooltip.lines[1] == KEYRING, "keyring tooltip must use the client's label")
     W.SecureClick(delegate)
-    assert(nativeClicks == 1, "keyring click did not go to Blizzard")
+    assert(nativeClicks == 1 and separate:IsVisible(), "keyring click did not open the native window")
+    local style = assert(W.M.windows[separate], "the separate keyring kept Blizzard's window skin")
+    local reagent = W.M.windows[W.Reagent]
+    assert(style[2]:IsVisible() and separate.Bg:GetAlpha() == 0 and separate.NineSlice:GetAlpha() == 0
+        and separate.PortraitButton:GetAlpha() == 0 and separate.PortraitButton:IsShown(),
+        "the keyring needs a Suite shell and its native portrait interaction")
+    assert(style[2].color[1] == reagent[2].color[1]
+        and W.P.BagCaption.states[separate].close:IsVisible(), "the keyring skin differs from the reagent window")
+    local occupied, vacant = separate.Items[1], separate.Items[2]
+    local filled = assert(W.M.overlays[occupied], "filled native keyring slot was not styled")
+    local empty = assert(W.M.overlays[vacant], "empty native keyring slot was not styled")
+    local layer, sublevel = empty.slotOuter.layer, empty.slotOuter.sublevel
+    assert(layer == "ARTWORK" and sublevel > 0 and empty.slotOuter:IsVisible()
+        and occupied.icon:IsVisible() and filled.strokeQuality == 2, "the keyring hid a key or exposed the empty art")
+    W.SecureClick(occupied)
+    local pickup = W.calls.pickups[#W.calls.pickups]
+    assert(pickup[1] == KEYRING_CONTAINER and pickup[2] == 1, "the skin interfered with the native key slot click")
+    W.Native(C_Container.PickupContainerItem, KEYRING_CONTAINER, 1)
+    W.config.slotBorderWidth, W.config.emptySlotBorderWidth = 0, 0
+    W.Apply()
+    W.Settle()
+    assert(not filled.slotEdges[1]:IsShown() and not empty.slotEdges[1]:IsShown(),
+        "the separate keyring ignored the Bags border widths")
+    W.SecureClick(separate.CloseButton)
+    assert(not separate:IsShown(), "the styled X stopped closing the native keyring")
+    W.EnterCombat()
+    W.Native(OpenSeparate, secondWindow)
+    assert(not W.M.windows[secondWindow], "a cold separate keyring attached chrome during combat")
+    assert(W.queuedApply, "the combat open did not queue the skin")
+    W.LeaveCombat()
+    W.Apply()
+    W.Settle()
+    assert(W.M.windows[secondWindow] and W.M.overlays[secondWindow.Items[2]],
+        "the keyring skin assumed a fixed Blizzard container or did not defer safely")
+    W.CloseBags()
+    W.EnterCombat()
+    assert(not W.P.BagsIdle.paused, "the only visible keyring was treated as a closed bag")
+    W.Native(secondWindow.Hide, secondWindow)
+    assert(W.P.BagsIdle.paused, "closing the only visible keyring did not pause bag work")
+    W.LeaveCombat()
+    W.OpenBags()
+    W.Settle()
+    separate:SetID(1)
+    W.Define(301, { name = "Other item", quality = 4 })
+    W.Put(1, 1, 301)
+    W.Fire("BAG_UPDATE", 1)
+    W.Native(OpenSeparate, separate)
+    assert(separate.Items[1] == occupied and filled.strokeQuality == 4,
+        "a reused standalone bag slot kept the keyring's quality")
+    W.Native(separate.Hide, separate)
+    separate:SetID(KEYRING_CONTAINER)
+    W.items[1][1] = nil
+    W.Fire("BAG_UPDATE", 1)
     E.Toggle()
     assert(not delegate:IsShown(), "keyring delegate survived closing the drawer")
     E.Toggle()
@@ -124,6 +185,8 @@ if flavor == "Forever" then
     assert(view.index.free == 9, "keyring inflated the normal bag free space")
 else
     assert(not E.keyring and not W.P.KeyringInventory, "keyring support must stay exclusive to Forever")
+    W.Native(OpenSeparate, separate)
+    assert(not W.M.windows[separate] and separate.Bg:GetAlpha() == 1, "Retail took the Forever standalone bag skin")
 end
 local ok, message = pcall(CreateFrame, "ItemButton", nil, nil, "ItemButtonTemplate")
 assert(not ok and message:find("couldn't find inherited node",1,true), "fixture silently accepts invented template")
@@ -135,5 +198,11 @@ assert(W.P.BagFinance.window:IsShown(), "gold window template path failed")
 W.P.BagFinance.window:Hide()
 W.S.Set("bags","enabled",false)
 W.Settle()
+assert(separate.Bg:GetAlpha() == 1 and separate.PortraitButton:GetAlpha() == 1
+    and separate.CloseButton:GetAlpha() == 1, "disabling Bags did not restore separate window art")
+if flavor == "Forever" then
+    assert(separate.Items[1].IconBorder:GetAlpha() == 1 and not W.M.windows[separate][2]:IsShown(),
+        "disabling Bags left the separate keyring skin active")
+end
 assert(#W.errors==0 and #W.taint==0 and #W.combatLayout==0, "template startup error/taint")
 print("Strict client templates and intrinsic ItemButton boot/drawer/tools passed: "..(arg[2] or "Mainline"))

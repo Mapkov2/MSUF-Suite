@@ -11,13 +11,14 @@ local function Axis(point, axis)
 end
 local Rect
 local function Resolve(frame, axis)
-    local size = frame[axis == 1 and "width" or "height"] or 0
+    local scale = frame:GetEffectiveScale()
+    local size = (frame[axis == 1 and "width" or "height"] or 0) * scale
     if #frame.points == 0 then return 0, size end
     local low, high, first, firstRatio
     for _, p in ipairs(frame.points) do
         local parent = p[2] or frame.parent
         local a, b = Resolve(parent, axis)
-        local target = a + (b - a) * Axis(p[3], axis) + (p[axis + 3] or 0)
+        local target = a + (b - a) * Axis(p[3] or p[1], axis) + (p[axis + 3] or 0) * scale
         local ratio = Axis(p[1], axis)
         if ratio == 0 then low = target elseif ratio == 1 then high = target end
         first, firstRatio = first or target, firstRatio or ratio
@@ -33,7 +34,11 @@ Rect = function(frame)
 end
 local Frame
 Frame = function(parent)
-    local f = { parent = parent, points = {}, scripts = {}, shown = true, width = 100, height = 20 }
+    local f = { parent = parent, points = {}, scripts = {}, children = {}, shown = true, width = 100, height = 20 }
+    if parent then parent.children[#parent.children + 1] = f end
+    function f:GetChildren() return unpack(self.children) end
+    function f:GetObjectType() return self.kind or "Frame" end
+    function f:GetNumPoints() return #self.points end
     function f:SetPoint(...) self.points[#self.points + 1] = { ... } end
     function f:ClearAllPoints() self.points = {} end
     function f:SetSize(w, h) self.width, self.height = w, h end
@@ -41,26 +46,34 @@ Frame = function(parent)
     function f:SetHeight(h) self.height = h end
     function f:SetClipsChildren(value) self.clipsChildren = value end
     function f:DoesClipChildren() return self.clipsChildren == true end
-    function f:GetWidth() local a, b = Resolve(self, 1); return b - a end
-    function f:GetHeight() local a, b = Resolve(self, 2); return b - a end
+    function f:GetWidth() local a, b = Resolve(self, 1); return (b - a) / self:GetEffectiveScale() end
+    function f:GetHeight() local a, b = Resolve(self, 2); return (b - a) / self:GetEffectiveScale() end
+    function f:GetRect()
+        local x, y, right, top = Rect(self)
+        local scale = self:GetEffectiveScale()
+        return x / scale, y / scale, (right - x) / scale, (top - y) / scale
+    end
+    function f:GetCenter()
+        local x, y, width, height = self:GetRect()
+        return x + width / 2, y + height / 2
+    end
     function f:SetText(t) self.text = t end
     function f:GetText() return self.text or "" end
     function f:GetStringWidth() return #self:GetText() * (self.charWidth or 6) end
     f.GetUnboundedStringWidth = f.GetStringWidth
     function f:SetWordWrap(wrap) self.wordWrap = wrap end
     function f:EnableMouseWheel(enabled) self.mouseWheel = enabled end
-    function f:SetScrollChild(child)
-        self.scrollChild = child
+    function f:SetMinMaxValues(low, high)
+        self.low, self.high = low, high
+        if self.value then self:SetValue(self.value) end
     end
-    function f:GetVerticalScroll() return self.scrollOffset or 0 end
-    function f:UpdateScrollChildRect()
-        self.scrollRectWidth, self.scrollRectHeight = self.scrollChild:GetWidth(), self.scrollChild:GetHeight()
-    end
-    function f:GetVerticalScrollRange() return math.max(0, (self.scrollRectHeight or 0) - self:GetHeight()) end
-    function f:SetVerticalScroll(offset)
-        self.scrollOffset = offset
-        self.scrollChild:ClearAllPoints()
-        self.scrollChild:SetPoint("TOPLEFT", self, "TOPLEFT", 0, offset)
+    function f:GetMinMaxValues() return self.low, self.high end
+    function f:GetValue() return self.value end
+    function f:SetValue(value)
+        value = math.min(self.high, math.max(self.low, value))
+        if value == self.value then return end
+        self.value = value
+        if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, value) end
     end
     function f:SetScript(key, fn) self.scripts[key] = fn end
     function f:GetScript(key) return self.scripts[key] end
@@ -95,7 +108,10 @@ Frame = function(parent)
     f.events = {}
     function f:RegisterEvent(event) self.events[event] = true end
     function f:UnregisterEvent(event) self.events[event] = nil end
-    function f:GetEffectiveScale() return 1 end
+    function f:SetScale(scale) self.scale = scale end
+    function f:GetEffectiveScale()
+        return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1)
+    end
     function f:GetFrameLevel() return self.frameLevel or 1 end
     function f:SetFrameLevel(level) self.frameLevel = level end
     function f:CreateTexture() return Frame(self) end
@@ -132,7 +148,15 @@ local function LoadFixedHeaderAPI(host, M, W, T)
     ]]
     assert(loadstring(prelude .. source:sub(first, last - 1), "@" .. path))(M, W, T, function(v) return v end)
 end
-CreateFrame = function(_, _, parent) return Frame(parent) end
+CreateFrame = function(kind, _, parent)
+    local frame = Frame(parent)
+    frame.kind = kind
+    return frame
+end
+local cursorX, cursorY, controlDown, pointerHeld = 0, 0, false, true
+function GetCursorPosition() return cursorX, cursorY end
+function IsControlKeyDown() return controlDown end
+function IsMouseButtonDown() return pointerHeld end
 IsInInstance = function() return false, "none" end
 local function CheckInside(child, parent, message)
     local l, b, r, t = Rect(child)
@@ -247,7 +271,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         assert(loadfile(arg[2] or root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua"))("Options", P)
         assert(loadfile(arg[4] or root .. "/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options", P)
         assert(loadfile(arg[3] or root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
-        assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
+        assert(loadfile(arg[5] or root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesMultiPreview.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", P)
         local ui = P.NameplatesEditor.Create(ctx, builder, {})
@@ -259,11 +283,12 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
             error("missing layer " .. key)
         end
         local status = Layer("status")
-        local content = status:GetParent()
-        local scroll = content:GetParent()
-        local point, relative, relativePoint, x, y = content:GetPoint(1)
-        assert(point == "TOPLEFT" and relative == scroll and relativePoint == "TOPLEFT" and x == 0 and y == 0,
-            "preview layer content is unanchored in its scroll viewport")
+        assert(status:GetParent() == ui.layerRail, "layer chips must be anchored to the visible rail")
+        local slider
+        for _, child in ipairs({ ui.layerRail:GetChildren() }) do
+            if child:GetObjectType() == "Slider" then slider = child end
+        end
+        assert(slider, "wide and narrow layouts need a common layer rail")
         values.look, ui.sampleKind = 4, "enemy"
         values.enemyGlowMode, values.enemyGlowEnabled = 2, true
         local glow = Layer("glow")
@@ -301,7 +326,8 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         assert(not Upvalue(P.NameplatesEditor.Bind, "Write")(ui, handle, 20, 30),
             "NPC world-name nudge wrote nameplate offsets")
         assert(not Upvalue(P.NameplatesEditor.Bind, "CanEdit")(handle), "NPC world name remained selectable")
-        handle.IsShown = function() return true end
+        handle.IsVisible = function() return true end
+        handle.IsShown = handle.IsVisible
         assert(not ui.body.selectionOptions.IsPlaced(handle), "NPC world name remained in the element picker")
         local savedSelect = ui.kit.Select
         ui.kit.Select = function(_, selected) assert(selected == nil, "NPC world name accepted a picker selection") end
@@ -447,7 +473,6 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
                 CheckButtonLabel(fit, fitCaption)
                 CheckInside(ui.layerRail, body, "layer rail overlaps settings at width " .. width)
                 CheckInside(ui.canvas, body, "canvas escaped preview at width " .. width)
-                CheckInside(scroll, ui.layerRail, "scroll viewport escapes its rail")
                 CheckInside(ui.raidPalette, ui.canvas, "raid marker palette clipped")
                 CheckAbove(ui.selection, ui.layerRail, 6, "selection overlaps layers")
                 CheckAbove(ui.tools, ui.selection, 5, "zoom tools overlap selection")
@@ -469,19 +494,25 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
                     if previous then CheckSeparate(previous, control, "zoom controls overlap") end
                     previous = control
                 end
-                for _, button in ipairs(ui.visibleLayerButtons or ui.layerButtons) do
-                    CheckInside(button, content, "layer button escapes its scroll content: " .. button.layerKey)
-                    if button.settingsLink then CheckInside(button.settingsLink, button, "settings link was clipped") end
+                for _, button in ipairs(ui.layerButtons) do
+                    if button:IsShown() then
+                        CheckInside(button, ui.layerRail, "layer button escapes its rail: " .. button.layerKey)
+                        if button.settingsLink then CheckInside(button.settingsLink, button, "settings link was clipped") end
+                    end
                 end
-                local scrollRange = scroll:GetVerticalScrollRange()
-                assert(scroll.scrollRectWidth == content:GetWidth() and scroll.scrollRectHeight == content:GetHeight(),
-                    "preview layer scroll bounds did not follow the content layout")
-                if width == 280 then assert(scrollRange > 0, "narrow layers did not scroll") end
-                if width >= 885 then assert(scrollRange == 0, "wide layers still require scrolling") end
-                assert(scroll:GetVerticalScroll() <= scrollRange, "resize retained an out-of-range scroll offset")
-                assert(scroll.mouseWheel == (scrollRange > 0), "rail grabs the wheel without overflow")
-                scroll:SetVerticalScroll(scrollRange)
-                CheckInside(ui.visibleLayerButtons[#ui.visibleLayerButtons], scroll, "last layer cannot be reached by scrolling")
+                if width == 280 then assert(slider:IsShown(), "narrow layers did not scroll") end
+                if width >= 885 then assert(not slider:IsShown() and slider:GetValue() == 0, "wide layers did not reset") end
+                assert(ui.layerRail.mouseWheel == slider:IsShown(), "rail grabs the wheel without overflow")
+                if slider:IsShown() then
+                    local _, last = slider:GetMinMaxValues()
+                    slider:SetValue(0)
+                    ui.layerRail.scripts.OnMouseWheel(ui.layerRail, -1)
+                    assert(slider:GetValue() == 1, "rail wheel did not scroll to the next row")
+                    slider:SetValue(last)
+                    local guides, castTarget = Layer("guides"), Layer("castTarget")
+                    assert(not guides:IsShown() and castTarget:IsShown(), "last layer is not selectable at the bottom")
+                    CheckInside(castTarget, ui.layerRail, "last layer escaped the rail")
+                end
                 for _, button in ipairs(ui.sampleButtons) do
                     if button:IsShown() then CheckInside(button, ui.canvas, "sample toolbar clipped") end
                 end
@@ -511,6 +542,99 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         fixed.onActivate()
         assert(section:IsShown() and ui.compact and section:GetParent() == headerHost,
             "returning to the page did not restore the fixed preview")
+        expander:Open()
+        body.scripts.OnSizeChanged(body)
+        local function SampleHandle(parent, id, x, y, w, h, scale)
+            local widget = Frame(parent)
+            widget:SetSize(w, h)
+            widget:SetScale(scale or 1)
+            widget:SetPoint("CENTER", parent, "CENTER", x, y)
+            ui:Bind(widget, id, id, "x", "y", "test")
+            return widget
+        end
+        local hp = SampleHandle(ui.stage, "enemy.Health", -35, 10, 100, 20)
+        local cast = SampleHandle(ui.stage, "enemy.Cast", 260, -180, 80, 36, 1.25)
+        local idleSide = Frame(ui.stage)
+        idleSide:Hide()
+        local hidden = SampleHandle(idleSide, "friendly.Health", 900, 1200, 100, 20)
+        assert(hidden:IsShown() and not body.selectionOptions.IsPlaced(hidden), "Tab can select a hidden-side layer")
+        ui:Select(hidden)
+        assert(not body._selectedHandle, "an invisible frame was selected")
+        ui:Select(hp)
+        assert(body._selectedHandle == hp and body.selectionOptions.IsPlaced(hp), "visible health handle could not be selected")
+
+        local fit = ui.zoomControls[1][1]
+        local actual = ui.zoomControls[2][1]
+        local zoomIn = ui.zoomControls[5][1]
+        actual.scripts.OnClick(actual)
+        ui.panX, ui.panY = 58, -27
+        ui:Paint()
+        zoomIn.scripts.OnClick(zoomIn)
+        assert(ui.zoom == 1.25, "zoom control did not use Unit Frame steps")
+        local canvasX, canvasY = ui.canvas:GetCenter()
+        local function CheckStage(x, y)
+            local sx, sy = ui.stage:GetCenter()
+            assert(math.abs(sx * ui.zoom - canvasX - x) < .01 and math.abs(sy * ui.zoom - canvasY - y) < .01,
+                "stage position drifted after zoom")
+        end
+        CheckStage(58, -27)
+        local forwarded = 0
+        M.ForwardMenuScrollWheel = function(delta) forwarded = forwarded + delta end
+        hp.scripts.OnMouseWheel(hp, 1)
+        assert(forwarded == 1 and ui.zoom == 1.25, "ordinary wheel failed to scroll the page")
+        controlDown = true
+        ui.canvas.scripts.OnMouseWheel(ui.canvas, 1)
+        assert(ui.zoom == 1.50 and forwarded == 1, "Ctrl+wheel did not zoom")
+        cursorX, cursorY, pointerHeld = 100, 60, true
+        hp.scripts.OnMouseDown(hp, "LeftButton")
+        assert(ui.panning and not ui.kit.drag, "Ctrl+drag hit the element rather than the canvas")
+        cursorX, cursorY = 120, 50
+        ui.canvas.scripts.OnUpdate(ui.canvas)
+        hp.scripts.OnMouseUp(hp, "LeftButton")
+        hp.scripts.OnClick(hp, "LeftButton")
+        assert(not ui.panning and not ui.canvas.scripts.OnUpdate, "canvas pan was not released")
+        CheckStage(78, -37)
+        controlDown = false
+
+        P.catalog = { nameplates = { rules = { x = { min = -1000, max = 1000 }, y = { min = -1000, max = 1000 } } } }
+        local oldWrites = writes
+        P.SetMany = function(_, offsets) values.x, values.y = offsets.x, offsets.y; writes = writes + 1 end
+        hp.scripts.OnMouseDown(hp, "LeftButton")
+        assert(not ui.dragging, "a click started moving the plate")
+        local heldX, heldY = cursorX, cursorY
+        cursorX = cursorX + 1
+        hp.scripts.OnUpdate(hp)
+        assert(not ui.dragging and writes == oldWrites, "pointer jitter started a drag")
+        cursorX, cursorY = heldX + 18, heldY + 9
+        hp.scripts.OnUpdate(hp)
+        assert(ui.dragging == hp and writes == oldWrites, "drag wrote settings before release")
+        hp.scripts.OnMouseUp(hp, "LeftButton")
+        hp.scripts.OnClick(hp, "LeftButton")
+        assert(writes == oldWrites + 1 and values.x == 13 and values.y == 7 and not ui.dragging, "drag committed the wrong offset")
+
+        fit.scripts.OnClick(fit)
+        assert(ui.fitMode and ui.zoom < 1 and ui.panX == 0 and ui.panY == 0, "Fit did not reset and scale the painted footprint")
+        local function CheckFit()
+            local left, bottom, right, top = Rect(hp)
+            if cast:IsVisible() then
+                local l, b, r, t = Rect(cast)
+                left, bottom, right, top = math.min(left, l), math.min(bottom, b), math.max(right, r), math.max(top, t)
+            end
+            local x, y, r, t = Rect(ui.canvas)
+            assert(left >= x + 19.99 and right <= r - 19.99 and bottom >= y + 19.99 and top <= t - ui.fitTop - 19.99,
+                "Fit clipped a visible element")
+            assert(math.abs((left + right - x - r) / 2) < .01, "Fit did not center the visible elements horizontally")
+            assert(math.abs((bottom + top - y - t + ui.fitTop) / 2) < .01, "Fit did not center within the usable viewport")
+        end
+        CheckFit()
+        local withCast = ui.zoom
+        cast:Hide()
+        ui:Paint()
+        CheckFit()
+        assert(ui.zoom > withCast, "Fit did not respond to a hidden layer")
+        actual.scripts.OnClick(actual)
+        assert(ui.zoom == 1 and not ui.fitMode, "1:1 did not exit Fit")
+        CheckStage(0, 0)
         print("ok " .. host .. (useShared and " shared chip flow" or " legacy chip flow"))
     end
 end

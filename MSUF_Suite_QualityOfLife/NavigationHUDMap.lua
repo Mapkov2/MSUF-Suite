@@ -218,6 +218,7 @@ end
 function Map:Sample()
     local art = self.art
     local x, y = Coordinates(C_Map.GetPlayerMapPosition(art.mapID, "player"))
+    self.playerX, self.playerY = x, y
     if not x then return false end
     x, y = x * art.width, y * art.height
     local scale, pixels = self.scale, self.pixelScale

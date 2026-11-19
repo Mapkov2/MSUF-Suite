@@ -239,6 +239,14 @@ local parkPageWindows = {
     LegacySystemFrame = true,
 }
 
+local function KeepPageOpen(state)
+    if parkPageWindows[state.name] then return true end
+    if state.name ~= "CharacterFrame" or state.suiteBounds then return false end
+    -- Both clients' CharacterMicroButton always opens PaperDollFrame.
+    local page = Safety.Field(state.frame, "activeSubframe")
+    return not Safety.Public(page) or page ~= nil and page ~= "PaperDollFrame"
+end
+
 -- Only the top-level panels identified below reach this policy. Transient
 -- dialogs have a native decision or interaction that must stay on screen.
 local closeOnly = {
@@ -298,11 +306,11 @@ end
 -- The map and Forever's spell book also update protected pins or action
 -- buttons from their own show/hide scripts.
 function Policy.SecureOnly(state)
-    return state.name == "WorldMapFrame" or parkPageWindows[state.name] or Policy.HasManagedVisibility(state)
+    return state.name == "WorldMapFrame" or KeepPageOpen(state) or Policy.HasManagedVisibility(state)
 end
 
 function Policy.CanNativeMinimize(state)
-    if state.inventory or parkPageWindows[state.name] then return false end
+    if state.inventory or KeepPageOpen(state) then return false end
     return Policy.CanNativeClick(state.close) and Safety.Read(state.close, "IsEnabled") ~= false
         and Policy.Opener(state) ~= nil
 end
@@ -339,6 +347,28 @@ function Policy.HoldPark(state)
     park.placing = nil
 end
 
+-- A native shortcut can select another page without showing the root again.
+-- Let Blizzard finish the switch before returning the parked frame to view.
+local function WatchCharacterPage(state)
+    local frame = state.frame
+    if state.name ~= "CharacterFrame" or not Safety.HasMethod(frame, "ShowSubFrame") then return end
+    local requestedPark
+    local function ReturnToView()
+        if not state.minimized or state.park ~= requestedPark or Safety.Read(frame, "IsShown") ~= true then return end
+        if NS.IsCombatLocked() then
+            NS.CombatGate.RunOrDefer("windowControls:restoreCharacterPage", ReturnToView)
+            return
+        end
+        requestedPark = nil
+        if Policy.RestorePark(state) then state.replayShow() end
+    end
+    hooksecurefunc(frame, "ShowSubFrame", function()
+        if state.suiteBounds or not state.park or not state.minimized then return end
+        requestedPark = state.park
+        NS.Registry.QueueJob(ReturnToView)
+    end)
+end
+
 local function WatchPark(state)
     if state.parkWatched then return end
     state.parkWatched = true
@@ -348,6 +378,7 @@ local function WatchPark(state)
         end
     end
     hooksecurefunc(state.frame, "SetPoint", Relayout)
+    WatchCharacterPage(state)
 end
 
 function Policy.Park(state, installLayoutHook)

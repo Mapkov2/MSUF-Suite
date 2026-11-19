@@ -272,7 +272,19 @@ end
 -- paint time: caching an absent Menu2 would miss the menu loaded later.
 local function LoadedMenu() return _G.MSUF2 end
 
+function HostBridge.CloseHostMenu()
+    local menu = LoadedMenu()
+    if menu and menu.HideSlashMenuAndMinibar then menu.HideSlashMenuAndMinibar(menu.frame) end
+end
+
 -- A pending welcome lives in Options; until its menu opens it owns no screen.
+-- nil denotes a host without the shared setup entry.
+function HostBridge.OpenUnitFrameSetup(freshOnly)
+    local host = HostBridge.Namespace()
+    local api = host and host.HostAPI
+    if api and api.OpenUnitFrameSetup then return api.OpenUnitFrameSetup(freshOnly) end
+end
+
 function HostBridge.FirstRunVisible()
     local menu = LoadedMenu()
     return menu and menu.frame and menu.frame:IsShown() and HostBridge.FirstRunPending() or false

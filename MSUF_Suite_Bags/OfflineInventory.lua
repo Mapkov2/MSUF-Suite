@@ -247,3 +247,30 @@ function Offline.AddMenu(menu)
     end
     return true
 end
+
+local function ChooseInventory(button)
+    if NS.InCombat() or not Archive() then return end
+    P.BagFilterMenu.Show(button, function(_, menu)
+        if not Offline.AddMenu(menu) then
+            menu:CreateButton(S.Text("Inventory archive"), function()
+                local archive = Archive()
+                if archive and not NS.InCombat() then archive:Browse("bags") end
+            end)
+        end
+    end)
+end
+
+function Offline.ToolbarButton(view)
+    local button = view.archiveButton
+    if not Archive() then
+        if button then button:Hide() end
+        return
+    end
+    if not button then
+        button = Grid.Button(view.chrome, "", 22, ChooseInventory)
+        P.BagAppearance.Tool(button, "Choose character", "Interface\\Icons\\INV_Misc_Book_09", nil, true)
+        view.archiveButton = button
+    end
+    button:Show()
+    return button
+end

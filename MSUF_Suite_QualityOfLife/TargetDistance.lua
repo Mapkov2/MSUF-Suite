@@ -79,11 +79,21 @@ local function RangeText(self)
     return "--"
 end
 
+local function PrepareFormat(self)
+    local format = self.config.format or "{range} {unit}"
+    local unit, parts, from = S.Text("yd"), {}, 1
+    local function UnitSuffix() return unit end
+    repeat
+        local first, last = format:find("{range}", from, true)
+        parts[#parts + 1] = format:sub(from, first and first - 1):gsub("{unit}", UnitSuffix)
+        from = last and last + 1
+    until not from
+    self.formatParts = parts
+end
+
 local function Paint(self)
     local range = S.editMode and "10-30" or RangeText(self)
-    local format = self.config.format or "{range} {unit}"
-    local text = format:gsub("{range}", function() return range end)
-        :gsub("{unit}", function() return S.Text("yd") end)
+    local text = table.concat(self.formatParts, range)
     if self.lastText ~= text then
         self.label:SetText(text)
         self.lastText = text
@@ -279,6 +289,7 @@ end
 
 function M:Refresh()
     local c = self.config
+    PrepareFormat(self)
     self.host:SetSize(c.width or 180, (c.fontSize or 16) + 8)
     self.host:SetScale((c.scale or 100) / 100)
     self.label:SetJustifyH(({ "LEFT", "CENTER", "RIGHT" })[c.align or 2])

@@ -14,6 +14,7 @@ local Kit = NS.AdapterKit
 local DEFAULT_OWNER = Shared.DEFAULT_OWNER
 local frameStates = Shared.frameStates
 local rowModes = Shared.rowModes
+local graphicsRowModes = Shared.graphicsRowModes
 local childPanelSpecs = Shared.childPanelSpecs
 local menuRowSpecs = Shared.menuRowSpecs
 local OwnerState = Shared.OwnerState
@@ -421,6 +422,39 @@ local function StylePrimaryButton(frame, owner, mode)
     end
 end
 
+local portraitBorderSpec = { role = "shell", fillVisible = false, motion = false, radius = 4 }
+local portraitTitleSpec = { role = "shell", border = 0, motion = false, radius = 0 }
+local portraitTitleBands = Kit.WeakSet()
+
+local function CanPaintPortraitRegion(region)
+    return Safety.Public(region) and Safety.CanDecorate(region)
+end
+
+-- The catalog shop inherits PortraitFrameTemplate. Its caption starts after
+-- the portrait and ends 24 px from the right edge, just above HeaderFrame.
+-- Use the NineSlice layer for the skin without covering the product canvas.
+local function SkinPortraitChrome(frame, owner, metrics)
+    if NS.IsCombatLocked() then return end
+    local nineSlice, title = Field(frame, "NineSlice"), Field(frame, "TitleContainer")
+    if not Safety.Public(nineSlice) or not CanSkin(nineSlice)
+        or not Safety.Public(title) or not CanSkin(title)
+        or not Kit.ParentIs(nineSlice, frame) or not Kit.ParentIs(title, frame) then return end
+
+    local band = portraitTitleBands[frame]
+    if not band then
+        band = Safety.CreateChildFrame("Frame", nineSlice)
+        band:SetPoint("TOPLEFT", title, "TOPLEFT")
+        band:SetPoint("BOTTOMRIGHT", title, "BOTTOMRIGHT", 22, -2)
+        portraitTitleBands[frame] = band
+    end
+    if not Attach(owner, band, portraitTitleSpec, metrics)
+        or not Attach(owner, nineSlice, portraitBorderSpec, metrics) then return end
+
+    NS.Cosmetics.FadeNineSlice(nineSlice, owner, CanPaintPortraitRegion)
+    local streaks = Field(frame, "TopTileStreaks")
+    if CanPaintPortraitRegion(streaks) then NS.Cosmetics.Fade(streaks, owner) end
+end
+
 local function ApplyFrameNow(frame, owner, mode)
     if not frame then return false, "invalid", nil end
     NS.WindowControls.TrackFocus(frame, owner)
@@ -447,6 +481,7 @@ local function ApplyFrameNow(frame, owner, mode)
         NS.Surface.SetVisible(frame, false)
     end
 
+    if ModeValue(mode, "portraitChrome", false) then SkinPortraitChrome(frame, owner, metrics) end
     if not metrics.accentOnly then
         SkinExplicitFields(frame, owner, metrics)
     end
@@ -521,6 +556,19 @@ local function RefreshTrackedRow(row, owner, mode)
     RefreshRowNodes(row, owner, mode, scratchNodes)
 end
 
+-- Graphics.xml puts Base and Raid quality controls in the same pooled row,
+-- including the hidden tab's children. Keep its budget separate from ordinary rows.
+local function RowSkinMode(row, mode)
+    if mode.menuPopup then return mode end
+    local base = Field(row, "BaseQualityControls")
+    if not Safety.Public(base) or type(base) ~= "table" then return mode end
+    local raid = Field(row, "RaidQualityControls")
+    if Safety.Public(raid) and type(raid) == "table" then
+        return graphicsRowModes[mode.allowImplicitProtected]
+    end
+    return mode
+end
+
 -- A pooled ScrollBox row keeps its template children, so the frames its walk
 -- accepts are recorded once per skin generation and mode. Later refreshes of
 -- that row revisit exactly those frames without enumerating children and
@@ -532,7 +580,8 @@ local function RefreshRecycledRow(row, registration)
     local nodes = rowNodes[row]
     if not nodes or nodes.generation ~= generation or nodes.mode ~= mode then
         nodes = { generation = generation, mode = mode }
-        CollectRowTree(nodes, row, mode, 0, mode.maxNodes - 1)
+        local skinMode = RowSkinMode(row, mode)
+        CollectRowTree(nodes, row, skinMode, 0, skinMode.maxNodes - 1)
         rowNodes[row] = nodes
     end
     RefreshRowNodes(row, registration.owner, mode, nodes)
@@ -558,7 +607,7 @@ local function OnRowInitialized(registration, row)
     end
     if ownerState.skinnedRows[row] == ownerState.generation then
         RefreshRecycledRow(row, registration)
-    elseif ApplyFrameNow(row, registration.owner, registration.mode) then
+    elseif ApplyFrameNow(row, registration.owner, RowSkinMode(row, registration.mode)) then
         ownerState.skinnedRows[row] = ownerState.generation
     end
 end

@@ -3,6 +3,12 @@ local Text, Number, String = NS.Text, NS.Number, NS.String
 local Gear = {}
 NS.Gear = Gear
 
+Gear.Events = {
+    "PLAYER_EQUIPMENT_CHANGED", "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED",
+    "UPDATE_INVENTORY_DURABILITY", "UNIT_INVENTORY_CHANGED", "SOCKET_INFO_SUCCESS",
+    "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED",
+}
+
 -- The order is the Character Panel's visual order. GetInventorySlotInfo
 -- supplies the native slot identifier and empty-slot icon on this client.
 local LEFT = { "HeadSlot", "NeckSlot", "ShoulderSlot", "BackSlot", "ChestSlot", "ShirtSlot", "TabardSlot", "WristSlot" }
@@ -220,11 +226,49 @@ function Gear.Compare(groups, own, inspect)
         end
         if not comparison.value or comparison.own ~= ownLevel or comparison.inspect ~= inspectLevel then
             local value = ItemLevel(ownRow) .. COMPARE_SEPARATOR .. ItemLevel(row)
-            if ownLevel and inspectLevel then value = value .. string.format(" · %+.0f", inspectLevel - ownLevel) end
+            if ownLevel and inspectLevel then value = value .. string.format(" - %+.0f", inspectLevel - ownLevel) end
             comparison.own, comparison.inspect, comparison.value = ownLevel, inspectLevel, value
         end
     end
     groups[#groups + 1] = group
+end
+
+local SOCKET_SIZE, SOCKET_GAP = 9, 1
+local EMPTY_SOCKET_ATLAS = "character-emptysocket"
+local UNKNOWN_GEM_TEXTURE = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+function Gear.PaintSlotSockets(button, audit)
+    local gems = audit and audit.gemInfo
+    local count = gems and math.min(audit.sockets or 0, #gems) or 0
+    local previous = button.socketCount
+    if previous == nil or (previous > 0) ~= (count > 0) then
+        button.level:ClearAllPoints()
+        button.level:SetPoint("RIGHT", -7, count > 0 and 7 or 0)
+    end
+    button.socketCount = count
+    previous = previous or 0
+    if count == 0 and previous == 0 then return end
+
+    local icons = button.socketIcons or {}
+    button.socketIcons = icons
+    -- Positions are anchored from the right. Keep the gems in left-to-right socket order.
+    for offset = 1, count do
+        local icon = icons[offset]
+        if not icon then
+            icon = NS.Suite.CreateTexture(button, nil, "OVERLAY")
+            icon:SetSize(SOCKET_SIZE, SOCKET_SIZE)
+            icon:SetPoint("BOTTOMRIGHT", -6 - (offset - 1) * (SOCKET_SIZE + SOCKET_GAP), 5)
+            icons[offset] = icon
+        end
+        local gem = gems[count - offset + 1]
+        local art = gem.texture or (gem.known and not gem.id and EMPTY_SOCKET_ATLAS or UNKNOWN_GEM_TEXTURE)
+        if icon.socketArt ~= art then
+            icon.socketArt = art
+            if art == EMPTY_SOCKET_ATLAS then icon:SetAtlas(art) else icon:SetTexture(art) end
+        end
+        if offset > previous then icon:Show() end
+    end
+    for offset = count + 1, previous do icons[offset]:Hide() end
 end
 
 function Gear.Details(groups, model, slot, inspect)
@@ -240,7 +284,8 @@ function Gear.Details(groups, model, slot, inspect)
         rows[#rows + 1] = { label = Text("Enchantment"), value = audit.enchantLabel }
     end
     if audit.sockets and audit.sockets > 0 then
-        rows[#rows + 1] = { label = Text("Sockets"), value = string.format("%d / %d", audit.gems or 0, audit.sockets) }
+        local filled = audit.gems and tostring(audit.gems) or "—"
+        rows[#rows + 1] = { label = Text("Sockets"), value = string.format("%s / %d", filled, audit.sockets) }
     end
     if not inspect and row.durability then
         rows[#rows + 1] = { label = Text("Durability"), value = string.format("%d%%", row.durability) }

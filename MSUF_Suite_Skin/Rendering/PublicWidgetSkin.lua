@@ -86,14 +86,21 @@ local function Hide(button)
     if state then state.down, state.hover = nil, nil end
 end
 
+local enabledMethods = { "SetEnabled", "Enable", "Disable" }
+
+-- Supplying OnEnable/OnDisable scripts prevents the client from passing a
+-- secret argument to SetEnabled. Observe native methods without adding scripts.
+function W.WatchEnabled(target, callback)
+    local observer = S.Isolated(callback)
+    for _, method in ipairs(enabledMethods) do
+        if S.HasMethod(target, method) then hooksecurefunc(target, method, observer) end
+    end
+end
+
 local function Watch(target, dropdown)
     local level = watched[target]
     if level == "dropdown" or level and not dropdown then return end
-    if not level then
-        for _, event in ipairs({ "OnEnable", "OnDisable" }) do
-            if S.Read(target, "HasScript", event) then target:HookScript(event, Enabled) end
-        end
-    end
+    if not level then W.WatchEnabled(target, Enabled) end
     if dropdown then
         target:HookScript("OnEnter", Enter)
         target:HookScript("OnLeave", Leave)

@@ -370,7 +370,6 @@ local function NewSlot(view)
     button.icon:SetPoint("BOTTOMRIGHT", rim, "BOTTOMRIGHT", -1, 1)
     button.icon:SetTexCoord(.07, .93, .07, .93)
     button.level = Font(view, button, 12, GOLD, "RIGHT", true)
-    button.level:SetPoint("RIGHT", -7, 0)
     button.level:SetWidth(34)
     button.label = Font(view, button, 10, MUTED)
     button.label:SetPoint("TOPLEFT", 42, -4)
@@ -393,6 +392,7 @@ local function PaintSlot(button, item, selected)
     Text(button.label, item.label)
     Text(button.name, item.name or "—")
     Text(button.level, item.level or (item.link and button.view.readableValues and "?" or "—"))
+    NS.Gear.PaintSlotSockets(button, item.audit)
     if button.texture ~= item.icon then
         button.texture = item.icon
         button.icon:SetTexture(item.icon)
@@ -492,7 +492,7 @@ local function PaintCard(list, card, index, offset)
         title.label:SetPoint("RIGHT", -19, 0)
     end
     Text(title.label, group.title)
-    Text(title.sign, group.action and (group.collapsed and "+" or "−") or "")
+    Text(title.sign, group.action and (group.collapsed and "+" or "-") or "")
 
     local top = offset - card.panelY
     local position = group.layout

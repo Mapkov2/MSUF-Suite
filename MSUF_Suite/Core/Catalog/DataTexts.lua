@@ -197,6 +197,7 @@ B.Section("dataTexts", "textStyle", "Shared text style", textStyle)
 B.LinkFontShadow(NS.SuiteCatalog.dataTexts.rules)
 B.Section("dataTexts", "minimizedWindows", "Minimized windows", {
     Bool("showMinimizedWindows", "Show minimized windows", false),
+    Choice("minimizedWindowsPoint", "Position", 8, NS.AnchorLabels),
 })
 B.Section("dataTexts", "bags", "Blizzard bag buttons", {
     Bool("hideBlizzardBagBar", "Hide Blizzard bag buttons; use the Bag space DataText", true),
@@ -240,13 +241,22 @@ B.Section("dataTexts", "coordinates", "Coordinates", {
 })
 
 -- Settings are copied from the shared style when an override is switched on.
-local function AddBarStyle(bar)
+-- Section titles are built here, so their format strings translate here.
+local BAR_TITLE, LOAD_TITLE, STYLE_TITLE = NS.Text("Bar %d"), NS.Text("Bar %d Visibility"), NS.Text("Bar %d styling")
+-- Bars 1 to 3 are registered like any rule. Every other bar, the legacy bars
+-- 4 to 12 included, builds its rules from the templates on demand (DynamicRule)
+-- with the same keys, defaults, labels and sections. Their legacy defaults
+-- differ from the template only in the name and the height on the screen.
+local PHYSICAL_BARS, LEGACY_BARS = 3, 12
+local function LegacyY(bar) return 85 + (bar - 1) * 36 end
+
+local function AddBarStyle(bar, add)
     local prefix, section = "bar" .. bar, "bar" .. bar .. "Style"
-    local title = NS.Text("Bar %d styling"):format(bar)
+    local title = STYLE_TITLE:format(bar)
     local switch = Bool(prefix .. "StyleOverride", "Own style", false)
     switch.hidden = true
     switch.enableKey = prefix .. "Enabled"
-    B.Add("dataTexts", switch, section, title)
+    add(switch, section, title)
     for _, group in ipairs({ barStyle, textStyle }) do
         for _, rule in ipairs(group) do
             local own = {}
@@ -257,77 +267,86 @@ local function AddBarStyle(bar)
                 own.requiresChoice = { key = NS.DataTextBarStyleKey(bar, rule.requiresChoice.key),
                     values = rule.requiresChoice.values }
             end
-            B.Add("dataTexts", own, section, title)
+            add(own, section, title)
         end
     end
 end
 
+-- One bar's rules in menu order. add(rule, section, sectionTitle) registers
+-- them, or keeps them as the templates of the bars built on demand.
 local defaults = { { 3, 4, 5 }, { 5, 8, 9 }, { 3, 7, 10 } }
-for bar = 1, 12 do
-    -- Section titles are built here, so their format strings translate here.
-    local prefix, section, title = "bar" .. bar, "bar" .. bar, NS.Text("Bar %d"):format(bar)
-    B.Section("dataTexts", section, title, {
-        B.String(prefix .. 'Name', 'Bar name', NS.Text('Bar %d'):format(bar), 64),
+local function AddBar(bar, add)
+    local prefix, section, title = "bar" .. bar, "bar" .. bar, BAR_TITLE:format(bar)
+    local enabled = Bool(prefix .. "Enabled", "Show bar", bar == 1)
+    enabled.hidden = true
+    for _, rule in ipairs({
+        B.String(prefix .. 'Name', 'Bar name', BAR_TITLE:format(bar), 64),
         Bool(prefix .. 'Vertical', 'Vertical bar', false),
         Bool(prefix .. 'FullScreen', 'Span the entire screen width or height', false),
         Choice(prefix .. 'Dock', 'Snap to screen edge', 1, { 'Free', 'Top', 'Bottom', 'Left', 'Right' }),
-        Bool(prefix .. "Enabled", "Show bar", bar == 1),
+        Bool(prefix .. "MinimapDock", "Attach below the minimap", false),
+        Number(prefix .. "MinimapDockGap", "Gap below the minimap", 0, 0, 80),
+        enabled,
         Number(prefix .. "Width", "Width", NS.Client.isForever and bar == 1 and 340 or 390, 180, 900, 5),
         Number(prefix .. "Height", "Height", NS.Client.isForever and bar == 1 and 28 or 26, 18, 100),
-        Choice(prefix .. "Layout", "Slot sizing", NS.Client.isForever and bar == 1 and 2 or 1, { "Equal", "Fit text" }),
+        Choice(prefix .. "Layout", "Slot sizing", NS.Client.isForever and bar == 1 and 2 or 1, { "Fixed width", "Fit text" }),
         Choice(prefix .. "Visibility", "Visibility", 1, { "Always", "Out of combat", "In combat", "Mouseover" }),
         Number(prefix .. "Layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
         Choice(prefix .. "Point", "Screen anchor", NS.Client.isForever and bar == 1 and 9 or 8, NS.AnchorLabels),
         Number(prefix .. "X", "Horizontal position", NS.Client.isForever and bar == 1 and -20 or 0, -4000, 4000),
-        Number(prefix .. "Y", "Vertical position", NS.Client.isForever and bar == 1 and 20 or 85 + (bar - 1) * 36, -3000, 3000),
-    })
-    NS.SuiteCatalog.dataTexts.rules[prefix .. "Enabled"].hidden = true
+        Number(prefix .. "Y", "Vertical position", NS.Client.isForever and bar == 1 and 20 or LegacyY(bar), -3000, 3000),
+    }) do add(rule, section, title) end
     for slot = 1, 6 do
-        B.Add("dataTexts", Choice(prefix .. "Slot" .. slot, NS.Text("Place %d"):format(slot),
+        add(Choice(prefix .. "Slot" .. slot, NS.Text("Place %d"):format(slot),
             defaults[bar] and defaults[bar][slot] or 1, NS.DataTextSources), section, title)
         -- Format-string labels: each translates once, then takes the place number.
         local block, target = prefix .. "Slot" .. slot, prefix .. "Blocks"
         local function Label(format) return NS.Text(format):format(slot) end
-        B.Add("dataTexts", B.String(block .. "Broker", Label("Place %d broker name"), "", 100), target, title)
-        B.Add("dataTexts", Number(block .. "Currency", Label("Place %d currency ID"), 0, 0, 100000), target, title)
-        B.Add("dataTexts", Number(block .. "MaxWidth", Label("Place %d maximum broker width"), 180, 40, 600),
-            target, title)
-        B.Add("dataTexts", Choice(block .. "Placement", Label("Place %d position"), 1,
+        add(B.String(block .. "Broker", Label("Place %d broker name"), "", 100), target, title)
+        add(Number(block .. "Currency", Label("Place %d currency ID"), 0, 0, 100000), target, title)
+        add(Number(block .. "MaxWidth", Label("Place %d maximum broker width"), 180, 40, 600), target, title)
+        add(Choice(block .. "Placement", Label("Place %d position"), 1,
             { "Flow", "Exact center", "Fill remaining space" }), target, title)
-        B.Add("dataTexts", Number(block .. "Padding", Label("Place %d padding"), 5, 0, 30), target, title)
-        B.Add("dataTexts", Color(block .. "Background", Label("Place %d background"), "101010"), target, title)
-        B.Add("dataTexts", Number(block .. "Alpha", Label("Place %d background opacity"), 0, 0, 100), target, title)
-        B.Add("dataTexts", Color(block .. "IconColor", Label("Place %d icon color"), "ffffff"), target, title)
-        B.Add("dataTexts", Number(block .. "Scale", Label("Place %d scale"), 100, 50, 200, 5), target, title)
+        local weight = Number(block .. "Weight", Label("Place %d relative width"), 100, 25, 400, 5)
+        add(B.Tooltip(weight, "Changes this place's share of the bar in the Fixed width layout."), target, title)
+        add(Number(block .. "Padding", Label("Place %d padding"), 5, 0, 30), target, title)
+        add(Color(block .. "Background", Label("Place %d background"), "101010"), target, title)
+        add(Number(block .. "Alpha", Label("Place %d background opacity"), 0, 0, 100), target, title)
+        add(Color(block .. "IconColor", Label("Place %d icon color"), "ffffff"), target, title)
+        add(Number(block .. "Scale", Label("Place %d scale"), 100, 50, 200, 5), target, title)
         local menu = B.String(block .. "MenuLabel", "Button label", "", 64)
         menu.requiresChoice = { key = block, values = { [NS.DataTextSourceIndex.microMenu] = true } }
-        B.Add("dataTexts", menu, target, title)
+        add(menu, target, title)
         local stat = Choice(block .. "Stat", Label("Place %d stat"), NS.DataTextStat.CRIT, NS.DataTextStatLabels)
         stat.requiresChoice = { key = block, values = { [NS.DataTextSourceIndex.secondaryStat] = true } }
-        B.Add("dataTexts", stat, target, title)
+        add(stat, target, title)
     end
     for _, condition in ipairs(NS.DataTextLoadConditions) do
         local rule = Bool(prefix .. "LoadCond" .. condition[1], condition[2], false)
         rule.enableKey = prefix .. "Enabled"
-        B.Add("dataTexts", rule, prefix .. "Load", NS.Text("Bar %d Visibility"):format(bar))
+        add(rule, prefix .. "Load", LOAD_TITLE:format(bar))
     end
-    AddBarStyle(bar)
+    AddBarStyle(bar, add)
 end
+
+local function Register(rule, section, title) B.Add("dataTexts", rule, section, title) end
+for bar = 1, PHYSICAL_BARS do AddBar(bar, Register) end
 
 local spec = NS.SuiteCatalog.dataTexts
 B.Add("dataTexts", B.String("barIds", "Configured bar IDs", "", 2048)).hidden = true
-local templates, templateOrder, dynamic, dynamicOrder = {}, {}, {}, {}
+-- The template bar is never registered. templates[suffix] is its rule;
+-- legacy[suffix] marks the suffixes the bars up to 12 had as registered rules.
+local templates, templateOrder, legacy, dynamic, dynamicOrder = {}, {}, {}, {}, {}
 local dynamicCursor = 1
-for _, rule in ipairs(spec.controls) do
+AddBar(LEGACY_BARS, function(rule, section, title)
     local suffix = rule.key:match("^bar12(.+)$")
-    if suffix then
-        templates[suffix] = rule
-        templateOrder[#templateOrder + 1] = suffix
-    end
-end
+    rule.section, rule.sectionTitle = section, title
+    templates[suffix], legacy[suffix] = rule, true
+    templateOrder[#templateOrder + 1] = suffix
+end)
 -- Keep the six legacy slots physically registered. Further slots share
 -- templates and are materialized only for bars whose controls are requested.
-NS.DataTextSlotSuffixes = { "", "Broker", "Currency", "MaxWidth", "Placement", "Padding",
+NS.DataTextSlotSuffixes = { "", "Broker", "Currency", "MaxWidth", "Placement", "Weight", "Padding",
     "Background", "Alpha", "IconColor", "Scale", "Stat", "MenuLabel" }
 for slot = 7, NS.DataTextSlotLimit do
     for _, field in ipairs(NS.DataTextSlotSuffixes) do
@@ -347,6 +366,13 @@ local function ValidID(value)
     local id = tonumber(value)
     return id and id >= 1 and id <= 1000000 and id == math.floor(id) and id or nil
 end
+-- The default a bar built on demand gets, read without building its rule.
+local function LazyDefault(id, suffix)
+    if suffix == "Name" then return BAR_TITLE:format(id) end
+    if suffix == "Y" and id <= LEGACY_BARS then return LegacyY(id) end
+    return templates[suffix].default
+end
+local SECTION_TITLES = { [""] = BAR_TITLE, Blocks = BAR_TITLE, Load = LOAD_TITLE, Style = STYLE_TITLE }
 local function DynamicRule(id, suffix)
     local rules = dynamic[id]
     if not rules then
@@ -365,12 +391,12 @@ local function DynamicRule(id, suffix)
         for field, value in pairs(template) do rule[field] = value end
         rule.key = key
         rule.section = template.section:gsub("^bar12", prefix)
-        rule.sectionTitle = NS.Text("Bar %d"):format(id)
+        rule.sectionTitle = SECTION_TITLES[template.section:match("^bar12(%a*)$")]:format(id)
         if rule.enableKey then rule.enableKey = rule.enableKey:gsub("^bar12", prefix) end
         if rule.requiresChoice then
             rule.requiresChoice = { key = rule.requiresChoice.key:gsub("^bar12", prefix), values = rule.requiresChoice.values }
         end
-        if suffix == "Name" then rule.default = NS.Text("Bar %d"):format(id) end
+        rule.default = LazyDefault(id, suffix)
         rules[rule.key] = rule
     end
     return rules[key]
@@ -381,6 +407,17 @@ setmetatable(spec.rules, { __index = function(_, key)
     local id = ValidID(raw)
     if id and tostring(id) == raw and templates[suffix] then return DynamicRule(id, suffix) end
 end })
+-- The rules of the legacy bars 4 to 12 in menu order, built for tools that list
+-- every registered setting (tools/suite_inventory_catalog.lua).
+spec.legacyControls = function()
+    local out = {}
+    for id = PHYSICAL_BARS + 1, LEGACY_BARS do
+        for _, suffix in ipairs(templateOrder) do
+            if legacy[suffix] then out[#out + 1] = DynamicRule(id, suffix) end
+        end
+    end
+    return out
+end
 function NS.DataTextBarIDs(config)
     local ids, seen = {}, {}
     local function Add(raw)
@@ -393,14 +430,13 @@ function NS.DataTextBarIDs(config)
     if type(config.barIds) == "string" and config.barIds ~= "" then
         for raw in config.barIds:gmatch("%d+") do Add(raw) end
     else
-        Add(1)
-        Add(2)
-        Add(3)
-        for id = 4, 12 do
+        for id = 1, PHYSICAL_BARS do Add(id) end
+        -- A legacy bar exists when one of its stored values left the default.
+        for id = PHYSICAL_BARS + 1, LEGACY_BARS do
             local prefix = "bar" .. id
             for suffix in pairs(templates) do
-                local key = prefix .. suffix
-                if config[key] ~= nil and config[key] ~= spec.rules[key].default then
+                local value = config[prefix .. suffix]
+                if value ~= nil and value ~= LazyDefault(id, suffix) then
                     Add(id)
                     break
                 end
@@ -433,22 +469,23 @@ spec.controlAvailable = function(rule, config)
     if not id then return true end
     local record = ControlMap(config)
     if record.enabled[id] ~= config["bar" .. id .. "Enabled"] then record = ControlMap(config, true) end
-    if (config.barIds == nil or config.barIds == "") and id >= 4 and id <= 12 then
+    if (config.barIds == nil or config.barIds == "") and id > PHYSICAL_BARS and id <= LEGACY_BARS then
         -- Legacy customizations can create a retained bar without an ID list.
-        -- These twelve templates are bounded and require no list allocation.
+        -- These templates are bounded and require no list allocation.
         local prefix = "bar" .. id
         for suffix in pairs(templates) do
-            local key = prefix .. suffix
-            if config[key] ~= nil and config[key] ~= spec.rules[key].default then return true end
+            local value = config[prefix .. suffix]
+            if value ~= nil and value ~= LazyDefault(id, suffix) then return true end
         end
         return false
     end
     return record.present[id] == true
 end
-spec.getControls = function(config)
+spec.getControls = function(config, checkpoint)
     local out = {}
     local present = ControlMap(config, true).present
     for _, rule in ipairs(spec.controls) do
+        if checkpoint then checkpoint() end
         if not rule.key:match("^bar%d+") then out[#out + 1] = rule end
     end
     local ids = {}
@@ -457,7 +494,14 @@ spec.getControls = function(config)
     end
     table.sort(ids)
     for _, id in ipairs(ids) do
-        for _, suffix in ipairs(templateOrder) do out[#out + 1] = spec.rules["bar" .. id .. suffix] end
+        local prefix = "bar" .. id
+        for _, suffix in ipairs(templateOrder) do
+            if checkpoint then checkpoint() end
+            -- The ID and template are already known here. Keep physical rules
+            -- authoritative and materialize other slots through their owner.
+            local rule = rawget(spec.rules, prefix .. suffix) or DynamicRule(id, suffix)
+            out[#out + 1] = rule
+        end
     end
     return out
 end
@@ -515,22 +559,17 @@ spec.prepareConfig = function(config)
         end
         return rule.default
     end
-    -- Physical rules stay legacy-only; lazy rules never seed another profile.
-    for key, value in pairs(config) do
-        local raw = type(key) == "string" and key:match("^bar(%d+).+")
-        local id = ValidID(raw)
-        if id and not rawget(spec.rules, key) then
-            local rule = spec.rules[key]
-            if rule then config[key] = Repaired(rule, value) end
-        end
-    end
+    -- Registered rules stay legacy-only; lazy rules never seed another profile.
+    -- A bar the profile shows gets its lazy rules: a legacy bar its former
+    -- settings and a newer bar every setting, with invalid values repaired,
+    -- and the further places it stores. Other bars keep their stored values
+    -- unread until they are shown again.
     for _, id in ipairs(NS.DataTextBarIDs(config)) do
-        if id > 12 then
-            for _, suffix in ipairs(templateOrder) do
-                local key = "bar" .. id .. suffix
-                local rule = spec.rules[key]
-                local value = config[key]
-                config[key] = Repaired(rule, value)
+        for _, suffix in ipairs(templateOrder) do
+            local key = "bar" .. id .. suffix
+            local value = config[key]
+            if not rawget(spec.rules, key) and (id > LEGACY_BARS or legacy[suffix] or value ~= nil) then
+                config[key] = Repaired(spec.rules[key], value)
             end
         end
     end
@@ -689,11 +728,15 @@ function NS.DataTextPresetValues(id, bar, config)
     return values
 end
 
-for _, rule in ipairs(NS.SuiteCatalog.dataTexts.controls) do
+local function BarEnableKey(rule)
     if rule.section and rule.section:match("^bar%d+$") and not rule.key:match("Enabled$") then
         rule.enableKey = rule.section .. "Enabled"
     end
 end
+for _, rule in ipairs(NS.SuiteCatalog.dataTexts.controls) do BarEnableKey(rule) end
+-- The template bar's rules as when they were registered; the places from 7 on
+-- were copied before this pass and keep their template.
+for suffix in pairs(legacy) do BarEnableKey(templates[suffix]) end
 
 -- Resolve only on settings/profile transitions. Timed data updates use the
 -- prepared style attached to each bar. bar nil: the shared bar style.

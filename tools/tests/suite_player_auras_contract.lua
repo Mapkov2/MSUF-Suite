@@ -3,6 +3,8 @@ local root=assert(arg[1])
 -- an aura refill (AuraButtonMixin:Update) leaves fonts alone.
 local NativeAuraUpdate=function(self)
     for index, button in ipairs(self.auraFrames) do
+        button.hasValidInfo = index <= #(self.auraInfo or { {} })
+        button.isExample = self.editing == true
         if self.editing then button.Duration:SetFont('native.ttf',10,'');button:SetShown(true)
         elseif index <= #(self.auraInfo or { {} }) then button:SetShown(true);button:Update()
         else button:Hide() end
@@ -95,7 +97,7 @@ local P={NS={IsCombatLocked=function()return combat end,IsSecret=function(v)retu
   return ok and result or nil
  end, Finish=function(fn,...)return true,fn(...)end,
  Safety={IsForbidden=function(r)return r.forbidden==true end},
- HostBridge={IconSkinLook=function()end,PaintIconSkin=function()return false end,WatchIconSkins=function()end}},Suite={}}
+ HostBridge={PlayerAuraSkin=function()end,PaintIconSkin=function()return false end,WatchIconSkins=function()end}},Suite={}}
 local S=P.Suite
 S.Finite=function(v)return not P.NS.IsSecret(v) and type(v)=='number' and v==v and v>-math.huge and v<math.huge end
 S.CreateFrame=function()return Region()end
@@ -106,7 +108,9 @@ S.ResolveFont=function()return 'modern.ttf' end
 S.Queue=function(id)queued=id end
 S.Install=function(id,m)captured=m end
 hooksecurefunc=function(obj,key,callback)local old=obj[key];obj[key]=function(self,...)local out={old(self,...)};callback(self,...);return unpack(out)end end
-P.PlayerAuraSkins={Yield=function()end} -- the skin-only piece (PlayerAuraSkins.lua)
+assert(loadfile(root .. '/MSUF_Suite_QualityOfLife/PlayerAuraSkins.lua'))('MSUF_Suite_QualityOfLife',P)
+P.PlayerAuraSkins.Yield=function()end
+P.PlayerAuraSkins.SetLayers=function()end
 assert(loadfile(arg[3] or root .. '/MSUF_Suite_QualityOfLife/PlayerAuras.lua'))('MSUF_Suite_QualityOfLife',P)
 captured.config={iconWidth=52,iconHeight=26,iconZoom=7,perRow=12,spacing=4,rowSpacing=8,x=-12,y=0,debuffOffset=80,debuffX=0,borderColor='000000',borderSize=2,font='x',fontSize=16,showDuration=true}
 captured.context={Event=function()end}
@@ -157,10 +161,16 @@ if arg[2] then
 end
 captured:Enable()
 assert(frame.auraFrames[1].width==52,'initial buff not styled')
+assert(not frame.auraFrames[2].shown and frame.auraFrames[2].width==52
+ and frame.auraFrames[2].Duration.font[2]==16,'the inactive physical buff slot was not prepared')
+frame.auraFrames[1].IsShown=function()error('ordinary aura visibility read by Suite')end
+frame.auraFrames[2].IsShown=frame.auraFrames[1].IsShown
+combat=true
 frame.auraInfo={{},{}}
 frame:UpdateAuraButtons()
 assert(frame.auraFrames[2].width==52 and frame.auraFrames[2].height==26,'newly gained buff retained native dimensions')
 assert(frame.auraFrames[2].Duration.font[2]==16,'newly gained buff kept the native duration font')
+combat=false
 frame:SetIsEditing(true)
 frame:UpdateAuraButtons()
 assert(frame.auraFrames[1].Duration.font[2]==16 and frame.auraFrames[2].Duration.font[2]==16,
@@ -191,8 +201,8 @@ frame.UpdateGridLayout=function(self)
 end
 local third=Button(false)
 frame.auraFrames[3]=third
-local before=third.Icon.GetTexCoord
-third.Icon.GetTexCoord=function()return {},0,0,1,1,0,1,1 end
+local before=third.GetScale
+third.GetScale=function()return nil end
 frame.auraInfo={{},{},{}}
 frame:UpdateAuraButtons()
 assert(frame.auraFrames[1].width==30 and frame.auraFrames[2].width==30 and third.width==30,
@@ -202,7 +212,7 @@ assert(frame.auraFrames[1].points[1][4]==0 and frame.auraFrames[2].points[1][4]=
 assert(frame.auraFrames[1].Duration.font[2]==10,'fallback left the custom duration style on Blizzard geometry')
 frame:UpdateAuraButtons()
 assert(frame.auraFrames[1].width==30,'fallback did not hold while the aura was still unreadable')
-third.Icon.GetTexCoord=before
+third.GetScale=before
 frame:UpdateAuraButtons()
 assert(frame.auraFrames[1].points[1][4]==0 and frame.auraFrames[2].points[1][4]==-56
  and third.points[1][4]==-112,'recovered row left an empty slot')
@@ -210,7 +220,7 @@ assert(frame.auraFrames[1].points[1][4]==0 and frame.auraFrames[2].points[1][4]=
 -- must not be restored through Blizzard's grid while combat is locked.
 local fourth=Button(false)
 frame.auraFrames[4]=fourth
-fourth.Icon.GetTexCoord=function()return {secret=true},0,0,1,1,0,1,1 end
+fourth.GetScale=function()return {secret=true} end
 combat=true
 frame.auraInfo={{},{},{},{}}
 frame:UpdateAuraButtons()
@@ -225,21 +235,33 @@ frame.auraInfo={{},{},{}}
 fourth:Hide()
 frame:UpdateAuraButtons()
 assert(third.width==52 and third.points[1][4]==-112,'row did not recover after the failed buff left')
--- A button without an icon fails the same way and recovers when hidden.
+-- A malformed visible entry hiding in the pool releases its row immediately.
 frame.auraFrames[3]=Button(true)
 frame.auraFrames[3].Icon=nil
 frame:UpdateAuraButtons()
 assert(frame.auraFrames[1].width==30,'a button with no icon left the row partly laid out')
 frame.auraInfo={{},{}}
+combat=true
 frame:UpdateAuraButtons()
-assert(frame.auraFrames[1].width==52 and frame.auraFrames[2].points[1][4]==-56,
- 'a failed button leaving the row did not allow the layout to recover')
+assert(frame.auraFrames[3].Icon==nil and not frame.auraFrames[3].shown and frame.auraFrames[1].width==52
+ and frame.auraFrames[2].points[1][4]==-56,'a failed button hiding in the pool did not allow combat layout to recover')
+combat=false
+frame.auraFrames[3].Icon=Region()
+frame:UpdateAuraButtons()
+assert(frame.auraFrames[3].width==52,'a repaired hidden pool entry did not get prepared')
+frame.auraFrames[3]=Button(false)
+local inactive=frame.auraFrames[3]
+inactive.forbidden,inactive.hasValidInfo=true,false
+inactive.IsShown=function()error('read shown on a forbidden pool entry')end
+captured:Refresh()
+assert(frame.auraFrames[1].width==52 and inactive.width==30,
+ 'a forbidden unused pool button forced healthy buffs back to native')
 frame.auraFrames[3]=nil
 -- A native layout error must release the re-entry guard and let the next
 -- refill retry the rollback, then apply the Suite layout.
-local getCoords=frame.auraFrames[2].Icon.GetTexCoord
+local getScale=frame.auraFrames[2].GetScale
 captured:Disable()
-frame.auraFrames[2].Icon.GetTexCoord=function()return nil end
+frame.auraFrames[2].GetScale=function()return nil end
 local updateGrid=AuraContainerMixin.UpdateGridLayout
 local failedLayout=false
 AuraContainerMixin.UpdateGridLayout=function(self)
@@ -250,7 +272,7 @@ end
 captured:Enable()
 assert(failedLayout,'fallback did not try the native layout')
 AuraContainerMixin.UpdateGridLayout=updateGrid
-frame.auraFrames[2].Icon.GetTexCoord=getCoords
+frame.auraFrames[2].GetScale=getScale
 frame:UpdateAuraButtons()
 assert(frame.auraFrames[1].width==52 and frame.auraFrames[2].points[1][4]==-56,
  'a native layout error left the row unable to recover')

@@ -14,6 +14,7 @@ local Accessible = NS.AdapterKit.PublicValue
 local After = C_Timer.After
 
 local ROW_HEIGHT = 28
+local chromeRevision = 1
 local hosts = setmetatable({}, { __mode = "k" })
 local slots = {
     { 1, "HeadSlot" }, { 2, "NeckSlot" }, { 3, "ShoulderSlot" }, { 15, "BackSlot" },
@@ -323,33 +324,6 @@ local function Paint(v)
     Color(v.toggleText, "text")
 end
 
-local function Disclosure(v)
-    local config = Config()
-    local view = v.kind == "character" and config.view
-    local expanded = view and view == "list" or not view and config.expanded
-    if expanded and not v.list then
-        local rail = NS.Safety.Field(v.root, "ModeTabs")
-        NS.AdapterKit.PositionSidecar(v.panel, v.root, rail, v)
-    end
-    v.panel:SetShown(expanded == true)
-    if view then
-        v.toggle:Hide()
-        return
-    end
-    v.toggle:Show()
-    v.toggle:ClearAllPoints()
-    if v.kind == "inspect" then
-        v.toggle:SetPoint("TOPRIGHT", v.root, "TOPRIGHT", -12, -33)
-    elseif config.expanded then
-        v.toggle:SetPoint("TOPRIGHT", v.panel, "TOPRIGHT", -8, -8)
-    else
-        v.toggle:SetPoint("TOPLEFT", v.root, "TOPRIGHT", 8, -34)
-    end
-    local action = NS.WindowActionSkin.Apply(v.toggle, v.actionOwner, config.expanded and "collapse" or "expand")
-    v.toggleText:SetText(config.expanded and "-" or "+")
-    v.toggleText:SetShown(not action or action.style == "native")
-end
-
 local function FooterText(waiting, lowest, forever)
     if waiting then return NS.L.DOSSIER_PENDING end
     if lowest then return string.format(NS.L.DOSSIER_DURABILITY, lowest * 100) end
@@ -410,7 +384,7 @@ local function PaintRows(v, dirtySlots)
 end
 
 -- dirtySlots: nil for a full read, or the set of slot ids that changed.
-function Details.Refresh(v, dirtySlots, durabilityOnly)
+function Details.Refresh(v, dirtySlots, durabilityOnly, contentOnly)
     if not Enabled(v) then
         Unregister(v)
         if CanPaintView(v) then
@@ -428,15 +402,19 @@ function Details.Refresh(v, dirtySlots, durabilityOnly)
         return
     end
     NS.CombatGate.Cancel(v.deferKey)
-    Details.StyleChrome(v.root, v.owner)
+    local chromeDirty = not contentOnly or v.chromeRevision ~= chromeRevision
+    if chromeDirty then Details.StyleChrome(v.root, v.owner) end
     if durabilityOnly and v.unit and v.kind == "character" and NeedsData(v) then
         -- No item, tooltip, identity, annotation or summary refresh.
         RefreshDurability(v)
         return
     end
-    NS.GearAnnotations.ApplyLayout(v)
-    Paint(v)
-    Disclosure(v)
+    if chromeDirty then
+        NS.GearAnnotations.ApplyLayout(v)
+        Paint(v)
+        NS.AdapterKit.DiscloseCharacterSidecar(v, Config())
+        v.chromeRevision = chromeRevision
+    end
     if not NeedsData(v) then
         Unregister(v)
         HideTooltip(v)
@@ -490,7 +468,7 @@ local function OnHide(v)
     HideTooltip(v)
     NS.GearAnnotations.Hide(v)
     NS.GearAnnotations.RestoreLayout(v)
-    v.observedVisible = false
+    v.observedVisible, v.chromeRevision = false, nil
     v.readyGUID = nil
     if not CanPaintView(v) then return end
     v.panel:Hide()
@@ -518,13 +496,13 @@ local function FlushRequests(v)
     end
     if all then
         WipeSlots(slots)
-        Details.Refresh(v)
+        Details.Refresh(v, nil, nil, true)
         return
     end
-    if next(slots) ~= nil then Details.Refresh(v, slots) end
+    if next(slots) ~= nil then Details.Refresh(v, slots, nil, true) end
     WipeSlots(slots)
     -- A slot read reuses the other rows' snapshots, durability included.
-    if durability then Details.Refresh(v, nil, true) end
+    if durability then Details.Refresh(v, nil, true, true) end
 end
 
 -- Item events arrive in bursts: a gear swap fires PLAYER_EQUIPMENT_CHANGED,
@@ -727,6 +705,7 @@ local function Create(root, parent, kind, owner)
     host:SetScript("OnShow", function() OnShow(v) end)
     host:SetScript("OnHide", function() OnHide(v) end)
     host:SetScript("OnEvent", function(_, event, arg1) OnEvent(v, event, arg1) end)
+    NS.AdapterKit.WatchNativeLayout(root, function() v.chromeRevision = nil end)
     return v
 end
 
@@ -805,6 +784,9 @@ local function RefreshActiveViews()
     end
 end
 
-NS.Registry.AddListener(Details, function() NS.Registry.QueueJob(RefreshActiveViews) end)
+NS.Registry.AddListener(Details, function()
+    chromeRevision = chromeRevision + 1
+    NS.Registry.QueueJob(RefreshActiveViews)
+end)
 
 return Details

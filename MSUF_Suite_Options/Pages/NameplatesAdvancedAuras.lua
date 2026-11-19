@@ -245,7 +245,7 @@ local function AddStyle(parts, prefix)
 end
 
 local function BuildTool(ctx, panel, width, scope, container, tool)
-    local title = Tr(container.label) .. " · " .. Tr(Model.ToolLabels[tool])
+    local title = Tr(container.label) .. " - " .. Tr(Model.ToolLabels[tool])
     local keys, y = Model.ToolKeys(scope, container, tool, true), Heading(panel, title, -12, width)
     local prefix = Model.Prefix(scope, container)
     if tool == "layout" then
@@ -289,7 +289,7 @@ end
 
 local function NativePart(scope, container, tool)
     return function(ctx, panel, width)
-        local title = Tr(container.label) .. " · " .. Tr(Model.ToolLabels[tool])
+        local title = Tr(container.label) .. " - " .. Tr(Model.ToolLabels[tool])
         local y = Heading(panel, title, -12, width)
         if tool == "layout" then
             y = y - (width >= 560 and 32 or 60)

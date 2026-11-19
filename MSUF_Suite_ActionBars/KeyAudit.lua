@@ -28,7 +28,7 @@ function S.ActionKeyAuditRows(onlyIssues)
                     end
                     name = name or S.Text("Action %d"):format(slot)
                     rows[#rows + 1] = { key = "slot:" .. rec.command,
-                        label = S.Text("%s · %s · Button %d"):format(name, S.Text(NS.ActionBarTitles[rec.bar.index]), rec.index),
+                        label = S.Text("%s · %s · Button %d", true):format(name, S.Text(NS.ActionBarTitles[rec.bar.index]), rec.index),
                         detail = bound and S.Text("Bound to %s"):format(key) or S.Text("No key assigned. This action can still be clicked.") }
                 end
             end

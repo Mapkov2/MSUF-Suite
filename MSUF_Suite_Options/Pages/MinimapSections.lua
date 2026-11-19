@@ -60,7 +60,7 @@ local function RefreshMinimapSummary(menu, group)
     else
         parts[1] = Tr(MinimapTitle(group.selected))
     end
-    W.SetCollapsibleSummary(group.body, #parts > 0 and table.concat(parts, " \194\183 ") or Tr("None"))
+    W.SetCollapsibleSummary(group.body, #parts > 0 and table.concat(parts, " - ") or Tr("None"))
 end
 
 local function BuildMinimapView(menu, group, source, width)

@@ -373,7 +373,8 @@ end
 -- One line under the canvas: the hint, or the last note with its Undo.
 local function BuildNoteLine(ui, body)
     local canvas = ui.canvas
-    local line = T.Font(body, "GameFontDisableSmall", HINT, T.colors.muted)
+    local line = T.Font(body, "GameFontDisableSmall", "", T.colors.muted)
+    Page.SetRaw(line, Tr(HINT, true))
     line:SetPoint("TOPLEFT", canvas, "BOTTOMLEFT", 2, -4)
     line:SetPoint("TOPRIGHT", canvas, "BOTTOMRIGHT", -88, -4)
     line:SetJustifyH("LEFT")
@@ -388,7 +389,7 @@ local function BuildNoteLine(ui, body)
             Page.SetRaw(line, Page.note)
             if Page.noteError then line:SetTextColor(1, 0.4, 0.35) else line:SetTextColor(Page.TextColor()) end
         else
-            Page.SetRaw(line, Page.CatalogUnavailable() or Page.SpellSearchHint() or Tr(HINT))
+            Page.SetRaw(line, Page.CatalogUnavailable() or Page.SpellSearchHint() or Tr(HINT, true))
             line:SetTextColor(Page.MutedColor())
         end
         undo:SetShown(Page.undo ~= nil)
@@ -550,7 +551,7 @@ function Page.BuildPreview(ctx, b, ui)
     if record then record.fixedHeight = ui.compactHeight + 48 end
     ui.width, ui.compact = max(260, (HM.GetSectionWidth(section) or b.width or 720) - 28), true
     -- Tooltip lines, translated once: hovering allocates nothing.
-    ui.tips = { hint = Tr(TIP), unlearned = Tr("Not learned right now."), sampleTitle = Tr("Sample icon"),
+    ui.tips = { hint = Tr(TIP, true), unlearned = Tr("Not learned right now."), sampleTitle = Tr("Sample icon"),
         sample = Tr("This bar has no spells yet. Click to add some."), plusTitle = Tr("Add spells"),
         plus = Tr("Pick cooldowns, buffs, trinkets or custom IDs for this bar.") }
     BuildToolbar(ui, toolbar)

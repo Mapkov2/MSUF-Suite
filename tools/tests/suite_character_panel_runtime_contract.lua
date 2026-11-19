@@ -860,6 +860,18 @@ local function Run(forever)
     Event(runtime, "PLAYER_EQUIPMENT_CHANGED", 1)
     Flush()
     assert(gearReads == baselineReads + 1 and lastSlot == 1, "equipment event lost slot coalescing")
+    assert(callbacks.UNIT_INVENTORY_CHANGED and callbacks.SOCKET_INFO_SUCCESS, "visible gear missed in-place socket changes")
+    Event(runtime, "UNIT_INVENTORY_CHANGED", "target")
+    Event(runtime, "UNIT_INVENTORY_CHANGED", secret)
+    Flush()
+    assert(gearReads == baselineReads + 1, "non-player inventory changes reread player gear")
+    Event(runtime, "UNIT_INVENTORY_CHANGED", "player")
+    Event(runtime, "SOCKET_INFO_SUCCESS")
+    Flush()
+    assert(gearReads == baselineReads + 2 and lastSlot == nil, "socket changes did not refresh visible gear together")
+    Event(runtime, "SOCKET_INFO_SUCCESS")
+    Flush()
+    assert(gearReads == baselineReads + 3, "the native socket confirmation alone did not refresh gear")
 
     do
         local model = MSUFSuite.CharacterTabs
@@ -1292,7 +1304,7 @@ local function Run(forever)
     actions.tab("compare")
     assert(not callbacks.UNIT_AURA and not callbacks.ADDON_RESTRICTION_STATE_CHANGED and not next(tickers),
         "comparison retained travel work")
-    assert(#lastReport == 1 and lastReport[1].rows[1].value == "18 > 24 · +6"
+    assert(#lastReport == 1 and lastReport[1].rows[1].value == "18 > 24 - +6"
         and lastReport[1].rows[2].value == "20 > —", "comparison lost aligned slots or treated unknown as zero")
     assert(openSounds == beforeSounds + 1, "Inspect handoff replayed the native opening sound")
     actions.slot(1, nil, "RightButton")
@@ -1618,6 +1630,7 @@ local function Run(forever)
         "C did not keep the native PaperDoll owner and open the configured home")
     assert(gearReads == scans and not callbacks.PLAYER_EQUIPMENT_CHANGED and not callbacks.UPDATE_INVENTORY_DURABILITY,
         "a report home read equipment or retained its events")
+    assert(not callbacks.UNIT_INVENTORY_CHANGED and not callbacks.SOCKET_INFO_SUCCESS, "a report home retained socket events")
     actions.tab("gear")
     assert(lastTab == "gear" and nativeModel:IsVisible(), "an explicit Suite tab was redirected to the home")
     assert(gearReads == scans + 1 and callbacks.PLAYER_EQUIPMENT_CHANGED,

@@ -69,31 +69,44 @@ local function SetVertexColor(texture, colorKey, alphaScale)
     texture:SetVertexColor(r, g, b, a * (alphaScale or 1))
 end
 
-local function ApplyFill(texture, material, state, alphaScale)
+local function ResolveFill(material, spec, alphaScale)
     local from = NS.Theme.GetColorTable(material.from)
     local to = NS.Theme.GetColorTable(material.to)
     local opacity = NS.Theme.GetMaterialOpacity(material)
-        * (tonumber(state.spec.fillAlphaScale) or 1) * (alphaScale or 1)
-    local strength = NS.DB.theme.gradientStrength or 1
-    local toR = from[1] + (to[1] - from[1]) * strength
-    local toG = from[2] + (to[2] - from[2]) * strength
-    local toB = from[3] + (to[3] - from[3]) * strength
-    local opaque = state.spec.opaqueFill == true
-    local fromA = opaque and 1 or from[4] * opacity
+        * (tonumber(spec.fillAlphaScale) or 1) * (alphaScale or 1)
+    local theme = NS.DB.theme
+    local strength = theme.gradientStrength or 1
+    local opaque = spec.opaqueFill == true
+    return from[1], from[2], from[3], opaque and 1 or from[4] * opacity,
+        from[1] + (to[1] - from[1]) * strength, from[2] + (to[2] - from[2]) * strength,
+        from[3] + (to[3] - from[3]) * strength,
+        opaque and 1 or (from[4] + (to[4] - from[4]) * strength) * opacity,
+        theme.gradient == true, theme.gradientDirection or "VERTICAL"
+end
+
+function Surface.PrepareFill(material, spec)
+    return { ResolveFill(material, spec) }
+end
+
+local function ApplyFill(texture, material, state, alphaScale, prepared)
+    local r, g, b, fromA, toR, toG, toB, toA, shaded, direction
+    if prepared then
+        r, g, b, fromA, toR, toG, toB, toA, shaded, direction = unpack(prepared)
+    else
+        r, g, b, fromA, toR, toG, toB, toA, shaded, direction = ResolveFill(material, state.spec, alphaScale)
+    end
     texture:SetVertexColor(1, 1, 1, 1)
-    local shaded = NS.DB.theme.gradient == true
     if shaded or state.gradientFrom then
         -- Replace the previous per-corner colors even when the shade is turned off.
-        state.gradientFrom = NS.Theme.ReuseColor(state.gradientFrom, from[1], from[2], from[3], fromA)
+        state.gradientFrom = NS.Theme.ReuseColor(state.gradientFrom, r, g, b, fromA)
         local finish = state.gradientFrom
         if shaded then
-            local toA = opaque and 1 or (from[4] + (to[4] - from[4]) * strength) * opacity
             state.gradientTo = NS.Theme.ReuseColor(state.gradientTo, toR, toG, toB, toA)
             finish = state.gradientTo
         end
-        texture:SetGradient(NS.DB.theme.gradientDirection or "VERTICAL", state.gradientFrom, finish)
+        texture:SetGradient(direction, state.gradientFrom, finish)
     else
-        texture:SetVertexColor(from[1], from[2], from[3], fromA)
+        texture:SetVertexColor(r, g, b, fromA)
     end
 end
 
@@ -266,9 +279,10 @@ local function RefreshButtonState(state, geometry)
     local visibleScale = state.visible == false and 0
         or NS.Theme.GetMaterialOpacity(controlOpacityMaterial)
     local hoverAsset, hoverScale = HoverStyle(geometry, visibleScale)
-    ConfigureShape(state.highlight, hoverAsset, geometry)
-    ConfigureShape(state.pushed, geometry.fill, geometry)
-    ConfigureShape(state.disabled, geometry.fill, geometry)
+    -- Blizzard can rewrite textures installed in native button slots.
+    ConfigureShape(state.highlight, hoverAsset, geometry, true)
+    ConfigureShape(state.pushed, geometry.fill, geometry, true)
+    ConfigureShape(state.disabled, geometry.fill, geometry, true)
     SetVertexColor(state.highlight, "hover", hoverScale)
     SetVertexColor(state.pushed, "pressed", visibleScale)
     SetVertexColor(state.disabled, "disabled", 0.45 * visibleScale)

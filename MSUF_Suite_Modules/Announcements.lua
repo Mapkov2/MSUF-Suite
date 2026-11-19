@@ -12,6 +12,13 @@ local Text, ReadText, Number = S.PublicText, S.ReadText, S.Number
 local Dispatch = S.Dispatch
 local Tr = S.Text
 
+local function FinishBanner(self)
+    if not self.active or not self.showing or S.editMode then return end
+    self.host:Hide()
+    self.current, self.showing, self.expiresAt = nil, false, nil
+    self:Next()
+end
+
 local function Create(self)
     if self.host then return end
     local host = S.CreateFrame("Frame", "MSUFSuiteAnnouncements", UIParent)
@@ -31,12 +38,7 @@ local function Create(self)
     fadeOut:SetFromAlpha(1)
     fadeOut:SetToAlpha(0)
     fadeOut:SetDuration(.36)
-    leave:SetScript("OnFinished", function()
-        if not self.active or S.editMode then return end
-        host:Hide()
-        self.current, self.showing, self.expiresAt = nil, false, nil
-        self:Next()
-    end)
+    leave:SetScript("OnFinished", function() FinishBanner(self) end)
     self.host, self.title, self.subtitle = host, self.art.title, self.art.subtitle
     self.enter, self.leave = enter, leave
     host:Hide()
@@ -48,7 +50,9 @@ local SCREEN_CENTER = 2
 local function Theme(self)
     local c = self.config
     local level = not S.editMode and self.current ~= nil and self.current.levelGains ~= nil
-    Art.Theme(self.art, c, self.context and self.context:Skin(), level)
+    local skin = self.context and self.context:Skin()
+    self.bannerTheme = Art.PrepareTheme(c, skin)
+    Art.Theme(self.art, c, skin, level, self.bannerTheme)
     self.host:SetScale(c.scale / 100)
     self.host:ClearAllPoints()
     local point = c.anchor == SCREEN_CENTER and "CENTER" or "TOP"
@@ -58,7 +62,7 @@ end
 local function Paint(self, item)
     local gains = item.levelGains
     if self.art.cleanLevel ~= Art.UseCleanLevel(self.config, gains ~= nil) then
-        Art.Theme(self.art, self.config, self.context and self.context:Skin(), gains ~= nil)
+        Art.Theme(self.art, self.config, nil, gains ~= nil, self.bannerTheme)
     end
     local height = self.art.cleanLevel and Art.LEVEL_HEIGHT or Art.HEIGHT
     if (self.bannerHeight or Art.HEIGHT) ~= height then
@@ -69,10 +73,10 @@ local function Paint(self, item)
     Art.Show(self.art, self.config, item.kind, item.title, subtitle)
 end
 
--- The banner on screen fades out after its duration (ctx:After);
--- clearing it or an Edit Mode preview cancels the wait (ctx:Cancel).
+-- Clearing the banner or opening Edit Mode cancels its hold timer.
 local function Dismiss(self)
-    if not S.editMode then self.leave:Play() end
+    if S.editMode then return end
+    if self.config.animateBanner == false then FinishBanner(self) else self.leave:Play() end
 end
 
 local function ScheduleDismiss(self, delay)
@@ -86,7 +90,7 @@ local function Display(self, item)
     Paint(self, item)
     self.host:SetAlpha(1)
     self.host:Show()
-    self.enter:Play()
+    if self.config.animateBanner ~= false then self.enter:Play() end
     self.showing = true
     self.expiresAt = GetTime() + self.config.duration
     ScheduleDismiss(self, self.config.duration)
@@ -463,6 +467,12 @@ end
 
 function M:Refresh()
     Theme(self)
+    if self.config.animateBanner == false then
+        local dismissing = self.leave:IsPlaying()
+        self.enter:Stop()
+        self.leave:Stop()
+        if dismissing then FinishBanner(self) end
+    end
     local signature = NativeSignature(self.config)
     if self.nativeSignature ~= signature then
         if not self.config.achievements then ClearKind(self, "achievement") end

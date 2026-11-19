@@ -110,7 +110,7 @@ function Data.Layout(entries, config, bar, style, pixel, screenLength)
     local fit, total = config[prefix .. "Layout"] == Suite.DataTextLayout.FIT, 0
     for _, entry in ipairs(entries) do
         entry.length = fit and math.max(44, math.ceil(entry.textWidth) + 2 * style.padding)
-            or math.max(0, length - inset - gaps) / math.max(1, count)
+            or entry.weight or 100
         total = total + entry.length
     end
     if fit and not config[prefix .. "FullScreen"] then

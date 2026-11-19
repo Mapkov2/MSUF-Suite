@@ -242,6 +242,248 @@ Suite.ModernDarkFramesCompact =
     (
         [[igVwGrqkw97i8j4PR/OFIH0MDGCALNq0SCsX/owr372pgN87bYFT7yYkPKcPkZpRNdhFvb5EHzLFefCTcU4hau+nok4n+WDIUupZ71/wM=]]
     )
+Suite.ModernDarkUnitFramesCompact =
+    (
+        [[MSUF3:7b1pjCTZdR4aWd2zcNhuDwb0c1bPkOzRkBrSHi1dTVNDG0ZPZuValUtkZGRWJDFwKSozqjLRWRmpjMzurrENjCEJFowH672ffH8sipIFWt5BwDOGYQi2AcsADT]] ..
+        [[y/B+jZzwIseoMlEvrjCENA/7DvvkdUVXfV9DI5P8iuyFjucu453znfuff8zbI/GoWzUrPbq2wfHi83KtFwHBz7mxte6e5kNtr2p9PqfBEeTqbBbjMcBYvZzZK/uFud+y]] ..
+        [[fT0B99lPfe2D+OVoelSTQPpvZiEi4my5Pm5GjhLyfh7IX6bD7cDqfhIvqwehTMgoU//XjjpxvL4MGy6A/vjhbhPO4O/Wh54C/cyXFQCWfL7uSDwNo9DmYr+NducOI16r]] ..
+        [[NlsDj0h8H7hdGoPYveb05Gs8nRGNx7PJ8GvdlkWVn4xwH4IRhN/Pfhg9H75QfzRRBF9/2Tm05wtJr6i59cLg+9G6jFFX+4DBcnNu5cYT6fToJR4pK2VMLhKir6i73JaD]] ..
+        [[nO/z3vxnzqn7j+4ihYdoNpMFw2wmjZDVezUZQ40dJfBvVhOIvcIFrCYYobtN/wr9oiAB8Dw9EBby4eNf3lcFyz0c+xd0P8Yncc3sdfaYHexH341WCxje9o3wsWi8kocH]] ..
+        [[LuED5rh/eDhQtH8sQ9mQeJl4/A4/XZMDyezI6cIKrPRpOhD3rJumWj97UPD6NgOXj3z1Z7dTD40+A7ZfR/OTiZaOqCUWURHlen4YEPJjUAd+/fu5VUyzP/YBqMYmcc+N]] ..
+        [[PluLrwR5NgBsbivvPwzn89RP+B5gczHzYZjgj+lGfZIyA1xaPiAk7aDEzKwzv/t4X+667A5LlhOF1O5mAy7oEOLkrVQrO8C344BHMCZqH68M5/uo3+c+bhYrnwJ8tSsP]] ..
+        [[SBqI7csNQoV1wHdr0KxqwJxKa4Wi7DWeLSe4vhArwUjXcx12Xtg5MBZDCYjZD8dw/CKILXoRyydrN3HKHnCw/v/BC3xPu8OHF80sjg5uQhlz4kPkg+tOG9Tj8Phw232B]] ..
+        [[1PhnfhYFnd+b05m03yBct7wygeZJKAOLCe8tYVppOjWdmpV2uu4x8dLUL2Viio2yGYPzi3hYMoXBwUZsMx/uFKD7YOv6a9Wk4nswBeznn5I/DJrfJogsQeLlOy8hN15I]] ..
+        [[CEfPdb8L//y4UzjhVG9+T4IJzCBX+9eQjWLJTmwnQ+9nNgPKaTDz7wFyPTyzviJOI1+ve9HxPXNewsWE2LZTADi6EyeRCMoAi3kZxsl4BQdcH3p4m3Sccd/Q0fcxerGR]] ..
+        [[iSoFToue32HK6yBrwHy08bjg9YEyM2zjfAAgErpou0AB1OPHZVt21D8WxBWUNz2l2eTIOSW6u3vC+i9sLHVpEdRmS0yfpDjZW/DVbBj74P//vXDTq23wzD4/zIu7HE6w]] ..
+        [[eqj8JqgQYmWMC+RDFaGXvBFGgFsDiiyD8Kkm6ERwbesT0FzwGxQcuoBW92/MmoCZZrsEhkITePkJen+huJh7jqO1C/j8L7M9RrOIkl2GXUJJvJLlxvyZ68WEuTRYBUZr]] ..
+        [[Fnd2ar44NgUTg4WAT38PhB/WCLawKK0GteHhqN7akfRZNhYQn+3wnuTSLwlo02fT1bPHlp+YImgCmYwC+S1XEXrD0n8EcnaFChuMXsGdx22NPu3B8C+QKaUxsEcb5LBW]] ..
+        [[e3p4o9FvQ9qR1A/mkLu6JCoBf3mJIyLWkvz78B1QG0WUDjHgWLSrHtlMoOsza4B7BrbFIT7wtDOHTIrAABvzcJ7ldXQDIiqvbBDUaVR432KyaN6+QERWQaFxc8MKouwt]] ..
+        [[VcUJ9Wk76qO/bnQaXb6RWccns8hyPUDeb+Ai2yn3Cg1gC3ACED3V76s2GQa7Opw0sKj00novNIG5I4pDvYzmE18ttM5PEQIVjRCO6BAUUte9ERVU8tgPbsmiJdnuV9Rd]] ..
+        [[RF3WE4D0YpGqk+C4lGjbuyWa2Bd4M1/zf+6b3f/t43PIMJ8Ky+KsSVcHHsL6vbPccpt1xui5FNw5+pVBvtYqGxAxAKhA1u6CbKEuYGcCCZZ7CAoUVebBcarkMFEVoeuq]] ..
+        [[Zu6NLJZMMOiB7vzvw5UgXQdPSmcGi1frHlxFeaKjbyfCIBdsZgxKZwRpjlfLFzREaTaRQsDnvqyJFPv8l0q+3PPMug3MiSv+rdTGkjN9tNhPcqk+kUdfhwBVYafT0WHa]] ..
+        [[srST8W2HoLqDe8oF8Xm2kaBoP9avoPkCxbjUOwnscV8NXB/MErtMc9DKvYeMRssNFHNIHvIytUNQ8jUwlEcjQYRCW0BhQJWOlg+u+C4YhSoG0x5wRI2RSERZbYPoIjRU]] ..
+        [[HSFIEV1KYAGwHk+BhDDluQAgeOO1v7onLtaROK7Wtf06pIdT+88zsY8uIRgjiVfAVDBUuXMWkFsk5AcAigGHAmYEdWi6DcDaeTkbdpAhYN2Lb8prepNZYaMGTJO8K6xV]] ..
+        [[JVK3tu2WkVGh1ZSxcWy1KlUXC7eORtcbZjQYMIY+x93tQytDigYNaKjfo3v1lwSq665qtgkpOeJrFQSZBB6UlywfypNlpJyLRjv2mPNYy9BRlC1Pk+1A1FTRfFNrMMZL]] ..
+        [[Vf7S6D4zlYMDWkeSlQJa6MHSFsxjoY/VoVKZ3Kboz+UWqV4hr6B3hlUkfQcgz8woSZWeIxGvrpbWpC1Z7hViTOnHp2gqXzvpiy0hhuKZYb7T174c+Ogoov+AGfNzdGFs]] ..
+        [[au7Phyb0X25yjeaZNlShdmsgfw5YG/lCUCNI0iYBvbNgZmnVxPcZAwjt/M/XGDIwbwAGjrXeoKRElP6hN/+Jd0u+RtMNNjh/PVHDTq1x3Ys/1yc2sfhg7Q5V8tTYPD5c]] ..
+        [[P3/kL5H/8WcEu3l+H84Xt/7V/8Pz8L/uix26sVdPM+1Nr0if9j62/xJ37pZ/7n74E/+uyJ8gMAxWfAZRA/8n/uCI/81Q+t98AfvE0Qwku3//J/vPZ7/At//e0PpS/QNg]] ..
+        [[FRWZ7QR47/1N9+jz3y89/twUf2ZtFi2YLGCUy/6E65qpUhfsUXzJLDDExXGGy2VG1p8UFs30TyTJHAddH7gAi0FC6jpLWKAr68o7gB8dPW3mQGkF1t8+rf31PRMwG25e]] ..
+        [[Jgv1n2boz8GdBlkclZ7OuqQliIeyiWglceDqbgf8duBK0njCdA7UVX0w6zqd67f87bZJYJB3to3Ku/pfm/Veb/SgOEgCgbf2AamYHdBiDLUW1vbw5QuKSzuPFow7W5PH]] ..
+        [[l45z9jL5GhcWa0qH7cU+ebhTsYgqL97VKPEGGUOpq0GMdQiI8g3dny702O0BCgeFjSgvi8Gc7C4XgBHFAwqPB1QFSAEuHhqRQwNrBcURXIDlpXtC20DXtjMiayKXYs73]] ..
+        [[WTxSLdfvfttoAGsOyzQBOcE2woWaAS+wsYwL2W4iJLxrh6eCmBzDTHe/CKt4nNKBjpcLUYBjYYbjpGDQL8UXsTeqcCxODAlrcbhW63L6zWygLOph/dtR+8rNpSCP/1hS]] ..
+        [[YNgyNOmRtCMBA7I7SmCawFwtGelYptt8bXWW1z458QVIiaTFHhHg3ETHCggHpjVosJMZr88v3xZBkocVYdM1ARgG1Ai7IrwyQMuVvtVrktgMkGULZxqvvkvWkaE6Y+Ba]] ..
+        [[haZLEd5laokQTmVgDjS8axeESA6A+wZmHIDtjUYXAMfciC6xa2a+VSHYqgaTyIbpcjAXltbAkyfY85Cy2wxKEwL1bz5QTMDXr3Nnikty+47uBvMHeg9cWtUpo5kaJJov]] ..
+        [[0WYcgekBMoAnCF1GeHIYG2UVKDkWU4GEmTh2yAmXnZNCtm/I0RiKh3tFgNQt0vm9Cwx9wGyhlQxaAHY2ggpSsFl3D74oYPzD41kvlNQ/jHswhGx0/QhZCigZiYteg4iM]] ..
+        [[6F0fEeWGj4FcUue9rIoktBdL7+TToWj5+Xx7/t06juvj+bHPvobg2BF5nf5uU1X0GeQ901w+u00ms0OoIokUANiRHbdJkE0Bte8pjr125vfQ33l6ka1F8xKMD9RL50kM]] ..
+        [[JIC4/JAJ1JnQRGEOdVOyT/etV73RC7Z6EU5N50g+lhTVqliaBsDI64KtLAoN9fjrEx7Wk6B1tBV4HZfD0a4g6Srm9xEYcTUjlAOqynhR/RyHEHn8hoC37iZvc4DJfjm/]]
+    ) ..
+    (
+        [[e21LClyZ/SVRaLmZrRzsCyBQEhJIINeTsGQ8FLYu6NCA5wh1knJwDIfgKasV1uuTDAqofA5Pl39ZAdx6Jm+FK1bMTViMxLV7CIu2CoYb9i91D8kyiNzdw7osUqhfdn8Y]] ..
+        [[6qDvY0XYkjibskkrjfLHiyX5buPVJ68ZZ3Q1id92cAno8n8z74PzAYuWz+zLMcKTCGhKhsF0BbVGBdZMBajulrIRFv8+dWYGi6wXI1R3OMZSRYQN7XMHJAo21q60IGod]] ..
+        [[5NpE+AlwwG06RN/kwiR9fSvG9OunEcY2JSuTTDxbM99mezYOqCZkdxi1hISOUCuBd31AXvWbiXqsPGgI4Q9XupCYzr9slwChV58OCzwMGCrHJodLBcNAgIipDgIgxsu1]] ..
+        [[hCa1JMO3HoMhXIRdEhBJYA9GoRvWgIhoOZ/vYPf/ELH3V+xCOb3vwB8MO+aA6T8kgsV1e6pLV9ZeBRJAcNRgz6HSz9ydTYbzWmAdr3vQ9+UP27n/uLenTRs8xRQsdqgn]] ..
+        [[EFpnAO7y0Vv7ND/gSClv/dCrx1FeXt0hiA8rgDTCV8CbCwR0ERRkQSxpOg4c+PkHNpC1RB0jyS3MeeyqAj9WWM5po1e2cKtHogBk6v7CJ2HzwWzoLyAcCed11JoIX1ZI]] ..
+        [[gSIWz1Eo9KUk8l3tMpcR74bmHxYpHKjoSpoHsdMyjNgGolCEYHoHmlFZ7Ch3d+D2chuMwog55AJHE4De8nWJvjwaipnnFPmwyoF1legyNpFGxevtIVFq+9isawLSZakc]] ..
+        [[Ex8g0kKuhDUdLBHS9y25Votr0LRnLpI0Dd4QwZCRDkTLaSxg5+F3shTKwwhGQ8hGKAufuEkZoyVKjZP597eOcP/vz8O//fK39ecM1woLjqFEp1YF72ZIjJI7YmctC7Ug]] ..
+        [[UtQYwKlDtEARb9KID6FN9hic4c8Nbvx0yTszQb7u3IVC+6IWbuPzIUclSbQxvUv+8UblmF21ZhK9fCeoOujsQW5RcDKoNWcx7e+Ra2X7tDYpWKR+DiP8Cqrq+GSYl7ge]] ..
+        [[S9FS6lhuRQQ6webIgbLlkix3G4AktET9spsm97mxND4hBemj3NTxIwiwwRyQzd3KMuKuR99qDDWVgAvAnjDRrSkE2qiUOu5hqrKCjSHIqke4QiML0JSlvCCUolf7UMDX]] ..
+        [[6Jt2FKfvLeTOHdPasDo6MtEQbG3A3R2LEaWG2ItolT3UnvTVkbKiSPqqOYM10Hd/3cKpxEQQtbKPggHNMNkjpC/LTSwj+qQR3+YB4swMQOgersGfAcm7I21+B4ghWemM]] ..
+        [[JjaHMKo3uQVB/BOGhiwMLAfEJha3IblmihWkIabOz4yObDRVfr1W340aWWDITykArAe+NjxiKMhKESA1ZJi2f0IFcNJZdwBxldc2FeSGE+D/wF7AwWmMYQJ4pU4f+pky]] ..
+        [[dgfa07LB0i7RmBv1bJGiFZo6fGdjExuUvCc1C/J4JGAEv1H72C1KirPoggvS2ic2Gym4xMgiO7A/C8XXags8I4UWAsgtnRcsyUP3HHOEJ7gWFu6H8iIq/XqlfaTrMnSY]] ..
+        [[6SQiOrm+ZkxAEcQxqKQZFiQT0JAEsgRIVeVRYD60OWHYNOLD2ge5N5wFYEW2csYOWImRWEK3XbNiHgDS614tClM7i9pRioYYC7E96D6UywcSRowXMVy6OjoBseLjFqTa]] ..
+        [[O5Pcukdgfv7mlIQOmPjZegG26HQG9Budkz6X3QQ/aIKwVopP61MCtL81wrQJMuw2ObSDC6Du9PunKwCSudVNgDfD9NcriRdEVRpOFqy1XNOzbAItOCbH1fZaRxtD3eGc]] ..
+        [[9peOU1BnYUFMzBji3AC4QYYwfSV6j3FRpnjV2511puxxfnsv4uoIgYlCuNa9rbvPILSmJSiicp5EoQtNdXqVIMIPJvmLQ+UOdywk9QKTT2CoNuFoEyyG95X0YWSQCl9v]] ..
+        [[gEKFd/CgUadx06hQqQlCONBoBSZfPeFqUKMs4dSTvI8SqAd+8GVK+9rORRCrnKDKMjbxo/G7OBBs+BhR4wRo4EanXp5FlaJhAgB51lNt6QbWOiY6o5eRUyJP+GIbVO8H]] ..
+        [[rfADISRMcBWLCmLFpVWQwszbnzLNlOacZCs0aIEumP5zZPYoAJ88FoNzipRIgSMMR8qyzmawKABaX/VGBaM5TBSoFa0hXZJMIQV4uDfadQL4mM8t7m1d/yNnVqRpmrN0]] ..
+        [[l0pxECQSabERjHu3/vaz/9M0IkXE+/M3v8VSNRJhk+V3Qc5BhWWhYICw5j2iE7f1PRIIwp2OFYKm4x5SPHN1NDzJ7V4ow5xOUP7/w+9S3YQ5q8N2kaInpbGoFbtE5JNP]] ..
+        [[OstM5Jw6eEJZg/bCQuIA3zdoezWTCLk8swAq4CE4V8xCrBlAJuq7KgUE/30qVkKcmoUOdUwOry7ZgsmK6OyL6PbUNkJdlTEsPRe+ulKO5r0Xtu3Tp4EYnR5uY++hodgS]] ..
+        [[WdA+5sMXAjpywakW9HWTMMq3almAmxU1+RmDCagOTIcFdcdlq8nz7TmAkL5bWOCPswJFGS0Jki3dgzeMDiJ3eRnpiQXTSb2t0yMOZ2HTL1xvCwMCgdvHUGowus5tKjmY]] ..
+        [[McS3aC9DpQtPP8l7riJQYucC614hTArGD4Ngeqi9c1nkuIzNRIzI8jM3qFW0N6heN+YWEUci0e20JIA6bbTYYtqjWpsSZ2Qb4OPvLv4Rt/+IvydfCp/x+utg9+0ES2gb]] ..
+        [[68WipXCr2Ga0OriiWbxF/VK1XtSlG7UgA6gyfLo0vUVEffrpa73XJru/zzD+/8K9z0h3f+4wL99/DOf0D//Z7sn9NQbCzTMGijGNLMsU7QIfX00w4JBKBNbF26d696dI]] ..
+        [[gy1D7O3W2ieDA1xXEbaLrVAuIZjMmIWq8OJ3gFNOHOvFIwnRwD4LPYvvlTN3swCoAEbAbTHIGYoVx1ezgFiwOKIBMooFWXxRMnnAZxO1odH+McIKwXyeg3h5MCZLJICm]] ..
+        [[ATaxr6hipckRC393DiZaGyCxcPRZlfbcwXk3tAv0FNFv1mNSBmrT6iAA2pr+1j/0GujJbetSbWjKvZEvo6SeHEKjx4qxoRfVDxhf0Buyh9Ce00ieJShFLWcTNKrRI1Mk]] ..
+        [[1snvBarDID12M+NvLhmUm6sU8DrUA8I6Q+KTuUVEPcq83c9xtzoh6goLaqTr20X2z3WqXufn+rCYe/PquFqwiSOtsHR3xF7A7Hq9ndYARTlGIHNxYloNIGNI5Q5BR1yn]] ..
+        [[uztw/DIEDFDEvhsT+ZOcHcnyxy9ig4WB0eYjcZovVKse267WaHzAbuLPzXew5sDJEABsEWYMLhr1igcC6N0BbkADbHU4EatGo4VQyYt8pwgpI1dmfclOe/1MTP026g24]] ..
+        [[HDGcbVERBBFAshlF9P+ZIk1ZmpBXsBGJWRTXQHgMUhyb71NkeMGcE/Ir8bRsnj5v5wQmewv5UQT8BFa2YIvLdpBLyDuSIIA0sNuG1UsQV1csTWihuCHC784D1kWZKXAu]] ..
+        [[C0iIK4geSNvn0Hc+twHHNdfON2AKMcdPzq4LVRgDMNjbv73JEpS8VdjheBj4aVxzfiPXV0SDPeOo3EJ6FvmJrsgheDOZ2O8vsZvP0OU+DFXJu3BY/I7gLFvcfB8C7wWf]] ..
+        [[mrSUIUcU52+WODm9rOvTLMuIn+YQmK/0dvE21AE5abiMeaTqLltr+MPuwPScCETHQ3AMM5iq4gTXGN6qJkF+hhMPJueDeYeXmUolt12j17vwZ0TAPlLe73byGcDaDa8G]] ..
+        [[6UNAHgGN6F4JNRNkiDVY5QfkYdKadSe69VOHmz8OA6NJLDuwOrMg8WTng/B/5mz9UnUN9CDJIftWh7pRVRZ536VaRY7ACgmBmkzypQAKbRh7vo/fihXawIuHokUBfvoq]] ..
+        [[QcGlwXuFVA0tD/Iz+EalnLHfEbmStdd8rNQr1Vb1XrtKEDi/3Ts7rCQxQ8Eb2EVfvLDXoz+loHK3py5T7QZElHeAWGkhu70ETRRVSbsLABMl3NYDkOR9RSOVKrI+iV14]] ..
+        [[oFZ7/dagzcofghtijFJiSNfSwJQFv0bycVrGOZkO3grpxXzl4zyhmMlosSJYpPFYea7cLJRuHB556U8MiDcRbpsUVHHlEC7UrlFEmSJ+AR5eqVS5YraR2dX8jYqpLe45]]
+    ) ..
+    (
+        [[IjGuBATeme15xNc+0oXHzNoVe2gXsBEABABRYTKf3HgdWk16CLHv16PSCbGaKkiiUa/gPNVJSU0d+xBNKAb0rf0BUGEmEC9j3sEiPs48P8dyRMsE384fbiyJ9NPkBjBZ]] ..
+        [[sCvn7or6ZLYax52z5624FcYJFKaxG18/FW3qvGlVeCcSVh6cWpS2/j2Vl6n8Qq++yzscpytQVKXg4Wu62CW++X929t7d/a0xYK2WdccQrNsiuLNdk60BidADQzGaJZjg]] ..
+        [[n2975x5QdeXvZ1NBCLxKtmoyVjjwxEaQXlBlatFGDmWXvUQVbzyHeYMziwWuzfCF9drVNY711toA9Q0FQDiJ2LrqO3Pu4qmBxt+tlFjcAzedWR8Cb6oLUznoMmEvj2o+]] ..
+        [[9/HybmZFBPxoy59oIdXYBeemWP9UrxZFAoiOaaWU0JcieNMBwKWJKkCNmrKKC7NdDmlti7qQ65Ft7cgeFAssunyWA4GhHMSmB4jDw4cgFON+hbsEh2udswsEyJc7v87d]] ..
+        [[71Fse68P2fsTlClr0i1gxhPPC5GNxbjHf3x1Pmq1bGOBT3Mx3sXsAQf2r2XJt/F4tSiwwny37Piv7bvM8KdbmL2i2fq+Gw3Y7oU2jXyiGcA3OgFy8VJyeM28Aivlg15z]] ..
+        [[IvnvdvYEkeGt4G0OI9RNnabf46OdoBhYy5LC8gf0bwks05csLLkdQgiqMVlqfTyRx8Jd5Bw4DF2+UfFmUbef1kc+/DO3+Iua6u4LvXZzhaTHffGKniGvH/B/AQHBjlEo]] ..
+        [[INPVXwMX8ghXc4Jc8duSo1jiXo0bSEKBEcRz2EMbC6Izm5n2keW4htCNnBFTQ8nmWzJc1iN1I8EG9ugspsGi6LjdIsnAXCevOsjqQThBULessCVtROGANWHm28nAXD3s]] ..
+        [[J279AThU5Py1MjUsDqUj0NNIQYyKHBUxKh6iLbCW6NCsNFGEVwR19sc/FR5n5PV+vY7d5BnDb829sQoxCeRYfSQUMpLAkc8WgjnMK3Un+Xhe/K4Jdh9KEIgjBI+Iy9j3]] ..
+        [[K6gmAE3GN0k2D1yxGc9O9lQA0zlHo8BzcNJNqRCm8FRJUFQETHTUBQp4Cwso9CRWfDTTLWEhAbxaRmECQi1BKcI5Rht4vXLNbsNYS84Gqqt0plz5GsraQKtw+OuI7f4e]] ..
+        [[f/JEIchyoatCfYP/aPgBmqDydsG9IolTrb5XYf+Cx0RaA25iSdVLT43nopyt3EgUWWiDBK2SjTIEqR6F8F6eA1knmmQI22LnbovwTV3cShPNplbK+KZFygKFCigCCdGR]] ..
+        [[wklAkLZ6kxnmNzgt8vmAHbH42g7tFPB+jg+PL2FJH7w2AWkGOneBixSrghSZtJ26+5gocRTUELEQVHDm+rM+URGyPmA2uHa+CkJ8NWOjVNScgSrO8HVgMSlJSDiTMSLp]] ..
+        [[l4SPLZ4thMvFzFSm0b6bS+Mi5U8+1w4BVTo+ldrzPiJRbE07OESPfgJV1lFxlppGGtgdVXzS5e4S822bpx/dndpM26CFeS3aWIHJgNzb2wxXvh0zGN1VPBJfC3NzKeVd]] ..
+        [[GUXp3IkWT58KnmSEo1MQ8nUAJ8OHFLt4FV6kifQda4Ben0yEb02+p49oL0enhyD5O20uTwcDJcTZc4TzqR6AUgdEyiFILHYXPRYKMEcYp8nsFnXD69wlIGGo+TDU0JWq]] ..
+        [[JdxAR2FnNUpUiCt8PfmbRFpINDq0gHD3jshuACbXYb+E7FoWSoKyFG23XKGBkDFwdvbmdZbAm3+IMNZ2TeaSkR69dE/FnM6SJeZcNaxequarWIzFGthMEAfP8OiqE77U]] ..
+        [[a5K/AROHdztbgXJHrCm56+Wl9SRYOGXkj2+yzCT23En7iF1u47tXKhUXbeKRWahSpQ+cApVVHa6/t88xzbLk89pRafaAR7RAZusEGsDEHhCWoW9g3ISDiWOHhgoP7LP/]] ..
+        [[vl97+S/HP9BKSdY+C8IsGPcjYXFpnVxZ/jJ0/skmGGPd+oLUVx9G4gSFF+MJyuRoEEQqO4K1GERBET0oUhanwcVfrOcRuM+mo67fvTFT4HLWnjJcDTVfo67MSYBUknDX]] ..
+        [[h0JWQua7ORcqzkNSfEgy06oJJIYhV6pUmtDSbhDCm6kl6sMr3YIB+QgwVk6B1m+zqCIOjgMyW778wnfRiT4zo4lbAyWQAgPkO8fHcf6Lpweg+e7wp3VaJ8FSJ7Bco8Ei]] ..
+        [[VLtgZwbSEot5bg8SL+C98FbGHE4xm7VLFBbQ1WEktd5kZeeCUZsQI7CAEgQwRE0bu8vCieaLclSdWJWwzTkCn4dyRhlK8KSbWqniFwnIQ1x2lt/jRsPxmkotWV/XPp1a]] ..
+        [[lHUtiC8w1wp38CQIOGr8SlDwTn33Zgyowj+rl4Slpc2aOmledCgp6aL0abxsZ/8GWY7iZ2QZgEUwjEs1oyWEP6osMpVzpkAtmquL5MImUHAcVOhE4jBrvN7E1BDdi32E]] ..
+        [[94IBwRu+CYWSybKPmcNp2aBwafvRNpmjYfW8q8C6u+mKMGs1HB32HR3oo/ncLdfAyMl++jLX//e0uYELhUmmRVyIEsA28PHXrzlr4d3sjEgSfDBMAQsjN6olgCMRxQAj]] ..
+        [[CLlVv96LAobKCrHh3CM715Ihe5wPO4yAVh/y1NlKPU3OWccNPDZ4tjrocd5vrHSzD77ePcT8i5TUnqTpcMo+SAZYgmeounoW33ujB6QH+5jQdN1Gwp+T42e1lzsliEi3]] ..
+        [[6cco6Il2d3qonTPC1oYXAAOlwrkY++2qGvUjsgZQe5rDcONCDBCB77G7cnM7BOljBrH0GgGI1oeTrBx5kngpJCi76JDxgnG2iSNk0hBLAR2suYDcBtuuJ5pk/ayd195S]] ..
+        [[VQo7RXS6urDdFW1WqzD5D1mHLG9yMl/qSf9c0/i/X5q0xshLZpczO4UsHcTeJtss5Uwuk0vI9WAJKrpMGEGG5q4CJEJVQ+eoS1hEqYKd2Iv4RnonE5R1qBvN32l+P3Uj]] ..
+        [[e4ZWUdvdCiwe1TFZnHW73FPbrM80jSDw9v0lchliV36skh6elFfIHjV8nREz6GDDUK6oUK/J6sPlxo/9CxS23QjXqr0GDNxUqkLy1W/XYtRYk1kg8cJQ83c/+Tr5E+0I]] ..
+        [[wHE7BwT8h+HeWI8FQOUD3x+xGO3egps4tzVDEb2lciZLRfbXngijntgG6JD/zDz6EU+vPygSlHbrekWajyv7eIUAVUA/LzZk85WNtMGRr0PINC+ukcyphUc919aOjApX]] ..
+        [[DFThVJNNqQKxd9aZvP1uYTJu02NJyubeAceZ80VSYgcZj8EVPa8Atnog3VM7TPRxuyxczA0/moQe6f/Lh6pIaZF2QmQFt6jmykBJPc4TO8CPEh2DB8knUkh8Ih8sm+re]] ..
+        [[0cNvOJ8nnWhlM2zncitQ0BA9zXh85FRMEB1iJtJFpsIcnx+q7WiS3HErqmSZYe/2BrVjzqgg+8OLxcNqjRVBe49xpXAZjJ1Em63//Wt34FHrt6ylnQ5z9bgy17dsRe3j]] ..
+        [[THeJM3E2q6WVEi4b6ccrSz+RSNngpiyPmim7qh00AZn7ii1WajqbCIClpzcpnMyLlPRDYcdWwcOYSrzcdKMFgsKcIUcoLrZ4ICUxiKDPJBOzY5jVPg4EQRktscCJyyn6]] ..
+        [[zDRZhKVurJDOc5hSH1LAC2/IrTYDZCCrfYKLdKPe4ViKOsY+gi7yYdh11iObDyy4hRpuxn4uMm6AkeC/mSHMr/rJc3y359ZmUfQKyIejXHQvMkNQDunREBkCsDOxEzZZ]] ..
+        [[09s2dYs0gznLbxnwuvMBDsIkMl9HgA6KYja0l35unemGOu0cE9akUM0g9E9vLUyGkKx1xRxECnGPYy86g/jbCln4hsUGxVS4z+/wHeVKbiDE8wW1u6RTZWOjJoKTr+Am]] ..
+        [[loPHi5LcREkfE17+dI3ceoMQXMbaNNEsMDpniZzBr0FLUkiTH7TREE5hOR40npn0SrqvQzjjxI4XmWIKi4w7W4b5oMYNRSAuzGOAxaT6bzn03bfUQ690sKgndyp8VTMU]] ..
+        [[nEdMGWOPquRHNQCekZwiVAO3W4zgBzDW+NU3bMK0cJyb6Qk8s6SozttCScieGsiRRONzUwbj73RA2+66bCsQyH1ChhjwE+ykn22NOJhCSNSNDT32je17v7HOGSuhyuxK]]
+    ) ..
+    (
+        [[HQUYe5o0UaKYZqNW4Jrh1ofLNfdtw6sLj7KDGOjgo7O5nrHY4SU48X1oyE9sPttPjDXNjyBr/SlSJ+XXSYuCjz3ktZJ/BqYeLUM7UVikGw4AbLU7QcdkIjIw9j88EwfI]] ..
+        [[lr2rlvAotAV8hLopjjwbPbuod9Zo6OzaDZN9miGsxk4RGCzaiQpuY9v8TdGRzxMB7xSRiK7ymgC6xWozkGWsbIUmQcOm5gUVVnrBabz/toctcR7lxRyWZ2cqB2kq16JI]] ..
+        [[iUm3DdvCn8ctgLIc3gj8kVT3fGU5aq1EQwq4jOrOGFzjAOQ5+SjksroxMSPs79lLKv+2K5D1NF0wvhQwzw6XQq5Bu57mNSIQY7YCZEngD/ISnT54n0UNGCqYbpVc1CyH]] ..
+        [[SHCXGZodzzzHmY3YhPMfXxjdzyAqiPVEv7XHEgBsf43PzHC0+G/zA7/xdAgGQdwCihkJTgTQYHkoE3H48OyYozZFIjpsKhVz55vkQ/mPz55kk0p/GT4EmyjjK9bA7lyj]] ..
+        [[PCoajRl085Z2IMt10AW2IKHqpu6XmYEiE0eiHkiHb4mx5bPQcpYgpIpPEhmfGET4QVUVgPQzg9nd1Oi5pcAnWi0RNPBWmSkj1xPuoklSXJ4ELSCRQt/qOFdMzBsRQC8z]] ..
+        [[KIk7PnsptOTSbJzWqyUgaTYuSmjJyKklGWypFKkf5UIsVMyKQkIl0imcKDAjqv87hkihKbM6UgmugTLXdRTn3MCiSbeZSstEozpyJnS6SlnqZwLGcjVKS0W2P4PCNyr7]] ..
+        [[Ixetj/nExKSgKyYdOUxlDodIpOuTwKm6IlEGUEtjV6JYueMlMvKpekcytppJWQJnCBjIqJqTMxfYkxdcHEhD0CqaKnGWdQoRlZNWZSQ0uUUSnetKyXVN7akMuipgempq]] ..
+        [[VopGxKPopOxZjSHylpYosAEqnBC2NNjGSNzpsYiTE9h3PNnGDmhBxa/XHOudRtI5dGnTz6VpJ3f99An6hqMcMonWEjSTpvQk/IfhzqJM0eGxMkngMK5aXz7xuReBR6VI]] ..
+        [[XIpGSlujz+FhKTWToPk8I8rjWV8onvIllcJpXivW6q+EipwgsmWnSb/NRQLJpD/rTsMTEHBi5vk8knyLN8/fK3nZi4FesSuZU3Pl17UfJfe1Iki9mXPB+94r1uKq12Ie]] ..
+        [[RLZpbmJ0jDqMEPjYcxeLtSDOadNfvyibEvF7BdhZMwiUrCpPru52diLmebSq0LsUXBLV/APhWVyHoMhsYUZDgLa3NdY0eMAaMsbufs3APSCT+L0MaFszzK4UwXzfHoYR]] ..
+        [[0jq5OWpGNmbwxsX0p+b/qmlwzr4Fmn7gsjqToaaXl2nsVE6dBDZNSQmYHQMYTksqgbMy+SQeCYSF0jf2OkONSI49nImxSaxshxMe6GcmQXQd9oFIl20C6KdW0XC87jkj]] ..
+        [[hp+aip0WQTpWNk2eTtASkci5qFoW/JNTM4etrvazp1Yc73NZA3596voicwu9IMtRcHqDDX143MT2qCsjGWa2Z0DNSNxqikcfR6DlYW6fYo5I7GGamMlsbo6KSSQi9mJb]] ..
+        [[6dZaOMOYvwIhkdw1lxUnpSfp6RjmSK9m+c6RwuqniyEsLOkoRt6WyQKe9apZbNedgCaZbBG2kMUWo+tkb5ZwSUPOu0hA6F68dkzmbOzUzJSSN2GCg6I8FTbffLTqMwyO]] ..
+        [[A7dZZHT+24LIbntSfE8Lx2ToZHOu6uuQim/nJyLxCL1KZyQH3lRHAUggnZRlcomrRVn+sKHhS76IozTa++auMChMSYhatl0sZX4MexBvgj6XzihK9vvJhOYFGbOKvy3B]] ..
+        [[5/oyN2mbuu/Ab0g3i8ZIf/RlbKV7VLg7e8L+JrxNdFfZS+RWHSnn6f9Dvoh3YD+e619N8Gt3riT3Ay0FuFAwC9z6t3nN4+QYG+nPLD4C3yZTTsaMblsaXf5b+b52BPvY]] ..
+        [[18+E+n/MC6zH9A8vALD+/8G3zQHquh8PDOf0vgWbD/I+dEw0UQsLLQqG4SXQVYm7ryHfji5tV3m0eH+8cnS+CZ4+Kg08sqDmo6SNR4pK/pwOEz1gjVTkV+LquDvtuRjp]] ..
+        [[6+/tSXA005QPsxK4K+8dRWBDWegvz4dUHFM+XXBUENBUFN1Q3OVhNUPbt4XRZ0XRZ0XRZ0XRZ0XRZ0XRZ0XRZ0XRb0yZUFNZxnn3wq64PKVbaEFK1cRmqWUujrmaoFKl]] ..
+        [[ZEy6iidmpB0JST/y+0NGhiLA16c10a9FNZGlRjb56X0qCs4MujVwU1F3T5BIqCqqXRsiqDCoV5LqpIqFJTRa4T2p/TwCVSIeAfKAL3yrpi6HNaMVQuDKuWDE0pcZNW6V]] ..
+        [[AqP6oVzCabs2yhamhWuaas0nTmMj16eSCl2OgZy4hK5VAfoYqoMQ3dVFCUlRvV6wacsahoVkElrXiTUoPxHMVF0yoY0hKoStnP00uJKoWbUpIf1VKZibFuVZvjJ1IV7Y]] ..
+        [[LqiwolswY303K+zBXmeKXR00t+SUVHrayio0I5aaWoqFjjVSwhmVFnU6stmlxabVG9wJqxjGhGIVRDhVGlYGmLdkcEasaalBkFRpV9d9fMxUOVCqPqOYTyJqPHKi4q18]] ..
+        [[3VKovG9hAmbsNqA1SjCgjZu96YizRk1amX9vFw7vdvKcVFxXKA18SqoshRL56gAoVZlUQN5/Cm1Q+VqkqbSxga9kSyQogZ9UKzy38a6oWaClAKxTtfPnPCpqlqZUaxZV]] ..
+        [[ZRNLOypyF3KbtS5aPVGpULeJozh8xFRgU/QBThlDKpWolRpaxnWoFRpTDruSqMGpL61bqm8jkfKYVEDeU61SRJraqouJNYqCYrV501pz4294cTKrf9rcRYGTS7OG5PHk]] ..
+        [[yyir6qJyhKVbRZqdCs7dUpdYYlh5vUMuTHQl14BVG1dOPZKofqG4EoAm6gATDVZE7NN01LUJWqSxsnAvi556scKlUpp2XV04qoPlahUKXKPd2K+vC3PngXrwS9TGh67f]] ..
+        [[lz1AsVq8tLxUpNu2W4hfI2+GYeKftFFlP0DevsBUI7o9Q9MeYKucIEDcw5hzaDbCX/GKL4+LRSoRm1YJ+9cqHbc3i+w5+41KOxn9wx2O9uG6oIKKc4PE4xUBVkXvjp1l]] ..
+        [[efg6MZ/hg5miFWE6u914Hw1fz5fAKpE2UPDDmQQTyxIX4SlT69G8ZGkmrKj3mGw7lPwzanHq1Lf55+aIO1Pv36jEczpFfGSDuY4dynLHxyRyqkbevRtwSc/zwF4w4kQu]] ..
+        [[69uq7f+ek8l/ocRyNc8OnSpx9iQPmxN4wmjeagnnpAwVN/UPS5TiR4wqcOPG0VMg17lLUN08/OYc7xo5W4NG9Mf9Td+k9oe77hdGUcLjPuz8/Ydb9pVBdoz25ePYkg9d]] ..
+        [[Djs+yPz9jabtzGnropXStRempCwMUfK6ydNWFMPpJjrWffiZ52HoUxxmHahq6eimDclp5pKbwfN28T1k6sN25KP3sROL1ooRYtNYdrM87v0/d/Z9VBNsbe1V3aZ9r/a9]] ..
+        [[yennkms/HAxqzty2eq+/XyI4R2jdUJtM3khnME5BOkzWHQtDMPznCqQMa5SRe4Yz3lQE2lqEZa7Nl44MYjHEJs4C1TDxESDh4SuezrmYcDKGeApJ4QfOqBwPyIvtTTb7]] ..
+        [[R96puoxSaNk2RsADceNZJx1h3JePlrxjODU08kzigykHEusfnoPn3LuoFTTDkMMHXnuhYw/nQcVvweJmSY5Zc2twvERgMTjPRE45vriPfl1Xw8QxjcWYbL+gwyx3wbKA]] ..
+        [[Stp4fH0yzFcxApf4VGyrMQwRmPI3m+jzJex8GfZBxcNdzPyZnEpwa+Ty36eP0CI+EXXcAxFU88fiD89IOFX33y9Rutdbz8k4qXa07A817H8bNnj70/fp3G084H/vK5gu]] ..
+        [[5g7TIkhjQJ0wTvPWVHB58xUJ8VyDGG65Wz8y4vTs8xL+/AX8qo0ZhR2uf0SoxnOd6XOvMXcLrvhYfolRCudEbehZ+n+4Qi9LIDfs6w/IVG3lXi2RSrPsvBs5nhelPidH]] ..
+        [[roJKuqY1rcX6/haKTiLj7Ybwi6mlMaHjXgbwxWpfF8pni/FAI0HhRsClFqGVVmGtQY4T8lbE49Y0PY3BzOl3PBtENSleSys9AGqQFYnfFPOVhWoxHM8XqVFpdS/FS+/V]]
+    ) ..
+    (
+        [[GyrhXKRQ/4v6UdIpvB4qcG3aWUyLMcJJt6WPClB+ZNbEUX7z516zO8xpFWMnLBZ8rVFqxVamZYWv6RMWht4N5NvLrKKmXExjOpdjPLnZZ8ZqCTcTDVHOM28olapoI5MY]] ..
+        [[ZG6M/MEZ6vjmAqeWpgV85YQ1A/JfoC4/TPdmSeHyQshebFDVJleNKs/3Hu1vMalP/vl5uGfko4/nHqCJ4lSf2l5yD0foXWD1RxREbNQLh4Lz8BPfWY70tNNF/XCrygWo]] ..
+        [[EbB5cQcM86Dv0ZzDh/LooBPkPxesGNgEcLxvRAqi8851F6fPrMYgLM6TIxh+w1IBevU9ufq1D9a2cO1T+hWn88og1PkDiAoY6nIqn+qan/d0kB/ksq/5ddaisjEf/8NQ]] ..
+        [[A1DuA8tf+egwR+NYhtquNniGtrwevLIBiMweCLph1OK+VjJCHOl0puJCnUvAhz1D2dysjIH1EzQbQqkmrOBqdF6DFZ6cyIMQhnYEc0BkVJJ0otvplBmZgzmIy8SVqYX+]] ..
+        [[DE1JBgKkNiStXSqM2L50dSuICDMIpw+R/4ZLNfdtw60E/78DjLR2VKzlaZy0SRmIO+GalzaamIKSHprArEZgqFHov57r4hNdPg7/CqEyYCxUBS6RH71Ni/Zo/I6a0KD2]] ..
+        [[Mg+Yx1/VK2QqSTEsaAsp5qYuB9DHs9zs2wZBX9M2ZkanyLQmjrFM2rKaU0dZ4ljVXRGa4L5FmUtBQz0SUnomSnsZ5784ORexR2Oeise0YGhca0qMSkkXFNyedPS6w4M4]] ..
+        [[GRkmlh5hrMmxPTGCipjCthVr6XRktd8PaHjMRAnVhJz5Yzs0QXVMPvWd34wCr07R7Ck9HoxobrzymHkv/eE+VQLoQ0MevM55k9eaTNCpfBopx3i8LG+qSeJ0aZ5K4+C5]] ..
+        [[TJY+5SyF3+sTw6RfIUb08wwnsz3LqMDQrPG/dhrXcorHcoPBLtcQE7FJ76A4Kehw0JxuMY1KM3zkFUPNpGhEc6LOgZ3ojwSlaO4EWcFhQ/PacFVRvtYqHxyNsShDF8jB]] ..
+        [[A800rnOxooJXviTPxPavDcENtMZU8uPoZ+Vj6m+MibDMxxFk4zvG2Kmuupr2l8hYmyPOtGBHN8XGMu1Gi0IZHfGBo/yxE/ReMRP8oJtVoENisGqseqzVFxOaqaxjqY6Y]] ..
+        [[sULsLABTxCVNwQxDZkNGihcDUtwkBupIW4z7LpIIW1v8BYePoGCTEt1hivzqCTHiEkLgZ339KJjlRiNZPBTw0lqyFylfc15RBkkOl6KpvK4Jtpc2Nk/syh9rRURxoa18]] ..
+        [[jeC46JG1MX9Gi4mUNPi9t7b+4fR6tDGxcvboULoJtIkV9axPhPQE21WAbIPkZxBVVsv/13WIqCPUSCwCqxRt+uzoMFRAPfJucGfrsMlvFx9O2r/6CG68yVovfE+mXeG6]] ..
+        [[zXpMINWCczAIGIWcVvKQWHwSya3AuiBL53GIz+Lqnke7W0PJkHJVh9Ti3C/XIDFaIjVestUvawBo0y5IoNJdoKJ1bhgUUJ1A1Ss5ghfbn2bu2A1FzMfx3VKM7nmcOJgm]] ..
+        [[ZANYplkHHVUVQMmYuoVJeOobkaHGZYZ7lU7FUqtOQeyyL3H6BSqLkSWsdsaG6id1dxveHo77E5qgdQOcM7cFkMuLxZ9cnGweSIvSFuzsLlNuh0gOo/x81wNj2pH8MP+z]] ..
+        [[Nw7xAMIKq6uwin8c6Q31iDNzaBAMStEa8fXZidxO5khiwDlB8wccugDe6MHXJVKDYdl2C74g4tIy00Sq64jEMZf7O+ZA4FlgDYt/IQrr5fAM4Wzilm0aqHd370leSf/f]] ..
+        [[L7X2XlGGvzxSRcgDX+giiNeKytnQjxzYilwQLo3RgRkYQaPDgEfYWFD5E8/wryglCpmVgsMEuXwm+WYcrCn/mNZkiUEdKpicv+HPvgnTilIWlM0f/jax993cGleoB6gh]] ..
+        [[9HD+7ixOT9+na75ZJaPlTwUYnHhFyFEiRXcG+jm4UyzjZ5Xqvg7MLLCHWUDw9pMWKrxz8nlmDcw5eF2wUt1cQ/4q0AA1R0tMNfQ8s6gvFF10qZxRVRLm6JVD7fVV/rGI]] ..
+        [[aia2qvCxRvSRkiSPDDK9umgot98RetVFFX6bxLxbHDG0QmEFWkIh24hj8oPshEek/5xabC2lYHrmWeP++G2GSlJGZPmy/WZCTKuGK7t6lNiVLG08XCSQdbiYuoIrR95r]] ..
+        [[Xp5fGXU0dcmHoPB+foI6X0ep4NfIeNzMY17w35G8oQ4bnJlsZeutBTcTZObv+UhvboHMvGaUdovaveggzIHl9X8qN9rTV4PdMpNkka7YJ5QehfQi2oAfFG0nNN/+TZ53]] ..
+        [[8vW+zox9MET9I4RD46XNHRPrSp/q1gi5lUsOr96MfIC0hC3tU9VRZZQXfzD6zyIwLR5Ob8H9ThJVKGmhRgY+KyqQs8/QhfZMLVmz1liEhB2Y50M8oZEkdLaGOuwcrAsZ]] ..
+        [[Ml4N91VsZ3VxwD1/iOPW3RkXagDupF7cxt8W6yknsCXGvha7w9XeVh1DvSCznk0tdHE9UV6wrTQiOl+a/pkzV49530GRlYHcNLXOMHbVUKbqpXBj+2iz+EBONFWxuGHh]] ..
+        [[0EPLJg/Q8BCspv7fHhUX5pUbkmiIIiwl9jiLCM7M/fUeBdJk5UkCF71dlQoAnvycgzFf2ZAaSCCat4MKK/dUqXJABrfjPr2Vn6gFvN+y2PGYJ9t9awbw371rBvDfvWsG]] ..
+        [[8N+9awbw371rDvOYd9FXQwze017lvjvjXuW+O+Ne5b47417lvjvjXu+zSE+762hn1r2LeGfWvYt4Z9a9i3hn1r2LeGfc97uA8nCP7GegKe0AScCXB/smbA+pRaAUU1P/]] ..
+        [[UWIG9fkgWwNAuQ/8lLNwFrp/LT4lS+uHYqn5xT+eIz7VS++NQ7lS8+/U4lpni31rG+tVpex/rWsb51rG8d61vH+taxvnWs73mneNGpqWvYt4Z9a9i3hn1r2PephH1/eQ]] ..
+        [[37nhnYl/vEUJ+1Rn3PLcOLj8lXYd96Pp7QfKyR9ZrnWiPrNc+15rmeL2S9zpp5RrJmfvKTy5qxLx1Wm6N3aDPHeg/vGo+sI33rSN860rcmeNeRvjXBuyZ4PxV7eNd5fW]] ..
+        [[vYt4Z9a9i3hn1r2LeGfWvYt4Z9n44j+9ZHNa9x3xr3rXHfGvetcd8a961x3xr3Pe+4r4qqtQVAKyKjGkZRggq44Uq7SSXCGG/nFIxnw6hheTRZuiF4bBwsEkGT6IguUh]] ..
+        [[epSR2a4Z0JqiHsKn1dAmGk7CF+q3F93dCJ+FYkgzRSbPFaCpbJgCuPY2XOCMVYvcbahHXpUS1/D4ptcTr54AN/MSrSu+I98XKJPx5zc6rnLnxJnWnvJhrX+gzOFkT8SS]] ..
+        [[qKTHUQFBOAP2GysamOgwHzpimgv/0YCsisd2SdcgHVIVUlQBXNd8/TdKF9kgJKb4m55WpjFCWY6YU5o3S8KRr6DWeYBrqbkWh5rxus4A0ZOG20I8Xxkmyd0XQL/kcahh]] ..
+        [[iaEfujuxvdocHI6y6G4TbPMuBK15/PA38B5RONzNifB9Gv7eA071K4jIAHse0WWlXQX2LE2YWS/KdWn7ZdaTca7b19u+24TqHupgF7O1KReRbUT3VgTWl0Gi5D9oC6o+]] ..
+        [[4o02Uye96GWrkGUPZid5TqEthDBXpd74w0UKpODDS00sT8ho1K+uJmYfkBApNzhatMl+fwvWB2R7Dt5F4mU+KbcJHrbrtRLznCZVpR2hFeRK+1hWuwO1eJpDzFLdRk9S]] ..
+        [[lua+kpH0t3aHK6tYAXQiR4EbpzXGcbGvIpra+90cIFtInCj75Dawb/SiUKFhN/ahEMSspo41LDBYj4Ei+PyncXbsP7G8DCtO/DCtz7924l5EzCj3PtJkK4tJh60hTqqo]] ..
+        [[8CoSa8l9eq09O69Y5c2xw+WNnudcGaZqXcbxem87Gf24mOw3A5hpXk455cfp5leLKX4Zrl/ZhXMaf3mKvdo2Ly1ZC4f7/fwXXg4VXm9UHL3PQXd4MFedVrHfomtekdrQ]] ..
+        [[o7L55+24El4IPR9nQyj3fA1eU2aEKwqILhcsBYNTGIA1cWq/kyIRXp+Yt4j6j4IPcCQoWkp9xMqsL3DZdhSfiuNhJbVYsXg0e9KuZYOXFhpRRzXam2Pb748M7HJIATHB]]
+    ) ..
+    (
+        [[8EIyQYYKpBZ0J8W8LKjBeP0COFh3d+eBv9118BOcNIqA2aCCQMLaRSpddoMBkRmqlNx+ClChyHmg1MHetXJZxOw/vItCEhShpMYkHDElZSHc5dCeIPdsX2ZwPLGaNmw8]] ..
+        [[EjaCOCEyl0vA2hzvIkxyWPydkNLtloFRKJt/3l+D29R47VxLNEV3sDiTjp2wstKlEyXOriZ7AE0S+zGdzCN2+Dm4Xh7Z4cH4TTquC3qbPiPLzzXTyRTfqqBmjVNGf7B1]] ..
+        [[G4OODLt9Xs9io3u2hh3ry3ZVjndPnw1Yxf1RjPC+hlqJo9Hz6mJwVdQkV/T9YV7iLwl8eg67U26Ea9VWiw5mKN0ZfWp3679zrA2eExgKpOENVnoNH+MmTDyFrMR5EoCO]] ..
+        [[8buZ/ja6cPdO3BZAqkoFJo7BUGXSZDWDXvzYm4qTZlTxUCqoe814fIcwAu8jJQ2jW4sievR4ayij1bncgim8ieIhM4BlGuOIUmQJn35uwr0P681pYHuphr0xfT6dwZz0]] ..
+        [[GP0DA/vPOHGGLLK4NISLkbTiejLpSLAhUejMesjiqTg7db0oxVc6wh9LteXtMT7mJydBQsdkv1rl1u7LsD8L9hOIRKjrSPIH+D5qfSpjXFe/eWMghVoyJ04NCA6e1y28]] ..
+        [[TVj77uXai1EKiF+pp2qklfjHyFSrfTKzhl09cKOYcuMDyNUG9d4f3S1J1BwxetyhiNf/7rmpUDusNXJkmZeaDXNk32E5nhxGAUqswodEUx0yz2bToYriQqVL/2RgHwPs]] ..
+        [[fcqKCh2gYuLBs81OP8Gy5THKL1Rg6RLTQgcWQ7J1pvPvGLcI5MA7RCPfqhEmvKBEgQphyoesZROT5Gt7UxUvpH2ifaHeBV8nVMJbRFL+F5yX+tK4kSFgeg1JpEpeN55F]] ..
+        [[LyAhOF25rC6mqtBeYI4GB/uYpKrRLsF1fLwhiqMSFf7VWWghVMghCn6PBZEceeiwkFdppBE17CXry1Nxktx1abaeAjohEAbv8VoBF00KFqDN2eYYF8eOd3vw//+9dM/N]] ..
+        [[Cn8nOmNSjA5atTlIUSAPdwTqmowt83OvKSLyyWpUqj4JqUhnelZ7AevTnQPrrh1PDebUEbKHjPMSE7AAj+6yH6z9vUhqw9I+COm+xuMAd+NpSQnzB3H5k5k4YDWpbeXx]] ..
+        [[4dBd3wcAltpWUE/AMB6uBl8SqfegwB5NUm2aQ2jkayH5M++4aMpzh0weKkGGAhvKvLJICwtWKj/s1vFpxSR1w76IUvtRcY7UHDAZoQxdWhHy0P/MV37OHYn82CqTshAd]] ..
+        [[gXOsIVO4zs4fJDV7jUiwJsb+IO7zNZthx3Q/MOV1WtW7YLTsEtswVXnAazEfypXGyUW6UedzPEedCBqyBBdMB2iV3BuvCGD2ei/ABFNKW1FCU71DOR3EUuksKitoEw0x]] ..
+        [[g5jo43JU1fJQ+7YlfbhAqzVAVSi728eaEAf2lPnUcCMcrFwX6zrCyYao6FtYmvJki/K2NIEXU5tJ3bUz+KZEkxIUOkMTStp6hgvh7E2C+7qMyxAR04QOdpzivRHw/v/M]] ..
+        [[7h4c8CtcgXGXELFNhZZbBTdchrcZtqVCqa3hckfVP0h3ePFtBFZpr2P2NN62qrC0zwn6wvqU7QBICp9MnRjMSwFUzn5OoAx1Kj8AcQxH7wgz42fNVxGC0F05e4U9hZxf]] ..
+        [[iR92ptQ4RKodEwqD9m0QlIpX93IURxqKqvz6Cyj3dnHCd+SVBmAvxjYyxbTO4fKy4jvV2MQ8i4u5irLcmqKrXarTLXBQYxZr8pwsV8MWKDeXuw6nMkq4ajZkAllVtNaq]] ..
+        [[3JtPzo+9+H5phNHZWkvgmHAgvYVtQ46kIHyjEeOiIWCVuASPkiVR73COgJ/JE49UBK6Bx0ZeWPgxTwC1wtEFNkDjShZczUwpY4CWwoNYDGvTdJGbcw4KIadEN2wJicSX]] ..
+        [[Pr5FwJSrcXB4i7+bqA3gjmNtvDgdWVIlTdcLUYQg5TRUrEgejJ7i9tFVulUo92h+PV7G4wUhyp25pjY4NJXIKFOGWW00bf2RaeV2My0HsUbRHsmU1awaWBons3RAEhYQ]] ..
+        [[F6L4kxGe+dFhdpRDkYHByjw0qliokS0qL4gQ2G8x2wmsC4bZW46aKQEq+QSjjDVIdmLegY78mWSg+AMGBM39zhRglACsRIEj+gUNkV/QAN6qDvvMxlXvd7DH4ZwFYyrk]] ..
+        [[MrqUVbhSWIK7gt2kxFF/Rjh8TORGyoXxOgHFmjmqVnc6ND5apVZ8HDpK2oRBgd6nA3gzZUez+lRrNCPJ7lwA81JHMT83jibT2uUL4Plexmzm1RI4LlMtkzGvP6jNlyQw]] ..
+        [[RxwP1Pe+oPAygy1Xa/7DQKA23eMcxmw0Hlg2lM78f7JgcA6ukxdzAQJK06hVIdmNOdAwWpo+Angkno5qQB/6bi/xryvdlbaB5C9RD8vhuceA2kqQ5BP94vjEbtWfR+cz]] ..
+        [[KawdnvTo7n0wDyG0ixgB+A9vLfhy+O3i8/mC+ARrrvn9x0gqPV1F/85HJ5CPAq+24D2kgIV0bA7sY74ykFm3HzEL6PBilIPKc8h+ECyqUvgqm/nNwLbOFi28eQAj4MbW]] ..
+        [[KtV7dh+s2SUd4FfoMLvunw+A1t1ee6gtSzi644yfTqq/YIhQ4JVEd1jPAV+HHszv5RAw4j7ZiwhjFOOIEsbgypZTk4gxhykhrO3uiIXaZoRPgiur6D+Vz4U4f/RETpRe]] ..
+        [[3S4C3vi/ga8VZRD6UvMWy8p98o3wD6od1BvvzV9N8Gt/riT2jg0XvFpAXvC9o95kZ6ee1G1oS0nwZvufgXNPxQGqQh9t5QfjVORF+5iXz1mvn64Jb6SZpu8W9++Itf+K]] ..
+        [[jzo4d3foA9gId3/hvMtvjK/8jZVD1SC5t4P6YKDsGXIVrs6GIMhk4N/Z3MhuINN8xvwRE9tLL21DtYBq/5h8FbffUHbDBecaLhIghmNP0AfqNF1zK+xZXvwBc3r75bOz]] ..
+        [[rcB37h8uTj3F+XedO4DTTNagGHU3IqqsMJhsoQSgNcMp0cT4DYbd/8qZsokQwtgxnEqqDVU5hfZA+h2d72I4ZcdwCmWxZPnBBY8na0Oj4OZyz3garK5nBSOAI+F8GHTZ]] ..
+        [[xmRN9QhagGPJL0OBCYHDPp/2pjvpjcA0assFr40W9SXziujygvgWDU9rH/IFdGvPG1Jk73WM2WUKclhROr8OAtmmaXq2AtiMOYKLektTo+gGkipQjl1LK4JJ3EJjEkyC]] ..
+        [[pWGSmfwhF7N/YpVIW4sTsM50FzcgS8ZdhZwgDn/0pjAYaMZja9ilKt6rMaMKKgjfH2wZHD4toSZnUE55F+sXGEvBzUC+/N3j6wp6vuPBiWwmN/MnOCuT9Z5GyWjj2ZBx]] ..
+        [[ATk8wWjPXQjg9/djdxYEPIdFNbK/UftOtf4Xa1FT82aY6nFXjCOG6XxWnjynACe/myiHXzX2ri52kv0O3AHIfAURUjw7IfbOSKe0pL5N0zF0wkZ1mj5v5wQue6vyXTvy]] ..
+        [[j98VT21wQ021OwBIMFFBYcx63ilCIn1xlpSMmR4DRZ3xnMr7VzgB1NMEE5I91bB6+NkKgm5gABIy6gYujCDELEubojg1MCXNMxdBNcgm1wKCZJ1ZOnMcJdPIYQdLrgxU]] ..
+        [[CGpqP8fgZPvMPQnJNz0MLBokTy4Tdk3rjNX0+iBSQsv8u7MbipxZzKPlRW/xClAX30NtE41BI2DwDovTudRGC8ltGHafmGSBtdZ7G/XZzk6oZ3g5mXh4OwX3XaPXu/Bv]] ..
+        [[RYA+UP7vdv7bDM5yhpgjkZAr0hROqQliQp1XWkAGGaT+HkzcKD/DsVlH85sEi2dA78zR6so9xk4A4H+VFLQYt4mdVZr35VyRutoKTS6MNd9H494VLK79NSOnGrgBSi/4]] ..
+        [[dS+gpV5dYpyYB12tCBxf7pWRlZfth+vNxg2VHwa4bkQUPu324kZGgKeVPIPsoZzFmpsubErIbYhKSxj0UBKJr+7YQk7jEpEwDueQTtc0ZBgxFGUaRE+amiyevZhZONwo]] ..
+        [[P/7UkJjzwYZ5CeazZWS3Je+imSJE/AI8rVK5csV9I6Or+QsVUl59ua8v5y9gEhSiiA+ZxDr8Dkc4A6ABKxmEjpPw6sJr0GXbzo1+s0Nz5KaA48+AeaqYik88cSEky8PH]]
+    ) ..
+    (
+        [[2DtkuQfQ8HEhCI9qdTIQ+eP9xeHPmzyQdorGBTwNcP/dV0KYw1b9tHbzv+ahkWqbTiRPLHW3mvGVdeySnUS8LSi1OX3sYzs/Q++0msss8+G6ssV1ug+Guw2G0V3Hq/vH]] ..
+        [[9ra//WnrZQ8LBjKsSVxZpQCo3RCYA0kyGa5ZhnkP17Ly87VBoy3sH5jGjJ2CMDuVTxodtWtdLd27TUsx3mcQ6sFvs3QqNX69Tz8a420AcoaqoBN4GLLv540UrPOesqsB]] ..
+        [[8Fq3dRk/C8XtXSyhrE2UQtuSIlmREa6LxJZirvdKVJu4f+zKFYInjf9hg4g1ZTQueJOY8MMtE0hghfFMXeTXUGUIxOiOu/uONHEVjEGKYbKeomw/FooNDs22jNJF2AZU]] ..
+        [[cn2+NgeFfz3s15YrvcJyGOjJI0JjmNReY0tjhuhq34jM2/LHttrLH4DfBf70EBmYbLooM2j+zuj6fMsaY5Zz9zppwz/lEskhpVmpVnZvOuK+z4Lmq0TIfu8m+l5Z5hSX]] ..
+        [[dyu3wKhZw9nHY2MqedSQ4gpkha/IM4tIBoZTrgryiZZMgdwi1GcZSsJDRzZllLlp0EBdNbYXk6ncxBd+IdNCh4beziCBEe9BpdKLGcnNYQvDIw6v8FRveSf94VAhNs59]] ..
+        [[sOXk7Y6I/MyVqGXDdOHgDZYGMuSb2SDmeZ+N1Rep5EjeiZgaUnymEuJf/rWmLnDpspb0OKmVVZtJN7r9UcsrhVHvqJCTpAWzdaQiwOSoEeNwLLlilmrfttPrA4hGDOTe]] ..
+        [[2O5IR6nkwjhKQE6r2CZMGzbKYG2SkEfB6EBS9TL+XtRqHbpUqggZRAkwy0vOik0StagrLyrIz05o6knZGWZAwmC1fi2AsYfkFMUfCEmXZHt7uxKNTOwzv/tgPD2E53ZK]] ..
+        [[Du9GxCEnna5aZmYAkBCO8seYRqWDMlK7gF+bfIRjO8Op694IhhQ5qrRwKgBjK3i4AUWNdRYbgIowgyhbHN51ZZJnv6SGFxU1Lcm+I4CfShnMcorGUcJ2sjBMsozui7LH]] ..
+        [[pcBr8Mow9FeIzh42fsfYjwu0EwCkZddJOAB8toI9X3MkCoGWQ/XugjzX3QN2EKQZIsaCq69AK2PgWel1FuQ+5siFpG4QKWp96KGR6LvksJzlEJzoaZ2q8hcA71Qr1VKn]] ..
+        [[vOyJBn+zs4qxRuxccCHeWEaKqs8QVLAOMEWkY4zjOqDydUFTRCbI5k9CYYfLhVhq1SLNi2YMZKAWiopSdkNEfgDdxaSXZG3FbDjUEx5ypYGH8tM9VW5cdLpYKz61CjLG]] ..
+        [[jhHd4JmKRGR0+4Q6PeYgKLZ/4RDrKgGRV3o5FkOmwRBiKMlmalg4kRoGHAY91hMAsSNf9Ky8uT0n0lgjlWU2rqzOTGKRnAO7zDSUqqkWEzH9BfAoEH/PXSfrHda5W6+/]] ..
+        [[2tFh1iAXZlpBEzf0LBJwzMi5d5Bkmclm28Sywm6j/FKd711KTjNvs+VE92V0oZfEm3Dxzrp2/7IjbcdcoI+rocrIhix68mHdJOUebEdkHuKqb8E/0YWZC9kTGbvCmxTI]] ..
+        [[nMVpCE3Ao+JqWKKZJCTrJDYnIRya+XXokGOIXnfbEjjhtRIP8Jm3mBIUE92V4t7gWJxJYBsWTYzdO30LhcykUwJWV1fUbCHgwZT6hE7SCKwWk3yl05DxqlUBEUVMxRh1]] ..
+        [[qSwh3+/URPm6vieR0I8UFp7PEJAw5wgqvT8MCfwhbjvJyslGYvz5ZyaXJ4OBmupssT/FgV61MeOOBAe7BhyuKS8n+uidCtmJP3Y1hENKpWeo6yuK/Ye32fJx9RrcSc2D]] ..
+        [[YeVWEPkSRQWKfzhGQ0E8ZsZKRTWmQ5CEmmKqJ0iAUTfd+MvdQi0TzYIGaKGDOwRBGAqkwWwIjOUEIAGRzHqqNlznKWz5qRTSZOSPdWk44JvuoIDTOgLDIQcDY37PG8sp]] ..
+        [[pO+/50FQDNsVgmci6ypESqTIkIiVmflXQeySHsSvQ6Jc6lTONcX0e7CB3Z3NmSYyCSOyL9JIXrkJSaso1ZpI2dGCfo6SrT00iicDiAJyJ/Wd9tRabDYZpKXBmFh3f+kG]] ..
+        [[zhydiQETui1obzj7euG9KKpYko5rr7QOOF03sB3pyBQHsOdbCNPDC30Np9p1YuNMrOO6VCs1AtOyk7qbU8ZG3zSrXXqlfaTpNoKqBQjcnEzsi8ndyYyALUtOgTIx4Tj2]] ..
+        [[cBxR4RqSzs1onTc4khipkdBULg8N/hidw+OOKpDaqPDWRAmC46yjZ7FVUTaYnKUm6yZXMjJWwCT0normJzv408dqIUipYYI8CqrcUXAjKeUkqj4P16lim1+aXUFPHUnH]] ..
+        [[pTdnCHU/5MFA/EMUtaggcBl15HjqPAcItkXOXdPcz2FFTWqMV+wsOxJ71XsORtlrODV1DSlO4kNhfhNf8YInBht7uU5uWw2cfZztCZQrmlFKA1KrgjjHqo+NPpAVDYDN]] ..
+        [[N3Rqn70YR4pnfdy8txQqE7Z0wRrhVct7BdK5eAmPNorAPTaAOAkNjOlihu4HWrJrthLVw/OgSSgdo/AtJUPTosgf8DSu1b+IXkAvjC3/in9377e9/wyAWwsr6Ncw8vJ/]] ..
+        [[V3d8gSkKMPvTfR6SgtlPeH6R4iRRgswMNXSgBJRB8B5xjZ3ZpNDDWSZGGzW3/IUhlrAGyARTKDBjDu8evigVNtfnkP53z/UgusB+jK8Qw3fo/KQ7zQ4b8RtJHzPs+vwc]] ..
+        [[BtiGLKPKOaMK6dBd6rwkctbmHoRLEzEGPeV37gDeMx2LkbXaFvwI9BHcl15IFot7djfFAgOhcHdjBu8luq/vyK+DkGnUhIAeJxOB+EabJJ41kafNJX54WEOLy30NSWJL]] ..
+        [[8AJyMQHAjPwBEay5L2lRei/RTsQB3WdxQVKk+Dph9Mo+UiPJZGzfSy9moJEVyuR/qwHS5maNN0MDtajq90ZUHBQKFzwJ5jJ+1onxlYPeGaEOl2wNMc9mGGw23zV2IXQB]] ..
+        [[uDwbtlV5oStg0iLY2vq0gzytnFr+iJQsmSzRObCLt6u5cXvtyLAixxmHkg44a0D5HcrjA+jBV1+SfLx/MlDVL9vxhN7ekLFd0VO/wH5OvCaIXDD/pkM98SWgjEd6OnCI]] ..
+        [[ywXc0lTcatZbSX8gAHxWRQMHC0bOE+7AahlFsWGEm8N45WwFhM/BlAaLPDFbZVfjRugPGIkrbYIXLMgjAdUESCEcXMMNo4hh0dcd0RJcoenquNxWoWoNEBkCvxXhdaqK]] ..
+        [[qol9okoZapFVGo+GEN1Ua7WGigzWjd+0Ewn8yOIHy+C2bXFqYK523TEVLUAf1EpI0tPkRuAcV0Avcm0DOuGqL8WcLUs20V0mQU+SmDiA6Shz3WNmCxNQ7f6wBEDTfXRW]] ..
+        [[ZjMLCaaFSBIUYYe9uPhmiiywfhrIk2XYmSwKayRVQjecubNj2elkmql5dFmoO2pE0biPepR7GoBYiiUlUrVWqKDFGN2yEDJiggPaOBvNqwx0oab8dSP8627ypCLW4LNj]] ..
+        [[cYgBw4MsjLYUPTEW4lh24g2msf4GvZEA/eFO8lcSXEKBTwbbHYJEH5inqa7s7cJZQAnLfEVdc3AoboZZIalDajv4eMKd83kXSiqQ8UjmjPHXJJ1JQimmDbMwg3AE8qEr]] ..
+        [[Q0YTrCOb4v0VOxudY+9mcrf9qR5ZqncogoRfplF26jIAdXfvQGJ4xEV2THZ2zuDszT2kdhhvqx/wD36YWGv4TtIonwdfwXUMkv0/Scd++zY3+NW7XoPgHwLOQ//Nlddh]] ..
+        [[QyoncVEGsM5T8CstUS1k0ErOINifnjLODDwmLM27sc0CxH6sQgjZQHVDvCB92efPTjHbwvEnnmJAAPvVLv9Rk9C7cZTIMAp7GXiieQA/yQLAg3hKcYsuNo803EcY79Ce]] ..
+        [[p9/iu28G40aD+fywGjzzdiNgL/HsJL1Z/AGQw9LF/4j236NoBDiazj9B/pLvQihAG6Yqto2KbH2lSfOdC7ww2xctae2DrI2LpjsAyPxon3JWMr0DjwV8TeGylDhNb8h+]] ..
+        [[1pCE8SYZ+IW/h7dEby+T5rGtC2QttyFrBzvG9Um/fF7tGdieEx5fgd9jbOVXSOWcNsIJJg6uBQwjdTAPkvHdxXW3g3QIn865SAfXjnj3DkryMODu5ZzzgQljAC6FXAqi]]
+    ) ..
+    (
+        [[pTj/vLGDj9H47UATSwMYJAsyqRYOwgunA7vzZmg7wtdoWPvNiQMlx+RulEF+HmN3nQYPhLmwk3FAIXrvp6JOJ/mgyFLqWe9b8A]]
+    )
 Suite.ModernDarkModuleCompact =
     (
         [[MSUFM1:MSUF3:tb1LjCxZeh6WWfd2s6fZag3IMVG3Zzi+VpOSwGflO9MgqFu3Xvl+V1UWRbMVlRlZlbxZGTkRmbeqRhAMCIIXXlm2CUGAYZMUSYuUbNIQLTcNP6CVudD]] ..

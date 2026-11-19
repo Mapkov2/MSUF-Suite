@@ -1,13 +1,14 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
-local Model = NS.NameplateAuraDisplay
+local Model, Filter = NS.NameplateAuraDisplay, private.AuraFilter
 -- The Suite creates containers only for explicitly tracked Custom and DoT
 -- rows. Blizzard owns their aura evaluation and the standard nameplate rows.
 local Display = {}
 private.AuraDisplay = Display
 local states = setmetatable({}, { __mode = "k" })
 local pending = setmetatable({}, { __mode = "k" })
-local owner, repaint, plan, revision, waitFrame, stackOptions, targetUF
+local owner, repaint, listen, plan, revision, waitFrame, stackOptions, targetUF
+local artListening = false
 local active, editMode = false, false
 local EMPTY = { includeSpellIDs = {} }
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -437,22 +438,24 @@ end
 
 -- Fixed slots: one native aura slot per tracked aura, in list order, with an
 -- optional faded icon while the aura is missing.
-local function Slots(state, record, c, excluded)
+local function Slots(state, record, c)
     for index, row in ipairs(c.rows) do
         local slot = record.slots[index] or NewSlot(state, record, index)
-        local x, y = Model.SlotOffset(c, index)
+        local fixed = c.fixedSlots[index]
         slot.anchor:SetSize(c.width, c.height)
         slot.anchor:ClearAllPoints()
-        slot.anchor:SetPoint(c.flowPoint, record.frame, c.flowPoint, x, y)
+        slot.anchor:SetPoint(c.flowPoint, record.frame, c.flowPoint, fixed.x, fixed.y)
         slot.anchor:SetFrameLevel(record.level)
-        local texture = C_Spell.GetSpellTexture(row.id)
-        if NS.Public(texture) then slot.texture:SetTexture(texture) end
-        slot.texture:SetTexCoord(c.crop, 1 - c.crop, c.crop, 1 - c.crop)
-        slot.texture:SetAlpha(c.missingAlpha / 100)
-        slot.texture:SetShown(c.missing and not (excluded and excluded[row.id]))
+        local id = fixed.artID
+        local texture = id and Filter.SpellArt(plan, id)
+        if texture or slot.artID ~= id then Filter.MissingArt(slot, texture) end
+        slot.artID = id
+        slot.texture:SetTexCoord(c.crop, c.cropMax, c.crop, c.cropMax)
+        slot.texture:SetAlpha(c.missingOpacity)
+        slot.texture:SetShown(slot.artID ~= nil)
         slot.anchor:SetShown(record.shown == true)
         slot.any = row.any
-        local candidate = Model.Excluding(row.candidate, excluded)
+        local candidate = fixed.candidate
         if not slot.added then
             record.frame:AddAuraSlot(slot.key, row.filter, { candidateFilters = candidate,
                 sortMethod = AuraContainerSortMethod.ExpirationOnly,
@@ -512,11 +515,11 @@ local function Configure(state, record, c, excluded)
         Place(state, record, c)
         if c.fixed then
             ClearGroups(record)
-            Slots(state, record, c, excluded)
+            Slots(state, record, c)
         else
             ClearSlots(record, 1)
-            Group(record, c, "auras", 1, c.filter, Model.Excluding(c.candidate, excluded), c.groupCount)
-            Group(record, c, "any", 2, c.anyFilter, Model.Excluding(c.anyCandidate, excluded), c.anyCount)
+            Group(record, c, "auras", 1, c.filter, c.groupCandidate, c.groupCount)
+            Group(record, c, "any", 2, c.anyFilter, c.groupAnyCandidate, c.anyCount)
         end
         for index = 1, styled do StylePart(record, record.parts[index]) end
     end
@@ -704,7 +707,25 @@ function Display.TargetChanged(current)
     RefreshTarget(current)
 end
 
-function Display.Configure(config)
+function Display.SpellDataLoaded(_, _, id, success)
+    if not active or not NS.Public(success) or success ~= true or not NS.Public(id) or type(id) ~= "number" then return end
+    if not plan.artIDs[id] or (plan.spellArt[id] and not plan.staleArt[id]) then return end
+    if Filter.SpellArt(plan, id, true) then Filter.RepaintArt(plan, states, id) end
+end
+
+local function SyncArtEvent()
+    if not listen then return end
+    local wanted = active and next(plan.artIDs) ~= nil
+    if artListening == wanted then return end
+    artListening = wanted
+    if wanted then
+        listen(owner, "SPELL_DATA_LOAD_RESULT", Display.SpellDataLoaded)
+    else
+        owner.context:RemoveEvent("SPELL_DATA_LOAD_RESULT")
+    end
+end
+
+function Display.Configure(config, spellDataChanged)
     active = config and Model.Active(config) or false
     if not active then
         Display.Release()
@@ -718,7 +739,15 @@ function Display.Configure(config)
     elseif bridge and plan and plan.iconSkin then
         bridge.WatchIconSkins("nameplates", false)
     end
-    if plan and nextPlan.signature == plan.signature and nextPlan.iconLook == plan.iconLook then return end
+    if plan and nextPlan.signature == plan.signature and nextPlan.iconLook == plan.iconLook then
+        if spellDataChanged and next(plan.artIDs) then
+            Filter.SeedArt(plan)
+            Filter.RepaintArt(plan, states)
+        end
+        return
+    end
+    Filter.PrepareDisplay(nextPlan)
+    Filter.SeedArt(nextPlan, plan and plan.spellArt)
     nextPlan.font = S.ResolveFont(nextPlan.values.auraFont) or S.GlobalFontPath()
     local dispel, held = DispelOptions(nextPlan.values), plan and plan.dispel
     nextPlan.dispel = held and SameDispel(held, dispel) and held or dispel
@@ -728,6 +757,7 @@ function Display.Configure(config)
         stackOptions = { formatter = formatter }
     end
     plan, revision = nextPlan, (revision or 0) + 1
+    SyncArtEvent()
 end
 
 function Display.Resume()
@@ -740,12 +770,13 @@ function Display.SetEditMode(enabled)
     editMode = enabled == true
 end
 
-function Display.Bind(module, refresh)
-    owner, repaint = module, refresh
+function Display.Bind(module, refresh, listenEvent)
+    owner, repaint, listen = module, refresh, listenEvent
 end
 
 function Display.Release()
     active, targetUF = false, nil
+    SyncArtEvent()
     if NS.HostBridge and plan and plan.iconSkin then NS.HostBridge.WatchIconSkins("nameplates", false) end
     plan = nil
     if rampJob then rampJob:Cancel() end

@@ -597,6 +597,7 @@ local function Materialize(key, slot, index, preview, spells, stage)
     if ov.replaceAura then C.EntryFill.ApplyReplacement(entry, ov) end
     local chosen = entry.unit and ChosenUnit(ov.auraUnit, entry.auraHelpful)
     if chosen then entry.unit = chosen end
+    if entry.ov ~= ov or entry.slot ~= slot then entry.cooldownRules, entry.indexedShowGCD = nil, nil end
     entry.ov = ov
     C.AuraTimers.Classify(entry)
     if old then Compare(entry, old) end

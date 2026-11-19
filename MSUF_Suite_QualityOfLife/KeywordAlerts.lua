@@ -464,7 +464,7 @@ local function HitRows()
         local time = S.Finite(hit.stamp) and date("%H:%M:%S", hit.stamp) or ""
         local text = S.Text("%s: %s"):format(hit.author, PlainText(hit.text))
         rows[i] = { key = hit.id, label = text, text = text,
-            detail = S.Text("%s · %s · %s\n%s"):format(time, channel, hit.phrase, text),
+            detail = S.Text("%s · %s · %s\n%s", true):format(time, channel, hit.phrase, text),
             search = channel .. " " .. hit.phrase .. " " .. text }
     end
     return rows

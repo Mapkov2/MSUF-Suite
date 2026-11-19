@@ -8,8 +8,8 @@ local CREST = NS.DataTextCrestMode
 -- Actions.lua owns what their clicks and tooltips do.
 local Sources = { bindings = {} }
 local ICON_SIZE, ICON_GAP, ICON_TEXT_GAP = 14, 2, 4
--- A reputation step with its name and percentage: "Renown 12 · 45%".
-local STEP_PROGRESS = S.Text("%s · %d%%")
+-- A reputation step with its name and percentage, such as "Renown 12 - 45%".
+local STEP_PROGRESS = S.Text("%s · %d%%", true)
 P.DataTextSources = Sources
 S.DataTextExtraSources = Sources
 local broker, owner

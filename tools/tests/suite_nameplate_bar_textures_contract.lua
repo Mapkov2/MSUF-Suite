@@ -86,6 +86,8 @@ local function Region(atlas)
         self:SetVertexColor(color.r, color.g, color.b, color.a)
     end
     function region:SetColorTexture(...) self.color = { ... } end
+    function region:AddMaskTexture(mask) assert(not self.mask) self.mask = mask end
+    function region:RemoveMaskTexture(mask) assert(self.mask == mask) self.mask = nil end
     function region:SetVertexOffset(index, x, y)
         assert(not self.locked and not self.forbidden, "restricted texture geometry write")
         self.vertices = self.vertices or {}
@@ -972,6 +974,34 @@ do
     assert(bg.path == "latestBack", "a protected first cast was left unprepared out of combat")
     T.Restore(uf)
     cast.visible, cast.protected = true, false
+    T.Configure({})
+end
+do
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/SlantedHealth.lua"))("Nameplates", private)
+    function cast:CreateMaskTexture()
+        local mask = Region()
+        function mask:SetAllPoints(owner) self.owner = owner end
+        return mask
+    end
+    local bridge, config = private.NS.HostBridge, { look = 3, nativeCastFillTexture = "cast" }
+    local read = bridge.CurrentFrameProfile
+    local profile = { general = {}, bars = { slantedBarsEnabled = true, slantedCastbars = true } }
+    bridge.CurrentFrameProfile = function() return profile end
+    local style = assert(T.SharedCastbar(config))
+    assert(style.slanted and T.SharedCastbar({ look = 2 }) == nil)
+    profile.bars.slantedBarsEnabled = false
+    assert(not T.SharedCastbar(config, style).slanted)
+    bridge.CurrentFrameProfile = read
+    T.Configure(config, { slanted = style.slanted, outlineSize = 0 })
+    T.Apply(uf)
+    local before = fill
+    assert(before.mask and before.mask.owner == cast and before.mask == cast.Background.mask)
+    cast.swapFill = true
+    cast:UpdateBarFillTexture(false)
+    assert(before ~= fill and not before.mask and fill.mask == cast.Background.mask,
+        "the native fill swap detached the slant from an active cast")
+    T.Restore(uf)
+    assert(not fill.mask and not cast.Background.mask)
     T.Configure({})
 end
 print("Nameplate textures: native fills and backgrounds, cast states, no repeated writes, release, restriction and links passed")

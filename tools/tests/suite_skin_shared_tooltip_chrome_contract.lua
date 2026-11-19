@@ -24,7 +24,7 @@ local function Test(forever)
     local frames, timers, listeners = {}, {}, {}
     local flags = setmetatable({}, { __mode = "k" })
     local nativeStyle, styleHook, building
-    local genericPaints = 0
+    local genericPaints, materialReads = 0, 0
     local function NoNativeWrite()
         assert(not building, "skin wrote during the native tooltip build")
     end
@@ -120,7 +120,11 @@ local function Test(forever)
             GetSurface = function() end,
         },
         Theme = {
-            GetMaterial = function(role) Check(role == "popup", "tooltip stopped using popup material"); return material end,
+            GetMaterial = function(role)
+                Check(role == "popup", "tooltip stopped using popup material")
+                materialReads = materialReads + 1
+                return material
+            end,
             GetColorTable = function(role) return palette[role] end,
             GetColor = function(role) return unpack(palette[role]) end,
             GetMaterialOpacity = function() return 0.75 end,
@@ -177,11 +181,20 @@ local function Test(forever)
         and embeddedFill.rgba[1] == 0.12, "popup palette/opacity missing on main or embedded")
     Check(edge.rgba[1] == 0.7 and edge.rgba[4] == 0.3, "border theme/opacity missing")
 
+    local reads = materialReads
     nativeStyle(tooltip, fill, 0.17)
     nativeStyle(tooltip, fill, 0.18)
     Check(#timers == 1, "reused tooltip queued duplicate settlements")
     NextFrame()
     Check(fill.rgba[1] == 0.12 and #timers == 0, "style reset left the tooltip native or kept polling")
+    Check(materialReads == reads, "a native style reset resolved immutable popup materials")
+    local originalEdge = tooltip.NineSlice.TopEdge
+    local replacement, replacementColors = Texture(0.3, 0.4, 0.5, 0.6)
+    tooltip.NineSlice.TopEdge = replacement
+    nativeStyle(tooltip, fill, 0.2)
+    NextFrame()
+    Check(replacementColors.rgba[1] == 0.7, "a replacement native edge kept the old handle")
+    tooltip.NineSlice.TopEdge = originalEdge
     Check(ns.Surface.TintEdge(tooltip, 0.26, 0.51, 0.92), "QoL border request no longer has a skin target")
     NextFrame()
     Check(edge.rgba[1] == 0.26 and edge.rgba[4] == 0.3, "quality/class color lost opacity")
@@ -204,6 +217,8 @@ local function Test(forever)
     Check(fill.rgba[1] == 0.22 and fill.gradient[2].r == 1 and embeddedFill.rgba[1] == 0.15,
         "disable overwrote the latest native style or left a gradient")
     Check(edge.rgba[1] == 0.6 and edge.rgba[4] == 0.8, "disable left the native border tinted")
+    Check(replacementColors.rgba[1] == 0.3 and replacementColors.rgba[4] == 0.6,
+        "replacement native edge lost its own baseline color")
     nativeStyle(tooltip, fill, 0.23)
     Check(#timers == 0, "disabled shared tooltip still schedules work")
 end

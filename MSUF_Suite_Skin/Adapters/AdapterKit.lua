@@ -747,6 +747,39 @@ function AdapterKit.SkinSearchBox(context, searchBox)
     AdapterKit.SetTextColor(context.textColors, Field(searchBox, "Instructions"), "muted")
 end
 
+function AdapterKit.DiscloseCharacterSidecar(v, config)
+    local view = v.kind == "character" and config.view
+    local expanded = view and view == "list" or not view and config.expanded
+    if expanded and not v.list then
+        local rail = NS.Safety.Field(v.root, "ModeTabs")
+        AdapterKit.PositionSidecar(v.panel, v.root, rail, v)
+    end
+    v.panel:SetShown(expanded == true)
+    if view then
+        v.toggle:Hide()
+        return
+    end
+    v.toggle:Show()
+    v.toggle:ClearAllPoints()
+    if v.kind == "inspect" then
+        v.toggle:SetPoint("TOPRIGHT", v.root, "TOPRIGHT", -12, -33)
+    elseif config.expanded then
+        v.toggle:SetPoint("TOPRIGHT", v.panel, "TOPRIGHT", -8, -8)
+    else
+        v.toggle:SetPoint("TOPLEFT", v.root, "TOPRIGHT", 8, -34)
+    end
+    local action = NS.WindowActionSkin.Apply(v.toggle, v.actionOwner, config.expanded and "collapse" or "expand")
+    v.toggleText:SetText(config.expanded and "-" or "+")
+    v.toggleText:SetShown(not action or action.style == "native")
+end
+
+function AdapterKit.WatchNativeLayout(frame, changed)
+    frame:HookScript("OnSizeChanged", changed)
+    AdapterKit.HookFunction(frame, "SetPoint", changed)
+    AdapterKit.HookFunction(frame, "ClearAllPoints", changed)
+    AdapterKit.HookFunction(frame, "SetScale", changed)
+end
+
 function AdapterKit.PositionSidecar(panel, root, rail, placement)
     local read = Safety.Read
     local right = read(root, "GetRight")

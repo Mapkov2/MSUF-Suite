@@ -30,6 +30,7 @@ local Public = S.Public
 local pairs, next, type = pairs, next, type
 local DELAY = 0.2
 local records = {} -- action button -> its records
+local activeTargets = {}
 local stamp = 0
 -- The entry a pass visits the buttons for, its kind, whether its glow shows
 -- and the stack threshold its glow uses (nil: no stack glow).
@@ -389,6 +390,7 @@ end
 local function Switch(rec, on)
     if rec.on == on then return end
     rec.on = on
+    if rec.unit == "target" then activeTargets[rec] = on and true or nil end
     rec.frame:SetEnabled(on)
 end
 
@@ -487,12 +489,7 @@ end
 -- native slot assignments even when B is unchanged; its Hide/Show reseeds
 -- the sealed inner target container without any addon call into that child.
 function ActionGlows.TargetChanged()
-    for _, list in pairs(records) do
-        for i = 1, #list do
-            local rec = list[i]
-            if not rec.free and rec.on and rec.unit == "target" then rec.frame:UpdateAllAuras() end
-        end
-    end
+    for rec in pairs(activeTargets) do rec.frame:UpdateAllAuras() end
 end
 
 ------------------------------------------------------------------ style changes

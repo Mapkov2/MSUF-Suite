@@ -30,7 +30,10 @@ local function Mutable(state)
     if not Writable(state.uf) or not Writable(state.health) then return false end
     if NS.InCombat() then
         local protected = state.uf:IsProtected()
-        if not NS.Public(protected) or protected ~= false then owner.pendingPlates[state.uf] = true return false end
+        if not NS.Public(protected) or protected ~= false then
+            owner.pendingPlates[state.uf] = true
+            return false
+        end
     end
     return true
 end
@@ -67,7 +70,10 @@ local function Pattern(state)
     end
     if not state.pattern then state.pattern = state.health:CreateTexture(nil, "ARTWORK", nil, 5) end
     local texture, fill = state.pattern, state.health:GetStatusBarTexture()
-    if not Writable(fill) then texture:Hide() return end
+    if not Writable(fill) then
+        texture:Hide()
+        return
+    end
     if state.patternFill ~= fill then texture:SetAllPoints(fill) state.patternFill = fill end
     if state.patternKind ~= chosen or state.patternGeneration ~= generation then
         texture:SetTexture(patterns[chosen])
@@ -112,7 +118,10 @@ local function CastTint(state, locked)
         state.castTint:SetColorTexture(1, 1, 1, 1)
     end
     local fill = state.health:GetStatusBarTexture()
-    if not Writable(fill) then state.castTint:Hide() return end
+    if not Writable(fill) then
+        state.castTint:Hide()
+        return
+    end
     if state.tintFill ~= fill then state.castTint:SetAllPoints(fill) state.tintFill = fill end
     if NS.Public(locked) and locked == nil then
         if not NS.Public(state.unit) or type(state.unit) ~= "string" then return end
@@ -123,7 +132,11 @@ local function CastTint(state, locked)
             locked = channel
         end
     end
-    if NS.Public(locked) and locked == nil then state.active = false state.castTint:Hide() return end
+    if NS.Public(locked) and locked == nil then
+        state.active = false
+        state.castTint:Hide()
+        return
+    end
     state.castTint:SetVertexColorFromBoolean(locked, colors.locked, colors.interruptible)
     state.castTint:SetAlpha(state.opacity or 1)
     state.castTint:Show()
@@ -157,7 +170,10 @@ local function Icon(state)
     state.icon:SetTexture(native:GetTexture())
     if state.iconAlpha == nil then
         local alpha = native:GetAlpha()
-        if not NS.Finite(alpha) then state.icon:Hide() return end
+        if not NS.Finite(alpha) then
+        state.icon:Hide()
+        return
+    end
         state.iconAlpha = alpha
     end
     native:SetAlpha(0)
@@ -315,7 +331,11 @@ function Features.Restore(uf, removed)
     if removed and selected.focus == uf then selected.focus = nil end
     if not state.enabled and not restores[uf] then return end
     state.enabled = false
-    if not Mutable(state) then restores[uf] = true Publish() return end
+    if not Mutable(state) then
+        restores[uf] = true
+        Publish()
+        return
+    end
     if state.pattern then state.pattern:Hide() end
     local castRestored, nameRestored = RestoreCast(state), RestoreName(state)
     if state.threat then Style.PaintBorder(state.threat, state.health, 0) end

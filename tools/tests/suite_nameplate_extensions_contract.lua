@@ -686,4 +686,48 @@ do
     X.Disable()
     M.castbarStyle = nil
 end
+do
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("Plates", P)
+    P.Auras = { RestorePlate = function() end, Apply = function() end }
+    local scopes = P.SkinScopes
+    local suppress = scopes.Bind(M, function() end)
+    local outer, unit = Plate("nameplate4")
+    unit.unit, unit.alpha = "nameplate4", .8
+    local nativePoints = { { point = "TOPLEFT" } }
+    outer.hitPoints = nativePoints
+    local access = true
+    function unit:CanBeAccessedInContext() return access end
+    local nativeSetAlpha = unit.SetAlpha
+    function unit:SetAlpha(alpha)
+        assert(access == true, "wrote alpha on an inaccessible unit frame")
+        nativeSetAlpha(self, alpha)
+    end
+
+    combat, M.config.enemySkinEnabled = true, false
+    scopes.Configure()
+    suppress(unit)
+    assert(unit.alpha == 0 and #outer.hitPoints == 0, "scope did not hide the unit and its hit region")
+
+    outer.canHit, M.config.enemySkinEnabled = false, true
+    scopes.Configure()
+    assert(unit.alpha == .8 and #outer.hitPoints == 0 and M.pendingPlates[unit],
+        "blocked outer hit-test restore also blocked restoring unit frame alpha")
+    unit:SetAlpha(.65)
+    outer.canHit = true
+    scopes.RestoreVisibility(unit)
+    assert(unit.alpha == .65 and outer.hitPoints == nativePoints and not scopes.OnHitTest(unit),
+        "later hit-test restore overwrote released alpha or kept the lease")
+
+    M.config.enemySkinEnabled = false
+    scopes.Configure()
+    suppress(unit)
+    access, M.config.enemySkinEnabled = secret, true
+    M.pendingPlates[unit] = nil
+    scopes.Configure()
+    assert(unit.alpha == 0 and outer.hitPoints == nativePoints and M.pendingPlates[unit],
+        "unreadable frame access affected independently restored hit-test points")
+    access = true
+    assert(scopes.OnHitTest(unit) and unit.alpha == .65 and not scopes.OnHitTest(unit),
+        "native hit-area refresh did not retry the still-owned alpha")
+end
 print("nameplate extensions contract passed: lifecycle, pooling, secrets, layout, click permission, range budget, text, restoration, visibility and opacity")

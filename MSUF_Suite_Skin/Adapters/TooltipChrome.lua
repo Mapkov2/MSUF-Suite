@@ -16,17 +16,32 @@ local borderPieces = {
 }
 local fillSpec = { role = "popup", radius = 8 }
 
+local plan
+local function PrepareStyle()
+    local material = NS.Theme.GetMaterial("popup")
+    local r, g, b, a = NS.Theme.GetColor(material.border)
+    local edge = NS.Geometry.Resolve(fillSpec).edge
+    plan = {
+        fill = NS.Surface.PrepareFill(material, fillSpec),
+        r = r, g = g, b = b, alpha = edge and a * NS.Theme.GetBorderOpacity() or 0,
+    }
+end
+
+local function SaveColor(color, r, g, b, a)
+    color[1], color[2], color[3], color[4] = r, g, b, a
+end
+
 local function Capture(state, region)
     if not Safety.Public(region) or not Safety.CanDecorate(region) then return end
     local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
     if r == nil then return end
     local paint = state.regions[region]
     if not paint then
-        paint = { spec = fillSpec }
+        paint = { spec = fillSpec, original = {}, applied = {} }
         state.regions[region] = paint
     end
     if not Safety.ColorMatches(paint.applied, r, g, b, a, Safety.COLOR_OWN) then
-        paint.original = { r, g, b, a }
+        SaveColor(paint.original, r, g, b, a)
     end
     return paint
 end
@@ -39,21 +54,20 @@ local function Paint(frame, state)
     local fill = Capture(state, center)
     if not fill then return false, "missing" end
 
-    local material = NS.Theme.GetMaterial("popup")
-    NS.Surface.PaintFill(center, material, fill)
-    fill.applied = { Safety.ReadColor(center, "GetVertexColor") }
+    if not plan then PrepareStyle() end
+    NS.Surface.PaintFill(center, nil, fill, nil, plan.fill)
+    SaveColor(fill.applied, Safety.ReadColor(center, "GetVertexColor"))
 
-    local r, g, b, a = NS.Theme.GetColor(material.border)
+    local r, g, b, alpha = plan.r, plan.g, plan.b, plan.alpha
     if state.tint then r, g, b = unpack(state.tint) end
-    local border = NS.Geometry.Resolve(fillSpec, state.geometry)
-    state.geometry = border
-    local alpha = border.edge and a * NS.Theme.GetBorderOpacity() or 0
+    -- Blizzard can install another region in the same slice. Resolve the
+    -- live handle before using its retained original and applied colors.
     for index = 1, #borderPieces do
         local region = Safety.Field(slice, borderPieces[index])
         local paint = Capture(state, region)
         if paint then
             region:SetVertexColor(r, g, b, alpha)
-            paint.applied = { r, g, b, alpha }
+            SaveColor(paint.applied, r, g, b, alpha)
         end
     end
     return true
@@ -87,6 +101,8 @@ end
 local function OnThemeChanged(_, domain)
     if domain ~= "theme" and domain ~= "color" and domain ~= "appearance"
         and domain ~= "geometry" and domain ~= "profile" then return end
+    plan = nil
+    if next(tooltips) then PrepareStyle() end
     for frame in pairs(tooltips) do RequestPaint(frame) end
 end
 
@@ -116,7 +132,8 @@ function TooltipChrome.TintEdge(frame, r, g, b)
         state.tint = nil
     elseif Safety.Public(r) and Safety.Public(g) and Safety.Public(b)
         and type(r) == "number" and type(g) == "number" and type(b) == "number" then
-        state.tint = { r, g, b }
+        state.tint = state.tint or {}
+        state.tint[1], state.tint[2], state.tint[3] = r, g, b
     else
         return false
     end

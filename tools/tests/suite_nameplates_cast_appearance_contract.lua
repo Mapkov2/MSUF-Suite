@@ -78,6 +78,8 @@ local function Region(alpha)
     function region:ClearAllPoints() self.points = {} end
     function region:SetPoint(...) self.points[#self.points + 1] = { ... } end
     function region:SetAllPoints(anchor) self.allPoints = anchor end
+    function region:AddMaskTexture(mask) assert(not self.mask) self.mask = mask end
+    function region:RemoveMaskTexture(mask) assert(self.mask == mask) self.mask = nil end
     function region:SetSize(width, height) self.width, self.height = width, height end
     function region:SetWidth(width) self.width = width end
     function region:SetHeight(height) self.height = height end
@@ -246,6 +248,7 @@ local owed = setmetatable({}, { __mode = "k" })
 private.Textures = { DeferCast = function(frame) owed[frame] = (owed[frame] or 0) + 1 end }
 assert(loadfile((arg and arg[2]) or root .. "/MSUF_Suite_Nameplates/CastAppearance.lua"))("Test", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CastOutline.lua"))("Test", private)
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/SlantedHealth.lua"))("Test", private)
 local appearance = assert(private.CastAppearance)
 
 -- Spark geometry of a castbar, counted passively: reads of the cast's height
@@ -427,6 +430,33 @@ GiveTargetWarning(protectedTarget)
 protectedTarget.protected = true
 assert(appearance.Apply(protectedTarget, targetOutline) and protectedTarget.CastTargetIndicator.alpha == .9)
 assert(appearance.Restore(protectedTarget))
+
+do
+    local shaped = Cast()
+    shaped.Background = Region()
+    shaped.CreateMaskTexture = function() return Region() end
+    GiveTargetWarning(shaped)
+    local style = { slanted = true, outlineSize = 1, outlineR = .47, outlineG = .35, outlineB = .22, targetHighlight = true }
+    shaped:SetIsHighlightedCastTarget(false)
+    assert(appearance.Apply(shaped, style))
+    local first, rim = shaped.fill, shaped.created[1]
+    assert(first.mask == shaped.Background.mask and first.mask.allPoints == shaped)
+    assert(rim.texture:match("SlantedHealthEdge%.tga$") and rim.shown and shaped.Border.alpha == 0)
+    assert(rim.vertex[1] == .47)
+    rim.secretTarget = true
+    shaped:SetIsHighlightedCastTarget(secret)
+    assert(rim.vertex[1] == 1 and rim.vertex[2] == .22, "targeted-cast warning lost the slanted shape")
+
+    combat, shaped.protected = true, true
+    local outline = private.CastOutline
+    assert(outline.RefreshShape(shaped), "an unchanged clipped castbar queued a combat replay")
+    shaped.fill = Region()
+    assert(not outline.RefreshShape(shaped) and first.mask and not shaped.fill.mask)
+    combat = false
+    assert(outline.RefreshShape(shaped) and not first.mask and shaped.fill.mask == shaped.Background.mask)
+    assert(appearance.Restore(shaped) and not shaped.fill.mask and not shaped.Background.mask and not rim.shown)
+    assert(shaped.Border.alpha > 0 and shaped.CastTargetIndicator.alpha == .9)
+end
 
 local nativeOutline = Cast()
 GiveTargetWarning(nativeOutline)

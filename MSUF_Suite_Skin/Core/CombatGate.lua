@@ -16,6 +16,7 @@ local CombatGate = {
 NS.CombatGate = CombatGate
 
 local eventFrame = CreateFrame("Frame")
+local combatStarted = false
 
 -- Drops stale slots once they outnumber the live jobs, so a key that is
 -- asked for on every update during a long fight keeps the list short.
@@ -38,6 +39,8 @@ local function Clear()
     for index = #order, 1, -1 do order[index] = nil end
     for key in pairs(positions) do positions[key] = nil end
     CombatGate.count = 0
+    combatStarted = false
+    eventFrame:UnregisterEvent("PLAYER_REGEN_DISABLED")
     eventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
 end
 
@@ -47,21 +50,21 @@ end
 -- combat-end drain took 23.7 ms in one frame). Combat before then holds the
 -- rest until it ends. A job leaves the queue before it runs: none runs twice.
 local DRAIN_BUDGET_MS = 4
-local draining, resumeQueued = false, false
+local FIRST_SETTLE_DELAY, MAX_SETTLE_DELAY = 0.05, 0.25
+local draining, resumeQueued, settleDelay = false, false, 0
 local ResumeDrain
 
-local function ScheduleDrain()
+local function ScheduleDrain(delay)
     if resumeQueued then return end
     resumeQueued = true
-    C_Timer.After(0, ResumeDrain)
+    C_Timer.After(delay or 0, ResumeDrain)
 end
 
 -- Each deferred job is its own boundary: a job that raises is reported and
 -- the remaining jobs still run in the same drain. budget nil: no limit.
 local function Drain(budget)
-    if NS.IsCombatLocked() then
-        return
-    end
+    if combatStarted or NS.IsCombatLocked() then return false end
+    settleDelay = 0
     local pending, order, positions = CombatGate.pending, CombatGate.order, CombatGate.positions
     local dispatch = NS.Safety.Dispatch
     local started = budget and CombatGate.count > 1 and debugprofilestop() or nil
@@ -77,38 +80,50 @@ local function Drain(budget)
             if started and CombatGate.count > 0 and debugprofilestop() - started >= budget then
                 draining = false
                 ScheduleDrain()
-                return
+                return true
             end
         end
         index = index + 1
     end
     draining = false
     Clear()
+    return true
 end
 
 ResumeDrain = function()
     resumeQueued = false
-    Drain(DRAIN_BUDGET_MS)
+    if CombatGate.count == 0 or Drain(DRAIN_BUDGET_MS) then return end
+    if combatStarted or InCombatLockdown() then return end
+    -- The unit flag can outlast the regen event and the next frame.
+    -- Probe only while work remains, backing off until the flag settles.
+    settleDelay = math.min(MAX_SETTLE_DELAY, math.max(FIRST_SETTLE_DELAY, settleDelay * 2))
+    ScheduleDrain(settleDelay)
 end
 
-eventFrame:SetScript("OnEvent", function()
-    -- Regen can arrive while the unit's combat flag still reports combat.
-    -- Finish on the next frame; if it is locked again, wait for the next edge.
-    if NS.IsCombatLocked() then
-        ScheduleDrain()
-    else
-        Drain(DRAIN_BUDGET_MS)
+eventFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        combatStarted = true
+        return
     end
+    combatStarted, settleDelay = false, 0
+    if not Drain(DRAIN_BUDGET_MS) then ScheduleDrain() end
 end)
 
 function CombatGate.RunOrDefer(key, callback)
     if type(callback) ~= "function" then
         return false, "invalid callback"
     end
-    if not NS.IsCombatLocked() then
-        -- Jobs a budgeted drain left for the next frame were asked for
-        -- before this request: they run first, without the budget.
-        if resumeQueued and not draining and CombatGate.count > 0 then Drain(nil) end
+    if not combatStarted and not NS.IsCombatLocked() then
+        if CombatGate.count > 0 then
+            -- Preserve the scheduled drain's order. If there is no such
+            -- drain, do not let a queued callback replay after this request.
+            if resumeQueued and not draining then
+                Drain(nil)
+            else
+                CombatGate.Cancel(key or callback)
+                if not draining and CombatGate.count > 0 then ScheduleDrain() end
+            end
+        end
         callback()
         return true
     end
@@ -117,6 +132,8 @@ function CombatGate.RunOrDefer(key, callback)
     local order, positions = CombatGate.order, CombatGate.positions
     if CombatGate.pending[key] == nil then
         if CombatGate.count == 0 then
+            settleDelay = 0
+            eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
             eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
             -- A job can arrive after the regen dispatch already passed us.
             if not InCombatLockdown() then ScheduleDrain() end

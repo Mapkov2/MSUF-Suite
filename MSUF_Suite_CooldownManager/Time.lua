@@ -1,14 +1,11 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Time sources for cooldown icons. Secret timing only reaches C sinks: the
--- swipe through duration objects, desaturation and opacity through step
--- curves evaluated C-side, counts through SetText. Lua branches only on
--- NeverSecret fields (isActive, isOnGCD, maxCharges, charge isActive),
--- HasSecretValues, or values that passed issecretvalue. No Lua table, closure or
--- string is built here per event; the new objects per event are the ones the
--- C API returns: the cooldown and charge info tables (GetSpellCooldown,
--- GetSpellCharges) and the duration objects.
+-- Secret times reach native swipes and curves, secret counts reach SetText.
+-- Lua branches only on NeverSecret fields (isActive, isOnGCD, maxCharges,
+-- charge isActive), HasSecretValues and values that passed issecretvalue.
+-- Only native queries allocate cooldown/charge info and duration objects;
+-- these paths create no Lua tables, closures or strings per event.
 local K = C.Const
 local COMBAT_POTION, HEALTH_POTION = K.SPELL_CATEGORY.COMBAT_POTION, K.SPELL_CATEGORY.HEALTH_POTION
 local STOCK = C.Presets.STOCK
@@ -37,21 +34,24 @@ local GetInventoryItemCooldown = GetInventoryItemCooldown
 local GetTotemInfo, GetTotemDuration = GetTotemInfo, GetTotemDuration
 local CreateDuration = C_DurationUtil.CreateDuration
 local GetTime = GetTime
--- Direct readers stay on the common unique-spell path. A flush with shared
--- spells temporarily binds memoized readers, then clears every native answer
--- before returning, including after an isolated entry error.
-local DirectCooldown, DirectDuration, DirectCharges = GetCooldown, GetDuration, GetCharges
-local DirectChargeDuration, DirectDisplayCount = GetChargeDuration, GetDisplayCount
-local function SharedReader(reader, argument, hasArgument)
+-- Spell state readers are scoped to a flush or an immediate cooldown event.
+-- Explicit event readers stay independent of an enclosing deferred flush.
+local LiveReads = {
+    cooldown = GetCooldown, duration = GetDuration, charges = GetCharges,
+    chargeDuration = GetChargeDuration, displayCount = GetDisplayCount,
+}
+Time.LiveReads = LiveReads
+
+local function SharedReader(reader, reads, argument)
     local seen, values = {}, {}
     local function Read(spell)
-        if issecret(spell) then
-            if hasArgument then return reader(spell, argument) end
+        if reads.invalidated or issecret(spell) then
+            if argument ~= nil then return reader(spell, argument) end
             return reader(spell)
         end
         if not seen[spell] then
             local value
-            if hasArgument then value = reader(spell, argument) else value = reader(spell) end
+            if argument ~= nil then value = reader(spell, argument) else value = reader(spell) end
             seen[spell], values[spell] = true, value
         end
         return values[spell]
@@ -62,34 +62,44 @@ local function SharedReader(reader, argument, hasArgument)
     end
     return Read, Clear
 end
-local SharedCooldown, ClearCooldown = SharedReader(DirectCooldown)
-local SharedBaseDuration, ClearBaseDuration = SharedReader(DirectDuration, true, true)
-local SharedDisplayDuration, ClearDisplayDuration = SharedReader(DirectDuration, false, true)
-local SharedCharges, ClearCharges = SharedReader(DirectCharges)
-local SharedChargeDuration, ClearChargeDuration = SharedReader(DirectChargeDuration)
-local SharedDisplayCount, ClearDisplayCount = SharedReader(DirectDisplayCount)
-local function SharedDuration(spell, ignoreGCD)
-    if ignoreGCD then return SharedBaseDuration(spell) end
-    return SharedDisplayDuration(spell)
+
+function Time.NewReads()
+    local reads = {}
+    local cooldown, clearCooldown = SharedReader(GetCooldown, reads)
+    local baseDuration, clearBase = SharedReader(GetDuration, reads, true)
+    local displayDuration, clearDisplay = SharedReader(GetDuration, reads, false)
+    local charges, clearCharges = SharedReader(GetCharges, reads)
+    local chargeDuration, clearRecharge = SharedReader(GetChargeDuration, reads)
+    local displayCount, clearCount = SharedReader(GetDisplayCount, reads)
+    reads.cooldown, reads.charges = cooldown, charges
+    reads.chargeDuration, reads.displayCount = chargeDuration, displayCount
+    reads.duration = function(spell, ignoreGCD)
+        if ignoreGCD then return baseDuration(spell) end
+        return displayDuration(spell)
+    end
+    reads.clear = function()
+        clearCooldown()
+        clearBase()
+        clearDisplay()
+        clearCharges()
+        clearRecharge()
+        clearCount()
+        reads.invalidated = nil
+    end
+    return reads
 end
-local queriesActive = false
+
+local flushReads = Time.NewReads()
+local activeReads = LiveReads
 function Time.BeginQueries()
-    if queriesActive then return false end
-    queriesActive = true
-    GetCooldown, GetDuration, GetCharges = SharedCooldown, SharedDuration, SharedCharges
-    GetChargeDuration, GetDisplayCount = SharedChargeDuration, SharedDisplayCount
+    if activeReads == flushReads then return false end
+    activeReads = flushReads
     return true
 end
+
 function Time.EndQueries()
-    GetCooldown, GetDuration, GetCharges = DirectCooldown, DirectDuration, DirectCharges
-    GetChargeDuration, GetDisplayCount = DirectChargeDuration, DirectDisplayCount
-    ClearCooldown()
-    ClearBaseDuration()
-    ClearDisplayDuration()
-    ClearCharges()
-    ClearChargeDuration()
-    ClearDisplayCount()
-    queriesActive = false
+    activeReads = LiveReads
+    flushReads.clear()
 end
 -- Ready alerts need a real cooldown of at least this long; items treat
 -- anything up to a global cooldown as no cooldown.
@@ -114,6 +124,7 @@ local function Curves(icon, entry, view, queries)
     local cooling = ov.cdAlpha or view.cdAlpha or 100
     icon.readyAlpha, icon.coolAlpha = ready / 100, cooling / 100
     icon.alphaCurve = (ready ~= 100 or cooling ~= 100) and K.StepCurve(ready, cooling) or nil
+    icon.chargeAlphaCurve = ov.hideAvailableCharges and K.StepCurve(0, 100) or nil
     local hide = ov.hideReady
     if hide == nil then hide = view.hideReady == true end
     icon.hideReady = hide
@@ -218,8 +229,8 @@ end
 
 -- Keep a running recharge independent of the main cooldown. If a GCD hid
 -- the last known cooldown state, a public "not recharging" settles it.
-local function ChargeState(entry, icon, spell, cooling, exact)
-    local charges = entry.charges ~= false and GetCharges(spell)
+local function ChargeState(entry, icon, spell, cooling, exact, reads)
+    local charges = entry.charges ~= false and reads.charges(spell)
     local rechargeDuration
     entry.fullyCharged = nil
     local maximum = charges and charges.maxCharges
@@ -228,7 +239,7 @@ local function ChargeState(entry, icon, spell, cooling, exact)
         local recharging = not issecret(state) and state == true
         entry.fullyCharged = not issecret(state) and state == false or nil
         if recharging then
-            local duration = GetChargeDuration(spell)
+            local duration = reads.chargeDuration(spell)
             rechargeDuration = duration
             if duration then
                 local cooldown = icon.chargeCd or C.Icons.ChargeCooldown(icon)
@@ -250,11 +261,11 @@ local function ChargeState(entry, icon, spell, cooling, exact)
         ClearCharge(icon)
     end
     TrackingBars.Charges(icon, charges, rechargeDuration)
-    if entry.ov and entry.ov.hideAvailableCharges and not issecret(maximum) and type(maximum) == "number" and maximum > 1
-        and not C.state.preview then
+    local chargeCurve = icon.chargeAlphaCurve
+    if chargeCurve and not issecret(maximum) and type(maximum) == "number" and maximum > 1 and not C.state.preview then
         local duration = icon.mainDuration
         if duration then
-            icon:SetAlpha(duration:EvaluateRemainingDuration(K.StepCurve(0, 100)))
+            icon:SetAlpha(duration:EvaluateRemainingDuration(chargeCurve))
         else
             icon:SetAlpha(0)
         end
@@ -271,25 +282,26 @@ end
 -- charge is available, so only the recharge swipe and the count are read
 -- and the main state holds; a main swipe that shows (no charge left, or the
 -- GCD) is read in full.
-local function SpellState(entry, icon, spell, reason)
+local function SpellState(entry, icon, spell, reason, reads)
     local cooling, exact = false, true
-    if reason == "recharge" and icon.cdSet == true then reason = "charges" end
     if reason == "expired" then
         if readable then icon.readinessKnown = true end
         if entry.ov.actionUsableGlow then C.ActionUsableGlows.Cooldown(entry, false) end
         ClearMain(icon)
         Feedback(icon, nil)
-    elseif reason == "recharge" then
+    elseif reason == "recharge" and icon.cdSet ~= true then
         cooling, exact = entry.cooling == true, false
     else
-        local info = GetCooldown(spell)
+        local info = reads.cooldown(spell)
         local active = info and info.isActive
         if not issecret(active) and active then
-            local ov = entry.ov
-            local showGCD = ov and ov.showGCD
-            if showGCD == nil then showGCD = C.state.showGCD end
+            local showGCD = entry.indexedShowGCD
+            if showGCD == nil or entry.indexedGCDChoices ~= entry.ov then
+                showGCD = entry.ov and entry.ov.showGCD
+                if showGCD == nil then showGCD = C.state.showGCD end
+            end
             local ignoreGCD = showGCD ~= true
-            local duration = GetDuration(spell, ignoreGCD)
+            local duration = reads.duration(spell, ignoreGCD)
             if duration then
                 icon.cd:SetCooldownFromDurationObject(duration, true)
                 icon.cdSet, icon.cdReal = true, ignoreGCD
@@ -299,8 +311,8 @@ local function SpellState(entry, icon, spell, reason)
             end
             -- Desaturation, opacity and the ready check ignore the GCD.
             local base = duration
-            if not ignoreGCD and (icon.desatCurve or icon.alphaCurve or ov and ov.hideAvailableCharges or reason ~= "cooldown") then
-                base = GetDuration(spell, true)
+            if not ignoreGCD and (icon.desatCurve or icon.alphaCurve or icon.chargeAlphaCurve or reason ~= "cooldown") then
+                base = reads.duration(spell, true)
             end
             Feedback(icon, base)
             cooling, exact = Real(info, base, reason, entry.cooling)
@@ -314,12 +326,12 @@ local function SpellState(entry, icon, spell, reason)
         -- Share the main answer before recharge presentation can hold it.
         if entry.ov.actionUsableGlow then C.ActionUsableGlows.Timing(entry, info, active, cooling, exact) end
     end
-    cooling = ChargeState(entry, icon, spell, cooling, exact)
+    cooling = ChargeState(entry, icon, spell, cooling, exact, reads)
     -- Potion and healthstone entries show their bag count (CategoryCount).
     local category = entry.spellCategory
     if category and category ~= 0 then return cooling end
     if icon.stackOn then
-        icon.count:SetText(GetDisplayCount(spell))
+        icon.count:SetText(reads.displayCount(spell))
         icon.countOff, icon.lastCount = false, nil
     else
         CountOff(icon)
@@ -543,7 +555,7 @@ end
 
 -- Forever 70170 CooldownViewerItemData.lua prefers the last category item:
 -- its cover spell may have no cooldown. Older builds keep the spell fallback.
-local function CategoryState(entry, icon, reason, spell)
+local function CategoryState(entry, icon, reason, spell, reads)
     -- Each healthstone category has one item, even before its first use
     -- event; a category of many ranks reads the one the bags hold.
     local item = entry.hideEmpty and HeldItem(entry.spellCategory) or entry.catItem
@@ -551,7 +563,7 @@ local function CategoryState(entry, icon, reason, spell)
     local info = item and GetCategoryCooldown and GetCategoryCooldown(item)
     if not info then
         icon.itemStart, icon.itemLock = nil, nil
-        if spell then return SpellState(entry, icon, spell, reason) end
+        if spell then return SpellState(entry, icon, spell, reason, reads) end
         if readable then icon.readinessKnown = false end
         ClearMain(icon)
         ClearCharge(icon)
@@ -661,7 +673,7 @@ end
 -- (SPELL_UPDATE_CHARGES: the charge part only, see SpellState), "charges"
 -- (state and count), "item" (bag events), "done", "expired" (the main swipe
 -- ran out, from Done), "full". Returns true when entry.hidden changed.
-function Time.Refresh(entry, reason, usableQueries)
+function Time.Refresh(entry, reason, usableQueries, timeReads)
     local icon = entry.icon
     if not icon or icon.sim or entry.src == "p" then return false end
     local view = C.views[entry.slot]
@@ -671,7 +683,7 @@ function Time.Refresh(entry, reason, usableQueries)
         -- swipes and state hold. Routed to spell entries that show counts.
         local spell = entry.spell
         if icon.stackOn and spell then
-            icon.count:SetText(GetDisplayCount(spell))
+            icon.count:SetText((timeReads or activeReads).displayCount(spell))
             icon.countOff, icon.lastCount = false, nil
         end
         return false
@@ -689,15 +701,16 @@ function Time.Refresh(entry, reason, usableQueries)
         -- started the category, with its cover spell as the legacy fallback.
         -- Healthstones also follow bag cooldowns while held in combat;
         -- potion timing follows SPELL_UPDATE_COOLDOWN.
+        local reads = timeReads or activeReads
         local spell, category = entry.spell, entry.spellCategory
         if category == 0 then category = nil end
         if category then spell = entry.catSpell end
         if category and reason == "item" and not entry.hideEmpty then
             cooling = entry.cooling == true
         elseif category then
-            cooling = CategoryState(entry, icon, reason, spell)
+            cooling = CategoryState(entry, icon, reason, spell, reads)
         elseif spell then
-            cooling = SpellState(entry, icon, spell, reason)
+            cooling = SpellState(entry, icon, spell, reason, reads)
         else
             cooling, empty = Untimed(entry, icon)
         end

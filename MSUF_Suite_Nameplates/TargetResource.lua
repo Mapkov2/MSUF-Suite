@@ -4,6 +4,7 @@ local Resource = {}
 private.TargetResource = Resource
 local owner, watcher, current, currentUF, power, read, maximum, config, revision, powerToken
 local rows = setmetatable({}, { __mode = "k" })
+local frameRow, frameActive
 local events = { "PLAYER_SPECIALIZATION_CHANGED", "SPELLS_CHANGED", "UPDATE_SHAPESHIFT_FORM",
     "UNIT_DISPLAYPOWER", "UNIT_MAXPOWER", "PLAYER_ENTERING_WORLD" }
 
@@ -20,7 +21,10 @@ local function Mutable(uf, health)
     if not Accessible(uf) or not Accessible(health) then return false end
     if NS.InCombat() then
         local protected = uf:IsProtected()
-        if not NS.Public(protected) or protected ~= false then owner.pendingPlates[uf] = true return false end
+        if not NS.Public(protected) or protected ~= false then
+            owner.pendingPlates[uf] = true
+            return false
+        end
     end
     return true
 end
@@ -31,23 +35,32 @@ local function Hide()
 end
 
 local function Resolve()
-    local bridge = NS.HostBridge
-    power, read, maximum, powerToken = nil, nil, nil, nil
-    if bridge and bridge.NameplateResource then power, read, maximum, powerToken = bridge.NameplateResource() end
+    power, read, maximum, powerToken = NS.HostBridge.NameplateResource()
+end
+
+local function UpdateRow(row, value)
+    if not row or not Accessible(row) then return end
+    for index = 1, row.count do row.bars[index]:SetValue(value) end
 end
 
 local function Update()
-    if not current or not read or not owner.active or not Accessible(current) then return end
+    if not read or not owner.active or not (current or frameActive) then return end
     local value = read("player", power)
-    for index = 1, current.count do current.bars[index]:SetValue(value) end
+    UpdateRow(current, value)
+    if frameActive then UpdateRow(frameRow, value) end
 end
 
 local function Layout(row, health, count)
     if row.revision ~= revision or row.count ~= count or row.power ~= power then
-        local width, height = config.targetClassResourceWidth, config.targetClassResourceHeight
+        local key = row.unitFrame and "targetUnitFrameResource" or "targetClassResource"
+        local width, height = config[key .. "Width"], config[key .. "Height"]
         row:SetSize(width, height)
         row:ClearAllPoints()
-        row:SetPoint("TOP", health, "BOTTOM", 0, config.targetClassResourceY)
+        if row.unitFrame then
+            row:SetPoint("TOPLEFT", health, "BOTTOMLEFT", 5, config[key .. "Y"])
+        else
+            row:SetPoint("TOP", health, "BOTTOM", 0, config[key .. "Y"])
+        end
         local size = (width - (count - 1) * 2) / count
         local colors = PowerBarColor[powerToken] or PowerBarColor.COMBO_POINTS or { r = 1, g = .8, b = 0 }
         for index = 1, math.max(count, #row.bars) do
@@ -76,8 +89,47 @@ local function Layout(row, health, count)
     end
 end
 
+local function MakeRow(parent, unitFrame)
+    local row = CreateFrame("Frame", nil, parent)
+    row:EnableMouse(false)
+    row.bars, row.unitFrame = {}, unitFrame
+    return row
+end
+
+local function HideFrameRow()
+    if frameRow and Accessible(frameRow) then frameRow:SetAlpha(0) end
+    frameActive = nil
+end
+
+local function RefreshFrameRow()
+    if not Resource.frameEnabled or not power then return HideFrameRow() end
+    local target = NS.HostBridge.TargetResourceFrame()
+    if not NS.Public(target) or not target or not Accessible(target) then return HideFrameRow() end
+    local count = maximum("player", power)
+    if not NS.Finite(count) or count <= 0 or count % 1 ~= 0 then return HideFrameRow() end
+    if frameRow and not Accessible(frameRow) then return HideFrameRow() end
+    local parent = frameRow and frameRow:GetParent()
+    local moving = not NS.Public(parent) or parent ~= target
+    if NS.InCombat() then
+        if moving or frameRow.revision ~= revision or frameRow.power ~= power or frameRow.count ~= count then
+            return HideFrameRow()
+        end
+    else
+        if not frameRow then
+            frameRow = MakeRow(target, true)
+        elseif moving then
+            frameRow:SetParent(target)
+            frameRow.revision = nil
+        end
+        Layout(frameRow, target, count)
+    end
+    frameActive = true
+    frameRow:SetAlpha(1)
+    frameRow:Show()
+end
+
 function Resource.Attach(uf, health, styled)
-    if not Resource.enabled or not power or not styled then
+    if not Resource.plateEnabled or not power or not styled then
         Resource.Restore(uf)
         return
     end
@@ -88,12 +140,13 @@ function Resource.Attach(uf, health, styled)
     if not Mutable(uf, health) then return end
     local count = maximum("player", power)
     if not NS.Finite(count) then return end
-    if count <= 0 or count % 1 ~= 0 then Hide() return end
+    if count <= 0 or count % 1 ~= 0 then
+        Hide()
+        return
+    end
     local row = rows[uf]
     if not row then
-        row = CreateFrame("Frame", nil, health)
-        row:EnableMouse(false)
-        row.bars = {}
+        row = MakeRow(health, false)
         rows[uf] = row
     end
     if current ~= row then Hide() current, currentUF = row, uf end
@@ -105,7 +158,10 @@ end
 
 function Resource.Selection()
     Hide()
+    RefreshFrameRow()
+    Update()
     Resource.targetUF = nil
+    if not Resource.plateEnabled then return end
     local plate = C_NamePlate.GetNamePlateForUnit("target")
     if not NS.Public(plate) or not plate or NS.Safety.IsForbidden(plate) then return end
     local uf = plate.UnitFrame
@@ -120,6 +176,9 @@ local function OnEvent(_, event, unit, token)
     if event == "UNIT_POWER_UPDATE" and NS.Public(token) and token ~= powerToken then return end
     if event == "UNIT_POWER_UPDATE" or event == "RUNE_POWER_UPDATE" or event == "COMBO_TARGET_CHANGED" then
         Update()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        RefreshFrameRow()
+        Update()
     else
         if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "UNIT_DISPLAYPOWER" or event == "UNIT_MAXPOWER" then
             if not NS.Public(unit) or unit ~= "player" then return end
@@ -132,16 +191,23 @@ end
 
 function Resource.Configure(module)
     owner, config, revision = module, module.config, (revision or 0) + 1
-    local enabled = owner.active and config.look ~= 2 and config.targetClassResource == true
+    Resource.plateEnabled = owner.active and config.look ~= 2 and config.targetClassResource == true
+    Resource.frameEnabled = owner.active and config.targetUnitFrameResource == true
+    Resource.enabled = Resource.plateEnabled or Resource.frameEnabled
     if watcher then watcher:UnregisterAllEvents() end
-    Resource.enabled = enabled
     Resource.targetUF = nil
     Hide()
-    if not enabled then return end
+    HideFrameRow()
+    if not Resource.enabled then return end
     Resolve()
     if not watcher then watcher = CreateFrame("Frame") watcher:SetScript("OnEvent", OnEvent) end
     if power then watcher:RegisterUnitEvent("UNIT_POWER_UPDATE", "player") end
     watcher:RegisterEvent("RUNE_POWER_UPDATE")
+    if Resource.frameEnabled then
+        watcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+        RefreshFrameRow()
+        Update()
+    end
     if NS.Client.isForever then watcher:RegisterEvent("COMBO_TARGET_CHANGED") end
     for _, event in ipairs(events) do watcher:RegisterEvent(event) end
 end

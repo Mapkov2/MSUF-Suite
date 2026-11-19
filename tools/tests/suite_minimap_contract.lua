@@ -690,9 +690,19 @@ do
     check(relative == panel and relativePoint == "TOPLEFT" and H.Near(x * alpha.scale, 20) and H.Near(y * alpha.scale, -20), "grid cell")
     check(H.Near(select(4, Anchor(own)) * own.scale, 76), "sorted by label")
     local toggle
-    for _, frame in ipairs(MM.host.children) do if frame.kind == "Button" and frame.dots then toggle = frame end end
+    for _, frame in ipairs(MM.host.children) do
+        if frame.kind == "Button" and frame.minimapOffsetKey == "drawer" then toggle = frame end
+    end
     check(toggle and toggle.shown and select(1, Anchor(toggle)) == "BOTTOMRIGHT" and select(4, Anchor(toggle)) == -5
         and toggle.strata == "MEDIUM" and toggle.clicks[1] == "LeftButtonUp", "toggle placement and click layer")
+    local drawerStyle = assert(W.Suite.MinimapDrawerStyle, "drawer style is missing")
+    local badge = assert(toggle.icon, "drawer button is missing its Suite badge")
+    local highlight = assert(toggle.highlight, "drawer button is missing its round highlight")
+    local media = "Interface\\AddOns\\MSUF_Suite\\Media\\"
+    check(W.config.drawerStyle == drawerStyle.AUTO and badge.texture == media .. "SuiteIconModern.tga",
+        "Retail profiles should get the round blue Suite badge by default")
+    check(highlight.texture == badge.texture and highlight.blend == "ADD",
+        "hover should brighten the round badge")
     assert(S.SetMany("minimap", { drawerX = 20, drawerY = 11 }))
     check(select(4, Anchor(toggle)) == 15 and select(5, Anchor(toggle)) == 11,
         "drawer preview offsets need to reach the native toggle")
@@ -750,6 +760,16 @@ do
     check(not toggle.shown, "mouseover toggle")
     W.Fire(MM.catcher, "OnEnter")
     check(toggle.shown, "hover did not reveal the toggle")
+    W.Fire(MM.catcher, "OnLeave"); W.Advance(0.2)
+    check(not toggle.shown, "leaving the minimap did not hide the drawer toggle")
+    W.Fire(MM.catcher, "OnEnter")
+    toggle:Click()
+    W.Fire(MM.catcher, "OnLeave"); W.Advance(0.2)
+    check(panel.shown and toggle.shown, "the toggle should stay visible while the drawer is open")
+    toggle:Click()
+    check(not panel.shown and not toggle.shown, "closing the drawer should restore mouseover visibility")
+    assert(S.Set("minimap", "drawerMouseover", false))
+    check(toggle.shown, "Always did not show the drawer toggle")
     W.SetCombat(true)
     check(not S.MinimapRescanButtons(), "rescan in combat")
     W.SetCombat(false)
@@ -783,6 +803,15 @@ do
     S.ModuleState("minimap").detachedButtons = {}
     check(S.MinimapRescanButtons(), "rescan after restored positions"); W.Step()
     check(alpha:GetParent() == panel and not holder.shown, "a restored collected button kept its empty holder")
+    assert(S.ApplyGlobalLook("midnightDark"))
+    check(badge.texture == media .. "SuiteIconDark.tga" and highlight.texture == badge.texture,
+        "automatic drawer style and highlight did not follow Midnight Dark")
+    assert(S.Set("minimap", "drawerStyle", drawerStyle.FOREVER))
+    check(badge.texture == media .. "SuiteIconForever.tga", "Forever override did not repaint the drawer")
+    assert(S.ApplyGlobalLook("midnight"))
+    check(badge.texture == media .. "SuiteIconForever.tga", "a Suite look replaced the drawer override")
+    assert(S.Set("minimap", "drawerStyle", drawerStyle.AUTO))
+    check(badge.texture == media .. "SuiteIconModern.tga", "automatic drawer style did not return to Midnight Blue")
     actions = {}; S.MinimapButtonLayoutMenu(); actions["Detach: Alpha"](); W.Step()
     assert(S.Set("minimap", "collectButtons", false))
     for _, button in ipairs({ alpha, beta, own, gamma, delta }) do

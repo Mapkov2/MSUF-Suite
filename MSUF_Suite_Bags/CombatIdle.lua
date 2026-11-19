@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
--- In a fight with no bag window open (the combined bag, the reagent bag or
--- the bank), the Bags run no code for that fight's events. At
+-- In a fight with every bag and bank window closed, the Bags run no code
+-- for that fight's events. At
 -- PLAYER_REGEN_DISABLED, or when the last window closes in combat, every
 -- listener below pauses. Each one marks what it may have missed as stale
 -- when it resumes: when a window opens in combat, or when the fight ends.
@@ -10,7 +10,13 @@ local Idle = { paused = false }
 P.BagsIdle = Idle
 
 local function WindowShown()
-    return M.frame ~= nil and M.frame:IsShown() or ContainerFrame6:IsShown() or BankFrame:IsShown()
+    if M.frame ~= nil and M.frame:IsShown() or ContainerFrame6:IsShown() or BankFrame:IsShown() then return true end
+    if M.standaloneFrames then
+        for _, frame in ipairs(M.standaloneFrames) do
+            if frame:IsShown() then return true end
+        end
+    end
+    return false
 end
 
 function Idle.Pause()
@@ -45,15 +51,20 @@ local function WindowHidden()
     if NS.InCombat() then Idle.Pause() end
 end
 
+local function WatchWindow(frame)
+    frame:HookScript("OnShow", Idle.Wake)
+    frame:HookScript("OnHide", WindowHidden)
+end
+
 -- Runs after every other Bags refresh (Bags.lua SUBMODULES), which may have
 -- restarted a paused listener.
 function Idle.Refresh()
     if not Idle.events then
         Idle.events = S.CreateFrame("Frame")
         Idle.events:SetScript("OnEvent", OnEvent)
-        for _, frame in ipairs({ M.frame, ContainerFrame6, BankFrame }) do
-            frame:HookScript("OnShow", Idle.Wake)
-            frame:HookScript("OnHide", WindowHidden)
+        for _, frame in ipairs({ M.frame, ContainerFrame6, BankFrame }) do WatchWindow(frame) end
+        if M.standaloneFrames then
+            for _, frame in ipairs(M.standaloneFrames) do WatchWindow(frame) end
         end
     end
     Idle.events:RegisterEvent("PLAYER_REGEN_DISABLED")

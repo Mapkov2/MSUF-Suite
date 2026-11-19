@@ -2,7 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 
 -- One TooltipDataProcessor post-call per tooltip type, shared by every Suite
--- helper that adds to Blizzard's main tooltip, with one eligibility check and
+-- helper that adds to Blizzard's tooltips, with one eligibility check and
 -- one line style. Helpers add lines or recolor the name line after Blizzard
 -- built the tooltip and before it is sized and shown. They never ask the
 -- tooltip to rebuild: RefreshDataNextUpdate writes GameTooltip's update
@@ -19,17 +19,20 @@ local VALUE_R, VALUE_G, VALUE_B = 1, .88, .58
 local callbacks = {}
 
 local function Run(list, tooltip, data)
-    if tooltip ~= GameTooltip or NS.Safety.IsForbidden(tooltip)
-        or not S.Public(data) or type(data) ~= "table" or not canaccesstable(data) then return end
+    if not S.Public(tooltip) or tooltip == nil then return end
+    local main = tooltip == GameTooltip
+    if not main and (not list.comparisons or tooltip ~= ShoppingTooltip1 and tooltip ~= ShoppingTooltip2) then return end
+    if NS.Safety.IsForbidden(tooltip) or not S.Public(data) or type(data) ~= "table"
+        or not canaccesstable(data) then return end
     for i = 1, #list do
         local entry = list[i]
-        if entry.module.active then S.Dispatch(entry.callback, tooltip, data) end
+        if entry.module.active and (main or entry.comparisons) then S.Dispatch(entry.callback, tooltip, data) end
     end
 end
 
 -- callback(tooltip, data) runs for one Enum.TooltipDataType name while module
 -- is active. Post-calls cannot be removed, so each is registered once.
-function Lines.Add(module, kind, callback)
+function Lines.Add(module, kind, callback, comparisons)
     local list = callbacks[kind]
     if not list then
         list = {}
@@ -42,7 +45,8 @@ function Lines.Add(module, kind, callback)
     for i = 1, #list do
         if list[i].module == module and list[i].callback == callback then return end
     end
-    list[#list + 1] = { module = module, callback = callback }
+    if comparisons then list.comparisons = true end
+    list[#list + 1] = { module = module, callback = callback, comparisons = comparisons }
 end
 
 -- The main tooltip and its data while it is open and readable; the data is

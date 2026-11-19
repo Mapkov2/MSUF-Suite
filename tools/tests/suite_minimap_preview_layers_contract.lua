@@ -302,12 +302,21 @@ do
     P.S.MinimapDrawerPreviewSource = function() return true, single end
     ui.Paint()
     local drawer = icons.drawer.button
-    assert(drawer.previewDrawerArt[1].atlas == "single-addon-art" and not drawer.previewDots[1]:IsShown(),
+    assert(drawer.previewDrawerArt[1].atlas == "single-addon-art" and not drawer.previewIcon:IsShown(),
         "single addon button was replaced by a generic drawer toggle")
     single = nil
-    ui.Paint()
-    assert(drawer.previewDots[1]:IsShown() and not drawer.previewDrawerArt[1]:IsShown(),
-        "drawer retained old addon artwork when its toggle returned")
+    local styles = P.Suite.MinimapDrawerStyle
+    local media = "Interface\\AddOns\\MSUF_Suite\\Media\\"
+    local previousStyle = config.drawerStyle
+    for style, asset in pairs({
+        [styles.FOREVER] = "SuiteIconForever.tga", [styles.MODERN] = "SuiteIconModern.tga", [styles.DARK] = "SuiteIconDark.tga",
+    }) do
+        config.drawerStyle = style
+        ui.Paint()
+        assert(drawer.previewIcon:IsShown() and drawer.previewIcon.texture == media .. asset
+            and not drawer.previewDrawerArt[1]:IsShown(), "preview did not show the selected Suite badge")
+    end
+    config.drawerStyle = previousStyle
     P.S.MinimapDrawerPreviewSource = function() return false end
     ui.Paint()
     assert(not drawer:IsShown(), "empty runtime drawer left a visible toggle")

@@ -370,9 +370,11 @@ function M:Enable()
     self.context:Event("BANKFRAME_OPENED", OpenBank)
     self.context:Event("BANKFRAME_CLOSED", CloseBank, true)
     if self.bankOpen then WatchBank(self) end
+    if S.BagsToolsChanged then S.BagsToolsChanged() end
 end
 function M:Disable()
     CloseBank(self)
     S.ToolListWindow.Close(self)
+    if S.BagsToolsChanged then S.BagsToolsChanged() end
 end
 S.Install("bankTransfer", M)

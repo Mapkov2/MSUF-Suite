@@ -11,9 +11,20 @@ local SHELL = { role = "shell", inset = 0 }
 local BUTTON = { role = "button", ownedArt = true }
 local PRIMARY = { role = "buttonPrimary", pillHeight = 28, ownedArt = true }
 local SEARCH = { role = "input", pillHeight = 25 }
+local DROPDOWN = { role = "input", pillHeight = 25, inset = 0, regions = { "Background" } }
 local PLAYER_BANK = Enum.SpellBookSpellBank.Player
 local SPELL_ITEM = Enum.SpellBookItemType.Spell
 local SOURCE = { automatic = 0, trainer = 1, quest = 2, unconfirmed = 3, talent = 4, item = 5, portal = 6 }
+local ALL_SOURCES = -1
+local CATEGORIES = {
+    { source = ALL_SOURCES, text = "All" },
+    { source = SOURCE.trainer, text = "Class trainer" },
+    { source = SOURCE.portal, text = "Portal trainer" },
+    { source = SOURCE.quest, text = "Class quest" },
+    { source = SOURCE.item, text = "Tome or item" },
+    { source = SOURCE.automatic, text = "Learned automatically" },
+    { source = SOURCE.unconfirmed, text = "Unknown" },
+}
 local lastCombatNotice
 local ROMAN_VALUES = { I = 1, V = 5, X = 10, L = 50, C = 100, D = 500, M = 1000 }
 
@@ -65,7 +76,7 @@ end
 
 local function AvailabilityColor(entry, level)
     if not Public(level) or type(level) ~= "number" or level < 1 then return NS.Theme.GetColor("muted") end
-    if entry.requiresTalent or entry.requiresQuest or entry.pendingQuest or entry.source == SOURCE.unconfirmed then
+    if entry.requiresQuest or entry.pendingQuest or entry.source == SOURCE.unconfirmed then
         return RED_FONT_COLOR:GetRGB()
     end
     if entry.level <= level then return GREEN_FONT_COLOR:GetRGB() end
@@ -138,11 +149,13 @@ local function ReadIndex()
     end
     local pattern = "(%d+):(%d+):(%d+):(%d+):?(%d*):?(%d*):?(%d*):?(%d*) "
     for id, level, rank, source, low, high, talent, quest in data:gmatch(pattern) do
-        if AllowedRace(race, low, high) then
+        local sourceCode = tonumber(source)
+        -- A trainer can offer higher ranks of a talent, so check both fields.
+        if sourceCode ~= SOURCE.talent and (tonumber(talent) or 0) == 0 and AllowedRace(race, low, high) then
             local spell = tonumber(id)
             entries[#entries + 1] = { id = spell, level = quests[spell] or tonumber(level), rank = tonumber(rank),
-                source = quests[spell] and SOURCE.quest or tonumber(source), cost = costs[spell],
-                requiredTalent = tonumber(talent), requiredQuest = tonumber(quest), pendingQuest = pending[spell] }
+                source = quests[spell] and SOURCE.quest or sourceCode, cost = costs[spell],
+                requiredQuest = tonumber(quest), pendingQuest = pending[spell] }
         end
     end
     return entries
@@ -180,9 +193,6 @@ local function ToolTip(row)
         GameTooltip:AddLine(NS.L["Learning source not confirmed"], NS.Theme.GetColor("accentBright"))
     elseif source == SOURCE.automatic then
         GameTooltip:AddLine(NS.L["Learned automatically"], NS.Theme.GetColor("accentBright"))
-    end
-    if row.requiresTalent then
-        GameTooltip:AddLine(NS.L["Requires a talent"], NS.Theme.GetColor("accentBright"))
     end
     if row.requiresQuest then GameTooltip:AddLine(NS.L["Requires a class quest"], NS.Theme.GetColor("accentBright")) end
     TrainingCost(row)
@@ -232,7 +242,7 @@ local function Paint(panel)
         if entry then
             local red, green, blue, alpha = AvailabilityColor(entry, level)
             row.spellID, row.source = entry.id, entry.source
-            row.requiresTalent, row.requiresQuest = entry.requiresTalent, entry.requiresQuest
+            row.requiresQuest = entry.requiresQuest
             row.pendingQuest = entry.pendingQuest
             row.cost = entry.cost
             row.isTraining = entry.source == SOURCE.trainer or entry.source == SOURCE.portal
@@ -264,7 +274,8 @@ local function Filter(panel)
     local matches = panel.filtered
     local count = 0
     for _, entry in ipairs(panel.available) do
-        if query == "" or entry.searchName:find(query, 1, true) then
+        if (panel.sourceFilter == ALL_SOURCES or panel.sourceFilter == entry.source)
+            and (query == "" or entry.searchName:find(query, 1, true)) then
             count = count + 1
             matches[count] = entry
         end
@@ -273,26 +284,36 @@ local function Filter(panel)
     Paint(panel)
 end
 
-local function KnowsUnlock(panel, learned, id)
-    if not id or id == 0 then return true end
-    local cached = panel.unlocks[id]
-    if cached ~= nil then return cached end
-    local entry = panel.byID[id]
-    local known = panel.bookIDs[id] or entry and entry.learned
-    if not entry then
-        known = C_SpellBook.IsSpellKnownOrInSpellBook(id, PLAYER_BANK, false)
-        known = Public(known) and known == true
+local function CreateCategoryDropdown(panel)
+    local dropdown = CreateFrame("DropdownButton", nil, panel, "WowStyle1DropdownTemplate")
+    dropdown:SetSize(176, 25)
+    dropdown:SetPoint("TOPRIGHT", -16, -61)
+
+    local function IsSelected(source)
+        return panel.sourceFilter == source
     end
-    local unlocked = known == true or entry and learned[entry.family] ~= nil or false
-    panel.unlocks[id] = unlocked
-    return unlocked
+
+    local function SelectSource(source)
+        if not panel:IsShown() or NS.SuiteCore().InCombat() then return end
+        panel.sourceFilter = source
+        panel.page = 1
+        Filter(panel)
+    end
+
+    dropdown:SetupMenu(function(_, root)
+        for _, category in ipairs(CATEGORIES) do
+            root:CreateRadio(NS.L[category.text], IsSelected, SelectSource, category.source)
+        end
+    end)
+    NS.ControlSkin.ApplyButton(dropdown, OWNER, DROPDOWN)
+    return dropdown
 end
 
 local function Refresh(panel)
     if not panel:IsShown() or NS.IsCombatLocked() then return end
     panel.entries = panel.entries or ReadIndex()
     local learned = {}
-    panel.ranksByID, panel.ranksByName, panel.byID, panel.unlocks, panel.bookIDs = {}, {}, {}, {}, {}
+    panel.ranksByID, panel.ranksByName, panel.byID, panel.bookIDs = {}, {}, {}, {}
     for _, entry in ipairs(panel.entries) do
         local known = C_SpellBook.IsSpellKnownOrInSpellBook(entry.id, PLAYER_BANK, false)
         entry.known = not Public(known) or known ~= false
@@ -317,11 +338,9 @@ local function Refresh(panel)
     for _, entry in ipairs(panel.entries) do
         if entry.name and not entry.known and not panel.bookIDs[entry.id] then
             local rank = learned[entry.family]
-            local talent = entry.requiredTalent or (entry.source == SOURCE.talent and entry.id)
-            entry.requiresTalent = not KnowsUnlock(panel, learned, talent)
             local quest = entry.requiredQuest and panel.byID[entry.requiredQuest]
             entry.requiresQuest = quest and quest.source == SOURCE.quest
-                and not KnowsUnlock(panel, learned, entry.requiredQuest) or false
+                and not (panel.bookIDs[quest.id] or quest.learned or learned[quest.family] ~= nil) or false
             -- An unranked spell can be a separate appearance (Polymorph),
             -- so only numbered ranks may be replaced by a same-name rank.
             if rank == nil or entry.rank == 0 or entry.rank > rank then
@@ -375,7 +394,6 @@ local function PaintPanelTheme(panel)
     panel.title:SetTextColor(NS.Theme.GetColor("title"))
     panel.caption:SetTextColor(NS.Theme.GetColor("muted"))
     panel.status:SetTextColor(NS.Theme.GetColor("muted"))
-    panel.close.label:SetTextColor(NS.Theme.GetColor("text"))
     panel.search:SetTextColor(NS.Theme.GetColor("text"))
     local hint = Safety.Field(panel.search, "Instructions")
     if type(hint) == "table" then hint:SetTextColor(NS.Theme.GetColor("muted")) end
@@ -401,6 +419,7 @@ end
 
 local function OnPanelHide(panel)
     panel:UnregisterAllEvents()
+    panel.category:CloseMenu()
     panel.search:ClearFocus()
 end
 
@@ -413,9 +432,13 @@ local function CreatePanel(book)
     panel:EnableMouseWheel(true)
     panel:Hide()
     panel.book, panel.page, panel.rows, panel.available, panel.filtered = book, 1, {}, {}, {}
+    panel.sourceFilter = ALL_SOURCES
     panel.refresh = function() Refresh(panel) end
-    panel.close = Button(panel, CLOSE, 74, function() panel:Hide() end)
-    panel.close:SetPoint("TOPRIGHT", -12, -10)
+    panel.close = CreateFrame("Button", nil, panel, "UIPanelCloseButtonNoScripts")
+    panel.close:SetPoint("TOPRIGHT", -10, -8)
+    panel.close:RegisterForClicks("LeftButtonUp")
+    panel.close:SetScript("OnClick", function() panel:Hide() end)
+    NS.WindowActionSkin.Apply(panel.close, OWNER, "close")
     panel.title = Label(panel, "GameFontNormalLarge")
     panel.title:SetPoint("TOPLEFT", 16, -14)
     panel.title:SetPoint("RIGHT", panel.close, "LEFT", -10, 0)
@@ -425,10 +448,11 @@ local function CreatePanel(book)
     panel.caption:SetPoint("TOPLEFT", 16, -40)
     panel.caption:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
     panel.caption:SetText(NS.L["Unlearned spells and ranks by required level"])
+    panel.category = CreateCategoryDropdown(panel)
     panel.search = CreateFrame("EditBox", nil, panel, "SearchBoxTemplate")
     panel.search:SetHeight(25)
     panel.search:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -61)
-    panel.search:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -16, -61)
+    panel.search:SetPoint("RIGHT", panel.category, "LEFT", -8, 0)
     panel.search:SetAutoFocus(false)
     NS.ControlSkin.ApplySearchBox(panel.search, OWNER, SEARCH)
     panel.headerRule = Rule(panel, "TOP", -93, 16)

@@ -17,6 +17,7 @@ local function Region(canvas)
     local frame = CreateFrame("Button", nil, canvas)
     frame.edge = Texture(frame, "BACKGROUND")
     frame.edge:SetAllPoints(frame)
+    frame.shaped = false
     frame.fill = Texture(frame)
     frame.fill:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
     frame.fill:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
@@ -38,15 +39,30 @@ local function Tint(region, hex, alpha)
     region:SetAlpha(alpha or 1)
 end
 
+local function GridCell(texture, region, item, index, width, height, color)
+    local sx, sy = width / item.width, height / item.height
+    local column, row = (index - 1) % item.columns, math.floor((index - 1) / item.columns)
+    texture:SetTexture(item.barMask or WHITE)
+    texture:SetTexCoord(0, 1, 0, 1)
+    texture:SetSize(max(1, item.cellWidth * sx), max(1, item.cellHeight * sy))
+    texture:SetPoint("TOPLEFT", region, "TOPLEFT",
+        column * (item.cellWidth + item.gap) * sx, -row * (item.cellHeight + item.gap) * sy)
+    Tint(texture, item.fillColor or color)
+end
+
 local function Details(region, item, color)
-    local icons = item.kind == "icons"
-    local rows = item.kind == "meter" and 5 or item.kind == "list" and 8 or icons and (item.count or 12) or 0
+    local icons, grid = item.kind == "icons", item.kind == "grid"
+    local rows = grid and item.count
+        or item.kind == "meter" and 5 or item.kind == "list" and 8 or icons and (item.count or 12) or 0
+    for index = #region.details + 1, rows do region.details[index] = Texture(region, "OVERLAY") end
     local width, height = region:GetWidth(), region:GetHeight()
     for index, texture in ipairs(region.details) do
         texture:SetShown(index <= rows)
         if index <= rows then
             texture:ClearAllPoints()
-            if icons then
+            if grid then
+                GridCell(texture, region, item, index, width, height, color)
+            elseif icons then
                 local columns, lines = item.columns or rows, item.rows or 1
                 local cellW, cellH = width / columns, height / lines
                 local iconWidth = item.iconWidth and item.iconWidth * width / item.width or min(cellW, cellH)
@@ -76,6 +92,39 @@ local function Details(region, item, color)
             end
         end
     end
+    if item.artwork then
+        local art = region.details[1]
+        art:ClearAllPoints()
+        art:SetAllPoints(region.fill)
+        art:SetTexture(item.artwork)
+        art:SetTexCoord(0, 1, 0, 1)
+        art:SetVertexColor(1, 1, 1, 1)
+        art:SetAlpha(1)
+        art:Show()
+    end
+end
+
+local function Body(region, item, color, background, border)
+    local visible, shaped = item.kind ~= "grid", item.barEdge ~= nil
+    region.edge:SetShown(visible)
+    region.fill:SetShown(visible)
+    if not visible then return end
+    if region.shaped ~= shaped then
+        region.shaped = shaped
+        region.fill:ClearAllPoints()
+        if shaped then
+            region.fill:SetAllPoints(region)
+            region.edge:SetDrawLayer("OVERLAY", 1)
+        else
+            region.fill:SetPoint("TOPLEFT", region, "TOPLEFT", 1, -1)
+            region.fill:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", -1, 1)
+            region.edge:SetDrawLayer("BACKGROUND")
+        end
+    end
+    Tint(region.edge, border)
+    Tint(region.fill, item.fillColor or ((item.kind == "bar" or item.kind == "resource") and color or background))
+    region.edge:SetTexture(item.barEdge or WHITE)
+    region.fill:SetTexture(item.barMask or (item.kind == "map" and "Interface\\Minimap\\UI-Minimap-Background") or WHITE)
 end
 
 function Preview.Build(window, profile, frames, navigate)
@@ -123,10 +172,7 @@ local function Paint(panel, profile, frames, layout, overrides, viewport)
         region:ClearAllPoints()
         region:SetPoint("TOPLEFT", panel.canvas, "TOPLEFT", item.x * scale, -item.y * scale)
         region:SetSize(max(2, item.width * scale), max(2, item.height * scale))
-        Tint(region.edge, panel.selectedModule == item.module and color or border)
-        Tint(region.fill, item.fillColor or ((item.kind == "bar" or item.kind == "resource") and color or background))
-        -- A minimap sample has its own art, independent of the menu theme.
-        region.fill:SetTexture(item.kind == "map" and "Interface\\Minimap\\UI-Minimap-Background" or WHITE)
+        Body(region, item, color, background, panel.selectedModule == item.module and color or border)
         Details(region, item, color)
     end
     panel.kit:ReleaseAll("region", #scene + 1)
@@ -168,7 +214,7 @@ function Preview.Show(window, shown, layout)
     local viewport = Suite.InstallerPreviewModel.Viewport(options)
     local frames = options and options.keepFrames and Suite.HostBridge.CurrentFramePreview() or nil
     if not (options and options.keepFrames) then frames = panel.frames(layout) end
-    frames = Suite.InstallerFrameColors.Preview(frames, options and options.keepFrames)
+    frames = Suite.InstallerFrameColors.Preview(frames)
     local scene = Paint(panel, profile, frames, layout, overrides, viewport)
     Context(panel, profile, overrides, options, viewport, scene)
     Suite.InstallerFrameColors.Show(panel, options and options.frameColorsStep, options and options.keepFrames, frames)

@@ -33,8 +33,9 @@ local function Endcap(bar, side)
     cap:SetSize(size, size)
     cap:ClearAllPoints()
     cap:SetPoint("CENTER", bar.header, anchor, direction * size * .6 + c[keys[names.x]], c[keys[names.y]])
-    if style == ENDCAP.BLIZZARD then
-        NS.PaintBlizzardActionBarEndcap(cap, side, size)
+    if style == ENDCAP.BLIZZARD or style == ENDCAP.WAYFARER then
+        local paint = style == ENDCAP.WAYFARER and NS.PaintWayfarerActionBarEndcap or NS.PaintBlizzardActionBarEndcap
+        paint(cap, side, size)
         cap:Show()
         return
     end
@@ -268,6 +269,49 @@ function AB.ClearDecoration(rec)
     if rec.hoverRing then rec.hoverRing:Hide() end
 end
 
+function AB.HideQuality(rec)
+    if not rec.qualityShown then return end
+    rec.qualityShown = nil
+    rec.quality:Hide()
+end
+
+-- A crafted item's quality badge, as ActionBarActionButtonMixin:
+-- UpdateProfessionQuality shows it on Retail and Forever: item actions only.
+-- Native reused buttons own this overlay themselves.
+local function SizeQuality(rec, size)
+    size = math.max(8, size * .4)
+    if rec.qualitySize == size then return end
+    rec.qualitySize = size
+    rec.quality:SetSize(size, size)
+end
+
+function AB.SetQuality(rec, info)
+    local atlas = S.Public(info) and type(info) == "table" and info.iconInventory
+    if not S.Public(atlas) or type(atlas) ~= "string" or atlas == "" then
+        AB.HideQuality(rec)
+        return
+    end
+    local texture, icon = rec.quality, rec.button.icon
+    if not texture then
+        texture = S.CreateTexture(rec.button, nil, "OVERLAY", nil, 7)
+        rec.quality = texture
+        SizeQuality(rec, rec.bar.size)
+    end
+    if rec.qualityIcon ~= icon then
+        if rec.qualityIcon then texture:ClearAllPoints() end
+        texture:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
+        rec.qualityIcon = icon
+    end
+    if rec.qualityAtlas ~= atlas then
+        texture:SetAtlas(atlas)
+        rec.qualityAtlas = atlas
+    end
+    if not rec.qualityShown then
+        texture:Show()
+        rec.qualityShown = true
+    end
+end
+
 function AB.StyleDecoration(rec, size)
     local c, button, style = M.config, rec.button, AB.style
     local circle, round = style.legacyCircle, style.round
@@ -320,7 +364,55 @@ function AB.StyleDecoration(rec, size)
         rec.borderArt:Hide()
         AB.UpdateDecorState(rec)
     end
-    if rec.quality then rec.quality:SetSize(math.max(8, size * .4), math.max(8, size * .4)) end
+    if rec.quality then SizeQuality(rec, size) end
+end
+
+-- Current spell and override routes for procs and recommendations. Macros,
+-- flyouts and slots awaiting a live repaint keep their existing checks.
+local procRoutes, procPool, fallback, noButtons = {}, {}, {}, {}
+AB.procFallback = fallback
+
+local function LeaveProc(rec, spell)
+    if not spell then return end
+    local list = procRoutes[spell]
+    list[rec] = nil
+    if not next(list) then
+        procRoutes[spell] = nil
+        procPool[#procPool + 1] = list
+    end
+end
+
+local function JoinProc(rec, spell)
+    if not spell then return end
+    local list = procRoutes[spell]
+    if not list then
+        local last = #procPool
+        list = procPool[last] or {}
+        procPool[last] = nil
+        procRoutes[spell] = list
+    end
+    list[rec] = true
+end
+
+function AB.ProcButtons(spell)
+    return procRoutes[spell] or noButtons
+end
+
+function AB.RouteProc(rec, spell, alias, live)
+    if rec.procSpell == spell and rec.procAlias == alias and fallback[rec] == live then return end
+    LeaveProc(rec, rec.procSpell)
+    LeaveProc(rec, rec.procAlias)
+    rec.procSpell, rec.procAlias, fallback[rec] = spell, alias, live
+    JoinProc(rec, spell)
+    JoinProc(rec, alias)
+end
+
+function AB.InvalidateProc(rec)
+    if not rec.procSpell and not fallback[rec] then
+        if not rec.filled and not rec.native then return end
+    end
+    rec.procPending = true
+    AB.RouteProc(rec, nil, nil, true)
 end
 
 -- Assisted combat recommendation, Retail only: Forever's Camelot UI offers no
@@ -338,6 +430,7 @@ end
 -- SetAssistedHighlightFrameShown.
 local assistedSpell
 local assistActive = false
+local assistPlan
 local function NativeAlpha(button)
     local frame = button.AssistedCombatHighlightFrame
     if frame then frame:SetAlpha(M.config.assistStyle == ASSIST.BLIZZARD and 1 or 0) end
@@ -346,28 +439,23 @@ end
 -- new recommendation (every few hundred milliseconds in combat) only moves
 -- which rings show.
 local function LayoutAssist(rec, holder)
-    local c = M.config
-    local size = (rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
-    local height = (rec.bar.height or rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
-    local shape = AB.style.shape
-    if holder.size == size and holder.height == height and holder.x == c.assistX and holder.y == c.assistY and holder.shape == shape
-        and holder.color == c.assistColor and holder.alpha == c.assistAlpha and holder.style == c.assistStyle then return end
-    holder.size, holder.x, holder.y, holder.shape = size, c.assistX, c.assistY, shape
-    holder.height = height
-    holder.color, holder.alpha, holder.style = c.assistColor, c.assistAlpha, c.assistStyle
+    local bar, plan, icon = rec.bar, assistPlan, rec.button.icon
+    local size = bar.size or M.config[bar.key.Size]
+    local height = bar.height or size
+    if holder.plan == plan and holder.layoutWidth == size and holder.layoutHeight == height and holder.icon == icon then return end
+    local sameIcon = holder.icon == icon
+    holder.plan, holder.layoutWidth, holder.layoutHeight, holder.icon = plan, size, height, icon
     holder:ClearAllPoints()
-    holder:SetSize(size, height)
-    holder:SetPoint("CENTER", rec.button, "CENTER", c.assistX, c.assistY)
+    holder:SetSize(size + plan.expansion, height + plan.expansion)
+    holder:SetPoint("CENTER", rec.button, "CENTER", plan.x, plan.y)
     holder.ring:SetAllPoints(holder)
-    local round = AB.style.round
-    Art(holder.ring, round and AB.style.ring)
-    holder.fill:SetAllPoints(rec.button.icon)
-    holder.fill:SetTexture(round and AB.style.fill or WHITE)
-    local r, g, b = S.RGB(c.assistColor)
-    holder.ring:SetVertexColor(r, g, b, c.assistAlpha / 100)
-    holder.fill:SetVertexColor(r, g, b, c.assistAlpha / 100 * .35)
-    holder.ring:SetShown(c.assistStyle == ASSIST.RING or c.assistStyle == ASSIST.RING_AND_FILL)
-    holder.fill:SetShown(c.assistStyle == ASSIST.FILL or c.assistStyle == ASSIST.RING_AND_FILL)
+    Art(holder.ring, plan.ring)
+    if not sameIcon then holder.fill:SetAllPoints(icon) end
+    holder.fill:SetTexture(plan.fill)
+    holder.ring:SetVertexColor(plan.r, plan.g, plan.b, plan.alpha)
+    holder.fill:SetVertexColor(plan.r, plan.g, plan.b, plan.fillAlpha)
+    holder.ring:SetShown(plan.showRing)
+    holder.fill:SetShown(plan.showFill)
 end
 local function ShowAssist(rec, show)
     local holder = rec.assist
@@ -402,8 +490,10 @@ local function Recommended(rec)
     end
     if not rec.filled then return false end
     local Pa = AB.Painter
-    if rec.glowKind == Pa.GLOW_SPELL then return rec.glowID == spell end
-    if rec.glowKind == Pa.GLOW_DYNAMIC then
+    if not rec.procPending and rec.glowKind == Pa.GLOW_SPELL then
+        return rec.glowID == spell or rec.glowOverride == spell
+    end
+    if rec.procPending or rec.glowKind == Pa.GLOW_DYNAMIC then
         if rec.virtual then return Pa.ButtonSpell(rec) == spell end
         return Pa.ActionSpell(rec.slot) == spell
     end
@@ -414,12 +504,38 @@ function AB.UpdateAssist(rec)
     if assistActive then ShowAssist(rec, Recommended(rec)) end
 end
 local function AssistAll()
-    for _, rec in pairs(AB.records) do ShowAssist(rec, assistActive and Recommended(rec)) end
+    for _, rec in pairs(AB.records) do
+        if assistActive and rec.assist then LayoutAssist(rec, rec.assist) end
+        ShowAssist(rec, assistActive and Recommended(rec))
+    end
 end
+
+local function AssistRoute(old, current)
+    for rec in pairs(AB.ProcButtons(old)) do
+        if rec.owned and not rec.native then ShowAssist(rec, Recommended(rec)) end
+    end
+    for rec in pairs(AB.ProcButtons(current)) do
+        if rec.owned and not rec.native and (not old or rec.glowID ~= old and rec.glowOverride ~= old) then
+            ShowAssist(rec, Recommended(rec))
+        end
+    end
+    for rec in pairs(fallback) do
+        if rec.owned and not rec.native then ShowAssist(rec, Recommended(rec)) end
+    end
+end
+
 local function RecommendationChanged(_, spellID)
     if not M.active then return end
+    local previous = assistedSpell
     assistedSpell = S.Finite(spellID) and spellID or nil
-    if assistActive then AssistAll() end
+    if assistActive and previous ~= assistedSpell then
+        if AB.procRoutesStale then
+            AB.Painter.Walk(AB.Painter.CacheAction)
+            AssistAll()
+        else
+            AssistRoute(previous, assistedSpell)
+        end
+    end
 end
 local function NativeHighlight(_, button)
     local rec = M.active and AB.records[button]
@@ -443,6 +559,13 @@ function AB.SyncAssistedDecoration()
     end
     if not AB.assistHooked then return end
     assistActive = style ~= ASSIST.BLIZZARD
+    local c, look = M.config, AB.style
+    local r, g, b = S.RGB(c.assistColor)
+    local alpha = c.assistAlpha / 100
+    assistPlan = { x = c.assistX, y = c.assistY, expansion = c.assistExpansion * 2, r = r, g = g, b = b,
+        alpha = alpha, fillAlpha = alpha * .35, ring = look.round and look.ring, fill = look.round and look.fill or WHITE,
+        showRing = style == ASSIST.RING or style == ASSIST.RING_AND_FILL,
+        showFill = style == ASSIST.FILL or style == ASSIST.RING_AND_FILL }
     local spell = AssistedCombatManager.lastNextCastSpellID
     assistedSpell = S.Finite(spell) and spell or nil
     for _, rec in pairs(AB.records) do NativeAlpha(rec.button) end

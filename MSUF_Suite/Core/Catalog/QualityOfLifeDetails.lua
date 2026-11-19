@@ -35,8 +35,13 @@ B.Module("flightTimer", {
     end,
     editElement = "flight",
 })
+-- displayStyle: the card it always was (route, stops, time, status and the
+-- landing button) or one slim Timer bar (destination, time and a fill the
+-- client runs); FlightTimer.lua draws both.
 B.Section("flightTimer", "flight_route", "Flight route timer", {
-    Bool("hideDisplay", "Hide the flight timer"), Bool("showStops", "Show intermediate flight stops", true),
+    Bool("hideDisplay", "Hide the flight timer"),
+    Choice("displayStyle", "Layout", 1, { "Card", "Timer bar" }),
+    Bool("showStops", "Show intermediate flight stops", true),
     Bool("routePreview", "Flight route preview in the taxi tooltip", true), Bool("classColor", "Use class color"),
     Number("width", "Width", 340, 180, 700), Number("fontSize", "Font size", 12, 8, 24),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
@@ -44,6 +49,41 @@ B.Section("flightTimer", "flight_route", "Flight route timer", {
 })
 
 NS.AddQoLTextStyle("flightTimer", "flight_route", "Flight route timer")
+-- The Timer bar's own look, and whether it takes the MSUF experience bar's
+-- place while the player flies (replaceXPBar; ExperienceBarSlot.lua lends it).
+-- barLook: Modern, the slim frameless bar, or MSUF Forever, matching the
+-- Forever skin (FlightTimer.lua, BAR_LOOKS). Choosing one here writes its
+-- fill color (the menu's look presets).
+-- The bar follows the Suite-wide Skinning look (extra, as the buff reminders
+-- and cooldown manager do; the shared palettes are NS.DataTextLooks): MSUF
+-- Forever draws the MSUF Forever bar, every other look the Modern bar filled
+-- in that look's accent, Class Style in the class color again at each login
+-- (Looks.RefreshConfig). A style chosen here holds until the Skinning look
+-- changes again; a look's fill writes a color, which ends Class Style.
+NS.FlightBarLooks = { [1] = { barColor = "4a98f5" }, [2] = { barColor = "d8b66a" } }
+NS.SuiteCatalog.flightTimer.look = {
+    key = "barLook", presets = NS.FlightBarLooks,
+    extra = function(values, lookIndex)
+        values.barLook = lookIndex == NS.SuiteLooks.indexes.foreverGlass and 2 or 1
+        values.barColor = NS.DataTextLooks[lookIndex].accent
+    end,
+}
+B.Section("flightTimer", "flight_bar", "Timer bar", {
+    Choice("barLook", "MSUF style", 2, { "Modern", "MSUF Forever" }),
+    Number("barHeight", "Bar height", 4, 2, 16),
+    B.Color("barColor", "Bar color", NS.FlightBarLooks[2].barColor),
+    B.Texture("barTexture", "Bar texture"),
+    Bool("barSpark", "Show a spark", true),
+    Bool("replaceXPBar", "Replace the experience bar while flying", true),
+})
+do
+    local rules = NS.SuiteCatalog.flightTimer.rules
+    local card, bar = { key = "displayStyle", values = { [1] = true } }, { key = "displayStyle", values = { [2] = true } }
+    rules.showStops.requiresChoice = card
+    for _, key in ipairs({ "barLook", "barHeight", "barColor", "barTexture", "barSpark", "replaceXPBar" }) do
+        rules[key].requiresChoice = bar
+    end
+end
 
 -- The Forever nameplate controller supplies the native soft-interact anchor.
 B.Module("glimmer", {

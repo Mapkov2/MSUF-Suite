@@ -1,13 +1,13 @@
 local addonName, NS = ...
 
--- MSUF Suite can load this legacy addon once for its SavedVariables. In that
--- case the Suite-owned engine keeps the public API and this copy stays inert.
+-- The Suite skinning module publishes its API under the historical globals.
+-- A migration load preserves the current provider.
 local provider = _G.MapkoSkin
 NS.migrationOnly = _G.MSUFSuiteSkinMigrating == true
     or type(provider) == "table" and provider.addonName == "MSUF_Suite_Skin"
 if not NS.migrationOnly then
     _G.MapkoSkin = NS
-    _G.MidnightSkin = NS -- Legacy integrations; canonical API is MapkoSkin.
+    _G.MidnightSkin = NS -- Historical alias used by existing integrations.
 end
 
 NS.addonName = addonName

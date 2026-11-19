@@ -44,6 +44,7 @@ local function PaintFill(health, visual, prefix)
 end
 
 local function PaintHealth(health, visual, prefix)
+    if M.config.enemySlantedHealth or visual.slanted then private.SlantedHealth.Visual(health, visual) end
     local c, keys = M.config, Key[prefix]
     local backColor = c[keys.BackdropColor]
     local backAlpha = (c[keys.BackdropAlpha] or 100) / 100

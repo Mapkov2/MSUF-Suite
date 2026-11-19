@@ -15,7 +15,7 @@ function M:Rows()
         row.label = S.Text("%s — missing %d"):format(Data.Name(row.itemID), missing)
         local knownBank = bankAt and S.Text("%d, recorded %s"):format(bank, date("%Y-%m-%d %H:%M", bankAt)) or S.Text("Not recorded")
         local knownAccount = accountAt and S.Text("%d, recorded %s"):format(account, date("%Y-%m-%d %H:%M", accountAt)) or S.Text("Not recorded")
-        row.detail = S.Text("Target: %d · In bags: %d · Missing: %d\nBank: %s\nWarband bank: %s")
+        row.detail = S.Text("Target: %d · In bags: %d · Missing: %d\nBank: %s\nWarband bank: %s", true)
             :format(row.quantity, bags[row.itemID] or 0, missing, knownBank, knownAccount)
         if not complete then
             row.label = S.Text("%s — bag quantity unavailable"):format(Data.Name(row.itemID))
@@ -83,8 +83,8 @@ local function MerchantRows(self)
         if missing > 0 then
             local name = S.PublicText(offer.name) or Data.Name(id)
             local price = S.Public(offer.hasExtendedCost) and offer.hasExtendedCost == false and S.Finite(offer.price) and offer.price
-            local detail = price and S.Text("%d per pack · %s"):format(offer.stackCount, S.MoneyText(price))
-                or S.Text("%d per pack · see merchant offer"):format(offer.stackCount)
+            local detail = price and S.Text("%d per pack · %s", true):format(offer.stackCount, S.MoneyText(price))
+                or S.Text("%d per pack · see merchant offer", true):format(offer.stackCount)
             rows[#rows + 1] = { key = index, itemID = id, label = S.Text("%s — missing %d"):format(name, missing),
                 detail = detail }
         end

@@ -144,6 +144,11 @@ local function CombinedBag(W, env)
     frame.PortraitButton = env.NewWidget("Button", nil, frame, true)
     function frame.PortraitButton:IsMenuOpen() return self.menuOpen == true end
     function frame.PortraitButton:SetMenuOpen(value) self.menuOpen = value end
+    local router = env.NewWidget("Button", nil, frame, true)
+    router.routeToSibling = "PortraitButton"
+    function router:GetRouteSibling() return self:GetParent()[self.routeToSibling] end
+    router:EnableMouse(true)
+    W.backpackRouter = router
     frame.TitleContainer = env.NewWidget("Frame", nil, frame, true)
     frame.TitleContainer:SetPoint("TOPLEFT", frame, "TOPLEFT", 58, -1)
     frame.TitleContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -24, -1)
@@ -211,8 +216,9 @@ local function CombinedBag(W, env)
     return frame
 end
 
-local function ReagentBag(W, env)
-    local frame = env.NewWidget("Frame", "ContainerFrame6", W.UIParent, true)
+local function IndividualBag(W, env, name, bag, parent)
+    local frame = env.NewWidget("Frame", name, parent, true)
+    frame:SetID(bag)
     frame.guarded, frame.shown, frame.width, frame.height = not W.unprotectedBags, false, 180, 200
     frame.Bg, frame.NineSlice = frame:CreateTexture(), env.NewWidget("Frame", nil, frame, true)
     frame.PortraitContainer = env.NewWidget("Frame", nil, frame, true)
@@ -224,18 +230,19 @@ local function ReagentBag(W, env)
     frame.Items = {}
     function frame:EnumerateValidItems() return ipairs(self.Items) end
     function frame:UpdateItemSlots()
-        local size = W.sizes[5] or 0
+        local bag = self:GetID()
+        local size = W.sizes[bag] or 0
         self.pool = self.pool or {}
         Clear(self.Items)
         for slot = 1, size do
             local button = self.pool[slot] or ItemButton(W, env, self, slot)
             self.pool[slot], self.Items[slot] = button, button
-            button.bagID, button.id = 5, slot
+            button.bagID, button.id = bag, slot
         end
     end
     function frame:UpdateItems()
         for _, button in self:EnumerateValidItems() do
-            local info = C_Container.GetContainerItemInfo(5, button:GetID())
+            local info = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
             button.hasItem = info and info.iconFileID
             button:SetItemButtonTexture(info and info.iconFileID)
             W.SetItemButtonCount(button, info and info.stackCount)
@@ -448,7 +455,17 @@ function H.BuildClient(W, env)
     W.NativeSearch = env.NewWidget("EditBox", "BagItemSearchBox", W.CF, true)
     W.NativeSort = env.NewWidget("Button", "BagItemAutoSortButton", W.CF, true)
     W.NativeSearch.mouse, W.NativeSort.mouse = true, true
-    W.Reagent = ReagentBag(W, env)
+    W.Reagent = IndividualBag(W, env, "ContainerFrame6", 5, W.UIParent)
+    function W.NewIndividualBag(name, bag)
+        if not ContainerFrameContainer then
+            ContainerFrameContainer = env.NewWidget("Frame", "ContainerFrameContainer", W.UIParent, true)
+            ContainerFrameContainer.ContainerFrames = {}
+        end
+        local parent = ContainerFrameContainer
+        local frame = IndividualBag(W, env, name, bag, parent)
+        parent.ContainerFrames[#parent.ContainerFrames + 1] = frame
+        return frame
+    end
     -- MainMenuBarBackpackButton: BaseBagSlotButtonMixin:BagSlotOnClick runs
     -- ToggleBag(0), which toggles the combined bag.
     W.Backpack = env.NewWidget("Button", "MainMenuBarBackpackButton", W.UIParent, true)

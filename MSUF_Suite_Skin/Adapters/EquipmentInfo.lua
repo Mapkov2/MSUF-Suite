@@ -76,26 +76,29 @@ local function ItemIdentity(link, result)
 end
 
 -- Clears a reused snapshot but keeps its nested tables.
-local function Reset(result)
+local function Reset(result, sameItem)
     local gems, stats = result.gemInfo or {}, result.stats or {}
     for key in pairs(result) do result[key] = nil end
     result.gemInfo, result.stats = gems, stats
     for _, gem in ipairs(gems) do
-        for key in pairs(gem) do gem[key] = nil end
+        for key in pairs(gem) do
+            if key ~= "requestedID" or not sameItem then gem[key] = nil end
+        end
     end
     for key in pairs(stats) do stats[key] = nil end
 end
 
 local function ReadGems(link, result)
     result.gems = 0
-    for index = 1, MAX_GEM_SLOTS do
+    for index = 1, math.min(result.sockets or 0, MAX_GEM_SLOTS) do
         local gem = result.gemInfo[index]
         if not gem then
             gem = {}
             result.gemInfo[index] = gem
         end
         local id = C_Item.GetItemGemID(link, index)
-        if not Public(id) then result.gemsRestricted = true end
+        gem.known = Public(id)
+        if not gem.known then result.gemsRestricted = true end
         gem.id = Number(id)
         if gem.id == 0 then gem.id = nil end
         if gem.id and gem.id > 0 then
@@ -106,9 +109,13 @@ local function ReadGems(link, result)
             -- Gem item data loads asynchronously; missing parts are read again.
             gem.pending = not gem.link or not gem.texture
             result.gemsPending = result.gemsPending or gem.pending
+            if gem.pending and gem.requestedID ~= gem.id then
+                gem.requestedID = gem.id
+                C_Item.RequestLoadItemDataByID(gem.id)
+            end
         end
     end
-    if result.gemsRestricted then result.gems = nil end
+    if result.gemsRestricted or not result.sockets or result.sockets > MAX_GEM_SLOTS then result.gems = nil end
 end
 
 local function ReadUpgrade(link, result)
@@ -135,7 +142,7 @@ local function ReadTooltip(unit, slot, result)
     local lines = Field(tooltip, "lines")
     if type(lines) ~= "table" then return lines end
     local types = Enum.TooltipDataLineType
-    local socketLines, filledLines = 0, 0
+    local socketLines = 0
     for index = 1, math.min(#lines, MAX_TOOLTIP_LINES) do
         local line = Field(lines, index)
         local kind = Field(line, "type")
@@ -143,13 +150,9 @@ local function ReadTooltip(unit, slot, result)
             result.enchantText = StripMarkup(Text(Field(line, "leftText")))
         elseif kind and kind == types.GemSocket then
             socketLines = socketLines + 1
-            if Field(line, "gemIcon") then filledLines = filledLines + 1 end
         end
     end
-    if socketLines > 0 and not result.sockets then result.sockets = socketLines end
-    if socketLines > 0 and not result.gems and not result.gemsRestricted then
-        result.gems = filledLines
-    end
+    if socketLines > (result.sockets or 0) then result.sockets = socketLines end
     return lines
 end
 
@@ -188,8 +191,9 @@ end
 function Info.Read(link, unit, slot, result, identity)
     result = result or {}
     link = Text(link)
-    if result.link == link and result.identity == identity and result.settled then return result end
-    Reset(result)
+    local sameItem = result.link == link and result.identity == identity
+    if sameItem and result.settled then return result end
+    Reset(result, sameItem)
     result.link, result.identity = link, identity
     if not link then
         result.settled = true
@@ -202,27 +206,25 @@ function Info.Read(link, unit, slot, result, identity)
     result.enchantRank = result.enchantID and rank[result.enchantID]
     ItemIdentity(link, result)
     result.itemLevel = Number(Read(C_Item.GetDetailedItemLevelInfo, link))
-    if NS.Client.isForever then
-        result.pending = not result.name or not result.itemLevel
-        result.settled = not result.pending
-        return result
-    end
     result.sockets = Number(Read(C_Item.GetItemNumSockets, link))
-    ReadGems(link, result)
-    ReadUpgrade(link, result)
-    local stats = Read(C_Item.GetItemStats, link)
-    if type(stats) == "table" then
-        for _, key in ipairs(statKeys) do result.stats[key] = Number(Field(stats, key)) end
+    local lines
+    if not NS.Client.isForever then
+        ReadUpgrade(link, result)
+        local stats = Read(C_Item.GetItemStats, link)
+        if type(stats) == "table" then
+            for _, key in ipairs(statKeys) do result.stats[key] = Number(Field(stats, key)) end
+        end
+        lines = ReadTooltip(unit, slot, result)
     end
-    local lines = ReadTooltip(unit, slot, result)
+    ReadGems(link, result)
     if result.sockets and result.gems and result.sockets >= result.gems then
         result.emptySockets = result.sockets - result.gems
     end
-    result.gemSlotsKnown = not result.gemsRestricted
+    result.gemSlotsKnown = result.sockets ~= nil and not result.gemsRestricted
     -- No socketability guess: actual empty sockets are not the same thing as
     -- optional sockets that a season-specific consumable might add later.
     result.pending = not result.name or not result.itemLevel or result.gemsPending
-        or result.gemsRestricted or type(lines) ~= "table"
+        or result.gemsRestricted or result.sockets == nil or (not NS.Client.isForever and type(lines) ~= "table")
     result.settled = not result.pending
     return result
 end

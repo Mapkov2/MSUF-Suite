@@ -10,7 +10,7 @@ local REAGENT_BAG = Enum.BagIndex.ReagentBag
 
 function Index.New()
     return { items = {}, records = setmetatable({}, { __mode = "k" }), metadata = {},
-        loads = Loads.New(2048), pending = {}, bagNames = {}, freshItems = {}, count = 0, revision = 0,
+        loads = Loads.New(2048), pending = {}, bagNames = {}, bagFamilies = {}, freshItems = {}, count = 0, revision = 0,
         buttons = {}, order = {}, filtered = 0 }
 end
 
@@ -250,10 +250,20 @@ local function Fresh(item, bag, slot)
     return fresh
 end
 
-local function ExcludesFromRegularCount(bag)
-    if bag == REAGENT_BAG then return true end
+function Index.BagFamily(index, bag, size)
+    local known = index and index.bagFamilies[bag]
+    if known and known.size == size then return known.family end
+    if index then index.bagFamilies[bag] = nil end
     local _, family = C_Container.GetContainerNumFreeSlots(bag)
-    return S.Finite(family) and family ~= 0
+    if not S.Finite(family) then return nil end
+    if index then index.bagFamilies[bag] = { family = family, size = size } end
+    return family
+end
+
+local function ExcludesFromRegularCount(index, bag, size)
+    if bag == REAGENT_BAG then return true end
+    local family = Index.BagFamily(index, bag, size)
+    return family ~= nil and family ~= 0
 end
 
 -- The gamepad's keyring sorts before the backpack because its container ID
@@ -288,11 +298,11 @@ function Index.ReadContainer(index, frame, recent)
         local key = order[i]
         local bag, slot = math.floor(key / KEY), key % KEY
         if bag ~= synced then
-            Slots.Sync(bag)
+            local size = Slots.Sync(bag)
             if IS_FOREVER or bag == REAGENT_BAG then
                 if excludeBag then excluded = excluded + free - firstInBag end
                 firstInBag = free
-                excludeBag = bag >= 0 and ExcludesFromRegularCount(bag)
+                excludeBag = bag >= 0 and ExcludesFromRegularCount(index, bag, size)
             end
             synced = bag
         end
@@ -319,9 +329,19 @@ function Index.ReadContainer(index, frame, recent)
     return items
 end
 
+function Index.InvalidateBag(index, bag)
+    if not S.Finite(bag) then return end
+    index.bagNames[bag], index.bagFamilies[bag] = nil, nil
+end
+
+function Index.InvalidateBags(index)
+    for bag in pairs(index.bagNames) do index.bagNames[bag] = nil end
+    for bag in pairs(index.bagFamilies) do index.bagFamilies[bag] = nil end
+end
+
 function Index.Invalidate(index)
     index.ordered = false
-    for bag in pairs(index.bagNames) do index.bagNames[bag] = nil end
+    Index.InvalidateBags(index)
 end
 
 -- GET_ITEM_INFO_RECEIVED: returns true when this index waited for the item.
@@ -358,7 +378,7 @@ end
 
 function Index.Reset(index)
     Loads.Reset(index.loads)
-    for _, key in ipairs({ "items", "records", "metadata", "pending", "bagNames", "freshItems",
+    for _, key in ipairs({ "items", "records", "metadata", "pending", "bagNames", "bagFamilies", "freshItems",
         "buttons", "order" }) do
         for entry in pairs(index[key]) do index[key][entry] = nil end
     end

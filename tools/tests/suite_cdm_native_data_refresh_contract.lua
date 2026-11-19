@@ -23,7 +23,16 @@ do
     local config = S.Config(ID)
     module.config, module.context, module.active = config, S.NewContext(ID), true
     infos[71].isKnown = false
+    local visibilityID = "nativeCooldownVisibility"
+    local hide = assert(S.instances[visibilityID], "layout module not loaded from the TOC")
+    hide.context = S.NewContext(visibilityID)
+    hide:Enable()
+    Check(cvars.cooldownViewerEnabled == "0", "native cooldown rows remained visible with the Suite manager off")
     module:Enable()
+    S.states.cooldownManager.active = true
+    hide:Refresh()
+    Check(cvars.cooldownViewerEnabled == "0" and S.CVarBaseline(ID, "cooldownViewerEnabled", "0") == "1",
+        "the takeover did not inherit the player's original cooldown setting")
     Run()
     Check(not C.entries.b71, "cold native trinket must initially be unavailable")
     infos[71].isKnown = true
@@ -96,6 +105,11 @@ do
     module:Disable()
     module.context:Release()
     module.context = nil
+    S.states.cooldownManager.active = false
+    hide:Refresh()
+    Check(cvars.cooldownViewerEnabled == "0", "turning the Suite manager off revealed the native cooldown rows")
+    S.RestoreSaved(visibilityID)
+    Check(cvars.cooldownViewerEnabled == "1", "releasing the layout switch did not restore native cooldowns")
     Run(5)
     Check(not registry["CooldownViewerSettings.OnDataChanged"], "disable must release the active callback")
     infos[71].isKnown = false
@@ -107,6 +121,31 @@ do
     Check(KnownRow() == true and C.Catalog.generation == generation + 1, "native data update must invalidate the cold snapshot")
     C.Cold()
     Check(C.Catalog.generation == generation + 1, "unchanged cold reads must reuse their snapshot")
+    -- Profile activation must stop the layout switch through the Suite lifecycle.
+    C_AddOns = {
+        DoesAddOnExist = function(name) return name == "MSUF_Suite_Modules" end,
+        IsAddOnLoaded = function(name) return name == "MSUF_Suite_Modules" end,
+        GetAddOnEnableState = function() return 2 end,
+    }
+    UnitGUID = function() return "Player-1-1" end
+    for _, id in ipairs(S.order) do S.Config(id).enabled = false end
+    local database = Suite.Database
+    local visible, hidden = database.GetActiveProfileName(), "Hide native cooldowns"
+    assert(database.Create(hidden, true))
+    database.GetProfile(hidden).suite.modules[visibilityID].enabled = true
+    S.Start()
+    dispatch.expect = true
+    local state = S.states[visibilityID]
+    for _, baseline in ipairs({ "1", "0" }) do
+        cvars.cooldownViewerEnabled = baseline
+        Check(database.Activate(hidden) and hide.active and state.active and cvars.cooldownViewerEnabled == "0",
+            "the new profile must hide native cooldowns")
+        Check(database.Activate(visible) and not hide.active and not state.active and cvars.cooldownViewerEnabled == baseline,
+            "switching back must stop the layout switch and restore the player's cooldown setting")
+        Check(#dispatch.errors == 0, "stopping the layout switch reported an error: " .. tostring(dispatch.errors[1]))
+    end
+    dispatch.expect = false
+
     print("native CDM data refresh: " .. checks .. " checks passed (" .. (arg[2] or "Mainline") .. ")")
 end
 ]=], "------------------------------------------------------------------ enable: capture, takeover, first build")

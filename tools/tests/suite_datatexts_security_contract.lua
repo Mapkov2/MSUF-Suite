@@ -365,7 +365,9 @@ inCombat.slots[2].rect = { 580, 284, 96, 26 }
 W.Fire(hearth, "OnEnter")
 hearth.mouseOver = true
 assert(overlay.shown, "the overlay did not attach before combat")
+palette.border[1] = .41
 W.SetCombat(true)
+assert(UsesSkin(A.combatMicroPopup), "an in-place palette change was not applied before lockdown")
 assert(not overlay.shown and #overlay.points == 0, "the secure overlay still depends on a place in combat")
 assert(not popup.shown and #popup.points == 0, "the secure popup still depends on a place in combat")
 assert(not outOfCombat.frame.shown and inCombat.frame.shown, "combat visibility did not switch in combat")
@@ -374,6 +376,11 @@ assert(inCombat.slots[1].text and inCombat.slots[1].text:find("Gold", 1, true),
 
 local function CheckCombatMicro()
     local combatMenu = assert(A.combatMicroPopup, "the combat micro menu was not prepared before lockdown")
+    local fillWrites, originalSetColor = 0, combatMenu.fill.SetColorTexture
+    combatMenu.fill.SetColorTexture = function(self, ...)
+        fillWrites = fillWrites + 1
+        originalSetColor(self, ...)
+    end
     local launchers = {}
     for _, candidate in ipairs(assert(A.combatMicroLaunchers)) do
         if candidate:IsShown() then
@@ -418,6 +425,8 @@ local function CheckCombatMicro()
     assert(combatMenu:IsShown(), "hiding the old launcher closed another launcher's popup")
     W.Blizzard(function() alternate:Hide() end)
     assert(not combatMenu:IsShown() and not combatMenu.autoHide, "a hidden launcher kept its combat popup open")
+    assert(fillWrites == 0, "opening a prepared combat popup restyled its background")
+    combatMenu.fill.SetColorTexture = originalSetColor
 end
 CheckCombatMicro()
 -- The clock and its Fit-text layout freeze while combat is active.

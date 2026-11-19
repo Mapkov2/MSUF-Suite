@@ -338,7 +338,7 @@ function Virtual.Paint(rec)
             quality = C_TradeSkillUI.GetItemReagentQualityInfo(action.id)
             if Public(quality) and not quality then quality = C_TradeSkillUI.GetItemCraftedQualityInfo(action.id) end
         end
-        painter.SetQuality(rec, quality)
+        AB.SetQuality(rec, quality)
         painter.GlowCheck(rec)
         painter.RouteSpell(rec)
     else

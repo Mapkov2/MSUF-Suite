@@ -149,10 +149,13 @@ function IO.ReportNameplateImport()
     for _, line in ipairs(lines) do Suite.Dispatch(Suite.Print, line) end
 end
 
-function IO.NameplateSnapshot(stored)
-    local values = CleanNameplateCVars(stored) or {}
-    for key, value in pairs(IO.CaptureNameplateCVars() or {}) do values[key] = value end
+local function MergeNameplateSnapshot(values, live)
+    for key, value in pairs(live or {}) do values[key] = value end
     return next(values) and values or nil
+end
+
+function IO.NameplateSnapshot(stored)
+    return MergeNameplateSnapshot(CleanNameplateCVars(stored) or {}, IO.CaptureNameplateCVars())
 end
 
 function IO.RememberNameplateCVars(profile, imported)
@@ -160,7 +163,9 @@ function IO.RememberNameplateCVars(profile, imported)
     if not profile then return end
     local values = CleanNameplateCVars(profile.nameplateCVars) or {}
     for key, value in pairs(CleanNameplateCVars(imported) or {}) do values[key] = value end
-    profile.nameplateCVars = IO.NameplateSnapshot(values)
+    local live = IO.CaptureNameplateCVars()
+    profile.nameplateCVars = MergeNameplateSnapshot(values, live)
+    return live
 end
 
 function IO.DefaultNameplateCVars()
@@ -177,7 +182,7 @@ end
 function IO.CaptureNameplateShared(name)
     name = name or Suite.Database.GetActiveProfileName()
     local shared, _, snapshot = Suite.HostBridge.CaptureNameplateSettings(name)
-    local profile = Suite.Database.GetProfile(name)
+    local profile = Suite.Database.ReadProfile(name)
     local stored = Suite.NameplateHostSettings.Capture(profile and profile.nameplateShared)
     if not shared and stored then shared = Suite.CopyValue(stored) end
     if stored and stored.nameplates and next(stored.nameplates) and stored.nameplates.fontOverride ~= false
@@ -353,6 +358,14 @@ end
 
 local function EncodeCompact(value)
     return _G.MSUF_EncodeCompactTable(value, "MSUF3")
+end
+
+local function DecodeCompact(value)
+    return _G.MSUF_TryDecodeCompactString(value)
+end
+
+function IO.StorageCodec()
+    if CodecAvailable() then return EncodeCompact, DecodeCompact end
 end
 
 -- A copy keeps the migration state of its source, so one-time migrations
@@ -607,9 +620,13 @@ function IO.ExportProfile(name, options)
     return IO.prefix .. encoded
 end
 
--- A module-only string carries one catalog entry and leaves every other Suite
--- module and all MSUF frame settings alone when imported. Its revision is the
--- migration state of the exported settings; strings without one migrate fully.
+local AURA_LAYOUT, AURA_SKINS = "playerAuras", "playerAuraSkins"
+local function AuraSkinChoices(settings)
+    return { buffSkin = settings.buffSkin, debuffSkin = settings.debuffSkin }
+end
+
+-- Module strings carry the module's settings and any shared settings it owns
+-- with another module. The revision records which migrations already ran.
 function IO.ExportModule(id, options)
     if not Suite.SuiteCatalog[id] then return nil, "Unknown suite module" end
     local name=Suite.Database.GetActiveProfileName()
@@ -633,6 +650,7 @@ function IO.ExportModule(id, options)
         settings = settings, characterBound = keep and keep[id] or nil,
         nameplateCVars = native, nameplateShared = shared, nameplateSections = selected,
         actionBarKeys = id == ACTIONBARS and IO.CaptureActionBarKeys() or nil,
+        auraSkins = id == AURA_SKINS and AuraSkinChoices(clean.suite.modules[AURA_LAYOUT]) or nil,
     })
     if type(encoded) ~= "string" or #IO.modulePrefix + #encoded > IO.maxExportBytes then
         return nil, "Suite module profile is too large"
@@ -660,6 +678,37 @@ function IO.EncodeNameplateProfile(settings, native, shared, options)
     return IO.modulePrefix .. encoded
 end
 
+-- Skin-only profiles share the layout module's two skin choices. Legacy
+-- Daily UI comforts profiles also carried some of today's chat preferences.
+local function CompanionSettings(id, envelope, modules)
+    if id == AURA_SKINS and envelope.auraSkins ~= nil then
+        if type(envelope.auraSkins) ~= "table" then return nil, "Invalid module settings" end
+        local choices, rules = AuraSkinChoices(envelope.auraSkins), Suite.SuiteCatalog[AURA_LAYOUT].rules
+        for key, value in pairs(choices) do
+            if Suite.Suite.CheckProfileValue(rules[key], value) == nil then
+                return nil, "Invalid module setting"
+            end
+        end
+        if next(choices) then return { id = AURA_LAYOUT, settings = choices } end
+    elseif id == "dailyComfort" then
+        local chat = {}
+        for key, rule in pairs(Suite.SuiteCatalog.chatComfort.rules) do
+            if key ~= "enabled" and not rule.personal and envelope.settings[key] ~= nil then
+                chat[key] = modules.chatComfort[key]
+            end
+        end
+        if next(chat) then return { id = "chatComfort", settings = chat } end
+    end
+end
+
+function IO.MergeModuleSettings(modules, id, settings, companion)
+    for key, value in pairs(settings) do modules[id][key] = value end
+    if companion then
+        local target = modules[companion.id]
+        for key, value in pairs(companion.settings) do target[key] = value end
+    end
+end
+
 function IO.PrepareModuleProfile(text, preservePersonal)
     local prefix = IO.modulePrefix
     -- MSUF matches ^%s* and passes the pasted text as it is.
@@ -670,7 +719,7 @@ function IO.PrepareModuleProfile(text, preservePersonal)
     if not CodecAvailable() then return nil, nil, "Profile codec unavailable on this client" end
     local encoded = text:sub(#prefix + 1)
     if encoded:sub(1, 6) ~= "MSUF3:" then return nil, nil, "Invalid suite module payload" end
-    local envelope = _G.MSUF_TryDecodeCompactString(encoded)
+    local envelope = DecodeCompact(encoded)
     if type(envelope) ~= "table" or envelope.addon ~= "MSUF_Suite" or envelope.format ~= 2
         or type(envelope.module) ~= "string"
         or not (Suite.SuiteCatalog[envelope.module] or envelope.module == "mapQuickSwitch")
@@ -694,16 +743,8 @@ function IO.PrepareModuleProfile(text, preservePersonal)
     for key, rule in pairs(spec.rules) do
         if preservePersonal and rule.personal and (envelope.characterBound ~= true or key == spec.personalExport) then settings[key] = nil end
     end
-    -- Old Daily UI comforts exports carried both the interface and chat choices.
-    if id == "dailyComfort" then
-        local chat = {}
-        for key, rule in pairs(Suite.SuiteCatalog.chatComfort.rules) do
-            if key ~= "enabled" and not rule.personal and envelope.settings[key] ~= nil then
-                chat[key] = clean.suite.modules.chatComfort[key]
-            end
-        end
-        if next(chat) then return id, settings, nil, chat end
-    end
+    local companion, companionWhy = CompanionSettings(id, envelope, clean.suite.modules)
+    if companionWhy then return nil, nil, companionWhy end
     local native, shared, selected
     if id == NAMEPLATES then
         native = CleanNameplateCVars(envelope.nameplateCVars)
@@ -719,7 +760,7 @@ function IO.PrepareModuleProfile(text, preservePersonal)
         if selected and not selected.blizzard then native = nil end
     end
     local keys = id == ACTIONBARS and CarriedKeys(envelope.actionBarKeys) or nil
-    return id, settings, nil, nil, native, shared, selected, keys
+    return id, settings, nil, companion, native, shared, selected, keys
 end
 
 function IO.PrepareProfile(text, shared)
@@ -728,7 +769,7 @@ function IO.PrepareProfile(text, shared)
     if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
     local encoded = text:sub(#IO.prefix + 1)
     if encoded:sub(1, 6) ~= "MSUF3:" then return nil, "Invalid suite profile payload" end
-    local envelope = _G.MSUF_TryDecodeCompactString(encoded)
+    local envelope = DecodeCompact(encoded)
     if type(envelope) ~= "table" or envelope.addon ~= "MSUF_Suite" or envelope.format ~= 1 then
         return nil, "Unsupported suite profile"
     end

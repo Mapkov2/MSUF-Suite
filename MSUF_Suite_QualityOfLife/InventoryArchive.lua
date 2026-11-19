@@ -631,6 +631,7 @@ function M:Enable()
     self.context:Event("PLAYER_REGEN_ENABLED", Event)
     if not self.tooltip then S.TooltipLines.Add(self, "Item", Tooltip) self.tooltip = true end
     self.job:Request()
+    if S.BagsToolsChanged then S.BagsToolsChanged() end
 end
 function M:Refresh() if self.job then self.job:Request() end end
 function M:Disable()
@@ -639,5 +640,6 @@ function M:Disable()
     self.mailPending, self.auctionsPending, self.guildPending, self.guildPermissionsPending = nil, nil, nil, nil
     self.bankOpen = false
     S.ToolListWindow.Close(self)
+    if S.BagsToolsChanged then S.BagsToolsChanged() end
 end
 S.Install("inventoryArchive", M)

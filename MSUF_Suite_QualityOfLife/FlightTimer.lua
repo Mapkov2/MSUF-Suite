@@ -5,6 +5,28 @@ local ID, M = "flightTimer", { routes = {}, nodes = {} }
 -- A chosen destination belongs to the next takeoff only this long; a choice
 -- the flight master refused never starts a flight.
 local REQUEST_WINDOW = 5
+-- displayStyle (MSUF_Suite/Core/Catalog/QualityOfLifeDetails.lua): the card,
+-- or one slim Timer bar.
+local BAR = 2
+-- The Timer bar's spacing: text and bar insets, the padding above and below,
+-- the gap between the text and the bar, and the fill the Edit Mode preview
+-- shows.
+local TEXT_INSET, BAR_INSET, BAR_PAD, BAR_GAP, PREVIEW_FILL = 10, 4, 7, 5, .6
+local SPARK = "Interface\\CastingBar\\UI-CastingBar-Spark"
+-- The card's panel, as it always was.
+local CARD_PANEL = { .035, .045, .06, .92 }
+-- The Timer bar's skins (barLook, MSUF_Suite/Core/Catalog/QualityOfLifeDetails.lua;
+-- each look's preset writes its fill color, barColor). 1 Modern: the slim
+-- dark bar without a frame, white text. 2 MSUF Forever: the Forever skin's
+-- graphite glass (MSUF_Suite_Skin foreverGlass: a light top sheen, ivory
+-- title, gold accent) with the hairline frame and gold top trim the
+-- experience bar's MSUF Forever look draws, so the bar matches it in its slot.
+local BAR_LOOKS = {
+    { panel = "0b0e12", panelAlpha = .82, track = "000000", trackAlpha = .55,
+        text = "ffffff", time = "ffffff", spark = "d6efff" },
+    { panel = "14181b", panelAlpha = .94, track = "20272a", trackAlpha = .98, sheen = .07,
+        text = "f1e3c4", time = "d8b66a", spark = "ffe6a8", border = "9f8960", trim = "d8b66a" },
+}
 local function Text(value) return S.Public(value) and type(value) == "string" and value ~= "" end
 local function PublicTable(value)
     return S.Public(value) and type(value) == "table" and canaccesstable(value)
@@ -139,7 +161,7 @@ local function Create(self)
     local host = S.CreateFrame("Frame", nil, UIParent)
     host.background = S.CreateTexture(host, nil, "BACKGROUND")
     host.background:SetAllPoints()
-    host.background:SetColorTexture(.035, .045, .06, .92)
+    host.background:SetColorTexture(CARD_PANEL[1], CARD_PANEL[2], CARD_PANEL[3], CARD_PANEL[4])
     host.title = S.CreateFontString(host, nil, "OVERLAY")
     host.title:SetJustifyH("LEFT")
     host.title:SetWordWrap(true)
@@ -182,34 +204,228 @@ local function Create(self)
     formatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
     formatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
     self.formatter = formatter
+    -- The countdown's formatter of the chosen layout (Layout).
+    self.countdownFormatter = formatter
     self.binding:SetFormatter(formatter)
     self.binding:SetExpiredText(S.Text("Arriving"))
     self.binding:SetUpdateInterval(1)
     self.host = host
 end
 
+-- The Timer bar, made the first time it is chosen: a StatusBar the client
+-- fills from the countdown's own duration (StatusBar:SetTimerDuration, Retail
+-- and Forever), so no Lua runs while it fills; a dark track behind it and a
+-- spark on the fill's edge, anchored to the fill texture so the client moves
+-- it with the fill.
+local function CreateBar(self)
+    local host = self.host
+    if host.bar then return end
+    local bar = S.CreateFrame("StatusBar", nil, host)
+    bar.track = S.CreateTexture(bar, nil, "BACKGROUND")
+    bar.track:SetAllPoints()
+    bar.track:SetColorTexture(0, 0, 0, .55)
+    bar.spark = S.CreateTexture(bar, nil, "OVERLAY")
+    bar.spark:SetTexture(SPARK)
+    bar.spark:SetBlendMode("ADD")
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(0)
+    -- The MSUF Forever frame (FrameBar) and glass sheen; the card never shows them.
+    host.edges = {}
+    for i = 1, 4 do host.edges[i] = S.CreateTexture(host, nil, "BORDER") end
+    host.sheen = S.CreateTexture(host, nil, "BACKGROUND", nil, 1)
+    host.sheen:SetAllPoints()
+    host.sheen:SetColorTexture(1, 1, 1, 1)
+    host.bar = bar
+    self.barDuration = C_DurationUtil.CreateDuration()
+    -- A new bar has no fill yet: the next update paints it (PaintBar).
+    self.barKey = false
+end
+
+-- The Timer bar shows the time left as a clock (1:42), with the breakpoint
+-- the battle resurrection timer and the cooldown manager's countdowns use.
+local function ClockFormatter(self)
+    if self.clockFormatter then return self.clockFormatter end
+    local down = Enum.NumericRuleFormatRounding.Down
+    local formatter = C_StringUtil.CreateNumericRuleFormatter()
+    formatter:SetBreakpoints({ { threshold = 0, format = "%d:%02d", rounding = down,
+        components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } } })
+    self.clockFormatter = formatter
+    return formatter
+end
+
+-- Texture, look, height and spark of the Timer bar. A running fill keeps
+-- its timer; the spark shows while the fill moves or holds the preview. The
+-- look's text colors give way to the class color (classColor).
+local function StyleBar(self)
+    local c, host, bar = self.config, self.host, self.host.bar
+    local look = BAR_LOOKS[c.barLook] or BAR_LOOKS[2]
+    self.barLookStyle = look
+    local r, g, b = S.RGB(look.panel)
+    host.background:SetColorTexture(r, g, b, look.panelAlpha)
+    host.sheen:SetShown(look.sheen ~= nil)
+    if look.sheen then host.sheen:SetGradient("VERTICAL", CreateColor(1, 1, 1, 0), CreateColor(1, 1, 1, look.sheen)) end
+    r, g, b = S.RGB(look.track)
+    bar.track:SetColorTexture(r, g, b, look.trackAlpha)
+    bar.spark:SetVertexColor(S.RGB(look.spark))
+    if not c.classColor then
+        host.title:SetTextColor(S.RGB(look.text))
+        host.time:SetTextColor(S.RGB(look.time))
+    end
+    local inherited = S.ResolveTexture("MSUF Lucent", NS.MSUFMedia.barTexture)
+    bar:SetStatusBarTexture(S.ResolveTexture(c.barTexture, inherited))
+    r, g, b = S.RGB(c.barColor)
+    bar:SetStatusBarColor(r, g, b, 1)
+    bar:SetHeight(c.barHeight)
+    bar.spark:ClearAllPoints()
+    bar.spark:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", 0, 0)
+    bar.spark:SetSize(math.max(8, c.barHeight * 2.5), math.max(10, c.barHeight * 3))
+    bar.spark:SetShown(c.barSpark == true and self.barMoving == true)
+end
+
+-- The fill of the Timer bar: the countdown's span from takeoff to arrival
+-- (finish, length), run by the client; otherwise a still value (the Edit Mode
+-- sample, else empty), as the dungeon cast stack shows an untimed cast. It is
+-- written again only when it changed.
+local function PaintBar(self, finish, length, sample)
+    local bar = self.barStyle and self.host.bar
+    if not bar then return end
+    local key = finish or sample or 0
+    if self.barKey == key and self.barLength == length then return end
+    self.barKey, self.barLength = key, length
+    if finish then
+        self.barDuration:SetTimeFromEnd(finish, length)
+        bar:SetTimerDuration(self.barDuration, Enum.StatusBarInterpolation.Immediate,
+            Enum.StatusBarTimerDirection.ElapsedTime)
+    else
+        bar:SetMinMaxValues(0, 1)
+        bar:SetValue(sample or 0)
+    end
+    self.barMoving = (finish or sample) ~= nil
+    bar.spark:SetShown(self.config.barSpark == true and self.barMoving)
+end
+
+-- Where the display stands. In the experience bar's place (slot: its host,
+-- S.ExperienceBarSlot) it takes that bar's scale and is anchored to its
+-- corners, so it follows the bar's position and size; the bar draws nothing
+-- meanwhile (S.CoverExperienceBar) and is handed back with slot nil.
+-- Otherwise it stands at its own position and scale. Both functions come
+-- from ExperienceBarSlot.lua, which this addon loads before this file.
+local function Place(self, slot)
+    local c, host = self.config, self.host
+    if (slot ~= nil) ~= (self.slot ~= nil) then S.CoverExperienceBar(slot ~= nil) end
+    self.slot = slot
+    host:ClearAllPoints()
+    if slot then
+        host:SetScale(slot:GetScale())
+        host:SetPoint("TOPLEFT", slot, "TOPLEFT")
+        host:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT")
+    else
+        host:SetScale(c.scale / 100)
+        host:SetPoint("CENTER", UIParent, "CENTER", c.x, c.y)
+    end
+end
+
+-- The experience bar to stand in for: only the Timer bar takes its place,
+-- only while flying (replaceXPBar) and never in Edit Mode, where the display
+-- is placed on its own. Nil without a shown MSUF experience bar.
+local function Slot(self, visible, taxi)
+    if not (visible and taxi and self.barStyle and self.config.replaceXPBar) or S.editMode then return nil end
+    return S.ExperienceBarSlot()
+end
+
 -- Font/style choices are applied only on Enable and Refresh; taxi events
 -- arrange the text only when the displayed route or flight state changes.
 local function Layout(self)
     local c, host = self.config, self.host
-    host:SetScale(c.scale / 100)
-    host:ClearAllPoints()
-    host:SetPoint("CENTER", UIParent, "CENTER", c.x, c.y)
+    local bar = c.displayStyle == BAR
+    if bar then CreateBar(self) end
+    self.barStyle = bar
+    Place(self, self.slot)
     local _, class = UnitClass("player")
     local color = c.classColor and S.Public(class) and RAID_CLASS_COLORS[class]
     for i = 1, #LABELS do
         local label = host[LABELS[i]]
-        local size = LABELS[i] == "time" and math.floor(c.fontSize * 1.5) or c.fontSize
+        local size = LABELS[i] == "time" and not bar and math.floor(c.fontSize * 1.5) or c.fontSize
         S.QoLStyleText(label, c, S.GlobalFontPath(), size)
         label:SetTextColor(color and color.r or 1, color and color.g or 1, color and color.b or 1)
     end
+    -- The bar's one line: the destination, cut where the time begins.
+    host.title:SetWordWrap(not bar)
+    host.title:SetMaxLines(bar and 1 or 2)
+    host.time:SetJustifyH(bar and "RIGHT" or "LEFT")
     host.landText:SetText(S.Text("Land at next stop"))
+    if bar then
+        host.bar:Show()
+        StyleBar(self)
+    elseif host.bar then
+        -- The card's own panel again, without the Timer bar's frame.
+        host.bar:Hide()
+        host.background:SetColorTexture(CARD_PANEL[1], CARD_PANEL[2], CARD_PANEL[3], CARD_PANEL[4])
+        host.sheen:Hide()
+        S.PlaceEdges(host.edges, host, 0)
+    end
+    -- The countdown of the chosen layout; a running one keeps its duration.
+    local formatter = bar and ClockFormatter(self) or self.formatter
+    if self.countdownFormatter ~= formatter then
+        self.countdownFormatter = formatter
+        if not self.elapsedClock then
+            self.binding:SetFormatter(formatter)
+            if self.countdownStart then self.binding:UpdateFontString() end
+        end
+    end
+end
+
+-- The Timer bar: the destination at the left and the time at the right on
+-- one line, the bar across the width below them. Heights come from the font
+-- size, not from measured text; in the experience bar's slot (whose corners
+-- size the display) the line and the bar are centered in its height.
+-- The MSUF Forever frame: one screen pixel at the display's current scale
+-- (its own, or the experience bar's in that bar's slot), the top edge in the
+-- gold trim. Modern draws none.
+local function FrameBar(self)
+    local host, look = self.host, self.barLookStyle
+    if not look.border then return S.PlaceEdges(host.edges, host, 0) end
+    local scale = host:GetEffectiveScale()
+    local pixel = S.Finite(scale) and scale > 0 and 1 / scale or 1
+    local r, g, b = S.RGB(look.border)
+    S.PlaceEdges(host.edges, host, pixel, r, g, b, .86)
+    r, g, b = S.RGB(look.trim)
+    host.edges[1]:SetColorTexture(r, g, b, .88)
+end
+
+local function ArrangeBar(self)
+    local c, host = self.config, self.host
+    FrameBar(self)
+    host.route:Hide()
+    host.status:Hide()
+    host.land:Hide()
+    local content = c.fontSize + BAR_GAP + c.barHeight
+    local height = content + BAR_PAD * 2
+    if self.slot then
+        height = self.slot:GetHeight()
+    else
+        host:SetSize(c.width, height)
+    end
+    local top = math.max(1, math.floor((height - content) / 2))
+    host.time:ClearAllPoints()
+    host.time:SetWidth(0)
+    host.time:SetPoint("TOPRIGHT", -TEXT_INSET, -top)
+    host.title:ClearAllPoints()
+    host.title:SetWidth(0)
+    host.title:SetPoint("TOPLEFT", TEXT_INSET, -top)
+    host.title:SetPoint("TOPRIGHT", host.time, "TOPLEFT", -6, 0)
+    host.bar:ClearAllPoints()
+    host.bar:SetPoint("TOPLEFT", BAR_INSET, -(top + c.fontSize + BAR_GAP))
+    host.bar:SetPoint("TOPRIGHT", -BAR_INSET, -(top + c.fontSize + BAR_GAP))
 end
 
 -- Only real intermediate stops get a second route line. Reserve measured text
 -- heights before the timer/footer so large fonts and narrow widths cannot overlap.
 local function Arrange(self)
+    if self.barStyle then return ArrangeBar(self) end
     local c, host, route = self.config, self.host, self.current
+    host.status:Show()
+    host.land:Show()
     host.title:ClearAllPoints()
     host.title:SetPoint("TOPLEFT", 10, -8)
     host.title:SetWidth(c.width - 20)
@@ -255,7 +471,7 @@ local function StopElapsed(self)
         self.elapsedClock = nil
         self.binding:SetEnabled(false)
         -- The countdown's own format again.
-        self.binding:SetFormatter(self.formatter)
+        self.binding:SetFormatter(self.countdownFormatter)
     end
     self.elapsedSecond = nil
 end
@@ -297,16 +513,19 @@ local function Update(self, taxi, force)
     end
     self.paintedVisible, self.paintedTaxi = visible, taxi
     self.paintedRoute, self.paintedDeparted = self.current, self.departed
+    Place(self, Slot(self, visible, taxi))
     self.host:SetShown(visible)
     self.host.land:SetEnabled(taxi and not self.earlyLanding and not S.editMode)
     self.host.landText:SetAlpha(taxi and not self.earlyLanding and not S.editMode and 1 or .45)
     StopElapsed(self)
     if not visible then
         StopCountdown(self)
+        PaintBar(self)
         return
     end
     local route = self.current
-    local title = route and (route.names[1] .. " > " .. route.destination)
+    -- The Timer bar names only the destination.
+    local title = route and (self.barStyle and route.destination or route.names[1] .. " > " .. route.destination)
         or S.Text(S.editMode and "Flight route preview" or "Flight route unavailable")
     self.host.title:SetText(title)
     self.host.route:SetText(route and #route.names > 2 and table.concat(route.names, " > ", 2, #route.names - 1)
@@ -320,9 +539,11 @@ local function Update(self, taxi, force)
             self.binding:UpdateFontString()
             self.countdownStart, self.countdownDuration = self.departed, estimate
         end
+        PaintBar(self, self.departed + estimate, estimate)
         self.host.status:SetText(S.Text("Remaining time"))
     else
         StopCountdown(self)
+        PaintBar(self, nil, nil, S.editMode and not taxi and PREVIEW_FILL or nil)
         self.host.status:SetText(S.Text(route and not self.earlyLanding and "Learning flight time" or "Elapsed time"))
         if taxi and self.departed then
             StartElapsed(self)
@@ -333,6 +554,17 @@ local function Update(self, taxi, force)
     end
     Arrange(self)
 end
+
+-- The experience bar showed or hid (ExperienceBarSlot.lua): a shown Timer
+-- bar that may stand in for it places itself again, and hands back a bar that
+-- hid (the level cap, switched off).
+function S.ExperienceSlotChanged()
+    local self = M
+    if self.active and self.host and self.paintedVisible and self.barStyle and self.config.replaceXPBar then
+        Update(self, self.paintedTaxi, true)
+    end
+end
+
 local function Forget(self)
     self.departed, self.current, self.earlyLanding, self.requested, self.onTaxi = nil, nil, nil, nil, nil
 end
@@ -501,6 +733,8 @@ function M:Disable()
     self.paintedVisible = nil
     if self.host then
         StopCountdown(self)
+        -- The experience bar comes back.
+        Place(self, nil)
         self.host:Hide()
     end
 end

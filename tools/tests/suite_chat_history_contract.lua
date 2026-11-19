@@ -97,6 +97,39 @@ config.historyConversations = false
 C.CompileHistory(config)
 C.HistoryWhisper(incoming:gsub(":10:", ":13:"), 5)
 assert(#C.WhisperSnapshot() == 0, "disabled conversation storage kept capturing")
+
+-- A fresh login may replay timestamps saved when copy-on-timestamp was
+-- enabled, although this session never installed the native link handler.
+do
+    local item = "|Hitem:42:0|h[Item]|h"
+    local url = "|Hmsufurl:https://example.com|h[Example]|h"
+    local content = " " .. item .. " " .. url
+    local archive = "|Hmsufline:1700000000-123-1|h[12:34]|h" .. content
+    local escaped = "||Hmsufline:1700000000-123-1|h[Literal]|h"
+    local saved = { lines = { { text = archive }, { text = item }, { text = Secrets.New("string") },
+        { text = escaped } }, count = 4, limit = 20, next = 5 }
+    local lines, registered, probes = {}, false, 0
+    LinkUtil = { IsLinkHandlerRegistered = function(linkType)
+        assert(linkType == "msufline", "replay checked the wrong link type")
+        probes = probes + 1
+        return registered
+    end }
+    local frame = {
+        GetMaxLines = function() return 100 end,
+        GetNumMessages = function() return 0 end,
+        BackFillMessage = function(_, text) lines[#lines + 1] = text end,
+    }
+    C.HistoryReplay(frame, saved)
+    assert(#lines == 3 and lines[3] == "[12:34]" .. content,
+        "an archived timestamp without a current handler stayed clickable")
+    assert(lines[1] == escaped and lines[2] == item, "replay altered a normal link or literal marker")
+    assert(saved.lines[1].text == archive, "replay rewrote the saved line")
+    registered, lines = true, {}
+    C.HistoryReplay(frame, saved)
+    assert(#lines == 3 and lines[3] == archive, "the registered timestamp copy link was stripped")
+    assert(probes == 2, "replay did not check the link registry once per ring")
+end
+
 C.ShowChatLine(Secrets.New("string"))
 local violations = stop()
 assert(#violations == 0, table.concat(violations, "\n"))

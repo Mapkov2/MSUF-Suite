@@ -112,7 +112,7 @@ local function PaintMask(record, index, source, fullRect, descriptor)
         local inset = descriptor.inset * scale
         left, bottom = left + inset, bottom + inset
         width, height = width - inset * 2, height - inset * 2
-        NS.Geometry.ConfigureShape(mask, descriptor.geometry.fill, descriptor.geometry)
+        NS.Geometry.ConfigureShape(mask, descriptor.geometry.fill, descriptor.geometry, true)
         mask:SetTexCoord(0, 1, 0, 1)
     else
         Configure(mask, descriptor)

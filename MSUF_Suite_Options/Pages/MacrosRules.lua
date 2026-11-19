@@ -2,8 +2,60 @@ local _, P = ...
 local Page = P.MacroPage
 
 Page.initializers[#Page.initializers + 1] = function()
-    local Page, Helpers, Tr, Model = P.MacroPage, P.MacroPage.helpers, P.Tr, P.Suite.Macros.Model
+    local Page, Helpers, Suite = P.MacroPage, P.MacroPage.helpers, P.Suite
+    Helpers.SelectedUnit = function(branch)
+        for _, condition in ipairs(branch.conditions) do
+            if condition.key == "unit" then return condition.value end
+        end
+        return "target"
+    end
+
+    local function ReadTargetName()
+        local forever = Suite.Client.isForever
+        local readName = forever and UnitNameUnmodified or UnitName
+        local name, suffix = readName("target")
+        if Suite.IsSecret(name) or Suite.IsSecret(suffix) or type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT then
+            return nil
+        end
+        if type(suffix) == "string" and suffix ~= "" then
+            if forever then
+                -- Match the unmodified full name in Forever's Camelot/NameUtil.lua.
+                name = name .. Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR .. suffix
+            else
+                name = name .. "-" .. suffix:gsub("%s+", "")
+            end
+        end
+        return Suite.Macros.ExactTargetName(name)
+    end
+
+    Helpers.TargetNameInput = function(ui, key, branch, y, width)
+        Page.Edit(ui, key .. ":target-name", "Target name", branch.value, 16, y, width - 32, function(value)
+            branch.value = value
+            Page.Changed(false)
+        end)
+        Page.Button(ui, key .. ":use-current-target", "Use current target", 16, y - 54, math.min(width - 32, 245), function()
+            if not UnitExists("target") then
+                Page.Error("No target")
+                return
+            end
+            local name = ReadTargetName()
+            if not name then
+                Page.Error("The current target's name is unavailable.")
+                return
+            end
+            branch.value = name
+            Page.Changed(true)
+        end)
+        return y - 93
+    end
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Page, Helpers, Model = P.MacroPage, P.MacroPage.helpers, P.Suite.Macros.Model
     Helpers.ValueInput = function(ui, key, branch, command, y, width)
+        if command == "targetexact" and Helpers.SelectedUnit(branch) == "target" then
+            return Helpers.TargetNameInput(ui, key, branch, y, width)
+        end
         local spec = Model.CommandByKey[command]
         if spec.argument == "none" then return y end
         if command == "tm" then
@@ -243,7 +295,7 @@ Page.initializers[#Page.initializers + 1] = function()
                 function() Helpers.BranchOrder(step, index, -1) end, index > 1)
         end
         y = y - 32
-        if spec.conditional ~= false then y = Helpers.Conditions(ui, key, branch, y, width) end
+        if spec.conditional ~= false then y = Helpers.Conditions(ui, key, branch, y, width, step.command) end
         if index > 1 and spec.argument ~= "none" then
             Page.Toggle(ui, key .. ":same", "Same action", branch.useFirst, 16, y, width - 32, function(value)
                 branch.useFirst = value
@@ -304,12 +356,11 @@ end
 
 Page.initializers[#Page.initializers + 1] = function()
     local Page, Helpers, Tr, Model = P.MacroPage, P.MacroPage.helpers, P.Tr, P.Suite.Macros.Model
-    Helpers.Target = function(ui, key, branch, y, width)
-        local selected = "target"
-        for _, condition in ipairs(branch.conditions) do
-            if condition.key == "unit" then selected = condition.value break end
-        end
-        Page.Select(ui, key .. ":target", "Target", Helpers.Translated(Helpers.units), selected, 16, y, width - 32,
+    Helpers.Target = function(ui, key, branch, y, width, command)
+        local choices = Helpers.Translated(Helpers.units)
+        -- With no unit override, Blizzard's /targetexact uses the name argument.
+        if command == "targetexact" then choices[1].text = Tr("Target an exact name") end
+        Page.Select(ui, key .. ":target", "Target", choices, Helpers.SelectedUnit(branch), 16, y, width - 32,
             function(value)
                 for i = #branch.conditions, 1, -1 do
                     if branch.conditions[i].key == "unit" then table.remove(branch.conditions, i) end
@@ -342,8 +393,8 @@ Page.initializers[#Page.initializers + 1] = function()
         end
     end
 
-    Helpers.Conditions = function(ui, key, branch, y, width)
-        y = Helpers.Target(ui, key, branch, y, width)
+    Helpers.Conditions = function(ui, key, branch, y, width, command)
+        y = Helpers.Target(ui, key, branch, y, width, command)
         local ordinal = 0
         for i, condition in ipairs(branch.conditions) do
             if condition.key ~= "unit" then

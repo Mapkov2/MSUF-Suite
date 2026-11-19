@@ -296,6 +296,13 @@ config.timestampFormat = "[%H:%M]"
 nativeStamp = "%H:%M "
 C.CompileMessages(config)
 eq(Rendered("12:34 hello"), "[12:34] hello", "Blizzard's own timestamp was kept next to the Suite stamp")
+do
+    local readCount, previous = cvarReads, clock
+    clock = previous + 1
+    eq(Rendered("12:34 one second later"), "[12:34] one second later", "native format changed on a clock tick")
+    eq(cvarReads, readCount, "the timestamp clock re-read an unchanged CVar")
+    clock = previous
+end
 -- Blizzard reuses a closed temporary whisper window and copies the source
 -- window's rendered lines into it through AddMessage
 -- (FCF_OpenTemporaryWindow): a line that already starts with a Suite stamp,
@@ -654,10 +661,9 @@ do
     table.remove(window.securePostHooks, 1)
     -- Budget: Lua VM instructions of one stamped line in a full window,
     -- this window model included (GC and hooks aside, deterministic on Lua
-    -- 5.1). 2026-10-01: 4534 when every visit read the raw text, 3548 with
-    -- the newest-slot predicate; +2 % headroom. 2026-10-03: 3552 with the
-    -- copied-line stamp check (one anchored string.find, no native call).
-    local CHAT_LINE_BUDGET = 3620
+    -- 5.1). Counting down to the newest storage slot reduced the current
+    -- cost from 3575 to 3445 instructions. Allow roughly 2% headroom.
+    local CHAT_LINE_BUDGET = 3510
     local count = 0
     local function Instructions(fn)
         count = 0

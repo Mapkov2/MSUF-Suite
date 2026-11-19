@@ -526,7 +526,7 @@ function M:Enable()
         hooksecurefunc("ConfirmLootRoll", NativeConfirmed)
         self.confirmHooked = true
     end
-    View.Create(self)
+    View.Layout(self)
     self.context:Event("START_LOOT_ROLL", StartRoll, IN_COMBAT)
     self.context:Event("CANCEL_LOOT_ROLL", CancelRoll, IN_COMBAT)
     self.context:Event("CANCEL_ALL_LOOT_ROLLS", CancelAll, IN_COMBAT)
@@ -546,6 +546,7 @@ end
 
 function M:Refresh()
     if self.showingSamples then self.visibleEntries = {} end
+    View.Layout(self)
     Flush(self)
 end
 
@@ -576,6 +577,7 @@ function S.DrawLootRollPreview(parent, config, _, viewport)
         parent.suiteLootRollPreview = view
     end
     view.config, view.previewViewport = config, viewport
+    View.Layout(view)
     View.Paint(view)
     View.Tick(view, GetTime())
     return view.host

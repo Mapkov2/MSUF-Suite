@@ -72,7 +72,8 @@ local function CheckOptimizer()
         local kind = options.kind or "world"
         local aura
         if not options.missing then
-            aura = { spellId = 429959, applications = stacks, expirationTime = options.expires or 1000 }
+            aura = { spellId = options.incomplete and secret or 429959, applications = stacks,
+                expirationTime = options.expires or 1000 }
         end
         local ns = { InCombat = function() return combat end }
         local suite = {
@@ -87,17 +88,30 @@ local function CheckOptimizer()
         GetTime = function() return now end
         UnitIsAFK = function() return options.afk or false end
         UnitIsDeadOrGhost = function() return dead end
-        GetInventoryItemID = function() return nil end
+        GetInventoryItemID = function() return options.equipped end
         canaccesstable = Public
         wipe = function(t) for key in pairs(t) do t[key] = nil end end
-        C_Secrets = { ShouldAurasBeSecret = function() return restricted end }
-        C_UnitAuras = { GetAuraDataByIndex = function(unit, index, filter)
-            assert(unit == "player" and filter == "HELPFUL", "optimizer read another unit's auras")
-            if index == 1 then return aura end
-            if index == 2 and options.incomplete then return { spellId = secret } end
+        local hidden = options.hidden or {}
+        C_Secrets = {
+            ShouldAurasBeSecret = function() return options.broadRestriction or restricted end,
+            ShouldSpellAuraBeSecret = function(id) return hidden[id] or restricted end,
+        }
+        C_UnitAuras = { GetPlayerAuraBySpellID = function(id)
+            assert(C_Secrets.ShouldSpellAuraBeSecret(id) == false, "optimizer queried a restricted spell")
+            if id == 429959 then return aura end
+            return options.auras and options.auras[id]
         end }
-        C_Item = { GetItemCount = function(id) return id == 211527 and 1 or 0 end }
-        C_Spell = { GetItemCooldown = function() return { startTime = 0, duration = 0, isEnabled = true } end }
+        C_Item = {
+            GetItemCount = function(id)
+                if id == 211527 then return 1 end
+                return options.items and options.items[id] or 0
+            end,
+            GetItemCooldown = function(id)
+                if id == 279978 and options.tentCooldown then return 1, 90, options.tentCooldown end
+                return 0, 0, true
+            end,
+        }
+        C_Spell = { GetItemCooldown = function() return nil end }
         C_QuestLog = { GetNumQuestLogEntries = function() return 0 end }
         local owner = { optimizerPaint = function() end, optimizerTooltip = function() end }
         local context = {}
@@ -135,6 +149,14 @@ local function CheckOptimizer()
         end
         return {
             owner = owner, warnings = warnings, events = events, advance = Advance, aura = AuraChange,
+            sync = function(level) p.ExperienceOptimizer.Sync(owner, level) end,
+            tooltip = function()
+                local rows = {}
+                local tooltip = { AddLine = function() end }
+                function tooltip:AddDoubleLine(label, value) rows[label] = value end
+                p.ExperienceOptimizer.Tooltip(owner.optimizer, tooltip, 100, 1000)
+                return rows
+            end,
             release = function()
                 combat, dead, kind = false, false, "world"
                 events.PLAYER_REGEN_ENABLED(owner, "PLAYER_REGEN_ENABLED")
@@ -145,6 +167,33 @@ local function CheckOptimizer()
             end,
         }
     end
+    local hidden = { [429959] = true, [1243969] = secret }
+    local observed = Load({ level = 36, broadRestriction = true, hidden = hidden, tentCooldown = 1,
+        auras = { [1249520] = { spellId = 1249520, expirationTime = 120 } }, items = { [279978] = 1 },
+        equipped = 273049 })
+    local rows = observed.tooltip()
+    assert(rows["XP food"] == "120" and rows["Cozy Sleeping Bag"] == "Owned"
+        and rows["Camp Tent"] == "Cooldown: 91" and rows["Undead XP pendant"] == "Ready",
+        "a secret alias or the broad restriction masked independent, readable XP bonus data")
+    observed.stop()
+
+    local blocked = Load({ level = 36, restricted = true, tentCooldown = true,
+        items = { [279978] = 1, [6290] = secret } })
+    rows = blocked.tooltip()
+    assert(rows["XP food"] == "Unknown" and rows["Cozy Sleeping Bag"] == "Owned"
+        and rows["Camp Tent"] == "Cooldown: 91" and rows["Undead XP pendant"] == "None in your bags right now.",
+        "restricted aura readings lost known item status or guessed secret ownership")
+    blocked.advance(16)
+    assert(#blocked.warnings == 0, "item ownership was treated as proof of a missing buff")
+    blocked.stop()
+
+    local unlocked = Load({ level = 13, stacks = 3 })
+    assert(unlocked.tooltip()["Cozy Sleeping Bag"] == nil, "optimizer showed an ineligible bonus")
+    unlocked.sync(14)
+    assert(unlocked.tooltip()["Cozy Sleeping Bag"] == "3 / 3 stacks (1000)",
+        "levelling did not scan a newly eligible buff")
+    unlocked.stop()
+
     local first = Load({ stacks = 1 })
     first.advance(14)
     assert(#first.warnings == 0, "partial stacks bypassed login grace")

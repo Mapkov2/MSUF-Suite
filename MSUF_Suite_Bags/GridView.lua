@@ -134,10 +134,17 @@ function GridView.PaintHeader(pool, index, parent, anchor, x, y, width, group, t
     if shift > 0 or P.BagPresentation.IsPanel(M.config) then
         text = GridView.CountLabel(text, group.collapsed and group.hidden or #group.rows)
     end
-    label:ClearAllPoints()
-    label:SetPoint("TOPLEFT", anchor, "TOPLEFT", x + shift, y)
-    label:SetWidth(width - shift)
-    label:SetText(text)
+    local textX, textWidth = x + shift, width - shift
+    if label.placeAnchor ~= anchor or label.placeX ~= textX or label.placeY ~= y or label.placeWidth ~= textWidth then
+        label:ClearAllPoints()
+        label:SetPoint("TOPLEFT", anchor, "TOPLEFT", textX, y)
+        label:SetWidth(textWidth)
+        label.placeAnchor, label.placeX, label.placeY, label.placeWidth = anchor, textX, y, textWidth
+    end
+    if label.headerText ~= text then
+        label:SetText(text)
+        label.headerText = text
+    end
     label:Show()
     if toggle or price then
         PlaceHit(label, parent, anchor, x, y, width, group, toggle, price)

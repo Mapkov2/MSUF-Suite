@@ -154,21 +154,20 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Check(W.states[sibling].grip.shown, "social release removed a sibling owner's controls")
         W.DisableOwner("social")
         social:Hide(); sibling:Hide()
-        -- A request made during combat recovers once through the existing owner gate.
+        -- The skin and existing safe controls are both available on a cold combat open.
         local cold = Native("SocialUIFrame")
         _G.combatEdge = true
-        Check(not NS.SocialUISkin.Apply("cold-social") and W.states[cold] and not cold.surfaceSpec,
-            "safe cold social opening lacks controls or traversed its deferred skin")
+        Check(NS.SocialUISkin.Apply("cold-social") and cold.surfaceSpec,
+            "safe cold social opening did not paint in combat")
         local coldControls = Controls(cold, "cold-social:social-ui")
         coldControls.titleDrag.scripts.OnDragStart(coldControls.titleDrag)
-        Check(cold.moving, "safe cold social title cannot move in combat")
-        coldControls.titleDrag.scripts.OnDragStop(coldControls.titleDrag)
+        Check(not cold.moving, "social skin bypassed the combat title drag restriction")
         cursorX, cursorY = 500, 500
         coldControls.grip.scripts.OnMouseDown(coldControls.grip, "LeftButton")
         cursorX, cursorY = 560, 470
         coldControls.grip.scripts.OnUpdate(coldControls.grip)
         coldControls.grip.scripts.OnMouseUp(coldControls.grip)
-        Check(cold.scale > 1 and not cold.surfaceSpec, "safe cold social combat scale required a full skin pass")
+        Check(cold.scale > 1, "safe cold social controls could not scale the window")
         _G.combatEdge = false
         for key, callback in pairs(H.jobs) do H.jobs[key] = nil; callback() end
         Controls(cold, "cold-social:social-ui")

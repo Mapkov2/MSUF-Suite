@@ -12,6 +12,7 @@ local TEXT_ANCHOR, BOX = NS.MinimapTextAnchor, NS.MinimapTextBox
 -- FPS and latency retain their last reading between player and pointer events.
 -- The configured intervals bound automatic movement and combat samples.
 local keys = { "CalendarDay", "Clock", "FPS", "Latency", "Coordinates", "Durability", "Location", "Weather" }
+local timedEntries, eventEntries = {}, {}
 local eventFields = { Durability = true, Location = true, Weather = true, FPS = true, Latency = true }
 local TELEMETRY_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_REGEN_DISABLED",
     "PLAYER_REGEN_ENABLED", "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING" }
@@ -387,23 +388,20 @@ end
 local Tick
 Tick = function()
     M.infoTimer = nil
-    if not Visible() then
-        Cancel()
-        return
-    end
+    if not Visible() then return Cancel() end
     local now, soonest = GetTime(), nil
-    for _, key in ipairs(keys) do
-        local entry = M.infoEntries[key]
-        if entry and entry.active and entry.button:IsShown() then
-            if eventFields[key] then
-                if entry.dirty then Sample(entry, key) end
-            else
-                if entry.due == nil or (entry.due and entry.due <= now) then
-                    local delay = Sample(entry, key)
-                    entry.due = delay and now + delay or false
-                end
-                if entry.due and (not soonest or entry.due < soonest) then soonest = entry.due end
+    for i = 1, #eventEntries do
+        local entry = eventEntries[i]
+        if entry.dirty and entry.button:IsShown() then Sample(entry, entry.button.infoKey) end
+    end
+    for i = 1, #timedEntries do
+        local entry = timedEntries[i]
+        if entry.button:IsShown() then
+            if entry.due == nil or (entry.due and entry.due <= now) then
+                local delay = Sample(entry, entry.button.infoKey)
+                entry.due = delay and now + delay or false
             end
+            if entry.due and (not soonest or entry.due < soonest) then soonest = entry.due end
         end
     end
     if M.difficultyDirty then UpdateDifficulty() end
@@ -417,10 +415,7 @@ function MM.UpdateInfoVisibility()
     end
     if M.infoVisible then return end
     M.infoVisible = true
-    for key in pairs(eventFields) do
-        local entry = M.infoEntries[key]
-        if entry then entry.dirty = true end
-    end
+    for i = 1, #eventEntries do eventEntries[i].dirty = true end
     if M.difficultyActive then M.difficultyDirty = true end
     if not M.infoTimer then Tick() end
 end
@@ -478,14 +473,21 @@ local function TelemetryChanged(_, event)
 end
 local function DifficultyChanged() UpdateDifficulty() end
 local function WeatherChanged() EventField("Weather") end
+-- Coordinates can be set to hide inside instances.
+local function CoordinatesHidden(c)
+    if not (c.infoCoordinates and c.infoCoordinatesHideInstance) then return false end
+    local inside = IsInInstance()
+    return not S.Public(inside) or inside == true
+end
+
 local function WorldChanged()
     S.InvalidateSharedData("durability")
     EventField("Durability")
     ZoneChanged()
     UpdateInvite()
     local c = M.config
-    if c.infoCoordinates and c.infoCoordinatesHideInstance then
-        -- Entering or leaving an instance may show or hide the coordinates text.
+    if CoordinatesHidden(c) ~= M.infoHideCoordinates then
+        -- Only a coordinate visibility transition requires another layout.
         if NS.IsCombatLocked() then
             MM.Force("texts")
             S.Queue("minimap")
@@ -636,13 +638,6 @@ local function ListenOne(event, handler, wanted)
     if wanted then MM.Listen(event, "info", handler) else MM.Unlisten(event, "info") end
 end
 
--- Coordinates can be set to hide inside instances.
-local function CoordinatesHidden(c)
-    if not (c.infoCoordinates and c.infoCoordinatesHideInstance) then return false end
-    local inside = IsInInstance()
-    return not S.Public(inside) or inside == true
-end
-
 local function TextWanted(c, key, hideCoordinates)
     return c["info" .. key] and not (key == "Coordinates" and hideCoordinates) and S.CanShowMinimapInfo(key)
 end
@@ -689,6 +684,8 @@ local function LayoutEntries(c, hideCoordinates)
                 M.infoEntries[key] = entry
             end
             Style(entry, key, c, classColor, boxR, boxG, boxB)
+            local active = eventFields[key] and eventEntries or timedEntries
+            active[#active + 1] = entry
             local anchor = c[prefix .. "Anchor"]
             local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2
                 or key == "Location" and NS.MinimapStyle.LocationLines(c) or 1
@@ -762,9 +759,12 @@ function MM.RefreshTexts()
         return
     end
     Cancel()
+    for i = #timedEntries, 1, -1 do timedEntries[i] = nil end
+    for i = #eventEntries, 1, -1 do eventEntries[i] = nil end
     MM.DetachInfoOverlay()
     local c = M.config
     local hideCoordinates = CoordinatesHidden(c)
+    M.infoHideCoordinates = hideCoordinates
     local difficulty = SyncTextEvents(c)
     local any = difficulty
     for _, key in ipairs(keys) do

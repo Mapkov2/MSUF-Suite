@@ -306,7 +306,8 @@ local function OnAnchors(uf)
     local textures = private.Textures
     if textures and textures.inUse then textures.OnAnchors(uf) end
     local state = states[uf]
-    local locked = NS.IsCombatLocked() or NS.Safety.IsForbidden(uf)
+    local forbidden = NS.Safety.IsForbidden(uf)
+    local locked = forbidden or NS.IsCombatLocked()
     if state then
         -- UpdateAnchors rebuilds dynamic links, including Forever's CC
         -- badge reservation. Restore only fixed XML links before applying
@@ -325,24 +326,29 @@ local function OnAnchors(uf)
         end
         state.links = pending
         state.header, state.nameAnchor = nil, nil -- Blizzard rebuilt the anchors and justification.
-        state.generation = nil
+        state.healthTextApplied, state.generation = nil, nil
         state.nativeReset = true
     end
+    local active = not forbidden and module.active
+        and (not private.IsSkinSuppressed or not private.IsSkinSuppressed(uf))
     if locked then
         Defer(uf)
-        private.Extensions.OnAnchors(uf)
-        return
-    end
-    if not module.active or private.IsSkinSuppressed and private.IsSkinSuppressed(uf) then
+    elseif not active then
         Layout.Restore(uf)
         return
     end
-    if not NS.Public(uf.isFriend) then return end
-    -- Blizzard can rebuild a recycled frame several times during SetUnit.
-    -- OnAdded paints the settled frame once, after native setup.
-    local unit = uf.unit
-    if NS.Public(unit) and type(unit) == "string" and module.activeUnits[unit] == uf then
-        Layout.Reapply(uf, uf.isFriend and "friendly" or "enemy", module.config)
+    if active then
+        local friend = uf.isFriend
+        if NS.Public(friend) then
+            -- Blizzard can rebuild a recycled frame several times during SetUnit.
+            -- OnAdded paints the settled frame once, after native setup.
+            local unit = uf.unit
+            if NS.Public(unit) and type(unit) == "string" and module.activeUnits[unit] == uf then
+                Layout.Reapply(uf, friend and "friendly" or "enemy", module.config)
+            end
+        elseif not locked then
+            return
+        end
     end
     private.Extensions.OnAnchors(uf)
 end
@@ -434,10 +440,9 @@ end
 -- The name follows the health text when Blizzard anchors it there.
 -- NamePlateConstants.NAME_ANCHOR_STYLES (Blizzard_NamePlateConstants.lua).
 local INSIDE_BAR, ABOVE_BAR = 1, 2
-local function NameLink(state, uf, plan, setup, badgeShown)
-    local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+local function NameLinkPoint(uf, setup, badgeShown)
     local anchor = setup.unitNameAnchorStyle
-    if not health or uf.showOnlyName == true or (anchor ~= INSIDE_BAR and anchor ~= ABOVE_BAR) then return end
+    if uf.showOnlyName == true or (anchor ~= INSIDE_BAR and anchor ~= ABOVE_BAR) then return end
     local inside = anchor == INSIDE_BAR
     local point, relative = inside and "RIGHT" or "BOTTOMRIGHT", inside and "LEFT" or "BOTTOMLEFT"
     if anchor == ABOVE_BAR and NS.Public(setup.nameJustificationWhenAboveHealthBar)
@@ -450,8 +455,60 @@ local function NameLink(state, uf, plan, setup, badgeShown)
             point, relative = "RIGHT", "LEFT"
         end
     end
+    return point, relative
+end
+
+local function NameLink(state, uf, plan, setup, badgeShown)
+    local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+    if not health then return end
+    local point, relative = NameLinkPoint(uf, setup, badgeShown)
     local value = plan.HealthText
     if point then Link(state, uf.name, point, health.Text, relative, -2, 0, value[1], value[2]) end
+end
+
+local function CombatWritable(region)
+    if not NS.Public(region) or not Accessible(region) then return false end
+    local accessible = region:CanBeAccessedInContext()
+    if not NS.Public(accessible) or accessible ~= true then return false end
+    local protected = region:IsProtected()
+    return NS.Public(protected) and protected == false
+end
+
+-- Native acquisition/rebuild can happen during lockdown. Place the ordinary
+-- HP text on writable plates now so it matches plates laid out before combat.
+-- The rest of the layout still uses the existing post-combat replay.
+local function ApplyCombatHealthText(state, uf, prefix, plan, config)
+    local x, y = plan.HealthText[1], plan.HealthText[2]
+    if x == 0 and y == 0 or state and (state.healthTextApplied or state.header) then return end
+    if not CombatWritable(uf) then return end
+    local namesOnly, setup = uf.showOnlyName, NamePlateSetupOptions
+    if not NS.Public(namesOnly) or namesOnly ~= false or not NS.Public(setup.unitNameAnchorStyle) then return end
+    if prefix == "enemy" and NS.NameplateStyle.MirrorHeader(config.enemyMirrorHeader,
+        config.enemyTextMode, setup.unitNameAnchorStyle, namesOnly) then return end
+
+    local container = uf.HealthBarsContainer
+    if not CombatWritable(container) then return end
+    local health = container.healthBar
+    if not CombatWritable(health) then return end
+    local label = health.LeftText
+    if not NS.Public(label) then return end
+    label = label or health.Text
+    if not CombatWritable(label) then return end
+
+    local point, relative
+    if not state or not state.nameAnchor then point, relative = NameLinkPoint(uf, setup) end
+    if point then
+        local name = uf.name
+        -- PixelUtil snaps the compensating name anchor using this scale.
+        if not CombatWritable(name) or not CombatWritable(health.Text)
+            or not NS.Finite(name:GetEffectiveScale()) then return end
+    end
+    state = state or { offsets = {}, links = {} }
+    states[uf] = state
+    Offset(state, label, x, y, true)
+    if point then Link(state, uf.name, point, health.Text, relative, -2, 0, x, y) end
+    state.healthTextApplied = true
+    Layout.Observe(uf)
 end
 
 -- upstream/forever 70009: UpdateAnchors reserves the badge width plus its
@@ -514,7 +571,9 @@ local function ElementOffsets(state, uf, plan, force, anchored)
     local namesOnly = uf.showOnlyName == true
     Offset(state, uf.HealthBarsContainer, plan.Health[1], plan.Health[2], force)
     if not anchored then Offset(state, uf.name, name[1], name[2], force) end
-    Offset(state, health and (health.LeftText or health.Text), value[1], value[2], force)
+    local label = health and (health.LeftText or health.Text)
+    Offset(state, label, value[1], value[2], force)
+    state.healthTextApplied = state.offsets[label] ~= nil
     Offset(state, uf.SoftTargetFrame, plan.SoftTarget[1], plan.SoftTarget[2], force)
     Offset(state, uf.RaidTargetFrame, raid[1] - (namesOnly and name[1] or 0),
         raid[2] - (namesOnly and name[2] or 0), force)
@@ -584,7 +643,9 @@ local function Lay(uf, prefix, config, force)
         if state then return Restore(uf) end
         return
     end
-    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
+    local locked = NS.IsCombatLocked()
+    if locked or NS.Safety.IsForbidden(uf) then
+        if locked then ApplyCombatHealthText(state, uf, prefix, plan, config) end
         Defer(uf)
         return
     end

@@ -8,6 +8,18 @@ function Presentation.IsPanel(c)
     return c.windowPresentation == NS.BagsPresentation.PANEL and c.inventoryView ~= NS.BagsView.BLIZZARD_GRID
 end
 
+function Presentation.HasSidebar(c)
+    return c.inventoryView == NS.BagsView.CATEGORIES and not c.collapseCategorySidebar
+end
+
+function Presentation.Rail(c)
+    if Presentation.IsPanel(c) and c.inventoryView ~= NS.BagsView.SINGLE
+        and not (c.inventoryView == NS.BagsView.CATEGORIES and c.collapseCategorySidebar) then
+        return Presentation.RAIL
+    end
+    return 0
+end
+
 -- A default reagent window remains a separate native root. Its width is
 -- reserved before choosing columns; custom reagent placement stays independent.
 function Presentation.CompanionWidth(c)
@@ -37,7 +49,7 @@ function Presentation.ResolveScale(c, viewportWidth, viewportHeight, money, draw
     if not Presentation.IsPanel(c) then return c.windowScale end
     local top, bottom = Top(true, drawer), money + 50
     local height = MinimumRows(c, top, bottom) * Presentation.CELL + top + bottom
-    local width = Presentation.RAIL + 6 * Presentation.CELL + 32
+    local width = Presentation.Rail(c) + 6 * Presentation.CELL + 32
     if companion and companion > 0 then
         width = width + companion + 8
         height = max(height, companionHeight)
@@ -57,11 +69,12 @@ end
 function Presentation.Measure(out, c, width, available, money, lines, drawer)
     local panel = Presentation.IsPanel(c)
     local columns = c.inventoryColumns
-    local rail = panel and Presentation.RAIL or 0
+    local rail = panel and Presentation.Rail(c) or 0
     local columnCapacity = panel and max(6, floor((width - 24 - rail - 32) / 40)) or 20
     if panel then columns = min(columns, columnCapacity) end
     out.columnCapacity = columnCapacity
-    local sidebar = panel and rail + 16 or c.inventoryView == NS.BagsView.CATEGORIES and 178 or 12
+    local sidebarShown = Presentation.HasSidebar(c)
+    local sidebar = panel and rail + 16 or sidebarShown and 178 or 12
     local top = Top(panel, drawer)
     local bottom = money + 50
     local height = max(top + bottom + 80, available - 12)
@@ -76,10 +89,11 @@ function Presentation.Measure(out, c, width, available, money, lines, drawer)
     end
     out.minimum, out.fullHeight = minimum, full
     out.panel, out.rail, out.top, out.bottom = panel, rail, top, bottom
+    out.sidebarShown, out.hideTabs = sidebarShown, c.inventoryView == NS.BagsView.SINGLE or panel and rail == 0
     out.columns, out.sidebar, out.rows = columns, sidebar, rows
     out.width = panel and rail + columns * 40 + 32 or max(620, sidebar + columns * 40 + 12)
     out.height = height
-    out.compact = not panel and c.compactGroups
+    out.compact = not panel and c.compactGroups and c.inventoryView ~= NS.BagsView.SINGLE
     return out
 end
 

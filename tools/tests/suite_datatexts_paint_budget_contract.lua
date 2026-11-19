@@ -144,4 +144,39 @@ for _, case in ipairs(BUDGETS) do
     end
 end
 assert(#failures == 0, table.concat(failures, "\n") .. "\nmeasured: " .. table.concat(summary, "; "))
+
+-- A stationary coordinate slot keeps its numeric sample and rendered value,
+-- including after a missing position or a change to display precision.
+local x, y, position = .5234, .4801, {}
+function position:GetXY() return x, y end
+W.G.C_Map = {
+    GetBestMapForUnit = function() return 37 end,
+    GetPlayerMapPosition = function() return x and position or nil end,
+}
+assert(S.SetMany("dataTexts", {
+    bar1Slot6 = W.Suite.DataTextSourceIndex.coordinates, coordinateDecimals = 1,
+    bar1LoadCondShowWhenInjured = false,
+}))
+local format, calls = string.format, 0
+W.G.string = setmetatable({
+    format = function(pattern, ...)
+        if pattern == "%.1f, %.1f" then calls = calls + 1 end
+        return format(pattern, ...)
+    end,
+}, { __index = string })
+local function CoordinateText() return M.values.coordinates.value end
+assert(CoordinateText() == "52.3, 48.0")
+for _ = 1, 4 do W.Advance(.6) end
+assert(calls == 0, "stationary coordinates were formatted again")
+x = .5434
+W.Advance(.6)
+assert(calls == 1 and CoordinateText() == "54.3, 48.0")
+x = nil
+W.Advance(.6)
+assert(calls == 1 and CoordinateText() == "\226\128\148")
+x = .5434
+W.Advance(.6)
+assert(CoordinateText() == "54.3, 48.0")
+assert(S.Set("dataTexts", "coordinateDecimals", 2))
+assert(CoordinateText() == "54.34, 48.01")
 print("DataTexts paint budget passed (" .. table.concat(summary, "; ") .. ")")

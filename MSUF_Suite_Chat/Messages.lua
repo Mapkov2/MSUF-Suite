@@ -75,7 +75,7 @@ local tools = {}
 local formatGeneration = 0
 local stampFormat, stampSecond, stampText = DEFAULT_STAMP, nil, ""
 local stampPattern = "^%[%d+:%d+%] "
-local nativeSetting, nativeFormat, nativePrefix
+local nativeFormat, nativePrefix
 
 ------------------------------------------------------------------ keywords
 -- An ASCII letter or digit. Bytes of other scripts are boundaries, so a
@@ -271,6 +271,17 @@ local function StampPattern(format)
     return pattern .. " "
 end
 
+function C.RefreshNativeTimestamp()
+    local setting = tools.stamps and PublicText(C_CVar.GetCVar("showTimestamps"))
+    nativeFormat = setting and setting ~= "none" and ValidFormat(setting) and setting or nil
+    stampSecond = nil
+end
+
+local function NativeTimestampChanged(_, _, name)
+    name = PublicText(name)
+    if name and name:lower() == "showtimestamps" then C.RefreshNativeTimestamp() end
+end
+
 -- Once per second at most: the Suite stamp and the prefix Blizzard writes
 -- itself (ChatFrameUtil.GetTimestampFormat, TimeUtil.BetterDate) while its
 -- showTimestamps setting is on. Its own stamp is replaced, not repeated.
@@ -278,11 +289,6 @@ local function RefreshStamps(now)
     stampSecond = now
     stampLabel = date(stampFormat, now)
     stampText = stampLabel .. " "
-    local setting = C_CVar.GetCVar("showTimestamps")
-    if setting ~= nativeSetting then
-        nativeSetting = setting
-        nativeFormat = PublicText(setting) and setting ~= "none" and ValidFormat(setting) and setting or nil
-    end
     nativePrefix = nativeFormat and TimeUtil.BetterDate(nativeFormat, now) or nil
 end
 
@@ -443,7 +449,7 @@ function C.CompileMessages(config)
     stampFormat = ValidFormat(config.timestampFormat) and config.timestampFormat or DEFAULT_STAMP
     stampPattern = StampPattern(stampFormat)
     tools.copyStamp = tools.stamps and config.copyOnTimestamp and not stampFormat:find("|", 1, true)
-    stampSecond = nil
+    C.RefreshNativeTimestamp()
 end
 
 ------------------------------------------------------------------ message hook
@@ -531,15 +537,14 @@ end
 
 local function NewRecord()
     local record = {}
-    -- The visit count and the newest slot are upvalues: the predicate runs
-    -- once per stored line.
-    local visit, slot = 0, 0
+    -- Count down to the newest storage slot using one upvalue per visit.
+    local remaining = 0
     record.aim = function(newest)
-        visit, slot = 0, newest
+        remaining = newest
     end
     record.newest = function(text)
-        visit = visit + 1
-        if visit ~= slot then return false end
+        remaining = remaining - 1
+        if remaining ~= 0 then return false end
         return PublicText(text) == record.source
     end
     record.matches = function(text)
@@ -738,6 +743,11 @@ end
 function C.MessagesRefresh(self)
     local c, context = self.config, self.context
     C.CompileMessages(c)
+    if tools.stamps then
+        C.ListenInCombat(context, "CVAR_UPDATE", NativeTimestampChanged)
+    else
+        context:RemoveEvent("CVAR_UPDATE")
+    end
     RefreshMessageFilters(tools.links == true, tools.format == true)
     RefreshClassIcons(c.showClassIcons)
     if tools.copyStamp and not stampLinkRegistered then

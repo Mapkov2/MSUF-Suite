@@ -17,6 +17,7 @@ local function Widget(parent)
         function group:CreateAnimation() return Widget(self) end
         function group:Play() self.playing = true end
         function group:Stop() self.playing = false end
+        function group:IsPlaying() return self.playing == true end
         return group
     end
     function w:SetSize() end
@@ -58,6 +59,7 @@ end
 local S = { instances = {}, editMode = false }
 S.Public = function(value) return value ~= secret end
 S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
+S.Finite = S.Number
 S.PublicText = function(value)
     return S.Public(value) and type(value) == "string" and value ~= "" and value or nil
 end
@@ -76,7 +78,8 @@ S.Install = function(id, module) S.instances[id] = module end
 -- font and color helpers.
 local NS = { Safety = { IsForbidden = function() return false end },
     HUDTextArgs = function() end, Dispatch = S.Dispatch, Public = S.Public, Suite = S,
-    IsCombatLocked = InCombatLockdown, ResolveFont = S.ResolveFont, GlobalFontPath = S.GlobalFontPath, RGB = S.RGB }
+    IsCombatLocked = InCombatLockdown, ResolveFont = S.ResolveFont, GlobalFontPath = S.GlobalFontPath,
+    RGB = S.RGB, Finite = S.Finite, Text = S.Text }
 local Context = Support.ModuleTimers(root, S, NS)
 local active, originalParents, nextProtected = {}, {}, false
 AchievementAlertSystem = { alertFramePool = {} }
@@ -214,6 +217,22 @@ banner:Refresh()
 assert(banner.current.kind == "quest" and banner.title.text == "Quest 42" and #banner.queue == 0,
     "off toggle retained achievements or discarded a different announcement kind")
 combat = false
+banner.config.animateBanner, banner.config.level, banner.config.levelClean = false, true, false
+banner:Refresh()
+clock.Advance(4.1)
+assert(not banner.showing and not banner.leave:IsPlaying(), "static banner did not dismiss at its hold deadline")
+ctx.events.QUEST_ACCEPTED(banner, "QUEST_ACCEPTED", 43)
+assert(banner.title.text == "Quest 43" and banner.host:IsShown() and banner.host.alpha == 1
+    and not banner.enter:IsPlaying(), "static quest accepted did not appear immediately")
+ctx.events.QUEST_TURNED_IN(banner, "QUEST_TURNED_IN", 43, 60, 0)
+ctx.events.PLAYER_LEVEL_UP(banner, "PLAYER_LEVEL_UP", 27, 20, 15, 1)
+clock.Advance(4.1)
+assert(banner.subtitle.text == "QUEST COMPLETE" and not banner.enter:IsPlaying() and not banner.leave:IsPlaying())
+clock.Advance(4.1)
+assert(banner.title.text == "LEVEL 27" and banner.host:IsShown() and not banner.enter:IsPlaying(),
+    "the static queue dropped the level-up banner")
+clock.Advance(4.1)
+assert(not banner.host:IsShown() and not banner.showing, "the last static banner did not clear")
 -- New unrelated alerts never acquire a per-frame polling loop.
 for _, object in ipairs({ banner.host, first, second, overflow }) do assert(not object.OnUpdate) end
 print("achievement scalar delivery, native fallback, combat queue, toggles and replay budget passed")

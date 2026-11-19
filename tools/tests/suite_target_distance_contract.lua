@@ -190,6 +190,9 @@ target = false; Fire("PLAYER_TARGET_CHANGED")
 assert(not module.host.shown and not next(subscriptions) and not module.context.events.SPELL_RANGE_CHECK_UPDATE)
 S.editMode = true; module:Refresh()
 assert(module.host.shown and module.label.text == "Range 10-30 (yd)" and not next(subscriptions))
+module.config.format = "%{range}/{range}% {unit} ({unit})"
+module:Refresh()
+assert(module.label.text == "%10-30/10-30% yd (yd)", "template changed repeated tokens or literal percentages")
 S.editMode, target, enemy = false, true, true
 Fire("PLAYER_ENTERING_WORLD", true, false)
 Flush()

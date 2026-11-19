@@ -46,7 +46,6 @@ C.MessageUnread = function(frame, kind)
     frame.lastType = kind
     if frame.onUnread then frame.onUnread() end
 end
-C.ChatActivity = function(frame) frame.wakes, frame.alpha = frame.wakes + 1, 1 end
 Constants = { ChatFrameConstants = { MaxChatWindows = 10 } }
 GetChatWindowInfo = function() return "Print" end
 LinkUtil = { RegisterLinkHandler = function() end }
@@ -70,6 +69,9 @@ hooksecurefunc = function(frame, method, callback)
     frame.hooks[#frame.hooks + 1] = callback
 end
 assert(loadfile(root .. "/MSUF_Suite_Chat/History.lua"))("MSUF_Suite_Chat", private)
+assert(loadfile(root .. "/MSUF_Suite_Chat/Fade.lua"))("MSUF_Suite_Chat", private)
+-- Observe the boundary to the fade layer without running widget timers.
+C.ChatActivity = function(frame) frame.wakes, frame.alpha = frame.wakes + 1, 1 end
 -- Load the shipped public entry point without booting unrelated platform APIs.
 local file = assert(io.open(root .. "/MSUF_Suite/Core/Platform.lua", "rb"))
 local platform = file:read("*a"); file:close()

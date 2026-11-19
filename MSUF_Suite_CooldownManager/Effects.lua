@@ -1,13 +1,9 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Glows, usable/range tint and the assisted-combat overlay. Glows are C
--- animations (flipbooks, alpha bounce, the Pixel and Autocast lines'
--- translations) started and stopped only on edges; nothing is animated
--- from Lua. Glow reasons (proc, ready, aura) share one glow per icon; the
--- assist suggestion has its own ants overlay (the standalone assisted icon
--- is AssistIcon.lua's). Range checks are reference counted per spell so
--- shared spells stay enabled until their last icon lets go.
+-- Native animations start and stop on edges. Proc, ready and aura share one
+-- glow per icon; assisted combat uses separate ants (AssistIcon owns its own icon).
+-- Range checks are reference counted per spell until the last icon lets go.
 local K = C.Const
 local KIND = K.KIND
 local USABLE = S.USABLE
@@ -31,13 +27,9 @@ local REASONS = { proc = "gProc", ready = "gReady", aura = "gAura" }
 local assistSpell
 -- The assisted icon (AssistIcon.lua) reads the suggestion.
 function Effects.AssistSpell() return assistSpell end
--- The press flash: a white overlay over the icon texture that fades out,
--- made at the first press (Effects.Press, Suite main's code) or, for a shaped
--- icon, by its decoration out of combat, so the shape's mask takes it then
--- (Icons.lua's Shape masks the flash animation's parent, either one). One
--- the decoration made and nothing played yet (unplayed) goes with the shape
--- (Effects.ParkPulse), so the recycle path stops none, as on Suite main; its
--- first play clears that mark once.
+-- The press flash fades over the icon. Ordinary icons make it on first press;
+-- shaped icons make it in their decoration so both share the shape mask.
+-- ParkPulse parks an unplayed flash with its shape. First play clears that mark.
 local unplayed = setmetatable({}, { __mode = "k" })
 local function Played(flash)
     flash:SetScript("OnPlay", nil)
@@ -129,9 +121,8 @@ local function GlowSpec(entry, view)
     return K.GlowSpec(entry and entry.ov or EMPTY, view.glowStyle, view.glowTint, view.glowR, view.glowG, view.glowB)
 end
 
--- The painted look (atlas or edges, size, tint) stays on the glow frame
--- while it is hidden: showing the same look again only shows and plays.
--- Pixel and Autocast paint their lines (GlowLines.PaintIcon).
+-- Atlas, edges, size and tint persist while hidden. Pixel and Autocast lines
+-- are painted by GlowLines.PaintIcon.
 local function PaintPlain(glow, icon, spec, style, r, g, b, w, h)
     if spec.lines then return Lines.PaintIcon(glow, icon, spec, r, g, b, w, h) end
     local px = K.Px()
@@ -171,11 +162,9 @@ local function PaintPlain(glow, icon, spec, style, r, g, b, w, h)
     end
 end
 
--- A shaped icon's edge glow: rings of its shape around the icon texture (the
--- bars offer no STAR, whose ring only works behind the icon: SuiteCatalog.lua)
--- in place of the square edges, placed when the glow's look changes (style,
--- color, pixel grid, shape); a new size moves them with the texture, so a
--- relayout places nothing. The Blizzard alert keeps its square art.
+-- A shaped glow uses its icon's ring. Style, color, pixel grid and shape
+-- affect placement; size alone moves the rings with the texture.
+-- The Blizzard alert keeps its square art. STAR has no edge ring.
 local function PaintShaped(glow, icon, spec, style, r, g, b, w, h)
     local shape = icon.shape
     if not shape or spec.atlas then
@@ -338,15 +327,16 @@ function Effects.Tint(entry)
 end
 local Tint = Effects.Tint
 
--- A ready glow that waits for enough resources (readyResources).
+-- Standalone previews and entries being resolved can lack index rules.
 local function NeedsResources(entry, view)
     if view == nil then return false end
+    local rules = entry.cooldownRules
+    if rules then return rules.readyResources end
     local value = (entry.ov or EMPTY).readyResources
     if value == nil then value = view.readyResources end
     return value == true
 end
--- Event eligibility is unchanged while individual icons are hidden. Only
--- the broadcast defers them; whole bars catch up through Visibility.Paint.
+-- Only the broadcast defers hidden icons. Bars catch up through Visibility.Paint.
 function Effects.UsableShown(entry)
     if not entry.icon then return false end
     local bar = C.bars[entry.slot]
@@ -488,20 +478,30 @@ function Effects.Procced(key) return procced[key] == true end
 
 local function ProcWanted(entry, view)
     if not entry.procOn then return false end
+    local rules = entry.cooldownRules
+    if rules then return rules.procGlow end
     return K.Pick(entry.ov or EMPTY, view, "procGlow")
 end
 
--- Glow when ready / when all charges are ready, from a cooling and a
--- full-charges state; the simulation (Preview.Glows) feeds its own.
+-- Preview.Glows supplies its own cooling and full-charge states.
 local function ReadyRule(ov, view, cooling, full)
     return (not cooling and K.Pick(ov, view, "readyGlow")) or (full == true and K.Pick(ov, view, "fullChargeGlow"))
 end
 Effects.ReadyRule = ReadyRule
 
 local function ReadyWanted(entry, view)
-    local ov = entry.ov or EMPTY
-    if entry.hidden or not ReadyRule(ov, view, entry.cooling, entry.fullyCharged) then return false end
-    if K.Pick(ov, view, "readyResources") and entry.resourcesAvailable ~= true then return false end
+    if entry.hidden then return false end
+    local rules = entry.cooldownRules
+    local ready, needsResources
+    if rules then
+        ready = (not entry.cooling and rules.readyGlow) or (entry.fullyCharged == true and rules.fullChargeGlow)
+        needsResources = rules.readyResources
+    else
+        local ov = entry.ov or EMPTY
+        ready = ReadyRule(ov, view, entry.cooling, entry.fullyCharged)
+        needsResources = ready and K.Pick(ov, view, "readyResources")
+    end
+    if not ready or (needsResources and entry.resourcesAvailable ~= true) then return false end
     local state = C.state
     if state.readyGlowCombat and not state.inCombat and not state.preview then return false end
     return true

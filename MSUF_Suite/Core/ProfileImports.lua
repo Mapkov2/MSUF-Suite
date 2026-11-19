@@ -104,7 +104,9 @@ end
 local function CommitModule(change)
     IO.lastNameplateReport = nil
     local ok, reason = Suite.Suite.SetMany(change.id, change.settings)
-    if ok and change.chat then ok, reason = Suite.Suite.SetMany("chatComfort", change.chat) end
+    if ok and change.companion then
+        ok, reason = Suite.Suite.SetMany(change.companion.id, change.companion.settings)
+    end
     if ok then ok, reason = IO.ApplyNameplateCVars(change.native) end
     if ok then ok, reason = IO.ApplyNameplateShared(change.shared) end
     if ok and change.native then IO.RememberNameplateCVars(nil, change.native) end
@@ -122,8 +124,8 @@ end
 local function RestoreModule(change)
     local ran, restored = Suite.Dispatch(Suite.Finish, Suite.Suite.SetMany, change.id, change.before)
     local ok = ran and restored
-    if change.beforeChat then
-        ran, restored = Suite.Dispatch(Suite.Finish, Suite.Suite.SetMany, "chatComfort", change.beforeChat)
+    if change.beforeCompanion then
+        ran, restored = Suite.Dispatch(Suite.Finish, Suite.Suite.SetMany, change.companion.id, change.beforeCompanion)
         ok = ok and ran and restored
     end
     if change.native or change.restore then
@@ -146,7 +148,8 @@ end
 local function CaptureAndCommitModule(change)
     local _, sharedSnapshot = IO.CaptureNameplateShared()
     change.before = Suite.CopyValue(Suite.Suite.Config(change.id))
-    change.beforeChat = change.chat and Suite.CopyValue(Suite.Suite.Config("chatComfort"))
+    local companion = change.companion
+    change.beforeCompanion = companion and Suite.CopyValue(Suite.Suite.Config(companion.id))
     change.beforeLooks = Suite.CopyValue(Suite.DB.suite.moduleLooks)
     change.beforeNative = change.native and IO.CaptureNameplateCVars()
     change.storedNative = Suite.CopyValue(Suite.DB.nameplateCVars)
@@ -156,13 +159,14 @@ local function CaptureAndCommitModule(change)
     return CommitModule(change)
 end
 
-local function ApplyModule(id, settings, chat, nameplateCVars, nameplateShared, restore)
+local function ApplyModule(id, settings, companion, nameplateCVars, nameplateShared, restore)
     local checkpoint, checkpointWhy = Suite.ProfileWorkbenchBridge.Checkpoint("Before importing Suite settings")
     if not checkpoint then return false, checkpointWhy end
     local name = DB.GetActiveProfileName()
     local allowed, mutationReason = Suite.ProfileVariants.BeforeMutation(name)
     if not allowed then return false, mutationReason end
-    local change = { id = id, settings = settings, chat = chat, native = nameplateCVars, shared = nameplateShared, restore = restore }
+    local change = { id = id, settings = settings, companion = companion,
+        native = nameplateCVars, shared = nameplateShared, restore = restore }
     local ran, ok, reason = Suite.Dispatch(Suite.Finish, CaptureAndCommitModule, change)
     if change.captured and (not ran or not ok) then
         local report = IO.lastNameplateReport
@@ -196,10 +200,10 @@ function Profiles.ImportModule(text)
         if not profile then return false, reason end
         return ApplySkin(skin, profile)
     end
-    local id, settings, reason, chat, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, companion, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
     local wanted = IO.ActionBarKeysWanted()
-    return KeysAfter(keys, wanted, ApplyModule(id, settings, chat, nameplateCVars, nameplateShared))
+    return KeysAfter(keys, wanted, ApplyModule(id, settings, companion, nameplateCVars, nameplateShared))
 end
 
 local function CopySkin(skin)
@@ -209,13 +213,10 @@ local function CopySkin(skin)
     return true, profile
 end
 
-local function MergeModule(profile, id, settings, chat, nameplateCVars, nameplateShared)
+local function MergeModule(profile, id, settings, companion, nameplateCVars, nameplateShared)
     if nameplateCVars then profile.nameplateCVars = nameplateCVars end
     if nameplateShared then profile.nameplateShared = IO.MergeNameplateShared(profile.nameplateShared, nameplateShared) end
-    for key, value in pairs(settings) do profile.suite.modules[id][key] = value end
-    if chat then
-        for key, value in pairs(chat) do profile.suite.modules.chatComfort[key] = value end
-    end
+    IO.MergeModuleSettings(profile.suite.modules, id, settings, companion)
 end
 
 local function ExportFrames()
@@ -227,13 +228,13 @@ end
 function Profiles.ImportModuleIntoNew(name, text)
     local clean, reason = Operations.NewName(name)
     if not clean then return false, reason end
-    local id, settings, why, chat, nameplateCVars, nameplateShared, skinProfile, keys
+    local id, settings, why, companion, nameplateCVars, nameplateShared, skinProfile, keys
     if IsSkin(text) then
         skinProfile, why = ReadSkin(SkinEngine(), text)
         if not skinProfile then return false, why end
     else
         local _
-        id, settings, why, chat, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
+        id, settings, why, companion, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
         if not id then return false, why end
     end
     local frames
@@ -243,7 +244,7 @@ function Profiles.ImportModuleIntoNew(name, text)
     profile, why = Operations.PrepareActive()
     if not profile then return false, why end
     if id then
-        MergeModule(profile, id, settings, chat, nameplateCVars, nameplateShared)
+        MergeModule(profile, id, settings, companion, nameplateCVars, nameplateShared)
         local copied
         copied, skinProfile = CopySkin(SkinEngine())
         if not copied then return false, skinProfile end
@@ -306,9 +307,9 @@ local function Decode(job)
         if not profile then return false, reason end
         job.skinProfile = profile
     else
-        local id, settings, reason, chat, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(job.text, true)
+        local id, settings, reason, companion, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(job.text, true)
         if not id then return false, reason end
-        job.id, job.settings, job.chat, job.nameplateCVars = id, settings, chat, nameplateCVars
+        job.id, job.settings, job.companion, job.nameplateCVars = id, settings, companion, nameplateCVars
         job.nameplateShared, job.actionBarKeys = nameplateShared, keys
     end
     return true
@@ -352,7 +353,7 @@ local function Apply(job)
     if not job.name then
         if job.kind == "skin" then return ApplySkin(skin, skinProfile) end
         return KeysAfter(job.actionBarKeys, job.keysWanted,
-            ApplyModule(job.id, job.settings, job.chat, job.nameplateCVars, job.nameplateShared))
+            ApplyModule(job.id, job.settings, job.companion, job.nameplateCVars, job.nameplateShared))
     end
     local profile, frames = job.profile, job.frames
     if job.bundle then
@@ -370,7 +371,7 @@ local function Apply(job)
         profile, why = Operations.PrepareActive()
         if not profile then return false, why end
         if job.id then
-            MergeModule(profile, job.id, job.settings, job.chat, job.nameplateCVars, job.nameplateShared)
+            MergeModule(profile, job.id, job.settings, job.companion, job.nameplateCVars, job.nameplateShared)
             local ok
             ok, skinProfile = CopySkin(SkinEngine())
             if not ok then return false, skinProfile end

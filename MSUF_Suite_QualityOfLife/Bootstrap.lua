@@ -40,7 +40,6 @@ end
 -- The palette alpha of each module card's fill and frame lines, as each
 -- module has always drawn them. Stripes and accent lines are opaque.
 local CARD_ALPHA = {
-    battleRes = { fill = .92, lines = .95 },
     durabilityAlert = { fill = .92, lines = .9 },
     groupBloodlust = { fill = .92, lines = .95 },
     innervateCue = { fill = .94 },

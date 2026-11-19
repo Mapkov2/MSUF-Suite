@@ -165,6 +165,31 @@ assert(cursor.host.scripts.OnUpdate and cursor.context.events.UNIT_SPELLCAST_SUC
 cursor.host.scripts.OnUpdate(cursor.host, .05)
 assert(cursor.host.point[4] == 50 and cursor.host.point[5] == 60,
     "cursor position did not account for UI scale")
+do
+    local scaleReads, lifecycleWrites, appearanceWrites = 0, 0, 0
+    local originalScale, originalScript = UIParent.GetEffectiveScale, cursor.host.SetScript
+    UIParent.GetEffectiveScale = function() scaleReads = scaleReads + 1; return 4 end
+    cursor.host.SetScript = function(self, script, callback)
+        if script == "OnUpdate" then lifecycleWrites = lifecycleWrites + 1 end
+        originalScript(self, script, callback)
+    end
+    local function CountVisibility(self, shown)
+        appearanceWrites = appearanceWrites + 1
+        self.shown = shown
+    end
+    for _, part in ipairs(cursor.pieces) do part.SetShown = CountVisibility end
+    for _, part in ipairs(cursor.trail) do part.SetShown = CountVisibility end
+    for _ = 1, 100 do cursor.context.events.UNIT_SPELLCAST_SUCCEEDED(cursor) end
+    for _ = 1, 120 do cursor.host.scripts.OnUpdate(cursor.host, 1 / 120) end
+    assert(scaleReads == 0 and lifecycleWrites == 0 and appearanceWrites == 0,
+        "an unchanged cursor repeated its visibility, hook, or scale setters")
+    cursor.context.events.UI_SCALE_CHANGED(cursor)
+    assert(scaleReads == 1 and cursor.host.point[4] == 25 and cursor.host.point[5] == 30,
+        "a stationary pointer did not reanchor when the UI scale changed")
+    UIParent.GetEffectiveScale = originalScale
+    cursor.host.SetScript = originalScript
+    cursor.context.events.DISPLAY_SIZE_CHANGED(cursor)
+end
 castDuration = { token = "cast" }
 cursor.context.events.UNIT_SPELLCAST_START(cursor)
 assert(cursor.cast.shown and cursor.cast.duration == castDuration and not cursor.gcd.shown,

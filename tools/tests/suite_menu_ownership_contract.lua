@@ -32,6 +32,7 @@ end
 Check(P.ResolveToolSearchTarget("suite_qualityOfLife", { settingKey = "msufsuite.unknown.enabled" }) == nil,
     "unknown settings must not be redirected")
 M.RegisterSearchProvider = function() return true end
+assert(loadfile(root .. "/MSUF_Suite_Options/Menu/SearchProvider.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Search.lua"))("MSUF_Suite_Options", P)
 local cold = P.SearchRows()
 local function FindControl(ctx, id, key)

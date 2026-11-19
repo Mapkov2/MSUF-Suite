@@ -4,6 +4,7 @@ local private, modules, events, points = {}, {}, {}, {}
 local secret, combat = {}, false
 local counters = { writes = 0, distance = 0 }
 local world = { kind = 2, distance = 400, valid = true, clamped = false, speed = 7, x = .3, y = .4, map = 84 }
+EventRegistry = { TriggerEvent = function(_, event) assert(event == "MSUF_Suite.SavedWaypointsChanged") end }
 local function Public(value) return value ~= secret end
 local function Finite(value) return Public(value) and type(value) == "number" and value == value and math.abs(value) < math.huge end
 local function PublicText(value) return Public(value) and type(value) == "string" and value or nil end

@@ -27,6 +27,13 @@ local BOX_SIDE = { RIGHT = "LEFT", LEFT = "RIGHT", TOP = "BOTTOM", BOTTOM = "TOP
 local showingCount = 0
 -- registered: the engine knows this module; shown: MSUF's nameplate switch.
 local registered, shown = false, false
+local projectionColor
+
+local function PrepareProjection(look)
+    projectionColor = look and (look.marker or look.segment) and {
+        r = look.readyR, g = look.readyG, b = look.readyB, a = look.readyA, shade = .25 * look.readyA,
+    } or nil
+end
 
 -- repaint: the skin's pass over the castbars of its shown plates.
 function Kick.Bind(module, repaint) M, RepaintCasts = module, repaint end
@@ -69,7 +76,7 @@ end
 
 local function HideProjection(projection)
     if not projection.shown then return end
-    projection.shown = false
+    projection.shown, projection.markerShown, projection.segmentShown = false, nil, nil
     projection.bar:Hide()
     projection.marker:Hide()
     projection.segment:Hide()
@@ -233,11 +240,11 @@ end
 -- shade at a quarter of its alpha.
 local function PaintProjection(projection, look, notInterruptible, rawSecret)
     local marker, segment = projection.marker, projection.segment
-    local r, g, b, a = look.readyR, look.readyG, look.readyB, look.readyA
-    if projection.r ~= r or projection.g ~= g or projection.b ~= b or projection.a ~= a then
-        projection.r, projection.g, projection.b, projection.a = r, g, b, a
-        marker:SetColorTexture(r, g, b, a)
-        segment:SetColorTexture(r, g, b, .25 * a)
+    local color = projectionColor
+    if color and projection.color ~= color then
+        projection.color = color
+        marker:SetColorTexture(color.r, color.g, color.b, color.a)
+        segment:SetColorTexture(color.r, color.g, color.b, color.shade)
     end
     if rawSecret then
         -- A restricted uninterruptible cast hides both natively.
@@ -249,10 +256,18 @@ local function PaintProjection(projection, look, notInterruptible, rawSecret)
         segment:SetAlpha(1)
         projection.restricted = false
     end
-    projection.shown = true
-    projection.bar:Show()
-    marker:SetShown(look.marker)
-    segment:SetShown(look.segment)
+    if not projection.shown then
+        projection.shown = true
+        projection.bar:Show()
+    end
+    if projection.markerShown ~= look.marker then
+        projection.markerShown = look.marker
+        marker:SetShown(look.marker)
+    end
+    if projection.segmentShown ~= look.segment then
+        projection.segmentShown = look.segment
+        segment:SetShown(look.segment)
+    end
 end
 
 local function PaintProjections(cast, state, engine, look, showing, notInterruptible, rawSecret)
@@ -370,6 +385,7 @@ local function OnEngineChange(reason)
     local engine = NS.HostBridge.KickReady()
     local look = engine.Look()
     if reason == "settings" then
+        PrepareProjection(look)
         if private.Textures then private.Textures.RefreshCastColors() end
         SetShown(look.show == true)
         if private.CastTime then private.CastTime.SyncEvents(M) end
@@ -393,12 +409,15 @@ function Kick.Configure()
         registered = false
         NS.HostBridge.KickReady().Unregister(OWNER)
     end
-    local nextShown = engine ~= nil and engine.Look().show == true
+    local look = engine and engine.Look()
+    PrepareProjection(look)
+    local nextShown = look ~= nil and look.show == true
     if shown and not nextShown then RestoreAll() end
     SetShown(nextShown)
 end
 
 function Kick.Disable()
+    PrepareProjection(nil)
     RestoreAll()
     SetShown(false)
     if not registered then return end

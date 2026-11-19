@@ -77,6 +77,7 @@ function D.BuildStyle()
     D.BuildDecorationStyle(style, c)
     style.rank, style.numberFormat, style.valueOrder, style.valueSeparator, style.percent, style.showPlayer =
         c.rank, c.numberFormat, c.valueOrder, c.valueSeparator, c.percent, c.showPlayer
+    D.BuildValuePlan(style)
     style.smoothFill = c.smoothFill == NS.DamageMeterSmoothFill.ON
     D.UseBarFill(style.smoothFill)
 end
@@ -432,25 +433,25 @@ end
 local function Roster()
     local raid = IsInRaid()
     raid = Public(raid) and raid == true
-    if raid ~= M.inRaid then
+    local raidChanged, resized = raid ~= M.inRaid, false
+    if raidChanged then
         M.inRaid = raid
         for i = 1, M.config.windowCount do
             local win, rows = D.windows[i], M.config[D.KEYS[i].RaidRows]
             if win and rows and rows > 0 then
                 D.StyleWindowLayout(win)
                 D.PlaceWindow(win)
-                win.dirty = true
+                win.dirty, resized = true, true
             end
         end
-        D.RequestPaint()
     end
     D.ClearIdentities()
     D.SnapshotIdentities()
     D.PruneRemoteSpecs()
     if M.threatOn then D.ThreatRosterChanged() end
-    if M.config.visibility ~= VISIBILITY.GROUP then return end
-    D.EvaluateVisibility()
-    D.RequestPaint()
+    local groupMode = M.config.visibility == VISIBILITY.GROUP
+    if groupMode or resized and not M.inCombat then D.EvaluateVisibility() end
+    if groupMode or raidChanged then D.RequestPaint() end
 end
 
 local function WantsRaidRows(c)
@@ -569,11 +570,13 @@ function D.EvaluateVisibility()
     else
         base = true
     end
-    local zone = base and not M.forced and D.ZoneKey()
+    local prepareCombat = M.available and not M.inCombat and not M.sessionHidden and c.visibility == VISIBILITY.COMBAT
+    local zone = (base or prepareCombat) and not M.forced and D.ZoneKey()
     local any = false
     for i = 1, D.MAX do
         local win = D.windows[i]
-        local show = base and i <= c.windowCount and not (zone and c[D.KEYS[i][zone]])
+        local allowed = i <= c.windowCount and not (zone and c[D.KEYS[i][zone]])
+        local show = base and allowed
         if show and not win then
             win = D.EnsureWindow(i)
             D.SyncWindow(win)
@@ -581,6 +584,10 @@ function D.EvaluateVisibility()
         if win then
             D.SetShown(win, show)
             D.ApplyMouse(win)
+            if allowed and (show or prepareCombat) and not M.forced and not M.inCombat and M.available then
+                if win.styleGen ~= M.styleGen then D.StyleWindow(win) end
+                D.PrepareRows(win)
+            end
         end
         any = any or show
     end

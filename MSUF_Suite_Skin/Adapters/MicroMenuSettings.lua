@@ -188,6 +188,7 @@ local optionValidators = {
     layoutRelativePoint = ListedOption("MicroMenuPoints"),
     layoutX = RangeOption(-4096, 4096, true),
     layoutY = RangeOption(-4096, 4096, true),
+    layoutWidth = RangeOption(0, 800, true),
     positionPreset = function(value)
         return value == "custom" or NS.MicroMenuPositionPresets[value] ~= nil, value
     end,

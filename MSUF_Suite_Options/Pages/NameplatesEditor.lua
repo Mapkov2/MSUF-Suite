@@ -73,7 +73,9 @@ end
 local function Read(handle) return P.Get(ID, handle.keyX), P.Get(ID, handle.keyY) end
 local function CanEdit(handle)
     local ui = handle.previewUI
-    return not Layers.NPCWorldNames(ui) and not ui.groupPreviewEnabled
+    if Layers.NPCWorldNames(ui) or ui.groupPreviewEnabled then return false end
+    local visible = handle:IsVisible()
+    return P.Suite.Public(visible) and visible
 end
 
 function Editor:Select(handle) self.kit:Select(handle and CanEdit(handle) and handle or nil) end
@@ -95,10 +97,7 @@ end
 
 function Editor:CancelDrag()
     self.kit:Cancel()
-    if self.panning then
-        self.stage:StopMovingOrSizing()
-        self.panning = nil
-    end
+    Layout.StopPan(self)
     self:Paint()
 end
 
@@ -134,19 +133,36 @@ local function BindSetting(handle, id)
     end
 end
 
+local function FollowHandle(handle, dx, dy)
+    local points = handle.previewDragPoints
+    if not points then return end
+    handle:ClearAllPoints()
+    for _, point in ipairs(points) do
+        handle:SetPoint(point[1], point[2], point[3], (point[4] or 0) + dx, (point[5] or 0) + dy)
+    end
+end
+
+local function TrackHandleDrag(ui, handle, phase)
+    if phase == "start" then
+        local points = {}
+        for i = 1, handle:GetNumPoints() do points[i] = { handle:GetPoint(i) } end
+        handle.previewDragPoints = points
+        ui.dragging = handle
+    else
+        if phase == "cancel" or phase == "done" then handle.previewDragPoints = nil end
+        ui.dragging = nil
+    end
+end
+
 function Editor:Bind(handle, id, label, keyX, keyY, section)
     handle.previewUI, handle._key, handle._label = self, id, label
     handle._color, handle.keyX, handle.keyY, handle.section = { 0.3, 0.74, 1 }, keyX, keyY, section
     BindSetting(handle, id)
     local border = P.Suite.NameplateStyle.CreateBorder(handle)
     handle.outline = function(size, color) P.Suite.NameplateStyle.PaintBorder(border, handle, size, color) end
-    handle:EnableMouseWheel(true)
-    handle:SetScript("OnMouseWheel", function(_, delta)
-        self.zoom = Clamp(self.zoom + delta * 0.1, 0.5, 2)
-        self:Paint()
-    end)
     self.kit:Add(id, handle, function() return Read(handle) end, function(x, y) return Write(self, handle, x, y) end,
-        { can = CanEdit })
+        { can = CanEdit, follow = FollowHandle })
+    Layout.BindHandleInput(self, handle)
     Register(handle, id, label)
 end
 
@@ -159,16 +175,12 @@ end
 function Editor:Paint()
     if self.dragging or self.panning then return end
     self.inDungeon = InDungeon()
-    self.stage:ClearAllPoints()
-    self.stage:SetPoint("CENTER", self.canvas, "CENTER", self.panX, self.panY)
-    self.stage:SetScale(self.zoom)
     local config = P.S.Config(ID)
     local style = P.Suite.NameplateStyle
     self.barSettings = style.BarSettings(config, not config.barsOverride and style.SharedBars())
     if not P.NameplatesMultiPreview.Paint(self) then
         for _, render in ipairs(self.renderers) do render() end
     end
-    if self.zoomLabel then self.zoomLabel:SetText(string.format("%d%%", Round(self.zoom * 100))) end
     for _, button in ipairs(self.layerButtons or {}) do
         if button.Refresh then button:Refresh()
         else button:SetAlpha(self:LayerActive(button.layerKey) and 1 or 0.6) end
@@ -184,12 +196,13 @@ function Editor:Paint()
         button:SetShown(self.sampleKind == "friendly" and self.scope ~= "friendlyNpc")
     end
     local selected = self.body._selectedHandle
-    if selected and (not selected:IsShown() or Layers.NPCWorldNames(self)) then self:Select(nil) end
+    if selected and not CanEdit(selected) then self:Select(nil) end
     self:RefreshSelection()
     if not self.compact and not self.groupPreviewEnabled then
         self:LayoutLayerRail()
-        P.NameplatesPreviewLayout.Samples(self)
+        Layout.Samples(self)
     end
+    Layout.UpdateViewport(self)
 end
 
 local function Button(parent, key, label, width, action)
@@ -207,26 +220,13 @@ local function BuildZoomTools(ui)
     tools:SetPoint("TOPRIGHT", canvas, "BOTTOMRIGHT", 0, -4)
     ui.tools = tools
     tools:SetHeight(46)
-    local fit = Button(tools, "fit", "Fit", 36, function()
-        ui.panX, ui.panY = 0, 0
-        ui.zoom = ui.groupPreviewEnabled and 1 or Clamp((canvas:GetWidth() - 40) / 600, 0.5, 1)
-        ui:Paint()
-    end)
-    local actual = Button(tools, "actual", "1:1", 36, function()
-        ui.zoom = 1
-        ui:Paint()
-    end)
-    local zoomOut = Button(tools, "zoomOut", "-", 24, function()
-        ui.zoom = Clamp(ui.zoom - 0.1, 0.5, 2)
-        ui:Paint()
-    end)
+    local fit = Button(tools, "fit", "Fit", 36, function() Layout.Fit(ui) end)
+    local actual = Button(tools, "actual", "1:1", 36, function() Layout.SetZoom(ui, 1) end)
+    local zoomOut = Button(tools, "zoomOut", "-", 24, function() Layout.StepZoom(ui, -1) end)
     ui.zoomLabel = T.Font(tools, "GameFontDisableSmall", "100%", T.colors.text)
     ui.zoomLabel:SetJustifyH("CENTER")
     ui.zoomLabel:SetWordWrap(false)
-    local zoomIn = Button(tools, "zoomIn", "+", 24, function()
-        ui.zoom = Clamp(ui.zoom + 0.1, 0.5, 2)
-        ui:Paint()
-    end)
+    local zoomIn = Button(tools, "zoomIn", "+", 24, function() Layout.StepZoom(ui, 1) end)
     ui.zoomControls = { { fit, 36 }, { actual, 36 }, { zoomOut, 24 }, { ui.zoomLabel, 40 }, { zoomIn, 24 } }
 end
 
@@ -330,10 +330,10 @@ local function BuildRaidPalette(ui)
             ui:Paint()
         end)
         button:SetScript("OnEnter", function()
-            P.SetTranslatedText(ui.hint, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])) .. " · "
+            P.SetTranslatedText(ui.hint, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])) .. " - "
                 .. Tr("Click to preview; right-click for settings"))
         end)
-        button:SetScript("OnLeave", function() P.SetTranslatedText(ui.hint, Tr(ui.help)) end)
+        button:SetScript("OnLeave", function() P.SetTranslatedText(ui.hint, ui.help) end)
         Register(button, "raidMark." .. index, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])))
         ui.raidChoices[index] = button
     end
@@ -356,7 +356,7 @@ local function BuildSelection(ui)
         local bar = SB.Create(body, {
             Tr = Tr, Theme = function() return T end, HandleList = function() return ui.handles end,
             HandleLabel = function(handle) return handle._label end,
-            IsPlaced = function(handle) return CanEdit(handle) and handle:IsShown() end,
+            IsPlaced = CanEdit,
             ReadOffsets = function(_, handle) return Read(handle) end,
             WriteOffsets = function(_, handle, x, y)
                 local ok = Write(ui, handle, x, y)
@@ -390,28 +390,9 @@ local function BuildSelection(ui)
 end
 
 local function BuildInput(ui)
-    local body, canvas, stage = ui.body, ui.canvas, ui.stage
+    local body = ui.body
     ui.bindings.onClick = function(_, dx, dy) return ui.kit:Arrow(dx, dy) end
-    canvas:SetScript("OnMouseWheel", function(_, delta)
-        ui.zoom = Clamp(ui.zoom + delta * 0.1, 0.5, 2)
-        ui:Paint()
-    end)
-    canvas:SetScript("OnMouseDown", function(_, button)
-        if button ~= "LeftButton" or ui.panning then return end
-        local x, y = GetCursorPosition()
-        ui.panning = { x = x, y = y }
-        stage:StartMoving()
-    end)
-    canvas:SetScript("OnMouseUp", function()
-        local pan = ui.panning
-        if not pan then return end
-        stage:StopMovingOrSizing()
-        ui.panning = nil
-        local x, y = GetCursorPosition()
-        local scale = canvas:GetEffectiveScale()
-        ui.panX, ui.panY = ui.panX + (x - pan.x) / scale, ui.panY + (y - pan.y) / scale
-        ui:Paint()
-    end)
+    Layout.BindViewportInput(ui)
     local function Release()
         ui:CancelDrag()
         ui:Select(nil)
@@ -469,7 +450,7 @@ local function SelectElement(editor, element)
     local prefix = editor.sampleKind
     local scope = editor.scope or prefix
     local entry = editor.kit.entries[scope .. "." .. element] or editor.kit.entries[prefix .. "." .. element]
-    if entry and entry.region:IsShown() then editor:Select(entry.region) end
+    if entry and CanEdit(entry.region) then editor:Select(entry.region) end
 end
 
 function Editor:ShowAuraSample(key)
@@ -613,27 +594,29 @@ local function BuildKit(ui)
     ui.bindings = { ownerName = "MSUF_SuiteNameplatesPreview_NudgeOwner", activeName = "MSUF_SuiteNameplatesPreview_ActiveNudgeBox",
         buttonPrefix = "MSUF_SuiteNameplatesPreview_Nudge" }
     ui.kit = P.PreviewInteraction.Handles(ui.host, {
-        owner = body, bindings = ui.bindings, pixels = true,
+        owner = body, bindings = ui.bindings, pixels = true, manualDrag = true,
+        pointerHeld = function() return IsMouseButtonDown("LeftButton") end,
         escape = function()
             ui:CancelDrag()
             ui:Select(nil)
         end,
         tab = SB and SB.CycleHandle and function(shift) return SB.CycleHandle(body, shift) end or nil,
         select = function() ui:RefreshSelection() end,
-        drag = function(handle, phase) ui.dragging = phase == "start" and handle or nil end,
+        drag = function(handle, phase) TrackHandleDrag(ui, handle, phase) end,
         tip = function(handle, entering)
             -- A sample health bar shows the mouseover highlight.
             P.NameplatesPreviewDecor.Hover(handle, entering)
             if entering then
                 handle.outline(1, "4ebaff")
-                P.SetTranslatedText(ui.hint, Tr(handle._label) .. " · " .. Tr((handle._npSettingsTab or handle._npSettingKey)
+                P.SetTranslatedText(ui.hint, Tr(handle._label) .. " - " .. Tr((handle._npSettingsTab or handle._npSettingKey)
                     and "Drag to move; click for settings" or "Drag to move; right-click for settings"))
             else
                 ui:RefreshSelection()
-                P.SetTranslatedText(ui.hint, Tr(ui.help))
+                P.SetTranslatedText(ui.hint, ui.help)
             end
         end,
         click = function(handle, button, moved)
+            if not CanEdit(handle) then return end
             if button == "RightButton" or button == "LeftButton"
                 and (handle._npSettingsTab or handle._npSettingKey) and not moved then
                 Focus(ui, handle)
@@ -695,7 +678,7 @@ function Editor.Create(ctx, builder, sections)
     local ui = setmetatable({ ctx = ctx, sections = sections, renderers = {}, layers = {},
         sampleKind = "enemy", zoom = 1, panX = 0, panY = 0, compact = true, layerContext = "anchor",
         softTargetSample = true, aggroSample = true,
-        help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom",
+        help = Tr("Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Ctrl+wheel: zoom", true),
     }, { __index = Editor })
     ui.previewRole, ui.previewRoleSource = nil, P.Get(ID, "enemyPreviewRole")
     ui.title = section.title
@@ -712,14 +695,14 @@ function Editor.Create(ctx, builder, sections)
     canvas:SetHeight(108)
     canvas:SetClipsChildren(true)
     canvas:EnableMouse(true)
-    canvas:EnableMouseWheel(true)
     ui.canvas = canvas
     if H.ApplyPreviewChrome then H.ApplyPreviewChrome(canvas, "canvas", T) end
     local stage = CreateFrame("Frame", nil, canvas)
-    stage:SetSize(600, 180)
-    stage:SetMovable(true)
+    stage:SetSize(1, 1)
+    stage:SetPoint("CENTER", canvas, "CENTER")
     ui.stage = stage
-    ui.hint = T.Font(toolbar, "GameFontDisableSmall", ui.help, T.colors.muted)
+    ui.hint = T.Font(toolbar, "GameFontDisableSmall", "", T.colors.muted)
+    P.SetTranslatedText(ui.hint, ui.help)
     ui.hint:SetPoint("LEFT", section.title or toolbar, section.title and "RIGHT" or "LEFT", section.title and 12 or 160, 0)
     ui.hint:SetPoint("RIGHT", toolbar, "RIGHT", -154, 0)
     ui.hint:SetJustifyH("LEFT")

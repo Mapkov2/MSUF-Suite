@@ -57,11 +57,11 @@ function Multi.Set(ui, enabled)
     ui:CancelDrag()
     ui:Select(nil)
     if enabled then
-        ui.singlePreviewView = { zoom = ui.zoom, x = ui.panX, y = ui.panY }
-        ui.zoom, ui.panX, ui.panY = 1, 0, 0
+        ui.singlePreviewView = { zoom = ui.zoom, x = ui.panX, y = ui.panY, fit = ui.fitMode }
+        ui.zoom, ui.panX, ui.panY, ui.fitMode = 1, 0, 0, nil
     elseif ui.singlePreviewView then
         local view = ui.singlePreviewView
-        ui.zoom, ui.panX, ui.panY = view.zoom, view.x, view.y
+        ui.zoom, ui.panX, ui.panY, ui.fitMode = view.zoom, view.x, view.y, view.fit
         ui.singlePreviewView = nil
     end
     ui.groupPreviewEnabled = enabled

@@ -22,7 +22,7 @@ end
 
 local function Setup(record)
     local label = record.setupLabel or record.label or Tr("Action bar setup")
-    if record.loadout and record.loadout ~= label then return Tr("%s · Loadout %s"):format(label, record.loadout) end
+    if record.loadout and record.loadout ~= label then return Tr("%s · Loadout %s", true):format(label, record.loadout) end
     return label
 end
 
@@ -49,7 +49,7 @@ end
 local function Refresh(ui)
     ReadStatus(ui)
     local current = ui.status.current
-    local label = current and Tr("Current setup for %s · %s"):format(Character(current), Setup(current))
+    local label = current and Tr("Current setup for %s · %s", true):format(Character(current), Setup(current))
         or Tr("The current action bar setup is unavailable.")
     ui.current:SetText(label)
     P.SetButtonText(ui.automatic, Tr(ui.status.capture and "Disable automatic capture" or "Enable automatic capture"))
@@ -64,7 +64,7 @@ end
 
 local function SetTarget(ui, index, record)
     local packet = ui.packet
-    local prompt = Tr("Target for %s · %s. Enter Name-Realm or Name for this realm. Add | Target loadout to use a different loadout name.")
+    local prompt = Tr("Target for %s · %s. Enter Name-Realm or Name for this realm. Add | Target loadout to use a different loadout name.", true)
         :format(Character(record), Setup(record))
     P.AskText("actionbar-transfer-target", prompt, function(text)
         if ui.packet ~= packet or P.Combat() then return end
@@ -102,21 +102,21 @@ local function Detail(ui, entry, index)
         local target = ui.assignments[index] or Tr("Skip")
         local slots = Count(entry.slots) + (entry.independentSlots and Count(entry.independentSlots) or 0)
         if entry.scope == "account" then
-            return Tr("%s · %d slots · %d shared keys · Target %s"):format(
+            return Tr("%s · %d slots · %d shared keys · Target %s", true):format(
                 Setup(entry), slots, Count(entry.keys), target)
         end
-        return Tr("%s · %d slots · %d keys · Target %s"):format(Setup(entry), slots, Count(entry.keys), target)
+        return Tr("%s · %d slots · %d keys · Target %s", true):format(Setup(entry), slots, Count(entry.keys), target)
     elseif ui.view == "saved" then
-        return Tr("%s · %d slots · %d keys"):format(Setup(entry), entry.slotCount, entry.keyCount)
+        return Tr("%s · %d slots · %d keys", true):format(Setup(entry), entry.slotCount, entry.keyCount)
     elseif ui.view == "results" then
-        if entry.error then return Tr("%s · Transfer could not finish. Review the skipped changes."):format(Setup(entry)) end
-        return Tr("%s · %d slots and %d keys applied · %d slots and %d keys skipped"):format(
+        if entry.error then return Tr("%s · Transfer could not finish. Review the skipped changes.", true):format(Setup(entry)) end
+        return Tr("%s · %d slots and %d keys applied · %d slots and %d keys skipped", true):format(
             Setup(entry), entry.slots, entry.keys, entry.skippedSlots, entry.skippedKeys)
     end
     if entry.waiting == "account" then
-        return Setup(entry) .. " · " .. Tr("Waiting for account-wide key bindings")
+        return Setup(entry) .. " - " .. Tr("Waiting for account-wide key bindings")
     elseif entry.waiting == "character" then
-        return Setup(entry) .. " · " .. Tr("Waiting for character-specific key bindings")
+        return Setup(entry) .. " - " .. Tr("Waiting for character-specific key bindings")
     end
     return Setup(entry)
 end

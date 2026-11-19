@@ -8,12 +8,10 @@ local S = P.Suite
 -- actions and context menus), ObjectivesContent.lua reads the Traveler's Log,
 -- Endeavors, collectibles and zone widgets that Blizzard's modules show
 -- beyond quests (ObjectivesContentActions.lua holds what their rows do),
--- ObjectivesRows.lua projects reused display
--- records, ObjectivesTracker.lua owns the frame and draws
--- its rows, and Objectives.lua runs the module (events, refresh flow and
--- lifecycle). Events mark sources dirty; one deferred flush per frame
--- re-reads them, and rows are laid out again only when their content or
--- geometry changed.
+-- ObjectivesRows.lua projects reused display records. ObjectivesTracker.lua
+-- draws the rows and Objectives.lua runs events, refreshes and module lifecycle.
+-- One deferred flush per frame reads dirty sources and lays out rows only when
+-- content or geometry changes.
 local O = {
     -- The module table; Objectives.lua installs it.
     M = {
@@ -74,11 +72,12 @@ local function NextEntry(list, id, title, group)
     entry.scenarioHeaderSetID = nil
     entry.recipeID, entry.isRecraft = nil, nil
     entry.contentID, entry.contentType = nil, nil
+    entry.questHeader, entry.questLabel, entry.dungeonBadge = nil, nil, nil
     entry.lines.count = 0
     return entry
 end
 
-local function AddLine(entry, text, done, percent)
+local function AddLine(entry, text, done, percent, progressText)
     local lines = entry.lines
     local index = lines.count + 1
     local line = lines[index]
@@ -86,19 +85,15 @@ local function AddLine(entry, text, done, percent)
         line = {}
         lines[index] = line
     end
-    line.text, line.done, line.percent = text, done, percent
+    line.text, line.done, line.percent, line.progressText = text, done, percent, progressText
     lines.count = index
 end
 O.NextEntry, O.AddLine = NextEntry, AddLine
 
--- Completion actions use AddLine directly; only ordinary objectives pass here.
-local function AddQuestObjective(entry, text, done, percent, hideCompleted)
-    if hideCompleted ~= true or done ~= true then AddLine(entry, text, done, percent) end
-end
-
 local function QuestIndex(questID)
-    local index = Detail(C_QuestLog.GetLogIndexForQuestID, questID)
-    return Finite(index) and index >= 1 and index or nil
+    local index = C_QuestLog.GetLogIndexForQuestID(questID)
+    if Finite(index) and index >= 1 then return index end
+    if not Public(index) then partial = true end
 end
 
 local function IsAutoComplete(index)
@@ -154,14 +149,34 @@ local function QuestTimeLeft(questID, task)
     end
 end
 
+local function SplitQuestProgress(text, objective)
+    local current, required = objective.numFulfilled, objective.numRequired
+    if not (Finite(current) and current >= 0 and current % 1 == 0
+        and Finite(required) and required > 0 and required % 1 == 0) then return text end
+    -- Only move a counter when it matches the native progress values at a label boundary.
+    local count = tostring(current) .. "/" .. tostring(required)
+    local pattern = count:gsub("(%p)", "%%%1")
+    local label = text:match("^(.-):%s*" .. pattern .. "%s*$")
+        or text:match("^(.-)：%s*" .. pattern .. "%s*$")
+        or text:match("^(.-)%s*%(" .. pattern .. "%)%s*$")
+        or text:match("^(.-)%s+" .. pattern .. "%s*$")
+        or text:match("^" .. pattern .. "%s+(.+)$")
+    if label then
+        label = label:match("^%s*(.-)%s*$")
+        if label ~= "" then return label, count end
+    end
+    return text
+end
+
 -- A quest whose objectives or one of their texts cannot be read keeps the lines
 -- that can; the collection is partial (the lines come back once readable).
-local function AddObjectiveLines(entry, questID, hideCompleted)
+local function AddObjectiveLines(entry, questID, c)
     local objectives = Detail(C_QuestLog.GetQuestObjectives, questID)
     if type(objectives) ~= "table" then
         partial = true
         return
     end
+    local hideCompleted, progressColumn = c.hideCompletedObjectives == true, c.questProgressColumn
     for i = 1, #objectives do
         local objective = objectives[i]
         if Public(objective) and type(objective) == "table" then
@@ -169,7 +184,8 @@ local function AddObjectiveLines(entry, questID, hideCompleted)
             if line then
                 local percent
                 local kind = objective.type
-                if not Public(kind) then
+                local readableKind = Public(kind)
+                if not readableKind then
                     partial = true
                 elseif kind == "progressbar" then
                     local value = Detail(GetQuestProgressBarPercent, questID)
@@ -181,7 +197,13 @@ local function AddObjectiveLines(entry, questID, hideCompleted)
                 else
                     done, partial = false, true
                 end
-                AddQuestObjective(entry, line, done, percent, hideCompleted)
+                if not hideCompleted or not done then
+                    local progressText
+                    if progressColumn and readableKind and kind ~= "progressbar" then
+                        line, progressText = SplitQuestProgress(line, objective)
+                    end
+                    AddLine(entry, line, done, percent, progressText)
+                end
             elseif not Public(objective.text) or objective.text == nil then
                 partial = true
             end
@@ -192,8 +214,10 @@ local function AddObjectiveLines(entry, questID, hideCompleted)
 end
 
 local function QuestTitle(questID)
-    local title = Detail(C_QuestLog.GetTitleForQuestID, questID)
-    if Text(title) then return title end
+    local value = C_QuestLog.GetTitleForQuestID(questID)
+    local title = Text(value)
+    if title then return title end
+    if not Public(value) then partial = true end
     local index = Detail(C_QuestLog.GetLogIndexForQuestID, questID)
     local info = Finite(index) and Detail(C_QuestLog.GetInfo, index)
     return type(info) == "table" and Text(info.title) or nil
@@ -219,12 +243,17 @@ local function AddQuest(list, c, id, title, group, tracked, task, complete)
         entry.questGroupSearch = Finite(activityID) and activityID > 0 or nil
     end
     entry.findGroup = not P.NS.Client.isForever and (group == "world" or entry.questGroupSearch)
-    AddObjectiveLines(entry, id, c.hideCompletedObjectives)
+    AddObjectiveLines(entry, id, c)
     local showItem = c.showQuestItems ~= false
     local showCompletion = not task and complete
     local index = (showItem or showCompletion) and QuestIndex(id)
+    if showCompletion then
+        if index and IsAutoComplete(index) then AddLine(entry, QUEST_WATCH_CLICK_TO_COMPLETE, true)
+        elseif c.groupQuestsByHeader then
+            AddLine(entry, S.Text("Ready to turn in"), true)
+        end
+    end
     if index then
-        if showCompletion and IsAutoComplete(index) then AddLine(entry, QUEST_WATCH_CLICK_TO_COMPLETE, true) end
         if showItem then
             if task then complete = Detail(C_QuestLog.IsComplete, id) == true end
             entry.itemIcon, entry.itemLink = QuestItem(index, complete)
@@ -277,7 +306,7 @@ local function QuestGroup(questID, focused, zone, complete)
 end
 
 local function PlayerZone(c)
-    return c.groupQuestsByZone and ZoneMap(Read(C_Map.GetBestMapForUnit, "player"))
+    return not c.groupQuestsByHeader and c.groupQuestsByZone and ZoneMap(Read(C_Map.GetBestMapForUnit, "player"))
 end
 
 -- The quests list carries what it was collected with (CollectQuests): zone is
@@ -321,10 +350,16 @@ local function CollectQuests(list, c)
     -- QuestGroupsChanged; everything else must have been readable here.
     list.zone, list.focus, list.known = zone, focused, false
     partial = false
-    local count = Read(C_QuestLog.GetNumQuestWatches)
+    if c.groupQuestsByHeader or c.showQuestLogCount then
+        O.ReadQuestLog(list, c)
+    else
+        list.logUsage, list.namedSections, list.sectionByName, list.questHeaders = nil, nil, nil, nil
+    end
+    local presentation = c.groupQuestsByHeader or c.showQuestLevel or c.questDifficultyColor or c.showDungeonBadge
+    local count = C_QuestLog.GetNumQuestWatches()
     if not Finite(count) then return end
     for i = 1, math.min(count, 40) do
-        local id = Read(C_QuestLog.GetQuestIDForQuestWatchIndex, i)
+        local id = C_QuestLog.GetQuestIDForQuestWatchIndex(i)
         if Finite(id) and id > 0 then
             if not seen[id] then
                 seen[id] = true
@@ -332,7 +367,9 @@ local function CollectQuests(list, c)
                 if title then
                     -- One snapshot for the category, completion hint and item in this refresh.
                     local complete = Detail(C_QuestLog.IsComplete, id) == true
-                    AddQuest(list, c, id, title, QuestGroup(id, focused, zone, complete), true, false, complete)
+                    local group = QuestGroup(id, focused, zone, complete)
+                    AddQuest(list, c, id, title, group, true, false, complete)
+                    if presentation then O.ApplyQuestLog(list, list[list.count], c) end
                 else
                     partial = true
                 end

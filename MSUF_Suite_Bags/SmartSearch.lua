@@ -43,16 +43,28 @@ end
 
 -- A recorded inventory (OfflineInventory.lua) is shown only: nothing moves.
 local function Recorded(view)
-    return view == P.InventoryView and P.BagOffline.Active()
+    return view == P.InventoryView and P.BagOffline and P.BagOffline.Active()
+end
+
+local function MatchScope(view)
+    if not view.context.transactions or view.context.query ~= view.smartQuery or Recorded(view) then return false end
+    local selected = view.selected
+    if view == P.InventoryView and selected ~= nil and selected ~= "all" then
+        local c = P.BagsModule.config
+        if c.inventoryView ~= NS.BagsView.CATEGORIES or c.collapseCategorySidebar then return false end
+    end
+    if selected == "keyring" then return false end
+    if view.renderedTab then return selected == "tab:" .. view.renderedTab end
+    if selected ~= view.context.selected then return false end
+    if selected and selected ~= "all" then return true end
+    return view.smartQuery and view.smartQuery:find("%S") and NS.InventoryRules.HasTerms(view.model.queryRule)
 end
 
 local function TransferSource(view, transfer)
-    if not transfer or Recorded(view) then return end
-    if not view.context.transactions or view.context.query ~= view.smartQuery then return end
+    if not transfer or not MatchScope(view) then return end
     local ready, bankType = transfer:CanBatch()
     if not ready then return end
     local selected = view.selected
-    if selected == "keyring" then return end
     if view ~= P.InventoryView then
         local mode = P.BagsModule.config.bankView
         if mode == NS.BagsBankView.CHARACTER and bankType ~= Enum.BankType.Character
@@ -64,13 +76,10 @@ local function TransferSource(view, transfer)
             return
         end
     end
-    if selected ~= view.context.selected then return end
-    if selected and selected ~= "all" then return bankType end
-    if view.smartQuery and view.smartQuery:find("%S") and NS.InventoryRules.HasTerms(view.model.queryRule) then return bankType end
+    return bankType
 end
 
-local function TransferMatches(view, transfer, direction, bankType)
-    if not view.frame:IsVisible() or TransferSource(view, transfer) ~= bankType then return end
+local function MatchingStacks(view, bankType)
     local items = {}
     local all = view.selected == nil or view.selected == "all" or view.renderedTab ~= nil
     for _, group in ipairs(view.model.groups) do
@@ -78,11 +87,65 @@ local function TransferMatches(view, transfer, direction, bankType)
             for _, row in ipairs(group.rows) do
                 local item = row.item
                 if item.itemID and row.stacks == 1 and (not all or not row.alias)
-                    and (direction == "deposit" or item.bankType == bankType) then items[#items + 1] = item end
+                    and (bankType == nil or item.bankType == bankType) then items[#items + 1] = item end
             end
         end
     end
-    transfer:Batch(items, direction)
+    return items
+end
+
+local function TransferMatches(view, transfer, direction, bankType)
+    if not view.frame:IsVisible() or NS.InCombat() or TransferSource(view, transfer) ~= bankType then return end
+    transfer:Batch(MatchingStacks(view, direction == "withdraw" and bankType or nil), direction)
+end
+
+local function QuickAction(view)
+    if NS.InCombat() or not S.instances then return end
+    local transfer = S.instances.bankTransfer
+    local bankType = TransferSource(view, transfer)
+    if bankType then return view == P.InventoryView and "deposit" or "withdraw", transfer, bankType end
+    local vendor = S.instances.lootVendorRules
+    if view == P.InventoryView and vendor and MatchScope(view) and vendor:CanSellMatches() then return "sell", vendor end
+end
+
+local function ClickQuick(button)
+    local view = button.searchView
+    if not view.frame:IsVisible() then return end
+    local action, owner, bankType = QuickAction(view)
+    if not action or action ~= button.searchAction or bankType ~= button.searchBankType then return end
+    if action == "sell" then
+        owner:SellMatches(MatchingStacks(view))
+    else
+        TransferMatches(view, owner, action, bankType)
+    end
+end
+
+local QUICK_LABEL = { deposit = "Deposit matching stacks", withdraw = "Withdraw matching stacks", sell = "Sell marked items" }
+
+function Search.UpdateQuickAction(view)
+    local action, _, bankType = QuickAction(view)
+    local button = view.transferButton
+    local shown = button and button:IsShown() or false
+    if not action then
+        if shown then button:Hide() end
+    else
+        if not button then
+            button = P.GridView.Button(view.searchParent, "", 22, ClickQuick)
+            button.searchView = view
+            button:SetPoint("RIGHT", view.filterButton, "LEFT", -6, 0)
+            view.transferButton = button
+        end
+        if button.searchAction ~= action then
+            button.bagTool = QUICK_LABEL[action]
+            button:SetText(action == "sell" and "$" or "↔")
+        end
+        button.searchAction, button.searchBankType = action, bankType
+        if not shown then button:Show() end
+    end
+    local visible = action ~= nil
+    if shown == visible then return false end
+    if view.searchPlace then view.searchPlace(view.smartSearch, view.filterButton, visible and button or nil) end
+    return true
 end
 
 local function AddInventoryTools(menu, button, view)
@@ -142,6 +205,7 @@ end
 -- chrome and position; the bank view passes its own.
 function Search.Create(view, request, parent, place)
     parent = parent or view.chrome
+    view.searchParent, view.searchPlace, view.transferButton = parent, place, nil
     local edit = P.ChildFrame("EditBox", parent, "InputBoxInstructionsTemplate")
     edit:SetHeight(23)
     edit:SetAutoFocus(false)

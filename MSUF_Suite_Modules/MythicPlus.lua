@@ -27,7 +27,7 @@ local L = {
 }
 -- Blizzard's check mark atlas; WoW's stock fonts have no check mark glyph.
 local DONE = "|A:common-icon-checkmark:12:12|a  "
-local OPEN = "\194\183  "
+local OPEN = "-  "
 
 local function SetText(widget, value)
     if widget.cachedText ~= value then
@@ -279,16 +279,22 @@ local function ReadTimer(view)
     return ScanTimerIDs(view, wanted, GetWorldElapsedTimers())
 end
 
-local function PaintChests(view, limit, elapsed)
+local function PrepareLimit(view, limit)
+    view.limit, view.limitText = limit, Clock(limit)
+    view.upgrade3, view.upgrade2 = limit and limit * .6, limit and limit * .8
     for i = 3, 1, -1 do
         local row = view.chests[4 - i]
-        local cutoff = Finite(limit) and limit > 0 and limit * (1 - (i - 1) * .2) or nil
+        row.cutoff = limit and limit * (1 - (i - 1) * .2)
+        SetText(row.label, "+" .. i .. "  " .. Clock(row.cutoff))
+    end
+end
+
+local function PaintChests(view, elapsed)
+    for _, row in ipairs(view.chests) do
         if not elapsed then
-            SetText(row.label, "+" .. i .. "  " .. Clock(cutoff))
             SetText(row.remaining, "--")
         else
-            if view.cutoffLimit ~= limit then SetText(row.label, "+" .. i .. "  " .. Clock(cutoff)) end
-            local remaining = cutoff - elapsed
+            local remaining = row.cutoff - elapsed
             SetText(row.remaining, remaining >= 0 and L.left:format(Clock(remaining)) or L.missed)
         end
     end
@@ -298,19 +304,17 @@ local function PaintClock(owner, elapsed)
     local view = owner.mplus
     if not view then return end
     local limit = view.limit
-    if view.cachedLimit ~= limit then
-        view.cachedLimit, view.limitText = limit, Clock(limit)
-    end
-    SetText(view.clock, Clock(elapsed) .. " / " .. (view.limitText or Clock(limit)))
-    SetText(view.barText, Clock(elapsed) .. " / " .. (view.limitText or Clock(limit)))
-    if not Finite(limit) or limit <= 0 or not Finite(elapsed) then
+    local clockText = Clock(elapsed) .. " / " .. view.limitText
+    SetText(view.clock, clockText)
+    SetText(view.barText, clockText)
+    if not limit or not Finite(elapsed) then
         SetText(view.remaining, L.waiting)
         view.bar:SetValue(0)
-        PaintChests(view, limit, nil)
+        PaintChests(view, nil)
         return
     end
     local left = limit - elapsed
-    local bracket = left < 0 and 0 or elapsed < limit * .6 and 3 or elapsed < limit * .8 and 2 or 1
+    local bracket = left < 0 and 0 or elapsed < view.upgrade3 and 3 or elapsed < view.upgrade2 and 2 or 1
     if view.barLimit ~= limit then
         view.bar:SetMinMaxValues(0, limit)
         view.barLimit = limit
@@ -326,8 +330,7 @@ local function PaintClock(owner, elapsed)
     else
         SetText(view.remaining, left >= 0 and L.timeLeft:format(Clock(left)) or L.timeOver:format(Clock(-left)))
     end
-    PaintChests(view, limit, elapsed)
-    view.cutoffLimit = limit
+    PaintChests(view, elapsed)
 end
 
 function H.UpdateDeaths(owner)
@@ -355,14 +358,14 @@ local function ReadAffixes(view)
             if name then names[#names + 1] = name end
         end
     end
-    SetText(view.affixes, L.affixes:format(#names > 0 and table.concat(names, " \194\183 ") or "--"))
+    SetText(view.affixes, L.affixes:format(#names > 0 and table.concat(names, " - ") or "--"))
 end
 
 local function ReadMapInfo(view)
     if not Finite(view.mapID) then return end
     local name, _, limit = C_ChallengeMode.GetMapUIInfo(view.mapID)
     if Text(name) then view.name = name end
-    if Finite(limit) and limit > 0 then view.limit = limit end
+    if Finite(limit) and limit > 0 and view.limit ~= limit then PrepareLimit(view, limit) end
 end
 
 local function DungeonTitle(view)
@@ -608,7 +611,6 @@ function H.Start(owner, mapID)
     S.MythicPlusPull.Stop(owner)
     view.forcesPercent = nil
     view.mapID, view.timerID, view.lastElapsed = mapID, nil, nil
-    view.cachedLimit, view.limitText, view.cutoffLimit = nil, nil, nil
     view.barLimit, view.barBracket = nil, nil
     view.completed, view.upgrades, view.bossCount = false, nil, 0
     view.splits, view.savedSplits, view.referenceRecords = {}, nil, {}
@@ -623,6 +625,7 @@ function H.Start(owner, mapID)
     SetText(view.affixes, L.affixes:format("--"))
     SetText(view.bossHeader, L.loading)
     ReadMapInfo(view)
+    if not view.limit then PrepareLimit(view, nil) end
     ReadAffixes(view)
     SetText(view.dungeon, DungeonTitle(view))
     owner.mplusActive = true

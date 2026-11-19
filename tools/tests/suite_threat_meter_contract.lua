@@ -4,9 +4,9 @@ local function Widget(parent)
     for _, key in ipairs({ "SetStatusBarTexture", "SetMinMaxValues", "SetAllPoints", "ClearAllPoints", "SetJustifyH" }) do w[key] = function() end end
     function w:SetScript(key, value) self[key] = value end
     function w:EnableMouseWheel(value) self.wheel, self.wheelCalls = value, self.wheelCalls + 1 end
-    function w:SetPoint(...) self.point = {...} end
+    function w:SetPoint(...) self.point = {...}; self.pointCalls = (self.pointCalls or 0) + 1 end
     function w:SetScale(value) self.scale = value end
-    function w:SetSize(width, height) self.width, self.height = width, height end
+    function w:SetSize(width, height) self.width, self.height = width, height; self.sizeCalls = (self.sizeCalls or 0) + 1 end
     function w:SetShown(value) self.shown = value end
     function w:Hide() self.shown = false end
     function w:SetColorTexture(...) self.color = {...} end
@@ -63,12 +63,23 @@ assert(m.records.main[1].unit=="party1" and #m.records.main==3 and m.windows.foc
     "native hostile target, sorted roster, pets or focus window missing")
 assert(movers.focus.visible() and movers.main.visible(), "target and focus windows lack their movers")
 assert(sounds==1 and m.windows.main.rows[1].marker.shown,"pull threshold mark or alert missing")
+local marker = m.windows.main.rows[1].marker
+local markerPoints, markerSizes = marker.pointCalls, marker.sizeCalls
 m:Update(); assert(sounds==1,"alert repeated without crossing its threshold")
+assert(marker.pointCalls == markerPoints and marker.sizeCalls == markerSizes,
+    "an unchanged threat marker rewrote its anchor or dimensions")
+threats.player = { false, 1, 90, 99, 8000 }
+m:Update()
+assert(marker.pointCalls == markerPoints + 1 and marker.sizeCalls == markerSizes,
+    "the changed threshold did not move independently of layout")
+m.config.rowHeight = 24
+m:Refresh()
+assert(marker.height == 24 and marker.sizeCalls == markerSizes + 1, "the new marker height was not applied")
 assert(m.windows.main.wheel==true,"more members than rows did not enable scrolling")
 threats.player={true,3,100,147,12000}
 threats.party1={false,2,95,105,10000}
 m.config.numberMode=2
-m:Update()
+m:Refresh()
 assert(not m.windows.main.rows[1].marker.shown and sounds==1,
     "already tanking player received a false takeover threshold or alert")
 assert(m.windows.main.rows[1].text.text:find("100.0% of tank",1,true),

@@ -115,7 +115,9 @@ local function PaintBadge(button, item)
             badge.transmogStatus = status
             badge:SetText(status == MISSING and "!" or "+")
             if status == MISSING then badge:SetTextColor(1, .78, .28)
-            else badge:SetTextColor(.59, .82, 1) end
+            else
+                badge:SetTextColor(.59, .82, 1)
+            end
         end
         if not badge:IsShown() then badge:Show() end
     elseif badge and badge:IsShown() then

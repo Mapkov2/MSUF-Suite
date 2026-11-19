@@ -13,7 +13,6 @@ local TEXT = {
     session = S.Text("Session %s"),
     today = S.Text("Today %s"),
     drag = S.Text("Drag to move"),
-    options = S.Text("Right-click for bag options"),
 }
 local NO_VALUE = "—"
 
@@ -59,7 +58,7 @@ local function NewWindowStyle(frame, combined)
     shadow:SetPoint("TOPLEFT", frame, "TOPLEFT", -3, 3)
     shadow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 3, -3)
 
-    -- The combined bag animates a separate shell. The reagent bag keeps its
+    -- The combined bag animates a separate shell. Individual bags keep their
     -- skin on the native root's draw layers, beneath the pooled slot buttons
     -- and title, regardless of the frame level of Blizzard's background.
     local shell = frame
@@ -109,28 +108,9 @@ local function NewWindowStyle(frame, combined)
 end
 
 -- Title drag handles share these scripts; handle.window is the bag frame.
-local function HandleMouseDown(handle) handle.ignoreClick = false end
-
-local function HandleClick(handle, button)
-    if handle.ignoreClick then
-        handle.ignoreClick = false
-        return
-    end
-    if button ~= "RightButton" or IsShiftKeyDown() or NS.InCombat() then return end
-    -- The portrait button is Blizzard's bag menu DropdownButton. Its menu
-    -- opens on its own press only; opened from here under WoW Forever's
-    -- Gamepad UI, MenuProxy.OnShow would run the frame controls manager's
-    -- focus code in the Suite's call (S.GamepadUI). There the portrait
-    -- button itself, which the gamepad reaches in the bag window, opens it.
-    if S.GamepadUI() then return end
-    local menu = handle.window.PortraitButton
-    menu:SetMenuOpen(not menu:IsMenuOpen())
-end
-
 local function HandleDragStart(handle) M:BeginWindowDrag(handle.window) end
 
 local function HandleDragStop(handle)
-    handle.ignoreClick = true
     M:EndWindowDrag(handle.window)
 end
 
@@ -141,7 +121,6 @@ end
 local function HandleEnter(handle)
     GameTooltip:SetOwner(handle, "ANCHOR_TOP")
     GameTooltip:SetText(TEXT.drag)
-    GameTooltip:AddLine(TEXT.options, 0.75, 0.8, 0.85)
     GameTooltip:Show()
 end
 
@@ -157,10 +136,7 @@ local function NewDragHandle(frame)
     handle:SetAllPoints(title)
     handle:SetFrameLevel(math.max(title:GetFrameLevel(), frame.PortraitButton:GetFrameLevel()) + 1)
     handle:EnableMouse(true)
-    handle:RegisterForClicks("RightButtonUp")
     handle:RegisterForDrag("LeftButton")
-    handle:SetScript("OnMouseDown", HandleMouseDown)
-    handle:SetScript("OnClick", HandleClick)
     handle:SetScript("OnDragStart", HandleDragStart)
     handle:SetScript("OnDragStop", HandleDragStop)
     handle:SetScript("OnHide", HandleHide)
@@ -184,15 +160,28 @@ local function SetSkinShown(textures, shown)
     textures[1]:SetShown(shown and not textures.panel)
 end
 
--- The Suite title offers a separate right-click for the native bag menu. Hide the full button: the Suite
--- skin can otherwise leave a styled but empty plate in this corner.
+local function FindPortraitRouter(...)
+    for i = 1, select("#", ...) do
+        local child = select(i, ...)
+        local route = child.routeToSibling
+        if S.Public(route) and route == "PortraitButton" and child.GetRouteSibling then return child end
+    end
+    return false
+end
+
 local function OwnChrome(self, frame, textures)
     local context = self.context
     context:Alpha(frame.Bg, 0)
     context:Alpha(frame.NineSlice, 0)
     if frame.MoneyFrame and frame.MoneyFrame.Border then context:Alpha(frame.MoneyFrame.Border, 0) end
     if frame.PortraitContainer then context:Alpha(frame.PortraitContainer, 0) end
-    if frame.PortraitButton then context:HideControl(frame.PortraitButton, true) end
+    local standalone = frame ~= self.frame and frame ~= ContainerFrame6
+    if standalone then
+        if frame.Background1Slot then context:Alpha(frame.Background1Slot, 0) end
+        if frame.PortraitButton then context:Alpha(frame.PortraitButton, 0) end
+    elseif frame.PortraitButton then
+        context:HideControl(frame.PortraitButton, true)
+    end
     local title = frame.TitleContainer
     if not title or NS.IsCombatLocked() then return end
     if not textures.titlePoints then
@@ -202,7 +191,13 @@ local function OwnChrome(self, frame, textures)
     end
     -- The title ends before the window's caption (BagCaption.lua).
     frame:SetTitleOffsets(8, -Private.BagCaption.Inset(textures.combined))
-    if not textures.dragHandle then textures.dragHandle = NewDragHandle(frame) end
+    if not standalone then
+        -- The native title proxy still opens the menu when the portrait has
+        -- mouse input disabled. Mute the proxy, which Blizzard excludes from gamepad navigation.
+        if textures.portraitRouter == nil then textures.portraitRouter = FindPortraitRouter(frame:GetChildren()) end
+        if textures.portraitRouter then context:HideControl(textures.portraitRouter, true) end
+        if not textures.dragHandle then textures.dragHandle = NewDragHandle(frame) end
+    end
 end
 
 function M:UpdatePresentation()
@@ -210,8 +205,9 @@ function M:UpdatePresentation()
     if not t then return end
     local combat = Private.InventoryView.layout ~= "suite"
     local panel = Private.BagPresentation.IsPanel(self.config) and not combat or false
-    if t.presentation == panel then return end
-    t.presentation, t.combat = panel, combat
+    local rail = panel and Private.BagPresentation.Rail(self.config) or 0
+    if t.presentation == panel and t.presentationRail == rail then return end
+    t.presentation, t.presentationRail, t.combat = panel, rail, combat
     PaintWindow(t, self.config)
     local title = self.frame.TitleContainer
     if title and title.TitleText then
@@ -224,7 +220,7 @@ function M:UpdatePresentation()
     if t.dragHandle then
         t.dragHandle:ClearAllPoints()
         if panel then
-            t.dragHandle:SetPoint("TOPLEFT", self.frame, "TOPLEFT", Private.BagPresentation.RAIL + 12, -8)
+            t.dragHandle:SetPoint("TOPLEFT", self.frame, "TOPLEFT", rail + 12, -8)
             t.dragHandle:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", -Private.BagCaption.PANEL_TITLE, -46)
         else
             t.dragHandle:SetAllPoints(title)
@@ -232,22 +228,43 @@ function M:UpdatePresentation()
     end
 end
 
-function M:StyleWindows()
+local function StyleWindow(self, frame, combined)
     self.windows = self.windows or {}
-    -- Blizzard_UIPanels_Game declares both windows in ContainerFrame.xml and
-    -- loads at startup on Retail and Forever.
-    local targets = { ContainerFrameCombinedBags, ContainerFrame6 }
-    for i = 1, #targets do
-        local frame = targets[i]
-        if not self.windows[frame] then self.windows[frame] = NewWindowStyle(frame, i == 1) end
+    local textures = self.windows[frame]
+    if not textures then
+        textures = NewWindowStyle(frame, combined)
+        if not textures then return end
+        self.windows[frame] = textures
     end
-    for frame, textures in pairs(self.windows) do
-        SetSkinShown(textures, true)
-        OwnChrome(self, frame, textures)
-        Private.BagCaption.Attach(self, frame, textures)
-        if textures.dragHandle then textures.dragHandle:SetShown(not S.editMode) end
-        PaintWindow(textures, self.config)
-        textures.presentation = nil
+    SetSkinShown(textures, true)
+    OwnChrome(self, frame, textures)
+    Private.BagCaption.Attach(self, frame, textures)
+    if textures.dragHandle then textures.dragHandle:SetShown(not S.editMode) end
+    PaintWindow(textures, self.config)
+    textures.presentation = nil
+end
+
+function M:StyleStandaloneWindow(frame)
+    local style = self.windows and self.windows[frame]
+    if style and style[2]:IsShown() then return end
+    if NS.InCombat() then
+        if not self.needsStandaloneWindow then
+            self.needsStandaloneWindow = true
+            S.Queue("bags")
+        end
+        return
+    end
+    StyleWindow(self, frame, false)
+end
+
+function M:StyleWindows()
+    StyleWindow(self, self.frame, true)
+    StyleWindow(self, ContainerFrame6, false)
+    if self.standaloneFrames and not NS.InCombat() then
+        for _, frame in ipairs(self.standaloneFrames) do
+            if self.windows[frame] or frame:IsShown() then StyleWindow(self, frame, false) end
+        end
+        self.needsStandaloneWindow = nil
     end
     self:UpdatePresentation()
 end

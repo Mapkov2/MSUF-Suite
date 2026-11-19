@@ -239,17 +239,12 @@ local function EnsureDrawer()
     toggle:SetFrameStrata("MEDIUM")
     toggle:SetFrameLevel(MM.mapLevel + 14)
     toggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    toggle.back = S.CreateTexture(toggle, nil, "BACKGROUND")
-    toggle.back:SetAllPoints(toggle)
-    -- A 2x2 grid glyph drawn from plain textures (no client-specific art).
-    toggle.dots = {}
-    for i = 1, 4 do
-        toggle.dots[i] = S.CreateTexture(toggle, nil, "ARTWORK")
-        toggle.dots[i]:SetColorTexture(0.9, 0.9, 0.9, 1)
-    end
-    local highlight = S.CreateTexture(toggle, nil, "HIGHLIGHT")
-    highlight:SetAllPoints(toggle)
-    highlight:SetColorTexture(1, 1, 1, 0.15)
+    toggle.icon = S.CreateTexture(toggle, nil, "ARTWORK")
+    toggle.icon:SetAllPoints(toggle)
+    toggle.highlight = S.CreateTexture(toggle, nil, "HIGHLIGHT")
+    toggle.highlight:SetAllPoints(toggle)
+    toggle.highlight:SetBlendMode("ADD")
+    toggle.highlight:SetAlpha(0.2)
     toggle:SetScript("OnClick", TogglePanel)
     toggle:SetScript("OnEnter", ShowTip)
     toggle:SetScript("OnLeave", HideTip)
@@ -278,9 +273,10 @@ local function EnsureDrawer()
     MM.panel = panel
 end
 
-local function StyleToggle(c)
+local function StyleDrawer(c)
+    toggle:SetSize(c.elementSize, c.elementSize)
+    NS.MinimapStyle.PaintDrawerToggle(toggle.icon, c, toggle.highlight)
     local r, g, b = MM.BorderRGB()
-    NS.MinimapStyle.PaintDrawerToggle(toggle, toggle.back, toggle.dots, c.elementSize, 1, r, g, b)
     -- An opaque one-pixel outline inside the panel, in the border color.
     S.PlaceEdges(panel.edges, panel, 1, r, g, b, 1)
 end
@@ -314,7 +310,7 @@ function MM.LayoutDrawer()
     end
     for i = count + 1, #visible do visible[i] = nil end
     local start = c.drawerRow == c.elementRow and (MM.rowCount or 0) or 0
-    StyleToggle(c)
+    StyleDrawer(c)
     if count == 1 then
         -- A single button goes straight onto the row; no toggle.
         toggle:Hide()
@@ -419,8 +415,8 @@ function S.MinimapRescanButtons()
     return true
 end
 
--- A closed drawer can have a grid toggle, a single addon button, or no row item.
--- Mouseover changes the grid's visibility without releasing its row position.
+-- A closed drawer can have a toggle, a single addon button, or no row item.
+-- Mouseover changes the toggle's visibility without releasing its row position.
 function S.MinimapDrawerPreviewSource()
     if not M.active then return end
     if not MM.CollectsButtons() or #visible == 0 then return false end

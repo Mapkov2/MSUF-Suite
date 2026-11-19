@@ -459,6 +459,8 @@ local uf2 = { HealthBarsContainer = { healthBar = health2 } }
 local made = creations
 C.Apply(uf2, "nameplate7", true)
 local waited = containers[#containers]
+assert(rawequal(container.slots.all1.filter, waited.slots.all1.filter)
+    and rawequal(waited.slots.single1.filter, waited.slots.all1.filter), "an unchanged spell filter was rebuilt per plate")
 assert(creations == made + 2 and waited.unit == "nameplate7" and waited.enabled and waited.parent.shown,
     "a new plate met in combat while auras were secret was not built")
 for present, expected in pairs({ [589] = "112233", [34914] = "445566", none = cfg.auraColorsNone,

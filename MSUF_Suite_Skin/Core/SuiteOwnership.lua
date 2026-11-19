@@ -1,8 +1,8 @@
 local _, NS = ...
 
 -- Blizzard surfaces a running Suite module replaces or hides: Blizzard's
--- damage meter (the Suite meter turns it off), the shell of the combined and
--- reagent bag windows (the Bags module paints its own), the cooldown viewers
+-- damage meter (the Suite meter turns it off), the native bag shells
+-- the Bags module paints, the cooldown viewers
 -- (the Suite cooldown manager turns them off or runs them invisibly) and the
 -- bag bar (DataTexts hides it on request). While such a module runs the skin
 -- leaves the surface to it; with the module off the skin styles Blizzard's
@@ -75,11 +75,22 @@ end
 
 -- The bag windows whose shell the Bags module paints.
 function SuiteOwnership.IsBagShell(frame)
-    return frame ~= nil and (frame == ContainerFrameCombinedBags or frame == ContainerFrame6)
+    local safety = NS.Safety
+    if not safety.Public(frame) or not frame then return false end
+    if frame == ContainerFrameCombinedBags or frame == ContainerFrame6 then return true end
+    if not NS.Client.isForever or frame == ContainerFrame1 then return false end
+    -- Reserve the same Forever native pool that Bags uses for the keyring.
+    -- A frame's current bag ID may change when Blizzard reuses the window.
+    local frames = safety.Field(ContainerFrameContainer, "ContainerFrames")
+    if type(frames) ~= "table" then return false end
+    for index = 1, #frames do
+        if frame == frames[index] then return true end
+    end
+    return false
 end
 
--- Bags owns both bag-shell positions on both clients, and BankWindow only
--- on Retail. Individual bags and Forever's native bank keep skin controls.
+-- Bags owns its window chrome and is the only mover for the combined and
+-- reagent bag positions. Standalone Forever bags keep Blizzard placement.
 function SuiteOwnership.OwnsWindowGeometry(frame)
     if SuiteOwnership.IsBagShell(frame) or (frame ~= nil and frame == BankFrame and not NS.Client.isForever) then
         return SuiteOwnership.Owns("bagWindows")
@@ -103,23 +114,31 @@ end
 -- "before" a module starts or stops, the skin lets go of surfaces that became
 -- owned; "after", it takes back surfaces that were freed. A surface the skin
 -- never asked about has nothing to undo.
-function SuiteOwnership.Refresh(phase)
+local function Collect(surface, claiming, rebuild)
+    local owned = SuiteOwnership.answers[surface]
+    if owned == nil then return rebuild end
+    local now = Ask(surface)
+    if now == owned or now ~= claiming then return rebuild end
+    SuiteOwnership.answers[surface] = now
+    rebuild = rebuild or {}
+    rebuild[surface == "characterDossier" and surface or ADAPTERS[surface]] = true
+    return rebuild
+end
+
+function SuiteOwnership.Refresh(phase, surface, dependent)
     local claiming = phase == "before"
-    local rebuild, characterDossier
-    for surface, owned in pairs(SuiteOwnership.answers) do
-        local now = Ask(surface)
-        if now ~= owned and now == claiming then
-            SuiteOwnership.answers[surface] = now
-            if surface == "characterDossier" then
-                characterDossier = true
-            else
-                rebuild = rebuild or {}
-                rebuild[ADAPTERS[surface]] = true
-            end
-        end
+    local rebuild
+    if surface then
+        rebuild = Collect(surface, claiming)
+        if dependent then rebuild = Collect(dependent, claiming, rebuild) end
+    else
+        for observed in pairs(SuiteOwnership.answers) do rebuild = Collect(observed, claiming, rebuild) end
     end
-    if characterDossier then RefreshCharacterDossier(claiming) end
     if not rebuild then return end
+    if rebuild.characterDossier then
+        rebuild.characterDossier = nil
+        RefreshCharacterDossier(claiming)
+    end
     for id in pairs(rebuild) do NS.Adapters.Refresh(id) end
 end
 

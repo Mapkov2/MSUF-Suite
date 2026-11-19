@@ -212,7 +212,7 @@ local function IconMenu(menu, entry)
         Prompt(entry, Text("Icon file ID (Enter)"), entry.icon and tostring(entry.icon), 10, ChangeIcon)
     end)
     for _, icon in ipairs(entry.icons) do
-        icons:CreateButton(icon.label, function()
+        icons:CreateButton(icon.markup, function()
             if CanUse(entry) then ChangeIcon(entry, icon.id) end
         end)
     end
@@ -271,7 +271,8 @@ local function ItemIcons(slots)
     for _, row in ipairs(slots) do
         local icon = Number(GetInventoryItemTexture("player", row.slot))
         if icon and not seen[icon] then
-            icons[#icons + 1] = { id = icon, label = ("|T%d:16|t %s"):format(icon, row.label) }
+            -- Texture markup plus the slot name: Blizzard's menu shows it as it is.
+            icons[#icons + 1] = { id = icon, markup = ("|T%d:16|t %s"):format(icon, row.label) }
             seen[icon] = true
         end
     end

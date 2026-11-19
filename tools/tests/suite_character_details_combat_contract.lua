@@ -5,7 +5,8 @@ local source=file:read("*a"); file:close()
 local stop=assert(source:find('details.Apply(characterFrame, "character", "details")',1,true))
 local H=assert(loadstring(source:sub(1,stop-1) .. [[
 return { NS=NS, Details=details, root=characterFrame, Object=Object,
-    Reads=function() return reads end, SetCombat=function(value) combatLocked=value end }
+    Reads=function() return reads end, SetCombat=function(value) combatLocked=value end,
+    RunNext=function() assert(table.remove(timers, 1))() end }
 ]],"@character_details_combat_fixture"))()
 local checks=0
 local function Check(value,message) assert(value,message); checks=checks+1 end
@@ -26,6 +27,18 @@ view.host.scripts.OnEvent(view.host,"PLAYER_EQUIPMENT_CHANGED",1)
 Check(H.Reads()==reads and not view.registered,"hidden dossier performed item reads or retained events")
 view.host:Show()
 Check(view.panel:IsShown() and H.Reads()>reads,"combat reopen hid the configured dossier")
+local layouts = 0
+H.NS.GearAnnotations.ApplyLayout = function() layouts = layouts + 1 end
+local function ChangeSlot()
+    view.host.scripts.OnEvent(view.host, "PLAYER_EQUIPMENT_CHANGED", 1)
+    H.RunNext()
+end
+reads = H.Reads()
+ChangeSlot()
+Check(layouts == 0 and H.Reads() == reads + 1, "slot refresh repeated stable presentation work")
+H.root.scripts.OnSizeChanged(H.root)
+ChangeSlot()
+Check(layouts == 1, "native root resize kept an obsolete presentation")
 reads=H.Reads()
 view.host.protected=true
 H.Details.Refresh(view)

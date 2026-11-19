@@ -206,9 +206,10 @@ local function PauseChanged(self, event)
     ScheduleHide(self)
 end
 
-local function AnimateNewest(self)
+local function PrepareAnimation(self)
     local mode = self.config.insertAnimation or NO_ANIMATION
-    if mode == NO_ANIMATION or S.editMode or self.contextVisible == false then return end
+    self.insertGroup = nil
+    if mode == NO_ANIMATION then return end
     local row = self.rows[1]
     local group
     if mode == POP_IN then group = row.pop else group = row.fade end
@@ -227,6 +228,13 @@ local function AnimateNewest(self)
             row.pop = group
         else row.fade = group end
     end
+    self.insertGroup = group
+end
+
+local function AnimateNewest(self)
+    local group = self.insertGroup
+    if not group or S.editMode or self.contextVisible == false then return end
+    local row = self.rows[1]
     if row.fade then row.fade:Stop() end
     if row.pop then row.pop:Stop() end
     group:Play()
@@ -301,21 +309,16 @@ local function SyncEvents(self)
 end
 
 function M:Enable()
-    WatchGloss(self, self.config.glossEnabled == true)
     Create(self)
-    self.history = {}
-    self.lastCastAt = nil
-    Layout(self)
-    Style(self)
-    Paint(self)
-    SyncEvents(self)
-    PauseChanged(self)
+    self.history, self.lastCastAt = {}, nil
+    self:Refresh()
 end
 
 function M:Refresh()
     WatchGloss(self, self.config.glossEnabled == true)
     Layout(self)
     Style(self)
+    PrepareAnimation(self)
     Paint(self)
     SyncEvents(self)
     PauseChanged(self)

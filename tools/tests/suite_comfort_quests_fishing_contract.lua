@@ -2,22 +2,41 @@ local root = assert(arg[1])
 local F = dofile(root .. "/tools/tests/comfort_fixture.lua")
 local e = F.New(root, true)
 UIParent = e.Frame()
-local hooks, requests, choices, prices, quest = {}, {}, {}, {}, 10
+local hooks, choices, quest = {}, {}, 10
+local prices = { ["reward:1"] = 20, ["reward:2"] = 50 }
+local cached = { ["reward:1"] = true, ["reward:2"] = true }
+local itemLoads, missingLogLink = 0, false
+local itemLoaded = "ITEM_DATA_LOAD_RESULT"
 hooksecurefunc = function(name, fn) hooks[name] = fn end
 GetQuestID = function() return quest end
 C_QuestLog = { GetSelectedQuest = GetQuestID }
 GetQuestItemInfo = function(_, index) local v = choices[index]; return "Reward", 1, v.count, 1, true, v.id end
 GetQuestLogChoiceInfo = function(index) return GetQuestItemInfo("choice", index) end
 GetQuestItemLink = function(_, index) return "reward:" .. index end
-GetQuestLogItemLink = GetQuestItemLink
-C_Item = { GetItemInfo = function(key) return "Reward", nil, nil, nil, nil, nil, nil, nil, nil, nil, prices[key] end,
-    RequestLoadItemDataByID = function(id) requests[id] = (requests[id] or 0) + 1 end }
+GetQuestLogItemLink = function(kind, index)
+    if not missingLogLink or index ~= 2 then return GetQuestItemLink(kind, index) end
+end
+-- Model the selection loss if an extra item load causes a native reward refresh.
+local function LoadItem()
+    itemLoads = itemLoads + 1
+    QuestInfoFrame.itemChoice = 0
+end
+C_Item = {
+    IsItemDataCachedByID = function(link) return cached[link] == true end,
+    GetItemInfo = function(link)
+        if not cached[link] then
+            LoadItem()
+            return
+        end
+        return "Reward", nil, nil, nil, nil, nil, nil, nil, nil, nil, prices[link]
+    end,
+    RequestLoadItemDataByID = LoadItem,
+}
 local rewards = e.Frame()
 rewards.RewardButtons = {}
 for i = 1, 2 do local b = e.Frame(); b.id, b.type, b.objectType = i, "choice", "item"; rewards.RewardButtons[i] = b end
-QuestInfoFrame = { questLog = false, rewardsFrame = rewards }
+QuestInfoFrame = { questLog = false, rewardsFrame = rewards, itemChoice = 2 }
 choices = { { id = 101, count = 4 }, { id = 102, count = 1 } }
-prices = { [101] = 5, [102] = 30, ["reward:1"] = 20, ["reward:2"] = 50 }
 e:Load("MSUF_Suite_QualityOfLife/QuestRewardValue.lua")
 e.S.MoneyText = tostring
 local m = e:Start("questRewardValue", {})
@@ -28,17 +47,71 @@ assert(Winner() == 1, "contextual reward price times stack size must choose firs
 assert(m.values[rewards.RewardButtons[1]].text == "80", "reward value is for the full stack")
 assert(m.values[rewards.RewardButtons[2]].text == "50", "each priced choice receives its own value")
 assert(not _G.GetQuestReward, "the marker has no reward-selection dependency")
--- All choices must be priced before claiming a winner.
-quest = 11; prices["reward:2"], prices[102] = nil, nil
-hooks.QuestInfo_ShowRewards(); e:Flush()
-assert(not Winner() and requests[102] == 1, "an unknown candidate must suppress a premature winner")
-for i = 1, 4 do hooks.QuestInfo_ShowRewards(); e:Flush() end
-assert(requests[102] == 1, "unknown item requests must be bounded")
+-- The price pass must not start item loads while a choice is selected.
+quest = 11
+cached["reward:2"] = false
+hooks.QuestInfo_ShowRewards()
+e:Flush()
+assert(itemLoads == 0 and QuestInfoFrame.itemChoice == 2, "a cold price must not start a load and disturb the choice")
+assert(not Winner() and not m.values[rewards.RewardButtons[2]].shown, "a cold price must not leave a stale winner or value")
+for i = 1, 4 do
+    hooks.QuestInfo_ShowRewards()
+    e:Flush()
+end
+assert(m.context.events[itemLoaded] and itemLoads == 0, "reward redraws must only wait for the native load")
+e:Emit(m, itemLoaded, 999, true)
+assert(not m.job.pending, "unrelated item loads must not queue a redraw")
+cached["reward:2"] = true
 prices["reward:2"] = 100
-e:Emit(m, "GET_ITEM_INFO_RECEIVED", 102, true); e:Flush()
-assert(Winner() == 2, "async price must repaint current quest")
-quest = 12; choices[1].count = e.secret
-hooks.QuestInfo_ShowRewards(); e:Flush()
+e:Emit(m, itemLoaded, 102, true)
+e:Flush()
+assert(Winner() == 2 and not m.context.events[itemLoaded], "a native load must repaint the price and stop waiting")
+assert(itemLoads == 0 and QuestInfoFrame.itemChoice == 2, "the passive repaint must leave the choice intact")
+
+-- A missing link in the quest log can resolve after native item data arrives.
+quest = 12
+QuestInfoFrame.questLog = true
+missingLogLink = true
+hooks.QuestInfo_Display()
+e:Flush()
+assert(not Winner() and m.context.events[itemLoaded], "a known item ID must wait even when the log link is missing")
+missingLogLink = false
+prices["reward:2"] = 0
+e:Emit(m, itemLoaded, 102, true)
+e:Flush()
+assert(Winner() == 1 and itemLoads == 0, "an unsellable item is a resolved price in the quest log")
+
+cached["reward:2"] = false
+hooks.QuestInfo_Display()
+e:Flush()
+e:Emit(m, itemLoaded, 102, false)
+assert(not m.context.events[itemLoaded] and not m.job.pending, "a failed load must stop waiting without a retry")
+hooks.QuestInfo_Display()
+e:Flush()
+e:Combat(true)
+e:Emit(m, "PLAYER_REGEN_DISABLED")
+assert(not m.context.events[itemLoaded] and not Winner(), "combat must release the pending price listener and labels")
+cached["reward:2"] = true
+e:Combat(false)
+e:Emit(m, "PLAYER_REGEN_ENABLED")
+e:Flush()
+assert(Winner() == 1 and itemLoads == 0, "combat exit must read the cache even if the load event was missed")
+
+QuestInfoFrame.questLog = false
+cached["reward:2"] = false
+hooks.QuestInfo_Display()
+e:Flush()
+assert(m.context.events[itemLoaded], "open dialogue must be waiting for the missing price")
+rewards:Hide()
+e:Emit(m, "QUEST_FINISHED")
+e:Flush()
+assert(not m.context.events[itemLoaded] and not Winner(), "closing the dialogue must stop waiting")
+rewards:Show()
+cached["reward:2"] = true
+quest = 13
+choices[1].count = e.secret
+hooks.QuestInfo_ShowRewards()
+e:Flush()
 assert(not Winner(), "secret quantity cannot produce a recommendation")
 m.active = false; m:Disable(); assert(not Winner(), "disable removes owned markers")
 -- Fishing never invokes protected casting from an event or performs a protected write in combat.
@@ -125,4 +198,4 @@ assert(not next(routed), "combat must release the override through the secure st
 e:Emit(m, "PLAYER_REGEN_DISABLED")
 e:Combat(false); e:Emit(m, "PLAYER_REGEN_ENABLED")
 m.active = false; m:Disable(); assert(not m.button.attrs.type1 and not m.lure.attrs.type1, "disable clears both secure actions")
-print("comfort quests/fishing: contextual prices, unknown data, secrets, bounded requests, hardware actions and audio teardown passed")
+print("comfort quests/fishing: passive reward prices, unknown data, secrets, hardware actions and audio teardown passed")

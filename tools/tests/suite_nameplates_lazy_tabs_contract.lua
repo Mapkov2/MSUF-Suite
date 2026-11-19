@@ -947,9 +947,24 @@ do
         end
         error("missing preview layer " .. key)
     end
+    local function VisiblePreviewLayer(key)
+        local button = PreviewLayer(key)
+        if button:IsVisible() then return button end
+        for _, slider in ipairs({ preview.layerRail:GetChildren() }) do
+            if slider:GetObjectType() == "Slider" and slider:IsVisible() then
+                local first, last = slider:GetMinMaxValues()
+                for row = first, last do
+                    slider:SetValue(row)
+                    preview:LayoutLayerRail()
+                    if button:IsVisible() then return button end
+                end
+            end
+        end
+        error("preview layer is unreachable: " .. key)
+    end
     local showCast = P.Get("nameplates", "enemyCastEnabled")
     assert(P.Set("nameplates", "enemyCastEnabled", 3))
-    PreviewLayer("castIcon"):Click()
+    VisiblePreviewLayer("castIcon"):Click()
     mw:RunTimers(1000)
     assert(widgets.enemyCastEnabled and widgets.enemyCastEnabled:IsVisible()
         and P.Get("nameplates", "enemyCastEnabled") == 3, "disabled cast icon did not open its castbar enable setting")
@@ -958,7 +973,7 @@ do
     assert(P.Set("nameplates", "highlightFocus", false))
     P.PreviewNameplateHighlight("focus")
     assert(preview:LayerActive("focusBorder"), "fixture did not show the disabled highlight example")
-    PreviewLayer("focusBorder"):Click()
+    VisiblePreviewLayer("focusBorder"):Click()
     mw:RunTimers(1000)
     assert(M.activeKey == "opt_bars" and widgets.highlightFocus:IsVisible()
         and P.Get("nameplates", "highlightFocus") == false, "the visible example did not open its disabled setting")
@@ -982,8 +997,7 @@ do
         return paintBorder(border, owner, size, color)
     end
     for key, sample in pairs({ aggroBorder = "aggro", targetBorder = "target", focusBorder = "focus", mouseoverBorder = "mouseover" }) do
-        local button = PreviewLayer(key)
-        assert(button:IsVisible(), "highlight sample was hidden from Preview Layers")
+        local button = VisiblePreviewLayer(key)
         shown = nil
         button:Click()
         assert(preview.highlightSample == sample and preview:LayerActive(key) and preview.layerContext == "anchor",
@@ -995,14 +1009,14 @@ do
     end
     style.PaintBorder = paintBorder
     assert(P.SetMany("nameplates", savedHighlights))
-    PreviewLayer("focusBorder"):GetScript("OnClick")(PreviewLayer("focusBorder"), "RightButton")
+    VisiblePreviewLayer("focusBorder"):Click("RightButton")
     assert(M.activeKey == "opt_bars" and outline:IsVisible() and widgets.highlightFocus:IsVisible(),
         "highlight preview layer did not open its Bars settings")
     assert(M.SelectPage("suite_nameplates"))
     assert(P.Get("nameplates", "highlightFocus") == configured, "preview layer wrote to the profile")
     P.NameplatesWorkspace.Open("friendly")
     preview:Edit("anchor")
-    assert(not PreviewLayer("aggroBorder"):IsShown() and PreviewLayer("focusBorder"):IsShown(),
+    assert(not PreviewLayer("aggroBorder"):IsShown() and VisiblePreviewLayer("focusBorder"):IsVisible(),
         "friendly preview offered the Enemy-only Aggro border")
     P.NameplatesWorkspace.Open("enemy")
 end

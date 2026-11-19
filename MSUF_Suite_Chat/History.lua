@@ -16,6 +16,8 @@ local M = C.M
 local NS = P.NS
 local MAX_TABS = 16
 local MAX_TEXT = 8192
+local COPY_TIMESTAMP = "msufline"
+local COPY_STAMP = "^|H" .. COPY_TIMESTAMP .. ":[^|]+|h(.-)|h"
 local PublicText, Finite = S.PublicText, S.Finite
 local CATEGORY_TYPES = {
     historyWhispers = { WHISPER = true, SMART_WHISPER = true, WHISPER_INFORM = true, BN_WHISPER = true,
@@ -203,10 +205,16 @@ end
 function C.HistoryReplay(frame, ring)
     local room = frame:GetMaxLines() - frame:GetNumMessages()
     local lines, size, newest = ring.lines, ring.limit, ring.next - 1
+    local registered = LinkUtil and LinkUtil.IsLinkHandlerRegistered
+    local keepStamp = registered and registered(COPY_TIMESTAMP) == true
     for offset = 1, math.min(ring.count, room) do
         local row = lines[(newest - offset) % size + 1]
-        if type(row) == "table" and PublicText(row.text) and #row.text <= MAX_TEXT then
-            frame:BackFillMessage(row.text, Finite(row.r) and row.r or 1,
+        local text = type(row) == "table" and PublicText(row.text)
+        if text and #text <= MAX_TEXT then
+            -- A stamp saved before reload can have no handler in this session.
+            -- Replay only its label so Blizzard never sees it as an item link.
+            if not keepStamp then text = text:gsub(COPY_STAMP, "%1", 1) end
+            frame:BackFillMessage(text, Finite(row.r) and row.r or 1,
                 Finite(row.g) and row.g or 1, Finite(row.b) and row.b or 1)
         end
     end
@@ -369,7 +377,7 @@ function C.HistorySnapshot()
             if type(row) == "table" and PublicText(row.text) and #row.text <= MAX_TEXT then
                 local text = C.PlainChatMessage(row.text)
                 rows[#rows + 1] = { key = tab.key .. ":" .. offset, label = text, text = text,
-                    detail = tab.key .. " · " .. stamp .. "\n" .. text, search = tab.key .. " " .. text }
+                    detail = tab.key .. " - " .. stamp .. "\n" .. text, search = tab.key .. " " .. text }
             end
         end
     end

@@ -139,7 +139,7 @@ local function ToggleSectionPopup(state)
     end
     if popup.RefreshTargets then popup.RefreshTargets() end
     local title = Tr(state.title)
-    popup.heading:SetText(state.source ~= nil and (spec.sourceLabel(state.source) .. " \194\183 " .. title) or title)
+    popup.heading:SetText(state.source ~= nil and (spec.sourceLabel(state.source) .. " - " .. title) or title)
     popup:ClearAllPoints()
     popup:SetPoint("TOPRIGHT", state.more, "BOTTOMRIGHT", 0, -4)
     if M.ApplyPopupFramePriority then M.ApplyPopupFramePriority(popup) end

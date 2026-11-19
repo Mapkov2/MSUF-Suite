@@ -6,8 +6,18 @@ local nativeSyncCalls = 0
 local function Widget(parent)
     local w = { shown = true, parent = parent }
     function w:SetFrameStrata(value) self.strata = value end
-    function w:EnableMouse() end
+    function w:EnableMouse(value) self.mouse = value end
+    function w:SetAlpha(value) self.alpha = value end
     function w:SetScript(key, callback) self[key] = callback end
+    function w:GetScript(key) return self[key] end
+    -- A hook runs after the frame's own script, as the client's HookScript.
+    function w:HookScript(key, callback)
+        local original = self[key]
+        self[key] = function(...)
+            if original then original(...) end
+            callback(...)
+        end
+    end
     function w:CreateTexture() return Widget() end
     function w:CreateFontString() return Widget() end
     function w:SetPoint(...) self.point = { ... }; self.anchors = (self.anchors or 0) + 1 end
@@ -178,7 +188,8 @@ local function Load(kind, forever)
     assert(loadfile(root .. "/MSUF_Suite/Core/ExperienceBarLayout.lua"))("MSUF_Suite", suite)
     MSUFSuite = suite
     local private = {}
-    for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceOptimizer", "ExperienceBar" }) do
+    for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceOptimizer",
+        "ExperienceBar", "ExperienceBarSlot" }) do
         assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
     end
     local module = runtime.instances.xpBar
@@ -920,6 +931,11 @@ config.showSession, config.showRate, config.showETA = false, false, false
 nextRuntime.DrawExperienceBarPreview(parent, config, sample)
 assert(not parent.suiteXPPreview.sessionText:IsShown() and not parent.suiteXPPreview.rateText:IsShown()
     and not parent.suiteXPPreview.etaText:IsShown(), "sample ignored hidden XP details")
+config.displayStyle, config.showLevelTime, config.track = 2, false, 1
+local compactHost, _, compactHeight = nextRuntime.DrawExperienceBarPreview(parent, config, sample)
+assert(compactHeight == config.height and compactHost.height == config.height,
+    "a minimal XP strip with no extra text still reserves space below itself")
+config.displayStyle = 1
 config.showSession, config.showRate, config.showETA = true, true, false
 nextRuntime.DrawExperienceBarPreview(parent, config, sample)
 assert(parent.suiteXPPreview.sessionText.text == "Session +12k"
@@ -948,10 +964,49 @@ for _,style in ipairs({1,2,3})do
 end
 print('all XP display styles, zero outline, finite segment geometry: OK')
 
+-- Another surface can stand in for the bar while it shows (the flight route timer's Timer bar, FlightTimer.lua;
+-- ExperienceBarSlot.lua): the bar keeps its place, layout and events, draws nothing and takes no mouse until it is
+-- handed back, and the stand-in learns when the bar shows or hides, so a hidden or disabled bar is handed back.
+do
+    -- The preview cases above made live XP reads raise.
+    UnitXP, UnitXPMax, GetXPExhaustion = function() return xp end, function() return maximum end,
+        function() return rested end
+    eventFrames = true
+    local view, xpRuntime = Load("login")
+    eventFrames = false
+    local changes = 0
+    -- The stand-in places itself again; without a slot it hands the bar back (FlightTimer.lua, Place).
+    xpRuntime.ExperienceSlotChanged = function()
+        changes = changes + 1
+        if not xpRuntime.ExperienceBarSlot() then xpRuntime.CoverExperienceBar(false) end
+    end
+    assert(xpRuntime.ExperienceBarSlot() == view.host, "a shown experience bar offers no slot")
+    view.hovered = true
+    tooltip.owner, tooltip.shown = view.host, true
+    xpRuntime.CoverExperienceBar(true)
+    assert(view.host.alpha == 0 and view.host.mouse == false and not tooltip.shown and not view.hovered,
+        "a covered experience bar still draws, takes the mouse or keeps its tooltip")
+    assert(view.host:IsShown() and xpRuntime.ExperienceBarSlot() == view.host and changes == 0,
+        "covering hid the experience bar, so what is anchored to it would move")
+    view:Refresh()
+    assert(view.host.alpha == 0 and view.host:IsShown(), "a layout uncovered the experience bar")
+    view.host:Hide()
+    assert(changes == 1 and view.host.alpha == 1 and view.host.mouse == true and xpRuntime.ExperienceBarSlot() == nil,
+        "a hidden experience bar was not handed back or still offers its slot")
+    view.host:Show()
+    assert(changes == 2 and xpRuntime.ExperienceBarSlot() == view.host, "a shown experience bar did not offer its slot")
+    xpRuntime.CoverExperienceBar(true)
+    view.active = false
+    view:Disable()
+    assert(changes == 3 and view.host.alpha == 1 and view.host.mouse == true and xpRuntime.ExperienceBarSlot() == nil,
+        "disabling kept the experience bar covered or its slot offered")
+end
+print('experience bar slot for a stand-in: OK')
+
 
 -- Exercise the opt-in through the installed bar with the production timer implementation.
 do
-    local sibling = root:gsub("[/\\][^/\\]+[/\\]?$", "") .. "/MidnightSimpleUnitFrames"
+    local sibling = root:gsub("[/\\][^/\\]+[/\\]?$", "") .. "/MidnightSimpleUnitFrames-7.0"
     local secrets = assert(loadfile(sibling .. "/tools/tests/classpower_secrets.lua"))()
     secrets.Install()
     secrets.GUARD_NAMES.falsy.Public = true
@@ -970,21 +1025,20 @@ do
     IsInInstance = function() return false, "none" end
     canaccesstable = function(t) return not issecretvalue(t) end
     wipe = function(t) for key in pairs(t) do t[key] = nil end end
-    C_Secrets = { ShouldAurasBeSecret = function() return restricted end }
+    C_Secrets = { ShouldSpellAuraBeSecret = function() return restricted end }
     local aura = { spellId = 429959, applications = 3, expirationTime = now + 100 }
-    C_UnitAuras = { GetAuraDataByIndex = function(_, index)
+    C_UnitAuras = { GetPlayerAuraBySpellID = function(id)
         auraReads = auraReads + 1
-        if index == 1 then return aura end
+        if id == 429959 then return aura end
     end }
+    local cooldown = 0
     C_Item = {
         GetItemCount = function(id)
             itemReads = itemReads + 1
             return (id == 211527 or id == 12218) and 1 or 0
         end,
+        GetItemCooldown = function() return cooldown, 0, true end,
     }
-    local readyCooldown = { startTime = 0, duration = 0, isEnabled = true }
-    local cooldown = readyCooldown
-    C_Spell = { GetItemCooldown = function() return cooldown end }
     local questReady, loaded = true, false
     local quests = {
         { isHeader = true, questID = 0 },
@@ -1038,9 +1092,9 @@ do
     local savedItemReads = itemReads
     aura.spellId = secret("number")
     liveEvents.UNIT_AURA(bar, "UNIT_AURA", secret("string"))
-    liveEvents.UNIT_AURA(bar, "UNIT_AURA", "player")
     Advance(1)
-    assert(itemReads == savedItemReads and not bar.optimizer.aurasReadable, "aura event rescanned bags or accepted secret ID")
+    assert(itemReads == savedItemReads and not bar.optimizer.bonuses[2].aurasReadable
+        and bar.optimizer.bonuses[1].aurasReadable, "a secret aura ID affected another bonus or caused a bag scan")
     aura.spellId = 429959
     loaded = true
     liveEvents.QUEST_DATA_LOAD_RESULT(bar, "QUEST_DATA_LOAD_RESULT", 43, true)
@@ -1050,18 +1104,20 @@ do
     Advance(39)
     assert(engine.lastReminder == "XP bonus expiring soon: Cozy Sleeping Bag.", "expiration warning missed its deadline")
     local previousAuraReads = auraReads
-    restricted, cooldown = secret("boolean"), secret("table")
+    restricted, cooldown = secret("boolean"), secret("number")
     liveEvents.PLAYER_REGEN_DISABLED(bar, "PLAYER_REGEN_DISABLED")
     liveEvents.BAG_UPDATE_COOLDOWN(bar, "BAG_UPDATE_COOLDOWN")
     Advance(1)
-    assert(auraReads == previousAuraReads and not bar.optimizer.aurasReadable
-        and table.concat(tooltip.lines, "\n"):find("Cozy Sleeping Bag | Unknown", 1, true),
-        "restricted aura data was read or treated as missing")
+    assert(auraReads == previousAuraReads and not bar.optimizer.bonuses[2].aurasReadable
+        and table.concat(tooltip.lines, "\n"):find("Cozy Sleeping Bag | Owned", 1, true),
+        "the tooltip queried a restricted aura or lost verified ownership")
     assert(bar.optimizer.bonuses[2].cooldownUnknown, "restricted cooldown appeared ready")
-    restricted, cooldown = false, readyCooldown
-    liveEvents.PLAYER_REGEN_ENABLED(bar, "PLAYER_REGEN_ENABLED")
+    liveEvents.ADDON_RESTRICTION_STATE_CHANGED(bar, "ADDON_RESTRICTION_STATE_CHANGED")
+    restricted, cooldown = false, 0
     Advance(20)
-    assert(not bar.optimizer.bonuses[2].cooldownUnknown, "cooldown did not recover after combat")
+    assert(bar.optimizer.bonuses[2].aurasReadable and not bar.optimizer.bonuses[2].cooldownUnknown
+        and table.concat(tooltip.lines, "\n"):find("3 / 3 stacks", 1, true),
+        "the aura or cooldown failed to recover after the restriction changed")
     xp = 200
     liveEvents.PLAYER_XP_UPDATE(bar, "PLAYER_XP_UPDATE", "player")
     assert(bar.optimizer.gained == 100 and bar.session.gained == 100 and not bar.rateText.text:find("--", 1, true))
@@ -1091,6 +1147,7 @@ do
     bar:Refresh()
     Advance(360)
     assert(not bar.optimizer and not liveEvents.UNIT_AURA and not liveEvents.QUEST_LOG_UPDATE
+        and not liveEvents.ADDON_RESTRICTION_STATE_CHANGED
         and not liveEvents.PLAYER_FLAGS_CHANGED and auraReads + itemReads + questReads == reads,
         "toggle off left optimizer work running")
     engine.DrawExperienceBarPreview(parent, bar.config, { xp = 50, rested = 15 })

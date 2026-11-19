@@ -74,6 +74,7 @@ local function RemoveAt(index)
     local tab = table.remove(D.tabs, index)
     if not tab then return end
     D.byKey[tab.key] = nil
+    tab.draft = nil
     if D.selected == tab then D.selected = D.tabs[math.min(index, #D.tabs)] end
 end
 

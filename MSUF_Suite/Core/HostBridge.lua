@@ -212,6 +212,20 @@ function HostBridge.IconSkinLook(choice, shape, strength, allowVariant)
     return look or nil
 end
 
+local PLAYER_AURA_FALLBACK = "FRAME_BEVEL"
+
+-- An enabled native aura renderer needs a square look even when the profile
+-- has no usable global default. Explicit choices, including CUSTOM, stay
+-- separate from the inheritance fallback. The second value describes the
+-- choice in the host's Icon Skins menu.
+function HostBridge.PlayerAuraSkin(choice)
+    local look = HostBridge.IconSkinLook(choice)
+    if look or choice ~= nil and choice ~= "DEFAULT" then return look, choice end
+    local fallback = HostBridge.IconSkinLook(PLAYER_AURA_FALLBACK)
+    if fallback then return fallback, PLAYER_AURA_FALLBACK end
+    return nil, choice
+end
+
 -- Draws `look` on `owner` around `anchor` (see the interface); a nil look
 -- hides an earlier one. clip: only the parts over the anchor draw (a look
 -- over an icon that already shows it there). Returns whether a skin draws
@@ -642,18 +656,15 @@ function HostBridge.StyleFrameFactory(compact, modes)
 end
 
 function HostBridge.FactoryFramePreview(layout)
-    local host = HostNamespace()
     local compact
-    if layout == "darkRaid" or layout == "blizzard" then
+    if layout == "wayfarer" then
+        compact = Suite.WayfarerFramesCompact
+    elseif layout == "darkRaid" or layout == "blizzard" then
         compact = layout == "darkRaid" and Suite.DarkRaidFramesCompact or Suite.BlizzardFramesCompact
     elseif layout == "modernDark" then
         compact = HostBridge.ModernDarkFrameCompact()
-    elseif layout == "forever" then
-        compact = Suite.Client.isForever and host and host.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
-            or Suite.ForeverFactoryFramesCompact
     else
-        compact = not Suite.Client.isForever and host and host.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT
-            or Suite.ClassicFactoryFramesCompact
+        compact = HostBridge.FactoryFrameCompact(layout == "forever")
     end
     if type(compact) ~= "string" then return nil end
     if framePreviews[compact] then return framePreviews[compact] end
@@ -746,7 +757,7 @@ function HostBridge.MigrateLegacyCastbarArtwork(root)
     local normalize = host.ProfileNormalize
     if not normalize or not normalize.MigrateSuiteCastbarArtwork then return end
     for name, profile in pairs(root and root.profiles or {}) do
-        local modules = profile.suite and profile.suite.modules
+        local modules = type(profile) == "table" and profile.suite and profile.suite.modules
         local legacy = modules and modules.castbarArt
         if type(legacy) == "table" then
             local frames = HostBridge.FrameProfile(name)
@@ -774,10 +785,10 @@ end
 function HostBridge.FactoryFrameCompact(forever)
     local host = HostNamespace()
     if forever then
-        return Suite.Client.isForever and host.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
+        return Suite.Client.isForever and host and host.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
             or Suite.ForeverFactoryFramesCompact
     end
-    return not Suite.Client.isForever and host.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT
+    return not Suite.Client.isForever and host and host.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT
         or Suite.ClassicFactoryFramesCompact
 end
 

@@ -325,10 +325,12 @@ Case("Friendly visibility ordinary history undo and redo", function()
     assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", private)
     instance.context = runtime.NewContext("nameplates")
     runtime.Apply = function() private.CVars.Apply(instance) end
-    runtime.SetMany = function(_, values)
+    -- The controller confirms a switch's native write after the module applied
+    -- the batch (MSUF_Suite/Core/Suite.lua, SetMany).
+    runtime.SetMany = function(_, values, confirm)
         for key, value in pairs(values) do instance.config[key] = value end
         runtime.Apply()
-        return true
+        return not confirm or confirm()
     end
     Suite.OnProfileChanged = function()
         instance.config = Suite.DB.suite.modules.nameplates
@@ -451,6 +453,23 @@ Case("Action bar key bindings in profile strings", function()
     refuse, Suite.ActionBarSnapshots = nil, nil
     assert(P.ImportModule(module) and #printed == reports + 2, "keys for absent action bars were not reported")
     Suite.Print = print
+end)
+
+Case("Player aura skin import review", function()
+    local S = Suite.Suite
+    assert(S.SetMany("playerAuras", { buffSkin = "SHADOW1", debuffSkin = "DARK2", enabled = true, x = -65 }))
+    assert(S.SetMany("playerAuraSkins", { enabled = true }))
+    local text = assert(P.ExportModule("playerAuraSkins"))
+    assert(S.SetMany("playerAuras", { buffSkin = "CUSTOM", debuffSkin = "CUSTOM", enabled = false, x = 38 }))
+    assert(S.SetMany("playerAuraSkins", { enabled = false }))
+    local prepared = assert(provider.PrepareImport(text))
+    assert(not S.Config("playerAuraSkins").enabled and S.Config("playerAuras").buffSkin == "CUSTOM",
+        "preparing a skin import changed the active profile")
+    assert(provider.Restore(prepared.provider))
+    local layout = S.Config("playerAuras")
+    assert(S.Config("playerAuraSkins").enabled and layout.buffSkin == "SHADOW1" and layout.debuffSkin == "DARK2",
+        "import review lost the selected aura skins")
+    assert(not layout.enabled and layout.x == 38, "import review changed the aura layout")
 end)
 
 assert(#failures == 0, "\n" .. table.concat(failures, "\n"))

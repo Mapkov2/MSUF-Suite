@@ -238,7 +238,9 @@ local function ChatLoot(self, _, message)
     if self.lootMultiple then
         local first, second = message:match(self.lootMultiple)
         if self.lootLinkIndex == 1 then link, count = first, tonumber(second)
-        else link, count = second, tonumber(first) end
+        else
+            link, count = second, tonumber(first)
+        end
     end
     if not link and self.lootSingle then link, count = message:match(self.lootSingle), 1 end
     if link and count and count > 0 then ShowToast(self, link, count) end

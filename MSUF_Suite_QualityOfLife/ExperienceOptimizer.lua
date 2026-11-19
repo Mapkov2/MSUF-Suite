@@ -8,7 +8,9 @@ local HourlyRate = P.ExperienceBarText.HourlyRate
 local IN_COMBAT = { inCombat = true }
 local QUEST_EVENTS = { "QUEST_LOG_UPDATE", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT" }
 local ITEM_EVENTS = { "BAG_UPDATE_DELAYED", "BAG_UPDATE_COOLDOWN", "PLAYER_EQUIPMENT_CHANGED" }
-local STATUS_EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_UNGHOST", "PLAYER_ALIVE" }
+local STATUS_EVENTS = {
+    "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_UNGHOST", "PLAYER_ALIVE", "ADDON_RESTRICTION_STATE_CHANGED",
+}
 local WARNING_LEAD, REMINDER_INTERVAL = 60, 300
 
 -- Known Forever item and aura IDs documented by ForeverXPOptimizer (1nd1v1d).
@@ -19,19 +21,16 @@ local FOODS = {
     { 21072, 10 }, { 12218, 35 }, { 13931, 35 },
 }
 local SOURCES = {
-    { label = S.Text("XP food"), level = 1, warn = true },
-    { label = S.Text("Cozy Sleeping Bag"), level = 14, item = 211527, warn = true, maxStacks = 3 },
-    { label = S.Text("Camp Tent"), level = 1, item = 279978 },
-    { label = S.Text("Undead XP pendant"), level = 30, item = 273049 },
-}
-local AURAS = {
-    [1249519] = FOOD, [1249520] = FOOD, [1243969] = FOOD,
-    [429959] = SLEEP, [1229487] = TENT, [1292997] = PENDANT, [1293736] = PENDANT,
+    { label = S.Text("XP food"), level = 1, warn = true, spells = { 1249519, 1249520, 1243969 } },
+    { label = S.Text("Cozy Sleeping Bag"), level = 14, item = 211527, warn = true, maxStacks = 3, spells = { 429959 } },
+    { label = S.Text("Camp Tent"), level = 1, item = 279978, spells = { 1229487 } },
+    { label = S.Text("Undead XP pendant"), level = 30, item = 273049, spells = { 1292997, 1293736 } },
 }
 local TEXT = {
     title = S.Text("Forever XP Optimizer"), quests = S.Text("Quest XP ready to turn in"),
     unknown = S.Text("Unknown"), incomplete = S.Text("Some quest rewards are unavailable."),
     active = S.Text("Active"), missing = S.Text("Missing"), inactive = S.Text("Inactive"),
+    owned = S.Text("Owned"), noStock = S.Text("None in your bags right now."),
     ready = S.Text("Ready"), cooldown = S.Text("Cooldown: %s"),
     stacks = S.Text("%d / 3 stacks (%s)"), lowRested = S.Text("Low rested XP"),
     afk = S.Text("AFK time"), rate = S.Text("Active XP per hour"),
@@ -44,61 +43,68 @@ local TEXT = {
     routePlanned = S.Text("Turn-in route planned. Stops: %d"), routeStopped = S.Text("Turn-in route stopped."),
 }
 
-local function ReadAuras(state, now)
-    for _, row in ipairs(state.bonuses) do row.up, row.expires, row.stacks = nil, nil, nil end
-    local restricted = C_Secrets.ShouldAurasBeSecret()
+local function ReadAura(row, spell, now)
+    -- Some XP auras can be read while other player auras are secret.
+    local restricted = C_Secrets.ShouldSpellAuraBeSecret(spell)
     if not Public(restricted) or restricted ~= false then return false end
-    local complete = true
-    for index = 1, 255 do
-        local aura = C_UnitAuras.GetAuraDataByIndex("player", index, "HELPFUL")
-        if not Public(aura) then return false end
-        if not aura then return complete end
-        if not canaccesstable(aura) then return false end
-        local spell = aura.spellId
-        if not Finite(spell) then
-            complete = false
-        else
-            local row = state.bonuses[AURAS[spell]]
-            if row then
-                local expires, stacks = aura.expirationTime, aura.applications
-                local timed = Finite(expires) and expires > 0
-                if (not timed or expires > now) and (not row.up or (timed and expires > (row.expires or now))) then
-                    row.up = true
-                    row.expires = timed and expires or nil
-                    row.stacks = Finite(stacks) and stacks or nil
-                end
-            end
-        end
+    local aura = C_UnitAuras.GetPlayerAuraBySpellID(spell)
+    if not Public(aura) then return false end
+    if aura == nil then return true end
+    if type(aura) ~= "table" or not canaccesstable(aura) then return false end
+    local id = aura.spellId
+    if not Public(id) or id ~= spell then return false end
+    local expires, stacks = aura.expirationTime, aura.applications
+    local timed = Finite(expires) and expires > 0
+    if (not timed or expires > now) and (not row.up or (timed and expires > (row.expires or now))) then
+        row.up = true
+        row.expires = timed and expires or nil
+        row.stacks = Finite(stacks) and stacks or nil
     end
-    return false
+    return true
+end
+
+local function ReadAuras(row, source, now)
+    row.up, row.expires, row.stacks = nil, nil, nil
+    row.aurasReadable = true
+    for _, spell in ipairs(source.spells) do
+        if not ReadAura(row, spell, now) then row.aurasReadable = false end
+    end
 end
 
 local function HasItem(id)
     local count = C_Item.GetItemCount(id)
-    return Finite(count) and count > 0
+    if Finite(count) then return count > 0 end
 end
 
 local function Owns(source, index, level)
     if index == FOOD then
+        local readable = true
         for _, food in ipairs(FOODS) do
-            if level >= food[2] and HasItem(food[1]) then return true end
+            if level >= food[2] then
+                local owned = HasItem(food[1])
+                if owned then return true end
+                if owned == nil then readable = false end
+            end
         end
-        return false
+        if readable then return false end
+        return nil
     end
-    if index == PENDANT then
+    local owned = HasItem(source.item)
+    if index == PENDANT and not owned then
         local equipped = GetInventoryItemID("player", 2)
-        if Finite(equipped) and equipped == source.item then return true end
+        if not Public(equipped) then return nil end
+        if equipped == source.item then return true end
     end
-    return HasItem(source.item)
+    return owned
 end
 
 local function CooldownEnd(item, now)
     if not item then return nil end
-    local info = C_Spell.GetItemCooldown(item)
-    if not Public(info) or not info or not canaccesstable(info) then return nil, true end
-    local start, duration, enabled = info.startTime, info.duration, info.isEnabled
+    local start, duration, enabled = C_Item.GetItemCooldown(item)
     if not Finite(start) or not Finite(duration) or not Public(enabled) then return nil, true end
-    if enabled and start > 0 and duration > 1.5 and start + duration > now then return start + duration end
+    if duration <= 1.5 then return nil end
+    if enabled ~= true and enabled ~= 1 then return nil, true end
+    if start > 0 and start + duration > now then return start + duration end
 end
 
 local function CanRemind(state)
@@ -107,16 +113,16 @@ local function CanRemind(state)
     return Public(dead) and not dead
 end
 
-local function Warn(row, source, state, now, canRemind)
+local function Warn(row, source, now, canRemind)
     local warning
     if row.up then
         if row.expires and row.expires - now <= WARNING_LEAD then
             warning = TEXT.expiresWarning
-        elseif state.aurasReadable and source.maxStacks and row.stacks
+        elseif row.aurasReadable and source.maxStacks and row.stacks
             and row.stacks > 0 and row.stacks < source.maxStacks then
             warning = TEXT.stacksWarning
         end
-    elseif state.aurasReadable and row.owned and not row.cooldown and not row.cooldownUnknown then
+    elseif row.aurasReadable and row.owned and not row.cooldown and not row.cooldownUnknown then
         warning = TEXT.missingWarning
     end
     if not warning then row.warned = nil end
@@ -156,10 +162,10 @@ local function ReadBonuses(self, now)
     local state = self.optimizer
     local canRemind = now >= state.remindAt and CanRemind(state)
     local deadline = now < state.remindAt and state.remindAt or nil
-    if state.aurasDirty then state.aurasReadable = ReadAuras(state, now) end
     for index, source in ipairs(SOURCES) do
         if state.level >= source.level then
             local row = state.bonuses[index]
+            if state.aurasDirty then ReadAuras(row, source, now) end
             if state.itemsDirty then
                 row.owned = Owns(source, index, state.level)
                 row.cooldown, row.cooldownUnknown = nil, nil
@@ -170,7 +176,7 @@ local function ReadBonuses(self, now)
             deadline = Earliest(deadline, row.expires, now)
             deadline = Earliest(deadline, row.cooldown, now)
             if source.warn then
-                deadline = Earliest(deadline, Warn(row, source, state, now, canRemind), now)
+                deadline = Earliest(deadline, Warn(row, source, now, canRemind), now)
                 deadline = Earliest(deadline, row.expires and row.expires - WARNING_LEAD, now)
             end
         end
@@ -188,12 +194,13 @@ end
 local function QueueStatus(self, event)
     local state = self.optimizer
     state.aurasDirty = true
-    if event == "PLAYER_REGEN_ENABLED" then state.itemsDirty = true end
+    if event == "PLAYER_REGEN_ENABLED" or event == "ADDON_RESTRICTION_STATE_CHANGED" then state.itemsDirty = true end
     state.bonusJob:Request()
 end
 
 local function PlayerAuraChanged(self, _, unit)
-    if Public(unit) and unit == "player" then QueueStatus(self) end
+    -- The unit-specific registration already filters for player if the payload is secret.
+    if not Public(unit) or unit == "player" then QueueStatus(self) end
 end
 
 local function QueueItems(self)
@@ -464,6 +471,7 @@ function Optimizer.Sync(self, level)
     if not state then return Optimizer.Start(self, level) end
     if state.level ~= level then
         state.level = level
+        state.aurasDirty = true
         QueueItems(self)
         state.questJob:Request()
     end
@@ -509,17 +517,23 @@ function Optimizer.Paint(view, fraction, maximum, xp)
     end
 end
 
-local function BonusText(index, row, state, now, rested, maximum)
+local function BonusText(index, row, now, rested, maximum)
     if row.up then
         local duration = row.expires and Duration(math.max(0, row.expires - now)) or TEXT.active
         if index == SLEEP and row.stacks then return TEXT.stacks:format(row.stacks, duration) end
         if index == TENT and row.expires then return TEXT.cooldown:format(duration) end
         return duration
     end
-    if not state.aurasReadable or row.cooldownUnknown then return TEXT.unknown end
     if row.cooldown and row.cooldown > now then return TEXT.cooldown:format(Duration(row.cooldown - now)) end
+    if not row.aurasReadable or row.cooldownUnknown then
+        if row.owned == nil then return TEXT.unknown end
+        return row.owned and TEXT.owned or TEXT.noStock
+    end
     if index == TENT and rested and rested < maximum * .05 then return TEXT.lowRested end
-    if index == TENT or index == PENDANT then return row.owned and TEXT.ready or TEXT.inactive end
+    if index == TENT or index == PENDANT then
+        if row.owned == nil then return TEXT.unknown end
+        return row.owned and TEXT.ready or TEXT.inactive
+    end
     return TEXT.missing
 end
 
@@ -531,7 +545,7 @@ function Optimizer.Tooltip(state, tooltip, rested, maximum)
     tooltip:AddDoubleLine(TEXT.afk, Duration(afk), 1, 1, 1, 1, 1, 1)
     for index, source in ipairs(SOURCES) do
         if state.level >= source.level then
-            tooltip:AddDoubleLine(source.label, BonusText(index, state.bonuses[index], state, now, rested, maximum),
+            tooltip:AddDoubleLine(source.label, BonusText(index, state.bonuses[index], now, rested, maximum),
                 1, 1, 1, 1, 1, 1)
         end
     end

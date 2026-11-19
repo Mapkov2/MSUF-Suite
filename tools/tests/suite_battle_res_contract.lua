@@ -8,17 +8,23 @@ local function Widget()
     function w:CreateTexture() return Widget() end
     function w:CreateFontString() return Widget() end
     function w:SetSize(width, height) self.width, self.height = width, height end
+    function w:SetWidth(width) self.width = width end
+    function w:SetWordWrap() end
+    function w:GetUnboundedStringWidth() return 64 end
     function w:SetScale(value) self.scale = value end
     function w:SetFrameStrata(value) self.strata = value end
     function w:GetFrameStrata() return self.strata or "MEDIUM" end
     function w:SetParent(value) self.parent = value end
+    function w:IsShown() return self.shown end
     function w:EnableMouse(value) self.mouse = value end
     function w:SetAllPoints() end
-    function w:SetColorTexture() end
+    function w:SetColorTexture(...) self.fill = { ... }; self.texture = nil end
+    function w:SetVertexColor(_, _, _, alpha) self.alpha = alpha end
     function w:SetTexture(value) self.texture = value end
     function w:SetPoint(...) self.point = { ... } end
     function w:ClearAllPoints() end
     function w:SetDrawEdge() end
+    function w:SetSwipeTexture(value) self.swipeTexture = value end
     function w:SetHideCountdownNumbers(value) self.hideNumbers = value end
     function w:SetMinimumCountdownDuration(value) self.minimumCountdown = value end
     function w:SetTextColor(...) self.color = { ... } end
@@ -46,7 +52,11 @@ end
 
 UIParent = Widget()
 GetTime = function() return 25 end
-GetInstanceInfo = function() return "Test", instanceType end
+local instanceReads = 0
+GetInstanceInfo = function()
+    instanceReads = instanceReads + 1
+    return "Test", instanceType
+end
 -- The deprecated global exists only while loadDeprecationFallbacks is on;
 -- the module must use the namespaced API.
 IsEncounterInProgress = nil
@@ -85,6 +95,8 @@ S.CreateFrame = function() return Widget() end
 S.CreateTexture = function(parent) return parent:CreateTexture() end
 S.CreateFontString = function(parent) return parent:CreateFontString() end
 S.PlaceEdges = function() end
+S.ResolveTexture = function(key, fallback) return key or fallback end
+S.ResolveFont = function(key) if key ~= "" then return key end end
 S.SetFont = function(fontString, path, size, flags)
     fontString:SetFont(path or "MSUF.ttf", size, flags)
 end
@@ -177,7 +189,7 @@ Event("CHALLENGE_MODE_START")
 assert(M.host.shown and M.count.text == "2" and M.maximum.text == "/3"
     and M.cooldown.duration == charges.duration and callbacks.SPELL_UPDATE_CHARGES,
     "active Mythic+ charges or native countdown did not appear")
-local readBefore = chargeReads
+local readBefore, instanceBefore = chargeReads, instanceReads
 charges = { currentCharges = 1, maxCharges = 3, isActive = true,
     display = "1", duration = {} }
 local formatted = M.maximum.formatted or 0
@@ -206,6 +218,7 @@ charges = nil
 Event("SPELL_UPDATE_CHARGES")
 assert(not M.host.shown and M.cooldown.duration == nil,
     "unavailable shared pool showed a made-up count")
+assert(instanceReads == instanceBefore, "charge events re-read the instance type")
 
 Event("CHALLENGE_MODE_COMPLETED")
 assert(not callbacks.SPELL_UPDATE_CHARGES and not M.host.shown,
@@ -233,11 +246,11 @@ M:Refresh()
 assert(not M.host.shown and not M.cooldown.preview,
     "Edit Mode left a fake pool or timer visible")
 
-instanceType, challenge = "party", false
+instanceType, challenge = nil, false
 Event("CHALLENGE_MODE_START")
 assert(#timers == 1 and not callbacks.SPELL_UPDATE_CHARGES,
     "early key start should schedule only one bounded recheck")
-challenge = true
+instanceType, challenge = "party", true
 Drain()
 assert(M.host.shown and callbacks.SPELL_UPDATE_CHARGES,
     "delayed key activation missed the shared pool")
@@ -273,8 +286,8 @@ assert(rule.threshold == 0 and rule.format == '%02d:%02d' and rule.components[1]
     'compact countdown does not preserve padded minutes and seconds')
 charges.display, charges.currentCharges, charges.duration = secret, secret, secret
 Event('SPELL_UPDATE_CHARGES')
-assert(M.count.text == secret and M.cooldown.duration == secret and not binding.enabled and not M.time.shown,
-    'secret object should keep native cooldown support without binding or fabricating a text duration')
+assert(M.count.text == secret and M.cooldown.duration == nil and not binding.enabled and not M.time.shown,
+    'compact mode must neither bind a secret object nor start its hidden swipe')
 charges.display, charges.currentCharges, charges.duration = '0', 0, {}
 Event('SPELL_UPDATE_CHARGES')
 assert(binding.enabled and M.time.shown and M.count.text == '0', 'public duration did not recover after restriction')
@@ -342,16 +355,47 @@ local previewConfig = { textOnly = true, font = "Preview.ttf", fontSize = 15,
 local previewHost = S.DrawBattleResPreview(parent, previewConfig, nil, viewport)
 local preview = assert(parent.suiteBattleResPreview)
 assert(previewHost == preview.host and preview.host.parent == parent and preview.host.shown
-    and preview.time.text == "02:38" and preview.separator.text == "+"
-    and preview.durationBinding.initialFont == "Preview.ttf" and preview.durationBinding.initialSize == 15,
-    "cold compact preview used text or a duration binding before its configured font")
+    and preview.time.text == "02:38" and preview.separator.text == "+" and not preview.durationBinding,
+    "cold compact preview did not use static sample text")
 AssertFont(preview, "Preview.ttf", 15)
-local previewBinding = preview.durationBinding
 bindingCount = #nativeBindings
 previewConfig.font, previewConfig.fontSize = "PreviewWarm.ttf", 20
 assert(S.DrawBattleResPreview(parent, previewConfig, nil, viewport) == previewHost)
 AssertFont(preview, "PreviewWarm.ttf", 20)
-assert(preview.durationBinding == previewBinding and #nativeBindings == bindingCount
-    and not preview.durationBinding.enabled, "cached preview recreated or enabled its sample timer")
+assert(not preview.durationBinding and #nativeBindings == bindingCount, "preview allocated a live duration binding")
+
+-- Independent geometry and saved media must reach the live display without
+-- touching charge reads except when the corresponding element is enabled.
+instanceType, challenge = "party", true
+charges = { maxCharges = 3, display = "1", isActive = true, duration = {} }
+local previousConfig = M.config
+local c = {}
+for key, value in pairs(previousConfig) do c[key] = value end
+M.config = c
+c.backgroundOpacity, c.borderShown = 0, false
+c.iconX, c.iconY, c.iconSize, c.iconTexture = 21, -6, 30, "12345"
+c.titleX, c.titleSize, c.titleFont = 9, 15, "Title.ttf"
+c.countShown, c.timerShown = false, false
+local beforeDisplay, beforeDuration = displayReads, durationReads
+M:Enable()
+assert(M.host.shown and not M.panel.shown and not M.edges[1].shown and not M.count.shown and not M.cooldown.shown)
+assert(M.icon.point[4] == 24 and M.icon.point[5] == -6 and M.icon.width == 30 and M.icon.texture == 12345)
+assert(M.title.point[4] == 57 and M.title.fontSize == 15 and M.title.fontPath == "Title.ttf")
+assert(displayReads == beforeDisplay and durationReads == beforeDuration)
+c.backgroundOpacity, c.backgroundTexture, c.backgroundWidth, c.backgroundHeight = 38, "grain", 180, 32
+c.borderShown, c.borderTexture, c.borderOpacity = true, "line", 42
+c.timerShown, c.timerTexture, c.timerSize = true, "swipe", 130
+M:Refresh()
+assert(M.panel.shown and M.panel.texture == "grain" and M.panel.alpha == .38
+    and M.panel.width == 180 and M.panel.height == 32)
+assert(M.edges[1].shown and M.edges[1].texture == "line" and M.edges[1].alpha == .42)
+assert(M.cooldown.shown and M.cooldown.swipeTexture == "swipe" and M.cooldown.scale == 1.3)
+c.backgroundShown, c.borderOpacity, c.titleShown, c.iconShown, c.maximumShown, c.timerShown = false, 0, false, false, false, false
+local beforeCharges = chargeReads
+M:Refresh()
+assert(not M.host.shown and not callbacks.SPELL_UPDATE_CHARGES and chargeReads == beforeCharges,
+    'a fully hidden display still watched or queried charges')
+M:Disable()
+M.config = previousConfig
 
 print("Battle resurrection: contextual charges, native timer, secrets, mover, font initialization and teardown passed")

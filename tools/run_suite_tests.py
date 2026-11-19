@@ -7,8 +7,10 @@ a filter selects it with "ratchet".
 """
 
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -17,7 +19,18 @@ BRANCH = ROOT.parent
 MSUF_LEGACY = BRANCH / "_repo_backups" / "6.22"
 # MSUF 7.0: the host with icon skins (MSUF_HostAPI.GetIconSkins).
 MSUF_70 = BRANCH / "MidnightSimpleUnitFrames-7.0"
-LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
+def lua_executable():
+    configured = os.environ.get("MSUF_LUA51")
+    if configured:
+        return configured
+    discovered = shutil.which("lua5.1") or shutil.which("lua51")
+    if discovered:
+        return discovered
+    portable = Path(tempfile.gettempdir()) / "msuf-lua51" / "portable" / "lua.exe"
+    return str(portable) if portable.is_file() else shutil.which("lua") or "lua"
+
+
+LUA = lua_executable()
 HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua",
            "suite_installer_harness.lua", "suite_bh3_state_support.lua",
            "suite_bh3_state_gear_fixture.lua", "suite_bh3_state_inspect_fixture.lua",
@@ -27,6 +40,7 @@ FLAVORS = ("Mainline", "Forever")
 EXTRA = {
     "suite_anchor_popup_choices_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_nameplates_friendly_visibility_contract.lua": [[], ["Forever"]],
+    "suite_nameplates_friendly_rollback_contract.lua": [[], ["Forever"]],
     "suite_nameplate_extras_contract.lua": [[], ["Forever"]],
     "suite_dev_bar_animation_contract.lua": [[str(MSUF_70 / "tools/tests/classpower_secrets.lua")]],
     "suite_trainer_learn_all_contract.lua": [[str(MSUF_70 / "tools/tests/classpower_secrets.lua")]],

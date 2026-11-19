@@ -89,6 +89,8 @@ Reconcile = function()
     local merchant = visible[Safety.Field(_G, "MerchantFrame")]
     local auction = visible[Safety.Field(_G, "AuctionHouseFrame")]
     local bank = visible[Safety.Field(_G, "BankFrame")]
+    local mail = visible[Safety.Field(_G, "MailFrame")]
+    local openMail = visible[Safety.Field(_G, "OpenMailFrame")]
     local bagsOpen = false
     for frame, state in pairs(visible) do
         local surface = presentations[frame]
@@ -101,10 +103,11 @@ Reconcile = function()
         end
         if tradingBags[state.name] then bagsOpen = true end
     end
-    -- Banking, shopping and upgrading use several windows together. Keep
-    -- all their participants clear even when another window receives input.
+    -- These workflows use multiple windows together. Keep their participants
+    -- clear even when another window receives input.
     local shopping = bagsOpen and (merchant or auction)
     local banking = bagsOpen and bank
+    local mailing = bagsOpen and (mail or openMail)
     local backpack = visible[Safety.Field(_G, "ContainerFrameCombinedBags")]
     local reagent = visible[Safety.Field(_G, "ContainerFrame6")]
     local bagPair = backpack and reagent
@@ -116,6 +119,7 @@ Reconcile = function()
         state.keepClear = state == active or upgrading and (state == character or state == upgrade)
             or shopping and (state == merchant or state == auction or tradingBags[state.name])
             or banking and (state == bank or tradingBags[state.name])
+            or mailing and (state == mail or state == openMail or tradingBags[state.name])
             or bagPair and (state == backpack or state == reagent)
         if state.keepClear and not state.readable then clearBounds = false end
     end

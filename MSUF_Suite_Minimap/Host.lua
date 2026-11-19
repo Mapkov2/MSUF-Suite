@@ -660,6 +660,7 @@ function MM.Claim()
     MM.ApplyMap(true)
     M.mapOwned = true
     MM.ApplyDecorations()
+    S.MinimapDock.SetMap(MM.host)
 end
 flushers.claim = MM.Claim
 
@@ -688,6 +689,7 @@ end
 function MM.ReleaseMap()
     local map, record = _G.Minimap, mapRecord
     mapRecord, M.mapOwned = nil, false
+    S.MinimapDock.SetMap(nil)
     if not record then return false end
     if not Usable(map) then return true end
     local parent, lost = record.parent, record.points == nil

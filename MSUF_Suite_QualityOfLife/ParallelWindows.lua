@@ -10,6 +10,11 @@ local reviewed = {
     MerchantFrame = true, MailFrame = true, GuildBankFrame = true, TradeFrame = true,
     WorldMapFrame = true, LFGParentFrame = true,
 }
+-- The Forever quest pages share Blizzard's QuestInfo widgets and selection
+-- state. Keep them in the native left slot with the map so they replace each other.
+local foreverManaged = {
+    MailFrame = true, WorldMapFrame = true, QuestFrame = true, QuestLogPopupDetailFrame = true,
+}
 local sideAreas = { left = true, doublewide = true, centerOrLeft = true, right = true }
 local childPanels = {
     LootFrame = true, PetitionFrame = true, PVPBannerFrame = true, ClubFinderGuildRecruitmentDialog = true,
@@ -23,6 +28,7 @@ local bagNames = {
     "ContainerFrameCombinedBags", "ContainerFrame1", "ContainerFrame2", "ContainerFrame3",
     "ContainerFrame4", "ContainerFrame5", "ContainerFrame6", "ContainerFrame7",
 }
+local tradingWindows = { MerchantFrame = true, AuctionHouseFrame = true }
 local ESCAPE_FRAME = "MSUFSuiteParallelWindowsEscape"
 local AREA = "UIPanelLayout-area"
 local DEFINED = "UIPanelLayout-defined"
@@ -32,7 +38,7 @@ local windowLimit = 0
 local escapeArmed = false
 local serial, ownedCount, shownBags, openedWindows = 0, 0, 0, 0
 local placementIndex = 0
-local bagOrder
+local bagOrder, bagOwner
 
 local function Accessible(frame)
     return NS.Public(frame) and frame and not NS.Safety.IsForbidden(frame)
@@ -64,6 +70,12 @@ local function NativeOnly(record)
     return record.nativeOnly or record.foreverOnly and NS.Client.isForever
 end
 
+local function ClosingBagsHidesCharacter()
+    -- Forever's combined bag OnHide calls ToggleCharacter in Gamepad UI.
+    return NS.Client.isForever and bagFrames[_G.ContainerFrameCombinedBags]
+        and Visible(_G.CharacterFrame) and S.GamepadUI()
+end
+
 local function CanClose(frame, managed, combat)
     if not frame or not shown[frame] then return false end
     local record = records[frame]
@@ -73,6 +85,8 @@ local function CanClose(frame, managed, combat)
     local protected, explicit = frame:IsProtected()
     if protected and (not canCloseManaged or frame ~= playerSpells or explicit ~= false) then return false end
     if frame == _G.CharacterFrame and NS.Client.isForever and S.GamepadUI() then return false end
+    -- Blizzard can still have an opener when the player reopens its bags by hand.
+    if record.closesTradingBags and (not bagOwner or frame == bagOwner) and ClosingBagsHidesCharacter() then return false end
     if combat then
         -- HideUIPanel is gated even for floating frames. Only use Hide for our own
         -- detached roots with reviewed native OnHide scripts.
@@ -81,11 +95,12 @@ local function CanClose(frame, managed, combat)
     return canCloseManaged or IsFree(frame)
 end
 
+local function HasIndependentBags()
+    return shownBags > 0 and not (bagOwner and records[bagOwner].open)
+end
+
 local function CanCloseBags()
-    if shownBags == 0 then return false end
-    -- Forever's combined bag OnHide calls ToggleCharacter in Gamepad UI.
-    if NS.Client.isForever and bagFrames[_G.ContainerFrameCombinedBags]
-        and Visible(_G.CharacterFrame) and S.GamepadUI() then return false end
+    if not HasIndependentBags() or ClosingBagsHidesCharacter() then return false end
     for frame, open in pairs(bagFrames) do
         if open then
             if not Accessible(frame) then return false end
@@ -116,21 +131,24 @@ end
 
 local function LastOpenWindow()
     local newest, order
-    if shownBags > 0 then newest, order = bagFrames, bagOrder end
+    if HasIndependentBags() then newest, order = bagFrames, bagOrder end
     for frame, opened in pairs(shown) do
         if Visible(frame) and (not order or opened > order) then newest, order = frame, opened end
     end
     return newest
 end
 
+local function MarkClosed(frame, record)
+    if bagOwner == frame then bagOwner = nil end
+    if not record.open then return end
+    record.open = false
+    openedWindows = openedWindows - 1
+end
+
 local function ForgetClosedWindows()
     for frame in pairs(shown) do
         if not Visible(frame) then
-            local record = records[frame]
-            if record.open then
-                record.open = false
-                openedWindows = openedWindows - 1
-            end
+            MarkClosed(frame, records[frame])
             shown[frame] = nil
         end
     end
@@ -160,7 +178,7 @@ local function Queue()
 end
 
 local function WindowCount()
-    return openedWindows + (shownBags > 0 and 1 or 0)
+    return openedWindows + (HasIndependentBags() and 1 or 0)
 end
 
 local function QueueCap()
@@ -172,7 +190,9 @@ end
 local function CloseWindow(frame, combat)
     if frame == bagFrames then
         NS.Dispatch(CloseAllBags)
-        return shownBags == 0
+        if shownBags ~= 0 then return false end
+        bagOrder = nil
+        return true
     end
     if combat then
         NS.Dispatch(frame.Hide, frame)
@@ -180,11 +200,10 @@ local function CloseWindow(frame, combat)
         NS.Dispatch(HideUIPanel, frame)
     end
     if Visible(frame) then return false end
-    local record = records[frame]
-    if record.open then
-        record.open = false
-        openedWindows = openedWindows - 1
-    end
+    MarkClosed(frame, records[frame])
+    -- Suite closes inside flush, after the native hide/show reconciliation.
+    -- A subsequent open must get a new place in the window order.
+    shown[frame] = nil
     return true
 end
 
@@ -240,9 +259,8 @@ end
 
 local function OnHide(frame)
     local record = records[frame]
-    if not record.open or Visible(frame) then return end
-    record.open = false
-    openedWindows = openedWindows - 1
+    if (not record.open and bagOwner ~= frame) or Visible(frame) then return end
+    MarkClosed(frame, record)
     -- A native resize can hide and re-show in one stack. Defer ordering and
     -- only revisit the panel that lost its native slot.
     if record.detachable and (M.active and not NativeOnly(record) and not record.area
@@ -371,10 +389,10 @@ local function TrackPanel(name, info, combat)
         layout = area,
         open = frame:IsShown(),
         combatClose = combatClose[name],
+        closesTradingBags = tradingWindows[name],
         detachable = sideAreas[area] and (reviewed[name] or StandardLayout(info)),
         nativeOnly = name == "PlayerSpellsFrame" or name == "BankFrame",
-        -- The Forever map's quest pins and mailbox's emote need the native manager.
-        foreverOnly = name == "MailFrame" or name == "WorldMapFrame",
+        foreverOnly = foreverManaged[name],
         retailCap = reviewed[name] or name == "PlayerSpellsFrame",
     }
     records[frame] = record
@@ -391,11 +409,21 @@ local function TrackPanel(name, info, combat)
     frame:HookScript("OnShow", OnShow)
 end
 
+local function OpeningTrader()
+    -- Native trader OnShow opens bags before our panel OnShow hook runs.
+    for name in pairs(tradingWindows) do
+        local frame = _G[name]
+        local record = Accessible(frame) and records[frame]
+        if record and not record.open and frame:IsShown() then return frame end
+    end
+end
+
 local function OnBagShow(frame)
     if bagFrames[frame] then return end
     bagFrames[frame] = true
     shownBags = shownBags + 1
     if shownBags == 1 then
+        bagOwner = OpeningTrader()
         if not bagOrder then
             serial = serial + 1
             bagOrder = serial
@@ -408,7 +436,12 @@ local function OnBagHide(frame)
     if not bagFrames[frame] or Visible(frame) then return end
     bagFrames[frame] = false
     shownBags = shownBags - 1
-    if shownBags == 0 then Queue() end
+    if shownBags == 0 then
+        -- A manual reopen should get a new place in FIFO after the attached bags close.
+        if bagOwner then bagOrder = nil end
+        bagOwner = nil
+        Queue()
+    end
 end
 
 -- Observe native calls after their frame scripts, including client builds

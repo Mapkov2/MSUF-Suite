@@ -1,10 +1,12 @@
 local _, private = ...
 local S, NS, Map = private.Suite, private.NS, private.NavigationHUDMap
 local Compass, Heading = NS.Compass, S.CompassHeading
+local Markers = private.NavigationHUDMarkers
 local ID = "navigationHUD"
 local M = {}
 
 local ART_CHECK_TICKS = 20
+local MAP_RECOVERY_DELAY, MAP_RECOVERY_ATTEMPTS = .2, 5
 local floor = math.floor
 local MAP_SHORTCUT, OVERLAY_COMMAND, ZONE_MAP_COMMAND = "SHIFT-M", "MSUFSUITE_TOGGLE_MAP_OVERLAY", "TOGGLEBATTLEFIELDMINIMAP"
 local CUSTOM_SHORTCUT = 2
@@ -15,12 +17,28 @@ local EVENT_NAMES = {
     "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED",
 }
 
+local RecoverMap
+
+local function CancelMapRecovery(self)
+    if not self.mapRecovery then return end
+    self.mapRecovery = nil
+    self.context:Cancel(RecoverMap)
+end
+
 local function PaintLive(self, mapReady, compassWanted, bearing)
+    local wasMap, wasCompass = self.mapLive, self.compassLive
     if mapReady then
+        if self.mapRecovery then CancelMapRecovery(self) end
         self.map:SetHeading(bearing and floor(bearing + .5) % 360)
         if not self.mapLive then self.map:Show(false) end
     elseif self.mapLive then
         self.map.frame:Hide()
+        if self.mapRequested then
+            -- A requested overlay can briefly lose its map or position. Retry
+            -- at a lower rate while it is hidden, without keeping the map watcher.
+            self.mapRecovery = MAP_RECOVERY_ATTEMPTS
+            self.context:After(MAP_RECOVERY_DELAY, RecoverMap)
+        end
     end
     self.mapLive = mapReady
     local compassReady = compassWanted and bearing ~= nil
@@ -32,12 +50,14 @@ local function PaintLive(self, mapReady, compassWanted, bearing)
         self.compass.frame:Hide()
     end
     self.compassLive = compassReady
+    self.markerBearing = (mapReady or compassReady) and bearing or nil
+    return mapReady ~= wasMap or compassReady ~= wasCompass
 end
 
 local function ReadMap(self, readWaypoint)
     local ready, changed = self.map:SelectArt()
     if not ready then return false end
-    if changed or readWaypoint then self.map:UpdateWaypoint(self.config.showWaypoint) end
+    if changed or readWaypoint then self.map:UpdateWaypoint(self.config.showMarkers and self.config.showWaypoint) end
     return self.map:Sample()
 end
 
@@ -52,11 +72,12 @@ local function Sample(self, bearing)
             ready = self.map:Sample()
         end
     end
-    PaintLive(self, ready, self.config.showCompass, bearing)
+    if PaintLive(self, ready, self.config.showCompass, bearing) then Markers.Sync(self) end
     if not self.mapLive and not self.compassLive then Heading.Watch(self) end
 end
 
-local function Stop(self)
+local function StopSurfaces(self)
+    CancelMapRecovery(self)
     Heading.Watch(self)
     self.map.frame:Hide()
     if self.compass then
@@ -64,6 +85,12 @@ local function Stop(self)
         self.compass.frame:Hide()
     end
     self.mapLive, self.compassLive, self.previewing = false, false, false
+    self.markerBearing = nil
+end
+
+local function Stop(self)
+    StopSurfaces(self)
+    Markers.Stop(self)
 end
 
 local function Eligible(self, event)
@@ -73,8 +100,30 @@ local function Eligible(self, event)
     return S.Public(inInstance) and inInstance == false
 end
 
+RecoverMap = function(self)
+    local remaining = self.mapRecovery
+    if not remaining or not self.active or not self.mapRequested or not self.driver:IsVisible()
+        or S.editMode or not Eligible(self) then
+        self.mapRecovery = nil
+        return
+    end
+    if ReadMap(self, true) then
+        self.mapRecovery, self.artTicks = nil, 0
+        PaintLive(self, true, self.config.showCompass, Heading.Read())
+        Heading.Watch(self, Sample)
+        Markers.Sync(self)
+    elseif remaining > 1 then
+        self.mapRecovery = remaining - 1
+        self.context:After(MAP_RECOVERY_DELAY, RecoverMap)
+    else
+        self.mapRecovery = nil
+    end
+end
+
 local function ShowEditPreview(self)
+    CancelMapRecovery(self)
     Heading.Watch(self)
+    Markers.Stop(self)
     self.mapLive, self.compassLive, self.previewing = false, false, true
     self.map:Show(true)
     if self.compass then
@@ -94,12 +143,17 @@ local function RefreshVisibility(self, event)
         return
     end
     local eligible = Eligible(self, event)
-    if self.previewing or not eligible then Stop(self) end
-    if not eligible then return end
+    if self.previewing or (not eligible and (self.mapLive or self.compassLive or self.mapRecovery)) then StopSurfaces(self) end
+    if not eligible then
+        Markers.Sync(self, event)
+        return
+    end
+    if not self.mapRequested then CancelMapRecovery(self) end
     self.artTicks = 0
     local mapReady, compassWanted = self.mapRequested and ReadMap(self, true) or false, self.config.showCompass
     PaintLive(self, mapReady, compassWanted, (mapReady or compassWanted) and Heading.Read() or nil)
     Heading.Watch(self, (self.mapLive or self.compassLive) and Sample or nil)
+    Markers.Sync(self, event)
 end
 
 local function Layout(self)
@@ -125,6 +179,12 @@ local function OnContextChanged(self, event)
         return
     end
     if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then Layout(self) end
+    if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+        Markers.Invalidate(self)
+    elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "UI_SCALE_CHANGED"
+        or event == "DISPLAY_SIZE_CHANGED" then
+        Markers.Invalidate(self, "map")
+    end
     RefreshVisibility(self, event)
     local zoneEntry = event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
     if zoneEntry and not self.previewing and self.driver:IsVisible() and Eligible(self, event) then
@@ -137,17 +197,19 @@ end
 
 local function WaypointChanged(self)
     if self.mapLive then self.map:UpdateWaypoint(self.config.showWaypoint) end
+    Markers.Invalidate(self, "map")
 end
 
 local function SyncListeners(self)
-    local listen = self.mapRequested or self.config.showCompass
+    local c = self.config
+    local listen = self.mapRequested or c.showCompass or (c.showMarkers and c.showGatheringMinimap)
     if self.listening ~= listen then
         self.listening = listen
         for _, event in ipairs(EVENT_NAMES) do
             if listen then self.context:Event(event, OnContextChanged, true) else self.context:RemoveEvent(event) end
         end
     end
-    if self.mapRequested and self.config.showWaypoint then
+    if c.showMarkers and c.showWaypoint and (self.mapRequested or (c.showCompass and c.showMapMarkers)) then
         self.context:Event("USER_WAYPOINT_UPDATED", WaypointChanged, true)
     else
         self.context:RemoveEvent("USER_WAYPOINT_UPDATED")
@@ -199,6 +261,7 @@ function M:Enable()
     end
     Layout(self)
     SyncListeners(self)
+    Markers.Bind(self)
     self.driver:Show()
     for _, event in ipairs(SHORTCUT_EVENTS) do self.driver:RegisterEvent(event) end
     RefreshDefaultShortcut(self)
@@ -207,6 +270,7 @@ end
 function M:Refresh()
     Layout(self)
     SyncListeners(self)
+    Markers.Bind(self)
     RefreshVisibility(self)
     RefreshDefaultShortcut(self)
 end
@@ -217,6 +281,7 @@ end
 
 function M:Disable()
     Heading.Watch(self)
+    Markers.Disable(self)
     if self.driver then
         for _, event in ipairs(SHORTCUT_EVENTS) do self.driver:UnregisterEvent(event) end
         RefreshDefaultShortcut(self)
@@ -228,7 +293,8 @@ end
 
 function M:ToggleMap()
     if S.editMode then return false end
-    self.mapRequested = not self.mapRequested
+    -- A hidden overlay with no pending recovery can try opening again.
+    self.mapRequested = not (self.mapRequested and (self.mapLive or self.mapRecovery))
     RefreshVisibility(self)
     if self.mapLive then
         PlaySound(SOUNDKIT.IG_QUEST_LOG_OPEN)

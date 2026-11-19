@@ -30,6 +30,14 @@ local function Frame(kind, parent, source)
     function frame:GetRegions() return unpack(self.regions) end
     function frame:GetAlpha() return self.alpha end
     function frame:SetAlpha(value) self.alpha = value end
+    function frame:GetFont()
+        if self.font then return self.font, 14, "" end
+        if self.fontObject then return self.fontObject:GetFont() end
+    end
+    function frame:SetFont(font) self.font = font return true end
+    function frame:GetFontObject() return self.fontObject end
+    function frame:SetFontObject(font) self.fontObject, self.font = font, nil end
+    function frame:GetText() return self.text end
     function frame:GetTextColor() return unpack(self.textColor or { 1, 1, 1, 1 }) end
     function frame:SetTextColor(...) self.textColor = { ... } end
     function frame:GetVertexColor() return unpack(self.vertex) end
@@ -445,6 +453,106 @@ SpokenEnv.DialogueUIPlayer:Unbuffer() Flush()
 Check(parchment.vertex[1] == 1, "Spoken cooperative transfer retained a deferred skin")
 NS.PublicAPI.OnRegistrationChanged("Spoken", false) Flush()
 Check(parchment.vertex[1] == 0.2, "Spoken cooperative unregister did not restore the automatic skin")
+
+do
+    NS.AddonSkins.SetOption("enabled", false) Flush()
+    local oldStyle = NS.LabelStyle
+    Load("Core/LabelStyle.lua")
+    NS.DB.typography = { enabled = true }
+    NS.Typography = { GetSelection = Noop, GetSelectionPath = function() return "Suite.ttf" end }
+    STANDARD_TEXT_FONT = "NativeText.ttf"
+    local template = Frame("Font")
+    template.font = "Suite.ttf"
+    local function Label(parent, text)
+        local label = Frame("FontString", parent)
+        label:SetFontObject(template)
+        label.text = text
+        return label
+    end
+    SpokenEnv.Subtitle = {}
+    function SpokenEnv.Subtitle:Build()
+        local frame = Frame("Frame", UIParent)
+        frame.name, frame.scripts.OnUpdate = "SpokenSubtitleFrame", nativeTick
+        self.frame, SpokenSubtitleFrame = frame, frame
+        self.title, self.dot = Label(frame, "Bibbly"), Label(frame, "·")
+        self.heldDot, self.moreDot = Label(frame, "·"), Label(frame, "·")
+        self.shadow, self.fill = Frame("Texture"), Frame("Texture")
+        self.portrait = Frame("Texture")
+    end
+    NS.Registry.NotifyListeners("typography", "enabled") Flush()
+    SpokenEnv.Subtitle:Build() Flush()
+    local subtitle = SpokenEnv.Subtitle
+    Check(subtitle.dot.font == STANDARD_TEXT_FONT and subtitle.shadow.vertex[1] == 1,
+        "global typography lost the separator when addon skins were off")
+    NS.AddonSkins.SetOption("enabled", true) Flush()
+    Check(not paintModes[subtitle.frame] and not surfaces[subtitle.frame]
+        and subtitle.shadow.vertex[1] == .2 and subtitle.fill.vertex[1] == .2
+        and subtitle.title.textColor[1] == .2, "lazy subtitle did not receive the transparent themed skin")
+    for _, label in ipairs({ subtitle.dot, subtitle.heldDot, subtitle.moreDot }) do
+        Check(label.font == STANDARD_TEXT_FONT and label.text == "·", "subtitle separator lost its native glyph")
+    end
+    Check(subtitle.frame.scripts.OnUpdate == nativeTick and subtitle.portrait.vertex[1] == 1,
+        "subtitle skin changed the playback update or portrait")
+
+    local map = Frame("Frame", UIParent)
+    SpokenPlaces = {}
+    function SpokenPlaces:SetupMapPanel()
+        local panel = Frame("Frame", map, "@Interface/AddOns/Spoken_Places/UI/MapPanel.lua:142")
+        panel.name = "SpokenPlacesPanel"
+        panel.backdrop, panel.Center = {}, Frame("Texture")
+        panel.TitleContainer = { TitleText = Label(panel, "Place Story") }
+        panel.rim, panel.close = Frame("Frame", panel), Frame("Button", panel)
+        panel.close.scripts.OnClick = nativeTick
+        local page = { sub = { text = Label(panel, "In Kalimdor · 15 of 19 discovered") },
+            bg = Frame("Texture"), picture = Frame("Texture") }
+        panel.page = setmetatable({ page = page }, { __index = function(self, key) return self.page[key] end })
+        SpokenPlacesPanel = panel
+    end
+    function SpokenPlaces:ApplyPanelOptions()
+        SpokenPlacesPanel.page.sub.text:SetFontObject(template)
+    end
+    Check(NS.AddonSkins.ResolveApp("Spoken_Places") == "spoken", "Spoken Places load event has no adapter")
+    NS.AddonSkins.SetOption("enabled", false) Flush()
+    Event("ADDON_LOADED", "Spoken_Places") Flush()
+    combat = true
+    SpokenPlaces:SetupMapPanel() Flush()
+    local panel = SpokenPlacesPanel
+    local line = panel.page.sub.text
+    Check(not paints[panel] and panel.rim.alpha == 1 and line:GetFont() == "Suite.ttf", "Place Story was changed in combat")
+    combat = false Flush()
+    Check(not paints[panel] and line.font == STANDARD_TEXT_FONT, "late Places load missed glyph repair with addon skins off")
+    NS.AddonSkins.SetOption("enabled", true) Flush()
+    Check(paintModes[panel] and paintModes[panel].role == "shell" and paints[panel.close] == "close",
+        "Place Story created beside the map missed the Suite shell or close glyph")
+    Check(panel.rim.alpha == 0 and panel.Center.alpha == 0 and panel.page.bg.alpha == 1 and panel.page.picture.alpha == 1
+        and panel.close.scripts.OnClick == nativeTick, "Place Story skin changed its content or close action")
+    Check(line.font == STANDARD_TEXT_FONT and line.text == "In Kalimdor · 15 of 19 discovered",
+        "Place Story discovery text lost its separator or content")
+    SpokenPlaces:ApplyPanelOptions() Flush()
+    Check(line.font == STANDARD_TEXT_FONT, "Spoken options reapplied the broken separator font")
+    template.font = "RestoredGameFont.ttf"
+    NS.DB.typography.enabled = false
+    NS.Registry.NotifyListeners("typography", "enabled") Flush()
+    Check(line:GetFont() == template.font and subtitle.dot:GetFont() == template.font,
+        "disabled typography retained a stale font instead of restoring the template")
+    template.font = "Suite.ttf"
+    NS.DB.typography.enabled = true
+    NS.Registry.NotifyListeners("typography", "enabled") Flush()
+    Check(line.font == STANDARD_TEXT_FONT and subtitle.dot.font == STANDARD_TEXT_FONT,
+        "re-enabled typography missed the separator font")
+    NS.AddonSkins.SetOption("spoken", false) Flush()
+    Check(panel.rim.alpha == 1 and panel.Center.alpha == 1 and subtitle.shadow.vertex[1] == 1 and subtitle.fill.vertex[1] == 1
+        and line:GetFont() == STANDARD_TEXT_FONT and subtitle.dot:GetFont() == STANDARD_TEXT_FONT,
+        "disabling Spoken skin did not restore native chrome independently of typography")
+    NS.DB.blizzardWindowsEnabled = false
+    NS.Registry.NotifyListeners("adapter", "blizzardWindowsEnabled") Flush()
+    Check(line:GetFont() == "Suite.ttf" and subtitle.dot:GetFont() == "Suite.ttf",
+        "disabling Blizzard typography did not release Spoken's inherited fonts")
+    NS.DB.blizzardWindowsEnabled = nil
+    NS.DB.typography, NS.LabelStyle = nil, oldStyle
+    SpokenEnv.Subtitle, SpokenSubtitleFrame, SpokenPlaces, SpokenPlacesPanel = nil, nil, nil, nil
+end
+
 -- RestedXP's legacy shell can be implicitly protected by its secure item
 -- buttons; the reviewed builtin exception remains strictly out of combat.
 RXPFrame = Frame("Frame", UIParent, "@Interface/AddOns/RXPGuides/GuideWindow.lua:24")
@@ -836,7 +944,8 @@ Check(not NS.AddonSkins.SetOption("enabled", false), "combat setting mutation wa
 combat = false
 NS.AddonSkins.SetOption("enabled", false) Flush()
 for _, frame in ipairs(frames) do
-    Check(not frame.scripts.OnUpdate or frame == spokenPlayer and frame.scripts.OnUpdate == nativeTick
+    Check(not frame.scripts.OnUpdate
+        or (frame == spokenPlayer or frame.name == "SpokenSubtitleFrame") and frame.scripts.OnUpdate == nativeTick
         or frame == profiler.ProfilerFrame and frame.scripts.OnUpdate == profilerTick
         or frame == profiler.PinContainer and frame.scripts.OnUpdate == profilerTick,
         "addon skin introduced idle polling")

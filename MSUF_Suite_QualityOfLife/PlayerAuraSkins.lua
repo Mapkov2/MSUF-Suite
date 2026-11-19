@@ -20,41 +20,77 @@ local M = {}
 -- controller's rule, as for the action bars' skins), so the skins appear then:
 -- painting in combat would make textures in combat.
 --   painted  button -> { look, w, h } it shows
---   layers   Duration -> its draw layer before a skin lifted it
+--   layers   native region -> its original draw layer and sublevel
 local painted, layers = {}, {}
 local yielded = false -- Player aura layout paints the buttons now
 local waiting -- a frame that paints at the combat end
-local IsSecret = NS.IsSecret
+local IsSecret, IsForbidden = NS.IsSecret, NS.Safety.IsForbidden
 
--- The Duration sits on BACKGROUND, under a skin's layers: while a skin draws
--- it moves to OVERLAY (the Count's layer), and back when the skin goes.
-local function Layer(text, skin)
-    if not (text and text.SetDrawLayer) then return end
-    local before = layers[text]
-    if skin and not before then
-        local layer, sublayer = text:GetDrawLayer()
+local function Layer(region, target)
+    if IsSecret(region) or not region or IsForbidden(region) or not region.SetDrawLayer then return end
+    local before = layers[region]
+    if target and not before then
+        local layer, sublayer = region:GetDrawLayer()
         if IsSecret(layer) or IsSecret(sublayer) then return end
-        layers[text] = { layer, sublayer or 0 }
-        text:SetDrawLayer("OVERLAY", 0)
-    elseif not skin and before then
-        layers[text] = nil
-        text:SetDrawLayer(before[1], before[2])
+        layers[region] = { layer, sublayer or 0 }
+        region:SetDrawLayer(target, 0)
+    elseif not target and before then
+        layers[region] = nil
+        region:SetDrawLayer(before[1], before[2])
     end
+end
+
+-- AuraButtonArtTemplate puts Icon on BACKGROUND and the native dispel and
+-- enchant borders on OVERLAY. Keep their colors above Icon, below the skin's
+-- ARTWORK and gloss. Count and Symbol already draw above the gloss.
+local function SetLayers(button, skin)
+    Layer(button.Duration, skin and "OVERLAY")
+    Layer(button.DebuffBorder, skin and "BORDER")
+    Layer(button.TempEnchantBorder, skin and "BORDER")
 end
 
 -- One button at its Icon's size; a button that never showed a skin never
 -- calls MSUF.
-local function Paint(button, look)
-    local icon = button and button.Icon
-    if not icon or button.isAuraAnchor then return end
-    local shown = painted[button]
+local function PaintLook(cache, button, icon, look, w, h)
+    local shown = cache[button]
     if not (look or shown) then return end
+    if shown and shown.look == look and shown.w == w and shown.h == h then return true end
+    local skin = NS.HostBridge.PaintIconSkin(button, look, w, h, icon)
+    cache[button] = skin and { look = look, w = w, h = h } or nil
+    SetLayers(button, skin)
+    return skin
+end
+
+local function NativeIcon(button)
+    local icon, private = button.Icon, button.isAuraAnchor
+    if not (IsSecret(private) or private or IsSecret(icon) or not icon or IsForbidden(icon)) then return icon end
+end
+
+-- While a button uses the native grid, its artwork may still have secret resolved bounds.
+local function PaintNative(button, look, cache)
+    if IsSecret(button) or not button or IsForbidden(button) then return end
+    local icon = NativeIcon(button)
+    if not icon then return end
+    local w, h = icon:GetWidth(), icon:GetHeight()
+    if not S.Finite(w) or w <= 0 then w = icon:GetWidth(true) end
+    if not S.Finite(h) or h <= 0 then h = icon:GetHeight(true) end
+    -- Ordinary AuraButtonArtTemplate textures on both clients start at 30 x 30.
+    PaintLook(cache, button, icon, look, S.Finite(w) and w > 0 and w or 30, S.Finite(h) and h > 0 and h or 30)
+end
+
+local function PaintNativeRow(frame, look, cache)
+    for _, button in ipairs(frame.auraFrames) do NS.Dispatch(PaintNative, button, look, cache) end
+    if frame.ConsolidatedBuffs then NS.Dispatch(PaintNative, frame.ConsolidatedBuffs, look, cache) end
+end
+
+local function Paint(button, look)
+    if IsSecret(button) or not button or IsForbidden(button) then return end
+    if not look then return PaintLook(painted, button) end
+    local icon = NativeIcon(button)
+    if not icon then return end
     local w, h = icon:GetWidth(), icon:GetHeight()
     if IsSecret(w) or IsSecret(h) then return end
-    if shown and shown.look == look and shown.w == w and shown.h == h then return end
-    local skin = NS.HostBridge.PaintIconSkin(button, look, w, h, icon)
-    painted[button] = skin and { look = look, w = w, h = h } or nil
-    Layer(button.Duration, skin)
+    PaintLook(painted, button, icon, look, w, h)
 end
 local function PaintFrame(name, look)
     local frame = _G[name]
@@ -81,14 +117,23 @@ local function Apply()
     end
     local on, c = M.active and not yielded, S.Config("playerAuras")
     local bridge = NS.HostBridge
-    PaintFrame("BuffFrame", on and bridge.IconSkinLook(c.buffSkin) or nil)
-    PaintFrame("DebuffFrame", on and bridge.IconSkinLook(c.debuffSkin) or nil)
+    PaintFrame("BuffFrame", on and bridge.PlayerAuraSkin(c.buffSkin) or nil)
+    PaintFrame("DebuffFrame", on and bridge.PlayerAuraSkin(c.debuffSkin) or nil)
+end
+
+local function NativeLoaded(self, _, addon)
+    if addon ~= "Blizzard_BuffFrame" then return end
+    self.context:RemoveEvent("ADDON_LOADED")
+    Apply()
 end
 
 function M:Enable()
     self.active = true
     -- MSUF's default icon skin changed: Refresh paints the new look.
     NS.HostBridge.WatchIconSkins("playerAuraSkins", true)
+    if not (BuffFrame and DebuffFrame) then
+        self.context:Event("ADDON_LOADED", NativeLoaded)
+    end
     Apply()
 end
 
@@ -98,6 +143,7 @@ end
 
 function M:Disable()
     self.active = false
+    self.context:RemoveEvent("ADDON_LOADED")
     NS.HostBridge.WatchIconSkins("playerAuraSkins", false)
     Apply()
 end
@@ -105,6 +151,9 @@ end
 -- Player aura layout starts (on) or has let go of the buttons (off): the
 -- skins it would paint over go first, and come back after it.
 P.PlayerAuraSkins = {
+    PaintNativeRow = PaintNativeRow,
+    PaintLook = PaintLook,
+    SetLayers = SetLayers,
     Yield = function(on)
         yielded = on == true
         Apply()

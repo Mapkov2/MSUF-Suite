@@ -64,13 +64,13 @@ O.UpdateQuestItem(module)
 O.UpdateQuestItem(module, true)
 assert(button.attributes.item1 == nil, "module disable must clear its binding even before active flips")
 local row, item, color = {}, { kind = "entry", questID = 1, group = "campaign" }, { 1, 1, 0 }
-assert(O.PaintQuestIcon(module, row, item, { questIconStyle = 2 }, color) == 31 and row.questBadge.text == "C")
+assert(O.PaintQuestIcon(module, row, item, { questIconStyle = 2 }, color) == 31 and row.questTypeGlyph.text == "C")
 item.questIcon, item.questIconAtlas = "CampaignInProgressQuestIcon", true
 assert(O.PaintQuestIcon(module, row, item, { questIconStyle = 3 }, color) == 31
-    and row.questIcon.atlas == item.questIcon and not row.questBadge.shown)
+    and row.questIcon.atlas == item.questIcon and not row.questTypeGlyph.shown)
 item.questIcon, item.questIconAtlas = "Interface/GossipFrame/ActiveQuestIcon", false
 O.PaintQuestIcon(module, row, item, { questIconStyle = 3 }, color)
 assert(row.questIcon.texture == item.questIcon, "native texture paths must not be treated as atlases")
 assert(O.PaintQuestIcon(module, row, item, { questIconStyle = 1 }, color) == 12
-    and not row.questIcon.shown and not row.questBadge.shown, "off must restore ordinary text space")
+    and not row.questIcon.shown and not row.questTypeGlyph.shown, "off must restore ordinary text space")
 print("objective shortcut priority, secure lifecycle, reuse and symbol styles passed")

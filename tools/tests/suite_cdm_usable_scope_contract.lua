@@ -239,10 +239,35 @@ do
     entries, C.Index.usable, C.views.b = all, all, view
 end
 
+-- The time reader is isolated in this fixture, but the measured entries
+-- get their actual cooldown rules from the cold routing index.
+local routingIndex
+do
+    local mockIndex = C.Index
+    C.Const.FAMILY.COOLDOWN = 1
+    C.Const.Choice, C.Const.BarStacks = noop, noop
+    C.Ranks = { on = false }
+    P.NS.CDM.SLOTS = { { key = "a" }, { key = "b" } }
+    assert(loadfile(root .. "/MSUF_Suite_CooldownManager/Index.lua"))("contract", P)
+    routingIndex, C.Index = C.Index, mockIndex
+end
+local function PrepareMeasuredEntries()
+    local plans = C.plans
+    C.plans = { a = { kind = 1, entries = {} }, b = { kind = 1, entries = {} } }
+    for _, entry in ipairs(entries) do
+        entry.linked = {}
+        local list = C.plans[entry.slot].entries
+        list[#list + 1] = entry
+    end
+    routingIndex.Rebuild()
+    C.plans = plans
+end
+
 -- Product-only VM count; stubs have their native calls counted separately.
 -- 200 passes, 12 icons of six exact spells in two bars. Cold rebind/broadcast,
 -- ordinary broadcast and warm full refresh are budgeted separately.
 local function Measure(label, rebind, broadcast, invalidate)
+    PrepareMeasuredEntries()
     local function Batch()
         for _ = 1, 200 do
             if rebind and not invalidate then

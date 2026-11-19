@@ -57,16 +57,62 @@ local FAQ = {
         help = "The Suite Cooldown manager page (CDM) shows Blizzard's tracked cooldowns and buffs as bars you arrange and style freely.",
         words = "cdm|cooldown manager|cooldowns|essential cooldowns|utility cooldowns|tracked buffs|enable cooldown manager" },
 }
--- Feature words, searchable in English and as their translation.
-local FEATURE_WORDS = {
-    glimmer = { "Quest item sparkle", "Quest objects", "Ore", "Herbs", "Sparkles" },
-    dungeonPortals = { "dungeonportal", "dungeon portal", "dungeon portals" },
-    characterExtras = { "character window" },
-    flightTimer = { "flight time" },
-    popupAttention = { "dialog window", "loot notice" },
-}
+-- Construct the vocabulary on the first provider build. Only English and the
+-- active menu translation enter the index, including on older hosts.
+local FEATURE_QUERIES, FEATURE_WORDS
+local function PrepareFeatureWords()
+    if FEATURE_QUERIES then return end
+    FEATURE_QUERIES = {
+        groupDeathAlert = {
+            "Alert when a group member dies",
+            "Which party or raid member just died",
+            "Who died in my group",
+            "Tell me when someone in my party is dead",
+            "Notify me about player deaths in the group",
+        },
+        battleRes = {
+            "How many battle res charges are left",
+            "Remaining battle rez charges for the group",
+            "Do we still have a combat res available",
+            "Can we resurrect someone during the fight",
+            "When can we brez",
+            "Combat resurrection",
+        },
+        groupBloodlust = {
+            "When is Heroism available again",
+            "When can we use Bloodlust or Time Warp again",
+            "How long until the Sated or Exhaustion debuff ends",
+            "When can we lust again",
+            "When can we lust",
+        },
+        cursorEffects = {
+            "I keep losing my mouse cursor in combat",
+            "Lost the mouse pointer and cannot find it in a fight",
+            "Ring around the mouse cursor",
+            "Circle around the pointer so it is easier to see",
+            "Where is my mouse",
+            "Find my mouse pointer",
+        },
+        actionTracker = {
+            "Show the spells I just cast",
+            "My own recently used abilities in the order I cast them",
+            "What did I cast",
+            "Last spells",
+            "Which spells did I just cast",
+        },
+    }
+    FEATURE_WORDS = {
+        glimmer = { "Quest item sparkle", "Quest objects", "Ore", "Herbs", "Sparkles" },
+        dungeonPortals = { "dungeonportal", "dungeon portal", "dungeon portals" },
+        characterExtras = { "character window" },
+        flightTimer = { "flight time" },
+        popupAttention = { "dialog window", "loot notice" },
+    }
+end
+
 local KIND_OF = { font = "dropdown", texture = "dropdown", choices = "dropdown" }
 local EMPTY_ROWS = {}
+local TRIM_CHECKPOINT_ROWS = 64
 
 -- Search describes what this client can use, including settings of features
 -- that the player has turned off. Opening a result never turns a feature on.
@@ -307,11 +353,12 @@ end
 
 -- Instance section names ("Pet bar", "Window 2", "Essential cooldowns") are
 -- not page sections; they become words of the page row instead.
-local function ModuleRows(rows, page, spec, instanceTitles)
+local function ModuleRows(rows, page, spec, instanceTitles, checkpoint)
     local seenRules, seenSections = {}, {}
     local config = Suite.Suite.Config(spec.id)
-    local controls = spec.getControls and spec.getControls(config) or spec.controls
+    local controls = spec.getControls and spec.getControls(config, checkpoint) or spec.controls
     for _, sourceRule in ipairs(controls) do
+        if checkpoint then checkpoint() end
         local rule = sourceRule
         if TemplateKey(sourceRule) and sourceRule.sectionTitle and not seenSections["instance:" .. sourceRule.sectionTitle] then
             seenSections["instance:" .. sourceRule.sectionTitle] = true
@@ -357,12 +404,38 @@ local function FeatureOwner(feature, page, category)
         { title = P.QoLOwners.Title(feature.id) or category.title }
 end
 
-local function QualityOfLifeRows(rows, page, modules, pageRow)
+local function FeatureKeywords(feature, category, spec, particles)
+    local keywords = {}
+    AddWords(keywords, feature.title)
+    AddWords(keywords, category.title)
+    AddWords(keywords, spec.title)
+    for _, word in ipairs(feature.aliases or {}) do keywords[#keywords + 1] = word end
+    for _, word in ipairs(feature.keywords or {}) do keywords[#keywords + 1] = word end
+    local phrases, queries, concepts = FEATURE_QUERIES[feature.id]
+    if phrases then
+        queries = {}
+        for _, phrase in ipairs(phrases) do AddWords(queries, phrase) end
+        for _, query in ipairs(queries) do keywords[#keywords + 1] = query end
+        if particles then
+            local groups = rawget(Suite.L, "msufsuite.search." .. feature.id)
+            if groups then
+                concepts = { particles }
+                for group in groups:gmatch("[^;]+") do concepts[#concepts + 1] = group end
+            end
+        end
+    end
+    for _, word in ipairs(FEATURE_WORDS[feature.id] or EMPTY_ROWS) do AddWords(keywords, word) end
+    return keywords, queries, concepts
+end
+
+local function QualityOfLifeRows(rows, page, modules, pageRow, checkpoint)
     local categories, features = P.QualityOfLifeCategories, P.QualityOfLifeSearchFeatures
     if type(categories) ~= "table" or type(features) ~= "table" then return false end
     -- Keep cold search row ordering identical without sorting an unseen page
     -- during ADDON_LOADED. Later page builds also re-sort for locale changes.
     if not P.qualityOfLifeSorted then P.SortQualityOfLifeCategories() end
+    PrepareFeatureWords()
+    local particles = Suite.L and rawget(Suite.L, "msufsuite.search.particles")
     local installed, byCategory = {}, {}
     for _, spec in ipairs(modules) do installed[spec.id] = spec end
     for _, category in ipairs(categories) do
@@ -370,22 +443,18 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
     end
     byCategory.gameplay = P.QoLView.GameplayCategory
     for _, feature in ipairs(features) do
+        if checkpoint then checkpoint() end
         local spec, category = installed[feature.id], byCategory[feature.category]
         if spec and category then
             local featurePage, visibleCategory = FeatureOwner(feature, page, category)
             local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
-            local keywords = {}
-            AddWords(keywords, feature.title)
-            AddWords(keywords, category.title)
-            AddWords(keywords, spec.title)
-            for _, word in ipairs(feature.aliases or {}) do keywords[#keywords + 1] = word end
-            for _, word in ipairs(feature.keywords or {}) do keywords[#keywords + 1] = word end
-            for _, word in ipairs(FEATURE_WORDS[feature.id] or EMPTY_ROWS) do AddWords(keywords, word) end
+            local keywords, queries, concepts = FeatureKeywords(feature, category, spec, particles)
             -- Color settings live in the feature's shortcut rather than as
             -- standalone widgets. Index their names on the exact feature row.
             local ruleRows, seen = {}, {}
             for _, sectionKey in ipairs(feature.sections) do
-                for _, rule in ipairs(P.SectionRules(feature.id, sectionKey)) do
+                for _, rule in ipairs(P.SectionRules(feature.id, sectionKey, nil, checkpoint)) do
+                    if checkpoint then checkpoint() end
                     if rule.key ~= feature.switch and not rule.hidden and not seen[rule.key] then
                         seen[rule.key] = true
                         if rule.color then AddWords(keywords, rule.label) end
@@ -399,7 +468,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
             rows[#rows + 1] = {
                 pageKey = featurePage.key, kind = "toggle", label = Tr(feature.title),
                 suiteModuleId = spec.id, suiteFeatureSwitch = feature.switch, suiteModuleSwitch = true,
-                qolFeatureId = feature.id,
+                qolFeatureId = feature.id, queryPhrases = queries, queryConcepts = concepts,
                 section = Tr(visibleCategory.title), keywords = keywords,
                 settingKey = "msufsuite." .. feature.id .. "." .. feature.switch,
                 sectionId = sectionId,
@@ -428,10 +497,12 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
     return true
 end
 
-function P.SearchRows()
+-- Produce the visible rows in the collector's private array.
+function P.SearchRows(checkpoint)
     P.ForgetAvailability()
     local rows, byPage, pagesByKey = {}, ModulesByPage(), {}
     for _, page in ipairs(P.pages) do
+        if checkpoint then checkpoint() end
         if PageAvailable(page.key) then
             local modules, instanceTitles = byPage[page.key] or {}, {}
             local pageRow = PageRow(page, modules)
@@ -462,9 +533,9 @@ function P.SearchRows()
                     }
                 end
             end
-            if page.key ~= "suite_qualityOfLife" or not QualityOfLifeRows(rows, page, modules, pageRow) then
+            if page.key ~= "suite_qualityOfLife" or not QualityOfLifeRows(rows, page, modules, pageRow, checkpoint) then
                 for _, spec in ipairs(modules) do
-                    ModuleRows(rows, page, spec, instanceTitles)
+                    ModuleRows(rows, page, spec, instanceTitles, checkpoint)
                 end
             end
             for _, title in ipairs(instanceTitles) do AddWords(pageRow.keywords, title) end
@@ -476,11 +547,12 @@ function P.SearchRows()
     end
     -- Skinning rows are gated per row below; its maintenance actions are
     -- found also while the Skin addon is off.
-    for _, row in ipairs(P.SkinSearchRows()) do rows[#rows + 1] = row end
-    P.AppendSearchActionRows(rows, pagesByKey)
-    P.PlayerAurasPage.AppendSearchRows(rows, RuleRow)
-    local visible = {}
-    for _, row in ipairs(rows) do
+    for _, row in ipairs(P.SkinSearchRows(checkpoint)) do rows[#rows + 1] = row end
+    P.AppendSearchActionRows(rows, pagesByKey, checkpoint)
+    P.PlayerAurasPage.AppendSearchRows(rows, RuleRow, checkpoint)
+    local write = 0
+    for read, row in ipairs(rows) do
+        if checkpoint then checkpoint() end
         local available, inactive = P.SearchRowAvailable(row.pageKey, row.settingKey, row)
         if available then
             if inactive then
@@ -488,87 +560,48 @@ function P.SearchRows()
                 row.section = Tr("Off") .. (row.section and (" > " .. row.section) or "")
                 if row.hint then row.hint = row.hint .. " > " .. Tr("Off") end
             end
-            visible[#visible + 1] = row
+            write = write + 1
+            if write ~= read then rows[write] = row end
         end
     end
-    return visible
+    for index = #rows, write + 1, -1 do
+        rows[index] = nil
+        if checkpoint and index % TRIM_CHECKPOINT_ROWS == 0 then checkpoint() end
+    end
+    return rows
 end
 
--- Each host caps a provider's rows. Keep ordinary modules separate from
--- dynamic bars, partitioned by configured ordinal rather than numeric ID.
--- The host collects sorted provider names once per invalidated rebuild, so
--- the base callback generates every row once and the fixed siblings reuse it.
-local ROWS_PER_PROVIDER, EXTRA_PROVIDERS = 4000, 2
-local BARS_PER_GROUP = 16
-local GROUP_COUNT = math.ceil(Suite.DataTextBarLimit / BARS_PER_GROUP)
-local barGroups, baseOverflow = {}, {}
-local function CollectBase()
-    local ordinal = {}
-    for index, bar in ipairs(Suite.DataTextBarIDs(P.S.Config("dataTexts"))) do
-        ordinal[tostring(bar)] = math.ceil(index / BARS_PER_GROUP)
-    end
-    local base, baseCount = {}, 0
-    barGroups, baseOverflow = {}, {}
-    for _, row in ipairs(P.SearchRows()) do
-        local bar = row.pageKey == "suite_dataTexts" and
-            ((row.suiteRuleKey or ""):match("^bar(%d+)") or (row.sectionId or ""):match("^suite_dataTexts_bar(%d+)"))
-        local group = bar and ordinal[bar]
-        if group then
-            local rows = barGroups[group]
-            if not rows then
-                rows = {}
-                barGroups[group] = rows
-            end
-            rows[#rows + 1] = row
-        elseif not bar then
-            local page = math.floor(baseCount / ROWS_PER_PROVIDER)
-            local bucket = base
-            if page > 0 then
-                bucket = baseOverflow[page]
-                if not bucket then
-                    bucket = {}
-                    baseOverflow[page] = bucket
-                end
-            end
-            bucket[#bucket + 1] = row
-            baseCount = baseCount + 1
-        end
-    end
-    return base
-end
 -- Classic MSUF asks before each search whether the provider's context
 -- changed. Blizzard's AddOn list can switch a Suite addon off while the menu
 -- is open, so availability is read again; settings changes also invalidate
 -- through P.Refresh.
-local contextSignature
+-- QoL sorts its feature list by translated title on first use. Compare
+-- switches by module and setting so a display reorder cannot restart a build.
+local lastContext, spareContext, lastCount, lastSkin
 local function SearchContextChanged()
     P.ForgetAvailability()
-    local parts = {}
+    local current, previous = spareContext or {}, lastContext
+    local features = P.QualityOfLifeSearchFeatures or EMPTY_ROWS
+    local count = #P.order + #features
+    local changed = count ~= lastCount
     for _, id in ipairs(P.order) do
-        parts[#parts + 1] = not ModuleAvailable(id) and "-" or P.S.Config(id).enabled == true and "1" or "0"
+        local value = not ModuleAvailable(id) and -1 or P.S.Config(id).enabled == true and 1 or 0
+        if not previous or previous[id] ~= value then changed = true end
+        current[id] = value
     end
-    for _, feature in ipairs(P.QualityOfLifeSearchFeatures or EMPTY_ROWS) do
-        parts[#parts + 1] = P.S.Config(feature.id)[feature.switch] == true and "1" or "0"
+    for _, feature in ipairs(features) do
+        local key = feature.id .. "." .. feature.switch
+        local enabled = P.S.Config(feature.id)[feature.switch] == true
+        if not previous or previous[key] ~= enabled then changed = true end
+        current[key] = enabled
     end
-    parts[#parts + 1] = not SkinAvailable() and "-" or P.SkinningEnabled() == true and "1" or "0"
-    local signature = table.concat(parts)
-    local changed = signature ~= contextSignature
-    contextSignature = signature
+    local skin = not SkinAvailable() and -1 or P.SkinningEnabled() == true and 1 or 0
+    if lastSkin ~= skin then changed = true end
+    if previous then wipe(previous) end
+    lastContext, spareContext, lastCount, lastSkin = current, previous, count, skin
     return changed
 end
-P.searchRegistered = M.RegisterSearchProvider("MSUF_Suite", CollectBase, SearchContextChanged) == true
-for index = 1, EXTRA_PROVIDERS do
-    local page = index
-    M.RegisterSearchProvider("MSUF_Suite.Controls." .. page, function()
-        return baseOverflow[page] or EMPTY_ROWS
-    end)
-end
-for index = 1, GROUP_COUNT do
-    local group = index
-    M.RegisterSearchProvider("MSUF_Suite.DataTexts." .. string.format("%02d", group), function()
-        return barGroups[group] or EMPTY_ROWS
-    end)
-end
+P.RegisterSuiteSearch(SearchContextChanged)
 
 -- Search records from visited pages and the cold provider share this gate.
 -- Supported details remain discoverable while a module is off. Unavailable
@@ -728,13 +761,6 @@ end
 Suite.HostBridge.RegisterSearchTargetResolver(M, "MSUF_Suite.FormerChatBehavior", ResolveFormerChatBehavior)
 
 if M.RegisterSearchAvailability then M.RegisterSearchAvailability("MSUF_Suite", P.SearchRowAvailable) end
-if M.InvalidateSearchProvider then
-    function P.InvalidateSearch() M.InvalidateSearchProvider("MSUF_Suite") end
-else
-    -- Registering again clears the host's cached rows of every provider; the
-    -- DataText siblings read the partition the base collector refills first.
-    function P.InvalidateSearch() M.RegisterSearchProvider("MSUF_Suite", CollectBase, SearchContextChanged) end
-end
 Suite.Registry.AddListener(P.SearchRows, function(_, domain)
     if domain == "profile" then
         P.ForgetAvailability()

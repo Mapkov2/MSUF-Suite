@@ -65,7 +65,14 @@ function Labels.CanStyle(label, menu)
         and (parent == nil or not Safety.IsCompositorManaged(parent))
 end
 
-function Labels.Apply(label, owner, menu, configured)
+local function InheritedFont(label, path, height, flags)
+    if not Safety.HasMethod(label, "SetFontObject") then return end
+    local font = Safety.Read(label, "GetFontObject")
+    local inheritedPath, inheritedHeight, inheritedFlags = ReadFont(font)
+    if inheritedPath == path and inheritedHeight == height and inheritedFlags == flags then return font end
+end
+
+function Labels.Apply(label, owner, menu, configured, restoreInheritance)
     if NS.IsCombatLocked() or not Labels.CanStyle(label, menu) then return end
     local current, height, flags = ReadFont(label)
     if not current then return end
@@ -90,11 +97,16 @@ function Labels.Apply(label, owner, menu, configured)
         local r, g, b, a = Safety.ReadColor(label, "GetTextColor")
         label:SetFontObject(font)
         if r then label:SetTextColor(r, g, b, a) end
-        styled[label] = { owner = owner, path = original, applied = desired, font = nativeFont }
+        styled[label] = { owner = owner, path = original, applied = desired, font = nativeFont, menu = true }
         return
     end
+    local nativeFont
+    if restoreInheritance then
+        if previous and previous.applied == current then nativeFont = previous.font
+        else nativeFont = InheritedFont(label, current, height, flags) end
+    end
     if Safety.HasMethod(label, "SetFont") and label:SetFont(desired, height, flags) then
-        styled[label] = { owner = owner, path = original, applied = desired }
+        styled[label] = { owner = owner, path = original, applied = desired, font = nativeFont }
     end
 end
 
@@ -107,7 +119,7 @@ function Labels.Release(label, owner, resetByPool)
         return
     end
     styled[label] = nil
-    if resetByPool or not Labels.CanStyle(label, previous.font ~= nil) then return end
+    if resetByPool or not Labels.CanStyle(label, previous.menu) then return end
     local current, height, flags = ReadFont(label)
     if not current or current:lower() ~= previous.applied:lower() then return end
     if previous.font then

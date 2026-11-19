@@ -33,6 +33,9 @@ function Slots.Bind(targets)
         for button in pairs(places) do Reset(button) end
     end
     if next(places) then
+        if not P.NS.InCombat() then
+            for button in pairs(places) do Compass.PrepareSlot(button, S.CreateFrame, S.CreateTexture) end
+        end
         if editing then
             Paint(Slots, 90)
             Heading.Watch(Slots)

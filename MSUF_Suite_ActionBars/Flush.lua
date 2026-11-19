@@ -289,6 +289,10 @@ local function CountWalk()
 end
 local function IconWalk()
     Walk(Icon)
+    if AB.procRoutesStale then
+        if M.config.procGlow == PROC_PIXEL then WalkNative(GlowCheck) end
+        AB.procRoutesStale = nil
+    end
     for index = 1, 10 do
         local bar = AB.bars[index]
         if bar and not bar.native and Visible(bar) then Refill(bar) end

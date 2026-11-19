@@ -262,6 +262,11 @@ local function Command(message)
     if Suite.IsSecret(message) or type(message) ~= "string" then return end
     local command, value = message:lower():match("^%s*(%S*)%s*(%S*)%s*$")
     if command == "" and Suite.Menu.Open("suite_devMode") then return end
+    if command == "quest" then
+        if Suite.Client.isForever then Suite.DevQuestTurnIn.Command(value)
+        else Dev.Report(false, "unsupported") end
+        return
+    end
     if value == "" and (command == "on" or command == "off") then
         local ok, reason, key = Dev.SetAll(command == "on")
         Dev.Report(ok, reason, key)
@@ -286,6 +291,7 @@ local function Command(message)
     end
     Suite.Print(Suite.Text("Use /msufdev to open Dev Mode, /msufdev on or off, or /msufdev taint 0, 1 or 2."))
     Suite.Print("/msufdev log (" .. Suite.Text("Taint logging") .. ")")
+    if Suite.Client.isForever then Suite.Print("/msufdev quest on | off | capture | report | latest") end
 end
 
 SLASH_MSUFSUITEDEVMODE1 = "/msufdev"

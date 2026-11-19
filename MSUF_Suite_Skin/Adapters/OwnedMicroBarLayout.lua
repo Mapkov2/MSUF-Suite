@@ -9,10 +9,11 @@ local Layout = {
 }
 NS.OwnedMicroBarLayout = Layout
 
-local Field = NS.Safety.Field
 local Call = NS.Safety.Call
 local Public = NS.Safety.Public
 local HasMethod = NS.Safety.HasMethod
+local IsSecretValue = issecretvalue
+local function PublicNumber(value) return type(value) == "number" and Public(value) end
 -- SharedXML utilities, loaded before any addon on every client.
 local GridLayoutUtil = _G.GridLayoutUtil
 local AnchorUtil = _G.AnchorUtil
@@ -87,7 +88,9 @@ local function FitToChildren(root, children)
     local left, right, top, bottom
     for index = 1, #children do
         local x, y, width, height = Call(children[index], "GetScaledRect")
-        if x == nil or not Public(x) or not Public(y) or not Public(width) or not Public(height) then
+        -- The native getter returns one complete numeric rect or no rect.
+        if type(x) ~= "number" or IsSecretValue and
+            (IsSecretValue(x) or IsSecretValue(y) or IsSecretValue(width) or IsSecretValue(height)) then
             x, y, width, height = 1, 1, 1, 1
         else
             x, y, width, height = x / scale, y / scale, width / scale, height / scale
@@ -168,13 +171,13 @@ end
 -- The first and last native button by layoutIndex, hidden ones included,
 -- exactly as MicroMenuMixin:GetEdgeButton collects them.
 local function EdgeButtons(...)
-    local first, last
+    local first, last, firstIndex, lastIndex
     for index = 1, select("#", ...) do
         local child = select(index, ...)
-        local layoutIndex = Field(child, "layoutIndex")
-        if type(layoutIndex) == "number" then
-            if not first or layoutIndex < first.layoutIndex then first = child end
-            if not last or layoutIndex > last.layoutIndex then last = child end
+        local layoutIndex = (not IsSecretValue or not IsSecretValue(child)) and child.layoutIndex
+        if type(layoutIndex) == "number" and (not IsSecretValue or not IsSecretValue(layoutIndex)) then
+            if not first or layoutIndex < firstIndex then first, firstIndex = child, layoutIndex end
+            if not last or layoutIndex > lastIndex then last, lastIndex = child, layoutIndex end
         end
     end
     return first, last
@@ -184,22 +187,23 @@ end
 -- the ticket button sits above/below the button on the outer screen edge.
 local function AnchorHelpButton(root, horizontal, left, bottom)
     local help = HelpOpenWebTicketButton
+    if not help then return end
     local first, last = EdgeButtons(root:GetChildren())
     if not first then return end
-    local firstX, firstY = first:GetCenter()
-    local lastX, lastY = last:GetCenter()
-    if not firstX or not lastX then return end
+    local firstX, firstY = Call(first, "GetCenter")
+    local lastX, lastY = Call(last, "GetCenter")
     local edge
     if horizontal then
+        if not (PublicNumber(firstX) and PublicNumber(lastX)) then return end
         if left then
             edge = firstX > lastX and first or last
         else
             edge = firstX < lastX and first or last
         end
-    elseif bottom then
-        edge = firstY > lastY and first or last
     else
-        edge = firstY < lastY and first or last
+        if not (PublicNumber(firstY) and PublicNumber(lastY)) then return end
+        if bottom then edge = firstY > lastY and first or last
+        else edge = firstY < lastY and first or last end
     end
     help:SetPoint("CENTER", edge, "CENTER", 0, bottom and HELP_BUTTON_OFFSET or -HELP_BUTTON_OFFSET)
 end

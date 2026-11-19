@@ -13,6 +13,26 @@ local COLORS = {
     { "classColor", "Class Style" },
 }
 
+local LAYOUTS = {
+    { "classic", "Modern MSUF Suite", "Modern Suite layout with DataTexts, damage meters and optional Skin." },
+    { "forever", "MSUF Suite Forever", "Forever Suite layout with Antique Map and optional parchment Skin." },
+    { "modernDark", "Modern Dark", "Dark unit frames, class colors and square cooldown icons." },
+    { "blizzard", "MSUF Blizzard", "Gold portraits, centered cooldowns and a familiar Blizzard layout." },
+    { "darkRaid", "Dark Raid", "Compact dark frames, a corner raid grid and centered cooldowns." },
+    { "wayfarer", "Wayfarer", "Brass frames, three action rows and a quest tracker below the map." },
+}
+
+function Picker.LayoutName(layout)
+    for _, entry in ipairs(LAYOUTS) do
+        if entry[1] == layout then return entry[2] end
+    end
+    return LAYOUTS[1][2]
+end
+
+function Picker.HasPaletteChoice(layout)
+    return layout ~= "blizzard" and layout ~= "wayfarer"
+end
+
 local function ExistingRows(window, button, choose)
     local names = Suite.SuiteProfiles.Names()
     local height = math.max(177, #names * 36)
@@ -86,7 +106,7 @@ end
 local function Sample(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(104, 10)
-    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 388, -21)
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 388, -17)
     frame.edge = frame:CreateTexture(nil, "BACKGROUND")
     frame.edge:SetTexture("Interface\\Buttons\\WHITE8X8")
     frame.edge:SetAllPoints(frame)
@@ -129,20 +149,17 @@ local function Swatches(control)
 end
 
 local function PaintPreviews(window, layout, look)
-    local classic, forever = window.previewProfile("classic"), window.previewProfile("forever")
-    PaintSample(window.classic.preview, Colors(classic, look))
-    PaintSample(window.forever.preview, Colors(forever, look))
-    local modernDark = window.previewProfile("modernDark")
-    PaintSample(window.modernDark.preview, Colors(modernDark, look))
-    local blizzard = window.previewProfile("blizzard")
-    PaintSample(window.blizzard.preview, Colors(blizzard, "authored"))
-    local darkRaid = window.previewProfile("darkRaid")
-    PaintSample(window.darkRaid.preview, Colors(darkRaid, look))
-    local profile = layout == "darkRaid" and darkRaid or layout == "blizzard" and blizzard or layout == "modernDark" and modernDark
-        or layout == "forever" and forever or classic
+    local selectedProfile
+    for _, card in ipairs(window.layoutCards) do
+        local profile = window.previewProfile(card.layout)
+        local palette = Picker.HasPaletteChoice(card.layout) and look or "authored"
+        PaintSample(card.preview, Colors(profile, palette))
+        if card.layout == layout then selectedProfile = profile end
+    end
+    if not Picker.HasPaletteChoice(layout) then return end
     local keys = { "bgColor", "borderColor", "barColor", "leftColor" }
     for _, control in ipairs(window.colors) do
-        local colors = Colors(profile, control.look)
+        local colors = Colors(selectedProfile, control.look)
         for index, texture in ipairs(control.swatches) do
             texture:SetShown(colors ~= nil)
             if colors then Tint(texture, colors[keys[index]]) end
@@ -151,35 +168,24 @@ local function PaintPreviews(window, layout, look)
 end
 
 function Picker.Build(window, label, card, button, style, chooseLayout, chooseLook, previewProfile)
-    window.classic = card(window, 36, 241, function() chooseLayout("classic") end)
-    window.classic.title:SetText(Text("Modern MSUF Suite"))
-    window.classic.detail:SetText(Text("Modern Suite layout with DataTexts, damage meters and optional Skin."))
-    window.forever = card(window, 36, 169, function() chooseLayout("forever") end)
-    window.forever.title:SetText(Text("MSUF Suite Forever"))
-    window.forever.detail:SetText(Text("Forever Suite layout with Antique Map and optional parchment Skin."))
-    window.modernDark = card(window, 36, 149, function() chooseLayout("modernDark") end)
-    window.modernDark.title:SetText(Text("Modern Dark"))
-    window.modernDark.detail:SetText(Text("Dark unit frames, class colors and square cooldown icons."))
-    window.blizzard = card(window, 36, 149, function() chooseLayout("blizzard") end)
-    window.blizzard.title:SetText(Text("MSUF Blizzard"))
-    window.blizzard.detail:SetText(Text("Gold portraits, centered cooldowns and a familiar Blizzard layout."))
-    window.darkRaid = card(window, 36, 149, function() chooseLayout("darkRaid") end)
-    window.darkRaid.title:SetText(Text("Dark Raid"))
-    window.darkRaid.detail:SetText(Text("Compact dark frames, a corner raid grid and centered cooldowns."))
-    for _, control in ipairs({ window.classic, window.forever, window.modernDark, window.blizzard, window.darkRaid }) do
-        control:SetHeight(34)
-        control.mark:SetPoint("TOPLEFT", control, "TOPLEFT", 388, -2)
-        control.mark:SetHeight(14)
-        control.title:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -2)
-        control.title:SetHeight(14)
-        control.detail:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -16)
-        control.detail:SetHeight(16)
+    local cards = {}
+    for index, entry in ipairs(LAYOUTS) do
+        local layout, name, description = entry[1], entry[2], entry[3]
+        local control = card(window, 36, 0, function() chooseLayout(layout) end)
+        control.layout = layout
+        control.title:SetText(Text(name))
+        control.detail:SetText(Text(description))
+        control:SetHeight(28)
+        control.mark:SetPoint("TOPLEFT", control, "TOPLEFT", 388, -1)
+        control.mark:SetHeight(13)
+        control.title:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -1)
+        control.title:SetHeight(13)
+        control.detail:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -14)
+        control.detail:SetHeight(13)
+        control.preview = Sample(control)
+        cards[index], window[layout] = control, control
     end
-    window.previewProfile = previewProfile
-    window.classic.preview, window.forever.preview = Sample(window.classic), Sample(window.forever)
-    window.modernDark.preview = Sample(window.modernDark)
-    window.blizzard.preview = Sample(window.blizzard)
-    window.darkRaid.preview = Sample(window.darkRaid)
+    window.layoutCards, window.previewProfile = cards, previewProfile
     window.colorLabel = label(window, "GameFontNormalSmall", 36, -337, 508, 16)
     window.colorLabel:SetText(Text("Colors"))
     window.colors, window.colorStyle = {}, style
@@ -199,27 +205,17 @@ end
 
 function Picker.Show(window, shown, layout, look)
     window.colorChoice = look
-    local cards = Suite.Client.isForever and { window.forever, window.classic, window.modernDark, window.blizzard, window.darkRaid }
-        or { window.classic, window.forever, window.modernDark, window.blizzard, window.darkRaid }
-    for index, card in ipairs(cards) do
+    for index, card in ipairs(window.layoutCards) do
+        local selected = card.layout == layout
+        local slot = Suite.Client.isForever and index <= 2 and 3 - index or index
         card:ClearAllPoints()
-        card:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 36, 301 - (index - 1) * 36)
+        card:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 36, 309 - (slot - 1) * 29)
         card:SetShown(shown)
+        window.colorStyle(card, selected)
+        card.mark:SetText(Text(selected and "SELECTED" or "CHOOSE"))
     end
-    window.colorStyle(window.classic, layout == "classic")
-    window.colorStyle(window.forever, layout == "forever")
-    window.classic.mark:SetText(layout == "classic" and Text("SELECTED") or Text("CHOOSE"))
-    window.forever.mark:SetText(layout == "forever" and Text("SELECTED") or Text("CHOOSE"))
-    window.colorStyle(window.modernDark, layout == "modernDark")
-    window.modernDark.mark:SetText(layout == "modernDark" and Text("SELECTED") or Text("CHOOSE"))
-    window.colorStyle(window.blizzard, layout == "blizzard")
-    window.blizzard.mark:SetText(layout == "blizzard" and Text("SELECTED") or Text("CHOOSE"))
-    window.colorStyle(window.darkRaid, layout == "darkRaid")
-    window.darkRaid.mark:SetText(layout == "darkRaid" and Text("SELECTED") or Text("CHOOSE"))
     if shown then PaintPreviews(window, layout, look) end
-    -- This reference layout includes its native gold chrome and round map.
-    -- Global palettes replace geometry as well as colors on several modules.
-    local palettes = shown and layout ~= "blizzard"
+    local palettes = shown and Picker.HasPaletteChoice(layout)
     window.colorLabel:SetShown(palettes)
     for _, control in ipairs(window.colors) do
         control:SetShown(palettes)

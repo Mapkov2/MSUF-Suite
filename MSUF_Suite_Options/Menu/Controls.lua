@@ -9,6 +9,7 @@ end)
 -- The Skinning declarations feed the cold search index and visible controls.
 -- Collection reads metadata only: callbacks and widget builders never run.
 function P.SkinSearchRow(ctx, row, section, title, help)
+    if ctx.searchCheckpoint then ctx.searchCheckpoint() end
     local keywords = { "suite", "skinning", "skin", row.searchLabel or row.label, title }
     for _, value in ipairs(type(row.values) == "table" and row.values or {}) do
         keywords[#keywords + 1] = value.text
@@ -260,8 +261,17 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
         local gates = P.ChoiceGates[id]
         local gate = gates and gates[rule.key]
         if gate then row.values = GatedChoiceValues(row.values, gate) end
-        row.get = function() return P.Get(id, Key()) end
-        row.set = function(value) P.Set(id, Key(), tonumber(value) or rule.default) end
+        if type(rule.default) == "boolean" then
+            -- The two numbered choices map to false and true in the profile.
+            row.get = function() return P.Get(id, Key()) == true and 2 or 1 end
+            row.set = function(value)
+                local choice = tonumber(value)
+                if choice == 1 or choice == 2 then P.Set(id, Key(), choice == 2) end
+            end
+        else
+            row.get = function() return P.Get(id, Key()) end
+            row.set = function(value) P.Set(id, Key(), tonumber(value) or rule.default) end
+        end
     elseif type(rule.default) == "boolean" then
         row.kind = "toggle"
         row.get = function() return P.Get(id, Key()) == true end
@@ -413,7 +423,7 @@ function P.AttachRowsSummary(ctx, body, rows)
                 parts[#parts + 1] = Tr("%s: %s"):format(Tr(row.summaryLabel or row.label or ""), tostring(shown or ""))
             end
         end
-        local text = table.concat(parts, " \194\183 ")
+        local text = table.concat(parts, " - ")
         if previous ~= text then
             W.SetCollapsibleSummary(body, text)
             previous = text
@@ -527,7 +537,8 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
         if opts.grid then
             y, entries = opts.grid(body, y, width)
         else
-            y, entries = P.RuleGrid(ctx, body, pageKey, id, rules, y, width, opts.keyFn, sectionId, opts.columns, built)
+            y, entries = P.RuleGrid(ctx, body, pageKey, id, rules, y, width, opts.keyFn, sectionId, opts.columns, built,
+                opts.editWhileOff)
         end
         if opts.extra then y = opts.extra(body, y, width) or y end
         if not opts.grid then P.AttachRuleColors(body, title, id, opts.colors or rules, opts.keyFn) end
@@ -638,9 +649,10 @@ function P.ResetPrefix(id, prefix)
 end
 
 -- Catalog rules of one section, in declaration order.
-function P.SectionRules(id, section, filter)
+function P.SectionRules(id, section, filter, checkpoint)
     local out = {}
     for _, rule in ipairs(ModuleControls(id)) do
+        if checkpoint then checkpoint() end
         if rule.section == section and rule.key ~= "enabled" and not rule.previewOnly
             and (not filter or filter(rule)) then
             out[#out + 1] = rule
@@ -662,7 +674,7 @@ function P.BuildColorsCategory(ctx, b)
                 local entry = {}
                 for key, value in pairs(rule) do entry[key] = value end
                 -- Joined text cannot be looked up, so each part translates first.
-                entry.label = (rule.sectionTitle and (Tr(rule.sectionTitle) .. " · ") or "") .. Tr(rule.label)
+                entry.label = (rule.sectionTitle and (Tr(rule.sectionTitle) .. " - ") or "") .. Tr(rule.label)
                 colors[#colors + 1] = entry
             end
         end

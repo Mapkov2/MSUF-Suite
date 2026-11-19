@@ -40,11 +40,11 @@ local made = {} -- frames the piece makes (its combat-end waiter)
 local function New(w, h)
     return setmetatable({ w = w or 0, h = h or 0, shown = true, layer = "BACKGROUND", sub = 0 }, Widget)
 end
-function Widget:GetWidth() calls = calls + 1 return self.w end
-function Widget:GetHeight() calls = calls + 1 return self.h end
+function Widget:GetWidth() assert(not self.forbidden, "forbidden icon width read") calls = calls + 1 return self.w end
+function Widget:GetHeight() assert(not self.forbidden, "forbidden icon height read") calls = calls + 1 return self.h end
 function Widget:SetShown(on) calls = calls + 1 self.shown = on and true or false end
-function Widget:GetDrawLayer() calls = calls + 1 return self.layer, self.sub end
-function Widget:SetDrawLayer(layer, sub) calls = calls + 1 self.layer, self.sub = layer, sub end
+function Widget:GetDrawLayer() assert(not self.forbidden, "forbidden layer read") calls = calls + 1 return self.layer, self.sub end
+function Widget:SetDrawLayer(layer, sub) assert(not self.forbidden, "forbidden layer write") calls = calls + 1 self.layer, self.sub = layer, sub end
 function Widget:SetScript(event, fn) calls = calls + 1 self.scripts = self.scripts or {}; self.scripts[event] = fn end
 function Widget:RegisterEvent(event) calls = calls + 1 self.events = self.events or {}; self.events[event] = true end
 function Widget:UnregisterEvent(event) calls = calls + 1 if self.events then self.events[event] = nil end end
@@ -54,7 +54,9 @@ function Widget:UnregisterEvent(event) calls = calls + 1 if self.events then sel
 local function Button()
     local b = New(30, 40)
     b.Icon, b.Duration, b.Count, b.DebuffBorder = New(30, 30), New(29, 11), New(0, 0), New(40, 40)
-    b.Count.layer, b.DebuffBorder.layer = "OVERLAY", "OVERLAY"
+    b.TempEnchantBorder, b.Symbol = New(32, 32), New()
+    b.Count.layer, b.Symbol.layer = "OVERLAY", "OVERLAY"
+    b.DebuffBorder.layer, b.TempEnchantBorder.layer = "OVERLAY", "OVERLAY"
     b.shown = false
     return b
 end
@@ -153,7 +155,11 @@ local S = {
         module = instance
     end,
 }
-local NS = { IsCombatLocked = function() return combat end, IsSecret = function() return false end, HostBridge = bridge }
+local secretSize = {}
+local NS = { IsCombatLocked = function() return combat end, IsSecret = function(value) return value == secretSize end,
+    Safety = { IsForbidden = function(region) return region.forbidden == true end } }
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
+for key, callback in pairs(bridge) do NS.HostBridge[key] = callback end
 local P = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuraSkins.lua"))("MSUF_Suite_QualityOfLife", P)
 Check(module and P.PlayerAuraSkins and P.PlayerAuraSkins.Yield, "the piece installs its module and the yield call")
@@ -172,7 +178,26 @@ end
 
 -- 1. Every button once -------------------------------------------------------
 module.config = {}
+local loadedBuffs, loadedDebuffs = BuffFrame, DebuffFrame
+BuffFrame, DebuffFrame = nil, nil
+local pending = {}
+module.context = {
+    Event = function(_, event, handler) pending[event] = handler end,
+    RemoveEvent = function(_, event) pending[event] = nil end,
+}
 module:Enable()
+Check(pending.ADDON_LOADED, "skin-only startup must observe a late Blizzard_BuffFrame")
+pending.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_Other")
+Check(pending.ADDON_LOADED and #paints == 0, "unrelated loads must leave the skin-only listener waiting")
+module:Disable()
+Check(not pending.ADDON_LOADED, "a disabled skin must release its load listener")
+module:Enable()
+BuffFrame, DebuffFrame = loadedBuffs, loadedDebuffs
+-- Distinct pre-existing sublevels must be restored exactly.
+BuffFrame.auraFrames[1].DebuffBorder.sub = 2
+BuffFrame.auraFrames[1].TempEnchantBorder.sub = -2
+pending.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_BuffFrame")
+Check(not pending.ADDON_LOADED, "the listener retires after the native buttons load")
 Check(watched.playerAuraSkins == true, "the module must watch MSUF's reports while enabled")
 Check(hooks == 0, "the piece must install no hook")
 for _, frame in ipairs({ BuffFrame, DebuffFrame }) do
@@ -185,6 +210,9 @@ for _, frame in ipairs({ BuffFrame, DebuffFrame }) do
             Check(call and #PaintsOf(button) == 1 and call.look == look and call.anchor == button.Icon and call.w == 30
                 and call.h == 30, "every aura button (shown or hidden) takes its row's look around its Icon at its size, once")
             Check(button.Duration.layer == "OVERLAY" and button.Count.layer == "OVERLAY", "the Duration must sit above the skin")
+            Check(button.Icon.layer == "BACKGROUND" and button.DebuffBorder.layer == "BORDER"
+                and button.TempEnchantBorder.layer == "BORDER" and button.Symbol.layer == "OVERLAY",
+                "native colored borders must draw above the icon but below the selected skin artwork")
         end
     end
 end
@@ -193,7 +221,15 @@ Check(Last(BuffFrame.ConsolidatedBuffs) and Last(BuffFrame.ConsolidatedBuffs).lo
 
 -- 2. A UNIT_AURA costs what it costs without the piece ----------------------
 local painted = #paints
+-- A newly gained buff fills a previously unused button while in combat.
+local fresh = BuffFrame.auraFrames[4]
+Check(not fresh.shown, "the combat reuse fixture requires a hidden pool button")
+BuffFrame.auraInfo[4] = 7
 combat = true
+Update()
+Check(fresh.shown and Last(fresh).look == LOOKS.DEFAULT and #paints == painted,
+    "newly shown buttons must retain their prepainted skin without a combat write")
+BuffFrame.auraInfo[4] = nil
 local instr, widgetCalls, bytes = Measure()
 combat = false
 Check(#paints == painted, "aura updates must not paint")
@@ -206,8 +242,13 @@ Check(#paints == painted, "an unchanged refresh repaints nothing")
 -- 3. No skin, combat ---------------------------------------------------------
 local buff, debuff = BuffFrame.auraFrames[1], DebuffFrame.auraFrames[1]
 config.buffSkin = "CUSTOM"
+buff.Icon.w = secretSize
 module:Refresh()
+buff.Icon.w = 30
 Check(Last(buff).look == nil and buff.Duration.layer == "BACKGROUND", "No skin clears the skin once and puts the Duration back")
+Check(buff.DebuffBorder.layer == "OVERLAY" and buff.DebuffBorder.sub == 2
+    and buff.TempEnchantBorder.layer == "OVERLAY" and buff.TempEnchantBorder.sub == -2,
+    "No skin must restore both native border layers")
 local cleared = #paints
 module:Refresh()
 Check(#paints == cleared, "buttons without a skin must not call MSUF again")
@@ -220,7 +261,12 @@ CombatEnd()
 Check(Last(buff).look == LOOKS.DARK2 and buff.Duration.layer == "OVERLAY", "the combat end paints the waiting look")
 
 -- 4. Player aura layout takes the buttons and gives them back ---------------
+local debuffIcon = debuff.Icon
+debuff.Icon = nil
+buff.Icon.GetWidth = function() error("releasing a skin must not read icon dimensions") end
 P.PlayerAuraSkins.Yield(true)
+buff.Icon.GetWidth = nil
+debuff.Icon = debuffIcon
 Check(Last(buff).look == nil and Last(debuff).look == nil and buff.Duration.layer == "BACKGROUND",
     "Player aura layout starting: the piece clears its skins first")
 local yielded = #paints
@@ -228,9 +274,49 @@ module:Refresh()
 Check(#paints == yielded, "while Player aura layout runs the piece paints nothing")
 P.PlayerAuraSkins.Yield(false)
 Check(Last(buff).look == LOOKS.DARK2 and Last(debuff).look == LOOKS.DARK2, "Player aura layout's cleanup: the piece paints again")
+config.buffSkin = "DEFAULT"
+LOOKS.DEFAULT, LOOKS.FRAME_BEVEL = nil, { signature = "K:FRAME_BEVEL" }
+module:Refresh()
+Check(Last(buff).look == LOOKS.FRAME_BEVEL and Last(buff).w == 30 and Last(buff).h == 30,
+    "skin-only Buffs must draw the square fallback when the default has no skin")
+local _, displayed = NS.HostBridge.PlayerAuraSkin(config.buffSkin)
+Check(displayed == "FRAME_BEVEL" and config.buffSkin == "DEFAULT", "the resolved skin must leave the saved setting intact")
+Check(Last(debuff).look == LOOKS.DARK2, "a selected Debuffs skin must keep drawing")
+config.buffSkin, LOOKS.DEFAULT = "CUSTOM", { signature = "K:SHADOW1" }
+module:Refresh()
+Check(Last(buff).look == nil and buff.Duration.layer == "BACKGROUND", "explicit No skin must clear an inherited fallback")
+config.buffSkin = "DEFAULT"
+module:Refresh()
+Check(Last(buff).look == LOOKS.DEFAULT, "a usable global default must take precedence again")
+local untouched = BuffFrame.auraFrames[5]
+buff.Icon.h = secretSize
+untouched.TempEnchantBorder.forbidden = true
 module:Disable()
+buff.Icon.h = 30
 Check(watched.playerAuraSkins == false and Last(buff).look == nil and buff.Duration.layer == "BACKGROUND",
     "a disabled piece leaves no skin and stops watching")
+Check(Last(untouched).look == nil and untouched.Duration.layer == "BACKGROUND"
+    and untouched.TempEnchantBorder.layer == "BORDER", "release must restore only drawable native regions")
+untouched.TempEnchantBorder.forbidden = nil
+-- A Blizzard UI load during combat uses the same single combat-end recovery.
+BuffFrame, DebuffFrame = nil, nil
+module:Enable()
+local beforeLoad = #paints
+combat = true
+BuffFrame, DebuffFrame = loadedBuffs, loadedDebuffs
+pending.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_BuffFrame")
+Check(#paints == beforeLoad and not pending.ADDON_LOADED, "a late combat load must defer painting")
+combat = false
+local missing = BuffFrame.auraFrames[8]
+missing.Icon = nil
+BuffFrame.auraFrames[6].Icon.forbidden = true
+BuffFrame.auraFrames[7].forbidden = true
+local beforeForbidden = #PaintsOf(BuffFrame.auraFrames[7])
+CombatEnd()
+Check(Last(fresh).look == LOOKS.DEFAULT and not fresh.shown, "combat end must paint the late loaded hidden pool")
+Check(Last(missing).look == nil and Last(BuffFrame.auraFrames[6]).look == nil
+    and #PaintsOf(BuffFrame.auraFrames[7]) == beforeForbidden, "positive painting must skip missing or forbidden artwork")
+module:Disable()
 
 -- 5. The catalog and the follow link -----------------------------------------
 local catalogNS = { Client = { isForever = false }, Text = function(text) return text end }

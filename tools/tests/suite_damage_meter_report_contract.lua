@@ -333,26 +333,42 @@ do
         end
         return true
     end
-    Settings({ windowCount = 3, w1ClickThrough = 2, w2ClickThrough = 1, w3ClickThrough = 2, w3Type = 1 })
-    local third = D.windows[3]
-    assert(All(win, true) and All(other, true) and All(third, true), "click-through In combat must leave windows usable outside combat")
-    assert(#third.rows == 3, "window 3 should have drawn three rows before the combat")
+    local fiveRows = M.style.headerSpace + 2 + 5 * M.style.barHeight + 4 * M.style.spacing
+    group.raid = false
+    Settings({ windowCount = 4, w1ClickThrough = 2, w2ClickThrough = 1, w4ClickThrough = 2, w4Type = 1,
+        w4Height = fiveRows, w4RaidRows = 14, visibility = D.VISIBILITY.COMBAT })
+    local extra = D.windows[4]
+    assert(extra.capacity == 5 and not extra.shown and #extra.rows == 5,
+        "a combat-only window should prepare five visible slots without showing")
+    group.raid = true
+    f.Event("GROUP_ROSTER_UPDATE")
+    assert(extra.capacity == 14 and not extra.shown and #extra.rows == 12,
+        "the out-of-combat raid transition did not prepare the new bounded capacity")
+    local prepared = extra.rows[6]
+    Settings({ visibility = D.VISIBILITY.ALWAYS })
+    assert(All(win, true) and All(other, true) and All(extra, true), "click-through In combat must leave windows usable outside combat")
+    assert(extra.paintedRows == 3 and #extra.rows == 12, "the tall window should draw three and prepare only twelve rows")
     D.OpenBreakdown(win, 1)
     assert(win.panel and win.bd.open)
     f.SetCombat(true)
     f.Event("PLAYER_REGEN_DISABLED")
-    assert(All(win, false) and All(other, true) and All(third, false), "the combat start did not make the windows click-through")
+    assert(All(win, false) and All(other, true) and All(extra, false), "the combat start did not make the windows click-through")
     -- Rows made during the combat are click-through too.
     D.CloseBreakdown(win, true)
     local many = {}
-    for i = 1, 6 do many[i] = { name = "P" .. i, class = "MAGE", guid = "Player-" .. i, total = 1000 * (7 - i), pps = 10, death = i } end
+    for i = 1, 14 do
+        many[i] = { name = "P" .. i, class = "MAGE", guid = "Player-" .. i, total = 1000 * (15 - i), pps = 10, death = i }
+    end
     f.SetRoster(many)
     D.MarkAll()
     D.PaintDirty()
-    assert(#third.rows == 6 and All(third, false) and All(win, false), "a row created in combat took the mouse")
+    assert(extra.paintedRows == 14 and #extra.rows == 14 and extra.rows[6] == prepared
+        and All(extra, false) and All(win, false), "combat overflow failed to reuse prepared rows or took the mouse")
     f.SetCombat(false)
     f.Event("PLAYER_REGEN_ENABLED")
-    assert(All(win, true) and All(third, true), "the combat end did not give the mouse back")
+    assert(All(win, true) and All(extra, true), "the combat end did not give the mouse back")
+    group.raid = false
+    f.Event("GROUP_ROSTER_UPDATE")
     f.SetRoster(roster)
     -- Always: click-through now, except while Edit Mode or the preview places windows, or for Mouseover windows.
     Settings({ w1ClickThrough = 3 })

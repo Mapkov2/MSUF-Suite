@@ -19,7 +19,7 @@ local function Widget(parent, fontString)
     function w:CreateFontString() return Widget(self, true) end
     function w:GetParent() return self.parent end
     function w:SetParent(newParent) self.parent = newParent end
-    function w:SetPoint() end
+    function w:SetPoint(...) self.point = { ... } end
     function w:ClearAllPoints() end
     function w:SetAllPoints() end
     function w:SetSize(a, b) self.width, self.height = a, b end
@@ -31,10 +31,13 @@ local function Widget(parent, fontString)
     function w:GetScale() return self.scale or 1 end
     function w:SetAlpha(value) self.alpha = value end
     function w:SetFrameStrata() end
+    function w:GetFrameLevel() return self.frameLevel or 0 end
+    function w:SetFrameLevel(level) self.frameLevel = level end
     function w:EnableMouse(value) self.mouse = value end
     function w:EnableMouseWheel() end
     function w:RegisterForClicks() end
     function w:SetScript(key, fn) self[key] = fn end
+    function w:GetScript(key) return self[key] end
     function w:HookScript(key, fn)
         local inherited = self[key]
         self[key] = function(...)
@@ -51,6 +54,7 @@ local function Widget(parent, fontString)
     function w:SetTexture() end
     function w:SetAtlas() end
     function w:SetTexCoord() end
+    function w:SetVertexColor() end
     function w:SetText(text)
         assert(not self.fontString or self.font, "FontString text assigned before font")
         self.text = text
@@ -60,6 +64,7 @@ local function Widget(parent, fontString)
     function w:SetWordWrap() end
     function w:SetFont(_, size) self.font = true; self.fontSize = size; return true end
     function w:GetStringHeight() return (self.fontSize or 12) + 2 end
+    function w:GetStringWidth() return #(self.text or "") * (self.fontSize or 10) / 2 end
     function w:SetStatusBarTexture() end
     function w:SetStatusBarColor() end
     function w:SetMinMaxValues() end
@@ -239,9 +244,9 @@ S.Number = function(value) return S.Public(value) and type(value) == "number" an
 S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
 S.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
 S.Text = function(value) return value end
+S.BlizzardText = function(_, fallback) return fallback end
 S.Dispatch = function(callback, ...)
-    local ok, err = pcall(callback, ...)
-    assert(ok, err)
+    return callback(...)
 end
 S.CreateFrame = CreateFrame
 S.CreateTexture = function(parent) return parent:CreateTexture() end
@@ -279,8 +284,8 @@ suite.Dispatch = S.Dispatch
 MSUFSuite = suite
 local TimerContext = Support.ModuleTimers(root, S, suite)
 local private = { NS = suite, Suite = S }
-for _, file in ipairs({ "ObjectivesData", "ObjectivesContent", "ObjectivesDetails", "ObjectivesActions",
-    "ObjectivesContentActions", "ObjectivesRows", "ObjectivesTracker", "Objectives" }) do
+for _, file in ipairs({ "ObjectivesData", "ObjectivesQuestLog", "ObjectivesContent", "ObjectivesDetails",
+    "ObjectivesActions", "ObjectivesContentActions", "ObjectivesRows", "ObjectivesVoice", "ObjectivesTracker", "Objectives" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local O = private.Objectives
@@ -290,6 +295,8 @@ local function Context()
     local ctx = TimerContext("objectives", tracker, { events = {}, hidden = {}, saved = {} })
     function ctx:Event(event, callback) self.events[event] = callback end
     function ctx:RemoveEvent(event) self.events[event] = nil end
+    function ctx:Callback(event, callback) self[event] = callback end
+    function ctx:RemoveCallback(event) self[event] = nil end
     function ctx:Skin() return nil end
     function ctx:HideControl(frame, value) self.hidden[frame] = value end
     function ctx:Scale() end
@@ -397,7 +404,15 @@ world.widgetsShowing = true
 tracker.context = Context()
 tracker.config = catalogConfig
 tracker.config.showWorldQuests, tracker.config.showBonus, tracker.config.showScenario = false, false, false
+-- The enabled preset needs the quest log count on a newly created header.
+tracker.config.showQuestLogCount = true
+C_QuestLog.GetNumQuestLogEntries = function() return 0, 12 end
+C_QuestLog.GetMaxNumQuests = function() return 175 end
+C_QuestLog.GetMaxNumQuestsCanAccept = function() return 40 end
 tracker:Enable()
+assert(tracker.count.text == "12/40", "the first render did not show the quest log count")
+tracker.config.showQuestLogCount = false
+tracker:Refresh()
 
 local function Entry(group, id) return assert(Row("entry:" .. group .. ":" .. id), group .. " entry " .. id .. " not drawn") end
 local function Line(group, id, index)
@@ -602,6 +617,110 @@ for _, setting in ipairs(SETTINGS) do
     tracker.config[setting.key] = true
     tracker:Refresh()
     assert(Row(setting.section), setting.key .. " on did not bring the group back")
+end
+
+------------------------------------------------------------------ quest log presentation and docking
+do
+    local accepted = 12
+    local log = {
+        { isHeader = true, title = "Duskwood" },
+        { questID = 41, title = "The Night Watch" },
+        { isHeader = true, title = "The Stockade" },
+        { questID = 42, title = "The Fury Runs Deep" },
+    }
+    Enum.QuestTag = { Dungeon = 81 }
+    Enum.QuestClassification = { Normal = 1 }
+    C_QuestInfoSystem = { GetQuestClassification = function() return 1 end }
+    C_LFGList = C_LFGList or {}
+    C_LFGList.GetActivityIDForQuestID = function() end
+    C_QuestLog.GetNumQuestWatches = function() return 2 end
+    C_QuestLog.GetQuestIDForQuestWatchIndex = function(index) return 40 + index end
+    C_QuestLog.GetNumQuestLogEntries = function() return #log, accepted end
+    C_QuestLog.GetMaxNumQuestsCanAccept = function() return 40 end
+    C_QuestLog.GetInfo = function(index) return log[index] end
+    C_QuestLog.GetLogIndexForQuestID = function(id) return (id - 40) * 2 end
+    C_QuestLog.GetTitleForQuestID = function(id) return log[(id - 40) * 2].title end
+    C_QuestLog.IsComplete = function() return false end
+    local slain = 2
+    C_QuestLog.GetQuestObjectives = function(id)
+        return id == 41 and {
+            { text = "Skeletons slain: " .. slain .. "/5", type = "monster", numFulfilled = slain, numRequired = 5 },
+            { text = "1/2 Ribs collected", type = "item", numFulfilled = 1, numRequired = 2 },
+            { text = "Investigate section 1/2", type = "event", numFulfilled = secret, numRequired = 2 },
+        } or {}
+    end
+    C_QuestLog.GetQuestDifficultyLevel = function(id) return id == 41 and 24 or 28 end
+    C_QuestLog.GetQuestTagInfo = function(id) return id == 42 and { tagID = 81 } or nil end
+    GetQuestDifficultyColor = function() return { r = 1, g = .5, b = 0 } end
+    QuestUtil = {
+        QuestShowsItemByIndex = function(index) return index == 2 end,
+        GetQuestIconActiveForQuestID = function() return "quest-ongoing", true end,
+    }
+    GetQuestLogSpecialItemInfo = function() return "item:8763", 1234 end
+
+    local played
+    VoiceOver = { QuestOverlayUI = {
+        ShowsTrackerButton = function(_, id) return id == 41 end,
+        BindPlayButton = function(_, button, id)
+            button:SetScript("OnClick", function() played = id end)
+        end,
+    } }
+
+    local footer = Widget(UIParent)
+    local anchor = footer
+    S.MinimapDock = { Anchor = function() return anchor end, mapChanged = "mapChanged", footerChanged = "footerChanged" }
+    S.Apply = function() tracker:Refresh() end
+    local config = tracker.config
+    config.groupQuestsByHeader, config.showDungeonBadge, config.showQuestLogCount = true, true, true
+    config.showQuestLevel, config.questDifficultyColor, config.compactQuestRows = true, true, true
+    config.width, config.showQuestItems, config.showTimers, config.questIconStyle = 220, true, false, 3
+    config.questProgressColumn = true
+    config.dockBelowMinimap, config.minimapDockGap = true, 13
+    tracker:Refresh()
+    assert(tracker.host.point[2] == footer and tracker.host.point[5] == -13, "tracker did not follow the footer")
+    assert(Row("section:questLog:Duskwood") and Row("section:questLog:The Stockade"))
+    assert(Entry("quests", 41).text.text == "|cffff8000[24] The Night Watch|r")
+    local row = Entry("quests", 41)
+    local voice, collapse, itemButton = row.voiceButton, row.collapse, row.itemButton
+    assert(voice.mouse and voice.shown and collapse.shown and itemButton.shown)
+    assert(voice.point[5] == 0 and voice.height < row.height, "Play overflowed the compact row vertically")
+    local textRight = row.text.point[4] + row.text.width
+    assert(textRight < row.width + voice.point[4] - voice.width, "Play overlapped the quest title")
+    assert(voice.point[4] < collapse.point[4] - collapse.width, "Play overlapped the collapse button")
+    assert(collapse.point[4] < itemButton.point[4] - itemButton.width, "Collapse overlapped the quest item")
+    Click(voice)
+    assert(played == 41 and collapse.shown and Row("entry:quests:41"), "Play opened or folded the quest")
+    assert(not Entry("quests", 42).voiceButton, "an unvoiced quest grew a Play button")
+    local dungeon = Entry("quests", 42)
+    assert(dungeon.questIcon.shown and dungeon.questBadge.shown and dungeon.questBadge.text == "Dungeon",
+        "the native quest icon hid the dungeon badge")
+    local objective = Row("line:quests:41:1")
+    assert(objective.text.text == "Skeletons slain" and objective.questProgress.text == "2/5")
+    assert(objective.text.point[4] == row.text.point[4], "the objective did not align with its quest title")
+    assert(objective.text.point[4] + objective.text.width < objective.width + objective.questProgress.point[4]
+        - objective.questProgress:GetStringWidth(), "the progress counter overlapped the objective text")
+    local prefix = Row("line:quests:41:2")
+    assert(prefix.text.text == "Ribs collected" and prefix.questProgress.text == "1/2")
+    local restricted = Row("line:quests:41:3")
+    assert(restricted.text.text == "Investigate section 1/2" and not restricted.questProgress)
+    assert(tracker.count.text == "12/40", "watched activity count replaced actual quest log usage")
+    accepted, slain = 13, 3
+    Fire("QUEST_LOG_UPDATE")
+    assert(tracker.count.text == "13/40")
+    assert(objective.questProgress.text == "3/5", "progress changes did not repaint the counter")
+    config.questProgressColumn = false
+    tracker:Refresh()
+    assert(objective.text.text == "Skeletons slain: 3/5" and not objective.questProgress.shown)
+    Click(Row("section:questLog:Duskwood"))
+    assert(not Row("entry:quests:41") and Row("entry:quests:42"), "folding one quest area affected another")
+    assert(not voice.shown and not voice:GetScript("OnClick"), "folded quest retained a Play target")
+    anchor = nil
+    tracker.context.footerChanged()
+    assert(tracker.host.point[2] == UIParent, "missing minimap did not restore screen placement")
+    config.groupQuestsByHeader, config.showDungeonBadge, config.showQuestLogCount = false, false, false
+    tracker:Refresh()
+    assert(Row("section:quests") and not Row("section:questLog:The Stockade"))
+    assert(not Entry("quests", 42).questBadge or not Entry("quests", 42).questBadge.shown)
 end
 
 ------------------------------------------------------------------ disable

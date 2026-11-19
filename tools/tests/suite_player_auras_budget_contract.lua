@@ -30,7 +30,7 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 
--- Measured 2026-10-16. A budget may grow by at most 2 %. Natives are budgeted
+-- A budget may grow by at most 2 %. Natives are budgeted
 -- per client API, exactly: an API the table leaves out must not be called.
 -- Before this change every UNIT_AURA ran three full repaints of both frames
 -- (the UpdateAuraButtons hooks of both frames and DebuffFrame's nested
@@ -42,30 +42,18 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 --   combatRefresh 39342 instr, .019 KB, 4383 natives (IsProtected 99);
 --   buffGain      40446 instr, .019 KB, 4437 natives;
 --   debuffGain    39979 instr, .019 KB, 4386 natives.
--- After: the buff frame reads its 33 buttons (IsShown and issecretvalue) and
--- writes nothing; the debuff frame re-places what Blizzard's UpdateGridLayout
--- has just reset (5 debuffs and 6 private anchors: scale, size, points, icon
--- and duration anchors, and the container). Neither frame moves on an aura
--- update. Artwork, outlines and fonts are painted once per configuration,
--- adoption or Edit Mode switch.
--- 2026-10-17 (independent review): the frames move only after Blizzard moved
--- them; refresh 180 -> 178 natives, buffGain 194 -> 190.
-local SHOWN = { IsShown = 55, issecretvalue = 55 }
-local function WithShown(extra)
-    local budget = {}
-    for api, count in pairs(SHOWN) do budget[api] = count end
-    for api, count in pairs(extra) do budget[api] = (budget[api] or 0) + count end
-    return budget
-end
+-- 2026-11-18: the native solver supplies the visible debuff count and
+-- consolidation state. Prepared buffs keep their slots with zero geometry
+-- writes on a refill. Only their row boundaries need checking for mover size.
+local REFRESH = { ClearAllPoints = 22, InCombatLockdown = 1, issecretvalue = 4,
+    SetAllPoints = 5, SetPoint = 17, SetScale = 11, SetSize = 12 }
 local BASELINE = {
-    refresh = { instructions = 1564, natives = WithShown({ ClearAllPoints = 22, InCombatLockdown = 1,
-        SetAllPoints = 5, SetPoint = 17, SetScale = 11, SetSize = 12 }) },
-    combatRefresh = { instructions = 1744, natives = WithShown({ ClearAllPoints = 22, InCombatLockdown = 1,
-        IsProtected = 12, issecretvalue = 12, SetAllPoints = 5, SetPoint = 17, SetScale = 11, SetSize = 12 }) },
-    buffGain = { instructions = 1713, natives = WithShown({ ClearAllPoints = 26, InCombatLockdown = 2,
-        SetAllPoints = 6, SetPoint = 20, SetScale = 12, SetSize = 14 }) },
-    debuffGain = { instructions = 1659, natives = WithShown({ ClearAllPoints = 25, InCombatLockdown = 1,
-        SetAllPoints = 6, SetPoint = 19, SetScale = 12, SetSize = 13 }) },
+    refresh = { instructions = 1481, natives = REFRESH },
+    combatRefresh = { instructions = 1653, natives = { ClearAllPoints = 22, InCombatLockdown = 1,
+        IsProtected = 12, issecretvalue = 16, SetAllPoints = 5, SetPoint = 17, SetScale = 11, SetSize = 12 } },
+    buffGain = { instructions = 1481, natives = REFRESH },
+    debuffGain = { instructions = 1575, natives = { ClearAllPoints = 25, InCombatLockdown = 1,
+        issecretvalue = 4, SetAllPoints = 6, SetPoint = 19, SetScale = 12, SetSize = 13 } },
 }
 
 ------------------------------------------------------------------ native counting
@@ -78,8 +66,14 @@ end
 local natives, counting, recording = { total = 0, byName = {} }, false, true
 -- Whether the function that called a stand-in is shipped code (level 3: the
 -- caller of the stand-in that calls this).
+local hookWrappers = {}
 local function FromProduct()
-    local info = debug.getinfo(3, "S")
+    local depth = 3
+    local info = debug.getinfo(depth, "Sf")
+    while info and hookWrappers[info.func] do
+        depth = depth + 1
+        info = debug.getinfo(depth, "Sf")
+    end
     return info and ProductCode((info.source:gsub("\\", "/")))
 end
 local function Count(name)
@@ -257,6 +251,11 @@ local function NativeLayout(frame, auras)
             aura:SetPoint("TOPRIGHT", frame.AuraContainer, "TOPRIGHT", -35 * (slot - 1), 0)
         end
     end
+    frame:UpdateSize(30, 40, 12, 5, 1, true, slot)
+    if frame.CollapseAndExpandButton then
+        frame.CollapseAndExpandButton:ClearAllPoints()
+        frame.CollapseAndExpandButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    end
     frame.AuraContainer:ClearAllPoints()
     frame.AuraContainer:SetPoint("TOPRIGHT", frame.containerAnchor, frame.containerPoint)
 end
@@ -304,7 +303,14 @@ local function AuraFrame(buttons, anchors)
     frame.AuraContainer, frame.auraFrames, frame.auraInfo, frame.pending = Widget("Frame", 400, 80), {}, {}, {}
     frame.containerAnchor, frame.containerPoint = frame, "TOPRIGHT"
     for _ = 1, buttons do frame.auraFrames[#frame.auraFrames + 1] = AuraButton() end
-    for _ = 1, anchors do frame.auraFrames[#frame.auraFrames + 1] = PrivateAnchor() end
+    frame.PrivateAuraAnchors = {}
+    for _ = 1, anchors do
+        local anchor = PrivateAnchor()
+        frame.auraFrames[#frame.auraFrames + 1] = anchor
+        frame.PrivateAuraAnchors[#frame.PrivateAuraAnchors + 1] = anchor
+    end
+    function frame:UpdateSize() end
+    function frame.AuraContainer:UpdateGridLayout(auras) NativeLayout(frame, auras) end
     function frame:UpdateAuras() self.auraInfo = self.pending end
     function frame:Update()
         self:UpdateAuras()
@@ -317,6 +323,8 @@ end
 
 local BuffFrame = AuraFrame(32, 0)
 BuffFrame.ConsolidatedBuffs, BuffFrame.CollapseAndExpandButton = AuraButton(), Widget("Frame", 15, 30)
+BuffFrame.ConsolidatedBuffs.Icon:SetTexCoord(.109375, .390625, .21875, .78125)
+local atlasCrop = table.concat(BuffFrame.ConsolidatedBuffs.Icon.coords, ",")
 BuffFrame.containerAnchor, BuffFrame.containerPoint = BuffFrame.CollapseAndExpandButton, "TOPLEFT"
 BuffFrame.consolidated = { BuffFrame.ConsolidatedBuffs }
 for _, button in ipairs(BuffFrame.auraFrames) do BuffFrame.consolidated[#BuffFrame.consolidated + 1] = button end
@@ -324,17 +332,19 @@ for _, button in ipairs(BuffFrame.auraFrames) do BuffFrame.consolidated[#BuffFra
 -- out again on every Update (prevShownStatus is an undefined global, 1279-1288).
 function BuffFrame:UpdateAuras()
     self.auraInfo = self.pending
-    if self.consolidate then
-        self.ConsolidatedBuffs:SetShown(true)
+    local consolidated = self.consolidate == true
+    if consolidated or self.wasConsolidated ~= consolidated then
         self:UpdateGridLayout()
+        if self.observeGrid then self:observeGrid(consolidated) end
     end
+    self.wasConsolidated = consolidated
 end
 function BuffFrame:RefreshConsolidationFrameVisibility() self.ConsolidatedBuffs:SetShown(self.consolidate == true) end
 function BuffFrame:UpdateAuraButtons()
     Refill(self)
     self:RefreshConsolidationFrameVisibility()
 end
-function BuffFrame:UpdateGridLayout() NativeLayout(self, self.consolidate and self.consolidated or self.auraFrames) end
+function BuffFrame:UpdateGridLayout() self.AuraContainer:UpdateGridLayout(self.consolidate and self.consolidated or self.auraFrames) end
 function BuffFrame:Update()
     self:UpdateAuras()
     self:UpdateAuraButtons()
@@ -349,7 +359,7 @@ function DebuffFrameMixin:UpdateAuraButtons()
     self:UpdateGridLayout()
 end
 DebuffFrame.UpdateAuraButtons = DebuffFrameMixin.UpdateAuraButtons
-function DebuffFrame:UpdateGridLayout() NativeLayout(self, self.auraFrames) end
+function DebuffFrame:UpdateGridLayout() self.AuraContainer:UpdateGridLayout(self.auraFrames) end
 _G.BuffFrame, _G.DebuffFrame, Minimap = BuffFrame, DebuffFrame, Widget("Frame", 200, 200)
 
 -- EditModeSystemMixin:OnSystemLoad replaces SetPoint and ClearAllPoints with
@@ -408,6 +418,7 @@ hooksecurefunc = function(object, key, hook)
         hook(...)
         return a, b, c
     end
+    hookWrappers[object[key]] = true
 end
 
 ------------------------------------------------------------------ the shipped module
@@ -444,7 +455,7 @@ local NS = { IsSecret = issecretvalue, IsCombatLocked = Native("InCombatLockdown
     Safety = { IsForbidden = function() return false end },
     MSUFMedia = { font = "msuf.ttf" },
     -- No MSUF host here: no icon skin look, nothing paints.
-    HostBridge = { IconSkinLook = function() end, PaintIconSkin = function() return false end, WatchIconSkins = function() end } }
+    HostBridge = { PlayerAuraSkin = function() end, PaintIconSkin = function() return false end, WatchIconSkins = function() end } }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuras.lua"))("MSUF_Suite_QualityOfLife",
     { NS = NS, Suite = S, PlayerAuraSkins = { Yield = function() end } })
 
@@ -602,6 +613,7 @@ local function Budget(name, prepare, scenario)
 end
 
 ------------------------------------------------------------------ scenarios
+BuffFrame:UpdateGridLayout() -- native OnLoad established the original collapse arrow anchor
 module:Enable()
 UnitAura(20, 5)
 SameAsFullRepaint("enable")
@@ -625,14 +637,35 @@ UnitAura(20, 5)
 assert(anchorDirty == dirty, "an aura update moved a frame: Edit Mode anchors marked dirty "
     .. (anchorDirty - dirty) .. " times")
 
+-- Private anchors immediately follow the packed ordinary prefix after gains,
+-- losses, row wrapping and secret visibility. Their Icon and Duration stay native.
+local private = DebuffFrame.PrivateAuraAnchors
+for _, count in ipairs({ 0, 1, config.perRow - 1, config.perRow, 2 }) do
+    for _, button in ipairs(DebuffFrame.auraFrames) do button.secret = { IsShown = true } end
+    UnitAura(20, count)
+    for index, button in ipairs(private) do
+        local slot = count + index - 1
+        local point = button.points[1]
+        assert(point[4] == -(slot % config.perRow) * (config.iconWidth + config.spacing)
+            and point[5] == -math.floor(slot / config.perRow) * (config.iconHeight + config.rowSpacing),
+            "a private anchor left a gap or covered an ordinary debuff")
+        assert(button.Icon.points[1][1] == "TOP" and button.Duration.points[1][2] == button.Icon,
+            "Suite changed the artwork of a private aura")
+    end
+end
+for _, button in ipairs(DebuffFrame.auraFrames) do button.secret = nil end
+
 -- An aura refresh writes nothing on the buff frame.
 UnitAura(20, 5)
-local _, detail = Natives(function()
+local _, detail, refreshCalls = Natives(function()
     BuffFrame.pending = Infos(20, 1000)
     BuffFrame:Update()
 end)
-assert(detail == "IsShown=33 issecretvalue=33",
-    "a buff refresh must only read the 32 buttons and the consolidation button: " .. detail)
+assert(not refreshCalls.IsShown and (refreshCalls.issecretvalue or 0) <= 8,
+    "a buff refill must only probe public row boundaries: " .. detail)
+for api in pairs(refreshCalls) do
+    assert(api == "issecretvalue", "an unchanged buff refill must not write: " .. detail)
+end
 
 -- A new position or size in the options moves and repaints both frames.
 config.x, config.y, config.debuffOffset, config.iconWidth = config.x - 30, config.y - 10, config.debuffOffset + 20, 40
@@ -662,13 +695,27 @@ UnitAura(0, 0)
 BuffFrame:UpdateGridLayout()
 SameAsFullRepaint("native relayout with no auras")
 -- Consolidated buffs take the first slot while consolidateBuffs is on.
+function BuffFrame:observeGrid(included)
+    assert(self.ConsolidatedBuffs.shown ~= included, "fixture did not expose stale consolidation visibility")
+    local offset = included and -(config.iconWidth + config.spacing) or 0
+    assert(self.auraFrames[1].points[1][4] == offset, "Suite chose stale shown state over Blizzard's actual grid order")
+end
 BuffFrame.consolidate = true
 UnitAura(20, 5)
 assert(BuffFrame.ConsolidatedBuffs.shown, "the model shows the consolidation button")
 SameAsFullRepaint("consolidation shown")
+assert(table.concat(BuffFrame.ConsolidatedBuffs.Icon.coords, ",") == atlasCrop,
+    "the rectangular aura crop sampled neighboring consolidation atlas artwork")
+assert(BuffFrame.auraFrames[1].points[1][4] == -(config.iconWidth + config.spacing),
+    "the consolidation icon and first buff share a slot")
+local arrowPoint = BuffFrame.CollapseAndExpandButton.points[1]
+assert(arrowPoint[1] == "TOPLEFT" and arrowPoint[2] == BuffFrame and arrowPoint[3] == "TOPRIGHT",
+    "the collapse arrow covers the first custom icon")
 BuffFrame.consolidate = false
 UnitAura(20, 5)
+BuffFrame.observeGrid = nil
 SameAsFullRepaint("consolidation hidden")
+assert(BuffFrame.auraFrames[1].points[1][4] == 0, "hiding consolidation left a gap before the first buff")
 
 -- Edit Mode resets every Duration font object (EditModeManager RefreshAuraFrame:
 -- SetIsEditing, then UpdateAuraButtons); the module paints its font again.
@@ -703,12 +750,26 @@ for _, frame in ipairs({ BuffFrame, DebuffFrame }) do
 end
 SameAsFullRepaint("edit mode exit with no auras")
 
+-- An anchor-only refresh has no button writes to trigger an earlier combat
+-- check. The native protected collapse arrow must still keep its own anchor.
+local arrow = BuffFrame.CollapseAndExpandButton
+arrow:ClearAllPoints()
+arrow:SetPoint("TOPRIGHT", BuffFrame, "TOPRIGHT", 0, 0)
+combat, arrow.protected, queued.playerAuras = true, true, nil
+BuffFrame:ApplySystemAnchor()
+assert(queued.playerAuras and arrow.points[1][1] == "TOPRIGHT",
+    "an anchor-only refresh moved a protected native collapse arrow in combat")
+combat, arrow.protected = false, nil
+module:Refresh()
+assert(arrow.points[1][1] == "TOPLEFT", "the collapse arrow was not repaired after combat")
+
 -- A protected frame in combat waits for the module's queued re-apply; its
 -- unprotected buttons wait with it.
 UnitAura(20, 5)
 BuffFrame:UpdateGridLayout()
-assert(BuffFrame.auraFrames[21].width == 30, "the native layout resets the hidden buttons too")
+assert(BuffFrame.auraFrames[21].width == config.iconWidth, "hidden buff slots lost their setup after native layout")
 combat, BuffFrame.protected = true, true
+BuffFrame:UpdateGridLayout()
 UnitAura(22, 5)
 assert(queued.playerAuras, "a protected frame in combat was not queued")
 assert(BuffFrame.auraFrames[21].width == 30 and BuffFrame.auraFrames[22].width == 30,
@@ -740,6 +801,7 @@ SameAsFullRepaint("restyle after a refusal, after combat")
 UnitAura(20, 5)
 BuffFrame:UpdateGridLayout()
 combat, BuffFrame.auraFrames[21].protected, queued.playerAuras = true, true, nil
+BuffFrame:UpdateGridLayout()
 UnitAura(22, 5)
 assert(queued.playerAuras and BuffFrame.auraFrames[21].width == 30 and BuffFrame.auraFrames[22].width == 30,
     "a protected button or a later slot was placed in combat")
@@ -758,6 +820,8 @@ module:Disable()
 assert(anchorDirty == dirtyBeforeNative and snapClears == clearsBeforeNative,
     "restoring the original aura anchors used the native Edit Mode overrides")
 assert(BuffFrame.alpha == .5, "disable put back a frame alpha the module never wrote")
+assert(#arrow.points == 1 and arrow.points[1][1] == "TOPRIGHT" and arrow.points[1][2] == BuffFrame,
+    "disable did not restore the native collapse arrow anchor")
 for _, button in ipairs(BuffFrame.auraFrames) do
     assert(not (button.Count.sized or button.Duration.sized), "disable gave an aura FontString a fixed size")
 end

@@ -95,22 +95,28 @@ local dialogBorderFields = {
 }
 
 -- Pooled ScrollBox rows share one mode per protection/menu variant.
-local function RowMode(allowImplicitProtected, menuPopup)
+local ROW_NODE_LIMIT = 120
+local GRAPHICS_ROW_NODE_LIMIT = 224
+local function RowMode(allowImplicitProtected, menuPopup, maxNodes)
     return {
         role = "card",
         radius = 4,
         inset = 0,
         listItem = true,
         maxDepth = 4,
-        maxNodes = 120,
+        maxNodes = maxNodes,
         allowImplicitProtected = allowImplicitProtected,
         menuPopup = menuPopup,
     }
 end
 
 local rowModes = {
-    [true] = { [true] = RowMode(true, true), [false] = RowMode(true, false) },
-    [false] = { [true] = RowMode(false, true), [false] = RowMode(false, false) },
+    [true] = { [true] = RowMode(true, true, ROW_NODE_LIMIT), [false] = RowMode(true, false, ROW_NODE_LIMIT) },
+    [false] = { [true] = RowMode(false, true, ROW_NODE_LIMIT), [false] = RowMode(false, false, ROW_NODE_LIMIT) },
+}
+local graphicsRowModes = {
+    [true] = RowMode(true, false, GRAPHICS_ROW_NODE_LIMIT),
+    [false] = RowMode(false, false, GRAPHICS_ROW_NODE_LIMIT),
 }
 
 local function CanSkin(frame, allowImplicitProtected)
@@ -364,6 +370,7 @@ NS.GenericWindowsShared = {
     DEFAULT_OWNER = DEFAULT_OWNER,
     frameStates = frameStates,
     rowModes = rowModes,
+    graphicsRowModes = graphicsRowModes,
     OwnerState = OwnerState,
     OwnerKey = OwnerKey,
     CanSkin = CanSkin,

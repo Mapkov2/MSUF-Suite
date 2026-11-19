@@ -78,7 +78,7 @@ io.write(JSON(world.env.MSUF_CreateCanonicalUnitAuras()))
 
 
 def frames(classic):
-    base = classic / "MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_Shell.lua"
+    base = classic / "MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_FactoryData.lua"
     envelope = decode(literal(base, "MSUF.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT"), "MSUF3:")
     # MSUF imports the lossless msuf6 snapshot when a Wago wrapper contains
     # both payloads. Publish one canonical snapshot, so preview and import
@@ -213,6 +213,26 @@ def frames(classic):
             debuffGroupOffsetY=80 if key == b"player" else 46)
         put(owner[b"layoutShared"], buffPerRow=6, debuffPerRow=6, maxBuffs=6, maxDebuffs=6,
             buffGrowthX="RIGHT", debuffGrowthX="RIGHT", buffGrowthY="DOWN", debuffGrowthY="DOWN")
+    return encode(envelope, "MSUF3:")
+
+
+def unit_frames(compact):
+    """Keep Modern Dark styling in the setup step that runs before cooldowns are configured."""
+    envelope = decode(compact, "MSUF3:")
+    db = envelope[b"payload"]
+    put(db[b"general"], anchorToCooldown=False, anchorName="UIParent")
+    for key, x in ((b"player", -370), (b"target", 370)):
+        put(db[key], anchorFrameName="UIParent", cooldownAnchorFrameTop=False,
+            offsetX=x, offsetY=-234, screenPositionMode="relativeHeight", screenPositionHeight=1080)
+    player = db[b"player"]
+    gap = 4
+    put(player, detachedPowerBarAnchorToClassPower=False, detachedPowerBarSyncClassPower=False,
+        detachedPowerBarOffsetY=-gap)
+    player.pop(b"detachedPowerBarWidth", None)
+    # Class power is positioned from the player's top edge with a 2px inset.
+    # Leave room for the health bar, detached power and a gap between each.
+    put(db[b"bars"], classPowerAnchorToCooldown=False, classPowerWidthMode="player",
+        classPowerOffsetY=2 - player[b"height"] - player[b"detachedPowerBarHeight"] - 2 * gap)
     return encode(envelope, "MSUF3:")
 
 
@@ -398,6 +418,7 @@ def main():
           + assignment("MSUF.MSUF_MODERN_DARK_PROFILE_COMPACT", frame), args.check)
     write(CORE / "ModernDarkFactory.lua", "local _, Suite = ...\n" + header
           + assignment("Suite.ModernDarkFramesCompact", frame)
+          + assignment("Suite.ModernDarkUnitFramesCompact", unit_frames(frame))
           + assignment("Suite.ModernDarkModuleCompact", modules())
           + assignment("Suite.ModernDarkSkinCompact", skin()), args.check)
     print("Modern Dark frame, Suite and Skin factories " + ("match" if args.check else "written"))

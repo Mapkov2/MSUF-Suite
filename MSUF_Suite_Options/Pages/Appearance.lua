@@ -142,6 +142,7 @@ local function MicroDetailSpecs(skin)
         { "Growth direction", "growth", "dropdown", skin.MicroMenuGrowthModes },
         { "Button spacing", "spacing", "slider", nil, -8, 16, 1 },
         { "Bar padding", "padding", "slider", nil, 0, 16, 1 },
+        { "Width", "layoutWidth", "slider", nil, 0, 800, 4 },
         { "Bar material", "barMaterial", "dropdown", skin.MicroMenuBarMaterials },
         { "Icon artwork", "iconStyle", "dropdown", skin.MicroMenuIconStyles },
         { "Icon colors", "tint", "dropdown", skin.MicroMenuTintModes },
@@ -730,8 +731,8 @@ end
 
 -- Also while the Skin addon is off: its maintenance actions stay findable
 -- (on the notice, outside any section, then).
-function P.SkinSearchRows()
-    local ctx, b = { searchRows = {} }, {}
+function P.SkinSearchRows(checkpoint)
+    local ctx, b = { searchRows = {}, searchCheckpoint = checkpoint }, {}
     local skin = _G.MapkoSkin
     Kit.BuildCharacter(ctx, b)
     if not (skin and skin.addonName == "MSUF_Suite_Skin" and skin.DB and skin.Theme) then

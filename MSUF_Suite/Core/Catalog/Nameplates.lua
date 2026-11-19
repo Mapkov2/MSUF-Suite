@@ -796,15 +796,15 @@ spec.controlAvailable = function(rule)
     if C_CVar.GetCVar(rule.cvar) == nil then return false end
     return not (rule.gameRule and C_GameRules.IsGameRuleActive(Enum.GameRule[rule.gameRule]))
 end
--- The controls this client has, listed on first use: registered CVars and
--- game rules do not change during a session.
+-- Registered CVars and game rules are stable for the session. Publish only the completed list.
 local available
-spec.getControls = function()
-    if not available then
-        available = {}
-        for _, rule in ipairs(spec.controls) do
-            if spec.controlAvailable(rule) then available[#available + 1] = rule end
-        end
+spec.getControls = function(_, checkpoint)
+    if available then return available end
+    local rows = {}
+    for _, rule in ipairs(spec.controls) do
+        if checkpoint then checkpoint() end
+        if spec.controlAvailable(rule) then rows[#rows + 1] = rule end
     end
-    return available
+    available = rows
+    return rows
 end

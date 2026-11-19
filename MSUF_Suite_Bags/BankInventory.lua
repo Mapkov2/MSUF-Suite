@@ -166,14 +166,14 @@ local function PaintListButton(organize)
 end
 
 -- The smart search box and its Filters button stand in the title row.
-local function PlaceSearch(edit, button)
+local function PlaceSearch(edit, button, transfer)
     button:SetPoint("TOPRIGHT", -12, NS.Client.isForever and -34 or -7)
     if NS.Client.isForever then
         edit:SetPoint("TOPLEFT", BankInventory.frame, "TOPLEFT", 12, -34)
     else
         edit:SetPoint("TOPLEFT", BankInventory.title, "TOPRIGHT", 16, 4)
     end
-    edit:SetPoint("TOPRIGHT", button, "TOPLEFT", -8, 0)
+    edit:SetPoint("TOPRIGHT", transfer or button, "TOPLEFT", -8, 0)
 end
 
 -- Both bank views use the same opaque fill. The organized panel covers the
@@ -434,6 +434,7 @@ Flush = function()
     FreeSlots.Read(BankInventory.freeSlots, BankInventory.index, false)
     BankInventory.context.query = BankInventory.smartQuery
     PrepareModel(state)
+    P.InventorySearch.UpdateQuickAction(BankInventory)
     Render()
     RenderNavigation()
 end

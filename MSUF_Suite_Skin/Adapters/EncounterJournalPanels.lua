@@ -173,7 +173,7 @@ local function Bullet(state, bullet)
     if not glyph then
         glyph = bullet:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         glyph:SetAllPoints(art)
-        glyph:SetText("\226\128\162")
+        glyph:SetText("-")
         bulletGlyphs[bullet] = glyph
     end
     if not Safety.CanDecorate(glyph, not NS.IsCombatLocked()) then return end

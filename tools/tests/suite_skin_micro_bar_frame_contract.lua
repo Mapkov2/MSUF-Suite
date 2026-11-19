@@ -128,6 +128,24 @@ Skin.RefreshActive()
 Check(menu:GetParent() == bar and menu.BorderArt:GetAlpha() == (forever and 0 or 1),
     "the frameless owned bar did not take Forever's art away again after Blizzard's hold")
 
+-- A preset can share its chat panel's outside width with the menu. Fit the
+-- live grid, then return to its preferred scale once the grid gets narrower.
+settings.barMaterial, settings.orientation, settings.padding, settings.scale = "theme", "horizontal", 3, 1
+local span = 400
+local button = menu:GetLayoutChildren()[1]
+function button:GetScaledRect()
+    local scale = menu:GetEffectiveScale()
+    return 0, 0, span * scale, 30 * scale
+end
+Check(NS.MicroMenuSkin.SetOption("layoutWidth", 272), "the owned width was refused")
+Check(math.abs(bar:GetWidth() - 272) < .01 and math.abs(menu:GetScale() - .665) < .001,
+    "a wide live micro grid overflowed its shared chat width")
+span = 200
+Check(Owned.Relayout(menu) and bar:GetWidth() == 272 and menu:GetScale() == 1,
+    "a narrower grid changed the outside width or kept stale scaling")
+Check(NS.MicroMenuSkin.SetOption("layoutWidth", 0) and bar:GetWidth() == 206,
+    "clearing the preset width did not restore the automatic width")
+
 Skin.Disable()
 Check(menu.BorderArt:GetAlpha() == 1 and menu.BackgroundArt:GetAlpha() == 1, "disabling the skin kept Blizzard's art faded")
 print(("Suite Micro Bar frame (%s): %d checks passed"):format(flavor, checks))

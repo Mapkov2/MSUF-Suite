@@ -35,6 +35,70 @@ local function Same(config, before)
     for key, value in pairs(config) do Check(before[key] == value, "navigation changed " .. key) end
     for key, value in pairs(before) do Check(config[key] == value, "navigation removed " .. key) end
 end
+local function CheckArtworkTransfer(artwork, config, customPath)
+    local io = P.Suite.ProfileIO
+    local encode, decode = MSUF_EncodeCompactTable, MSUF_TryDecodeCompactString
+    local envelope
+    MSUF_EncodeCompactTable = function(value, prefix)
+        envelope = value
+        return prefix .. ":minimap-fixture"
+    end
+    MSUF_TryDecodeCompactString = function(text)
+        Check(text == "MSUF3:minimap-fixture", "unexpected profile payload")
+        return envelope
+    end
+    local art = P.Suite.MinimapStyleTexture
+    for _, choice in ipairs({ art.WAYFARER, art.ANTIQUE_MAP_FRAME }) do
+        artwork.set(choice)
+        local module, imported = io.PrepareModuleProfile(assert(io.ExportModule("minimap")), true)
+        Check(module == "minimap" and imported.styleTexture == choice and imported.styleTexturePath == customPath,
+            "bundled artwork choice did not survive profile transfer independently of the custom path")
+        Check(config.styleTexture == imported.styleTexture, "profile transfer changed the chosen artwork")
+    end
+    MSUF_EncodeCompactTable, MSUF_TryDecodeCompactString = encode, decode
+end
+local function CheckArtwork(ctx, menu, config)
+    Check(menu:SelectMinimapSettings("style_art"), "Decorative border editor is missing")
+    local artwork = assert(Widget(ctx, "styleTexture"))
+    local path = assert(Widget(ctx, "styleTexturePath"))
+    local scale = assert(Widget(ctx, "styleScale"))
+    local art = P.Suite.MinimapStyleTexture
+    local wayfarerPath = "Interface\\AddOns\\MSUF_Suite\\Media\\WayfarerMinimapFrame.tga"
+    local antiquePath = "Interface\\AddOns\\MSUF_Suite_Modules\\Media\\Minimap\\AntiqueMapFrame.tga"
+    local values = artwork.row.values
+    Check(values[9] and values[9].text == P.Tr("Wayfarer") and values[9].icon == wayfarerPath,
+        "Wayfarer needs a direct artwork choice with a thumbnail")
+    Check(values[10] and values[10].text == P.Tr("Antique map frame") and values[10].icon == antiquePath,
+        "Antique map frame needs a direct artwork choice with a thumbnail")
+    for _, choice in ipairs({ art.ARCANE_RING, art.EMBER_RING, art.ASTRAL_RING, art.STEEL_FRAME, art.PARCHMENT_SCROLL }) do
+        local icon = values[choice].icon
+        Check(type(icon) == "string" and icon == P.Suite.MinimapStyle.paths[choice], "Suite ornament has no texture thumbnail")
+    end
+
+    config.enabled = true
+    Check(S.SetMany("minimap", { styleTexture = art.CUSTOM, styleTexturePath = wayfarerPath,
+        shape = P.Suite.MinimapShape.SQUARE, styleAlpha = 100, styleScale = 100,
+        stylePlacement = P.Suite.MinimapStylePlacement.ABOVE }), "could not load the existing Wayfarer artwork")
+    M.RequestRefresh()
+    local ui = assert(F.registeredControls["menu2.suite_minimap.minimap.preview.map"]).previewUI
+    local overlay = ui.art.style.artOver
+    Check(path.enabled and overlay:IsShown() and overlay.texture == wayfarerPath, "existing Wayfarer artwork changed")
+    local width, height = overlay:GetWidth(), overlay:GetHeight()
+    artwork.set(values[9].value)
+    M.RequestRefresh()
+    Check(config.styleTexture == 9 and overlay.texture == wayfarerPath and overlay:IsShown()
+        and overlay:GetWidth() == width and overlay:GetHeight() == height, "Wayfarer choice changed the artwork geometry")
+    Check(not path.enabled and scale.enabled, "bundled artwork has the wrong editing controls")
+    artwork.set(values[10].value)
+    Check(config.styleTexture == 10 and overlay.texture == antiquePath, "antique frame was not painted")
+    artwork.set(art.CUSTOM)
+    M.RequestRefresh()
+    Check(path.enabled and path.get() == wayfarerPath, "selecting a bundled frame lost the custom path")
+    local customPath = "Interface\\AddOns\\AnotherAddon\\Art.tga"
+    path.set(customPath)
+    Check(config.styleTexturePath == customPath and overlay.texture == customPath, "custom path is no longer editable")
+    CheckArtworkTransfer(artwork, config, customPath)
+end
 local function CheckPerformanceColors(menu, config)
     local expected = { "infoGoodColor", "infoWarningColor", "infoBadColor" }
     local original, targetsBySection = {}, {}
@@ -122,6 +186,26 @@ for _, width in ipairs({ 320, 720, 1100 }) do
     config.enabled = false
     for key, value in pairs(config) do before[key] = value end
     CheckTabs(ctx, workspace, width)
+    Check(menu:SelectMinimapSettings("addons") and workspace.selected == "buttons", "Add-on buttons editor is missing")
+    local drawerStyle = assert(Widget(ctx, "drawerStyle"), "drawer style is missing from Minimap's add-on settings")
+    local styles = P.Suite.MinimapDrawerStyle
+    local values = drawerStyle.row.values
+    Check(drawerStyle.rowKind == "dropdown" and #values == 4 and values[styles.DARK].text == P.Tr("Midnight Dark"),
+        "drawer style does not offer all palettes")
+    drawerStyle.set(styles.DARK)
+    Check(config.drawerStyle == styles.DARK, "drawer style editor did not store the selection")
+    drawerStyle.set(before.drawerStyle)
+    local visibility = assert(Widget(ctx, "drawerMouseover"), "drawer visibility is missing")
+    local modes = visibility.row.values
+    Check(visibility.rowKind == "dropdown" and visibility.parent == drawerStyle.parent
+        and visibility.label == P.Tr("Drawer button visibility")
+        and #modes == 2 and modes[1].text == P.Tr("Always") and modes[2].text == P.Tr("Mouseover"),
+        "drawer visibility should offer Always and Mouseover next to the style")
+    visibility.set(modes[2].value)
+    Check(config.drawerMouseover == true and visibility.get() == modes[2].value, "Mouseover lost the saved boolean")
+    visibility.set(modes[1].value)
+    Check(config.drawerMouseover == false and visibility.get() == modes[1].value, "Always lost the saved boolean")
+    visibility.set(before.drawerMouseover and modes[2].value or modes[1].value)
     local info = menu.groups.information
     Check(info.views.info_weather == nil, "unselected information controls built eagerly")
     for _, section in ipairs({ "info_clock", "info_fps", "info_location", "info_weather", "info_difficulty", "info_colors" }) do
@@ -183,5 +267,6 @@ for _, width in ipairs({ 320, 720, 1100 }) do
     end
     Check(F.registeredControls["menu2.suite_minimap.minimap.style.preset.12"], "Class Style tile is missing")
     for _, fn in ipairs(ctx.refreshers) do fn() end
+    if width == 1100 then CheckArtwork(ctx, menu, config) end
 end
 print("Minimap tabs, preview, narrow widths, lazy editors, exact routes and scoped reset passed")

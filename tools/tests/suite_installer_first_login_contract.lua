@@ -66,6 +66,42 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames-7.0" }) do
         Check(suite.Installer.MaybeShow("login") == false, "setup opened during combat")
         H.combat = false
         Check(suite.Installer.MaybeShow("login") == true, "setup did not open after combat")
+        MSUFSuiteInstallFrame:Hide()
+        local coreOpens, fresh = 0, true
+        namespace.HostAPI = { OpenUnitFrameSetup = function(freshOnly)
+            coreOpens = coreOpens + 1
+            return fresh or not freshOnly
+        end }
+        Check(suite.Installer.MaybeShow("login"), "fresh shared setup was refused")
+        Check(coreOpens == 1 and not suite.Installer.IsOpen(), "Suite opened ahead of Core setup")
+        fresh = false
+        Check(suite.Installer.MaybeShow("login"), "configured Core did not open Suite setup")
+        local window = MSUFSuiteInstallFrame
+        Check(window:IsShown() and not window.back:IsShown(), "configured Core entered the shared continuation")
+        for _ = 1, 3 do window.next.scripts.OnClick() end
+        Check(window.keepFrames:IsShown() and window.keepFrames.caption:GetText():find(suite.Text("ON"), 1, true),
+            "Suite first login must offer the full installer and default to keeping existing frames")
+        window:Hide()
+        Check(suite.Installer.Open(function() namespace.HostAPI.OpenUnitFrameSetup(false) end), "continuation failed to open")
+        Check(window:IsShown() and window.back:IsShown(), "shared setup lost the return to Core")
+        window.back.scripts.OnClick()
+        Check(coreOpens == 3 and not window:IsShown(), "Back did not return to the shared setup")
+
+        -- Opening an already loaded Core menu can succeed with no return value.
+        -- The real host boundary must still claim the first-login handoff.
+        firstLoad:Reset("fresh")
+        namespace.Util = { InCombat = function() return false end }
+        namespace.ExportPublic = function() end
+        UnitAffectingCombat = function() return false end
+        namespace.MSUF2 = { OpenUnitFrameSetup = function() coreOpens = coreOpens + 1 end }
+        namespace.OpenOptionsFromLauncher = function(page, afterOpen)
+            assert(page == "home")
+            afterOpen()
+        end
+        assert(loadfile(hostRoot .. "Runtime/MSUF_HostAPI.lua"))("MidnightSimpleUnitFrames", namespace)
+        Check(suite.Installer.MaybeShow("login"), "loaded Core could not claim the setup")
+        Check(coreOpens == 4 and not window:IsShown(), "loaded Core opened both setups")
+
         Check(#H.reported == 0, "real installer raised: " .. tostring(H.reported[1]))
     end
 end

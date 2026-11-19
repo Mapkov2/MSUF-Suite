@@ -2,6 +2,7 @@ local _, Private = ...
 local Suite = Private.Suite
 local Navigation = { WAYPOINT = 1, CARD = 2, DIRECTION = 3 }
 Private.Navigation, Suite.Navigation = Navigation, Navigation
+local floor = math.floor
 
 function Navigation.Distance(yards, units)
     local value = units == 2 and yards * .9144 or yards
@@ -18,9 +19,10 @@ end
 local YARDS = { whole = Suite.Text("%d yd"), thousands = Suite.Text("%.1f kyd") }
 local METRES = { whole = Suite.Text("%d m"), thousands = Suite.Text("%.1f km") }
 local SECONDS, MINUTES = Suite.Text("%d sec"), Suite.Text("%d min %02d sec")
-local JOIN = Suite.Text("%s · %s")
+local JOIN = Suite.Text("%s · %s", true)
+local PREVIEW_INFO = Suite.Text("Saved waypoint · Preview", true)
 
--- A distance format and a travel time format as one: "%d yd · %d sec".
+-- A distance format and a travel time format as one, such as "%d yd - %d sec".
 local joined = {}
 local function Joined(distance, eta)
     local row = joined[distance]
@@ -42,25 +44,27 @@ end
 -- text shows (whole yards, tenths of a kilometre), so they change only when
 -- the text does, and the stamp counts those changes for the view.
 function Navigation.Readout(model, config, distance, speed)
-    local rounded = math.floor(distance + .5)
-    local seconds = config.showETA and speed > 1 and math.floor(distance / speed + .5) or -1
-    if rounded == model.rounded and seconds == model.seconds then return end
-    model.rounded, model.seconds = rounded, seconds
+    local seconds = config.showETA and speed > 1 and floor(distance / speed + .5) or -1
+    -- An exact repeat can skip conversion. Otherwise round in the displayed
+    -- unit and track the format boundary, which rounding alone can hide.
+    if distance == model.readoutDistance and model.rounded and seconds == model.seconds then return end
+    model.readoutDistance = distance
+    local value, formats = distance, YARDS
+    if config.units == 2 then value, formats = distance * .9144, METRES end
+    local rounded, thousands = floor(value + .5), value >= 1000
+    if rounded == model.rounded and seconds == model.seconds and thousands == model.thousands then return end
+    model.rounded, model.seconds, model.thousands = rounded, seconds, thousands
     local format, a, b, c
     if config.showDistance then
-        local metric = config.units == 2
-        local formats = metric and METRES or YARDS
-        local value = metric and distance * .9144 or distance
-        if value >= 1000 then
-            format, a = formats.thousands, math.floor(value / 100 + .5) / 10
+        if thousands then
+            format, a = formats.thousands, floor(value / 100 + .5) / 10
         else
-            -- Whole yards are the rounded distance above.
-            format, a = formats.whole, metric and math.floor(value + .5) or rounded
+            format, a = formats.whole, rounded
         end
     end
     if seconds >= 0 then
         local eta, first, second = SECONDS, seconds, nil
-        if seconds >= 60 then eta, first, second = MINUTES, math.floor(seconds / 60), seconds % 60 end
+        if seconds >= 60 then eta, first, second = MINUTES, floor(seconds / 60), seconds % 60 end
         if format then format, b, c = Joined(format, eta), first, second
         else
             format, a, b = eta, first, second
@@ -84,7 +88,7 @@ end
 function Navigation.Sample(model, config, scene, distance)
     model.valid, model.clamped = scene ~= 4, scene == 3
     model.distance, model.angle, model.color = distance, -.65, config.pinColor
-    model.title, model.info = Suite.Text("A place to explore"), Suite.Text("Saved waypoint · Preview")
+    model.title, model.info = Suite.Text("A place to explore"), PREVIEW_INFO
     model.rounded = nil
     Navigation.Readout(model, config, distance, 7)
     model.mode = Navigation.Mode(model, config)

@@ -29,6 +29,9 @@ local function Widget(kind)
     function methods:SetHeight(height) self.height = height end
     function methods:GetWidth() return self.width end
     function methods:GetHeight() return self.height end
+    function methods:GetParent() return self.parent end
+    function methods:SetFrameStrata(value) self.strata = value end
+    function methods:GetFrameStrata() return self.strata end
     function methods:SetScale(value) self.scale = value end
     function methods:GetScale() return rawget(self, "scale") or 1 end
     function methods:GetEffectiveScale() return self:GetScale() end
@@ -110,6 +113,7 @@ function H.Setup(options)
     GetServerTime = function() return 1000 end
     GetMoney = function() return 0 end
     C_EventUtils = { IsEventValid = function() return true end }
+    EventUtil = { ContinueOnAddOnLoaded = function() end }
     C_CVar = { GetCVar = function() return "0" end }
     C_Timer = { After = function() end }
     DEFAULT_CHAT_FRAME = { AddMessage = function(_, message) H.chat[#H.chat + 1] = message end }
@@ -117,8 +121,9 @@ function H.Setup(options)
     hooksecurefunc = function() end
     IsLoggedIn = function() return true end
     ReloadUI = function() end
-    CreateFrame = function(kind, name)
+    CreateFrame = function(kind, name, parent)
         local w = Widget(kind)
+        w.parent = parent
         if name then _G[name] = w end
         return w
     end

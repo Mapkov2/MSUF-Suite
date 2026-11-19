@@ -80,6 +80,7 @@ function Gloss.Fill(owner, target, strength, opacity)
         bars[owner] = state
     end
     StyleBar(state, target, state.path, strength / 100, opacity or 1)
+    return state.upper, state.lower
 end
 
 function Gloss.SetBarOpacity(owner, opacity) BarOpacity(bars[owner], opacity) end

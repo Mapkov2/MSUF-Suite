@@ -110,7 +110,8 @@ local function SlotDetails(ctx, builder, bar, slot, reveal, select)
     })
 end
 
-local LAYOUT = { Width = true, Height = true, Vertical = true, FullScreen = true, Dock = true, Layout = true }
+local LAYOUT = { Width = true, Height = true, Vertical = true, FullScreen = true, Dock = true, Layout = true,
+    MinimapDock = true, MinimapDockGap = true }
 local ESSENTIAL_STYLE = { Look = true, FontSize = true, ShowLabels = true, BackgroundEnabled = true }
 
 local function Appearance(ctx, builder, bar, reveal)
@@ -250,7 +251,7 @@ local function SlotChoices(bar, selected)
         local source = P.Get(ID, "bar" .. bar .. "Slot" .. slot)
         if source ~= 1 or slot == selected then
             values[#values + 1] = { value = slot,
-                text = Tr("Place %d"):format(slot) .. " · " .. Tr(P.Suite.DataTextSources[source] or "None") }
+                text = Tr("Place %d"):format(slot) .. " - " .. Tr(P.Suite.DataTextSources[source] or "None") }
         end
     end
     return values

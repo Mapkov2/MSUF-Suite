@@ -4,6 +4,33 @@ local T = {}
 P.ExtensionText = T
 local SOURCES = { target = 2, quest = 3, guild = 4, title = 5, threat = 6, difference = 7, power = 8, absorb = 9, forces = 10 }
 local ANCHORS = NS.NameplateExtensions.TextPoints
+local EVENT_SOURCES = {
+    UNIT_TARGET = { [2] = true, [6] = true, [7] = true },
+    UNIT_NAME_UPDATE = { [2] = true, [3] = true, [4] = true, [5] = true, [10] = true },
+    UNIT_THREAT_LIST_UPDATE = { [6] = true, [7] = true },
+    UNIT_THREAT_SITUATION_UPDATE = { [6] = true, [7] = true },
+    UNIT_POWER_UPDATE = { [8] = true },
+    UNIT_MAXPOWER = { [8] = true },
+    UNIT_DISPLAYPOWER = { [8] = true },
+    UNIT_ABSORB_AMOUNT_CHANGED = { [9] = true },
+}
+
+function T.Configure(scopes)
+    for _, scope in pairs(scopes) do
+        local routes = {}
+        for event, sources in pairs(EVENT_SOURCES) do
+            local slots
+            for _, slot in ipairs(scope.slots) do
+                if sources[slot.source] then
+                    slots = slots or {}
+                    slots[#slots + 1] = slot
+                end
+            end
+            routes[event] = slots
+        end
+        scope.textRoutes = routes
+    end
+end
 
 local function PublicTable(value)
     return not NS.IsSecret(value) and type(value) == "table" and canaccesstable(value)
@@ -83,15 +110,15 @@ local function Threat(state)
 end
 
 local function Read(state, event)
-    local sources, values, all = state.interaction.sources, state.textValues, event == nil
+    local sources, values = state.interaction.sources, state.textValues
+    local changed = EVENT_SOURCES[event] or sources
     if not state.metadataReady then Metadata(state) end
-    if sources[2] and (all or event == "UNIT_TARGET" or event == "UNIT_NAME_UPDATE") then Target(state) end
-    if (sources[6] or sources[7]) and (all or event == "UNIT_THREAT_LIST_UPDATE" or event == "UNIT_THREAT_SITUATION_UPDATE"
-        or event == "UNIT_TARGET") then Threat(state) end
-    if sources[8] and (all or event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER") then
+    if sources[2] and changed[2] then Target(state) end
+    if (sources[6] and changed[6]) or (sources[7] and changed[7]) then Threat(state) end
+    if sources[8] and changed[8] then
         values.power, values.maximum = UnitPower(state.unit), UnitPowerMax(state.unit)
     end
-    if sources[9] and (all or event == "UNIT_ABSORB_AMOUNT_CHANGED") then values.absorb = UnitGetTotalAbsorbs(state.unit) end
+    if sources[9] and changed[9] then values.absorb = UnitGetTotalAbsorbs(state.unit) end
 end
 
 local FORMATS = { [6] = "%.0f%%", [7] = "%+.0f", [9] = "%.0f", [10] = "+%.2f%%" }
@@ -140,8 +167,15 @@ function T.Apply(state, event)
     state.textValues, state.labels = state.textValues or {}, state.labels or {}
     local changed = state.textPlan ~= scope
     if changed then T.Hide(state) end
+    local slots = scope.slots
+    if event and not changed and (state.metadataReady or event == "UNIT_NAME_UPDATE") then
+        slots = scope.textRoutes[event]
+        if not slots then return end
+    else
+        event = nil
+    end
     Read(state, event)
-    for _, slot in ipairs(scope.slots) do
+    for _, slot in ipairs(slots) do
         local label = state.labels[slot.source]
         if not label then
             local owner = state.uf

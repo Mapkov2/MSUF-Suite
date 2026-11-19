@@ -14,6 +14,33 @@ W.Apply()
  W.OpenBags()
  W.Settle()
 local V = W.P.InventoryView
+local label = assert(V.labels[1], "no header to repaint")
+local headerWrites = 0
+for _, method in ipairs({ "ClearAllPoints", "SetPoint", "SetWidth", "SetText" }) do
+ local original = label[method]
+ label[method] = function(self, ...)
+  headerWrites = headerWrites + 1
+  return original(self, ...)
+ end
+end
+V.MoveScroll(0)
+assert(headerWrites == 0, "unchanged header was reanchored or rewritten")
+local width = label:GetWidth()
+W.M.config.inventoryColumns = 6
+V.MoveScroll(0)
+assert(label:GetWidth() < width, "reused header kept the old viewport width")
+W.M.config.inventoryColumns = 8
+V.MoveScroll(0)
+assert(label:GetWidth() == width, "viewport width did not return after resizing")
+W.CloseBags()
+W.config.enabled = false
+W.Apply()
+W.config.enabled = true
+W.Apply()
+W.OpenBags()
+W.Settle()
+assert(V.labels[1] == label and label:IsVisible() and label:GetWidth() == width,
+ "re-enabling the inventory did not restore the reused section header")
 for scroll = 0, 4 do
  V.scroll = scroll
  V.MoveScroll(0)

@@ -1,206 +1,110 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local Feed, Display, Gains = NS.FloatingCombatFeed, P.FloatingTextDisplay, P.FloatingTextGains
 local ID, CAPACITY = "floatingCombatText", 24
-local PLATE_LINES, TRAVEL, LINE_GAP = 4, 42, 8
+local ESTIMATED, ALL_ENEMIES = 1, 2
 local DAMAGE_CVAR = "floatingCombatTextCombatDamage_v2"
 local DIRECT = { inCombat = true, direct = true }
-local FULL_MITIGATION = { ABSORB = true, BLOCK = true, RESIST = true }
 local MELEE_WINDOW, RANGED_WINDOW, CAST_WINDOW = 1.3, 2, 2.5
--- Forever's Enum.PlayerSwingType, defined in SwingTimerDocumentation.lua.
+-- Forever's Enum.PlayerSwingType from SwingTimerDocumentation.lua.
 local OFF_HAND, RANGED = 1, 2
 local M = {}
 
-local function ReleasePlateSlot(self, slot)
-    local plate = slot.plate
-    local mask = self.activePlates[plate] - slot.lineBit
-    self.activePlates[plate] = mask > 0 and mask or nil
-    if slot.older then slot.older.newer = slot.newer else self.firstSlots[plate] = slot.newer end
-    if slot.newer then slot.newer.older = slot.older else self.lastSlots[plate] = slot.older end
-    slot.older, slot.newer = nil, nil
+-- The type is public only on the paths checked below. The amount is opaque
+-- and is handed straight to the renderer's FontString.
+local Outcomes = {
+    MISS = MISS or S.Text("Miss"), DODGE = DODGE or S.Text("Dodge"), PARRY = PARRY or S.Text("Parry"),
+    BLOCK = BLOCK or S.Text("Block"), RESIST = RESIST or S.Text("Resist"), ABSORB = ABSORB or S.Text("Absorb"),
+    IMMUNE = IMMUNE or S.Text("Immune"), EVADE = EVADE or S.Text("Evade"),
+    DEFLECT = DEFLECT or S.Text("Deflect"), REFLECT = REFLECT or S.Text("Reflect"),
+}
+local FULL_MITIGATION = { ABSORB = true, BLOCK = true, RESIST = true }
+local Formats = Gains.Formats
+S.FloatingTextSamples = {
+    { key = "hit", label = S.Text("Enemy damage"), route = "hit", format = "%s", value = "461" },
+    { key = "crit", label = S.Text("Critical hit"), route = "hit", critical = true, format = "%s", value = "1,284" },
+    { key = "dodge", label = Outcomes.DODGE, route = "avoid", value = Outcomes.DODGE },
+    { key = "parry", label = Outcomes.PARRY, route = "avoid", value = Outcomes.PARRY },
+    { key = "miss", label = Outcomes.MISS, route = "avoid", value = Outcomes.MISS },
+    { key = "block", label = Outcomes.BLOCK, route = "avoid", value = Outcomes.BLOCK },
+    { key = "absorb", label = Outcomes.ABSORB, route = "avoid", value = Outcomes.ABSORB },
+    { key = "resist", label = Outcomes.RESIST, route = "avoid", value = Outcomes.RESIST },
+    { key = "immune", label = Outcomes.IMMUNE, route = "avoid", value = Outcomes.IMMUNE },
+    { key = "xp", label = S.Text("XP gained"), route = "gain", format = Formats.xp, value = 425 },
+    { key = "level", label = S.Text("Level up"), route = "gain", critical = true, format = Formats.level, value = 42 },
+    { key = "reputation", label = S.Text("Reputation"), route = "gain", format = Formats.reputation, value = "+125" },
+    { key = "honor", label = S.Text("Honor"), route = "gain", format = Formats.honor, value = 48 },
+    { key = "power", label = S.Text("Resource gain"), route = "power", format = Formats.power, value = 20 },
+    { key = "enter", label = Gains.CombatStart, route = "combat", value = Gains.CombatStart },
+    { key = "leave", label = Gains.CombatEnd, route = "combat", value = Gains.CombatEnd },
+}
+
+local function IsEnemy(unit)
+    local enemy = UnitCanAttack("player", unit)
+    return S.Public(enemy) and enemy == true
 end
 
-local function Finished(animation)
-    local slot, owner = animation.slot, animation.owner
-    ReleasePlateSlot(owner, slot)
-    slot.plate = nil
-    slot.frame:Hide()
+local function AccessiblePlate(plate)
+    return S.Public(plate) and type(plate) == "table" and not NS.Safety.IsForbidden(plate)
 end
 
-local function ClearSlots(self, plate)
-    if plate and not self.activePlates[plate] then return end
-    for i = 1, CAPACITY do
-        local slot = self.slots[i]
-        if slot.plate and (not plate or slot.plate == plate) then
-            slot.animation:Stop()
-            Finished(slot.animation)
-        end
-    end
+local function GetPlate(unit)
+    local plate = C_NamePlate.GetNamePlateForUnit(unit)
+    if AccessiblePlate(plate) then return plate end
 end
 
-local function NewText(frame)
-    local text = S.CreateFontString(frame, nil, "OVERLAY")
-    -- One anchor lets the native FontString fit the complete amount, including
-    -- secret numbers. Opposing anchors would truncate it to the holder's width.
-    text:SetPoint("CENTER", frame, "CENTER")
-    text:SetJustifyH("CENTER")
-    text:SetJustifyV("MIDDLE")
-    text:SetWordWrap(false)
-    text:SetNonSpaceWrap(false)
-    text:SetTextColor(1, 0.82, 0)
-    return text
-end
-
-local function Create(self)
-    if self.slots then return end
-    self.slots, self.plates, self.activePlates = {}, {}, {}
-    self.firstSlots, self.lastSlots = {}, {}
-    for i = 1, CAPACITY do
-        local frame = S.CreateFrame("Frame", nil, UIParent)
-        frame:SetFrameStrata("HIGH")
-        frame:EnableMouse(false)
-        frame:SetClipsChildren(false)
-        local normal, critical = NewText(frame), NewText(frame)
-        critical:Hide()
-        local animation = frame:CreateAnimationGroup()
-        animation:SetScript("OnFinished", Finished)
-        local move = animation:CreateAnimation("Translation")
-        move:SetOrder(1)
-        move:SetOffset(0, TRAVEL)
-        local fade = animation:CreateAnimation("Alpha")
-        fade:SetOrder(1)
-        fade:SetFromAlpha(1)
-        fade:SetToAlpha(0)
-        local slot = { frame = frame, normal = normal, critical = critical, text = normal,
-            animation = animation, move = move, fade = fade, index = i }
-        animation.slot, animation.owner = slot, self
-        self.slots[i] = slot
-        frame:Hide()
-    end
-    self.cursor = 0
-end
-
-local function Style(self)
-    ClearSlots(self)
-    local c = self.config
-    local critSize = c.fontSize * c.critScale / 100
-    local font = S.ResolveFont(c.font) or S.GlobalFontPath()
-    -- Reserve the largest glyph height and its entire upward animation path.
-    self.lineStep = critSize * 1.5 + TRAVEL + LINE_GAP
-    for i = 1, CAPACITY do
-        local slot = self.slots[i]
-        slot.anchor = nil
-        slot.frame:ClearAllPoints()
-        slot.frame:SetSize(math.max(120, critSize * 6), critSize * 1.5)
-        S.SetFont(slot.normal, font, c.fontSize, "OUTLINE")
-        S.SetFont(slot.critical, font, critSize, "OUTLINE")
-        slot.move:SetDuration(c.duration)
-        slot.fade:SetStartDelay(c.duration * .45)
-        slot.fade:SetDuration(c.duration * .55)
-    end
-end
-
-local function Paint(self, plate, flag, amount)
-    local mask = self.activePlates[plate] or 0
-    local line, lineBit = 0, 1
-    while mask % 2 == 1 do
-        line, lineBit, mask = line + 1, lineBit * 2, math.floor(mask / 2)
-    end
-    local slot
-    if line == PLATE_LINES then
-        -- A full plate reuses its oldest number without growing the stack.
-        slot = self.firstSlots[plate]
-        line, lineBit = slot.line, slot.lineBit
-    else
-        slot = self.slots[self.cursor % CAPACITY + 1]
-    end
-    self.cursor = slot.index
-    local previous = slot.plate
-    if previous then
-        slot.animation:Stop()
-        ReleasePlateSlot(self, slot)
-    end
-    self.activePlates[plate] = (self.activePlates[plate] or 0) + lineBit
-    slot.plate, slot.line, slot.lineBit = plate, line, lineBit
-    local tail = self.lastSlots[plate]
-    slot.older = tail
-    if tail then tail.newer = slot else self.firstSlots[plate] = slot end
-    self.lastSlots[plate] = slot
-    if slot.anchor ~= plate or slot.anchorLine ~= line then
-        slot.frame:ClearAllPoints()
-        slot.frame:SetPoint("BOTTOM", plate, "TOP", 0, self.config.offset + line * self.lineStep)
-        slot.anchor, slot.anchorLine = plate, line
-    end
-    local critical = flag == "CRITICAL" or flag == "CRUSHING"
-    local text = critical and slot.critical or slot.normal
-    if slot.text ~= text then
-        slot.text:Hide()
-        text:Show()
-        slot.text = text
-    end
-    -- UNIT_COMBAT's amount is secret on Forever. Pass it directly to the C text sink.
-    text:SetFormattedText("%s", amount)
-    if not previous then slot.frame:Show() end
-    slot.animation:Play()
-end
-
-local function EnemyPlate(unit, plate)
-    if not S.Public(plate) or type(plate) ~= "table" or NS.Safety.IsForbidden(plate) then return end
-    local attackable = UnitCanAttack("player", unit)
-    if S.Public(attackable) and attackable then return plate end
-end
-
-local function FindTarget(self)
-    local plate = EnemyPlate("target", C_NamePlate.GetNamePlateForUnit("target"))
-    if plate ~= self.targetPlate then
-        self.mainHandUntil, self.offHandUntil, self.castUntil = nil, nil, nil
-        self.targetPlate = plate
-    end
+local function ResetClaims(self)
+    self.mainHandUntil, self.offHandUntil, self.castUntil = nil, nil, nil
 end
 
 local function TargetChanged(self)
-    self.mainHandUntil, self.offHandUntil, self.castUntil = nil, nil, nil
-    FindTarget(self)
+    ResetClaims(self)
+    self.targetEnemy = self.source and IsEnemy("target")
+    self.targetPlate = self.trackPlates and self.targetEnemy and GetPlate("target") or nil
 end
 
 local function WorldChanged(self)
-    ClearSlots(self)
+    self.display:Clear()
     wipe(self.plates)
     TargetChanged(self)
+    Gains.WorldChanged(self)
+    if not self.trackPlates then return end
     local plates = C_NamePlate.GetNamePlates()
+    if not S.Public(plates) or type(plates) ~= "table" then return end
     for i = 1, #plates do
         local plate = plates[i]
-        if S.Public(plate) and type(plate) == "table" and not NS.Safety.IsForbidden(plate) and plate.GetUnit then
+        if AccessiblePlate(plate) and plate.GetUnit then
             local unit = plate:GetUnit()
-            if S.Public(unit) and type(unit) == "string" then self.plates[unit] = EnemyPlate(unit, plate) end
+            if S.Public(unit) and type(unit) == "string" and IsEnemy(unit) then self.plates[unit] = plate end
         end
     end
 end
 
 local function PlateAdded(self, _, unit)
     if not S.Public(unit) or type(unit) ~= "string" then return end
-    local plate = EnemyPlate(unit, C_NamePlate.GetNamePlateForUnit(unit))
+    local plate = IsEnemy(unit) and GetPlate(unit) or nil
     local previous = self.plates[unit]
-    if previous and previous ~= plate then ClearSlots(self, previous) end
+    if previous and previous ~= plate then self.display:Clear(previous) end
     self.plates[unit] = plate
-    if not self.targetPlate and plate then FindTarget(self) end
+    if plate and not self.targetPlate and self.targetEnemy then self.targetPlate = GetPlate("target") end
 end
 
 local function PlateRemoved(self, _, unit)
-    if not S.Public(unit) or type(unit) ~= "string" then return end
+    if not S.Public(unit) then return end
     local plate = self.plates[unit]
     if not plate then return end
     self.plates[unit] = nil
     if plate == self.targetPlate then
         self.targetPlate = nil
-        self.mainHandUntil, self.offHandUntil, self.castUntil = nil, nil, nil
+        ResetClaims(self)
     end
-    ClearSlots(self, plate)
+    self.display:Clear(plate)
 end
 
--- The public action events provide timing, not attribution. A consumed window
--- can admit at most one hit, and never carries over to a new target.
+-- Swing and cast windows approximate attribution. The frames and event
+-- payload do not identify who caused a hit to the target.
 local function Swing(self, _, _, swingType)
-    if not self.targetPlate or not S.Public(swingType) then return end
+    if not self.targetEnemy or not S.Public(swingType) then return end
     local now = GetTime()
     if swingType == OFF_HAND then
         self.offHandUntil = now + MELEE_WINDOW
@@ -212,7 +116,7 @@ local function Swing(self, _, _, swingType)
 end
 
 local function Cast(self, _, _, _, spellID)
-    if not self.targetPlate or not S.Public(spellID) or type(spellID) ~= "number" then return end
+    if not self.targetEnemy or not S.Public(spellID) or type(spellID) ~= "number" then return end
     local harmful = C_Spell.IsSpellHarmful(spellID)
     if S.Public(harmful) and harmful then self.castUntil = GetTime() + CAST_WINDOW end
 end
@@ -230,57 +134,77 @@ local function Claim(self, school)
     elseif cast and cast >= now then
         self.castUntil = nil
     else
-        self.mainHandUntil, self.offHandUntil, self.castUntil = nil, nil, nil
+        ResetClaims(self)
         return false
     end
     return true
 end
 
-local function Wound(unit, action, flag)
-    return S.Public(action) and action == "WOUND" and S.Public(unit) and S.Public(flag)
-        and not FULL_MITIGATION[flag]
-end
-
-local function AllHits(self, _, unit, action, flag, amount)
-    if not Wound(unit, action, flag) then return end
+local function EnemyCombat(self, _, unit, action, flag, amount, school)
+    if not S.Public(unit) or not S.Public(action) then return end
+    local plate
     if unit == "target" then
-        if self.targetPlate then Paint(self, self.targetPlate, flag, amount) end
+        if not self.targetEnemy then return end
+        plate = self.targetPlate
+    elseif self.source == ALL_ENEMIES then
+        plate = self.plates[unit]
+        -- A target hit can also arrive on its nameplate token.
+        if not plate or plate == self.targetPlate then return end
     else
-        local plate = self.plates[unit]
-        -- The target has its own UNIT_COMBAT alias. Ignore its duplicate nameplate event.
-        if plate and plate ~= self.targetPlate then Paint(self, plate, flag, amount) end
+        return
     end
-end
-
-local function EstimatedHits(self, _, unit, action, flag, amount, school)
-    if not self.targetPlate or not Wound(unit, action, flag) or unit ~= "target" or not Claim(self, school) then return end
-    Paint(self, self.targetPlate, flag, amount)
+    if not S.Public(flag) then flag = nil end
+    local outcome = Outcomes[action]
+    local damage = action == "WOUND"
+    if damage and FULL_MITIGATION[flag] then
+        outcome, damage = Outcomes[flag], false
+    end
+    if not damage and not outcome then return end
+    if self.source == ESTIMATED and not Claim(self, school) then return end
+    local display = self.display
+    if damage and display.enabled.hit then
+        display:Show("hit", flag == "CRITICAL" or flag == "CRUSHING", "%s", amount, plate)
+    elseif outcome and display.enabled.avoid then
+        display:Show("avoid", false, nil, outcome, plate)
+    end
 end
 
 local function Listen(self)
-    local context, estimate = self.context, self.config.hitSource == 1
-    if estimate == self.estimate then return end
-    self.estimate = estimate
-    self.mainHandUntil, self.offHandUntil, self.castUntil = nil, nil, nil
+    local c, display, context = self.config, self.display, self.context
+    local source = Feed.Enemy() and (c.showHits or c.showAvoidance) and c.hitSource or false
+    local track = source ~= false and (source == ALL_ENEMIES or display:NeedsPlate()) or false
+    if self.source == source and self.trackPlates == track then return end
+    self.source, self.trackPlates = source, track
     context:RemoveEvent("UNIT_COMBAT")
-    if estimate then
-        context:Event("UNIT_COMBAT", EstimatedHits, nil, "target")
-        context:Event("PLAYER_SWING", Swing, DIRECT)
-        context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, nil, "player")
-    else
-        context:Event("UNIT_COMBAT", AllHits, DIRECT)
-        context:RemoveEvent("PLAYER_SWING")
-        context:RemoveEvent("UNIT_SPELLCAST_SUCCEEDED")
+    context:RemoveEvent("PLAYER_SWING")
+    context:RemoveEvent("UNIT_SPELLCAST_SUCCEEDED")
+    if source == ALL_ENEMIES then
+        context:Event("UNIT_COMBAT", EnemyCombat, DIRECT)
+    elseif source then
+        context:Event("UNIT_COMBAT", EnemyCombat, nil, "target")
+        if source == ESTIMATED then
+            context:Event("PLAYER_SWING", Swing, DIRECT)
+            context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, nil, "player")
+        end
     end
+    if source then context:Event("PLAYER_TARGET_CHANGED", TargetChanged) else context:RemoveEvent("PLAYER_TARGET_CHANGED") end
+    if track then
+        context:Event("NAME_PLATE_UNIT_ADDED", PlateAdded)
+        context:Event("NAME_PLATE_UNIT_REMOVED", PlateRemoved)
+    else
+        context:RemoveEvent("NAME_PLATE_UNIT_ADDED")
+        context:RemoveEvent("NAME_PLATE_UNIT_REMOVED")
+    end
+    WorldChanged(self)
 end
 
 function M:Refresh()
-    Style(self)
+    local c = self.config
+    self.display:Configure(c, S.ResolveFont(c.font) or S.GlobalFontPath())
     Listen(self)
-    if self.config.hideBlizzard then
-        if not self.hidesBlizzard then
-            self.hidesBlizzard = self.context:CVar(DAMAGE_CVAR, 0)
-        end
+    Gains.Refresh(self)
+    if self.source and c.showHits and c.hideBlizzard then
+        if not self.hidesBlizzard then self.hidesBlizzard = self.context:CVar(DAMAGE_CVAR, 0) end
     elseif self.hidesBlizzard then
         S.RestoreCVar(ID, DAMAGE_CVAR)
         self.hidesBlizzard = nil
@@ -288,21 +212,25 @@ function M:Refresh()
 end
 
 function M:Enable()
-    Create(self)
-    WorldChanged(self)
-    self.context:Event("NAME_PLATE_UNIT_ADDED", PlateAdded)
-    self.context:Event("NAME_PLATE_UNIT_REMOVED", PlateRemoved)
-    self.context:Event("PLAYER_TARGET_CHANGED", TargetChanged)
+    if not self.display then
+        local host = S.CreateFrame("Frame", nil, UIParent)
+        host:SetAllPoints(UIParent)
+        host:SetFrameStrata("HIGH")
+        host:EnableMouse(false)
+        self.display, self.plates = Display.New(host, CAPACITY), {}
+    end
     self.context:Event("PLAYER_ENTERING_WORLD", WorldChanged)
     self:Refresh()
 end
 
 function M:Disable()
-    if not self.slots then return end
-    ClearSlots(self)
+    if not self.display then return end
+    self.display:Clear()
     wipe(self.plates)
-    self.targetPlate, self.estimate, self.hidesBlizzard = nil, nil, nil
-    self.mainHandUntil, self.offHandUntil, self.castUntil = nil, nil, nil
+    self.source, self.trackPlates, self.hidesBlizzard = nil, nil, nil
+    self.targetEnemy, self.targetPlate = nil, nil
+    ResetClaims(self)
+    Gains.Disable(self)
 end
 
 S.Install(ID, M)

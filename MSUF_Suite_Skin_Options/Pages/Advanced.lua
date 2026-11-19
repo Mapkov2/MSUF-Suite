@@ -13,9 +13,8 @@ local function BuildRuntimeContract(page)
     -- The engine's actual runtime footprint: the window corner drag is its only
     -- OnUpdate (removed on release), timers are one-shot, and unit events
     -- serve only the Micro Bar portrait and open character panels.
-    local body = O.CreateText(contract,
-        L["• No idle OnUpdate; a window corner drag runs one only while the mouse button is held\n• No repeating tickers; short one-shot timers only batch layout and hover updates\n• One frame walk per session, when the window skin is first enabled, adopts existing panel buttons\n• No aura or nameplate listeners; unit events only for the Micro Bar portrait and open character panels\n• Combat-state events only pause and resume deferred work and close open option popups\n• One shared ADDON_LOADED dispatcher only while catalog targets are pending\n• External weak-key runtime state"],
-        13, "text")
+    local instructions = L["• No idle OnUpdate; a window corner drag runs one only while the mouse button is held\n• No repeating tickers; short one-shot timers only batch layout and hover updates\n• One frame walk per session, when the window skin is first enabled, adopts existing panel buttons\n• No aura or nameplate listeners; unit events only for the Micro Bar portrait and open character panels\n• Combat-state events only pause and resume deferred work and close open option popups\n• One shared ADDON_LOADED dispatcher only while catalog targets are pending\n• External weak-key runtime state"]
+    local body = O.CreateText(contract, (instructions:gsub("• ", "- ")), 13, "text")
     body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
     body:SetPoint("RIGHT", -18, 0)
     body:SetJustifyV("TOP")

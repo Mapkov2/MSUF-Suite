@@ -3,54 +3,19 @@ local NS, S = P.NS, P.Suite
 local ID = "playerAuras"
 local M = {}
 local cleanup, trayHooked, debuffControls
--- Blizzard's two aura frames, read at each Adopt.
 local buffFrame, debuffFrame
--- Side tables; nothing is written onto Blizzard frames.
---   saved    region -> the readable originals of what this module writes on it
---   borders  button -> the module's outline frame
---   hooked   frame  -> true once its native layout calls are hooked
---   debuffs  frame  -> true for the frame that takes the debuff row offset
---   laid     frame  -> { n, anchored, framed, restyle, [slot] = button }: the
---                       first n slots were placed since the frame's last native
---                       layout; anchored: the container's anchor and size
---                       hold; framed: the frame sits beside the minimap
---   styled   button -> the style generation its artwork and fonts carry
---   looks    parent -> MSUF's icon skin look of the buttons it holds (an aura
---                       frame's AuraContainer and the frame itself; nil: none)
---   skinned  button -> { look, w, h } while that skin draws on it
---   lifted   region -> the Duration's draw layer before a skin lifted it
---   shifted  frame  -> { dx, dy }: an MSUF Edit Mode drag's preview offset of
---                       the frame's AuraContainer, until the next Adopt
---   handles  container -> the Suite's empty frame over it that its MSUF
---                       Edit Mode mover holds
+-- All snapshots, style generations and placements live in Suite side tables.
 local saved, borders, hooked, debuffs, laid, styled = {}, {}, {}, {}, {}, {}
-local looks, skinned, lifted, shifted, handles = {}, {}, {}, {}, {}
+local looks, skinned, shifted, handles = {}, {}, {}, {}
 local generation, fontPath = 0, nil
+local borderRed, borderGreen, borderBlue
+local cropLeft, cropRight, cropTop, cropBottom
+local stepX, stepY
 local unpack, select, floor, ceil, max, min = unpack, select, math.floor, math.ceil, math.max, math.min
--- The client's secret test (Platform.lua), called directly on the aura path.
 local IsSecret = NS.IsSecret
 local Finite = S.Finite
 
--- Blizzard_BuffFrame (live 12.1.5 and Forever 1.60.1): retain native buttons,
--- aura updates, cancel clicks, private anchors and duration timers.
--- Only public, configured geometry and artwork are changed here.
---
--- Cadence (BuffFrame.lua): every player UNIT_AURA that adds, removes or
--- updates an aura runs both frames' Update -> UpdateAuraButtons (283-295), and
--- DebuffFrame's UpdateAuraButtons ends in UpdateGridLayout (751-754).
--- UpdateGridLayout re-scales, re-sizes and re-anchors each button it lays
--- out, its Icon and its Duration (147-163) and the AuraContainer.
--- UpdateAuraButtons only shows, hides and refills buttons: SetTexture keeps
--- the TexCoord (Blizzard_CustomAuraButton.lua:501 resets it explicitly), and
--- SetAtlas ignores the atlas size on the native borders. So a button is placed
--- when its slot is new since the frame's last native layout, and its artwork
--- and fonts are painted once per style generation. A refresh that keeps the
--- shown buttons costs one IsShown per button and writes nothing.
-
--- A secret value is not recorded: SetPoint, SetSize, SetScale, SetFont and
--- SetShadow* refuse one from addon code, and SetAlpha, SetTexCoord and
--- SetTextColor would mark the region's aspect secret. Such a value keeps its
--- current state when the module stops.
+-- Prepare the native pool before show: buff refills keep geometry and skin; debuffs reflow active and private anchors.
 local function Readable(...)
     local values = { n = select("#", ...), ... }
     for index = 1, values.n do
@@ -59,13 +24,9 @@ local function Readable(...)
     return values
 end
 
--- What the module writes on each kind of region, and so all that Remember
--- reads and Restore puts back. A FontString's size, a button's alpha (the
--- warning flash) and the frame's alpha (Edit Mode opacity) stay Blizzard's.
 local BUTTON = { points = true, size = true, scale = true }
--- Aura button icons are Textures (BuffFrameTemplates.xml:8); a private aura
--- anchor's Icon frame is never written.
-local ICON = { points = true, coords = true }
+-- SetAllPoints resizes textures by default. Save their intrinsic size independently of the resolved rectangle.
+local ICON = { points = true, intrinsicSize = true }
 local TEXT = { points = true, alpha = true, text = true }
 local BORDER = { size = true }
 local FRAME = { points = true }
@@ -94,16 +55,26 @@ local function Numbers(count, ...)
     return values
 end
 
+-- Opposite corners fill the button without changing an unreadable intrinsic size.
+local function FillIconCorners(icon, button)
+    icon:SetPoint("TOPLEFT", button, "TOPLEFT")
+    icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT")
+end
+
 local function Snapshot(region, aspects)
     if not region or NS.Safety.IsForbidden(region) then return end
     local state = {}
     if aspects.points then
         state.points = Points(region)
-        if not state.points then return end
+        if not state.points and not aspects.intrinsicSize then return end
     end
-    if aspects.size then
-        state.size = Numbers(2, region:GetWidth(), region:GetHeight())
-        if not state.size then return end
+    if aspects.size or aspects.intrinsicSize then
+        local intrinsic = aspects.intrinsicSize == true
+        state.size = Numbers(2, region:GetWidth(intrinsic), region:GetHeight(intrinsic))
+        if intrinsic then state.fill = state.size and region.SetAllPoints or FillIconCorners
+        elseif not state.size then
+            return
+        end
     end
     if aspects.scale then
         state.scale = Numbers(1, region:GetScale())
@@ -112,10 +83,6 @@ local function Snapshot(region, aspects)
     if aspects.alpha then
         state.alpha = Numbers(1, region:GetAlpha())
         if not state.alpha then return end
-    end
-    if aspects.coords then
-        state.coords = Numbers(8, region:GetTexCoord())
-        if not state.coords then return end
     end
     if aspects.text then
         state.font = Readable(region:GetFont())
@@ -139,8 +106,11 @@ end
 
 local function RestoreRegion(region, state)
     if not state then return end
-    if NS.Safety.IsForbidden(region) then saved[region] = nil return end
-    if state.points then
+    if NS.Safety.IsForbidden(region) then
+        saved[region] = nil
+        return
+    end
+    if state.points and not state.reanchored then
         local clear = region.ClearAllPointsBase or region.ClearAllPoints
         local set = region.SetPointBase or region.SetPoint
         clear(region)
@@ -158,34 +128,32 @@ local function RestoreRegion(region, state)
 end
 
 local function Restore()
-    for region, state in pairs(saved) do RestoreRegion(region, state) end
-    for _, border in pairs(borders) do border:Hide() end
-    for button in pairs(skinned) do
-        NS.HostBridge.PaintIconSkin(button, nil)
-        skinned[button] = nil
+    for region, state in pairs(saved) do
+        NS.Dispatch(RestoreRegion, region, state)
+        saved[region] = nil
     end
-    for region, layer in pairs(lifted) do
-        if layer then Put(region, "SetDrawLayer", layer) end
-        lifted[region] = nil
+    for _, border in pairs(borders) do NS.Dispatch(border.Hide, border) end
+    for button in pairs(skinned) do
+        NS.Dispatch(NS.HostBridge.PaintIconSkin, button, nil)
+        NS.Dispatch(P.PlayerAuraSkins.SetLayers, button, false)
+        skinned[button] = nil
     end
     for frame in pairs(shifted) do shifted[frame] = nil end
 end
 
--- Forget every placement and style: the next sync of each frame paints all.
 local function Invalidate()
     generation = generation + 1
     for _, list in pairs(laid) do
-        list.n, list.anchored, list.framed = 0, false, false
+        list.n, list.anchored, list.framed, list.attempts = -1, false, false, nil
     end
 end
 
--- In combat a protected frame or button waits: S.Queue re-applies the module
--- after it. The slots from `slot` on stay unplaced until then.
-local function Refused(region, list, slot)
+-- Protected writes resume after combat.
+local function Refused(region, list)
     local protected = region:IsProtected()
     if not (IsSecret(protected) or protected) then return false end
     S.Queue("playerAuras")
-    list.n = slot - 1
+    list.n = -1
     return true
 end
 
@@ -201,23 +169,8 @@ local function Border(button, icon, c)
     border:SetAllPoints(icon)
     local level = button:GetFrameLevel()
     if Finite(level) then border:SetFrameLevel(level + 1) end
-    local r, g, b = S.RGB(c.borderColor)
-    S.PlaceEdges(border.edges, border, c.borderSize, r, g, b, 1)
+    S.PlaceEdges(border.edges, border, c.borderSize, borderRed, borderGreen, borderBlue, 1)
     border:SetShown(c.borderSize > 0)
-end
-
--- The template keeps Duration on BACKGROUND, under a skin's layers: while a
--- skin draws it moves to OVERLAY (the Count's layer). Its own layer, read once,
--- comes back when the skin goes or the module stops.
-local function Lift(region, on)
-    if not (region and region.SetDrawLayer) then return end
-    if on then
-        if lifted[region] == nil then lifted[region] = Readable(region:GetDrawLayer()) or false end
-        region:SetDrawLayer("OVERLAY", 0)
-    elseif lifted[region] ~= nil then
-        if lifted[region] then Put(region, "SetDrawLayer", lifted[region]) end
-        lifted[region] = nil
-    end
 end
 
 local function Font(region, c)
@@ -242,21 +195,15 @@ local function NativeBorder(region, c)
     region:SetSize(c.iconWidth + 2, c.iconHeight + 2)
 end
 
--- Native code keeps all of this until the configuration or Edit Mode changes.
--- (zhTW alone: AuraButtonMixin:OnUpdate sets the Duration font object every
--- frame for long auras, BuffFrame.lua:963-973.)
 local function Style(button, icon, c)
     styled[button] = generation
     if icon.SetTexCoord then
-        -- Half the shown artwork; the zoom cuts c.iconZoom percent per side.
-        local x = .5 - c.iconZoom / 100
-        local y = x
-        if c.iconWidth > c.iconHeight then
-            y = y * c.iconHeight / c.iconWidth
-        else
-            x = x * c.iconWidth / c.iconHeight
+        -- ConsolidatedBuffs uses a sub-rectangle of an atlas, not an aura icon.
+        if not (buffFrame and button == buffFrame.ConsolidatedBuffs) then
+            local original = saved[icon]
+            original.coords = original.coords or Numbers(8, icon:GetTexCoord())
+            if original.coords then icon:SetTexCoord(cropLeft, cropRight, cropTop, cropBottom) end
         end
-        icon:SetTexCoord(.5 - x, .5 + x, .5 - y, .5 + y)
         Border(button, icon, c)
     end
     NativeBorder(button.DebuffBorder, c)
@@ -264,41 +211,19 @@ local function Style(button, icon, c)
     Font(button.Count, c)
     Font(button.Duration, c)
     Pin(button.Count, button, "BOTTOMRIGHT")
-    if button.Duration and button.Duration.SetFont then button.Duration:SetAlpha(c.showDuration and 1 or 0) end
-end
-
--- MSUF's icon skin on a button Style just styled, run in Style's stead
--- (Place's `style`, chosen by ResolveLooks on the settings path) only while
--- a row has a look: the aura updates of a player without skins run Style
--- alone. Once per style generation and when Blizzard shows a button the pool
--- hands out, also in combat, so every button shows the same look: its row's,
--- found by the button's parent (that frame's AuraContainer). Its layers are
--- textures of the button around its Icon (ARTWORK 5-7, gloss OVERLAY -1: the
--- debuff type border and Count, OVERLAY, stay above); it replaces the
--- module's outline while it draws. Style made that outline with the icon's
--- texture coordinates: without it the icon is not styled and takes no skin.
-local function PaintSkin(button, icon, look, w, h)
-    local shown = skinned[button]
-    if not (look or shown) then return end
-    if shown and shown.look == look and shown.w == w and shown.h == h then return true end
-    local skin = NS.HostBridge.PaintIconSkin(button, look, w, h, icon)
-    skinned[button] = skin and { look = look, w = w, h = h } or nil
-    Lift(button.Duration, skin)
-    return skin
+    if saved[button.Duration] then button.Duration:SetAlpha(c.showDuration and 1 or 0) end
 end
 
 local style = Style
 local function StyleSkinned(button, icon, c)
     Style(button, icon, c)
     local border = borders[button]
-    if border and PaintSkin(button, icon, looks[button:GetParent()], c.iconWidth, c.iconHeight) then
+    if border and P.PlayerAuraSkins.PaintLook(skinned, button, icon, looks[button:GetParent()], c.iconWidth, c.iconHeight) then
         border:Hide()
     end
 end
 
--- Native layout owns these: UpdateGridLayout resets them on each laid-out button.
-local function Place(button, icon, slot, container, c)
-    local auraAnchor = button.isAuraAnchor
+local function Place(button, icon, slot, container, c, auraAnchor)
     if not saved[button] or (not auraAnchor and not saved[icon]) then
         if not icon then return end
         local original = saved[button] or Snapshot(button, BUTTON)
@@ -309,40 +234,84 @@ local function Place(button, icon, slot, container, c)
     button:SetScale(1)
     button:SetSize(c.iconWidth, c.iconHeight)
     button:ClearAllPoints()
-    button:SetPoint("TOPRIGHT", container, "TOPRIGHT", -col * (c.iconWidth + c.spacing),
-        -row * (c.iconHeight + c.rowSpacing))
-    -- Private aura artwork is registered with fixed native dimensions.
-    -- Keep its native IconInfo; only place its public anchor in the row.
+    button:SetPoint("TOPRIGHT", container, "TOPRIGHT", -col * stepX, -row * stepY)
+    -- Keep the fixed native IconInfo dimensions of private auras; reposition only their public anchor.
     if auraAnchor then return true end
-    icon:ClearAllPoints()
-    icon:SetAllPoints(button)
+    local artwork = saved[icon]
+    if not artwork.points and artwork.checked ~= generation then
+        artwork.points, artwork.checked = Points(icon), generation
+        if not artwork.size then
+            artwork.size = Numbers(2, icon:GetWidth(true), icon:GetHeight(true))
+            artwork.fill = artwork.size and icon.SetAllPoints or FillIconCorners
+        end
+    end
+    if artwork.points then
+        icon:ClearAllPoints()
+        artwork.fill(icon, button)
+    elseif artwork.size then
+        -- The native texture is already attached to the button. Only change a size we can restore.
+        icon:SetSize(c.iconWidth, c.iconHeight)
+    end
     Pin(button.Duration, button, "BOTTOMLEFT")
     if styled[button] ~= generation then style(button, icon, c) end
     return true
 end
 
--- Place the frame beside the minimap and lay out the container it holds.
--- Blizzard's Edit Mode overrides change snap data and the manager's shared
--- dirty flag. Use the underlying setters for Suite placement and restoration.
--- The debuff offsets count from the buff row.
-local function Anchor(frame, list, count)
+-- Track actual point writes: a frame or grid callback can finish before Blizzard replaces the Suite position.
+local function PointWritten(region)
+    local original = saved[region]
+    if original then original.reanchored = true end
+    local list = laid[region]
+    if list then list.framed, list.anchored = false, false end
+end
+
+local function SaveNativePoints(region)
+    local original = saved[region]
+    if not (original and original.reanchored) then return true end
+    local points = Points(region)
+    if points then original.points, original.reanchored = points, nil end
+    return points
+end
+local function Arrow(frame, x, y)
+    local arrow = frame.CollapseAndExpandButton
+    if not arrow then return true end
+    if not Remember(arrow, FRAME) or not SaveNativePoints(arrow) then return end
+    arrow:ClearAllPoints()
+    arrow:SetPoint("TOPLEFT", frame, "TOPRIGHT", x, y)
+    saved[arrow].reanchored = nil
+    return true
+end
+
+-- Own the public row position independently of individual aura geometry and skins.
+local function SeatFrame(frame, list)
+    if not Remember(frame, FRAME) or not SaveNativePoints(frame) then return end
+    local debuff, c = debuffs[frame], M.config
+    local clear = frame.ClearAllPointsBase or frame.ClearAllPoints
+    local set = frame.SetPointBase or frame.SetPoint
+    clear(frame)
+    set(frame, "TOPRIGHT", Minimap, "TOPLEFT", debuff and c.x + c.debuffX or c.x, debuff and c.y - c.debuffOffset or c.y)
+    saved[frame].reanchored, list.framed, list.captureContainer = nil, true, true
+    return true
+end
+
+local function Anchor(frame, list, rows)
     local c, container = M.config, frame.AuraContainer
-    if not saved[container] and not Remember(container, CONTAINER) then return end
-    if not list.framed then
-        if not Remember(frame, FRAME) then return end
-        local debuff = debuffs[frame]
-        local clear = frame.ClearAllPointsBase or frame.ClearAllPoints
-        local set = frame.SetPointBase or frame.SetPoint
-        clear(frame)
-        set(frame, "TOPRIGHT", Minimap, "TOPLEFT", debuff and c.x + c.debuffX or c.x,
-            debuff and c.y - c.debuffOffset or c.y)
-        list.framed = true
+    local original = saved[container] or Remember(container, CONTAINER)
+    if not original then return end
+    local cache = container.currentGridLayoutInfo
+    if list.captureContainer or cache and (list.nativeLayout ~= cache.layout or list.nativeAnchor ~= cache.anchor) then
+        if not SaveNativePoints(container) then return end
+        if cache then list.nativeLayout, list.nativeAnchor = cache.layout, cache.anchor end
+        list.captureContainer = nil
     end
     local shift = shifted[frame]
+    local x, y = shift and shift[1] or 0, shift and shift[2] or 0
+    if not list.anchored and frame.CollapseAndExpandButton and not Arrow(frame, x, y) then return end
     container:ClearAllPoints()
-    container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", shift and shift[1] or 0, shift and shift[2] or 0)
+    container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", x, y)
+    original.reanchored = nil
     container:SetSize(c.perRow * (c.iconWidth + c.spacing) - c.spacing,
-        max(1, ceil(count / c.perRow)) * (c.iconHeight + c.rowSpacing) - c.rowSpacing)
+        rows * (c.iconHeight + c.rowSpacing) - c.rowSpacing)
     list.anchored = true
     return true
 end
@@ -355,28 +324,17 @@ local function RestoreButton(button)
     RestoreRegion(button.DebuffBorder, saved[button.DebuffBorder])
     RestoreRegion(button.TempEnchantBorder, saved[button.TempEnchantBorder])
     if borders[button] then borders[button]:Hide() end
-    if skinned[button] then NS.HostBridge.PaintIconSkin(button, nil) end
-    skinned[button], styled[button] = nil, nil
-    Lift(button.Duration, false)
-end
-
-local function PaintNativeSkin(button, look)
-    local icon = button.Icon
-    if not icon or button.isAuraAnchor or NS.Safety.IsForbidden(button) or NS.Safety.IsForbidden(icon) then return end
-    local w, h = icon:GetWidth(), icon:GetHeight()
-    if Finite(w) and Finite(h) and w > 0 and h > 0 then
-        PaintSkin(button, icon, look, w, h)
+    if skinned[button] then
+        NS.HostBridge.PaintIconSkin(button, nil)
+        P.PlayerAuraSkins.SetLayers(button, false)
     end
+    skinned[button], styled[button] = nil, nil
 end
 
--- The layout module still owns the look while Blizzard owns the geometry.
--- Prepaint the pool so ordinary native refills already have a skin.
+-- Prepaint under Blizzard geometry ownership so ordinary native refills retain the Suite look.
 local function PaintNativeSkins(frame)
     local look = looks[frame]
-    if not look then return end
-    for _, button in ipairs(frame.auraFrames) do PaintNativeSkin(button, look) end
-    local collect = frame.ConsolidatedBuffs
-    if collect then PaintNativeSkin(collect, look) end
+    if look then P.PlayerAuraSkins.PaintNativeRow(frame, look, skinned) end
 end
 
 -- Restore native geometry while keeping the layout cache on an owned receiver.
@@ -410,26 +368,28 @@ local function RestoreGrid(frame)
     AuraContainerMixin.UpdateGridLayout(proxy, icons, frame.doNotAnchorDisabledFrames)
 end
 local function RestoreNative(frame, list)
-    RestoreRegion(frame, saved[frame])
+    RestoreRegion(frame.CollapseAndExpandButton, saved[frame.CollapseAndExpandButton])
     local container, collect = frame.AuraContainer, frame.ConsolidatedBuffs
     RestoreRegion(container, saved[container])
     if collect then RestoreButton(collect) end
     for _, button in ipairs(frame.auraFrames) do RestoreButton(button) end
     shifted[frame] = nil
-    list.n, list.framed, list.anchored = 0, false, false
-    RestoreGrid(frame)
-    PaintNativeSkins(frame)
+    list.n, list.anchored = -1, false
 end
 
 local function RollBack(frame, list)
-    list.restoring = true
-    local finished = NS.Dispatch(NS.Finish, RestoreNative, frame, list)
-    list.restoring, list.rollback = nil, not finished or nil
-    return finished
+    if list.attempts == 2 then return end
+    list.restoring, list.attempts = true, (list.attempts or 0) + 1
+    local restored = list.rollback == "grid" or NS.Dispatch(NS.Finish, RestoreNative, frame, list)
+    local solved = restored and NS.Dispatch(NS.Finish, RestoreGrid, frame)
+    NS.Dispatch(PaintNativeSkins, frame)
+    list.restoring, list.rollback = nil, nil
+    if not solved then list.rollback = restored and "grid" or true end
+    return solved
 end
 
 local function FallBack(frame, list, failed, locked)
-    list.failed = failed
+    list.failed, list.attempts = failed, nil
     if locked then
         list.rollback = true
         S.Queue(ID)
@@ -438,129 +398,186 @@ local function FallBack(frame, list, failed, locked)
     RollBack(frame, list)
 end
 
--- While a frame stays native, probe the failed region before moving any
--- buttons again. A missing button can also leave the row on a normal refill.
-local function CanRetry(frame, failed)
-    if failed == frame then
-        return Snapshot(frame, FRAME) and Snapshot(frame.AuraContainer, CONTAINER)
-    end
-    local shown, icon = failed:IsShown(), failed.Icon
-    if IsSecret(shown) then return end
-    return not shown or (icon and Snapshot(failed, BUTTON)
-        and (failed.isAuraAnchor or Snapshot(icon, ICON)))
+-- Check unused slots only after geometry fails. Hidden malformed buttons stay native until a usable refill.
+local function Unused(frame, button)
+    if button == frame then return false end
+    local private = button.isAuraAnchor
+    if IsSecret(private) or private then return false end
+    local valid, example = button.hasValidInfo, button.isExample
+    if not IsSecret(valid) and valid ~= nil and not IsSecret(example) then return not (valid or example) end
+    if NS.Safety.IsForbidden(button) then return false end
+    local shown = button:IsShown()
+    return not IsSecret(shown) and not shown
 end
 
--- The shown buttons in slot order, the native consolidation button first.
--- Only a slot whose button differs from the last placement is written; the
--- combat state is read once, at the first write.
+local function CanRetry(frame, failed)
+    if failed == frame then
+        local arrow = frame.CollapseAndExpandButton
+        return Snapshot(frame, FRAME) and Snapshot(frame.AuraContainer, CONTAINER) and (not arrow or Snapshot(arrow, FRAME))
+    end
+    if failed ~= frame.ConsolidatedBuffs then
+        local present = false
+        for _, button in ipairs(frame.auraFrames) do
+            if button == failed then present = true break end
+        end
+        if not present then return true end
+    end
+    return failed.Icon and Snapshot(failed, BUTTON) and (failed.isAuraAnchor or Snapshot(failed.Icon, ICON))
+end
+
+-- FrameXML fills buttons in order. For row extent, sample buff row starts and reserve room at unreadable boundaries.
+local function Filled(buttons, ordinary, offset, step)
+    for index = ordinary - (ordinary + offset - 1) % step, 1, -step do
+        local button = buttons[index]
+        local valid, example = button.hasValidInfo, button.isExample
+        if IsSecret(valid) or valid or IsSecret(example) or example then return index end
+    end
+    return 0
+end
+
+local function Bounds(frame, list, ordinary, private, offset)
+    if private > 0 then
+        -- Before UpdateSize reports the exact native count including private anchors, use the pool.
+        local enabled = list.enabled
+        if enabled and enabled >= private and enabled <= ordinary + private then return enabled - private end
+        return Filled(frame.auraFrames, ordinary, 0, 1)
+    end
+    return Filled(frame.auraFrames, ordinary, offset, M.config.perRow)
+end
+
+local function Offset(collect, list)
+    if not collect then return 0 end
+    if list.nativeOffset ~= nil then return list.nativeOffset end
+    local shown = collect:IsShown()
+    if not IsSecret(shown) then return shown and 1 or 0 end
+    local enabled = collect:IsEnabled()
+    return list.offset or ((IsSecret(enabled) or enabled) and 1 or 0)
+end
+
+local function SamePool(buttons, list)
+    for index = 1, #buttons do
+        if buttons[index] ~= list[index] then return false end
+    end
+    return true
+end
+
 local function Sync(frame)
     if not (M.active and frame and frame.AuraContainer and frame.auraFrames) then return end
     local list = laid[frame]
     if not list then
-        list = { n = 0, anchored = false, framed = false, restyle = false }
+        list = { n = -1 }
         laid[frame] = list
     end
+    if list.restoring then return end
+    if not list.framed then
+        local locked = NS.IsCombatLocked()
+        if locked and Refused(frame, list) then return end
+        if not SeatFrame(frame, list) then
+            if list.failed ~= frame then FallBack(frame, list, frame, locked) end
+            return
+        end
+    end
     if list.failed then
-        if list.restoring then return end
-        if NS.IsCombatLocked() then return end
-        if list.rollback and not RollBack(frame, list) then return end
-        if not CanRetry(frame, list.failed) then return end
+        if Unused(frame, list.failed) then list.n, list.rollback = -1, nil
+        else
+            if NS.IsCombatLocked() or (list.rollback and not RollBack(frame, list)) then return end
+            if not CanRetry(frame, list.failed) then return end
+        end
         list.failed = nil
     end
-    local valid, slot, seated, locked = list.n, 0, false, nil
     if list.restyle then
-        generation, valid, list.restyle = generation + 1, 0, false
+        generation, list.n, list.restyle = generation + 1, -1, false
         list.anchored, list.framed = false, false
     end
     local buttons, collect, c = frame.auraFrames, frame.ConsolidatedBuffs, M.config
+    local offset = Offset(collect, list)
+    local private = frame.PrivateAuraAnchors and #frame.PrivateAuraAnchors or 0
+    local ordinary = #buttons - private
+    local filled = Bounds(frame, list, ordinary, private, offset)
+    local reset = list.reset and (frame.doNotAnchorDisabledFrames and private > 0 and filled or ordinary) or -1
+    local valid, locked = list.n, nil
+    if list.offset ~= offset then valid = -1 end
+    if valid == #buttons and list.anchored and not list.reset and list.filled == filled
+        and list[0] == collect and SamePool(buttons, list) then return end
     for index = collect and 0 or 1, #buttons do
         local button = index == 0 and collect or buttons[index]
-        local shown = button:IsShown()
-        if IsSecret(shown) then
-            FallBack(frame, list, button, NS.IsCombatLocked())
-            return
-        end
-        if shown then
-            slot = slot + 1
-            if slot > valid or list[slot] ~= button then
-                if locked == nil then
-                    locked = NS.IsCombatLocked()
-                    if locked and Refused(frame, list, slot) then return end
-                end
-                if locked and Refused(button, list, slot) then return end
-                if not Place(button, button.Icon, slot, frame.AuraContainer, c) then
-                    FallBack(frame, list, button, locked)
-                    return
-                end
-                list[slot], seated = button, true
+        local anchor = index > ordinary
+        if index > valid or index <= reset or list[index] ~= button or (anchor and (list.reset or list.filled ~= filled)) then
+            if locked == nil then
+                locked = NS.IsCombatLocked()
+                if locked and Refused(frame, list) then return end
+            end
+            if locked and Refused(button, list) then return end
+            local slot = index == 0 and 1 or index + offset
+            if anchor then slot = filled + index - ordinary end
+            if Place(button, button.Icon, slot, frame.AuraContainer, c, anchor) then list[index] = button
+            elseif Unused(frame, button) then
+                list[index] = nil
+            else
+                FallBack(frame, list, button, locked)
+                return
             end
         end
     end
-    list.n = slot
-    if not seated and slot == valid and list.anchored then return end
+    list.n, list.reset, list.filled, list.offset = #buttons, false, filled, offset
+    local rows = max(1, ceil((filled + offset + private) / c.perRow))
+    if list.rows == rows and list.anchored then return end
     if locked == nil then
         locked = NS.IsCombatLocked()
-        if locked and Refused(frame, list, slot + 1) then return end
+        if locked and Refused(frame, list) then return end
     end
-    if not Anchor(frame, list, slot) then FallBack(frame, list, frame, locked) end
+    if locked and not list.anchored and frame.CollapseAndExpandButton and Refused(frame.CollapseAndExpandButton, list) then return end
+    if Anchor(frame, list, rows) then list.rows = rows
+    else
+        FallBack(frame, list, frame, locked)
+    end
 end
 
--- UpdateGridLayout re-scaled, re-sized and re-anchored what it laid out and
--- the container; the frame itself stays where it was.
 local function Relayout(frame)
     local list = laid[frame]
-    if list then
-        local container = frame.AuraContainer
-        local cache = container.currentGridLayoutInfo
-        if cache and (list.nativeLayout ~= cache.layout or list.nativeAnchor ~= cache.anchor) then
-            local original = saved[container]
-            local points = original and Points(container)
-            if not original or points then
-                if original then original.points = points end
-                list.nativeLayout, list.nativeAnchor = cache.layout, cache.anchor
-            end
-        end
-        list.n, list.anchored = 0, false
-    end
+    if not list then return Sync(frame) end
+    -- Blizzard's completed grid settles a failed proxy without a retry per refill.
+    if list.rollback == "grid" then list.rollback = nil end
+    list.reset, list.anchored = true, false
     Sync(frame)
 end
 
--- Edit Mode's first refill resets every Duration font object (BuffFrame.lua:374,
--- after SetIsEditing in EditModeManager.lua:2290-2300); the sync that follows
--- it paints the styles again.
 local function Restyle(frame)
     local list = laid[frame]
     if list then list.restyle = true end
 end
 
--- Blizzard placed the frame itself: Edit Mode applies a layout or a reset
--- (ApplySystemAnchor, EditModeSystemTemplates.lua:350; UpdateSystem lays the
--- auras out afterwards, 1945-1948).
-local function Moved(frame, keepAnchor)
+local function Moved(frame)
     local list = laid[frame]
     if list then
-        local original = saved[frame]
-        if original and not keepAnchor then original.points = Points(frame) or original.points end
         list.anchored, list.framed = false, false
     end
     Sync(frame)
 end
 
--- StatusTrayManager (LoadFirst on Retail and Forever) moves a default-placed
--- BuffFrame below the help and survey trays without either (StatusTrayManager
--- .lua:36-43): after Edit Mode lays out its systems (EditModeManager.lua
--- 187-191) and when a tray shows.
 local function Reanchor()
-    for frame in pairs(laid) do Moved(frame, frame ~= buffFrame or not frame:IsInDefaultPosition()) end
+    if M.active and buffFrame and buffFrame:IsInDefaultPosition() then Moved(buffFrame) end
 end
 
--- DebuffFrame's UpdateAuraButtons ends in UpdateGridLayout, so its layout hook
--- already sees every refill; a second hook would sync it twice per aura event.
 local function Hook(frame, debuff)
     if not frame or hooked[frame] or not frame.UpdateGridLayout then return end
     hooked[frame] = true
     debuffs[frame] = debuff
+    for _, region in ipairs({ frame, frame.AuraContainer, frame.CollapseAndExpandButton }) do
+        hooksecurefunc(region, "SetPoint", PointWritten)
+    end
     hooksecurefunc(frame, "UpdateGridLayout", Relayout)
+    if debuff and frame.UpdateSize then
+        hooksecurefunc(frame, "UpdateSize", function(_, _, _, _, _, _, _, count)
+            local list = laid[frame]
+            if list then list.enabled = Finite(count) and count or nil end
+        end)
+    elseif frame.AuraContainer.UpdateGridLayout then
+        hooksecurefunc(frame.AuraContainer, "UpdateGridLayout", function(_, icons)
+            local list = laid[frame]
+            if list then list.nativeOffset = icons[1] == frame.ConsolidatedBuffs and 1 or 0 end
+        end)
+    end
     local mixin = _G.DebuffFrameMixin
     if frame.UpdateAuraButtons and not (mixin and frame.UpdateAuraButtons == mixin.UpdateAuraButtons) then
         hooksecurefunc(frame, "UpdateAuraButtons", Sync)
@@ -569,34 +586,26 @@ local function Hook(frame, debuff)
     if frame.ApplySystemAnchor then hooksecurefunc(frame, "ApplySystemAnchor", Moved) end
 end
 
--- The square look of a frame's Icon Skins page row, for the buttons its
--- AuraContainer holds and those on the frame itself (BuffFrame's consolidated
--- buffs button, Sync's slot 0). HostBridge keeps one table per look until
--- MSUF reports a change: WatchIconSkins refreshes then.
 local function SetLook(name, choice)
     local frame = _G[name]
     if not frame then return end
-    local look = NS.HostBridge.IconSkinLook(choice)
+    local look = NS.HostBridge.PlayerAuraSkin(choice)
     looks[frame] = look
     local container = frame.AuraContainer
     if container then looks[container] = look end
 end
 
--- The rows' looks and the style they need, on the settings path (Enable,
--- Refresh: also MSUF's reports, WatchIconSkins): an adoption (a zone, the
--- combat end, an addon loading, also in combat) stays Suite main's code.
+-- Resolve looks on the settings path, including changes reported by the host.
 local function ResolveLooks()
     local c = M.config
     SetLook("BuffFrame", c.buffSkin)
     SetLook("DebuffFrame", c.debuffSkin)
-    -- A button whose row has no look any more drops its skin now, a hidden one
-    -- too (an adoption restyles only shown buttons), so No skin on both rows
-    -- selects Style at once.
+    -- Release even hidden skins as soon as their row selects No skin.
     for button in pairs(skinned) do
         if not looks[button:GetParent()] then
             NS.HostBridge.PaintIconSkin(button, nil)
             skinned[button] = nil
-            Lift(button.Duration, false)
+            P.PlayerAuraSkins.SetLayers(button, false)
         end
     end
     style = next(looks) and StyleSkinned or Style
@@ -604,16 +613,21 @@ end
 
 local function Adopt()
     buffFrame, debuffFrame = _G.BuffFrame, _G.DebuffFrame
-    fontPath = S.ResolveFont(M.config.font) or NS.MSUFMedia.font
-    -- Every refresh, also the one after a drag's commit or cancel, ends a
-    -- drag preview: the containers go back onto their frames.
+    local c = M.config
+    fontPath = S.ResolveFont(c.font) or NS.MSUFMedia.font
+    stepX, stepY = c.iconWidth + c.spacing, c.iconHeight + c.rowSpacing
+    borderRed, borderGreen, borderBlue = S.RGB(c.borderColor)
+    local half = .5 - c.iconZoom / 100
+    local x, y = half * math.min(1, c.iconWidth / c.iconHeight), half * math.min(1, c.iconHeight / c.iconWidth)
+    cropLeft, cropRight, cropTop, cropBottom = .5 - x, .5 + x, .5 - y, .5 + y
+    -- Any refresh, including drag commit or cancel, returns preview containers to their frames.
     for frame in pairs(shifted) do shifted[frame] = nil end
     Invalidate()
     Hook(buffFrame, false)
     Hook(debuffFrame, true)
-    Sync(buffFrame)
-    Sync(debuffFrame)
-    if not trayHooked then
+    NS.Dispatch(Sync, buffFrame)
+    NS.Dispatch(Sync, debuffFrame)
+    if not trayHooked and StatusTrayManager then
         hooksecurefunc(StatusTrayManager, "UpdateTrayAndBuffFrameLayout", Reanchor)
         trayHooked = true
     end
@@ -622,12 +636,11 @@ end
 local function FinishCleanup()
     if NS.IsCombatLocked() then return end
     if cleanup then cleanup:UnregisterEvent("PLAYER_REGEN_ENABLED") end
-    Restore()
+    NS.Dispatch(Restore)
     for _, list in pairs(laid) do
         list.failed, list.restoring, list.rollback = nil, nil, nil
     end
     for frame in pairs(hooked) do NS.Dispatch(RestoreGrid, frame) end
-    -- The skin-only piece paints the buttons again (if it runs).
     P.PlayerAuraSkins.Yield(false)
 end
 
@@ -636,11 +649,12 @@ function M:Enable()
     self.active = true
     -- The skin-only piece (PlayerAuraSkins.lua) lets go of the buttons first.
     P.PlayerAuraSkins.Yield(true)
-    -- MSUF's default icon skin changed: Refresh resolves the looks again.
     NS.HostBridge.WatchIconSkins("playerAuras", true)
     self.context:Event("PLAYER_ENTERING_WORLD", Adopt)
     self.context:Event("PLAYER_REGEN_ENABLED", Adopt)
-    self.context:Event("ADDON_LOADED", Adopt)
+    self.context:Event("ADDON_LOADED", function(_, _, addon)
+        if addon == "Blizzard_BuffFrame" then S.Apply(ID) end
+    end)
     ResolveLooks()
     Adopt()
 end
@@ -668,22 +682,14 @@ function M:Disable()
     end
 end
 
------------------------------------------------------------------- MSUF Edit Mode
--- One mover per row, over the AuraContainer the module laid out. Positions
--- stay this module's settings, so undo, discard and profiles work as for
--- every Suite mover. A drag previews on the containers alone: plain child
--- frames, so no Edit Mode system override (Anchor) runs per mouse step. The
--- commit writes the settings; the refresh after it pins the frames once, as
--- a slider change does. MSUF Edit Mode refuses drags in combat.
+-- MSUF Edit Mode previews each row drag on its container and commits through the Suite mover.
 local LAYOUT = { "iconWidth", "iconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" }
 
 local function Round(value)
     return floor(value + .5)
 end
 
--- MSUF Edit Mode flags the frame a mover drags (_msufDragActive), so each
--- mover holds an empty Suite frame laid over its row's container, never the
--- Blizzard container itself.
+-- MSUF drags its own handle instead of recording drag state on the native container.
 local function Handle(frame)
     local container = frame and frame.AuraContainer
     if not (container and saved[container]) then return end
@@ -704,28 +710,25 @@ end
 
 local function Shift(frame, dx, dy)
     local list, container = laid[frame], frame and frame.AuraContainer
-    if not (list and list.anchored and container and saved[container]) then return false end
+    if not (list and list.anchored and container and saved[container] and SaveNativePoints(container)) then return false end
     local shift = shifted[frame]
     if not shift then
         shift = {}
         shifted[frame] = shift
     end
     shift[1], shift[2] = dx, dy
+    if not Arrow(frame, dx, dy) then return false end
     container:ClearAllPoints()
     container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", dx, dy)
+    saved[container].reanchored = nil
     return true
 end
 
--- A delta that keeps value + delta inside the setting's range: the drop
--- then stores what the preview showed.
 local function InRange(delta, rule, value)
     return max(rule.min - value, min(rule.max - value, delta))
 end
 
--- Blizzard sizes each frame for all its aura slots (BuffFrame.lua
--- UpdateSize) and clamps it to the screen inside its Edit Mode selection
--- (EditModeSystemTemplate clampedToScreen, UpdateClampOffsets). A drag stops
--- where that clamp would move the frame away from the dropped row.
+-- Respect the native Edit Mode system clamp, including its selection insets.
 local function OnScreen(frame, scale, dx, dy)
     if not frame then return dx, dy end
     local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
@@ -740,9 +743,7 @@ local function OnScreen(frame, scale, dx, dy)
     return max(-left, min(width / scale - right, dx)), max(-bottom, min(height / scale - top, dy))
 end
 
--- The host's deltas are UIParent units; the offsets are the frame's. The
--- buff row carries the debuff row along, whose offsets count from it, and
--- the debuff row offset grows downwards.
+-- Convert host deltas to the frame scale. Buff drags carry the relative debuff row.
 local function Drag(debuffRow, request)
     local frame, state = debuffRow and debuffFrame or buffFrame, request.state
     local origin = state.origin or state.values
@@ -765,7 +766,6 @@ local function Drag(debuffRow, request)
         end
         return S.CommitEditPosition(ID, { x = Round(origin.x + dx), y = Round(origin.y + dy) })
     end
-    -- The debuff row follows only a buff row that moved.
     local moved = Shift(frame, dx, dy)
     if moved and not debuffRow then Shift(debuffFrame, dx, dy) end
     return moved
@@ -779,8 +779,7 @@ local function Control(key)
         set = function(value) return S.Set(ID, key, value) end }
 end
 
--- The debuff row's own offsets replace the generic X and Y fields (its
--- vertical offset grows downwards); the icon layout is shared by both rows.
+-- Debuff Y grows downwards. Both movers share the layout settings.
 local function DebuffControls()
     local controls = { Control("debuffX"), Control("debuffOffset") }
     controls[1].positionAxis, controls[2].positionAxis = "x", "y"

@@ -67,14 +67,17 @@ function scopes.Allowed(uf, unit)
 end
 private.SkinAllowed = scopes.Allowed
 
+local function Accessible(uf)
+    if not uf.CanBeAccessedInContext then return true end
+    local accessible = uf:CanBeAccessedInContext()
+    return S.Public(accessible) and accessible == true
+end
+
 local function HideHostile(uf, state)
     local L = private.ExtensionLayout
-    if uf.CanBeAccessedInContext then
-        local accessible = uf:CanBeAccessedInContext()
-        if not S.Public(accessible) or not accessible then
-            module.pendingPlates[uf] = true
-            return
-        end
+    if not Accessible(uf) then
+        module.pendingPlates[uf] = true
+        return
     end
     if L.HitTest(state, true) then L.Alpha(state, 0) end
 end
@@ -96,8 +99,16 @@ function scopes.RestoreVisibility(uf)
     if not state then return end
     local L = private.ExtensionLayout
     if Safe(uf) then
-        if not L.HitTest(state, false) then return end
-        L.Alpha(state, 1)
+        -- The UnitFrame alpha and the outer plate's hit-test area have
+        -- different access rules. Release each when its owner permits it.
+        if state.baseAlpha ~= nil then
+            if Accessible(uf) then
+                L.Alpha(state, 1)
+            else
+                module.pendingPlates[uf] = true
+            end
+        end
+        if not L.HitTest(state, false) or state.baseAlpha ~= nil then return end
     end
     hidden[uf] = nil
 end

@@ -444,6 +444,91 @@ rowOne.childReads = 0
 Check(GenericWindows.ApplyFrame(window, "contract", MODE) and rowOne.childReads == 1,
     "re-enabling did not re-skin the visible pooled row")
 
+Section("graphics options pooled row", function()
+    -- Graphics.xml gives one pooled quality section both Base and Raid tabs.
+    -- Even the hidden tab consumes traversal nodes. Each dropdown owns
+    -- three separate buttons, plus the row wrapper and NewFeature frame.
+    local function Child(parent, key, objectType)
+        local frame = Frame(nil)
+        frame.GetParent = function() return parent end
+        if objectType then frame.GetObjectType = function() return objectType end end
+        parent.children[#parent.children + 1] = frame
+        parent[key] = frame
+        return frame
+    end
+
+    local buttons = {}
+    local function QualityControls(row, key)
+        local group = Child(row, key)
+        for index = 1, 12 do
+            local option = Child(group, index)
+            local control = Child(option, "Control")
+            Child(option, "NewFeature")
+            local back = Child(control, "DecrementButton", "Button")
+            local nextButton = Child(control, "IncrementButton", "Button")
+            local dropdown = Child(control, "Dropdown", "DropdownButton")
+            back.normalAtlas = "common-dropdown-icon-back"
+            nextButton.normalAtlas = "common-dropdown-icon-next"
+            buttons[#buttons + 1] = back
+            buttons[#buttons + 1] = nextButton
+            buttons[#buttons + 1] = dropdown
+        end
+        for _, key in ipairs({ "GraphicsQuality", "ViewDistance", "EnvironmentDetail", "GroundClutter" }) do
+            local slider = Child(Child(group, key), "SliderWithSteppers")
+            Child(slider, "Back", "Button")
+            Child(slider, "Forward", "Button")
+            Child(slider, "Slider", "Slider")
+        end
+        return group
+    end
+
+    local apply, isDropdown = NS.ControlSkin.ApplyButton, NS.Checkmarks.IsDropdown
+    local applyScrollBar = NS.ScrollBarSkin.Apply
+    NS.ScrollBarSkin.Apply = function() return false end
+    local paints = 0
+    NS.Checkmarks.IsDropdown = function(frame) return frame:GetObjectType() == "DropdownButton" end
+    NS.ControlSkin.ApplyButton = function()
+        paints = paints + 1
+        return true
+    end
+    local graphics = Frame(nil)
+    Child(graphics, "Button", "Button")
+    Child(graphics, "NineSlice")
+    Child(graphics, "RaidTab", "Button")
+    Child(graphics, "BaseTab", "Button")
+    QualityControls(graphics, "BaseQualityControls")
+    local raid = QualityControls(graphics, "RaidQualityControls")
+    Child(raid.GraphicsQuality, "Checkbox", "CheckButton")
+    raid.IsShown = function() return false end
+    scrollBox:Initialize(graphics)
+    local coldPaints = paints
+    Expect(coldPaints == #buttons, ("graphics row styled %d/%d buttons across Base and Raid"):format(paints, #buttons))
+
+    local warmup = graphics.childReads
+    scrollBox:Initialize(graphics)
+    Expect(graphics.childReads == warmup + 1, "graphics row did not build the reusable refresh list")
+    local reads = graphics.childReads
+    yellowFrames = {}
+    scrollBox:Initialize(graphics)
+    local refreshed = 0
+    for _, button in ipairs(buttons) do
+        if yellowFrames[button] then refreshed = refreshed + 1 end
+    end
+    Expect(refreshed == #buttons, "a recycled graphics row missed some native button text")
+    yellowFrames = nil
+
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local memory = collectgarbage("count")
+    for _ = 1, 512 do scrollBox:Initialize(graphics) end
+    local grown = collectgarbage("count") - memory
+    collectgarbage("restart")
+    Expect(grown < 1, ("graphics row refresh allocated %.2f KB for 512 callbacks"):format(grown))
+    Expect(graphics.childReads == reads and paints == coldPaints, "recycling graphics repeated traversal or skinning")
+    NS.ControlSkin.ApplyButton, NS.Checkmarks.IsDropdown = apply, isDropdown
+    NS.ScrollBarSkin.Apply = applyScrollBar
+end)
+
 -- The catalog entry list is sorted once; counts reuse it.
 Check(GenericWindows.GetCounts().total > 0, "reviewed catalog entries are missing")
 local sort, sorted = table.sort, 0
@@ -1577,6 +1662,33 @@ Section("social ui tabs", function()
     friends.ScrollBox:Initialize(card)
     NS.Surface.Attach = attach
     Expect(attaches == 1, "a friend card was skinned by both its Initialize hook and the ScrollBox")
+
+    locked = true
+    card:Initialize()
+    friends.ScrollBox:Initialize(card)
+    card:SetSelected(true)
+    Expect(card.surfaceSpec and card.surfaceActive == true,
+        "a recycled social card lost its skin or selection during combat")
+    card:SetSelected(false)
+    Expect(card.surfaceActive == false, "a social card kept its selection after deselecting it in combat")
+    local combatTab = Frame("CombatSocialTab")
+    combatTab.SelectedTexture = { IsShown = function() return true end }
+    social.nextTabs = { combatTab }
+    social:RefreshTabs()
+    Expect(combatTab.surfaceSpec and combatTab.surfaceActive == true,
+        "a new social tab was not skinned and selected in combat")
+    function card:IsProtected() return true, false end
+    local backgroundFaded = false
+    local fade = NS.Cosmetics.Fade
+    NS.Cosmetics.Fade = function(region, ...)
+        if region == card.Background then backgroundFaded = true end
+        return fade(region, ...)
+    end
+    friends.ScrollBox:Initialize(card)
+    NS.Cosmetics.Fade = fade
+    Expect(not backgroundFaded,
+        "a protected social card lost its native background in combat")
+    locked = false
     NS.SocialUISkin.Disable("social")
     _G.SocialUIFrame, _G.SocialUIFrameMixin, _G.FriendsListSocialCardMixin = nil, nil, nil
 end)
@@ -2570,6 +2682,8 @@ Section("chat color flag", function()
         info.r, info.g, info.b = r, g, b
     end
     function FCFTab_UpdateColors() end
+    local nativeTabColors, originalDock = FCFTab_UpdateColors, GENERAL_CHAT_DOCK
+    GENERAL_CHAT_DOCK = {}
     -- Blizzard_ChatFrameBase loads at startup: the dock and CHAT_FRAMES exist.
     GeneralDockManager, CHAT_FRAMES = Frame("GeneralDockManager"), {}
     local chatFrame = Frame("ChatFrame1")
@@ -2586,24 +2700,30 @@ Section("chat color flag", function()
     NS.ChatFramesSkin:OnThemeChanged("color", "blizzardYellow")
     Expect(ChatTypeInfo.SYSTEM.r == 0.2 and ChatTypeInfo.SYSTEM.b == 0.4,
         "a failed color change left later chat color changes ignored")
-    -- FCFDock_UpdateTabs repaints every tab in a loop.
+    -- The Suite observes the dock after Blizzard finished its native tab updates.
     local raisingTab = Frame("ChatFrame2Tab")
     function raisingTab:GetName() error("contract: chat tab raised") end
+    GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES = { { Tab = raisingTab }, chatFrame }
+    GENERAL_CHAT_DOCK.selected = chatFrame
+    tab.Text:SetTextColor(1, 0.82, 0)
     before = #reported
-    ok = pcall(FCFTab_UpdateColors, raisingTab, true)
-    Expect(ok and #reported == before + 1, "a raising chat tab repaint escaped into FCFTab_UpdateColors")
+    ok = pcall(MSUFSuite.ChatState.Report, "layout")
+    Expect(ok and #reported == before + 1, "a raising chat tab repaint escaped the layout notification")
+    Expect(FCFTab_UpdateColors == nativeTabColors, "chat skin hooked Blizzard's native tab color update")
+    Expect(Near(tab.Text.color[1], 1) and Near(tab.Text.color[2], 1), "a failed tab prevented the next tab from being themed")
     -- A tab color Blizzard set near ours is Blizzard's: disable keeps it.
-    Expect(Near(tab.Text.color[1], 1) and Near(tab.Text.color[2], 1), "the chat tab text was not themed")
     tab.Text:SetTextColor(0.99, 0.99, 0.99)
     NS.ChatFramesSkin.Disable(nil, "chat")
     Expect(Near(tab.Text.color[2], 0.99), "disable overwrote a chat tab color Blizzard had set")
     Expect(ChatTypeInfo.SYSTEM.r == 0.2, "disable reset the system color the player picked")
     ChatTypeInfo, ChangeChatColor, FCFTab_UpdateColors = nil, nil, nil
+    GENERAL_CHAT_DOCK = originalDock
     GeneralDockManager, CHAT_FRAMES = nil, nil
     _G.ChatFrame1, _G.ChatFrame1Tab = nil, nil
 end)
 
 Section("damage meter rows", function()
+    NS.ScrollMotion, NS.ResultMotion = { ReleaseOwner = function() end }, { ReleaseOwner = function() end }
     Load("DamageMeter.lua")
     NS.DB = { hud = { damageMeterRows = true, damageMeterDetails = true, damageMeterWindows = true } }
     local box = RowBox()
@@ -2726,6 +2846,94 @@ Section("major windows pvp categories", function()
         "a raising major window group stopped the other groups or was not reported")
     NS.MajorWindows.Disable("isolated")
     _G.PVPUIFrame, _G.WeeklyRewardsFrame = nil, nil
+end)
+
+Section("catalog shop portrait chrome", function()
+    local previousCosmetics, previousCreate, previousShop, previousUI =
+        NS.Cosmetics, CreateFrame, _G.CatalogShopFrame, _G.UIParent
+    local previousForever, previousAttach = NS.Client.isForever, NS.Surface.Attach
+    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    NS.Surface.Attach = function(target, spec)
+        target.surfaceVisible = true
+        return previousAttach(target, spec)
+    end
+    local function Art(parent, alpha)
+        local region = { alpha = alpha, writes = 0 }
+        function region:GetParent() return parent end
+        function region:GetAlpha() return self.alpha end
+        function region:SetAlpha(value) self.alpha = value; self.writes = self.writes + 1 end
+        return region
+    end
+    local titleBand, bands
+    CreateFrame = function()
+        local frame = NewFrame()
+        function frame:SetPoint(...) self.points[#self.points + 1] = { ... } end
+        frame.points = {}
+        titleBand, bands = frame, bands + 1
+        return frame
+    end
+    local entry = NS.BlizzardCatalog.FindByFrame("CatalogShopFrame")
+    for _, forever in ipairs({ false, true }) do
+        NS.Client.isForever = forever
+        local owner = forever and "contract:shop-forever" or "contract:shop-retail"
+        local frame, nineSlice, title = Frame("CatalogShopFrame"), Frame(), Frame()
+        local container, card = Frame(), Frame()
+        frame.NineSlice, frame.TitleContainer, frame.BackgroundContainer = nineSlice, title, container
+        frame.children = { nineSlice, title, container, card }
+        function nineSlice:GetParent() return frame end
+        function title:GetParent() return frame end
+        nineSlice.TopEdge, nineSlice.BottomEdge = Art(nineSlice, 0.9), Art(nineSlice, 1)
+        frame.TopTileStreaks, container.Background_1, card.Preview = Art(frame, 0.8), Art(container, 1), Art(card, 1)
+        local nativeAction = function() end
+        card.OnClick = nativeAction
+        frame.shown, frame.hooks = false, {}
+        function frame:IsShown() return self.shown end
+        function frame:HookScript(script, callback) self.hooks[script] = callback end
+        function frame:GetParent() return _G.UIParent end
+        function frame:GetWidth() return 1615 end
+        function frame:GetHeight() return 932 end
+        _G.UIParent = { GetWidth = function() return 1620 end, GetHeight = function() return 940 end }
+        _G.CatalogShopFrame = frame
+        titleBand, bands = nil, 0
+
+        GenericWindows.ApplyEntry(entry, owner)
+        Expect(bands == 0 and frame.hooks.OnShow and nineSlice.TopEdge.writes == 0,
+            "hidden shop was painted before it opened")
+        frame.shown = true
+        frame.hooks.OnShow(frame)
+        Expect(bands == 1 and titleBand.parent == nineSlice and titleBand.surfaceSpec
+            and titleBand.surfaceSpec.fillVisible ~= false,
+            "first opening did not paint a title band on the portrait chrome")
+        Expect(titleBand and titleBand.points[1] and titleBand.points[1][2] == title
+            and titleBand.points[2] and titleBand.points[2][2] == title,
+            "shop title band did not follow Blizzard's caption geometry")
+        Expect(nineSlice.surfaceSpec and nineSlice.surfaceSpec.fillVisible == false
+            and nineSlice.TopEdge.alpha == 0 and nineSlice.BottomEdge.alpha == 0 and frame.TopTileStreaks.alpha == 0,
+            "large shop did not replace the native decorative portrait border")
+        Expect(frame.surfaceSpec == nil and container.Background_1.writes == 0
+            and card.Preview.writes == 0 and card.OnClick == nativeAction,
+            "shop skin affected product art, background or click behavior")
+
+        GenericWindows.ApplyEntry(entry, owner)
+        Expect(bands == 1, "shop repaint duplicated the title band")
+        GenericWindows.Disable(owner)
+        Expect(nineSlice.TopEdge.alpha == 0.9 and nineSlice.BottomEdge.alpha == 1
+            and frame.TopTileStreaks.alpha == 0.8 and titleBand and titleBand.surfaceVisible == false
+            and nineSlice.surfaceVisible == false, "disabling shop skin did not restore its chrome")
+        GenericWindows.ApplyEntry(entry, owner)
+        Expect(bands == 1 and titleBand and titleBand.surfaceVisible == true and nineSlice.TopEdge.alpha == 0,
+            "shop skin could not be re-enabled on a visible frame")
+        GenericWindows.Disable(owner)
+
+        function frame:IsForbidden() return true end
+        local painted = GenericWindows.ApplyEntry(entry, owner)
+        Expect(not painted and bands == 1 and nineSlice.TopEdge.alpha == 0.9,
+            "forbidden shop root was painted")
+        GenericWindows.Disable(owner)
+    end
+    NS.Client.isForever, NS.Cosmetics, CreateFrame = previousForever, previousCosmetics, previousCreate
+    NS.Surface.Attach = previousAttach
+    _G.CatalogShopFrame, _G.UIParent = previousShop, previousUI
 end)
 
 Section("taxi map semantic artwork", function()
@@ -4064,19 +4272,48 @@ Section("hidden windows defer cosmetic work until visible", function()
         return true
     end
     NS.CombatGate.Cancel = function(key) queued[key] = nil end
+    local function Drain()
+        for key, callback in pairs(queued) do
+            queued[key] = nil
+            callback()
+        end
+    end
     local combatPaints = Paints()
-    NS.SocialUISkin.Apply("combat-social")
+    local lockdown = InCombatLockdown
+    -- The Suite reports the combat edge before the raw client lockdown flag.
+    InCombatLockdown = function() return false end
     locked = true
+    NS.SocialUISkin.Apply("combat-social")
+    local callbacks = combatSocial.FriendsList.ScrollBox.callbacks
+    Expect(Paints() == combatPaints and next(callbacks) == nil,
+        "an apply during combat touched the closed social window")
     combatSocial:Display(true)
-    Expect(next(queued) ~= nil and Paints() == combatPaints,
-        "cold combat social opening lost its deferred skin or painted immediately")
+    Expect(combatSocial.surfaceSpec and next(callbacks) ~= nil,
+        "first social opening during combat did not skin the window and acquire its row callback")
     combatSocial:Display(false)
+    local closedPaints = Paints()
     locked = false
-    for key, callback in pairs(queued) do queued[key] = nil callback() end
-    Expect(Paints() == combatPaints, "combat-end replay skinned a closed social window")
-    combatSocial:Display(true)
-    Expect(combatSocial.surfaceSpec ~= nil, "social skin did not recover on the next native opening")
+    Drain()
+    Expect(Paints() == closedPaints, "combat-end replay skinned a closed social window")
     NS.SocialUISkin.Disable("combat-social")
+
+    combatSocial.surfaceSpec = nil
+    function combatSocial:IsProtected() return self.protected == true, false end
+    NS.SocialUISkin.Apply("protected-social")
+    combatSocial.protected, locked = true, true
+    combatSocial:Display(true)
+    Expect(next(queued) ~= nil and not combatSocial.surfaceSpec and next(callbacks) == nil,
+        "a protected social window was skinned in combat or lost its deferred request")
+    combatSocial:Display(false)
+    closedPaints = Paints()
+    locked = false
+    Drain()
+    Expect(Paints() == closedPaints, "unlock painted the protected social window while it was closed")
+    combatSocial:Display(true)
+    Expect(combatSocial.surfaceSpec and next(callbacks) ~= nil,
+        "the protected social skin did not recover on the next native opening")
+    NS.SocialUISkin.Disable("protected-social")
+    InCombatLockdown = lockdown
     NS.CombatGate.RunOrDefer, NS.CombatGate.Cancel = runOrDefer, cancel
     _G.SocialUIFrame = nil
     local ordered, order = Window("OrderedSkin"), {}

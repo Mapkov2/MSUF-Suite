@@ -104,7 +104,7 @@ local function MaterialDetails(detail, entries)
         local source = entry.source
         local location = S.Text(source.location)
         if source.owner then location = source.owner .. " (" .. location .. ")" end
-        lines[#lines + 1] = S.Text("%s: %d · %s"):format(location, entry.count, source.recorded)
+        lines[#lines + 1] = S.Text("%s: %d · %s", true):format(location, entry.count, source.recorded)
     end
     return table.concat(lines, "\n")
 end

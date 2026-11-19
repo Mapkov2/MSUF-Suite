@@ -54,21 +54,24 @@ function NS.SetFriendlyNameplates(scope, on, values)
     for key, value in pairs(values or {}) do settings[key] = value end
     settings[spec.key] = on
     local suite = NS.Suite
-    local config = suite.Config("nameplates")
     if not NS.Public(settings.enabled) then return false end
-    if config.enabled ~= true and settings.enabled ~= true then return false end
-    local ok, reason = suite.SetMany("nameplates", settings)
-    if not ok then return ok, reason end
-    config = suite.Config("nameplates")
-    local namesOnly = scope == "friendlyNpc" and config.friendlyNPCs == NPC_NAMES_ONLY
-    local value = on and not namesOnly and "1" or "0"
-    local module = suite.instances.nameplates
-    if not module or not module.active then return false end
-    module.friendlyVisibility = module.friendlyVisibility or {}
-    module.friendlyVisibility[scope] = value
-    local committed = suite.CommitCVar("nameplates", spec.cvar, value)
-    NS.CaptureFriendlyNameplates(module)
-    return committed
+    if suite.Config("nameplates").enabled ~= true and settings.enabled ~= true then return false end
+    -- The native write belongs to the same change: the controller confirms it
+    -- before the menu repaints. A module that does not run afterwards (it
+    -- could not start, is unavailable or stopped after an error) or a value
+    -- Blizzard refused restores the whole batch, so the profile never keeps a
+    -- visibility it did not apply.
+    return suite.SetMany("nameplates", settings, function()
+        local module = suite.instances.nameplates
+        if not module or not module.active then return false, suite.Status("nameplates") end
+        local namesOnly = scope == "friendlyNpc" and suite.Config("nameplates").friendlyNPCs == NPC_NAMES_ONLY
+        local value = on and not namesOnly and "1" or "0"
+        module.friendlyVisibility = module.friendlyVisibility or {}
+        module.friendlyVisibility[scope] = value
+        local committed = suite.CommitCVar("nameplates", spec.cvar, value)
+        NS.CaptureFriendlyNameplates(module)
+        return committed
+    end)
 end
 
 local function FriendlySettings(settings, scope, value, config)

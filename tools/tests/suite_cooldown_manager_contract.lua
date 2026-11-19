@@ -2208,6 +2208,9 @@ do
     plan.entries[#plan.entries+1]=duplicate
     C.Index.Rebuild()
     assert(C.Index.hasSharedTimeSpells,"the cold plan did not enable sharing for duplicate spells")
+    C.Flush.dirty.events = true
+    C.Schedule()
+    Run()
     cdState[101]={start=now,length=8};chargeState[101]={isActive=true};combat=true
     local cooldowns=cdSpells[101] or 0
     local base,display,charges,recharges=cdSpells.baseDuration or 0,cdSpells.displayDuration or 0,
@@ -2237,6 +2240,111 @@ do
     refresh(e11,"cooldown");refresh(e11,"cooldown")
     assert(cdSpells[101]==cooldowns+2,"a failed time batch left shared readers active")
     C.Schedule();Run() -- ordinary isolated-unit retry
+    -- The immediate event also shares native answers within this spell's batch.
+    -- Keep the two duration keys separate, deliver both swipes before returning,
+    -- and read the live cooldown and charges again when the next event arrives.
+    do
+        local function FireMeasured(length, recharging, copies, showGCD)
+            cdState[101] = { start = now, length = length }
+            chargeState[101] = recharging and { isActive = true } or nil
+            local beforeCooldown, beforeBase, beforeDisplay = cdSpells[101] or 0,
+                cdSpells.baseDuration or 0, cdSpells.displayDuration or 0
+            local beforeCharges, beforeRecharge, beforeCount = cdSpells.charges or 0,
+                cdSpells.chargeDuration or 0, cdSpells.displayCount or 0
+            assert(Fire("SPELL_UPDATE_COOLDOWN", 101), "the immediate cooldown event is not registered")
+            assert(e11.icon.cd.running and e11.icon.cd.running.length == length and e11.icon.cdReal == true,
+                "the immediate event did not synchronously draw the fresh GCD-free cooldown")
+            assert((e11.icon.chargeCd.running ~= nil) == recharging,
+                "the immediate event did not synchronously update the first recharge")
+            if copies then
+                assert(duplicate.icon.cd.running and duplicate.icon.cd.running.length == length
+                    and duplicate.icon.cdReal == not showGCD,
+                    "the immediate event lost the copy's fresh duration or GCD policy")
+                assert((duplicate.icon.chargeCd.running ~= nil) == recharging,
+                    "the immediate event did not synchronously update the copy's recharge")
+                if recharging then
+                    assert(rawequal(e11.icon.chargeCd.running, duplicate.icon.chargeCd.running),
+                        "the immediate event read separate recharge duration objects")
+                end
+                if showGCD then
+                    assert(not rawequal(e11.icon.cd.running, duplicate.icon.cd.running),
+                        "the immediate event merged distinct GCD duration objects")
+                else
+                    assert(rawequal(e11.icon.cd.running, duplicate.icon.cd.running),
+                        "the immediate event read the same GCD-free duration twice")
+                end
+            end
+            assert(cdSpells[101] == beforeCooldown + 1 and cdSpells.charges == beforeCharges + 1
+                and cdSpells.chargeDuration == beforeRecharge + (recharging and 1 or 0)
+                and cdSpells.displayCount == beforeCount + 1,
+                "the immediate event repeated cooldown info, charge info, recharge duration or display count reads")
+            assert(cdSpells.baseDuration == beforeBase + 1
+                and (cdSpells.displayDuration or 0) == beforeDisplay + (showGCD and 1 or 0),
+                "the immediate event did not use one query per duration key")
+        end
+
+        FireMeasured(13, true, true, true)
+        FireMeasured(17, false, true, true)
+        duplicate.ov = { showGCD = false }
+        FireMeasured(19, true, true, false)
+
+        -- Throw after native state has been fetched, so the cache has actual
+        -- entries whose lifetime must end even if a widget setter fails.
+        local setter = duplicate.icon.cd.SetCooldownFromDurationObject
+        local failure = "immediate shared cooldown setter failed"
+        local errorsBefore = #dispatch.errors
+        duplicate.icon.cd.SetCooldownFromDurationObject = function() error(failure) end
+        cdState[101] = { start = now, length = 23 }
+        dispatch.expect = true
+        local ok, report = pcall(Fire, "SPELL_UPDATE_COOLDOWN", 101)
+        dispatch.expect = false
+        duplicate.icon.cd.SetCooldownFromDurationObject = setter
+        assert((not ok and tostring(report):find(failure, 1, true))
+            or (#dispatch.errors == errorsBefore + 1 and dispatch.errors[#dispatch.errors]:find(failure, 1, true)),
+            "the immediate-event setter error was not observed")
+        local before = cdSpells[101]
+        C.Time.Refresh(e11, "cooldown")
+        C.Time.Refresh(e11, "cooldown")
+        assert(cdSpells[101] == before + 2, "a failing immediate event left shared answers on the direct reader")
+        FireMeasured(29, false, true, false)
+
+        -- A widget callback can enter the event again before the outer walk
+        -- returns. The nested event may use direct readers, but must see the
+        -- changed native result while the outer event's answers are still live.
+        do
+            local icon = e11.icon.cd
+            local write = icon.SetCooldownFromDurationObject
+            local entered = false
+            function icon:SetCooldownFromDurationObject(duration, ...)
+                write(self, duration, ...)
+                if entered then return end
+                entered = true
+                cdState[101] = { start = now, length = 41 }
+                local reads = cdSpells[101]
+                assert(Fire("SPELL_UPDATE_COOLDOWN", 101), "the nested cooldown event is not registered")
+                assert(cdSpells[101] > reads and e11.icon.cd.running.length == 41
+                    and duplicate.icon.cd.running.length == 41,
+                    "a nested cooldown event reused stale timing from the outer event")
+            end
+            cdState[101] = { start = now, length = 37 }
+            assert(Fire("SPELL_UPDATE_COOLDOWN", 101), "the outer cooldown event is not registered")
+            icon.SetCooldownFromDurationObject = write
+            assert(entered, "the nested cooldown event was not exercised")
+        end
+        FireMeasured(43, false, true, false)
+
+        plan.entries[#plan.entries] = nil
+        C.Index.Rebuild()
+        assert(not C.Index.hasSharedTimeSpells, "the single-icon case still has shared spells")
+        C.Flush.dirty.events = true
+        C.Schedule()
+        Run()
+        local dispatches = dispatch.calls
+        FireMeasured(31, true, false, false)
+        assert(dispatch.calls == dispatches, "a single unshared icon gained an event dispatch boundary")
+        plan.entries[#plan.entries + 1] = duplicate
+        Run()
+    end
     cdState[101],chargeState[101],combat,e11.ov=oldState,oldCharges,oldCombat,oldOverride
     plan.entries[#plan.entries]=nil
     C.Index.Rebuild()

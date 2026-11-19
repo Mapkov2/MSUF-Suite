@@ -128,6 +128,7 @@ local function Setup(forever, prepare)
     end
     local View = {}
     function View.Create(module) module.host = module.host or Frame(false, module.previewParent or UIParent) end
+    View.Layout = View.Create
     function View.Paint(module)
         View.Create(module)
         state.paints = state.paints + 1

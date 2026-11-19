@@ -357,6 +357,13 @@ local function ButtonSpell(rec)
     return Virtual.Spell(action)
 end
 
+-- The override the client currently applies to a spell, else nil.
+local function OverrideOf(spell)
+    local override = api.Override(spell)
+    if IsSecret(override) or type(override) ~= "number" or override == spell then return nil end
+    return override
+end
+
 -- Caches what GlowMatch compares; returns the action's spell or flyout.
 local function CacheAction(rec)
     local kind, id, sub
@@ -365,18 +372,24 @@ local function CacheAction(rec)
     else
         kind, id, sub = ReadAction(rec.slot)
     end
-    if kind == "spell" then
-        rec.glowKind, rec.glowID = GLOW_SPELL, id
+    rec.procPending, rec.glowOverride = nil, nil
+    if kind == "spell" and Public(id) and type(id) == "number" then
+        local override = OverrideOf(id)
+        rec.glowKind, rec.glowID, rec.glowOverride = GLOW_SPELL, id, override
+        AB.RouteProc(rec, id, override)
         return id
     elseif kind == "flyout" then
+        AB.RouteProc(rec, nil, nil, true)
         rec.glowKind, rec.glowID = GLOW_FLYOUT, id
         return nil, id
-    elseif kind == "macro" or kind == nil then
+    elseif kind == "macro" or kind == "spell" or kind == nil then
+        AB.RouteProc(rec, nil, nil, true)
         rec.glowKind, rec.glowID = GLOW_DYNAMIC, nil
         if sub == "spell" then return id end
         return
     end
     rec.glowKind, rec.glowID = GLOW_NONE, nil
+    AB.RouteProc(rec)
 end
 
 -- Blizzard's proc alert on a suite button, played exactly as
@@ -454,6 +467,10 @@ local function GlowCheck(rec)
     if spell then
         local overlayed = api.Overlayed(spell)
         show = Public(overlayed) and overlayed or false
+        if not show and rec.glowOverride then
+            overlayed = api.Overlayed(rec.glowOverride)
+            show = Public(overlayed) and overlayed or false
+        end
     elseif flyout then
         local _, _, slots = GetFlyoutInfo(flyout)
         for i = 1, Public(slots) and type(slots) == "number" and slots or 0 do
@@ -518,13 +535,6 @@ local function SetRoute(rec, spell, override, previous, previousOverride)
     Join(rec, previousOverride)
 end
 
--- The override the client currently applies to a spell, else nil.
-local function OverrideOf(spell)
-    local override = api.Override(spell)
-    if IsSecret(override) or type(override) ~= "number" or override == spell then return nil end
-    return override
-end
-
 local function UnrouteSpell(rec)
     if rec.cdSpell == nil and rec.cdOverride == nil and rec.cdPrevious == nil and rec.cdPreviousOverride == nil then return end
     SetRoute(rec, nil, nil, nil, nil)
@@ -546,7 +556,7 @@ local function RouteSpell(rec)
         UnrouteSpell(rec)
         return
     end
-    local override = OverrideOf(spell)
+    local override = rec.glowOverride
     local oldSpell, oldOverride = rec.cdSpell, rec.cdOverride
     local action = rec.virtualAction or rec.slot
     if spell == oldSpell and override == oldOverride and rec.cdSlot == action then return end
@@ -571,7 +581,7 @@ end
 
 ------------------------------------------------------------------ buttons
 local function Clear(rec)
-    if rec.quality then rec.quality:Hide() end
+    AB.HideQuality(rec)
     local button = rec.button
     rec.filled, rec.tex, rec.displayCount, rec.actionText, rec.iconShown = false, nil, nil, nil, nil
     if button.icon then
@@ -600,33 +610,17 @@ local function Clear(rec)
         end
         button:SetAlpha(1)
     end
-    rec.glowKind, rec.glowID = GLOW_NONE, nil
+    rec.glowKind, rec.glowID, rec.glowOverride, rec.procPending = GLOW_NONE, nil, nil, nil
+    AB.RouteProc(rec)
     UnrouteSpell(rec)
     SetGlow(rec, false)
     ReleaseRange(rec)
 end
 
--- A crafted item's quality badge, as ActionBarActionButtonMixin:
--- UpdateProfessionQuality shows it on Retail and Forever: item actions only.
--- Native reused buttons own this overlay themselves.
-local function SetQuality(rec, info)
-    local atlas = Public(info) and type(info) == "table" and info.iconInventory
-    if not Public(atlas) or type(atlas) ~= "string" or atlas == "" then
-        if rec.quality then rec.quality:Hide() end
-        return
-    end
-    if not rec.quality then rec.quality = S.CreateTexture(rec.button, nil, "OVERLAY", nil, 7) end
-    rec.quality:SetAtlas(atlas)
-    rec.quality:SetSize(math.max(8, rec.bar.size * .4), math.max(8, rec.bar.size * .4))
-    rec.quality:ClearAllPoints()
-    rec.quality:SetPoint("TOPLEFT", rec.button.icon, "TOPLEFT", 0, 0)
-    rec.quality:Show()
-end
-
 local function ProfessionQuality(rec)
     if rec.native then return end
     local item = api.IsItem(rec.slot)
-    SetQuality(rec, Public(item) and item and api.Quality(rec.slot))
+    AB.SetQuality(rec, Public(item) and item and api.Quality(rec.slot))
 end
 
 local function Paint(rec, slotPaint)
@@ -668,9 +662,15 @@ local function Icon(rec)
     local texture = api.Texture(rec.slot)
     if rec.tex ~= nil and Public(texture) and texture == rec.tex then
         local spell = rec.cdSpell
-        if not spell then return end
+        if not spell then
+            if AB.procRoutesStale and rec.glowKind == GLOW_SPELL then GlowCheck(rec) end
+            return
+        end
         local kind, id = ReadAction(rec.slot)
-        if kind == "spell" and id == spell and OverrideOf(spell) == rec.cdOverride then return end
+        if kind == "spell" and id == spell and OverrideOf(spell) == rec.cdOverride then
+            if rec.procPending then CacheAction(rec) end
+            return
+        end
     end
     Paint(rec)
 end
@@ -803,7 +803,7 @@ AB.Painter = {
     Tint = Tint, SetTint = AB.SetTint, ReleaseRange = ReleaseRange, AcquireRange = AcquireRange,
     Usable = Usable, State = State, Count = Count, Cooldown = Cooldown, CooldownFeedback = CooldownFeedback,
     CacheAction = CacheAction, ActionSpell = ActionSpell, ButtonSpell = ButtonSpell, SetGlow = SetGlow, GlowCheck = GlowCheck,
-    Clear = Clear, RouteSpell = RouteSpell, SetQuality = SetQuality,
+    Clear = Clear, RouteSpell = RouteSpell,
     GLOW_SPELL = GLOW_SPELL, GLOW_DYNAMIC = GLOW_DYNAMIC, GLOW_FLYOUT = GLOW_FLYOUT,
     Paint = Paint, Icon = Icon, Refill = Refill, MapButton = MapButton, UnmapButton = UnmapButton, Remap = Remap,
     AllKeyTexts = AllKeyTexts, PaintBar = PaintBar, Walk = Walk, WalkNative = WalkNative,

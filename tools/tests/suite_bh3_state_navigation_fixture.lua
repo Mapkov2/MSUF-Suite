@@ -52,27 +52,31 @@ assert(loadfile(arg[1] .. "/MSUF_Suite/Core/PreviewKit.lua"))("MSUF_Suite", core
 -- containers, so the model is loaded on a namespace of its own.
 local auras = { Public = function() return true end, Client = { isForever = false } }
 assert(loadfile(arg[1] .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", auras)
-P.Suite = { Client = { isForever = false }, NameplateStyle = { NativeBit = function() return false end,
+P.Suite = { Client = { isForever = false }, Public = function() return true end,
+  NameplateStyle = { NativeBit = function() return false end,
   CreateBorder = function() return {} end, PaintBorder = noop }, PreviewKit = core.PreviewKit,
   NameplateAuraDisplay = auras.NameplateAuraDisplay }
 P.PreviewInteraction = { Outline = noop, Handles = function(host, opts) return core.PreviewKit.Handles(host, opts) end }
 P.NameplatesEditorMarkers = {}
-P.NameplatesPreviewLayout = { Apply = noop }
 LoadNameplatePage(P, ROOT, function(key) opened[#opened+1] = key; return true end)
 assert(loadfile(ROOT .. "NameplatesEditorLayers.lua"))("MSUF_Suite_Options", P)
+assert(loadfile(ROOT .. "NameplatesPreviewLayout.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(ROOT .. "NameplatesEditor.lua"))("MSUF_Suite_Options", P)
 local Editor = P.NameplatesEditor
 
 local function Handle()
   local h = { scripts = {} }
   function h:SetScript(n, f) self.scripts[n] = f end
+  function h:GetScript(n) return self.scripts[n] end
   for _, m in ipairs({ "EnableMouse", "SetMovable", "RegisterForClicks", "RegisterForDrag",
       "EnableMouseWheel", "EnableKeyboard" }) do h[m] = noop end
   function h:IsShown() return true end
+  function h:IsVisible() return self:IsShown() end
   return h
 end
 local ui = setmetatable({ sampleKind = "enemy",
-  body = { IsShown = function() return true end, EnableKeyboard = noop, SetPropagateKeyboardInput = noop,
+  body = { IsShown = function() return true end, IsVisible = function() return true end,
+    EnableKeyboard = noop, SetPropagateKeyboardInput = noop,
     SetScript = noop },
   sections = { enemy = "SECTION:enemy", auras = "SECTION:auras", signals = "SECTION:signals" } },
   { __index = Editor })

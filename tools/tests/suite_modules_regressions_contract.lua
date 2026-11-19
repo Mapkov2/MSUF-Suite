@@ -72,7 +72,7 @@ Case("category-profile", function()
         -- to the same profile table and a same-table import notification.
         Load("MSUF_Suite/Core/Database.lua", W.NS)
         W.NS.ProfileVariants = { CanMutate = function() return true end, OnActivated = function() end }
-        local profileA, profileB = {}, {}
+        local profileA, profileB = { suite = {} }, { suite = {} }
         W.NS.RootDB.profiles = { A = profileA, B = profileB }
         assert(W.NS.Database.Activate("A"))
         for _, operation in ipairs({ "roundtrip", "in-place", "close" }) do
@@ -156,7 +156,7 @@ Case("objective-deadline", function()
         SetTextColor = function() end, SetText = function(self, text) self.text = text end }
     local row = { timer = timer, collapse = { Hide = function() end } }
     owner.active, owner.font, owner.mutedRGB, owner.timedRows = true, "native", {1,1,1}, {}
-    owner.countdownJob = { Request = function() end }
+    owner.countdownJob, owner.rowFontArgs, owner.textRevision = { Request = function() end }, {}, 1
     cached.kind = "entry"
     paint(owner, row, cached, {1,1,1}, 15)
     now = 130

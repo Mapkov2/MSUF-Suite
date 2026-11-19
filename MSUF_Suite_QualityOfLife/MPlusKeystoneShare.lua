@@ -106,12 +106,12 @@ end
 -- Before the first request the window shows its original line.
 local function StatusText(self, pages)
     if not self.requestMode then
-        return string.format(S.Text("Page %d/%d · Suite users who answered this request"), self.page, pages)
+        return string.format(S.Text("Page %d/%d · Suite users who answered this request", true), self.page, pages)
     end
     if self.rowCount == 0 then
-        return string.format(S.Text("Page %d/%d · No answers yet"), self.page, pages)
+        return string.format(S.Text("Page %d/%d · No answers yet", true), self.page, pages)
     end
-    return string.format(S.Text("Page %d/%d · Players who answered: %d (%s)"),
+    return string.format(S.Text("Page %d/%d · Players who answered: %d (%s)", true),
         self.page, pages, self.rowCount, AnswerSources(self))
 end
 
@@ -135,7 +135,7 @@ local function PaintWindow(self)
         self.rowMaps[i] = entry and entry.mapID or nil
     end
     -- Custom fonts may lack the middle dot used by existing translations.
-    self.status:SetText((StatusText(self, pages):gsub("\194\183", "-")))
+    self.status:SetText(StatusText(self, pages))
     -- Combat locks the teleport buttons; PLAYER_REGEN_ENABLED paints again (AfterCombat).
     Teleport.Paint(self, self.rowMaps)
 end

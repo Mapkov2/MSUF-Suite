@@ -43,7 +43,7 @@ local TRACKER_GROUPS = {
 -- The Mythic+ and raid views of the tracker (HUDPreviewViews.lua).
 V.Views = {}
 -- The group underline is as tall as the tracker draws it.
-local UNDERLINE_HEIGHT = 4
+local UNDERLINE_HEIGHT = 1
 
 -- The tracker heading with its title and entry count; returns the next row.
 local function Header(ui, title, count)
@@ -56,6 +56,17 @@ local function Header(ui, title, count)
     return -46
 end
 
+local function DrawQuestObjective(ui, label, progress, y, color)
+    local c = ui.config
+    if c.questProgressColumn then
+        local inset = c.questIconStyle == 1 and 25 or 38
+        DrawText(ui, label, inset, y, c.width - inset - 64, c.objectiveSize, color)
+        DrawText(ui, progress, c.width - 64, y, 52, c.objectiveSize, color):SetJustifyH("RIGHT")
+    else
+        DrawText(ui, progress .. "  " .. label, 28, y, c.width - 42, c.objectiveSize, color)
+    end
+end
+
 -- One group: its heading in the group color, an entry and its objectives.
 -- Rows carry a stripe in the group color or, with group underlines on, a line
 -- under the heading.
@@ -66,7 +77,7 @@ local function Group(ui, group, y)
     DrawText(ui, Tr(group[1]), 11, y, width - 22, c.sectionSize, color)
     y = y - c.sectionSize - 14
     if c.groupUnderlines then
-        Fill(ui, 13, y + UNDERLINE_HEIGHT, width - 17, UNDERLINE_HEIGHT, { P.RGB(c.dividerColor) })
+        Fill(ui, 13, y + UNDERLINE_HEIGHT, width - 17, UNDERLINE_HEIGHT, { P.RGB(c.dividerColor) }, .55)
     end
     local text = { Color(c, "textColor", TEXT, "text") }
     local symbol = c.questIconStyle == 1 and "" or c.questIconStyle == 2 and "! "
@@ -75,10 +86,10 @@ local function Group(ui, group, y)
     DrawText(ui, symbol .. Tr("Example Quest"), 18, y, width - 36, c.entrySize, titleColor)
     y = y - c.entrySize - 9
     local entryBottom = y
-    DrawText(ui, "3/8  " .. Tr("Collect supplies"), 28, y, width - 42, c.objectiveSize, text)
+    DrawQuestObjective(ui, Tr("Collect supplies"), "3/8", y, text)
     y = y - c.objectiveSize - 7
     if not c.hideCompletedObjectives then
-        DrawText(ui, "5/5  " .. Tr("Defeat enemies"), 28, y, width - 42, c.objectiveSize,
+        DrawQuestObjective(ui, Tr("Defeat enemies"), "5/5", y,
             { Color(c, "completeColor", { .49, .75, .53 }) })
         y = y - c.objectiveSize - 7
     end

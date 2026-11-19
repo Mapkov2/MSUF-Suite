@@ -132,13 +132,14 @@ local function RestoreSkin(snapshot, historyReason)
     return true
 end
 
-local function RestoreSuite(snapshot)
-    local previous = Suite.Database.GetActiveProfileName()
-    local name = snapshot.activeProfile or previous
+local function RestoreSuite(snapshot, name, profile)
+    local db = Suite.Database
+    local previous = db.GetActiveProfileName()
     local lifted = Suite.ProfileVariants.LiftOverlay(previous)
-    Suite.RootDB.profiles[name] = Suite.RootDB.profiles[name] or { suite = {} }
     Suite.RootDB.activeProfile = name
-    Suite.DB = Suite.RootDB.profiles[name]
+    db.StoreProfile(name, profile)
+    Suite.DB = profile
+    db.CompactInactive(previous)
     Suite.DB.suite = Suite.DB.suite or {}
     for _, key in ipairs(Suite.Database.PROFILE_SETTINGS) do
         Suite.DB.suite[key] = Suite.CopyValue(snapshot.suite[key])
@@ -176,12 +177,20 @@ local function RestoreFriendlyVisibility(snapshot)
 end
 
 local function ApplyWorkbenchSnapshot(snapshot, historyReason, source)
+    local name, profile
+    if snapshot.suite then
+        local db = Suite.Database
+        name = snapshot.activeProfile or db.GetActiveProfileName()
+        profile = db.GetProfile(name)
+        if not profile and db.HasProfile(name) then return false, "Missing suite profile" end
+        profile = profile or { suite = {} }
+    end
     if snapshot.present then
         local ok, reason = RestoreSkin(snapshot, historyReason)
         if not ok then return false, reason end
     end
     if snapshot.suite then
-        RestoreSuite(snapshot)
+        RestoreSuite(snapshot, name, profile)
         if historyReason == nil or source == "profile-workbench" then
             local ok, reason = IO.ApplyNameplateCVars(snapshot.nameplateCVars)
             if not ok then return false, reason end
@@ -268,16 +277,11 @@ local function PrepareWorkbenchImport(text)
         snapshot.nameplateShared = nil
         return { provider = snapshot }
     end
-    local id, settings, reason, chat, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, companion, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
     snapshot.actionBarKeys = keys
-    -- Only the string's settings change, as in P.ImportModule (SetMany): it
-    -- leaves out character-bound ones, and an old helper string names seven
-    -- Minimap settings.
-    for key, value in pairs(settings) do snapshot.suite.modules[id][key] = value end
-    if chat then
-        for key, value in pairs(chat) do snapshot.suite.modules.chatComfort[key] = value end
-    end
+    -- Use the same selected settings as the direct module import.
+    IO.MergeModuleSettings(snapshot.suite.modules, id, settings, companion)
     snapshot.nameplateCVars, snapshot.nameplateShared = nameplateCVars, nameplateShared
     return { provider = snapshot }
 end

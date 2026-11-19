@@ -9,7 +9,7 @@ local Tr = S.Text
 -- (build = specialization and item level, score = rating and its change).
 local Party = {}
 P.RunSummaryParty = Party
-local SEPARATOR = "  \194\183  "
+local SEPARATOR = "  -  "
 local COLUMNS = {
     { field = "name", title = "Character", width = 132, level = 2, sort = "name" },
     { field = "build", title = "Build", width = 128, level = 2, sort = "ilvl" },

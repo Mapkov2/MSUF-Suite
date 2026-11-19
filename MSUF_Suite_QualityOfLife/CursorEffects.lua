@@ -24,6 +24,7 @@ local function Ring(parent)
     for i = 1, RING_PIECES do
         local piece = S.CreateTexture(parent, nil, "OVERLAY")
         piece:SetColorTexture(1, 1, 1, 1)
+        piece:Hide()
         pieces[i] = piece
     end
     return pieces
@@ -59,6 +60,7 @@ local function Create(self)
         trail[i] = dot
     end
     self.host, self.pieces, self.trailHost, self.trail = host, Ring(host), trailHost, trail
+    self.ringCount, self.trailShown, self.following = 0, false, false
     self.gcd = NativeCooldown(host, .96, .77, .37)
     self.cast = NativeCooldown(host, .35, .8, 1)
     -- The pointer's centre dot.
@@ -85,6 +87,7 @@ local function Draw(self)
     local r, g, b = S.RGB(c.color)
     local radius = c.size / 2
     local count = PieceCount(c)
+    self.visiblePieces = c.ringShape == NO_RING and 0 or count
     local thickness = math.max(1, c.size / 21)
     local length = c.ringShape == DOTS and thickness * 1.5
         or c.ringShape == THIN and TAU * radius / count + 1 or math.max(3, c.size / 9)
@@ -117,11 +120,17 @@ local function Draw(self)
     self.gcdHost:SetAlpha(c.gcdOpacity / 100)
 end
 
-local function ReadCursor()
-    local x, y = GetCursorPosition()
+local function ReadScale(self)
     local scale = UIParent:GetEffectiveScale()
-    if not S.Finite(x) or not S.Finite(y) or not S.Finite(scale) or scale <= 0 then return nil end
-    return x / scale, y / scale
+    self.cursorScale = S.Finite(scale) and scale > 0 and 1 / scale or nil
+    return self.cursorScale
+end
+
+local function ReadCursor(self)
+    local x, y = GetCursorPosition()
+    local scale = self.cursorScale or ReadScale(self)
+    if not scale or not S.Finite(x) or not S.Finite(y) then return nil end
+    return x * scale, y * scale
 end
 
 local function MoveTrail(self, x, y)
@@ -130,8 +139,10 @@ local function MoveTrail(self, x, y)
         local dot = self.trail[i]
         local nextX, nextY = self.trailX[i], self.trailY[i]
         self.trailX[i], self.trailY[i] = oldX, oldY
-        dot:ClearAllPoints()
-        dot:SetPoint("CENTER", UIParent, "BOTTOMLEFT", oldX, oldY)
+        if nextX ~= oldX or nextY ~= oldY then
+            dot:ClearAllPoints()
+            dot:SetPoint("CENTER", UIParent, "BOTTOMLEFT", oldX, oldY)
+        end
         oldX, oldY = nextX or x, nextY or y
     end
 end
@@ -140,7 +151,7 @@ end
 -- pointer highlight must follow the pointer. It runs only while something
 -- is shown, moves nothing while the pointer rests and lets the trail settle.
 local function Follow(self, elapsed)
-    local x, y = ReadCursor()
+    local x, y = ReadCursor(self)
     if not x then return end
     if x ~= self.x or y ~= self.y then
         self.x, self.y = x, y
@@ -166,6 +177,34 @@ local function FollowUpdate(_, elapsed)
 end
 
 -- One rule for the whole highlight: combat and location.
+local function ScaleChanged(self)
+    local previous = self.cursorScale
+    if ReadScale(self) ~= previous and self.following then Follow(self, 0) end
+end
+
+local function SetRingCount(self, count)
+    local previous = self.ringCount
+    if count == previous then return end
+    self.ringCount = count
+    for i = count + 1, previous do self.pieces[i]:Hide() end
+    for i = previous + 1, count do self.pieces[i]:Show() end
+end
+
+local function SetTrailShown(self, shown)
+    if self.trailShown == shown then return end
+    self.trailShown = shown
+    self.trailHost:SetShown(shown)
+    for i = 1, TRAIL_COUNT do self.trail[i]:SetShown(shown) end
+end
+
+local function SetFollowing(self, shown)
+    if self.following == shown then return end
+    self.following = shown
+    self.host:SetShown(shown)
+    self.host:SetScript("OnUpdate", shown and FollowUpdate or nil)
+    if shown then Follow(self, 0) end
+end
+
 local function Visible(self)
     local c = self.config
     if c.zone == INSIDE and not self.inInstance or c.zone == OUTSIDE and self.inInstance then return false end
@@ -216,26 +255,23 @@ local function Active(self)
     local c = self.config
     local visible = Visible(self)
     local pointer = visible and When(self, c.ringWhen) and (not c.cameraHoldOnly or self.cameraHeld == true)
-    local ring = pointer and c.ringShape ~= NO_RING
+    local count = pointer and self.visiblePieces or 0
     local dot = pointer and c.showDot == true
     local cast = visible and c.showCast and When(self, c.castWhen) and self.casting == true
     local gcdOn = visible and c.showGCD and When(self, c.gcdWhen) and self.gcdActive == true
     local gcd = gcdOn and not c.gcdDetached and not cast
     local free = gcdOn and c.gcdDetached == true
-    self.trailShown = pointer and c.showTrail == true
-    local count = PieceCount(c)
-    for i = 1, #self.pieces do self.pieces[i]:SetShown(ring and i <= count) end
-    self.dot:SetShown(dot)
+    SetTrailShown(self, pointer and c.showTrail == true)
+    SetRingCount(self, count)
+    if self.dotShown ~= dot then
+        self.dotShown = dot
+        self.dot:SetShown(dot)
+    end
     self.cast:SetShown(cast)
     self.gcd:SetShown(gcd)
     self.gcdFree:SetShown(free)
     self.gcdHost:SetShown(free or S.editMode == true and c.gcdDetached == true)
-    self.trailHost:SetShown(self.trailShown)
-    for i = 1, TRAIL_COUNT do self.trail[i]:SetShown(self.trailShown) end
-    local follow = ring or dot or cast or gcd or self.trailShown
-    self.host:SetShown(follow)
-    self.host:SetScript("OnUpdate", follow and FollowUpdate or nil)
-    if follow then Follow(self, 0) end
+    SetFollowing(self, count > 0 or dot or cast or gcd or self.trailShown)
 end
 
 local function OnCast(self)
@@ -301,7 +337,13 @@ local GCD_START_EVENTS = {
 }
 local COMBAT_EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }
 local MOUSE_EVENTS = { "GLOBAL_MOUSE_DOWN", "GLOBAL_MOUSE_UP" }
-local ZONE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA" }
+local ZONE_EVENTS = { "ZONE_CHANGED_NEW_AREA" }
+local SCALE_EVENTS = { "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }
+
+local function EnterWorld(self, event)
+    ScaleChanged(self)
+    ContextChanged(self, event)
+end
 
 local function Listen(self, events, wanted, callback, unit)
     for i = 1, #events do
@@ -320,6 +362,8 @@ local function SyncEvents(self)
     Listen(self, GCD_EVENTS, c.showGCD, OnGCD, "player")
     Listen(self, COMBAT_EVENTS, NeedsCombat(c), ContextChanged)
     Listen(self, ZONE_EVENTS, c.zone ~= 1, ContextChanged)
+    Listen(self, SCALE_EVENTS, true, ScaleChanged)
+    self.context:Event("PLAYER_ENTERING_WORLD", EnterWorld, IN_COMBAT)
     Listen(self, MOUSE_EVENTS, c.cameraHoldOnly, OnMouse)
     if not c.cameraHoldOnly then self.cameraLeft, self.cameraRight, self.cameraHeld = false, false, false end
 end
@@ -351,6 +395,7 @@ end
 function M:Enable()
     Create(self)
     self.trailX, self.trailY, self.trailElapsed, self.trailIdle = {}, {}, 0, 0
+    ReadScale(self)
     Draw(self)
     SyncEvents(self)
     self.gcd:SetScript("OnCooldownDone", CooldownDone)
@@ -360,6 +405,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    ScaleChanged(self)
     Draw(self)
     SyncEvents(self)
     ContextChanged(self)
@@ -367,9 +413,9 @@ function M:Refresh()
 end
 
 function M:Disable()
-    self.host:SetScript("OnUpdate", nil)
-    self.host:Hide()
-    self.trailHost:Hide()
+    SetFollowing(self, false)
+    SetTrailShown(self, false)
+    self.dotShown = false
     self.cast:Hide()
     self.gcd:Hide()
     self.dot:Hide()

@@ -451,6 +451,15 @@ local function SquareArea(key, group, label, order, id, skinKey, icon)
         write = function(value) return P.Set(id, skinKey, value) end,
     }
 end
+
+local function PlayerAuraArea(key, label, order, skinKey)
+    local area = SquareArea(key, "Player aura layout", label, order, "playerAuras", skinKey)
+    area.read = function()
+        local _, displayed = Suite.HostBridge.PlayerAuraSkin(P.Get("playerAuras", skinKey))
+        return displayed
+    end
+    return area
+end
 -- An area whose shape belongs to its module page alone: the minimap's shape
 -- sets its mask, terrain and ring and is part of its style preset (Ember is
 -- round), so a skin never writes it. The map can use alternate skin art
@@ -494,8 +503,8 @@ local function RegisterIconSkinAreas()
         { "iconSkin" }, { "buttonShape" }, Suite.ActionBarEnum.BUTTON_SHAPE_IDS, "Interface\\Icons\\Ability_Warrior_Charge")
     -- Blizzard's own player buffs and debuffs beside the minimap, as the
     -- Player aura layout module draws them.
-    specs[#specs + 1] = SquareArea("suite_playerauras_buffs", "Player aura layout", "Buffs", 1, "playerAuras", "buffSkin")
-    specs[#specs + 1] = SquareArea("suite_playerauras_debuffs", "Player aura layout", "Debuffs", 2, "playerAuras", "debuffSkin")
+    specs[#specs + 1] = PlayerAuraArea("suite_playerauras_buffs", "Buffs", 1, "buffSkin")
+    specs[#specs + 1] = PlayerAuraArea("suite_playerauras_debuffs", "Debuffs", 2, "debuffSkin")
     specs[#specs + 1] = FixedShapeArea(P.IconSkinKey("minimap"), "Minimap", "Map", 1, "minimap",
         "iconSkin", "shape", { "RECTANGLE", "CIRCLE", "RECTANGLE" }, "Interface\\Icons\\INV_Misc_Map_01")
     specs[#specs + 1] = SkinArea(P.IconSkinKey("buffReminders"), "Buff reminders", "Icons", 1, "buffReminders",

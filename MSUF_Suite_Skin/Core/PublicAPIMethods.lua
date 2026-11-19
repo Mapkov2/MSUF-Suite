@@ -29,6 +29,7 @@ local QueueEntry = Shared.QueueEntry
 local SelectEntry = Shared.SelectEntry
 local NextSettingsGeneration = Shared.NextSettingsGeneration
 local HasMethod = NS.Safety.HasMethod
+local ReadableMethod = NS.Safety.ReadableMethod
 
 local listenerOwner = {}
 local listenerActive = false
@@ -170,7 +171,9 @@ function ScopeMethods:AnimateContent(frame, token)
     local safe
     safe, reason = SafeTarget(frame, true)
     if not safe then return false, reason end
-    if not HasMethod(frame, "CreateAnimationGroup") or not HasMethod(frame, "HookScript") then
+    -- SafeTarget proved the frame readable and not forbidden, so read its
+    -- members without asking IsForbidden twice more on every page switch.
+    if not ReadableMethod(frame, "CreateAnimationGroup") or not ReadableMethod(frame, "HookScript") then
         return false, "unsupported-frame"
     end
     if not NS.Safety.Public(token) or token == nil then return false, "invalid-token" end

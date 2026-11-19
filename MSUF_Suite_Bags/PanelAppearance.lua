@@ -61,11 +61,14 @@ local function GoldGeometry(t, panel, both)
     second:SetWordWrap(panel)
 end
 
-function Panel.Geometry(t, panel, both)
-    if t.dailyGoldLabel and (t.panel ~= panel or t.goldBoth ~= both) then GoldGeometry(t, panel, both) end
+function Panel.Geometry(t, panel, both, rail)
+    rail = rail or t.rail or 0
+    if t.dailyGoldLabel and (t.panel ~= panel or t.goldBoth ~= both or t.rail ~= rail) then
+        GoldGeometry(t, panel and rail > 0, both)
+    end
     t.goldBoth = both
-    if t.panel == panel then return end
-    t.panel = panel
+    if t.panel == panel and t.rail == rail then return end
+    t.panel, t.rail = panel, rail
     if panel then Extras(t) end
     Inset(t[2], 0, 0)
     Inset(t[3], 0, 0, panel and 50 or (t.combined and 62 or 40))
@@ -76,10 +79,11 @@ function Panel.Geometry(t, panel, both)
         t[5]:SetPoint("BOTTOMRIGHT")
     end
     if t.feather then
-        t.feather:SetShown(panel)
+        t.feather:SetShown(panel and rail > 0)
         t.ribbon:SetShown(panel)
         t.glow:SetShown(panel)
         t.heading:SetShown(panel)
+        t.heading:SetPoint("TOPLEFT", rail + 16, -16)
     end
 end
 

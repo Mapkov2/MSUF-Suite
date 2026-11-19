@@ -29,11 +29,11 @@ local function Layout(ui)
         local bottom = ui.selector:GetLayoutMetrics().bottomY
         local y = ui.inlineFilter and -16 or bottom - 8
         if ui.filterY ~= y then
-            ui.filterControl:ClearAllPoints()
-            ui.filterControl:SetPoint("TOPRIGHT", ui.body, "TOPRIGHT", -8, y)
+            ui.filterSlot:ClearAllPoints()
+            ui.filterSlot:SetPoint("TOPRIGHT", ui.body, "TOPRIGHT", -8, y)
             ui.filterY = y
         end
-        local top = math.max(-bottom, -y + 26) + 12
+        local top = math.max(-bottom, -y + ui.filterSlot:GetHeight()) + 12
         if ui.top ~= top then
             ui.top = top
             for _, value in pairs(ui.panels) do
@@ -192,12 +192,17 @@ local function InstallRoutes(ui, categories)
 end
 
 local function BuildFilters(ui)
-    ui.filterControl = P.M.BindDropdownAt(ui.ctx, ui.body, Tr("Show"), 0, 0, {
+    local width = math.min(170, ui.width / 2)
+    local slot = CreateFrame("Frame", nil, ui.body)
+    slot:SetSize(width, 26)
+    ui.filterSlot = slot
+    -- Menu2 reapplies the dropdown's local anchor on resize. Move its slot instead.
+    ui.filterControl = P.M.BindDropdownAt(ui.ctx, slot, Tr("Show"), 0, 24, {
         { value = "all", text = Tr("All") },
         { value = "enabled", text = Tr("Enabled only") },
         { value = "disabled", text = Tr("Disabled only") },
         { value = "unavailable", text = Tr("Unavailable") },
-    }, math.min(170, ui.width / 2), function() return ui.filter end,
+    }, width, function() return ui.filter end,
         function(value) ui:SetFilter(value) end, P.Meta(ui.page, "qol", "view.enabled", "ephemeral"))
     P.HideControlTitle(ui.filterControl)
     ui.empty = P.Text(ui.body, "No features match this filter.", 16, 0, ui.width - 32)

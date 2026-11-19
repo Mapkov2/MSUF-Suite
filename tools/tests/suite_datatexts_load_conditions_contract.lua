@@ -135,6 +135,44 @@ do
     assert(built == 0, "visibility events rebuilt the macro expression " .. built .. " times")
     assert(first.visibilityDriver == "[mounted] hide; show", "cached visibility expression changed")
 end
+
+local reads, heading = 0, 90
+G.GetPlayerFacing = function()
+    reads = reads + 1
+    return -math.rad(heading)
+end
+health = 1
+assert(S.SetMany("dataTexts", { bar1Width = 650, bar1Height = 28, bar1Slot1 = W.Suite.DataTextSourceIndex.compass }))
+local compassButton = first.slots[1]
+local view = assert(compassButton.dataCompass.view)
+assert(compassButton.source == "compass" and view.frame:IsVisible() and not compassButton.label:IsShown())
+local before = reads
+heading = 94
+W.Advance(5)
+assert(reads == before + 1 and view.motion:IsPlaying(), "a stalled frame must take only one heading sample")
+health = 0
+W.Event("UNIT_HEALTH", "player")
+before = reads
+W.Advance(.2)
+assert(reads == before and not view.motion:IsPlaying(), "a health-hidden compass kept sampling or animating")
+W.SetCombat(true)
+W.SetCombat(false)
+W.Advance(.2)
+assert(reads == before, "leaving combat resubscribed a hidden compass")
+heading, health = 107, 1
+W.Event("UNIT_HEALTH", "player")
+assert(W.Suite.Compass.SlotText(compassButton) == "107\194\176" and not view.motion:IsPlaying(),
+    "revealing the panel animated from the previous session's heading")
+S.SetEditMode(true)
+before = reads
+W.Advance(.2)
+assert(reads == before and W.Suite.Compass.SlotText(compassButton) == "90\194\176", "the editor must show a static sample")
+S.SetEditMode(false)
+assert(S.Set("dataTexts", "bar1Slot1", W.Suite.DataTextSourceIndex.gold))
+before = reads
+W.Advance(.2)
+assert(reads == before and compassButton.label:IsShown() and not view.frame:IsShown(), "changing sources left a live compass behind")
+
 assert(S.Set("dataTexts", "enabled", false))
 assert(first.visibilityDriver == nil and not first.frame:IsShown(), "disable kept the visibility driver")
 print("Suite DataTexts load conditions passed: " .. flavor)

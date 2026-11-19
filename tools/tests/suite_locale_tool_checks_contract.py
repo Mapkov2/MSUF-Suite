@@ -57,6 +57,31 @@ check(not tool.english_problems("|cff00ff00Ready|r and a|b, Primary | secondary,
       "complete escapes or displayed pipes were flagged")
 check(not tool.english_problems("%d%% done"), "a format string with %% was flagged")
 
+# Regenerating translations must retain the data read by Suite search.
+with tempfile.TemporaryDirectory() as directory:
+    old_locale_dir = tool.LOCALE_DIR
+    tool.LOCALE_DIR = Path(directory)
+    try:
+        locale = "koKR"
+        path = tool.locale_path(locale)
+        metadata = {
+            "msufsuite.search.particles": "최근 방금",
+            "msufsuite.search.actionTracker": '기록 "최근";주문 시전',
+        }
+        raw = "".join(f"L[{tool.lua_quote(key)}] = {tool.lua_quote(value)}\n" for key, value in metadata.items())
+        path.write_text(raw + 'T("Spell history", "주문 기록")\n', encoding="utf-8")
+        translations = tool.read_locale(locale)
+        translations["Party deaths"] = "파티원 사망"
+        tool.write_locale(locale, translations)
+        check(tool.pack_entries(tool.read_source(path)) == metadata, "regenerating a pack lost search metadata")
+        check(tool.read_locale(locale) == translations, "search metadata contaminated translation entries")
+        rewritten = path.read_bytes()
+        tool.write_locale(locale, tool.read_locale(locale))
+        check(path.read_bytes() == rewritten, "rewriting search metadata is not stable")
+    finally:
+        tool.LOCALE_DIR = old_locale_dir
+
+
 # A catalog's summary ranks settings; help summaries on pages are visible prose.
 with tempfile.TemporaryDirectory() as directory:
     tree = Path(directory)

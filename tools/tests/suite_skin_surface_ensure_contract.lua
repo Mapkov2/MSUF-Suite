@@ -65,6 +65,33 @@ for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Core/Theme.lua"
     "Rendering/Geometry.lua", "Rendering/Surface.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
+-- A recycled row can reapply its tint and visibility without resetting its
+-- owned nine-slice. Native button slots can be rewritten by Blizzard.
+local function CheckShapeReuse()
+    local texture, another = Texture(), Texture()
+    local geometry = { slice = true, margins = { 2, 3, 4, 5 } }
+    local configure = NS.Geometry.ConfigureShape
+    local before = paints
+    configure(texture, "first", geometry)
+    Check(paints - before == 4, "first shape did not configure its slice")
+    configure(texture, "first", geometry)
+    Check(paints - before == 4, "stable owned shape rewrote its slice")
+    configure(another, "first", geometry)
+    Check(paints - before == 8, "a different texture reused the first texture's shape")
+    geometry.margins[4] = 6
+    configure(texture, "first", geometry)
+    Check(paints - before == 12, "changed slice margin was ignored")
+    geometry.slice = false
+    configure(texture, "first", geometry)
+    Check(paints - before == 14, "disabling the slice did not clear it")
+    configure(texture, "second", geometry)
+    Check(paints - before == 16, "changed asset was ignored")
+    configure(another, "first", geometry, true)
+    configure(another, "first", geometry, true)
+    Check(paints - before == 20, "native button slot stopped restoring its shape")
+end
+CheckShapeReuse()
+
 local Surface = NS.Surface
 local spec = { role = "card", radius = 4, inset = 1, listItem = true }
 

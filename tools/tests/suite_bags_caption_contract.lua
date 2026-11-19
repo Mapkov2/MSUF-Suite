@@ -84,7 +84,7 @@ assert(Near(cx + cw, fx + fw - 1) and Near(cy + ch, fy + fh - 1), "the caption i
 assert(Near(mx + mw, cx) and Near(nx + nw, mx) and cw == mw and mw == nw, "the caption cells are not one row of equal cells")
 -- The side panel's tools, heading and drag strip end left of the caption.
 local V, t = W.P.InventoryView, W.M.windows[W.CF]
-for _, tool in ipairs({ V.equipped, V.cleanup, V.manage, V.clearRecent }) do
+for _, tool in ipairs({ V.equipped, V.cleanup, V.manage, V.listToggle }) do
     local tx, _, tw = W.Rect(tool)
     assert(tx + tw <= nx - 8 + .01, "a panel tool lies under the caption")
 end
@@ -150,6 +150,12 @@ assert(taskbar.IsDocked(tab), "the Bags restore button did not appear on the Dat
 local reopen = assert(Delegate(W, W.Backpack), "the restore tab has no secure click on Blizzard's backpack button")
 assert(reopen == delegate and reopen.points[1][2] == W.UIParent, "the restore uses a secure anchor to the tab")
 SameRect(W, reopen, tab, "the restore click is not over the tab")
+W.NS.AnchorPoints = { "TOPLEFT" }
+dataTexts.minimizedWindowsPoint = 1
+taskbar.Refresh()
+local _, strip = tab:GetPoint(1)
+assert(strip:GetPoint(1) == "TOPLEFT", "the bag tab did not follow the taskbar to the top-left corner")
+SameRect(W, reopen, tab, "moving the taskbar left the bag's secure hit area behind")
 Click(reopen)
 W.Settle()
 assert(W.CF:IsShown() and not tab:IsShown() and #W.taint == 0, "the restore tab did not reopen the bag cleanly")

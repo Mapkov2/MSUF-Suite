@@ -20,7 +20,7 @@ local function Run(scenario)
     local writes, addonWrites, solverCalls = 0, 0, 0
     local cacheOwners, skins, nativeContainers, solverCallsByFrame = {}, {}, {}, {}
     local yieldHistory = {}
-    local boundaryErrors = {}
+    local boundaryErrors, expectedError, expectedErrors = {}, nil, 0
     NS.Dispatch = function(callback, ...)
         local ok, result = pcall(callback, ...)
         if not ok then boundaryErrors[#boundaryErrors + 1] = result end
@@ -45,7 +45,7 @@ local function Run(scenario)
         end
     end
 
-    NS.HostBridge.IconSkinLook = function(choice) return choice end
+    NS.HostBridge.PlayerAuraSkin = function(choice) return choice end
     NS.HostBridge.PaintIconSkin = function(button, look)
         skins[button] = look
         return look ~= nil
@@ -70,6 +70,7 @@ local function Run(scenario)
     frame.nativeContainerAnchor = { "TOPRIGHT", frame, "TOPRIGHT", 0, 0 }
     function frame:IsInDefaultPosition() return self.defaultPosition end
     function frame:ApplySystemAnchor()
+        if self.skipAnchor then return end
         self:ClearAllPoints()
         self:SetPoint(unpack(self.nativeAnchor))
     end
@@ -144,8 +145,13 @@ local function Run(scenario)
             icons = { self.ConsolidatedBuffs, unpack(self.auraFrames) }
         end
         AuraContainerMixin.UpdateGridLayout(self.AuraContainer, icons)
+        if self.skipContainerAnchor then return end
         nativeContainer:ClearAllPoints()
         nativeContainer:SetPoint(unpack(self.nativeContainerAnchor))
+        if self.CollapseAndExpandButton then
+            self.CollapseAndExpandButton:ClearAllPoints()
+            self.CollapseAndExpandButton:SetPoint("TOPRIGHT", self, "TOPRIGHT", 8, 2)
+        end
         nativeContainer:SetSize(304, 40)
     end
 
@@ -165,16 +171,35 @@ local function Run(scenario)
         debuff[key] = frame[key]
     end
     DebuffFrame = debuff
+    if scenario == "noop-native-anchors" or scenario == "coincident-native-anchors" or scenario == "independent-arrow" then
+        frame.CollapseAndExpandButton = H.Region()
+        frame.nativeContainerAnchor = { "BOTTOMLEFT", frame, "BOTTOMLEFT", 19, 27 }
+    end
     Native(frame.ApplySystemAnchor, frame)
     Native(debuff.ApplySystemAnchor, debuff)
     Native(frame.UpdateGridLayout, frame)
     Native(debuff.UpdateGridLayout, debuff)
     local nativeCache = frame.AuraContainer.currentGridLayoutInfo
     origin = "addon"
+    local icon = frame.auraFrames[1].Icon
+    local getPoint, getWidth, getHeight = icon.GetPoint, icon.GetWidth, icon.GetHeight
+    if scenario == "restricted-icon" then
+        icon.GetPoint = function() return "TOP", frame.auraFrames[1], "TOP", { secret = true }, 0 end
+        icon.GetWidth, icon.GetHeight = function() return { secret = true } end, function() return { secret = true } end
+    end
     module:Enable()
     Check(frame.auraFrames[1].width == 52 and skins[frame.auraFrames[1]] == "taint-test-look",
         scenario .. ": custom aura layout or skin was not adopted")
-    if scenario == "native-layout-change" then
+    if scenario == "noop-native-anchors" then
+        frame.skipAnchor, frame.skipContainerAnchor = true, true
+        Native(frame.ApplySystemAnchor, frame)
+        container.iconPadding = 9
+    elseif scenario == "coincident-native-anchors" then
+        frame.nativeAnchor = { "TOPRIGHT", Minimap, "TOPLEFT", -12, 0 }
+        frame.nativeContainerAnchor = { "TOPRIGHT", frame, "TOPRIGHT", 0, 0 }
+        Native(frame.ApplySystemAnchor, frame)
+        container.iconPadding = 9
+    elseif scenario == "native-layout-change" then
         container.iconPadding = 9
     elseif scenario == "native-container-change" or scenario == "transient-native-anchor" then
         container.addIconsToTop = true
@@ -207,7 +232,88 @@ local function Run(scenario)
         Native(StatusTrayManager.UpdateTrayAndBuffFrameLayout)
     end
 
-    if scenario == "disable-forbidden-saved-icon" then
+    if scenario == "direct-frame-release" or scenario == "direct-frame-adopt" or scenario == "direct-frame-refill" then
+        -- A native snap or drag can write the Edit Mode override without
+        -- invoking ApplySystemAnchor. Capture it before a release or re-adopt.
+        Native(frame.ClearAllPoints, frame)
+        Native(frame.SetPoint, frame, "TOPLEFT", UIParent, "TOPLEFT", 87, -99)
+        if scenario == "direct-frame-adopt" then module:Refresh() end
+        if scenario == "direct-frame-refill" then
+            Native(frame.UpdateAuraButtons, frame)
+            Check(frame.points[1][2] == Minimap, "the next buff update kept an external frame position")
+        end
+        module:Disable()
+        local point = frame.points[1]
+        Check(point[2] == UIParent and point[4] == 87 and point[5] == -99,
+            scenario .. ": lost a direct native frame anchor")
+    elseif scenario == "independent-arrow" then
+        local arrow = frame.CollapseAndExpandButton
+        Native(arrow.ClearAllPoints, arrow)
+        Native(arrow.SetPoint, arrow, "BOTTOMRIGHT", frame, "BOTTOMRIGHT", 14, -7)
+        frame.skipContainerAnchor = true
+        Native(frame.UpdateGridLayout, frame)
+        nativeCache = container.currentGridLayoutInfo
+        module:Disable()
+        local p = arrow.points[1]
+        Check(p[1] == "BOTTOMRIGHT" and p[2] == frame and p[4] == 14 and p[5] == -7,
+            "a grid notification erased a genuine independent native arrow position")
+    elseif scenario == "cleanup-region-error" then
+        expectedError, expectedErrors = "fixture saved region failure", 1
+        local count = frame.auraFrames[1].Count
+        local setColor = count.SetTextColor
+        count.SetTextColor = function() error(expectedError) end
+        local finished = pcall(module.Disable, module)
+        count.SetTextColor = setColor
+        Check(finished and yieldHistory[#yieldHistory] == false, "a throwing region blocked the skin-only handoff")
+        Check(frame.auraFrames[2].Duration.font[2] == 10 and debuff.auraFrames[1].Duration.font[2] == 10,
+            "one throwing region prevented restoration on other buttons or the other row")
+        Check(skins[frame.auraFrames[1]] == nil and skins[frame.auraFrames[2]] == nil,
+            "native selected skins were left owned by the disabled layout module")
+    elseif scenario == "persistent-solver-error" then
+        local original = AuraContainerMixin.UpdateGridLayout
+        local tries = 0
+        expectedError = "fixture persistent proxy solver failure"
+        AuraContainerMixin.UpdateGridLayout = function(self, ...)
+            if self:GetParent() == frame and self ~= container then
+                tries = tries + 1
+                error(expectedError)
+            end
+            return original(self, ...)
+        end
+        local bad = H.Button(true)
+        function bad:GetParent() return container end
+        local scale = bad.GetScale
+        bad.GetScale = function() return nil end
+        frame.auraFrames[4], frame.auraInfo = bad, { {}, {}, {}, {} }
+        Native(frame.UpdateAuraButtons, frame)
+        Check(tries == 1 and skins[frame.auraFrames[1]] == "taint-test-look" and skins[bad] == "taint-test-look",
+            "a throwing native solver stranded the visible pool without its selected skin")
+        for _ = 1, 8 do Native(frame.UpdateAuraButtons, frame) end
+        Check(tries == 2 and frame.auraFrames[1].width == 30,
+            "a persistent proxy solver error must allow one transient retry then leave the row native")
+        module:Refresh()
+        Check(tries == 3 and skins[bad] == "taint-test-look", "explicit refresh did not retry the solver with native skins")
+        -- DebuffFrame ends every refill with a real native grid. The successful
+        -- native pass supplies the geometry without ever re-entering the proxy.
+        for _ = 1, 5 do Native(frame.UpdateGridLayout, frame) end
+        nativeCache = container.currentGridLayoutInfo
+        Check(tries == 3 and skins[bad] == "taint-test-look", "native relayouts repeatedly rearmed the failed solver")
+        bad.GetScale = scale
+        Native(frame.UpdateAuraButtons, frame)
+        Check(frame.auraFrames[1].width == 52 and bad.width == 52 and skins[bad] == "taint-test-look",
+            "the custom layout failed to recover after Blizzard solved the row and the bad entry became readable")
+        expectedErrors = 3
+        AuraContainerMixin.UpdateGridLayout = original
+    elseif scenario == "independent-adoption" then
+        expectedError, expectedErrors = "fixture failed cold buff adoption", 1
+        local first = frame.auraFrames[1]
+        local setter = first.SetScale
+        first.SetScale = function() error(expectedError) end
+        module.config.iconWidth = 67
+        local adopted = pcall(module.Refresh, module)
+        first.SetScale = setter
+        Check(adopted and debuff.auraFrames[1].width == 67, "one row aborted adoption of the other row")
+    elseif scenario == "disable-forbidden-saved-icon" then
         local icon = frame.auraFrames[1].Icon
         local clear, coordinates = icon.ClearAllPoints, icon.SetTexCoord
         local beforeSolver = solverCallsByFrame[frame]
@@ -230,6 +336,7 @@ local function Run(scenario)
         failed.Icon = originalIcon
         failed.Icon.forbidden = nil
     elseif scenario == "cleanup-solver-error" then
+        expectedError, expectedErrors = "fixture cleanup solver failure", 1
         local updateGrid = AuraContainerMixin.UpdateGridLayout
         local visited = {}
         AuraContainerMixin.UpdateGridLayout = function(self, auras)
@@ -249,41 +356,86 @@ local function Run(scenario)
         collect.ShouldShow = function() return { secret = true } end
         local beforeSolver = solverCalls
         Native(frame.UpdateAuraButtons, frame)
+        Check(frame.auraFrames[1].width == 52 and collect.width == 52,
+            "secret consolidation tore down a prepared custom row")
+        local bad = H.Button(true)
+        function bad:GetParent() return container end
+        bad.GetScale = function() return nil end
+        frame.auraFrames[4] = bad
+        frame.auraInfo = { {}, {}, {}, {} }
+        Native(frame.UpdateAuraButtons, frame)
         Check(solverCalls == beforeSolver, "secret consolidation: restoration invoked the grid solver")
         Check(frame.auraFrames[1].width == 30 and collect.width == 30,
             "secret consolidation: restoration did not restore readable snapshots")
         collect.IsShown, collect.ShouldShow = readableShown, readableShouldShow
+    elseif scenario == "restricted-icon" then
+        local button, neighbor = frame.auraFrames[1], frame.auraFrames[2]
+        local p = frame.points[1]
+        Check(p and p[2] == Minimap and p[4] == -12 and p[5] == 0, "restricted icon displaced the entire buff row")
+        Check(button.Icon.points[1][1] == "TOP" and #button.Icon.points == 1, "Suite overwrote an unreadable native texture anchor")
+        Check(neighbor.width == 52 and button.Duration.points[1][1] == "BOTTOMLEFT" and skins[button] == "taint-test-look",
+            "restricted icon prevented Suite skin, duration or neighbor layout")
+        icon.GetPoint, icon.GetWidth, icon.GetHeight = getPoint, getWidth, getHeight
+        module:Refresh()
+        Check(#icon.points == 2 and icon.points[1][1] == "TOPLEFT" and icon.points[2][1] == "BOTTOMRIGHT",
+            "the previously restricted texture did not fill its slot after becoming readable")
+        module:Disable()
+        Check(frame.points[1][2] == UIParent and button.Icon.points[1][1] == "TOP", "restricted icon broke native restoration")
     elseif scenario == "fallback" or scenario == "pending-native-flags" or scenario == "pending-native-nil-flag" then
         if scenario == "pending-native-flags" then
             container.addIconsToRight = true
         elseif scenario == "pending-native-nil-flag" then
             container.addIconsToTop = true
         end
-        failed.Icon.GetTexCoord = function() return { secret = true }, 0, 0, 1, 1, 0, 1, 1 end
+        failed = H.Button(true)
+        function failed:GetParent() return container end
+        frame.auraFrames[3] = failed
+        failed.GetScale = function() return { secret = true } end
+        failed.Icon.GetWidth = function(_, intrinsic) return intrinsic and 30 or { secret = true } end
         frame.auraInfo = { {}, {}, {} }
         Native(frame.UpdateAuraButtons, frame)
         Check(frame.auraFrames[1].width == 30 and frame.auraFrames[2].width == 30,
             "fallback: readable buttons retained Suite dimensions")
+        Check(frame.points[1][2] == Minimap and skins[failed] == "taint-test-look",
+            "an unreadable visible buff lost its skin or moved the entire row to Blizzard's anchor")
+        frame.nativeAnchor = { "TOPRIGHT", UIParent, "TOPRIGHT", -274.4, -209.7 }
+        Native(frame.ApplySystemAnchor, frame)
+        Check(frame.points[1][2] == Minimap, "a native layout update moved the row during fallback")
         if scenario ~= "fallback" then
             Check(failed.points[1] and failed.points[1][4] == -70,
                 scenario .. ": pending native flags prevented restoring the last native grid")
         end
+        module:Disable()
+        Check(frame.points[1][2] == UIParent and frame.points[1][5] == -209.7,
+            "disabling the layout during fallback lost Blizzard's latest position")
     else
         module:Disable()
         Check(frame.auraFrames[1].width == 30 and frame.auraFrames[1].Duration.font[2] == 10,
             "disable: native geometry or duration font was not restored")
     end
 
-    if scenario == "cleanup-solver-error" then
-        Check(#boundaryErrors == 1 and boundaryErrors[1]:find("fixture cleanup solver failure", 1, true),
-            "cleanup did not report precisely the injected solver failure")
-    else
-        Check(#boundaryErrors == 0, scenario .. ": restoration reported an unexpected native error")
+    Check(#boundaryErrors == expectedErrors, scenario .. ": unexpected error count at the isolation boundary")
+    for _, message in ipairs(boundaryErrors) do
+        Check(expectedError and message:find(expectedError, 1, true), scenario .. ": unexpected error at the boundary")
     end
     Check(addonWrites == 0, scenario .. ": Suite invoked the stateful native aura layout")
     Check(frame.AuraContainer.currentGridLayoutInfo == nativeCache,
         scenario .. ": Suite replaced Blizzard's aura layout cache")
-    if scenario == "native-layout-change" then
+    if scenario == "noop-native-anchors" then
+        local point, containerPoint, arrow = frame.points[1], container.points[1], frame.CollapseAndExpandButton.points[1]
+        Check(point[2] == UIParent and point[4] == -30 and point[5] == -40,
+            "no-op ApplySystemAnchor recorded Suite's minimap position as Blizzard's")
+        Check(containerPoint[1] == "BOTTOMLEFT" and containerPoint[4] == 19 and containerPoint[5] == 27,
+            "a new grid identity recorded Suite's untouched container position as Blizzard's")
+        Check(arrow[1] == "TOPRIGHT" and arrow[4] == 8 and arrow[5] == 2,
+            "a new grid identity recorded Suite's untouched arrow position as Blizzard's")
+    elseif scenario == "coincident-native-anchors" then
+        local point, containerPoint = frame.points[1], container.points[1]
+        Check(point[2] == Minimap and point[4] == -12 and point[5] == 0,
+            "Blizzard genuinely moved its frame to the current Suite position but cleanup restored an older position")
+        Check(containerPoint[1] == "TOPRIGHT" and containerPoint[4] == 0 and containerPoint[5] == 0,
+            "Blizzard genuinely moved its container to the current Suite position but cleanup restored an older position")
+    elseif scenario == "native-layout-change" then
         Check(frame.auraFrames[2].points[1][4] == -39,
             "native layout change: restoration used obsolete native grid spacing")
     elseif scenario == "consolidation" then
@@ -327,11 +479,18 @@ local function Run(scenario)
 end
 
 Run("fallback")
+Run("restricted-icon")
 Run("disable")
 Run("native-layout-change")
 Run("consolidation")
 Run("native-container-change")
 Run("native-frame-change")
+Run("noop-native-anchors")
+Run("direct-frame-release")
+Run("direct-frame-adopt")
+Run("direct-frame-refill")
+Run("independent-arrow")
+Run("coincident-native-anchors")
 Run("status-tray-default")
 Run("status-tray-custom")
 Run("secret-consolidation")
@@ -341,6 +500,9 @@ Run("pending-native-nil-flag")
 Run("disable-missing-icon")
 Run("disable-forbidden-icon")
 Run("cleanup-solver-error")
+Run("persistent-solver-error")
+Run("cleanup-region-error")
+Run("independent-adoption")
 Run("disable-forbidden-saved-icon")
 assert(#failures == 0, table.concat(failures, "\n"))
 print("player aura native cache ownership and downstream damage meter paths: " .. checks .. " checks passed")

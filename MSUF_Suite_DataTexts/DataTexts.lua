@@ -413,7 +413,7 @@ end
 
 -- The screen edge each docked bar snaps to.
 local DOCK_POINTS = { [DOCK.TOP] = "TOP", [DOCK.BOTTOM] = "BOTTOM", [DOCK.LEFT] = "LEFT", [DOCK.RIGHT] = "RIGHT" }
-local function PlaceBar(bar, c)
+local function PlaceBar(bar, c, mapAnchor)
     local prefix, frame = bar.prefix, bar.frame
     local pixel = S.PixelUnit() or 1
     bar.pixelUnit = pixel
@@ -427,7 +427,10 @@ local function PlaceBar(bar, c)
     bar.length = Snap(c[prefix .. "FullScreen"] and span or c[bar.widthKey], pixel)
     local thickness = Snap(c[bar.heightKey], pixel)
     frame:SetSize(bar.vertical and thickness or bar.length, bar.vertical and bar.length or thickness)
-    if dock ~= DOCK.FREE then
+    if mapAnchor then
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPRIGHT", mapAnchor, "BOTTOMRIGHT", 0, -c[prefix .. "MinimapDockGap"])
+    elseif dock ~= DOCK.FREE then
         frame:ClearAllPoints()
         frame:SetPoint(point, UIParent, point, 0, 0)
     end
@@ -480,7 +483,7 @@ local function RefreshSlot(button, c, index, slot, style, font)
     if button.source then StyleSlot(button, style, font) end
 end
 
-local function RefreshBar(index)
+local function RefreshBar(index, mapAnchor)
     local c = M.config
     local bar = Bars.Create(index)
     Bars.EnsureSlots(bar, c)
@@ -489,7 +492,7 @@ local function RefreshBar(index)
     Bars.SetVisibilityCallbacks(bar, not M.paused)
     S.ApplyOwnedChildLayer(bar.visual, frame, layer, 1, restored)
     S.ApplyOwnedChildLayer(bar.badge, frame, layer, 2, restored)
-    PlaceBar(bar, c)
+    PlaceBar(bar, c, mapAnchor)
     bar.style = BarStyle(c, index, bar.vertical)
     bar.display = bar.style.display
     Appearance.Paint(bar)
@@ -523,6 +526,34 @@ local function PrimeCombatBars(self, initialSnapshot)
     end
 end
 
+local function ApplyMapDock() S.Apply(ID) end
+
+local function RefreshBars(self)
+    local dock = S.MinimapDock
+    local anchor = dock.Anchor()
+    local tail, wantsMap = anchor, false
+    for _, i in ipairs(self.barIDs) do
+        local keys = BarKeys(i)
+        if self.config[keys.enabled] then
+            if self.config[keys.prefix .. "MinimapDock"] then
+                RefreshBar(i, tail)
+                if tail then tail = self.bars[i].frame end
+                wantsMap = true
+            else
+                RefreshBar(i)
+            end
+        end
+    end
+    if self.wantsMap ~= wantsMap then
+        if wantsMap then self.context:Callback(dock.mapChanged, ApplyMapDock)
+        elseif self.wantsMap then
+            self.context:RemoveCallback(dock.mapChanged)
+        end
+        self.wantsMap = wantsMap
+    end
+    dock.SetFooter(tail ~= anchor and tail or nil)
+end
+
 local function RefreshLayout(self)
     self.uiWidth, self.uiHeight, self.uiPixel = UIParent:GetWidth(), UIParent:GetHeight(), S.PixelUnit()
     Standard.Configure(self.config)
@@ -543,9 +574,7 @@ local function RefreshLayout(self)
             self.pool[#self.pool + 1] = bar
         end
     end
-    for _, i in ipairs(self.barIDs) do
-        if self.config[BarKeys(i).enabled] then RefreshBar(i) end
-    end
+    RefreshBars(self)
     self.styling = false
 end
 
@@ -665,6 +694,10 @@ function M:Enable()
 end
 
 function M:Disable()
+    if self.wantsMap then
+        self.wantsMap = nil
+        S.MinimapDock.SetFooter(nil)
+    end
     self:SetDeleteHover()
     self.paused, self.refreshAfterCombat = nil, nil
     Gold.WatchToday(self, nil)

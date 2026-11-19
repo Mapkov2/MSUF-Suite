@@ -10,7 +10,8 @@ local D = P.Messenger
 -- edit box, so its chatType and tell target stay untouched.
 -- The messages show in one word-wrapped string of a scroll frame, built
 -- again only when a line arrives in the shown tab or another tab is chosen;
--- the window holds no chat text while it is hidden.
+-- the window holds no chat text while it is hidden. Each open tab can
+-- keep its own unsent draft in session memory.
 local W = {}
 D.Window = W
 local MODULE = "chatMessenger"
@@ -29,22 +30,36 @@ end
 
 ------------------------------------------------------------------ positions
 -- Window and launcher positions are per-profile module state, not settings.
-local function SavedPoint(key)
-    local state = S.ModuleState(MODULE)
+local function SavedPoint(state, key)
     local point = state and state[key]
     if type(point) == "table" and Finite(point.x) and Finite(point.y) then return point end
 end
 
-local function SavePoint(frame, key)
-    local state = S.ModuleState(MODULE)
+local function SavePoint(frame, state, key)
     local left, bottom = frame:GetLeft(), frame:GetBottom()
     if not (state and Finite(left) and Finite(bottom)) then return end
     state[key] = { x = math.floor(left + 0.5), y = math.floor(bottom + 0.5) }
 end
 
-local function Place(frame, key, point, x, y)
+local function BeginDrag(frame)
+    frame.dragState = S.ModuleState(MODULE) or false
+    frame:StartMoving()
+end
+
+local function EndDrag(frame, key)
+    local state = frame.dragState
+    if state == nil then return end
+    frame.dragState = nil
+    frame:StopMovingOrSizing()
+    if key and state and state == S.ModuleState(MODULE) then SavePoint(frame, state, key) end
+end
+
+local function Place(frame, state, key, point, x, y)
+    if frame.placed and frame.placementState == state then return end
+    EndDrag(frame)
+    frame.placed, frame.placementState = true, state
     frame:ClearAllPoints()
-    local saved = SavedPoint(key)
+    local saved = SavedPoint(state, key)
     if saved then
         frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", saved.x, saved.y)
     else
@@ -173,8 +188,19 @@ local function RenderMessages()
     panel.renderedTab = tab
 end
 
+local function SetDraftTab(tab)
+    local old, input = panel.inputTab, panel.input
+    if old == tab then return end
+    if old and D.byKey[old.key] == old then old.draft = PublicText(input:GetText()) end
+    panel.inputTab = tab
+    local draft = tab and tab.draft
+    if tab then tab.draft = nil end
+    input:SetText(draft or "")
+end
+
 local function RenderInput()
     local tab = D.selected
+    SetDraftTab(tab)
     local hint = tab and S.Text("Reply to %s"):format(tab.label or "") or S.Text("Open a conversation first")
     panel.input.Instructions:SetText(hint)
 end
@@ -214,7 +240,15 @@ D.Changed = W.Refresh
 
 ------------------------------------------------------------------ window
 local function Sent(box)
-    if handlers.send(box:GetText()) then box:SetText("") end
+    local tab = panel.inputTab
+    if not tab or not W.IsShown() then return end
+    local text = PublicText(box:GetText())
+    if not text or not handlers.send(text, tab) then return end
+    if panel.inputTab == tab and PublicText(box:GetText()) == text then
+        box:SetText("")
+    elseif tab.draft == text then
+        tab.draft = nil
+    end
 end
 
 local function CreateInput()
@@ -259,7 +293,9 @@ end
 
 -- The player's unsent draft stays; the shown conversation does not.
 local function WindowHidden()
+    EndDrag(panel, "window")
     panel.input:ClearFocus()
+    SetDraftTab(nil)
     panel.text:SetText("")
     panel.renderedTab = nil
 end
@@ -286,10 +322,9 @@ local function CreateWindow()
     HeaderButton("Close all", -110, 76, function() handlers.closeAll() end)
     panel.close:SetScript("OnClick", function() W.Hide() end)
     panel.dragHandle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -194, 0)
-    panel.dragHandle:SetScript("OnDragStop", function()
-        panel:StopMovingOrSizing()
-        SavePoint(panel, "window")
-    end)
+    panel.dragHandle:SetScript("OnDragStart", function() BeginDrag(panel) end)
+    panel.dragHandle:SetScript("OnDragStop", function() EndDrag(panel, "window") end)
+    panel:SetScript("OnShow", W.Refresh)
     panel:SetScript("OnHide", WindowHidden)
     panel:Hide()
 end
@@ -305,7 +340,7 @@ end
 
 local function LauncherDrag(button)
     local shift = IsShiftKeyDown()
-    if S.Public(shift) and shift == true then button:StartMoving() end
+    if S.Public(shift) and shift == true then BeginDrag(button) end
 end
 
 local function CreateLauncher()
@@ -315,26 +350,28 @@ local function CreateLauncher()
     launcher:SetClampedToScreen(true)
     launcher:RegisterForDrag("LeftButton")
     launcher:SetScript("OnDragStart", LauncherDrag)
-    launcher:SetScript("OnDragStop", function(button)
-        button:StopMovingOrSizing()
-        SavePoint(button, "launcher")
-    end)
+    launcher:SetScript("OnDragStop", function(button) EndDrag(button, "launcher") end)
     launcher:SetScript("OnClick", function() W.Toggle() end)
     launcher:SetScript("OnEnter", function(button) C.ShowTooltip(button, LauncherTip()) end)
     launcher:SetScript("OnLeave", function(button) C.HideTooltip(button) end)
-    Place(launcher, "launcher", "BOTTOMLEFT", 14, 236)
 end
 
 ------------------------------------------------------------------ visibility
 function W.Apply(settings)
     config = settings
-    if settings.launcher then
-        if not launcher then CreateLauncher() end
-        launcher:Show()
-    elseif launcher then
-        launcher:Hide()
+    local state = S.ModuleState(MODULE)
+    if settings.launcher and not launcher then CreateLauncher() end
+    if launcher then
+        Place(launcher, state, "launcher", "BOTTOMLEFT", 14, 236)
+        if settings.launcher then
+            launcher:Show()
+        else
+            EndDrag(launcher, "launcher")
+            launcher:Hide()
+        end
     end
     if panel then
+        Place(panel, state, "window", "CENTER", 0, 0)
         panel:SetSize(settings.width, settings.height)
         S.SetFont(panel.text, nil, settings.fontSize, "")
     end
@@ -345,7 +382,6 @@ function W.Show()
     if not config then return end
     if not panel then
         CreateWindow()
-        Place(panel, "window", "CENTER", 0, 0)
         W.Apply(config)
     end
     hiddenForCombat, openAfterCombat = false, false
@@ -354,8 +390,7 @@ function W.Show()
     D.Seed(D.selected)
     D.MarkRead(D.selected)
     D.nativeOnly = 0
-    panel:Show()
-    W.Refresh()
+    if W.IsShown() then W.Refresh() else panel:Show() end
 end
 
 -- The player's own close: nothing comes back after combat.
@@ -398,10 +433,13 @@ function W.Release()
     if panel then
         panel:Hide()
         panel.input:SetText("")
+        panel.placed, panel.placementState = nil, nil
     end
     if launcher then
+        EndDrag(launcher)
         C.HideTooltip(launcher)
         launcher:Hide()
+        launcher.placed, launcher.placementState = nil, nil
     end
     config = nil
 end

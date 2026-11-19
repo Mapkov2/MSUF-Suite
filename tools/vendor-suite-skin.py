@@ -91,7 +91,7 @@ def vendor_core(source):
             if entry != "Core\\Lifecycle.lua":
                 copy_entry(core_source, CORE_TARGET, entry, core_transforms)
         toc = [interface, "## Title: MSUF Suite - Skinning",
-               "## Notes: Suite-owned MapkoSkin skin engine.", "## Author: Mapko",
+               "## Notes: Window and addon skinning for MSUF Suite.", "## Author: Mapko",
                f"## Version: {SUITE_VERSION}", "## Dependencies: MSUF_Suite", "## Group: MSUF_Suite",
                "## LoadOnDemand: 1", "## SavedVariables: MSUFSuiteSkinDB",
                "## IconTexture: Interface\\AddOns\\MSUF_Suite\\Media\\SuiteIcon.tga", ""]

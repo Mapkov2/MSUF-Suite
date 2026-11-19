@@ -7,9 +7,9 @@ local NS, S = P.NS, P.Suite
 -- where they are, faded out under the list (Context:HideControl, never
 -- Hide()), so the buyback tab and a stopped module get them back unchanged.
 local M = { rows = {}, requests = S.QoLItemRequests(), offset = 0 }
--- MerchantFrame.xml: offers start 69 below the top, the page buttons sit
--- centred 96 above the bottom; the list covers both.
-local LIST_TOP, LIST_WIDTH, LIST_HEIGHT = -64, 316, 300
+-- MerchantFrame.xml: the offers start 69 below the top. The page buttons
+-- reach x=326 and y=-364, just above the latest buyback slot.
+local LIST_TOP, LIST_WIDTH, LIST_HEIGHT = -64, 320, 300
 local ROW_WIDTH, ICON = 304, 36
 local MAX_COSTS = 3 -- MAX_ITEM_COST in MerchantFrame.lua
 local CONFIRM, QUANTITY, REFUND = "MSUF_SUITE_MERCHANT_BUY", "MSUF_SUITE_MERCHANT_QUANTITY", "MSUF_SUITE_MERCHANT_REFUND"
@@ -450,6 +450,11 @@ local function ListHidden(panel) panel:UnregisterEvent("GLOBAL_MOUSE_UP") end
 local function Build(self)
     if self.panel then return self.panel end
     local panel = S.CreateFrame("Frame")
+    -- The native offers can become visible before the coalesced repaint
+    -- reapplies their fade. Keep the whole viewport opaque behind our rows.
+    local background = S.CreateTexture(panel, nil, "BACKGROUND")
+    background:SetAllPoints(panel)
+    background:SetColorTexture(.04, .04, .04, 1)
     -- The mouse over the faded offers and page buttons reaches the list only.
     panel:EnableMouse(true)
     panel:EnableMouseWheel(true)

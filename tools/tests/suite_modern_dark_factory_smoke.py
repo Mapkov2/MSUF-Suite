@@ -25,11 +25,36 @@ local function Equal(a, b)
     for k in pairs(b) do if a[k] == nil then return false end end
     return true
 end
+
+local function CheckUnitFrameSetup(Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/API.lua"))("MSUF_Suite", Suite)
+    local modernDark
+    for _, preset in ipairs(Suite.API.GetSetupFramePresets()) do
+        if preset.name == "Modern Dark" then modernDark = preset.compact end
+    end
+    local frames = assert(fixtures[modernDark], "Modern Dark missing from Unit Frame Setup").payload
+    assert(frames.general.anchorToCooldown == false and frames.bars.classPowerAnchorToCooldown == false,
+        "Unit Frame Setup requires a cooldown viewer")
+    for _, key in ipairs({ "player", "target" }) do
+        local unit, authored = frames[key], frameData.payload[key]
+        assert(unit.anchorFrameName == "UIParent" and unit.screenPositionMode == "relativeHeight")
+        assert(unit.width == authored.width and unit.height == authored.height and unit.portraitMode == authored.portraitMode)
+    end
+    local player, bars = frames.player, frames.bars
+    assert(player.powerBarDetached and player.detachedPowerBarAnchorToClassPower == false
+        and player.detachedPowerBarSyncClassPower == false and player.detachedPowerBarWidth == nil
+        and player.detachedPowerBarOffsetY < 0, "mana must follow the player's bottom edge at the frame width")
+    local powerBottom = -player.height + player.detachedPowerBarOffsetY - player.detachedPowerBarHeight
+    assert(bars.classPowerWidthMode == "player" and bars.classPowerOffsetY - 2 < powerBottom,
+        "class power overlaps mana in Unit Frame Setup")
+end
+
 for _, forever in ipairs({ false, true }) do
     for _, withSkin in ipairs({ false, true }) do
         MapkoSkin = nil
         local Suite = H.Setup({ root = root, forever = forever, uiWidth = 1920, uiHeight = 1080,
             addons = { MSUF_Suite_Skin = withSkin }, frameFactory = function() return frameData.payload end })
+        CheckUnitFrameSetup(Suite)
         MSUF_TryDecodeCompactString = function(text)
             local envelope = assert(fixtures[text], "unexpected factory")
             return Suite.CopyValue(envelope)
@@ -175,6 +200,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local failure = world:FirstFailure()
     assert(not failure, failure and failure.message)
     local env, UF = world.env, world.core.UF
+    local public = world.core.PublicGlobals
     -- Exercise the shipped selector, import transaction and profile switch.
     -- A Wago wrapper may carry a different lossless msuf6 payload: copying
     -- its outer payload directly would hide exactly that installation bug.
@@ -184,16 +210,16 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         if fixtures[text] then return Copy(fixtures[text]) end
         return decode(text)
     end)
-    env.MSUF_InitProfiles()
+    public.MSUF_InitProfiles()
     local previousName, previousProfile = env.MSUF_ActiveProfile, Copy(env.MSUF_DB)
-    local imported, why = env.MSUF_Profiles_ImportIntoNewProfile("Modern Dark imported", "MSUF3:modern-dark-test")
+    local imported, why = public.MSUF_ImportIntoNewProfile("Modern Dark imported", "MSUF3:modern-dark-test")
     assert(imported, tostring(why))
     assert(env.MSUF_ActiveProfile == "Modern Dark imported")
     assert(Equal(env.MSUF_GlobalDB.profiles[previousName], previousProfile), "actual import changed the previous profile")
     assert(env.MSUF_DB.player.width == 340 and env.MSUF_DB.player.height == 54
         and env.MSUF_DB.player.portraitMode == "LEFT" and env.MSUF_DB.player.portraitPlacement == "OVERLAY" and env.MSUF_DB.general.barMode == "dark",
         "actual MSUF import selected stale unit-frame data instead of Modern Dark")
-    env.MSUF_EnsureDB()
+    public.MSUF_EnsureDB()
     local containers = env.MSUF_DB.auras3.customContainers.perUnit.player.items
     assert(containers[4] and not containers["4"], "canonical defensive container lost its numeric slot")
     assert(not containers[4].enabled and not containers[4].autoBlacklistPlayerBuffs,
@@ -267,7 +293,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local pet, tot = UF.Config.GetSpec("pet"), UF.Config.GetSpec("targettarget")
     assert(pet.width == 138 and pet.height == 16 and pet.anchorToUnitframe == "player" and pet.y == -68)
     assert(tot.width == 138 and tot.height == 16 and tot.anchorToUnitframe == "target" and tot.y == -68)
-    local width, height = env.MSUF_GetCastbarDesiredSize("target", env.MSUF_DB.general, nil, 340, 28)
+    local width, height = public.MSUF_GetCastbarDesiredSize("target", env.MSUF_DB.general, nil, 340, 28)
     assert(width == 392 and height == 28, "castbar no longer reserves its exterior right icon")
 end
 print("Modern Dark: real factory preview, combat refusal, full installs on Retail/Forever with/without Skin; original profiles and CDM lists preserved")
@@ -285,15 +311,18 @@ def main():
                            ("RetailFactory.lua", "RetailFactoryModuleCompact"),
                            ("ModernDarkFactory.lua", "ModernDarkModuleCompact"),
                            ("ModernDarkFactory.lua", "ModernDarkFramesCompact"),
+                           ("ModernDarkFactory.lua", "ModernDarkUnitFramesCompact"),
                            ("BlizzardFactory.lua", "BlizzardModuleCompact"),
-                           ("DarkRaidFactory.lua", "DarkRaidModuleCompact")):
+                           ("DarkRaidFactory.lua", "DarkRaidModuleCompact"),
+                           ("WayfarerFactory.lua", "WayfarerModuleCompact")):
         value = literal(core / filename, "Suite." + name)
         is_module = "Module" in name
         fixtures[value[7:] if is_module else value] = decode(value, "MSUFM1:MSUF3:" if is_module else "MSUF3:")
     value = literal(core / "ModernDarkFactory.lua", "Suite.ModernDarkFramesCompact")
     frame = fixtures[value]
-    native_path = root.parent / "MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames_Options/State/MSUF_Defaults_ModernDark.lua"
-    default_path = root.parent / "MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_Shell.lua"
+    classic = root.parent / "MidnightSimpleUnitFrames-7.0"
+    native_path = classic / "MidnightSimpleUnitFrames_Options/State/MSUF_Defaults_ModernDark.lua"
+    default_path = classic / "MidnightSimpleUnitFrames/State/Defaults/MSUF_Defaults_FactoryData.lua"
     default_text = literal(default_path, "MSUF.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT")
     fixtures[default_text] = decode(default_text, "MSUF3:")
     if native_path.exists():
@@ -302,7 +331,7 @@ def main():
     skin = decode(literal(core / "ModernDarkFactory.lua", "Suite.ModernDarkSkinCompact"), "MSKIN1:")
     script = CHECK.replace("FIXTURES", lua_literal(fixtures), 1).replace("FRAME", lua_literal(copy.deepcopy(frame)), 1)
     script = script.replace("SKIN", lua_literal(skin), 1)
-    run = subprocess.run([LUA, "-", str(root), str(root.parent / "MidnightSimpleUnitFrames-7.0")], input=script, text=True, capture_output=True, cwd=root)
+    run = subprocess.run([LUA, "-", str(root), str(classic)], input=script, text=True, capture_output=True, cwd=root)
     print(run.stdout, end="")
     if run.returncode: print(run.stderr, file=sys.stderr, end="")
     return run.returncode

@@ -1,11 +1,11 @@
 local _, P = ...
 -- Aliases name feature switches; keywords also describe their detail controls.
 local GROUPS = {
-    { id = "navigationHUD", title = "Map overlay & compass", switch = "enabled", sections = { "navigation_hud" },
-        aliases = { "overlay map", "compass", "minimap", "map keybind", "kartenoverlay", "kompass", "übersichtskarte" } },
     { id = "navigation", title = "Navigation & waypoints", switch = "enabled",
         sections = { "navigation_basics", "navigation_appearance", "navigation_sources", "navigation_audio", "navigation_integrations" },
         aliases = { "waypoint", "navigation", "navigator", "pinpoint", "route", "wegpunkt", "zielfuehrung" } },
+    { id = "navigationHUD", title = "Map overlay & compass", switch = "enabled", sections = { "navigation_hud" },
+        aliases = { "overlay map", "compass", "minimap", "map keybind", "kartenoverlay", "kompass", "übersichtskarte" } },
     { id = "foreverWorldMap", title = "World map information (Forever)", switch = "enabled",
         sections = { "forever_world_map" }, aliases = { "zone levels", "travel markers", "world map" } },
     { id = "gatheringTooltips", title = "Gathering tooltips (Forever)", switch = "enabled",
@@ -16,8 +16,10 @@ local GROUPS = {
             "auktionshaus", "ah preis", "händlererlös", "haendlererloes", "aufpreis" } },
     { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
         keywords = { "SCT", "FCT", "floating combat text", "Kampftext", "Schadenszahlen", "Heilungszahlen" } },
-    { id = "floatingCombatText", title = "Floating combat text", switch = "enabled", sections = { "floating_combat_text" },
-        keywords = { "SCT", "FCT", "damage numbers", "nameplate damage", "Kampftext", "Schadenszahlen" } },
+    { id = "floatingCombatText", title = "Floating combat text", switch = "enabled",
+        sections = { "floating_combat_text", "floating_combat_text_hits", "floating_combat_text_gains" },
+        keywords = { "SCT", "FCT", "scrolling combat text", "damage numbers", "nameplate damage",
+            "critical hit", "dodge", "parry", "XP gained", "Kampftext", "Schadenszahlen", "Ausweichen", "Parieren" } },
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
     { id = "actionTracker", title = "Action tracker", switch = "enabled",
         sections = { "action_tracker", "action_tracker_visibility", "action_tracker_colors" },
@@ -138,8 +140,8 @@ local GROUPS = {
             "quest hilfe", "questobjekte", "questgegenstände", "questgegenstaende", "sammelobjekte", "funkeln",
             "quest sparkle", "quest sparkles", "loot sparkle", "loot sparkles", "quest glow", "gathering",
             "erz", "erze", "kräuter", "kraeuter", "ore", "herbs" } },
-    { id = "flightTimer", title = "Flight route timer (Forever)", switch = "enabled", sections = { "flight_route" },
-        aliases = { "taxi timer", "flight path timer" } },
+    { id = "flightTimer", title = "Flight route timer (Forever)", switch = "enabled", sections = { "flight_route", "flight_bar" },
+        aliases = { "taxi timer", "flight path timer", "flight bar", "flugleiste" } },
     { id = "characterExtras", title = "Character sheet additions (Retail)", switch = "enabled",
         sections = { "character_extras", "character_model", "character_flyouts" },
         keywords = { "charakterfenster", "character window" } },
@@ -244,6 +246,10 @@ local function Initialize()
     for _, group in ipairs(GROUPS) do
         local key = group.switch == "enabled" and group.id or group.id .. "." .. group.switch
         byKey[key] = group
+    end
+    for _, layer in ipairs(P.catalog.battleRes.layers) do
+        local sections = byKey.battleRes.sections
+        sections[#sections + 1] = layer.section
     end
     for index, definition in ipairs(Definitions()) do
         CATEGORIES[index].subgroups = definition.subgroups

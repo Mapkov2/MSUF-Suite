@@ -1,6 +1,22 @@
 {
   "removed": [
     {
+      "category": "rule_metadata",
+      "item": "[\"forever:bags.inventoryView\",\"choice\",false,1,4,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Bags.lua catalog appends One bag at choice 5. suite_bags_inventory_contract checks all five indices and suite_bags_workflow_contract checks entering and leaving One bag.",
+      "reason": "Extend the maximum choice index from four to five on Forever.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:bags.inventoryView\",\"choice\",false,1,4,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Bags.lua catalog appends One bag at choice 5. suite_bags_inventory_contract checks all five indices and suite_bags_workflow_contract checks entering and leaving One bag.",
+      "reason": "Extend the maximum choice index from four to five on Retail.",
+      "date": "2026-11-19"
+    },
+    {
       "category": "module_traits",
       "item": "[\"forever:qol\",\"conflicts\",[[1,\"EnhanceQoLVendor\"],[2,\"Scrap\"],[3,\"SellJunk\"]]]",
       "basis": "moved",
@@ -2794,23 +2810,7 @@
     },
     {
       "category": "locale",
-      "item": "above",
-      "basis": "moved",
-      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
-      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
-      "date": "2026-10-08"
-    },
-    {
-      "category": "locale",
       "item": "attached %s %s",
-      "basis": "moved",
-      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
-      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
-      "date": "2026-10-08"
-    },
-    {
-      "category": "locale",
-      "item": "below",
       "basis": "moved",
       "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
       "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
@@ -6106,6 +6106,22 @@
     },
     {
       "category": "locale",
+      "item": "Drag the bag title to move it; click for options.",
+      "basis": "owner",
+      "evidence": "Owner requested removal of the native bag title menu on 2026-11-19. The current help is Drag to move, and suite_bags_workflow_contract covers the Suite gear and the absence of the title menu.",
+      "reason": "Remove an obsolete instruction for the old title menu.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "locale",
+      "item": "Drag the reagent bag title while it is open to move it independently. Click the title for bag options. Reset its position in MSUF Edit Mode to follow Blizzard's normal bag layout again.",
+      "basis": "owner",
+      "evidence": "Owner requested removal of the native bag title menu on 2026-11-19. The reagent help gives the existing move and reset instructions without the menu shortcut.",
+      "reason": "Update reagent window help to match the current title controls.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "locale",
       "item": "Where the buff or debuff is looked for. Automatic: harmful spells on your target, all others on you.",
       "basis": "owner",
       "evidence": "2026-11-06 group-buff tracking repair. CooldownManagerPopoverFields.lua retains Track on and all original choices, adds Group, and replaces this help with the complete Automatic includes Blizzard's group buffs sentence. suite_cdm_group_buffs_contract covers all original routes, the group route and harmful-aura fallback.",
@@ -7367,6 +7383,302 @@
       "evidence": "MSUF_Suite/Core/Catalog/NameplateAuras.lua and tools/tests/suite_nameplates_lifecycle_contract.lua",
       "reason": "Each aura row now has a click-through choice. The original Boolean remains a hidden fallback for existing profiles and look presets.",
       "date": "2026-11-16"
+    },
+    {
+      "category": "locale",
+      "item": "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom",
+      "basis": "moved",
+      "evidence": "NameplatesEditor.lua and the Suite locales retain the full hint with Ctrl+wheel. suite_nameplates_preview_layout_contract.lua checks that Ctrl+wheel zooms and the ordinary wheel scrolls the page.",
+      "reason": "The hint now names the same zoom modifier as the Unit Frame preview.",
+      "date": "2026-11-18"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar1Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar2Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar3Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar4Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar5Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar6Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar7Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar8Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar9Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar10Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar11Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dataTexts.bar12Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:buffReminders.point\",\"Screen anchor\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/BuffReminders.lua preserves 1 = Center and 2 = Top; BuffReminders/Visuals.lua uses those same indices in R.ScreenPoint. BuffReminders/Anchors.lua exposes the label Reminder point.",
+      "reason": "The label names the same anchor setting, now also configurable relative to an attached frame.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:minimap.drawerMouseover\",\"Show the drawer button only on mouseover\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua retains the Bool rule drawerMouseover with the old false default. suite_minimap_sections_contract exercises Always and Mouseover through the picker and checks the unchanged saved boolean; Minimap/Drawer.lua still consumes that boolean.",
+      "reason": "Drawer button visibility replaces the checkbox caption and exposes both old states by name.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:minimap.drawerMouseover\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua retains the Bool rule drawerMouseover with the old false default. suite_minimap_sections_contract exercises Always and Mouseover through the picker and checks the unchanged saved boolean; Minimap/Drawer.lua still consumes that boolean.",
+      "reason": "The catalog presents a choice UI for an unchanged boolean setting; it retains both former states.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:lootToastFilter\",\"description\",\"Show extra compact item notices for Blizzard personal loot toasts matching your rarity and item list.\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/QualityOfLife.lua keeps the lootToastFilter rule and opt-in default. QualityOfLife/LootToastFilter.lua uses SHOW_LOOT_TOAST on Retail and CHAT_MSG_LOOT on Forever; CHANGELOG.md describes both paths.",
+      "reason": "The new module description describes the same item filters and both supported notice sources.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar1Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar2Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar3Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar4Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar5Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar6Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar7Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar8Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar9Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar10Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar11Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dataTexts.bar12Layout\",1,\"Equal\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:buffReminders.point\",\"Screen anchor\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/BuffReminders.lua preserves 1 = Center and 2 = Top; BuffReminders/Visuals.lua uses those same indices in R.ScreenPoint. BuffReminders/Anchors.lua exposes the label Reminder point.",
+      "reason": "The label names the same anchor setting, now also configurable relative to an attached frame.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:minimap.drawerMouseover\",\"Show the drawer button only on mouseover\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua retains the Bool rule drawerMouseover with the old false default. suite_minimap_sections_contract exercises Always and Mouseover through the picker and checks the unchanged saved boolean; Minimap/Drawer.lua still consumes that boolean.",
+      "reason": "Drawer button visibility replaces the checkbox caption and exposes both old states by name.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:minimap.drawerMouseover\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua retains the Bool rule drawerMouseover with the old false default. suite_minimap_sections_contract exercises Always and Mouseover through the picker and checks the unchanged saved boolean; Minimap/Drawer.lua still consumes that boolean.",
+      "reason": "The catalog presents a choice UI for an unchanged boolean setting; it retains both former states.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:lootToastFilter\",\"description\",\"Show extra compact item notices for Blizzard personal loot toasts matching your rarity and item list.\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/QualityOfLife.lua keeps the lootToastFilter rule and opt-in default. QualityOfLife/LootToastFilter.lua uses SHOW_LOOT_TOAST on Retail and CHAT_MSG_LOOT on Forever; CHANGELOG.md describes both paths.",
+      "reason": "The new module description describes the same item filters and both supported notice sources.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "locale",
+      "item": "Equal",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua uses the same NS.DataTextLayout.EQUAL index 1 and still offers Fit text at 2. DataTexts/Geometry.lua uses LAYOUT.FIT to select content-based sizing.",
+      "reason": "The Fixed width label describes the same saved choice and layout behavior as Equal.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "locale",
+      "item": "Show the drawer button only on mouseover",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua retains the Bool rule drawerMouseover with the old false default. suite_minimap_sections_contract exercises Always and Mouseover through the picker and checks the unchanged saved boolean; Minimap/Drawer.lua still consumes that boolean.",
+      "reason": "The localized picker title and Always and Mouseover labels replace the former checkbox sentence.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "locale",
+      "item": "Show extra compact item notices for Blizzard personal loot toasts matching your rarity and item list.",
+      "basis": "moved",
+      "evidence": "Core/Catalog/QualityOfLife.lua keeps the lootToastFilter rule and opt-in default. QualityOfLife/LootToastFilter.lua uses SHOW_LOOT_TOAST on Retail and CHAT_MSG_LOOT on Forever; CHANGELOG.md describes both paths.",
+      "reason": "The new module description describes the same item filters and both supported notice sources.",
+      "date": "2026-11-19"
+    },
+    {
+      "category": "locale",
+      "item": "Filtered loot notice is available only in Retail",
+      "basis": "dead",
+      "evidence": "Core/Catalog/QualityOfLife.lua keeps the lootToastFilter rule and opt-in default. QualityOfLife/LootToastFilter.lua uses SHOW_LOOT_TOAST on Retail and CHAT_MSG_LOOT on Forever; CHANGELOG.md describes both paths.",
+      "reason": "The Retail-only refusal became unreachable when the module added a Forever event implementation.",
+      "date": "2026-11-19"
     }
   ]
 }

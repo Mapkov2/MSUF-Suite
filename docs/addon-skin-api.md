@@ -63,10 +63,12 @@ Existing RXP widget collections are caught up once after enable or a native them
 rebuild, including fonts and controls beyond the initial tree budget. A pooled
 window's actual acquisition refreshes its rebuilt controls; plain shows stay clean.
 
-## Cooperative integrations (API 2.4)
+## MSUF Suite Skinning API 2.4
 
-Addons can supply their own exact targets through the versioned public API.
-Declare `MSUF_Suite_Skin` as an optional dependency, and register after it loads.
+The `MSUF_Suite_Skin` module provides the versioned skinning API for addons such as BetterFriendlist.
+Declare `MSUF_Suite_Skin` as an optional dependency and register after the module loads.
+The Suite publishes the API under the historical Lua global `_G.MapkoSkin`. The standalone
+MapkoSkin addon also uses this name. Check `addonName` to select the Suite provider.
 **Enable Skinning** is the master switch. **Skin registered addons** is on by
 default and controls integrations such as BetterFriendlist. **Skin Blizzard
 windows** controls native windows. **Skin other addons** controls the Suite's
@@ -77,7 +79,9 @@ Older 2.x integrations can request their existing minimum version.
 
 ```lua
 local provider = _G.MapkoSkin
-local api = provider and provider.GetAPI(2, 4)
+if type(provider) ~= "table" or provider.addonName ~= "MSUF_Suite_Skin"
+    or type(provider.GetAPI) ~= "function" then return end
+local api = provider.GetAPI(2, 4)
 if not api then return end
 local skin = api:RegisterAddon("MyAddon", { integrationVersion = 1 })
 if not skin then return end

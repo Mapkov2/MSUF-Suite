@@ -145,14 +145,13 @@ local function CheckHeader(entry)
         local barEntry = P.HM.GetSectionEntry(body)
         Check(barEntry.label:GetText() == P.DataTextPage.BarName(bar) and barEntry.featureSwitch:IsVisible(),
             "DataTexts bar accordion lost its name or switch")
-        local basic
-        for _, region in ipairs({ panel:GetRegions() }) do
-            if region:IsShown() and region:GetObjectType() == "FontString" and region:GetText() == P.Tr("Basic") then
-                basic = region
-                break
-            end
-        end
-        Check(basic and ui.buttons.enabled:IsVisible(), "DataTexts module switch is not in the Basic panel")
+        local shared, toggle = ui.buttons.shared, ui.buttons.enabled
+        Check(shared and shared:IsVisible() and toggle:IsVisible(), "the DataTexts header lost All bars or the module switch")
+        local point, relative, anchor, sharedX, sharedY = shared:GetPoint()
+        local _, _, _, toggleX = toggle:GetPoint()
+        Check(point == "TOPLEFT" and relative == panel and anchor == "TOPLEFT"
+            and sharedX + shared:GetWidth() < panel:GetWidth() + toggleX - toggle:GetWidth(),
+            "All bars overlaps the DataTexts module switch")
         local function Bounds(widget, name)
             local point, relative, anchor, x, y = widget:GetPoint()
             Check(point=="TOPLEFT" and relative==panel and anchor=="TOPLEFT", name.." lost its header anchor")
@@ -162,6 +161,7 @@ local function CheckHeader(entry)
             return x, y, right, bottom
         end
         local _, top, right, bottom = Bounds(selector, "Bar selector")
+        Check(sharedY <= 0 and sharedY - shared:GetHeight() > top, "All bars is not above the bar selector")
         local addX, addTop, addRight, addBottom = Bounds(ui.buttons.add, "Add bar")
         local deleteX, deleteTop = Bounds(ui.buttons.delete, "Delete bars")
         Check(addTop==deleteTop and addRight<deleteX, "DataTexts actions do not share one row")

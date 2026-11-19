@@ -23,7 +23,7 @@ local SCALE_SOURCE = "tooltipVisibility"
 local REVEAL_KEYS = { false, IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown }
 local concealedAlpha
 local watching, rulesEnabled = false, false
-local buildHooked
+local buildHooked, itemIconHooked
 -- Set below: the reveal key listener calls Apply, which starts the listener.
 local StateChanged
 
@@ -118,6 +118,24 @@ end
 local function Built(tooltip)
     if rulesEnabled and tooltip == GameTooltip then Apply() end
 end
+
+-- Post-calls run after the native item name was written. AppendText adds to
+-- line one through the native API, without replacing its color or comparing
+-- the item name. Ignore appended item sections and inaccessible headers.
+local function ItemIcon(tooltip, data)
+    if not M.config.itemHeaderIcon or NS.InCombat() or not S.Finite(data.id) or data.id <= 0
+        or not tooltip.AppendText or not tooltip.GetPrimaryTooltipData then return end
+    local primary = tooltip:GetPrimaryTooltipData()
+    if not S.Public(primary) or not rawequal(primary, data) then return end
+    local lines = data.lines
+    if not S.Public(lines) or type(lines) ~= "table" or not canaccesstable(lines) then return end
+    local name = lines[1]
+    if not S.Public(name) or type(name) ~= "table" or not canaccesstable(name)
+        or not S.Public(name.type) or name.type ~= Enum.TooltipDataLineType.ItemName
+        or not S.Finite(name.lineIndex) or name.lineIndex ~= 1 or not S.PublicText(name.leftText) then return end
+    local icon = C_Item.GetItemIconByID(data.id)
+    if S.Finite(icon) and icon > 0 then tooltip:AppendText(("  |T%d:15:15|t"):format(icon)) end
+end
 StateChanged = function(_, event) Apply(event) end
 
 -- The tooltip is Blizzard's again: its alpha, its scale, no reveal key watch.
@@ -159,6 +177,10 @@ function M:Refresh()
     elseif not rulesEnabled then
         Reveal(GameTooltip)
         WatchReveal(false)
+    end
+    if c.itemHeaderIcon and not itemIconHooked and C_Item and C_Item.GetItemIconByID then
+        S.TooltipLines.Add(self, "Item", ItemIcon, true)
+        itemIconHooked = true
     end
     WantEvent(context, "PLAYER_REGEN_DISABLED", c.inCombat)
     WantEvent(context, "PLAYER_REGEN_ENABLED", c.inCombat)

@@ -47,9 +47,9 @@ function Visuals.Surface(target, owner, role, allowImplicitProtected)
     return true
 end
 
-function Visuals.Label(label, owner)
+function Visuals.Label(label, owner, font)
     if not NS.LabelStyle.CanStyle(label) then return end
-    NS.LabelStyle.Apply(label, owner)
+    NS.LabelStyle.Apply(label, owner, nil, font, type(font) == "string")
     Owned(owner).labels[label] = true
 end
 
@@ -64,7 +64,7 @@ local function FollowText(label)
     record.painting = nil
 end
 
-function Visuals.Text(label, owner, token)
+function Visuals.Text(label, owner, token, font)
     if not NS.LabelStyle.CanStyle(label) then return end
     local binding = textBindings[label]
     if binding and binding.owner ~= owner then return end
@@ -87,7 +87,7 @@ function Visuals.Text(label, owner, token)
     record.painting = true
     if not Safety.SameColor(r, g, b, a, red, green, blue, a) then label:SetTextColor(red, green, blue, a) end
     record.painting = nil
-    Visuals.Label(label, owner)
+    Visuals.Label(label, owner, font)
 end
 
 function Visuals.Fade(region, owner, allowImplicitProtected)

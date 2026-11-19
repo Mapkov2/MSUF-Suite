@@ -41,16 +41,25 @@ local function Said(fragment)
 end
 
 -- MSUF: the real profile store with its runtime apply idle.
+local public = { MSUF_GF_InvalidateConfCache = noop }
 local host = {
+    PublicGlobals = public, Client = { IsRetail = true }, Geometry = { VisibleRect = noop },
     StateHelpers = {}, ProfileIOImportLimits = {},
+    GetCharacterProfileKey = function() return "Player-Realm" end,
+    FirstLoad6 = { ResolveLiveGlobalDB = function(fallback)
+        return MSUF_GlobalDB or fallback, MSUF_GlobalDB ~= nil
+    end },
     ProfileRuntime = { Apply = noop },
     Translate = function(text) return text end,
-    ProfileNormalize = {},
+    ProfileNormalize = {}, DefaultsSchema = { RenameProfileRecovery = noop, CompactInactiveProfile = noop },
     Require = function(name)
-        assert(name == "MSUF_EnsureDB", name)
-        return noop
+        if name == "MSUF_EnsureDB" then return noop end
+        return assert(public[name], name)
     end,
-    ExportPublic = function(name, value) _G[name] = value; return value end,
+    ExportPublic = function(name, value)
+        public[name], _G[name] = value, value
+        return value
+    end,
     EventBus = { Register = noop },
 }
 MSUF_NS = host
@@ -66,6 +75,7 @@ end
 assert(loadfile(hostRoot .. "/MidnightSimpleUnitFrames/State/MSUF_GuidedTour.lua"))("MidnightSimpleUnitFrames", host)
 assert(loadfile(hostRoot .. "/MidnightSimpleUnitFrames/Kernel/MSUF_Util.lua"))("MidnightSimpleUnitFrames", host)
 assert(loadfile(hostRoot .. "/MidnightSimpleUnitFrames/State/MSUF_Profiles.lua"))("MidnightSimpleUnitFrames", host)
+local RenameProfile = assert(host.ProfilesParts and host.ProfilesParts.MSUF_RenameProfile or MSUF_RenameProfile)
 
 -- The Suite and its skin store.
 local suite = {
@@ -135,7 +145,7 @@ end
 -- 1. A skin-only profile already has the new name: refused before anything
 --    moves, and MSUF names the reason.
 Fixture()
-local renamed, why = MSUF_RenameProfile("A", "B")
+local renamed, why = RenameProfile("A", "B")
 assert(renamed == false and why == "profile-exists",
     "a rename onto a skin-only profile was not refused: " .. tostring(renamed) .. ", " .. tostring(why))
 assert(not MSUF_GlobalDB.profiles.B and Said("Profile 'B' already exists."), "MSUF did not report the taken name")
@@ -143,7 +153,7 @@ Unchanged("skin-only collision")
 
 -- 2. A Suite-only profile already has the new name: refused the same way.
 Fixture()
-renamed, why = MSUF_RenameProfile("A", "Leftover")
+renamed, why = RenameProfile("A", "Leftover")
 assert(renamed == false and why == "profile-exists" and not MSUF_GlobalDB.profiles.Leftover,
     "a rename onto a Suite-only profile was not refused")
 Unchanged("Suite-only collision")
@@ -151,7 +161,7 @@ Unchanged("Suite-only collision")
 -- 3. In combat the Suite refuses every rename; MSUF stops with its combat line.
 Fixture()
 combat = true
-renamed = MSUF_RenameProfile("A", "C")
+renamed = RenameProfile("A", "C")
 combat = false
 assert(renamed == false and not MSUF_GlobalDB.profiles.C and Said("Cannot change profiles while in combat."),
     "a rename in combat was not refused with the combat message")
@@ -159,7 +169,7 @@ Unchanged("combat")
 
 -- 4. A free name: all three stores rename together and stay active.
 Fixture()
-assert(MSUF_RenameProfile("A", "C") == true, "a rename to a free name failed")
+assert(RenameProfile("A", "C") == true, "a rename to a free name failed")
 assert(host.GuidedTour6:GetState().profileName == "C"
     and MSUF_GlobalDB.global.guidedTour6 == host.GuidedTour6:GetState(),
     "the real guided tour did not rename its active profile in the current saved root")
@@ -187,7 +197,7 @@ assert(suite.Database.GetProfile("B").suite.modules.chat.marker == "A" and not s
 for _, taken in ipairs({ "Leftover", "B" }) do
     Fixture()
     MSUF_GlobalDB.profiles.Pre = { player = { width = 99 } }
-    renamed, why = MSUF_RenameProfile("Pre", taken)
+    renamed, why = RenameProfile("Pre", taken)
     assert(renamed == false and why == "profile-exists" and MSUF_GlobalDB.profiles.Pre and not MSUF_GlobalDB.profiles[taken]
         and Said("Profile '" .. taken .. "' already exists."),
         "a profile without a twin was renamed onto the occupied name " .. taken)
@@ -201,7 +211,7 @@ Fixture()
 local long = string.rep("L", 81)
 MSUF_GlobalDB.profiles[long], MSUF_GlobalDB.profiles.A = MSUF_GlobalDB.profiles.A, nil
 MSUF_GlobalDB.char["Player-Realm"].activeProfile, MSUF_ActiveProfile = long, long
-assert(MSUF_RenameProfile(long, "Recovered") == true, "an over-long older profile could not be renamed")
+assert(RenameProfile(long, "Recovered") == true, "an over-long older profile could not be renamed")
 assert(MSUF_GlobalDB.profiles.Recovered == MSUF_DB and not MSUF_GlobalDB.profiles[long] and MSUF_ActiveProfile == "Recovered"
     and suite.Database.GetActiveProfileName() == "Recovered" and skin.Database.GetActiveProfileName() == "Recovered",
     "the recovered profile is not active in all three stores")
@@ -209,7 +219,7 @@ assert(MSUF_GlobalDB.profiles.Recovered == MSUF_DB and not MSUF_GlobalDB.profile
 -- 8. A new name the Suite cannot store is refused with MSUF's name rule (the
 --    visible-character rule, not the 80-byte limit the name is far below).
 Fixture()
-renamed, why = MSUF_RenameProfile("A", "Bad\1Name")
+renamed, why = RenameProfile("A", "Bad\1Name")
 assert(renamed == false and why == "invalid-profile-name"
     and Said("Profile names need a visible character and cannot contain control characters.")
     and not Said("Profile names can be at most 80 bytes long."),
@@ -220,7 +230,7 @@ Unchanged("invalid name")
 --    goes ahead as it did before MSUF asked first.
 Fixture()
 suite.RootDB = nil
-assert(MSUF_RenameProfile("A", "C") == true and MSUF_GlobalDB.profiles.C and MSUF_ActiveProfile == "C",
+assert(RenameProfile("A", "C") == true and MSUF_GlobalDB.profiles.C and MSUF_ActiveProfile == "C",
     "a rename was refused while the Suite had no database")
 
 write("suite_profile_rename_contract: ok\n")

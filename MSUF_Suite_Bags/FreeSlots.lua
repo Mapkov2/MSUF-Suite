@@ -12,12 +12,12 @@ local IS_FOREVER = P.NS and P.NS.Client and P.NS.Client.isForever
 -- its slots come from the shared slot cache (SlotCache.lua), which reads a
 -- bag again only after the client said it changed.
 -- Returns nil without a reagent bag.
-function FreeSlots.Reagent()
+function FreeSlots.Reagent(index)
     local size = P.SlotCache.Sync(REAGENT_BAG)
     if size == 0 then return nil end
     if IS_FOREVER then
-        local _, family = C_Container.GetContainerNumFreeSlots(REAGENT_BAG)
-        if S.Finite(family) and family ~= 0 then return nil end
+        local family = P.InventoryIndex.BagFamily(index, REAGENT_BAG, size)
+        if family ~= nil and family ~= 0 then return nil end
     end
     local free = 0
     for slot = 1, size do
@@ -30,7 +30,7 @@ end
 -- reagent bag exists.
 function FreeSlots.Read(out, index, withReagent)
     out.regular = index.free
-    out.reagent = withReagent and FreeSlots.Reagent() or nil
+    out.reagent = withReagent and FreeSlots.Reagent(index) or nil
 end
 
 -- Shows the counts; the text is built only when a count changed.

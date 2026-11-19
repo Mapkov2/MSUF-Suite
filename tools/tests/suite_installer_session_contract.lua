@@ -20,6 +20,31 @@ do
     assert(#H.reported == 0, "a call raised: " .. tostring(H.reported[1]))
 end
 
+-- A compact Suite profile still owns its name even if its payload cannot
+-- be decoded. Checking for an available name must not materialize it.
+do
+    MapkoSkin = nil
+    local suite = H.Setup({ root = root, forever = true })
+    local name, occupied = "MSUF Suite Forever", "MSUF3:invalid packed profile"
+    local database = suite.Database
+    suite.RootDB.profiles[name] = occupied
+    local read = database.GetProfile
+    database.GetProfile = function(target)
+        assert(target ~= name, "setup decoded an inactive profile to allocate a name")
+        return read(target)
+    end
+    local requested
+    suite.SuiteProfiles.InstallFactory = function(target)
+        requested = target
+        return false, "test stops before profile install"
+    end
+    assert(suite.Installer.Open())
+    local ok, reason = suite.Installer.Apply()
+    assert(not ok and reason == "test stops before profile install" and requested == name .. " 2",
+        "setup chose " .. tostring(requested) .. " for reserved name " .. name)
+    assert(suite.RootDB.profiles[name] == occupied, "setup replaced an unreadable stored profile")
+end
+
 -- Setup reopened in the same session starts again at 100 percent: the slider
 -- shows the scale the label shows and Install applies.
 do

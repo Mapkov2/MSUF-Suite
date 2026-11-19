@@ -37,27 +37,71 @@ B.Section("selfCombatText", "self_combat_text", "Own combat text", {
 })
 
 local DAMAGE_CVAR = "floatingCombatTextCombatDamage_v2"
+local Feed = {}
+NS.FloatingCombatFeed = Feed
+
+function Feed.Enemy()
+    return NS.Client.SupportsEvent("UNIT_COMBAT")
+end
+
+function Feed.Gains()
+    return NS.Client.SupportsEvent("COMBAT_TEXT_UPDATE")
+end
+
+function Feed.Experience()
+    return NS.Client.SupportsEvent("PLAYER_XP_UPDATE")
+end
+
 B.Module("floatingCombatText", {
     title = "Floating combat text",
-    description = "Show damage above enemy nameplates.",
-    defaultEnabled = NS.Client.isForever == true, page = "suite_qualityOfLife",
+    description = "Scroll enemy hits and gains around your character or above enemy nameplates.",
+    defaultEnabled = true, page = "suite_qualityOfLife",
     cvars = { [DAMAGE_CVAR] = true },
     conflicts = { "ForeverCombatText", "BetterDamageText", "NameplateSCT" },
     available = function()
-        if not NS.Client.isForever then return false, "Available only in WoW Forever" end
-        if not NS.Client.SupportsEvent("UNIT_COMBAT") then
+        if not (Feed.Enemy() or Feed.Gains() or Feed.Experience()) then
             return false, "Combat text is unavailable on this client"
         end
         return true
     end,
 })
-B.Section("floatingCombatText", "floating_combat_text", "Floating combat text", {
-    B.Tooltip(Choice("hitSource", "Hits to display", 1, { "Your hits (estimated)", "All hits on enemies" }),
-        "Estimates your hits on your target from swings and harmful casts. Simultaneous hits can be misidentified."),
-    Bool("hideBlizzard", "Hide Blizzard damage numbers", true),
+local SIDES = { "Enemy nameplate", "Left", "Right" }
+local SCREEN_SIDES = { "Left", "Right" }
+local forever = NS.Client.isForever
+B.Section("floatingCombatText", "floating_combat_text", "Appearance", {
     B.Font("font", "Font"),
     Number("fontSize", "Font size", 28, 10, 48),
     Number("critScale", "Critical text size (percent)", 140, 100, 200, 5),
     Number("duration", "Text duration (seconds)", 0.9, 0.4, 2, 0.1),
+    Choice("scrollStyle", "Scroll style", 1, { "Up", "Down", "Outward" }),
+    Number("travel", "Scroll distance", 42, 16, 96, 2),
+    Number("sideOffset", "Distance from center", 124, 48, 360, 2),
+    Number("screenY", "Vertical position", 0, -220, 220, 2),
+})
+B.Section("floatingCombatText", "floating_combat_text_hits", "Enemy hits", {
+    B.Tooltip(Choice("hitSource", "Hits to display", forever and 1 or 3,
+        { forever and "Your hits (estimated)" or "Your spell hits (estimated)",
+            "All hits on enemies", "All hits on current target" }),
+        "Estimated hits use your attack events. All hits can include other players' damage."),
+    Bool("showHits", "Show enemy damage", true),
+    Choice("hitSide", "Enemy damage placement", forever and 1 or 3, SIDES),
+    B.Color("hitColor", "Enemy damage color", "ffd100"),
+    Bool("showAvoidance", "Show enemy dodge, parry and misses", true),
+    Choice("avoidSide", "Enemy avoidance placement", 2, SIDES),
+    B.Color("avoidColor", "Enemy avoidance color", "fae0a0"),
+    Bool("hideBlizzard", "Hide Blizzard damage numbers", forever),
     Number("offset", "Vertical offset", 5, 0, 60),
+})
+B.Section("floatingCombatText", "floating_combat_text_gains", "Gains and notifications", {
+    Bool("showXP", "Show XP gains", true),
+    Bool("showReputation", "Show reputation changes", true),
+    Bool("showHonor", "Show honor gains", false),
+    Choice("gainSide", "Progression placement", 2, SCREEN_SIDES),
+    B.Color("gainColor", "Progression color", "9be9b0"),
+    Bool("showPower", "Show resource gains", false),
+    Choice("powerSide", "Resource placement", 2, SCREEN_SIDES),
+    B.Color("powerColor", "Resource gain color", "8ed8ff"),
+    Bool("showCombatState", "Show combat entry and exit", false),
+    Choice("combatSide", "Combat state placement", 1, SCREEN_SIDES),
+    B.Color("combatColor", "Combat state color", "ffac77"),
 })

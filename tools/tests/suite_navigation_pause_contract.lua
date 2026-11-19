@@ -1160,6 +1160,18 @@ do
     Reads(140, 7, 1, false, true, "20 Sek.")
     Reads(437.4, 7, 1, false, true, "1 Min. 02 Sek.")
     Reads(437.4, 7, 1, false, false, "")
+    Reads(10.30, 0, 2, true, false, "9 m")
+    local metric = { units = 2, showDistance = true }
+    local stamp = model.readoutStamp
+    readout(model, metric, 10.45, 0)
+    assert(model.readoutA == 10 and model.readoutStamp == stamp + 1,
+        "metres did not update when rounded yards stayed the same")
+    readout(model, metric, 10.47, 0)
+    assert(model.readoutStamp == stamp + 1, "the same formatted distance invalidated its paint")
+    Reads(999.9, 0, 1, true, false, "1000 Yards")
+    readout(model, { units = 1, showDistance = true }, 1000.1, 0)
+    assert(model.readoutFormat == "%.1f Tsd. Yards" and model.readoutA == 1,
+        "the readout stayed in whole yards after crossing the thousands threshold")
 end
 do
     world.mouselook = false

@@ -232,11 +232,19 @@ Suite.Defaults = {}
 Suite.L = localeAddonLoaded and type(MSUF.L) == "table" and MSUF.L or {}
 Suite.Safety = {}
 
--- English source text through MSUF's locale table; a missing or empty
--- translation stays English.
-function Suite.Text(english)
+-- These delimiters decorate Suite-authored labels. A custom font can lack
+-- the middle dot or bullet. Translate the full template before swapping the
+-- separator, and insert user data only after this step.
+function Suite.PlainSeparators(text)
+    return (text:gsub(" · ", " - "):gsub(" • ", " - "))
+end
+
+-- A missing or empty translation stays English.
+function Suite.Text(english, plainSeparators)
     local value = Suite.L[english]
-    return type(value) == "string" and value ~= "" and value or english
+    local text = type(value) == "string" and value ~= "" and value or english
+    if plainSeparators == true then return Suite.PlainSeparators(text) end
+    return text
 end
 
 -- Statuses and refusal reasons are stored and returned as English text and

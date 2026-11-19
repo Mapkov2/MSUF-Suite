@@ -222,8 +222,9 @@ local function PaintBackdrop(ui, style, inset)
     ui.badge:SetPoint("LEFT", ui.sample, "LEFT", Data.Snap(4, ui.pixel), 0)
 end
 
-local function Entries(ui, config, style, vertical)
+local function Entries(ui, config, style)
     local entries, prefix = {}, "bar" .. ui.bar .. "Slot"
+    local vertical = config["bar" .. ui.bar .. "Vertical"]
     local font = Suite.ResolveFont(style.font) or Suite.GlobalFontPath()
     for slot = 1, ui.maxSlots do
         local button, block = ui.slots[slot], prefix .. slot
@@ -245,7 +246,7 @@ local function Entries(ui, config, style, vertical)
             local textWidth = compass and (vertical and Compass.fallbackWidth or Compass.slotWidth)
                 or progress and Suite.DataTextProgressWidth or button.label:GetUnboundedStringWidth()
             entries[#entries + 1] = { button = button, block = block, textWidth = textWidth, progress = progress,
-                compass = compass, placement = config[block .. "Placement"],
+                compass = compass, placement = config[block .. "Placement"], weight = config[block .. "Weight"],
                 limit = source == "broker" and config[block .. "MaxWidth"] or nil }
             Metadata(ui, button, "Slot" .. slot .. ".preview", Tr("Choose data for place %d"):format(slot))
         end
@@ -441,7 +442,7 @@ local function Paint(ui)
     if vertical then style.bagBadge = false end
     ValueColor(style)
     ui.pixel = S.PixelUnit and S.PixelUnit() or 1
-    local entries = Entries(ui, config, style, vertical)
+    local entries = Entries(ui, config, style)
     local span = vertical and UIParent:GetHeight() or UIParent:GetWidth()
     local width, height, inset = Data.Layout(entries, config, bar, style, ui.pixel, span)
     local badge = style.bagBadge and style.bagBadgeSize or 0

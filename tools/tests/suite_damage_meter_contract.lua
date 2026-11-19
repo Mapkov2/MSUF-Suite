@@ -433,7 +433,12 @@ sharedFetches=api.fetch
 D.MarkAll(); D.PaintDirty()
 assert(api.fetch==sharedFetches+2,"different fights must keep separate session fetches")
 assert(S.SetMany("damageMeter",{w2Type=3,w2Session=1}))
-assert(#win.rows==3 and not win.rows[4],"rows are not pooled to the visible data")
+assert(#win.rows == math.min(win.capacity, 12), "the visible window did not prepare its bounded row pool")
+for i = 1, #win.rows do
+    local row = win.rows[i]
+    assert(row.styleGen == M.styleGen and row.valueText.font and (i <= 3 or not row.shown and row.index == nil),
+        "an unused prewarmed row was unstyled or visible")
+end
 assert(Row(win,1).nameText.text=="Tank" and Row(win,1).rankText.text=="1.","plain name or rank missing")
 assert(c.showRealm==false and D.Short("Tank-Realm")=="Tank","server names should be hidden by default")
 assert(S.Set("damageMeter","showRealm",true) and Row(win,1).nameText.text=="Tank-Realm"
@@ -642,6 +647,7 @@ local value=Row(win,1).valueText.text
 assert(type(value)=="table" and value.format=="%s (%s)" and Label(value.args[1])=="abbr:total1" and Label(value.args[2])=="abbr:pps1",
     "secret values must go through AbbreviateNumbers and SetFormattedText")
 M.style.numberFormat,M.style.valueOrder,M.style.valueSeparator=5,5,3
+D.BuildValuePlan(M.style)
 D.SetValueText(Row(win,1),0,Secret("customtotal"),Secret("customrate"),Secret("customdenominator"),true)
 value=Row(win,1).valueText.text
 assert(type(value)=="table" and value.format=="%s [%s]" and Label(value.args[1])=="abbr:customtotal"
@@ -652,11 +658,13 @@ assert(type(value)=="table" and value.format=="%s [%s] [%s]" and value.args[1]==
     and value.args[2]=="1K" and Label(value.args[3])=="abbr:mixedrate",
     "custom layout must place a plain share before a secret rate")
 M.style.valueSeparator=6
+D.BuildValuePlan(M.style)
 D.SetValueText(Row(win,1),0,Secret("hyphentotal"),Secret("hyphenrate"),Secret("hyphendenominator"),true)
 value=Row(win,1).valueText.text
 assert(type(value)=="table" and value.format=="%s - %s" and Label(value.args[1])=="abbr:hyphentotal"
     and Label(value.args[2])=="abbr:hyphenrate","hyphen layout must keep secrets in C sinks")
 M.style.numberFormat,M.style.valueOrder,M.style.valueSeparator=3,1,2
+D.BuildValuePlan(M.style)
 assert(OtherCalls()==0 and not PaintRequest(),"combat start left a deferred paint")
 -- Mixed readability: plain row values with a secret total never compute a share.
 D.SetValueText(Row(win,1),0,1000,10,Secret("sessiontotal"),true)

@@ -32,13 +32,28 @@ function Gradient.Plan(config, key, previous)
     return plan
 end
 
+local function ApplyMask(texture, previous, mask)
+    if not texture then return end
+    if previous then texture:RemoveMaskTexture(previous) end
+    if mask then texture:AddMaskTexture(mask) end
+end
+
+function Gradient.SetMask(state, mask)
+    if not state or state.mask == mask then return end
+    local previous = state.mask
+    for i = 1, #directions do ApplyMask(state[i], previous, mask) end
+    ApplyMask(state.glossUpper, previous, mask)
+    ApplyMask(state.glossLower, previous, mask)
+    state.mask = mask
+end
+
 -- These textures follow the filled region using native anchors. The bar
 -- continues to own progress and neither painter needs to read its value.
-function Gradient.Paint(owner, state, target, plan)
+function Gradient.Paint(owner, state, target, plan, initialMask)
     if not target then plan = nil end
     if not state then
         if not plan then return end
-        state = {}
+        state = { mask = initialMask }
     end
     if state.plan == plan and (not plan or state.target == target) then return state end
     for i, direction in ipairs(directions) do
@@ -49,6 +64,7 @@ function Gradient.Paint(owner, state, target, plan)
                 texture = owner:CreateTexture(nil, "OVERLAY", nil, -2)
                 texture:SetTexture(white)
                 if state.alpha then texture:SetAlpha(state.alpha) end
+                ApplyMask(texture, nil, state.mask)
                 state[i] = texture
             end
             if not state.plan or not state.plan[i] or state.target ~= target then
@@ -66,7 +82,12 @@ function Gradient.Paint(owner, state, target, plan)
         end
     end
     if plan and plan.gloss > 0 then
-        NS.GlossMaterial.Fill(owner, target, plan.gloss, state.alpha)
+        local upper, lower = NS.GlossMaterial.Fill(owner, target, plan.gloss, state.alpha)
+        if upper ~= state.glossUpper then
+            ApplyMask(upper, nil, state.mask)
+            ApplyMask(lower, nil, state.mask)
+            state.glossUpper, state.glossLower = upper, lower
+        end
         state.glossOwner = owner
     elseif state.glossOwner then
         NS.GlossMaterial.Fill(state.glossOwner)
@@ -102,11 +123,11 @@ function Gradient.PaintHealth(health, visual, plan, uf, pending)
     local fill = plan and health:GetStatusBarTexture()
     if not NS.Public(fill) or fill and NS.Safety.IsForbidden(fill) then fill = nil end
     if plan and (not previous or previous.plan ~= plan or previous.target ~= fill) then
-        local combat = NS.IsCombatLocked()
+        local combat = NS.InCombat()
         if not CanAttach(uf, health, fill, combat) then
             if combat then pending[uf] = true end
             fill = nil
         end
     end
-    visual.gradient = Gradient.Paint(health, previous, fill, plan)
+    visual.gradient = Gradient.Paint(health, previous, fill, plan, visual.slantMask)
 end

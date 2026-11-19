@@ -93,13 +93,18 @@ local function ReadRewards(self)
         end
     end
     if requested then self.rewardCheckAt = GetTime() + 1
-    elseif not self.waiting then self.rewardCheckAt = nil end
+    elseif not self.waiting then
+        self.rewardCheckAt = nil
+    end
 end
 
 local function Flush()
     M.updateTimer = nil
     if not Available() or not Tools.IsOpen(M) then return end
-    if not MapShown(M.map) then Tools.Close(M) return end
+    if not MapShown(M.map) then
+        Tools.Close(M)
+        return
+    end
     local mapID = CurrentMapID(M.map)
     local scan = M.mapDirty or mapID ~= M.mapID
     if scan then Collect(M, mapID) end
@@ -124,7 +129,9 @@ local function QuestEvent(self, event, id, success)
     elseif Finite(id) and self.byID[id] ~= nil then
         local row = self.byID[id]
         if event == "QUEST_TURNED_IN" then Queue(self, true)
-        elseif S.Public(success) and success == true and (not row or not row.classes) then Queue(self, not row) end
+        elseif S.Public(success) and success == true and (not row or not row.classes) then
+            Queue(self, not row)
+        end
     end
 end
 
@@ -145,7 +152,9 @@ local function MapUpdated(self, count)
     if self.rewardCheckAt and now >= self.rewardCheckAt then
         self.rewardCheckAt = nil
         Queue(self)
-    elseif self.clockAt and now >= self.clockAt then Queue(self) end
+    elseif self.clockAt and now >= self.clockAt then
+        Queue(self)
+    end
 end
 
 local function Closed(self)
@@ -164,7 +173,7 @@ local function RowDetail(row, time)
     local reward = row.rewardText
     if not reward then reward = S.Text("Quest rewards are loading.") end
     if reward == "" then reward = S.Text("Reward information unavailable") end
-    row.label = time and S.Text("%s · %s remaining"):format(row.name, S.ClockText(time, true)) or row.name
+    row.label = time and S.Text("%s · %s remaining", true):format(row.name, S.ClockText(time, true)) or row.name
     row.detail, row.search = reward, row.name .. " " .. (row.rewardSearch or "")
 end
 
@@ -186,7 +195,7 @@ end
 
 local function Status(self)
     local text = self.visibleCount == 0 and S.Text("No world quests match the selected map and filters.") or self.zone or ""
-    if self.waiting then return text .. (text == "" and "" or " · ") .. S.Text("Quest rewards are loading.") end
+    if self.waiting then return text .. (text == "" and "" or " - ") .. S.Text("Quest rewards are loading.") end
     return text
 end
 
@@ -232,11 +241,17 @@ function M:Open()
     if not MapShown(map) and not S.ShowPanel("worldMap") then return end
     map = WorldMapFrame
     if not MapShown(map) then return end
-    if Tools.IsOpen(self) then Tools.Close(self) return end
+    if Tools.IsOpen(self) then
+        Tools.Close(self)
+        return
+    end
     self.map = map
     Collect(self, CurrentMapID(map))
     local window = Tools.Open(self, SPEC)
-    if not window then Closed(self) return end
+    if not window then
+        Closed(self)
+        return
+    end
     for i = 1, #QUEST_EVENTS do self.context:Event(QUEST_EVENTS[i], QuestEvent) end
     self.watchedMap = map
     map:RegisterCallback("WorldQuestsUpdate", MapUpdated, self)

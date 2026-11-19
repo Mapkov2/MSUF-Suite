@@ -113,18 +113,38 @@ end
 function Visual.Show(record, rect, fullRect, strata, level)
     if not Safety.CanDecorate(record.overlay) then return false end
     local overlay, canvas = record.overlay, record.canvas
-    overlay:ClearAllPoints()
-    overlay:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", rect.left, rect.bottom)
-    overlay:SetSize(rect.width, rect.height)
-    overlay:SetFrameStrata(strata)
-    overlay:SetFrameLevel(level)
+    if record.left ~= rect.left or record.bottom ~= rect.bottom then
+        record.left, record.bottom = rect.left, rect.bottom
+        overlay:ClearAllPoints()
+        overlay:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", rect.left, rect.bottom)
+    end
+    if record.width ~= rect.width or record.height ~= rect.height then
+        record.width, record.height = rect.width, rect.height
+        overlay:SetSize(rect.width, rect.height)
+    end
+    if record.strata ~= strata or record.level ~= level then
+        record.strata, record.level = strata, level
+        overlay:SetFrameStrata(strata)
+        overlay:SetFrameLevel(level)
+        canvas:SetFrameStrata(strata)
+        canvas:SetFrameLevel(level + 1)
+    end
     local scale = (rect.source or rect).unitScale or 1
-    canvas:SetScale(scale)
-    canvas:ClearAllPoints()
-    canvas:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", (fullRect.left - rect.left) / scale, (fullRect.bottom - rect.bottom) / scale)
-    canvas:SetSize(fullRect.width / scale, fullRect.height / scale)
-    canvas:SetFrameStrata(strata)
-    canvas:SetFrameLevel(level + 1)
+    if record.scale ~= scale then
+        record.scale = scale
+        canvas:SetScale(scale)
+    end
+    local x, y = (fullRect.left - rect.left) / scale, (fullRect.bottom - rect.bottom) / scale
+    if record.canvasX ~= x or record.canvasY ~= y then
+        record.canvasX, record.canvasY = x, y
+        canvas:ClearAllPoints()
+        canvas:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", x, y)
+    end
+    local width, height = fullRect.width / scale, fullRect.height / scale
+    if record.canvasWidth ~= width or record.canvasHeight ~= height then
+        record.canvasWidth, record.canvasHeight = width, height
+        canvas:SetSize(width, height)
+    end
     record.rect, record.fullRect = rect, fullRect
     if not record.dim then
         Paint(record)

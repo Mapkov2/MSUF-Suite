@@ -577,60 +577,81 @@ local function ShowInRail(ui, key)
     return true
 end
 
-local function VisibleButtons(ui)
-    local visible = ui.visibleLayerButtons
-    for i = #visible, 1, -1 do visible[i] = nil end
-    for _, button in ipairs(ui.layerButtons) do
-        local show = ShowInRail(ui, button.layerKey)
-        button:SetShown(show)
-        if show then visible[#visible + 1] = button end
-    end
-    return visible
-end
+local LAYER_TOP, LAYER_ROW, CHIP_HEIGHT, VISIBLE_ROWS = 29, 26, 22, 5
+local LAYER_LEFT, LAYER_RIGHT, CHIP_GAP = 8, 24, 5
 
-local LAYER_TOP, LAYER_ROW, CHIP_HEIGHT = 29, 26, 22
-local MAX_LAYER_HEIGHT = 5 * LAYER_ROW + CHIP_HEIGHT
-
-local function BuildLayerViewport(rail)
-    local styleScroll = T.StyleScrollFrame
-    local template = not styleScroll and "UIPanelScrollFrameTemplate" or nil
-    local scroll = CreateFrame("ScrollFrame", nil, rail, template)
-    scroll:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, -LAYER_TOP)
-    scroll:SetPoint("TOPRIGHT", rail, "TOPRIGHT", -24, -LAYER_TOP)
-    local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(1, 1)
-    content:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
-    if template then scroll.scrollBarHideable = true end
-    scroll:SetScrollChild(content)
-    if styleScroll then styleScroll(scroll, rail) end
-    return scroll, content
-end
-
-local function BuildRailLayout(ui, rail, scroll, content)
-    function ui:LayoutLayerRail()
-        local width = scroll:GetWidth()
-        if not width or width < 1 then return end
-        local x, y = 0, 0
-        for _, button in ipairs(VisibleButtons(self)) do
-            local label = button.fs or HM.GetControlLabel(button)
-            local measureWidth = label and (label.GetUnboundedStringWidth or label.GetStringWidth)
-            local naturalWidth = measureWidth and math.ceil(measureWidth(label)) + button.labelPadding or button.layerWidth
-            local size = math.min(width, naturalWidth)
-            if x > 0 and x + size > width then x, y = 0, y + LAYER_ROW end
-            button:SetWidth(size)
+local function PlaceRows(rail, visible, firstRow)
+    for _, button in ipairs(visible) do
+        local row = button.layerRow - firstRow
+        local shown = row >= 0 and row < VISIBLE_ROWS
+        button:SetShown(shown)
+        if shown then
             button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
-            x = x + size + 5
+            button:SetPoint("TOPLEFT", rail, "TOPLEFT", button.layerX, -LAYER_TOP - row * LAYER_ROW)
         end
-        local height = y + CHIP_HEIGHT
-        local viewport = math.min(height, MAX_LAYER_HEIGHT)
-        scroll:SetHeight(viewport)
-        content:SetSize(width, height)
-        scroll:UpdateScrollChildRect()
-        scroll:EnableMouseWheel(height > viewport)
-        content:EnableMouseWheel(height > viewport and T.StyleScrollFrame ~= nil)
-        if scroll:GetVerticalScroll() > height - viewport then scroll:SetVerticalScroll(height - viewport) end
-        rail:SetHeight(LAYER_TOP + viewport + 6)
+    end
+end
+
+local function BuildLayerScrollbar(rail, visible)
+    local slider = CreateFrame("Slider", nil, rail)
+    slider:EnableMouse(true)
+    slider:SetOrientation("VERTICAL")
+    slider:SetWidth(14)
+    slider:SetPoint("TOPRIGHT", rail, "TOPRIGHT", -5, -LAYER_TOP)
+    slider:SetPoint("BOTTOMRIGHT", rail, "BOTTOMRIGHT", -5, 6)
+    slider:SetMinMaxValues(0, 1)
+    slider:SetValueStep(1)
+    slider:SetObeyStepOnDrag(true)
+    slider:SetValue(0)
+    local track = slider:CreateTexture(nil, "BACKGROUND")
+    track:SetPoint("TOP", slider, "TOP")
+    track:SetPoint("BOTTOM", slider, "BOTTOM")
+    track:SetWidth(2)
+    track:SetColorTexture(1, 1, 1, .18)
+    local thumb = slider:CreateTexture(nil, "ARTWORK")
+    thumb:SetSize(5, 16)
+    thumb:SetColorTexture(1, .86, .57, .72)
+    slider:SetThumbTexture(thumb)
+    slider:SetScript("OnValueChanged", function(_, value) PlaceRows(rail, visible, math.floor(value + .5)) end)
+    local function Wheel(_, delta) slider:SetValue(slider:GetValue() - delta) end
+    slider:EnableMouseWheel(true)
+    slider:SetScript("OnMouseWheel", Wheel)
+    rail:SetScript("OnMouseWheel", Wheel)
+    slider:Hide()
+    return slider
+end
+
+local function BuildRailLayout(ui, rail)
+    local visible = {}
+    local slider = BuildLayerScrollbar(rail, visible)
+    function ui:LayoutLayerRail()
+        local width = self.body:GetWidth() - LAYER_LEFT - LAYER_RIGHT
+        if width < 1 then return end
+        local x, row, count = 0, 0, 0
+        for _, button in ipairs(self.layerButtons) do
+            if ShowInRail(self, button.layerKey) then
+                local label = button.fs or HM.GetControlLabel(button)
+                local measureWidth = label and (label.GetUnboundedStringWidth or label.GetStringWidth)
+                local naturalWidth = measureWidth and math.ceil(measureWidth(label)) + button.labelPadding or button.layerWidth
+                local size = math.min(width, naturalWidth)
+                if x > 0 and x + size > width then x, row = 0, row + 1 end
+                button:SetWidth(size)
+                button.layerX, button.layerRow = LAYER_LEFT + x, row
+                x, count = x + size + CHIP_GAP, count + 1
+                visible[count] = button
+            else
+                button:Hide()
+            end
+        end
+        for i = #visible, count + 1, -1 do visible[i] = nil end
+        local lastRow = math.max(0, row + 1 - VISIBLE_ROWS)
+        local firstRow = math.min(slider:GetValue(), lastRow)
+        slider:SetMinMaxValues(0, math.max(1, lastRow))
+        slider:SetValue(firstRow)
+        slider:SetShown(lastRow > 0)
+        rail:EnableMouseWheel(lastRow > 0)
+        rail:SetHeight(LAYER_TOP + (math.min(row, VISIBLE_ROWS - 1) * LAYER_ROW) + CHIP_HEIGHT + 6)
+        PlaceRows(rail, visible, firstRow)
     end
 end
 
@@ -658,7 +679,7 @@ end
 local function BuildButtons(ui, rail)
     local measure = T.Font(rail, "GameFontDisableSmall", "", T.colors.muted)
     measure:Hide()
-    ui.layerButtons, ui.visibleLayerButtons = {}, {}
+    ui.layerButtons = {}
     for i, def in ipairs(PrepareLayers()) do
         local key, label, section = def[1], def[2], def[3]
         local button
@@ -719,8 +740,10 @@ function Layers.Build(ui)
         title = T.Font(rail, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
     end
     title:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, -8)
-    local scroll, content = BuildLayerViewport(rail)
-    BuildButtons(ui, content)
-    BuildRailLayout(ui, rail, scroll, content)
+    -- Dock the chips directly on the preview rail, like Unit Frames. At
+    -- narrow widths the slider swaps whole rows within the same hit area.
+    rail:SetFrameLevel(ui.canvas:GetFrameLevel() + 1)
+    BuildButtons(ui, rail)
+    BuildRailLayout(ui, rail)
     ui.layerRail = rail
 end

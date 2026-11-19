@@ -24,6 +24,7 @@ function HostBridge.SharedCastbarStyle()
     local host, db = HostBridge.Namespace(), HostBridge.CurrentFrameProfile()
     local g = type(db) == "table" and db.general
     if not host or type(g) ~= "table" then return end
+    local bars = type(db.bars) == "table" and db.bars
     local bgR, bgG, bgB, bgA = CastbarValue(host, "MSUF_GetCastbarBackgroundColor")
     local textR, textG, textB = CastbarValue(host, "MSUF_GetCastbarTextColor")
     local interruptR, interruptG, interruptB = CastbarValue(host, "MSUF_ResolveInterruptFeedbackCastColor")
@@ -40,6 +41,7 @@ function HostBridge.SharedCastbarStyle()
         outlineSize = math.max(0, math.min(12, math.floor((tonumber(g.castbarOutlineThickness) or 1) + .5))),
         outlineR = ColorComponent(g.castbarBorderR, 0), outlineG = ColorComponent(g.castbarBorderG, 0),
         outlineB = ColorComponent(g.castbarBorderB, 0), outlineA = ColorComponent(g.castbarBorderA, 1),
+        slanted = bars and bars.slantedBarsEnabled ~= false and bars.slantedCastbars == true or nil,
         reverseFill = g.castbarFillDirection == "RTL",
         showSpark = g.castbarShowSpark == true, sparkOverflow = g.castbarSparkOverflow ~= false,
         glow = g.castbarShowGlow == true,

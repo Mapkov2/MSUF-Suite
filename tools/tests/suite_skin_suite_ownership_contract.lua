@@ -89,7 +89,11 @@ available, character.enabled = true, false
 Check(not S.OwnsBlizzardSurface("characterDossier"), "a disabled character panel claimed the dossier")
 
 -- Start/stop also reconciles the DataTexts follower surface; unrelated modules never notify.
-Suite.Skin = { SurfacesChanged = function(phase) events[#events + 1] = "skin:" .. phase end }
+local changedSurfaces = {}
+Suite.Skin = { SurfacesChanged = function(phase, surface, dependent)
+    events[#events + 1] = "skin:" .. phase
+    changedSurfaces[#changedSurfaces + 1] = table.concat({surface, dependent}, "/")
+end }
 S.Config("dataTexts").enabled = false
 S.started = true
 S.NewContext = function() return { Release = function() end } end
@@ -104,6 +108,8 @@ S.Config("bags").enabled = true
 S.Apply("bags")
 Check(table.concat(events, ",") == "skin:before,enable,skin:after,skin:before,skin:after",
     "the skin did not let go before the Bags module started: " .. table.concat(events, ","))
+Check(table.concat(changedSurfaces, ",") == "bagWindows/bagBar,bagWindows/bagBar,bagBar,bagBar",
+    "the bag shell did not reconcile its dependent bag bar on both phases")
 events = {}
 S.Config("bags").enabled = false
 S.Apply("bags")
@@ -203,21 +209,49 @@ Ownership.Refresh("before")
 Check(#rebuilt == 1 and rebuilt[1] == "blizzardWindows" and Ownership.Owned("battleNetToast"),
     "the Battle.net toast was not handed to the Suite module")
 
+local asked = {}
+MSUFSuite.Suite.OwnsBlizzardSurface = function(surface)
+    asked[#asked + 1] = surface
+    return owned[surface] == true
+end
+Ownership.answers = { bagWindows = false, bagBar = false, damageMeter = false }
+owned.bagWindows, owned.bagBar, owned.damageMeter = true, true, true
+rebuilt = {}
+Ownership.Refresh("before", "bagWindows", "bagBar")
+Check(table.concat(asked, ",") == "bagWindows,bagBar" and #rebuilt == 1 and rebuilt[1] == "blizzardWindows"
+    and not Ownership.Owned("damageMeter"), "a targeted refresh queried or changed another surface")
+asked = {}
+owned.bagWindows, owned.bagBar = false, false
+Ownership.Refresh("after", "bagWindows", "bagBar")
+Check(table.concat(asked, ",") == "bagWindows,bagBar" and #rebuilt == 2
+    and not Ownership.Owned("bagWindows") and not Ownership.Owned("bagBar"),
+    "a targeted hand-back skipped the bag bar or rebuilt its shared adapter twice")
+asked = {}
+Ownership.Refresh("after", "characterDossier")
+Check(#asked == 0, "the skin queried a surface it has never observed")
+
 ContainerFrameCombinedBags, ContainerFrame6 = {}, {}
 Check(Ownership.IsBagShell(ContainerFrameCombinedBags) and Ownership.IsBagShell(ContainerFrame6)
     and not Ownership.IsBagShell({}) and not Ownership.IsBagShell(nil),
     "the bag shell frames are misidentified")
-BankFrame, ContainerFrame1 = {}, {}
+BankFrame, ContainerFrame1, ContainerFrame2, ContainerFrame7 = {}, {}, {}, {}
+ContainerFrameContainer = { ContainerFrames = { ContainerFrame1, ContainerFrame2, ContainerFrame6, ContainerFrame7 } }
+Check(not Ownership.IsBagShell(ContainerFrame2) and not Ownership.IsBagShell(ContainerFrame7),
+    "Retail incorrectly reserved the Forever standalone bag pool")
 owned.bagWindows = true
 Check(Ownership.OwnsWindowGeometry(BankFrame) and Ownership.OwnsWindowGeometry(ContainerFrameCombinedBags)
     and Ownership.OwnsWindowGeometry(ContainerFrame6) and not Ownership.OwnsWindowGeometry(ContainerFrame1),
     "the native bag geometry owners do not match the active Bags module")
 NS.Client.isForever = true
+Check(Ownership.IsBagShell(ContainerFrame2) and Ownership.IsBagShell(ContainerFrame7)
+    and not Ownership.IsBagShell(ContainerFrame1) and not Ownership.IsBagShell({}),
+    "the general skin did not yield the Forever keyring's native frame pool to Bags")
 Check(not Ownership.OwnsWindowGeometry(BankFrame) and Ownership.OwnsWindowGeometry(ContainerFrameCombinedBags)
     and Ownership.OwnsWindowGeometry(ContainerFrame6), "Forever incorrectly handed bank geometry to Bags")
 owned.bagWindows = false
 Check(not Ownership.OwnsWindowGeometry(BankFrame) and not Ownership.OwnsWindowGeometry(ContainerFrameCombinedBags)
-    and not Ownership.OwnsWindowGeometry(ContainerFrame6) and not Ownership.OwnsWindowGeometry(nil),
+    and not Ownership.OwnsWindowGeometry(ContainerFrame6) and not Ownership.OwnsWindowGeometry(ContainerFrame2)
+    and not Ownership.OwnsWindowGeometry(ContainerFrame7) and not Ownership.OwnsWindowGeometry(nil),
     "inactive Bags retained native window geometry")
 Check(Ownership.EntrySurface("hud-cooldown-viewers") == "cooldownViewers"
     and Ownership.EntrySurface("hud-bag-bar") == "bagBar"

@@ -2,13 +2,25 @@ local _, NS = ...
 
 -- Settings builds keybinding scripts in pooled rows. Group Finder, SocialUI
 -- and Communities can run restricted operations during native updates.
+-- DamageMeter's session and source lists can initialize secret rows while scrolling.
 -- Lua ScrollController setters write native fields from skin execution.
 -- Keep that state native and ease only the rendered content, with finite C
 -- animations and external ownership, as the legacy scroll renderer does.
 local NativeList = { states = setmetatable({}, { __mode = "k" }), targets = {}, owners = {}, active = {} }
+local function ForeverQuestPane()
+    if NS.Client.isForever and NS.Safety.Public(QuestMapFrame) then return QuestMapFrame end
+end
+
+local function InForeverQuestPane(target)
+    local pane = ForeverQuestPane()
+    return pane ~= nil and NS.AdapterKit.IsDescendantOf(target, pane)
+end
+
 do
 local Safety = NS.Safety
-local nativeRoots = { LFGListFrame = true, LFGParentFrame = true, SocialUIFrame = true, CommunitiesFrame = true }
+local nativeRoots = {
+    LFGListFrame = true, LFGParentFrame = true, SocialUIFrame = true, CommunitiesFrame = true, DamageMeter = true,
+}
 
 function NativeList.IsTarget(target)
     local panel = SettingsPanel
@@ -17,7 +29,9 @@ function NativeList.IsTarget(target)
     if target == Safety.Field(settings, "ScrollBox") or target == Safety.Field(categories, "ScrollBox") then
         return true
     end
+    local questPane = ForeverQuestPane()
     for _ = 1, 16 do
+        if questPane and target == questPane then return true end
         local name = Safety.Read(target, "GetName")
         if type(name) == "string" and nativeRoots[name] then return true end
         target = Safety.Read(target, "GetParent")
@@ -46,6 +60,17 @@ local function Finished(group)
     if group.owner.group == group then NativeList.active[group.owner] = nil end
 end
 
+local function PrepareMotion(state, child)
+    Reset(state)
+    state.child = child
+    state.group = child:CreateAnimationGroup()
+    state.group.owner = state
+    state.group:SetScript("OnFinished", Finished)
+    state.move = state.group:CreateAnimation("Translation")
+    state.move:SetDuration(0.11)
+    state.move:SetSmoothing("OUT")
+end
+
 local function Scrolled(state, percentage, fraction)
     if not Enabled(state) then Reset(state) return end
     local height = Safety.Read(state.box, "GetHeight")
@@ -62,14 +87,7 @@ local function Scrolled(state, percentage, fraction)
     local child = Safety.Read(state.box, "GetScrollTarget")
     if not Safety.CanCreateRegions(child) or Safety.GetProtection(child) then Reset(state) return end
     if child ~= state.child then
-        Reset(state)
-        state.child = child
-        state.group = child:CreateAnimationGroup()
-        state.group.owner = state
-        state.group:SetScript("OnFinished", Finished)
-        state.move = state.group:CreateAnimation("Translation")
-        state.move:SetDuration(0.11)
-        state.move:SetSmoothing("OUT")
+        PrepareMotion(state, child)
         state.offset = offset
     end
     state.group:Stop()
@@ -101,17 +119,19 @@ end
 
 function NativeList.Track(target, owner)
     local box, bar = Resolve(target)
-    if owner == nil or not box or not NativeList.IsTarget(box) or not Safety.CanCreateRegions(box)
+    if owner == nil or not box or not Safety.CanCreateRegions(box)
         or Safety.GetProtection(box) or not Safety.Public(bar)
         or bar ~= nil and not Safety.CanCreateRegions(bar)
         or not Safety.HasMethod(box, "RegisterCallback")
         or not Safety.HasMethod(box, "UnregisterCallback") then return false end
+    if not NativeList.IsTarget(box) and not InForeverQuestPane(bar) then return false end
     local state = NativeList.states[box]
     if not state then
-        state = { box = box, bar = bar, leases = {} }
+        state = { box = box, leases = {} }
         NativeList.states[box] = state
         box:HookScript("OnHide", Hidden)
     end
+    state.bar = bar
     local targets = NativeList.targets[target]
     if not targets then targets = {} NativeList.targets[target] = targets end
     if targets[owner] then return true end
@@ -124,6 +144,12 @@ function NativeList.Track(target, owner)
         box:RegisterCallback(ScrollBoxListMixin.Event.OnScroll, Scrolled, state)
         box:RegisterCallback(ScrollBoxListMixin.Event.OnLayout, Reset, state)
         state.registered = true
+        if not NS.IsCombatLocked() and Enabled(state) then
+            local child = Safety.Read(box, "GetScrollTarget")
+            if child ~= state.child and Safety.CanCreateRegions(child) and not Safety.GetProtection(child) then
+                PrepareMotion(state, child)
+            end
+        end
     end
     return true
 end
@@ -169,7 +195,8 @@ NS.ScrollMotion = ScrollMotion
 local Safety = NS.Safety
 local Partner
 -- These ScrollFrameTemplate pages reset their native bar synchronously after
--- replacing quest content. Never turn that reset into controller interpolation.
+-- replacing quest content. The map detail reset also precedes SetMapID, so
+-- keep that native interpolation flag under Blizzard ownership.
 local questScrollNames = {
     "QuestDetailScrollFrame", "QuestProgressScrollFrame", "QuestRewardScrollFrame",
     "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame", "QuestMapDetailsScrollFrame",
@@ -187,13 +214,22 @@ end
 
 -- The second result also excludes Forever's map-side list from legacy
 -- render easing. Its native scrollbar already owns the wheel and offsets.
-function ScrollMotion.IsQuestScroll(target)
+local function IsNamedQuestScroll(target)
     if not Safety.Public(target) or target == nil then return false end
     if IsNativeQuestList(target) then return true, true end
     for index = 1, #questScrollNames do
         if IsScrollFrame(target, questScrollNames[index]) then return true end
     end
     return false
+end
+
+-- The legacy renderer also discovers the campaign and map legend scroll frames.
+-- Keep their native scroll state intact while easing only the scroll child's art.
+function ScrollMotion.IsQuestScroll(target)
+    if not Safety.Public(target) or target == nil then return false end
+    local named, nativeOnly = IsNamedQuestScroll(target)
+    if named then return true, nativeOnly end
+    return InForeverQuestPane(target)
 end
 -- MailFrame_Show refreshes the bars before its protected reading emote.
 -- Native setters/cancellation write fields that ScrollBar:Update later reads;
@@ -568,40 +604,17 @@ Partner = function(target)
     return nil
 end
 
-function ScrollMotion.Track(target, owner, ownedPreview)
-    if owner == nil or ScrollMotion.IsQuestScroll(target) or ScrollMotion.IsMailScroll(target)
-        or not Supported(target) then return false end
-    local partner = Partner(target)
-    local groupFinder = NS.ForeverGroupFinder
-    local isActivityList = groupFinder and groupFinder.IsActivityList
-    if partner and (IsNativeQuestList(partner) or ScrollMotion.IsMailScroll(partner))
-        or isActivityList and (isActivityList(target) or isActivityList(partner)) then
-        return false
-    end
-    if NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner) then
-        return NativeList.Track(target, owner)
-    end
-    if not Flag(target) or partner and (not Supported(partner) or not Flag(partner)) then return false end
-    local targets = ScrollMotion.targets[target]
-    if not targets then targets = {} ScrollMotion.targets[target] = targets end
-    local lease = targets[owner]
-    if not lease then
-        lease = { target = target, owner = owner, controllers = {}, ownedPreview = ownedPreview == true }
-        targets[owner] = lease
-    end
-    local owned = ScrollMotion.owners[owner]
-    if not owned then owned = {} ScrollMotion.owners[owner] = owned end
-    owned[lease] = true
-    local applied = AddController(lease, target)
-    if partner then AddController(lease, partner) end
-    return applied
-end
-
-function ScrollMotion.Release(target, owner)
-    NativeList.Release(target, owner)
+local function ReleaseControllerLease(target, owner)
     local targets = ScrollMotion.targets[target]
     local lease = targets and targets[owner]
     if not lease then return end
+    targets[owner] = nil
+    if not next(targets) then ScrollMotion.targets[target] = nil end
+    local owned = ScrollMotion.owners[owner]
+    if owned then
+        owned[lease] = nil
+        if not next(owned) then ScrollMotion.owners[owner] = nil end
+    end
     for index = #lease.controllers, 1, -1 do
         local state = lease.controllers[index]
         state.leases[lease], lease.controllers[index] = nil, nil
@@ -619,11 +632,41 @@ function ScrollMotion.Release(target, owner)
             Restore(state)
         end
     end
-    local owned = ScrollMotion.owners[owner]
-    if owned then
-        owned[lease] = nil
-        if not next(owned) then ScrollMotion.owners[owner] = nil end
+end
+
+function ScrollMotion.Track(target, owner, ownedPreview)
+    if owner == nil or IsNamedQuestScroll(target) or ScrollMotion.IsMailScroll(target)
+        or not Supported(target) then return false end
+    local partner = Partner(target)
+    local groupFinder = NS.ForeverGroupFinder
+    local isActivityList = groupFinder and groupFinder.IsActivityList
+    if partner and NS.Client.isForever and (IsNamedQuestScroll(partner) or ScrollMotion.IsMailScroll(partner))
+        or isActivityList and (isActivityList(target) or isActivityList(partner)) then
+        return false
     end
+    if NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner) then
+        return NativeList.Track(target, owner)
+    end
+    if not Flag(target) or partner and (not Supported(partner) or not Flag(partner)) then return false end
+    local targets = ScrollMotion.targets[target]
+    if not targets then targets = {} ScrollMotion.targets[target] = targets end
+    local lease = targets[owner]
+    local newLease = lease == nil
+    if newLease then
+        lease = { target = target, owner = owner, controllers = {}, ownedPreview = ownedPreview == true }
+        targets[owner] = lease
+    end
+    local owned = ScrollMotion.owners[owner]
+    if not owned then owned = {} ScrollMotion.owners[owner] = owned end
+    owned[lease] = true
+    if AddController(lease, target) and (not partner or AddController(lease, partner)) then return true end
+    if newLease then ReleaseControllerLease(target, owner) end
+    return false
+end
+
+function ScrollMotion.Release(target, owner)
+    NativeList.Release(target, owner)
+    ReleaseControllerLease(target, owner)
 end
 
 function ScrollMotion.ReleaseOwner(owner)

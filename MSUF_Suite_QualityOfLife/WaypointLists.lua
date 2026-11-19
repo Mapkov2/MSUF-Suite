@@ -20,11 +20,17 @@ local function Rows()
     for i, point in ipairs(Store() or {}) do
         local info = C_Map.GetMapInfo(point.map)
         local zone = S.Public(info) and type(info) == "table" and S.PublicText(info.name) or S.Text("Unknown map")
-        rows[#rows + 1] = { key = i, point = point, label = point.list .. " · " .. point.name,
-            detail = S.Text("%s · %.1f, %.1f"):format(zone, point.x * 100, point.y * 100) }
+        rows[#rows + 1] = { key = i, point = point, label = point.list .. " - " .. point.name,
+            detail = S.Text("%s · %.1f, %.1f", true):format(zone, point.x * 100, point.y * 100) }
     end
     return rows
 end
+
+local function PointsChanged()
+    S.ToolListWindow.Refresh(M)
+    EventRegistry:TriggerEvent("MSUF_Suite.SavedWaypointsChanged")
+end
+
 local function SavePoint(point)
     S.ToolListWindow.Edit(M, { title = "Save waypoint", label = "Name this place.", text = point.name or "", maxBytes = 120,
         onSave = function(_, text)
@@ -40,7 +46,7 @@ local function SavePoint(point)
                     if #points >= 100 then return false, S.Text("Keep at most 100 saved waypoints.") end
                     point.list, M.lastList = list, list
                     points[#points + 1] = point
-                    S.ToolListWindow.Refresh(M)
+                    PointsChanged()
                     return true
                 end })
             return true
@@ -90,7 +96,7 @@ local function Remove(_, row)
         callback = function()
             if NS.DB ~= profile or NS.InCombat() or not M.active then return end
             for i, p in ipairs(Store() or {}) do if p == point then table.remove(Store(), i) break end end
-            S.ToolListWindow.Refresh(M)
+            PointsChanged()
         end })
 end
 function M:Open()

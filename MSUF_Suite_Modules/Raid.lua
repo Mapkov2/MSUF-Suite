@@ -14,14 +14,14 @@ local Dispatch, Finish = S.Dispatch, NS.Finish
 local Clock = S.ClockText
 local RaidRecords = S.RaidRecords
 local Tr = S.Text
-local DOT = "  \194\183  "
+local SEPARATOR = "  -  "
 -- Translated once; the view repaints with every event of a pull.
 local L = {
     lastPull = Tr("LAST PULL  %s"), boss = Tr("Boss %d"), active = Tr("ACTIVE BOSSES  %s"),
     hpUnavailable = Tr("HP unavailable"), defeated = Tr("%d defeated"), bestPull = Tr("BEST PULL  %s"),
     waiting = Tr("Waiting for raid encounter"), phase = Tr("PHASE  %s"), bestPhase = Tr("BEST PULL  PHASE %s"),
     fastest = Tr("FASTEST KILL  %s"), encounter = Tr("Raid encounter"), difficulty = Tr("Difficulty %d"),
-    unavailable = Tr("RESULT UNAVAILABLE"), kill = Tr("KILL"), wipe = Tr("WIPE \194\183 %s"),
+    unavailable = Tr("RESULT UNAVAILABLE"), kill = Tr("KILL"), wipe = Tr("WIPE \194\183 %s", true),
 }
 -- 12.1 has five boss unit tokens (UnitTokenType Boss1-Boss5). Live health
 -- listens to exactly these instead of every raid member's UNIT_HEALTH.
@@ -51,78 +51,56 @@ local function Line(parent, size, y)
     return line
 end
 
--- The active boss row while a pull runs, else the last result.
-local function CurrentText(view)
-    if not view.pull then return L.lastPull:format(view.lastResult or "--") end
-    if view.liveText then return view.liveText end
-    local names = {}
-    for i = 1, 10 do
-        local boss = view.live[i]
-        if boss then
-            names[#names + 1] = (boss.name or L.boss:format(i))
-                .. (boss.percent and string.format(" %.1f%%", boss.percent) or "")
-        end
-    end
-    view.liveText = L.active:format(#names > 0 and table.concat(names, " \194\183 ") or L.hpUnavailable)
-    return view.liveText
-end
-
--- While combat keeps a boss's health secret, the row becomes a format: the
--- readable parts are written into it and each secret percentage stays an
--- argument for SetFormattedText, a C sink. The format depends only on the
--- names, which bosses read secret and the readable percents; ReadBoss drops
--- it when one of those changes (view.secretFormat), so a paint in a secret
--- fight only collects the secret percentages.
+-- Separately cache the public format and the slots that supply live secret args.
 local secretArgs = {}
-local function BuildSecretFormat(view)
-    local parts = {}
-    for i = 1, 10 do
-        local boss = view.live[i]
-        if boss then
-            local name = (boss.name or L.boss:format(i)):gsub("%%", "%%%%")
-            if boss.secret then
-                parts[#parts + 1] = name .. " %.1f%%"
-            else
-                parts[#parts + 1] = name .. (boss.percent and string.format(" %.1f%%%%", boss.percent) or "")
-            end
-        end
-    end
-    return L.active:format(table.concat(parts, " \194\183 "))
-end
-
-local function SecretFormat(view)
+local function SecretSlots(view)
+    local slots = view.secretSlots
+    if not view.secretSlotsDirty then return slots end
     local count = 0
     for i = 1, 10 do
         local boss = view.live[i]
         if boss and boss.secret then
             count = count + 1
-            secretArgs[count] = boss.secretPercent
+            slots[count] = i
         end
     end
-    local format = view.secretFormat
-    if not format then
-        format = BuildSecretFormat(view)
-        view.secretFormat = format
-    end
-    return format, count
+    for i = count + 1, #slots do slots[i] = nil end
+    view.secretSlotsDirty = false
+    return slots
 end
 
-local function AnySecret(view)
+local function BuildLiveText(view, secret)
+    local parts = {}
     for i = 1, 10 do
         local boss = view.live[i]
-        if boss and boss.secret then return true end
+        if boss then
+            local label = secret and boss.escapedLabel or boss.label
+            if boss.secret then
+                label = label .. " %.1f%%"
+            elseif boss.percent then
+                label = label .. string.format(secret and " %.1f%%%%" or " %.1f%%", boss.percent)
+            end
+            parts[#parts + 1] = label
+        end
     end
-    return false
+    return L.active:format(#parts > 0 and table.concat(parts, " - ") or L.hpUnavailable)
 end
 
 local function PaintCurrent(view)
-    if not view.pull or not AnySecret(view) then
-        SetText(view.current, CurrentText(view))
+    if not view.pull then
+        SetText(view.current, L.lastPull:format(view.lastResult or "--"))
         return
     end
-    local format, count = SecretFormat(view)
+    local slots = SecretSlots(view)
+    local count = #slots
+    if not view.liveText then view.liveText = BuildLiveText(view, count > 0) end
+    if count == 0 then
+        SetText(view.current, view.liveText)
+        return
+    end
+    for i = 1, count do secretArgs[i] = view.live[slots[i]].secretPercent end
     view.current.cachedText = nil
-    view.current:SetFormattedText(format, unpack(secretArgs, 1, count))
+    view.current:SetFormattedText(view.liveText, unpack(secretArgs, 1, count))
     for i = 1, count do secretArgs[i] = nil end
 end
 
@@ -140,7 +118,7 @@ local function Create(owner)
     panel:SetPoint("TOPLEFT", owner.content, "TOPLEFT", 0, 0)
     panel:SetPoint("TOPRIGHT", owner.content, "TOPRIGHT", 0, 0)
     panel:SetHeight(230)
-    local view = { frame = panel, height = 230, live = {}, liveDirty = {} }
+    local view = { frame = panel, height = 230, live = {}, liveDirty = {}, secretSlots = {} }
     view.name = Line(panel, 16, -5)
     view.elapsed = Line(panel, 23, -34)
     view.phase = Line(panel, 13, -72)
@@ -163,7 +141,7 @@ end
 
 local function ProgressText(best)
     local boss = best.boss and (best.boss .. "  ") or ""
-    local progress = best.defeated > 0 and (L.defeated:format(best.defeated) .. DOT) or ""
+    local progress = best.defeated > 0 and (L.defeated:format(best.defeated) .. SEPARATOR) or ""
     return progress .. boss .. string.format("%.1f%%", best.remaining)
 end
 
@@ -182,7 +160,7 @@ local function Paint(owner)
         SetText(view.elapsed, view.pull and Clock(GetTime() - view.pull.started)
             or view.lastTime and Clock(view.lastTime) or "--:--")
     end
-    local phase = L.phase:format(view.stage and (view.stage .. (view.stageSource and (DOT .. view.stageSource) or ""))
+    local phase = L.phase:format(view.stage and (view.stage .. (view.stageSource and (SEPARATOR .. view.stageSource) or ""))
         or "--")
     local phases = record and record.bestPhases
     local bestPhase = phases and (view.stageSource and phases[view.stageSource]
@@ -192,10 +170,10 @@ local function Paint(owner)
     if bestPhase then
         local best = L.bestPhase:format(bestPhase.stage)
         if bestPhase.defeated and bestPhase.defeated > 0 then
-            best = best .. " \194\183 " .. L.defeated:format(bestPhase.defeated)
+            best = best .. " - " .. L.defeated:format(bestPhase.defeated)
         end
         if bestPhase.remaining then
-            best = best .. " \194\183 " .. (bestPhase.boss and (bestPhase.boss .. " ") or "")
+            best = best .. " - " .. (bestPhase.boss and (bestPhase.boss .. " ") or "")
                 .. string.format("%.1f%%", bestPhase.remaining)
         end
         SetText(view.best, best)
@@ -322,11 +300,31 @@ local function RememberEncounter(view, data)
     if data then data.raidLastEncounter = selected else view.pendingEncounter = selected end
 end
 
+-- Probe and prepare an inactive native writer ahead of an encounter whenever
+-- the view is already available. A view first discovered in combat still binds
+-- when its clock starts.
+local function PrepareClock(view)
+    if view and view.clock then return true end
+    local format = S.ElapsedClock()
+    if not format or not view then return false end
+    view.clock, view.clockDuration = C_DurationUtil.CreateDurationTextBinding(), C_DurationUtil.CreateDuration()
+    view.clock:SetEnabled(false)
+    view.clock:SetFontString(view.elapsed)
+    view.clock:SetTextFormat("{}", format)
+    view.clock:SetUpdateInterval(1)
+    return true
+end
+
+function H.PrepareClock(owner)
+    if owner.config.showRaid and not NS.InCombat() then PrepareClock(owner.raid) end
+end
+
 -- Records belong to the character (MSUF_Suite/Core/CharacterData.lua); the
 -- one-time move from profiles also converted old 0..1 wipe fractions.
 function H.Show(owner)
     if not H.Detect(owner) then return false end
     local view = Create(owner)
+    H.PrepareClock(owner)
     local data, changed = BindRecords(view)
     RestoreEncounter(owner, view, data, changed)
     owner.raidActive = true
@@ -341,16 +339,9 @@ end
 -- runs per second: every other line of the panel is painted by its event.
 -- Otherwise it ticks once a second on the owner's context (ctx:Ticker).
 local function StartClock(owner, view)
-    local format = S.ElapsedClock()
-    if not format then
+    if not PrepareClock(view) then
         owner.context:Ticker(1, H.Tick)
         return
-    end
-    if not view.clock then
-        view.clock, view.clockDuration = C_DurationUtil.CreateDurationTextBinding(), C_DurationUtil.CreateDuration()
-        view.clock:SetFontString(view.elapsed)
-        view.clock:SetTextFormat("{}", format)
-        view.clock:SetUpdateInterval(1)
     end
     view.clockDuration:SetTimeFromStart(view.pull.started, S.CLOCK_SPAN)
     view.clock:SetDuration(view.clockDuration)
@@ -380,7 +371,7 @@ function H.Stop(owner)
     view.pull = nil
     ClearEncounter(view)
     view.live = {}
-    view.liveText, view.secretFormat = nil, nil
+    view.liveText, view.secretSlotsDirty = nil, true
     for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
     view.frame:Hide()
     owner.raidActive = false
@@ -405,7 +396,7 @@ local function ReadBoss(view, index, unit, keepMissing)
         if keepMissing then return false end
         if not before then return false end
         view.live[index] = nil
-        view.liveText, view.secretFormat = nil, nil
+        view.liveText, view.secretSlotsDirty = nil, true
         return true
     end
     local name = Text(UnitName(unit))
@@ -418,15 +409,25 @@ local function ReadBoss(view, index, unit, keepMissing)
     if not name and not percent and not secret then
         if not before then return false end
         view.live[index] = nil
-        view.secretFormat = nil
-    elseif before then
-        if before.name ~= name or before.percent ~= percent or before.secret ~= secret then view.secretFormat = nil end
-        before.name, before.percent, before.secret, before.secretPercent = name, percent, secret, secretPercent
-    else
-        view.live[index] = { name = name, percent = percent, secret = secret, secretPercent = secretPercent }
-        view.secretFormat = nil
+        view.liveText, view.secretSlotsDirty = nil, true
+        return true
     end
-    view.liveText = nil
+    local boss = before
+    if not boss then
+        boss = {}
+        view.live[index] = boss
+    end
+    if not boss.label or boss.name ~= name then
+        local label = name or L.boss:format(index)
+        boss.label, boss.escapedLabel = label, label:gsub("%%", "%%%%")
+        view.liveText = nil
+    end
+    if boss.secret ~= secret then
+        view.liveText, view.secretSlotsDirty = nil, true
+    elseif boss.percent ~= percent then
+        view.liveText = nil
+    end
+    boss.name, boss.percent, boss.secret, boss.secretPercent = name, percent, secret, secretPercent
     return true
 end
 
@@ -583,7 +584,7 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     view.lastTime, view.lastResult = nil, nil
     view.stage, view.stageStep, view.stageSource = nil, nil, nil
     view.live = {}
-    view.liveText, view.secretFormat = nil, nil
+    view.liveText, view.secretSlotsDirty = nil, true
     for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
     view.pull = { started = GetTime() }
     ReadInitialStage(owner)

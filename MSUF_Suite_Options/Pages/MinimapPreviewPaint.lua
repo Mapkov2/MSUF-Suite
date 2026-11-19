@@ -43,7 +43,7 @@ function Data.Icons()
         { "externalEvent", "External event", "elements", false, "blizzard", nil, "Interface\\Icons\\Spell_nature_timestop", "ExternalEvent" },
         { "difficulty", "Difficulty", "elements", "showDifficulty", "blizzard", nil, "Interface\\GroupFrame\\UI-Group-LeaderIcon" },
         { "folio", "Omnium Folio", "landing", "showLanding", "folio", "GarrLanding-MinimapIcon-Alliance-Up", "Interface\\Icons\\INV_Misc_Book_09" },
-        { "drawer", "Addon drawer", "addons", "collectButtons", "addons", nil, "Interface\\Buttons\\UI-OptionsButton" },
+        { "drawer", "Addon drawer", "addons", "collectButtons", "addons" },
     }
     if not Suite.Client.isForever then
         ICONS[#ICONS + 1] = { "specialization", "Minimap specialization menu", "specialization", "specButton",
@@ -539,12 +539,9 @@ local function PaintDrawer(ui, config, item, size, source, index)
         for _, part in ipairs(button.previewDrawerArt) do part:Hide() end
     end
     if not copied then
-        local r, g, b = P.RGB(config.borderColor)
-        if config.borderClassColor then r, g, b = PlayerClassColor(r, g, b) end
-        Suite.MinimapStyle.PaintDrawerToggle(button, item.backdrop, button.previewDots, config.elementSize, ui.art.scale, r, g, b)
+        Suite.MinimapStyle.PaintDrawerToggle(button.previewIcon, config)
     end
-    item.backdrop:SetShown(not copied)
-    for _, part in ipairs(button.previewDots) do part:SetShown(not copied) end
+    button.previewIcon:SetShown(not copied)
     RowPosition(button, ui.map, config.drawerRow, index, config, ui.art.scale, "drawer")
 end
 

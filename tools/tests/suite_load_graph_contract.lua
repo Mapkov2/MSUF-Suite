@@ -11,6 +11,7 @@ Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 },
     ItemQuality = { Poor = 0, Common = 1, Uncommon = 2 }, BagIndex = { Backpack = 0 } }
 Constants = { InventoryConstants = { NumBagSlots = 4 } }
 C_SpellBook = {}
+EventRegistry = { RegisterCallback = function() end }
 local frames, loads, featureLoads, optionLoads, loaded = {}, 0, 0, 0, {}
 SlashCmdList = {}
 MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil
@@ -152,6 +153,10 @@ do
     owner.Suite.Config("objectives").enabled = false
     owner.Suite.Config("runSummary").enabled = false
     owner.Suite.Config("announcements").enabled = false
+    assert(owner.Suite.Availability("floatingCombatText") and owner.Suite.Config("floatingCombatText").enabled,
+        "Floating combat text must be available and enabled by default on both clients")
+    -- The combat text contract supplies FontStrings and native animations.
+    owner.Suite.Config("floatingCombatText").enabled = false
     -- Secure ActionBars and the XP bar have their own contract fixtures.
     if flavor == "Forever" then
         assert(owner.Suite.Config("glimmer").enabled, "Forever Glimmer must start enabled")
@@ -159,6 +164,9 @@ do
         owner.Suite.Config("actionbars").enabled = false
     end
     owner.Suite.Config("xpBar").enabled = false
+    -- Aura skins wait for Blizzard's aura addon in this lightweight fixture.
+    -- Their listener ownership is exercised by the native aura contract.
+    owner.Suite.Config("playerAuraSkins").enabled = false
 end
 frames[1]:callback("PLAYER_LOGIN")
 frames[2]:callback("PLAYER_ENTERING_WORLD", true, false)

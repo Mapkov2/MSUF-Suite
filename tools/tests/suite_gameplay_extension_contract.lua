@@ -25,7 +25,7 @@ env.C_SpecializationInfo.GetSpecialization = env.C_SpecializationInfo.GetSpecial
 env.C_EventUtils = env.C_EventUtils or {}
 local isEventValid = env.C_EventUtils.IsEventValid
 env.C_EventUtils.IsEventValid = function(event)
-    if event == "UNIT_COMBAT" then return flavor == "Forever" end
+    if event == "UNIT_COMBAT" then return true end
     return not isEventValid or isEventValid(event)
 end
 local getCVar = env.C_CVar.GetCVar
@@ -159,10 +159,13 @@ local key = "msufsuite.actionTracker.enabled"
 Check(rows[key], "combat feature missing from cold search")
 local floatingTextKey = "msufsuite.floatingCombatText.enabled"
 local floatingTextAvailable, floatingTextReason = S.Availability("floatingCombatText")
-Check(floatingTextAvailable == (flavor == "Forever"), tostring(floatingTextReason))
+Check(floatingTextAvailable, tostring(floatingTextReason))
 Check((rows[floatingTextKey] ~= nil) == floatingTextAvailable, "wrong floating combat text search visibility")
 Check((rows["msufsuite.floatingCombatText.font"] ~= nil) == floatingTextAvailable,
     "floating combat text font picker is missing from Gameplay search")
+for _, setting in ipairs({ "hitSide", "avoidSide", "scrollStyle", "showXP" }) do
+    Check(rows["msufsuite.floatingCombatText." .. setting], "scrolling combat text setting missing from Gameplay search")
+end
 local original = { pageKey = "suite_qualityOfLife", settingKey = key,
     sectionId = "suite_qualityOfLife_actionTracker_action_tracker" }
 local page, target = P.GameplayPage.Resolve(original.pageKey, original)

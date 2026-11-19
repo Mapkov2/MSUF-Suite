@@ -11,6 +11,7 @@ local function Texture()
     function texture:GetAlpha() return self.alpha end
     function texture:SetAlpha(alpha) self.alpha = alpha end
     function texture:ClearAllPoints() end
+    function texture:SetColorTexture(r, g, b, a) self.color = {r, g, b, a} end
     function texture:SetPoint() end
     function texture:SetHeight() end
     function texture:SetWidth() end
@@ -73,11 +74,12 @@ local now = 0
 GetTime = function() return now end
 C_Timer = { NewTimer = function() error("bubble discovery used a timer") end, After = function() error("bubble discovery used a timer") end }
 local scanner
+local fontReads = 0
 local S = {
     Public = function() return true end,
     PublicText = function(v) return type(v) == "string" and v ~= "" and v or nil end,
     Finite = function(v) return type(v) == "number" end,
-    ResolveFont = function() return "Custom" end, GlobalFontPath = function() return "Custom" end,
+    ResolveFont = function() fontReads = fontReads + 1; return "Custom" end, GlobalFontPath = function() return "Custom" end,
     RGB = function(hex) return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255 end,
     RestoreCVar = function(_, name) restoredCVars[name] = true end,
     Queue = function() error("bubbles queued the module for combat end") end,
@@ -218,6 +220,7 @@ Hide(spoken)
 -- A source with its own look: its own text color, size, spacing and width.
 config.bubbleOwnCreature, config.bubbleTextCreature = true, "ff0000"
 config.bubbleSizeCreature, config.bubbleWidthCreature = 22, 150
+C.BubblesRefresh(M)
 local npc = Bubble()
 Show(npc, "You dare?")
 Speech("CHAT_MSG_MONSTER_YELL", "You dare?")
@@ -262,7 +265,7 @@ Frames(1)
 table.remove(live)
 -- A full set of heard lines (48 found within their time) stops discovery;
 -- once they expired, the next line is still heard and styled.
-local crowd = {}
+local crowd, previouslyResolved = {}, fontReads
 for i = 1, 48 do
     crowd[i] = Bubble()
     Show(crowd[i], "crowd " .. i)
@@ -270,6 +273,8 @@ for i = 1, 48 do
 end
 Frames(0.05)
 assert(not scanner.shown and crowd[48].String.font == "Custom", "the crowd's bubbles were not found at once")
+assert(fontReads == previouslyResolved, "new bubbles resolved their source font again")
+
 now = now + 1
 local fresh = Bubble()
 Show(fresh, "after the crowd")

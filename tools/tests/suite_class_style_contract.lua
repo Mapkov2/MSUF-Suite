@@ -27,13 +27,9 @@ local function Session(class, profile, forever)
         colorCalls = colorCalls + 1
         return colors[token]
     end }
-    local ns = Support.Load(root, "MSUF_Suite", {}, "Core/Suite.lua")
-    assert(loadfile(root .. "/MSUF_Suite/Core/ProfileIO.lua"))("MSUF_Suite", ns)
-    assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", ns)
-    assert(loadfile(root .. "/MSUF_Suite/Core/NameplateHostSettings.lua"))("MSUF_Suite", ns)
+    local ns = Support.Load(root, "MSUF_Suite", {}, "Core/ProfileIO.lua")
     ns.DB = profile or { suite = { schema = 1, revision = ns.Suite.MigrationRevision, modules = {} } }
-    -- Keep runtime frames outside this catalog/controller contract.
-    ns.Suite.Apply = function() end
+    -- The real controller runs against the missing runtime addons modeled by C_AddOns.
     ns.Suite.Start()
     return ns
 end

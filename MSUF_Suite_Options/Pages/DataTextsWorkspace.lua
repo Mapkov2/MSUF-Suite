@@ -318,7 +318,14 @@ end
 local function Navigation(ctx, builder, bars, choose, selection)
     local navigation = builder:Section(Tr("DataTexts"), 82)
     if navigation.title then navigation.title:Hide() end
-    P.Text(navigation, "Basic", 16, -12, 160, T.colors.text, "heading")
+    local shared = T.RoleButton(navigation, Tr("All bars"), "primary", 146, ACTION_HEIGHT)
+    shared:SetPoint("TOPLEFT", navigation, "TOPLEFT", 16, -8)
+    shared:SetScript("OnClick", function()
+        if P.Combat() then return end
+        choose("shared")
+        PageScroll(0)
+    end)
+    HM.SkipHistoryCheckpoint(shared)
     local toggle = W.SwitchAt(navigation, Tr("Enable"), 0, 0, 68, "LEFT")
     toggle:ClearAllPoints()
     toggle:SetPoint("TOPRIGHT", navigation, "TOPRIGHT", -16, -12)
@@ -354,6 +361,7 @@ local function Navigation(ctx, builder, bars, choose, selection)
         local editable = not P.Combat()
         W.SetControlEnabled(toggle, editable)
         W.SetControlEnabled(picker, editable)
+        shared:SetEnabled(editable)
         add:SetEnabled(editable and #bars < P.Suite.DataTextBarLimit)
         delete:SetEnabled(editable and #bars > 0)
     end)
@@ -365,7 +373,7 @@ local function Navigation(ctx, builder, bars, choose, selection)
     navigation:HookScript("OnSizeChanged", Fit)
     navigation:HookScript("OnShow", Fit)
     Fit()
-    return navigation, { add = add, delete = delete, enabled = toggle }
+    return navigation, { shared = shared, add = add, delete = delete, enabled = toggle }
 end
 
 function Page.Build(ctx, builder, shared)
@@ -406,6 +414,7 @@ function Page.Build(ctx, builder, shared)
         if view.select then view.select(mode, slot) end
         selection = (type(key) == "number" or key == "shared") and key or nil
         ctx.dataTextBarSelector:SetValue(selection)
+        buttons.shared:SetActive(key == "shared")
         if entering then PageScroll(0) end
         M.RefreshPageHistoryNav()
         return view

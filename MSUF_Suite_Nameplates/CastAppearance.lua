@@ -89,7 +89,7 @@ local function PaintArtwork(cast, state, settings)
         art.name:Hide()
         state.art = art
     end
-    art.border:Show()
+    art.border:SetShown(settings.slanted ~= true)
     -- A border alone follows the cast by its anchors and uses no dimension.
     if settings.artworkNamePanel == false then
         art.name:Hide()

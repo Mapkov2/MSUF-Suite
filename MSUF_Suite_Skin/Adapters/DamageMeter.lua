@@ -223,6 +223,9 @@ function DamageMeterSkin.Disable(_, owner)
     for scrollBox, event in pairs(state.scrollBoxes) do
         Kit.UnregisterRowCallback(scrollBox, event, state)
     end
+    -- RegisterRowCallback tracks motion with this state, not the adapter ID.
+    NS.ScrollMotion.ReleaseOwner(state)
+    NS.ResultMotion.ReleaseOwner(state)
     Kit.HideSurfaces(state)
     NS.WindowActionSkin.DisableOwner(owner)
     NS.Checkmarks.UntrackOwner(owner)

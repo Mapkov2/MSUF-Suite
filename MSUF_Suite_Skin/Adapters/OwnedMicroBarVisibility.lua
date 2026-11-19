@@ -25,6 +25,7 @@ local INJURED_OVERRIDES = {
 }
 
 local owner, bar, healthGate, healthCurve
+local showWhenInjured = false
 local visibilityDriver, editSession, hoverTimer
 local nativeEditSession, nativeCallbacks = false, false
 local nativeRegistry = EventRegistry
@@ -103,9 +104,9 @@ local function InHousing()
     return C_Housing.IsInsideHouseOrPlot() == true
 end
 
-function Visibility.RefreshHealthGate(settings)
+function Visibility.RefreshHealthGate()
     if not healthGate then return end
-    if editSession or nativeEditSession or not (settings and settings.loadShowWhenInjured) then
+    if editSession or nativeEditSession or not showWhenInjured then
         healthGate:SetAlpha(1)
         return
     end
@@ -195,7 +196,8 @@ function Visibility.Apply(settings)
     elseif not driver then
         bar:Show()
     end
-    RefreshHealthGate(settings)
+    showWhenInjured = not not (settings and settings.loadShowWhenInjured)
+    RefreshHealthGate()
     return true
 end
 
@@ -212,6 +214,7 @@ end
 function Visibility.Reset()
     CancelHoverTimer()
     Visibility.ClearDriver()
+    showWhenInjured = false
     editSession = false
     nativeEditSession = false
     if nativeCallbacks then

@@ -105,7 +105,7 @@ local function Bosses(ui, y)
     y = y - size - 9
     for index = 1, 3 do
         local done = index <= #BOSS_TIMES
-        DrawText(ui, (done and "|A:common-icon-checkmark:12:12|a  " or "\194\183  ") .. Tr("Boss %d"):format(index),
+        DrawText(ui, (done and "|A:common-icon-checkmark:12:12|a  " or "-  ") .. Tr("Boss %d"):format(index),
             11, y, width - 22, size, text)
         local split = done and Clock(BOSS_TIMES[index]) or ""
         if done and paced then split = split .. "  " .. (BOSS_PACE[index] >= 0 and "+" or "-") .. Clock(math.abs(BOSS_PACE[index])) end
@@ -132,9 +132,9 @@ V.Views.raid = { title = "RAID", count = "Mythic", draw = function(ui, y)
     local rows = {
         { Tr("Example Boss"), c.entrySize, text },
         { "4:34", math.max(23, c.titleSize + 5), text },
-        { Tr("PHASE  %s"):format("2  \194\183  BigWigs"), c.objectiveSize, muted },
+        { Tr("PHASE  %s"):format("2  -  BigWigs"), c.objectiveSize, muted },
         { Tr("ACTIVE BOSSES  %s"):format(Tr("Example Boss") .. " 41.0%"), c.objectiveSize, muted },
-        { Tr("BEST PULL  %s"):format(Tr("%d defeated"):format(1) .. "  \194\183  12.3%"), c.objectiveSize, text },
+        { Tr("BEST PULL  %s"):format(Tr("%d defeated"):format(1) .. "  -  12.3%"), c.objectiveSize, text },
         { Tr("FASTEST KILL  %s"):format("4:12"), c.objectiveSize, muted },
     }
     for _, row in ipairs(rows) do

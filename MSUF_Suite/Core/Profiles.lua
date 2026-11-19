@@ -107,12 +107,13 @@ function P.SyncActive(name)
         if DB.IsProfileName(previousName) then installation.frameProfileName = previousName end
     end
     if DB.GetActiveProfileName() ~= name then
-        if not DB.GetProfile(name) then
+        if not DB.HasProfile(name) then
             local base, why = Suite.ProfileVariants.BaseProfile(DB.GetActiveProfileName())
             if not base then return false, why end
             if not DB.CreateFromProfile(name, base) then return false end
         end
-        if not DB.Activate(name) then return false end
+        local ok, reason = DB.Activate(name)
+        if not ok then return false, reason end
     end
     local skin = SkinEngine()
     if skin then
@@ -302,17 +303,17 @@ end
 local Lifecycle = {}
 
 function Lifecycle.create(source, _, skin)
-    if DB.GetProfile(source) or skin and skin.Database.GetProfile(source) then return false, "profile-exists" end
-    if not DB.GetProfile(source) then DB.Create(source, false) end
+    if DB.HasProfile(source) or skin and skin.Database.GetProfile(source) then return false, "profile-exists" end
+    if not DB.HasProfile(source) then DB.Create(source, false) end
     if skin and not skin.Database.GetProfile(source) then skin.Database.CreateProfile(source, false) end
     return true
 end
 
 function Lifecycle.reset(source, _, skin)
-    if DB.GetProfile(source) then
+    if DB.HasProfile(source) then
         local profile = DB.CreateFactoryProfile()
         Suite.Suite.Normalize(profile)
-        Suite.RootDB.profiles[source] = profile
+        DB.StoreProfile(source, profile)
         if DB.GetActiveProfileName() == source then DB.Activate(source) end
     end
     if skin and skin.Defaults then
@@ -325,12 +326,12 @@ function Lifecycle.reset(source, _, skin)
 end
 
 function Lifecycle.copy(source, target, skin)
-    if DB.GetProfile(target) or skin and skin.Database.GetProfile(target) then return false, "profile-exists" end
-    if not DB.GetProfile(target) then
+    if DB.HasProfile(target) or skin and skin.Database.GetProfile(target) then return false, "profile-exists" end
+    if not DB.HasProfile(target) then
         -- An MSUF profile from before the Suite was installed has no Suite
         -- twin yet; its copy starts from the factory like a new profile.
         local ok, why
-        if DB.GetProfile(source) then
+        if DB.HasProfile(source) then
             local original
             original, why = Suite.ProfileVariants.BaseProfile(source)
             if not original then return false, why end
@@ -349,18 +350,18 @@ function Lifecycle.copy(source, target, skin)
 end
 
 function Lifecycle.rename(source, target, skin)
-    local original = DB.GetProfile(source)
+    local original = Suite.RootDB.profiles[source]
     -- MSUF asks before it renames its own profile, so a Suite or skin profile
     -- that already has the new name is refused before anything moves, also
     -- when that store has no profile under the old name: no store keeps the
     -- old settings behind, and the renamed profile never activates another
     -- profile's. Older MSUF builds rename first and ignore the answer; they
     -- keep the previous best-effort move.
-    if Suite.HostBridge.FrameProfile(source) and (DB.GetProfile(target) or skin and skin.Database.GetProfile(target)) then
+    if Suite.HostBridge.FrameProfile(source) and (DB.HasProfile(target) or skin and skin.Database.GetProfile(target)) then
         return false, "profile-exists"
     end
-    if original and not DB.GetProfile(target) then
-        Suite.RootDB.profiles[target] = original
+    if original and not DB.HasProfile(target) then
+        DB.StoreProfile(target, original)
         Suite.RootDB.profiles[source] = nil
         DB.RenameRuntimeData(source, target)
         if DB.GetActiveProfileName() == source then
@@ -382,7 +383,7 @@ function Lifecycle.rename(source, target, skin)
 end
 
 function Lifecycle.delete(source, _, skin)
-    if DB.GetProfile(source) and DB.GetActiveProfileName() ~= source then DB.Delete(source) end
+    if DB.HasProfile(source) and DB.GetActiveProfileName() ~= source then DB.Delete(source) end
     if skin and skin.Database.GetProfile(source)
         and skin.Database.GetActiveProfileName() ~= source then skin.Database.DeleteProfile(source) end
     return true
@@ -440,7 +441,7 @@ function P.Names()
     local result = {}
     if P.Available() then
         for _, name in ipairs(Suite.HostBridge.FrameProfileNames()) do
-            if DB.GetProfile(name) then result[#result + 1] = name end
+            if DB.HasProfile(name) then result[#result + 1] = name end
         end
         table.sort(result)
     end
@@ -458,16 +459,57 @@ local function NewName(name)
     if not ready then return nil, reason end
     name = type(name) == "string" and name:match("^%s*(.-)%s*$") or nil
     if not DB.IsProfileName(name) then return nil, "Enter a new profile name" end
-    if DB.GetProfile(name) or Suite.HostBridge.FrameProfile(name) then
+    if DB.HasProfile(name) or Suite.HostBridge.FrameProfile(name) then
         return nil, "Profile name already exists"
     end
     return name
 end
 
-local function Restore(frames, modules)
-    if Suite.HostBridge.ActiveFrameProfileName() ~= frames then Dispatch(Finish, Suite.HostBridge.Profiles.SwitchProfile, frames) end
-    if DB.GetActiveProfileName() ~= modules then Dispatch(Finish, DB.Activate, modules) end
-    return Suite.HostBridge.ActiveFrameProfileName() == frames and DB.GetActiveProfileName() == modules
+local function SwitchFrames(name)
+    -- The host notifies the Suite during the switch but does not report what
+    -- that callback did. The caller performs the Suite step explicitly.
+    local previousSync = Suite.suppressProfileSync
+    Suite.suppressProfileSync = true
+    local ran, ok, reason = Dispatch(Finish, Suite.HostBridge.Profiles.SwitchProfile, name)
+    Suite.suppressProfileSync = previousSync
+    return ran and ok, reason
+end
+
+local function Restore(frames, modules, switchFrames)
+    local changed = Suite.HostBridge.ActiveFrameProfileName() ~= frames
+    local framesRestored, modulesRestored = true, true
+    if changed then
+        local ran, ok = Dispatch(Finish, switchFrames or Suite.HostBridge.Profiles.SwitchProfile, frames)
+        framesRestored = ran and ok
+    end
+    if DB.GetActiveProfileName() ~= modules then
+        local ran, ok = Dispatch(Finish, DB.Activate, modules)
+        modulesRestored = ran and ok
+    elseif switchFrames and framesRestored and changed and frames == modules then
+        -- DB.Activate may already have restored the pointer while the host
+        -- still held the target. Rebind the old overlay to the restored host.
+        modulesRestored = Dispatch(Finish, Suite.ProfileVariants.OnActivated, modules)
+        Dispatch(Suite.OnProfileChanged, modules)
+    end
+    return framesRestored and modulesRestored
+        and Suite.HostBridge.ActiveFrameProfileName() == frames and DB.GetActiveProfileName() == modules
+end
+
+local function SkinSelection()
+    local skin = SkinEngine()
+    return skin, skin and skin.Database.GetActiveProfileName()
+end
+
+local function RestoreSkinSelection(skin, name)
+    if not name or skin.Database.GetActiveProfileName() == name then return true end
+    local ran, ok = Dispatch(Finish, skin.Database.SetActiveProfile, name)
+    return ran and ok and skin.Database.GetActiveProfileName() == name
+end
+
+local function ActivateUnified(name)
+    local ok, reason = SwitchFrames(name)
+    if not ok or Suite.HostBridge.ActiveFrameProfileName() ~= name then return false, reason end
+    return P.SyncActive(name)
 end
 
 function P.Activate(name)
@@ -477,12 +519,15 @@ function P.Activate(name)
         return false, "Choose a profile that exists in both parts of the suite"
     end
     local _, frames, modules = P.Active()
-    local ok, why = Suite.HostBridge.Profiles.SwitchProfile(name)
-    if ok and Suite.HostBridge.ActiveFrameProfileName() == name and DB.GetActiveProfileName() ~= name then
-        ok, why = DB.Activate(name)
+    local captured, skin, skinName = Dispatch(Finish, SkinSelection)
+    if not captured then return false, "Profile switch failed" end
+    local ran, ok, why = Dispatch(Finish, ActivateUnified, name)
+    if ran and ok and Suite.HostBridge.ActiveFrameProfileName() == name and DB.GetActiveProfileName() == name then
+        return true, name
     end
-    if ok and Suite.HostBridge.ActiveFrameProfileName() == name and DB.GetActiveProfileName() == name then return true, name end
-    if not Restore(frames, modules) then return false, "Profile switch failed; restore the previous profiles manually" end
+    local restored = Restore(frames, modules, SwitchFrames)
+    local skinRestored = RestoreSkinSelection(skin, skinName)
+    if not restored or not skinRestored then return false, "Profile switch failed; restore the previous profiles manually" end
     return false, why or "Profile switch failed"
 end
 
@@ -584,13 +629,13 @@ local function Create(name, frames, profile, skinProfile, screenHeight, finish, 
     if profilesRestored then
         if skin and skin.Database.GetProfile(name) then Dispatch(Finish, skin.Database.DeleteProfile, name) end
         if Suite.HostBridge.FrameProfile(name) then Dispatch(Finish, Suite.HostBridge.Profiles.DeleteProfile, name) end
-        if DB.GetProfile(name) then Dispatch(Finish, DB.Delete, name) end
+        if DB.HasProfile(name) then Dispatch(Finish, DB.Delete, name) end
     end
     local skinRestored = not previousSkin or skin.Database.GetActiveProfileName() == previousSkin
     if not profilesRestored or not ran or not nativeRestored or not skinRestored then
         return false, "Profile import failed; restore the previous profiles manually"
     end
-    if Suite.HostBridge.FrameProfile(name) or DB.GetProfile(name) or skin and skin.Database.GetProfile(name) then
+    if Suite.HostBridge.FrameProfile(name) or DB.HasProfile(name) or skin and skin.Database.GetProfile(name) then
         return false, "Profile import failed; the incomplete profile could not be removed"
     end
     return false, reason or "Profile import failed"
@@ -666,11 +711,18 @@ function P.InstallFactory(name, frames, modules, skinText, lookName, finish, opt
     return Create(clean, frames, profile, skinProfile, screenHeight, finish)
 end
 
--- Modern replaces only the active Suite and optional Skin settings. Prepare
--- both payloads before changing either store; the MSUF frame profile is never
--- imported or switched here. finish: as for Create.
+-- Reusing frames normally updates only Suite and Skin. Explicit frame colors
+-- are installed in a copy of the current layout through the same transaction
+-- as a factory profile. finish: as for Create.
 function P.InstallSuiteFactory(name, modules, skinText, lookName, finish, options)
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
+    if options and options.frameColors then
+        local ready, why = Ready()
+        if not ready then return false, why end
+        local frames = Suite.HostBridge.Profiles.Profiles_ExportSelectionToString("all")
+        local bundledSkin = Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and skinText or nil
+        return P.InstallFactory(options.colorProfileName, frames, modules, bundledSkin, lookName, finish, options)
+    end
     local profile, reason = IO.PrepareTable(modules, false)
     if not profile then return false, reason end
     DB.PrepareFactory(profile)
@@ -686,14 +738,14 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName, finish, option
         end
         if not (options and options.preserveSkinLayout) then AdaptFactorySkin(skinProfile, profile.suite.modules) end
     end
-    local previousModules = DB.GetProfile(name)
+    local previousModules = Suite.RootDB.profiles[name]
     local previousActive = DB.GetActiveProfileName()
     local previousSkin = skin and skin.Database.GetProfile(name)
     previousSkin = previousSkin and Suite.CopyValue(previousSkin)
     local previousSkinActive = skin and skin.Database.GetActiveProfileName()
     local allowed,mutationReason=Suite.ProfileVariants.BeforeMutation(name)
     if not allowed then return false,mutationReason end
-    Suite.RootDB.profiles[name] = profile
+    DB.StoreProfile(name, profile)
     -- An error in any step is reported and rolled back like a refusal.
     local finished, ok, why = Dispatch(Finish, ActivateProfiles, name, skin, skinProfile)
     if finished and ok and finish then
@@ -701,8 +753,8 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName, finish, option
         ok = finished and ok == true
     end
     if finished and ok then return true, name end
-    Suite.RootDB.profiles[name] = previousModules
-    if previousActive and DB.GetProfile(previousActive) then DB.Activate(previousActive) end
+    DB.StoreProfile(name, previousModules)
+    if previousActive and DB.HasProfile(previousActive) then DB.Activate(previousActive) end
     if skin then
         if previousSkin then skin.Database.SetProfile(name, previousSkin)
         elseif skin.Database.GetProfile(name) then skin.Database.DeleteProfile(name) end

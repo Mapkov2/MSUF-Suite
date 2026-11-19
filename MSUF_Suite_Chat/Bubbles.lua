@@ -25,15 +25,16 @@ local CHROME = {
 local PublicText, Public, Finite, RGB = S.PublicText, S.Public, S.Finite, S.RGB
 local IsForbidden = NS.Safety.IsForbidden
 -- chat event -> the setting keys of its source
-local sourceKeys = {}
+local sourceKeys, looks = {}, {}
 for _, source in ipairs(NS.ChatBubbleSources) do
     local key = source.key
     local keys = {
         style = "bubbleStyle" .. key, own = "bubbleOwn" .. key, font = "bubbleFont" .. key,
-        size = "bubbleSize" .. key, text = "bubbleText" .. key, fill = "bubbleFill" .. key,
+        size = "bubbleSize" .. key, textColor = "bubbleText" .. key, fill = "bubbleFill" .. key,
         opacity = "bubbleOpacity" .. key, edge = "bubbleEdge" .. key, pad = "bubblePad" .. key,
         width = "bubbleWidth" .. key,
     }
+    looks[keys] = {}
     for _, event in ipairs(source.events) do sourceKeys[event] = keys end
 end
 -- text -> source keys / deadline / a bubble showed it
@@ -48,14 +49,14 @@ local function Same(current, applied)
 end
 
 ------------------------------------------------------------------ owned values
-local function OwnFont(view, fontKey, fontSize)
+local function OwnFont(view, fontPath, fontSize)
     local region = view.region
     local path, size, flags = region:GetFont()
     if not (Same(path, view.appliedPath) and Same(size, view.appliedSize)) then
         if not (PublicText(path) and Finite(size) and Public(flags)) then return end
         view.fontPath, view.fontSize, view.fontFlags = path, size, flags
     end
-    region:SetFont(S.ResolveFont(fontKey) or S.GlobalFontPath(), fontSize, view.fontFlags)
+    region:SetFont(fontPath, fontSize, view.fontFlags)
     view.appliedPath, view.appliedSize = region:GetFont()
 end
 
@@ -153,7 +154,7 @@ end
 
 -- The shared bubble look, or the source's own one while it uses it.
 local SHARED = {
-    font = "bubbleFont", size = "bubbleFontSize", text = "bubbleTextColor", fill = "bubbleBackground",
+    font = "bubbleFont", size = "bubbleFontSize", textColor = "bubbleTextColor", fill = "bubbleBackground",
     opacity = "bubbleAlpha", edge = "bubbleBorder", pad = "bubblePadding", width = "bubbleMaxWidth",
 }
 local function Look(c, keys, part)
@@ -161,24 +162,36 @@ local function Look(c, keys, part)
     return c[SHARED[part]]
 end
 
+local function PrepareLooks(c)
+    for keys, look in pairs(looks) do
+        if c[keys.style] then
+            look.path = S.ResolveFont(Look(c, keys, "font")) or S.GlobalFontPath()
+            look.size, look.width, look.pad = Look(c, keys, "size"), Look(c, keys, "width"), Look(c, keys, "pad")
+            look.r, look.g, look.b = RGB(Look(c, keys, "textColor"))
+            look.fillR, look.fillG, look.fillB = RGB(Look(c, keys, "fill"))
+            look.edgeR, look.edgeG, look.edgeB = RGB(Look(c, keys, "edge"))
+            look.alpha = Look(c, keys, "opacity") / 100
+        end
+    end
+end
+
 local function Paint(view, keys)
-    local c, region = M.config, view.region
-    OwnFont(view, Look(c, keys, "font"), Look(c, keys, "size"))
-    local r, g, b = RGB(Look(c, keys, "text"))
-    OwnColor(view, r, g, b)
-    OwnWidth(view, Look(c, keys, "width"))
+    local look, region = looks[keys], view.region
+    OwnFont(view, look.path, look.size)
+    OwnColor(view, look.r, look.g, look.b)
+    OwnWidth(view, look.width)
     OwnChrome(view)
     if not view.fill then CreateBackdrop(view) end
-    local pad, fill = Look(c, keys, "pad"), view.fill
+    local pad, fill = look.pad, view.fill
     fill:ClearAllPoints()
     fill:SetPoint("TOPLEFT", region, "TOPLEFT", -pad, pad)
     fill:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", pad, -pad)
-    C.Tint(fill, Look(c, keys, "fill"), Look(c, keys, "opacity"))
+    fill:SetColorTexture(look.fillR, look.fillG, look.fillB, look.alpha)
     fill:Show()
-    local border = Look(c, keys, "edge")
     for i = 1, 4 do
-        C.Tint(view.edges[i], border, 100)
-        view.edges[i]:Show()
+        local edge = view.edges[i]
+        edge:SetColorTexture(look.edgeR, look.edgeG, look.edgeB, 1)
+        edge:Show()
     end
     view.painted = keys
 end
@@ -313,6 +326,7 @@ function C.BubblesRefresh(self)
         C.BubblesDisable()
         return
     end
+    PrepareLooks(c)
     -- Changed settings reach the bubbles already styled.
     for _, view in pairs(views) do
         local keys = view.source

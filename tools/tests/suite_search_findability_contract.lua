@@ -248,10 +248,122 @@ local function CheckFeatureAliases(stage)
         end
     end
 end
+-- A player can describe the feature without knowing its label. Keep nearby
+-- controls distinguishable, and index only switches that this client owns.
+local naturalFeatures = { "groupDeathAlert", "battleRes", "groupBloodlust", "cursorEffects", "actionTracker" }
+local naturalQueries = {
+    enUS = {
+        "Notify me about player deaths in the group",
+        "When can we brez",
+        "When can we lust",
+        "Find my mouse pointer",
+        "Which spells did I just cast",
+    },
+    deDE = {
+        "Sag mir Bescheid wenn jemand aus der Gruppe tot ist",
+        "Wann können wir wieder rezzen",
+        "Wann geht Kampfrausch wieder",
+        "Mauszeiger finden",
+        "Was ich zuletzt gecastet oder gewirkt habe",
+    },
+    esES = {
+        "¿Quién ha muerto en mi grupo?",
+        "Cuándo podemos usar brez",
+        "Cuándo podemos tirar BL",
+        "Encontrar el puntero del ratón",
+        "Qué hechizos acabo de lanzar",
+    },
+    esMX = {
+        "¿Quién se murió en mi grupo?",
+        "Cuándo hay brez",
+        "Cuándo tiramos lust",
+        "Encontrar mi puntero del mouse",
+        "Cuáles hechizos acabo de lanzar",
+    },
+    frFR = {
+        "Notification des morts de joueurs dans le groupe",
+        "Quand est-ce qu'on peut brez",
+        "On peut BL quand",
+        "Trouver le pointeur de ma souris",
+        "Quels sorts est-ce que je viens de lancer",
+    },
+    itIT = {
+        "Notifica delle morti dei giocatori nel gruppo",
+        "Quando possiamo fare brez",
+        "Quando si può fare lust",
+        "Trova il puntatore del mio mouse",
+        "Quali incantesimi ho appena lanciato",
+    },
+    ptBR = {
+        "Notificar sobre mortes de jogadores no grupo",
+        "Quando dá pra dar brez",
+        "Quando podemos dar lust",
+        "Encontrar o ponteiro do meu mouse",
+        "Quais feitiços eu acabei de lançar",
+    },
+    ruRU = {
+        "Уведомлять о смертях игроков в группе",
+        "Когда будет батлрес",
+        "Когда можно прожать БЛ или геру",
+        "Найти курсор мыши на экране",
+        "Какие заклинания я только что применил",
+    },
+    koKR = {
+        "파티 및 공격대 플레이어 사망 알림",
+        "전투 부활 언제 쓸 수 있어",
+        "블러드 웅심 언제 쓸 수 있어",
+        "마우스 포인터 찾기",
+        "방금 내가 쓴 스킬이나 주문이 뭐였지",
+    },
+    zhCN = {
+        "团队成员死亡通知",
+        "什么时候能战复",
+        "什么时候能开嗜血",
+        "找到我的鼠标指针",
+        "我刚刚施放了哪些法术",
+    },
+    zhTW = {
+        "團隊成員死亡通知",
+        "什麼時候可以戰復",
+        "什麼時候能開嗜血",
+        "找出我的滑鼠游標",
+        "我剛才施放了哪些法術",
+    },
+}
+naturalQueries.enGB = naturalQueries.enUS
+local function CheckNaturalQueries()
+    local queries = assert(naturalQueries[locale], "missing natural query corpus for " .. locale)
+    for i, id in ipairs(naturalFeatures) do
+        local query, key = queries[i], "msufsuite." .. id .. ".enabled"
+        local rank, results = Rank(query, function(rec) return rec.exactTarget and rec.exactTarget.settingKey == key end)
+        Check(P.Available(id) and rank == 1 or not P.Available(id) and not rank,
+            flavor .. ": " .. query .. " -> " .. Got(results))
+    end
+end
+-- New word orders must still establish the subject and the player's intent.
+-- An enemy, a different requested setting, or an explicit exclusion must not
+-- acquire one of the five exact feature promotions.
+local compoundCases = {
+    zhCN = { "提醒我队友阵亡", "我的技能施放顺序", "不要提醒我队友阵亡", "敌人的技能施放顺序" },
+    zhTW = { "提醒我隊友陣亡", "我的技能施放順序", "不要提醒我隊友陣亡", "敵人的技能施放順序" },
+    koKR = { "사망한 파티원을 알려줘", "내 최근 주문 기록", "파티원 사망 알림 제외", "적의 최근 주문 기록" },
+}
+local compounds = compoundCases[locale]
+if compounds then
+    for i, query in ipairs(compounds) do
+        local setting = "msufsuite." .. naturalFeatures[i % 2 == 1 and 1 or 5] .. ".enabled"
+        local rank, results = Rank(query, function(rec)
+            return rec.exactQueryHit and rec.exactTarget and rec.exactTarget.settingKey == setting
+        end)
+        Check(i <= 2 and rank == 1 or i > 2 and not rank, flavor .. ": " .. query .. " -> " .. Got(results))
+    end
+end
 CheckFeatureAliases("cold enabled")
+CheckNaturalQueries()
 for _, case in ipairs(featureAliases) do Suite.Suite.Config(case[1]).enabled = false end
 P.Refresh()
 CheckFeatureAliases("cold disabled")
+CheckNaturalQueries()
 
 local nativeTasks = {
     ["enUS"] = { "I want to make my minimap bigger", "I want to make my bags bigger", "make my chat font bigger", "make my chat tab font bigger" },

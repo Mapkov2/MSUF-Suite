@@ -3,10 +3,81 @@ local NS = private.NS
 local Filter = {}
 private.AuraFilter = Filter
 
+local Model = NS.NameplateAuraDisplay
+
+local function PrepareScope(c, excluded, prepared)
+    if not c.enabled then return end
+    if c.fixed then
+        c.fixedSlots, c.cropMax, c.missingOpacity = {}, 1 - c.crop, c.missingAlpha / 100
+        for index, row in ipairs(c.rows) do
+            local x, y = Model.SlotOffset(c, index)
+            local artID = c.missing and not (excluded and excluded[row.id]) and row.id or nil
+            c.fixedSlots[index] = { x = x, y = y, artID = artID, candidate = Model.Excluding(row.candidate, excluded) }
+            if artID then prepared.artIDs[artID] = true end
+        end
+    else
+        c.groupCandidate = Model.Excluding(c.candidate, excluded)
+        c.groupAnyCandidate = Model.Excluding(c.anyCandidate, excluded)
+    end
+end
+
+function Filter.PrepareDisplay(plan)
+    plan.artIDs = {}
+    for side, scopes in pairs(plan.scopes) do
+        local exclusions = plan.exclusions[side]
+        for _, scope in ipairs(scopes) do PrepareScope(scope, exclusions and exclusions[scope.key], plan) end
+    end
+end
+
 local function Accessible(frame)
     if not NS.Public(frame) or not frame or NS.Safety.IsForbidden(frame) then return false end
     local allowed = frame:CanBeAccessedInContext()
     return NS.Public(allowed) and allowed == true
+end
+
+function Filter.SpellArt(configured, id, refresh)
+    local texture = not refresh and configured.spellArt[id]
+    if texture then return texture end
+    texture = C_Spell.GetSpellTexture(id)
+    if NS.Public(texture) and texture then
+        configured.spellArt[id], configured.staleArt[id] = texture, nil
+        return texture
+    end
+end
+
+function Filter.MissingArt(slot, texture)
+    if slot.art ~= texture then
+        slot.texture:SetTexture(texture)
+        slot.art = texture
+    end
+end
+
+function Filter.SeedArt(prepared, previous)
+    previous = previous or prepared.spellArt
+    prepared.spellArt, prepared.staleArt = {}, {}
+    for id in pairs(prepared.artIDs) do
+        if not Filter.SpellArt(prepared, id) and previous and previous[id] then
+            prepared.spellArt[id], prepared.staleArt[id] = previous[id], true
+        end
+    end
+end
+
+function Filter.RepaintArt(plan, states, id)
+    for _, state in pairs(states) do
+        if state.visible then
+            for _, record in pairs(state.sides[state.side].records) do
+                if record.shown and record.c.fixed then
+                    for index = 1, #record.c.rows do
+                        local slot = record.slots[index]
+                        local texture = slot.artID and plan.spellArt[slot.artID]
+                        if texture and (not id or id == slot.artID) and Accessible(slot.texture) then
+                            Filter.MissingArt(slot, texture)
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 local function Visible(button)

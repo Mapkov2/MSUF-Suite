@@ -268,6 +268,7 @@ local statChange = { "UNIT_STATS", RESTRICTION_CHANGED }
 local ratingChange = { "UNIT_STATS", "COMBAT_RATING_UPDATE", RESTRICTION_CHANGED }
 local auditChange = {
     "PLAYER_EQUIPMENT_CHANGED", "PLAYER_LEVEL_UP", "PLAYER_SPECIALIZATION_CHANGED",
+    "UNIT_INVENTORY_CHANGED", "SOCKET_INFO_SUCCESS",
     "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED",
 }
 
@@ -281,26 +282,26 @@ function Pages.Durability(gear)
     if durability then return string.format("%d%%", durability) end
 end
 
+local summaryByModel = setmetatable({}, { __mode = "k" })
 function Pages.EquipmentSummary(groups, model)
-    local rows = {}
-    local durability = Pages.Durability(model)
-    if durability then
-        rows[#rows + 1] = { label = Text("Durability"), value = durability,
-            action = (model.wornSlots or 0) > 0 and "durability" or nil }
+    local durability, worn = model.durability, (model.wornSlots or 0) > 0
+    local missing = not Forever and Pages.AuditCount(model, "missingEnchants") or nil
+    local empty = not Forever and Pages.AuditCount(model, "emptySockets") or nil
+    local state = summaryByModel[model]
+    if not state or state.missing ~= missing or state.empty ~= empty or state.durability ~= durability or state.worn ~= worn then
+        local rows = {}
+        if durability then
+            rows[1] = { label = Text("Durability"), value = Pages.Durability(model), action = worn and "durability" or nil }
+        end
+        if not Forever then
+            rows[#rows + 1] = { label = Text("Missing enchants"), value = missing or "—", action = missing and missing > 0 and "enchants" or nil }
+            rows[#rows + 1] = { label = Text("Empty sockets"), value = empty or "—", action = empty and empty > 0 and "sockets" or nil }
+        end
+        state = { missing = missing, empty = empty, durability = durability, worn = worn,
+            group = #rows > 0 and { title = Text("Equipment check"), rows = rows } or nil }
+        summaryByModel[model] = state
     end
-    if not Forever then
-        local missing = Pages.AuditCount(model, "missingEnchants")
-        local empty = Pages.AuditCount(model, "emptySockets")
-        rows[#rows + 1] = { label = Text("Missing enchants"), value = missing or "—",
-            action = missing and missing > 0 and "enchants" or nil }
-        rows[#rows + 1] = { label = Text("Empty sockets"), value = empty or "—",
-            action = empty and empty > 0 and "sockets" or nil }
-    end
-    if #rows == 0 then return end
-    groups[#groups + 1] = {
-        title = Text("Equipment check"),
-        rows = rows,
-    }
+    if state.group then groups[#groups + 1] = state.group end
 end
 
 local function ReadAttribute(id)

@@ -627,6 +627,12 @@ local function Clear(self)
     for _, wake in ipairs(self.wakes) do wake:Clear() end
     SyncRangeTicker(self)
 end
+local function PrepareRows(self)
+    if not self.listening or NS.InCombat() then return end
+    for _ = #self.rows + 1, self.config.listSize do
+        self.free[#self.free + 1] = NewRow(self, self.rows)
+    end
+end
 
 local function Gate(self)
     local inside, kind = IsInInstance()
@@ -638,6 +644,7 @@ local function Gate(self)
         end
         Clear(self)
         if want then
+            PrepareRows(self)
             -- One bounded snapshot covers entering or enabling inside a dungeon.
             for i = 1, #PLATE_TOKENS do
                 local unit = PLATE_TOKENS[i]
@@ -710,6 +717,7 @@ function M:Enable()
     end
     self.context:Event("PLAYER_ENTERING_WORLD", OnZone, IN_COMBAT)
     self.context:Event("ZONE_CHANGED_NEW_AREA", OnZone, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", PrepareRows)
     self:Refresh()
 end
 
@@ -728,6 +736,7 @@ function M:Refresh()
     for _, row in ipairs(self.previews) do Style(self, row) end
     Candidates(self)
     Gate(self)
+    PrepareRows(self)
     -- A settings change repaints every listed cast once.
     local ordered = self.ordered
     for i = #ordered, 1, -1 do

@@ -77,7 +77,10 @@ local function SlotChanged(_, _, slot)
     local changed = GridChanged(slot, kind, id)
     for i = 1, #list do
         local rec = list[i]
-        if changed then gridBars[rec.bar] = true end
+        if changed then
+            gridBars[rec.bar] = true
+            AB.InvalidateProc(rec)
+        end
         if rec.native then
             if nativeEffects and not rec.bar.paintDormant then dirtySlots[slot] = true end
         else
@@ -133,14 +136,21 @@ local function RangeChanged(_, _, slot, inRange, checksRange)
     end
 end
 
--- Proc glows match the event's spell against spell and macro actions;
--- flyouts rescan their slots. Spell actions use the ID cached at paint
--- time, so a glow event reads no action info for them.
+-- Directed proc updates for public spells. Only dynamic actions and flyouts
+-- need the live checks; a transient slot replacement refreshes its route.
 local glowSpell, glowShow
 local function GlowMatch(rec)
+    if rec.procPending then Painter.CacheAction(rec) end
     local kind = rec.glowKind
     if kind == GLOW_SPELL then
-        if rec.glowID == glowSpell then SetGlow(rec, glowShow and M.config.procGlow ~= PROC_NONE) end
+        if rec.glowID ~= glowSpell and rec.glowOverride ~= glowSpell then return end
+        local show = glowShow
+        if not show and rec.glowOverride then
+            local other = rec.glowID == glowSpell and rec.glowOverride or rec.glowID
+            local overlayed = api.Overlayed(other)
+            show = Public(overlayed) and overlayed or false
+        end
+        SetGlow(rec, show)
     elseif kind == GLOW_FLYOUT then
         GlowCheck(rec)
     elseif kind == GLOW_DYNAMIC then
@@ -157,6 +167,18 @@ local function GlowMatch(rec)
         end
     end
 end
+local function RefreshGlow(rec)
+    Painter.CacheAction(rec)
+    GlowMatch(rec)
+end
+
+local function ProcVisible(rec, native)
+    local bar = rec.bar
+    if AB.bars[bar.index] ~= bar or not Visible(bar) then return false end
+    if bar.native then return native and bar.index <= 8 and rec.button:IsVisible() end
+    return bar.index <= 10 and rec.filled
+end
+
 local function Glow(_, event, spell)
     if M.config.procGlow == PROC_NONE then return end
     if not Public(spell) or type(spell) ~= "number" then
@@ -164,8 +186,19 @@ local function Glow(_, event, spell)
         return
     end
     glowSpell, glowShow = spell, event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW"
-    Walk(GlowMatch)
-    if M.config.procGlow == PROC_PIXEL then WalkNative(GlowMatch) end
+    local native = M.config.procGlow == PROC_PIXEL
+    if AB.procRoutesStale then
+        AB.procRoutesStale = nil
+        Walk(RefreshGlow)
+        if native then WalkNative(RefreshGlow) end
+        return
+    end
+    for rec in pairs(AB.ProcButtons(spell)) do
+        if ProcVisible(rec, native) then GlowMatch(rec) end
+    end
+    for rec in pairs(AB.procFallback) do
+        if ProcVisible(rec, native) then GlowMatch(rec) end
+    end
 end
 
 -- SPELL_UPDATE_COOLDOWN (SpellBookDocumentation.lua): spellID "can be a
@@ -298,6 +331,12 @@ end
 -- Whether ACTION_USABLE_CHANGED also covers slots without a registered
 -- Blizzard button (C_ActionBar.RegisterActionUIButton) is not documented:
 -- ACTIONBAR_UPDATE_USABLE re-reads the suite buttons on slots it never named.
+local function RefreshSpellAnswers()
+    AB.procRoutesStale = true
+    NewChargeEpoch()
+    Mark("icon")
+end
+
 local EVENTS = {
     ADDON_LOADED = function()
         AB.SyncPanelReveal()
@@ -321,18 +360,11 @@ local EVENTS = {
     STOP_AUTOREPEAT_SPELL = function() Mark("state") end,
     TRADE_SKILL_SHOW = function() Mark("state") end,
     TRADE_SKILL_CLOSE = function() Mark("state") end,
-    UPDATE_SHAPESHIFT_FORM = function()
-        NewChargeEpoch()
-        Mark("icon")
-    end,
-    SPELL_UPDATE_ICON = function()
-        NewChargeEpoch()
-        Mark("icon")
-    end,
-    SPELLS_CHANGED = function()
-        NewChargeEpoch()
-        Mark("icon")
-    end,
+    UPDATE_SHAPESHIFT_FORM = RefreshSpellAnswers,
+    SPELL_UPDATE_ICON = RefreshSpellAnswers,
+    SPELLS_CHANGED = RefreshSpellAnswers,
+    PLAYER_SPECIALIZATION_CHANGED = RefreshSpellAnswers,
+    COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED = RefreshSpellAnswers,
     UPDATE_SUMMONPETS_ACTION = function()
         NewChargeEpoch()
         Mark("icon")
@@ -436,7 +468,10 @@ function AB.OnHeaderAttribute(bar, name, value)
     if not M.active then return end
     if name == "actionpage" and (bar.index == MAIN_BAR or bar.customPage) then
         local buttons = bar.buttons
-        for i = 1, #buttons do UnmapButton(buttons[i]) end
+        for i = 1, #buttons do
+            AB.InvalidateProc(buttons[i])
+            UnmapButton(buttons[i])
+        end
         AB.PageSlots(bar, value)
         for i = 1, #buttons do MapButton(buttons[i]) end
         if bar.index == MAIN_BAR and not bar.native then protected.routing = true end

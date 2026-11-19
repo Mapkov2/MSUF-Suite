@@ -18,7 +18,10 @@ local function Spec(module, index)
     spec = {
         nameKey = prefix .. "Name", order = 690 + index,
         getFrame = function() return module.bars[index] and module.bars[index].frame end,
-        isEnabled = function() return module.presentIDs[index] and module.config[enabledKey] == true end,
+        isEnabled = function()
+            return module.presentIDs[index] and module.config[enabledKey] == true
+                and not (module.config[prefix .. "MinimapDock"] and S.MinimapDock.Anchor())
+        end,
         xKey = prefix .. "X", yKey = prefix .. "Y", pointKey = pointKey,
         point = function() return NS.DataTextPoints[module.config[pointKey]] or "BOTTOM" end,
         historyKeys = { widthKey, heightKey },

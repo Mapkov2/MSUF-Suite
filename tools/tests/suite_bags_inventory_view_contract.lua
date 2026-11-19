@@ -139,7 +139,7 @@ local S = {
 Constants = { InventoryConstants = { NumBagSlots = 4, NumReagentBagSlots = 1 } }
 local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
 local P = { Suite = S, NS = { Safety = {IsForbidden=function() return false end}, IsSecret = function() return false end, IsCombatLocked = function() return combat end, BagsPresentation = catalog.BagsPresentation, BagsView = catalog.BagsView,
-    BagsSort = catalog.BagsSort,
+    BagsSort = catalog.BagsSort, BagsPhysicalOrder = catalog.BagsPhysicalOrder,
     InCombat = function(event)
         if event == "PLAYER_REGEN_DISABLED" then return true end
         if event == "PLAYER_REGEN_ENABLED" then return false end

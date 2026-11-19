@@ -1,6 +1,8 @@
 -- Shared by the suite contract tests (not a test itself). Files load in TOC
 -- order, so the tests follow load-order changes without their own file lists.
 local Support = {}
+-- Most fixtures never load Blizzard's mail UI or other native add-ons.
+if not EventUtil then EventUtil = { ContinueOnAddOnLoaded = function() end } end
 -- These native APIs exist on both supported clients. Most contracts do not
 -- care about character color; tests that do supply their own fixture.
 if not UnitClass then UnitClass = function() return nil end end

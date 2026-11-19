@@ -121,4 +121,26 @@ collapsedEntries["quests:1"] = true
 Project(flat)
 assert(flat[3] == formerLine and formerLine.kind == "entry" and formerLine.questID == 2 and not formerLine.done,
     "row-kind change retained data from the previous line")
+do
+    local rows = {}
+    local config = { compactQuestRows = true, objectiveSize = 6 }
+    local zone = { key = "zone:41", rowKey = "section:zone:41", title = "Zone" }
+    local quest = { group = "quests", id = 73, title = "Quest", questLabel = "Numbered quest",
+        lines = { count = 2, { text = "Kill target" }, { text = "Collect points", percent = 0, progressText = "0/40" } } }
+    local function ProjectZone()
+        return O.AddFlat(rows, 0, "zone", { quest }, config, {}, {}, groups, sectionKeys, nil, zone)
+    end
+    assert(ProjectZone() == 4 and rows[1].collapseKey == zone.key and rows[2].group == "quests"
+        and rows[2].questID == 73 and rows[2].text == "Numbered quest",
+        "zone projection changed the heading, presentation or action group")
+    assert(rows[3].height == 16 and rows[4].height == 28 and rows[4].progressText == "0/40",
+        "compact heights lost the minimum or treated 0% as a plain objective")
+    config.objectiveSize = 35
+    ProjectZone()
+    assert(rows[3].height == 40 and rows[4].height == 52, "compact heights missed the current objective size")
+    config.compactQuestRows, quest.id = false, 74
+    ProjectZone()
+    assert(rows[3].height == 48 and rows[4].height == 52 and rows[4].key == "line:quests:74:2",
+        "ordinary heights or pooled row keys did not reflect a changed setting and entry")
+end
 print("objective refresh budget, native action state and row reuse passed")

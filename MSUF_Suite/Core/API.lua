@@ -11,7 +11,7 @@ local _, Suite = ...
 --   version                                   1
 --   StageFactoryReset() -> ok, reason         Menu2 dashboard: factory reset
 --   GetOverview() -> table | nil              the dashboard card summary
---   GetChangelog() -> table                   the Suite's release history
+--   GetChangelog() -> table | nil             the Suite's release history (loads with MSUF_Suite_Options)
 --   OpenInstaller() -> opened                 the Suite setup window
 --   MaybeShowInstaller(reason)                after MSUF's own first run
 --   IsInstallerPending() -> bool              setup not finished yet
@@ -40,6 +40,18 @@ function API.GetChangelog() return Suite.Changelog end
 
 ------------------------------------------------------------------ setup
 function API.OpenInstaller() return Suite.Installer.Open() end
+function API.OpenAfterUnitFrameSetup(onBack) return Suite.Installer.Open(onBack) end
+function API.GetSetupFramePresets()
+    local host = Suite.HostBridge
+    return {
+        { name = "Modern MSUF Suite", compact = host.FactoryFrameCompact(false) },
+        { name = "MSUF Suite Forever", compact = host.FactoryFrameCompact(true) },
+        { name = "Modern Dark", compact = Suite.ModernDarkUnitFramesCompact },
+        { name = "MSUF Blizzard", compact = Suite.BlizzardFramesCompact },
+        { name = "Dark Raid", compact = Suite.DarkRaidFramesCompact },
+        { name = "Wayfarer", compact = Suite.WayfarerFramesCompact },
+    }
+end
 function API.MaybeShowInstaller(reason) return Suite.Installer.MaybeShow(reason) end
 function API.IsInstallerPending() return Suite.Installer.IsFirstRunPending() end
 function API.IsInstallerOpen() return Suite.Installer.IsOpen() end

@@ -431,8 +431,8 @@ PROFESSIONS_TRACKING_VIEW_RECIPE, PROFESSIONS_UNTRACK_RECIPE = "View Recipe", "U
 Enum.CraftingReagentType = { Basic = 0, Modifying = 1, Finishing = 2 }
 -- Dialogs.lua and MicroMenu.lua: S.ContextMenu, S.GamepadUI and S.CanOpenNativeWindow.
 for _, file in ipairs({ "Dialogs", "MicroMenu", "MythicPlusPull", "MythicPlus", "RaidRecords", "Raid", "ObjectivesData",
-    "ObjectivesContent", "ObjectivesDetails", "ObjectivesActions", "ObjectivesContentActions", "ObjectivesRows",
-    "ObjectivesTracker", "Objectives", "Announcements" }) do
+    "ObjectivesQuestLog", "ObjectivesContent", "ObjectivesDetails", "ObjectivesActions", "ObjectivesContentActions", "ObjectivesRows",
+    "ObjectivesVoice", "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
@@ -887,6 +887,22 @@ assert(stageProgress and stageProgress.text.text == "Kill the Void-Enraged beast
     and stageProgress.progress.shown and stageProgress.progress.value == 37.5
     and not tracker.rows["line:scenario:0:3"],
     "first scenario stage omitted its native weighted percentage")
+do
+    local measure, measurements, points = stageProgress.text.GetStringHeight, 0, stageProgress.pointCalls
+    function stageProgress.text:GetStringHeight()
+        measurements = measurements + 1
+        return measure(self)
+    end
+    C_Scenario.GetStepInfo = function()
+        return "Void Cleansing", "Kill the Void-Enraged beasts.", 2, nil, nil, nil, nil, nil, nil, 37.9
+    end
+    tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
+    Drain()
+    assert(stageProgress.progress.value == 37.9 and stageProgress.text.text == "Kill the Void-Enraged beasts.  38%"
+        and stageProgress.pointCalls == points and measurements == 0,
+        "stable text and geometry were remeasured when only live progress changed")
+    stageProgress.text.GetStringHeight = measure
+end
 C_Scenario.GetStepInfo = function()
     return "Void Cleansing", "Kill the Void-Enraged beasts.", 2, nil, nil, nil, nil, nil, nil, 0
 end
@@ -1982,6 +1998,30 @@ if flavor == "Mainline" then
     assert(tracker.raidActive and tracker.title.text == "RAID"
         and tracker.raid.name.text == "Waiting for raid encounter",
         "raid option must provide its own objective HUD view")
+    do
+        local elapsedClock, durationUtil = S.ElapsedClock, C_DurationUtil
+        local created, attempts = 0, 0
+        local binding = {}
+        function binding:SetEnabled(value) self.enabled = value end
+        function binding:SetFontString(value) self.text = value end
+        function binding:SetTextFormat() end
+        function binding:SetUpdateInterval() end
+        S.ElapsedClock = function()
+            attempts = attempts + 1
+            return {}
+        end
+        C_DurationUtil = {
+            CreateDurationTextBinding = function() created = created + 1; return binding end,
+            CreateDuration = function() created = created + 1; return {} end,
+        }
+        tracker:Refresh()
+        tracker:Refresh()
+        assert(attempts == 1 and created == 2 and tracker.raid.clock == binding
+            and binding.enabled == false and binding.text == tracker.raid.elapsed,
+            "the eligible raid view did not prepare exactly one inactive native clock")
+        S.ElapsedClock, C_DurationUtil = elapsedClock, durationUtil
+        tracker.raid.clock, tracker.raid.clockDuration = nil, nil
+    end
     assert(tracker.raid.records == characterData.objectives.raidRecords
         and tracker.raid.records["900:16"].best.remaining == 16
         and tracker.raid.records["900:16"].bestPhases.BigWigs.remaining == 16,
@@ -2000,11 +2040,11 @@ if flavor == "Mainline" then
         and tracker.raid.current.text:find("First Guardian 70.0%%", 1, false)
         and tracker.context.events.UNIT_HEALTH and raidTicker and dbmStage and bigWigsStage,
         "raid pull must show its boss and subscribe to live health only while active")
-    assert(tracker.raid.phase.text == "PHASE  1  ·  DBM",
+    assert(tracker.raid.phase.text == "PHASE  1  -  DBM",
         "raid view must recover a stage that DBM reported before ENCOUNTER_START")
     dbmStage("DBM_SetStage", {}, "test-mod", 1, 800, 1)
     dbmStage("DBM_SetStage", {}, "test-mod", 2, 800, 2)
-    assert(tracker.raid.phase.text == "PHASE  2  ·  DBM",
+    assert(tracker.raid.phase.text == "PHASE  2  -  DBM",
         "same-boss stage transition must come from the encounter module")
     clock = 211
     raidTicker:Fire()
@@ -2145,7 +2185,7 @@ if flavor == "Mainline" then
     bigWigsStage("BigWigs_SetStage", { IsEncounterID = function(_, id) return id == 800 end }, 4)
     tracker.context.events.INSTANCE_ENCOUNTER_ENGAGE_UNIT(tracker, "INSTANCE_ENCOUNTER_ENGAGE_UNIT")
     assert(tracker.raid.current.text:find("Second Guardian", 1, true)
-        and tracker.raid.phase.text == "PHASE  3  ·  DBM",
+        and tracker.raid.phase.text == "PHASE  3  -  DBM",
         "a later boss phase must replace the active boss row")
     clock = 250
     tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 0,

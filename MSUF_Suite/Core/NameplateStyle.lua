@@ -436,12 +436,13 @@ end
 
 function Style.PaintBorder(visual, owner, size, color)
     local edges = visual.edges
-    if size <= 0 then
+    local slanted = visual.paintSlantedRim and visual.paintSlantedRim(visual, size, color)
+    if size <= 0 or slanted then
         if visual.borderShown then
             for i = 1, 4 do edges[i]:Hide() end
             visual.borderShown = false
         end
-        visual.borderSize = 0
+        visual.borderSize = slanted and size or 0
         return
     end
     if visual.borderColor ~= color then

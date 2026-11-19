@@ -17,7 +17,12 @@ local Safety = NS.Safety
 
 local MAX_PARENT_DEPTH = 20
 local MAX_OBJECTIVES = 40
+local MAX_OFFER_ITEMS = 40
 local REPAINT_KEY = "quest-text:repaint"
+-- Forever fades the reward scroll child over 0.5 s. On quest 331 the shared
+-- contents were opaque on the next frame and transparent again at 0.651 s.
+local TURN_IN_CHECK_DELAY = 0.70
+local TURN_IN_CHECK_KEY = "quest-text:turn-in-opacity"
 
 -- Text colours are paint: Blizzard displays quest text in combat too (the
 -- world map, the quest popup), so the paint runs in combat as well. Only a
@@ -58,6 +63,23 @@ local function RewardAmount(read)
     if Safety.Public(value) and type(value) == "number" and value > 0 then return value end
 end
 
+local function AppendOfferItems(lines, kind, count, heading)
+    local needsHeading = true
+    for index = 1, math.min(count, MAX_OFFER_ITEMS) do
+        local name, _, quantity = GetQuestItemInfo(kind, index)
+        if Safety.Public(name) and type(name) == "string" and name ~= "" then
+            if needsHeading then
+                lines[#lines + 1] = heading
+                needsHeading = false
+            end
+            if Safety.Public(quantity) and type(quantity) == "number" and quantity > 1 then
+                name = ("%d x %s"):format(quantity, name)
+            end
+            lines[#lines + 1] = name
+        end
+    end
+end
+
 local function OfferRewardText()
     local spacer = QuestInfoSpacerFrame
     if not IsDetailReady() or not spacer or Safety.Read(spacer, "GetParent") ~= QuestDetailScrollChildFrame then return end
@@ -68,8 +90,19 @@ local function OfferRewardText()
     local xp, money = RewardAmount(GetRewardXP), RewardAmount(GetRewardMoney)
     local experience = xp and (EXPERIENCE_COLON .. " " .. BreakUpLargeNumbers(xp))
     local coins = money and GetMoneyString(money, false, false)
-    if experience and coins then return experience .. "   " .. coins end
-    return experience or coins
+    local summary = experience and coins and experience .. "   " .. coins or experience or coins
+    local choices, guaranteed = RewardAmount(GetNumQuestChoices), RewardAmount(GetNumQuestRewards)
+    if not (choices or guaranteed) then return summary end
+
+    local lines = {}
+    if choices then
+        AppendOfferItems(lines, "choice", choices, choices == 1 and REWARD_ITEMS_ONLY or REWARD_CHOICES)
+    end
+    if guaranteed then
+        AppendOfferItems(lines, "reward", guaranteed, #lines > 0 and REWARD_ITEMS or REWARD_ITEMS_ONLY)
+    end
+    if summary then lines[#lines + 1] = summary end
+    if #lines > 0 then return table.concat(lines, "\n") end
 end
 
 local function CanPaintOfferReward()
@@ -88,13 +121,13 @@ local function PaintOfferReward()
         return
     end
     if not CanPaintOfferReward() then return end
-    -- Blizzard can omit the reward block on an offer. Keep the numeric
-    -- rewards returned by the client in the normal scrolling content.
+    -- The offer API can have rewards even when the native block was omitted.
+    -- The preview is part of the scroll content and never handles clicks.
     if not offerReward then
         local anchor = QuestInfoSpacerFrame
         offerReward = QuestDetailScrollChildFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        offerReward:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 1)
-        offerReward:SetWidth(255)
+        offerReward:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+        offerReward:SetWidth(275)
         offerReward:SetJustifyH("LEFT")
     end
     offerReward:SetText(text)
@@ -106,6 +139,56 @@ local function RevealReward(region)
     if not IsCurrentReward(region) or not CanPaint(region) then return end
     local alpha = Safety.Read(region, "GetAlpha")
     if type(alpha) == "number" and alpha < 1 then Safety.Invoke(region, "SetAlpha", 1) end
+end
+
+local function RestoreTurnInOpacity(region)
+    if Safety.Read(region, "IsShown") ~= true or Safety.Read(region, "GetParent") ~= QuestRewardScrollChildFrame then return end
+    if not Safety.CanDecorate(region, true) then return end
+    local changed = false
+    if Safety.Read(region, "GetAlpha") == 0 then changed = Safety.Invoke(region, "SetAlpha", 1) end
+    if region == QuestInfoRewardText then
+        local r, g, b, alpha = Safety.ReadColor(region, "GetTextColor")
+        if alpha == 0 then return Safety.Invoke(region, "SetTextColor", r, g, b, 1) or changed end
+    end
+    return changed
+end
+
+local turnInTimer, turnInDue, verifyRepair
+local AfterTurnInFade
+
+local function CheckTurnInOpacity()
+    if not turnInDue then return end
+    turnInDue = false
+    if not QuestText.roots[QuestFrame] or Safety.Read(QuestFrameRewardPanel, "IsVisible") ~= true then return end
+    if Safety.Read(QuestInfoTitleHeader, "GetParent") ~= QuestRewardScrollChildFrame then return end
+    local storyChanged = RestoreTurnInOpacity(QuestInfoRewardText)
+    local rewardsChanged = RestoreTurnInOpacity(QuestInfoRewardsFrame)
+    -- A late write hid this page once. Verify the repair once more in case
+    -- the same transition writes again. Healthy pages finish on the first check.
+    if not verifyRepair and (storyChanged or rewardsChanged) then
+        verifyRepair = true
+        turnInTimer = C_Timer.NewTimer(TURN_IN_CHECK_DELAY, AfterTurnInFade)
+    end
+end
+
+AfterTurnInFade = function()
+    turnInTimer, turnInDue = nil, true
+    NS.CombatGate.RunOrDefer(TURN_IN_CHECK_KEY, CheckTurnInOpacity)
+end
+
+local function QueueTurnInCheck()
+    if turnInTimer or turnInDue or not QuestText.roots[QuestFrame] then return end
+    if Safety.Read(QuestFrameRewardPanel, "IsVisible") ~= true then return end
+    verifyRepair = false
+    turnInTimer = C_Timer.NewTimer(TURN_IN_CHECK_DELAY, AfterTurnInFade)
+end
+
+local function CancelTurnInCheck()
+    if turnInTimer then
+        turnInTimer:Cancel()
+        turnInTimer = nil
+    end
+    turnInDue = false
 end
 
 local fields = {
@@ -324,6 +407,11 @@ end
 -- These Blizzard functions are called through their globals. QUEST_LOG_UPDATE
 -- also refreshes the greeting list through QuestFrameGreetingPanel_OnShow.
 local PaintCurrentHook = Isolated(RequestPaint)
+local function RewardPageShown()
+    RequestPaint()
+    if NS.Client and NS.Client.isForever then QueueTurnInCheck() end
+end
+local RewardPageShownHook = Isolated(RewardPageShown)
 local globalHooks = {
     { "QuestInfo_Display", PaintCurrentHook },
     { "QuestInfo_ShowRewards", PaintCurrentHook },
@@ -344,11 +432,18 @@ local function EnsurePanelShowHooks()
     for index = 1, #questPanels do
         local panel = Safety.Field(_G, questPanels[index])
         if Safety.HasMethod(panel, "HookScript") and not QuestText.hooks[panel] then
-            panel:HookScript("OnShow", PaintCurrentHook)
+            if panel == QuestFrameRewardPanel then
+                panel:HookScript("OnShow", RewardPageShownHook)
+            else
+                panel:HookScript("OnShow", PaintCurrentHook)
+            end
             QuestText.hooks[panel] = true
         end
     end
     if NS.Client and NS.Client.isForever and not offerHooks and QuestFrameDetailPanel then
+        if Safety.HasMethod(QuestFrameRewardPanel, "HookScript") then
+            QuestFrameRewardPanel:HookScript("OnHide", Isolated(CancelTurnInCheck))
+        end
         -- Enable() follows the last reading-fade update, after the Disable()
         -- in QuestFrameDetailPanel_OnShow, so the button's OnEnable fires.
         -- Observed as a script hook: no member of the native button changes.
@@ -383,6 +478,9 @@ function QuestText.Activate(root, owner)
     if not owners then
         owners = {}
         QuestText.roots[root] = owners
+        if root == QuestFrame and NS.Client and NS.Client.isForever then
+            QueueTurnInCheck()
+        end
     end
     owners[owner] = true
     EnsureHooks()
@@ -396,6 +494,7 @@ function QuestText.Deactivate(root, owner)
     if not owners then return end
     owners[owner] = nil
     if next(owners) then return end
+    if root == QuestFrame then CancelTurnInCheck() end
     -- Restore while the root is still recognized for parent-chain matching.
     RestoreRoot(root)
     QuestText.roots[root] = nil

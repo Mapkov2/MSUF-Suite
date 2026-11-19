@@ -109,7 +109,11 @@ local hud = Build.Module("navigationHUD", {
 Build.Section("navigationHUD", "navigation_hud", "Map overlay & compass", {
     Choice("shortcutMode", "Map overlay shortcut", 1, { "Shift+M (default)", "Custom key binding" }),
     Bool("showCompass", "Compass"),
+    Bool("showMarkers", "Show Suite markers", true),
     Bool("showWaypoint", "Show the active map waypoint", true),
+    Bool("showMapMarkers", "Show nearby map markers", true),
+    Bool("showKnownGathering", "Show known gathering spots", true),
+    Bool("showGatheringMinimap", "Show gathering spots on the minimap"),
     Bool("hideInCombat", "Hide in combat", true),
     Number("mapWidth", "Map overlay width", 360, 200, 600, 10),
     Number("mapOpacity", "Map opacity (percent)", 55, 15, 95, 5),
@@ -123,3 +127,8 @@ Build.Section("navigationHUD", "navigation_hud", "Map overlay & compass", {
 })
 for _, key in ipairs({ "mapX", "mapY", "compassX", "compassY" }) do hud.rules[key].hidden = true end
 hud.rules.compassWidth.enableKey = "showCompass"
+for _, key in ipairs({ "showWaypoint", "showMapMarkers", "showKnownGathering", "showGatheringMinimap" }) do
+    hud.rules[key].enableKey = "showMarkers"
+end
+Build.Tooltip(hud.rules.showKnownGathering, "Shows known herb and ore locations and remembers successful gathers.")
+Build.Tooltip(hud.rules.showGatheringMinimap, "Show known herb and ore locations alongside Blizzard's tracking.")

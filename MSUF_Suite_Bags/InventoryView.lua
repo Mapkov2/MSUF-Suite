@@ -21,8 +21,8 @@ local Transactions = { "MailFrame", "TradeFrame", "AuctionHouseFrame", "AuctionF
 local EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO_RECEIVED", "MERCHANT_SHOW",
     "MERCHANT_CLOSED", "MAIL_SHOW", "MAIL_CLOSED", "TRADE_SHOW", "TRADE_CLOSED", "AUCTION_HOUSE_SHOW",
     "AUCTION_HOUSE_CLOSED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED",
-    "BAG_UPDATE_DELAYED", "EQUIPMENT_SETS_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "INVENTORY_SEARCH_UPDATE",
-    "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }
+    "BAG_UPDATE", "BAG_UPDATE_DELAYED", "BAG_CONTAINER_UPDATE", "PLAYER_ENTERING_WORLD", "EQUIPMENT_SETS_CHANGED",
+    "PLAYER_EQUIPMENT_CHANGED", "INVENTORY_SEARCH_UPDATE", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }
 local ITEM_EVENTS = { "QUEST_REMOVED", "ITEM_LOCK_CHANGED" }
 
 local function State()
@@ -116,6 +116,9 @@ Render = function(delta)
 end
 
 local function BuildModel(state)
+    if M.config.inventoryView == VIEW.SINGLE or M.config.inventoryView == VIEW.CATEGORIES and M.config.collapseCategorySidebar then
+        InventoryView.selected = "all"
+    end
     -- A recorded inventory (OfflineInventory.lua) builds the same model from
     -- its display records; the live index stays read for the way back.
     local recorded = Offline and Offline.Items()
@@ -149,7 +152,7 @@ Flush = function(event)
     end
     local state = State()
     if not state then return end
-    if P.ReagentInventory and (M.config.combineReagentBag or P.ReagentInventory.active) then
+    if P.ReagentInventory and (M.config.combineReagentBag or M.config.inventoryView == VIEW.SINGLE or P.ReagentInventory.active) then
         P.ReagentInventory.Prepare()
     end
     Index.ReadContainer(InventoryView.index, InventoryView.frame, Index.Recent())
@@ -216,6 +219,10 @@ local function OnEvent(_, event, value, success)
         Flush(event)
         return
     end
+    if event == "BAG_UPDATE" then
+        Index.InvalidateBag(InventoryView.index, value)
+        return
+    end
     if event == "PLAYER_REGEN_ENABLED" then InventoryView.positionsDirty = true end
     if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
         P.BagWindowMotion.Cancel()
@@ -224,6 +231,9 @@ local function OnEvent(_, event, value, success)
     end
     if event == "BAG_UPDATE_DELAYED" or event == "EQUIPMENT_SETS_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then
         P.InventoryDetails.Invalidate()
+    end
+    if event == "BAG_CONTAINER_UPDATE" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_ENTERING_WORLD" then
+        Index.InvalidateBags(InventoryView.index)
     end
     if event == "GET_ITEM_INFO_RECEIVED" then
         -- Arriving item data patches the waiting records; no slot is read again.
@@ -282,7 +292,10 @@ end
 local function RegisterEvents()
     local events = InventoryView.events
     for i = 1, #EVENTS do
-        if NS.Client.SupportsEvent(EVENTS[i]) then events:RegisterEvent(EVENTS[i]) end
+        local event = EVENTS[i]
+        if (event ~= "BAG_UPDATE" or NS.Client.isForever) and NS.Client.SupportsEvent(event) then
+            events:RegisterEvent(event)
+        end
     end
     for i = 1, #ITEM_EVENTS do
         local event = ITEM_EVENTS[i]
@@ -315,6 +328,7 @@ end
 function InventoryView.Resume()
     if not InventoryView.active then return end
     RegisterEvents()
+    Index.InvalidateBags(InventoryView.index)
     P.InventoryDetails.Invalidate()
 end
 
@@ -329,7 +343,9 @@ function InventoryView.Refresh()
         if InventoryView.active then InventoryView.Release() end
         return
     end
-    InventoryView.context.physicalSlots = NS.Client.isForever and M.config.inventoryView == VIEW.ALL
+    Model.Prepare(InventoryView.model, M.config)
+    InventoryView.measureConfig = nil
+    InventoryView.context.physicalSlots = NS.BagsPhysicalOrder(M.config)
     if InventoryView.nativeMouseWheel == nil then InventoryView.nativeMouseWheel = InventoryView.frame:IsMouseWheelEnabled() end
     if not InventoryView.controlsReady then P.InventoryControls.Create() end
     Grid.RefreshFonts()

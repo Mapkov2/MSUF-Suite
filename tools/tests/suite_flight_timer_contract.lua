@@ -1,10 +1,14 @@
 local root=assert(arg[1])
 local function Widget(parent)
     local w={shown=true,parent=parent}
-    for _,key in ipairs({"SetAllPoints","SetJustifyH","ClearAllPoints","SetExpiredText","SetUpdateInterval",
+    for _,key in ipairs({"SetAllPoints","ClearAllPoints","SetExpiredText","SetUpdateInterval",
         "SetDesiredUnitCount","SetMinInterval","SetDefaultAbbreviation","SetWordWrap","SetMaxLines"}) do w[key]=function() end end
+    -- points: every anchor since the last ClearAllPoints, by its point.
+    function w:ClearAllPoints() self.points={} end
     function w:SetPoint(...)
         self.point={...}
+        self.points=self.points or {}
+        self.points[self.point[1]]=self.point
         if self.point[1]=="LEFT" then self.left=true end
         if self.point[1]=="RIGHT" then self.right=true end
     end
@@ -28,7 +32,25 @@ local function Widget(parent)
     end
     function w:SetScript(k,v) self[k]=v end
     function w:SetShown(v) self.shown=v end
+    function w:Show() self.shown=true end
     function w:Hide() self.shown=false end
+    function w:SetHeight(v) self.height=v end
+    function w:SetJustifyH(v) self.justify=v end
+    function w:SetTexture(v) self.texture=v end
+    function w:SetBlendMode(v) self.blend=v end
+    -- The Timer bar's StatusBar: a still value replaces a running timer, as the client's.
+    function w:SetMinMaxValues(a,b) self.min,self.max=a,b end
+    function w:SetValue(v) self.value,self.timer=v,nil end
+    function w:SetTimerDuration(d,interpolation,direction)
+        self.timer={finish=d.finish,length=d.duration,interpolation=interpolation,direction=direction}
+        self.timers=(self.timers or 0)+1
+    end
+    function w:SetStatusBarTexture(v) self.statusTexture=v;self.fill=self.fill or Widget(self) end
+    function w:GetStatusBarTexture() return self.fill end
+    function w:SetStatusBarColor(...) self.barColor={...} end
+    function w:SetVertexColor(...) self.vertex={...} end
+    function w:SetGradient(orientation,from,to) self.gradient={orientation,from,to} end
+    function w:GetEffectiveScale() return (self.scale or 1)*(self.parent and self.parent:GetEffectiveScale() or 1) end
     function w:SetEnabled(v) self.enabled=v end
     function w:SetTimeFromEnd(finish,duration) self.finish,self.duration,self.start=finish,duration,nil end
     function w:SetTimeFromStart(start,span) self.start,self.span,self.finish=start,span,nil end
@@ -81,6 +103,18 @@ C_DurationUtil={CreateDuration=Widget,CreateDurationTextBinding=Widget}
 local formatters=0
 C_StringUtil={CreateSecondsFormatter=function() formatters=formatters+1;return Widget() end}
 Enum.SecondsFormatterInterval,Enum.SecondsFormatterAbbreviation={Seconds=0},{OneLetter=2}
+-- The Timer bar's clock (NumericRuleFormatter) and the StatusBar timer enums (Retail and Forever).
+local clocks=0
+C_StringUtil.CreateNumericRuleFormatter=function()
+    clocks=clocks+1
+    local formatter={}
+    function formatter:SetBreakpoints(points) self.points=points end
+    return formatter
+end
+Enum.NumericRuleFormatRounding={Down=1}
+Enum.StatusBarInterpolation={Immediate=0,ExponentialEaseOut=1}
+Enum.StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1}
+CreateColor=function(r,g,b,a) return {r=r,g=g,b=b,a=a} end
 local S={}
 local state={}
 -- The runtime's per-profile module state (MSUF_Suite/Core/Suite.lua).
@@ -93,6 +127,22 @@ S.CreateFontString=function(parent) local label=Widget(parent);label.isFontStrin
 S.SetStyledFont=function(label,path,size) label.fontSize=size end;
 S.QoLStyleText=function(label,config,path,size) label.style=config; S.SetStyledFont(label,path,size) end;S.GlobalFontPath=function() return "font" end
 S.Text=function(v) return v end
+-- SharedMedia keys resolve to a path; an empty key keeps the fallback (MSUF_Suite/Core/Platform.lua).
+S.ResolveTexture=function(key,fallback) if key==nil or key=="" then return fallback end return "media:"..key end
+S.RGB=function(hex) return tonumber(hex:sub(1,2),16)/255,tonumber(hex:sub(3,4),16)/255,tonumber(hex:sub(5,6),16)/255 end
+-- Four hairlines around an owner, hidden at width 0 (MSUF_Suite_Modules/Surfaces.lua).
+S.PlaceEdges=function(set,owner,width,r,g,b,a)
+    for i=1,4 do
+        set[i]:SetShown(width>0)
+        if width>0 then set[i]:SetColorTexture(r,g,b,a or 1) end
+    end
+    if width>0 then
+        set[1]:SetHeight(width)
+        set[2]:SetHeight(width)
+        set[3]:SetWidth(width)
+        set[4]:SetWidth(width)
+    end
+end
 -- The format of the clock the client writes (MSUF_Suite_Modules/Surfaces.lua), nil on a client that
 -- cannot: the module then keeps its ticker. The cases below run without it unless they set it.
 local clockFormat
@@ -102,10 +152,12 @@ local movers={}
 S.RegisterOwnedMover=function(id,element,spec) assert(id=="flightTimer");movers[element]=spec end
 S.Install=function(id,m) assert(id=="flightTimer");S.module=m end
 local qol=(arg[2] or root).."/MSUF_Suite_QualityOfLife/"
-local private={NS={Client={},Safety={IsForbidden=function(frame) return frame.forbidden==true end}},Suite=S}
+local private={NS={Client={},Safety={IsForbidden=function(frame) return frame.forbidden==true end},
+    MSUFMedia={barTexture="msuf-bar.tga"}},Suite=S}
 assert(loadfile(qol.."FlightTimer.lua"))("test",private)
 local m=S.module
-m.active=true;m.config={width=340,scale=100,x=0,y=0,fontSize=12,showStops=true,routePreview=true,classColor=true,hideDisplay=false}
+m.active=true;m.config={width=340,scale=100,x=0,y=0,fontSize=12,showStops=true,routePreview=true,classColor=true,hideDisplay=false,
+    displayStyle=1,barLook=1,barHeight=4,barColor="4a98f5",barTexture="",barSpark=true,replaceXPBar=true}
 local tickers,deadlines={},{}
 m.context={
     Event=function(_,name,callback) events[name]=callback end,
@@ -412,6 +464,144 @@ assert(m.departed==700 and m.host.time.text=="0:00" and Running()==1,"cold enabl
 now=705;Tick();assert(m.host.time.text=="0:05","cold-enabled flight clock stayed blank")
 Landed(710);assert(next(state.timings)==nil,"cold enable learned a partial route")
 m.active=false;m:Disable()
+assert(not m.host.bar and clocks==0,"the card layout built the Timer bar or its clock")
+
+-- The Timer bar layout (displayStyle 2): the destination and the time left as a clock on one line, and a bar
+-- the client fills from the countdown's own span: no Lua timer, no paint per second. While flying it takes the
+-- shown MSUF experience bar's place, scale and size (replaceXPBar; ExperienceBar.lua lends and takes it back).
+do
+    local covers,slotShown={},true
+    local slot=Widget(UIParent)
+    function slot:GetScale() return .8 end
+    function slot:GetWidth() return 400 end
+    function slot:GetHeight() return 41 end
+    S.ExperienceBarSlot=function() return slotShown and slot or nil end
+    S.CoverExperienceBar=function(covered) covers[#covers+1]=covered end
+    local function Covered() return covers[#covers]==true end
+    -- The event storm above counted font writes; sizes are recorded again.
+    S.SetStyledFont=function(label,_,size) label.fontSize=size end
+    local c=m.config
+    c.displayStyle=2
+    taxi=false;m.active=true;m:Enable()
+    local bar=m.host.bar
+    assert(bar and bar.shown and bar.statusTexture=="media:MSUF Lucent" and bar.height==4,
+        "the Timer bar lost its MSUF texture or height")
+    assert(math.abs(bar.barColor[1]-0x4a/255)<.001 and math.abs(bar.barColor[3]-0xf5/255)<.001,"the Timer bar ignored its color")
+    assert(bar.spark.texture and bar.spark.blend=="ADD" and bar.spark.point[2]==bar:GetStatusBarTexture(),
+        "the spark does not ride the fill's edge")
+    assert(not m.host.shown and #covers==0,"a grounded Timer bar showed or took the experience bar's place")
+    state.timings["A > B > C"]=60
+    now=1499;Fire("TAXIMAP_OPENED")
+    TakeOff(1500)
+    assert(m.host.shown and m.host.title.text=="C" and m.host.title.style==c,"the Timer bar does not name the destination")
+    assert(m.binding.enabled and m.binding.formatter==m.clockFormatter and clocks==1 and m.duration.finish==1560,
+        "the Timer bar's countdown is not the clock")
+    local points=m.clockFormatter.points[1]
+    assert(points.format=="%d:%02d" and points.components[1].div==60 and points.components[2].mod==60,"the clock is not m:ss")
+    assert(bar.timer and bar.timer.finish==1560 and bar.timer.length==60 and bar.timer.direction==Enum.StatusBarTimerDirection.ElapsedTime
+        and bar.timers==1 and bar.spark.shown,"the client does not fill the bar from takeoff to arrival")
+    assert(Running()==0 and not m.host.OnUpdate,"the Timer bar runs a Lua timer")
+    assert(not m.host.route.shown and not m.host.status.shown and not m.host.land.shown,"the Timer bar kept card rows")
+    assert(m.host.time.justify=="RIGHT" and m.host.time.fontSize==c.fontSize,"the time is not the line's right end")
+    -- In the experience bar's place: its scale and its corners, and the experience bar draws nothing.
+    local function InSlot()
+        local points=m.host.points
+        return points.TOPLEFT and points.TOPLEFT[2]==slot and points.BOTTOMRIGHT[2]==slot and not points.CENTER
+    end
+    local function OwnPlace()
+        local points=m.host.points
+        return points.CENTER and points.CENTER[2]==UIParent and not points.TOPLEFT
+    end
+    assert(Covered() and #covers==1 and InSlot() and m.host.scale==.8,"the Timer bar did not take the experience bar's place")
+    assert(m.host.title.point[3]=="TOPLEFT" and m.host.time.point[3]==-10,"the line is not centered in the slot's height")
+    assert(bar.point[1]=="TOPRIGHT" and m.host.title.point[2]==m.host.time,"the Timer bar line is not laid out")
+    -- Flag storms neither restart the fill nor lend the slot again.
+    for _=1,200 do Fire("UNIT_FLAGS","player") end
+    assert(bar.timers==1 and #covers==1,"flag events restarted the fill or took the slot again")
+    -- A refresh keeps the running fill and the slot.
+    m:Refresh()
+    assert(bar.timers==1 and Covered() and #covers==1 and m.binding.formatter==m.clockFormatter,
+        "a refresh restarted the fill or handed the experience bar back")
+    -- The experience bar goes (hidden or switched off): the bar returns to its own place; it comes back: the bar
+    -- takes it again. The fill keeps running throughout.
+    slotShown=false;S.ExperienceSlotChanged()
+    assert(not Covered() and OwnPlace() and m.host.scale==1 and m.host.width==c.width
+        and m.host.height==c.fontSize+5+c.barHeight+14,"the Timer bar stayed in a slot that went away")
+    slotShown=true;S.ExperienceSlotChanged()
+    assert(Covered() and InSlot() and bar.timers==1,"the Timer bar did not take a returning slot")
+    -- MSUF Edit Mode places the bar on its own; the switch keeps the experience bar.
+    S.editMode=true;m:Refresh()
+    assert(not Covered() and OwnPlace(),"Edit Mode left the bar in the experience bar's place")
+    S.editMode=false;m:Refresh()
+    assert(Covered(),"leaving Edit Mode did not take the slot again")
+    c.replaceXPBar=false;m:Refresh()
+    assert(not Covered() and OwnPlace(),"the switch off kept the experience bar covered")
+    c.replaceXPBar=true;m:Refresh()
+    assert(Covered(),"the switch on did not take the slot")
+    -- Landing hands the experience bar back and empties the bar.
+    Landed(1560)
+    assert(not Covered() and not m.host.shown and bar.value==0 and not bar.timer and not bar.spark.shown,
+        "landing kept the experience bar covered or the fill running")
+    assert(state.timings["A > B > C"]==60,"the Timer bar changed what a journey teaches")
+    -- Without a known time the clock counts up from takeoff and the bar stays empty.
+    now=1599;Fire("TAXIMAP_OPENED")
+    now=1600;hooks.TakeTaxiNode(2);taxi=true;Fire("UNIT_FLAGS","player")
+    assert(m.host.title.text=="B" and Running()==1 and m.host.time.text=="0:00" and bar.value==0 and not bar.spark.shown,
+        "an unknown route invented a fill")
+    now=1612;Tick()
+    assert(m.host.time.text=="0:12","the unknown route's clock does not count up")
+    -- Without a shown experience bar the Timer bar keeps its own place.
+    slotShown=false;Landed(1620)
+    TakeOff(1700)
+    assert(m.host.shown and not Covered() and OwnPlace(),"the Timer bar took a missing slot")
+    Landed(1760)
+    slotShown=true
+    -- MSUF Edit Mode shows a sample fill.
+    S.editMode=true;m:Refresh()
+    assert(m.host.shown and m.host.title.text=="Flight route preview" and bar.value==.6 and bar.spark.shown,
+        "the Timer bar preview has no sample fill")
+    -- The skins. Modern: the frameless dark bar with white text. MSUF Forever: the Forever skin's graphite glass
+    -- with its top sheen, the experience bar's hairline frame with the gold top trim, an ivory title and a gold
+    -- time. A chosen class color still wins over the look's text.
+    local function Near(color,hex) return math.abs(color[1]-tonumber(hex:sub(1,2),16)/255)<.001 end
+    c.classColor=false;m:Refresh()
+    local edges,sheen=m.host.edges,m.host.sheen
+    assert(not edges[1].shown and not sheen.shown and m.host.background.color[4]==.82 and m.host.title.color[1]==1
+        and Near(bar.track.color,"00"),"Modern drew a frame, a sheen or tinted text")
+    c.barLook=2;m:Refresh()
+    assert(edges[1].shown and edges[4].shown and edges[1].height==1 and Near(edges[1].color,"d8") and Near(edges[2].color,"9f"),
+        "MSUF Forever lost its hairline frame or gold trim")
+    assert(sheen.shown and sheen.gradient[1]=="VERTICAL" and sheen.gradient[3].a==.07 and Near(m.host.background.color,"14")
+        and m.host.background.color[4]==.94 and Near(bar.track.color,"20"),"MSUF Forever lost its graphite glass")
+    assert(Near(m.host.title.color,"f1") and Near(m.host.time.color,"d8") and Near(bar.spark.vertex,"ff"),
+        "MSUF Forever text is not ivory and gold")
+    c.classColor=true;m:Refresh()
+    assert(m.host.title.color[1]==.7 and m.host.time.color[1]==.7,"the look's text colors replaced the class color")
+    c.barLook=1;m:Refresh()
+    assert(not edges[1].shown and not sheen.shown,"Modern kept the Forever frame")
+    c.barLook=2;m:Refresh()
+    S.editMode=false;m:Refresh()
+    -- Disabled while it stands in: the experience bar comes back.
+    TakeOff(1800)
+    assert(Covered(),"probe: the flight did not take the slot")
+    m.active=false;m:Disable()
+    assert(not Covered() and not m.host.shown,"disabling kept the experience bar covered")
+    -- Back to the card: its rows, its countdown format and no bar.
+    c.displayStyle=1
+    taxi=false;m.active=true;m:Enable()
+    assert(not bar.shown and m.binding.formatter==m.formatter and m.host.time.justify=="LEFT",
+        "the card kept the Timer bar or its clock")
+    assert(not m.host.edges[1].shown and not m.host.sheen.shown and m.host.background.color[4]==.92,
+        "the card kept the Forever frame or the bar's panel")
+    now=1899;Fire("TAXIMAP_OPENED")
+    TakeOff(1900)
+    assert(not Covered() and m.host.status.shown and m.host.land.shown and m.host.title.text=="A > C",
+        "the card took the experience bar's place or lost its rows")
+    Landed(1960)
+    m.active=false;m:Disable()
+    S.ExperienceBarSlot,S.CoverExperienceBar=nil,nil
+    wipe(state.timings)
+end
 
 -- The bundled data is loaded by the QoL TOC and stays off Retail.
 local manifest=assert(io.open(qol.."MSUF_Suite_QualityOfLife_Mainline.toc","rb"))

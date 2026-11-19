@@ -11,43 +11,25 @@ local FPS_HIDDEN, FPS_BELOW, FPS_ALONE = 1, 2, 3
 -- short or full stat names (MSUF_Suite/Core/Catalog/QualityOfLifeHUD.lua).
 local RATINGS, BOTH, FULL_NAMES = 2, 3, 2
 local FIELDS = {
-    { key = "showCrit", label = "CRIT", full = "Critical strike" },
-    { key = "showHaste", label = "HASTE", full = "Haste" },
-    { key = "showMastery", label = "MASTERY", full = "Mastery" },
-    { key = "showVersatility", label = "VERS", full = "Versatility" },
+    { key = "showCrit", label = "CRIT", full = "Critical strike", read = function() return S.ReadCrit() end },
+    { key = "showHaste", label = "HASTE", full = "Haste", rating = "CR_HASTE_MELEE", read = function() return S.ReadHaste() end },
+    { key = "showMastery", label = "MASTERY", full = "Mastery", rating = "CR_MASTERY", read = function() return S.ReadMastery() end },
+    { key = "showVersatility", label = "VERS", full = "Versatility", rating = "CR_VERSATILITY_DAMAGE_DONE",
+        read = function() return S.ReadVersatility() end },
     -- Each extra stat has its own switch and color.
     { key = "showLeech", color = "leechColor", label = "LEECH", full = "Leech", rating = "CR_LIFESTEAL",
-        read = S.ReadLeech },
+        read = function() return S.ReadPercent(S.ReadLeech) end },
     { key = "showAvoidance", color = "avoidanceColor", label = "AVOID", full = "Avoidance", rating = "CR_AVOIDANCE",
-        read = function() return GetAvoidance() end },
+        read = function() return S.ReadPercent(GetAvoidance) end },
     { key = "showSpeed", color = "speedColor", label = "SPD", full = "Speed", rating = "CR_SPEED",
-        read = function() return GetSpeed() end },
+        read = function() return S.ReadPercent(GetSpeed) end },
 }
-local FIRST_EXTRA = 5
 -- The text size (fontSize) is the value's. The stat names are LABEL_STEP
 -- smaller, but not below MIN_LABEL; the FPS readout is FPS_STEP smaller.
 local LABEL_STEP, MIN_LABEL, FPS_STEP = 5, 8, 1
 
 local function Enabled(c, field)
     return c[field.key] == true
-end
-
-local function AnyEnabled(c)
-    for i = 1, #FIELDS do if Enabled(c, FIELDS[i]) then return true end end
-    return false
-end
-
--- The stat readers are shared with the DataTexts Secondary stat place
--- (MSUF_Suite_Modules/PlayerReaders.lua); a disabled stat is never read.
-local ReadPercent = S.ReadPercent
-
-local function ReadStats(config)
-    local crit, critRating
-    if config.showCrit then crit, critRating = S.ReadCrit() end
-    local haste = config.showHaste and S.ReadHaste() or nil
-    local mastery = config.showMastery and S.ReadMastery() or nil
-    local versatility = config.showVersatility and S.ReadVersatility() or nil
-    return crit, haste, mastery, versatility, critRating
 end
 
 local function ReadRating(rating)
@@ -57,18 +39,19 @@ local function ReadRating(rating)
     end
 end
 
--- raw: the numbers include ratings; ratingsOnly: only ratings (else both
--- on two lines). Without raw the value shows as a percentage.
-local function SetValue(field, value, rating, raw, ratingsOnly)
-    local text
-    if not raw then
-        text = S.Finite(value) and string.format("%.1f%%", value) or "--"
-    elseif ratingsOnly then
-        text = S.Finite(rating) and string.format("%.0f", rating) or "--"
-    else
-        text = (S.Finite(value) and string.format("%.1f%%", value) or "--")
-            .. "\n" .. (S.Finite(rating) and string.format("%.0f", rating) or "--")
-    end
+local function Percent(value)
+    return S.Finite(value) and string.format("%.1f%%", value) or "--"
+end
+
+local function Rating(_, rating)
+    return S.Finite(rating) and string.format("%.0f", rating) or "--"
+end
+
+local function Both(value, rating)
+    return Percent(value) .. "\n" .. Rating(nil, rating)
+end
+
+local function SetValue(field, text)
     if field.lastText ~= text then
         field.lastText = text
         field.value:SetText(text)
@@ -194,11 +177,18 @@ local function Layout(self)
     self.bg:SetAlpha(c.opacity / 100)
     self.border:SetColorTexture(S.RGB(c.accentColor))
     Colors(self)
-    local count = 0
+    local active = {}
+    self.activeFields = active
+    self.wantRating = c.valueFormat == RATINGS or c.valueFormat == BOTH
+    self.formatValue = c.valueFormat == RATINGS and Rating or c.valueFormat == BOTH and Both or Percent
     for i = 1, #FIELDS do
-        if Enabled(c, FIELDS[i]) then count = count + 1 end
+        local definition, field = FIELDS[i], self.fields[i]
+        if Enabled(c, definition) then
+            field.read, field.rating, field.index = definition.read, definition.rating and _G[definition.rating], i
+            active[#active + 1] = field
+        end
     end
-    count = math.max(1, count)
+    local count = #active
     local visible = 0
     for i = 1, #FIELDS do
         local field, definition = self.fields[i], FIELDS[i]
@@ -214,13 +204,15 @@ local function Layout(self)
             field.label:SetPoint("TOP", host, "TOPLEFT", x, -5)
             field.value:ClearAllPoints()
             field.value:SetPoint("BOTTOM", host, "BOTTOMLEFT", x, 5)
+        else
+            SetValue(field, self.formatValue())
         end
     end
 end
 
 -- PLAYER_REGEN_DISABLED arrives before the combat lockdown starts.
 local function Wanted(self, event)
-    return AnyEnabled(self.config) and (S.editMode or not self.config.combatOnly or NS.InCombat(event))
+    return #self.activeFields > 0 and (S.editMode or not self.config.combatOnly or NS.InCombat(event))
 end
 
 local function Update(self, event)
@@ -228,25 +220,24 @@ local function Update(self, event)
     local visible = Wanted(self, event)
     self.host:SetShown(visible)
     if not visible then return end
-    local c = self.config
-    local ratingsOnly = c.valueFormat == RATINGS
-    local raw = ratingsOnly or c.valueFormat == BOTH
+    local formatValue = self.formatValue
     if S.editMode then
-        for i = 1, #self.fields do SetValue(self.fields[i], 12.3 + i, 500 + i * 100, raw, ratingsOnly) end
+        for _, field in ipairs(self.activeFields) do
+            local i = field.index
+            SetValue(field, formatValue(12.3 + i, 500 + i * 100))
+        end
         return
     end
-    local crit, haste, mastery, versatility, critRating = ReadStats(c)
-    SetValue(self.fields[1], crit, c.showCrit and raw and ReadRating(critRating), raw, ratingsOnly)
-    SetValue(self.fields[2], haste, c.showHaste and raw and ReadRating(_G.CR_HASTE_MELEE), raw, ratingsOnly)
-    SetValue(self.fields[3], mastery, c.showMastery and raw and ReadRating(_G.CR_MASTERY), raw, ratingsOnly)
-    SetValue(self.fields[4], versatility, c.showVersatility and raw
-        and ReadRating(_G.CR_VERSATILITY_DAMAGE_DONE), raw, ratingsOnly)
-    -- Switched-off extra stats are not read.
-    for i = FIRST_EXTRA, #FIELDS do
-        local field = FIELDS[i]
-        if c[field.key] then
-            SetValue(self.fields[i], ReadPercent(field.read), raw and ReadRating(_G[field.rating]), raw, ratingsOnly)
+    local wantRating = self.wantRating
+    for _, field in ipairs(self.activeFields) do
+        local value, dynamicRating = field.read()
+        local rating
+        if wantRating then
+            local constant = field.rating
+            if constant == nil then constant = dynamicRating end
+            rating = ReadRating(constant)
         end
+        SetValue(field, formatValue(value, rating))
     end
 end
 

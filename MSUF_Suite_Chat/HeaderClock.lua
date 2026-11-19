@@ -10,6 +10,7 @@ function C.ApplyClockSettings()
     else
         S.RestoreCVar("chat", "showTimestamps")
     end
+    C.RefreshNativeTimestamp()
 end
 
 function C.ClockText(config, hour, minute)

@@ -30,7 +30,11 @@ B.Module("bags", {
 NS.BagsAnimation = { OFF = 1, SIMPLE = 2, FULL = 3 }
 NS.BagsPresentation = { WINDOW = 1, PANEL = 2 }
 NS.BagsGoldPeriod = { SESSION = 1, TODAY = 2, BOTH = 3 }
-NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4 }
+NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4, SINGLE = 5 }
+function NS.BagsPhysicalOrder(config)
+    local view = config.inventoryView
+    return NS.Client.isForever and (view == NS.BagsView.ALL or view == NS.BagsView.SINGLE)
+end
 NS.BagsBankView = { TABS = 1, CHARACTER = 2, WARBANK = 3, CATEGORIES = 4 }
 NS.BagsSortDirection = { BLIZZARD = 1, FROM_TOP = 2, FROM_BOTTOM = 3 }
 -- The order of the Suite views' items (the "sortMode" setting).
@@ -113,7 +117,10 @@ B.Section("bags", "window", "Combined bag window", {
     B.Number("windowY", "Vertical offset", 0, -4096, 4096),
 })
 B.Section("bags", "organisation", "Inventory organisation", {
-    B.Choice("inventoryView", "Default inventory view", NS.BagsView.ALL, { "All items", "By bag", "Categories", "Blizzard grid" }),
+    B.Choice("inventoryView", "Default inventory view", NS.BagsView.ALL, {
+        "All items", "By bag", "Categories", "Blizzard grid", "One bag",
+    }),
+    B.Bool("collapseCategorySidebar", "Collapse category sidebar"),
     B.Bool("combineReagentBag", "Combine reagent bag with backpack"),
     B.Choice("sortMode", "Sort items by", NS.BagsSort.NAME,
         { "Name", "Quality", "Item level", "Type", "Expansion", "Stack count", "Vendor price" }),
@@ -208,7 +215,7 @@ rules.combineReagentBag.requiresChoice = { key = "inventoryView", values = {
 } }
 rules.category_ammo.hidden = not NS.Client.isForever
 rules.desaturateInactiveQuestItems.requiresChoice = { key = "inventoryView", values = {
-    [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,
+    [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true, [NS.BagsView.SINGLE] = true,
 } }
 -- The bank views and the bank window exist on Retail only.
 for _, key in ipairs({ "bankWindowScale", "bankWindowMoved", "bankWindowX", "bankWindowY" }) do
@@ -218,6 +225,7 @@ end
 -- category_*, groupEquipmentSets and hideEmptyCategories are read by the bank's
 -- category view too (BankInventory.lua copies them); Pages/Bags.lua gates those.
 local categoriesOnly = { key = "inventoryView", values = { [NS.BagsView.CATEGORIES] = true } }
+rules.collapseCategorySidebar.requiresChoice = categoriesOnly
 for _, key in ipairs({ "groupEquipmentSlots", "groupExpansions", "groupReagentTypes" }) do
     rules[key].requiresChoice = categoriesOnly
 end
@@ -228,7 +236,7 @@ end
 rules.panelFullHeight.requiresChoice = { key = "windowPresentation", values = { [NS.BagsPresentation.PANEL] = true } }
 -- The bag list replaces a Suite grid; Blizzard's own grid has none.
 rules.listView.requiresChoice = { key = "inventoryView", values = {
-    [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,
+    [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true, [NS.BagsView.SINGLE] = true,
 } }
 rules.bankListView.requiresChoice = { key = "bankView", values = {
     [NS.BagsBankView.CHARACTER] = true, [NS.BagsBankView.WARBANK] = true, [NS.BagsBankView.CATEGORIES] = true,

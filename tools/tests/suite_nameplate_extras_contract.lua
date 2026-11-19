@@ -24,7 +24,9 @@ local function Frame(parent)
     function f:SetWidth(w) geometry = geometry + 1 self.width = w end
     function f:GetHeight() return self.height end
     function f:SetHeight(h) self.height = h end
-    function f:SetPoint(...) geometry = geometry + 1 end
+    function f:SetPoint(...) self.point = { ... }; geometry = geometry + 1 end
+    function f:GetParent() return self.parent end
+    function f:SetParent(p) self.parent = p end
     function f:ClearAllPoints() geometry = geometry + 1 end
     function f:SetAllPoints(p) self.anchor = p end
     function f:SetMinMaxValues(a,b) self.min, self.max = a,b end
@@ -34,6 +36,16 @@ local function Frame(parent)
     function f:GetStatusBarTexture() return self.fill end
     function f:SetTexture(p) self.texture = p end
     function f:GetTexture() return self.texture end
+    function f:SetBlendMode(mode) self.blendMode = mode end
+    function f:SetGradient(...) self.gradient = { ... } end
+    function f:AddMaskTexture(mask)
+        assert(not combat and not self.mask, "duplicate mask or mask added in combat")
+        self.mask = mask
+    end
+    function f:RemoveMaskTexture(mask)
+        assert(not combat and self.mask == mask, "wrong mask or mask removed in combat")
+        self.mask = nil
+    end
     function f:SetColorTexture(...) self.color = {...} end
     function f:SetVertexColor(...) self.color = {...} end
     function f:SetVertexColorFromBoolean(v,yes,no) self.boolean, self.yes, self.no = v,yes,no end
@@ -149,4 +161,98 @@ assert(not tint.shown, "disabled cast hook painted a stale frame")
 assert(not owner.extras and not p.EasyFeatures.enabled, "disabled feature gates disagree")
 local violations = stop()
 assert(#violations == 0, table.concat(violations,"\n"))
-print("Nameplate extras: opaque sinks, cast finish, native name refresh, target pooling, protected release and event budgets passed")
+do
+    local targetFrame = Frame()
+    ns.HostBridge.TargetResourceFrame = function() return targetFrame end
+    owner.active = true
+    config.look, config.targetUnitFrameResource = 2, true
+    config.targetUnitFrameResourceWidth, config.targetUnitFrameResourceHeight, config.targetUnitFrameResourceY = 114, 5, -8
+    p.TargetResource.Configure(owner)
+    local unitFrameRow
+    for _, frame in ipairs(frames) do if frame.parent == targetFrame and frame.unitFrame then unitFrameRow = frame end end
+    assert(unitFrameRow and unitFrameRow.point[1] == "TOPLEFT" and unitFrameRow.point[2] == targetFrame)
+    assert(unitFrameRow.point[5] == -8 and unitFrameRow.width == 114)
+    local called = reads
+    value = secret
+    watcher.scripts.OnEvent(watcher, "UNIT_POWER_UPDATE", "player", "COMBO_POINTS")
+    assert(rawequal(unitFrameRow.bars[1].value, secret) and reads == called + 1)
+    combat = true
+    maximum = 6
+    watcher.scripts.OnEvent(watcher, "UNIT_MAXPOWER", "player")
+    assert(unitFrameRow.alpha == 0 and #unitFrameRow.bars == 5, "resource row resized during combat")
+    combat = false
+    watcher.scripts.OnEvent(watcher, "PLAYER_REGEN_ENABLED")
+    assert(unitFrameRow.alpha == 1 and #unitFrameRow.bars == 6, "resource row did not resume after combat")
+    owner.active = false
+    p.TargetResource.Configure(owner)
+    assert(unitFrameRow.alpha == 0 and not next(watcher.events))
+end
+
+do
+    local prefix = "enemy"
+    p.PlatePrefix = function() return prefix end
+    ns.IsCombatLocked = ns.InCombat
+    ns.HostBridge.GlossTexture = function() return not ns.Client.isForever and "gloss" or nil end
+    assert(loadfile(root .. "/MSUF_Suite/Core/GlossMaterial.lua"))("MSUF_Suite", ns)
+    assert(loadfile(root .. "/MSUF_Suite/Core/NameplateGradient.lua"))("MSUF_Suite", ns)
+    Load("SlantedHealth")
+    local shape, gradient = p.SlantedHealth, ns.NameplateStyle.Gradient
+    local frame, hp = Frame(), Frame()
+    local firstFill, secondFill, back = Frame(hp), Frame(hp), Frame(hp)
+    hp.fill, hp.bgTexture = firstFill, back
+    hp.CreateMaskTexture = function(self) return Frame(self) end
+    local visual = { fill = Frame(hp), back = Frame(hp) }
+    local function Writable(region) return not region.forbidden end
+    shape.Configure({ look = 3, enemySlantedHealth = true })
+    combat, frame.protected = true, true
+    assert(not shape.Apply(frame, hp, true, Writable) and not firstFill.mask, "protected plate was clipped in combat")
+    combat = false
+    assert(shape.Apply(frame, hp, true, Writable) and firstFill.mask and firstFill.mask == back.mask)
+    shape.Visual(hp, visual)
+    assert(visual.slanted and visual.fill.mask == firstFill.mask and visual.slantRim)
+
+    local finish = { healthGradientEnabled = true }
+    local plan, pending = gradient.Plan(finish, "health"), {}
+    combat = true
+    gradient.PaintHealth(hp, visual, plan, frame, pending)
+    assert(pending[frame] and not visual.gradient, "protected plate allocated a gradient in combat")
+    combat = false
+    gradient.PaintHealth(hp, visual, plan, frame, pending)
+    assert(visual.gradient[2].mask == firstFill.mask, "health gradient covers the slanted edge")
+
+    finish.healthGradientDirLeft, finish.healthGradientDirUp, finish.healthGradientDirDown = true, true, true
+    finish.healthGlossEnabled = true
+    plan = gradient.Plan(finish, "health", plan)
+    gradient.PaintHealth(hp, visual, plan, frame, pending)
+    local layers = { unpack(visual.gradient, 1, 4) }
+    local glossCount = 0
+    for _, texture in ipairs(hp.textures) do
+        if texture.blendMode == "ADD" then
+            layers[#layers + 1] = texture
+            glossCount = glossCount + 1
+        end
+    end
+    assert(glossCount == (ns.Client.isForever and 1 or 2), "test did not create the expected gloss textures")
+    for _, texture in ipairs(layers) do
+        assert(texture.shown and texture.mask == firstFill.mask and texture.anchor == firstFill)
+    end
+
+    hp.fill = secondFill
+    assert(shape.Apply(frame, hp, true, Writable) and not firstFill.mask and secondFill.mask == back.mask)
+    gradient.PaintHealth(hp, visual, plan, frame, pending)
+    for _, texture in ipairs(layers) do
+        assert(texture.mask == secondFill.mask and texture.anchor == secondFill)
+    end
+
+    gradient.PaintHealth(hp, visual, nil, frame, pending)
+    prefix = "friendly"
+    assert(shape.Apply(frame, hp, true, Writable) and not back.mask and not secondFill.mask
+        and not visual.slanted and not visual.fill.mask and not visual.slantRim.shown)
+    for _, texture in ipairs(layers) do assert(not texture.shown and not texture.mask) end
+    gradient.PaintHealth(hp, visual, plan, frame, pending)
+    for _, texture in ipairs(layers) do assert(texture.shown and not texture.mask) end
+    prefix = "enemy"
+    assert(shape.Apply(frame, hp, true, Writable) and secondFill.mask)
+    for _, texture in ipairs(layers) do assert(texture.shown and texture.mask == secondFill.mask) end
+end
+print("Nameplate extras, clipped native health, and target UnitFrame resources passed")

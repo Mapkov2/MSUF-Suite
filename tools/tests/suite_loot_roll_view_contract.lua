@@ -1,6 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local viewPath = arg[2] or root .. "/MSUF_Suite_QualityOfLife/LootRollView.lua"
 local writes, nativeReads, subscriptions = 0, 0, 0
+local anchors, fonts, colors = 0, 0, 0
 
 local function Write()
     writes = writes + 1
@@ -18,7 +19,11 @@ local function Widget(parent, kind)
         error("renderer subscribed to a native event")
     end
     function widget:ClearAllPoints() self.points = {} Write() end
-    function widget:SetPoint(...) self.points[#self.points + 1] = { ... } Write() end
+    function widget:SetPoint(...)
+        self.points[#self.points + 1] = { ... }
+        anchors = anchors + 1
+        Write()
+    end
     function widget:SetAllPoints(relative) self.allPoints = relative Write() end
     function widget:SetSize(width, height) self.width, self.height = width, height Write() end
     function widget:SetWidth(width) self.width = width Write() end
@@ -41,7 +46,7 @@ local function Widget(parent, kind)
     end
     function widget:SetValue(value) self.value = value Write() end
     function widget:SetTexCoord(...) self.texCoord = { ... } Write() end
-    function widget:SetColorTexture(...) self.color = { ... } Write() end
+    function widget:SetColorTexture(...) self.color = { ... }; colors = colors + 1; Write() end
     function widget:SetTexture(texture) self.texture = texture Write() end
     function widget:SetAtlas(atlas) self.atlas = atlas Write() end
     function widget:SetAlpha(alpha) self.alpha = alpha Write() end
@@ -101,6 +106,7 @@ local Suite = {
     RGB = RGB,
     QoLStyle = function(config) return palettes[config.look or 1] end,
     QoLStyleText = function(region, _, font, size)
+        fonts = fonts + 1
         region.font, region.fontSize = font, size
     end,
     QoLColor = function(region, hex, alpha)
@@ -162,6 +168,10 @@ local row, done = module.rows[1], module.rows[2]
 local need, transmog = Action(row, 1), Action(row, 4)
 assert(module.viewCount == 2 and module.host.width == 380 and module.host.height == 120)
 assert(module.host.shown and row.frame.shown and done.frame.shown and not module.rows[3].frame.shown)
+local anchorBefore, fontBefore, colorBefore = anchors, fonts, colors
+for _ = 1, 8 do View.Paint(module) end
+assert(anchors == anchorBefore and fonts == fontBefore and colors == colorBefore,
+    "unchanged loot history rewrote anchors, fonts or colors")
 assert(row.name.text == "Blue sword" and row.icon.texture == 1234)
 Near(row.name.textColor[1], 0)
 Near(row.name.textColor[2], .44)
@@ -248,6 +258,7 @@ need.button.scripts.OnLeave(need.button)
 assert(not GameTooltip.shown, "our own tooltip was left open")
 
 config.width, config.rowHeight, config.scale, config.growth = 300, 48, 125, 2
+View.Layout(module)
 View.Paint(module)
 assert(module.host.width == 300 and module.host.height == 114 and module.host.scale == 1.25)
 assert(row.frame.points[1][1] == "BOTTOMLEFT" and done.frame.points[1][5] == 59)
@@ -262,6 +273,7 @@ for index = #row.actions, 1, -1 do
     end
 end
 config.fontSize = 18
+View.Layout(module)
 View.Paint(module)
 assert(row.frame.height == 61 and module.host.height == 126,
     "minimum row height did not expand to fit the largest supported text")
@@ -276,6 +288,7 @@ local buttonTop = row.frame.height - need.button.points[1][5] - need.button.heig
 assert(titleBottom <= buttonTop, "large title overlaps the roll buttons")
 config.fontSize = 12
 config.width, config.rowHeight, config.scale, config.growth, config.look = 600, 84, 80, 1, 2
+View.Layout(module)
 View.Paint(module)
 assert(module.host.width == 600 and module.host.height == 172 and module.host.scale == .8)
 assert(row.frame.points[1][1] == "TOPLEFT" and done.frame.points[1][5] == -88)
@@ -283,6 +296,7 @@ assert(row.details.width > 300 and row.item.width == 72)
 Near(row.background.color[1], 21 / 255)
 
 config.width, config.rowHeight, config.scale, config.look = 380, 58, 100, 1
+View.Layout(module)
 View.Paint(module)
 assert(View.Tick(module, 89) and row.remaining.text == 11)
 Near(row.border[1].color[1], 51 / 255)
@@ -319,6 +333,7 @@ View.Tick(module, 219)
 Near(row.border[1].color[1], 51 / 255)
 config.showCounts = false
 replacement.counts[1] = 5
+View.Layout(module)
 View.Paint(module)
 assert(not need.count.shown and not need.backdrop.shown)
 
@@ -338,6 +353,7 @@ local statusX, statusY = Point(row.status)
 config.nameOffsetX, config.nameOffsetY, config.iconOffsetX, config.iconOffsetY = 7, -3, -2, 4
 config.buttonsOffsetX, config.buttonsOffsetY, config.timerOffsetY = -11, 6, 5
 config.remainingOffsetX, config.detailsOffsetY, config.resultOffsetX = 3, -1, 9
+View.Layout(module)
 View.Paint(module)
 local x, y = Point(row.name)
 assert(x == nameX + 7 and y == nameY - 3 and Point(row.name, 2) == nameRightX + 7, "name offset")
@@ -356,6 +372,7 @@ assert(x == statusX + 9 and y == statusY, "result offset")
 for _, element in ipairs({ "icon", "name", "details", "result", "remaining", "timer", "buttons" }) do
     config[element .. "OffsetX"], config[element .. "OffsetY"] = 0, 0
 end
+View.Layout(module)
 View.Paint(module)
 assert(Point(row.name) == nameX and Point(need.button) == needX, "offsets did not return to the default place")
 
@@ -365,6 +382,7 @@ local autoStep = Point(Action(row, 0).button) - Point(Action(row, 1).button)
 assert(autoName == 12 and autoIcon == 46 and autoButton == 23 and row.timer.height == 2, "automatic sizes drifted")
 config.nameSize, config.iconSize, config.buttonsSize, config.timerSize = 16, 30, 28, 4
 config.detailsSize, config.resultSize, config.remainingSize = 10, 14, 18
+View.Layout(module)
 View.Paint(module)
 assert(row.name.fontSize == 16 and row.name.height == 19, "name size")
 assert(row.item.width == 30 and row.item.height == 30 and Point(row.name) == 30 + 14, "icon size or text start")
@@ -376,6 +394,7 @@ assert(row.frame.height == 58, "an element size changed the row height")
 for _, element in ipairs({ "icon", "name", "details", "result", "remaining", "timer", "buttons" }) do
     config[element .. "Size"] = 0
 end
+View.Layout(module)
 View.Paint(module)
 assert(row.name.fontSize == autoName and row.item.width == autoIcon and need.button.width == autoButton)
 local beforeTick = writes

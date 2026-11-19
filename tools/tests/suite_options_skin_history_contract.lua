@@ -12,10 +12,6 @@ local suiteRoot = { activeProfile = "Default", skinEnabled = true,
 local skinRoot = { activeProfile = "Default", profiles = { Default = { accent = 1 } } }
 MSUFSuite = {
     RootDB = suiteRoot, DB = suiteRoot.profiles.Default,
-    Database = { ROOT_SETTINGS = { "activeProfile", "skinEnabled" },
-        PROFILE_SETTINGS = { "modules" }, PROFILE_LAYOUT_STATE = {},
-        GetActiveProfileName = function() return suiteRoot.activeProfile end,
-        IsProfileName = function(name) return type(name) == "string" end },
     HostBridge = { Menu2 = function() return {} end, ProfileWorkbench = function() end }, SuiteCatalog = {}, SuiteOrder = {},
     ProfileVariants = { BaseSettings = function() return Copy(suiteRoot.profiles.Default.suite) end,
         LiftOverlay = function() return false end, Register = function() end },
@@ -31,6 +27,7 @@ MSUFSuite = {
         ReportNameplateImport = function() end },
     OnProfileChanged = function() end,
 }
+assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", MSUFSuite)
 MSUF2 = { Widgets = {}, Theme = {} }
 MapkoSkin = { addonName = "MSUF_Suite_Skin", Database = {
     GetRoot = function() return skinRoot end,

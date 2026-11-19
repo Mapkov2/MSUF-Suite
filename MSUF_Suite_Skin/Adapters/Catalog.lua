@@ -799,7 +799,13 @@ local entries = {
         category = "economy",
         addon = "Blizzard_CatalogShop",
         frames = { "CatalogShopFrame" },
-        mode = semanticOverlayMode,
+        mode = {
+            role = "panel",
+            rootSurface = false,
+            preserveRootArt = true,
+            allowImplicitProtected = false,
+            portraitChrome = true,
+        },
     },
     {
         id = "catalog-shop-refund",

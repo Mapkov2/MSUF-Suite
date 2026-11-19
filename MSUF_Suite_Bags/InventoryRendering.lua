@@ -183,7 +183,7 @@ end
 local function LiveTools(enabled)
     if InventoryView.liveTools == enabled then return end
     InventoryView.liveTools = enabled
-    for _, key in ipairs({ "equipped", "cleanup", "clearRecent" }) do
+    for _, key in ipairs({ "equipped", "cleanup" }) do
         local button = InventoryView[key]
         if button then button:SetEnabled(enabled) end
     end
@@ -249,10 +249,26 @@ local function Measure(c, listed)
         local companion = Presentation.CompanionWidth(c)
         if companion > 0 then width = width - companion - 8 end
     end
-    Presentation.Measure(g, c, width, available, MoneyTop(), nil, P.EquippedBags.frame:IsShown())
+    local money, drawer = MoneyTop(), P.EquippedBags.frame:IsShown()
+    local resizing = P.BagResize.active
+    if not resizing and InventoryView.measureConfig == c and g.measureWidth == width and g.measureHeight == available
+        and g.measureMoney == money and g.measureDrawer == drawer
+        and g.measureColumns == c.inventoryColumns and g.measureRows == c.inventoryRows and g.measureMode == c.inventoryView
+        and g.measurePresentation == c.windowPresentation and g.measureFullHeight == c.panelFullHeight
+        and g.measureCollapsed == c.collapseCategorySidebar and g.measureCompact == c.compactGroups then
+        g.rows, g.height = g.baseRows, g.baseHeight
+    else
+        Presentation.Measure(g, c, width, available, money, nil, drawer)
+        InventoryView.measureConfig = not resizing and c or nil
+        g.measureWidth, g.measureHeight, g.measureMoney, g.measureDrawer = width, available, money, drawer
+        g.measureColumns, g.measureRows, g.measureMode = c.inventoryColumns, c.inventoryRows, c.inventoryView
+        g.measurePresentation, g.measureFullHeight = c.windowPresentation, c.panelFullHeight
+        g.measureCollapsed, g.measureCompact = c.collapseCategorySidebar, c.compactGroups
+        g.baseRows, g.baseHeight = g.rows, g.height
+    end
     local layout = not listed and Model.Layout(InventoryView.model, g.columns, g.compact) or nil
     Presentation.FitRows(g, c, listed and ListLines(c) or InventoryView.model.lineCount)
-    if P.BagResize.active then g.width, g.height = P.BagResize.width, P.BagResize.height end
+    if resizing then g.width, g.height = P.BagResize.width, P.BagResize.height end
     P.BagWindowMotion.Target(g.width, g.height)
     return layout
 end
@@ -270,7 +286,6 @@ function Rendering.Suite(visualPass)
     TOP = g.top
     local columns, visibleRows = P.BagWindowMotion.Viewport(g)
     local sidebar = g.sidebar
-    local categories = c.inventoryView == VIEW.CATEGORIES
     ClearVisible()
     local font = Grid.FontPath()
     InventoryView.countSize = M.config.itemCountSize + (M.readableValues and 2 or 0)
@@ -282,11 +297,12 @@ function Rendering.Suite(visualPass)
     HideUnplaced()
     InventoryView.layout = "suite"
     InventoryView.ShowChrome(true)
-    InventoryView.sidebar:SetShown(categories)
+    InventoryView.sidebar:SetShown(g.sidebarShown)
     InventoryView.previous:SetEnabled(InventoryView.scroll > 0)
     InventoryView.next:SetEnabled(InventoryView.scroll < InventoryView.maxScroll)
     PaintFree()
     for view, button in pairs(InventoryView.tabs) do
+        if button:IsShown() == g.hideTabs then button:SetShown(not g.hideTabs) end
         P.BagAppearance.Button(button, view == c.inventoryView)
     end
     P.InventoryControls.Layout(g)

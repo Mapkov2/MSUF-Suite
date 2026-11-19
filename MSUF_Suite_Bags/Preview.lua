@@ -36,8 +36,9 @@ end
 function S.BagsPreviewLayout(preview, config, bank, geometry)
     local c = preview.config
     for key, value in pairs(config) do c[key] = value end
+    local reagent = not bank and (c.combineReagentBag or c.inventoryView == P.NS.BagsView.SINGLE)
     for i = 1, #preview.reagentItems do
-        preview.items[#SAMPLES + i] = not bank and c.combineReagentBag and preview.reagentItems[i] or nil
+        preview.items[#SAMPLES + i] = reagent and preview.reagentItems[i] or nil
     end
     if bank then
         Model.BankConfig(c, config)
@@ -47,10 +48,10 @@ function S.BagsPreviewLayout(preview, config, bank, geometry)
     else
         preview.width = nil
         if geometry then c.inventoryColumns = geometry.columns end
-        if P.BagPresentation.IsPanel(c) then c.compactGroups = false end
+        if P.BagPresentation.IsPanel(c) or c.inventoryView == P.NS.BagsView.SINGLE then c.compactGroups = false end
     end
     preview.context = preview.context or {}
-    preview.context.hasReagent = not bank and c.combineReagentBag
+    preview.context.hasReagent = reagent
     Model.Build(preview.model, preview.items, c, preview.state, preview.context)
     return Model.Layout(preview.model, c.inventoryColumns, c.compactGroups)
 end

@@ -84,6 +84,7 @@ local S = {
 local NS = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
+    InCombat = function() return combat end,
     Print = function(value) printed[#printed + 1] = value end,
 }
 Support.QoLStyleFixture(root, S)
@@ -191,4 +192,22 @@ assert(late, "the sale question did not open again")
 refund.all = InRefundWindow(10)
 dialogs.Accept(late)
 assert(#sold == soldBefore, "confirmation sold a stack that became refundable")
+
+refund.all = nil
+bagSlots[0][1].info.stackCount = 3
+bagSlots[1][1].info.stackCount = 1
+local matches = { { bag = 0, slot = 1, itemID = 100, count = 3, link = "item-100" } }
+assert(module:CanSellMatches(), "open merchant refused the marked search action")
+module:SellMatches(matches)
+local matching = assert(Question(), "search action skipped its sale confirmation")
+assert(matching.text == "Sell 1 marked item stacks to this merchant?",
+    "search action included non-matching marked stacks")
+bagSlots[0][1].info.stackCount = 2
+dialogs.Accept(matching)
+assert(#sold == soldBefore, "search sold a stack changed after confirmation")
+bagSlots[0][1].info.stackCount = 3
+module:SellMatches(matches)
+dialogs.Accept(assert(Question()))
+assert(#sold == soldBefore + 1 and sold[#sold][1] == 0 and sold[#sold][2] == 1,
+    "search action sold outside the selected marked slots")
 print("Suite marked vendor rules: preview, revalidation, combat, merchant close passed")

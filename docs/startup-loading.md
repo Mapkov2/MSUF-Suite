@@ -29,12 +29,16 @@ files are compiled; only the selected catalog populates translations. The bundle
 does not claim a compiler or login-time improvement over individual language addons.
 Package validation requires the combined TOC and all ten canonical catalogs.
 
-The profile database still copies every stored profile before validation publishes
+The profile database validates a copy of the stored profiles before publishing
 the new root. `CopyValue` preserves cycles, shared references, table keys, optional
-`seen`, primitive/function identity and the previous no-metatable-copy behavior.
-Only tables recurse; primitive members no longer call another Lua function. A
-table root has one extra helper call, accepted only with the measured aggregate
-profile-copy budget; primitive roots retain their direct return.
+`seen`, and primitive and function identity. Table metatables are left behind.
+
+When the host codec is available, the database can pack untouched inactive
+profiles during the session. Active and writable profiles keep their table
+identity for the session. Logout and addon unloading restore compatible schema-1
+tables before SavedVariables are written. The loader still accepts schema-2 data
+from development builds. Undecodable entries are retained in a recovery table
+and can be restored when the codec is available again.
 
 Regression checks are auto-discovered by `tools/run_suite_tests.py`:
 
@@ -55,4 +59,4 @@ Regression checks are auto-discovered by `tools/run_suite_tests.py`:
 
 Native VM, calls, compiler CPU and allocation measurements are offline evidence.
 They do not establish WoW login seconds, native frame cost, combat/taint or visual
-behavior. No deferred startup work, polling or new timer is introduced.
+behavior.

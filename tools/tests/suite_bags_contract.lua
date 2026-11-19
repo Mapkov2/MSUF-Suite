@@ -180,6 +180,7 @@ ContainerFrame6 = {
 for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
     frame.IsProtected = function() return true end
     frame.TitleContainer = VisualFrame(frame)
+    frame.GetChildren = function(self) return self.TitleContainer, self.PortraitButton end
     frame.TitleContainer:SetPoint("TOPLEFT", frame, "TOPLEFT", 35, -1)
     frame.TitleContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -24, -1)
     frame.SetTitleOffsets = function(self, left, right)
@@ -658,33 +659,15 @@ assert(combinedHandle and reagentHandle and combinedHandle.shown and reagentHand
     and reagentHandle.allPoints == ContainerFrame6.TitleContainer
     and combinedHandle.drags == "LeftButton" and reagentHandle.drags == "LeftButton",
     "open bag titles are not draggable")
--- The title explains dragging and the separate right-click menu.
+-- The title explains dragging and has no menu callback.
 combinedHandle.scripts.OnEnter(combinedHandle)
 assert(tooltip.shown and tooltip.owner == combinedHandle and tooltip.anchor == "ANCHOR_TOP"
-    and tooltip.lines[1] == "Drag to move" and tooltip.lines[2] == "Right-click for bag options",
-    "the bag title did not explain dragging and its menu")
+    and tooltip.lines[1] == "Drag to move" and tooltip.lines[2] == nil,
+    "the bag title did not explain its drag behavior")
 combinedHandle.scripts.OnLeave(combinedHandle)
 assert(not tooltip.shown, "leaving the bag title kept its tooltip")
-combinedHandle.scripts.OnMouseDown(combinedHandle)
-combinedHandle.scripts.OnClick(combinedHandle, "LeftButton")
-assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
-    "left-clicking the combined bag title opened Blizzard's bag menu")
-combinedHandle.scripts.OnClick(combinedHandle, "RightButton")
-assert(ContainerFrameCombinedBags.PortraitButton.menuOpen,
-    "right-clicking the combined bag title lost Blizzard's bag menu")
-combinedHandle.scripts.OnMouseDown(combinedHandle)
-combinedHandle.scripts.OnClick(combinedHandle, "RightButton")
-assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
-    "second title click did not close Blizzard's bag menu")
--- S12-A5: under WoW Forever's Gamepad UI Blizzard's bag menu, opened from
--- the Suite's call, would run MenuProxy.OnShow's focus code tainted; there the
--- portrait button itself opens it. The title still drags the window.
-gamepadUI = true
-combinedHandle.scripts.OnMouseDown(combinedHandle)
-combinedHandle.scripts.OnClick(combinedHandle, "RightButton")
-assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
-    "the bag title opened Blizzard's bag menu from the Suite under the Gamepad UI")
-gamepadUI = false
+assert(not combinedHandle.scripts.OnClick and not reagentHandle.scripts.OnClick,
+    "a Suite bag title still handles menu clicks")
 -- WoW Forever's SmartNavigation post-hooks CreateFrame and rescans an open
 -- bag window above a new frame's parent in the caller's execution
 -- (Blizzard_GamepadSmartNavigation/SmartNavigation.lua SetupFrameHooks).
@@ -694,7 +677,6 @@ assert(ContainerFrameCombinedBags.moving, "combined bag did not start moving")
 layoutInfoCalls, layoutEnumerations = infoCalls, enumerations
 cursorX, cursorY = 590, 455
 combinedHandle.scripts.OnDragStop(combinedHandle)
-combinedHandle.scripts.OnClick(combinedHandle, "LeftButton")
 assert(not ContainerFrameCombinedBags.moving and not ContainerFrameCombinedBags.PortraitButton.menuOpen
     and module.config.windowMoved and module.config.windowX == 60 and module.config.windowY == -18
     and ContainerFrameCombinedBags.point[4] == 60 and ContainerFrameCombinedBags.point[5] == -18

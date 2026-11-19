@@ -52,7 +52,7 @@ local function PaintDelta(label, a, b)
         label:SetText("+" .. D.Abbreviate(delta))
         label:SetTextColor(.45, .85, .67)
     elseif delta < 0 then
-        label:SetText("−" .. D.Abbreviate(-delta))
+        label:SetText("-" .. D.Abbreviate(-delta))
         label:SetTextColor(.96, .56, .56)
     else
         label:SetText("0")
@@ -223,7 +223,7 @@ local function NewList(parent, top, title, click)
     Columns(header, title, 12)
     header.values[1]:SetText(S.Text("Pull A"))
     header.values[2]:SetText(S.Text("Pull B"))
-    header.values[3]:SetText("B − A")
+    header.values[3]:SetText("B - A")
 
     local list = S.CreateFrame("Frame", nil, parent)
     list:SetPoint("TOPLEFT", header, "BOTTOMLEFT")

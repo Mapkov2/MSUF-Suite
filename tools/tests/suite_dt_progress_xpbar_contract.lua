@@ -28,6 +28,7 @@ local function Widget(parent)
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetShown(value) self.shown = value end
     function w:IsShown() return self.shown end
+    function w:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:SetText(value) self.text = value end

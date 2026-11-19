@@ -128,6 +128,84 @@ def read_snapshot(path):
     return data
 
 
+def structured_rows(items, size):
+    for item in items:
+        try:
+            row = json.loads(item)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, list) and len(row) == size and isinstance(row[0], str):
+            yield item, row
+
+
+def keyed_rows(items, size, key_size):
+    rows = {}
+    for _, row in structured_rows(items, size):
+        key = tuple(row[:key_size])
+        if all(isinstance(part, str) for part in key):
+            rows[key] = row if key not in rows else None
+    return rows
+
+
+def choice_ids(items):
+    rows = {}
+    for _, (owner, index, _) in structured_rows(items, 3):
+        if type(index) is int:
+            rows.setdefault(owner, []).append(index)
+    return rows
+
+
+def appended_choices(removed, added, current):
+    limits = keyed_rows(current["rule_metadata"], 7, 1)
+    previous_choices_lost = choice_ids(removed["choices"])
+    new_choices = choice_ids(added["choices"])
+    for item, old in structured_rows(removed["rule_metadata"], 7):
+        owner = old[0]
+        new = limits.get((owner,))
+        if not new or old[1] != "choice" or old[:4] != new[:4] or old[5:] != new[5:]:
+            continue
+        old_max, new_max = old[4], new[4]
+        indexes = new_choices.get(owner)
+        if (type(old_max) is int and type(new_max) is int and indexes and owner not in previous_choices_lost
+                and len(indexes) == len(set(indexes)) == new_max - old_max
+                and min(indexes) == old_max + 1 and max(indexes) == new_max):
+            yield item
+
+
+def required_choices(value):
+    if not isinstance(value, list) or len(value) != 2:
+        return None
+    key, values = value
+    if not (isinstance(key, list) and len(key) == 2 and key[0] == "key" and isinstance(key[1], str)
+            and isinstance(values, list) and len(values) == 2 and values[0] == "values"
+            and isinstance(values[1], list)):
+        return None
+    indexes = set()
+    for choice in values[1]:
+        if not (isinstance(choice, list) and len(choice) == 2 and type(choice[0]) is int
+                and choice[0] > 0 and choice[1] is True and choice[0] not in indexes):
+            return None
+        indexes.add(choice[0])
+    return key[1], indexes
+
+
+def extended_visibility_links(removed, current):
+    links = keyed_rows(current["rule_traits"], 3, 2)
+    choices = choice_ids(current["choices"])
+    for item, (owner, trait, value) in structured_rows(removed["rule_traits"], 3):
+        if trait != "requiresChoice":
+            continue
+        new = links.get((owner, trait))
+        old_requirement, new_requirement = required_choices(value), new and required_choices(new[2])
+        if not old_requirement or not new_requirement:
+            continue
+        target, old_indexes = old_requirement
+        new_target, new_indexes = new_requirement
+        target_rule = owner.rpartition(".")[0] + "." + target
+        if target == new_target and old_indexes < new_indexes <= set(choices.get(target_rule, ())):
+            yield item
+
+
 def compare(before, after, allowlist):
     removed = {name: set(before[name]) - set(after[name]) for name in CATEGORIES}
     added = {name: set(after[name]) - set(before[name]) for name in CATEGORIES}
@@ -159,6 +237,13 @@ def compare(before, after, allowlist):
         if not matches:
             problems.append(label + " is stale: " + category + " " + pattern)
         covered[category].update(matches)
+    # These replacements retain every old choice or visibility condition.
+    # Explicit historical exceptions still take precedence and stay auditable.
+    for name, extensions in {
+        "rule_metadata": appended_choices(removed, added, after),
+        "rule_traits": extended_visibility_links(removed, after),
+    }.items():
+        removed[name].difference_update(set(extensions) - covered[name])
     for name in CATEGORIES:
         problems.extend("unapproved removal: " + name + " " + value for value in sorted(removed[name] - covered[name]))
     return removed, added, covered, problems

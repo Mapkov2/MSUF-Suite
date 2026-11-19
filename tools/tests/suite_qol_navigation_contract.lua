@@ -5,6 +5,18 @@ SUITE_OPTIONS_FIXTURE = true
 local F = dofile(root .. "/tools/tests/suite_options_menu_contract.lua")
 SUITE_OPTIONS_FIXTURE = nil
 local P, M, V = F.optionsNS, F.M, F.optionsNS.QoLView
+local reflowDropdown = {}
+local bindDropdownAt = M.BindDropdownAt
+M.BindDropdownAt = function(ctx, parent, label, x, y, values, width, get, set, meta)
+    local control = bindDropdownAt(ctx, parent, label, x, y, values, width, get, set, meta)
+    control:SetSize(width, 22)
+    -- Menu2 restores each registered dropdown's original MoveWidget anchor.
+    reflowDropdown[control] = function()
+        control:ClearAllPoints()
+        control:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 24)
+    end
+    return control
+end
 local active
 M.RequestRefresh = function()
     if active then for _, refresh in ipairs(active.refreshers) do refresh() end end
@@ -24,14 +36,36 @@ local function Build(width, gameplay)
     M.RequestRefresh()
     return ctx, assert(ctx.entry.qualityOfLifeView)
 end
+local function CheckFilterPlacement(ui)
+    local control = ui.filterControl
+    reflowDropdown[control]()
+    local point = control.points[1]
+    local left, top = point[4], point[5]
+    local parent = point[2]
+    if parent ~= ui.body then
+        local anchor = parent.points[1]
+        assert(anchor[1] == "TOPRIGHT" and anchor[2] == ui.body and anchor[3] == "TOPRIGHT")
+        left = left + ui.width + anchor[4] - parent:GetWidth()
+        top = top + anchor[5]
+    end
+    local metrics = ui.selector:GetLayoutMetrics()
+    if ui.inlineFilter then
+        assert(left >= (metrics.maxRight or ui.width - 190), "reflow put the filter over the category tabs")
+    else
+        assert(top <= metrics.bottomY - 8, "reflow put the filter over the category tabs")
+    end
+    assert(left + control:GetWidth() == ui.width - 8, "reflow moved the filter away from the right edge")
+    assert(top - control:GetHeight() > -ui.top, "filter extends into the feature rows")
+end
 local expected = { "character", "lootMerchants", "questsProfessions", "groups", "travel", "interface" }
 V.GetCategories()
 for index, id in ipairs(expected) do assert(P.QualityOfLifeCategories[index].id == id, "fixed category order drift") end
-assert(#P.QualityOfLifeCategories == 6 and #V.GameplayCategory.features == 14)
+assert(#P.QualityOfLifeCategories == #expected)
 assert(#V.GetCategories() == 7, "old hosts must keep all gameplay helpers reachable")
 local ctx, ui = Build(1200)
 assert(Count(ui.panels) == 1, "hidden QoL categories created widgets")
 assert(ui.selector.kind == "ScopeOverrideBar", "QoL must use the Unitframes group selector")
+CheckFilterPlacement(ui)
 local initial = Count(ui.rows)
 for _, record in pairs(ui.rows) do assert(not record.details, "feature details were built eagerly") end
 local selector = ui.selector
@@ -63,17 +97,19 @@ assert(restored.selector.kind == "ScopeOverrideBar", "narrow QoL hid groups in a
 assert(Count(restored.panels) == 1, "restoring a category eagerly built other categories")
 assert(#restored.selector.buttons == 7, "not every group has a clickable button")
 assert(restored.top > ui.top, "wrapped groups overlap the filter or feature rows")
+CheckFilterPlacement(restored)
 restored.selector.buttons[2]:GetScript("OnClick")()
 assert(restored.selected == "lootMerchants", "group click did not show its own features")
 local top = restored.top
 restored.selector:GetLayoutMetrics().bottomY = restored.selector:GetLayoutMetrics().bottomY - 30
 M.RequestRefresh()
 assert(restored.top == top + 30, "refresh forgot the resized selector height")
+CheckFilterPlacement(restored)
 
 P.GameplayPage.registered = true
 assert(#V.GetCategories() == 6, "new hosts duplicated Gameplay inside QoL")
 local gameplayCtx, gameplay = Build(1000, true)
-assert(Count(gameplay.rows) == 14 and Count(gameplay.panels) == 1)
+assert(Count(gameplay.rows) == #V.GameplayCategory.features and Count(gameplay.panels) == 1)
 for _, group in ipairs(V.GameplayCategory.features) do
     assert(V.GetFeaturePage(group) == "gameplay")
     local row = gameplay.rows[V.FeatureSectionId(group)]

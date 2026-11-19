@@ -40,6 +40,18 @@ function H.New(root, client, options)
     options = options or {}
     local G = setmetatable({}, { __index = _G })
     G._G = G
+    local callbacks = {}
+    G.EventRegistry = {}
+    function G.EventRegistry:RegisterCallback(event, callback, owner)
+        callbacks[event] = callbacks[event] or {}
+        callbacks[event][owner] = callback
+    end
+    function G.EventRegistry:UnregisterCallback(event, owner)
+        if callbacks[event] then callbacks[event][owner] = nil end
+    end
+    function G.EventRegistry:TriggerEvent(event, ...)
+        for owner, callback in pairs(callbacks[event] or {}) do callback(owner, ...) end
+    end
     G.CreateColor = function(r, g, b, a) return { r, g, b, a } end
     local W = { G = G, combat = false, secure = false, now = 0, timers = {}, frames = {}, drivers = {},
         hooks = 0, movers = {}, hostRecords = {}, cvars = { rotateMinimap = "0" }, calls = {} }
@@ -141,11 +153,14 @@ function H.New(root, client, options)
             function animation:SetOrigin(...) self.origin = { ... } end
             function animation:SetDegrees(value) self.degrees = value end
             function animation:SetDuration(value) self.duration = value end
+            function animation:SetOffset(x, y) self.offsetX, self.offsetY = x, y end
             return animation
         end
         function group:IsPlaying() return self.playing end
-        function group:Play() self.playing = true end
+        function group:GetProgress() return self.reverse and 1 or 0 end
+        function group:Play(reverse) self.playing, self.reverse = true, reverse end
         function group:Stop() self.playing = false end
+        function group:SetScript(event, callback) self[event] = callback end
         return group
     end
     function R:SetTexCoord(...) self.coords = { ... } end
@@ -215,6 +230,7 @@ function H.New(root, client, options)
         if wasVisible ~= nowVisible then Cascade(self, nowVisible and "OnShow" or "OnHide") end
     end
     function F:GetChildren() return unpack(self.children) end
+    F.CreateAnimationGroup = R.CreateAnimationGroup
     function F:CreateTexture(name, layer, template, subLevel)
         assert(template == nil or type(template) == "string", "CreateTexture template must be a name")
         assert(subLevel == nil or type(subLevel) == "number", "CreateTexture subLevel must be a number")

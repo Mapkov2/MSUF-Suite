@@ -33,7 +33,7 @@ function AuraMenu.FilterQualityOfLife(groups, categories)
         for _, tab in ipairs(category.tabs or { category }) do RemoveAuraKeys(tab.keys) end
     end
 end
-function AuraMenu.AppendSearchRows(rows, ruleRow)
+function AuraMenu.AppendSearchRows(rows, ruleRow, checkpoint)
     if not AuraMenu.registered then return end
     local page = { key = PAGE, title = P.Tr("Blizzard player auras") }
     rows[#rows + 1] = {
@@ -43,6 +43,7 @@ function AuraMenu.AppendSearchRows(rows, ruleRow)
     }
     for _, id in ipairs({ "playerAuras", "playerAuraSkins" }) do
         for _, rule in ipairs(P.catalog[id].controls) do
+            if checkpoint then checkpoint() end
             if not rule.hidden then
                 local row = ruleRow(page, P.catalog[id], rule)
                 if row then

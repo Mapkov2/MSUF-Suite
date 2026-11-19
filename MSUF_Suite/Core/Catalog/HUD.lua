@@ -26,6 +26,11 @@ local objectiveContent = {
     B.Bool("showZoneEvents", "Zone event progress", true),
     B.Bool("showWorldQuests", "World quests", true),
     B.Bool("groupQuestsByZone", "Group watched quests by current zone", false),
+    B.Bool("groupQuestsByHeader", "Group quests by zone and dungeon name", false),
+    B.Bool("showQuestLevel", "Show quest levels", false),
+    B.Bool("questDifficultyColor", "Color quest titles by difficulty", false),
+    B.Bool("showDungeonBadge", "Show dungeon badges", false),
+    B.Bool("showQuestLogCount", "Show quest log usage", false),
     B.Tooltip(B.Bool("hideCompletedObjectives", "Hide completed quest objectives", false),
         "Hides completed quest objective lines while keeping quest titles, timers, usable items and completion actions."),
     B.Bool("showBonus", "Nearby bonus objectives", true),
@@ -91,6 +96,8 @@ B.Section("objectives", "raid", "Raid encounters", {
     B.Bool("showRaid", "Show raid encounters in the objective tracker", false),
 })
 B.Section("objectives", "layout", "Size and position", {
+    B.Bool("dockBelowMinimap", "Attach below the minimap", false),
+    B.Number("minimapDockGap", "Gap below the minimap", 13, 0, 80),
     B.Number("width", "Tracker width", 310, 220, 520, 5),
     B.Number("height", "Maximum tracker height", 570, 220, 900, 10),
     B.Number("scale", "Scale (percent)", 100, 60, 160, 5),
@@ -103,6 +110,8 @@ B.Section("objectives", "type", "Tracker text", {
     B.Number("sectionSize", "Group heading size", 14, 9, 20),
     B.Number("entrySize", "Quest title size", 15, 10, 24),
     B.Number("objectiveSize", "Objective text size", 13, 9, 20),
+    B.Bool("compactQuestRows", "Compact quest rows", false),
+    B.Bool("questProgressColumn", "Align quest progress on the right", false),
 })
 B.TextStyle("objectives", "type", "Tracker text", 70)
 B.Section("objectives", "colors", "Tracker colors", {
@@ -236,6 +245,7 @@ B.Section("announcements", "levelUp", "Level-up banner", {
 })
 B.Section("announcements", "layout", "Timing and position", {
     B.Number("duration", "Display time (seconds)", 4, 2, 8),
+    B.Bool("animateBanner", "Fade announcements in and out", true),
     B.Number("scale", "Scale (percent)", 100, 60, 160, 5),
     B.Choice("anchor", "Position relative to", 1, { "Top center", "Screen center" }),
     B.Number("x", "Horizontal position", 0, -4000, 4000),

@@ -107,7 +107,7 @@ end
 -- Headline color follows the last Art.Tint; until then the frame is gold.
 local function FrameColor(art)
     if art.frameSource == FRAME_HEADLINE and art.tintR then return art.tintR, art.tintG, art.tintB end
-    if art.frameSource == FRAME_CUSTOM and art.frameCustom then return NS.RGB(art.frameCustom) end
+    if art.frameRGB then return unpack(art.frameRGB) end
     return GOLD_R, GOLD_G, GOLD_B
 end
 
@@ -152,6 +152,7 @@ local function LayoutFrame(art, config)
     end
     if art.frameAlpha ~= alpha or art.frameSource ~= source or art.frameCustom ~= custom then
         art.frameAlpha, art.frameSource, art.frameCustom = alpha, source, custom
+        art.frameRGB = custom and { NS.RGB(custom) } or nil
         art.revision = art.revision + 1
     end
     PaintFrame(art)
@@ -255,30 +256,42 @@ function Art.UseCleanLevel(config, level)
     return level == true and config.levelClean ~= false
 end
 
-function Art.Theme(art, config, skin, level)
+function Art.PrepareTheme(config, skin)
+    local dark = not skin or not skin.GetLook or skin:GetLook() == "midnightDark"
+    local theme = {
+        font = NS.ResolveFont(config.font) or NS.GlobalFontPath(),
+        titleSize = config.titleSize or 31, subtitleSize = config.subtitleSize or 16,
+        titleArgs = { NS.HUDTextArgs(config, "banner") }, subtitleArgs = { NS.HUDTextArgs(config, "subtitle") },
+        opacity = (config.backgroundOpacity or (dark and 57 or 50)) / 100,
+        colors = KIND_COLORS,
+    }
+    if config.colorStyle == CUSTOM_COLORS then
+        theme.background, theme.subtitle = { NS.RGB(config.backgroundColor) }, { NS.RGB(config.subtitleColor) }
+        theme.colors = {}
+        for kind, key in pairs(COLOR_KEYS) do theme.colors[kind] = { NS.RGB(config[key]) } end
+    elseif skin then
+        theme.background, theme.subtitle = { skin:GetColor("surface") }, { skin:GetColor("text") }
+    else
+        theme.background, theme.subtitle = { .02, .025, .035 }, { .91, .93, .96 }
+    end
+    return theme
+end
+
+function Art.Theme(art, config, skin, level, prepared)
+    local theme = prepared or Art.PrepareTheme(config, skin)
     local clean = Art.UseCleanLevel(config, level)
     if art.cleanLevel ~= clean then
         art.cleanLevel, art.placed = clean, nil
         art.subtitle:SetWordWrap(clean)
     end
-    local font, setFont = NS.ResolveFont(config.font) or NS.GlobalFontPath(), NS.Suite.SetStyledFont
-    setFont(art.title, font, (config.titleSize or 31) + (clean and 6 or 0), NS.HUDTextArgs(config, "banner"))
-    setFont(art.subtitle, font, config.subtitleSize or 16, NS.HUDTextArgs(config, "subtitle"))
+    local setFont = NS.Suite.SetStyledFont
+    setFont(art.title, theme.font, theme.titleSize + (clean and 6 or 0), unpack(theme.titleArgs, 1, 5))
+    setFont(art.subtitle, theme.font, theme.subtitleSize, unpack(theme.subtitleArgs, 1, 5))
     Art.Layout(art, clean and CLEAN_LEVEL or config)
-    local dark = not skin or not skin.GetLook or skin:GetLook() == "midnightDark"
-    local opacity = clean and 0 or (config.backgroundOpacity or (dark and 57 or 50)) / 100
-    if config.colorStyle == CUSTOM_COLORS then
-        local r, g, b = NS.RGB(config.backgroundColor)
-        Art.PaintBackground(art, r, g, b, opacity)
-        art.subtitle:SetTextColor(NS.RGB(config.subtitleColor))
-    elseif skin then
-        local r, g, b = skin:GetColor("surface")
-        Art.PaintBackground(art, r, g, b, opacity)
-        art.subtitle:SetTextColor(skin:GetColor("text"))
-    else
-        Art.PaintBackground(art, .02, .025, .035, opacity)
-        art.subtitle:SetTextColor(.91, .93, .96)
-    end
+    local r, g, b = unpack(theme.background)
+    Art.PaintBackground(art, r, g, b, clean and 0 or theme.opacity)
+    art.subtitle:SetTextColor(unpack(theme.subtitle))
+    art.theme = theme
     PlaceTexts(art, config)
 end
 
@@ -293,7 +306,15 @@ end
 -- One banner: its texts, the headline in its kind's color, which also tints
 -- the plain accents and a headline-colored frame.
 function Art.Show(art, config, kind, title, subtitle)
-    local r, g, b = Art.KindColor(config, kind, art.cleanLevel)
+    local r, g, b
+    local theme = art.theme
+    if not theme then
+        r, g, b = Art.KindColor(config, kind, art.cleanLevel)
+    elseif art.cleanLevel and theme.colors == KIND_COLORS then
+        r, g, b = .99, .86, .60
+    else
+        r, g, b = unpack(theme.colors[kind] or theme.colors.zone)
+    end
     art.title:SetText(title)
     art.title:SetTextColor(r, g, b)
     art.subtitle:SetText(subtitle or "")
@@ -341,7 +362,7 @@ function Art.LevelDetails(config, gains)
         Gain(attributes, gains.intellect, SPELL_STAT4_NAME or NS.Text("Intellect"))
         Gain(attributes, gains.spirit, SPELL_STAT5_NAME or NS.Text("Spirit"))
     end
-    local primary, secondary = table.concat(main, "  ·  "), table.concat(attributes, "  ·  ")
+    local primary, secondary = table.concat(main, "  -  "), table.concat(attributes, "  -  ")
     if primary == "" then
         if secondary == "" and config.levelClean == false then return NS.Text("LEVEL UP") end
         return secondary

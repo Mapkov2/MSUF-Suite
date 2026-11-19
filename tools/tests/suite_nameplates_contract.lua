@@ -521,12 +521,14 @@ end
 local module = assert(installed)
 S.instances.nameplates = module
 S.Config = function(id) assert(id == "nameplates"); return module.config end
-S.SetMany = function(id, values)
+S.SetMany = function(id, values, confirm)
     assert(id == "nameplates")
     if combat then return false end
     for key, value in pairs(values) do module.config[key] = value end
     private.CVars.Apply(module)
-    return true
+    -- The controller confirms a switch's native write after the module
+    -- applied the batch (MSUF_Suite/Core/Suite.lua, SetMany).
+    return not confirm or confirm()
 end
 -- Work held back for the end of combat (Skin.lua OnCombatEnded): the plates
 -- a write named (pendingPlates) or a write no plate owns (needsRefresh).
@@ -2576,9 +2578,9 @@ print("Suite nameplates: native lifecycle, cast customization, masks, friendly f
 do
     local writes = 0
     local setMany = S.SetMany
-    S.SetMany = function(id, values)
+    S.SetMany = function(id, values, confirm)
         writes = writes + 1
-        return setMany(id, values)
+        return setMany(id, values, confirm)
     end
     local previousNpcMode = module.config.friendlyNPCs
     module.config.enabled, module.config.friendlyNpcSkinEnabled, module.config.friendlyNPCs = true, true, 2

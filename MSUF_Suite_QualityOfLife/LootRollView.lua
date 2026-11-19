@@ -178,12 +178,21 @@ local function Sizes(self)
     sizes.remaining = config.remainingSize > 0 and config.remainingSize or config.fontSize
     sizes.timer = config.timerSize > 0 and config.timerSize or 2
     sizes.button = config.buttonsSize > 0 and config.buttonsSize or 23
-    return sizes
+    sizes.height = height
+    local textWidth, step = config.width - sizes.icon - 30, sizes.button + 6
+    sizes.showOtherCounts = config.showCounts and textWidth - #ACTIONS * step >= sizes.result * 8
+    sizes.buttonY = config.buttonsOffsetY + 9
+    local buttonX, detailWidth = sizes.buttonX or {}, sizes.detailWidth or {}
+    sizes.buttonX, sizes.detailWidth = buttonX, detailWidth
+    for count = 0, #ACTIONS do
+        buttonX[count] = config.buttonsOffsetX - 9 - count * step
+        detailWidth[count] = math.max(1, textWidth - count * step)
+    end
 end
 
 local function PlaceRow(self, row, index)
     local config, sizes = self.config, self.sizes
-    local height, width = RowHeight(config), config.width
+    local height, width = sizes.height, config.width
     local iconSize = sizes.icon
     row.frame:ClearAllPoints()
     local offset = (index - 1) * (height + config.rowGap)
@@ -216,54 +225,70 @@ local function PlaceRow(self, row, index)
     row.timer:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", 5 + timerX, timerY)
     row.timer:SetPoint("BOTTOMRIGHT", row.frame, "BOTTOMRIGHT", timerX - 5, timerY)
     row.timer:SetHeight(sizes.timer)
+    row.detailWidth = nil
+    for _, action in ipairs(row.actions) do
+        action.button:SetSize(sizes.button, sizes.button)
+        action.layoutSlot = nil
+    end
+end
+
+local function StyleRow(self, row, style)
+    local config, sizes, font = self.config, self.sizes, style.font
+    local red, green, blue = unpack(style.border)
+    row.borderRed, row.borderGreen, row.borderBlue = red, green, blue
+    row.background:SetColorTexture(unpack(style.background))
+    S.PlaceEdges(row.border, row.frame, 1, red, green, blue, 1)
+    row.urgent = false
+    S.QoLStyleText(row.name, config, font, sizes.name)
+    S.QoLStyleText(row.details, config, font, sizes.details)
+    row.details:SetTextColor(unpack(style.muted))
+    S.QoLStyleText(row.status, config, font, sizes.result)
+    row.status:SetTextColor(unpack(style.text))
+    S.QoLStyleText(row.remaining, config, font, sizes.remaining)
+    row.remaining:SetTextColor(unpack(style.text))
+    row.timer:SetStatusBarColor(unpack(style.accent))
+    for _, action in ipairs(row.actions) do
+        S.QoLStyleText(action.count, config, font, 9)
+        action.count:SetTextColor(1, 1, 1)
+    end
 end
 
 function View.Layout(self)
     View.Create(self)
     Sizes(self)
-    local config = self.config
+    local config, host = self.config, self.host
+    if not self.previewViewport then
+        host:ClearAllPoints()
+        local point = NS.AnchorPoints[config.point] or "CENTER"
+        host:SetPoint(point, UIParent, point, config.x, config.y)
+        host:SetScale(config.scale / 100)
+    end
+    local palette = S.QoLStyle(config)
+    local red, green, blue = S.RGB(palette.background)
+    local ar, ag, ab = S.RGB(palette.accent)
+    local style = {
+        font = S.ResolveFont(config.font) or S.GlobalFontPath(),
+        background = { red, green, blue, .94 }, border = { S.RGB(palette.border) },
+        text = { S.RGB(palette.text) }, muted = { S.RGB(palette.muted) }, accent = { ar, ag, ab, 1 },
+    }
+    for index = 1, math.min(config.maxRows, MAX_ROWS) do
+        local row = self.rows[index]
+        PlaceRow(self, row, index)
+        StyleRow(self, row, style)
+    end
+    self.viewCount = nil
+end
+
+local function SizeView(self)
+    local config, sizes = self.config, self.sizes
     local count = math.min(#self.visibleEntries, config.maxRows, MAX_ROWS)
+    if count == self.viewCount then return end
     self.viewCount = count
-    local height = math.max(1, count * RowHeight(config) + math.max(0, count - 1) * config.rowGap)
+    local height = math.max(1, count * sizes.height + math.max(0, count - 1) * config.rowGap)
     self.host:SetSize(config.width, height)
     local viewport = self.previewViewport
     if viewport then
         self.host:SetScale(math.min(viewport.scale, viewport.width / config.width, viewport.height / height))
-    else
-        self.host:ClearAllPoints()
-        local point = NS.AnchorPoints[config.point] or "CENTER"
-        self.host:SetPoint(point, UIParent, point, config.x, config.y)
-        self.host:SetScale(config.scale / 100)
-    end
-    for index = 1, count do PlaceRow(self, self.rows[index], index) end
-end
-
-local function StyleRow(self, row, entry)
-    local config, palette = self.config, S.QoLStyle(self.config)
-    local font = S.ResolveFont(config.font) or S.GlobalFontPath()
-    local red, green, blue = S.RGB(palette.border)
-    row.borderRed, row.borderGreen, row.borderBlue = red, green, blue
-    S.QoLColor(row.background, palette.background, .94)
-    S.PlaceEdges(row.border, row.frame, 1, red, green, blue, 1)
-    row.urgent = false
-    local qr, qg, qb = QualityColor(entry)
-    S.PlaceEdges(row.iconBorder, row.item, 1, qr, qg, qb, 1)
-    local sizes = self.sizes
-    S.QoLStyleText(row.name, config, font, sizes.name)
-    row.name:SetTextColor(qr, qg, qb)
-    local tr, tg, tb = S.RGB(palette.text)
-    local mr, mg, mb = S.RGB(palette.muted)
-    S.QoLStyleText(row.details, config, font, sizes.details)
-    row.details:SetTextColor(mr, mg, mb)
-    S.QoLStyleText(row.status, config, font, sizes.result)
-    row.status:SetTextColor(tr, tg, tb)
-    S.QoLStyleText(row.remaining, config, font, sizes.remaining)
-    row.remaining:SetTextColor(tr, tg, tb)
-    local ar, ag, ab = S.RGB(palette.accent)
-    row.timer:SetStatusBarColor(ar, ag, ab, 1)
-    for _, action in ipairs(row.actions) do
-        S.QoLStyleText(action.count, config, font, 9)
-        action.count:SetTextColor(1, 1, 1)
     end
 end
 
@@ -287,11 +312,8 @@ local function Actions(self, row, entry)
     local preview = IsPreview(self)
     local displayActions = (entry.rollID ~= nil or preview) and not entry.finished
     local actionable = displayActions and entry.choice == nil and not entry.cancelled
-    local shown, buttonsX, buttonsY = 0, self.config.buttonsOffsetX - 9, self.config.buttonsOffsetY + 9
-    local size = self.sizes.button
-    local step = size + 6
-    local textWidth = self.config.width - self.sizes.icon - 30
-    local showOtherCounts = self.config.showCounts and textWidth - #ACTIONS * step >= self.sizes.result * 8
+    local shown, sizes = 0, self.sizes
+    local showOtherCounts = sizes.showOtherCounts
     for index = #row.actions, 1, -1 do
         local action = row.actions[index]
         local selected = entry.choice == action.action.id
@@ -305,9 +327,11 @@ local function Actions(self, row, entry)
         action.icon:SetAlpha((selected or actionable and eligible) and 1 or .6)
         action.check:SetShown(selected)
         if available then
-            action.button:ClearAllPoints()
-            action.button:SetPoint("BOTTOMRIGHT", row.frame, "BOTTOMRIGHT", buttonsX - shown * step, buttonsY)
-            action.button:SetSize(size, size)
+            if action.layoutSlot ~= shown then
+                action.layoutSlot = shown
+                action.button:ClearAllPoints()
+                action.button:SetPoint("BOTTOMRIGHT", row.frame, "BOTTOMRIGHT", sizes.buttonX[shown], sizes.buttonY)
+            end
             local showSelfRoll = selected and entry.finished and S.Finite(entry.selfRoll)
             local hasCount = not entry.finished and self.config.showCounts and counted
             action.count:SetShown(showSelfRoll or hasCount)
@@ -316,9 +340,12 @@ local function Actions(self, row, entry)
             shown = shown + 1
         end
     end
-    local width = math.max(1, textWidth - shown * step)
-    row.details:SetWidth(width)
-    row.status:SetWidth(width)
+    local width = sizes.detailWidth[shown]
+    if width ~= row.detailWidth then
+        row.detailWidth = width
+        row.details:SetWidth(width)
+        row.status:SetWidth(width)
+    end
     row.details:SetShown(actionable)
     row.status:SetShown(not actionable)
     return actionable
@@ -362,7 +389,12 @@ local function PaintRow(self, row, entry)
         row.maximum, row.timerTick, row.timerSecond = nil, nil, nil
     end
     row.entry = entry
-    StyleRow(self, row, entry)
+    local red, green, blue = QualityColor(entry)
+    if red ~= row.qualityRed or green ~= row.qualityGreen or blue ~= row.qualityBlue then
+        row.qualityRed, row.qualityGreen, row.qualityBlue = red, green, blue
+        S.PlaceEdges(row.iconBorder, row.item, 1, red, green, blue, 1)
+        row.name:SetTextColor(red, green, blue)
+    end
     row.icon:SetTexture(entry.icon or 134400)
     row.name:SetText(entry.name or "")
     row.details:SetText(Details(self.config, entry))
@@ -378,12 +410,16 @@ local function PaintRow(self, row, entry)
     local hasTimer = actionable and (S.Finite(entry.endsAt) or staticTimer)
     TimerShown(row, hasTimer)
     if staticTimer then PaintCountdown(self, row, entry, entry.remaining) end
-    if not hasTimer then row.timerTick, row.timerSecond = nil, nil end
+    if not hasTimer then
+        row.timerTick, row.timerSecond = nil, nil
+        Urgency(row, false)
+    end
     row.frame:Show()
 end
 
 function View.Paint(self)
-    View.Layout(self)
+    if not self.sizes then View.Layout(self) end
+    SizeView(self)
     for index, row in ipairs(self.rows) do
         local entry = index <= self.viewCount and self.visibleEntries[index]
         if entry then

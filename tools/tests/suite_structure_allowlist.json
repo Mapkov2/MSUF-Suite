@@ -16,6 +16,18 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite/Core/DevQuestTurnIn.lua",
+   "kind": "lod",
+   "reason": "The report also works before the load-on-demand Suite Modules copy dialog is available, using local chat in that case.",
+   "symbol": "Suite.QoLCopyDialog"
+  },
+  {
+   "file": "MSUF_Suite/Core/DevQuestTurnIn.lua",
+   "kind": "lod",
+   "reason": "The report also works before the load-on-demand Suite Modules copy dialog is available, using local chat in that case.",
+   "symbol": "Suite.QoLShowCopy"
+  },
+  {
    "file": "MSUF_Suite_Modules/ObjectivesVoice.lua",
    "kind": "addon",
    "reason": "Spoken publishes VoiceOver only when its Quests addon loads.",
@@ -473,6 +485,12 @@
   },
   {
    "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "api.OpenUnitFrameSetup",
+   "kind": "addon",
+   "reason": "Shared first-run setup is an optional MSUF host capability. Older hosts use the full Suite installer. The installer first-login contract covers both paths."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
    "symbol": "api.OnAppearanceChanged",
    "kind": "addon",
    "reason": "The optional skin exposes this notification in public API v2.1. The adapter hooks it once per owner and API; the installer appearance contract covers provider transitions and coalesced palette refresh. Older providers use the v1 listener."
@@ -482,6 +500,12 @@
    "symbol": "api.OnThemeChanged",
    "kind": "addon",
    "reason": "Legacy standalone MapkoSkin exposes this public API v1 listener instead of v2.1 appearance notifications. The installer appearance contract covers one registration per owner and repeated ADDON_LOADED events."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "menu.HideSlashMenuAndMinibar",
+   "kind": "addon",
+   "reason": "The load-on-demand MSUF menu owns its close operation. The standalone Suite installer can open when the host menu is absent or has no close operation."
   },
   {
    "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
@@ -506,6 +530,18 @@
    "kind": "client",
    "reason": "Retail and Forever: FrameXML EventRegistry broadcasts completion after setup. Standalone host fixtures may omit the registry.",
    "symbol": "registry (= EventRegistry)"
+  },
+  {
+   "file": "MSUF_Suite/Core/InstallerFrameColors.lua",
+   "kind": "client",
+   "symbol": "picker (= ColorPickerFrame)",
+   "reason": "Retail and Forever supply the native Blizzard_ColorPickerFrame. If the UI addon is unavailable during setup, opening Unified does not replace the staged choice."
+  },
+  {
+   "file": "MSUF_Suite/Core/InstallerFrameColors.lua",
+   "kind": "client",
+   "symbol": "picker.SetupColorPickerAndShow (= ColorPickerFrame)",
+   "reason": "Blizzard_ColorPickerFrame/Mainline/ColorPickerFrame.lua publishes this method on Retail (Gethe live 297d7aaa) and Forever (3d8abb1d). The frame colors contract covers picker callbacks."
   },
   {
    "file": "MSUF_Suite/Core/Menu.lua",
@@ -758,6 +794,12 @@
    "kind": "addon",
    "reason": "Optional MSUF host profile export resolved by HostBridge. Older hosts still start the Suite without early UI scale application",
    "symbol": "applyScale (= Suite.HostBridge.Profiles.ApplyCurrentProfileGlobalUiScale)"
+  },
+  {
+   "file": "MSUF_Suite/Core/Suite.lua",
+   "kind": "lod",
+   "reason": "export of the load-on-demand runtime MSUF_Suite_Modules",
+   "symbol": "S.CVarRecords"
   },
   {
    "file": "MSUF_Suite/Core/Suite.lua",
@@ -1681,12 +1723,6 @@
    "file": "MSUF_Suite_Options/Pages/Appearance.lua",
    "kind": "lod",
    "reason": "export of MSUF_Suite_Skin, which loads on demand",
-   "symbol": "skin.Adapters.ApplyAll"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Appearance.lua",
-   "kind": "lod",
-   "reason": "export of MSUF_Suite_Skin, which loads on demand",
    "symbol": "skin.Client"
   },
   {
@@ -2011,12 +2047,6 @@
    "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
    "kind": "addon",
    "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "H.ApplyPreviewChrome"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
    "symbol": "button.Refresh"
   },
   {
@@ -2142,12 +2172,6 @@
   {
    "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
    "kind": "addon",
-   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
-   "symbol": "H.ApplyPreviewChrome"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
-   "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
    "symbol": "M.PreviewSelectionBar.Refresh"
   },
@@ -2225,12 +2249,6 @@
   },
   {
    "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
-   "kind": "state",
-   "reason": "NameplatesEditor.lua Editor.Create sets it only when the page builds a nameplate preview (W.FixedPreviewSection returned a section); the Blizzard elements tab also opens without a preview to switch.",
-   "symbol": "P.ShowNameplatesElementsSample"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
    "kind": "addon",
    "reason": "P.W is MSUF2's widget table. SegmentTabs is a Menu2 widget (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts); an MSUF build without it gets the enemy design and the Blizzard elements as two ordinary sections.",
    "symbol": "P.W.SegmentTabs"
@@ -2240,12 +2258,6 @@
    "kind": "addon",
    "reason": "H is MSUF2.PreviewHelpers (Shell/Menu2/MSUF_Menu2_PreviewHelpers.lua on the Main and Classic hosts, {} without it). ApplyPreviewChrome gives the canvas the shared preview frame; without it the canvas stays plain.",
    "symbol": "H.ApplyPreviewChrome"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2 theme export (Shell/Menu2/MSUF_Menu2_Theme.lua on the Main and Classic hosts); without it the toolbar labels keep the theme button's alignment.",
-   "symbol": "T.CenterButtonLabel"
   },
   {
    "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
@@ -3628,12 +3640,6 @@
    "symbol": "GuildBankFrame"
   },
   {
-   "file": "MSUF_Suite_QualityOfLife/ParallelWindows.lua",
-   "kind": "state",
-   "reason": "A native frame may exist before Blizzard registers it in UIPanelWindows. Float only the currently registered PlayerSpells panel.",
-   "symbol": "UIPanelWindows.PlayerSpellsFrame"
-  },
-  {
    "file": "MSUF_Suite_QualityOfLife/Navigation.lua",
    "symbol": "native (= SuperTrackedFrame)",
    "kind": "addon",
@@ -3686,6 +3692,24 @@
    "symbol": "rxp (= RXPG_ARROW)",
    "kind": "addon",
    "reason": "RestedXP is optional. Its named arrow exists only after the guide addon loads; no timer is started for an absent or hidden arrow."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationHUDPoints.lua",
+   "symbol": "stub.GetLibrary (= LibStub)",
+   "kind": "addon",
+   "reason": "LibStub is supplied by other addons. Use it only when an existing library can be queried without loading an addon."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationHUDPoints.lua",
+   "symbol": "ace.GetAddon",
+   "kind": "addon",
+   "reason": "AceAddon is optional and only resolves GatherMate2 when it has already initialized."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NavigationHUDPoints.lua",
+   "symbol": "addon.GetNodesForZone",
+   "kind": "addon",
+   "reason": "Read known coordinates through the optional GatherMate2 API when the installed version exposes it."
   },
   {
    "file": "MSUF_Suite_QualityOfLife/NavigationMap.lua",
@@ -3752,18 +3776,6 @@
    "kind": "addon",
    "symbol": "provider.HasFontScope",
    "reason": "The external MSUF nameplate provider is versioned independently. Providers without the optional HasFontScope method use Suite portable typography. suite_nameplate_host_settings_contract covers the absent method and strips unsupported font writes."
-  },
-  {
-   "file": "MSUF_Suite/Core/NameplateExtensions.lua",
-   "symbol": "driver (= NamePlateDriverFrame)",
-   "kind": "client",
-   "reason": "Retail loads NamePlateDriverFrame and GetClassNameplateBar from Blizzard_NamePlates; the Forever TOC excludes class mechanic bars. This cold capability report can run before the Retail nameplate addon loads. suite_nameplate_extensions_contract covers absent and active native bars."
-  },
-  {
-   "file": "MSUF_Suite/Core/NameplateExtensions.lua",
-   "symbol": "driver.GetClassNameplateBar (= NamePlateDriverFrame)",
-   "kind": "client",
-   "reason": "Retail loads NamePlateDriverFrame and GetClassNameplateBar from Blizzard_NamePlates; the Forever TOC excludes class mechanic bars. This cold capability report can run before the Retail nameplate addon loads. suite_nameplate_extensions_contract covers absent and active native bars."
   },
   {
    "file": "MSUF_Suite/Core/NameplateHostSettings.lua",

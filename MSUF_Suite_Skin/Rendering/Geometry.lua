@@ -93,17 +93,41 @@ function Geometry.Resolve(spec, result)
     return result
 end
 
--- Paints a resolved shape asset on a texture, nine-sliced when the geometry
--- asks for it.
-function Geometry.ConfigureShape(texture, asset, geometry)
-    if not texture or not asset then
-        return
+-- These textures are owned by the skin. Their tint and visibility can change
+-- independently of the asset and slice applied here.
+local appliedShapes = setmetatable({}, { __mode = "k" })
+local assetSlices = {}
+
+local function SliceToken(asset, left, top, right, bottom)
+    local slice = assetSlices[asset]
+    if not slice then
+        slice = { left, top, right, bottom }
+        assetSlices[asset] = slice
+    elseif slice[1] ~= left or slice[2] ~= top or slice[3] ~= right or slice[4] ~= bottom then
+        -- Assets use fixed margins. A different slice still paints and clears
+        -- the previous token without creating another retained variant.
+        return nil
     end
+    return slice
+end
+
+function Geometry.ConfigureShape(texture, asset, geometry, alwaysApply)
+    if not texture or not asset then return end
+    local margins = geometry.slice and geometry.margins
+    local left, top, right, bottom
+    local token
+    if margins then
+        left, top, right, bottom = margins[1], margins[2], margins[3], margins[4]
+        if not alwaysApply then token = SliceToken(asset, left, top, right, bottom) end
+    elseif not alwaysApply then
+        token = asset
+    end
+    if token and appliedShapes[texture] == token then return end
     texture:ClearTextureSlice()
     texture:SetTexture(asset)
-    if geometry.slice then
-        local margins = geometry.margins
-        texture:SetTextureSliceMargins(margins[1], margins[2], margins[3], margins[4])
+    if margins then
+        texture:SetTextureSliceMargins(left, top, right, bottom)
         texture:SetTextureSliceMode(STRETCHED)
     end
+    appliedShapes[texture] = token
 end

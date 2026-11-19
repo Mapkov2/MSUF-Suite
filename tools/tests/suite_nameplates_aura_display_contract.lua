@@ -1099,6 +1099,42 @@ do
     assert(worst < 0.001, "a frame that makes no button allocated " .. worst .. " KB")
     for _, container in ipairs(list) do assert(container.groups.auras.max == 10, "a limit of " .. container.groups.auras.max) end
     D.Configure({ auraDisplayEnabled = false })
+    do
+        local reads, loaded, original = {}, nil, C_Spell.GetSpellTexture
+        C_Spell.GetSpellTexture = function(id)
+            reads[id] = (reads[id] or 0) + 1
+            if id ~= 34914 then return id end
+            return loaded
+        end
+        local config = { auraDisplayEnabled = true, auraEnemyDotsVisible = true, auraEnemyDotsSource = 2,
+            auraEnemyDotsIDsRetail = "589,34914" }
+        D.Configure(config)
+        local first = #frames + 1
+        targetUnit = nil
+        assert(D.Apply(Plate(), "nameplate1", true))
+        assert(D.Apply(Plate(), "nameplate2", true))
+        assert(reads[589] == 1 and reads[34914] == 3, "shared spell art was fetched again or a missing texture was not retried")
+        local function Seen(texture)
+            local found = 0
+            for i = first, #frames do
+                local frame = frames[i]
+                local args = rawget(frame, "SetTextureArgs")
+                if frame.drawLayer == "BACKGROUND" and args and args[1] == texture then found = found + 1 end
+            end
+            return found
+        end
+        loaded = 34914
+        D.SpellDataLoaded(nil, "SPELL_DATA_LOAD_RESULT", 34914, true)
+        assert(Seen(34914) == 2 and reads[34914] == 4, "late spell art never reached both previously bound plates")
+        loaded = nil
+        D.Configure(config, true)
+        assert(Seen(34914) == 2, "an unreadable override removed the last public art of the same spell")
+        loaded = 54321
+        D.SpellDataLoaded(nil, "SPELL_DATA_LOAD_RESULT", 34914, true)
+        assert(Seen(54321) == 2 and reads[34914] == 6, "retained art prevented the override from loading")
+        C_Spell.GetSpellTexture = original
+        D.Configure({ auraDisplayEnabled = false })
+    end
 end
 
 -- Options workspace and preview

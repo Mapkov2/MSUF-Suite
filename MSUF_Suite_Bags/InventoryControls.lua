@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Grid, Model, Index = P.GridView, P.InventoryModel, P.InventoryIndex
 local Font, Button, VIEW = Grid.Font, Grid.Button, NS.BagsView
+local VIEW_NAMES = { "All items", "By bag", "Categories", "Blizzard grid", "One bag" }
 local ALL, PINNED = { label = "All items", translate = true }, { label = "Pinned items", translate = true }
 local Controls = {}
 P.InventoryControls = Controls
@@ -108,14 +109,28 @@ function Controls.ToggleGroup(key)
     if state and Model.ToggleCollapsed(state.collapsed, key, InventoryView.model.groupsByKey) then Request() end
 end
 
-local function ViewSelected(button)
-    if button.view == M.config.inventoryView or NS.InCombat() then return end
+local function SelectView(view)
+    if view == M.config.inventoryView or NS.InCombat() then return end
     InventoryView.transitionPending = true
     InventoryView.scroll, InventoryView.selected = 0, "all"
-    if not S.Set("bags", "inventoryView", button.view) then
+    if not S.Set("bags", "inventoryView", view) then
         InventoryView.transitionPending = false
         P.BagMotion.StopAll()
     end
+end
+
+local function ViewSelected(button) SelectView(button.view) end
+
+local function ToggleCategorySidebar()
+    if NS.InCombat() or M.config.inventoryView ~= VIEW.CATEGORIES then return end
+    InventoryView.scroll = 0
+    S.Set("bags", "collapseCategorySidebar", not M.config.collapseCategorySidebar)
+end
+
+local function SidebarTip(button)
+    GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    GameTooltip:SetText(S.Text(M.config.collapseCategorySidebar and "Expand category sidebar" or "Collapse category sidebar"))
+    GameTooltip:Show()
 end
 
 local function ViewTip(button)
@@ -130,10 +145,41 @@ local function ViewTip(button)
     GameTooltip:Show()
 end
 
--- The click's own arguments (the button) must not reach Editor.Show,
--- whose first argument selects the pinned list.
 local function EditCategories()
-    P.InventoryEditor.Show()
+    if not NS.InCombat() then P.InventoryEditor.Show() end
+end
+
+local function CanClearRecent()
+    local offline = P.BagOffline
+    return M.active and M.config.showRecent and not (offline and offline.Active()) and State()
+end
+
+local function ClearRecent()
+    if NS.InCombat() or not CanClearRecent() then return end
+    Index.ClearRecent(Index.Recent())
+    Request()
+end
+
+local function BagSettings(_, menu)
+    if InventoryView.geometry.hideTabs then
+        for view = VIEW.ALL, VIEW.CATEGORIES do
+            local choice = view
+            if choice ~= M.config.inventoryView then
+                menu:CreateButton(S.Text(VIEW_NAMES[choice]), function() SelectView(choice) end)
+            end
+        end
+    end
+    if M.config.inventoryView ~= VIEW.SINGLE then
+        menu:CreateButton(S.Text("One bag"), function() SelectView(VIEW.SINGLE) end)
+    end
+    menu:CreateButton(S.Text("Edit categories"), EditCategories)
+    if CanClearRecent() then
+        menu:CreateButton(S.Text("Clear recent items"), ClearRecent)
+    end
+end
+
+local function OpenBagSettings(button)
+    P.BagFilterMenu.Show(button, BagSettings)
 end
 
 -- Grid or list (ListView.lua): the listView setting, so the choice stays.
@@ -162,7 +208,8 @@ local function MakeFooter(frame)
     InventoryView.next:SetPoint("LEFT", InventoryView.previous, "RIGHT", 6, 0)
     InventoryView.position = Font(InventoryView.chrome, 11)
     InventoryView.position:SetPoint("LEFT", InventoryView.next, "RIGHT", 8, 0)
-    InventoryView.manage = Button(InventoryView.chrome, "Edit categories", 108, EditCategories)
+    InventoryView.manage = Button(InventoryView.chrome, "Settings", 108, OpenBagSettings)
+    InventoryView.manage.bagNavigation = true
     InventoryView.manage:SetPoint("BOTTOMRIGHT", money, "TOPRIGHT", -4, 13)
     InventoryView.cleanup = Button(InventoryView.chrome, "Clean up bags", 108, function()
         P.InventoryActions.Cleanup()
@@ -186,9 +233,8 @@ function Controls.Create()
     InventoryView.chrome:SetFrameLevel(frame:GetFrameLevel() + 15)
     InventoryView.tabs = {}
     -- The Suite views: the first three inventoryView choices.
-    local titles = { [VIEW.ALL] = "All items", [VIEW.BY_BAG] = "By bag", [VIEW.CATEGORIES] = "Categories" }
     for view = VIEW.ALL, VIEW.CATEGORIES do
-        local button = Button(InventoryView.chrome, titles[view], 88, ViewSelected)
+        local button = Button(InventoryView.chrome, VIEW_NAMES[view], 88, ViewSelected)
         button.view, button.bagNavigation = view, true
         button:HookScript("OnEnter", ViewTip)
         button:HookScript("OnLeave", GameTooltip_Hide)
@@ -210,12 +256,6 @@ function Controls.Create()
     InventoryView.sidebar, InventoryView.sidebarChild = P.BagWidgets.Scroll(InventoryView.chrome, 142)
     InventoryView.sidebar:SetPoint("TOPLEFT", 12, -122)
     InventoryView.sidebar:SetPoint("BOTTOMLEFT", InventoryView.previous, "TOPLEFT", -4, 8)
-    InventoryView.clearRecent = Button(InventoryView.chrome, "Clear recent items", 136, function()
-        Index.ClearRecent(Index.Recent())
-        Request()
-    end)
-    InventoryView.clearRecent:SetPoint("TOPRIGHT", -136, -62)
-    InventoryView.clearRecent:SetWidth(140)
     frame:HookScript("OnMouseWheel", function(_, delta)
         if InventoryView.active then MoveScroll(-delta * 3) end
     end)
@@ -224,9 +264,12 @@ function Controls.Create()
 end
 
 function Controls.Sidebar()
+    if M.config.inventoryView == VIEW.SINGLE or M.config.inventoryView == VIEW.CATEGORIES and M.config.collapseCategorySidebar then
+        P.BagTabSelection.HideList(InventoryView)
+        return
+    end
     local n = 1
     CategoryButton("all", ALL, nil, n)
-    local state = State()
     if M.config.showPinned and not InventoryView.model.groupsByKey.pinned then
         n = n + 1
         CategoryButton("pinned", PINNED, 0, n)
@@ -254,7 +297,6 @@ function Controls.Sidebar()
         P.BagTabSelection.HideList(InventoryView)
     end
     InventoryView.categoryCount, InventoryView.categoryTransitionPending = n, false
-    InventoryView.clearRecent:SetShown(M.config.showRecent and state ~= nil)
 end
 
 local function Place(button, frame, point, x, y, width, height)
@@ -284,10 +326,35 @@ end
 -- when it shows, then Filters. The tool takes 28 of the box's width.
 local function SearchRow(frame, left, y)
     local view, tool = InventoryView, CheapestTool()
+    if M.config.inventoryView == VIEW.CATEGORIES then
+        local toggle = view.sidebarToggle
+        if not toggle then
+            toggle = Button(view.chrome, "", 22, ToggleCategorySidebar)
+            toggle:HookScript("OnEnter", SidebarTip)
+            toggle:HookScript("OnLeave", GameTooltip_Hide)
+            view.sidebarToggle = toggle
+        end
+        toggle:SetText(M.config.collapseCategorySidebar and ">" or "<")
+        Place(toggle, frame, "TOPLEFT", left, y, 22, 22)
+        toggle:Show()
+        left = left + 28
+    elseif view.sidebarToggle then
+        view.sidebarToggle:Hide()
+    end
+    local archive = P.BagOffline and P.BagOffline.ToolbarButton(view)
+    if archive then
+        Place(archive, frame, "TOPLEFT", left, y, 22, 22)
+        left = left + 28
+    end
+    local right = 104
+    if view.transferButton and view.transferButton:IsShown() then right = right + 28 end
+    if tool then
+        Place(tool, frame, "TOPRIGHT", 4 - right, y, 22, 22)
+        right = right + 28
+    end
     view.smartSearch:ClearAllPoints()
     view.smartSearch:SetPoint("TOPLEFT", frame, "TOPLEFT", left, y)
-    view.smartSearch:SetPoint("TOPRIGHT", frame, "TOPRIGHT", tool and -132 or -104, y)
-    if tool then Place(tool, frame, "TOPRIGHT", -100, y, 22, 22) end
+    view.smartSearch:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -right, y)
     view.filterButton:ClearAllPoints()
     view.filterButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, y)
 end
@@ -295,16 +362,16 @@ end
 -- Quality of Life switched a bag tool on or off: the next pass lays the
 -- controls out again.
 function S.BagsToolsChanged()
-    if InventoryView then InventoryView.controlPanel, InventoryView.controlTop = nil, nil end
+    if InventoryView then InventoryView.controlPanel = nil end
     P.InventoryView.Request()
+    if P.BankInventory then P.BankInventory.Request() end
 end
 
 local function Tools(panel)
     local view, appearance = InventoryView, P.BagAppearance
     appearance.Tool(view.equipped, "Equipped bags", "Interface\\Icons\\INV_Misc_Bag_08", nil, panel)
     appearance.Tool(view.cleanup, "Clean up bags", nil, "bags-button-autosort-up", panel)
-    appearance.Tool(view.manage, "Edit categories", "Interface\\Buttons\\UI-OptionsButton", nil, panel)
-    appearance.Tool(view.clearRecent, "Clear recent items", "Interface\\Icons\\INV_Misc_PocketWatch_01", nil, panel)
+    appearance.Tool(view.manage, "Settings", "Interface\\Buttons\\UI-OptionsButton", nil, panel)
 end
 
 -- The grid/list switch names what a click shows; its look marks the list.
@@ -328,14 +395,17 @@ local function PanelControls(g)
     Place(view.equipped, frame, "TOPRIGHT", -right, -16, 24, 24)
     Place(view.cleanup, frame, "TOPRIGHT", -right - 32, -16, 24, 24)
     Place(view.manage, frame, "TOPRIGHT", -right - 64, -16, 24, 24)
-    Place(view.clearRecent, frame, "TOPRIGHT", -right - 96, -16, 24, 24)
-    Place(view.listToggle, frame, "TOPRIGHT", -right - 128, -16, 24, 24)
+    Place(view.listToggle, frame, "TOPRIGHT", -right - 96, -16, 24, 24)
     view.free:ClearAllPoints()
-    view.free:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 12)
-    view.free:SetSize(96, 32)
-    view.free:SetJustifyH("LEFT")
-    view.free:SetWordWrap(true)
-    view.position:SetWidth(g.columns * 40 - 52)
+    if g.rail > 0 then
+        view.free:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 12)
+    else
+        view.free:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, 37)
+    end
+    view.free:SetSize(g.rail > 0 and 96 or 180, 32)
+    view.free:SetJustifyH(g.rail > 0 and "LEFT" or "RIGHT")
+    view.free:SetWordWrap(g.rail > 0)
+    view.position:SetWidth(g.rail > 0 and g.columns * 40 - 52 or 0)
     view.position:SetWordWrap(false)
     view.previous:SetText("<")
     view.next:SetText(">")
@@ -361,7 +431,6 @@ local function WindowControls(g)
         Place(button, frame, "TOPLEFT", 12 + (mode - 1) * 92, -62, 88, 22)
     end
     Place(view.equipped, frame, "TOPRIGHT", -12, -62, 116, 22)
-    Place(view.clearRecent, frame, "TOPRIGHT", -136, -62, 140, 22)
     Place(view.listToggle, frame, "TOPLEFT", 288, -62, 52, 22)
     Place(view.manage, frame.MoneyFrame, "BOTTOMRIGHT", -4, 13, 108, 22)
     Place(view.cleanup, view.manage, "TOPLEFT", -113, 0, 108, 22)
@@ -393,14 +462,21 @@ function Controls.Layout(g)
     local view = InventoryView
     P.BagResize.Refresh(view.resize)
     ListToggle(g.panel)
-    if view.controlPanel == g.panel and view.controlTop == g.top then
+    local quickChanged = P.InventorySearch.UpdateQuickAction(view)
+    local mode, collapsed = M.config.inventoryView, M.config.collapseCategorySidebar
+    local geometryChanged = view.controlPanel ~= g.panel or view.controlTop ~= g.top or view.controlRail ~= g.rail
+        or view.controlHiddenTabs ~= g.hideTabs
+    if not geometryChanged and view.controlMode == mode
+        and view.controlCollapsed == collapsed and not quickChanged then
         P.BagTabSelection.Refresh(view, M.config)
         return
     end
     view.controlPanel, view.controlTop = g.panel, g.top
+    view.controlRail, view.controlHiddenTabs = g.rail, g.hideTabs
+    view.controlMode, view.controlCollapsed = mode, collapsed
     Tools(g.panel)
     P.EquippedBags.Layout(g.panel)
     if g.panel then PanelControls(g) else WindowControls(g) end
     for _, button in pairs(view.tabs) do P.BagAppearance.Button(button, button.view == M.config.inventoryView) end
-    P.BagTabSelection.Refresh(view, M.config, true)
+    P.BagTabSelection.Refresh(view, M.config, geometryChanged)
 end

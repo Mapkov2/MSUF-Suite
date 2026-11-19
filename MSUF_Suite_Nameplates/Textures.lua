@@ -1,6 +1,6 @@
 local _, private = ...
 local Selection, Absorbs = private.Selection, private.Absorbs
-local NS = private.NS
+local NS, Slant = private.NS, private.SlantedHealth
 local Style = NS.NameplateStyle
 local Textures = {}
 private.Textures = Textures
@@ -10,10 +10,8 @@ local darkCastBackground, sharedCastStyle
 local nativeEnemyOutline, nativeFriendlyOutline
 local healthStates = setmetatable({}, { __mode = "k" })
 local castStates = setmetatable({}, { __mode = "k" })
--- Nameplates are pooled and every release hands a plate back untextured, so a
--- plate's state ends with each cycle. Its table waits here, emptied, for the
--- same unit frame or castbar: texturing a recycled plate allocates nothing
--- (replay: 320 B of state tables per added plate before).
+-- Release plates untextured and reuse their empty state by frame or castbar.
+-- The replay previously allocated 320 B of state tables per added plate.
 local spareHealth = setmetatable({}, { __mode = "k" })
 local spareCast = setmetatable({}, { __mode = "k" })
 local castHooks = setmetatable({}, { __mode = "k" })
@@ -242,9 +240,13 @@ local function RecolorCastFill(cast, state)
     return true
 end
 
+local function RefreshCastShape(cast, state)
+    return not state.slanted or not private.CastOutline or private.CastOutline.RefreshShape(cast)
+end
+
 local function PaintCastFill(cast, state)
     local kind = cast.barType
-    if state.usesColorFill or NS.Public(kind) and kind == "empowered" then return true end
+    if state.usesColorFill or NS.Public(kind) and kind == "empowered" then return RefreshCastShape(cast, state) end
     -- The public asset can be set on the bar without accessing its old texture.
     local ok = cast:SetStatusBarTexture(castFill)
     if not NS.Public(ok) or ok == false then
@@ -255,7 +257,7 @@ local function PaintCastFill(cast, state)
     state.fill = castFill
     state.colorOnly = nil
     state.colorRevision = nil
-    return RecolorCastFill(cast, state)
+    return RecolorCastFill(cast, state) and RefreshCastShape(cast, state)
 end
 
 local function AfterCastFill(cast, full)
@@ -265,14 +267,19 @@ local function AfterCastFill(cast, full)
     state.full = not NS.Public(full) or full == true
     if not state.full then state.usesColorFill, state.notInterruptible, state.interrupted = nil, nil, nil end
     local uf = state.owner
-    if not state.enabled or not painted[uf] then return end
-    if not castFill then return end
-    if not Writable(cast) or not PaintCastFill(cast, state) then Defer(uf, false) end
+    if not painted[uf] then return end
+    if state.enabled and castFill then
+        if not Writable(cast) or not PaintCastFill(cast, state) then Defer(uf, false) end
+    elseif not RefreshCastShape(cast, state) then
+        Defer(uf, false)
+    end
 end
 
 local function AfterCastColorFill(cast)
     local state = castStates[cast]
-    if state then state.fill, state.colorOnly, state.usesColorFill = nil, nil, true end
+    if not state then return end
+    state.fill, state.colorOnly, state.usesColorFill = nil, nil, true
+    if painted[state.owner] and not RefreshCastShape(cast, state) then Defer(state.owner, false) end
 end
 
 local function AfterCastEvent(cast, event)
@@ -430,15 +437,16 @@ local function ApplyCast(uf, cast, reset, useFill, castBack, style, deferSpark)
     if not NS.Public(cast) then return false end
     local state = castStates[cast]
     if not cast or not state and not (useFill or castBack or style) then return true end
-    if state then state.enabled = useFill ~= nil end
+    local slanted = style and style.slanted == true
+    if state then state.enabled, state.slanted = useFill ~= nil, slanted end
     if not Writable(cast) then return false end
     if not state then
         state = spareCast[cast]
         if state then spareCast[cast] = nil else state = {} end
         castStates[cast] = state
     end
-    state.enabled = useFill ~= nil
-    if useFill and not castHooks[cast] then
+    state.enabled, state.slanted = useFill ~= nil, slanted
+    if (useFill or slanted) and not castHooks[cast] then
         hooksecurefunc(cast, "UpdateBarFillTexture", AfterCastFill)
         hooksecurefunc(cast, "SetColorFill", AfterCastColorFill)
         hooksecurefunc(cast, "PlayInterruptAnims", AfterInterrupt)
@@ -519,6 +527,7 @@ end
 
 function Textures.Configure(config, style)
     local hadTextures, absorbChanged = Textures.inUse, Absorbs and Absorbs.Configure(config)
+    local shapeChanged = Slant and Slant.Configure(config)
     local fill, back, cast, background = config.nativeHealthFillTexture, config.nativeHealthBackgroundTexture,
         config.nativeCastFillTexture, config.nativeCastBackgroundTexture
     local hpFill = Resolve(textureKeys[1], healthFill, fill)
@@ -540,14 +549,15 @@ function Textures.Configure(config, style)
     local friendlyOutline = NS.NameplateStyle.UsesNativeOutline(config, "friendly")
     if hpFill ~= healthFill or hpBack ~= healthBack or spellFill ~= castFill or spellBack ~= castBack or focus ~= focusFill
         or enemyOutline ~= nativeEnemyOutline or friendlyOutline ~= nativeFriendlyOutline or dark ~= darkCastBackground
-        or sharedCastStyle ~= style or absorbChanged then
+        or sharedCastStyle ~= style or absorbChanged or shapeChanged then
         generation = generation + 1
     end
     nativeEnemyOutline, nativeFriendlyOutline = enemyOutline, friendlyOutline
     healthFill, healthBack, castFill, castBack = hpFill, hpBack, spellFill, spellBack
     darkCastBackground, sharedCastStyle = dark, style
     focusFill = focus
-    baseTextures = healthFill or healthBack or castFill or castBack or sharedCastStyle or Absorbs and Absorbs.inUse
+    baseTextures = healthFill or healthBack or castFill or castBack or sharedCastStyle
+        or Absorbs and Absorbs.inUse or Slant and Slant.enabled
     Textures.inUse, Textures.focusFill = baseTextures or focusFill, focusFill
     Textures.healthFill, Textures.healthBack, Textures.castFill = healthFill, healthBack, castFill
     return hadTextures and not Textures.inUse
@@ -644,10 +654,11 @@ local function Apply(uf, reset, useTextures, background, deferSpark)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local absorbDone = not Absorbs or Absorbs.Apply(uf, health, useTextures, Writable)
+    local shapeDone = not Slant or Slant.Apply(uf, health, useTextures, Writable)
     if not useTextures then
         local healthDone = ApplyHealth(uf, health)
         local castDone = ApplyCast(uf, cast)
-        return healthDone and castDone and absorbDone
+        return healthDone and castDone and absorbDone and shapeDone
     end
     local fill = Textures.HealthFill(uf)
     if fill then
@@ -658,7 +669,7 @@ local function Apply(uf, reset, useTextures, background, deferSpark)
     end
     local healthDone = ApplyHealth(uf, health, reset, fill, background)
     local castDone = ApplyCast(uf, cast, reset, castFill, castBack, sharedCastStyle, deferSpark)
-    return healthDone and castDone and absorbDone
+    return healthDone and castDone and absorbDone and shapeDone
 end
 local function FlushDeferred(frame)
     if NS.IsCombatLocked() then return end
@@ -728,10 +739,8 @@ function Textures.Apply(uf, reset, paintedWithLayout)
     return deferSpark
 end
 
--- A castbar paint that waits for the end of combat: a cast height the client
--- withheld at a layout edge, or a cast event its castbar denied. The combat
--- end applies the plate again (FlushDeferred). Outside combat nothing is kept:
--- the next layout edge or cast event is the retry.
+-- FlushDeferred retries denied cast layouts or paints after combat.
+-- Outside combat, the next layout or cast event retries instead.
 function Textures.DeferCast(cast)
     if not NS.IsCombatLocked() then return end
     local state = castStates[cast]

@@ -25,6 +25,8 @@ Minimap = { SetMaskTexture = function() end }
 C_AddOns = { DoesAddOnExist = function() return false end, IsAddOnLoaded = function() return false end }
 MapkoSkin = setmetatable({}, { __index = function() error("profiles read the skin owner") end })
 Enum = { CompressionMethod = { Deflate = 1 } }
+-- Deferred storage scheduling is exercised separately from this synchronous profile fixture.
+C_Timer = { After = function() end }
 C_EncodingUtil = {}
 for _, name in ipairs({ "SerializeCBOR", "DeserializeCBOR", "EncodeBase64", "DecodeBase64", "CompressString", "DecompressString" }) do
     C_EncodingUtil[name] = function() error("native codec must be exercised by the MSUF codec owner") end

@@ -66,8 +66,9 @@ NS.MinimapDungeonAnchors = {
 }
 NS.MinimapTextAnchor = { ABOVE = #NS.AnchorLabels + 1, BELOW = #NS.AnchorLabels + 2 }
 NS.MinimapShape = { SQUARE = 1, CIRCLE = 2, WIDE = 3 }
+-- Profiles store these choice numbers. Append new artwork at the end.
 NS.MinimapStyleTexture = { NONE = 1, ARCANE_RING = 2, EMBER_RING = 3, ASTRAL_RING = 4, STEEL_FRAME = 5,
-    CUSTOM = 6, PARCHMENT_SCROLL = 7, BLIZZARD = 8 }
+    CUSTOM = 6, PARCHMENT_SCROLL = 7, BLIZZARD = 8, WAYFARER = 9, ANTIQUE_MAP_FRAME = 10 }
 NS.MinimapStylePlacement = { ABOVE = 1, BEHIND = 2 }
 NS.MinimapStyleBlend = { NORMAL = 1, ADDITIVE = 2 }
 NS.MinimapWeatherIcons = { BLIZZARD = 1, FOREVER = 2 }
@@ -77,6 +78,7 @@ NS.MinimapZoomButtons = { MOUSEOVER = 1, ALWAYS = 2, HIDE = 3 }
 NS.MinimapMiddleClick = { NOTHING = 1, TRACKING = 2, CALENDAR = 3, WORLD_MAP = 4, MICRO_MENU = 5 }
 NS.MinimapLanding = { ALWAYS = 1, MOUSEOVER = 2, NEVER = 3 }
 NS.MinimapLandingIcon = { BLIZZARD = 1, BOOK = 2 }
+NS.MinimapDrawerStyle = { AUTO = 1, FOREVER = 2, MODERN = 3, DARK = 4 }
 NS.MinimapTextBox = { NONE = 1, BORDER = 2, CUSTOM = 3 }
 NS.MinimapWeatherDisplay = { TEXT = 1, ICON = 2, BOTH = 3 }
 NS.MinimapClockSource = { REALM = 1, LOCAL = 2, BOTH = 3 }
@@ -186,7 +188,7 @@ B.Section(id, "shape", "Shape, border and shadow", {
 -- The texture paths are Suite-owned original art; Custom accepts a local WoW
 -- texture path or a file ID. Existing profiles retain the clean default.
 NS.MinimapStyleTextureNames = { "None", "Arcane ring", "Ember ring", "Astral ring", "Steel frame",
-    "Custom texture", "Parchment scroll", "Blizzard" }
+    "Custom texture", "Parchment scroll", "Blizzard", "Wayfarer", "Antique map frame" }
 NS.MinimapStylePresetNames = { "Custom", "Clean", "Arcane", "Ember", "Astral", "Steel",
     "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map", "Clean Modern", "Class Style" }
 local clean = {
@@ -342,12 +344,16 @@ B.Section(id, "specialization", "Minimap specialization menu", {
     Number("specX", "Horizontal offset", 0, -600, 600),
     Number("specY", "Vertical offset", 0, -600, 600),
 })
+local drawerVisibility = Bool("drawerMouseover", "Drawer button visibility", false)
+drawerVisibility.choices = { "Always", "Mouseover" }
 B.Section(id, "addons", "Addon buttons", {
     Bool("collectButtons", "Collect addon buttons into a drawer", true),
+    Choice("drawerStyle", "Drawer button style", NS.MinimapDrawerStyle.AUTO,
+        { "Automatic", "MSUF Forever", "Modern", "Midnight Dark" }),
+    drawerVisibility,
     Choice("drawerRow", "Drawer button placement", 5, NS.MinimapRowLabels),
     Number("drawerButtonSize", "Drawer icon size", 24, 14, 40),
     Number("drawerColumns", "Drawer columns", 4, 1, 8),
-    Bool("drawerMouseover", "Show the drawer button only on mouseover", false),
     Number("drawerX", "Drawer horizontal offset", 0, -600, 600),
     Number("drawerY", "Drawer vertical offset", 0, -600, 600),
     -- Edited by the page's picker and list (MinimapButtonList.lua), not as text.
@@ -526,7 +532,7 @@ rules.zoomResetSeconds.enableKey = "scrollZoom"
 rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverResize"
 rules.trackingMouseover.enableKey = "showTracking"
 rules.drawerKeep.hidden = true
-for _, key in ipairs({ "drawerRow", "drawerButtonSize", "drawerColumns", "drawerMouseover", "drawerKeep" }) do
+for _, key in ipairs({ "drawerStyle", "drawerRow", "drawerButtonSize", "drawerColumns", "drawerMouseover", "drawerKeep" }) do
     rules[key].enableKey = "collectButtons"
 end
 rules.infoDifficultyColor.disabledBy = "infoDifficultyColors"
@@ -540,8 +546,10 @@ local ART = NS.MinimapStyleTexture
 rules.styleTexturePath.requiresChoice = { key = "styleTexture", values = { [ART.CUSTOM] = true } }
 for _, key in ipairs({ "styleGlowColor", "styleGlowAlpha", "styleGlowScale" }) do rules[key].enableKey = "styleGlow" end
 for _, key in ipairs({ "styleBackdropColor", "styleBackdropAlpha", "styleBackdropPadding" }) do rules[key].enableKey = "styleBackdrop" end
+local artworkSelected = { key = "styleTexture", values = {} }
+for choice in ipairs(rules.styleTexture.choices) do
+    if choice ~= ART.NONE then artworkSelected.values[choice] = true end
+end
 for _, key in ipairs({ "styleColor", "styleAlpha", "styleScale", "styleX", "styleY", "stylePlacement", "styleBlend", "styleRotation" }) do
-    rules[key].requiresChoice = { key = "styleTexture", values = { [ART.ARCANE_RING] = true, [ART.EMBER_RING] = true,
-        [ART.ASTRAL_RING] = true, [ART.STEEL_FRAME] = true, [ART.CUSTOM] = true,
-        [ART.PARCHMENT_SCROLL] = true, [ART.BLIZZARD] = true } }
+    rules[key].requiresChoice = artworkSelected
 end

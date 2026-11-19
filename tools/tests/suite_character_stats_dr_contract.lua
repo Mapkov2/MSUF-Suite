@@ -682,6 +682,7 @@ do
     local enum, item, tooltipInfo, tooltip = Enum, C_Item, C_TooltipInfo, GameTooltip
     Enum = { TooltipDataLineType = { GemSocket = 3, ItemEnchantmentPermanent = 15, ItemUpgradeLevel = 32 } }
     local tooltipLines, gemLink
+    local requests = 0
     C_Item = {
         GetItemInfo = function()
             return "Contract Helm", nil, 4, nil, nil, nil, nil, nil, "INVTYPE_HEAD", 1234, nil, 4, 2, nil, 11
@@ -693,6 +694,10 @@ do
         GetDetailedItemLevelInfo = function() return 639 end,
         GetItemNumSockets = function() return 2 end,
         GetItemStats = function() return { ITEM_MOD_CRIT_RATING_SHORT = 120 } end,
+        RequestLoadItemDataByID = function(id)
+            assert(id == 555, "unexpected socket data request")
+            requests = requests + 1
+        end,
     }
     C_TooltipInfo = { GetInventoryItem = function()
         return tooltipLines and { lines = tooltipLines } or nil
@@ -734,6 +739,40 @@ do
     assert(#added > 0 and added[2] == NS.L.GEAR_TOOLTIP_TITLE, "the equipment tooltip lines were not added")
     -- Theme.GetColor returns r, g, b, a; AddLine's fifth argument is wrap.
     assert(wraps[2] == nil, "the theme colour's alpha reached AddLine as the title's wrap flag")
+
+    NS.Client.isForever = true
+    local function UnexpectedRetailRead() error("Retail gear metadata was read on Forever") end
+    C_Item.GetItemUpgradeInfo, C_Item.GetItemStats = UnexpectedRetailRead, UnexpectedRetailRead
+    C_TooltipInfo.GetInventoryItem = UnexpectedRetailRead
+    local gemIcon, gemID = nil, 555
+    gemLink, requests = nil, 0
+    C_Item.GetItemIconByID = function() return gemIcon end
+    C_Item.GetItemGemID = function(_, index) return index == 1 and gemID or nil end
+    snapshot = info.Read("item:1:0:", "player", 1, nil, "Player-1")
+    assert(snapshot.sockets == 2 and snapshot.gems == 1 and snapshot.emptySockets == 1
+        and snapshot.gemInfo[1].id == 555 and snapshot.gemInfo[2].known, "Forever dropped the equipped item's sockets")
+    local pending = {}
+    info.Summarize(snapshot, pending)
+    assert(snapshot.pending and pending[555] and requests == 1, "the uncached gem was not requested and tracked")
+    info.Read(snapshot.link, "player", 1, snapshot, "Player-1")
+    assert(requests == 1, "refreshing the same item requested its pending gem again")
+    gemLink, gemIcon = "item:555", 99
+    info.Read(snapshot.link, nil, 1, snapshot, "Player-1")
+    assert(snapshot.settled and snapshot.gemInfo[1].texture == 99, "loaded gem artwork did not refresh from a captured link")
+
+    local previousSecretCheck, privateGem = issecretvalue, newproxy()
+    issecretvalue = function(value) return rawequal(value, privateGem) or previousSecretCheck(value) end
+    gemID = privateGem
+    info.Read("item:2:0:", "player", 1, snapshot, "Player-1")
+    assert(not snapshot.gemInfo[1].known and snapshot.gemInfo[2].known and not snapshot.gems and not snapshot.emptySockets,
+        "a restricted gem ID was reported as an empty socket")
+    issecretvalue = previousSecretCheck
+    C_Item.GetItemNumSockets = function() return 0 end
+    C_Item.GetItemGemID = function() error("a socketless item requested gem data") end
+    info.Read("item:3:0:", "player", 1, snapshot, "Player-1")
+    assert(snapshot.sockets == 0 and not snapshot.gemInfo[1].id and not snapshot.gemInfo[1].texture,
+        "replacing the item retained its old sockets")
+    NS.Client.isForever = nil
     Enum, C_Item, C_TooltipInfo, GameTooltip = enum, item, tooltipInfo, tooltip
 end
 

@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -34,14 +35,25 @@ builder.validate_payload({"MSUF_Suite/Core/Load.toc": b"Child.xml\n",
                           "MSUF_Suite/Core/Child.xml": b'<Ui><Script file="Child.lua"/></Ui>',
                           "MSUF_Suite/Core/Child.lua": b"return true"})
 
+# Validate the real working source, including new modules installed from the
+# checkout. The publication builder still limits its input to Git-listed files.
+worktree_files = subprocess.check_output(
+    ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=root,
+).decode("utf-8").split("\0")
+worktree_files = sorted({file for file in worktree_files if file and (root / file).is_file()})
+version = builder.field((root / "MSUF_Suite/MSUF_Suite_Mainline.toc").read_text(encoding="utf-8-sig"), "Version")
+addons = builder.validate_addons(root, worktree_files, version)
+builder.validate_payload({file: (root / file).read_bytes() for file in worktree_files if file.split("/")[0] in addons})
+
 with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
-    scratch = Path(temporary)
+    scratch = Path(temporary) / "source"
     core = scratch / "MSUF_Suite/MSUF_Suite_Mainline.toc"
     options = scratch / "MSUF_Suite_Options/MSUF_Suite_Options_Mainline.toc"
     for path in (core, options):
         path.parent.mkdir(parents=True)
     header = "## Version: 0.1-alpha\n## Interface: 120105,16001\n"
-    core.write_text(header + "## Dependencies: MidnightSimpleUnitFrames\n", encoding="utf-8")
+    core.write_text(header + "## Dependencies: MidnightSimpleUnitFrames\n"
+                    "## X-Curse-Project-ID: 1743628\n## X-Wago-ID: YK9xrV6L\n", encoding="utf-8")
     options.write_text(header + "## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options\n", encoding="utf-8")
     files = [path.relative_to(scratch).as_posix() for path in (core, options)]
     # A complete minimal package has one optional addon with all canonical catalogs.
@@ -65,8 +77,28 @@ with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
         core.write_bytes(original.replace(old, new))
         rejects(lambda: builder.validate_addons(scratch, files, "0.1-alpha"), "Unsafe TOC passed: " + str(new))
     core.write_bytes(original)
+    cycle = scratch / "MSUF_Suite_Cycle/MSUF_Suite_Cycle_Mainline.toc"
+    cycle.parent.mkdir()
+    cycle.write_text(header + "## Dependencies: MSUF_Suite, MSUF_Suite_Cycle\n", encoding="utf-8")
+    rejects(lambda: builder.validate_addons(scratch, files + [cycle.relative_to(scratch).as_posix()], "0.1-alpha"),
+            "An addon may reach MSUF and still fail to load because of a required dependency cycle")
     options.write_text(header + "## Dependencies: MSUF_Suite\n", encoding="utf-8")
     rejects(lambda: builder.validate_addons(scratch, files, "0.1-alpha"), "MSUF Options became optional")
+
+    # Metadata and deterministic archive checks need a release entry; use an
+    # isolated Git fixture so an Unreleased working changelog is also testable.
+    options.write_text(header + "## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options\n", encoding="utf-8")
+    for path, content in (("CHANGELOG.md", "# Suite changelog\n\n## Unreleased\n\n- Pending.\n"),
+                          ("LICENSE.txt", "Test license\n"), ("README.md", "# Suite fixture\n")):
+        (scratch / path).write_text(content, encoding="utf-8")
+    subprocess.run(["git", "init", "--quiet"], cwd=scratch, check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "add", "--", *files, "CHANGELOG.md", "LICENSE.txt", "README.md"],
+                   cwd=scratch, check=True)
+    root = scratch
+    scratch = Path(temporary) / "output"
+    rejects(lambda: builder.build(root, scratch / "unreleased"), "Unreleased changelog became publishable")
+    (root / "CHANGELOG.md").write_text("# Suite changelog\n\n## 0.1 Alpha - 2026-01-01\n\n- Fixture release.\n",
+                                       encoding="utf-8")
 
     first = builder.build(root, scratch / "first")
     second = builder.build(root, scratch / "second")

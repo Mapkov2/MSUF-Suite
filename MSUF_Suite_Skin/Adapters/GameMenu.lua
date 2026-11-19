@@ -24,13 +24,13 @@ local listenerRegistered = false
 
 -- Core gives MSUF the same bounds as its native neighbor. Use those full
 -- bounds for every menu button, including the generic panel-skin first pass.
-local BUTTON_SPEC = {
+local BUTTON_SPEC = NS.ControlSkin.MarkFixedButtonSpec({
     role = "button",
     activeRole = "buttonPrimary",
     useControlShape = true,
     pillHeight = 32,
     inset = 0,
-}
+})
 local SHELL_SPEC = { role = "shell", inset = 0 }
 local HEADER_SPEC = {
     role = "navigationActive",

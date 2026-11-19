@@ -115,43 +115,94 @@ function S.CooldownManagerSpec()
 end
 
 ------------------------------------------------------------------ hot event handlers
--- Prebuilt callbacks; per-event values travel through these upvalues.
-local stamp, curSpell, curItem, curRange = 0, nil, nil, nil
-local function RefreshCooldown(entry)
-    if entry.cdStamp == stamp or not entry.icon then return end
-    entry.cdStamp = stamp
-    if Refresh(entry, "cooldown") then Request(entry.slot) end
-end
+local curRangeSpell, curRange
 local function EachCooldown(fn)
     for i = 1, #cooldownEntries do fn(cooldownEntries[i]) end
 end
-local function SetCategorySpell(entry) entry.catSpell, entry.catItem = curSpell, curItem end
 
--- SPELL_UPDATE_COOLDOWN: nil or unreadable spell = all; category payloads
--- (potions, healthstones) name the spell that started the category; a GCD
--- start touches every icon only while icons show the GCD. A payload value
--- that is secret counts as absent.
-local function OnCooldown(_, _, spellID, baseSpellID, category, recovery, itemID)
-    stamp = stamp + 1
-    if AuraTimers.hasManual then AuraTimers.Cooldown(spellID, baseSpellID) end
-    if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == GCD_SPELL
-        or not issecret(recovery) and recovery == GCD) then Effects.RecommendationGCD() end
-    local item = not issecret(itemID) and itemID or nil
-    local categoryItem = item and not issecret(category) and category and category ~= 0
-    if categoryItem then
-        curSpell = not issecret(baseSpellID) and baseSpellID or (not issecret(spellID) and spellID or nil)
-        curItem = item
-        ForCategory(category, SetCategorySpell)
-    end
-    if issecret(spellID) or spellID == nil then return EachCooldown(RefreshCooldown) end
-    if categoryItem then ForCategory(category, RefreshCooldown) end
+local function CanShareCooldown(spellID, baseSpellID, category, recovery, itemID)
+    if issecret(spellID) or spellID == nil then return #cooldownEntries > 1 end
+    local a = Index.bySpell[spellID]
+    local b = not issecret(baseSpellID) and Index.bySpell[baseSpellID]
+    if a and #a > 1 or b and #b > 1 or a and b and a[1] ~= b[1] then return true end
     if not issecret(recovery) and recovery == GCD then
-        local list = Index.gcd
-        for i = 1, #list do RefreshCooldown(list[i]) end
+        local gcd = Index.gcd
+        if #gcd > 1 or #gcd == 1 and (a or b) and gcd[1] ~= (a or b)[1] then return true end
     end
-    ForSpell(spellID, baseSpellID, RefreshCooldown)
-    if item then ForItem(item, RefreshCooldown) end
+    if not issecret(itemID) and itemID and not issecret(category) and category and category ~= 0 then
+        local list = Index.byCategory[category]
+        if list and (#list > 1 or (a or b) and list[1] ~= (a or b)[1]) then return true end
+    end
 end
+
+local OnCooldown, OnCooldownWithSharing = (function()
+    -- Prebuilt callbacks; per-event values travel through these upvalues.
+    local stamp, curSpell, curItem = 0, nil, nil
+    local liveCooldownReads = C.Time.LiveReads
+    local cooldownReads, sharingCooldown = C.Time.NewReads(), false
+    local Dispatch = S.Dispatch
+
+    local function CooldownRefresher(reads)
+        return function(entry)
+            if entry.cdStamp == stamp or not entry.icon then return end
+            entry.cdStamp = stamp
+            if Refresh(entry, "cooldown", nil, reads) then Request(entry.slot) end
+        end
+    end
+
+    local RefreshCooldown = CooldownRefresher(liveCooldownReads)
+    local RefreshSharedCooldown = CooldownRefresher(cooldownReads)
+
+    local function SetCategorySpell(entry) entry.catSpell, entry.catItem = curSpell, curItem end
+
+    -- SPELL_UPDATE_COOLDOWN: nil or unreadable spell = all; category payloads
+    -- (potions, healthstones) name the spell that started the category; a GCD
+    -- start touches every icon only while icons show the GCD. A payload value
+    -- that is secret counts as absent.
+    local function CooldownHandler(refresh)
+        return function(_, _, spellID, baseSpellID, category, recovery, itemID)
+            stamp = stamp + 1
+            if AuraTimers.hasManual then AuraTimers.Cooldown(spellID, baseSpellID) end
+            if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == GCD_SPELL
+                or not issecret(recovery) and recovery == GCD) then Effects.RecommendationGCD() end
+            local item = not issecret(itemID) and itemID
+            local categoryItem = item and not issecret(category) and category and category ~= 0
+            if categoryItem then
+                curSpell = not issecret(baseSpellID) and baseSpellID or (not issecret(spellID) and spellID or nil)
+                curItem = item
+                ForCategory(category, SetCategorySpell)
+            end
+            if issecret(spellID) or spellID == nil then return EachCooldown(refresh) end
+            if categoryItem then ForCategory(category, refresh) end
+            if not issecret(recovery) and recovery == GCD then
+                local list = Index.gcd
+                for i = 1, #list do refresh(list[i]) end
+            end
+            ForSpell(spellID, baseSpellID, refresh)
+            if item then ForItem(item, refresh) end
+        end
+    end
+
+    local OnCooldown = CooldownHandler(RefreshCooldown)
+    local RunSharedCooldown = CooldownHandler(RefreshSharedCooldown)
+
+    -- Existing deferred flush reads are separate. Invalidating a direct snapshot
+    -- makes the rest of that pass use live reads after a nested cooldown event.
+    local function OnCooldownWithSharing(module, event, spellID, baseSpellID, category, recovery, itemID)
+        if sharingCooldown then
+            cooldownReads.invalidated = true
+            return OnCooldown(module, event, spellID, baseSpellID, category, recovery, itemID)
+        end
+        if not CanShareCooldown(spellID, baseSpellID, category, recovery, itemID) then
+            return OnCooldown(module, event, spellID, baseSpellID, category, recovery, itemID)
+        end
+        sharingCooldown = true
+        Dispatch(RunSharedCooldown, module, event, spellID, baseSpellID, category, recovery, itemID)
+        cooldownReads.clear()
+        sharingCooldown = false
+    end
+    return OnCooldown, OnCooldownWithSharing
+end)()
 
 local countedSet = Index.countedSet
 local function MarkCount(entry)
@@ -295,11 +346,11 @@ local function OnGlowHide(_, _, spellID) ForSpell(spellID, nil, ProcOff) end
 
 -- Only the entry holding the check for this spell follows its update.
 local function RangeEntry(entry)
-    if entry.rangeSpell == curSpell then Range(entry, curRange) end
+    if entry.rangeSpell == curRangeSpell then Range(entry, curRange) end
 end
 local function OnRange(_, _, spell, inRange, checksRange)
     if issecret(spell) or spell == nil then return end
-    curSpell, curRange = spell, nil
+    curRangeSpell, curRange = spell, nil
     if not (issecret(checksRange) or issecret(inRange)) and checksRange then curRange = inRange end
     ForSpell(spell, nil, RangeEntry)
 end
@@ -345,7 +396,9 @@ local function Overridden(entry)
 end
 local function OnOverride(_, _, base, override)
     if not C.Catalog.OnOverride(base, override) then return end
+    local shared = Index.hasSharedTimeSpells
     if ForBase(base, Overridden) == 0 then return end
+    if not shared and Index.hasSharedTimeSpells then dirty.events = true end
     if C.state.inCombat then
         staleRoutes = true
     else
@@ -624,7 +677,8 @@ local function EquipWatch()
 end
 local function UpdateEvents()
     local cooldown = #cooldownEntries > 0
-    Want("SPELL_UPDATE_COOLDOWN", cooldown or AuraTimers.Wanted() or C.state.assistIcon and C.state.assistIconGCD, OnCooldown)
+    local onCooldown = Index.hasSharedTimeSpells and OnCooldownWithSharing or OnCooldown
+    Want("SPELL_UPDATE_COOLDOWN", cooldown or AuraTimers.Wanted() or C.state.assistIcon and C.state.assistIconGCD, onCooldown)
     Want("SPELL_UPDATE_USES", #Index.counted > 0, OnUses)
     Want("SPELL_UPDATE_ICON", cooldown, OnIcon)
     local timers = C.AuraTimers.Wanted()

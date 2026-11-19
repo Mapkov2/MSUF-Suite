@@ -165,7 +165,7 @@ local function RuleSearchKind(rule)
     return "textinput"
 end
 
-local function RegisterFeatureRuleSearch(group, sectionId, entries, keywords)
+local function RegisterFeatureRuleSearch(group, sectionId, entries, keywords, prepare)
     for _, entry in ipairs(entries or {}) do
         if entry.widget then
             local rule = entry.rule
@@ -175,9 +175,22 @@ local function RegisterFeatureRuleSearch(group, sectionId, entries, keywords)
             for _, word in ipairs(keywords) do words[#words + 1] = word end
             meta.label, meta.keywords = Tr(rule.label), words
             P.M.RegisterSearchWidget(entry.widget, meta)
-            HM.SetSearchTargetPrepare(entry.widget, function() return group.reveal(true) ~= nil end)
+            HM.SetSearchTargetPrepare(entry.widget, function()
+                if group.reveal(true) == nil then return false end
+                if prepare then prepare() end
+                return true
+            end)
         end
     end
+end
+
+local function BuildIndicatorPreview(ctx, details, group, sectionId, width, y, keywords)
+    local bottom, ui = P.BuildQoLIndicatorPreview(ctx, details, group.id, width, y)
+    if ui and ui.editor then
+        return ui.editor.BuildProperties(ui, details, bottom, width - 32, V.GetFeaturePage(group), sectionId,
+            function(entries, prepare) RegisterFeatureRuleSearch(group, sectionId, entries, keywords, prepare) end)
+    end
+    return bottom
 end
 
 local function BuildFeatureDetails(ctx, details, group, sectionId, width, sections, allRules, keywords)
@@ -193,9 +206,10 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
             16, y, width - 32, P.T.colors.warning or P.T.colors.accent2)
         y = y - math.max(16, math.ceil(warning:GetStringHeight() or 16)) - 10
     end
-    y = P.BuildQoLIndicatorPreview(ctx, details, group.id, width, y)
+    y = BuildIndicatorPreview(ctx, details, group, sectionId, width, y, keywords)
     y = P.BuildNewToolActions(ctx, details, group.id, sectionId, y, width - 32)
     for _, section in ipairs(sections) do
+        if group.id == "battleRes" and section.key ~= "battle_res" then break end
         if #sections > 1 and section.source[1] then
             local subtitle = P.Text(details, section.source[1].sectionTitle, 16, y, width - 32, P.T.colors.text)
             y = y - math.max(14, math.ceil(subtitle:GetStringHeight() or 14)) - 6

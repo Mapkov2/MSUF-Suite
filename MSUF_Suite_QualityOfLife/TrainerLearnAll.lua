@@ -40,7 +40,7 @@ if NS.Client.isForever then
         local remaining = money - total
         local reserve = (self.config.reserveSilver or 0) * 100
         if self.paintCount ~= count or self.paintTotal ~= total or self.paintRemaining ~= remaining or self.paintReserve ~= reserve then
-            local text = S.Text("%d paid · %s"):format(count, Coins(total))
+            local text = S.Text("%d paid · %s", true):format(count, Coins(total))
             if remaining < 0 then
                 text = text .. "\n" .. S.Text("%s short"):format(Coins(-remaining))
             else

@@ -105,6 +105,7 @@ end
 local function Configure(english, style)
     D.M.config = { englishNumbers = english }
     D.M.style = style
+    D.BuildValuePlan(style)
     D.ConfigureAbbreviation()
 end
 
@@ -148,6 +149,31 @@ for _, english in ipairs({ false, true }) do
     Configure(english, { numberFormat = FORMAT.PARENTHESES, percent = true })
     assert(Paint(TYPE.DamageDone, false) == Paint(TYPE.DamageDone, true) .. " 50%",
         "the plain share changed the amounts' format: " .. Paint(TYPE.DamageDone, false))
+end
+
+-- Exercise every configured order and separator, with either optional value
+-- omitted, including a secret rate beside a readable percentage.
+local orders = { "trp", "tpr", "rtp", "rpt", "ptr", "prt" }
+local separators = { " %s", " (%s)", " [%s]", " | %s", " / %s", " - %s" }
+for order, fields in ipairs(orders) do
+    for separator, suffix in ipairs(separators) do
+        Configure(true, { numberFormat = FORMAT.CUSTOM, valueOrder = order, valueSeparator = separator })
+        for _, hasRate in ipairs({ true, false }) do
+            for _, hasPercent in ipairs({ true, false }) do
+                local amounts = { t = "12M", r = hasRate and "123K", p = hasPercent and "50%" }
+                local text = ""
+                for key in fields:gmatch(".") do
+                    local amount = amounts[key]
+                    if amount then text = text == "" and amount or text .. suffix:format(amount) end
+                end
+                local sample = Row()
+                local meter = hasRate and TYPE.DamageDone or TYPE.Interrupts
+                D.SetValueText(sample, meter, TOTAL, Secret(RATE), hasPercent and SHARE or Secret(SHARE), true)
+                assert(sample.valueText.shown == text, ("custom variant %d/%d: expected %q, got %q"):format(
+                    order, separator, text, sample.valueText.shown))
+            end
+        end
+    end
 end
 
 -- Native calls: one per shown amount when a plain value changed, none for an

@@ -208,6 +208,22 @@ function S.ForgetCVar(id, key)
     return true
 end
 
+-- A confirmed batch the controller undoes (MSUF_Suite/Core/Suite.lua,
+-- SetMany) gives the module its records back as they were before the batch,
+-- so an override keeps the Blizzard value from before it.
+function S.CVarRecords(id)
+    local recovery = Recovery(false)
+    local saved = recovery and recovery[id]
+    return NS.CopyValue(type(saved) == "table" and saved or {})
+end
+
+function S.SetCVarRecords(id, records)
+    local recovery = Recovery(next(records) ~= nil)
+    if not recovery then return end
+    recovery[id] = next(records) and NS.CopyValue(records) or nil
+    if not next(recovery) then NS.RootDB.suiteRecovery[recoveryKey] = nil end
+end
+
 function S.CommitCVar(id, key, value)
     if NS.InCombat() or not OwnsCVar(id, key) then return false end
     local current = CVars.GetCVar(key)

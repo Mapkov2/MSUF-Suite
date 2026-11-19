@@ -275,14 +275,19 @@ M:Refresh()
 assert(M.host.height == 230 and M.header.shown and M.header.text == "Recent spells",
     "optional header did not expand the named history window")
 M.config.insertAnimation = 2
-Cast(13)
+M:Refresh()
 local fade = M.rows[1].fade
-assert(fade and fade.plays == 1, "fade insertion did not use a native animation")
+assert(fade and fade.plays == 0, "the configured fade was not prepared before the first cast")
+Cast(13)
+assert(M.rows[1].fade == fade and fade.plays == 1, "fade insertion did not use the prepared animation")
 Cast(14)
 assert(M.rows[1].fade == fade and fade.plays == 2, "insert animations were not reused")
 M.config.insertAnimation = 3
+M:Refresh()
+local pop = M.rows[1].pop
+assert(pop and pop.plays == 0, "the configured pop was not prepared before the first cast")
 Cast(15)
-assert(M.rows[1].pop and M.rows[1].pop.plays == 1 and fade.stopped,
+assert(M.rows[1].pop == pop and pop.plays == 1 and fade.stopped,
     "switching insertion animations left the previous animation running")
 M:Disable()
 M.active = false

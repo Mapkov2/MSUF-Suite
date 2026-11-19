@@ -2,13 +2,14 @@
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
-## Version: 0.1.27-alpha
+## Version: 0.1.28-alpha
 ## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Menu\Bridge.lua
+Menu\ChangelogData.lua
 Menu\Changelog.lua
 Menu\MediaValues.lua
 Menu\Controls.lua
@@ -59,6 +60,7 @@ Pages\XPBarPreviewEditor.lua
 Pages\LootRollPreviewMove.lua
 Pages\LootRollPreviewProperties.lua
 Pages\LootRollPreviewEditor.lua
+Pages\BattleResEditor.lua
 Pages\QualityOfLifePreview.lua
 Menu\GraphicsPerformance.lua
 Pages\GraphicsPerformance.lua
@@ -146,4 +148,5 @@ Pages\Appearance.lua
 Menu\ToolRouting.lua
 Menu\Register.lua
 Menu\SearchActions.lua
+Menu\SearchProvider.lua
 Menu\Search.lua

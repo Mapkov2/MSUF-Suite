@@ -2573,6 +2573,26 @@ do
     local rec=Button(9,4)
     assert(rec.slot==16 and rec.quality and rec.quality.shown and rec.quality.atlas=="Professions-Icon-Quality-Tier3-Inv",
         "Forever lost the crafting quality badge")
+    do
+        local writes, original = 0, {}
+        for _, name in ipairs({"SetAtlas","SetSize","SetPoint","ClearAllPoints","Show"}) do
+            original[name]=rec.quality[name]
+            rec.quality[name]=function(self,...)
+                writes=writes+1
+                return original[name](self,...)
+            end
+        end
+        for _=1,100 do AB.Painter.Paint(rec) end
+        assert(writes==0,"identical item paints rewrote badge artwork or layout")
+        actions[16].quality=nil
+        AB.Painter.Paint(rec)
+        assert(not rec.quality.shown,"unavailable quality retained its badge")
+        actions[16].quality="Professions-Icon-Quality-Tier2-Inv"
+        AB.Painter.Paint(rec)
+        assert(writes==2 and rec.quality.shown and rec.quality.atlas=="Professions-Icon-Quality-Tier2-Inv",
+            "the late quality result did not apply only its atlas and visibility")
+        for name in pairs(original) do rec.quality[name]=nil end
+    end
     Suite.Client.isForever=false
     local reads=calls.quality
     Event("ACTIONBAR_SLOT_CHANGED",13);RunTimers()

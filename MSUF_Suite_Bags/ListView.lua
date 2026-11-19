@@ -76,9 +76,11 @@ function List.Layout(list, model, spec, config)
         local group = model.groups[g]
         local rows = group.displayRows
         if group.visible and (#rows > 0 or group.collapsed) then
-            count = count + 1
-            local header = Entry(list, count)
-            header.group, header.row = group, nil
+            if not model.flat then
+                count = count + 1
+                local header = Entry(list, count)
+                header.group, header.row = group, nil
+            end
             for i = 1, #rows do Columns.Prepare(rows[i].item, config) end
             table.sort(rows, comparator)
             for i = 1, #rows do

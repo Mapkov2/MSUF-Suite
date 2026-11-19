@@ -42,6 +42,11 @@ function Preview.Stop(ui)
     ui.canvas:SetAlpha(1)
 end
 
+local function FinishPreview(ui)
+    ui.playing, ui.finished = false, true
+    ui.canvas:SetAlpha(0)
+end
+
 local function Animation(ui)
     local group = ui.canvas:CreateAnimationGroup()
     group:SetToFinalAlpha(true)
@@ -61,20 +66,20 @@ local function Animation(ui)
     fadeOut:SetFromAlpha(1)
     fadeOut:SetToAlpha(0)
     fadeOut:SetDuration(.36)
-    leave:SetScript("OnFinished", function()
-        ui.playing, ui.finished = false, true
-        ui.canvas:SetAlpha(0)
-    end)
+    leave:SetScript("OnFinished", function() FinishPreview(ui) end)
     ui.animation, ui.leave = group, leave
 end
 
 function Preview.Play(ui, withSound)
     if ui.id ~= "announcements" or not ui.host:IsVisible() then return end
     Preview.Stop(ui)
-    if not ui.animation then Animation(ui) end
-    local duration = S.Config("announcements").duration
+    local config = S.Config("announcements")
+    local duration, animate = config.duration, config.animateBanner ~= false
     ui.lastDuration, ui.playing = duration, true
-    ui.animation:Play()
+    if animate then
+        if not ui.animation then Animation(ui) end
+        ui.animation:Play()
+    end
     if withSound and modes.announcements == "level" then PlaySound(LEVEL_UP_SOUNDKIT) end
     -- Match the actual banner: fade-in and the display clock start together;
     -- only the one-shot deadline starts the independent fade-out group.
@@ -82,7 +87,9 @@ function Preview.Play(ui, withSound)
     timer = C_Timer.NewTimer(duration, function()
         if ui.dismissTimer ~= timer then return end
         ui.dismissTimer = nil
-        if ui.playing and ui.id == "announcements" and ui.host:IsVisible() then ui.leave:Play() end
+        if ui.playing and ui.id == "announcements" and ui.host:IsVisible() then
+            if animate then ui.leave:Play() else FinishPreview(ui) end
+        end
     end)
     ui.dismissTimer = timer
 end
@@ -449,7 +456,7 @@ function Preview.Build(ctx, parent, width)
     HM.SkipHistoryCheckpoint(ui.playButton)
     HM.AllowCombatClick(ui.playButton)
     ui.playButton:SetScript("OnClick", function() Preview.Play(ui, true) end)
-    ui.levelDetailsButton = P.T.Button(parent, Tr("Level-up details"), math.min(160, width - 156), 26)
+    ui.levelDetailsButton = P.T.Button(parent, "Level-up details", math.min(160, width - 156), 26)
     ui.levelDetailsButton:SetPoint("TOPLEFT", 16, -66)
     HM.SkipHistoryCheckpoint(ui.levelDetailsButton)
     ui.levelDetailsButton:Hide()

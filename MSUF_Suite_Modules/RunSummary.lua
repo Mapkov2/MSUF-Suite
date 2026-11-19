@@ -8,7 +8,7 @@ local RaidRecords = S.RaidRecords
 local Tr = S.Text
 local IN_COMBAT = { inCombat = true }
 local M = {}
-local DOT = "  \194\183  "
+local SEPARATOR = "  -  "
 -- A first click on "Delete run" arms it for this many seconds.
 local DELETE_WINDOW = 4
 local BUTTON_TEXT_SIZE = 12
@@ -113,7 +113,7 @@ local function MythicRows(c, result, rows)
             or result.onTime == false and Tr("Over time") or Tr("Unknown")
         if Finite(result.limit) and Finite(result.time) then
             local delta = result.limit - result.time
-            value = value .. DOT .. (delta >= 0 and "-" or "+") .. Clock(math.abs(delta))
+            value = value .. SEPARATOR .. (delta >= 0 and "-" or "+") .. Clock(math.abs(delta))
         end
         Add(rows, Tr("Timer"), value)
     end
@@ -138,7 +138,7 @@ local function Rows(self, result)
     else
         if c.showDuration then Add(rows, Tr("Kill time"), Clock(result.time)) end
         if c.showBest then
-            Add(rows, Tr("Fastest kill"), Clock(result.best) .. (result.newBest and (DOT .. Tr("New best")) or ""))
+            Add(rows, Tr("Fastest kill"), Clock(result.best) .. (result.newBest and (SEPARATOR .. Tr("New best")) or ""))
         end
         if c.showGroupSize then Add(rows, Tr("Group size"), Finite(result.groupSize) and result.groupSize or "--") end
         if c.showKills and Finite(result.kills) then Add(rows, Tr("Kills recorded"), result.kills) end
@@ -237,7 +237,7 @@ local PREVIEW_RAID = { kind = "raid", time = 274,
 -- Sample rows use the real table painter and never enter saved run history.
 local function PreviewResult(kind)
     PREVIEW_MPLUS.subtitle = Tr("Example Dungeon  +%d"):format(15)
-    PREVIEW_RAID.subtitle = Tr("Example Boss") .. DOT .. Tr("Mythic")
+    PREVIEW_RAID.subtitle = Tr("Example Boss") .. SEPARATOR .. Tr("Mythic")
     local result = kind == "raid" and PREVIEW_RAID or PREVIEW_MPLUS
     if result == PREVIEW_MPLUS and not result.players then
         result.players = {}
@@ -598,7 +598,7 @@ local function RaidEvent(self, event, encounterID, encounterName, difficultyID, 
     -- The records are the store the tracker's raid view shares (RaidRecords.lua).
     local best, newBest, kills = RaidRecords.Kill((RaidRecords.Store()), key, elapsed)
     local difficulty = Text(GetDifficultyInfo(difficultyID)) or Tr("Difficulty %d"):format(difficultyID)
-    local result = { kind = "raid", subtitle = (Text(encounterName) or Tr("Raid encounter")) .. DOT .. difficulty,
+    local result = { kind = "raid", subtitle = (Text(encounterName) or Tr("Raid encounter")) .. SEPARATOR .. difficulty,
         time = elapsed, best = best, newBest = newBest,
         groupSize = Finite(groupSize) and groupSize or nil, kills = kills }
     if data then data.lastKind, data.lastRaid = "raid", result end

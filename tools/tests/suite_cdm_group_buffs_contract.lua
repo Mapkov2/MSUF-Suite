@@ -91,8 +91,17 @@ do (function()
         function driver:UnregisterAllEvents() for event in pairs(self.events) do self.events[event] = nil end end
         return driver
     end
-    S.Dispatch = function(callback, ...) return callback(...) end
+    local public, publicChecks, dispatches = S.Public, 0, 0
+    S.Public = function(value)
+        publicChecks = publicChecks + 1
+        return public(value)
+    end
+    S.Dispatch = function(callback, ...)
+        dispatches = dispatches + 1
+        return callback(...)
+    end
     LoadRuntime("AuraRecipients.lua")
+    S.Public = public
     local function Fire(event, unit)
         if driver and driver.events[event] then driver.callback(driver, event, unit) end
     end
@@ -149,9 +158,12 @@ do (function()
     ContainerMethods.SetUnit = setUnit
     local before = reads
     COMBAT, ACCESS, AURAS_SECRET = true, false, true
+    publicChecks, dispatches = 0, 0
     for _ = 1, 100 do Fire("UNIT_AURA", "party1") end
     Fire("UNIT_AURA", Secret())
     Fire("UNIT_AURA", "nameplate1")
+    assert(publicChecks == 102, "recipient events must check unit readability once")
+    assert(dispatches == 100, "secret or untracked units reached the recipient dispatch")
     RunTimers()
     assert(reads == before + 1 and Current().frame == container, "burst must read one changed unit and reuse its sealed slot")
     Fire("PLAYER_TARGET_CHANGED")

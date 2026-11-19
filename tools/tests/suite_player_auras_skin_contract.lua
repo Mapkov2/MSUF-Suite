@@ -53,7 +53,8 @@ local function Region(w, h)
     function r:SetShadowOffset(...) self.shadowOffset = { ... } end
     function r:GetDrawLayer() return self.layer, self.sublayer end
     function r:SetDrawLayer(layer, sublayer) self.layer, self.sublayer = layer, sublayer end
-    function r:SetAllPoints(parent)
+    function r:SetAllPoints(parent, doResize)
+        if doResize ~= false then self:SetSize(parent:GetWidth(), parent:GetHeight()) end
         self:ClearAllPoints()
         self:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
         self:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
@@ -75,7 +76,7 @@ end
 local function Button(shown, parent)
     local b = Region()
     b.parent = parent
-    b.Icon, b.Count, b.Duration = Region(), Region(), Region()
+    b.Icon, b.Count, b.Duration = Region(30, 30), Region(), Region()
     b.DebuffBorder, b.TempEnchantBorder = Region(40, 40), Region(32, 32)
     b.Count.layer = "OVERLAY"
     b.shown = shown
@@ -137,12 +138,16 @@ local S = {
 local NS = { IsCombatLocked = function() return combat end, IsSecret = function() return false end,
     Dispatch = function(fn, ...) return fn(...) end, Finish = function(fn, ...) return true, fn(...) end,
     Safety = { IsForbidden = function() return false end },
-    MSUFMedia = { font = "msuf.ttf" }, HostBridge = bridge }
+    MSUFMedia = { font = "msuf.ttf" } }
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
+for key, callback in pairs(bridge) do NS.HostBridge[key] = callback end
 -- The skin-only piece (PlayerAuraSkins.lua) lets go of the buttons while this
 -- module runs: yields records its calls.
 local yields = {}
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuras.lua"))("MSUF_Suite_QualityOfLife",
-    { NS = NS, Suite = S, PlayerAuraSkins = { Yield = function(on) yields[#yields + 1] = { on = on, paints = #paints } end } })
+local private = { NS = NS, Suite = S }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuraSkins.lua"))("MSUF_Suite_QualityOfLife", private)
+private.PlayerAuraSkins.Yield = function(on) yields[#yields + 1] = { on = on, paints = #paints } end
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuras.lua"))("MSUF_Suite_QualityOfLife", private)
 
 local catalogNS = { Client = { isForever = false }, Text = function(text) return text end }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", catalogNS)
@@ -172,7 +177,30 @@ end
 local buffIcon = BuffFrame.auraFrames[1].Icon
 buffIcon:SetTexCoord(.1, .2, .2, .8, .9, .1, .8, .9)
 local originalCrop = table.concat(buffIcon.coords, ",")
+local intrinsic = BuffFrame.auraFrames[3].Icon
+intrinsic:SetSize(31, 27)
+local pendingRect = intrinsic.GetWidth
+function intrinsic:GetWidth(ignoreRect)
+    if not ignoreRect then return 45 end
+    return pendingRect(self)
+end
+local unavailable = DebuffFrame.auraFrames[1].Icon
+local getHeight = unavailable.GetHeight
+function unavailable:GetHeight(ignoreRect)
+    if ignoreRect then return nil end
+    return getHeight(self)
+end
+local unreadable = BuffFrame.auraFrames[2]
+local readCoords = unreadable.Icon.GetTexCoord
+local unreadableCrop = table.concat(unreadable.Icon.coords, ",")
+unreadable.Icon.GetTexCoord = function() return nil end
 module:Enable()
+Check(unreadable.width == config.iconWidth and BuffFrame.points[1][2] == Minimap,
+    "an unreadable crop disabled the entire aura layout")
+Check(PaintsOf(unreadable)[1] and PaintsOf(unreadable)[1].look == LOOKS.DEFAULT,
+    "an unreadable crop suppressed the applied skin")
+Check(table.concat(unreadable.Icon.coords, ",") == unreadableCrop, "an unreadable crop was overwritten")
+unreadable.Icon.GetTexCoord = readCoords
 Check(table.concat(buffIcon.coords, ",") ~= originalCrop, "the layout must crop the native icon")
 Check(watched.playerAuras == true, "the module must watch MSUF's reports while enabled")
 Check(#yields == 1 and yields[1].on == true and yields[1].paints == 0,
@@ -186,11 +214,16 @@ Check(PaintsOf(BuffFrame.ConsolidatedBuffs)[1] and PaintsOf(BuffFrame.Consolidat
     "the consolidated buffs button (on BuffFrame itself) takes the Buffs row's look")
 Check(outline[buff] and not outline[buff].shown, "the skin replaces the module's outline")
 Check(buff.Duration.layer == "OVERLAY" and buff.Count.layer == "OVERLAY", "the duration text must sit above the skin")
-Check(#PaintsOf(BuffFrame.auraFrames[3]) == 0, "a hidden button is not painted")
+Check(#PaintsOf(BuffFrame.auraFrames[3]) == 1 and PaintsOf(BuffFrame.auraFrames[3])[1].look == LOOKS.DEFAULT,
+    "a hidden ordinary button must already carry its row's skin before combat")
+for _, button in ipairs(BuffFrame.auraFrames) do
+    button.IsShown = function() error("custom layout read an ordinary button's visibility") end
+end
 -- A private aura anchor keeps Blizzard's art.
 local anchor = Button(true, DebuffFrame.AuraContainer)
 anchor.isAuraAnchor = true
 DebuffFrame.auraFrames[3] = anchor
+DebuffFrame.PrivateAuraAnchors = { anchor }
 DebuffFrame:UpdateGridLayout()
 Check(#PaintsOf(anchor) == 0, "a private aura anchor must not be skinned")
 
@@ -206,11 +239,12 @@ combat = false
 
 -- 2. Combat: a button the pool hands out gets the look at once -----------------
 combat = true
-local gained = BuffFrame.auraFrames[3]
+local gained, beforeGain = BuffFrame.auraFrames[3], #paints
 gained.shown = true
 BuffFrame:UpdateAuraButtons()
 Check(PaintsOf(gained)[1] and PaintsOf(gained)[1].look == PaintsOf(buff)[1].look,
     "a buff shown in combat must take the look of the buffs beside it")
+Check(#paints == beforeGain, "revealing the prepainted button in combat must not repaint it")
 combat = false
 local quiet = #paints
 BuffFrame:UpdateAuraButtons()
@@ -264,6 +298,9 @@ module:Refresh()
 Check(PaintsOf(debuff)[#PaintsOf(debuff)].look == LOOKS.DARK2, "the debuffs' skin is on again")
 module:Disable()
 Check(table.concat(buffIcon.coords, ",") == originalCrop, "disabling restores all eight native texture coordinates")
+Check(buffIcon.width == 30 and buffIcon.height == 30, "layout release kept the resized native buff icon")
+Check(intrinsic.width == 31 and intrinsic.height == 27, "release restored the current rectangle over the intrinsic size")
+Check(unavailable.width == 30 and unavailable.height == 30, "layout overwrote an unreadable intrinsic texture size")
 Check(yields[#yields].on == false, "the cleanup gives the buttons back to the skin-only piece")
 Check(watched.playerAuras == false, "a disabled module stops watching")
 Check(PaintsOf(debuff)[#PaintsOf(debuff)].look == nil and debuff.Duration.layer == "BACKGROUND",
@@ -277,14 +314,14 @@ local function LastPaint(button)
 end
 config.buffSkin = "DEFAULT"
 local blocked = Button(true, BuffFrame.AuraContainer)
-local getTexCoord = blocked.Icon.GetTexCoord
-blocked.Icon.GetTexCoord = function() return nil end
+local getScale = blocked.GetScale
+blocked.GetScale = function() return nil end
 BuffFrame.auraFrames[6] = blocked
 local pooled = Button(false, BuffFrame.AuraContainer)
 BuffFrame.auraFrames[7] = pooled
 module:Enable()
 local native = LastPaint(buff)
-Check(native and native.look == LOOKS.DEFAULT and native.w == 30 and native.h == 40
+Check(native and native.look == LOOKS.DEFAULT and native.w == 30 and native.h == 30
     and native.anchor == buff.Icon and buff.Duration.layer == "OVERLAY",
     "a failed layout must keep the Buffs skin at native icon size")
 Check(LastPaint(blocked).look == LOOKS.DEFAULT and LastPaint(pooled).look == LOOKS.DEFAULT,
@@ -304,10 +341,15 @@ Check(LastPaint(buff).look == nil and buff.Duration.layer == "BACKGROUND",
     "No skin must clear the native fallback look")
 config.buffSkin = "DEFAULT"
 module:Refresh()
-blocked.Icon.GetTexCoord = getTexCoord
+blocked.GetScale = getScale
 BuffFrame:UpdateAuraButtons()
 Check(LastPaint(buff).look == LOOKS.DEFAULT and LastPaint(buff).w == config.iconWidth
     and buff.Duration.layer == "OVERLAY", "layout recovery must resize the skin without losing it")
+LOOKS.DEFAULT, LOOKS.FRAME_BEVEL = nil, { signature = "K:FRAME_BEVEL" }
+module:Refresh()
+Check(LastPaint(buff).look == LOOKS.FRAME_BEVEL and LastPaint(buff).w == config.iconWidth,
+    "an inherited skin missing its global default must draw the square fallback in the custom layout")
+Check(LastPaint(debuff).look == LOOKS.DARK2, "the inherited fallback must preserve a specific Debuffs skin")
 module:Disable()
 Check(LastPaint(pooled).look == nil and pooled.Duration.layer == "BACKGROUND",
     "disabling must release a skin on a button prepainted during fallback")
@@ -328,7 +370,7 @@ do
         local body = Body(head):lower()
         Check(not body:find("skin", 1, true) and not body:find("look", 1, true), head .. " must run Suite main's code")
     end
-    Check(Body("local function Sync("):find("Place(button, button.Icon, slot, frame.AuraContainer, c)", 1, true),
+    Check(Body("local function Sync("):find("Place(button, button.Icon, slot, frame.AuraContainer, c, anchor)", 1, true),
         "Sync must use the shared placement path")
 end
 print("suite player auras skin contract passed")

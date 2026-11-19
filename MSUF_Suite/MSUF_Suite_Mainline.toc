@@ -3,7 +3,7 @@
 ## Notes: Alpha interface modules for MSUF. Requires MSUF; compatible with 6.5 (6.50).
 ## Author: Mapko
 ## Category: MSUF
-## Version: 0.1.27-alpha
+## Version: 0.1.28-alpha
 ## X-Wago-ID: YK9xrV6L
 ## X-Curse-Project-ID: 1743628
 ## Dependencies: MidnightSimpleUnitFrames
@@ -12,12 +12,12 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Core\Platform.lua
+Core\ForeverMailSubject.lua
 Core\ChatState.lua
 Core\CombatRating.lua
 Core\UnitMount.lua
 Core\DisclosureMotion.lua
 Core\PreviewKit.lua
-Core\Changelog.lua
 Core\ForeverFactory.lua
 Core\ForeverFrames.lua
 Core\ClassicFramesFactory.lua
@@ -27,6 +27,8 @@ Core\RetailProfile.lua
 Core\ModernDarkFactory.lua
 Core\BlizzardFactory.lua
 Core\DarkRaidFactory.lua
+Core\WayfarerFactory.lua
+Core\ProfileStorage.lua
 Core\Database.lua
 Core\SessionGold.lua
 Core\CharacterData.lua
@@ -125,6 +127,7 @@ Core\Macros\Store.lua
 Core\Menu.lua
 Core\DevBarAnimationText.lua
 Core\DevBarAnimation.lua
+Core\DevQuestTurnIn.lua
 Core\DevMode.lua
 Core\API.lua
 Core\PlannerCommand.lua

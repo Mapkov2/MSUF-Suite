@@ -132,6 +132,15 @@ local function SetMoverVisible(visible)
     mover:SetShown(visible == true and not EditMode.registered and not NS.IsCombatLocked())
 end
 
+-- The scale MicroMenuMixin:UpdateScale would give the owned size: its game
+-- rule factor stays part of the result.
+local function OwnedScale(settings)
+    local scale = Clamp(settings.scale, 0.50, 1.50)
+    local factor = C_GameRules.GetGameRuleAsFloat(Enum.GameRule.MicrobarScale)
+    if type(factor) == "number" and factor ~= 0 then return scale * factor end
+    return scale
+end
+
 local function ApplyShell(root, settings, horizontal, scale)
     local barMaterial = settings.barMaterial
     local buttonCount = Field(root, "numButtons")
@@ -145,17 +154,25 @@ local function ApplyShell(root, settings, horizontal, scale)
     root:ClearAllPoints()
     root:SetPoint("CENTER", bar, "CENTER", portraitSpace / 2, 0)
 
-    local rootScale = ReadNumber(root, "GetScale", scale)
-    local width = math.max(1, ReadNumber(root, "GetWidth", 1) * rootScale)
-    local height = math.max(1, ReadNumber(root, "GetHeight", 1) * rootScale)
     local padding = math.floor(Clamp(settings.padding, 0, 16) + 0.5)
+    local rootWidth = math.max(1, ReadNumber(root, "GetWidth", 1))
+    local rootScale = ReadNumber(root, "GetScale", scale)
+    local shellWidth = horizontal and (settings.layoutWidth or 0) or 0
+    if shellWidth > 0 then
+        local available = shellWidth - padding * 2 - portraitSpace
+        local fittedScale = math.min(OwnedScale(settings), math.max(.5, available / rootWidth))
+        if rootScale ~= fittedScale then root:SetScale(fittedScale) end
+        rootScale, scale = fittedScale, fittedScale
+    end
+    local width = math.max(shellWidth, math.max(1, rootWidth * rootScale) + padding * 2 + portraitSpace)
+    local height = math.max(1, ReadNumber(root, "GetHeight", 1) * rootScale)
     local shellHeight = height + padding * 2
     if portraitEnabled and barMaterial == "forever" then
         -- Native button hit boxes are taller than our visible 32px plates.
         -- Size the owned shell to the artwork so its frame stays compact.
         shellHeight = math.max(42, Clamp(settings.buttonSize, 20, 32) * scale + padding * 2 + 2)
     end
-    bar:SetSize(width + padding * 2 + portraitSpace, shellHeight)
+    bar:SetSize(width, shellHeight)
     portrait:SetShown(portraitEnabled)
     portraitRing:SetShown(portraitEnabled)
     -- The rules are part of the bar frame.
@@ -185,15 +202,6 @@ local function LayoutOwned(root, settings)
     local horizontal = LayoutButtons(root, settings)
     ApplyShell(root, settings, horizontal, Clamp(settings.scale, 0.50, 1.50))
     AnchorCompanions(root, settings, horizontal, bar)
-end
-
--- The scale MicroMenuMixin:UpdateScale would give the owned size: its game
--- rule factor stays part of the result.
-local function OwnedScale(settings)
-    local scale = Clamp(settings.scale, 0.50, 1.50)
-    local factor = C_GameRules.GetGameRuleAsFloat(Enum.GameRule.MicrobarScale)
-    if type(factor) == "number" and factor ~= 0 then return scale * factor end
-    return scale
 end
 
 local function ApplyGrid(root, settings)
@@ -614,7 +622,7 @@ eventFrame:SetScript("OnEvent", function(_, event)
             portraitDirty = false
         end
     elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
-        RefreshHealthGate(Settings())
+        RefreshHealthGate()
     elseif event == "ZONE_CHANGED_NEW_AREA" or event == "HOUSE_PLOT_ENTERED"
         or event == "HOUSE_PLOT_EXITED" then
         if NS.IsCombatLocked() or OwnedMicroBar.suspended then

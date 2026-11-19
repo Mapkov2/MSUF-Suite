@@ -439,6 +439,41 @@ local function ReagentShown()
     RefreshMovers()
 end
 
+local function StandaloneSlotsAssigned(frame)
+    if not M.active then return end
+    for _, button in frame:EnumerateValidItems() do
+        local record = M.overlays[button]
+        if record then record.slotStyle, record.strokeStyle = nil, nil end
+    end
+end
+
+local function StandaloneItemsUpdated(frame)
+    if M.active and M.windows and M.windows[frame] then StyleVisibleSlots(M, frame) end
+end
+
+local function StandaloneShown(frame)
+    if M.active then M:StyleStandaloneWindow(frame) end
+end
+
+local function InstallStandaloneHooks(self)
+    local container = NS.Client.isForever and ContainerFrameContainer
+    local frames = container and container.ContainerFrames
+    if not frames then return end
+    -- The keyring uses the first available individual frame. The backpack
+    -- only takes bag 0 and the reagent template is already handled above.
+    -- Forever 3d8abb1d: Mainline/ContainerFrame.lua and ContainerFrame.xml.
+    local standalone = {}
+    for _, frame in ipairs(frames) do
+        if frame ~= ContainerFrame1 and frame ~= ContainerFrame6 then
+            standalone[#standalone + 1] = frame
+            hooksecurefunc(frame, "UpdateItemSlots", StandaloneSlotsAssigned)
+            hooksecurefunc(frame, "UpdateItems", StandaloneItemsUpdated)
+            frame:HookScript("OnShow", StandaloneShown)
+        end
+    end
+    self.standaloneFrames = standalone
+end
+
 local function InstallHooks(self)
     if self.hooked then return end
     local frame = self.frame
@@ -449,6 +484,7 @@ local function InstallHooks(self)
     ContainerFrame6:HookScript("OnShow", ReagentShown)
     ContainerFrame6:HookScript("OnHide", ReagentHidden)
     hooksecurefunc("UpdateContainerFrameAnchors", M.AfterNativeWindowLayout)
+    InstallStandaloneHooks(self)
     self.hooked = true
 end
 
@@ -608,7 +644,8 @@ function M:Refresh()
         labelChanged = true
         for _, record in pairs(self.overlays) do record.bindStyled = nil end
     end
-    if windowChanged then self:StyleWindows() end
+    local deferredWindow = self.needsStandaloneWindow
+    if windowChanged or deferredWindow then self:StyleWindows() end
     if goldChanged then self:ApplyGoldEvents() end
     if labelChanged then
         if self.windows then
@@ -630,6 +667,9 @@ function M:Refresh()
         self.needsBankRefresh = nil
     end
     if slotChanged or deferredItems then StyleVisibleSlots(self, ContainerFrame6) end
+    if self.standaloneFrames and (slotChanged or deferredItems or deferredWindow) then
+        for _, frame in ipairs(self.standaloneFrames) do StandaloneItemsUpdated(frame) end
+    end
     self.needsItemRefresh = nil
     self:RefreshWindowLayout()
     RememberVisuals(self, c)
@@ -645,7 +685,7 @@ function M:Disable()
     self:CancelWindowDrag()
     self.combinedBagConfigured, self.writingCombinedMode = nil, nil
     if self.combinedModeJob then self.combinedModeJob:Cancel() end
-    self.appliedVisual = nil
+    self.appliedVisual, self.needsStandaloneWindow = nil, nil
     self.context:RemoveEvent("PLAYER_MONEY")
     NS.GoldLedger.WatchToday(self, nil)
     self.context:RemoveEvent("PLAYER_ENTERING_WORLD")

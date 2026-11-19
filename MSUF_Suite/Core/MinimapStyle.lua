@@ -4,16 +4,37 @@ local _, NS = ...
 local Style = {}
 NS.MinimapStyle = Style
 local MEDIA = "Interface\\AddOns\\MSUF_Suite_Modules\\Media\\Minimap\\"
-Style.paths = { false, MEDIA .. "ArcaneRing.tga", MEDIA .. "EmberRing.tga",
-    MEDIA .. "AstralRing.tga", MEDIA .. "SteelFrame.tga", false,
-    MEDIA .. "AntiqueScrollFrame.tga" }
+local SUITE_MEDIA = "Interface\\AddOns\\MSUF_Suite\\Media\\"
 local HALO, CIRCLE = MEDIA .. "Halo.tga", MEDIA .. "Circle.tga"
 local RGB = NS.RGB
 -- The choice values (Core/Catalog/Minimap.lua) and the catalog defaults that
 -- stand in for a setting a partial config lacks.
 local WEATHER, ICONS, SHAPE = NS.MinimapWeatherDisplay, NS.MinimapWeatherIcons, NS.MinimapShape
 local ART, PLACEMENT, BLEND = NS.MinimapStyleTexture, NS.MinimapStylePlacement, NS.MinimapStyleBlend
+local DRAWER = NS.MinimapDrawerStyle
 local RULES = NS.SuiteCatalog.minimap.rules
+Style.paths = {
+    [ART.ARCANE_RING] = MEDIA .. "ArcaneRing.tga",
+    [ART.EMBER_RING] = MEDIA .. "EmberRing.tga",
+    [ART.ASTRAL_RING] = MEDIA .. "AstralRing.tga",
+    [ART.STEEL_FRAME] = MEDIA .. "SteelFrame.tga",
+    [ART.PARCHMENT_SCROLL] = MEDIA .. "AntiqueScrollFrame.tga",
+    [ART.WAYFARER] = SUITE_MEDIA .. "WayfarerMinimapFrame.tga",
+    [ART.ANTIQUE_MAP_FRAME] = MEDIA .. "AntiqueMapFrame.tga",
+}
+-- The menu thumbnails use the same files as the live minimap and preview.
+RULES.styleTexture.choiceIcons = Style.paths
+local DRAWER_TEXTURES = {
+    [DRAWER.FOREVER] = SUITE_MEDIA .. "SuiteIconForever.tga",
+    [DRAWER.MODERN] = SUITE_MEDIA .. "SuiteIconModern.tga",
+    [DRAWER.DARK] = SUITE_MEDIA .. "SuiteIconDark.tga",
+}
+local DRAWER_PRESETS = {
+    [7] = DRAWER.FOREVER, [8] = DRAWER.MODERN, [9] = DRAWER.DARK,
+    [10] = DRAWER.FOREVER, [11] = DRAWER.MODERN, [12] = DRAWER.MODERN,
+}
+local GLOBAL_PRESETS = NS.SuiteCatalog.minimap.look.global
+local DEFAULT_DRAWER = NS.Client.isForever and DRAWER.FOREVER or DRAWER.MODERN
 
 -- Native location values are public text only; Custom retains older profiles.
 function Style.LocationContent(c, zone, subzone, minimap)
@@ -69,20 +90,6 @@ function Style.PaintDungeonButton(button, icon, style, scale)
     if not (NS.Finite(l) and NS.Finite(r) and NS.Finite(t) and NS.Finite(b)) then return end
     local x, y = modern and .30 or .16, modern and .36 or .30
     icon:SetTexCoord(l + (r - l) * x, r - (r - l) * x, t + (b - t) * y, b - (b - t) * y)
-end
-
--- The drawer glyph and its border tint are identical at any preview zoom.
-function Style.PaintDrawerToggle(button, back, dots, size, scale, r, g, b)
-    local dot = math.max(2, math.floor(size * 0.2 + 0.5))
-    local offset = (dot + math.max(1, math.floor(size * 0.12 + 0.5))) * scale / 2
-    button:SetSize(size * scale, size * scale)
-    for i = 1, 4 do
-        local texture = dots[i]
-        texture:SetSize(dot * scale, dot * scale)
-        texture:ClearAllPoints()
-        texture:SetPoint("CENTER", button, "CENTER", i % 2 == 1 and -offset or offset, i <= 2 and offset or -offset)
-    end
-    back:SetColorTexture(r, g, b, 0.8)
 end
 
 -- Shared by the live weather entry and the options preview. WeatherType and
@@ -190,6 +197,20 @@ local function Assign(texture, path)
     texture:SetTexture(path)
     texture:SetTexCoord(0, 1, 0, 1)
 end
+
+-- Automatic uses a matching minimap preset, then the profile's Suite look.
+function Style.PaintDrawerToggle(icon, config, highlight)
+    local path = DRAWER_TEXTURES[config.drawerStyle]
+    if not path then
+        local db = NS.DB and NS.DB.suite
+        local look = db and NS.SuiteLooks.indexes[db.globalLook]
+        local style = DRAWER_PRESETS[config.stylePreset] or DRAWER_PRESETS[GLOBAL_PRESETS[look]]
+        path = DRAWER_TEXTURES[style or DEFAULT_DRAWER]
+    end
+    Assign(icon, path)
+    if highlight then Assign(highlight, path) end
+end
+
 local function Visible(layerOn, key)
     return not layerOn or layerOn(key)
 end

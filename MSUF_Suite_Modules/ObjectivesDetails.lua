@@ -240,40 +240,42 @@ end
 function O.PaintQuestIcon(self, row, item, c, color)
     local style = c.questIconStyle or 1
     local wanted = item.kind == "entry" and item.questID and style > 1
+    local glyph, icon = row.questTypeGlyph, row.questIcon
     if not wanted then
-        if row.questBadge then row.questBadge:Hide() end
-        if row.questIcon then row.questIcon:Hide() end
+        if glyph then glyph:Hide() end
+        if icon then icon:Hide() end
         return 12
     end
     if style == 2 then
-        if not row.questBadge then
-            row.questBadge = S.CreateFontString(row, nil, "OVERLAY")
-            row.questBadge:SetPoint("LEFT", row, "LEFT", 10, 0)
-            row.questBadge:SetWidth(16)
+        if not glyph then
+            glyph = S.CreateFontString(row, nil, "OVERLAY")
+            row.questTypeGlyph = glyph
+            glyph:SetPoint("LEFT", row, "LEFT", 10, 0)
+            glyph:SetWidth(16)
         end
-        S.SetStyledFont(row.questBadge, self.font, c.entrySize or 15, NS.HUDTextArgs(c))
-        row.questBadge:SetText(SYMBOLS[item.group] or "!")
-        row.questBadge:SetTextColor(color[1], color[2], color[3])
-        row.questBadge:Show()
-        if row.questIcon then row.questIcon:Hide() end
+        S.SetStyledFont(glyph, self.font, c.entrySize or 15, NS.HUDTextArgs(c))
+        glyph:SetText(SYMBOLS[item.group] or "!")
+        glyph:SetTextColor(color[1], color[2], color[3])
+        glyph:Show()
+        if icon then icon:Hide() end
     else
+        if glyph then glyph:Hide() end
         if not item.questIcon then
-            if row.questIcon then row.questIcon:Hide() end
-            if row.questBadge then row.questBadge:Hide() end
+            if icon then icon:Hide() end
             return 12
         end
-        if not row.questIcon then
-            row.questIcon = S.CreateTexture(row, nil, "ARTWORK")
-            row.questIcon:SetPoint("LEFT", row, "LEFT", 10, 0)
+        if not icon then
+            icon = S.CreateTexture(row, nil, "ARTWORK")
+            row.questIcon = icon
+            icon:SetPoint("LEFT", row, "LEFT", 10, 0)
         end
         if item.questIconAtlas then
-            row.questIcon:SetAtlas(item.questIcon)
+            icon:SetAtlas(item.questIcon)
         else
-            row.questIcon:SetTexture(item.questIcon)
+            icon:SetTexture(item.questIcon)
         end
-        row.questIcon:SetSize(16, 16)
-        row.questIcon:Show()
-        if row.questBadge then row.questBadge:Hide() end
+        icon:SetSize(16, 16)
+        icon:Show()
     end
     return 31
 end

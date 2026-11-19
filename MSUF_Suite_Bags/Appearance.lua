@@ -27,7 +27,7 @@ end
 -- here belong to the Suite; Blizzard retains the item buttons and their actions.
 function Appearance.Window(t, c)
     local panel = t.combined and P.BagPresentation.IsPanel(c) and not t.combat or false
-    P.BagPanelAppearance.Geometry(t, panel, t.goldBoth)
+    P.BagPanelAppearance.Geometry(t, panel, t.goldBoth, panel and P.BagPresentation.Rail(c) or 0)
     local r, g, b = S.RGB(c.backgroundColor)
     local ar, ag, ab = S.RGB(c.accentColor)
     local opacity = c.backgroundOpacity / 100

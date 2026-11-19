@@ -287,12 +287,17 @@ local function TrackCombatFocus(definition)
     end
 end
 
+local RunPart
+
 local function AttachCombatWindow(definition)
     if definition and definition.id == "playerSpells" and NS.DB.enabled and DefinitionEnabled(definition) then
         local frame = NS.Safety.Field(_G, "PlayerSpellsFrame")
         if frame then NS.PlayerSpellsSkin.AttachWindowControls(frame, definition.id) end
     elseif definition and definition.id == "worldMap" and NS.DB.enabled and DefinitionEnabled(definition) then
         NS.WorldMapSkin.AttachCombatQuestLog(NS.Safety.Field(_G, "WorldMapFrame"), definition.id)
+    elseif definition and definition.id == "blizzardWindows" and NS.DB.enabled and DefinitionEnabled(definition)
+        and NS.GenericWindows.IsCategoryEnabled("social") then
+        RunPart("SocialUISkin", "Apply", definition.id)
     end
 end
 
@@ -329,6 +334,7 @@ function Adapters.ApplyAll()
     if NS.IsCombatLocked() then
         for id in pairs(focusRoots) do TrackCombatFocus(Adapters.definitions[id]) end
         TrackCombatFocus(Adapters.definitions.blizzardWindows)
+        AttachCombatWindow(Adapters.definitions.blizzardWindows)
         AttachCombatWindow(Adapters.definitions.playerSpells)
         AttachCombatWindow(Adapters.definitions.worldMap)
         NS.CombatGate.RunOrDefer("adapters:all", Adapters.ApplyAll)
@@ -443,7 +449,7 @@ end
 -- Each part, including the lookup of its module, is its own boundary: a
 -- part that raises is reported (nil, "error") and the other parts still
 -- apply or release.
-local function RunPart(moduleName, method, owner)
+RunPart = function(moduleName, method, owner)
     local finished, first, second = NS.Safety.Dispatch(Finish, CallPart, moduleName, method, owner)
     if not finished then return nil, "error" end
     return first, second

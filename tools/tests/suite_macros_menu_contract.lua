@@ -280,6 +280,83 @@ page.ui.pools.select["step:1:branch:1:marker"].action(7)
 assert(page.compiled:find("/tm !7", 1, true), "standalone icon choice sets and keeps Cross")
 page.ui.pools.select["step:1:branch:1:marker"].action(0)
 assert(page.compiled:find("/tm 0", 1, true), "standalone clear marker")
+do
+    local key = "step:1:branch:1"
+    local secret = setmetatable({}, { __concat = function() error("secret target name was joined") end })
+    local name, suffix, exists = "Forest Spider", nil, true
+    local reads, publicationsBefore = 0, publications
+    local isSecret = NS.IsSecret
+    NS.IsSecret = function(value) return value == secret or isSecret(value) end
+    local function ReadName(unit)
+        assert(unit == "target", "reads the selected unit only")
+        reads = reads + 1
+        return name, suffix
+    end
+    UnitExists = function(unit) return unit == "target" and exists end
+    UnitName = function(unit)
+        assert(not NS.Client.isForever, "Forever captures the unmodified character name")
+        return ReadName(unit)
+    end
+    UnitNameUnmodified = function(unit)
+        assert(NS.Client.isForever, "Retail captures the character name and realm")
+        return ReadName(unit)
+    end
+    Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
+
+    page.ui.pools.select["step:1:command"].action("targetexact")
+    local selectTarget = page.ui.pools.select[key .. ":target"]
+    local edit = page.ui.pools.edit[key .. ":target-name"]
+    local capture = page.ui.pools.button[key .. ":use-current-target"]
+    assert(selectTarget.values[1].text == "Target an exact name", "default exact target uses the name field")
+    assert(edit and edit.shown and capture and capture.shown and capture.enabled, "named target controls are available")
+    assert(reads == 0, "rendering the name field does not inspect the current target")
+    edit:SetText("Wächterin, das Licht")
+    edit.scripts.OnTextChanged(edit, true)
+    assert(page.compiled:find("/targetexact Wächterin, das Licht", 1, true), "manual NPC name goes into the exact target command")
+    CheckScroll(ctx, page.ui.body)
+
+    combat = true
+    capture.scripts.OnClick(capture)
+    combat = false
+    assert(reads == 0 and edit:GetText() == "Wächterin, das Licht", "combat capture has no reads or draft changes")
+    capture.scripts.OnClick(capture)
+    assert(edit:GetText() == "Forest Spider" and page.compiled:find("/targetexact Forest Spider", 1, true),
+        "capture fills the editable name and preview")
+    name = "Other Target"
+    page.Render()
+    assert(reads == 1 and edit:GetText() == "Forest Spider", "capture is a snapshot rather than a dynamic target")
+    name, suffix = "Ásha", NS.Client.isForever and "Brightvale" or "Argent Dawn"
+    capture.scripts.OnClick(capture)
+    local fullName = NS.Client.isForever and "Ásha Brightvale" or "Ásha-ArgentDawn"
+    assert(edit:GetText() == fullName and page.compiled:find("/targetexact " .. fullName, 1, true),
+        "complete player name uses the client format")
+
+    name, suffix = secret, nil
+    capture.scripts.OnClick(capture)
+    assert(edit:GetText() == fullName and page.message == "The current target's name is unavailable.",
+        "a restricted name leaves the draft intact")
+    name, suffix = "Ásha", secret
+    capture.scripts.OnClick(capture)
+    assert(edit:GetText() == fullName and page.message == "The current target's name is unavailable.",
+        "a restricted surname or realm leaves the draft intact")
+    name, suffix = "Guard; /cast Kick", nil
+    capture.scripts.OnClick(capture)
+    assert(edit:GetText() == fullName and page.message == "The current target's name is unavailable.",
+        "unsafe macro punctuation leaves the draft intact")
+    local readsBefore = reads
+    exists = false
+    capture.scripts.OnClick(capture)
+    assert(reads == readsBefore and edit:GetText() == fullName and page.message == "No target",
+        "no target leaves the draft intact")
+
+    selectTarget.action("focus")
+    assert(not edit.shown and not capture.shown and page.compiled:find("/targetexact [@focus] ", 1, true),
+        "a legacy unit override keeps its behavior and does not offer a name capture")
+    selectTarget.action("target")
+    assert(edit.shown and edit:GetText() == fullName and publications == publicationsBefore,
+        "switching back restores the editable name without publishing")
+    NS.IsSecret = isSecret
+end
 page.ui.pools.select["step:1:command"].action("startattack")
 local targetArgument = page.ui.pools.edit["step:1:branch:1:action"]
 targetArgument.action("focus")

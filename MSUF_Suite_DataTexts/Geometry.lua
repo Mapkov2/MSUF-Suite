@@ -31,8 +31,8 @@ local function TextWidth(button)
 end
 Geometry.TextWidth = TextWidth
 
--- Widths of the first count layout slots: equal shares, or (auto layout)
--- text widths scaled to fill the bar.
+-- Fixed bars divide their width by the configured shares. Fit mode uses
+-- the current text widths and may grow the bar.
 local function SlotWidths(bar, count, config)
     local style, widths = bar.style, layoutWidths
     local pixel = bar.pixelUnit or 1
@@ -46,11 +46,16 @@ local function SlotWidths(bar, count, config)
         if fit then
             local textWidth = button.source == "compass" and (bar.vertical and Compass.fallbackWidth or Compass.slotWidth)
                 or button.source == "progressBar" and ProgressWidth or TextWidth(button)
-            local demand = textWidth + 2 * style.padding
-            if button.extra then demand = demand + P.DataTextSources.IconWidth(button) end
-            widths[i] = math.max(44, demand)
+            local scale = (SlotSetting(config, bar, button, i, "Scale") or 100) / 100
+            local iconWidth = button.extra and P.DataTextSources.IconWidth(button) or 0
+            local padding = iconWidth > 0 and (button.extra.padding or 0)
+                or Snap(SlotSetting(config, bar, button, i, "Padding") or style.padding, pixel / scale)
+            -- Text, icon and inset measurements are local to the scaled slot.
+            -- Round its demand up in bar pixels before distributing space.
+            local demand = (textWidth + iconWidth + 2 * padding) * scale
+            widths[i] = ceil(math.max(44, demand) / pixel) * pixel
         else
-            widths[i] = (configuredWidth - inset - gaps) / count
+            widths[i] = SlotSetting(config, bar, button, i, "Weight") or 100
         end
         total = total + widths[i]
     end
@@ -134,7 +139,8 @@ local function PlaceSlot(bar, button, index, config, extra)
         button:SetSize(math.max(0, right - left) / scale, height / scale)
     end
     local ownPad = SlotSetting(config, bar, button, index, "Padding")
-    local inset = Snap(math.max(0, math.min(ownPad or style.padding, floor((width / scale - 4) / 2))), pixel)
+    local labelSpan = (bar.vertical and height or right - left) / scale
+    local inset = Snap(math.max(0, math.min(ownPad or style.padding, floor((labelSpan - 4) / 2))), pixel / scale)
     button.labelInset = inset
     button.label:ClearAllPoints()
     button.label:SetPoint("LEFT", button, "LEFT", inset, 0)

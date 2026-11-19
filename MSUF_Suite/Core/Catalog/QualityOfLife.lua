@@ -226,6 +226,8 @@ B.Section("tooltipVisibility", "tooltip_visibility", "Tooltip visibility", {
     Bool("inCombat", "Hide main tooltip in combat"),
     Bool("inInstances", "Hide main tooltip in instances"),
     Bool("hideItems", "Hide item tooltips"),
+    B.Tooltip(Bool("itemHeaderIcon", "Show item icons in tooltip headers"),
+        "Shows the item icon beside the name in item and comparison tooltips outside combat."),
     Bool("hideSpells", "Hide spell tooltips"),
     Bool("hideUnits", "Hide unit tooltips"),
     B.Tooltip(Choice("revealModifier", "Hold a key to show hidden tooltips", 1, { "None", "Shift", "Ctrl", "Alt" }),

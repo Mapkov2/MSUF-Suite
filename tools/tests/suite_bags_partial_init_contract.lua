@@ -37,7 +37,7 @@ for _, wheel in ipairs({false,true}) do
         W.P.BagAppearance.MakeButton, W.S.CreateTexture = original, create
         W.Apply()
         W.Settle()
-        assert(V.active and V.events and V.equipped and V.clearRecent, "reenable reused incomplete UI")
+        assert(V.active and V.events and V.equipped and V.manage and V.filterButton, "reenable reused incomplete UI")
         assert(not partial:IsVisible() and V.chrome~=partial, "failed chrome reused or left visible")
         assert(W.P.EquippedBags.frame:GetParent()==V.chrome, "equipped drawer belongs to failed UI")
         W.P.EquippedBags.Toggle()

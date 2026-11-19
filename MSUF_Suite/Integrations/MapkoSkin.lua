@@ -201,11 +201,11 @@ end
 -- A module that replaces a Blizzard surface starts ("before") or stopped
 -- ("after"); see S.OwnsBlizzardSurface. The engine rebuilds only surfaces that
 -- changed hands.
-function Skin.SurfacesChanged(phase)
+function Skin.SurfacesChanged(phase, surface, dependent)
     local provider = LoadedEngine()
     if not provider then return end
     local ownership = provider.SuiteOwnership
-    if type(ownership) == "table" and type(ownership.Refresh) == "function" then ownership.Refresh(phase) end
+    if type(ownership) == "table" and type(ownership.Refresh) == "function" then ownership.Refresh(phase, surface, dependent) end
 end
 
 -- Colors the border the skin draws on a Blizzard frame (a tooltip); false

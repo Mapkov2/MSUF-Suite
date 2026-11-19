@@ -82,4 +82,53 @@ assert(S.RegisterOwnedMover("secondary", "relative", {
     quickPosition = false, extraControls = relative,
 }))
 assert(records["MSUFSuite.secondary/relative"].extraControls == relative, "explicit relative controls were replaced")
+
+do
+    local config = { x = -28, y = -346, width = 290, height = 370, scale = 150,
+        dockBelowMinimap = true, minimapDockGap = 10 }
+    configs.objectives = config
+    S.catalog.objectives = { rules = { x = rules.x, y = rules.y, dockBelowMinimap = { default = false } } }
+    S.states.objectives = { active = true }
+    S.Install = function(id, module) S.instances[id] = module end
+    local dock = {}
+    S.MinimapDock = { Anchor = function() return dock end }
+    local tracker = { config = config, host = frame }
+    function frame:GetScaledRect() return 850, 190, 290, 270 end
+    function frame:GetEffectiveScale() return .75 end
+    function UIParent:GetScaledRect() return 0, 0, 1200, 700 end
+    function UIParent:GetEffectiveScale() return .5 end
+    frame.scale = 1.5
+    NS.Client = {}
+    local private = { NS = NS, Suite = S, Objectives = { M = tracker, CONTENT_EVENTS = {}, COLLECTED_EVENTS = {} } }
+    for _, file in ipairs({ "ObjectivesTracker", "Objectives" }) do
+        assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("test", private)
+    end
+    tracker:RegisterMovers()
+    local mover = records["MSUFSuite.objectives/tracker"]
+    assert(mover.isEnabled(), "the Wayfarer minimap dock hid the Objective Tracker mover")
+
+    local before = mover.captureState()
+    assert(before.values.dockBelowMinimap and before.values.x == -28 and before.values.y == -346)
+    assert(before.origin.x == -80 and before.origin.y == -320, "first drag used the stale free position")
+    assert(mover.movePosition({ state = before, deltaX = 15, deltaY = -30, phase = "preview" }))
+    assert(frame.points[2] == UIParent and frame.points[4] == -70 and frame.points[5] == -340)
+    assert(config.dockBelowMinimap and config.x == -28, "drag preview changed the profile")
+    assert(mover.movePosition({ state = before, deltaX = .5, deltaY = 0, phase = "preview" }))
+    assert(frame.points[2] == dock and frame.points[5] == -10,
+        "returning to the starting position lost the live dock before a no-op release")
+    assert(mover.movePosition({ state = before, deltaX = 15, deltaY = -30, phase = "commit" }))
+    assert(not config.dockBelowMinimap and config.x == -70 and config.y == -340)
+    assert(mover.restoreState(before) and config.dockBelowMinimap and config.x == -28 and config.y == -346,
+        "undo did not restore the Wayfarer dock and saved offsets")
+
+    assert(mover.movePosition({ state = mover.captureState(), deltaX = 1.5, deltaY = 0, phase = "commit" }))
+    assert(not config.dockBelowMinimap and config.x == -79 and config.y == -320, "a one-pixel nudge used the old offsets")
+    assert(mover.restoreState(before))
+    dock = nil
+    local free = mover.captureState()
+    assert(mover.isEnabled() and free.origin.x == -28 and free.origin.y == -346,
+        "the requested dock overrode the fallback position with no minimap")
+    assert(mover.resetPosition() and config.dockBelowMinimap == false, "reset kept the active dock")
+end
+
 print("PASS shared owned mover visibility, explicit sizing, localization, save/discard/profile/combat lifecycle")

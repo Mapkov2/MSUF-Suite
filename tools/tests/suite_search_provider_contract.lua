@@ -121,8 +121,9 @@ for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = true e
 Suite.Skin.enabled = true
 local P = {}
 local collectors,collectionCalls={},{}
+local beginSuite, contextSuite
 local nativeRegister=world.core.MSUF2.RegisterSearchProvider
-world.core.MSUF2.RegisterSearchProvider=function(name,collect,contextChanged)
+world.core.MSUF2.RegisterSearchProvider=function(name,collect,contextChanged,begin)
     if name:match("^MSUF_Suite") then
         local source=collect
         collect=function()
@@ -130,12 +131,111 @@ world.core.MSUF2.RegisterSearchProvider=function(name,collect,contextChanged)
             return source()
         end
         collectors[name]=collect
+        if name == "MSUF_Suite" then beginSuite, contextSuite = begin, contextChanged end
+        if begin then
+            local start = begin
+            begin = function()
+                collectionCalls[name] = (collectionCalls[name] or 0) + 1
+                return start()
+            end
+        end
     end
-    return nativeRegister(name,collect,contextChanged)
+    return nativeRegister(name,collect,contextChanged,begin)
 end
 LoadAddOn("MSUF_Suite_Options", P)
 for _, feature in ipairs(P.QualityOfLifeSearchFeatures or {}) do
     Suite.Suite.Config(feature.id)[feature.switch] = true
+end
+
+-- Old hosts collect synchronously. A newer host may drop a partial build and
+-- restart with changed configuration; siblings must never see partial shards.
+do
+    Check(type(beginSuite) == "function", "Suite has no cooperative provider")
+    local base = collectors.MSUF_Suite()
+    local firstBar = collectors["MSUF_Suite.DataTexts.01"]
+    local bars, step = firstBar(), beginSuite()
+    local function AlwaysDue() return true end
+    for i = 1, 8 do
+        local rows, done = step(AlwaysDue)
+        Check(not rows and not done and firstBar() == bars, "partial build published a shard")
+    end
+    step = nil
+    local config = Suite.Suite.Config("chat")
+    local saved = config.enabled
+    config.enabled = not saved
+    Check(contextSuite(), "external module change was missed during a partial build")
+    config.enabled = saved
+    step = beginSuite()
+    local polls, batches, done = 0, 0
+    local function Due()
+        polls = polls + 1
+        return polls % 23 == 0
+    end
+    local rows
+    repeat
+        rows, done = step(Due)
+        batches = batches + 1
+        Check(done or not rows and firstBar() == bars, "incomplete replacement escaped the provider")
+    until done or batches > 5000
+    Check(done and batches > 1 and #rows == #base and #firstBar() == #bars, "cooperative provider lost rows")
+    for i, row in ipairs(rows) do
+        local previous = base[i]
+        Check(row.pageKey == previous.pageKey and row.kind == previous.kind and row.label == previous.label
+            and row.controlId == previous.controlId and row.settingKey == previous.settingKey,
+            "cooperative and synchronous rows differ at " .. i)
+    end
+    -- Extra slots are generated from the bar templates. Check every configured
+    -- bar's generated controls, including colors which have no setting key.
+    local dataTexts = Suite.Suite.Config("dataTexts")
+    local dataRows = {}
+    for name, collect in pairs(collectors) do
+        if name:match("^MSUF_Suite%.DataTexts%.") then
+            for _, row in ipairs(collect()) do
+                if row.suiteRuleKey then dataRows[row.suiteRuleKey] = true end
+            end
+        end
+    end
+    for _, bar in ipairs(Suite.DataTextBarIDs(dataTexts)) do
+        for place = 7, Suite.DataTextSlotLimit do
+            local slot = "bar" .. bar .. "Slot" .. place
+            for _, field in ipairs(Suite.DataTextSlotSuffixes) do
+                if field ~= "MenuLabel" then
+                    Check(dataRows[slot .. field], "search lost a generated data-text control: " .. slot .. field)
+                end
+            end
+        end
+    end
+    Check(not contextSuite(), "unchanged first post-build context started another build")
+end
+
+-- QoL sorts its descriptors at first search. Mixed switches of one module
+-- must retain their individual identities across sorts, removals and reuse.
+do
+    local all, seen, left, right = P.QualityOfLifeSearchFeatures, {}
+    for _, feature in ipairs(all) do
+        local same = seen[feature.id]
+        if same and same.switch ~= feature.switch then left, right = same, feature break end
+        seen[feature.id] = feature
+    end
+    Check(left and right, "expected distinct switches of one module")
+    local config = Suite.Suite.Config(left.id)
+    local a, b = config[left.switch], config[right.switch]
+    config[left.switch], config[right.switch] = false, true
+    P.QualityOfLifeSearchFeatures = {left, right}
+    contextSuite()
+    P.QualityOfLifeSearchFeatures = {right, left}
+    Check(not contextSuite(), "sorting the same switches invalidated the complete index")
+    config[left.switch], config[right.switch] = true, false
+    Check(contextSuite(), "opposite changes to two switches of one module were lost")
+    P.QualityOfLifeSearchFeatures = {left}
+    Check(contextSuite(), "removing one switch did not invalidate its rows")
+    P.QualityOfLifeSearchFeatures = {right}
+    Check(contextSuite(), "replacing a switch without changing length was missed")
+    P.QualityOfLifeSearchFeatures = {}
+    Check(contextSuite() and not contextSuite(), "empty feature list did not settle")
+    P.QualityOfLifeSearchFeatures = all
+    config[left.switch], config[right.switch] = a, b
+    contextSuite()
 end
 
 -- Disabling a module/feature keeps its supported settings and enable switch
@@ -241,7 +341,24 @@ do
 end
 
 local M = world.core.MSUF2
-local api = M.Search._CoreAPI
+local hostSearch = M.Search._CoreAPI
+local api = setmetatable({}, { __index = hostSearch })
+-- The current host indexes in slices. Drive those slices as the open menu does.
+function api.GetSearchRecords()
+    local rows = hostSearch.GetSearchRecords()
+    if not hostSearch.WhenIndexReady or #rows > 0 or env.InCombatLockdown() then return rows end
+    local ready
+    if not hostSearch.WhenIndexReady(function() ready = true end) then return rows end
+    for _ = 1, 1000 do
+        if ready then return hostSearch.GetSearchRecords() end
+        world.widgets:RunTimers(1000)
+    end
+    error("search index did not complete")
+end
+function api.SearchPages(query)
+    api.GetSearchRecords()
+    return hostSearch.SearchPages(query)
+end
 do
     local config = Suite.Suite.Config("dataTexts")
     local original = Suite.CopyValue(config)
@@ -315,7 +432,7 @@ do
     local found = {}
     for _, row in ipairs(P.SearchRows()) do
         for key, kind in pairs(expected) do
-            local meta = P.Meta("suite_nameplates", "nameplates", key, "action", "suite_nameplates_auraColors")
+            local meta = P.Meta("suite_nameplates", "nameplates", key, "action", "suite_nameplates_auraWorkspace")
             if row.controlId == meta.controlId then
                 Check(row.kind == kind and row.sectionId == meta.sectionId, "DoT search lost its real control: " .. key)
                 found[key] = true
@@ -843,6 +960,28 @@ do
     M.frame:Show()
 
     if searchHost == classic then
+        -- The DoT editor is built only after its nested view is selected.
+        local dotPage = "suite_nameplates"
+        -- The separate live plate preview needs native rendering APIs. The real
+        -- page, aura workspace, DoT panel and all four widgets run here.
+        local preview = P.BuildNameplatesPreview
+        P.BuildNameplatesPreview = function() end
+        -- The shared Forever fixture supplies only GetActiveSpecGroup. Its
+        -- client also exposes GetSpecialization (no current spec in this scenario).
+        env.C_SpecializationInfo.GetSpecialization = env.C_SpecializationInfo.GetSpecialization or function() return 0 end
+        for _, query in ipairs({ "DoTs by specialization", "Add a DoT from MSUF", "Custom aura ID", "Preview DoT state" }) do
+            local match
+            for _, result in ipairs(Search(query)) do
+                if result.key == dotPage and result.label == P.Tr(query) then match = result; break end
+            end
+            Check(match and match.exactTarget, "missing DoT editor search result: " .. query)
+            P.NameplatesWorkspace.Open("friendly")
+            local selected, anchored, exact = api.OpenSearchTarget(match.key, query, match.label,
+                match.anchor, match.route, match.exactTarget)
+            local _, widget = M.RuntimeControlCatalog.ResolveExactTarget(dotPage, match.exactTarget)
+            Check(selected and anchored and exact and widget and widget:IsVisible(), "DoT search did not reveal its control: " .. query)
+        end
+        P.BuildNameplatesPreview = preview
         local page, setting = "suite_minimap", "msufsuite.minimap.showMail"
         local control = P.Meta(page, "minimap", "showMail", "setting", "suite_minimap_elements").controlId
         local function OpenMail(query)

@@ -349,6 +349,21 @@ local function RowOrder(config, categories)
     return SORTERS[config.sortMode] or categories and SortRows or nil
 end
 
+function Model.Prepare(model, config)
+    local plan = model.categoryPlan or { optional = {}, empty = {} }
+    plan.config = config
+    plan.order = RowOrder(config, config.inventoryView == CATEGORIES)
+    EnabledOptional(config, plan.optional)
+    Clear(plan.empty)
+    if config.inventoryView == CATEGORIES and not config.hideEmptyCategories then
+        for i = 1, #BUILTINS do
+            local entry = BUILTINS[i]
+            if CategoryOn(config, entry) then plan.empty[#plan.empty + 1] = entry end
+        end
+    end
+    model.categoryPlan = plan
+end
+
 local function SortGroups(a, b)
     if a.expansionFirst and a.order > 1 and b.order > 1 and a.expansion ~= b.expansion then
         return (a.expansion or -1) > (b.expansion or -1)
@@ -408,6 +423,10 @@ local function PhysicalGroup(item)
     return "all", "All items", 2, nil, true
 end
 
+local function FlatGroup()
+    return "all", "All items", 2, nil, true
+end
+
 local function PhysicalReagentGroup(item)
     if item.reagentBag then return "reagentBag", "Reagent bag", 210, nil, true end
     return PhysicalGroup(item)
@@ -427,10 +446,11 @@ local function AddSets(model, config, item, key)
     end
 end
 
-local function AddEmptyCategories(model, config)
-    for i = 1, #BUILTINS do
-        local entry = BUILTINS[i]
-        if CategoryOn(config, entry) then Group(model, entry[1], entry[2], entry[3], nil, true) end
+local function AddEmptyCategories(model, config, plan)
+    local entries = plan and plan.empty or BUILTINS
+    for i = 1, #entries do
+        local entry = entries[i]
+        if plan or CategoryOn(config, entry) then Group(model, entry[1], entry[2], entry[3], nil, true) end
     end
     for i = 1, #model.custom do
         local category = model.custom[i]
@@ -473,7 +493,10 @@ function Model.Build(model, items, config, state, context)
     -- sorted lines while the revision stays.
     model.revision = (model.revision or 0) + 1
     model.expansionFirst = config.expansionFirst == true
-    model.optional = EnabledOptional(config, model.optional or {})
+    local plan = model.categoryPlan
+    if plan and plan.config ~= config then plan = nil end
+    model.optional = plan and plan.optional or EnabledOptional(config, model.optionalScratch or {})
+    if not plan then model.optionalScratch = model.optional end
     if model.customText ~= config.customCategories then
         model.customText = config.customCategories
         model.custom = Model.DecodeCategories(config.customCategories)
@@ -494,6 +517,7 @@ function Model.Build(model, items, config, state, context)
     end
     local selected = context and context.selected
     local categories = config.inventoryView == CATEGORIES
+    model.flat = config.inventoryView == VIEW.SINGLE
     local showSets = categories and config.groupEquipmentSets and config.category_equipment ~= false
     local query = context and context.query
     if query and not query:find("%S") then query = nil end
@@ -503,7 +527,7 @@ function Model.Build(model, items, config, state, context)
     -- searching: Blizzard's search marks non-matching slots isFiltered.
     local searching = context and context.searching
     local special = context and (context.hasKeyring or context.hasReagent)
-    local groupForItem = physical and (context.hasReagent and PhysicalReagentGroup or PhysicalGroup)
+    local groupForItem = model.flat and FlatGroup or physical and (context.hasReagent and PhysicalReagentGroup or PhysicalGroup)
         or special and ItemGroupWithKeyring or ItemGroup
     for i = 1, #items do
         local item = items[i]
@@ -521,10 +545,13 @@ function Model.Build(model, items, config, state, context)
         end
     end
     if categories and not config.hideEmptyCategories and not query and not searching then
-        AddEmptyCategories(model, config)
+        AddEmptyCategories(model, config, plan)
     end
     sort(model.groups, SortGroups)
-    local order = not physical and RowOrder(config, categories) or nil
+    local order
+    if not physical then
+        if plan then order = plan.order else order = RowOrder(config, categories) end
+    end
     -- Collapsing applies to the Categories view; a search shows its matches.
     local collapsed = categories and not query and not searching and state.collapsed or nil
     for i = 1, #model.groups do Arrange(model.groups[i], selected, collapsed, order) end
@@ -539,6 +566,7 @@ function Model.Layout(model, columns, compact)
     model.layoutPool = model.layoutPool or {}
     Clear(layout)
     local line, column, count, bandHeight = 0, 0, 0, 0
+    local headerRows = model.flat and 0 or 1
     for g = 1, #model.groups do
         local group = model.groups[g]
         local rows = group.displayRows
@@ -546,19 +574,22 @@ function Model.Layout(model, columns, compact)
             local span = compact and #rows <= math.floor(columns / 2)
                 and math.floor(columns / 2) or columns
             if column + span > columns then line, column, bandHeight = line + bandHeight, 0, 0 end
-            count = count + 1
-            local header = model.layoutPool[count] or {}
-            model.layoutPool[count], layout[count] = header, header
-            header.group, header.row, header.line, header.column, header.width = group, nil, line, column, span
-            header.height = 1 + math.ceil(#rows / span)
+            local height = headerRows + math.ceil(#rows / span)
+            if headerRows > 0 then
+                count = count + 1
+                local header = model.layoutPool[count] or {}
+                model.layoutPool[count], layout[count] = header, header
+                header.group, header.row, header.line, header.column, header.width = group, nil, line, column, span
+                header.height = height
+            end
             for i = 1, #rows do
                 count = count + 1
                 local cell = model.layoutPool[count] or {}
                 model.layoutPool[count], layout[count] = cell, cell
                 cell.group, cell.row = group, rows[i]
-                cell.line, cell.column = line + 1 + math.floor((i - 1) / span), column + (i - 1) % span
+                cell.line, cell.column = line + headerRows + math.floor((i - 1) / span), column + (i - 1) % span
             end
-            bandHeight = math.max(bandHeight, 1 + math.ceil(#rows / span))
+            bandHeight = math.max(bandHeight, height)
             column = column + span
         end
     end

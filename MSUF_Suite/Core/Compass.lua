@@ -18,7 +18,7 @@ local function SlideToSample(view)
     if target == anchor then return end
     if anchor then
         local period = view.periodPixels
-        local half = period * .5
+        local half = view.halfPeriodPixels
         local delta = (target - anchor + half) % period - half
         if delta ~= 0 and abs(delta) <= view.maxSlidePixels then
             local shift = delta * view.unitsPerPixel
@@ -101,6 +101,8 @@ function Compass.Layout(view, width, unitsPerPixel, font, color)
         view.width, view.unitsPerPixel = width, unitsPerPixel
         -- Each 360-degree repeat occupies whole physical pixels at the seam.
         view.periodPixels = floor(width * (360 / (HALF_ARC * 2)) / unitsPerPixel + .5)
+        view.halfPeriodPixels = view.periodPixels * .5
+        view.periodWidth = view.periodPixels * unitsPerPixel
         view.pixelsPerDegree = view.periodPixels / 360
         view.maxSlidePixels = (-TICK_MIN - HALF_ARC) * view.pixelsPerDegree
         view.step = view.pixelsPerDegree * unitsPerPixel
@@ -135,6 +137,14 @@ function Compass.Paint(view, bearing)
     end
     view.offsetPixels = pixels
     if not view.slideTarget then SlideToSample(view) end
+end
+
+function Compass.MarkerOffsets(view, bearing)
+    local x = (bearing - TICK_MIN) * view.step
+    local period = view.periodWidth
+    if bearing <= TICK_MAX - 360 then return x, x + period end
+    if bearing >= TICK_MIN + 360 then return x, x - period end
+    return x
 end
 
 local function HideSlot(button, slot)
@@ -185,17 +195,23 @@ function Compass.SlotText(button)
     return DegreeText(WholeDegrees(slot and slot.bearing))
 end
 
+function Compass.PrepareSlot(button, createFrame, createTexture)
+    local slot = button.dataCompass
+    if not slot or not slot.width then return end
+    if not slot.view then
+        local view = Compass.New(button, true, createFrame, createTexture)
+        view.frame:SetPoint("CENTER", button, "CENTER")
+        Compass.Layout(view, slot.width, slot.pixel, slot.font, slot.color)
+        slot.view = view
+    end
+    return slot.view
+end
+
 function Compass.PaintSlot(button, bearing, createFrame, createTexture)
     local slot = button.dataCompass
     slot.bearing = bearing
     if bearing and slot.width then
-        local view = slot.view
-        if not view then
-            view = Compass.New(button, true, createFrame, createTexture)
-            view.frame:SetPoint("CENTER", button, "CENTER")
-            Compass.Layout(view, slot.width, slot.pixel, slot.font, slot.color)
-            slot.view = view
-        end
+        local view = slot.view or Compass.PrepareSlot(button, createFrame, createTexture)
         Compass.Paint(view, bearing)
         if not slot.showing then
             slot.showing, slot.degrees = true, nil

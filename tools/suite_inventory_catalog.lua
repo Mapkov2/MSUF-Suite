@@ -105,6 +105,19 @@ local function emitLook(owner, look)
 end
 local catalog, order = rawget(ns, "SuiteCatalog"), rawget(ns, "SuiteOrder")
 assert(type(catalog) == "table" and #order > 0, "empty catalog")
+local function emitRule(id, rule)
+    local key = client .. ":" .. id .. "." .. rule.key
+    emit("rules", key)
+    emit("defaults", key, type(rule.default), rule.default)
+    emit("labels", key, rule.label or "")
+    if rule.section then emit("sections", key, rule.section, rule.sectionTitle or "") end
+    for index, choice in ipairs(rule.choices or {}) do emit("choices", key, index, choice) end
+    local kind = rule.choices and "choice" or rule.color and "color" or rule.font and "font"
+        or rule.texture and "texture" or type(rule.default)
+    emit("rule_metadata", key, kind, rule.hidden == true, rule.min or "", rule.max or "",
+        rule.step or "", rule.maxLength or "")
+    emitTraits("rule_traits", key, rule, RULE_TRAITS)
+end
 for _, id in ipairs(order) do
     local spec = catalog[id]
     emit("modules", client .. ":" .. id)
@@ -112,18 +125,11 @@ for _, id in ipairs(order) do
     emit("module_metadata", client .. ":" .. id, spec.page or "", spec.addon)
     emitTraits("module_traits", client .. ":" .. id, spec, SPEC_TRAITS)
     emitLook(client .. ":" .. id, spec.look)
-    for _, rule in ipairs(spec.controls) do
-        local key = client .. ":" .. id .. "." .. rule.key
-        emit("rules", key)
-        emit("defaults", key, type(rule.default), rule.default)
-        emit("labels", key, rule.label or "")
-        if rule.section then emit("sections", key, rule.section, rule.sectionTitle or "") end
-        for index, choice in ipairs(rule.choices or {}) do emit("choices", key, index, choice) end
-        local kind = rule.choices and "choice" or rule.color and "color" or rule.font and "font"
-            or rule.texture and "texture" or type(rule.default)
-        emit("rule_metadata", key, kind, rule.hidden == true, rule.min or "", rule.max or "",
-            rule.step or "", rule.maxLength or "")
-        emitTraits("rule_traits", key, rule, RULE_TRAITS)
+    for _, rule in ipairs(spec.controls) do emitRule(id, rule) end
+    -- Settings a catalog builds on demand still count as registered ones
+    -- (DataTexts: the legacy bars 4 to 12).
+    if spec.legacyControls then
+        for _, rule in ipairs(spec.legacyControls()) do emitRule(id, rule) end
     end
 end
 for key, value in pairs(_G) do

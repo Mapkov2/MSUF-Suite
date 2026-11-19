@@ -550,7 +550,7 @@ local previewCases = {
     { "glimmer", "DrawGlimmerPreview", nil, "size" },
     { "skyriding", "DrawSkyridingPreview", "suiteFlightPreview", "width", "speedHeight", "fontSize", "displayStyle" },
     { "actionTracker", "DrawActionTrackerPreview", nil, "rowHeight" },
-    { "battleRes", "DrawBattleResPreview", nil, "scale" },
+    { "battleRes", "DrawBattleResPreview", "suiteBattleResPreview" },
     { "enemyCastStack", "DrawEnemyCastStackPreview", nil, "rowHeight" },
     { "lootRolls", "DrawLootRollPreview", nil, "width" },
 }
@@ -568,6 +568,7 @@ end
 for _, case in ipairs(previewCases) do
     local id, export, field = case[1], case[2], case[3]
     if P.Available(id) then
+        if id == "battleRes" then S.HideBattleResPreview = function() end end
         S.Config(id).enabled = false
         S[export] = function(parent)
             local host = parent.testIndicatorHost
@@ -584,6 +585,14 @@ for _, case in ipairs(previewCases) do
                     end
                     parent[field] = regions
                 end
+            end
+            if id == "battleRes" then
+                local view = parent.suiteBattleResPreview
+                view.panel = view.panel or host:CreateTexture(nil, "BACKGROUND")
+                view.borderBounds = view.borderBounds or host:CreateTexture(nil, "BACKGROUND")
+                view.maximum = view.maximum or host:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                view.cooldown = view.cooldown or env.CreateFrame("Frame", nil, host)
+                view.panel:SetShown(S.Config(id).backgroundShown)
             end
             return host
         end
@@ -619,6 +628,24 @@ for _, case in ipairs(previewCases) do
         ui.Paint()
         ui.Paint()
         Check(previewFrames == stable, "warm indicator paint created hit areas")
+        if id == "battleRes" then
+            local title = ui.targets.title
+            title:GetScript("OnClick")(title, "LeftButton")
+            Check(ui.selectedLayer == "title" and ui.layerPanels.title:IsShown(), "click did not select the title layer")
+            local background = ui.layerButtons[1]
+            background:GetScript("OnClick")(background, "LeftButton")
+            Check(S.Config(id).backgroundShown == false and not ui.targets.background:IsShown(), "background chip did not persist visibility")
+            background:GetScript("OnClick")(background, "LeftButton")
+            Check(S.Config(id).backgroundShown and ui.targets.background:IsShown(), "background chip did not restore visibility")
+            Check(not S.Config(id).enabled, "changing a layer activated the tracker")
+            lastPreviewTarget = nil
+            Check(ui.OpenTarget("borderOpacity"), "battle rez search did not focus the border settings")
+            Settle()
+            local updated = contexts[page].qolIndicatorPreviews[id]
+            Check(lastPreviewTarget and lastPreviewTarget.focused and updated.layerPanels.border:IsShown(),
+                "search did not reveal the border layer; active layer: " .. tostring(updated.selectedLayer))
+            ui = updated
+        end
         if id == "xpBar" then
             Check(ui.targets.percent:GetFrameLevel() > ui.targets.displayStyle:GetFrameLevel(),
                 "movable text did not sit above the background target")
@@ -651,11 +678,17 @@ for _, case in ipairs(previewCases) do
             Check(lastPreviewTarget and lastPreviewTarget.key == "msufsuite.lootRolls.rowHeight"
                 and lastPreviewTarget.focused and lastPreviewTarget.matched, "layer right-click did not focus its setting")
         end
+        if id == "battleRes" then MenuWorld.FireVisibilityScripts(ui.stage) end
         ui.stage:Hide()
         lastPreviewTarget = nil
-        local handle = ui.targets[case[4]]
-        handle:GetScript("OnClick")(handle, "LeftButton")
-        Check(lastPreviewTarget == nil, "hidden preview navigated")
+        if id == "battleRes" then
+            Check(ui.moves:Selected() == nil and not ui.stage:IsEventRegistered("PLAYER_REGEN_DISABLED"),
+                "closed battle rez preview retained focus or combat events")
+        else
+            local handle = ui.targets[case[4]]
+            handle:GetScript("OnClick")(handle, "LeftButton")
+            Check(lastPreviewTarget == nil, "hidden preview navigated")
+        end
     end
 end
 env.CreateFrame = createPreviewFrame

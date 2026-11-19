@@ -73,7 +73,7 @@ P.Gates[ID] = function(rule)
     if rule.key == "combineReagentBag" and not OpensBags() then
         return false, Tr("Unavailable with the current settings.")
     end
-    if rule.section == "reagentWindow" and P.Get(ID, "combineReagentBag")
+    if rule.section == "reagentWindow" and (P.Get(ID, "combineReagentBag") or P.Get(ID, "inventoryView") == P.Suite.BagsView.SINGLE)
         and P.Get(ID, "inventoryView") ~= P.Suite.BagsView.BLIZZARD_GRID and OpensBags() then
         return false, Tr("Turn off reagent bag integration to position its separate window.")
     end
@@ -167,7 +167,7 @@ local function Build(ctx)
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_window", Tr("Combined bag window"),
         P.SectionRules(ID, "window"), {
             open = true,
-            help = P.Help("Drag the bag title to move it; click for options.", "Fit window to contents removes unused space. Items per row adjusts the width. Visible rows sets the height; turn off Fit window to contents to keep it fixed. Window size scales the whole window. Use full screen height restores the tall panel. These size controls are also available in MSUF Edit Mode."),
+            help = P.Help("Drag to move", "Fit window to contents removes unused space. Items per row adjusts the width. Visible rows sets the height; turn off Fit window to contents to keep it fixed. Window size scales the whole window. Use full screen height restores the tall panel. These size controls are also available in MSUF Edit Mode."),
         })
     local bankRules = P.SectionRules(ID, "bank", function(rule) return not rule.hidden end)
     if #bankRules > 0 then
@@ -185,7 +185,7 @@ local function Build(ctx)
     end
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_reagentWindow", Tr("Reagent bag window"),
         P.SectionRules(ID, "reagentWindow"), {
-            help = "Drag the reagent bag title while it is open to move it independently. Click the title for bag options. Reset its position in MSUF Edit Mode to follow Blizzard's normal bag layout again.",
+            help = "Drag the reagent bag title while it is open to move it independently. Reset its position in MSUF Edit Mode to follow Blizzard's normal bag layout again.",
         })
     for _, id in ipairs({ "inventoryArchive", "restockPlanner", "craftShopping", "bankTransfer", "currencyGoals" }) do
         P.BuildOwnedTool(ctx, b, id)

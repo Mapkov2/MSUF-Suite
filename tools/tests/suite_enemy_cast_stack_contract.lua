@@ -163,7 +163,8 @@ local S = { Install = function(_, m) module = m end, Public = function(v) return
         tonumber(hex:sub(5, 6), 16) / 255 end }
 -- The Suite's one nameplate token list (MSUF_Suite_Modules/Runtime.lua).
 S.NameplateUnits, S.NameplateUnit = dofile(root .. "/tools/tests/suite_test_support.lua").NameplateUnits(root)
-local NS = { Client = {}, Dispatch = function(callback, ...) return callback(...) end }
+local NS = { Client = {}, Dispatch = function(callback, ...) return callback(...) end,
+    InCombat = function() return false end }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/EnemyCastStack.lua"))("test", { NS = NS, Suite = S })
 module.active = true
 module.config = { listSize = 2, castKinds = 1, fadeMinor = false, targetLine = true, readyStripe = false,
@@ -187,7 +188,17 @@ targets.nameplate1 = Secret()
 channels.nameplate150 = SecretCast()
 inside, instanceKind = true, "raid"; Fire("PLAYER_ENTERING_WORLD")
 assert(not module.listening and not module.context.events.UNIT_SPELLCAST_START, "the stack listened in a raid")
+local cast, channel = casts.nameplate1, channels.nameplate150
+casts.nameplate1, channels.nameplate150 = nil, nil
 instanceKind = "party"; Fire("PLAYER_ENTERING_WORLD")
+assert(#module.rows == module.config.listSize and #module.free == module.config.listSize and not module.host.shown,
+    "an eligible empty dungeon did not prepare its hidden live rows")
+local framesBefore, stylesBefore = Calls("CreateFrame"), Calls("SetStyledFont")
+casts.nameplate1, channels.nameplate150 = cast, channel
+Fire("UNIT_SPELLCAST_START", "nameplate1")
+Fire("UNIT_SPELLCAST_CHANNEL_START", "nameplate150")
+assert(Calls("CreateFrame") == framesBefore and Calls("SetStyledFont") == stylesBefore,
+    "first dungeon casts allocated or styled live rows")
 assert(Live("nameplate1") and Live("nameplate150"), "the snapshot missed a nameplate token up to 150")
 local first, second = module.ordered[1].row, module.ordered[2].row
 assert(module.visible == 2 and first.slot == 1 and second.slot == 2 and module.host.shown)

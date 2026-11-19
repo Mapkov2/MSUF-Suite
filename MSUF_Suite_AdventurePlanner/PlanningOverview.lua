@@ -41,7 +41,7 @@ function Overview.Subtitle(row, now)
     for _, lockout in ipairs(entry.lockouts or {}) do
         if S.Finite(lockout.expires) and lockout.expires > now then count = count + 1 end
     end
-    return S.Text("%s • %d lockouts"):format(entry.realm or Plan.Date(entry.at), count)
+    return S.Text("%s • %d lockouts", true):format(entry.realm or Plan.Date(entry.at), count)
 end
 
 function Overview.Hint(tab)

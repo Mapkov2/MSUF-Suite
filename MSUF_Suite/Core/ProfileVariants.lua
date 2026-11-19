@@ -96,7 +96,7 @@ end
 -- A copy of a stored Suite profile without the variant overlay. A failed core
 -- snapshot never falls back to the overlaid values.
 function P.BaseProfile(name)
-    local source = Suite.Database.GetProfile(name)
+    local source = Suite.Database.ReadProfile(name)
     if not source then return nil, "Missing suite profile" end
     local out = Suite.CopyValue(source)
     if Overlaid(name) then
@@ -109,7 +109,7 @@ end
 -- Only the settings of a stored Suite profile (Database.PROFILE_SETTINGS of
 -- its suite table) without the variant overlay, for undo history.
 function P.BaseSettings(name)
-    local source = Suite.Database.GetProfile(name)
+    local source = Suite.Database.ReadProfile(name)
     local db = source and source.suite
     if type(db) ~= "table" then return nil, "Missing suite profile" end
     local out = {}

@@ -139,6 +139,11 @@ local function Preview(forever)
         "the preview filter must keep unfinished objectives and timers")
     assert(compactHeight < fullHeight and labels["Example Quest"][1] == .2,
         "the preview must reflect compact height and the existing focus color")
+    labels = {}
+    c.questProgressColumn = true
+    V.Render.objectives(ui, "focused")
+    assert(labels["Collect supplies"] and labels["3/8"] and not labels["3/8  Collect supplies"],
+        "the preview must separate progress when the tracker uses a column")
 end
 
 local function Signature(forever)
