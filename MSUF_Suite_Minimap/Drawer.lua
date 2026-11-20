@@ -284,6 +284,54 @@ local function ToggleShown(c)
     return not c.drawerMouseover or MM.Revealed() or panel:IsShown()
 end
 
+local function DrawerList()
+    if panel.listScroll then return panel.listScroll, panel.listContent end
+    local scroll = S.CreateFrame("ScrollFrame", nil, panel)
+    scroll:SetAllPoints(panel)
+    scroll:EnableMouseWheel(true)
+    scroll:SetFrameLevel(panel:GetFrameLevel() + 1)
+    scroll:SetScript("OnMouseWheel", function(frame, delta)
+        local offset = frame:GetVerticalScroll() - delta * (M.config.drawerButtonSize + GAP)
+        frame:SetVerticalScroll(math.max(0, math.min(frame:GetVerticalScrollRange(), offset)))
+    end)
+    local content = S.CreateFrame("Frame", nil, scroll)
+    scroll:SetScrollChild(content)
+    panel.listScroll, panel.listContent, panel.listLabels = scroll, content, {}
+    return scroll, content
+end
+
+local function PlaceDrawerList(count, cell, level)
+    local scroll, content = DrawerList()
+    local width = math.max(160, cell + 112)
+    local height = MARGIN * 2 + count * (cell + GAP) - GAP
+    local screenHeight = UIParent:GetHeight()
+    panel:SetSize(width, math.min(height, math.max(cell + 2 * MARGIN, screenHeight * .55)))
+    content:SetSize(width, height)
+    local labels = panel.listLabels
+    for i = 1, count do
+        local button = visible[i]
+        local y = -(MARGIN + (i - 1) * (cell + GAP) + cell / 2)
+        MM.Place(button, content, "CENTER", content, "TOPLEFT", MARGIN + cell / 2, y, MM.Fit(button, cell), "DIALOG", level)
+        local label = labels[i]
+        if not label then
+            label = S.CreateFontString(content, nil, "ARTWORK")
+            label:SetJustifyH("LEFT")
+            label:SetWordWrap(false)
+            labels[i] = label
+        end
+        S.SetFont(label, nil, 12, "")
+        label:ClearAllPoints()
+        label:SetPoint("LEFT", content, "TOPLEFT", MARGIN + cell + 8, y)
+        label:SetWidth(width - 2 * MARGIN - cell - 8)
+        label:SetText(Kept.Label(button:GetName()))
+        label:Show()
+    end
+    for i = count + 1, #labels do labels[i]:Hide() end
+    scroll:UpdateScrollChildRect()
+    scroll:SetVerticalScroll(math.min(scroll:GetVerticalScroll(), scroll:GetVerticalScrollRange()))
+    scroll:Show()
+end
+
 function MM.LayoutDrawer()
     local c = M.config
     if not MM.CollectsButtons() or not toggle then return end
@@ -311,7 +359,7 @@ function MM.LayoutDrawer()
     for i = count + 1, #visible do visible[i] = nil end
     local start = c.drawerRow == c.elementRow and (MM.rowCount or 0) or 0
     StyleDrawer(c)
-    if count == 1 then
+    if count == 1 and not c.drawerList then
         -- A single button goes straight onto the row; no toggle.
         toggle:Hide()
         ClosePanel()
@@ -333,12 +381,18 @@ function MM.LayoutDrawer()
     toggle:SetShown(ToggleShown(c))
     rowItem[1] = toggle
     MM.LayoutRow(c.drawerRow, rowItem, 1, c.elementSize, c.elementSpacing, c.elementDistance, start, "drawer")
-    local cell, columns = c.drawerButtonSize, math.min(c.drawerColumns, count)
-    local rows = math.ceil(count / columns)
-    panel:SetSize(MARGIN * 2 + columns * cell + (columns - 1) * GAP, MARGIN * 2 + rows * cell + (rows - 1) * GAP)
     local anchor = PANEL_ANCHORS[c.drawerRow] or PANEL_ANCHORS[1]
     panel:ClearAllPoints()
     panel:SetPoint(anchor[1], toggle, anchor[2], anchor[3], anchor[4])
+    local cell = c.drawerButtonSize
+    if c.drawerList then
+        PlaceDrawerList(count, cell, level)
+        return
+    end
+    if panel.listScroll then panel.listScroll:Hide() end
+    local columns = math.min(c.drawerColumns, count)
+    local rows = math.ceil(count / columns)
+    panel:SetSize(MARGIN * 2 + columns * cell + (columns - 1) * GAP, MARGIN * 2 + rows * cell + (rows - 1) * GAP)
     for i = 1, count do
         local button = visible[i]
         local column, row = (i - 1) % columns, math.floor((i - 1) / columns)
@@ -353,7 +407,8 @@ MM.flushers.drawer = MM.LayoutDrawer
 -- Hover listeners also run after every refresh, MSUF Edit Mode switches
 -- included.
 MM.OnHover(function()
-    if toggle and M.active and MM.CollectsButtons() and M.config.drawerMouseover and #visible > 1 then
+    if toggle and M.active and MM.CollectsButtons() and M.config.drawerMouseover
+        and (#visible > 1 or M.config.drawerList and #visible == 1) then
         toggle:SetShown(ToggleShown(M.config))
     end
     ShowGrips()
@@ -420,7 +475,7 @@ end
 function S.MinimapDrawerPreviewSource()
     if not M.active then return end
     if not MM.CollectsButtons() or #visible == 0 then return false end
-    return true, #visible == 1 and visible[1] or nil
+    return true, not M.config.drawerList and #visible == 1 and visible[1] or nil
 end
 
 -- The frame names of the buttons in the drawer: what the options page offers

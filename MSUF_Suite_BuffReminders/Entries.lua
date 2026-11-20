@@ -491,6 +491,43 @@ local function BagFood()
     return best
 end
 
+local function OwnedFoodChoices()
+    local foods, seen = {}, {}
+    for bag = 0, Constants.InventoryConstants.NumBagSlots do
+        local slots = C_Container.GetContainerNumSlots(bag)
+        for slot = 1, S.Finite(slots) and slots or 0 do
+            local itemID = C_Container.GetContainerItemID(bag, slot)
+            if S.Finite(itemID) and not seen[itemID] then
+                seen[itemID] = true
+                if IsFood(itemID) then
+                    local name = S.PublicText(C_Item.GetItemInfo(itemID))
+                    if name then foods[#foods + 1] = { id = itemID, name = name, count = ItemCount(itemID) or 0 } end
+                end
+            end
+        end
+    end
+    table.sort(foods, function(a, b) return a.name < b.name or a.name == b.name and a.id < b.id end)
+    return foods
+end
+
+function R.OpenFoodChoices(self, button)
+    local profile, foods = NS.DB, OwnedFoodChoices()
+    local function Selected(id) return ID(self.config.foodChoice) == id end
+    local function Choose(id)
+        if not self.active or NS.DB ~= profile or NS.InCombat() then return end
+        if not id or (ItemCount(id) or 0) > 0 then S.Set("buffReminders", "foodChoice", id and tostring(id) or "") end
+    end
+    S.ContextMenu(button, function(_, menu)
+        menu:CreateTitle(S.Text("Preferred food"))
+        menu:CreateRadio(S.Text("Automatic"), Selected, Choose)
+        if #foods == 0 then menu:CreateTitle(S.Text("No buff food in your bags.")) end
+        for _, food in ipairs(foods) do
+            local label = S.Text("%s (%d in bags)"):format(food.name, food.count)
+            menu:CreateRadio(label, Selected, Choose, food.id)
+        end
+    end)
+end
+
 -- The food the reminder clicks: the chosen one while it is in the bags, else
 -- the newest food in the bags (false for none).
 local function FoodPick(c)

@@ -140,11 +140,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     S.ReputationProgress = function() return rep end
     level = 80
     W.Event("PLAYER_LEVEL_UP")
-    assert(progress.text == "Test Faction · 25%" and visual.fill.width == visual.width * .25)
+    assert(progress.text == "Test Faction - 25%" and visual.fill.width == visual.width * .25)
     rep = nil
     S.HonorProgress = function() return 60, 100, 7 end
     W.Event("UPDATE_FACTION")
-    assert(progress.text == "Honor Level 7 · 60%" and visual.fill.width == visual.width * .6)
+    assert(progress.text == "Honor Level 7 - 60%" and visual.fill.width == visual.width * .6)
     S.HonorProgress = function() end
     W.Event("HONOR_XP_UPDATE")
     assert(not visual.track.shown, "no progress left a stale fill")

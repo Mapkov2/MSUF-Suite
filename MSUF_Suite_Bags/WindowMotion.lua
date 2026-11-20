@@ -61,6 +61,7 @@ function Motion.Target(width, height)
         and not P.BagResize.active and not view.positionsDirty
     Motion.Cancel()
     if w == width and h == height then return end
+    M:PinBagResizeCorner()
     if not animate then
         Resize(width, height)
         M:RefreshWindowLayout()

@@ -49,8 +49,13 @@ function Frame:SetPoint(...) self.point = { ... }; calls.writes = calls.writes +
 function Frame:SetSize(w, h) self.width, self.height = w, h end
 function Frame:GetSize() return self.width, self.height end
 function Frame:SetWidth(w) self.width = w end
-function Frame:SetAtlas(atlas) self.atlas = atlas end
-function Frame:SetTexture(file) self.file = file; calls.textures = calls.textures + 1 end
+function Frame:SetAtlas(atlas) self.atlas, self.coords = atlas, nil end
+function Frame:SetTexture(file)
+    if file == 99999 then return false end
+    self.file = file
+    calls.textures = calls.textures + 1
+    return true
+end
 function Frame:SetTexCoord(...) self.coords = { ... } end
 function Frame:SetRotation(angle) self.angle = angle; calls.writes = calls.writes + 1 end
 function Frame:CreateAnimationGroup()
@@ -174,13 +179,19 @@ local S = {
     RegisterOwnedMover = function(_, element, mover) movers[element] = mover end,
     Dispatch = function(fn, ...) return fn(...) end,
 }
-local NS = { Suite = S, Text = S.Text, RGB = S.RGB,
+Enum = { UIMapType = { Zone = 3, Continent = 2 }, QuestLineFloorLocation = { Same = 0 } }
+canaccesstable = function(value) return Public(value) and type(value) == "table" end
+local NS = { Suite = S, Text = S.Text, RGB = S.RGB, Client = { isForever = true, IsAddOnLoaded = function() return false end },
     InCombat = function(event) return event == "PLAYER_REGEN_DISABLED" or world.combat == true end }
 local private = { Suite = S, NS = NS }
 assert(loadfile(root .. "/MSUF_Suite/Core/Compass.lua"))("Core", NS)
 assert(loadfile(root .. "/MSUF_Suite_Modules/CompassHeading.lua"))("Modules", private)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDMap.lua"))("QoL", private)
 S.PublicText = function(value) return Public(value) and type(value) == "string" and value ~= "" and value or nil end
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDQuestOffers.lua"))("QoL", private)
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDServices.lua"))("QoL", private)
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDHandyNotes.lua"))("QoL", private)
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDQuestie.lua"))("QoL", private)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDPoints.lua"))("QoL", private)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUDMarkers.lua"))("QoL", private)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NavigationHUD.lua"))("QoL", private)
@@ -566,7 +577,7 @@ C_QuestLog = {
     GetTitleForQuestID = function() return "Tracked quest" end,
 }
 C_SuperTrack = { GetSuperTrackedQuestID = function() return 5 end }
-Enum = { FlightPathFaction = { Neutral = 0, Horde = 1, Alliance = 2 } }
+Enum.FlightPathFaction = { Neutral = 0, Horde = 1, Alliance = 2 }
 function UnitFactionGroup() return "Alliance" end
 C_TaxiMap = { GetTaxiNodesForMap = function()
     return { { position = { x = .48, y = .5 }, name = "Flight master", faction = 2 },
@@ -718,3 +729,183 @@ assert(not ctx.markerTick and Visible(markers.miniPins) == 0 and markers.gatherC
 hud.active = false
 hud:Disable()
 print("PASS public compass and overlay markers, bounded gathering data, native minimap and combat lifecycle")
+
+
+-- Use the real source modules in all three projections. Services remain
+-- available without QuestieDB and stay separate from native tracking.
+local offerReads, requests = 0, 0
+local offers = { { questID = 101, x = .278, y = .58, questName = "Available quest", floorLocation = 0 } }
+C_QuestLine = {
+    GetAvailableQuestLines = function(map) assert(map == 1455); offerReads = offerReads + 1; return offers end,
+    RequestQuestLinesForMap = function(map) assert(map == 1455); requests = requests + 1 end,
+}
+C_Map.GetMapInfo = function() return { mapType = Enum.UIMapType.Zone } end
+C_Map.GetMapWorldSize = function() return 650, 650 end
+world.map, world.position, world.heading = 1455, { x = .28, y = .66 }, -math.rad(90)
+world.waypoint, world.rotate = nil, false
+local config = hud.config
+config.showQuestOffers, config.showMapServices, config.showNavigationMinimap = true, true, true
+config.showMapMarkers, config.showKnownGathering, config.showGatheringMinimap, config.showCompass = false, false, false, true
+hud.active = true
+hud:Enable()
+assert(hud:ToggleMap())
+local function CountAtlas(pool, atlas)
+    local count = 0
+    for _, pin in ipairs(pool) do
+        if pin.shown and pin.texture.atlas == atlas then count = count + 1 end
+    end
+    return count
+end
+local function HasQuestAndMail(pool)
+    return CountAtlas(pool, "QuestNormal") > 0 and CountAtlas(pool, "ui-hud-minimap-mail-icon") > 0
+end
+assert(HasQuestAndMail(markers.mapPins) and HasQuestAndMail(markers.compassPins) and HasQuestAndMail(markers.miniPins),
+    "quest starts and known mailboxes must reach the overlay, compass and opt-in minimap")
+assert(markers.focus.text:find("Mailbox", 1, true) and markers.focus.text:find("24 m", 1, true),
+    "the compass must name the focused mailbox and show its distance")
+assert(CountAtlas(markers.miniPins, "ui-hud-minimap-mail-icon") == 2, "distinct local mailboxes were missing or duplicated")
+local reads = offerReads
+for _ = 1, 10 do MarkerTick() end
+assert(offerReads == reads and requests == 1, "unchanged samples rebuilt or requested quest offers")
+offers = {}
+Fire("QUESTLINE_UPDATE", false)
+MarkerTick()
+assert(CountAtlas(markers.miniPins, "QuestNormal") == 0 and requests == 1, "quest offers did not disappear on refresh")
+Fire("QUESTLINE_UPDATE", true)
+MarkerTick()
+assert(requests == 2, "the client could not explicitly request fresh quest offers")
+offers[1] = { questID = 101, x = .278, y = .58, questName = "Available quest", floorLocation = 0 }
+Fire("MINIMAP_UPDATE_TRACKING")
+MarkerTick()
+
+config.showNavigationMinimap = false
+hud:Refresh()
+assert(Visible(markers.miniPins) == 0 and HasQuestAndMail(markers.mapPins), "the minimap switch changed the overlay")
+config.showMapServices = false
+hud:Refresh()
+assert(CountAtlas(markers.mapPins, "ui-hud-minimap-mail-icon") == 0 and CountAtlas(markers.mapPins, "QuestNormal") > 0,
+    "mailboxes and quest starts must have independent toggles")
+config.showMapServices, config.showCompass = true, false
+assert(not hud:ToggleMap())
+local compactSlot = CompassSlot(120)
+BindCompass({ compactSlot })
+local compact = compactSlot.dataCompass.view
+assert(HasQuestAndMail(assert(markers.compactPins[compact])), "the DataTexts compass must share the sources without the standalone compass")
+assert(Visible(markers.compassPins) == 0 and Visible(markers.mapPins) == 0 and Visible(markers.miniPins) == 0)
+local warmReads = offerReads
+MarkerTick()
+assert(offerReads == warmReads, "the DataTexts compass read a second copy of the quest feed")
+config.showNavigationMinimap = true
+hud:Refresh()
+world.rotate, headings = true, calls.headings
+Tick()
+MarkerTick()
+assert(calls.headings == headings + 1, "rotating minimap must reuse the DataTexts heading sample")
+config.showNavigationMinimap = false
+hud:Refresh()
+BindCompass()
+assert(not ctx.markerTick and Visible(markers.compactPins[compact]) == 0, "an unbound DataTexts slot kept markers or a ticker alive")
+-- A native request can synchronously ask for another request while the
+-- current list is still empty. The empty-list idle path must not lose it.
+config.showMapServices, config.showCompass = false, true
+offers = {}
+local currentRequests = requests
+C_QuestLine.RequestQuestLinesForMap = function()
+    requests = requests + 1
+    if requests == currentRequests + 1 then
+        Fire("QUESTLINE_UPDATE", true)
+    else
+        offers[1] = { questID = 102, x = .31, y = .66, questName = "Late quest" }
+    end
+end
+Fire("QUESTLINE_UPDATE", true)
+hud:Refresh()
+assert(ctx.markerTick and Visible(markers.compassPins) == 0, "an empty response lost a pending native retry")
+MarkerTick()
+assert(requests == currentRequests + 2 and Visible(markers.compassPins) > 0, "delayed quest retry did not paint")
+config.showMapMarkers = true
+hud:Refresh()
+local offerReadsBefore = offerReads
+Fire("VIGNETTES_UPDATED")
+MarkerTick()
+assert(offerReads == offerReadsBefore, "an unrelated vignette event re-read quest data")
+hud.active = false
+hud:Disable()
+print("PASS quest offer refresh, known Forever services, independent minimap switch and shared compact compass")
+
+
+local handy, questie = private.NavigationHUDHandyNotes, private.NavigationHUDQuestie
+local handyWatch, questieWatch
+local handyReads, questieReads = 0, 0
+local available = false
+function handy.Watch(callback) handyWatch = callback end
+function questie.Watch(callback) questieWatch = callback end
+function handy.Read(output, map, add, classifyNative)
+    assert(map == world.map and not world.combat)
+    handyReads = handyReads + 1
+    if not available then return end
+    add(output, .305, .62, "HandyNotes chest", nil, "handynotes", 678, .25, .5, 0, .25,
+        classifyNative and false)
+    add(output, .24, .69, "HandyNotes native", nil, "handynotes", 679, nil, nil, nil, nil,
+        classifyNative and true)
+    add(output, .32, .68, "Duplicate with Questie", nil, "handynotes", 681)
+    add(output, .28, .72, "Missing provider asset", nil, "handynotes", 99999, .1, .2, .2, .3)
+end
+function questie.Read(output, map, add)
+    assert(map == world.map and not world.combat)
+    questieReads = questieReads + 1
+    add(output, .32, .68, "Questie quest", "QuestNormal", "questie", nil, nil, nil, nil, nil, true)
+end
+local function TextureOn(pool, id)
+    for _, pin in ipairs(pool) do
+        if pin.shown and pin.icon == id then return pin.texture end
+    end
+end
+config.showQuestOffers, config.showMapMarkers = false, false
+config.showNavigationMinimap, config.showQuestie, config.showHandyNotes = true, false, false
+world.position, world.rotate = { x = .28, y = .66 }, false
+hud.active = true
+hud:Enable()
+assert(hud:ToggleMap())
+assert(handyReads == 0 and questieReads == 0 and not handyWatch and not questieWatch)
+config.showHandyNotes = true
+hud:Refresh()
+assert(handyWatch and not questieWatch and handyReads == 1 and questieReads == 0)
+assert(not ctx.markerTick, "an absent addon should not keep a marker ticker running")
+available = true
+Fire("ADDON_LOADED", "HandyNotes")
+MarkerTick()
+assert(TextureOn(markers.mapPins, 678) and TextureOn(markers.compassPins, 678), "loaded notes did not reach both surfaces")
+assert(TextureOn(markers.miniPins, 678) and not TextureOn(markers.miniPins, 679), "the minimap duplicated a native pin or lost a map-only note")
+assert(TextureOn(markers.mapPins, 678).coords[1] == .25, "the provider's texture sheet coordinates were lost")
+local fallback = assert(TextureOn(markers.mapPins, 99999))
+assert(fallback.atlas == "Waypoint-MapPin-Tracked" and not fallback.coords,
+    "an unavailable icon did not use uncropped fallback art")
+local reads = handyReads
+MarkerTick()
+MarkerTick()
+assert(handyReads == reads, "the moving-marker scheduler reread unchanged addon data")
+config.showQuestie = true
+hud:Refresh()
+assert(questieReads == 1 and questieWatch and not TextureOn(markers.mapPins, 681)
+    and CountAtlas(markers.mapPins, "QuestNormal") > 0, "Questie did not join or deduplicate the note layer")
+questieWatch()
+MarkerTick()
+assert(questieReads == 2 and handyReads == reads, "one provider invalidated unrelated data")
+local noNotesReads = handyReads
+config.showHandyNotes = false
+hud:Refresh()
+assert(not handyWatch and questieWatch and not TextureOn(markers.mapPins, 678) and handyReads == noNotesReads,
+    "disabling HandyNotes changed the wrong source")
+local questieBeforeCombat = questieReads
+world.combat = true
+Fire("PLAYER_REGEN_DISABLED")
+questieWatch()
+assert(not ctx.markerTick and Visible(markers.mapPins) == 0 and questieReads == questieBeforeCombat)
+world.combat = false
+Fire("PLAYER_REGEN_ENABLED")
+assert(questieReads > questieBeforeCombat)
+hud.active = false
+hud:Disable()
+assert(not handyWatch and not questieWatch and not ctx.markerTick)
+print("PASS optional addon sources, late load, dedup, minimap ownership, and combat idle")

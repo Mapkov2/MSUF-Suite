@@ -27,6 +27,8 @@ local objectiveContent = {
     B.Bool("showWorldQuests", "World quests", true),
     B.Bool("groupQuestsByZone", "Group watched quests by current zone", false),
     B.Bool("groupQuestsByHeader", "Group quests by zone and dungeon name", false),
+    B.Bool("groupReadyQuests", "Group quests ready to turn in separately", false),
+    B.Bool("altClickQuestCollapse", "Alt-click to expand or collapse a quest", false),
     B.Bool("showQuestLevel", "Show quest levels", false),
     B.Bool("questDifficultyColor", "Color quest titles by difficulty", false),
     B.Bool("showDungeonBadge", "Show dungeon badges", false),
@@ -112,7 +114,9 @@ B.Section("objectives", "type", "Tracker text", {
     B.Number("objectiveSize", "Objective text size", 13, 9, 20),
     B.Bool("compactQuestRows", "Compact quest rows", false),
     B.Bool("questProgressColumn", "Align quest progress on the right", false),
+    B.Bool("showQuestObjectiveIcons", "Show objective type icons next to quest progress", false),
 })
+objectiveRules.showQuestObjectiveIcons.enableKey = "questProgressColumn"
 B.TextStyle("objectives", "type", "Tracker text", 70)
 B.Section("objectives", "colors", "Tracker colors", {
     B.Choice("colorStyle", "Color source", 1, { "Suite skin + default accents", "Custom colors" }),

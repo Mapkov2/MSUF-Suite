@@ -200,22 +200,40 @@ end
 -- page reset through the Suite's host bridge (MSUF_Suite/Core/HostBridge.lua):
 -- a provider on Menu2 hosts with host API v1, the wrapped reset functions on
 -- older hosts. These handlers are the Suite's half of either.
-local function PageResetHandlers()
+local function PageResetSpecs()
     local pages, specs = {}, {}
     for _, page in ipairs(P.pages) do
         pages[page.key], specs[page.key] = true, page
+        if page.resetTargets then
+            for _, target in ipairs(page.resetTargets) do
+                pages[target.key], specs[target.key] = true, target
+            end
+        end
+    end
+    return pages, specs
+end
+
+local function PageResetHandlers()
+    local pages, specs = PageResetSpecs()
+    local function ResolveKey(key)
+        local page = specs[key]
+        return page and page.resolveResetKey and page.resolveResetKey() or key
     end
     -- The page's title in the reader's language (its key when it has none).
     local function PageTitle(key)
-        local page = specs[key]
+        local page = specs[ResolveKey(key)]
         return page and P.Tr(page.title) or key
     end
     local handlers = { pages = pages, withHistory = P.WithHistory, confirm = P.Confirm, combat = P.Combat }
+    handlers.resolveConfirmKey = ResolveKey
     function handlers.canReset(key)
-        local page = specs[key]
-        return page ~= nil and page.reset ~= false and PageAddOnEnabled(key)
+        local page = specs[ResolveKey(key)]
+        return page ~= nil and page.reset ~= false and PageAddOnEnabled(page.ownerPage or key)
+            and (not page.canReset or page.canReset())
     end
     function handlers.warning(key)
+        -- Older providers may confirm the parent key and resolve its tab on Yes.
+        if specs[key].resolveResetKey then return M.Tr("Reset page") end
         return string.format(P.Tr("Reset %s to defaults?\n\nThis resets all settings on this Suite page for the active profile."),
             PageTitle(key))
     end
@@ -228,15 +246,16 @@ local function PageResetHandlers()
         return key == "suite_skin" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     end
     function handlers.prepare(key)
-        if key == "suite_hud" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then P.SkinPageKit.Engine() end
+        local page = specs[ResolveKey(key)]
+        if not page then return false end
+        if page.prepareReset then return page.prepareReset() end
         return not SkinAddOn(key) or Suite.Skin.EnsureEngine() == true
     end
     function handlers.run(key)
         if SkinAddOn(key) and not P.ResetSkinPage() then return false end
-        -- The cooldown manager resets its settings, spell lists and spell
-        -- options through its page, which offers an Undo line.
-        local body = specs[key] and specs[key].resetPage
-        if body then return body() == true end
+        local page = specs[ResolveKey(key)]
+        if not page then return false end
+        if page.resetPage then return page.resetPage() == true end
         local modules = PAGE_MODULES[key]
         if not modules then return key == "suite_skin" end
         for _, id in ipairs(modules) do
@@ -244,7 +263,6 @@ local function PageResetHandlers()
                 (P.PlayerAurasPage.Relocated(id) or P.GameplayPage.Relocated(id))
             if not moved and not S.Reset(id) then return false end
         end
-        if key == "suite_hud" then P.SkinPageKit.ResetCharacter() end
         return true
     end
     function handlers.finish()

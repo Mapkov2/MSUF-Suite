@@ -52,6 +52,18 @@ assert(mode.row.values[1].text == "Shift+M (default)" and mode.row.values[2].tex
 mode.set(2)
 assert(mode.get() == 2 and not config.enabled)
 assert(markerOptions.showMapMarkers.get() and markerOptions.showKnownGathering.get() and not markerOptions.showGatheringMinimap.get())
+assert(not markerOptions.showQuestOffers.get() and not markerOptions.showMapServices.get() and not markerOptions.showNavigationMinimap.get())
+markerOptions.showQuestOffers.set(true)
+markerOptions.showMapServices.set(true)
+markerOptions.showNavigationMinimap.set(true)
+assert(config.showQuestOffers and config.showMapServices and config.showNavigationMinimap and not config.enabled)
+assert(not markerOptions.showHandyNotes.get() and not markerOptions.showQuestie.get())
+markerOptions.showHandyNotes.set(true)
+assert(config.showHandyNotes and not config.showQuestie and not config.enabled, "HandyNotes turned on another feature")
+markerOptions.showQuestie.set(true)
+markerOptions.showHandyNotes.set(false)
+assert(not config.showHandyNotes and config.showQuestie and not config.enabled, "the provider switches must operate independently")
+
 markerOptions.showGatheringMinimap.set(true)
 markerOptions.showKnownGathering.set(false)
 assert(config.showGatheringMinimap and not config.showKnownGathering and not config.enabled,

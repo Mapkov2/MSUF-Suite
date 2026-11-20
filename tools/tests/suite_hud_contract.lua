@@ -1297,8 +1297,18 @@ C_QuestLog.GetQuestObjectives = function()
     local lines = {}
     for i = 1, 6 do lines[i] = { text = i == 6 and string.rep("Long objective text ", 5)
         or "Objective " .. i, type = "monster", finished = false } end
+    if tracker.config.questProgressColumn then
+        lines[1].text, lines[1].numFulfilled, lines[1].numRequired = "Defeat foes: 3/8", 3, 8
+    end
     return lines
 end
+tracker.config.questProgressColumn, tracker.config.showQuestObjectiveIcons = true, true
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+Drain()
+local objectiveProgress = tracker.rows["line:quests:42:1"].questProgress
+assert(objectiveProgress and objectiveProgress.text:find("INV_Sword_04", 1, true)
+    and objectiveProgress.text:find("3/8", 1, true), "the monster icon did not accompany the aligned counter")
+tracker.config.questProgressColumn, tracker.config.showQuestObjectiveIcons = false, false
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
 Drain()
 assert(tracker.rows["line:quests:42:6"], "all quest objectives must remain visible")
@@ -1347,7 +1357,12 @@ do
         activeQuest.collapse.OnClick(activeQuest.collapse, "LeftButton")
     end
 
-    ToggleQuest()
+    tracker.config.altClickQuestCollapse = true
+    local nativeAlt, previousOpenedLog = IsAltKeyDown, openedLog
+    IsAltKeyDown = function() return true end
+    activeQuest:Click("LeftButton")
+    tracker.config.altClickQuestCollapse, IsAltKeyDown = false, nativeAlt
+    assert(openedLog == previousOpenedLog, "Alt-click delegated to the quest log")
     local motion = assert(tracker.questMotion, "quest folding should animate by default")
     local objective = assert(tracker.rows["line:quests:42:1"])
     local heightBeforeFold = tracker.content:GetHeight()

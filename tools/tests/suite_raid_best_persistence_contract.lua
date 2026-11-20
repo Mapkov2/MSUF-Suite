@@ -70,6 +70,8 @@ local function Session(saved, options)
     local ns = { Client = { isForever = false }, Public = Public, PublicText = Text, Finite = Finite,
         IsSecret = function(value) return value == secret end,
         IsCombatLocked = function() return false end,
+        InCombat = function() return false end,
+        Dispatch = function(callback, ...) return callback(...) end,
         ProfileVariants = { CanMutate = function() return true end, OnActivated = function() end },
         OnProfileChanged = function() end,
         Finish = function(fn, ...) return true, fn(...) end,

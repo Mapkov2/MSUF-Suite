@@ -51,7 +51,7 @@ local function Arrived(self, tab)
 end
 
 local function Delivered(self, tab, body, outgoing, lineID)
-    if not tab then return end
+    if not tab then return NativeOnly(outgoing) end
     D.Seed(tab)
     local seen = W.IsShown() and D.selected == tab
     if D.Receive(tab, body, outgoing, lineID, seen) and not outgoing then Arrived(self, tab) end

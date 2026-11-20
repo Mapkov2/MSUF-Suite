@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Skinning
 ## Notes: Window and addon skinning for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.28-alpha
+## Version: 0.1.29-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -52,6 +52,7 @@ Rendering\WindowControls.lua
 Rendering\WindowFocusContour.lua
 Rendering\WindowFocusVisual.lua
 Rendering\WindowFocusGeometry.lua
+Rendering\WindowMotion.lua
 Rendering\WindowFocusLayers.lua
 Rendering\WindowFocusChrome.lua
 Rendering\WindowFocusPopups.lua
@@ -72,6 +73,7 @@ Adapters\GenericWindowsNodes.lua
 Adapters\GenericWindowsFrames.lua
 Adapters\ChatConfig.lua
 Adapters\TooltipChrome.lua
+Adapters\CatalogShopMotion.lua
 Adapters\GenericWindowsCatalog.lua
 Adapters\TutorialPointers.lua
 Rendering\ScrollMotion.lua

@@ -181,6 +181,7 @@ local function OnContextChanged(self, event)
     if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then Layout(self) end
     if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         Markers.Invalidate(self)
+        if event == "PLAYER_ENTERING_WORLD" then Markers.ResetQuestOffers() end
     elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "UI_SCALE_CHANGED"
         or event == "DISPLAY_SIZE_CHANGED" then
         Markers.Invalidate(self, "map")
@@ -202,19 +203,27 @@ end
 
 local function SyncListeners(self)
     local c = self.config
-    local listen = self.mapRequested or c.showCompass or (c.showMarkers and c.showGatheringMinimap)
+    local listen = self.mapRequested or c.showCompass
+        or (c.showMarkers and (c.showGatheringMinimap or c.showNavigationMinimap or S.CompassMarkerViews ~= nil))
     if self.listening ~= listen then
         self.listening = listen
         for _, event in ipairs(EVENT_NAMES) do
             if listen then self.context:Event(event, OnContextChanged, true) else self.context:RemoveEvent(event) end
         end
     end
-    if c.showMarkers and c.showWaypoint and (self.mapRequested or (c.showCompass and c.showMapMarkers)) then
+    local compassMarkers = (c.showMapMarkers or c.showQuestOffers or c.showMapServices or c.showHandyNotes or c.showQuestie)
+        and (c.showCompass or S.CompassMarkerViews)
+    if c.showMarkers and c.showWaypoint and (self.mapRequested or compassMarkers) then
         self.context:Event("USER_WAYPOINT_UPDATED", WaypointChanged, true)
     else
         self.context:RemoveEvent("USER_WAYPOINT_UPDATED")
     end
     if not listen then self.context:Cancel(RefreshVisibility) end
+end
+
+function M:RefreshMarkerViews()
+    SyncListeners(self)
+    Markers.ViewsChanged(self)
 end
 
 local function WantsDefaultShortcut(self)

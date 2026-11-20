@@ -335,6 +335,25 @@ local function RefreshMessageFilters(urls, verbatim)
     end
 end
 
+local tradeskillFilter, tradeskillWindow
+local function OwnTradeskills(frame, _, ...)
+    if NS.ChatLocked() then return end
+    if tradeskillWindow and tradeskillWindow ~= 0 then
+        local id = frame and frame:GetID()
+        if not S.Finite(id) or id ~= tradeskillWindow then return end
+    end
+    local sender = PublicText(select(12, ...))
+    local player = sender and PublicText(UnitGUID("player"))
+    if player and sender ~= player then return true end
+end
+
+local function RefreshTradeskillFilter(enabled)
+    if enabled == (tradeskillFilter == true) then return end
+    local set = enabled and ChatFrameUtil.AddMessageEventFilter or ChatFrameUtil.RemoveMessageEventFilter
+    set("CHAT_MSG_TRADESKILLS", OwnTradeskills)
+    tradeskillFilter = enabled
+end
+
 local function CompileChannels(config)
     for i = #plainLabels, 1, -1 do plainLabels[i] = nil end
     for label in pairs(linkLabels) do linkLabels[label] = nil end
@@ -643,6 +662,7 @@ end
 
 function C.MessagesDisable()
     RefreshMessageFilters(false, false)
+    RefreshTradeskillFilter(false)
     RefreshClassIcons(false)
     if itemIconCount > 0 then
         wipe(itemIcons)
@@ -749,6 +769,8 @@ function C.MessagesRefresh(self)
         context:RemoveEvent("CVAR_UPDATE")
     end
     RefreshMessageFilters(tools.links == true, tools.format == true)
+    tradeskillWindow = c.ownTradeskillsWindow
+    RefreshTradeskillFilter(c.ownTradeskillsOnly == true)
     RefreshClassIcons(c.showClassIcons)
     if tools.copyStamp and not stampLinkRegistered then
         LinkUtil.RegisterLinkHandler(COPY_LINK, CopyTimestamp)

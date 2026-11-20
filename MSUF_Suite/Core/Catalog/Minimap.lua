@@ -354,6 +354,7 @@ B.Section(id, "addons", "Addon buttons", {
     Choice("drawerRow", "Drawer button placement", 5, NS.MinimapRowLabels),
     Number("drawerButtonSize", "Drawer icon size", 24, 14, 40),
     Number("drawerColumns", "Drawer columns", 4, 1, 8),
+    Bool("drawerList", "Show addon names in a list", false),
     Number("drawerX", "Drawer horizontal offset", 0, -600, 600),
     Number("drawerY", "Drawer vertical offset", 0, -600, 600),
     -- Edited by the page's picker and list (MinimapButtonList.lua), not as text.
@@ -532,7 +533,8 @@ rules.zoomResetSeconds.enableKey = "scrollZoom"
 rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverResize"
 rules.trackingMouseover.enableKey = "showTracking"
 rules.drawerKeep.hidden = true
-for _, key in ipairs({ "drawerStyle", "drawerRow", "drawerButtonSize", "drawerColumns", "drawerMouseover", "drawerKeep" }) do
+for _, key in ipairs({ "drawerStyle", "drawerRow", "drawerButtonSize", "drawerColumns", "drawerList",
+    "drawerMouseover", "drawerKeep" }) do
     rules[key].enableKey = "collectButtons"
 end
 rules.infoDifficultyColor.disabledBy = "infoDifficultyColors"

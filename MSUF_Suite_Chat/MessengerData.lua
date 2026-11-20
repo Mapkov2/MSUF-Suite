@@ -80,14 +80,22 @@ end
 
 -- Over the limit, the least recent read conversation closes first; one
 -- with unread lines only when every other one has some as well. Its lines
--- remain in Blizzard's chat. The selected tab and the one just opened stay.
+-- remain in Blizzard's chat. Keep the selection when another tab can close.
 local function Evict(keep)
     while #D.tabs > maxTabs do
         local index
         for i, tab in ipairs(D.tabs) do
-            if tab ~= D.selected and tab ~= keep and (not index or Older(tab, D.tabs[index])) then index = i end
+            if not tab.pinned and tab ~= D.selected and tab ~= keep and (not index or Older(tab, D.tabs[index])) then
+                index = i
+            end
         end
-        RemoveAt(index or 1)
+        if not index then
+            for i, tab in ipairs(D.tabs) do
+                if not tab.pinned and tab ~= keep then index = i break end
+            end
+        end
+        if not index then break end
+        RemoveAt(index)
     end
 end
 
@@ -132,6 +140,33 @@ function D.Close(tab)
     for index, open in ipairs(D.tabs) do
         if open == tab then return RemoveAt(index) end
     end
+end
+
+function D.CanPin(tab)
+    if not tab or D.byKey[tab.key] ~= tab then return false end
+    if tab.pinned then return true end
+    local count = 0
+    for _, open in ipairs(D.tabs) do
+        if open.pinned then count = count + 1 end
+    end
+    return count < maxTabs - 1
+end
+
+function D.TogglePin(tab)
+    if not D.CanPin(tab) then return end
+    local index = 1
+    for i, open in ipairs(D.tabs) do
+        if open == tab then
+            table.remove(D.tabs, i)
+            break
+        end
+    end
+    tab.pinned = not tab.pinned or nil
+    if not tab.pinned then
+        while D.tabs[index] and D.tabs[index].pinned do index = index + 1 end
+    end
+    table.insert(D.tabs, index, tab)
+    D.Changed()
 end
 
 function D.CloseAll()
@@ -267,7 +302,10 @@ function D.Configure(config)
     maxLines = Clamp(config.maxLines, LINES_MIN, LINES_MAX, 100)
     D.showArchive = config.showArchive ~= false
     if not D.showArchive then D.ArchiveCleared() end
-    for _, tab in ipairs(D.tabs) do Trim(tab) end
+    for index, tab in ipairs(D.tabs) do
+        if index >= maxTabs then tab.pinned = nil end
+        Trim(tab)
+    end
     Evict()
 end
 

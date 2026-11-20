@@ -1,5 +1,5 @@
 local _, P = ...
-local S = P.Suite
+local NS, S = P.NS, P.Suite
 local Columns, Grid = P.BagListColumns, P.GridView
 -- The list presentation of the bag view (InventoryRendering.lua), the bank
 -- view (BankInventory.lua) and the offline view (OfflineInventory.lua). One
@@ -339,12 +339,14 @@ end
 
 local function Changed(row, data, item, list)
     return row.item ~= item or row.count ~= data.count or row.version ~= item.version or row.loaded ~= item.loaded
+        or row.recentCountText ~= data.recentCountText
         or row.fitKey ~= list.fitKey or row.level ~= item.listLevel or row.track ~= item.listTrack
         or row.binding ~= item.binding or row.fontEpoch ~= list.fontEpoch
 end
 
 local function Remember(row, data, item)
     row.item, row.count, row.version, row.loaded = item, data.count, item.version, item.loaded
+    row.recentCountText = data.recentCountText
     row.level, row.track, row.binding = item.listLevel, item.listTrack, item.binding
 end
 

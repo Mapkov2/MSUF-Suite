@@ -3,6 +3,7 @@ local _, P = ...
 -- The native slot remains the authority even when several stacks share a row.
 local Model = {}
 P.InventoryModel = Model
+local S = P.Suite
 local VIEW, SORT = P.NS.BagsView, P.NS.BagsSort
 local BY_BAG, CATEGORIES = VIEW.BY_BAG, VIEW.CATEGORIES
 -- Item classes, subclasses and qualities: Enum.ItemClass, Enum.ItemArmorSubclass,
@@ -388,11 +389,24 @@ local function Subgroup(item, config, key, label)
 end
 
 -- key, label, order, expansion, translate, expansionName
+local function RecentGain(state, id)
+    local gain = state.recentGains and state.recentGains[id]
+    if type(gain) == "table" and S.Finite(gain.count) and S.Finite(gain.added)
+        and gain.added > 0 and gain.count >= gain.added then return gain end
+end
+
+local function RecentVisible(item, state)
+    if (item.maxStack or 1) <= 1 or item.equipLoc and item.equipLoc ~= "" then return true end
+    local gain = RecentGain(state, item.itemID)
+    return not gain or gain.fromTransfer == true or gain.count == gain.added
+end
+
 local function ItemGroup(item, config, state, model)
     if item.itemID and config.showPinned and state.pinned and state.pinned[item.itemID] then
         return "pinned", "Pinned items", 0, nil, true
     end
-    if item.itemID and config.showRecent and state.recent and state.recent[item.itemID] then
+    if item.itemID and config.showRecent and state.recent and state.recent[item.itemID]
+        and (not config.recentNewTypesOnly or RecentVisible(item, state)) then
         return "recent", "Recent items", 1, nil, true
     end
     if config.inventoryView == BY_BAG then
@@ -410,6 +424,28 @@ local function ItemGroup(item, config, state, model)
             item.expansionName or tostring(item.expansion)
     end
     return key, label, order, nil, translate
+end
+
+local function AnnotateRecent(model, state)
+    local group = model.groupsByKey.recent
+    if not group or not state.recentGains then return end
+    local seen, annotated = model.recentShown or {}, model.recentAnnotated or {}
+    Clear(seen)
+    model.recentShown = seen
+    model.recentAnnotated = annotated
+    for _, row in ipairs(group.rows) do
+        local id = row.item.itemID
+        local gain = not seen[id] and RecentGain(state, id)
+        if gain then
+            seen[id] = true
+            annotated[#annotated + 1] = row
+            if row.count == gain.count then
+                row.recentCountText = ("%d + %d"):format(gain.count - gain.added, gain.added)
+            else
+                row.recentCountText = ("%d (+%d)"):format(row.count, gain.added)
+            end
+        end
+    end
 end
 
 local function ItemGroupWithKeyring(item, config, state, model)
@@ -485,7 +521,26 @@ local function Arrange(group, selected, collapsed, order)
     end
 end
 
+local function ClearRecentAnnotations(model)
+    local annotated = model.recentAnnotated
+    for i = #annotated, 1, -1 do
+        annotated[i].recentCountText, annotated[i] = nil, nil
+    end
+end
+
+local function ArrangeGroups(model, config, state, selected, categories, plan, physical, searching)
+    sort(model.groups, SortGroups)
+    local order
+    if not physical then
+        if plan then order = plan.order else order = RowOrder(config, categories) end
+    end
+    -- A search shows its matches in the Categories view even when collapsed.
+    local collapsed = categories and not searching and state.collapsed or nil
+    for i = 1, #model.groups do Arrange(model.groups[i], selected, collapsed, order) end
+end
+
 function Model.Build(model, items, config, state, context)
+    if model.recentAnnotated then ClearRecentAnnotations(model) end
     Clear(model.groups)
     Clear(model.groupsByKey)
     model.rowCount, model.groupCount = 0, 0
@@ -547,14 +602,8 @@ function Model.Build(model, items, config, state, context)
     if categories and not config.hideEmptyCategories and not query and not searching then
         AddEmptyCategories(model, config, plan)
     end
-    sort(model.groups, SortGroups)
-    local order
-    if not physical then
-        if plan then order = plan.order else order = RowOrder(config, categories) end
-    end
-    -- Collapsing applies to the Categories view; a search shows its matches.
-    local collapsed = categories and not query and not searching and state.collapsed or nil
-    for i = 1, #model.groups do Arrange(model.groups[i], selected, collapsed, order) end
+    ArrangeGroups(model, config, state, selected, categories, plan, physical, query or searching)
+    if config.showRecentGains then AnnotateRecent(model, state) end
     return model.groups
 end
 

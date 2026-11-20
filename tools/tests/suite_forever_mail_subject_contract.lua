@@ -89,7 +89,7 @@ local function Boot(forever)
         Finite = function(value) return type(value) == "number" and value < math.huge and value > -math.huge end,
     }
     for line in io.lines(root .. "/MSUF_Suite/MSUF_Suite_Mainline.toc") do
-        if line == [[Core\ForeverMailSubject.lua]] then
+        if line:gsub("\r$", "") == [[Core\ForeverMailSubject.lua]] then
             assert(loadfile(root .. "/MSUF_Suite/Core/ForeverMailSubject.lua"))("MSUF_Suite", suite)
         end
     end

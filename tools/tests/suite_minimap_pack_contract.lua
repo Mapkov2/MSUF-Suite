@@ -191,6 +191,12 @@ local names = S.MinimapButtonNames()
 check(#names == 3 and names[1] == "LibDBIcon10_Alpha" and names[3] == "MyAddonMinimapButton",
     "the picker is not fed the drawer's buttons")
 
+assert(S.Set("minimap", "drawerList", true))
+check(alpha:GetParent() == panel.listContent and panel.listScroll.wheel and panel.listLabels[1].text == "Alpha"
+    and panel.listLabels[3].text == "MyAddonMinimapButton", "the drawer list did not label the original buttons")
+assert(S.Set("minimap", "drawerList", false))
+check(alpha:GetParent() == panel and not panel.listScroll:IsShown(), "the drawer grid did not reclaim the buttons")
+
 -- A listed button leaves the drawer for the place its addon gave it.
 local Kept = NS.MinimapKeptButtons
 assert(S.Set("minimap", "drawerKeep", Kept.With("", "LibDBIcon10_Alpha")))

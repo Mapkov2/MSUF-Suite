@@ -264,7 +264,7 @@ walk = function(state, frame, depth)
             if not state.content then state.content = body end
             if Safe(body) then Observe(state, body)
             elseif state.observed[body] ~= nil then state.observed[body] = true end
-            local watched = Content.Watch(body, state.owner)
+            local watched = Content.Watch(body, state.owner, nil, state.root)
             if record then record.watched[index] = watched == true end
         end
     end
@@ -278,19 +278,26 @@ walk = function(state, frame, depth)
     end
 end
 
-function Menus.Track(root, owner, contentOnly)
-    if owner == nil or not Safe(root) then return false end
-    -- Authored tab bodies already identify the exact content container.
-    -- Watch it once; its descendants need neither discovery nor registration.
-    if contentOnly then return Content.Watch(root, owner) end
+local function RegisterRoot(root, owner, window)
     local state = Menus.states[root]
     if not state then
         state = { root = root, owners = {}, observed = {}, records = {} }
         state.scan = function() Scan(state) end
         Menus.states[root] = state
     end
-    state.owners[owner], state.owner = true, owner
-    Content.Watch(root, owner)
+    state.owners[owner] = window and "window" or state.owners[owner] or true
+    state.owner = owner
+    Content.Watch(root, owner, state.owners[owner] == "window")
+    if window then NS.WindowMotion.Watch(root, owner) end
+    return state
+end
+
+function Menus.Track(root, owner, contentOnly, window)
+    if owner == nil or not Safe(root) then return false end
+    -- Authored tab bodies already identify the exact content container.
+    -- Watch it once; its descendants need neither discovery nor registration.
+    if contentOnly then return Content.Watch(root, owner) end
+    local state = RegisterRoot(root, owner, window)
     Observe(state, root)
     if not state.scanning then state.reentryQueued = false end
     Scan(state)
@@ -323,6 +330,7 @@ end
 function Menus.Release(owner, root)
     for target, state in pairs(Menus.states) do
         if root == nil or root == target then
+            if state.owners[owner] == "window" then NS.WindowMotion.Unwatch(target, owner) end
             state.owners[owner] = nil
             state.owner, state.cacheOwner = next(state.owners), nil
             if not next(state.owners) then
@@ -340,7 +348,7 @@ function Menus.Release(owner, root)
     -- must restore their bodies even when their frame identities stayed put.
     for _, state in pairs(Menus.states) do
         if state.owners[owner] then
-            Content.Watch(state.root, owner)
+            Content.Watch(state.root, owner, state.owners[owner] == "window")
             Schedule(state, true)
         end
     end
@@ -362,9 +370,22 @@ local function Refresh(_, domain)
     if domain ~= "profile" and domain ~= "adapter" then return end
     for _, state in pairs(Menus.states) do Schedule(state, true) end
 end
+
+local function TrackAdapterRoot(root, owner, contentOnly, candidate)
+    local window = candidate and NS.WindowControlPolicy.IsAnimationWindow(root)
+    return Menus.Track(root, owner, contentOnly, window)
+end
+
+local function PrepareAdapterWindow(root, owner)
+    if owner == nil or not Safe(root) or not NS.WindowControlPolicy.IsAnimationWindow(root) then return end
+    -- The catalog paints on first show. Observe the root early so the first
+    -- opening uses the selected fade without traversing a closed window.
+    RegisterRoot(root, owner, true)
+end
+
 NS.Registry.AddListener(Menus, Refresh)
-NS.GenericWindows.SetMenuMotionProvider(Menus.Track, Menus.Release)
-NS.Adapters.SetMenuMotionProvider(Menus.Track, Menus.Release)
+NS.GenericWindows.SetMenuMotionProvider(TrackAdapterRoot, Menus.Release, PrepareAdapterWindow)
+NS.Adapters.SetMenuMotionProvider(TrackAdapterRoot, Menus.Release)
 NS.AdapterKit.SetMotionProvider(Menus.TrackTarget, Content.Watch)
 NS.Checkmarks.SetSettingsMotionProvider(SettingsChanged, Menus.Release)
 NS.PublicAPI.TrackMenu, NS.PublicAPI.ReleaseMenu = Menus.Track, Menus.Release

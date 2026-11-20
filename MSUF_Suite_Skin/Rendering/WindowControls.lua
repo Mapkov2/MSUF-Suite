@@ -7,6 +7,10 @@ NS.WindowControls = WindowControls
 local TrackFocus, ReleaseFocus = function() end, function() end
 function WindowControls.SetFocusProvider(track, release) TrackFocus, ReleaseFocus = track, release end
 function WindowControls.TrackFocus(frame, owner) return TrackFocus(frame, owner) end
+local GeometryChanged, GeometryInteraction = function() end, function() end
+function WindowControls.SetGeometryMotionProvider(geometry, interaction)
+    GeometryChanged, GeometryInteraction = geometry, interaction
+end
 
 local Safety = NS.Safety
 local Policy = NS.WindowControlPolicy
@@ -202,6 +206,7 @@ local function ToggleFit(state)
     if Chrome.ToggleFit(state, Policy.CaptureNativePoints) then
         if state.fit then InstallPanelPositionHook() end
         WindowControls.Refresh()
+        GeometryChanged(state.frame)
         if state.fit then state.fit.initialScale, state.fit.initialX, state.fit.initialY = nil, nil, nil end
     end
 end
@@ -256,6 +261,7 @@ local function EndDrag(state)
     grip:SetScript("OnUpdate", nil)
     if not drag then return end
     state.drag = nil
+    GeometryInteraction(state.frame, false)
     if not CanChangeFrameGeometry(state.frame) or not Safety.CanDecorate(grip, not IsCombat()) then return end
     if grip:IsMouseOver() then grip:SetButtonState("NORMAL") end
     local scale = state.frame:GetScale()
@@ -327,6 +333,7 @@ local function BeginDrag(state)
     drag.x, drag.y = x, y
     drag.scale, drag.pixels = scale, pixels
     state.drag = drag
+    GeometryInteraction(frame, true)
     state.grip:SetScript("OnUpdate", OnGripUpdate)
 end
 
@@ -383,6 +390,7 @@ local function EndMove(state)
         return
     end
     state.moving = false
+    GeometryInteraction(frame, false)
     state.titleDrag:UnregisterEvent("GLOBAL_MOUSE_UP")
     state.titleDrag:UnregisterEvent("PLAYER_REGEN_DISABLED")
     local point, interrupted = state.stopPoint, state.stopPending
@@ -411,6 +419,7 @@ local function BeginMove(state)
     Policy.ReleasePositionClamp(state)
     frame:StartMoving()
     state.moving = true
+    GeometryInteraction(frame, true)
     state.titleDrag:RegisterEvent("GLOBAL_MOUSE_UP")
     state.titleDrag:RegisterEvent("PLAYER_REGEN_DISABLED")
 end

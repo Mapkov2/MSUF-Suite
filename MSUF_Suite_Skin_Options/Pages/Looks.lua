@@ -43,6 +43,27 @@ local function AddSliders(list, rows, specs)
     end
 end
 
+local WindowAnimationLabel = O.Labeler({ off = L["Off"], subtle = L["Subtle"], extended = L["Extended"] })
+
+local function AddWindowAnimations(list, rows)
+    local selector = O.CreateSegmented(list, L["Window animations"], NS.WindowAnimationModes,
+        NS.Theme.GetWindowAnimationMode, ThemeSetter("windowAnimations"), WIDTH, WindowAnimationLabel)
+    rows[#rows + 1] = { selector, true }
+    rows[#rows + 1] = { O.CreateToggle(list, L["Reduced motion"], ThemeGetter("reduceMotion"),
+        ThemeSetter("reduceMotion"), WIDTH), true }
+    local note = O.CreateText(list, "", 11, "muted")
+    note:SetSize(WIDTH - 12, 34)
+    note:SetJustifyH("LEFT")
+    note:SetJustifyV("TOP")
+    rows[#rows + 1] = { note, true }
+    O.TrackAndRefresh(function()
+        local reduced = NS.DB.theme.reduceMotion == true
+        O.SetWidgetEnabled(selector, not reduced)
+        note:SetText(reduced and L["Disabled while Reduced motion is on."]
+            or L["Subtle fades windows in. Extended also animates resizing and closing on supported windows."])
+    end)
+end
+
 -- The left column: every look control, stacked for the current mode.
 local function BuildControls(page)
     local controlsScroll, list = O.CreateLeftColumn(page, 510, 660, WIDTH)
@@ -64,6 +85,7 @@ local function BuildControls(page)
         O.ShowPage("icons")
     end, "navigation"), true }
     AddSliders(list, rows, OPACITY_SLIDERS)
+    AddWindowAnimations(list, rows)
 
     local RefreshMode = O.StackRows(list, rows)
     O.TrackMode(RefreshMode)
@@ -136,5 +158,11 @@ O.RegisterPage("looks", NS.L.LOOKS, function(page)
     O.CreateSectionTitle(page, L["Style"],
         L["Choose Clean Modern, Midnight Blue, MSUF Forever Glass, Midnight Dark or Class Style for Skinning and enabled Suite modules. Modules enabled later inherit it."])
     BuildControls(page)
-    BuildLookNote(page, BuildPreview(page))
+    local preview, shell = BuildPreview(page)
+    BuildLookNote(page, preview, shell)
+    local replay = O.CreateButton(preview, L["Preview window animation"], 204, 28, function()
+        NS.ContentMotion.StopOwner(page, shell)
+        NS.ContentMotion.Play(shell, page, {}, true)
+    end)
+    replay:SetPoint("TOP", shell, "BOTTOM", 0, -115)
 end)

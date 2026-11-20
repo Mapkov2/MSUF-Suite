@@ -10,17 +10,20 @@ local function Jump(ctx, section, key)
     if ui then ui:Focus(sectionId) end
 end
 
-local function Link(preview, frame, label, section, key, action)
+local function Link(preview, frame, label, section, key, action, actionOnLeft)
     local function Open() return Jump(preview.ctx, section, key) end
     preview.links[frame] = Open
     frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     frame:SetScript("OnClick", function(_, mouseButton)
-        if mouseButton == "RightButton" and action then return action() end
+        local rightClick = mouseButton == "RightButton"
+        if action and rightClick ~= (actionOnLeft == true) then return action() end
         return Open()
     end)
     if P.M.AddTooltip then
-        local hint = action and Tr("Click for settings. Right-click to try it in the preview.")
-            or Tr("Click an element to open its settings.")
+        local hint
+        if actionOnLeft then hint = Tr("Right-click to open its settings.")
+        elseif action then hint = Tr("Click for settings. Right-click to try it in the preview.")
+        else hint = Tr("Click an element to open its settings.") end
         P.M.AddTooltip(frame, Tr(label), hint, { hook = true })
     end
 end
@@ -50,7 +53,8 @@ end
 local function Box(preview, skin, parent, x, y, w, h, role)
     local frame = K.Button(parent, x, y, w, h)
     local button = role == "buttonPrimary" or role == "button"
-    local spec = { role = role, ownedArt = true, motion = true, useControlShape = button }
+    -- The sample window is replayed explicitly by the two preview buttons.
+    local spec = { role = role, ownedArt = true, motion = role ~= "shell", useControlShape = button }
     local state
     if button then
         state = skin.Surface.SkinOwnedButton(frame, spec, false)
@@ -194,9 +198,9 @@ local function RefreshInteraction(preview, skin)
     end
 end
 
-local function Element(preview, skin, parent, role, label, section, key, action)
+local function Element(preview, skin, parent, role, label, section, key, action, actionOnLeft)
     local frame = Box(preview, skin, parent, 0, 0, 1, 1, role)
-    Link(preview, frame, label, section, key, action)
+    Link(preview, frame, label, section, key, action, actionOnLeft)
     return frame
 end
 
@@ -293,7 +297,8 @@ local ITEM_BORDER_SETTINGS = {
 }
 
 local function AddWindowDemo(preview, skin)
-    local function Replay()
+    local function Replay(window)
+        if not preview.section:IsVisible() or P.Combat() then return end
         preview.shell:Show()
         preview.minimized, preview.wide, preview.menuOpen = false, false, false
         preview.focused = true
@@ -302,11 +307,16 @@ local function AddWindowDemo(preview, skin)
         preview.Paint()
         if skin.ContentMotion then
             skin.ContentMotion.StopOwner(preview, preview.shell)
-            skin.ContentMotion.Play(preview.shell, preview, {})
+            skin.ContentMotion.Play(preview.shell, preview, {}, window)
         end
     end
-    preview.reopen = Element(preview, skin, preview.footer, "button", "Menu animations", "shape", "theme.menuAnimations", Replay)
+    preview.reopen = Element(preview, skin, preview.footer, "button", "Menu animations", "shape",
+        "theme.menuAnimations", function() Replay(false) end)
     CaptionLabel(preview, preview.reopen, "Preview")
+    preview.ReplayWindow = function() Replay(true) end
+    preview.windowReplay = Element(preview, skin, preview.footer, "button", "Window animations", "shape",
+        "theme.windowAnimations", preview.ReplayWindow, true)
+    CaptionLabel(preview, preview.windowReplay, "Preview window animation")
     preview.focus = Element(preview, skin, preview.footer, "button", "Dim inactive windows", "shape", "theme.windowFocusDimming", function()
         preview.focused = not preview.focused
         RefreshInteraction(preview, skin)
@@ -386,7 +396,7 @@ local function Layout(preview, fallbackWidth)
     local x = sidebar and 16 + stageWidth + 12 or 16
     local footerHeight = preview.actionBar and controlsWidth < 290 and 55 or 26
     local footerY = sidebar and -STAGE_TOP or -STAGE_TOP - preview.shellHeight - 8
-    Place(preview.footer, section, x, footerY, controlsWidth, footerHeight)
+    Place(preview.footer, section, x, footerY, controlsWidth, footerHeight + 32)
     local available = controlsWidth - (preview.actionBar and footerHeight == 26 and 92 or 0)
     local buttonWidth = math.floor(math.min(116, (available - 6) / 2))
     Place(preview.reopen, preview.footer, 0, 0, buttonWidth, 26)
@@ -395,7 +405,8 @@ local function Layout(preview, fallbackWidth)
         local below = footerHeight > 26
         Place(preview.actionBar, preview.footer, below and 0 or controlsWidth - 82, below and -30 or -1, 82, 24)
     end
-    local y = footerY - 6 - footerHeight
+    Place(preview.windowReplay, preview.footer, 0, -footerHeight - 6, math.min(260, controlsWidth), 26)
+    local y = footerY - 38 - footerHeight
     preview.chips:SetPoint("TOPLEFT", section, "TOPLEFT", x, y)
     Interaction.LayoutLayerRail(preview, controlsWidth)
     local height = math.max(STAGE_TOP + preview.shellHeight, -y + preview.chips:GetHeight()) + 8
@@ -462,6 +473,8 @@ local function TrackPreview(preview, skin)
             elseif key == "windowFocusDimming" then
                 RevealSample(owner, "content")
                 owner.focused = false
+            elseif key == "windowAnimations" then
+                skin.Registry.QueueJob(owner.ReplayWindow)
             elseif key == "menuAnimations" or key == "reduceMotion" then
                 RevealSample(owner, "content")
                 if skin.ContentMotion then
@@ -515,5 +528,6 @@ function P.BuildSkinMenuPreview(ctx, b, skin)
         preview.Layout()
     end)
     TrackPreview(preview, skin)
+    if skin.WindowMotion then skin.WindowMotion.WatchPreview(preview.shell, preview) end
     return section, toolbar
 end

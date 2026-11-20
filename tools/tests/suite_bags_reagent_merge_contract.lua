@@ -1,8 +1,8 @@
 local root = assert(arg[1])
 local H = dofile(root .. "/tools/tests/suite_bags_harness.lua")
-local function World(protected)
+local function Ready(protected, combine)
     local W = H.New(root, {client=arg[2] or "Mainline", unprotectedBags=not protected,
-        config={combineReagentBag=true,showRecent=false,showPinned=false}})
+        config={combineReagentBag=combine,showRecent=false,showPinned=false}})
     W.sizes[0], W.sizes[5] = 8, 4
     W.Define(101, {name="Potion",quality=2})
     W.Define(102, {name="Cloth",class=7,quality=3})
@@ -10,6 +10,10 @@ local function World(protected)
     W.Put(5,1,102,20)
     W.Put(5,2,102,5)
     W.Apply()
+    return W
+end
+local function World(protected)
+    local W = Ready(protected, true)
     W.OpenBags()
     W.Settle()
     return W
@@ -90,4 +94,111 @@ do
     W.LeaveCombat(); W.Settle(); Merged(W)
     Clean(W)
 end
+-- Blizzard opens the combined backpack before its separate reagent container.
+local function CombatOpenAll(W)
+    W.EnterCombat()
+    W.OpenBags()
+    W.Native(OpenBag, Enum.BagIndex.ReagentBag)
+end
+
+local function Separate(W)
+    local view, reagent = W.P.InventoryView, W.P.ReagentInventory
+    assert(not reagent.active and #view.index.items == 8, "separate reagent slots entered the backpack")
+    assert(W.Reagent:IsShown() and W.Reagent:GetAlpha() == 1, "separate reagent window was hidden")
+    for _, button in W.Reagent:EnumerateValidItems() do
+        assert(button:GetParent() == W.Reagent and button:IsVisible(), "separate reagent slot was moved or hidden")
+    end
+    Clean(W)
+end
+
+do
+    local W = Ready(false, true)
+    CombatOpenAll(W)
+    W.Settle()
+    Merged(W)
+    local button = W.Reagent.Items[1]
+    W.Native(button:GetScript("OnClick"), button, "RightButton")
+    local use = assert(W.calls.uses[#W.calls.uses], "merged reagent slot lost its native combat action")
+    assert(use[1] == Enum.BagIndex.ReagentBag and use[2] == 1, "merged reagent action changed its native bag or slot")
+    W.CloseBags()
+    W.Native(function() W.Reagent:Hide() end)
+    W.Settle()
+    assert(not button:IsVisible(), "merged reagent slot stayed visible after Close All Bags")
+    W.OpenBags()
+    W.Native(OpenBag, Enum.BagIndex.ReagentBag)
+    W.Settle()
+    Merged(W)
+    Clean(W)
+end
+
+do
+    local W = Ready(false, false)
+    CombatOpenAll(W)
+    W.Settle()
+    Separate(W)
+end
+
+for _, protected in ipairs({ "frame", "slot" }) do
+    local W = Ready(false, true)
+    CombatOpenAll(W)
+    local target = protected == "frame" and W.Reagent or W.Reagent.Items[1]
+    target.protection, target.guarded = true, true
+    W.Settle()
+    Separate(W)
+    W.LeaveCombat()
+    W.Settle()
+    Merged(W)
+    Clean(W)
+end
+
+do
+    local W = Ready(false, true)
+    local openBag = OpenBag
+    OpenBag = function(bag)
+        assert(W.secure or not W.combat, "backpack-only combat opening called OpenBag from Suite")
+        openBag(bag)
+    end
+    W.EnterCombat()
+    W.OpenBags()
+    W.Settle()
+    assert(not W.Reagent:IsShown() and not W.P.ReagentInventory.active,
+        "backpack-only combat opening activated the unopened reagent bag")
+    assert(#W.P.InventoryView.index.items == 8, "backpack-only combat opening exposed reagent slots")
+    Clean(W)
+
+    W.Native(OpenBag, Enum.BagIndex.ReagentBag)
+    W.Settle()
+    Merged(W)
+    Clean(W)
+end
+
+do
+    local W = Ready(false, true)
+    W.EnterCombat()
+    W.Native(OpenBag, Enum.BagIndex.ReagentBag)
+    local button = W.Reagent.Items[1]
+    W.modified = "SPLITSTACK"
+    W.Native(button:GetScript("OnClick"), button, "LeftButton")
+    W.modified = nil
+    assert(W.StackSplitFrame:IsShown() and W.StackSplitFrame.owner == button, "native reagent split setup failed")
+    W.Search(function(item) return item.id == 101 end)
+    W.OpenBags()
+    W.Settle()
+    assert(W.StackSplitFrame:IsShown() and W.StackSplitFrame.owner == button, "combat merge closed the native reagent split")
+    Separate(W)
+
+    W.LeaveCombat()
+    W.Settle()
+    assert(W.StackSplitFrame:IsShown() and W.StackSplitFrame.owner == button, "combat end closed the native reagent split")
+    Separate(W)
+
+    W.Search(nil)
+    W.Settle()
+    Separate(W)
+    W.Native(W.StackSplitFrame.Hide, W.StackSplitFrame)
+    W.Settle()
+    Merged(W)
+    Clean(W)
+end
+
 print("reagent integration: native slots, views, search, counts, replacement, restore and combat passed")

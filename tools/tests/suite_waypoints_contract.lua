@@ -123,4 +123,33 @@ module.active = false
 module:Disable()
 assert(slash.Type("/way 44 44") and tomtomRuns == 5 and not slash.Type("/msufway 5 5"),
     "disable did not leave exactly the other addon's /way")
+
+local points, opened, editor, changes = {}, nil, nil, 0
+local character = { points = points }
+suite.CharacterData = function() return character end
+suite.ToolListWindow = {
+    Open = function(_, spec) opened = spec end,
+    Edit = function(_, spec) editor = spec end,
+    Refresh = function() end,
+}
+C_Map.GetMapInfo = function(id) return { name = "Zone " .. id } end
+EventRegistry = { TriggerEvent = function(_, event)
+    assert(event == "MSUF_Suite.SavedWaypointsChanged")
+    changes = changes + 1
+end }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/WaypointLists.lua"))("MSUF_Suite_QualityOfLife",
+    { NS = { InCombat = function() return combat end }, Suite = suite })
+module.active = true
+module:Open()
+opened.actions[3].run()
+assert(editor.multiline)
+assert(editor.onSave(module, "/way #11 12.3 45.6\r\n/way 1000 5 5\n/way 11 12,3 45,6\n/way 20 30"))
+local preview = opened.rows()
+assert(opened.help == "2 new waypoints, 1 invalid lines, 1 duplicates." and #preview == 2
+    and preview[2].label:find("^4%.") and #points == 0 and placed == oldPoint,
+    "the preview did not preserve source lines or allowed an early save")
+opened.actions[1].run()
+assert(#points == 2 and points[1].map == 11 and points[2].map == 22
+    and points[1].list == "Imported waypoints" and opened.title == "Saved waypoint lists" and changes == 1,
+    "the preview did not save exactly the accepted waypoints")
 print("Suite waypoint command lifecycle passed")

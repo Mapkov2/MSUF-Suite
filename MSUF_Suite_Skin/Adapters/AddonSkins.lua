@@ -229,6 +229,10 @@ function Skins.SetOption(key, value)
     return true
 end
 
+local function NotifyStartup()
+    if Skins.IsEnabled() then NS.Registry.NotifyListeners("addonSkins", "enabled") end
+end
+
 NS.Registry.AddListener(Skins, function(_, domain, key)
     if domain == "addonSkins" and key == "registered" then return end
     local enabled = Skins.IsEnabled() == true
@@ -248,7 +252,17 @@ events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function(self, event, addon)
     if event == "PLAYER_LOGIN" then
         self:UnregisterEvent(event)
+        self:RegisterEvent("PLAYER_ENTERING_WORLD")
         if active ~= false or Skins.IsEnabled() then NS.Registry.QueueJob(Refresh) end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        self:UnregisterEvent(event)
+        if Skins.IsEnabled() then
+            -- Let world-entry callbacks finish before notifying every addon skin owner.
+            -- The startup layout can flush registry jobs during the dispatch.
+            C_Timer.After(0, function()
+                if Skins.IsEnabled() then NS.Registry.QueueJob(NotifyStartup) end
+            end)
+        end
     elseif addon == NS.addonName or (active and Skins.ResolveApp(addon)) then
         NS.Registry.QueueJob(Refresh)
     end

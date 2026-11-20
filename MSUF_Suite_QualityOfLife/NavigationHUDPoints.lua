@@ -1,5 +1,7 @@
 local _, private = ...
 local S = private.Suite
+local Offers, Services = private.NavigationHUDQuestOffers, private.NavigationHUDServices
+local HandyNotes, Questie = private.NavigationHUDHandyNotes, private.NavigationHUDQuestie
 local Points = {}
 private.NavigationHUDPoints = Points
 
@@ -88,9 +90,22 @@ function Points.Record(category)
 end
 
 local function Add(output, x, y, label, atlas, kind)
-    if Fraction(x) and Fraction(y) then
-        output[#output + 1] = { x = x, y = y, label = Text(label), atlas = Text(atlas), kind = kind }
+    if not Fraction(x) or not Fraction(y) then return end
+    local point = { x = x, y = y, label = Text(label), atlas = Text(atlas), kind = kind }
+    output[#output + 1] = point
+    return point
+end
+
+local function AddAddon(output, x, y, label, atlas, kind, texture, left, right, top, bottom, nativeMinimap)
+    local point = Add(output, x, y, label, atlas, kind)
+    if not point then return end
+    if Public(texture) and ((Finite(texture) and texture > 0) or Text(texture)) then
+        point.icon = texture
+        if Fraction(left) and Fraction(right) and Fraction(top) and Fraction(bottom) then
+            point.left, point.right, point.top, point.bottom = left, right, top, bottom
+        end
     end
+    if Public(nativeMinimap) and type(nativeMinimap) == "boolean" then point.nativeMinimap = nativeMinimap end
 end
 
 local function AddPosition(output, vector, label, atlas, kind)
@@ -224,4 +239,63 @@ function Points.ReadMap(map, general, waypoint)
         end
     end
     return output
+end
+
+function Points.ReadQuestOffers(map)
+    local output = {}
+    Offers.Read(output, map, Add)
+    return output
+end
+
+function Points.ReadServices(map, useQuestieDB)
+    local output = {}
+    Services.Read(output, map, Add, useQuestieDB)
+    return output
+end
+
+function Points.ReadHandyNotes(map, classifyNative)
+    local output = {}
+    HandyNotes.Read(output, map, AddAddon, classifyNative)
+    return output
+end
+
+function Points.ReadQuestie(map)
+    local output = {}
+    Questie.Read(output, map, AddAddon)
+    return output
+end
+
+local DEDUP_RESOLUTION = 10000
+function Points.AddonBuckets(handyNotes, questie, native, offers, services)
+    local buckets, seen, count, minimapCount = {}, {}, 0, 0
+    local function PositionKey(point)
+        return floor(point.x * DEDUP_RESOLUTION + .5) * (DEDUP_RESOLUTION + 1) + floor(point.y * DEDUP_RESOLUTION + .5)
+    end
+    local function Seed(other)
+        if not other then return end
+        for _, point in ipairs(other) do seen[PositionKey(point)] = true end
+    end
+    local function Merge(other)
+        if not other then return end
+        for _, point in ipairs(other) do
+            local key = PositionKey(point)
+            if not seen[key] then
+                seen[key] = true
+                local cell = Points.GatheringCell(point.y) * Points.gatheringCells + Points.GatheringCell(point.x)
+                local bucket = buckets[cell]
+                if not bucket then
+                    bucket = {}
+                    buckets[cell] = bucket
+                end
+                bucket[#bucket + 1], count = point, count + 1
+                if point.nativeMinimap == false then minimapCount = minimapCount + 1 end
+            end
+        end
+    end
+    Seed(native)
+    Seed(offers)
+    Seed(services)
+    Merge(questie)
+    Merge(handyNotes)
+    return buckets, count, minimapCount
 end

@@ -164,7 +164,7 @@ function Columns.Text(key, row)
     if key == "name" then return item.name or "" end
     if key == "level" then return item.listLevel and tostring(item.listLevel) or "" end
     if key == "track" then return item.listTrack or "" end
-    if key == "count" then return tostring(row.count or 1) end
+    if key == "count" then return row.recentCountText or tostring(row.count or 1) end
     if key == "binding" then
         local entry = Binding(item)
         return entry and S.Text(entry[1]) or ""

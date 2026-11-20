@@ -266,6 +266,10 @@ function MacroWindow.Apply(frame, owner)
     state.active, state.owner, state.frame = true, owner, frame
     state.pass = state.pass + 1
     HookFrame(state, frame)
+    -- Register the top-level window before the load-on-demand panel opens.
+    -- Its popup skin remains the template for the chrome.
+    state.openingMotion = state.openingMotion or NS.ContentMotion.Watch(frame, state, true)
+    state.geometryMotion = state.geometryMotion or NS.WindowMotion.Watch(frame, state)
     return Refresh(state)
 end
 
@@ -293,6 +297,14 @@ end)
 
 local function ReleaseState(state)
     state.active = false
+    if state.openingMotion then
+        NS.ContentMotion.Unwatch(state, state.frame)
+        state.openingMotion = nil
+    end
+    if state.geometryMotion then
+        NS.WindowMotion.Unwatch(state.frame, state)
+        state.geometryMotion = nil
+    end
     if state.event then
         Kit.UnregisterRowCallback(state.scrollBox, state.event, state)
         state.event = nil

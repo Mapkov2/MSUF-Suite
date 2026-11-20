@@ -192,6 +192,8 @@ local CONFIRMED = {
         "the explicit Ready Check button; the ready state and combat restrictions are checked again on click",
     ["MSUF_Suite_DamageMeter/Report.lua SendChatMessage"] =
         "the explicit Report channel selection; SendReport rejects combat, unavailable channels and secret rankings",
+    ["MSUF_Suite_CooldownManager/TotemCoverage.lua SendChatMessage"] =
+        "the explicit totem report button; the click reads current public auras and checks the chat restriction",
     ["MSUF_Suite_Chat/Messenger.lua SendChatMessage"] =
         "sending a composed reply from the Suite edit box; received events never send a message",
     ["MSUF_Suite_QualityOfLife/TrainerLearnAll.lua BuyTrainerService"] = "learns after the cost confirmation",

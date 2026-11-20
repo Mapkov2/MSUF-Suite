@@ -113,6 +113,7 @@ B.Section("bags", "window", "Combined bag window", {
     B.Bool("showSessionGold", "Show gold summary", true),
     B.Number("windowScale", "Window size", 1, 0.65, 1.5, 0.05),
     B.Bool("windowMoved", "Use custom window position", false),
+    B.Bool("keepResizeCorner", "Keep the nearest bag corner in place when resizing", false),
     B.Number("windowX", "Horizontal offset", 0, -4096, 4096),
     B.Number("windowY", "Vertical offset", 0, -4096, 4096),
 })
@@ -122,6 +123,7 @@ B.Section("bags", "organisation", "Inventory organisation", {
     }),
     B.Bool("collapseCategorySidebar", "Collapse category sidebar"),
     B.Bool("combineReagentBag", "Combine reagent bag with backpack"),
+    B.Bool("markReagentBagOrigin", "Mark items stored in the reagent bag", false),
     B.Choice("sortMode", "Sort items by", NS.BagsSort.NAME,
         { "Name", "Quality", "Item level", "Type", "Expansion", "Stack count", "Vendor price" }),
     B.Number("inventoryColumns", "Items per row", 12, 8, 20),
@@ -186,6 +188,8 @@ B.Section("bags", "collections", "Pinned and recent items", {
     B.Bool("showRecent", "Show recent items", true),
     B.Bool("showPinnedHint", "Show pinned item hints", true),
     B.Bool("showRecentHint", "Show recent item hints", true),
+    B.Bool("recentNewTypesOnly", "Recent items: hide gains of stackable items I already carry", false),
+    B.Bool("showRecentGains", "Recent items: show the amount picked up", false),
     B.Number("recentHours", "Keep recent items for (hours)", 24, 1, 168),
 })
 B.Section("bags", "bank", "Bank organisation", {
@@ -210,6 +214,10 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 })
 
 local rules = NS.SuiteCatalog.bags.rules
+rules.markReagentBagOrigin.hidden = NS.Client.isForever
+rules.markReagentBagOrigin.enableKey = "combineReagentBag"
+rules.recentNewTypesOnly.enableKey = "showRecent"
+rules.showRecentGains.enableKey = "showRecent"
 rules.combineReagentBag.requiresChoice = { key = "inventoryView", values = {
     [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,
 } }

@@ -13,6 +13,25 @@ P.Gates[ID] = function(rule)
     end
     return true
 end
+local function CraftingWindowRow()
+    local row = P.Meta(PAGE, ID, "ownTradeskillsWindow", "setting", PAGE .. "_tools")
+    row.id, row.label, row.kind = "ownTradeskillsWindow", Tr("Crafting filter chat window"), "dropdown"
+    row.settingKey = row.id
+    row.values = function()
+        local values = { { value = 0, text = Tr("All chat windows") } }
+        for index = 1, math.min(Constants.ChatFrameConstants.MaxChatWindows, 12) do
+            local title = P.S.PublicText((GetChatWindowInfo(index)))
+            if title and title ~= "" then
+                values[#values + 1] = { value = index, text = ("%s (%d)"):format(title, index) }
+            end
+        end
+        return values
+    end
+    row.get = function() return P.Get(ID, row.id) end
+    row.set = function(value) P.Set(ID, row.id, value) end
+    return row
+end
+
 -- Build native timestamps and history controls only when Chat tools opens.
 local function ToolsExtra(ctx, body, y, width)
     local function TimestampValues()
@@ -46,7 +65,9 @@ local function ToolsExtra(ctx, body, y, width)
     row.get = function() return C_CVar.GetCVar("showTimestamps") or "none" end
     row.set = function(value) if type(value) == "string" then C_CVar.SetCVar("showTimestamps", value) end end
     row.settingKey = "showTimestamps"
-    local grid = P.W.SettingsRows(ctx, body, { x = 16, y = y, width = width, columns = 2, rows = { row } })
+    local grid = P.W.SettingsRows(ctx, body, {
+        x = 16, y = y, width = width, columns = 2, rows = { row, CraftingWindowRow() },
+    })
     P.Button(ctx, body, "Clear saved chat history", 16, grid.bottomY, width, function()
         P.Confirm("clear-chat-history",
             Tr("Clear the saved chat history of this character in every chat window? This cannot be undone."), function() History(true) end)

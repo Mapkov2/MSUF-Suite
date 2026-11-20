@@ -136,7 +136,7 @@ local function Test(forever)
             DeferHidden = function() return false end,
             Isolate = function(callback, ...) callback(...); return true end,
         },
-        GenericWindows = {},
+        GenericWindows = { PrepareWindowMotion = function() end },
         GenericWindowsShared = {
             DEFAULT_OWNER = "generic",
             OwnerState = function(owner)
@@ -145,7 +145,7 @@ local function Test(forever)
             end,
             OwnerKey = function(owner) return owner end,
             CanSkin = function() return true end,
-            CatalogMode = function(mode) return mode end,
+            CatalogMode = function(mode) return type(mode) == "table" and mode or {} end,
             ApplyFrameNow = function(frame)
                 genericPaints = genericPaints + 1
                 Check(frame == itemReference, "shared tooltip went through generic traversal")
@@ -158,6 +158,7 @@ local function Test(forever)
             Check(frame == itemReference, "shared tooltip registered with the window controls")
         end, DisableOwner = function() end },
         MacroWindow = { Disable = function() end },
+        CatalogShopMotion = { Disable = function() end },
     }
 
     for _, path in ipairs({ "Core/Safety.lua", "Rendering/Geometry.lua", "Rendering/Surface.lua",

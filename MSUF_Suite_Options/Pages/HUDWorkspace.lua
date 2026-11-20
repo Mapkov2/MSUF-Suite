@@ -2,6 +2,7 @@ local _, P = ...
 local W, M, Tr, HM = P.W, P.M, P.Tr, P.HM
 local Page = {}
 P.HUDMenu = Page
+local PAGE = "suite_hud"
 local selected = "objectives"
 local FEATURES = {
     { id = "objectives", label = "Objective Tracker" },
@@ -11,6 +12,38 @@ local FEATURES = {
     { id = "characterPanel", label = "Character Panel" },
     { id = "extras", label = "Additional displays" },
 }
+
+local function CharacterSkinEnabled()
+    return P.Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+end
+
+local function ResetFeature(id)
+    if id == "extras" then return P.QoLOwners.Reset(PAGE, true) end
+    if not P.S.Reset(id) then return false end
+    if id == "characterPanel" and CharacterSkinEnabled() then P.SkinPageKit.ResetCharacter() end
+    return true
+end
+
+function Page.ResetKey()
+    return PAGE .. ":" .. selected
+end
+
+Page.ResetTargets = {}
+for index, feature in ipairs(FEATURES) do
+    local id = feature.id
+    local target = {
+        key = PAGE .. ":" .. id, title = feature.label, ownerPage = PAGE,
+        resetPage = function() return ResetFeature(id) end,
+    }
+    if id == "extras" then
+        target.canReset = function() return P.QoLOwners.HasFeatures(PAGE) end
+    elseif id == "characterPanel" then
+        target.prepareReset = function()
+            return not CharacterSkinEnabled() or P.SkinPageKit.Engine() ~= nil
+        end
+    end
+    Page.ResetTargets[index] = target
+end
 
 local function Height(ui)
     HM.SetSectionCursor(ui.body, -(ui.groups[ui.selected].height or 80) + 12)
@@ -27,6 +60,7 @@ end
 
 local function Choose(ui, id)
     if not ui.groups[id] then return end
+    local changed = selected ~= id
     ui.selected, selected = id, id
     for key, group in pairs(ui.groups) do group.frame:SetShown(key == id) end
     if ui.selector then ui.selector:SetValue(id) end
@@ -42,6 +76,7 @@ local function Choose(ui, id)
     end
     if ui.characterPreview then ui.characterPreview:SetShown(character) end
     PreviewHeight(ui, character and (ui.characterPreviewHeight or 204) or hasPreview and 326 or 62)
+    if changed and M.RefreshToolbarPageReset then M.RefreshToolbarPageReset() end
 end
 
 local function Child(ui, id)

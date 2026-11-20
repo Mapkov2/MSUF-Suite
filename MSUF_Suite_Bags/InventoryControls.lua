@@ -11,13 +11,54 @@ local function State() return InventoryView.State() end
 local function Request() InventoryView.Request() end
 local function MoveScroll(delta) InventoryView.MoveScroll(delta) end
 
+local ClearRecent
+local function CategoryMenu(button)
+    local key = button.categoryKey
+    local index = InventoryView.model.customIndex[key]
+    local saved, profile = M.config.customCategories, NS.DB
+    local function Active()
+        return M.active and NS.DB == profile and not NS.InCombat()
+    end
+    S.ContextMenu(button, function(_, menu)
+        if key == "pinned" then
+            menu:CreateButton(S.Text("Edit pinned items"), function()
+                if Active() then P.InventoryEditor.ShowPinned() end
+            end)
+        elseif key == "recent" then
+            menu:CreateButton(S.Text("Clear recent items"), function()
+                if Active() then ClearRecent() end
+            end)
+        elseif index then
+            menu:CreateButton(S.Text("Edit this category"), function()
+                if Active() and M.config.customCategories == saved then P.InventoryEditor.Show(false, index) end
+            end)
+            menu:CreateButton(S.Text("Rename this category"), function()
+                if Active() and M.config.customCategories == saved then P.InventoryEditor.Show(false, index, true) end
+            end)
+            menu:CreateButton(S.Text("Hide this category"), function()
+                if not Active() or M.config.customCategories ~= saved then return end
+                local categories = Model.DecodeCategories(saved)
+                categories[index].enabled = false
+                local encoded = Model.EncodeCategories(categories)
+                if encoded then S.Set("bags", "customCategories", encoded) end
+            end)
+        else
+            local rule = "category_" .. (key:match("^[^:]+") or key)
+            if NS.SuiteCatalog.bags.rules[rule] then
+                menu:CreateButton(S.Text("Hide this category"), function()
+                    if Active() then S.Set("bags", rule, false) end
+                end)
+            end
+            menu:CreateButton(S.Text("Edit bag categories"), function()
+                if Active() then P.InventoryEditor.Show() end
+            end)
+        end
+    end)
+end
+
 local function SelectCategory(button, mouseButton)
     if mouseButton == "RightButton" then
-        if button.categoryKey == "pinned" then
-            P.InventoryEditor.ShowPinned()
-        else
-            P.InventoryEditor.Show()
-        end
+        if not NS.InCombat() then CategoryMenu(button) end
         return
     end
     if not P.BagLayout.CanRender() or InventoryView.selected == button.categoryKey then return end
@@ -154,7 +195,7 @@ local function CanClearRecent()
     return M.active and M.config.showRecent and not (offline and offline.Active()) and State()
 end
 
-local function ClearRecent()
+ClearRecent = function()
     if NS.InCombat() or not CanClearRecent() then return end
     Index.ClearRecent(Index.Recent())
     Request()

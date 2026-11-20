@@ -182,9 +182,14 @@ end
 -- PreClick of a Forever row or header: writes only the button's own
 -- attributes; row.secureWindow tells the click handler that Blizzard's
 -- button took the click.
+function O.IsQuestCollapseClick(row, mouseButton)
+    return mouseButton == "LeftButton" and row.altCollapse and O.M.config.altClickQuestCollapse
+        and IsAltKeyDown() and not WatchTogglePressed()
+end
+
 function O.RowPreClick(row, mouseButton)
     local target
-    if row.kind ~= "section" and not NS.IsCombatLocked() then
+    if row.kind ~= "section" and not NS.IsCombatLocked() and not O.IsQuestCollapseClick(row, mouseButton) then
         if S.GamepadUI() then
             if mouseButton == "LeftButton" then
                 target = not WatchTogglePressed() and WindowButton(row) or nil

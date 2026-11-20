@@ -86,6 +86,11 @@ local function ShowReplacement(tooltip, slot, price)
     local name, _, _, _, _, _, _, _, _, _, vendor = C_Item.GetItemInfo(link)
     name = S.PublicText(name)
     if not name or not S.Finite(vendor) or vendor < 0 or vendor ~= math.floor(vendor) then return end
+    if slot == "MainHandSlot" then
+        name = S.Text("Main Hand: %s"):format(name)
+    elseif slot == "SecondaryHandSlot" then
+        name = S.Text("Off Hand: %s"):format(name)
+    end
     Lines.Line(tooltip, "Vendor sell price of equipped item", name .. "  " .. Copper(vendor))
     local difference = price - vendor
     if difference < 0 then
@@ -123,12 +128,24 @@ local function CanEquip(id)
     return S.Public(usable) and usable == true
 end
 
+local function AddAuctionPrice(tooltip, price, quantity, browse)
+    if browse or not PositiveInteger(quantity) or quantity == 1 then
+        Lines.Line(tooltip, browse and "AH price from" or "AH buyout price", Copper(price))
+        return
+    end
+    Lines.Line(tooltip, "AH stack buyout price", S.Text("%s for %d items"):format(Copper(price), quantity))
+    local unitPrice = price / quantity
+    local rounded = math.floor(unitPrice + .5)
+    Lines.Line(tooltip, unitPrice == rounded and "AH price per item" or "Approximate AH price per item", Copper(rounded))
+end
+
 local function ShowPrices(tooltip, data, row, id, browse)
     local price = row.buyoutAmount
     if browse then price = row.minPrice end
     local hasPrice = PositiveInteger(price)
+    local quantity = row.quantity
     if hasPrice then
-        Lines.Line(tooltip, browse and "AH price from" or "AH buyout price", Copper(price))
+        AddAuctionPrice(tooltip, price, quantity, browse)
     end
 
     local link = S.PublicText(row.itemLink)
@@ -139,7 +156,7 @@ local function ShowPrices(tooltip, data, row, id, browse)
     end
 
     equip = S.PublicText(equip)
-    local quantity, owned, ownedByCharacter = row.quantity, row.containsAccountItem, row.containsOwnerItem
+    local owned, ownedByCharacter = row.containsAccountItem, row.containsOwnerItem
     if not browse and link and equip and hasPrice
         and S.Public(quantity) and quantity == 1 and S.Public(owned) and owned == false
         and S.Public(ownedByCharacter) and ownedByCharacter == false and CanEquip(id) then

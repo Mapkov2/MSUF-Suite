@@ -111,8 +111,8 @@ local GEOMETRY_CHOICES = {
 local OPTIONAL_MOTION_KEYS = { "menuAnimations", "reduceMotion", "readableValues", "dropdownDimming", "windowFocusDimming",
     "smoothScrolling", "adaptiveScrolling", "scrollEdgeBounce" }
 
--- Optional booleans stay absent in older profiles and retain explicit false
--- through sanitization, copy and import without adding factory defaults.
+-- Missing motion options keep their legacy behavior. Preserve explicit
+-- choices through sanitization, copy and import.
 local function CopyMotionOptions(source, target)
     for index = 1, #OPTIONAL_MOTION_KEYS do
         local key = OPTIONAL_MOTION_KEYS[index]
@@ -120,6 +120,8 @@ local function CopyMotionOptions(source, target)
         if type(source) == "table" then value = source[key] end
         if type(value) == "boolean" then target[key] = value else target[key] = nil end
     end
+    local mode = type(source) == "table" and source.windowAnimations
+    target.windowAnimations = IsListed(NS.WindowAnimationModes, mode) and mode or nil
 end
 
 local WINDOW_ACTION_CHOICES = {

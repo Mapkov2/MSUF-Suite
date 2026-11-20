@@ -14,7 +14,7 @@ for _, method in ipairs({
     "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV", "SetWordWrap",
     "SetFrameStrata", "SetMovable", "SetClampedToScreen", "RegisterForDrag",
     "SetAutoFocus", "SetMaxBytes", "SetSpacing", "SetScrollChild", "SetTextColor",
-    "UpdateScrollChildRect", "SetVerticalScroll", "SetFocus", "ClearFocus",
+    "UpdateScrollChildRect", "SetVerticalScroll", "SetFocus", "ClearFocus", "RegisterForClicks",
 }) do Frame[method] = Noop end
 function Frame:SetSize(width, height) self.width, self.height = width, height end
 function Frame:SetWidth(width) self.width = width end

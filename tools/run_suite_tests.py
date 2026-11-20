@@ -139,6 +139,7 @@ EXTRA = {
     "suite_tracker_sources_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_macros_menu_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_options_menu_contract.lua": [[], ["Forever"]],
+    "suite_navigation_contract.lua": [[host, flavor] for host in ("-", str(MSUF_70)) for flavor in FLAVORS],
     "suite_menu_ux_contract.lua": [[], ["Forever"]],
     "suite_buff_reminders_preview_contract.lua": [[], ["Forever"]],
     "suite_meter_menu_preview_contract.lua": [[], ["Forever"]],

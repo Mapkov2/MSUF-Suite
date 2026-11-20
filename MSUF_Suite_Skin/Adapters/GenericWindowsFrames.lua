@@ -505,7 +505,8 @@ local function ApplyFrameNow(frame, owner, mode)
     if ModeValue(mode, "listItem", false) ~= true then GenericWindows.TrackCollapseMotion(frame, owner) end
     ownerState.frames[frame] = true
     if wantsRootSurface and not metrics.accentOnly and not metrics.fullscreenGuarded then
-        GenericWindows.TrackMenuMotion(frame, owner)
+        local role = RootRole(mode)
+        GenericWindows.TrackMenuMotion(frame, owner, role == "shell" or role == "panel")
     end
     NS.WindowControls.Attach(frame, owner)
     return true, "applied", metrics

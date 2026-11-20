@@ -201,6 +201,7 @@ local function AddObjectiveLines(entry, questID, c)
                     local progressText
                     if progressColumn and readableKind and kind ~= "progressbar" then
                         line, progressText = SplitQuestProgress(line, objective)
+                        if progressText and c.showQuestObjectiveIcons then progressText = O.IconQuestProgress(kind, progressText) end
                     end
                     AddLine(entry, line, done, percent, progressText)
                 end
@@ -333,7 +334,7 @@ local function QuestGroupsChanged(self)
     for i = 1, list.count do
         local entry = list[i]
         local group = entry.group
-        if group ~= "focused" then
+        if group ~= "focused" and not (self.config.groupReadyQuests and group == "complete") then
             local collected = (group == "localQuests" or group == "otherQuests") and group or nil
             if ZoneGroup(entry.id, zone) ~= collected then return true end
         end
@@ -350,8 +351,7 @@ local function CollectQuests(list, c)
     -- QuestGroupsChanged; everything else must have been readable here.
     list.zone, list.focus, list.known = zone, focused, false
     partial = false
-    if c.groupQuestsByHeader or c.showQuestLogCount then
-        O.ReadQuestLog(list, c)
+    if c.groupQuestsByHeader or c.showQuestLogCount then O.ReadQuestLog(list, c)
     else
         list.logUsage, list.namedSections, list.sectionByName, list.questHeaders = nil, nil, nil, nil
     end
@@ -365,9 +365,8 @@ local function CollectQuests(list, c)
                 seen[id] = true
                 local title = QuestTitle(id)
                 if title then
-                    -- One snapshot for the category, completion hint and item in this refresh.
                     local complete = Detail(C_QuestLog.IsComplete, id) == true
-                    local group = QuestGroup(id, focused, zone, complete)
+                    local group = QuestGroup(id, focused, not (c.groupReadyQuests and complete) and zone, complete)
                     AddQuest(list, c, id, title, group, true, false, complete)
                     if presentation then O.ApplyQuestLog(list, list[list.count], c) end
                 else
@@ -428,8 +427,10 @@ local function CollectBonus(list, c)
                     local line, kind, done = GetQuestObjectiveInfo(id, j, false)
                     if Text(line) then
                         local percent = Text(kind) == "progressbar" and Read(GetQuestProgressBarPercent, id) or nil
-                        AddQuestObjective(entry, line, Public(done) and done == true,
-                            Finite(percent) and math.max(0, math.min(100, percent)) or nil, c.hideCompletedObjectives)
+                        local complete = Public(done) and done == true
+                        if c.hideCompletedObjectives ~= true or not complete then
+                            AddLine(entry, line, complete, Finite(percent) and math.max(0, math.min(100, percent)) or nil)
+                        end
                     end
                 end
                 if c.showTimers ~= false then entry.timeLeft = QuestTimeLeft(id, true) end

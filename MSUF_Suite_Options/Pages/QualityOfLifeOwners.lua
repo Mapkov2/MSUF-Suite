@@ -49,9 +49,9 @@ function Owners.Build(ctx, builder, page, reveal)
         { heading = page == "opt_misc" and spec.title or nil, compact = true, reveal = reveal })
 end
 
-function Owners.Reset(page)
+function Owners.Reset(page, availableOnly)
     for id in PAGES[page].modules:gmatch("%S+") do
-        if not P.S.Reset(id) then return false end
+        if (not availableOnly or P.Available(id)) and not P.S.Reset(id) then return false end
     end
     return true
 end

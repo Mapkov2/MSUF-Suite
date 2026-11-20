@@ -205,6 +205,7 @@ end
 
 P.RegisterPage({ key = PAGE, label = "HUD", title = "HUD", build = Build, icon = { 7, 1 },
     nav = "interface", navOrder = 7,
+    resetTargets = P.HUDMenu.ResetTargets, resolveResetKey = P.HUDMenu.ResetKey,
     aliases = {
         "objectives", "objective tracker", "run summary", "mythic plus", "raid kill", "announcements", "events", "afk", "hud",
         "suite_characterPanel", "character", "character panel", "inspect", "paperdoll", "reputation", "currency",

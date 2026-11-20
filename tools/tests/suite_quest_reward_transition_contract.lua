@@ -78,17 +78,72 @@ QuestFrameRewardPanel = NativeFrame(quest)
 QuestDetailScrollChildFrame = NativeFrame(QuestFrameDetailPanel)
 QuestRewardScrollChildFrame = NativeFrame(QuestFrameRewardPanel)
 QuestInfoSpacerFrame = NativeFrame(QuestDetailScrollChildFrame)
+QuestInfoObjectivesText = WithOpacity(Text(QuestDetailScrollChildFrame, 0.2, 0.1, 0.1), QuestDetailScrollChildFrame)
+function QuestInfoSpacerFrame:GetPoint(index)
+    assert(index == 1)
+    return "TOPLEFT", self.anchor, "BOTTOMLEFT", 0, -20
+end
 local offerXP, rewardXP, rewardMoney = nil, 0, 0
 local offerItems = { choice = {}, reward = {} }
+local questID, logData, loadCallbacks, preloads = 2846, { [2846] = {} }, {}, {}
+local itemData, itemCallbacks = {}, {}
+C_Item = {
+    GetItemNameByID = function(id) return itemData[id] end,
+    IsItemDataCachedByID = function(id) return itemData[id] ~= nil end,
+}
+ItemEventListener = { AddCallback = function(_, id, callback) itemCallbacks[id] = callback end }
+function GetQuestID() return questID end
+local function NotFading() return false end
+UIFrameIsFading = NotFading
+local atMaxLevel = false
+GameRulesUtil = { IsPlayerAtEffectiveMaxLevel = function() return atMaxLevel end }
+function GetQuestItemInfoLootType() return 0 end
+function HaveQuestRewardData(id) return logData[id] ~= nil end
+QuestEventListener = { AddCallback = function(_, id, callback) loadCallbacks[id] = callback end }
+C_TaskQuest = { RequestPreloadRewardData = function(id) preloads[id] = (preloads[id] or 0) + 1 end }
+local function LogData(id)
+    assert(type(id) == "number", "queried rewards for the selected quest")
+    return logData[id] or {}
+end
+function GetNumQuestLogChoices(id) return #(LogData(id).choice or {}) end
+function GetNumQuestLogRewards(id) return #(LogData(id).reward or {}) end
+function GetQuestLogRewardXP(id) return LogData(id).xp or 0 end
+function GetQuestLogRewardMoney(id) return LogData(id).money or 0 end
+local function LogItem(kind, index, id)
+    local item = (LogData(id)[kind] or {})[index]
+    if item then return item.name, 1, item.count or 1, 2, true, item.itemID end
+end
+function GetQuestLogChoiceInfo(index, id) return LogItem("choice", index, id) end
+function GetQuestLogRewardInfo(index, id) return LogItem("reward", index, id) end
 function QuestDetailScrollChildFrame:CreateFontString()
     local region = NativeFrame(self)
     function region:SetPoint(_, owner) self.anchor = owner end
+    function region:ClearAllPoints() self.anchor = nil end
     function region:SetWidth() end
     function region:SetJustifyH() end
     function region:SetText(text) self.text = text end
     function region:SetTextColor() end
     offerXP = region
     return region
+end
+function CreateFrame(kind, parent)
+    assert(kind == "Frame" and parent == nil)
+    local frame = NativeFrame()
+    function frame:SetParent(owner) self.parent = owner end
+    function frame:SetPoint(_, owner) self.anchor = owner end
+    function frame:SetWidth(width) self.width = width end
+    function frame:SetHeight(height) self.height = height end
+    function frame:CreateFontString(...)
+        local label = QuestDetailScrollChildFrame.CreateFontString(self, ...)
+        function label:SetText(text) self.text, frame.text = text, text end
+        function label:GetStringHeight()
+            local _, newlines = self.text:gsub("\n", "")
+            return (newlines + 1) * 12
+        end
+        frame.label, offerXP = label, frame
+        return label
+    end
+    return frame
 end
 function GetRewardXP() return rewardXP end
 function GetRewardMoney() return rewardMoney end
@@ -102,7 +157,7 @@ function GetNumQuestChoices() return #offerItems.choice end
 function GetNumQuestRewards() return #offerItems.reward end
 function GetQuestItemInfo(kind, index)
     local item = offerItems[kind][index]
-    if item then return item.name, 1, item.count end
+    if item then return item.name, 1, item.count or 1, 2, true, item.itemID end
 end
 local function HasOfferText(text)
     return offerXP and offerXP:IsVisible() and type(offerXP.text) == "string" and offerXP.text:find(text, 1, true)
@@ -123,7 +178,12 @@ nativeEnable = QuestFrameAcceptButton.Enable
 WithOpacity(QuestInfoRewardText, QuestDetailScrollChildFrame)
 WithOpacity(QuestInfoTitleHeader, QuestDetailScrollChildFrame)
 local rewards = NativeFrame(QuestDetailScrollChildFrame)
-rewards.XPFrame = {}
+function rewards:GetPoint(index)
+    assert(index == 1)
+    return "TOPLEFT", self.anchor, "BOTTOMLEFT", 0, -15
+end
+rewards.XPFrame, rewards.MoneyFrame = NativeFrame(rewards), NativeFrame(rewards)
+rewards.Header = WithOpacity(Text(rewards, 0.2, 0.1, 0.1), rewards)
 rewards.ItemChooseText = Text(rewards, 0.1, 0.1, 0.1)
 QuestInfoRewardsFrame = rewards
 QuestInfoFrame = { itemChoice = 0 }
@@ -135,6 +195,31 @@ for index = 1, 2 do
     button.click = function() QuestInfoFrame.itemChoice = index end
     choices[index] = button
 end
+-- QuestInfo_Display anchors the spacer to the last native element. A standalone
+-- QuestInfo_ShowRewards refresh changes rows, but does not rebuild that anchor.
+local function PopulateNative(choicesShown, fixedShown, xpShown, moneyShown, layOut)
+    rewards.activeRewardElements, rewards.RewardButtons = {}, {}
+    local function AddItem(kind, index)
+        local item = offerItems[kind][index]
+        local row = NativeFrame(rewards)
+        row.type, row.objectType, row.questID = kind, "item", questID
+        function row:GetID() return index end
+        row.Name = NativeFrame(row)
+        function row.Name:GetText() return item.name end
+        rewards.RewardButtons[#rewards.RewardButtons + 1] = row
+        rewards.activeRewardElements[#rewards.activeRewardElements + 1] = row
+    end
+    for i = 1, choicesShown do AddItem("choice", i) end
+    for i = 1, fixedShown do AddItem("reward", i) end
+    rewards.XPFrame.shown, rewards.MoneyFrame.shown = xpShown, moneyShown
+    if xpShown then table.insert(rewards.activeRewardElements, rewards.XPFrame) end
+    if layOut then
+        if rewards.shown then rewards.anchor = QuestInfoObjectivesText end
+        QuestInfoSpacerFrame.anchor = rewards.shown and
+            (rewards.activeRewardElements[#rewards.activeRewardElements] or rewards.Header) or QuestInfoObjectivesText
+    end
+end
+rewards.activeRewardElements, rewards.RewardButtons = {}, {}
 local firstClick, secondClick = choices[1].click, choices[2].click
 local function Complete()
     if QuestInfoFrame.itemChoice > 0 then completed = completed + 1 end
@@ -149,6 +234,7 @@ QuestFrameCompleteQuestButton = { click = Complete }
 local function NativeDisplay(parent)
     QuestInfoTitleHeader.parent, QuestInfoRewardText.parent, rewards.parent = parent, parent, parent
     QuestInfoRewardText.shown, rewards.shown = true, true
+    QuestInfoSpacerFrame.parent, QuestInfoSpacerFrame.anchor = parent, rewards.Header
     if callbacks.QuestInfo_Display then callbacks.QuestInfo_Display() end
 end
 QuestInfo_Display = NativeDisplay
@@ -218,11 +304,13 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         NextFrame()
         Check(rewards.alpha == 1 and QuestInfoRewardText.alpha == 1, "offer rewards stayed transparent after reading")
         rewardXP, rewards.shown = 3950, false
+        PopulateNative(0, 0, false, false, true)
         callbacks.QuestInfo_ShowRewards()
         NextFrame()
         Check(offerXP and offerXP:IsVisible() and offerXP.anchor == QuestInfoSpacerFrame
             and offerXP.text == "Experience: 3950", "XP-only offer did not show the reward returned by the client")
         rewards.shown = true
+        PopulateNative(0, 0, true, false, true)
         callbacks.QuestInfo_ShowRewards()
         NextFrame()
         Check(not offerXP:IsShown(), "fallback duplicated Blizzard's reward")
@@ -248,6 +336,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             "item preview hid the XP or money from the same offer")
 
         rewards.shown = true
+        PopulateNative(2, 1, true, true, true)
         callbacks.QuestInfo_ShowRewards()
         NextFrame()
         Check(not offerXP:IsShown(), "item preview duplicated Blizzard's reward block")
@@ -286,6 +375,119 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         callbacks.QuestInfo_ShowRewards()
         NextFrame()
         Check(HasOfferText("Spellshifter Rod"), "readable offer did not recover after restricted data")
+    end
+    do
+        -- Saving Sharpbeak: native ShowRewards may leave a correctly parented
+        -- shell with some displayed rows while the offer knows more rewards.
+        questID = 2994
+        logData[questID] = {}
+        offerItems.choice = { { name = "Gryphon Rider's Stormhammer" }, { name = "Gryphon Rider's Leggings" },
+            { name = "Gryphon Rider's Grip" } }
+        offerItems.reward, rewardXP, rewardMoney = {}, 7350, 22500
+        rewards.shown = true
+        PopulateNative(0, 0, false, false, true)
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        Check(HasOfferText("Stormhammer") and HasOfferText("Leggings") and HasOfferText("Grip") and HasOfferText("7350")
+            and HasOfferText("22500"), "empty attached native shell suppressed Saving Sharpbeak rewards")
+        PopulateNative(1, 0, true, false, true)
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(HasOfferText("Leggings") and HasOfferText("22500"), "partial native render omitted the remaining rewards")
+        Check(not HasOfferText("Stormhammer") and not HasOfferText("7350"), "partial native render duplicated visible rewards")
+        rewards.shown = false
+        rewards.anchor = QuestInfoRewardText -- prior page's preceding paragraph
+        PopulateNative(0, 0, false, false, true)
+        rewards.shown = true
+        PopulateNative(3, 0, true, true, false)
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(HasOfferText("Stormhammer") and HasOfferText("Leggings"), "standalone refresh only populated the old layout")
+        PopulateNative(3, 0, true, true, true)
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        Check(not offerXP:IsShown(), "a complete new native layout retained duplicate preview rows")
+        if nativeFades then
+            rewards.alpha = 0
+            local fading = true
+            UIFrameIsFading = function(region) return fading and region == rewards end
+            callbacks.QuestInfo_ShowRewards()
+            NextFrame()
+            Check(rewards.alpha == 0, "offer recovery interrupted the native fade")
+            fading = false
+            Advance(0.71)
+            NextFrame()
+            Check(rewards.alpha == 1, "shown choice rows stayed transparent after the native offer fade")
+            UIFrameIsFading = NotFading
+        end
+
+        -- A cold offer can have zero active-offer values before acceptance.
+        -- The quest-scoped result arrives before the loot cache in this sequence.
+        questID, offerItems.choice, rewardXP, rewardMoney = 2995, {}, 0, 0
+        logData[questID], loadCallbacks[questID], preloads[questID] = nil, nil, nil
+        rewards.shown = false
+        PopulateNative(0, 0, false, false, true)
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        Check(not offerXP:IsShown() and preloads[questID] == 1, "cold offer inherited choices or did not preload reward data")
+        local loaded = assert(loadCallbacks[questID], "cold offer did not request its quest data")
+        local questEvent = assert(QuestFrame.hooks.OnEvent, "missing late reward cache refresh")
+        for i = 1, 20 do questEvent(QuestFrame, "QUEST_LOG_UPDATE") end
+        Check(#queuedJobs == 0, "unrelated log updates repeatedly repainted an offer with unavailable reward data")
+        loaded()
+        NextFrame()
+        Check(preloads[questID] == 1, "an early quest data result repeatedly requested its reward payload")
+        logData[questID] = { choice = { { name = "Cached Choice" } }, reward = { { name = "Cached Item" } },
+            money = 1234, xp = 888 }
+        questEvent(QuestFrame, "QUEST_LOG_UPDATE")
+        NextFrame()
+        Check(HasOfferText("Cached Choice") and HasOfferText("Cached Item") and HasOfferText("888")
+            and HasOfferText("1234"), "explicit quest reward data did not hydrate a still-open cold offer")
+        offerItems.choice, questID = { { itemID = 9534 } }, 2996
+        itemData[9534], itemCallbacks[9534] = nil, nil
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        loaded()
+        NextFrame()
+        Check(not HasOfferText("Cached Choice") and not HasOfferText("Cached Item"), "an earlier offer leaked into the next one")
+        itemData[9534] = "Newly Loaded Axe"
+        local loadedItem = assert(itemCallbacks[9534], "missing callback for a cold item's name")
+        loadedItem()
+        NextFrame()
+        Check(HasOfferText("Newly Loaded Axe"), "item cache resolved without painting the current offer")
+        questID, offerItems.choice = 2846, {}
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        loadedItem()
+        NextFrame()
+        Check(not HasOfferText("Newly Loaded Axe"), "retired item callback leaked into another quest")
+        -- A count may arrive before its active-offer names and IDs. Only
+        -- supplement a slot when the quest-scoped payload can identify it.
+        questID, offerItems.choice = 2997, { {} }
+        logData[questID] = { choice = { { name = "Warm Quest-Scoped Blade", itemID = 6842 } } }
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        Check(HasOfferText("Warm Quest-Scoped Blade"), "active count with empty slot suppressed matching cached choice")
+        offerItems.choice[1].itemID = 0
+        logData[questID].xp, atMaxLevel = 888, true
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(HasOfferText("Warm Quest-Scoped Blade") and not HasOfferText("888"),
+            "zero item ID lost the available choice or max-level offer displayed unavailable XP")
+        Check(offerXP.parent == QuestDetailScrollChildFrame and offerXP.height >= offerXP.label:GetStringHeight(),
+            "scroll content did not include the height of the entire offer preview")
+        atMaxLevel = false
+        offerItems.choice[1].itemID = 9864
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(not HasOfferText("Warm Quest-Scoped Blade"), "explicit quest row replaced a different active item ID")
+        offerItems.choice[1].itemID = nil
+        logData[questID].choice[2] = { name = "Unmatched Choice" }
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        Check(not HasOfferText("Warm Quest-Scoped Blade") and not HasOfferText("Unmatched Choice"),
+            "ambiguous cached choices replaced an unidentifiable active slot")
+        questID, offerItems.choice = 2846, {}
     end
     QuestFrameProgressPanel:Show()
     -- The fallback line hides with its parent page at once and is settled after the build.
@@ -439,7 +641,8 @@ for _, region in ipairs(painted) do
 end
 for _, region in ipairs({ QuestInfoRewardText, QuestInfoTitleHeader, rewards }) do Counted(region, "SetAlpha") end
 if offerXP then
-    for _, method in ipairs({ "Show", "Hide", "SetText", "SetTextColor" }) do Counted(offerXP, method) end
+    for _, method in ipairs({ "Show", "Hide" }) do Counted(offerXP, method) end
+    for _, method in ipairs({ "SetText", "SetTextColor" }) do Counted(offerXP.label or offerXP, method) end
 end
 for name, callback in pairs(callbacks) do
     if type(name) == "string" then callbacks[name] = Guard(callback) end

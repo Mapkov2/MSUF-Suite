@@ -114,6 +114,19 @@ local function Row(kind, label, key, section, get, set, values, min, max, step)
     return row
 end
 
+function Kit.AddWindowAnimationRow(shape, skin)
+    local label, key = "Window animations", "theme.windowAnimations"
+    local row = Row("dropdown", label, key, "shape", skin.Theme.GetWindowAnimationMode,
+        function(value) Change(skin, label, key,
+            function() return skin.Theme.SetAppearance("windowAnimations", value) end) end,
+        Values(skin.WindowAnimationModes, { subtle = "Subtle", extended = "Extended" }))
+    row.tooltip = Tr("Subtle fades windows in. Extended also animates resizing and closing on supported windows.")
+    row.unavailable = function()
+        if skin.DB.theme.reduceMotion == true then return Tr("Disabled while Reduced motion is on.") end
+    end
+    shape[#shape + 1] = row
+end
+
 function Kit.AddScrollRows(shape, skin)
     local modes = {
         { value = "native", text = Tr("Default") },
@@ -162,7 +175,9 @@ local function ResetSkinSection(skin, id, rows, contextRows)
             if not seen[row.id] then
                 seen[row.id] = true
                 local value = SkinDefault(defaults, row.id)
-                if value ~= nil then changes[#changes + 1] = { row = row, value = value } end
+                if value ~= nil or row.id == "theme.windowAnimations" then
+                    changes[#changes + 1] = { row = row, value = value }
+                end
             end
         end
     end
@@ -264,7 +279,12 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows, 
             GateRows(ctx, grid, visibleRows)
             local entries = {}
             for _, row in ipairs(visibleRows) do
-                entries[#entries + 1] = { widget = grid.controls[row.id], meta = row,
+                local widget = grid.controls[row.id]
+                if widget and row.tooltip and M.AddTooltip then
+                    M.AddTooltip(widget, row.label, row.tooltip, { hook = true,
+                        enabled = function() return not row.unavailable or row.unavailable() == nil end })
+                end
+                entries[#entries + 1] = { widget = widget, meta = row,
                     rule = { key = row.id, label = row.searchLabel }, label = row.label }
             end
             if route then P.HUDMenu.Prepare(body, entries)

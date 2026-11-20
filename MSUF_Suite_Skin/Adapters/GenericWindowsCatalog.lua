@@ -265,6 +265,15 @@ local function PaintEntryFrame(request, index)
     if frameValue == "ItemRefTooltip" and entry.id == "item-reference-tooltips" then
         DrawItemReferenceClose(frame, request.ownerState, owner)
     end
+    local frameMode = type(entry.frameModes) == "table"
+        and type(frameValue) == "string" and entry.frameModes[frameValue] or nil
+    local mode = CatalogMode(frameMode or entry.mode)
+    if entry.id == "catalog-shop" then
+        NS.CatalogShopMotion.Apply(frame, owner)
+    elseif entry.category ~= "hud" and mode.rootSurface ~= false
+        and (mode.role == nil or mode.role == "shell" or mode.role == "panel") then
+        GenericWindows.PrepareWindowMotion(frame, owner)
+    end
     -- Only an unprotected window root waits for its OnShow. HUD and protected roots
     -- (EncounterTimeline, encounter warnings, ExtraActionBar, TargetFrame ...) show
     -- mostly in combat, where they cannot be painted: a deferral woke in combat and
@@ -275,9 +284,7 @@ local function PaintEntryFrame(request, index)
         StoreFrameResult(request, index, false, "waiting")
         return
     end
-    local frameMode = type(entry.frameModes) == "table"
-        and type(frameValue) == "string" and entry.frameModes[frameValue] or nil
-    local ok, reason, metrics = ApplyFrameNow(frame, owner, CatalogMode(frameMode or entry.mode))
+    local ok, reason, metrics = ApplyFrameNow(frame, owner, mode)
     StoreFrameResult(request, index, ok, reason, metrics)
     -- Paint safe cosmetics now; finish protected descendants and window controls
     -- once after combat, or on the next show if the window has closed again.
@@ -479,6 +486,7 @@ end
 
 local function DisableNow(owner)
     NS.MacroWindow.Disable(owner)
+    NS.CatalogShopMotion.Disable(owner)
     local ownerState = OwnerState(owner)
     if ownerState.itemReferenceCell then
         ownerState.itemReferenceCell.itemReferenceOwner = nil

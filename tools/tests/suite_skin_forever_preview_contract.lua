@@ -161,6 +161,7 @@ OpensSetting(preview.fontSample, "fonts", "font.face")
 OpensSetting(buttons.Menu, "shape", "theme.dropdownDimming")
 OpensSetting(buttons.Focus, "shape", "theme.windowFocusDimming")
 OpensSetting(buttons.Preview, "shape", "theme.menuAnimations")
+OpensSetting(buttons["Preview window animation"], "shape", "theme.windowAnimations", "RightButton")
 assert(not preview.menu:IsShown() and not preview.focusVeil:IsShown(), "opening settings changed the preview state")
 local layerButtons = {}
 for _, button in ipairs(preview.layerButtons) do layerButtons[button.key] = button end
@@ -240,8 +241,14 @@ OpensSetting(captions.close, "icons", "icons.windowActions.closeStyle")
 assert(preview.shell:IsShown())
 captions.close:Fire("OnClick", "RightButton")
 assert(not preview.shell:IsShown())
-buttons.Preview:Fire("OnClick", "RightButton")
+buttons["Preview window animation"]:Fire("OnClick", "LeftButton")
 assert(preview.shell:IsShown() and preview.panel:IsShown())
+local opening = assert(skin.ContentMotion.records[preview.shell], "window preview did not start an opening fade")
+assert(opening.window and skin.ContentMotion.active[opening], "window preview used the menu animation setting")
+assert(skin.Theme.SetAppearance("windowAnimations", "off"))
+buttons["Preview window animation"]:Fire("OnClick", "LeftButton")
+assert(not skin.ContentMotion.active[opening], "window preview ignored the Off setting")
+assert(skin.Theme.SetAppearance("windowAnimations", "subtle"))
 local value
 for _, row in ipairs(preview.labels) do if row.value then value = row.region end end
 local _, original = value:GetFont()

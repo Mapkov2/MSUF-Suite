@@ -387,6 +387,7 @@ NS.GeometryBorders = { 0, 1, 2 }
 NS.ControlShapes = { "pill", "round", "continuous", "squircle" }
 NS.GradientDirections = { "VERTICAL", "HORIZONTAL" }
 NS.HoverStyles = { "outline", "softFill", "solidFill", "off" }
+NS.WindowAnimationModes = { "off", "subtle", "extended" }
 NS.IconBorderStyles = { "quality", "theme", "off" }
 NS.WindowActionStyles = { "bare", "soft", "outline", "native" }
 NS.WindowCloseStyles = { "bare", "soft", "outline", "native", "global" }

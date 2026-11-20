@@ -16,6 +16,11 @@ local function Run(flavor)
     NS.Registry.QueueJob = function(callback) jobs[callback] = true end
     NS.Registry.NotifyListeners = Noop
     NS.WindowControls = { TrackFocus = Noop, Attach = Noop, DisableOwner = Noop, Refresh = Noop }
+    NS.WindowControlPolicy = { IsAnimationWindow = function(frame)
+        return not forever and frame == WorldMapFrame
+    end }
+    NS.WindowMotion = { Watch = Noop, Unwatch = Noop }
+    NS.Theme = { GetWindowAnimationMode = function() return "subtle" end }
     NS.Checkmarks.TrackControlTree = Noop
     NS.QuestText = { Activate = Noop, Deactivate = Noop }
     NS.Cosmetics = { Fade = Noop, RestoreOwner = Noop }

@@ -4,6 +4,7 @@ local Model, Index, Grid, FreeSlots = P.InventoryModel, P.InventoryIndex, P.Grid
 local VIEW, Keyring = NS.BagsView, P.KeyringInventory
 -- Recorded inventories (OfflineInventory.lua); absent in partial loads.
 local Offline = P.BagOffline
+local Recent = P.BagRecentCounts
 local POOR = Enum.ItemQuality.Poor
 -- layout: "suite" (Suite grid), "combat" (every slot in physical order, no
 -- Suite controls) or "native" (Blizzard's own grid is showing).
@@ -24,6 +25,7 @@ local EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO
     "BAG_UPDATE", "BAG_UPDATE_DELAYED", "BAG_CONTAINER_UPDATE", "PLAYER_ENTERING_WORLD", "EQUIPMENT_SETS_CHANGED",
     "PLAYER_EQUIPMENT_CHANGED", "INVENTORY_SEARCH_UPDATE", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }
 local ITEM_EVENTS = { "QUEST_REMOVED", "ITEM_LOCK_CHANGED" }
+local RECENT_EVENTS = { "MAIL_INBOX_UPDATE", "TRADE_ACCEPT_UPDATE" }
 
 local function State()
     local state = S.ModuleState("bags")
@@ -205,6 +207,7 @@ local function OnEvent(_, event, value, success)
         return
     end
     if event == "PLAYER_REGEN_DISABLED" then
+        M.resizeCorner = nil
         -- This frame may get the combat edge before the Bags context does.
         if M.config.showTransmogStatus then P.BagTransmog.Pause() end
         -- A fight shows the live bags: every item button must be reachable.
@@ -219,12 +222,19 @@ local function OnEvent(_, event, value, success)
         Flush(event)
         return
     end
+    if InventoryView.recentCountsActive and (event == "BAG_UPDATE_DELAYED" or event == "PLAYER_ENTERING_WORLD"
+        or event == "PLAYER_REGEN_ENABLED"
+        or event == "MAIL_INBOX_UPDATE" or event == "TRADE_ACCEPT_UPDATE") then
+        Recent.Event(M.config, event, value, success)
+    end
+    if event == "MAIL_INBOX_UPDATE" or event == "TRADE_ACCEPT_UPDATE" then return end
     if event == "BAG_UPDATE" then
         Index.InvalidateBag(InventoryView.index, value)
         return
     end
     if event == "PLAYER_REGEN_ENABLED" then InventoryView.positionsDirty = true end
     if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
+        M.resizeCorner = nil
         P.BagWindowMotion.Cancel()
         P.BagResize.Cancel()
         M:RefreshWindowLayout()
@@ -275,6 +285,7 @@ end
 -- Blizzard lays the bag out again when it opens; until the Suite's own pass
 -- (or while protected) its grid is what shows.
 local function WindowHidden()
+    M.resizeCorner = nil
     if P.ReagentInventory then P.ReagentInventory.Release() end
     P.PhysicalSort.Stop()
     if Offline then Offline.Leave(true) end
@@ -306,6 +317,13 @@ local function RegisterEvents()
             events:UnregisterEvent(event)
         end
     end
+    if Recent then
+        local wanted = Recent.Wanted(M.config)
+        InventoryView.recentCountsActive = wanted
+        for _, event in ipairs(RECENT_EVENTS) do
+            if wanted and NS.Client.SupportsEvent(event) then events:RegisterEvent(event) else events:UnregisterEvent(event) end
+        end
+    end
 end
 
 -- In a fight with every bag window closed (CombatIdle.lua) only the combat
@@ -323,11 +341,13 @@ function InventoryView.Pause()
         if not PAUSE_KEEPS[event] and NS.Client.SupportsEvent(event) then events:UnregisterEvent(event) end
     end
     for i = 1, #ITEM_EVENTS do events:UnregisterEvent(ITEM_EVENTS[i]) end
+    for _, event in ipairs(RECENT_EVENTS) do events:UnregisterEvent(event) end
 end
 
 function InventoryView.Resume()
     if not InventoryView.active then return end
     RegisterEvents()
+    if Recent then Recent.Event(M.config, "PLAYER_REGEN_ENABLED") end
     Index.InvalidateBags(InventoryView.index)
     P.InventoryDetails.Invalidate()
 end
@@ -355,6 +375,9 @@ function InventoryView.Refresh()
         InventoryView.events:SetScript("OnEvent", OnEvent)
     end
     RegisterEvents()
+    if Recent then
+        if Recent.Wanted(M.config) then Recent.Event(M.config, "Refresh") else Recent.Reset() end
+    end
     if not InventoryView.hooked then
         hooksecurefunc(InventoryView.frame, "UpdateItems", Request)
         hooksecurefunc(InventoryView.frame, "UpdateItemLayout", NativeLayoutChanged)
@@ -386,6 +409,7 @@ end
 -- return at once (neither is protected); the layout follows when combat ends,
 -- also after a module error stopped the view in combat.
 function InventoryView.Release()
+    if Recent then Recent.Reset() end
     if P.ReagentInventory then P.ReagentInventory.Release() end
     P.PhysicalSort.Stop()
     if Offline then Offline.Leave(true) end

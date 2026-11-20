@@ -34,7 +34,7 @@ local function Session(forever, groupFinderExists)
     local NS = {
         IsCombatLocked = function() return false end,
         DB = { enabled = true, skins = { blizzardWindows = true }, skinCategories = { group = true } },
-        GenericWindows = {},
+        GenericWindows = { PrepareWindowMotion = Noop },
         WindowControls = { TrackFocus = Noop },
         AdapterKit = { Isolate = function(callback, ...) callback(...) return true end, CancelDeferred = Noop, DeferHidden = Noop, CancelHidden = Noop },
         -- GenericWindows.lua's private helpers; ApplyFrameNow paints one root.
@@ -43,7 +43,7 @@ local function Session(forever, groupFinderExists)
             OwnerState = function() return { deferred = {} } end,
             OwnerKey = tostring,
             CanSkin = function() return true end,
-            CatalogMode = function(mode) return mode end,
+            CatalogMode = function(mode) return type(mode) == "table" and mode or {} end,
             ApplyFrameNow = function(frame)
                 painted[#painted + 1] = frame
                 return true, "applied", {}

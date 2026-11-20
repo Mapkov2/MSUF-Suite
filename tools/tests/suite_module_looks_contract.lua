@@ -31,6 +31,7 @@ Minimap = { SetMaskTexture = function() end }
 -- Bags read Blizzard's combined bag setting; the cooldown manager needs
 -- MSUF's codec (no profile string is decoded here).
 C_CVar = { GetCVar = function(name) return name == "combinedBags" and "1" or nil end }
+C_EventUtils = { IsEventValid = function(event) return type(event) == "string" and event ~= "" end }
 MSUF_EncodeCompactTable = function() return "MSUF3:" end
 MSUF_TryDecodeCompactString = function() return nil end
 CreateFrame = function()

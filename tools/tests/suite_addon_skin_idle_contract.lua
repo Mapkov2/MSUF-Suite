@@ -29,11 +29,14 @@ local function Flush()
         job()
     end
 end
+local function NotifyListeners(domain, key)
+    for owner, listener in pairs(settingsListeners) do listener(owner, domain, key) end
+end
 local function Changed(domain)
-    for owner, listener in pairs(settingsListeners) do listener(owner, domain) end
+    NotifyListeners(domain)
     Flush()
 end
-local categoryCallback
+local categoryCallback, currentCategory = nil, "Example"
 EventRegistry = {
     RegisterCallback = function(_, _, callback) categoryCallback = callback end,
     UnregisterCallback = function() categoryCallback = nil end,
@@ -41,7 +44,7 @@ EventRegistry = {
 SettingsPanel = {
     GetCurrentCategory = function()
         reads = reads + 1
-        return { GetName = function() return "Example" end }
+        if currentCategory then return { GetName = function() return currentCategory end } end
     end,
 }
 local enabled = { enabled = false }
@@ -55,17 +58,25 @@ local NS = {
     AddonMenus = { AssignAddon = Noop }, GenericWindows = { Disable = function() releases = releases + 1 end,
         ApplyFrame = function() paints = paints + 1 return true end },
     RestedXPSkin = { Invalidate = Noop }, SpokenSkin = { Install = Noop }, PublicAPI = {},
-    Registry = { AddListener = function(owner, listener) settingsListeners[owner] = listener end,
+    Registry = { AddListener = function(owner, listener) settingsListeners[owner] = listener end, NotifyListeners = NotifyListeners,
         QueueJob = function(job) calls = calls + 1 jobs[job] = true end },
 }
 local function Load(name)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/" .. name .. ".lua"))(NS.addonName, NS)
 end
-Load("AddonSkins")
 local scans = 0
-NS.AddonSkins.InstallTriggers = Noop
-NS.AddonSkins.Discover = function() scans = scans + 1 end
-NS.AddonSkins.ObserveSecondaryWindows = Noop
+local function LoadSkins()
+    Load("AddonSkins")
+    NS.AddonSkins.InstallTriggers = Noop
+    NS.AddonSkins.Discover = function() scans = scans + 1 end
+    NS.AddonSkins.ObserveSecondaryWindows = Noop
+    NS.AddonSkins.ObserveRestedXP = Noop
+end
+local function Window()
+    return { visible = true, IsVisible = function(self) return self.visible end,
+        HookScript = function(self, _, callback) self.shown = callback end }
+end
+LoadSkins()
 Load("AddonSkinSettings")
 -- Already logged in: only the engine's own ADDON_LOADED is delivered.
 local database = NS.DB
@@ -93,8 +104,7 @@ Idle()
 enabled.enabled = true
 Changed("profile")
 assert(NS.AddonSettings.IsApplied("example") and categoryCallback and scans == 1)
-ExampleWindow = { visible = true, IsVisible = function(self) return self.visible end,
-    HookScript = function(self, _, callback) self.shown = callback end }
+ExampleWindow = Window()
 Event("ADDON_LOADED", "ExampleUI")
 Flush()
 assert(paints == 1, "enabled listener missed the late window")
@@ -144,4 +154,58 @@ Changed("profile")
 Event("PLAYER_LOGIN")
 Flush()
 Idle()
-print("optional addon skins: disabled delivery, restoration, late load and re-enable passed")
+
+NS.AddonSkinDefinitions[2] = { label = "RestedXP", id = "restedXP", addons = { "RXPGuides" },
+    roots = {}, paths = { { "RXPV2GuideWindow", "frame" } } }
+NS.RestedXPSkin.Paint = Noop
+local timers = {}
+C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+local function WorldEntry(savedEnabled)
+    frames, settingsListeners, jobs, timers = {}, {}, {}, {}
+    ExampleWindow, RXPV2GuideWindow = nil, nil
+    categoryCallback, currentCategory = nil, nil
+    enabled.enabled = savedEnabled
+    LoadSkins()
+    Load("AddonSkinSettings")
+    Event("ADDON_LOADED", NS.addonName)
+    Event("ADDON_LOADED", "RXPGuides")
+    Event("PLAYER_LOGIN")
+    Flush()
+
+    local foreign = CreateFrame()
+    foreign:RegisterEvent("PLAYER_ENTERING_WORLD")
+    foreign:SetScript("OnEvent", function(self, event)
+        self:UnregisterEvent(event)
+        -- Forever can drain the queue during world entry, before foreign
+        -- listeners have created or updated the windows for this character.
+        Flush()
+        ExampleWindow = Window()
+        RXPV2GuideWindow = { frame = Window() }
+        currentCategory = "Example"
+    end)
+    local scansBefore, paintsBefore, callsBefore, rowsBefore = scans, paints, calls, addonRows
+    Event("PLAYER_ENTERING_WORLD")
+    for _, timer in ipairs(timers) do timer() end
+    Flush()
+    if savedEnabled then
+        local roots = NS.AddonSkins.roots
+        assert(roots[RXPV2GuideWindow.frame] and roots[RXPV2GuideWindow.frame].applied,
+            "saved-enabled startup missed the RestedXP guide window")
+        assert(roots[ExampleWindow] and roots[ExampleWindow].applied, "saved-enabled startup missed another addon window")
+        assert(scans == scansBefore + 1 and paints == paintsBefore + 2, "world entry did not catch up the active roots once")
+        assert(NS.AddonSettings.IsApplied("example") and addonRows == rowsBefore + 1,
+            "saved-enabled startup missed the already open addon Settings category")
+    else
+        assert(#timers == 0 and calls == callsBefore and scans == scansBefore and paints == paintsBefore and addonRows == rowsBefore,
+            "world entry started addon skin work for a disabled profile")
+    end
+
+    scansBefore, callsBefore = scans, calls
+    timers = {}
+    Event("PLAYER_ENTERING_WORLD")
+    Flush()
+    assert(#timers == 0 and calls == callsBefore and scans == scansBefore, "a zone change repeated startup discovery")
+end
+WorldEntry(true)
+WorldEntry(false)
+print("optional addon skins: world entry, disabled delivery, restoration, late load and re-enable passed")

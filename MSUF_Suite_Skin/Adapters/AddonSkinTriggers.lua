@@ -112,6 +112,8 @@ end
 
 function Skins.ObserveRestedXP()
     if not Skins.IsEnabled("restedXP") then return end
+    -- Restoring or switching a guide builds legacy rows without UpdateVisuals.
+    Hook(rawget(_G, "RXP"), "LoadGuide", RestedChanged)
     Hook(rawget(_G, "RXPFrame"), "UpdateVisuals", RestedChanged)
     local window = rawget(_G, "RXPV2GuideWindow")
     Hook(window, "UpdateTheme", RestedChanged)

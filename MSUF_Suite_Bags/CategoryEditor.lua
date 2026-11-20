@@ -196,14 +196,19 @@ local function Create()
     Editor.status:SetTextColor(1, 0.55, 0.2)
 end
 
-function Editor.Show(pinned)
+function Editor.Show(pinned, index, rename)
     if NS.InCombat() then return end
     Editor.editPins = pinned == true
     if not Editor.frame then Create() end
     Editor.profile, Editor.open = NS.DB, true
+    if index then Editor.selected = index end
     NS.Registry.AddListener(Editor, ProfileChanged)
     Refresh()
     Editor.frame:Show()
+    if rename and Editor.categories[Editor.selected] then
+        Editor.name:SetFocus()
+        Editor.name:HighlightText()
+    end
 end
 
 function S.OpenBagCategoryEditor()

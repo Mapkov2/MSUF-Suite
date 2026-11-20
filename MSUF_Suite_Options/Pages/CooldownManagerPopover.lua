@@ -4,7 +4,8 @@ local _, P = ...
 local Page = P.CDMPage
 if not Page then return end
 local W, T, Tr = P.W, P.T, P.Tr
-local CDM = P.Suite.CDM
+local Suite = P.Suite
+local CDM = Suite.CDM
 local FAMILY = CDM.FAMILY
 local ID = Page.ID
 local SLOTS, KEYS = CDM.SLOTS, CDM.KEYS
@@ -35,13 +36,21 @@ local STACK_COLOR = CDM.SPELL_DEFAULTS.stackColor
 local pop
 
 -- A totem slot (kind t) counts its totem down: no charges, glows, ready
--- state or use, only the look of its swipe, countdown and bar, its icon and
--- the spell conditions.
+-- state or use. Its appearance, spell conditions and supported coverage can
+-- be edited here.
 local TOTEM_FIELDS = { swipe = true, timeText = true, threshold = true, icon = true, barColor = true, barText = true,
     requireSpell1 = true, requireSpell2 = true, requireSpell3 = true, excludeSpell1 = true, excludeSpell2 = true, excludeSpell3 = true }
+local function CoverageSlot(key)
+    if not Suite.Client.isForever or CDM.EntryKind(key) ~= "t" then return end
+    local slot = CDM.EntryID(key)
+    if not slot or (slot ~= AIR_TOTEM_SLOT and slot ~= EARTH_TOTEM_SLOT) then return end
+    local _, class = UnitClass("player")
+    if Public(class) and class == "SHAMAN" then return slot end
+end
 -- aura: the entry is a buff, or a cooldown that shows the buff it tracks.
 -- bars: the bar draws bars (buff bars, cooldowns shown as timer bars).
-local function Applies(field, family, kind, aura, barKind, bars)
+local function Applies(field, family, kind, aura, barKind, bars, key)
+    if field.key == "totemCoverage" then return kind == "t" and CoverageSlot(key) ~= nil end
     if kind == "t" then return TOTEM_FIELDS[field.key] == true and not (field.bars and not bars) end
     if field.timer and barKind ~= CDM.KIND.AURA_BAR then return false end
     if field.blizzardOnly and kind ~= "b" then return false end
@@ -541,6 +550,19 @@ local function ScopeClick()
     Page.PaintPopover()
 end
 
+local function CoverageReportSlot(key)
+    local slot = CoverageSlot(key)
+    if not slot or type(Suite.ReportTotemCoverage) ~= "function" then return end
+    local fields = Page.SpellFields(key, true)
+    if fields and fields.totemCoverage == true then return slot end
+end
+
+local function ReportCoverageClick()
+    if P.Combat() then return end
+    local slot = CoverageReportSlot(pop.key)
+    if slot then Suite.ReportTotemCoverage(slot) end
+end
+
 local function EnsurePopover()
     if pop then return pop end
     Page.PreparePopoverFields()
@@ -567,6 +589,9 @@ local function EnsurePopover()
         Button(pop, "Reset this spell", 102, 22, ResetSpellClick), Button(pop, "Copy to all specs", 140, 22, CopyClick),
     }
     pop.scopeButton = Button(pop, "Edit this specialization", 160, 22, ScopeClick)
+    pop.reportCoverage = Button(pop, "Report totem coverage", 180, 22, ReportCoverageClick)
+    local reportWidth = T.MeasureButtonWidth and T.MeasureButtonWidth(pop.reportCoverage, 180, POP_W - 24)
+    if type(reportWidth) == "number" and reportWidth > 0 then pop.reportCoverage:SetWidth(reportWidth) end
     pop.remove, pop.move, pop.reset, pop.copy = pop.actions[1], pop.actions[2], pop.actions[3], pop.actions[4]
     for i = 1, #pop.actions do
         local width = T.MeasureButtonWidth and T.MeasureButtonWidth(pop.actions[i], 60, POP_W - 24)
@@ -586,11 +611,12 @@ end
 -- Places the header actions (Copy only for the player's own entries) and
 -- returns where the rows start, below the scope text however many lines it
 -- wraps to; moves nothing when neither changed.
-local function PlaceActions(copy)
+local function PlaceActions(copy, report)
     local scopeHeight = max(14, pop.scope:GetStringHeight() or 14)
-    if pop.placedCopy == copy and pop.placedScope == scopeHeight then return pop.top end
-    pop.placedCopy, pop.placedScope = copy, scopeHeight
+    if pop.placedCopy == copy and pop.placedScope == scopeHeight and pop.placedReport == report then return pop.top end
+    pop.placedCopy, pop.placedScope, pop.placedReport = copy, scopeHeight, report
     pop.copy:SetShown(copy)
+    pop.reportCoverage:SetShown(report)
     local x, line = 12, 0
     for i = 1, copy and 4 or 3 do
         local button = pop.actions[i]
@@ -607,6 +633,11 @@ local function PlaceActions(copy)
     pop.scopeButton:ClearAllPoints()
     pop.scopeButton:SetPoint("TOPLEFT", pop.scope, "BOTTOMLEFT", 0, -5)
     pop.top = y + scopeHeight + 34
+    if report then
+        pop.reportCoverage:ClearAllPoints()
+        pop.reportCoverage:SetPoint("TOPLEFT", pop.scopeButton, "BOTTOMLEFT", 0, -4)
+        pop.top = pop.top + 26
+    end
     pop.scroll:ClearAllPoints()
     pop.scroll:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -pop.top)
     pop.scroll:SetPoint("BOTTOMRIGHT", pop, "BOTTOMRIGHT", -26, 10)
@@ -657,7 +688,7 @@ function Page.PaintPopover()
         or "These choices apply to this spell on every bar and specialization."))
     pop.scopeButton:SetText(Page.spellSpecScope and "Edit shared choices" or "Edit this specialization")
     pop.scopeButton:SetEnabled(Page.Spec() ~= nil)
-    local top = PlaceActions(kind ~= "b")
+    local top = PlaceActions(kind ~= "b", CoverageReportSlot(pop.key) ~= nil)
     local barKind = Page.Kind(pop.slot)
     local bars = barKind == CDM.KIND.AURA_BAR or barKind == CDM.KIND.COOLDOWN and BarSetting("cooldownDuration") == true
     local hasAura = pop.hasAura or fields and (fields.replaceAura or 0) > 0
@@ -666,7 +697,7 @@ function Page.PaintPopover()
     for i = 1, #FIELDS do
         local field = FIELDS[i]
         local row = pop.rows[field.key]
-        if not field.inline and Applies(field, pop.family, kind, hasAura, barKind, bars) then
+        if not field.inline and Applies(field, pop.family, kind, hasAura, barKind, bars, pop.key) then
             if section ~= field.section then
                 section = field.section
                 Header(section, y)

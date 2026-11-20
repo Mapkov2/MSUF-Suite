@@ -305,6 +305,7 @@ NS = {
     CharacterStats = { IsHost = function() return false end },
     EQoLCharacter = { IsHost = function() return false end },
     MacroWindow = { Apply = function() end, Disable = function() end },
+    CatalogShopMotion = { Apply = function() end, Disable = function() end },
     QuestText = { Activate = function() end, Deactivate = function() end },
     Adapters = { Refresh = function() return true end },
 }
@@ -753,14 +754,14 @@ Section("native character stats stay outside generic skin registration", functio
     local popup = Frame("GearManagerPopupFrame")
     _G.CharacterFrame, _G.GearManagerPopupFrame = character, popup
     local motion = {}
-    GenericWindows.SetMenuMotionProvider(function(frame) motion[frame] = true end, function() end)
+    GenericWindows.SetMenuMotionProvider(function(frame) motion[frame] = true end, function() end, function() end)
     Expect(GenericWindows.ApplyAll("native-character"), "native character catalog pass failed")
     Expect(character.childReads == 0 and stats.childReads == 0 and not motion[character],
         "generic skin traversed or registered menu motion on the native character window")
     Expect(GenericWindows.GetStatus("character") == "applied" and popup.surfaceSpec and motion[popup],
         "native character exclusion also skipped the separate gear manager popup")
     GenericWindows.Disable("native-character")
-    GenericWindows.SetMenuMotionProvider(function() end, function() end)
+    GenericWindows.SetMenuMotionProvider(function() end, function() end, function() end)
     _G.CharacterFrame, _G.GearManagerPopupFrame = nil, nil
 end)
 
@@ -4449,10 +4450,19 @@ Section("hidden windows defer cosmetic work until visible", function()
     InCombatLockdown = priorNativeLockdown
 
     local frame = Window("ColdGenericFrame")
-    local entry = { id = "cold-generic", category = "utility", frames = { frame } }
+    local entry = { id = "cold-generic", category = "utility", frames = { frame }, mode = { role = "panel" } }
+    local prepared, tracked
+    GenericWindows.SetMenuMotionProvider(function(target, owner, _, windowCandidate)
+        if target == frame and owner == "cold-generic" then tracked = windowCandidate end
+    end, function(owner)
+        if owner == prepared then prepared = nil end
+    end, function(target, owner)
+        if target == frame then prepared = owner end
+    end)
     before = Paints()
     GenericWindows.ApplyEntry(entry, "cold-generic")
-    Expect(Paints() == before and frame.surfaceSpec == nil, "hidden catalog frame performed a tree pass")
+    Expect(prepared == "cold-generic" and tracked == nil and Paints() == before and frame.surfaceSpec == nil,
+        "hidden catalog frame did not prepare motion before its deferred tree pass")
     frame.shown, frame.parentShown = true, false
     local cancelHidden, cancellationScans = Kit.CancelHidden, 0
     Kit.CancelHidden = function(owner) cancellationScans = cancellationScans + 1; return cancelHidden(owner) end
@@ -4462,13 +4472,15 @@ Section("hidden windows defer cosmetic work until visible", function()
     Expect(Paints() == before, "a shown frame under a hidden parent performed a tree pass")
     frame.parentShown = true
     frame:Display(true)
-    Expect(frame.surfaceSpec ~= nil and Paints() > before, "catalog frame did not catch up on parent show")
+    Expect(frame.surfaceSpec ~= nil and Paints() > before and tracked == true,
+        "catalog panel did not catch up or retain its window classification on show")
     frame:Display(false)
     GenericWindows.ApplyEntry(entry, "cold-generic")
     GenericWindows.Disable("cold-generic")
     before = Paints()
     frame:Display(true)
-    Expect(Paints() == before, "hidden catalog job survived owner disable")
+    Expect(Paints() == before and prepared == nil, "hidden catalog work survived owner disable")
+    GenericWindows.SetMenuMotionProvider(function() end, function() end, function() end)
 
     local combatWindow = Window("CombatFirstWindow")
     local combatEntry = { id = "combat-first-window", category = "utility", frames = { combatWindow } }
@@ -4785,9 +4797,9 @@ Section("hidden windows defer cosmetic work until visible", function()
 
     local retained = setmetatable({}, { __mode = "v" })
     local metricOwner = { deferred = {} }
-    local metricNS = setmetatable({ GenericWindows = {}, GenericWindowsShared = {
+    local metricNS = setmetatable({ GenericWindows = { PrepareWindowMotion = function() end }, GenericWindowsShared = {
         DEFAULT_OWNER = "metrics", OwnerState = function() return metricOwner end,
-        OwnerKey = tostring, CatalogMode = function(mode) return mode end,
+        OwnerKey = tostring, CatalogMode = function(mode) return type(mode) == "table" and mode or {} end,
         CanSkin = function() return true end, DeactivateOwner = function() end,
         ApplyFrameNow = function()
             local metrics = { nodes = 1, surfaces = 2, controls = 3, scrollBars = 4, protected = 0, errors = 0 }

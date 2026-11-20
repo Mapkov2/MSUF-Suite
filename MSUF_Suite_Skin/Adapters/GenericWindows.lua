@@ -25,11 +25,14 @@ end
 local TrackCollapseMotion, ReleaseCollapseMotion = function() end, function() end
 function GenericWindows.SetCollapseMotionProvider(track, release) TrackCollapseMotion, ReleaseCollapseMotion = track, release end
 function GenericWindows.TrackCollapseMotion(target, owner) TrackCollapseMotion(target, owner) end
-local TrackMenuMotion, ReleaseMenuMotion = function() end, function() end
-function GenericWindows.SetMenuMotionProvider(track, release)
-    TrackMenuMotion, ReleaseMenuMotion = track, release
+local TrackMenuMotion, ReleaseMenuMotion, PrepareWindowMotion = function() end, function() end, function() end
+function GenericWindows.SetMenuMotionProvider(track, release, prepare)
+    TrackMenuMotion, ReleaseMenuMotion, PrepareWindowMotion = track, release, prepare
 end
-function GenericWindows.TrackMenuMotion(target, owner) return TrackMenuMotion(target, owner) end
+function GenericWindows.TrackMenuMotion(target, owner, window)
+    return TrackMenuMotion(target, owner, false, window)
+end
+function GenericWindows.PrepareWindowMotion(target, owner) PrepareWindowMotion(target, owner) end
 local TrackContentMotion, ReleaseContentMotion = function() end, function() end
 function GenericWindows.SetContentMotionProvider(track, release)
     TrackContentMotion, ReleaseContentMotion = track, release

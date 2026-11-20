@@ -295,6 +295,15 @@ local standalone = Target("Button", parent)
 Surface.Attach(standalone, { role = "button", interactive = true })
 NS.DB.theme.controlOpacity = 0.4
 Check(NS.Theme.SetAppearance("menuAnimations", false), "animation switch rejected false")
+Check(NS.Theme.GetWindowAnimationMode() == "off" and not Motion.WindowEnabled(), "legacy menu opt-out was lost")
+do
+    local windowSpec = { windowAnimation = true }
+    Check(NS.Theme.SetAppearance("windowAnimations", "extended"), "window animation choice rejected")
+    Check(not Motion.Enabled() and Motion.WindowEnabled() and Motion.Enabled(windowSpec),
+        "explicit window animation did not work independently of menu animation")
+    Check(not NS.Theme.SetAppearance("windowAnimations", "invalid"), "unknown window mode was accepted")
+    NS.DB.theme.windowAnimations = nil
+end
 button:Fire("OnEnter")
 Check(Motion.count == 0 and state.highlight:GetAlpha() > 0, "off did not restore native static hover")
 standalone:Fire("OnEnter")
@@ -304,6 +313,8 @@ Check(NS.Registry.GetSurface(standalone).hoverOverlay:IsShown()
 local r, g, b, alpha = NS.Theme.GetColor("buttonFill")
 Check(math.abs(select(4, state.fill:GetVertexColor()) * state.fill:GetAlpha() - alpha * 0.4) < 0.000001, "motion cleanup overwrote new material opacity")
 Check(NS.Theme.SetAppearance("menuAnimations", true), "animation switch failed")
+Check(NS.Theme.GetWindowAnimationMode() == "subtle" and Motion.WindowEnabled()
+    and not Motion.Enabled({ windowAnimation = true }), "legacy default enabled extended effects")
 Check(NS.Theme.SetAppearance("windowFocusDimming", false) and NS.DB.theme.windowFocusDimming == false
     and NS.DB.theme.dropdownDimming == nil, "window dimming setting is missing or changed dropdown dimming")
 Check(NS.Theme.SetAppearance("windowFocusDimming", true) and NS.DB.theme.windowFocusDimming == true,

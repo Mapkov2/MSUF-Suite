@@ -56,6 +56,8 @@ local entries = {
     { "addonSkins", L["Skin other addons"], "addon skins addons fremde addons" },
     { "addonSkins", L["AceGUI / AceConfig windows"], "acegui aceconfig ace3 settings options" },
     { "dashboard", NS.L.MASTER_ENABLE, "master on off engine" },
+    { "looks", L["Window animations"], "fade open close resize minimize maximize motion" },
+    { "looks", L["Reduced motion"], "animations movement accessibility" },
     { "looks", L["Style preset"], "complete coordinated authored look " .. lookCatalogKeywords },
     { "looks", L["Shaded surfaces"], "material gradient on off", EXPERT },
     { "looks", L["Light direction"], "gradient horizontal vertical", EXPERT },

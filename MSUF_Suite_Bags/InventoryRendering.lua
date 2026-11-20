@@ -107,6 +107,7 @@ end
 local function SetWindowSize(width, height)
     local frame = InventoryView.frame
     if frame:GetWidth() == width and frame:GetHeight() == height then return end
+    M:PinBagResizeCorner()
     frame:SetSize(width, height)
     M:RefreshWindowLayout()
 end
@@ -273,6 +274,29 @@ local function Measure(c, listed)
     return layout
 end
 
+local function PaintInventoryHints(c, view)
+    local annotated = c.showRecentGains and view.model.recentAnnotated
+    if annotated then
+        for _, row in ipairs(annotated) do
+            local button = row.item.button
+            local slot = button and view.slotState[button]
+            if slot and slot.row == row and view.visibleButtons[button] and button.Count then
+                button.Count:SetText(row.recentCountText)
+                button.Count:Show()
+            end
+        end
+    end
+    local Details = P.InventoryDetails
+    if view.reagentHints then Details.HideReagentOrigins() end
+    view.reagentHints = c.markReagentBagOrigin and view.context.hasReagent
+    if view.reagentHints then
+        for button in pairs(view.visibleButtons) do
+            local row = view.slotState[button].row
+            if row then Details.PaintReagentOrigin(button, row) end
+        end
+    end
+end
+
 function Rendering.Suite(visualPass)
     InventoryView = P.InventoryView
     local c = P.BagResize.active and P.BagResize.config or M.config
@@ -294,6 +318,7 @@ function Rendering.Suite(visualPass)
     else
         PaintGrid(layout, g, columns, visibleRows, sidebar, font)
     end
+    if c.showRecentGains or c.markReagentBagOrigin or InventoryView.reagentHints then PaintInventoryHints(c, InventoryView) end
     HideUnplaced()
     InventoryView.layout = "suite"
     InventoryView.ShowChrome(true)
@@ -317,6 +342,7 @@ end
 function Rendering.Combat()
     P.BagHover.Clear()
     InventoryView = P.InventoryView
+    if InventoryView.reagentHints then P.InventoryDetails.HideReagentOrigins() end
     local items = InventoryView.index.items
     local total = #items
     local line = P.BagFinance.HasLine() and P.BagFinance.LINE or 0

@@ -33,31 +33,33 @@ local function Coordinates(message)
     return nil
 end
 
+local function Parse(message, current)
+    if not S.PublicText(message) then return end
+    local mapID, x, y = Coordinates(message)
+    local named = S.Navigation and S.Navigation.Parse(message, current)
+    if named then return named.map, named.x, named.y, named end
+    if not x or x < 0 or x > 100 or y < 0 or y > 100 then return end
+    return mapID or current, x / 100, y / 100
+end
+S.ParseSuiteWaypoint = Parse
+
 local function Refuse()
     S.Print(S.Text("A waypoint cannot be set on this map"))
 end
 
 local function Place(message)
     if not M.active then return end
-    local mapID, x, y = Coordinates(message)
-    local named
-    if S.Navigation then
-        local current = WorldMapFrame:IsShown() and WorldMapFrame:GetMapID() or C_Map.GetBestMapForUnit("player")
-        named = S.Navigation.Parse(message, current)
-        if named then mapID, x, y = named.map, named.x * 100, named.y * 100 end
-    end
-    if not x or x < 0 or x > 100 or y < 0 or y > 100 then
+    local mapShown = WorldMapFrame:IsShown()
+    local current = mapShown and WorldMapFrame:GetMapID() or C_Map.GetBestMapForUnit("player")
+    local mapID, x, y, named = Parse(message, current)
+    if not x then
         S.Print(S.Text("Usage: /way x y or /way mapID x y"))
         return
-    end
-    local mapShown = WorldMapFrame:IsShown()
-    if not mapID then
-        mapID = mapShown and WorldMapFrame:GetMapID() or C_Map.GetBestMapForUnit("player")
     end
     if not S.Finite(mapID) then return Refuse() end
     local allowed = C_Map.CanSetUserWaypointOnMap(mapID)
     if not S.Public(allowed) or allowed ~= true then return Refuse() end
-    local placed = C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(mapID, x / 100, y / 100))
+    local placed = C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(mapID, x, y))
     if not S.Public(placed) or placed ~= true then return Refuse() end
     if named then S.Navigation.Remember(named, "manual") end
     if M.config.superTrack then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end

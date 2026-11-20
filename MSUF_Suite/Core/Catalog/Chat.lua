@@ -257,6 +257,8 @@ B.Section(id, "text", "Message text", {
 NS.ChatLineLimits = { 256, 512, 1000, 2000 }
 local lineChoices = { "Keep Blizzard's setting" }
 for index, lines in ipairs(NS.ChatLineLimits) do lineChoices[index + 1] = NS.Text("%d lines"):format(lines) end
+local tradeskillWindow = B.Number("ownTradeskillsWindow", "Crafting filter chat window", 0, 0, 12)
+tradeskillWindow.hidden = true
 B.Section(id, "tools", "Chat tools", {
     B.Bool("saveHistory", "Save chat history for this character and tab", false),
     B.Number("historyLines", "Saved lines per tab", 200, 20, 1000, 20),
@@ -276,6 +278,8 @@ B.Section(id, "tools", "Chat tools", {
     B.Number("whisperSoundKit", "Whisper sound kit ID (0 disables)", 0, 0, 1000000),
     B.String("whisperSound", "Custom whisper sound file", "", 240),
     B.Bool("completeMessages", "Show only complete messages", false),
+    B.Bool("ownTradeskillsOnly", "Show only my crafting in Tradeskills chat", false),
+    tradeskillWindow,
     B.Bool("copyMessages", "Show Copy button for chat messages", false),
     B.Number("copyButtonX", "Copy button X", 0, -200, 200),
     B.Number("copyButtonY", "Copy button Y", 0, -200, 200),

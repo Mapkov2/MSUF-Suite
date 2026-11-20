@@ -90,6 +90,7 @@ function Index.ExpireRecent(recent, now, hours)
         local arrived = items[order[i]]
         if not S.Finite(arrived) or arrived >= oldest then break end
         items[order[i]] = nil
+        if type(recent.gains) == "table" then recent.gains[order[i]] = nil end
         first = i + 1
     end
     if first == 1 then return end
@@ -142,9 +143,29 @@ local function Remember(recent, itemID, now)
     local order = recent.order
     if #order >= 200 then
         recent.items[order[1]] = nil
+        if type(recent.gains) == "table" then recent.gains[order[1]] = nil end
         table.remove(order, 1)
     end
     order[#order + 1], recent.items[itemID] = itemID, now
+end
+
+function Index.RememberRecentGain(recent, itemID, before, count, transfer, now)
+    recent.gains = type(recent.gains) == "table" and recent.gains or {}
+    local added, previous = count - before, recent.gains[itemID]
+    if recent.items[itemID] and type(previous) == "table" and previous.count == before
+        and S.Finite(previous.added) and previous.added > 0 and previous.added <= before then
+        added = added + previous.added
+        transfer = transfer or previous.fromTransfer == true
+    end
+    if recent.items[itemID] then
+        for i, orderedID in ipairs(recent.order) do
+            if orderedID == itemID then table.remove(recent.order, i) break end
+        end
+        recent.items[itemID] = nil
+    end
+    recent.dismissed[itemID] = nil
+    Remember(recent, itemID, now)
+    recent.gains[itemID] = { count = count, added = added, fromTransfer = transfer == true }
 end
 
 -- The view state: pinned items and the collapsed groups (under collapsedKey)
@@ -156,7 +177,9 @@ function Index.State(state, view, collapsedKey)
     state[collapsedKey] = type(state[collapsedKey]) == "table" and state[collapsedKey] or {}
     state.recent, state.recentOrder, state.dismissedRecent = nil, nil, nil
     view = view or {}
-    view.pinned, view.recent, view.collapsed = state.pinned, Index.Recent().items, state[collapsedKey]
+    local recent = Index.Recent()
+    view.pinned, view.recent, view.collapsed = state.pinned, recent.items, state[collapsedKey]
+    view.recentGains = type(recent.gains) == "table" and recent.gains or nil
     return view
 end
 
@@ -389,5 +412,6 @@ function Index.ClearRecent(recent)
     for itemID in pairs(recent.items) do
         recent.dismissed[itemID], recent.items[itemID] = true, nil
     end
+    recent.gains = nil
     for i = #recent.order, 1, -1 do recent.order[i] = nil end
 end

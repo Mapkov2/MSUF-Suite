@@ -52,9 +52,37 @@ end
 
 local function Finished(group) Content.active[group.record] = nil end
 
+local function IsWindowWatch(watch)
+    if not watch then return end
+    for _, kind in pairs(watch.owners) do
+        if kind == "window" then return true end
+    end
+end
+
+local function Enabled(window)
+    if window then return Motion.WindowEnabled() end
+    return Motion.Enabled()
+end
+
+local function OpensIndependently(source)
+    return not IsWindowWatch(Content.watchers[source])
+end
+
+local function OpeningOwner(watch, preferred)
+    local source = watch.owners[preferred]
+    if source and OpensIndependently(source) then return preferred end
+    for owner, root in pairs(watch.owners) do
+        if OpensIndependently(root) then return owner end
+    end
+end
+
+function Content.IsWindow(frame)
+    return IsWindowWatch(Content.watchers[frame]) == true
+end
+
 function Content.HasOpeningFade(frame)
     local watch = Content.watchers[frame]
-    return watch ~= nil and next(watch.owners) ~= nil
+    return watch ~= nil and OpeningOwner(watch) ~= nil and Enabled(IsWindowWatch(watch))
 end
 
 -- The native list may lay out before its now-visible window's OnShow hook.
@@ -66,7 +94,7 @@ function Content.DeferToOpening(target, resolve)
         frame = Safety.Read(frame, "GetParent")
         if frame == nil then return end
         local watch = Content.watchers[frame]
-        if watch and not watch.shown and next(watch.owners)
+        if watch and not watch.shown and Content.HasOpeningFade(frame)
             and Safety.CanCreateRegions(frame) and Safety.Read(frame, "IsVisible") == true then
             watch.pending[target] = resolve
             return watch.pending
@@ -74,15 +102,15 @@ function Content.DeferToOpening(target, resolve)
     end
 end
 
-function Content.Play(frame, owner, token)
+function Content.Play(frame, owner, token, window)
     local record = Content.records[frame]
-    if not Motion.Enabled() or not Safety.CanCreateRegions(frame)
+    if record and record.owner ~= nil and record.owner ~= owner then return false end
+    if not Enabled(window) or not Safety.CanCreateRegions(frame)
         or Safety.Read(frame, "IsVisible") ~= true then
-        if record then Stop(record) end
+        if record and record.window == window then Stop(record) end
         return false
     end
-    if record and record.owner ~= nil and record.owner ~= owner then return false end
-    local unchanged = record and record.token == token and record.revision == revision
+    local unchanged = record and record.token == token and record.revision == revision and record.window == window
     if unchanged and Content.active[record] then return true end
     local first = next(Content.active)
     if first and (first ~= record or next(Content.active, first)) then
@@ -103,8 +131,6 @@ function Content.Play(frame, owner, token)
     if not record then
         local group = frame:CreateAnimationGroup()
         local animation = group:CreateAnimation("Alpha")
-        animation:SetDuration(0.12)
-        animation:SetSmoothing("OUT")
         record = { target = frame, group = group, alpha = animation, owner = owner }
         group.record = record
         group:SetScript("OnFinished", Finished)
@@ -120,8 +146,14 @@ function Content.Play(frame, owner, token)
         end
         record.group:Stop()
     end
-    record.owner, record.token, record.revision = owner, token, revision
+    record.owner, record.token, record.revision, record.window = owner, token, revision, window
     -- Replays of the same fade reuse the native animation configuration.
+    local extended = window and NS.Theme.GetWindowAnimationMode() == "extended" or false
+    if record.extended ~= extended then
+        record.alpha:SetDuration(extended and 0.24 or 0.12)
+        record.alpha:SetSmoothing(extended and "IN_OUT" or "OUT")
+        record.extended = extended
+    end
     if record.fromAlpha ~= from then
         record.alpha:SetFromAlpha(from)
         record.fromAlpha = from
@@ -155,11 +187,12 @@ local function Shown(frame)
     local watch = Content.watchers[frame]
     if not watch then return end
     watch.shown = true
-    local owner = next(watch.owners)
+    local record = Content.records[frame]
+    local owner = OpeningOwner(watch, record and record.owner)
     local covered = false
     if owner then
         watch.serial = watch.serial + 1
-        covered = Content.Play(frame, owner, watch.serial)
+        covered = Content.Play(frame, owner, watch.serial, IsWindowWatch(watch))
     end
     CompleteOpening(watch, covered and frame)
 end
@@ -173,7 +206,7 @@ local function QueueMailboxOpening()
     NS.Registry.QueueJob(SettleMailbox)
 end
 
-function Content.Watch(frame, owner)
+function Content.Watch(frame, owner, window, bodyRoot)
     if not Safety.CanCreateRegions(frame)
         or not Safety.HasMethod(frame, "CreateAnimationGroup") then return false end
     local watch = Content.watchers[frame]
@@ -185,7 +218,13 @@ function Content.Watch(frame, owner)
         frame:HookScript("OnShow", onShow)
         if not Content.records[frame] then frame:HookScript("OnHide", Hidden) end
     end
-    watch.owners[owner] = true
+    if window then
+        watch.owners[owner] = "window"
+    elseif watch.owners[owner] ~= "window" then
+        -- A named body discovered under a Blizzard window inherits the
+        -- window's opening. Explicit tab and result fades call Play directly.
+        watch.owners[owner] = bodyRoot or true
+    end
     return true
 end
 
@@ -205,7 +244,13 @@ function Content.UnwatchOwner(owner)
     for _, watch in pairs(Content.watchers) do RemoveOwner(watch, owner) end
 end
 
-local function StopAll(_, event)
+local function StopAll(_, event, key)
+    if event == "motion" and key == "windowAnimations" then
+        for record in pairs(Content.active) do
+            if record.window then Stop(record) end
+        end
+        return
+    end
     local combat = event == "PLAYER_REGEN_DISABLED"
     if not combat then revision = revision + 1 end
     for record in pairs(Content.active) do
@@ -217,5 +262,7 @@ local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:SetScript("OnEvent", StopAll)
 NS.Registry.AddListener(Content, StopAll)
-NS.PublicAPI.PlayContent = Content.Play
+function NS.PublicAPI.PlayContent(frame, owner, token)
+    return Content.Play(frame, owner, token)
+end
 NS.PublicAPI.StopContent = Content.StopOwner

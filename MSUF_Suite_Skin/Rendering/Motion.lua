@@ -10,11 +10,19 @@ local clock = CreateFrame("Frame")
 clock:Hide()
 local driving = false
 
+function Motion.WindowEnabled()
+    local db = NS.DB
+    local theme = db and db.theme
+    return theme ~= nil and db.enabled ~= false and theme.reduceMotion ~= true
+        and NS.Theme.GetWindowAnimationMode() ~= "off"
+end
+
 function Motion.Enabled(spec)
     local db = NS.DB
     local theme = db and db.theme
-    return db ~= nil and db.enabled ~= false and theme ~= nil
-        and theme.menuAnimations ~= false and theme.reduceMotion ~= true
+    if not theme or db.enabled == false or theme.reduceMotion == true then return false end
+    if spec and spec.windowAnimation then return NS.Theme.GetWindowAnimationMode() == "extended" end
+    return theme.menuAnimations ~= false
         and (not spec or spec.motion ~= false and (not spec.ownedArt or spec.motion == true))
 end
 

@@ -103,7 +103,11 @@ local S = {
     Public = function(value) return not IsSecret(value) end,
     PublicText = function(value) return not IsSecret(value) and type(value) == "string" and value ~= "" and value or nil end,
     Finite = function(value) return not IsSecret(value) and type(value) == "number" and value == value end,
-    Text = function(text) return text end,
+    -- Suite.Text: plainSeparators swaps the middle dot for a hyphen (fonts may lack it).
+    Text = function(text, plainSeparators)
+        if plainSeparators == true then return (text:gsub(" · ", " - "):gsub(" • ", " - ")) end
+        return text
+    end,
     Print = function(text) notices[#notices + 1] = text end,
     CreateFrame = function(kind, _, parent, template)
         if combat and SECURE[template] then secureCreated = secureCreated + 1 end

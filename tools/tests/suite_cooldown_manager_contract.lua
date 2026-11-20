@@ -50,7 +50,8 @@ local function Read(path)
     return text
 end
 AuraContainerSortMethod={ExpirationOnly=5}
-local ORDER={"Bootstrap.lua","Const.lua","RankData.lua","ForeverPresets.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua","Icons.lua","Masque.lua",
+local ORDER={"Bootstrap.lua","Const.lua","RankData.lua","ForeverPresets.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua",
+    "TotemCoverageDisplay.lua","TotemCoverage.lua","Icons.lua","Masque.lua",
     "TrackingBars.lua","Time.lua","GlowLines.lua","Effects.lua","AssistIcon.lua", "KickMark.lua","AuraGlows.lua","AuraLooks.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","AuraRecipients.lua","ActionGlows.lua",
     "ActionUsableGlows.lua","ReadyPulse.lua","Alerts.lua","Grid.lua","FrameAnchors.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua","Flush.lua","Settings.lua","Events.lua","Controller.lua","Editor.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)

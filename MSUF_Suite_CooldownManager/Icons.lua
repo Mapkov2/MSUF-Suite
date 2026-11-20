@@ -12,6 +12,7 @@ local KIND, SWIPE = K.KIND, K.SWIPE
 local Icons = {}
 C.Icons = Icons
 local EMPTY = C.EMPTY
+local TotemCoverage = C.TotemCoverage or EMPTY
 local pools = {}
 local owner = {}
 local syncGen = 0
@@ -20,8 +21,6 @@ local SWIPE_ALPHA = K.SWIPE_ALPHA
 local issecret, GetTotemInfo = NS.IsSecret, GetTotemInfo
 
 ------------------------------------------------------------------ scripts
--- Prebuilt handlers shared by every icon; the icon is looked up, never captured.
--- Time needs to know which swipe ran out (main swipe or recharge edge).
 local function CooldownDone(cooldown)
     local icon = owner[cooldown]
     if icon then C.Time.Done(icon, cooldown) end
@@ -31,7 +30,9 @@ local function OnEnter(icon)
     local entry = icon.entry
     if not entry then return end
     local view, bar = C.views[entry.slot], C.bars[entry.slot]
-    if not view or not view.tooltips or (bar and bar.hidden) then return end
+    if not view or (bar and bar.hidden) then return end
+    if entry.src == "t" and TotemCoverage.Hover and TotemCoverage.Hover(icon) then return end
+    if not view.tooltips then return end
     local tip = GameTooltip
     GameTooltip_SetDefaultAnchor(tip, icon)
     local slot = entry.equipSlot or (entry.src == "e" and entry.id)
@@ -41,7 +42,6 @@ local function OnEnter(icon)
     elseif slot then
         tip:SetInventoryItem("player", slot)
     elseif entry.src == "t" then
-        -- An empty totem slot (the editor shows it) has no totem to describe.
         if entry.cooling then tip:SetTotem(entry.id) else tip:SetText(entry.name) end
     elseif entry.src == "i" or entry.categoryItem then
         tip:SetItemByID(entry.categoryItem or entry.itemID or entry.id)
@@ -57,6 +57,7 @@ local function OnEnter(icon)
 end
 
 local function OnLeave(icon)
+    if TotemCoverage.Leave then TotemCoverage.Leave(icon) end
     if GameTooltip:IsOwned(icon) then GameTooltip:Hide() end
 end
 
@@ -519,6 +520,7 @@ end
 function Icons.TotemTexture(entry, have, texture)
     local icon, ov = entry.icon, entry.ov or EMPTY
     if not icon then return end
+    if TotemCoverage.Update and ov.totemCoverage then TotemCoverage.Update(icon) end
     if issecret(texture) and not ov.icon then
         icon.lastTex = nil
         icon.tex:SetTexture(texture)
@@ -547,6 +549,7 @@ function Icons.Apply(entry)
     local ov = entry.ov or EMPTY
     if icon.esEntry == entry and icon.esOv == ov and icon.esStyle == view.styleGen and icon.esBehavior == view.behaviorGen then return end
     icon.esEntry, icon.esOv, icon.esStyle, icon.esBehavior = entry, ov, view.styleGen, view.behaviorGen
+    if entry.src == "t" and TotemCoverage.Sync then TotemCoverage.Sync(icon, entry) end
     if icon.durationBar then C.TrackingBars.Entry(icon, entry, view) end
     Texts(icon, view, ov)
     Icons.StyleCharge(icon)
@@ -598,9 +601,9 @@ function Icons.SetKeybind(entry, text)
     if icon then ApplyKey(icon, text) end
 end
 
--- Blizzard's ping hit test uses ping-receiver independently of mouse clicks.
--- Keep normal clicks passing through while tooltips use mouse motion only.
-local function SetMouse(icon, on)
+-- Mouse motion and ping handling leave clicks passing through.
+local function SetMouse(icon, on, visible)
+    if not on and visible and icon.entry.src == "t" and TotemCoverage.WantsHover then on = TotemCoverage.WantsHover(icon) end
     if icon.mouse == on then return end
     icon.mouse = on
     icon:EnableMouseMotion(on)
@@ -641,6 +644,7 @@ end
 
 -- Returns an icon to its bar's pool. Points stay with the layout layer.
 local function Recycle(pool, icon)
+    if icon.entry and icon.entry.src == "t" and TotemCoverage.Retire then TotemCoverage.Retire(icon) end
     if icon.readinessText then
         Icons.PaintReadiness(icon)
         icon.readinessKnown = nil
@@ -721,7 +725,7 @@ function Icons.Sync(slotKey)
         if icon.styleGen ~= view.styleGen or icon.styleView ~= view then Restyle(icon, view) end
         Icons.Texture(entry)
         Icons.Apply(entry)
-        SetMouse(icon, mouse)
+        SetMouse(icon, mouse, ping)
         SetPing(icon, ping)
         if fresh then
             -- Bag counts were not followed while nothing showed one: read
@@ -755,20 +759,22 @@ function Icons.Style(slotKey)
     for _, icon in pairs(pool.byKey) do
         if icon.styleGen ~= view.styleGen or icon.styleView ~= view then Restyle(icon, view) end
         if icon.entry then Icons.Apply(icon.entry) end
-        SetMouse(icon, mouse)
+        SetMouse(icon, mouse, ping)
         SetPing(icon, ping)
     end
 end
 
--- Visibility: a transparent bar must give up tooltips and ping targets.
--- Plain icon frames remain safe to update in combat; unchanged state writes
--- nothing.
+-- Transparent bars give up hover and ping targets.
 function Icons.SetBarMouse(slotKey, on)
     local pool, view = pools[slotKey], C.views[slotKey]
     if not pool then return end
     local visible = on == true and view ~= nil
     for _, icon in pairs(pool.byKey) do
-        SetMouse(icon, visible and view.tooltips == true)
+        local totem = icon.entry and icon.entry.src == "t"
+        local coverageHover = totem and TotemCoverage.WantsHover and TotemCoverage.WantsHover(icon)
+        if totem and not visible and TotemCoverage.Leave then TotemCoverage.Leave(icon) end
+        if coverageHover then TotemCoverage.Update(icon) end
+        SetMouse(icon, visible and view.tooltips == true, visible)
         SetPing(icon, visible)
     end
 end

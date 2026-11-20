@@ -108,6 +108,10 @@ function R.DismissClick(self, button, mouseButton)
     local entry = button.entry
     if mouseButton ~= "RightButton" and mouseButton ~= "MiddleButton" then return end
     if not entry or NS.IsCombatLocked() or S.editMode then return end
+    if entry.kind == "food" and mouseButton == "RightButton" and IsShiftKeyDown() then
+        if not NS.InCombat() then R.OpenFoodChoices(self, button) end
+        return
+    end
     local view = self.view
     view.dismissed = view.dismissed or {}
     view.dismissed[DismissKey(entry)] = true

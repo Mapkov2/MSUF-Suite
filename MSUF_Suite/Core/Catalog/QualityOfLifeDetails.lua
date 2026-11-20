@@ -167,6 +167,7 @@ B.Module("merchantList", {
 })
 B.Section("merchantList", "merchant_list", "Merchant list", {
     Number("rowHeight", "Offer row height", 44, 36, 72),
+    Bool("hideKnownOffers", "Hide already known recipes and collectibles", false),
 })
 -- inspectHovered sends inspect requests for hovered players, so the module
 -- counts as automation for profile imports.

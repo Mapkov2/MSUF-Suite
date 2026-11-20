@@ -70,7 +70,7 @@ end
 
 function O.ApplyQuestLog(list, entry, c)
     local id = entry.id
-    if c.groupQuestsByHeader then AddToSection(list, entry) end
+    if c.groupQuestsByHeader and not (c.groupReadyQuests and entry.group == "complete") then AddToSection(list, entry) end
     if c.showQuestLevel or c.questDifficultyColor then
         local level = Read(C_QuestLog.GetQuestDifficultyLevel, id)
         if Finite(level) and level > 0 then
@@ -106,6 +106,16 @@ function O.PaintQuestBadge(self, row, item, inset)
     badge:Show()
     local width = badge:GetStringWidth()
     return inset + (Finite(width) and width or 40) + 6
+end
+
+local OBJECTIVE_ICONS = {
+    monster = "|TInterface\\Icons\\INV_Sword_04:12:12|t ",
+    item = "|TInterface\\Icons\\INV_Misc_Bag_08:12:12|t ",
+}
+
+function O.IconQuestProgress(kind, text)
+    local icon = OBJECTIVE_ICONS[kind]
+    return icon and icon .. text or text
 end
 
 function O.PaintQuestProgress(self, row, item, inset, size)

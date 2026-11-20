@@ -3,6 +3,8 @@ local root = assert(arg[1], "repository root required")
 MSUF_NS = {}
 -- The parts of the core the database uses (Platform.lua and the controller).
 local Suite = { Client = { isForever = false }, OnProfileChanged = function() end,
+    Dispatch = function(callback, ...) return callback(...) end,
+    Finish = function(callback, ...) return true, callback(...) end,
     Suite = { MigrationRevision = 0, Normalize = function() end, StyleProfile = function() end } }
 assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)

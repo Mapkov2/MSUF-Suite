@@ -156,6 +156,7 @@ local function ApplyNow(state)
     -- Inspect skips the generic adapter, which normally attaches the shared
     -- window controls. Keep its scale grip available after load-on-demand.
     NS.WindowControls.Attach(root, state.owner)
+    NS.MenuMotion.Track(root, state.owner, false, true)
     panel.InstallHooks()
     return true, "applied"
 end
@@ -222,7 +223,9 @@ function InspectPanel.Disable(owner)
     if NS.IsCombatLocked() then return false, "combat" end
 
     state.active = false
-    NS.CharacterDetails.Disable(_G.InspectFrame, owner)
+    local root = _G.InspectFrame
+    if root then NS.MenuMotion.Release(owner, root) end
+    NS.CharacterDetails.Disable(root, owner)
     panel:Release(state)
     NS.Cosmetics.RestoreOwner(state.modelOverlayOwner)
     -- The parent blizzardWindows adapter restores shared IconSkin,

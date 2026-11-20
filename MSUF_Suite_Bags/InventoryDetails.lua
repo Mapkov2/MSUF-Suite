@@ -4,6 +4,7 @@ local Marker, SORT = P.UpgradeMarker, NS.BagsSort
 local Details = { dirty = true, sets = {}, overlays = setmetatable({}, { __mode = "k" }),
     markers = setmetatable({}, { __mode = "k" }), maps = {} }
 P.InventoryDetails = Details
+local reagentMarkers = setmetatable({}, { __mode = "k" })
 -- Slot keys of SlotCache.lua: bag * KEY + slot, no string per item.
 local KEY = P.SlotCache.KEY
 
@@ -175,7 +176,8 @@ end
 local transmogTooltip
 local function Tooltip(tooltip, data)
     if not M.active or tooltip ~= GameTooltip then return end
-    local record = Details.overlays[tooltip:GetOwner()]
+    local owner = tooltip:GetOwner()
+    local record = Details.overlays[owner]
     local item = record and record.item
     if item then
         if item.setName and M.config.showEquipmentSetNames then
@@ -185,6 +187,8 @@ local function Tooltip(tooltip, data)
             tooltip:AddLine((item.upgradeTrack and item.upgradeTrack .. " " or "") .. item.upgrade, 0.8, 0.8, 0.8)
         end
     end
+    local reagent = reagentMarkers[owner]
+    if reagent and reagent:IsShown() then tooltip:AddLine(S.Text("Stored in the reagent bag"), .8, .8, .8) end
     if transmogTooltip then transmogTooltip(tooltip, data) end
 end
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, Tooltip)
@@ -250,6 +254,24 @@ local function PaintWithTransmog(button, item, font)
     P.BagTransmog.Paint(button, item)
 end
 
+function Details.PaintReagentOrigin(button, row)
+    local item = row.item
+    if not item.reagentBag or not item.itemID or row.stacks > 1 and row.bags[item.bag] ~= row.stacks then return end
+    local marker = reagentMarkers[button]
+    if not marker then
+        marker = S.CreateTexture(button, nil, "OVERLAY", nil, 5)
+        marker:SetSize(12, 12)
+        marker:SetPoint("TOPRIGHT", -1, -1)
+        marker:SetTexture("Interface\\Icons\\INV_Misc_Herb_19")
+        reagentMarkers[button] = marker
+    end
+    marker:Show()
+end
+
+function Details.HideReagentOrigins()
+    for _, marker in pairs(reagentMarkers) do marker:Hide() end
+end
+
 -- Keep the original slot painter installed when disabled or in combat. The
 -- permanent Blizzard item post-call above also drops the feature at that edge.
 function Details.SetTransmog(tooltip, badge)
@@ -273,5 +295,6 @@ function Details.Hide()
         record.item = nil
     end
     Details.HideMarkers()
+    Details.HideReagentOrigins()
     Details.dirty = true
 end

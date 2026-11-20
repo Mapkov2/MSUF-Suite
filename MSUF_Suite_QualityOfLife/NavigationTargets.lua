@@ -101,7 +101,7 @@ function Navigation.Parse(line, fallbackMap)
     end
     if not Suite.Finite(map) or map <= 0 or map % 1 ~= 0 or not Suite.Finite(x) or not Suite.Finite(y)
         or x < 0 or x > 100 or y < 0 or y > 100 then return nil end
-    return { map = map, x = x / 100, y = y / 100,
+    return { map = map, x = x / 100, y = y / 100, unnamed = not name or nil,
         name = name and name:sub(1, 120) or Suite.Text("Map waypoint"), list = Suite.Text("My places") }
 end
 

@@ -688,6 +688,13 @@ function Policy.IdentifyFocusWindow(frame)
     return IdentifyWindow(frame, true)
 end
 
+function Policy.IsAnimationWindow(frame)
+    local name = Policy.IdentifyFocusWindow(frame)
+    return name ~= nil and frame == Safety.Field(_G, name)
+        and not inventoryRoots[name] and not focusCompanions[name] and not focusParents[name]
+        and name ~= "GameMenuFrame" and (name ~= "WorldMapFrame" or not NS.Client.isForever)
+end
+
 function Policy.Eligible(frame)
     if not Policy.CanControl(frame) then return nil end
     return Policy.IdentifyWindow(frame)

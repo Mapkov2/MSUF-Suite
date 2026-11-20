@@ -146,6 +146,7 @@ end
 
 local function RGB() return .1, .1, .1 end
 local Suite = {
+    Public = function() return true end,
     Finite = function(value) return type(value) == "number" and value == value end,
     Text = function(text) return text end,
     CreateFrame = function(_, _, parent) return Widget(parent, "Frame") end,

@@ -61,6 +61,26 @@ local function MuteChildren(...)
     end
 end
 
+local function CanAttach(frame, view, inCombat)
+    local host, layout = view.frame, P.BagLayout
+    if inCombat and (not layout.Frame(frame) or not layout.Frame(host)
+        or not frame:IsVisible() or not host:IsVisible()) then return false end
+    local splitOwner = StackSplitFrame:IsShown() and StackSplitFrame.owner
+    if splitOwner and view.visibleButtons[splitOwner] then
+        view.splitPending = true
+        return false
+    end
+    if not inCombat and not splitOwner then return true end
+    for _, button in frame:EnumerateValidItems() do
+        if button == splitOwner then
+            view.splitPending = true
+            return false
+        end
+        if inCombat and not layout.Frame(button) then return false end
+    end
+    return true
+end
+
 -- Keep the native reagent container shown and listening to its events. Only
 -- its shell is muted; its own buttons retain Blizzard's bag/slot identity,
 -- item actions, cooldowns, search, tooltips and new-item handling.
@@ -70,14 +90,17 @@ function Reagent.Prepare()
         Reagent.Release()
         return
     end
-    if NS.InCombat() and not Reagent.active then return end
+    local inCombat = NS.InCombat()
+    -- Blizzard's Open All Bags can show the reagent frame during combat. Check
+    -- the whole pool before muting it, and let an open native stack split finish.
+    if not Reagent.active and not CanAttach(frame, view, inCombat) then return end
     local size = P.SlotCache.Sync(BAG)
     if not S.Finite(size) or size == 0 then
         Reagent.Release()
         return
     end
     if not frame:IsShown() then
-        if NS.InCombat() then return end
+        if inCombat then return end
         OpenBag(BAG)
     end
     if not frame:IsShown() then return end

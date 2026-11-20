@@ -384,7 +384,26 @@ local function PaintCountdown(self, row, entry, left)
     Urgency(row, self.config.urgentTimer == true and left <= self.config.urgentSeconds)
 end
 
-local function PaintRow(self, row, entry)
+local function DropName(self, entry, index)
+    local name, link = entry.name or "", entry.link
+    if not S.Public(link) or type(link) ~= "string" then return name end
+    local position, total = 0, 0
+    local rollID = S.Finite(entry.rollID) and entry.rollID
+    for otherIndex = 1, self.viewCount do
+        local other = self.visibleEntries[otherIndex]
+        if S.Public(other.link) and other.link == link then
+            total = total + 1
+            local otherID = S.Finite(other.rollID) and other.rollID
+            if (otherID and (not rollID or otherID < rollID))
+                or (otherID == rollID and otherIndex <= index) then
+                position = position + 1
+            end
+        end
+    end
+    return total > 1 and ("%d/%d  %s"):format(position, total, name) or name
+end
+
+local function PaintRow(self, row, entry, index)
     if row.entry ~= entry then
         row.maximum, row.timerTick, row.timerSecond = nil, nil, nil
     end
@@ -396,7 +415,7 @@ local function PaintRow(self, row, entry)
         row.name:SetTextColor(red, green, blue)
     end
     row.icon:SetTexture(entry.icon or 134400)
-    row.name:SetText(entry.name or "")
+    row.name:SetText(DropName(self, entry, index))
     row.details:SetText(Details(self.config, entry))
     local actionable = Actions(self, row, entry)
     local choice = ACTION_LABELS[entry.choice]
@@ -423,7 +442,7 @@ function View.Paint(self)
     for index, row in ipairs(self.rows) do
         local entry = index <= self.viewCount and self.visibleEntries[index]
         if entry then
-            PaintRow(self, row, entry)
+            PaintRow(self, row, entry, index)
         else
             row.entry = nil
             row.frame:Hide()

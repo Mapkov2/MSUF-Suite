@@ -278,6 +278,13 @@ function H.New(root, client, options)
     function F:SetWidth(w) Guard(self, "SetWidth"); self.width = w end
     function F:SetHeight(h) Guard(self, "SetHeight"); self.height = h end
     F.GetSize, F.GetWidth, F.GetHeight = R.GetSize, R.GetWidth, R.GetHeight
+    function F:SetScrollChild(child) self.scrollChild = child end
+    function F:UpdateScrollChildRect() end
+    function F:GetVerticalScroll() return self.scroll or 0 end
+    function F:SetVerticalScroll(value) self.scroll = value end
+    function F:GetVerticalScrollRange()
+        return math.max(0, self.scrollChild:GetHeight() - self.parent:GetHeight())
+    end
     function F:GetCenter() if self.center then return self.center[1], self.center[2] end end
     -- Edges only where a scenario resolved them (frame.rect = { left, bottom,
     -- width, height } in the frame's own units); the client returns nothing

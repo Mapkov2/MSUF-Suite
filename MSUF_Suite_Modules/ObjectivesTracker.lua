@@ -106,6 +106,7 @@ local function ToggleGroup(self, group)
     Render(self)
 end
 
+local ToggleEntry
 local function OnRowClick(button, mouseButton)
     if mouseButton == "RightButton" then
         -- Blizzard's own quest menu opened from its header (O.RowPreClick).
@@ -123,6 +124,10 @@ local function OnRowClick(button, mouseButton)
     if button.secureWindow then
         -- Blizzard's own button opened the window (O.RowPreClick).
         button.secureWindow = nil
+        return
+    end
+    if O.IsQuestCollapseClick(button, mouseButton) then
+        ToggleEntry(M, button)
         return
     end
     if Finite(button.recipeID) then
@@ -169,6 +174,9 @@ local function OnRowEnter(button)
     else
         GameTooltip:SetText(button.menuTitle)
     end
+    if button.altCollapse and M.config.altClickQuestCollapse then
+        GameTooltip:AddLine(Tr("Alt-click to expand or collapse."), .8, .8, .8, true)
+    end
     GameTooltip:Show()
 end
 
@@ -182,7 +190,7 @@ local function OnFindGroupEnter(button)
     GameTooltip:SetText(search and TOOLTIP_TRACKER_FIND_GROUP_BUTTON or Tr("Open group finder"))
     GameTooltip:Show()
 end
-local function ToggleEntry(self, owner)
+ToggleEntry = function(self, owner)
     local key = owner.collapseKey
     local closing = not self.collapsedEntries[key]
     local animate = self.config.animateQuestCollapse ~= false and Finite(owner.questID)
@@ -620,6 +628,7 @@ local function PaintRow(self, row, item, c, width, y)
         row.cachedText = item.text
     end
     row.kind, row.group, row.collapseKey = item.kind, item.group, item.collapseKey
+    row.altCollapse = item.kind == "entry" and item.hasLines and Finite(item.questID) or nil
     local rightInset = O.PaintQuestVoice(row, item, PaintRowWidgets(self, row, item, color, size), color)
     if item.dungeonBadge or row.questBadge then rightInset = O.PaintQuestBadge(self, row, item, rightInset) end
     local leftInset = O.PaintQuestIcon(self, row, item, c, color)

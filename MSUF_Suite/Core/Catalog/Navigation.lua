@@ -112,6 +112,11 @@ Build.Section("navigationHUD", "navigation_hud", "Map overlay & compass", {
     Bool("showMarkers", "Show Suite markers", true),
     Bool("showWaypoint", "Show the active map waypoint", true),
     Bool("showMapMarkers", "Show nearby map markers", true),
+    Bool("showQuestOffers", "Show available quest starts"),
+    Bool("showMapServices", "Show known mailboxes and services"),
+    Bool("showHandyNotes", "Use HandyNotes markers"),
+    Bool("showQuestie", "Use Questie markers"),
+    Bool("showNavigationMinimap", "Show navigation markers on the minimap"),
     Bool("showKnownGathering", "Show known gathering spots", true),
     Bool("showGatheringMinimap", "Show gathering spots on the minimap"),
     Bool("hideInCombat", "Hide in combat", true),
@@ -127,8 +132,17 @@ Build.Section("navigationHUD", "navigation_hud", "Map overlay & compass", {
 })
 for _, key in ipairs({ "mapX", "mapY", "compassX", "compassY" }) do hud.rules[key].hidden = true end
 hud.rules.compassWidth.enableKey = "showCompass"
-for _, key in ipairs({ "showWaypoint", "showMapMarkers", "showKnownGathering", "showGatheringMinimap" }) do
+for _, key in ipairs({ "showWaypoint", "showMapMarkers", "showQuestOffers", "showMapServices",
+    "showHandyNotes", "showQuestie", "showNavigationMinimap", "showKnownGathering", "showGatheringMinimap" }) do
     hud.rules[key].enableKey = "showMarkers"
 end
+Build.Tooltip(hud.rules.showQuestOffers, "Shows quest starts available on Blizzard's world map.")
+Build.Tooltip(hud.rules.showMapServices,
+    "Shows known mailbox, auction house, bank, innkeeper and trainer locations where data is available.")
+Build.Tooltip(hud.rules.showHandyNotes,
+    "Adds markers from active HandyNotes plugins for the current map. Requires HandyNotes to be loaded.")
+Build.Tooltip(hud.rules.showQuestie,
+    "Adds visible Questie quest and service markers in WoW Forever. An already loaded QuestieDB also refines known service locations.")
+Build.Tooltip(hud.rules.showNavigationMinimap, "Also shows enabled quest, service and nearby map markers on the minimap.")
 Build.Tooltip(hud.rules.showKnownGathering, "Shows known herb and ore locations and remembers successful gathers.")
 Build.Tooltip(hud.rules.showGatheringMinimap, "Show known herb and ore locations alongside Blizzard's tracking.")

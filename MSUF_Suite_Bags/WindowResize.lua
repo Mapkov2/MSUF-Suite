@@ -82,6 +82,7 @@ local function Begin(_, button)
     Resize.width, Resize.height = Resize.startWidth, Resize.startHeight
     Resize.mouseX, Resize.mouseY, Resize.cursorX, Resize.cursorY = mouseX, mouseY, mouseX, mouseY
     Resize.active = true
+    M.resizeCorner = nil
     P.BagMotion.StopAll()
     GameTooltip:Hide()
     Resize.Reassert()

@@ -148,6 +148,7 @@ local function Tooltip(button)
     if entry.notice == "food" and not entry.restock then
         GameTooltip:AddLine(S.Text("No food for this buff in your bags."), 1, .65, .2, true)
     end
+    if entry.kind == "food" then GameTooltip:AddLine(S.Text("Shift-right-click to choose your preferred food."), .7, .7, .7, true) end
     GameTooltip:AddLine(S.Text("Right-click to hide this reminder until you reload the UI."), .7, .7, .7, true)
     GameTooltip:Show()
 end

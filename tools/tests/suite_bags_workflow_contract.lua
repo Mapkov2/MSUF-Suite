@@ -408,4 +408,58 @@ do
     assert(#W.errors == 0 and #W.taint == 0, "modeled native bank failure")
 end
 
+do
+    local W = World({ inventoryView = 3, showRecentGains = true, showRecent = true, mergeStacks = true })
+    local index = W.P.InventoryIndex
+    local recent = index.Recent()
+    index.ClearRecent(recent)
+    W.Put(0, 1, 10, 5)
+    W.BagChanged(0)
+    W.Settle()
+    local gains = assert(recent.gains and recent.gains[10], "a new item was not counted")
+    assert(gains.count == 11 and gains.added == 1, "existing stack pickup recorded the wrong quantity")
+    W.Put(0, 1, 10, 2)
+    W.Put(0, 2, 10, 9)
+    W.BagChanged(0)
+    W.Settle()
+    assert(recent.gains[10] == gains, "moving items between stacks counted as a pickup")
+    W.S.Set("bags", "recentNewTypesOnly", true)
+    W.Settle()
+    assert(not W.P.InventoryView.model.groupsByKey.recent, "a gain of an already owned stack was kept in Recent")
+    W.P.BagRecentCounts.Event(W.M.config, "TRADE_ACCEPT_UPDATE", 1, 1)
+    W.Put(0, 1, 10, 3)
+    W.BagChanged(0)
+    W.Settle()
+    assert(recent.gains[10].fromTransfer and W.P.InventoryView.model.groupsByKey.recent,
+        "an accepted transfer did not stay in Recent")
+
+    W.Define(11, { name = "Tonic", class = 0, maxStack = 20 })
+    W.Put(0, 4, 11, 1)
+    W.BagChanged(0)
+    W.Settle()
+    W.Put(0, 4, 11, 2)
+    W.BagChanged(0)
+    W.Settle()
+    assert(recent.gains[11].added == 2 and W.P.InventoryView.model.groupsByKey.recent,
+        "a repeat pickup lost part of the recent gain")
+
+    W.worn[16] = "item:40"
+    W.items[0][3] = nil
+    W.BagChanged(0)
+    W.Settle()
+    W.worn[16] = nil
+    W.Put(0, 3, 40, 1)
+    W.BagChanged(0)
+    W.Settle()
+    assert(not recent.gains[40], "unequipping an item was counted as a new gain")
+
+    W.EnterCombat()
+    W.Put(0, 4, 11, 3)
+    W.BagChanged(0)
+    assert(recent.gains[11].added == 2, "the count advanced while bags were restricted")
+    W.LeaveCombat()
+    W.Settle()
+    assert(recent.gains[11].added == 3, "the count did not reconcile after combat")
+end
+
 print("bag workflows: title routing, bag settings, filtered transfers, archive navigation and bank lifecycle passed (" .. flavor .. ")")

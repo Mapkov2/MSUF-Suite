@@ -99,11 +99,109 @@ local function Remove(_, row)
             PointsChanged()
         end })
 end
+
+local function PointKey(point)
+    return ("%d:%.8f:%.8f"):format(point.map, point.x, point.y)
+end
+
+local function ExistingPoints(points)
+    local keys = {}
+    for _, point in ipairs(points) do keys[PointKey(point)] = true end
+    return keys
+end
+
+local function ParseImport(text, points)
+    local imports, keys, skipped, duplicates = {}, ExistingPoints(points), 0, 0
+    local current = WorldMapFrame:IsShown() and WorldMapFrame:GetMapID() or C_Map.GetBestMapForUnit("player")
+    local lineNumber = 0
+    text = text:gsub("\r\n", "\n"):gsub("\r", "\n")
+    for line in (text .. "\n"):gmatch("(.-)\n") do
+        lineNumber = lineNumber + 1
+        if line:find("%S") then
+            local input = line:match("^%s*/[Ww][Aa][Yy]%s+(.+)$")
+            local map, x, y, named
+            if input then map, x, y, named = S.ParseSuiteWaypoint((input:gsub("^%s*#(%d+)%s+", "%1 ")), current) end
+            local allowed = S.Finite(map) and map >= 1 and map % 1 == 0 and C_Map.CanSetUserWaypointOnMap(map)
+            if not S.Public(allowed) or allowed ~= true or not S.Finite(x) or not S.Finite(y)
+                or x < 0 or x > 1 or y < 0 or y > 1 then
+                skipped = skipped + 1
+            else
+                local name = named and not named.unnamed and S.PublicText(named.name)
+                local point = { map = map, x = x, y = y, name = name and #name <= 120 and name
+                    or ("%.1f, %.1f"):format(x * 100, y * 100) }
+                local key = PointKey(point)
+                if keys[key] then
+                    duplicates = duplicates + 1
+                else
+                    keys[key] = true
+                    imports[#imports + 1] = { point = point, line = lineNumber }
+                end
+            end
+        end
+    end
+    return imports, skipped, duplicates
+end
+
+local function SaveImport(points, imports, window)
+    if not M.active or NS.InCombat() or Store() ~= points then return end
+    local keys, list = ExistingPoints(points), S.Text("Imported waypoints")
+    local added = 0
+    for _, entry in ipairs(imports) do
+        if not keys[PointKey(entry.point)] then added = added + 1 end
+    end
+    if #points + added > 100 then
+        window:SetStatus(S.Text("Keep at most 100 saved waypoints."))
+        return
+    end
+    for _, entry in ipairs(imports) do
+        local point = entry.point
+        if not keys[PointKey(point)] then
+            point.list = list
+            points[#points + 1] = point
+        end
+    end
+    M:Open()
+    PointsChanged()
+end
+
+local function PreviewImport(points, imports, summary)
+    local rows = {}
+    for i, entry in ipairs(imports) do
+        local point = entry.point
+        local info = C_Map.GetMapInfo(point.map)
+        local zone = S.Public(info) and type(info) == "table" and S.PublicText(info.name) or S.Text("Unknown map")
+        rows[i] = { key = i, label = ("%d. %s"):format(entry.line, point.name),
+            detail = S.Text("%s · %.1f, %.1f", true):format(zone, point.x * 100, point.y * 100) }
+    end
+    S.ToolListWindow.Open(M, { title = "Review waypoint import", help = summary, rows = function() return rows end,
+        actions = {
+            { label = "Save", run = function(_, _, window) SaveImport(points, imports, window) end },
+            { label = "Cancel", run = function() M:Open() end },
+        },
+    })
+end
+
+local function Import()
+    S.ToolListWindow.Edit(M, { title = "Import waypoints", label = "Paste one /way command per line.",
+        multiline = true, maxBytes = 8000, onSave = function(_, text)
+            local points = Store()
+            if not points then return false, S.Text("Character data is not available yet.") end
+            local imports, skipped, duplicates = ParseImport(text, points)
+            local count = #imports
+            local summary = S.Text("%d new waypoints, %d invalid lines, %d duplicates."):format(count, skipped, duplicates)
+            if count == 0 then return false, summary end
+            if #points + count > 100 then return false, S.Text("Keep at most 100 saved waypoints.") end
+            PreviewImport(points, imports, summary)
+            return true
+        end })
+end
+
 function M:Open()
     return S.ToolListWindow.Open(self, { title = "Saved waypoint lists", rows = Rows,
         help = "Save your position or a map pin. Search by list or place, then activate one waypoint manually.",
         empty = "Save a place to start your first route.", actions = {
             { label = "Save my position", run = Here }, { label = "Save map pin", run = Current },
+            { label = "Import waypoints", run = Import },
             { label = "Activate waypoint", enabled = function(_, row) return row ~= nil end, run = Activate },
             { label = "Remove waypoint", enabled = function(_, row) return row ~= nil end, run = Remove },
         } })

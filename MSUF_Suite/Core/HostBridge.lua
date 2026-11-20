@@ -532,6 +532,7 @@ end
 -- handlers (from MSUF_Suite_Options/Menu/Register.lua):
 --   pages        { [pageKey] = true } of the Suite pages
 --   canReset     fn(key) -> whether the page resets now (addon state)
+--   resolveConfirmKey fn(key) -> a stable reset key for the confirmation (optional)
 --   warning      fn(key) -> the confirmation text
 --   label        fn(key) -> the history label
 --   prepare      fn(key) -> whether what the reset needs is there
@@ -539,12 +540,9 @@ end
 --   finish       fn(key): refresh and feedback after a reset
 --   withHistory  fn(label, source, fn) -> ok;  confirm fn(key, text, onAccept)
 --   combat       fn() -> whether combat refuses
--- A v1 Menu2 owns the confirmation, the combat refusal, the canReset check
--- and the history entry, and runs the provider's steps in the spec's order:
--- prepare before its undo snapshot (so Undo also restores state prepare
--- loaded, the dormant Skinning engine), reset inside the one history entry
--- named by historyLabel (already translated), finish after the entry is
--- committed. Older menus get the four wrapped functions as before.
+-- A v1 Menu2 owns confirmation, combat refusal and the history entry.
+-- It runs prepare before the snapshot and finish after committing the reset.
+-- Older menus get the wrapped equivalents.
 local PROVIDER_ID = "msuf-suite"
 
 local function RegisterProvider(M, handlers)
@@ -552,6 +550,7 @@ local function RegisterProvider(M, handlers)
     M.RegisterPageResetProvider(PROVIDER_ID, {
         pages = handlers.pages,
         canReset = handlers.canReset,
+        resolveConfirmKey = handlers.resolveConfirmKey,
         warning = handlers.warning,
         prepare = handlers.prepare,
         reset = function(key) return run(key) == true end,
@@ -589,7 +588,8 @@ local function WrapLegacy(M, handlers)
     end
     function M.ShowPageResetConfirm(key)
         if not pages[key] then return oldConfirm and oldConfirm(key) or false end
-        if not handlers.canReset(key) or handlers.combat() then return false end
+        if handlers.resolveConfirmKey then key = handlers.resolveConfirmKey(key) end
+        if not pages[key] or not handlers.canReset(key) or handlers.combat() then return false end
         handlers.confirm("page-reset", M.BuildPageResetWarning(key), function() M.ResetPageToDefaults(key) end)
         return true
     end

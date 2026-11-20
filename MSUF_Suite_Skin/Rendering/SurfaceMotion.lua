@@ -167,11 +167,13 @@ local function Show(target)
     if not record then return end
     record.checked = Safety.Read(target, "GetChecked")
     if not record.window or NS.IsCombatLocked() then return end
+    local content = NS.ContentMotion
+    if content.IsWindow(target) and not Motion.WindowEnabled() then return end
     if not record.channels then Motion.New(record.state, Paint, Safe, Motion.Restore, record) end
     -- ContentMotion loads later; native OnShow runs after the complete load graph.
     -- Resolve here and use registration, independent of the OnShow hook order.
     local fadeOnly = record.state.spec.fadeOnly
-    local completeFade = not fadeOnly and NS.ContentMotion.HasOpeningFade(target)
+    local completeFade = not fadeOnly and content.HasOpeningFade(target)
     Motion.Set(record, 7, 1, completeFade and 1 or 0)
     if not fadeOnly then Motion.Set(record, 2, 0, -3) end
     Motion.Play(record, 0.16)

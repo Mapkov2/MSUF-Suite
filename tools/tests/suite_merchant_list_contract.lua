@@ -464,6 +464,28 @@ Check(not panel.shown and MerchantItem1.alpha == 1, "a merchant opened in combat
 combat = false
 list:Refresh()
 Check(panel.shown and MerchantItem1.alpha == 0, "the list did not take over after combat")
+
+ITEM_SPELL_KNOWN = "Already known"
+Enum = { ItemClass = { Recipe = 9 } }
+C_Item.GetItemInfoInstant = function(id) return id, nil, nil, nil, nil, id == 4 and 9 or 0 end
+C_TooltipInfo = { GetMerchantItem = function() return { lines = { { leftText = ITEM_SPELL_KNOWN } } } end }
+canaccesstable = function() return true end
+PlayerHasToy = function(id) return id == 1 end
+C_MountJournal = {
+    GetMountFromItem = function(id) return id == 2 and 101 end,
+    GetMountInfoByID = function() return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, true end,
+}
+C_PetJournal = { GetPetInfoByItemID = function(id)
+    if id == 3 then return "Pet", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, 102 end
+end, GetNumCollectedInfo = function(id) return id == 102 and 1 or 0 end }
+list.config.hideKnownOffers = true
+list:Refresh()
+Check(rows[1].index == 5 and rows[2].index == 6 and panel.bar.high == 20,
+    "the known-offer filter missed a collectible or recipe, or changed native offer indices")
+list.config.hideKnownOffers = false
+list:Refresh()
+Check(rows[1].index == 1 and panel.bar.high == 24, "disabling the filter did not restore the original offers")
+
 list.active = false
 list:Disable()
 Check(not panel.shown and MerchantItem1.alpha == 1 and MerchantPrevPageButton.alpha == 1

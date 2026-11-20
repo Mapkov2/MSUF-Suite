@@ -414,6 +414,7 @@ end
 -- Item data that arrives in one frame repaints the list once (self.repaint).
 local function ItemLoaded(self, _, itemID)
     if not self.requests:Arrived(itemID) then return end
+    self.offerCount = nil
     self.repaint:Request()
 end
 
@@ -512,9 +513,73 @@ local function Layout(self, count)
     return visible
 end
 
+local COLLECTION_EVENTS = { "NEW_RECIPE_LEARNED", "NEW_MOUNT_ADDED", "NEW_PET_ADDED", "TOYS_UPDATED" }
+local function CollectionChanged(self)
+    self.offerCount = nil
+    self.repaint:Request()
+end
+
+local function WatchCollection(self, enabled)
+    if self.watchingCollection == enabled then return end
+    self.watchingCollection = enabled
+    for _, event in ipairs(COLLECTION_EVENTS) do
+        if enabled then
+            self.context:Event(event, CollectionChanged)
+        else
+            self.context:RemoveEvent(event)
+        end
+    end
+end
+
 local function Leave(self)
+    WatchCollection(self, false)
     Conceal(self, false)
     if self.panel then self.panel:Hide() end
+end
+
+local function True(value)
+    return S.Public(value) and value == true
+end
+
+local function KnownRecipe(index, itemID)
+    local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
+    if not S.Finite(classID) or classID ~= Enum.ItemClass.Recipe then return false end
+    local data = C_TooltipInfo.GetMerchantItem(index)
+    if not S.Public(data) or type(data) ~= "table" or not canaccesstable(data) then return false end
+    local lines = data.lines
+    if not S.Public(lines) or type(lines) ~= "table" or not canaccesstable(lines) then return false end
+    for _, line in ipairs(lines) do
+        if S.Public(line) and type(line) == "table" and canaccesstable(line)
+            and S.PublicText(line.leftText) == ITEM_SPELL_KNOWN then return true end
+    end
+    return false
+end
+
+local function KnownOffer(index)
+    local id = GetMerchantItemID(index)
+    if not S.Finite(id) or id < 1 then return false end
+    if True(C_Heirloom.PlayerHasHeirloom(id)) or True(PlayerHasToy(id)) then return true end
+    local mount = C_MountJournal.GetMountFromItem(id)
+    if S.Finite(mount) and mount > 0 and True(select(11, C_MountJournal.GetMountInfoByID(mount))) then return true end
+    local pet = select(13, C_PetJournal.GetPetInfoByItemID(id))
+    if S.Finite(pet) and pet > 0 then
+        local count = C_PetJournal.GetNumCollectedInfo(pet)
+        if S.Finite(count) and count > 0 then return true end
+    end
+    return KnownRecipe(index, id)
+end
+
+local function FilteredOffers(self, count)
+    if not self.config.hideKnownOffers then return count end
+    local offers = self.offers or {}
+    if self.offerCount ~= count then
+        wipe(offers)
+        for index = 1, count do
+            if not KnownOffer(index) then offers[#offers + 1] = index end
+        end
+        self.offers, self.offerCount = offers, count
+    end
+    return #offers, offers
 end
 
 -- The list needs the faded offers; in combat it does not take them over.
@@ -526,11 +591,14 @@ function M:Paint()
     end
     local panel = Build(self)
     Conceal(self, true)
-    local visible = Layout(self, count)
+    WatchCollection(self, self.config.hideKnownOffers == true)
+    local displayed, offers = FilteredOffers(self, count)
+    local visible = Layout(self, displayed)
     local waiting = false
     for i, row in ipairs(self.rows) do
         local index = self.offset + i
-        local info = i <= visible and index <= count and C_MerchantFrame.GetItemInfo(index)
+        if offers then index = offers[index] end
+        local info = i <= visible and index and index <= count and C_MerchantFrame.GetItemInfo(index)
         if S.Public(info) and type(info) == "table" then
             local loading = Fill(row, index, info)
             -- Asked once per merchant visit; true while the answer is open.
@@ -550,6 +618,7 @@ end
 
 local function Closed(self)
     self.offset = 0
+    self.offerCount = nil
     self.repaint:Clear()
     self.requests:Reset()
     self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
@@ -557,16 +626,21 @@ local function Closed(self)
     Leave(self)
 end
 
+local function OffersChanged(self)
+    self.offerCount = nil
+    self:Paint()
+end
+
 function M:Enable()
     self.repaint = self.context:Coalesce(0, M.Paint)
     self.offset = 0
     self.context:Event("MERCHANT_CLOSED", Closed)
-    S.WatchMerchant(self, self.Paint)
+    S.WatchMerchant(self, OffersChanged)
     self:Paint()
 end
 
 function M:Refresh()
-    self:Paint()
+    OffersChanged(self)
 end
 
 function M:Disable()

@@ -258,6 +258,26 @@ eq(#D.tabs, 0, "disable kept conversations")
 eq(#hidden, 2, "disable left a question open")
 
 ------------------------------------------------------------------ repository rules
+do
+    D.Configure({ maxTabs = 3, showArchive = false })
+    local first = D.CharacterTab("Pinned-Home")
+    local selected = D.CharacterTab("Selected-Home")
+    D.CharacterTab("Older-Home")
+    D.Select(selected)
+    D.TogglePin(first)
+    assert(D.tabs[1] == first and first.pinned, "a pinned tab did not move to the front")
+    D.CharacterTab("New-Home")
+    assert(D.byKey[first.key] == first and not D.byKey["c:older-home"], "eviction closed the pinned tab")
+    D.TogglePin(first)
+    assert(not first.pinned, "unpinning did not clear the tab state")
+    D.TogglePin(first)
+    D.TogglePin(D.byKey["c:new-home"])
+    local new = D.CharacterTab("Next-Home")
+    assert(new and D.selected and D.byKey[first.key] == first and D.byKey["c:new-home"]
+        and not D.byKey[selected.key], "pinned tabs prevented a new conversation")
+    D.Reset()
+end
+
 local FORBIDDEN = { "ChatTypeInfo", "StaticPopupDialogs", "hooksecurefunc", "HookScript", "pcall", "OnUpdate",
     "COMBAT_LOG_EVENT", "CombatLogGetCurrentEventInfo", "SetAttribute", "ChatEdit_", "ChatFrameUtil",
     "EditBox:SetText", "FCF_", "SlashCmdList", "UISpecialFrames", "AddMessageEventFilter" }

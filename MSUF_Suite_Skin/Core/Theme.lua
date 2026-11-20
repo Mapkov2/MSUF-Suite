@@ -487,6 +487,13 @@ local function NotifyMotion(key)
     return true
 end
 
+function Theme.GetWindowAnimationMode()
+    local theme = NS.DB.theme
+    local mode = theme.windowAnimations
+    if mode then return mode end
+    return theme.menuAnimations == false and "off" or "subtle"
+end
+
 function Theme.GetScrollBehavior()
     local theme = NS.DB.theme
     if theme.smoothScrolling == false then return "native" end
@@ -504,6 +511,11 @@ end
 function Theme.SetAppearance(key, value)
     if NS.IsCombatLocked() then return false end
     if key == "gradient" then return Theme.SetGradient(value) end
+    if key == "windowAnimations" then
+        if not NS.Safety.Public(value) or not IsListed(NS.WindowAnimationModes, value) then return false end
+        NS.DB.theme.windowAnimations = value
+        return NotifyMotion(key)
+    end
     if key == "readableValues" then
         if type(value) ~= "boolean" then return false end
         NS.DB.theme[key] = value

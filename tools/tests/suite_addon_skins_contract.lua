@@ -559,6 +559,15 @@ RXPFrame = Frame("Frame", UIParent, "@Interface/AddOns/RXPGuides/GuideWindow.lua
 RXPFrame.protected, RXPFrame.implicit, RXPFrame.name = true, true, "RXPFrame"
 RXPFrame.backdrop, RXPFrame.Center = {}, Frame("Texture")
 function RXPFrame:UpdateVisuals() self.Center.alpha = 1 end
+local scrollChild = Frame("Frame", RXPFrame)
+RXPFrame.ScrollChild, scrollChild.framePool = scrollChild, {}
+RXP = {}
+function RXP:LoadGuide()
+    local row = Frame("Frame", scrollChild)
+    row.backdrop, row.Center = {}, Frame("Texture")
+    scrollChild.framePool[#scrollChild.framePool + 1] = row
+    return row
+end
 local questAction = Frame("Button", RXPFrame)
 questAction.protected, questAction.backdrop, questAction.Center = true, {}, Frame("Texture")
 local nativeQuestClick = function() end
@@ -588,6 +597,11 @@ Check(paints[RXPV2GuideWindow.frame] == "shell", "RestedXP V2 widget frame was m
 Check(questAction.Center.alpha == 1 and questAction.scripts.OnClick == nativeQuestClick,
     "RestedXP skin changed a secure quest action")
 Check(NS.AddonSkins.ResolveApp("RestedXP Guides/Guide Options") == "restedXP", "RestedXP AceConfig alias was missed")
+-- Loading the saved guide after the shell is already visible can create rows
+-- without a theme update or an AceGUI widget acquisition.
+local loadedRow = RXP:LoadGuide()
+Flush()
+Check(loadedRow.Center.alpha == 0, "late RestedXP legacy guide row retained native chrome")
 RXPFrame:UpdateVisuals() Flush()
 Check(RXPFrame.Center.alpha == 0, "RestedXP theme rebuild retained native chrome")
 RXPV2GuideWindow:UpdateTheme() Flush()

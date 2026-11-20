@@ -354,6 +354,38 @@ local function WindowOffset(frame)
     return (left + width - parentLeft - parentWidth) / scale, (bottom - parentBottom) / scale, scale
 end
 
+local function ResizeCorner(self)
+    local saved, c = self.resizeCorner, self.config
+    if not saved then return end
+    if not c.keepResizeCorner or saved.profile ~= NS.DB or saved.moved ~= c.windowMoved
+        or saved.windowX ~= c.windowX or saved.windowY ~= c.windowY or saved.scale ~= c.windowScale then
+        self.resizeCorner = nil
+        return
+    end
+    return saved
+end
+
+-- Choose the nearest screen edges from the old rectangle, before any
+-- size change. Anchor points retain those edges while the viewport changes.
+function M:PinBagResizeCorner()
+    local c, frame = self.config, self.frame
+    if not c.keepResizeCorner or not frame or not frame:IsShown() or NS.InCombat() then return end
+    if ResizeCorner(self) then return end
+    local left, bottom, width, height = frame:GetScaledRect()
+    local screenX, screenY, screenW, screenH = UIParent:GetScaledRect()
+    local scale = frame:GetEffectiveScale()
+    if not (Finite(left) and Finite(bottom) and Finite(width) and Finite(height) and Finite(screenX)
+        and Finite(screenY) and Finite(screenW) and Finite(screenH) and Finite(scale)) or scale <= 0 then return end
+    local x, y = left - screenX, bottom - screenY
+    local right, top = x + width - screenW, y + height - screenH
+    local atLeft, atTop = math.abs(x) < math.abs(right), math.abs(top) < math.abs(y)
+    local point = (atTop and "TOP" or "BOTTOM") .. (atLeft and "LEFT" or "RIGHT")
+    x, y = atLeft and x or right, atTop and top or y
+    self.resizeCorner = { point = point, x = x, y = y, profile = NS.DB, moved = c.windowMoved,
+        windowX = c.windowX, windowY = c.windowY, scale = c.windowScale }
+    Layout.Position(self.context, frame, point, x / scale, y / scale)
+end
+
 function M:BeginWindowDrag(frame)
     if not self.active or NS.IsCombatLocked() or S.editMode or not frame:IsShown() or self.dragWindow then
         return
@@ -364,6 +396,7 @@ function M:BeginWindowDrag(frame)
     local cursorX, cursorY = GetCursorPosition()
     if not x or not Finite(cursorX) or not Finite(cursorY) then return end
     self.dragWindow = { frame = frame, x = x, y = y, scale = scale, cursorX = cursorX, cursorY = cursorY }
+    if frame == self.frame then self.resizeCorner = nil end
     frame:StartMoving()
 end
 
@@ -422,7 +455,12 @@ local function CaptureLiveOffset(values, frame, movedKey, xKey, yKey)
 end
 
 local function CaptureCombinedOffset(values)
-    CaptureLiveOffset(values, M.frame, "windowMoved", "windowX", "windowY")
+    if ResizeCorner(M) then
+        local x, y = WindowOffset(M.frame)
+        if x then values.windowX, values.windowY = x, y end
+    else
+        CaptureLiveOffset(values, M.frame, "windowMoved", "windowX", "windowY")
+    end
 end
 
 local function CaptureReagentOffset(values)
@@ -461,7 +499,11 @@ function M:ApplyWindowLayout()
         local scale = combat or (panel and Private.BagPresentation.Scale(c, Private.BagPresentation.CompanionWidth(c))
             or nativeScale * c.windowScale)
         if Finite(scale) and scale > 0 then Layout.Scale(self.context, frame, scale) end
-        if c.windowMoved then
+        local corner = not combat and not NS.InCombat() and ResizeCorner(self)
+        local effective = corner and frame:GetEffectiveScale()
+        if Finite(effective) and effective > 0 then
+            Layout.Position(self.context, frame, corner.point, corner.x / effective, corner.y / effective)
+        elseif c.windowMoved then
             local x, y = c.windowX, c.windowY
             if panel or combat then x, y = PanelOffset(frame, x, y) end
             Layout.Position(self.context, frame, "BOTTOMRIGHT", x, y)

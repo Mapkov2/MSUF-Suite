@@ -122,7 +122,11 @@ Hover()
 assert(#added == 2)
 row.containsOwnerItem, row.quantity = false, 2
 Hover()
-assert(#added == 2)
+assert(#added == 3 and added[1][1] == "AH stack buyout price" and added[1][2] == "400 for 2 items")
+assert(added[2][1] == "AH price per item" and added[2][2] == "200")
+row.quantity = 3
+Hover()
+assert(added[2][1] == "Approximate AH price per item" and added[2][2] == "133")
 row.quantity, canEquip = 1, false
 Hover()
 assert(#added == 2)

@@ -1,6 +1,8 @@
 -- Suite navigation availability, dashboard overview, first-run order and
 -- /msuite routing after the redundant Suite Modules page was removed.
 local root = assert(arg[1], "repository root required")
+local hostRoot = arg[2] ~= "-" and arg[2] or nil
+local flavor = arg[3] or "Mainline"
 securecallfunction = function(callback, ...) return callback(...) end
 hooksecurefunc = function(target, name, callback)
     local original = assert(target[name])
@@ -95,13 +97,17 @@ GetInstanceInfo = function() return "outside", "none", 0 end
 GetLocale = function() return "enUS" end
 C_SpecializationInfo = { GetSpecialization = function() return nil end }
 WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
+GameEvent = flavor == "Forever" and { RegisterCamelotEvents = function() end } or nil
+EventRegistry = { RegisterCallback = function() end }
 GameFontHighlightSmall = {}
 UIParent = Widget("UIParent")
+UISpecialFrames = {}
 ReloadUI = function() end
 YES, NO = "Yes", "No"
 C_CVar = { GetCVar = function() return nil end }
 SecureHandlerExecute, SecureHandlerSetFrameRef, RegisterStateDriver = function() end, function() end, function() end
 C_DamageMeter = { GetCombatSessionFromType = function() end }
+C_SpellBook = {}
 Enum = { DamageMeterType = { DamageDone = 0 } }
 Minimap = { SetMaskTexture = function() end }
 
@@ -142,7 +148,9 @@ C_AddOns = {
 -- Main MSUF host shape (no MSUF.Client); the locale table returns English.
 local L = setmetatable({}, { __index = function(_, k) return k end })
 MSUF_NS = { L = L, GetEffectiveLocale = function() return "enUS" end }
-dofile(root .. "/tools/tests/suite_test_support.lua").LoadBossTargetIndicator(root, MSUF_NS)
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+Support.LoadBossTargetIndicator(root, MSUF_NS)
+local dialogs = Support.StaticPopups()
 
 -- Menu2 public surface
 local M, W, T = {}, {}, {}
@@ -198,6 +206,7 @@ end
 local controls = {}
 M.RegisterControlMetadata = function(widget, meta) if meta and meta.controlId then controls[meta.controlId] = widget end end
 M.SelectPage = function(key) M.selectedPage = key end
+M.AddTooltip = function() end
 local current
 M.TrackRefresh = function(ctx, fn) ctx.refreshers[#ctx.refreshers + 1] = fn end
 M.RequestRefresh = function()
@@ -243,6 +252,33 @@ W.PageBuilder = function(ctx, opts)
     function b:FinishSection(body) body.finished = true end
     return b
 end
+
+-- Use the actual Menu2 reset dispatcher and provider on the current host.
+local function LoadHostResets()
+    local menuPath = hostRoot .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/"
+    function M.WordList(words)
+        local list = {}
+        for word in words:gmatch("%S+") do list[#list + 1] = word end
+        return list
+    end
+    function M.KeySet(...)
+        local keys = {}
+        for i = 1, select("#", ...) do keys[select(i, ...)] = true end
+        return keys
+    end
+    function M.KeySetFromWords(words) return M.KeySet(unpack(M.WordList(words))) end
+    M.ApplyService = {}
+    M.BlockCombatAction = InCombatLockdown
+    M.ShowConfigCombatLockMessage = function() end
+    M.SyncExternalHistoryState = function() end
+    M.TranslatedHistoryLabel = function(label) return label end
+    MSUF_NS.MSUF2 = M
+    MSUF_NS.HostAPIPlayerInCombat = InCombatLockdown
+    MSUF_NS.RunHostAPIStep = function(_, step, ...) return true, step(...) end
+    assert(loadfile(menuPath .. "MSUF_Menu2_Bindings_Reset.lua"))("MidnightSimpleUnitFrames_Options", MSUF_NS)
+    assert(loadfile(menuPath .. "MSUF_Menu2_PageResetProviders.lua"))("MidnightSimpleUnitFrames_Options", MSUF_NS)
+end
+if hostRoot then LoadHostResets() end
 
 -- Boot the core as the client would, then attach the menu.
 LoadTOC("MSUF_Suite", {})
@@ -393,13 +429,6 @@ do
     S.Config("afkScreen").enabled = false
     S.Config("characterPanel").enabled, loaded.MSUF_Suite_CharacterPanel = true, true
     assert(rows.suite_hud.availability() == true, "the Character Panel module must keep its HUD destination active")
-    local reset, refresh, resetOwners = S.Reset, P.Refresh, {}
-    S.Reset = function(id) resetOwners[id] = true return true end
-    P.Refresh = function() end
-    local resetHUD = M.ResetPageToDefaults("suite_hud")
-    S.Reset, P.Refresh = reset, refresh
-    assert(resetHUD and resetOwners.characterPanel and resetOwners.objectives,
-        "HUD reset must include the moved Character Panel module and its existing owners")
     for id, enabled in pairs(states) do S.Config(id).enabled = enabled end
     loaded.MSUF_Suite_Modules, loaded.MSUF_Suite_CharacterPanel = wasRuntimeLoaded, wasCharacterLoaded
     -- Catalog ownership includes every QoL feature, including those added
@@ -423,6 +452,159 @@ do
     Suite.Skin.enabled = true
     assert(rows.suite_skin.availability() == true, "enabled Skinning stays grey")
     Suite.Skin.enabled, loaded.MSUF_Suite_Skin = wasSkinEnabled, wasSkinLoaded
+end
+
+------------------------------------------------------------------ HUD toolbar reset
+local visibleFlightModule = flavor == "Forever" and "flightTimer" or "skyriding"
+local hiddenFlightModule = flavor == "Forever" and "skyriding" or "flightTimer"
+local hudTabs = {
+    { id = "objectives", label = "Objective Tracker", modules = { "objectives" } },
+    { id = "runSummary", label = "Run Summaries", modules = { "runSummary" } },
+    { id = "announcements", label = "Announcements", modules = { "announcements" } },
+    { id = "afkScreen", label = "AFK Screen", modules = { "afkScreen" } },
+    { id = "characterPanel", label = "Character Panel", modules = { "characterPanel" } },
+    { id = "extras", label = "Additional displays", modules = { "xpBar", visibleFlightModule, "lootToastFilter" } },
+}
+local hudSettings = {
+    objectives = { key = "width", value = 345 },
+    runSummary = { key = "width", value = 450 },
+    announcements = { key = "duration", value = 6 },
+    characterPanel = { key = "reputationBarHeight", value = 6 },
+    xpBar = { key = "width", value = 445 },
+    skyriding = { key = "x", value = 36 },
+    flightTimer = { key = "width", value = 400 },
+    lootToastFilter = { key = "minQuality", value = 2 },
+}
+if P.catalog.reputationBar then hudSettings.reputationBar = { key = "factionID", value = 76 } end
+
+local function BuildHUD()
+    local ctx = { key = "suite_hud", width = 720, wrapper = Widget("Page"), refreshers = {}, widgets = {}, sections = {} }
+    function ctx:SetContentHeight(value) self.height = value end
+    local preview, character = P.HUDPreview.Build, P.CharacterPanelEditor.Build
+    local pageBuilder, helpers = W.PageBuilder, P.QoLView.BuildSelected
+    W.PageBuilder = function(pageCtx)
+        local builder = pageBuilder(pageCtx)
+        function builder:Section(title, height)
+            local body = Widget("Section")
+            body.title = Widget("FontString")
+            body.title:SetText(title)
+            body._msuf2Width = pageCtx.width
+            body:SetHeight(height)
+            return body
+        end
+        return builder
+    end
+    P.HUDPreview.Build = function() return { Select = function() end } end
+    P.CharacterPanelEditor.Build = function() return Widget("CharacterPreview") end
+    P.QoLView.BuildSelected = function() end
+    M.pages.suite_hud.build(ctx)
+    local workspace = assert(ctx._msufSuiteHUDWorkspace)
+    workspace.selector.set("characterPanel")
+    workspace.selector.set("objectives")
+    P.HUDPreview.Build, P.CharacterPanelEditor.Build = preview, character
+    W.PageBuilder, P.QoLView.BuildSelected = pageBuilder, helpers
+    return workspace
+end
+
+local function CheckHUDReset(workspace, tab, alternateTab, skin)
+    local hasScopedWarning = type(M.BuildScopedPageResetWarning) == "function"
+    local capturesScope = not hostRoot or hasScopedWarning
+    local target = alternateTab and not capturesScope and alternateTab or tab
+    for id, setting in pairs(hudSettings) do S.Config(id)[setting.key] = setting.value end
+    local afkEnabled = S.Config("afkScreen").enabled
+    local resetCalls, expectedModules = {}, {}
+    for _, id in ipairs(target.modules) do expectedModules[id] = true end
+    local reset = S.Reset
+    S.Reset = function(id)
+        resetCalls[#resetCalls + 1] = id
+        return reset(id)
+    end
+    skin.DB.characterDetails.view, skin.DB.characterStats.diminishingReturns = "list", false
+    local historyBefore = historyWrites
+    workspace.selector.set(tab.id)
+    assert(workspace.selected == tab.id and M.PageHasReset("suite_hud"), "HUD selector did not activate " .. tab.label)
+    if hasScopedWarning then
+        local tooltip = assert(M.BuildScopedPageResetWarning("suite_hud"))
+        assert(tooltip:find(tab.label, 1, true), "Reset page tooltip did not name " .. tab.label)
+        for _, sibling in ipairs(hudTabs) do
+            assert(sibling == tab or not tooltip:find(sibling.label, 1, true), "Reset page tooltip names " .. sibling.label)
+        end
+    end
+    if alternateTab then
+        assert(M.ShowPageResetConfirm("suite_hud"), "HUD reset did not ask to confirm")
+        local prompt = assert(dialogs.Last("GENERIC_CONFIRMATION"))
+        if capturesScope then
+            assert(prompt.text:find(tab.label, 1, true), "confirmation did not name " .. tab.label)
+        else
+            assert(prompt.text == "Reset page", "legacy provider confirmation must not promise a fixed tab")
+        end
+        assert(#resetCalls == 0 and historyWrites == historyBefore, "HUD settings changed before confirming")
+        workspace.selector.set(alternateTab.id)
+        dialogs.Accept(prompt)
+    else
+        assert(M.ResetPageToDefaults("suite_hud"), "HUD toolbar could not reset " .. tab.label)
+    end
+    S.Reset = reset
+    assert(#resetCalls == #target.modules, tab.label .. " reset touched settings from another HUD tab")
+    for _, id in ipairs(resetCalls) do assert(expectedModules[id], tab.label .. " reset touched " .. id) end
+    for id, setting in pairs(hudSettings) do
+        local expected = expectedModules[id] and P.catalog[id].rules[setting.key].default or setting.value
+        assert(S.Config(id)[setting.key] == expected, tab.label .. " reset wrote the wrong value for " .. id)
+    end
+    local character = target.id == "characterPanel"
+    assert(skin.DB.characterDetails.view == (character and "modern" or "list")
+        and skin.DB.characterStats.diminishingReturns == character, tab.label .. " reset crossed the Character Panel skin scope")
+    assert(S.Config("afkScreen").enabled == afkEnabled, "HUD reset changed the enabled state")
+    assert(historyWrites == historyBefore + 1, tab.label .. " reset should record one history entry")
+end
+
+do
+    assert(P.pageResetMode == (hostRoot and "provider" or "legacy"), "HUD reset test did not use the requested host")
+    local skin = {
+        addonName = "MSUF_Suite_Skin", Theme = {}, DB = { characterDetails = {}, characterStats = {} },
+        Database = { CreateFactoryProfile = function()
+            return { characterDetails = { view = "modern" }, characterStats = { diminishingReturns = true } }
+        end },
+        Adapters = { ApplyAll = function() end }, Registry = { NotifyListeners = function() end },
+    }
+    local workspace = BuildHUD()
+    assert(Suite.Client.flavor == flavor, "HUD reset test did not use the requested client")
+    assert(P.Available(visibleFlightModule) and not P.Available(hiddenFlightModule),
+        "Additional displays needs one visible and one hidden flight module")
+    local oldSkin, engineLoad = MapkoSkin, Suite.Skin.EnsureEngine
+    local loads = 0
+    Suite.Skin.EnsureEngine = function()
+        loads = loads + 1
+        MapkoSkin = skin
+        return true
+    end
+    for _, tab in ipairs(hudTabs) do
+        CheckHUDReset(workspace, tab, nil, skin)
+        assert(loads == ((tab.id == "characterPanel" or tab.id == "extras") and 1 or 0),
+            tab.label .. " reset loaded the Character Panel skin outside its scope")
+    end
+    CheckHUDReset(workspace, hudTabs[5], hudTabs[1], skin)
+
+    workspace.selector.set("characterPanel")
+    local characterSetting = hudSettings.characterPanel
+    local wasDisabled = disabled.MSUF_Suite_Skin
+    disabled.MSUF_Suite_Skin = true
+    skin.DB.characterDetails.view = "list"
+    S.Config("characterPanel")[characterSetting.key] = characterSetting.value
+    assert(M.ResetPageToDefaults("suite_hud"), "disabled Skin addon prevented Character Panel reset")
+    assert(S.Config("characterPanel")[characterSetting.key] == P.catalog.characterPanel.rules[characterSetting.key].default
+        and skin.DB.characterDetails.view == "list", "Character Panel reset changed the disabled skin")
+    disabled.MSUF_Suite_Skin = wasDisabled
+
+    MapkoSkin = nil
+    Suite.Skin.EnsureEngine = function() return false end
+    S.Config("characterPanel")[characterSetting.key] = characterSetting.value
+    local historyBefore = historyWrites
+    assert(not M.ResetPageToDefaults("suite_hud") and historyWrites == historyBefore
+        and S.Config("characterPanel")[characterSetting.key] == characterSetting.value,
+        "failure to load the Character Panel skin started a partial reset")
+
+    MapkoSkin, Suite.Skin.EnsureEngine = oldSkin, engineLoad
 end
 
 ------------------------------------------------------------------ overview API

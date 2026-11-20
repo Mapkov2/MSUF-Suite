@@ -33,8 +33,9 @@ local nativeTracks, nativeReleases = {}, {}
 NS.ScrollMotion = { IsQuestScroll = function() return false end, IsMailScroll = function() return false end,
     Track = function(target, owner) nativeTracks[target] = owner end,
     ReleaseOwner = function(owner) nativeReleases[owner] = true end }
-NS.GenericWindows.SetMenuMotionProvider = function(track, release)
+NS.GenericWindows.SetMenuMotionProvider = function(track, release, prepare)
     NS.GenericWindows.menuTrack, NS.GenericWindows.menuRelease = track, release
+    NS.GenericWindows.prepareWindowMotion = prepare
 end
 NS.AdapterKit = { SetMotionProvider = function(track, watch)
     NS.AdapterKit.track, NS.AdapterKit.watch = track, watch
@@ -76,6 +77,122 @@ Check(Menus.OwnerFor(body) == owner1, "menu retained released latest owner")
 Menus.SelectionChanged(Frame(window))
 local bodyFade = Content.records[body]
 Check(bodyFade and bodyFade.owner == owner1, "selection re-created a released owner")
+
+-- Explicit Blizzard windows have their own opening policy. Adopted menus
+-- and tab bodies keep the regular menu setting.
+do
+    Load("Core/Defaults.lua")
+    Load("Core/Theme.lua")
+    local owner, duplicate = {}, {}
+    local nativeWindow, otherWindow, menu = Frame(UIParent, true), Frame(UIParent, true), Frame(UIParent, true)
+    local coldWindow, coldOwner = Frame(UIParent, true), {}
+    local windowBody = Frame(nativeWindow, true)
+    nativeWindow.Content, nativeWindow.children = windowBody, { windowBody }
+    local tracked = {}
+    NS.WindowMotion = {
+        Watch = function(frame, id)
+            tracked[frame] = tracked[frame] or {}
+            tracked[frame][id] = true
+        end,
+        Unwatch = function(frame, id)
+            tracked[frame][id] = nil
+            if not next(tracked[frame]) then tracked[frame] = nil end
+        end,
+    }
+    NS.WindowControlPolicy = { IsAnimationWindow = function(frame)
+        return frame == nativeWindow or frame == coldWindow
+    end }
+    local theme = NS.DB.theme
+    theme.windowAnimations = "extended"
+    coldWindow:Hide()
+    local visits = 0
+    function coldWindow:GetChildren() visits = visits + 1 end
+    NS.GenericWindows.prepareWindowMotion(coldWindow, coldOwner)
+    Check(Content.IsWindow(coldWindow) and tracked[coldWindow][coldOwner]
+        and not Menus.observers[coldWindow] and visits == 0,
+        "hidden window preparation missed its opening watcher or traversed its children")
+    coldWindow:Show()
+    coldWindow:Fire("OnShow")
+    local firstOpening = Content.records[coldWindow]
+    Check(firstOpening and firstOpening.group.plays == 1 and firstOpening.alpha.Duration == 0.24
+        and firstOpening.alpha.Smoothing == "IN_OUT" and visits == 0,
+        "first show did not play one Extended fade before catalog painting")
+    NS.GenericWindows.menuTrack(coldWindow, coldOwner, false, true)
+    Check(firstOpening.group.plays == 1 and visits > 0,
+        "the first catalog paint skipped menu discovery or replayed the opening")
+    NS.GenericWindows.menuRelease(coldOwner)
+    Check(not Content.IsWindow(coldWindow) and not tracked[coldWindow] and not firstOpening.group:IsPlaying(),
+        "catalog disable did not release the prepared window")
+    coldWindow:Hide()
+    coldWindow:Show()
+    coldWindow:Fire("OnShow")
+    Check(firstOpening.group.plays == 1, "a disabled prepared window replayed its opening")
+    Menus.Track(nativeWindow, duplicate)
+    NS.GenericWindows.menuTrack(nativeWindow, owner, false, true)
+    Menus.Track(otherWindow, owner, false, true)
+    NS.GenericWindows.menuTrack(menu, owner, false, true)
+    Check(Content.IsWindow(nativeWindow) and tracked[nativeWindow] and tracked[nativeWindow][owner]
+        and tracked[menu] == nil,
+        "Blizzard window effects were not scoped to explicit window adoption")
+    Check(not Content.records[nativeWindow], "adopting an already visible window replayed the opening")
+    local function Reopen(frame)
+        frame:Hide()
+        frame:Show()
+        frame:Fire("OnShow")
+        local record = Content.records[frame]
+        return record ~= nil and record.group:IsPlaying()
+    end
+    theme.windowAnimations = "off"
+    Check(not Reopen(nativeWindow) and Reopen(menu), "window Off also affected menus or let the window fade")
+    windowBody:Fire("OnShow")
+    Check(not Content.HasOpeningFade(windowBody) and not Content.records[windowBody],
+        "window Off let its body fade on inherited show")
+    Menus.SelectionChanged(Frame(nativeWindow))
+    local selection = Content.records[windowBody]
+    Check(selection and selection.group:IsPlaying(), "window Off suppressed an explicit tab fade")
+    selection.group:Finish()
+    theme.menuAnimations, theme.windowAnimations = false, nil
+    Check(not Reopen(nativeWindow), "unset window animations ignored the legacy menu preference")
+    theme.windowAnimations = "subtle"
+    Check(Reopen(nativeWindow) and not Reopen(menu), "enabled window fade depended on menu animations")
+    Menus.Track(nativeWindow, duplicate, false, true)
+    Check(Reopen(nativeWindow), "duplicate window registration lost the active content owner")
+    local opening = Content.records[nativeWindow]
+    Check(opening.alpha.Duration == 0.12 and opening.alpha.Smoothing == "OUT", "Subtle opening changed timing")
+    theme.menuAnimations, theme.windowAnimations = true, "extended"
+    H.listeners[Content](Content, "motion", "windowAnimations")
+    Check(Reopen(nativeWindow) and Content.records[nativeWindow] == opening
+        and opening.alpha.Duration == 0.24 and opening.alpha.Smoothing == "IN_OUT",
+        "Extended window opening did not reconfigure the cached fade")
+    Check(Reopen(menu) and Content.records[menu].alpha.Duration == 0.12
+        and Content.records[menu].alpha.Smoothing == "OUT", "Extended window opening changed menu fade timing")
+    local writes, setDuration = 0, opening.alpha.SetDuration
+    function opening.alpha:SetDuration(value)
+        writes = writes + 1
+        setDuration(self, value)
+    end
+    Check(Reopen(nativeWindow) and writes == 0, "same window mode rewrote cached fade timing")
+    theme.menuAnimations, theme.windowAnimations = false, "subtle"
+    H.listeners[Content](Content, "motion", "windowAnimations")
+    Check(Reopen(nativeWindow) and writes == 1 and opening.alpha.Duration == 0.12
+        and opening.alpha.Smoothing == "OUT", "Subtle mode retained Extended fade timing")
+    theme.windowAnimations = "off"
+    H.listeners[Content](Content, "motion", "windowAnimations")
+    Check(not Content.records[nativeWindow].group:IsPlaying(), "Off retained an active window-opening fade")
+    theme.windowAnimations, theme.reduceMotion = "extended", true
+    Check(not Reopen(nativeWindow), "reduced motion failed to suppress a window fade")
+    theme.menuAnimations, theme.windowAnimations, theme.reduceMotion = nil, nil, nil
+    Menus.Release(owner, nativeWindow)
+    Check(Content.IsWindow(nativeWindow) and tracked[nativeWindow] and tracked[nativeWindow][duplicate]
+        and not tracked[nativeWindow][owner]
+        and Content.IsWindow(otherWindow) and tracked[otherWindow][owner] and Reopen(nativeWindow),
+        "targeted release lost a shared window or another window's transition owner")
+    Menus.Release(duplicate, nativeWindow)
+    Check(not Content.IsWindow(nativeWindow) and tracked[nativeWindow] == nil, "final release retained window effects")
+    Menus.Release(owner)
+    NS.WindowControlPolicy, NS.WindowMotion = nil, nil
+    Flush()
+end
 
 -- Parent/child fades are exclusive for both native show notification orders.
 Content.StopOwner(owner1)

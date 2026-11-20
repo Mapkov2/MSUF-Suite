@@ -395,6 +395,7 @@ local function ContentSignature(c)
         .. ":" .. tostring(c.groupQuestsByHeader) .. ":" .. tostring(c.showQuestLevel)
         .. ":" .. tostring(c.questDifficultyColor) .. ":" .. tostring(c.showDungeonBadge)
         .. ":" .. tostring(c.showQuestLogCount) .. ":" .. tostring(c.questProgressColumn)
+        .. ":" .. tostring(c.groupReadyQuests) .. ":" .. tostring(c.showQuestObjectiveIcons)
 end
 
 local TRACKER_EVENTS = {

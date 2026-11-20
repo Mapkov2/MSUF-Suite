@@ -1,5 +1,25 @@
 # MSUF Suite Changelog
 
+## 0.1.29 Alpha - 2026-11-20
+
+Distributed through the Beta channel for Retail and WoW Forever.
+
+### Skinning
+
+- Added Off, Subtle, and Extended window animations under Style → Skinning, with a live preview inside Suite settings. Reduced motion takes precedence.
+- Registered supported Blizzard windows before their first opening, including the native macro window. The Blizzard shop uses a separate animated outline driven by Blizzard’s visibility event.
+- Updated quest text styling and third-party addon skin integration.
+
+### Bags and Cooldown Manager
+
+- Refined Bags and Bank list views, category editing, and inventory layout and sizing.
+- Added optional totem coverage indicators to supported Cooldown Manager entries.
+
+### Navigation and other updates
+
+- Added optional HandyNotes and Questie integration for Navigation HUD markers on supported clients.
+- Updated the whisper messenger, quest tracking, buff reminders, loot roll layout, and merchant and auction display behavior.
+
 ## 0.1.28 Alpha - 2026-11-20
 
 Distributed through the Beta channel for Retail and WoW Forever.

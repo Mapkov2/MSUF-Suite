@@ -1425,6 +1425,18 @@ NS.Surface = {
 }
 NS.Cosmetics = { FadeNineSlice = function() end, RestoreOwner = function() end }
 NS.CharacterDetails = { Apply = function() end, Disable = function() end }
+local inspectMotion
+NS.MenuMotion = {
+    Track = function(root, owner, contentOnly, window)
+        Check(root == InspectFrame and owner == "blizzardWindows" and not contentOnly and window == true,
+            "Inspect did not register as a native window")
+        inspectMotion = root
+    end,
+    Release = function(owner, root)
+        Check(root == inspectMotion and owner == "blizzardWindows", "Inspect released the wrong animation")
+        inspectMotion = nil
+    end,
+}
 NS.CombatGate = { Cancel = function() end }
 PanelTemplates_GetSelectedTab = function() return 1 end
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/PaperDollChrome.lua"))("MSUF_Suite_Skin", NS)
@@ -1437,6 +1449,7 @@ InspectFrame.width, InspectFrame.height = 338, 424
 UIPanelWindows.InspectFrame = { area = "left", pushable = 0 }
 inspectLoaded()
 local inspectState = NS.WindowControls.states[InspectFrame]
+Check(inspectMotion == InspectFrame, "Inspect did not register animation after load-on-demand")
 Check(inspectState and inspectState.grip and inspectState.titleDrag and inspectState.minimize.shown,
     "the dedicated Inspect adapter omitted scaling or minimize")
 inspectState.minimize.scripts.OnClick(inspectState.minimize)
@@ -1457,6 +1470,7 @@ NS.InspectPanel.Apply("blizzardWindows")
 Check(InspectFrame.scale == inspectScale and NS.WindowControls.states[InspectFrame] == inspectState,
     "reopening Inspect lost its scale or duplicated its controls")
 NS.InspectPanel.Disable("blizzardWindows")
+Check(inspectMotion == nil, "disabling the Inspect skin left its animation active")
 NS.WindowControls.DisableOwner("blizzardWindows")
 Check(not inspectState.grip.shown and not inspectState.titleDrag.shown,
     "disabling the Blizzard window owner left Inspect controls active")

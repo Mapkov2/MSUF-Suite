@@ -888,4 +888,32 @@ do
     chat.FadeDisable()
 end
 
+do
+    local chat, module = LoadChat(nil)
+    local locked = false
+    NS.ChatLocked = function() return locked end
+    UnitGUID = function() return "Player-1-1" end
+    config.ownTradeskillsOnly = true
+    chat.MessagesRefresh(module)
+    local filter = assert(messageFilters.CHAT_MSG_TRADESKILLS, "Tradeskills filter was not installed")
+    local function Filter(guid, index)
+        local frame = { GetID = function() return index end }
+        return filter(frame, "CHAT_MSG_TRADESKILLS", "Made something", "Sender",
+            nil, nil, nil, nil, nil, nil, nil, nil, nil, guid)
+    end
+    eq(Filter("Player-1-2"), true, "another crafter's message remained visible")
+    eq(Filter("Player-1-1"), nil, "the player's crafting was hidden")
+    eq(Filter("secret"), nil, "restricted crafting was hidden")
+    config.ownTradeskillsWindow = 2
+    chat.MessagesRefresh(module)
+    eq(Filter("Player-1-2", 1), nil, "the filter hid crafting in another chat window")
+    eq(Filter("Player-1-2", 2), true, "the selected chat window did not filter crafting")
+    locked = true
+    eq(Filter("Player-1-2", 2), nil, "the filter acted during chat lockdown")
+    config.ownTradeskillsOnly = false
+    chat.MessagesRefresh(module)
+    eq(messageFilters.CHAT_MSG_TRADESKILLS, nil, "disabling kept the crafting filter")
+    chat.MessagesDisable()
+end
+
 print("chat messages PASS")

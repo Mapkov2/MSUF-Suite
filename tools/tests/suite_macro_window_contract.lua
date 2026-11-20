@@ -32,15 +32,19 @@ end
 
 local visible, active, specs, surfaces = {}, {}, {}, {}
 local attaches = {}
-local eventFrame = {}
-function eventFrame:RegisterEvent(event) self.event = event end
-function eventFrame:UnregisterEvent(event)
-    if self.event == event then self.event = nil end
+local eventFrame
+CreateFrame = function()
+    local events = {}
+    function events:RegisterEvent(event) self.event = event end
+    function events:UnregisterEvent(event)
+        if self.event == event then self.event = nil end
+    end
+    function events:SetScript(script, callback)
+        if script == "OnEvent" then self.onEvent = callback end
+    end
+    eventFrame = eventFrame or events
+    return events
 end
-function eventFrame:SetScript(script, callback)
-    if script == "OnEvent" then self.onEvent = callback end
-end
-CreateFrame = function() return eventFrame end
 hooksecurefunc = function(target, method, callback)
     local native = target[method]
     target[method] = function(self, ...)
@@ -48,6 +52,7 @@ hooksecurefunc = function(target, method, callback)
         callback(self, ...)
     end
 end
+local windowMode, geometryOwners = "extended", {}
 local NS = {
     IsCombatLocked = function() return false end,
     Cosmetics = {
@@ -77,13 +82,23 @@ local NS = {
         end,
     },
     Client = { HasAddOn = function() return true end },
-    Registry = { GetSurface = function(target) return surfaces[target] end },
+    Registry = { GetSurface = function(target) return surfaces[target] end, AddListener = function() end },
+    PublicAPI = {},
+    Theme = { GetWindowAnimationMode = function() return windowMode end },
+    Motion = { WindowEnabled = function() return windowMode ~= "off" end, Enabled = function() return true end },
+    WindowMotion = {
+        Watch = function(target, owner) geometryOwners[target] = owner return true end,
+        Unwatch = function(target, owner)
+            if geometryOwners[target] == owner then geometryOwners[target] = nil end
+        end,
+    },
 }
 -- The real guards and ScrollBox row helpers.
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/AdapterKit.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/SharedChrome.lua"))("MSUF_Suite_Skin", NS)
 local MacroWindow = assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/MacroWindow.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/ContentMotion.lua"))("MSUF_Suite_Skin", NS)
 
 local function Button(selected)
     local button = {
@@ -138,9 +153,33 @@ function frame.dividerRight:GetPoint()
     return "LEFT", MacroHorizontalBarLeft, "RIGHT"
 end
 function frame:IsShown() return self.shown end
+function frame:IsVisible() return self.shown end
+function frame:GetAlpha() return 1 end
 function frame:Update() self.nativeUpdated = true end
 function frame:GetRegions() return self.divider, self.dividerRight end
-function frame:HookScript(script, callback) self.hooks[script] = callback end
+function frame:HookScript(script, callback)
+    local previous = self.hooks[script]
+    self.hooks[script] = function(...)
+        if previous then previous(...) end
+        callback(...)
+    end
+end
+function frame:CreateAnimationGroup()
+    local group = { plays = 0 }
+    function group:CreateAnimation(kind)
+        assert(kind == "Alpha")
+        local animation = {}
+        for _, key in ipairs({ "Duration", "Smoothing", "FromAlpha", "ToAlpha" }) do
+            animation["Set" .. key] = function(self, value) self[key] = value end
+        end
+        return animation
+    end
+    function group:SetScript() end
+    function group:Play() self.plays, self.playing = self.plays + 1, true end
+    function group:IsPlaying() return self.playing end
+    function group:Stop() self.playing = false end
+    return group
+end
 assert(MacroWindow.Start("blizzardWindows") and eventFrame.event == "ADDON_LOADED",
     "Macro window did not wait for Blizzard_MacroUI")
 MacroFrame = frame
@@ -150,9 +189,21 @@ assert(not faded[MacroFramePortrait] and eventFrame.event == "ADDON_LOADED",
 eventFrame.onEvent(eventFrame, "ADDON_LOADED", "Blizzard_MacroUI")
 assert(not faded[MacroFramePortrait] and frame.hooks.OnShow and not eventFrame.event,
     "Macro window touched Blizzard's hidden, unfinished selector")
+assert(NS.ContentMotion.IsWindow(frame) and geometryOwners[frame],
+    "MacroFrame did not register its window motion before the first Blizzard show")
 frame.MacroSelector = { ScrollBox = scrollBox }
 frame.shown = true
 frame.hooks.OnShow(frame)
+local opening = NS.ContentMotion.records[frame]
+assert(opening and opening.alpha.Duration == 0.24 and opening.group.plays == 1,
+    "first Macro opening did not use exactly one Extended window fade")
+frame.shown = false
+frame.hooks.OnHide(frame)
+windowMode, frame.shown = "off", true
+frame.hooks.OnShow(frame)
+assert(opening.group.plays == 1 and not opening.group.playing,
+    "MacroFrame still used menu motion with window animations off")
+windowMode = "extended"
 assert(faded[MacroFramePortrait] and scrollBox.callback and not faded[one.backdrop],
     "Macro window did not wait for the selector view")
 scrollBox.viewReady = true
@@ -218,6 +269,8 @@ assert(MacroWindow.Disable("blizzardWindows") and not scrollBox.callback
     and visible[frame] == false
     and visible[frame.Inset] == false and visible[MacroFrameTextBackground] == false,
     "Macro window did not release its visual ownership")
+assert(not NS.ContentMotion.IsWindow(frame) and not geometryOwners[frame] and not opening.group.playing,
+    "Macro window did not release its animation ownership")
 assert(MacroFramePortrait.alpha == 1 and frame.Bg.alpha == 1
     and frame.NineSlice.alpha == 1 and one.backdrop.alpha == 1
     and frame.Inset.NineSlice.alpha == 1,

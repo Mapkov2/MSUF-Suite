@@ -86,8 +86,18 @@ local function FlatButton(parent, width, height)
     return button
 end
 
-local function TabClicked(button)
-    if button.tab then handlers.select(button.tab) end
+local function TabClicked(button, mouseButton)
+    local tab = button.tab
+    if not tab then return end
+    if mouseButton == "RightButton" then
+        S.ContextMenu(button, function(_, menu)
+            local action = menu:CreateButton(S.Text(tab.pinned and "Unpin conversation" or "Pin conversation"),
+                function() D.TogglePin(tab) end)
+            action:SetEnabled(D.CanPin(tab))
+        end)
+        return
+    end
+    handlers.select(tab)
 end
 
 local function TabClosed(close)
@@ -109,6 +119,7 @@ local function TabButton(index)
     close.label:SetText("x")
     close:SetScript("OnClick", TabClosed)
     button.close = close
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetScript("OnClick", TabClicked)
     panel.tabs[index] = button
     return button
@@ -137,6 +148,7 @@ end
 local function PaintTab(button, tab)
     button.tab = tab
     local label = tab.label or ""
+    if tab.pinned then label = "|TInterface\\Minimap\\Tracking\\Target:12:12|t " .. label end
     if tab.unread > 0 then label = label .. " |cffffd100(" .. tab.unread .. ")|r" end
     button.label:SetText(label)
     local selected = tab == D.selected

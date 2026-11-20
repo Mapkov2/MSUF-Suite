@@ -237,7 +237,9 @@ local function ApplyDefinition(definition)
     if definition.trackIconTree == true then
         NS.Checkmarks.TrackControlTree(frame, id, definition.iconTreeOptions)
     end
-    if definition.menuMotion ~= false then TrackMenuMotion(frame, id) end
+    if definition.menuMotion ~= false then
+        TrackMenuMotion(frame, id, false, id ~= "colorPicker")
+    end
     NS.WindowControls.Attach(frame, id)
     if id == "blizzardWindows" and combatWindowPreparationReady and CanPrepareProfessions() then PrepareProfessions() end
     return true

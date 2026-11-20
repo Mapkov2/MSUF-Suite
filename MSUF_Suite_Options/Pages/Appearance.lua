@@ -394,6 +394,7 @@ local function BuildShape(ctx, b, skin)
         function() return skin.DB.theme.menuAnimations ~= false end,
         function(value) Change(skin, "Menu animations", "theme.menuAnimations",
             function() return skin.Theme.SetAppearance("menuAnimations", value) end) end)
+    Kit.AddWindowAnimationRow(shape, skin)
     shape[#shape + 1] = Row("toggle", "Dim background for dropdowns", "theme.dropdownDimming", "shape",
         function() return skin.DB.theme.dropdownDimming ~= false end,
         function(value) Change(skin, "Dim background for dropdowns", "theme.dropdownDimming",

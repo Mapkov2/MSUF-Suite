@@ -260,7 +260,7 @@ do
     local underlined = Draw(RETAIL, "quests", { groupUnderlines = true })
     Check(#underlined.fills ~= #plain.fills, "group underlines do not change the preview")
     -- The first fill is the header divider; the second the line under the heading.
-    Check(underlined.fills[2].height == 4 and underlined.fills[2].width == 310 - 17,
+    Check(underlined.fills[2].height == 1 and underlined.fills[2].width == 310 - 17,
         "the underline is not drawn under the heading")
     -- Bonus rows follow their switch.
     local hidden = Draw(RETAIL, "bonus", { showBonus = false })
