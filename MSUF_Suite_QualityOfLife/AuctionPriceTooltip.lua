@@ -168,7 +168,7 @@ end
 -- This callback belongs to the auction house, so item tooltips elsewhere
 -- have no additional callback, combat event, timer or background price read.
 local function AuctionTooltip(owner, row)
-    if not M.active or S.InCombat() then return end
+    if not M.active or NS.InCombat() then return end
     local id, browse = AuctionRow(owner, row)
     if not id then return end
     local tooltip, data = Lines.Open()

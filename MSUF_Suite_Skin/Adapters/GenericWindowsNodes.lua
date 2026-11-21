@@ -566,6 +566,7 @@ local function SkinRootChrome(frame, owner, metrics)
     local targets = metrics.rootChromeTargets
     FadeFields(owner, frame, separatorFields, targets)
     FadeChrome(frame, owner, targets)
+    if metrics.surfaceTargets[frame] then Shared.ConcealPortraitChrome(frame, owner, targets) end
     FadeAtlasRegions(frame, owner, targets, anonymousChromeAtlases)
     if metrics.menuPopup then
         FadeAtlasRegions(frame, owner, targets, menuBackgroundAtlases)
@@ -576,8 +577,10 @@ end
 -- Checkmarks child pass (TrackNode) already tracked its button textures.
 local function SkinNode(frame, owner, metrics, isRoot, buttonTracked)
     local objectType = Kit.ObjectType(frame)
-    -- Native container identity survives the Suite's reagent-slot reparenting.
     if objectType == "Button" then
+        -- LegacyWindows supplies all four visual states for these two buttons.
+        if frame == MerchantPrevPageButton or frame == MerchantNextPageButton then return end
+        -- Native container identity survives the Suite's reagent-slot reparenting.
         local container = Field(frame, "containerFrame")
         if Safety.Public(container) and NS.SuiteOwnership.IsBagShell(container)
             and NS.SuiteOwnership.Owns("bagWindows") then return end

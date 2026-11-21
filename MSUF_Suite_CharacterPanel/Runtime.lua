@@ -287,6 +287,9 @@ function Dirty(_, event, first, success)
     if not Module.kind then return end
     if event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         Module.view:CancelWindowGestures()
+        if Module.view.nativeLayout and not Host.InCombat() then
+            Module.layoutGeometry.WindowAction(Module.layoutRoot, "prepare")
+        end
         Module.view:FitScreen()
         return
     end
@@ -646,9 +649,15 @@ local function NativeVisibilityChanged(root, requestedTab)
     end
 end
 
-local function FitNative() if Module.kind == PLAYER then Module.view:FitScreen() end end
+local function FitNative()
+    if Module.kind ~= PLAYER then return end
+    if Module.view.nativeLayout then
+        return Module.layoutGeometry.RefreshChrome(Module.layoutRoot)
+    end
+    Module.view:FitScreen()
+end
 local function NativeSizeChanged()
-    if Module.kind == PLAYER and not Module.view.nativeLayout then Module.nativeFitJob:Request() end
+    if Module.kind == PLAYER then Module.nativeFitJob:Request() end
 end
 local function InspectInputMode(_, event, cvar)
     if event == "CVAR_UPDATE" and (NS.String(cvar) or ""):lower() ~= "gamepadenable" then return end

@@ -305,6 +305,60 @@ local function FadeTextures(owner, ...)
     end
 end
 
+-- Blizzard puts the portrait and its metal NineSlice on the OVERLAY layer
+-- of dedicated art hosts. A repaint can reset texture alpha while the
+-- general window skin still owns it. Suppress drawing independently.
+local function SuppressArtLayer(frame, owner)
+    if not Public(frame) or not Safety.CanDecorate(frame, true) or not Safety.HasMethod(frame, "SetDrawLayerEnabled") then return false end
+    local enabled = Read(frame, "IsDrawLayerEnabled", "OVERLAY")
+    if type(enabled) ~= "boolean" then return false end
+    if enabled then
+        owner[frame] = "layer"
+        frame:SetDrawLayerEnabled("OVERLAY", false)
+    end
+    return true
+end
+
+local function HideArtTexture(region, owner)
+    if Public(region) and Safety.CanDecorate(region, true) and Read(region, "IsShown") == true and Safety.HasMethod(region, "SetShown") then
+        owner[region] = "texture"
+        region:SetShown(false)
+    end
+end
+
+local function RestoreCharacterArt(owner)
+    for region, kind in pairs(owner) do
+        if Safety.CanDecorate(region, true) then
+            if kind == "layer" and Read(region, "IsDrawLayerEnabled", "OVERLAY") == false then
+                region:SetDrawLayerEnabled("OVERLAY", true)
+            elseif kind == "texture" and Read(region, "IsShown") == false then
+                region:SetShown(true)
+            end
+            owner[region] = nil
+        end
+    end
+    NS.Cosmetics.RestoreOwner(owner)
+end
+
+local function PaintCharacterChrome(view)
+    local owner, root = view.chromeOwner, view.root
+    if not owner then return end
+    if not view.presentation then
+        RestoreCharacterArt(owner)
+        return
+    end
+    local slice = Safety.Field(root, "NineSlice")
+    if Public(slice) and not Safety.IsForbidden(slice) and not SuppressArtLayer(slice, owner) then
+        NS.Cosmetics.VisitNineSlice(slice, HideArtTexture, owner)
+    end
+    local container = Safety.Field(root, "PortraitContainer")
+    if Public(container) and not Safety.IsForbidden(container) and not SuppressArtLayer(container, owner) then
+        HideArtTexture(Read(root, "GetPortrait") or Safety.Field(container, "portrait"), owner)
+    end
+    local glow = Safety.Field(root, "FrameGlow")
+    if Public(glow) and Safety.CanDecorate(glow, true) and Read(glow, "GetAlpha") ~= 0 then NS.Cosmetics.Fade(glow, owner) end
+end
+
 -- The original button covers the union of the two authored icon positions.
 -- Owned blockers in the Suite view expose only the active part of that span.
 local function ApplyHitInsets(v, frame, insets)
@@ -372,6 +426,7 @@ function CharacterGeometry.Apply(root, plan)
     if closeScale then Scale(v, close, closeScale) end
     Place(v, close, "TOPLEFT", root, "TOPLEFT", plan.close.x / closeRatio, -plan.close.y / closeRatio)
     Layer(v, close, plan.strata, plan.closeLevel)
+    if v.presentation then PaintCharacterChrome(v) end
     v.applying = nil
     return true
 end
@@ -381,15 +436,16 @@ end
 -- on open. Preserve both renderers and the cooldown and text layers of the
 -- original equipment slots under the Suite view.
 local function SetGlassAlpha(record, frame, ignore)
-    if record.applied ~= ignore then
+    if Read(frame, "IsIgnoringParentAlpha") ~= ignore then
         frame:SetIgnoreParentAlpha(ignore)
-        record.applied = ignore
     end
+    record.applied = ignore
 end
 
 local function ClearGlass(v)
     local glass = v.glass
     if not glass then return end
+    v.glass = nil
     for frame, record in pairs(glass.alpha) do
         if Safety.HasMethod(frame, "SetIgnoreParentAlpha")
             and Read(frame, "IsIgnoringParentAlpha") == record.applied then
@@ -398,7 +454,6 @@ local function ClearGlass(v)
     end
     if not Safety.IsForbidden(v.root) then NS.Cosmetics.Restore(v.root, glass) end
     if glass.controls and not Safety.IsForbidden(glass.controls) then NS.Cosmetics.Restore(glass.controls, glass) end
-    v.glass = nil
 end
 
 local function CaptureGlassAlpha(glass, frame)
@@ -408,23 +463,55 @@ local function CaptureGlassAlpha(glass, frame)
     return true
 end
 
-local function StartGlass(v, surface)
+local glassHookRoot
+local function StopNativeCharacterFade(root)
+    -- The Suite view owns its own opening animation. End only the current
+    -- CharacterFrame transform before hiding the native root beneath it.
+    local motion = NS.ContentMotion
+    local record = motion.records[root]
+    if record and motion.active[record] then motion.StopOwner(record.owner, root) end
+end
+
+local function NativeGlassAlphaChanged(root, alpha)
+    local glass = layout and layout.root == root and layout.glass
+    if not glass or glass.writing or not glass.refresh or not Public(alpha) then return end
+    if NS.Cosmetics.GetOwner(root) ~= glass then return end
+    NS.Cosmetics.CaptureNativeAlpha(root, glass)
+    if alpha ~= 0 then glass.refresh() end
+end
+
+local function StartGlass(v, surface, refresh)
     if not CanLayout(v.root) or Read(surface, "GetParent") ~= v.root then return end
     local flyout = Safety.Field(_G, "EquipmentFlyoutFrame")
-    local glass = { alpha = {}, surface = surface, model = v.model, slots = v.slots }
+    local glass = { alpha = {}, surface = surface, model = v.model, slots = v.slots, refresh = refresh }
     if not CaptureGlassAlpha(glass, surface) or not CaptureGlassAlpha(glass, v.model) then return end
     if flyout and not CaptureGlassAlpha(glass, flyout) then return end
     for _, slot in ipairs(glass.slots) do
         if not CaptureGlassAlpha(glass, slot.frame) then return end
     end
+    StopNativeCharacterFade(v.root)
     if not NS.Cosmetics.Fade(v.root, glass) then return end
     if CanLayout(v.controls) and NS.Cosmetics.Fade(v.controls, glass) then glass.controls = v.controls end
     SetGlassAlpha(glass.alpha[surface], surface, true)
     if flyout then SetGlassAlpha(glass.alpha[flyout], flyout, true) end
     v.glass = glass
+    if refresh and glassHookRoot ~= v.root then
+        hooksecurefunc(v.root, "SetAlpha", NativeGlassAlphaChanged)
+        glassHookRoot = v.root
+    end
 end
 
-function CharacterGeometry.SetGlass(root, surface, enabled, modelVisible, gearVisible)
+local function GlassRootHidden(root, glass, alpha)
+    if alpha == 0 then return true end
+    if not alpha or not CanLayout(root) or NS.Cosmetics.GetOwner(root) ~= glass then return false end
+    glass.writing = true
+    StopNativeCharacterFade(root)
+    NS.Cosmetics.Fade(root, glass)
+    glass.writing = nil
+    return Read(root, "GetAlpha") == 0
+end
+
+function CharacterGeometry.SetGlass(root, surface, enabled, modelVisible, gearVisible, refresh)
     local v = layout
     if not NS.Client.isForever or not v or v.root ~= root then return false end
     local glass = v.glass
@@ -434,7 +521,8 @@ function CharacterGeometry.SetGlass(root, surface, enabled, modelVisible, gearVi
         if not enabled and glass then
             NS.CombatGate.RunOrDefer(GLASS_KEY, function() ClearGlass(v) end)
         elseif enabled then NS.CombatGate.Cancel(GLASS_KEY) end
-        return glass ~= nil, glass and glass.alpha[glass.model].applied, glass and glass.gearVisible
+        return enabled and glass and Read(root, "GetAlpha") == 0 or false,
+            glass and Read(glass.model, "IsIgnoringParentAlpha") ~= false, glass and glass.gearVisible
     end
     NS.CombatGate.Cancel(GLASS_KEY)
     if not enabled then
@@ -442,15 +530,17 @@ function CharacterGeometry.SetGlass(root, surface, enabled, modelVisible, gearVi
         return false
     end
     if glass and (glass.surface ~= surface or glass.model ~= v.model) then ClearGlass(v) end
-    if not v.glass then StartGlass(v, surface) end
+    if not v.glass then StartGlass(v, surface, refresh) end
     glass = v.glass
     if not glass then return false end
+    local alpha = Read(root, "GetAlpha")
+    if alpha ~= 0 then SetGlassAlpha(glass.alpha[surface], surface, true) end
     SetGlassAlpha(glass.alpha[glass.model], glass.model, modelVisible)
-    if glass.gearVisible ~= gearVisible then
+    if glass.gearVisible ~= gearVisible or alpha ~= 0 then
         for _, slot in ipairs(glass.slots) do SetGlassAlpha(glass.alpha[slot.frame], slot.frame, gearVisible) end
         glass.gearVisible = gearVisible
     end
-    return true, modelVisible, gearVisible
+    return GlassRootHidden(root, glass, alpha), Read(glass.model, "IsIgnoringParentAlpha") ~= false, gearVisible
 end
 
 local function ReleaseLayout()
@@ -458,6 +548,8 @@ local function ReleaseLayout()
     if not v or v.releasing or Safety.IsForbidden(v.root) then return end
     v.releasing = true
     ClearGlass(v)
+    v.presentation = nil
+    PaintCharacterChrome(v)
     for frame, record in pairs(v.geometry) do
         if RestoreFrame(frame, record) then v.geometry[frame] = nil end
     end
@@ -470,7 +562,24 @@ function CharacterGeometry.Release(root)
     if layout and layout.root == root then NS.CombatGate.RunOrDefer(RELEASE_KEY, ReleaseLayout) end
 end
 
+function CharacterGeometry.RefreshChrome(root)
+    local view = layout
+    if view and view.root == root and view.chromeOwner then
+        NS.CombatGate.RunOrDefer(view.chromeOwner, view.refreshChrome)
+    end
+end
+
 function CharacterGeometry.Present(root, surface)
+    local view = layout
+    if view and view.root == root then
+        view.presentation = surface
+        if not view.chromeOwner then
+            view.chromeOwner = {}
+            view.refreshChrome = function() PaintCharacterChrome(view) end
+        end
+        CharacterGeometry.RefreshChrome(root)
+    end
+    NS.WindowControls.SetSuitePresentation(root, surface ~= nil)
     NS.WindowFocus.Present(root, surface)
 end
 

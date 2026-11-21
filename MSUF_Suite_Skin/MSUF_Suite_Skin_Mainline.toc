@@ -1,4 +1,4 @@
-## Interface: 120100, 120105, 16001
+## Interface: 120100, 120105, 120107, 16001
 ## Title: MSUF Suite - Skinning
 ## Notes: Window and addon skinning for MSUF Suite.
 ## Author: Mapko
@@ -73,10 +73,16 @@ Adapters\GenericWindowsNodes.lua
 Adapters\GenericWindowsFrames.lua
 Adapters\ChatConfig.lua
 Adapters\TooltipChrome.lua
+Adapters\ItemTooltipCard.lua
+Adapters\LootTooltipRows.lua
 Adapters\CatalogShopMotion.lua
+Adapters\FlightMapChrome.lua
 Adapters\GenericWindowsCatalog.lua
 Adapters\TutorialPointers.lua
 Rendering\ScrollMotion.lua
+Adapters\QuestRewardSelection.lua
+Adapters\QuestRewardCards.lua
+Adapters\QuestWindow.lua
 Adapters\QuestText.lua
 Adapters\MacroWindow.lua
 Adapters\DeepWindows.lua
@@ -126,6 +132,7 @@ Adapters\Blizzard.lua
 Rendering\WindowFocusDiscovery.lua
 Rendering\PublicWidgetParts.lua
 Rendering\PublicWidgetSkin.lua
+Rendering\PublicMenuStyle.lua
 Rendering\PublicCaption.lua
 Rendering\AddonWindowControls.lua
 Core\PublicAPIControls.lua
@@ -147,6 +154,7 @@ Adapters\AceWidgets.lua
 Adapters\AddonMenus.lua
 Adapters\AddonSkinsCatalog.lua
 Adapters\AddonSkins.lua
+Adapters\AddonSkinQuestie.lua
 Adapters\AddonSkinTriggers.lua
 Adapters\AddonSkinDiscovery.lua
 Adapters\AddonSkinSettings.lua

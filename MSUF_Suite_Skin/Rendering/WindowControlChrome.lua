@@ -30,7 +30,7 @@ end
 local outsideGrips = {
     ProfessionsFrame = true, ModelPreviewFrame = true, EventTrace = true, OpacityFrame = true,
     ChatConfigFrame = true, HelpFrame = true, CooldownViewerSettings = true,
-    ColorPickerFrame = true, ScriptErrorsFrame = true, ClickBindingFrame = true,
+    ColorPickerFrame = true, ScriptErrorsFrame = true, ClickBindingFrame = true, QuestFrame = true,
 }
 
 function Chrome.Footprint(state)
@@ -50,6 +50,10 @@ local function ExteriorGrip(grip, state)
     local ratio = NS.WindowControlPolicy.ScreenRatio(frame)
     local right, bottom = Safety.Read(frame, "GetRight"), Safety.Read(frame, "GetBottom")
     local topSide = ratio and type(bottom) == "number" and (bottom - 21) * ratio < 0
+    if state.name == "HelpFrame" and not topSide then
+        grip:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        return
+    end
     if NS.Client.isForever and state.name == "ProfessionsFrame" and not topSide then
         -- Dock under the lower border. Camelot's Create button starts at y=7,
         -- and the profession tabs sit beyond the right edge.
@@ -506,6 +510,17 @@ local function ShowStandaloneMinimize(state, level, besideClose)
     return PlaceCell(button, nil, 22, 22, level, "minimize")
 end
 
+local function PlaceCloseCell(state, width, height, level)
+    local close = DrawnCell(state, "closeCell")
+    close:ClearAllPoints()
+    close:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", state.captionX, state.captionY)
+    PlaceCell(close, nil, width, height, level, "close")
+    Drive(state.close, close)
+    FadeSockets(state)
+    RefreshFocus(state.frame)
+    return close
+end
+
 function Chrome.ShowCaption(state, level)
     Chrome.SyncMinimize(state)
     local width, height, room, inset, limit, right, scale = Chrome.CaptionSize(state)
@@ -514,7 +529,8 @@ function Chrome.ShowCaption(state, level)
         Chrome.LeaveFit(state)
         width, height, room, inset, limit, right, scale = Chrome.CaptionSize(state)
     end
-    local cells = width and not gamepad and not state.nativeCaption and FadeNative(state, state.close)
+    local nativeClose = state.name == "CatalogShopFrame"
+    local cells = width and not gamepad and not state.nativeCaption and (nativeClose or FadeNative(state, state.close))
     -- Combat leaves a shown caption where it is (a protected window can read
     -- as unsized there): Blizzard's buttons stay faded, the toggle's cell comes
     -- and goes with the toggle, and the window is laid out once combat ends.
@@ -545,13 +561,7 @@ function Chrome.ShowCaption(state, level)
     -- A tight title shrinks all cells alike before one of them gives way.
     local cells = ((state.maximize or toggle) and 1 or 0) + (minimize and 1 or 0)
     if cells > 0 and room < width * cells then width = math.max(18, math.floor(room / cells)) end
-    local close = DrawnCell(state, "closeCell")
-    close:ClearAllPoints()
-    close:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", state.captionX, state.captionY)
-    PlaceCell(close, nil, width, height, level, "close")
-    Drive(state.close, close)
-    FadeSockets(state)
-    RefreshFocus(state.frame)
+    local close = nativeClose and state.close or PlaceCloseCell(state, width, height, level)
     local middle = state.sizeToggle and ToggleCell(state, close, width, height, level)
     local maximize = state.maximize
     if maximize and not middle and room >= width * 2 then

@@ -47,6 +47,7 @@ local capabilities = {
     dropdowns = true, checkButtons = true, sliders = true, scrollBars = true,
     directionalWindowActions = true, captionActions = true, registeredWindows = true,
     targetStatus = true, targetNotifications = true, menuStyleTokens = true, registeredAddonSwitch = true,
+    windowGeometry = true, menuDescriptionStyling = true, standardWidgetArtwork = true,
     batches = true,
     menuMotion = true,
     labels = true,

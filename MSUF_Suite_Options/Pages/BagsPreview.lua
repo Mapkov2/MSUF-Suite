@@ -5,6 +5,13 @@ local VIEW, BANK_VIEW = P.Suite.BagsView, P.Suite.BagsBankView
 local GOLD_PERIOD = P.Suite.BagsGoldPeriod
 local EMPTY = {}
 local BANK_WIDTH, BANK_HEIGHT = 738, 460
+local BACKPACK_COLUMNS, BACKPACK_SLOTS = 10, 66
+local BACKPACK_SLOT_SIZE, BACKPACK_SPACING = 37, 5
+local BACKPACK_TOP, BACKPACK_BOTTOM = 72, 21
+local BACKPACK_PITCH = BACKPACK_SLOT_SIZE + BACKPACK_SPACING
+local BACKPACK_ROWS = math.ceil(BACKPACK_SLOTS / BACKPACK_COLUMNS)
+local BACKPACK_WIDTH = BACKPACK_COLUMNS * BACKPACK_PITCH - BACKPACK_SPACING + 15
+local BACKPACK_HEIGHT = BACKPACK_ROWS * BACKPACK_PITCH - BACKPACK_SPACING + BACKPACK_TOP + BACKPACK_BOTTOM
 
 local function RefreshGuide(preview)
     if preview.hovered and not preview.hovered:IsVisible() then preview.hovered = nil end
@@ -38,12 +45,17 @@ end
 
 -- The runtime supplies representative items and its real category/packing
 -- model. The menu never scans bags, banks or character inventories.
-local function Texture(parent, layer)
-    return parent:CreateTexture(nil, layer or "BACKGROUND")
+local function Texture(parent, layer, sublevel)
+    return parent:CreateTexture(nil, layer or "BACKGROUND", nil, sublevel)
 end
 local function Chrome(window, width)
     local t = { shell = window, combined = true }
-    for i = 1, 9 do t[i] = Texture(window, i == 4 and "ARTWORK" or "BACKGROUND") end
+    t[1] = Texture(window, "BACKGROUND", -8)
+    t[2] = Texture(window, "BACKGROUND", -7)
+    t[3] = Texture(window, "BORDER", -7)
+    t[4] = Texture(window, "ARTWORK", -7)
+    t[5] = Texture(window, "BORDER", -6)
+    for i = 6, 9 do t[i] = Texture(window, "ARTWORK", -6) end
     t[1]:SetPoint("TOPLEFT", -3, 3)
     t[1]:SetPoint("BOTTOMRIGHT", 3, -3)
     t[2]:SetAllPoints(window)
@@ -96,7 +108,7 @@ end
 local function PaintCaption(preview, c, bank)
     local panel = not bank and S.BagsPreviewIsPanel(c)
     local maximize = preview.caption[2]
-    maximize.previewMuted = not panel
+    maximize.previewMuted = not (panel or not bank and c.inventoryView == VIEW.BLIZZARD_GRID)
     S.WindowCaption.SetKind(maximize, panel and c.panelFullHeight and "restore" or "maximize")
     for _, cell in ipairs(preview.caption) do cell:SetShown(not bank) end
 end
@@ -149,6 +161,13 @@ local function PaintItem(slot, item, c, bank, native)
     S.SetFont(slot.count, S.ResolveFont(c.font) or S.GlobalFontPath(), c.itemCountSize, "OUTLINE")
 end
 
+local function PaintEmpty(slot, c)
+    S.BagsPaintPreviewSlot(slot, c, EMPTY)
+    slot.level:Hide()
+    slot.count:Hide()
+    slot.arrow:Hide()
+end
+
 local function PaintBorderExamples(ui, preview, c, bank)
     local examples = preview.borderExamples
     if not examples then
@@ -171,10 +190,7 @@ local function PaintBorderExamples(ui, preview, c, bank)
     examples:ClearAllPoints()
     examples:SetPoint("TOPLEFT", preview.window, "BOTTOMLEFT", 0, -10)
     PaintItem(examples.item, preview.snapshot.items[1], c, false)
-    S.BagsPaintPreviewSlot(examples.empty, c, EMPTY)
-    examples.empty.level:Hide()
-    examples.empty.count:Hide()
-    examples.empty.arrow:Hide()
+    PaintEmpty(examples.empty, c)
     preview.footer:ClearAllPoints()
     preview.footer:SetPoint("TOPLEFT", examples, "BOTTOMLEFT", -4, -4)
 end
@@ -208,20 +224,26 @@ end
 
 local function Geometry(preview, c, bank, native)
     local g = preview.geometry
+    g.nativeBackpack = not bank and c.inventoryView == VIEW.BLIZZARD_GRID
     if bank then
         g.panel, g.sidebar, g.top = false, c.bankView == BANK_VIEW.CATEGORIES and 170 or 12, 40
         g.height = BANK_HEIGHT
         g.rows = math.floor((g.height - 84) / 40)
+    elseif g.nativeBackpack then
+        g.panel, g.sidebarShown, g.rail = false, false, 0
+        g.width, g.height, g.rows = BACKPACK_WIDTH, BACKPACK_HEIGHT, BACKPACK_ROWS
     else
         local width, height = UIParent:GetWidth(), UIParent:GetHeight()
         local scale = S.BagsPreviewScale(c, width, height, 24, false)
         S.BagsPreviewGeometry(g, c, width / scale, height / scale - 12, 24)
     end
-    local layout = not native and S.BagsPreviewLayout(preview.snapshot, c, bank, not bank and g or nil) or EMPTY
-    if not bank then S.BagsFitPreviewRows(g, c, preview.snapshot.model.lineCount) end
+    local layout = EMPTY
+    if not native and not g.nativeBackpack then
+        layout = S.BagsPreviewLayout(preview.snapshot, c, bank, not bank and g or nil)
+        if not bank then S.BagsFitPreviewRows(g, c, preview.snapshot.model.lineCount) end
+    end
     local columns = preview.snapshot.config.inventoryColumns
     local width = native and BANK_WIDTH or bank and preview.snapshot.width or g.width
-    if not bank and c.inventoryView == VIEW.BLIZZARD_GRID then g.rows, g.height = 5, 360 end
     preview.rows = g.rows
     preview.content:SetSize(width, g.height)
     local outerWidth, outerHeight = width + (native and 36 or 0), g.height + (native and 28 or 0)
@@ -246,6 +268,35 @@ local function PlaceTool(button, label, texture, atlas, panel, x, y, width)
     S.BagsPaintPreviewTool(button, label, texture, atlas, panel)
 end
 
+local function PlaceSessionGold(preview, c)
+    local g = preview.geometry
+    local show = (g.panel or g.nativeBackpack) and c.showSessionGold
+    preview.session:SetShown(show)
+    preview.sessionJump:SetShown(show)
+    if not show then return end
+    local label, period = preview.session, c.goldPeriod
+    local session, today = Tr("Session %s"):format("+124 |cffffd700g|r"), Tr("Today %s"):format("+370 |cffffd700g|r")
+    label:ClearAllPoints()
+    label:SetPoint("BOTTOMLEFT", preview.content, "BOTTOMLEFT", 8, g.panel and 50 or 2)
+    label:SetSize(g.panel and 96 or 260, g.panel and (period == GOLD_PERIOD.BOTH and 44 or 32) or 18)
+    label:SetWordWrap(g.panel)
+    label:SetText(period == GOLD_PERIOD.TODAY and today
+        or period == GOLD_PERIOD.BOTH and session .. (g.panel and "\n" or "    ") .. today or session)
+    S.SetFont(label, S.ResolveFont(c.font) or S.GlobalFontPath(), 11, "OUTLINE")
+end
+
+local function PlaceNativeBackpackControls(preview, width)
+    local title, search = preview.title, preview.search
+    title:SetWidth(width - 104)
+    title:SetJustifyH("CENTER")
+    search:ClearAllPoints()
+    search:SetPoint("TOPLEFT", preview.content, "TOPLEFT", 62, -37)
+    search:SetSize(330, 18)
+    preview.searchLabel:SetWidth(314)
+    P.SetTranslatedText(preview.searchLabel, Tr("Search"))
+    PlaceTool(preview.cleanup, "Clean up bags", nil, "bags-button-autosort-up", true, -9, -34, 24)
+end
+
 local function PlaceControls(preview, c, bank, width, native)
     local g = preview.geometry
     local suite = not bank and c.inventoryView ~= VIEW.BLIZZARD_GRID
@@ -256,14 +307,16 @@ local function PlaceControls(preview, c, bank, width, native)
     preview.title:SetWidth(native and width - 24 or 400)
     preview.title:SetJustifyH(native and "CENTER" or "LEFT")
     preview.categories:SetShown(categories)
-    preview.categories:ClearAllPoints()
-    preview.categories:SetPoint("TOPLEFT", preview.content, "TOPLEFT", g.panel and 8 or 12, g.panel and -224 or -g.top)
-    preview.categories:SetSize(g.panel and 88 or 148, g.panel and g.height - 318 or (bank and 260 or g.height - g.top - g.bottom))
-    preview.categoryLabel:SetWidth(g.panel and 80 or 140)
+    if categories then
+        preview.categories:ClearAllPoints()
+        preview.categories:SetPoint("TOPLEFT", preview.content, "TOPLEFT", g.panel and 8 or 12, g.panel and -224 or -g.top)
+        preview.categories:SetSize(g.panel and 88 or 148, g.panel and g.height - 318 or (bank and 260 or g.height - g.top - g.bottom))
+        preview.categoryLabel:SetWidth(g.panel and 80 or 140)
+    end
     preview.search:ClearAllPoints()
     local searchLeft = bank and 240 or (g.panel and g.rail + 20 or 12)
     preview.search:SetPoint("TOPLEFT", preview.content, "TOPLEFT", searchLeft, bank and -7 or (g.panel and -58 or -91))
-    preview.search:SetWidth(width - searchLeft - 12)
+    preview.search:SetSize(width - searchLeft - 12, 23)
     preview.searchLabel:SetWidth(width - searchLeft - 28)
     P.SetTranslatedText(preview.searchLabel, Tr(native and "Search" or "Search items"))
     for i, button in ipairs(preview.viewButtons) do
@@ -279,20 +332,15 @@ local function PlaceControls(preview, c, bank, width, native)
         g.panel, g.panel and -99 or -12, g.panel and -16 or -62, g.panel and 24 or 116)
     PlaceTool(preview.cleanup, bank and "Manage bank tabs" or "Clean up bags", nil, "bags-button-autosort-up",
         g.panel, g.panel and -131 or (bank and -12 or -156), g.panel and -16 or -328, g.panel and 24 or (bank and 160 or 108))
-    local showSession = g.panel and c.showSessionGold
-    preview.session:SetShown(showSession)
-    preview.sessionJump:SetShown(showSession)
-    local session, today = Tr("Session %s"):format("+124 |cffffd700g|r"), Tr("Today %s"):format("+370 |cffffd700g|r")
-    local period = c.goldPeriod
-    preview.session:SetHeight(period == GOLD_PERIOD.BOTH and 44 or 32)
-    preview.session:SetText(period == GOLD_PERIOD.TODAY and today or period == GOLD_PERIOD.BOTH and session .. "\n" .. today or session)
-    S.SetFont(preview.session, S.ResolveFont(c.font) or S.GlobalFontPath(), 11, "OUTLINE")
+    PlaceSessionGold(preview, c)
     if native then
         preview.search:ClearAllPoints()
         preview.search:SetPoint("TOPRIGHT", preview.content, "TOPRIGHT", -56, -33)
         preview.search:SetWidth(110)
         preview.searchLabel:SetWidth(94)
         PlaceTool(preview.cleanup, "Clean up bags", nil, "bags-button-autosort-up", true, -20, -33, 24)
+    elseif g.nativeBackpack then
+        PlaceNativeBackpackControls(preview, width)
     elseif not g.panel then
         preview.cleanup:ClearAllPoints()
         preview.cleanup:SetPoint("BOTTOMRIGHT", preview.content, "BOTTOMRIGHT", bank and -12 or -156, 10)
@@ -302,7 +350,8 @@ local function PlaceControls(preview, c, bank, width, native)
     preview.free:SetSize(g.panel and 96 or 220, g.panel and 32 or 0)
     preview.free:SetWordWrap(g.panel)
     preview.chrome.goldLabel:ClearAllPoints()
-    preview.chrome.goldLabel:SetPoint("BOTTOMRIGHT", preview.content, "BOTTOMRIGHT", -12, 20)
+    preview.chrome.goldLabel:SetPoint("BOTTOMRIGHT", preview.content, "BOTTOMRIGHT",
+        g.nativeBackpack and -26 or -12, g.nativeBackpack and 5 or 20)
     preview.chrome.goldLabel:SetShown(not bank)
     preview.goldJump:SetShown(not bank)
 end
@@ -370,6 +419,48 @@ local function PaintNativeBank(ui, preview, c, native)
     for index, slot in pairs(preview.nativeBank.slots) do PaintItem(slot, preview.snapshot.items[index], c, true, true) end
 end
 
+-- Blizzard's combined bag packs ten columns of 37px slots from the bottom
+-- right, with 5px gaps. Populate the preview with example items only.
+local function CreateNativeBackpack(ui, preview)
+    local frame = CreateFrame("Frame", nil, preview.content)
+    frame:SetAllPoints(preview.content)
+    local slots = {}
+    for index = 1, BACKPACK_SLOTS do
+        local slot = Slot(preview, ui, frame)
+        local column, row = (index - 1) % BACKPACK_COLUMNS, math.floor((index - 1) / BACKPACK_COLUMNS)
+        slot:ClearAllPoints()
+        slot:SetSize(BACKPACK_SLOT_SIZE, BACKPACK_SLOT_SIZE)
+        slot:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -7 - column * BACKPACK_PITCH, BACKPACK_BOTTOM + row * BACKPACK_PITCH)
+        slots[index] = slot
+    end
+    local scaleGrip = GuideTarget(preview, K.Button(frame, 0, 0, 20, 20, function() ui:Focus("suite_bags_window") end))
+    scaleGrip:ClearAllPoints()
+    scaleGrip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+    scaleGrip.icon = Texture(scaleGrip, "ARTWORK")
+    scaleGrip.icon:SetAllPoints(scaleGrip)
+    scaleGrip.icon:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    return { frame = frame, slots = slots, scaleGrip = scaleGrip }
+end
+
+local function PaintNativeBackpack(ui, preview, c)
+    local grid = preview.nativeBackpack
+    if not preview.geometry.nativeBackpack then
+        if grid then grid.frame:Hide() end
+        return
+    end
+    grid = grid or CreateNativeBackpack(ui, preview)
+    preview.nativeBackpack = grid
+    grid.frame:Show()
+    local items = preview.snapshot.items
+    for index, slot in ipairs(grid.slots) do
+        if index <= 3 or index >= 31 then
+            PaintItem(slot, items[(index - 1) % 12 + 1], c, false)
+        else
+            PaintEmpty(slot, c)
+        end
+    end
+end
+
 local function PaintCells(ui, preview, c, bank, layout, columns)
     for _, slot in pairs(preview.slots) do slot:Hide() end
     for _, header in ipairs(preview.groups) do
@@ -405,6 +496,7 @@ local function PaintLayout(ui, preview, c, bank, native)
     PlaceControls(preview, c, bank, width, native)
     PaintCells(ui, preview, c, bank, layout, columns)
     PaintNativeBank(ui, preview, c, native)
+    PaintNativeBackpack(ui, preview, c)
 end
 
 local function Paint(ui, preview)
@@ -415,20 +507,27 @@ local function Paint(ui, preview)
     local c = S.Config("bags")
     local changed = K.Changed(preview.settings, c, P.catalog.bags.rules)
     local width, height = UIParent:GetWidth(), UIParent:GetHeight()
-    if not changed and preview.tab == ui.selected and preview.viewportWidth == width and preview.viewportHeight == height then return end
+    local border = S.BagsDefaultBorder and S.BagsDefaultBorder(c)
+    if not changed and preview.tab == ui.selected and preview.defaultBorder == border
+        and preview.viewportWidth == width and preview.viewportHeight == height then return end
+    preview.defaultBorder = border
     preview.tab, preview.viewportWidth, preview.viewportHeight = ui.selected, width, height
     local bank = ui.selected == "bank"
     local native = bank and c.bankView == BANK_VIEW.TABS
     preview.chrome.combined = not bank
     S.BagsPaintPreviewWindow(preview.chrome, bank and BankLook(preview.bankLook, c) or c)
     PaintCaption(preview, c, bank)
-    preview.chrome[3]:SetHeight(native and 22 or 62)
+    preview.chrome[3]:SetHeight(bank and (native and 22 or 40) or (preview.chrome.panel and 50 or 62))
     local title = bank and P.catalog.bags.rules.bankView.choices[c.bankView] or "Bags"
-    P.SetTranslatedText(preview.title, native and (BANK or Tr("Bank")) or Tr(title))
+    if native then title = BANK or Tr("Bank")
+    elseif not bank and c.inventoryView == VIEW.BLIZZARD_GRID then title = COMBINED_BAG_TITLE or Tr(title)
+    else title = Tr(title) end
+    P.SetTranslatedText(preview.title, title)
     PaintLayout(ui, preview, c, bank, native)
     PaintBorderExamples(ui, preview, c, bank)
-    preview.free:SetShown(not native and c.showFreeSlots)
-    preview.freeJump:SetShown(not native and c.showFreeSlots)
+    local showFree = not native and not preview.geometry.nativeBackpack and c.showFreeSlots
+    preview.free:SetShown(showFree)
+    preview.freeJump:SetShown(showFree)
     preview.free:SetText(string.format(bank and Tr("%d free") or Tr("%d free + %d reagent"), 22, 4))
     P.SetTranslatedText(preview.footer, Tr("Sample values. Click an element to open its settings."))
     P.MenuWorkspace.FitHeader(ui, math.max(406, 102 + preview.window:GetHeight())

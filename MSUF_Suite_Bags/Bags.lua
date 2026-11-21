@@ -549,6 +549,7 @@ local SUBMODULES = {
     { "SortDirection", "Refresh", "Restore" },                -- Blizzard's bag sorting direction
     { "BuybackSearch", "Refresh", "Disable" },                -- search the merchant buyback tab
     { "BagCaption", "Refresh", "Release" },                   -- the windows' minimize, maximize and close
+    { "NativeBagBar", "Refresh", "Disable" },                 -- bottom-screen native bag buttons
     { "BagsIdle", "Refresh", "Disable" },                     -- pauses the listeners above in a fight with the bags closed
 }
 M.SUBMODULES = SUBMODULES
@@ -582,7 +583,8 @@ end
 -- every setting of the catalog section "itemLevels" (MSUF_Suite/Core/Catalog/
 -- Bags.lua) except its switches, so a new text option joins it on its own.
 local SLOT_KEYS = { "backgroundColor", "accentColor", "slotBorderWidth", "emptySlotBorderWidth" }
-local WINDOW_KEYS = { "look", "backgroundOpacity", "windowPresentation" }
+local WINDOW_KEYS = { "look", "backgroundOpacity", "windowPresentation",
+    "backpackBorderStyle", "backpackBorderColor", "backpackBorderWidth", "backpackBorderOpacity" }
 local LEVEL_KEYS = { "showItemLevel", "showBindBadge", "showBankItemLevel" }
 local GOLD_KEYS = { "showSessionGold", "goldPeriod" }
 local LABEL_KEYS, VISUAL_KEYS = {}, {}
@@ -636,6 +638,9 @@ function M:Refresh()
     end
     local c, last = self.config, self.appliedVisual
     local slotChanged, windowChanged, labelChanged, levelChanged, goldChanged = VisualChanges(c, last)
+    local border = Private.BagAppearance.DefaultBorder(c)
+    windowChanged = windowChanged or self.defaultBorder ~= border
+    self.defaultBorder = border
     local fontPath, fontEpoch = S.ResolveFont(c.font) or S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
     local readable = S.ReadableValues and S.ReadableValues() or false
     if self.fontPath ~= fontPath or self.fontEpoch ~= fontEpoch or self.readableValues ~= readable then

@@ -31,7 +31,7 @@ NS.SuiteCatalog.inventoryProtection.rules.sets.help =
 -- The highest quality Delete cheapest item offers (its "quality" choice).
 NS.CheapestItemQuality = { POOR = 1, COMMON = 2, UNCOMMON = 3 }
 Module("cheapestItem", "Delete cheapest item",
-    "A button on the open bag deletes the stack that sells for the least, to make room when your bags are full.", false, {
+    "Review the cheapest stacks in a separate window and delete a chosen stack to make room in your bags.", false, {
     B.Choice("quality", "Highest quality to delete", NS.CheapestItemQuality.POOR, { "Poor", "Common", "Uncommon" }),
     B.Bool("confirm", "Ask before deleting Poor items", true),
     B.Bool("keepEnchanting", "Protect enchanting materials from deletion", true),

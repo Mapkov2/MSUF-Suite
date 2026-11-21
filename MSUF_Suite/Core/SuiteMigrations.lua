@@ -100,6 +100,18 @@ function Steps.DataTextsBagButtons(modules)
     if anySlot then data.hideBlizzardBagBar = false end
 end
 
+function Steps.BagsBarVisibility(modules)
+    local data, bags = Module(modules, "dataTexts"), Module(modules, "bags")
+    if not HasSettings(data) or bags and bags.bagBarVisibility ~= nil then return end
+    local mode = NS.BagsBarVisibility
+    local value = mode.ALWAYS
+    if data.enabled ~= false then
+        if data.hideBlizzardBagBar ~= false then value = mode.NEVER
+        elseif data.bagBarMouseover == true then value = mode.MOUSEOVER end
+    end
+    EnsureModule(modules, "bags").bagBarVisibility = value
+end
+
 function Steps.ActionBarsCustomLook(modules)
     -- Action bar looks are newer than the bars. Existing profiles keep their
     -- exact button colors and spacing and show them as Custom.
@@ -117,6 +129,13 @@ function Steps.BagsCustomLook(modules)
         if bags[key] == nil then bags[key] = value end
     end
     bags.look = look.custom
+end
+
+function Steps.BagsDefaultBorder(modules)
+    local bags = Module(modules, "bags")
+    -- Start upgraded profiles with the standard frame, including profiles
+    -- saved by preview builds that already stored a custom border.
+    if bags then bags.backpackBorderStyle = NS.BagsBorderStyle.DEFAULT end
 end
 
 function Steps.LookRenumbering(modules)

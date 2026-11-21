@@ -177,13 +177,19 @@ end
 
 local function SkinExplicitFields(frame, owner, metrics)
     local allowImplicitProtected = metrics.allowImplicitProtected
+    if frame == LootFrame then
+        local close = Field(frame, "ClosePanelButton")
+        if Safety.Public(close) and Kit.ParentIs(close, frame) then
+            SkinIconButtonBase(close, owner, metrics, "CloseButton")
+        end
+    end
     if metrics.legacyDropdown then
         SkinLegacyDropdownList(frame, owner, metrics)
     end
 
     for index = 1, #explicitButtonFields do
         local control = ExplicitControl(frame, explicitButtonFields[index], allowImplicitProtected)
-        if control and Kit.ObjectType(control) == "Button"
+        if control and control ~= metrics.nativeClose and Kit.ObjectType(control) == "Button"
             and not SkinButton(control, owner, metrics) then
             SkinIconButtonBase(control, owner, metrics, explicitButtonFields[index])
         end
@@ -249,6 +255,8 @@ local function TraverseTree(root, owner, metrics, maxDepth, maxNodes, rootIsNode
         head = head + 1
         if IsOwnedEquipmentHost(current) then
             -- Skipped deliberately; see IsOwnedEquipmentHost.
+        elseif current == metrics.nativeClose then
+            -- The Shop keeps the complete native close button and artwork.
         elseif not CanSkin(current, metrics.allowImplicitProtected) then
             metrics.protected = metrics.protected + 1
         else
@@ -360,6 +368,7 @@ local function RootSpec(mode, allowImplicitProtected)
             inset = ModeValue(mode, "inset", 0),
             border = ModeValue(mode, "border", nil),
             fillVisible = ModeValue(mode, "fillVisible", true) ~= false,
+            fillAlphaScale = ModeValue(mode, "fillAlphaScale", nil),
             keepGlassFill = ModeValue(mode, "keepGlassFill", nil),
             listItem = ModeValue(mode, "listItem", false) == true,
             allowImplicitProtected = allowImplicitProtected,
@@ -422,37 +431,95 @@ local function StylePrimaryButton(frame, owner, mode)
     end
 end
 
-local portraitBorderSpec = { role = "shell", fillVisible = false, motion = false, radius = 4 }
-local portraitTitleSpec = { role = "shell", border = 0, motion = false, radius = 0 }
-local portraitTitleBands = Kit.WeakSet()
+local windowBorderSpec = { role = "shell", fillVisible = false, motion = false, radius = 4 }
+local browserChromeSpec = { role = "shell", opaqueFill = true, motion = false, radius = 4 }
+local windowTitleSpec = { role = "shell", border = 0, motion = false, radius = 0 }
+local windowTitleBands = Kit.WeakSet()
+local shopLogos = Kit.WeakSet()
 
-local function CanPaintPortraitRegion(region)
+local function CanPaintWindowRegion(region)
     return Safety.Public(region) and Safety.CanDecorate(region)
 end
 
--- The catalog shop inherits PortraitFrameTemplate. Its caption starts after
--- the portrait and ends 24 px from the right edge, just above HeaderFrame.
--- Use the NineSlice layer for the skin without covering the product canvas.
-local function SkinPortraitChrome(frame, owner, metrics)
-    if NS.IsCombatLocked() then return end
-    local nineSlice, title = Field(frame, "NineSlice"), Field(frame, "TitleContainer")
-    if not Safety.Public(nineSlice) or not CanSkin(nineSlice)
-        or not Safety.Public(title) or not CanSkin(title)
-        or not Kit.ParentIs(nineSlice, frame) or not Kit.ParentIs(title, frame) then return end
-
-    local band = portraitTitleBands[frame]
-    if not band then
-        band = Safety.CreateChildFrame("Frame", nineSlice)
-        band:SetPoint("TOPLEFT", title, "TOPLEFT")
-        band:SetPoint("BOTTOMRIGHT", title, "BOTTOMRIGHT", 22, -2)
-        portraitTitleBands[frame] = band
+local function SkinShopLogo(portrait, band, owner)
+    local native = Field(portrait, "portrait")
+    if not CanPaintWindowRegion(native) or not Kit.ParentIs(native, portrait) then return end
+    local logo = shopLogos[band]
+    if not logo then
+        logo = band:CreateTexture(nil, "ARTWORK")
+        logo:SetSize(16, 16)
+        logo:SetPoint("LEFT", band, "LEFT", 6, 0)
+        logo:SetTexture("Interface\\Icons\\UI_Shop")
+        local mask = band:CreateMaskTexture(nil, "ARTWORK")
+        mask:SetAllPoints(logo)
+        mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        logo:AddMaskTexture(mask)
+        logo:Hide()
+        shopLogos[band] = logo
     end
-    if not Attach(owner, band, portraitTitleSpec, metrics)
-        or not Attach(owner, nineSlice, portraitBorderSpec, metrics) then return end
+    if not NS.Cosmetics.Fade(native, owner) then return end
+    local state = OwnerState(owner)
+    if not state.windowArt then state.windowArt = Kit.WeakSet() end
+    state.windowArt[logo] = true
+    logo:Show()
+end
 
-    NS.Cosmetics.FadeNineSlice(nineSlice, owner, CanPaintPortraitRegion)
+-- Keep the Shop's title text, portrait and controls above the static band.
+local function AttachWindowTitle(frame, nineSlice, owner, metrics)
+    local title = Field(frame, "TitleContainer")
+    if not Safety.Public(title) or not CanSkin(title) or not Kit.ParentIs(title, frame) then return false end
+    local borderLevel = PublicNumber(nineSlice, "GetFrameLevel")
+    local titleLevel = PublicNumber(title, "GetFrameLevel")
+    local portrait = Field(frame, "PortraitContainer")
+    if not Safety.Public(portrait) then return end
+    local portraitLevel = PublicNumber(portrait, "GetFrameLevel")
+    if not borderLevel or not titleLevel or (portrait and not portraitLevel) then return end
+    local level = math.min(borderLevel, titleLevel, portraitLevel or titleLevel) - 1
+    if level < 0 then return end
+
+    local band = windowTitleBands[frame]
+    if not band then
+        band = Safety.CreateChildFrame("Frame", frame)
+        band:EnableMouse(false)
+        windowTitleBands[frame] = band
+    end
+    band:SetFrameLevel(level)
+    band:ClearAllPoints()
+    band:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -1)
+    band:SetPoint("BOTTOMRIGHT", title, "BOTTOMRIGHT", 22, -2)
+    if not Attach(owner, band, windowTitleSpec, metrics) then return false end
+    if CanPaintWindowRegion(portrait) and Kit.ParentIs(portrait, frame) then SkinShopLogo(portrait, band, owner) end
+    return true
+end
+
+local function FadeBrowserDecor(frame, owner)
+    local background = Field(frame, "Bg")
+    if CanPaintWindowRegion(background) then NS.Cosmetics.Fade(background, owner) end
+
+    local browser = Field(frame, "Browser")
+    if not Safety.Public(browser) or not Kit.ParentIs(browser, frame) then return end
+    local inset = Field(browser, "BrowserInset")
+    if CanPaintWindowRegion(inset) and Kit.ParentIs(inset, browser) then NS.Cosmetics.Fade(inset, owner) end
+end
+
+local function SkinWindowChrome(frame, owner, metrics, kind)
+    if NS.IsCombatLocked() then return end
+    local nineSlice = Field(frame, "NineSlice")
+    if not Safety.Public(nineSlice) or not CanSkin(nineSlice) or not Kit.ParentIs(nineSlice, frame) then return end
+    -- HelpFrame's browser and spinner render at HIGH. One shell under them
+    -- joins the title and body and covers the unequal native browser margins.
+    local browser = kind == "browser"
+    if not Attach(owner, nineSlice, browser and browserChromeSpec or windowBorderSpec, metrics) then return end
+    if browser then
+        FadeBrowserDecor(frame, owner)
+    elseif not AttachWindowTitle(frame, nineSlice, owner, metrics) then
+        NS.Surface.SetVisible(nineSlice, false)
+        return
+    end
+
+    NS.Cosmetics.FadeNineSlice(nineSlice, owner, CanPaintWindowRegion)
     local streaks = Field(frame, "TopTileStreaks")
-    if CanPaintPortraitRegion(streaks) then NS.Cosmetics.Fade(streaks, owner) end
+    if CanPaintWindowRegion(streaks) then NS.Cosmetics.Fade(streaks, owner) end
 end
 
 local function ApplyFrameNow(frame, owner, mode)
@@ -481,7 +548,12 @@ local function ApplyFrameNow(frame, owner, mode)
         NS.Surface.SetVisible(frame, false)
     end
 
-    if ModeValue(mode, "portraitChrome", false) then SkinPortraitChrome(frame, owner, metrics) end
+    local chrome = ModeValue(mode, "windowChrome")
+    if chrome == "shop" then
+        local close = Field(frame, "CloseButton")
+        if Safety.Public(close) and Kit.ParentIs(close, frame) then metrics.nativeClose = close end
+    end
+    if chrome then SkinWindowChrome(frame, owner, metrics, chrome) end
     if not metrics.accentOnly then
         SkinExplicitFields(frame, owner, metrics)
     end
@@ -502,8 +574,11 @@ local function ApplyFrameNow(frame, owner, mode)
     end
 
     StoreFrameState(frame, owner, mode, metrics, previousState, rootSurfaceAttached)
-    if ModeValue(mode, "listItem", false) ~= true then GenericWindows.TrackCollapseMotion(frame, owner) end
     ownerState.frames[frame] = true
+    -- LootFrame animates both the window and its pooled rows; even a content
+    -- motion scan can reach those rows after the shell-only pass.
+    if frame == LootFrame then return true, "applied", metrics end
+    if ModeValue(mode, "listItem", false) ~= true then GenericWindows.TrackCollapseMotion(frame, owner) end
     if wantsRootSurface and not metrics.accentOnly and not metrics.fullscreenGuarded then
         local role = RootRole(mode)
         GenericWindows.TrackMenuMotion(frame, owner, role == "shell" or role == "panel")

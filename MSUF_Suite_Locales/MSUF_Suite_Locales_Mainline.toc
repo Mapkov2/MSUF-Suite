@@ -1,4 +1,4 @@
-## Interface: 120100, 120105, 16001
+## Interface: 120100, 120105, 120107, 16001
 ## Title: MSUF Suite - Locales
 ## Notes: Optional MSUF Suite translations. Disable for English; follows the language selected in MSUF.
 ## Author: Mapko

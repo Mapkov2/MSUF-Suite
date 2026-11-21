@@ -15,12 +15,13 @@ local Layout = P.BagLayout
 -- the native window. It tracks the visible minimize cell or restore tab
 -- before mouse input arrives. Blizzard's list of open bags
 -- (ContainerFrameSettingsManager) never comes from the Suite's code.
--- Maximize turns the side panel's full screen height on and off. Built once,
+-- Maximize toggles full height for the side panel or fit for the Blizzard grid. Built once,
 -- laid out when a window shows or moves; in combat the caption stays and
 -- minimize and maximize wait for its end. Under the Gamepad UI Blizzard hides
 -- its X (ContainerFrameCombinedBagsMixin:InitializeGamepad): no caption there.
 local Caption = { states = setmetatable({}, { __mode = "k" }) }
 P.BagCaption = Caption
+local BLIZZARD_GRID = NS.BagsView.BLIZZARD_GRID
 
 local CELL_W, CELL_H = 30, 24
 -- How far a caption reaches in from the window's right edge: three cells or
@@ -331,9 +332,11 @@ function Caption.Sync(state, event)
     if state.minimize then
         local c, held = module.config, NS.InCombat(event) or S.editMode
         local panel = P.BagPresentation.IsPanel(c) and P.InventoryView.layout ~= "combat"
-        local kind = panel and c.panelFullHeight and "restore" or "maximize"
+        local native = c.inventoryView == BLIZZARD_GRID
+        local maximized = panel and c.panelFullHeight or native and module.nativeMaximized
+        local kind = maximized and "restore" or "maximize"
         if state.maximize.caption.kind ~= kind then Painter().SetKind(state.maximize, kind) end
-        SetDisabled(state.maximize, held or not panel)
+        SetDisabled(state.maximize, held or not (panel or native))
         SetDisabled(state.minimize, held or not Backpack())
     end
     if state.frame:IsVisible() then Snap(state) end
@@ -343,7 +346,12 @@ end
 local function Maximize(cell)
     local module = P.BagsModule
     if cell.bagDisabled or not module.active or NS.InCombat() then return end
-    if P.BagPresentation.IsPanel(module.config) then S.Set("bags", "panelFullHeight", not module.config.panelFullHeight) end
+    if module.config.inventoryView == BLIZZARD_GRID then
+        module:ToggleNativeMaximize()
+        Caption.Sync(cell.bagCaption)
+    elseif P.BagPresentation.IsPanel(module.config) then
+        S.Set("bags", "panelFullHeight", not module.config.panelFullHeight)
+    end
 end
 
 local function NewCell(state, kind, frameType)
@@ -450,7 +458,12 @@ local function New(frame, t)
     return state
 end
 
-local function CombatChanged(_, event)
+local function CaptionEvent(_, event)
+    if event == "UI_SCALE_CHANGED" then
+        local module = P.BagsModule
+        if module.nativeMaximized then module:RefreshWindowLayout() end
+        return
+    end
     -- PLAYER_REGEN_DISABLED runs before the lockdown: the delegate lets go.
     if delegate then delegate.clicking = nil end
     Detach()
@@ -459,9 +472,10 @@ end
 
 local function WatchCombat()
     events = events or S.CreateFrame("Frame")
-    events:SetScript("OnEvent", CombatChanged)
+    events:SetScript("OnEvent", CaptionEvent)
     events:RegisterEvent("PLAYER_REGEN_DISABLED")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    events:RegisterEvent("UI_SCALE_CHANGED")
 end
 
 -- StyleWindows: t is the window's Suite style (BagWindow.lua NewWindowStyle).
@@ -485,6 +499,7 @@ end
 
 function Caption.Refresh()
     WatchCombat()
+    if P.BagsModule.config.inventoryView ~= BLIZZARD_GRID then P.BagsModule.nativeMaximized = nil end
     for _, state in pairs(states) do
         Own(state, P.BagsModule.context)
         Caption.Sync(state)
@@ -494,6 +509,7 @@ end
 
 -- The module stops: its context hands Blizzard's X back afterwards.
 function Caption.Release()
+    P.BagsModule.nativeMaximized = nil
     for _, state in pairs(states) do
         state.owned = false
         for _, cell in ipairs(state.cells) do cell:Hide() end

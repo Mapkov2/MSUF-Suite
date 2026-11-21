@@ -14,6 +14,21 @@ local _, Suite = ...
 local HostBridge = Suite.HostBridge
 Suite.HostBridge = HostBridge
 
+function HostBridge.RegisterOutlineOverview(menu, id, collect)
+    if menu.RegisterOutlineOverviewProvider then menu.RegisterOutlineOverviewProvider(id, collect) end
+end
+
+function HostBridge.AttachOutlineOverview(menu, control, focus)
+    if menu.AttachOutlineOverview then return menu.AttachOutlineOverview(control, focus) end
+end
+
+function HostBridge.ConsiderOutlineControl(control, label, key, anchor, offsetX)
+    local menu = _G.MSUF2
+    if menu and menu.ConsiderOutlineOverview then
+        return menu.ConsiderOutlineOverview(control, { label = label, kind = "color", settingKey = key }, anchor, offsetX)
+    end
+end
+
 local MENU_API_VERSION = 2
 local pairs, rawget, tonumber, type = pairs, rawget, tonumber, type
 
@@ -613,6 +628,12 @@ function HostBridge.OpenExactMenuSetting(menu, page, section, settingKey)
     local route = { accordion = { [page .. ":" .. section] = true } }
     local called, opened, focused, exact = search.OpenSearchTarget(page, "", nil, nil, route, target)
     return called == true and opened == true and focused == true and exact == true
+end
+
+function HostBridge.OpenUnitFrameTooltipSettings()
+    local menu = LoadedMenu()
+    return menu and HostBridge.OpenExactMenuSetting(menu, "suite_skin", "suite_skin_unit_tooltips",
+        "msufsuite.skin.unitTooltipMode")
 end
 
 function HostBridge.OpenSharedAggroBorder(menu)

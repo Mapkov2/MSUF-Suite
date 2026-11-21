@@ -119,6 +119,14 @@ end
 
 function API.IsSkinAddOnEnabled() return Suite.Client.AddOnEnabled("MSUF_Suite_Skin") == true end
 
+function API.HasUnitFrameTooltipSettings()
+    return Suite.Client.AddOnEnabled("MSUF_Suite_Options") and Suite.HostBridge.UnitFrameTooltipAPI() ~= nil
+end
+
+function API.OpenUnitFrameTooltipSettings()
+    return Suite.HostBridge.OpenUnitFrameTooltipSettings()
+end
+
 ------------------------------------------------------------------ nameplates
 -- MSUF_Suite_Nameplates draws MSUF's interrupt-ready indicator (MSUF.KickReady)
 -- while MSUF's "Show on enemy nameplates" switch is on.

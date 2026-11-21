@@ -105,6 +105,11 @@ function O.GetMode()
     return O.ui.mode
 end
 
+function O.AttachOutlineControl(row, label, key, offsetX)
+    local bridge = NS.SuiteCore().HostBridge
+    if bridge and bridge.ConsiderOutlineControl then bridge.ConsiderOutlineControl(row, label, key, row, offsetX) end
+end
+
 function O.SetMode(mode)
     mode = mode == "expert" and "expert" or "guided"
     if O.ui.mode == mode then return false end

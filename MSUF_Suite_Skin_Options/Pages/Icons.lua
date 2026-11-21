@@ -280,12 +280,13 @@ local function CreateRow(list, spec)
     if kind == "heading" then return O.CreateSubheading(list, spec.label, WIDTH) end
     if kind == "preview" then return CreateWindowActionPreview(list) end
     local get, set = RowGetter(spec), RowSetter(spec)
+    local options = spec.key and { outlineSetting = "msufsuite.skin." .. (spec.source or "theme") .. "." .. spec.key }
     if kind == "toggle" then
-        return O.CreateToggle(list, spec.label, get, set, WIDTH)
+        return O.CreateToggle(list, spec.label, get, set, WIDTH, options)
     elseif kind == "segmented" then
-        return O.CreateSegmented(list, spec.label, spec.values, get, set, WIDTH, spec.format)
+        return O.CreateSegmented(list, spec.label, spec.values, get, set, WIDTH, spec.format, options)
     end
-    return O.CreateSlider(list, spec.label, spec.min, spec.max, spec.step or 1, get, set, WIDTH, spec.format)
+    return O.CreateSlider(list, spec.label, spec.min, spec.max, spec.step or 1, get, set, WIDTH, spec.format, options)
 end
 
 -- The left column. Returns the widgets each gate enables.

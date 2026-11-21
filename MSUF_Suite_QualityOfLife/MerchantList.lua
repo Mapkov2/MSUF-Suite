@@ -523,11 +523,8 @@ local function WatchCollection(self, enabled)
     if self.watchingCollection == enabled then return end
     self.watchingCollection = enabled
     for _, event in ipairs(COLLECTION_EVENTS) do
-        if enabled then
-            self.context:Event(event, CollectionChanged)
-        else
-            self.context:RemoveEvent(event)
-        end
+        if enabled then self.context:Event(event, CollectionChanged)
+        else self.context:RemoveEvent(event) end
     end
 end
 

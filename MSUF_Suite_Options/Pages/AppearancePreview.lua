@@ -384,6 +384,7 @@ end
 
 local function Layout(preview, fallbackWidth)
     local section = preview.section
+    if not section:IsShown() then return end
     local actual = section:GetWidth()
     local width = math.min(1000, math.max(120, (actual and actual > 100 and actual or fallbackWidth) - 32))
     local sidebar = width >= 680
@@ -412,9 +413,9 @@ local function Layout(preview, fallbackWidth)
     local height = math.max(STAGE_TOP + preview.shellHeight, -y + preview.chips:GetHeight()) + 8
     local ui = preview.ctx.suiteWorkspace
     if ui then P.MenuWorkspace.FitHeader(ui, height)
-    elseif section:GetHeight() ~= height then
-        P.HM.SetFixedPreviewHeight(section, height)
-        section:SetHeight(height)
+    elseif preview.header:GetHeight() ~= height then
+        P.HM.SetFixedPreviewHeight(preview.header, height)
+        preview.header:SetHeight(height)
     end
 end
 
@@ -505,9 +506,11 @@ end
 
 function P.BuildSkinMenuPreview(ctx, b, skin)
     if not P.W.FixedPreviewSection then return end
-    local section, toolbar = P.W.FixedPreviewSection(ctx, b, { title = Tr("Skin preview"), height = 62 })
-    if not section then return end
-    local preview = { ctx = ctx, section = section, labels = {}, surfaces = {}, links = {}, titleButtons = {},
+    local header, toolbar = P.W.FixedPreviewSection(ctx, b, { title = Tr("Skin preview"), height = 62 })
+    if not header then return end
+    local section = CreateFrame("Frame", nil, header)
+    section:SetAllPoints(header)
+    local preview = { ctx = ctx, header = header, section = section, labels = {}, surfaces = {}, links = {}, titleButtons = {},
         captions = {}, layers = { content = true, controls = true, item = true, actions = true }, focused = true }
     preview.forever = skin.Client and skin.Client.isForever
     ctx.skinPreview = preview
@@ -529,5 +532,5 @@ function P.BuildSkinMenuPreview(ctx, b, skin)
     end)
     TrackPreview(preview, skin)
     if skin.WindowMotion then skin.WindowMotion.WatchPreview(preview.shell, preview) end
-    return section, toolbar
+    return header, toolbar
 end

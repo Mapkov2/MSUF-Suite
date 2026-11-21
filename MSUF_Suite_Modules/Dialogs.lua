@@ -56,8 +56,8 @@ end
 
 -- A movable Suite-owned window with a title, a drag strip (panel.dragHandle)
 -- and a close button (panel.close).
-function S.QoLWindow(width, height, title, titleSize, copyChrome)
-    local panel = SuitePanel("DIALOG", nil, copyChrome)
+function S.QoLWindow(width, height, title, titleSize, copyChrome, name)
+    local panel = SuitePanel("DIALOG", name, copyChrome)
     panel:SetSize(width, height)
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     panel:SetMovable(true)

@@ -260,6 +260,7 @@ function O.CreateColorRow(parent, colorKey, labelText, width, description)
         })
     end
 
+    if O.AttachOutlineControl then O.AttachOutlineControl(row, labelText, "msufsuite.skin.color." .. colorKey, -248) end
     local ShowHexError = BindHexInput(input, help, description or colorKey, colorKey, labelText)
 
     -- The hex text is rewritten after a color change, once the field has no

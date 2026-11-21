@@ -1,4 +1,4 @@
-## Interface: 120100, 120105, 16001
+## Interface: 120100, 120105, 120107, 16001
 ## Title: MSUF Suite - Quality of Life
 ## Notes: Optional combat, quest, merchant, vault, tooltip and experience helpers for MSUF Suite.
 ## Author: Mapko

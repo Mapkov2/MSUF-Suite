@@ -24,6 +24,7 @@ local function Fallback(text)
     if text:find("[\208-\211][\128-\191]") then return "Fonts\\FRIZQT___CYR.TTF" end
     if text:find("[\206\207][\128-\191]") then return "Fonts\\ARIALN.TTF" end
     if text:find("[\227-\233][\128-\191][\128-\191]") then return "Fonts\\ARKai_T.ttf" end
+    if text:find("\226\136\158", 1, true) then return "Fonts\\ARIALN.TTF" end
 end
 
 local function Font(path, height, flags)
@@ -50,6 +51,14 @@ local function ReadFont(label)
     return path, height, type(flags) == "string" and flags or ""
 end
 
+function Labels.GetMenuFont(label, configured)
+    if not configured then return end
+    local current, height, flags = ReadFont(label)
+    if not current then return end
+    local desired = Fallback(Safety.Read(label, "GetText")) or configured
+    if current:lower() ~= desired:lower() then return Font(desired, height, flags) end
+end
+
 function Labels.GetConfiguredPath()
     local settings = NS.DB and NS.DB.typography
     if not settings or not settings.enabled then return end
@@ -72,7 +81,16 @@ local function InheritedFont(label, path, height, flags)
     if inheritedPath == path and inheritedHeight == height and inheritedFlags == flags then return font end
 end
 
-function Labels.Apply(label, owner, menu, configured, restoreInheritance)
+local function FitHeight(label, path, height, flags)
+    local limit = Safety.Read(label, "GetHeight")
+    local needed = Safety.Read(label, "GetStringHeight")
+    if type(limit) ~= "number" or type(needed) ~= "number" or limit <= 0
+        or needed <= limit + 0.5 or height <= 8 then return end
+    local size = math.max(8, height - 2, math.floor(height * limit / needed))
+    if size < height and label:SetFont(path, size, flags) then return size end
+end
+
+function Labels.Apply(label, owner, menu, configured, restoreInheritance, fitHeight)
     if NS.IsCombatLocked() or not Labels.CanStyle(label, menu) then return end
     local current, height, flags = ReadFont(label)
     if not current then return end
@@ -105,8 +123,14 @@ function Labels.Apply(label, owner, menu, configured, restoreInheritance)
         if previous and previous.applied == current then nativeFont = previous.font
         else nativeFont = InheritedFont(label, current, height, flags) end
     end
-    if Safety.HasMethod(label, "SetFont") and label:SetFont(desired, height, flags) then
-        styled[label] = { owner = owner, path = original, applied = desired, font = nativeFont }
+    local originalHeight = height
+    if previous and previous.applied == current and previous.fitted == height then
+        originalHeight = previous.height
+    end
+    if Safety.HasMethod(label, "SetFont") and label:SetFont(desired, originalHeight, flags) then
+        local fitted = fitHeight and FitHeight(label, desired, originalHeight, flags)
+        styled[label] = { owner = owner, path = original, applied = desired, font = nativeFont,
+            height = fitted and originalHeight or nil, fitted = fitted or nil }
     end
 end
 
@@ -127,6 +151,6 @@ function Labels.Release(label, owner, resetByPool)
         label:SetFontObject(previous.font)
         if r then label:SetTextColor(r, g, b, a) end
     elseif Safety.HasMethod(label, "SetFont") then
-        label:SetFont(previous.path, height, flags)
+        label:SetFont(previous.path, height == previous.fitted and previous.height or height, flags)
     end
 end

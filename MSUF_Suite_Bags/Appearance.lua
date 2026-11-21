@@ -5,6 +5,48 @@ P.BagAppearance = Appearance
 
 local FOREVER_LOOK = 3
 local GLASS_SOFT_ALPHA, GLASS_DARK_ALPHA = .88, .94
+local DEFAULT_BORDER = { .063, .063, .063, 1 }
+
+function Appearance.DefaultBorder(c)
+    if c.backpackBorderStyle == P.NS.BagsBorderStyle.CUSTOM then return nil end
+    local skin = P.NS.Skin
+    local border = skin and skin.GetTooltipBorder and skin.GetTooltipBorder()
+    return border and border[4] > 0 and border or DEFAULT_BORDER
+end
+
+local function SizeBorder(t, width)
+    if t.borderWidth == width then return end
+    t.borderWidth = width
+    t[6]:SetHeight(width)
+    t[7]:SetHeight(width)
+    t[8]:SetWidth(width)
+    t[9]:SetWidth(width)
+    for i = 8, 9 do
+        local top, bottom = i == 8 and "TOPLEFT" or "TOPRIGHT", i == 8 and "BOTTOMLEFT" or "BOTTOMRIGHT"
+        t[i]:ClearAllPoints()
+        t[i]:SetPoint(top, t.shell, top, 0, -width)
+        t[i]:SetPoint(bottom, t.shell, bottom, 0, width)
+    end
+end
+
+local function PaintBorder(t, c, ar, ag, ab)
+    if not t.combined then
+        if t.borderWidth then SizeBorder(t, 1) end
+        t[6]:SetColorTexture(ar, ag, ab, .45)
+        for i = 7, 9 do t[i]:SetColorTexture(.28, .31, .36, .55) end
+        return
+    end
+    local default = Appearance.DefaultBorder(c)
+    local width = default and 1 or c.backpackBorderWidth
+    SizeBorder(t, width)
+    if default then
+        for i = 6, 9 do t[i]:SetColorTexture(unpack(default)) end
+    else
+        local r, g, b = S.RGB(c.backpackBorderColor)
+        local a = width > 0 and c.backpackBorderOpacity / 100 or 0
+        for i = 6, 9 do t[i]:SetColorTexture(r, g, b, a) end
+    end
+end
 
 local function PaintBody(t, glass, panel, r, g, b, opacity)
     local body = t[2]
@@ -37,8 +79,7 @@ function Appearance.Window(t, c)
     t[3]:SetColorTexture(r + .025, g + .025, b + .025, (glass or panel) and .28 * opacity or opacity)
     t[4]:SetColorTexture(ar, ag, ab, .24)
     if t[5] then t[5]:SetColorTexture(r * .7, g * .7, b * .7, (glass or panel) and .46 * opacity or opacity) end
-    t[6]:SetColorTexture(ar, ag, ab, panel and .22 or .45)
-    for i = 7, 9 do t[i]:SetColorTexture(.28, .31, .36, .55) end
+    PaintBorder(t, c, ar, ag, ab)
     if t.goldLabel then
         local font = S.ResolveFont(c.font)
         S.SetFont(t.goldLabel, font, 11, "OUTLINE")
@@ -193,4 +234,5 @@ end
 
 S.BagsPaintPreviewTool = Appearance.Tool
 S.BagsPaintPreviewWindow = Appearance.Window
+S.BagsDefaultBorder = Appearance.DefaultBorder
 S.BagsPaintPreviewSection = Appearance.PaintSection

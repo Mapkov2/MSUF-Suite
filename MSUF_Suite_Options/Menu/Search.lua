@@ -127,7 +127,7 @@ end
 -- Page rows and FAQ answers: some module of the page can run here.
 local function PageAvailable(pageKey)
     if pageKey == "suite_macros" or pageKey == "suite_devMode" then return true end
-    if pageKey == "suite_skin" then return SkinAvailable() end
+    if pageKey == "suite_skin" and (SkinAvailable() or Suite.HostBridge.UnitFrameTooltipAPI()) then return true end
     for _, id in ipairs(P.order) do
         if (P.QoLOwners.PageFor(id) or P.catalog[id].page) == pageKey and ModuleAvailable(id) then return true end
     end
@@ -642,7 +642,7 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
         return P.Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and ModuleAvailable("characterPanel")
     end
     if owner == "skin" then pageKey = "suite_skin"
-    elseif owner and P.catalog[owner] then pageKey = P.catalog[owner].page or pageKey end
+    elseif owner and P.catalog[owner] then pageKey = P.QoLOwners.PageFor(owner) or P.catalog[owner].page or pageKey end
     if pageKey:sub(1, 6) ~= "suite_" then return true end
     if pageKey == "suite_macros" and not owner then return true end
     if record.kind == "page" or row.kind == "page" or record.kind == "faq" or row.kind == "faq" then
@@ -650,7 +650,10 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     end
     -- Actions built in every state of their page (Pages/Appearance.lua).
     if row.suiteAlways or record.suiteAlways then return true end
-    if pageKey == "suite_skin" then
+    if pageKey == "suite_skin" and (not owner or owner == "skin") then
+        if (row.sectionId or record.sectionId) == "suite_skin_unit_tooltips" then
+            return P.Suite.HostBridge.UnitFrameTooltipAPI() ~= nil
+        end
         if not SkinAvailable() then return false end
         if settingKey == "msufsuite.skin.enabled" then return true end
         if (row.sectionId or record.sectionId) == "suite_skin_hud" and P.S.OwnsBlizzardSurface("damageMeter") then

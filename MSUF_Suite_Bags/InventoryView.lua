@@ -398,6 +398,12 @@ RestoreLayout = function()
     InventoryView.restorePending = false
     if not InventoryView.active and InventoryView.events then InventoryView.events:UnregisterAllEvents() end
     local frame = InventoryView.frame
+    -- Opening the bag generates its native buttons before laying them out.
+    if not frame:IsShown() then return end
+    -- The iterator uses the bag size, which can include a slot without a button.
+    for _, button in frame:EnumerateValidItems() do
+        if not button then return end
+    end
     frame:UpdateItems()
     for _, button in frame:EnumerateValidItems() do button:Show() end
     frame:UpdateItemLayout()

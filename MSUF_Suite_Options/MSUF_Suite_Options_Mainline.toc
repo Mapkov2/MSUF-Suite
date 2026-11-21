@@ -1,4 +1,4 @@
-## Interface: 120100, 120105, 16001
+## Interface: 120100, 120105, 120107, 16001
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
@@ -144,9 +144,12 @@ Pages\AppearanceKit.lua
 Pages\AppearanceAddons.lua
 Pages\AppearancePreview.lua
 Pages\AppearanceQuests.lua
+Pages\AppearanceTooltips.lua
+Pages\AppearanceTooltipPreview.lua
 Pages\Appearance.lua
 Menu\ToolRouting.lua
 Menu\Register.lua
+Menu\OutlineOverview.lua
 Menu\SearchActions.lua
 Menu\SearchProvider.lua
 Menu\Search.lua

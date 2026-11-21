@@ -71,32 +71,6 @@ local function Read(preview, handle)
     return P.Get(ID, xKey), P.Get(ID, yKey)
 end
 
-local function SelectionLayout(preview)
-    local bar, width = preview.selection, preview.availableWidth
-    if not bar or bar.layoutWidth == width then return end
-    bar.layoutWidth = width
-    local compact, narrow = width < 600, width < 260
-    local height = compact and (narrow and 112 or 84) or 24
-    local function Place(region, x, y, point)
-        region:ClearAllPoints()
-        region:SetPoint(point or "TOPLEFT", bar, point or "TOPLEFT", x, y)
-    end
-    bar:SetSize(width, height)
-    Place(bar.swatch, 10, -8)
-    Place(bar.label, 25, -3)
-    bar.label:SetWidth(compact and width - 35 or 132)
-    bar.label:SetHeight(18)
-    Place(bar.axisX, compact and 10 or 163, compact and -29 or -1)
-    Place(bar.axisY, compact and (narrow and 10 or 132) or 285, compact and (narrow and -57 or -29) or -1)
-    local actionsY = compact and (narrow and -85 or -57) or -3
-    Place(bar.openButton, -8, actionsY, "TOPRIGHT")
-    if compact then Place(bar.resetButton, 10, actionsY)
-    else
-        bar.resetButton:ClearAllPoints()
-        bar.resetButton:SetPoint("RIGHT", bar.openButton, "LEFT", -6, 0)
-    end
-end
-
 -- What a selection changes besides the keyboard, which the kit hands over.
 local function Selected(preview, handle)
     local owner = preview.viewport
@@ -108,7 +82,7 @@ local function Selected(preview, handle)
     local previousSelectionHeight = preview.selectionHeight
     if M.PreviewSelectionBar then M.PreviewSelectionBar.Refresh(owner) end
     if preview.selection then preview.selection:SetShown(not handle or handle.canMove) end
-    SelectionLayout(preview)
+    P.PreviewInteraction.LayoutSelectionBar(preview.selection, preview.availableWidth)
     preview.selectionHeight = preview.selection and preview.selection:IsShown() and preview.selection:GetHeight() + 8 or 0
     local previousHeight = preview.propertiesHeight
     Properties.Refresh(preview)

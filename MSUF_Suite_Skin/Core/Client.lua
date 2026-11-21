@@ -28,6 +28,18 @@ function NS.Client.HasAddOn(name)
     return AddOns.DoesAddOnExist(name) == true
 end
 
+function NS.Client.IsDisabledHere(name)
+    local guid = UnitGUID("player")
+    if not NS.Safety.Public(guid) then return false end
+    local state = AddOns.GetAddOnEnableState(name, guid)
+    return NS.Safety.Public(state) and state == 0
+end
+
+function NS.Client.AddOnVersion(name)
+    local version = AddOns.GetAddOnMetadata(name, "Version")
+    if NS.Safety.Public(version) and type(version) == "string" then return version end
+end
+
 function NS.Client.SupportsEvent(event)
     return C_EventUtils.IsEventValid(event) == true
 end

@@ -102,7 +102,7 @@ B.Module("dataTexts", {
     title = "DataTexts",
     description = "Movable information bars with individually chosen data sources.",
     core = NS.Client.isForever, optIn = not NS.Client.isForever,
-    page = "suite_dataTexts", follows = "bags",
+    page = "suite_dataTexts",
     -- Information bar addons: Titan Panel (folder Titan), ChocolateBar and
     -- Bazooka are the CurseForge folder names (none is installed here to
     -- check); EllesmereUIDataBars is the installed folder.
@@ -201,7 +201,11 @@ B.Section("dataTexts", "minimizedWindows", "Minimized windows", {
 })
 B.Section("dataTexts", "bags", "Blizzard bag buttons", {
     Bool("hideBlizzardBagBar", "Hide Blizzard bag buttons; use the Bag space DataText", true),
+    Bool("bagBarMouseover", "Mouseover", false),
 })
+NS.SuiteCatalog.dataTexts.rules.bagBarMouseover.disabledBy = "hideBlizzardBagBar"
+NS.SuiteCatalog.dataTexts.rules.hideBlizzardBagBar.hidden = true
+NS.SuiteCatalog.dataTexts.rules.bagBarMouseover.hidden = true
 B.Section("dataTexts", "gold", "Gold across characters", {
     Bool("trackAltGold", "Remember this character's gold for the account total", false),
 })

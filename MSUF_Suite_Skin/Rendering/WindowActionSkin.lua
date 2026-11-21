@@ -35,6 +35,7 @@ local captionAtlases = {
 }
 
 local validKinds = {
+    page = true,
     close = true,
     maximize = true, restore = true,
     minimize = true,
@@ -85,11 +86,6 @@ end
 local function Wipe(target)
     for key in pairs(target) do target[key] = nil end
     return target
-end
-
-local function Settings()
-    return NS.DB and NS.DB.icons and NS.DB.icons.windowActions
-        or NS.Defaults.icons.windowActions
 end
 
 local function CanStyle(target)
@@ -199,6 +195,9 @@ end
 local function RestoreNative(button, state)
     StopGlyphs(button)
     if not state.nativeCaptured then return end
+    -- Restore detached merchant artwork before binding it to the button
+    -- again, so Blizzard selects the state for the current page.
+    if state.kind == "page" then NS.Cosmetics.RestoreOwner(state) end
     for index = 1, #specialTextures do
         local definition = specialTextures[index]
         local glyph = state.glyphs and state.glyphs[definition.key]
@@ -218,6 +217,7 @@ end
 local function RebaseNative(state)
     -- Blizzard or another owner replaced our state slots after Apply. Those
     -- newer slots win; discard the old snapshot instead of overwriting them.
+    if state.kind == "page" then NS.Cosmetics.RestoreOwner(state) end
     HideGlyphs(state)
     RestoreExtraRegions(state)
     Wipe(state.native)
@@ -323,7 +323,10 @@ local function GlyphKey(kind, glyphMode, caption)
     return "minus"
 end
 
+local pageColors = { normal = "text", pushed = "accent", highlight = "accentBright", disabled = "muted" }
+
 local function ColorRole(kind, stateName)
+    if kind == "page" then return pageColors[stateName] end
     if kind == "close" then
         if stateName == "pushed" then return "blizzardClosePressed" end
         if stateName == "highlight" then return "blizzardCloseHover" end
@@ -419,7 +422,12 @@ local function RefreshExtraRegions(button, state)
     -- Replacing a Button state slot does not detach its old Texture region.
     -- Hide every captured state as well, including native pressed/hover art.
     for index = 1, #specialTextures do
-        FadeExtraRegion(state, state.native[specialTextures[index].key])
+        local region = state.native[specialTextures[index].key]
+        if state.kind == "page" then
+            NS.Cosmetics.FadeDecoration(region, state)
+        else
+            FadeExtraRegion(state, region)
+        end
     end
     if state.kind == "close" or state.kind == "minimize" then
         for _, key in ipairs({ "Border", "Icon", "icon", "NormalTexture", "PushedTexture", "DisabledTexture",
@@ -790,10 +798,8 @@ function WindowActionSkin.OnNativeChanged(button)
     return WindowActionSkin.Apply(button, state.owner, kind) ~= nil
 end
 
--- Private to WindowActionSettings.lua, which loads next (TOC order) and takes
--- it off NS again.
+-- WindowActionSettings consumes these private drawing helpers at load time.
 NS.WindowActionSkinShared = {
-    Settings = Settings,
     GlyphAsset = GlyphAsset,
     GlyphLayout = GlyphLayout,
     ConfigureGlyph = ConfigureGlyph,

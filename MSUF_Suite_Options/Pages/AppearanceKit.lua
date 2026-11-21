@@ -120,7 +120,7 @@ function Kit.AddWindowAnimationRow(shape, skin)
         function(value) Change(skin, label, key,
             function() return skin.Theme.SetAppearance("windowAnimations", value) end) end,
         Values(skin.WindowAnimationModes, { subtle = "Subtle", extended = "Extended" }))
-    row.tooltip = Tr("Subtle fades windows in. Extended also animates resizing and closing on supported windows.")
+    row.tooltip = Tr("Subtle fades supported windows in. Extended uses a longer fade.")
     row.unavailable = function()
         if skin.DB.theme.reduceMotion == true then return Tr("Disabled while Reduced motion is on.") end
     end
@@ -217,6 +217,9 @@ local function ResetSkinSection(skin, id, rows, contextRows)
                 if type(parent) == "table" and last then parent[last] = Suite.CopyValue(item.value) end
             end
         end
+        if id == "addon_skins" then
+            skin.DB.addonSkins.discovered, skin.DB.addonSkins.looks = {}, {}
+        end
         if id == "material" or id == "shape" or id == "icons" then
             skin.DB.theme.look = "custom"
         end
@@ -249,7 +252,7 @@ end
 -- `extra(body, y, width) -> y` builder, and the color shortcut. A lazy host
 -- builds them when the accordion first opens (P.LazySection); its summary
 -- and "..." are in the header at once.
-local function Section(ctx, b, id, title, help, rows, open, extra, contextRows, route)
+local function Section(ctx, b, id, title, help, rows, open, extra, contextRows, route, reset)
     local sectionId = route and route.section or "suite_skin_" .. id
     if ctx.searchRows then
         local page = route and route.page
@@ -280,6 +283,9 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows, 
             local entries = {}
             for _, row in ipairs(visibleRows) do
                 local widget = grid.controls[row.id]
+                if widget and row.outlineOverview then
+                    Suite.HostBridge.AttachOutlineOverview(M, widget, function() return row.outlineOverview end)
+                end
                 if widget and row.tooltip and M.AddTooltip then
                     M.AddTooltip(widget, row.label, row.tooltip, { hook = true,
                         enabled = function() return not row.unavailable or row.unavailable() == nil end })
@@ -299,6 +305,7 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows, 
         content = Content,
         shell = id ~= "advanced" and function(body)
             P.AttachSectionReset(ctx, body, title, function()
+                if reset then return reset() end
                 return ResetSkinSection(Engine(), id, rows, contextRows)
             end)
         end or nil,

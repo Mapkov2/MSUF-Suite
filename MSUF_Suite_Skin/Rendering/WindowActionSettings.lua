@@ -4,15 +4,24 @@ local _, NS = ...
 -- validated option writes and their reset, the read-only status getters and
 -- the theme listener that re-applies the glyphs.
 local WindowActionSkin = NS.WindowActionSkin
--- WindowActionSkin.lua's settings reader: taken off NS again, so nothing
+-- WindowActionSkin.lua's drawing helpers: taken off NS again, so nothing
 -- internal stays reachable through _G.MapkoSkin.
 local Shared = NS.WindowActionSkinShared
 NS.WindowActionSkinShared = nil
-local Settings = Shared.Settings
 local IsListed = NS.IsListed
 local forever = (rawget(NS, "Client") or {}).isForever == true
 local stateGetters = { normal = "GetNormalTexture", pushed = "GetPushedTexture",
     disabled = "GetDisabledTexture", highlight = "GetHighlightTexture" }
+
+local function Settings()
+    return NS.DB and NS.DB.icons and NS.DB.icons.windowActions
+        or NS.Defaults.icons.windowActions
+end
+
+local pageStyle = {
+    style = "soft", surfaceShape = "continuous", surfaceRadius = 4, surfaceInset = 4,
+    glyphSize = 18, weight = "bold", opacity = 1, glyphMode = "chevrons",
+}
 
 -- The close X has its own style. Older profiles may intentionally keep native
 -- expand/minimize art; that choice no longer leaves the X outside our skin.
@@ -20,6 +29,7 @@ local stateGetters = { normal = "GetNormalTexture", pushed = "GetPushedTexture",
 -- copy its values into their own specs and never retain this shared view.
 local closeSettings = setmetatable({}, { __index = function(options, key) return options.source[key] end })
 function WindowActionSkin.ResolveSettings(kind)
+    if kind == "page" then return pageStyle end
     local settings = Settings()
     if kind ~= "close" then return settings end
     local style = settings.closeStyle or NS.Defaults.icons.windowActions.closeStyle

@@ -10,7 +10,7 @@ local presentations = setmetatable({}, { __mode = "k" })
 local count, serial = 0, 0
 local driver = CreateFrame("Frame")
 driver:Hide()
-local mouseListening, geometryPending = false, false
+local mouseListening, geometryPending, scaleListening = false, false, false
 local moving = {}
 local movingCount = 0
 local inputWindow
@@ -36,6 +36,40 @@ end
 
 local function IsVisible(frame)
     return Safety.Read(frame, "IsVisible") == true
+end
+
+local function HideOutline(state)
+    if state.outline then state.outline:Hide() end
+    if state.tooltipOutline then state.tooltipOutline:Hide() end
+end
+
+local function UpdateOutline(state)
+    local db, frame = NS.DB, state.frame
+    local theme = db and db.theme
+    local pixels = theme and theme.windowOutline or 0
+    local matchTooltip = theme and theme.windowOutlineMatchTooltip == true
+    if (not matchTooltip and pixels == 0) or db.enabled == false or db.blizzardWindowsEnabled == false
+        or db.skins and db.skins.blizzardWindows == false or presentations[frame] or not IsVisible(frame) then
+        HideOutline(state)
+        return
+    end
+    if NS.IsCombatLocked() then
+        driver:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
+    if not Safety.CanCreateRegions(frame) or not Geometry.Layer(state) then
+        HideOutline(state)
+        return
+    end
+    if matchTooltip then
+        if state.outline then state.outline:Hide() end
+        state.tooltipOutline = NS.TooltipChrome.PaintOutline(frame, state.tooltipOutline, state.strata, state.level)
+        return
+    end
+    if state.tooltipOutline then state.tooltipOutline:Hide() end
+    local outline = NS.SuiteCore().WindowOutline
+    local r, g, b, a = NS.Theme.GetColor("windowOutline")
+    state.outline = outline.Paint(frame, state.outline, pixels, r, g, b, a, state.strata, state.level, true)
 end
 
 local function Hide(state, immediate)
@@ -157,11 +191,20 @@ UpdateListeners = function()
         NS.WindowFocusPopups.SetActive(listen)
         if listen then
             driver:RegisterEvent("GLOBAL_MOUSE_DOWN")
-            driver:RegisterEvent("UI_SCALE_CHANGED")
-            driver:RegisterEvent("DISPLAY_SIZE_CHANGED")
             NS.WindowFocusPopups.Discover()
         else
             driver:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+        end
+    end
+    local theme = NS.DB and NS.DB.theme
+    local scale = listen or count > 0 and theme ~= nil
+        and (theme.windowOutlineMatchTooltip == true or (theme.windowOutline or 0) > 0)
+    if scale ~= scaleListening then
+        scaleListening = scale
+        if scale then
+            driver:RegisterEvent("UI_SCALE_CHANGED")
+            driver:RegisterEvent("DISPLAY_SIZE_CHANGED")
+        else
             driver:UnregisterEvent("UI_SCALE_CHANGED")
             driver:UnregisterEvent("DISPLAY_SIZE_CHANGED")
         end
@@ -216,7 +259,10 @@ local function MouseDown()
 end
 
 driver:SetScript("OnEvent", function(_, event)
-    if event == "GLOBAL_MOUSE_DOWN" then MouseDown()
+    if event == "PLAYER_REGEN_ENABLED" then
+        driver:UnregisterEvent(event)
+        for _, state in pairs(visible) do UpdateOutline(state) end
+    elseif event == "GLOBAL_MOUSE_DOWN" then MouseDown()
     elseif event == "GLOBAL_MOUSE_UP" then
         local state = inputWindow
         StopDriver()
@@ -225,7 +271,10 @@ driver:SetScript("OnEvent", function(_, event)
             state.chromeDirty = true
             QueueGeometry()
         end
-    else QueueGeometry() end
+    else
+        for _, state in pairs(visible) do UpdateOutline(state) end
+        QueueGeometry()
+    end
 end)
 
 local function Shown(frame)
@@ -233,6 +282,7 @@ local function Shown(frame)
     if not state or not Owned(state) or not IsVisible(frame) then return end
     if not visible[frame] then visible[frame], count = state, count + 1 end
     state.focusVisible = true
+    UpdateOutline(state)
     Promote(state)
 end
 
@@ -240,6 +290,7 @@ local function Hidden(frame)
     local state = Focus.records[frame]
     if not state then return end
     state.focusVisible = false
+    HideOutline(state)
     if visible[frame] then visible[frame], count = nil, count - 1 end
     if moving[state] then moving[state], movingCount = nil, movingCount - 1 end
     Hide(state, true)
@@ -252,7 +303,10 @@ end
 
 local function LayoutChanged(frame)
     local state = visible[frame]
-    if state then state.chromeDirty = true end
+    if state then
+        state.chromeDirty = true
+        UpdateOutline(state)
+    end
     GeometryChanged(frame)
 end
 
@@ -279,7 +333,8 @@ local function Observe(frame)
     for index = 1, #geometryMethods do
         local method = geometryMethods[index]
         if Safety.HasMethod(frame, method) then
-            local callback = (method == "SetFrameLevel" or method == "SetFrameStrata" or method == "Raise") and LayoutChanged or GeometryChanged
+            local layout = method == "SetFrameLevel" or method == "SetFrameStrata" or method == "Raise" or method == "SetScale"
+            local callback = layout and LayoutChanged or GeometryChanged
             hooksecurefunc(frame, method, callback)
         end
     end
@@ -295,6 +350,7 @@ function Focus.Present(frame, surface)
     local state = visible[frame]
     if state then
         state.chromeDirty = true
+        UpdateOutline(state)
         Reconcile()
     end
 end
@@ -314,6 +370,7 @@ function Focus.Track(frame, owner)
     if IsVisible(frame) and not visible[frame] then
         visible[frame], count = state, count + 1
         state.focusVisible, state.chromeDirty = true, true
+        UpdateOutline(state)
         if state.order == 0 then
             serial = serial + 1
             state.order = serial
@@ -328,6 +385,7 @@ function Focus.ReleaseOwner(owner)
     for frame, state in pairs(visible) do
         if not Owned(state) then
             state.focusVisible = false
+            HideOutline(state)
             if visible[frame] then visible[frame], count = nil, count - 1 end
             if moving[state] then moving[state], movingCount = nil, movingCount - 1 end
             Hide(state, true)
@@ -340,6 +398,7 @@ local function SettingsChanged(_, domain)
     if domain == "profile" or domain == "motion" or domain == "adapter" or domain == "theme"
         or domain == "color" or domain == "appearance" or domain == "geometry" then
         for _, state in pairs(visible) do
+            UpdateOutline(state)
             for index = 1, #state.veils do Visual.Refresh(state.veils[index]) end
         end
         Reconcile()

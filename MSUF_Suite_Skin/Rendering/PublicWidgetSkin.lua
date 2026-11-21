@@ -4,6 +4,7 @@ local active = setmetatable({}, { __mode = "k" })
 local WatchTheme, UnwatchTheme
 local watched = setmetatable({}, { __mode = "k" })
 local tracks = setmetatable({}, { __mode = "k" })
+local filterArrows = setmetatable({}, { __mode = "k" })
 local BORDER = { role = "button", activeRole = "buttonPrimary", useControlShape = true, ownedArt = true, motion = false }
 
 local function RestoreColor(part, saved)
@@ -35,6 +36,35 @@ local function PaintColor(state, part, spec, role)
     if not S.ColorMatches(saved.applied, r, g, b, a, S.COLOR_OWN) then part[spec.setter](part, cr, cg, cb, ca) end
 end
 
+local function DropdownRole(visual, idleRole)
+    if visual == "disabled" then return "disabled" end
+    if visual == "pressed" or visual == "open" then return "accentBright" end
+    if visual == "hover" then return "accent" end
+    return idleRole
+end
+
+local function StepperDisabled(plan, button, previous)
+    if not button then return end
+    if W.Safe(button) and W.Belongs(plan.root, button) then
+        local enabled = S.Read(button, "IsEnabled")
+        if enabled ~= nil then return enabled == false end
+    end
+    return previous
+end
+
+local function ColorRole(state, spec)
+    if state.visual == "disabled" then return "disabled" end
+    if spec.input then
+        local disabled = state.forwardDisabled
+        if spec.input == state.plan.back then disabled = state.backDisabled end
+        if disabled == nil then return end
+        if disabled then return "disabled" end
+    end
+    if spec.role == "arrow" then return DropdownRole(state.visual, "blizzardArrow") end
+    if spec.role == "label" then return DropdownRole(state.visual, "text") end
+    return spec.role
+end
+
 local function Paint(state, force)
     local plan = state.plan
     if not plan or not W.Safe(plan.root) or NS.IsCombatLocked() then return end
@@ -44,28 +74,31 @@ local function Paint(state, force)
     local open = trigger and S.Read(plan.root, "IsMenuOpen") == true
     local down = trigger and (state.down or S.Read(trigger, "GetButtonState") == "PUSHED")
     local visual = disabled and "disabled" or down and "pressed" or open and "open" or state.hover and "hover" or "normal"
-    if not force and state.visual == visual then return end
+    local backDisabled = StepperDisabled(plan, plan.back, state.backDisabled)
+    local forwardDisabled = StepperDisabled(plan, plan.forward, state.forwardDisabled)
+    local visualChanged = state.visual ~= visual
+    if not force and not visualChanged and state.backDisabled == backDisabled
+        and state.forwardDisabled == forwardDisabled then return end
     state.visual = visual
+    state.backDisabled, state.forwardDisabled = backDisabled, forwardDisabled
     if trigger then
         local selected = visual ~= "normal" and visual ~= "disabled"
         if force or selected ~= state.selected then NS.Surface.SetActive(plan.root, selected) end
         state.selected = selected
     end
+    if state.filterArrow then
+        state.filterArrow:SetVertexColor(NS.Theme.GetColor(DropdownRole(visual, "blizzardArrow")))
+    end
     for part, spec in pairs(plan.colors) do
-        local role = spec.role
-        if disabled then role = "disabled"
-        elseif role == "arrow" or role == "label" then
-            if down or open then role = "accentBright"
-            elseif state.hover then role = "accent"
-            elseif role == "arrow" then role = "blizzardArrow"
-            else role = "text" end
-        end
-        if force or spec.lastRole ~= role or spec.role == "arrow" or spec.role == "label" then
+        local role = ColorRole(state, spec)
+        if role and (force or spec.lastRole ~= role or spec.role == "arrow" or spec.role == "label") then
             PaintColor(state, part, spec, role)
             spec.lastRole = role
         end
     end
-    if state.track then state.track:SetColorTexture(NS.Theme.GetColor(disabled and "disabled" or "borderSoft")) end
+    if state.track and (force or visualChanged) then
+        state.track:SetColorTexture(NS.Theme.GetColor(disabled and "disabled" or "borderSoft"))
+    end
 end
 
 local function Changed(target, flag, value)
@@ -80,7 +113,19 @@ local function Enter(button) Changed(button, "hover", true) end
 local function Leave(button) Changed(button, "hover", false) end
 local function Down(button) Changed(button, "down", true) end
 local function Up(button) Changed(button, "down", false) end
-local function Enabled(button) Changed(button) end
+local function Enabled(button)
+    local state = active[button]
+    if not state then return end
+    local plan = state.plan
+    if button == plan.back or button == plan.forward then
+        local enabled = S.ReadUnprotected(button, "IsEnabled")
+        if enabled == nil then return end
+        local disabled = not enabled
+        if button == plan.back and disabled == state.backDisabled then return end
+        if button == plan.forward and disabled == state.forwardDisabled then return end
+    end
+    Changed(button)
+end
 local function Hide(button)
     local state = active[button]
     if state then state.down, state.hover = nil, nil end
@@ -124,6 +169,8 @@ local function Unbind(state)
     active[plan.root] = nil
     if plan.trigger then active[plan.trigger] = nil end
     if plan.slider then active[plan.slider] = nil end
+    if plan.back then active[plan.back] = nil end
+    if plan.forward then active[plan.forward] = nil end
 end
 
 local function RestoreFade(root, part, owner)
@@ -143,6 +190,7 @@ function W.Release(entry)
     end
     for part in pairs(state.plan.fades or {}) do RestoreFade(state.plan.root, part, entry.owner) end
     if state.track and W.Safe(state.plan.slider) and W.Belongs(state.plan.root, state.plan.slider) then state.track:Hide() end
+    if state.filterArrow then state.filterArrow:Hide() end
     if state.surface then NS.Surface.SetVisible(state.plan.root, false) end
     state.plan, entry.widget = nil, nil
 end
@@ -160,10 +208,36 @@ local function TrackFor(slider)
     return track
 end
 
+local function UpdateFilterArrow(state, plan)
+    if not plan.filterArrow then
+        if state.filterArrow then state.filterArrow:Hide() end
+        state.filterArrow = nil
+        return
+    end
+    local arrow = filterArrows[plan.root]
+    if not arrow then
+        arrow = plan.root:CreateTexture(nil, "OVERLAY")
+        arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+        arrow:SetSize(14, 14)
+        arrow:SetPoint("RIGHT", plan.root, "RIGHT", -4, 0)
+        arrow:SetRotation(-math.pi / 2)
+        filterArrows[plan.root] = arrow
+    end
+    state.filterArrow = arrow
+    arrow:Show()
+end
+
+local function BindStepper(button, state)
+    if not button then return end
+    active[button] = state
+    Watch(button)
+end
+
 function W.Apply(entry, plan)
     local state = entry.widget
     if state and (state.plan.trigger ~= plan.trigger or state.plan.slider ~= plan.slider
-        or state.plan.kind ~= plan.kind or (state.plan.nativeBar ~= nil) ~= (plan.nativeBar ~= nil)) then W.Release(entry) state = nil end
+        or state.plan.back ~= plan.back or state.plan.forward ~= plan.forward or state.plan.kind ~= plan.kind
+        or (state.plan.nativeBar ~= nil) ~= (plan.nativeBar ~= nil)) then W.Release(entry) state = nil end
     if not state then
         state = { colors = {} }
         state.repaint = function() if state.plan then Paint(state) end end
@@ -197,6 +271,7 @@ function W.Apply(entry, plan)
                 if not NS.Cosmetics.Fade(part, entry.owner) then return false, "unsupported-dropdown-art" end
             end
         end
+        UpdateFilterArrow(state, plan)
         if not state.events and S.HasMethod(plan.root, "IsMenuOpen") and S.HasMethod(plan.root, "RegisterCallback")
             and S.HasMethod(plan.root, "UnregisterCallback") then
             state.events = DropdownButtonMixin.Event
@@ -207,6 +282,8 @@ function W.Apply(entry, plan)
         local input = plan.slider or plan.root
         active[input] = state
         if S.HasMethod(input, "HookScript") then Watch(input) end
+        BindStepper(plan.back, state)
+        BindStepper(plan.forward, state)
         if plan.slider and not plan.hasTrack then state.track = TrackFor(plan.slider)
         elseif state.track then state.track:Hide() state.track = nil end
     end

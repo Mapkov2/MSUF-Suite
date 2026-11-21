@@ -1,4 +1,4 @@
-## Interface: 120100, 120105, 16001
+## Interface: 120100, 120105, 120107, 16001
 ## Title: MSUF Suite - Cooldown manager
 ## Notes: Optional cooldown, buff and buff bar manager for Retail and Forever.
 ## Author: Mapko

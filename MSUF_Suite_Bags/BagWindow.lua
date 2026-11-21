@@ -9,6 +9,7 @@ local IN_COMBAT = { inCombat = true }
 local WindowTexture = M.WindowTexture
 local Layout = Private.BagLayout
 local GOLD_PERIOD = NS.BagsGoldPeriod
+local BLIZZARD_GRID = NS.BagsView.BLIZZARD_GRID
 local TEXT = {
     session = S.Text("Session %s"),
     today = S.Text("Today %s"),
@@ -369,7 +370,7 @@ end
 -- size change. Anchor points retain those edges while the viewport changes.
 function M:PinBagResizeCorner()
     local c, frame = self.config, self.frame
-    if not c.keepResizeCorner or not frame or not frame:IsShown() or NS.InCombat() then return end
+    if not c.keepResizeCorner or self.nativeMaximized or not frame or not frame:IsShown() or NS.InCombat() then return end
     if ResizeCorner(self) then return end
     local left, bottom, width, height = frame:GetScaledRect()
     local screenX, screenY, screenW, screenH = UIParent:GetScaledRect()
@@ -390,6 +391,7 @@ function M:BeginWindowDrag(frame)
     if not self.active or NS.IsCombatLocked() or S.editMode or not frame:IsShown() or self.dragWindow then
         return
     end
+    if self.nativeMaximized and frame == self.frame then return end
     -- StartMoving raises on a frame that is not movable.
     if not frame:IsMovable() then return end
     local x, y, scale = WindowOffset(frame)
@@ -420,6 +422,25 @@ local function PanelOffset(frame, x, y)
     local reserve = companion > 0 and companion + 8 or 0
     local height = companion > 0 and math.max(frame:GetHeight(), ContainerFrame6:GetHeight()) or frame:GetHeight()
     return ScreenOffset(frame, x, y, frame:GetWidth() + reserve, height)
+end
+
+local function NativeFitScale(frame)
+    local width, height = frame:GetSize(true)
+    local uiWidth, uiHeight = UIParent:GetSize()
+    local scale, effective, parentScale = frame:GetScale(), frame:GetEffectiveScale(), UIParent:GetEffectiveScale()
+    if not (Finite(width) and Finite(height) and Finite(uiWidth) and Finite(uiHeight)
+        and Finite(scale) and Finite(effective) and Finite(parentScale)) then return end
+    if width <= 0 or height <= 0 or effective <= 0 or scale <= 0 or parentScale <= 0 or uiWidth <= 16 or uiHeight <= 16 then return end
+    return math.min((uiWidth - 16) / width, (uiHeight - 16) / height) * scale * parentScale / effective
+end
+
+function M:ToggleNativeMaximize()
+    local frame = self.frame
+    if not self.active or NS.InCombat() or S.editMode or self.config.inventoryView ~= BLIZZARD_GRID or not frame or not frame:IsVisible()
+        or self.dragWindow or Private.BagResize.active or StackSplitFrame:IsShown() then return end
+    if not self.nativeMaximized and not NativeFitScale(frame) then return end
+    self.nativeMaximized = not self.nativeMaximized or nil
+    self:RefreshWindowLayout()
 end
 
 function M:EndWindowDrag(frame)
@@ -471,10 +492,7 @@ end
 -- layout changes. Reapply the Suite adjustment after that native layout,
 -- while leaving the window's item grid and click handlers untouched.
 function M.AfterNativeWindowLayout()
-    if Private.BagResize.active then
-        Private.BagResize.Reassert()
-        return
-    end
+    if Private.BagResize.active and Private.BagResize.Reassert() then return end
     if Private.BagWindowMotion.active then Private.BagWindowMotion.Cancel(true) end
     if not M.active then return end
     local frame = M.frame
@@ -496,12 +514,15 @@ function M:ApplyWindowLayout()
         local nativeScale = self.nativeScale or frame:GetScale()
         local panel = Private.BagPresentation.IsPanel(c)
         local combat = Private.InventoryView.layout == "combat" and self.combatScale
-        local scale = combat or (panel and Private.BagPresentation.Scale(c, Private.BagPresentation.CompanionWidth(c))
+        local fit = self.nativeMaximized and c.inventoryView == BLIZZARD_GRID and NativeFitScale(frame)
+        local scale = fit or combat or (panel and Private.BagPresentation.Scale(c, Private.BagPresentation.CompanionWidth(c))
             or nativeScale * c.windowScale)
         if Finite(scale) and scale > 0 then Layout.Scale(self.context, frame, scale) end
         local corner = not combat and not NS.InCombat() and ResizeCorner(self)
         local effective = corner and frame:GetEffectiveScale()
-        if Finite(effective) and effective > 0 then
+        if fit then
+            Layout.Position(self.context, frame, "CENTER", 0, 0)
+        elseif Finite(effective) and effective > 0 then
             Layout.Position(self.context, frame, corner.point, corner.x / effective, corner.y / effective)
         elseif c.windowMoved then
             local x, y = c.windowX, c.windowY
@@ -527,6 +548,8 @@ function M:ApplyWindowLayout()
         end
     end
     Private.BagCaption.Moved()
+    local style = self.windows and self.windows[frame]
+    Private.BagResize.RefreshNative(style and style.shell)
 end
 
 -- Blizzard's anchor pass (UpdateContainerFrameAnchors) reads the open bags

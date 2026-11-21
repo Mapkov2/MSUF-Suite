@@ -16,7 +16,7 @@ NS.version = "0.35.1"
 -- client API is negotiated separately through MapkoSkin.GetAPI(2, 0).
 NS.apiVersion = 1
 NS.publicAPIMajor = 2
-NS.publicAPIMinor = 4
+NS.publicAPIMinor = 5
 NS.path = "Interface\\AddOns\\MSUF_Suite_Skin\\"
 
 function NS.IsCombatLocked(event)

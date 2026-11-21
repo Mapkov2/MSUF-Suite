@@ -193,18 +193,26 @@ local function SkinNamedRows(group, prefix, count)
         local row = _G[name]
         if row then
             found = found + 1
-            Attach(group, row)
-            Fade(group, Field(row, "SlotTexture"))
-            FadeGlobal(group, name .. "NameFrame")
+            local attached = Attach(group, row)
+            local slot, plate = Field(row, "SlotTexture"), Global(name .. "NameFrame")
+            if prefix == "MerchantItem" then
+                if attached and Kit.ParentIs(slot, row) then NS.Cosmetics.FadeDecoration(slot, group.owner) end
+                if attached and Kit.ParentIs(plate, row) then NS.Cosmetics.FadeDecoration(plate, group.owner) end
+            else
+                Fade(group, slot)
+                Fade(group, plate)
+            end
         end
     end
     return found
 end
 
 -- MerchantFrame.xml: each page button's BACKGROUND layer holds an anonymous
--- UI-PageButton-Background, the stone square behind its arrow. The catalog
--- pass draws the button and its arrow (GenericWindowsNodes glyph buttons).
-local MERCHANT_PAGE_BUTTONS = { "MerchantPrevPageButton", "MerchantNextPageButton" }
+-- UI-PageButton-Background, the stone square behind its four state textures.
+local MERCHANT_PAGE_BUTTONS = {
+    { name = "MerchantPrevPageButton", direction = "left" },
+    { name = "MerchantNextPageButton", direction = "right" },
+}
 local PAGE_BACKPLATE = "interface\\buttons\\ui-pagebutton-background"
 local PAGE_BACKPLATE_FILE = 130822
 
@@ -213,17 +221,22 @@ local function IsPageBackplate(texture)
         or type(texture) == "string" and texture:gsub("/", "\\"):lower():gsub("%.blp$", "") == PAGE_BACKPLATE
 end
 
-local function FadePageBackplate(region, group)
+local function FadePageBackplate(region, group, button)
     if Read(region, "GetTextureFileID") == PAGE_BACKPLATE_FILE
         or IsPageBackplate(Read(region, "GetTextureFilePath"))
         or IsPageBackplate(Read(region, "GetTexture")) then
-        Fade(group, region)
+        if Kit.ParentIs(region, button) then NS.Cosmetics.FadeDecoration(region, group.owner) end
     end
 end
 
-local function SkinMerchant(_, group)
+local function SkinMerchant(merchant, group)
     for index = 1, #MERCHANT_PAGE_BUTTONS do
-        Kit.ForEachRegion(Global(MERCHANT_PAGE_BUTTONS[index]), FadePageBackplate, group)
+        local options = MERCHANT_PAGE_BUTTONS[index]
+        local button = Global(options.name)
+        if Kit.ParentIs(button, merchant) then
+            local applied = NS.WindowActionSkin.ApplyExplicit(button, group.owner, "page", false, options)
+            if applied then Kit.ForEachRegion(button, FadePageBackplate, group, button) end
+        end
     end
     -- ItemButton, icon/quality, MoneyFrame, AltCurrencyFrame, repair/sell
     -- controls, layout and scripts remain entirely Blizzard-owned.
@@ -281,6 +294,7 @@ local function DisableGroup(state, spec)
     local group = state and state.groups[spec.id]
     if not group then return true end
     if NS.IsCombatLocked() then return false, "combat" end
+    if spec.id == "merchant-rows" then NS.WindowActionSkin.DisableOwner(group.owner) end
 
     for target in pairs(group.surfaces) do
         if LegacyWindows.surfaceTargets[target] then

@@ -169,4 +169,42 @@ function Caption.Dress(cell, kind, colors, opaque)
     return cell
 end
 
+local Suite = NS.Suite
+local Outline = {}
+NS.WindowOutline, Suite.WindowOutline = Outline, Outline
+
+function Outline.Paint(frame, art, pixels, r, g, b, a, strata, level, detached)
+    if not pixels or pixels <= 0 then
+        if art then art:Hide() end
+        return art
+    end
+    if not art then
+        art = Suite.CreateFrame("Frame")
+        art:SetParent(detached and UIParent or frame)
+        art:SetAllPoints(frame)
+        art:EnableMouse(false)
+        for i = 1, 4 do art[i] = art:CreateTexture(nil, "OVERLAY") end
+        art[1]:SetPoint("TOPLEFT")
+        art[1]:SetPoint("TOPRIGHT")
+        art[2]:SetPoint("BOTTOMLEFT")
+        art[2]:SetPoint("BOTTOMRIGHT")
+    end
+    local factor = NS.WindowCaption.PixelFactor()
+    local scale = art:GetEffectiveScale()
+    local size = NS.Finite(factor) and factor > 0 and NS.Finite(scale) and scale > 0 and pixels * factor / scale or pixels
+    for i = 1, 4 do art[i]:SetColorTexture(r, g, b, a) end
+    art[1]:SetHeight(size)
+    art[2]:SetHeight(size)
+    art[3]:SetWidth(size)
+    art[3]:SetPoint("TOPLEFT", art, "TOPLEFT", 0, -size)
+    art[3]:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", 0, size)
+    art[4]:SetWidth(size)
+    art[4]:SetPoint("TOPRIGHT", art, "TOPRIGHT", 0, -size)
+    art[4]:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", 0, size)
+    if strata and art:GetFrameStrata() ~= strata then art:SetFrameStrata(strata) end
+    if NS.Finite(level) and art:GetFrameLevel() ~= level then art:SetFrameLevel(level) end
+    art:Show()
+    return art
+end
+
 return Caption

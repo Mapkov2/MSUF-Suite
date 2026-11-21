@@ -130,10 +130,11 @@ local MIGRATIONS = {
     { run = Steps.NameplateTextIndicators },
     { run = Steps.NameplateBarsOverride },
     { run = Steps.NameplateOutlineOff },
+    { run = Steps.BagsDefaultBorder },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {
-    Steps.AnnouncementsAnchor, Steps.AnnouncementsFactory, Steps.DataTextsBagButtons, Steps.SkyridingColors,
+    Steps.AnnouncementsAnchor, Steps.AnnouncementsFactory, Steps.DataTextsBagButtons, Steps.BagsBarVisibility, Steps.SkyridingColors,
     Steps.ObjectivesCollapseState, NS.NameplateStyle.RepairGeometry,
 }
 -- The migration revision a copy of this suite table must keep (nil for a
@@ -440,7 +441,7 @@ end
 -- to the module and styles Blizzard's original again once the module is off.
 local SURFACE_MODULES = {
     damageMeter = "damageMeter", bagWindows = "bags",
-    cooldownViewers = "cooldownManager", bagBar = "dataTexts", staticPopups = "popupAttention",
+    cooldownViewers = "cooldownManager", staticPopups = "popupAttention",
     characterDossier = "characterPanel", battleNetToast = "bnetToast",
 }
 local SURFACE_OWNERS = {}
@@ -449,17 +450,15 @@ for surface, id in pairs(SURFACE_MODULES) do SURFACE_OWNERS[id] = surface end
 -- available on this client and not failed. It answers before S.Start too, so
 -- the skin's first pass already leaves the surface alone.
 function S.OwnsBlizzardSurface(surface)
+    if surface == "bagBar" then
+        return S.OwnsBlizzardSurface("bagWindows") and S.states.bags.active == true
+            and S.Config("bags").bagBarVisibility == NS.BagsBarVisibility.NEVER
+    end
     local id = SURFACE_MODULES[surface]
     if not id or not ActiveSuite() or S.states[id].error then return false end
     local config = S.Config(id)
     if config.enabled ~= true then return false end
     if surface == "characterDossier" and config.mode ~= NS.CharacterPanelMode.SUITE then return false end
-    -- DataTexts hides the bag bar only on request.
-    if surface == "bagBar" then
-        if config.hideBlizzardBagBar ~= true or not S.states.bags.active then return false end
-        if S.Config("bags").inventoryView == NS.BagsView.BLIZZARD_GRID then return false end
-        if not S.OwnsBlizzardSurface("bagWindows") then return false end
-    end
     if surface == "staticPopups" and config.skin ~= true and config.dialogFont ~= true then return false end
     -- Choice 1 keeps Blizzard's look of the toast, which the skin may style.
     if surface == "battleNetToast" and config.look == 1 then return false end

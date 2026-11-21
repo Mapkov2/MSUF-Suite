@@ -3,8 +3,8 @@ local S, W = NS.Safety, NS.PublicWidgets
 local widgetOptions = {
     SkinDropdown = { kind = "dropdown", "trigger", "label", "arrow" },
     SkinCheckButton = { kind = "checkButton", "indicator", "label" },
-    SkinSlider = { kind = "slider", "track", "thumb", "back", "forward" },
-    SkinScrollBar = { kind = "scrollBar", "track", "thumb", "back", "forward" },
+    SkinSlider = { kind = "slider", "track", "thumb", "back", "forward", "backArt", "forwardArt" },
+    SkinScrollBar = { kind = "scrollBar", "track", "thumb", "back", "forward", "backArt", "forwardArt" },
 }
 local menuColors = {
     background = "popup", border = "border", text = "text", title = "title", disabled = "disabled",
@@ -56,12 +56,13 @@ end
 local function WindowOptions(options)
     if not Options(options) or not options then return nil end
     local spec = {}
-    for _, key in ipairs({ "closeButton", "minimize", "maximize", "minScale", "maxScale", "title" }) do
+    for _, key in ipairs({ "closeButton", "minimize", "maximize", "minScale", "maxScale", "title", "showOnRelease" }) do
         local value = rawget(options, key)
         if not S.Public(value) then return nil end
         spec[key] = value
     end
     if spec.minimize ~= nil and type(spec.minimize) ~= "boolean" or spec.maximize ~= nil and type(spec.maximize) ~= "boolean" then return nil end
+    if spec.showOnRelease ~= nil and type(spec.showOnRelease) ~= "boolean" then return nil end
     if not (spec.closeButton or spec.minimize or spec.maximize) then return nil end
     for _, key in ipairs({ "minScale", "maxScale" }) do
         local value = spec[key]
@@ -72,8 +73,14 @@ local function WindowOptions(options)
     return spec
 end
 
-function NS.InstallPublicControls(methods, getScope, safe, request, enabled)
-    for name, definition in pairs(widgetOptions) do methods[name] = WidgetMethod(definition, safe, request) end
+local function WindowEntry(scope, frame)
+    if not S.Public(frame) or frame == nil then return nil, "unknown-window" end
+    local entry = scope.targets[frame]
+    if not entry or not entry.window then return nil, "unknown-window" end
+    return entry
+end
+
+local function InstallWindowMethods(methods, getScope, safe, request)
     function methods:RegisterWindow(frame, options)
         local ok, reason = safe(frame, true)
         if not ok then return false, reason end
@@ -83,6 +90,25 @@ function NS.InstallPublicControls(methods, getScope, safe, request, enabled)
         if not ok then return false, reason end
         return request(self, frame, "window", spec, true)
     end
+    function methods:GetWindowState(frame)
+        local scope, reason = getScope(self)
+        if not scope then return nil, reason end
+        local entry, why = WindowEntry(scope, frame)
+        if not entry then return nil, why end
+        return NS.AddonWindowControls.GetState(entry)
+    end
+    function methods:RestoreWindowGeometry(frame)
+        local scope, reason = getScope(self)
+        if not scope then return false, reason end
+        local entry, why = WindowEntry(scope, frame)
+        if not entry then return false, why end
+        return NS.AddonWindowControls.RestoreGeometry(entry)
+    end
+end
+
+function NS.InstallPublicControls(methods, getScope, safe, request, enabled)
+    for name, definition in pairs(widgetOptions) do methods[name] = WidgetMethod(definition, safe, request) end
+    InstallWindowMethods(methods, getScope, safe, request)
     function methods:GetTargetStatus(target)
         local scope = getScope(self)
         if not scope then return "released" end
@@ -133,6 +159,11 @@ function NS.InstallPublicControls(methods, getScope, safe, request, enabled)
         local result = { font = self:GetFont() }
         for name, role in pairs(menuColors) do result[name] = { NS.Theme.GetColor(role) } end
         return result
+    end
+    function methods:SkinMenuDescription(description)
+        local scope, reason = getScope(self)
+        if not scope then return false, reason end
+        return NS.PublicMenuStyle.Bind(description, scope, enabled)
     end
     return ActionOptions
 end

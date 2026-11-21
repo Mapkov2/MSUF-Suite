@@ -10,22 +10,29 @@ local appearanceHooked = false
 -- The HUD modules read skin colors and fonts when they paint.
 local SKINNED_HUD = { "objectives", "runSummary", "announcements", "characterPanel" }
 -- Addons that restyle Blizzard's windows as the skin does (folder names).
-local WINDOW_SKIN_ADDONS = { "ElvUI", "NDui", "Aurora", "DarkMode" }
+local WINDOW_SKIN_ADDONS = { "ElvUI", "NDui", "Aurora", "DarkMode", "DaylightUI_Skins" }
 -- The Suite's own skin engine while it is loaded.
 local function LoadedEngine()
     local provider = _G.MapkoSkin
     return type(provider) == "table" and provider.addonName == "MSUF_Suite_Skin" and provider or nil
 end
 
-local function HookOwnedHUD(api)
+local tooltipBorder
+local function HookOwnedAppearance(api)
     -- hooksecurefunc raises when the hooked field is not a function.
     if appearanceHooked or type(api.OnAppearanceChanged) ~= "function" then return end
-    hooksecurefunc(api, "OnAppearanceChanged", function()
+    hooksecurefunc(api, "OnAppearanceChanged", function(_, domain, key)
         local controller = Suite.Suite
         if not controller.started then return end
         for _, id in ipairs(SKINNED_HUD) do
             local state = controller.states[id]
             if state and state.active then controller.Apply(id) end
+        end
+        local bags = controller.states.bags
+        if bags and bags.active and (domain == "theme" or domain == "color" or domain == "appearance"
+            or domain == "geometry" or domain == "profile" or domain == "ready" or domain == "adapter" and key == "master") then
+            local config = controller.Config("bags")
+            if config.backpackBorderStyle ~= Suite.BagsBorderStyle.CUSTOM then controller.Apply("bags") end
         end
     end)
     appearanceHooked = true
@@ -84,6 +91,23 @@ function Skin.WindowsEnabled()
     return Skin.enabled and not (engine and engine.DB and engine.DB.enabled == false)
 end
 
+function Skin.GetTooltipBorder()
+    local engine = LoadedEngine()
+    local chrome = engine and engine.TooltipChrome
+    if type(chrome) ~= "table" or type(chrome.GetBorder) ~= "function" or type(engine.GetAPI) ~= "function" then return nil end
+    if not appearanceHooked then
+        local api = engine.GetAPI(2, 0)
+        if api then HookOwnedAppearance(api) end
+    end
+    if not Skin.WindowsEnabled() then return nil end
+    local r, g, b, a = chrome.GetBorder()
+    if not (Suite.Finite(r) and Suite.Finite(g) and Suite.Finite(b) and Suite.Finite(a)) then return nil end
+    if not tooltipBorder or tooltipBorder[1] ~= r or tooltipBorder[2] ~= g or tooltipBorder[3] ~= b or tooltipBorder[4] ~= a then
+        tooltipBorder = { r, g, b, a }
+    end
+    return tooltipBorder
+end
+
 function Skin.Acquire(moduleID)
     if not Skin.enabled or type(moduleID) ~= "string" or not moduleID:match("^[%a][%w_]*$") then
         return nil
@@ -93,7 +117,7 @@ function Skin.Acquire(moduleID)
     if clients[moduleID] then return clients[moduleID] end
     local api = _G.MapkoSkin.GetAPI(2, 0)
     if not api or type(api.RegisterAddon) ~= "function" then return nil end
-    HookOwnedHUD(api)
+    HookOwnedAppearance(api)
     local engine, client = LoadedEngine()
     if engine and engine.PublicAPI and engine.PublicAPI.RegisterSuiteAddon then
         client = engine.PublicAPI.RegisterSuiteAddon(moduleID)
@@ -184,6 +208,18 @@ local function TellOnce(root, name)
     if told[name] then return end
     told[name] = true
     Suite.Print(Suite.Text("%s also restyles Blizzard's windows and may clash with the MSUF skin. Pick one; MSUF changes nothing by itself."):format(name))
+end
+
+function Skin.ListWindowSkinConflicts()
+    local conflicts = {}
+    local provider = LoadedEngine()
+    if not (provider and provider.DB and provider.DB.enabled and provider.DB.blizzardWindowsEnabled ~= false) then
+        return conflicts
+    end
+    for _, name in ipairs(WINDOW_SKIN_ADDONS) do
+        if Suite.Client.IsAddOnLoaded(name) then conflicts[#conflicts + 1] = name end
+    end
+    return conflicts
 end
 
 -- While the skin styles Blizzard's windows, each loaded addon that restyles

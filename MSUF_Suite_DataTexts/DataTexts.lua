@@ -7,7 +7,7 @@ local Standard = P.DataTextStandard
 local Extra = P.DataTextSources
 local Actions = P.DataTextActions
 local Compass, CompassSlots = NS.Compass, P.DataTextCompass
-local Visibility, NativeBagBar = P.DataTextBarVisibility, P.DataTextNativeBagBar
+local Visibility = P.DataTextBarVisibility
 local healthBars, GateHealth = Visibility.healthBars, Visibility.GateHealthBar
 local M = P.DataTexts
 local Bars, BarKeys = P.DataTextBars, P.DataTextBarKeys
@@ -580,8 +580,7 @@ end
 
 function M:Refresh(resample)
     if self.paused or NS.InCombat() then
-        -- The controller may apply DataTexts again as a Bags follower
-        -- during the same startup. Its first snapshot is already laid out.
+        -- The before-lockdown startup already laid out its first snapshot.
         if not NS.startingBeforeLockdown then self.refreshAfterCombat = true end
         return
     end
@@ -602,7 +601,6 @@ function M:Refresh(resample)
     if not Extra.PrepareHearths() then Actions.Refresh() end
     PrimeCombatBars(self)
     P.DataTextCombatMenu.Sync(self)
-    NativeBagBar.Sync()
 end
 
 local function RefreshSurface(module, resample)
@@ -619,7 +617,6 @@ local function ScaleChanged(module)
 end
 
 local function BindSurfaceEvents(self)
-    self.context:Event("ADDON_LOADED", NativeBagBar.AddonLoaded, IN_COMBAT)
     self.context:Event("UI_SCALE_CHANGED", ScaleChanged)
     self.context:Event("DISPLAY_SIZE_CHANGED", ScaleChanged)
 end
@@ -637,7 +634,6 @@ local function Pause(self)
         self.context:RemoveEvent(event)
         self.events[event] = nil
     end
-    self.context:RemoveEvent("ADDON_LOADED")
     self.context:RemoveEvent("UI_SCALE_CHANGED")
     self.context:RemoveEvent("DISPLAY_SIZE_CHANGED")
     Extra.Disable()
@@ -667,7 +663,6 @@ local function Resume(self)
         Extra.HearthsMayHaveChanged()
         PrimeCombatBars(self)
         P.DataTextCombatMenu.Sync(self)
-        if self.config.hideBlizzardBagBar then NativeBagBar.Sync() end
     end
     Actions.Resume()
 end
@@ -682,7 +677,6 @@ function M:Enable()
             Visibility.Apply(self)
             PrimeCombatBars(self, true)
             P.DataTextCombatMenu.Sync(self)
-            NativeBagBar.Sync()
             self.clockSeconds = self.config.clockSeconds == true
         else
             self.refreshAfterCombat = true
@@ -706,7 +700,6 @@ function M:Disable()
     P.DataTextCombatMenu.Disable()
     Extra.Disable()
     CompassSlots.Bind()
-    NativeBagBar.Sync()
     if self.timer then
         self.timer:Cancel()
         self.timer = nil

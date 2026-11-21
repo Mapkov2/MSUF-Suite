@@ -20,12 +20,19 @@ function S.InviteRelation(guid, name)
     return true, relation
 end
 
--- An ordinary invite: no group finder role to choose and no quest session.
-function S.PlainInvite(tank, healer, damage, questSession)
-    return S.Public(tank) and tank == false
+-- The tail after isNativeRealm has one extra flag on newer clients.
+-- Only ordinary invites with readable identity can be answered automatically.
+function S.PlainInviteGUID(tank, healer, damage, ...)
+    local count = select("#", ...)
+    if count ~= 3 and count ~= 4 then return end
+    local guid, questSession = select(count - 1, ...)
+    if S.Public(tank) and tank == false
         and S.Public(healer) and healer == false
         and S.Public(damage) and damage == false
         and S.Public(questSession) and questSession == false
+        and S.PublicText(guid) then
+        return guid
+    end
 end
 
 local function Trusted(self, guid, name)
@@ -65,11 +72,11 @@ local function AcceptVisible(self, inviterName)
     end
 end
 
-local function OnInvite(self, _, name, tank, healer, damage, _, _, guid, questSession)
+local function OnInvite(self, _, name, tank, healer, damage, _, ...)
     Invalidate(self)
-    if not self.active or not S.PublicText(name) or not S.PublicText(guid)
-        or not S.PlainInvite(tank, healer, damage, questSession)
-        or not SafeToJoin() or not Trusted(self, guid, name) then return end
+    if not self.active or not S.PublicText(name) then return end
+    local guid = S.PlainInviteGUID(tank, healer, damage, ...)
+    if not guid or not SafeToJoin() or not Trusted(self, guid, name) then return end
     -- The event may reach addons before Blizzard creates its native popup.
     self.inviter = name
     self.context:After(0, AcceptLatest)

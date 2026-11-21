@@ -94,16 +94,21 @@ local function SetMaskAlpha(mask, alpha)
 end
 
 function Window.SyncGlass(view, force)
-    if not (view.glassLook or view.glassApplied) or not view.nativeLayout then return end
+    if not (view.glassLook or view.glassApplied or view.glassEnabled) or not view.nativeLayout then return end
     local geometry = NS.Host.Skin.CharacterGeometry
     if not geometry or not geometry.SetGlass then return end
     local enable = view.glassLook and view.frame:IsVisible() and view.characterView ~= "classic" and not NS.Suite.GamepadUI()
         and view.surfaces[view.frame].themed
     local withGear = view.gear:IsShown()
     local withModel = withGear and view.modelHost:IsShown()
-    if not force and enable == view.glassEnabled and withModel == view.glassWithModel and withGear == view.glassWithGear then return end
+    if not force and enable == view.glassEnabled and withModel == view.glassWithModel and withGear == view.glassWithGear then
+        if not enable or view.glassApplied and NS.Number(view.nativeRoot:GetAlpha()) == 0 then return end
+        -- LeaveCombat forces the next native sync. Keep the solid cover
+        -- during repeated combat paints while the native write is deferred.
+        if not view.glassApplied and NS.Host.InCombat() then return end
+    end
+    local glass, modelAbove, slotsAbove = geometry.SetGlass(view.nativeRoot, view.frame, enable, withModel, withGear, view.refreshNativeGlass)
     view.glassEnabled, view.glassWithModel, view.glassWithGear = enable, withModel, withGear
-    local glass, modelAbove, slotsAbove = geometry.SetGlass(view.nativeRoot, view.frame, enable, withModel, withGear)
     if view.glassApplied ~= glass and view.closeArt then
         -- Glass already hides the native X artwork via the host's alpha.
         view.closeArt.caption.base:SetShown(not glass)
@@ -131,14 +136,30 @@ function Window.RefreshGlass(view, skin)
     end
 end
 
+function Window.RefreshOutline(view, config)
+    local outline = NS.Suite.WindowOutline
+    if not outline then return end
+    local pixels = config and config.windowOutline
+    pixels = pixels == 3 and 2 or pixels == 2 and 1 or 0
+    if pixels == 0 then
+        if view.outline then view.outline:Hide() end
+        return
+    end
+    local r, g, b = NS.Suite.RGB(config.windowOutlineColor or "000000")
+    local frame = view.frame
+    view.outline = outline.Paint(frame, view.outline, pixels, r or 0, g or 0, b or 0, 1,
+        frame:GetFrameStrata(), frame:GetFrameLevel() + 90)
+end
+
 function Window.HostNativeView(view)
     local frame, root, plan = view.frame, view.nativeRoot, view.nativeLayout
     frame:SetParent(root)
     frame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
     frame:SetFrameStrata(plan.strata)
     frame:SetFrameLevel((plan.rootLevel or 0) + plan.artLevel)
-    frame:HookScript("OnShow", function() Window.SyncGlass(view) end)
-    frame:HookScript("OnHide", function() Window.SyncGlass(view) end)
+    view.refreshNativeGlass = function() Window.SyncGlass(view, true) end
+    frame:HookScript("OnShow", view.refreshNativeGlass)
+    frame:HookScript("OnHide", view.refreshNativeGlass)
 end
 
 function Window.CreateChild(view, kind, parent)
@@ -420,8 +441,8 @@ local function BindNativeGrip(view, grip)
     view.window.nativeGrip = grip
     local action = view.callbacks.windowAction
     if not action then return end
-    grip:SetScript("OnMouseDown", function(_, button)
-        if button == "LeftButton" then action("scaleStart") end
+    grip:SetScript("OnMouseDown", function(control, button)
+        if button == "LeftButton" then action("scaleStart", control) end
     end)
     grip:SetScript("OnMouseUp", function(_, button)
         if button == "LeftButton" then action("scaleStop") end

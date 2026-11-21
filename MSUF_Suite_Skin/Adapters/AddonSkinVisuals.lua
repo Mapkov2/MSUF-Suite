@@ -7,6 +7,7 @@ NS.AddonSkinVisuals = Visuals
 local Safety = NS.Safety
 local textBindings = setmetatable({}, { __mode = "k" })
 local textHooks = setmetatable({}, { __mode = "k" })
+local looks = {}
 local pieces = { "Center", "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
     "TopEdge", "BottomEdge", "LeftEdge", "RightEdge" }
 local specs = {
@@ -16,6 +17,12 @@ local specs = {
     button = { role = "button", radius = 4, interactive = true, allowImplicitProtected = false },
 }
 local implicitSpecs = {}
+local softerShell = { role = "shell", allowImplicitProtected = false, fillAlphaScale = 0.65 }
+
+function Visuals.UseLook(owner, look)
+    looks[owner] = look
+end
+
 for role, spec in pairs(specs) do
     local copy = {}
     for key, value in pairs(spec) do copy[key] = value end
@@ -41,15 +48,23 @@ function Visuals.Surface(target, owner, role, allowImplicitProtected)
     if not Visuals.Safe(target, allowImplicitProtected) then return false end
     if NS.WindowActionSkin.IsApplied(target) then return NS.WindowActionSkin.GetOwner(target) == owner end
     local styles = allowImplicitProtected and implicitSpecs or specs
-    if not NS.Surface.Attach(target, styles[role] or styles.panel) then return false end
+    local look = looks[owner]
+    local style = role == "shell" and look and look.softerWindow and not allowImplicitProtected
+        and softerShell or styles[role] or styles.panel
+    if not NS.Surface.Attach(target, style) then return false end
     NS.Surface.SetVisible(target, true)
     Owned(owner).surfaces[target] = true
     return true
 end
 
-function Visuals.Label(label, owner, font)
+function Visuals.Label(label, owner, font, fitHeight)
     if not NS.LabelStyle.CanStyle(label) then return end
-    NS.LabelStyle.Apply(label, owner, nil, font, type(font) == "string")
+    local look = looks[owner]
+    if look and look.nativeFont then
+        NS.LabelStyle.Release(label, owner)
+        return
+    end
+    NS.LabelStyle.Apply(label, owner, nil, font, type(font) == "string", fitHeight)
     Owned(owner).labels[label] = true
 end
 
@@ -120,6 +135,25 @@ function Visuals.Panel(frame, owner, role, allowImplicitProtected)
     local slice = Safety.Field(frame, "NineSlice")
     for index = 1, #pieces do Visuals.Fade(Safety.Field(slice, pieces[index]), owner) end
     Visuals.Surface(frame, owner, role or "panel", allowImplicitProtected)
+end
+
+-- Unknown windows receive only backdrop chrome and an explicit title label.
+function Visuals.ApplyDiscovered(frame, owner)
+    if not Visuals.Surface(frame, owner, "shell") then return false end
+    local slice = Safety.Field(frame, "NineSlice")
+    local hasBackdrop = Safety.Read(frame, "GetBackdrop") ~= nil
+    if not Safety.Public(slice) or Safety.IsForbidden(slice) then slice = nil end
+    for index = 1, #pieces do
+        local key = pieces[index]
+        Visuals.Fade(Safety.Field(slice, key), owner)
+        if hasBackdrop then Visuals.Fade(Safety.Field(frame, key), owner) end
+    end
+    local container = Safety.Field(frame, "TitleContainer")
+    local title
+    if Safety.Public(container) and not Safety.IsForbidden(container) then title = Safety.Field(container, "TitleText") end
+    if not Safety.Public(title) or not title then title = Safety.Field(frame, "TitleText") end
+    Visuals.Label(title, owner)
+    return true
 end
 
 function Visuals.Tint(region, owner, token)
@@ -207,5 +241,5 @@ function Visuals.Release(owner)
     NS.ControlSkin.DisableOwner(owner)
     NS.ScrollBarSkin.DisableOwner(owner)
     NS.WindowActionSkin.DisableOwner(owner)
-    Visuals.owners[owner] = nil
+    Visuals.owners[owner], looks[owner] = nil, nil
 end

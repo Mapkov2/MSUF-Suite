@@ -50,15 +50,31 @@ local function BuildControls(page)
         return NS.DB.geometry.border
     end, function(value)
         NS.Theme.SetGeometry("border", value)
-    end, 520, BorderLabel)
+    end, 520, BorderLabel, { outlineSetting = "msufsuite.skin.geometry.border" })
     border:SetPoint("TOPLEFT", radius, "BOTTOMLEFT", 0, -8)
+
+    local outline = O.CreateSlider(page, L["Window outline"], 0, 10, 1, function()
+        return NS.DB.theme.windowOutline
+    end, function(value)
+        NS.Theme.SetAppearance("windowOutline", value)
+    end, 520, BorderLabel, { outlineSetting = "msufsuite.skin.theme.windowOutline" })
+    outline:SetPoint("TOPLEFT", border, "BOTTOMLEFT", 0, -8)
+    local outlineColor = O.CreateColorRow(page, "windowOutline", L["Outline color"], 520)
+    outlineColor:SetPoint("TOPLEFT", outline, "BOTTOMLEFT", 0, -8)
+
+    local matchTooltip = O.CreateToggle(page, L["Match tooltip border"], function()
+        return NS.DB.theme.windowOutlineMatchTooltip == true
+    end, function(value)
+        NS.Theme.SetAppearance("windowOutlineMatchTooltip", value)
+    end, 520, { outlineSetting = "msufsuite.skin.theme.windowOutlineMatchTooltip" })
+    matchTooltip:SetPoint("TOPLEFT", outlineColor, "BOTTOMLEFT", 0, -8)
 
     local hoverStyle = O.CreateCycle(page, L["Hover highlight"], NS.HoverStyles, function()
         return NS.DB.theme.hoverStyle
     end, function(value)
         NS.Theme.SetAppearance("hoverStyle", value)
     end, 520, HoverLabel)
-    hoverStyle:SetPoint("TOPLEFT", border, "BOTTOMLEFT", 0, -8)
+    hoverStyle:SetPoint("TOPLEFT", matchTooltip, "BOTTOMLEFT", 0, -8)
 
     local hoverIntensity = O.CreateSlider(page, L["Hover intensity"], 0, 1, 0.05, function()
         return NS.DB.theme.hoverIntensity

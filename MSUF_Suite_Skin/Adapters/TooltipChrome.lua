@@ -17,13 +17,56 @@ local borderPieces = {
 local fillSpec = { role = "popup", radius = 8 }
 
 local plan
+local geometry = {}
+
+local function ResolveBorder(material)
+    local r, g, b, a = NS.Theme.GetColor(material.border)
+    local edge = NS.Geometry.Resolve(fillSpec, geometry).edge
+    return r, g, b, edge and a * NS.Theme.GetBorderOpacity() or 0
+end
+
+function TooltipChrome.GetBorder()
+    return ResolveBorder(NS.Theme.GetMaterial("popup"))
+end
+
+-- Reuse the tooltip's actual edge art on an addon-owned overlay. The center
+-- belongs to the outlined window; only the eight edge pieces are installed.
+local outlineLayout
+function TooltipChrome.PaintOutline(frame, art, strata, level)
+    local r, g, b, a = TooltipChrome.GetBorder()
+    if a <= 0 then
+        if art then art:Hide() end
+        return art
+    end
+    if not art then
+        if not outlineLayout then
+            local native = NineSliceUtil and NineSliceUtil.GetLayout("TooltipDefaultLayout")
+            if not native then return end
+            outlineLayout = NS.CopyValue(native)
+            outlineLayout.Center = nil
+        end
+        art = CreateFrame("Frame", nil, UIParent, "NineSlicePanelTemplate")
+        art:EnableMouse(false)
+        art:SetAllPoints(frame)
+        NineSliceUtil.ApplyLayout(art, outlineLayout)
+    end
+    local tooltipScale = Safety.Read(GameTooltip, "GetEffectiveScale")
+    local parentScale = Safety.Read(UIParent, "GetEffectiveScale")
+    local scale = tooltipScale and parentScale and parentScale > 0 and tooltipScale / parentScale or 1
+    if art:GetScale() ~= scale then art:SetScale(scale) end
+    if art:GetFrameStrata() ~= strata then art:SetFrameStrata(strata) end
+    if art:GetFrameLevel() ~= level then art:SetFrameLevel(level) end
+    art:SetBorderColor(r, g, b, a)
+    art:Show()
+    return art
+end
+
 local function PrepareStyle()
     local material = NS.Theme.GetMaterial("popup")
-    local r, g, b, a = NS.Theme.GetColor(material.border)
-    local edge = NS.Geometry.Resolve(fillSpec).edge
+    local r, g, b, a = ResolveBorder(material)
     plan = {
         fill = NS.Surface.PrepareFill(material, fillSpec),
-        r = r, g = g, b = b, alpha = edge and a * NS.Theme.GetBorderOpacity() or 0,
+        r = r, g = g, b = b, alpha = a,
     }
 end
 
@@ -89,13 +132,22 @@ local function RequestPaint(frame)
     C_Timer.After(0, Flush)
 end
 
+function TooltipChrome.SettleBackdrop(frame)
+    if not pending[frame] then return end
+    pending[frame] = nil
+    local state = tooltips[frame]
+    if state then Safety.Dispatch(Paint, frame, state) end
+end
+
 -- Both clients reset the Center color in SharedTooltip_SetBackdropStyle.
--- Its callers can still clear or lay out widgets. The global post-hook
--- records the request and the paint runs after the native call stack.
+-- Keep a visible card and the native body on the same palette even when an
+-- item hover rebuilds the tooltip. Other chrome can settle once per frame.
 local function OnStyleChanged(frame)
-    if Safety.Public(frame) and type(frame) == "table" and tooltips[frame] then
-        RequestPaint(frame)
-    end
+    if not Safety.Public(frame) or type(frame) ~= "table" or not tooltips[frame] then return end
+    if NS.ItemTooltipCard and NS.ItemTooltipCard.HasVisibleHeader(frame) then
+        pending[frame] = true
+        TooltipChrome.SettleBackdrop(frame)
+    else RequestPaint(frame) end
 end
 
 local function OnThemeChanged(_, domain)
@@ -104,6 +156,10 @@ local function OnThemeChanged(_, domain)
     plan = nil
     if next(tooltips) then PrepareStyle() end
     for frame in pairs(tooltips) do RequestPaint(frame) end
+end
+
+function TooltipChrome.IsActive(frame)
+    return tooltips[frame] ~= nil
 end
 
 function TooltipChrome.Apply(frame, owner)

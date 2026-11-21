@@ -231,5 +231,6 @@ function O.CreateDropdown(parent, labelText, values, getter, setter, width, form
         local _, height, flags = caption:GetFont()
         caption:SetFont(path or valueButton.defaultFont, height or 12, flags or "")
     end)
+    if O.AttachOutlineControl then O.AttachOutlineControl(row, labelText, options and options.outlineSetting, -195) end
     return row, valueButton
 end

@@ -146,13 +146,11 @@ local HELP = {
     bnet_toast = "Move Blizzard's Battle.net toast in MSUF Edit Mode and give it a Suite look and font. "
         .. "Nothing of it runs in combat unless the toast shows.",
     inventoryProtection = "Items you protect are skipped by every sale action of the Suite. With the equipment set switch on, all equippable items are protected while any equipment set exists, because exact set membership is not available to this helper. Manage the protected items in the inventory tool.",
-    cheapestItem = "The bag button is beside Filters in Suite Bags or in the title bar of Blizzard's bag window. "
-        .. "Both mouse buttons list the ten cheapest stacks by vendor value. Left-click also offers to destroy the three cheapest "
-        .. "stacks together after confirmation. Use a stack's submenu to destroy it or protect that item type. Only Poor items "
-        .. "are offered until you raise the highest quality, never above Uncommon. Quest items, refundable items, items in "
-        .. "equipment sets, items protected by Never sell items and items without a vendor price are never offered. A stack "
-        .. "above Poor quality always asks first. The button works only while the bag is open and out of combat, and runs "
-        .. "nothing in the background.",
+    cheapestItem = "Click the bag button to review the ten cheapest stacks by vendor value. The window also opens when loot cannot fit in your bags. "
+        .. "Click Delete next to a stack to make room. The window opened from your bags also offers to delete three stacks after confirmation. "
+        .. "Right-click a stack to protect that item type. Only Poor items are offered by default, with a maximum of Uncommon. "
+        .. "Quest items, refundable items, equipment set items, items protected by Never sell items and items without a vendor price are skipped. "
+        .. "Stacks above Poor always require confirmation. The tool works outside combat.",
     mailTemplates = "Prepare mail to your own recorded characters with a saved subject and item quantities. Applying a template fills the mail form; sending stays manual.",
 }
 

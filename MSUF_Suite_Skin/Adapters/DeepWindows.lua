@@ -88,10 +88,11 @@ local MATERIAL_FIELDS = {
     "SealMaterialBG",
 }
 
-local GOSSIP_MATERIAL_GLOBALS = {
-    "GossipFrameGreetingPanelMaterialTopRight",
-    "GossipFrameGreetingPanelMaterialBotLeft",
-    "GossipFrameGreetingPanelMaterialBotRight",
+local GOSSIP_MATERIAL = {
+    { "MaterialTopLeft" },
+    { "MaterialTopRight", "GossipFrameGreetingPanelMaterialTopRight" },
+    { "MaterialBotLeft", "GossipFrameGreetingPanelMaterialBotLeft" },
+    { "MaterialBotRight", "GossipFrameGreetingPanelMaterialBotRight" },
 }
 
 
@@ -166,11 +167,11 @@ local function ApplyQuestAndGossip(state)
     end
     SetQuestText(state, true)
 
-    if Fade(state, Path(_G.GossipFrame, "GreetingPanel", "MaterialTopLeft")) then
-        faded = faded + 1
-    end
-    for index = 1, #GOSSIP_MATERIAL_GLOBALS do
-        if Fade(state, _G[GOSSIP_MATERIAL_GLOBALS[index]]) then
+    local greeting = Field(_G.GossipFrame, "GreetingPanel")
+    for index = 1, #GOSSIP_MATERIAL do
+        local keys = GOSSIP_MATERIAL[index]
+        local region = Field(greeting, keys[1]) or (keys[2] and _G[keys[2]])
+        if Kit.ParentIs(region, greeting) and NS.Cosmetics.FadeDecoration(region, state.owner) then
             faded = faded + 1
         end
     end

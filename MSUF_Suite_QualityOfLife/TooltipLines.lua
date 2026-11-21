@@ -17,10 +17,14 @@ S.TooltipLines = Lines
 local LABEL_R, LABEL_G, LABEL_B = .65, .81, .87
 local VALUE_R, VALUE_G, VALUE_B = 1, .88, .58
 local callbacks = {}
+local positioner
 
 local function Run(list, tooltip, data)
     if not S.Public(tooltip) or tooltip == nil then return end
     local main = tooltip == GameTooltip
+    if list.positioning and positioner and (main or tooltip == BuffFrameTooltip) then
+        S.Dispatch(positioner, tooltip, data)
+    end
     if not main and (not list.comparisons or tooltip ~= ShoppingTooltip1 and tooltip ~= ShoppingTooltip2) then return end
     if NS.Safety.IsForbidden(tooltip) or not S.Public(data) or type(data) ~= "table"
         or not canaccesstable(data) then return end
@@ -30,9 +34,7 @@ local function Run(list, tooltip, data)
     end
 end
 
--- callback(tooltip, data) runs for one Enum.TooltipDataType name while module
--- is active. Post-calls cannot be removed, so each is registered once.
-function Lines.Add(module, kind, callback, comparisons)
+local function CallbackList(kind)
     local list = callbacks[kind]
     if not list then
         list = {}
@@ -42,6 +44,20 @@ function Lines.Add(module, kind, callback, comparisons)
             Run(list, tooltip, data)
         end)
     end
+    return list
+end
+
+-- The anchor runs before type-specific card and detail callbacks. It works
+-- with the primary build's identity and never reads its content.
+function Lines.SetPositioner(callback)
+    positioner = callback
+    if callback then CallbackList("AllTypes").positioning = true end
+end
+
+-- callback(tooltip, data) runs for one Enum.TooltipDataType name while module
+-- is active. Post-calls cannot be removed, so each is registered once.
+function Lines.Add(module, kind, callback, comparisons)
+    local list = CallbackList(kind)
     for i = 1, #list do
         if list[i].module == module and list[i].callback == callback then return end
     end

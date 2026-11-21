@@ -69,7 +69,12 @@ function P.AttachSkinColors(body, title, rows)
             return targets
         end,
     })
-    if shortcut then HM.ReleaseColorShortcut(shortcut) end
+    if shortcut then
+        HM.ReleaseColorShortcut(shortcut)
+        for _, row in ipairs(colorRows) do
+            if P.Suite.HostBridge.ConsiderOutlineControl(shortcut, row.searchLabel or row.label, row.settingKey, shortcut, -36) then break end
+        end
+    end
 end
 
 -- The tab panels and their selector inside a skin tab accordion.
@@ -471,7 +476,18 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant, extraTarg
         end,
     })
     -- Later bound swatches must not replace this complete, curated list.
-    if shortcut then HM.ReleaseColorShortcut(shortcut) end
+    if shortcut then
+        HM.ReleaseColorShortcut(shortcut)
+        local bridge = P.Suite.HostBridge
+        for _, rule in ipairs(colors) do
+            local function Key() return keyFn and keyFn(rule.key) or rule.key end
+            local setting = "msufsuite." .. id .. "." .. Key()
+            if bridge.ConsiderOutlineControl(shortcut, rule.label, setting, shortcut, -36) then
+                bridge.AttachOutlineOverview(M, shortcut, function() return "suite." .. id .. "." .. Key() end)
+                break
+            end
+        end
+    end
     return shortcut
 end
 

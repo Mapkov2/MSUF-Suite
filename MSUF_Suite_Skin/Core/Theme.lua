@@ -339,6 +339,7 @@ function Theme.SetColor(key, r, g, b, a)
         return false
     end
     WriteColor(key, r, g, b, a)
+    if key == "windowOutline" then return NS.Registry.NotifyListeners("color", key) end
     if NS.MicroColorSources[key] and NS.DB.icons and NS.DB.icons.microMenu then
         NS.DB.icons.microMenu.preset = "custom"
     end
@@ -511,6 +512,17 @@ end
 function Theme.SetAppearance(key, value)
     if NS.IsCombatLocked() then return false end
     if key == "gradient" then return Theme.SetGradient(value) end
+    if key == "itemTooltipStyle" then
+        if not NS.Safety.Public(value) or (value ~= "compact" and value ~= "card") then return false end
+        if NS.DB.theme[key] == value then return true end
+        NS.DB.theme[key] = value
+        return NS.Registry.NotifyListeners("tooltipStyle", key)
+    end
+    if key == "windowOutlineMatchTooltip" then
+        if not NS.Safety.Public(value) or type(value) ~= "boolean" then return false end
+        NS.DB.theme[key] = value
+        return NS.Registry.NotifyListeners("appearance", key)
+    end
     if key == "windowAnimations" then
         if not NS.Safety.Public(value) or not IsListed(NS.WindowAnimationModes, value) then return false end
         NS.DB.theme.windowAnimations = value
@@ -541,6 +553,7 @@ function Theme.SetAppearance(key, value)
         if range[4] then value = math.floor(value + 0.5) end
     end
     NS.DB.theme[key] = value
+    if key == "windowOutline" then return NS.Registry.NotifyListeners("appearance", key) end
     DetachLook()
     if key == "hoverStyle" or key == "hoverIntensity" then
         NS.Registry.QueueRefresh("hover")

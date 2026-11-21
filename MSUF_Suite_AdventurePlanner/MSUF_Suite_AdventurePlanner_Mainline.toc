@@ -1,4 +1,4 @@
-## Interface: 120100, 120105, 16001
+## Interface: 120100, 120105, 120107, 16001
 ## Title: MSUF Suite - Adventure Planner
 ## Notes: Optional Adventure Planner module for MSUF Suite.
 ## Author: Mapko

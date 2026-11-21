@@ -1,6 +1,6 @@
 local _, NS = ...
 
--- Resolve only named parts of the explicitly submitted widget. No child walks.
+-- Resolve parts of the submitted widget and known art on its standard steppers.
 local Widgets = {}
 NS.PublicWidgets = Widgets
 local S = NS.Safety
@@ -42,10 +42,11 @@ local stateTextures = {
     GetNormalTexture = "borderSoft", GetHighlightTexture = "hover",
     GetPushedTexture = "accentBright", GetDisabledTexture = "disabled",
 }
-local function ButtonArt(plan, button)
+local function ButtonArt(plan, button, skipNamedArrow)
     if not Part(plan, button) then return end
     for getter, role in pairs(stateTextures) do Part(plan, S.Read(button, getter), role) end
-    Part(plan, Field(button, "Texture"), "blizzardArrow")
+    if not skipNamedArrow then Part(plan, Field(button, "Texture"), "blizzardArrow") end
+    return true
 end
 
 local function Dropdown(plan, options)
@@ -65,11 +66,44 @@ local function Dropdown(plan, options)
             plan.fades[decor] = true
         end
     end
+    local filter = WowStyle1FilterDropdownMixin
+    local getBackgroundAtlas = S.ReadableMethod(root, "GetBackgroundAtlas")
+    plan.filterArrow = not arrow and plan.fades and plan.fades[Field(root, "Background")]
+        and S.HasMethod(filter, "GetBackgroundAtlas")
+        and S.Public(getBackgroundAtlas) and getBackgroundAtlas == filter.GetBackgroundAtlas
     -- Some modern triggers supply the complete arrow art as state textures.
     for _, key in ipairs({ "NormalTexture", "PushedTexture", "HighlightTexture", "DisabledTexture" }) do
         Part(plan, Field(trigger, key), key == "DisabledTexture" and "disabled" or "arrow")
     end
     return S.HasMethod(root, "CreateTexture") and S.HasMethod(trigger, "HookScript")
+end
+
+local function StepperAtlasRegion(button, atlas, ...)
+    for index = 1, select("#", ...) do
+        local region = select(index, ...)
+        if Widgets.Safe(region) and S.Read(region, "GetParent") == button and S.Read(region, "GetAtlas") == atlas then
+            return region
+        end
+    end
+end
+
+local function Stepper(plan, button, explicitArt, atlas)
+    if not ButtonArt(plan, button, true) then
+        if explicitArt then plan.error = plan.error or "missing-stepper" end
+        return
+    end
+    local art = explicitArt or Field(button, "Texture")
+    if not art and atlas then art = StepperAtlasRegion(button, atlas, S.Call(button, "GetRegions")) end
+    if not art then return end
+    if not Widgets.Belongs(button, art) then
+        plan.error = "foreign-region"
+        return
+    end
+    local region = Part(plan, art, "blizzardArrow")
+    if region and S.HasMethod(button, "IsEnabled") then
+        plan.colors[region].input = button
+        return button
+    end
 end
 
 local function CheckButton(plan, options)
@@ -99,8 +133,12 @@ local function Slider(plan, options)
     for _, spec in pairs(plan.colors) do
         if spec.role == "borderSoft" then plan.hasTrack = true break end
     end
-    ButtonArt(plan, options.back or Field(root, "Back") or Field(root, "ScrollUpButton"))
-    ButtonArt(plan, options.forward or Field(root, "Forward") or Field(root, "ScrollDownButton"))
+    local nativeBack, nativeForward = Field(root, "Back"), Field(root, "Forward")
+    local back = options.back or nativeBack or Field(root, "ScrollUpButton")
+    local forward = options.forward or nativeForward or Field(root, "ScrollDownButton")
+    plan.back = Stepper(plan, back, options.backArt, slider ~= root and back == nativeBack and "Minimal_SliderBar_Button_Left")
+    plan.forward = Stepper(plan, forward, options.forwardArt,
+        slider ~= root and forward == nativeForward and "Minimal_SliderBar_Button_Right")
     return true
 end
 

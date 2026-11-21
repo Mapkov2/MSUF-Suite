@@ -249,17 +249,26 @@ local function Install()
     end
 end
 
-local function Refresh(_, domain)
+local function Refresh(_, domain, key)
     if domain ~= "addonSkins" and domain ~= "profile" and domain ~= "adapter" and domain ~= "theme"
         and domain ~= "color" and domain ~= "appearance" and domain ~= "geometry" and domain ~= "typography" then return end
     if not Enabled() then
         for state in pairs(paintedRoots) do Schedule(state) end
         return
     end
+    if domain == "addonSkins" and key == "discovered" then return end
+    local id = domain == "addonSkins" and NS.AddonSkins.byID[key] and key
     for _, state in pairs(Menus.widgets) do
-        if state.root then Schedule(state) end
+        if state.root and (not id or state.addonID == id) then Schedule(state) end
     end
 end
+function Menus.IsApplied(id)
+    for state in pairs(paintedRoots) do
+        if state.addonID == id and state.applied then return true end
+    end
+    return false
+end
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:SetScript("OnEvent", Install)

@@ -11,6 +11,7 @@ local MAX_NODES, MAX_DEPTH, MAX_EXTENTS = 384, 5, 16
 local ranks = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5,
     FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
 local Changed
+local layoutScripts = { "OnShow", "OnHide", "OnSizeChanged" }
 -- Blizzard caption buttons our caption faded (WindowControlChrome): no chrome.
 local Hidden = function() return false end
 function Chrome.SetHidden(predicate) Hidden = predicate end
@@ -26,9 +27,12 @@ end
 local function Observe(frame, state)
     if observed[frame] == state then return end
     if not observed[frame] then
-        frame:HookScript("OnShow", LayoutChanged)
-        frame:HookScript("OnHide", LayoutChanged)
-        frame:HookScript("OnSizeChanged", LayoutChanged)
+        for index = 1, #layoutScripts do
+            local script = layoutScripts[index]
+            if Safety.Read(frame, "HasScript", script) == true then
+                frame:HookScript(script, LayoutChanged)
+            end
+        end
         for _, method in ipairs({ "SetPoint", "SetFrameLevel", "SetFrameStrata", "SetScale" }) do
             if Safety.HasMethod(frame, method) then hooksecurefunc(frame, method, LayoutChanged) end
         end

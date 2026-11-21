@@ -33,16 +33,29 @@ local function Available(state)
     return state.enabled and Enabled() and not NS.IsCombatLocked() and Windows.Validate(state.frame, state.options)
 end
 
+local function SetGeometry(frame, scale, points)
+    frame:SetScale(scale)
+    frame:ClearAllPoints()
+    for _, point in ipairs(points) do frame:SetPoint(unpack(point, 1, 5)) end
+    return true
+end
+
+local function ChangeGeometry(state, scale, points)
+    state.geometryChanging = true
+    local applied = S.Dispatch(SetGeometry, state.frame, scale, points)
+    state.geometryChanging = nil
+    return applied == true
+end
+
 local function RestoreSize(state)
     local fit, frame = state.fit, state.frame
+    if state.geometryChanging then return false, "geometry-changing" end
     if not fit then return true end
     if not CanAnchor(frame) then return false, "restricted-anchors" end
     for _, p in ipairs(fit.points) do
         if p[2] and S.IsForbidden(p[2]) then return false, "restricted-anchors" end
     end
-    frame:SetScale(fit.scale)
-    frame:ClearAllPoints()
-    for _, p in ipairs(fit.points) do frame:SetPoint(unpack(p, 1, 5)) end
+    if not ChangeGeometry(state, fit.scale, fit.points) then return false, "geometry-failed" end
     state.fit = nil
     return true
 end
@@ -54,8 +67,28 @@ local function UpdateGlyph(state)
     NS.WindowControlChrome.PaintActionCell(state.maximize, true)
 end
 
+function Windows.GetState(entry)
+    local state = entry.addonWindow
+    return {
+        fitted = state ~= nil and state.fit ~= nil,
+        minimized = state ~= nil and state.minimized == true,
+    }
+end
+
+function Windows.RestoreGeometry(entry)
+    local state = entry.addonWindow
+    if not state then return true, "normal" end
+    if NS.IsCombatLocked() then return false, "combat" end
+    if not Widgets.Safe(state.frame) then return false, "protected-target" end
+    local fitted = state.fit ~= nil
+    local ok, why = RestoreSize(state)
+    if not ok then return false, why end
+    if fitted then UpdateGlyph(state) end
+    return true, fitted and "restored" or "normal"
+end
+
 local function ToggleFit(state)
-    if not Available(state) then return end
+    if not Available(state) or state.geometryChanging then return end
     if state.fit then
         RestoreSize(state)
     else
@@ -69,19 +102,20 @@ local function ToggleFit(state)
         local limits = NS.WindowLayoutLimits
         fit = math.max(state.options.minScale or limits.minScale, math.min(state.options.maxScale or limits.maxScale, fit))
         state.fit = { scale = scale, points = points }
-        frame:SetScale(fit)
-        frame:ClearAllPoints()
-        frame:SetPoint("TOPLEFT", UIParent, "CENTER", -w / 2, h / 2)
-        frame:SetPoint("BOTTOMRIGHT", UIParent, "CENTER", w / 2, -h / 2)
+        local applied = ChangeGeometry(state, fit, {
+            { "TOPLEFT", UIParent, "CENTER", -w / 2, h / 2 },
+            { "BOTTOMRIGHT", UIParent, "CENTER", w / 2, -h / 2 },
+        })
+        if not applied or (not state.minimized and S.Read(frame, "IsShown") == false) then RestoreSize(state) end
     end
     UpdateGlyph(state)
 end
 
-local function Restore(state)
+local function Restore(state, keepHidden)
     if not state.minimized then return end
     state.minimized = nil
     state.restore:Hide()
-    state.frame:Show()
+    if not keepHidden then state.frame:Show() end
 end
 
 local function Minimize(state)
@@ -178,7 +212,7 @@ function Windows.Release(entry)
     state.enabled, activeWindows[state] = false, nil
     if not next(activeWindows) then NS.Registry.RemoveListener(Windows) end
     NS.CombatGate.Cancel(state)
-    Restore(state)
+    Restore(state, entry.window.showOnRelease == false)
     if state.minimize then state.minimize:Hide() state.restore:Hide() end
     if state.maximize then state.maximize:Hide() end
     state.options, entry.addonWindow = nil, nil
@@ -205,7 +239,7 @@ function Windows.Apply(entry, options, addon)
         local ok, why = RestoreSize(state)
         if not ok then return false, why end
     end
-    if not options.minimize then Restore(state) end
+    if not options.minimize then Restore(state, options.showOnRelease == false) end
     Prepare(state)
     return true
 end

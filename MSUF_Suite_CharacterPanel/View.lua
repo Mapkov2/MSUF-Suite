@@ -249,6 +249,7 @@ function View:RefreshAppearance(skin, headerConfig)
         end
     end
     Window.SyncGlass(self, true)
+    Window.RefreshOutline(self, headerConfig)
     local reflow, barHeight = RefreshFonts(self), self.reputationHeight
     if reflow and self.tabs then self:SetTabs(self.tabs, self.tab, true) end
     self:ApplyHeaderSettings(headerConfig)
@@ -702,6 +703,7 @@ function View:FitScreen()
     if not self.nativeLayout then
         if self.nativeRoot then Window.FitHosted(self.window, self.nativeRoot) else Window.Fit(self.window) end
     end
+    Window.RefreshOutline(self, self.headerConfig)
     self:ReflowText()
 end
 

@@ -282,6 +282,8 @@ local function NormalizeTheme(theme, revision)
     local defaults = NS.Defaults.theme
     theme.gradient = theme.gradient ~= false
     ClampRanges(theme, NS.AppearanceRanges)
+    theme.windowOutlineMatchTooltip = theme.windowOutlineMatchTooltip == true
+    if theme.itemTooltipStyle ~= "card" then theme.itemTooltipStyle = "compact" end
     KeepListed(theme, THEME_CHOICES, defaults)
     if type(theme.look) ~= "string" or not NS.LookPresets[theme.look] then
         theme.look = "custom"
@@ -389,11 +391,45 @@ local function NormalizeToggleSet(settings, defaults)
     for key in pairs(defaults) do settings[key] = settings[key] ~= false end
 end
 
+local MAX_DISCOVERED_ADDONS = 24
+NS.MaxDiscoveredAddons = MAX_DISCOVERED_ADDONS
+
+function NS.ValidDiscoveredAddon(name)
+    return type(name) == "string" and #name <= 64 and name:match("^[!%w_ %-]+$") ~= nil
+end
+
+local function CopyDiscovered(source)
+    local result, count = {}, 0
+    if type(source) ~= "table" then return result end
+    for name, enabled in pairs(source) do
+        if count == MAX_DISCOVERED_ADDONS then break end
+        if enabled == true and NS.ValidDiscoveredAddon(name) then
+            result[name], count = true, count + 1
+        end
+    end
+    return result
+end
+
+local function CopyAddonLooks(source)
+    local result = {}
+    if type(source) ~= "table" then return result end
+    for id, default in pairs(NS.Defaults.addonSkins) do
+        local look = source[id]
+        if type(default) == "boolean" and type(look) == "table"
+            and (look.nativeFont == true or look.softerWindow == true) then
+            result[id] = { nativeFont = look.nativeFont == true, softerWindow = look.softerWindow == true }
+        end
+    end
+    return result
+end
+
 local function NormalizeToggles(db)
     db.addonSkins.enabled = db.addonSkins.enabled == true
-    for key in pairs(NS.Defaults.addonSkins) do
-        if key ~= "enabled" then db.addonSkins[key] = db.addonSkins[key] ~= false end
+    for key, default in pairs(NS.Defaults.addonSkins) do
+        if key ~= "enabled" and type(default) == "boolean" then db.addonSkins[key] = db.addonSkins[key] ~= false end
     end
+    db.addonSkins.discovered = CopyDiscovered(db.addonSkins.discovered)
+    db.addonSkins.looks = CopyAddonLooks(db.addonSkins.looks)
     NormalizeToggleSet(db.skins, NS.Defaults.skins)
     NormalizeToggleSet(db.skinCategories, NS.Defaults.skinCategories)
     NormalizeToggleSet(db.hud, NS.Defaults.hud)
@@ -712,6 +748,10 @@ function Database.SanitizeProfile(profile)
     MigrateWindowSwitch(profile, safe)
     CopyMotionOptions(profile.theme, safe.theme)
     CopyAdapterSwitches(profile.skins, safe.skins)
+    if type(profile.addonSkins) == "table" then
+        safe.addonSkins.discovered = profile.addonSkins.discovered
+        safe.addonSkins.looks = profile.addonSkins.looks
+    end
     local windowControls = profile.windowControls
     if type(windowControls) == "table" then
         CopyLayoutEntries(windowControls.scales, safe.windowControls.scales,

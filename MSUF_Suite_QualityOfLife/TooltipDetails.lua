@@ -374,23 +374,97 @@ local function Corner(config, x, y)
     return corner.point, corner.x * math.abs(x), corner.y * math.abs(y)
 end
 
+local function CanAnchor(frame)
+    if NS.Safety.IsForbidden(frame) then return false end
+    if not NS.IsCombatLocked() then return true end
+    local protected = frame:IsProtected()
+    return S.Public(protected) and protected == false
+end
+
+local function FixedPoint(frame, point, relativePoint, x, y, nativeAnchor)
+    local old, parent, relative, ox, oy = frame:GetPoint(1)
+    if not (S.Public(old) and S.Public(parent) and S.Public(relative) and S.Public(ox) and S.Public(oy)) then return end
+    local reset = nativeAnchor ~= nil and nativeAnchor ~= "ANCHOR_NONE"
+    if not reset and old == point and parent == UIParent and relative == relativePoint and S.Finite(ox) and S.Finite(oy)
+        and math.abs(ox - x) < .01 and math.abs(oy - y) < .01 then
+        local count = frame:GetNumPoints()
+        if S.Public(count) and count == 1 then return end
+    end
+    if reset then frame:SetAnchorType("ANCHOR_NONE") end
+    frame:ClearAllPoints()
+    frame:SetPoint(point, UIParent, relativePoint, x, y)
+end
+
+local function AnchorScales(frame)
+    local root, scale = UIParent:GetEffectiveScale(), frame:GetEffectiveScale()
+    if S.Finite(root) and root > 0 and S.Finite(scale) and scale > 0 then return root, scale end
+end
+
+local function AnchorCorner(frame, nativeAnchor)
+    local root, scale = AnchorScales(frame)
+    if not root then return end
+    local point, x, y = Corner(M.config, M.config.fixedX, M.config.fixedY)
+    local ratio = root / scale
+    FixedPoint(frame, point, point, x * ratio, y * ratio, nativeAnchor)
+end
+
+local function SharedAnchor()
+    return M.active and (M.config.anchor == 2 or M.config.anchor == 3)
+end
+
+local function SharedTooltip(t)
+    return SharedAnchor() and S.Public(t) and t and (t == GameTooltip or t == BuffFrameTooltip) and CanAnchor(t)
+end
+
 -- ANCHOR_CURSOR ignores offsets; ANCHOR_CURSOR_RIGHT applies them from the
 -- cursor (Blizzard_AuraButton.lua lists both). GameTooltip_SetDefaultAnchor
 -- has just called SetOwner(parent, "ANCHOR_NONE") and set its own point
 -- (SharedTooltipTemplates.lua). A second SetOwner from this post-hook would
 -- clear the tooltip again (OnTooltipCleared) inside the addon's call, in the
 -- middle of the caller's build. So the cursor mode changes only the anchor
--- type (SetAnchorType with offsets, as ContainerFrame.lua does) and the fixed
--- corner only the point.
-local function Anchor(t)
-    if not M.active or t ~= GameTooltip or t._msufUnitTooltipOwner ~= nil or M.config.anchor == 1 then return end
-    t:ClearAllPoints()
+-- type (SetAnchorType with offsets, as ContainerFrame.lua does).
+local function ApplyAnchor(t)
+    local anchor, anchorX, anchorY = t:GetAnchorType()
+    if not S.Public(anchor) then return end
     if M.config.anchor == 2 then
+        if anchor == "ANCHOR_CURSOR_RIGHT" and S.Public(anchorX) and S.Public(anchorY)
+            and anchorX == M.config.cursorX and anchorY == M.config.cursorY then return end
+        if anchor ~= "ANCHOR_CURSOR_RIGHT" then t:ClearAllPoints() end
         t:SetAnchorType("ANCHOR_CURSOR_RIGHT", M.config.cursorX, M.config.cursorY)
         return
     end
-    local point, x, y = Corner(M.config, M.config.fixedX, M.config.fixedY)
-    t:SetPoint(point, UIParent, point, x, y)
+    AnchorCorner(t, anchor)
+end
+
+local function Anchor(t)
+    if SharedTooltip(t) then ApplyAnchor(t) end
+end
+
+-- Explicit SetOwner callers (bags, spells, auras and unit frames) bypass
+-- GameTooltip_SetDefaultAnchor. Only the primary build can move its tooltip.
+local function AnchorData(t, data)
+    if not SharedTooltip(t) or not S.Public(data) or type(data) ~= "table" then return end
+    local primary = t:GetPrimaryTooltipData()
+    if S.Public(primary) and rawequal(primary, data) then ApplyAnchor(t) end
+end
+
+local function AnchorUnitPanel(panel)
+    if not SharedAnchor() or not CanAnchor(panel) then return end
+    if M.config.anchor == 2 then
+        local x, y = GetCursorPosition()
+        local root, scale = AnchorScales(panel)
+        if root and S.Finite(x) and S.Finite(y) then
+            FixedPoint(panel, "LEFT", "BOTTOMLEFT", (x + M.config.cursorX * root) / scale, (y + M.config.cursorY * root) / scale)
+        end
+        return
+    end
+    AnchorCorner(panel)
+end
+
+local function RefreshAnchor()
+    local active = SharedAnchor()
+    Lines.SetPositioner(active and AnchorData or nil)
+    if S.HostBridge then S.HostBridge.SetUnitFrameTooltipPanelPositioner(active and AnchorUnitPanel or nil) end
 end
 
 local function PlacePreview(x, y)
@@ -483,16 +557,20 @@ function M:Enable()
     self.lastInspect = Now()
     self.context:Event("INSPECT_READY", InspectReady)
     Install(self)
+    RefreshAnchor()
     LayoutPreview(self)
 end
 
 function M:Refresh()
+    RefreshAnchor()
     LayoutPreview(self)
     Reset(self)
     if not self.config.hideHealth then Restore(self) end
 end
 
 function M:Disable()
+    Lines.SetPositioner(nil)
+    if S.HostBridge then S.HostBridge.SetUnitFrameTooltipPanelPositioner(nil) end
     if self.preview then self.preview:Hide() end
     Reset(self)
     Restore(self)

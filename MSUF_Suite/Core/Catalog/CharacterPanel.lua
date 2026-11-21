@@ -290,6 +290,8 @@ tabOrder.hidden, inspectTabOrder.hidden, headerOrder.hidden = true, true, true
 hiddenTabs.hidden, hiddenInspectTabs.hidden, homeTab.hidden = true, true, true
 Build.Section(ID, "appearance", "Appearance", {
     Build.Choice("mode", "Panel style", MODE.SUITE, { "Basic", "Suite" }),
+    Build.Choice("windowOutline", "Window outline", 1, { "Off", "Thin", "Strong" }),
+    Build.Color("windowOutlineColor", "Outline color", "000000"),
     Build.Bool("showFullStats", "Show all stats in Overview", true),
     Build.Bool("showEquipmentSetsInOverview", "Show equipment sets in Overview", true),
     Build.Bool("showAttributesTab", "Show Attributes tab", false),

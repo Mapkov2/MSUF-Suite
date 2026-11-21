@@ -29,8 +29,31 @@ B.Module("bags", {
 -- label's position there); the Bags runtime names its modes through these.
 NS.BagsAnimation = { OFF = 1, SIMPLE = 2, FULL = 3 }
 NS.BagsPresentation = { WINDOW = 1, PANEL = 2 }
+NS.BagsBorderStyle = { DEFAULT = 1, CUSTOM = 2 }
 NS.BagsGoldPeriod = { SESSION = 1, TODAY = 2, BOTH = 3 }
 NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4, SINGLE = 5 }
+NS.BagsBarVisibility = { ALWAYS = 1, OUT_OF_COMBAT = 2, IN_COMBAT = 3, MOUSEOVER = 4, NEVER = 5 }
+-- Unit-frame conditions that the secure macro parser can evaluate on both clients.
+NS.BagsBarConditions = {
+    { "bagBarHideMounted", "Mounted", "[mounted] hide" },
+    { "bagBarHideInVehicle", "In vehicle", "[@player,unithasvehicleui] hide; [vehicleui] hide" },
+    { "bagBarHideResting", "Resting", "[resting] hide" },
+    { "bagBarHideNoTarget", "No target", "[@target,noexists] hide" },
+    { "bagBarHideOutOfCombatNoTarget", "Out of combat and no target", "[nocombat,@target,noexists] hide" },
+    { "bagBarHideStealthed", "Stealthed", "[stealth] hide" },
+    { "bagBarHideSolo", "Solo", "[nogroup] hide" },
+    { "bagBarHideInGroup", "In group", "[group] hide" },
+}
+local bagBarRules = {
+    B.Choice("bagBarVisibility", "Blizzard bag buttons", NS.BagsBarVisibility.NEVER,
+        { "Always", "Out of combat", "In combat", "Mouseover", "Never" }),
+}
+for _, condition in ipairs(NS.BagsBarConditions) do
+    local rule = B.Bool(condition[1], condition[2], false)
+    rule.requiresChoice = { key = "bagBarVisibility", values = { [1] = true, [2] = true, [3] = true, [4] = true } }
+    bagBarRules[#bagBarRules + 1] = rule
+end
+B.Section("bags", "bagBar", "Visibility State Driver", bagBarRules)
 function NS.BagsPhysicalOrder(config)
     local view = config.inventoryView
     return NS.Client.isForever and (view == NS.BagsView.ALL or view == NS.BagsView.SINGLE)
@@ -82,6 +105,10 @@ B.Section("bags", "appearance", "Window appearance", {
     B.Color("backgroundColor", "Background color", initial.backgroundColor),
     B.Number("backgroundOpacity", "Background opacity (percent)", initial.backgroundOpacity, 0, 100, 1),
     B.Color("accentColor", "Accent color", initial.accentColor),
+    B.Choice("backpackBorderStyle", "Backpack border", NS.BagsBorderStyle.DEFAULT, { "Default", "Custom" }),
+    B.Color("backpackBorderColor", "Border color", "101010"),
+    B.Number("backpackBorderWidth", "Border thickness", 1, 0, 4, 1),
+    B.Number("backpackBorderOpacity", "Border opacity (percent)", 100, 0, 100, 1),
     B.Number("slotBorderWidth", "Item slot border thickness", 1, 0, 4, 1),
     B.Number("emptySlotBorderWidth", "Empty slot border thickness", 1, 0, 4, 1),
     B.Choice("animationMode", "Bag animations", NS.BagsAnimation.SIMPLE, { "Off", "Simple", "Full" }),
@@ -214,6 +241,10 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 })
 
 local rules = NS.SuiteCatalog.bags.rules
+local customBorder = { key = "backpackBorderStyle", values = { [NS.BagsBorderStyle.CUSTOM] = true } }
+rules.backpackBorderColor.requiresChoice = customBorder
+rules.backpackBorderWidth.requiresChoice = customBorder
+rules.backpackBorderOpacity.requiresChoice = customBorder
 rules.markReagentBagOrigin.hidden = NS.Client.isForever
 rules.markReagentBagOrigin.enableKey = "combineReagentBag"
 rules.recentNewTypesOnly.enableKey = "showRecent"

@@ -93,5 +93,5 @@ local function Build(ctx)
     for _, section in ipairs(P.PlannerSections) do BuildPlannerSection(ctx, builder, section) end
 end
 P.RegisterPage({ key = PAGE, label = "Adventure planner", title = "Adventure planner", build = Build,
-    icon = { 7, 1 }, nav = "general", navOrder = 3,
+    icon = { 7, 1 }, nav = "root",
     aliases = { "planner", "adventure", "weekly", "preparation", "loadouts", "runs", "raid", "goals", "lfg", "notes" } })

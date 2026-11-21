@@ -40,6 +40,12 @@ local semanticChromeMode = {
 }
 
 local safePanelMode = { role = "shell", allowImplicitProtected = false }
+-- Flight nodes are native input targets. Visit the window controls explicitly
+-- and let FlightMapChrome paint only the title and the four map margins.
+local flightMapMode = {
+    role = "shell", rootSurface = true, fillVisible = false, preserveRootArt = true,
+    allowImplicitProtected = false, maxDepth = 0, registerDynamicRows = false, flightMapChrome = true,
+}
 local safeDialogMode = { role = "popup", allowImplicitProtected = false }
 local inviteDialogMode = { role = "popup", motion = false, primaryButton = "LFGInvitePopupAcceptButton" }
 local readyDialogMode = { role = "popup", motion = false, primaryButton = "YesButton" }
@@ -106,7 +112,7 @@ local entries = {
             "MasterLooterFrame",
         },
         -- Shared/TaxiFrame.lua uses InsetBg for SetTaxiMap on both clients.
-        frameModes = { TaxiFrame = semanticChromeMode, MasterLooterFrame = "dialog" },
+        frameModes = { TaxiFrame = flightMapMode, MasterLooterFrame = "dialog" },
     },
     {
         id = "dressing-room",
@@ -505,6 +511,12 @@ local entries = {
             "GroupLootFrame1", "GroupLootFrame2", "GroupLootFrame3", "GroupLootFrame4",
         },
         mode = safePanelMode,
+        -- LootFrame recycles its item, money and currency rows. Paint the
+        -- window shell and explicit scrollbar, leaving the ScrollBox native.
+        frameModes = {
+            LootFrame = { role = "shell", maxDepth = 0, registerDynamicRows = false,
+                childSurfaces = false, motion = false, allowImplicitProtected = true },
+        },
     },
     {
         id = "group-system-dialogs",
@@ -804,7 +816,7 @@ local entries = {
             rootSurface = false,
             preserveRootArt = true,
             allowImplicitProtected = false,
-            portraitChrome = true,
+            windowChrome = "shop",
         },
     },
     {
@@ -854,7 +866,7 @@ local entries = {
         category = "map",
         addon = "Blizzard_FlightMap",
         frames = { "FlightMapFrame" },
-        mode = semanticChromeMode,
+        mode = flightMapMode,
     },
     {
         id = "adventure-map-dialog",
@@ -1039,7 +1051,15 @@ local entries = {
         category = "utility",
         addon = "Blizzard_HelpFrame",
         frames = { "HelpFrame", "ReportCheatingDialog" },
-        frameModes = { ReportCheatingDialog = "dialog" },
+        frameModes = {
+            HelpFrame = {
+                rootSurface = false,
+                preserveRootArt = true,
+                windowChrome = "browser",
+                maxDepth = 0,
+            },
+            ReportCheatingDialog = "dialog",
+        },
     },
     {
         id = "report-dialog",
@@ -2050,6 +2070,10 @@ local homogeneousGlassKinds = {
 }
 
 local mixedGlassKinds = {
+    ["help"] = {
+        HelpFrame = "semantic-content",
+        ReportCheatingDialog = "generic-shell",
+    },
     ["player-interaction"] = {
         TradeFrame = "generic-shell",
         TaxiFrame = "semantic-chrome",

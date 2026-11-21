@@ -375,6 +375,7 @@ function O.CreateToggle(parent, labelText, getter, setter, width, options)
         Refresh()
         CommitWidgetChange(labelText, options, began)
     end)
+    if O.AttachOutlineControl then O.AttachOutlineControl(button, labelText, options and options.outlineSetting, -60) end
     return button
 end
 
@@ -417,6 +418,7 @@ function O.CreateCycle(parent, labelText, values, getter, setter, width, formatt
         painted, hasPainted = value, true
         valueLabel:SetText(formatter and formatter(value) or tostring(value))
     end)
+    if O.AttachOutlineControl then O.AttachOutlineControl(row, labelText, options and options.outlineSetting, -195) end
     return row
 end
 
@@ -470,6 +472,7 @@ function O.CreateSegmented(parent, labelText, values, getter, setter, width, for
         end
     end)
     row.segmentButtons = buttons
+    if O.AttachOutlineControl then O.AttachOutlineControl(row, labelText, options and options.outlineSetting, -12) end
     return row
 end
 

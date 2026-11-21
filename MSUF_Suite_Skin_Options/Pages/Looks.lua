@@ -38,7 +38,7 @@ local function AddSliders(list, rows, specs)
     for index = 1, #specs do
         local spec = specs[index]
         local slider = O.CreateSlider(list, spec[1], spec[3], 1, 0.05, ThemeGetter(spec[2]),
-            ThemeSetter(spec[2]), WIDTH, O.Percent)
+            ThemeSetter(spec[2]), WIDTH, O.Percent, { outlineSetting = "msufsuite.skin.theme." .. spec[2] })
         rows[#rows + 1] = { slider, spec[4] }
     end
 end
@@ -60,7 +60,7 @@ local function AddWindowAnimations(list, rows)
         local reduced = NS.DB.theme.reduceMotion == true
         O.SetWidgetEnabled(selector, not reduced)
         note:SetText(reduced and L["Disabled while Reduced motion is on."]
-            or L["Subtle fades windows in. Extended also animates resizing and closing on supported windows."])
+            or L["Subtle fades supported windows in. Extended uses a longer fade."])
     end)
 end
 

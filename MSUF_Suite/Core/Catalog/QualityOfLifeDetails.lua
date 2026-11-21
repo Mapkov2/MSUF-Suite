@@ -173,7 +173,7 @@ B.Section("merchantList", "merchant_list", "Merchant list", {
 -- counts as automation for profile imports.
 B.Module("tooltipDetails", {
     title = "Tooltip details and anchor",
-    description = "General tooltips, guild rank, target, item levels and item details. MSUF unit-frame tooltip anchors remain separate.",
+    description = "Shared tooltip anchor for items, spells, auras and unit frames, with optional tooltip details.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = RetailExtras,
     editElement = "tooltip",
 })

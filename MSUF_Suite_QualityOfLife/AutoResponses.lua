@@ -106,10 +106,11 @@ end
 -- Only an ordinary invite from a stranger is declined, and only when the
 -- relationship lookup worked: an invite that asks for a group finder role, a
 -- quest session invite, or a failed lookup stays the player's.
-local function OnInvite(self, _, name, tank, healer, damage, _, _, guid, questSession)
+local function OnInvite(self, _, name, tank, healer, damage, _, ...)
     self.context:Cancel(AnswerInvite)
-    if not Allowed(self, "declineInvite") or not S.PublicText(name) or not S.PublicText(guid)
-        or not S.PlainInvite(tank, healer, damage, questSession) then return end
+    if not Allowed(self, "declineInvite") or not S.PublicText(name) then return end
+    local guid = S.PlainInviteGUID(tank, healer, damage, ...)
+    if not guid then return end
     local ok, relation = S.InviteRelation(guid, name)
     if ok and not SPARED[relation] then self.context:After(0, AnswerInvite) end
 end

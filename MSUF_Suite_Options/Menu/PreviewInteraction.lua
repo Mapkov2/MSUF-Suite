@@ -107,6 +107,32 @@ function Interaction.SizeBar(bar, width)
     bar.label:SetShown(width - buttonWidth >= 68)
 end
 
+-- Damage Meter and the Tooltip preview share the same exact-offset bar.
+function Interaction.LayoutSelectionBar(bar, width)
+    if not bar or bar.layoutWidth == width then return end
+    bar.layoutWidth = width
+    local compact, narrow = width < 600, width < 260
+    local height = compact and (narrow and 112 or 84) or 24
+    local function Place(region, x, y, point)
+        region:ClearAllPoints()
+        region:SetPoint(point or "TOPLEFT", bar, point or "TOPLEFT", x, y)
+    end
+    bar:SetSize(width, height)
+    Place(bar.swatch, 10, -8)
+    Place(bar.label, 25, -3)
+    bar.label:SetWidth(compact and width - 35 or 132)
+    bar.label:SetHeight(18)
+    Place(bar.axisX, compact and 10 or 163, compact and -29 or -1)
+    Place(bar.axisY, compact and (narrow and 10 or 132) or 285, compact and (narrow and -57 or -29) or -1)
+    local actionsY = compact and (narrow and -85 or -57) or -3
+    Place(bar.openButton, -8, actionsY, "TOPRIGHT")
+    if compact then Place(bar.resetButton, 10, actionsY)
+    else
+        bar.resetButton:ClearAllPoints()
+        bar.resetButton:SetPoint("RIGHT", bar.openButton, "LEFT", -6, 0)
+    end
+end
+
 function Interaction.Bar(ctx, parent, width, help)
     local bar = CreateFrame("Frame", nil, parent)
     bar:EnableMouse(true)

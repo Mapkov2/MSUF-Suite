@@ -19,6 +19,7 @@ local function WithAlpha(color, alpha)
 end
 
 local midnightColors = {
+    windowOutline = Color(0, 0, 0, 1),
     background = Color(0.020, 0.039, 0.071, 0.940),
     ink = Color(0.027, 0.063, 0.106, 0.920),
     surface = Color(0.035, 0.067, 0.114, 0.900),
@@ -74,6 +75,7 @@ local midnightColors = {
 -- exported precision that materially affects rendering; the selected external
 -- font alias is mapped below to MapkoSkin's identical bundled media name.
 local darkColors = {
+    windowOutline = Color(0, 0, 0, 1),
     background = Color(0.018, 0.020, 0.026, 0.985),
     ink = Color(0.027, 0.031, 0.039, 0.980),
     surface = Color(0.043, 0.047, 0.057, 0.970),
@@ -185,6 +187,16 @@ NS.Defaults = {
         panelOpacity = 1,
         controlOpacity = 1,
         borderOpacity = 1,
+        windowOutline = 0,
+        windowOutlineMatchTooltip = false,
+        itemTooltipStyle = "compact",
+        tooltipLayout = {
+            preset = "", item = true, spell = false, icon = true, level = true, kind = true,
+            itemStyle = "", spellStyle = "", unitStyle = "", lootStyle = "suite",
+            tint = true, rule = true, iconSize = 30, x = 10, y = 0, height = 48,
+            headerColor = { 0.09, 0.10, 0.13, 0 },
+            borderMode = "suite", borderWidth = 1, borderColor = { 0.42, 0.52, 0.66, 1 },
+        },
         hoverStyle = "outline",
         hoverIntensity = 1,
         iconBorderStyle = "quality",
@@ -212,13 +224,16 @@ NS.Defaults = {
     foreverSpellLearning = true,
     addonSkins = {
         enabled = false, registered = true,
-        aceGUI = true,
+        aceGUI = true, discovered = {}, looks = {},
         bugSack = true, campingKit = true, dialogueUI = true, doesItDie = true,
         dungeonJournal = true, foreverFishing = true, foreverLevelingBiS = true,
         journeyGuides = true, keepOrToss = true, layerSwap = true, lootTriage = true,
         oneForAll = true, openMap = true, polestar = true, questie = true,
         rareScanner = true, shortestPath = true, spoken = true, totalRP3 = true,
         trueshotLodge = true,
+        lfgForever = true, mastercraft = true, kerzoQuestLog = true, kerzoExpansion = true,
+        atlasLoot = true, highFidelityMap = true, pawn = true, altoholic = true,
+        allTheThings = true, auctionator = true, details = true, leatrix = true,
         enhanceQoL = true,
         restedXP = true,
         addonProfiler = true,
@@ -531,6 +546,7 @@ NS.AppearanceRanges = {
     { "panelOpacity", 0.35, 1 },
     { "controlOpacity", 0.35, 1 },
     { "borderOpacity", 0, 1 },
+    { "windowOutline", 0, 10, true },
     { "hoverIntensity", 0, 1 },
     { "iconBorderThickness", 1, 3, true },
     { "iconBorderPadding", 0, 3, true },

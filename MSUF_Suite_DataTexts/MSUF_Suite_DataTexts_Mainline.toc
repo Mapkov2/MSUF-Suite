@@ -1,4 +1,4 @@
-## Interface: 120100, 120105, 16001
+## Interface: 120100, 120105, 120107, 16001
 ## Title: MSUF Suite - DataTexts
 ## Notes: Optional information bars for MSUF Suite.
 ## Author: Mapko
@@ -24,7 +24,6 @@ CombatMenu.lua
 Compass.lua
 Geometry.lua
 Visibility.lua
-NativeBagBar.lua
 Movers.lua
 Bars.lua
 DataTexts.lua

@@ -43,6 +43,61 @@ end
 
 function HostBridge.HasCoreAPI() return CoreAPI() ~= nil end
 
+function HostBridge.UnitFrameTooltipAPI()
+    local api = CoreAPI()
+    if api and type(api.GetUnitFrameTooltipSetting) == "function"
+        and type(api.SetUnitFrameTooltipSetting) == "function" then return api end
+end
+
+local pendingTooltipPanel, tooltipPositioner, legacyTooltipHook
+local function OfferTooltipPanel()
+    if not pendingTooltipPanel and not tooltipPositioner then return end
+    local panel = _G.MSUF_PlayerInfoFrame
+    if not panel then return end
+    if pendingTooltipPanel then
+        local receive = pendingTooltipPanel
+        pendingTooltipPanel = nil
+        Suite.Dispatch(receive, panel)
+    end
+    if tooltipPositioner then
+        local shown = panel:IsShown()
+        if Suite.Public(shown) and shown == true then Suite.Dispatch(tooltipPositioner, panel) end
+    end
+end
+
+local function ObserveUnitTooltip()
+    if legacyTooltipHook then return true end
+    local namespace = HostNamespace()
+    local tooltips = namespace and namespace.Tooltips
+    if not tooltips or type(tooltips.ShowUnit) ~= "function" then return false end
+    hooksecurefunc(tooltips, "ShowUnit", OfferTooltipPanel)
+    legacyTooltipHook = true
+    return true
+end
+
+function HostBridge.SetUnitFrameTooltipPanelPositioner(positioner)
+    if not positioner then tooltipPositioner = nil return true end
+    if not ObserveUnitTooltip() then return false end
+    tooltipPositioner = positioner
+    OfferTooltipPanel()
+    return true
+end
+
+function HostBridge.SetUnitFrameTooltipPanelStyler(styler)
+    local api = CoreAPI()
+    if api and type(api.SetUnitFrameTooltipPanelStyler) == "function" then
+        return api.SetUnitFrameTooltipPanelStyler(styler)
+    end
+    -- Released 7.0 hosts before the panel callback use the same addon-owned
+    -- frame. The host's hover entry point discovers it once, after creation.
+    pendingTooltipPanel = styler
+    if not styler then return true end
+    OfferTooltipPanel()
+    if not pendingTooltipPanel or ObserveUnitTooltip() then return true end
+    pendingTooltipPanel = nil
+    return false
+end
+
 -- MSUF Auras3 marks each Blizzard aura-container button it manages with this
 -- raw field. HasAnyForbiddenAspects can raise "forbidden object" on such a
 -- native button from addon code, so only the raw marker is read and nothing

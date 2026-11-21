@@ -1,20 +1,16 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
--- Delete cheapest item: a button on the open bag that lists stacks by vendor
--- value. Left-click adds a shortcut to destroy the three cheapest stacks.
--- It works only while the backpack's window is open and out of combat.
+-- Delete cheapest item shows vendor-priced stacks from the bag button or
+-- when loot cannot fit. Only a click on a delete action can destroy a stack.
 --   * Where: in the Suite Bags views beside Filters (Bags makes that button
 --     in its own look and hands it to M:Bind, MSUF_Suite_Bags/
 --     InventoryControls.lua); otherwise on the title of Blizzard's backpack
 --     or combined bag window, left of its close button or of the Suite Bags
 --     caption (S.BagsTitleInset, MSUF_Suite_Bags/BagCaption.lua).
---   * Nothing runs in the background. The bags are read on demand (a hover,
---     a click, the list); only the cheapest few are checked further (quest
---     items, equipment sets, Never sell items, refunds). Its events are the
---     two combat edges while enabled and BAG_UPDATE_DELAYED only while the
---     pointer rests on a button. From PLAYER_REGEN_DISABLED to
---     PLAYER_REGEN_ENABLED the buttons are disabled and nothing of this file
---     runs but the window hook's combat test.
+--   * Bag updates are watched only while a button is hovered or the list
+--     window is shown. The inventory-full error is watched outside combat.
+--     Only the cheapest stacks are checked for quest items, sets, refunds and
+--     Never sell items.
 --   * Offered: priced stacks of the chosen quality or lower (Poor by
 --     default, never above Uncommon), unlocked and not kept by the player.
 --   * A delete reads the slot again, picks up exactly the offered stack and
@@ -37,7 +33,9 @@ local QUALITY_NAMES = { [CHOICE.POOR] = { "ITEM_QUALITY0_DESC", "Poor" },
 local BACKPACK, LAST_BAG = Enum.BagIndex.Backpack, Constants.InventoryConstants.NumBagSlots
 local KEY, LIST, KEEP_LIMIT, KEEP_SCROLL = 1000, 10, 200, 400
 local BATCH_SIZE = 3
+local WINDOW_NAME, WIDTH, ROW_HEIGHT = "MSUFSuiteCheapestItems", 500, 30
 local QUESTION = "suite-delete-cheapest-item"
+local FALLBACK_ICON = 134400
 local DELETE_ATLAS = "common-icon-delete"
 local PASS_TEXTURE = "Interface\\Buttons\\UI-GroupLoot-Pass-Up"
 local MARK = { 1, .32, .2 }
@@ -46,6 +44,8 @@ local EDGES = { { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", 
 local HINT = { .72, .78, .85 }
 local pool, eligible, setSlots = {}, {}, {}
 local hovered, asked, hooked, repaint, SyncNative
+local window, RefreshWindow, WatchLootErrors
+local lootOffered = false
 
 ------------------------------------------------------------------ kept items
 local function Sorted(ids)
@@ -75,8 +75,14 @@ local function BagWindow()
     return ContainerFrameUtil_GetShownFrameForID(BACKPACK)
 end
 
-function M:Usable(event)
-    return self.active == true and not NS.InCombat(event) and BagWindow() ~= nil
+function M:Usable()
+    return self.active == true and not NS.InCombat() and BagWindow() ~= nil
+end
+
+local function CanUse(fromWindow)
+    if not fromWindow then return M:Usable() end
+    return M.active == true and not NS.InCombat() and window and window:IsVisible()
+        and window.profile == NS.DB and (window.fromLoot or BagWindow() ~= nil)
 end
 
 -- A slot's stack when its own read allows it: priced, unlocked, of an
@@ -173,10 +179,10 @@ end
 
 -- At most limit offered stacks, cheapest first; pooled records, valid until
 -- the next call.
-function M:Candidates(limit)
+function M:Candidates(limit, fromWindow)
     local ranked = self.ranked
     for i = #ranked, 1, -1 do ranked[i] = nil end
-    if not self:Usable() then return ranked end
+    if not CanUse(fromWindow) then return ranked end
     local count, sets = Collect(self.highest), nil
     table.sort(eligible, Cheaper)
     for i = 1, count do
@@ -210,15 +216,16 @@ local function Unchanged(item)
         and id == item.itemID and link == item.link and count == item.count and locked == false
 end
 
-local function CanDelete(item)
-    if not M:Usable() or M.keep[item.itemID] or item.quality > M.highest then return false end
-    local cursor = GetCursorInfo()
-    return S.Public(cursor) and cursor == nil and Unchanged(item) and Allowed(item, ReadSets())
+local function CanDelete(item, fromWindow)
+    if not CanUse(fromWindow) or M.keep[item.itemID] or item.quality > M.highest then return false end
+    local cursor, targeting = GetCursorInfo(), SpellIsTargeting()
+    return S.Public(cursor) and cursor == nil and S.Public(targeting) and targeting == false
+        and Unchanged(item) and Allowed(item, ReadSets())
 end
 
 -- Runs synchronously in the list entry or the confirmation's click.
-function M:Delete(item)
-    if not CanDelete(item) then return false end
+function M:Delete(item, fromWindow)
+    if not CanDelete(item, fromWindow) then return false end
     C_Container.PickupContainerItem(item.bag, item.slot)
     local kind, itemID = GetCursorInfo()
     if not (S.Public(kind) and S.Public(itemID) and kind == "item" and itemID == item.itemID) then
@@ -226,8 +233,12 @@ function M:Delete(item)
         return false
     end
     DeleteCursorItem()
-    local remaining = GetCursorInfo()
-    if not S.Public(remaining) or remaining ~= nil then return false end
+    local remaining, remainingID = GetCursorInfo()
+    if not S.Public(remaining) then return false end
+    if remaining ~= nil then
+        if remaining == "item" and S.Public(remainingID) and remainingID == item.itemID then ClearCursor() end
+        return false
+    end
     S.Print(string.format(S.Text("Deleted %s (%s)."), Label(item), S.MoneyText(item.value)))
     return true
 end
@@ -259,21 +270,29 @@ local function Ask(data, accept)
 end
 
 -- item: a snapshot. Deletes now, or once the player confirms.
-function M:Request(item)
-    if not self:Usable() then return end
+local function DeleteOne(item, fromWindow)
+    local deleted = M:Delete(item, fromWindow)
+    if fromWindow and window:IsShown() then
+        if deleted and window.fromLoot then window.heading:SetText(S.Text("Cheapest stacks by vendor value")) end
+        repaint:Request()
+    end
+end
+
+function M:Request(item, fromWindow)
+    if not CanUse(fromWindow) then return end
     if not Asks(item) then
-        self:Delete(item)
-        return
+        Forget()
+        return DeleteOne(item, fromWindow)
     end
     Ask({
         text = S.Text("Delete %s (%s)? This cannot be undone."), text_arg1 = Label(item),
         text_arg2 = S.MoneyText(item.value),
-    }, function() M:Delete(item) end)
+    }, function() DeleteOne(item, fromWindow) end)
 end
 
 local function CanDeleteBatch(items)
     for i = 1, BATCH_SIZE do
-        if not CanDelete(items[i]) then return false end
+        if not CanDelete(items[i], true) then return false end
     end
     return true
 end
@@ -287,10 +306,12 @@ local function RequestBatch(items)
     end
     Ask({ text = S.Text("Destroy these three stacks? This cannot be undone.%s"),
         text_arg1 = "\n\n" .. table.concat(lines, "\n") }, function()
-        if not CanDeleteBatch(items) then return end
-        for i = 1, BATCH_SIZE do
-            if not M:Delete(items[i]) then break end
+        if CanDeleteBatch(items) then
+            for i = 1, BATCH_SIZE do
+                if not M:Delete(items[i], true) then break end
+            end
         end
+        repaint:Request()
     end)
 end
 
@@ -358,7 +379,7 @@ local function Paint(button)
         Hint(S.Text("Never offered: quest items, refundable items, items in equipment sets and items you keep."))
     end
     if not combat then
-        Hint(S.Text("Left-click for the list with the option to destroy the three cheapest stacks."))
+        Hint(S.Text("Left-click to open the deletion window."))
         Hint(S.Text("Right-click to choose a stack or protect an item from deletion."))
     end
     GameTooltip:Show()
@@ -369,28 +390,39 @@ end
 -- later): paint after it.
 local function Repaint()
     if hovered and hovered:IsVisible() then Paint(hovered) end
+    if window and window:IsShown() then RefreshWindow() end
 end
 
 local function Changed()
-    if hovered then repaint:Request() end
+    repaint:Request()
+end
+
+local function WatchBagChanges()
+    if hovered or window and window:IsVisible() then
+        M.context:Event("BAG_UPDATE_DELAYED", Changed)
+    else
+        M.context:RemoveEvent("BAG_UPDATE_DELAYED")
+        repaint:Cancel()
+    end
 end
 
 local function Enter(button)
     hovered = not NS.InCombat() and button or nil
-    if hovered then M.context:Event("BAG_UPDATE_DELAYED", Changed) end
+    WatchBagChanges()
     Paint(button)
 end
 
 local function Leave(button)
     if hovered == button then hovered = nil end
-    M.context:RemoveEvent("BAG_UPDATE_DELAYED")
+    WatchBagChanges()
     M:Mark(nil)
     if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
 end
 
--- The bag closed or the button went away: nothing waits for it.
 local function Hidden(button)
     Leave(button)
+    if window and window.fromLoot then return end
+    if window then window:Hide() end
     Forget()
 end
 
@@ -405,23 +437,20 @@ end
 local function Combat(_, event)
     local combat = NS.InCombat(event)
     for button, icon in pairs(M.tools) do Sync(button, icon, combat) end
+    WatchLootErrors(not combat)
     if not combat then return SyncNative() end
     if hovered then Leave(hovered) end
+    if window then window:Hide() end
     Forget()
-end
-
-function M:OpenCandidates(anchor)
-    if not self:Usable() then return false end
-    S.ContextMenu(anchor, self.BuildMenu)
-    return true
 end
 
 local function Clicked(button, mouseButton)
     if not M:Usable() then return end
     Leave(button)
-    if mouseButton == "RightButton" then M:OpenCandidates(button)
+    if mouseButton == "RightButton" then
+        S.ContextMenu(button, M.BuildMenu)
     else
-        S.ContextMenu(button, M.BuildMenu, true)
+        M:OpenCandidates()
     end
 end
 
@@ -486,6 +515,7 @@ end
 -- when one opens or closes). In combat nothing changes until its end.
 SyncNative = function()
     if NS.InCombat() then return end
+    if window and window:IsShown() and not window.fromLoot and not CanUse(true) then window:Hide() end
     local frame = M.active and not BagsHosting() and BagWindow() or nil
     for host, tool in pairs(M.natives) do
         if host ~= frame then tool:Hide() end
@@ -516,25 +546,198 @@ local function AddKept(root)
     end)
 end
 
--- Both clicks show the same list. Only left-click adds the three-stack action.
-function M.BuildMenu(_, root, showBatch)
+function M.BuildMenu(_, root)
     root:CreateTitle(S.Text("Cheapest items to destroy"))
     local list = M:Candidates(LIST)
-    local batch = showBatch and {}
-    if showBatch then
-        local action = root:CreateButton(S.Text("Destroy the three cheapest stacks"), function() RequestBatch(batch) end)
-        action:SetEnabled(#list >= BATCH_SIZE)
-    end
     if #list == 0 then root:CreateTitle(S.Text("No item to delete.")) end
     for i = 1, #list do
         local item = Snapshot(list[i])
-        if batch and i <= BATCH_SIZE then batch[i] = item end
         local entry = root:CreateButton(string.format(S.Text("%s - %s"), Label(item), S.MoneyText(item.value)))
         entry:SetTooltip(function(tooltip) tooltip:SetBagItem(item.bag, item.slot) end)
         entry:CreateButton(S.BlizzardText("DELETE", "Delete"), function() M:Request(item) end)
         entry:CreateButton(S.Text("Never delete this item"), function() M:Keep(item.itemID, true) end)
     end
     AddKept(root)
+end
+
+------------------------------------------------------------------ deletion window
+local function WindowButton(parent, text, width, action)
+    local bridge = NS.HostBridge
+    local button = bridge and bridge.MenuButton(parent, width, 24)
+        or S.CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(width, 24)
+    button:SetText(text)
+    button:SetScript("OnClick", action)
+    return button
+end
+
+local function SameOffer(a, b)
+    return a.bag == b.bag and a.slot == b.slot and a.link == b.link and a.itemID == b.itemID
+        and a.count == b.count and a.quality == b.quality and a.value == b.value
+end
+
+-- A bag update can change the row between mouse-down and the click.
+local function RowPressed(button, mouse)
+    if mouse == "LeftButton" then button.pressedItem = button:GetParent().item end
+end
+
+local function RowDelete(button)
+    local item, pressed = button:GetParent().item, button.pressedItem
+    button.pressedItem = nil
+    if item and (not pressed or SameOffer(item, pressed)) then
+        M:Request(item, true)
+    end
+end
+
+local function RowLeave(row)
+    if GameTooltip:IsOwned(row) then GameTooltip:Hide() end
+end
+
+local function RowEnter(row)
+    local item = row.item
+    if not item or not CanUse(true) then return end
+    GameTooltip:SetOwner(row, "ANCHOR_LEFT")
+    GameTooltip:SetHyperlink(item.link)
+    Hint(S.Text("Right-click to protect this item from deletion."))
+    GameTooltip:Show()
+end
+
+local function RowKeep(row)
+    local item = row.item
+    if not item or not CanUse(true) then return end
+    S.ContextMenu(row, function(_, root)
+        root:CreateButton(S.Text("Never delete this item"), function()
+            if CanUse(true) then M:Keep(item.itemID, true) end
+        end)
+    end)
+end
+
+local function CreateRow(parent, index)
+    local row = S.CreateFrame("Button", nil, parent)
+    row:SetSize(WIDTH - 28, ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", 14, -66 - (index - 1) * ROW_HEIGHT)
+    row:RegisterForClicks("RightButtonUp")
+    row:SetScript("OnClick", RowKeep)
+    row:SetScript("OnEnter", RowEnter)
+    row:SetScript("OnLeave", RowLeave)
+    row.icon = S.CreateTexture(row, nil, "ARTWORK")
+    row.icon:SetSize(22, 22)
+    row.icon:SetPoint("LEFT", 2, 0)
+    row.label = S.QoLLabel(row, "")
+    row.label:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
+    row.label:SetWidth(259)
+    row.label:SetWordWrap(false)
+    row.label:SetJustifyH("LEFT")
+    row.value = S.QoLLabel(row, "")
+    row.value:SetPoint("RIGHT", -98, 0)
+    row.delete = WindowButton(row, S.BlizzardText("DELETE", "Delete"), 86, RowDelete)
+    row.delete:SetPoint("RIGHT")
+    row.delete:RegisterForClicks("LeftButtonUp")
+    row.delete:HookScript("OnMouseDown", RowPressed)
+    return row
+end
+
+local function WindowHidden()
+    window.profile, window.fromLoot = nil, nil
+    if window:IsShown() then window:Hide() end
+    for _, row in ipairs(window.rows) do
+        row.item, row.delete.pressedItem = nil, nil
+        RowLeave(row)
+    end
+    Forget()
+    WatchBagChanges()
+end
+
+local function WindowBatch()
+    if not CanUse(true) then return end
+    local batch = {}
+    for i = 1, BATCH_SIZE do batch[i] = window.rows[i].item end
+    RequestBatch(batch)
+end
+
+local function CreateWindow()
+    local bridge = NS.HostBridge
+    if bridge then bridge.EnsureMenuTheme() end
+    window = S.QoLWindow(WIDTH, 150, "Delete cheapest item", 15, true, WINDOW_NAME)
+    window:Hide()
+    window:SetScript("OnHide", WindowHidden)
+    UISpecialFrames[#UISpecialFrames + 1] = WINDOW_NAME
+    window.heading = S.QoLLabel(window, "")
+    window.heading:SetPoint("TOPLEFT", 16, -44)
+    window.empty = S.QoLLabel(window, "No item to delete.")
+    window.empty:SetPoint("TOP", 0, -82)
+    window.batch = WindowButton(window, S.Text("Destroy the three cheapest stacks"), 280, WindowBatch)
+    window.batch:SetPoint("BOTTOMLEFT", 14, 10)
+    window.rows = {}
+    for i = 1, LIST do window.rows[i] = CreateRow(window, i) end
+end
+
+RefreshWindow = function()
+    if not CanUse(true) then
+        window:Hide()
+        return
+    end
+    local list = M:Candidates(LIST, true)
+    for i, row in ipairs(window.rows) do
+        local item = list[i]
+        if row.item and (not item or row.item.link ~= item.link) then RowLeave(row) end
+        row.item = item and Snapshot(item) or nil
+        if item then
+            local icon = C_Item.GetItemIconByID(item.itemID)
+            row.icon:SetTexture(S.Finite(icon) and icon or FALLBACK_ICON)
+            row.label:SetText(Label(item))
+            row.value:SetText(S.MoneyText(item.value))
+        end
+        row:SetShown(item ~= nil)
+    end
+    window.empty:SetShown(#list == 0)
+    window.batch:SetShown(not window.fromLoot)
+    window.batch:SetEnabled(#list >= BATCH_SIZE)
+    window:SetHeight(76 + math.max(1, #list) * ROW_HEIGHT + (window.fromLoot and 0 or 32))
+end
+
+local function ShowWindow(fromLoot)
+    if not window then CreateWindow() end
+    Forget()
+    window.profile, window.fromLoot = NS.DB, fromLoot
+    window.heading:SetText(fromLoot and S.Text("Your bags are full. Choose a stack to delete.")
+        or S.Text("Cheapest stacks by vendor value"))
+    window:Show()
+    RefreshWindow()
+    WatchBagChanges()
+end
+
+function M:OpenCandidates()
+    if not self:Usable() then return false end
+    ShowWindow(false)
+    return true
+end
+
+------------------------------------------------------------------ loot
+-- Forever's LootFrame matches the same localized error. A pending loot slot
+-- also covers Quick Loot, which can report the error during LOOT_READY.
+local function LootClosed()
+    M.context:RemoveEvent("LOOT_CLOSED")
+    lootOffered = false
+    if window and window.fromLoot then window:Hide() end
+end
+
+local function LootFull(_, _, _, message)
+    if lootOffered or NS.InCombat() or not S.Public(message) or message ~= ERR_INV_FULL then return end
+    local count = GetNumLootItems()
+    if not S.Finite(count) or count < 1 then return end
+    lootOffered = true
+    M.context:Event("LOOT_CLOSED", LootClosed)
+    if not window or not window:IsShown() then ShowWindow(true) end
+end
+
+WatchLootErrors = function(enabled)
+    if enabled then
+        M.context:Event("UI_ERROR_MESSAGE", LootFull)
+    else
+        M.context:RemoveEvent("UI_ERROR_MESSAGE")
+        LootClosed()
+    end
 end
 
 ------------------------------------------------------------------ module
@@ -545,6 +748,7 @@ function M:Enable()
     end
     self.context:Event("PLAYER_REGEN_DISABLED", Combat)
     self.context:Event("PLAYER_REGEN_ENABLED", Combat)
+    WatchLootErrors(not NS.InCombat())
     self:Refresh()
 end
 
@@ -554,11 +758,14 @@ function M:Refresh()
     self.highest = QUALITY[self.config.quality] or POOR
     repaint = self.context:Coalesce(.1, Repaint)
     SyncNative()
+    if window and window:IsShown() then RefreshWindow() end
     -- Suite Bags lays its search row out again, with or without the tool.
     if S.BagsToolsChanged then S.BagsToolsChanged() end
 end
 
 function M:Disable()
+    WatchLootErrors(false)
+    if window then window:Hide() end
     for _, tool in pairs(self.natives) do tool:Hide() end
     if hovered then Leave(hovered) end
     Forget()

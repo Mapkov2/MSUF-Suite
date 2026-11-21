@@ -182,7 +182,14 @@ local function FadeCosmeticGlobals(state)
         local group = cosmeticGlobals[index]
         if NS.GenericWindows.IsCategoryEnabled(group.category) then
             for nameIndex = 1, #group.names do
-                if Kit.Fade(state, _G[group.names[nameIndex]]) then
+                local region = _G[group.names[nameIndex]]
+                local painted
+                if group.category == "npc" and Kit.ParentIs(region, MerchantFrame) then
+                    painted = NS.Cosmetics.FadeDecoration(region, state.owner)
+                else
+                    painted = Kit.Fade(state, region)
+                end
+                if painted then
                     faded = faded + 1
                 end
             end

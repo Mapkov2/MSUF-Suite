@@ -184,7 +184,7 @@ local function AtPosition(frame, x, y)
         and math.abs(dx - x) < 0.001 and math.abs(dy - y) < 0.001
 end
 
-function Policy.PlaceWindow(state, point)
+function Policy.PlaceWindow(state, point, onlyIfOutside)
     local frame = state.frame
     local uiWidth, uiHeight = UIParent:GetWidth(), UIParent:GetHeight()
     local uiScale = UIParent:GetEffectiveScale()
@@ -196,6 +196,7 @@ function Policy.PlaceWindow(state, point)
     local right, bottom, top = NS.WindowControlChrome.Footprint(state)
     local x = math.max(0, math.min(uiWidth - (width + right) * ratio, point.x)) / ratio
     local y = math.max(-math.max(0, uiHeight - (height + bottom) * ratio), math.min(-top * ratio, point.y)) / ratio
+    if onlyIfOutside and math.abs(point.x - x * ratio) <= 1 and math.abs(point.y - y * ratio) <= 1 then return end
     PinPosition(state, -x, uiWidth / ratio - x - width, -y, height - uiHeight / ratio - y)
     if not AtPosition(frame, x, y) then
         state.placing = true
@@ -643,6 +644,9 @@ local function IdentifyWindow(frame, focus)
     if not frame or Safety.IsForbidden(frame) then return nil end
     local name = Safety.Read(frame, "GetName")
     if type(name) ~= "string" or name == "" then return nil end
+    -- LootFrame opens at the cursor or its Edit Mode anchor. Hiding it closes
+    -- the loot session and discards the native list.
+    if name == "LootFrame" then return nil end
     -- Blizzard's social toasts have close buttons but are not focus windows.
     if focus and (name == "BNToastFrame" or name == "TimeAlertFrame") then return nil end
     local companion = focus and (focusCompanions[name] or focusParents[name])

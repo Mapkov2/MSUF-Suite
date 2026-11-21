@@ -142,26 +142,36 @@ local function ObserveProfiler()
     Hook(Safety.Field(addon, "PinContainer"), "PinAddon", ProfilerPinned)
 end
 
-function Skins.InstallTriggers()
-    for _, entry in ipairs(Skins.definitions) do
-        if Skins.IsEnabled(entry.id) then
-            local callback = callbacks[entry.id]
+local function InstallEntry(entry)
+    if not Skins.IsEnabled(entry.id) or Skins.cooperative[entry.id] then return end
+    if entry.id == "questie" then NS.AddonSkinQuestie.Install() end
+    local callback = callbacks[entry.id]
+    if callback then
+        for _, key in ipairs(entry.slash or {}) do Hook(SlashCmdList, key, callback) end
+        for _, key in ipairs(entry.openers or {}) do Hook(_G, key, callback) end
+        for _, method in ipairs(entry.methods or {}) do Hook(rawget(_G, method[1]), method[2], callback) end
+    end
+    for _, addon in ipairs(entry.addons) do
+        if NS.Client.HasAddOn(addon) then
+            local title = C_AddOns.GetAddOnMetadata(addon, "Title")
+            if Safety.Public(title) and type(title) == "string" then Skins.byTitle[title:lower()] = entry.id end
             if callback then
-                for _, key in ipairs(entry.slash or {}) do Hook(SlashCmdList, key, callback) end
-            end
-            for _, addon in ipairs(entry.addons) do
-                if NS.Client.HasAddOn(addon) then
-                    local title = C_AddOns.GetAddOnMetadata(addon, "Title")
-                    if Safety.Public(title) and type(title) == "string" then Skins.byTitle[title:lower()] = entry.id end
-                    if callback then
-                        ObserveDesigner(addon, entry.id)
-                        local key = C_AddOns.GetAddOnMetadata(addon, "AddonCompartmentFunc")
-                        if Safety.Public(key) and type(key) == "string" then Hook(_G, key, callback) end
-                    end
-                end
+                ObserveDesigner(addon, entry.id)
+                local key = C_AddOns.GetAddOnMetadata(addon, "AddonCompartmentFunc")
+                if Safety.Public(key) and type(key) == "string" then Hook(_G, key, callback) end
             end
         end
     end
+end
+
+function Skins.InstallTriggers(id)
+    if id then
+        InstallEntry(Skins.byID[id])
+        if id == "restedXP" then Skins.ObserveRestedXP() end
+        if id == "addonProfiler" then ObserveProfiler() end
+        return
+    end
+    for _, entry in ipairs(Skins.definitions) do InstallEntry(entry) end
     InstallBroker()
     Skins.ObserveRestedXP()
     ObserveProfiler()

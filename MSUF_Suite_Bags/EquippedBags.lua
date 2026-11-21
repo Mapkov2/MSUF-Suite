@@ -20,12 +20,12 @@ function Equipped.ClearBackpackBindings()
     ClearOverrideBindings(bindingOwner)
 end
 
--- Forever binds B to Backpack. In the Suite views, open all bags through
--- Blizzard's existing binding so Blizzard also creates the reagent window.
+-- Forever's Backpack binding leaves the reagent window closed. Use Blizzard's
+-- open-all binding in every keyboard layout, including the Blizzard grid.
 function Equipped.RefreshBackpackBindings(module)
     if not module.active then return end
     local first, second
-    if module.config.inventoryView ~= NS.BagsView.BLIZZARD_GRID and not S.GamepadUI() and HasReagentBag() then
+    if not S.GamepadUI() and HasReagentBag() then
         first, second = GetBindingKey("TOGGLEBACKPACK")
         if not S.Public(first) then first = nil end
         if not S.Public(second) then second = nil end

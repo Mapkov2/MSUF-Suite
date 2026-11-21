@@ -268,6 +268,7 @@ local function PaintEntryFrame(request, index)
     local frameMode = type(entry.frameModes) == "table"
         and type(frameValue) == "string" and entry.frameModes[frameValue] or nil
     local mode = CatalogMode(frameMode or entry.mode)
+    if frameValue == "LootFrame" and NS.LootTooltipRows then NS.LootTooltipRows.Apply(frame, owner) end
     if entry.id == "catalog-shop" then
         NS.CatalogShopMotion.Apply(frame, owner)
     elseif entry.category ~= "hud" and mode.rootSurface ~= false
@@ -286,6 +287,9 @@ local function PaintEntryFrame(request, index)
     end
     local ok, reason, metrics = ApplyFrameNow(frame, owner, mode)
     StoreFrameResult(request, index, ok, reason, metrics)
+    if ok and mode.flightMapChrome and NS.FlightMapChrome.Apply(frame, owner) then
+        request.ownerState.flightMapChrome = true
+    end
     -- Paint safe cosmetics now; finish protected descendants and window controls
     -- once after combat, or on the next show if the window has closed again.
     if NS.IsCombatLocked() then DeferEntryFrame(request, index) end
@@ -485,6 +489,7 @@ local function RemovePendingForOwner(owner)
 end
 
 local function DisableNow(owner)
+    if NS.LootTooltipRows then NS.LootTooltipRows.Disable(owner) end
     NS.MacroWindow.Disable(owner)
     NS.CatalogShopMotion.Disable(owner)
     local ownerState = OwnerState(owner)
@@ -502,6 +507,10 @@ local function DisableNow(owner)
         NS.TooltipChrome.DisableOwner(owner)
     end
     NS.WindowControls.DisableOwner(owner)
+    if ownerState.flightMapChrome then
+        NS.FlightMapChrome.Disable(owner)
+        ownerState.flightMapChrome = nil
+    end
     DeactivateOwner(owner)
 
     RemovePendingForOwner(owner)

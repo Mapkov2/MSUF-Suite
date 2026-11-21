@@ -1,7 +1,8 @@
 local _, P = ...
 local Suite, M, S = P.Suite, P.M, P.S
 -- Suite pages join MSUF's navigation groups by id, in this order. Each page
--- names its group and its place there (nav, navOrder of P.RegisterPage). A
+-- names its group and its place there (nav, navOrder of P.RegisterPage), or
+-- uses nav = "root" for a standalone row below the Dashboard. A
 -- host menu without a group (Retail MSUF still has Appearance and Features)
 -- uses the fallback group, or gets the group title in front of its last group.
 local NAV_GROUPS = {
@@ -52,7 +53,8 @@ local function PageAddOnEnabled(key)
     -- Skinning also shows Suite modules (QualityOfLifeOwners.lua: the
     -- Battle.net toast; they stay on Quality of Life when the skin AddOn
     -- is off at load). A skin AddOn turned off later leaves the page to them.
-    if key == "suite_skin" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then return true end
+    if key == "suite_skin" and (Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+        or Suite.HostBridge.UnitFrameTooltipAPI()) then return true end
     local modules = PAGE_MODULES[key]
     if not modules then return key ~= "suite_skin" end
     for _, id in ipairs(modules) do
@@ -138,8 +140,10 @@ local function AddNavigation()
     if type(items) ~= "table" then return false end
     local pagesByKey = {}
     for _, page in ipairs(P.pages) do pagesByKey[page.key] = page end
-    for _, item in ipairs(items) do
+    local rootIndex = 1
+    for i, item in ipairs(items) do
         if item.key and pagesByKey[item.key] then return true end
+        if item.key == "home" then rootIndex = i + 1 end
     end
     local placed = {}
     local function Place(spec, keys)
@@ -154,9 +158,13 @@ local function AddNavigation()
         end
     end
     for _, spec in ipairs(NAV_GROUPS) do Place(spec, GroupPages(spec.id)) end
-    -- A page without a known group still gets a row, at the end of Interface.
     for _, page in ipairs(P.pages) do
-        if not placed[page.key] then Place(NAV_GROUPS[2], { page.key }) end
+        if page.nav == "root" then
+            table.insert(items, rootIndex, NavRow(page))
+            rootIndex = rootIndex + 1
+        elseif not placed[page.key] then
+            Place(NAV_GROUPS[2], { page.key })
+        end
     end
     if type(M.navPrimaryForKey) == "table" then
         for _, page in ipairs(P.pages) do M.navPrimaryForKey[page.key] = page.key end

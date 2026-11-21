@@ -268,6 +268,39 @@ local function FadeChrome(frame, owner, targets)
     FadeFields(owner, Field(frame, "FlatBackground"), flatBackgroundFields, targets)
 end
 
+local function ConcealField(parent, key, owner, targets)
+    local region = Field(parent, key)
+    if Kit.ParentIs(region, parent) and NS.Cosmetics.FadeDecoration(region, owner) then
+        targets[region] = true
+    end
+end
+
+local function ConcealPanelArt(panel, owner, targets)
+    ConcealField(panel, "Bg", owner, targets)
+    local nine = Field(panel, "NineSlice")
+    if Kit.ParentIs(nine, panel) and Safety.CanDecorate(nine, true) then
+        for index = 1, #nineSlicePieceFields do
+            ConcealField(nine, nineSlicePieceFields[index], owner, targets)
+        end
+    end
+end
+
+-- PortraitFrameBaseTemplate is shared by merchants, questgivers and other
+-- Blizzard panels. Native theme and layout code can reveal its artwork after
+-- the shell was painted. Only its named decorative textures are concealed.
+local function ConcealPortraitChrome(frame, owner, targets)
+    local layout = Field(frame, "layoutType")
+    if not Safety.Public(layout) or (layout ~= "PortraitFrameTemplate" and layout ~= "PortraitFrameTemplateMinimizable") then return end
+    if not Kit.ParentIs(Field(frame, "NineSlice"), frame) then return end
+    ConcealPanelArt(frame, owner, targets)
+    ConcealField(frame, "TopTileStreaks", owner, targets)
+    local inset = Field(frame, "Inset")
+    if Kit.ParentIs(inset, frame) and Safety.CanDecorate(inset, true) then
+        ConcealPanelArt(inset, owner, targets)
+    end
+    if frame == GossipFrame then ConcealField(frame, "Background", owner, targets) end
+end
+
 local function FadeAtlasRegion(region, owner, targets, atlases)
     local atlas = Safety.Read(region, "GetAtlas")
     if atlas ~= nil and atlases[atlas] then Fade(owner, region, targets) end
@@ -345,6 +378,9 @@ local function DeactivateOwnerState(owner, ownerState)
     for target in pairs(ownerState.surfaces) do
         NS.Surface.SetVisible(target, false)
     end
+    if ownerState.windowArt then
+        for texture in pairs(ownerState.windowArt) do texture:Hide() end
+    end
     for _, glyph in pairs(ownerState.glyphs) do
         glyph:Hide()
     end
@@ -387,6 +423,7 @@ NS.GenericWindowsShared = {
     HasChrome = HasChrome,
     FadeDialogBorderChrome = FadeDialogBorderChrome,
     FadeChrome = FadeChrome,
+    ConcealPortraitChrome = ConcealPortraitChrome,
     FadeAtlasRegions = FadeAtlasRegions,
     EnsureThemeListener = EnsureThemeListener,
     GlyphColor = GlyphColor,

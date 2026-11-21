@@ -104,6 +104,7 @@ function O.CreateSlider(parent, labelText, minimum, maximum, step, getter, sette
         if ColorChanged(thumbColor, r, g, b, a) then thumb:SetVertexColor(r, g, b, a) end
     end
     O.TrackAndRefresh(Refresh)
+    if O.AttachOutlineControl then O.AttachOutlineControl(row, labelText, options and options.outlineSetting, -60) end
     row._mskinControl = slider
     return row
 end

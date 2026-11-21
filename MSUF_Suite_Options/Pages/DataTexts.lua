@@ -150,12 +150,6 @@ remembered reagents stay listed at zero. Bank items are excluded.]],
             end,
         })
     end
-    local bagRules = P.SectionRules(ID, "bags")
-    if #bagRules > 0 then
-        SharedRules(ctx, b, reveal, PAGE .. "_bags", Tr("Blizzard bag buttons"), bagRules, {
-            help = "While DataTexts is active, hide Blizzard's backpack and bag slots. A Bag space DataText opens the native bags when clicked. Turn this off to restore the Blizzard buttons.",
-        })
-    end
     SharedRules(ctx,b,reveal,PAGE..'_sources',Tr('Additional data sources'),P.SectionRules(ID,'sources'),{
         help='Choose broker names and discovered currency IDs per place. Select your current-season crest currencies from the native currency list; saved currency selections work after login without visiting an upgrade NPC. Selection order and separator control the crest block. Observed upgrade stages remain available as an alternative after selecting an upgrade item this login. Hearthstone actions require a deliberate click.',
         extra=function(body,y,width)

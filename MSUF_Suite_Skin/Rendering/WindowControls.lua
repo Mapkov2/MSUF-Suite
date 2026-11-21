@@ -60,14 +60,16 @@ local function SafeControls(state)
     return true
 end
 
-local function HasCaption(state) return state.maximize or state.minimize or state.sizeToggle or state.closeOnly end
+local function HasCaption(state)
+    return not state.suitePresentation and (state.maximize or state.minimize or state.sizeToggle or state.closeOnly)
+end
 
 local function Maximized(state) return state.name == "WorldMapFrame" and Safety.Read(state.frame, "IsMaximized") == true end
 
 local InstallPanelPositionHook
 
 local function ApplyStoredScale(state)
-    if not CanChangeFrameGeometry(state.frame) or state.fit then return end
+    if not CanChangeFrameGeometry(state.frame) or state.fit or state.drag then return end
     local frame, scale = state.frame, state.originalScale
     if not Maximized(state) then
         local limits = NS.WindowLayoutLimits
@@ -77,13 +79,18 @@ local function ApplyStoredScale(state)
             scale = stored
             state.customScale = true
             InstallPanelPositionHook()
-        elseif state.customScale then
+        elseif state.customScale or state.suiteScaleCapped then
             state.customScale = false
+        elseif state.suiteBounds then
+            scale = Safety.Read(frame, "GetScale")
         else
             return
         end
     end
     if type(scale) == "number" then
+        local fit = state.suiteBounds and Policy.FitGeometry(state)
+        state.suiteScaleCapped = fit and fit < scale or nil
+        if state.suiteScaleCapped then scale = fit end
         local current = frame:GetScale()
         if PublicNumber(current) and current ~= scale then frame:SetScale(scale) end
     end
@@ -128,7 +135,13 @@ local function ApplyStoredPosition(state)
         and NS.Client.isForever and NS.DB.theme.look == "foreverGlass"
     if defaultPosition then point = FOREVER_CHARACTER_DOCK end
     if not point then
-        if state.customPosition then Policy.RestoreNativePosition(state) end
+        if state.customPosition and not state.suiteConstrained then Policy.RestoreNativePosition(state) end
+        if state.suiteBounds then
+            local position = Policy.ScreenPosition(state.frame)
+            if position and Policy.PlaceWindow(state, position, true) then
+                state.customPosition, state.suiteConstrained = true, true
+            end
+        end
         return
     end
     if not Policy.PlaceWindow(state, point) then return end
@@ -137,6 +150,7 @@ local function ApplyStoredPosition(state)
         Chrome.PlaceTitleDrag(state.titleDrag, state)
     end
     state.customPosition = true
+    state.suiteConstrained = nil
     state.defaultPosition = defaultPosition == true
     if not defaultPosition then Policy.WatchPosition(state, QueuePosition) end
     InstallPanelPositionHook()
@@ -257,10 +271,10 @@ end
 -- itself on release/hide, or if its panel becomes protected in combat.
 
 local function EndDrag(state)
-    local grip, drag = state.grip, state.drag
+    local grip, drag = state.dragGrip or state.grip, state.drag
     grip:SetScript("OnUpdate", nil)
     if not drag then return end
-    state.drag = nil
+    state.drag, state.dragGrip = nil, nil
     GeometryInteraction(state.frame, false)
     if not CanChangeFrameGeometry(state.frame) or not Safety.CanDecorate(grip, not IsCombat()) then return end
     if grip:IsMouseOver() then grip:SetButtonState("NORMAL") end
@@ -277,9 +291,9 @@ local function EndDrag(state)
         state.customScale = true
         InstallPanelPositionHook()
         if state.customPosition then ApplyStoredPosition(state) end
-        if SafeControls(state) then
+        if SafeControls(state) and not state.suitePresentation then
             if HasCaption(state) then Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET) end
-            Chrome.PlaceGrip(grip, state)
+            Chrome.PlaceGrip(state.grip, state)
             Chrome.PlaceTitleDrag(state.titleDrag, state)
         end
     end
@@ -303,6 +317,8 @@ local function UpdateDrag(state)
     local delta = ((x - drag.x) + (drag.y - y)) * 0.5
     local scale = ClampScale(drag.scale + delta / drag.pixels)
     scale = math.floor(scale * 100 + 0.5) / 100
+    local fit = state.suiteBounds and Policy.FitGeometry(state)
+    if fit then scale = math.min(scale, fit) end
     if scale ~= current then state.frame:SetScale(scale) end
 end
 
@@ -315,7 +331,7 @@ local function OnGripUpdate(grip)
     end
 end
 
-local function BeginDrag(state)
+local function BeginDrag(state, grip)
     if not CanChangeFrameGeometry(state.frame) or not SafeControls(state) or not Enabled() or Maximized(state) or state.fit then return end
     if state.inventory and not state.customScale and not state.customPosition then Policy.CaptureNativeBagLayout(state) end
     local x, y = GetCursorPosition()
@@ -332,9 +348,11 @@ local function BeginDrag(state)
     state.dragStart = drag
     drag.x, drag.y = x, y
     drag.scale, drag.pixels = scale, pixels
-    state.drag = drag
+    grip = grip or state.grip
+    controlStates[grip] = state
+    state.drag, state.dragGrip = drag, grip
     GeometryInteraction(frame, true)
-    state.grip:SetScript("OnUpdate", OnGripUpdate)
+    grip:SetScript("OnUpdate", OnGripUpdate)
 end
 
 local function OnGripMouseDown(grip, mouseButton)
@@ -453,8 +471,16 @@ local function CreateTitleDrag(state)
     return strip
 end
 
-local function Settles(state) return activeStates[state.frame] == state and Controlled(state) and SafeControls(state) end
+local function Settles(state)
+    return HasCaption(state) and activeStates[state.frame] == state and Controlled(state) and SafeControls(state)
+end
 local function ShowControls(state)
+    if state.suitePresentation then
+        state.titleDrag:Hide()
+        state.grip:Hide()
+        Chrome.HideCaption(state)
+        return
+    end
     local level = Chrome.Level(state)
     if HasCaption(state) then
         Chrome.ShowCaption(state, level + CONTROL_LEVEL_OFFSET)
@@ -784,6 +810,16 @@ function WindowControls.ResetLayout()
     return scaled and moved
 end
 
+function WindowControls.SetSuitePresentation(frame, visible)
+    local state = WindowControls.states[frame]
+    if not state or state.suitePresentation == visible then return end
+    state.suitePresentation = visible
+    if Controlled(state) and Safety.Read(frame, "IsShown") == true and SafeControls(state) then
+        if IsCombat() then NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
+        else ShowControls(state) end
+    end
+end
+
 function WindowControls.SuiteAction(frame, bounds, action, control)
     local state = WindowControls.states[frame]
     if action == "moveStop" then return state and EndMove(state) end
@@ -791,7 +827,12 @@ function WindowControls.SuiteAction(frame, bounds, action, control)
     if action == "release" then
         if not state then return end
         state.suiteBounds = nil
+        state.suiteConstrained, state.suitePresentation = nil, nil
         if state.fit and not IsCombat() then Chrome.LeaveFit(state) end
+        if not IsCombat() then
+            ApplyStoredScale(state)
+            ApplyStoredPosition(state)
+        end
         if state.owners.suiteCharacterPanel then WindowControls.DisableOwner("suiteCharacterPanel") end
         return
     end
@@ -801,7 +842,10 @@ function WindowControls.SuiteAction(frame, bounds, action, control)
     if not Controlled(state) then return end
     local prepare = state.suiteBounds == nil
     state.suiteBounds = bounds
-    if prepare then ApplyStoredPosition(state) end
+    if prepare or action == "prepare" then
+        ApplyStoredScale(state)
+        ApplyStoredPosition(state)
+    end
     -- The Suite's own cell (control) minimizes as ours: Blizzard's X through the delegate.
     if action == "bindMinimize" then
         if control and state.restore then Delegate.BindMinimize(control, state, PrepareMinimize, FinishMinimize) end
@@ -811,7 +855,7 @@ function WindowControls.SuiteAction(frame, bounds, action, control)
     elseif action == "minimize" and state.restore then
         Minimize(state)
     elseif action == "moveStart" then BeginMove(state)
-    elseif action == "scaleStart" then BeginDrag(state) end
+    elseif action == "scaleStart" then BeginDrag(state, control) end
     return action == "minimize" and state.minimized == true or action ~= "minimize" and state.fit ~= nil
 end
 return WindowControls

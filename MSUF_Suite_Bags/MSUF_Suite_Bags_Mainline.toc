@@ -1,4 +1,4 @@
-## Interface: 120100, 120105, 16001
+## Interface: 120100, 120105, 120107, 16001
 ## Title: MSUF Suite - Bags
 ## Notes: Optional Bags module for MSUF Suite.
 ## Author: Mapko
@@ -67,4 +67,5 @@ AutoSplit.lua
 StackSplitter.lua
 SortDirection.lua
 BuybackSearch.lua
+NativeBagBar.lua
 CombatIdle.lua

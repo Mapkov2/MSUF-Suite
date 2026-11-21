@@ -94,11 +94,7 @@ local function SourceMap(map, source, level, migrate, mapFile, originalLevel)
     if not Public(level) then return end
     if source == nil then source = mapFile else source = Text(source) end
     if not source then return end
-    if level == nil then
-        level = originalLevel
-    elseif not Finite(level) then
-        return
-    end
+    if level == nil then level = originalLevel elseif not Finite(level) then return end
     if source == mapFile and level == originalLevel then return map end
     local convert = Method(migrate, "GetUIMapIDFromMapFile")
     local translated = convert and convert(migrate, source, level)
@@ -126,11 +122,8 @@ end
 local function CollectWorld(state, name, x, y, source, coord, icon)
     local label = (name == "HandyNotes" and NoteTitle(state.notes, source, coord)) or name
     local onNativeMinimap
-    if state.nativePoints[PointKey(x, y)] then
-        onNativeMinimap = true
-    elseif state.nativeComplete then
-        onNativeMinimap = false
-    end
+    if state.nativePoints[PointKey(x, y)] then onNativeMinimap = true
+    elseif state.nativeComplete then onNativeMinimap = false end
     local file, left, right, top, bottom = Texture(icon)
     state.add(state.output, x, y, label, nil, "handynotes", file, left, right, top, bottom, onNativeMinimap)
     state.points = state.points + 1
@@ -153,11 +146,8 @@ local function ReadNodes(state, plugin, name, map, minimap, collect)
         elseif alpha == nil or alpha > 0 then
             source = SourceMap(map, source, level, migrate, mapFile, originalLevel)
             local x, y = Position(state, source, coord)
-            if x then
-                collect(state, name, x, y, source, coord, icon)
-            else
-                complete = false
-            end
+            if x then collect(state, name, x, y, source, coord, icon)
+            else complete = false end
         end
     end
 end
@@ -246,3 +236,4 @@ function HandyNotes.Watch(callback)
     local core = _G.HandyNotes
     if callback and Table(core) then S.Dispatch(Hook, core) end
 end
+

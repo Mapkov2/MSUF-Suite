@@ -22,7 +22,7 @@ local WORKSPACE = { page = PAGE, module = ID, title = "Bags", height = 220,
         tabs = {
             { id = "bags", label = "Basics", sections = "bags_module finance currencyGoals_module" },
             { id = "appearance", label = "Appearance", sections = "look appearance itemLevels transmog" },
-            { id = "layout", label = "Layout", sections = "window reagentWindow" },
+            { id = "layout", label = "Layout", sections = "window reagentWindow bagBar" },
             { id = "inventory", label = "Inventory organisation",
                 sections = "organisation listView categories collections inventoryArchive_module restockPlanner_module craftShopping_module" },
             { id = "bank", label = "Bank", sections = "bank bankWindow bankTransfer_module" },
@@ -187,6 +187,8 @@ local function Build(ctx)
         P.SectionRules(ID, "reagentWindow"), {
             help = "Drag the reagent bag title while it is open to move it independently. Reset its position in MSUF Edit Mode to follow Blizzard's normal bag layout again.",
         })
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_bagBar", Tr("Visibility State Driver"),
+        P.SectionRules(ID, "bagBar"), { help = "Hide this bar when any selected condition is true." })
     for _, id in ipairs({ "inventoryArchive", "restockPlanner", "craftShopping", "bankTransfer", "currencyGoals" }) do
         P.BuildOwnedTool(ctx, b, id)
     end
