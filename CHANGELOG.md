@@ -1,5 +1,21 @@
 # MSUF Suite Changelog
 
+## 0.1.30 Alpha - 2026-11-21
+
+Distributed through the Beta channel for WoW Retail and WoW Forever.
+
+### Tooltips
+
+- Added separate styles for item, spell, unit and loot tooltips, with an interactive preview and a shared layout builder.
+- The spell style now covers buffs, debuffs, spellbook entries and action bar tooltips. The unit style also covers the MSUF unit-frame information panel.
+- The shared tooltip anchor now covers items, spells, auras and MSUF unit frames.
+- Fixed header and backdrop flicker during item tooltip updates. Loot rows can use the item card style while retaining native loot clicks, stack counts and quest markers.
+
+### Quest and loot windows
+
+- Improved the native quest offer and reward layout, including late quest data and the Forever reading fade.
+- Preserved native loot row behavior when applying the Suite skin to the loot window.
+
 ## 0.1.29 Alpha - 2026-11-20
 
 Distributed through the Beta channel for Retail and WoW Forever.
