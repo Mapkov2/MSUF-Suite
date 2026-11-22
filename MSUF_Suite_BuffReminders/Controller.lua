@@ -537,7 +537,7 @@ local function Preview(self)
     list.needsFullRefresh, list.countsDirty = true, true
     view.preview:SetShown(mask == 0)
     view.previewShown = mask == 0
-    R.SyncCursor(self)
+    view.afterUpdate(self)
 end
 
 function M:Update(mode, updateCounts, updateInfo, foodDirty)
@@ -578,7 +578,7 @@ function M:Update(mode, updateCounts, updateInfo, foodDirty)
         view.preview:SetShown(previewShown)
         view.previewShown = previewShown
     end
-    R.SyncCursor(self)
+    view.afterUpdate(self)
 end
 
 local function SyncSubzoneEvents(self)
@@ -710,7 +710,7 @@ OnEvent = function(self, event, unit, updateInfo)
         return
     end
     if event == "READY_CHECK" then
-        if Allowed(self) then R.ReadyCheck(self) end
+        R.ReadyCheckActions(self, Allowed(self))
         return
     end
     if ENVIRONMENT_EVENT[event] then
@@ -758,12 +758,12 @@ function M:Refresh()
     R.WatchAnchor(self, true)
     NS.HostBridge.WatchIconSkins("buffReminders", self.config.iconSkin ~= "CUSTOM")
     ReadInstance(self)
-    self.readyCheck.enabled = self.config.readyCheckMana or self.config.readyCheckIssues
+    R.PrepareReadyCheck(self)
     R.SyncPreparationEvents(self, OnEvent)
     SyncRestingEvent(self)
     RegisterEvents(self)
     if not self.readyCheck.enabled then R.HideReadyCheck(self) end
-    R.StyleNotices(self)
+    R.RefreshSpecialControls(self)
     self:Compile()
     self.view.mask = nil
     self:Update("visual")
@@ -781,7 +781,7 @@ function M:Disable()
     R.SyncPreparationEvents(self, OnEvent)
     R.HideReadyCheck(self)
     R.SyncSpecialEvents(self, OnEvent)
-    R.HideSpecialText(self)
+    R.ReleaseSpecialControls(self)
     R.CancelGroupWork(self)
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     for i = 1, #EVENTS do self.context:RemoveEvent(EVENTS[i]) end

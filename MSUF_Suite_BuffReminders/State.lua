@@ -26,7 +26,7 @@ R.STATE = {
     -- newAlert: a newly shown reminder still owes its sound; dismissed: the
     -- reminders the player hid until the next reload (Alerts).
     view = { "host", "buttons", "preview", "previewShown", "previewing", "mask", "layout", "newAlert",
-        "dismissed", "allowed" },
+        "dismissed", "allowed", "afterUpdate", "selfBuffButton" },
     -- Following the cursor (Cursor): the OnUpdate driver (it runs while the
     -- host follows) and whether the host left its saved anchor.
     cursor = { "driver", "displaced" },
@@ -76,7 +76,7 @@ R.STATE = {
     menuPreview = { "buffer", "settings" },
     -- Optional raid buff coverage: reused rows and per-member snapshots,
     -- plain display buttons, sample mode and the personal row's top offset.
-    raid = { "rows", "pool", "buttons", "sample", "offset", "update" },
+    raid = { "rows", "pool", "buttons", "sample", "offset", "update", "namesOwner" },
 }
 
 -- Gives an owner (the module, or a test's owner) one empty table per concern.

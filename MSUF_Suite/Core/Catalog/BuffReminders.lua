@@ -129,6 +129,8 @@ NS.SuiteCatalog[id].look = {
 local shortBuffWarning = Number("personalBuffWarningSeconds", "Class buff warning in seconds (0 = use general warning)", 0, 0, 300)
 B.Section(id, "tracking", "What to remind", {
     shortBuffWarning,
+    B.Tooltip(Bool("selfBuffKey", "Enable next missing self-buff key", false),
+        "Set Cast next missing self-buff in Keybindings > MSUF Suite. Each press casts one missing self-buff outside combat."),
     Bool("classBuff", "Remind me of my known class raid buff", true),
     Bool("groupBuff", "Remind me when others need my group buff", false),
     Bool("otherClassBuffs", "Remind me of missing buffs from classes in my group", false),
@@ -206,6 +208,7 @@ B.Section(id, "visibility", "When to show", {
 })
 B.Section(id, "readycheck", "Ready check", {
     Bool("readyCheckIssues", "Ready checks: show missing preparation", false),
+    Bool("readyCheckRaidBuffNames", "Ready checks: show who is missing raid buffs", false),
     Bool("readyCheckMana", "Ready checks: show my healer mana when it is low", false),
     Number("readyCheckManaPercent", "Low means below (percent of mana)", 70, 1, 100),
     Number("readyCheckDuration", "Show the mana note for (seconds)", 8, 3, 30),

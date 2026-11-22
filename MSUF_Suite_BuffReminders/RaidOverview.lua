@@ -216,6 +216,58 @@ local function UpdateWithOverview(self, ...)
     end
 end
 
+local function RaidNamesRows(self)
+    local rows = {}
+    for _, row in ipairs(self.raid.rows or {}) do
+        local missing, unknown = {}, 0
+        for _, unit in ipairs(self.group.unitList or {}) do
+            if row.presence[unit] == false then
+                local name = S.PublicText(GetUnitName(unit, true))
+                if name then missing[#missing + 1] = name else unknown = unknown + 1 end
+            elseif row.presence[unit] == nil then
+                unknown = unknown + 1
+            end
+        end
+        local spell = S.PublicText(C_Spell.GetSpellName(row.id))
+        if spell and (#missing > 0 or unknown > 0) then
+            local detail = table.concat(missing, ", ")
+            if unknown > 0 then
+                local unavailable = S.Text("Unable to check: %d"):format(unknown)
+                detail = detail ~= "" and detail .. "\n" .. unavailable or unavailable
+            end
+            rows[#rows + 1] = { key = row.id, label = spell, detail = detail }
+        end
+    end
+    return rows
+end
+
+function R.CloseReadyRaidBuffNames(self)
+    if not self.raid.namesOwner then return end
+    S.ToolListWindow.Close(self.raid.namesOwner)
+    self.raid.namesOwner = nil
+end
+
+function R.ReadyRaidBuffNames(self)
+    if NS.InCombat() or S.editMode then return end
+    local raid, leader, assistant = IsInRaid(), UnitIsGroupLeader("player"), UnitIsGroupAssistant("player")
+    if not (S.Public(raid) and raid == true and (S.Public(leader) and leader == true
+        or S.Public(assistant) and assistant == true)) then return end
+    local audit = { group = {}, raid = {}, list = {}, config = { raidBuffOverview = true } }
+    R.GroupRoster(audit)
+    R.BuildRaidOverview(audit, false)
+    R.RefreshRaidOverview(audit)
+    local rows = RaidNamesRows(audit)
+    if #rows == 0 then
+        R.CloseReadyRaidBuffNames(self)
+        return
+    end
+    self.raid.namesOwner = self.raid.namesOwner or {}
+    S.ToolListWindow.Open(self.raid.namesOwner, {
+        title = "Raid buffs at ready check", rows = function() return rows end,
+        valid = function() return self.active and self.config.readyCheckRaidBuffNames and not NS.InCombat() end,
+    })
+end
+
 function R.BindRaidOverview(self)
     local raid = self.raid
     if not raid.update then raid.update = self.Update end

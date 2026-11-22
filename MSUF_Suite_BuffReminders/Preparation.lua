@@ -94,6 +94,13 @@ function R.Threshold(self)
     return (c.remindBeforeMinutes or Default("remindBeforeMinutes")) * 60
 end
 
+function R.PrepareReadyCheck(self)
+    local config = self.config
+    self.readyCheck.enabled = config.readyCheckMana or config.readyCheckIssues
+        or NS.Client.modernEquipment and config.readyCheckRaidBuffNames
+    if not config.readyCheckRaidBuffNames then R.CloseReadyRaidBuffNames(self) end
+end
+
 function R.SyncPreparationEvents(self, callback)
     local listen = not self.listen.suspended
     if listen and self.readyCheck.enabled then
@@ -172,6 +179,11 @@ local function ShowPreparationAction(self, text, route)
     S.SetFont(action.label, nil, 12, "OUTLINE")
     action.route = route
     action:Show()
+end
+
+function R.ReadyCheckActions(self, allowed)
+    if allowed then R.ReadyCheck(self) end
+    if NS.Client.modernEquipment and self.config.readyCheckRaidBuffNames then R.ReadyRaidBuffNames(self) end
 end
 
 function R.ReadyCheck(self)

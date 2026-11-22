@@ -2,6 +2,53 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local R = P.BuffReminders
 local Public = S.Public
+local function NextSelfBuff(self)
+    for _, entry in ipairs(self.list.entries or {}) do
+        if entry.kind == "spell" and entry.present == false and not entry.dismissed
+            and not entry.ally and not entry.group and not entry.slot and not entry.notice then
+            return entry.spellName or entry.id
+        end
+    end
+end
+
+local function SyncSelfBuffKey(self, allowed)
+    if NS.InCombat() then return end
+    local view = self.view
+    local spell = allowed and self.config.selfBuffKey and NextSelfBuff(self) or nil
+    local button = view.selfBuffButton
+    if not button then
+        if not self.config.selfBuffKey then return end
+        button = S.CreateFrame("Button", "MSUFSuiteSelfBuff", UIParent,
+            "SecureActionButtonTemplate,SecureHandlerStateTemplate")
+        button:RegisterForClicks("AnyUp")
+        button:SetAttribute("useOnKeyDown", false)
+        button:SetAttribute("unit", "player")
+        button:SetAttribute("_onstate-msufbuff", 'if newstate == "blocked" then self:SetAttribute("type1", nil) end')
+        RegisterStateDriver(button, "msufbuff", "[combat][petbattle][vehicleui] blocked; normal")
+        view.selfBuffButton = button
+    end
+    if button:GetAttribute("spell1") ~= spell then button:SetAttribute("spell1", spell) end
+    local action = spell and button:GetAttribute("state-msufbuff") ~= "blocked" and "spell" or nil
+    if button:GetAttribute("type1") ~= action then button:SetAttribute("type1", action) end
+end
+
+local function UpdateCursorAndKey(self)
+    R.SyncCursor(self)
+    SyncSelfBuffKey(self, self.view.allowed and not S.editMode)
+end
+
+function R.RefreshSpecialControls(self)
+    R.StyleNotices(self)
+    self.view.afterUpdate = self.config.selfBuffKey and UpdateCursorAndKey or R.SyncCursor
+    if not self.config.selfBuffKey and self.view.selfBuffButton then SyncSelfBuffKey(self, false) end
+end
+
+function R.ReleaseSpecialControls(self)
+    R.HideSpecialText(self)
+    R.CloseReadyRaidBuffNames(self)
+    if self.view.selfBuffButton then SyncSelfBuffKey(self, false) end
+end
+
 local EVENTS = { "PET_BAR_UPDATE", "PET_UI_UPDATE", "UNIT_PET" }
 -- A demon's other looks report their own creature family. The family a look
 -- has is learned when a new pet appears within SUMMON_SECONDS after the
