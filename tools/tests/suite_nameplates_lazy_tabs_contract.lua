@@ -1432,6 +1432,20 @@ do
     assert(group.samples[1].sample.state.target and group.samples[2].editor.scope == "neutral"
         and group.samples[3].editor.scope == "friendly" and group.samples[4].editor.friendlyElite,
         "comparison does not render the four unit types")
+    do
+        local npc = group.samples[4]
+        local mode, tint, enabled = config.friendlyNPCs, config.friendlyNpcPlateNameTypeColor, config.friendlyNpcSkinEnabled
+        local resolve = P.Suite.HostBridge.NPCNameColor
+        P.Suite.HostBridge.NPCNameColor = function(kind) assert(kind == "friendly") return .1, .8, .3 end
+        config.friendlyNPCs, config.friendlyNpcPlateNameTypeColor, config.friendlyNpcSkinEnabled = 5, true, true
+        local label, rgb = npc.sample.nameText
+        local set = label.SetVertexColor
+        label.SetVertexColor = function(self, r, g, b, a) rgb = { r, g, b } return set(self, r, g, b, a) end
+        P.NameplatesPreview.Render(npc.editor, npc.sample)
+        assert(rgb and rgb[1] == .1 and rgb[2] == .8 and rgb[3] == .3, "friendly NPC preview used an enemy role color")
+        label.SetVertexColor, P.Suite.HostBridge.NPCNameColor = set, resolve
+        config.friendlyNPCs, config.friendlyNpcPlateNameTypeColor, config.friendlyNpcSkinEnabled = mode, tint, enabled
+    end
     local auraState = assert(group.samples[1].sample.auraPreviewState)
     assert(#auraState.containers.dots.icons == 2,
         "group sample bypassed the shared aura container preview")
