@@ -388,18 +388,35 @@ local function CanAnchor(frame)
     return S.Public(protected) and protected == false
 end
 
-local function FixedPoint(frame, point, relativePoint, x, y, nativeAnchor)
+local function FixedPoint(frame, point, relativePoint, x, y, nativeAnchor, relativeTo)
+    relativeTo = relativeTo or UIParent
     local old, parent, relative, ox, oy = frame:GetPoint(1)
     if not (S.Public(old) and S.Public(parent) and S.Public(relative) and S.Public(ox) and S.Public(oy)) then return end
     local reset = nativeAnchor ~= nil and nativeAnchor ~= "ANCHOR_NONE"
-    if not reset and old == point and parent == UIParent and relative == relativePoint and S.Finite(ox) and S.Finite(oy)
+    if not reset and old == point and parent == relativeTo and relative == relativePoint and S.Finite(ox) and S.Finite(oy)
         and math.abs(ox - x) < .01 and math.abs(oy - y) < .01 then
         local count = frame:GetNumPoints()
         if S.Public(count) and count == 1 then return end
     end
     if reset then frame:SetAnchorType("ANCHOR_NONE") end
     frame:ClearAllPoints()
-    frame:SetPoint(point, UIParent, relativePoint, x, y)
+    frame:SetPoint(point, relativeTo, relativePoint, x, y)
+end
+
+-- Use the native container's corner without calling SetDefaultAnchor, which
+-- would clear a GameTooltip whose unit data is already being processed.
+local function AnchorBlizzard(frame, nativeAnchor)
+    local container = GameTooltipDefaultContainer or SharedTooltipDefaultContainer
+    if not container or NS.Safety.IsForbidden(container) then return end
+    local point, _, _, x, y = container:GetPoint(1)
+    if not S.PublicText(point) then return end
+    if point == "TOP" or point == "BOTTOM" or point == "LEFT" or point == "RIGHT" or point == "CENTER" then
+        if not S.Finite(x) or not S.Finite(y) then return end
+        local upper = point == "TOP" or point ~= "BOTTOM" and y > 0
+        local right = point == "RIGHT" or point ~= "LEFT" and x > 0
+        point = (upper and "TOP" or "BOTTOM") .. (right and "RIGHT" or "LEFT")
+    end
+    FixedPoint(frame, point, point, 0, 0, nativeAnchor, container)
 end
 
 local function AnchorScales(frame)
@@ -455,8 +472,19 @@ local function AnchorData(t, data)
     if S.Public(primary) and rawequal(primary, data) then ApplyAnchor(t) end
 end
 
+local function AnchorBlizzardUnit(t, data)
+    local host = NS.HostBridge
+    if t ~= GameTooltip or not host or not host.OwnsUnitFrameTooltip or not host.OwnsUnitFrameTooltip(t)
+        or not S.Public(data) or type(data) ~= "table" or not CanAnchor(t) then return end
+    local primary = t:GetPrimaryTooltipData()
+    if not S.Public(primary) or not rawequal(primary, data) then return end
+    local anchor = t:GetAnchorType()
+    if S.Public(anchor) then AnchorBlizzard(t, anchor) end
+end
+
 local function AnchorUnitPanel(panel)
-    if not SharedAnchor() or not CanAnchor(panel) then return end
+    if not M.active or not CanAnchor(panel) then return end
+    if M.config.anchor == 1 then return AnchorBlizzard(panel) end
     if M.config.anchor == 2 then
         local x, y = GetCursorPosition()
         local root, scale = AnchorScales(panel)
@@ -469,9 +497,14 @@ local function AnchorUnitPanel(panel)
 end
 
 local function RefreshAnchor()
-    local active = SharedAnchor()
-    Lines.SetPositioner(active and AnchorData or nil)
-    if S.HostBridge then S.HostBridge.SetUnitFrameTooltipPanelPositioner(active and AnchorUnitPanel or nil) end
+    if SharedAnchor() then
+        Lines.SetPositioner(AnchorData)
+    elseif M.active then
+        Lines.SetPositioner(AnchorBlizzardUnit, "Unit")
+    else
+        Lines.SetPositioner(nil)
+    end
+    if NS.HostBridge then NS.HostBridge.SetUnitFrameTooltipPanelPositioner(M.active and AnchorUnitPanel or nil) end
 end
 
 local function PlacePreview(x, y)
@@ -548,13 +581,11 @@ local function Reset(self)
 end
 
 -- Hooks cannot be removed; they do nothing while the module is off.
-local function Install(self)
-    if self.hooked then return end
+local function InstallDetails(self)
     Lines.Add(self, "Unit", Unit)
     Lines.Add(self, "Item", Item)
     Lines.Add(self, "Spell", Spell)
     Lines.Add(self, "Mount", Mount)
-    hooksecurefunc("GameTooltip_SetDefaultAnchor", Anchor)
     GameTooltip:HookScript("OnHide", Hidden)
     GameTooltip:HookScript("OnTooltipCleared", function(t)
         Border.Restore(t)
@@ -562,13 +593,21 @@ local function Install(self)
     end)
     hooksecurefunc("NotifyInspect", ObserveInspect)
     hooksecurefunc("ClearInspectPlayer", function() ObserveInspect() end)
+end
+
+local function Install(self)
+    if self.hooked then return end
+    hooksecurefunc("GameTooltip_SetDefaultAnchor", Anchor)
+    if NS.Client.modernEquipment then InstallDetails(self) end
     self.hooked = true
 end
 
 function M:Enable()
-    if NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = ReleaseLegacyHealth end
-    self.lastInspect = Now()
-    self.context:Event("INSPECT_READY", InspectReady)
+    if NS.Client.modernEquipment then
+        if NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = ReleaseLegacyHealth end
+        self.lastInspect = Now()
+        self.context:Event("INSPECT_READY", InspectReady)
+    end
     Install(self)
     RefreshAnchor()
     LayoutPreview(self)
@@ -584,7 +623,7 @@ end
 function M:Disable()
     if NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = nil end
     Lines.SetPositioner(nil)
-    if S.HostBridge then S.HostBridge.SetUnitFrameTooltipPanelPositioner(nil) end
+    if NS.HostBridge then NS.HostBridge.SetUnitFrameTooltipPanelPositioner(nil) end
     if self.preview then self.preview:Hide() end
     Reset(self)
     Restore(self)

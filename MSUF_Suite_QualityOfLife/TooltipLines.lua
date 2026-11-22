@@ -17,12 +17,12 @@ S.TooltipLines = Lines
 local LABEL_R, LABEL_G, LABEL_B = .65, .81, .87
 local VALUE_R, VALUE_G, VALUE_B = 1, .88, .58
 local callbacks = {}
-local positioner
+local positioner, positionedList
 
 local function Run(list, tooltip, data)
     if not S.Public(tooltip) or tooltip == nil then return end
     local main = tooltip == GameTooltip
-    if list.positioning and positioner and (main or tooltip == BuffFrameTooltip) then
+    if list == positionedList and (main or tooltip == BuffFrameTooltip) then
         S.Dispatch(positioner, tooltip, data)
     end
     if not main and (not list.comparisons or tooltip ~= ShoppingTooltip1 and tooltip ~= ShoppingTooltip2) then return end
@@ -49,9 +49,9 @@ end
 
 -- The anchor runs before type-specific card and detail callbacks. It works
 -- with the primary build's identity and never reads its content.
-function Lines.SetPositioner(callback)
+function Lines.SetPositioner(callback, kind)
     positioner = callback
-    if callback then CallbackList("AllTypes").positioning = true end
+    positionedList = callback and CallbackList(kind or "AllTypes") or nil
 end
 
 -- callback(tooltip, data) runs for one Enum.TooltipDataType name while module

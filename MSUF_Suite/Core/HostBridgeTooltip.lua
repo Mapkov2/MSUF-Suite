@@ -4,6 +4,11 @@ local HostBridge = Suite.HostBridge
 local pendingTooltipPanel, tooltipPositioner, legacyTooltipHook, tooltipObserver
 local modifierDown = { ALT = IsAltKeyDown, SHIFT = IsShiftKeyDown, CTRL = IsControlKeyDown }
 
+function HostBridge.OwnsUnitFrameTooltip(tooltip)
+    local owner = rawget(tooltip, "_msufUnitTooltipOwner")
+    return Suite.Public(owner) and owner ~= nil
+end
+
 local function ObserveShownUnit(panel, unit, opts)
     if not tooltipObserver or not Suite.PublicText(unit) or panel._msufEditPreviewActive == true then return end
     local shown = panel:IsShown()
@@ -40,7 +45,7 @@ local function OfferTooltipPanel(_, unit, opts)
         pendingTooltipPanel = nil
         Suite.Dispatch(receive, panel)
     end
-    if tooltipPositioner then
+    if tooltipPositioner and panel._msufEditPreviewActive ~= true then
         local shown = panel:IsShown()
         if Suite.Public(shown) and shown == true then Suite.Dispatch(tooltipPositioner, panel) end
     end

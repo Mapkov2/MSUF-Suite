@@ -174,7 +174,7 @@ B.Section("merchantList", "merchant_list", "Merchant list", {
 B.Module("tooltipDetails", {
     title = "Tooltip details and anchor",
     description = "Shared tooltip anchor for items, spells, auras and unit frames, with optional tooltip details.",
-    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = RetailExtras,
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     editElement = "tooltip",
 })
 local HIDDEN_LINE = "Blanks the text on unit tooltips. Text the game keeps private is never changed."
@@ -220,6 +220,13 @@ do
     rules.cursorX.requiresChoice = { key = "anchor", values = { [2] = true } }
     rules.cursorY.requiresChoice = { key = "anchor", values = { [2] = true } }
     rules.growth.requiresChoice = { key = "anchor", values = { [3] = true } }
+    if NS.Client.isForever then
+        local anchor = { enabled = true, anchor = true, cursorX = true, cursorY = true,
+            fixedX = true, fixedY = true, growth = true }
+        for key, rule in pairs(rules) do
+            if not anchor[key] then rule.hidden = true end
+        end
+    end
 end
 B.Module("popupAttention", {
     title = "Dialogs and loot toasts",

@@ -21,7 +21,7 @@ function P.TooltipAnchorMode()
 end
 
 function P.UsesSharedTooltipAnchor()
-    return P.TooltipAnchorMode() ~= nil
+    return P.TooltipDetailsEnabled()
 end
 
 local previewSection = PAGE .. "_preview"
@@ -373,7 +373,8 @@ end
 function P.PaintTooltipPreviewBody(preview, sample)
     local rows = sample.rows
     local extra = 0
-    local details = rows and P.TooltipDetailsEnabled() and not (sample.id == "unit" and P.TooltipPreviewUsesPanel())
+    local details = rows and P.Suite.Client.modernEquipment and P.TooltipDetailsEnabled()
+        and not (sample.id == "unit" and P.TooltipPreviewUsesPanel())
     local function Row(index, label, value, detail)
         local row = preview.rows[index]
         row[1]:SetText(label)
