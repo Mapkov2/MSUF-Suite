@@ -177,6 +177,9 @@ do
         assert(owner.Suite.Config("glimmer").enabled, "Forever Glimmer must start enabled")
         owner.Suite.Config("glimmer").enabled = false -- rendering has its own native-surface fixture
         owner.Suite.Config("actionbars").enabled = false
+        assert(owner.Suite.Config("foreverPartyMap").enabled, "Forever party map must start enabled")
+        -- The party map contract exercises its separate Blizzard_WorldMap listener.
+        owner.Suite.Config("foreverPartyMap").enabled = false
     end
     owner.Suite.Config("xpBar").enabled = false
     -- Aura skins wait for Blizzard's aura addon in this lightweight fixture.
