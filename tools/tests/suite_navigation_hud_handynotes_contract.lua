@@ -185,3 +185,4 @@ Provider.Watch(OnUpdate)
 owner:OnEnable()
 assert(updates == 4 and hooks == 5, "watch re-enable failed to reuse hooks")
 print("PASS HandyNotes registry, world-only/native pin filtering, legacy coordinates, public icons/titles and bounded watchers")
+

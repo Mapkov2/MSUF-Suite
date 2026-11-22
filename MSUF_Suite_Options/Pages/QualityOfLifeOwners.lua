@@ -108,7 +108,12 @@ local function ResolveTooltipPosition(page, target)
     if not key then return end
     local meta, _, mode = P.TooltipPositionTarget(module, key)
     if not meta then return end
-    if mode and mode ~= P.TooltipAnchorMode() then
+    local canBuildPreview = P.Suite.Tooltips
+        or P.Suite.Client.AddOnEnabled("MSUF_Suite_Tooltips") and not P.Combat()
+    if mode and (not canBuildPreview or mode ~= P.TooltipAnchorMode()) then
+        if P.TooltipLayoutOwnsRule("tooltipDetails", "anchor") then
+            return P.Meta("suite_tooltips", "tooltipDetails", "anchor", "setting", P.TooltipLayoutSection)
+        end
         local feature = P.QoLView.FindFeature("tooltipDetails")
         return P.Meta("suite_tooltips", "tooltipDetails", "anchor", "setting", P.QoLView.FeatureSectionId(feature))
     end
@@ -118,6 +123,10 @@ end
 
 function Owners.Resolve(page, target)
     if not target then return end
+    local tooltip = P.ResolveTooltipMenuTarget(page, target)
+    if tooltip and (page ~= tooltip.pageKey or target.sectionId ~= tooltip.sectionId) then
+        return "suite_tooltips", tooltip, {}
+    end
     local position = ResolveTooltipPosition(page, target)
     if position then return "suite_tooltips", position, {} end
     if page == "suite_skin" then
@@ -142,6 +151,10 @@ function Owners.Resolve(page, target)
     local unit = page == "opt_misc" and unitTooltipKeys[target.settingKey]
     if unit and P.Suite.HostBridge.UnitFrameTooltipAPI() then
         if unit == "unitTooltipAnchor" and P.UsesSharedTooltipAnchor and P.UsesSharedTooltipAnchor() then
+            if P.TooltipLayoutOwnsRule("tooltipDetails", "anchor") then
+                return "suite_tooltips",
+                    P.Meta("suite_tooltips", "tooltipDetails", "anchor", "setting", P.TooltipLayoutSection), {}
+            end
             local feature = P.QoLView.FindFeature("tooltipDetails")
             if feature then
                 return "suite_tooltips",
@@ -162,7 +175,7 @@ function Owners.Resolve(page, target)
     local copy = {}
     for field, value in pairs(target) do copy[field] = value end
     copy.pageKey = destination
-    copy.sectionId = tooltips and "suite_skin_tooltips" or P.QoLView.FeatureSectionId(feature)
+    copy.sectionId = tooltips and P.TooltipBasicsSection or P.QoLView.FeatureSectionId(feature)
     copy.controlId, copy.controlPath, copy.identityKey, copy.actionKey = nil, nil, nil, nil
     key = key or old and old.kind == "setting" and old.key
     if key and feature then

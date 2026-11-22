@@ -74,6 +74,8 @@ local now,taxi=100,false
 local timeReads,taxiReads=0,0
 GetTime=function() timeReads=timeReads+1;return now end
 UnitOnTaxi=function() taxiReads=taxiReads+1;return taxi end
+local guid="Player-1-taxi"
+UnitGUID=function() return guid end
 UnitClass=function() return "Warrior","WARRIOR" end
 RAID_CLASS_COLORS={WARRIOR={r=.7,g=.5,b=.3}}
 UIParent=Widget()
@@ -154,8 +156,13 @@ S.Install=function(id,m) assert(id=="flightTimer");S.module=m end
 local qol=(arg[2] or root).."/MSUF_Suite_QualityOfLife/"
 local private={NS={Client={},Safety={IsForbidden=function(frame) return frame.forbidden==true end},
     MSUFMedia={barTexture="msuf-bar.tga"}},Suite=S}
-assert(loadfile(qol.."FlightTimer.lua"))("test",private)
-local m=S.module
+canaccesstable=function(value) return not value.restricted end
+local function LoadTimer()
+    assert(loadfile(qol.."FlightTimerData.lua"))("test",private)
+    assert(loadfile(qol.."FlightTimer.lua"))("test",private)
+    return S.module
+end
+local m=LoadTimer()
 m.active=true;m.config={width=340,scale=100,x=0,y=0,fontSize=12,showStops=true,routePreview=true,classColor=true,hideDisplay=false,
     displayStyle=1,barLook=1,barHeight=4,barColor="4a98f5",barTexture="",barSpark=true,replaceXPBar=true}
 local tickers,deadlines={},{}
@@ -607,7 +614,8 @@ end
 local manifest=assert(io.open(qol.."MSUF_Suite_QualityOfLife_Mainline.toc","rb"))
 local contents=manifest:read("*a"):gsub("\r\n","\n")
 manifest:close()
-assert(contents:find("ForeverFlightTimes.lua\nFlightTimer.lua",1,true),"flight times are missing from the load graph")
+assert(contents:find("ForeverFlightTimes.lua\nFlightTimerData.lua\nFlightTimer.lua",1,true),
+    "flight timer dependencies are missing from the load graph")
 local loadTimes=assert(loadfile(qol.."ForeverFlightTimes.lua"))
 loadTimes("test",private)
 assert(not private.ForeverFlightTimes,"Forever flight data loaded on Retail")
@@ -620,7 +628,6 @@ Enum.UIMapSystem={Taxi=1,Adventure=2}
 UnitFactionGroup=function() return "Horde" end
 GetTaxiMapID=function() return 101 end
 C_Map={GetBestMapForUnit=function() return 202 end}
-canaccesstable=function(value) return not value.restricted end
 local expectedMap=101
 local entries={
     {slotIndex=3,nodeID=58,name="Zoramgar-Außenposten",state=1},
@@ -649,9 +656,74 @@ Landed(1060)
 assert(state.timings[route]==260,"the bundled estimate prevented learning the actual flight")
 TakeOff(1100)
 assert(m.binding.enabled and m.duration.finish==1360,"a learned route lost priority over the estimate")
+now=1120
 m.host.land.OnClick()
-Landed(1120)
+assert(m.binding.enabled and m.duration.finish==1189 and m.host.time.text=="69" and Running()==0,
+    "early landing did not replace the full ETA with the remaining time to the first stop")
+assert(m.host.title.text=="Orgrimmar > Splitterholzposten" and not m.host.route.shown
+    and m.host.status.text=="Estimated time","the card did not show the estimated landing point")
+Landed(1190)
 assert(state.timings[route]==260,"an early landing overwrote the learned route")
+assert(not next(deadlines),"landing kept the shortened estimate pending")
+local firstLeg="Orgrimmar > Splitterholzposten"
+assert(not state.timings[firstLeg],"an unconfirmed early landing taught a leg time")
+
+-- The native leave button uses the same request, including in Timer bar mode.
+m.config.displayStyle,m.config.replaceXPBar=2,false
+m:Refresh()
+state.timings[firstLeg]=95
+TakeOff(1400)
+now=1430
+TaxiRequestEarlyLanding()
+local timer=m.host.bar.timer
+assert(m.host.title.text=="Splitterholzposten" and m.host.time.text=="65"
+    and timer and timer.finish==1495 and timer.length==95,"the bar did not use the learned ETA to land")
+now=1500
+TaxiRequestEarlyLanding()
+m:Refresh()
+assert(m.host.bar.timer==timer and m.host.title.text=="Splitterholzposten",
+    "a repeated request or refresh changed the selected landing point")
+now=1506;FlushDeadlines()
+assert(m.host.title.text=="Land at next stop" and not m.host.bar.timer and Running()==1,
+    "a missed estimated landing point kept its stale countdown")
+Landed(1510)
+assert(state.timings[firstLeg]==95 and state.timings[route]==260,"early landing wrote a saved time")
+m.config.displayStyle,m.config.replaceXPBar=1,true
+m:Refresh()
+TakeOff(1600)
+now=1700
+TaxiRequestEarlyLanding()
+assert(m.binding.enabled and m.duration.finish==1860 and m.host.title.text=="Orgrimmar > Zoramgar-Außenposten",
+    "early landing after the estimated first stop did not move on to the next stop")
+Landed(1860)
+
+now=1900;hooks.TakeTaxiNode(2);taxi=true;Fire("UNIT_FLAGS","player")
+now=1910
+TaxiRequestEarlyLanding()
+assert(m.binding.enabled and m.duration.finish==1995 and m.host.title.text=="Orgrimmar > Splitterholzposten",
+    "early landing dropped the known ETA on a direct flight")
+Landed(1996)
+state.timings[firstLeg]=nil
+
+-- The native request can arrive before Suite sees the first taxi flag.
+now=2050;hooks.TakeTaxiNode(3)
+TaxiRequestEarlyLanding()
+assert(not m.earlyLanding,"a request on the ground marked the next trip as shortened")
+Fire("PLAYER_CONTROL_LOST")
+now=2051;taxi=true
+TaxiRequestEarlyLanding()
+assert(m.binding.enabled and m.duration.finish==2139,"a landing request before UNIT_FLAGS missed the current trip")
+Landed(2140)
+
+entries[3].state=2
+events.TAXIMAP_OPENED(m,"TAXIMAP_OPENED",Enum.UIMapSystem.Adventure)
+TakeOff(2100)
+now=2120
+TaxiRequestEarlyLanding()
+assert(m.binding.enabled and m.duration.finish==2360 and m.host.title.text=="Orgrimmar > Zoramgar-Außenposten",
+    "an unavailable intermediate stop was picked as a landing point")
+Landed(2360)
+entries[3].state=1
 
 -- A legacy taxi map uses the player's UiMap. With no known leg chain use
 -- the measured endpoint pair. An unknown destination still learns normally.
@@ -663,12 +735,121 @@ entries[3].nodeID=99999
 events.TAXIMAP_OPENED(m,"TAXIMAP_OPENED",Enum.UIMapSystem.Taxi)
 hooks.TaxiNodeOnButtonEnter(Widget())
 assert(GameTooltip.line==route.." (4:10)","a known endpoint pair was lost when a leg was missing on TaxiFrame")
+TakeOff(2000)
+now=2020
+TaxiRequestEarlyLanding()
+assert(not m.binding.enabled and Running()==1 and m.host.status.text=="Elapsed time",
+    "a full-route estimate was used to guess past an untimed intermediate stop")
+assert(m.host.title.text=="Land at next stop" and not m.host.route.shown,
+    "an unknown landing point still showed the original destination and stops")
+Landed(2030)
 entries[1].nodeID=99998
 events.TAXIMAP_OPENED(m,"TAXIMAP_OPENED",Enum.UIMapSystem.Taxi)
 TakeOff(1200)
 assert(not m.binding.enabled and Running()==1,"a route with no data invented a countdown")
 Landed(1220)
 assert(state.timings[route]==20,"a missing route could not learn its own time")
+
+-- Keep only SavedVariables and the native taxi/clock across new UI instances.
+local function CopySaved(value)
+    if type(value) ~= "table" then return value end
+    local copy={}
+    for key,child in pairs(value) do copy[key]=CopySaved(child) end
+    return copy
+end
+local function SaveForReload(at)
+    now=at
+    Fire("PLAYER_LOGOUT")
+    return CopySaved(state)
+end
+local function Boot(at, saved, loginKind, inFlight)
+    local config,context=m.config,m.context
+    m.active=false;m:Disable()
+    wipe(events);wipe(hooks)
+    assert(not next(deadlines) and Running()==0,"shutdown left a timer behind")
+    state,now,taxi=saved,at,inFlight
+    private.NS.startingModules,private.NS.loginKind=true,loginKind
+    m=LoadTimer()
+    m.active,m.config,m.context=true,config,context
+    m:Enable()
+    private.NS.startingModules=nil
+end
+
+entries[3].nodeID,entries[1].nodeID=61,58
+expectedMap=101
+events.TAXIMAP_OPENED(m,"TAXIMAP_OPENED",Enum.UIMapSystem.Adventure)
+m.config.displayStyle,m.config.replaceXPBar=2,false
+m:Refresh()
+state.timings[route]=260
+TakeOff(2400)
+local saved=SaveForReload(2420)
+Boot(2427,saved,nil,true)
+assert(not m.host.shown and not m.departed and events.UNIT_FLAGS,"startup committed a taxi before learning the login kind")
+private.NS.loginKind="reload"
+Fire("PLAYER_ENTERING_WORLD",false,true)
+assert(m.departed==2400 and m.host.bar.timer and m.host.bar.timer.finish==2660 and m.host.bar.timer.length==260
+    and m.host.time.text=="233" and m.host.title.text=="Zoramgar-Außenposten",
+    "reload reset the flight's native countdown or bar")
+assert(not state.flight and not m.flightTimes and Running()==0 and not m.host.OnUpdate,
+    "reload kept its snapshot, loaded static data eagerly or started Lua updates")
+local reloadTimeReads=timeReads
+for _=1,1000 do Fire("UNIT_FLAGS","player") end
+assert(timeReads==reloadTimeReads and Running()==0,"restored taxi flags read the clock or started polling")
+
+now=2440
+TaxiRequestEarlyLanding()
+assert(m.host.bar.timer and m.host.bar.timer.finish==2489,"reload lost the bundled time to the next stop")
+saved=SaveForReload(2450)
+Boot(2456,saved,"reload",false)
+assert(not m.host.shown and events.UNIT_FLAGS,"the startup taxi flag could not arrive after enabling")
+saved=SaveForReload(2457)
+Boot(2459,saved,"reload",false)
+taxi=true;Fire("UNIT_FLAGS","player")
+assert(m.earlyLanding and m.host.bar.timer and m.host.bar.timer.finish==2489 and m.host.time.text=="30"
+    and m.host.title.text=="Splitterholzposten","two reloads before the taxi flag lost the shortened flight")
+saved=SaveForReload(2492)
+Boot(2500,saved,"reload",true)
+assert(m.departed==2400 and m.earlyLanding and not m.host.bar.timer and m.host.time.text=="1:40",
+    "reload restarted a stale early landing estimate")
+Landed(2510)
+assert(state.timings[route]==260 and not events.PLAYER_LOGOUT and not next(deadlines),
+    "landing after reload wrote a shortened time or kept a handler")
+
+-- A tracked flight without a route still retains the original elapsed start.
+now=2700;taxi=true;Fire("PLAYER_ENTERING_WORLD")
+saved=SaveForReload(2710)
+clockFormat={{property=2}}
+Boot(2712,saved,"reload",true)
+assert(m.departed==2700 and m.binding.textFormat=="{}" and m.duration.start==2700 and Running()==0,
+    "reload reset the elapsed clock or added a Lua ticker")
+Landed(2730)
+clockFormat=nil
+
+-- A login or a different character must never adopt a previous flight.
+state.flight={guid=guid,departed=2800,savedAt=2810}
+saved=CopySaved(state)
+Boot(2812,saved,"login",true)
+assert(m.departed==2812 and not state.flight,"a normal login adopted a saved departure")
+Landed(2820)
+state.flight={guid="Player-2-foreign",departed=2800,savedAt=2810}
+Boot(2830,CopySaved(state),"reload",true)
+assert(m.departed==2830 and not state.flight,"reload adopted a different character's flight")
+Landed(2840)
+state.flight={guid=guid,departed=2800,savedAt=2840}
+Boot(2842,CopySaved(state),"reload",false)
+now=2848;taxi=true;FlushDeadlines()
+assert(m.departed==2800 and m.resumed,"the startup deadline dropped a late taxi flag without an event")
+Landed(2850)
+state.flight={guid=guid,departed=2800,savedAt=2850}
+Boot(2852,CopySaved(state),"reload",false)
+now=2858;FlushDeadlines()
+assert(not m.resume and not events.UNIT_FLAGS and not events.PLAYER_LOGOUT and Running()==0,
+    "a grounded reload with a snapshot kept listening after its startup window")
+taxi=true;Fire("PLAYER_ENTERING_WORLD")
+assert(m.departed==2858,"a later untracked flight adopted the expired reload record")
+Landed(2860)
+m.config.displayStyle=1
+m:Refresh()
 
 local Strict=dofile(root.."/../MidnightSimpleUnitFrames-7.0/tools/tests/classpower_secrets.lua")
 Strict.Install()
@@ -678,7 +859,9 @@ S.Public=function(value) return not issecretvalue(value) end
 local secretNumber=Strict.New("number")
 local secretBoolean=Strict.New("boolean")
 local secretText=Strict.New("string")
-local stop=Strict.Watch(qol.."FlightTimer.lua",{strict=true})
+local stop=Strict.Watch(qol.."FlightTimerData.lua",{strict=true})
+expectedMap=202
+entries[1].nodeID,entries[3].nodeID=99998,99999
 entries[4]={slotIndex=secretNumber,nodeID=61,name="Restricted slot",state=1}
 entries[5]={slotIndex=2,nodeID=secretNumber,name="Restricted node",state=1}
 entries[6]={slotIndex=2,nodeID=61,name=secretText,state=1}

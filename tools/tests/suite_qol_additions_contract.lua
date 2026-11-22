@@ -67,7 +67,7 @@ C_Item = { GetItemCount = function(id, bank, uses, reagent, account)
     assert(id == 123 and bank and not uses and reagent and account)
     return 7
 end }
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ItemCounts.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/ItemCounts.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local counts = modules.itemCounts
 counts.context, counts.config, counts.active = Context(), {}, true
 counts:Enable()

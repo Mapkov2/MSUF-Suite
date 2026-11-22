@@ -1,8 +1,10 @@
 local root = assert(arg[1])
 local FONT, OVERRIDE = "MSUF.ttf", "CombatOverride.ttf"
 local CVAR = "floatingCombatTextCombatDamage_v2"
+local WORLD_SCALE = "WorldTextScale_v2"
 local NOOP = function() end
 local cvar, font, now = "1", FONT, 0
+local worldScale, worldWrites, clampWorldScale, inCombat = "1.25", 0, false, false
 local frames, fontWrites, paints, anchors, clockReads, styleCalls = 0, 0, 0, 0, 0, 0
 local secret = setmetatable({}, {
     __tostring = function() error("secret converted in Lua") end,
@@ -58,22 +60,51 @@ wipe = function(map) for key in pairs(map) do map[key] = nil end return map end
 GetTime = function() clockReads = clockReads + 1; return now end
 UnitName = function() return "Tester" end
 GetRealmName = function() return "Test realm" end
-Enum = { PlayerSwingType = { MainHand = 0, OffHand = 1, Ranged = 2 }, Damageclass = { MaskPhysical = 1 } }
+Enum = { PlayerSwingType = { MainHand = 0, OffHand = 1, Ranged = 2 }, Damageclass = { MaskPhysical = 1 },
+    PowerType = { Mana = 0, Rage = 1, ComboPoints = 4 } }
 C_Spell = { IsSpellHarmful = function(spellID) return spellID == 11 end }
 C_CVar = {
-    GetCVar = function(key) assert(key == CVAR); return cvar end,
-    SetCVar = function(key, value) assert(key == CVAR); cvar = value; return true end,
+    GetCVar = function(key)
+        assert(key == CVAR or key == WORLD_SCALE)
+        return key == WORLD_SCALE and worldScale or cvar
+    end,
+    SetCVar = function(key, value)
+        assert(key == CVAR or key == WORLD_SCALE)
+        if key == WORLD_SCALE then
+            assert(not inCombat, "Wrote the world-text CVar during combat")
+            if tonumber(value) == 1000 then value = clampWorldScale and "5.000000" or "1000.000000" end
+            worldScale = value
+            worldWrites = worldWrites + 1
+        else
+            cvar = value
+        end
+        return true
+    end,
 }
 local level, xp, maxXP, activeEvent, eventReads = 20, 880, 1000, nil, 0
 UnitLevel = function() return level end
 UnitXP = function() return xp end
 UnitXPMax = function() return maxXP end
-local activeUnit, unitWrites = nil, 0
+local pendingTimers = {}
+C_Timer = { After = function(delay, callback)
+    pendingTimers[#pendingTimers + 1] = { due = now + delay, callback = callback }
+end }
+local power, powerMax = { [0] = 80, [4] = 1 }, { [0] = 100, [4] = 5 }
+UnitPower = function(unit, powerType)
+    assert(unit == "player")
+    return power[powerType or 0] or 0
+end
+UnitPowerMax = function(unit, powerType)
+    assert(unit == "player")
+    return powerMax[powerType] or 0
+end
+local honor, honorMax, honorLevel = 980, 1000, 8
+local activeUnit, unitWrites, eventPowerToken = nil, 0, secret
 C_Secrets = { ShouldUnitIdentityBeSecret = function() return false end }
 C_CombatText = { GetCurrentEventInfo = function()
     assert(activeEvent == "COMBAT_TEXT_UPDATE", "Read event data outside its synchronous dispatch")
     eventReads = eventReads + 1
-    return secret, secret
+    return secret, eventPowerToken
 end, GetActiveUnit = function() return activeUnit end,
     SetActiveUnit = function(unit) activeUnit, unitWrites = unit, unitWrites + 1 end,
 }
@@ -94,7 +125,7 @@ local NS = {
     Public = function(value) return not rawequal(value, secret) end,
     Safety = { IsForbidden = function(plate) return plate.forbidden == true end },
     Dispatch = function(fn, ...) return fn(...) end,
-    InCombat = function() return false end,
+    InCombat = function() return inCombat end,
     Skin = { Release = NOOP },
 }
 _G.MSUFSuite = NS
@@ -110,6 +141,9 @@ assert(spec.available(), "Combat text must be available on Retail")
 NS.Client.isForever = true
 S.CreateFrame = function() frames = frames + 1; return New() end
 S.CreateFontString = New
+S.HonorProgress = function()
+    if NS.Finite(honor) and NS.Finite(honorLevel) then return honor, honorMax, honorLevel end
+end
 S.Public = NS.Public
 NS.Finite = function(value) return type(value) == "number" end
 NS.Text = function(text) return text end
@@ -122,6 +156,7 @@ S.SetFont = function(text, path, size)
 end
 local P = {}
 assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", P)
+assert(loadfile(root .. "/MSUF_Suite_Modules/Timers.lua"))("MSUF_Suite_Modules", P)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/FloatingTextDisplay.lua"))("MSUF_Suite_QualityOfLife", P)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/FloatingTextGains.lua"))("MSUF_Suite_QualityOfLife", P)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/FloatingCombatText.lua"))("MSUF_Suite_QualityOfLife", P)
@@ -157,6 +192,14 @@ local function Emit(event, ...)
     if context.frame then EmitOn(context.frame, event, ...) end
     if context.directFrame then EmitOn(context.directFrame, event, ...) end
     activeEvent = nil
+end
+local function FlushTimers()
+    local timers = pendingTimers
+    pendingTimers = {}
+    for _, timer in ipairs(timers) do
+        now = math.max(now, timer.due)
+        timer.callback()
+    end
 end
 local function CheckSpacing()
     for index, entry in ipairs(D.slots) do
@@ -304,6 +347,68 @@ assert(not next(D.occupied) and not next(D.head) and not next(D.tail),
 Emit("NAME_PLATE_UNIT_ADDED", "nameplate2")
 Emit("PLAYER_TARGET_CHANGED")
 
+assert(spec.rules.hideBlizzardWorldText and spec.rules.hideBlizzardWorldText.default == false,
+    "Missing opt-in Forever world-text setting")
+assert(worldScale == "1.25" and worldWrites == 0, "Default settings changed native world text")
+
+local function CheckWorldTextReplacement()
+    local baselineXP = xp
+    M.config.hideBlizzardWorldText, M.config.hideBlizzard = true, false
+    M:Refresh()
+    assert(tonumber(worldScale) == 1000 and worldWrites == 1 and cvar == "1",
+        "World-text replacement depends on the separate damage setting")
+    assert(context.directFrame.events.PLAYER_XP_UPDATE and M.config.showXP == false,
+        "Suite XP did not start without changing the stored XP preference")
+
+    inCombat = true
+    Emit("PLAYER_REGEN_DISABLED")
+    xp = xp + 20
+    Emit("PLAYER_XP_UPDATE", "player")
+    FlushTimers()
+    assert(D.slots[D.cursor].text.format == "+%s XP" and D.slots[D.cursor].text.amount == 20,
+        "Suite XP did not render with native world text hidden in combat")
+    assert(tonumber(worldScale) == 1000 and worldWrites == 1, "Combat changed the world-text override")
+    inCombat = false
+    Emit("PLAYER_REGEN_ENABLED")
+
+    -- Recreate the controller's memory with the persisted override still present.
+    M:Disable()
+    M:Enable()
+    assert(tonumber(worldScale) == 1000 and worldWrites == 1, "Reload reapplied the unchanged override")
+    M.config.hideBlizzardWorldText = false
+    M:Refresh()
+    assert(worldScale == "1.25" and worldWrites == 2, "Turning off the override lost the original world-text scale")
+    assert(not context.directFrame.events.PLAYER_XP_UPDATE, "Restoring Blizzard kept the forced Suite XP listener")
+
+    clampWorldScale, M.config.hideBlizzardWorldText = true, true
+    M:Refresh()
+    assert(worldScale == "1.25" and not context.directFrame.events.PLAYER_XP_UPDATE,
+        "A clamped CVar left a partial override or duplicate XP")
+    clampWorldScale = false
+    M:Refresh()
+    assert(tonumber(worldScale) == 1000 and context.directFrame.events.PLAYER_XP_UPDATE,
+        "World-text override could not recover from a clamped CVar")
+    worldScale = "1.6" -- A different owner changed the CVar.
+    Emit("CVAR_UPDATE", "WORLDTEXTSCALE_V2")
+    assert(not context.directFrame.events.PLAYER_XP_UPDATE, "External CVar edit brought back duplicate XP")
+    M.config.hideBlizzardWorldText, M.config.hideBlizzard = false, true
+    M:Refresh()
+    assert(worldScale == "1.6", "Releasing the override erased a later external edit")
+
+    M.config.hideBlizzardWorldText = true
+    M:Refresh()
+    inCombat = true
+    Emit("PLAYER_LOGOUT")
+    assert(tonumber(worldScale) == 1000, "A combat reload lost the active override")
+    inCombat = false
+    Emit("PLAYER_LOGOUT")
+    assert(worldScale == "1.6", "Logging out left Blizzard world text hidden")
+    M.config.hideBlizzardWorldText = false
+    M:Refresh()
+    xp = baselineXP
+end
+CheckWorldTextReplacement()
+
 font = "New MSUF profile.ttf"
 M.config.hideBlizzard = false
 M:Refresh()
@@ -335,6 +440,133 @@ for _, override in ipairs({ "", "CombatTextFont" }) do
         CheckSpacing()
     end
 end
+local function CheckForeverGainFeeds()
+    local previousLevel, previousXP = level, xp
+    M.config.hideBlizzardWorldText = true
+    M.config.showHonor, M.config.showPower, M.config.showCombatState = true, true, true
+    M:Refresh()
+    inCombat = true
+    Emit("PLAYER_REGEN_DISABLED")
+    assert(D.slots[D.cursor].text.label == "Entering combat")
+
+    -- The level signal completes a rollover even with no second XP update.
+    xp = 10
+    Emit("PLAYER_XP_UPDATE", "player")
+    level = level + 1
+    Emit("PLAYER_LEVEL_UP", level)
+    FlushTimers()
+    local foundXP, foundLevel
+    for _, slot in ipairs(D.slots) do
+        if slot.anchor then
+            local format, amount = slot.text.format, slot.text.amount
+            if format == "+%s XP" and amount == maxXP - previousXP + 10 then foundXP = true end
+            if format == "Level %d" and amount == level then foundLevel = true end
+        end
+    end
+    assert(foundXP, "Level-up rollover lost XP when no second XP update arrived")
+    assert(foundLevel, "The level-up notification was lost when Blizzard world text was hidden")
+    local count = paints
+    Emit("CHAT_MSG_COMBAT_XP_GAIN", secret)
+    Emit("PLAYER_XP_UPDATE", "player")
+    FlushTimers()
+    assert(paints == count, "Two XP signals printed the same gain twice")
+    -- The level can also change first, while UnitXP still reports the old value.
+    xp = 900
+    Emit("PLAYER_XP_UPDATE", "player")
+    FlushTimers()
+    level = level + 1
+    Emit("PLAYER_LEVEL_UP", level)
+    xp = 25
+    Emit("PLAYER_XP_UPDATE", "player")
+    FlushTimers()
+    assert(D.slots[D.cursor].text.format == "+%s XP" and D.slots[D.cursor].text.amount == 125,
+        "A new level with the old XP counter produced a fabricated gain")
+    M.config.showLevelUp = false
+    M:Refresh()
+    count = paints
+    Emit("CHAT_MSG_COMBAT_XP_GAIN", secret)
+    xp = xp + 12
+    FlushTimers()
+    assert(paints == count + 1 and D.slots[D.cursor].text.format == "+%s XP" and D.slots[D.cursor].text.amount == 12,
+        "The additional XP signal did not wait for the player counter")
+
+    count = paints
+    honor, honorLevel = 15, honorLevel + 1
+    Emit("HONOR_XP_UPDATE", "player")
+    assert(paints == count + 1 and D.slots[D.cursor].text.format == "+%s Honor" and D.slots[D.cursor].text.amount == 35,
+        "Honor was lost without a combat-text event or at an honor-level rollover")
+    Emit("COMBAT_TEXT_UPDATE", "HONOR_GAINED")
+    Emit("HONOR_XP_UPDATE", "player")
+    assert(paints == count + 1, "Honor from the player counter and native feed was duplicated")
+    local readableHonor = honor
+    honor = secret
+    Emit("COMBAT_TEXT_UPDATE", "HONOR_GAINED")
+    assert(paints == count + 2 and D.slots[D.cursor].text.amount == secret,
+        "Native honor was lost when the counter was unreadable")
+    honor = readableHonor
+
+    count = paints
+    power[4] = 3
+    Emit("UNIT_POWER_UPDATE", "target", "COMBO_POINTS")
+    assert(paints == count, "A non-player power event produced a gain")
+    Emit("UNIT_POWER_UPDATE", "player", "COMBO_POINTS")
+    assert(paints == count + 1 and D.slots[D.cursor].text.format == "+%s Resource" and D.slots[D.cursor].text.amount == 2,
+        "A player resource increased without producing text")
+    eventPowerToken = "COMBO_POINTS"
+    Emit("COMBAT_TEXT_UPDATE", "ENERGIZE")
+    eventPowerToken = secret
+    Emit("COMBAT_TEXT_UPDATE", "ENERGIZE")
+    power[4] = 1
+    Emit("UNIT_POWER_UPDATE", "player", "COMBO_POINTS")
+    power[4] = secret
+    eventPowerToken = "COMBO_POINTS"
+    Emit("COMBAT_TEXT_UPDATE", "ENERGIZE")
+    assert(paints == count + 2 and D.slots[D.cursor].text.amount == secret,
+        "A restricted power counter prevented the native resource notification")
+    count = count + 1
+    activeUnit = "vehicle"
+    Emit("COMBAT_TEXT_UPDATE", "ENERGIZE")
+    assert(paints == count + 2 and D.slots[D.cursor].text.amount == secret,
+        "The player counter swallowed a vehicle resource gain")
+    count = count + 1
+    activeUnit, eventPowerToken = "player", "ALTERNATE"
+    Emit("COMBAT_TEXT_UPDATE", "ENERGIZE")
+    assert(paints == count + 2, "A power type outside the player counters was dropped")
+    count = count + 1
+    eventPowerToken = secret
+    Emit("UNIT_POWER_UPDATE", "player", "COMBO_POINTS")
+    Emit("UNIT_POWER_UPDATE", "player", secret)
+    -- The next visible update seeds the baseline for each affected resource.
+    Emit("UNIT_POWER_UPDATE", "player", "MANA")
+    power[4] = 3
+    Emit("UNIT_POWER_UPDATE", "player", "COMBO_POINTS")
+    assert(paints == count + 1, "Duplicate, spent or unreadable power produced a gain")
+    power[0] = 90
+    Emit("UNIT_POWER_UPDATE", "player", "MANA")
+    power[0] = 93
+    Emit("UNIT_POWER_UPDATE", "player", "MANA")
+    assert(paints == count + 1, "Continuous regeneration interrupted progression text")
+    FlushTimers()
+    assert(paints == count + 2 and D.slots[D.cursor].text.amount == 13, "Primary power gains were not batched")
+    power[4] = 4
+    Emit("UNIT_DISPLAYPOWER", "player")
+    Emit("UNIT_POWER_UPDATE", "player", "COMBO_POINTS")
+    assert(paints == count + 2, "A power reset produced a gain")
+
+    inCombat = false
+    Emit("PLAYER_REGEN_ENABLED")
+    M.config.hideBlizzardWorldText = false
+    M:Refresh()
+    assert(not context.directFrame.events.HONOR_XP_UPDATE and not context.frame.events.UNIT_POWER_UPDATE
+        and not context.directFrame.events.CHAT_MSG_COMBAT_XP_GAIN, "Opting out left the replacement feeds running")
+    assert(context.directFrame.events.COMBAT_TEXT_UPDATE, "Opting out did not restore the original combat text feed")
+    M.config.showHonor, M.config.showPower, M.config.showCombatState, M.config.showLevelUp = false, false, false, true
+    M:Refresh()
+    level, xp = previousLevel, previousXP
+    eventReads = 0
+end
+CheckForeverGainFeeds()
+
 M.active = false
 M:Disable()
 CheckOwners()
@@ -350,7 +582,9 @@ assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/QualityOfLifeCombatText.lua"))
 S.catalog = NS.SuiteCatalog
 local retail = S.catalog[id]
 assert(retail.available() and retail.defaultEnabled and retail.rules.enabled.default)
-M.config = {}
+assert(not retail.rules.hideBlizzardWorldText, "Forever-only option appeared on Retail")
+M.config = { hideBlizzardWorldText = true }
+local retailWorldWrites = worldWrites
 for key, rule in pairs(retail.rules) do M.config[key] = rule.default end
 assert(M.config.hitSource == 3 and M.config.hitSide == 3)
 assert(retail.rules.hitSource.choices[1] == "Your spell hits (estimated)")
@@ -362,6 +596,7 @@ M:Enable()
 assert(activeUnit == "vehicle" and unitWrites == 1, "Gain display stole the active unit from Own combat text")
 assert(context.frame.events.UNIT_COMBAT == "target" and not context.directFrame.events.PLAYER_SWING)
 assert(cvar == "1", "Retail must not hide Blizzard numbers by default")
+assert(worldWrites == retailWorldWrites, "A stored Forever setting changed world text on Retail")
 Hit("target", "CRITICAL")
 local crit = D.slots[D.cursor]
 assert(crit.anchor == D.sides[3] and crit.text == crit.critical and crit.text.amount == secret)
@@ -379,8 +614,24 @@ Emit("COMBAT_TEXT_UPDATE", "DAMAGE")
 Emit("COMBAT_TEXT_UPDATE", "HEAL_CRIT")
 assert(paints == prev and eventReads == 0, "Own combat text fed the outgoing display")
 
+assert(not context.directFrame.events.PLAYER_XP_UPDATE, "Default settings duplicate Blizzard's XP text")
+xp = xp + 10
+Emit("PLAYER_XP_UPDATE", "player")
+assert(paints == prev, "Default settings displayed extra XP")
+Emit("PLAYER_LEVEL_UP", level)
+assert(D.slots[D.cursor].text.format == "Level %d", "Default XP setting disabled level-up notices")
+
+M.config.showXP, M.config.gainSide = true, 1
+M:Refresh()
 xp = xp + 40
 Emit("PLAYER_XP_UPDATE", "player")
+assert(D.slots[D.cursor].anchor == D.sides[2], "XP did not inherit the saved progression position")
+M.config.xpSide, M.config.showLevelUp = 3, false
+M:Refresh()
+assert(not context.directFrame.events.PLAYER_LEVEL_UP, "Level-up switch did not release its event")
+xp = xp + 40
+Emit("PLAYER_XP_UPDATE", "player")
+assert(D.slots[D.cursor].anchor == D.sides[3], "XP did not move independently")
 assert(D.slots[D.cursor].text.amount == 40 and D.slots[D.cursor].text.format == "+%s XP")
 local afterXP = paints
 Emit("PLAYER_XP_UPDATE", "player")
@@ -391,9 +642,11 @@ assert(paints == afterXP, "Rollover upset the baseline before level changed")
 level = level + 1
 Emit("PLAYER_LEVEL_UP", level)
 Emit("PLAYER_XP_UPDATE", "player")
-assert(D.slots[D.cursor].text.amount == 250, "XP lost across a level up")
+assert(D.slots[D.cursor].text.amount == 200, "XP lost across a level up")
 Emit("COMBAT_TEXT_UPDATE", "FACTION")
-assert(eventReads == 1 and D.slots[D.cursor].text.format == "%s Reputation" and D.slots[D.cursor].text.amount == secret)
+local reputation = D.slots[D.cursor]
+assert(eventReads == 1 and reputation.text.format == "%s Reputation" and reputation.text.amount == secret)
+assert(reputation.anchor == D.sides[2], "XP placement moved the rest of the progression text")
 
 M.config.scrollStyle, M.config.hitSide, M.config.avoidSide, M.config.showPower = 2, 2, 3, true
 M:Refresh()

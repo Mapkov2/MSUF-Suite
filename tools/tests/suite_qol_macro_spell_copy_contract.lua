@@ -68,7 +68,7 @@ local tooltips = Support.TooltipFixture(root, S, NS)
 local function spellPostCall(tooltip, data) tooltips.Run(4, tooltip, data) end
 local P = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SlashCommands.lua"))("QoL", P)
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipSpellCopy.lua"))("QoL", P)
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipSpellCopy.lua"))("QoL", P)
 
 local copy = assert(modules.tooltipSpellCopy)
 local events = {}

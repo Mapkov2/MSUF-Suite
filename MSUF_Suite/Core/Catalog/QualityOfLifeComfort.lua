@@ -1,4 +1,5 @@
 local _, NS = ...
+local Tooltips = NS.CatalogBuild.ForAddon("MSUF_Suite_Tooltips")
 local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local function Forever()
     if NS.Client.isForever then return true end
@@ -14,7 +15,7 @@ B.Module("questRewardValue", {
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = Forever,
 })
 B.Section("questRewardValue", "quest_reward_value", "Quest reward value", {})
-B.Module("auctionPriceTooltip", {
+Tooltips.Module("auctionPriceTooltip", {
     title = "Auction house price comparison",
     description = "Show auction prices, vendor sell prices and what a replacement costs after selling the equipped item.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = Forever,

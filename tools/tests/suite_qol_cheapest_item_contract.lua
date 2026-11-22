@@ -10,12 +10,15 @@
 --     it the search box's room back when the module stops), on the title of
 --     Blizzard's bag window otherwise, left of the Suite caption under the
 --     Suite Bags Blizzard grid;
---   * no line of CheapestItem.lua runs during combat or an ordinary bag
---     refresh: only the combat edges and the player's own hover and clicks.
+--   * the Suite window uses the same protection rules from a manual open or
+--     a full-inventory loot error, and a changed row cannot hijack a click;
+--   * ordinary bag updates do no work with the window closed and no hover,
+--     and the feature releases its loot and bag watches in combat.
 local root, flavor = assert(arg[1]), arg[2] or "Mainline"
 local Harness = dofile(root .. "/tools/tests/suite_bags_harness.lua")
 local SOURCE = "CheapestItem.lua"
 local QUESTION = "suite-delete-cheapest-item"
+local WINDOW_NAME = "MSUFSuiteCheapestItems"
 
 -- Item IDs: Poor 5c, Poor 3c x4 (12c), Poor 9c, Common 1c, then the stacks
 -- that must never be offered.
@@ -74,6 +77,26 @@ local function Client(W)
         local item = W.Item(bag, slot)
         if item and item.refundable then return { refundSeconds = 3600, money = 500, itemCount = 0, currencyCount = 0 } end
     end
+    _G[WINDOW_NAME] = nil
+    ERR_INV_FULL = "Inventory is full."
+    GetNumLootItems = function() return W.lootCount or 0 end
+    SpellIsTargeting = function() return W.targeting or false end
+    ClearCursor = function()
+        local cursor = W.cursor
+        W.cursor = nil
+        if cursor and cursor.from then W.Put(cursor.from[1], cursor.from[2], cursor.id, cursor.count) end
+    end
+    C_Item.GetItemIconByID = function(id) return W.data[id] and id + 1000 end
+    W.GameTooltip.SetHyperlink = function(tooltip, link) tooltip:SetText(link) end
+    W.templates.BackdropTemplate = function(frame)
+        frame.SetBackdrop = function(self, backdrop) self.backdrop = backdrop end
+        frame.SetBackdropColor = function() end
+        frame.SetBackdropBorderColor = function() end
+    end
+    local widget = getmetatable(W.UIParent)
+    widget.SetMaxLines = function() end
+
+    W.Insecure(assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua")), "MSUF_Suite_Modules", { NS = W.NS, Suite = W.S })
     W.questions, W.hidden, W.prints, W.deleted, W.menus = {}, {}, {}, {}, {}
     W.S.Confirm = function(key, data) W.questions[#W.questions + 1] = { key = key, data = data } end
     W.S.HideQuestion = function(key) W.hidden[#W.hidden + 1] = key end
@@ -190,13 +213,20 @@ local function MenuRoot()
     return setmetatable({ children = {} }, { __index = methods })
 end
 
-local function OpenMenu(W, button, mouseButton)
+local function OpenMenu(W, button)
     local count = #W.menus
-    Run(W, button, "OnClick", mouseButton or "RightButton")
+    Run(W, button, "OnClick", "RightButton")
     local menu = assert(W.menus[count + 1], "click opened no list")
     local list = MenuRoot()
     W.Insecure(menu.generator, menu.owner, list, unpack(menu.args))
     return list
+end
+
+local function OpenWindow(W, button)
+    Run(W, button, "OnClick", "LeftButton")
+    local window = assert(_G[WINDOW_NAME], "click opened no deletion window")
+    assert(window:IsShown(), "deletion window was hidden")
+    return window
 end
 
 local function RequestFirst(W, button)
@@ -332,15 +362,13 @@ end
 do
     local W = World({ tool = { confirm = false } })
     local tool = W.V.cheapest
-    local left, right = OpenMenu(W, tool, "LeftButton"), OpenMenu(W, tool)
-    assert(#W.deleted == 0 and #W.questions == 0, "opening either menu must only show the choices")
-    local action = left.children[2]
-    assert(action.text == "Destroy the three cheapest stacks" and action.enabled, "left-click needs the bulk action at the top")
-    assert(#left.children == #right.children + 1 and left.children[1].text == right.children[1].text)
-    for i = 2, #right.children do
-        assert(left.children[i + 1].text == right.children[i].text, "left-click must keep the right-click list")
-    end
-    W.Insecure(action.callback)
+    local window = OpenWindow(W, tool)
+    assert(#W.deleted == 0 and #W.questions == 0, "opening the window must only show the choices")
+    local action = window.batch
+    assert(action.text == "Destroy the three cheapest stacks" and action:IsEnabled(), "the window lost the bulk action")
+    assert(window.rows[1].item.itemID == FANG and window.rows[2].item.itemID == BONE
+        and window.rows[3].item.itemID == CLOTH, "the window must list the cheapest stack first")
+    Run(W, action, "OnClick")
     local question = assert(W.questions[1], "bulk deletion needs a confirmation")
     for _, id in ipairs({ FANG, BONE, CLOTH }) do
         assert(question.data.text_arg1:find("item:" .. id, 1, true), "confirmation must name each stack")
@@ -350,8 +378,8 @@ do
     W.Insecure(question.data.callback)
     assert(#W.deleted == 0 and #W.calls.pickups == 0, "a changed stack must abort the whole batch before pickup")
 
-    action = OpenMenu(W, tool, "LeftButton").children[2]
-    W.Insecure(action.callback)
+    action = OpenWindow(W, tool).batch
+    Run(W, action, "OnClick")
     question = W.questions[2]
     local delete = DeleteCursorItem
     DeleteCursorItem = function()
@@ -359,22 +387,23 @@ do
     end
     W.Insecure(question.data.callback)
     DeleteCursorItem = delete
-    assert(#W.deleted == 1 and #W.calls.pickups == 2 and W.Item(1, 3), "a blocked delete must stop the remaining batch")
+    assert(#W.deleted == 1 and #W.calls.pickups == 2 and not W.cursor and W.Item(1, 3).id == BONE,
+        "a blocked delete must put back the held stack and stop the remaining batch")
 end
 
 do
     local W = World()
     local tool = W.V.cheapest
-    local action = OpenMenu(W, tool, "LeftButton").children[2]
-    W.Insecure(action.callback)
+    local action = OpenWindow(W, tool).batch
+    Run(W, action, "OnClick")
     W.Insecure(W.questions[1].data.cancelCallback)
     W.Insecure(W.questions[1].data.callback)
     assert(#W.deleted == 0, "a cancelled confirmation must stay cancelled")
-    W.Insecure(action.callback)
+    Run(W, action, "OnClick")
     W.Insecure(W.questions[2].data.callback)
     assert(#W.deleted == 3 and W.deleted[1].id == FANG and W.deleted[2].id == BONE and W.deleted[3].id == CLOTH,
         "the batch must destroy the three displayed stacks in order")
-    assert(W.Item(0, 4).id == LINEN and not OpenMenu(W, tool, "LeftButton").children[2].enabled,
+    assert(W.Item(0, 4).id == LINEN and not OpenWindow(W, tool).batch:IsEnabled(),
         "the batch must be disabled with fewer than three eligible stacks")
 end
 
@@ -407,6 +436,75 @@ do
     assert(#W.taint == 0 and #W.errors == 0, "modeled native failure: " .. table.concat(W.taint, ", "))
 end
 
+------------------------------------------------------------------ manual and loot window
+do
+    local W = World({ tool = { confirm = false } })
+    local window = OpenWindow(W, W.V.cheapest)
+    local row = window.rows[1]
+    assert(window.backdrop and UISpecialFrames[#UISpecialFrames] == WINDOW_NAME, "the window needs Suite chrome and Escape registration")
+    assert(row.delete:GetText() == "Delete" and row.icon:GetTexture() == FANG + 1000 and row.value:GetText() == "5c",
+        "the cheapest stack needs its own visible delete action, icon and vendor value")
+    assert(window.rows[3].label:GetText():find("x4", 1, true), "stack size is missing")
+    Run(W, row, "OnEnter")
+    assert(W.GameTooltip:Has("item:" .. FANG), "the row tooltip should describe the shown stack")
+    W.targeting = true
+    Run(W, row.delete, "OnClick")
+    assert(#W.deleted == 0 and #W.calls.pickups == 0, "a targeting spell must not be applied by the delete button")
+    W.targeting = false
+    W.Put(0, 1, FANG, 2)
+    Run(W, row.delete, "OnClick")
+    assert(#W.deleted == 0 and #W.calls.pickups == 0, "a changed row must not delete another stack")
+    Run(W, row.delete, "OnMouseDown", "LeftButton")
+    W.Advance(.2)
+    Run(W, row.delete, "OnClick")
+    assert(#W.deleted == 0 and #W.calls.pickups == 0, "a refresh must not move a different stack under a pressed button")
+    Run(W, row.delete, "OnMouseDown", "LeftButton")
+    Run(W, row.delete, "OnClick")
+    assert(#W.deleted == 1 and W.deleted[1].id == BONE, "the click must delete the stack shown by its row")
+    W.Advance(.2)
+    assert(row.item.itemID == FANG and row.value:GetText() == "10c", "the window did not refresh after deletion")
+    Run(W, row, "OnClick", "RightButton")
+    local menu, rootMenu = assert(W.menus[#W.menus]), MenuRoot()
+    W.Insecure(menu.generator, menu.owner, rootMenu)
+    W.Insecure(Find(rootMenu, "Never delete this item").callback)
+    assert(row.item.itemID == CLOTH, "protecting a row must remove it from the offers")
+    W.CloseBags()
+    assert(not window:IsShown() and not Listens(W, "BAG_UPDATE_DELAYED"), "closing bags must release the manual window")
+end
+
+do
+    local W = World()
+    W.CloseBags()
+    W.Fire("UI_ERROR_MESSAGE", 2, ERR_INV_FULL)
+    assert(not _G[WINDOW_NAME], "an inventory error outside loot must not create a window")
+    W.lootCount = 1
+    W.Fire("UI_ERROR_MESSAGE", 3, "Other error")
+    assert(not _G[WINDOW_NAME], "an unrelated loot error must not create a window")
+    W.Fire("UI_ERROR_MESSAGE", 2, ERR_INV_FULL)
+    local window = assert(_G[WINDOW_NAME], "full bags during loot must create a window")
+    assert(window:IsShown() and window.fromLoot and not window.batch:IsShown() and not W.C:Usable(),
+        "the loot window must offer individual stacks even with the bags closed")
+    assert(#W.deleted == 0 and #W.calls.pickups == 0, "an error event must never initiate deletion")
+    Run(W, window.rows[1].delete, "OnClick")
+    local question = assert(W.questions[1], "the loot action must honor the confirmation setting")
+    W.Fire("LOOT_CLOSED")
+    W.Insecure(question.data.callback)
+    assert(not window:IsShown() and not Listens(W, "LOOT_CLOSED") and #W.deleted == 0,
+        "closing loot must cancel pending deletion and release its event")
+    W.Fire("UI_ERROR_MESSAGE", 2, ERR_INV_FULL)
+    Run(W, window.close, "OnClick")
+    W.Fire("UI_ERROR_MESSAGE", 2, ERR_INV_FULL)
+    assert(not window:IsShown(), "repeated errors in the same loot session must respect dismissal")
+    W.Fire("LOOT_CLOSED")
+    W.Fire("UI_ERROR_MESSAGE", 2, ERR_INV_FULL)
+    assert(window:IsShown(), "the next loot session must be able to offer space")
+    Run(W, window.rows[1].delete, "OnClick")
+    W.Insecure(W.questions[2].data.callback)
+    assert(#W.deleted == 1 and W.deleted[1].id == FANG, "the explicit loot-window confirmation must remove the chosen stack")
+    W.StopTool()
+    assert(not window:IsShown() and not Listens(W, "UI_ERROR_MESSAGE"), "disabling must release the window and error watch")
+end
+
 ------------------------------------------------------------------ Blizzard's bag window
 do
     -- Without Suite Bags: on the title, left of Blizzard's close button.
@@ -423,8 +521,10 @@ do
     assert(W.GameTooltip:Has("item:" .. FANG) and C.marks[ContainerFrameUtil_GetItemButtonAndContainer(0, 1)],
         "Blizzard's bag offers or marks nothing")
     Run(W, native, "OnLeave")
+    local window = OpenWindow(W, native)
+    assert(window.rows[1].item.itemID == FANG, "the Blizzard title button should open the same window")
     W.CloseBags()
-    assert(not native:IsShown() and not C:Usable(), "the title button stayed with the bag closed")
+    assert(not native:IsShown() and not C:Usable() and not window:IsShown(), "the title button or window stayed with the bag closed")
     W.OpenBags()
     assert(native:IsShown(), "the title button did not come back with the bag")
     W.StopTool()
@@ -461,12 +561,14 @@ do
     assert(idle == 0, "bag refreshes ran " .. idle .. " lines of the module without a hover")
 
     Run(W, tool, "OnEnter")
-    local action = OpenMenu(W, tool, "LeftButton").children[2]
-    W.Insecure(action.callback)
+    local window = OpenWindow(W, tool)
+    Run(W, window.batch, "OnClick")
     assert(W.questions[1], "no question before combat")
     W.EnterCombat()
-    assert(not tool:IsEnabled() and W.hidden[#W.hidden] == QUESTION, "combat left the button usable or its question open")
-    assert(not Listens(W, "BAG_UPDATE_DELAYED") and not W.GameTooltip.shown, "combat kept the hover alive")
+    assert(not tool:IsEnabled() and W.hidden[#W.hidden] == QUESTION and not window:IsShown(),
+        "combat left the button, window or question usable")
+    assert(not Listens(W, "BAG_UPDATE_DELAYED") and not Listens(W, "UI_ERROR_MESSAGE") and not W.GameTooltip.shown,
+        "combat kept bag or loot watches alive")
     local fighting = LinesRun(function()
         for slot = 5, 8 do
             W.Put(1, slot, CLOTH, slot)
@@ -488,7 +590,7 @@ do
     W.Insecure(W.questions[1].data.callback)
     Run(W, tool, "OnClick", "LeftButton")
     Run(W, tool, "OnClick", "RightButton")
-    assert(#W.deleted == 0 and #W.menus == 1, "the module acted in combat")
+    assert(#W.deleted == 0 and #W.menus == 0 and not window:IsShown(), "the module acted in combat")
     W.LeaveCombat()
     W.Settle()
     assert(tool:IsEnabled() and C:Usable(), "the button did not return after combat")

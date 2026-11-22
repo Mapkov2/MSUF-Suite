@@ -232,7 +232,7 @@ GameTooltip = {
     GetPrimaryTooltipData = function(self) return self.data end,
     Show = function(self) self.shows = (self.shows or 0) + 1 end,
 }
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipLines.lua"))(
+assert(loadfile(root .. "/MSUF_Suite_Modules/TooltipLines.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = owner, Suite = suite })
 Load("TooltipIDs")
 local tooltip = assert(suite.instances.tooltipIDs)

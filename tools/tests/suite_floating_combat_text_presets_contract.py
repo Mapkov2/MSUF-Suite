@@ -21,6 +21,21 @@ for _, forever in ipairs({ true, false }) do
         local factory = assert(fixtures[text], "missing real factory: " .. text:sub(1, 40))
         return Suite.CopyValue(factory)
     end
+    local S = Suite.Suite
+    for _, legacyXP in ipairs({ true, false }) do
+        local legacyText = { showXP = legacyXP, gainSide = 1 }
+        local oldProfile = { suite = {
+            revision = S.MigrationRevision - 1, modules = { floatingCombatText = legacyText },
+        } }
+        S.Normalize(oldProfile)
+        assert(legacyText.showXP == false, "old settings still display duplicate XP")
+        assert(legacyText.showLevelUp == legacyXP, "upgrade changed the old level-up preference")
+        assert(legacyText.gainSide == 1 and legacyText.xpSide == 1, "upgrade lost existing progression placement")
+        legacyText.showXP = true
+        S.Normalize(oldProfile)
+        assert(legacyText.showXP, "normalization undid XP re-enabled by the player")
+    end
+
     local old = Suite.DB.suite.modules.floatingCombatText
     old.enabled, old.font = false, "EXPLICIT_FONT"
     Suite.Suite.Normalize(Suite.DB)
@@ -32,6 +47,8 @@ for _, forever in ipairs({ true, false }) do
         local staged = assert(window.previewProfile(layout))
         local config = staged.suite.modules.floatingCombatText
         assert(config.enabled and config.font == "", "wrong combat text default for " .. layout)
+        assert(config.showXP == false and config.showLevelUp == true and config.xpSide == 1,
+            "wrong XP defaults for " .. layout)
         assert(config.hitSide == (forever and 1 or 3) and config.hitSource == (forever and 1 or 3),
             "wrong combat text placement or hit scope for " .. layout)
     end

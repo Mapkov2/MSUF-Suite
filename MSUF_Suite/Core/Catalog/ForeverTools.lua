@@ -1,4 +1,5 @@
 local _, NS = ...
+local Tooltips = NS.CatalogBuild.ForAddon("MSUF_Suite_Tooltips")
 local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local function Forever()
     if NS.Client.isForever then return true end
@@ -22,7 +23,7 @@ B.Section("foreverWorldMap", "forever_world_map", "World map information", {
     B.Number("pinSize", "Map marker size", 20, 12, 32),
 })
 
-B.Module("gatheringTooltips", {
+Tooltips.Module("gatheringTooltips", {
     title = "Gathering tooltips (Forever)",
     description = "Show the required and current profession skill for known herbs and ore deposits.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = Forever,
