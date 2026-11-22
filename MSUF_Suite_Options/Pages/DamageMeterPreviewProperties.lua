@@ -36,15 +36,14 @@ function R.Reset(preview)
     local handle = preview.viewport._selectedHandle
     if preview.inCombat or P.Combat() or not preview.viewport:IsVisible() or not handle or not handle:IsVisible() then return false end
     local values, rules = {}, P.catalog[ID].rules
-    if handle.canMove then
-        local prefix = handle.offsetPrefix
-        for _, axis in ipairs({ "X", "Y" }) do values[prefix .. axis] = rules[prefix .. axis].default end
-    end
+    local x, y = P.MeterPreviewEditor.Keys(preview, handle)
+    if x then values[x], values[y] = rules[x].default, rules[y].default end
     for _, field in ipairs(FIELDS) do
         local key = R.Key(preview, handle, field[1])
         if key then values[key] = rules[key].default end
     end
-    return P.SetMany(ID, values)
+    if next(values) then return P.SetMany(ID, values) end
+    return false
 end
 
 function R.Build(preview)
@@ -94,8 +93,9 @@ end
 function R.Refresh(preview)
     local handle, panel = preview.viewport._selectedHandle, preview.properties
     if not panel then return end
-    panel:SetShown(handle ~= nil and handle ~= false)
-    if not handle then
+    local hasProperties = handle and (handle.sizeSetting or handle.widthSetting or handle.heightSetting or handle.layerSetting)
+    panel:SetShown(hasProperties and true or false)
+    if not hasProperties then
         preview.propertiesHeight, panel.lastHandle = 0, nil
         return
     end
@@ -145,36 +145,41 @@ local BUTTONS = {
     { "settings", "Window settings" }, { "reset", "Reset combat data" },
     { "session", "Fight" }, { "type", "Meter" }, { "target", "Filter damage by target" },
 }
-local SUFFIXES = { "Size", "OffsetX", "OffsetY" }
 local function SearchSection(key) return SEARCH_PAGE .. "_button_" .. key end
+
+function R.PositionTitle(rule)
+    local buttonKey = rule.key:match("^(.+)Offset[XY]$")
+    for _, button in ipairs(BUTTONS) do
+        if button[1] == buttonKey then return button[2] end
+    end
+    return rule.window and "Window settings" or rule.sectionTitle
+end
 
 function R.BuildSearchSections(ctx, builder)
     for _, button in ipairs(BUTTONS) do
-        local rules = {}
-        for _, suffix in ipairs(SUFFIXES) do
-            local rule = {}
-            for key, value in pairs(P.catalog[ID].rules[button[1] .. suffix]) do rule[key] = value end
-            rule.hidden = false
-            rules[#rules + 1] = rule
-        end
-        P.MenuWorkspace.Rules(ctx, builder, SEARCH_PAGE, ID, SearchSection(button[1]), P.Tr(button[2]), rules)
+        local size = {}
+        for key, value in pairs(P.catalog[ID].rules[button[1] .. "Size"]) do size[key] = value end
+        size.hidden = false
+        local rules = { size }
+        local switch = button[1] == "target" and "targetSelector" or nil
+        if switch then rules[#rules + 1] = P.catalog[ID].rules[switch] end
+        P.MenuWorkspace.Rules(ctx, builder, SEARCH_PAGE, ID, SearchSection(button[1]), P.Tr(button[2]), rules,
+            { switchKey = switch })
     end
 end
 
 function R.AppendSearchRows(rows, pages)
     if not pages[SEARCH_PAGE] or not P.Suite.Client.HasAddOn(P.catalog[ID].addon) then return end
     for _, button in ipairs(BUTTONS) do
-        for _, suffix in ipairs(SUFFIXES) do
-            local key = button[1] .. suffix
-            local rule = P.catalog[ID].rules[key]
-            local meta = P.Meta(SEARCH_PAGE, ID, key, "setting", SearchSection(button[1]))
-            rows[#rows + 1] = {
-                pageKey = SEARCH_PAGE, suiteModuleId = ID, kind = "slider", label = P.Tr(rule.label),
-                section = P.Tr(button[2]), sectionId = meta.sectionId, controlId = meta.controlId,
-                settingKey = meta.settingKey, prepareKind = "suiteWorkspace", prepareValue = key,
-                keywords = { rule.label, P.Tr(rule.label), button[2], P.Tr(button[2]), "Preview", P.Tr("Preview"),
-                    "Damage meter", P.Tr("Damage meter") },
-            }
-        end
+        local key = button[1] .. "Size"
+        local rule = P.catalog[ID].rules[key]
+        local meta = P.Meta(SEARCH_PAGE, ID, key, "setting", SearchSection(button[1]))
+        rows[#rows + 1] = {
+            pageKey = SEARCH_PAGE, suiteModuleId = ID, kind = "slider", label = P.Tr(rule.label),
+            section = P.Tr(button[2]), sectionId = meta.sectionId, controlId = meta.controlId,
+            settingKey = meta.settingKey, prepareKind = "suiteWorkspace", prepareValue = key,
+            keywords = { rule.label, P.Tr(rule.label), button[2], P.Tr(button[2]), "Preview", P.Tr("Preview"),
+                "Damage meter", P.Tr("Damage meter") },
+        }
     end
 end

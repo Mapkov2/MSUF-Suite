@@ -21,12 +21,19 @@ end
 
 -- The choice values of the settings below (each is its label's position
 -- there); the damage meter runtime names its modes through these.
-NS.DamageMeterVisibility = { ALWAYS = 1, COMBAT = 2, GROUP = 3, MOUSEOVER = 4, NEVER = 5 }
+local VISIBILITY = { ALWAYS = 1, COMBAT = 2, GROUP = 3, MOUSEOVER = 4, NEVER = 5, OUT_OF_COMBAT = 6 }
+NS.DamageMeterVisibility = VISIBILITY
+NS.DamageMeterGroupCondition = { ANY = 1, SOLO = 2, GROUP = 3 }
+local windowModes = { false, VISIBILITY.ALWAYS, VISIBILITY.COMBAT, VISIBILITY.OUT_OF_COMBAT, VISIBILITY.MOUSEOVER, VISIBILITY.NEVER }
+function NS.DamageMeterWindowVisibility(config, key)
+    return windowModes[config[key]] or config.visibility or VISIBILITY.ALWAYS
+end
 NS.DamageMeterSession = { CURRENT = 1, OVERALL = 2 }
 NS.DamageMeterIconStyle = { NONE = 1, SPEC = 2, CLASS = 3 }
 NS.DamageMeterRowBorder = { NONE = 1, FULL = 2, FILLED = 3 }
 NS.DamageMeterTextStyle = { SHADOW = 1, OUTLINE = 2, THICK = 3, NONE = 4, OUTLINE_SHADOW = 5, THICK_SHADOW = 6 }
 NS.DamageMeterValueFormat = { RATE = 1, PRIMARY = 2, PARENTHESES = 3, BAR = 4, CUSTOM = 5, COLUMNS = 6 }
+NS.DamageMeterTimerFormat = { PLAIN = 1, PARENTHESES = 2, BRACKETS = 3, BRACES = 4 }
 NS.DamageMeterClickThrough = { NEVER = 1, COMBAT = 2, ALWAYS = 3 }
 NS.DamageMeterSmoothFill = { OFF = 1, ON = 2 }
 -- The lines of a chat report, by the position of its choice.
@@ -98,7 +105,8 @@ B.Section(id, "look", "Choose a look", {
 B.Section(id, "general", "Windows and data", {
     Number("windowCount", "Number of windows", 2, 1, MAX_WINDOWS),
     Number("refreshRate", "Update interval in combat (seconds)", 1.5, 0.2, 2, 0.1),
-    Choice("visibility", "Show windows", 1, { "Always", "In combat", "In a group", "Mouseover", "Never" }),
+    Choice("visibility", "Show windows", VISIBILITY.ALWAYS,
+        { "Always", "In combat", "In a group", "Mouseover", "Never", "Out of combat" }),
     Bool("autoCurrent", "Return to the current fight when combat starts", true),
     Bool("mythicReset", "Reset data when a Mythic+ keystone starts", true),
     Bool("toggleTimer", "Meter hotkey also toggles combat timer", true),
@@ -145,46 +153,14 @@ B.Section(id, "bars", "Bars", {
     Bool("gradientDirUp", "Gradient up", false),
     Bool("gradientDirDown", "Gradient down", false),
 })
-B.Section(id, "text", "Text and numbers", {
+B.Section(id, "text", "Shared text style", {
     Font("font", "Font"),
-    Bool("englishNumbers", "Use English K/M/B abbreviations", false),
-    Number("englishDecimals", "English K/M/B decimal places (-1 = Auto)", -1, -1, 2),
-    Number("englishKDecimals", "English K decimal places (-1 = shared)", -1, -1, 2),
     Choice("outline", "Text style", 2, { "Shadow", "Outline", "Thick outline", "None", "Outline + shadow", "Thick outline + shadow" }),
     Choice("rendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
     Number("shadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     Choice("shadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Number("textOpacity", "Text opacity (percent)", 100, 50, 100, 5),
     Number("baseline", "Text baseline (px)", 0, -4, 4),
-    Number("leftSize", "Name size", 11, 8, 18),
-    Number("rightSize", "Value size", 11, 8, 18),
-    Number("nameOffsetX", "Names: horizontal", 0, -200, 200),
-    Number("nameOffsetY", "Names: vertical", 0, -200, 200),
-    Number("valueOffsetX", "Values: horizontal", 0, -200, 200),
-    Number("valueOffsetY", "Values: vertical", 0, -200, 200),
-    Number("nameLayer", "Names: MSUF layer (-1 = Auto)", -1, -1, 30),
-    Number("valueLayer", "Values: MSUF layer (-1 = Auto)", -1, -1, 30),
-    Bool("showRealm", "Show server names", false),
-    Number("nameMaxChars", "Shorten names after characters (0 = off)", 0, 0, 40),
-    Bool("nameEllipsis", "Add ... to shortened names", true),
-    Bool("rank", "Show rank numbers", true),
-    Choice("numberFormat", "Value format", 3, {
-        "Per second only", "Primary value only", "Primary (secondary)", "Primary | secondary", "Custom layout", "Columns",
-    }),
-    Number("totalColumnWidth", "Total column width", 48, 24, 180),
-    Number("rateColumnWidth", "Per second column width", 44, 24, 180),
-    Number("percentColumnWidth", "Percent column width", 34, 24, 180),
-    Choice("valueOrder", "Value order", 1, {
-        "Total, per second, percent", "Total, percent, per second",
-        "Per second, total, percent", "Per second, percent, total",
-        "Percent, total, per second", "Percent, per second, total",
-    }),
-    Choice("valueSeparator", "Value separator", 2, { "None (spaces)", "Parentheses ( )", "Square brackets [ ]", "Vertical bar |", "Slash /", "Hyphen -" }),
-    Bool("percent", "Show share of the total when available", false),
-    Bool("leftClassColor", "Class-colored names", false),
-    Color("leftColor", "Name color", initial.leftColor),
-    Bool("rightClassColor", "Class-colored values", false),
-    Color("rightColor", "Value color", initial.rightColor),
 })
 B.Section(id, "window", "Window and header", {
     Color("bgColor", "Background color", initial.bgColor),
@@ -235,13 +211,17 @@ B.Section(id, "details", "Details", {
     Number("tooltipScale", "Breakdown scale (percent)", 100, 80, 150, 5),
     Bool("spellTooltips", "Show spell tooltips in the breakdown", true),
 })
+local timerFormats = { "1:35", "(1:35)", "[1:35]", "{1:35}" }
+local TIMER_FORMAT = NS.DamageMeterTimerFormat
 B.Section(id, "timer", "Combat timer", {
     Bool("combatTime", "Show combat time", true),
     Bool("headerTimer", "Show duration in window headers", true),
+    Choice("headerTimerFormat", "Header timer format", TIMER_FORMAT.PARENTHESES, timerFormats),
     Number("headerTimerOffsetX", "Header timer: horizontal", 0, -200, 200),
     Number("headerTimerOffsetY", "Header timer: vertical", 0, -200, 200),
     Number("headerTimerSize", "Header timer size (0 = header text size)", 0, 0, 40),
     Bool("timer", "Show a separate floating timer", false),
+    Choice("timerFormat", "Floating timer format", TIMER_FORMAT.PLAIN, timerFormats),
     Number("timerSize", "Timer text size", 26, 10, 40),
     Bool("timerDecimals", "Show tenths of a second", false),
     Bool("timerDesaturate", "Dim timer color outside combat", false),
@@ -297,6 +277,18 @@ B.Section(id, "separators", "Separators", {
     Number("separatorSize", "Separator thickness", 1, 1, 4),
     Number("separatorInset", "Separator inset", 0, 0, 6),
 })
+B.Section(id, "namesFont", "Name font", {
+    Bool("showNames", "Show names on bars", true),
+    Number("leftSize", "Name size", 11, 8, 18),
+    Bool("rank", "Show rank numbers", true),
+})
+B.Section(id, "valuesFont", "Value font", {
+    Bool("showValues", "Show bar values", true),
+    Number("rightSize", "Value size", 11, 8, 18),
+})
+B.Section(id, "headerFont", "Header font", {
+    Bool("showTitle", "Show meter title", true),
+})
 local fontRoles = { { "names", "Name font" }, { "values", "Value font" }, { "header", "Header font" },
     { "details", "Breakdown font" }, { "timer", "Floating timer font" } }
 for _, role in ipairs(fontRoles) do
@@ -308,6 +300,39 @@ for _, role in ipairs(fontRoles) do
         Choice(role[1] .. "Rendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
     })
 end
+B.Section(id, "namesFont", "Name font", {
+    Bool("showRealm", "Show server names", false),
+    Number("nameMaxChars", "Shorten names after characters (0 = off)", 0, 0, 40),
+    Bool("nameEllipsis", "Add ... to shortened names", true),
+    Bool("leftClassColor", "Class-colored names", false),
+    Color("leftColor", "Name color", initial.leftColor),
+    Number("nameLayer", "Names: MSUF layer (-1 = Auto)", -1, -1, 30),
+    Number("nameOffsetX", "Names: horizontal", 0, -200, 200),
+    Number("nameOffsetY", "Names: vertical", 0, -200, 200),
+})
+B.Section(id, "valuesFont", "Value font", {
+    Choice("numberFormat", "Value format", 3, {
+        "Per second only", "Primary value only", "Primary (secondary)", "Primary | secondary", "Custom layout", "Columns",
+    }),
+    Bool("percent", "Show share of the total when available", false),
+    Choice("valueOrder", "Value order", 1, {
+        "Total, per second, percent", "Total, percent, per second",
+        "Per second, total, percent", "Per second, percent, total",
+        "Percent, total, per second", "Percent, per second, total",
+    }),
+    Choice("valueSeparator", "Value separator", 2, { "None (spaces)", "Parentheses ( )", "Square brackets [ ]", "Vertical bar |", "Slash /", "Hyphen -" }),
+    Number("totalColumnWidth", "Total column width", 48, 24, 180),
+    Number("rateColumnWidth", "Per second column width", 44, 24, 180),
+    Number("percentColumnWidth", "Percent column width", 34, 24, 180),
+    Bool("englishNumbers", "Use English K/M/B abbreviations", false),
+    Number("englishDecimals", "English K/M/B decimal places (-1 = Auto)", -1, -1, 2),
+    Number("englishKDecimals", "English K decimal places (-1 = shared)", -1, -1, 2),
+    Bool("rightClassColor", "Class-colored values", false),
+    Color("rightColor", "Value color", initial.rightColor),
+    Number("valueLayer", "Values: MSUF layer (-1 = Auto)", -1, -1, 30),
+    Number("valueOffsetX", "Values: horizontal", 0, -200, 200),
+    Number("valueOffsetY", "Values: vertical", 0, -200, 200),
+})
 B.Section(id, "timerDock", "Timer placement", {
     Choice("timerAnchor", "Timer anchor", 1, { "Free position", "Top left", "Top right", "Bottom left", "Bottom right" }),
     Number("timerWindow", "Attach to window", 1, 1, MAX_WINDOWS),
@@ -319,6 +344,7 @@ B.Section(id, "timerDock", "Timer placement", {
 local defaultTypes = { 1, 3, 8, 6, 10 }
 -- A choice of any meter, or none: the Mythic+ start and each role.
 local meterOrKeep = { "Keep selected meter", unpack(NS.DamageMeterTypeLabels) }
+local windowVisibility = { "Use shared setting", "Always", "In combat", "Out of combat", "Mouseover", "Never" }
 local ROLE_TIP = "Applies at login and when a specialization change brings this role. A Mythic+ meter keeps its window during a keystone."
 local windowAnchors = { "Screen" }
 for index = 1, MAX_WINDOWS - 1 do
@@ -349,15 +375,20 @@ for i = 1, MAX_WINDOWS do
         Bool(p .. "SyncSession", "Synchronize fight selection", false),
         Bool(p .. "MythicSwap", "Switch to Overall when a Mythic+ run ends", false),
         Choice(p .. "MythicType", "Meter at Mythic+ start", 1, meterOrKeep),
+        B.Tooltip(Choice(p .. "RoleTank", "Meter as tank", 1, meterOrKeep), ROLE_TIP),
+        B.Tooltip(Choice(p .. "RoleHealer", "Meter as healer", 1, meterOrKeep), ROLE_TIP),
+        B.Tooltip(Choice(p .. "RoleDamager", "Meter as damage dealer", 1, meterOrKeep), ROLE_TIP),
+    }, { window = i })
+    B.Section(id, p, title, {
+        Choice(p .. "LoadVisibility", "When to show", 1, windowVisibility),
+        Choice(p .. "GroupCondition", "Group condition", NS.DamageMeterGroupCondition.ANY, { "Any group status", "Solo", "In a group" }),
+        Bool(p .. "RequireTarget", "Require a target", false),
         Bool(p .. "HideDungeon", "Hide in dungeons", false),
         Bool(p .. "HideDelve", "Hide in Delves", false),
         Bool(p .. "HideRaid", "Hide in raids", false),
         Bool(p .. "HidePvP", "Hide in battlegrounds and arenas", false),
         Bool(p .. "HideWorld", "Hide outside instances", false),
-        B.Tooltip(Choice(p .. "RoleTank", "Meter as tank", 1, meterOrKeep), ROLE_TIP),
-        B.Tooltip(Choice(p .. "RoleHealer", "Meter as healer", 1, meterOrKeep), ROLE_TIP),
-        B.Tooltip(Choice(p .. "RoleDamager", "Meter as damage dealer", 1, meterOrKeep), ROLE_TIP),
-    }, { window = i })
+    }, { window = i, loadCondition = true })
     if NS.Client.isForever then
         NS.SuiteCatalog[id].rules[p .. "MythicSwap"].hidden = true
         NS.SuiteCatalog[id].rules[p .. "MythicType"].hidden = true
@@ -367,8 +398,12 @@ end
 -- Presentation dependencies for the menu: enableKey needs the named switch on,
 -- disabledBy needs it off, requiresChoice needs one of the listed choices.
 local rules = NS.SuiteCatalog.damageMeter.rules
--- Direct element controls live beside the preview instead of duplicating
--- twelve anonymous position/size rows in the header accordion.
+rules.visibility.loadCondition = true
+-- Positions are edited through the preview. Keep their profile rules and
+-- ranges so existing layouts, imports and Edit Mode use the same values.
+for _, rule in pairs(rules) do
+    if rule.key:match("[XY]$") then rule.previewOnly = true end
+end
 for _, kind in ipairs({ "settings", "reset", "session", "type", "target" }) do
     rules[kind .. "OffsetX"].hidden, rules[kind .. "OffsetY"].hidden, rules[kind .. "Size"].hidden = true, true, true
 end
@@ -401,12 +436,12 @@ end
 rules.englishDecimals.enableKey = "englishNumbers"
 rules.englishKDecimals.enableKey = "englishNumbers"
 rules.headerTimer.enableKey = "combatTime"
-for _, key in ipairs({ "headerTimerSize", "headerTimerOffsetX", "headerTimerOffsetY" }) do
+for _, key in ipairs({ "headerTimerFormat", "headerTimerSize", "headerTimerOffsetX", "headerTimerOffsetY" }) do
     rules[key].enableKey = "headerTimer"
 end
 rules.timer.enableKey = "combatTime"
 for _, key in ipairs({ "tooltipRows", "tooltipScale", "spellTooltips" }) do rules[key].enableKey = "hoverTooltip" end
-for _, key in ipairs({ "timerSize", "timerKeep", "timerX", "timerY", "timerDecimals", "timerDesaturate", "timerTextColor",
+for _, key in ipairs({ "timerFormat", "timerSize", "timerKeep", "timerX", "timerY", "timerDecimals", "timerDesaturate", "timerTextColor",
     "timerBackground", "timerBackgroundAlpha", "timerBorderSize", "timerBorderColor" }) do
     rules[key].enableKey = "timer"
 end
@@ -415,14 +450,9 @@ end
 -- stay editable with Row border None (Rows.lua StyleRowBorder).
 rules.rowBorderIcon.requiresChoice = { key = "rowBorderMode", values = { [BORDER.FULL] = true, [BORDER.FILLED] = true } }
 rules.timerX.category, rules.timerY.category = "advanced", "advanced"
--- Mouseover windows need the mouse to appear, so they cannot be click-through.
-local VISIBILITY = NS.DamageMeterVisibility
-local NOT_MOUSEOVER = { key = "visibility", values = { [VISIBILITY.ALWAYS] = true, [VISIBILITY.COMBAT] = true,
-    [VISIBILITY.GROUP] = true, [VISIBILITY.NEVER] = true } }
 for i = 1, MAX_WINDOWS do
     rules["w" .. i .. "X"].category = "advanced"
     rules["w" .. i .. "Y"].category = "advanced"
-    rules["w" .. i .. "ClickThrough"].requiresChoice = NOT_MOUSEOVER
     local prefix = "w" .. i
     local targets = {}
     for choice = 2, i do targets[choice] = true end

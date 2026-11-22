@@ -1,25 +1,27 @@
 local _, P = ...
 local Suite, S, M, W, T, Tr, HM = P.Suite, P.S, P.M, P.W, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_damageMeter", "damageMeter"
+local LOAD_SECTION = "suite_damageMeter_loadConditions"
+local FONT_HELP = "Separate font settings override the shared font and text style."
 
 local HELP = {
     general = P.Help("Windows update from the client's own combat data: every event outside combat, and at the chosen interval during combat.",
         "Report in a window's Settings menu sends its ranking to chat once combat is over."),
     bars = "Bar colors follow the class unless you turn class colors off. The gradient can shade several edges at once; choose its color from the three dots and its strength below.",
-    text = P.Help("Choose the values shown on each bar.", "Choose Custom layout to set the order of total, per-second and percent values, then pick spaces, brackets or a separator. The percent switch controls main rows; breakdown rows show available shares. Unavailable shares are omitted. Primary means per second for DPS/HPS and total for other meters. Text settings also apply to headers, details and the floating timer. Slug uses WoW's crisp font renderer with an outline and no shadow. Protected values show without a percentage until combat ends."),
+    text = P.Help(FONT_HELP, "Text settings also apply to headers, details and the floating timer. Slug uses WoW's crisp font renderer with an outline and no shadow."),
+    valuesFont = P.Help("Choose the values shown on each bar.",
+        "Choose Custom layout to set the order of total, per-second and percent values, then pick spaces, brackets or a separator. The percent switch controls main rows; breakdown rows show available shares. Unavailable shares are omitted. Primary means per second for DPS/HPS and total for other meters. Protected values show without a percentage until combat ends."),
     window = "The header shows the meter and fight. Its buttons change the meter and fight directly in the window.",
     details = "Click a bar to open the spell breakdown in the window; hover it for a short tooltip.",
-    timer = "Turn off Show combat time to hide both the duration in every meter header and the separate floating timer. The two switches below let you show either one independently.",
+    timer = "Use the switch above to show or hide combat time. Choose where it appears below.",
     surfaces = "Textures use the window and header colors and opacity. Turn the texture switch off to return to a flat color.",
     borders = P.Help("Choose a style, then adjust its thickness in Bars or Window and header.",
         "Distance moves the border outward. Turn individual edges on or off."),
-    iconBorder = "Enable Separate icon border in Bars. Independent settings override the row border. Material icon skins keep their own frame.",
+    iconBorder = "Independent settings override the row border. Material icon skins keep their own frame.",
     separators = "Static lines separate rows, icons and the header. Increase Bar spacing for more room between rows.",
-    timerDock = P.Help("Free position uses the screen coordinates in Combat timer and Move on screen.",
+    timerDock = P.Help("Move the free timer in the screen position preview.",
         "Docked timers follow the selected window and hide with it. Positive horizontal offsets move right; positive vertical offsets move up."),
-    namesFont = P.Help("Separate font settings override the shared font and text style. Turn the switch off to inherit them again.",
-        "Text sizes stay in their usual sections and preview controls."),
-    window_settings = "Each window keeps its own meter, fight, size and visibility rules. Drag the header or use MSUF Edit Mode to move it.",
+    window_settings = "Each window keeps its own meter, fight, size and visibility rules. Move the window in the screen position preview.",
 }
 
 -- The window settings that choose a fight: a threat window has none.
@@ -35,6 +37,10 @@ P.SearchPreparers[ID] = function() return selected end
 local function WindowKey(key)
     local suffix = key:match("^w%d+(.+)$")
     return suffix and ("w" .. selected .. suffix) or key
+end
+
+local function IsLoadCondition(rule)
+    return rule.loadCondition == true
 end
 
 local function IconSkinStatus(ctx, body, y, width)
@@ -124,8 +130,8 @@ end
 
 -- Window settings: one pane whose controls follow the selected window. A
 -- lazy host builds its controls when it first opens (P.LazySection).
-local function BuildWindows(ctx, b)
-    local templates = P.SectionRules(ID, "w1")
+local function BuildWindows(ctx, b, ui)
+    local templates = P.SectionRules(ID, "w1", function(rule) return not IsLoadCondition(rule) end)
     local built = P.RuleRows(PAGE, ID, templates, WindowKey, "suite_damageMeter_windows")
     local picker, note
     P.LazySection(b, "suite_damageMeter_windows", Tr("Window settings"), true, {
@@ -137,13 +143,16 @@ local function BuildWindows(ctx, b)
         summary = function(body) P.AttachRowsSummary(ctx, body, built.rows) end,
         shell = function(body)
             P.AttachSectionReset(ctx, body, "Window settings", function()
-                return P.ResetPrefix(ID, "w" .. selected)
+                return P.ResetRules(ID, templates, WindowKey)
             end)
         end,
         finish = function(body, y)
             local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
             P.Button(ctx, body, "Move this window", 16, y - 4, math.floor((width - 12) / 2),
-                function() P.MoveOnScreen(ID, "window" .. selected) end,
+                function()
+                    local preview = ui and ui.meterPreview
+                    if preview then preview.showScreen(true, preview.screen.window) end
+                end,
                 function()
                     local anchor = P.Get(ID, "w" .. selected .. "AnchorWindow") or 1
                     return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount")
@@ -161,6 +170,44 @@ local function BuildWindows(ctx, b)
     })
 end
 
+local function BuildLoadConditions(ctx, b)
+    local rules = P.SectionRules(ID, "w1", IsLoadCondition)
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, LOAD_SECTION, Tr("Load Conditions"), rules, {
+        keyFn = WindowKey,
+        open = true,
+        help = "Show windows sets the shared default. Group, target and zone conditions must all match for the selected window.",
+    })
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, PAGE .. "_globalVisibility", Tr("Shared visibility rules"),
+        { P.catalog[ID].rules.visibility })
+end
+
+local SECTION_SWITCHES = {
+    window = "headerVisible", timer = "combatTime", iconBorder = "iconBorder",
+    namesFont = "showNames", valuesFont = "showValues", headerFont = "showTitle",
+    detailsFont = "detailsFontCustom", timerFont = "timerFontCustom",
+}
+local VISIBILITY_LABELS = { window = "Header", namesFont = "Name", valuesFont = "Value", headerFont = "Title" }
+
+local function BuildRuleSections(ctx, b)
+    for _, section in ipairs({ "general", "bars", "text", "window", "details", "timer", "surfaces", "borders", "iconBorder",
+        "separators", "namesFont", "valuesFont", "headerFont", "detailsFont", "timerFont", "timerDock" }) do
+        local rules = P.SectionRules(ID, section, function(rule)
+            return not IsLoadCondition(rule) and rule.key ~= "targetSelector" and rule.key ~= "iconBorder"
+        end)
+        if #rules > 0 then
+            local title = Tr(rules[1].sectionTitle)
+            if section == "iconBorder" then table.insert(rules, 1, P.catalog[ID].rules.iconBorder) end
+            P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_damageMeter_" .. section, title, rules,
+                { help = HELP[section] or section:find("Font", 1, true) and FONT_HELP, open = section == "general",
+                  switchKey = SECTION_SWITCHES[section], switchLabel = VISIBILITY_LABELS[section],
+                  dimSwitch = not VISIBILITY_LABELS[section],
+                  extra = section == "bars" and function(body, y, width)
+                      return IconSkinStatus(ctx, body, BuildGradientPad(ctx, body, y, width), width)
+                  end or nil })
+        end
+    end
+end
+
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Damage meter", height = 264,
         tabs = {
@@ -169,6 +216,7 @@ local function Build(ctx)
                 .. "button_settings button_reset button_session button_type button_target" },
             { id = "window", label = "Layout", sections = "windows" },
             { id = "text", label = "Text", sections = "text namesFont valuesFont headerFont detailsFont" },
+            { id = "visibility", label = "Visibility", sections = "loadConditions globalVisibility" },
             { id = "timer", label = "Combat timer", sections = "timer timerDock timerFont" },
         } })
     P.MenuSamples.Meter(ui, function() return selected end, function(value) selected = value
@@ -177,7 +225,10 @@ local function Build(ctx)
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Reset combat data", function() if S.DamageMeterReset then S.DamageMeterReset() end end,
           function() return S.DamageMeterReset ~= nil and P.Get(ID, "enabled") end, key = "reset_data" },
-        { "Move on screen", function() P.MoveOnScreen(ID, "window1") end, nil, key = "move" },
+        { "Move on screen", function()
+            local preview = ui and ui.meterPreview
+            if preview then preview.showScreen(true, preview.screen.window) end
+        end, nil, key = "move" },
     })
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_damageMeter_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
@@ -185,19 +236,10 @@ local function Build(ctx)
             help = "Clean Modern uses matte panels with white accents. Midnight Blue keeps the original blue palette. Midnight Dark uses neutral charcoal glass; MSUF Forever retains its muted gold. Color changes become Custom.",
             extra = P.LookPresetButtons(ctx, PAGE, ID, "suite_damageMeter_look"),
         })
-    for _, section in ipairs({ "general", "bars", "text", "window", "details", "timer", "surfaces", "borders", "iconBorder",
-        "separators", "namesFont", "valuesFont", "headerFont", "detailsFont", "timerFont", "timerDock" }) do
-        local rules = P.SectionRules(ID, section)
-        if #rules > 0 then
-            P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_damageMeter_" .. section, Tr(rules[1].sectionTitle), rules,
-                { help = HELP[section] or section:find("Font", 1, true) and HELP.namesFont, open = section == "general",
-                  extra = section == "bars" and function(body, y, width)
-                      return IconSkinStatus(ctx, body, BuildGradientPad(ctx, body, y, width), width)
-                  end or nil })
-        end
-    end
+    BuildRuleSections(ctx, b)
     P.MeterPreviewProperties.BuildSearchSections(ctx, b)
-    BuildWindows(ctx, b)
+    BuildWindows(ctx, b, ui)
+    BuildLoadConditions(ctx, b)
     -- Windows above the configured count keep their settings but stay hidden.
     P.Gates[ID] = function(rule, key)
         if rule.key == "glossEnabled" or rule.key == "glossStrength" then
@@ -207,14 +249,17 @@ local function Build(ctx)
         if rule.key == "shadowOpacity" or rule.key == "shadowDistance" then
             return P.Get(ID, "rendering") ~= P.Suite.FontRendering.SLUG
         end
-        if key == "timerWindow" or key == "timerDockX" or key == "timerDockY" then
+        if key == "timerWindow" then
             return P.Get(ID, "timerAnchor") ~= 1
         end
-        if key == "timerX" or key == "timerY" then return P.Get(ID, "timerAnchor") == 1 end
         if key:match("^iconBorder") and key ~= "iconBorder" then return P.Get(ID, "iconBorder") end
         local index = tonumber(key:match("^w(%d+)"))
         if not index then return true end
         if index > P.Get(ID, "windowCount") then return false end
+        if key:match("^w%d+ClickThrough$") then
+            local mode = Suite.DamageMeterWindowVisibility(S.Config(ID), "w" .. index .. "LoadVisibility")
+            return mode ~= Suite.DamageMeterVisibility.MOUSEOVER
+        end
         -- Only WoW Forever has a threat meter.
         local threat = Suite.DamageMeterThreatType
         if threat and FIGHT_KEYS[key:match("^w%d+(.+)$")] and P.Get(ID, "w" .. index .. "Type") == threat + 1 then
@@ -223,6 +268,15 @@ local function Build(ctx)
         return true
     end
     P.MenuWorkspace.Finish(ui)
+    if ui and ui.meterPreview then
+        local entry = ctx.entry or ctx
+        local resolve = HM.GetMissingSectionResolver(entry)
+        HM.SetMissingSectionResolver(entry, function(sectionId)
+            local key = sectionId:match("^suite_damageMeter_preview_offset_(.+)$")
+            if key then return P.MeterPreviewEditor.ResolvePosition(ui.meterPreview, key) end
+            return resolve and resolve(sectionId)
+        end)
+    end
 end
 
 P.RegisterPage({ key = PAGE, label = "Damage meter", title = "Damage meter", build = Build, icon = { 7, 0 },

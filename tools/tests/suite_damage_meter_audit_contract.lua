@@ -34,7 +34,7 @@ local registered
 -- The settings the gate reads: the page's own copy, so the runtime stays as it is.
 local values = { windowCount = 2, w1Type = 1, w2Type = 3 }
 local P = setmetatable({
-    Suite = NS, catalog = S.catalog, SearchPreparers = {}, Gates = {},
+    Suite = NS, S = { Config = function() return values end }, catalog = S.catalog, SearchPreparers = {}, Gates = {},
     Get = function(_, key) return values[key] end,
     RegisterPage = function(page) registered = page end,
 }, { __index = function() return Any end })
@@ -128,6 +128,67 @@ if not forever then
     assert(not first.shown and second.shown, "a protected Delve answer must read as no Delve")
     Settings({ w1HideDungeon = false, w2HideDelve = false })
     Zone("none", false)
+end
+
+------------------------------------------------------------------ per-window load conditions and event ownership
+do
+    local f = MSUF_DM_FIXTURE
+    local function Event(name)
+        assert(M.events[name], "expected event: " .. name)
+        local frame = M.context.frame
+        frame:GetScript("OnEvent")(frame, name)
+    end
+    local originalInGroup, originalUnitExists = IsInGroup, UnitExists
+    local inGroup, hasTarget = false, false
+    IsInGroup = function() return inGroup end
+    UnitExists = function(unit)
+        if unit == "target" then return hasTarget end
+        return originalUnitExists and originalUnitExists(unit)
+    end
+    if f then f.SetCombat(false) end
+    M.inCombat = false
+    Settings({ enabled = true, windowCount = 2, visibility = 1, w1Type = 1, w2Type = 3,
+        w1LoadVisibility = 3, w2LoadVisibility = 4, w1GroupCondition = 2, w1RequireTarget = true })
+    local first, second = D.windows[1], D.windows[2]
+    assert(not first.shown and second.shown and M.events.PLAYER_TARGET_CHANGED and M.events.GROUP_ROSTER_UPDATE,
+        "hidden windows must still listen for conditions that can reveal them")
+    if f then f.SetCombat(true) end
+    Event("PLAYER_REGEN_DISABLED")
+    assert(not first.shown and not second.shown and not M.events.DAMAGE_METER_CURRENT_SESSION_UPDATED,
+        "the out-of-combat window or the targetless window remained active during combat")
+    hasTarget = true
+    Event("PLAYER_TARGET_CHANGED")
+    assert(first.shown and not second.shown and M.events.DAMAGE_METER_CURRENT_SESSION_UPDATED,
+        "acquiring a target did not reveal the combat window or restore its data events")
+    inGroup = true
+    Event("GROUP_ROSTER_UPDATE")
+    assert(not first.shown, "joining a group did not hide the solo window")
+    inGroup = false
+    Event("GROUP_ROSTER_UPDATE")
+    assert(first.shown, "leaving the group did not restore the solo window")
+    hasTarget = false
+    Event("PLAYER_TARGET_CHANGED")
+    assert(not first.shown and not M.events.DAMAGE_METER_CURRENT_SESSION_UPDATED, "losing the target kept the window active")
+    if f then f.SetCombat(false) end
+    Event("PLAYER_REGEN_ENABLED")
+    assert(not first.shown and second.shown, "the out-of-combat window did not return")
+    Settings({ visibility = 5, w1LoadVisibility = 1, w1GroupCondition = 1, w1RequireTarget = false, w2LoadVisibility = 5,
+        w2ClickThrough = 3 })
+    assert(not first.shown and second.shown and second.faded and not second.passive,
+        "window mouseover did not override the shared Never choice or blocked interaction")
+    assert(not M.events.PLAYER_TARGET_CHANGED, "the target event remained without a target condition")
+    values.visibility, values.w2LoadVisibility = 5, 5
+    assert(not gate(rules.w2ClickThrough, "w2ClickThrough"), "click-through was editable on a mouseover window")
+    values.visibility, values.w2LoadVisibility = 4, 2
+    assert(gate(rules.w2ClickThrough, "w2ClickThrough"), "shared mouseover incorrectly disabled click-through")
+    M.preview = true
+    D.EvaluateVisibility()
+    assert(first.shown and second.shown, "load conditions blocked the preview")
+    M.preview = false
+    D.EvaluateVisibility()
+    assert(not first.shown and second.shown, "closing the preview failed to restore load conditions")
+    IsInGroup, UnitExists = originalInGroup, originalUnitExists
+    Settings({ visibility = 1, w1LoadVisibility = 1, w2LoadVisibility = 1, w2ClickThrough = 1 })
 end
 
 ------------------------------------------------------------------ chat report (Retail fixture)

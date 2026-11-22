@@ -1314,7 +1314,8 @@ do
     local rules=S.catalog.damageMeter.rules
     local NAMES={
         {"visibility",Suite.DamageMeterVisibility,{ALWAYS="Always",COMBAT="In combat",GROUP="In a group",
-            MOUSEOVER="Mouseover",NEVER="Never"}},
+            MOUSEOVER="Mouseover",NEVER="Never",OUT_OF_COMBAT="Out of combat"}},
+        {"w1GroupCondition",Suite.DamageMeterGroupCondition,{ANY="Any group status",SOLO="Solo",GROUP="In a group"}},
         {"w1Session",Suite.DamageMeterSession,{CURRENT="Current fight",OVERALL="Overall"}},
         {"iconStyle",Suite.DamageMeterIconStyle,{NONE="None",SPEC="Specialization",CLASS="Class"}},
         {"rowBorderMode",Suite.DamageMeterRowBorder,{NONE="None",FULL="Full row",FILLED="Filled portion"}},

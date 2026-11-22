@@ -127,6 +127,10 @@ local function Click(key)
     local meta = P.Meta("suite_damageMeter", "damageMeter", key, "setting", "suite_damageMeter_timer")
     local _, control = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter", meta)
     assert(control and control:IsVisible(), "missing visible timer control: " .. key)
+    if key == "combatTime" then
+        local entry = P.HM.GetSectionEntry(ui.sections.suite_damageMeter_timer)
+        assert(control == entry.featureSwitch, "master combat time switch did not move to the accordion header")
+    end
     control:GetScript("OnClick")(control)
     mw:RunTimers()
     Visible()
@@ -140,6 +144,24 @@ local function Set(values)
     assert(P.SetMany("damageMeter", values) ~= false)
     mw:RunTimers()
     Visible()
+end
+do
+    local formats = Suite.DamageMeterTimerFormat
+    local rules = P.catalog.damageMeter.rules
+    for _, key in ipairs({ "headerTimerFormat", "timerFormat" }) do
+        local meta = P.Meta("suite_damageMeter", "damageMeter", key, "setting", "suite_damageMeter_timer")
+        local _, control = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter", meta)
+        assert(control and control:IsVisible() and P.RuleEnabled("damageMeter", rules[key]), "missing active format choice: " .. key)
+    end
+    Set({ headerTimerFormat = formats.BRACKETS, timerFormat = formats.BRACES, timerDecimals = true })
+    assert(win.timer:GetText() == "[1:35]" and sampleTimer.text:GetText() == "{1:35.0}", "preview ignored independent timer formats")
+    D.M.lastDuration = 95.75
+    Set({ timerKeep = true })
+    assert(D.M.timerFrame.text:GetText() == "{1:35.7}", "live timer placed tenths outside the selected format")
+    Set({ headerTimerFormat = formats.PLAIN, timerFormat = formats.PARENTHESES })
+    assert(win.timer:GetText() == "1:35" and sampleTimer.text:GetText() == "(1:35.0)"
+        and D.M.timerFrame.text:GetText() == "(1:35.7)", "same-duration format changes left an old string")
+    Set({ headerTimerFormat = formats.PARENTHESES, timerFormat = formats.PLAIN, timerDecimals = false, timerKeep = false })
 end
 local points = { "TOPLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "TOPLEFT", "TOPRIGHT" }
 for _, outside in ipairs({ false, true }) do

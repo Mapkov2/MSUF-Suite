@@ -31,7 +31,7 @@ local WHITE = "Interface\\Buttons\\WHITE8X8"
 -- dungeons, as they did before Hide in Delves existed.
 local ZONES = { party = "HideDungeon", scenario = "HideDungeon", raid = "HideRaid", pvp = "HidePvP", arena = "HidePvP" }
 local PREVIEW_SECONDS = 95
-local VISIBILITY, TEXT_STYLE, SESSION = D.VISIBILITY, D.TEXT_STYLE, D.SESSION
+local TEXT_STYLE, SESSION = D.TEXT_STYLE, D.SESSION
 local OUTLINED = { [TEXT_STYLE.OUTLINE] = "OUTLINE", [TEXT_STYLE.OUTLINE_SHADOW] = "OUTLINE",
     [TEXT_STYLE.THICK] = "THICKOUTLINE", [TEXT_STYLE.THICK_SHADOW] = "THICKOUTLINE" }
 local SHADOWED = { [TEXT_STYLE.SHADOW] = true, [TEXT_STYLE.OUTLINE_SHADOW] = true, [TEXT_STYLE.THICK_SHADOW] = true }
@@ -449,7 +449,7 @@ local function Roster()
     D.SnapshotIdentities()
     D.PruneRemoteSpecs()
     if M.threatOn then D.ThreatRosterChanged() end
-    local groupMode = M.config.visibility == VISIBILITY.GROUP
+    local groupMode = M.load.group
     if groupMode or resized and not M.inCombat then D.EvaluateVisibility() end
     if groupMode or raidChanged then D.RequestPaint() end
 end
@@ -498,11 +498,19 @@ end
 -- the watched enemy's threat list (filtered to the target unless a friendly
 -- target's enemy is watched), target and pet changes. The roster follows
 -- GROUP_ROSTER_UPDATE through Roster.
+local function TargetChanged()
+    if M.load.target and not M.forced and not M.sessionHidden and D.LoadTargetChanged() then
+        D.EvaluateVisibility()
+        D.RequestPaint()
+    end
+    if M.threatOn then D.ThreatTargetChanged() end
+end
+
 local function WantThreat(threat)
     if threat and not M.threatOn then D.ThreatStart() end
     M.threatOn = threat
     Want("UNIT_THREAT_LIST_UPDATE", threat, D.ThreatListUpdated, threat and D.ThreatListUnit() or nil)
-    Want("PLAYER_TARGET_CHANGED", threat, D.ThreatTargetChanged)
+    Want("PLAYER_TARGET_CHANGED", threat or (M.load.target and not M.forced and not M.sessionHidden), TargetChanged)
     Want("UNIT_TARGET", threat, D.ThreatTargetsTarget, "target")
     Want("UNIT_PET", threat, D.ThreatPetChanged)
 end
@@ -520,14 +528,14 @@ end
 -- windows at combat start and stop forcing them inside it.
 function D.UpdateEvents()
     local c = M.config
-    local possible = M.forced or c.visibility ~= VISIBILITY.NEVER
+    local possible = M.forced or M.load.possible
     local clock = possible or (c.combatTime and c.timer)
     local threat = M.anyShown and D.THREAT ~= nil and D.ThreatShown()
     local shown = M.anyShown and MeterShown(true)
     local data = shown and MeterShown(false)
     M.dataVisible = data == true
     local remoteSpecs = M.available and c.inspectRemoteSpecs and c.iconStyle == D.ICON.SPEC and not M.preview
-        and (shown or (possible and not M.sessionHidden and c.visibility == VISIBILITY.COMBAT))
+        and (shown or (M.load.combat and not M.sessionHidden))
     M.watchRemoteSpecs = remoteSpecs
     if not remoteSpecs then D.ClearRemoteSpecs() end
     WantThreat(threat)
@@ -538,7 +546,7 @@ function D.UpdateEvents()
     Want("PLAYER_SPECIALIZATION_CHANGED", roles or remoteSpecs, SpecChanged, not remoteSpecs and "player" or nil)
     Want("INSPECT_READY", M.remoteSpecs, D.RemoteSpecReady)
     Want("ZONE_CHANGED_NEW_AREA", possible, World)
-    Want("GROUP_ROSTER_UPDATE", (possible and c.visibility == VISIBILITY.GROUP) or (shown and D.WantsGroupDetails())
+    Want("GROUP_ROSTER_UPDATE", (possible and M.load.group) or (shown and D.WantsGroupDetails())
         or threat or M.remoteSpecs or possible and WantsRaidRows(c), Roster)
     local mythic = D.WantsMythicEvents()
     Want("CHALLENGE_MODE_START", mythic, KeyStart)
@@ -552,31 +560,17 @@ function D.UpdateEvents()
 end
 
 -- Visibility: Edit Mode (out of combat) and the options preview force every
--- configured window; otherwise the global rule, then per-window zone hides.
+-- configured window; otherwise each window follows its own load conditions.
 -- Mouseover keeps windows shown and fades them (see D.ApplyHover).
 function D.EvaluateVisibility()
     local c = M.config
     M.forced = M.preview == true or (S.editMode == true and not M.inCombat)
-    local base
-    if M.forced then
-        base = true
-    elseif M.sessionHidden or c.visibility == VISIBILITY.NEVER then
-        base = false
-    elseif c.visibility == VISIBILITY.COMBAT then
-        base = M.inCombat == true
-    elseif c.visibility == VISIBILITY.GROUP then
-        local grouped = IsInGroup()
-        base = Public(grouped) and grouped == true
-    else
-        base = true
-    end
-    local prepareCombat = M.available and not M.inCombat and not M.sessionHidden and c.visibility == VISIBILITY.COMBAT
-    local zone = (base or prepareCombat) and not M.forced and D.ZoneKey()
+    D.ReadLoadConditions()
     local any = false
     for i = 1, D.MAX do
         local win = D.windows[i]
-        local allowed = i <= c.windowCount and not (zone and c[D.KEYS[i][zone]])
-        local show = base and allowed
+        local show, prepareCombat = false, false
+        if i <= c.windowCount then show, prepareCombat = D.WindowLoadState(i) end
         if show and not win then
             win = D.EnsureWindow(i)
             D.SyncWindow(win)
@@ -584,7 +578,7 @@ function D.EvaluateVisibility()
         if win then
             D.SetShown(win, show)
             D.ApplyMouse(win)
-            if allowed and (show or prepareCombat) and not M.forced and not M.inCombat and M.available then
+            if (show or prepareCombat) and not M.forced and not M.inCombat and M.available then
                 if win.styleGen ~= M.styleGen then D.StyleWindow(win) end
                 D.PrepareRows(win)
             end

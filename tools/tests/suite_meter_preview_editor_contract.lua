@@ -1,5 +1,5 @@
 local root = assert(arg[1]):gsub("\\", "/")
-local host = root .. "/../MidnightSimpleUnitFrames-7.0"
+local host = arg[3] or root .. "/../MidnightSimpleUnitFrames-7.0"
 local flavor = arg[2] or "Mainline"
 local MenuWorld = assert(loadfile(host .. "/tools/tests/menu_core_world.lua"))()
 local mw = MenuWorld.Open(host, flavor, { locale = "deDE" })
@@ -64,7 +64,9 @@ P.S.DamageMeterDrawMenuPreview = function(parent, index, details)
     for _, key in ipairs({ "settings", "reset", "session", "type" }) do win.buttons[key] = Frame("Button", win.header, 18, 18) end
     for i = 1, 3 do
         local row = Frame("Button", win.body, 258, 18, 0, -(i - 1) * 20)
-        row.nameText, row.valueText, row.rankText, row.icon = row:CreateFontString(), row:CreateFontString(), row:CreateFontString(), row:CreateTexture()
+        row.valueHost = Frame("Frame", row, 258, 18)
+        row.nameText, row.valueText, row.rankText, row.icon =
+            row:CreateFontString(), row.valueHost:CreateFontString(), row:CreateFontString(), row:CreateTexture()
         row.bar, row.track = env.CreateFrame("StatusBar", nil, row), row:CreateTexture()
         local fill = row.bar:CreateTexture()
         row.bar.GetStatusBarTexture = function() return fill end
@@ -135,13 +137,37 @@ local function Click(handle, expectedKey, section, button)
     local expectedY = -math.max(0, math.max(0, ctx.wrapper:GetTop() - widget:GetTop()) - 8)
     assert(math.abs(y - expectedY) < .01, "highlight belongs to the accordion instead of the exact control")
 end
-Click(targets.rows[1].name, "leftSize", "suite_damageMeter_text")
-Click(targets.rows[1].value, "rightSize", "suite_damageMeter_text")
+Click(targets.rows[1].name, "leftSize", "suite_damageMeter_namesFont")
+Click(targets.rows[1].value, "rightSize", "suite_damageMeter_valuesFont")
 Click(targets.rows[1].icon, "iconStyle", "suite_damageMeter_bars")
-Click(targets.rows[1].rank, "rank", "suite_damageMeter_text")
+Click(targets.rows[1].rank, "rank", "suite_damageMeter_namesFont")
+do
+    local partition = {
+        text = { "font", "outline", "rendering", "shadowOpacity", "shadowDistance", "textOpacity", "baseline" },
+        namesFont = { "leftSize", "showRealm", "nameMaxChars", "nameEllipsis", "leftClassColor", "nameLayer" },
+        valuesFont = { "rightSize", "numberFormat", "percent", "valueOrder", "valueSeparator", "englishNumbers",
+            "englishDecimals", "englishKDecimals", "totalColumnWidth", "rateColumnWidth", "percentColumnWidth", "rightClassColor", "valueLayer" },
+    }
+    for section, keys in pairs(partition) do
+        local sectionId = "suite_damageMeter_" .. section
+        assert(ui:Focus(sectionId), "missing text accordion " .. section)
+        for _, key in ipairs(keys) do
+            local exact = P.Meta("suite_damageMeter", "damageMeter", key, "setting", sectionId)
+            local _, control = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter", exact)
+            assert(P.catalog.damageMeter.rules[key].section == section and control and control:IsVisible(),
+                key .. " is under the wrong accordion")
+        end
+    end
+    local previousRealm, previousFormat, previousBaseline = c.showRealm, c.numberFormat, c.baseline
+    c.showRealm, c.numberFormat, c.baseline = true, 5, 1
+    assert(ui.sections.suite_damageMeter_namesFont._msufSuiteSectionReset())
+    assert(c.showRealm == false and c.numberFormat == 5 and c.baseline == 1, "name reset crossed into another text group")
+    c.showRealm, c.numberFormat, c.baseline = previousRealm, previousFormat, previousBaseline
+    ui.refreshPreview()
+end
 Click(targets.rows[1].barHit, "barHeight", "suite_damageMeter_bars")
 Click(targets.title, "titleSize", "suite_damageMeter_window")
-Click(targets.timer, "headerTimerSize", "suite_damageMeter_timer")
+Click(targets.timer, "combatTime", "suite_damageMeter_timer")
 Click(targets.buttons.type, "w1Type", "suite_damageMeter_windows")
 local openedSample
 P.S.DamageMeterOpenPreviewFight = function(win, owner, refresh)
@@ -211,7 +237,7 @@ assert(P.SetMany("damageMeter", { timer = true, timerAnchor = 1 }))
 ui.refreshPreview()
 local floating = assert(targets.floatingTimer, "floating timer preview has no settings handle")
 assert(floating:IsShown() and floating.sizeSetting == "timerSize", "floating timer preview cannot select its size")
-Click(floating, "timerSize", "suite_damageMeter_timer")
+Click(floating, "combatTime", "suite_damageMeter_timer")
 assert(P.Set("damageMeter", "timerAnchor", 3))
 ui.refreshPreview()
 assert(floating:IsShown(), "docked timer lost its settings handle")
@@ -219,6 +245,31 @@ assert(P.Set("damageMeter", "timer", false))
 ui.refreshPreview()
 assert(not floating:IsShown(), "disabled timer left a hit area")
 local selectedIndex = preview.selected
+do
+    local section = "suite_damageMeter_loadConditions"
+    local savedCount, savedVisibility = c.windowCount, c.visibility
+    c.windowCount, c.visibility = 2, 2
+    c.w1LoadVisibility, c.w2LoadVisibility, c.w2RequireTarget = 3, 4, true
+    debug.setupvalue(selectedIndex, 1, 2)
+    local tabs = {}
+    for i, tab in ipairs(ui.spec.tabs) do tabs[i] = tab.id end
+    assert(table.concat(tabs, " ") == "shared appearance window text visibility timer", "Visibility is in the wrong tab order")
+    assert(ui:Focus(section) and ui.selected == "visibility", "Load Conditions did not open in Visibility")
+    for _, key in ipairs({ "w1LoadVisibility", "w1GroupCondition", "w1RequireTarget", "w1HideDungeon", "w1HideWorld" }) do
+        local exact = P.Meta("suite_damageMeter", "damageMeter", key, "setting", section)
+        local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter", exact)
+        assert(widget and widget:IsVisible(), key .. " is missing from Load Conditions")
+    end
+    assert(ui.sections[section]._msufSuiteSectionReset())
+    assert(c.w1LoadVisibility == 3 and c.w2LoadVisibility == 1 and c.w2RequireTarget == false and c.visibility == 2,
+        "reset did not respect the selected window and shared default")
+    local shared = "suite_damageMeter_globalVisibility"
+    assert(ui:Focus(shared) and ui.selected == "visibility", "shared visibility is outside the Visibility tab")
+    local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter",
+        P.Meta("suite_damageMeter", "damageMeter", "visibility", "setting", shared))
+    assert(widget and widget:IsVisible(), "the shared visibility accordion is missing its dropdown")
+    c.windowCount, c.visibility, c.w1LoadVisibility = savedCount, savedVisibility, 1
+end
 -- Change the page's actual picker closure, then exercise real exact preparation.
 debug.setupvalue(selectedIndex, 1, 2)
 c.windowCount = 1
@@ -384,8 +435,100 @@ x = x + 5
 targets.body:GetScript("OnMouseUp")(targets.body, "LeftButton")
 assert(c.w1X == prior and c.w2X == P.catalog.damageMeter.rules.w2X.default, "preview background moved a live window")
 assert(not preview.kit.drag and not targets.header.canMove, "window/header retained an Edit Mode drag")
+do
+    local previous = { w1X = c.w1X, w1Y = c.w1Y, w1Scale = c.w1Scale, timer = c.timer, timerAnchor = c.timerAnchor,
+        timerX = c.timerX, timerY = c.timerY, timerDockX = c.timerDockX, timerDockY = c.timerDockY,
+        buttonsOffsetX = c.buttonsOffsetX, buttonsOffsetY = c.buttonsOffsetY }
+    local function Drag(target, dx, dy)
+        x, y = 100, 100
+        target:GetScript("OnMouseDown")(target, "LeftButton")
+        x, y = x + dx, y + dy
+        target:GetScript("OnMouseUp")(target, "LeftButton")
+    end
+    local function AssertNoAccordionOffsets()
+        for key, rule in pairs(P.catalog.damageMeter.rules) do
+            if key:match("[XY]$") then
+                assert(rule.previewOnly, "position not owned by the preview: " .. key)
+                local section = "suite_damageMeter_" .. (rule.window and "windows" or rule.section)
+                local exact = P.Meta("suite_damageMeter", "damageMeter", key, "setting", section)
+                local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter", exact)
+                assert(not widget, "accordion still has a position slider: " .. key)
+            end
+        end
+    end
+    for _, section in ipairs({ "bars", "text", "window", "windows", "timer", "timerDock",
+        "button_settings", "button_reset", "button_session", "button_type", "button_target" }) do
+        assert(ui:Focus("suite_damageMeter_" .. section))
+    end
+    AssertNoAccordionOffsets()
+    env.UIParent:SetSize(1600, 900)
+    c.w1X, c.w1Y, c.w1Scale, c.timer, c.timerAnchor = -120, 100, 125, true, 1
+    c.timerX, c.timerY = 120, 50
+    local win = preview.stage.meterTestWindow
+    local previousZoom = win.previewZoom
+    win.previewZoom = 1.25
+    preview.showScreen(true)
+    local window, timer = preview.screen.window, preview.screen.timer
+    assert(window:IsVisible() and timer:IsVisible() and not preview.stage:IsVisible(), "screen placement mode has no positioned elements")
+    local screenScale = window.positionScale * preview.viewport:GetEffectiveScale()
+    local timerScale = timer.positionScale * preview.viewport:GetEffectiveScale()
+    assert(math.abs(screenScale / timerScale - 1.25) < .001, "screen map did not account for the window's local scale")
+    Drag(window, 20 * screenScale, 30 * screenScale)
+    assert(c.w1X == -100 and c.w1Y == 130 and c.w2X == P.catalog.damageMeter.rules.w2X.default,
+        "screen drag did not write the selected window coordinates")
+    Drag(timer, -25 * timerScale, 25 * timerScale)
+    assert(c.timerX == 95 and c.timerY == 75, "free timer drag did not write screen coordinates")
+    c.w1X = -4000
+    ui.refreshPreview()
+    Drag(window, 0, 50 * screenScale)
+    assert(c.w1X == -4000 and c.w1Y == 180, "orthogonal drag discarded an offscreen value")
+    c.timerAnchor = 3
+    local originalSelected, originalCount, originalAnchor = preview.selected, c.windowCount, c.w2AnchorWindow
+    c.windowCount, c.w2AnchorWindow = 2, 2
+    preview.selected = function() return 2 end
+    ui.refreshPreview()
+    assert(not window:IsVisible(), "an anchored window appeared as independently movable")
+    preview.selected, c.windowCount, c.w2AnchorWindow = originalSelected, originalCount, originalAnchor
+    win.previewZoom = previousZoom
+    ui.refreshPreview()
+    assert(not timer:IsVisible(), "docked timer is still movable in screen coordinates")
+    preview.showScreen(false)
+    Drag(floating, 10, -5)
+    assert(c.timerDockX == previous.timerDockX + 20 and c.timerDockY == previous.timerDockY - 10
+        and c.timerX == 95 and c.timerY == 75, "docked timer drag wrote the wrong coordinates")
+    Drag(preview.buttonGroup, -10, 5)
+    assert(c.buttonsOffsetX == previous.buttonsOffsetX - 20 and c.buttonsOffsetY == previous.buttonsOffsetY + 10,
+        "button group grip did not write shared offsets")
+    for key, value in pairs(previous) do c[key] = value end
+    ui.refreshPreview()
+end
 local byLayer = {}
 for _, button in ipairs(preview.layerButtons) do byLayer[button.key] = button end
+do
+    local row = preview.stage.meterTestWindow.rows[1]
+    c.showNames, c.showValues, c.showTitle = false, false, false
+    ui.refreshPreview()
+    assert(not row.nameText:IsVisible() and row.rankText:IsVisible() and not row.valueHost:IsVisible(),
+        "preview row did not honor independent text switches")
+    assert(not targets.rows[1].name:IsVisible() and not targets.rows[1].value:IsVisible() and not targets.title:IsVisible(),
+        "hidden text retained preview hit targets")
+    local sections = { showNames = "namesFont", showValues = "valuesFont", showTitle = "headerFont" }
+    Click(byLayer.name, "showNames", "suite_damageMeter_namesFont")
+    Click(byLayer.value, "showValues", "suite_damageMeter_valuesFont")
+    Click(byLayer.title, "showTitle", "suite_damageMeter_headerFont")
+    assert(not c.showNames and not c.showValues and not c.showTitle, "opening visibility settings enabled hidden text")
+    for key, section in pairs(sections) do
+        local sectionId = "suite_damageMeter_" .. section
+        local exact = P.Meta("suite_damageMeter", "damageMeter", key, "setting", sectionId)
+        local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter", exact)
+        local entry = P.HM.GetSectionEntry(ui.sections[sectionId])
+        assert(widget and widget:IsVisible() and widget == entry.featureSwitch, "missing font header visibility switch: " .. key)
+        widget:GetScript("OnClick")(widget)
+        mw:RunTimers()
+        assert(c[key], "text visibility control did not update the profile: " .. key)
+    end
+    assert(row.nameText:IsVisible() and row.valueHost:IsVisible() and targets.title:IsVisible(), "preview text did not restore")
+end
 local savedHeader, savedIcon, savedTimer, savedCombatTime = c.headerVisible, c.iconStyle, c.timer, c.combatTime
 c.headerVisible, c.iconStyle, c.timer, c.combatTime = false, 1, false, true
 Click(byLayer.header, "headerVisible", "suite_damageMeter_window")

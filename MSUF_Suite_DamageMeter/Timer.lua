@@ -73,7 +73,7 @@ function D.UpdateTimer(liveDuration, liveResolved)
     local units = floor(seconds * (c.timerDecimals and 10 or 1))
     if units ~= M.timerSecond then
         M.timerSecond = units
-        frame.text:SetText(c.timerDecimals and (D.Clock(seconds) .. "." .. units % 10) or D.Clock(seconds))
+        frame.text:SetText(D.CombatClock(seconds, c.timerFormat, c.timerDecimals and units % 10 or nil))
     end
     if c.timerDecimals and M.inCombat and not M.forced then D.timerJob:Request() end
     if not frame:IsShown() then frame:Show() end

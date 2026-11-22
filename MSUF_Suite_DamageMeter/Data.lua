@@ -34,7 +34,8 @@ D.ROW_BORDER, D.TEXT_STYLE, D.VALUE_FORMAT = NS.DamageMeterRowBorder, NS.DamageM
 
 -- Per-window setting names, built once so paint and visibility paths never
 -- concatenate keys.
-local suffixes = { "Type", "Session", "Width", "Height", "X", "Y", "Locked", "HideDungeon", "HideDelve", "HideRaid",
+local suffixes = { "Type", "Session", "Width", "Height", "X", "Y", "Locked", "LoadVisibility", "GroupCondition", "RequireTarget",
+    "HideDungeon", "HideDelve", "HideRaid",
     "HidePvP", "HideWorld", "AutoCurrent", "SyncSession", "MythicSwap", "MythicType", "Scale", "ClickThrough",
     "RoleTank", "RoleHealer", "RoleDamager", "RaidRows", "AnchorWindow", "AnchorSide", "AnchorGap" }
 for i = 1, D.MAX do
@@ -129,6 +130,19 @@ function D.Clock(seconds)
     seconds = floor(seconds)
     if seconds >= 3600 then return format("%d:%02d:%02d", floor(seconds / 3600), floor(seconds / 60) % 60, seconds % 60) end
     return format("%d:%02d", floor(seconds / 60), seconds % 60)
+end
+
+-- Match the saved choice order in Catalog/DamageMeter.lua. The module can
+-- still draw its default formats if loaded by an earlier Suite core.
+local TIMER_FORMAT = NS.DamageMeterTimerFormat or { PLAIN = 1, PARENTHESES = 2, BRACKETS = 3, BRACES = 4 }
+D.TIMER_FORMAT = TIMER_FORMAT
+local clockFormats = { [TIMER_FORMAT.PARENTHESES] = "(%s)", [TIMER_FORMAT.BRACKETS] = "[%s]", [TIMER_FORMAT.BRACES] = "{%s}" }
+
+function D.CombatClock(seconds, timerFormat, tenths)
+    local text = D.Clock(seconds)
+    if tenths then text = text .. "." .. tenths end
+    local wrapper = clockFormats[timerFormat]
+    return wrapper and format(wrapper, text) or text
 end
 
 -- Blizzard ships localized meter strings with Blizzard_DamageMeter on every

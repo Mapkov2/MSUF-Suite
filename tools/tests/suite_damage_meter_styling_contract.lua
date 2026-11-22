@@ -32,6 +32,34 @@ local win = Draw()
 local row = win.rows[1]
 assert(not row.fillBorder or not row.fillBorder.materialEdges, "default style allocated material edges")
 assert(not row.rowSeparator and not row.iconSeparator and not win.sampleTimer, "unused decorations allocated regions")
+do
+    local previousFormat, previousPercent = c.numberFormat, c.percent
+    assert(c.showNames and c.showValues and c.showTitle and row.nameText:IsShown() and row.valueHost:IsShown(),
+        "default profile lost meter text")
+    c.numberFormat, c.percent = D.VALUE_FORMAT.COLUMNS, true
+    c.showNames, c.showTitle = false, false
+    Draw()
+    assert(not row.nameText:IsShown() and row.rankText:IsShown(), "name visibility affected independent ranks")
+    assert(row.valueHost:IsShown() and row.rateText:IsShown() and row.percentText:IsShown(), "hiding names affected values")
+    assert(not win.title:IsShown() and win.header:IsShown() and win.buttons.type.configuredShown and M.style.headerClock,
+        "hiding the title affected header controls or timer")
+    c.showNames, c.showValues, c.rank = true, false, false
+    Draw()
+    assert(row.nameText:IsShown() and not row.rankText:IsShown() and not row.valueHost:IsShown(),
+        "hiding values did not hide the common parent of all numeric columns")
+    assert(row.nameText.points[2][2] == row.bar, "hidden values still reserve name space")
+    S.DamageMeterDrawMenuPreview(stage, 1, true)
+    assert(win.bdRows[1].nameText:IsShown() and win.bdRows[1].valueText:IsShown(),
+        "main meter visibility leaked into the breakdown")
+    c.showNames, c.showValues, c.showTitle, c.rank = nil, nil, nil, true
+    Draw()
+    assert(win.title:IsShown() and row.nameText:IsShown() and row.valueHost:IsShown()
+        and row.rateText:IsShown() and row.percentText:IsShown() and row.nameText.points[2][2] == row.valueText,
+        "a legacy profile did not restore text and the column layout")
+    c.showNames, c.showValues, c.showTitle = true, true, true
+    c.numberFormat, c.percent = previousFormat, previousPercent
+    Draw()
+end
 local vertex = {}
 win.bg.SetVertexColor = function(_, ...) vertex = { ... } end
 c.bgTextured, c.bgTexture, c.bgColor, c.bgAlpha = true, "", "336699", 40

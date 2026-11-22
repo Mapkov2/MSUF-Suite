@@ -12,9 +12,12 @@ function Layers.Layout(preview)
 end
 
 local HEADER_LAYERS = { header = true, title = true, timer = true, buttons = true }
+local TEXT_SWITCHES = { name = "showNames", value = "showValues", title = "showTitle" }
 local function Blocked(layer)
     local c = P.S.Config("damageMeter")
     if HEADER_LAYERS[layer] and c.headerVisible == false then return "headerVisible" end
+    local textSwitch = TEXT_SWITCHES[layer]
+    if textSwitch and c[textSwitch] == false then return textSwitch end
     if layer == "icon" and c.iconStyle == 1 then return "iconStyle" end
     if (layer == "timer" or layer == "floatingTimer") and not c.combatTime then return "combatTime" end
     if layer == "timer" and not c.headerTimer then return "headerTimer" end
@@ -68,10 +71,11 @@ function Layers.Paint(preview, win)
     Show(targets.details, layers.details and win.detailsSample)
     Show(targets.body, not win.detailsSample)
     local header = layers.header and c.headerVisible ~= false
+    local title = header and layers.title and c.showTitle ~= false
     Show(win.header, header)
     Show(targets.header, header)
-    Show(win.title, header and layers.title)
-    Show(targets.title, header and layers.title)
+    Show(win.title, title)
+    Show(targets.title, title)
     Show(win.sampleTimer, layers.floatingTimer and win.previewTimerShown)
     Show(targets.floatingTimer, layers.floatingTimer and win.previewTimerShown)
     local timer = header and layers.timer and c.combatTime and c.headerTimer and not win.overall
@@ -82,18 +86,19 @@ function Layers.Paint(preview, win)
         Show(button, visible)
         Show(targets.buttons[key], visible)
     end
+    local names, values = layers.name and c.showNames ~= false, layers.value and c.showValues ~= false
     for i, row in ipairs(win.rows) do
         Show(row, (not win.capacity or i <= win.capacity) and not win.detailsSample)
         Bars(row, layers.bars, c)
         Show(targets.rows[i].barHit, layers.bars)
         Show(row.iconBorder, layers.icon and c.iconStyle ~= 1 and c.iconBorder and not row.iconSkinApplied)
-        Show(row.nameText, layers.name)
-        Show(row.rankText, layers.name and c.rank)
-        Show(row.valueText, layers.value)
+        Show(row.nameText, names)
+        Show(row.rankText, c.rank)
+        Show(row.valueHost or row.valueText, values)
         Show(row.icon, layers.icon and c.iconStyle ~= 1)
-        Show(targets.rows[i].name, layers.name)
-        Show(targets.rows[i].rank, layers.name and c.rank)
-        Show(targets.rows[i].value, layers.value)
+        Show(targets.rows[i].name, names)
+        Show(targets.rows[i].rank, c.rank)
+        Show(targets.rows[i].value, values)
         Show(targets.rows[i].icon, layers.icon and c.iconStyle ~= 1)
     end
     P.PreviewInteraction.RefreshLayerRail(preview)

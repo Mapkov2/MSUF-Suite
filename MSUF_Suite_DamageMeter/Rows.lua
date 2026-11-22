@@ -261,6 +261,37 @@ local function StyleRowBorder(row, hasIcon)
     elseif row.iconBorder then row.iconBorder:Hide() end
 end
 
+local function StyleRowText(row, list, left, right)
+    local style, c = M.style, M.config
+    local nx, ny = list and c.nameOffsetX or 0, list and c.nameOffsetY or 0
+    local vx, vy = list and c.valueOffsetX or 0, list and c.valueOffsetY or 0
+    local rank, name, value, bar = row.rankText, row.nameText, row.valueText, row.bar
+    local showValues = not list or c.showValues ~= false
+    name:SetShown(not list or c.showNames ~= false)
+    if list then row.valueHost:SetShown(showValues) end
+    D.FontStyle(rank, left, list and "names" or "details")
+    D.FontStyle(name, left, list and "names" or "details")
+    D.FontStyle(value, right, list and "values" or "details")
+    rank:ClearAllPoints()
+    name:ClearAllPoints()
+    value:ClearAllPoints()
+    value:SetPoint("RIGHT", bar, "RIGHT", -3 + vx, style.baseline + vy)
+    StyleValueColumns(row, vx, vy, right)
+    if list and style.rank then
+        rank:SetPoint("LEFT", bar, "LEFT", 3 + nx, style.baseline + ny)
+        rank:Show()
+        name:SetPoint("LEFT", rank, "RIGHT", 2, 0)
+    else
+        rank:Hide()
+        name:SetPoint("LEFT", bar, "LEFT", 3 + nx, style.baseline + ny)
+    end
+    if showValues then
+        name:SetPoint("RIGHT", value, "LEFT", -6 + nx - vx, ny - vy)
+    else
+        name:SetPoint("RIGHT", bar, "RIGHT", -3 + nx, style.baseline + ny)
+    end
+end
+
 function D.StyleRow(row)
     local style = M.style
     row.styleGen = M.styleGen
@@ -269,8 +300,6 @@ function D.StyleRow(row)
     local left, right = tip and 11 or style.leftSize, tip and 11 or style.rightSize
     local hasIcon = not list or style.iconStyle ~= ICON.NONE
     local c = M.config
-    local nx, ny = list and c.nameOffsetX or 0, list and c.nameOffsetY or 0
-    local vx, vy = list and c.valueOffsetX or 0, list and c.valueOffsetY or 0
     row:SetHeight(height)
     local icon, bar = row.icon, row.bar
     icon:ClearAllPoints()
@@ -299,24 +328,7 @@ function D.StyleRow(row)
     row.track:SetAllPoints(bar)
     row.track:SetColorTexture(style.trackR, style.trackG, style.trackB, style.trackA)
     row.hasIcon = hasIcon
-    local rank, name, value = row.rankText, row.nameText, row.valueText
-    D.FontStyle(rank, left, list and "names" or "details")
-    D.FontStyle(name, left, list and "names" or "details")
-    D.FontStyle(value, right, list and "values" or "details")
-    rank:ClearAllPoints()
-    name:ClearAllPoints()
-    value:ClearAllPoints()
-    value:SetPoint("RIGHT", bar, "RIGHT", -3 + vx, style.baseline + vy)
-    StyleValueColumns(row, vx, vy, right)
-    if list and style.rank then
-        rank:SetPoint("LEFT", bar, "LEFT", 3 + nx, style.baseline + ny)
-        rank:Show()
-        name:SetPoint("LEFT", rank, "RIGHT", 2, 0)
-    else
-        rank:Hide()
-        name:SetPoint("LEFT", bar, "LEFT", 3 + nx, style.baseline + ny)
-    end
-    name:SetPoint("RIGHT", value, "LEFT", -6 + nx - vx, ny - vy)
+    StyleRowText(row, list, left, right)
     D.ClearMemo(row)
 end
 

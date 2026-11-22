@@ -288,6 +288,7 @@ function D.StyleHeader(win)
     win.firstButton = previous
     D.FontStyle(win.title, c.titleSize > 0 and c.titleSize or c.headerFontSize, "header")
     win.title:SetTextColor(r, g, b)
+    win.title:SetShown(c.showTitle ~= false)
     D.FontStyle(win.timer, c.headerTimerSize > 0 and c.headerTimerSize or c.headerFontSize, "header")
     win.timer:SetTextColor(r, g, b)
     win.title:ClearAllPoints()
@@ -391,7 +392,8 @@ function D.SetTimerText(win, seconds)
     if seconds then seconds = floor(seconds) end
     if seconds == win.timerSecond then return end
     win.timerSecond = seconds
-    win.timer:SetText(seconds and seconds > 0 and format("(%s)", D.Clock(seconds)) or "")
+    local timerFormat = M.config.headerTimerFormat or D.TIMER_FORMAT.PARENTHESES
+    win.timer:SetText(seconds and seconds > 0 and D.CombatClock(seconds, timerFormat) or "")
 end
 
 function D.SetShown(win, show)
@@ -572,7 +574,7 @@ end
 
 function D.ApplyHover(win, deferred)
     local c = M.config
-    local fade = M.uiHidden or (c.visibility == D.VISIBILITY.MOUSEOVER and not M.forced and not win.hover)
+    local fade = M.uiHidden or (D.WindowVisibility(win.index) == D.VISIBILITY.MOUSEOVER and not M.forced and not win.hover)
     if fade ~= win.faded then
         win.faded, win.dirty = fade, true
         win.frame:SetAlpha(fade and 0 or 1)
@@ -618,7 +620,7 @@ end
 local CLICK_THROUGH = NS.DamageMeterClickThrough
 local function WantsPassive(win)
     local mode = M.config[D.KEYS[win.index].ClickThrough]
-    if mode == CLICK_THROUGH.NEVER or M.forced or M.config.visibility == D.VISIBILITY.MOUSEOVER then return false end
+    if mode == CLICK_THROUGH.NEVER or M.forced or D.WindowVisibility(win.index) == D.VISIBILITY.MOUSEOVER then return false end
     return mode == CLICK_THROUGH.ALWAYS or M.inCombat == true
 end
 

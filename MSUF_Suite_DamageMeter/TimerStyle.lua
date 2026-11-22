@@ -18,7 +18,9 @@ end
 
 function D.PaintTimerStyle(frame)
     local c = M.config
-    frame:SetSize(c.timerSize * (c.timerDecimals and 5.5 or 4), c.timerSize + 8)
+    local width = c.timerDecimals and 5.5 or 4
+    if c.timerFormat and c.timerFormat ~= D.TIMER_FORMAT.PLAIN then width = width + 1 end
+    frame:SetSize(c.timerSize * width, c.timerSize + 8)
     local r, g, b = S.RGB(c.timerBackground)
     frame.background:SetColorTexture(r, g, b, c.timerBackgroundAlpha / 100)
     r, g, b = S.RGB(c.timerBorderColor)
@@ -79,7 +81,7 @@ function D.LayoutMenuTimer(win, parent)
         left, right = math.min(left, x), math.max(right, x + tw)
         top, bottom = math.min(top, y), math.max(bottom, y + th)
         frame.previewX, frame.previewY = x, y
-        frame.text:SetText(c.timerDecimals and "1:35.0" or "1:35")
+        frame.text:SetText(D.CombatClock(95, c.timerFormat, c.timerDecimals and 0 or nil))
         frame.text:SetTextColor(frame.liveR, frame.liveG, frame.liveB)
         frame:Show()
     elseif frame then frame:Hide() end

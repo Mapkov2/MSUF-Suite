@@ -5,6 +5,7 @@ local E, ID = {}, "damageMeter"
 P.MeterPreviewEditor = E
 local M, HM, Tr = P.M, P.HM, P.Tr
 local Properties = P.MeterPreviewProperties
+local DRAG_THRESHOLD = 2
 local TEXT_ANCHORS = { leftSize = "LEFT", rightSize = "RIGHT", rank = "LEFT", titleSize = "LEFT", headerTimerSize = "RIGHT" }
 local HIT_ORDER = { window = 0, header = 1, bars = 2, name = 4, value = 4, title = 5, timer = 5, floatingTimer = 5, details = 7, buttons = 6, icon = 6 }
 
@@ -30,7 +31,7 @@ end
 -- Window rows retain w1 template identities while their getters follow the picker.
 function E.Open(preview, handle)
     if not handle then return false end
-    local ui, key = preview.ui, handle.controlKey
+    local ui, key = preview.ui, handle.settingsKey or handle.controlKey
     if not ui:Focus(handle.previewSection) then return false end
     local bridge = M.SearchBridge
     if not bridge or not bridge.OpenSearchTarget then return false end
@@ -41,25 +42,53 @@ function E.Open(preview, handle)
     return called == true and opened == true and focused == true
 end
 
-local function Keys(preview, handle)
-    if not handle.canMove then return end
-    local prefix = handle.offsetPrefix
+function E.Keys(preview, handle)
+    local prefix = handle and handle.offsetPrefix
+    if not prefix then return end
+    if prefix == "screenWindow" then
+        prefix = "w" .. preview.selected()
+        if P.Get(ID, prefix .. "AnchorWindow") ~= 1 or preview.selected() > P.Get(ID, "windowCount") then return end
+    elseif prefix == "screenTimer" then
+        if P.Get(ID, "timerAnchor") ~= 1 then return end
+        prefix = "timer"
+    elseif prefix == "timerDock" and P.Get(ID, "timerAnchor") == 1 then
+        return
+    end
     return prefix .. "X", prefix .. "Y"
 end
+local Keys = E.Keys
 
-local function DragCurrent(token, preview)
-    return token.window == preview.selected() and token.current() and token.config == P.S.Config(ID)
+local function Scale(preview, handle)
+    if handle.positionScale then return handle.positionScale * preview.viewport:GetEffectiveScale() end
+    return preview.stage:GetEffectiveScale()
+end
+
+local function DragCurrent(token, preview, handle)
+    local x, y = Keys(preview, handle)
+    return x and token.window == preview.selected() and token.current() and token.config == P.S.Config(ID)
+        and token.key == x and token.scale == Scale(preview, handle) and token.x == P.Get(ID, x) and token.y == P.Get(ID, y)
+end
+
+local function UnclampDrag(value, original, correction, scale)
+    if correction == 0 then return value end
+    if math.abs(value - original) * scale < DRAG_THRESHOLD then return original end
+    return value + correction
 end
 
 -- dragged: the commit of a drag, which must still belong to the window, profile
 -- and settings it began under. Arrows and the X/Y fields carry no such claim.
 local function Write(preview, handle, x, y, dragged)
-    if dragged and not (handle.dragToken and DragCurrent(handle.dragToken, preview)) then return false end
+    local token = handle.dragToken
+    if dragged and not (token and DragCurrent(token, preview, handle)) then return false end
     if preview.inCombat or P.Combat() or not preview.viewport:IsVisible() or not handle:IsVisible() then return false end
     local xKey, yKey = Keys(preview, handle)
     if not xKey then return false end
     local rules = P.catalog[ID].rules
     local xr, yr = rules[xKey], rules[yKey]
+    if dragged then
+        x = UnclampDrag(x, token.x, token.clampedX, token.scale)
+        y = UnclampDrag(y, token.y, token.clampedY, token.scale)
+    end
     x = math.max(xr.min, math.min(xr.max, math.floor(x + .5)))
     y = math.max(yr.min, math.min(yr.max, math.floor(y + .5)))
     return P.SetMany(ID, { [xKey] = x, [yKey] = y }) ~= false
@@ -81,7 +110,7 @@ local function Selected(preview, handle)
     end
     local previousSelectionHeight = preview.selectionHeight
     if M.PreviewSelectionBar then M.PreviewSelectionBar.Refresh(owner) end
-    if preview.selection then preview.selection:SetShown(not handle or handle.canMove) end
+    if preview.selection then preview.selection:SetShown(not handle or Keys(preview, handle) ~= nil) end
     P.PreviewInteraction.LayoutSelectionBar(preview.selection, preview.availableWidth)
     preview.selectionHeight = preview.selection and preview.selection:IsShown() and preview.selection:GetHeight() + 8 or 0
     local previousHeight = preview.propertiesHeight
@@ -101,7 +130,10 @@ local function Dragged(preview, handle, phase)
     if phase == "press" then
         -- Before the drag exists, as the old code did; the claim first, so the
         -- repaint a selection asks for finds it.
-        handle.dragToken = { window = preview.selected(), config = P.S.Config(ID), current = P.ProfileGuard() }
+        local x, y = Read(preview, handle)
+        handle.dragToken = { window = preview.selected(), config = P.S.Config(ID), current = P.ProfileGuard(), x = x, y = y,
+            key = Keys(preview, handle), scale = Scale(preview, handle),
+            clampedX = handle.clampedX or 0, clampedY = handle.clampedY or 0 }
         E.Select(preview, handle)
         return
     end
@@ -111,10 +143,12 @@ end
 
 function E.Handle(preview, handle, region, prefix, label, layer, section, controlKey)
     handle.meterPreview, handle.previewRegion = preview, region
-    handle.offsetPrefix, handle._label, handle._previewLayerKey = prefix, label, layer
-    handle.canMove = prefix ~= "window"
+    handle.offsetPrefix, handle._label, handle._previewLayerKey = prefix ~= "window" and prefix or nil, label, layer
+    handle.canMove = handle.offsetPrefix ~= nil
+    handle.positionScale, handle.clampedX, handle.clampedY = false, 0, 0
     handle.previewSection = section
     handle.controlKey = controlKey
+    handle.settingsKey = false
     handle.sizeSetting, handle.widthSetting, handle.heightSetting, handle.layerSetting, handle.defaultSizeSetting = false, false, false, false, false
     handle.textAnchor = TEXT_ANCHORS[controlKey]
     local priority = HIT_ORDER[layer]
@@ -123,7 +157,8 @@ function E.Handle(preview, handle, region, prefix, label, layer, section, contro
     Anchor(handle, true)
     preview.kit:Add(handle, handle, function() return Read(preview, handle) end,
         handle.canMove and function(x, y, dragged) return Write(preview, handle, x, y, dragged) end or nil,
-        { select = false, scale = function() return preview.stage:GetEffectiveScale() end })
+        { select = false, scale = function() return Scale(preview, handle) end,
+            can = function() return handle:IsVisible() and Keys(preview, handle) ~= nil end })
     HM.SkipHistoryCheckpoint(handle)
 end
 
@@ -164,7 +199,7 @@ function E.Build(preview)
     preview.arrowBindings = { ownerName = "MSUF_SuiteMeterPreview_NudgeOwner", activeName = "MSUF_SuiteMeterPreview_ActiveNudgeBox",
         buttonPrefix = "MSUF_SuiteMeterPreview_Nudge", onClick = function(_, dx, dy) return preview.kit:Arrow(dx, dy) end }
     preview.kit = P.PreviewInteraction.Handles(preview.host, {
-        owner = owner, threshold = 2, rekey = true, bindings = preview.arrowBindings,
+        owner = owner, threshold = DRAG_THRESHOLD, pixels = true, rekey = true, bindings = preview.arrowBindings,
         combat = function() return preview.inCombat or P.Combat() end,
         tip = function(handle, entering)
             P.PreviewInteraction.Outline(handle, entering or owner._selectedHandle == handle)
@@ -212,7 +247,7 @@ end
 function E.Refresh(preview)
     local drag = preview.kit.drag
     local active = drag and drag.entry.region
-    if active and not (active.dragToken and DragCurrent(active.dragToken, preview) and active:IsVisible()) then
+    if active and not (active.dragToken and DragCurrent(active.dragToken, preview, active) and active:IsVisible()) then
         preview.kit:Cancel()
         active = nil
     end
