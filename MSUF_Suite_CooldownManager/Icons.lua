@@ -86,7 +86,6 @@ local function PingInfo(icon)
     return {}
 end
 
------------------------------------------------------------------- creation
 local function NewCooldown(icon)
     local cooldown = S.CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     cooldown:ClearAllPoints()
@@ -103,7 +102,8 @@ local function CreateIcon(parent, pingable)
         icon.GetAllowRadialWheel = NoRadialWheel
         icon.GetTargetInfo = PingInfo
     end
-    icon.tex = S.CreateTexture(icon, nil, "ARTWORK")
+    icon.Icon = S.CreateTexture(icon, nil, "ARTWORK")
+    icon.tex = icon.Icon
     icon.cd = NewCooldown(icon)
     icon.edges = K.NewEdges(icon, 7)
     -- Stacks and the keybind sit on their own frame above the swipe and the
@@ -514,19 +514,19 @@ function Icons.SetTexture(icon, texture)
     icon.tex:SetTexture(texture)
 end
 
--- A totem slot shows the totem in it: a secret icon goes straight to the
--- texture (no memo compare), a plainly empty slot shows the entry's own
--- icon. An icon choice wins.
+-- Slot presence and texture can be protected independently. Only public
+-- textures enter the memo, and a custom icon wins.
 function Icons.TotemTexture(entry, have, texture)
     local icon, ov = entry.icon, entry.ov or EMPTY
     if not icon then return end
     if TotemCoverage.Update and ov.totemCoverage then TotemCoverage.Update(icon) end
-    if issecret(texture) and not ov.icon then
+    if ov.icon or (not issecret(have) and have == false) then texture = ov.icon or entry.texture end
+    if issecret(texture) then
         icon.lastTex = nil
         icon.tex:SetTexture(texture)
         return
     end
-    if ov.icon or issecret(have) or have ~= true or not texture then texture = ov.icon or entry.texture end
+    if not texture or texture == 0 then texture = entry.texture end
     Icons.SetTexture(icon, texture or K.QUESTION_ICON)
 end
 function Icons.Texture(entry)

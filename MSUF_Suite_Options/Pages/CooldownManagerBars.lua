@@ -474,6 +474,7 @@ local function MenuItem(n, value, text)
     local item = barMenu[n] or {}
     barMenu[n] = item
     item.value, item.text, item.header, item.translate, item.disabled, item.tooltip = value, text, nil, nil, nil, nil
+    item.destructive = nil
     return item
 end
 local function BarPicked(value)
@@ -505,7 +506,7 @@ function Page.OpenBarMenu(owner, slot)
     local custom = Page.SlotInfo(slot).custom
     local on = P.Get(ID, "enabled") and Page.IsOn(slot)
     local n = 1
-    MenuItem(n, on and "hide" or "show", on and "Hide this bar" or "Show this bar")
+    MenuItem(n, on and "hide" or "show", on and "Disable this bar" or "Enable this bar")
     if custom then
         n = n + 1
         MenuItem(n, "rename", "Rename this bar")
@@ -513,15 +514,16 @@ function Page.OpenBarMenu(owner, slot)
     n = n + 1
     local move = MenuItem(n, "move", "Move on screen")
     move.disabled = not (on and Page.Movable(slot))
-    if move.disabled then move.tooltip = Tr(on and "This bar cannot be moved on its own right now." or "Show this bar first.") end
+    if move.disabled then move.tooltip = Tr(on and "This bar cannot be moved on its own right now." or "Enable this bar first.") end
     n = n + 1
     local free = P.Get(ID, KEYS[slot].anchor) == FREE and RULES[KEYS[slot].anchor].default == FREE
     MenuItem(n, "reset", "Reset this bar's settings").tooltip =
         Tr(free and "Keeps its name, type and position. You can undo it." or RESET_TIP)
     if custom then
         n = n + 1
-        MenuItem(n, "delete", "Delete this bar").tooltip =
-            Tr("Frees this custom bar: its settings, and its spells in every specialization. You can undo it.")
+        local delete = MenuItem(n, "delete", "Delete this bar")
+        delete.destructive = true
+        delete.tooltip = Tr("Frees this custom bar: its settings, and its spells in every specialization. You can undo it.")
     end
     n = n + 1
     local header = MenuItem(n, "copy", "Copy settings from")

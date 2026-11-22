@@ -21,7 +21,7 @@ CreateFrame=function() created=created+1;return {SetScript=function() end,Regist
 UIParent={GetEffectiveScale=function() return 1 end,GetWidth=function() return 1024 end,GetHeight=function() return 768 end}
 GetPhysicalScreenSize=function() return 1024,768 end
 for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings","CharacterTabs","CharacterBindings",
-    "Catalog/DataTexts","NameplateStyle","SuiteMigrations","Suite"}) do
+    "Catalog/DataTexts","Catalog/Bags","NameplateStyle","SuiteMigrations","Suite"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
@@ -113,7 +113,7 @@ for tag in xml:gmatch('<Binding%s[^>]*>') do
     if name:match("^MSUFSUITE_CHARACTER_FROM_") then
         assert(tag:find('hidden="true"',1,true) and not tag:find("category=",1,true), "visible delegate: "..tag)
     else
-        local category = name:match("^MSUFSUITE_CHARACTER_") and "BINDING_HEADER_MSUFSUITE_CHARACTER" or "BINDING_HEADER_MSUFSUITE"
+        local category = name:match("^MSUFSUITE_CHARACTER_") and "CHARACTER_BUTTON" or "MSUF Suite"
         assert(tag:match('category="([^"]+)"') == category, "wrong binding category: "..tag)
     end
     local header=tag:match('header="([%w_]+)"')

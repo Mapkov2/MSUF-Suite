@@ -309,11 +309,23 @@ end
 -- (AuraTimers) follow the same payload.
 local totemTimers = false
 local function RefreshTotem(entry)
-    if entry.icon and Refresh(entry, "totem") then Request(entry.slot) end
+    if not entry.icon then return end
+    if Refresh(entry, "totem") then Request(entry.slot) end
+    -- A replacement clock can arrive after the slot event. Retry once on
+    -- the normal flush; a still-empty slot then sleeps until the next event.
+    if not entry.icon.cdReal then Mark(entry, "full") end
 end
 local function OnTotem(_, event, slot)
     if totemTimers then AuraTimers.Totem(nil, event, slot) end
     Index.ForTotem(slot, RefreshTotem)
+end
+-- Slot data can change across a loading screen or restriction transition
+-- without a cast. Coalesce those updates in the next normal refresh.
+local function MarkTotems()
+    local totems = Index.totems
+    for i = 1, #totems do
+        if totems[i].icon then Mark(totems[i], "full") end
+    end
 end
 
 -- SPELL_UPDATE_ICON names the base spell (nil = all).
@@ -379,6 +391,10 @@ local function OnRestriction(_, _, _, state)
         end
         if C.ActionGlows.pending then C_Timer.After(0, C.ActionGlows.Refresh) end
     end
+end
+local function OnTotemRestriction(...)
+    MarkTotems()
+    OnRestriction(...)
 end
 
 -- The override changes spell, texture and routing of entries with that
@@ -472,11 +488,7 @@ end
 -- loading screen may have had no event).
 local function OnWorld()
     EnterWorld()
-    -- Totems can end with the loading screen without an event of their own.
-    local totems = Index.totems
-    for i = 1, #totems do
-        if totems[i].icon then Mark(totems[i], "full") end
-    end
+    MarkTotems()
     if AlertsWanted() then C.Alerts.SyncAuraSounds() end
     C.Resolve.SpellsChanged()
     dirty.catalog, dirty.resolve, dirty.visibility = true, true, true
@@ -703,7 +715,9 @@ local function UpdateEvents()
         or C.state.assistIcon and C.state.assistIconVis == K.VIS.COMBAT_OR_TARGET
     Want("PLAYER_TARGET_CHANGED", #Index.ranged > 0 or target, OnTarget)
     Want("UNIT_FACTION", target, OnFaction)
-    Want("ADDON_RESTRICTION_STATE_CHANGED", #Index.aura > 0 or #Index.overlay > 0 or C.ActionGlows.wanted, OnRestriction)
+    local slots = #Index.totems > 0
+    Want("ADDON_RESTRICTION_STATE_CHANGED", slots or #Index.aura > 0 or #Index.overlay > 0 or C.ActionGlows.wanted,
+        slots and OnTotemRestriction or OnRestriction)
     Want("PLAYER_EQUIPMENT_CHANGED", EquipWatch(), OnEquipment)
     local keys = KeybindWatch()
     local actionGlows = C.ActionGlows.wanted or C.ActionUsableGlows.wanted

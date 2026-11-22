@@ -599,26 +599,49 @@ end
 local function TotemState(entry, icon)
     local have, _, start, length, texture = GetTotemInfo(entry.id)
     local duration = GetTotemDuration(entry.id)
-    local secret = issecret(have)
-    if not secret and have == true and not issecret(start) and not issecret(length) and type(start) == "number"
+    -- A duration object can contain protected times. Its reference has to
+    -- be accessible before it can be bound to a swipe or bar.
+    if issecret(duration) then
+        duration = nil
+    elseif issecret(have) then
+        if duration == nil then have = false end
+    elseif have == nil and duration then
+        -- GetTotemInfo may return nothing. The native clock can still tell
+        -- the widget whether to show, even if its answer is a secret.
+        have = duration:IsActive()
+    end
+    if not issecret(start) and not issecret(length) and type(start) == "number"
         and type(length) == "number" and length > 0 and start + length <= GetTime() then have = false end
+    local secret = issecret(have)
+    local active = secret or have == true
+    if not active then duration = nil end
     ClearCharge(icon)
     CountOff(icon)
-    Feedback(icon, nil)
-    if readable then icon.readinessKnown = not secret end
-    if (secret or have == true) and (issecret(duration) or duration) then
+    icon.mainDuration = nil
+    TrackingBars.Duration(icon, duration)
+    if icon.fbDesat ~= 0 then
+        icon.fbDesat = 0
+        icon.tex:SetDesaturation(0)
+    end
+    icon.readinessKnown = not secret
+    if duration then
         icon.cd:SetCooldownFromDurationObject(duration, true)
         icon.cdSet, icon.cdReal = true, true
-        TrackingBars.Duration(icon, duration)
     else
         ClearMain(icon)
     end
     if secret then
-        icon:SetAlphaFromBoolean(have, icon.fbAlpha or 1, 0)
+        icon:SetAlphaFromBoolean(have, icon.coolAlpha, 0)
         icon.fbAlpha = nil
+    else
+        local alpha = active and icon.coolAlpha or icon.readyAlpha
+        if icon.fbAlpha ~= alpha then
+            icon.fbAlpha = alpha
+            icon:SetAlpha(alpha)
+        end
     end
     C.Icons.TotemTexture(entry, have, texture)
-    return secret or have == true, not secret and have ~= true
+    return active, not active
 end
 
 -- No spell and no category: a totem slot reads its slot (after every
@@ -649,7 +672,7 @@ local function Edge(entry, cooling, usableQueries)
     if cooling then
         if not was then
             entry.coolStart = GetTime()
-            if was == false and entry.ov.usedSound then C.Alerts.Used(entry) end
+            if was == false and entry.ov.usedSound and (entry.src ~= "t" or entry.icon.readinessKnown) then C.Alerts.Used(entry) end
         end
     elseif was then
         local start = entry.coolStart

@@ -4601,6 +4601,18 @@ do (function()
         "a slot's payload refreshes that slot at once and no other")
     Fire("PLAYER_TOTEM_UPDATE",2);Run()
     assert(not t2.hidden and t2.icon.tex.tex==5555,"the second slot shows its own totem")
+    TotemFixture[2]=nil
+    Fire("ADDON_RESTRICTION_STATE_CHANGED",1,2);Run()
+    assert(not t1.hidden and t2.hidden,"entering dungeon restrictions re-reads configured slots without a totem event")
+    TotemFixture[2]={true,"Healing Stream Totem",now,15,5555}
+    Fire("ADDON_RESTRICTION_STATE_CHANGED",1,0);Run()
+    assert(not t2.hidden and t2.cooling,"leaving restrictions restores the active slot without a recast")
+    TotemFixture[2]=nil
+    Fire("PLAYER_TOTEM_UPDATE",2)
+    assert(t2.hidden,"an empty slot hides immediately")
+    TotemFixture[2]={true,"Mana Tide Totem",now,12,6666}
+    Run()
+    assert(not t2.hidden and t2.icon.tex.tex==6666,"a slot update can precede its replacement clock by one frame")
     TotemFixture[1],TotemFixture[2]=nil,nil
     Fire("PLAYER_TOTEM_UPDATE",nil);Run()
     assert(t1.hidden and t2.hidden,"an unreadable payload refreshes every totem slot")

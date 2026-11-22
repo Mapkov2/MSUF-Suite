@@ -189,16 +189,22 @@ C_Spell={
     GetSpellCooldownDurationUnused=nil,
 }
 C_SpellActivationOverlay={IsSpellOverlayed=function(spell) Plain(spell,"overlay");return overlayed[spell]==true end}
--- Totem slots: GetTotemInfo per slot (plain fields, or all secret while the
--- slot is secret), GetTotemDuration a duration object that is never nil.
+-- Slot details and duration handles can be available independently.
 local totems,totemReads={},0
 GetTotemInfo=function(slot)
     Plain(slot,"GetTotemInfo");totemReads=totemReads+1
     local t=totems[slot]
     if not t then return false,"",0,0,0 end
+    if t.noInfo then return end
     return t.have,t.name,t.start,t.length,t.icon
 end
-GetTotemDuration=function(slot) Plain(slot,"GetTotemDuration");return NextDuration() end
+GetTotemDuration=function(slot)
+    Plain(slot,"GetTotemDuration")
+    local t=totems[slot]
+    if t and t.noDuration then return nil end
+    if t and t.clock then return t.clock end
+    return NextDuration()
+end
 local equip={start=0,length=0,enable=1}
 GetInventoryItemCooldown=function(unit,slot) assert(unit=="player" and slot==13);return equip.start,equip.length,equip.enable end
 -- Bag contents by item ID; the last GetItemCount flags are kept for the count contract.
@@ -1962,10 +1968,13 @@ end
 -- paint its icon (SetTexture is AllowedWhenTainted); an icon choice wins.
 -- The tooltip names the totem, or the slot while it is empty.
 do
-    Record("SetAlphaFromBoolean")
+    Record("SetAlphaFromBoolean",function(self,_,on,off) self.activeAlpha,self.emptyAlpha=on,off end)
     Record("SetTotem")
     local plan=C.plans.ess
     local t1=Entry("t1","ess",{texture=136099,hideEmpty=true,name="Totem slot 1"})
+    local uses=0
+    C.Alerts.Used=function(entry) assert(entry==t1); uses=uses+1 end
+    t1.ov={readyAlpha=0,cdAlpha=75,usedSound="test"}
     C.plans.ess={slot="ess",kind=1,entries={t1}}
     ess.desat=true
     ess.behaviorGen=ess.behaviorGen+1
@@ -1979,6 +1988,8 @@ do
         "a placed totem shows its icon (a hidden flip relayouts)")
     assert(icon.cd.running and icon.tex.last.SetTexture==4444 and icon.tex.last.SetDesaturation==0,
         "a placed totem swipes its duration and keeps its colors")
+    assert(icon.last.SetAlpha==.75,"a placed totem uses its active opacity even when ready opacity is zero")
+    assert(uses==1,"a confirmed placement can play its configured sound")
     -- One refresh: one GetTotemInfo, one duration object, no other client read.
     local reads,durations,cooldowns=totemReads,durationCalls,cooldownQueries
     T.Refresh(t1,"totem")
@@ -2000,17 +2011,60 @@ do
     local setTexture=Widget.SetTexture
     Record("SetTexture")
     local secretIcon=Secret("number")
+    local publicUses=uses
     totems[1]={have=SECRET_BOOL,name=SECRET_COUNT,start=SECRET_START,length=SECRET_LENGTH,icon=secretIcon}
     T.Refresh(t1,"totem")
     assert(t1.hidden==false and t1.cooling==true and icon.cd.running,"a secret slot keeps its place and its swipe")
     assert(icon.last.SetAlphaFromBoolean==SECRET_BOOL and icon.tex.last.SetTexture==secretIcon and icon.lastTex==nil,
         "the client shows the secret slot and paints its icon")
+    assert(icon.activeAlpha==.75 and icon.emptyAlpha==0,"the native visibility gate uses the configured active opacity")
+    assert(uses==publicUses,"entering a protected slot state is not a confirmed placement")
+    totems[1].icon=5555
+    I.Texture(t1)
+    assert(icon.tex.last.SetTexture==5555,"a protected slot can have a public replacement texture")
+    ess.cooldownDuration=true
+    ess.styleGen=ess.styleGen+1
+    I.StyleIcon(icon,ess); I.Apply(t1)
+    local clock=NewDuration(true)
+    totems[1].clock=clock
+    local writesBefore=Calls(icon.timerBar,"SetTimerDuration")
+    T.Refresh(t1,"totem")
+    assert(icon.timerBar.last.SetTimerDuration==clock and icon.cd.last.SetCooldownFromDurationObject==clock
+        and Calls(icon.timerBar,"SetTimerDuration")==writesBefore+1,"swipe and bar share one slot clock")
+    totems[1].noDuration=true
+    assert(T.Refresh(t1,"totem") and t1.empty and t1.hidden and not t1.cooling and not icon.cd.running
+        and icon.timerBar.duration==nil,"a missing slot clock frees a protected empty slot")
+    totems[1]={have=SECRET_BOOL,icon=6789,clock=NewDuration(true)}
+    assert(T.Refresh(t1,"totem") and not t1.hidden and icon.tex.last.SetTexture==6789
+        and icon.timerBar.duration==totems[1].clock,"a recast replaces the previous texture and clock")
+    totems[1].noInfo=true
+    T.Refresh(t1,"totem")
+    assert(not t1.hidden and icon.cd.running and icon.last.SetAlphaFromBoolean==SECRET_BOOL,
+        "a duration can still drive the native visibility gate when GetTotemInfo returns nothing")
+    totems[1].clock=NewDuration(false)
+    totems[1].clock:SetTimeFromStart(now-30,15)
+    icon.cd.scripts.OnCooldownDone(icon.cd)
+    assert(t1.hidden and not icon.cd.running,"an expired public clock does not reserve a slot with missing details")
+    totems[1]={have=SECRET_BOOL,icon=secretIcon,clock=Secret("userdata")}
+    T.Refresh(t1,"totem")
+    assert(not t1.hidden and not icon.cd.running and icon.timerBar.duration==nil and icon.activeAlpha==.75,
+        "an opaque duration reference never reaches a duration widget")
+    t1.ov={readyAlpha=50,cdAlpha=0}
+    T.Refresh(t1,"totem")
+    assert(icon.activeAlpha==0,"a user-selected zero active opacity is respected")
+    totems[1]={have=true,start=now-60,length=0,icon=8888,noDuration=true}
+    T.Refresh(t1,"totem")
+    assert(not t1.hidden and t1.cooling and not icon.cd.running and icon.last.SetAlpha==0,
+        "a confirmed untimed totem still occupies its slot")
+    totems[1]={have=SECRET_BOOL,icon=secretIcon}
     t1.ov={icon=777}
     I.Texture(t1)
     assert(icon.tex.last.SetTexture==777,"an icon choice wins over the totem's")
     t1.ov=C.EMPTY
     Widget.SetTexture=setTexture
+    C.Alerts.Used=nil
     totems[1]=nil
+    ess.cooldownDuration=false
     ess.tooltips,ess.desat=false,false
     I.Release("ess")
     C.plans.ess,C.entries.t1=plan,nil

@@ -2782,9 +2782,13 @@ local menuValues = {}
 for i, item in ipairs(menu.values) do menuValues[i] = tostring(item.value) end
 assert(Page.selected == "c2" and table.concat(menuValues, ",")
     == "hide,rename,move,reset,delete,copy,copy:ess,copy:uti,copy:def,copy:ext,copy:buf,copy:bar,copy:c2"
+    and menu.values[1].text == "Disable this bar"
     and menu.values[6].header and menu.values[7].translate == false and menu.values[7].text == "Essential cooldowns"
     and not menu.values[3].disabled and menu.values[5].tooltip:find("undo", 1, true),
     "bar actions of a custom bar: " .. table.concat(menuValues, ","))
+for _, item in ipairs(menu.values) do
+    assert((item.destructive == true) == (item.value == "delete"), "only Delete should have the destructive style")
+end
 -- Copy: the look and behavior of another bar, never its name, type or place.
 Config().buf_zoom, Config().buf_border, Config().buf_size = 20, 3, 30
 local c1Anchor, c1Name = Config().c1_anchor, Config().c1_name
@@ -2814,9 +2818,11 @@ local utiPoints = ui.chips.buf.points
 M.RequestRefresh()
 assert(ui.chips.buf.points == utiPoints, "a repaint of the same strip moved its chips")
 menu = BarMenu(ui.chips.uti, "RightButton")
-assert(menu.values[1].value == "show" and menu.values[2].value == "move" and menu.values[2].disabled
-    and menu.values[2].tooltip == "Show this bar first." and menu.values[4].value == "copy",
-    "a hidden bar offers Show and cannot move")
+assert(menu.values[1].value == "show" and menu.values[1].text == "Enable this bar"
+    and menu.values[2].value == "move" and menu.values[2].disabled
+    and menu.values[2].tooltip == "Enable this bar first." and menu.values[4].value == "copy",
+    "a disabled bar offers Enable and cannot move")
+assert(menu.values[5] and not menu.values[5].destructive, "reopening on a built-in bar must clear the destructive style")
 menu.onSelect("show")
 assert(Config().uti_on, "showing a bar failed")
 -- Rename selects the bar and brings its name input into view.

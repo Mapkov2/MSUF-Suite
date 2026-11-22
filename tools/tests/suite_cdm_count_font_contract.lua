@@ -44,6 +44,7 @@ assert(checked > 0, "no cooldown icon was checked")
 -- The options preview styles its own new icons through the same pass.
 local holder = CreateFrame("Frame", nil, UIParent)
 local sample = C.Icons.CreateStandalone(holder)
+assert(sample.Icon == sample.tex, "the tooltip owner must expose the rendered cooldown icon")
 C.Icons.StyleIcon(sample, C.views.ess, 36, 36)
 assert(sample.count.font and sample.styleGen == C.views.ess.styleGen, "a new preview icon was not styled")
 Widget.SetText = setText
