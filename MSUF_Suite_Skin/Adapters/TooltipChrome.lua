@@ -6,6 +6,195 @@ local Safety = NS.Safety
 local TooltipChrome = {}
 NS.TooltipChrome = TooltipChrome
 
+local Palette = { choices = {}, fields = { fillColor = "popup", endColor = "ink", titleColor = "text", accentColor = "accent" } }
+NS.TooltipPalette = Palette
+
+local presets = {}
+local function AddPreset(key, label, look, height, iconSize)
+    Palette.choices[#Palette.choices + 1] = { key = key, label = label }
+    presets[key] = { look = look, height = height, iconSize = iconSize }
+end
+AddPreset("forever", "WoW Forever", "gridClassic", 40, 24)
+AddPreset("retail", "Retail", "modern", 48, 32)
+for _, key in ipairs(NS.LookOrder or {}) do
+    AddPreset(key, NS.LookPresets[key].label, key, key == "cleanModern" and 42 or 48, key == "cleanModern" and 26 or 30)
+end
+
+function Palette.HasPreset(key)
+    return presets[key] ~= nil
+end
+
+local function WithOpacity(rgba, opacity)
+    return { rgba[1], rgba[2], rgba[3], rgba[4] * opacity }
+end
+
+function Palette.BuildPreset(key)
+    local spec = presets[key]
+    if not spec then return end
+    local profile = { theme = {}, geometry = {} }
+    if not NS.Theme.StyleProfile(profile, spec.look) then return end
+    local theme, layout = profile.theme, {
+        palette = true, borderMode = "custom", height = spec.height, iconSize = spec.iconSize,
+    }
+    layout.paletteGradient, layout.paletteDirection = theme.gradient == true, theme.gradientDirection
+    for field, role in pairs(Palette.fields) do
+        local opacity = (role == "popup" or role == "ink") and theme.shellOpacity or 1
+        layout[field] = WithOpacity(theme.colors[role], opacity)
+    end
+    layout.borderColor = WithOpacity(theme.colors.border, theme.borderOpacity)
+    return layout
+end
+
+local function Layout()
+    local layout = NS.DB and NS.DB.theme and NS.DB.theme.tooltipLayout
+    if type(layout) == "table" then return layout end
+end
+
+local function Channel(value)
+    return Safety.Public(value) and type(value) == "number" and value >= 0 and value <= 1
+end
+
+local function ReadColor(layout, field, role)
+    local color = layout and layout[field]
+    if Safety.Public(color) and type(color) == "table" and canaccesstable(color)
+        and Channel(color[1]) and Channel(color[2]) and Channel(color[3]) and Channel(color[4]) then
+        return unpack(color, 1, 4)
+    end
+    return NS.Theme.GetColor(role)
+end
+
+function Palette.IsActive()
+    local layout = Layout()
+    return layout and layout.palette == true or false
+end
+
+function Palette.Color(field)
+    return ReadColor(Layout(), field, Palette.fields[field])
+end
+
+function Palette.Fill(spec, alphaScale)
+    local layout = Layout()
+    if not layout or layout.palette ~= true then return end
+    local r, g, b, a = ReadColor(layout, "fillColor", "popup")
+    local tr, tg, tb, ta = ReadColor(layout, "endColor", "ink")
+    local scale = alphaScale or 1
+    local direction = layout.paletteDirection == "HORIZONTAL" and "HORIZONTAL" or "VERTICAL"
+    return r, g, b, spec.opaqueFill and 1 or a * scale,
+        tr, tg, tb, spec.opaqueFill and 1 or ta * scale, layout.paletteGradient == true, direction
+end
+
+function Palette.Title()
+    if Palette.IsActive() then return Palette.Color("titleColor") end
+    return NS.Theme.GetColor("text")
+end
+
+function Palette.Accent(r, g, b)
+    if Palette.IsActive() then return Palette.Color("accentColor") end
+    return r, g, b, .74
+end
+
+local hostFill = { role = "popup", resolveFill = Palette.Fill }
+function Palette.PaintHostBackdrop(frame, state, wanted, keepBorder)
+    if not wanted or not Palette.IsActive() then
+        if state.nativeBackdrop then
+            frame:SetBackdropColor(unpack(state.nativeBackdrop))
+            state.nativeBackdrop = nil
+        end
+        if state.nativeBorder then
+            frame:SetBackdropBorderColor(unpack(state.nativeBorder))
+            state.nativeBorder = nil
+        end
+        if state.paletteFill then state.paletteFill:Hide() end
+        return false
+    end
+    if not state.nativeBackdrop then
+        local r, g, b, a = Safety.ReadColor(frame, "GetBackdropColor")
+        if not r or not Safety.HasMethod(frame, "SetBackdropColor") then return false end
+        state.nativeBackdrop = { r, g, b, a }
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+    if keepBorder and state.nativeBorder then
+        frame:SetBackdropBorderColor(unpack(state.nativeBorder))
+        state.nativeBorder = nil
+    elseif not keepBorder and not state.nativeBorder then
+        local r, g, b, a = Safety.ReadColor(frame, "GetBackdropBorderColor")
+        if r and Safety.HasMethod(frame, "SetBackdropBorderColor") then
+            state.nativeBorder = { r, g, b, a }
+            frame:SetBackdropBorderColor(0, 0, 0, 0)
+        end
+    end
+    if not state.paletteFill then
+        state.paletteFill = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+        state.paletteFill:SetAllPoints(frame)
+        state.paletteFill:SetColorTexture(1, 1, 1, 1)
+    end
+    local material = NS.Theme.GetMaterial("popup")
+    NS.Surface.PaintFill(state.paletteFill, nil, state, nil, NS.Surface.PrepareFill(material, hostFill))
+    state.paletteFill:Show()
+    return true
+end
+
+NS.Registry.AddListener(Palette, function(_, domain)
+    if domain == "tooltipStyle" then NS.Registry.QueueRefresh("tooltipPalette") end
+end)
+
+local Caption = { Height = 20 }
+NS.TooltipComparisonCaption = Caption
+
+function Caption.Read(tip)
+    local badge = Safety.Field(tip, "CompareHeader")
+    if not Safety.Public(badge) then return false end
+    if not badge then return end
+    local shown = Safety.Read(badge, "IsShown")
+    if shown == nil then return false end
+    if not shown then return end
+    local label = Safety.Field(badge, "Label")
+    if not Safety.Public(label) then return false end
+    local text = Safety.Read(label, "GetText")
+    if type(text) ~= "string" or text == "" then return false end
+    return badge, text
+end
+
+function Caption.Release(view)
+    if not view.nativeComparison then return end
+    NS.Cosmetics.Restore(view.nativeComparison, view)
+    view.nativeComparison, view.comparisonCaption = nil, nil
+    view.comparisonText:Hide()
+    view.comparisonFill:Hide()
+end
+
+function Caption.Paint(view, badge, text, changed)
+    if view.nativeComparison and view.nativeComparison ~= badge then Caption.Release(view) end
+    if not view.nativeComparison or Safety.Read(badge, "GetAlpha") ~= 0 then
+        if not Safety.CanDecorate(badge) or not NS.Cosmetics.Fade(badge, view) then return false end
+    end
+    view.nativeComparison = badge
+    local label, fill = view.comparisonText, view.comparisonFill
+    if not label then
+        local header = view.header.frame
+        label = header:CreateFontString(nil, "OVERLAY", "GameTooltipTextSmall")
+        label:SetPoint("BOTTOMLEFT", header, "TOPLEFT", 7, 4)
+        label:SetPoint("BOTTOMRIGHT", header, "TOPRIGHT", -7, 4)
+        label:SetJustifyH("LEFT")
+        label:SetWordWrap(false)
+        label:SetMaxLines(1)
+        fill = header:CreateTexture(nil, "BACKGROUND")
+        fill:SetPoint("TOPLEFT", header, "TOPLEFT", 0, Caption.Height)
+        fill:SetPoint("BOTTOMRIGHT", header, "TOPRIGHT")
+        view.comparisonText, view.comparisonFill = label, fill
+    end
+    if view.comparisonCaption ~= text or changed then
+        view.comparisonCaption = text
+        label:SetText(text)
+        label:SetTextColor(NS.Theme.GetColor("title"))
+        if Palette.IsActive() then fill:SetColorTexture(Palette.Color("fillColor"))
+        else fill:SetColorTexture(NS.Theme.GetColor("popup")) end
+        label:Show()
+        fill:Show()
+    end
+    return true
+end
+
 local tooltips = setmetatable({}, { __mode = "k" })
 local pending = setmetatable({}, { __mode = "k" })
 local scheduled = false
@@ -14,12 +203,16 @@ local borderPieces = {
     "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
     "TopEdge", "BottomEdge", "LeftEdge", "RightEdge",
 }
-local fillSpec = { role = "popup", radius = 8 }
+local fillSpec = { role = "popup", radius = 8, resolveFill = Palette.Fill }
 
 local plan
 local geometry = {}
 
 local function ResolveBorder(material)
+    local layout = Layout()
+    if layout and layout.palette == true and layout.borderMode == "custom" then
+        return ReadColor(layout, "borderColor", material.border)
+    end
     local r, g, b, a = NS.Theme.GetColor(material.border)
     local edge = NS.Geometry.Resolve(fillSpec, geometry).edge
     return r, g, b, edge and a * NS.Theme.GetBorderOpacity() or 0
@@ -89,16 +282,67 @@ local function Capture(state, region)
     return paint
 end
 
+local function RevealSlice(state, keep)
+    local slice = state.coveredSlice
+    if slice and slice ~= keep then
+        NS.Cosmetics.Restore(slice, state)
+        state.coveredSlice = nil
+    end
+end
+
+local function CoverSlice(state, slice)
+    RevealSlice(state, slice)
+    if state.coveredSlice ~= slice or Safety.Read(slice, "GetAlpha") ~= 0 then
+        if not NS.Cosmetics.Fade(slice, state) then return false, "protected" end
+        state.coveredSlice = slice
+    end
+    return true
+end
+
+local function RevealCenter(state, keep)
+    local center = state.coveredCenter
+    if not center or center == keep then return end
+    state.coveredCenter = nil
+    if state.centerWasShown and Safety.CanDecorate(center) and Safety.Read(center, "IsShown") == false then
+        center:Show()
+    end
+end
+
+local function CoverCenter(state, center)
+    RevealCenter(state, center)
+    local shown = Safety.Read(center, "IsShown")
+    if shown == nil then return false end
+    if not state.coveredCenter or shown then
+        state.coveredCenter, state.centerWasShown = center, shown
+    end
+    if shown then center:Hide() end
+    return true
+end
+
 local function Paint(frame, state)
     if not Safety.CanDecorate(frame) then return false, "protected" end
     local slice = Safety.Field(frame, "NineSlice")
     if not Safety.Public(slice) or not Safety.CanDecorate(slice) then return false, "missing" end
+    -- Atlas colors can be restored independently of their parent opacity.
+    -- Our backdrop and outline replace the entire native slice in this mode.
+    if state.cardBacking == "all" then
+        RevealCenter(state)
+        return CoverSlice(state, slice)
+    end
+    RevealSlice(state)
+
     local center = Safety.Field(slice, "Center")
     local fill = Capture(state, center)
     if not fill then return false, "missing" end
+    if state.cardBacking == "fill" then
+        if not CoverCenter(state, center) then return false, "protected" end
+    else
+        RevealCenter(state)
+    end
 
     if not plan then PrepareStyle() end
-    NS.Surface.PaintFill(center, nil, fill, nil, plan.fill)
+    -- While the card supplies the backdrop, only the native edges need paint.
+    if not state.cardBacking then NS.Surface.PaintFill(center, nil, fill, nil, plan.fill) end
     SaveColor(fill.applied, Safety.ReadColor(center, "GetVertexColor"))
 
     local r, g, b, alpha = plan.r, plan.g, plan.b, plan.alpha
@@ -152,10 +396,25 @@ end
 
 local function OnThemeChanged(_, domain)
     if domain ~= "theme" and domain ~= "color" and domain ~= "appearance"
-        and domain ~= "geometry" and domain ~= "profile" then return end
+        and domain ~= "geometry" and domain ~= "profile" and domain ~= "tooltipStyle" then return end
     plan = nil
     if next(tooltips) then PrepareStyle() end
     for frame in pairs(tooltips) do RequestPaint(frame) end
+end
+
+-- The card draws its own fill around the native content. Leave the nine-slice
+-- layout intact, with only its paint suppressed for the life of that card.
+function TooltipChrome.SetCardBacking(frame, mode)
+    local state = tooltips[frame]
+    if not state then return false end
+    if state.cardBacking == mode then return true end
+    state.cardBacking = mode
+    local ok = Paint(frame, state)
+    if not ok then
+        state.cardBacking = nil
+        RequestPaint(frame)
+    end
+    return ok
 end
 
 function TooltipChrome.IsActive(frame)
@@ -220,6 +479,8 @@ function TooltipChrome.DisableOwner(owner)
         if not next(state.owners) then
             tooltips[frame], pending[frame] = nil, nil
             for region, paint in pairs(state.regions) do Restore(region, paint) end
+            RevealCenter(state)
+            NS.Cosmetics.RestoreOwner(state)
         end
     end
 end

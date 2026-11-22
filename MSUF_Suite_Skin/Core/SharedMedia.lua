@@ -43,6 +43,11 @@ end
 -- through the normal OOC typography path. The catalog itself is already shared
 -- by LibSharedMedia, so unrelated registrations need no runtime work.
 function SharedMedia:OnRegistered(_, mediaType, key)
+    if mediaType == "statusbar" and NS.TooltipVitals then
+        NS.TooltipVitals.MediaRegistered(key)
+        return
+    end
+    if mediaType == "font" and NS.TooltipVitals then NS.TooltipVitals.FontRegistered(key) end
     -- Older CallbackHandler embeds can dispatch without forwarding event
     -- arguments. In that case the selected key becoming available is still an
     -- exact, bounded signal and avoids rescanning or refreshing other fonts.

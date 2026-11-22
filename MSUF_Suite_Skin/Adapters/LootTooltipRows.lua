@@ -4,30 +4,83 @@ local Rows = {}
 NS.LootTooltipRows = Rows
 local Safety, Kit, Card = NS.Safety, NS.AdapterKit, NS.ItemTooltipCard
 local rows, owners = Kit.WeakSet(), {}
-local root, box, callbacks, enabled
+local root, box, callbacks, enabled, rich, matching
+
+local function ReleaseHeader(header)
+    if not header then return end
+    header.frame:Hide()
+    NS.Cosmetics.RestoreOwner(header)
+end
 
 local function Release(record)
     if not record or not record.active then return end
     record.active = false
-    record.header.frame:Hide()
-    record.outline.frame:Hide()
+    ReleaseHeader(record.header)
+    if record.outline then record.outline.frame:Hide() end
+    if record.backing then record.backing:Hide() end
     NS.Cosmetics.RestoreOwner(record)
+    record.nativeFill = nil
 end
 
 local function Released(_, row)
     if Safety.Public(row) then Release(rows[row]) end
 end
 
-local function New(row, item)
-    local header = Card.Create(row, true)
-    -- Keep Blizzard's actual item icon and its stack and quest overlays.
-    header.frame:SetPoint("TOPLEFT", item, "TOPRIGHT", 2, 2)
-    header.frame:SetPoint("TOPRIGHT", row, "TOPRIGHT", -1, -2)
-    local outline = Card.CreateOutline(row, true)
-    outline.frame:SetFrameLevel(row:GetFrameLevel() + 3)
-    local record = { header = header, outline = outline }
-    rows[row] = record
-    return record
+local function PaintBacking(record, row, level)
+    local native = matching and Safety.Field(row, "NameFrame")
+    if not native or level < 1 or not Kit.ParentIs(native, row) then
+        if record.backing then record.backing:Hide() end
+        NS.Cosmetics.Restore(record.nativeFill, record)
+        record.nativeFill = nil
+        return false
+    end
+    if record.nativeFill ~= native then
+        NS.Cosmetics.Restore(record.nativeFill, record)
+        record.nativeFill = nil
+    end
+    if not record.backing then
+        record.backing = Card.CreateBacking(row, level - 1)
+        if not record.backing then return false end
+        record.backing:SetAllPoints(row)
+    elseif record.backing:GetFrameLevel() ~= level - 1 then
+        record.backing:SetFrameLevel(level - 1)
+    end
+    if not record.nativeFill or Safety.Read(native, "GetAlpha") ~= 0 then
+        if not NS.Cosmetics.Fade(native, record) then
+            record.backing:Hide()
+            return false
+        end
+        record.nativeFill = native
+    end
+    if not record.backing:IsShown() then record.backing:Show() end
+    return true
+end
+
+local function PaintHeader(record, row, item, slot, name, height, unified)
+    local text, qualityText = row.Text, row.QualityText
+    local header = record.header
+    if not header then
+        header = Card.Create(row, true)
+        -- Keep Blizzard's item widget, its stack, and its quest overlays.
+        header.frame:SetPoint("TOPLEFT", item, "TOPRIGHT", 2, 2)
+        header.frame:SetPoint("TOPRIGHT", row, "TOPRIGHT", -1, -2)
+        record.header = header
+    end
+    if not (NS.Cosmetics.Fade(text, header) and NS.Cosmetics.Fade(qualityText, header)) then
+        ReleaseHeader(header)
+        return
+    end
+    NS.Cosmetics.Fade(row.QualityStripe, header)
+    local link = GetLootSlotLink(slot)
+    local kind, level
+    if Safety.Public(link) and type(link) == "string" and link ~= "" then
+        local _
+        _, kind, level = Card.ReadItem(link)
+    end
+    Card.SetUnifiedHeader(header, unified)
+    Card.Draw(header, name, nil, kind, level, Safety.Read(row, "GetQuality"), height - 4)
+    header.frame:Show()
+    return header
 end
 
 local function Paint(row)
@@ -41,22 +94,26 @@ local function Paint(row)
         Release(record)
         return
     end
-    local slot = Safety.Read(row, "GetSlotIndex")
-    if type(slot) ~= "number" or slot < 1 then Release(record) return end
-    local link = GetLootSlotLink(slot)
-    local kind, level
-    if Safety.Public(link) and type(link) == "string" and link ~= "" then
-        local _
-        _, kind, level = Card.ReadItem(link)
+    local slot, frameLevel = Safety.Read(row, "GetSlotIndex"), Safety.Read(row, "GetFrameLevel")
+    if type(slot) ~= "number" or slot < 1 or type(frameLevel) ~= "number" then Release(record) return end
+    if not record then
+        record = {}
+        rows[row] = record
     end
-    record = record or New(row, item)
     record.active = true
-    if not (NS.Cosmetics.Fade(text, record) and NS.Cosmetics.Fade(qualityText, record)) then Release(record) return end
-    NS.Cosmetics.Fade(row.QualityStripe, record)
-    local quality = Safety.Read(row, "GetQuality")
-    Card.Draw(record.header, name, nil, kind, level, quality, height - 4)
-    record.header.frame:Show()
-    local r, g, b = record.header.r, record.header.g, record.header.b
+    local unified = PaintBacking(record, row, frameLevel)
+    local header
+    if rich then
+        header = PaintHeader(record, row, item, slot, name, height, unified)
+    else
+        ReleaseHeader(record.header)
+    end
+    if not unified and not header then Release(record) return end
+    local r, g, b
+    if header then r, g, b = header.r, header.g, header.b
+    else r, g, b = Safety.ReadColor(text, "GetTextColor") end
+    if not record.outline then record.outline = Card.CreateOutline(row, true) end
+    if record.outline.frame:GetFrameLevel() ~= frameLevel + 3 then record.outline.frame:SetFrameLevel(frameLevel + 3) end
     Card.PaintOutline(record.outline, row, row, r, g, b)
     if record.outline.frame:IsShown() then NS.Cosmetics.Fade(row.BorderFrame, record)
     else NS.Cosmetics.Restore(row.BorderFrame, record) end
@@ -84,7 +141,8 @@ end
 
 local function Refresh()
     if not root then return end
-    local wanted = next(owners) ~= nil and NS.DB.enabled ~= false and Card.TypeStyle("loot") == "custom"
+    rich, matching = Card.TypeStyle("loot") == "custom", Card.MatchesLootSurface()
+    local wanted = next(owners) ~= nil and NS.DB.enabled ~= false and (rich or matching)
     if wanted ~= enabled then
         enabled = wanted
         if wanted then

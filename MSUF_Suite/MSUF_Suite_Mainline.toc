@@ -96,6 +96,7 @@ Core\WindowCaption.lua
 Core\MinimizedWindows.lua
 Integrations\MapkoSkin.lua
 Core\HostBridge.lua
+Core\HostBridgeTooltip.lua
 Core\HostBridgeAnchors.lua
 Core\HostBridgeBars.lua
 Core\HostBridgeNameplateExtras.lua

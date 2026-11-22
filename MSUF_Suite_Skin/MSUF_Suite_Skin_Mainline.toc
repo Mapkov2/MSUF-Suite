@@ -73,6 +73,8 @@ Adapters\GenericWindowsNodes.lua
 Adapters\GenericWindowsFrames.lua
 Adapters\ChatConfig.lua
 Adapters\TooltipChrome.lua
+Adapters\TooltipCardSettings.lua
+Adapters\UnitTooltipVitals.lua
 Adapters\ItemTooltipCard.lua
 Adapters\LootTooltipRows.lua
 Adapters\CatalogShopMotion.lua

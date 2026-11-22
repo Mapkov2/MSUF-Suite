@@ -300,9 +300,16 @@ local function Forces(t, unit, rows)
 end
 
 local function HideHealth(t)
-    local health = t.StatusBar or GameTooltipStatusBar
-    if NS.Safety.IsForbidden(health) then return end
-    if M.health[health] == nil then M.health[health] = health:GetAlpha() end
+    if NS.HostBridge and NS.HostBridge.TooltipOwnsHealth then return end
+    local health = t.StatusBar
+    if not S.Public(health) then return end
+    health = health or GameTooltipStatusBar
+    if not S.Public(health) or not health or NS.Safety.IsForbidden(health) then return end
+    if M.health[health] == nil then
+        local alpha = health:GetAlpha()
+        if not S.Finite(alpha) then return end
+        M.health[health] = alpha
+    end
     health:SetAlpha(0)
 end
 
@@ -521,6 +528,8 @@ local function Restore(self)
     end
 end
 
+local function ReleaseLegacyHealth() Restore(M) end
+
 local function Hidden()
     ClearHoverInspect()
     M.mountGUID, M.mountName, M.mountCollected = nil, nil, nil
@@ -547,13 +556,17 @@ local function Install(self)
     Lines.Add(self, "Mount", Mount)
     hooksecurefunc("GameTooltip_SetDefaultAnchor", Anchor)
     GameTooltip:HookScript("OnHide", Hidden)
-    GameTooltip:HookScript("OnTooltipCleared", Border.Restore)
+    GameTooltip:HookScript("OnTooltipCleared", function(t)
+        Border.Restore(t)
+        Restore(self)
+    end)
     hooksecurefunc("NotifyInspect", ObserveInspect)
     hooksecurefunc("ClearInspectPlayer", function() ObserveInspect() end)
     self.hooked = true
 end
 
 function M:Enable()
+    if NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = ReleaseLegacyHealth end
     self.lastInspect = Now()
     self.context:Event("INSPECT_READY", InspectReady)
     Install(self)
@@ -569,6 +582,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    if NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = nil end
     Lines.SetPositioner(nil)
     if S.HostBridge then S.HostBridge.SetUnitFrameTooltipPanelPositioner(nil) end
     if self.preview then self.preview:Hide() end
