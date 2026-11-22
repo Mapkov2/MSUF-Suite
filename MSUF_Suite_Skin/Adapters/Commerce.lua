@@ -21,6 +21,16 @@ local DEFAULT_OWNER = "blizzardWindows"
 local AUCTION_ADDON = "Blizzard_AuctionHouseUI"
 local MAIL_ROW_COUNT = 7
 local MAIL_ATTACHMENT_COUNT = 16
+-- MailFrame.xml on Forever (734f0653) and Retail (ab5cb850). Send slots
+-- draw this unnamed stone backing independently of the normal item texture.
+local MAIL_SLOT_BACKGROUND = 130862
+local MAIL_SLOT_PATH = "interface\\buttons\\ui-slot-background"
+local mailActions = {
+    InboxFrame = { "OpenAllMail" },
+    SendMailFrame = { "SendMailMailButton", "SendMailCancelButton" },
+    OpenMailFrame = { "OpenMailReplyButton", "OpenMailDeleteButton", "OpenMailCancelButton", "OpenMailReportSpamButton" },
+}
+local mailButtonSlices = { "Left", "Middle", "Right" }
 
 local auctionPanelPaths = {
     { "CategoriesList" },
@@ -77,6 +87,7 @@ local ATTACHMENT_SPEC = SurfaceSpec("input", 4, 1)
 local MAIL_INPUT_SPEC = { role = "input", regions = { "Left", "Middle", "Right" } }
 local SEARCH_SPEC = {}
 local BUTTON_SPEC = {}
+local MAIL_BUTTON_SPEC = { allowImplicitProtected = true }
 local TAB_SPEC = {}
 
 local function Group(owner)
@@ -122,11 +133,45 @@ local function SkinMailRow(group, row)
     return Kit.Attach(group, row, ROW_SPEC)
 end
 
-local function SkinMailAttachment(group, globalName)
+local function FadeSendSlotBacking(region, group)
+    if Safety.Read(region, "GetDrawLayer") ~= "BACKGROUND" then return end
+    local texture = Safety.Read(region, "GetTexture")
+    if texture == MAIL_SLOT_BACKGROUND or type(texture) == "string" and texture:lower() == MAIL_SLOT_PATH then
+        Fade(group, region)
+    end
+end
+
+local function SkinMailAttachment(group, globalName, sendSlot)
     local button = _G[globalName]
     if not button then return end
-    Fade(group, _G[globalName .. "Slot"])
-    Kit.Attach(group, button, ATTACHMENT_SPEC)
+    local first = not group.surfaces[button]
+    if Kit.Ensure(group, button, ATTACHMENT_SPEC) and first then
+        if sendSlot then Kit.ForEachRegion(button, FadeSendSlotBacking, group)
+        else Fade(group, Field(_G, globalName .. "Slot")) end
+    end
+end
+
+local function SkinMailAction(group, parentOwner, parent, button)
+    if not Kit.ParentIs(button, parent) or not Safety.CanCreateRegions(button, true) then return end
+    local owner = NS.ControlSkin.GetOwner(button)
+    if not owner and not NS.ControlSkin.ApplyButton(button, group.owner, MAIL_BUTTON_SPEC) then return end
+    local foreign = owner and owner ~= group.owner and owner ~= parentOwner and owner ~= "uipanel-buttons"
+    for _, key in ipairs(mailButtonSlices) do
+        local slice = Field(button, key)
+        if Kit.ParentIs(slice, button) then
+            if foreign then NS.Cosmetics.ReleaseDecoration(slice, group.owner)
+            elseif NS.Cosmetics.GetOwner(slice) ~= group.owner then NS.Cosmetics.HideDecoration(slice, group.owner) end
+        end
+    end
+end
+
+local function SkinMailActions(group, parentOwner)
+    for parentName, names in pairs(mailActions) do
+        local parent = Field(_G, parentName)
+        for _, name in ipairs(names) do
+            SkinMailAction(group, parentOwner, parent, Field(_G, name))
+        end
+    end
 end
 
 -- OpenMailBodyText is SimpleHTML and uses the paragraph style for plain
@@ -215,7 +260,7 @@ local function SkinMailHint(group)
     mailHint.label:SetTextColor(NS.Theme.GetColor("muted"))
 end
 
-local function SkinMail(owner)
+local function SkinMail(owner, parentOwner)
     if NS.IsCombatLocked() then return false, "combat" end
     local group = Group(owner)
     Fade(group, _G.InboxFrameBg)
@@ -242,9 +287,10 @@ local function SkinMail(owner)
     Kit.SkinControl(group, _G.SendMailSubjectEditBox, MAIL_INPUT_SPEC, "ApplySearchBox")
     Kit.SkinControl(group, _G.MailFrameTab1, TAB_SPEC, "ApplyTab")
     Kit.SkinControl(group, _G.MailFrameTab2, TAB_SPEC, "ApplyTab")
+    SkinMailActions(group, parentOwner)
 
     for index = 1, MAIL_ATTACHMENT_COUNT do
-        SkinMailAttachment(group, "SendMailAttachment" .. index)
+        SkinMailAttachment(group, "SendMailAttachment" .. index, true)
         SkinMailAttachment(group, "OpenMailAttachmentButton" .. index)
     end
     return true
@@ -384,7 +430,7 @@ function Commerce.Apply(parentOwner)
     state.active = true
     local applied = false
     if NS.DB.skinCategories.social ~= false then
-        applied = SkinMail(state.mailOwner) == true or applied
+        applied = SkinMail(state.mailOwner, parentOwner) == true or applied
     else
         DisableGroup(state.mailOwner)
     end

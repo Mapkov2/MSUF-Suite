@@ -74,15 +74,47 @@ function Cosmetics.CaptureNativeAlpha(region, owner)
     return true
 end
 
-local function Conceal(region, state)
+-- Blizzard can repaint these fixed interaction-window textures during a
+-- fight. Check the current parent chain, including protection inherited
+-- from a frame when the texture itself has no IsProtected method.
+local function CanPaintInteractionArt(region, decoration)
+    if decoration.otherWindow then return false end
+    local target = region
+    for _ = 1, 12 do
+        if target == UIParent then
+            decoration.otherWindow = true
+            return false
+        end
+        if not NS.Safety.CanDecorate(target) then return false end
+        if target == QuestFrame or target == GossipFrame or target == MailFrame or target == OpenMailFrame then return true end
+        target = NS.Safety.Read(target, "GetParent")
+    end
+    return false
+end
+
+local function Conceal(region, state, settled)
     local decoration = state.decoration
     if not decoration or Cosmetics.states[region] ~= state then return end
     if NS.IsCombatLocked() then
         if not decoration.resume then
-            decoration.resume = function() Conceal(region, state) end
+            decoration.resume = function()
+                decoration.scheduled = nil
+                if state.decoration == decoration then Conceal(region, state, true) end
+            end
         end
-        NS.CombatGate.RunOrDefer(decoration.resume, decoration.resume)
-        return
+        if not CanPaintInteractionArt(region, decoration) then
+            NS.CombatGate.RunOrDefer(decoration.resume, decoration.resume)
+            return
+        end
+        -- Leave the native Show/SetAlpha stack first. In particular, the
+        -- mailbox still has its protected reading emote to run.
+        if not settled then
+            if not decoration.scheduled then
+                decoration.scheduled = true
+                C_Timer.After(0, decoration.resume)
+            end
+            return
+        end
     end
     if not NS.Safety.CanDecorate(region, true) then return end
     local alpha = state.kind == "alpha" and AccessibleAlpha(region)
@@ -154,6 +186,7 @@ local function SuppressDecoration(region, owner, claim, kind)
         end
     end
     state.decoration.claims[claim or owner] = true
+    state.decoration.otherWindow = nil
     Conceal(region, state)
     return true
 end

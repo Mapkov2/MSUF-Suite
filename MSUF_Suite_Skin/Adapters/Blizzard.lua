@@ -297,9 +297,9 @@ local function AttachCombatWindow(definition)
         if frame then NS.PlayerSpellsSkin.AttachWindowControls(frame, definition.id) end
     elseif definition and definition.id == "worldMap" and NS.DB.enabled and DefinitionEnabled(definition) then
         NS.WorldMapSkin.AttachCombatQuestLog(NS.Safety.Field(_G, "WorldMapFrame"), definition.id)
-    elseif definition and definition.id == "blizzardWindows" and NS.DB.enabled and DefinitionEnabled(definition)
-        and NS.GenericWindows.IsCategoryEnabled("social") then
-        RunPart("SocialUISkin", "Apply", definition.id)
+    elseif definition and definition.id == "blizzardWindows" and NS.DB.enabled and DefinitionEnabled(definition) then
+        RunPart("GenericWindows", "PrepareInteractionWindows", definition.id)
+        if NS.GenericWindows.IsCategoryEnabled("social") then RunPart("SocialUISkin", "Apply", definition.id) end
     end
 end
 

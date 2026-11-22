@@ -65,8 +65,27 @@ local function PaintRow(row, turnIn)
     MarkSelection(row, card, turnIn)
 end
 
+local rowParts = { "NameFrame", "Icon", "IconBorder" }
+local function CanPaintRow(row, locked)
+    if not Safety.CanCreateRegions(row, not locked) then return false end
+    if not locked then return true end
+    for _, key in ipairs(rowParts) do
+        local part = Safety.Field(row, key)
+        if not Safety.Public(part) or part and (not Kit.ParentIs(part, row) or not Safety.CanDecorate(part)) then return false end
+    end
+    local parent = Safety.Read(row, "GetParent")
+    for _ = 1, 12 do
+        if parent == UIParent then return true end
+        if not Safety.CanDecorate(parent) then return false end
+        if parent == QuestFrame then return true end
+        parent = Safety.Read(parent, "GetParent")
+    end
+    return false
+end
+
 function Cards.Paint()
-    if NS.IsCombatLocked() then NS.CombatGate.RunOrDefer("quest-reward-cards", Cards.Paint) return end
+    local locked = NS.IsCombatLocked()
+    if locked then NS.CombatGate.RunOrDefer("quest-reward-cards", Cards.Paint) end
     generation = generation + 1
     local rewards, turnIn = NativePage()
     local rows = Safety.Field(rewards, "RewardButtons")
@@ -74,16 +93,25 @@ function Cards.Paint()
         for index = 1, math.min(#rows, 80) do
             local row = rows[index]
             if Safety.Public(row) and Kit.ParentIs(row, rewards) and Safety.Read(row, "IsShown") == true
-                and Safety.CanCreateRegions(row, true) then PaintRow(row, turnIn) end
+                and CanPaintRow(row, locked) then PaintRow(row, turnIn) end
         end
     end
-    for _, card in pairs(cards) do
-        if card.generation ~= generation then Release(card) end
+    for row, card in pairs(cards) do
+        if card.active and card.generation ~= generation and (not locked or CanPaintRow(row, true)) then Release(card) end
     end
 end
 
+local queued = false
+local function PaintAfterNative()
+    queued = false
+    Safety.Dispatch(Cards.Paint)
+end
+
 local function AfterNative()
-    if enabled and Safety.Read(QuestFrame, "IsVisible") == true then NS.Registry.QueueJob(Cards.Paint) end
+    if not queued and enabled and Safety.Read(QuestFrame, "IsVisible") == true then
+        queued = true
+        C_Timer.After(0, PaintAfterNative)
+    end
 end
 
 local function OnHide()

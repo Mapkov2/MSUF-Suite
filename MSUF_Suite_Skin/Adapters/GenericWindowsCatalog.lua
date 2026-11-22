@@ -250,7 +250,7 @@ local function PaintEntryFrame(request, index)
     end
     request.frames[index] = request.frames[index] or {}
     request.frames[index].pending = nil
-    if entry.id == "core-tooltips" then
+    if entry.id == "core-tooltips" or entry.id == "item-reference-tooltips" and frameValue ~= "ItemRefTooltip" then
         request.ownerState.coreTooltips = true
         local ok, reason = NS.TooltipChrome.Apply(frame, owner)
         StoreFrameResult(request, index, ok, reason)
@@ -280,7 +280,7 @@ local function PaintEntryFrame(request, index)
     -- mostly in combat, where they cannot be painted: a deferral woke in combat and
     -- re-armed after every combat. They are decided now, as before deferral.
     if entry.category ~= "hud" and CanSkin(frame)
-        and Kit.DeferHidden(frame, request, NS.Client.isForever and entry.id == "mail"
+        and Kit.DeferHidden(frame, request, entry.id == "mail"
             and QueueEntryFrame or DeferredEntryFrame, request, index) then
         StoreFrameResult(request, index, false, "waiting")
         return
@@ -341,7 +341,16 @@ end
 
 -- MailFrame_Show still has its protected reading emote to run after OnShow.
 QueueEntryFrame = function(request, index)
-    NS.Registry.QueueJob(FrameJob(request, index).run)
+    local job = FrameJob(request, index)
+    if job.scheduled then return end
+    job.scheduled = true
+    if not job.afterShow then
+        job.afterShow = function()
+            job.scheduled = nil
+            DeferredEntryFrame(request, index)
+        end
+    end
+    C_Timer.After(0, job.afterShow)
 end
 
 DeferEntryFrame = function(request, index)
@@ -388,6 +397,22 @@ ApplyEntryIsolated = function(entry, owner)
     if not Kit.Isolate(GenericWindows.ApplyEntry, entry, owner) then
         SetEntryStatus(entry, owner, "error")
         entryOwners[entry.id] = owner
+    end
+end
+
+-- A combat login can precede the regular catalog pass. Arm the two enabled
+-- interaction entries once; their normal show/LoD paths own the paint.
+local interactionRoots = { "GossipFrame", "MailFrame" }
+function GenericWindows.PrepareInteractionWindows(owner)
+    if not Enabled() then return end
+    for _, name in ipairs(interactionRoots) do
+        local entry = NS.BlizzardCatalog.FindByFrame(name)
+        if entry and GenericWindows.IsCategoryEnabled(entry.category) and not entryStatus[entry.id] then
+            ApplyEntryIsolated(entry, owner)
+            if name == "GossipFrame" and QuestFrame and NS.QuestWindow.Activate(QuestFrame, owner) then
+                OwnerState(owner).questWindow = QuestFrame
+            end
+        end
     end
 end
 
@@ -493,6 +518,10 @@ local function DisableNow(owner)
     NS.MacroWindow.Disable(owner)
     NS.CatalogShopMotion.Disable(owner)
     local ownerState = OwnerState(owner)
+    if ownerState.questWindow then
+        NS.QuestWindow.Deactivate(ownerState.questWindow, owner)
+        ownerState.questWindow = nil
+    end
     if ownerState.itemReferenceCell then
         ownerState.itemReferenceCell.itemReferenceOwner = nil
         ownerState.itemReferenceCell:Hide()

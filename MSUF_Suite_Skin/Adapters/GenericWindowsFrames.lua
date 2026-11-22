@@ -522,6 +522,18 @@ local function SkinWindowChrome(frame, owner, metrics, kind)
     if CanPaintWindowRegion(streaks) then NS.Cosmetics.Fade(streaks, owner) end
 end
 
+local gossipButtonSlices = { "Left", "Middle", "Right" }
+local function FinishGossipFooter(frame, owner, metrics)
+    local page = Field(frame, "GreetingPanel")
+    if not Safety.Public(page) or not Kit.ParentIs(page, frame) then return end
+    local button = Field(page, "GoodbyeButton")
+    if not Safety.Public(button) or not Kit.ParentIs(button, page) or not metrics.controlTargets[button] then return end
+    for _, key in ipairs(gossipButtonSlices) do
+        local slice = Field(button, key)
+        if Safety.Public(slice) and Kit.ParentIs(slice, button) then NS.Cosmetics.HideDecoration(slice, owner) end
+    end
+end
+
 local function ApplyFrameNow(frame, owner, mode)
     if not frame then return false, "invalid", nil end
     NS.WindowControls.TrackFocus(frame, owner)
@@ -558,6 +570,7 @@ local function ApplyFrameNow(frame, owner, mode)
         SkinExplicitFields(frame, owner, metrics)
     end
     TraverseTree(frame, owner, metrics, TraversalLimits(mode))
+    if frame == GossipFrame then FinishGossipFooter(frame, owner, metrics) end
     StylePrimaryButton(frame, owner, mode)
 
     local ownerState = OwnerState(owner)

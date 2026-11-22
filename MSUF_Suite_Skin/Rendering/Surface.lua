@@ -70,6 +70,10 @@ local function SetVertexColor(texture, colorKey, alphaScale)
 end
 
 local function ResolveFill(material, spec, alphaScale)
+    if spec.resolveFill then
+        local r, g, b, a, tr, tg, tb, ta, gradient, direction = spec.resolveFill(spec, alphaScale)
+        if r ~= nil then return r, g, b, a, tr, tg, tb, ta, gradient, direction end
+    end
     local from = NS.Theme.GetColorTable(material.from)
     local to = NS.Theme.GetColorTable(material.to)
     local opacity = NS.Theme.GetMaterialOpacity(material)
@@ -129,7 +133,7 @@ end
 local function RefreshDepth(state, geometry, material, suppressFill)
     local amount = tonumber((NS.DB and NS.DB.theme and NS.DB.theme.materialDepth)
         or NS.Defaults.theme.materialDepth) or 0
-    if amount <= 0 or state.spec.fillVisible == false or suppressFill
+    if amount <= 0 or state.spec.fillVisible == false or state.spec.depth == false or suppressFill
         or not SupportsDepth(state) or not geometry.hoverEdge then
         if state.depth then state.depth:Hide() end
         return
@@ -236,6 +240,7 @@ local function SurfaceTokens(state)
     end
     for index = #tokens, 1, -1 do tokens[index] = nil end
     AddMaterialTokens(tokens, state.spec.role or "panel")
+    AddToken(tokens, state.spec.appearanceToken)
     if state.spec.activeRole then
         AddMaterialTokens(tokens, state.spec.activeRole)
     end
@@ -682,6 +687,8 @@ end
 -- when target has no visible edge. Only the owned edge texture changes, so
 -- combat does not matter.
 function Surface.TintEdge(target, r, g, b)
+    local public = NS.Safety.Public
+    if not (public(target) and public(r) and public(g) and public(b)) then return false end
     local state = NS.Registry.GetSurface(target)
     if not state then
         local chrome = NS.TooltipChrome

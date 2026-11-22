@@ -19,6 +19,7 @@ local pieces = { "TopEdge", "BottomEdge", "LeftEdge", "RightEdge", "TopLeftCorne
 local owners, bands = {}, {}
 local art = Kit.WeakSet()
 local enabled, hooked, status, paints = false, false, "inactive", 0
+local paintQueued = false
 local Release
 
 local function Enabled()
@@ -48,7 +49,9 @@ local function Dress(frame)
     if bg and Kit.ParentIs(bg, frame) then Fade(bg) end
     for _, key in ipairs(material) do Fade(Safety.Field(frame, key)) end
     local nine = Safety.Field(frame, "NineSlice")
-    if nine then for _, key in ipairs(pieces) do Fade(Safety.Field(nine, key)) end end
+    if Safety.Public(nine) and Safety.CanDecorate(nine, not NS.IsCombatLocked()) then
+        for _, key in ipairs(pieces) do Fade(Safety.Field(nine, key)) end
+    end
 end
 
 -- Texture bands have no hit rectangle. The title and portrait live in their
@@ -75,7 +78,7 @@ local function PaintShell()
     if not NS.Surface.Attach(QuestFrame, spec) then return false end
     Dress(QuestFrame)
     local inset = Safety.Field(QuestFrame, "Inset")
-    if Kit.ParentIs(inset, QuestFrame) and Safety.CanDecorate(inset, true) then Dress(inset) end
+    if Kit.ParentIs(inset, QuestFrame) and Safety.CanDecorate(inset, not NS.IsCombatLocked()) then Dress(inset) end
     Band("title", "TOP", -2, 20, "ink")
     Band("topLine", "TOP", -22, 1, "borderSoft")
     Band("footer", "BOTTOM", 2, 29, "ink")
@@ -84,7 +87,13 @@ local function PaintShell()
 end
 
 local function PaintFooterButton(page, button)
-    if not Kit.ParentIs(button, page) or not Safety.CanDecorate(button, true) then return end
+    if not Kit.ParentIs(button, page) or not Safety.CanDecorate(button, not NS.IsCombatLocked()) then return end
+    if NS.IsCombatLocked() then
+        for _, key in ipairs(footerButtonSlices) do
+            local slice = Safety.Field(button, key)
+            if not Safety.Public(slice) or not Kit.ParentIs(slice, button) or not Safety.CanDecorate(slice) then return end
+        end
+    end
     local owner = NS.ControlSkin.GetOwner(button)
     local painted
     if not owner then painted = NS.ControlSkin.ApplyButton(button, OWNER, BUTTON_SPEC)
@@ -116,7 +125,7 @@ local function PaintPage(page, controls)
     end
     local scroll = Safety.Field(_G, controls[1])
     local bar = scroll and Safety.Field(scroll, "ScrollBar")
-    if Kit.ParentIs(scroll, page) and Kit.ParentIs(bar, scroll) then
+    if not NS.IsCombatLocked() and Kit.ParentIs(scroll, page) and Kit.ParentIs(bar, scroll) then
         local state = NS.ScrollBarSkin.GetState(bar)
         if not state then NS.ScrollBarSkin.Apply(bar, OWNER)
         elseif OurOwner(state.owner) then NS.ScrollBarSkin.Refresh(bar) end
@@ -128,22 +137,31 @@ end
 
 local function Paint()
     if not Visible() then return end
-    if NS.IsCombatLocked() then return NS.CombatGate.RunOrDefer(OWNER, Paint) end
-    if not Safety.CanCreateRegions(QuestFrame, true) then status = "protected" return end
+    local locked = NS.IsCombatLocked()
+    if locked then NS.CombatGate.RunOrDefer(OWNER, Paint) end
+    if not Safety.CanCreateRegions(QuestFrame, not locked) then status = "protected" return end
     if not PaintShell() then status = "surface" return end
     for name, controls in pairs(pages) do
         local page = Safety.Field(_G, name)
         if Kit.ParentIs(page, QuestFrame) and Safety.Read(page, "IsVisible") == true then
-            if Safety.CanDecorate(page, true) then PaintPage(page, controls) end
+            if Safety.CanCreateRegions(page, not locked) then PaintPage(page, controls) end
         end
     end
-    NS.QuestText.Refresh()
+    if not locked then NS.QuestText.Refresh() end
     NS.QuestRewardCards.Paint()
     status, paints = "painted", paints + 1
 end
 
+local function PaintAfterShow()
+    paintQueued = false
+    Safety.Dispatch(Paint)
+end
+
 function Window.Refresh()
-    if Visible() then NS.Registry.QueueJob(Paint)
+    if Visible() then
+        if paintQueued then return end
+        paintQueued = true
+        C_Timer.After(0, PaintAfterShow)
     elseif enabled and not Enabled() and status == "painted" then NS.Registry.QueueJob(Release) end
 end
 
@@ -162,7 +180,13 @@ local function HookWindow()
 end
 
 function Window.Activate(root, owner)
-    if root ~= QuestFrame or not owner then return end
+    if not root or root ~= QuestFrame or not owner then return end
+    if not hooked and NS.IsCombatLocked() then
+        if not Safety.CanDecorate(root) then return end
+        for name in pairs(pages) do
+            if not Safety.CanDecorate(Safety.Field(_G, name)) then return end
+        end
+    end
     owners[owner] = true
     if not enabled then
         enabled, status = true, "waiting"
@@ -170,6 +194,7 @@ function Window.Activate(root, owner)
         NS.QuestRewardCards.Enable()
     end
     Window.Refresh()
+    return true
 end
 
 Release = function()
