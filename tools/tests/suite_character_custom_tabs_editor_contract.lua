@@ -208,7 +208,8 @@ local function Run(forever, styled)
     P.ContextMenu = function(anchor, generate)
         local items = {}
         menus[#menus + 1] = items
-        generate(anchor, { CreateTitle = function() end, CreateButton = function(_, label, click) items[label] = click end })
+        generate(anchor, { CreateTitle = function() end, CreateButton = function(_, label, click) items[label] = click end,
+            CreateCheckbox = function(_, label, checked, click) items[label] = click end })
     end
     P.AskText = function(_, _, callback)
         answer = callback
@@ -326,7 +327,14 @@ local function Run(forever, styled)
     assert(Tab().name == "Setup")
     local original = selected
     component.actions:Fire("OnClick")
+    Menu("Search")
+    assert(suite.CharacterHeader.TabSearchEnabled(config, original))
+    component.actions:Fire("OnClick")
     Menu("Duplicate tab")
+    assert(suite.CharacterHeader.TabSearchEnabled(config, selected))
+    component.actions:Fire("OnClick")
+    Menu("Search")
+    assert(not suite.CharacterHeader.TabSearchEnabled(config, selected) and suite.CharacterHeader.TabSearchEnabled(config, original))
     assert(selected ~= original and #model.Get(config) == 2 and Tab().cards[2].rows[2].label == "XP target")
     local removed = selected
     config.tabOrder = "overview," .. removed .. "," .. original .. ",gear"

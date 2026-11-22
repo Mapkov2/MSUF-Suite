@@ -38,7 +38,7 @@ local overlay = CharacterModelFrameBackgroundOverlay
 overlay.alpha = 1
 function overlay:GetAlpha() return self.alpha end
 function overlay:SetAlpha(alpha) writes = writes + 1; self.alpha = alpha end
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
 -- Drive the public Character adapter, not only its individual painters.
 local pending, detailCalls = {}, 0
 local detailsApply, eqolApply = NS.CharacterDetails.Apply, NS.EQoLCharacter.Apply

@@ -152,7 +152,8 @@ local function Test(initialPreview)
         ContextMenu = function(anchor, generate)
             menuItems = {}
             generate(anchor, { CreateTitle = function(_, label) menuItems[label] = true end,
-                CreateButton = function(_, label, click) menuItems[label] = click end })
+                CreateButton = function(_, label, click) menuItems[label] = click end,
+                CreateCheckbox = function(_, label, checked, click) menuItems[label] = click end })
         end,
         Set = function(_, key, value)
             config[key] = value
@@ -211,7 +212,9 @@ local function Test(initialPreview)
     local customSelection, contentOpened, actionsOpened
     local restoring, restoreStock, offeredStock
     local customCancels = 0
-    P.CharacterCustomTabs = { Create = function(_, changed)
+    Load("MSUF_Suite_Options/Pages/CharacterPreviewContent.lua", P)
+    Load("MSUF_Suite_Options/Pages/CharacterCustomTabs.lua", P)
+    P.CharacterCustomTabs.Create = function(_, changed)
         return {
             Add = function(_, _, hidden, restore)
                 if restoring then
@@ -233,7 +236,7 @@ local function Test(initialPreview)
             OpenContent = function() contentOpened = customSelection end,
             OpenTabActions = function() actionsOpened = customSelection end,
         }
-    end }
+    end
     local directOrder, directXY, directField
     P.CharacterPreviewHandles = { Create = function()
         return {
@@ -523,6 +526,9 @@ local function Test(initialPreview)
     toggles["Tab actions"]:Fire("OnClick")
     assert(menuItems["Key bindings"])()
     assert(bindingTab == "gear", "tab actions did not open bindings for the selected tab")
+    assert(menuItems["Search"])()
+    assert(Suite.CharacterHeader.TabSearchEnabled(config, "gear") and not Suite.CharacterHeader.TabSearchEnabled(config, "skills"))
+    toggles["Tab actions"]:Fire("OnClick")
     assert(menuItems["Use as character start tab"])()
     assert(config.homeTab == "gear", "the selected built-in tab could not become C home")
     toggles["Tab actions"]:Fire("OnClick")
@@ -540,7 +546,7 @@ local function Test(initialPreview)
     staleRestore("gear")
     assert(not Suite.CharacterHeader.TabVisible(config, "tab", "gear"), "an old menu restored into a different window")
     toggles["Tab actions"]:Fire("OnClick")
-    assert(not menuItems["Use as character start tab"] and not menuItems["Key bindings"] and menuItems["Hide tab"],
+    assert(not menuItems["Use as character start tab"] and not menuItems["Key bindings"] and not menuItems["Search"] and menuItems["Hide tab"],
         "Inspect offered player tab binding actions")
     assert(menuItems["Hide tab"])()
     assert(paintedTab == "overview" and toggles["+"]:IsShown(), "Inspect could not hide and restore a built-in tab")

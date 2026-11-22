@@ -58,6 +58,9 @@ for _, width in ipairs({600,960,1920}) do
         assert(point=="BOTTOMRIGHT" and px==-100 and py==80, "panel overwrites custom reagent placement")
         W.S.Set("bags","reagentWindowMoved",false)
         W.Settle()
+        local dockPoint, anchor, relativePoint = ContainerFrame6:GetPoint()
+        assert(dockPoint == "BOTTOMRIGHT" and anchor == W.CF and relativePoint == "BOTTOMLEFT",
+            "clearing the custom position did not reattach the open reagent window")
         W.Native(function() ContainerFrame6:Hide();UpdateContainerFrameAnchors() end)
         W.Settle()
         assert(math.abs(W.CF:GetScale()-W.P.BagPresentation.Scale(W.config,0))<.001, "closing companion leaves panel at fitted companion scale")

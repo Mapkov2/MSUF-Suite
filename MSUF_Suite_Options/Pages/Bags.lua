@@ -1,6 +1,7 @@
 local _, P = ...
 local S, Tr = P.S, P.Tr
 local PAGE, ID = "suite_bags", "bags"
+local ORGANISATION = "suite_bags_organisation"
 
 -- OpenAllBags from these buttons runs in the Suite's call. Under WoW
 -- Forever's Gamepad UI that would run Blizzard's frame controls manager in it
@@ -66,6 +67,13 @@ local function CategoriesInUse()
         or OpensBags() and P.Get(ID, "bankView") == Suite.BagsBankView.CATEGORIES
 end
 
+local function ReagentPositionBlocker()
+    local view, modes = P.Get(ID, "inventoryView"), P.Suite.BagsView
+    if view == modes.BLIZZARD_GRID or not OpensBags() then return end
+    if view == modes.SINGLE then return "inventoryView" end
+    if P.Get(ID, "combineReagentBag") then return "combineReagentBag" end
+end
+
 P.Gates[ID] = function(rule)
     local panel = P.Get(ID, "windowPresentation") == P.Suite.BagsPresentation.PANEL
         and P.Get(ID, "inventoryView") ~= P.Suite.BagsView.BLIZZARD_GRID
@@ -73,9 +81,10 @@ P.Gates[ID] = function(rule)
     if rule.key == "combineReagentBag" and not OpensBags() then
         return false, Tr("Unavailable with the current settings.")
     end
-    if rule.section == "reagentWindow" and (P.Get(ID, "combineReagentBag") or P.Get(ID, "inventoryView") == P.Suite.BagsView.SINGLE)
-        and P.Get(ID, "inventoryView") ~= P.Suite.BagsView.BLIZZARD_GRID and OpensBags() then
-        return false, Tr("Turn off reagent bag integration to position its separate window.")
+    if rule.section == "reagentWindow" then
+        local blocker = ReagentPositionBlocker()
+        if blocker == "combineReagentBag" then return false, Tr("Turn off reagent bag integration to position its separate window.") end
+        if blocker then return false, Tr("Unavailable with the current settings.") end
     end
     if (rule.key == "inventoryRows" or rule.key == "autoSizeWindow") and panel and P.Get(ID, "panelFullHeight") then
         return false, string.format(Tr("Turn off \"%s\" to change this."), Tr("Use full screen height"))
@@ -127,6 +136,33 @@ local function BuildAppearance(ctx, b)
     end
 end
 
+local function BuildReagentWindow(ctx, b, ui)
+    local section = "suite_bags_reagentWindow"
+    local function OpenBlocker()
+        local key = ReagentPositionBlocker()
+        if not key then return end
+        if not P.Suite.HostBridge.OpenExactMenuSetting(P.M, PAGE, ORGANISATION, "msufsuite.bags." .. key) and ui then
+            ui:Focus(ORGANISATION)
+        end
+    end
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, section, Tr("Reagent bag window"),
+        P.SectionRules(ID, "reagentWindow"), {
+            help = "Drag the reagent bag title while it is open to move it independently.",
+            extra = function(body, y, width)
+                local button = P.Button(ctx, body, "Open related settings", 16, y, width, OpenBlocker, nil,
+                    P.Meta(PAGE, ID, "action.reagentPositionBlocker", "action", section))
+                local function RefreshShortcut()
+                    local key = ReagentPositionBlocker()
+                    button:SetShown(key ~= nil and P.Get(ID, "enabled"))
+                    if key then P.SetButtonText(button, Tr("Open %s"):format(Tr(P.catalog[ID].rules[key].label))) end
+                end
+                P.M.TrackRefresh(ctx, RefreshShortcut)
+                RefreshShortcut()
+                return y - 34
+            end,
+        })
+end
+
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, WorkspaceSpec())
     P.MenuSamples.Bags(ui)
@@ -137,7 +173,7 @@ local function Build(ctx)
             open = true,
         })
     -- Hidden rules are data (custom categories): never rendered, never reset.
-    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_organisation", Tr("Inventory organisation"),
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, ORGANISATION, Tr("Inventory organisation"),
         P.SectionRules(ID, "organisation", function(rule) return not rule.hidden end), {
             help = P.Help("Keep Blizzard grid, or choose one Suite grid, physical bag groups or categories. Use Edit categories in the bag window to create, rename, reorder or disable your categories; drop items onto a sidebar category to assign them. Sort items by orders every Suite view; Name keeps the order each view has always had. Click a category header to hide or show its items. The footer counts free slots, and Mark items that beat what you wear puts a small arrow on equipment that beats what you wear in its slot. Scroll or use Previous and Next for larger inventories; in combat every slot is shown at once. Combined stack counts are visual only; physical stacks are always restored at the bank, guild bank, mail, trade, auction house and merchant.",
                 "Show reagent bag slots at the end of the backpack, or keep the separate reagent bag window."),
@@ -183,10 +219,7 @@ local function Build(ctx)
                     "Move the open bank in MSUF Edit Mode, or set the offsets here after turning on the custom position.",
             })
     end
-    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_reagentWindow", Tr("Reagent bag window"),
-        P.SectionRules(ID, "reagentWindow"), {
-            help = "Drag the reagent bag title while it is open to move it independently. Reset its position in MSUF Edit Mode to follow Blizzard's normal bag layout again.",
-        })
+    BuildReagentWindow(ctx, b, ui)
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_bagBar", Tr("Visibility State Driver"),
         P.SectionRules(ID, "bagBar"), { help = "Hide this bar when any selected condition is true." })
     for _, id in ipairs({ "inventoryArchive", "restockPlanner", "craftShopping", "bankTransfer", "currencyGoals" }) do

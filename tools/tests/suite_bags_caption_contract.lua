@@ -53,6 +53,53 @@ local function Point(frame, name)
     end
 end
 
+do
+    local W = World({ inventoryView = 4, windowScale = .9, windowMoved = true, windowX = -220, windowY = 110 })
+    local frame = W.CF
+    local button = W.P.BagCaption.states[frame].maximize
+    assert(button:IsMouseEnabled() and not button.bagDisabled, "Blizzard grid cannot maximize")
+    local x, y, width, height = frame:GetScaledRect()
+    local nativeWidth, nativeHeight = frame:GetSize(true)
+    local slotPoint, slotOwner, _, slotX, slotY = frame.Items[1]:GetPoint()
+    W.RunScript(button, "OnClick", "LeftButton")
+    W.Settle()
+    local left, bottom, fittedWidth, fittedHeight = frame:GetScaledRect()
+    assert(button.caption.kind == "restore" and fittedWidth > width and fittedHeight > height, "Blizzard grid did not fit")
+    assert(Near(left + fittedWidth / 2, W.screenWidth / 2) and Near(bottom + fittedHeight / 2, W.screenHeight / 2)
+        and fittedWidth <= W.screenWidth and fittedHeight <= W.screenHeight, "maximized grid exceeds the viewport")
+    local point, owner, _, itemX, itemY = frame.Items[1]:GetPoint()
+    assert(frame:GetWidth() == nativeWidth and frame:GetHeight() == nativeHeight and point == slotPoint and owner == slotOwner
+        and itemX == slotX and itemY == slotY, "maximize changed the native item layout")
+    assert(not W.P.BagResize.scaleGrip:IsVisible() and W.config.windowScale == .9 and not W.config.panelFullHeight,
+        "maximize changed saved dimensions or left the scale grip active")
+    local screenWidth = W.screenWidth
+    W.screenWidth = 600
+    W.Fire("UI_SCALE_CHANGED")
+    local resizedX, _, resizedWidth = frame:GetScaledRect()
+    assert(resizedWidth <= W.screenWidth and Near(resizedX + resizedWidth / 2, W.screenWidth / 2),
+        "maximized bag did not refit the changed viewport")
+    W.screenWidth = screenWidth
+    W.Fire("UI_SCALE_CHANGED")
+    W.EnterCombat()
+    assert(button.bagDisabled, "maximize still takes input in combat")
+    W.LeaveCombat()
+    W.Settle()
+    W.RunScript(button, "OnClick", "LeftButton")
+    W.Settle()
+    local restoredX, restoredY, restoredWidth, restoredHeight = frame:GetScaledRect()
+    assert(button.caption.kind == "maximize" and Near(restoredX, x) and Near(restoredY, y)
+        and Near(restoredWidth, width) and Near(restoredHeight, height), "restore lost the original bag geometry")
+    assert(W.P.BagResize.scaleGrip:IsVisible() and #W.taint == 0 and #W.combatLayout == 0,
+        "restoring the Blizzard grid changed protected layout or lost its grip")
+    W.RunScript(button, "OnClick", "LeftButton")
+    W.S.Set("bags", "inventoryView", W.NS.BagsView.ALL)
+    W.Settle()
+    W.S.Set("bags", "inventoryView", W.NS.BagsView.BLIZZARD_GRID)
+    W.Settle()
+    assert(button.caption.kind == "maximize" and W.P.BagResize.scaleGrip:IsVisible(),
+        "switching views retained an old maximized bag")
+end
+
 ---------------------------------------------------------------- the caption
 local W = World()
 local dataTexts = { showMinimizedWindows = false }
@@ -247,10 +294,10 @@ assert(title[4] == -C.P.BagCaption.WIDE, "the compact window's title runs under 
 C.RunScript(compact.maximize, "OnClick", "LeftButton")
 assert(C.config.panelFullHeight == false, "the compact window's disabled maximize changed a setting")
 
--- Blizzard's own grid keeps the caption with its maximize unavailable.
+-- The native grid exposes fit independently of the Suite panel's height.
 local G = World({ inventoryView = 4 })
 local grid = G.P.BagCaption.states[G.CF]
-assert(grid.close:IsVisible() and grid.maximize.bagDisabled and not grid.minimize.bagDisabled,
-    "Blizzard's bag grid lost its caption or offers the full height")
+assert(grid.close:IsVisible() and grid.maximize:IsMouseEnabled() and not grid.minimize.bagDisabled,
+    "Blizzard's bag grid lost a caption control")
 
 print("Bags caption " .. flavor .. ": cells, close, maximize, minimize, restore, combat, gamepad, reagent and release passed")

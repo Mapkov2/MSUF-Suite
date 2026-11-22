@@ -473,6 +473,7 @@ local function Run(forever)
         ClearPending = function(_, pending) wipe(pending) end,
     }
     local characterView = "modern"
+    local chromeRefreshes = 0
     MSUFSuite = {
         Suite = controller, Text = function(text) return text end, Client = { isForever = forever, isMainline = not forever },
         InCombat = function(event) return locked or event == "PLAYER_REGEN_DISABLED" end, Public = function(value) return not rawequal(value, secret) end,
@@ -485,6 +486,10 @@ local function Run(forever)
             GetCharacterView = function() return characterView end,
             Acquire = function(id) assert(id == "characterPanelInspect" or id == "characterPanelDock") end,
             CharacterGeometry = {
+                RefreshChrome = function(root)
+                    assert(root == CharacterFrame and presented ~= nil, "native chrome refreshed without its presentation")
+                    chromeRefreshes = chromeRefreshes + 1
+                end,
                 Present = function(root, frame)
                     assert(root == CharacterFrame and (not frame or frame:IsVisible()), "focus footprint used an invalid host")
                     presented = frame
@@ -637,10 +642,11 @@ local function Run(forever)
                         railPaints = railPaints + 1
                         assert(lastGearSummary == groups[1].rows, "speed repaint used a different rail")
                     end,
-                    ShowGroups = function(_, groups, combat)
+                    ShowGroups = function(self, groups, combat)
+                        self.fixedReport, self.reportPaints = combat == true, (self.reportPaints or 0) + 1
                         lastReport = groups
-                        if nativeRoot and locked and (lastTab == "overview" or lastTab == "gear") then
-                            assert(combat, "combat gear fallback used native scrolling")
+                        if nativeRoot and locked and (lastTab == "overview" or lastTab == "gear" or lastTab == "reputation") then
+                            assert(combat, "combat report used native scrolling")
                         end
                         if lastTab == "attributes" then lastCombatRail = combat end
                         if nativeRoot and (lastTab == "overview" or lastTab == "gear") then
@@ -671,6 +677,7 @@ local function Run(forever)
     Load("GearActions", ns)
     Load("Stats", ns)
     Load("Reputation", ns)
+    Load("ReputationList", ns)
     Load("Pages", ns)
     local reputationConfig
     ns.Pages.Read = function(tab, _, config)
@@ -1130,8 +1137,12 @@ local function Run(forever)
     Event(runtime, "PLAYER_REGEN_DISABLED")
     assert(not runtime.view.setManager and not callbacks.EQUIPMENT_SETS_CHANGED and not callbacks.BAG_UPDATE_DELAYED and lastContext == nil,
         "combat did not close and suspend the manager")
+    runtime.view.glassLook = true
+    beforeAppearance = appearancePaints
     locked = false
     Event(runtime, "PLAYER_REGEN_ENABLED")
+    assert(appearancePaints > beforeAppearance, "combat exit did not force the character window to verify its native glass suppression")
+    runtime.view.glassLook = nil
     gearActions.Equip(combatManager, combatManager.rows[1])
     assert(setUses == beforeUses + 1, "a manager action survived combat")
     local resumed = assert(runtime.view.setManager, "combat exit did not return to the open set manager")
@@ -1200,16 +1211,17 @@ local function Run(forever)
     Flush()
     assert(setReads == beforeSets and not callbacks.EQUIPMENT_SETS_CHANGED, "inactive tab listened to set updates")
     local beforeGroups = groupReads
-    actions.group(1)
+    actions.group("Alliance")
     Flush()
-    assert(groupReads == beforeGroups + 1, "group action waited for an unrelated native event")
-    local beforeFits = screenFits
+    assert(groupReads == beforeGroups and runtime.reputations.closed.Alliance, "folding a group reread the native list")
+    local beforeFits, beforeChrome = screenFits, chromeRefreshes
     CharacterFrame.scripts.OnSizeChanged()
     CharacterFrame:SetPoint("CENTER")
     CharacterFrame:SetScale(1)
     CharacterFrame:StopMovingOrSizing()
     Flush()
     assert(screenFits == beforeFits, "the inherited wide host rescheduled a detached layout on native movement")
+    assert(chromeRefreshes == beforeChrome + 1, "native movement did not coalesce the chrome refresh")
     local beforeClose = gearReads
     Event(runtime, "PLAYER_EQUIPMENT_CHANGED", 1)
     Press("C")
@@ -1387,7 +1399,10 @@ local function Run(forever)
     actions.group(1)
     assert(runtime.slot == 1 and lastRail[1].title == "Helm" and not usedSlot and not lastWithModel,
         "combat item details no longer belong to the same window")
+    local beforeCombatRep = groupReads
     actions.tab("reputation")
+    assert(groupReads == beforeCombatRep and not callbacks.UPDATE_FACTION and not callbacks.FACTION_STANDING_CHANGED,
+        "opening Reputation in combat scanned factions or subscribed the search to updates")
     assert(lastTab == "reputation" and nativeModel:IsVisible(), "combat tab displaced the native viewport")
     local beforeNative = nativeToggles
     Press("C")
@@ -1662,16 +1677,44 @@ local function Run(forever)
     Press("C")
     local model, customTabs = MSUFSuite.CharacterTabs, {}
     local home = assert(model.Create(customTabs, "empty", "My home"))
-    config.customTabs, config.homeTab = assert(model.Encode(customTabs)), home
+    config.customTabs, config.homeTab, config.searchTabs = assert(model.Encode(customTabs)), home, home
     scans = gearReads
     locked = true
     Press("C")
     assert(lastTab == home and PaperDollFrame:IsVisible() and hostedView.frame:IsShown(),
         "C in combat did not open the custom home through the native owner")
+    assert(not hostedView.tabSearch, "a custom search was attached while in combat")
     locked = false
     Event(runtime, "PLAYER_REGEN_ENABLED")
     Flush()
     assert(lastTab == home and gearReads == scans, "custom home changed or reread equipment across combat")
+    assert(hostedView.tabSearch and hostedView.tabSearch.tab == home)
+    config.searchTabs = ""
+    runtime:Refresh()
+    Flush()
+    assert(not hostedView.tabSearch and not runtime.searchState, "disabling search did not update the open custom tab")
+    do
+        config.searchTabs = "currency"
+        actions.tab("currency")
+        local search = assert(hostedView.tabSearch)
+        search.groups = lastReport
+        local paints = hostedView.reportPaints
+        locked = true
+        Event(runtime, "PLAYER_REGEN_DISABLED")
+        assert(not hostedView.tabSearch and hostedView.reportPaints == paints, "an empty search repainted the currency list in combat")
+        locked = false
+        Event(runtime, "PLAYER_REGEN_ENABLED")
+        search.query = "coin"
+        paints = hostedView.reportPaints
+        locked = true
+        Event(runtime, "PLAYER_REGEN_DISABLED")
+        assert(hostedView.reportPaints == paints + 1 and not hostedView.fixedReport,
+            "clearing the active currency filter on combat entry disabled scrolling")
+        locked = false
+        Event(runtime, "PLAYER_REGEN_ENABLED")
+        config.searchTabs = ""
+        actions.tab(home)
+    end
     config.customTabs, config.homeTab = "", home
     runtime:Refresh()
     Flush()

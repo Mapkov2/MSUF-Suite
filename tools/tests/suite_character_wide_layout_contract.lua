@@ -43,7 +43,7 @@ local NS = {
 }
 local skin = root .. "/MSUF_Suite_Skin/"
 MSUFSuite = { Skin = {} }
-for _, file in ipairs({ "Core/Safety", "Core/Cosmetics", "Core/Defaults", "Core/DefaultsLooks", "Core/Database",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety", "../MSUF_Suite/Appearance/Cosmetics", "Core/Defaults", "Core/DefaultsLooks", "Core/Database",
     "Rendering/WindowControlPolicy", "Adapters/AdapterKit", "Adapters/CharacterDetails", "Adapters/GearGeometry" }) do
     assert(loadfile(skin .. file .. ".lua"))("MSUF_Suite_Skin", NS)
 end
@@ -336,6 +336,8 @@ local function Art(kind, alpha)
     function region:GetObjectType() return self.kind end
     function region:GetAlpha() return self.alpha end
     function region:SetAlpha(value) self.alpha = value end
+    function region:IsShown() return self.shown ~= false end
+    function region:SetShown(value) assert(not locked) self.shown = value end
     function region:GetVertexColor() return unpack(self.vertex) end
     function region:SetVertexColor(...) self.vertex = { ... } end
     return region
@@ -399,6 +401,7 @@ NS.WindowControls = {
         Check(frame == CharacterFrame and layout == plan and action == "release", "window action lost its native root or plan")
         return true
     end,
+    SetSuitePresentation = function(frame, shown) frame.suitePresentation = shown end,
 }
 Check(not geometry.WindowAction(items, "release") and geometry.WindowAction(CharacterFrame, "release"),
     "the native window action did not honor its geometry owner")
@@ -434,26 +437,129 @@ AlphaFixture(surface, 1)
 AlphaFixture(model, 1)
 AlphaFixture(flyout, 1)
 AlphaFixture(modelControls, .8)
+local nativePortrait = Layered(Art("Frame", 1), CharacterFrame, "MEDIUM")
+local nativeRim = Layered(Art("Frame", 1), CharacterFrame, "MEDIUM")
+CharacterFrame.PortraitContainer, CharacterFrame.NineSlice = nativePortrait, nativeRim
+AlphaFixture(nativePortrait, .8)
+AlphaFixture(nativeRim, .9)
+-- Parent alpha can be restricted while the individual decorative textures
+-- remain writable. The portrait surround is itself part of the NineSlice.
+function nativePortrait:IsProtected() return true, true end
+function nativeRim:IsProtected() return true, true end
+nativePortrait.portrait = Art("Texture", .85)
+nativeRim.TopLeftCorner = Art("Texture", 1)
+nativeRim.TopEdge = Art("Texture", .95)
+nativeRim.LeftEdge = Art("Texture", .75)
+nativeRim.BottomEdge = Art("Texture", 1)
+nativeRim.BottomEdge:SetShown(false)
+NS.Cosmetics.Fade(nativeRim.LeftEdge, "blizzardWindows")
+NS.Cosmetics.Fade(nativeRim.TopLeftCorner, "blizzardWindows")
+nativeRim.TopLeftCorner:SetAlpha(1)
+NS.WindowFocus = { Present = function() end }
+geometry.Present(CharacterFrame, surface)
+Check(not nativeRim.TopLeftCorner:IsShown() and nativeRim.TopLeftCorner.alpha == 1
+    and NS.Cosmetics.GetOwner(nativeRim.TopLeftCorner) == "blizzardWindows",
+    "the visible metal corner claimed by the general window skin protruded through the character panel")
+Check(not nativePortrait.portrait:IsShown() and not nativeRim.TopEdge:IsShown() and CharacterFrame.suitePresentation,
+    "stock portrait or rim stayed visible when the containers could not be painted")
+local originalTop = nativeRim.TopEdge
+nativeRim.TopEdge = Art("Texture", .9)
+geometry.RefreshChrome(CharacterFrame)
+Check(not nativeRim.TopEdge:IsShown(), "replacement native rim texture was not suppressed")
+geometry.Present(CharacterFrame, nil)
+Check(nativeRim.TopLeftCorner:IsShown() and nativeRim.TopEdge:IsShown() and originalTop:IsShown() and nativePortrait.portrait:IsShown()
+    and not nativeRim.BottomEdge:IsShown() and nativeRim.LeftEdge.alpha == 0 and not CharacterFrame.suitePresentation,
+    "native character decorations were not restored with the Suite view closed")
+local function NativeArtLayer(frame, enabled)
+    frame.overlayEnabled = enabled
+    function frame:IsProtected() return false, false end
+    function frame:IsDrawLayerEnabled(layer) assert(layer == "OVERLAY") return self.overlayEnabled end
+    function frame:SetDrawLayerEnabled(layer, value) assert(layer == "OVERLAY" and not locked) self.overlayEnabled = value end
+end
+NativeArtLayer(nativePortrait, false)
+NativeArtLayer(nativeRim, true)
+geometry.Present(CharacterFrame, surface)
+nativeRim.TopLeftCorner:SetAlpha(1)
+nativeRim.TopLeftCorner:SetShown(true)
+Check(not nativeRim.overlayEnabled and not nativePortrait.overlayEnabled and nativeRim.TopLeftCorner:IsShown(),
+    "a native repaint exposed the shared border or changed its shown state")
+locked = true
+geometry.Present(CharacterFrame, nil)
+Check(not nativeRim.overlayEnabled, "combat close wrote to the native drawing layer immediately")
+locked = false
+local restoreChrome = assert(pending)
+pending = nil
+restoreChrome()
+Check(nativeRim.overlayEnabled and not nativePortrait.overlayEnabled and NS.Cosmetics.GetOwner(nativeRim.TopLeftCorner) == "blizzardWindows",
+    "combat close did not restore just the drawing layer changed by the panel")
+locked = true
+geometry.Present(CharacterFrame, surface)
+Check(nativeRim.overlayEnabled, "a combat open wrote the native overlay before the safe refresh")
+locked = false
+local presentChrome = assert(pending)
+pending = nil
+presentChrome()
+Check(not nativeRim.overlayEnabled, "the native rim stayed visible after the combat-open queue drained")
+geometry.Present(CharacterFrame, nil)
+NS.Cosmetics.RestoreOwner("blizzardWindows")
 local wasForever = NS.Client.isForever
 NS.Client.isForever = true
-Check(geometry.SetGlass(CharacterFrame, surface, true, true, true) and CharacterFrame.alpha == 0
+local alphaHooks, refreshes = 0, 0
+local nativeFade, unrelatedFade = { owner = "blizzardWindows" }, { owner = "blizzardWindows" }
+NS.ContentMotion = { records = { [CharacterFrame] = nativeFade }, active = { [nativeFade] = true, [unrelatedFade] = true } }
+function NS.ContentMotion.StopOwner(owner, root)
+    assert(owner == nativeFade.owner and root == CharacterFrame)
+    NS.ContentMotion.active[nativeFade] = nil
+end
+local postAlpha
+function hooksecurefunc(target, method, callback)
+    assert(target == CharacterFrame and method == "SetAlpha")
+    alphaHooks, postAlpha = alphaHooks + 1, callback
+end
+local setRootAlpha = CharacterFrame.SetAlpha
+function CharacterFrame:SetAlpha(value)
+    setRootAlpha(self, value)
+    if postAlpha then postAlpha(self, value) end
+end
+local function refreshReport()
+    refreshes = refreshes + 1
+    return geometry.SetGlass(CharacterFrame, surface, true, false, false, refreshReport)
+end
+Check(geometry.SetGlass(CharacterFrame, surface, true, true, true, refreshReport) and CharacterFrame.alpha == 0
     and surface.ignoreAlpha and model.ignoreAlpha and flyout.ignoreAlpha and head.ignoreAlpha and modelControls.alpha == 0,
     "glass did not isolate Suite art, the model and the native equipment flyout")
 Check(geometry.SetGlass(CharacterFrame, surface, true, false, true) and not model.ignoreAlpha and flyout.ignoreAlpha
     and head.ignoreAlpha, "native equipment pages lost slot feedback or would draw the model through Glass")
 Check(geometry.SetGlass(CharacterFrame, surface, true, false, false) and not head.ignoreAlpha and not weapon.ignoreAlpha,
     "native slot feedback would show through the reports")
+model.ignoreAlpha, head.ignoreAlpha, surface.ignoreAlpha = true, true, false
+CharacterFrame:SetAlpha(1)
+Check(CharacterFrame.alpha == 0 and not model.ignoreAlpha and not head.ignoreAlpha and surface.ignoreAlpha and refreshes == 1 and alphaHooks == 1
+    and not NS.ContentMotion.active[nativeFade] and NS.ContentMotion.active[unrelatedFade],
+    "Skills kept transparent covers while the native paper doll was visible after an alpha rewrite")
+CharacterFrame.alpha = 1 -- an animation need not call the Lua SetAlpha hook
+Check(refreshReport() and CharacterFrame.alpha == 0, "the next tab paint trusted stale Glass ownership")
 locked = true
 Check(geometry.SetGlass(CharacterFrame, surface, true, true, true) and not model.ignoreAlpha,
     "glass changed native model display in combat")
+CharacterFrame.alpha, model.ignoreAlpha = 1, true -- an external combat transition
+local hiddenInCombat, escapedModel = geometry.SetGlass(CharacterFrame, surface, true, false, false)
+Check(not hiddenInCombat and escapedModel and CharacterFrame.alpha == 1 and model.ignoreAlpha,
+    "a combat Skills switch dropped the cover or wrote to the locked native model")
+locked = false
+Check(refreshReport() and not model.ignoreAlpha and CharacterFrame.alpha == 0,
+    "combat exit did not recover the current report's native state")
+locked = true
 geometry.SetGlass(CharacterFrame, surface, false, false)
 Check(type(pending) == "function" and CharacterFrame.alpha == 0, "glass restored native art during combat")
 locked = false
 local restoreGlass = pending
 pending = nil
 restoreGlass()
-Check(CharacterFrame.alpha == .9 and not surface.ignoreAlpha and not model.ignoreAlpha and not flyout.ignoreAlpha
+Check(CharacterFrame.alpha == 1 and not surface.ignoreAlpha and not model.ignoreAlpha and not flyout.ignoreAlpha
     and modelControls.alpha == .8, "closing Glass did not restore native and Suite alpha ownership")
+CharacterFrame:SetAlpha(.9)
+Check(refreshes == 3 and CharacterFrame.alpha == .9, "a closed character panel still intercepted other windows' alpha changes")
 locked, combatAlpha = true, true
 function weapon:IsProtected() return true, false end
 Check(not geometry.SetGlass(CharacterFrame, surface, true, true, true) and CharacterFrame.alpha == .9 and not surface.ignoreAlpha,

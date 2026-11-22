@@ -128,7 +128,7 @@ end
 
 local function BuildAppearance(ctx, b)
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_text", Tr("Message text"),
-        P.SectionRules(ID, "text"), {
+        P.ChatWorkspace.RulesOutsideVisibility(ID, "text"), {
             open = true,
             help = "The default font follows MSUF Fonts while the default size follows Blizzard's chat size. Choose Blizzard chat font to keep its own face. Slug has no shadow.",
         })
@@ -190,7 +190,7 @@ local function Build(ctx)
             extra = P.LookPresetButtons(ctx, PAGE, ID, PAGE .. "_look", ImmersiveButton(ctx)),
         })
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_window", Tr("Chat window"),
-        P.SectionRules(ID, "window"), {
+        P.ChatWorkspace.RulesOutsideVisibility(ID, "window"), {
             open = false,
             help = "A click-through surface follows each Blizzard chat window. Blizzard and MSUF Edit Mode keep their normal move and resize controls.",
         })
@@ -203,7 +203,7 @@ local function Build(ctx)
             help = "MSUF icons replace the scattered Blizzard chat controls. Friends, channels, text to speech and the chat menu keep their Blizzard actions; the bottom icon jumps to the newest message. Turn this off to restore the native buttons.",
         })
     BuildAppearance(ctx, b)
-    local comfort = P.SectionRules("chatComfort", "chatComfort_module")
+    local comfort = P.ChatWorkspace.RulesOutsideVisibility("chatComfort", "chatComfort_module")
     P.ModuleCard(ctx, b, PAGE, "chatComfort", nil, {
         title = "Chat behavior", open = false, rules = comfort,
         reset = function() return P.ResetRules("chatComfort", comfort) end,
@@ -211,6 +211,7 @@ local function Build(ctx)
     BuildMessenger(ctx, b)
     BuildInputTools(ctx, b)
     BuildMessageSections(ctx, b)
+    P.ChatWorkspace.BuildVisibility(ctx, b)
     P.ChatWorkspace.Helpers(ctx, b, workspace)
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_bubbles", Tr("Speech bubbles"), P.SectionRules(ID, "bubbles"), {
         help = "Bubbles outside instances can take the MSUF look; Blizzard locks the ones inside instances. Each source keeps Blizzard's look or uses the MSUF one: the shared look or its own font, size, colors, spacing and width. A bubble is matched to the line it shows right after that line arrives. Turning bubbles off inside instances uses Blizzard's bubble settings and gives them back when you leave or turn it off.",

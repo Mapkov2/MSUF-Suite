@@ -29,6 +29,65 @@ local function World(config, reagent)
     return W
 end
 
+-- Blizzard knows the combined bag's size before its first open assigns item buttons.
+do
+    local W = Harness.New(root, { client = flavor, config = { hideEmptySlots = true } })
+    local view = W.NS.BagsView
+    W.sizes[0], W.sizes[1], W.sizes[2], W.sizes[3], W.sizes[4] = 18, 12, 12, 12, 12
+    W.Define(10, { name = "Potion", class = 0, maxStack = 20 })
+    W.Put(0, 1, 10, 4)
+    W.Apply()
+    assert(W.P.InventoryView.active and not W.CF:IsShown() and W.CF:GetBagSize() == 66 and not next(W.CF.Items),
+        "cold handoff fixture needs a closed bag with no assigned buttons")
+
+    local function CheckNativeGrid()
+        for _, button in W.CF:EnumerateValidItems() do
+            local point, owner = button:GetPoint()
+            assert(button:IsShown() and point == "BOTTOMRIGHT" and owner == W.CF, "native handoff lost a physical slot")
+        end
+        assert(not W.P.InventoryView.active and #W.errors == 0 and #W.taint == 0, "native handoff left Suite ownership or errors")
+    end
+
+    assert(W.S.Set("bags", "inventoryView", view.BLIZZARD_GRID))
+    assert(not W.CF:IsShown() and not next(W.CF.Items), "changing the view built a closed bag")
+    W.OpenBags()
+    W.Settle()
+    CheckNativeGrid()
+
+    assert(W.S.Set("bags", "inventoryView", view.ALL))
+    W.Settle()
+    assert(not W.CF.Items[1]:IsShown(), "the Suite fixture did not hide empty slots")
+    assert(W.S.Set("bags", "inventoryView", view.BLIZZARD_GRID))
+    W.Settle()
+    CheckNativeGrid()
+
+    assert(W.S.Set("bags", "inventoryView", view.ALL))
+    W.Settle()
+    assert(not W.CF.Items[1]:IsShown(), "the populated fixture needs hidden Suite slots")
+    W.CloseBags()
+    assert(W.S.Set("bags", "inventoryView", view.BLIZZARD_GRID))
+    W.EnterCombat()
+    W.OpenBags()
+    W.Settle()
+    CheckNativeGrid()
+    W.LeaveCombat()
+    W.Settle()
+    CheckNativeGrid()
+    assert(#W.combatLayout == 0 and not W.P.InventoryView.restorePending, "native reopen left a protected layout or pending restore")
+
+    assert(W.S.Set("bags", "inventoryView", view.ALL))
+    W.Settle()
+    -- The iterator can yield a valid index before its button has been assigned.
+    W.CF.Items[2] = nil
+    local reads = W.calls.info
+    assert(W.S.Set("bags", "inventoryView", view.BLIZZARD_GRID))
+    assert(W.calls.info == reads, "a partial native pool was handed to UpdateItems")
+    -- A native generation can also refresh a bag that is already open.
+    W.OpenBags()
+    W.Settle()
+    CheckNativeGrid()
+end
+
 for _, presentation in ipairs({ 1, 2 }) do
     local W = World({ inventoryView = 1, windowPresentation = presentation })
     local handle = assert(W.M.windows[W.CF].dragHandle)

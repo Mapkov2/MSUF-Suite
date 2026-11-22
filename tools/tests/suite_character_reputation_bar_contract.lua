@@ -108,6 +108,7 @@ C_Reputation = {
     end,
 }
 local row = { factionID = 72, factionName = "Stormwind" }
+Load("MSUF_Suite_CharacterPanel/ReputationList.lua", NS)
 NS.OpenReputationMenu(row)
 Equal(menu.title, "Stormwind", "row menu title")
 assert(not menu[AT_WAR], "unavailable war control was offered")

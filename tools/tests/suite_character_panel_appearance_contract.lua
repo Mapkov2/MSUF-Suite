@@ -74,7 +74,8 @@ local methods = {
     end,
     GetLeft = function() return 100 end, GetTop = function() return 700 end,
     RegisterForDrag = Write,
-    SetAutoFocus = Write, SetMaxLetters = Write, SetTextInsets = Write, SetFontObject = Write,
+    SetAutoFocus = Write, SetMaxLetters = Write, SetTextInsets = Write,
+    SetFontObject = function(self, font) self.fontPath = font Write() end,
     SetFocus = function(self) self.focused = true end,
     ClearFocus = function(self) self.focused = false end,
     HighlightText = Write,
@@ -693,9 +694,16 @@ do
     GetInventorySlotInfo = function(token) if token == "HeadSlot" then return 1, 42 end end
     GetInventoryItemTexture = function() return 123 end
     assert(loadfile(path .. "Reputation.lua"))("MSUF_Suite_CharacterPanel", ns)
+    assert(loadfile(path .. "ReputationList.lua"))("MSUF_Suite_CharacterPanel", ns)
+    assert(loadfile(path .. "ReputationSearch.lua"))("MSUF_Suite_CharacterPanel", ns)
+    local searchPrefs = {}
+    suite.ModuleState = function() return searchPrefs end
     assert(loadfile(path .. "Pages.lua"))("MSUF_Suite_CharacterPanel", ns)
     local fullStats, previewCombat
-    ns.Pages.Overview = function(data, full, combat) data[1], fullStats, previewCombat = groups[1], full, combat end
+    ns.Pages.Overview = function(data, full, combat)
+        data[1], fullStats, previewCombat = groups[1], full, combat
+        return data
+    end
     ns.Pages.EquipmentSummary = function() end
     local reputationReads = 0
     ns.Pages.Read = function(tab, data, config)
@@ -747,12 +755,14 @@ do
     preview:Paint(reputation, "own", all, "reputation", {}, 800)
     assert(reputationReads == 2 and faction.reputationTrack.height == 6 and faction.reputationBar.color[2] == .8,
         "the same-tab preview did not restyle its cached bar without reading factions")
-    local attributes = { showAttributesTab = true, showFullStats = false }
+    local attributes = { showAttributesTab = true, showFullStats = false, searchTabs = "attributes" }
     preview:Paint(attributes, "own", suite.CharacterHeader.Order(attributes, "tab"), "attributes", {}, 800)
     assert(fullStats == true and embedded.report.scroll:IsShown() and not embedded.gear:IsShown(),
         "Attributes preview did not use the full runtime stats without equipment")
+    assert(embedded.reputationSearch:IsShown() and not embedded.reputationSearch.edit.mouseEnabled)
     liveCombat = true
     preview:Paint(attributes, "own", suite.CharacterHeader.Order(attributes, "tab"), "attributes", {}, 800)
+    assert(not embedded.reputationSearch:IsShown())
     assert(previewCombat == true and embedded.combatReport.canvas:IsShown(), "preview missed the combat edge")
     preview:Paint({}, "own", all, "overview", {}, 800)
     assert(previewCombat == true and embedded.combatRail.canvas:IsShown(), "Overview preview read full combat stats")
@@ -1231,14 +1241,17 @@ do
     local translucent = true
     transparent.GetLook = function() return "custom" end
     transparent.HasTranslucentShell = function() return translucent end
-    local modelVisible, gamepad
+    local modelVisible, gamepad, refuseFade, glassCalls
+    function native:GetAlpha() return self.alpha end
     suite.GamepadUI = function() return gamepad == true end
     local previousSkin = ns.Host.Skin
     ns.Host.Skin = { CharacterGeometry = {
         SetGlass = function(root, surface, enabled, withModel)
             assert(root == native and surface == full.frame, "glass changed an unrelated native window")
+            glassCalls = (glassCalls or 0) + 1
+            native.alpha = enabled and not refuseFade and 0 or 1
             modelVisible = enabled and withModel
-            return enabled, modelVisible
+            return enabled and native.alpha == 0, modelVisible
         end,
     } }
     close.caption.base:Show()
@@ -1258,6 +1271,22 @@ do
     full:ShowGroups(groups)
     assert(full.reportMask:GetAlpha() == 0 and not modelVisible and full.reportCover:IsShown(),
         "Forever Glass left the model behind the report or lost the report hit shield")
+    native.alpha, refuseFade = 1, true
+    full:ShowGroups(groups)
+    assert(full.artMask:GetAlpha() == 1 and full.reportMask:GetAlpha() == 1 and not full.glassApplied,
+        "a visible Blizzard root behind the same report did not get opaque covers")
+    liveCombat = true
+    local combatGlassCalls = glassCalls
+    for i = 1, 100 do ns.Window.SyncGlass(full) end
+    assert(glassCalls == combatGlassCalls and full.reportMask:GetAlpha() == 1, "locked combat paints retried the native write")
+    liveCombat = false
+    refuseFade = false
+    full:ShowGroups(groups)
+    assert(full.artMask:GetAlpha() == 0 and full.reportMask:GetAlpha() == 0 and native.alpha == 0,
+        "the report did not recover when native suppression was available again")
+    local settledGlassCalls = glassCalls
+    for i = 1, 100 do ns.Window.SyncGlass(full) end
+    assert(glassCalls == settledGlassCalls, "settled report repaints kept reapplying native character geometry")
     local reportCard = full.report.cards[1]
     local reportSurface = full.surfaces[reportCard]
     local originalPainter = transparent.SkinFrame
@@ -1367,6 +1396,54 @@ do
     full:ShowGroups(groups)
     assert(full.report.offset == 0 and full.report.canvas.point[3] == 0 and not full.report.bar:IsShown(),
         "shortening the report did not clamp its position and hide the scrollbar")
+
+    do
+        local prefs = {}
+        suite.ModuleState = function() return prefs end
+        local state = { groups = longReport }
+        full:ShowGroups(longReport, false, state)
+        local search = full.reputationSearch
+        assert(search:IsShown() and search.parent == full.footer and search.point[2] == full.frame
+            and search:GetFrameLevel() > full.report.scroll:GetFrameLevel() and search.count.text == "19")
+        full.report.slider:SetValue(full.report.range)
+        search.edit:SetText("Row 18")
+        search.edit.scripts.OnTextChanged(search.edit)
+        assert(full.report.offset == 0 and search.count.text == "1 / 19" and full.report.cards[1].rows[1].left.text == "Row 18",
+            "typing in the hosted search failed to reveal the matching row at the top")
+        ns.ReputationSearch.Hide(full)
+        assert(not search:IsShown())
+        local previousTab = full.tab
+        full.tab, liveCombat = "reputation", true
+        full:ShowGroups(longReport, true)
+        full.report.slider:SetValue(full.report.range)
+        assert(full.report.scroll:IsShown() and full.report.offset > 0 and not search:IsShown(),
+            "the Forever combat report lost scrolling through cached factions")
+        full.tab, liveCombat = previousTab, false
+        local cardLayout = { x = 4, y = 0, rowUp = 0, rowDown = 0 }
+        local firstRow = { label = "Currency", value = "Darkmoon Token" }
+        local source = { { title = "My card", layout = cardLayout, rows = { firstRow, { label = "Level", value = 39 } } } }
+        full.tabSearch = { tab = "custom1" }
+        full:ShowGroups(source)
+        assert(full.report.groups == source and search.edit:GetText() == "")
+        search.edit:SetText("ToKeN")
+        search.edit.scripts.OnTextChanged(search.edit)
+        assert(search.count.text == "1 / 2" and full.report.groups[1].layout == cardLayout
+            and full.report.groups[1].rows[1] == firstRow and #source[1].rows == 2)
+        search.edit:SetText("39")
+        search.edit.scripts.OnTextChanged(search.edit)
+        assert(full.report.groups[1].rows[1].label == "Level", "numeric row value was not searchable")
+        full.tabSearch = { tab = "gear" }
+        full:ShowGear(gear.left, gear.right, gear.weapons, source, nil, empty, true)
+        search.edit:SetText("unknown")
+        search.edit.scripts.OnTextChanged(search.edit)
+        assert(full.rail.groups[1].title == "No results" and full.gear:IsShown() and not full.reportCover:IsShown(),
+            "typing in the equipment rail replaced the paper doll")
+        search.edit:SetText("")
+        search.edit.scripts.OnTextChanged(search.edit)
+        assert(full.rail.groups == source, "clearing the search changed the equipment layout")
+        ns.ReputationSearch.Hide(full)
+        full.tabSearch = nil
+    end
 
     liveCombat = true
     full:ShowGear(gear.left, gear.right, gear.weapons, groups, nil, empty, true, true)

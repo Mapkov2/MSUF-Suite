@@ -37,10 +37,28 @@ P.BuildBagsMenuPreview(ui)
 local preview=ui.bagsPreview
 assert(loads==0 and paints==0 and ui.header:GetHeight()>=406,
  "cold-combat fallback extends outside reserved header")
+W.config.inventoryView = W.NS.BagsView.BLIZZARD_GRID
 combat=false;W.Fire("PLAYER_REGEN_ENABLED");W.Settle()
-assert(loads==1 and paints==1 and next(preview.slots),"visible regen never paints cold preview")
+assert(loads==1 and paints==1 and preview.nativeBackpack and preview.nativeBackpack.frame:IsVisible(),
+ "visible regen never paints a cold Blizzard grid preview")
+assert(not preview.categories:IsShown(), "cold Blizzard grid shows Suite categories")
+assert(not preview.caption[2].previewMuted, "Blizzard-grid preview dims the working maximize control")
+W.config.inventoryView = W.NS.BagsView.CATEGORIES
+ui.refreshPreview()
+assert(next(preview.slots), "switching from the cold Blizzard grid never paints Suite slots")
 assert(not W.M.active and not W.CF:IsShown(),"preview activated bag replacement")
 local before=paints;ui.refreshPreview();assert(paints==before,"unchanged preview repainted")
+local borderStyle = W.NS.BagsBorderStyle
+W.config.backpackBorderStyle = borderStyle.CUSTOM
+W.config.backpackBorderWidth = 3
+W.config.backpackBorderColor = "ff0000"
+W.config.backpackBorderOpacity = 40
+ui.refreshPreview()
+assert(preview.chrome[6]:GetHeight() == 3 and preview.chrome[6].color[1] == 1 and preview.chrome[6].color[4] == .4,
+    "custom Backpack border did not update in the preview")
+W.config.backpackBorderStyle = borderStyle.DEFAULT
+ui.refreshPreview()
+assert(preview.chrome[6]:GetHeight() == 1 and preview.chrome[6].color[1] < .1, "preview did not restore the dark standard border")
 local function GuideIs(target, thickness)
  local guide=assert(preview.guide,"bags preview has no guide")
  assert(guide:IsShown()==(target~=nil) and guide:IsMouseEnabled()==false,"guide visibility or input is wrong")
@@ -90,6 +108,65 @@ local function Disjoint(a,b)
  assert(ax+aw<=bx or bx+bw<=ax or ay+ah<=by or by+bh<=ay,
  "finance hit target intercepts cleanup")
 end
+local originalLook = {}
+for key in pairs(W.NS.BagsLookVisualKeys) do originalLook[key] = W.config[key] end
+originalLook.look = W.config.look
+W.config.inventoryView = W.NS.BagsView.BLIZZARD_GRID
+W.config.windowPresentation = W.NS.BagsPresentation.PANEL
+ui.refreshPreview()
+local grid = assert(preview.nativeBackpack, "Blizzard grid lacks a combined backpack sample")
+local scaleGrip = assert(grid.scaleGrip, "Blizzard-grid preview is missing the window scale grip")
+assert(scaleGrip.icon:GetTexture() == "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up", "preview uses the wrong scale icon")
+InsideContent(scaleGrip)
+Disjoint(scaleGrip, preview.goldJump)
+scaleGrip:GetScript("OnClick")()
+assert(focused == "suite_bags_window", "preview grip does not open the layout settings")
+assert(grid.frame:IsShown() and #grid.slots == 66 and not preview.geometry.panel, "Blizzard grid lost its compact shape")
+assert(not preview.slots[9]:IsShown(), "Suite slots remain visible in the Blizzard grid")
+local x, y = W.Rect(grid.slots[1])
+local tenthX, tenthY = W.Rect(grid.slots[10])
+local nextX, nextY = W.Rect(grid.slots[11])
+assert(x > tenthX and y == tenthY and x == nextX and nextY > y, "Blizzard slots do not fill from the bottom right")
+assert(grid.slots[1].icon:IsShown() and not grid.slots[4].icon:IsShown(), "Blizzard grid lacks item and empty-slot samples")
+InsideContent(preview.search)
+InsideContent(preview.cleanup)
+Disjoint(preview.search,preview.cleanup)
+for _, nativeSlot in ipairs(grid.slots) do
+ InsideContent(nativeSlot)
+ Disjoint(nativeSlot,preview.search)
+ Disjoint(nativeSlot,preview.cleanup)
+end
+InsideContent(preview.sessionJump)
+Disjoint(preview.sessionJump,preview.goldJump)
+assert(preview.chrome[2].sublevel > preview.chrome[1].sublevel and preview.chrome[3].layer == "BORDER"
+ and preview.chrome[6].layer == "ARTWORK", "preview chrome does not follow the live draw order")
+for _, look in ipairs({1, 3, 2, 5, 6}) do
+ W.config.look = look
+ for key, value in pairs(W.NS.BagsLookPresets[look]) do W.config[key] = value end
+ ui.refreshPreview()
+ local body, line = preview.chrome[2], preview.chrome[4].color
+ local r, g, b = W.S.RGB(W.config.backgroundColor)
+ local ar, ag, ab = W.S.RGB(W.config.accentColor)
+ local opacity = W.config.backgroundOpacity / 100
+ assert(line[1] == ar and line[2] == ag and line[3] == ab, "preview kept the old preset accent")
+ if look == 3 then
+  local gradient = body.gradient
+  assert(gradient[1] == "VERTICAL" and gradient[2].r == r and gradient[2].a == opacity * .88
+   and gradient[3].r == r * .85, "Forever preset lacks the live glass gradient")
+ elseif body.gradient then
+  local flat = body.gradient[2]
+  assert(flat == body.gradient[3] and flat.r == r and flat.g == g and flat.b == b and flat.a == opacity,
+   "live preset color or opacity did not replace the glass gradient")
+ else
+  assert(body.color[1] == r and body.color[2] == g and body.color[3] == b and body.color[4] == opacity,
+   "preview kept the old preset background")
+ end
+end
+for key, value in pairs(originalLook) do W.config[key] = value end
+W.config.inventoryView = W.NS.BagsView.CATEGORIES
+ui.refreshPreview()
+assert(not grid.frame:IsShown() and preview.slots[9]:IsShown(), "Blizzard grid survives a return to Suite categories")
+assert(not scaleGrip:IsVisible(), "Blizzard grip survives in the Suite preview")
 for _, presentation in ipairs({1,2}) do
 W.config.windowPresentation=presentation
 for _,columns in ipairs({8,12,20}) do

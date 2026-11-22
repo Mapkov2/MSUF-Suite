@@ -56,7 +56,7 @@ local function RatingCore(forever)
 end
 local suiteCore = RatingCore(false)
 local NS = {
-    Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
+    Safety = assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", {}),
     SuiteCore = function() return suiteCore end,
     Registry = { AddListener = function() end },
     IsCombatLocked = function() return false end,
@@ -378,7 +378,7 @@ CreateFrame = function(...)
     gateFrame = normalCreate(...)
     return gateFrame
 end
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/CombatGate.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/CombatGate.lua"))("MSUF_Suite_Skin", NS)
 CreateFrame = normalCreate
 STAT_CRITICAL_STRIKE, STAT_HASTE, STAT_MASTERY, STAT_VERSATILITY = "Crit", "Haste", "Mastery", "Versatility"
 CR_CRIT_MELEE, CR_HASTE_MELEE, CR_MASTERY, CR_VERSATILITY_DAMAGE_DONE = 1, 2, 3, 4

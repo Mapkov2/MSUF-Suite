@@ -214,27 +214,31 @@ end
 do
     local section = "suite_chat_chatComfort_module"
     local oldSection = "suite_qualityOfLife_dailyComfort_daily_comfort"
-    local keys = { chatWheel = true, chatClassColors = true, noChatFade = true, whisperWindows = true }
+    local visibleSection = "suite_chat_comfortVisibility"
+    local keys = { chatWheel = section, chatClassColors = section, noChatFade = visibleSection, whisperWindows = section }
     local seen = {}
     for _, row in ipairs(P.SearchRows()) do
         local key = row.settingKey and row.settingKey:match("^msufsuite%.chatComfort%.(.+)$")
         if keys[key] then
-            Check(row.pageKey == "suite_chat" and row.sectionId == section and not seen[key], "duplicate or misplaced Chat behavior result")
+            Check(row.pageKey == "suite_chat" and row.sectionId == keys[key] and not seen[key], "duplicate or misplaced Chat behavior result")
             seen[key] = true
         end
         local legacy = row.settingKey and row.settingKey:match("^msufsuite%.dailyComfort%.(.+)$")
         Check(not keys[legacy], "moved Chat behavior remained searchable from Daily UI comforts")
     end
-    for key in pairs(keys) do
+    for key, destination in pairs(keys) do
         Check(seen[key], "Chat behavior setting absent from search: " .. key)
         local old = P.Meta("suite_qualityOfLife", "dailyComfort", key, "setting", oldSection)
         if key == "whisperWindows" then old.settingKey = nil end
         local called, opened, focused = bridge.OpenSearchTarget("suite_qualityOfLife", "", nil, nil, {}, old)
         mw:RunTimers()
-        local meta = P.Meta("suite_chat", "chatComfort", key, "setting", section)
+        local meta = P.Meta("suite_chat", "chatComfort", key, "setting", destination)
         local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_chat", meta)
+        local topic = destination == visibleSection and "visibility" or "basics"
         Check(called and opened and focused and widget and widget:IsVisible()
-            and ui.ctx.chatWorkspace.selected == "basics", "legacy bookmark missed Chat behavior: " .. key)
+            and ui.ctx.chatWorkspace.selected == topic, ("legacy bookmark missed Chat behavior %s (%s, %s, %s, %s, %s)")
+                :format(key, tostring(called), tostring(opened), tostring(focused), ui.ctx.chatWorkspace.selected,
+                    tostring(widget and widget:IsVisible())))
     end
     local daily = P.S.Config("dailyComfort")
     local comfort = P.S.Config("chatComfort")
@@ -242,8 +246,10 @@ do
     daily.muteMusic = true
     comfort.enabled, comfort.noChatFade, comfort.whisperWindows = true, true, 3
     local card = ui.ctx.chatWorkspace.sections[section]
-    Check(card._msufSuiteSectionReset() and comfort.enabled and not comfort.noChatFade
-        and comfort.whisperWindows == 1 and daily.muteMusic, "Chat behavior reset escaped its four settings")
+    Check(card._msufSuiteSectionReset() and comfort.enabled and comfort.noChatFade
+        and comfort.whisperWindows == 1 and daily.muteMusic, "Chat behavior reset escaped its Basics settings")
+    Check(ui.ctx.chatWorkspace.sections[visibleSection]._msufSuiteSectionReset() and not comfort.noChatFade,
+        "Chat behavior visibility did not reset its own setting")
     daily.muteMusic, comfort.enabled = originalMusic, false
 end
 for key, spec in pairs(R.keys) do
@@ -641,7 +647,22 @@ Check(not P.Get("chat", "hideNativeButtons"), "compact look left native controls
 
 -- Topic navigation keeps one preview and reveals exact targets in hidden groups.
 local topics = assert(ui.ctx.chatWorkspace, "Chat has no topic workspace")
-Check(#topics.tabs.items == 4, "Chat topics are not directly selectable")
+Check(#topics.tabs.items == 5 and topics.tabs.items[4].id == "messages" and topics.tabs.items[5].id == "visibility",
+    "Visibility is not directly selectable after Messages")
+for _, key in ipairs({ "idleSeconds", "idleAlpha", "idleFadeDuration", "idleIgnoreProgress", "messageFading", "messageTimeVisible", "messageFadeDuration" }) do
+    local section = key:match("^idle") and "idleVisibility" or "messageVisibility"
+    topics.select("messages")
+    Exact(key, section)
+    Check(topics.selected == "visibility", "fade setting search missed Visibility: " .. key)
+end
+for _, old in ipairs({ { "chat", "idleSeconds", "window" }, { "chat", "messageFading", "text" },
+    { "chatComfort", "noChatFade", "chatComfort_module" } }) do
+    topics.select("basics")
+    local meta = P.Meta("suite_chat", old[1], old[2], "setting", "suite_chat_" .. old[3])
+    local called, opened, focused = bridge.OpenSearchTarget("suite_chat", "", nil, nil, {}, meta)
+    mw:RunTimers()
+    Check(called and opened and focused and topics.selected == "visibility", "previous Chat route missed Visibility: " .. old[2])
+end
 local function CheckTopicHighlight(expected)
     for _, item in ipairs(topics.tabs.items) do
         Check(item.button._msuf2Active == (item.id == expected), "Chat topic has the wrong active highlight: " .. item.id)

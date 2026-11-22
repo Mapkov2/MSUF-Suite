@@ -384,7 +384,7 @@ bagsPrivate.BagMotion = { Play = function() end, Stop = function() end, StopAll 
 assert(loadfile(root .. "/MSUF_Suite_Bags/LayoutSafety.lua"))("Bags", bagsPrivate)
 for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", {
-        NS = state, Suite = S, BagsModule = module, BagResize={active=false}, BagWindowMotion={active=false}, ItemLoads = bagsPrivate.ItemLoads,
+        NS = state, Suite = S, BagsModule = module, BagResize={active=false, RefreshNative=function() end}, BagWindowMotion={active=false}, ItemLoads = bagsPrivate.ItemLoads,
         BagLayout = bagsPrivate.BagLayout, InventoryView = bagsPrivate.InventoryView, BagPresentation = bagsPrivate.BagPresentation, BagAppearance = bagsPrivate.BagAppearance, BagMotion = bagsPrivate.BagMotion,
         BagPanelAppearance = bagsPrivate.BagPanelAppearance,
         ChildFrame = bagsPrivate.ChildFrame, BankWindow = { mover = {} }, BagCaption = caption,
@@ -469,10 +469,10 @@ assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or h
 -- The explicit sub-module list replaces the files' post-hooks on the module.
 local REFRESH_ORDER = { "PlayerGear.Refresh", "BagTransmog.Refresh", "UpgradeMarker.Refresh", "ReagentInventory.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
     "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh", "BuybackSearch.Refresh", "BagCaption.Refresh",
-    "BagsIdle.Refresh" }
+    "NativeBagBar.Refresh", "BagsIdle.Refresh" }
 local STOP_ORDER = { "PlayerGear.Disable", "BagTransmog.Disable", "UpgradeMarker.Disable", "PhysicalSort.Stop", "ReagentInventory.Release", "InventoryView.Disable", "BankInventory.Disable",
     "BankWindow.Disable", "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore", "BuybackSearch.Disable",
-    "BagCaption.Release", "BagsIdle.Disable" }
+    "BagCaption.Release", "NativeBagBar.Disable", "BagsIdle.Disable" }
 local function Ran(order)
     if #submoduleCalls ~= #order then return false end
     for i = 1, #order do if submoduleCalls[i] ~= order[i] then return false end end

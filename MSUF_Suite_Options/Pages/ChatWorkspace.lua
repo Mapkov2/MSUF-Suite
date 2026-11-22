@@ -10,7 +10,33 @@ local TABS = {
     { id = "input", label = "Input line", sections = "input" },
     { id = "messages", label = "Messages",
         sections = "tools historyRules spamFilterRules text sounds highlight keywordAlerts_module" },
+    { id = "visibility", label = "Visibility", sections = "idleVisibility messageVisibility comfortVisibility" },
 }
+
+local panel = { id = "idleVisibility", title = "Chat panel" }
+local messages = { id = "messageVisibility", title = "Messages" }
+local comfort = { id = "comfortVisibility", title = "Chat behavior" }
+local visibility = {
+    idleSeconds = panel, idleAlpha = panel, idleFadeDuration = panel, idleIgnoreProgress = panel,
+    messageFading = messages, messageTimeVisible = messages, messageFadeDuration = messages,
+    noChatFade = comfort,
+}
+
+function E.VisibilitySection(key) return visibility[key] end
+
+function E.RulesOutsideVisibility(module, source)
+    return P.SectionRules(module, source, function(rule) return not visibility[rule.key] end)
+end
+
+function E.BuildVisibility(ctx, builder)
+    local function Add(group, module, source, opts)
+        local rules = P.SectionRules(module, source, function(rule) return visibility[rule.key] == group end)
+        P.MenuWorkspace.Rules(ctx, builder, PAGE, module, PAGE .. "_" .. group.id, P.Tr(group.title), rules, opts)
+    end
+    Add(panel, ID, "window", { open = true })
+    Add(messages, ID, "text", { open = true, switchKey = "messageFading" })
+    Add(comfort, "chatComfort", "chatComfort_module")
+end
 
 function E.Begin(ctx)
     local builder = P.W.PageBuilder(ctx)

@@ -124,7 +124,19 @@ if arg[2] == "Forever" then
     F.Fire("CVAR_UPDATE", "InputDeviceInterfaceStyle")
     assert(overrides.I == "OPENALLBAGS", "returning to mouse and keyboard left the reagent bag inaccessible")
     F.S.Set("bags", "inventoryView", F.NS.BagsView.BLIZZARD_GRID)
-    assert(not next(overrides), "Blizzard Grid must restore the Backpack keys")
+    F.CloseBags()
+    F.Native(function() F.Reagent:Hide() end)
+    -- Both native bindings open the backpack. Only ToggleAllBags opens the reagent bag too.
+    F.OpenBags()
+    if overrides.I == "OPENALLBAGS" then F.Native(OpenBag, Enum.BagIndex.ReagentBag) end
+    F.Settle()
+    assert(F.Reagent:IsShown(), "Blizzard Grid lost the Backpack key that opens the reagent bag")
+    assert(not F.P.ReagentInventory.active and F.Reagent:GetAlpha() == 1,
+        "Blizzard Grid must keep the reagent bag separate and visible")
+    assert(F.S.Set("bags", "enabled", false))
+    assert(not next(overrides), "disabling Bags in Blizzard Grid left a binding override behind")
+    assert(F.S.Set("bags", "enabled", true))
+    assert(overrides.I == "OPENALLBAGS", "enabling Bags directly in Blizzard Grid did not open the reagent bag")
     F.S.Set("bags", "inventoryView", F.NS.BagsView.ALL)
     assert(overrides.I == "OPENALLBAGS", "returning to the Suite view left the reagent bag inaccessible")
     F.S.Set("bags", "enabled", false)

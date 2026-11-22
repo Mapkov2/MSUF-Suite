@@ -409,7 +409,7 @@ local function VerifyBindingXml()
     file:close()
     local scripts = {}
     for name, flags, script in xml:gmatch('<Binding name="(MSUFSUITE_CHARACTER_[A-Z0-9]+)"([^>]*)>([^<]+)</Binding>') do
-        assert(flags:find('category="BINDING_HEADER_MSUFSUITE_CHARACTER"', 1, true) and not scripts[name])
+        assert(flags:find('category="CHARACTER_BUTTON"', 1, true) and not scripts[name])
         scripts[name] = script
     end
     assert(xml:find('header="MSUFSUITE_CHARACTER"', 1, true))
