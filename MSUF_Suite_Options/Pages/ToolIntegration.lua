@@ -6,7 +6,8 @@ P.OwnedTools = {
     restockPlanner = "Open inventory tool", craftShopping = "Open inventory tool", bankTransfer = "Open inventory tool",
 }
 local QOL_CATEGORY = {
-    inventoryProtection = "merchants", mailTemplates = "everydayAutomation", waypointLists = "mapTravel",
+    inventoryProtection = "merchants", mailTemplates = "everydayAutomation", mailReceipts = "interfaceChat",
+    waypointLists = "mapTravel",
     soundProfiles = "everydayAutomation", notificationHistory = "interfaceChat",
 }
 function P.ExtendQoLTools(groups, categories)
@@ -222,6 +223,7 @@ function P.AppendToolSearchActions(Add)
     Add("chat", "searchHistory", "Search saved chat", "suite_chat_tools")
     Add("inventoryProtection", "action.open", "Open inventory tool", "suite_qualityOfLife_inventoryProtection_inventoryProtection")
     Add("mailTemplates", "action.open", "Open inventory tool", "suite_qualityOfLife_mailTemplates_mailTemplates")
+    Add("mailReceipts", "action.open", "Recently sent mail", "suite_qualityOfLife_mailReceipts_mailReceipts")
     Add("waypointLists", "action.open", "Open saved waypoint lists", "suite_qualityOfLife_waypointLists_saved_waypoints")
     Add("notificationHistory", "action.open", "Open notice history", "suite_qualityOfLife_notificationHistory_notice_history")
     Add("worldQuestTab", "action.open", "Open world quests", "suite_qualityOfLife_worldQuestTab_world_quest_tab")

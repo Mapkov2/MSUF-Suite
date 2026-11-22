@@ -81,8 +81,10 @@
 		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleCombatStatsFPS then MSUFSuite.Suite.ToggleCombatStatsFPS() end
 	</Binding>
 	<Binding name="CLICK MSUFSuiteQuestItem:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="CLICK MSUFSuiteQuestContinue:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
 	<Binding name="CLICK MSUFSuiteFishing:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
 	<Binding name="CLICK MSUFSuiteFishingLure:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="CLICK MSUFSuiteSelfBuff:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
 	<Binding name="MSUFSUITE_CHARACTER_OVERVIEW" header="MSUFSUITE_CHARACTER" category="BINDING_HEADER_MSUFSUITE_CHARACTER">
 		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.OpenBoundCharacterTab then MSUFSuite.Suite.OpenBoundCharacterTab("MSUFSUITE_CHARACTER_OVERVIEW") end
 	</Binding>

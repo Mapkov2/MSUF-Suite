@@ -54,8 +54,32 @@ local function Route()
     ApplyRoute()
     M.routingUpdate = nil
 end
+local BOBBER_OBJECT_ID = 35591
+local SOFT_INTERACT_EVENT = "PLAYER_SOFT_INTERACT_CHANGED"
+
+local function BobberHint(_, _, _, guid)
+    if not M.fishing or not M.routing or not M.config.bobberHint or NS.InCombat() then
+        if M.bobberHint then M.bobberHint:Hide() end
+        return
+    end
+    guid = S.PublicText(guid)
+    local id = guid and tonumber(guid:match("^GameObject%-%d+%-%d+%-%d+%-%d+%-(%d+)%-"))
+    if not M.bobberHint then
+        M.bobberHint = S.CreateFontString(UIParent, nil, "OVERLAY", "GameFontNormalLarge")
+        M.bobberHint:SetPoint("CENTER", UIParent, "CENTER", 0, -110)
+    end
+    local ready = id == BOBBER_OBJECT_ID
+    M.bobberHint:SetText(ready and S.Text("Fishing key: reel in") or S.Text("Fishing: find the bobber"))
+    M.bobberHint:SetTextColor(ready and .5 or 1, ready and 1 or .82, .35)
+    M.bobberHint:Show()
+end
+
 local function StopFishing()
     M.fishing = nil
+    if M.bobberHint then
+        M.context:RemoveEvent(SOFT_INTERACT_EVENT)
+        M.bobberHint:Hide()
+    end
     ClearRoute()
     Restore()
 end
@@ -134,6 +158,10 @@ local function Channel(_, event, unit)
     if not S.Finite(spell) or spell ~= M.spell then return end
     M.fishing = true
     Route()
+    if M.config.bobberHint and M.routing then
+        M.context:Event(SOFT_INTERACT_EVENT, BobberHint, IN_COMBAT)
+        BobberHint(nil, nil, nil, UnitGUID("softinteract"))
+    end
     if not M.config.audio then return end
     S.SuspendSoundProfile()
     M.audio = true
@@ -161,7 +189,10 @@ end
 
 local function Changed(_, event)
     if event == "UPDATE_BINDINGS" then
-        if M.fishing then Route() end
+        if M.fishing then
+            Route()
+            if M.config.bobberHint then BobberHint(nil, nil, nil, UnitGUID("softinteract")) end
+        end
         return
     end
     if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_LEAVING_WORLD" then

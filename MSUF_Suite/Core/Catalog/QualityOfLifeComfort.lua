@@ -50,6 +50,22 @@ B.Section("groupFinderTools", "group_finder_statistics", "Application statistics
     B.Bool("statistics", "Count Mythic+ applications", true),
     B.Choice("scope", "Statistics scope", 1, { "Session", "Character", "Account" }),
 })
+B.Module("bonusRollConfirm", {
+    title = "Bonus roll protection",
+    description = "Hold Shift when clicking Roll or Pass on the bonus roll prompt outside combat.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = Retail,
+})
+B.Section("bonusRollConfirm", "bonus_roll", "Bonus roll protection", {})
+B.Module("dialogKeys", {
+    title = "Quest dialogue keys",
+    description = "Use the keyboard to advance NPC dialogues and choose rewards outside combat.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("dialogKeys", "dialog_keys", "Quest dialogue keys", {
+    B.Tooltip(B.Bool("useSpace", "Use Space to advance dialogue", true),
+        "Set Advance NPC dialogue in Keybindings > MSUF Suite to use a different key."),
+    B.Bool("numberChoices", "Use number keys to select dialogue and reward choices", true),
+})
 B.Module("fishingComfort", {
     title = "Fishing comfort",
     description = [[A secure fishing key with optional rod, lure and a temporary sound profile.
@@ -62,6 +78,7 @@ B.Section("fishingComfort", "fishing_comfort", "Fishing comfort", {
     B.String("rod", "Fishing rod item ID (empty: equipped rod)", "", 12),
     B.String("lure", "Lure item ID (separate key binding)", "", 12),
     B.Bool("sameKeyInteract", "Use the Fishing key to interact during a cast"),
+    B.Bool("bobberHint", "Show when the Fishing key can reel in"),
     B.Bool("audio", "Use fishing sound profile during your cast"),
     B.Bool("warnInInstance", "Warn if a fishing rod is equipped when entering an instance", true),
     B.Number("music", "Fishing music volume (percent)", 10, 0, 100, 5),
@@ -69,6 +86,7 @@ B.Section("fishingComfort", "fishing_comfort", "Fishing comfort", {
     B.Number("effects", "Fishing effects volume (percent)", 100, 0, 100, 5),
 })
 
+NS.SuiteCatalog.fishingComfort.rules.bobberHint.enableKey = "sameKeyInteract"
 NS.SuiteCatalog.fishingComfort.rules.rod.hidden = true
 NS.SuiteCatalog.fishingComfort.rules.lure.hidden = true
 NS.SuiteCatalog.groupFinderTools.rules.activities.hidden = true

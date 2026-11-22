@@ -161,8 +161,10 @@ function NS.ToggleMapOverlay()
     return false
 end
 _G["BINDING_NAME_CLICK MSUFSuiteQuestItem:LeftButton"] = Text("Use tracked quest item")
+_G["BINDING_NAME_CLICK MSUFSuiteQuestContinue:LeftButton"] = Text("Advance NPC dialogue")
 _G["BINDING_NAME_CLICK MSUFSuiteFishing:LeftButton"] = Text("Fishing")
 _G["BINDING_NAME_CLICK MSUFSuiteFishingLure:LeftButton"] = Text("Apply fishing lure")
+_G["BINDING_NAME_CLICK MSUFSuiteSelfBuff:LeftButton"] = Text("Cast next missing self-buff")
 local buttonFormat = Text("%s button %d")
 for bar = 9, 10 do
     local title = Text(NS.ActionBarTitles[bar])

@@ -5,6 +5,8 @@ P.QoLComfortGroups = {
     { id = "mailRecipients", title = "Mail recipients (Retail)", switch = "enabled", sections = { "mail_recipients" } },
     { id = "groupFinderTools", title = "Group finder filters and statistics (Retail)", switch = "enabled",
         sections = { "group_finder_tools", "group_finder_statistics" } },
+    { id = "bonusRollConfirm", title = "Bonus roll protection", switch = "enabled", sections = { "bonus_roll" } },
+    { id = "dialogKeys", title = "Quest dialogue keys", switch = "enabled", sections = { "dialog_keys" } },
     { id = "fishingComfort", title = "Fishing comfort (Forever)", switch = "enabled", sections = { "fishing_comfort" } },
     { id = "autoResponses", title = "Automatic responses", switch = "enabled", sections = { "auto_responses" },
         aliases = { "auto accept summon", "auto accept resurrection", "auto decline duel", "decline invites",

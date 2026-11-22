@@ -57,12 +57,15 @@ CheapestItem.lua
 InventoryToolsUI.lua
 InventoryData.lua
 InventoryArchive.lua
+RestockPurchase.lua
 RestockPlanner.lua
 CraftShopping.lua
 InventoryTransfers.lua
 MailTemplates.lua
+MailReceipts.lua
 LootToastFilter.lua
 QuestHelpers.lua
+DialogKeys.lua
 QuestRewardValue.lua
 MailRecipients.lua
 GroupFinderStatistics.lua
@@ -154,4 +157,5 @@ TooltipBorder.lua
 TooltipHiddenLines.lua
 TooltipDetails.lua
 PopupAttention.lua
+BonusRollConfirm.lua
 BattleNetToast.lua

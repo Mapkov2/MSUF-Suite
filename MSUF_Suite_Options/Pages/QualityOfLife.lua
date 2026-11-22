@@ -297,7 +297,8 @@ V.GroupEnabled = GroupEnabled
 V.FeatureSectionId, V.FeatureRules = FeatureSectionId, FeatureRules
 V.BindFeatureSwitch, V.BuildFeatureDetails = BindFeatureSwitch, BuildFeatureDetails
 function V.HasDetails(group, rules)
-    return #rules > 0 or group.id == "mailTemplates" or group.id == "macroBuilder"
+    return #rules > 0 or group.id == "mailTemplates" or group.id == "mailReceipts"
+        or group.id == "bonusRollConfirm" or group.id == "macroBuilder"
         or EDIT_ELEMENTS[group.id] ~= nil or group.id == "xpBar"
         or group.id == "innervateCue" or group.id == "loadoutReminder" or group.id == "worldQuestTab"
 end

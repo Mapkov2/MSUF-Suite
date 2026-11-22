@@ -184,7 +184,7 @@ return {
         Subgroup("merchants", "Merchants", "merchantLevel qol.repair qol.autoJunk lootVendorRules merchantList inventoryProtection"),
     } },
     { id = "questsProfessions", title = "Quests & Professions", subgroups = {
-        Subgroup("quests", "Quests", "quests questRewardValue worldQuestTab"),
+        Subgroup("quests", "Quests", "quests dialogKeys questRewardValue worldQuestTab"),
         Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips"),
     } },
     { id = "groups", title = "Groups", subgroups = {
@@ -199,8 +199,8 @@ return {
     } },
     { id = "interface", title = "Interface", subgroups = {
         Subgroup("interface", "Interface", "dailyComfort soundProfiles"),
-        Subgroup("chat", "Chat & Mail", "mailRecipients mailTemplates guildChatPrivacy"),
-        Subgroup("notifications", "Notifications", "quietPopups uiErrorFilter popupAttention bnetToast notificationHistory"),
+        Subgroup("chat", "Chat & Mail", "mailRecipients mailTemplates mailReceipts guildChatPrivacy"),
+        Subgroup("notifications", "Notifications", "quietPopups uiErrorFilter popupAttention bonusRollConfirm bnetToast notificationHistory"),
         Subgroup("tooltips", "Tooltips",
             "auctionPriceTooltip tooltipClassColors tooltipSpellCopy itemCounts tooltipIDs tooltipVisibility tooltipDetails tooltipMPlusScore"),
     } },
