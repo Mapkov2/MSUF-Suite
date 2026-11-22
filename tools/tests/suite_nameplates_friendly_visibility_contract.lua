@@ -296,4 +296,36 @@ Check(not NS.SetFriendlyNameplates("friendly", true) and not NS.ToggleFriendlyNP
 Check(writes == 0, "unavailable optional runtime changed native visibility")
 S.instances.nameplates, S.CommitCVar, S.SetMany = savedInstance, savedCommit, savedSetMany
 
+do
+    Reset()
+    live.nameplateShowFriendlyPlayerPets, live.UnitNameFriendlyPetName = "0", "1"
+    live.nameplateShowEnemyPets, live.UnitNameEnemyPetName = "1", "0"
+    live.UnitNameFriendlyGuardianName, live.UnitNameEnemyTotemName = "1", "1"
+    local page = { Suite = NS, Tr = NS.Text, NameplatesStatus = { IsOffset = function() return false end } }
+    function page.RuleRow(_, id, rule)
+        return { kind = "dropdown", get = function() return S.Config(id)[rule.key] end,
+            set = function(value) return S.Set(id, rule.key, value) end }
+    end
+    Load(root .. "/MSUF_Suite_Options/Pages/NameplatesDirectSettings.lua", "Options", page)
+    local playerPets = page.RuleRow("suite_nameplates", "nameplates", rules.plateFriendlyPets)
+    local enemyPets = page.RuleRow("suite_nameplates", "nameplates", rules.plateEnemyPets)
+    Check(playerPets.kind == "dropdown" and enemyPets.kind == "dropdown"
+        and playerPets.values()[3].text == "Names only (world names)", "pet rows did not offer a names-only choice")
+    Check(playerPets.get() == 4 and enemyPets.get() == 2 and writes == 0,
+        "the inherited controls did not distinguish world names from bars")
+    Check(playerPets.set(3) and playerPets.get() == 3 and live.nameplateShowFriendlyPlayerPets == "0"
+        and live.UnitNameFriendlyPetName == "0", "friendly Hide left the world-space pet name visible")
+    Check(enemyPets.set(4) and enemyPets.get() == 4 and live.nameplateShowEnemyPets == "0"
+        and live.UnitNameEnemyPetName == "1", "enemy Names only did not replace the plate with its world name")
+    Check(playerPets.set(4) and live.UnitNameFriendlyPetName == "1" and live.nameplateShowFriendlyPlayerPets == "0",
+        "friendly Names only did not restore the name after Hide")
+    Check(live.UnitNameFriendlyGuardianName == "1" and live.UnitNameEnemyTotemName == "1",
+        "changing pet display touched a different kind of minion")
+    Check(playerPets.set(2) and live.nameplateShowFriendlyPlayerPets == "1" and live.UnitNameFriendlyPetName == "1",
+        "Health bars failed to reveal the friendly pet plate")
+    context:Release()
+    Check(live.nameplateShowFriendlyPlayerPets == "0" and live.UnitNameFriendlyPetName == "1"
+        and live.nameplateShowEnemyPets == "1" and live.UnitNameEnemyPetName == "0", "release lost the native pet defaults")
+end
+
 print("Suite friendly visibility " .. flavor .. ": " .. checks .. " causal checks passed")

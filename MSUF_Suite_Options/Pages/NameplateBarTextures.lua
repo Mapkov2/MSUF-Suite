@@ -71,6 +71,8 @@ local function Value(key)
     return P.Get(ID, key)
 end
 
+Textures.OutlineValue = Value
+
 local function SetOverride(enabled, key, value)
     local values = { barsOverride = enabled }
     if enabled and not P.Get(ID, "barsOverrideSaved") then
@@ -179,7 +181,8 @@ end
 local function Link(ctx, body, y, width, section, spec, label, target)
     if not spec.registered then return y end
     target = target or spec.keys[1]
-    P.Button(ctx, body, label, 16, y, math.min(width, 240), function()
+    local buttonWidth = math.min(width, 240)
+    local button = P.Button(ctx, body, label, 16, y, buttonWidth, function()
         local key = "msufsuite.nameplates." .. target
         if not Bridge.OpenExactMenuSetting(P.M, spec.page, spec.section, key) then
             P.M.SelectPage(spec.page)
@@ -195,6 +198,14 @@ local function Link(ctx, body, y, width, section, spec, label, target)
             end
         end
     end, nil, P.Meta("suite_nameplates", ID, "link." .. target, "action", section))
+    if spec == outline or (spec == highlight and label == highlight.title) then
+        local side = section:match("^suite_nameplates_friendly") and "friendly" or "enemy"
+        local gear = Bridge.AttachOutlineOverview(P.M, button, function()
+            if spec == highlight then return "suite.nameplates.highlightBorderSize" end
+            return "suite.nameplates." .. side .. "BorderSize"
+        end, true)
+        if gear then button:SetWidth(buttonWidth - gear:GetWidth() - 4) end
+    end
     return y - 38
 end
 

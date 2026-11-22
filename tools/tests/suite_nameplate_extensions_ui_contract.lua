@@ -86,8 +86,8 @@ do
     Enum = { SpellBookSpellBank = { Player = 0 } }
     C_SpellBook = {
         GetNumSpellBookSkillLines = function() reads = reads + 1 return 1 end,
-        GetSpellBookSkillLineInfo = function() return { itemIndexOffset = 0, numSpellBookItems = 3 } end,
-        GetSpellBookItemInfo = function(index) return { spellID = index } end,
+        GetSpellBookSkillLineInfo = function() return { itemIndexOffset = 0, numSpellBookItems = 4 } end,
+        GetSpellBookItemInfo = function(index) return { spellID = index, iconID = index ~= 4 and (135900 + index) or nil } end,
         IsSpellKnown = function(id) return id ~= 3 end,
     }
     C_Spell = { SpellHasRange = function(id) return id ~= 2 end, GetSpellName = function() return "Test spell" end }
@@ -96,9 +96,14 @@ do
     commit("123")
     assert(value == 123, "manual spell ID was not saved")
     click()
-    assert(reads == 1 and choices["Test spell (1)"] and not choices["Test spell (2)"] and not choices["Test spell (3)"],
-        "picker exposed an unknown or non-range spell")
-    choices["Test spell (1)"]()
+    local iconLabel = "|T135901:14:14:0:0:64:64:5:59:5:59|t  Test spell (1)"
+    assert(reads == 1 and choices[iconLabel], "picker did not use the spellbook's icon")
+    assert(choices["Test spell (4)"], "picker dropped a spell without an icon")
+    for label in pairs(choices) do
+        assert(not label:find("Test spell (2)", 1, true) and not label:find("Test spell (3)", 1, true),
+            "picker exposed an unknown or non-range spell")
+    end
+    choices[iconLabel]()
     assert(value == 1, "spellbook choice was not saved")
 end
 print("nameplate extensions UI contract passed: all controls placed, default resets, capabilities and priority explanation")

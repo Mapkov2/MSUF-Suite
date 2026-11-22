@@ -350,9 +350,14 @@ local function Metrics(editor, s, m)
     local friendlyDisplay = Get(ID, "friendlyNamesOnly")
     m.groupOnly = not m.skinDisabled and prefix == "friendly" and not m.friendlyNPC
         and not editor.editFullPlate and friendlyDisplay == 3
-    m.namesOnly = m.npcWorldName or prefix == "friendly" and not m.friendlyNPC and not editor.editFullPlate
+    local scope = m.friendlyNPC and "friendlyNpc" or prefix == "enemy" and editor.scope == "neutral" and "neutral" or prefix
+    m.nameOnlyScope = not (m.skinDisabled or editor.editFullPlate)
+        and P.Suite.NameplateExtensions.CustomNameOnly(P.S.Config(ID), scope, true) and scope or nil
+    m.namesOnly = m.npcWorldName or m.nameOnlyScope ~= nil or prefix == "friendly" and not m.friendlyNPC and not editor.editFullPlate
         and (friendlyDisplay == 2 or friendlyDisplay == 3 or friendlyDisplay == 1
             and Style.NativeToggle("nameplateShowOnlyNameForFriendlyPlayerUnits", false))
+    m.centerName = m.namesOnly and not (m.npcWorldName or m.skinDisabled) and Get(ID, "look") ~= 2
+        and Get(ID, prefix) and Get(ID, scope .. "CenterName")
     m.nativeLevel = m.forever and not m.namesOnly
     m.levelMode = P.NameplatesPreviewDecor.LevelMode(editor, prefix, m.classic, m.namesOnly)
     m.nativeLevelWidth = m.nativeLevel and SetupNumber("playerLevelDiffWidth", 28 * m.classificationScale) or 0
@@ -441,8 +446,9 @@ local function RenderVisibility(editor, s, m)
     s.bar:SetShown(not namesOnly and editor:LayerOn("health"))
     local castMode = Get(ID, "look") == 2 and 1 or Get(ID, "enemyCastEnabled")
     local nativeCast = C_CVar.GetCVar("nameplateShowCastBars")
-    m.showCast = (editor.castSample and not m.npcWorldName) or not namesOnly and s.state.cast
-        and editor:LayerOn("cast") and castMode ~= 3 and (castMode ~= 1 or not P.Suite.Public(nativeCast) or nativeCast ~= "0")
+    m.showCast = editor:LayerOn("cast") and ((editor.castSample and not m.npcWorldName and not m.nameOnlyScope)
+        or not namesOnly and s.state.cast and castMode ~= 3
+        and (castMode ~= 1 or not P.Suite.Public(nativeCast) or nativeCast ~= "0"))
     s.cast:SetShown(m.showCast)
     local group = P.NameplatesEditorLayers.AuraGroup(editor, prefix)
     local model, config = P.Suite.NameplateAuraDisplay, P.S.Config(ID)
@@ -461,41 +467,6 @@ local function RenderVisibility(editor, s, m)
         and (editor.auraSample == "Buffs" or model.NativeShown(config, group, "Buffs")))
     s.control:SetShown(not namesOnly and editor:LayerOn("controlAura")
         and (editor.auraSample == "ControlAura" or model.NativeShown(config, group, "Control")))
-end
-
-local function RenderName(s, m)
-    local prefix, name, bar = s.prefix, s.name, s.bar
-    name:EnableMouse(not m.npcWorldName and not s.static)
-    local config = P.S.Config(ID)
-    local shared = not (m.npcWorldName or m.skinDisabled) and P.Suite.NameplateText.Shared(config)
-    local size = P.Suite.NameplateText.ResolveSize(config, prefix .. "NameSize", shared)
-    local anchor = not (m.namesOnly or m.skinDisabled) and Get(ID, "look") ~= 2 and P.Suite.NameplateText.NameAnchor(config, prefix)
-    name:SetHeight(not (m.npcWorldName or m.skinDisabled) and (shared or Get(ID, prefix .. "TextEnabled")) and size > 0 and size
-        or SetupNumber("healthBarFontHeight", (m.classic and 10 or m.forever and 14 or 12) * m.vertical))
-    name:ClearAllPoints()
-    if m.npcWorldName then
-        name:SetPoint("CENTER", s.cell, "CENTER", 0, 0)
-        name:SetWidth(170)
-    elseif m.namesOnly then
-        if m.nameAnchor == 1 then Place(s, name, "CENTER", bar, "CENTER", 0, 0, "Name")
-        else Place(s, name, "BOTTOM", bar, "TOP", 0, 2, "Name") end
-        name:SetWidth(170)
-    elseif anchor then
-        Place(s, name, anchor, bar, anchor, 0, 0, "Name")
-        name:SetWidth(m.availableNameWidth)
-    elseif m.nameAnchor == 3 then
-        Place(s, name, "BOTTOM", bar, "TOP", m.classic and 8.625 * m.horizontal or 0, m.nameSpacing, "Name")
-        name:SetWidth(m.barWidth - 8 + (m.classic and m.classicInset or 0))
-    elseif m.nameAnchor == 2 then
-        Place(s, name, "BOTTOMLEFT", bar, "TOPLEFT", 4, m.nameSpacing, "Name")
-        name:SetWidth(m.nativeLevel and m.barWidth + m.reserve - 4 or m.availableNameWidth)
-    else
-        Place(s, name, "LEFT", bar, "LEFT", 4, 0, "Name")
-        name:SetWidth(m.availableNameWidth)
-    end
-    s.nameText:SetWidth(m.namesOnly and 170 or m.nameAnchor == 3 and name:GetWidth() or m.availableNameWidth)
-    local justify = anchor and (anchor:find("LEFT", 1, true) and "LEFT" or anchor:find("RIGHT", 1, true) and "RIGHT" or "CENTER")
-    s.nameText:SetJustifyH(justify or ((m.namesOnly or m.nameAnchor == 3) and "CENTER" or "LEFT"))
 end
 
 local function RoleColorShown(editor, m)
@@ -563,11 +534,12 @@ local function RenderHighlight(editor, s, m)
         and editor:LayerOn("health") and editor:LayerOn("highlightBorders") and Style.CompileHighlights(config, sample)
     local color, selected
     if plan and sample then
-        color = plan[sample]
-        selected = sample == "target" or sample == "focus"
+        color = editor:LayerOn(sample .. "Border") and plan[sample]
+        selected = color and (sample == "target" or sample == "focus")
     elseif plan then
-        color, selected = Style.HighlightColor(plan, s.state.target, s.state.focus,
-            s.prefix == "enemy" and editor.scope ~= "neutral" and editor.aggroSample, false)
+        color, selected = Style.HighlightColor(plan,
+            s.state.target and editor:LayerOn("targetBorder"), s.state.focus and editor:LayerOn("focusBorder"),
+            s.prefix == "enemy" and editor.scope ~= "neutral" and editor.aggroSample and editor:LayerOn("aggroBorder"), false)
     end
     s.customSelection = selected
     s.highlightColor, s.highlightSize = color, plan and plan.size
@@ -580,7 +552,7 @@ local function RenderTarget(editor, s, m)
     local leftGap = level:IsShown() and (m.levelMode == "number" and m.forever and level:GetWidth() + 4
         or m.levelMode == "badge" and not m.forever and level:GetWidth() + 4) or 0
     local status = editor.statusSample
-    local targeted = not m.npcWorldName and editor:LayerOn("target") and (not status or status == "target")
+    local targeted = not (m.npcWorldName or m.nameOnlyScope) and editor:LayerOn("target") and (not status or status == "target")
         and (s.state.target or status == "target" or editor.allStatusSamples)
     Markers.PaintTarget(s, not m.skinDisabled and targeted, rightGap, leftGap, editor.statusOffsetSample, m.barSettings)
 end
@@ -595,7 +567,8 @@ local function RenderMarkers(editor, s, m)
             Get(ID, prefix .. (marker.kind == "elite" and "EliteMarkerAnchor" or "QuestMarkerAnchor")))
         Style.PaintMarker(marker.icon, marker.kind, size, Get(ID, marker.color), m.role == 4 and "boss" or "elite")
         local status = editor.statusSample
-        marker.handle:SetShown(not m.skinDisabled and not m.npcWorldName and editor:LayerOn(marker.kind .. "Marker") and Get(ID, "look") ~= 2
+        marker.handle:SetShown(not (m.skinDisabled or m.npcWorldName or m.nameOnlyScope) and editor:LayerOn(marker.kind .. "Marker")
+            and Get(ID, "look") ~= 2
             and (Get(ID, marker.enabledKey) or editor.statusOffsetSample == marker.kind)
             and (not status or status == marker.kind)
             and (status == marker.kind or editor.allStatusSamples == true or prefix == "friendly" and m.friendlyNPC or marker.roles[m.role] == true))
@@ -632,7 +605,8 @@ end
 
 local function RenderCastAndAuras(editor, s, m)
     local prefix, cast = s.prefix, s.cast
-    local spellShown = editor.castSample == "CastText" or editor:LayerOn("castText") and NativeCastDetail("enemyCastSpellName", 1, true)
+    local spellShown = editor:LayerOn("castText")
+        and (editor.castSample == "CastText" or NativeCastDetail("enemyCastSpellName", 1, true))
     s.castName:SetShown(m.showCast and spellShown)
     -- Blizzard anchors the castbar to the plate, not the movable health container.
     Place(s, cast, "TOP", s.cell, "CENTER", m.castX, -4 - m.nativeBarHeight / 2 - m.castSpacing, "Cast")
@@ -641,8 +615,8 @@ local function RenderCastAndAuras(editor, s, m)
     local elapsed = Get(ID, prefix .. "CastTimeFormat") == 2
     s.castTime:SetWidth(elapsed and 90 or 38)
     s.castTimeText:SetText(elapsed and SAMPLE_CAST_TIME or "2.3s")
-    s.castTime:SetShown(m.showCast and not m.skinDisabled and (editor.castSample == "CastTime" or Get(ID, "look") ~= 2
-        and Get(ID, prefix .. "CastTimeEnabled") and editor:LayerOn("castTime")))
+    s.castTime:SetShown(m.showCast and not m.skinDisabled and editor:LayerOn("castTime")
+        and (editor.castSample == "CastTime" or Get(ID, "look") ~= 2 and Get(ID, prefix .. "CastTimeEnabled")))
     -- Blizzard's DebuffListFrame starts at HealthBarsContainer.LEFT, not
     -- at the middle of the visible bar. Its BOTTOM follows bar/name TOP;
     -- the Suite name offset is compensated independently at runtime.
@@ -672,7 +646,7 @@ local function RenderRaid(editor, s, m)
     local marked = status == "RaidIcon" or not status and (editor.allStatusSamples == true or editor.raidMarked == true)
     local index = editor.raidMarked and editor.raidIndex or 8
     s.raidTexture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. index)
-    raid:SetShown(not m.npcWorldName and editor:LayerOn("raidIcon") and marked
+    raid:SetShown(not (m.npcWorldName or m.nameOnlyScope) and editor:LayerOn("raidIcon") and marked
         and (not styled or Get(ID, prefix .. "RaidIcon") or editor.statusOffsetSample == "RaidIcon"))
     local size = styled and Get(ID, prefix .. "RaidIconSize") or 22
     raid:SetSize(marked and size or 0, size)
@@ -687,7 +661,7 @@ local function RenderRaid(editor, s, m)
     local showRarity = rarityMode == 2 or rarityMode == 1 and NativeBit("nameplateInfoDisplay", 3, true)
     local classificationSample = status == "Classification"
         or not status and (editor.allStatusSamples or prefix == "enemy" and (role == 3 or role == 4) or m.friendlyNPC)
-    local showClassification = classificationSample and not m.npcWorldName and not marked
+    local showClassification = classificationSample and not (m.npcWorldName or m.nameOnlyScope) and not marked
         and editor:LayerOn("classification") and (showRarity or editor.statusOffsetSample == "Classification")
     s.classification:SetShown(showClassification)
     s.classificationBase:SetWidth(showClassification and 20 or 0) -- Blizzard ClassificationFrame collapsesLayout.
@@ -709,11 +683,12 @@ local function RenderCastDetails(editor, s, m)
         s.shield:SetSize(SetupNumber("castBarShieldWidth", m.iconWidth), SetupNumber("castBarShieldHeight", m.iconHeight))
         Place(s, s.shield, "RIGHT", cast, relative, m.iconWidth, m.castInside and 0 or -m.iconHeight / 2, "CastShield")
     end
-    s.shield:SetShown(m.showCast and (editor.castSample == "CastShield" or editor.uninterruptible and editor:LayerOn("castShield")))
-    s.castIcon:SetShown(m.showCast and (editor.castSample == "CastIcon"
-        or editor:LayerOn("castIcon") and (not editor.uninterruptible or m.classicCast) and NativeCastDetail("enemyCastSpellIcon", 2, false)))
+    s.shield:SetShown(m.showCast and editor:LayerOn("castShield") and (editor.castSample == "CastShield" or editor.uninterruptible))
+    s.castIcon:SetShown(m.showCast and editor:LayerOn("castIcon") and (editor.castSample == "CastIcon"
+        or (not editor.uninterruptible or m.classicCast) and NativeCastDetail("enemyCastSpellIcon", 2, false)))
     Place(s, s.castTarget, "TOPRIGHT", cast, "BOTTOMRIGHT", 0, -1, "CastTarget")
-    local targetShown = editor.castSample == "CastTarget" or editor:LayerOn("castTarget") and NativeCastDetail("enemyCastSpellTarget", 3, false)
+    local targetShown = editor:LayerOn("castTarget")
+        and (editor.castSample == "CastTarget" or NativeCastDetail("enemyCastSpellTarget", 3, false))
     s.castTarget:SetShown(m.showCast and targetShown)
     P.NameplatesPreviewDecor.CastIcon(s, Place, Get)
     P.NameplatesPreviewDecor.CastPresentation(editor, s, m, Get)
@@ -734,7 +709,7 @@ local function Render(editor, s)
     RenderFrames(editor, s, m)
     RenderTitle(editor, s, m)
     RenderVisibility(editor, s, m)
-    RenderName(s, m)
+    P.NameplatesPreviewLayout.RenderName(s, m, Get, SetupNumber, Place)
     RenderHighlight(editor, s, m)
     P.NameplatesPreviewDecor.PaintHealthChrome(editor, s, m, not m.skinDisabled and m.barSettings.nativeHealthBackgroundTexture or "")
     P.NameplatesPreviewDecor.PaintLevel(editor, s, m, SetupNumber, Place)
@@ -747,6 +722,17 @@ local function Render(editor, s)
     local nameLook = P.Suite.NameplateText.Compile(P.S.Config(ID), s.prefix)
     if not (m.npcWorldName or m.skinDisabled) then
         P.Suite.NameplateText.Paint(s.nameText, s.nameFormatState, s.nameText:GetText(), nameLook)
+    end
+    if m.nameOnlyScope then
+        if s.prefix == "enemy" and editor.enemyPlayer and Get(ID, "enemyPlateNameClassColor") then
+            local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS.WARRIOR
+            if color then s.nameText:SetVertexColor(color.r, color.g, color.b, 1) end
+        elseif not (s.prefix == "enemy" and editor.enemyPlayer) and Get(ID, m.nameOnlyScope .. "PlateNameTypeColor") then
+            local role = m.friendlyNPC and "Miniboss" or m.descriptor and m.descriptor.key or "Melee"
+            local colorRole = P.Suite.NameplateExtensions.NameOnlyColorRole(m.nameOnlyScope, role)
+            local color = Get(ID, "enemy" .. colorRole .. "Color")
+            if color then s.nameText:SetVertexColor(P.RGB(color)) end
+        end
     end
     P.NameplatesPreviewDecor.PaintMirroredHeader(s, m, Get, P.S.Config(ID))
     RenderCastAndAuras(editor, s, m)

@@ -232,6 +232,8 @@ C.Configure(cfg)
 C.Apply(uf, "nameplate1", true)
 assert(creations == 2 and #textures == 3 * A.LIMIT and #containers == 1)
 local container = containers[1]
+assert(not container.slots.all1.shown and not container.slots.all2.shown,
+    "a slot without an aura starts visible and shifts the warning mask")
 do
     local before = writes
     private.Textures = { focusFill = "focus", HealthFill = function(frame) if frame == uf then return "focus" end end }
@@ -273,9 +275,13 @@ assert(wrapper.allPoints == health and health.parent == plate and health.height 
 local function NativePass(present, owner)
     owner = owner or container
     for _, slot in pairs(owner.slots) do
-        slot.nativeShown = false
+        local matched = false
         if owner.enabled then
-            for id in pairs(present) do if slot.filter.includeSpellIDs[id] then slot.nativeShown = true end end
+            for id in pairs(present) do if slot.filter.includeSpellIDs[id] then matched = true break end end
+        end
+        -- Blizzard only clears an empty slot if it had an assigned aura.
+        if matched or slot.assigned then
+            slot.shown, slot.assigned = matched, matched
         end
     end
 end
@@ -289,7 +295,7 @@ local function Bottom(region)
     error("missing native anchor")
 end
 Top = function(region)
-    return Bottom(region) + (region.collapse and not region.nativeShown and 0 or region.height or 0)
+    return Bottom(region) + (region.collapse and not region.shown and 0 or region.height or 0)
 end
 -- The client draws by layer, then sublevel; within one sublevel the order is
 -- undefined, so two covering colour textures there have no defined winner.
@@ -476,6 +482,7 @@ combat, secretAuras = false, false
 local plate3 = Region(WorldFrame)
 local health3 = Region(plate3)
 plate3.native, health3.native = true, true
+health3.isHealth, health3.height = true, 32
 local fill3 = Region(health3)
 function health3:GetStatusBarTexture() return fill3 end
 local uf3 = { HealthBarsContainer = { healthBar = health3 } }
@@ -487,6 +494,27 @@ buildWaits[C](C)
 waited = containers[#containers]
 assert(creations == made + 2 and waited.unit == "nameplate8" and waited.enabled,
     "the plate that waited for the gamepad panel was not built after it closed")
+local warningColor, configuredDoTs = cfg.auraColorsNone, cfg.auraColorsData
+panelOpen, cfg.auraColorsNoneEnabled = true, false
+C.Configure(cfg)
+C.Apply(uf3, "nameplate8", true)
+NativePass({}, waited)
+assert(VisibleColor(health3) == nil, "an open gamepad panel kept the disabled warning visible")
+cfg.auraColorsNoneEnabled, cfg.auraColorsNone = true, "a053d1"
+C.Configure(cfg)
+C.Apply(uf3, "nameplate8", true)
+NativePass({}, waited)
+assert(VisibleColor(health3) == "a053d1" and SlotCount(waited) == 4, "the warning change waited on a panel without a new slot build")
+local expanded = A.Decode(configuredDoTs)
+expanded[101][#expanded[101] + 1] = { id = 778, ids = { 778 }, color = "ab1234" }
+cfg.auraColorsData = A.Encode(expanded)
+C.Configure(cfg)
+C.Apply(uf3, "nameplate8", true)
+assert(not waited.enabled and VisibleColor(health3) == nil and SlotCount(waited) == 4,
+    "the previous warning remained visible while a new predicate was waiting")
+panelOpen, cfg.auraColorsData, cfg.auraColorsNone = false, configuredDoTs, warningColor
+C.Configure(cfg)
+buildWaits[C](C)
 -- Blizzard's Edit Mode feeds containers sample auras. 12.1.5 and Forever
 -- keep the real ones (the switch above), so their colors stay; 12.1.0 has no
 -- switch: there the colors hide until Edit Mode closes.

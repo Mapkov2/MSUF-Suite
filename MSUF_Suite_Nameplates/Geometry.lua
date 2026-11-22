@@ -50,6 +50,50 @@ function G.LevelReserve(uf, setup)
     if NS.Finite(setup.playerLevelDiffWidth) then return setup.playerLevelDiffWidth + 5 end
 end
 
+-- The native name points from Blizzard_NamePlateUnitFrame:UpdateAnchors.
+-- They can be restored even when FrameMeasurement is blocked for the label.
+local function NativeNamePoints(uf, setup, badgeShown)
+    local container = uf.HealthBarsContainer
+    local health = container and container.healthBar
+    local healthText = health and health.Text
+    if not healthText or NS.Safety.IsForbidden(healthText) then return end
+    local style, spacing = setup.unitNameAnchorStyle, setup.healthBarToNameAboveSpacing
+    if uf.showOnlyName then
+        if style == 1 then return { { "LEFT", container, "LEFT", 4, 0 }, { "RIGHT", container, "RIGHT", -4, 0 } } end
+        return { { "BOTTOMLEFT", container, "TOPLEFT", 4, 2 }, { "BOTTOMRIGHT", container, "TOPRIGHT", -4, 2 } }
+    end
+    if style == 1 then return { { "LEFT", container, "LEFT", 4, 0 }, { "RIGHT", healthText, "LEFT", -2, 0 } } end
+    if style == 3 then return { { "BOTTOM", container, "TOP", 0, spacing } } end
+    if style ~= 2 then return end
+    if not NS.Client.isForever then
+        return { { "BOTTOMLEFT", container, "TOPLEFT", 4, spacing }, { "BOTTOMRIGHT", healthText, "BOTTOMLEFT", -2, 0 } }
+    end
+    local inside = setup.healthTextInsideBarWhenNameAboveHealthBar
+    if not NS.Public(inside) or type(inside) ~= "boolean" or badgeShown == nil then return end
+    local right = badgeShown and { "RIGHT", uf.PlayerLevelDiffFrame, "RIGHT", 0, 0 }
+        or inside and { "RIGHT", container, "RIGHT", 0, 0 } or { "RIGHT", healthText, "LEFT", -2, 0 }
+    return { { "BOTTOMLEFT", container, "TOPLEFT", 0, spacing }, right }
+end
+
+function G.CenterName(uf, setup, healthHeight, offsetY, badgeShown)
+    local label, cast = uf.name, uf.CastBarsContainer
+    local spacing, gap = setup.castBarToHealthBarSpacing, setup.healthBarToNameAboveSpacing
+    if not cast or NS.Safety.IsForbidden(cast) or not NS.Finite(healthHeight)
+        or not NS.Finite(spacing) or not NS.Finite(gap) then return end
+    local access, justify = cast:CanBeAccessedInContext(), label:GetJustifyH()
+    if not NS.Public(access) or access ~= true or not NS.Public(justify) or type(justify) ~= "string" then return end
+    local points = NativeNamePoints(uf, setup, badgeShown)
+    if not points then return end
+    local y = spacing + healthHeight + (uf.showOnlyName and 2 or gap) + offsetY
+    -- The native cast container is centered on the plate. The health
+    -- container can be narrower on the right to accommodate the level badge.
+    label:ClearAllPoints()
+    label:SetPoint("BOTTOMLEFT", cast, "TOPLEFT", 4, y)
+    label:SetPoint("BOTTOMRIGHT", cast, "TOPRIGHT", -4, y)
+    label:SetJustifyH("CENTER")
+    return { native = true, points = points, justify = justify }
+end
+
 -- The plate width constants carry different names on Retail
 -- (NAMEPLATE_WIDTH, CLASSIC_NAMEPLATE_WIDTH) and on Forever (Camelot's
 -- NAME_PLATE_WIDTH, CLASSIC_NAME_PLATE_WIDTH).

@@ -55,8 +55,34 @@ function X.IsEnemy(kind)
 end
 
 X.OpacityScopes = { "enemy", "neutral", "friendly", "friendlyNpc" }
+X.NPC_PLATE_NAME_ONLY = 5
+X.NEUTRAL_BARS_ATTACKABLE, X.NEUTRAL_NAMES_ATTACKABLE = 2, 3
+
+function X.NeutralNameSplit(config)
+    local mode = config.neutralNameOnlyMode
+    if config.neutralPlateNameOnly == true and (mode == X.NEUTRAL_BARS_ATTACKABLE or mode == X.NEUTRAL_NAMES_ATTACKABLE) then return mode end
+end
+
+function X.CustomNameOnly(config, scope, attackable)
+    if scope == "friendlyNpc" then return config.friendlyNPCs == X.NPC_PLATE_NAME_ONLY end
+    if scope == "neutral" then
+        if config.neutralPlateNameOnly ~= true then return false end
+        local mode = X.NeutralNameSplit(config)
+        return not mode or not NS.IsSecret(attackable) and type(attackable) == "boolean"
+            and attackable == (mode == X.NEUTRAL_NAMES_ATTACKABLE)
+    end
+    return scope == "enemy" and config.enemyPlateNameOnly == true
+end
+
+function X.NameOnlyColorRole(scope, npcType)
+    return scope == "neutral" and "Neutral" or npcType
+end
 X.SkinKeys = { enemy = "enemySkinEnabled", neutral = "neutralSkinEnabled",
     friendly = "friendlySkinEnabled", friendlyNpc = "friendlyNpcSkinEnabled" }
+X.ContextKeys = { enemy = "enemyContextEnabled", neutral = "neutralContextEnabled",
+    friendly = "friendlyContextEnabled", friendlyNpc = "friendlyNpcContextEnabled" }
+X.ContextFields = { "CastVisibility", "Scale", "Opacity" }
+for _, context in ipairs(X.Contexts) do X.ContextFields[#X.ContextFields + 1] = context.key .. "Visible" end
 
 function X.SkinEnabled(config, scope)
     return config[X.SkinKeys[scope]] ~= false
@@ -70,6 +96,35 @@ function X.OpacityScope(kind)
     if kind == "neutralNpc" then return "neutral" end
     if kind == "friendlyPlayer" then return "friendly" end
     if kind == "friendlyNpc" then return kind end
+end
+
+function X.ContextKind(config, kind)
+    if kind == "neutralNpc" and config.neutralContextEnabled == nil and not config.neutralNpcContextOverride then
+        return "enemyNpc"
+    end
+    return kind
+end
+
+function X.ContextEnabled(config, kind)
+    kind = X.ContextKind(config, kind)
+    local key = X.ContextKeys[X.OpacityScope(kind)]
+    if key and config[key] ~= nil then return config[key] == true end
+    if kind == "neutralNpc" then return config.neutralNpcContextOverride == true end
+    return config.plateContextEnabled == true
+end
+
+function X.SeparateContexts(config)
+    if config.neutralContextEnabled == nil then
+        local kind = X.ContextKind(config, "neutralNpc")
+        config.neutralContextEnabled = X.ContextEnabled(config, "neutralNpc")
+        if kind == "enemyNpc" and config.neutralContextEnabled then
+            for _, field in ipairs(X.ContextFields) do config["neutralNpc" .. field] = config["enemyNpc" .. field] end
+        end
+    end
+    for _, scope in ipairs(X.OpacityScopes) do
+        local key = X.ContextKeys[scope]
+        if config[key] == nil then config[key] = config.plateContextEnabled == true end
+    end
 end
 
 -- The indices match the data readers in ExtensionText.lua and the old source IDs.
@@ -205,7 +260,7 @@ local function TextIndicators(c, plan, scope, entry)
         local key = X.TextKey(scope, source)
         if c[key] then
             local item = X.TextIndicators[source]
-            entry.slots[#entry.slots + 1] = {
+            local slot = {
                 source = source,
                 anchor = Number(c[key .. "Anchor"], item.anchor, 1, #X.TextAnchors),
                 x = Number(c[key .. "X"], 0, -2048, 2048),
@@ -214,6 +269,8 @@ local function TextIndicators(c, plan, scope, entry)
                 unknown = c[key .. "Unknown"] == true,
                 layer = item.layer and Number(c[key .. "Layer"], item.layer, 0, 30),
             }
+            entry.slots[#entry.slots + 1] = slot
+            if source == 3 then entry.questSlot = slot end
             entry.sources[source] = true
             plan.sources[source] = true
         end
@@ -255,7 +312,7 @@ end
 function X.Plan(c)
     local plan = {
         enemy = Side(c, "enemy"), friendly = Side(c, "friendly"), interaction = {}, sources = {}, kinds = {},
-        contextEnabled = c.plateContextEnabled == true, enemyLoad = EnemyLoad(c),
+        enemyLoad = EnemyLoad(c),
         interrupt = c.interruptFeedbackEnabled == true,
         interruptShared = c.interruptFeedbackShared ~= false,
         interruptDuration = Number(c.interruptFeedbackDuration, 1.2, .1, 5),
@@ -269,9 +326,10 @@ function X.Plan(c)
     }
     for _, kind in ipairs(X.Kinds) do
         local entry = { alpha = 1, scale = 1, castVisibility = 1 }
-        if kind.key == "neutralNpc" and not c.neutralNpcContextOverride then
+        if X.ContextKind(c, kind.key) ~= kind.key then
             entry = plan.kinds.enemyNpc
-        elseif plan.contextEnabled or kind.key == "neutralNpc" and c.neutralNpcContextOverride then
+        elseif X.ContextEnabled(c, kind.key) then
+            plan.contextEnabled = true
             entry.alpha = Number(c[kind.key .. "Opacity"], 100, 0, 100) / 100
             entry.scale = Number(c[kind.key .. "Scale"], 100, 50, 200) / 100
             entry.castVisibility = Number(c[kind.key .. "CastVisibility"], 1, 1, 3)
@@ -281,8 +339,8 @@ function X.Plan(c)
     end
     Interaction(c, plan)
     AddOpacity(plan, c)
-    plan.neutralContext = c.neutralNpcContextOverride == true
-    plan.contextEnabled = plan.contextEnabled or plan.neutralContext
+    plan.neutralContext = X.ContextKind(c, "neutralNpc") == "neutralNpc"
+        and (X.ContextEnabled(c, "neutralNpc") or X.ContextEnabled(c, "enemyNpc"))
     plan.enabled = plan.contextEnabled or plan.opacity ~= nil or plan.enemyLoad ~= nil or plan.interrupt or plan.focusReminder or plan.execute
         or plan.focusScale ~= 1 or plan.castScale ~= 1 or plan.scoped
     for _, prefix in ipairs({ "enemy", "friendly" }) do
@@ -290,6 +348,9 @@ function X.Plan(c)
         plan.enabled = plan.enabled or side.nameCast > 1 or side.raidAnchor > 1 or side.iconAnchor > 1
             or side.foreground or side.identity > 1
     end
+    plan.neutralQuestText = X.NeutralNameSplit(c) == X.NEUTRAL_BARS_ATTACKABLE
+    plan.questTextOnly = plan.neutralQuestText and not plan.enabled
+    plan.enabled = plan.enabled or plan.neutralQuestText
     return plan
 end
 

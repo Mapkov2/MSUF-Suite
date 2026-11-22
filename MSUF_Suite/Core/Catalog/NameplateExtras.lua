@@ -1,6 +1,6 @@
 local _, NS = ...
 local B = NS.CatalogBuild.ForAddon("MSUF_Suite_Nameplates")
-local id, keys = "nameplates", {}
+local id = "nameplates"
 local spec = NS.SuiteCatalog[id]
 local rules = {
     B.Bool("questReactionColors", "Separate neutral and hostile quest colors", false),
@@ -37,13 +37,13 @@ end
 local scopes = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly", friendlyNpc = "Friendly NPC" }
 for _, scope in ipairs(NS.NameplateExtensions.OpacityScopes) do
     local label = NS.Text("%s: automatic class range spell"):format(NS.Text(scopes[scope]))
-    rules[#rules + 1] = B.Bool(scope .. "RangeAuto", label, false)
+    local auto = B.Bool(scope .. "RangeAuto", label, false)
+    auto.enableKey = scope .. "RangeEnabled"
+    rules[#rules + 1] = auto
     spec.rules[scope .. "RangeSpell"].disabledBy = scope .. "RangeAuto"
 end
 B.Section(id, "plateExtras", "Extra nameplate features", rules)
 for _, rule in ipairs(rules) do
-    keys[#keys + 1] = rule.key
     spec.look.visualKeys[rule.key] = true
     for _, preset in pairs(spec.look.presets) do preset[rule.key] = rule.default end
 end
-NS.NameplateExtraKeys = keys

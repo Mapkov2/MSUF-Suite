@@ -5,6 +5,7 @@ local counts, events, plates, units, members = {}, {}, {}, {}, {}
 local module
 local instance, grouped, tank, pvp, reference = "party", true, true, nil, 90
 local partyName, raidName, guidReads = false, nil, 0
+local combat = false
 local function Count(key) counts[key] = (counts[key] or 0) + 1 end
 local function Public(value) return not rawequal(value, secret) end
 local function Finite(value) return Public(value) and type(value) == "number" end
@@ -38,7 +39,13 @@ local function Region()
     function r:SetShadowOffset(x, y) self.shadowX, self.shadowY = x, y end
     function r:SetColorTexture(color) self.color = color end
     function r:SetAllPoints(target) self.target = target end
-    r.SetVertexColor, r.ClearAllPoints = Nothing, Nothing
+    function r:GetTextColor() return self.textR or 1, self.textG or 1, self.textB or 1, self.textA or 1 end
+    r.GetVertexColor = r.GetTextColor
+    function r:SetVertexColor(red, green, blue, alpha)
+        self.textR, self.textG, self.textB, self.textA = red, green, blue, alpha
+    end
+    function r:IsProtected() return false end
+    r.ClearAllPoints = Nothing
     function r:CreateTexture() return Region() end
     function r:GetStatusBarTexture() return self.texture end
     return r
@@ -70,7 +77,8 @@ UnitIsDead = function() return false end
 UnitIsConnected = function() return true end
 UnitPlayerControlled = function() return false end
 UnitIsTapDenied = function(unit) return units[unit].tapped end
-UnitReaction = function() return 2 end
+UnitReaction = function(unit) return units[unit] and units[unit].reaction or 2 end
+UnitAffectingCombat = function(unit) return units[unit] and units[unit].fighting == true end
 UnitCanAttack = function() return true end
 UnitThreatSituation = function(unit, other) return units[other or unit].threat end
 UnitThreatLeadSituation = function(_, unit) return units[unit].lead end
@@ -104,11 +112,16 @@ local Style = {
 local SharedStyle = { AnchorPoints = {}, AnchorLabels = {} }
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", SharedStyle)
 setmetatable(Style, { __index = SharedStyle.NameplateStyle })
-local NS = { NameplateStyle = Style, Client = {}, Finite = Finite, IsSecret = function(value) return not Public(value) end,
+local function RGB(hex)
+    if hex == "e5db00" then return .9, .86, 0 end
+    return hex, 0, 0
+end
+local NS = { NameplateStyle = Style, Client = {}, Finite = Finite, RGB = RGB, IsSecret = function(value) return not Public(value) end,
+    InCombat = function() return combat end,
     IsCombatLocked = function() return true end, Safety = {
     IsForbidden = function(frame) return frame.forbidden end,
 } }
-local S = { Public = Public, Finite = Finite, RGB = function(hex) return hex, 0, 0 end,
+local S = { Public = Public, Finite = Finite, RGB = RGB,
     SetFont = function(region, ...) region:SetFont(...) end,
     Install = function(_, owner) module = owner end }
 local private = { NS = NS, Suite = S, Geometry = { LevelBadgeShown = function() return false end } }
@@ -139,6 +152,8 @@ private.AuraColors.Apply = function(frame)
         "specialization applied aura colors to a forbidden plate")
     Count("AuraColors.Apply")
 end
+NS.AnchorPoints, NS.AnchorLabels = {}, {}
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Roles.lua"))("nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Text.lua"))("nameplates", private)
@@ -154,8 +169,6 @@ local castPresentation = private.CastTime
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CastTime.lua"))("nameplates", private)
 private.CastTime.Paint, private.CastTime.Restore = castPresentation.Paint, castPresentation.Restore
 private.CastTime.Refresh = castPresentation.Refresh
-NS.AnchorPoints, NS.AnchorLabels = {}, {}
-assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("Suite", NS)
 for _, file in ipairs({ "ExtensionLayout", "ExtensionText", "ExtensionEffects", "Extensions", "Status" }) do
     assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("nameplates", private)
 end
@@ -186,12 +199,14 @@ for i = 1, 5 do
     local frame, health = Region(), Region()
     frame.name, frame.isFriend, frame.isPlayer = Region(), i == 3, i == 3
     frame.optionTable = { usePlayerForAggroHighlightThreat = true }
-    frame.HealthBarsContainer = { healthBar = health }
+    frame.HealthBarsContainer = Region()
+    frame.HealthBarsContainer.healthBar = health
     health.texture, health.Text = Region(), Region()
     if i <= 2 then
         local cast = Region()
         cast.Text, cast.CastTargetNameText = Region(), Region()
-        frame.CastBarsContainer = { castBar = cast }
+        frame.CastBarsContainer = Region()
+        frame.CastBarsContainer.castBar = cast
     end
     local plate = { UnitFrame = frame, unitToken = unit }
     plates[i] = plate
@@ -322,6 +337,34 @@ for _, forever in ipairs({ false, true }) do
     assert(not counts.Paint and not counts["Text.Apply"], "unchanged subzone repainted")
     pvp, instance, grouped, tank = nil, "party", true, true
     members.party1.role, members.party1.occupant = "TANK", "first"
+    local mob, frame = units.nameplate1, plates[1].UnitFrame
+    module.config.neutralPlateNameOnly, module.config.neutralPlateNameTypeColor = true, true
+    module.config.enemyNeutralColor, mob.reaction = "e5db00", 4
+    module:Refresh()
+    assert(private.FriendlyNames.NameOnlyScope(frame) == "neutral" and frame.name.textR == .9)
+    -- This pooled frame previously drew ordinary health bars. Selecting the
+    -- NPC must refresh its current name even while the old visual is cached.
+    assert(module.visuals[frame.HealthBarsContainer.healthBar])
+    frame.name:SetVertexColor(1, 0, 0, 1)
+    units.target = mob
+    Event("PLAYER_TARGET_CHANGED")
+    units.target = nil
+    assert(frame.name.textR == .9 and frame.name.textG == .86,
+        "selecting a name-only NPC with a cached bar visual left a red name")
+    frame.name:SetVertexColor(1, 1, 1, 1)
+    Event("PLAYER_TARGET_CHANGED")
+    assert(frame.name.textR == .9 and frame.name.textG == .86,
+        "clearing the target left the previous neutral name white")
+    combat, mob.fighting = true, true
+    Event("UNIT_FLAGS", "nameplate1")
+    assert(private.FriendlyNames.NameOnlyScope(frame) == "neutral" and frame.name.textR == .9,
+        "combat entry changed the neutral name or its color")
+    mob.reaction = 2
+    Event("UNIT_FLAGS", "nameplate1")
+    assert(not private.FriendlyNames.IsNameOnly(frame) and frame.HealthBarsContainer.alpha == .7 and frame.name.textR == 1,
+        "a real faction change did not release the neutral name-only display")
+    combat, mob.fighting, mob.reaction = false, nil, nil
+    module.config.neutralPlateNameOnly, module.config.neutralPlateNameTypeColor = nil, nil
     module:Disable()
 end
 assert(guidReads == 0, "context refresh read group GUIDs")

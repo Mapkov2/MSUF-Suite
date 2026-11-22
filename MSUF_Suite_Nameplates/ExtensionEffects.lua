@@ -3,6 +3,11 @@ local NS, S = P.NS, P.Suite
 local E = {}
 P.ExtensionEffects = E
 
+local function NameOnly(state)
+    local names = P.FriendlyNames
+    return names and names.nameOnlyEnabled and names.IsNameOnly(state.uf)
+end
+
 local function Pulse(region)
     local group = region:CreateAnimationGroup()
     local animation = group:CreateAnimation("Alpha")
@@ -40,7 +45,8 @@ end
 
 function E.Execute(state)
     local plan, visual = state.plan, state.executeVisual
-    if not plan.executeCurve or state.prefix ~= "enemy" or state.visible == false then
+    if not plan.executeCurve or state.prefix ~= "enemy" or state.visible == false
+        or NameOnly(state) then
         if visual then visual.animation:Stop() visual.gate:Hide() end
         return
     end
@@ -80,7 +86,7 @@ local function InterruptVisual(state)
 end
 
 function E.Interrupt(state, guid)
-    if not state.plan.interrupt then return end
+    if not state.plan.interrupt or NameOnly(state) then return end
     local plan = state.plan
     local shared = plan.interruptShared and state.owner.castbarStyle
     local duration = shared and shared.interruptDuration or plan.interruptDuration
@@ -124,7 +130,7 @@ end
 
 function E.Reminder(state, wanted)
     local label = state.focusLabel
-    if wanted then
+    if wanted and not NameOnly(state) then
         if not label then
             label = state.uf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             label:SetPoint("BOTTOM", state.uf.name, "TOP", 0, 14)
@@ -140,7 +146,7 @@ end
 
 function E.Range(state, target)
     local label = state.rangeLabel
-    if target and state.interaction and state.interaction.range and state.interaction.rangeText then
+    if target and state.interaction and state.interaction.range and state.interaction.rangeText and not NameOnly(state) then
         if not label then
             label = state.uf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             label:SetPoint("TOP", state.health, "BOTTOM", 0, -14)
@@ -173,6 +179,7 @@ end
 
 function E.Identity(state)
     local mode = state.plan[state.prefix].identity
+    if NameOnly(state) then mode = 1 end
     local classAtlas, factionAtlas
     if mode > 1 and (state.kind == "enemyPlayer" or state.kind == "friendlyPlayer") then
         local restricted = C_Secrets.ShouldUnitIdentityBeSecret(state.unit)

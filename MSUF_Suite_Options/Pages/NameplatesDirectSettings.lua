@@ -46,9 +46,9 @@ end
 local switches = {
     plateShowAll = "nameplateShowAll", plateOffscreen = "nameplateShowOffscreen",
     plateEnemyMinions = "nameplateShowEnemyMinions", plateEnemyMinus = "nameplateShowEnemyMinus",
-    plateEnemyPets = "nameplateShowEnemyPets", plateEnemyGuardians = "nameplateShowEnemyGuardians",
+    plateEnemyGuardians = "nameplateShowEnemyGuardians",
     plateEnemyTotems = "nameplateShowEnemyTotems", plateFriendlyMinions = "nameplateShowFriendlyPlayerMinions",
-    plateFriendlyPets = "nameplateShowFriendlyPlayerPets", plateFriendlyGuardians = "nameplateShowFriendlyPlayerGuardians",
+    plateFriendlyGuardians = "nameplateShowFriendlyPlayerGuardians",
     plateFriendlyTotems = "nameplateShowFriendlyPlayerTotems", plateClampTarget = "clampTargetNameplateToScreen",
     enemyCastEnabled = "nameplateShowCastBars",
     friendlyNpcDebuffs = "nameplateShowDebuffsOnFriendly", friendlyNameClassColor = "nameplateUseClassColorForFriendlyPlayerUnitNames",
@@ -136,19 +136,37 @@ local function EditFlag(key, group, on)
     return P.SetMany(ID, values)
 end
 
+local function NeutralDisplay(row)
+    row.get = function()
+        if not P.Get(ID, "neutralPlateNameOnly") then return 1 end
+        return (P.Get(ID, "neutralNameOnlyMode") or 1) + 1
+    end
+    row.set = function(value)
+        local choice = tonumber(value) or 1
+        return P.SetMany(ID, { neutralPlateNameOnly = choice > 1, neutralNameOnlyMode = math.max(1, choice - 1) })
+    end
+    return row
+end
+
 function P.RuleRow(page, id, rule, keyFn, ...)
     if page == "suite_nameplates" and P.NameplatesStatus.IsOffset(rule.key) then return end
     local row = RuleRow(page, id, rule, keyFn, ...)
     if id ~= ID or not row then return row end
     PrepareDependent()
     local key = keyFn and keyFn(rule.key) or rule.key
+    if key == "neutralPlateNameOnly" then return NeutralDisplay(row) end
     if key == "friendlyNPCs" then
         local get = row.get
+        local nameOnly = P.Suite.NameplateExtensions.NPC_PLATE_NAME_ONLY
         row.label = P.Tr("Display")
         row.values = function()
-            return { { value = 2, text = P.Tr("Health bars") }, { value = 4, text = P.Tr(rule.choices[4]) } }
+            return { { value = 2, text = P.Tr("Health bars") }, { value = nameOnly, text = P.Tr(rule.choices[nameOnly]) },
+                { value = 4, text = P.Tr(rule.choices[4]) } }
         end
-        row.get = function() return get() == 4 and 4 or 2 end
+        row.get = function()
+            local value = get()
+            return (value == 4 or value == nameOnly) and value or 2
+        end
         row.set = function(value)
             if P.Get(ID, "enabled") then
                 return P.SetFriendlyNameplateVisibility("friendlyNpc", P.Suite.FriendlyNameplateShown("friendlyNpc"),
@@ -201,7 +219,12 @@ function P.RuleRow(page, id, rule, keyFn, ...)
         row.values = function() return choices end
         row.get = function()
             local value = get()
-            return value == 1 and ModeChoice(key) or value
+            if value ~= 1 then return value end
+            if rule.petNameCVar then
+                if NativeFlag(rule.cvar, nil, false) then return 2 end
+                return NativeFlag(rule.petNameCVar, nil, false) and 4 or 3
+            end
+            return ModeChoice(key)
         end
     end
     return row

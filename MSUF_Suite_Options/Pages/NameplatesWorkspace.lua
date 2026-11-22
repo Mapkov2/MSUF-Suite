@@ -10,37 +10,169 @@ local ORDER = { "enemy", "neutral", "friendly", "friendlyNpc" }
 local LABELS = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly",
     friendlyNpc = "Friendly NPC" }
 local SIDES = { enemy = "enemy", neutral = "enemy", friendly = "friendly", friendlyNpc = "friendly" }
+local X = P.Suite.NameplateExtensions
+local PRIMARY_KINDS = { enemy = "enemyNpc", neutral = "neutralNpc", friendly = "friendlyPlayer", friendlyNpc = "friendlyNpc" }
+local COPY_CATEGORIES = {
+    { key = "dimensions", label = "Health bar dimensions" }, { key = "style", label = "Style" },
+    { key = "text", label = "Text" }, { key = "cast", label = "Castbar" },
+    { key = "status", label = "Status icons" }, { key = "positions", label = "Position" },
+    { key = "visibility", label = "Visibility" }, { key = "opacity", label = "Opacity" },
+    { key = "range", label = "Range Check" }, { key = "clicks", label = "Click area" },
+}
 local current = "enemy"
 
 function Workspace.Side() return SIDES[current] end
 function Workspace.Kind() return current end
 
-local function CopyAppearance(source, target)
-    if P.Combat() then return end
-    local catalog, values = P.catalog[ID].rules, {}
-    for key, rule in pairs(catalog) do
-        if rule.section == source or rule.section == "plateStatus" or rule.section == "plateOpacity"
-            or rule.section == "castbar" and source == "enemy" then
-            local suffix = key:match("^" .. source .. "(%u.+)$")
-            local destination = suffix and catalog[target .. suffix]
-            if destination and (destination.section == target or destination.section == "plateStatus"
-                or destination.section == "plateOpacity" or destination.section == "castbar") then
-                values[destination.key] = P.Get(ID, key)
-            end
-        end
+local function CopyCategory(rule, field, scope)
+    local section = rule.section
+    if section == "plateNameOnly" then return "style" end
+    if section == "plateOpacity" then return "opacity" end
+    if section == "plateInteraction" or section == "plateExtras" then
+        if field:match("^Range") then return "range" end
+        if field:match("^Clickbox") or field == "PlateClickThrough" then return "clicks" end
+        return
     end
-    P.Confirm("nameplates.copyAppearance", Tr("Copy appearance and positions to %s?"):format(Tr(LABELS[target])), function()
-        P.SetMany(ID, values)
-    end)
+    if section == "plateExtraText" then return field:match("[XY]$") and "positions" or "status" end
+    if scope ~= SIDES[scope] then return end
+    if section == "plateStatus" or section == "castbar" or section == "castPresentation" or section == "castExtensions"
+        or section == "plateTextDisplay" or section == "nameText" or section == "frameOutline" or section == scope then
+        if field:match("Offset[XY]$") then return "positions" end
+        if field:match("^Cast") then return "cast" end
+        if field:match("^Health[WH].*Delta$") then return end
+        if section == "plateStatus" or field:match("^Raid") then return "status" end
+        if section == "plateTextDisplay" or section == "nameText" or field:match("^Name") or field:match("^HealthText") then
+            return "text"
+        end
+        return "style"
+    end
 end
 
-local function CopyTo(anchor)
-    local source = current
-    if (source ~= "enemy" and source ~= "friendly") or P.Combat() then return end
-    local target = source == "enemy" and "friendly" or "enemy"
-    P.ContextMenu(anchor, function(_, menu)
-        menu:CreateButton(Tr(LABELS[target]), function() CopyAppearance(source, target) end)
+local function CopyRule(values, from, to)
+    local spec = P.catalog[ID]
+    local source, target = spec.rules[from], spec.rules[to]
+    if not (source and target) or source.cvar or target.cvar or source.previewOnly or target.previewOnly
+        or not spec.controlAvailable(source) or not spec.controlAvailable(target) then return end
+    local value = P.Get(ID, from)
+    if type(value) ~= type(target.default) then return end
+    if type(value) ~= "boolean" and (source.choices or target.choices) then
+        local choice = source.choices and source.choices[value]
+        if not choice or not target.choices then return end
+        for index, label in ipairs(target.choices) do
+            if choice == label then values[to] = index return true end
+        end
+    elseif type(value) ~= "number" or (not target.min or value >= target.min) and (not target.max or value <= target.max) then
+        values[to] = value
+        return true
+    end
+end
+
+local function CopyContext(values, source, target, selected)
+    local function CopyKind(from, to)
+        for _, field in ipairs(X.ContextFields) do
+            if selected[field == "Opacity" and "opacity" or "visibility"] then CopyRule(values, from .. field, to .. field) end
+        end
+    end
+    CopyKind(source == "enemy" and target == "friendly" and "enemyPlayer" or PRIMARY_KINDS[source], PRIMARY_KINDS[target])
+    if target == "enemy" then CopyKind(PRIMARY_KINDS[source], "enemyPlayer") end
+    if selected.visibility then CopyRule(values, X.ContextKeys[source], X.ContextKeys[target]) end
+end
+
+function Workspace.CopyValues(source, target, selected)
+    local values, available = {}, {}
+    if not LABELS[source] or not LABELS[target] or source == target then return values, available end
+    for key, rule in pairs(P.catalog[ID].rules) do
+        local field = key:match("^" .. source .. "(%u.+)$")
+        local category = field and CopyCategory(rule, field, source)
+        local candidate = category and P.catalog[ID].rules[target .. field]
+        if selected[category] and candidate and CopyCategory(candidate, field, target) == category
+            and CopyRule(values, key, candidate.key) then
+            available[category] = true
+        end
+    end
+    if target == "neutral" and values.neutralPlateNameOnly ~= nil then values.neutralNameOnlyMode = 1 end
+    if source == "neutral" and X.NeutralNameSplit(P.S.Config(ID)) then values[target .. "PlateNameOnly"] = nil end
+    CopyContext(values, source, target, selected)
+    available.visibility, available.opacity = selected.visibility, selected.opacity
+    if selected.dimensions then
+        local width, height = X.HealthDimensions(P.S.Config(ID), SIDES[source], PRIMARY_KINDS[source])
+        local kind = PRIMARY_KINDS[target]
+        local override = target ~= SIDES[target]
+        local prefix = override and kind or target
+        values[prefix .. "HealthWidthDelta"], values[prefix .. "HealthHeightDelta"] = width, height
+        if override then values[kind .. "SizeOverride"] = true end
+        available.dimensions = true
+    end
+    return values, available
+end
+
+local function ApplyCopy(source, target, selected)
+    if source ~= current or P.Combat() then return false end
+    local values = Workspace.CopyValues(source, target, selected)
+    for key, value in pairs(values) do
+        if P.Get(ID, key) == value then values[key] = nil end
+    end
+    if not next(values) then
+        if P.M.ShowStatusFeedback then P.M.ShowStatusFeedback(Tr("Nothing was copied."), "warning", 2) end
+        return false
+    end
+    return P.SetMany(ID, values)
+end
+
+local function AttachCopy(ctx, head, button)
+    HM.SkipHistoryCheckpoint(button)
+    local selected, all, available, source, target = {}, {}, {}, nil, nil
+    for _, category in ipairs(COPY_CATEGORIES) do selected[category.key], all[category.key] = true, true end
+    local function SetTarget(key)
+        target = key
+        local _, supported = Workspace.CopyValues(source, target, all)
+        available = supported
+    end
+    local shared = P.M.UnitSectionsShared
+    if not (shared and shared.MakeScopeCopyPopup) then
+        button:SetScript("OnClick", function(anchor)
+            local from = current
+            if P.Combat() then return end
+            P.ContextMenu(anchor, function(_, menu)
+                for _, scope in ipairs(ORDER) do
+                    if scope ~= from then
+                        menu:CreateButton(Tr(LABELS[scope]), function()
+                            P.Confirm("nameplates.copyAppearance", Tr("Copy appearance and positions to %s?"):format(Tr(LABELS[scope])),
+                                function() ApplyCopy(from, scope, selected) end)
+                        end)
+                    end
+                end
+            end)
+        end)
+        return
+    end
+    local popup = shared.MakeScopeCopyPopup(button, {
+        controlDomain = "suite", controlPageKey = ctx.key, controlPath = "nameplates.copy", width = 460,
+        targetWidth = 132, categoryWidth = 184, categoryColumnWidth = 215,
+        categories = COPY_CATEGORIES, scopes = selected, targets = ORDER,
+        sourceKey = function() return source end, sourceLabel = function(key) return Tr(LABELS[key]) end,
+        targetLabelText = function(key) return LABELS[key] end, selectedTarget = function() return target end,
+        isTargetVisible = function(key, from) return key ~= from end, onTargetClick = SetTarget,
+        isCategoryAvailable = function(key) return available[key] == true end,
+        runLabel = "Copy Selected", runWidth = 128,
+        onRun = function(_, panel)
+            if ApplyCopy(source, target, selected) then
+                if P.M.ShowStatusFeedback then P.M.ShowStatusFeedback(Tr("Copied to %s"):format(Tr(LABELS[target])), "ok", 1.8) end
+                panel:Hide()
+            end
+        end,
+    })
+    button:SetScript("OnClick", function(anchor)
+        if P.Combat() then return end
+        source = current
+        if not target or target == source then
+            for _, scope in ipairs(ORDER) do if scope ~= source then target = scope break end end
+        end
+        SetTarget(target)
+        popup.Show(anchor)
     end)
+    head:HookScript("OnHide", popup.Hide)
+    return popup
 end
 
 function Workspace.Open(kind)
@@ -61,6 +193,7 @@ local SIDE_REASONS = { enemy = "Skin enemy nameplates", friendly = "Skin friendl
 
 P.Gates[ID] = function(rule, key)
     local skin = SKIN_SECTIONS[rule.section]
+    if rule.section == "plateNameOnly" then skin = SIDES[key:match("^(%l%a*)CenterName$")] end
     if rule.section == "highlightBorders" then skin = true end
     if rule.section == "frameOutline" then skin = key:match("^(%l+)") end
     local side, outlineField = key:match("^(%l+)Border([A-Z]%a*)$")
@@ -122,7 +255,7 @@ function Workspace.Select(ui, kind, fromFocus)
     ui.builder.layoutEntries = visible
     ui.builder:RequestRelayoutCollapsibles()
     if ui.selector then ui.selector:Refresh() end
-    if ui.copy then ui.copy:SetShown(kind == "enemy" or kind == "friendly") end
+    if changed and ui.copyPopup then ui.copyPopup.Hide() end
     -- A preview click or search hit keeps the sample it came from.
     local side = SIDES[kind]
     if side then
@@ -176,7 +309,7 @@ function Workspace.Header(ctx, builder)
     if theme.Button then
         ui.copy = P.T.Button(head, "Copy To", 94, 24)
         ui.copy:SetPoint("TOPRIGHT", head, "TOPRIGHT", -12, -14)
-        ui.copy:SetScript("OnClick", CopyTo)
+        ui.copyPopup = AttachCopy(ctx, head, ui.copy)
     end
     if P.M.BindSegment then
         P.M.BindSegment(ctx, ui.selector, opts.getValue, opts.setValue, P.Meta(PAGE, ID, "view.area", "ephemeral"))

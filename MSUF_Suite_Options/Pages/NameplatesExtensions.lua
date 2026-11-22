@@ -112,8 +112,10 @@ local function AddBookSpells(menu, key)
                     if public(known) and known and public(ranged) and ranged then
                         local name = spell.GetSpellName(id)
                         if public(name) and type(name) == "string" then
+                            local icon = info.iconID
+                            if not public(icon) or type(icon) ~= "number" or icon <= 0 then icon = nil end
                             seen[id] = true
-                            choices[#choices + 1] = { name = name, id = id }
+                            choices[#choices + 1] = { name = name, id = id, icon = icon }
                         end
                     end
                 end
@@ -127,6 +129,9 @@ local function AddBookSpells(menu, key)
     for _, entry in ipairs(choices) do
         local id = entry.id
         local label = ("%s (%d)"):format(entry.name, id)
+        if entry.icon then
+            label = ("|T%d:14:14:0:0:64:64:5:59:5:59|t  %s"):format(entry.icon, label)
+        end
         menu:CreateRadio(label, function() return P.Get(ID, key) == id end, function() P.Set(ID, key, id) end)
     end
 end

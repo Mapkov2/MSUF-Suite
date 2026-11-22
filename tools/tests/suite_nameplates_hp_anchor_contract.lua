@@ -12,12 +12,13 @@ local NS = {
     HostBridge = { NameFormatter = Noop },
     NameplatePortableText = { Stored = Noop, Resolve = Noop },
     AnchorPoints = {},
+    IsSecret = function(value) return not Public(value) end,
 }
 local private = { NS = NS, Suite = NS, Extensions = { OnAnchors = Noop } }
 PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
 UnitIsGameObject, UnitIsFriend, UnitIsPlayer = Noop, Noop, Noop
 
-for _, name in ipairs({ "NameplateStyle", "NameplateText", "NameplateAuraDisplay" }) do
+for _, name in ipairs({ "NameplateStyle", "NameplateText", "NameplateAuraDisplay", "NameplateExtensions" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. name .. ".lua"))("MSUF_Suite", NS)
 end
 for _, name in ipairs({ "Modes", "Geometry", "Layout" }) do
@@ -158,5 +159,51 @@ for _, forever in ipairs({ false, true }) do
     Apply(unchanged)
     assert(checks == before, "a plate without HP offsets checked combat protection")
     combat = false
+
+    local neutral, neutralHealth = Plate()
+    local name = neutral.name
+    neutral.isPlayer = false
+    neutral.CastBarsContainer = Region()
+    function name:GetWidth() error("restricted name width read") end
+    function name:ClearAllPoints() self.points = {} end
+    function name:GetJustifyH() return self.justify end
+    function name:SetJustifyH(justify) self.justify = justify end
+    UnitReaction = function() return 4 end
+    UnitAffectingCombat = function() return false end
+    NamePlateSetupOptions.castBarToHealthBarSpacing = 3
+    NamePlateSetupOptions.healthBarToNameAboveSpacing = 2
+    function neutral:UpdateAnchors()
+        name.justify = forever and "CENTER" or "LEFT"
+        name.points = {
+            BOTTOMLEFT = { self.HealthBarsContainer, "TOPLEFT", forever and 0 or 4, 2 },
+        }
+        if forever then name.points.RIGHT = { self.PlayerLevelDiffFrame, "RIGHT", 0, 0 }
+        else name.points.BOTTOMRIGHT = { neutralHealth.Text, "BOTTOMLEFT", -2, 0 } end
+        if self.onAnchors then self.onAnchors(self) end
+    end
+    neutral:UpdateAnchors()
+    config.neutralPlateNameOnly, config.neutralCenterName = true, true
+    config.enemyNameOffsetX, config.enemyNameOffsetY = -32, 5
+    Layout.Configure(config)
+    combat = true
+    Apply(neutral)
+    assert(name.points.BOTTOMLEFT[1] == neutral.HealthBarsContainer and module.pendingPlates[neutral],
+        "centering changed anchors during combat")
+    combat = false
+    Apply(neutral)
+    local left, right = name.points.BOTTOMLEFT, name.points.BOTTOMRIGHT
+    assert(left[1] == neutral.CastBarsContainer and right[1] == neutral.CastBarsContainer
+        and left[3] == 4 and right[3] == -4 and left[4] == 38 and right[4] == 38 and name.justify == "CENTER"
+        and name.x ~= -32, "name-only label was not centered in the native plate's horizontal lane")
+    neutral:UpdateAnchors()
+    assert(name.points.BOTTOMLEFT[1] == neutral.CastBarsContainer, "native anchor rebuild lost centering")
+
+    config.neutralPlateNameOnly = false
+    Layout.Configure(config)
+    Apply(neutral)
+    local restored = forever and name.points.RIGHT or name.points.BOTTOMRIGHT
+    assert(name.points.BOTTOMLEFT[1] == neutral.HealthBarsContainer and restored[1] == (forever and neutral.PlayerLevelDiffFrame or neutralHealth.Text)
+        and name.justify == (forever and "CENTER" or "LEFT") and name.x == -32,
+        "switching to health bars did not restore both native anchors and the manual offset")
 end
 print("Nameplate HP anchors: Retail and Forever combat acquire, rebuild, reuse, deferral and repeat costs passed")

@@ -99,23 +99,24 @@ end
 
 local function ReadFacts(uf, unit, facts)
     local prefix = Prefix(uf)
-    if M.config.look == LOOK_BLIZZARD or not prefix or not M.config[prefix] then return end
+    local typeOnName = Names.typeColorInUse and prefix and Names.WantsTypeColor(prefix)
+    if not prefix or (M.config.look == LOOK_BLIZZARD or not M.config[prefix]) and not typeOnName then return end
     if not S.Public(unit) or type(unit) ~= "string" then return end
     local focus = UnitIsUnit(unit, "focus")
     if S.Public(focus) and focus == true then M.focusUF = uf end
     if not S.Public(uf.isPlayer) or uf.isPlayer ~= false then return end
-    local color = prefix == "enemy" and M.config.enemyRoleColors and Roles.allowed
+    local color = prefix == "enemy" and M.config.look ~= LOOK_BLIZZARD and M.config.enemyRoleColors and Roles.allowed
     local keys = Key[prefix]
     local elite, quest = M.config[keys.EliteMarker], M.config[keys.QuestMarker]
-    if not color and not elite and not quest then return end
+    if not color and not elite and not quest and not typeOnName then return end
     local classification = UnitClassification(unit)
     if not S.Public(classification) then classification = false end
     if elite then facts.marker = Roles.Marker(unit, classification) end
     facts.wantsQuest = quest or color and M.config.enemyQuestColors and M.config.enemyQuestEnabled ~= false
     if facts.wantsQuest then facts.quest = Roles.Quest(unit) end
+    if (color or typeOnName) and M.active then facts.kind = Roles.Classify(unit, classification) end
     if color and M.active then
         facts.colored = true
-        facts.kind = Roles.Classify(unit, classification)
         Roles.Base(facts, unit, uf)
     end
 end
@@ -138,22 +139,29 @@ local function Paint(uf)
     if not Safe(health) then return end
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local prefix, unit = Prefix(uf), M.units[health]
+    local onlyName
+    if Names.nameOnlyEnabled then
+        local facts = M.facts[health]
+        onlyName = Names.ApplyNameOnly(uf, unit, facts and facts.kind)
+    end
     CastTime.Paint(cast, prefix, unit, uf)
     KickReady.Paint(cast, prefix, unit)
     Threat.Apply(uf)
     Extensions.BeforeNameFilter(uf)
     FilterFriendlyName(uf, prefix)
     if Status.Paint then Status.Paint(uf, prefix, unit) end
-    Level.PaintNative(uf, prefix)
-    Level.Paint(uf, prefix, unit)
+    if onlyName then Level.Hide(uf) else
+        Level.PaintNative(uf, prefix)
+        Level.Paint(uf, prefix, unit)
+    end
     Layout.Apply(uf, prefix, M.config)
     if Power.enemyEnabled then Power.ApplyEnemy(uf, health, prefix, unit) end
     local styled = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix] == true
     local outline, borderSize, borderColor
-    if not styled then
+    if not styled or onlyName then
         if M.targetUF == uf then M.targetUF = nil end
         HideVisual(M.visuals[health])
-        if Text.shared and prefix and M.config[prefix] then
+        if styled or Text.shared and prefix and M.config[prefix] then
             PaintFonts(uf, health, cast, prefix)
         else
             RestorePlateFonts(uf, health, cast)
@@ -167,14 +175,15 @@ local function Paint(uf)
         PaintFonts(uf, health, cast, prefix)
     end
     if Mouseover.textInUse then Mouseover.Apply(uf, health, prefix, styled) end
-    if Selection.inUse then Selection.Apply(health, styled == true, uf, prefix, outline, borderSize, borderColor) end
-    if Decor.inUse then Decor.Paint(uf, health, cast, prefix, unit) end
+    if Selection.inUse then Selection.Apply(health, styled == true and not onlyName, uf, prefix, outline, borderSize, borderColor) end
+    if Decor.inUse and not onlyName then Decor.Paint(uf, health, cast, prefix, unit) elseif onlyName then Decor.Restore(health) end
     -- DoT colors are applied after the role tint.
-    AuraColors.Apply(uf, unit, prefix == "enemy")
+    AuraColors.Apply(uf, unit, prefix == "enemy" and not onlyName)
     if NameText.inUse then NameText.Apply(uf, prefix, unit) end
-    if M.extras then private.EasyFeatures.Paint(uf, health, cast, prefix, unit, styled, M.roles[health]) end
-    AuraDisplay.Apply(uf, unit, prefix == "enemy")
+    if M.extras then private.EasyFeatures.Paint(uf, health, cast, prefix, unit, styled and not onlyName, M.roles[health]) end
+    if onlyName then AuraDisplay.Restore(uf) else AuraDisplay.Apply(uf, unit, prefix == "enemy") end
     if Extensions.inUse then Extensions.Apply(uf, health, cast, prefix, unit) end
+    if onlyName then Names.PaintNameOnly(uf) end
 end
 
 local PaintPlate = Paint
@@ -185,6 +194,7 @@ local function PaintFocusAdded(uf) Textures.PaintAdded(uf, PaintPlate) end
 local PaintAdded = PaintPlate
 
 local function RestorePlate(uf, keepUnit, recycled)
+    Names.RestoreNameOnly(uf)
     if M.extras then private.EasyFeatures.Restore(uf, not keepUnit) end
     if Textures.inUse then Textures.Restore(uf, recycled) end
     if Power.enemyEnabled then Power.RestoreEnemy(uf) end
@@ -272,7 +282,7 @@ local function RefreshActive(self, contextOnly, auraColors)
                 local prefix = Prefix(uf)
                 local visual = health and self.visuals[health]
                 local styled = prefix and self.config.look ~= LOOK_BLIZZARD and self.config[prefix]
-                if styled and not visual then Paint(uf)
+                if Names.nameOnlyEnabled and Names.IsNameOnly(uf) or styled and not visual then Paint(uf)
                 else
                     FilterFriendlyName(uf, prefix)
                     if styled then PaintHealth(health, visual, prefix) end
@@ -320,6 +330,7 @@ local function OnRemoved(self, _, unit)
     self.activeUnits[unit] = nil
     Roles.ClearQuest(unit)
     if self.targetUF == uf then self.targetUF = nil end
+    if self.nameOnlyTargetUF == uf then self.nameOnlyTargetUF = nil end
     if self.focusUF == uf then self.focusUF = nil end
     if uf then
         suppressed[uf] = nil
@@ -347,6 +358,10 @@ end
 local function RefreshTarget(uf)
     if not Safe(uf) then return end
     if scopedSkins and suppressed[uf] then return end
+    if Names.nameOnlyEnabled and Names.IsNameOnly(uf) then
+        Names.PaintNameOnly(uf)
+        return true
+    end
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local prefix = Prefix(uf)
     local visual = health and M.visuals[health]
@@ -393,21 +408,21 @@ end
 
 local function OnQuestLogChanged(module)
     if Extensions.usesMetadata then Extensions.OnMetadata() end
+    if module.usesQuests or Extensions.usesQuestText then Roles.ClearQuest() end
     if not module.usesQuests then return end
-    Roles.ClearQuest()
     if not Roles.inInstance and next(module.activeUnits) then module.questJob:Request() end
 end
 
 local function OnTargetChanged(self)
     if self.extras then private.EasyFeatures.Selection("target") end
     Extensions.OnSelection()
-    local previous = self.targetUF
+    local previous = self.nameOnlyTargetUF or self.targetUF
     local plate = C_NamePlate.GetNamePlateForUnit("target")
     local current = Safe(plate) and plate.UnitFrame
     if self.config.auraDisplayEnabled then AuraDisplay.TargetChanged(current) end
     if Decor.inUse then Decor.TargetChanged(current) end
-    if Safe(previous) then RefreshTarget(previous) end
-    if Safe(current) and current ~= previous then RefreshTarget(current) end
+    if previous and previous ~= current then RefreshTarget(previous) end
+    self.nameOnlyTargetUF = current and RefreshTarget(current) and current or nil
 end
 
 -- Faction changes repaint the plate. Level, classification and power display
@@ -424,7 +439,9 @@ local function OnUnitChanged(module, event, unit)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
     local facts = module.facts[health]
-    if event == "UNIT_FACTION" or not facts then
+    if event == "UNIT_FACTION" or not facts
+        or Names.neutralNameOnly and (event == "UNIT_FLAGS" or Names.neutralSplit and event == "UNIT_THREAT_LIST_UPDATE")
+        and Names.NeutralDisplayChanged(uf, unit) then
         SetRole(uf, unit)
         Paint(uf)
         return
@@ -467,7 +484,7 @@ end
 
 local function RepaintAuraColors(module)
     for unit, uf in pairs(module.activeUnits) do
-        if not suppressed[uf] then
+        if not suppressed[uf] and not (Names.nameOnlyEnabled and Names.IsNameOnly(uf)) then
             local enemy = Prefix(uf) == "enemy"
             AuraColors.Apply(uf, unit, enemy)
             AuraDisplay.Apply(uf, unit, enemy)
@@ -703,6 +720,7 @@ function M:Refresh()
     Roles.Configure(self.config)
     Text.Configure(self.config, self.castbarStyle)
     NameText.Configure(self.config)
+    Names.ConfigureNameOnly()
     self.targetConfig = Style.TargetConfig(self.config, bars)
     self.friendlyTargetConfig = Style.TargetConfig(self.config, bars, "friendly")
     Power.ConfigureEnemy()
@@ -774,7 +792,7 @@ function M:Disable()
     Threat.Disable()
     self:ResetCVarBaseline()
     Layout.RestoreAll()
-    self.targetUF, self.focusUF = nil, nil
+    self.targetUF, self.nameOnlyTargetUF, self.focusUF = nil, nil, nil
     Roles.ClearQuest()
     for unit, uf in pairs(self.activeUnits) do
         suppressed[uf] = nil

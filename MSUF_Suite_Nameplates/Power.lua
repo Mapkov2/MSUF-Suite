@@ -184,7 +184,8 @@ end
 
 function Power.ApplyEnemy(uf, health, prefix, unit, refreshResource)
     local state = enemyBars[uf]
-    if prefix ~= "enemy" or not unit then
+    local names = private.FriendlyNames
+    if prefix ~= "enemy" or not unit or names and names.nameOnlyEnabled and names.IsNameOnly(uf) then
         if state and state.unit then Power.RestoreEnemy(uf) end
         return
     end

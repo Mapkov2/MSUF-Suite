@@ -116,11 +116,13 @@ B.Section(id, "threatDetail", "Threat warning detail", {
     Enabled(B.Color("enemyThreatTransitionColor", "Orange threat warning", "ff9900"), "enemyThreatTransitionEnabled"),
 })
 
-local context = {
-    B.Bool("plateContextEnabled", "Customize nameplates by unit type and location", false),
-    B.Bool("neutralNpcContextOverride", "Customize neutral visibility and opacity", false),
-    B.Bool("neutralNpcVisible", "Show neutral nameplates", true),
-}
+local legacyContext = B.Bool("plateContextEnabled", "Customize nameplates by unit type and location", false)
+local legacyNeutral = B.Bool("neutralNpcContextOverride", "Customize neutral visibility and opacity", false)
+legacyContext.hidden, legacyNeutral.hidden = true, true
+local context = { legacyContext, legacyNeutral, B.Bool("neutralNpcVisible", "Show neutral nameplates", true) }
+for _, scope in ipairs(X.OpacityScopes) do
+    context[#context + 1] = B.Bool(X.ContextKeys[scope], legacyContext.label, false)
+end
 local dimensions = {}
 for _, kind in ipairs({ "neutralNpc", "friendlyNpc" }) do
     local toggle = kind .. "SizeOverride"
@@ -129,9 +131,34 @@ for _, kind in ipairs({ "neutralNpc", "friendlyNpc" }) do
     dimensions[#dimensions + 1] = Enabled(B.Number(kind .. "HealthHeightDelta", "Health bar height adjustment (px)", 0, -4, 24), toggle)
 end
 B.Section(id, "plateDimensions", "Health bar dimensions", dimensions)
+local nameOnly = { Enabled(B.Bool("enemyPlateNameClassColor", "Class color for player names", false), "enemyPlateNameOnly") }
+for _, scope in ipairs({ "enemy", "neutral", "friendlyNpc" }) do
+    local toggle = scope .. "PlateNameOnly"
+    local color = B.Bool(scope .. "PlateNameTypeColor", "Color name by NPC type", false)
+    if scope == "friendlyNpc" then
+        color.requiresChoice = { key = "friendlyNPCs", values = { [X.NPC_PLATE_NAME_ONLY] = true } }
+    else
+        local choices = { "Health bars", "Name only" }
+        if scope == "neutral" then
+            choices[3], choices[4] = "Health bars for attackable units", "Name only for attackable units"
+        end
+        nameOnly[#nameOnly + 1] = B.Choice(toggle, "Display", false, choices)
+        color.enableKey = toggle
+    end
+    nameOnly[#nameOnly + 1] = color
+end
+local neutralMode = B.Choice("neutralNameOnlyMode", "Display", 1,
+    { "Name only", "Health bars for attackable units", "Name only for attackable units" })
+neutralMode.hidden = true
+nameOnly[#nameOnly + 1] = neutralMode
+for _, scope in ipairs(X.OpacityScopes) do
+    nameOnly[#nameOnly + 1] = B.Tooltip(B.Bool(scope .. "CenterName", "Auto center above unit", false),
+        "Center the name above the nameplate in Name only mode.")
+end
+B.Section(id, "plateNameOnly", "Name only", nameOnly)
 for _, kind in ipairs(X.Kinds) do
     local key, label = kind.key, NS.Text(kind.label)
-    local enabled = key == "neutralNpc" and "neutralNpcContextOverride" or "plateContextEnabled"
+    local enabled = X.ContextKeys[X.OpacityScope(key)]
     context[#context + 1] = Enabled(B.Number(key .. "Opacity", NS.Text("%s opacity (%%)"):format(label), 100, 0, 100, 5), enabled)
     context[#context + 1] = Enabled(B.Number(key .. "Scale", NS.Text("%s scale (%%)"):format(label), 100, 50, 200, 5), enabled)
     context[#context + 1] = Enabled(B.Choice(key .. "CastVisibility", NS.Text("%s casting visibility"):format(label), 1,
@@ -194,6 +221,11 @@ end
 -- Added after the legacy looks were captured. Every look must include the
 -- neutral defaults so switching back to a preset also clears extensions.
 local spec = NS.SuiteCatalog[id]
+local prepare = spec.prepareConfig
+spec.prepareConfig = function(config)
+    if prepare then prepare(config) end
+    X.SeparateContexts(config)
+end
 local look = spec.look
 for _, rule in ipairs(spec.controls) do
     if rule.section == "barGradients" then

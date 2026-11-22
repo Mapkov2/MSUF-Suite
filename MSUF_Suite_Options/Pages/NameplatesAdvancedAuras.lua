@@ -280,7 +280,8 @@ local function NativeSwitch(key, column)
     return { key = "visible:" .. key, column = column, build = function(ctx, panel, width)
         local rule = P.catalog[ID].rules[key]
         local row = P.RuleRow(PAGE, ID, rule, nil, SECTION)
-        local button = P.M.BindSwitchAt(ctx, panel, row.label, 16, 0, width / 2, row.get, row.set, row)
+        local columnWidth = width >= 560 and width / 2 or width
+        local button = P.M.BindSwitchAt(ctx, panel, row.label, 16, 0, columnWidth - 32, row.get, row.set, row)
         P.GateControls(ctx, ID, { { widget = button, rule = rule, checked = row.get } })
         P.HM.SetSearchTargetPrepare(button, function() UI.PrepareSearch(key) end)
         return -28

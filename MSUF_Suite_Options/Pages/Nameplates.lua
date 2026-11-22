@@ -172,7 +172,7 @@ local function PlacedSections()
     EnsureSections()
     placed = {}
     for _, spec in ipairs(SECTIONS) do
-        if spec.key == "enemyBasics" then Place({ "look" }, PAGE .. "_enemyBasics", spec, "general") end
+        if spec.key == "shared" then Place({ "look" }, PAGE .. "_shared", spec, "style") end
     end
     for _, spec in ipairs(SECTIONS) do
         local sectionId = PAGE .. "_" .. spec.key

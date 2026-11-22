@@ -342,6 +342,7 @@ local function Compile(config, prefix)
 end
 
 local function Paint(uf, prefix, unit)
+    if P.FriendlyNames and P.FriendlyNames.IsNameOnly(uf) then return Restore(uf) end
     if raidEnabled or raidTouched[uf] then Status.Raid(uf, prefix) end
     if Status.inUse then Status.Apply(uf, prefix, unit) end
 end

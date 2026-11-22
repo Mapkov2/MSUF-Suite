@@ -11,6 +11,7 @@
 local root = assert(arg[1], "repository root required")
 local classic = root .. "/../MidnightSimpleUnitFrames-7.0/MidnightSimpleUnitFrames"
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local clock = support.Clock()
 
 ------------------------------------------------------------------ secrets
 local Secrets = assert(loadfile(classic .. "/../tools/tests/classpower_secrets.lua"))()
@@ -409,6 +410,82 @@ c.enemyNameMouseover, c.enemyHealthTextVisible, mouseover = false, true, nil
 module:Refresh()
 assert(events.UPDATE_MOUSEOVER_UNIT == nil and healthB.Text:GetAlpha() == 1)
 ufA.name:SetAlpha(1)
+do
+    local title = ufF.name
+    local underPointer, uiFocus, mouselooking, restricted, reads = false, nil, false, false, 0
+    function title:IsAnchoringRestricted() return restricted end
+    function title:IsMouseOver()
+        assert(restricted == false, "FrameMeasurement attempted on a restricted nameplate label")
+        reads = reads + 1
+        return underPointer
+    end
+    function title:IsVisible() return self.shown end
+    GetMouseFoci = function() return { uiFocus } end
+    IsMouselooking = function() return mouselooking end
+
+    c.friendlyNamesOnly, c.friendlyNameMouseover = private.Mode.ALL_NAMES_ONLY, true
+    c.friendlyNameFadeIn, c.friendlyNameFadeOut = .35, .4
+    module:Refresh()
+    assert(title:GetAlpha() == 0, "name-only plate started visible without mouseover")
+
+    restricted, underPointer = true, true
+    clock.Advance(.1)
+    assert(reads == 0 and title:GetAlpha() == 0, "restricted label was measured or revealed")
+    restricted = Secret(true)
+    clock.Advance(.1)
+    assert(reads == 0, "unreadable restriction did not skip the measurement")
+    Hover(plateF)
+    assert(title.hoverAlpha and title.hoverAlpha.target == 1, "native mouseover disappeared on a restricted label")
+    title.hoverAnimation:Finish()
+    Hover(nil)
+    title.hoverAnimation:Finish()
+    restricted = false
+
+    -- Blizzard clears the name-only plate's hit-test points. Moving over
+    -- its text supplies neither a plate lookup nor an UPDATE_MOUSEOVER_UNIT.
+    underPointer = true
+    clock.Advance(.1)
+    assert(title.hoverAlpha and title.hoverAlpha.target == 1 and title.hoverAlpha.duration == .35,
+        "a name-only friendly plate did not fade in under the pointer")
+    title.hoverAnimation:Finish()
+    uiFocus = {}
+    clock.Advance(.1)
+    assert(title.hoverAlpha.target == 0 and title.hoverAlpha.duration == .4,
+        "UI covering the name-only plate did not fade out its text")
+    title.hoverAnimation:Finish()
+    uiFocus, underPointer = nil, Secret(true)
+    clock.Advance(.1)
+    assert(title:GetAlpha() == 0 and title.hoverAlpha.target == 0, "restricted pointer geometry revealed the name")
+    underPointer = true
+    c.friendlyNameFadeIn = 0
+    module:Refresh()
+    clock.Advance(.1)
+    assert(title:GetAlpha() == 1, "zero fade did not reveal the name immediately")
+
+    Hover(plateA)
+    local lastReads = reads
+    clock.Advance(.1)
+    assert(title.hoverAlpha.target == 0 and reads == lastReads, "geometric hover took priority over native mouseover")
+    title.hoverAnimation:Finish()
+    Hover(nil)
+    clock.Advance(.1)
+    assert(title:GetAlpha() == 1, "geometry did not resume after native mouseover left")
+    mouselooking = true
+    clock.Advance(.1)
+    assert(title.hoverAlpha.target == 0, "mouselook kept pointer-only name text visible")
+    title.hoverAnimation:Finish()
+    mouselooking = false
+
+    private.Mouseover.Restore(ufF)
+    assert(title:GetAlpha() == 1, "pooled friendly name did not regain its native alpha")
+    lastReads = reads
+    clock.Advance(.1)
+    assert(reads == lastReads, "released plate retained the pointer scan")
+    c.friendlyNameMouseover, c.friendlyNamesOnly = false, 1
+    module:Refresh()
+    clock.Advance(.1)
+    assert(title:GetAlpha() == 1 and reads == lastReads, "disabled name hover retained a pointer scan or changed alpha")
+end
 local oldPlayer, oldParty, oldRaid = ufF.isPlayer, UnitInParty, UnitInRaid
 ufF.isPlayer = true
 UnitInParty, UnitInRaid = function() return false end, function() return false end

@@ -115,8 +115,7 @@ function Layout.Choice(key)
 end
 
 local function ContextEnabled(kind)
-    if kind == "neutralNpc" then return P.Get(ID, "neutralNpcContextOverride") end
-    return P.Get(ID, "plateContextEnabled")
+    return X.ContextEnabled(P.S.Config(ID), kind)
 end
 
 function Layout.Opacity(kinds, key)
@@ -300,6 +299,7 @@ local SHARED_CAST_SETTINGS = {
     enemyCastDisplay = true, enemyCastSpellName = true, enemyCastSpellIcon = true, enemyCastSpellTarget = true,
     enemyCastImportant = true, enemyCastTargetHighlight = true, interruptFeedbackEnabled = true, interruptFeedbackWho = true,
     interruptFeedbackDuration = true, interruptFeedbackFlash = true, interruptFeedbackColor = true, interruptFeedbackShared = true,
+    castIconCombinedHeight = true, castSeamLine = true,
 }
 local CAST_LABELS = {
     interruptFeedbackEnabled = "Show interrupt", interruptFeedbackWho = "Show interrupter name",
@@ -317,7 +317,7 @@ local function CastTabs(side)
     surface.group, surface.links = true, true
     local general = CastTab("general", "General", interrupt, surface, size)
     local iconCard = CastCard(nil, { "enemyCastSpellIcon", p .. "IconRelativeAnchor", p .. "IconSize", p .. "IconZoom",
-        p .. "IconBorder", p .. "IconBorderSize" }, { p .. "IconBorderColor" })
+        p .. "IconBorder", p .. "IconBorderSize", "castIconCombinedHeight" }, { p .. "IconBorderColor" })
     iconCard.toggle = true
     local icon = CastTab("icon", "Icon", iconCard)
     local spellCard = CastCard(nil, { "enemyCastSpellName", p .. "TextEnabled", p .. "Size" })
@@ -331,7 +331,7 @@ local function CastTabs(side)
     local behavior = CastCard("Spell Text Behavior", { side .. "NameDuringCast", side .. "NameCastAlpha" })
     local layer = CastCard("Whole Castbar Layer", { p .. "Foreground" })
     local feedback = CastCard("Interrupted casts", { "interruptFeedbackShared", "interruptFeedbackDuration", "interruptFeedbackFlash" })
-    local details = CastCard("Castbar details", { "enemyCastImportant", "enemyCastTargetHighlight" })
+    local details = CastCard("Castbar details", { "enemyCastImportant", "enemyCastTargetHighlight", "castSeamLine" })
     for _, card in ipairs({ behavior, layer, feedback, details }) do card.group = true end
     local advanced = CastTab("advanced", "Advanced", behavior, layer, feedback, details)
     return { general, icon, spell, time, advanced }
@@ -536,6 +536,9 @@ local function ResourceSection(power)
 end
 
 local CAST_POSITIONS = { "Cast", "CastText", "CastTime", "CastIcon", "CastShield", "CastTarget" }
+local ENEMY_EXTRA_COLORS = { "questNeutralColor", "questHostileColor", "castHealthInterruptible", "castHealthLocked" }
+local HIGHLIGHT_PATTERNS = { "targetPatternTexture", "targetPatternAlpha", "focusPatternTexture", "focusPatternAlpha",
+    "hoverPatternTexture", "hoverPatternAlpha" }
 
 local function StyleColors(side)
     local colors, seen = {}, {}
@@ -546,10 +549,14 @@ local function StyleColors(side)
         Add(side .. suffix)
     end
     for _, rule in ipairs(P.catalog[ID].controls) do
-        if rule.color and not rule.hidden and rule.section ~= "plateExtraText" and not rule.key:match("^aura") then
-            local owner = rule.key:match("^(enemy)") or rule.key:match("^(friendly)")
+        if rule.color and not rule.hidden and rule.section ~= "plateExtraText" and rule.section ~= "plateExtras"
+            and not rule.key:match("^aura") then
+            local owner = rule.section == "combatExtensions" and "enemy" or rule.key:match("^(enemy)") or rule.key:match("^(friendly)")
             if not owner or owner == side then Add(rule.key) end
         end
+    end
+    if side == "enemy" then
+        for _, key in ipairs(ENEMY_EXTRA_COLORS) do Add(key) end
     end
     return colors
 end
@@ -561,9 +568,13 @@ local function StyleAppearance(side, frame, health, combat, threat)
         for _, tab in ipairs({ health.tabs[2], threat }) do
             for _, key in ipairs(tab.keys) do keys[#keys + 1] = key end
         end
+        for _, key in ipairs({ "questReactionColors", "castHealthColors", "threatNameColor", "threatFrameColor" }) do
+            keys[#keys + 1] = key
+        end
     end
     local tabs = { Tab("colors", "Colors", keys), Tab("frame", frame.label, { side .. "BackdropEnabled", side .. "BackdropAlpha" }) }
     tabs[1].colors, tabs[1].help, tabs[2].help = colors, health and "roleColors" or nil, frame.help
+    if side == "enemy" then tabs[2].keys[#tabs[2].keys + 1] = "enemySlantedHealth" end
     local textures = P.NameplateBarTextures
     if not textures.Target("enemyOutlineMode") then
         local fallback = textures.BarDetailKeys()
@@ -577,18 +588,8 @@ local function StyleAppearance(side, frame, health, combat, threat)
     return tabs
 end
 
-local function PlaceStyle(sections, scope, native, appearance, sharedAppearance)
-    local style = Tab("style", "Style", native.keys)
-    style.shared = scope ~= "enemy"
-    style.extra = function(ctx, body, y, width, section)
-        local hint = P.Text(body, "Nameplate style and size apply to all nameplate types.", 16, y - 8, width)
-        y = y - 18 - math.ceil(hint:GetStringHeight() or 14)
-        y = P.NameplateBarTextures.LinkCastTarget(ctx, body, y, width, section)
-        return P.NameplateBarTextures.LinkAbsorbs(ctx, body, y, width, section)
-    end
-    local extras = Tab("extras", "More Options", P.Suite.NameplateExtraKeys or {})
-    extras.shared = scope ~= "enemy"
-    local tabs = { style, extras }
+local function PlaceStyle(sections, scope, appearance, sharedAppearance)
+    local tabs = {}
     for _, source in ipairs(appearance) do
         local tab = Tab(source.id, source.label, source.keys)
         tab.colors, tab.help, tab.shared = source.colors, source.help, sharedAppearance
@@ -602,7 +603,7 @@ local function StatusSections(sections, by, side, identity, target, options)
     local alternate = side == "enemy" and "neutral" or "friendlyNpc"
     for _, scope in ipairs({ side, alternate }) do
         local spec = { positionSide = side, plateScope = scope }
-        local more = Tab("more", "More Options", { "levelAppearance" }, P.NameplatesStatus.More)
+        local more = Tab("more", "More Options", {}, P.NameplatesStatus.More)
         P.NameplatesStatus.Configure(spec, side, identity, target, more, by.signals, options)
         Add(sections, scope .. "Markers", "Status icons", { [scope] = true }, 70, spec)
     end
@@ -613,18 +614,23 @@ local function PlaceEnemy(sections, by)
     local dimensions = Take(bar, 1, 2)
     Add(sections, "enemyBasics", "Basics", { enemy = true }, 10, { open = true,
         switch = X.SkinKeys.enemy, enableModule = true, summary = Layout.Dimensions("enemy"),
-        keys = dimensions })
+        keys = { "enemyPlateNameOnly", "enemyCenterName", "enemyPlateNameClassColor", "enemyPlateNameTypeColor", unpack(dimensions) } })
     Add(sections, "neutralBasics", "Basics", { neutral = true }, 10, { open = true,
         switch = X.SkinKeys.neutral, enableModule = true, summary = Layout.Dimensions("neutral"),
-        help = "neutralBasics", keys = { "neutralNpcSizeOverride",
+        help = "neutralBasics", keys = { "neutralPlateNameOnly", "neutralCenterName", "neutralPlateNameTypeColor", "neutralNpcSizeOverride",
             "neutralNpcHealthWidthDelta", "neutralNpcHealthHeightDelta" } })
     local appearance = StyleAppearance("enemy", frame, by.roleColors, by.combatExtensions, by.threatDetail)
-    PlaceStyle(sections, "enemy", by.native, appearance, false)
-    PlaceStyle(sections, "neutral", by.native, appearance, true)
+    PlaceStyle(sections, "enemy", appearance, false)
+    PlaceStyle(sections, "neutral", appearance, true)
     Text(sections, "enemy", ENEMY)
     local options = { "enemyThresholdEnabled", "enemyThresholdPercent", "enemyThresholdWidth", "enemyThresholdColor" }
     StatusSections(sections, by, "enemy", by.plateIdentity.tabs[1].keys, target.keys, options)
     ResourceSection(Relocate(by, "enemyPower", "Resource Bar", ENEMY, 50))
+    Add(sections, "classResources", "Class Resources", { enemy = true }, 55, { tabs = {
+        Tab("plate", "Nameplates", { "targetClassResource", "targetClassResourceWidth", "targetClassResourceHeight", "targetClassResourceY" }),
+        Tab("frame", "Target", { "targetUnitFrameResource", "targetUnitFrameResourceWidth", "targetUnitFrameResourceHeight",
+            "targetUnitFrameResourceY" }),
+    } })
     local cast = Relocate(by, "castbar", "Castbar", ENEMY, 60)
     cast.switch, cast.castCards = "enemyCastEnabled", true
     cast.positions, cast.positionSide, cast.positionElements = nil, "enemy", CAST_POSITIONS
@@ -635,16 +641,17 @@ local function PlaceFriendly(sections, by)
     local display, bar, frame = unpack(by.friendly.tabs)
     local dimensions = Take(bar, 1, 2)
     Add(sections, "friendlyBasics", "Basics", { friendly = true }, 10, { open = true,
-        keys = { display.keys[1], display.keys[2], display.keys[3], dimensions[1], dimensions[2] },
+        keys = { display.keys[1], "friendlyCenterName", display.keys[2], display.keys[3], dimensions[1], dimensions[2] },
         switch = X.SkinKeys.friendly, enableModule = true, help = "friendly",
         summary = Layout.Dimensions("friendly") })
     Add(sections, "friendlyNpcBasics", "Basics", { friendlyNpc = true }, 10, { open = true,
         help = "friendlyNpcBasics", switch = X.SkinKeys.friendlyNpc, enableModule = true,
         summary = Layout.Dimensions("friendlyNpc"),
-        keys = { display.keys[4], "friendlyNpcSizeOverride", "friendlyNpcHealthWidthDelta", "friendlyNpcHealthHeightDelta" } })
+        keys = { display.keys[4], "friendlyNpcCenterName", "friendlyNpcPlateNameTypeColor", "friendlyNpcSizeOverride",
+            "friendlyNpcHealthWidthDelta", "friendlyNpcHealthHeightDelta" } })
     local appearance = StyleAppearance("friendly", frame)
-    PlaceStyle(sections, "friendly", by.native, appearance, false)
-    PlaceStyle(sections, "friendlyNpc", by.native, appearance, true)
+    PlaceStyle(sections, "friendly", appearance, false)
+    PlaceStyle(sections, "friendlyNpc", appearance, true)
     Text(sections, "friendly", FRIENDLY)
     Add(sections, "friendlyCast", "Castbar", FRIENDLY, 60, {
         switch = "enemyCastEnabled", sharedSwitch = true, castCards = true, tabs = CastTabs("friendly"), sharedSettings = SHARED_CAST_SETTINGS,
@@ -664,18 +671,17 @@ local function ContextTabs(kind, suffixes)
     return tabs
 end
 
-local function ExtendBasics(sections, basics, scope, gate, kinds, display, suffixes, by)
+local function ExtendBasics(sections, basics, scope, kinds, display, suffixes)
     local tabs = { Tab("general", "General", basics.keys) }
     basics.keys = nil
-    if gate == "plateContextEnabled" then basics.sharedGate = gate end
     tabs[1].help = basics.help
-    tabs[1].before, tabs[1].extra = Layout.Look, Layout.BarLinks
-    tabs[1].keys[#tabs[1].keys + 1] = gate
+    tabs[1].extra = Layout.BarLinks
+    tabs[1].keys[#tabs[1].keys + 1] = X.ContextKeys[scope]
     if display then tabs[#tabs + 1] = Tab("display", "Display", display) end
-    local clicks, range = {}, {}
+    local clicks, range = {}, { scope .. "RangeAuto" }
     for _, field in ipairs(X.InteractionFields) do
         local keys = field:sub(1, 5) == "Range" and range or clicks
-        keys[#keys + 1] = scope .. field
+        if field ~= "RangeEnabled" then keys[#keys + 1] = scope .. field end
     end
     if scope == "friendly" or scope == "friendlyNpc" then clicks[#clicks + 1] = scope .. "PlateClickThrough" end
     local clickTab = Tab("clicks", "Click area", clicks)
@@ -683,33 +689,27 @@ local function ExtendBasics(sections, basics, scope, gate, kinds, display, suffi
     tabs[#tabs + 1] = clickTab
     local spell = Tab("spell", "Spell range", range)
     spell.help = "plateRange"
-    local distance = Tab("distance", "Distance and stacking", by.distance.keys)
-    distance.shared = scope ~= "enemy"
     Add(sections, scope .. "Range", "Range Check", { [scope] = true }, 85,
-        { tabs = { spell, distance }, switch = scope .. "RangeEnabled", spellPicker = scope .. "RangeSpell" })
+        { tabs = { spell }, switch = scope .. "RangeEnabled", spellPicker = scope .. "RangeSpell" })
     for _, tab in ipairs(ContextTabs(kinds, suffixes)) do
-        table.insert(tab.keys, 1, gate)
         tabs[#tabs + 1] = tab
     end
     basics.tabs = tabs
 end
 
-local function OpacityTabs(key, kinds, gate)
+local function OpacityTabs(key, kinds)
     local prefix = key .. "Fade"
-    local side = (key == "enemy" or key == "neutral") and "enemy" or "friendly"
     local general = CastTab("general", "General",
         CastCard("Health Bar", { prefix .. "Health", prefix .. "HealthBackground" }),
         CastCard("Options", { prefix .. "KeepText", prefix .. "KeepPrediction" }))
-    general.cards[1].colors = { side .. "BackdropColor", side .. "BorderColor" }
     if key == "enemy" or key == "neutral" then
-        local card = CastCard("Resource Bar", { prefix .. "Power", prefix .. "PowerBackground" },
-            { "enemyPowerColor", "enemyPowerBackgroundColor" })
+        local card = CastCard("Resource Bar", { prefix .. "Power", prefix .. "PowerBackground" })
         table.insert(general.cards, 2, card)
         for _, rule in ipairs(card.keys) do general.keys[#general.keys + 1] = rule end
     end
     local ooc = CastTab("ooc", "Out of Combat",
         CastCard("Out of Combat", { prefix .. "OutOfCombat", prefix .. "OutOfCombatAlpha" }))
-    local whole = CastTab("plate", "Whole Plate", CastCard("Whole Plate", { gate }))
+    local whole = CastTab("plate", "Whole Plate")
     for _, tab in ipairs(ContextTabs(kinds, { "Opacity" })) do
         whole.cards[#whole.cards + 1] = CastCard(tab.label, tab.keys)
         whole.keys[#whole.keys + 1] = tab.keys[1]
@@ -726,10 +726,9 @@ local function OpacityTabs(key, kinds, gate)
     return { general, ooc, whole }
 end
 
-local function AddOpacity(sections, key, kinds, gate)
+local function AddOpacity(sections, key, kinds)
     Add(sections, key .. "Opacity", "Opacity", { [key] = true }, 90,
-        { tabs = OpacityTabs(key, kinds, gate), castCards = true, opacityCards = true,
-            sharedGate = gate == "plateContextEnabled" and gate or nil, summary = Layout.Opacity(kinds, key) })
+        { tabs = OpacityTabs(key, kinds), castCards = true, opacityCards = true, summary = Layout.Opacity(kinds, key) })
 end
 
 local function PlaceVisibility(sections, by)
@@ -746,11 +745,23 @@ local function PlaceVisibility(sections, by)
         friendlyNpc = { "plateSimpleFriendlyNpc" },
     }
     for _, key in ipairs({ "enemy", "neutral", "friendly", "friendlyNpc" }) do
-        local gate = key == "neutral" and "neutralNpcContextOverride" or "plateContextEnabled"
-        ExtendBasics(sections, by[key .. "Basics"], key, gate, kinds[key], displays[key], suffixes, by)
-        AddOpacity(sections, key, kinds[key], gate)
+        ExtendBasics(sections, by[key .. "Basics"], key, kinds[key], displays[key], suffixes)
+        AddOpacity(sections, key, kinds[key])
     end
     Relocate(by, "enemyVisibility", nil, { enemy = true }, 80)
+end
+
+local function PlaceShared(sections, by)
+    by.native.keys[#by.native.keys + 1] = "levelAppearance"
+    local style = Tab("style", "Style", by.native.keys, function(ctx, body, y, width, section)
+        local hint = P.Text(body, "Nameplate style and size apply to all nameplate types.", 16, y - 8, width)
+        y = y - 18 - math.ceil(hint:GetStringHeight() or 14)
+        y = P.NameplateBarTextures.LinkCastTarget(ctx, body, y, width, section)
+        return P.NameplateBarTextures.LinkAbsorbs(ctx, body, y, width, section)
+    end)
+    style.before = Layout.Look
+    Add(sections, "shared", "Shared", ALL, 100, { tabs = { style,
+        Tab("frame", "Frame and highlights", HIGHLIGHT_PATTERNS), Tab("distance", "Distance and stacking", by.distance.keys) } })
 end
 
 function Layout.Arrange(sections)
@@ -763,6 +774,7 @@ function Layout.Arrange(sections)
         "plateShrinkDistance", "plateSpacingMode", "plateOverlapV", "plateOverlapH", "plateMotionSpeed", "plateInsetMode",
         "plateTopInset", "plateBottomInset", "plateClampTarget", "plateStackEnemy", "plateStackFriendly", "plateShowAll", "plateOffscreen" }
     PlaceVisibility(sections, by)
+    PlaceShared(sections, by)
     local auras = Relocate(by, "auraWorkspace", "Auras", ALL, 30)
     auras.open, auras.summary = false, P.NameplatesAdvancedAuras.Summary
     for i = #sections, 1, -1 do
@@ -773,10 +785,6 @@ end
 function Layout.Look(ctx, body, y, width, sectionId)
     local M = P.M
     local look = P.RuleRow(PAGE, ID, P.catalog[ID].rules.look, nil, sectionId)
-    local scope = sectionId:sub(#PAGE + 2)
-    if scope ~= "enemyBasics" then
-        look.controlId = P.Meta(PAGE, ID, scope .. ".look", "ephemeral", sectionId).controlId
-    end
     local grid = P.W.SettingsRows(ctx, body, { x = 16, y = y - 4, width = width, rows = { look }, columns = 2 })
     M.AddTooltip(grid.controls.look, Tr("Look"), Tr("The selected look applies to all nameplate types."), { hook = true })
     return grid.bottomY - 12

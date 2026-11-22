@@ -53,7 +53,7 @@ local function Focus(ui, handle)
     if handle._key and handle._key:match("%.Health$") then
         key = P.NameplatesSize.Keys(handle) or key
     end
-    if handle._key and handle._key:match("%.CastShield$") and P.OpenNameplateCastDetail(ui.sampleKind, "advanced") then return end
+    if handle._key and handle._key:match("%.CastShield$") then return Layers.Focus(ui, "castbar", "castShield") end
     if P.OpenNameplateStatusItem(ui.sampleKind, handle.keyX) then return end
     if OpenSetting(key) then return end
     local section = ui.sections and ui.sections[handle.section]
@@ -182,8 +182,7 @@ function Editor:Paint()
         for _, render in ipairs(self.renderers) do render() end
     end
     for _, button in ipairs(self.layerButtons or {}) do
-        if button.Refresh then button:Refresh()
-        else button:SetAlpha(self:LayerActive(button.layerKey) and 1 or 0.6) end
+        P.PreviewInteraction.RefreshLayerButton(button, self:LayerActive(button.layerKey))
     end
     if self.roleButton then self.roleButton:SetShown(self.sampleKind == "enemy" and self.scope ~= "neutral" and not self.enemyPlayer) end
     if self.enemyTypeButton then self.enemyTypeButton:SetShown(self.sampleKind == "enemy" and self.scope ~= "neutral") end
@@ -463,6 +462,8 @@ function Editor:ShowAuraSample(key)
 end
 
 local TEXT_LAYERS = { Name = "name", HealthText = "healthText", PowerText = "enemyPower" }
+local CAST_LAYERS = { CastText = "castText", CastTime = "castTime", CastIcon = "castIcon",
+    CastShield = "castShield", CastTarget = "castTarget" }
 
 function Editor:Edit(context, element, interrupted, sharedAuraText)
     if P.Combat() then return end
@@ -474,10 +475,16 @@ function Editor:Edit(context, element, interrupted, sharedAuraText)
     self.layerContext = context
     local layer = context == "text" and TEXT_LAYERS[element]
     self.textSample = layer and element or nil
-    self.editFullPlate = element == "Health" or element == "HealthText" or self.auraSample ~= nil
+    self.editFullPlate = element == "Health" or element == "HealthText" or self.castSample == "CastShield" or self.auraSample ~= nil
         or context == "status" and self.statusOffsetSample == "Level"
     if context == "anchor" then self.layers.health = true end
     if layer then self.layers[layer], self.layers.health = true, true end
+    if context == "power" then self.layers.enemyPower = true end
+    if self.castSample then
+        self.layers.cast = true
+        local castLayer = CAST_LAYERS[self.castSample]
+        if castLayer then self.layers[castLayer] = true end
+    end
     if self.auraSample then
         self.layers[AURA_ELEMENT[element] or "auras"] = true
         if element:match("^Tracked") then self.targetSample = true end
@@ -496,11 +503,13 @@ end
 function Editor:SampleHighlight(sample, clear, fromLayer)
     if P.Combat() then return end
     if clear then
+        self.layers[sample .. "Border"] = false
         self.highlightSample = nil
         self:Paint()
         return
     end
     self.highlightSample = sample
+    self.layers[sample .. "Border"] = true
     self.layers.highlightBorders, self.layers.health = true, true
     if sample == "aggro" then self.statusSample, self.statusOffsetSample = nil, nil end
     if fromLayer then

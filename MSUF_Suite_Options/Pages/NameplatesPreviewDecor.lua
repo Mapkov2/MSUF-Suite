@@ -34,7 +34,7 @@ function Preview.ExtraText(editor, sample, metrics)
         sample.extraText = sample.extraTextByScope[scope]
     end
     local labels = sample.extraText
-    local shown = sample.prefix == editor.sampleKind and not metrics.skinDisabled and not metrics.npcWorldName
+    local shown = sample.prefix == editor.sampleKind and not (metrics.skinDisabled or metrics.npcWorldName or metrics.nameOnlyScope)
         and P.Get(ID, "look") ~= 2 and P.Get(ID, sample.prefix) and editor:LayerOn("status")
     for source = X.FirstTextSource, X.LastTextSource do
         local item = X.TextIndicators[source]
@@ -117,13 +117,12 @@ function Preview.ApplySampleOpacity(editor, s, m)
     local config, alpha = P.S.Config(ID), P.Get(ID, prefix) and 1 or 0.4
     local kind = editor.scope == "neutral" and "neutralNpc" or m.friendlyNPC and "friendlyNpc"
         or prefix == "enemy" and (editor.enemyPlayer and "enemyPlayer" or "enemyNpc") or "friendlyPlayer"
-    local override = kind == "neutralNpc" and config.neutralNpcContextOverride
-    if kind == "neutralNpc" and not override then kind = "enemyNpc" end
-    if not m.skinDisabled and (config.plateContextEnabled or override) then
+    local model = P.Suite.NameplateExtensions
+    kind = model.ContextKind(config, kind)
+    if not m.skinDisabled and model.ContextEnabled(config, kind) then
         alpha = alpha * (config[kind .. "Opacity"] or 100) / 100
     end
     local scope = editor.scope == "neutral" and "neutral" or m.friendlyNPC and "friendlyNpc" or prefix
-    local model = P.Suite.NameplateExtensions
     m.opacity = not m.skinDisabled and Styled(prefix) and model and model.ReadOpacity and model.ReadOpacity(config, scope) or nil
     if m.opacity and editor.opacitySample then alpha = alpha * m.opacity.ooc end
     cell:SetAlpha(alpha)
@@ -401,7 +400,7 @@ end
 
 function Preview.PaintStatus(editor, s, m, get)
     if m.skinDisabled or not editor:LayerOn("status") or s.prefix ~= editor.sampleKind or not Styled(s.prefix)
-        or m.npcWorldName then
+        or m.npcWorldName or m.nameOnlyScope then
         for _, visual in pairs(s.statusSamples or {}) do visual.frame:Hide() end
         for _, icon in ipairs(s.identitySamples or {}) do icon:Hide() end
         if s.identityHandle then s.identityHandle:Hide() end
@@ -694,7 +693,8 @@ function Preview.Power(editor, s, m)
     local handle, bar = s.enemyPowerHandle, s.enemyPower
     local config = m.barSettings or P.S.Config(ID)
     local edit = editor.textSample == "PowerText" or editor.layerContext == "power"
-    if m.skinDisabled or editor.sampleKind ~= "enemy" or not (edit or editor:LayerActive("enemyPower")) then
+    if m.skinDisabled or editor.sampleKind ~= "enemy"
+        or not (editor:LayerOn("enemyPower") and (edit or editor:LayerActive("enemyPower"))) then
         if handle then handle:Hide() end
         return
     end

@@ -72,6 +72,7 @@ end
 local built,widgets,panels={}, {},{}
 local controlsBySection = {}
 local preview, interruptLink
+local outlineLinks = {}
 local CreateEditor, OriginalButton = P.NameplatesEditor.Create, P.Button
 local BindHandle = P.NameplatesEditor.Bind
 P.NameplatesEditor.Bind = function(editor, region, ...)
@@ -97,6 +98,7 @@ end
 P.Button = function(ctx, parent, label, ...)
     local button = OriginalButton(ctx, parent, label, ...)
     if label == "Open interrupt settings" then interruptLink = button end
+    if label == "Frame Outline" then outlineLinks[#outlineLinks + 1] = button end
     return button
 end
 local GateControls = P.GateControls
@@ -331,7 +333,11 @@ local cases={
     {'enemyNpcOpacity','enemyOpacity:plate'}, {'enemyNpcScale','enemyBasics:enemyNpc'},
     {'friendlyNpcFadeHealthBackground','friendlyNpcOpacity:general'},
     {'enemyIdentityIcons'}, {'friendlyClickboxWidth','friendlyBasics:clicks'},
-    {'neutralRangeAlpha'}, {'neutralRangeSpell'}, {'plateFadeDistance','enemyRange:distance'}, {'friendlyNpcExtraTextTitleSize'},
+    {'neutralRangeAlpha'}, {'neutralRangeSpell'}, {'plateFadeDistance','shared:distance'}, {'friendlyNpcExtraTextTitleSize'},
+    {'enemyRangeAuto'}, {'neutralRangeAuto'}, {'friendlyRangeAuto'}, {'friendlyNpcRangeAuto'},
+    {'enemySlantedHealth','enemyStyle:frame'}, {'targetPatternTexture','shared:frame'},
+    {'castIconCombinedHeight','castbar:icon'}, {'castSeamLine','castbar:advanced'},
+    {'targetClassResource','classResources:plate'}, {'targetUnitFrameResource','classResources:frame'},
     {'friendlyNpcDebuffs'}, {'neutralNpcHealthWidthDelta'},
     {'enemyNpcBuffs'}, {'enemyPlayerDebuffs'}, {'enemyNpcControl'}, {'auraEnemyBuffAlpha'},
 }
@@ -613,7 +619,7 @@ do
         "friendlyNpcMarkers", "friendlyNpcRange", "friendlyNpcOpacity" })
     Order("neutral", { "neutralBasics", "neutralStyle", "auraWorkspace", "enemyText", "enemyPower", "castbar",
         "neutralMarkers", "neutralRange", "neutralOpacity" })
-    Order("enemy", { "enemyBasics", "enemyStyle", "auraWorkspace", "enemyText", "enemyPower", "castbar",
+    Order("enemy", { "enemyBasics", "enemyStyle", "auraWorkspace", "enemyText", "enemyPower", "classResources", "castbar",
         "enemyMarkers", "enemyVisibility", "enemyRange", "enemyOpacity" })
     assert(not page.sections.suite_nameplates_enemy and not page.sections.suite_nameplates_friendly,
         "Nameplates still registers a Texture Layer accordion")
@@ -634,14 +640,24 @@ do
         mw:RunTimers(1000)
         local basicTabs, styleTabs = assert(layoutTabs[basicId]), assert(layoutTabs[styleId])
         assert(not Choice(basicTabs, "appearance") and not Choice(basicTabs, "style") and not Choice(basicTabs, "colors"))
-        assert(Choice(styleTabs, "style")):Click()
-        assert(Choice(styleTabs, "frame") and panels[styleId .. ":style"]:IsVisible())
+        assert(not Choice(styleTabs, "extras"), "unfiltered extras still appear in " .. styleId)
+        assert(not Choice(styleTabs, "style"), "global style still repeated in " .. styleId)
+        assert(Choice(styleTabs, "frame")):Click()
+        assert(panels[styleId .. ":frame"]:IsVisible())
         assert(Choice(styleTabs, "colors")):Click()
         basics.SetOpenImmediate(false)
         assert(styleTabs:GetValue() == "colors" and panels[styleId .. ":colors"]:IsVisible(),
             "closing Basics affected the Style accordion")
         style.SetOpenImmediate(false)
         assert(not styleTabs:IsVisible())
+        local rangeId = "suite_nameplates_" .. scope .. "Range"
+        local range = assert(controlsBySection[rangeId])
+        assert(not range[scope .. "RangeEnabled"], "Range Check repeats its section switch")
+        assert(records["msufsuite.nameplates." .. scope .. "RangeAuto"].exactTarget.sectionId == rangeId,
+            "range search did not open " .. scope)
+        for _, kind in ipairs({ "enemy", "neutral", "friendly", "friendlyNpc" }) do
+            assert((range[kind .. "RangeAuto"] ~= nil) == (kind == scope), "range toggle leaked into " .. scope)
+        end
     end
     local function Colors(id)
         for _, spec in ipairs(P.NameplateSections) do
@@ -657,7 +673,89 @@ do
     assert(enemyColors.enemyBorderColor and neutralColors.enemyBorderColor and enemyColors.enemyBossColor
         and enemyColors.enemyTargetColor and enemyColors.enemyCastIconBorderColor, "enemy style palette is incomplete")
     assert(not page.sections.suite_nameplates_auraColors, "DoT colors still have a standalone accordion")
-    assert(Colors("friendlyStyle").friendlyBackdropColor and Colors("friendlyNpcStyle").friendlyBackdropColor)
+    for _, scope in ipairs({ "friendly", "friendlyNpc" }) do
+        local colors = Colors(scope .. "Style")
+        assert(colors.friendlyBackdropColor)
+        for _, key in ipairs({ "questNeutralColor", "questHostileColor", "castHealthInterruptible", "castHealthLocked",
+            "focusReminderColor", "executePulseColor" }) do
+            assert(enemyColors[key] and not colors[key], "Enemy color leaked into " .. scope .. ": " .. key)
+        end
+    end
+    do
+        local config = P.S.Config("nameplates")
+        for _, scope in ipairs({ "enemy", "neutral", "friendly", "friendlyNpc" }) do
+            local rule = assert(P.catalog.nameplates.rules[scope .. "CenterName"])
+            assert(rule.default == false and P.NameplateSearchTarget(rule) == "suite_nameplates_" .. scope .. "Basics",
+                "centering is missing from the matching Basics section")
+        end
+        local originalCenter = config.friendlyNpcCenterName
+        config.friendlyNpcCenterName = true
+        assert(P.NameplatesWorkspace.CopyValues("friendlyNpc", "neutral", { style = true }).neutralCenterName,
+            "Copy To lost the name centering preference")
+        local look, display, offset = config.look, config.friendlyNPCs, config.friendlyNameOffsetX
+        config.look, config.friendlyNPCs, config.friendlyNameOffsetX = 3, 5, -42
+        preview:ShowSample("friendly", "friendlyNpc")
+        preview:Paint()
+        local name = assert(preview.kit.entries["friendly.Name"]).region
+        local point, owner, relative, x = name:GetPoint(1)
+        assert(point == "BOTTOM" and owner == preview.sampleCells.friendly and relative == "CENTER" and x == 0,
+            "Name only preview did not center the text independently of its horizontal offset")
+        config.look, config.friendlyNPCs, config.friendlyNameOffsetX = look, display, offset
+        config.friendlyNpcCenterName = originalCenter
+        local neutralDisplay = P.RuleRow("suite_nameplates", "nameplates", P.catalog.nameplates.rules.neutralPlateNameOnly)
+        local nameOnly, mode = config.neutralPlateNameOnly, config.neutralNameOnlyMode
+        local choices = type(neutralDisplay.values) == "function" and neutralDisplay.values() or neutralDisplay.values
+        assert(#choices == 4, "Neutral Display did not expose both attackability choices")
+        for _, choice in ipairs({ 3, 4, 2, 1 }) do
+            assert(neutralDisplay.set(choice) and neutralDisplay.get() == choice, "Neutral Display did not save choice " .. choice)
+            assert(config.neutralNameOnlyMode == math.max(1, choice - 1), "Neutral Display left an obsolete attackability condition")
+        end
+        config.neutralPlateNameOnly, config.neutralNameOnlyMode = nameOnly, mode
+        for _, scopes in ipairs({ { "enemy", "neutral" }, { "neutral", "enemy" } }) do
+            local source, target = unpack(scopes)
+            local sourceKey, targetKey = source .. "PlateNameOnly", target .. "PlateNameOnly"
+            local original = config[sourceKey]
+            local row = P.RuleRow("suite_nameplates", "nameplates", P.catalog.nameplates.rules[sourceKey])
+            assert(row.kind == "dropdown" and row.label == P.Tr("Display"), source .. " is missing the Display dropdown")
+            for _, nameOnly in ipairs({ true, false }) do
+                config[sourceKey] = nameOnly
+                local values = P.NameplatesWorkspace.CopyValues(source, target, { style = true })
+                assert(values[targetKey] == nameOnly, "Copy To lost the display mode for " .. target)
+            end
+            config[sourceKey] = original
+        end
+        local saved = { friendlyNpcRangeAlpha = config.friendlyNpcRangeAlpha, friendlyNpcContextEnabled = config.friendlyNpcContextEnabled,
+            neutralRangeAlpha = config.neutralRangeAlpha, neutralContextEnabled = config.neutralContextEnabled, look = config.look }
+        config.friendlyNpcRangeAlpha, config.friendlyNpcContextEnabled = 63, true
+        local values = P.NameplatesWorkspace.CopyValues("friendlyNpc", "neutral", { range = true })
+        assert(values.neutralRangeAlpha == 63 and values.neutralContextEnabled == nil and values.enemyRangeAlpha == nil,
+            "copying Friendly NPC range changed a different category or scope")
+        values = P.NameplatesWorkspace.CopyValues("friendlyNpc", "neutral", { visibility = true })
+        assert(values.neutralContextEnabled and values.enemyContextEnabled == nil and values.neutralRangeAlpha == nil,
+            "copying Friendly NPC context changed a different category or scope")
+        values = P.NameplatesWorkspace.CopyValues("friendlyNpc", "neutral", { style = true })
+        assert(values.neutralPlateNameTypeColor == P.Get("nameplates", "friendlyNpcPlateNameTypeColor"),
+            "copying Friendly NPC style missed the scoped name color setting")
+        for key in pairs(values) do
+            assert(key == "neutralPlateNameTypeColor" or key == "neutralCenterName", "copying Friendly NPC style included a shared setting")
+        end
+        assert(P.NameplatesWorkspace.Open("friendlyNpc"))
+        ui.copy:Click()
+        local popup = assert(ui.copyPopup.GetPopup())
+        assert(popup:IsShown())
+        popup._targetBtns.neutral:Click()
+        assert(popup._checks[2]:IsEnabled(), "Copy To did not offer the scoped NPC style setting")
+        for index, check in ipairs(popup._checks) do
+            if check:IsEnabled() then
+                check:SetChecked(index == 9)
+                check:Click()
+            end
+        end
+        popup._runBtn:Click()
+        assert(not popup:IsShown() and config.neutralRangeAlpha == 63 and config.neutralContextEnabled == saved.neutralContextEnabled,
+            "Copy Selected did not restrict the write to the chosen destination and category")
+        for key, value in pairs(saved) do config[key] = value end
+    end
     local color = assert(records["msufsuite.nameplates.enemyTargetColor"])
     local opened, focused, exact = (M.Search._RoutingAPI or api).OpenSearchTarget(color.key,
         color.label, color.label, color.anchor, color.route, color.exactTarget)
@@ -894,6 +992,74 @@ do
 end
 
 do
+    local popup
+    local CreatePopup = M.CreateMenuPopupPanel
+    M.CreateMenuPopupPanel = function(...)
+        popup = CreatePopup(...)
+        return popup
+    end
+    for _, scope in ipairs({ "enemy", "friendly", "neutral", "friendlyNpc" }) do
+        assert(P.NameplatesWorkspace.Open(scope))
+        local sectionId = "suite_nameplates_" .. scope .. "Basics"
+        local basics = assert(M.cache.suite_nameplates.sections[sectionId])
+        P.HM.GetSectionEntry(basics).SetOpenImmediate(true)
+        for _, spec in ipairs(P.NameplateSections) do
+            if spec.key == scope .. "Basics" then assert(spec.select("general")) end
+        end
+        local link
+        for _, button in ipairs(outlineLinks) do
+            if button:IsVisible() then link = button end
+        end
+        assert(link, "the Frame Outline link is hidden for " .. scope)
+        local gear
+        for _, child in ipairs({ link:GetChildren() }) do
+            local point, anchor, relativePoint = child:GetPoint()
+            if point == "LEFT" and anchor == link and relativePoint == "RIGHT" then gear = child end
+        end
+        assert(gear and gear:IsVisible(), "the Frame Outline link is missing its gear for " .. scope)
+        gear:Click()
+        assert(popup and popup:IsShown(), "the gear did not open Outline settings")
+        local key = scope:match("^friendly") and "friendlyBorderSize" or "enemyBorderSize"
+        assert(popup.select:GetValue() == "suite.nameplates." .. key, "the gear focused the wrong outline for " .. scope)
+        assert(popup.rows["suite.nameplates.enemyBorderSize"] and popup.rows["suite.nameplates.friendlyBorderSize"]
+            and popup.rows["@all"], "the gear did not open the shared outline overview")
+        gear:Click()
+        assert(not popup:IsShown(), "clicking the gear again did not close Outline settings")
+    end
+    local outlineRecords = {}
+    for _, record in pairs(Ready()) do
+        local setting = record.exactTarget and record.exactTarget.settingKey
+        if setting then outlineRecords[setting] = record end
+    end
+    local function CheckSetting(setting, id)
+        local record = assert(outlineRecords[setting], "the border setting has no search route: " .. setting)
+        local routed, revealed, exact = (M.Search._RoutingAPI or api).OpenSearchTarget(record.key,
+            record.label, record.label, record.anchor, record.route, record.exactTarget)
+        mw:RunTimers(1000)
+        assert(routed and revealed and exact, "the border setting did not open: " .. setting)
+        local _, widget = M.RuntimeControlCatalog.FindBySettingKey(setting, M.activeKey)
+        local gear = assert(widget and widget._msuf2OutlineGear, "missing local gear for " .. setting)
+        assert(gear:IsVisible())
+        gear:Click()
+        assert(popup:IsShown() and popup.select:GetValue() == id, "wrong outline selected for " .. setting)
+        gear:Click()
+    end
+    CheckSetting("msufsuite.nameplates.enemyOutlineMode", "suite.nameplates.enemyBorderSize")
+    CheckSetting("msufsuite.nameplates.friendlyOuterFrameSize", "suite.nameplates.friendlyOuterFrameSize")
+    CheckSetting("msufsuite.minimap.borderSize", "suite.minimap.borderSize")
+    CheckSetting("msufsuite.chat.borderSize", "suite.chat.borderSize")
+    local keys = Suite.CDM.KEYS
+    local rule = P.catalog.cooldownManager.rules[keys.ess.border]
+    local slot = "uti"
+    local row = P.RuleRow("suite_cooldownManager", "cooldownManager", rule, function() return keys[slot].border end)
+    assert(row.outlineFocus() == "suite.cooldownManager." .. keys.uti.border)
+    slot = "ext"
+    assert(row.outlineFocus() == "suite.cooldownManager." .. keys.ext.border)
+    assert(P.NameplatesWorkspace.Open("enemy"))
+    M.CreateMenuPopupPanel = CreatePopup
+end
+
+do
     local record = assert(records["msufsuite.nameplates.enemyOutlineMode"], "the frame outline dropdown has no cold search route")
     local selected, anchored, exact = (M.Search._RoutingAPI or api).OpenSearchTarget(record.key,
         record.label, record.label, record.anchor, record.route, record.exactTarget)
@@ -1123,6 +1289,37 @@ do
     general.fontSize = previous
 end
 
+local function ClickLayer(key, mouse)
+    for _, button in ipairs(preview.layerButtons) do
+        if button.layerKey == key then return button:GetScript("OnClick")(button, mouse or "LeftButton") end
+    end
+    error("missing preview layer: " .. key)
+end
+
+do
+    local config = P.S.Config("nameplates")
+    local changes = { look = 4, enabled = true, enemy = true, friendly = true,
+        neutralSkinEnabled = true, neutralPlateNameOnly = true, neutralNameOnlyMode = 1, enemyCastEnabled = 2 }
+    local previous = {}
+    for key in pairs(changes) do previous[key] = config[key] end
+    assert(P.SetMany("nameplates", changes))
+    for _, scope in ipairs({ "enemy", "friendly", "neutral" }) do
+        assert(P.NameplatesWorkspace.Open(scope))
+        if scope == "neutral" then assert(P.Set("nameplates", "enemyCastEnabled", 3)) end
+        preview:Edit("anchor", "Health")
+        ClickLayer("castShield", "RightButton")
+        local shield = preview.body._selectedHandle
+        assert(M.activeKey == "suite_nameplates" and preview.scope == scope and shield and shield:IsVisible()
+            and shield.keyX == (scope == "friendly" and "friendly" or "enemy") .. "CastShieldOffsetX",
+            "Blizzard shield chip did not open its position controls in " .. scope)
+        shield:GetScript("OnClick")(shield, "RightButton")
+        assert(preview.body._selectedHandle == shield and preview.castSample == "CastShield",
+            "Blizzard shield handle used a different settings destination in " .. scope)
+    end
+    assert(P.SetMany("nameplates", previous))
+    assert(P.NameplatesWorkspace.Open("enemy"))
+end
+
 -- Manual cast width and time size use the same settings in the menu and preview.
 do
     local config = P.S.Config("nameplates")
@@ -1137,6 +1334,14 @@ do
     local time = assert(preview.kit.entries["enemy.CastTime"]).region
     assert(bar:GetWidth() == 191 and P.NameplatesSize.Keys(bar) == "enemyCastManualWidth")
     assert(time:IsVisible() and P.NameplatesSize.Keys(time) == "enemyCastTimeSize" and time:GetHeight() == 19)
+    ClickLayer("castTime")
+    assert(not time:IsVisible() and bar:IsVisible() and config.enemyCastTimeEnabled, "cast time chip altered the edit sample or its setting")
+    ClickLayer("castTime")
+    assert(time:IsVisible(), "cast time chip did not restore the edit sample")
+    ClickLayer("cast")
+    assert(not bar:IsVisible() and config.enemyCastEnabled == 2, "cast chip did not hide the edit sample locally")
+    ClickLayer("cast")
+    assert(bar:IsVisible() and time:IsVisible(), "cast chip did not restore the edit sample")
     assert(P.SetMany("nameplates", previous))
 end
 
@@ -1161,6 +1366,10 @@ do
     local width, height = P.NameplatesSize.Keys(power)
     assert(power:IsVisible() and power:GetWidth() == 120 and power:GetHeight() == 8)
     assert(width == "enemyPowerDetachedWidth" and height == "enemyPowerDetachedHeight")
+    ClickLayer("enemyPower")
+    assert(not power:IsVisible() and config.enemyPowerEnabled, "power chip did not hide the edit sample locally")
+    ClickLayer("enemyPower")
+    assert(power:IsVisible(), "power chip did not restore the edit sample")
     assert(P.SetMany("nameplates", previous))
 end
 

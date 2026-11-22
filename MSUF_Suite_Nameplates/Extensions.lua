@@ -320,7 +320,8 @@ end
 
 function Extensions.Apply(uf, health, cast, prefix, unit)
     if not M.active or not plan or not plan.enabled or not prefix or not M.config[prefix]
-        or M.config.look == P.Mode.LOOK_BLIZZARD or not PublicUnit(unit) then
+        or M.config.look == P.Mode.LOOK_BLIZZARD or not PublicUnit(unit)
+        or plan.questTextOnly and not P.FriendlyNames.KeepsQuestText(uf) then
         Extensions.Restore(uf)
         return
     end
@@ -360,10 +361,15 @@ function Extensions.Apply(uf, health, cast, prefix, unit)
     PlateLayers(state, true)
     Presentation(state)
     if mutable then
-        E.Resume(state)
-        T.Apply(state)
-        E.Execute(state)
-        E.Identity(state)
+        if P.FriendlyNames and P.FriendlyNames.nameOnlyEnabled and P.FriendlyNames.IsNameOnly(uf) then
+            T.Apply(state)
+            E.Hide(state)
+        else
+            E.Resume(state)
+            T.Apply(state)
+            E.Execute(state)
+            E.Identity(state)
+        end
     end
 end
 
@@ -535,7 +541,10 @@ end
 
 function Extensions.OnCombatEnded()
     FlushRestores()
-    if plan and plan.enabled then Extensions.OnContext(nil, "PLAYER_REGEN_ENABLED") end
+    if plan and plan.enabled then
+        Extensions.OnContext(nil, "PLAYER_REGEN_ENABLED")
+        if plan.neutralQuestText then Extensions.OnMetadata() end
+    end
 end
 
 local function NativeAnchors(uf)
@@ -616,12 +625,13 @@ local function Subscriptions()
     local aggro = M.active and P.Selection and P.Selection.aggroEnabled
     Subscribe("UNIT_TARGET", aggro and TargetEvent or DataEvent, aggro or enabled and (sources[2] or sources[7]))
     local identity = plan.enemy.identity > 1 or plan.friendly.identity > 1
-    Subscribe("UNIT_NAME_UPDATE", DataEvent, enabled and (sources[2] or sources[4] or sources[5] or identity))
+    Subscribe("UNIT_NAME_UPDATE", DataEvent, enabled and (sources[2] or sources[4] or sources[5] or identity or plan.neutralQuestText))
     Subscribe("UNIT_POWER_UPDATE", DataEvent, enabled and sources[8])
     P.Power.SetExtraTextEvents(enabled and sources[8])
     Subscribe("UNIT_ABSORB_AMOUNT_CHANGED", DataEvent, enabled and sources[9])
     Subscribe("UPDATE_SHAPESHIFT_FORM", Extensions.RangeSpellChanged, enabled and plan.range)
-    local metadata = enabled and (sources[3] or sources[4] or sources[5] or sources[10])
+    Extensions.usesQuestText = enabled and (sources[3] or plan.neutralQuestText)
+    local metadata = enabled and (Extensions.usesQuestText or sources[4] or sources[5] or sources[10])
     Subscribe("CHALLENGE_MODE_START", Extensions.OnMetadata, metadata and sources[10])
     Subscribe("CHALLENGE_MODE_COMPLETED", Extensions.OnMetadata, metadata and sources[10])
     Subscribe("PLAYER_GUILD_UPDATE", Extensions.OnMetadata, metadata and sources[4])

@@ -102,6 +102,9 @@ local function Slot(state, key, marker, anchor, relative, offset, filter)
     state.container:AddAuraSlot(key, "HARMFUL|PLAYER", {
         candidateFilters = filter,
         initializeFrame = function(button)
+            -- The native slot manager only hides a slot after clearing an assigned aura.
+            -- A new empty slot must already be collapsed before its first assignment.
+            button:Hide()
             button:SetMouseClickEnabled(false)
             button:SetMouseMotionEnabled(false)
             button:SetSize(1, SPAN)
@@ -230,6 +233,11 @@ local function Hide(state)
     state.active = false
 end
 
+local function NeedsSlots(state)
+    return not state or not state.countSlots[#rows]
+        or config.auraColorsIndividual and not state.singles[#rows]
+end
+
 function Colors.SetOpacity(uf, alpha)
     local state = states[uf]
     if not state or state.opacity == alpha then return end
@@ -304,9 +312,12 @@ function Colors.Apply(uf, unit, enemy)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not health or NS.Safety.IsForbidden(health) then return end
     local fill = health:GetStatusBarTexture()
-    -- A new plate, another selection or another fill texture builds or
-    -- reconfigures; only an open Forever gamepad panel holds that back.
-    if (not state or state.revision ~= revision or state.fill ~= fill) and Blocked() then return end
+    -- An open Forever gamepad panel blocks new native slots, but existing
+    -- filters, warning switches and fill textures can still be updated.
+    if (not state or state.revision ~= revision) and NeedsSlots(state) and Blocked() then
+        if state then Hide(state) end
+        return
+    end
     if not state then
         state = New(health)
         states[uf] = state

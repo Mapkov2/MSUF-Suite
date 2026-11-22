@@ -219,7 +219,8 @@ end
 local function RestoreNameAnchor(state, uf)
     local saved = state.nameAnchor
     if not saved then return true end
-    if not NameAnchorWritable(uf.name) then
+    local writable = saved.native and AuraWritable or NameAnchorWritable
+    if not writable(uf.name) then
         Defer(uf)
         return false
     end
@@ -248,6 +249,32 @@ local function ApplyNameAnchor(state, uf, plan)
     Point(label, anchor, owner, anchor, plan.Name[1], plan.Name[2])
     label:SetJustifyH(anchor:find("LEFT", 1, true) and "LEFT" or anchor:find("RIGHT", 1, true) and "RIGHT" or "CENTER")
     return true
+end
+
+local function CenterName(state, uf, plan, config, setup, kind, baseHeight, badgeShown)
+    local names = private.FriendlyNames
+    local active = names and names.NameOnlyScope and names.NameOnlyScope(uf)
+    local scope = active or X.OpacityScope(kind)
+    if not scope or not config[Key[scope].CenterName] or not (active or uf.showOnlyName or X.CustomNameOnly(config, scope)) then return end
+    if AuraWritable(uf.name) then
+        local size = state.healthSize
+        local height = size and size[4] + size[2] or baseHeight
+        Offset(state, uf.name, 0, 0, true)
+        state.nameAnchor = Geometry.CenterName(uf, setup, height, plan.Name[2], badgeShown)
+        if state.nameAnchor then return true end
+    end
+    Defer(uf)
+    return nil, true
+end
+
+local function AnchorName(state, uf, plan, config, setup, kind, height, badgeShown)
+    local anchored, pending
+    if plan.centerName then anchored, pending = CenterName(state, uf, plan, config, setup, kind, height, badgeShown) end
+    if not anchored and plan.nameAnchor then
+        Offset(state, uf.name, 0, 0, true)
+        anchored = ApplyNameAnchor(state, uf, plan)
+    end
+    return anchored, pending
 end
 
 -- The cold-layout handoff. A pass that may write the cast's geometry (its
@@ -650,7 +677,7 @@ local function Lay(uf, prefix, config, force)
         return
     end
     local kind
-    if X and (prefix == "enemy" and config.neutralNpcSizeOverride or prefix == "friendly" and config.friendlyNpcSizeOverride)
+    if X and (plan.centerName or prefix == "enemy" and config.neutralNpcSizeOverride or prefix == "friendly" and config.friendlyNpcSizeOverride)
         and NS.Public(uf.unit) then kind = X.PlateKind(uf, uf.unit) end
     if state and state.generation == generation and state.prefix == prefix and state.kind == kind and not force then return end
     local setup = NamePlateSetupOptions
@@ -682,10 +709,12 @@ local function Lay(uf, prefix, config, force)
         return true
     end
     HealthSize(state, uf, setup, width, height, force or geometryChanged, baseHeight)
-    if plan.nameAnchor then Offset(state, uf.name, 0, 0, true) end
-    local anchored = plan.nameAnchor and ApplyNameAnchor(state, uf, plan)
-    ElementOffsets(state, uf, plan, force, anchored)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
+    local anchored, centerPending
+    if plan.centerName or plan.nameAnchor then
+        anchored, centerPending = AnchorName(state, uf, plan, config, setup, kind, baseHeight, badgeShown)
+    end
+    ElementOffsets(state, uf, plan, force, anchored)
     if not anchored then
         local mirrored = MirrorHeader(state, uf, prefix, plan, setup, config)
         if mirrored == nil then return true end
@@ -700,7 +729,7 @@ local function Lay(uf, prefix, config, force)
         Defer(uf)
         return true
     end
-    state.generation, state.prefix, state.kind = generation, prefix, kind
+    state.generation, state.prefix, state.kind = not centerPending and generation or nil, prefix, kind
     state.nativeReset = nil
     Layout.Observe(uf)
     return true
@@ -715,6 +744,11 @@ Layout.Apply = Apply
 -- rebuilt its anchors (UpdateAnchors).
 function Layout.Reapply(uf, prefix, config)
     Apply(uf, prefix, config, true)
+end
+
+function Layout.InvalidateName(uf)
+    local state = states[uf]
+    if state then state.generation = nil end
 end
 
 function Layout.CastWidthDelta(uf, config, prefix)
@@ -750,7 +784,11 @@ function Layout.Configure(config)
     for _, prefix in ipairs({ "enemy", "friendly" }) do
         local auraStyles = AuraStyles(config, prefix)
         local anchor = NS.NameplateText.NameAnchor(config, prefix)
-        local plan = { auraStyles = auraStyles, nameAnchor = anchor, active = auraStyles ~= nil or anchor ~= nil or config.barGeometry == Mode.SAME_GEOMETRY
+        local centerName = prefix == "enemy" and (config.enemyCenterName or config.neutralCenterName)
+            or prefix == "friendly" and (config.friendlyCenterName or config.friendlyNpcCenterName
+                or config.neutralCenterName and X.NeutralNameSplit(config))
+        local plan = { auraStyles = auraStyles, nameAnchor = anchor, centerName = centerName,
+            active = centerName or auraStyles ~= nil or anchor ~= nil or config.barGeometry == Mode.SAME_GEOMETRY
             or prefix == "enemy" and config.enemyMirrorHeader == true }
         for i = 1, #elements do
             local element = elements[i]

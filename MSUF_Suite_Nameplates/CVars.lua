@@ -205,14 +205,24 @@ local CHOICES = {
     { "plateFriendlyMinions", "nameplateShowFriendlyPlayerMinions" },
     { "plateOffscreen", "nameplateShowOffscreen" },
     -- The combined minion choices above keep applying; these set each kind alone.
-    { "plateEnemyPets", "nameplateShowEnemyPets" },
     { "plateEnemyGuardians", "nameplateShowEnemyGuardians" },
     { "plateEnemyTotems", "nameplateShowEnemyTotems" },
-    { "plateFriendlyPets", "nameplateShowFriendlyPlayerPets" },
     { "plateFriendlyGuardians", "nameplateShowFriendlyPlayerGuardians" },
     { "plateFriendlyTotems", "nameplateShowFriendlyPlayerTotems" },
     { "plateClampTarget", "clampTargetNameplateToScreen" },
 }
+
+local PET_WORLD_NAMES_ONLY = 4
+local function PetDisplay(module, mode, plateCVar, nameCVar)
+    mode = mode or KEEP
+    if mode == PET_WORLD_NAMES_ONLY then
+        Toggle(module, HIDE, plateCVar)
+        Toggle(module, SHOW, nameCVar)
+    else
+        Toggle(module, mode, plateCVar)
+        Toggle(module, mode == HIDE and HIDE or KEEP, nameCVar)
+    end
+end
 
 local function Names(module, c)
     -- Names only for party / raid (group members keep their bar) uses the same CVar.
@@ -227,6 +237,8 @@ local function Names(module, c)
         local choice = CHOICES[i]
         Toggle(module, c[choice[1]] or KEEP, choice[2])
     end
+    PetDisplay(module, c.plateEnemyPets, "nameplateShowEnemyPets", "UnitNameEnemyPetName")
+    PetDisplay(module, c.plateFriendlyPets, "nameplateShowFriendlyPlayerPets", "UnitNameFriendlyPetName")
     local npcs = c.friendlyNpcSkinEnabled ~= false
     local worldNames = npcs and c.friendlyNPCs == Mode.NPC_NAMES_ONLY
     Toggle(module, (c.enemySkinEnabled ~= false or c.neutralSkinEnabled ~= false) and SHOW or HIDE, "nameplateShowEnemies")

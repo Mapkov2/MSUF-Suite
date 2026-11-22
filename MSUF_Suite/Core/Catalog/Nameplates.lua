@@ -130,7 +130,7 @@ local generalRules = {
     B.Choice("classColors", "Player class colors", 2, { "Keep Blizzard setting", "On", "Off" }),
     B.Choice("personalAuras", "Personal auras", 1, { "Keep Blizzard setting", "Show all", "Filtered" }),
     B.Tooltip(B.Choice("friendlyNPCs", "Friendly NPC nameplates", 1,
-        { "Keep Blizzard setting", "Show", "Hide", "Names only (world names)" }),
+        { "Keep Blizzard setting", "Show", "Hide", "Names only (world names)", "Name only" }),
         "Uses Blizzard's world names and hides friendly NPC bars. NPC world names also affect enemies and use Blizzard's font."),
     B.Choice("playerGuildNames", "Player guild names", 1, { "Keep Blizzard setting", "Show", "Hide" }),
     B.Choice("playerTitles", "Player titles", 1, { "Keep Blizzard setting", "Show", "Hide" }),
@@ -427,6 +427,14 @@ end
 -- Which units get a plate and how plates share space: Blizzard's own
 -- nameplate options (Settings > Nameplates). Not part of a look.
 local SHOW_HIDE, SIMPLE = { "Keep Blizzard setting", "Show", "Hide" }, { "Keep Blizzard setting", "Simplified", "Full size" }
+local PET_DISPLAY = { "Keep Blizzard setting", "Health bars", "Hide", "Names only (world names)" }
+local function PetDisplay(key, label, plateCVar, nameCVar)
+    local rule = Writes(plateCVar, B.Choice(key, label, 1, PET_DISPLAY))
+    rule.petNameCVar = nameCVar
+    NS.SuiteCatalog[id].cvars[nameCVar] = true
+    return rule
+end
+
 local STACK = { "Keep Blizzard setting", "Stack", "Overlap" }
 -- The combined minion choices predate the separate ones and keep applying.
 local COMBINED_NOTE = "Blizzard's combined switch for pets, guardians and totems. The separate choices set each kind on its own."
@@ -438,12 +446,12 @@ B.Section(id, "visibility", "Visibility", {
     B.Choice("plateStackEnemy", "Enemy nameplate stacking", 1, STACK),
     B.Choice("plateStackFriendly", "Friendly nameplate stacking", 1, STACK),
     B.Tooltip(B.Choice("plateEnemyMinions", "Enemy minions (pets, guardians, totems)", 1, SHOW_HIDE), COMBINED_NOTE),
-    Writes("nameplateShowEnemyPets", B.Choice("plateEnemyPets", "Enemy pets", 1, SHOW_HIDE)),
+    PetDisplay("plateEnemyPets", "Enemy pets", "nameplateShowEnemyPets", "UnitNameEnemyPetName"),
     Writes("nameplateShowEnemyGuardians", B.Choice("plateEnemyGuardians", "Enemy guardians", 1, SHOW_HIDE)),
     Writes("nameplateShowEnemyTotems", B.Choice("plateEnemyTotems", "Enemy totems", 1, SHOW_HIDE)),
     B.Choice("plateEnemyMinus", "Minor enemies", 1, SHOW_HIDE),
     B.Tooltip(B.Choice("plateFriendlyMinions", "Friendly player minions", 1, SHOW_HIDE), COMBINED_NOTE),
-    Writes("nameplateShowFriendlyPlayerPets", B.Choice("plateFriendlyPets", "Friendly player pets", 1, SHOW_HIDE)),
+    PetDisplay("plateFriendlyPets", "Friendly player pets", "nameplateShowFriendlyPlayerPets", "UnitNameFriendlyPetName"),
     Writes("nameplateShowFriendlyPlayerGuardians", B.Choice("plateFriendlyGuardians", "Friendly player guardians", 1, SHOW_HIDE)),
     Writes("nameplateShowFriendlyPlayerTotems", B.Choice("plateFriendlyTotems", "Friendly player totems", 1, SHOW_HIDE)),
     B.Choice("plateOffscreen", "Off-screen nameplates", 1, SHOW_HIDE),

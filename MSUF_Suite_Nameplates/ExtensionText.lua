@@ -3,6 +3,8 @@ local NS, S = P.NS, P.Suite
 local T = {}
 P.ExtensionText = T
 local SOURCES = { target = 2, quest = 3, guild = 4, title = 5, threat = 6, difference = 7, power = 8, absorb = 9, forces = 10 }
+local QUEST_ONLY = { [SOURCES.quest] = true }
+local DEFAULT_QUEST_SLOT = { source = SOURCES.quest, anchor = 1, x = 0, y = 2, size = 10, color = "ffffff" }
 local ANCHORS = NS.NameplateExtensions.TextPoints
 local EVENT_SOURCES = {
     UNIT_TARGET = { [2] = true, [6] = true, [7] = true },
@@ -158,8 +160,47 @@ local function Place(label, slot, state)
     label:SetTextColor(S.RGB(slot.color))
 end
 
+local function CreateLabel(state, slot)
+    local owner = state.uf
+    if slot.layer then
+        owner = CreateFrame("Frame", nil, state.uf)
+        owner:SetAllPoints(state.uf)
+        state.threatTextFrame = owner
+    end
+    local label = owner:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    state.labels[slot.source] = label
+    return label
+end
+
+local function ApplyQuestOnly(state)
+    local slot = state.plan.interaction.neutral.questSlot or DEFAULT_QUEST_SLOT
+    local changed = state.textPlan ~= QUEST_ONLY or state.questSlot ~= slot
+    if not changed and state.metadataReady then return end
+    state.textValues, state.labels = state.textValues or {}, state.labels or {}
+    if changed then T.Hide(state) end
+    Tooltip(state, state.textValues, QUEST_ONLY)
+    local label = state.labels[SOURCES.quest]
+    if label or state.textValues.quest or slot.unknown then
+        if not label then
+            label = CreateLabel(state, slot)
+            changed = true
+        end
+        if changed then Place(label, slot, state) end
+        Write(label, slot, state.textValues)
+    end
+    state.metadataReady, state.textPlan, state.questSlot = true, QUEST_ONLY, slot
+end
+
 function T.Apply(state, event)
     local scope = state.interaction
+    local names = P.FriendlyNames
+    if names and names.IsNameOnly(state.uf) then
+        if names.KeepsQuestText and names.KeepsQuestText(state.uf) then return ApplyQuestOnly(state) end
+        if state.textPlan == QUEST_ONLY then T.Invalidate(state) end
+        T.Hide(state)
+        return
+    end
+    if state.textPlan == QUEST_ONLY then T.Invalidate(state) end
     if not scope or #scope.slots == 0 then
         T.Hide(state)
         return
@@ -176,17 +217,7 @@ function T.Apply(state, event)
     end
     Read(state, event)
     for _, slot in ipairs(slots) do
-        local label = state.labels[slot.source]
-        if not label then
-            local owner = state.uf
-            if slot.layer then
-                owner = CreateFrame("Frame", nil, state.uf)
-                owner:SetAllPoints(state.uf)
-                state.threatTextFrame = owner
-            end
-            label = owner:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            state.labels[slot.source] = label
-        end
+        local label = state.labels[slot.source] or CreateLabel(state, slot)
         if changed then
             Place(label, slot, state)
             if slot.layer then
@@ -204,6 +235,6 @@ function T.Hide(state)
 end
 
 function T.Invalidate(state)
-    state.metadataReady, state.textPlan = nil, nil
+    state.metadataReady, state.textPlan, state.questSlot = nil, nil, nil
     if state.textValues then for key in pairs(state.textValues) do state.textValues[key] = nil end end
 end

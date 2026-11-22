@@ -284,20 +284,41 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         end
         local status = Layer("status")
         assert(status:GetParent() == ui.layerRail, "layer chips must be anchored to the visible rail")
-        local slider
+        local slider, layerTitle
         for _, child in ipairs({ ui.layerRail:GetChildren() }) do
             if child:GetObjectType() == "Slider" then slider = child end
+            if child:GetText() == "Preview Layers" then layerTitle = child end
         end
-        assert(slider, "wide and narrow layouts need a common layer rail")
+        assert(slider and layerTitle, "wide and narrow layouts need a common layer rail")
+        layerTitle:SetWidth(layerTitle:GetStringWidth())
         values.look, ui.sampleKind = 4, "enemy"
         values.enemyGlowMode, values.enemyGlowEnabled = 2, true
+        values.enemy, values.enemyPowerEnabled = true, true
+        values.enemyNpcAuraMode, values.enemyNpcDebuffs = 2, true
+        local beforeToggles = writes
+        for _, key in ipairs({ "glow", "enemyPower", "auras" }) do
+            local button = Layer(key)
+            button.scripts.OnClick(button, "LeftButton")
+            assert(not ui:LayerOn(key) and writes == beforeToggles, key .. " chip wrote settings instead of hiding the layer")
+            button.scripts.OnClick(button, "LeftButton")
+            assert(ui:LayerActive(key) and writes == beforeToggles, key .. " chip did not restore the preview")
+        end
+        local power = Layer("enemyPower")._msuf2CommandAction
+        assert(power.set(false) and not power.get() and power.set(true) and power.get() and writes == beforeToggles,
+            "power search commands did not toggle preview visibility independently")
+        values.enemyPowerEnabled = false
+        assert(not power.get() and not power.set(true) and not values.enemyPowerEnabled and writes == beforeToggles,
+            "power search command enabled a disabled live feature")
+        values.enemyGlowEnabled = false
         local glow = Layer("glow")
         glow.scripts.OnClick(glow, "LeftButton")
-        glow.scripts.OnClick(glow, "LeftButton")
-        assert(values.enemyGlowMode == 2 and values.enemyGlowEnabled == false and opened == "enemyGlowEnabled",
-            "disabled glow layer did not open its setting or replaced the selected mode")
+        assert(not ui:LayerActive("glow") and opened == "enemyGlowEnabled" and writes == beforeToggles,
+            "disabled glow layer did not open its setting")
         values.enemyGlowEnabled = true
-        for _, button in ipairs(ui.layerButtons) do assert(button.layerKey ~= "fillTexture", "retired texture chip remains") end
+        for _, button in ipairs(ui.layerButtons) do
+            assert(button.layerKey ~= "fillTexture", "retired texture chip remains")
+            assert(not button.settingsLink, "right chevron remains on layer " .. button.layerKey)
+        end
         ui.sampleKind = "friendly"
         local before = writes
         for _, key in ipairs({ "focusMarker", "threshold" }) do
@@ -306,7 +327,6 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         end
         assert(writes == before, "unavailable friendly sample changed enemy settings")
         -- NPC world names have no movable or adjustable nameplate elements.
-        P.NameplatesEditorMarkers.ToggleTarget = function() writes = writes + 1 end
         values.friendlyNPCs, ui.friendlyElite = 4, true
         for _, key in ipairs({ "level", "target", "name", "targetScale", "raidIcon" }) do
             local button = Layer(key)
@@ -314,6 +334,11 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
             assert(not ui:LayerAvailable(key), "NPC world-name layer remained editable: " .. key)
         end
         assert(writes == before, "NPC world-name layer chips changed nameplate settings")
+        local guides = Layer("guides")
+        guides.scripts.OnClick(guides, "LeftButton")
+        assert(not ui:LayerActive("guides") and writes == before, "NPC world names kept preview guides on")
+        guides.scripts.OnClick(guides, "LeftButton")
+        assert(ui:LayerActive("guides"), "NPC world names could not restore preview guides")
         local function Upvalue(fn, name)
             for index = 1, 60 do
                 local key, value = debug.getupvalue(fn, index)
@@ -402,8 +427,8 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         RenderTarget(ui, targetSample, {})
         assert(targeted, "Status icons toggle did not restore the target arrows")
         local beforeStatus = writes
-        status.settingsLink.scripts.OnClick(status.settingsLink)
-        assert(opened == "enemy.status" and writes == beforeStatus, "Status icons link did not open its settings")
+        status.scripts.OnClick(status, "RightButton")
+        assert(opened == "enemy.status" and writes == beforeStatus, "Status icons right-click did not open its settings")
 
         P.PreviewNameplateStatus("RaidIcon")
         assert(ui.statusSample == "RaidIcon", "previewing a status icon stopped selecting it")
@@ -417,15 +442,15 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         values.highlightAggro = true
         aggro.scripts.OnClick(aggro, "LeftButton")
         assert(ui.highlightSample == "aggro" and not ui.statusSample, "Aggro border left an isolated status sample")
-        local link = assert(Layer("castTarget").settingsLink, "the layer lacks a visible settings link")
+        local castTarget = Layer("castTarget")
         local beforeLink = writes
-        link.scripts.OnClick(link)
-        assert(opened == "enemyCastSpellTarget" and writes == beforeLink, "settings link toggled a layer or opened the wrong control")
+        castTarget.scripts.OnClick(castTarget, "RightButton")
+        assert(opened == "enemyCastSpellTarget" and writes == beforeLink, "right-click toggled a layer or opened the wrong setting")
         ui.sampleKind = "friendly"
         ui:Paint()
         assert(not Layer("enemyPower"):IsShown() and not Layer("aggroBorder"):IsShown() and Layer("castTarget"):IsShown(),
             "friendly scope shows enemy controls or misses its own layers")
-        link.scripts.OnClick(link)
+        castTarget.scripts.OnClick(castTarget, "RightButton")
         assert(opened == "friendly.spell" and writes == beforeLink, "friendly cast link jumped to enemy settings")
         ui.sampleKind = "enemy"
         ui:Edit("anchor")
@@ -472,6 +497,10 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
                 CheckButtonLabel(ui.focusStateButton, focusCaption)
                 CheckButtonLabel(fit, fitCaption)
                 CheckInside(ui.layerRail, body, "layer rail overlaps settings at width " .. width)
+                if width >= 885 then
+                    assert(layerTitle:GetPoint() == "LEFT", "wide layer rail did not dock its heading left")
+                    CheckSeparate(layerTitle, Layer("guides"), "layer rail heading overlaps the chips")
+                end
                 CheckInside(ui.canvas, body, "canvas escaped preview at width " .. width)
                 CheckInside(ui.raidPalette, ui.canvas, "raid marker palette clipped")
                 CheckAbove(ui.selection, ui.layerRail, 6, "selection overlaps layers")
@@ -497,7 +526,6 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
                 for _, button in ipairs(ui.layerButtons) do
                     if button:IsShown() then
                         CheckInside(button, ui.layerRail, "layer button escapes its rail: " .. button.layerKey)
-                        if button.settingsLink then CheckInside(button.settingsLink, button, "settings link was clipped") end
                     end
                 end
                 if width == 280 then assert(slider:IsShown(), "narrow layers did not scroll") end

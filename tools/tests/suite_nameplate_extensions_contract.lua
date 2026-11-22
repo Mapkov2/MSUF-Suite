@@ -475,6 +475,14 @@ do
     local model = NS.NameplateExtensions
     local inherited = model.Plan({ plateContextEnabled = true, enemyNpcOpacity = 45 })
     local neutral = model.Plan({ plateContextEnabled = true, enemyNpcOpacity = 45, neutralNpcContextOverride = true, neutralNpcOpacity = 80 })
+    local old = { plateContextEnabled = true, enemyNpcOpacity = 64, enemyNpcDungeonVisible = false }
+    model.SeparateContexts(old)
+    assert(old.neutralNpcOpacity == 64 and old.neutralNpcDungeonVisible == false, "neutral lost its old effective rules")
+    old.enemyContextEnabled, old.enemyNpcOpacity, old.friendlyNpcContextEnabled = false, 31, false
+    model.SeparateContexts(old)
+    local separate = model.Plan(old)
+    assert(separate.kinds.enemyNpc.alpha == 1 and separate.kinds.neutralNpc.alpha == .64
+        and old.friendlyContextEnabled and not old.friendlyNpcContextEnabled, "context switches are coupled after normalization")
     local _, inheritedAlpha = model.Visibility(inherited, "neutralNpc", "World", false)
     local _, neutralAlpha = model.Visibility(neutral, "neutralNpc", "World", false)
     assert(inheritedAlpha == 0.45 and neutralAlpha == 0.8, "neutral opacity did not inherit or override correctly")
@@ -729,5 +737,33 @@ do
     access = true
     assert(scopes.OnHitTest(unit) and unit.alpha == .65 and not scopes.OnHitTest(unit),
         "native hit-area refresh did not retry the still-owned alpha")
+end
+do
+    local showQuest, related = true, true
+    P.IsSkinSuppressed = nil
+    P.FriendlyNames = { nameOnlyEnabled = true, IsNameOnly = function() return showQuest end,
+        KeepsQuestText = function() return showQuest end }
+    P.Roles.Quest = function() return related end
+    M.active = true
+    M.config = { enemy = true, look = 3, neutralPlateNameOnly = true, neutralNameOnlyMode = 2 }
+    local _, npc, npcHealth, npcCast = Plate("nameplate4")
+    X.Configure(M)
+    Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
+    local label = npc.labels[1]
+    assert(label and #npc.labels == 1 and label:IsShown() and label.text == "2/8 enemies defeated"
+        and X.usesMetadata, "split name-only did not show the available quest objective on its own")
+    local before = reads.tooltip
+    Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
+    assert(reads.tooltip == before, "repainting a stable quest label rescanned its tooltip")
+    related = false
+    X.OnUnit(M, "UNIT_NAME_UPDATE", "nameplate4")
+    assert(not label:IsShown(), "an unavailable objective was left visible")
+    showQuest, related = false, true
+    Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
+    showQuest = true
+    Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
+    assert(label:IsShown(), "the returning quest label did not recover after the health bar transition")
+    X.Restore(npc)
+    assert(not label:IsShown(), "a released plate retained its quest label")
 end
 print("nameplate extensions contract passed: lifecycle, pooling, secrets, layout, click permission, range budget, text, restoration, visibility and opacity")

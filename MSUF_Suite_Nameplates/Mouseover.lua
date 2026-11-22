@@ -25,6 +25,9 @@ local animations = setmetatable({}, { __mode = "k" })
 local visibilityActive = false
 local opacity = setmetatable({}, { __mode = "k" })
 local ALWAYS = {}
+local pointerNames = setmetatable({}, { __mode = "k" })
+local textHovered, pointerTicker
+local POINTER_INTERVAL = 0.05
 
 function Hover.Bind(module) M = module end
 function Hover.IsHovered(uf) return hovered == uf end
@@ -118,16 +121,6 @@ local function ReleaseText(records, region)
     if cached then cached.record = nil end
 end
 
--- The group-only filter takes ownership of the name's native alpha first.
-function Hover.ReleaseName(uf, label)
-    local records = plates[uf]
-    local record = records and records[label]
-    if not record then return true end
-    if not Alpha(label, record, record.original, 0) then return false end
-    ReleaseText(records, label)
-    return true
-end
-
 local function Reveal(uf, over, instant)
     local records = plates[uf]
     if not records then return end
@@ -139,6 +132,60 @@ local function Reveal(uf, over, instant)
         if not record.retry and not rule then ReleaseText(records, region) end
     end
     if not next(records) then plates[uf] = nil end
+end
+
+local function SetTextHovered(uf)
+    if textHovered == uf then return end
+    if textHovered then Reveal(textHovered, false) end
+    textHovered = uf
+    if uf then Reveal(uf, true) end
+end
+
+local function StopTrackingName(uf)
+    pointerNames[uf] = nil
+    if textHovered == uf and hovered ~= uf then SetTextHovered(nil) end
+    if pointerTicker and not next(pointerNames) then
+        pointerTicker:Cancel()
+        pointerTicker = nil
+    end
+end
+
+-- The group-only filter takes ownership of the name's native alpha first.
+function Hover.ReleaseName(uf, label)
+    local records = plates[uf]
+    local record = records and records[label]
+    if not record then return true end
+    if not Alpha(label, record, record.original, 0) then return false end
+    ReleaseText(records, label)
+    if pointerNames[uf] == label then StopTrackingName(uf) end
+    return true
+end
+
+local function NameUnderPointer(uf, label)
+    if not Safe(uf) or not Writable(label) then return false end
+    -- Access to alpha does not grant frame measurement on native nameplates.
+    local restricted = label:IsAnchoringRestricted()
+    if not NS.Public(restricted) or restricted ~= false then return false end
+    local visible = label:IsVisible()
+    if not NS.Public(visible) or visible ~= true then return false end
+    local over = label:IsMouseOver()
+    return NS.Public(over) and over == true
+end
+
+-- Blizzard removes the hit-test area of name-only plates. Check only the
+-- managed friendly name labels, without taking mouse focus or clicks.
+local function PointerTick()
+    if hovered then return end
+    if IsMouselooking() then return SetTextHovered(nil) end
+    local focus = GetMouseFoci()[1]
+    if NS.Public(focus) and (not focus or focus == WorldFrame) then
+        local current = textHovered and pointerNames[textHovered]
+        if current and NameUnderPointer(textHovered, current) then return end
+        for uf, label in pairs(pointerNames) do
+            if uf ~= textHovered and NameUnderPointer(uf, label) then return SetTextHovered(uf) end
+        end
+    end
+    SetTextHovered(nil)
 end
 
 local function Claim(records, region, rule, multiplier)
@@ -182,7 +229,19 @@ function Hover.Apply(uf, health, prefix, styled)
         changed = changed or record.previousRule ~= record.rule or record.previousMultiplier ~= record.multiplier or record.retry
         record.previousRule, record.previousMultiplier = nil, nil
     end
-    if changed then Reveal(uf, hovered == uf, true) end
+    if changed then Reveal(uf, textHovered == uf, true) end
+    if prefix == "friendly" and plan and plan.name and plan.name.mouse then
+        local label = uf.name
+        local record = label and records[label]
+        if record and record.rule == plan.name then
+            pointerNames[uf] = label
+            if not pointerTicker then pointerTicker = M.context:Ticker(POINTER_INTERVAL, PointerTick) end
+        elseif pointerNames[uf] then
+            StopTrackingName(uf)
+        end
+    elseif pointerNames[uf] then
+        StopTrackingName(uf)
+    end
     if not next(records) then plates[uf] = nil end
     if not visibilityActive and not next(plates) then Hover.textInUse = false end
 end
@@ -209,7 +268,6 @@ local function OnMouseover()
     if hovered then
         if highlight then Hide(hovered) end
         if outline then private.Selection.HighlightMouseover(hovered, false) end
-        Reveal(hovered, false)
     end
     local previous = hovered
     hovered = current
@@ -220,8 +278,8 @@ local function OnMouseover()
     if current then
         if highlight then Show(current) end
         if outline then private.Selection.HighlightMouseover(current, true) end
-        Reveal(current, true)
     end
+    SetTextHovered(current)
 end
 
 local function Clear()
@@ -277,11 +335,14 @@ function Hover.Configure()
     end
     Clear()
     if on then OnMouseover() end
+    if not hovered and textHovered and not pointerNames[textHovered] then SetTextHovered(nil) end
 end
 
 -- A plate that leaves (Skin.lua RestorePlate) takes its highlight along.
 function Hover.Restore(uf)
     opacity[uf] = nil
+    if textHovered == uf then textHovered = nil end
+    if pointerNames[uf] then StopTrackingName(uf) end
     if Safe(uf) and highlight then Hide(uf) end
     local records = plates[uf]
     if records then
@@ -293,6 +354,7 @@ end
 
 function Hover.Disable()
     Clear()
+    textHovered = nil
     for uf in pairs(plates) do Hover.Restore(uf) end
     listening, highlight, outline, visibilityActive = false, false, false, false
     Hover.textInUse = next(plates) ~= nil

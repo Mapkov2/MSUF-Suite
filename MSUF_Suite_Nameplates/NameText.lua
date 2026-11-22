@@ -59,14 +59,19 @@ local function ForgetPlain(state)
     state.unit, state.prefix = unit, prefix
 end
 
-local function Capture(state, label, raw)
-    state.raw, state.captured = raw, true
+local function CaptureColor(state, label)
     local r, g, b, a = label:GetTextColor()
     if S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a) then
         state.r, state.g, state.b, state.a = r, g, b, a
     else
         state.r, state.g, state.b, state.a = nil, nil, nil, nil
     end
+    state.colorDirty = nil
+end
+
+local function Capture(state, label, raw)
+    state.raw, state.captured = raw, true
+    CaptureColor(state, label)
     state.formatted, state.tinted, state.nativeDirty = nil, nil, nil
 end
 
@@ -93,7 +98,7 @@ local function Restore(state, label)
     state.formatted, state.tinted = nil, nil
 end
 
-local function Paint(state, label, look)
+local function Paint(uf, state, label, look)
     if look.enabled then
         local output = Text.Format(state, state.raw, look)
         local changed = output ~= state.raw
@@ -103,6 +108,13 @@ local function Paint(state, label, look)
         label:SetText(state.raw)
         state.formatted = nil
     end
+    if private.FriendlyNames and private.FriendlyNames.OwnsColor(uf) then
+        -- The name-only painter also follows Blizzard's native refresh. This
+        -- hook can be installed later when shared name formatting is enabled.
+        state.look = look
+        return
+    end
+    if state.colorDirty then CaptureColor(state, label) end
     if (look.customColor or look.shared) and state.r then
         local applied = Text.PaintColor(label, state, look, state.unit)
         if not applied then RestoreColor(state, label) end
@@ -171,7 +183,7 @@ local function OnNativeName(uf)
         return
     end
     Capture(state, label, raw)
-    Paint(state, label, look)
+    Paint(uf, state, label, look)
 end
 
 local function RestoreInactive()
@@ -263,7 +275,7 @@ function Names.Apply(uf, prefix, unit)
     if state.nativeDirty or state.raw == nil or current ~= state.output and current ~= state.raw then
         Capture(state, label, current)
     end
-    Paint(state, label, look)
+    Paint(uf, state, label, look)
 end
 
 function Names.Begin(uf)
@@ -274,6 +286,18 @@ end
 function Names.Invalidate(uf)
     local state = states[uf]
     if state then state.look = nil end
+end
+
+function Names.ColorOwnerChanged(uf, acquired)
+    local state = states[uf]
+    if not state then return end
+    if acquired and state.tinted then
+        local label = Safe(uf)
+        if label then RestoreColor(state, label) end
+    end
+    -- The native hook may have captured the NPC tint while formatting text.
+    -- Read the released color before applying or later undoing a shared tint.
+    state.look, state.colorDirty = nil, state.captured
 end
 
 function Names.Suspend(uf)

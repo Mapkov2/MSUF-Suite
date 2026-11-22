@@ -9,6 +9,48 @@ local LABEL_INSET = 8
 local ZOOM_STEPS = { 0.35, 0.50, 0.75, 1, 1.25, 1.50, 2, 3, 4 }
 local FIT_PADDING, MIN_FIT_ZOOM = 20, 0.05
 
+function Layout.RenderName(s, m, Get, SetupNumber, Place)
+    local ID = "nameplates"
+    local prefix, name, bar = s.prefix, s.name, s.bar
+    name:EnableMouse(not m.npcWorldName and not s.static)
+    local config = P.S.Config(ID)
+    local shared = not (m.npcWorldName or m.skinDisabled) and P.Suite.NameplateText.Shared(config)
+    local size = P.Suite.NameplateText.ResolveSize(config, prefix .. "NameSize", shared)
+    local anchor = not (m.namesOnly or m.skinDisabled) and Get(ID, "look") ~= 2 and P.Suite.NameplateText.NameAnchor(config, prefix)
+    local centered = m.centerName or m.namesOnly and not m.nameOnlyScope
+    name:SetHeight(not (m.npcWorldName or m.skinDisabled) and (shared or Get(ID, prefix .. "TextEnabled")) and size > 0 and size
+        or SetupNumber("healthBarFontHeight", (m.classic and 10 or m.forever and 14 or 12) * m.vertical))
+    name:ClearAllPoints()
+    if m.npcWorldName then
+        name:SetPoint("CENTER", s.cell, "CENTER", 0, 0)
+        name:SetWidth(170)
+    elseif m.centerName then
+        local spacing = m.nameOnlyScope and m.nameSpacing or 2
+        local y = -4 + m.nativeBarHeight / 2 + m.heightDelta + spacing + Get(ID, prefix .. "NameOffsetY")
+        name:SetPoint("BOTTOM", s.cell, "CENTER", 0, y)
+        name:SetWidth(170)
+    elseif centered then
+        if m.nameAnchor == 1 then Place(s, name, "CENTER", bar, "CENTER", 0, 0, "Name")
+        else Place(s, name, "BOTTOM", bar, "TOP", 0, 2, "Name") end
+        name:SetWidth(170)
+    elseif anchor then
+        Place(s, name, anchor, bar, anchor, 0, 0, "Name")
+        name:SetWidth(m.availableNameWidth)
+    elseif m.nameAnchor == 3 then
+        Place(s, name, "BOTTOM", bar, "TOP", m.classic and 8.625 * m.horizontal or 0, m.nameSpacing, "Name")
+        name:SetWidth(m.barWidth - 8 + (m.classic and m.classicInset or 0))
+    elseif m.nameAnchor == 2 then
+        Place(s, name, "BOTTOMLEFT", bar, "TOPLEFT", 4, m.nameSpacing, "Name")
+        name:SetWidth(m.nativeLevel and m.barWidth + m.reserve - 4 or m.availableNameWidth)
+    else
+        Place(s, name, "LEFT", bar, "LEFT", 4, 0, "Name")
+        name:SetWidth(m.availableNameWidth)
+    end
+    s.nameText:SetWidth(centered and 170 or m.nameAnchor == 3 and name:GetWidth() or m.availableNameWidth)
+    local justify = anchor and (anchor:find("LEFT", 1, true) and "LEFT" or anchor:find("RIGHT", 1, true) and "RIGHT" or "CENTER")
+    s.nameText:SetJustifyH(justify or ((centered or m.nameAnchor == 3) and "CENTER" or "LEFT"))
+end
+
 function Layout.StyleButton(button)
     local label = P.HM.GetControlLabel(button)
     if not label then return end
