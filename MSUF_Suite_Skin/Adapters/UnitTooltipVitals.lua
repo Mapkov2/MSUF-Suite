@@ -217,7 +217,7 @@ end
 
 local function Stop(view)
     if not view then return end
-    view.mirror = nil
+    view.mirror, view.mirrorPending, view.mirrorDirty = nil, nil, nil
     if view.native then FadeNative(view, false) end
     if view.unit then view.event:UnregisterAllEvents() end
     view.unit, view.pending, view.unitShown, view.healthOn, view.powerOn = nil, nil, nil, nil, nil
@@ -249,12 +249,14 @@ local function BindHealthSource(view)
     bar:HookScript("OnShow", function() StartMirror(view) end)
     bar:HookScript("OnHide", function()
         if not view.mirror then return end
-        view.mirror, view.healthShape.shown = nil, nil
+        view.mirror, view.mirrorDirty, view.healthShape.shown = nil, nil, nil
         view.health:Hide()
         FadeNative(view, false)
     end)
     bar:HookScript("OnValueChanged", function(_, value)
-        if view.mirror then view.health:SetValue(value) end
+        if not view.mirror then return end
+        if view.mirrorPending then view.mirrorDirty = true
+        else view.health:SetValue(value) end
     end)
 end
 
@@ -345,6 +347,29 @@ local function ClearNative()
     Stop(nativeView)
 end
 
+function Vitals.NativeCleared()
+    local view = nativeView
+    if view and view.mirror and Safety.Read(view.parent, "IsShown") == true then
+        view.unitShown, view.mirrorPending = nil, true
+        return true
+    end
+    ClearNative()
+end
+
+function Vitals.FinishNativeClear()
+    if nativeView and nativeView.mirrorPending then ClearNative() end
+end
+
+local function ResumeMirror(view)
+    if view.mirrorDirty then
+        view.mirrorDirty = nil
+        local value = Safety.Call(view.healthSource, "GetValue")
+        if Safety.Public(value) and value == nil then Stop(view) return end
+        view.health:SetValue(value)
+    end
+    if view.healthShape.style ~= config.health then Paint(view, true, false, false, nil, nil, true) end
+end
+
 function Vitals.Native(tooltip, data)
     if not active or not nativeView or not Safety.Public(tooltip) or tooltip ~= GameTooltip
         or Safety.IsForbidden(tooltip) then return end
@@ -354,13 +379,13 @@ function Vitals.Native(tooltip, data)
         if Readable(data) then unit = UnitFromData(tooltip, data) end
     end
     if view.mirror and (unit or config.mode ~= "show") or not unit and (view.unit or view.pending) then Stop(view) end
-    view.unitShown = true
+    view.unitShown, view.mirrorPending = true, nil
     if unit then
         if Safety.Read(tooltip, "IsShown") ~= true then view.pending = unit
         else Watch(view, unit) end
     end
     if config.mode == "hide" then FadeNative(view, true) end
-    if view.mirror then Paint(view, true, false, false, nil, nil, true)
+    if view.mirror then ResumeMirror(view)
     else StartMirror(view) end
 end
 
@@ -409,7 +434,6 @@ function Vitals.Refresh()
         if nativeView and not nativeHooks then
             BindHealthSource(nativeView)
             GameTooltip:HookScript("OnShow", ShowNative)
-            GameTooltip:HookScript("OnTooltipCleared", ClearNative)
             nativeHooks = true
         end
     end

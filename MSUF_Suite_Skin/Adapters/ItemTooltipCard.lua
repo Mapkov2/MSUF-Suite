@@ -423,8 +423,14 @@ local function Paint(view, allowHidden, settled, data)
     Present(view, title, width, offset, changed, ratio)
 end
 
+local function FinishVitalsClear(view)
+    view.vitalsPending = nil
+    Vitals.FinishNativeClear()
+end
+
 local function Flush(view)
     view.queued = false
+    if view.vitalsPending then FinishVitalsClear(view) end
     if not active then return end
     if not view.ready then Hide(view)
     elseif view.retryLayout then Paint(view, false, true) end
@@ -476,14 +482,16 @@ end
 
 local function Cleared(view)
     view.ready, view.retryLayout, view.nativeKind = false, false, nil
+    view.vitalsPending = nil
     Hide(view)
 end
 
 local function NativeCleared(view)
     view.ready, view.retryLayout, view.nativeKind = false, false, nil
+    if Vitals and Vitals.Enabled and view.tip == GameTooltip then view.vitalsPending = Vitals.NativeCleared() end
     -- ClearLines also runs during in-place rebuilds. A replacement title can
     -- take over in the same native call without dropping the visible art.
-    if active and Safety.Read(view.tip, "IsShown") == true
+    if view.vitalsPending or active and Safety.Read(view.tip, "IsShown") == true
         and (view.header.frame:IsShown() or view.outline.frame:IsShown()) then
         QueueSettlement(view)
     else
@@ -541,12 +549,15 @@ end
 
 local function NativePostCall(tooltip, data, kind)
     if not Safety.Public(tooltip) then return end
-    local updateVitals = kind == UNIT and Vitals and Vitals.Enabled and tooltip == GameTooltip
-    if not active and not updateVitals then return end
+    local vitalsEnabled = Vitals and Vitals.Enabled and tooltip == GameTooltip
+    if not active and not vitalsEnabled then return end
+    local updateVitals = vitalsEnabled and kind == UNIT
     local view = views[tooltip]
+    if not active and not updateVitals and not (view and view.vitalsPending) then return end
     if view or updateVitals then
         if not IsPrimaryBuild(tooltip, data) then return end
         if updateVitals then Safety.Dispatch(Vitals.Native, tooltip, data) end
+        if view and view.vitalsPending then FinishVitalsClear(view) end
     else
         if not Safety.Public(data) then return end
         view = ComparisonView(tooltip, data)
