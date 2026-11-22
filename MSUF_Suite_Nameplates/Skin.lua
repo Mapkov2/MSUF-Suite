@@ -358,11 +358,17 @@ end
 local function RefreshTarget(uf)
     if not Safe(uf) then return end
     if scopedSkins and suppressed[uf] then return end
+    local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+    local unit = health and M.units[health]
+    if Names.neutralNameOnly and unit and Names.NeutralDisplayChanged(uf, unit) then
+        SetRole(uf, unit)
+        Paint(uf)
+        return Names.IsNameOnly(uf)
+    end
     if Names.nameOnlyEnabled and Names.IsNameOnly(uf) then
         Names.PaintNameOnly(uf)
         return true
     end
-    local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local prefix = Prefix(uf)
     local visual = health and M.visuals[health]
     if not Safe(health) or not prefix or not visual or M.config.look == LOOK_BLIZZARD or not M.config[prefix] then

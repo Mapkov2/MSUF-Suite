@@ -355,6 +355,23 @@ for _, forever in ipairs({ false, true }) do
     Event("PLAYER_TARGET_CHANGED")
     assert(frame.name.textR == .9 and frame.name.textG == .86,
         "clearing the target left the previous neutral name white")
+    local oldNPCs, oldTint = module.config.friendlyNPCs, module.config.friendlyNpcPlateNameTypeColor
+    module.config.friendlyNPCs, module.config.friendlyNpcPlateNameTypeColor = 5, true
+    local oldPalette = NS.HostBridge.NPCNameColor
+    NS.HostBridge.NPCNameColor = function() return 0, 1, 0 end
+    frame.isFriend, mob.friendly, mob.reaction = true, true, 5
+    module:Refresh()
+    assert(private.FriendlyNames.NameOnlyScope(frame) == "friendlyNpc" and frame.name.textG == 1)
+    -- The plate keeps isFriend=true when the now-readable reaction is 4.
+    -- Selection can arrive before any faction or flags notification.
+    mob.reaction, units.target = 4, mob
+    frame.name:SetVertexColor(1, 1, 1, 1)
+    Event("PLAYER_TARGET_CHANGED")
+    assert(private.FriendlyNames.NameOnlyScope(frame) == "neutral" and frame.name.textG == .86,
+        "selection replayed a stale friendly tint on a neutral NPC")
+    units.target, frame.isFriend, mob.friendly = nil, false, false
+    NS.HostBridge.NPCNameColor = oldPalette
+    module.config.friendlyNPCs, module.config.friendlyNpcPlateNameTypeColor = oldNPCs, oldTint
     combat, mob.fighting = true, true
     Event("UNIT_FLAGS", "nameplate1")
     assert(private.FriendlyNames.NameOnlyScope(frame) == "neutral" and frame.name.textR == .9,

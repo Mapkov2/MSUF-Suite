@@ -31,7 +31,10 @@ local function Region(alpha)
     function region:GetAlpha() return self.alpha end
     function region:SetAlpha(value) self.alpha = value end
     function region:GetTextColor() return self.r, self.g, self.b, self.a end
-    region.GetVertexColor = region.GetTextColor
+    function region:GetVertexColor()
+        if self.rgbOnly then return self.r, self.g, self.b end
+        return self.r, self.g, self.b, self.a
+    end
     function region:GetText() return self.text end
     function region:SetText(text) self.text = text end
     function region:IsShown() return true end
@@ -227,4 +230,34 @@ assert(uf.name.r == 1 and uf.name.g == 0 and uf.name.a == .5, "an alpha change l
 class = "PRIEST"
 RAID_CLASS_COLORS.PRIEST = { r = 1, g = 1, b = 1 }
 assert(Names.ApplyNameOnly(uf, uf.unit) and uf.name.g == 1, "the recycled plate inherited the previous class")
+
+-- Forever's selected neutral NPC reported friendly=true, reaction 4 and
+-- three public vertex components. The font's own opacity need not be 1.
+Names.RestoreNameOnly(uf)
+uf.isPlayer, uf.isFriend, reaction = false, true, 4
+uf.name.rgbOnly = true
+uf.name:SetVertexColor(1, 1, 1, .75)
+config.neutralPlateNameOnly, config.friendlyNPCs = true, 5
+Names.ConfigureNameOnly()
+assert(Names.ApplyNameOnly(uf, uf.unit) and Names.NameOnlyScope(uf) == "neutral")
+assert(uf.name.r == .9 and uf.name.g == .86 and uf.name.b == 0 and uf.name.a == .75,
+    "a friendly-routed neutral NPC with RGB-only vertex readback kept its white name")
+uf.name:SetVertexColor(1, 0, 0, .55)
+nativeUpdate(uf)
+assert(uf.name.r == .9 and uf.name.g == .86 and uf.name.a == .55, "RGB-only native reset lost neutral tint or opacity")
+Names.RestoreNameOnly(uf)
+assert(uf.name.r == 1 and uf.name.g == 0 and uf.name.a == .55, "RGB-only release did not restore native red and opacity")
+reaction = 5
+assert(Names.ApplyNameOnly(uf, uf.unit) and uf.name.r == 0 and uf.name.g == 1 and uf.name.b == 0 and uf.name.a == .55,
+    "the same RGB-only frame could not display a friendly NPC")
+uf.name.GetTextColor = function(self) return self.r, self.g, self.b end
+uf.name.alpha = .35
+uf.name:SetVertexColor(1, 1, 1, 1)
+nativeUpdate(uf)
+assert(uf.name.g == 1 and uf.name.r == 0 and uf.name.a == .35, "two RGB-only getters lost the name's opacity")
+uf.name.GetTextColor = function(self) return self.r, self.g, self.b, secret end
+uf.name:SetVertexColor(1, 1, 1, 1)
+local lastWrites = uf.name.writes
+nativeUpdate(uf)
+assert(uf.name.writes == lastWrites, "a restricted opacity was treated as missing")
 print("Name-only scope selection, color, combat deferral and restoration passed")

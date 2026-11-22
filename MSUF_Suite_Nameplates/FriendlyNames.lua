@@ -80,13 +80,26 @@ local function Writable(uf, region)
     return true
 end
 
+-- Some native name FontStrings return RGB without the optional alpha. A
+-- missing component is distinct from a restricted value on either client.
+local function ReadNameColor(label)
+    local r, g, b, a = label:GetVertexColor()
+    if not (S.Finite(r) and S.Finite(g) and S.Finite(b)) then return end
+    if not S.Finite(a) then
+        if not S.Public(a) or a ~= nil then return end
+        a = select(4, label:GetTextColor())
+        if S.Public(a) and a == nil then a = label:GetAlpha() end
+        if not S.Finite(a) then return end
+    end
+    return r, g, b, a
+end
+
 local function RestoreNameColor(uf, state)
     local label = state.label
     if not label then return true end
     if not Writable(uf, label) then return false end
-    local r, g, b, a = label:GetVertexColor()
-    if S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a)
-        and r == state.r and g == state.g and b == state.b and a == state.a then
+    local r, g, b, a = ReadNameColor(label)
+    if r and r == state.r and g == state.g and b == state.b and a == state.a then
         label:SetVertexColor(state.beforeR, state.beforeG, state.beforeB, state.beforeA)
     end
     state.label = nil
@@ -168,8 +181,8 @@ end
 local function ApplyNameColor(uf, state)
     local label = uf.name
     if not Writable(uf, label) then return end
-    local r, g, b, a = label:GetVertexColor()
-    if not (S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a)) then return end
+    local r, g, b, a = ReadNameColor(label)
+    if not r then return end
     if label == state.label and r == state.r and g == state.g and b == state.b then
         if a ~= state.a then state.beforeA, state.a = a, a end
         if state.appliedR == state.colorR and state.appliedG == state.colorG and state.appliedB == state.colorB then return end
@@ -179,10 +192,8 @@ local function ApplyNameColor(uf, state)
     end
     label:SetVertexColor(state.colorR, state.colorG, state.colorB, a)
     -- Native storage can round components. Compare against what it stored.
-    state.r, state.g, state.b, state.a = label:GetVertexColor()
-    if not (S.Finite(state.r) and S.Finite(state.g) and S.Finite(state.b) and S.Finite(state.a)) then
-        state.label = nil
-    end
+    state.r, state.g, state.b, state.a = ReadNameColor(label)
+    if not state.r then state.label = nil end
     state.appliedR, state.appliedG, state.appliedB = state.colorR, state.colorG, state.colorB
 end
 
