@@ -254,7 +254,16 @@ uf.name.GetTextColor = function(self) return self.r, self.g, self.b end
 uf.name.alpha = .35
 uf.name:SetVertexColor(1, 1, 1, 1)
 nativeUpdate(uf)
-assert(uf.name.g == 1 and uf.name.r == 0 and uf.name.a == .35, "two RGB-only getters lost the name's opacity")
+assert(uf.name.g == 1 and uf.name.r == 0 and uf.name.a == nil and uf.name.alpha == .35,
+    "two RGB-only getters copied the separate region opacity into the vertex tint")
+local previousWrites = uf.name.writes
+uf.name:SetAlpha(.4)
+nativeUpdate(uf)
+assert(uf.name.writes == previousWrites, "changing region opacity caused a redundant color write")
+Names.RestoreNameOnly(uf)
+assert(uf.name.r == 1 and uf.name.g == 1 and uf.name.b == 1 and uf.name.a == nil and uf.name.alpha == .4,
+    "RGB-only release lost the native white or applied the region opacity twice")
+assert(Names.ApplyNameOnly(uf, uf.unit))
 uf.name.GetTextColor = function(self) return self.r, self.g, self.b, secret end
 uf.name:SetVertexColor(1, 1, 1, 1)
 local lastWrites = uf.name.writes

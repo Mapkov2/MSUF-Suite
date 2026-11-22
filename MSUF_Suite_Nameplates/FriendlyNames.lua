@@ -88,8 +88,9 @@ local function ReadNameColor(label)
     if not S.Finite(a) then
         if not S.Public(a) or a ~= nil then return end
         a = select(4, label:GetTextColor())
-        if S.Public(a) and a == nil then a = label:GetAlpha() end
-        if not S.Finite(a) then return end
+        -- With two RGB-only getters the setter takes its optional alpha
+        -- as nil. The region's independent fade must stay on the region.
+        if not S.Public(a) or a ~= nil and not S.Finite(a) then return end
     end
     return r, g, b, a
 end
