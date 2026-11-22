@@ -858,6 +858,7 @@ class Extractor:
         self.dynamic = []          # (rel, line, sink, expression)
         self.changed = False
         self.seen = set()
+        self.active_call_projections = set()
         self.current = None
 
     # registration
@@ -1100,8 +1101,16 @@ class Extractor:
         self.seen.add(key)
         targets = self.call_targets_of(f, call)
         if not targets and re.fullmatch(r"[A-Za-z_]\w*", call.callee):
-            # A function held by a parameter or a local: its callers' functions.
-            self.resolve_name(RET(index, shape), f, call.callee, call.owner, sink, call.open)
+            # A local such as bar = bar() can otherwise grow a return projection
+            # on every revisit to this call site, evading the shape-based memo.
+            projection = (f.rel, call.open, index)
+            if projection in self.active_call_projections:
+                return
+            self.active_call_projections.add(projection)
+            try:
+                self.resolve_name(RET(index, shape), f, call.callee, call.owner, sink, call.open)
+            finally:
+                self.active_call_projections.remove(projection)
         for d in targets:
             self.apply_returns(d, index, shape, sink, f, call)
 
@@ -1605,7 +1614,7 @@ def english_problems(english):
 
 
 def proper_noun_like(english):
-    if english in {"MSUF Forever Glass", "MSUF Smooth v2"}:
+    if english in {"MSUF Forever Glass", "MSUF Smooth v2", "Visibility State Driver"}:
         return True
     stripped = re.sub(r"\|c[0-9a-fA-F]{8}|\|r|%[-+ #0]*\d*(?:\.\d+)?[a-zA-Z%]", " ", english)
     for word in re.findall(r"[A-Za-z][A-Za-z0-9']*", stripped):
