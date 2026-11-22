@@ -1,5 +1,24 @@
 # MSUF Suite Changelog
 
+## 0.1.35 Alpha - 2026-11-23
+
+GitHub prerelease for WoW Retail 12.1.5 and 12.1.7, and WoW Forever 1.60.1. Requires Midnight Simple Unit Frames.
+
+### Nameplates
+
+- Friendly and neutral NPC name-only colors now use Blizzard's original name text. The Suite preserves its opacity and restores native colors when a nameplate is reused or switches display mode.
+- Auto center aligns names over the unit in both Health bars and Name only. Updated target selection, name layout and the preview controls.
+- General now holds the shared appearance and native layout settings. Enemy and Friendly can choose stacking independently, and each nameplate category has its own target, focus and mouseover highlight patterns. Existing profiles carry their saved patterns forward.
+
+### Tooltips
+
+- Use the same tooltip visibility rules in combat, out of combat and in instances.
+- The tooltip detail key in Basics controls enabled IDs and requests enabled player details. WoW Forever now supports tooltip IDs and item counts, including separate bag and bank counts.
+
+### WoW Forever
+
+- The world map can show a party roster and the available positions of party members. The feature has its own switch under Quality of Life, Map & Travel.
+
 ## 0.1.34 Alpha - 2026-11-22
 
 Distributed through the CurseForge Beta channel for WoW Retail 12.1.5 and 12.1.7, and WoW Forever 1.60.1. Requires Midnight Simple Unit Frames.
