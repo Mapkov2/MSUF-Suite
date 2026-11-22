@@ -540,13 +540,18 @@ local function IsPrimaryBuild(tooltip, data)
 end
 
 local function NativePostCall(tooltip, data, kind)
-    if not active or not Safety.Public(tooltip) then return end
+    if not Safety.Public(tooltip) then return end
+    local updateVitals = kind == UNIT and Vitals and Vitals.Enabled and tooltip == GameTooltip
+    if not active and not updateVitals then return end
     local view = views[tooltip]
-    if not view then
+    if view or updateVitals then
+        if not IsPrimaryBuild(tooltip, data) then return end
+        if updateVitals then Safety.Dispatch(Vitals.Native, tooltip, data) end
+    else
         if not Safety.Public(data) then return end
         view = ComparisonView(tooltip, data)
-        if not view then return end
-    elseif not IsPrimaryBuild(tooltip, data) then return end
+    end
+    if not active or not view then return end
     view.ready, view.nativeKind, view.titleDirty = true, kind, true
     RetryIfLayoutMissing(view, Paint(view, true, nil, data))
     if NS.TooltipChrome and view.header.frame:IsShown() then NS.TooltipChrome.SettleBackdrop(tooltip) end
@@ -561,7 +566,6 @@ end
 
 local function RegisterNative(kind)
     TooltipDataProcessor.AddTooltipPostCall(kind, function(tooltip, data)
-        if kind == UNIT and Vitals and Vitals.Enabled then Safety.Dispatch(Vitals.Native, tooltip, data) end
         NativePostCall(tooltip, data, kind)
     end)
 end
