@@ -33,7 +33,7 @@ The layout includes centered cooldowns, native styled nameplates, a round minima
 
 ## Install
 
-Supported clients: **WoW Retail 12.1.5** and **WoW Forever 1.60.1**.
+Supported clients: **WoW Retail 12.1.5 and 12.1.7** and **WoW Forever 1.60.1**.
 
 1. Install **MSUF Suite** through the **CurseForge client** or **Wago client**. Choose **Beta** in CurseForge and Wago for this release. The Suite itself remains in Alpha.
 2. CurseForge installs **MSUF** automatically as a required dependency. In Wago, install **MSUF 6.5 (6.50)** as well.

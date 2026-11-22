@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
     options = scratch / "MSUF_Suite_Options/MSUF_Suite_Options_Mainline.toc"
     for path in (core, options):
         path.parent.mkdir(parents=True)
-    header = "## Version: 0.1-alpha\n## Interface: 120105,16001\n"
+    header = "## Version: 0.1-alpha\n## Interface: 120105,120107,16001\n"
     core.write_text(header + "## Dependencies: MidnightSimpleUnitFrames\n"
                     "## X-Curse-Project-ID: 1743628\n## X-Wago-ID: YK9xrV6L\n", encoding="utf-8")
     options.write_text(header + "## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options\n", encoding="utf-8")
@@ -72,7 +72,8 @@ with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
     files.append(locale_manifest.relative_to(scratch).as_posix())
     builder.validate_addons(scratch, files, "0.1-alpha")
     original = core.read_bytes()
-    for old, new in ((b"MidnightSimpleUnitFrames", b"OptionalHost"), (b"120105,16001", b"120105"),
+    for old, new in ((b"MidnightSimpleUnitFrames", b"OptionalHost"), (b"120105,120107,16001", b"120105,16001"),
+                     (b"120105,120107,16001", b"120105,120107"),
                      (b"0.1-alpha", b"0.1")):
         core.write_bytes(original.replace(old, new))
         rejects(lambda: builder.validate_addons(scratch, files, "0.1-alpha"), "Unsafe TOC passed: " + str(new))
@@ -114,11 +115,12 @@ with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
         for name, digest in manifest["files"].items():
             assert hashlib.sha256(package.read(name)).hexdigest() == digest, name
     curseforge = json.loads((first.parent / "CURSEFORGE_METADATA.json").read_text(encoding="utf-8"))
+    assert curseforge["gameVersionNames"] == ["12.1.5", "12.1.7", "1.60.1"]
     assert curseforge["relations"]["projects"] == [{"slug": "midnightsimpleunitframes", "projectID": 1384660,
                                                   "type": "requiredDependency"}]
     wago = json.loads((first.parent / "WAGO_METADATA.json").read_text(encoding="utf-8"))
     assert wago["stability"] == "alpha"
-    assert wago["supported_retail_patches"] == ["12.1.5"]
+    assert wago["supported_retail_patches"] == ["12.1.5", "12.1.7"]
     assert wago["supported_forever_patches"] == ["1.60.1"]
     client = builder.build(root, scratch / "client-beta", curseforge_client_beta=True)
     client_manifest = json.loads((client.parent / "RELEASE_MANIFEST.json").read_text(encoding="utf-8"))

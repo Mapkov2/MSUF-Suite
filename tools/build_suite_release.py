@@ -41,8 +41,9 @@ def validate_addons(root, files, version):
             raise ValueError(f"Mixed release version in {tocs[0]}")
         dependencies[addon] = [value.strip() for value in field(content, "Dependencies").split(",")]
         interfaces = {value.strip() for value in field(content, "Interface").split(",")}
-        if not {"120105", "16001"}.issubset(interfaces):
-            raise ValueError(f"Retail 12.1.5 or Forever interface is missing in {tocs[0]}")
+        missing = {"120105", "120107", "16001"} - interfaces
+        if missing:
+            raise ValueError(f"Missing release interfaces in {tocs[0]}: {', '.join(sorted(missing))}")
     if dependencies.get("MSUF_Suite") != ["MidnightSimpleUnitFrames"]:
         raise ValueError("MSUF must be the Suite core's required dependency")
     if "MidnightSimpleUnitFrames_Options" not in dependencies.get("MSUF_Suite_Options", []):
@@ -209,7 +210,7 @@ def build(root, output, curseforge_client_beta=False, release_channel="alpha"):
         raise ValueError("Latest changelog does not match the release version")
     requirements = ("**Alpha build. Requires Midnight Simple Unit Frames (MSUF); compatible with MSUF 6.5 "
                     "(release 6.50). CurseForge installs MSUF as a required dependency.**\n\n"
-                    "Supported clients: WoW Retail 12.1.5 and WoW Forever 1.60.1.\n")
+                    "Supported clients: WoW Retail 12.1.5 and 12.1.7, and WoW Forever 1.60.1.\n")
     notes = "# " + title + "\n\n" + requirements + "\n## " + entry + "\n"
     output.mkdir(parents=True, exist_ok=True)
     payload = {path: (root / path).read_bytes() for path in files if path.split("/")[0] in addons}
@@ -229,13 +230,13 @@ def build(root, output, curseforge_client_beta=False, release_channel="alpha"):
         "CURSEFORGE_METADATA.json": {
             "displayName": title + (" (CurseForge Client)" if curseforge_client_beta else ""),
             "releaseType": release_type, "changelogType": "markdown", "changelog": notes,
-            "gameVersionNames": ["12.1.5", "1.60.1"],
+            "gameVersionNames": ["12.1.5", "12.1.7", "1.60.1"],
             "relations": {"projects": [{"slug": "midnightsimpleunitframes", "projectID": 1384660,
                                          "type": "requiredDependency"}]},
         },
         "WAGO_METADATA.json": {
             "label": title, "stability": release_channel, "changelog": notes,
-            "supported_retail_patches": ["12.1.5"], "supported_forever_patches": ["1.60.1"],
+            "supported_retail_patches": ["12.1.5", "12.1.7"], "supported_forever_patches": ["1.60.1"],
         },
         "RELEASE_MANIFEST.json": {
             "version": version, "tag": "v" + version, "title": title, "githubPrerelease": False,
