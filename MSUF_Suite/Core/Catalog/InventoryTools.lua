@@ -40,6 +40,8 @@ Module("cheapestItem", "Delete cheapest item",
 NS.SuiteCatalog.cheapestItem.rules.keep.hidden = true
 NS.SuiteCatalog.cheapestItem.rules.quality.help = "Stacks above Poor quality always ask before they are deleted."
 Module("bankTransfer", "Bank transfer preview", "Review matching stacks and move one selected stack with each click while your bank is open.", false)
+Module("mailReceipts", "Recently sent mail",
+    "Keep a short local record of which items and gold you sent, and to whom.", false)
 Module("mailTemplates", "Mail templates",
     "Prepare mail for your own recorded characters with saved subjects and item quantities. Sending stays manual.", true, {
     B.String("templates", "Mail template data", "", 24000),

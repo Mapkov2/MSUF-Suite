@@ -171,6 +171,7 @@ B.Section("bags", "organisation", "Inventory organisation", {
     B.Bool("showEquipmentSetNames", "Show equipment set names"),
     B.Number("equipmentSetNameSize", "Equipment set name text size", 9, 7, 16),
     B.Bool("showUpgradeTrack", "Show upgrade track and rank"),
+    B.Bool("showPetFood", "Mark food your hunter pet can eat"),
     B.Number("upgradeTextSize", "Upgrade rank text size", 9, 7, 16),
     B.Bool("showFreeSlots", "Show the free slot count", true),
     B.Bool("showUpgradeMarker", "Mark items that beat what you wear"),
@@ -253,6 +254,11 @@ rules.combineReagentBag.requiresChoice = { key = "inventoryView", values = {
     [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,
 } }
 rules.category_ammo.hidden = not NS.Client.isForever
+rules.showPetFood.hidden = true
+if NS.Client.isForever and UnitClass and NS.Public then
+    local _, playerClass = UnitClass("player")
+    rules.showPetFood.hidden = not NS.Public(playerClass) or playerClass ~= "HUNTER"
+end
 rules.desaturateInactiveQuestItems.requiresChoice = { key = "inventoryView", values = {
     [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true, [NS.BagsView.SINGLE] = true,
 } }

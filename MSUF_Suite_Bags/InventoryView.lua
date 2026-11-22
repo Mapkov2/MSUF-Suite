@@ -26,6 +26,7 @@ local EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO
     "PLAYER_EQUIPMENT_CHANGED", "INVENTORY_SEARCH_UPDATE", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }
 local ITEM_EVENTS = { "QUEST_REMOVED", "ITEM_LOCK_CHANGED" }
 local RECENT_EVENTS = { "MAIL_INBOX_UPDATE", "TRADE_ACCEPT_UPDATE" }
+local PET_EVENT = "UNIT_PET"
 
 local function State()
     local state = S.ModuleState("bags")
@@ -228,6 +229,7 @@ local function OnEvent(_, event, value, success)
         Recent.Event(M.config, event, value, success)
     end
     if event == "MAIL_INBOX_UPDATE" or event == "TRADE_ACCEPT_UPDATE" then return end
+    if event == PET_EVENT and (not S.Public(value) or value ~= "player") then return end
     if event == "BAG_UPDATE" then
         Index.InvalidateBag(InventoryView.index, value)
         return
@@ -317,6 +319,11 @@ local function RegisterEvents()
             events:UnregisterEvent(event)
         end
     end
+    if M.config.showPetFood and P.InventoryDetails.PetFoodEnabled() then
+        events:RegisterUnitEvent(PET_EVENT, "player")
+    else
+        events:UnregisterEvent(PET_EVENT)
+    end
     if Recent then
         local wanted = Recent.Wanted(M.config)
         InventoryView.recentCountsActive = wanted
@@ -342,6 +349,7 @@ function InventoryView.Pause()
     end
     for i = 1, #ITEM_EVENTS do events:UnregisterEvent(ITEM_EVENTS[i]) end
     for _, event in ipairs(RECENT_EVENTS) do events:UnregisterEvent(event) end
+    events:UnregisterEvent(PET_EVENT)
 end
 
 function InventoryView.Resume()

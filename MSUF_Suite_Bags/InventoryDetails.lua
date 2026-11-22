@@ -57,6 +57,8 @@ local function ReadUpgrade(item)
     if maximum <= 0 or current < 0 or current > maximum then return end
     item.upgrade = tostring(current) .. "/" .. tostring(maximum)
     item.upgradeTrack = S.PublicText(data.trackString)
+    local cap = data.maxItemLevel
+    item.upgradeCap = S.Finite(cap) and cap > 0 and cap or nil
 end
 
 local CHARACTER = "[%z\1-\127\194-\244][\128-\191]*"
@@ -139,8 +141,20 @@ function Details.Index(index, query)
     if not NS.Client.isForever and c.showKeystoneDetails then
         keyLevel, keyMap = C_MythicPlus.GetOwnedKeystoneLevel(), C_MythicPlus.GetOwnedKeystoneChallengeMapID()
     end
+    local canEat = Details.PetFoodEnabled()
+    local foods = canEat and {}
     for i = 1, #index.items do
         local item = index.items[i]
+        item.petFood = nil
+        if foods and not item.bankType and item.itemID then
+            local edible = foods[item.itemID]
+            if edible == nil then
+                local value = canEat(item.itemID)
+                edible = S.Public(value) and value == true
+                foods[item.itemID] = edible
+            end
+            item.petFood = edible
+        end
         item.setNames = needsSets
             and Details.sets[item.bag * KEY + item.slot] or nil
         item.setName = item.setNames and item.setNames[1] or nil
@@ -160,6 +174,12 @@ function Details.Index(index, query)
             item.keyLevel, item.keyMap = keyLevel, MapTag(keyMap)
         end
     end
+end
+
+function Details.PetFoodEnabled()
+    if not NS.Client.isForever or M.config.showPetFood ~= true then return end
+    local api = NS.Safety.Field(_G, "C_PetInfo")
+    return NS.Safety.Field(api, "CanPetEatItem")
 end
 
 local function Label(button, point, x, y)
@@ -185,7 +205,11 @@ local function Tooltip(tooltip, data)
         end
         if item.upgrade and M.config.showUpgradeTrack then
             tooltip:AddLine((item.upgradeTrack and item.upgradeTrack .. " " or "") .. item.upgrade, 0.8, 0.8, 0.8)
+            if item.upgradeCap then
+                tooltip:AddLine(S.Text("Maximum item level: %d"):format(item.upgradeCap), .8, .8, .8)
+            end
         end
+        if M.config.showPetFood and item.petFood then tooltip:AddLine(S.Text("Your pet can eat this"), .6, 1, .6) end
     end
     local reagent = reagentMarkers[owner]
     if reagent and reagent:IsShown() then tooltip:AddLine(S.Text("Stored in the reagent bag"), .8, .8, .8) end
@@ -234,13 +258,22 @@ local function PaintDetails(button, item, font)
         if better or Details.markers[button] then PaintMarker(button, better) end
     end
     local record = Details.overlays[button]
-    if not record and not name and not upgrade and not keyLevel then return end
+    local petFood = c.showPetFood and item.petFood
+    if not record and not name and not upgrade and not keyLevel and not petFood then return end
     if not record then
         record = { name = Label(button, "BOTTOM", 0, 1), upgrade = Label(button, "TOPLEFT", 0, -13),
             keyLevel = Label(button, "CENTER", 0, 2), keyMap = Label(button, "BOTTOM", 0, 1) }
         Details.overlays[button] = record
     end
     record.item = item
+    if petFood and not record.petFood then
+        local icon = S.CreateTexture(button, nil, "OVERLAY", nil, 6)
+        icon:SetSize(13, 13)
+        icon:SetPoint("TOPRIGHT", -1, -1)
+        icon:SetAtlas("UI-PetHappiness")
+        record.petFood = icon
+    end
+    if record.petFood then record.petFood:SetShown(petFood == true) end
     PaintText(record.name, name, font, c.equipmentSetNameSize)
     PaintText(record.upgrade, upgrade, font, c.upgradeTextSize)
     PaintText(record.keyLevel, keyLevel and tostring(keyLevel), font, c.keystoneLevelSize)
@@ -292,6 +325,7 @@ function Details.Hide()
         record.upgrade:Hide()
         record.keyLevel:Hide()
         record.keyMap:Hide()
+        if record.petFood then record.petFood:Hide() end
         record.item = nil
     end
     Details.HideMarkers()

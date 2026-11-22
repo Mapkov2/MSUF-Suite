@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local Data, Lists, M = S.InventoryData, NS.InventoryLists, { merchantPreviewOwner = {} }
+local Purchase = P.RestockPurchase
 local IN_COMBAT = { inCombat = true }
 local LIVE_EVENTS = { "MERCHANT_UPDATE", "MERCHANT_CLOSED", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_REGEN_DISABLED" }
 local NO_OFFERS = {}
@@ -34,7 +35,7 @@ function M:Edit(itemID)
 end
 
 local function MerchantOpen(self)
-    if not NS.Client.isForever or NS.InCombat() or self.active == false or self.config.merchantPreview == false then return false end
+    if NS.InCombat() or self.active == false or self.config.merchantPreview == false then return false end
     local frame = MerchantFrame
     return frame and not NS.Safety.IsForbidden(frame) and frame:IsShown()
         and S.Finite(frame.selectedTab) and frame.selectedTab == 1
@@ -43,7 +44,7 @@ end
 local function TargetQuantities(self)
     local targets = Lists.Quantities(self.config.targets) or {}
     local config = S.Config("dataTexts")
-    if config and (config.ammoWarning or 0) > 0 then
+    if NS.Client.isForever and config and (config.ammoWarning or 0) > 0 then
         local slot = C_PaperDollInfo.GetInventorySlotInfo("AmmoSlot")
         local id = S.Finite(slot) and GetInventoryItemID("player", slot)
         if S.Finite(id) and id > 0 then
@@ -86,7 +87,7 @@ local function MerchantRows(self)
             local detail = price and S.Text("%d per pack · %s", true):format(offer.stackCount, S.MoneyText(price))
                 or S.Text("%d per pack · see merchant offer", true):format(offer.stackCount)
             rows[#rows + 1] = { key = index, itemID = id, label = S.Text("%s — missing %d"):format(name, missing),
-                detail = detail }
+                detail = detail, name = name, missing = missing, goldOffer = price and price > 0 }
         end
     end
     return rows
@@ -94,17 +95,29 @@ end
 
 local function OpenMerchant(self)
     if not MerchantOpen(self) then return end
+    local help = S.Text("Use the merchant window to buy items.")
+    for _, row in ipairs(self.merchantRows or NO_OFFERS) do
+        if row.goldOffer then
+            help = S.Text("Select a gold-priced item to buy the missing amount. Bundle sizes can round the quantity up.")
+            break
+        end
+    end
     S.ToolListWindow.Open(self.merchantPreviewOwner, {
         title = "Missing stock at this merchant", rows = function() return self.merchantRows or NO_OFFERS end,
         valid = function() return MerchantOpen(self) end,
         empty = "This merchant has no items you need from your stock targets.",
-        help = "Use the merchant window to buy items.",
-        actions = { { label = "Back", run = function() self:Open() end } },
+        help = help,
+        actions = {
+            { label = "Buy missing stock", enabled = function(_, row) return Purchase and Purchase.Available(self, row) end,
+                run = function(_, row) Purchase.Confirm(self, row) end },
+            { label = "Back", run = function() self:Open() end },
+        },
     })
 end
 
 local function HideMerchant(self)
     self.merchantRows = nil
+    if Purchase then Purchase.Stop(self) end
     if self.merchantBadge then self.merchantBadge:Hide() end
     S.ToolListWindow.Close(self.merchantPreviewOwner)
 end
@@ -162,7 +175,7 @@ function M:Open()
 end
 function M:Refresh()
     if NS.InCombat() then return end
-    if self.context and self.active and NS.Client.isForever then
+    if self.context and self.active then
         if self.config.merchantPreview == false then
             self.context:RemoveEvent("MERCHANT_SHOW")
             self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
@@ -177,6 +190,7 @@ function M:Refresh()
 end
 local function BagsChanged(self, event)
     if NS.InCombat(event) then return end
+    if Purchase then Purchase.Delivered(self) end
     S.ToolListWindow.Refresh(self)
     if MerchantOpen(self) then
         PaintMerchant(self)
@@ -185,10 +199,8 @@ local function BagsChanged(self, event)
 end
 function M:Enable()
     self.context:Event("BAG_UPDATE_DELAYED", BagsChanged)
-    if NS.Client.isForever then
-        self.context:Callback("MerchantFrame.MerchantTabShow", MerchantTabChanged)
-        self.context:Callback("MerchantFrame.BuyBackTabShow", MerchantTabChanged)
-    end
+    self.context:Callback("MerchantFrame.MerchantTabShow", MerchantTabChanged)
+    self.context:Callback("MerchantFrame.BuyBackTabShow", MerchantTabChanged)
     self:Refresh()
 end
 function M:Disable()
