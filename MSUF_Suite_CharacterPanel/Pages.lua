@@ -40,12 +40,16 @@ Pages.Events = {
     statistics = { "CRITERIA_UPDATE" },
 }
 
-local reputationDetailEvents = { unpack(Pages.Events.reputation) }
+local reputationEvents = { unpack(Pages.Events.reputation) }
+reputationEvents[#reputationEvents + 1] = "FACTION_STANDING_CHANGED"
+local reputationDetailEvents = { unpack(reputationEvents) }
 reputationDetailEvents[#reputationDetailEvents + 1] = "QUEST_TURNED_IN"
 local defaultReputationKey = Reputation.OptionsKey()
 
 function Pages.ReportEvents(tab, config)
-    if tab == "reputation" and Reputation.OptionsKey(config) ~= defaultReputationKey then return reputationDetailEvents end
+    if tab == "reputation" then
+        return Reputation.OptionsKey(config) ~= defaultReputationKey and reputationDetailEvents or reputationEvents
+    end
     return Pages.Events[tab]
 end
 
@@ -506,11 +510,16 @@ function Pages.SyncCustomEvents(plan, combat, setEvents)
     setEvents(plan.combatOptionalEvents, not combat, true)
 end
 
-function Pages.InvalidateCustom(plan, event)
+function Pages.InvalidateCustom(plan, event, search, id)
     if not plan then return end
     if event then
         local targets = plan.dataEvents[event]
-        if targets then for _, section in ipairs(targets) do section.stale = true end end
+        if targets then
+            for _, section in ipairs(targets) do
+                if section ~= plan.data.reputation or not search or not search.catalog
+                    or NS.ReputationList.Update(search.catalog, event, id) then section.stale = true end
+            end
+        end
     else
         for _, section in pairs(plan.data) do section.stale = true end
     end
@@ -543,6 +552,7 @@ local function ReadCustomData(plan, state, combat, config)
         local attributes, gear = plan.data.attributes, plan.data.gear
         if attributes then attributes.stale = true end
         if gear then gear.stale = true end
+        if not combat and state.searchState and plan.data.reputation then plan.data.reputation.stale = true end
     end
     for domain, section in pairs(plan.data) do
         if not state or section.stale then
@@ -559,6 +569,15 @@ local function ReadCustomData(plan, state, combat, config)
                         wipe(value)
                         Pages.EquipmentSummary(value, state.gear)
                         NS.Gear.EquipmentList(value, state.gear)
+                    elseif domain == "reputation" and state.searchState then
+                        if not combat then
+                            local search = state.searchState
+                            search.catalog = search.catalog or {}
+                            Pages.Read(domain, value, config, search.catalog)
+                        elseif #value == 0 then
+                            -- First open in combat uses the same visible rows as an ordinary report.
+                            Pages.Read(domain, value, config)
+                        end
                     else
                         Pages.Read(domain, value, config)
                     end
@@ -625,22 +644,29 @@ function Pages.Custom(groups, plan, state, combat, config)
     return Finish(buffer, groups)
 end
 
-local function ReadReputation(buffer, config)
-    local group
+local function ReadReputation(buffer, config, catalog)
+    local group, parent
     local sex = Number(UnitSex("player")) or false
     local showBars, valueMode, goal = Reputation.Options(config)
-    for index = 1, Number(C_Reputation.GetNumFactions()) or 0 do
-        local info = C_Reputation.GetFactionDataByIndex(index)
+    local rows = catalog and NS.ReputationList.Rows(catalog)
+    for index = 1, rows and #rows or Number(C_Reputation.GetNumFactions()) or 0 do
+        local info = rows and rows[index] or C_Reputation.GetFactionDataByIndex(index)
         local name = IsTable(info) and String(info.name)
         if name then
             local header = Flag(info.isHeader)
-            if header then group = Group(buffer, name, index, Flag(info.isCollapsed), Flag(info.isChild) and 1 or 0) end
+            if header then
+                local child = Flag(info.isChild)
+                group = Group(buffer, name, index, not rows and Flag(info.isCollapsed), child and 1 or 0)
+                if not child then parent = group end
+            elseif parent and Public(info.isChild) and info.isChild == false then
+                group = parent
+            end
             if not header or Flag(info.isHeaderWithRep) then
                 group = group or Group(buffer, Text("Reputation"))
                 local row = Row(group, header and Text("Reputation") or name)
                 local id = Number(info.factionID)
                 if id and id > 0 then row.action, row.factionID, row.factionName = "reputation", id, name end
-                Reputation.Populate(row, info, sex, showBars, valueMode, goal)
+                Reputation.Populate(row, catalog and catalog.progress[index] or info, sex, showBars, valueMode, goal)
             end
         end
     end
@@ -771,10 +797,10 @@ local readers = {
     skills = Forever and ReadSkills or ReadProfessions, pvp = Forever and ReadPvP or ReadHonor,
 }
 
-function Pages.Read(tab, groups, config)
+function Pages.Read(tab, groups, config, catalog)
     local buffer = Buffer(groups)
     local reader = readers[tab]
-    if reader then reader(buffer, config) end
+    if reader then reader(buffer, config, catalog) end
     if buffer.count == 0 then Group(buffer, Text("No data available")) end
     return Finish(buffer, groups)
 end

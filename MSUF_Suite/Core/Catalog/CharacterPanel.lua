@@ -211,6 +211,26 @@ function Header.SetHomeTab(config, id)
     if config.homeTab ~= id and Header.TabVisible(config, PLAYER, id) then return { homeTab = id } end
 end
 
+-- Reputation already has its own search. Other player tabs opt in by stable ID.
+function Header.TabSearchEnabled(config, id)
+    local ids = config.searchTabs
+    return type(ids) == "string" and type(id) == "string" and id ~= "reputation"
+        and ("," .. ids .. ","):find("," .. id .. ",", 1, true) ~= nil
+end
+
+function Header.SearchTabs(config, changed, enabled, custom)
+    local result = {}
+    local function Include(tab)
+        local id = tab.id
+        if id ~= "reputation" and ((id == changed and enabled) or (id ~= changed and Header.TabSearchEnabled(config, id))) then
+            result[#result + 1] = id
+        end
+    end
+    for _, tab in ipairs(tabsWithAttributes) do Include(tab) end
+    for _, tab in ipairs(custom or CustomTabs.Get(config)) do Include(tab) end
+    return table.concat(result, ",")
+end
+
 function Header.WithoutCustomTab(config, id, encoded)
     local state = ReadVisibility(config, PLAYER)
     if not CustomTabs.Find(config, id) or #state.visible == 1 or type(encoded) ~= "string" or encoded == config.customTabs then
@@ -222,6 +242,7 @@ function Header.WithoutCustomTab(config, id, encoded)
         if key ~= id then ids[#ids + 1] = key end
     end
     local patch = { customTabs = encoded, tabOrder = table.concat(ids, ","), homeTab = ChooseHome(state, config.homeTab, id) }
+    if Header.TabSearchEnabled(config, id) then patch.searchTabs = Header.SearchTabs(config, id, false) end
     Bindings.ClearTab(config, id, patch)
     return patch
 end
@@ -248,6 +269,7 @@ end
 
 local function PrepareConfig(config)
     CustomTabs.Normalize(config)
+    if config.searchTabs ~= nil then config.searchTabs = Header.SearchTabs(config) end
     Bindings.Normalize(config)
     for kind, spec in pairs(visibilitySpecs) do
         if config[spec.key] ~= nil then
@@ -281,6 +303,8 @@ Build.Section("reputationBar", "reputation_bar", "Reputation bar", {
 local tabOrder = Build.String("tabOrder", "Tab order", "", 256)
 local customTabs = Build.String("customTabs", "Custom tabs", "", CustomTabs.MaxBytes)
 customTabs.hidden = true
+local searchTabs = Build.String("searchTabs", "Search", "", 256)
+searchTabs.hidden = true
 local inspectTabOrder = Build.String("inspectTabOrder", "Tab order", "", 128)
 local headerOrder = Build.String("headerOrder", "Header field order", "", 128)
 local hiddenTabs = Build.String("hiddenTabs", "Hidden tabs", "", HIDDEN_LIMIT)
@@ -295,7 +319,7 @@ Build.Section(ID, "appearance", "Appearance", {
     Build.Bool("showFullStats", "Show all stats in Overview", true),
     Build.Bool("showEquipmentSetsInOverview", "Show equipment sets in Overview", true),
     Build.Bool("showAttributesTab", "Show Attributes tab", false),
-    tabOrder, inspectTabOrder, headerOrder, customTabs, hiddenTabs, hiddenInspectTabs, homeTab,
+    tabOrder, inspectTabOrder, headerOrder, customTabs, searchTabs, hiddenTabs, hiddenInspectTabs, homeTab,
 })
 
 Bindings.RegisterSettings(Build, ID)

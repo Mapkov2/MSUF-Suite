@@ -141,8 +141,14 @@ function Preview:Paint(config, mode, order, tab, overrides, width)
     local reputationKey = mode == OWN and Pages.ReputationKey(tab, config, definition and Pages.CustomPlan(definition))
     local switched = self.mode ~= mode or self.tab ~= tab
     if switched then self.slot = nil end
+    local showSearch = mode == OWN and Suite.CharacterHeader.TabSearchEnabled(config, tab) and not Host.InCombat()
+    local searchChanged = showSearch ~= (view.tabSearch ~= nil) or view.tabSearch and view.tabSearch.config ~= config
+    if switched or searchChanged then
+        if view.reputationSearch then NS.ReputationSearch.Hide(view) end
+        view.tabSearch = showSearch and { tab = tab, config = config } or nil
+    end
     if switched or self.definition ~= definition or self.fullStats ~= fullStats or self.combat ~= combat
-        or self.showSets ~= showSets
+        or self.showSets ~= showSets or searchChanged
         or self.reputationKey ~= reputationKey or self.reopen then
         self.mode, self.tab, self.definition, self.fullStats, self.combat = mode, tab, definition, fullStats, combat
         self.config, self.reputationKey, self.showSets = config, reputationKey, showSets

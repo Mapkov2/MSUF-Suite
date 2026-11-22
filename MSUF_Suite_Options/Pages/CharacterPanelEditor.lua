@@ -440,6 +440,9 @@ local function OpenTabActions(ui, anchor)
     local claim = TabClaim(ui, anchor)
     P.ContextMenu(anchor, function(_, menu)
         if claim.kind == TAB then
+            if claim.selected ~= "reputation" then
+                P.CharacterCustomTabs.SearchOption(menu, claim.config, claim.selected, function() return CurrentTabs(ui, claim) end)
+            end
             menu:CreateButton(P.Tr("Key bindings"), function()
                 if CurrentTabs(ui, claim) then P.CharacterPanelBindings.Open(ui.ctx, claim.selected) end
             end)

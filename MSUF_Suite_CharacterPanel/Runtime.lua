@@ -63,6 +63,9 @@ end
 
 local function OnClose()
     if not Module.kind then return end
+    if Module.view.reputationSearch then NS.ReputationSearch.Hide(Module.view) end
+    Module.view.tabSearch, Module.searchState = nil, nil
+    if Module.reputations then Module.reputations.query = "" end
     if Module.view.nativeLayout then Module.layoutGeometry.Present(Module.layoutRoot, nil) end
     local restoreCharacter = Module.kind == INSPECT and Module.running and not Module.replacing and Routing.Shown()
     Routing.ReleaseGearClick()
@@ -222,6 +225,8 @@ local function Paint(event)
             if #details == 0 and tab == EQUIPMENT and Module.reader then Gear.EquipmentList(report, model) end
             view:ShowGroups(report, combat)
         end
+    elseif tab == REPUTATION then
+        NS.ReputationList.Paint(Module, combat)
     elseif tab == ATTRIBUTES then
         view:ShowGroups(Pages.Overview(groups, true, combat), combat)
     elseif tab == COMPARE then
@@ -346,8 +351,11 @@ function Dirty(_, event, first, success)
     elseif event == "EQUIPMENT_SETS_CHANGED" or event == "EQUIPMENT_SWAP_FINISHED" or event == "BAG_UPDATE_DELAYED" then
         Module.dirtySets = true
     end
-    if Module.pageEvents[event] then Module.dirtyPage = true end
-    Pages.InvalidateCustom(Module.custom, event)
+    if Module.pageEvents[event] then
+        if Module.tab == REPUTATION and Module.reputations and not NS.ReputationList.Update(Module.reputations, event, first) then return end
+        Module.dirtyPage = true
+    end
+    Pages.InvalidateCustom(Module.custom, event, Module.view.tabSearch, first)
     Module.paintJob:Request()
 end
 
@@ -376,6 +384,13 @@ local function SelectTab(tab, preserveSlot, showAudit)
     HideTooltip()
     local kind, config = TAB_KIND[Module.kind], Module.config
     if not CharacterHeader.TabVisible(config, kind, tab) then tab = CharacterHeader.HomeTab(config, kind) end
+    local search = Module.searchState
+    if Module.kind == PLAYER and CharacterHeader.TabSearchEnabled(config, tab) then
+        if not search or search.tab ~= tab or search.config ~= config then search = { tab = tab, config = config, query = "" } end
+    else search = nil end
+    if Module.view.reputationSearch and (tab ~= Module.tab or search ~= Module.searchState) then NS.ReputationSearch.Hide(Module.view) end
+    Module.searchState, Module.view.tabSearch = search, not Host.InCombat() and search or nil
+    if Module.reputations then Module.reputations.updateOnly = false end
     local definition = Module.kind == PLAYER and tab:match("^custom%d+$") and CharacterTabs.Find(config, tab)
     Module.customDefinition, Module.custom = definition, definition and Pages.CustomPlan(definition, true) or nil
     if not preserveSlot or tab ~= Module.tab then
@@ -395,7 +410,9 @@ local function SelectTab(tab, preserveSlot, showAudit)
         else
             local attributes = tab == ATTRIBUTES
             Subscribe(HEADER_EVENTS, attributes)
-            Subscribe(attributes and ATTRIBUTE_EVENTS or Pages.ReportEvents(tab, config), true)
+            if tab ~= REPUTATION or not Host.InCombat() then
+                Subscribe(attributes and ATTRIBUTE_EVENTS or Pages.ReportEvents(tab, config), true)
+            end
         end
         Module.fullStats = tab == ATTRIBUTES or Module.config.showFullStats ~= false
         SyncHeaderEvents()
@@ -458,6 +475,7 @@ end
 
 local function GroupClick(index)
     if Module.kind ~= PLAYER then return end
+    if Module.tab == REPUTATION then return NS.ReputationList.Toggle(Module, index) end
     if index == "equipmentSets" then
         if Host.InCombat() or Module.setManager then return end
         if Module.tab ~= EQUIPMENT and CharacterHeader.TabVisible(Module.config, "tab", EQUIPMENT) then return SelectTab(EQUIPMENT) end
@@ -537,6 +555,8 @@ local function RefreshVisibleAppearance()
             local tab, config = Module.tab, Module.config
             if previousView ~= view.characterView or not CharacterHeader.TabVisible(config, TAB_KIND[Module.kind], tab)
                 or Module.customDefinition and CharacterTabs.Find(config, tab) ~= Module.customDefinition
+                or Module.kind == PLAYER and (Module.searchState ~= nil) ~= CharacterHeader.TabSearchEnabled(config, tab)
+                or Module.searchState and Module.searchState.config ~= config
                 or Module.kind == PLAYER and tab == OVERVIEW and (Module.fullStats ~= (config.showFullStats ~= false)
                     or Module.showSets ~= (config.showEquipmentSetsInOverview ~= false))
                 or Module.reputationKey ~= Pages.ReputationKey(tab, config, Module.custom) then
@@ -717,6 +737,12 @@ local function RepaintAfterCombat()
     if Module.guid == "player" then Module.guid = Identity("player") or Module.guid end
     Module.gearStale, Module.durabilityStale = true, true
     local tab = Module.tab
+    Module.view.tabSearch = Module.searchState
+    if Module.searchState and Module.searchState.catalog then Module.searchState.catalog.updateOnly = false end
+    if tab == REPUTATION then
+        Subscribe(Pages.ReportEvents(tab, Module.config), true)
+        if Module.reputations then Module.reputations.updateOnly = false end
+    end
     if tab == OVERVIEW or tab == EQUIPMENT or Module.custom then Gear.SyncPlayer(Module) end
     ReadHeaderExtras()
     Header()
@@ -749,6 +775,16 @@ local function EnterCombat(_, event)
     if Module.kind == INSPECT then
         Close()
     elseif Module.kind == PLAYER then
+        Module.view.tabSearch = nil
+        if Module.view.reputationSearch then NS.ReputationSearch.Hide(Module.view) end
+        if Module.tab == REPUTATION then
+            SetEvents(Pages.ReportEvents(REPUTATION, Module.config), false)
+            NS.ReputationList.Paint(Module, true)
+        elseif Module.searchState and Module.searchState.groups and Module.searchState.query ~= ""
+            and not Module.custom and Module.tab ~= ATTRIBUTES
+            and Module.tab ~= OVERVIEW and Module.tab ~= EQUIPMENT then
+            Module.view:ShowGroups(Module.searchState.groups)
+        end
         Module.view:CancelWindowGestures()
         WindowAction("moveStop")
         WindowAction("scaleStop")

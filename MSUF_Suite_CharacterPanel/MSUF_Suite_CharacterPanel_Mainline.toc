@@ -13,6 +13,8 @@ Equipment.lua
 GearActions.lua
 Stats.lua
 Reputation.lua
+ReputationList.lua
+ReputationSearch.lua
 ReputationBar.lua
 Pages.lua
 ModelControls.lua

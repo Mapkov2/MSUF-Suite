@@ -672,9 +672,23 @@ function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups,
     Visible(self.plate, not classic)
     local detailsShown = selectedSlot ~= nil and detailGroups ~= nil and #detailGroups > 0
     local railGroups = detailsShown and detailGroups or groups or GROUP_EMPTY
-    self.combatRail = GroupLayout.ShowList(self.rail, self.combatRail, railGroups, reset, combat, Visible, SET_STYLE)
+    self:ShowRailGroups(railGroups, reset, combat)
     Visible(self.dismiss, detailsShown)
     Text(self.hint, self.gearHint)
+end
+
+local function SearchGroups(view, groups, state, rail)
+    if view.setManager then
+        NS.ReputationSearch.Hide(view)
+        return groups
+    end
+    state.groups, state.rail = groups or GROUP_EMPTY, rail
+    return NS.ReputationSearch.Show(view, state, SET_STYLE)
+end
+
+function View:ShowRailGroups(groups, reset, combat)
+    if self.tabSearch and not combat then groups = SearchGroups(self, groups, self.tabSearch, true) end
+    self.combatRail = GroupLayout.ShowList(self.rail, self.combatRail, groups, reset, combat, Visible, SET_STYLE)
 end
 
 function View:RefreshInspectSummary(groups, relayout)
@@ -684,13 +698,18 @@ function View:RefreshInspectSummary(groups, relayout)
     PaintList(rail, NS.Number(rail.scroll:GetVerticalScroll()) or 0)
 end
 
-function View:ShowGroups(groups, combat)
-    local reset = self.contentTab ~= self.tab
+function View:ShowGroups(groups, combat, search, resetScroll)
+    local reset = resetScroll or self.contentTab ~= self.tab
+    search = search or self.tabSearch
+    if search and not combat then groups = SearchGroups(self, groups, search, false) end
     self.contentTab, self.detailSlot = self.tab, nil
     if self.gear then Visible(self.gear, false) end
     if self.reportCover then Visible(self.reportCover, true) end
     Window.SyncGlass(self)
-    self.combatReport = GroupLayout.ShowList(self.report, self.combatReport, groups or GROUP_EMPTY, reset, combat, Visible, SET_STYLE)
+    -- Forever's hosted report owns its slider. The cached rows can still be
+    -- scrolled in combat without running faction queries or native scroll scripts.
+    local fixed = combat and not (self.tab == "reputation" and self.report.slider)
+    self.combatReport = GroupLayout.ShowList(self.report, self.combatReport, groups or GROUP_EMPTY, reset, fixed, Visible, SET_STYLE)
     Text(self.hint, "")
 end
 

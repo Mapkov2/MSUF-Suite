@@ -126,7 +126,15 @@ local function Duplicate(self, claim)
     local tabs, tab = Editable(self, claim)
     if not tab or #tabs >= Model.TabLimit then return end
     local id = Model.Duplicate(tabs, tab.id)
-    if id then Save(self, claim, tabs, id) end
+    if not id then return end
+    if Header.TabSearchEnabled(claim.config, tab.id) then
+        local encoded = Model.Encode(tabs)
+        if encoded and P.SetMany(ID, { customTabs = encoded, searchTabs = Header.SearchTabs(claim.config, id, true, tabs) }) then
+            self.changed(id)
+        end
+    else
+        Save(self, claim, tabs, id)
+    end
 end
 
 local function DeleteTab(self, claim)
@@ -140,10 +148,17 @@ local function DeleteTab(self, claim)
     end)
 end
 
+function Content.SearchOption(menu, config, id, current)
+    menu:CreateCheckbox(Tr("Search"), function() return Header.TabSearchEnabled(config, id) end, function()
+        if current() then P.Set(ID, "searchTabs", Header.SearchTabs(config, id, not Header.TabSearchEnabled(config, id))) end
+    end)
+end
+
 local function TabActions(self, anchor)
     if P.Combat() then return end
     local claim = Claim(self, anchor)
     P.ContextMenu(anchor, function(_, menu)
+        Content.SearchOption(menu, claim.config, claim.id, function() return Current(self, claim) end)
         menu:CreateButton(Tr("Key bindings"), function()
             if Current(self, claim) then P.CharacterPanelBindings.Open(self.ctx, claim.id) end
         end)

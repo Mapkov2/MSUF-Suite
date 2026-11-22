@@ -151,6 +151,7 @@ local function ToggleWar(id)
             return
         end
     end
+    NS.ReputationList.ToggleHiddenWar(id)
 end
 
 function Reputation.AddWarOption(root, id)
