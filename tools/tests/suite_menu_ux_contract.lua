@@ -232,6 +232,69 @@ do
     c.items, C_Item = previous, items
 end
 assert(focused == 6, "preview links did not focus their exact sections")
+-- Damage Meter master switches are available from collapsed sections and
+-- keep their catalog search/reset identity after the body is built.
+do
+    local config = P.S.Config("damageMeter")
+    local wasEnabled = config.enabled
+    config.enabled = true
+    local ctx, ui = Build("suite_damageMeter", 340)
+    local expected = {
+        window = "headerVisible", timer = "combatTime", iconBorder = "iconBorder", button_target = "targetSelector",
+        namesFont = "showNames", valuesFont = "showValues", headerFont = "showTitle",
+        detailsFont = "detailsFontCustom", timerFont = "timerFontCustom",
+    }
+    local cold = {}
+    if not P.SearchRows then
+        M.RegisterSearchProvider = function() return true end
+        Chunk(root .. "/MSUF_Suite_Options/Menu/SearchProvider.lua")("MSUF_Suite_Options", P)
+        Chunk(root .. "/MSUF_Suite_Options/Menu/Search.lua")("MSUF_Suite_Options", P)
+    end
+    for _, row in ipairs(P.SearchRows()) do cold[row.settingKey or ""] = row.sectionId end
+    for section, key in pairs(expected) do
+        local sectionId = "suite_damageMeter_" .. section
+        local body = assert(ui.sections[sectionId])
+        local entry = HM.GetSectionEntry(body)
+        local switch = Control(ctx, "." .. key)
+        local identity = "msufsuite.damageMeter." .. key
+        assert(not body._uxBuilt and entry.featureSwitch == switch and switch.parent == entry.header,
+            key .. " was missing from the collapsed accordion header")
+        assert(rawget(body, "summary") ~= nil, key .. " did not reserve header space for the switch and actions")
+        assert(switch.meta.settingKey == identity and cold[identity] == sectionId, key .. " lost its exact search target")
+        assert(HM.GetSearchTargetPrepare(switch)() and ui.selected == body._suiteWorkspaceTab,
+            key .. " search left the header hidden")
+    end
+    assert(not rawget(ui.sections.suite_damageMeter_button_session, "headerSwitch")
+        and not rawget(ui.sections.suite_damageMeter_button_type, "headerSwitch"),
+        "Fight and Meter must not get separate controls for the shared selector preference")
+    Ensure(ctx)
+    for _, widget in ipairs(ctx.widgets) do
+        for _, key in pairs(expected) do
+            if widget.meta and widget.meta.settingKey == "msufsuite.damageMeter." .. key then
+                assert(widget == Control(ctx, "." .. key), key .. " also appeared in the section body")
+            end
+        end
+    end
+    local timer = Control(ctx, ".combatTime")
+    local headerTimer, floatingTimer = Control(ctx, ".headerTimer"), Control(ctx, ".timer")
+    local wasHeaderTimer, wasFloatingTimer, wasCombatTime = config.headerTimer, config.timer, config.combatTime
+    local combat = P.Combat
+    P.Combat = function() return true end
+    M.RequestRefresh()
+    assert(not timer.enabled)
+    timer.set(not wasCombatTime)
+    assert(config.combatTime == wasCombatTime, "timer header wrote in combat")
+    P.Combat = combat
+    M.RequestRefresh()
+    timer.set(false)
+    assert(timer.enabled and not config.combatTime and not headerTimer.enabled and not floatingTimer.enabled,
+        "disabled master did not lock the timer choices")
+    assert(config.headerTimer == wasHeaderTimer and config.timer == wasFloatingTimer, "master switch changed display preferences")
+    assert(ui.sections.suite_damageMeter_timer._msufSuiteSectionReset())
+    assert(config.combatTime == P.catalog.damageMeter.rules.combatTime.default, "section reset skipped the header switch")
+    config.enabled, config.combatTime = wasEnabled, wasCombatTime
+    config.headerTimer, config.timer = wasHeaderTimer, wasFloatingTimer
+end
 -- A cold combat open waits for the native combat-end event. The real LoD
 -- renderer is the only drawing provider, including after cached page reuse.
 do

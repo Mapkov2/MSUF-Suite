@@ -30,15 +30,20 @@ KNOWN_CLIENTS = {
     "120007": ("12.0.7", "12.0.7"),
     "120100": ("12.1.0", "12.1.0"),
     "120105": ("12.1.5", "12.1.5"),
+    "120107": ("12.1.7", "fbb18ce126862cedee284308dec404ff93fa27b1"),
     "16001": ("Forever", "upstream/forever"),
 }
 ROOT = Path(__file__).resolve().parents[2]
 CLIENTS = {}
 OUT = Path(__file__).with_name("client_api_snapshot.json")
 DOCS = "Interface/AddOns/Blizzard_APIDocumentationGenerated"
-FLAVORS = ("Classic", "Mists", "Cata", "Wrath", "Vanilla", "TBC")
-NOT_OTHER_FLAVORS = [":!*/%s/*" % f for f in FLAVORS] + [":!*_%s.*" % f for f in FLAVORS]
-LUA = ["Interface/*.lua", ":!" + DOCS + "/*"] + NOT_OTHER_FLAVORS
+OTHER_FLAVORS = ("Classic", "Mists", "Cata", "Wrath", "Vanilla", "TBC", "WoWHack", "WoWLabs")
+
+
+def framexml_exclusions(client):
+    # Unified trees may ship Camelot's sources alongside Standard's.
+    flavors = OTHER_FLAVORS if client == "Forever" else (*OTHER_FLAVORS, "Camelot")
+    return [path for flavor in flavors for path in (f":!*/{flavor}/*", f":!*_{flavor}.*")]
 NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 USED = r"(?<![\w.:])(?:C_\w+|[A-Z]\w*)(?:\.\w+){0,2}"
 # Client API names start with a capital or C_ (Lua's own libraries do not).
@@ -85,19 +90,20 @@ def documented(mirror, ref):
     return prefixes(names)
 
 
-def defined(mirror, ref):
+def defined(mirror, ref, exclusions):
+    paths = ["Interface/*.lua", ":!" + DOCS + "/*", *exclusions]
     names = set()
-    for line in grep(mirror, ref, r"^\s*function %s(?:[.:]%s)*\s*\(" % (NAME, NAME), LUA):
+    for line in grep(mirror, ref, r"^\s*function %s(?:[.:]%s)*\s*\(" % (NAME, NAME), paths):
         names.add(re.match(r"\s*function ([\w.:]+)", line).group(1).replace(":", "."))
-    for line in grep(mirror, ref, r"^%s(?:\.%s)*\s*=(?!=)" % (NAME, NAME), LUA):
+    for line in grep(mirror, ref, r"^%s(?:\.%s)*\s*=(?!=)" % (NAME, NAME), paths):
         names.add(re.match(r"[\w.]+", line).group(0))
-    for line in grep(mirror, ref, r'\bname="%s"' % NAME, ["Interface/*.xml"] + NOT_OTHER_FLAVORS):
+    for line in grep(mirror, ref, r'\bname="%s"' % NAME, ["Interface/*.xml", *exclusions]):
         names.add(line[6:-1])
     return prefixes(names)
 
 
-def used(mirror, ref):
-    return prefixes(set(grep(mirror, ref, USED, LUA)))
+def used(mirror, ref, exclusions):
+    return prefixes(set(grep(mirror, ref, USED, ["Interface/*.lua", ":!" + DOCS + "/*", *exclusions])))
 
 
 def declared_clients():
@@ -121,9 +127,10 @@ def main():
     CLIENTS.update(declared_clients())
     present, judged = {}, set()
     for client, ref in CLIENTS.values():
-        known = documented(mirror, ref) | defined(mirror, ref)
+        exclusions = framexml_exclusions(client)
+        known = documented(mirror, ref) | defined(mirror, ref, exclusions)
         judged |= known
-        present[client] = known | used(mirror, ref)
+        present[client] = known | used(mirror, ref, exclusions)
         print("%-8s %d names" % (client, len(present[client])))
     partial = {}
     for name in sorted(judged):

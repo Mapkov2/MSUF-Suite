@@ -29,7 +29,7 @@ NS.CharacterDetails = { IsHost = function() return false end }
 NS.CharacterStats, NS.EQoLCharacter = NS.CharacterDetails, NS.CharacterDetails
 NS.WindowControls = { Attach = Noop, TrackFocus = Noop, DisableOwner = Noop }
 NS.LabelStyle = { CanStyle = function() return false end, Apply = Noop }
-for _, file in ipairs({ "Core/Cosmetics", "Rendering/ScrollBarSkin", "Adapters/AdapterKit", "Adapters/GenericWindows",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Cosmetics", "Rendering/ScrollBarSkin", "Adapters/AdapterKit", "Adapters/GenericWindows",
     "Adapters/GenericWindowsNodes", "Adapters/GenericWindowsFrames", "Adapters/AddonSkinVisuals", "Adapters/AceWidgets" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file .. ".lua"))("MSUF_Suite_Skin", NS)
 end

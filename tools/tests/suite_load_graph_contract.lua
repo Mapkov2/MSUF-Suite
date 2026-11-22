@@ -13,6 +13,10 @@ Constants = { InventoryConstants = { NumBagSlots = 4 } }
 C_SpellBook = {}
 EventRegistry = { RegisterCallback = function() end }
 local frames, loads, featureLoads, optionLoads, loaded = {}, 0, 0, 0, {}
+local tooltipLoads, tooltipEnabled = 0, false
+Enum.TooltipDataType = { Item = 1, Spell = 2, Unit = 3, UnitAura = 4, PetAction = 5, Totem = 6, Flyout = 7, Macro = 8 }
+Enum.TooltipDataLineType = { UnitName = 1 }
+
 SlashCmdList = {}
 MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil
 -- Both clients load the Mainline TOCs. Retail boots under the Main MSUF build
@@ -38,6 +42,7 @@ CreateFrame = function()
     return frame
 end
 IsLoggedIn = function() return false end
+canaccesstable = function() return true end
 local deferred = {}
 C_Timer = { After = function(delay, callback)
     assert(delay == 0)
@@ -58,11 +63,14 @@ C_ChatInfo = { IsLoggingCombat = function() return false end }
 GetInstanceInfo = function() return "outside", "none", 0 end
 C_AddOns = {
     DoesAddOnExist = function(name)
-        return name == "MSUF_Suite_QualityOfLife"
+        return name == "MSUF_Suite_QualityOfLife" or name == "MSUF_Suite_Tooltips"
             or flavor == "Forever" and name == "MSUF_Suite_ActionBars"
     end,
     IsAddOnLoaded = function(name) return loaded[name] == true end,
-    GetAddOnEnableState = function() return 2 end,
+    GetAddOnEnableState = function(name)
+        if name == "MSUF_Suite_Tooltips" and not tooltipEnabled then return 0 end
+        return 2
+    end,
     LoadAddOn = function(name)
         if name == "MSUF_Suite_Modules" then
             loads = loads + 1
@@ -76,6 +84,13 @@ C_AddOns = {
             Support.Load(root, name, {})
             loaded[name] = true
             return true
+        end
+        if name == "MSUF_Suite_Tooltips" then
+            assert(tooltipEnabled, "attempted to load Tooltips while disabled in the AddOn list")
+            tooltipLoads = tooltipLoads + 1
+            Support.Load(root, name, {})
+            loaded[name] = true
+            return nil, "FOREVER_DIAGNOSTIC"
         end
         -- Like the client, report addons this fixture does not install.
         if name == "MSUF_Suite_Skin" then return false, "MISSING" end
@@ -179,6 +194,9 @@ assert(owner.Suite.Config("combatLog").enabled == true
     "combat logging did not keep safe, useful defaults")
 assert(owner.Host.build == (flavor == "Mainline" and "Main" or "Classic"))
 assert(owner.Client.flavor == flavor, "client detected as " .. tostring(owner.Client.flavor))
+assert(not owner.Suite.Availability("tooltipDetails") and tooltipLoads == 0 and not owner.Tooltips,
+    "Tooltips ran with the AddOn disabled")
+tooltipEnabled = true
 assert(owner.Suite.Availability("tooltipDetails"), "the shared tooltip anchor is unavailable on " .. flavor)
 assert((owner.Suite.catalog.tooltipDetails.rules.inspectHovered.hidden == true) == (flavor == "Forever"),
     "the shared tooltip anchor exposed Retail inspect controls on Forever")
@@ -223,4 +241,26 @@ for index, frame in ipairs(frames) do
     if index ~= 5 then assert(not next(frame.events), "disabled runtime retained an event") end
 end
 assert(MapkoSkin == nil and MapkoSkinDB == nil)
+local legacy = { itemTooltipStyle = "card", tooltipLayout = { x = 17, unitHealth = "show", bogus = true } }
+local name = owner.Database.GetActiveProfileName()
+assert(not owner.TooltipAppearance.ImportLegacy(legacy, name .. " other"))
+assert(owner.TooltipAppearance.ImportLegacy(legacy, name))
+local config = owner.Suite.Config("tooltipAppearance")
+assert(config.tooltipLayout.x == 17 and config.tooltipLayout.unitHealth == "show" and not config.tooltipLayout.bogus)
+local exported = assert(owner.ProfileIO.PrepareTable(owner.DB, false)).suite.modules.tooltipAppearance
+assert(exported.tooltipLayout ~= config.tooltipLayout and exported.tooltipLayout.x == 17
+    and exported.itemTooltipStyle == "card", "standalone tooltip layout did not round-trip through profiles")
+assert(not owner.TooltipAppearance.ImportLegacy({ tooltipLayout = { x = 4 } }, name), "migration overwrote a saved layout")
+assert(owner.Suite.Set("tooltipAppearance", "enabled", false))
+assert(tooltipLoads == 0, "an off module loaded its addon before the page requested it")
+local tooltips = assert(owner.TooltipAppearance.Engine(), "configuration did not load without Skinning")
+local card = tooltips.ItemTooltipCard
+assert(not tooltips.DB.enabled and card.Setting("x") == 17 and tooltipLoads == 1)
+assert(card.SetPreset("forever") and card.Setting("height") == 40, "standalone Forever preset was unavailable")
+assert(card.SetPreset("retail") and card.Setting("height") == 48, "standalone Retail preset was unavailable")
+assert(owner.Suite.Set("tooltipAppearance", "enabled", true))
+assert(owner.Suite.states.tooltipAppearance.active and tooltips.DB.enabled and tooltipLoads == 1)
+assert(owner.Suite.Set("tooltipAppearance", "enabled", false))
+assert(not owner.Suite.states.tooltipAppearance.active and not tooltips.DB.enabled and not MapkoSkin)
+
 print("Standalone TOC boot, menu attach, on-demand activation and disable passed: " .. flavor)

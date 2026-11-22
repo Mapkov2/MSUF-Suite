@@ -66,7 +66,7 @@ local function PublicWorld()
         SetNativeStateSync = Noop,
     }
     for _, name in ipairs({ "Safety", "Registry", "PublicAPIControls", "PublicAPI", "PublicAPIMethods" }) do
-        assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. name .. ".lua"))("MSUF_Suite_Skin", NS)
+        assert(loadfile(root .. (name == "Safety" and "/MSUF_Suite/Appearance/" or "/MSUF_Suite_Skin/Core/") .. name .. ".lua"))("MSUF_Suite_Skin", NS)
     end
     world.NS, world.api = NS, NS.PublicAPI.API
     function world:Reset()

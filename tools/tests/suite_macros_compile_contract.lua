@@ -357,7 +357,7 @@ Compile(doc, "#showtooltip\n/party Ready; {skull}")
 doc.steps[1].branches[1].conditions = { Condition("combat") }
 Reject(doc, "This command does not support conditions")
 
-for _, field in ipairs({ "version", "name", "scope", "mode", "icon", "raw", "steps", "showTooltip", "consumable" }) do
+for _, field in ipairs({ "version", "name", "scope", "mode", "icon", "raw", "steps", "showTooltip", "highestRank", "consumable" }) do
     doc = Model.New()
     doc[field] = secret
     Equal(Model.Normalize(doc), nil, "secret document field accepted: " .. field)
@@ -376,4 +376,60 @@ doc.name = string.rep("\195\164", 16)
 Equal(type(Model.Normalize(doc)), "table", "UTF-8 macro name")
 doc.name = doc.name .. "a"
 Equal(Model.Normalize(doc), nil, "macro name limit")
+
+namespace.Client = { isForever = true }
+local ranked = "Heilung(Rang 1)"
+local spell = { name = "Heilung", spellID = 2054 }
+C_Spell = {
+    GetSpellInfo = function(value)
+        if value == ranked or value == "Heilung" or value == 2054 then return spell end
+        if value == "Aura(Form 2)" then return { name = "Aura(Form 2)", spellID = 1000 } end
+    end,
+    GetSpellSubtext = function(id) return id == 2054 and "Rang 1" or "Form 2" end,
+}
+C_Item = { GetItemInfo = function() end }
+SLASH_CAST1 = "/wirken"
+doc = Model.New("mouseover")
+doc.highestRank = nil
+doc.steps[1].branches[1].value = ranked
+local original = Compile(doc, "#showtooltip\n/cast [@mouseover,help,nodead][help,nodead][@player] " .. ranked)
+Equal(Model.Normalize(doc).highestRank, false, "older macro defaults to manual ranks")
+doc.highestRank = true
+Compile(doc, "#showtooltip\n/cast [@mouseover,help,nodead][help,nodead][@player] Heilung")
+doc.steps[1].branches[1].value = "Heilung(Rang 6)"
+Compile(doc, "#showtooltip\n/cast [@mouseover,help,nodead][help,nodead][@player] Heilung")
+doc.steps[1].branches[1].value = ranked
+Equal(Model.Normalize(doc).highestRank, true, "normalization retains the per-macro toggle")
+Equal(doc.steps[1].branches[1].value, ranked, "automatic rank overwrote the rule")
+Equal(Macros.Compile(doc, nil, true), original, "copying rules to the code editor lost the explicit rank")
+namespace.Client.isForever = false
+Compile(doc, original)
+namespace.Client.isForever = true
+doc.mode = "raw"
+doc.raw = "#showtooltip [mod] Heilung (Rang 1);13\n"
+    .. "  /wirken [@player][help] !Heilung(Rang 1);2054\n"
+    .. "/castsequence [help] reset=target/3 Heilung(Rang 1), item:5512, 13\n"
+    .. "/castrandom Heilung(Rang 1),Aura(Form 2)\n"
+    .. "/use [combat] 13; Heilung(Rang 1)\n\n"
+    .. "/cancelaura Heilung(Rang 1)\n/say Heilung(Rang 1)"
+Compile(doc, "#showtooltip [mod] Heilung;13\n"
+    .. "  /wirken [@player][help] !Heilung;Heilung\n"
+    .. "/castsequence [help] reset=target/3 Heilung, item:5512, 13\n"
+    .. "/castrandom Heilung,Aura(Form 2)\n"
+    .. "/use [combat] 13; Heilung\n\n"
+    .. "/cancelaura Heilung(Rang 1)\n/say Heilung(Rang 1)")
+C_Item.GetItemInfo = function(value) return value == "Heilung" and value or nil end
+doc.raw = "/use " .. ranked
+Compile(doc, doc.raw)
+C_Item.GetItemInfo = function() return secret end
+Compile(doc, doc.raw)
+doc.raw = "/cast Heilung(Version 2)"
+Compile(doc, doc.raw)
+doc.raw = "/cast " .. string.rep("9", 200)
+Compile(doc, doc.raw)
+spell.name = secret
+doc.raw = "/cast " .. ranked
+Compile(doc, doc.raw)
+doc.highestRank = false
+Compile(doc, doc.raw)
 print("PASS suite macros compiler: " .. checks .. " checks")

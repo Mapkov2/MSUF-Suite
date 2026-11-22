@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local originalLoad, P = loadfile
 local mutations = {
-    meterText = { "Pages/DamageMeterPreview.lua", '"suite_damageMeter_text", "rightSize"', '"suite_damageMeter_bars", "rightSize"' },
+    meterText = { "Pages/DamageMeterPreview.lua", '"suite_damageMeter_valuesFont", "rightSize"', '"suite_damageMeter_bars", "rightSize"' },
     bank = { "Pages/BagsPreview.lua", 'ui.selected == "bank" and "suite_bags_bank" or "suite_bags_organisation"', '"suite_bags_organisation"' },
     icons = { "Pages/BagsPreview.lua", 'slot.icon:SetTexture(item.icon)', 'slot.icon:SetTexture(134400)' },
     warm = { "Pages/BagsPreview.lua", 'if not changed and preview.tab == ui.selected and preview.viewportWidth == width and preview.viewportHeight == height then return end', 'if false then return end' },
@@ -54,6 +54,7 @@ P.S.DamageMeterDrawMenuPreview = function(parent)
     for i = 1, 3 do
         local row = CreateFrame("Button", nil, win.body)
         row.icon, row.nameText, row.valueText = row:CreateTexture(), row:CreateFontString(), row:CreateFontString()
+        row.valueHost = false
         row.rankText = row:CreateFontString()
         row.bar, row.track = CreateFrame("StatusBar", nil, row), row:CreateTexture()
         local fill = row.bar:CreateTexture()
@@ -71,9 +72,9 @@ local focused
 ui.Focus = function(_, section) focused = section end
 local targets = ui.meterPreview.targets
 targets.rows[1].value.scripts.OnClick()
-assert(focused == "suite_damageMeter_text", "meter value text opened bar settings")
+assert(focused == "suite_damageMeter_valuesFont", "meter values did not open the Value font accordion")
 targets.rows[1].name.scripts.OnClick()
-assert(focused == "suite_damageMeter_text", "meter name opened bar settings")
+assert(focused == "suite_damageMeter_namesFont", "meter name did not open the Name font accordion")
 ui.meterPreview.stage.provider.rows[1].scripts.OnClick()
 assert(focused == "suite_damageMeter_bars", "meter bar did not open bar settings")
 targets.timer.scripts.OnClick()

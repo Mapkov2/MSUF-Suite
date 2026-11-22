@@ -81,7 +81,7 @@ local NS = {
     ControlSkin = { DisableOwner = Noop }, IconSkin = { DisableOwner = Noop },
     ScrollBarSkin = { DisableOwner = Noop },
 }
-for _, path in ipairs({ "Core/Safety.lua", "Core/Cosmetics.lua", "Adapters/AdapterKit.lua",
+for _, path in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "../MSUF_Suite/Appearance/Cosmetics.lua", "Adapters/AdapterKit.lua",
     "Rendering/Surface.lua", "Adapters/GenericWindows.lua", "Adapters/GenericWindowsNodes.lua",
     "Adapters/GenericWindowsFrames.lua" }) do
     assert(loadfile(skin .. path))("MSUF_Suite_Skin", NS)

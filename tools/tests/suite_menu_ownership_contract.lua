@@ -6,8 +6,8 @@ local count = 0
 local function Check(value, message) assert(value, message) count = count + 1 end
 local pages = { keyAudit = "suite_actionbars", currencyGoals = "suite_bags", keywordAlerts = "suite_chat",
     inventoryArchive = "suite_bags", restockPlanner = "suite_bags", craftShopping = "suite_bags",
-    bankTransfer = "suite_bags", planningTools = "suite_planningTools" }
-Check(M.pages.suite_planningTools ~= nil, "planner has no independent page")
+    bankTransfer = "suite_bags", planningTools = "suite_hud" }
+Check(not M.pages.suite_planningTools and M.ALIASES.suite_planningTools == "suite_hud", "planner page still stands alone")
 for id, page in pairs(pages) do Check(P.catalog[id].page == page, "wrong owner: " .. id) end
 local remaining = { inventoryProtection = "lootMerchants", mailTemplates = "interface",
     waypointLists = "travel", soundProfiles = "interface", notificationHistory = "interface" }
@@ -29,6 +29,20 @@ for id, page in pairs(pages) do
     local actionPage, actionTarget = P.ResolveToolSearchTarget("suite_qualityOfLife", { controlId = control })
     Check(actionPage == page and actionTarget.controlId ~= control, "legacy action did not move: " .. id)
 end
+local savedPlanner = { pageKey = "suite_planningTools", sectionId = "suite_planningTools_characters",
+    controlId = P.Meta("suite_planningTools", "planningTools", "weekly").controlId,
+    settingKey = "msufsuite.planningTools.weekly", prepareKind = "suiteWorkspace", prepareValue = "weekly" }
+local movedPage, movedPlanner = P.ResolveToolSearchTarget(savedPlanner.pageKey, savedPlanner)
+Check(movedPage == "suite_hud" and movedPlanner.sectionId == "suite_hud_planningTools_characters"
+    and movedPlanner.controlId == P.Meta("suite_hud", "planningTools", "weekly").controlId
+    and movedPlanner.prepareKind == nil and savedPlanner.prepareKind == "suiteWorkspace", "saved planner setting did not move")
+movedPage, movedPlanner = P.ResolveToolSearchTarget("suite_planningTools", {
+    sectionId = "suite_planningTools_raid",
+    controlId = P.Meta("suite_planningTools", "planningTools", "action.open.raid", "action").controlId,
+})
+Check(movedPage == "suite_hud" and movedPlanner.sectionId == "suite_hud_planningTools_raid"
+    and movedPlanner.controlId == P.Meta("suite_hud", "planningTools", "action.open.raid", "action").controlId,
+    "saved planner launcher did not move")
 Check(P.ResolveToolSearchTarget("suite_qualityOfLife", { settingKey = "msufsuite.unknown.enabled" }) == nil,
     "unknown settings must not be redirected")
 M.RegisterSearchProvider = function() return true end
@@ -43,37 +57,56 @@ local function FindControl(ctx, id, key)
     end
 end
 local contexts = {}
-for _, page in ipairs({ "suite_bags", "suite_actionbars", "suite_chat", "suite_planningTools" }) do
+for _, page in ipairs({ "suite_bags", "suite_actionbars", "suite_chat", "suite_hud" }) do
     contexts[page] = E.build(page)
 end
--- Planner settings share the normal page scroll; no second navigation layer.
-local plannerContext = contexts.suite_planningTools
-Check(plannerContext.suiteWorkspace == nil, "planner settings still require choosing a topic tab")
-Check(plannerContext.fixedPreview == nil, "planner settings reserve an empty navigation header")
-local plannerSections = {}
-for _, section in ipairs(plannerContext.sections) do
-    plannerSections[section.sectionId] = section
-    Check(section.finished, "planner section does not contribute to page scroll height")
-    Check(section:IsVisible(), "planner section is hidden behind another topic")
+local plannerContext = contexts.suite_hud
+local hud = plannerContext._msufSuiteHUDWorkspace
+local selector = hud.selector or plannerContext.tabControls[1].segment
+local afkPosition
+for pos, choice in ipairs(selector.values) do
+    if choice.value == "afkScreen" then afkPosition = pos end
 end
+Check(afkPosition and selector.values[afkPosition + 1].value == "planningTools", "planner is missing beside AFK Screen")
+local plannerSections, sectionCount = {}, 0
+for _, section in ipairs(plannerContext.sections) do
+    if section.sectionId:match("^suite_hud_planningTools_") then
+        plannerSections[section.sectionId] = section
+        sectionCount = sectionCount + 1
+        Check(section.finished, "planner section does not contribute to page scroll height")
+        Check(not section:IsVisible(), "planner settings are shown in another HUD tab")
+    end
+end
+local module = assert(plannerSections.suite_hud_planningTools_module)
+local resolve = assert(P.HM.GetMissingSectionResolver(plannerContext.entry or plannerContext))
+Check(resolve(module.sectionId) == module, "section-only search cannot find the planner card")
+Check(hud.selected == "planningTools" and module:IsVisible() and not hud.preview.host.shown,
+    "focusing the planner card must reveal only the planner settings")
+hud.select("afkScreen")
+P.HM.GetSectionEnsureVisible(P.HM.GetSectionEntry(module))()
+Check(hud.selected == "planningTools", "section focus did not reveal the planner card")
 local expectedSections = 1
 for _, spec in ipairs(P.PlannerSections) do
     local available = not spec.hidden and not (spec.retail and flavor == "Forever")
-    local section = plannerSections["suite_planningTools_" .. spec.key]
+    local section = plannerSections["suite_hud_planningTools_" .. spec.key]
     Check((section ~= nil) == available, "planner client visibility changed: " .. spec.key)
-    if available then expectedSections = expectedSections + 1 end
+    if available then
+        Check(section:IsVisible(), "planner section is hidden behind another topic: " .. spec.key)
+        expectedSections = expectedSections + 1
+    end
 end
-Check(#plannerContext.sections == expectedSections, "planner has extra navigation sections")
-local launcherId = P.Meta("suite_planningTools", "planningTools", "action.openPlanner", "action").controlId
+Check(sectionCount == expectedSections, "planner has extra navigation sections")
+local launcherId = P.Meta("suite_hud", "planningTools", "action.openPlanner", "action").controlId
 Check(E.widgets[launcherId] ~= nil, "planner has no direct launch button in its first card")
 for _, spec in ipairs(P.PlannerSections) do
     if not spec.hidden and not (spec.retail and flavor == "Forever") then
         for _, key in ipairs(spec.keys) do
             local widget, meta = FindControl(plannerContext, "planningTools", key)
-            Check(meta.searchPrepareKind == "suiteWorkspace" and meta.searchPrepareValue == key,
-                "saved planner search contract lost: " .. key)
-            Check(meta.prepareExactSearchTarget(widget) == true,
-                "saved planner search target cannot prepare: " .. key)
+            hud.select("afkScreen")
+            Check(meta.searchPrepareKind == "hudWorkspace" and meta.searchPrepareValue == key,
+                "planner settings did not register a HUD search route: " .. key)
+            Check(meta.prepareExactSearchTarget(widget) == true and hud.selected == "planningTools",
+                "planner search target cannot reveal its HUD tab: " .. key)
         end
     end
 end
@@ -133,6 +166,11 @@ Check(S.Config("notificationHistory").limit == P.catalog.notificationHistory.rul
 Check(M.ResetPageToDefaults("suite_bags"), "Bags reset failed")
 Check(S.Config("currencyGoals").capPercent == P.catalog.currencyGoals.rules.capPercent.default
     and S.Config("keyAudit").onlyIssues and S.Config("keywordAlerts").cooldown == 125, "Bags reset crossed ownership")
+S.Set("afkScreen", "enabled", not P.catalog.afkScreen.rules.enabled.default)
+hud.select("planningTools")
+Check(M.ResetPageToDefaults("suite_hud"), "Planner HUD reset failed")
+Check(S.Config("planningTools").weekly == P.catalog.planningTools.rules.weekly.default
+    and S.Config("afkScreen").enabled ~= P.catalog.afkScreen.rules.enabled.default, "Planner reset crossed HUD ownership")
 Check(Suite.RootDB.menuOwnershipFixture == archives and archives.sentinel, "menu reset removed stored data")
 local opened
 S.PlanningTools = { Active = function() return true end, Window = { Open = function(tab) opened = tab return true end } }

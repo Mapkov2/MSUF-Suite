@@ -82,7 +82,7 @@ if scenario ~= "chat" then
         Theme = { RefreshDynamicLook = Noop }, Typography = { Restore = Noop, ApplyConfigured = Noop },
         Adapters = { ApplyAll = Noop }, Registry = { RefreshAll = Noop, NotifyListeners = Noop, AddListener = Noop } }
     for _, file in ipairs({ "Defaults", "DefaultsLooks", "Database", "DatabaseProfiles", "Safety" }) do
-        assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. file .. ".lua"))("MSUF_Suite_Skin", skin)
+        assert(loadfile(root .. (file == "Safety" and "/MSUF_Suite/Appearance/" or "/MSUF_Suite_Skin/Core/") .. file .. ".lua"))("MSUF_Suite_Skin", skin)
     end
     MSUFSuite = Suite
     local database = skin.Database

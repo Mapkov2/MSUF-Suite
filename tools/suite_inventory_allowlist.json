@@ -7673,12 +7673,492 @@
       "date": "2026-11-19"
     },
     {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.rank\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rank in namesFont with its original label and default. The meter preview editor follows this setting to Name font.",
+      "reason": "Rank visibility is grouped with the independent name visibility control.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.rank\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rank in namesFont with its original label and default. The meter preview editor follows this setting to Name font.",
+      "reason": "Rank visibility is grouped with the independent name visibility control.",
+      "date": "2026-11-22"
+    },
+    {
       "category": "locale",
       "item": "Filtered loot notice is available only in Retail",
       "basis": "dead",
       "evidence": "Core/Catalog/QualityOfLife.lua keeps the lootToastFilter rule and opt-in default. QualityOfLife/LootToastFilter.lua uses SHOW_LOOT_TOAST on Retail and CHAT_MSG_LOOT on Forever; CHANGELOG.md describes both paths.",
       "reason": "The Retail-only refusal became unreachable when the module added a Forever event implementation.",
       "date": "2026-11-19"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.baseline\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.baseline under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.englishNumbers\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.englishNumbers under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.font\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.font under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.leftClassColor\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.leftClassColor under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.leftColor\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.leftColor under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.leftSize\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.leftSize under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.nameEllipsis\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.nameEllipsis under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.nameMaxChars\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.nameMaxChars under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.numberFormat\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.numberFormat under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.outline\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.outline under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.percent\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.percent under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.rendering\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rendering under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.rightClassColor\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rightClassColor under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.rightColor\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rightColor under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.rightSize\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rightSize under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.shadowDistance\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.shadowDistance under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.shadowOpacity\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.shadowOpacity under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.showRealm\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.showRealm under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.textOpacity\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.textOpacity under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.valueOrder\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.valueOrder under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:damageMeter.valueSeparator\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.valueSeparator under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.baseline\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.baseline under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.englishNumbers\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.englishNumbers under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.font\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.font under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.leftClassColor\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.leftClassColor under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.leftColor\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.leftColor under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.leftSize\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.leftSize under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.nameEllipsis\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.nameEllipsis under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.nameMaxChars\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.nameMaxChars under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.numberFormat\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.numberFormat under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.outline\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.outline under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.percent\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.percent under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.rendering\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rendering under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.rightClassColor\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rightClassColor under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.rightColor\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rightColor under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.rightSize\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.rightSize under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.shadowDistance\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.shadowDistance under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.shadowOpacity\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.shadowOpacity under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.showRealm\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.showRealm under Name font (namesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Name font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.textOpacity\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.textOpacity under Shared text style (text) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Shared text style.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.valueOrder\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.valueOrder under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:damageMeter.valueSeparator\",\"text\",\"Text and numbers\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua declares damageMeter.valueSeparator under Value font (valuesFont) with the same saved key, label and default.",
+      "reason": "The existing setting is grouped under Value font.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "locale",
+      "item": "Text and numbers",
+      "basis": "moved",
+      "evidence": "Catalog/DamageMeter.lua and Pages/DamageMeter.lua use Shared text style and put number-format guidance in Value font.",
+      "reason": "The regrouped text panel separates shared typography and value-format guidance.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "locale",
+      "item": "Choose Custom layout to set the order of total, per-second and percent values, then pick spaces, brackets or a separator. The percent switch controls main rows; breakdown rows show available shares. Unavailable shares are omitted. Primary means per second for DPS/HPS and total for other meters. Text settings also apply to headers, details and the floating timer. Slug uses WoW's crisp font renderer with an outline and no shadow. Protected values show without a percentage until combat ends.",
+      "basis": "moved",
+      "evidence": "Catalog/DamageMeter.lua and Pages/DamageMeter.lua use Shared text style and put number-format guidance in Value font.",
+      "reason": "The regrouped text panel separates shared typography and value-format guidance.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:itemCounts\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns itemCounts to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:tooltipClassColors\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipClassColors to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:tooltipDetails\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipDetails to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:tooltipIDs\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipIDs to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:tooltipMPlusScore\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipMPlusScore to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:tooltipSpellCopy\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipSpellCopy to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:tooltipVisibility\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipVisibility to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:itemCounts\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns itemCounts to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:tooltipClassColors\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipClassColors to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:tooltipDetails\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipDetails to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:tooltipIDs\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipIDs to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:tooltipMPlusScore\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipMPlusScore to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:tooltipSpellCopy\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipSpellCopy to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:tooltipVisibility\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "The Suite catalog assigns tooltipVisibility to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
+      "reason": "The tooltip feature loads from the standalone Tooltips addon.",
+      "date": "2026-11-22"
     }
   ]
 }

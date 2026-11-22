@@ -68,7 +68,7 @@ local function Load(path)
     local override = path == "Rendering/ScrollMotion.lua" and arg[2]
     assert(loadfile(override or root .. "/MSUF_Suite_Skin/" .. path))("MSUF_Suite_Skin", NS)
 end
-Load("Core/Safety.lua")
+Load("../MSUF_Suite/Appearance/Safety.lua")
 Load("Rendering/ScrollMotion.lua")
 local function Controller(parent)
     local frame = Frame(nil, parent)

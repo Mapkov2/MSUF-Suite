@@ -64,9 +64,15 @@ module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTim
     "trustedPartyInvites", module, context())
 module:Enable()
 assert(module.context.events.PARTY_INVITE_REQUEST and module.context.events.PARTY_INVITE_CANCEL)
-local function invite(guid, tank, healer, damage, quest)
-    module.context.events.PARTY_INVITE_REQUEST(module, "PARTY_INVITE_REQUEST", "Name-Realm",
-        tank == true, healer == true, damage == true, false, false, guid, quest == true)
+local function invite(guid, tank, healer, damage, quest, crossShard)
+    local handler = module.context.events.PARTY_INVITE_REQUEST
+    if crossShard ~= nil then
+        handler(module, "PARTY_INVITE_REQUEST", "Name-Realm",
+            tank == true, healer == true, damage == true, false, crossShard, false, guid, quest == true)
+    else
+        handler(module, "PARTY_INVITE_REQUEST", "Name-Realm",
+            tank == true, healer == true, damage == true, false, false, guid, quest == true)
+    end
 end
 local function nextFrame()
     local pending = deferred
@@ -79,7 +85,7 @@ assert(#deferred == 1 and accepts == 0, "invite was handled before Blizzard's po
 nextFrame()
 assert(accepts == 1 and not dialog.shown, "trusted Battle.net invite was not accepted")
 dialog.shown = true
-invite("wow")
+invite("wow", nil, nil, nil, nil, false)
 nextFrame()
 assert(accepts == 2, "trusted WoW friend invite was not accepted")
 dialog.shown = true
@@ -94,7 +100,7 @@ invite("club")
 nextFrame()
 assert(accepts == 2, "unselected relationship was accepted")
 module.config.guild = true
-invite("guild")
+invite("guild", nil, nil, nil, nil, true)
 nextFrame()
 assert(accepts == 3, "selected guild relationship was ignored")
 
@@ -104,6 +110,9 @@ for _, case in ipairs({
     { guid = "bnet", damage = true }, { guid = "bnet", quest = true },
 }) do
     invite(case.guid, case.tank, case.healer, case.damage, case.quest)
+    assert(#deferred == 0, "legacy role or quest-session invite scheduled acceptance")
+    invite(case.guid, case.tank, case.healer, case.damage, case.quest, false)
+    assert(#deferred == 0, "new role or quest-session invite scheduled acceptance")
 end
 nextFrame()
 assert(accepts == 3, "role or quest-session invite bypassed Blizzard confirmation")

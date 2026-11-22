@@ -26,7 +26,7 @@ local NS = {
     WindowActionSkin = { HasOwnedStates = Noop, GetExplicitKind = Noop, IsApplied = Noop, DisableOwner = Noop },
 }
 for _, path in ipairs({ "Safety", "BlizzardYellow", "Checkmarks", "CheckmarksMenus" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. path .. ".lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(root .. (path == "Safety" and "/MSUF_Suite/Appearance/" or "/MSUF_Suite_Skin/Core/") .. path .. ".lua"))("MSUF_Suite_Skin", NS)
 end
 
 local function Label()

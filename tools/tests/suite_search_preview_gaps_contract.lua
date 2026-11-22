@@ -112,37 +112,90 @@ for _, record in ipairs(Ready()) do
     local key = record.exactTarget and record.exactTarget.settingKey
     if key then records[key] = record end
 end
+for key, section in pairs({
+    font = "text", leftSize = "namesFont", showRealm = "namesFont", rightSize = "valuesFont",
+    numberFormat = "valuesFont", englishNumbers = "valuesFont", valueOrder = "valuesFont",
+}) do
+    local record = assert(records["msufsuite.damageMeter." .. key], "missing cold text setting: " .. key)
+    assert(record.exactTarget.sectionId == "suite_damageMeter_" .. section, "cold search routed to the old text accordion: " .. key)
+end
+for _, key in ipairs({ "visibility", "w1LoadVisibility", "w1GroupCondition", "w1RequireTarget", "w1HideDungeon", "w1HideWorld" }) do
+    local record = assert(records["msufsuite.damageMeter." .. key], "missing cold load condition: " .. key)
+    local section = key == "visibility" and "globalVisibility" or "loadConditions"
+    assert(record.exactTarget.sectionId == "suite_damageMeter_" .. section, "load condition search opened the wrong accordion: " .. key)
+end
+local colorSections = { leftColor = "suite_damageMeter_namesFont", rightColor = "suite_damageMeter_valuesFont" }
+for _, row in ipairs(P.SearchRows()) do
+    if row.suiteModuleId == "damageMeter" and colorSections[row.suiteRuleKey] then
+        assert(row.sectionId == colorSections[row.suiteRuleKey], "color search still opens the old Text and numbers section")
+        colorSections[row.suiteRuleKey] = nil
+    end
+end
+assert(not next(colorSections), "a moved text color is missing from search")
 c.settingsSize = nil
 local saved = {}
 for _, button in ipairs({"settings", "reset", "session", "type", "target"}) do
-    for _, suffix in ipairs({"Size", "OffsetX", "OffsetY"}) do
-        local key = button..suffix
-        saved[key] = P.Get("damageMeter", key)
-        assert(records["msufsuite.damageMeter."..key], "missing cold setting: "..key)
-    end
+    local key = button.."Size"
+    saved[key] = P.Get("damageMeter", key)
+    assert(records["msufsuite.damageMeter."..key], "missing cold setting: "..key)
 end
 assert(M.activeKey ~= "suite_damageMeter", "fixture prebuilt the target page")
 local function CheckRoutes()
     for _, button in ipairs({"settings", "reset", "session", "type", "target"}) do
-        for _, suffix in ipairs({"Size", "OffsetX", "OffsetY"}) do
-            local key = button..suffix
-            assert(M.SelectPage("home"))
-            local record = records["msufsuite.damageMeter."..key]
-            Ready()
-            local query = P.Tr("Damage meter") .. " " .. P.Tr(({settings="Window settings",reset="Reset combat data",session="Fight",type="Meter",target="Filter damage by target"})[button]) .. " " .. record.label
-            local ranked, matched = api.SearchPages(query), false
-            for i=1,math.min(6,#ranked) do if ranked[i].exactTarget and ranked[i].exactTarget.settingKey == record.exactTarget.settingKey then matched=true end end
-            if not matched then print("QUERY",query); for i=1,math.min(12,#ranked) do print(i,ranked[i].label,ranked[i].exactTarget and ranked[i].exactTarget.settingKey) end end
-            assert(matched, "contextual query missed top six: "..key)
-            local selected, anchored, exact = api.OpenSearchTarget(record.key, record.label, record.label, record.anchor, record.route, record.exactTarget)
-            mw:RunTimers()
-            assert(selected and anchored and exact, "not exact: "..key)
-            local found = assert(M.RuntimeControlCatalog.Get(record.exactTarget.controlId), key)
-            assert(found.widget and found.widget:IsVisible(), "setting widget hidden: "..key)
-        end
+        local key = button.."Size"
+        assert(M.SelectPage("home"))
+        local record = records["msufsuite.damageMeter."..key]
+        Ready()
+        local query = P.Tr("Damage meter") .. " " .. P.Tr(({settings="Window settings",reset="Reset combat data",session="Fight",type="Meter",target="Filter damage by target"})[button]) .. " " .. record.label
+        local ranked, matched = api.SearchPages(query), false
+        for i=1,math.min(6,#ranked) do if ranked[i].exactTarget and ranked[i].exactTarget.settingKey == record.exactTarget.settingKey then matched=true end end
+        if not matched then print("QUERY",query); for i=1,math.min(12,#ranked) do print(i,ranked[i].label,ranked[i].exactTarget and ranked[i].exactTarget.settingKey) end end
+        assert(matched, "contextual query missed top six: "..key)
+        local selected, anchored, exact = api.OpenSearchTarget(record.key, record.label, record.label, record.anchor, record.route, record.exactTarget)
+        mw:RunTimers()
+        assert(selected and anchored and exact, "not exact: "..key)
+        local found = assert(M.RuntimeControlCatalog.Get(record.exactTarget.controlId), key)
+        assert(found.widget and found.widget:IsVisible(), "setting widget hidden: "..key)
     end
 end
 CheckRoutes()
+do
+    local old = P.Meta("suite_damageMeter", "damageMeter", "visibility", "setting", "suite_damageMeter_loadConditions")
+    local opened, anchored, exact = api.OpenSearchTarget("suite_damageMeter", "", nil, nil, {}, old)
+    mw:RunTimers()
+    assert(opened and anchored and exact, "previous shared visibility route missed the new accordion")
+end
+do
+    local positions, bySection = {}, {}
+    for _, record in ipairs(Ready()) do
+        if record.sectionId then bySection[record.sectionId] = record end
+    end
+    for _, row in ipairs(P.SearchRows()) do
+        if row.suiteModuleId == "damageMeter" and row.sectionId
+            and row.sectionId:match("^suite_damageMeter_preview_offset_") then positions[row.suiteRuleKey] = row end
+    end
+    for _, key in ipairs({ "settingsOffsetX", "resetOffsetY", "typeOffsetX", "targetOffsetY", "w1X", "timerX", "timerDockY" }) do
+        local row = assert(positions[key], "missing preview position search result: " .. key)
+        assert(row.kind == "textinput" and not row.settingKey and not records["msufsuite.damageMeter." .. key],
+            "position still advertises an accordion slider: " .. key)
+        assert(bySection[row.sectionId], "position was lost when indexing the search results: " .. key)
+    end
+    local c = P.S.Config("damageMeter")
+    local before = c.settingsOffsetX
+    local function OpenPosition(key)
+        assert(M.SelectPage("home"))
+        local record = assert(bySection[positions[key].sectionId])
+        local opened, anchored = api.OpenSearchTarget(record.key, record.label, record.label, record.anchor, record.route, record.exactTarget)
+        mw:RunTimers()
+        assert(opened and anchored and ui.meterPreview.selection.axisX:IsVisible(), "position search did not reach the preview: " .. key)
+    end
+    OpenPosition("settingsOffsetX")
+    assert(ui.meterPreview.viewport._selectedHandle == ui.meterPreview.targets.buttons.settings
+        and c.settingsOffsetX == before, "position search changed a saved value or selected the wrong handle")
+    OpenPosition("w1X")
+    assert(ui.meterPreview.viewport._selectedHandle == ui.meterPreview.screen.window, "window search did not open screen placement")
+    ui.meterPreview.showScreen(false)
+end
 for key in pairs(ui.meterPreview.layers) do ui.meterPreview.layers[key] = false end
 c.headerVisible, c.headerSelectors, c.targetSelector = false, false, false
 ui.refreshPreview()

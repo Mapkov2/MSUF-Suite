@@ -4,13 +4,14 @@ local P = {
     M = {}, OwnedTools = {},
     catalog = {
         macroBuilder = { page = "suite_macros", rules = { enabled = {} } },
-        planningTools = { page = "suite_planningTools", rules = { enabled = {} } },
+        planningTools = { page = "suite_hud", rules = { enabled = {} } },
     },
     MacroPage = { PrepareSearch = function(tab) prepared = tab end },
     Meta = function(page, id, key)
         return { controlId = page .. ":" .. id .. ":" .. key }
     end,
-    PlanningRuleTarget = function() return "suite_planningTools_general" end,
+    PlannerSectionID = function(tab) return "suite_hud_planningTools_" .. tab end,
+    PlanningRuleTarget = function() return "suite_hud_planningTools_module" end,
     Suite = { HostBridge = { RegisterSearchTargetResolver = function() end } },
 }
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/ToolRouting.lua"))("MSUF_Suite_Options", P)
@@ -37,7 +38,7 @@ page, copy = P.ResolveToolSearchTarget("suite_qualityOfLife", {
 })
 assert(page == "suite_macros" and copy.controlId == nil and copy.sectionId == nil and prepared == "rules")
 page, copy = P.ResolveToolSearchTarget("suite_qualityOfLife", { settingKey = "msufsuite.planningTools.enabled" })
-assert(page == "suite_planningTools" and copy.sectionId == "suite_planningTools_general")
+assert(page == "suite_hud" and copy.sectionId == "suite_hud_planningTools_module")
 prepared = nil
 assert(P.ResolveToolSearchTarget("suite_bags", { controlId = "unrelated" }) == nil and prepared == nil)
 print("macro search routing: direct tabs, legacy targets and immutable records passed")

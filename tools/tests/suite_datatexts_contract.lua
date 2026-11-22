@@ -205,10 +205,6 @@ if nativeBag then
         "DataTexts must retain equipped bag buttons when no Bags replacement is running")
     nativeBag:Show()
     assert(nativeBag.shown, "DataTexts hid the bar without an equipped-bag replacement")
-    assert(S.Set("dataTexts", "hideBlizzardBagBar", false))
-    assert(nativeBag.shown and nativeBag.driver == nil, "visible native bag buttons were lost")
-    assert(S.Set("dataTexts", "hideBlizzardBagBar", true))
-    assert(nativeBag.shown and nativeBag.driver == nil, "hide preference cannot remove the only equipped-bag access")
 end
 assert(S.states.dataTexts.active and M.bars[1].frame:IsShown()
     and M.bars[1].slots[1].text == "Gold: 10G"
@@ -883,8 +879,8 @@ if flavor == "Forever" then
     core.startingBeforeLockdown = true
     controller.Start()
     core.startingBeforeLockdown = nil
-    assert(not cold.G.BagsBar:IsShown() and cold.G.BagsBar.driver == "hide",
-        "the reload snapshot left native bag buttons visible")
+    assert(cold.G.BagsBar:IsShown() and cold.G.BagsBar.driver == nil,
+        "DataTexts altered the native bag buttons during combat reload")
     local bar = module.bars[1]
     assert(bar and bar.frame:IsShown() and bar.slots[1].text and bar.slots[1].text:find(tostring(fps), 1, true),
         "combat reload did not lay out and paint DataTexts")
@@ -950,7 +946,7 @@ end
 -- plain existence check, not a type guard.
 do
     local parts = {}
-    for _, name in ipairs({ "DataTexts", "Bars", "Visibility", "NativeBagBar", "Movers" }) do
+    for _, name in ipairs({ "DataTexts", "Bars", "Visibility", "Movers" }) do
         local file = assert(io.open(root .. "/MSUF_Suite_DataTexts/" .. name .. ".lua", "rb"))
         parts[#parts + 1] = file:read("*a")
         file:close()

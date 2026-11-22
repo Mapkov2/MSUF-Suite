@@ -16,7 +16,7 @@ local P = {
         runSummary = { rules = { showMythicPlus = {} } } } },
     M = { frame = menu }, W = { PageBuilder = function() return {} end },
     Suite = { Client = { isForever = false } },
-    catalog = { characterPanel = { description = "Character Panel" } },
+    catalog = { characterPanel = { description = "Character Panel" }, planningTools = { rules = {} } },
     HUDMenu = { Builder = function() return {} end, BuildHelpers = function() end, Finish = function() end },
     BuildHUDCharacterPanel = function() end,
     Tr = function(text) return text end,

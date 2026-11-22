@@ -40,6 +40,7 @@ P.Refresh=function() end
 P.WithHistory=function(_,_,fn) return fn() end
 assert(loadfile(root..'/MSUF_Suite_Options/Menu/MediaValues.lua'))('MSUF_Suite_Options',P)
 assert(loadfile(root..'/MSUF_Suite_Options/Menu/Controls.lua'))('MSUF_Suite_Options',P)
+assert(loadfile(root..'/MSUF_Suite_Options/Menu/Colors.lua'))('MSUF_Suite_Options',P)
 assert(loadfile(root..'/MSUF_Suite_Options/Pages/AppearanceKit.lua'))('MSUF_Suite_Options',P)
 local host=root:gsub('/MSUF%-Suite$','/MidnightSimpleUnitFrames')
 assert(loadfile(host..'/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_Widgets_ContextColors.lua'))(
@@ -58,7 +59,6 @@ if schema=='inline' or schema=='shortcut' then
         end
         return {bottomY=-60,controls=widgets}
     end
-    assert(loadfile(root..'/MSUF_Suite_Options/Menu/Colors.lua'))('MSUF_Suite_Options',P)
     P.BuildSkinColors({}, {width=520})
     assert(sectionSpec.content({}))
     assert(rows and rows[1], 'actual Skin Colors rows missing')

@@ -188,10 +188,16 @@ channel = e.secret
 e:Emit(m, "UNIT_SPELLCAST_CHANNEL_START", "player")
 assert(not m.routing, "an unreadable cast must not take ownership of the binding")
 channel = 800
+c.bobberHint = true
+UnitGUID = function(unit) if unit == "softinteract" then return "GameObject-0-1-2-3-35591-00001" end end
 e:Emit(m, "UNIT_SPELLCAST_CHANNEL_START", "player")
+assert(m.bobberHint and m.bobberHint.shown and m.bobberHint.text == "Fishing key: reel in", "show the matching bobber")
+e:Emit(m, "PLAYER_SOFT_INTERACT_CHANGED", nil, e.secret)
+assert(m.bobberHint.text == "Fishing: find the bobber", "secret target cannot appear ready")
 assert(routed.F and routed["SHIFT-F"] and m.routing, "the selected Fishing bindings must reach Blizzard Interact")
 e:Emit(m, "UNIT_SPELLCAST_CHANNEL_STOP", "player")
 assert(not next(routed) and not m.routing and not onCombat, "channel stop must release keys and stop watching combat")
+assert(not m.bobberHint.shown and not m.context.events.PLAYER_SOFT_INTERACT_CHANGED, "channel stop removes the bobber cue")
 e:Emit(m, "UNIT_SPELLCAST_CHANNEL_START", "player")
 e:Combat(true); onCombat()
 assert(not next(routed), "combat must release the override through the secure state driver")

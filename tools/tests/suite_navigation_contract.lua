@@ -297,9 +297,12 @@ local function NavShape()
     end
     return table.concat(out, " ")
 end
+assert(not NavShape():find("suite_planningTools", 1, true) and M.pages.suite_planningTools == nil
+    and M.ALIASES.suite_planningTools == "suite_hud",
+    "Adventure planner must resolve to HUD without its own navigation row")
 assert(NavShape():find("#general gameplay@general suite_qualityOfLife@general suite_macros@general"
-    .. " suite_planningTools@general suite_devMode@general opt_misc@general", 1, true),
-    "Quality of Life / Macros / Adventure planner order differs in General: " .. NavShape())
+    .. " suite_devMode@general opt_misc@general", 1, true),
+    "Quality of Life / Macros order differs in General: " .. NavShape())
 local rows = {}
 for _, item in ipairs(M.navItems) do if item.key then rows[item.key] = item end end
 assert(rows.suite_macros.availability() == true, "macro workspace must stay available while automatic updates are off")

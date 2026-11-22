@@ -54,7 +54,11 @@ local function Fixture()
     _G.GetServerTime = function() return state.time end
     _G.GetTime = function() return state.time end
     _G.UnitGUID = function() return state.guid end
-    _G.UnitName = function() return state.name end
+    _G.UnitName = function() return state.name, state.surname end
+    _G.GetUnitName = function() return state.fullName or state.name end
+    _G.UnitNameUnmodified = function() return state.unmodifiedName or state.name, state.unmodifiedSurname end
+    _G.Constants = _G.Constants or {}
+    Constants.CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " }
     _G.UnitClass = function() return "Warrior", "WARRIOR" end
     _G.GetRealmName = function() return state.realm end
     _G.GetCurrentRegionName = function() return state.region end
@@ -132,11 +136,77 @@ end
 
 if arg[2] == "--fixture" then return Fixture end
 
+local function ForeverNameChecks()
+    local st, NS, _, Plan, owner = Fixture()
+    NS.Client.isForever = true
+    _G.Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = "-" } }
+    _G.GetRealmName = function() error("Forever planner must not read the realm") end
+    local savedLockouts = { { name = "Saved Raid", expires = st.time + 600, difficulty = 16 } }
+    local characters = {
+        [st.guid] = { name = "Alice - Internal Realm", character = "Alice", realm = "Internal Realm",
+            lockouts = savedLockouts, money = 12, at = st.time },
+        ["offline"] = { name = "Bob - Another Realm", realm = "Another Realm", money = 20, at = st.time },
+    }
+    Plan.Account().characters = characters
+    local rows = Plan.Weekly.Rows(false)
+    equal(rows[1].label, "Alice", "old snapshot shows the known name")
+    equal(rows[2].label, "Bob", "older snapshots without a character field drop the realm")
+    equal(characters[st.guid].name, "Alice - Internal Realm", "reading does not rewrite saved snapshots")
+
+    owner:Enable()
+    st.Flush()
+    equal(characters[st.guid].name, "Alice", "first name is visible while surname is pending")
+    st.surname = "Ash"
+    st.Event("UNIT_NAME_UPDATE", "target")
+    equal(st.Flush(), false, "other units' name events do not schedule a capture")
+    equal(st.Event("UNIT_NAME_UPDATE", "player"), true, "late player name queues a refresh")
+    st.Flush()
+    equal(characters[st.guid].name, "Alice Ash", "late surname relabels the same character")
+    equal(characters[st.guid].lockouts, savedLockouts, "relabeling preserves existing lockouts")
+    equal(characters[st.guid].realm, nil, "Forever snapshots have no realm label")
+    st.surname = secret
+    Plan.Weekly.Capture()
+    equal(characters[st.guid].name, "Alice Ash", "restricted surname does not overwrite a known name")
+    _G.UNKNOWNOBJECT = "Unknown"
+    st.name, st.surname = UNKNOWNOBJECT, nil
+    equal(Plan.Weekly.Capture(), false, "placeholder identity does not overwrite an existing snapshot")
+    equal(characters[st.guid].name, "Alice Ash", "known name survives the placeholder")
+
+    st.guid, st.name, st.surname, st.money = "player-b", "Alice-Oak", nil, 54
+    Plan.Weekly.Capture()
+    equal(characters["player-b"].name, "Alice Oak", "combined name splits on the native separator")
+    equal(characters["player-b"].money, 54, "shared first name retains independent vitals")
+    equal(characters["player-a"].name, "Alice Ash", "shared first name retains independent saved name")
+    st.surname = "Oak"
+    Plan.Weekly.Capture()
+    equal(characters["player-b"].name, "Alice Oak", "surname is not duplicated if the name is already combined")
+    st.guid, st.name, st.surname, st.unmodifiedSurname = "player-c", "Alice", "", "Birch"
+    Plan.Weekly.Capture()
+    equal(characters["player-c"].name, "Alice Birch", "unmodified name can supply the surname")
+    st.name, st.unmodifiedName = "Alyssa", "Alice"
+    Plan.Weekly.Capture()
+    equal(characters["player-c"].name, "Alyssa", "a new first name cannot inherit the old surname")
+    st.guid, st.name, st.unmodifiedName, st.unmodifiedSurname = "player-d", "Alice", nil, nil
+    st.fullName = "Alice-Cedar"
+    Plan.Weekly.Capture()
+    equal(characters["player-d"].name, "Alice Cedar", "the native display name fills an absent surname")
+    st.guid, st.fullName = "player-e", "Bella-Cedar"
+    Plan.Weekly.Capture()
+    equal(characters["player-e"].name, "Alice", "the native display name must match the known first name")
+    st.surname = "Alice"
+    Plan.Weekly.Capture()
+    equal(characters["player-e"].name, "Alice Alice", "the same first name and surname are valid")
+    st.Event("PLAYER_REGEN_DISABLED")
+    equal(st.Event("UNIT_NAME_UPDATE", "player"), false, "the name event is suspended in combat")
+    equal(characters["offline"].name, "Bob - Another Realm", "unvisited character remains stored")
+end
+
 local function WeeklyChecks()
     local st, NS, S, Plan, owner = Fixture()
     equal(Plan.Weekly.Capture(), true, "weekly capture")
     local row = Plan.Weekly.Rows()[1]
     equal(row.checked, true, "same reset fresh")
+    equal(row.label, "Alice - Realm", "Retail retains the name and realm label")
     equal(row.detail:find("waiting for the server", 1, true) ~= nil, true, "lockout pending honest")
     Plan.Weekly.lockoutsReady = true
     Plan.Weekly.Capture()
@@ -572,6 +642,7 @@ local function LootChecks()
 end
 
 WeeklyChecks()
+ForeverNameChecks()
 KeystoneChecks()
 RegionChecks()
 SnapshotChecks()

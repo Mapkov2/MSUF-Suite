@@ -355,7 +355,7 @@ function Support.TooltipFixture(root, suite, ns)
         AddLinePreCall = function(kind, callback) fixture.pre[kind] = callback end,
     }
     if not canaccesstable then canaccesstable = function() return true end end
-    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipLines.lua"))(
+    assert(loadfile(root .. "/MSUF_Suite_Modules/TooltipLines.lua"))(
         "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
     function fixture.Run(kind, tooltip, data)
         for _, callback in ipairs(fixture.post.ALL or {}) do callback(tooltip, data) end

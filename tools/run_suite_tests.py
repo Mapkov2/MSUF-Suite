@@ -129,6 +129,8 @@ EXTRA = {
     "suite_skin_combat_edge_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_window_action_combat_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_game_menu_combat_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_flight_map_chrome_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_quest_offer_footer_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_cooperative_controls_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_scroll_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_surface_ensure_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -170,6 +172,7 @@ EXTRA = {
     # Host API v2: the current multi-client Menu2 protocol and Suite link files.
     "suite_host_api_v2_contract.lua": [[str(MSUF_70)]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_bags_native_bar_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_gallery_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_datatexts_security_contract.lua": [[flavor] for flavor in FLAVORS],

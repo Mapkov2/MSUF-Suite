@@ -334,6 +334,44 @@ local function Run(flavor)
     body = assert(Store.Preview(drink))
     Check(body:find("item:1113", 1, true) and not body:find("item:" .. buffFoodID, 1, true),
         "recovery consumed stat food instead of ordinary food")
+    local ranked = NS.Macros.Model.New("spell")
+    ranked.name, ranked.highestRank = "Ranked Heal", true
+    ranked.steps[1].branches[1].value = "Heal(Rank 1)"
+    C_Spell.GetSpellInfo = function() return { name = "Heal", spellID = 2054 } end
+    C_Spell.GetSpellSubtext = function() return "Rank 1" end
+    local rankID = assert(Store.Save(ranked))
+    Check(Store.Get(rankID).highestRank and Store.Publish(rankID), "automatic rank was not saved and published")
+    local published = assert(Store.ResolvePublished(rankID))
+    local expected = flavor == "Forever" and "Heal" or "Heal(Rank 1)"
+    Check(published.body == "#showtooltip\n/cast " .. expected, "saved WoW macro did not follow the client's rank setting")
+    ranked.highestRank = false
+    assert(Store.Save(ranked, rankID))
+    Check(Store.Publish(rankID, true) and Store.ResolvePublished(rankID).body == "#showtooltip\n/cast Heal(Rank 1)",
+        "updating the WoW macro did not restore the selected rank")
+
+    local rankIndex = published.index
+    macros[rankIndex].body = "#showtooltip\n/cast Heal(Rank 2)"
+    macros[rankIndex].icon = 135915
+    macros[1] = { name = ranked.name, body = "/say account macro", icon = 134400 }
+    ranked.highestRank = true
+    assert(Store.Save(ranked, rankID))
+    Check(not Store.Publish(rankID, true), "an unconfirmed write accepted changed native macro data")
+    local update, updateError, changed = Store.PrepareUpdate(rankID)
+    Check(update and update.index == rankIndex and changed, updateError or "changed macro was not found in its original scope")
+    macros[rankIndex].body = "#showtooltip\n/cast Heal(Rank 3)"
+    local beforeEdits, beforeCreates = edits, creates
+    Check(not Store.Publish(rankID, true, update) and edits == beforeEdits, "a stale confirmation overwrote a second edit")
+    macros[rankIndex + 1] = { name = ranked.name, body = "/say other macro", icon = 134400 }
+    Check(not Store.PrepareUpdate(rankID), "the update guessed between same-scope macros")
+    macros[rankIndex + 1] = nil
+    update = assert(Store.PrepareUpdate(rankID))
+    Check(Store.Publish(rankID, true, update) and creates == beforeCreates and edits == beforeEdits + 1,
+        "the confirmed update failed to edit the existing macro in place")
+    local updated = assert(Store.ResolvePublished(rankID))
+    Check(updated.index == rankIndex and updated.body == "#showtooltip\n/cast " .. expected
+        and macros[1].body == "/say account macro", "the update did not preserve the original slot or the other scope")
+    local _, _, changedAgain = Store.PrepareUpdate(rankID)
+    Check(not changedAgain, "the successful update did not refresh the linked fingerprint")
     return now
 end
 

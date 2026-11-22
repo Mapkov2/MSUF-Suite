@@ -44,7 +44,7 @@ local function Load(path)
     if handle then handle:close() else candidate = nil end
     assert(loadfile(candidate or root .. "/MSUF_Suite_Skin/" .. path))("MSUF_Suite_Skin", NS)
 end
-Load("Core/Safety.lua")
+Load("../MSUF_Suite/Appearance/Safety.lua")
 NS.Cosmetics = { Fade = function(target)
     Check(NS.Safety.CanDecorate(target, not combat), "native protected icon border was faded")
     writes = writes + 1

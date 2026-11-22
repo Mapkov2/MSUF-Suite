@@ -80,7 +80,7 @@ local ns = {
     CharacterDetails = { Apply = noop, Disable = noop },
     WindowControls = { TrackFocus = function() end, Attach = noop },
 }
-ns.Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", ns) or ns.Safety
+ns.Safety = assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", ns) or ns.Safety
 for _, file in ipairs({ "AdapterKit", "PaperDollChrome", "InspectPanel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", ns)
 end

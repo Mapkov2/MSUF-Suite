@@ -94,7 +94,7 @@ local NS = {
     },
 }
 -- The real guards and ScrollBox row helpers.
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/AdapterKit.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/SharedChrome.lua"))("MSUF_Suite_Skin", NS)
 local MacroWindow = assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/MacroWindow.lua"))("MSUF_Suite_Skin", NS)

@@ -146,7 +146,7 @@ local namespace = {
 namespace.Surface.Ensure = namespace.Surface.Attach
 
 -- The real guards and ScrollBox row helpers.
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", namespace)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", namespace)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/AdapterKit.lua"))("MSUF_Suite_Skin", namespace)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/SharedChrome.lua"))("MSUF_Suite_Skin", namespace)
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Adapters/ForeverGroupFinder.lua"))(

@@ -1120,16 +1120,16 @@
    "symbol": "object.OnTooltipShow"
   },
   {
-   "file": "MSUF_Suite_DataTexts/NativeBagBar.lua",
+   "file": "MSUF_Suite_Bags/NativeBagBar.lua",
    "kind": "client",
-   "reason": "only WoW Forever defines MainActionBar_InitializeMKB (its keyboard action bar setup shows the bag bar); 12.1.0 and 12.1.5 lack it",
+   "reason": "Only WoW Forever defines MainActionBar_InitializeMKB to show its keyboard bag bar; Retail lacks it.",
    "symbol": "MainActionBar_InitializeMKB"
   },
   {
-   "file": "MSUF_Suite_DataTexts/NativeBagBar.lua",
-   "kind": "addon",
-   "reason": "BagsBar belongs to Blizzard's Blizzard_MainMenuBarBagButtons; the bag bar option waits for it and syncs again on its ADDON_LOADED (suite_datatexts_contract hides and restores it).",
-   "symbol": "frame (= BagsBar)"
+   "file": "MSUF_Suite_Bags/NativeBagBar.lua",
+   "kind": "client",
+   "reason": "Only WoW Forever defines MainActionBar_InitializeGamepad to switch off the keyboard bag bar; Retail lacks it.",
+   "symbol": "MainActionBar_InitializeGamepad"
   },
   {
    "file": "MSUF_Suite_DataTexts/Sources.lua",
@@ -2306,6 +2306,18 @@
    "kind": "lod",
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
    "symbol": "S.ResetXPSession"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/CheapestItem.lua",
+   "symbol": "S.BagsTitleInset",
+   "kind": "lod",
+   "reason": "Suite Bags supplies the optional caption inset; Blizzard Bags works without the Bags addon loaded."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/CheapestItem.lua",
+   "symbol": "S.BagsToolsChanged",
+   "kind": "lod",
+   "reason": "Suite Bags supplies the callback to update its search row when the tool changes availability."
   },
   {
    "file": "MSUF_Suite_QualityOfLife/CharacterExtras.lua",

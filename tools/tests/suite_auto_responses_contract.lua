@@ -259,9 +259,14 @@ local function RefusalContract(module, case)
 end
 
 ------------------------------------------------------------------ party invites
-local function Invite(module, guid, tank, quest, name)
-    Fire(module, "PARTY_INVITE_REQUEST", name or "Stranger-Realm", tank == true, false, false, false, false,
-        guid, quest == true)
+local function Invite(module, guid, tank, quest, name, crossShard)
+    if crossShard ~= nil then
+        Fire(module, "PARTY_INVITE_REQUEST", name or "Stranger-Realm", tank == true, false, false, false,
+            crossShard, false, guid, quest == true)
+    else
+        Fire(module, "PARTY_INVITE_REQUEST", name or "Stranger-Realm", tank == true, false, false, false, false,
+            guid, quest == true)
+    end
     clock.Frame()
     return Took() == "DeclineGroup,hide PARTY_INVITE"
 end
@@ -275,6 +280,10 @@ local function InviteContract(module)
     end
     Check(not Invite(module, "stranger", true), "a group finder role invite was declined")
     Check(not Invite(module, "stranger", false, true), "a quest session invite was declined")
+    Check(Invite(module, "stranger", false, false, nil, false), "a new-payload stranger was not declined")
+    Check(Invite(module, "stranger", false, false, nil, true), "a cross-shard stranger was not declined")
+    Check(not Invite(module, "bnet", false, false, nil, true), "a cross-shard friend was declined")
+    Check(not Invite(module, "stranger", false, true, nil, true), "a cross-shard quest session invite was declined")
     Check(not Invite(module, secret) and not Invite(module, "stranger", false, false, secret),
         "an invite with a secret guid or name was declined")
     Check(not Invite(module, "hidden"), "an invite with a secret relationship was declined")
@@ -287,7 +296,7 @@ local function InviteContract(module)
     clock.Frame()
     Check(Took() == "", "a cancelled invite was declined")
     Fire(module, "PARTY_INVITE_REQUEST", unpack(STRANGER))
-    Fire(module, "PARTY_INVITE_REQUEST", "Friend-Realm", false, false, false, false, false, "bnet", false)
+    Fire(module, "PARTY_INVITE_REQUEST", "Friend-Realm", false, false, false, false, true, false, "bnet", false)
     clock.Frame()
     Check(Took() == "", "a stranger's invite was declined after a friend's replaced it")
     -- No relationship lookup is spent in combat.

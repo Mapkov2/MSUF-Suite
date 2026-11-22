@@ -156,6 +156,28 @@ do
     Suite.Suite.Normalize(oldBags)
     assert(oldBags.suite.modules.bags.inventoryView == 2, "the Blizzard grid migration must run only once")
 end
+do
+    local Borders = Suite.BagsBorderStyle
+    local step = Support.MigrationStep(root, "Steps.BagsDefaultBorder")
+    local settings = {
+        enabled = false, backpackBorderStyle = Borders.CUSTOM,
+        backpackBorderColor = "ff0000", backpackBorderWidth = 0, backpackBorderOpacity = 0,
+    }
+    local upgraded = { suite = { schema = 1, revision = step - 1, modules = { bags = settings } } }
+    Suite.Suite.Normalize(upgraded)
+    assert(settings.backpackBorderStyle == Borders.DEFAULT, "an older profile kept its hidden custom Backpack border")
+    assert(not settings.enabled and settings.backpackBorderColor == "ff0000"
+        and settings.backpackBorderWidth == 0 and settings.backpackBorderOpacity == 0, "border migration changed other bag settings")
+    settings.backpackBorderStyle = Borders.CUSTOM
+    Suite.Suite.Normalize(upgraded)
+    assert(settings.backpackBorderStyle == Borders.CUSTOM, "border migration overrode a later player choice")
+    local legacy = { suite = { schema = 1, modules = { bags = { backpackBorderStyle = Borders.CUSTOM } } } }
+    Suite.Suite.Normalize(legacy)
+    assert(legacy.suite.modules.bags.backpackBorderStyle == Borders.DEFAULT, "profile without a revision missed the migration")
+    local fresh = { suite = { schema = 1, revision = Suite.Suite.MigrationRevision, modules = {} } }
+    Suite.Suite.Normalize(fresh)
+    assert(fresh.suite.modules.bags.backpackBorderStyle == Borders.DEFAULT, "new profile has no standard Backpack border")
+end
 assert(Suite.Defaults.suite.modules.announcements.anchor == 1
     and Suite.Defaults.suite.modules.announcements.y == -90
     and Suite.Defaults.suite.modules.objectives.x == -35

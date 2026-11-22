@@ -395,17 +395,16 @@ assert(next(M.bars) == nil and next(M.activeSources) == nil and W.Pending() == 0
 nativeBag:Show()
 assert(nativeBag.shown, "DataTexts cannot hide the only equipped bag slots")
 W.SetCombat(true)
-assert(not S.Set("dataTexts", "hideBlizzardBagBar", false), "combat menu edit was accepted")
-S.Config("dataTexts").hideBlizzardBagBar = false
+assert(not S.Set("bags", "bagBarVisibility", W.Suite.BagsBarVisibility.ALWAYS), "combat menu edit was accepted")
 M:Refresh()
 assert(nativeBag.shown and not nativeBag.driver, "disabled Bags changed native access during combat")
 W.SetCombat(false)
 assert(nativeBag.shown and not nativeBag.driver, "bag restore was not replayed after combat")
-assert(S.Set("dataTexts", "hideBlizzardBagBar", true))
+assert(S.Set("bags", "bagBarVisibility", W.Suite.BagsBarVisibility.NEVER))
 assert(nativeBag.shown and not nativeBag.driver, "hide preference removed equipped slots without a replacement")
 assert(S.Set("dataTexts", "enabled", false))
 assert(nativeBag.shown and not nativeBag.driver, "profile disable did not restore native bag bar")
-print("PASS: DataTexts preserves native bags without a replacement; combat deferral and restore work")
+print("PASS: DataTexts preserves native bags while Bags is disabled")
 """
 
 def check_meter_and_bags(root, module):

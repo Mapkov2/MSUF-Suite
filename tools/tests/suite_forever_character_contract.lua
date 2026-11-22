@@ -168,7 +168,7 @@ local ns = {
     Theme = { GetColor = function() return 0.7, 0.5, 0.3, 1 end },
     Registry = { AddListener = function(owner, callback) themeListeners[owner] = callback end, QueueJob = QueueJob },
     IsCombatLocked = function() return combatLocked end,
-    Safety = assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
+    Safety = assert(loadfile(rootPath .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", {}),
     Cosmetics = {
         Fade = function(region) region.alpha = 0; return true end,
         Restore = function(region) region.alpha = 1; return true end,

@@ -79,7 +79,7 @@ NS.Macros.Native = {
     RemoveBindings = function(entry, reserved) restored = { entry = entry, reserved = reserved } return true end,
 }
 NS.Macros.Store = {
-    Preview = function(document) return NS.Macros.Compile(document) end,
+    Preview = function(document, preserveRanks) return NS.Macros.Compile(document, nil, preserveRanks) end,
     List = function() return saved end,
     Get = function(id) return saved[id] end,
     Save = function(document, id)
@@ -89,6 +89,7 @@ NS.Macros.Store = {
         saved[id].id = id
         return id
     end,
+    PrepareUpdate = function() return native[1] end,
     Publish = function(id)
         publications = publications + 1
         native[1] = { index = 1, name = saved[id].name, scope = saved[id].scope,
@@ -704,6 +705,7 @@ entries[1].subName, entries[5].subName = "Rang 1", "Rang 2"
 NS.Client.isForever = false
 page.Render()
 assert(not rankButton:IsShown(), "Retail does not expose legacy spell rank controls")
+assert(not page.ui.pools.toggle["highest-rank"]:IsShown(), "Retail does not expose automatic ranks")
 beforeScans, readsBeforeFilter = scans, slotReads
 page.PickRank(page.ui.body, "spell", spellName, function() error("Retail rank callback") end)
 assert(scans == beforeScans and slotReads == readsBeforeFilter, "Retail rank action never reads legacy rank data")
@@ -721,9 +723,63 @@ assert(scans == beforeScans and slotReads == readsBeforeFilter
 combat = false
 local bindingContext = Context()
 P.registered.build(bindingContext)
+local rankedHeal = "Heal(Rank 1)"
+C_Spell.GetSpellInfo = function(value)
+    if value == rankedHeal then return { name = "Heal", spellID = 2054 } end
+end
+C_Spell.GetSpellSubtext = function() return "Rank 1" end
+page.helpers.New("spell", function(doc)
+    doc.name, doc.steps[1].branches[1].value = "Ranked Heal", rankedHeal
+end)
+local automaticRank = assert(page.ui.pools.toggle["highest-rank"])
+assert(automaticRank:IsShown() and not automaticRank.checked, "new macros start with automatic rank off")
+assert(automaticRank.caption.text == "Auto Rank Up" and automaticRank.point[5] > page.ui.publish.point[3],
+    "Auto Rank Up must be a visible checkbox above the WoW macro action")
+automaticRank.scripts.OnClick(automaticRank)
+assert(automaticRank.checked and page.compiled:find("/cast Heal\n?$") and page.dirty,
+    "automatic rank did not update the preview")
+page.ui.pools.button["tab:raw"].action()
+assert(page.document.raw:find(rankedHeal, 1, true) and page.compiled:find("/cast Heal\n?$"),
+    "the Code tab lost the original rank or stopped applying the toggle")
+automaticRank.scripts.OnClick(automaticRank)
+assert(page.compiled == page.document.raw, "turning off automatic ranks did not restore the original code")
+automaticRank.scripts.OnClick(automaticRank)
+page.ui.pools.button["save-draft"].action()
+local rankedDraft = page.id
+page.helpers.New("spell")
+assert(not automaticRank.checked, "new macro inherited another macro's toggle")
+page.Load(rankedDraft)
+assert(automaticRank.checked and page.document.highestRank, "the toggle did not survive a draft round trip")
+page.ui.publish.scripts.OnClick(page.ui.publish)
+local changedTarget = { name = page.document.name, scope = page.document.scope, body = "/cast Heal(Rank 2)" }
+local macroStore = NS.Macros.Store
+macroStore.PrepareUpdate = function(id)
+    assert(id == rankedDraft, "update requested the wrong draft")
+    return changedTarget, nil, true
+end
+local savedPublish, showConfirmation = macroStore.Publish, P.Confirm
+local approveUpdate, updatePrompt, approvedTarget
+P.Confirm = function(_, prompt, approve) updatePrompt, approveUpdate = prompt, approve end
+macroStore.Publish = function(id, replace, target)
+    assert(replace and id == rankedDraft, "confirmation did not perform an in-place update")
+    approvedTarget = target
+    return savedPublish(id)
+end
+page.ui.publish.scripts.OnClick(page.ui.publish)
+assert(approveUpdate and updatePrompt:find(changedTarget.name, 1, true) and not approvedTarget,
+    "the existing changed macro must be named and confirmed before updating")
+approveUpdate()
+assert(approvedTarget == changedTarget, "update did not use the confirmed snapshot")
+page.ui.publish.scripts.OnClick(page.ui.publish)
+local staleUpdate = approveUpdate
+P.Confirm = showConfirmation
+macroStore.Publish = savedPublish
 page.helpers.New("mouseover", function(doc)
     doc.name, doc.steps[1].branches[1].value = "Click Heal", "Heal"
 end)
+local priorPublications = publications
+staleUpdate()
+assert(publications == priorPublications, "an old update dialog published a different draft")
 local function BeginBinding(isKey)
     local button = assert(isKey and page.ui.bindKey or page.ui.bindClick, "missing binding control in the macro builder")
     assert(button.enabled and button:IsVisible(), "a valid macro cannot be bound")

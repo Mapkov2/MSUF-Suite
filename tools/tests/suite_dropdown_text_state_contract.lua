@@ -33,7 +33,7 @@ local NS = {
 }
 for _, path in ipairs({ "Safety", "BlizzardYellow", "Checkmarks", "CheckmarksMenus" }) do
     local override = path == "CheckmarksMenus" and os.getenv("SUITE_DROPDOWN_STATE_OVERRIDE")
-    assert(loadfile(override or root .. "/MSUF_Suite_Skin/Core/" .. path .. ".lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(override or root .. (path == "Safety" and "/MSUF_Suite/Appearance/" or "/MSUF_Suite_Skin/Core/") .. path .. ".lua"))("MSUF_Suite_Skin", NS)
 end
 local function Label()
     local text = { color = { 1, 0.82, 0, 1 }, writes = 0 }

@@ -163,9 +163,14 @@ Check(floatingTextAvailable, tostring(floatingTextReason))
 Check((rows[floatingTextKey] ~= nil) == floatingTextAvailable, "wrong floating combat text search visibility")
 Check((rows["msufsuite.floatingCombatText.font"] ~= nil) == floatingTextAvailable,
     "floating combat text font picker is missing from Gameplay search")
-for _, setting in ipairs({ "hitSide", "avoidSide", "scrollStyle", "showXP" }) do
+for _, setting in ipairs({ "hitSide", "avoidSide", "scrollStyle", "showXP", "showLevelUp", "xpSide" }) do
     Check(rows["msufsuite.floatingCombatText." .. setting], "scrolling combat text setting missing from Gameplay search")
 end
+local worldTextKey = "msufsuite.floatingCombatText.hideBlizzardWorldText"
+local worldTextRow = rows[worldTextKey]
+Check((worldTextRow ~= nil) == (flavor == "Forever"), "World text search did not follow client availability")
+local xpPlacement = rows["msufsuite.floatingCombatText.xpSide"]
+Check(xpPlacement.label:find("XP", 1, true), "XP placement has no direct search label")
 local original = { pageKey = "suite_qualityOfLife", settingKey = key,
     sectionId = "suite_qualityOfLife_actionTracker_action_tracker" }
 local page, target = P.GameplayPage.Resolve(original.pageKey, original)
@@ -212,7 +217,33 @@ Settle()
 Check(M.activeKey == "gameplay" and Widget(key), "runtime shortcut opened wrong page")
 Select("home")
 local api = M.Search._CoreAPI
-local ok, focused, exact = api.OpenSearchTarget(original.pageKey, "Action tracker", nil, nil, nil, original)
+api.GetSearchRecords()
+if api.WhenIndexReady then
+    local indexed = false
+    Check(api.WhenIndexReady(function() indexed = true end), "XP search index could not start")
+    Settle()
+    Check(indexed, "XP search index did not finish")
+end
+local xpTarget
+local xpResults = api.SearchPages("XP")
+for i = 1, math.min(6, #xpResults) do
+    local target = xpResults[i].exactTarget
+    if target and target.settingKey == xpPlacement.settingKey then
+        xpTarget = target
+        break
+    end
+end
+Check(xpTarget, "XP placement missing from the first six results for XP")
+local ok, focused, exact = api.OpenSearchTarget(xpTarget.pageKey, "XP", nil, nil, nil, xpTarget)
+Settle()
+Check(ok and focused and exact and Widget(xpPlacement.settingKey), "XP placement failed exact navigation")
+if worldTextRow then
+    ok, focused, exact = api.OpenSearchTarget(worldTextRow.pageKey, worldTextRow.label, nil, nil, nil, worldTextRow)
+    Settle()
+    Check(ok and focused and exact and Widget(worldTextKey), "World text search did not open its switch")
+end
+Select("home")
+ok, focused, exact = api.OpenSearchTarget(original.pageKey, "Action tracker", nil, nil, nil, original)
 Settle()
 Check(ok and focused and exact and M.activeKey == "gameplay", "legacy toggle failed exact navigation")
 local oldCategory = { pageKey = "suite_qualityOfLife", sectionId = "suite_qualityOfLife_category_combatAlerts" }

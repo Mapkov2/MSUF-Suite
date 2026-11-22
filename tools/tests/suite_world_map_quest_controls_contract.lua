@@ -427,7 +427,7 @@ local function Run(flavor)
     NS.CombatGate = { RunOrDefer = function(key, callback)
         if combat then delayed[key] = callback else callback() end
     end }
-    Load("Core/Cosmetics.lua")
+    Load("../MSUF_Suite/Appearance/Cosmetics.lua")
     Load("Adapters/AdapterKit.lua")
     hooksecurefunc = function(target, name, callback)
         if type(target) == "string" then target, name, callback = _G, target, name end

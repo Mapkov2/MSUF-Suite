@@ -257,6 +257,29 @@ local function Check(forever)
     Event("PLAYER_MOUNT_DISPLAY_CHANGED")
     assert(module.raid.rows[2].total == 6 and module.raid.buttons[2].shown,
         "first visible state did not take a complete snapshot")
+    if not forever then
+        c.raidBuffOverview, c.readyCheckRaidBuffNames = false, true
+        local report
+        local tools = S.ToolListWindow
+        S.ToolListWindow = { Open = function(_, spec) report = spec.rows() end, Close = function() end }
+        NS.InCombat = NS.IsCombatLocked
+        S.PublicText = function(value) return S.Public(value) and type(value) == "string" and value or nil end
+        C_Spell.GetSpellName = function(id) return "Spell " .. id end
+        UnitIsGroupLeader = function() return true end
+        UnitIsGroupAssistant = function() return false end
+        GetUnitName = function(unit) return "Name-" .. unit end
+        buffs.raid3[1459] = nil
+        invisible.raid3, disconnected.raid3, dead.raid3 = nil, nil, nil
+        module:Refresh()
+        Event("READY_CHECK")
+        local mage
+        for _, entry in ipairs(report or {}) do if entry.key == 1459 then mage = entry end end
+        assert(mage and mage.detail:find("Name-raid3", 1, true), "ready check should name the player missing Arcane Intellect")
+        assert(#module.raid.rows == 0, "ready check snapshot must not turn on the permanent raid overview")
+        c.readyCheckRaidBuffNames = false
+        module:Refresh()
+        S.ToolListWindow = tools
+    end
     module:Disable()
     module.active = false
 end
