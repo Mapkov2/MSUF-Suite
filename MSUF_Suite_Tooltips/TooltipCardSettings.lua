@@ -169,6 +169,7 @@ function Card.SetPreset(key, resetSurface)
     local theme, item, spell, unit = NS.DB.theme, Card.TypeStyle("item"), Card.TypeStyle("spell"), Card.TypeStyle("unit")
     local loot, quest = Card.TypeStyle("loot"), Setting("questStyle")
     local cardSurface, lootSurface = Setting("cardSurface"), Setting("lootSurface")
+    local backgroundTexture, headerTexture = Setting("backgroundTexture"), Setting("headerTexture")
     local previous = theme.tooltipLayout
     local vitals = {}
     for _, field in ipairs(unitFields) do vitals[field] = NS.CopyValue(Setting(field)) end
@@ -192,6 +193,7 @@ function Card.SetPreset(key, resetSurface)
     settings.itemStyle, settings.spellStyle, settings.unitStyle, settings.questStyle, settings.lootStyle = item, spell, unit, quest, loot
     if resetSurface then cardSurface, lootSurface = defaults.cardSurface, defaults.lootSurface end
     settings.cardSurface, settings.lootSurface = cardSurface, lootSurface
+    if not resetSurface then settings.backgroundTexture, settings.headerTexture = backgroundTexture, headerTexture end
     NS.Registry.NotifyListeners("tooltipStyle", "preset")
     return true
 end
@@ -202,6 +204,23 @@ function Card.Preset()
     if key == "custom" or presets[key] or Palette.HasPreset(key) then return key end
     return theme.itemTooltipStyle == "card" and "custom" or "compact"
 end
+
+local layoutFields = { "x", "y", "iconSize", "height", "cardSurface", "lootSurface" }
+local appearanceFields = { "backgroundTexture", "headerTexture", "headerColor", "icon", "level", "kind", "tint",
+    "rule", "palette", "paletteGradient", "paletteDirection", "borderMode", "borderWidth", "borderColor",
+    "fillColor", "endColor", "titleColor", "accentColor" }
+
+local function ResetFields(fields, reason)
+    if NS.IsCombatLocked() then return false end
+    local settings = LayoutSettings()
+    for _, field in ipairs(fields) do settings[field] = nil end
+    settings.preset = "custom"
+    NS.Registry.NotifyListeners("tooltipStyle", reason)
+    return true
+end
+
+function Card.ResetLayout() return ResetFields(layoutFields, "layout") end
+function Card.ResetAppearance() return ResetFields(appearanceFields, "preset") end
 
 function Card.ResetUnitVitals()
     if NS.IsCombatLocked() then return false end

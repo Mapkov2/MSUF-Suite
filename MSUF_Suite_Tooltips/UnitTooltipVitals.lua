@@ -8,7 +8,7 @@ local NATIVE_FILL = "Interface\\TargetingFrame\\UI-TargetingFrame-BarFill"
 local UNIT = Enum.TooltipDataType.Unit
 local UNIT_NAME = Enum.TooltipDataLineType.UnitName
 local nativeView, panelView
-local active, nativeHooks
+local active
 local config = {}
 local UnitHealthPercent = UnitHealthPercent
 local scaleTo100 = CurveConstants and CurveConstants.ScaleTo100
@@ -30,14 +30,18 @@ local function PublicUnit(unit)
     return Safety.Public(unit) and type(unit) == "string" and unit ~= ""
 end
 
-local function UnitFromData(tooltip, data)
+local function UnitFromData(data)
+    if not Readable(data) then return end
     local lines = data.lines
     local first = Readable(lines) and lines[1]
     if Readable(first) and Safety.Public(first.type) and first.type == UNIT_NAME and PublicUnit(first.unitToken) then
         return first.unitToken
     end
-    -- The native frame already knows its unit. Its result can be secret.
-    local _, unit = Safety.Call(tooltip, "GetUnit")
+    -- Use the documented GUID lookup without the native Lua wrapper, which
+    -- branches on the same tooltip fields before checking for restricted data.
+    local guid = data.guid
+    if not PublicUnit(guid) then return end
+    local unit = UnitTokenFromGUID(guid)
     if PublicUnit(unit) then return unit end
 end
 
@@ -85,19 +89,23 @@ local function Place(view, shape)
     end
 end
 
-local function Create(parent)
+local function Resize(view, width)
+    if not Safety.Public(width) or type(width) ~= "number" or width == view.width then return end
+    view.width = width
+    if view.healthShape.width ~= 100 then Place(view, view.healthShape) end
+    if view.powerShape.width ~= 100 then Place(view, view.powerShape) end
+end
+
+local function Create(parent, native)
     local health, healthText, healthBg = Bar(parent)
     local power, powerText, powerBg = Bar(parent)
     local view = { parent = parent, health = health, healthText = healthText, power = power, powerText = powerText,
         healthShape = { bar = health, bg = healthBg, text = healthText, fill = FILL },
         powerShape = { bar = power, bg = powerBg, text = powerText, fill = FILL } }
     view.width = Safety.Read(parent, "GetWidth")
-    parent:HookScript("OnSizeChanged", function(_, width)
-        if not Safety.Public(width) or width == view.width then return end
-        view.width = width
-        if view.healthShape.width ~= 100 then Place(view, view.healthShape) end
-        if view.powerShape.width ~= 100 then Place(view, view.powerShape) end
-    end)
+    if not native then
+        parent:HookScript("OnSizeChanged", function(_, width) Resize(view, width) end)
+    end
     return view
 end
 
@@ -114,10 +122,16 @@ local function ApplyMaterial(shape, style)
     shape.bg:SetVertexColor(unpack(style.tint))
 end
 
+local function HideBar(shape)
+    if not shape.shown then return end
+    shape.shown = false
+    shape.bar:Hide()
+end
+
 local function PaintBar(view, shape, style, offset, shown, showText, draft)
-    shape.shown = shown
-    shape.bar:SetShown(shown)
-    if not shown then return 0 end
+    if not shown then HideBar(shape) return 0 end
+    shape.shown = true
+    shape.bar:SetShown(true)
     shape.offset = offset
     shape.x = draft and draft.x or style.x
     shape.y = draft and draft.y or style.y
@@ -218,28 +232,49 @@ end
 local function Stop(view)
     if not view then return end
     view.mirror, view.mirrorPending, view.mirrorDirty = nil, nil, nil
-    if view.native then FadeNative(view, false) end
+    view.mirrorPercent, view.mirrorText = nil, nil
+    if view.faded then FadeNative(view, false) end
     if view.unit then view.event:UnregisterAllEvents() end
     view.unit, view.pending, view.unitShown, view.healthOn, view.powerOn = nil, nil, nil, nil, nil
-    view.healthShape.shown, view.powerShape.shown = nil, nil
-    view.health:Hide()
-    view.power:Hide()
+    HideBar(view.healthShape)
+    HideBar(view.powerShape)
 end
 
--- The native bar has already resolved the target, even when its unit token
--- is secret. Forward only its display range and value to the owned bar.
+-- The native health bar uses a public 0-1 range. Show percentages when its
+-- fill value is also public. Its secret values go straight to the status bar.
+local function MirrorPercent(text, value)
+    if config.healthText.mode ~= "percent" or not Safety.Public(value) or type(value) ~= "number" then return false end
+    text:SetFormattedText("%.0f%%", value * 100)
+    return true
+end
+
+local function PaintMirrorText(view, value, restyle)
+    local show = view.mirrorPercent and MirrorPercent(view.healthText, value)
+    if restyle or view.mirrorText ~= show then
+        view.mirrorText = show
+        Paint(view, true, false, false, nil, nil, not show)
+    end
+end
+
+-- Blizzard still owns the unit identity and updates its display value.
+
+local function WantsMirror(view)
+    return config.mode == "show" and view.unitShown and not (view.unit or view.pending or view.mirror)
+end
+
 local function StartMirror(view)
     local bar = view.healthSource
-    if not view.unitShown or view.unit or view.pending or view.mirror or config.mode ~= "show"
-        or Safety.Read(view.parent, "IsShown") ~= true or Safety.Read(bar, "IsShown") ~= true then return end
+    if not WantsMirror(view) or Safety.Read(view.parent, "IsShown") ~= true
+        or Safety.Read(bar, "IsShown") ~= true then return end
     local minimum, maximum = Safety.Call(bar, "GetMinMaxValues")
     local value = Safety.Call(bar, "GetValue")
     if (Safety.Public(minimum) and minimum == nil) or not ValidMaximum(maximum)
         or (Safety.Public(value) and value == nil) or not FadeNative(view, true) then return end
     view.mirror = true
+    view.mirrorPercent = Safety.Public(minimum) and minimum == 0 and Safety.Public(maximum) and maximum == 1
     view.health:SetMinMaxValues(minimum, maximum)
     view.health:SetValue(value)
-    Paint(view, true, false, false, nil, nil, true)
+    PaintMirrorText(view, value, true)
 end
 
 local function BindHealthSource(view)
@@ -249,15 +284,25 @@ local function BindHealthSource(view)
     bar:HookScript("OnShow", function() StartMirror(view) end)
     bar:HookScript("OnHide", function()
         if not view.mirror then return end
-        view.mirror, view.mirrorDirty, view.healthShape.shown = nil, nil, nil
-        view.health:Hide()
+        view.mirror, view.mirrorDirty = nil, nil
+        HideBar(view.healthShape)
         FadeNative(view, false)
     end)
     bar:HookScript("OnValueChanged", function(_, value)
         if not view.mirror then return end
-        if view.mirrorPending then view.mirrorDirty = true
-        else view.health:SetValue(value) end
+        if view.mirrorPending then
+            view.mirrorDirty = true
+        else
+            view.health:SetValue(value)
+            PaintMirrorText(view, value)
+        end
     end)
+end
+
+local function RequestMirror(view)
+    if not WantsMirror(view) then return end
+    if not view.healthSource then BindHealthSource(view) end
+    StartMirror(view)
 end
 
 local function UpdateHealth(view, unit)
@@ -287,10 +332,11 @@ local function Update(view, event)
         power = ValidMaximum(maximum)
         if power then SetValues(view.power, view.powerText, UnitPower(unit), maximum, config.text) end
     elseif event then power = view.powerOn end
-    if view.native and not health then FadeNative(view, config.mode == "hide") end
+    local hideNative = config.mode == "hide"
+    if view.native and not health and (hideNative or view.faded) then FadeNative(view, hideNative) end
     if not event or health ~= view.healthOn or power ~= view.powerOn then
         view.healthOn, view.powerOn = health, power
-        Paint(view, health, power, false, view.native and not health and NativeHeight())
+        Paint(view, health, power, false, power and view.native and not health and NativeHeight())
     end
 end
 
@@ -320,7 +366,7 @@ end
 
 local function Bind(parent, native)
     if not Safety.CanCreateRegions(parent) then return end
-    local view = Create(parent)
+    local view = Create(parent, native)
     view.native = native
     view.event = CreateFrame("Frame")
     view.event:SetScript("OnEvent", function(_, event)
@@ -329,22 +375,29 @@ local function Bind(parent, native)
         end
         Update(view, event)
     end)
-    parent:HookScript("OnHide", function() Stop(view) end)
+    if not native then
+        parent:HookScript("OnHide", function() if view.unit then Stop(view) end end)
+    end
     return view
 end
 
-local function ShowNative()
+function Vitals.NativeShown()
     local view = nativeView
     if not view or not active then return end
     local pending = view.pending
     view.pending = nil
     if pending then Watch(view, pending) end
     if config.mode == "hide" and view.unitShown then FadeNative(view, true) end
-    StartMirror(view)
+    RequestMirror(view)
 end
 
 local function ClearNative()
     Stop(nativeView)
+end
+Vitals.NativeHidden = ClearNative
+
+function Vitals.NativeResized(width)
+    if nativeView then Resize(nativeView, width) end
 end
 
 function Vitals.NativeCleared()
@@ -361,13 +414,15 @@ function Vitals.FinishNativeClear()
 end
 
 local function ResumeMirror(view)
+    local restyle = view.healthShape.style ~= config.health
+    if not view.mirrorDirty and not restyle then return end
+    local value = Safety.Call(view.healthSource, "GetValue")
+    if Safety.Public(value) and value == nil then Stop(view) return end
     if view.mirrorDirty then
         view.mirrorDirty = nil
-        local value = Safety.Call(view.healthSource, "GetValue")
-        if Safety.Public(value) and value == nil then Stop(view) return end
         view.health:SetValue(value)
     end
-    if view.healthShape.style ~= config.health then Paint(view, true, false, false, nil, nil, true) end
+    PaintMirrorText(view, value, restyle)
 end
 
 function Vitals.Native(tooltip, data)
@@ -375,9 +430,7 @@ function Vitals.Native(tooltip, data)
         or Safety.IsForbidden(tooltip) then return end
     local view = nativeView
     local unit
-    if config.mode == "show" or config.power then
-        if Readable(data) then unit = UnitFromData(tooltip, data) end
-    end
+    if config.mode == "show" or config.power then unit = UnitFromData(data) end
     if view.mirror and (unit or config.mode ~= "show") or not unit and (view.unit or view.pending) then Stop(view) end
     view.unitShown, view.mirrorPending = true, nil
     if unit then
@@ -386,7 +439,7 @@ function Vitals.Native(tooltip, data)
     end
     if config.mode == "hide" then FadeNative(view, true) end
     if view.mirror then ResumeMirror(view)
-    else StartMirror(view) end
+    else RequestMirror(view) end
 end
 
 local function ObservePanel(panel, unit)
@@ -431,12 +484,8 @@ function Vitals.Refresh()
         NS.CombatGate.RunOrDefer(Vitals, Vitals.Refresh)
     elseif wanted and GameTooltip and not nativeView then
         nativeView = Bind(GameTooltip, true)
-        if nativeView and not nativeHooks then
-            BindHealthSource(nativeView)
-            GameTooltip:HookScript("OnShow", ShowNative)
-            nativeHooks = true
-        end
     end
+    local previouslyActive = active
     active = wanted == true
     Vitals.Enabled = active
     local host = suite and suite.HostBridge
@@ -455,6 +504,7 @@ function Vitals.Refresh()
     elseif panelView and panelView.unit then Watch(panelView, panelView.unit) end
     if not active then ClearNative()
     elseif nativeView then
+        if not previouslyActive then Resize(nativeView, Safety.Read(GameTooltip, "GetWidth")) end
         local data = Safety.Read(GameTooltip, "GetPrimaryTooltipData")
         if nativeView.unitShown or Readable(data) and Safety.Public(data.type) and data.type == UNIT then
             Vitals.Native(GameTooltip, data)
@@ -486,13 +536,17 @@ function Vitals.CreatePreview(parent) return Create(parent) end
 
 function Vitals.PaintPreview(view, visible, panel, legacyHidden, healthLayer, powerLayer, previewSize, restricted)
     local native = not panel and config.mode == "native" and not legacyHidden
-    local mirrored = not panel and restricted and config.mode == "show"
-    local health = visible and healthLayer and (native or config.mode == "show" and (not restricted or mirrored))
-    local power = visible and powerLayer and config.power == true and not restricted
+    local hiddenUnit = not panel and restricted
+    local mirrored = hiddenUnit and config.mode == "show"
+    local health = visible and healthLayer and (native or config.mode == "show")
+    local power = visible and powerLayer and config.power == true and not hiddenUnit
+    local hideHealthText
     if health then
-        if native or mirrored then SetValues(view.health, view.healthText, 7601, 10000, false)
+        if native or mirrored then
+            SetValues(view.health, view.healthText, .7601, 1, false)
+            hideHealthText = mirrored and not MirrorPercent(view.healthText, .7601)
         else HealthValues(view, 7601, 10000) end
     end
     if power then SetValues(view.power, view.powerText, 63, 100, config.text) end
-    return Paint(view, health, power, native, nil, previewSize, mirrored)
+    return Paint(view, health, power, native, nil, previewSize, hideHealthText)
 end

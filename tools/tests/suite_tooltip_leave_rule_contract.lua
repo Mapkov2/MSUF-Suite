@@ -10,7 +10,7 @@ local root = assert(arg[1], "repository root required")
 -- The files in TOC order (QualityOfLife: J-Z and EnemyCastStack only).
 local function Files()
     local files = {}
-    for _, addon in ipairs({ "MSUF_Suite_QualityOfLife", "MSUF_Suite_BuffReminders", "MSUF_Suite_Chat",
+    for _, addon in ipairs({ "MSUF_Suite_Tooltips", "MSUF_Suite_QualityOfLife", "MSUF_Suite_BuffReminders", "MSUF_Suite_Chat",
         "MSUF_Suite_Nameplates" }) do
         local toc = assert(io.open(root .. "/" .. addon .. "/" .. addon .. "_Mainline.toc", "rb"))
         for line in toc:read("*a"):gmatch("[^\r\n]+") do

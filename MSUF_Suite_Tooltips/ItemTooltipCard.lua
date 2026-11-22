@@ -4,9 +4,9 @@ local _, NS = ...
 local Card, Vitals = NS.ItemTooltipCard, NS.TooltipVitals
 local Safety = NS.Safety
 local Palette = NS.TooltipPalette
-local SPEC = { role = "popup", radius = 0, border = 0, opaqueFill = true,
+local SPEC = { role = "popup", radius = 0, border = 0, opaqueFill = true, media = "header",
     resolveFill = Palette.Fill, appearanceToken = "tooltipPalette" }
-local BACKING = { role = "popup", radius = 0, border = 0, motion = false, depth = false, ownedArt = true,
+local BACKING = { role = "popup", radius = 0, border = 0, motion = false, depth = false, ownedArt = true, media = "background",
     resolveFill = Palette.Fill, appearanceToken = "tooltipPalette" }
 local WIDTH, HEIGHT, MIN_CARD_WIDTH = 238, 48, 160
 local Caption = NS.TooltipComparisonCaption
@@ -86,11 +86,15 @@ end
 function Card.Draw(target, name, icon, kind, level, quality, maxHeight, previewSize)
     local height = math.min(previewSize and previewSize.height or Card.HeaderHeight(), maxHeight or HEIGHT)
     local size = math.min(height - 8, previewSize and previewSize.iconSize or Setting("iconSize"))
-    local showIcon = icon ~= nil and Setting("icon")
+    local secretIcon = not Safety.Public(icon)
+    local showIcon = Setting("icon") and (secretIcon or icon ~= nil)
     target.hasIcon, target.iconSize, target.height = showIcon, size, height
+    target.secretIcon = showIcon and secretIcon
     target.frame:SetHeight(height)
-    target.icon:SetShown(showIcon)
+    if not showIcon then icon = nil end
+    -- SetTexture accepts display-only assets from Blizzard.
     target.icon:SetTexture(icon)
+    target.icon:SetShown(showIcon)
     target.icon:SetSize(size, size)
     Card.PlaceContent(target, Setting("x"), Setting("y"))
     target.title:SetText(name)
@@ -176,6 +180,10 @@ local function Hide(view)
         view.header.title:SetText("")
         view.secretTitle = nil
     end
+    if view.header.secretIcon then
+        view.header.icon:SetTexture(nil)
+        view.header.secretIcon, view.kind = false, nil
+    end
 end
 
 local EMPTY = {}
@@ -204,13 +212,14 @@ local function PositiveNumber(value)
     return Safety.Public(value) and type(value) == "number" and value > 0 and value < math.huge and value or nil
 end
 
-local function ItemKey(tip, info)
+local function ItemKey(info)
     local link = info.hyperlink
-    if not Safety.Public(link) then return end
-    if type(link) == "string" and link ~= "" then return link end
-    local _, itemLink = Safety.Call(tip, "GetItem")
-    if not Safety.Public(itemLink) then return end
-    if type(itemLink) == "string" and itemLink ~= "" then return itemLink end
+    if Safety.Public(link) and type(link) == "string" and link ~= "" then return link end
+    local guid = info.guid
+    if Safety.Public(guid) and type(guid) == "string" and guid ~= "" then
+        link = C_Item.GetItemLinkByGUID(guid)
+        if Safety.Public(link) and type(link) == "string" and link ~= "" then return link end
+    end
     return PositiveNumber(info.id)
 end
 
@@ -228,38 +237,66 @@ function Card.ReadItem(key)
     return PositiveNumber(icon), subclass, level and NS.SuiteCore().Text("Item level %d"):format(level), quality
 end
 
-local function TextureKey(region)
-    if not Safety.Public(region) then return end
-    local texture = Safety.Read(region, "GetTexture")
+local function DisplayTexture(texture)
+    if not Safety.Public(texture) then return texture end
     if type(texture) == "string" and texture ~= "" then return texture end
     return PositiveNumber(texture)
+end
+
+local function ReadIcon(region)
+    if not Safety.Public(region) or region == nil or Safety.Read(region, "IsShown") == false then return end
+    return DisplayTexture(Safety.Call(region, "GetTexture"))
 end
 
 local function OwnerIcon(tip)
     local owner = Safety.Read(tip, "GetOwner")
     if not owner or Safety.IsForbidden(owner) then return end
-    return TextureKey(Safety.Field(owner, "Icon")) or TextureKey(Safety.Field(owner, "icon"))
+    local icon = ReadIcon(Safety.Field(owner, "Icon"))
+    if not Safety.Public(icon) or icon ~= nil then return icon end
+    return ReadIcon(Safety.Field(owner, "icon"))
+end
+
+local function NativeIconSource(tip)
+    local source = Safety.Read(tip, "GetPrimaryTooltipInfo")
+    if type(source) ~= "table" or not canaccesstable(source) then return end
+    local getter = source.getterName
+    if not Safety.Public(getter) or getter ~= "GetAction" and getter ~= "GetSpellByID" then return end
+    local args = source.getterArgs
+    if not Safety.Public(args) or type(args) ~= "table" or not canaccesstable(args) then return end
+    local id = PositiveNumber(args[1])
+    if not id then return end
+    if getter == "GetSpellByID" then return id end
+    -- GetAction's argument is the slot used for this build, even when the
+    -- owner is an anchor frame and the payload cannot expose a spell ID.
+    if id % 1 == 0 then return nil, DisplayTexture(C_ActionBar.GetActionTexture(id)) end
 end
 
 local function DataKey(tip, info, kind, link)
-    if kind == ITEM then return link or ItemKey(tip, info) end
-    if kind == SPELL then return PositiveNumber(info.id) or "spell" end
+    if kind == ITEM then return link or ItemKey(info) end
     if nativeNames[kind] then return kind end
-    -- An aura instance, action slot or macro ID is not a spell ID.
-    if spellLabels[kind] then return Setting("icon") and OwnerIcon(tip) or false end
+    if not spellLabels[kind] or not Setting("icon") then return end
+    -- Prefer the actual rendered icon. A spell lookup can return a different
+    -- asset for an override or have no usable result during a cooldown.
+    local icon = OwnerIcon(tip)
+    local publicIcon = Safety.Public(icon)
+    if publicIcon and icon ~= nil then return nil, icon end
+    local sourceID, sourceIcon = NativeIconSource(tip)
+    local publicSource = Safety.Public(sourceIcon)
+    if publicSource and sourceIcon ~= nil then return nil, sourceIcon end
+    if not publicIcon then return nil, icon end
+    if not publicSource then return nil, sourceIcon end
+    if kind == SPELL then return PositiveNumber(info.id) or sourceID end
 end
 
 local sourceColor = {}
-local function ReadData(kind, key, text)
+local function ReadData(kind, key, text, ownerIcon)
     if kind == ITEM then
         if not key then return text end
         local icon, itemType, level, quality = Card.ReadItem(key)
         return text, icon, itemType, level, quality
     elseif spellLabels[kind] then
-        local icon = key or nil
-        if kind == SPELL then
-            icon = type(key) == "number" and Setting("icon") and PositiveNumber(C_Spell.GetSpellTexture(key)) or nil
-        end
+        local icon = ownerIcon
+        if key then icon = DisplayTexture(C_Spell.GetSpellTexture(key)) end
         return text, icon, NS.SuiteCore().Text(spellLabels[kind])
     elseif nativeNames[kind] then
         return text, nil, nil, nil, sourceColor.r and sourceColor or nil
@@ -386,9 +423,18 @@ local function Paint(view, allowHidden, settled, data)
     local text = Safety.Call(title, "GetText")
     local public = Safety.Public(text)
     if public and (type(text) ~= "string" or text == "") then Hide(view) return end
-    local key = DataKey(tip, info, kind, link) or false
     local publicTitle = public and text or nil
+    local key, ownerIcon, secretOwnerIcon
+    if spellLabels[kind] and view.kind == kind and view.text == publicTitle and not view.titleDirty then
+        key, ownerIcon, secretOwnerIcon = view.key, view.ownerIcon, view.secretOwnerIcon
+    else
+        key, ownerIcon = DataKey(tip, info, kind, link)
+        secretOwnerIcon = not Safety.Public(ownerIcon)
+    end
     local same = view.kind == kind and view.key == key and view.text == publicTitle
+        and view.secretOwnerIcon == secretOwnerIcon
+        and (secretOwnerIcon or view.ownerIcon == ownerIcon)
+        and not (view.titleDirty and view.header.secretIcon and not secretOwnerIcon)
     local badge, caption
     if view.comparison then badge, caption = Caption.Read(tip) end
     local width, offset, ratio = HeaderRoom(tip, title, badge and Caption.Height or 0)
@@ -410,12 +456,18 @@ local function Paint(view, allowHidden, settled, data)
         view.titleR, view.titleG, view.titleB = r, g, b
     end
     if changed then
-        local name, icon, label, level, quality = ReadData(kind, key, text)
+        local name, icon, label, level, quality = ReadData(kind, key, text, ownerIcon)
         view.kind, view.key, view.text = kind, key, publicTitle
+        view.secretOwnerIcon = secretOwnerIcon
+        view.ownerIcon = nil
+        if not secretOwnerIcon then view.ownerIcon = ownerIcon end
         Card.Draw(view.header, name, icon, label, level, quality)
     elseif not public and (view.titleDirty or not view.secretTitle) then
         -- SetText accepts secret strings. Resend only for a new native build.
         view.header.title:SetText(text)
+    end
+    if not changed and view.titleDirty and secretOwnerIcon then
+        view.header.icon:SetTexture(ownerIcon)
     end
     view.secretTitle, view.titleDirty = not public, false
     if badge == false or (offset and badge and not Caption.Paint(view, badge, caption, changed)) then offset = nil end
@@ -510,20 +562,26 @@ end
 local function AddView(tip, titleName, aurasOnly, comparison)
     if not tip or Safety.IsForbidden(tip) then return end
     local header = Card.Create(tip)
+    local unitVitals = tip == GameTooltip and Vitals
     local view = { tip = tip, titleName = titleName, aurasOnly = aurasOnly, comparison = comparison,
         header = header, outline = Card.CreateOutline(tip) }
     views[tip] = view
     header.frame:Hide()
     view.flush = function() Flush(view) end
     tip:HookScript("OnHide", function()
+        if unitVitals and unitVitals.Enabled then unitVitals.NativeHidden() end
         Cleared(view)
         if comparison then RefitOwner(tip) end
     end)
     tip:HookScript("OnShow", function()
+        if unitVitals and unitVitals.Enabled then unitVitals.NativeShown() end
         PaintNow(view)
         if comparison then RefitOwner(tip) end
     end)
-    tip:HookScript("OnSizeChanged", function() if view.ready then PaintNow(view) end end)
+    tip:HookScript("OnSizeChanged", function(_, width)
+        if unitVitals and unitVitals.Enabled then unitVitals.NativeResized(width) end
+        if view.ready then PaintNow(view) end
+    end)
     tip:HookScript("OnTooltipCleared", function() NativeCleared(view) end)
     return view
 end
@@ -608,6 +666,7 @@ local function CreateCoreStyle(frame)
     local r, g, b, a = Safety.ReadColor(name, "GetTextColor")
     if not r then r, g, b, a = NS.Theme.GetColor("text") end
     local fill = frame:CreateTexture(nil, "ARTWORK", nil, -7)
+    fill:SetColorTexture(1, 1, 1, 1)
     fill:SetPoint("TOPLEFT", 3, -3)
     fill:SetPoint("TOPRIGHT", -3, -3)
     fill:SetHeight(HEIGHT - 3)
@@ -617,7 +676,7 @@ local function CreateCoreStyle(frame)
     rule:SetHeight(1)
     local border = Card.CreateOutline(frame)
     border.frame:SetFrameLevel(frame:GetFrameLevel() + 1)
-    return { fill = fill, rule = rule, outline = border, name = name, body = body, height = frame:GetHeight(),
+    return { fill = fill, headerMedia = {}, rule = rule, outline = border, name = name, body = body, height = frame:GetHeight(),
         titleAnchor = { name:GetPoint(1) }, bodyAnchor = { body:GetPoint(1) }, titleColor = { r, g, b, a } }
 end
 
@@ -658,14 +717,15 @@ local function PaintCorePanel()
     corePanel:SetHeight(style.height + height - 25)
     local hasPalette = Palette.PaintHostBackdrop(corePanel, style, true, Setting("borderMode") == "native")
     local r, g, b, a = Card.HeaderColor()
-    if hasPalette and unifiedCard then
-        style.fill:SetColorTexture(r, g, b, a)
+    NS.Surface.SetMediaTexture(style.fill, style.headerMedia, "header")
+    if hasPalette and unifiedCard and not NS.Surface.MediaPath("header") then
+        style.fill:SetVertexColor(r, g, b, a)
         style.fill:SetShown(a > 0)
     else
         local fr, fg, fb
         if hasPalette then fr, fg, fb = Palette.Color("fillColor")
         else fr, fg, fb = NS.Theme.GetColor("popup") end
-        style.fill:SetColorTexture(fr + (r - fr) * a, fg + (g - fg) * a, fb + (b - fb) * a, 1)
+        style.fill:SetVertexColor(fr + (r - fr) * a, fg + (g - fg) * a, fb + (b - fb) * a, 1)
         style.fill:Show()
     end
     if Setting("tint") then r, g, b = unpack(style.titleColor)
@@ -728,5 +788,7 @@ NS.Registry.AddListener(Card, function(_, domain)
         or domain == "adapter" or domain == "tooltipStyle" then
         for _, view in pairs(views) do view.kind, view.key, view.text = nil, nil, nil end
         Card.Refresh()
+    elseif domain == "tooltipMedia" then
+        PaintCorePanel()
     end
 end)

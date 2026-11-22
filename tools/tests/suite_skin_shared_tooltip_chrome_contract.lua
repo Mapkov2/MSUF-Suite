@@ -57,6 +57,8 @@ local function Test(forever)
     local function Texture(r, g, b, a)
         local values = { rgba = { r, g, b, a }, alpha = 1, shown = true }
         local region = NativeObject({
+            SetAllPoints = function(_, anchor) values.anchor = anchor end,
+            ClearAllPoints = function() values.anchor = nil end,
             GetAlpha = function() return values.alpha end,
             IsShown = function() return values.shown end,
             Show = function() NoNativeWrite(); values.shown = true end,
@@ -84,20 +86,25 @@ local function Test(forever)
     local function Tooltip()
         local center, fill = Texture(0.15, 0.15, 0.15, 0.93)
         local border, edge = Texture(0.6, 0.6, 0.6, 0.8)
-        local sliceAlpha = 1
+        local sliceAlpha, art = 1, {}
         local frame = NativeObject({
             NineSlice = NativeObject({
                 Center = center, TopEdge = border,
+                CreateTexture = function()
+                    local region, data = Texture(1, 1, 1, 1)
+                    art[region] = data
+                    return region
+                end,
                 GetAlpha = function() return sliceAlpha end,
                 SetAlpha = function(_, alpha) NoNativeWrite(); sliceAlpha = alpha end,
             }),
             IsForbidden = function(self) return flags[self] == "forbidden" end,
             IsProtected = function(self) return flags[self] == "protected", flags[self] == "protected" end,
         })
-        return frame, fill, edge
+        return frame, fill, edge, art
     end
 
-    local tooltip, fill, edge = Tooltip()
+    local tooltip, fill, edge, owned = Tooltip()
     local embedded, embeddedFill = Tooltip()
     local itemReference = Tooltip()
     local mainCompare, mainCompareFill = Tooltip()
@@ -126,7 +133,8 @@ local function Test(forever)
     local material = { from = "popup", to = "ink", border = "border" }
     local palette = { popup = { 0.12, 0.23, 0.34, 0.8 }, ink = { 0.09, 0.1, 0.12, 1 }, border = { 0.7, 0.8, 0.9, 0.5 } }
     local states = {}
-    local ns = {
+    local ns
+    ns = {
         path = "",
         GeometryBorders = { 0, 1, 2 },
         GeometryRadii = { 4, 8, 12 },
@@ -151,6 +159,7 @@ local function Test(forever)
             GetColor = function(role) return unpack(palette[role]) end,
             GetMaterialOpacity = function() return 0.75 end,
             GetBorderOpacity = function() return 0.6 end,
+            Border = function() return 0.7, 0.8, 0.9, ns.DB.geometry.border > 0 and 0.3 or 0 end,
             ReuseColor = function(_, ...) return Color(...) end,
         },
         AdapterKit = {
@@ -183,21 +192,30 @@ local function Test(forever)
         CatalogShopMotion = { Disable = function() end },
     }
 
-    for _, path in ipairs({ "Core/Safety.lua", "Core/Cosmetics.lua", "Rendering/Geometry.lua", "Rendering/Surface.lua",
-        "Adapters/Catalog.lua", "Adapters/CatalogGlass.lua", "Adapters/TooltipChrome.lua",
+    local core = { DB = {}, QoLVisualStyles = { [4] = {} }, Skin = { TooltipTheme = function() return ns end } }
+    local function PrepareCore() return core end
+    ns.SuiteCore = PrepareCore
+    for _, path in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "../MSUF_Suite/Appearance/Cosmetics.lua", "Rendering/Geometry.lua", "Rendering/Surface.lua",
+        "Adapters/Catalog.lua", "Adapters/CatalogGlass.lua", "../MSUF_Suite_Tooltips/TooltipChrome.lua",
         "Adapters/GenericWindowsCatalog.lua" }) do
         Load(ns, path)
     end
+    local texturePath
+    ns.Surface.MediaPath = function(role) if role == "background" then return texturePath end end
+    ns.Surface.SetMediaTexture = function(texture)
+        if owned[texture] then owned[texture].path = texturePath end
+    end
+    local paintPlan = ns.Surface.PrepareFill
+    ns.Surface.PrepareFill = function(_, spec) return paintPlan(ns.Theme.GetMaterial("popup"), spec) end
     local generic = ns.GenericWindows
     local entries = {}
     for _, entry in ipairs(ns.BlizzardCatalog.entries) do entries[entry.id] = entry end
-    local shared, itemRef = entries["core-tooltips"], entries["item-reference-tooltips"]
-    Check(shared and itemRef, "native tooltip catalog roots disappeared")
-    generic.ApplyEntry(shared, "test")
-    Check(generic.GetStatus(shared.id) == "waiting" and styleHook == nil,
-        "tooltip skin installed before the native addon loaded")
-    addonLoaded = true
-    frames[1].OnEvent(frames[1], "ADDON_LOADED", "Blizzard_GameTooltip")
+    local itemRef = entries["item-reference-tooltips"]
+    Check(not entries["core-tooltips"] and itemRef, "native tooltip chrome still belongs to Skinning")
+    local chrome = ns.TooltipChrome
+    for _, frame in ipairs({ tooltip, embedded, mainCompare, linkCompare }) do
+        Check(chrome.Apply(frame, "test"), "standalone tooltip did not acquire its native slice")
+    end
     Check(type(styleHook) == "function" and SharedTooltip_SetBackdropStyle == nativeStyle,
         "native style function replaced or hook missing")
     Check(fill.rgba[1] == 0.12 and math.abs(fill.rgba[4] - 0.60) < 0.0001
@@ -214,7 +232,6 @@ local function Test(forever)
     ns.ItemTooltipCard = { HasVisibleHeader = function() return true end }
     nativeStyle(tooltip, fill, 0.19)
     Check(fill.rgba[1] == 0.12 and #timers == 0, "a visible card flashed native chrome before the next frame")
-    local chrome = ns.TooltipChrome
     local slice = tooltip.NineSlice
     Check(chrome.SetCardBacking(tooltip, "all") and slice:GetAlpha() == 0,
         "unified card still composites the native slice under its background")
@@ -230,6 +247,17 @@ local function Test(forever)
         and math.abs(slice.Center:GetAlpha() - restoredAlpha) < .0001 and math.abs(fill.rgba[4] - 0.60) < 0.0001,
         "minimal style did not regain its own fill")
     ns.ItemTooltipCard = nil
+    texturePath = "Background fixture"
+    listeners[ns.TooltipChrome](nil, "tooltipMedia")
+    NextFrame()
+    local overlay, overlayPaint = next(owned)
+    Check(overlay and overlay:IsShown() and not slice.Center:IsShown()
+        and overlayPaint.path == texturePath and overlayPaint.anchor == slice.Center
+        and edge.rgba[1] == 0.7, "custom background replaced the atlas layout or tinted the border")
+    texturePath = nil
+    listeners[ns.TooltipChrome](nil, "tooltipMedia")
+    NextFrame()
+    Check(not overlay:IsShown() and slice.Center:IsShown(), "reset did not restore the native center")
     local originalEdge = tooltip.NineSlice.TopEdge
     local replacement, replacementColors = Texture(0.3, 0.4, 0.5, 0.6)
     tooltip.NineSlice.TopEdge = replacement
@@ -237,10 +265,10 @@ local function Test(forever)
     NextFrame()
     Check(replacementColors.rgba[1] == 0.7, "a replacement native edge kept the old handle")
     tooltip.NineSlice.TopEdge = originalEdge
-    Check(ns.Surface.TintEdge(tooltip, 0.26, 0.51, 0.92), "QoL border request no longer has a skin target")
+    Check(chrome.TintEdge(tooltip, 0.26, 0.51, 0.92), "QoL border request no longer has a skin target")
     NextFrame()
     Check(edge.rgba[1] == 0.26 and edge.rgba[4] == 0.3, "quality/class color lost opacity")
-    ns.Surface.TintEdge(tooltip)
+    chrome.TintEdge(tooltip)
     NextFrame()
     Check(edge.rgba[1] == 0.7, "cleared quality/class color did not return to theme")
 
@@ -254,11 +282,13 @@ local function Test(forever)
     slice:SetAlpha(.85)
     Check(chrome.SetCardBacking(tooltip, "all") and slice:GetAlpha() == 0,
         "unified card failed to suppress the native gradient")
+    addonLoaded = true
     generic.ApplyEntry(itemRef, "test")
-    Check(genericPaints == 1, "the pinned item window lost its existing skin path")
+    Check(genericPaints == 0, "Skinning repainted the pinned Tooltip module surface")
     Check(mainCompareFill.gradient[2].r == .12 and linkCompareFill.gradient[2].r == .12
         and chrome.IsActive(mainCompare) and chrome.IsActive(linkCompare), "a comparison retained different chrome")
     nativeStyle(tooltip, fill, 0.22)
+    chrome.DisableOwner("test")
     generic.Disable("test")
     NextFrame()
     Check(slice:GetAlpha() == .85 and slice.Center:IsShown(), "disable lost the native slice visibility or opacity")

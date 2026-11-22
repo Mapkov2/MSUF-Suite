@@ -75,7 +75,7 @@ local function NewWorld(label)
     world.MM = { M = { active = true, config = { tooltipScale = 100 } } }
     assert(loadfile(root .. "/MSUF_Suite_Minimap/Tooltips.lua"))("MSUF_Suite_Minimap",
         { NS = ns, Suite = suite, Minimap = world.MM })
-    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipVisibility.lua"))("MSUF_Suite_QualityOfLife",
+    assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipVisibility.lua"))("MSUF_Suite_QualityOfLife",
         { NS = ns, Suite = suite })
     world.qol.context = { Event = function() end, RemoveEvent = function() end }
     world.qol.config = { inCombat = false, inInstances = false, revealModifier = 1, scale = 100 }
@@ -285,7 +285,7 @@ for _, world in ipairs(worlds) do
     end
 end
 local writers = {}
-for _, addon in ipairs({ "MSUF_Suite", "MSUF_Suite_QualityOfLife", "MSUF_Suite_Minimap" }) do
+for _, addon in ipairs({ "MSUF_Suite", "MSUF_Suite_Tooltips", "MSUF_Suite_Minimap" }) do
     for _, file in ipairs(Support.TocFiles(root, addon)) do
         if file:match("%.lua$") then
             local handle = assert(io.open(root .. "/" .. addon .. "/" .. file, "rb"))

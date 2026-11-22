@@ -30,7 +30,7 @@ C_PlayerInfo = { GetPlayerMythicPlusRatingSummary = function(token)
     return score and { currentSeasonScore = score }
 end }
 local tooltips = Support.TooltipFixture(root, S, NS)
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipMPlusScore.lua"))(
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipMPlusScore.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 module.active = true
 module:Enable()

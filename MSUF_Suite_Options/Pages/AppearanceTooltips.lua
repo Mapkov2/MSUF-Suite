@@ -1,8 +1,21 @@
 local _, P = ...
 
 local Kit, M, Tr = P.SkinPageKit, P.M, P.Tr
+local Appearance = P.Suite.TooltipAppearance
 local PAGE = "suite_tooltips"
 local styleKey, styleSection = "theme.itemTooltipStyle", "tooltips"
+local basicsSection, typesSection = PAGE .. "_tooltipAppearance_module", "suite_skin_tooltips"
+local layoutSection, layoutID = "suite_skin_tooltip_layout", "tooltip_layout"
+local typesTitle = "Tooltip styles by type"
+P.TooltipBasicsSection, P.TooltipTypesSection, P.TooltipLayoutSection = basicsSection, typesSection, layoutSection
+local layoutFields = { iconSize = true, height = true, cardSurface = true, lootSurface = true }
+local layoutRules = { tooltipDetails = { anchor = true, growth = true }, tooltipVisibility = { scale = true } }
+local EDITOR_TABS = {
+    { id = "basics", label = "Basics", sections = basicsSection },
+    { id = "appearance", label = "Appearance", sections = typesSection .. " suite_skin_tooltip_builder" },
+    { id = "layout", label = "Layout", sections = layoutSection },
+    { id = "details", label = "Tooltip details", sections = "suite_skin_unit_tooltips" },
+}
 local presetKeys = { "compact", "detailed", "minimal", "dense", "custom" }
 local presetValues = { compact = "Default", detailed = "Detailed", minimal = "Minimal", dense = "Dense", custom = "Custom" }
 local typeChoices = {
@@ -42,43 +55,101 @@ function P.TooltipPositionTarget(module, key)
     end
 end
 
-function P.BuildSkinTooltipSection(ctx, builder, skin)
+local function PresetRow(skin)
     local card = skin and skin.ItemTooltipCard
-    if skin and not card then return end
     local choices = Kit.Values(presetKeys, presetValues)
     for _, entry in ipairs(skin and skin.TooltipPalette and skin.TooltipPalette.choices or {}) do
         choices[#choices + 1] = { value = entry.key, text = Tr(entry.label) }
     end
     local row = Kit.Row("dropdown", "Tooltip layout preset", styleKey, styleSection, card and card.Preset,
         function(value)
-            Kit.Change(skin, "Tooltip layout preset", styleKey, function()
+            return Kit.Change(skin, "Tooltip layout preset", styleKey, function()
                 return card.SetPreset(value)
             end)
         end, choices)
-    local rows = { row }
+    row.sectionId = basicsSection
+    return row
+end
+
+local function TypeRows(skin)
+    local card = skin and skin.ItemTooltipCard
+    local rows, values = {}, Kit.Values({ "suite", "custom" }, typeValues)
     for _, spec in ipairs(typeChoices) do
-        local field = "theme.tooltipLayout." .. spec.id .. "Style"
-        rows[#rows + 1] = Kit.Row("dropdown", spec.label, field, styleSection,
+        local row = Kit.Row("dropdown", spec.label, "theme.tooltipLayout." .. spec.id .. "Style", styleSection,
             function() return card.TypeStyle(spec.id) end, function(value)
-                Kit.Change(skin, spec.label, field, function() return card.SetTypeStyle(spec.id, value) end)
-            end, Kit.Values({ "suite", "custom" }, typeValues))
+                return Kit.Change(skin, spec.label, "theme.tooltipLayout." .. spec.id .. "Style", function()
+                    return card.SetTypeStyle(spec.id, value)
+                end)
+            end, values)
+        row.sectionId = typesSection
+        rows[#rows + 1] = row
     end
-    return Kit.Section(ctx, builder, styleSection, "Tooltips", nil, rows, true, function(body, y, width)
-        if not body then return y end
-        local host = P.Suite.HostBridge
-        local details = P.QoLView and P.QoLView.FindFeature("tooltipDetails")
-        if details and P.Available("tooltipDetails") then
-            P.Button(ctx, body, "General tooltip anchor", 16, y, math.min(280, width), function()
-                host.OpenExactMenuSetting(M, PAGE, P.QoLView.FeatureSectionId(details), "msufsuite.tooltipDetails.anchor")
-            end)
-            y = y - 34
+    return rows
+end
+
+function P.TooltipLayoutOwnsRule(id, key)
+    local fields = layoutRules[id]
+    return fields and fields[key] == true
+        and P.Suite.Client.AddOnEnabled("MSUF_Suite_Tooltips") and P.Available(id) == true
+end
+
+function P.TooltipFieldSection(field)
+    return layoutFields[field] and layoutSection or "suite_skin_tooltip_builder"
+end
+
+-- Keep the stored control identity when a setting moves to another tab.
+function P.ResolveTooltipMenuTarget(page, target)
+    if page ~= PAGE and page ~= "suite_skin" and page ~= "suite_qualityOfLife" and page ~= "opt_misc" then return end
+    local settingKey = target.settingKey or ""
+    local id, rule = settingKey:match("^msufsuite%.([^.]+)%.(.+)$")
+    if id and P.TooltipLayoutOwnsRule(id, rule) then
+        return P.Meta(PAGE, id, rule, "setting", layoutSection)
+    end
+    if page ~= PAGE and page ~= "suite_skin" then return end
+    local control = target.controlId or ""
+    local key = settingKey:match("^msufsuite%.skin%.(.+)$")
+    if key == styleKey or control:match("%.theme%.item%.tooltip%.style$") then
+        local meta = Kit.Meta(styleKey, styleSection)
+        meta.sectionId = basicsSection
+        return meta
+    end
+    for field in pairs(layoutFields) do
+        local meta = Kit.Meta("theme.tooltipLayout." .. field, "tooltip_builder")
+        if settingKey == meta.settingKey or control == meta.controlId then
+            meta.sectionId = layoutSection
+            return meta
         end
-        if host.UnitFrameTooltipAPI() then return y end
-        P.Button(ctx, body, "Unitframe tooltips", 16, y, math.min(280, width), function()
-            host.OpenExactMenuSetting(M, "opt_misc", "misc_tooltips", "general.unitTooltipMode")
-        end)
-        return y - 34
-    end, nil, nil, function() return card.SetPreset("compact") end)
+    end
+end
+
+local function BuildTypeStyles(ctx, builder, skin)
+    local rows = TypeRows(skin)
+    if ctx.searchRows then
+        P.SkinSearchRow(ctx, { pageKey = PAGE, kind = "section", label = Tr(typesTitle) }, typesSection, Tr(typesTitle))
+        for _, row in ipairs(rows) do P.SkinSearchRow(ctx, row, typesSection, Tr(typesTitle)) end
+        return
+    end
+    P.LazySection(builder, typesSection, Tr(typesTitle), false, {
+        content = function(body)
+            local width = math.max(240, (P.HM.GetSectionWidth(body) or builder.width or 720) - 32)
+            local y, entries = Kit.SettingsGrid(ctx, body, rows, -14, width)
+            P.MenuWorkspace.Prepare(body, entries)
+            return y
+        end,
+        finish = function(body, y) P.FinishBody(builder, body, y) end,
+    })
+end
+
+local function BuildBasics(ctx, builder, skin)
+    P.ModuleCard(ctx, builder, PAGE, "tooltipAppearance", nil, {
+        reset = skin.ItemTooltipCard.Reset,
+        content = function(body)
+            local width = math.max(240, (P.HM.GetSectionWidth(body) or builder.width or 720) - 32)
+            local y, entries = Kit.SettingsGrid(ctx, body, { PresetRow(skin) }, -14, width)
+            P.MenuWorkspace.Prepare(body, entries)
+            return y
+        end,
+    })
 end
 
 local unitRows = {
@@ -124,12 +195,16 @@ end
 function P.OpenTooltipHealthTextMenu(preview)
     if P.Combat() then return false end
     local owner = preview.handles.healthText
-    if not owner:IsShown() then
-        owner = preview.tabs[3]
-        for _, button in ipairs(preview.layerButtons or {}) do
-            if button.key == "healthText" then owner = button break end
+    if not owner or not owner:IsVisible() then
+        owner = preview.sampleSelector
+        for _, button in ipairs(preview.layerButtons) do
+            if button.key == "healthText" and button:IsVisible() then
+                owner = button
+                break
+            end
         end
     end
+    if not owner or not owner:IsVisible() then return false end
     local skin, card = preview.skin, preview.card
     P.AnchoredContextMenu(owner, function(_, menu)
         menu:CreateTitle(Tr("Health text"))
@@ -210,7 +285,7 @@ end
 
 function P.BuildSkinUnitTooltipSection(ctx, builder, skin)
     local host = P.Suite.HostBridge.UnitFrameTooltipAPI()
-    local vitals = skin and skin.TooltipVitals or ctx.searchRows and P.Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    local vitals = skin and skin.TooltipVitals or ctx.searchRows and P.Suite.Client.AddOnEnabled("MSUF_Suite_Tooltips")
     if not host and not vitals then return end
     local id, title, rows = "unit_tooltips", "Unitframe tooltips", {}
     local shared = P.UsesSharedTooltipAnchor()
@@ -244,7 +319,14 @@ function P.BuildSkinUnitTooltipSection(ctx, builder, skin)
         end
         return not vitals or skin.ItemTooltipCard.ResetUnitVitals()
     end
-    return Kit.Section(ctx, builder, id, title, nil, rows, false, nil, nil, nil, Reset)
+    local function OpenHostSettings(body, y, width)
+        if not body or host then return y end
+        P.Button(ctx, body, "Unitframe tooltips", 16, y, math.min(280, width), function()
+            P.Suite.HostBridge.OpenExactMenuSetting(M, "opt_misc", "misc_tooltips", "general.unitTooltipMode")
+        end)
+        return y - 34
+    end
+    return Kit.Section(ctx, builder, id, title, nil, rows, false, OpenHostSettings, nil, nil, Reset)
 end
 
 local builderSection = "tooltip_builder"
@@ -253,8 +335,12 @@ local fields = { { "icon", "Icon" }, { "level", "Item level" }, { "kind", "Type"
     { "paletteGradient", "Shaded surfaces" } }
 local paletteColors = { { "fillColor", "Background" }, { "endColor", "Gradient color" },
     { "titleColor", "Title text" }, { "accentColor", "Accent color" } }
-local sizes = { { "iconSize", "Icon size", 16, 38 }, { "borderWidth", "Tooltip frame thickness", 1, 4 },
-    { "height", "Header height", 36, 48 } }
+local layoutSizes = { { "iconSize", "Icon size", 16, 38 }, { "height", "Header height", 36, 48 } }
+local surfaceChoices = {
+    { "cardSurface", "Tooltip card background", { "unified", "split" }, { unified = "Unified", split = "Separate header" } },
+    { "lootSurface", "Loot row background", { "auto", "match", "native" },
+        { auto = "Default", match = "Match tooltip", native = "Blizzard" } },
+}
 EditLayout = function(skin, label, field, value)
     return Kit.Change(skin, label, "theme.tooltipLayout." .. field, function()
         return skin.ItemTooltipCard.Set(field, value)
@@ -275,16 +361,75 @@ function P.TooltipPaletteRows(skin)
     return rows
 end
 
+local function LayoutSetting(skin, kind, field, label, values, min, max)
+    local card = skin and skin.ItemTooltipCard
+    local row = Kit.Row(kind, label, "theme.tooltipLayout." .. field, builderSection,
+        function() return card.Setting(field) end,
+        function(value) return EditLayout(skin, label, field, value) end, values, min, max, 1)
+    if layoutFields[field] then row.sectionId = layoutSection end
+    return row
+end
+
+local function AddLayoutRule(rows, id, key)
+    if not P.TooltipLayoutOwnsRule(id, key) then return end
+    local rule = P.catalog[id].rules[key]
+    local row = P.RuleRow(PAGE, id, rule, nil, layoutSection)
+    row.pageKey, row.searchLabel, row.tooltip = PAGE, rule.label, rule.tooltip and Tr(rule.tooltip)
+    row.unavailable = function()
+        local enabled, reason = P.RuleEnabled(id, rule, nil, true)
+        if not enabled then return reason end
+    end
+    rows[#rows + 1] = row
+end
+
+local function BuildTooltipLayout(ctx, builder, skin)
+    local rows = {}
+    -- The cold catalog already contributes these three Suite settings.
+    if not ctx.searchRows then
+        AddLayoutRule(rows, "tooltipDetails", "anchor")
+        AddLayoutRule(rows, "tooltipDetails", "growth")
+        AddLayoutRule(rows, "tooltipVisibility", "scale")
+    end
+    if skin or ctx.searchRows then
+        for _, spec in ipairs(layoutSizes) do
+            rows[#rows + 1] = LayoutSetting(skin, "slider", spec[1], spec[2], nil, spec[3], spec[4])
+        end
+        for _, spec in ipairs(surfaceChoices) do
+            rows[#rows + 1] = LayoutSetting(skin, "dropdown", spec[1], spec[2], Kit.Values(spec[3], spec[4]))
+        end
+    end
+    if #rows == 0 then return end
+    return Kit.Section(ctx, builder, layoutID, "Layout", nil, rows, true, nil, nil, nil, function()
+        if skin and not skin.ItemTooltipCard.ResetLayout() then return false end
+        for id, keys in pairs(layoutRules) do
+            if P.Available(id) then
+                local defaults = {}
+                for key in pairs(keys) do defaults[key] = P.catalog[id].rules[key].default end
+                if id == "tooltipDetails" then
+                    for key in pairs(anchorModes) do defaults[key] = P.catalog[id].rules[key].default end
+                end
+                if not P.S.ResetKeys(id, defaults) then return false end
+            end
+        end
+        return true
+    end)
+end
+
 function P.BuildSkinTooltipBuilder(ctx, builder, skin)
     local card = skin and skin.ItemTooltipCard
     if skin and not card then return end
-    local rows = {
-        Kit.Row("dropdown", "Tooltip frame", "theme.tooltipLayout.borderMode", builderSection,
-            function() return card.Setting("borderMode") end,
-            function(value) return EditLayout(skin, "Tooltip frame", "borderMode", value) end,
-            Kit.Values({ "suite", "title", "custom", "native" },
-                { suite = "Suite style", title = "Match tooltip title", custom = "Custom", native = "Keep" })),
-    }
+    local rows = {}
+    for _, spec in ipairs({ { "backgroundTexture", "Background texture" }, { "headerTexture", "Header texture" } }) do
+        local field, label = spec[1], spec[2]
+        rows[#rows + 1] = LayoutSetting(skin, "dropdown", field, label, function()
+            return P.TextureValues(card and card.Setting(field))
+        end)
+    end
+    rows[#rows + 1] = Kit.Row("dropdown", "Tooltip frame", "theme.tooltipLayout.borderMode", builderSection,
+        function() return card.Setting("borderMode") end,
+        function(value) return EditLayout(skin, "Tooltip frame", "borderMode", value) end,
+        Kit.Values({ "suite", "title", "custom", "native" },
+            { suite = "Suite style", title = "Match tooltip title", custom = "Custom", native = "Keep" }))
     local function Add(spec, slider)
         local field, label = spec[1], spec[2]
         rows[#rows + 1] = Kit.Row(slider and "slider" or "toggle", label, "theme.tooltipLayout." .. field, builderSection,
@@ -292,7 +437,7 @@ function P.BuildSkinTooltipBuilder(ctx, builder, skin)
             function(value) return EditLayout(skin, label, field, value) end, nil, spec[3], spec[4], 1)
     end
     for _, spec in ipairs(fields) do Add(spec) end
-    for _, spec in ipairs(sizes) do Add(spec, true) end
+    Add({ "borderWidth", "Tooltip frame thickness", 1, 4 }, true)
     rows[#rows + 1] = Kit.Row("dropdown", "Gradient direction", "theme.tooltipLayout.paletteDirection", builderSection,
         function() return card.Setting("paletteDirection"):lower() end,
         function(value) return EditLayout(skin, "Gradient direction", "paletteDirection", value:upper()) end,
@@ -309,23 +454,16 @@ function P.BuildSkinTooltipBuilder(ctx, builder, skin)
             Kit.Change(skin, "Tooltip frame color", "theme.tooltipLayout.borderColor",
                 function() return card.SetBorderColor(r, g, b, a) end)
         end)
-    rows[#rows + 1] = Kit.Row("dropdown", "Tooltip card background", "theme.tooltipLayout.cardSurface", builderSection,
-        function() return card.Setting("cardSurface") end,
-        function(value) return EditLayout(skin, "Tooltip card background", "cardSurface", value) end,
-        Kit.Values({ "unified", "split" }, { unified = "Unified", split = "Separate header" }))
-    rows[#rows + 1] = Kit.Row("dropdown", "Loot row background", "theme.tooltipLayout.lootSurface", builderSection,
-        function() return card.Setting("lootSurface") end,
-        function(value) return EditLayout(skin, "Loot row background", "lootSurface", value) end,
-        Kit.Values({ "auto", "match", "native" }, { auto = "Default", match = "Match tooltip", native = "Blizzard" }))
-    return Kit.Section(ctx, builder, builderSection, "Tooltip builder", nil, rows, false,
-        nil, nil, nil, function() return card.SetPreset("compact", true) end)
+    return Kit.Section(ctx, builder, builderSection, "Appearance", nil, rows, true,
+        nil, nil, nil, function() return card.ResetAppearance() end)
 end
 
-
 function P.BuildTooltipSearchRows(ctx, builder, skin)
-    if skin or P.Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then
-        P.BuildSkinTooltipSection(ctx, builder, skin)
+    if skin or P.Suite.Client.AddOnEnabled("MSUF_Suite_Tooltips") then
+        P.SkinSearchRow(ctx, PresetRow(skin), basicsSection, Tr("Basics"))
+        BuildTypeStyles(ctx, builder, skin)
         P.BuildSkinTooltipBuilder(ctx, builder, skin)
+        BuildTooltipLayout(ctx, builder, skin)
         for axis, label in pairs(titlePositions) do
             local meta = P.TooltipPositionTarget("skin", "theme.tooltipLayout." .. axis)
             meta.kind, meta.label, meta.searchLabel = "slider", Tr(label), label
@@ -343,10 +481,11 @@ function P.BindTooltipPositionSearch(preview, selectTitle, paint)
         local region = CreateFrame("Frame", nil, preview.root)
         local axis = key:lower():sub(-1) == "x" and "axisX" or "axisY"
         local selection = preview.selection
-        region:SetAllPoints(selection and selection[axis] or preview.titleButton)
+        region:SetAllPoints(selection and selection[axis] or preview.sampleSelector)
         local function Prepare()
+            if P.Combat() or not preview.root:IsVisible() or mode and mode ~= P.TooltipAnchorMode() then return false end
+            preview.ui.select("layout")
             if not mode then return selectTitle(preview) end
-            if P.Combat() or not preview.root:IsVisible() or mode ~= P.TooltipAnchorMode() then return false end
             paint(preview)
             preview.kit:Select(preview.anchorButton)
             return true
@@ -368,6 +507,12 @@ end
 
 function P.TooltipDetailsEnabled()
     return P.Available("tooltipDetails") and P.Get("tooltipDetails", "enabled")
+end
+
+function P.TooltipPreviewCombatHidden(preview, sample)
+    return preview.combat and sample.id ~= "loot" and not (sample.id == "unit" and P.TooltipPreviewUsesPanel())
+        and P.Available("tooltipVisibility") and P.Get("tooltipVisibility", "enabled")
+        and P.Get("tooltipVisibility", "inCombat") == true or false
 end
 
 function P.PaintTooltipPreviewBody(preview, sample)
@@ -398,9 +543,9 @@ function P.PaintTooltipPreviewBody(preview, sample)
             Add("target", "Target", Tr("Player Name"))
             Add("itemLevel", "Item level", "160")
             if P.Get("tooltipDetails", "itemLevel") then Add("spec", "Specialization", Tr("Paladin")) end
-        elseif sample.id == "item" then
+        elseif sample.id == "item" and not preview.restricted then
             Add("iconID", "Item icon ID", tostring(sample.icon))
-        elseif sample.id == "spell" then
+        elseif sample.id == "spell" and not preview.restricted then
             Add("iconID", "Spell icon ID", tostring(sample.icon))
         end
     end
@@ -410,26 +555,30 @@ end
 
 local function BuildPage(ctx)
     local builder = P.W.PageBuilder(ctx)
-    local skin = Kit.Engine()
-    if not skin or not skin.ItemTooltipCard then
+    local skin = Appearance.Engine()
+    if not skin then
+        P.ModuleCard(ctx, builder, PAGE, "tooltipAppearance")
+        BuildTooltipLayout(ctx, builder)
         P.BuildSkinUnitTooltipSection(ctx, builder)
         P.QoLOwners.Build(ctx, builder, PAGE, nil, "tooltips")
         return
     end
     local workspace, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = "skin", title = "Tooltips",
-        builder = builder, tabs = { { id = "tooltips", label = "Settings", sections = "" } },
-        buildSelector = function() end,
+        builder = builder, tabs = EDITOR_TABS, buildSelector = P.MenuWorkspace.WrappingTabs,
     })
     if ui then ui.refreshPreview = function() P.ShowSkinTooltipPreview(ui, skin, true) end end
-    P.BuildSkinTooltipSection(ctx, workspace, skin)
+    BuildBasics(ctx, workspace, skin)
     P.BuildSkinTooltipBuilder(ctx, workspace, skin)
+    BuildTypeStyles(ctx, workspace, skin)
+    BuildTooltipLayout(ctx, workspace, skin)
     P.BuildSkinUnitTooltipSection(ctx, workspace, skin)
-    P.QoLOwners.Build(ctx, ui and ui.groups.tooltips.builder or workspace, PAGE, nil, "tooltips")
+    P.QoLOwners.Build(ctx, ui and ui.groups.details.builder or workspace, PAGE,
+        ui and function() ui.select("details") end, "tooltips")
     P.MenuWorkspace.Finish(ui)
 end
 
 local function ResetPage()
-    local skin = Kit.Engine()
+    local skin = Appearance.Engine()
     if skin and skin.ItemTooltipCard and not skin.ItemTooltipCard.Reset() then return false end
     return P.QoLOwners.Reset(PAGE, true)
 end

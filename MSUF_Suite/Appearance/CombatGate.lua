@@ -1,4 +1,5 @@
-local _, NS = ...
+local _, owner = ...
+local NS = owner.AppearancePrimitives or owner
 
 -- Runs visual work now, or once after combat. A job is keyed, so a newer
 -- request for the same target replaces the older one. Deferred jobs run in
@@ -15,7 +16,7 @@ local CombatGate = {
 }
 NS.CombatGate = CombatGate
 
-local eventFrame = CreateFrame("Frame")
+local eventFrame
 local combatStarted = false
 
 -- Drops stale slots once they outnumber the live jobs, so a key that is
@@ -100,14 +101,25 @@ ResumeDrain = function()
     ScheduleDrain(settleDelay)
 end
 
-eventFrame:SetScript("OnEvent", function(_, event)
+local function OnEvent(_, event)
     if event == "PLAYER_REGEN_DISABLED" then
         combatStarted = true
         return
     end
     combatStarted, settleDelay = false, 0
     if not Drain(DRAIN_BUDGET_MS) then ScheduleDrain() end
-end)
+end
+
+-- The shared addon does not need an event frame before a cosmetic consumer loads.
+function CombatGate.Initialize()
+    if not eventFrame then
+        eventFrame = CreateFrame("Frame")
+        eventFrame:SetScript("OnEvent", OnEvent)
+    end
+    return CombatGate
+end
+
+if not owner.AppearancePrimitives then CombatGate.Initialize() end
 
 function CombatGate.RunOrDefer(key, callback)
     if type(callback) ~= "function" then

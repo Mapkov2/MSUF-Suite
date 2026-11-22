@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local card, outline, buffCard, buffOutline, combatEvents, timer
 local callbacks = {}
-local queued, reads, combat, spells = 0, 0, false, 0
+local queued, reads, combat, spells, actionTextures = 0, 0, false, 0, 0
 local function Noop() end
 local function Widget()
     local w = { scripts = {}, events = {} }
@@ -10,11 +10,11 @@ local function Widget()
     function w:RegisterEvent(event) self.events[event] = true end
     function w:UnregisterAllEvents() self.events = {} end
     function w:SetText(value) self.text, self.textWrites = value, (self.textWrites or 0) + 1 end
-    function w:SetTexture(value) self.texture = value end
+    function w:SetTexture(value) self.texture, self.textureWrites = value, (self.textureWrites or 0) + 1 end
     function w:SetPoint(...) self.anchor = { ... } end
     function w:GetPoint() return unpack(self.anchor or {}) end
     function w:GetTextColor() return 1, 1, 1, 1 end
-    function w:SetHeight(value) self.height = value end
+    function w:SetHeight(value) self.height, self.heightWrites = value, (self.heightWrites or 0) + 1 end
     function w:GetHeight() return self.height or 90 end
     function w:IsShown() return self.shown == true end
     function w:Show() self.shown = true end
@@ -29,6 +29,7 @@ local function Widget()
     w.SetWidth, w.SetAllPoints = Noop, Noop
     function w:SetFrameLevel(level) self.frameLevel = level end
     function w:SetColorTexture(...) self.color = { ... } end
+    function w:SetVertexColor(...) self.color = { ... } end
     function w:CreateFontString()
         local text = Widget()
         self.fontStrings = self.fontStrings or {}
@@ -89,7 +90,15 @@ C_Item = {
     GetDetailedItemLevelInfo = function() return 45 end,
     GetItemQualityColor = function() return .1, .4, 1 end,
 }
-C_Spell = { GetSpellTexture = function() spells = spells + 1 return 135846 end }
+C_Spell = { GetSpellTexture = function(id)
+    spells = spells + 1
+    return id == 117 and 135847 or 135846
+end }
+C_ActionBar = { GetActionTexture = function(slot)
+    assert(slot == 37, "the icon lookup did not use its native action slot")
+    actionTextures = actionTextures + 1
+    return 135849
+end }
 local timers = {}
 C_Timer = { After = function(_, job)
     queued, timer = queued + 1, true
@@ -151,22 +160,31 @@ local NS = {
         NotifyListeners = function(domain) listener(nil, domain) end },
     Theme = { GetColor = function() return 1, 1, 1, 1 end },
     LabelStyle = { Apply = Noop },
-    Surface = { Attach = Noop },
+    Surface = { Attach = Noop, MediaPath = Noop, SetMediaTexture = Noop },
 }
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
-assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/TooltipChrome.lua"))("MSUF_Suite_Skin", NS)
-assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/TooltipCardSettings.lua"))("MSUF_Suite_Skin", NS)
-assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/ItemTooltipCard.lua"))("MSUF_Suite_Skin", NS)
+local core = { CatalogBuild = { Module = Noop, Add = Noop } }
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Tooltips.lua"))("MSUF_Suite", core)
+NS.Defaults = { theme = core.TooltipAppearance.defaults }
+local function Copy(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, field in pairs(value) do result[key] = Copy(field) end
+    return result
+end
+NS.CopyValue = Copy
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipChrome.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipCardSettings.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/ItemTooltipCard.lua"))("MSUF_Suite_Skin", NS)
 NS.ItemTooltipCard.Refresh()
 assert(not next(callbacks) and not timer and not card, "compact style registered item callbacks")
 local API = NS.ItemTooltipCard
 GameTooltip:Hide()
 GameTooltip.current = { type = 1, hyperlink = "item:1" }
 assert(API.SetTypeStyle("item", "custom"))
-local function Build(kind, primary)
+local function Build(kind, primary, source)
     GameTooltip.scripts.OnTooltipCleared()
     GameTooltip.current = primary
-    GameTooltip.primaryInfo = {}
+    GameTooltip.primaryInfo = source or {}
     GameTooltip.processing = GameTooltip.primaryInfo
     callbacks[kind](GameTooltip, primary)
 end
@@ -260,24 +278,91 @@ assert(card:IsShown() and outline:IsShown() and rawequal(renderedTitle.text, com
 combat = true
 local blockedPrimary = setmetatable({ secret = true }, { __index = function() error("read restricted tooltip data") end })
 local beforeSpells = spells
+local ownerTexture, ownerReads = 135844, 0
+GameTooltip.owner = { Icon = { GetTexture = function()
+    ownerReads = ownerReads + 1
+    return ownerTexture
+end } }
 Build(2, blockedPrimary)
+local cardIcon = card.textures[1]
 assert(card:IsShown() and rawequal(renderedTitle.text, combatTitle) and spells == beforeSpells,
     "opaque action data lost the selected Spell card or queried a private spell ID")
-local titleWrites = renderedTitle.textWrites
+assert(cardIcon:IsShown() and cardIcon.texture == ownerTexture,
+    "the restricted spell lost its displayed action button icon")
+ownerTexture = 135845
+Build(2, { type = 2, id = { secret = true } })
+assert(cardIcon:IsShown() and cardIcon.texture == ownerTexture and spells == beforeSpells,
+    "a restricted spell ID discarded the new owner's public icon")
+GameTooltip.owner.Icon, GameTooltip.owner.icon = nil, GameTooltip.owner.Icon
+local protectedTexture = {
+    __eq = function() error("compared a restricted texture in Lua") end,
+    __tostring = function() error("formatted a restricted texture in Lua") end,
+}
+ownerTexture = setmetatable({ secret = true }, protectedTexture)
+Build(2, blockedPrimary)
+assert(cardIcon:IsShown() and rawequal(cardIcon.texture, ownerTexture),
+    "the action button's display-only icon was not forwarded to the card texture")
+local titleWrites, iconWrites, heightWrites = renderedTitle.textWrites, cardIcon.textureWrites, card.heightWrites
+local beforeOwnerReads = ownerReads
 for _ = 1, 15 do GameTooltip.scripts.OnSizeChanged() end
-assert(renderedTitle.textWrites == titleWrites and spells == beforeSpells,
-    "an unchanged layout re-rendered the restricted title or fetched spell data")
+assert(renderedTitle.textWrites == titleWrites and cardIcon.textureWrites == iconWrites
+    and spells == beforeSpells and ownerReads == beforeOwnerReads,
+    "an unchanged layout re-rendered or fetched the restricted icon")
 GameTooltip.processing = {}
 callbacks[1](GameTooltip, { secret = true })
-assert(card:IsShown() and renderedTitle.textWrites == titleWrites,
+assert(card:IsShown() and renderedTitle.textWrites == titleWrites and cardIcon.textureWrites == iconWrites,
     "appended restricted data overwrote the primary action tooltip")
 local nextTitle = { secret = true }
 combatTitle = nextTitle
+ownerTexture = setmetatable({ secret = true }, protectedTexture)
 Build(2, blockedPrimary)
 assert(card:IsShown() and rawequal(renderedTitle.text, nextTitle) and renderedTitle.textWrites == titleWrites + 1,
     "a new protected title was not displayed on exactly one primary build")
+assert(rawequal(cardIcon.texture, ownerTexture) and cardIcon.textureWrites == iconWrites + 1
+    and card.heightWrites == heightWrites,
+    "the next primary build did not replace the display-only icon without rebuilding the header")
+combat = false
+assert(API.Set("icon", false) and not cardIcon:IsShown() and cardIcon.texture == nil,
+    "the icon option did not hide the slot or clear its protected texture")
+assert(API.Set("icon", true) and cardIcon:IsShown() and rawequal(cardIcon.texture, ownerTexture))
 GameTooltip.scripts.OnHide()
-assert(not card:IsShown() and renderedTitle.text == "", "hiding the card retained the restricted title")
+assert(not card:IsShown() and renderedTitle.text == "" and cardIcon.texture == nil,
+    "hiding the card retained its protected render values")
+GameTooltip.owner.icon.IsShown = function() return false end
+Build(2, { type = 2, id = { secret = true } })
+assert(card:IsShown() and not cardIcon:IsShown() and cardIcon.texture == nil,
+    "a spell without a readable ID or visible icon borrowed the previous tooltip's texture")
+GameTooltip.owner = nil
+combat = true
+local actionSource = { getterName = "GetAction", getterArgs = { 37 } }
+Build(2, blockedPrimary, actionSource)
+assert(cardIcon:IsShown() and cardIcon.texture == 135849 and actionTextures == 1 and spells == beforeSpells,
+    "the GCD rebuild did not resolve the action-slot icon exactly once")
+local beforeActionTextures = actionTextures
+for _ = 1, 15 do GameTooltip.scripts.OnSizeChanged() end
+assert(actionTextures == beforeActionTextures, "layout-only updates requeried the native action slot")
+GameTooltip.owner = { Icon = { GetTexture = function() return ownerTexture end } }
+Build(2, blockedPrimary, actionSource)
+assert(cardIcon.texture == 135849 and actionTextures == beforeActionTextures + 1,
+    "an opaque owner icon prevented the public action-slot fallback")
+GameTooltip.owner = nil
+beforeActionTextures = actionTextures
+Build(2, { type = 2, id = 116 }, { getterName = "GetAction", getterArgs = { { secret = true } } })
+assert(cardIcon:IsShown() and cardIcon.texture == 135846 and actionTextures == beforeActionTextures,
+    "a private action slot was passed to the public action API")
+local beforeSourceLookup = spells
+Build(2, blockedPrimary, { getterName = "GetSpellByID", getterArgs = { 117 } })
+assert(cardIcon:IsShown() and cardIcon.texture == 135847 and spells == beforeSourceLookup + 1,
+    "the tooltip did not recover the icon from its original spell argument")
+beforeSourceLookup = spells
+GameTooltip.owner = { Icon = { GetTexture = function() return 135848 end } }
+Build(2, { type = 2, id = 116 }, { getterName = "GetSpellByID", getterArgs = { 116 } })
+assert(cardIcon:IsShown() and cardIcon.texture == 135848 and spells == beforeSourceLookup,
+    "native cooldown texture was ignored whenever the payload had a readable spell ID")
+Build(2, blockedPrimary, { getterName = "GetSpellByID", getterArgs = { { secret = true } } })
+assert(cardIcon:IsShown() and cardIcon.texture == 135848 and spells == beforeSourceLookup,
+    "the displayed cooldown icon was removed by a restricted rebuild")
+GameTooltip.owner = nil
 combat = false
 function GameTooltipTextLeft1:GetText() return "Current title" end
 assert(API.SetOffsets(16, -1) and API.Preset() == "custom")
@@ -320,7 +405,8 @@ end
 assert(spells == beforeIconReads, "an aura or action ID was used as a spell ID")
 icon = { secret = true }
 Build(7, { type = 7, id = { secret = true } })
-assert(card:IsShown() and not card.textures[1]:IsShown(), "a public aura title required a readable icon")
+assert(card:IsShown() and cardIcon:IsShown() and rawequal(cardIcon.texture, icon),
+    "a protected aura icon was not forwarded to the card texture")
 function GameTooltipTextLeft1:GetText() return { secret = true } end
 callbacks[7](GameTooltip, GameTooltip.current)
 assert(card:IsShown() and outline:IsShown() and renderedTitle.text.secret,
@@ -578,6 +664,24 @@ assert(API.HasVisibleHeader(GameTooltip), "a quest did not reach the card")
 assert(API.SetTypeStyle("quest", "suite"))
 Build(23, { type = 23 })
 assert(not API.HasVisibleHeader(GameTooltip), "the quest style could not be disabled separately")
+function C_Item.GetItemLinkByGUID(guid)
+    assert(guid == "Item-public")
+    return "item:public-guid"
+end
+local savedGetItem = GameTooltip.GetItem
+function GameTooltip:GetItem() error("native GetItem wrapper read potentially restricted fields") end
+assert(API.SetTypeStyle("item", "custom"))
+local beforeRestrictedItem = reads
+combat = true
+Build(1, { type = 1, hyperlink = { secret = true }, guid = { secret = true }, id = 42 })
+assert(card:IsShown() and reads == beforeRestrictedItem + 1 and card.textures[1]:IsShown(),
+    "the card did not use the readable item ID")
+Build(1, { type = 1, hyperlink = { secret = true }, guid = "Item-public" })
+assert(card:IsShown() and reads == beforeRestrictedItem + 2 and card.textures[1]:IsShown(),
+    "the card did not use the readable item GUID")
+GameTooltip.GetItem = savedGetItem
+combat = false
+Flush()
 print("item tooltip cards: public quest and object data, palettes, restricted fallback and comparisons passed")
 
 -- Independent vital styling follows the tooltip profile across layout presets.
@@ -624,3 +728,21 @@ assert(settled == 1, "the timer settled the same clear twice")
 GameTooltip.scripts.OnTooltipCleared()
 Flush()
 assert(settled == 2, "clearing without replacement kept the health mirror with the card off")
+
+local shown, hidden, resized = 0, 0, 0
+vitals.NativeShown = function() shown = shown + 1 end
+vitals.NativeHidden = function() hidden = hidden + 1 end
+vitals.NativeResized = function(width)
+    assert(width == 240)
+    resized = resized + 1
+end
+vitals.Enabled = false
+GameTooltip.scripts.OnShow()
+GameTooltip.scripts.OnSizeChanged(GameTooltip, 240)
+GameTooltip.scripts.OnHide()
+assert(shown == 0 and hidden == 0 and resized == 0, "disabled vitals received shared lifecycle events")
+vitals.Enabled = true
+GameTooltip.scripts.OnShow()
+GameTooltip.scripts.OnSizeChanged(GameTooltip, 240)
+GameTooltip.scripts.OnHide()
+assert(shown == 1 and hidden == 1 and resized == 1, "the shared tooltip lost the active vitals lifecycle")

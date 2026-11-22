@@ -23,10 +23,8 @@ Core\DatabaseProfiles.lua
 Core\SharedMedia.lua
 Core\DeflateSize.lua
 Core\ProfileIO.lua
-Core\Safety.lua
 Core\Registry.lua
 Core\SuiteOwnership.lua
-Core\CombatGate.lua
 Core\Theme.lua
 Core\BlizzardFontCatalog.lua
 Core\BlizzardYellow.lua
@@ -59,7 +57,6 @@ Rendering\WindowFocusPopups.lua
 Rendering\WindowFocus.lua
 Rendering\MicroMenuPerformance.lua
 Rendering\MicroMenuVisual.lua
-Core\Cosmetics.lua
 Rendering\IconSkin.lua
 Rendering\ControlSkin.lua
 Rendering\ScrollBarSkin.lua
@@ -72,13 +69,9 @@ Adapters\GenericWindows.lua
 Adapters\GenericWindowsNodes.lua
 Adapters\GenericWindowsFrames.lua
 Adapters\ChatConfig.lua
-Adapters\TooltipChrome.lua
-Adapters\TooltipCardSettings.lua
-Adapters\UnitTooltipVitals.lua
-Adapters\ItemTooltipCard.lua
-Adapters\LootTooltipRows.lua
 Adapters\CatalogShopMotion.lua
 Adapters\FlightMapChrome.lua
+Adapters\TrainerCollections.lua
 Adapters\GenericWindowsCatalog.lua
 Adapters\TutorialPointers.lua
 Rendering\ScrollMotion.lua

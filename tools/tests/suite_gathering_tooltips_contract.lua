@@ -37,9 +37,9 @@ C_Item = {
     RequestLoadItemDataByID = function(id) requests[id] = (requests[id] or 0) + 1 end,
 }
 local function Load(path) assert(loadfile(root .. "/" .. path))("MSUF_Suite_QualityOfLife", private) end
-Load("MSUF_Suite_QualityOfLife/TooltipLines.lua")
-Load("MSUF_Suite_QualityOfLife/GatheringData.lua")
-Load("MSUF_Suite_QualityOfLife/GatheringTooltips.lua")
+Load("MSUF_Suite_Modules/TooltipLines.lua")
+Load("MSUF_Suite_Tooltips/GatheringData.lua")
+Load("MSUF_Suite_Tooltips/GatheringTooltips.lua")
 local module = assert(modules.gatheringTooltips)
 local events = {}
 module.context = { Event = function(_, event, fn) events[event] = fn end,

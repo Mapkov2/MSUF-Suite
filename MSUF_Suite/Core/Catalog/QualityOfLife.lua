@@ -1,4 +1,5 @@
 local _, NS = ...
+local Tooltips = NS.CatalogBuild.ForAddon("MSUF_Suite_Tooltips")
 local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local Number, Bool, Choice, String = B.Number, B.Bool, B.Choice, B.String
 
@@ -200,7 +201,7 @@ B.Module("vaultSpec", {
     end,
 })
 
-B.Module("tooltipIDs", {
+Tooltips.Module("tooltipIDs", {
     title = "Tooltip IDs",
     description = "Show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
@@ -217,7 +218,7 @@ B.Section("tooltipIDs", "tooltip_ids", "Tooltip IDs", {
     Bool("showAccountCurrency", "Show currency on other characters"),
 })
 
-B.Module("tooltipVisibility", {
+Tooltips.Module("tooltipVisibility", {
     title = "Tooltip visibility",
     description = "Optionally hide the main tooltip in combat, instances or for selected content types.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
@@ -236,7 +237,7 @@ B.Section("tooltipVisibility", "tooltip_visibility", "Tooltip visibility", {
         "Scales Blizzard's main tooltip. Other tooltips keep their size."),
 })
 
-B.Module("itemCounts", {
+Tooltips.Module("itemCounts", {
     title = "Item counts in tooltips",
     description = "Show your owned item count, including bank and Warband bank, on item tooltips.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
@@ -259,7 +260,7 @@ B.Module("socketGemSuggestions", {
     end,
 })
 
-B.Module("tooltipSpellCopy", {
+Tooltips.Module("tooltipSpellCopy", {
     title = "Copy spell ID",
     description = "Select the last public spell tooltip ID for copying with /msufcopyspell.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
@@ -269,7 +270,7 @@ B.Module("tooltipSpellCopy", {
     end,
 })
 
-B.Module("tooltipMPlusScore", {
+Tooltips.Module("tooltipMPlusScore", {
     title = "Mythic+ score in tooltips",
     description = "Show a player's public current-season Mythic+ score on their main tooltip.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
@@ -279,7 +280,7 @@ B.Module("tooltipMPlusScore", {
     end,
 })
 
-B.Module("tooltipClassColors", {
+Tooltips.Module("tooltipClassColors", {
     title = "Class-colored player names",
     description = "Color player names by class on the main tooltip.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",

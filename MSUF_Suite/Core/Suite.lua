@@ -50,7 +50,6 @@ local function ClampNumber(rule, value)
     return value
 end
 
--- Setters reject invalid input; stored profiles are repaired instead.
 local function CheckedValue(rule, value)
     local kind = type(value)
     if not rule or kind ~= type(rule.default) then return nil, "Invalid setting" end
@@ -62,11 +61,13 @@ local function CheckedValue(rule, value)
         return value
     end
     if kind == "string" and not ValidText(rule, value) then return nil, "Invalid setting text" end
+    if rule.copy then return rule.copy(value) end
     return value
 end
 S.CheckProfileValue = CheckedValue
 local function RepairedValue(rule, value)
     if type(value) ~= type(rule.default) then value = rule.default end
+    if rule.copy then return rule.copy(value) end
     if type(value) == "number" then
         if not Finite(value) then value = rule.default end
         return ClampNumber(rule, value)
@@ -191,8 +192,7 @@ local function RunMigrations(db)
         if step.legacy and index <= db.revision then db[step.legacy] = nil end
     end
 end
--- The pending migrations of a suite table (profile.suite) alone: imports run
--- them before only documented settings stay (ProfileIO.lua).
+-- Imports run these migrations before dropping retired settings.
 S.Migrate = RunMigrations
 
 ------------------------------------------------------------------ normalization
@@ -581,6 +581,7 @@ function S.ApplyGlobalLook(lookName)
             end
         end
     end
+    NS.Registry.NotifyListeners("look", lookName)
     Changed()
     return true
 end

@@ -48,7 +48,7 @@ local NS = {
         return combat
     end,
     Finish = function(callback, ...) return true, callback(...) end,
-    Skin = { TintEdge = function() return false end },
+
 }
 NS.Dispatch = S.Dispatch
 
@@ -183,8 +183,9 @@ local fixture = Support.TooltipFixture(root, S, NS)
 ApproximatelyEqual = function(a, b) return math.abs(a - b) < .000001 end
 NS.Finite = S.Finite
 assert(loadfile(root .. "/MSUF_Suite/Core/TooltipScale.lua"))("MSUF_Suite", NS)
+local private = { NS = NS, Suite = S, TooltipChrome = { TintEdge = function() return false end } }
 local function Load(file)
-    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
+    assert(loadfile(root .. "/MSUF_Suite_Tooltips/" .. file))("MSUF_Suite_Tooltips", private)
 end
 Load("TooltipBorder.lua")
 Load("TooltipHiddenLines.lua")
@@ -378,7 +379,7 @@ tooltip:Hide()
 details.active = true
 details:Enable()
 -- The skin draws the tooltip's border: the color goes to its edge, not around it.
-NS.Skin.TintEdge = function(frame, r, g, b)
+private.TooltipChrome.TintEdge = function(frame, r, g, b)
     assert(frame == tooltip)
     skinTints[#skinTints + 1] = r and { r, g, b } or "theme"
     return true
@@ -388,7 +389,7 @@ Check(#skinTints == 1 and Same(skinTints[1], MAGE) and Same(Border(), nativeBord
     "the skin's tooltip edge was not colored through the skin")
 tooltip:Hide()
 Check(skinTints[2] == "theme" and Same(Border(), nativeBorder), "the skin's edge kept the color after hide")
-NS.Skin.TintEdge = function() return false end
+private.TooltipChrome.TintEdge = function() return false end
 details.config.borderColor = 1
 
 ------------------------------------------------------------------ Mythic+ forces
@@ -617,6 +618,7 @@ do
             GetBorderOpacity = function() return .5 end,
         },
     }
+    skinNS.SuiteCore = function() return {} end
     assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/Surface.lua"))("MSUF_Suite_Skin", skinNS)
     local edge = { shown = true, color = { .1, .2, .3, .4 } }
     function edge:IsShown() return self.shown end
@@ -645,7 +647,7 @@ end
 ------------------------------------------------------------------ rules
 -- No Tooltip file hooks a method of the shared tooltip, no method assigned
 -- over it, and no error was reported.
-local addon = "MSUF_Suite_QualityOfLife"
+local addon = "MSUF_Suite_Tooltips"
 local scanned = 0
 for _, file in ipairs(Support.TocFiles(root, addon)) do
     if file:match("^Tooltip.*%.lua$") then

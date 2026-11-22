@@ -1,0 +1,31 @@
+## Interface: 120100, 120105, 120107, 16001
+## Title: MSUF Suite - Tooltips
+## Notes: Tooltip appearance, details, visibility and positioning for MSUF Suite.
+## Author: Mapko
+## Version: 0.1.33-alpha
+## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## Group: MSUF_Suite
+## LoadOnDemand: 1
+## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
+
+Bootstrap.lua
+Surface.lua
+TooltipChrome.lua
+TooltipCardSettings.lua
+UnitTooltipVitals.lua
+ItemTooltipCard.lua
+LootTooltipRows.lua
+TooltipIDs.lua
+TooltipVisibility.lua
+TooltipSpellCopy.lua
+TooltipMPlusScore.lua
+TooltipClassColors.lua
+TooltipBorder.lua
+TooltipHiddenLines.lua
+TooltipDetails.lua
+ItemCounts.lua
+AuctionPriceTooltip.lua
+GatheringData.lua
+GatheringTooltips.lua
+ItemReference.lua
+Appearance.lua

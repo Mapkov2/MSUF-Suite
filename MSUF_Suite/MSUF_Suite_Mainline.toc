@@ -12,6 +12,10 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Core\Platform.lua
+Appearance\Bootstrap.lua
+Appearance\Safety.lua
+Appearance\CombatGate.lua
+Appearance\Cosmetics.lua
 Core\ForeverMailSubject.lua
 Core\ChatState.lua
 Core\CombatRating.lua
@@ -51,6 +55,7 @@ Core\CharacterTabs.lua
 Core\CharacterBindings.lua
 Core\Catalog\CharacterPanel.lua
 Core\Catalog\QualityOfLife.lua
+Core\Catalog\Tooltips.lua
 Core\Catalog\LootRolls.lua
 Core\Catalog\QualityOfLifeIndicators.lua
 Core\Catalog\ExperienceBar.lua

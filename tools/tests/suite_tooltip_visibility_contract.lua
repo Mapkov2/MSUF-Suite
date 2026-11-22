@@ -75,7 +75,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/TooltipScale.lua"))("MSUF_Suite", ns)
 local context = { events = {} }
 function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipVisibility.lua"))(
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipVisibility.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 assert(module)
 module.active, module.context = true, context

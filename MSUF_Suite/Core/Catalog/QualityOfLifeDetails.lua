@@ -1,4 +1,5 @@
 local _, NS = ...
+local Tooltips = NS.CatalogBuild.ForAddon("MSUF_Suite_Tooltips")
 local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local Number, Bool, Choice = B.Number, B.Bool, B.Choice
 
@@ -171,7 +172,7 @@ B.Section("merchantList", "merchant_list", "Merchant list", {
 })
 -- inspectHovered sends inspect requests for hovered players, so the module
 -- counts as automation for profile imports.
-B.Module("tooltipDetails", {
+Tooltips.Module("tooltipDetails", {
     title = "Tooltip details and anchor",
     description = "Shared tooltip anchor for items, spells, auras and unit frames, with optional tooltip details.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",

@@ -1,5 +1,5 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local NS, S, Chrome = P.NS, P.Suite, P.TooltipChrome
 
 -- Colors the border of Blizzard's main tooltip by item quality or by the
 -- unit's class or reaction. The color is chosen once per tooltip build, from
@@ -54,7 +54,7 @@ function B.Restore(tooltip)
     painted = nil
     if not owner or NS.Safety.IsForbidden(tooltip) then return end
     if owner == SKIN then
-        NS.Skin.TintEdge(tooltip)
+        Chrome.TintEdge(tooltip)
     elseif native[1] then
         tooltip.NineSlice:SetBorderColor(native[1], native[2], native[3], native[4])
     end
@@ -62,7 +62,7 @@ end
 
 local function Paint(tooltip, r, g, b)
     B.Restore(tooltip)
-    if NS.Skin.TintEdge(tooltip, r, g, b) then
+    if Chrome and Chrome.TintEdge(tooltip, r, g, b) then
         painted = SKIN
     elseif PaintNative(tooltip, r, g, b) then
         painted = NATIVE

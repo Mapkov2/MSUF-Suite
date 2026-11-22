@@ -12,6 +12,7 @@ Surfaces.lua
 Runtime.lua
 Timers.lua
 Dialogs.lua
+TooltipLines.lua
 ToolListWindow.lua
 WorldQuestRewards.lua
 WorldQuestTab.lua

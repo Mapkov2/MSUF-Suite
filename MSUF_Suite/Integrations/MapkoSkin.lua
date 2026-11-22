@@ -18,6 +18,21 @@ local function LoadedEngine()
 end
 
 local tooltipBorder
+
+function Skin.TooltipTheme()
+    local engine = LoadedEngine()
+    if engine and engine.DB and engine.DB.enabled ~= false and Skin.enabled then return engine end
+end
+
+function Skin.LegacyTooltipLayout()
+    local engine = LoadedEngine()
+    if engine and engine.DB then return engine.DB.theme, engine.Database.GetActiveProfileName() end
+end
+
+function Skin.TooltipAppearanceChanged()
+    local engine = Skin.TooltipTheme()
+    if engine then engine.Registry.NotifyListeners("tooltipStyle", "tooltips") end
+end
 local function HookOwnedAppearance(api)
     -- hooksecurefunc raises when the hooked field is not a function.
     if appearanceHooked or type(api.OnAppearanceChanged) ~= "function" then return end
@@ -93,13 +108,16 @@ end
 
 function Skin.GetTooltipBorder()
     local engine = LoadedEngine()
-    local chrome = engine and engine.TooltipChrome
-    if type(chrome) ~= "table" or type(chrome.GetBorder) ~= "function" or type(engine.GetAPI) ~= "function" then return nil end
-    if not appearanceHooked then
+    local tooltips = Suite.Tooltips
+    local chrome = tooltips and tooltips.TooltipChrome or engine and engine.TooltipChrome
+    if not chrome then return nil end
+    if not appearanceHooked and engine and engine.GetAPI then
         local api = engine.GetAPI(2, 0)
         if api then HookOwnedAppearance(api) end
     end
-    if not Skin.WindowsEnabled() then return nil end
+    if tooltips then
+        if not tooltips.DB.enabled then return nil end
+    elseif not Skin.WindowsEnabled() then return nil end
     local r, g, b, a = chrome.GetBorder()
     if not (Suite.Finite(r) and Suite.Finite(g) and Suite.Finite(b) and Suite.Finite(a)) then return nil end
     if not tooltipBorder or tooltipBorder[1] ~= r or tooltipBorder[2] ~= g or tooltipBorder[3] ~= b or tooltipBorder[4] ~= a then

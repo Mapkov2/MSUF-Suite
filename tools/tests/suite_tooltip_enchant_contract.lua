@@ -29,7 +29,7 @@ local suite = {
 }
 local ns = { Safety = { IsForbidden = function() return false end } }
 local tooltips = Support.TooltipFixture(root, suite, ns)
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipIDs.lua"))(
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipIDs.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 assert(module)
 module.active, module.context, module.config = true, context, { showTempEnchant = true }

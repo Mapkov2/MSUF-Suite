@@ -2,9 +2,13 @@ local _, NS = ...
 
 local Rows = {}
 NS.LootTooltipRows = Rows
-local Safety, Kit, Card = NS.Safety, NS.AdapterKit, NS.ItemTooltipCard
-local rows, owners = Kit.WeakSet(), {}
+local Safety, Card = NS.Safety, NS.ItemTooltipCard
+local rows, owners = setmetatable({}, { __mode = "k" }), {}
 local root, box, callbacks, enabled, rich, matching
+
+local function ParentIs(frame, parent)
+    return Safety.Read(frame, "GetParent") == parent
+end
 
 local function ReleaseHeader(header)
     if not header then return end
@@ -28,7 +32,7 @@ end
 
 local function PaintBacking(record, row, level)
     local native = matching and Safety.Field(row, "NameFrame")
-    if not native or level < 1 or not Kit.ParentIs(native, row) then
+    if not native or level < 1 or not ParentIs(native, row) then
         if record.backing then record.backing:Hide() end
         NS.Cosmetics.Restore(record.nativeFill, record)
         record.nativeFill = nil
@@ -89,7 +93,7 @@ local function Paint(row)
     if Safety.Read(row, "GetItemSlotType") ~= Enum.LootSlotType.Item then Release(record) return end
     local item, text, qualityText = row.Item, row.Text, row.QualityText
     local height, name = Safety.Read(row, "GetHeight"), Safety.Read(text, "GetText")
-    if not Kit.ParentIs(item, row) or not Kit.ParentIs(text, row) or not Kit.ParentIs(qualityText, row)
+    if not ParentIs(item, row) or not ParentIs(text, row) or not ParentIs(qualityText, row)
         or type(height) ~= "number" or height < 36 or type(name) ~= "string" or name == "" then
         Release(record)
         return
@@ -154,7 +158,10 @@ local function Refresh()
             OnHide()
         end
     end
-    if wanted and Safety.Read(root, "IsShown") == true then Kit.ForEachRow(box, PaintRow) end
+    if wanted and Safety.Read(root, "IsShown") == true and Safety.HasMethod(box, "ForEachFrame")
+        and (not Safety.HasMethod(box, "HasView") or Safety.Read(box, "HasView") == true) then
+        box:ForEachFrame(PaintRow)
+    end
 end
 
 local function ThemeChanged(_, domain)

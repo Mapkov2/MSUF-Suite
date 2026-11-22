@@ -24,7 +24,7 @@ local player, class = true, "MAGE"
 UnitIsPlayer = function(unit) assert(unit == "target"); return player end
 UnitClass = function(unit) assert(unit == "target"); return "Mage", class end
 local tooltips = Support.TooltipFixture(root, suite, ns)
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipClassColors.lua"))(
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipClassColors.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 local module = assert(installed.tooltipClassColors)
 module.active = true

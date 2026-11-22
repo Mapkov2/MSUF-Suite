@@ -1,4 +1,5 @@
-local _, NS = ...
+local _, owner = ...
+local NS = owner.AppearancePrimitives or owner
 
 -- Reversible alpha suppression of native decoration. Each region remembers
 -- its original value and is restored only while it still shows our value.

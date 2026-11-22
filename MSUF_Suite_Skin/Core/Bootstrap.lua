@@ -16,7 +16,7 @@ NS.version = "0.35.1"
 -- client API is negotiated separately through MapkoSkin.GetAPI(2, 0).
 NS.apiVersion = 1
 NS.publicAPIMajor = 2
-NS.publicAPIMinor = 5
+NS.publicAPIMinor = 6
 NS.path = "Interface\\AddOns\\MSUF_Suite_Skin\\"
 
 function NS.IsCombatLocked(event)
@@ -48,6 +48,9 @@ end
 
 -- Chat lines go out under the Suite's name, through the Suite core's
 -- printer (MSUF_Suite/Core/Platform.lua).
+local appearance = NS.SuiteCore().AppearancePrimitives
+NS.Safety, NS.Cosmetics, NS.CombatGate = appearance.Safety, appearance.Cosmetics, appearance.CombatGate.Initialize()
+
 function NS.Print(message)
     NS.SuiteCore().Print(message or "")
 end

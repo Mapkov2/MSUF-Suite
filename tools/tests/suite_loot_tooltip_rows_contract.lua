@@ -20,6 +20,9 @@ local function Row(slot, kind)
     row.Item.GetCount = function() return 2 end
     row.Item.Click = function() return slot end
     row.Item.parent, row.Text.parent, row.QualityText.parent = row, row, row
+    local function GetParent(frame) return frame.parent end
+    row.Item.GetParent, row.Text.GetParent = GetParent, GetParent
+    row.QualityText.GetParent, row.NameFrame.GetParent = GetParent, GetParent
     function row.Text:GetText() return self.name end
     function row:GetItemSlotType() return self.kind end
     function row:GetSlotIndex() return self.slot end
@@ -49,6 +52,8 @@ function GetLootSlotLink(slot)
     return "item:4306"
 end
 local function Public(value) return type(value) ~= "table" or not value.secret end
+function box:ForEachFrame(paint) paint(item) paint(money) end
+
 local ns = {
     DB = { enabled = true },
     Safety = {
@@ -62,11 +67,6 @@ local ns = {
         end,
         ReadColor = function() return 1, 1, 1 end,
         Dispatch = function(fn, ...) return fn(...) end,
-    },
-    AdapterKit = {
-        WeakSet = function() return {} end,
-        ParentIs = function(frame, parent) return frame and frame.parent == parent end,
-        ForEachRow = function(_, paint) paint(item) paint(money) end,
     },
     Cosmetics = {
         Fade = function(region, owner) faded[region] = owner return true end,
@@ -99,7 +99,7 @@ local ns = {
     },
     Registry = { AddListener = function(_, callback) listener = callback end },
 }
-assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Adapters/LootTooltipRows.lua"))("MSUF_Suite_Skin", ns)
+assert(loadfile(rootPath .. "/MSUF_Suite_Tooltips/LootTooltipRows.lua"))("MSUF_Suite_Skin", ns)
 local adapter = ns.LootTooltipRows
 adapter.Apply(window, "test")
 assert(not next(callbacks) and not next(art), "stock loot allocated or painted a card")

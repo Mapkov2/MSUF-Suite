@@ -56,9 +56,11 @@ local function Frame(parent)
     function frame:GetWidth() return self.width end
     function frame:SetHeight(height) self.height = height end
     function frame:GetHeight() return self.height end
-    function frame:SetShown(shown) self.shown = shown end
-    function frame:Show() self.shown = true; if self.scripts.OnShow then self.scripts.OnShow(self) end end
-    function frame:Hide() self.shown = false; if self.scripts.OnHide then self.scripts.OnHide(self) end end
+    function frame:SetShown(shown)
+        self.shown, self.visibilityWrites = shown, (self.visibilityWrites or 0) + 1
+    end
+    function frame:Show() self:SetShown(true); if self.scripts.OnShow then self.scripts.OnShow(self) end end
+    function frame:Hide() self:SetShown(false); if self.scripts.OnHide then self.scripts.OnHide(self) end end
     function frame:IsShown() return self.shown end
     function frame:GetAlpha() return self.alpha end
     function frame:SetAlpha(value) self.alpha, self.alphaWrites = value, (self.alphaWrites or 0) + 1 end
@@ -90,7 +92,11 @@ GameTooltip.StatusBar = Frame(GameTooltip)
 GameTooltip.StatusBar:SetMinMaxValues(0, 1)
 GameTooltip.StatusBar:SetValue(.75)
 function GameTooltip:GetPrimaryTooltipData() return self.data end
-function GameTooltip:GetUnit() return "Restricted unit", self.fallback end
+function GameTooltip:GetUnit() error("native GetUnit wrapper read potentially restricted fields") end
+function UnitTokenFromGUID(guid)
+    assert(guid == "Creature-public" and not secrets[guid], "resolved a restricted GUID")
+    return "target"
+end
 local observer, deferred, blockFade
 local releases = 0
 local HostBridge = {
@@ -148,8 +154,19 @@ local NS = {
         Restore = function(frame) frame:SetAlpha(1) end,
     },
 }
-assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/UnitTooltipVitals.lua"))("Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/UnitTooltipVitals.lua"))("Skin", NS)
 local vitals = NS.TooltipVitals
+local show, hide = GameTooltip.Show, GameTooltip.Hide
+-- ItemTooltipCard owns the shared lifecycle. Retain any separately installed
+-- scripts here as well, so the disabled-state budget detects them.
+function GameTooltip:Show()
+    show(self)
+    if vitals.Enabled and vitals.NativeShown then vitals.NativeShown() end
+end
+function GameTooltip:Hide()
+    hide(self)
+    if vitals.Enabled and vitals.NativeHidden then vitals.NativeHidden() end
+end
 local unitData = { type = 2, lines = { { type = 1, unitToken = "target" } } }
 GameTooltip.data = unitData
 assert(not vitals.Refresh() and #frames == 2 and unitCalls == 0, "factory settings allocated hover resources")
@@ -162,6 +179,7 @@ deferred()
 assert(GameTooltip.StatusBar.alpha == 0 and unitCalls == 0 and HostBridge.TooltipOwnsHealth and releases == 1)
 local unitBar, powerBar, event = frames[3], frames[6], frames[9]
 assert(not unitBar.shown and not powerBar.shown and not next(event.events), "hiding started a unit watch")
+assert(not GameTooltip.StatusBar.scripts.OnValueChanged, "hiding Blizzard health installed a value mirror")
 vitals.NativeCleared()
 assert(GameTooltip.StatusBar.alpha == 1)
 
@@ -194,7 +212,7 @@ config.unitHealthX, config.unitHealthY, config.unitHealthWidth, config.unitHealt
 vitals.Refresh()
 assert(unitBar.points[1][4] == 73 and unitBar.points[1][5] == -3 and unitBar.height == 20)
 GameTooltip.width = 204
-GameTooltip.scripts.OnSizeChanged(GameTooltip, 204)
+vitals.NativeResized(204)
 assert(unitBar.points[1][4] == 63, "relative width did not update with the tooltip width")
 combat = false
 vitals.MediaRegistered("Unrelated")
@@ -240,8 +258,8 @@ assert(label:IsShown() and label.raw == secretPercent and unitBar.value == secre
     and label.font[2] == 18 and label.points[1][4] == 13 and event.events.UNIT_HEALTH == "target",
     "opening the native tooltip during combat changed the style or format")
 vitals.PaintPreview(preview, true, false, false, true, true, nil, true)
-assert(preview.health:IsShown() and not preview.healthText:IsShown() and not preview.power:IsShown(),
-    "the protected fallback should display only health")
+assert(preview.health:IsShown() and preview.healthText:IsShown() and preview.healthText.raw == 76.01
+    and not preview.power:IsShown(), "restricted preview did not show the public native health percentage")
 assert(preview.health.texture == "Fill.tga" and preview.healthShape.bg.path == "Track.tga"
     and preview.health.height == 20, "the restricted preview lost the selected material or geometry")
 config.unitHealthTextFormat = "value"
@@ -269,8 +287,7 @@ assert(not label:IsShown() and percentCalls == calls and powerBar.text:IsShown()
 
 GameTooltip:Hide()
 assert(GameTooltip.StatusBar.alpha == 1 and not next(event.events) and not unitBar.shown and not powerBar.shown)
-GameTooltip.data = { type = 2, lines = { { type = 1, unitToken = Secret() } } }
-GameTooltip.fallback = Secret()
+GameTooltip.data = { type = 2, guid = Secret(), lines = { { type = 1, unitToken = Secret() } } }
 local native = GameTooltip.StatusBar
 local before, mediaBefore = unitCalls, resolves
 local maskedHealth = Secret()
@@ -286,6 +303,15 @@ local newerHealth = Secret()
 native:SetValue(newerHealth)
 assert(unitBar.value == newerHealth and resolves == mediaBefore and unitCalls == before,
     "native health updates performed extra queries or missed the custom bar")
+config.unitHealthTextFormat = "percent"
+vitals.Refresh()
+assert(not label:IsShown(), "the mirror showed a percentage from a secret fraction")
+native:SetValue(.61)
+assert(label:IsShown() and label.format == "%.0f%%" and math.abs(label.raw - 61) < .01
+    and unitBar.value == .61 and unitCalls == before and not powerBar.shown,
+    "the native public fraction did not reach the percentage text")
+native:SetValue(newerHealth)
+assert(not label:IsShown() and unitBar.value == newerHealth, "the mirror retained stale text when the fraction became secret")
 local alphaWrites = native.alphaWrites
 media["Suite fill"] = "Enemy texture.tga"
 vitals.Refresh()
@@ -323,7 +349,14 @@ assert(not unitBar.shown and native.alpha == 1, "the mirror outlived its native 
 GameTooltip:Hide()
 combat = false
 native:Show()
-GameTooltip.fallback = nil
+GameTooltip.data = { type = 2, guid = "Creature-public", lines = { { type = 1, unitToken = Secret() } } }
+vitals.Native(GameTooltip, GameTooltip.data)
+GameTooltip:Show()
+assert(unitBar.shown and label:IsShown() and powerBar.shown and event.events.UNIT_HEALTH == "target",
+    "a readable native GUID failed to recover full unit vitals")
+GameTooltip:Hide()
+config.unitHealthTextFormat = "value"
+vitals.Refresh()
 GameTooltip.data = { type = 2, lines = { { type = 1, unitToken = "focus" } } }
 vitals.Native(GameTooltip, GameTooltip.data)
 GameTooltip:Show()
@@ -339,4 +372,40 @@ mode, power = "native", false
 assert(not vitals.Refresh() and not observer and not next(panelEvents.events) and not panelHealth.shown)
 assert(vitals.PaintPreview(preview, true, true, false, true, true) == 0 and not preview.health.shown)
 assert(vitals.PaintPreview(preview, true, false, false, true, true) > 0 and preview.health.height == 8)
-print("unit tooltip vitals contract: native lifecycle, protected values, preview, and MSUF provider")
+
+local healthWrites, powerWrites = unitBar.visibilityWrites, powerBar.visibilityWrites
+local hiddenReads, lastPercentCalls, hiddenAlphaWrites = unitCalls, percentCalls, native.alphaWrites
+for _ = 1, 10 do
+    GameTooltip:Show()
+    native:SetValue(.41)
+    GameTooltip:Hide()
+    event.scripts.OnEvent(event, "UNIT_HEALTH")
+    event.scripts.OnEvent(event, "UNIT_POWER_UPDATE")
+end
+assert(unitBar.visibilityWrites == healthWrites and powerBar.visibilityWrites == powerWrites,
+    "disabled vitals issued visibility writes on the shared tooltip lifecycle")
+assert(unitCalls == hiddenReads and percentCalls == lastPercentCalls and native.alphaWrites == hiddenAlphaWrites
+    and not next(event.events) and not GameTooltip.scripts.OnSizeChanged,
+    "disabled vitals retained unit queries, event work, or a dedicated tooltip layout hook")
+
+local function CheckSingleBar(healthMode, powerOn, disabledBar)
+    mode, power = healthMode, powerOn
+    GameTooltip.data = unitData
+    assert(vitals.Refresh())
+    GameTooltip:Show()
+    local visibility, values = disabledBar.visibilityWrites, disabledBar.valueWrites
+    local reads = unitCalls
+    for _ = 1, 10 do
+        vitals.NativeCleared()
+        vitals.Native(GameTooltip, unitData)
+    end
+    assert(disabledBar.visibilityWrites == visibility and disabledBar.valueWrites == values,
+        "the disabled bar did work while its sibling was active")
+    assert(unitCalls == reads + 20, "the disabled bar queried unit values while its sibling was active")
+    GameTooltip:Hide()
+end
+GameTooltip.width = 284
+CheckSingleBar("show", false, powerBar)
+assert(unitBar.points[1][4] == 83, "enabling health used the old tooltip width")
+CheckSingleBar("native", true, unitBar)
+print("unit tooltip vitals contract: native lifecycle, disabled bars, protected values, preview, and MSUF provider")

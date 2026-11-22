@@ -94,8 +94,8 @@ function Palette.Accent(r, g, b)
 end
 
 local hostFill = { role = "popup", resolveFill = Palette.Fill }
-function Palette.PaintHostBackdrop(frame, state, wanted, keepBorder)
-    if not wanted or not Palette.IsActive() then
+function Palette.PaintHostBackdrop(frame, state, wanted, keepBorder, useTheme)
+    if not wanted or not (useTheme or Palette.IsActive() or NS.Surface.MediaPath("background")) then
         if state.nativeBackdrop then
             frame:SetBackdropColor(unpack(state.nativeBackdrop))
             state.nativeBackdrop = nil
@@ -128,15 +128,11 @@ function Palette.PaintHostBackdrop(frame, state, wanted, keepBorder)
         state.paletteFill:SetAllPoints(frame)
         state.paletteFill:SetColorTexture(1, 1, 1, 1)
     end
-    local material = NS.Theme.GetMaterial("popup")
-    NS.Surface.PaintFill(state.paletteFill, nil, state, nil, NS.Surface.PrepareFill(material, hostFill))
+    NS.Surface.SetMediaTexture(state.paletteFill, state, "background")
+    NS.Surface.PaintFill(state.paletteFill, nil, state, nil, NS.Surface.PrepareFill(nil, hostFill))
     state.paletteFill:Show()
     return true
 end
-
-NS.Registry.AddListener(Palette, function(_, domain)
-    if domain == "tooltipStyle" then NS.Registry.QueueRefresh("tooltipPalette") end
-end)
 
 local Caption = { Height = 20 }
 NS.TooltipComparisonCaption = Caption
@@ -206,59 +202,24 @@ local borderPieces = {
 local fillSpec = { role = "popup", radius = 8, resolveFill = Palette.Fill }
 
 local plan
-local geometry = {}
 
-local function ResolveBorder(material)
+local function ResolveBorder()
     local layout = Layout()
     if layout and layout.palette == true and layout.borderMode == "custom" then
-        return ReadColor(layout, "borderColor", material.border)
+        return ReadColor(layout, "borderColor", "border")
     end
-    local r, g, b, a = NS.Theme.GetColor(material.border)
-    local edge = NS.Geometry.Resolve(fillSpec, geometry).edge
-    return r, g, b, edge and a * NS.Theme.GetBorderOpacity() or 0
+    return NS.Theme.Border()
 end
 
 function TooltipChrome.GetBorder()
-    return ResolveBorder(NS.Theme.GetMaterial("popup"))
-end
-
--- Reuse the tooltip's actual edge art on an addon-owned overlay. The center
--- belongs to the outlined window; only the eight edge pieces are installed.
-local outlineLayout
-function TooltipChrome.PaintOutline(frame, art, strata, level)
-    local r, g, b, a = TooltipChrome.GetBorder()
-    if a <= 0 then
-        if art then art:Hide() end
-        return art
-    end
-    if not art then
-        if not outlineLayout then
-            local native = NineSliceUtil and NineSliceUtil.GetLayout("TooltipDefaultLayout")
-            if not native then return end
-            outlineLayout = NS.CopyValue(native)
-            outlineLayout.Center = nil
-        end
-        art = CreateFrame("Frame", nil, UIParent, "NineSlicePanelTemplate")
-        art:EnableMouse(false)
-        art:SetAllPoints(frame)
-        NineSliceUtil.ApplyLayout(art, outlineLayout)
-    end
-    local tooltipScale = Safety.Read(GameTooltip, "GetEffectiveScale")
-    local parentScale = Safety.Read(UIParent, "GetEffectiveScale")
-    local scale = tooltipScale and parentScale and parentScale > 0 and tooltipScale / parentScale or 1
-    if art:GetScale() ~= scale then art:SetScale(scale) end
-    if art:GetFrameStrata() ~= strata then art:SetFrameStrata(strata) end
-    if art:GetFrameLevel() ~= level then art:SetFrameLevel(level) end
-    art:SetBorderColor(r, g, b, a)
-    art:Show()
-    return art
+    return ResolveBorder()
 end
 
 local function PrepareStyle()
-    local material = NS.Theme.GetMaterial("popup")
-    local r, g, b, a = ResolveBorder(material)
+    local r, g, b, a = ResolveBorder()
     plan = {
-        fill = NS.Surface.PrepareFill(material, fillSpec),
+        fill = NS.Surface.PrepareFill(nil, fillSpec),
+        background = NS.Surface.MediaPath("background"),
         r = r, g = g, b = b, alpha = a,
     }
 end
@@ -319,13 +280,47 @@ local function CoverCenter(state, center)
     return true
 end
 
+-- Use an owned layer for SharedMedia. The native atlas and its layout remain
+-- intact, and the same center is restored on reset or when the card backs it.
+local function PaintBackground(slice, center, state)
+    local art = state.background
+    if not state.cardBacking and plan.background and Safety.CanCreateRegions(slice) then
+        if not art then
+            local texture = slice:CreateTexture(nil, "BACKGROUND", nil, -7)
+            art = { texture = texture }
+            state.background = art
+        end
+        if art.anchor ~= center then
+            art.texture:ClearAllPoints()
+            art.texture:SetAllPoints(center)
+            art.anchor = center
+        end
+        if CoverCenter(state, center) then
+            NS.Surface.SetMediaTexture(art.texture, art, "background")
+            NS.Surface.PaintFill(art.texture, nil, art, nil, plan.fill)
+            if not art.texture:IsShown() then art.texture:Show() end
+            return true
+        end
+    end
+    if art then art.texture:Hide() end
+    if state.cardBacking == "fill" then return CoverCenter(state, center) end
+    RevealCenter(state)
+    return false
+end
+
 local function Paint(frame, state)
     if not Safety.CanDecorate(frame) then return false, "protected" end
     local slice = Safety.Field(frame, "NineSlice")
-    if not Safety.Public(slice) or not Safety.CanDecorate(slice) then return false, "missing" end
+    if not Safety.Public(slice) then return false, "missing" end
+    if not slice then
+        if not Safety.CanCreateRegions(frame) then return false, "protected" end
+        return Palette.PaintHostBackdrop(frame, state, true, true, true)
+    end
+    if not Safety.CanDecorate(slice) then return false, "protected" end
     -- Atlas colors can be restored independently of their parent opacity.
     -- Our backdrop and outline replace the entire native slice in this mode.
     if state.cardBacking == "all" then
+        if state.background then state.background.texture:Hide() end
         RevealCenter(state)
         return CoverSlice(state, slice)
     end
@@ -334,15 +329,10 @@ local function Paint(frame, state)
     local center = Safety.Field(slice, "Center")
     local fill = Capture(state, center)
     if not fill then return false, "missing" end
-    if state.cardBacking == "fill" then
-        if not CoverCenter(state, center) then return false, "protected" end
-    else
-        RevealCenter(state)
-    end
-
     if not plan then PrepareStyle() end
-    -- While the card supplies the backdrop, only the native edges need paint.
-    if not state.cardBacking then NS.Surface.PaintFill(center, nil, fill, nil, plan.fill) end
+    local covered = PaintBackground(slice, center, state)
+    if state.cardBacking == "fill" and not covered then return false, "protected" end
+    if not covered then NS.Surface.PaintFill(center, nil, fill, nil, plan.fill) end
     SaveColor(fill.applied, Safety.ReadColor(center, "GetVertexColor"))
 
     local r, g, b, alpha = plan.r, plan.g, plan.b, plan.alpha
@@ -396,7 +386,7 @@ end
 
 local function OnThemeChanged(_, domain)
     if domain ~= "theme" and domain ~= "color" and domain ~= "appearance"
-        and domain ~= "geometry" and domain ~= "profile" and domain ~= "tooltipStyle" then return end
+        and domain ~= "geometry" and domain ~= "profile" and domain ~= "tooltipStyle" and domain ~= "tooltipMedia" then return end
     plan = nil
     if next(tooltips) then PrepareStyle() end
     for frame in pairs(tooltips) do RequestPaint(frame) end
@@ -480,6 +470,8 @@ function TooltipChrome.DisableOwner(owner)
             tooltips[frame], pending[frame] = nil, nil
             for region, paint in pairs(state.regions) do Restore(region, paint) end
             RevealCenter(state)
+            if state.background then state.background.texture:Hide() end
+            if state.nativeBackdrop then Palette.PaintHostBackdrop(frame, state, false) end
             NS.Cosmetics.RestoreOwner(state)
         end
     end

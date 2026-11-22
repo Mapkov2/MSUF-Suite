@@ -34,10 +34,6 @@ NavigationHUD.lua
 SoundProfiles.lua
 SlashCommands.lua
 CharacterPanel.lua
-TooltipLines.lua
-AuctionPriceTooltip.lua
-GatheringData.lua
-GatheringTooltips.lua
 ForeverMapData.lua
 ForeverMapPins.lua
 ForeverMapPins.xml
@@ -74,13 +70,7 @@ GroupFinderTools.lua
 FishingComfort.lua
 MerchantItemLevel.lua
 VaultSpec.lua
-TooltipIDs.lua
-TooltipVisibility.lua
-ItemCounts.lua
 SocketGemSuggestions.lua
-TooltipSpellCopy.lua
-TooltipMPlusScore.lua
-TooltipClassColors.lua
 MacroConsumableData.lua
 MacroConsumables.lua
 MacroBuilder.lua
@@ -154,9 +144,6 @@ GlimmerVisuals.lua
 Glimmer.lua
 CharacterExtras.lua
 MerchantList.lua
-TooltipBorder.lua
-TooltipHiddenLines.lua
-TooltipDetails.lua
 PopupAttention.lua
 BonusRollConfirm.lua
 BattleNetToast.lua

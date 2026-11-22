@@ -1,4 +1,5 @@
-local _, NS = ...
+local _, owner = ...
+local NS = owner.AppearancePrimitives or owner
 
 -- Guards for touching Blizzard and other foreign objects without protected
 -- calls. Each known failure has an explicit check instead of a swallowed error:

@@ -182,7 +182,7 @@ local tooltips = Support.TooltipFixture(root, S, NS)
 local mountReaderPath = root .. "/MSUF_Suite/Core/UnitMount.lua"
 assert(loadfile(mountReaderPath))("test", NS)
 for _, file in ipairs({ "TooltipBorder.lua", "TooltipHiddenLines.lua", "TooltipDetails.lua" }) do
-    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file))("test", { NS = NS, Suite = S })
+    assert(loadfile(root .. "/MSUF_Suite_Tooltips/" .. file))("test", { NS = NS, Suite = S })
 end
 local m = modules.tooltipDetails
 m.active, m.events = true, {}

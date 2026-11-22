@@ -81,8 +81,8 @@ local S = {
     end,
 }
 local P = { NS = NS, Suite = S }
-local path = root .. "/MSUF_Suite_QualityOfLife/"
-assert(loadfile(path .. "TooltipLines.lua"))("test", P)
+local path = root .. "/MSUF_Suite_Tooltips/"
+assert(loadfile(root .. "/MSUF_Suite_Modules/TooltipLines.lua"))("test", P)
 assert(loadfile(path .. "AuctionPriceTooltip.lua"))("test", P)
 module.active = true
 module:Enable()
