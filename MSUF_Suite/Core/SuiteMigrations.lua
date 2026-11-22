@@ -527,6 +527,15 @@ function Steps.ChatComfort(modules)
     end
 end
 
+function Steps.FloatingXP(modules)
+    local combatText = Module(modules, "floatingCombatText")
+    if combatText and combatText.showLevelUp == nil then
+        -- One setting previously controlled both XP and level-up notices.
+        combatText.showLevelUp = combatText.showXP ~= false
+        combatText.showXP = false
+    end
+end
+
 function Steps.RecordModuleLooks(modules, db)
     -- Profiles saved before db.moduleLooks: each module the global look
     -- styles gets the record its settings show (SuiteCatalog.lua

@@ -131,6 +131,7 @@ local MIGRATIONS = {
     { run = Steps.NameplateBarsOverride },
     { run = Steps.NameplateOutlineOff },
     { run = Steps.BagsDefaultBorder },
+    { run = Steps.FloatingXP },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {
