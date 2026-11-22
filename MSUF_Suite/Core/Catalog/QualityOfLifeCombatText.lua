@@ -37,7 +37,7 @@ B.Section("selfCombatText", "self_combat_text", "Own combat text", {
 })
 
 local DAMAGE_CVAR = "floatingCombatTextCombatDamage_v2"
-local Feed = {}
+local Feed = { WorldTextScale = "WorldTextScale_v2" }
 NS.FloatingCombatFeed = Feed
 
 function Feed.Enemy()
@@ -52,11 +52,15 @@ function Feed.Experience()
     return NS.Client.SupportsEvent("PLAYER_XP_UPDATE")
 end
 
+function Feed.LevelUp()
+    return NS.Client.SupportsEvent("PLAYER_LEVEL_UP")
+end
+
 B.Module("floatingCombatText", {
     title = "Floating combat text",
     description = "Scroll enemy hits and gains around your character or above enemy nameplates.",
     defaultEnabled = true, page = "suite_qualityOfLife",
-    cvars = { [DAMAGE_CVAR] = true },
+    cvars = { [DAMAGE_CVAR] = true, [Feed.WorldTextScale] = true },
     conflicts = { "ForeverCombatText", "BetterDamageText", "NameplateSCT" },
     available = function()
         if not (Feed.Enemy() or Feed.Gains() or Feed.Experience()) then
@@ -92,8 +96,19 @@ B.Section("floatingCombatText", "floating_combat_text_hits", "Enemy hits", {
     Bool("hideBlizzard", "Hide Blizzard damage numbers", forever),
     Number("offset", "Vertical offset", 5, 0, 60),
 })
+local xpGains = B.Tooltip(Bool("showXP", "XP gains (Suite)", false),
+    "Show Suite XP in addition to Blizzard's XP text.")
+local xpPlacement = Choice("xpSide", "XP placement", 1, { "Progression placement", "Left", "Right" })
+xpGains.searchSection, xpPlacement.searchSection = "XP", "XP"
+if forever then
+    local worldText = B.Tooltip(Bool("hideBlizzardWorldText", "Hide Blizzard world text", false),
+        "Hide Blizzard's floating damage, healing and XP in the world. Suite XP stays on while this is active.")
+    B.Add("floatingCombatText", worldText, "floating_combat_text_gains", "Gains and notifications")
+end
 B.Section("floatingCombatText", "floating_combat_text_gains", "Gains and notifications", {
-    Bool("showXP", "Show XP gains", true),
+    xpGains,
+    xpPlacement,
+    Bool("showLevelUp", "Show level-up notifications", true),
     Bool("showReputation", "Show reputation changes", true),
     Bool("showHonor", "Show honor gains", false),
     Choice("gainSide", "Progression placement", 2, SCREEN_SIDES),

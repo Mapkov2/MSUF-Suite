@@ -83,7 +83,7 @@ local function XPChanged(self, _, unit)
     elseif level == lastLevel + 1 and lastMax >= lastXP then
         gain = lastMax - lastXP + current
     end
-    if gain and gain > 0 then self.display:Show("gain", false, XP_FORMAT, gain) end
+    if gain and gain > 0 then self.display:Show("xp", false, XP_FORMAT, gain) end
 end
 
 local function LevelUp(self, _, level)
@@ -100,13 +100,13 @@ end
 
 function Gains.Refresh(self)
     local enabled, context = self.display.enabled, self.context
-    local xp = enabled.xp and Feed.Experience()
+    local xp = (enabled.xp or self.worldTextHidden) and Feed.Experience() or false
     if self.listeningXP ~= xp then
         self.listeningXP = xp
         if xp then SeedXP(self) else self.xpLevel, self.xpValue, self.xpMax = nil, nil, nil end
         SetEvent(context, "PLAYER_XP_UPDATE", XPChanged, xp)
-        SetEvent(context, "PLAYER_LEVEL_UP", LevelUp, xp)
     end
+    SetEvent(context, "PLAYER_LEVEL_UP", LevelUp, enabled.level and Feed.LevelUp())
     local gains = (enabled.power or enabled.reputation or enabled.honor) and Feed.Gains()
     if self.listeningGains ~= gains then
         self.listeningGains = gains

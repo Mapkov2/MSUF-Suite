@@ -4,6 +4,8 @@ local Feed, Display, Gains = NS.FloatingCombatFeed, P.FloatingTextDisplay, P.Flo
 local ID, CAPACITY = "floatingCombatText", 24
 local ESTIMATED, ALL_ENEMIES = 1, 2
 local DAMAGE_CVAR = "floatingCombatTextCombatDamage_v2"
+local WORLD_TEXT_CVAR, HIDDEN_WORLD_TEXT_SCALE = Feed.WorldTextScale, 1000
+local WORLD_TEXT_EVENT_KEY = WORLD_TEXT_CVAR:lower()
 local DIRECT = { inCombat = true, direct = true }
 local MELEE_WINDOW, RANGED_WINDOW, CAST_WINDOW = 1.3, 2, 2.5
 -- Forever's Enum.PlayerSwingType from SwingTimerDocumentation.lua.
@@ -30,7 +32,7 @@ S.FloatingTextSamples = {
     { key = "absorb", label = Outcomes.ABSORB, route = "avoid", value = Outcomes.ABSORB },
     { key = "resist", label = Outcomes.RESIST, route = "avoid", value = Outcomes.RESIST },
     { key = "immune", label = Outcomes.IMMUNE, route = "avoid", value = Outcomes.IMMUNE },
-    { key = "xp", label = S.Text("XP gained"), route = "gain", format = Formats.xp, value = 425 },
+    { key = "xp", label = S.Text("XP gained"), route = "xp", format = Formats.xp, value = 425 },
     { key = "level", label = S.Text("Level up"), route = "gain", critical = true, format = Formats.level, value = 42 },
     { key = "reputation", label = S.Text("Reputation"), route = "gain", format = Formats.reputation, value = "+125" },
     { key = "honor", label = S.Text("Honor"), route = "gain", format = Formats.honor, value = 48 },
@@ -198,8 +200,52 @@ local function Listen(self)
     WorldChanged(self)
 end
 
+local function HiddenWorldTextScale()
+    local scale = C_CVar.GetCVar(WORLD_TEXT_CVAR)
+    if S.Public(scale) and tonumber(scale) == HIDDEN_WORLD_TEXT_SCALE then return scale end
+end
+
+local function WorldTextChanged(self, _, key)
+    if not S.Public(key) or type(key) ~= "string" or key:lower() ~= WORLD_TEXT_EVENT_KEY then return end
+    local hidden = HiddenWorldTextScale() ~= nil
+    if hidden ~= self.worldTextHidden then
+        self.worldTextHidden = hidden
+        Gains.Refresh(self)
+    end
+end
+
+local function ReleaseWorldText(self)
+    if NS.InCombat() then return end
+    self.context:RemoveEvent("CVAR_UPDATE")
+    self.context:RemoveEvent("PLAYER_LOGOUT")
+    S.RestoreCVar(ID, WORLD_TEXT_CVAR)
+    self.ownsWorldText, self.worldTextHidden = nil, nil
+end
+
+local function ApplyWorldText(self)
+    if not NS.Client.isForever or NS.InCombat() then return end
+    if not self.config.hideBlizzardWorldText then
+        ReleaseWorldText(self)
+    elseif self.ownsWorldText then
+        self.worldTextHidden = HiddenWorldTextScale() ~= nil
+    else
+        -- The native world renderer has no off switch. This scale puts its
+        -- pop-ups off-screen and persists across the combat boundary.
+        local hiddenScale = HiddenWorldTextScale() or HIDDEN_WORLD_TEXT_SCALE
+        self.worldTextHidden = self.context:CVar(WORLD_TEXT_CVAR, hiddenScale) and HiddenWorldTextScale() ~= nil
+        if self.worldTextHidden then
+            self.ownsWorldText = true
+            self.context:Event("CVAR_UPDATE", WorldTextChanged, true)
+            self.context:Event("PLAYER_LOGOUT", ReleaseWorldText, true)
+        else
+            S.RestoreCVar(ID, WORLD_TEXT_CVAR)
+        end
+    end
+end
+
 function M:Refresh()
     local c = self.config
+    ApplyWorldText(self)
     self.display:Configure(c, S.ResolveFont(c.font) or S.GlobalFontPath())
     Listen(self)
     Gains.Refresh(self)
@@ -228,6 +274,7 @@ function M:Disable()
     self.display:Clear()
     wipe(self.plates)
     self.source, self.trackPlates, self.hidesBlizzard = nil, nil, nil
+    self.ownsWorldText, self.worldTextHidden = nil, nil
     self.targetEnemy, self.targetPlate = nil, nil
     ResetClaims(self)
     Gains.Disable(self)

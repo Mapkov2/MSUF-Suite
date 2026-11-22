@@ -1,10 +1,12 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local Flight = P.FlightTimerData
 local IN_COMBAT = { inCombat = true }
 local ID, M = "flightTimer", { routes = {}, nodes = {} }
 -- A chosen destination belongs to the next takeoff only this long; a choice
 -- the flight master refused never starts a flight.
 local REQUEST_WINDOW = 5
+local LANDING_ESTIMATE_GRACE = 10
 -- displayStyle (MSUF_Suite/Core/Catalog/QualityOfLifeDetails.lua): the card,
 -- or one slim Timer bar.
 local BAR = 2
@@ -27,107 +29,11 @@ local BAR_LOOKS = {
     { panel = "14181b", panelAlpha = .94, track = "20272a", trackAlpha = .98, sheen = .07,
         text = "f1e3c4", time = "d8b66a", spark = "ffe6a8", border = "9f8960", trim = "d8b66a" },
 }
-local function Text(value) return S.Public(value) and type(value) == "string" and value ~= "" end
-local function PublicTable(value)
-    return S.Public(value) and type(value) == "table" and canaccesstable(value)
-end
-
-local function ReadNodeIDs(self, system)
-    if not self.flightTimes then return end
-    -- FlightMapFrame uses GetTaxiMapID. The legacy TaxiFrame has no UiMap,
-    -- so query the map of the flight master the player is talking to.
-    local mapID = S.Public(system) and system ~= Enum.UIMapSystem.Taxi and GetTaxiMapID()
-    if not S.Finite(mapID) or mapID <= 0 then mapID = C_Map.GetBestMapForUnit("player") end
-    if not S.Finite(mapID) or mapID <= 0 then return end
-    local entries = C_TaxiMap.GetAllTaxiNodes(mapID)
-    if not PublicTable(entries) then return end
-    for _, entry in ipairs(entries) do
-        if PublicTable(entry) then
-            local slot, nodeID, name, state = entry.slotIndex, entry.nodeID, entry.name, entry.state
-            local transition = entry.isMapLayerTransition
-            if S.Finite(slot) and slot > 0 and S.Finite(nodeID) and nodeID > 0 and Text(name)
-                and S.Public(transition) and not transition then
-                local node = self.nodes[slot]
-                if not node then
-                    node = { name = name }
-                    self.nodes[slot] = node
-                end
-                node.id = nodeID
-                if S.Public(state) and state == Enum.FlightPathState.Current then self.startNode = node end
-            end
-        end
-    end
-end
-
-local function PairTime(times, from, to)
-    local row = times[from]
-    return row and row[to]
-end
-
-local function BuildRoute(self, index, node, segments)
-    local start, times = self.startNode, self.flightTimes
-    local names = { start and start.name or S.Text("Unknown") }
-    local previous = times and start and start.id
-    local total = previous and 0
-    for part = 1, segments do
-        -- Both native taxi maps use exact segment slots; positions can overlap.
-        local slot = TaxiGetNodeSlot(index, part, false)
-        local stop = S.Finite(slot) and self.nodes[slot]
-        if stop and stop.name ~= names[#names] then names[#names + 1] = stop.name end
-        if total then
-            local nextID = stop and stop.id
-            local seconds = PairTime(times, previous, nextID)
-            total = seconds and total + seconds
-            previous = nextID
-        end
-    end
-    if node.name ~= names[#names] then names[#names + 1] = node.name end
-    -- Prefer the selected legs when all are known. The endpoint measurement
-    -- can still give an estimate when the table is missing an intermediate leg.
-    local estimate = total and total > 0 and previous == node.id and total
-        or times and start and PairTime(times, start.id, node.id)
-    return { names = names, key = table.concat(names, " > "), destination = node.name, estimate = estimate }
-end
-
-local function ReadRoutes(self, system)
-    wipe(self.nodes)
-    wipe(self.routes)
-    self.startNode = nil
-    if NS.Client.isForever and not self.flightTimes then
-        local faction = UnitFactionGroup("player")
-        local loadTimes = Text(faction) and P.ForeverFlightTimes[faction]
-        self.flightTimes = loadTimes and loadTimes()
-    end
-    local count = NumTaxiNodes()
-    count = S.Finite(count) and math.min(256, count) or 0
-    for i = 1, count do
-        local name, kind = TaxiNodeName(i), TaxiNodeGetType(i)
-        if Text(name) and S.Public(kind) then
-            local node = { name = name }
-            self.nodes[i] = node
-            if kind == "CURRENT" then self.startNode = node end
-        end
-    end
-    ReadNodeIDs(self, system)
-    for index, node in pairs(self.nodes) do
-        local routes = GetNumRoutes(index)
-        if S.Finite(routes) and routes >= 0 and routes <= 32 then
-            self.routes[index] = BuildRoute(self, index, node, routes)
-        end
-    end
-end
-
-local function Estimate(self, route)
-    local learned = self.timings and self.timings[route.key]
-    if S.Finite(learned) and learned > 0 then return learned end
-    return route.estimate
-end
-
 -- The route line under a node's tooltip (setting routePreview).
 local function AddRoute(self, index)
     local route = self.active and self.config.routePreview and self.routes[index]
     if route and not NS.Safety.IsForbidden(GameTooltip) then
-        local estimate = Estimate(self, route)
+        local estimate = Flight.Estimate(self, route)
         local line = route.key
         if estimate then
             line = string.format("%s (%d:%02d)", line, math.floor(estimate / 60), math.floor(estimate % 60))
@@ -526,12 +432,12 @@ local function Update(self, taxi, force)
     local route = self.current
     -- The Timer bar names only the destination.
     local title = route and (self.barStyle and route.destination or route.names[1] .. " > " .. route.destination)
-        or S.Text(S.editMode and "Flight route preview" or "Flight route unavailable")
+        or S.Text(S.editMode and "Flight route preview" or self.earlyLanding and "Land at next stop" or "Flight route unavailable")
     self.host.title:SetText(title)
     self.host.route:SetText(route and #route.names > 2 and table.concat(route.names, " > ", 2, #route.names - 1)
         or S.editMode and S.Text("Select a destination at the flight master.") or "")
-    local estimate = route and Estimate(self, route)
-    if estimate and self.departed and not self.earlyLanding then
+    local estimate = route and Flight.Estimate(self, route)
+    if estimate and self.departed then
         if self.countdownStart ~= self.departed or self.countdownDuration ~= estimate then
             self.duration:SetTimeFromEnd(self.departed + estimate, estimate)
             self.binding:SetDuration(self.duration)
@@ -540,11 +446,12 @@ local function Update(self, taxi, force)
             self.countdownStart, self.countdownDuration = self.departed, estimate
         end
         PaintBar(self, self.departed + estimate, estimate)
-        self.host.status:SetText(S.Text("Remaining time"))
+        self.host.status:SetText(S.Text(self.earlyLanding and "Estimated time" or "Remaining time"))
     else
         StopCountdown(self)
         PaintBar(self, nil, nil, S.editMode and not taxi and PREVIEW_FILL or nil)
-        self.host.status:SetText(S.Text(route and not self.earlyLanding and "Learning flight time" or "Elapsed time"))
+        local learning = route and not self.earlyLanding and not self.resumed
+        self.host.status:SetText(S.Text(learning and "Learning flight time" or "Elapsed time"))
         if taxi and self.departed then
             StartElapsed(self)
         else
@@ -565,8 +472,18 @@ function S.ExperienceSlotChanged()
     end
 end
 
+local function ExpireLandingEstimate(self)
+    -- If the taxi is still flying, the original landing guess may have
+    -- missed the server's cutoff. Fall back to elapsed time.
+    self.current, self.landingDeadline = nil, nil
+    self:TaxiState()
+end
+
 local function Forget(self)
+    if self.landingDeadline then self.context:Cancel(ExpireLandingEstimate) end
+    if self.onTaxi or self.resume then self.context:RemoveEvent("PLAYER_LOGOUT") end
     self.departed, self.current, self.earlyLanding, self.requested, self.onTaxi = nil, nil, nil, nil, nil
+    self.resume, self.resumed, self.landingDeadline = nil, nil, nil
 end
 
 local function WatchFlags(self)
@@ -574,6 +491,14 @@ local function WatchFlags(self)
 end
 
 local function ExpireRequest(self)
+    if self.resume then
+        self:TaxiState()
+        if self.resume then
+            self.resume = nil
+            self.context:RemoveEvent("PLAYER_LOGOUT")
+            self:TaxiState()
+        end
+    end
     -- A matching control loss already started the trip. The taxi flag may lag.
     if self.departed then return end
     if self.requested then
@@ -583,10 +508,17 @@ local function ExpireRequest(self)
     if not self.mapOpen then self.context:RemoveEvent("UNIT_FLAGS") end
 end
 
+local function BeginFlight(self)
+    self.onTaxi = true
+    self.context:Cancel(ExpireRequest)
+    self.context:Event("PLAYER_LOGOUT", Flight.Save, IN_COMBAT)
+    WatchFlags(self)
+end
+
 local function MapOpened(self, _, system)
     self.mapOpen = true
     WatchFlags(self)
-    ReadRoutes(self, system)
+    Flight.ReadRoutes(self, system)
 end
 
 local function MapClosed(self)
@@ -603,7 +535,7 @@ end
 -- Only a whole journey on a known route teaches its time.
 local function Land(self, now)
     local elapsed = now - self.departed
-    if self.current and self.onTaxi and not self.earlyLanding and elapsed > 3 then
+    if self.current and self.onTaxi and not self.earlyLanding and not self.resumed and elapsed > 3 then
         local times = self.timings
         if not times[self.current.key] then
             local count = 0
@@ -631,16 +563,19 @@ function M:TaxiState(event)
     if taxi then
         if self.onTaxi and event then return end
         if not self.departed then
+            if self.resume and not NS.loginKind then
+                Update(self, false, not event)
+                return
+            end
             local now = GetTime()
-            -- A flight seen without its takeoff (after a /reload) has no known route.
-            if not Fresh(self, now) then self.current = nil end
-            self.departed = now
+            if not Flight.Restore(self, now) then
+                if not Fresh(self, now) then self.current = nil end
+                self.departed = now
+            elseif self.landingDeadline then
+                self.context:After(self.landingDeadline - now, ExpireLandingEstimate)
+            end
         end
-        if not self.onTaxi then
-            self.onTaxi = true
-            self.context:Cancel(ExpireRequest)
-            WatchFlags(self)
-        end
+        if not self.onTaxi then BeginFlight(self) end
     elseif self.departed then
         -- Control lost after a choice ends only with the taxi flag or control again.
         if self.onTaxi or event == "PLAYER_CONTROL_GAINED" then
@@ -664,12 +599,11 @@ local function Takeoff(self, index)
     local observed = taxi and self.onTaxi and not self.current and self.departed
     Forget(self)
     self.current = S.Finite(index) and self.routes[index] or nil
-    WatchFlags(self)
     if taxi then
         self.departed = observed and now - observed <= REQUEST_WINDOW and observed or now
-        self.onTaxi = true
-        self.context:Cancel(ExpireRequest)
+        BeginFlight(self)
     else
+        WatchFlags(self)
         self.requested = now
         self.context:After(REQUEST_WINDOW, ExpireRequest)
     end
@@ -678,22 +612,37 @@ end
 
 -- Learned times are runtime state of the active profile (S.ModuleState),
 -- never exported or offered as settings.
-local function Timings()
+local function ModuleState()
     local state = S.ModuleState(ID)
     if type(state.timings) ~= "table" then state.timings = {} end
-    return state.timings
+    return state
 end
 
 function M:Enable()
-    self.timings = Timings()
+    self.state = ModuleState()
+    self.timings = self.state.timings
+    self.resume = Flight.TakeSnapshot(self.state)
+    if self.resume then
+        self.context:Event("PLAYER_LOGOUT", Flight.Save, IN_COMBAT)
+        WatchFlags(self)
+        self.context:After(REQUEST_WINDOW, ExpireRequest)
+    end
     if not self.hooked then
         self.hooked = true
         hooksecurefunc("TakeTaxiNode", function(index)
             if self.active then Takeoff(self, index) end
         end)
         hooksecurefunc("TaxiRequestEarlyLanding", function()
-            if self.active then
+            if not self.active or self.earlyLanding then return end
+            local taxi = UnitOnTaxi("player")
+            if S.Public(taxi) and taxi then
+                local landing = self.departed and Flight.EarlyLandingRoute(self)
+                if landing and landing ~= self.current and S.Finite(landing.estimate) then
+                    self.landingDeadline = self.departed + landing.estimate + LANDING_ESTIMATE_GRACE
+                    self.context:After(math.max(0, self.landingDeadline - GetTime()), ExpireLandingEstimate)
+                end
                 self.earlyLanding = true
+                self.current = landing
                 self:TaxiState()
             end
         end)
@@ -715,10 +664,10 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", sizeKeys = { "width" }, point = function() return "CENTER" end })
 end
 function M:Refresh()
-    local timings = Timings()
+    local state = ModuleState()
     -- A profile switch mid-flight must not teach the new profile this trip.
-    if self.timings ~= timings then Forget(self) end
-    self.timings = timings
+    if self.state ~= state or self.timings ~= state.timings then Forget(self) end
+    self.state, self.timings = state, state.timings
     Create(self)
     Layout(self)
     self:TaxiState()

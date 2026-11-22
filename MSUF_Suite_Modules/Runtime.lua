@@ -16,7 +16,7 @@ Private.Context = Context
 -- defined once in MSUF_Suite/Core/Platform.lua, which is always loaded.
 S.Public, S.Number, S.Finite = NS.Public, NS.Number, NS.Finite
 S.PublicText, S.ReadText, S.Text = NS.PublicText, NS.ReadText, NS.Text
-S.Dispatch, S.Print = NS.Dispatch, NS.Print
+S.Dispatch, S.Finish, S.Print = NS.Dispatch, NS.Finish, NS.Print
 -- Records a character collects (MSUF_Suite/Core/CharacterData.lua).
 S.CharacterData = NS.CharacterData
 -- The nameplate unit tokens, nameplate1 to nameplate150 on Retail and WoW

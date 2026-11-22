@@ -148,6 +148,7 @@ BattleRes.lua
 Skyriding.lua
 ThreatMeter.lua
 ForeverFlightTimes.lua
+FlightTimerData.lua
 FlightTimer.lua
 GlimmerVisuals.lua
 Glimmer.lua

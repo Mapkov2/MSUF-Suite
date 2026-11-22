@@ -79,10 +79,11 @@ local function NewAnchor(parent)
 end
 
 function Display.New(parent, capacity)
+    local gainColor = {}
     local self = setmetatable({ slots = {}, occupied = {}, head = {}, tail = {}, cursor = 0, parent = parent,
         free = {}, freeCount = capacity, recycleCursor = 0,
         sides = { [LEFT] = NewAnchor(parent), [RIGHT] = NewAnchor(parent) },
-        placements = { {}, {}, {} }, colors = { hit = {}, avoid = {}, gain = {}, power = {}, combat = {} },
+        placements = { {}, {}, {} }, colors = { hit = {}, avoid = {}, gain = gainColor, xp = gainColor, power = {}, combat = {} },
         routes = {}, enabled = {},
     }, Display)
     for i = 1, capacity do
@@ -104,7 +105,9 @@ local function StyleRoutes(self, c)
     local route, enabled, colors = self.routes, self.enabled, self.colors
     route.hit, route.avoid = c.hitSide, c.avoidSide
     route.gain, route.power, route.combat = c.gainSide + 1, c.powerSide + 1, c.combatSide + 1
+    route.xp = c.xpSide == 1 and route.gain or c.xpSide
     enabled.hit, enabled.avoid, enabled.xp = c.showHits, c.showAvoidance, c.showXP
+    enabled.level = c.showLevelUp
     enabled.power, enabled.reputation, enabled.honor = c.showPower, c.showReputation, c.showHonor
     enabled.combat = c.showCombatState
     local hit, avoid, gain, power, combat = colors.hit, colors.avoid, colors.gain, colors.power, colors.combat
