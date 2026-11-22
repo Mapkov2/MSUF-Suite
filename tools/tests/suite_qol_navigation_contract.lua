@@ -144,4 +144,17 @@ M.SearchBridge = { OpenSearchTarget = function(page, _, _, section)
 end }
 assert(F.Suite.Menu.FocusQualityOfLifeModule("actionTracker") and opened, "cold module link did not open Gameplay")
 F.Suite.Menu.Open, M.SearchBridge, M.cache = oldOpen, oldBridge, oldCache
+
+local _, travel = Build(1000)
+assert(travel:SelectCategory("travel"))
+local partyMap = V.FindFeature("foreverPartyMap")
+local partyRow = travel.rows[V.FeatureSectionId(partyMap)]
+if F.Suite.Client.isForever then
+    assert(partyRow and partyRow.toggle.get(), "the Forever party map must appear enabled in Map & Travel")
+    partyRow.toggle.set(false)
+    assert(not F.S.Config("foreverPartyMap").enabled, "the party map must have an independent off switch")
+else
+    assert(not P.Available("foreverPartyMap") and not partyRow.row:IsShown(),
+        "the Forever party map must stay unavailable on Retail")
+end
 print("PASS QoL fixed categories, lazy rows/details, wrapping clickable groups, filters, state, exact routes and Suite Gameplay")

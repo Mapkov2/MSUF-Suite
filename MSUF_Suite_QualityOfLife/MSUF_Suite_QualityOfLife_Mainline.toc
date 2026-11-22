@@ -41,6 +41,7 @@ ForeverMapLabels.lua
 ForeverMapLocations.lua
 ForeverMapLayer.lua
 ForeverWorldMap.lua
+ForeverPartyMap.lua
 MerchantWatch.lua
 InventoryProtection.lua
 Merchant.lua

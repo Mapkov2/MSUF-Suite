@@ -8,6 +8,8 @@ local GROUPS = {
         aliases = { "overlay map", "compass", "minimap", "map keybind", "kartenoverlay", "kompass", "übersichtskarte" } },
     { id = "foreverWorldMap", title = "World map information (Forever)", switch = "enabled",
         sections = { "forever_world_map" }, aliases = { "zone levels", "travel markers", "world map" } },
+    { id = "foreverPartyMap", title = "Party members on the world map (Forever)", switch = "enabled",
+        sections = { "forever_party_map" }, aliases = { "party map", "group marker", "gruppenmitglieder", "weltkarte" } },
     { id = "gatheringTooltips", title = "Gathering tooltips (Forever)", switch = "enabled",
         sections = { "gathering_tooltips" }, aliases = { "herbalism", "mining", "gathering skill" } },
     { id = "auctionPriceTooltip", title = "Auction house price comparison", switch = "enabled",
@@ -195,7 +197,8 @@ return {
     } },
     { id = "travel", title = "Travel", subgroups = {
         Subgroup("travel", "Map & Travel",
-            "navigationHUD navigation mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists dungeonPortals foreverWorldMap"),
+            "navigationHUD navigation mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists "
+                .. "dungeonPortals foreverWorldMap foreverPartyMap"),
     } },
     { id = "interface", title = "Interface", subgroups = {
         Subgroup("interface", "Interface", "dailyComfort soundProfiles"),

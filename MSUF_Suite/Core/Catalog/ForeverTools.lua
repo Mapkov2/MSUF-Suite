@@ -23,6 +23,11 @@ B.Section("foreverWorldMap", "forever_world_map", "World map information", {
     B.Number("pinSize", "Map marker size", 20, 12, 32),
 })
 
+B.Module("foreverPartyMap", {
+    title = "Party members on the world map (Forever)",
+    defaultEnabled = true, page = "suite_qualityOfLife", available = Forever,
+})
+
 Tooltips.Module("gatheringTooltips", {
     title = "Gathering tooltips (Forever)",
     description = "Show the required and current profession skill for known herbs and ore deposits.",
