@@ -11,6 +11,7 @@ local MIDDLE = NS.MinimapMiddleClick
 local Finite = S.Finite
 local weak = { __mode = "k" }
 local holder, catcher
+local zoomOutOverlay, zoomOutGlyph, zoomOutTarget
 local inputMap, inputScripts
 local hoverHooked = setmetatable({}, weak)
 local leaveJob
@@ -18,7 +19,8 @@ local zoomShown, zoomHooked = setmetatable({}, weak), setmetatable({}, weak)
 local extents = {}
 local HOVER_GRACE = 0.15
 
-local ZoomButtons = NS.MinimapElements.ZoomButtons
+local Native = NS.MinimapElements
+local ZoomButtons = Native.ZoomButtons
 MM.ZoomButtons = ZoomButtons
 
 local function SyncButtons(zoom, levels)
@@ -281,12 +283,44 @@ end
 local function ZoomHidden(button)
     if M.active and MM.owned[button] and M.config.zoomButtons ~= ZOOM.HIDE and not button:IsShown() then button:Show() end
 end
-local function Adopt(button, mode)
+
+local function PaintZoomOut(button)
+    if button ~= zoomOutTarget then return end
+    local scale, enabled = button:GetScale(), button:IsEnabled()
+    NS.MinimapStyle.PaintZoomOutGlyph(zoomOutGlyph, Finite(scale) and scale > 0 and scale or 1, S.Public(enabled) and enabled == true)
+end
+
+local function PlaceZoomOutGlyph(button)
+    if not button then
+        if zoomOutOverlay then zoomOutOverlay:Hide() end
+        zoomOutTarget = nil
+        return
+    end
+    if not zoomOutOverlay then
+        zoomOutOverlay = S.CreateFrame("Frame", nil, holder)
+        zoomOutOverlay:EnableMouse(false)
+        zoomOutGlyph = NS.MinimapStyle.CreateZoomOutGlyph(zoomOutOverlay)
+    end
+    if zoomOutTarget ~= button then
+        zoomOutTarget = button
+        zoomOutOverlay:ClearAllPoints()
+        zoomOutOverlay:SetAllPoints(button)
+    end
+    zoomOutOverlay:SetFrameLevel(button:GetFrameLevel() + 1)
+    PaintZoomOut(button)
+    zoomOutOverlay:Show()
+end
+
+local function Adopt(button, mode, zoomOut)
     if not button then return end
     if not zoomHooked[button] then
         zoomHooked[button] = true
         button:HookScript("OnClick", ZoomClicked)
         button:HookScript("OnHide", ZoomHidden)
+        if zoomOut then
+            button:HookScript("OnEnable", PaintZoomOut)
+            button:HookScript("OnDisable", PaintZoomOut)
+        end
     end
     if zoomShown[button] == nil then zoomShown[button] = button:IsShown() == true end
     -- Parked buttons sit in a hidden frame, so Blizzard's hover show never renders them.
@@ -296,30 +330,22 @@ local function PlaceZoom(mode)
     local zoomIn, zoomOut = ZoomButtons()
     local host = MM.host
     Adopt(zoomIn, mode)
-    Adopt(zoomOut, mode)
+    Adopt(zoomOut, mode, true)
     if mode == ZOOM.HIDE or not zoomIn or not zoomOut then
+        PlaceZoomOutGlyph(nil)
         MM.SetExtent("zoom", 0, 0, 0, 0)
         return
     end
-    local inset, level = 2, MM.mapLevel + 13
-    local c = M.config
-    MM.Place(zoomOut, holder, "BOTTOMRIGHT", host, "BOTTOMRIGHT",
-        -inset + (c.zoomOutX or 0), inset + (c.zoomOutY or 0), nil, nil, level)
-    MM.Place(zoomIn, holder, "BOTTOMRIGHT", host, "BOTTOMRIGHT",
-        -inset + (c.zoomInX or 0), 27 + (c.zoomInY or 0), nil, nil, level)
-    local left, right, top, bottom = 0, 0, 0, 0
-    for _, item in ipairs({ { zoomIn, c.zoomInX or 0, 27 + (c.zoomInY or 0) },
-        { zoomOut, c.zoomOutX or 0, inset + (c.zoomOutY or 0) } }) do
-        local width, height = item[1]:GetSize()
-        if Finite(width) and Finite(height) then
-            local x, y = -inset + item[2], item[3]
-            left = math.max(left, width - (MM.width or 0) - x)
-            right = math.max(right, x)
-            top = math.max(top, y + height - (MM.height or 0))
-            bottom = math.max(bottom, -y)
-        end
-    end
-    MM.SetExtent("zoom", left, right, top, bottom)
+    local c, level = M.config, MM.mapLevel + 13
+    local ix, iy, ox, oy, iw, ih, ow, oh = Native.ZoomOffsets(c, zoomIn, zoomOut)
+    ix, iy = Native.ZoomPosition(c, true, ix, iy)
+    ox, oy = Native.ZoomPosition(c, false, ox, oy)
+    local placed = MM.Place(zoomOut, holder, "BOTTOMRIGHT", host, "BOTTOMRIGHT", ox, oy, nil, nil, level)
+    PlaceZoomOutGlyph(placed and zoomOut or nil)
+    MM.Place(zoomIn, holder, "BOTTOMRIGHT", host, "BOTTOMRIGHT", ix, iy, nil, nil, level)
+    local width, height = MM.width or 0, MM.height or 0
+    MM.SetExtent("zoom", math.max(0, iw - width - ix, ow - width - ox), math.max(0, ix, ox),
+        math.max(0, iy + ih - height, oy + oh - height), math.max(0, -iy, -oy))
     if not zoomIn:IsShown() then zoomIn:Show() end
     if not zoomOut:IsShown() then zoomOut:Show() end
 end
@@ -376,6 +402,12 @@ MM.OnHover(function(shown)
     LayerCatcher()
     if holder and M.active and M.config.zoomButtons == ZOOM.MOUSEOVER then holder:SetShown(shown) end
 end)
+
+function S.MinimapZoomPreviewShown()
+    if not M.active or not holder then return end
+    local zoomIn, zoomOut = ZoomButtons()
+    return zoomIn ~= nil and zoomOut ~= nil and M.config.zoomButtons ~= ZOOM.HIDE and holder:IsVisible()
+end
 
 -- Edit Mode writes its own rotation when it applies a layout (at login); an
 -- explicit suite choice goes back on after Blizzard's handler has run.
@@ -434,6 +466,7 @@ function MM.ReleaseInput()
     if leaveJob then leaveJob:Cancel() end
     MM.hovered = false
     MM.CloseMicroMenu()
+    PlaceZoomOutGlyph(nil)
     for button in pairs(zoomShown) do
         if MM.owned[button] then
             MM.Release(button)

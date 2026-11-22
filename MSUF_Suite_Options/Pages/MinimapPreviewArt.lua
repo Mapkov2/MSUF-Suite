@@ -78,7 +78,7 @@ local function ReadTerrain()
     if not Public(files) or type(files) ~= "table" then return nil end
     -- nil where the map has no player position (instances).
     local position = api.GetPlayerMapPosition(mapID, "player")
-    if not position then return nil end
+    if not Public(position) or not position then return nil end
     local u, v = position:GetXY()
     if not (UnitInterval(u) and UnitInterval(v)) then return nil end
     return {
@@ -199,7 +199,8 @@ local function PaintTerrain(art, width, showMap)
             end
         end
     end
-    art.fallback:Hide()
+    -- World-map tiles may be missing or transparent near the zone boundary.
+    art.fallback:Show()
 end
 
 -- Returns the scaled border width the shadow rings start from.
@@ -242,6 +243,10 @@ end
 
 local Art = {}
 Art.__index = Art
+
+function Art:RefreshTerrain()
+    self.terrain = ReadTerrain()
+end
 
 -- Retain one settings view for preview-only samples. The live profile stays
 -- the source of every value the user has configured.
@@ -306,7 +311,6 @@ function P.CreateMinimapPreviewArt(canvas)
     local canvasLevel = tonumber((canvas:GetFrameLevel())) or 0
     BuildMap(art, canvas, canvasLevel)
     BuildFrame(art, canvas)
-    art.terrain = ReadTerrain()
     art.style = Suite.MinimapStyle.Create(canvas, canvasLevel, canvasLevel + 5)
     return art
 end

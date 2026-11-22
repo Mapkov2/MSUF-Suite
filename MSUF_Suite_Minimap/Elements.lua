@@ -62,6 +62,7 @@ end
 
 -- Read-only preview hint. `nil` means Blizzard has not made this button yet;
 -- `false` means it exists but its owner currently hides it (mail, crafting, etc.).
+-- The second return preserves a native row slot hidden by Suite's mouseover rule.
 -- Blizzard's difficulty widget keeps its outer frame shown even when all
 -- content modes are hidden. The preview needs the visible mode, not the
 -- outer frame's visibility or a generic replacement icon.
@@ -76,6 +77,82 @@ local function ActiveDifficulty(frame)
         end
     end
 end
+-- GetInstanceInfo difficulty IDs: tag and colour tier (1 normal, 2 heroic, 3
+-- mythic, 4 raid finder/follower, 5 timewalking, 6 keystone). Bare tags carry
+-- no group size. Unknown IDs fall back to GetDifficultyInfo's heroic/mythic flags.
+local TAGS = {
+    [1] = { "N", 1 },
+    [2] = { "H", 2 },
+    [23] = { "M", 3 },
+    [14] = { "N", 1 },
+    [15] = { "H", 2 },
+    [16] = { "M", 3 },
+    [233] = { "M", 3 },
+    [3] = { "N", 1 },
+    [4] = { "N", 1 },
+    [5] = { "H", 2 },
+    [6] = { "H", 2 },
+    [9] = { "N", 1 },
+    [148] = { "N", 1 },
+    [173] = { "N", 1 },
+    [174] = { "H", 2 },
+    [242] = { "N", 1 },
+    [243] = { "N", 1 },
+    [7] = { "LFR", 4 },
+    [17] = { "LFR", 4 },
+    [205] = { "F", 4, true },
+    [24] = { "TW", 5 },
+    [33] = { "TW", 5 },
+    [151] = { "TW", 5 },
+    [18] = { "EVT", 1 },
+    [19] = { "EVT", 1 },
+    [30] = { "EVT", 1 },
+    [25] = { "PvP", 1 },
+    [29] = { "PvP", 1 },
+    [32] = { "PvP", 1 },
+    [34] = { "PvP", 1 },
+    [45] = { "PvP", 1 },
+    [12] = { "S", 1 },
+    [38] = { "S", 1 },
+    [11] = { "HS", 2 },
+    [39] = { "HS", 2 },
+    [40] = { "MS", 3 },
+    [8] = { "M+", 6, true },
+    [208] = { "D", 1, true },
+}
+-- Flexible raids show the current group size instead of the maximum.
+local FLEX = { [14] = true, [15] = true, [17] = true, [33] = true }
+
+-- Group size and difficulty letter, e.g. "20M", "5H", "M+12", "25LFR".
+function MM.ReadDifficultyText()
+    local _, kind, difficulty, _, maxPlayers, _, dynamic, _, groupSize = GetInstanceInfo()
+    if not S.Public(kind) or kind == "none" or kind == "interior" or kind == "neighborhood"
+        or not Finite(difficulty) then
+        return ""
+    end
+    local tag, letter, tier = TAGS[difficulty], nil, 1
+    if tag then
+        letter, tier = tag[1], tag[2]
+    else
+        local _, _, heroic, _, displayHeroic, displayMythic = GetDifficultyInfo(difficulty)
+        if S.Public(displayMythic) and displayMythic then
+            letter, tier = "M", 3
+        elseif S.Public(heroic) and S.Public(displayHeroic) and (heroic or displayHeroic) then
+            letter, tier = "H", 2
+        else
+            letter = "N"
+        end
+    end
+    if difficulty == 8 then
+        local level = C_ChallengeMode.GetActiveKeystoneInfo()
+        return Finite(level) and level > 0 and letter .. math.floor(level) or letter, tier
+    end
+    if tag and tag[3] then return letter, tier end
+    local flexible = FLEX[difficulty] or (S.Public(dynamic) and dynamic == true)
+    local size = flexible and Finite(groupSize) and groupSize > 0 and groupSize or maxPlayers
+    return (Finite(size) and size > 0 and math.floor(size) or "") .. letter, tier
+end
+
 function S.MinimapDifficultyPreviewSource()
     local frame = DIFFICULTY.frame()
     if not frame then return end
@@ -92,7 +169,10 @@ function S.MinimapElementPreviewShown(key)
     else
         shown = frame:IsShown()
     end
-    if S.Public(shown) then return shown end
+    if S.Public(shown) then
+        local slot = M.active and mine[frame] and slots[key]
+        return shown and (not slot or slot:IsShown()), shown
+    end
     return nil
 end
 

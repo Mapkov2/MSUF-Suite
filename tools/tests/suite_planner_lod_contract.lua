@@ -84,12 +84,18 @@ Check(S.PlanningTools == nil and S.instances.planningTools == nil, "disabled Pla
 Check(not loaded.MSUF_Suite_Modules and not loaded.MSUF_Suite_AdventurePlanner, "disabled Planner loaded a runtime")
 Check(S.Availability("planningTools"), "QoL absence made standalone Planner unavailable")
 
-local opened
+local opened, focused
 env.MSUF2_Open = function(page) opened = page return true end
+M.SearchBridge.OpenSearchTarget = function(page, _, _, _, _, target)
+    focused = target
+    return true, page == opened, true
+end
 env.SlashCmdList.MSUFPLANNER()
-Check(opened == "suite_planningTools", "cold slash command did not route to Planner settings")
+Check(opened == "suite_hud", "cold slash command did not open HUD")
 Check(loaded.MSUF_Suite_Options and NS.Menu.attached, "real Suite Options did not attach")
-Check(M.pages.suite_planningTools ~= nil, "real Options loader did not register Planner page")
+Check(M.pages.suite_hud ~= nil and M.pages.suite_planningTools == nil, "Planner has a separate page")
+Check(focused and focused.pageKey == "suite_hud" and focused.sectionId == "suite_hud_planningTools_module",
+    "cold slash command did not focus Planner settings")
 Check(S.PlanningTools == nil and not loaded.MSUF_Suite_AdventurePlanner, "cold settings open enabled the Planner")
 Check(not loaded.MSUF_Suite_QualityOfLife, "cold settings open loaded QoL")
 

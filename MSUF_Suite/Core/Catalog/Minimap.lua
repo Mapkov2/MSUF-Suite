@@ -75,6 +75,7 @@ NS.MinimapWeatherIcons = { BLIZZARD = 1, FOREVER = 2 }
 NS.MinimapVisibility = { ALWAYS = 1, IN_COMBAT = 2, OUT_OF_COMBAT = 3, MOUSEOVER = 4, NEVER = 5 }
 NS.MinimapRotate = { BLIZZARD = 1, ROTATE = 2, NORTH_UP = 3 }
 NS.MinimapZoomButtons = { MOUSEOVER = 1, ALWAYS = 2, HIDE = 3 }
+NS.MinimapZoomLayout = { FREE = 1, ABOVE = 2, BELOW = 3, LEFT = 4, RIGHT = 5 }
 NS.MinimapMiddleClick = { NOTHING = 1, TRACKING = 2, CALENDAR = 3, WORLD_MAP = 4, MICRO_MENU = 5 }
 NS.MinimapLanding = { ALWAYS = 1, MOUSEOVER = 2, NEVER = 3 }
 NS.MinimapLandingIcon = { BLIZZARD = 1, BOOK = 2 }
@@ -294,14 +295,19 @@ B.Section(id, "behavior", "Map behavior", {
     Bool("scrollZoom", "Scroll to zoom", true),
     Number("zoomResetSeconds", "Reset zoom after manual zoom (seconds, 0: never)", 0, 0, 15),
     Choice("zoomButtons", "Zoom buttons", 1, { "Show on mouseover", "Always show", "Hide" }),
+    Choice("zoomLayout", "Zoom button arrangement", NS.MinimapZoomLayout.FREE,
+        { "Free positioning", "Plus above minus", "Plus below minus", "Plus left of minus", "Plus right of minus" }),
     Choice("middleClick", "Middle-click action", 2, { "Nothing", "Tracking menu", "Calendar", "World map", "Micro menu" }),
 })
 -- Offset labels are built here, so their format strings translate here.
 local HORIZONTAL, VERTICAL = NS.Text("%s horizontal offset"), NS.Text("%s vertical offset")
 for _, name in ipairs({ "zoomIn", "zoomOut" }) do
-    B.Add(id, Number(name .. "X", HORIZONTAL:format(name), 0, -600, 600), "behavior")
-    B.Add(id, Number(name .. "Y", VERTICAL:format(name), 0, -600, 600), "behavior")
+    B.Add(id, Number(name .. "X", HORIZONTAL:format(name), 0, -600, 600, .5), "behavior")
+    B.Add(id, Number(name .. "Y", VERTICAL:format(name), 0, -600, 600, .5), "behavior")
 end
+local zoomLabel = NS.Text("Zoom buttons")
+B.Add(id, Number("zoomGroupX", HORIZONTAL:format(zoomLabel), 0, -600, 600), "behavior")
+B.Add(id, Number("zoomGroupY", VERTICAL:format(zoomLabel), 0, -600, 600), "behavior")
 B.Section(id, "elements", "Blizzard buttons", {
     Bool("showTracking", "Tracking button", true),
     Bool("trackingMouseover", "Show the tracking button only on mouseover", false),
@@ -518,18 +524,19 @@ rules.x.previewOnly, rules.y.previewOnly = true, true
 for key, rule in pairs(rules) do
     local prefix = key:match("^(.+)[XY]$")
     if prefix and type(rule.default) == "number" and (prefix:match("^info[%a]+$")
-        or prefix:match("^button[%a]+$") or prefix == "zoomIn" or prefix == "zoomOut"
+        or prefix:match("^button[%a]+$") or prefix == "zoomIn" or prefix == "zoomOut" or prefix == "zoomGroup"
         or prefix == "drawer" or prefix == "landing" or prefix == "difficultyButton" or prefix == "dungeon"
         or prefix == "style" or prefix == "queueStatus") then rule.previewOnly = true end
 end
 rules.x.category, rules.y.category, rules.point.category = "advanced", "advanced", "advanced"
-for _, key in ipairs({ "zoomInX", "zoomInY", "zoomOutX", "zoomOutY", "drawerX", "drawerY" }) do
+for _, key in ipairs({ "zoomInX", "zoomInY", "zoomOutX", "zoomOutY", "zoomGroupX", "zoomGroupY", "drawerX", "drawerY" }) do
     rules[key].category = "advanced"
 end
 rules.borderColor.disabledBy = "borderClassColor"
 rules.queueStatusSize.enableKey = "queueStatusEnabled"
 rules.landingIcon.requiresChoice = { key = "showLanding", values = { [1] = true, [2] = true } }
 rules.zoomResetSeconds.enableKey = "scrollZoom"
+rules.zoomLayout.requiresChoice = { key = "zoomButtons", values = { [1] = true, [2] = true } }
 rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverResize"
 rules.trackingMouseover.enableKey = "showTracking"
 rules.drawerKeep.hidden = true

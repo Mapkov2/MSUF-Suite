@@ -344,6 +344,13 @@ do
     -- Blizzard's zoom buttons live in the suite holder; their clicks re-arm the reset.
     local zoomIn, zoomOut = map.ZoomIn, map.ZoomOut
     check(zoomIn:GetParent() == holder and zoomOut:GetParent() == holder and zoomIn.shown and zoomOut.shown, "zoom buttons adopted")
+    local minus
+    for _, child in ipairs({ holder:GetChildren() }) do
+        if child.kind == "Frame" and select(2, child:GetPoint(1)) == zoomOut then minus = child end
+    end
+    check(minus and not minus.mouse and minus.level > zoomOut.level and minus.regions[2].color[1] == .73,
+        "native minimum zoom must have a readable disabled minus without intercepting the button")
+    check(minus.regions[2].width == 9 and minus.regions[2].height == 2, "runtime zoom-out glyph lost its visible stroke")
     assert(S.SetMany("minimap", { zoomInX = 30, zoomInY = 10 }))
     check(select(4, zoomIn:GetPoint(1)) == 28 and select(5, zoomIn:GetPoint(1)) == 37
         and select(4, zoomOut:GetPoint(1)) == -2, "zoom buttons need independent offsets")
@@ -352,16 +359,20 @@ do
     zoomIn:SetScript("OnClick", function() map:SetZoom(map:GetZoom() + 1) end)
     zoomIn:Click()
     check(map.zoom == 1 and W.Pending(5) == 1, "zoom button click did not arm the reset")
+    zoomOut:SetEnabled(true)
     W.Fire(catcher, "OnEnter")
     check(holder.shown, "hover did not reveal zoom buttons")
+    check(minus:IsVisible() and minus.regions[2].color[1] == 1, "hovered, enabled zoom-out did not display the active minus")
     W.Blizzard(function() zoomIn:Hide() end)
     check(zoomIn.shown, "Blizzard's leave-hide must not win inside the holder")
     W.Fire(catcher, "OnLeave"); W.Advance(0.2)
     check(not holder.shown, "leave did not hide zoom buttons")
+    check(not minus:IsVisible(), "minus remained visible after the mouseover holder hid")
     assert(S.Set("minimap", "zoomButtons", 2))
     check(holder.shown, "always-shown zoom buttons")
     assert(S.Set("minimap", "zoomButtons", 3))
     check(zoomIn:GetParent() == MM.park and not MM.park.shown, "hidden zoom buttons must be parked")
+    check(not minus:IsShown(), "Hide left the zoom-out artwork attached to the map")
     W.Blizzard(function() zoomIn:Show() end)
     check(not zoomIn:IsVisible(), "parked zoom buttons rendered")
     -- Scroll zoom off hands the wheel to the camera.

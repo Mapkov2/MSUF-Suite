@@ -178,11 +178,16 @@ do
     assert(S.Set("minimap", "infoClockDate", true))
     check(clock.label.text == "14:03  26.09.2026", "optional date on minimap clock")
     assert(S.Set("minimap", "infoClockDatePosition", 2))
-    check(clock.label.text == "26.09.2026\n14:03" and clock.button.height == 32,
-        "date above time must reserve two text lines")
-    assert(S.Set("minimap", "infoClockDatePosition", 3))
-    check(clock.label.text == "14:03\n26.09.2026", "date below time")
-    assert(S.Set("minimap", "infoClockDate", false))
+    check(clock.label.text == "26.09.2026" and clock.clockSecond.text == "14:03" and clock.clockSecond:IsShown()
+        and clock.text == "26.09.2026\n14:03" and clock.button.height == 32,
+        "date above time must use two visible single-line fields")
+    assert(S.SetMany("minimap", { infoClockDatePosition = 3, infoClockSize = 25, infoClockWidth = 120 }))
+    check(clock.label.text == "14:03" and clock.clockSecond.text == "26.09.2026" and clock.clockSecond:IsShown()
+        and clock.label.width == 120 and clock.clockSecond.width == 120 and clock.button.height == 58
+        and clock.label.points[1][5] - clock.clockSecond.points[1][5] == 25,
+        "date below time must have its own row at the reported 25px size and 120px width")
+    assert(S.SetMany("minimap", { infoClockDate = false, infoClockSize = 12 }))
+    check(clock.label.text == "14:03" and not clock.clockSecond:IsShown(), "disabling the date left a visible second row")
     check(clock.button.points[1][1] == "TOP" and clock.label.justify == "CENTER", "clock anchor")
     check(clock.label.font[1] == W.Suite.MSUFMedia.font and clock.label.font[2] == 12
         and clock.label.font[3] == "OUTLINE,SLUG", "MSUF Slug font")

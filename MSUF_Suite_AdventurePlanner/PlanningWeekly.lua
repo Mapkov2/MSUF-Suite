@@ -182,24 +182,63 @@ end
 
 local function Player()
     local account = Plan.Account()
-    local guid, name = S.PublicText(UnitGUID("player")), S.PublicText(UnitName("player"))
+    local guid = S.PublicText(UnitGUID("player"))
+    local name, surname = UnitName("player")
+    name = S.PublicText(name)
     if not account or not guid or not name then return nil end
-    return account, guid, name
+    return account, guid, name, surname
+end
+
+-- Forever may return both names together or provide the surname separately.
+local function ForeverName(name, surname)
+    name, surname = S.PublicText(name), S.PublicText(surname)
+    if not name or name == UNKNOWNOBJECT then return nil end
+    if surname == UNKNOWNOBJECT then surname = nil end
+    local separator = S.PublicText(Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR) or " "
+    local from, to = name:find(separator, 2, true)
+    if from and to < #name then
+        return name:sub(1, from - 1), surname or name:sub(to + 1)
+    end
+    return name, surname
+end
+
+local function CharacterLabel(name, second, previous)
+    if not NS.Client.isForever then
+        local realm = S.PublicText(GetRealmName())
+        return realm and name .. " - " .. realm or name, name, nil, realm
+    end
+
+    local first, surname = ForeverName(name, second)
+    if not surname then
+        local unmodified, unmodifiedSurname = ForeverName(UnitNameUnmodified("player"))
+        if not first or unmodified == first then first, surname = unmodified, unmodifiedSurname end
+    end
+    if not surname then
+        local fullFirst, fullSurname = ForeverName((GetUnitName("player")))
+        if fullSurname and (not first or fullFirst == first) then first, surname = fullFirst, fullSurname end
+    end
+    if not first then return nil end
+    if not surname and previous then
+        local oldFirst, oldSurname = ForeverName(previous.character, previous.surname)
+        if oldFirst == first then surname = oldSurname end
+    end
+    return surname and first .. " " .. surname or first, first, surname
 end
 
 function Weekly.Capture()
     if not Plan.CanEdit() or not Plan.owner.config.weekly then return false end
-    local account, guid, name = Player()
+    local account, guid, name, second = Player()
     local now = Plan.Now()
     if not account or not now then return false end
     local characters = Plan.Table(account, "characters")
     local previous = type(characters[guid]) == "table" and characters[guid] or nil
-    local realm = S.PublicText(GetRealmName())
+    local label, first, surname, realm = CharacterLabel(name, second, previous)
+    if not label then return false end
     local _, classFile = UnitClass("player")
     local vault, ready = Vault()
     local keyName, keyLevel, keyActivity, keyPending = Keystone()
     local lockouts = Weekly.lockoutsReady and Lockouts(now)
-    local entry = { name = realm and name .. " - " .. realm or name, character = name, realm = realm,
+    local entry = { name = label, character = first, surname = surname, realm = realm,
         classFile = S.PublicText(classFile), at = now, reset = Weekly.Reset(), region = Weekly.Region(), vault = vault,
         reward = ready, key = keyName and { name = keyName, level = keyLevel, activity = keyActivity }
             or keyPending and previous and previous.key or nil, keyPending = keyPending or nil,
@@ -301,7 +340,11 @@ function Weekly.Rows(details)
         -- snapshot cannot be judged against this region's reset.
         if type(entry) == "table" and Plan.Text(entry.name, 240) and (not home or not entry.region or entry.region == home) then
             local fresh = reset ~= nil and entry.reset == reset
-            rows[#rows + 1] = { key = guid, label = entry.name,
+            local label = entry.name
+            if NS.Client.isForever and entry.realm then
+                label = S.PublicText(entry.character) or label:match("^(.-) %- ") or label
+            end
+            rows[#rows + 1] = { key = guid, label = label,
                 detail = details ~= false and Weekly.Detail(entry, fresh) or nil, checked = fresh, snapshot = entry }
         end
     end

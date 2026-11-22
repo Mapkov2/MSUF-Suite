@@ -209,7 +209,7 @@ local function Band(view, window, row)
     for col = 1, Matrix.COLUMNS do view.cells[row][col] = Cell(band, window, col) end
 end
 
--- Characters are Menu2 pills, the realm sits under each in class colour.
+-- The surname or realm sits under the Menu2 pill in class colour.
 local function Headers(view, window)
     view.counter = B.Label(view, "", 11, "muted")
     view.counter:SetPoint("TOPLEFT", 4, -10)
@@ -219,7 +219,7 @@ local function Headers(view, window)
     view.previous:SetPoint("TOPLEFT", 126, -8)
     view.next = B.Button(view, ">", 24, 24, function() Page(window, 1) end)
     view.next:SetPoint("TOPLEFT", 154, -8)
-    view.realms = {}
+    view.nameDetails = {}
     for col = 1, Matrix.COLUMNS do
         local header = B.Button(view, "", COLUMN_STEP - 6, 24, ChooseCharacter)
         header:SetPoint("TOPLEFT", LABEL_WIDTH + (col - 1) * COLUMN_STEP, -8)
@@ -227,12 +227,12 @@ local function Headers(view, window)
         header.text:SetWordWrap(false)
         header.window = window
         view.headers[col] = header
-        local realm = B.Label(view, "", 11, "muted")
-        realm:SetPoint("TOPLEFT", LABEL_WIDTH + (col - 1) * COLUMN_STEP, -34)
-        realm:SetSize(COLUMN_STEP - 6, 14)
-        realm:SetJustifyH("CENTER")
-        realm:SetWordWrap(false)
-        view.realms[col] = realm
+        local detail = B.Label(view, "", 11, "muted")
+        detail:SetPoint("TOPLEFT", LABEL_WIDTH + (col - 1) * COLUMN_STEP, -34)
+        detail:SetSize(COLUMN_STEP - 6, 14)
+        detail:SetJustifyH("CENTER")
+        detail:SetWordWrap(false)
+        view.nameDetails[col] = detail
     end
 end
 
@@ -342,17 +342,18 @@ end
 
 local function DrawHeaders(window)
     local view = window.matrix
+    local detailField = P.NS.Client.isForever and "surname" or "realm"
     for col, header in ipairs(view.headers) do
         local character = view.columns[view.characterOffset + col]
-        local realm = view.realms[col]
+        local detail = view.nameDetails[col]
         header.character = character
         header:SetShown(character ~= nil)
-        realm:SetShown(character ~= nil)
+        detail:SetShown(character ~= nil)
         if character then
             header.text:SetText(Plan.Overview.Name(character))
-            realm:SetText(character.snapshot.realm or "")
-            realm.plannerClassFile = character.snapshot.classFile
-            B.TintLabel(realm, "muted")
+            detail:SetText(character.snapshot[detailField] or "")
+            detail.plannerClassFile = character.snapshot.classFile
+            B.TintLabel(detail, "muted")
             B.StyleButton(header, character.key == window.selected)
         end
     end

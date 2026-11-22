@@ -9,6 +9,7 @@ local COMPACT_HEIGHT, EXPANDED_HEIGHT = 112, 316
 local HANDLE_COLOR = { 0.30, 0.74, 1.00 }
 local DEFAULT_HINT = "Click to select; drag or use arrow keys; edit exact X/Y below."
 local Data = P.MinimapPreviewData
+local Native, ZOOM_LAYOUT = Suite.MinimapElements, Suite.MinimapZoomLayout
 local TEXTS, ICONS, LAYERS
 local ORNAMENT_EDGES = Data.ORNAMENT_EDGES
 local Clamp, Tint, SetIcon = Data.Clamp, Data.Tint, Data.SetIcon
@@ -71,6 +72,23 @@ local function IndexLayerControls()
 end
 
 ------------------------------------------------------------------ offsets
+local function IndividualZoom(key)
+    return key == "zoomIn" or key == "zoomOut"
+end
+local function ReadOffsets(key)
+    if IndividualZoom(key) then
+        local ix, iy, ox, oy = Native.ZoomOffsets(S.Config(ID), Native.ZoomButtons())
+        if key == "zoomIn" then return ix, iy end
+        return ox, oy
+    end
+    local xKey, yKey = OffsetKeys(key)
+    if xKey then return P.Get(ID, xKey), P.Get(ID, yKey) end
+    return 0, 0
+end
+local function RoundOffset(value, rule)
+    local step = rule.step or 1
+    return Clamp(math.floor((tonumber(value) or 0) / step + 0.5) * step, rule.min, rule.max)
+end
 local function WriteOffsets(key, x, y)
     if P.Combat() then return false end
     local xKey, yKey = OffsetKeys(key)
@@ -78,9 +96,17 @@ local function WriteOffsets(key, x, y)
     local rules = Suite.SuiteCatalog[ID].rules
     local xRule, yRule = rules[xKey], rules[yKey]
     if not xRule or not yRule then return false end
-    x = Clamp(math.floor((tonumber(x) or 0) + 0.5), xRule.min, xRule.max)
-    y = Clamp(math.floor((tonumber(y) or 0) + 0.5), yRule.min, yRule.max)
-    return P.SetMany(ID, { [xKey] = x, [yKey] = y }) ~= false
+    local values = {}
+    if IndividualZoom(key) then
+        local c = S.Config(ID)
+        if c.zoomLayout and c.zoomLayout ~= ZOOM_LAYOUT.FREE then
+            -- Materialize the aligned pair before editing only one button.
+            values.zoomInX, values.zoomInY, values.zoomOutX, values.zoomOutY = Native.ZoomOffsets(c, Native.ZoomButtons())
+            values.zoomLayout = ZOOM_LAYOUT.FREE
+        end
+    end
+    values[xKey], values[yKey] = RoundOffset(x, xRule), RoundOffset(y, yRule)
+    return P.SetMany(ID, values) ~= false
 end
 
 ------------------------------------------------------------------ selection and focus
@@ -147,7 +173,7 @@ local function BindHandle(ui, button, key, label, section)
     button.previewKey, button.previewSection = key, section
     button._key, button._label, button._color = key, label, HANDLE_COLOR
     button._previewLayerKey = key == "style" and "map" or key == "drawer" and "addons"
-        or (key == "zoomIn" or key == "zoomOut") and "zoom" or key
+        or (IndividualZoom(key) or key == "zoomGroup") and "zoom" or key
     if key:match("^ornament_") then button._previewLayerKey = "ornament" end
     for _, spec in ipairs(TEXTS) do
         if key == "info" .. spec[1] then
@@ -164,10 +190,10 @@ end
 -- A movable element is a region of the kit: its offsets are read and written
 -- through the minimap settings, and a drag counts in preview units.
 local function AddHandle(ui, button, key)
-    local xKey, yKey = OffsetKeys(key)
-    ui.kit:Add(key, button, function() return P.Get(ID, xKey), P.Get(ID, yKey) end,
+    ui.kit:Add(key, button, function() return ReadOffsets(key) end,
         function(x, y) return WriteOffsets(key, x, y) end,
         { select = false, clicks = { "LeftButtonUp" },
+            follow = key == "zoomGroup" and function(_, dx, dy) Data.MoveZoomGroup(ui, dx, dy) end or nil,
             scale = function() return button:GetEffectiveScale() * (ui.art.scale or 1) end })
 end
 
@@ -318,14 +344,27 @@ local function BuildTextTargets(ui)
         box:SetPoint("CENTER", button, "CENTER")
         box:SetSize(100, 19)
         local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        label:SetAllPoints(button)
+        label:SetWordWrap(false)
         label:SetJustifyV("MIDDLE")
         -- The location field can be 220px wide while its visible zone name is
         -- only a few glyphs. Keep its click target on the rendered text so it
         -- cannot steal FPS/latency clicks, or be stolen by their wide fields.
         if name == "Location" then button:SetFrameLevel(canvasLevel + 7) end
         local icon = name == "Weather" and button:CreateTexture(nil, "ARTWORK") or nil
-        ui.textItems[#ui.textItems + 1] = { spec = spec, button = button, box = box, label = label, icon = icon }
+        local invite, clockSecond
+        if name == "Clock" then
+            clockSecond = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            clockSecond:SetWordWrap(false)
+            clockSecond:SetJustifyV("MIDDLE")
+            clockSecond:Hide()
+            invite = button:CreateTexture(nil, "ARTWORK")
+            invite:SetTexture("Interface\\Calendar\\EventNotification")
+            invite:SetTexCoord(0.03125, 0.6484375, 0.03125, 0.8671875)
+            invite:Hide()
+        end
+        ui.textItems[#ui.textItems + 1] = {
+            spec = spec, button = button, box = box, label = label, icon = icon, invite = invite, clockSecond = clockSecond,
+        }
     end
 end
 
@@ -405,17 +444,23 @@ local function BuildIconTargets(ui)
         ui.iconItems[#ui.iconItems + 1] = IconTarget(ui, spec)
     end
     ui.zoomItems = {}
-    for _, spec in ipairs({ { "zoomIn", "Zoom in", "+" }, { "zoomOut", "Zoom out", "-" } }) do
+    for index, spec in ipairs({ { "zoomIn", "Zoom in" }, { "zoomOut", "Zoom out" } }) do
         local button = Target(ui, spec[1], spec[2], "behavior", 20, 20)
-        local back = button:CreateTexture(nil, "BACKGROUND")
-        back:SetAllPoints(button)
-        Tint(back, 0.035, 0.05, 0.065, 0.9)
-        button.previewBackdrop = back
         button.previewIcon = button:CreateTexture(nil, "ARTWORK")
-        button.previewSign = T.Font(button, "GameFontHighlightSmall", spec[3], T.colors.text)
-        button.previewSign:SetPoint("CENTER", button, "CENTER")
+        if index == 1 then
+            local back = button:CreateTexture(nil, "BACKGROUND")
+            back:SetAllPoints(button)
+            Tint(back, 0.035, 0.05, 0.065, 0.9)
+            button.previewBackdrop = back
+            button.previewSign = T.Font(button, "GameFontHighlightSmall", "+", T.colors.text)
+            button.previewSign:SetPoint("CENTER", button, "CENTER")
+        else
+            button.previewZoomOutGlyph = Suite.MinimapStyle.CreateZoomOutGlyph(button)
+        end
         ui.zoomItems[#ui.zoomItems + 1] = button
     end
+    ui.zoomGroup = Target(ui, "zoomGroup", "Zoom buttons", "behavior", 14, 14)
+    Data.StyleZoomGroupGrip(ui.zoomGroup)
     ui.compass = Target(ui, "compass", "Compass and rotation", "behavior", 17, 17)
     ui.compass:SetPoint("TOP", ui.map, "TOP", 0, -2)
     local north = T.Font(ui.compass, "GameFontHighlightSmall", "N", T.colors.text)
@@ -464,10 +509,7 @@ local function BuildSelectionBar(ui)
         HandleList = function() return ui.handles end,
         HandleLabel = function(handle) return handle._label end,
         IsPlaced = function(handle) return handle.IsShown and handle:IsShown() or false end,
-        ReadOffsets = function(_, handle)
-            local xKey, yKey = OffsetKeys(handle._key)
-            return xKey and P.Get(ID, xKey) or 0, yKey and P.Get(ID, yKey) or 0
-        end,
+        ReadOffsets = function(_, handle) return ReadOffsets(handle._key) end,
         WriteOffsets = function(_, handle, x, y) return WriteOffsets(handle._key, x, y) end,
         NudgeDelta = function(_, dx, dy) return ui.kit:Nudge(dx, dy) end,
         ResetOffsets = function(_, handle)
@@ -569,7 +611,7 @@ local function BuildLayerChips(ui)
 end
 
 local function Paint(ui)
-    if not ui.body:IsVisible() then return end
+    if not ui.body:IsVisible() or ui.kit.drag then return end
     local selected = ui.body._selectedHandle
     if selected then P.PreviewInteraction.Outline(selected, selected:IsShown()) end
     local config = S.Config(ID)
@@ -581,7 +623,7 @@ local function Paint(ui)
     PaintElements(ui, config)
     ui.zoomLabel:SetText(string.format("%d%%", math.floor(base * 100 + 0.5)))
     for _, button in ipairs(ui.layerButtons) do
-        if button.Refresh then button:Refresh() else button:SetAlpha(ui.ChipOn(button.key) and 1 or 0.42) end
+        P.PreviewInteraction.RefreshLayerButton(button, ui.ChipOn(button.key))
     end
     selected = ui.body._selectedHandle
     if selected and not selected:IsShown() then ui.kit:Select(nil) end
@@ -596,27 +638,56 @@ local PREVIEW_EVENTS = {
     "LFG_UPDATE", "LFG_QUEUE_STATUS_UPDATE", "PLAYER_DIFFICULTY_CHANGED", "UPDATE_INSTANCE_INFO",
     "PLAYER_SPECIALIZATION_CHANGED", "MINIMAP_UPDATE_TRACKING", "MINIMAP_UPDATE_ZOOM", "CVAR_UPDATE",
 }
+local TERRAIN_EVENTS = { PLAYER_ENTERING_WORLD = true, ZONE_CHANGED = true, ZONE_CHANGED_INDOORS = true, ZONE_CHANGED_NEW_AREA = true }
+
 local function WatchRuntime(ui)
     local events = CreateFrame("Frame", nil, ui.body)
-    local queued = false
+    local queued, terrainDirty = false, false
+    local listener
     local function Flush()
         queued = false
+        if P.RefreshMinimapPreview ~= ui.Paint or not events:IsVisible() then return end
+        if terrainDirty then ui.art:RefreshTerrain() end
+        terrainDirty = false
+        if S.SetMinimapPreviewListener then S.SetMinimapPreviewListener(listener) end
         ui.host:Paint()
     end
     local function Request(_, event, name)
         if event == "CVAR_UPDATE" and name ~= "rotateMinimap" then return end
+        if event and TERRAIN_EVENTS[event] then terrainDirty = true end
         if queued then return end
         queued = true
         C_Timer.After(0, Flush)
+    end
+    listener = function(key)
+        if not ui.body:IsVisible() or ui.kit.drag then return end
+        if key then
+            for _, item in ipairs(ui.textItems) do
+                if item.spec[1] == key then
+                    Data.PaintText(ui, S.Config(ID), item)
+                    break
+                end
+            end
+        else
+            Request()
+        end
     end
     local function Activate()
         for _, event in ipairs(PREVIEW_EVENTS) do
             if Suite.Client.SupportsEvent(event) then events:RegisterEvent(event) end
         end
+        P.RefreshMinimapPreview = ui.Paint
+        if S.SetMinimapPreviewListener then S.SetMinimapPreviewListener(listener) end
+        ui.art:RefreshTerrain()
         ui.Paint()
     end
     events:SetScript("OnShow", Activate)
-    events:SetScript("OnHide", events.UnregisterAllEvents)
+    events:SetScript("OnHide", function(self)
+        self:UnregisterAllEvents()
+        if P.RefreshMinimapPreview ~= ui.Paint then return end
+        P.RefreshMinimapPreview = nil
+        if S.SetMinimapPreviewListener then S.SetMinimapPreviewListener(nil) end
+    end)
     events:SetScript("OnEvent", Request)
     if events:IsVisible() then Activate() end
 end

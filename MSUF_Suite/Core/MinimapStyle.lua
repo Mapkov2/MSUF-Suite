@@ -10,6 +10,7 @@ local RGB = NS.RGB
 -- The choice values (Core/Catalog/Minimap.lua) and the catalog defaults that
 -- stand in for a setting a partial config lacks.
 local WEATHER, ICONS, SHAPE = NS.MinimapWeatherDisplay, NS.MinimapWeatherIcons, NS.MinimapShape
+local DATE = NS.MinimapDatePosition
 local ART, PLACEMENT, BLEND = NS.MinimapStyleTexture, NS.MinimapStylePlacement, NS.MinimapStyleBlend
 local DRAWER = NS.MinimapDrawerStyle
 local RULES = NS.SuiteCatalog.minimap.rules
@@ -55,6 +56,72 @@ end
 function Style.LocationLines(c)
     local source = c.infoLocationSource or 1
     return c.infoLocationBelow and (source == 5 or source == 1 and c.infoLocationZone and c.infoLocationSubzone) and 2 or 1
+end
+
+function Style.ClockLines(c)
+    return c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2 or 1
+end
+
+function Style.ClockContent(c, timeText, today)
+    if not c.infoClockDate then return timeText or "--" end
+    today = today or date("*t")
+    local dateText = FormatShortDate(today.day, today.month, today.year)
+    if not timeText then return dateText end
+    if c.infoClockDatePosition == DATE.ABOVE then return dateText .. "\n" .. timeText end
+    return timeText .. (c.infoClockDatePosition == DATE.BELOW and "\n" or "  ") .. dateText
+end
+
+local function PlaceClockRow(label, button, justify, width, height, offset)
+    label:ClearAllPoints()
+    label:SetPoint(justify, button, justify, 0, offset)
+    label:SetSize(width, height)
+    label:SetJustifyH(justify)
+end
+
+function Style.LayoutClock(entry, c, width, justify, scale)
+    local size = c.infoClockSize * scale
+    local twoRows = Style.ClockLines(c) == 2
+    local offset, height = twoRows and size / 2 or 0, size + 8 * scale
+    PlaceClockRow(entry.label, entry.button, justify, width, height, offset)
+    if twoRows then PlaceClockRow(entry.clockSecond, entry.button, justify, width, height, -offset) end
+end
+
+-- Each row is an independent single-line field so clipping cannot remove the other row.
+function Style.SetClockText(entry, text)
+    local split = text:find("\n", 1, true)
+    entry.label:SetText(split and text:sub(1, split - 1) or text)
+    if split then entry.clockSecond:SetText(text:sub(split + 1)) end
+    entry.clockSecond:SetShown(split ~= nil)
+end
+
+function Style.InfoTextWidth(entry)
+    local width = entry.label:GetStringWidth()
+    if not NS.Finite(width) then width = 0 end
+    if entry.clockSecond and entry.clockSecond:IsShown() then
+        local second = entry.clockSecond:GetStringWidth()
+        if NS.Finite(second) then width = math.max(width, second) end
+    end
+    return width
+end
+
+-- A readable minus even when Blizzard's current zoom atlas is desaturated.
+function Style.CreateZoomOutGlyph(parent)
+    local backing = parent:CreateTexture(nil, "OVERLAY", nil, 1)
+    backing:SetPoint("CENTER", parent, "CENTER")
+    backing:SetColorTexture(0.035, 0.05, 0.065, 0.94)
+    local line = parent:CreateTexture(nil, "OVERLAY", nil, 2)
+    line:SetPoint("CENTER", parent, "CENTER")
+    return { backing = backing, line = line }
+end
+
+function Style.PaintZoomOutGlyph(glyph, scale, enabled)
+    glyph.backing:SetSize(math.max(6, 13 * scale), math.max(3, 6 * scale))
+    glyph.line:SetSize(math.max(4, 9 * scale), math.max(1, 2 * scale))
+    if enabled then
+        glyph.line:SetColorTexture(1.0, 0.81, 0.41, 1)
+    else
+        glyph.line:SetColorTexture(0.73, 0.76, 0.80, 1)
+    end
 end
 
 -- The native queue-eye atlas is a subrectangle, not a whole texture file.

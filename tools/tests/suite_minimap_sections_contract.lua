@@ -267,6 +267,19 @@ for _, width in ipairs({ 320, 720, 1100 }) do
     end
     Check(F.registeredControls["menu2.suite_minimap.minimap.style.preset.12"], "Class Style tile is missing")
     for _, fn in ipairs(ctx.refreshers) do fn() end
-    if width == 1100 then CheckArtwork(ctx, menu, config) end
+    if width == 1100 then
+        CheckArtwork(ctx, menu, config)
+        Check(menu:SelectMinimapSettings("behavior"), "missing map behavior editor")
+        local visibility, arrangement = assert(Widget(ctx, "zoomButtons")), assert(Widget(ctx, "zoomLayout"))
+        local modes, placements = P.Suite.MinimapZoomButtons, P.Suite.MinimapZoomLayout
+        visibility.set(modes.ALWAYS)
+        M.RequestRefresh()
+        Check(arrangement.enabled and #arrangement.row.values == 5, "zoom arrangement is missing its four alignments and free placement")
+        arrangement.set(placements.LEFT)
+        Check(config.zoomLayout == placements.LEFT, "arrangement did not write the live minimap setting")
+        visibility.set(modes.HIDE)
+        M.RequestRefresh()
+        Check(not arrangement.enabled and config.zoomLayout == placements.LEFT, "hiding zoom buttons lost their arrangement")
+    end
 end
 print("Minimap tabs, preview, narrow widths, lazy editors, exact routes and scoped reset passed")

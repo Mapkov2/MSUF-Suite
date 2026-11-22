@@ -397,7 +397,8 @@ Equal(#view.cells, 11, "ten taller activity rows plus the scroll band")
 for _, row in ipairs(view.cells) do Equal(#row, 6, "six reusable cells per activity") end
 Equal(#view.model.columns, 18, "model sees every saved character")
 Equal(view.headers[1].character.key, "char-1", "first column is first sorted character")
-Equal(view.realms[1].textColor[1], .78, "the realm under each character pill uses its class color")
+Equal(view.nameDetails[1]:GetText(), forever and "" or "VeryLongRealmName", "the realm is shown on Retail")
+Equal(view.nameDetails[1].textColor[1], .78, "the detail under each character pill uses its class color")
 Check(native.materials >= 3, "actual HostBridge reaches native MSUF material provider")
 -- Actions, close, search clear, column paging and headers; the rail paints its own rows.
 Check(native.buttons >= 16, "actual HostBridge creates native MSUF controls")
@@ -847,5 +848,24 @@ if arg[3] and arg[3] ~= "-" then
         end
     end
     output:write(']}') output:close()
+end
+if forever then
+    account.characters = {}
+    st.guid, st.name, st.surname = "ash", "Alice", "Ash"
+    Check(Plan.Weekly.Capture(), "capture first same-name Forever character")
+    st.guid, st.surname = "oak", "Oak"
+    Check(Plan.Weekly.Capture(), "capture second same-name Forever character")
+    window.search:SetText("")
+    Equal(view.headers[1].text:GetText(), "Alice", "Forever header shows the first name")
+    Equal(view.nameDetails[1]:GetText(), "Ash", "first column shows its own surname")
+    Equal(view.nameDetails[2]:GetText(), "Oak", "second column shows its own surname")
+    window.search:SetText("Oak")
+    Equal(#view.columns, 1, "search finds the surname")
+    Equal(view.headers[1].character.key, "oak", "surname search chooses the matching character")
+    local cell = Cell("field", "field", "level")
+    Check(cell and cell.scripts.OnEnter, "Forever character cell supports its existing tooltip")
+    cell.scripts.OnEnter(cell)
+    Check(table.concat(GameTooltip.lines, "\n"):find("Alice Oak", 1, true) ~= nil, "hover shows the full name")
+    cell.scripts.OnLeave(cell)
 end
 print("suite_planner_board_contract: " .. (forever and "Forever " or "Mainline ") .. locale .. " " .. checks .. " checks; " .. count .. " frames/regions; zero lifecycle growth")

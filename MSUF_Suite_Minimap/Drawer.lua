@@ -475,7 +475,8 @@ end
 function S.MinimapDrawerPreviewSource()
     if not M.active then return end
     if not MM.CollectsButtons() or #visible == 0 then return false end
-    return true, not M.config.drawerList and #visible == 1 and visible[1] or nil
+    if not M.config.drawerList and #visible == 1 then return true, visible[1], single:IsShown() end
+    return true, nil, toggle:IsShown()
 end
 
 -- The frame names of the buttons in the drawer: what the options page offers

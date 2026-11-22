@@ -51,6 +51,8 @@ CreateFrame, loadfile = create, original
 assert(ui, "minimap preview did not build")
 local buttons = {}
 for _, button in ipairs(ui.layerButtons) do buttons[button.key] = button end
+-- The fallback fixture provides no real host Refresh method on its buttons.
+if not rawget(buttons.fps, "Refresh") then buttons.fps.Refresh = false end
 local config = P.S.Config("minimap")
 for key in pairs(ui.state.layers) do ui.state.layers[key] = true end
 ui.state.layers.guides, ui.state.layers.hidden = false, false
@@ -76,6 +78,7 @@ assert(exact == "suite_minimap_info_fps:msufsuite.minimap.infoFPS" and not fps:I
     "an off FPS display must jump to Show FPS without changing the profile or the preview")
 config.infoFPS = true
 ui.Paint()
+assert(not buttons.fps._suiteLayerMuted and buttons.fps:GetAlpha() == 1, "legacy layer did not restore the active styling")
 Click("text")
 assert(not fps:IsShown(), "text group does not hide an enabled display")
 Click("fps")
@@ -87,6 +90,7 @@ assert(not fps:IsShown(), "Hidden must honor an explicitly hidden preview layer"
 ui.state.layers.fps = nil
 ui.Paint()
 assert(fps:IsShown(), "Hidden does not reveal automatic inactive layers")
+assert(buttons.fps._suiteLayerMuted and buttons.fps:GetAlpha() < 1, "a visible preview sample lost the disabled styling")
 exact = nil
 Click("fps")
 assert(exact == "suite_minimap_info_fps:msufsuite.minimap.infoFPS" and fps:IsShown() and config.infoFPS == false,
@@ -234,6 +238,7 @@ do
     MinimapBackdrop = { ExternalEventURLButton = external }
     config.showTracking, config.showCalendar, config.showMail, config.showCompartment = true,true,true,true
     config.showCrafting, config.showDifficulty, config.infoDifficulty = true,true,false
+    config.zoomButtons = P.Suite.MinimapZoomButtons.ALWAYS
     ui.state.layers.hidden = false
     ui.state.layers.blizzard = true
     ui.Paint()
@@ -254,6 +259,13 @@ do
     assert(icons.compartment.button.previewNative.text.text == "7", "native button text is missing")
     assert(ui.zoomItems[1].previewIcon.atlas == "zoom-in" and ui.zoomItems[2].previewIcon.atlas == "zoom-out"
         and ui.zoomItems[2]:GetHeight() == 9 * ui.art.scale, "zoom controls lost their native art or dimensions")
+    local minus = ui.zoomItems[2].previewZoomOutGlyph
+    assert(minus and minus.line.color[1] == .73 and minus.line:GetWidth() == 9 * ui.art.scale,
+        "preview must show the shared minus at the lowest zoom")
+    zoomOut.GetDisabledTexture = function() end
+    ui.Paint()
+    assert(not ui.zoomItems[2].previewIcon:IsShown() and minus.line:IsShown() and minus.line.color[4] == 1,
+        "an unavailable native texture erased the preview's minus")
     if not P.Suite.Client.isForever then
         assert(icons.folio.button.previewIcon.atlas == "current-expansion-landing"
             and math.abs(icons.folio.button:GetWidth() - 35 * config.elementSize / 21 * .8 * ui.art.scale) < .001,
@@ -271,6 +283,13 @@ do
     assert(not icons.tracking.button:IsShown() and icons.compartment.button.points[1][5] == compartmentY,
         "hiding a live preview button re-packed the runtime row")
     ui.state.layers.tracking = nil
+    P.S.MinimapElementPreviewShown = function(key)
+        if key == "Tracking" then return false, true end
+    end
+    ui.Paint()
+    assert(not icons.tracking.button:IsShown() and icons.compartment.button.points[1][5] == compartmentY,
+        "a live mouseover-only button appeared or displaced the buttons after it")
+    P.S.MinimapElementPreviewShown = nil
     assert(not icons.externalEvent.button:IsShown(), "native hidden event button appeared in preview")
     external.visible = true
     ui.Paint()
@@ -317,6 +336,10 @@ do
             and not drawer.previewDrawerArt[1]:IsShown(), "preview did not show the selected Suite badge")
     end
     config.drawerStyle = previousStyle
+    P.S.MinimapDrawerPreviewSource = function() return true, nil, false end
+    ui.state.layers.addons = nil
+    ui.Paint()
+    assert(not drawer:IsShown(), "mouseover drawer toggle appeared while runtime hid it")
     P.S.MinimapDrawerPreviewSource = function() return false end
     ui.Paint()
     assert(not drawer:IsShown(), "empty runtime drawer left a visible toggle")
@@ -353,3 +376,182 @@ do
     P.S.MinimapElementAvailable,P.S.MinimapElementPreviewShown = available,shown
 end
 print("suite_minimap_preview_layers_contract: native 70425 sources and absence passed")
+
+-- Use the real runtime and options setters together, with the deferred menu refresh parked.
+local H = assert(original(root .. "/tools/tests/suite_minimap_harness.lua"))()
+local function CheckZoomArrangement(runtime)
+    local layout, c = P.Suite.MinimapZoomLayout, runtime.config
+    local scale = ui.art.scale
+    local function Position(button)
+        local point = button.points[1]
+        return point[4], point[5]
+    end
+    local function Near(a, b) return math.abs(a - b) < .0001 end
+    local function MatchPositions()
+        local ix, iy = Position(runtime.map.ZoomIn)
+        local ox, oy = Position(runtime.map.ZoomOut)
+        local px, py = Position(ui.zoomItems[1])
+        local mx, my = Position(ui.zoomItems[2])
+        assert(Near(px, ix * scale) and Near(py, iy * scale) and Near(mx, ox * scale) and Near(my, oy * scale),
+            "zoom arrangement reached only one view")
+        return ix, iy, ox, oy
+    end
+    assert(P.SetMany("minimap", { zoomInX = 21, zoomInY = 154, zoomOutX = 1, zoomOutY = 158 }))
+    local ix, iy, ox, oy = MatchPositions()
+    assert(c.zoomLayout == layout.FREE and ix == 19 and iy == 181 and ox == -1 and oy == 160,
+        "the default moved existing independently positioned buttons")
+    for _, orientation in ipairs({ layout.ABOVE, layout.BELOW, layout.LEFT, layout.RIGHT }) do
+        assert(P.Set("minimap", "zoomLayout", orientation))
+        local px, py, mx, my = MatchPositions()
+        local dx, dy = px - mx, py + 8.5 - my - 4.5
+        assert(Near(px + mx, ix + ox) and Near(py + my, iy + oy), "aligning displaced the center of the pair")
+        assert((orientation == layout.ABOVE and Near(dx, 0) and dy > 0)
+            or (orientation == layout.BELOW and Near(dx, 0) and dy < 0)
+            or (orientation == layout.LEFT and Near(dy, 0) and dx < 0)
+            or (orientation == layout.RIGHT and Near(dy, 0) and dx > 0), "zoom orientation did not align button centers")
+    end
+    ix, iy, ox, oy = MatchPositions()
+    assert(ui.zoomGroup:IsShown(), "visible zoom controls have no joint drag handle")
+    local oldCursor = GetCursorPosition
+    local cursorX, cursorY = 100, 100
+    GetCursorPosition = function() return cursorX, cursorY end
+    local group = ui.zoomGroup
+    group:GetScript("OnMouseDown")(group, "LeftButton")
+    cursorX, cursorY = cursorX + 12 * scale, cursorY - 5 * scale
+    group:GetScript("OnUpdate")(group)
+    local px, py = Position(ui.zoomItems[1])
+    local mx, my = Position(ui.zoomItems[2])
+    assert(Near(px, (ix + 12) * scale) and Near(py, (iy - 5) * scale)
+        and Near(mx, (ox + 12) * scale) and Near(my, (oy - 5) * scale) and c.zoomGroupX == 0,
+        "dragging the group did not move both preview buttons together before committing")
+    group:GetScript("OnMouseUp")(group, "LeftButton")
+    GetCursorPosition = oldCursor
+    local gx, gy, hx, hy = MatchPositions()
+    assert(c.zoomLayout == layout.RIGHT and Near(gx, ix + 12) and Near(gy, iy - 5)
+        and Near(hx, ox + 12) and Near(hy, oy - 5), "the drag did not move the pair as one group")
+    ui.kit:Select(ui.zoomItems[1])
+    assert(ui.kit:Nudge(7, 4))
+    local nx, ny, tx, ty = MatchPositions()
+    assert(c.zoomLayout == layout.FREE and Near(nx, gx + 7) and Near(ny, gy + 4)
+        and Near(tx, hx) and Near(ty, hy), "moving only plus displaced minus or lost the group offset")
+    ui.kit:Select(ui.zoomItems[2])
+    assert(ui.kit:Nudge(-4, 3))
+    px, py, mx, my = MatchPositions()
+    assert(Near(px, nx) and Near(py, ny) and Near(mx, tx - 4) and Near(my, ty + 3), "moving only minus displaced plus")
+end
+
+for _, client in ipairs({ "Mainline", "Forever" }) do
+    local minute = 33
+    local runtime = H.New(root, client, { beforeModules = function(W)
+        W.G.GetGameTime = function() return 9, minute end
+        W.G.date = function() return { day = 22, month = 11, year = 2026, hour = 9 } end
+        W.G.FormatShortDate = function() return "22.11.2026" end
+    end })
+    runtime.editModeReady = true
+    H.Enable(runtime, { captured = true, infoClock = true, infoClock24Hour = true,
+        infoClockDate = true, infoClockSize = 25, infoClockWidth = 120 })
+    runtime.Step()
+    local suite = P.S
+    local oldConfig, oldSet, oldSetMany = suite.Config, suite.Set, suite.SetMany
+    local oldRequest, oldMap, oldTimer = fixture.M.RequestRefresh, Minimap, C_Timer
+    local flush
+    C_Timer = { After = function(_, callback) flush = callback end }
+    Minimap = runtime.map
+    for _, button in ipairs({ Minimap.ZoomIn, Minimap.ZoomOut }) do
+        button.GetNormalTexture = function() end
+        button.GetDisabledTexture = function() end
+    end
+    suite.Config = function(id) return id == "minimap" and runtime.config or oldConfig(id) end
+    suite.Set, suite.SetMany = runtime.S.Set, runtime.S.SetMany
+    suite.MinimapInfoPreviewSource = runtime.S.MinimapInfoPreviewSource
+    suite.SetMinimapPreviewListener = runtime.S.SetMinimapPreviewListener
+    suite.MinimapZoomPreviewShown = runtime.S.MinimapZoomPreviewShown
+    fixture.M.RequestRefresh = function() end
+    ui.state.layers.clock, ui.state.layers.zoom, ui.state.layers.hidden = nil, nil, false
+    watcher:GetScript("OnShow")(watcher)
+    local clock
+    for _, item in ipairs(ui.textItems) do
+        if item.spec[1] == "Clock" then clock = item end
+    end
+    local label = runtime.M.infoEntries.Clock.label
+    local second = runtime.M.infoEntries.Clock.clockSecond
+    assert(clock.label.text == "09:33  22.11.2026" and clock.label.text == label.text,
+        client .. " preview lost the date shown by the live clock")
+    assert(clock.label.width == 120 * ui.art.scale, "clock width diverged from its live truncation constraint")
+    assert(P.SetMany("minimap", { infoClockDatePosition = 2, infoClockWidth = 96, size = 260 }))
+    assert(clock.label.text == label.text and clock.label.text == "22.11.2026" and ui.art.scale == 94 / 260
+        and clock.clockSecond.text == second.text and clock.clockSecond.text == "09:33" and clock.clockSecond:IsShown()
+        and clock.label.width == 96 * ui.art.scale and clock.button.height == (25 * 2 + 8) * ui.art.scale,
+        "settings did not repaint both views immediately with the same two-line clock geometry")
+    assert(P.SetMany("minimap", { infoClockDatePosition = 3, infoClockWidth = 120 }))
+    assert(clock.label.text == label.text and clock.label.text == "09:33"
+        and clock.clockSecond.text == second.text and clock.clockSecond.text == "22.11.2026" and clock.clockSecond:IsShown()
+        and clock.clockSecond.width == 120 * ui.art.scale,
+        "reported below-clock date did not appear in both views")
+    minute = 34
+    runtime.Advance(61)
+    assert(clock.label.text == label.text and clock.label.text:find("09:34", 1, true), "preview clock did not follow a live tick")
+    assert(not ui.zoomItems[1]:IsShown(), "mouseover-only zoom shown while the live zoom holder is hidden")
+    runtime.Fire(runtime.MM.catcher, "OnEnter")
+    flush()
+    assert(ui.zoomItems[1]:IsShown(), "preview did not follow the live zoom reveal")
+    runtime.Fire(runtime.MM.catcher, "OnLeave")
+    runtime.Advance(.2)
+    flush()
+    assert(not ui.zoomItems[1]:IsShown(), "preview did not follow the live zoom hide")
+    assert(P.Set("minimap", "zoomButtons", P.Suite.MinimapZoomButtons.ALWAYS))
+    assert(ui.zoomItems[1]:IsShown() and runtime.MM.zoomHolder:IsVisible(), "Always did not reveal both views immediately")
+    CheckZoomArrangement(runtime)
+    watcher:GetScript("OnHide")(watcher)
+    flush()
+    assert(P.RefreshMinimapPreview == nil, "hidden preview retained the synchronous settings callback")
+    minute = 35
+    runtime.Advance(61)
+    assert(clock.label.text ~= label.text, "hidden preview received a live update")
+    watcher:GetScript("OnShow")(watcher)
+    assert(clock.label.text == label.text and clock.clockSecond.text == second.text, "reopened preview did not read the current clock")
+    assert(P.Set("minimap", "infoClockDatePosition", 1))
+    assert(clock.label.text == label.text and clock.label.text == "09:35  22.11.2026"
+        and not clock.clockSecond:IsShown() and not second:IsShown(), "beside mode retained a second date row")
+    watcher:GetScript("OnHide")(watcher)
+    flush()
+    suite.Config, suite.Set, suite.SetMany = oldConfig, oldSet, oldSetMany
+    suite.MinimapInfoPreviewSource, suite.SetMinimapPreviewListener, suite.MinimapZoomPreviewShown = nil, nil, nil
+    fixture.M.RequestRefresh, Minimap, C_Timer = oldRequest, oldMap, oldTimer
+end
+print("suite_minimap_preview_layers_contract: live clock, zoom and immediate settings parity passed")
+
+do
+    local oldDate, oldShortDate = date, FormatShortDate
+    date = function() return { day = 22, month = 11, year = 2026 } end
+    FormatShortDate = function() return "22.11.2026" end
+    config.infoClock, config.infoClockDate, config.infoClockDatePosition = true, true, 3
+    ui.Paint()
+    for _, item in ipairs(ui.textItems) do
+        if item.spec[1] == "Clock" then
+            assert(item.clockSecond:IsShown() and item.clockSecond.text == "22.11.2026", "cold preview lost the configured date")
+        end
+    end
+    date, FormatShortDate = oldDate, oldShortDate
+    config.infoClockDate = false
+end
+
+do
+    local oldMap, oldTimer = C_Map, C_Timer
+    local tile, flush = 123, nil
+    C_Map = {
+        GetBestMapForUnit = function() return 1 end,
+        GetMapArtLayers = function() return { { layerWidth = 512, layerHeight = 512, tileWidth = 256, tileHeight = 256 } } end,
+        GetMapArtLayerTextures = function() return { tile } end,
+        GetPlayerMapPosition = function() return { GetXY = function() return .2, .2 end } end,
+    }
+    C_Timer = { After = function(_, callback) flush = callback end }
+    watcher:GetScript("OnShow")(watcher)
+    assert(ui.art.tiles[5].texture == 123 and ui.art.fallback:IsShown(), "partial terrain exposed the preview's backplate")
+    tile = 456
+    watcher:GetScript("OnEvent")(watcher, "ZONE_CHANGED_NEW_AREA")
+    flush()
+    assert(ui.art.tiles[5].texture == 456, "terrain remained on the old zone after a transition")
+    watcher:GetScript("OnHide")(watcher)
+    C_Map, C_Timer = oldMap, oldTimer
+end

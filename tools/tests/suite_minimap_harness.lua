@@ -328,10 +328,15 @@ function H.New(root, client, options)
     function F:StartMoving() self.moving = true end
     function F:StopMovingOrSizing() self.moving = false end
     function F:Click(button) Fire(self, "OnClick", button or "LeftButton") end
-    function F:SetEnabled(value) self.enabled = value and true or false end
+    function F:SetEnabled(value)
+        local enabled = value and true or false
+        if self.enabled == enabled then return end
+        self.enabled = enabled
+        Fire(self, enabled and "OnEnable" or "OnDisable")
+    end
     function F:IsEnabled() return self.enabled end
-    function F:Enable() self.enabled = true end
-    function F:Disable() self.enabled = false end
+    function F:Enable() self:SetEnabled(true) end
+    function F:Disable() self:SetEnabled(false) end
     function F:SetNormalTexture(value) self.normal = value end
     function F:SetHighlightTexture(value) self.highlight = value end
     function F:SetAttribute(key, value)

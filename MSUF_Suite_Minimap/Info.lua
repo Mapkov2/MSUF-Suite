@@ -2,7 +2,8 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
-local CLOCK, DATE, LATENCY = NS.MinimapClockSource, NS.MinimapDatePosition, NS.MinimapLatencySource
+local CLOCK, LATENCY = NS.MinimapClockSource, NS.MinimapLatencySource
+local MinimapStyle = NS.MinimapStyle
 local TEXT_ANCHOR, BOX = NS.MinimapTextAnchor, NS.MinimapTextBox
 -- Information texts on the map. One cancellable timer serves every timed text
 -- (clock, calendar day, coordinates); durability, location, weather, difficulty
@@ -25,53 +26,7 @@ local zoneColors = {
     sanctuary = "69ccf0", arena = "ff1a1a", friendly = "1aff1a", hostile = "ff1a1a", contested = "ffb300",
 }
 local outlines = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
--- GetInstanceInfo difficulty IDs: tag and colour tier (1 normal, 2 heroic, 3
--- mythic, 4 raid finder/follower, 5 timewalking, 6 keystone). Bare tags carry
--- no group size. Unknown IDs fall back to GetDifficultyInfo's heroic/mythic flags.
-local TAGS = {
-    [1] = { "N", 1 },
-    [2] = { "H", 2 },
-    [23] = { "M", 3 },
-    [14] = { "N", 1 },
-    [15] = { "H", 2 },
-    [16] = { "M", 3 },
-    [233] = { "M", 3 },
-    [3] = { "N", 1 },
-    [4] = { "N", 1 },
-    [5] = { "H", 2 },
-    [6] = { "H", 2 },
-    [9] = { "N", 1 },
-    [148] = { "N", 1 },
-    [173] = { "N", 1 },
-    [174] = { "H", 2 },
-    [242] = { "N", 1 },
-    [243] = { "N", 1 },
-    [7] = { "LFR", 4 },
-    [17] = { "LFR", 4 },
-    [205] = { "F", 4, true },
-    [24] = { "TW", 5 },
-    [33] = { "TW", 5 },
-    [151] = { "TW", 5 },
-    [18] = { "EVT", 1 },
-    [19] = { "EVT", 1 },
-    [30] = { "EVT", 1 },
-    [25] = { "PvP", 1 },
-    [29] = { "PvP", 1 },
-    [32] = { "PvP", 1 },
-    [34] = { "PvP", 1 },
-    [45] = { "PvP", 1 },
-    [12] = { "S", 1 },
-    [38] = { "S", 1 },
-    [11] = { "HS", 2 },
-    [39] = { "HS", 2 },
-    [40] = { "MS", 3 },
-    [8] = { "M+", 6, true },
-    [208] = { "D", 1, true },
-}
 local TIER_COLORS = NS.MinimapDifficultyColors
--- Flexible raids show the current group size instead of the maximum.
-local FLEX = { [14] = true, [15] = true, [17] = true, [33] = true }
-
 local Finite = S.Finite
 -- 12.1.0 lacks C_Weather (12.1.5 and WoW Forever have it).
 local GetCurrentWeather = C_Weather and C_Weather.GetCurrentWeather
@@ -127,18 +82,7 @@ local function Clock(entry)
     local localTime = source ~= CLOCK.REALM and LocalTime(entry, c, now) or nil
     local text = source == CLOCK.REALM and server or source == CLOCK.LOCAL and localTime
         or server and localTime and server .. " / " .. localTime
-    if c.infoClockDate then
-        -- Blizzard's localized short date (SHORTDATE through FormatShortDate).
-        local calendarDate = FormatShortDate(now.day, now.month, now.year)
-        if c.infoClockDatePosition == DATE.ABOVE then
-            text = text and calendarDate .. "\n" .. text or calendarDate
-        elseif c.infoClockDatePosition == DATE.BELOW then
-            text = text and text .. "\n" .. calendarDate or calendarDate
-        else
-            text = text and text .. "  " .. calendarDate or calendarDate
-        end
-    end
-    return text or "--", c.infoClockSeconds and 1 or second and 60 - second or 1
+    return MinimapStyle.ClockContent(c, text, now), c.infoClockSeconds and 1 or second and 60 - second or 1
 end
 
 -- One latency unit for both values, as the DataTexts show it.
@@ -235,36 +179,6 @@ local function ClassColor()
     return S.ClassHex(token)
 end
 
--- Group size and difficulty letter, e.g. "20M", "5H", "M+12", "25LFR".
-local function DifficultyText()
-    local _, kind, difficulty, _, maxPlayers, _, dynamic, _, groupSize = GetInstanceInfo()
-    if not S.Public(kind) or kind == "none" or kind == "interior" or kind == "neighborhood"
-        or not Finite(difficulty) then
-        return ""
-    end
-    local tag, letter, tier = TAGS[difficulty], nil, 1
-    if tag then
-        letter, tier = tag[1], tag[2]
-    else
-        local _, _, heroic, _, displayHeroic, displayMythic = GetDifficultyInfo(difficulty)
-        if S.Public(displayMythic) and displayMythic then
-            letter, tier = "M", 3
-        elseif S.Public(heroic) and S.Public(displayHeroic) and (heroic or displayHeroic) then
-            letter, tier = "H", 2
-        else
-            letter = "N"
-        end
-    end
-    if difficulty == 8 then
-        local level = C_ChallengeMode.GetActiveKeystoneInfo()
-        return Finite(level) and level > 0 and letter .. math.floor(level) or letter, tier
-    end
-    if tag and tag[3] then return letter, tier end
-    local flexible = FLEX[difficulty] or (S.Public(dynamic) and dynamic == true)
-    local size = flexible and Finite(groupSize) and groupSize > 0 and groupSize or maxPlayers
-    return (Finite(size) and size > 0 and math.floor(size) or "") .. letter, tier
-end
-
 local function Invites()
     local count = C_Calendar.GetNumPendingInvites()
     return Finite(count) and count > 0
@@ -290,10 +204,26 @@ local function Visible()
 end
 MM.InfoVisible = Visible
 
+local previewListener
+function S.SetMinimapPreviewListener(listener)
+    previewListener = listener
+end
+
+-- Read the already-rendered display state without sampling game data again.
+function S.MinimapInfoPreviewSource(key)
+    if not M.active then return end
+    if not M.infoVisible then return false end
+    if key == "Difficulty" then
+        return M.difficultyActive and M.difficultyText ~= nil and M.difficultyText ~= "", M.difficultyText, M.difficultyColor
+    end
+    local entry = M.infoEntries and M.infoEntries[key]
+    if not entry or not entry.active or not entry.button:IsShown() then return false end
+    return true, entry.text, entry.lastColor, entry.weatherTexture, entry.invite and entry.invite:IsShown()
+end
+
 -- The box, invite mark and hit rectangle follow the measured content width.
 local function Decorate(entry)
-    local width = entry.contentWidth or entry.label:GetStringWidth()
-    if not Finite(width) then width = 0 end
+    local width = entry.contentWidth or MinimapStyle.InfoTextWidth(entry)
     local padding = 2
     if entry.box and entry.box:IsShown() then
         local boxWidth = math.max(entry.size, width + 8)
@@ -324,9 +254,10 @@ end
 local function Sample(entry, key)
     local previousTexture = entry.weatherTexture
     local text, delay, severity, overrideColor = readers[key](entry)
-    if text ~= entry.text or previousTexture ~= entry.weatherTexture then
+    local changed = text ~= entry.text or previousTexture ~= entry.weatherTexture
+    if changed then
         if text ~= entry.text then
-            entry.label:SetText(text)
+            if entry.clockSecond then MinimapStyle.SetClockText(entry, text) else entry.label:SetText(text) end
             entry.text = text
         end
         if key == "Weather" then
@@ -337,10 +268,14 @@ local function Sample(entry, key)
     end
     local color = overrideColor or entry.statusColors and severity and entry.statusColors[severity] or entry.color
     if color ~= entry.lastColor then
-        entry.label:SetTextColor(Color(color))
+        local r, g, b = Color(color)
+        entry.label:SetTextColor(r, g, b)
+        if entry.clockSecond then entry.clockSecond:SetTextColor(r, g, b) end
         entry.lastColor = color
+        changed = true
     end
     entry.dirty = false
+    if changed and previewListener then NS.Dispatch(previewListener, key) end
     return delay
 end
 
@@ -364,8 +299,9 @@ local function UpdateDifficulty()
         return
     end
     M.difficultyDirty = false
-    local text, tier = DifficultyText()
-    if text ~= M.difficultyText then
+    local text, tier = MM.ReadDifficultyText()
+    local changed = text ~= M.difficultyText
+    if changed then
         label:SetText(text)
         M.difficultyText = text
         FitDifficultyBox(label, text)
@@ -374,7 +310,9 @@ local function UpdateDifficulty()
     if color ~= M.difficultyColor then
         label:SetTextColor(Color(color))
         M.difficultyColor = color
+        changed = true
     end
+    if changed and previewListener then NS.Dispatch(previewListener, "Difficulty") end
 end
 
 local function UpdateInvite()
@@ -383,6 +321,7 @@ local function UpdateInvite()
     if not mark then return end
     mark:SetShown(M.inviteWanted and entry.active and Invites() or false)
     Decorate(entry)
+    if previewListener and not M.infoConfiguring then NS.Dispatch(previewListener, "Clock") end
 end
 
 local Tick
@@ -410,7 +349,9 @@ end
 
 function MM.UpdateInfoVisibility()
     if not Visible() then
+        local wasVisible = M.infoVisible
         Cancel()
+        if wasVisible and previewListener then NS.Dispatch(previewListener) end
         return
     end
     if M.infoVisible then return end
@@ -418,6 +359,7 @@ function MM.UpdateInfoVisibility()
     for i = 1, #eventEntries do eventEntries[i].dirty = true end
     if M.difficultyActive then M.difficultyDirty = true end
     if not M.infoTimer then Tick() end
+    if previewListener then NS.Dispatch(previewListener) end
 end
 
 -- Coordinates parked without a position sample again right away.
@@ -515,7 +457,15 @@ local function CreateEntry(key)
     label:SetAllPoints(button)
     label:SetWordWrap(false)
     local icon = key == "Weather" and S.CreateTexture(button, nil, "ARTWORK") or nil
-    return { button = button, label = label, icon = icon }
+    local clockSecond
+    if key == "Clock" then
+        clockSecond = S.CreateFontString(button, nil, "OVERLAY", "GameFontNormalSmall")
+        clockSecond:SetWordWrap(false)
+        clockSecond:SetJustifyV("MIDDLE")
+        clockSecond:Hide()
+        label:SetJustifyV("MIDDLE")
+    end
+    return { button = button, label = label, icon = icon, clockSecond = clockSecond }
 end
 
 local parentAlphaHooked
@@ -526,7 +476,10 @@ local function EnsureFrame()
         M.infoFrame = S.CreateFrame("Frame", nil, host)
         M.infoFrame:EnableMouse(false)
         M.infoFrame:SetScript("OnShow", MM.UpdateInfoVisibility)
-        M.infoFrame:SetScript("OnHide", Cancel)
+        M.infoFrame:SetScript("OnHide", function()
+            Cancel()
+            if previewListener then NS.Dispatch(previewListener) end
+        end)
         M.infoEntries = {}
     end
     -- Alpha-only fades (AFK) do not fire OnShow when UIParent returns.
@@ -568,6 +521,12 @@ local function PlaceBox(box, owner, justify)
     end
 end
 
+local function StyleInfoFont(label, c, prefix, size)
+    S.SetStyledFont(label, S.ResolveFont(c[prefix .. "Font"]), size,
+        outlines[c[prefix .. "Outline"]], c[prefix .. "Rendering"],
+        c[prefix .. "Shadow"], c[prefix .. "ShadowOpacity"], c[prefix .. "ShadowDistance"])
+end
+
 local function Style(entry, key, c, classColor, boxR, boxG, boxB)
     local prefix = "info" .. key
     entry.active, entry.due, entry.lastColor, entry.dirty = true, nil, nil, true
@@ -597,21 +556,24 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         entry.useZoneColor = c.infoLocationZoneColor and not (c.infoLocationClassColor and classColor)
     end
     local size = c[prefix .. "Size"]
-    S.SetStyledFont(entry.label, S.ResolveFont(c[prefix .. "Font"]), size,
-        outlines[c[prefix .. "Outline"]], c[prefix .. "Rendering"],
-        c[prefix .. "Shadow"], c[prefix .. "ShadowOpacity"], c[prefix .. "ShadowDistance"])
-    local lines = key == "Location" and NS.MinimapStyle.LocationLines(c)
-        or key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2 or 1
+    StyleInfoFont(entry.label, c, prefix, size)
+    local lines = key == "Location" and MinimapStyle.LocationLines(c)
+        or key == "Clock" and MinimapStyle.ClockLines(c) or 1
     local height = key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or size * lines
     local width = c[prefix .. "Width"]
     local weather = NS.MinimapWeatherDisplay
     if key == "Weather" and c.infoWeatherDisplay ~= weather.TEXT then
         width = c.infoWeatherDisplay == weather.ICON and c.infoWeatherIconSize or math.max(width, c.infoWeatherIconSize + 8)
     end
-    entry.size, entry.width = key == "Weather" and height or size, width
-    entry.button:SetSize(width, height + 8)
+    entry.size, entry.width, entry.height = key == "Weather" and height or size, width, height + 8
+    entry.button:SetSize(width, entry.height)
     entry.justify = Anchor(entry.button, c[prefix .. "Anchor"], c[prefix .. "X"], c[prefix .. "Y"])
-    entry.label:SetJustifyH(entry.justify)
+    if entry.clockSecond then
+        StyleInfoFont(entry.clockSecond, c, prefix, size)
+        MinimapStyle.LayoutClock(entry, c, width, entry.justify, 1)
+    else
+        entry.label:SetJustifyH(entry.justify)
+    end
     local boxMode = c[prefix .. "Box"]
     if boxMode == BOX.BORDER or boxMode == BOX.CUSTOM then
         if not entry.box then entry.box = S.CreateTexture(entry.button, nil, "BACKGROUND") end
@@ -687,9 +649,7 @@ local function LayoutEntries(c, hideCoordinates)
             local active = eventFields[key] and eventEntries or timedEntries
             active[#active + 1] = entry
             local anchor = c[prefix .. "Anchor"]
-            local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2
-                or key == "Location" and NS.MinimapStyle.LocationLines(c) or 1
-            local height = (key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or c[prefix .. "Size"] * lines) + 8
+            local height = entry.height
             if anchor == TEXT_ANCHOR.ABOVE then above = math.max(above, c[prefix .. "Y"] + height) end
             if anchor == TEXT_ANCHOR.BELOW then below = math.max(below, height - c[prefix .. "Y"]) end
             entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == NS.MinimapCoordinatesMode.ALWAYS or MM.Revealed())
@@ -796,9 +756,11 @@ MM.OnHover(function(shown)
     if not M.active then return end
     if shown then RefreshTelemetry(true) end
     local entry = M.infoEntries and M.infoEntries.Coordinates
-    if not entry or not entry.active or M.config.infoCoordinatesMode ~= NS.MinimapCoordinatesMode.MOUSEOVER then return end
-    entry.button:SetShown(shown)
-    if shown then Rearm() end
+    if entry and entry.active and M.config.infoCoordinatesMode == NS.MinimapCoordinatesMode.MOUSEOVER then
+        entry.button:SetShown(shown)
+        if shown then Rearm() end
+    end
+    if previewListener then NS.Dispatch(previewListener) end
 end)
 
 function MM.ReleaseTexts()

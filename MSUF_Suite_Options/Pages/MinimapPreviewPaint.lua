@@ -10,6 +10,7 @@ local OUTLINES = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
 -- The choice values (Core/Catalog/Minimap.lua) and the catalog defaults that
 -- stand in for a setting a partial config lacks.
 local TEXT_ANCHOR, WEATHER, BOX = Suite.MinimapTextAnchor, Suite.MinimapWeatherDisplay, Suite.MinimapTextBox
+local MinimapStyle = Suite.MinimapStyle
 local LANDING, LANDING_ICON, ZOOM = Suite.MinimapLanding, Suite.MinimapLandingIcon, Suite.MinimapZoomButtons
 local ROTATE = Suite.MinimapRotate
 local RULES = P.catalog.minimap.rules
@@ -101,10 +102,8 @@ local function Sample(name, config)
     end
     if name == "Clock" then
         local hour, minute = GetGameTime()
-        if PublicNumber(hour) and PublicNumber(minute) then
-            return string.format("%02d:%02d", hour, minute)
-        end
-        return "12:34"
+        local time = PublicNumber(hour) and PublicNumber(minute) and string.format("%02d:%02d", hour, minute) or "12:34"
+        return MinimapStyle.ClockContent(config, time)
     end
     if name == "Location" then
         local text = Suite.MinimapStyle.LocationContent(config, GetZoneText(), GetSubZoneText(), GetMinimapZoneText())
@@ -260,7 +259,7 @@ local function OffsetPrefix(key)
     if key == "dungeon" or key == "queueStatus" then return key end
     if key == "specialization" then return "spec" end
     if key == "difficulty" then return "difficultyButton" end
-    if key == "drawer" or key == "zoomIn" or key == "zoomOut" then return key end
+    if key == "drawer" or key == "zoomIn" or key == "zoomOut" or key == "zoomGroup" then return key end
     if key == "ornament" or key:find("^ornament_") then return "style" end
     if ICON_KEYS[key] then return "button" .. key:sub(1, 1):upper() .. key:sub(2) end
 end
@@ -281,70 +280,133 @@ local function TextColor(config, name, prefix)
     return config[prefix .. "Color"] or "ffffff"
 end
 
+local function TextContent(config, name, prefix)
+    local wanted = config[prefix] == true
+    if wanted and S.MinimapInfoPreviewSource then
+        local shown, text, color, texture, invite = S.MinimapInfoPreviewSource(name)
+        if shown == true and text then return shown, text, color, texture, invite end
+        if shown == false then wanted = false end
+    end
+    return wanted
+end
+
+local function TextHeight(config, name, size)
+    if name == "Weather" then return Suite.MinimapStyle.WeatherHeight(config) end
+    if name == "Location" then return size * Suite.MinimapStyle.LocationLines(config) end
+    if name == "Clock" then return size * MinimapStyle.ClockLines(config) end
+    return size
+end
+
+local function PlaceTextDecorations(item, justify, size, width, scale, invite)
+    local box = item.box
+    local x = justify == "LEFT" and -4 or justify == "RIGHT" and 4 or 0
+    box:ClearAllPoints()
+    box:SetPoint(justify, item.button, justify, x * scale, 0)
+    box:SetWidth(math.max(size * scale, width + 8 * scale))
+    local mark = item.invite
+    if not mark then return end
+    mark:SetShown(invite == true)
+    if not invite then return end
+    mark:SetSize(size * scale, size * scale)
+    mark:ClearAllPoints()
+    if justify == "RIGHT" then
+        mark:SetPoint("RIGHT", item.button, "RIGHT", -width - 2 * scale, 0)
+    elseif justify == "LEFT" then
+        mark:SetPoint("LEFT", item.button, "LEFT", width + 2 * scale, 0)
+    else
+        mark:SetPoint("LEFT", item.button, "CENTER", width / 2 + 2 * scale, 0)
+    end
+end
+
+local function StylePreviewText(label, config, prefix, size, scale)
+    local path = Suite.ResolveFont(config[prefix .. "Font"] or "")
+    P.StylePreviewFont(label, path, math.max(1, size * scale), OUTLINES[config[prefix .. "Outline"]] or "OUTLINE",
+        config[prefix .. "Rendering"], config[prefix .. "Shadow"],
+        config[prefix .. "ShadowOpacity"], (config[prefix .. "ShadowDistance"] or 1) * scale)
+end
+
+local function LayoutTextLabels(item, config, prefix, text, justify, width, size, height, scale)
+    local label = item.label
+    StylePreviewText(label, config, prefix, size, scale)
+    if item.clockSecond then
+        StylePreviewText(item.clockSecond, config, prefix, size, scale)
+        MinimapStyle.LayoutClock(item, config, width, justify, scale)
+        MinimapStyle.SetClockText(item, text)
+        return
+    end
+    label:ClearAllPoints()
+    label:SetPoint(justify, item.button, justify)
+    label:SetSize(width, (height + 8) * scale)
+    label:SetJustifyH(justify)
+    label:SetText(text)
+end
+
 local function PaintText(ui, config, item)
     local name, prefix = item.spec[1], "info" .. item.spec[1]
-    local on = config[prefix] == true
+    local on, sample, liveColor, texture, invite = TextContent(config, name, prefix)
     local layer = name == "Difficulty" and "difficultyText" or item.spec[3]
     local shown = ui.ShowLayer(layer, on, "text")
     local button = item.button
     button:SetShown(shown)
     if not shown then return end
+    if sample == nil then
+        local _, sampleTexture
+        sample, _, sampleTexture = Sample(name, config)
+        texture = sampleTexture
+    end
     local scale = ui.art.scale
     local size = config[prefix .. "Size"] or 12
-    local path = Suite.ResolveFont(config[prefix .. "Font"] or "")
-    P.StylePreviewFont(item.label, path, math.max(8, size * scale), OUTLINES[config[prefix .. "Outline"]] or "OUTLINE",
-        config[prefix .. "Rendering"], config[prefix .. "Shadow"],
-        config[prefix .. "ShadowOpacity"], config[prefix .. "ShadowDistance"])
-    local sample, _, texture = Sample(name, config)
-    item.label:SetText(sample)
-    -- The hit area hugs the rendered text, up to the configured field width.
-    local contentHeight = name == "Weather" and Suite.MinimapStyle.WeatherHeight(config)
-        or name == "Location" and size * Suite.MinimapStyle.LocationLines(config) or size
+    local contentHeight = TextHeight(config, name, size)
     local fieldWidth = config[prefix .. "Width"] or 100
     if name == "Weather" and config.infoWeatherDisplay ~= WEATHER.TEXT then
         local iconSize = config.infoWeatherIconSize or RULES.infoWeatherIconSize.default
         fieldWidth = config.infoWeatherDisplay == WEATHER.ICON and iconSize or math.max(fieldWidth, iconSize + 8)
     end
-    local configuredWidth = math.max(24, fieldWidth * scale)
+    local configuredWidth = fieldWidth * scale
+    local justify = TextPosition(button, ui.map, config[prefix .. "Anchor"], config[prefix .. "X"] or 0,
+        config[prefix .. "Y"] or 0, scale, (config.borderSize or 0) * scale)
+    LayoutTextLabels(item, config, prefix, sample, justify, configuredWidth, size, contentHeight, scale)
     -- A font that has not loaded yet measures 0: estimate from the text.
-    local measured = item.label:GetStringWidth()
+    local measured = MinimapStyle.InfoTextWidth(item)
     if measured <= 0 then
         measured = #sample * size * scale * 0.62
     end
     if name == "Weather" and texture then
         measured = measured + (config.infoWeatherIconSize or RULES.infoWeatherIconSize.default) * scale + (sample ~= "" and 4 * scale or 0)
     end
-    local hitWidth = math.min(configuredWidth, math.max(24, measured + 8))
-    button:SetSize(hitWidth, math.max(18, (contentHeight + 8) * scale))
-    item.box:SetWidth(hitWidth)
-    if name == "Weather" then item.box:SetHeight((contentHeight + 4) * scale) end
-    local justify = TextPosition(button, ui.map, config[prefix .. "Anchor"], config[prefix .. "X"] or 0,
-        config[prefix .. "Y"] or 0, scale, (config.borderSize or 0) * scale)
-    item.label:SetJustifyH(justify)
+    local hitWidth = math.min(configuredWidth, math.max(24, measured + 8 * scale))
+    button:SetSize(name == "Weather" and configuredWidth or hitWidth, math.max(18, (contentHeight + 8) * scale))
+    item.box:SetHeight((contentHeight + 4) * scale)
     if name == "Weather" then
         if item.weatherTexture ~= texture then item.icon:SetTexture(texture) end
         item.weatherTexture, item.justify = texture, justify
         Suite.MinimapStyle.LayoutWeather(item, config, sample, scale)
-        item.box:SetWidth(math.max(contentHeight * scale, item.contentWidth + 8 * scale))
+        measured = item.contentWidth
+        local free = math.max(0, configuredWidth - measured - 8 * scale)
+        local left = justify == "LEFT" and 0 or justify == "RIGHT" and free or free / 2
+        button:SetHitRectInsets(left, free - left, 0, 0)
     end
-    local r, g, b = P.RGB(TextColor(config, name, prefix))
-    if config[prefix .. "ClassColor"] then r, g, b = PlayerClassColor(r, g, b) end
+    PlaceTextDecorations(item, justify, name == "Weather" and contentHeight or size, math.min(configuredWidth, measured), scale, invite)
+    local r, g, b = P.RGB(liveColor or TextColor(config, name, prefix))
+    if not liveColor and config[prefix .. "ClassColor"] then r, g, b = PlayerClassColor(r, g, b) end
     item.label:SetTextColor(r or 1, g or 1, b or 1)
+    if item.clockSecond then item.clockSecond:SetTextColor(r or 1, g or 1, b or 1) end
     local boxMode = config[prefix .. "Box"]
     local boxed = boxMode == BOX.BORDER or boxMode == BOX.CUSTOM
     local br, bg, bb = P.RGB(config.borderColor)
+    if config.borderClassColor then br, bg, bb = PlayerClassColor(br, bg, bb) end
     if boxMode == BOX.CUSTOM then br, bg, bb = P.RGB(config[prefix .. "BoxColor"]) end
-    Tint(item.box, br, bg, bb, 0.85)
+    Tint(item.box, br, bg, bb, boxed and 1 or 0.85)
     item.box:SetShown(boxed or ui.body._selectedHandle == button)
     button:SetAlpha(on and 1 or 0.38)
 end
 
 -- Owner visibility remains separate from the preview layer filters, since
 -- hidden samples must not move the live row's buttons.
-local function IconWanted(config, spec, drawer)
+local function IconWanted(config, spec, drawer, drawerShown)
     local key, nativeKey = spec[1], spec[8] or spec[2]
     if key == "drawer" then
-        return config.collectButtons and drawer ~= false and not Suite.MinimapButtonCollector()
+        return config.collectButtons and drawer ~= false and drawerShown ~= false and not Suite.MinimapButtonCollector()
     end
     if key == "specialization" then return config.specButton and (config.specShowSpec or config.specShowLoot) end
     if key == "dungeon" then return config.dungeonButton end
@@ -359,8 +421,8 @@ local function IconWanted(config, spec, drawer)
     if S.MinimapElementAvailable and not S.MinimapElementAvailable(nativeKey) then return false end
     local frame = Native.Frame(nativeKey)
     if S.MinimapElementPreviewShown then
-        local shown = S.MinimapElementPreviewShown(nativeKey)
-        if shown ~= nil then return shown end
+        local shown, packed = S.MinimapElementPreviewShown(nativeKey)
+        if shown ~= nil then return shown, packed end
     end
     if frame then return RegionShown(frame) end
     return spec[4] ~= false and not Native.Ready()
@@ -587,23 +649,24 @@ end
 
 local function PaintIcons(ui, config)
     local size = (config.elementSize or RULES.elementSize.default) * ui.art.scale
-    local drawer, single
-    if S.MinimapDrawerPreviewSource then drawer, single = S.MinimapDrawerPreviewSource() end
+    local drawer, single, drawerShown
+    if S.MinimapDrawerPreviewSource then drawer, single, drawerShown = S.MinimapDrawerPreviewSource() end
     local count, drawerItem = 0, nil
     for _, item in ipairs(ui.iconItems) do
         local key, spec = item.spec[1], item.spec
-        local wanted = IconWanted(config, spec, drawer)
+        local wanted, packed = IconWanted(config, spec, drawer, drawerShown)
+        local occupiesRow = (wanted or packed) and RowIcon(spec)
         local layer = key == "drawer" and "addons" or key
         local group = spec[5] ~= layer and spec[5] or nil
         local shown = ui.ShowLayer(layer, wanted, group)
         item.button:SetShown(shown)
         item.button:SetAlpha(wanted and 1 or 0.38)
-        item.sampleRow = shown and not wanted and RowIcon(spec)
+        item.sampleRow = shown and not occupiesRow and RowIcon(spec)
         if key == "drawer" then
             if shown then drawerItem = item end
         elseif not item.sampleRow then
             if shown then PaintIcon(ui, config, item, size, count) end
-            if wanted and RowIcon(spec) then count = count + 1 end
+            if occupiesRow then count = count + 1 end
         end
     end
     if drawerItem then
@@ -635,33 +698,77 @@ local function PaintOrnament(ui, config)
     end
 end
 
-local function PaintZoom(ui, config, button, frame, index)
+local function PaintZoom(ui, button, frame, x, y, width, height)
     local scale = ui.art.scale
-    local width, height = NativeSize(frame)
-    button:SetSize((width or 17) * scale, (height or (index == 1 and 17 or 9)) * scale)
-    local copied = width and CopyNativeTexture(button.previewIcon, Native.ButtonTexture(frame), frame, scale)
+    local rawWidth = frame and frame:GetWidth()
+    local artScale = PublicNumber(rawWidth) and rawWidth > 0 and scale * width / rawWidth or scale
+    button:SetSize(width * scale, height * scale)
+    local copied = frame and CopyNativeTexture(button.previewIcon, Native.ButtonTexture(frame), frame, artScale)
     button.previewIcon:SetShown(copied == true)
-    button.previewBackdrop:SetShown(not copied)
-    button.previewSign:SetShown(not copied)
-    local prefix = index == 1 and "zoomIn" or "zoomOut"
+    local glyph = rawget(button, "previewZoomOutGlyph")
+    if not glyph then
+        button.previewBackdrop:SetShown(not copied)
+        button.previewSign:SetShown(not copied)
+    else
+        local enabled = not frame or frame:IsEnabled()
+        MinimapStyle.PaintZoomOutGlyph(glyph, artScale, Public(enabled) and enabled == true)
+    end
+    button.zoomAnchorX, button.zoomAnchorY = x * scale, y * scale
+end
+
+local function PaintZoomGroup(ui, ix, iy, ox, oy, iw, ih, ow, oh)
+    local scale = ui.art.scale
+    local cx, cy = (ix + ox) / 2 - (iw + ow) / 4, (iy + oy) / 2 + (ih + oh) / 4
+    local horizontal = math.abs(ix - iw / 2 - ox + ow / 2) > math.abs(iy + ih / 2 - oy - oh / 2)
+    local x = horizontal and cx * scale or math.min(ix - iw, ox - ow) * scale - 10
+    local y = horizontal and math.max(iy + ih, oy + oh) * scale + 10 or cy * scale
+    ui.zoomGroup.zoomAnchorX, ui.zoomGroup.zoomAnchorY = x, y
+end
+
+local function PlaceZoomTarget(button, map, anchor, x, y)
     button:ClearAllPoints()
-    button:SetPoint("BOTTOMRIGHT", ui.map, "BOTTOMRIGHT", (-2 + (config[prefix .. "X"] or 0)) * scale,
-        ((index == 1 and 27 or 2) + (config[prefix .. "Y"] or 0)) * scale)
+    button:SetPoint(anchor, map, "BOTTOMRIGHT", button.zoomAnchorX + x, button.zoomAnchorY + y)
+end
+
+function Data.MoveZoomGroup(ui, dx, dy)
+    local x, y = dx * ui.art.scale, dy * ui.art.scale
+    PlaceZoomTarget(ui.zoomItems[1], ui.map, "BOTTOMRIGHT", x, y)
+    PlaceZoomTarget(ui.zoomItems[2], ui.map, "BOTTOMRIGHT", x, y)
+    PlaceZoomTarget(ui.zoomGroup, ui.map, "CENTER", x, y)
+end
+
+function Data.StyleZoomGroupGrip(button)
+    local backdrop = button:CreateTexture(nil, "BACKGROUND")
+    backdrop:SetAllPoints(button)
+    Tint(backdrop, 0.035, 0.05, 0.065, 0.95)
+    for i = 1, 6 do
+        local dot = button:CreateTexture(nil, "ARTWORK")
+        dot:SetSize(2, 2)
+        dot:SetPoint("CENTER", button, "CENTER", i <= 3 and -2 or 2, ((i - 1) % 3 - 1) * 4)
+        Tint(dot, 0.75, 0.84, 0.94, 1)
+    end
 end
 
 local function PaintMapControls(ui, config)
     local mode = config.zoomButtons or RULES.zoomButtons.default
     local zoomIn, zoomOut = Native.ZoomButtons()
-    local zoom = mode ~= ZOOM.HIDE and (zoomIn and zoomOut or not Native.Ready()) and true or false
+    local zoom
+    if S.MinimapZoomPreviewShown then zoom = S.MinimapZoomPreviewShown() end
+    if zoom == nil then zoom = mode == ZOOM.ALWAYS and (zoomIn and zoomOut or not Native.Ready()) and true or false end
     local shown = ui.ShowLayer("zoom", zoom, "blizzard")
-    for index, button in ipairs(ui.zoomItems) do
+    for _, button in ipairs(ui.zoomItems) do
         button:SetShown(shown)
-        if shown then
-            button:SetAlpha(zoom and 1 or 0.38)
-            local frame = zoomOut
-            if index == 1 then frame = zoomIn end
-            PaintZoom(ui, config, button, frame, index)
-        end
+        button:SetAlpha(zoom and 1 or 0.38)
+    end
+    ui.zoomGroup:SetShown(shown)
+    if shown then
+        local ix, iy, ox, oy, iw, ih, ow, oh = Native.ZoomOffsets(config, zoomIn, zoomOut)
+        ix, iy = Native.ZoomPosition(config, true, ix, iy)
+        ox, oy = Native.ZoomPosition(config, false, ox, oy)
+        PaintZoom(ui, ui.zoomItems[1], zoomIn, ix, iy, iw, ih)
+        PaintZoom(ui, ui.zoomItems[2], zoomOut, ox, oy, ow, oh)
+        PaintZoomGroup(ui, ix, iy, ox, oy, iw, ih, ow, oh)
+        Data.MoveZoomGroup(ui, 0, 0)
     end
     local rotating = config.rotate == ROTATE.ROTATE
     if config.rotate == ROTATE.BLIZZARD then
@@ -685,4 +792,4 @@ end
 Data.ORNAMENT_EDGES = ORNAMENT_EDGES
 Data.Clamp, Data.Tint, Data.SetIcon = Clamp, Tint, SetIcon
 Data.OffsetPrefix, Data.OffsetKeys = OffsetPrefix, OffsetKeys
-Data.PaintElements = PaintElements
+Data.PaintElements, Data.PaintText = PaintElements, PaintText

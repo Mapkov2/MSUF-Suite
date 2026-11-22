@@ -7,7 +7,7 @@ local UPDATE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "WEEKL
     "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_SPECIALIZATION_CHANGED", "SELECTED_LOADOUT_CHANGED", "PLAYER_LOOT_SPEC_UPDATED", "BAG_UPDATE_DELAYED",
     "EQUIPMENT_SETS_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_MONEY", "PLAYER_LEVEL_UP" }
 local WEEK_EVENTS = { WEEKLY_REWARDS_UPDATE = true, UPDATE_INSTANCE_INFO = true, CHALLENGE_MODE_COMPLETED = true,
-    CHALLENGE_MODE_MAPS_UPDATE = true, PLAYER_ENTERING_WORLD = true }
+    CHALLENGE_MODE_MAPS_UPDATE = true, PLAYER_ENTERING_WORLD = true, UNIT_NAME_UPDATE = true }
 -- Level, item level, gold and zone refresh alone; gold and level change
 -- nothing else the planner tracks.
 local VITAL_EVENTS = { PLAYER_MONEY = true, PLAYER_LEVEL_UP = true, PLAYER_EQUIPMENT_CHANGED = true, PLAYER_AVG_ITEM_LEVEL_UPDATE = true,
@@ -28,7 +28,8 @@ local function Refresh(self)
     if not captured and not vitals and not key and not keyOnly then Plan.Changed() end
 end
 
-local function Queue(self, event)
+local function Queue(self, event, unit)
+    if event == "UNIT_NAME_UPDATE" and S.PublicText(unit) ~= "player" then return end
     if event == "PLAYER_ENTERING_WORLD" then self.leaving = nil end
     if not self.active or self.leaving then return end
     local ready = READY_EVENTS[event]
@@ -75,6 +76,7 @@ local function Arm(self)
             self.context:Event(event, Queue)
         end
     end
+    if NS.Client.isForever then self.context:Event("UNIT_NAME_UPDATE", Queue) end
     self.context:Event("READY_CHECK", Ready)
 end
 
@@ -84,6 +86,7 @@ local function CombatStart(self)
     for _, event in ipairs(UPDATE_EVENTS) do
         if event ~= "PLAYER_ENTERING_WORLD" and not READY_EVENTS[event] then self.context:RemoveEvent(event) end
     end
+    if NS.Client.isForever then self.context:RemoveEvent("UNIT_NAME_UPDATE") end
     self.context:RemoveEvent("READY_CHECK")
     Plan.Board.Close(self)
     S.ToolListWindow.Close(self)
