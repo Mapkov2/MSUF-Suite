@@ -172,6 +172,10 @@ local function Hide(view)
     if view.header.frame:IsShown() then view.header.frame:Hide() end
     if view.outline.frame:IsShown() then view.outline.frame:Hide() end
     ReleaseBacking(view)
+    if view.secretTitle then
+        view.header.title:SetText("")
+        view.secretTitle = nil
+    end
 end
 
 local EMPTY = {}
@@ -180,18 +184,20 @@ local function OwnerItemLink(tip)
     if Safety.Public(link) and type(link) == "string" and link ~= "" then return link end
 end
 
-local function PrimaryData(tip, allowHidden, info)
+local function PrimaryData(view, allowHidden, info)
+    local tip = view.tip
     if not tip or Safety.IsForbidden(tip) or (not allowHidden and Safety.Read(tip, "IsShown") ~= true) then return end
-    if info == nil then info = Safety.Call(tip, "GetPrimaryTooltipData") end
-    if not Safety.Public(info) then return end
+    if not allowHidden then info = Safety.Call(tip, "GetPrimaryTooltipData") end
+    if not Safety.Public(info) then return EMPTY, view.nativeKind end
     if info == nil then
         local link = OwnerItemLink(tip)
         if link then return EMPTY, ITEM, link end
         return
     end
-    if type(info) ~= "table" or not canaccesstable(info) then return end
+    if type(info) ~= "table" or not canaccesstable(info) then return EMPTY, view.nativeKind end
     local kind = info.type
-    if Safety.Public(kind) then return info, kind end
+    if Safety.Public(kind) and kind ~= nil then return info, kind end
+    return EMPTY, view.nativeKind
 end
 
 local function PositiveNumber(value)
@@ -246,6 +252,7 @@ end
 local sourceColor = {}
 local function ReadData(kind, key, text)
     if kind == ITEM then
+        if not key then return text end
         local icon, itemType, level, quality = Card.ReadItem(key)
         return text, icon, itemType, level, quality
     elseif spellLabels[kind] then
@@ -370,21 +377,18 @@ end
 
 local function Paint(view, allowHidden, settled, data)
     local tip = view.tip
-    local info, kind, link = PrimaryData(tip, allowHidden, data)
+    local info, kind, link = PrimaryData(view, allowHidden, data)
     if not kind or (view.aurasOnly and kind ~= AURA) or not appliedStyle[spellLabels[kind] and SPELL or kind] then
         Hide(view)
         return
     end
     local title = _G[view.titleName]
     local text = Safety.Call(title, "GetText")
-    if not Safety.Public(text) then
-        if kind == AURA or nativeNames[kind] then Present(view, title, nil, nil, false) else Hide(view) end
-        return
-    end
-    if type(text) ~= "string" or text == "" then Hide(view) return end
-    local key = DataKey(tip, info, kind, link)
-    if key == nil then Hide(view) return end
-    local same = view.kind == kind and view.key == key and view.text == text
+    local public = Safety.Public(text)
+    if public and (type(text) ~= "string" or text == "") then Hide(view) return end
+    local key = DataKey(tip, info, kind, link) or false
+    local publicTitle = public and text or nil
+    local same = view.kind == kind and view.key == key and view.text == publicTitle
     local badge, caption
     if view.comparison then badge, caption = Caption.Read(tip) end
     local width, offset, ratio = HeaderRoom(tip, title, badge and Caption.Height or 0)
@@ -407,9 +411,13 @@ local function Paint(view, allowHidden, settled, data)
     end
     if changed then
         local name, icon, label, level, quality = ReadData(kind, key, text)
-        view.kind, view.key, view.text = kind, key, text
+        view.kind, view.key, view.text = kind, key, publicTitle
         Card.Draw(view.header, name, icon, label, level, quality)
+    elseif not public and (view.titleDirty or not view.secretTitle) then
+        -- SetText accepts secret strings. Resend only for a new native build.
+        view.header.title:SetText(text)
     end
+    view.secretTitle, view.titleDirty = not public, false
     if badge == false or (offset and badge and not Caption.Paint(view, badge, caption, changed)) then offset = nil end
     if not badge then Caption.Release(view) end
     Present(view, title, width, offset, changed, ratio)
@@ -467,12 +475,12 @@ function Card.HasVisibleHeader(tooltip)
 end
 
 local function Cleared(view)
-    view.ready, view.retryLayout = false, false
+    view.ready, view.retryLayout, view.nativeKind = false, false, nil
     Hide(view)
 end
 
 local function NativeCleared(view)
-    view.ready, view.retryLayout = false, false
+    view.ready, view.retryLayout, view.nativeKind = false, false, nil
     -- ClearLines also runs during in-place rebuilds. A replacement title can
     -- take over in the same native call without dropping the visible art.
     if active and Safety.Read(view.tip, "IsShown") == true
@@ -522,24 +530,40 @@ local function ComparisonView(tip, data)
     if type(name) == "string" then return AddView(tip, name .. "TextLeft1", nil, true) end
 end
 
-local function NativePostCall(tooltip, data)
+local function IsPrimaryBuild(tooltip, data)
+    local primary = Safety.Call(tooltip, "GetPrimaryTooltipData")
+    if Safety.Public(primary) and Safety.Public(data) then return data ~= nil and rawequal(primary, data) end
+    -- When the contents are restricted, the public processing wrapper still
+    -- distinguishes a primary build from appended spell or item details.
+    local processing = Safety.Read(tooltip, "GetProcessingTooltipInfo")
+    return type(processing) == "table" and rawequal(processing, Safety.Read(tooltip, "GetPrimaryTooltipInfo"))
+end
+
+local function NativePostCall(tooltip, data, kind)
     if not active or not Safety.Public(tooltip) then return end
     local view = views[tooltip]
-    if not Safety.Public(data) then
-        if view and not Safety.Read(tooltip, "GetPrimaryTooltipData") then Cleared(view) end
-        return
-    end
     if not view then
+        if not Safety.Public(data) then return end
         view = ComparisonView(tooltip, data)
         if not view then return end
-    elseif not rawequal(Safety.Read(tooltip, "GetPrimaryTooltipData"), data) then return end
-    view.ready = true
+    elseif not IsPrimaryBuild(tooltip, data) then return end
+    view.ready, view.nativeKind, view.titleDirty = true, kind, true
     RetryIfLayoutMissing(view, Paint(view, true, nil, data))
     if NS.TooltipChrome and view.header.frame:IsShown() then NS.TooltipChrome.SettleBackdrop(tooltip) end
 end
 
 local function PaintAll()
-    for _, view in pairs(views) do PaintNow(view) end
+    for _, view in pairs(views) do
+        view.titleDirty = true
+        PaintNow(view)
+    end
+end
+
+local function RegisterNative(kind)
+    TooltipDataProcessor.AddTooltipPostCall(kind, function(tooltip, data)
+        if kind == UNIT and Vitals and Vitals.Enabled then Safety.Dispatch(Vitals.Native, tooltip, data) end
+        NativePostCall(tooltip, data, kind)
+    end)
 end
 
 local function Install()
@@ -547,16 +571,9 @@ local function Install()
     if not GameTooltip then return false end
     AddView(GameTooltip, "GameTooltipTextLeft1")
     AddView(BuffFrameTooltip, "BuffFrameTooltipTextLeft1", true)
-    TooltipDataProcessor.AddTooltipPostCall(ITEM, NativePostCall)
-    for kind in pairs(nativeNames) do
-        if kind == UNIT and Vitals then
-            TooltipDataProcessor.AddTooltipPostCall(kind, function(tooltip, data)
-                if Vitals.Enabled then Safety.Dispatch(Vitals.Native, tooltip, data) end
-                NativePostCall(tooltip, data)
-            end)
-        else TooltipDataProcessor.AddTooltipPostCall(kind, NativePostCall) end
-    end
-    for kind in pairs(spellLabels) do TooltipDataProcessor.AddTooltipPostCall(kind, NativePostCall) end
+    RegisterNative(ITEM)
+    for kind in pairs(nativeNames) do RegisterNative(kind) end
+    for kind in pairs(spellLabels) do RegisterNative(kind) end
     if Safety.HasMethod(TooltipComparisonManager, "AnchorShoppingTooltips") then
         hooksecurefunc(TooltipComparisonManager, "AnchorShoppingTooltips", OnComparisonsAnchored)
     end
