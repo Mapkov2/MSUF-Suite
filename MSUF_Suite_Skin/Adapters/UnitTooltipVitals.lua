@@ -270,6 +270,8 @@ local function Watch(view, unit)
         if config.mode == "show" then
             frame:RegisterUnitEvent("UNIT_HEALTH", unit)
             frame:RegisterUnitEvent("UNIT_MAXHEALTH", unit)
+            frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+            frame:RegisterEvent("PLAYER_REGEN_ENABLED")
         end
         if config.power then
             frame:RegisterUnitEvent("UNIT_POWER_UPDATE", unit)
@@ -286,7 +288,12 @@ local function Bind(parent, native)
     local view = Create(parent)
     view.native = native
     view.event = CreateFrame("Frame")
-    view.event:SetScript("OnEvent", function(_, event) Update(view, event) end)
+    view.event:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+            event = "UNIT_HEALTH"
+        end
+        Update(view, event)
+    end)
     parent:HookScript("OnHide", function() Stop(view) end)
     return view
 end
@@ -309,6 +316,9 @@ function Vitals.Native(tooltip, data)
         or Safety.IsForbidden(tooltip) or not Readable(data) then return end
     if not rawequal(Safety.Read(tooltip, "GetPrimaryTooltipData"), data) then return end
     if not Safety.Public(data.type) or data.type ~= UNIT then return end
+    if config.mode == "hide" and not config.power and (nativeView.unit or nativeView.pending) then
+        Stop(nativeView)
+    end
     nativeView.unitShown = true
     if config.mode == "hide" then FadeNative(nativeView, true) end
     if config.mode == "show" or config.power then
@@ -375,7 +385,7 @@ function Vitals.Refresh()
     local host = suite and suite.HostBridge
     local watchPanel = active and (mode == "show" or power)
     if host then
-        local ownsHealth = active and mode ~= "native"
+        local ownsHealth = active and nativeView ~= nil and mode ~= "native"
         if ownsHealth and not host.TooltipOwnsHealth and host.ReleaseLegacyTooltipHealth then
             host.ReleaseLegacyTooltipHealth()
         end

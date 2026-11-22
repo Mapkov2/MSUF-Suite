@@ -223,7 +223,9 @@ end
 local function Movable(preview, handle)
     if handle and handle == preview.anchorButton then return preview.anchorMode ~= nil and handle:IsVisible() end
     if handle and handle.spec[1] == "healthText" then return handle:IsVisible() end
-    if handle and handle.spec[1] == "health" then return handle:IsVisible() and preview.card.Setting("unitHealth") == "show" end
+    if handle and handle.spec[1] == "health" then
+        return handle:IsVisible() and not preview.restricted and preview.card.Setting("unitHealth") == "show"
+    end
     if handle and handle.spec[1] == "power" then return handle:IsVisible() and preview.card.Setting("unitPower") end
     return handle and handle.spec[4] and handle:IsVisible() and preview.header.frame:IsShown()
         and (handle.spec[1] ~= "icon" or SAMPLES[preview.selected].id ~= "loot")

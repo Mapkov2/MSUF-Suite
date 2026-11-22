@@ -593,8 +593,9 @@ end
 -- values sent directly to a native FontString. Style those regions in place.
 local function PaintCorePanel()
     if not corePanel then return end
-    if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer(PaintCorePanel, PaintCorePanel)
+    local locked = NS.IsCombatLocked()
+    if not Safety.CanCreateRegions(corePanel, not locked) then
+        if locked then NS.CombatGate.RunOrDefer(PaintCorePanel, PaintCorePanel) end
         return
     end
     if not active or not appliedStyle[UNIT] then
