@@ -294,6 +294,13 @@ function HostBridge.NPCNameColor(unitOrKind)
     return colors.GetNPCColor(kind)
 end
 
+-- The host getter also supplies defaults. An explicitly saved green must
+-- still win when Blizzard gives this particular friendly NPC a different bar.
+function HostBridge.HasFriendlyNPCColor()
+    local db = HostBridge.CurrentFrameProfile()
+    return db and db.npcColors and db.npcColors.friendly ~= nil
+end
+
 function HostBridge.HasNameplateFontsMenu(M)
     local formatter = HostBridge.NameFormatter()
     local bridge = M.SearchBridge

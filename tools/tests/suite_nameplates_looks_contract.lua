@@ -170,6 +170,11 @@ GetDifficultyColor = function(value) return DIFFICULTY[value] end
 UnitLevel = function() return levelValue end
 UnitEffectiveLevel = UnitLevel
 UnitIsUnit = function() return false end
+UnitIsPlayer = function(unit)
+    local plate = C_NamePlate.GetNamePlateForUnit(unit)
+    return plate and plate.UnitFrame.isPlayer == true or false
+end
+UnitReaction = function() return nil end
 UnitClassification = function() return "normal" end
 Enum = { SecondsFormatterInterval = { Seconds = 1 }, SecondsFormatterAbbreviation = { OneLetter = 2 },
     DurationTextBindingProperty = { ElapsedDuration = 2, TotalDuration = 4 } }
@@ -481,6 +486,14 @@ do
     lastReads = reads
     clock.Advance(.1)
     assert(reads == lastReads, "released plate retained the pointer scan")
+    title:SetAlpha(.8)
+    private.Mouseover.Apply(ufF, healthF, "friendly", true)
+    assert(title:GetAlpha() == 0)
+    clock.Advance(.1)
+    assert(title:GetAlpha() == .8, "hover did not restore the NPC name's native opacity")
+    assert(private.Mouseover.ReleaseName(ufF, title) and title:GetAlpha() == .8)
+    title:SetAlpha(1)
+    lastReads = reads
     c.friendlyNameMouseover, c.friendlyNamesOnly = false, 1
     module:Refresh()
     clock.Advance(.1)

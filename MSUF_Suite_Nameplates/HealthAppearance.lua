@@ -22,21 +22,26 @@ local function PaintMarker(texture, health, kind, enabled, size, x, y, color, an
     ShowVisual(texture, true)
 end
 
-local function PaintFill(health, visual, prefix)
-    local role = prefix == "enemy" and M.config.enemyRoleColors and M.roles[health]
-    if role and M.config[RoleKey[role].enabled] == false then role = nil end
-    local fillTexture = health:GetStatusBarTexture()
-    if not role or not Safe(fillTexture) then
-        return ShowVisual(visual.fill, false)
+local function RoleFillColor(health, prefix)
+    local c = M.config
+    local role = prefix == "enemy" and c.enemyRoleColors and M.roles[health]
+    local keys = role and RoleKey[role]
+    if not keys or c[keys.enabled] == false then return end
+    if role == "Quest" and c.questReactionColors then
+        return c[M.facts[health].questNeutral and "questNeutralColor" or "questHostileColor"]
     end
+    return c[keys.color]
+end
+
+local function PaintFill(health, visual, prefix)
+    local hex = RoleFillColor(health, prefix)
+    if not hex then return ShowVisual(visual.fill, false) end
+    local fillTexture = health:GetStatusBarTexture()
+    if not Safe(fillTexture) then return ShowVisual(visual.fill, false) end
     if visual.fillTarget ~= fillTexture then
         visual.fill:ClearAllPoints()
         visual.fill:SetAllPoints(fillTexture)
         visual.fillTarget = fillTexture
-    end
-    local hex = M.config[RoleKey[role].color]
-    if role == "Quest" and M.config.questReactionColors then
-        hex = M.config[M.facts[health].questNeutral and "questNeutralColor" or "questHostileColor"]
     end
     local path = visual.focusFill or Textures.healthFill
     if visual.fillColor ~= hex or visual.fillPath ~= path then Textures.TintRole(visual, hex, path) end
@@ -105,11 +110,11 @@ end
 local function PaintFonts(uf, health, cast, prefix)
     local nameStyle = Text.styles[prefix]
     Text.Apply(uf.name, nameStyle, nameStyle.size)
-    Text.ApplyHealth(health, nameStyle, uf.showOnlyName)
+    Text.ApplyHealth(health, nameStyle, private.HealthNameOnly(uf))
     if cast then Text.ApplyCast(cast, Text.styles[Key[prefix].Cast]) end
 end
 
-private.HealthAppearance = {}
+private.HealthAppearance = { RoleFillColor = RoleFillColor }
 function private.HealthAppearance.RestoreFonts(uf, health, cast)
     Text.Restore(uf.name)
     Text.RestoreHealth(health)

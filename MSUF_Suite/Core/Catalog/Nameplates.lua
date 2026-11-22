@@ -113,7 +113,8 @@ end
 local generalRules = {
     B.Bool("targetScaleEnabled", "Enlarge current target", false),
     B.Number("targetScalePercent", "Current target size (%)", 120, 100, 160, 5),
-    B.Choice("look", "Look", 4, { "Jundies", "Blizzard", "Custom", "Mapko" }),
+    B.Tooltip(B.Choice("look", "Look", 4, { "Jundies", "Blizzard", "Custom", "Mapko" }),
+        "The selected look applies to all nameplate types."),
     B.Choice("barGeometry", "Bar dimensions", 1, { "Client default", "Same on Retail and Forever" }),
     B.Bool("hideHealthBarBorders", "Hide health bar borders", false),
     B.Bool("enemy", "Skin enemy nameplates", true),

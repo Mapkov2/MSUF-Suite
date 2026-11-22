@@ -71,6 +71,7 @@ local private = {
     Selection = { RepaintBackground = function() end },
     Layout = { Observe = function() observed = observed + 1 end },
     PlatePrefix = function(uf) return uf.isFriend and "friendly" or "enemy" end,
+    HealthNameOnly = function(uf) return uf.showOnlyName end,
 }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeBars.lua"))("Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("Suite", NS)

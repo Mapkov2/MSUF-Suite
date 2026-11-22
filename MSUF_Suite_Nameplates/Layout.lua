@@ -233,7 +233,7 @@ end
 
 local function ApplyNameAnchor(state, uf, plan)
     local anchor, label, owner = plan.nameAnchor, uf.name, uf.HealthBarsContainer.healthBar
-    if not anchor or uf.showOnlyName or not NameAnchorWritable(label) or not Accessible(owner) then return end
+    if not anchor or private.HealthNameOnly(uf) or not NameAnchorWritable(label) or not Accessible(owner) then return end
     local points, justify = {}, label:GetJustifyH()
     if not NS.Public(justify) then return end
     local count = label:GetNumPoints()
@@ -251,30 +251,35 @@ local function ApplyNameAnchor(state, uf, plan)
     return true
 end
 
-local function CenterName(state, uf, plan, config, setup, kind, baseHeight, badgeShown)
-    local names = private.FriendlyNames
-    local active = names and names.NameOnlyScope and names.NameOnlyScope(uf)
-    local scope = active or X.OpacityScope(kind)
-    if not scope or not config[Key[scope].CenterName] or not (active or uf.showOnlyName or X.CustomNameOnly(config, scope)) then return end
+local function PlaceNativeName(state, uf, plan, setup, baseHeight, badgeShown, center, nativeReset)
     if AuraWritable(uf.name) then
-        local size = state.healthSize
-        local height = size and size[4] + size[2] or baseHeight
-        Offset(state, uf.name, 0, 0, true)
-        state.nameAnchor = Geometry.CenterName(uf, setup, height, plan.Name[2], badgeShown)
-        if state.nameAnchor then return true end
+        local anchor
+        if center then
+            local size = not nativeReset and state.healthSize
+            local height = size and size[4] + size[2] or baseHeight
+            local geometry = not nativeReset and state.geometry
+            anchor = Geometry.CenterName(uf, setup, height, plan.Name[2], badgeShown, geometry)
+        else
+            anchor = Geometry.FitNameOnly(uf, setup, plan.Name[1], plan.Name[2], badgeShown, plan.nameAnchor)
+        end
+        if anchor then
+            Offset(state, uf.name, 0, 0, true)
+            anchor.generation = generation
+            state.nameAnchor = anchor
+            return true
+        end
     end
     Defer(uf)
     return nil, true
 end
 
-local function AnchorName(state, uf, plan, config, setup, kind, height, badgeShown)
-    local anchored, pending
-    if plan.centerName then anchored, pending = CenterName(state, uf, plan, config, setup, kind, height, badgeShown) end
-    if not anchored and plan.nameAnchor then
+local function AnchorName(state, uf, plan, center, setup, height, badgeShown)
+    if center or plan.fitName and private.FriendlyNames.IsNameOnly(uf) then
+        return PlaceNativeName(state, uf, plan, setup, height, badgeShown, center)
+    elseif plan.nameAnchor then
         Offset(state, uf.name, 0, 0, true)
-        anchored = ApplyNameAnchor(state, uf, plan)
+        return ApplyNameAnchor(state, uf, plan)
     end
-    return anchored, pending
 end
 
 -- The cold-layout handoff. A pass that may write the cast's geometry (its
@@ -365,13 +370,13 @@ local function OnAnchors(uf)
         return
     end
     if active then
-        local friend = uf.isFriend
-        if NS.Public(friend) then
+        local prefix = private.PlatePrefix(uf)
+        if prefix then
             -- Blizzard can rebuild a recycled frame several times during SetUnit.
             -- OnAdded paints the settled frame once, after native setup.
             local unit = uf.unit
             if NS.Public(unit) and type(unit) == "string" and module.activeUnits[unit] == uf then
-                Layout.Reapply(uf, friend and "friendly" or "enemy", module.config)
+                Layout.Reapply(uf, prefix, module.config)
             end
         elseif not locked then
             return
@@ -451,7 +456,8 @@ end
 local function LevelOffsets(state, uf, prefix, plan, setup, config, force)
     local level = plan.Level
     local classic = NS.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
-    local namesOnly = NS.Public(uf.showOnlyName) and uf.showOnlyName == true
+    local namesOnly = private.HealthNameOnly(uf)
+    namesOnly = NS.Public(namesOnly) and namesOnly == true
     local badgeShown = Geometry.LevelBadgeShown(uf, uf.unit)
     local mode = NS.NameplateStyle.LevelMode(NS.Client.isForever, classic, true,
         config[Key[prefix].LevelEnabled], config.levelAppearance, badgeShown, namesOnly)
@@ -493,12 +499,25 @@ local function NameLink(state, uf, plan, setup, badgeShown)
     if point then Link(state, uf.name, point, health.Text, relative, -2, 0, value[1], value[2]) end
 end
 
-local function CombatWritable(region)
-    if not NS.Public(region) or not Accessible(region) then return false end
-    local accessible = region:CanBeAccessedInContext()
-    if not NS.Public(accessible) or accessible ~= true then return false end
-    local protected = region:IsProtected()
-    return NS.Public(protected) and protected == false
+local CombatWritable = Geometry.CombatWritable
+
+local function CombatCenter(state, uf, plan, config)
+    if not NS.Public(uf.unit) or not uf.unit or module.activeUnits[uf.unit] ~= uf then return state end
+    local anchor = state and state.nameAnchor
+    local center = plan.centerName and Geometry.CenterEnabled(private.UnitKinds[uf] or X.UnitKind(uf, uf.unit), config)
+    local wanted = center or plan.fitName and private.FriendlyNames.IsNameOnly(uf)
+    if wanted and anchor and anchor.generation == generation and (anchor.centered == true) == (center == true)
+        or not wanted and not (anchor and anchor.native) then return state end
+    if not CombatWritable(uf) or not CombatWritable(uf.name) or not NS.Public(uf.showOnlyName) then return state end
+    if anchor and not RestoreNameAnchor(state, uf) then return state end
+    if wanted then
+        state = state or { offsets = {}, links = {} }
+        states[uf] = state
+        local setup = NamePlateSetupOptions
+        PlaceNativeName(state, uf, plan, setup, setup.healthBarHeight, Geometry.LevelBadgeShown(uf, uf.unit), center, state.nativeReset)
+        Layout.Observe(uf)
+    end
+    return state
 end
 
 -- Native acquisition/rebuild can happen during lockdown. Place the ordinary
@@ -508,7 +527,7 @@ local function ApplyCombatHealthText(state, uf, prefix, plan, config)
     local x, y = plan.HealthText[1], plan.HealthText[2]
     if x == 0 and y == 0 or state and (state.healthTextApplied or state.header) then return end
     if not CombatWritable(uf) then return end
-    local namesOnly, setup = uf.showOnlyName, NamePlateSetupOptions
+    local namesOnly, setup = private.HealthNameOnly(uf), NamePlateSetupOptions
     if not NS.Public(namesOnly) or namesOnly ~= false or not NS.Public(setup.unitNameAnchorStyle) then return end
     if prefix == "enemy" and NS.NameplateStyle.MirrorHeader(config.enemyMirrorHeader,
         config.enemyTextMode, setup.unitNameAnchorStyle, namesOnly) then return end
@@ -579,7 +598,8 @@ end
 local function DebuffPaddingAnchor(state, uf, plan, setup)
     local auras, name, anchor = plan.Auras, plan.Name, setup.unitNameAnchorStyle
     local debuffs = uf.AurasFrame and uf.AurasFrame.DebuffListFrame
-    local debuffX = auras[1] - (anchor ~= 1 and name[1] or 0)
+    local centered = state.nameAnchor and state.nameAnchor.centered
+    local debuffX = auras[1] - (anchor ~= 1 and not centered and name[1] or 0)
     local debuffY = auras[2] - (anchor ~= 1 and name[2] or 0)
     if not debuffs or (debuffX == 0 and debuffY == 0) then return end
     local padding = GetCVarNumberOrDefault(NamePlateConstants.DEBUFF_PADDING_CVAR)
@@ -595,14 +615,15 @@ end
 local function ElementOffsets(state, uf, plan, force, anchored)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local name, value, raid = plan.Name, plan.HealthText, plan.RaidIcon
-    local namesOnly = uf.showOnlyName == true
+    local namesOnly = private.HealthNameOnly(uf) == true
     Offset(state, uf.HealthBarsContainer, plan.Health[1], plan.Health[2], force)
     if not anchored then Offset(state, uf.name, name[1], name[2], force) end
     local label = health and (health.LeftText or health.Text)
     Offset(state, label, value[1], value[2], force)
     state.healthTextApplied = state.offsets[label] ~= nil
     Offset(state, uf.SoftTargetFrame, plan.SoftTarget[1], plan.SoftTarget[2], force)
-    Offset(state, uf.RaidTargetFrame, raid[1] - (namesOnly and name[1] or 0),
+    local centered = state.nameAnchor and state.nameAnchor.centered
+    Offset(state, uf.RaidTargetFrame, raid[1] - (namesOnly and not centered and name[1] or 0),
         raid[2] - (namesOnly and name[2] or 0), force)
     Offset(state, uf.ClassificationFrame and uf.ClassificationFrame.classificationIndicator,
         plan.Classification[1] - raid[1], plan.Classification[2] - raid[2], force)
@@ -672,14 +693,19 @@ local function Lay(uf, prefix, config, force)
     end
     local locked = NS.IsCombatLocked()
     if locked or NS.Safety.IsForbidden(uf) then
-        if locked then ApplyCombatHealthText(state, uf, prefix, plan, config) end
+        if locked then
+            if (plan.centerName or plan.fitName or state and state.nameAnchor and state.nameAnchor.native) and not NS.Safety.IsForbidden(uf) then
+                state = CombatCenter(state, uf, plan, config)
+            end
+            ApplyCombatHealthText(state, uf, prefix, plan, config)
+        end
         Defer(uf)
         return
     end
-    local kind
-    if X and (plan.centerName or prefix == "enemy" and config.neutralNpcSizeOverride or prefix == "friendly" and config.friendlyNpcSizeOverride)
-        and NS.Public(uf.unit) then kind = X.PlateKind(uf, uf.unit) end
-    if state and state.generation == generation and state.prefix == prefix and state.kind == kind and not force then return end
+    local unitKind, kind
+    if plan.centerName or plan.sizeByKind then unitKind = private.UnitKinds[uf] or X.UnitKind(uf, uf.unit) end
+    if plan.sizeByKind and NS.Public(uf.unit) then kind = X.PlateKind(uf, uf.unit, unitKind) end
+    if state and state.generation == generation and state.prefix == prefix and state.kind == kind and state.unitKind == unitKind and not force then return end
     local setup = NamePlateSetupOptions
     if not NS.Public(setup.useClassicCastBar) or not NS.Public(setup.spellNameInsideCastBar)
         or not NS.Public(setup.unitNameAnchorStyle) or not NS.Public(uf.showOnlyName) then return end
@@ -711,8 +737,9 @@ local function Lay(uf, prefix, config, force)
     HealthSize(state, uf, setup, width, height, force or geometryChanged, baseHeight)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
     local anchored, centerPending
-    if plan.centerName or plan.nameAnchor then
-        anchored, centerPending = AnchorName(state, uf, plan, config, setup, kind, baseHeight, badgeShown)
+    if plan.centerName or plan.fitName or plan.nameAnchor then
+        local center = plan.centerName and Geometry.CenterEnabled(unitKind, config)
+        anchored, centerPending = AnchorName(state, uf, plan, center, setup, baseHeight, badgeShown)
     end
     ElementOffsets(state, uf, plan, force, anchored)
     if not anchored then
@@ -729,7 +756,7 @@ local function Lay(uf, prefix, config, force)
         Defer(uf)
         return true
     end
-    state.generation, state.prefix, state.kind = not centerPending and generation or nil, prefix, kind
+    state.generation, state.prefix, state.kind, state.unitKind = not centerPending and generation or nil, prefix, kind, unitKind
     state.nativeReset = nil
     Layout.Observe(uf)
     return true
@@ -787,8 +814,11 @@ function Layout.Configure(config)
         local centerName = prefix == "enemy" and (config.enemyCenterName or config.neutralCenterName)
             or prefix == "friendly" and (config.friendlyCenterName or config.friendlyNpcCenterName
                 or config.neutralCenterName and X.NeutralNameSplit(config))
-        local plan = { auraStyles = auraStyles, nameAnchor = anchor, centerName = centerName,
-            active = centerName or auraStyles ~= nil or anchor ~= nil or config.barGeometry == Mode.SAME_GEOMETRY
+        local fitName = private.FriendlyNames and (prefix == "enemy" and (config.enemyPlateNameOnly or config.neutralPlateNameOnly)
+            or prefix == "friendly" and X.CustomNameOnly(config, "friendlyNpc"))
+        local plan = { auraStyles = auraStyles, nameAnchor = anchor, centerName = centerName, fitName = fitName,
+            sizeByKind = X and (prefix == "enemy" and config.neutralNpcSizeOverride or prefix == "friendly" and config.friendlyNpcSizeOverride),
+            active = centerName or fitName or auraStyles ~= nil or anchor ~= nil or config.barGeometry == Mode.SAME_GEOMETRY
             or prefix == "enemy" and config.enemyMirrorHeader == true }
         for i = 1, #elements do
             local element = elements[i]

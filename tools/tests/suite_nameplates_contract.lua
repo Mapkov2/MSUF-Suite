@@ -755,7 +755,7 @@ assert(cvars.nameplateShowOnlyNameForFriendlyPlayerUnits == "1"
     and cvars.nameplateUseClassColorForFriendlyPlayerUnitNames == "1")
 assert(cvars.nameplateStyle == "0" and cvars.nameplateSize == "2"
     and cvars.nameplateForceShowUnitName == "1"
-    and cvars.nameplateSimplifiedTypes == string.char(1, 76)
+    and cvars.nameplateSimplifiedTypes == string.char(1, 72)
     and cvars.nameplateInfoDisplay == string.char(1, 71),
     "Jundies defaults did not request Blizzard's full enemy text and medium inside-bar layout")
 assert(cvars.nameplateCastBarDisplay == string.char(1, 121),
@@ -989,6 +989,13 @@ isBoss, classification, hasMana, questUnit, tappedUnit = false, "secret", "secre
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(module.visuals[bar].borderColor == "111418" and not module.visuals[bar].fill:IsShown(),
     "secret role must leave Blizzard's health fill and the plain border")
+-- Keep the unit API and the simulated occupants in sync as this pooled
+-- frame switches between hostile NPCs, friendly NPCs and actual players.
+UnitReaction = function()
+    if uf.isFriend == "secret" then return "secret" end
+    return uf.isFriend and 5 or 2
+end
+UnitIsPlayer = function() return uf.isPlayer or badgeUnit.player end
 uf.isFriend = true
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(name.fontSize == 14 and bar.barTexture.texture == "native-health"

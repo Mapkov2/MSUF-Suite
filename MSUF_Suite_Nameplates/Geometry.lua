@@ -75,23 +75,68 @@ local function NativeNamePoints(uf, setup, badgeShown)
     return { { "BOTTOMLEFT", container, "TOPLEFT", 0, spacing }, right }
 end
 
-function G.CenterName(uf, setup, healthHeight, offsetY, badgeShown)
-    local label, cast = uf.name, uf.CastBarsContainer
+function G.CenterEnabled(kind, config)
+    local scope = NS.NameplateExtensions.OpacityScope(kind)
+    return scope and config[Key[scope].CenterName]
+        and not (kind == "friendlyNpc" and config.friendlyNPCs == private.Mode.NPC_NAMES_ONLY)
+end
+
+function G.CombatWritable(region)
+    if not NS.Public(region) or not region or NS.Safety.IsForbidden(region) then return false end
+    local accessible = region:CanBeAccessedInContext()
+    if not NS.Public(accessible) or accessible ~= true then return false end
+    local protected = region:IsProtected()
+    return NS.Public(protected) and protected == false
+end
+
+function G.CenterName(uf, setup, healthHeight, offsetY, badgeShown, geometry)
+    local label = uf.name
     local spacing, gap = setup.castBarToHealthBarSpacing, setup.healthBarToNameAboveSpacing
-    if not cast or NS.Safety.IsForbidden(cast) or not NS.Finite(healthHeight)
+    local castHeight = geometry and geometry.castHeight or setup.castBarHeight
+    local iconHeight = geometry and geometry.iconHeight or setup.castIconHeight
+    local inside = setup.spellNameInsideCastBar
+    if not NS.Public(inside) or not NS.Public(setup.unitNameAnchorStyle)
+        or not NS.Finite(castHeight) or not inside and not NS.Finite(iconHeight) or not NS.Finite(healthHeight)
         or not NS.Finite(spacing) or not NS.Finite(gap) then return end
-    local access, justify = cast:CanBeAccessedInContext(), label:GetJustifyH()
-    if not NS.Public(access) or access ~= true or not NS.Public(justify) or type(justify) ~= "string" then return end
+    local justify = label:GetJustifyH()
+    if not NS.Public(justify) or type(justify) ~= "string" then return end
     local points = NativeNamePoints(uf, setup, badgeShown)
     if not points then return end
-    local y = spacing + healthHeight + (uf.showOnlyName and 2 or gap) + offsetY
-    -- The native cast container is centered on the plate. The health
-    -- container can be narrower on the right to accommodate the level badge.
+    local y = castHeight + (inside and 0 or iconHeight) + spacing + healthHeight + (uf.showOnlyName and 2 or gap) + offsetY
+    -- AcquireUnitFrame stretches uf across the world-positioned plate. Its
+    -- center is stable when either bar or the level badge moves sideways.
     label:ClearAllPoints()
-    label:SetPoint("BOTTOMLEFT", cast, "TOPLEFT", 4, y)
-    label:SetPoint("BOTTOMRIGHT", cast, "TOPRIGHT", -4, y)
+    label:SetPoint("BOTTOMLEFT", uf, "BOTTOMLEFT", 4, y)
+    label:SetPoint("BOTTOMRIGHT", uf, "BOTTOMRIGHT", -4, y)
     label:SetJustifyH("CENTER")
-    return { native = true, points = points, justify = justify }
+    return { native = true, centered = true, points = points, justify = justify }
+end
+
+-- With the health text suppressed it must no longer reserve the right edge
+-- of the name. Keep Blizzard's alignment and the user's manual offsets.
+function G.FitNameOnly(uf, setup, x, y, badgeShown, manual)
+    local label, bar = uf.name, uf.HealthBarsContainer
+    local original = label:GetJustifyH()
+    local style = setup.unitNameAnchorStyle
+    if not NS.Public(original) or not NS.Public(style) or not NS.Finite(setup.healthBarToNameAboveSpacing) then return end
+    if original ~= "LEFT" and original ~= "CENTER" and original ~= "RIGHT" then return end
+    local points = NativeNamePoints(uf, setup, badgeShown)
+    if not points then return end
+    local edge, relative, justify = "", "", original
+    if manual and not private.HealthNameOnly(uf) then
+        bar = bar.healthBar
+        edge = manual:match("^TOP") or manual:match("^BOTTOM") or ""
+        relative = edge
+        justify = manual:match("LEFT$") or manual:match("RIGHT$") or "CENTER"
+    elseif style ~= 1 then
+        edge, relative = "BOTTOM", "TOP"
+        y = y + (uf.showOnlyName and 2 or setup.healthBarToNameAboveSpacing)
+    end
+    label:ClearAllPoints()
+    label:SetPoint(edge .. "LEFT", bar, relative .. "LEFT", x, y)
+    label:SetPoint(edge .. "RIGHT", bar, relative .. "RIGHT", x, y)
+    label:SetJustifyH(justify)
+    return { native = true, points = points, justify = original }
 end
 
 -- The plate width constants carry different names on Retail

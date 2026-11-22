@@ -29,13 +29,12 @@ end
 
 -- Several settings that each choose one flag of the same array CVar, flag i
 -- from settings[i]: Keep takes the flag the CVar had before the first custom
--- write (or forced[i] when given), Show sets it, Hide clears it. One write
--- carries all of them; with every setting on Keep and nothing forced,
--- Blizzard's value comes back.
-local function Flags(module, key, settings, c, forced)
+-- write, Show sets it, Hide clears it. A name-only category needs a full
+-- plate unless the user explicitly chose simplification.
+local function Flags(module, key, settings, c, full)
     local custom = false
     for i = 1, #settings do
-        if (c[settings[i]] or KEEP) ~= KEEP or forced and forced[i] ~= nil then custom = true end
+        if (c[settings[i]] or KEEP) ~= KEEP or full and full[i] then custom = true end
     end
     local before = module.flagsBefore
     if not custom then
@@ -43,19 +42,19 @@ local function Flags(module, key, settings, c, forced)
         Restore(key)
         return
     end
-    local flags = Style.CVarFlags(C_CVar.GetCVar(key))
+    local current = C_CVar.GetCVar(key)
+    local flags = Style.CVarFlags(current)
     if flags == nil then return end
-    if before[key] == nil then before[key] = flags end
+    if before[key] == nil then
+        local baseline = S.CVarBaseline and S.CVarBaseline("nameplates", key, current)
+        before[key] = Style.CVarFlags(baseline) or flags
+    end
     local mask = 0
     for i = 1, #settings do
         local mode, bit = c[settings[i]] or KEEP, 2 ^ (i - 1)
         local on = mode == SHOW
-        if mode == KEEP then
-            if forced and forced[i] ~= nil then
-                on = forced[i]
-            else
-                on = math.floor(before[key] / bit) % 2 == 1
-            end
+        if mode == KEEP and not (full and full[i]) then
+            on = math.floor(before[key] / bit) % 2 == 1
         end
         if on then mask = mask + bit end
     end
@@ -65,13 +64,25 @@ end
 -- Blizzard's NamePlateStackType and NamePlateSimplifiedType flags, in order.
 local STACKING = { "plateStackEnemy", "plateStackFriendly" }
 local SIMPLIFIED = { "plateSimpleMinion", "plateSimpleMinus", "plateSimpleFriendlyPlayer", "plateSimpleFriendlyNpc" }
--- Forced full enemy minion and minor plates (InfoDisplay's names) unless the
--- player chose otherwise.
-local FULL_ENEMY_PLATES = { false, false }
-
-local function Visibility(module, c, namesForced)
+local function Visibility(module, c, enemyText)
     Flags(module, "nameplateStackingTypes", STACKING, c)
-    Flags(module, "nameplateSimplifiedTypes", SIMPLIFIED, c, namesForced and FULL_ENEMY_PLATES or nil)
+    local playerNames = c.friendlySkinEnabled ~= false
+        and (c.friendlyNamesOnly == Mode.ALL_NAMES_ONLY or c.friendlyNamesOnly == Mode.GROUP_NAMES_ONLY)
+    -- Blizzard can use either friendly simplification bit for NPCs, including
+    -- reaction-neutral NPCs and UnitTreatAsPlayerForDisplay. Minion and minus
+    -- are independent of friendship. Simplified plates hide unselected names.
+    local friendlyNPCNames = c.friendlyNpcSkinEnabled ~= false and NS.NameplateExtensions
+        and c.friendlyNPCs == NS.NameplateExtensions.NPC_PLATE_NAME_ONLY
+    local friendlyTemplates = friendlyNPCNames or c.neutralSkinEnabled ~= false and c.neutralPlateNameOnly
+    local minor = friendlyTemplates or c.enemySkinEnabled ~= false and c.enemyPlateNameOnly
+        or enemyText and (c.enemySkinEnabled ~= false or c.neutralSkinEnabled ~= false)
+    local full = { minor, minor, playerNames or friendlyTemplates, friendlyTemplates }
+    Flags(module, "nameplateSimplifiedTypes", SIMPLIFIED, c, full)
+    if minor or playerNames then
+        module.context:CVar("nameplateForceShowUnitName", "1")
+    else
+        Restore("nameplateForceShowUnitName")
+    end
 end
 
 -- A three-way choice: keep Blizzard's value, write on (SHOW) or off.
@@ -106,12 +117,6 @@ end
 local function InfoDisplay(module, c)
     local textMode = c.enemy and c.look ~= LOOK_BLIZZARD and c.enemyTextMode or KEEP
     local rarityMode = c.enemy and c.look ~= LOOK_BLIZZARD and c.enemyRarityIcon or KEEP
-    -- Forced names also need full minion and minor plates (Visibility).
-    if textMode == KEEP then
-        Restore("nameplateForceShowUnitName")
-    else
-        module.context:CVar("nameplateForceShowUnitName", "1")
-    end
     if textMode == KEEP and (rarityMode == KEEP or module.infoTextApplied) then Restore("nameplateInfoDisplay") end
     if textMode ~= KEEP or rarityMode ~= KEEP then
         local flags = Style.CVarFlags(C_CVar.GetCVar("nameplateInfoDisplay"))

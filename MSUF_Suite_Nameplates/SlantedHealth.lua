@@ -104,7 +104,7 @@ function Slant.Apply(uf, health, styled, writable)
     local state = states[health]
     local enabled = styled and Slant.enabled and P.PlatePrefix(uf) == "enemy"
     if enabled then
-        local nameOnly = uf.showOnlyName
+        local nameOnly = P.HealthNameOnly(uf)
         enabled = NS.Public(nameOnly) and nameOnly ~= true
     end
     if not enabled and not state then return true end

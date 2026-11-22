@@ -77,7 +77,11 @@ end
 function X.NameOnlyNPCColor(config, scope, npcType)
     if scope == "friendlyNpc" then
         local r, g, b = NS.HostBridge.NPCNameColor("friendly")
-        if NS.Finite(r) and NS.Finite(g) and NS.Finite(b) then return r, g, b end
+        if NS.Finite(r) and NS.Finite(g) and NS.Finite(b) then
+            local custom = r ~= 0 or g ~= 1 or b ~= 0
+                or NS.HostBridge.HasFriendlyNPCColor and NS.HostBridge.HasFriendlyNPCColor()
+            return r, g, b, custom == true
+        end
         return 0, 1, 0 -- Core's default friendly reaction on hosts without the palette provider.
     end
     local role = scope == "neutral" and "Neutral" or npcType
@@ -97,6 +101,19 @@ end
 
 X.InteractionFields = { "ClickboxEnabled", "ClickboxWidth", "ClickboxHeight", "RangeEnabled", "RangeSpell",
     "RangeAlpha", "RangeUnknownAlpha", "RangeText" }
+
+X.Patterns = {
+    { kind = "target", field = "TargetPattern", label = "Target" },
+    { kind = "focus", field = "FocusPattern", label = "Focus" },
+    { kind = "hover", field = "HoverPattern", label = "Mouseover" },
+}
+
+function X.PatternSettings(config, scope, pattern)
+    local key = scope .. pattern.field
+    local legacy = pattern.kind .. "Pattern"
+    return config[key .. "Texture"] or config[legacy .. "Texture"],
+        config[key .. "Alpha"] or config[legacy .. "Alpha"] or 35
+end
 
 function X.OpacityScope(kind)
     if X.IsEnemy(kind) then return "enemy" end
@@ -183,21 +200,44 @@ local function Number(value, default, minimum, maximum)
 end
 X.Number = Number
 
+local reactionKinds = { "enemyNpc", "enemyNpc", "enemyNpc", "neutralNpc", "friendlyNpc", "friendlyNpc", "friendlyNpc", "friendlyNpc" }
+
 function X.Kind(friend, player, reaction, fighting)
-    if NS.IsSecret(friend) or NS.IsSecret(player) then return end
-    if type(friend) ~= "boolean" or type(player) ~= "boolean" then return end
-    if friend then return player and "friendlyPlayer" or "friendlyNpc" end
-    if player then return "enemyPlayer" end
-    if not NS.IsSecret(reaction) and reaction == 4 and not NS.IsSecret(fighting) and fighting == false then
-        return "neutralNpc"
+    if NS.IsSecret(player) or type(player) ~= "boolean" then return end
+    if not player and not NS.IsSecret(reaction) and type(reaction) == "number" then
+        if reaction == 4 and not NS.IsSecret(fighting) and fighting == true then return "enemyNpc" end
+        if reactionKinds[reaction] then return reactionKinds[reaction] end
     end
-    return "enemyNpc"
+    if NS.IsSecret(friend) or type(friend) ~= "boolean" then return end
+    if player then return friend and "friendlyPlayer" or "enemyPlayer" end
+    return friend and "friendlyNpc" or "enemyNpc"
 end
 
-function X.PlateKind(frame, unit)
-    local kind = X.Kind(frame.isFriend, frame.isPlayer)
-    if kind ~= "enemyNpc" or not unit then return kind end
-    return X.Kind(false, false, UnitReaction(unit, "player"), UnitAffectingCombat(unit))
+-- Blizzard's isFriend is also true for some reaction-4 NPCs, and its
+-- isPlayer includes UnitTreatAsPlayerForDisplay. Neither selects an NPC palette.
+function X.UnitKind(frame, unit, alternateUnit)
+    if NS.IsSecret(unit) or type(unit) ~= "string" then return X.Kind(frame.isFriend, frame.isPlayer) end
+    local player = UnitIsPlayer(unit)
+    if not NS.IsSecret(player) and player == false then
+        local reaction = UnitReaction(unit, "player")
+        if alternateUnit and not NS.IsSecret(reaction) and reaction == nil then reaction = UnitReaction(alternateUnit, "player") end
+        if not NS.IsSecret(reaction) then
+            local kind = reactionKinds[reaction]
+            if kind then return kind end
+        end
+    end
+    return X.Kind(frame.isFriend, player)
+end
+
+function X.PlateKind(frame, unit, kind)
+    kind = kind or X.UnitKind(frame, unit)
+    -- Context rules can promote an engaged neutral to Enemy. Its display
+    -- setting and color still belong to the underlying NPC reaction.
+    if kind == "neutralNpc" and not NS.IsSecret(unit) and type(unit) == "string" then
+        local fighting = UnitAffectingCombat(unit)
+        if not NS.IsSecret(fighting) and fighting == true then return "enemyNpc" end
+    end
+    return kind
 end
 
 function X.HealthDimensions(config, side, kind)

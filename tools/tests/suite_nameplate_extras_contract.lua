@@ -80,8 +80,15 @@ local config = { look = 1, targetPatternTexture = "pattern", targetPatternAlpha 
     castHealthColors = true, threatNameColor = true, threatFrameColor = true, enemyThreatLostColor = "ff0000",
     targetClassResource = true, targetClassResourceWidth = 100, targetClassResourceHeight = 5, targetClassResourceY = -6,
     castIconCombinedHeight = true, castSeamLine = true }
+ns.IsSecret = issecretvalue
+ns.AnchorPoints, ns.AnchorLabels = { "CENTER" }, { "Center" }
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("Suite", ns)
 ns.NameplateStyle = { HighlightOrder = function() return { "target", "focus", "mouseover" } end,
     CreateBorder = function() return {} end, PaintBorder = function(b,_,size,hex) b.size,b.hex = size,hex end }
+local reaction, fighting, player = 4, false, false
+function UnitIsPlayer() return player end
+function UnitReaction() return reaction end
+function UnitAffectingCombat() return fighting end
 ns.HostBridge = { NameplateResource = function()
     return power, function() reads = reads + 1 return value end, function() return maximum end, "COMBO_POINTS"
 end }
@@ -94,6 +101,7 @@ Load("EasyFeatures")
 local stop = Secrets.Watch(root .. "/MSUF_Suite_Nameplates/EasyFeatures.lua", {strict=true})
 local uf, health, cast = Frame(), Frame(), Frame()
 uf.name = Frame()
+uf.isFriend, uf.isPlayer = false, false
 health.fill = Frame(health)
 uf.HealthBarsContainer = { healthBar = health }
 uf.CastBarsContainer = { castBar = cast }
@@ -152,6 +160,34 @@ p.EasyFeatures.Restore(uf,true)
 assert(not pattern.shown and cast.Icon.alpha == 1)
 p.EasyFeatures.Paint(uf,health,cast,"enemy","nameplate2",true,nil)
 assert(not pattern.shown, "pooled frame inherited the previous target")
+config.enemyTargetPatternTexture, config.enemyTargetPatternAlpha = "enemy", 60
+config.neutralTargetPatternTexture, config.neutralTargetPatternAlpha = "neutral", 0
+config.friendlyTargetPatternTexture = ""
+config.friendlyNpcTargetPatternTexture, config.friendlyNpcTargetPatternAlpha = "npc", 80
+p.EasyFeatures.Configure(owner)
+p.EasyFeatures.Paint(uf, health, cast, "enemy", "nameplate1", true)
+assert(pattern.shown and pattern.texture == "neutral" and pattern.alpha == 0, "neutral scoped pattern or zero opacity lost")
+p.EasyFeatures.SetOpacity(uf, 1)
+fighting = true
+p.EasyFeatures.UpdatePatternScope(uf, "nameplate1")
+assert(pattern.shown and pattern.texture == "enemy" and pattern.alpha == .6, "engaged neutral did not use the enemy pattern")
+uf.isFriend, uf.isPlayer, player = true, true, true
+p.EasyFeatures.Paint(uf, health, cast, "friendly", "nameplate1", true)
+assert(not pattern.shown, "an explicit empty player pattern inherited an old texture")
+uf.isPlayer, player, reaction = false, false, 5
+p.EasyFeatures.Paint(uf, health, cast, "friendly", "nameplate1", true)
+assert(pattern.shown and pattern.texture == "npc" and pattern.alpha == .8, "friendly NPC inherited the player pattern")
+config.friendlyNpcTargetPatternTexture, config.friendlyNpcHoverPatternTexture = "", "npc-hover"
+config.friendlyNpcHoverPatternAlpha = 25
+p.EasyFeatures.Configure(owner)
+p.EasyFeatures.Paint(uf, health, cast, "friendly", "nameplate1", true)
+assert(p.EasyFeatures.hoverPatterns and not pattern.shown, "hover-only pattern should register before the unit is hovered")
+hover = uf
+p.EasyFeatures.Hover(uf)
+assert(pattern.shown and pattern.texture == "npc-hover" and pattern.alpha == .25)
+hover = nil
+p.EasyFeatures.Hover(uf)
+assert(not pattern.shown, "leaving a hovered nameplate kept its pattern")
 owner.active = false
 p.EasyFeatures.Configure(owner)
 assert(not next(watcher.events), "disabled resources retained event subscriptions")
@@ -190,6 +226,7 @@ end
 
 do
     local prefix = "enemy"
+    Load("Modes")
     p.PlatePrefix = function() return prefix end
     ns.IsCombatLocked = ns.InCombat
     ns.HostBridge.GlossTexture = function() return not ns.Client.isForever and "gloss" or nil end

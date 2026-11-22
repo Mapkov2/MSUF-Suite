@@ -200,6 +200,19 @@ Suite.DB.nameplateShared = { version = 1, nameplates = {
 local slug = Suite.NameplatePortableText.Resolve()
 assert(slug.fontFlags == "OUTLINE,SLUG" and not slug.fontShadow, "portable SLUG differs from the host resolver")
 Suite.DB.nameplateShared = beforeTypography
+-- A profile from before the split keeps its shared pattern in each rendered category.
+do
+    local legacy = { suite = { schema = 1, revision = S.MigrationRevision - 1, modules = { nameplates = {
+        targetPatternTexture = "legacy", targetPatternAlpha = 0, friendlyTargetPatternTexture = "",
+    } } } }
+    local imported = assert(Suite.ProfileIO.PrepareTable(legacy))
+    local plates = imported.suite.modules.nameplates
+    for _, scope in ipairs(Suite.NameplateExtensions.OpacityScopes) do
+        assert(plates[scope .. "TargetPatternTexture"] == (scope == "friendly" and "" or "legacy"))
+        assert(plates[scope .. "TargetPatternAlpha"] == 0)
+    end
+    assert(Suite.NameplateProfiles.FilterSettings(plates, { layout = true }).neutralTargetPatternTexture == "legacy")
+end
 -- Template history is local to the profile and preserves sparse inheritance.
 do
     local fontCapability = Suite.HostBridge.HasNameplateFontSettings

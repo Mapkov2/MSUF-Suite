@@ -115,7 +115,8 @@ local function ShowsNumber(uf, prefix, unit)
         or not M.config[Key[prefix].LevelEnabled] then return false end
     local setup = NamePlateSetupOptions
     local classic = S.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
-    local namesOnly = S.Public(uf.showOnlyName) and uf.showOnlyName == true
+    local namesOnly = private.HealthNameOnly(uf)
+    namesOnly = S.Public(namesOnly) and namesOnly == true
     local forever = NS.Client.isForever
     local badge
     if not forever and not classic then badge = LevelBadgeShown(uf, unit) end

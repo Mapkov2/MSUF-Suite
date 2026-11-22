@@ -14,9 +14,11 @@ function Layout.RenderName(s, m, Get, SetupNumber, Place)
     local prefix, name, bar = s.prefix, s.name, s.bar
     name:EnableMouse(not m.npcWorldName and not s.static)
     local config = P.S.Config(ID)
+    m.centerName = not (m.npcWorldName or m.skinDisabled) and Get(ID, "look") ~= 2
+        and Get(ID, prefix) and Get(ID, m.scope .. "CenterName")
     local shared = not (m.npcWorldName or m.skinDisabled) and P.Suite.NameplateText.Shared(config)
     local size = P.Suite.NameplateText.ResolveSize(config, prefix .. "NameSize", shared)
-    local anchor = not (m.namesOnly or m.skinDisabled) and Get(ID, "look") ~= 2 and P.Suite.NameplateText.NameAnchor(config, prefix)
+    local anchor = not (m.centerName or m.namesOnly or m.skinDisabled) and Get(ID, "look") ~= 2 and P.Suite.NameplateText.NameAnchor(config, prefix)
     local centered = m.centerName or m.namesOnly and not m.nameOnlyScope
     name:SetHeight(not (m.npcWorldName or m.skinDisabled) and (shared or Get(ID, prefix .. "TextEnabled")) and size > 0 and size
         or SetupNumber("healthBarFontHeight", (m.classic and 10 or m.forever and 14 or 12) * m.vertical))
@@ -25,8 +27,9 @@ function Layout.RenderName(s, m, Get, SetupNumber, Place)
         name:SetPoint("CENTER", s.cell, "CENTER", 0, 0)
         name:SetWidth(170)
     elseif m.centerName then
-        local spacing = m.nameOnlyScope and m.nameSpacing or 2
+        local spacing = m.namesOnly and not m.nameOnlyScope and 2 or m.nameSpacing
         local y = -4 + m.nativeBarHeight / 2 + m.heightDelta + spacing + Get(ID, prefix .. "NameOffsetY")
+            + (shared and shared.fontBaselineOffset or 0)
         name:SetPoint("BOTTOM", s.cell, "CENTER", 0, y)
         name:SetWidth(170)
     elseif centered then

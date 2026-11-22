@@ -71,7 +71,7 @@ local function Instance(text, name)
     function Text.PaintColor(label, state, look, unit)
         state.MSUFSpec, state.MSUFUnitKey = look.shared, unit
         if world.refuseColor then return false end
-        label:SetVertexColor(.1, .2, .3, 1)
+        label:SetTextColor(.1, .2, .3, 1)
         return true
     end
     local NS = {
@@ -88,7 +88,7 @@ local function Instance(text, name)
     end
     function label:SetText(v) world.writes = world.writes + 1 self.value = v end
     function label:GetTextColor() world.natives = world.natives + 1 return self.r, self.g, self.b, self.a end
-    function label:SetVertexColor(r, g, b, a) world.writes = world.writes + 1 self.r, self.g, self.b, self.a = r, g, b, a or 1 end
+    function label:SetTextColor(r, g, b, a) world.writes = world.writes + 1 self.r, self.g, self.b, self.a = r, g, b, a or 1 end
     function label:IsShown() world.natives = world.natives + 1 return self.shown end
     function label:IsForbidden() world.natives = world.natives + 1 return self.forbidden or false end
     function label:IsProtected() world.natives = world.natives + 1 return self.protected or false end

@@ -3,7 +3,9 @@ local NS, Style = private.NS, private.NS.NameplateStyle
 local Features = {}
 private.EasyFeatures = Features
 local owner, config, generation = nil, nil, 0
-local patterns, colors, order = {}, {}, {}
+local StyleScopes = NS.NameplateExtensions
+local patterns, patternEvents, colors, order = {}, {}, {}, {}
+local sharedPatterns
 local states = setmetatable({}, { __mode = "k" })
 local casts = setmetatable({}, { __mode = "k" })
 local hooked = setmetatable({}, { __mode = "k" })
@@ -57,11 +59,14 @@ local function CaptureName(state)
 end
 
 local function Pattern(state)
+    local plan = state.patternPlan
     local chosen
-    for _, kind in ipairs(order) do
-        local active = kind == "mouseover" and private.Mouseover.IsHovered(state.uf) or selected[kind] == state.uf
-        local key = kind == "mouseover" and "hover" or kind
-        if active and patterns[key] then chosen = key break end
+    if plan then
+        for _, kind in ipairs(order) do
+            local active = kind == "mouseover" and private.Mouseover.IsHovered(state.uf) or selected[kind] == state.uf
+            local key = kind == "mouseover" and "hover" or kind
+            if active and plan[key] then chosen = plan[key] break end
+        end
     end
     if not chosen then
         if state.pattern then state.pattern:Hide() end
@@ -76,9 +81,9 @@ local function Pattern(state)
     end
     if state.patternFill ~= fill then texture:SetAllPoints(fill) state.patternFill = fill end
     if state.patternKind ~= chosen or state.patternGeneration ~= generation then
-        texture:SetTexture(patterns[chosen])
+        texture:SetTexture(chosen.texture)
         texture:SetVertexColor(1, 1, 1, 1)
-        texture:SetAlpha(config[chosen .. "PatternAlpha"] / 100 * (state.opacity or 1))
+        texture:SetAlpha(chosen.alpha * (state.opacity or 1))
         state.patternKind, state.patternGeneration = chosen, generation
     end
     texture:Show()
@@ -218,20 +223,65 @@ local function RestoreCast(state)
     return state.iconAlpha == nil
 end
 
+local function SamePatterns(first, second)
+    if first == second then return true end
+    if not first or not second then return false end
+    for _, entry in ipairs(StyleScopes.Patterns) do
+        local a, b = first[entry.kind], second[entry.kind]
+        if (a == nil) ~= (b == nil) or a and b and (a.texture ~= b.texture or a.alpha ~= b.alpha) then return false end
+    end
+    return true
+end
+
+local function CompilePatterns(config)
+    patterns, patternEvents = {}, {}
+    for _, scope in ipairs(StyleScopes.OpacityScopes) do
+        local plan = {}
+        for _, entry in ipairs(StyleScopes.Patterns) do
+            local key, alpha = StyleScopes.PatternSettings(config, scope, entry)
+            local texture = NS.ResolveTexture(key)
+            if texture then
+                plan[entry.kind] = { texture = texture, alpha = alpha / 100 }
+                patternEvents[entry.kind] = true
+            end
+        end
+        if next(plan) then patterns[scope] = plan end
+    end
+    Features.splitEnemyPatterns = not SamePatterns(patterns.enemy, patterns.neutral)
+    sharedPatterns = not Features.splitEnemyPatterns
+        and SamePatterns(patterns.enemy, patterns.friendly) and SamePatterns(patterns.enemy, patterns.friendlyNpc)
+    Features.hoverPatterns = patternEvents.hover
+end
+
+local function PatternPlan(uf, unit, prefix)
+    if sharedPatterns then return patterns.enemy end
+    local scope = StyleScopes.OpacityScope(StyleScopes.PlateKind(uf, unit))
+    return patterns[scope or prefix]
+end
+
+function Features.UpdatePatternScope(uf, unit)
+    local state = states[uf]
+    if not state or not state.enabled then return end
+    local plan = PatternPlan(uf, unit, state.prefix)
+    if plan == state.patternPlan or not Mutable(state) then return end
+    state.patternPlan = plan
+    Pattern(state)
+end
+
 function Features.Configure(module)
     owner, config, generation = module, module.config, generation + 1
     for _, state in pairs(states) do if Mutable(state) then RestoreName(state) end end
-    patterns = {}
-    for _, kind in ipairs({ "target", "focus", "hover" }) do patterns[kind] = NS.ResolveTexture(config[kind .. "PatternTexture"]) end
+    CompilePatterns(config)
     order = Style.HighlightOrder(config.highlightPriority and config.highlightOrder or nil)
     if config.castHealthColors then
         colors.interruptible = CreateColor(NS.RGB(config.castHealthInterruptible or "4fb3ff"))
         colors.locked = CreateColor(NS.RGB(config.castHealthLocked or "f39200"))
     end
-    Features.inUse = module.active and config.look ~= 2 and (patterns.target or patterns.focus or patterns.hover or config.castHealthColors
+    Features.inUse = module.active and config.look ~= 2 and (next(patternEvents) or config.castHealthColors
         or config.threatNameColor or config.threatFrameColor or config.castIconCombinedHeight or config.castSeamLine)
     private.TargetResource.Configure(module)
     if not Features.inUse then
+        Features.splitEnemyPatterns, Features.hoverPatterns = false, false
         for uf, state in pairs(states) do if state.enabled then Features.Restore(uf) end end
     end
     Publish()
@@ -252,6 +302,7 @@ function Features.Paint(uf, health, cast, prefix, unit, styled, role)
             end
             state.prefix, state.unit, state.enabled, state.cast = prefix, unit, true, cast
             state.nameTint = nil
+            state.patternPlan = PatternPlan(uf, unit, prefix)
             Pattern(state)
             Threat(state, role)
             if Writable(cast) and (config.castHealthColors or config.castIconCombinedHeight or config.castSeamLine) then
@@ -296,9 +347,9 @@ function Features.Selection(kind)
 end
 
 function Features.Added()
-    if patterns.target then Features.Selection("target") end
-    if patterns.focus then Features.Selection("focus") end
-    if not patterns.target and private.TargetResource.enabled then private.TargetResource.Selection() end
+    if patternEvents.target then Features.Selection("target") end
+    if patternEvents.focus then Features.Selection("focus") end
+    if not patternEvents.target and private.TargetResource.enabled then private.TargetResource.Selection() end
 end
 
 function Features.Hover(uf)
@@ -352,6 +403,6 @@ function Features.SetOpacity(uf, alpha)
     local state = states[uf]
     if not state then return end
     state.opacity = alpha
-    if state.pattern and state.patternKind then state.pattern:SetAlpha(config[state.patternKind .. "PatternAlpha"] / 100 * alpha) end
+    if state.pattern and state.patternKind then state.pattern:SetAlpha(state.patternKind.alpha * alpha) end
     if state.castTint then state.castTint:SetAlpha(alpha) end
 end

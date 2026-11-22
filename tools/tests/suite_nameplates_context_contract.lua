@@ -39,11 +39,17 @@ local function Region()
     function r:SetShadowOffset(x, y) self.shadowX, self.shadowY = x, y end
     function r:SetColorTexture(color) self.color = color end
     function r:SetAllPoints(target) self.target = target end
-    function r:GetTextColor() return self.textR or 1, self.textG or 1, self.textB or 1, self.textA or 1 end
-    r.GetVertexColor = r.GetTextColor
-    function r:SetVertexColor(red, green, blue, alpha)
+    function r:GetTextColor()
+        self.fontReads = (self.fontReads or 0) + 1
+        return self.textR or 1, self.textG or 1, self.textB or 1, self.textA or 1
+    end
+    function r:SetTextColor(red, green, blue, alpha)
         self.textR, self.textG, self.textB, self.textA = red, green, blue, alpha
     end
+    function r:SetVertexColor(red, green, blue, alpha)
+        self.vertexR, self.vertexG, self.vertexB, self.vertexA = red, green, blue, alpha
+    end
+    function r:GetVertexColor() return self.vertexR or 1, self.vertexG or 1, self.vertexB or 1, self.vertexA or 1 end
     function r:IsProtected() return false end
     r.ClearAllPoints = Nothing
     function r:CreateTexture() return Region() end
@@ -76,6 +82,7 @@ UnitHasPowerType = function() return false end
 UnitIsDead = function() return false end
 UnitIsConnected = function() return true end
 UnitPlayerControlled = function() return false end
+UnitIsPlayer = function(unit) return units[unit].plate.UnitFrame.isPlayer end
 UnitIsTapDenied = function(unit) return units[unit].tapped end
 UnitReaction = function(unit) return units[unit] and units[unit].reaction or 2 end
 UnitAffectingCombat = function(unit) return units[unit] and units[unit].fighting == true end
@@ -114,6 +121,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", Sh
 setmetatable(Style, { __index = SharedStyle.NameplateStyle })
 local function RGB(hex)
     if hex == "e5db00" then return .9, .86, 0 end
+    if hex == "lost" then return .85, .05, .1 end
     return hex, 0, 0
 end
 local NS = { NameplateStyle = Style, Client = {}, Finite = Finite, RGB = RGB, IsSecret = function(value) return not Public(value) end,
@@ -338,20 +346,29 @@ for _, forever in ipairs({ false, true }) do
     pvp, instance, grouped, tank = nil, "party", true, true
     members.party1.role, members.party1.occupant = "TANK", "first"
     local mob, frame = units.nameplate1, plates[1].UnitFrame
+    local held = mob.held
+    mob.held = nil
     module.config.neutralPlateNameOnly, module.config.neutralPlateNameTypeColor = true, true
     module.config.enemyNeutralColor, mob.reaction = "e5db00", 4
     module:Refresh()
+    assert(module.roles[frame.HealthBarsContainer.healthBar] == "ThreatLost"
+        and frame.name.textR == .85 and frame.name.textG == .05, "neutral NPC lost its actual threat bar color")
+    mob.lead, mob.threat = nil, nil
+    Event("UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
     assert(private.FriendlyNames.NameOnlyScope(frame) == "neutral" and frame.name.textR == .9)
+    local reads = frame.name.fontReads
+    Event("UNIT_FACTION", "nameplate1")
+    assert(frame.name.fontReads == reads + 1, "an unchanged plate paint checked the same font color more than once")
     -- This pooled frame previously drew ordinary health bars. Selecting the
     -- NPC must refresh its current name even while the old visual is cached.
     assert(module.visuals[frame.HealthBarsContainer.healthBar])
-    frame.name:SetVertexColor(1, 0, 0, 1)
+    frame.name:SetTextColor(1, 0, 0, 1)
     units.target = mob
     Event("PLAYER_TARGET_CHANGED")
     units.target = nil
     assert(frame.name.textR == .9 and frame.name.textG == .86,
         "selecting a name-only NPC with a cached bar visual left a red name")
-    frame.name:SetVertexColor(1, 1, 1, 1)
+    frame.name:SetTextColor(1, 1, 1, 1)
     Event("PLAYER_TARGET_CHANGED")
     assert(frame.name.textR == .9 and frame.name.textG == .86,
         "clearing the target left the previous neutral name white")
@@ -365,10 +382,39 @@ for _, forever in ipairs({ false, true }) do
     -- The plate keeps isFriend=true when the now-readable reaction is 4.
     -- Selection can arrive before any faction or flags notification.
     mob.reaction, units.target = 4, mob
-    frame.name:SetVertexColor(1, 1, 1, 1)
+    frame.name:SetTextColor(1, 1, 1, 1)
     Event("PLAYER_TARGET_CHANGED")
     assert(private.FriendlyNames.NameOnlyScope(frame) == "neutral" and frame.name.textG == .86,
         "selection replayed a stale friendly tint on a neutral NPC")
+    local health = frame.HealthBarsContainer.healthBar
+    -- The Suite listener can miss acquisition when the native driver still
+    -- hasn't attached its UnitFrame to the base in NAME_PLATE_UNIT_ADDED.
+    Event("NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    mob.plate.UnitFrame = nil
+    Event("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    mob.plate.UnitFrame = frame
+    assert(not module.activeUnits.nameplate1 and not module.units[health])
+    local getPlates = C_NamePlate.GetNamePlates
+    C_NamePlate.GetNamePlates = function() error("selecting an unobserved plate scanned other units") end
+    for _, unsettled in ipairs({ secret, "target", "nameplate4" }) do
+        frame.unit = unsettled
+        Event("PLAYER_TARGET_CHANGED")
+        assert(not module.activeUnits.nameplate1 and not module.activeUnits.target and not module.units[health],
+            "target recovery adopted a restricted, aliased or stale native unit")
+    end
+    frame.unit = "nameplate1"
+    Event("PLAYER_TARGET_CHANGED")
+    C_NamePlate.GetNamePlates = getPlates
+    assert(module.activeUnits.nameplate1 == frame and module.units[health] == "nameplate1"
+        and private.FriendlyNames.NameOnlyScope(frame) == "neutral" and frame.name.textG == .86,
+        "selecting a settled frame after a missed native acquisition left it unmanaged")
+    module.config.neutralPlateNameOnly = false
+    module:Refresh()
+    assert(private.PlatePrefix(frame) == "enemy" and module.roles[health] == "Neutral"
+        and not private.FriendlyNames.IsNameOnly(frame) and frame.HealthBarsContainer.alpha == .7,
+        "selecting Neutral Health bars used the Friendly NPC settings for the same target")
+    module.config.neutralPlateNameOnly = true
+    module:Refresh()
     units.target, frame.isFriend, mob.friendly = nil, false, false
     NS.HostBridge.NPCNameColor = oldPalette
     module.config.friendlyNPCs, module.config.friendlyNpcPlateNameTypeColor = oldNPCs, oldTint
@@ -381,6 +427,7 @@ for _, forever in ipairs({ false, true }) do
     assert(not private.FriendlyNames.IsNameOnly(frame) and frame.HealthBarsContainer.alpha == .7 and frame.name.textR == 1,
         "a real faction change did not release the neutral name-only display")
     combat, mob.fighting, mob.reaction = false, nil, nil
+    mob.lead, mob.threat, mob.held = 3, 3, held
     module.config.neutralPlateNameOnly, module.config.neutralPlateNameTypeColor = nil, nil
     module:Disable()
 end

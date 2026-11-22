@@ -121,6 +121,56 @@ Frame = function(parent)
     end })
 end
 
+local function CheckCenteredNames(P)
+    local config = { look = 3, enemy = true, friendly = true, enemyCenterName = true, friendlyNpcCenterName = true,
+        enemyNameOffsetY = -3, friendlyNameOffsetY = -3 }
+    local function Get(_, key) return config[key] end
+    local saved = P.Suite.NameplateText
+    local anchor = "RIGHT"
+    P.Suite.NameplateText = { Shared = Noop, ResolveSize = function() return 12 end, NameAnchor = function() return anchor end }
+    local style = P.Suite.NameplateStyle
+    local mirror, place = style.MirrorHeader, style.PlaceMirroredHeader
+    style.MirrorHeader = function() return true end
+    style.PlaceMirroredHeader = function() error("mirrored header replaced the centered name") end
+    local cell = Frame()
+    local s = { prefix = "enemy", cell = cell, bar = Frame(cell), name = Frame(cell), nameText = Frame(cell) }
+    function s.nameText:SetJustifyH(value) self.justify = value end
+    local m = { scope = "enemy", vertical = 1, nativeBarHeight = 20, heightDelta = 6, nameSpacing = 4,
+        availableNameWidth = 65, nameAnchor = 1 }
+    local function Render()
+        P.NameplatesPreviewLayout.RenderName(s, m, Get, function(_, fallback) return fallback end,
+            function(_, frame, point, anchor, relative, x, y) frame:SetPoint(point, anchor, relative, x, y) end)
+    end
+    for _, namesOnly in ipairs({ false, true }) do
+        m.namesOnly, m.nameOnlyScope = namesOnly, namesOnly and "enemy" or nil
+        Render()
+        local point = s.name.points[1]
+        assert(m.centerName and point[2] == cell and point[4] == 0 and point[5] == 13 and s.nameText.justify == "CENTER",
+            "configured name lost the unit center to a manual anchor")
+        anchor = nil
+        P.NameplatesPreviewDecor.PaintMirroredHeader(s, m, Get, config)
+        anchor = "RIGHT"
+    end
+    m.scope, m.namesOnly, m.nameOnlyScope = "neutral", false, nil
+    Render()
+    assert(not m.centerName and s.name.points[1][2] == s.bar and s.nameText.justify == "RIGHT",
+        "neutral scope inherited the enemy centering setting")
+    m.scope, s.prefix = "friendlyNpc", "friendly"
+    Render()
+    assert(m.centerName and s.name.points[1][2] == cell)
+    m.npcWorldName = true
+    Render()
+    assert(not m.centerName and s.name.points[1][1] == "CENTER", "world name entered the plate layout")
+    m.npcWorldName, m.skinDisabled = false, true
+    Render()
+    assert(not m.centerName, "disabled skin entered the centered layout")
+    m.skinDisabled, config.look = false, 2
+    Render()
+    assert(not m.centerName, "Blizzard look entered the centered layout")
+    P.Suite.NameplateText = saved
+    style.MirrorHeader, style.PlaceMirroredHeader = mirror, place
+end
+
 local function LoadFixedHeaderAPI(host, M, W, T)
     local dir = root .. "/../" .. host .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/"
     local path = dir .. "MSUF_Menu2_Widgets_PreviewDock.lua"
@@ -274,6 +324,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         assert(loadfile(arg[5] or root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesMultiPreview.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", P)
+        CheckCenteredNames(P)
         local ui = P.NameplatesEditor.Create(ctx, builder, {})
         local sample = { cell = Frame(ui.stage), bar = Frame(ui.stage), cast = Frame(ui.stage), progress = Frame(ui.stage) }
         P.NameplatesPreviewDecor.Build(ui, sample)

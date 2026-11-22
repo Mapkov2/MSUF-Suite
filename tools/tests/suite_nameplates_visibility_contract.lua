@@ -20,6 +20,7 @@ local live = {}
 C_CVar = { GetCVar = function(key) return live[key] end }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", NS)
 local spec = NS.SuiteCatalog.nameplates
 local rules = spec.rules
@@ -85,7 +86,7 @@ local function Apply(overrides)
 end
 -- Blizzard drops the data byte of an empty mask (CvarUtil SetCVarBitfieldMask).
 local function Flags(value) return (value:byte(2) or 64) - 64 end
-local KEEP_TEXT = { enemyTextMode = 1, enemyRarityIcon = 1 }
+local KEEP_TEXT = { enemyTextMode = 1, enemyRarityIcon = 1, friendlyNamesOnly = 1 }
 local function Reset()
     for key in pairs(live) do live[key] = nil end
     live.nameplateStackingTypes = string.char(1, 64 + 2)    -- friendly plates stack
@@ -117,10 +118,57 @@ assert(restored.nameplateStackingTypes and module.flagsBefore.nameplateStackingT
 -- Forced enemy names need full minion and minor plates; friendly types keep
 -- theirs, and an explicit choice wins over the forced one.
 Reset()
-Apply({ enemyTextMode = 4 })
+Apply({ enemyTextMode = 4, friendlyNamesOnly = 1 })
 assert(Flags(writes.nameplateSimplifiedTypes) == 12, "forced names kept simplified enemy minion or minor plates")
-Apply({ enemyTextMode = 4, plateSimpleMinion = 2, plateSimpleFriendlyNpc = 3 })
+Apply({ enemyTextMode = 4, friendlyNamesOnly = 1, plateSimpleMinion = 2, plateSimpleFriendlyNpc = 3 })
 assert(Flags(writes.nameplateSimplifiedTypes) == 5, "explicit simplified choices lost against the forced names")
+
+-- Full native plates keep the name visible when it is the only remaining
+-- element. A neutral or friendly NPC may use either native friendly template.
+local function CheckNameDisplay(overrides, expected)
+    Reset()
+    local options = Config(KEEP_TEXT)
+    for key, value in pairs(overrides) do options[key] = value end
+    live.nameplateSimplifiedTypes = string.char(2, 64 + 31, 65)
+    Apply(options)
+    if expected == nil then
+        assert(restored.nameplateForceShowUnitName and restored.nameplateSimplifiedTypes
+            and not writes.nameplateForceShowUnitName and not writes.nameplateSimplifiedTypes,
+            "an inactive Name only setting retained a native display override")
+    else
+        assert(writes.nameplateForceShowUnitName == "1", "Name only left the native name conditional")
+        assert(writes.nameplateSimplifiedTypes == string.char(2, 64 + 16 + expected, 65),
+            "Name only changed the wrong simplification flags or lost unknown bits")
+        Apply(KEEP_TEXT)
+        assert(restored.nameplateForceShowUnitName and restored.nameplateSimplifiedTypes,
+            "leaving Name only kept the visibility override")
+    end
+end
+CheckNameDisplay({ friendlyNamesOnly = 2 }, 11)
+CheckNameDisplay({ friendlyNamesOnly = 3 }, 11)
+CheckNameDisplay({ enemyPlateNameOnly = true }, 12)
+CheckNameDisplay({ friendlyNPCs = 5 }, 0)
+CheckNameDisplay({ neutralPlateNameOnly = true, neutralNameOnlyMode = 2 }, 0)
+CheckNameDisplay({ neutralPlateNameOnly = true, neutralNameOnlyMode = 3 }, 0)
+CheckNameDisplay({ neutralPlateNameOnly = true, plateSimpleFriendlyPlayer = 2, plateSimpleMinus = 2 }, 6)
+CheckNameDisplay({ friendlyNamesOnly = 2, friendlySkinEnabled = false })
+CheckNameDisplay({ friendlyNPCs = 5, friendlyNpcSkinEnabled = false })
+CheckNameDisplay({ neutralPlateNameOnly = true, neutralSkinEnabled = false })
+CheckNameDisplay({ enemyPlateNameOnly = true, enemySkinEnabled = false })
+CheckNameDisplay({ enemyTextMode = 4, enemySkinEnabled = false, neutralSkinEnabled = false })
+CheckNameDisplay({ friendlyNamesOnly = 4, friendlyNPCs = 4 })
+
+-- On reload the stored CVar may already contain the former profile's full
+-- plate mask. Keep takes untouched categories from native recovery.
+Reset()
+live.nameplateSimplifiedTypes = string.char(2)
+S.CVarBaseline = function(_, key, current)
+    if key == "nameplateSimplifiedTypes" then return string.char(2, 79) end
+    return current
+end
+Apply({ enemyTextMode = 1, friendlyNamesOnly = 2 })
+assert(Flags(writes.nameplateSimplifiedTypes) == 11, "reload discarded native simplification for unrelated types")
+S.CVarBaseline = nil
 
 Reset()
 Apply({ plateShowAll = 2, plateOffscreen = 3, plateEnemyMinus = 2, enemyTextMode = 1, enemyRarityIcon = 1 })
@@ -135,6 +183,11 @@ assert(next(writes) == nil and next(restored) == nil and module.cvarsPending, "a
 combat = false
 CVars.Apply(module)
 assert(writes.nameplateShowAll == "1" and not module.cvarsPending, "the held-back CVars were not applied after combat")
+
+if arg[2] == "cvars" then
+    print("Suite nameplates: visibility CVars, Name only modes, bitfield recovery and combat deferral passed")
+    return
+end
 
 ------------------------------------------------------------------ Selection
 local hooks = {}
@@ -667,7 +720,6 @@ P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
 end
 -- Keep this fixture on native visibility controls. Expanded aura placement
 -- and rendering are exercised by suite_nameplates_aura_display_contract.
-assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateExtensions.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/NameplateAuras.lua"))("MSUF_Suite", NS)

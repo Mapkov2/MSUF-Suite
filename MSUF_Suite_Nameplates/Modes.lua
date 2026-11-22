@@ -35,11 +35,22 @@ private.RoleKey = Memo(function(role)
     return { enabled = "enemy" .. role .. "Enabled", color = "enemy" .. role .. "Color" }
 end)
 
--- The settings side of a plate's unit frame: "friendly", "enemy", or nil
--- while Blizzard's isFriend is restricted or unset.
+-- Populated on unit assignment and faction changes. Paints (including
+-- native health/texture hooks) only look up the cached settings side.
+local unitKinds = setmetatable({}, { __mode = "k" })
+local Public = private.NS.Public or private.Suite.Public
+local sides = { friendlyNpc = "friendly", friendlyPlayer = "friendly", neutralNpc = "enemy", enemyNpc = "enemy", enemyPlayer = "enemy" }
+private.UnitKinds = unitKinds
+local forcedNPCHealth = setmetatable({}, { __mode = "k" })
+private.ForcedNPCHealth = forcedNPCHealth
+function private.HealthNameOnly(uf)
+    return not forcedNPCHealth[uf] and uf.showOnlyName
+end
 function private.PlatePrefix(uf)
+    local kind = unitKinds[uf]
+    if kind then return sides[kind] end
     local value = uf.isFriend
-    if not private.Suite.Public(value) or type(value) ~= "boolean" then return nil end
+    if not Public(value) or type(value) ~= "boolean" then return nil end
     return value and "friendly" or "enemy"
 end
 
@@ -62,7 +73,7 @@ function scopes.Allowed(uf, unit)
         unit = uf.unit
         if not S.Public(unit) or type(unit) ~= "string" then unit = nil end
     end
-    local scope = X.OpacityScope(X.PlateKind(uf, unit))
+    local scope = X.OpacityScope(X.PlateKind(uf, unit, unitKinds[uf]))
     return not scope or X.SkinEnabled(module.config, scope)
 end
 private.SkinAllowed = scopes.Allowed

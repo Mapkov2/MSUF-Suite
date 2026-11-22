@@ -264,6 +264,13 @@ function Extensions.BeforeNameFilter(uf)
     if state then L.RestoreName(state) end
 end
 
+-- A roster update can release the group filter while the same cast is
+-- running. Resume its opacity without repainting the rest of the plate.
+function Extensions.ResumeName(uf)
+    local state = states[uf]
+    if state and state.unit and M.activeUnits[state.unit] == uf and not restores[state] then L.Name(state) end
+end
+
 local function CastPresent(unit)
     local duration = UnitCastingDuration(unit)
     if NS.IsSecret(duration) then return nil end
@@ -347,9 +354,9 @@ function Extensions.Apply(uf, health, cast, prefix, unit)
     P.Layout.Observe(uf)
     if state.interruptExpired then E.EndInterrupt(state) state.interruptExpired = nil end
     if plan.neutralContext or plan.enemyLoad or plan.opacity or plan.hostileScoped then
-        state.kind = X.PlateKind(uf, unit)
+        state.kind = X.PlateKind(uf, unit, P.UnitKinds[uf])
     else
-        state.kind = X.Kind(uf.isFriend, uf.isPlayer)
+        state.kind = P.UnitKinds[uf] or X.UnitKind(uf, unit)
     end
     ObserveCast(state, state.cast ~= previousCast)
     state.focus = (plan.focusScale ~= 1 or plan.focusReminder) and Same(unit, "focus") or false
@@ -384,7 +391,7 @@ end
 local function UpdateKind(uf, unit)
     local state = states[uf]
     if not state or restores[state] or state.unit ~= unit then return end
-    local kind = X.PlateKind(uf, unit)
+    local kind = X.PlateKind(uf, unit, P.UnitKinds[uf])
     if kind == state.kind then return end
     state.kind = kind
     ObserveCast(state)
@@ -399,14 +406,18 @@ local function NeutralEvent(module, event, unit)
     module.unitEvents(module, event, unit)
     if not PublicUnit(unit) then return end
     local uf = module.activeUnits[unit]
-    if not Safe(uf) or P.PlatePrefix(uf) ~= "enemy" then return end
-    if P.IsSkinSuppressed and P.IsSkinSuppressed(uf) then return end
+    if not Safe(uf) or P.IsSkinSuppressed and P.IsSkinSuppressed(uf) then return end
+    local features = P.EasyFeatures
+    if features and features.splitEnemyPatterns then features.UpdatePatternScope(uf, unit) end
+    if P.PlatePrefix(uf) ~= "enemy" then return end
     if module.config.neutralNpcSizeOverride then P.Layout.Apply(uf, "enemy", module.config) end
     if plan.neutralContext or plan.enemyLoad or plan.opacity or plan.hostileScoped then UpdateKind(uf, unit) end
 end
 
 function Extensions.NeutralHandler(config)
-    if config.neutralNpcSizeOverride == true or plan.neutralContext or plan.enemyLoad or plan.opacity or plan.hostileScoped then
+    local features = P.EasyFeatures
+    if config.neutralNpcSizeOverride == true or plan.neutralContext or plan.enemyLoad or plan.opacity or plan.hostileScoped
+        or features and features.splitEnemyPatterns then
         return NeutralEvent
     end
 end
@@ -429,6 +440,21 @@ end
 local function TargetEvent(module, event, unit)
     module:OnAggroTargetChanged(unit)
     DataEvent(module, event, unit)
+end
+
+local needsNameData, nameEventUnits
+local function NameEvent(module, event, unit)
+    if P.FriendlyNames.managedNames and PublicUnit(unit) then
+        local token, uf = unit, module.activeUnits[unit]
+        if unit == "target" then
+            local plate = C_NamePlate.GetNamePlateForUnit(unit)
+            uf = Safe(plate) and Is(plate:CanBeAccessedInContext(), true) and plate.UnitFrame
+            token = Safe(uf) and Is(uf:CanBeAccessedInContext(), true) and uf.unit
+            if not PublicUnit(token) or module.activeUnits[token] ~= uf then uf = nil end
+        end
+        if uf then P.FriendlyNames.RepairMissing(uf, token) end
+    end
+    if needsNameData then DataEvent(module, event, unit) end
 end
 
 function Extensions.OnUnit(_, event, unit)
@@ -625,7 +651,15 @@ local function Subscriptions()
     local aggro = M.active and P.Selection and P.Selection.aggroEnabled
     Subscribe("UNIT_TARGET", aggro and TargetEvent or DataEvent, aggro or enabled and (sources[2] or sources[7]))
     local identity = plan.enemy.identity > 1 or plan.friendly.identity > 1
-    Subscribe("UNIT_NAME_UPDATE", DataEvent, enabled and (sources[2] or sources[4] or sources[5] or identity or plan.neutralQuestText))
+    needsNameData = enabled and (sources[2] or sources[4] or sources[5] or identity or plan.neutralQuestText)
+    local managed = M.active and P.FriendlyNames and P.FriendlyNames.managedNames
+    -- The router retains the first native unit filter until unregistration.
+    -- Both consumers share this stable filter when a setting changes.
+    if (managed or needsNameData) and not nameEventUnits and S.NameplateUnits then
+        nameEventUnits = { unpack(S.NameplateUnits) }
+        nameEventUnits[#nameEventUnits + 1] = "target"
+    end
+    Subscribe("UNIT_NAME_UPDATE", managed and NameEvent or DataEvent, managed or needsNameData, nameEventUnits)
     Subscribe("UNIT_POWER_UPDATE", DataEvent, enabled and sources[8])
     P.Power.SetExtraTextEvents(enabled and sources[8])
     Subscribe("UNIT_ABSORB_AMOUNT_CHANGED", DataEvent, enabled and sources[9])

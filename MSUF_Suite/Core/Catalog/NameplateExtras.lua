@@ -29,11 +29,6 @@ for _, index in ipairs({ 5, 6, 7 }) do rules[index].enableKey = "targetClassReso
 for _, index in ipairs({ 9, 10 }) do rules[index].enableKey = "castHealthColors" end
 for _, index in ipairs({ 11, 12 }) do rules[index].enableKey = "enemyRoleColors" end
 for _, index in ipairs({ 16, 17, 18 }) do rules[index].enableKey = "targetUnitFrameResource" end
-for _, entry in ipairs({ { "target", "Target" }, { "focus", "Focus" }, { "hover", "Mouseover" } }) do
-    local kind, label = entry[1], NS.Text(entry[2])
-    rules[#rules + 1] = B.Texture(kind .. "PatternTexture", NS.Text("%s pattern texture"):format(label))
-    rules[#rules + 1] = B.Number(kind .. "PatternAlpha", NS.Text("%s pattern opacity (%%)"):format(label), 35, 0, 100, 5)
-end
 local scopes = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly", friendlyNpc = "Friendly NPC" }
 for _, scope in ipairs(NS.NameplateExtensions.OpacityScopes) do
     local label = NS.Text("%s: automatic class range spell"):format(NS.Text(scopes[scope]))
@@ -43,7 +38,25 @@ for _, scope in ipairs(NS.NameplateExtensions.OpacityScopes) do
     spec.rules[scope .. "RangeSpell"].disabledBy = scope .. "RangeAuto"
 end
 B.Section(id, "plateExtras", "Extra nameplate features", rules)
-for _, rule in ipairs(rules) do
+local function AddToLooks(rule)
     spec.look.visualKeys[rule.key] = true
     for _, preset in pairs(spec.look.presets) do preset[rule.key] = rule.default end
+end
+for _, rule in ipairs(rules) do AddToLooks(rule) end
+
+-- The old keys remain readable while importing pre-category profiles.
+local function PatternRules(prefix, label)
+    return {
+        B.Texture(prefix .. "Texture", NS.Text("%s pattern texture"):format(label)),
+        B.Number(prefix .. "Alpha", NS.Text("%s pattern opacity (%%)"):format(label), 35, 0, 100, 5),
+    }
+end
+for _, pattern in ipairs(NS.NameplateExtensions.Patterns) do
+    local label = NS.Text(pattern.label)
+    B.Section(id, "plateExtras", "Extra nameplate features", PatternRules(pattern.kind .. "Pattern", label), { hidden = true })
+    for _, scope in ipairs(NS.NameplateExtensions.OpacityScopes) do
+        local scoped = PatternRules(scope .. pattern.field, label)
+        B.Section(id, "plateHighlightPatterns", "Frame and highlights", scoped)
+        for _, rule in ipairs(scoped) do AddToLooks(rule) end
+    end
 end

@@ -60,6 +60,7 @@ local private = {
     Layout = { Observe = function() observes = observes + 1 end },
 }
 private.Suite = private.NS
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("Nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeBars.lua"))("Suite", private.NS)
 local function Region(atlas)
     local region = { atlas = atlas, writes = 0 }

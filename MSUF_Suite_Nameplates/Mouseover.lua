@@ -157,7 +157,7 @@ function Hover.ReleaseName(uf, label)
     if not record then return true end
     if not Alpha(label, record, record.original, 0) then return false end
     ReleaseText(records, label)
-    if pointerNames[uf] == label then StopTrackingName(uf) end
+    if pointerNames[uf] then StopTrackingName(uf) end
     return true
 end
 
@@ -211,12 +211,16 @@ function Hover.Apply(uf, health, prefix, styled)
             record.previousMultiplier, record.multiplier = record.multiplier, nil
         end
     end
+    local label
     if plan or fade then
         plan = plan or ALWAYS
         records = records or {}
         plates[uf] = records
         local text = fade and fade.text
-        if not M.friendlyNames[uf.name] then Claim(records, uf.name, plan.name, fade and fade.name) end
+        if not M.friendlyNames[uf.name] and (plan.name or fade and fade.name ~= 1) then
+            label = uf.name
+            Claim(records, label, plan.name, fade and fade.name)
+        end
         Claim(records, health.Text, plan.hp, text)
         Claim(records, health.LeftText, plan.hp, text)
         Claim(records, health.RightText, plan.hp, text)
@@ -231,7 +235,6 @@ function Hover.Apply(uf, health, prefix, styled)
     end
     if changed then Reveal(uf, textHovered == uf, true) end
     if prefix == "friendly" and plan and plan.name and plan.name.mouse then
-        local label = uf.name
         local record = label and records[label]
         if record and record.rule == plan.name then
             pointerNames[uf] = label
@@ -313,7 +316,7 @@ end
 
 -- Settings changed (Skin.lua Refresh): the event follows the setting, and
 -- the plate under the mouse takes the new color or loses its highlight.
-function Hover.Configure()
+function Hover.Configure(hasPatterns)
     local c = M.config
     TextPlans(c)
     Hover.textInUse = visibilityActive or next(plates) ~= nil
@@ -323,8 +326,7 @@ function Hover.Configure()
     end
     highlight = c.mouseoverHighlight == true and c.look ~= LOOK_BLIZZARD
     outline = c.highlightMouseover == true and c.look ~= LOOK_BLIZZARD
-    local pattern = c.look ~= LOOK_BLIZZARD and c.hoverPatternTexture and c.hoverPatternTexture ~= ""
-    local on = highlight or outline or pattern or Mouse(enemy) or Mouse(friendly)
+    local on = highlight or outline or hasPatterns or Mouse(enemy) or Mouse(friendly)
     color = c.mouseoverHighlightColor or "ffffff"
     if on and not listening then
         M.context:Event("UPDATE_MOUSEOVER_UNIT", OnMouseover, IN_COMBAT)

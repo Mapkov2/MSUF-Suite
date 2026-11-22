@@ -398,6 +398,33 @@ local function PaintIdentity(editor, s, player, get)
     end
 end
 
+function Preview.PaintPattern(editor, s, m)
+    local config, scopes = P.S.Config(ID), P.Suite.NameplateExtensions
+    if not m.skinDisabled and not m.namesOnly and config.look ~= 2 and config[s.prefix]
+        and editor:LayerOn("health") and editor:LayerOn("highlightBorders") then
+        for _, signal in ipairs(Style.HighlightOrder(config.highlightPriority and config.highlightOrder or nil)) do
+            local active = signal == "target" and s.state.target or signal == "focus" and s.state.focus
+                or signal == "mouseover" and editor.highlightSample == "mouseover"
+            if active and editor:LayerOn(signal .. "Border") then
+                local kind = signal == "mouseover" and "hover" or signal
+                for _, pattern in ipairs(scopes.Patterns) do
+                    if pattern.kind == kind then
+                        local key, alpha = scopes.PatternSettings(config, m.scope, pattern)
+                        local texture = P.Suite.ResolveTexture(key)
+                        if texture then
+                            s.pattern:SetTexture(texture)
+                            s.pattern:SetAlpha(alpha / 100)
+                            s.pattern:Show()
+                            return
+                        end
+                    end
+                end
+            end
+        end
+    end
+    s.pattern:Hide()
+end
+
 function Preview.PaintStatus(editor, s, m, get)
     if m.skinDisabled or not editor:LayerOn("status") or s.prefix ~= editor.sampleKind or not Styled(s.prefix)
         or m.npcWorldName or m.nameOnlyScope then
@@ -657,7 +684,7 @@ function Preview.CastTimeSize(sample, inherited)
 end
 
 function Preview.PaintMirroredHeader(s, m, get, config)
-    if m.skinDisabled or s.prefix ~= "enemy" or not Style.MirrorHeader(get(ID, "enemyMirrorHeader"),
+    if m.centerName or m.skinDisabled or s.prefix ~= "enemy" or not Style.MirrorHeader(get(ID, "enemyMirrorHeader"),
         get(ID, "enemyTextMode"), m.nameAnchor, m.namesOnly) or get(ID, "look") == 2 then return end
     if P.Suite.NameplateText.NameAnchor(config, s.prefix) then return end
     s.healthText:SetWidth(math.max(1, s.value:GetStringWidth()))

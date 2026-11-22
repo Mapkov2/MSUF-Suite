@@ -46,6 +46,7 @@ local combat = false
 NS.IsCombatLocked = function() return combat end
 NS.NameplateStyle.Elements = {}
 P.Geometry, P.Key = { Point = function() end }, {}
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("Plates", P)
 P.Extensions.OnAnchors = function() order[#order + 1] = "extensions" end
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Layout.lua"))("Plates", P)
 P.Layout.Bind(owner)
@@ -59,7 +60,7 @@ assert(hookCount == 1 and table.concat(order, ",") == "native,layout,extensions"
     "one native anchor observer applies base layout before extension anchors")
 order, combat, owner.pendingPlates = {}, true, {}
 uf:UpdateAnchors()
-assert(owner.pendingPlates[uf] and table.concat(order, ",") == "native,extensions",
+assert(owner.pendingPlates[uf] and table.concat(order, ",") == "native,layout,extensions",
     "deferred base layout still reaches the extension's per-frame protection guard")
 combat = false
 owner.activeUnits.nameplate1 = {}

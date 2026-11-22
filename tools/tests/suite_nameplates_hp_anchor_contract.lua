@@ -16,7 +16,8 @@ local NS = {
 }
 local private = { NS = NS, Suite = NS, Extensions = { OnAnchors = Noop } }
 PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
-UnitIsGameObject, UnitIsFriend, UnitIsPlayer = Noop, Noop, Noop
+UnitIsGameObject, UnitIsFriend = Noop, Noop
+UnitIsPlayer = function() return false end
 
 for _, name in ipairs({ "NameplateStyle", "NameplateText", "NameplateAuraDisplay", "NameplateExtensions" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. name .. ".lua"))("MSUF_Suite", NS)
@@ -171,6 +172,7 @@ for _, forever in ipairs({ false, true }) do
     UnitReaction = function() return 4 end
     UnitAffectingCombat = function() return false end
     NamePlateSetupOptions.castBarToHealthBarSpacing = 3
+    NamePlateSetupOptions.castBarHeight = 12
     NamePlateSetupOptions.healthBarToNameAboveSpacing = 2
     function neutral:UpdateAnchors()
         name.justify = forever and "CENTER" or "LEFT"
@@ -186,24 +188,63 @@ for _, forever in ipairs({ false, true }) do
     config.enemyNameOffsetX, config.enemyNameOffsetY = -32, 5
     Layout.Configure(config)
     combat = true
+    name.protected = true
     Apply(neutral)
     assert(name.points.BOTTOMLEFT[1] == neutral.HealthBarsContainer and module.pendingPlates[neutral],
-        "centering changed anchors during combat")
+        "centering changed a protected name during combat")
+    name.protected = false
+    Apply(neutral)
+    assert(name.points.BOTTOMLEFT[1] == neutral and name.points.BOTTOMRIGHT[1] == neutral,
+        "a writable plate acquired in combat missed the unit center")
+    local centeredWrites, centeredChecks = writes, checks
+    for _ = 1, 100 do Apply(neutral) end
+    assert(writes == centeredWrites and checks == centeredChecks, "a centered name rewrote geometry on unchanged paints")
+    neutral:UpdateAnchors()
+    assert(name.points.BOTTOMLEFT[1] == neutral, "combat rebuild lost the unit center")
     combat = false
     Apply(neutral)
     local left, right = name.points.BOTTOMLEFT, name.points.BOTTOMRIGHT
-    assert(left[1] == neutral.CastBarsContainer and right[1] == neutral.CastBarsContainer
-        and left[3] == 4 and right[3] == -4 and left[4] == 38 and right[4] == 38 and name.justify == "CENTER"
+    assert(left[1] == neutral and right[1] == neutral
+        and left[3] == 4 and right[3] == -4 and left[4] == 50 and right[4] == 50 and name.justify == "CENTER"
         and name.x ~= -32, "name-only label was not centered in the native plate's horizontal lane")
     neutral:UpdateAnchors()
-    assert(name.points.BOTTOMLEFT[1] == neutral.CastBarsContainer, "native anchor rebuild lost centering")
+    assert(name.points.BOTTOMLEFT[1] == neutral, "native anchor rebuild lost centering")
 
     config.neutralPlateNameOnly = false
+    config.enemyHealthHeightDelta = 6
+    function neutral.HealthBarsContainer:SetHeight(h) self.height = h end
+    Layout.Configure(config)
+    Apply(neutral)
+    assert(name.points.BOTTOMLEFT[1] == neutral and name.points.BOTTOMRIGHT[1] == neutral and name.points.BOTTOMLEFT[4] == 56,
+        "health bars ignored the center setting")
+    combat = true
+    neutral:UpdateAnchors()
+    assert(name.points.BOTTOMLEFT[4] == 50, "a native combat rebuild reused the previous custom health height")
+    combat = false
+    config.neutralCenterName = false
     Layout.Configure(config)
     Apply(neutral)
     local restored = forever and name.points.RIGHT or name.points.BOTTOMRIGHT
     assert(name.points.BOTTOMLEFT[1] == neutral.HealthBarsContainer and restored[1] == (forever and neutral.PlayerLevelDiffFrame or neutralHealth.Text)
         and name.justify == (forever and "CENTER" or "LEFT") and name.x == -32,
-        "switching to health bars did not restore both native anchors and the manual offset")
+        "disabling centering did not restore both native anchors and the manual offset")
+    config.neutralPlateNameOnly = true
+    private.FriendlyNames = { IsNameOnly = function(f) return f == neutral end }
+    Layout.Configure(config)
+    Apply(neutral)
+    local only = assert(name.points.BOTTOMLEFT, "lost original name alignment")
+    assert(only[1] == neutral.HealthBarsContainer and only[3] == -32 and only[4] == 7
+        and name.points.BOTTOMRIGHT[1] == neutral.HealthBarsContainer and name.justify == (forever and "CENTER" or "LEFT"),
+        "a name-only NPC's text width still depended on the hidden HP field")
+    neutral:UpdateAnchors()
+    assert(name.points.BOTTOMRIGHT[1] == neutral.HealthBarsContainer,
+        "target rebuild restored the collapsed HP lane")
+    NS.AnchorPoints[5], config.enemyNameRelativeAnchor = "TOPRIGHT", 6
+    Layout.Configure(config)
+    Apply(neutral)
+    assert(name.points.TOPLEFT[1] == neutralHealth and name.points.TOPRIGHT[1] == neutralHealth and name.justify == "RIGHT",
+        "a name-only plate lost the chosen manual alignment")
+    NS.AnchorPoints[5] = nil
+    private.FriendlyNames = nil
 end
 print("Nameplate HP anchors: Retail and Forever combat acquire, rebuild, reuse, deferral and repeat costs passed")

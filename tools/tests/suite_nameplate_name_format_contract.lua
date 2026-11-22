@@ -67,8 +67,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     function label:GetText() reads = reads + 1 return self.value end
     function label:SetText(v) writes = writes + 1 self.value = v end
     function label:GetTextColor() reads = reads + 1 return self.r, self.g, self.b, self.a end
-    function label:SetVertexColor(r,g,b,a) writes = writes + 1 self.r,self.g,self.b,self.a = r,g,b,a or 1 end
-    label.SetTextColor = label.SetVertexColor
+    function label:SetTextColor(r,g,b,a) writes = writes + 1 self.r,self.g,self.b,self.a = r,g,b,a or 1 end
     function label:IsShown() reads = reads + 1 return self.shown end
     label.IsForbidden = NS.Safety.IsForbidden
     function label:IsProtected() return self.protected == true end

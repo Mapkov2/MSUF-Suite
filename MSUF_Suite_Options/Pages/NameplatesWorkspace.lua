@@ -8,7 +8,7 @@ P.NameplatesWorkspace = Workspace
 
 local ORDER = { "enemy", "neutral", "friendly", "friendlyNpc" }
 local LABELS = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly",
-    friendlyNpc = "Friendly NPC" }
+    friendlyNpc = "Friendly NPC", general = "General" }
 local SIDES = { enemy = "enemy", neutral = "enemy", friendly = "friendly", friendlyNpc = "friendly" }
 local X = P.Suite.NameplateExtensions
 local PRIMARY_KINDS = { enemy = "enemyNpc", neutral = "neutralNpc", friendly = "friendlyPlayer", friendlyNpc = "friendlyNpc" }
@@ -26,7 +26,7 @@ function Workspace.Kind() return current end
 
 local function CopyCategory(rule, field, scope)
     local section = rule.section
-    if section == "plateNameOnly" then return "style" end
+    if section == "plateNameOnly" or section == "plateHighlightPatterns" then return "style" end
     if section == "plateOpacity" then return "opacity" end
     if section == "plateInteraction" or section == "plateExtras" then
         if field:match("^Range") then return "range" end
@@ -80,7 +80,7 @@ end
 
 function Workspace.CopyValues(source, target, selected)
     local values, available = {}, {}
-    if not LABELS[source] or not LABELS[target] or source == target then return values, available end
+    if not SIDES[source] or not SIDES[target] or source == target then return values, available end
     for key, rule in pairs(P.catalog[ID].rules) do
         local field = key:match("^" .. source .. "(%u.+)$")
         local category = field and CopyCategory(rule, field, source)
@@ -185,7 +185,8 @@ end
 -- Blizzard settings that apply under any look (CVars.lua Names) or only
 -- change the preview.
 local SKIN_SECTIONS = { enemy = "enemy", roleColors = "enemy", enemyColors = "enemy", friendly = "friendly",
-    castbar = true, auras = true, signals = true, auraColors = true, auraDisplay = true, barAbsorbs = true, plateExtras = true }
+    castbar = true, auras = true, signals = true, auraColors = true, auraDisplay = true, barAbsorbs = true, plateExtras = true,
+    plateHighlightPatterns = true }
 local ANY_LOOK = { friendlyNamesOnly = true, friendlyNameClassColor = true, friendlyRealm = true,
     enemyPreviewRole = true }
 local LOOK_REASON = "Choose a nameplate look other than Blizzard under Look."
@@ -258,6 +259,7 @@ function Workspace.Select(ui, kind, fromFocus)
     if changed and ui.copyPopup then ui.copyPopup.Hide() end
     -- A preview click or search hit keeps the sample it came from.
     local side = SIDES[kind]
+    if ui.copy then ui.copy:SetShown(side ~= nil) end
     if side then
         local status = ui.statusSections and ui.statusSections[kind]
         if changed and status and status.refreshStatusScope then status.refreshStatusScope() end
@@ -281,6 +283,7 @@ function Workspace.Track(ui, body, scopes)
     ui.sections[index] = { entry = entry, scopes = scopes, index = index }
     HM.SetSectionEnsureVisible(entry, function()
         if scopes[current] then return end
+        if scopes.general then Workspace.Select(ui, "general", true) return end
         for _, kind in ipairs(ORDER) do
             if scopes[kind] then Workspace.Select(ui, kind, true) return end
         end
@@ -298,6 +301,7 @@ function Workspace.Header(ctx, builder)
     local width = builder.width or ctx.width or 720
     local values = {}
     for _, kind in ipairs(ORDER) do values[#values + 1] = { value = kind, text = Tr(LABELS[kind]) } end
+    values[#values + 1] = { value = "general", text = Tr(LABELS.general) }
     local opts = { values = values, width = width, maxRight = width - 118, label = "", labelWidth = 0, startX = 16,
         getValue = function() return current end,
         setValue = function(kind) Workspace.Select(ui, kind) end }

@@ -52,8 +52,8 @@ local ENEMY = { key = "enemy", area = "enemies", title = "Enemy appearance", ope
 local function BaseSections()
     return {
         { key = "native", area = "general", title = "Nameplate styling",
-          keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry",
-                "classColors", "playerTitles", "protectImport" } },
+          keys = { "look", "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry",
+                "classColors", "playerTitles", "levelAppearance" } },
         { key = "distance", area = "general", catalog = "distance" },
         ENEMY,
         { key = "castbar", area = "casts", catalog = "castbar", positions = "castbar" },
@@ -172,9 +172,6 @@ local function PlacedSections()
     EnsureSections()
     placed = {}
     for _, spec in ipairs(SECTIONS) do
-        if spec.key == "shared" then Place({ "look" }, PAGE .. "_shared", spec, "style") end
-    end
-    for _, spec in ipairs(SECTIONS) do
         local sectionId = PAGE .. "_" .. spec.key
         if spec.switch then Place({ spec.switch }, sectionId, spec) end
         Place(spec.keys, sectionId, spec)
@@ -240,7 +237,8 @@ function P.NameplateSearchTarget(rule)
         return PAGE .. "_preview_" .. (side or "current"), side, false
     end
     if section then
-        local side = spec and spec.statusItems and spec.positionSide
+        local side = spec and (spec.searchScope or spec.statusItems and spec.positionSide)
+        if rule.section == "plateHighlightPatterns" then side = spec.styleScope end
         local textIndicator = spec and spec.statusItems and rule.section == "plateExtraText"
         if textIndicator then side = spec.plateScope end
         local colorTarget = placement.tab == "colors" or textIndicator
@@ -409,7 +407,10 @@ local function PrepareSearch(page, target)
     local rule = key and P.catalog[ID].rules[key]
     if rule then
         local _, side = P.NameplateSearchTarget(rule)
-        if side and P.NameplatesWorkspace.Side() ~= side then P.NameplatesWorkspace.Open(side) end
+        if side and P.NameplatesWorkspace.Kind() ~= side
+            and (rule.section == "plateHighlightPatterns" or P.NameplatesWorkspace.Side() ~= side) then
+            P.NameplatesWorkspace.Open(side)
+        end
     end
     local placement = key and PlacedSections()[key]
     if not placement then return end
@@ -451,7 +452,8 @@ local function TabRules(spec)
         end
         for _, rule in ipairs(tab.rules) do
             all[#all + 1] = rule
-            if not tab.shared and rule.key ~= spec.sharedGate and not (spec.sharedSettings and spec.sharedSettings[rule.key]) then
+            if (not tab.shared or rule.section == "plateHighlightPatterns") and rule.key ~= "look"
+                and rule.key ~= spec.sharedGate and not (spec.sharedSettings and spec.sharedSettings[rule.key]) then
                 reset[#reset + 1] = rule
             end
         end

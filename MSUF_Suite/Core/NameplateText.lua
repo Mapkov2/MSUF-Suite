@@ -80,7 +80,7 @@ end
 
 function Text.PaintColor(label, state, look, unit)
     if look.customColor then
-        label:SetVertexColor(look.r, look.g, look.b, look.shared and look.shared.textColor.a or 1)
+        label:SetTextColor(look.r, look.g, look.b, look.shared and look.shared.textColor.a or 1)
     elseif look.shared and look.colorPainter.NameColor then
         state.nameText, state.MSUFSpec, state.MSUFUnitKey = label, look.shared, unit
         state._msufPortraitSampleClass = unit == nil and "WARRIOR" or nil
@@ -93,7 +93,7 @@ function Text.PaintColor(label, state, look, unit)
         if not NS.Finite(r) or not NS.Finite(g) or not NS.Finite(b) or not NS.Finite(a) then
             return false
         end
-        label:SetVertexColor(r, g, b, a)
+        label:SetTextColor(r, g, b, a)
     end
     return look.customColor or look.shared ~= nil
 end

@@ -48,7 +48,10 @@ end
 
 local function ApplySharedBars(module)
     local config = module.config
-    if not module.active or config.look == 2 then return end
+    if not module.active then return end
+    local names = private.FriendlyNames
+    if names and names.friendlyPaletteEnabled then names.RefreshFriendlyPalette(true) end
+    if config.look == 2 then return end
     if Absorbs and Absorbs.SharedChanged(config) then return RefreshNameplates() end
     if config.barsOverride then return end
     local previous = module.barSettings or config
@@ -73,7 +76,8 @@ function Textures.ObserveHostStyles(module)
     if bridge.ObserveSharedNameplateBars then
         module.barsJob = module.context:Coalesce(0, ApplySharedBars)
         bridge.ObserveSharedNameplateBars(function()
-            if module.active and module.config.look ~= 2 and (not module.config.barsOverride or Absorbs and Absorbs.shared) then
+            if module.active and (private.FriendlyNames and private.FriendlyNames.friendlyPaletteEnabled
+                or module.config.look ~= 2 and (not module.config.barsOverride or Absorbs and Absorbs.shared)) then
                 module.barsJob:Request()
             end
         end)
@@ -664,7 +668,7 @@ local function Apply(uf, reset, useTextures, background, deferSpark)
     if fill then
         -- Both clients rebuild anchors when names-only mode changes. The
         -- fill is invisible there. Background ownership still feeds Selection.
-        local namesOnly = uf.showOnlyName
+        local namesOnly = private.HealthNameOnly(uf)
         if NS.Public(namesOnly) and namesOnly == true then fill = nil end
     end
     local healthDone = ApplyHealth(uf, health, reset, fill, background)

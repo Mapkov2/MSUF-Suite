@@ -333,9 +333,13 @@ local cases={
     {'enemyNpcOpacity','enemyOpacity:plate'}, {'enemyNpcScale','enemyBasics:enemyNpc'},
     {'friendlyNpcFadeHealthBackground','friendlyNpcOpacity:general'},
     {'enemyIdentityIcons'}, {'friendlyClickboxWidth','friendlyBasics:clicks'},
-    {'neutralRangeAlpha'}, {'neutralRangeSpell'}, {'plateFadeDistance','shared:distance'}, {'friendlyNpcExtraTextTitleSize'},
+    {'neutralRangeAlpha'}, {'neutralRangeSpell'}, {'plateFadeDistance','general:distance'}, {'friendlyNpcExtraTextTitleSize'},
+    {'plateStackEnemy','enemyBasics:display'}, {'plateStackFriendly','friendlyBasics:display'},
+    {'protectImport','general:profiles'}, {'look','general:style'},
     {'enemyRangeAuto'}, {'neutralRangeAuto'}, {'friendlyRangeAuto'}, {'friendlyNpcRangeAuto'},
-    {'enemySlantedHealth','enemyStyle:frame'}, {'targetPatternTexture','shared:frame'},
+    {'enemySlantedHealth','enemyStyle:frame'}, {'enemyTargetPatternTexture','enemyStyle:frame'},
+    {'neutralTargetPatternTexture','neutralStyle:frame'}, {'friendlyFocusPatternAlpha','friendlyStyle:frame'},
+    {'friendlyNpcHoverPatternTexture','friendlyNpcStyle:frame'},
     {'castIconCombinedHeight','castbar:icon'}, {'castSeamLine','castbar:advanced'},
     {'targetClassResource','classResources:plate'}, {'targetUnitFrameResource','classResources:frame'},
     {'friendlyNpcDebuffs'}, {'neutralNpcHealthWidthDelta'},
@@ -361,6 +365,18 @@ if enforce then
 end
 assert(M.SelectPage('suite_nameplates'))
 mw:RunTimers(1000)
+assert(not M.cache.suite_nameplates.sections.suite_nameplates_shared, "the Shared section was still created")
+assert(not records["msufsuite.nameplates.targetPatternTexture"], "the retired pattern appeared in search")
+local placements = {}
+for _, section in ipairs(P.NameplateSections) do
+    for _, tab in ipairs(section.tabs or {}) do
+        for _, key in ipairs(tab.keys or {}) do placements[key] = (placements[key] or 0) + 1 end
+    end
+end
+for _, key in ipairs({ "nativeStyle", "nativeSize", "protectImport", "plateStackEnemy", "plateStackFriendly",
+    "enemyTargetPatternTexture", "neutralTargetPatternTexture", "friendlyTargetPatternTexture", "friendlyNpcTargetPatternTexture" }) do
+    assert(placements[key] == 1, "duplicate or missing placements for " .. key)
+end
 local bySection={}
 for key in pairs(built) do local section=key:match('^([^:]+)'); bySection[section]=(bySection[section] or 0)+1 end
 for section,n in pairs(bySection) do
@@ -736,8 +752,12 @@ do
         values = P.NameplatesWorkspace.CopyValues("friendlyNpc", "neutral", { style = true })
         assert(values.neutralPlateNameTypeColor == P.Get("nameplates", "friendlyNpcPlateNameTypeColor"),
             "copying Friendly NPC style missed the scoped name color setting")
+        assert(values.neutralTargetPatternTexture == P.Get("nameplates", "friendlyNpcTargetPatternTexture"),
+            "copying Friendly NPC style missed the scoped target pattern")
         for key in pairs(values) do
-            assert(key == "neutralPlateNameTypeColor" or key == "neutralCenterName", "copying Friendly NPC style included a shared setting")
+            local rule = P.catalog.nameplates.rules[key]
+            assert(key == "neutralPlateNameTypeColor" or key == "neutralCenterName" or rule.section == "plateHighlightPatterns",
+                "copying Friendly NPC style included a shared setting")
         end
         assert(P.NameplatesWorkspace.Open("friendlyNpc"))
         ui.copy:Click()
@@ -868,10 +888,14 @@ do
     assert(P.Set("nameplates", "neutralExtraTextResource", oldText))
 
     local oldColor, newColor = config.enemyBorderColor, "17b7cd"
-    assert(P.Set("nameplates", "enemyBorderColor", newColor))
-    assert(not page.sections.suite_nameplates_neutralStyle._msufSuiteSectionReset
-        and config.enemyBorderColor == newColor, "Neutral Style exposed a reset for shared Enemy colors")
-    assert(P.Set("nameplates", "enemyBorderColor", oldColor))
+    local oldPattern, oldAlpha = config.neutralTargetPatternAlpha, config.enemyTargetPatternAlpha
+    assert(P.SetMany("nameplates", { enemyBorderColor = newColor, neutralTargetPatternAlpha = 73, enemyTargetPatternAlpha = 61 }))
+    assert(page.sections.suite_nameplates_neutralStyle._msufSuiteSectionReset())
+    assert(config.neutralTargetPatternAlpha == P.catalog.nameplates.rules.neutralTargetPatternAlpha.default,
+        "Neutral Style did not reset its highlight pattern")
+    assert(config.enemyBorderColor == newColor and config.enemyTargetPatternAlpha == 61,
+        "Neutral Style reset an Enemy setting")
+    assert(P.SetMany("nameplates", { enemyBorderColor = oldColor, neutralTargetPatternAlpha = oldPattern, enemyTargetPatternAlpha = oldAlpha }))
     local savedOffsets = {}
     local offsets = { enemyHealthTextOffsetX = 12, enemyHealthOffsetX = 27, enemyCastIconOffsetX = 33,
         friendlyCastIconOffsetX = 41, enemyBuffsOffsetX = 51, enemyCastEnabled = 3,
@@ -1439,11 +1463,15 @@ do
         P.Suite.HostBridge.NPCNameColor = function(kind) assert(kind == "friendly") return .1, .8, .3 end
         config.friendlyNPCs, config.friendlyNpcPlateNameTypeColor, config.friendlyNpcSkinEnabled = 5, true, true
         local label, rgb = npc.sample.nameText
-        local set = label.SetVertexColor
-        label.SetVertexColor = function(self, r, g, b, a) rgb = { r, g, b } return set(self, r, g, b, a) end
+        local set = label.SetTextColor
+        label.SetTextColor = function(self, r, g, b, a) rgb = { r, g, b } return set(self, r, g, b, a) end
         P.NameplatesPreview.Render(npc.editor, npc.sample)
         assert(rgb and rgb[1] == .1 and rgb[2] == .8 and rgb[3] == .3, "friendly NPC preview used an enemy role color")
-        label.SetVertexColor, P.Suite.HostBridge.NPCNameColor = set, resolve
+        config.friendlyNpcPlateNameTypeColor = false
+        P.NameplatesPreview.Render(npc.editor, npc.sample)
+        local red, green, blue = P.RGB(npc.sample.metrics.healthColor)
+        assert(rgb[1] == red and rgb[2] == green and rgb[3] == blue, "the sample name did not inherit its own bar color")
+        label.SetTextColor, P.Suite.HostBridge.NPCNameColor = set, resolve
         config.friendlyNPCs, config.friendlyNpcPlateNameTypeColor, config.friendlyNpcSkinEnabled = mode, tint, enabled
     end
     local auraState = assert(group.samples[1].sample.auraPreviewState)

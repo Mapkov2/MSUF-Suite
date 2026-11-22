@@ -153,7 +153,7 @@ neutralMode.hidden = true
 nameOnly[#nameOnly + 1] = neutralMode
 for _, scope in ipairs(X.OpacityScopes) do
     nameOnly[#nameOnly + 1] = B.Tooltip(B.Bool(scope .. "CenterName", "Auto center above unit", false),
-        "Center the name above the nameplate in Name only mode.")
+        "Center the name above the unit in Health bars and Name only modes.")
 end
 B.Section(id, "plateNameOnly", "Name only", nameOnly)
 for _, kind in ipairs(X.Kinds) do

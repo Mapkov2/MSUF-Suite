@@ -146,7 +146,11 @@ local function Verify(host, flavor)
     end
     local basics = "suite_nameplates_enemyBasics"
     Expand(basics)
-    assert(rows[basics].look and not rows[basics].nameplatePreset, "Basics must keep Look without the template selector")
+    assert(not (rows[basics] and rows[basics].look), "a category still renders the global Look control")
+    local general = "suite_nameplates_general"
+    Expand(general)
+    assert(P.NameplatesWorkspace.Kind() == "general", "opening the global settings did not select General")
+    assert(rows[general].look and not rows[general].nameplatePreset, "General must keep Look without the template selector")
     for _, label in ipairs({ "Quick Setup", "Preview template", "Show original" }) do
         assert(not (buttons[basics] and buttons[basics][label]), "Basics kept " .. label)
     end

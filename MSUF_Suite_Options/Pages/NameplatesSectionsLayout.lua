@@ -537,9 +537,6 @@ end
 
 local CAST_POSITIONS = { "Cast", "CastText", "CastTime", "CastIcon", "CastShield", "CastTarget" }
 local ENEMY_EXTRA_COLORS = { "questNeutralColor", "questHostileColor", "castHealthInterruptible", "castHealthLocked" }
-local HIGHLIGHT_PATTERNS = { "targetPatternTexture", "targetPatternAlpha", "focusPatternTexture", "focusPatternAlpha",
-    "hoverPatternTexture", "hoverPatternAlpha" }
-
 local function StyleColors(side)
     local colors, seen = {}, {}
     local function Add(key)
@@ -593,6 +590,13 @@ local function PlaceStyle(sections, scope, appearance, sharedAppearance)
     for _, source in ipairs(appearance) do
         local tab = Tab(source.id, source.label, source.keys)
         tab.colors, tab.help, tab.shared = source.colors, source.help, sharedAppearance
+        if tab.id == "frame" then
+            tab.keys = Take(source, 1)
+            for _, pattern in ipairs(P.Suite.NameplateExtensions.Patterns) do
+                local key = scope .. pattern.field
+                tab.keys[#tab.keys + 1], tab.keys[#tab.keys + 2] = key .. "Texture", key .. "Alpha"
+            end
+        end
         tabs[#tabs + 1] = tab
     end
     Add(sections, scope .. "Style", "Style", { [scope] = true }, 20,
@@ -739,9 +743,9 @@ local function PlaceVisibility(sections, by)
         friendly = { friendlyPlayer = true }, friendlyNpc = { friendlyNpc = true } }
     local displays = {
         enemy = { "plateEnemyMinions", "plateEnemyPets", "plateEnemyGuardians", "plateEnemyTotems",
-            "plateEnemyMinus", "plateSimpleMinion", "plateSimpleMinus" },
+            "plateEnemyMinus", "plateSimpleMinion", "plateSimpleMinus", "plateStackEnemy" },
         friendly = { "plateFriendlyMinions", "plateFriendlyPets", "plateFriendlyGuardians", "plateFriendlyTotems",
-            "plateSimpleFriendlyPlayer" },
+            "plateSimpleFriendlyPlayer", "plateStackFriendly" },
         friendlyNpc = { "plateSimpleFriendlyNpc" },
     }
     for _, key in ipairs({ "enemy", "neutral", "friendly", "friendlyNpc" }) do
@@ -751,17 +755,19 @@ local function PlaceVisibility(sections, by)
     Relocate(by, "enemyVisibility", nil, { enemy = true }, 80)
 end
 
-local function PlaceShared(sections, by)
-    by.native.keys[#by.native.keys + 1] = "levelAppearance"
-    local style = Tab("style", "Style", by.native.keys, function(ctx, body, y, width, section)
+local function PlaceGeneral(sections, by)
+    local scope = { general = true }
+    local function Links(ctx, body, y, width, section)
         local hint = P.Text(body, "Nameplate style and size apply to all nameplate types.", 16, y - 8, width)
         y = y - 18 - math.ceil(hint:GetStringHeight() or 14)
         y = P.NameplateBarTextures.LinkCastTarget(ctx, body, y, width, section)
         return P.NameplateBarTextures.LinkAbsorbs(ctx, body, y, width, section)
-    end)
-    style.before = Layout.Look
-    Add(sections, "shared", "Shared", ALL, 100, { tabs = { style,
-        Tab("frame", "Frame and highlights", HIGHLIGHT_PATTERNS), Tab("distance", "Distance and stacking", by.distance.keys) } })
+    end
+    Add(sections, "general", "General", scope, 10, { open = true, searchScope = "general", tabs = {
+        Tab("style", "Style", by.native.keys, Links),
+        Tab("distance", "Distance and stacking", by.distance.keys),
+        Tab("profiles", "Profiles", { "nativeProfileMode", "protectImport" }),
+    } })
 end
 
 function Layout.Arrange(sections)
@@ -772,22 +778,14 @@ function Layout.Arrange(sections)
     for _, spec in ipairs(sections) do by[spec.key] = spec end
     by.distance.keys = { "plateMaxDistanceMode", "plateMaxDistance", "plateOccludedMode", "plateOccludedPercent", "plateFadeDistance",
         "plateShrinkDistance", "plateSpacingMode", "plateOverlapV", "plateOverlapH", "plateMotionSpeed", "plateInsetMode",
-        "plateTopInset", "plateBottomInset", "plateClampTarget", "plateStackEnemy", "plateStackFriendly", "plateShowAll", "plateOffscreen" }
+        "plateTopInset", "plateBottomInset", "plateClampTarget", "plateShowAll", "plateOffscreen" }
     PlaceVisibility(sections, by)
-    PlaceShared(sections, by)
+    PlaceGeneral(sections, by)
     local auras = Relocate(by, "auraWorkspace", "Auras", ALL, 30)
     auras.open, auras.summary = false, P.NameplatesAdvancedAuras.Summary
     for i = #sections, 1, -1 do
         if not sections[i].scopes then table.remove(sections, i) end
     end
-end
-
-function Layout.Look(ctx, body, y, width, sectionId)
-    local M = P.M
-    local look = P.RuleRow(PAGE, ID, P.catalog[ID].rules.look, nil, sectionId)
-    local grid = P.W.SettingsRows(ctx, body, { x = 16, y = y - 4, width = width, rows = { look }, columns = 2 })
-    M.AddTooltip(grid.controls.look, Tr("Look"), Tr("The selected look applies to all nameplate types."), { hook = true })
-    return grid.bottomY - 12
 end
 
 function Layout.BarLinks(ctx, body, y, width, sectionId)

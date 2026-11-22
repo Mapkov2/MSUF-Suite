@@ -170,6 +170,8 @@ local function BuildBar(editor, s, cell)
     s.progress:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
     s.progress:SetWidth(100)
     Tint(s.progress, prefix == "enemy" and "c64b52" or "52a873")
+    s.pattern = bar:CreateTexture(nil, "ARTWORK", nil, 5)
+    s.pattern:SetAllPoints(s.progress)
     s.selectedBar = bar:CreateTexture(nil, "OVERLAY")
     s.aggro = Fill(bar, "OVERLAY")
     s.aggro:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 0, 0)
@@ -351,13 +353,12 @@ local function Metrics(editor, s, m)
     m.groupOnly = not m.skinDisabled and prefix == "friendly" and not m.friendlyNPC
         and not editor.editFullPlate and friendlyDisplay == 3
     local scope = m.friendlyNPC and "friendlyNpc" or prefix == "enemy" and editor.scope == "neutral" and "neutral" or prefix
+    m.scope = scope
     m.nameOnlyScope = not (m.skinDisabled or editor.editFullPlate)
         and P.Suite.NameplateExtensions.CustomNameOnly(P.S.Config(ID), scope, true) and scope or nil
     m.namesOnly = m.npcWorldName or m.nameOnlyScope ~= nil or prefix == "friendly" and not m.friendlyNPC and not editor.editFullPlate
         and (friendlyDisplay == 2 or friendlyDisplay == 3 or friendlyDisplay == 1
             and Style.NativeToggle("nameplateShowOnlyNameForFriendlyPlayerUnits", false))
-    m.centerName = m.namesOnly and not (m.npcWorldName or m.skinDisabled) and Get(ID, "look") ~= 2
-        and Get(ID, prefix) and Get(ID, scope .. "CenterName")
     m.nativeLevel = m.forever and not m.namesOnly
     m.levelMode = P.NameplatesPreviewDecor.LevelMode(editor, prefix, m.classic, m.namesOnly)
     m.nativeLevelWidth = m.nativeLevel and SetupNumber("playerLevelDiffWidth", 28 * m.classificationScale) or 0
@@ -488,7 +489,9 @@ local function RenderHealth(editor, s, m)
     s.back:SetShown(not m.skinDisabled and not s.healthBackgroundPath and Get(ID, "look") ~= 2 and editor:LayerOn("backdrop")
         and Get(ID, prefix .. "BackdropEnabled") and Get(ID, prefix .. "BackdropAlpha") > 0)
     local hex = prefix == "enemy" and "c64b52" or "52a873"
-    if not m.skinDisabled and RoleColorShown(editor, m) then hex = Get(ID, "enemy" .. m.descriptor.key .. "Color") end
+    m.roleFillColor = not m.skinDisabled and RoleColorShown(editor, m) and Get(ID, "enemy" .. m.descriptor.key .. "Color")
+    hex = m.roleFillColor or hex
+    m.healthColor = hex
     if prefix == "enemy" and not m.skinDisabled and Get(ID, "look") ~= 2 then
         hex = P.NameplatesAuraDraft.Color() or hex
     end
@@ -714,6 +717,7 @@ local function Render(editor, s)
     P.NameplatesPreviewDecor.PaintHealthChrome(editor, s, m, not m.skinDisabled and m.barSettings.nativeHealthBackgroundTexture or "")
     P.NameplatesPreviewDecor.PaintLevel(editor, s, m, SetupNumber, Place)
     RenderHealth(editor, s, m)
+    P.NameplatesPreviewDecor.PaintPattern(editor, s, m)
     RenderTarget(editor, s, m)
     RenderMarkers(editor, s, m)
     RenderFonts(s, m)
@@ -726,11 +730,21 @@ local function Render(editor, s)
     if m.nameOnlyScope then
         if s.prefix == "enemy" and editor.enemyPlayer and Get(ID, "enemyPlateNameClassColor") then
             local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS.WARRIOR
-            if color then s.nameText:SetVertexColor(color.r, color.g, color.b, 1) end
-        elseif not (s.prefix == "enemy" and editor.enemyPlayer) and Get(ID, m.nameOnlyScope .. "PlateNameTypeColor") then
-            local role = m.descriptor and m.descriptor.key or "Melee"
-            local r, g, b = P.Suite.NameplateExtensions.NameOnlyNPCColor(P.S.Config(ID), m.nameOnlyScope, role)
-            if r then s.nameText:SetVertexColor(r, g, b, 1) end
+            if color then s.nameText:SetTextColor(color.r, color.g, color.b, 1) end
+        elseif not (s.prefix == "enemy" and editor.enemyPlayer) then
+            local r, g, b = P.RGB(m.healthColor)
+            local scope = m.nameOnlyScope
+            if Get(ID, scope .. "PlateNameTypeColor") then
+                if scope == "friendlyNpc" then
+                    local red, green, blue, custom = P.Suite.NameplateExtensions.NameOnlyNPCColor(P.S.Config(ID), scope)
+                    if custom then r, g, b = red, green, blue end
+                elseif not m.roleFillColor and scope == "neutral" and Get(ID, "enemyNeutralEnabled") ~= false then
+                    r, g, b = P.RGB(Get(ID, "enemyNeutralColor"))
+                elseif not m.roleFillColor and scope == "enemy" and m.descriptor and Get(ID, "enemy" .. m.descriptor.key .. "Enabled") ~= false then
+                    r, g, b = P.RGB(Get(ID, "enemy" .. m.descriptor.key .. "Color"))
+                end
+            end
+            s.nameText:SetTextColor(r, g, b, 1)
         end
     end
     P.NameplatesPreviewDecor.PaintMirroredHeader(s, m, Get, P.S.Config(ID))

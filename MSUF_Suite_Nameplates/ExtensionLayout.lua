@@ -180,8 +180,8 @@ function L.Scale(state, scale)
 end
 
 function L.Name(state)
-    local name, side = state.uf.name, state.plan[state.prefix]
-    if not side or not Safe(name) then return end
+    local uf, side = state.uf, state.plan[state.prefix]
+    if not side then return end
     local alpha = state.casting == true and (side.nameCast == 3 and 0 or side.nameCast == 2 and side.nameAlpha) or 1
     local fade = state.layerFade
     if fade and P.Mouseover then
@@ -189,20 +189,27 @@ function L.Name(state)
         P.Mouseover.SetOpacity(state.uf, state.health, state.prefix, fade.text, fade.powerText, alpha)
         return
     end
-    if alpha == 1 and state.baseNameAlpha == nil then return end
+    if alpha == 1 then
+        if state.nameAlphaRegion then L.RestoreName(state) end
+        return
+    end
+    local name = uf.name
+    if state.nameAlphaRegion and state.nameAlphaRegion ~= name then L.RestoreName(state) end
+    if state.owner.friendlyNames and state.owner.friendlyNames[name] ~= nil then return end
+    if not Safe(name) then return end
     if state.baseNameAlpha == nil then
         local native = name:GetAlpha()
         if not S.Finite(native) then return end
-        state.baseNameAlpha = native
+        state.baseNameAlpha, state.nameAlphaRegion = native, name
     end
     local value = state.baseNameAlpha * alpha
     if state.nameAlpha ~= value then name:SetAlpha(value) state.nameAlpha = value end
-    if alpha == 1 then state.baseNameAlpha, state.nameAlpha = nil, nil end
 end
 
 function L.RestoreName(state)
-    if state.baseNameAlpha ~= nil and Safe(state.uf.name) then state.uf.name:SetAlpha(state.baseNameAlpha) end
-    state.baseNameAlpha, state.nameAlpha = nil, nil
+    local name = state.nameAlphaRegion
+    if name and Safe(name) then name:SetAlpha(state.baseNameAlpha) end
+    state.nameAlphaRegion, state.baseNameAlpha, state.nameAlpha = nil, nil, nil
 end
 
 local function Foreground(state, enabled)

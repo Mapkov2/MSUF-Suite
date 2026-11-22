@@ -133,6 +133,7 @@ local MIGRATIONS = {
     { run = Steps.NameplateOutlineOff },
     { run = Steps.BagsDefaultBorder },
     { run = Steps.FloatingXP },
+    { run = Steps.NameplateHighlightPatterns },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {

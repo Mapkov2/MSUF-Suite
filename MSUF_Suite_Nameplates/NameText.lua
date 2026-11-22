@@ -80,7 +80,7 @@ local function RestoreColor(state, label)
         local r, g, b, a = label:GetTextColor()
         if S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a)
             and r == state.paintR and g == state.paintG and b == state.paintB and a == state.paintA then
-            label:SetVertexColor(state.r, state.g, state.b, state.a)
+            label:SetTextColor(state.r, state.g, state.b, state.a)
         end
     end
     state.tinted = nil

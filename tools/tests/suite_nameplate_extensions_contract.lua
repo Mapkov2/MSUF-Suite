@@ -17,7 +17,7 @@ UnitHasVehicleUI = function() return vehicle end
 UnitInVehicle = function() return vehicle end
 IsInGroup = function() return grouped end
 C_Housing = { IsInsideHouseOrPlot = function() return housing end }
-UnitReaction = function(unit) return unit == "nameplate2" and reaction or 2 end
+UnitReaction = function(unit) return unit == "nameplate3" and 5 or unit == "nameplate2" and reaction or 2 end
 UnitAffectingCombat = function(unit) return unit == "nameplate2" and fighting or false end
 local reads, writes, created, hooks, ranges, casts, identities = {}, 0, 0, {}, {}, {}, {}
 local function Read(key) reads[key] = (reads[key] or 0) + 1 end
@@ -201,9 +201,12 @@ local P = {
     HookPlates = function(method, callback) hooks[method] = callback end,
 }
 local jobs, timers, tickers = {}, {}, {}
-local ctx = { callbacks = {} }
-function ctx:Event(event, callback) self.callbacks[event] = callback end
-function ctx:RemoveEvent(event) self.callbacks[event] = nil end
+local ctx = { callbacks = {}, unitFilters = {} }
+function ctx:Event(event, callback, _, units)
+    if not self.callbacks[event] then self.unitFilters[event] = units end
+    self.callbacks[event] = callback
+end
+function ctx:RemoveEvent(event) self.callbacks[event], self.unitFilters[event] = nil, nil end
 function ctx:Ticker(interval, callback) tickers[callback] = interval end
 function ctx:After(delay, callback) timers[callback] = now + delay end
 function ctx:Cancel(callback) tickers[callback], timers[callback] = nil, nil end
@@ -239,6 +242,8 @@ X.Configure(M)
 assert(created == beforeCreated and CountReads() == beforeReads and next(ctx.callbacks) == nil and next(tickers) == nil,
     "disabled extensions must allocate no frame, query no gameplay data and register no listeners/tickers")
 local plates = {}
+P.UnitKinds = {}
+UnitIsPlayer = function(unit) return plates[unit] and plates[unit].UnitFrame.isPlayer == true end
 C_NamePlate = { GetNamePlateForUnit = function(unit) return plates[unit == "target" and target or unit] end }
 local function Plate(unit, friend)
     local plate, uf = NewFrame(UIParent), NewFrame(UIParent)
@@ -323,6 +328,11 @@ assert(uf.name.alpha == 1 and reads.interrupter == 3, "empower stop uses sixth-a
 X.OnCast(M, "UNIT_SPELLCAST_START", "nameplate1", secret, secret, 47)
 X.BeforeNameFilter(uf)
 assert(uf.name.alpha == 1, "friendly-name filtering sees the alpha before cast dimming")
+uf.name:SetAlpha(.8)
+Apply(uf, health, cast)
+assert(uf.name.alpha == .2, "cast dimming ignored the native name's opacity")
+X.BeforeNameFilter(uf)
+assert(uf.name.alpha == .8, "ending cast dimming lost the native name's original opacity")
 uf.name:SetAlpha(0)
 Apply(uf, health, cast)
 assert(uf.name.alpha == 0, "cast dimming preserves an external name filter")
@@ -765,5 +775,115 @@ do
     assert(label:IsShown(), "the returning quest label did not recover after the health bar transition")
     X.Restore(npc)
     assert(not label:IsShown(), "a released plate retained its quest label")
+end
+-- Roster-only refresh calls the group filter without a full plate paint.
+-- The cast effect releases the native name before the group filter claims it.
+do
+    local grouped = true
+    UnitInParty = function() return grouped end
+    UnitInRaid = function() return false end
+    P.Mode.GROUP_NAMES_ONLY = 3
+    P.Mouseover = { textInUse = false }
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/FriendlyNames.lua"))("Plates", P)
+    local names = P.FriendlyNames
+    names.Bind(M)
+    M.active, M.friendlyNames, M.units = true, {}, {}
+    M.config = { friendly = true, look = 3, friendlyNamesOnly = 3, friendlyNameDuringCast = 3 }
+    local unit = "nameplate8"
+    local _, player, bar, castingBar = Plate(unit, true)
+    local native = player.name
+    player.isPlayer, P.UnitKinds[player], M.units[bar] = true, "friendlyPlayer", unit
+    native:SetAlpha(.8)
+    casts[unit] = true
+    X.Configure(M)
+    Apply(player, bar, castingBar, "friendly", unit)
+    assert(native.alpha == 0)
+    names.Filter(player, "friendly")
+    assert(native.alpha == 0, "checking an unfiltered group member canceled the active cast fade")
+    grouped = false
+    names.Filter(player, "friendly")
+    assert(M.friendlyNames[native] == .8 and native.alpha == 0, "roster refresh captured the cast's hidden alpha")
+    local getAlpha = native.GetAlpha
+    native.GetAlpha = function() error("casting sampled the hidden native group-filter alpha") end
+    Apply(player, bar, castingBar, "friendly", unit)
+    native.GetAlpha = getAlpha
+    grouped = true
+    names.Filter(player, "friendly")
+    assert(native.alpha == 0 and M.friendlyNames[native] == nil, "joining mid-cast canceled the configured cast fade")
+    casts[unit] = nil
+    X.OnCast(M, "UNIT_SPELLCAST_STOP", unit, secret, secret, 123)
+    assert(native.alpha == .8 and M.friendlyNames[native] == nil, "a cast hid the released group member")
+    grouped = false
+    names.Filter(player, "friendly")
+    native.forbidden, grouped = true, true
+    names.Filter(player, "friendly")
+    assert(M.friendlyNames[native] == .8 and M.pendingPlates[player], "a denied restore forgot its native alpha")
+    native.forbidden = false
+    names.Filter(player, "friendly")
+    assert(native.alpha == .8 and M.friendlyNames[native] == nil, "a released plate kept the group filter's zero")
+end
+-- The native name-cache event updates health, even on a visible enemy bar
+-- whose name was unavailable when Blizzard assigned the frame.
+do
+    local names = P.FriendlyNames
+    P.Mode.ALL_NAMES_ONLY, P.Mode.NPC_NAMES_ONLY = 2, 4
+    P.SkinScopes = { suppressed = {} }
+    S.NameplateUnits = { "nameplate1", "nameplate9" }
+    M.config = { enemy = true, enemySkinEnabled = true, enemyNameVisible = true, enemyNameMouseover = false,
+        enemyPlateNameOnly = false, friendlyNamesOnly = 1, look = 3 }
+    local unit = "nameplate9"
+    local plate, npc = Plate(unit)
+    npc.unit, npc.optionTable, P.UnitKinds[npc] = unit, {}, "enemyNpc"
+    function npc.name:GetText() return self.text end
+    function npc:ShouldShowName() return not self.widgetsOnlyMode end
+    function plate:CanBeAccessedInContext() return true end
+    function npc:CanBeAccessedInContext() return not self.inaccessible end
+    local repaired = 0
+    securecallfunction = function(f, ...) return f(...) end
+    CompactUnitFrame_UpdateName = function(f)
+        repaired = repaired + 1
+        f.name:SetText(UnitName(f.unit))
+    end
+    names.ConfigureNameOnly()
+    X.Configure(M)
+    local update = assert(ctx.callbacks.UNIT_NAME_UPDATE, "Show name on an enemy health bar never registered the name-cache event")
+    identities[unit] = "Murloc Tidehunter"
+    update(M, "UNIT_NAME_UPDATE", "nameplate404")
+    npc.name:Hide()
+    update(M, "UNIT_NAME_UPDATE", unit)
+    npc.name:Show()
+    npc.widgetsOnlyMode = true
+    update(M, "UNIT_NAME_UPDATE", unit)
+    assert(repaired == 0 and npc.name.text == nil, "repaired a hidden, widgets-only or unmapped plate")
+    npc.widgetsOnlyMode = false
+    update(M, "UNIT_NAME_UPDATE", unit)
+    assert(npc.name.text == identities[unit] and repaired == 1, "late enemy name missing from the visible health bar")
+    update(M, "UNIT_NAME_UPDATE", unit)
+    assert(repaired == 1, "rewrote a populated native name")
+    npc.name:SetText(nil)
+    M.config.enemyNameVisible = nil -- legacy default-on configuration
+    names.ConfigureNameOnly()
+    assert(names.repairKinds.enemyNpc, "an enemy bar missed the initial name check")
+    names.RepairMissing(npc, unit)
+    assert(npc.name.text == identities[unit] and repaired == 2, "name-cache event before frame mapping left the health bar blank")
+    local filter = assert(ctx.unitFilters.UNIT_NAME_UPDATE, "name-cache event lacks unit filter")
+    local hasTarget = false
+    for _, token in ipairs(filter) do if token == "target" then hasTarget = true end end
+    assert(hasTarget and #S.NameplateUnits == 2, "target alias absent from the native filter or shared units modified")
+    target = unit
+    npc.name:SetText(nil)
+    M.activeUnits[unit] = uf
+    update(M, "UNIT_NAME_UPDATE", "target")
+    M.activeUnits[unit] = npc
+    npc.inaccessible = true
+    update(M, "UNIT_NAME_UPDATE", "target")
+    npc.inaccessible = false
+    assert(repaired == 2 and not npc.name.text, "target alias used an inaccessible or recycled frame")
+    update(M, "UNIT_NAME_UPDATE", "target")
+    assert(repaired == 3 and npc.name.text == identities[unit], "target alias did not repair the selected canonical plate")
+    M.config.enemyNameVisible = false
+    names.ConfigureNameOnly()
+    X.Configure(M)
+    assert(not ctx.callbacks.UNIT_NAME_UPDATE, "hidden full-bar names kept the name-cache subscriber")
 end
 print("nameplate extensions contract passed: lifecycle, pooling, secrets, layout, click permission, range budget, text, restoration, visibility and opacity")

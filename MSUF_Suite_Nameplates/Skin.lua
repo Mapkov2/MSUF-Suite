@@ -77,6 +77,7 @@ local function HideVisual(visual)
 end
 
 local Prefix = private.PlatePrefix
+local UnitKinds, UnitKind = private.UnitKinds, NS.NameplateExtensions.UnitKind
 local scopes = private.SkinScopes
 local suppressed = scopes.suppressed
 local scopedSkins, ApplyAuras = false, Auras.Apply
@@ -104,7 +105,8 @@ local function ReadFacts(uf, unit, facts)
     if not S.Public(unit) or type(unit) ~= "string" then return end
     local focus = UnitIsUnit(unit, "focus")
     if S.Public(focus) and focus == true then M.focusUF = uf end
-    if not S.Public(uf.isPlayer) or uf.isPlayer ~= false then return end
+    local kind = UnitKinds[uf]
+    if kind ~= "enemyNpc" and kind ~= "neutralNpc" and kind ~= "friendlyNpc" then return end
     local color = prefix == "enemy" and M.config.look ~= LOOK_BLIZZARD and M.config.enemyRoleColors and Roles.allowed
     local keys = Key[prefix]
     local elite, quest = M.config[keys.EliteMarker], M.config[keys.QuestMarker]
@@ -117,14 +119,15 @@ local function ReadFacts(uf, unit, facts)
     if (color or typeOnName) and M.active then facts.kind = Roles.Classify(unit, classification) end
     if color and M.active then
         facts.colored = true
-        Roles.Base(facts, unit, uf)
+        Roles.Base(facts, unit, uf, kind)
     end
 end
 
 -- Unit metadata is refreshed on identity/threat/quest events, never health ticks.
-local function SetRole(uf, unit)
+local function SetRole(uf, unit, kind)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
+    UnitKinds[uf] = kind or UnitKind(uf, unit)
     M.units[health] = unit
     local facts = Facts(health)
     ReadFacts(uf, unit, facts)
@@ -139,15 +142,21 @@ local function Paint(uf)
     if not Safe(health) then return end
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local prefix, unit = Prefix(uf), M.units[health]
-    local onlyName
+    local onlyName, paintPlayerName
     if Names.nameOnlyEnabled then
         local facts = M.facts[health]
-        onlyName = Names.ApplyNameOnly(uf, unit, facts and facts.kind)
+        local barHex = M.config.look ~= LOOK_BLIZZARD and prefix and M.config[prefix]
+            and private.HealthAppearance.RoleFillColor(health, prefix) or nil
+        onlyName, paintPlayerName = Names.ApplyNameOnly(uf, unit, facts and facts.kind, barHex, UnitKinds[uf])
+        if onlyName and S.Public(uf.isTarget) and uf.isTarget == true then M.nameOnlyTargetUF = uf end
+    end
+    if Names.npcHealthBars[uf] or (UnitKinds[uf] == "neutralNpc" or UnitKinds[uf] == "friendlyNpc")
+        and S.Public(uf.showOnlyName) and uf.showOnlyName == true then
+        Names.SyncNPCHealth(uf, UnitKinds[uf], onlyName)
     end
     CastTime.Paint(cast, prefix, unit, uf)
     KickReady.Paint(cast, prefix, unit)
     Threat.Apply(uf)
-    Extensions.BeforeNameFilter(uf)
     FilterFriendlyName(uf, prefix)
     if Status.Paint then Status.Paint(uf, prefix, unit) end
     if onlyName then Level.Hide(uf) else
@@ -183,7 +192,7 @@ local function Paint(uf)
     if M.extras then private.EasyFeatures.Paint(uf, health, cast, prefix, unit, styled and not onlyName, M.roles[health]) end
     if onlyName then AuraDisplay.Restore(uf) else AuraDisplay.Apply(uf, unit, prefix == "enemy") end
     if Extensions.inUse then Extensions.Apply(uf, health, cast, prefix, unit) end
-    if onlyName then Names.PaintNameOnly(uf) end
+    if paintPlayerName then Names.PaintNameOnly(uf) end
 end
 
 local PaintPlate = Paint
@@ -194,6 +203,8 @@ local function PaintFocusAdded(uf) Textures.PaintAdded(uf, PaintPlate) end
 local PaintAdded = PaintPlate
 
 local function RestorePlate(uf, keepUnit, recycled)
+    if Names.npcHealthBars[uf] then Names.SyncNPCHealth(uf) end
+    if not keepUnit then UnitKinds[uf] = nil end
     Names.RestoreNameOnly(uf)
     if M.extras then private.EasyFeatures.Restore(uf, not keepUnit) end
     if Textures.inUse then Textures.Restore(uf, recycled) end
@@ -204,7 +215,7 @@ local function RestorePlate(uf, keepUnit, recycled)
     AuraColors.Restore(uf)
     Threat.Restore(uf)
     Mouseover.Restore(uf)
-    RestoreFriendlyName(uf.name)
+    RestoreFriendlyName(uf.name, uf)
     Level.PaintNative(uf, nil)
     Level.Hide(uf)
     if Status.Restore then Status.Restore(uf) end
@@ -232,12 +243,14 @@ local SuppressSkin = scopes.Bind(M, RestorePlate)
 -- mixin reaches the frames created after it; a frame that still holds the
 -- unhooked method gets a hook of its own when the Suite meets it.
 local plateHooks = {}
+local coveredHooks = setmetatable({}, { __mode = "k" })
 
-local function CoverPlate(uf)
-    for i = 1, #plateHooks do
+local function CoverPlate(uf, count)
+    for i = (coveredHooks[uf] or 0) + 1, count do
         local hook = plateHooks[i]
         if uf[hook.method] == hook.original then hooksecurefunc(uf, hook.method, hook.callback) end
     end
+    coveredHooks[uf] = count
 end
 
 -- Once per method and session (a secure hook cannot be removed). The shown
@@ -250,7 +263,7 @@ end
 local function ApplyPlate(plate)
     if not Safe(plate) or not Safe(plate.UnitFrame) then return end
     local uf, unit = plate.UnitFrame, plate.unitToken
-    CoverPlate(uf)
+    if coveredHooks[uf] ~= #plateHooks then CoverPlate(uf, #plateHooks) end
     if not M.active then
         RestorePlate(uf)
         return
@@ -259,10 +272,12 @@ local function ApplyPlate(plate)
         M.activeUnits[unit] = uf
         SetRole(uf, unit)
     else
+        UnitKinds[uf] = nil
         local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
         if Safe(health) then M.roles[health], M.units[health] = nil, nil end
     end
     Paint(uf)
+    if uf.optionTable and Names.repairKinds[UnitKinds[uf]] then Names.RepairMissing(uf, unit) end
     ApplyAuras(uf)
 end
 
@@ -314,12 +329,13 @@ local function OnAdded(self, _, unit)
     local plate = C_NamePlate.GetNamePlateForUnit(unit)
     local uf = Safe(plate) and plate.UnitFrame
     if not Safe(uf) then return end
-    CoverPlate(uf)
+    if coveredHooks[uf] ~= #plateHooks then CoverPlate(uf, #plateHooks) end
     self.activeUnits[unit] = uf
     BeginName(uf)
     SetRole(uf, unit)
     if self.extras then private.EasyFeatures.Added() end
     PaintAdded(uf)
+    if uf.optionTable and Names.repairKinds[UnitKinds[uf]] then Names.RepairMissing(uf, unit) end
     ApplyAuras(uf)
     if Roles.learnedLieutenant then AfterClassify(self) end
 end
@@ -346,27 +362,36 @@ local function RefreshRole(uf)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local prefix = Prefix(uf)
     local visual = health and M.visuals[health]
-    if not Safe(health) or not prefix or not visual or M.config.look == LOOK_BLIZZARD or not M.config[prefix]
+    if not Safe(health) or not prefix or M.config.look == LOOK_BLIZZARD or not M.config[prefix]
         or scopedSkins and suppressed[uf] then
         Paint(uf)
         return
     end
+    if Names.nameOnlyEnabled then
+        local facts = M.facts[health]
+        if Names.RefreshRole(uf, facts and facts.kind, private.HealthAppearance.RoleFillColor(health, prefix)) then return end
+    end
+    if not visual then return Paint(uf) end
     PaintHealth(health, visual, prefix)
     if M.extras then private.EasyFeatures.Role(uf, M.roles[health]) end
 end
 
-local function RefreshTarget(uf)
+local function RefreshTarget(uf, selectionChanged, selectedUnit)
     if not Safe(uf) then return end
-    if scopedSkins and suppressed[uf] then return end
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local unit = health and M.units[health]
-    if Names.neutralNameOnly and unit and Names.NeutralDisplayChanged(uf, unit) then
-        SetRole(uf, unit)
-        Paint(uf)
-        return Names.IsNameOnly(uf)
+    if (Names.nameOnlyEnabled or scopedSkins) and unit then
+        local kind = UnitKind(uf, unit, selectedUnit)
+        if kind ~= UnitKinds[uf] or Names.nameOnlyEnabled and Names.NeutralDisplayChanged(uf, unit, kind) then
+            SetRole(uf, unit, kind)
+            Paint(uf)
+            if selectionChanged and Names.IsNameOnly(uf) then Names.PaintNameOnly(uf, true) end
+            return Names.IsNameOnly(uf)
+        end
     end
+    if scopedSkins and suppressed[uf] then return end
     if Names.nameOnlyEnabled and Names.IsNameOnly(uf) then
-        Names.PaintNameOnly(uf)
+        Names.PaintNameOnly(uf, selectionChanged)
         return true
     end
     local prefix = Prefix(uf)
@@ -396,7 +421,7 @@ local function RefreshQuests(module)
             local before, role = facts.quest, module.roles[health]
             facts.quest = Roles.Quest(unit)
             if facts.colored then
-                Roles.Base(facts, unit, uf)
+                Roles.Base(facts, unit, uf, UnitKinds[uf])
                 module.roles[health] = Roles.Get(facts, unit, uf)
             end
             if before ~= facts.quest or role ~= module.roles[health] then RefreshRole(uf) end
@@ -425,10 +450,29 @@ local function OnTargetChanged(self)
     local previous = self.nameOnlyTargetUF or self.targetUF
     local plate = C_NamePlate.GetNamePlateForUnit("target")
     local current = Safe(plate) and plate.UnitFrame
+    if Safe(current) then
+        local health = current.HealthBarsContainer and current.HealthBarsContainer.healthBar
+        local unit = current.unit
+        if S.Public(unit) and type(unit) == "string" and Safe(health)
+            and (self.activeUnits[unit] ~= current or self.units[health] ~= unit)
+            and unit:match("^nameplate%d+$") and S.Public(plate.unitToken) and plate.unitToken == unit then
+            -- The native driver acquires its pooled UnitFrame in the same
+            -- event as OnAdded. The selected frame can now be fully bound.
+            local prior = self.units[health]
+            if prior and prior ~= unit and self.activeUnits[prior] == current then OnRemoved(self, nil, prior) end
+            local displaced = self.activeUnits[unit]
+            if displaced and displaced ~= current then
+                if previous == displaced then previous = nil end
+                local oldHealth = Safe(displaced) and displaced.HealthBarsContainer and displaced.HealthBarsContainer.healthBar
+                if oldHealth and self.units[oldHealth] == unit then OnRemoved(self, nil, unit) end
+            end
+            OnAdded(self, nil, unit)
+        end
+    end
     if self.config.auraDisplayEnabled then AuraDisplay.TargetChanged(current) end
     if Decor.inUse then Decor.TargetChanged(current) end
-    if previous and previous ~= current then RefreshTarget(previous) end
-    self.nameOnlyTargetUF = current and RefreshTarget(current) and current or nil
+    if previous and previous ~= current then RefreshTarget(previous, true) end
+    self.nameOnlyTargetUF = current and RefreshTarget(current, true, "target") and current or nil
 end
 
 -- Faction changes repaint the plate. Level, classification and power display
@@ -445,10 +489,23 @@ local function OnUnitChanged(module, event, unit)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
     local facts = module.facts[health]
-    if event == "UNIT_FACTION" or not facts
-        or Names.neutralNameOnly and (event == "UNIT_FLAGS" or Names.neutralSplit and event == "UNIT_THREAT_LIST_UPDATE")
-        and Names.NeutralDisplayChanged(uf, unit) then
-        SetRole(uf, unit)
+    if facts and (event == "UNIT_THREAT_SITUATION_UPDATE" or event == "UNIT_THREAT_LIST_UPDATE" and not Names.neutralSplit) then
+        if facts.colored then
+            local role = Roles.Get(facts, unit, uf)
+            if module.roles[health] ~= role then
+                module.roles[health] = role
+                RefreshRole(uf)
+            elseif not module.visuals[health] and not Names.IsNameOnly(uf) then
+                RefreshRole(uf)
+            end
+        end
+        return
+    end
+    local kind = event == "UNIT_FLAGS" and UnitKind(uf, unit) or nil
+    if event == "UNIT_FACTION" or not facts or event == "UNIT_FLAGS" and kind ~= UnitKinds[uf]
+        or Names.neutralSplit and (event == "UNIT_FLAGS" or event == "UNIT_THREAT_LIST_UPDATE")
+        and Names.NeutralDisplayChanged(uf, unit, kind or UnitKinds[uf]) then
+        SetRole(uf, unit, kind)
         Paint(uf)
         return
     end
@@ -463,7 +520,7 @@ local function OnUnitChanged(module, event, unit)
             if M.targetUF == uf then RefreshTarget(uf) end
         end
     elseif facts.colored then
-        if event == "UNIT_FLAGS" then Roles.Base(facts, unit, uf) end
+        if event == "UNIT_FLAGS" then Roles.Base(facts, unit, uf, kind) end
         module.roles[health] = Roles.Get(facts, unit, uf)
     end
     if not module.visuals[health] or role ~= module.roles[health]
@@ -477,6 +534,14 @@ local function OnScopedUnitChanged(module, event, unit)
     if S.Public(unit) and type(unit) == "string" then
         local uf = module.activeUnits[unit]
         if Safe(uf) then
+            if event == "UNIT_FACTION" or event == "UNIT_FLAGS" then
+                local kind = UnitKind(uf, unit)
+                if kind ~= UnitKinds[uf] then
+                    SetRole(uf, unit, kind)
+                    Paint(uf)
+                    return
+                end
+            end
             if not scopes.Allowed(uf, unit) then return SuppressSkin(uf) end
             if suppressed[uf] then
                 SetRole(uf, unit)
@@ -543,6 +608,14 @@ local function OnFrameOptions(uf)
         Text.Invalidate(cast.CastTargetNameText)
     end
     Paint(uf)
+end
+
+local function OnNativeShowOnlyName(uf)
+    local kind = UnitKinds[uf]
+    if not M.active or not (kind == "neutralNpc" or kind == "friendlyNpc" or Names.npcHealthBars[uf])
+        or suppressed[uf] or not Safe(uf) then return end
+    local unit = uf.unit
+    if S.Public(unit) and unit and M.activeUnits[unit] == uf then Names.SyncNPCHealth(uf, kind, Names.IsNameOnly(uf)) end
 end
 
 -- The shown plates whose unit frame a held-back write named, in Blizzard's
@@ -689,6 +762,7 @@ function M:Enable()
     if not self.fontHook then
         self.fontHook = true
         private.HookPlates("ApplyFrameOptions", OnFrameOptions)
+        if NamePlateUnitFrameMixin.UpdateShowOnlyName then private.HookPlates("UpdateShowOnlyName", OnNativeShowOnlyName) end
     end
     Listen(self, "NAME_PLATE_UNIT_ADDED", OnAdded)
     Listen(self, "NAME_PLATE_UNIT_REMOVED", OnRemoved)
@@ -737,7 +811,7 @@ function M:Refresh()
     Selection.Configure(bars)
     if private.EasyFeatures then private.EasyFeatures.Configure(self) end
     self.extras = private.EasyFeatures and private.EasyFeatures.enabled
-    Mouseover.Configure()
+    Mouseover.Configure(self.extras and private.EasyFeatures.hoverPatterns)
     AuraColors.Configure(self.config)
     AuraDisplay.Configure(self.config)
     Status.Configure(self)

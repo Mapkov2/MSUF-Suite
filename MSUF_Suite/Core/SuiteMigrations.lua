@@ -458,6 +458,24 @@ function Steps.NameplateEnableVisibility(modules)
     if plates.friendlyNPCs ~= 4 then plates.friendlyNPCs = nil end
 end
 
+function Steps.NameplateHighlightPatterns(modules)
+    local config = Module(modules, "nameplates")
+    if not config then return end
+    for _, pattern in ipairs(NS.NameplateExtensions.Patterns) do
+        local legacy = pattern.kind .. "Pattern"
+        for _, suffix in ipairs({ "Texture", "Alpha" }) do
+            local value = config[legacy .. suffix]
+            if value ~= nil then
+                for _, scope in ipairs(NS.NameplateExtensions.OpacityScopes) do
+                    local key = scope .. pattern.field .. suffix
+                    if config[key] == nil then config[key] = value end
+                end
+                config[legacy .. suffix] = nil
+            end
+        end
+    end
+end
+
 function Steps.NameplateBarsOverride(modules)
     local plates = Module(modules, "nameplates")
     if not plates or plates.barsOverride ~= nil then return end
