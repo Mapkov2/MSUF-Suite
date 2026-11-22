@@ -1,5 +1,26 @@
 # MSUF Suite Changelog
 
+
+## 0.1.31 Alpha - 2026-11-21
+
+### Retail and WoW Forever
+
+- Use Space or a custom key to advance NPC dialogue. Number keys select dialogue options and quest rewards.
+- Buy the missing quantity from your restock list with a confirmation that shows the amount and price.
+- Bind a key to cast the next missing self-buff. Each press casts one buff outside combat.
+- Look up recently sent mail for the current character, including recipients, attached items and gold.
+
+### Retail
+
+- See which players are missing raid buffs during a ready check.
+- See an item's maximum upgrade level in the bag details.
+- Optionally require Shift-click to roll or pass on a bonus roll outside combat.
+
+### WoW Forever
+
+- Mark food in your bags that your hunter pet can eat.
+- Show when the Fishing key can reel in your bobber.
+
 ## 0.1.30 Alpha - 2026-11-21
 
 Distributed through the Beta channel for WoW Retail and WoW Forever.
