@@ -127,8 +127,7 @@ end
 -- Page rows and FAQ answers: some module of the page can run here.
 local function PageAvailable(pageKey)
     if pageKey == "suite_macros" or pageKey == "suite_devMode" then return true end
-    if (pageKey == "suite_skin" or pageKey == "suite_tooltips")
-        and (SkinAvailable() or Suite.HostBridge.UnitFrameTooltipAPI()) then return true end
+    if pageKey == "suite_skin" and SkinAvailable() then return true end
     for _, id in ipairs(P.order) do
         if (P.QoLOwners.PageFor(id) or P.catalog[id].page) == pageKey and ModuleAvailable(id) then return true end
     end
@@ -215,15 +214,31 @@ local function TemplateKey(rule)
     if rule.slot or rule.bar or rule.window then return (rule.key:gsub("%d+", "#")) end
 end
 
+local function VisibilityTarget(pageKey, module, key)
+    if module == "damageMeter" and key == "visibility" then
+        return pageKey .. "_globalVisibility", "Shared visibility rules"
+    end
+    if module == "chat" or module == "chatComfort" then
+        local section = P.ChatWorkspace.VisibilitySection(key)
+        if section then return pageKey .. "_" .. section.id, section.title end
+    end
+end
+
 -- Shared editors use their first instance's stable widget identity. Other
 -- numbered controls (DataTexts bars and slots) have their own real widgets.
 local function RuleTarget(page, spec, rule)
     if spec.id == "macroBuilder" then return nil end
     local section = rule.section
+    if page.key == "suite_tooltips" and P.TooltipLayoutOwnsRule(spec.id, rule.key) then
+        return P.TooltipLayoutSection, "Layout", true
+    end
     if P.OwnedTools[spec.id] then return page.key .. "_" .. spec.id .. "_module" end
     if spec.id == "planningTools" then return P.PlanningRuleTarget(rule.key) end
     if rule.key == "enabled" and spec.id ~= "nameplates" then return page.key .. "_" .. spec.id .. "_module" end
     if rule.previewOnly then
+        if spec.id == "damageMeter" then
+            return page.key .. "_preview_offset_" .. rule.key, P.MeterPreviewProperties.PositionTitle(rule), false
+        end
         local target = spec.id == "minimap" and P.MinimapSections.PreviewOffsetSection(rule.key) or page.key .. "_preview"
         return target, nil, false
     end
@@ -249,6 +264,13 @@ local function RuleTarget(page, spec, rule)
             end
         end
     end
+    local visibilitySection, visibilityTitle = VisibilityTarget(page.key, spec.id, rule.key)
+    if visibilitySection then return visibilitySection, visibilityTitle end
+    if spec.id == "damageMeter" then
+        if rule.loadCondition then return page.key .. "_loadConditions", "Load Conditions" end
+        if rule.key == "iconBorder" then return page.key .. "_iconBorder", "Icon border styling" end
+        if rule.key == "targetSelector" then return page.key .. "_button_target", "Filter damage by target" end
+    end
     if rule.window then return page.key .. "_windows", "Window settings" end
     if spec.id == "dataTexts" and section then
         return P.DataTextSearchTarget(rule)
@@ -266,6 +288,7 @@ end
 local function RuleRow(page, spec, rule, template, feature, category, config)
     local kind = RuleKind(rule)
     if not kind then return nil end
+    if spec.id == "damageMeter" and rule.previewOnly then kind = "textinput" end
     local keywords = {}
     AddWords(keywords, spec.title)
     AddWords(keywords, rule.label)
@@ -285,10 +308,12 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
     -- page holds several.
     local sectionId, targetTitle, targetExact = RuleTarget(page, spec, rule)
     if spec.id == "chat" and rule.key:match("[XY]$") then sectionId = page.key .. "_preview" end
-    local section = feature and category and (Tr(category.title) .. " > " .. Tr(feature.title))
+    local section = sectionId == P.TooltipLayoutSection and Tr("Layout")
+        or feature and category and (Tr(category.title) .. " > " .. Tr(feature.title))
         or targetTitle and Tr(targetTitle)
         or not template and (rule.sectionTitle and Tr(rule.sectionTitle)
         or (spec.title ~= page.title and Tr(spec.title))) or nil
+    if spec.id == "damageMeter" and rule.previewOnly then section = Tr("Preview") .. " > " .. section end
     if rule.searchSection then
         AddWords(keywords, rule.searchSection)
         section = section and (section .. " > " .. Tr(rule.searchSection)) or Tr(rule.searchSection)
@@ -312,7 +337,8 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
         section = section, keywords = keywords, help = rule.help and Tr(rule.help) or nil,
         settingKey = exact and settingKey or nil,
         sectionId = spec.id ~= "macroBuilder" and
-            (feature and ("suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]) or sectionId) or nil,
+            (sectionId == P.TooltipLayoutSection and sectionId
+                or feature and ("suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]) or sectionId) or nil,
         prepareKind = spec.id == "macroBuilder" and "suiteMacroTab" or nil,
         prepareValue = spec.id == "macroBuilder" and "consumable" or nil,
         anchorText = kind == "color" and (feature and Tr(feature.title) or section) or nil,
@@ -341,6 +367,7 @@ local function SearchableRule(spec, rule, config)
     -- A rule this client cannot use has no control: its page skips the section
     -- (Buff Reminders' Mainline consumables on WoW Forever).
     if rule.requires and P.Requires[rule.requires] and not P.Requires[rule.requires]() then return false end
+    if spec.id == "damageMeter" and rule.previewOnly then return true end
     if not rule.hidden then return true end
     -- These rules are hidden only from the generic settings grid. The page
     -- owns a switch, preview or direction pad for them instead.
@@ -637,10 +664,13 @@ local function ModuleForRecord(pageKey, settingKey, record)
     return id, key, row
 end
 
-local function SkinSearchRowAvailable(sectionId, settingKey)
+local function SkinSearchRowAvailable(pageKey, sectionId, settingKey)
     if sectionId == "suite_skin_unit_tooltips" and
         not (settingKey and settingKey:match("^msufsuite%.skin%.theme%.tooltipLayout%.unit")) then
         return P.Suite.HostBridge.UnitFrameTooltipAPI() ~= nil
+    end
+    if pageKey == "suite_tooltips" then
+        return ModuleAvailable("tooltipAppearance"), not P.Get("tooltipAppearance", "enabled")
     end
     if not SkinAvailable() then return false end
     if settingKey == "msufsuite.skin.enabled" then return true end
@@ -669,7 +699,7 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     -- Actions built in every state of their page (Pages/Appearance.lua).
     if row.suiteAlways or record.suiteAlways then return true end
     if (pageKey == "suite_skin" or pageKey == "suite_tooltips") and (not owner or owner == "skin") then
-        return SkinSearchRowAvailable(row.sectionId or record.sectionId, settingKey)
+        return SkinSearchRowAvailable(pageKey, row.sectionId or record.sectionId, settingKey)
     end
     local id, key = ModuleForRecord(pageKey, settingKey, record)
     if not id then
@@ -767,11 +797,23 @@ local function ResolveFormerChatBehavior(_, target)
     if not target then return end
     local key = (target.settingKey or ""):match("^msufsuite%.dailyComfort%.(.+)$") or FormerChatKey(target.controlId)
     if not key or key == "enabled" or not P.catalog.chatComfort.rules[key] then return end
-    local copy = P.Meta("suite_chat", "chatComfort", key, "setting", chatBehaviorSection)
+    local section = VisibilityTarget("suite_chat", "chatComfort", key) or chatBehaviorSection
+    local copy = P.Meta("suite_chat", "chatComfort", key, "setting", section)
     copy.pageKey = "suite_chat"
     return "suite_chat", copy, {}
 end
 Suite.HostBridge.RegisterSearchTargetResolver(M, "MSUF_Suite.FormerChatBehavior", ResolveFormerChatBehavior)
+
+local function ResolveFormerVisibility(page, target)
+    if not target or (page ~= "suite_chat" and page ~= "suite_damageMeter") then return end
+    local module, key = (target.settingKey or ""):match("^msufsuite%.([^.]+)%.(.+)$")
+    local section = VisibilityTarget(page, module, key)
+    if not section or section == target.sectionId then return end
+    local spec = P.catalog[module]
+    if not spec or spec.page ~= page then return end
+    return page, P.Meta(page, module, key, "setting", section), {}
+end
+Suite.HostBridge.RegisterSearchTargetResolver(M, "MSUF_Suite.FormerVisibility", ResolveFormerVisibility)
 
 if M.RegisterSearchAvailability then M.RegisterSearchAvailability("MSUF_Suite", P.SearchRowAvailable) end
 Suite.Registry.AddListener(P.SearchRows, function(_, domain)

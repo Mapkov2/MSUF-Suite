@@ -19,11 +19,41 @@ function Workspace.FitHeader(ui, required)
     if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
 end
 
+local function RuleSwitch(ctx, body, page, module, section, rule, opts)
+    local row = P.RuleRow(page, module, rule, opts.keyFn, section)
+    local toggle = P.BindSectionSwitch(ctx, body, {
+        label = row.label, displayLabel = Tr(opts.switchLabel or "Enable"), dim = opts.dimSwitch,
+        get = row.get, meta = row,
+        set = function(value)
+            if P.RuleEnabled(module, rule, opts.keyFn, false, opts.editWhileOff) then row.set(value) end
+        end,
+    })
+    local entries = { { rule = rule, widget = toggle, meta = row, label = row.label } }
+    P.GateControls(ctx, module, entries, opts.keyFn, opts.editWhileOff)
+    Workspace.Prepare(body, entries)
+    P.AttachRowsSummary(ctx, body)
+end
+
 function Workspace.Rules(ctx, builder, page, module, section, title, rules, opts)
     opts = opts or {}
+    if opts.switchKey and W.SectionSwitch then
+        local bodyRules, switch = {}, nil
+        for _, rule in ipairs(rules) do
+            if rule.key == opts.switchKey then switch = rule else bodyRules[#bodyRules + 1] = rule end
+        end
+        if switch then
+            local head = opts.head
+            opts.head = function(body)
+                if head then head(body) end
+                RuleSwitch(ctx, body, page, module, section, switch, opts)
+            end
+            opts.resetRules = opts.resetRules or rules
+            rules = bodyRules
+        end
+    end
     local before = opts.onBuilt
     opts.onBuilt = function(body, entries)
-        Workspace.Prepare(body, entries)
+        Workspace.Prepare(body, entries, module)
         if before then before(body, entries) end
     end
     return P.RuleSection(ctx, builder, page, module, section, title, rules, opts)
@@ -68,12 +98,14 @@ end
 local function Route(ui, sectionId)
     local suffix = sectionId:sub(#ui.spec.page + 2)
     for _, tab in ipairs(ui.spec.tabs) do
-        for name in tab.sections:gmatch("%S+") do if suffix == name then return tab.id end end
+        for name in tab.sections:gmatch("%S+") do
+            if name == suffix or name == sectionId then return tab.id end
+        end
     end
     return ui.spec.tabs[1].id
 end
 
-function Workspace.Prepare(body, entries)
+function Workspace.Prepare(body, entries, module)
     local ui = body._suiteWorkspace
     if not ui then return end
     for _, entry in ipairs(entries or {}) do
@@ -86,7 +118,7 @@ function Workspace.Prepare(body, entries)
                 return true
             end
             HM.SetSearchTargetPrepare(widget, Reveal)
-            local meta = entry.meta or P.Meta(ui.spec.page, ui.spec.module, entry.rule.key,
+            local meta = entry.meta or P.Meta(ui.spec.page, module or ui.spec.module, entry.rule.key,
                 "setting", body._suiteWorkspaceSection)
             P.RegisterWorkspaceSearch(widget, meta, entry.rule, "suiteWorkspace", Reveal, entry.label)
         end

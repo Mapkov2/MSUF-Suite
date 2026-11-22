@@ -87,6 +87,10 @@ function Interaction.Refresh(bar)
     P.SetTranslatedText(bar.label, Tr(bar._suitePreviewLabel or bar.hint or HINT))
     bar.button:SetEnabled(target ~= nil)
     bar.button:SetAlpha(target and 1 or .45)
+    if bar.hideOpenWhenIdle and bar.button:IsShown() ~= (target ~= nil) then
+        bar.button:SetShown(target ~= nil)
+        Interaction.SizeBar(bar, bar:GetWidth())
+    end
     -- Thickness 0 names the selection in the bar without outlining it.
     if target then Interaction.Outline(target, bar._suitePreviewThickness ~= 0, bar._suitePreviewThickness) end
 end
@@ -103,8 +107,9 @@ function Interaction.SizeBar(bar, width)
     bar:SetSize(width, 24)
     local buttonWidth = math.min(width - 12, bar.preferredButtonWidth)
     bar.button:SetWidth(buttonWidth)
-    bar.label:SetWidth(math.max(20, width - buttonWidth - 28))
-    bar.label:SetShown(width - buttonWidth >= 68)
+    local actionWidth = bar.hideOpenWhenIdle and not bar.button:IsShown() and 0 or buttonWidth
+    bar.label:SetWidth(math.max(20, width - actionWidth - 28))
+    bar.label:SetShown(width - actionWidth >= 68)
 end
 
 -- Damage Meter and the Tooltip preview share the same exact-offset bar.
@@ -133,8 +138,9 @@ function Interaction.LayoutSelectionBar(bar, width)
     end
 end
 
-function Interaction.Bar(ctx, parent, width, help)
+function Interaction.Bar(ctx, parent, width, help, hideOpenWhenIdle)
     local bar = CreateFrame("Frame", nil, parent)
+    bar.hideOpenWhenIdle = hideOpenWhenIdle
     bar:EnableMouse(true)
     local chrome = P.M.PreviewHelpers
     if chrome and chrome.ApplyPreviewChrome then chrome.ApplyPreviewChrome(bar, "sidebar", T) end
@@ -176,6 +182,7 @@ function Interaction.LayerRailTitle(rail)
 end
 
 function Interaction.BindLayerClick(button, toggle, open, blocked)
+    button._suiteLayerBlocked = blocked
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetScript("OnClick", function(_, mouse)
         local setting = blocked and blocked()
@@ -193,6 +200,7 @@ function Interaction.BuildLayerRail(owner, parent, specs, toggle, open, blocked)
     owner.chips, owner.layerButtons = chips, {}
     local H = P.M.PreviewHelpers or {}
     local title = Interaction.LayerRailTitle(chips)
+    owner.layerTitle = title
     title:SetPoint("TOPLEFT", chips, "TOPLEFT", 10, -5)
     local measure = T.Font(chips, "GameFontDisableSmall", "", T.colors.muted)
     measure:Hide()
@@ -213,7 +221,6 @@ function Interaction.BuildLayerRail(owner, parent, specs, toggle, open, blocked)
             button.key = key
         end
         local check = blocked and function() return blocked(key) end
-        button._suiteLayerBlocked = check
         Interaction.BindLayerClick(button, function() return toggle(key, owner.layers[key] == false) end,
             function(setting) return open(spec, setting) end, check)
         HM.SkipHistoryCheckpoint(button)
@@ -224,32 +231,55 @@ function Interaction.BuildLayerRail(owner, parent, specs, toggle, open, blocked)
     end
 end
 
-function Interaction.LayoutLayerRail(owner, width)
-    local chips, x, row = owner.chips, 10, 0
-    for _, button in ipairs(owner.layerButtons) do
-        button._suiteLayerWidth = button._suiteLayerWidth or button:GetWidth()
-        local size = math.min(math.max(1, width - 20), button._suiteLayerWidth)
-        if button:GetWidth() ~= size then
-            button:SetWidth(size)
-            if button.fs then
-                button.fs:SetPoint("RIGHT", button, "RIGHT", -5, 0)
-                button.fs:SetWordWrap(false)
-            end
-        end
-        if x > 10 and x + size > width - 10 then x, row = 10, row + 1 end
-        button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", chips, "TOPLEFT", x, -25 - row * 24)
-        x = x + size + 5
+function Interaction.LayoutLayerRail(owner, width, inline)
+    local chips = owner.chips
+    local left, top = 10, 25
+    if inline then
+        local titleWidth = math.ceil(owner.layerTitle:GetStringWidth()) + 22
+        if width >= titleWidth + 180 then left, top = titleWidth, 5 end
     end
-    chips:SetSize(width, 50 + row * 24)
+    local x, row = left, 0
+    for _, button in ipairs(owner.layerButtons) do
+        if not inline or button:IsShown() then
+            button._suiteLayerWidth = button._suiteLayerWidth or button:GetWidth()
+            local size = math.min(math.max(1, width - left - 10), button._suiteLayerWidth)
+            if button:GetWidth() ~= size then
+                button:SetWidth(size)
+                if button.fs then
+                    button.fs:SetPoint("RIGHT", button, "RIGHT", -5, 0)
+                    button.fs:SetWordWrap(false)
+                end
+            end
+            if x > left and x + size > width - 10 then x, row = left, row + 1 end
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", chips, "TOPLEFT", x, -top - row * 24)
+            x = x + size + 5
+        end
+    end
+    chips:SetSize(width, top + 25 + row * 24)
+end
+
+function Interaction.RefreshLayerButton(button, on)
+    if button.Refresh then return button:Refresh() end
+    local blocked = button._suiteLayerBlocked and button._suiteLayerBlocked()
+    local muted = blocked or not on
+    button:SetAlpha(blocked and 0.58 or (muted and 0.77 or 1))
+    local label = HM.GetControlLabel and HM.GetControlLabel(button)
+    if label and (muted or button._suiteLayerMuted) then
+        local colors = T.colors
+        local color = muted and (colors.disabled or colors.dim or colors.muted) or colors.text
+        if muted then
+            local gray = color and color[1] and (color[1] * 0.2126 + color[2] * 0.7152 + color[3] * 0.0722) or 0.635
+            label:SetTextColor(gray, gray, gray, color and color[4] or 1)
+        elseif color and color[1] then
+            label:SetTextColor(color[1], color[2], color[3], color[4] or 1)
+        end
+    end
+    button._suiteLayerMuted = muted and true or nil
 end
 
 function Interaction.RefreshLayerRail(owner)
     for _, button in ipairs(owner.layerButtons) do
-        if button.Refresh then button:Refresh()
-        else
-            local blocked = button._suiteLayerBlocked and button._suiteLayerBlocked()
-            button:SetAlpha((blocked or owner.layers[button.key] == false) and .42 or 1)
-        end
+        Interaction.RefreshLayerButton(button, owner.layers[button.key] ~= false)
     end
 end

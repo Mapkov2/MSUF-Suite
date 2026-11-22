@@ -6,6 +6,8 @@ P.Suite.Registry.AddListener(colorOwner, function(_, domain)
     if domain == "profile" then colorEpoch = colorEpoch + 1 end
 end)
 
+function P.ColorHistoryEpoch() return colorEpoch end
+
 -- The Skinning declarations feed the cold search index and visible controls.
 -- Collection reads metadata only: callbacks and widget builders never run.
 function P.SkinSearchRow(ctx, row, section, title, help)
@@ -33,50 +35,6 @@ function P.SkinSearchButton(ctx, parent, label, x, y, width, onClick, enabled, m
 end
 
 -- The skin section's three-dot menu edits its color rows.
-function P.SkinColorTarget(skin, row)
-    local profile, epoch = skin.DB, skin.Database.GetHistoryEpoch()
-    local r, g, b, a = row.get()
-    local function Current()
-        return skin.DB == profile and skin.Database.GetHistoryEpoch() == epoch and not P.Combat()
-    end
-    local function Get()
-        if Current() then return row.get() end
-        return r, g, b, a
-    end
-    return { label = row.label, get = Get,
-        set = function(...)
-            if Current() then return row.set(...) end
-            return false
-        end,
-        settingKey = row.settingKey, hasOpacity = true,
-        getOpacity = function() return select(4, Get()) end }
-end
-
-function P.AttachSkinColors(body, title, rows)
-    local colorRows = {}
-    for _, row in ipairs(rows) do
-        if row.kind == "color" then colorRows[#colorRows + 1] = row end
-    end
-    if #colorRows == 0 or not W.AttachContextColorShortcut then return end
-    local shortcut = W.AttachContextColorShortcut(body, {
-        title = Tr(title),
-        maxTargets = #colorRows,
-        getTargets = function()
-            local targets = {}
-            for _, row in ipairs(colorRows) do
-                targets[#targets + 1] = P.SkinColorTarget(P.SkinPageKit.Engine(), row)
-            end
-            return targets
-        end,
-    })
-    if shortcut then
-        HM.ReleaseColorShortcut(shortcut)
-        for _, row in ipairs(colorRows) do
-            if P.Suite.HostBridge.ConsiderOutlineControl(shortcut, row.searchLabel or row.label, row.settingKey, shortcut, -36) then break end
-        end
-    end
-end
-
 -- The tab panels and their selector inside a skin tab accordion.
 local function SkinTabs(ctx, builder, body, specs, state)
     local width = math.max(240, (HM.GetSectionWidth(body) or builder.width or 720) - 32)
@@ -242,6 +200,9 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
     local function Key() return keyFn and keyFn(rule.key) or rule.key end
     local row = P.Meta(pageKey, id, rule.key, "setting", sectionId)
     row.id, row.label = rule.key, Tr(rule.label)
+    if keyFn and P.OutlineFocus and P.OutlineFocus(id, rule.key) then
+        row.outlineFocus = function() return P.OutlineFocus(id, Key()) end
+    end
     row.summary = not rule.font and not rule.texture and not rule.border and not rule.color and P.SummaryPriority(id, rule.key)
     row.summaryEnabled = function() return P.RuleEnabled(id, rule, keyFn) end
     if rule.color then
@@ -399,6 +360,11 @@ end
 function P.AttachRowsSummary(ctx, body, rows)
     if not W.SetCollapsibleSummary or not HM.GetSectionEntry(body)
         or body._msufSuiteSummary or body._msufSuiteSkipSummary then return end
+    -- A header switch can reserve its space before its lazy body has any rows.
+    if not rows then
+        W.SetCollapsibleSummary(body, "")
+        return
+    end
     local selected = {}
     for _, row in ipairs(rows) do
         if type(row.summary) == "number" and row.get then selected[#selected + 1] = row end
@@ -436,6 +402,31 @@ function P.AttachRowsSummary(ctx, body, rows)
     end)
 end
 
+local function RuleColorTarget(id, rule, keyFn, isRelevant, getValue)
+    local key = keyFn and keyFn(rule.key) or rule.key
+    local config, profile, epoch = S.Config(id), P.Suite.DB, colorEpoch
+    local barIds = config.barIds
+    local function Current()
+        return epoch == colorEpoch and profile == P.Suite.DB and config == S.Config(id)
+            and barIds == config.barIds and (not keyFn or keyFn(rule.key) == key)
+    end
+    return {
+        label = Tr(rule.label),
+        sourceSettingKey = "msufsuite." .. id .. "." .. rule.key,
+        settingKey = "msufsuite." .. id .. "." .. key,
+        isEnabled = isRelevant and function() return isRelevant(rule) end or nil,
+        get = function()
+            if Current() then return RuleRGB(rule, getValue and getValue(key) or P.Get(id, key)) end
+            return RuleRGB(rule, config[key])
+        end,
+        set = function(r, g, b)
+            if getValue and isRelevant and not isRelevant(rule) then return false end
+            if not Current() then return false end
+            return P.Set(id, key, RuleHex(rule, r, g, b))
+        end,
+    }
+end
+
 -- Suite accordions use this shortcut as their sole color entry point.
 function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant, extraTargets, extraCount, getValue)
     if not (body and W.AttachContextColorShortcut) then return end
@@ -450,27 +441,7 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant, extraTarg
         getTargets = function()
             local targets = extraTargets and extraTargets() or {}
             for _, rule in ipairs(colors) do
-                local key = keyFn and keyFn(rule.key) or rule.key
-                local config, profile, epoch = S.Config(id), P.Suite.DB, colorEpoch
-                local barIds = config.barIds
-                local function Current()
-                    return epoch == colorEpoch and profile == P.Suite.DB and config == S.Config(id)
-                        and barIds == config.barIds and (not keyFn or keyFn(rule.key) == key)
-                end
-                targets[#targets + 1] = {
-                    label = Tr(rule.label),
-                    sourceSettingKey = "msufsuite." .. id .. "." .. rule.key,
-                    settingKey = "msufsuite." .. id .. "." .. key,
-                    isEnabled = isRelevant and function() return isRelevant(rule) end or nil,
-                    get = function()
-                        if Current() then return RuleRGB(rule, getValue and getValue(key) or P.Get(id, key)) end
-                        return RuleRGB(rule, config[key])
-                    end,
-                    set = function(r, g, b)
-                        if getValue and isRelevant and not isRelevant(rule) then return end
-                        if Current() then P.Set(id, key, RuleHex(rule, r, g, b)) end
-                    end,
-                }
+                targets[#targets + 1] = RuleColorTarget(id, rule, keyFn, isRelevant, getValue)
             end
             return targets
         end,
@@ -482,10 +453,11 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant, extraTarg
         for _, rule in ipairs(colors) do
             local function Key() return keyFn and keyFn(rule.key) or rule.key end
             local setting = "msufsuite." .. id .. "." .. Key()
-            if bridge.ConsiderOutlineControl(shortcut, rule.label, setting, shortcut, -36) then
-                bridge.AttachOutlineOverview(M, shortcut, function() return "suite." .. id .. "." .. Key() end)
-                break
-            end
+            local focus = P.OutlineFocus and P.OutlineFocus(id, Key())
+                and function() return P.OutlineFocus(id, Key()) end
+            if bridge.ConsiderOutlineColorShortcut(shortcut, setting, rule.label, function()
+                return RuleColorTarget(id, rule, keyFn, isRelevant, getValue)
+            end, focus) then break end
         end
     end
     return shortcut
@@ -729,6 +701,20 @@ local function ModuleSwitch(ctx, body, pageKey, id, sectionId, opts)
     return toggle
 end
 
+local function RefreshModuleStatus(status, id, available)
+    P.SetTranslatedText(status, P.StatusText(id))
+    local colors = T.colors
+    local inactive = not P.feedback[id] and (not available or not P.Get(id, "enabled"))
+    local c = inactive and (colors.disabled or colors.dim or colors.muted) or colors.text
+    if c and c[1] and T.StyleFontString then T.StyleFontString(status, c, nil, "card") end
+    if inactive then
+        local gray = c and c[1] and (c[1] * 0.2126 + c[2] * 0.7152 + c[3] * 0.0722) or 0.635
+        status:SetTextColor(gray, gray, gray, c and c[4] or 1)
+    elseif c and c[1] then
+        status:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+    end
+end
+
 -- Status line, description, actions, help and rules: the card's body.
 local function ModuleBody(ctx, b, body, pageKey, id, actions, opts, card)
     local sectionId = pageKey .. "_" .. id .. "_module"
@@ -757,7 +743,7 @@ local function ModuleBody(ctx, b, body, pageKey, id, actions, opts, card)
         P.AttachRuleColors(body, title, id, opts.rules)
     end
     -- Built after the header (lazy host): its refresher ran without the line.
-    if card.header then P.SetTranslatedText(card.status, P.StatusText(id)) end
+    if card.header then RefreshModuleStatus(card.status, id, P.Available(id)) end
     return y
 end
 
@@ -770,7 +756,7 @@ local function ModuleHeader(ctx, body, id, opts, card)
         -- The preference remains editable even when this client cannot run the
         -- module. S.Apply still enforces Availability before starting it.
         W.SetControlEnabled(card.toggle, not P.Combat())
-        if card.status then P.SetTranslatedText(card.status, P.StatusText(id)) end
+        if card.status then RefreshModuleStatus(card.status, id, ok) end
         local entry = HM.GetSectionEntry(body)
         if entry and entry.label then
             local suffix = not ok and (" - " .. P.Suite.StatusText(why or "Unavailable on this client", Tr))
@@ -787,7 +773,7 @@ end
 -- actions: list of { label, onClick, enabled(optional), key = id }. A lazy
 -- host builds a closed card's body on first open; switch, title suffix,
 -- summary and "..." are there at once. opts: eager (the page adds to the card
--- after this returns), reset, buildBody(body, y, width) -> y, colorSections.
+-- after this returns), reset, content(body) -> y, buildBody(body, y, width) -> y, colorSections.
 function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
     opts = opts or {}
     local sectionId = pageKey .. "_" .. id .. "_module"
@@ -795,7 +781,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
     return P.LazySection(b, sectionId, Tr(opts.title or "Basics"), opts.open ~= false, {
         eager = opts.eager,
         head = function(body) card.toggle = ModuleSwitch(ctx, body, pageKey, id, sectionId, opts) end,
-        content = function(body) return ModuleBody(ctx, b, body, pageKey, id, actions, opts, card) end,
+        content = opts.content or function(body) return ModuleBody(ctx, b, body, pageKey, id, actions, opts, card) end,
         shell = function(body) ModuleHeader(ctx, body, id, opts, card) end,
         summary = card.built and function(body) P.AttachRowsSummary(ctx, body, card.built.rows) end or nil,
         finish = function(body, y)

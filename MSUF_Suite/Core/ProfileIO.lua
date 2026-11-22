@@ -465,7 +465,7 @@ local function CopySettings(spec, source)
             if type(value) ~= type(rule.default) then return nil, "Invalid module setting" end
             if type(value) == "number" and not Suite.Finite(value) then return nil, "Invalid module number" end
             if type(value) == "string" and #value > rule.maxLength then return nil, "Module setting is too long" end
-            target[key] = value
+            target[key] = rule.copy and rule.copy(value) or value
         elseif type(key) == "string" and PlainValue(value) then
             target[key] = value
         end

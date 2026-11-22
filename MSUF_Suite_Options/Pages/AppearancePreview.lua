@@ -1,6 +1,10 @@
 local _, P = ...
 local K, Tr, Interaction = P.PreviewCanvas, P.Tr, P.PreviewInteraction
 local STAGE_TOP = 74
+local CORNER_SAMPLE_SCALE = 1.5
+local CORNER_SAMPLE_HEIGHT = 32 * CORNER_SAMPLE_SCALE
+local CORNER_SAMPLE_GAP = 8
+local CORNER_CONTROL_HEIGHT = 24
 local function Jump(ctx, section, key)
     local sectionId = "suite_skin_" .. section
     local bridge = P.Suite.HostBridge
@@ -208,6 +212,43 @@ local function CaptionLabel(preview, frame, label, token, y, right)
     Label(preview, frame, label, 8, y or -5, right or 8, token)
 end
 
+local function CornerSample(preview, label, key, useControlShape)
+    local button = K.Button(preview.section, 0, 0, 1, CORNER_SAMPLE_HEIGHT)
+    Link(preview, button, label, "shape", key)
+    local caption = Label(preview, button, label, 12, -17, 12)
+    caption:SetJustifyH("CENTER")
+
+    local swatch = CreateFrame("Frame", nil, button)
+    -- Enlarge the actual nine-slice corners while keeping the label at menu scale.
+    swatch:SetScale(CORNER_SAMPLE_SCALE)
+    if useControlShape then
+        swatch:SetPoint("LEFT", button, "LEFT")
+        swatch:SetPoint("RIGHT", button, "RIGHT")
+        swatch:SetHeight(CORNER_CONTROL_HEIGHT)
+    else
+        swatch:SetAllPoints(button)
+    end
+    local fill = swatch:CreateTexture(nil, "BACKGROUND")
+    local edge = swatch:CreateTexture(nil, "BORDER")
+    fill:SetAllPoints(swatch)
+    edge:SetAllPoints(swatch)
+    return { button = button, fill = fill, edge = edge,
+        spec = { role = useControlShape and "button" or "shell", useControlShape = useControlShape,
+            border = 1, pillHeight = CORNER_CONTROL_HEIGHT } }
+end
+
+local function PaintCorners(preview, skin)
+    local color = P.T.colors.text
+    for _, sample in ipairs(preview.cornerSamples) do
+        local geometry = skin.Geometry.Resolve(sample.spec, sample.geometry)
+        sample.geometry = geometry
+        skin.Geometry.ConfigureShape(sample.fill, geometry.fill, geometry)
+        skin.Geometry.ConfigureShape(sample.edge, geometry.edge, geometry)
+        sample.fill:SetVertexColor(color[1], color[2], color[3], .10)
+        sample.edge:SetVertexColor(color[1], color[2], color[3], .78)
+    end
+end
+
 local function BuildDropdown(preview, skin)
     local shell, panel = preview.shell, preview.panel
     local level = panel:GetFrameLevel() + 5
@@ -255,6 +296,7 @@ local function Refresh(preview, skin)
     if not preview.section:IsVisible() or P.Combat() then return end
     RefreshInteraction(preview, skin)
     Interaction.RefreshLayerRail(preview)
+    PaintCorners(preview, skin)
     for _, frame in ipairs(preview.surfaces) do skin.Surface.Refresh(frame) end
     for _, cell in ipairs(preview.titleButtons) do P.S.WindowCaption.Paint(cell) end
     if preview.item and skin.IconSkin then skin.IconSkin.Repaint(preview.item) end
@@ -382,6 +424,18 @@ local function LayoutWindow(preview, width)
     if preview.maximize then P.S.WindowCaption.SetKind(preview.maximize, preview.wide and "restore" or "maximize") end
 end
 
+local function LayoutCorners(preview, width, y)
+    local pairWidth = math.min(width, 440)
+    local stacked = pairWidth < 320
+    local firstWidth = stacked and pairWidth or math.floor((pairWidth - CORNER_SAMPLE_GAP) / 2)
+    local secondWidth = stacked and pairWidth or pairWidth - firstWidth - CORNER_SAMPLE_GAP
+    Place(preview.cornerSamples[1].button, preview.section, 16, y, firstWidth, CORNER_SAMPLE_HEIGHT)
+    local x = stacked and 16 or 16 + firstWidth + CORNER_SAMPLE_GAP
+    local secondY = stacked and y - CORNER_SAMPLE_HEIGHT - CORNER_SAMPLE_GAP or y
+    Place(preview.cornerSamples[2].button, preview.section, x, secondY, secondWidth, CORNER_SAMPLE_HEIGHT)
+    return secondY - CORNER_SAMPLE_HEIGHT
+end
+
 local function Layout(preview, fallbackWidth)
     local section = preview.section
     if not section:IsShown() then return end
@@ -396,7 +450,8 @@ local function Layout(preview, fallbackWidth)
     end
     local x = sidebar and 16 + stageWidth + 12 or 16
     local footerHeight = preview.actionBar and controlsWidth < 290 and 55 or 26
-    local footerY = sidebar and -STAGE_TOP or -STAGE_TOP - preview.shellHeight - 8
+    local cornersBottom = LayoutCorners(preview, stageWidth, -STAGE_TOP - preview.shellHeight - CORNER_SAMPLE_GAP)
+    local footerY = sidebar and -STAGE_TOP or cornersBottom - CORNER_SAMPLE_GAP
     Place(preview.footer, section, x, footerY, controlsWidth, footerHeight + 32)
     local available = controlsWidth - (preview.actionBar and footerHeight == 26 and 92 or 0)
     local buttonWidth = math.floor(math.min(116, (available - 6) / 2))
@@ -410,7 +465,7 @@ local function Layout(preview, fallbackWidth)
     local y = footerY - 38 - footerHeight
     preview.chips:SetPoint("TOPLEFT", section, "TOPLEFT", x, y)
     Interaction.LayoutLayerRail(preview, controlsWidth)
-    local height = math.max(STAGE_TOP + preview.shellHeight, -y + preview.chips:GetHeight()) + 8
+    local height = math.max(-cornersBottom, -y + preview.chips:GetHeight()) + 8
     local ui = preview.ctx.suiteWorkspace
     if ui then P.MenuWorkspace.FitHeader(ui, height)
     elseif preview.header:GetHeight() ~= height then
@@ -518,6 +573,10 @@ function P.BuildSkinMenuPreview(ctx, b, skin)
     preview.Layout = function() Layout(preview, P.HM.GetSectionWidth(section) or b.width or 720) end
     preview.shell = Element(preview, skin, section, "shell", "Window corners", "shape", "geometry.family")
     CaptionLabel(preview, preview.shell, "Window shell", "title", -10, 92)
+    preview.cornerSamples = {
+        CornerSample(preview, "Window corners", "geometry.family", false),
+        CornerSample(preview, "Button corners", "geometry.controlShape", true),
+    }
     Contents(preview, skin)
     AddWindowDemo(preview, skin)
     if preview.forever and skin.WindowActionSkin and skin.WindowActionSkin.PaintCaption then

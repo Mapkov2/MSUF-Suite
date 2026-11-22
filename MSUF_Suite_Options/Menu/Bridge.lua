@@ -218,6 +218,7 @@ function P.InvalidateSearch() end
 -- the menu through Suite.Options.RefreshAll (set in Register.lua).
 local trackerEnabled
 function P.Refresh()
+    if P.RefreshMinimapPreview then P.RefreshMinimapPreview() end
     P.ForgetAvailability()
     P.InvalidateSearch()
     P.RefreshSkinPageShape()
@@ -469,7 +470,9 @@ end
 function P.BindSectionSwitch(ctx, body, spec)
     local toggle = P.W.SectionSwitch(body, spec.label, spec.displayLabel)
     local entry = HM.GetSectionEntry(body)
-    if entry and entry.outer and entry.outer.SetAlpha then DimSectionWithSwitch(toggle, entry.outer) end
+    if spec.dim ~= false and entry and entry.outer and entry.outer.SetAlpha then
+        DimSectionWithSwitch(toggle, entry.outer)
+    end
     M.BindBoolWidget(ctx, toggle, spec.get, spec.set, spec.meta)
     toggle:SetChecked(spec.get() and true or false)
     return toggle

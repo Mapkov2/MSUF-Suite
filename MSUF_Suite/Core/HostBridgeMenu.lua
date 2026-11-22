@@ -18,15 +18,29 @@ function HostBridge.RegisterOutlineOverview(menu, id, collect)
     if menu.RegisterOutlineOverviewProvider then menu.RegisterOutlineOverviewProvider(id, collect) end
 end
 
-function HostBridge.AttachOutlineOverview(menu, control, focus)
-    if menu.AttachOutlineOverview then return menu.AttachOutlineOverview(control, focus) end
+function HostBridge.RegisterOutlineSettingResolver(menu, id, resolve)
+    if not menu.RegisterOutlineSettingResolver then return false end
+    menu.RegisterOutlineSettingResolver(id, resolve)
+    return true
 end
 
-function HostBridge.ConsiderOutlineControl(control, label, key, anchor, offsetX)
+function HostBridge.AttachOutlineOverview(menu, control, focus, besideControl)
+    if menu.AttachOutlineOverview then return menu.AttachOutlineOverview(control, focus, besideControl) end
+end
+
+function HostBridge.ConsiderOutlineControl(control, label, key, anchor, offsetX, focus)
     local menu = _G.MSUF2
     if menu and menu.ConsiderOutlineOverview then
-        return menu.ConsiderOutlineOverview(control, { label = label, kind = "color", settingKey = key }, anchor, offsetX)
+        return menu.ConsiderOutlineOverview(control, { label = label, settingKey = key, outlineFocus = focus }, anchor, offsetX)
     end
+end
+
+function HostBridge.ConsiderOutlineColorShortcut(control, key, label, getTarget, focus)
+    local menu = _G.MSUF2
+    if menu and menu.ConsiderOutlineColorShortcut then
+        return menu.ConsiderOutlineColorShortcut(control, key, label, getTarget, focus)
+    end
+    return HostBridge.ConsiderOutlineControl(control, label, key, control, -36, focus)
 end
 
 local MENU_API_VERSION = 2

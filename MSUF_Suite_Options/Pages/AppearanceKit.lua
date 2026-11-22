@@ -61,7 +61,7 @@ local function Change(skin, label, key, fn)
     return result, reason
 end
 
-local tooltipSections = { tooltips = true, tooltip_builder = true, unit_tooltips = true }
+local tooltipSections = { tooltips = true, tooltip_builder = true, tooltip_layout = true, unit_tooltips = true }
 local function PageForSection(section)
     return tooltipSections[section] and "suite_tooltips" or PAGE
 end
@@ -256,6 +256,27 @@ local function GateRows(ctx, grid, rows)
     end
 end
 
+function Kit.SettingsGrid(ctx, body, visibleRows, y, width)
+    local grid = W.SettingsRows(ctx, body, {
+        x = 16, y = y, width = width, columns = width >= 520 and 2 or 1, rows = visibleRows,
+    })
+    GateRows(ctx, grid, visibleRows)
+    local entries = {}
+    for _, row in ipairs(visibleRows) do
+        local widget = grid.controls[row.id]
+        if widget and row.outlineOverview then
+            Suite.HostBridge.AttachOutlineOverview(M, widget, function() return row.outlineOverview end)
+        end
+        if widget and row.tooltip and M.AddTooltip then
+            M.AddTooltip(widget, row.label, row.tooltip, { hook = true,
+                enabled = function() return not row.unavailable or row.unavailable() == nil end })
+        end
+        entries[#entries + 1] = { widget = widget, meta = row,
+            rule = { key = row.id, label = row.searchLabel }, label = row.label }
+    end
+    return grid.bottomY, entries
+end
+
 -- One accordion: help, a settings grid of the non-color rows, an optional
 -- `extra(body, y, width) -> y` builder, and the color shortcut. A lazy host
 -- builds them when the accordion first opens (P.LazySection); its summary
@@ -283,30 +304,15 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows, 
             y = y - math.max(14, math.ceil(hint:GetStringHeight() or 14)) - 12
         end
         if #visibleRows > 0 then
-            local grid = W.SettingsRows(ctx, body, {
-                x = 16, y = y, width = width, columns = width >= 520 and 2 or 1, rows = visibleRows,
-            })
-            y = grid.bottomY
-            GateRows(ctx, grid, visibleRows)
-            local entries = {}
-            for _, row in ipairs(visibleRows) do
-                local widget = grid.controls[row.id]
-                if widget and row.outlineOverview then
-                    Suite.HostBridge.AttachOutlineOverview(M, widget, function() return row.outlineOverview end)
-                end
-                if widget and row.tooltip and M.AddTooltip then
-                    M.AddTooltip(widget, row.label, row.tooltip, { hook = true,
-                        enabled = function() return not row.unavailable or row.unavailable() == nil end })
-                end
-                entries[#entries + 1] = { widget = widget, meta = row,
-                    rule = { key = row.id, label = row.searchLabel }, label = row.label }
-            end
+            local entries
+            y, entries = Kit.SettingsGrid(ctx, body, visibleRows, y, width)
             if route then P.HUDMenu.Prepare(body, entries)
             else P.MenuWorkspace.Prepare(body, entries) end
         end
         if extra then y = extra(body, y, width) or y end
         P.AttachRowsSummary(ctx, body, visibleRows)
-        P.AttachSkinColors(body, title, contextRows or rows)
+        local getEngine = tooltipSections[id] and Suite.TooltipAppearance.Engine or nil
+        P.AttachSkinColors(body, title, contextRows or rows, getEngine)
         return y
     end
     return P.LazySection(b, sectionId, Tr(title), open, {

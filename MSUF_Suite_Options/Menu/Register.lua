@@ -52,8 +52,8 @@ local function PageAddOnEnabled(key)
     -- Skinning also shows Suite modules (QualityOfLifeOwners.lua: the
     -- Battle.net toast; they stay on Quality of Life when the skin AddOn
     -- is off at load). A skin AddOn turned off later leaves the page to them.
-    if (key == "suite_skin" or key == "suite_tooltips") and (Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
-        or Suite.HostBridge.UnitFrameTooltipAPI()) then return true end
+    if key == "suite_tooltips" then return Suite.Client.AddOnEnabled("MSUF_Suite_Tooltips") == true end
+    if key == "suite_skin" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then return true end
     local modules = PAGE_MODULES[key]
     if not modules then return key ~= "suite_skin" end
     for _, id in ipairs(modules) do
@@ -63,8 +63,8 @@ local function PageAddOnEnabled(key)
 end
 local function PageEnabled(key)
     if key == "suite_macros" then return true end
-    if not PageAddOnEnabled(key) then return false, ADDON_NOTICE end
-    if key == "suite_skin" or key == "suite_tooltips" then
+    if not PageAddOnEnabled(key) then return false, P.Tr(ADDON_NOTICE) end
+    if key == "suite_skin" then
         if P.SkinningEnabled() == true and Suite.Client.IsAddOnLoaded("MSUF_Suite_Skin") then return true end
         if not PAGE_MODULES[key] then return false, "Off" end
     end
@@ -75,7 +75,7 @@ local function PageEnabled(key)
         if S.Config(id).enabled == true and Suite.Client.AddOnEnabled(addon)
             and Suite.Client.IsAddOnLoaded(addon) then return true end
     end
-    return false, "Off"
+    return false, P.Tr("Off")
 end
 local function NavRow(page, group)
     return {

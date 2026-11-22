@@ -1,6 +1,56 @@
 local _, P = ...
 local W, Tr, HM = P.W, P.Tr, P.HM
 
+function P.SkinColorTarget(skin, row)
+    local getEpoch = skin.Database and skin.Database.GetHistoryEpoch or P.ColorHistoryEpoch
+    local profile, epoch = skin.DB, getEpoch()
+    local r, g, b, a = row.get()
+    local function Current()
+        return skin.DB == profile and getEpoch() == epoch and not P.Combat()
+    end
+    local function Get()
+        if Current() then return row.get() end
+        return r, g, b, a
+    end
+    return { label = row.label, get = Get,
+        set = function(...)
+            if Current() then return row.set(...) end
+            return false
+        end,
+        settingKey = row.settingKey, hasOpacity = true,
+        getOpacity = function() return select(4, Get()) end }
+end
+
+function P.AttachSkinColors(body, title, rows, getEngine)
+    getEngine = getEngine or P.SkinPageKit.Engine
+    local colorRows = {}
+    for _, row in ipairs(rows) do
+        if row.kind == "color" then colorRows[#colorRows + 1] = row end
+    end
+    if #colorRows == 0 or not W.AttachContextColorShortcut then return end
+    local shortcut = W.AttachContextColorShortcut(body, {
+        title = Tr(title),
+        maxTargets = #colorRows,
+        getTargets = function()
+            local targets, engine = {}, getEngine()
+            if not engine then return targets end
+            for _, row in ipairs(colorRows) do
+                targets[#targets + 1] = P.SkinColorTarget(engine, row)
+            end
+            return targets
+        end,
+    })
+    if shortcut then
+        HM.ReleaseColorShortcut(shortcut)
+        for _, row in ipairs(colorRows) do
+            if P.Suite.HostBridge.ConsiderOutlineColorShortcut(shortcut, row.settingKey, row.searchLabel or row.label, function()
+                local engine = getEngine()
+                return engine and P.SkinColorTarget(engine, row)
+            end) then break end
+        end
+    end
+end
+
 function P.LayoutColorRows(parent, controls, rows, y, width, columns)
     local gap, left = 18, 16
     local cell = math.floor((width - gap * (columns - 1)) / columns)

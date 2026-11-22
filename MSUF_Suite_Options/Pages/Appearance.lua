@@ -766,7 +766,7 @@ function P.SkinSearchRows(checkpoint)
         return ctx.searchRows
     end
     BuildSections(ctx, b, skin)
-    P.BuildTooltipSearchRows(ctx, b, skin)
+    P.BuildTooltipSearchRows(ctx, b, Suite.Tooltips)
     Kit.RefreshButton(ctx, nil, skin)
     return ctx.searchRows
 end
