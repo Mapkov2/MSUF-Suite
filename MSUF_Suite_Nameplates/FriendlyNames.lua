@@ -151,9 +151,7 @@ local function NameOnlyRGB(uf, scope, unit, role)
         if color then return color.r, color.g, color.b end
         return nil, nil, nil, true
     elseif player == false and config[scope .. "PlateNameTypeColor"] then
-        local colorRole = X.NameOnlyColorRole(scope, role)
-        local color = colorRole and config[private.RoleKey[colorRole].color]
-        if color then return NS.RGB(color) end
+        return X.NameOnlyNPCColor(config, scope, role)
     end
 end
 
@@ -229,14 +227,6 @@ function Names.NeutralDisplayChanged(uf, unit)
     return scope ~= (state and state.scope) or questText ~= (state and state.questText)
 end
 
-function Names.WantsTypeColor(prefix)
-    local config = M.config
-    if prefix == "enemy" then
-        return config.enemyPlateNameOnly and config.enemyPlateNameTypeColor
-    end
-    return prefix == "friendly" and config.friendlyNpcPlateNameTypeColor and X.CustomNameOnly(config, "friendlyNpc")
-end
-
 function Names.OwnsColor(uf)
     local state = onlyNames[uf]
     return state and state.colorR ~= nil
@@ -253,7 +243,7 @@ function Names.ConfigureNameOnly()
     Names.neutralNameOnly = config.neutralPlateNameOnly == true
     Names.neutralSplit = X.NeutralNameSplit(config)
     Names.nameOnlyEnabled = config.enemyPlateNameOnly or Names.neutralNameOnly or X.CustomNameOnly(config, "friendlyNpc")
-    Names.typeColorInUse = Names.WantsTypeColor("enemy") or Names.WantsTypeColor("friendly")
+    Names.typeColorInUse = config.enemyPlateNameOnly and config.enemyPlateNameTypeColor
     if not Names.nameOnlyEnabled then
         for uf in pairs(onlyNames) do Names.RestoreNameOnly(uf) end
     elseif not nameHooked then

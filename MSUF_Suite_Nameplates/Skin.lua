@@ -99,7 +99,7 @@ end
 
 local function ReadFacts(uf, unit, facts)
     local prefix = Prefix(uf)
-    local typeOnName = Names.typeColorInUse and prefix and Names.WantsTypeColor(prefix)
+    local typeOnName = Names.typeColorInUse and prefix == "enemy"
     if not prefix or (M.config.look == LOOK_BLIZZARD or not M.config[prefix]) and not typeOnName then return end
     if not S.Public(unit) or type(unit) ~= "string" then return end
     local focus = UnitIsUnit(unit, "focus")

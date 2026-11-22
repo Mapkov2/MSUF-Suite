@@ -728,10 +728,9 @@ local function Render(editor, s)
             local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS.WARRIOR
             if color then s.nameText:SetVertexColor(color.r, color.g, color.b, 1) end
         elseif not (s.prefix == "enemy" and editor.enemyPlayer) and Get(ID, m.nameOnlyScope .. "PlateNameTypeColor") then
-            local role = m.friendlyNPC and "Miniboss" or m.descriptor and m.descriptor.key or "Melee"
-            local colorRole = P.Suite.NameplateExtensions.NameOnlyColorRole(m.nameOnlyScope, role)
-            local color = Get(ID, "enemy" .. colorRole .. "Color")
-            if color then s.nameText:SetVertexColor(P.RGB(color)) end
+            local role = m.descriptor and m.descriptor.key or "Melee"
+            local r, g, b = P.Suite.NameplateExtensions.NameOnlyNPCColor(P.S.Config(ID), m.nameOnlyScope, role)
+            if r then s.nameText:SetVertexColor(r, g, b, 1) end
         end
     end
     P.NameplatesPreviewDecor.PaintMirroredHeader(s, m, Get, P.S.Config(ID))

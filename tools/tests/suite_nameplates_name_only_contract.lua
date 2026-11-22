@@ -95,7 +95,30 @@ combat, reaction = false, 5
 uf.isFriend, fighting = true, false
 assert(not Names.ApplyNameOnly(uf, "nameplate1"), "Neutral setting affected a Friendly NPC")
 config.friendlyNPCs = NS.NameplateExtensions.NPC_PLATE_NAME_ONLY
+config.friendlyNpcPlateNameTypeColor = true
+NS.Finite = Finite
+local friendlyPaletteReads = 0
+NS.HostBridge = { NPCNameColor = function(kind)
+    assert(kind == "friendly")
+    friendlyPaletteReads = friendlyPaletteReads + 1
+    return .1, .8, .3
+end }
+Names.ConfigureNameOnly()
 assert(Names.ApplyNameOnly(uf, "nameplate1"), "Friendly NPC display did not enter name-only")
+assert(uf.name.r == .1 and uf.name.g == .8 and uf.name.b == .3, "unclassified friendly NPC lost its reaction color")
+assert(Names.ApplyNameOnly(uf, "nameplate1", "Caster") and uf.name.g == .8, "a friendly caster used the enemy palette")
+local friendlyReads = friendlyPaletteReads
+uf.name:SetVertexColor(1, 1, 1, .9)
+for _ = 1, 1000 do nativeUpdate(uf) end
+assert(uf.name.g == .8 and friendlyPaletteReads == friendlyReads, "native refresh lost or repeatedly read the friendly palette")
+reaction = 4
+assert(Names.ApplyNameOnly(uf, "nameplate1", "Caster") and Names.NameOnlyScope(uf) == "neutral" and uf.name.g == .86,
+    "a neutral NPC on a friendly plate used the friendly palette")
+reaction = 5
+NS.HostBridge.NPCNameColor = function() end
+Names.ConfigureNameOnly()
+assert(Names.ApplyNameOnly(uf, "nameplate1") and uf.name.r == 0 and uf.name.g == 1 and uf.name.b == 0,
+    "an older host without a reaction palette lost the standard friendly green")
 uf.isPlayer = true
 assert(not Names.ApplyNameOnly(uf, "nameplate2"), "Friendly NPC mode affected a friendly player")
 

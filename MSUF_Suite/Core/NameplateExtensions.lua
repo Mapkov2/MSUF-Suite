@@ -74,8 +74,15 @@ function X.CustomNameOnly(config, scope, attackable)
     return scope == "enemy" and config.enemyPlateNameOnly == true
 end
 
-function X.NameOnlyColorRole(scope, npcType)
-    return scope == "neutral" and "Neutral" or npcType
+function X.NameOnlyNPCColor(config, scope, npcType)
+    if scope == "friendlyNpc" then
+        local r, g, b = NS.HostBridge.NPCNameColor("friendly")
+        if NS.Finite(r) and NS.Finite(g) and NS.Finite(b) then return r, g, b end
+        return 0, 1, 0 -- Core's default friendly reaction on hosts without the palette provider.
+    end
+    local role = scope == "neutral" and "Neutral" or npcType
+    local hex = role and config["enemy" .. role .. "Color"]
+    if hex then return NS.RGB(hex) end
 end
 X.SkinKeys = { enemy = "enemySkinEnabled", neutral = "neutralSkinEnabled",
     friendly = "friendlySkinEnabled", friendlyNpc = "friendlyNpcSkinEnabled" }
