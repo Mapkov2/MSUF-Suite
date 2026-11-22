@@ -1,5 +1,6 @@
 local root = assert(arg[1], "repository root required")
-local inCombat, shown, canEquip = false, true, true
+local Support = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))()
+local locked, fighting, shown, canEquip = false, false, true, true
 local added, visits, hooks, reads, layouts, rowReads = {}, 0, 0, 0, 0, 0
 local secret = {}
 local browseList, buyList = {}, {}
@@ -64,6 +65,7 @@ end }
 C_PlayerInfo = { CanUseItem = function() reads = reads + 1 return canEquip end }
 
 local NS = { Client = { isForever = true },
+    InCombat = Support.InCombat(root, function() return locked end, function() return fighting end),
     Safety = { IsForbidden = function() return false end } }
 local module
 local S = {
@@ -71,7 +73,6 @@ local S = {
     Finite = function(value) return type(value) == "number" and math.abs(value) < math.huge end,
     PublicText = function(value) return type(value) == "string" and value end,
     MoneyText = tostring,
-    InCombat = function() return inCombat end,
     Text = function(value) return value end,
     Dispatch = function(callback, ...) return callback(...) end,
     Install = function(id, instance)
@@ -88,9 +89,9 @@ module:Enable()
 module:Enable()
 assert(hooks == 1 and nativeRegistrations == 0)
 
-local function Hover()
+local function Hover(rowData)
     added = {}
-    AuctionHouseUtil.SetAuctionHouseTooltip(owner, row)
+    AuctionHouseUtil.SetAuctionHouseTooltip(owner, rowData or row)
 end
 
 Hover()
@@ -108,10 +109,14 @@ resale = 410
 Hover()
 assert(added[4][1] == "Gold left after replacing item" and added[4][2] == "10")
 
-list, row.minPrice = browseList, 100
+list = browseList
+local browseRow = { itemKey = { itemID = 42 }, totalQuantity = 10932, minPrice = 300, containsOwnerItem = false }
+Hover(browseRow)
+assert(#added == 2 and added[1][1] == "AH price from" and added[1][2] == "300")
+assert(added[2][1] == "Vendor sell price per item" and added[2][2] == "450")
 data.lines = { { type = 11, price = 450 } }
-Hover()
-assert(#added == 1 and added[1][1] == "AH price from" and added[1][2] == "100")
+Hover(browseRow)
+assert(#added == 1 and added[1][1] == "AH price from" and added[1][2] == "300")
 
 list, data.lines = buyList, {}
 row.buyoutAmount = nil
@@ -139,10 +144,13 @@ Hover()
 assert(#added == 2)
 
 local previousReads, previousLayouts, previousRows = reads, layouts, rowReads
-inCombat = true
+fighting = true
 Hover()
 assert(#added == 0 and reads == previousReads and layouts == previousLayouts and rowReads == previousRows)
-inCombat, module.active = false, false
+fighting, locked = false, true
+Hover()
+assert(#added == 0 and reads == previousReads and layouts == previousLayouts and rowReads == previousRows)
+locked, module.active = false, false
 Hover()
 assert(#added == 0 and reads == previousReads and layouts == previousLayouts)
 module.active, shown = true, false

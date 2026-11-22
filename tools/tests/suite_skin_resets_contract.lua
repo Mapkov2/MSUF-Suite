@@ -31,7 +31,10 @@ local skin = { GetAPI = function() return nil end, addonName = "MSUF_Suite_Skin"
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", skin)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", skin)
 skin.DB = skin.CopyValue(skin.Defaults)
-skin.Surface = { Attach = function(frame) return frame end }
+skin.Surface = {
+    Attach = function(frame) return frame end,
+    SetVisible = function(frame, visible) frame.surfaceVisible = visible end,
+}
 skin.Surface.SkinOwnedButton = skin.Surface.Attach
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Theme.lua"))("MSUF_Suite_Skin", skin)
 local ScrollTheme = skin.Theme
@@ -110,10 +113,11 @@ MapkoSkin = skin
 -- The default Suite meter owns Blizzard's meter; the harness cannot load its runtime.
 S.states.damageMeter.error = nil
 
-local function BuildSkinPage()
-    local ctx = { key = "suite_skin", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+local function BuildSkinPage(key)
+    key = key or "suite_skin"
+    local ctx = { key = key, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
     F.SetCurrent(ctx)
-    M.pages.suite_skin.build(ctx)
+    M.pages[key].build(ctx)
     for _, refresh in ipairs(ctx.refreshers) do refresh() end
     return ctx
 end
@@ -255,7 +259,7 @@ do
             rows[#rows + 1] = widget.row
         end
     end
-    Check(#rows == 25, "the real Suite page must expose master, AceGUI and all 23 addons")
+    Check(#rows == 3 + #Suite.AddonSkinDefinitions, "the real Suite page must expose all skin toggles")
     local master = assert(controls["addonSkins.enabled"])
     Check(master.get() == false, "the new addon master is not opt-in")
     master.set(true)
@@ -294,6 +298,185 @@ do
         Check(skin.DB.addonSkins[entry.id], "addon reset lost " .. entry.label)
     end
     Check(notified.addonSkins, "addon reset did not refresh discovery and AceGUI ownership")
+end
+
+------------------------------------------------------------------ Item tooltip previews and selection
+do
+    local unit = { unitTooltipMode = "ALWAYS" }
+    local host = { GetUnitFrameTooltipSetting = function(key) return unit[key] end,
+        SetUnitFrameTooltipSetting = function(key, value) unit[key] = value return true end }
+    Suite.HostBridge.UnitFrameTooltipAPI = function() return host end
+    local modes = { item = "suite", spell = "suite", unit = "suite", quest = "suite", loot = "suite" }
+    local layoutPreset = "compact"
+    skin.TooltipPalette = { choices = {}, IsActive = function() return false end, Title = function() return 1, 1, 1, 1 end }
+    skin.ItemTooltipCard = {
+        Create = function(parent)
+            local frame = CreateFrame("Frame", nil, parent)
+            return { frame = frame, icon = frame:CreateTexture(), title = frame:CreateFontString(),
+                meta = frame:CreateFontString(), rule = frame:CreateTexture() }
+        end,
+        CreateOutline = function(parent)
+            local frame = CreateFrame("Frame", nil, parent)
+            return { frame = frame, edges = { frame:CreateTexture() } }
+        end,
+        PaintOutline = function(outline) outline.frame:Show() end,
+        Draw = Noop, PlaceContent = Noop, HeaderHeight = function() return 48 end,
+        SetUnifiedHeader = function(view, value) view.unified = value end,
+        MatchesLootSurface = function()
+            return skin.DB.theme.tooltipLayout.lootSurface == "match" or modes.loot == "custom"
+        end,
+        Setting = function(field) return skin.DB.theme.tooltipLayout[field] end,
+        Set = function(field, value) skin.DB.theme.tooltipLayout[field] = value return true end,
+        Range = function(field)
+            if field == "height" then return 36, 48 end
+            if field == "iconSize" then return 16, 38 end
+            if field == "x" then return 4, 22 end
+            return -5, 5
+        end,
+        Preset = function() return layoutPreset end,
+        TypeStyle = function(kind) return modes[kind] end,
+        SetTypeStyle = function(kind, value) modes[kind] = value return true end,
+        SetOffsets = function(x, y)
+            skin.DB.theme.tooltipLayout.x, skin.DB.theme.tooltipLayout.y = x, y
+            return true
+        end,
+        SetPreset = function(value)
+            layoutPreset = value
+            return true
+        end,
+    }
+    local ctx = BuildSkinPage("suite_tooltips")
+    local section = SectionOf(ctx, "suite_skin_tooltips")
+    optionsNS.EnsureSectionContent(section)
+    local controls = ControlsOf(ctx, "suite_skin_tooltips")
+    local preset, itemMode, spellMode, unitMode = controls[1], controls[2], controls[3], controls[4]
+    local indexed = false
+    for _, row in ipairs(optionsNS.SkinSearchRows()) do
+        if row.pageKey == "suite_tooltips" and row.sectionId == "suite_skin_tooltips"
+            and row.settingKey == "msufsuite.skin.theme.itemTooltipStyle" then
+            indexed = true
+        end
+    end
+    Check(indexed, "cold search missed the tooltip style chooser")
+    local preview = assert(ctx.suiteWorkspace.tooltipPreview)
+    Check(preview.root:IsShown() and #preview.layerButtons == 7, "the tooltip tab missed its frame layer")
+    for _, button in ipairs(section._testButtons or {}) do
+        Check(button.text ~= "Unitframe tooltips", "the tooltip subsection duplicated its Unit Frame settings link")
+    end
+    Check(skin.DB.theme.itemTooltipStyle == "compact", "the current tooltip style was not preserved by default")
+    Check(preview.titleButton.scripts.OnClick() and preview.kit:Selected() == preview.handles.title
+        and preview.header.frame:IsShown() and modes.item == "suite", "the compact title had no preview-only position editor")
+    preset.set("detailed")
+    itemMode.set("custom")
+    unitMode.set("custom")
+    Check(modes.item == "custom" and modes.unit == "custom" and modes.spell == "suite", "type styles were not independent")
+    Check(spellMode.get() == "suite" and layoutPreset == "detailed", "selecting a type reset the layout")
+    preview.tabs[3].scripts.OnClick()
+    Check(preview.selected == 3 and preview.header.frame:IsShown(), "the unit sample missed the selected style")
+    preview.combatButton.scripts.OnClick(preview.combatButton)
+    Check(preview.header.frame:IsShown() and modes.unit == "custom", "combat lost a supported tooltip style")
+    preview.restrictionsButton.scripts.OnClick(preview.restrictionsButton)
+    Check(not preview.header.frame:IsShown() and preview.compact:IsShown() and modes.unit == "custom",
+        "restricted combat preview did not simulate the native fallback")
+    preview.combatButton.scripts.OnClick(preview.combatButton)
+    Check(preview.header.frame:IsShown(), "leaving the combat preview did not clear restrictions")
+    local heightHandle = preview.handles.rule
+    local resize = preview.kit.entries[heightHandle]
+    skin.DB.theme.tooltipLayout.height = 42
+    resize.follow(heightHandle, 0, -5)
+    Check(preview.dragSize.height == 47 and skin.DB.theme.tooltipLayout.height == 42,
+        "following the resize wrote the saved header height")
+    Check(resize.write(0, -47) and skin.DB.theme.tooltipLayout.height == 47,
+        "committing resize did not save the header height")
+    preview.kit.opts.drag(heightHandle, "done")
+    preview.kit:Select(preview.handles.title)
+    Check(preview.kit:Nudge(2, 1) and skin.DB.theme.tooltipLayout.x == 12 and skin.DB.theme.tooltipLayout.y == 1,
+        "moving the preview did not update the layout coordinates")
+    preview.layerButtons[2].scripts.OnClick(preview.layerButtons[2], "LeftButton")
+    Check(not preview.header.title:IsShown() and skin.DB.theme.tooltipLayout.tint, "the Title layer modified saved settings")
+    preset.set("compact")
+    Check(layoutPreset == "compact" and modes.item == "custom" and modes.unit == "custom",
+        "resetting the style changed which tooltips use it")
+    modes.loot = "custom"
+    preview.tabs[5].scripts.OnClick()
+    Check(preview.header.unified and not preview.lootFill:IsShown(), "loot preview retained the native texture with matching selected")
+    local unitSection = SectionOf(ctx, "suite_skin_unit_tooltips")
+    optionsNS.EnsureSectionContent(unitSection)
+    Check(#ControlsOf(ctx, "suite_skin_unit_tooltips") == 4, "the Suite did not build all four Core tooltip settings")
+    local key, target = optionsNS.QoLOwners.Resolve("opt_misc", { settingKey = "general.unitTooltipMode" })
+    Check(key == "suite_tooltips" and target.settingKey == "msufsuite.skin.unitTooltipMode", "a Core search target did not follow the moved control")
+    Check(optionsNS.QoLOwners.PageFor("tooltipVisibility") == "suite_tooltips", "tooltip visibility stayed under Miscellaneous")
+    local editor = SectionOf(ctx, "suite_skin_tooltip_builder")
+    optionsNS.EnsureSectionContent(editor)
+    Check(#ControlsOf(ctx, "suite_skin_tooltip_builder") >= 10, "the tooltip editor lost layout or data controls")
+    local oldPage, oldTarget = optionsNS.QoLOwners.Resolve("suite_skin", {
+        sectionId = "suite_skin_tooltip_builder", settingKey = "msufsuite.skin.theme.tooltipLayout.x",
+    })
+    Check(oldPage == "suite_tooltips" and oldTarget.sectionId == "suite_tooltips_preview",
+        "saved Tooltip X/Y links did not reach the preview")
+    for _, widget in ipairs(ControlsOf(ctx, "suite_skin_tooltip_builder")) do
+        Check(not (widget.meta.settingKey or ""):match("tooltipLayout%.[xy]$"), "title offset slider remained in the menu")
+    end
+
+    local available, setMany = optionsNS.Available, optionsNS.SetMany
+    local cfg = S.Config("tooltipDetails")
+    local oldMode, oldEnabled = cfg.anchor, cfg.enabled
+    local writes = 0
+    optionsNS.Available = function(id)
+        if id == "tooltipDetails" then return true end
+        return available(id)
+    end
+    optionsNS.SetMany = function(id, values)
+        if id ~= "tooltipDetails" then return setMany(id, values) end
+        writes = writes + 1
+        for key, value in pairs(values) do cfg[key] = value end
+        return true
+    end
+    local function CheckAnchor(mode, xKey, yKey)
+        cfg.anchor, cfg.enabled = mode, true
+        preview.host:Paint("test")
+        local button = preview.anchorButton
+        Check(button:IsShown(), "the selected shared anchor had no preview handle")
+        preview.kit:Select(button)
+        Check(preview.kit:Nudge(2, 3), "the preview could not set shared anchor coordinates")
+        local x, y = preview.kit.entries[button].read()
+        Check(cfg[xKey] == x and cfg[yKey] == y, "anchor X/Y wrote a different mode")
+        local count, point = writes, preview.frame.points[1]
+        local entry = preview.kit.entries[button]
+        preview.kit.opts.drag(button, "press")
+        entry.follow(button, -10, 10)
+        local moved = preview.frame.points[1]
+        Check(writes == count and (point[4] ~= moved[4] or point[5] ~= moved[5]),
+            "moving the anchor did not move just the sample")
+        Check(entry.write(x - 10, y + 10, true) and writes == count + 1,
+            "releasing the preview did not commit both coordinates together")
+        preview.kit.opts.drag(button, "done")
+        local page, target = optionsNS.QoLOwners.Resolve("suite_tooltips", {
+            settingKey = "msufsuite.tooltipDetails." .. xKey,
+        })
+        Check(page == "suite_tooltips" and target.sectionId == "suite_tooltips_preview",
+            "saved anchor link did not target the selected preview")
+    end
+    CheckAnchor(3, "fixedX", "fixedY")
+    CheckAnchor(2, "cursorX", "cursorY")
+    local anchorCtx = BuildSkinPage("suite_tooltips")
+    local detailSection = "suite_qualityOfLife_tooltipDetails_tooltip_details"
+    local feature = assert(anchorCtx.qualityOfLifeFeatureRows[detailSection])
+    W.EnsureSectionContent(feature.body)
+    local detailControls = ControlsOf(anchorCtx, detailSection)
+    Check(#detailControls > 1, "the shared anchor settings were not built")
+    for _, widget in ipairs(detailControls) do
+        local key = widget.meta.settingKey or ""
+        Check(not (key:match("tooltipDetails%.cursor[XY]$") or key:match("tooltipDetails%.fixed[XY]$")),
+            "a shared anchor coordinate remained in the menu")
+    end
+    cfg.anchor, cfg.enabled = oldMode, oldEnabled
+    cfg.cursorX, cfg.cursorY, cfg.fixedX, cfg.fixedY = nil, nil, nil, nil
+    optionsNS.Available, optionsNS.SetMany = available, setMany
+    local style = BuildSkinPage()
+    Check(not style.suiteWorkspace.groups.tooltips, "controls were duplicated on Skinning")
+    skin.ItemTooltipCard = nil
+    Suite.HostBridge.UnitFrameTooltipAPI = function() end
 end
 
 ------------------------------------------------------------------ The close X remains editable under Native window buttons

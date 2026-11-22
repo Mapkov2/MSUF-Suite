@@ -39,6 +39,7 @@ S.CreateFrame, S.CreateTexture, S.CreateFontString = Widget, Widget, Widget
 local combat = false
 local skinTints = {}
 local NS = {
+    Client = { modernEquipment = true },
     Safety = { IsForbidden = function(frame) return frame.forbidden == true end },
     IsCombatLocked = function() return combat end,
     InCombat = function(event)
@@ -606,6 +607,7 @@ do
     local surfaces = {}
     local theme = { .1, .2, .3, .8 }
     local skinNS = {
+        Safety = { Public = function(value) return type(value) ~= "table" or not value.secret end },
         Geometry = { ConfigureShape = function() end },
         BlizzardYellow = {},
         Registry = { AddListener = function() end, GetSurface = function(target) return surfaces[target] end },
@@ -630,6 +632,8 @@ do
     surfaces[frame] = { edge = edge, spec = { role = "popup" } }
     Check(suite.Skin.TintEdge(frame, 1, 0, 0) and edge.color[1] == 1 and edge.color[2] == 0 and edge.color[4] == .4,
         "the skin edge did not take the color and keep its alpha")
+    Check(not suite.Skin.TintEdge(frame, { secret = true }, 0, 0) and edge.color[1] == 1,
+        "a restricted color reached the tooltip edge")
     Check(suite.Skin.TintEdge(frame) and edge.color[1] == .1 and edge.color[4] == .8 * .5,
         "the skin edge did not get the theme border back")
     edge.shown = false

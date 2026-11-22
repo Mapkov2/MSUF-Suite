@@ -672,8 +672,9 @@ W.PageBuilder = function(ctx)
         if ctx.SetContentHeight then ctx:SetContentHeight(-y + 42) end
     end
     if ctx.key == "suite_actionbars" or ctx.key == "suite_dataTexts" or ctx.key == "suite_hud" or ctx.key == "suite_macros"
-        or ctx.key == "suite_planningTools" or ctx.key == "suite_devMode" or ctx.key == "suite_qualityOfLife" or ctx.key == "gameplay"
-        or ctx.key == "suite_chat" or ctx.key == "suite_minimap" or ctx.key == "suite_bags" or ctx.key == "suite_skin" then
+        or ctx.key == "suite_devMode" or ctx.key == "suite_qualityOfLife" or ctx.key == "gameplay"
+        or ctx.key == "suite_chat" or ctx.key == "suite_minimap" or ctx.key == "suite_bags" or ctx.key == "suite_skin"
+        or ctx.key == "suite_tooltips" then
         function b:Section(title, height)
             local body = Widget("Panel")
             body.title, body.parent = Widget("FontString"), ctx.wrapper
@@ -946,6 +947,66 @@ do
         if section.sectionId == "suite_bags_organisation" then organisation = section end
     end
     local bags = S.Config("bags")
+    do
+        local shortcut = assert(registeredControls["menu2.suite_bags.bags.action.reagentPositionBlocker"],
+            "the reagent bag section has no shortcut to the blocking setting")
+        local available, gamepad, panel, bridge = S.Availability, S.GamepadUI, S.PanelButton, M.SearchBridge
+        local enabled, view, merged = bags.enabled, bags.inventoryView, bags.combineReagentBag
+        local moved, x, y = bags.reagentWindowMoved, bags.reagentWindowX, bags.reagentWindowY
+        local views = Suite.BagsView
+        local position = S.catalog.bags.rules.reagentWindowMoved
+        local target
+        S.Availability = function() return true end
+        S.GamepadUI = function() return false end
+        S.PanelButton = function() return nil end
+        M.SearchBridge = { OpenSearchTarget = function(page, _, _, _, route, exact)
+            assert(page == "suite_bags" and exact.sectionId == "suite_bags_organisation"
+                and route.accordion["suite_bags:suite_bags_organisation"], "shortcut did not open Inventory organisation")
+            local controlId = exact.settingKey:gsub("^msufsuite%.", "menu2.suite_bags.")
+            local widget = registeredControls[controlId]
+            assert(widget and widget.registeredMeta.settingKey == exact.settingKey
+                and widget.registeredMeta.sectionId == exact.sectionId, "shortcut did not target a registered setting")
+            target = exact.settingKey
+            return true, true, true, true
+        end }
+        bags.enabled, bags.inventoryView, bags.combineReagentBag = true, views.CATEGORIES, false
+        bags.reagentWindowMoved, bags.reagentWindowX, bags.reagentWindowY = true, -1084, 1010
+        optionsNS.Refresh()
+        assert(not shortcut:IsShown() and optionsNS.RuleEnabled("bags", position), "shortcut appeared with no blocker")
+        assert(S.Set("bags", "combineReagentBag", true))
+        assert(shortcut:IsShown() and shortcut.enabled and not optionsNS.RuleEnabled("bags", position),
+            "an active merge setting did not provide a usable shortcut from the disabled controls")
+        shortcut.scripts.OnClick(shortcut)
+        assert(target == "msufsuite.bags.combineReagentBag" and bags.combineReagentBag,
+            "shortcut did not focus the merge setting or changed it")
+        bags.combineReagentBag, target = false, nil
+        shortcut.scripts.OnClick(shortcut)
+        assert(not target and not shortcut:IsShown(), "a stale shortcut navigated after the blocker was removed")
+        bags.combineReagentBag = true
+        bags.inventoryView = views.SINGLE
+        optionsNS.Refresh()
+        shortcut.scripts.OnClick(shortcut)
+        assert(target == "msufsuite.bags.inventoryView" and bags.inventoryView == views.SINGLE,
+            "One bag did not focus the inventory view before the disabled merge switch")
+        M.SearchBridge.OpenSearchTarget = function() return true, true, false, false end
+        ctx.suiteWorkspace.select("layout")
+        shortcut.scripts.OnClick(shortcut)
+        assert(ctx.suiteWorkspace.selected == "inventory", "the shortcut did not open the Inventory tab on the legacy path")
+        assert(bags.reagentWindowMoved and bags.reagentWindowX == -1084 and bags.reagentWindowY == 1010,
+            "navigation changed the reagent bag placement")
+        bags.inventoryView = views.BLIZZARD_GRID
+        optionsNS.Refresh()
+        assert(not shortcut:IsShown() and optionsNS.RuleEnabled("bags", position), "Blizzard grid treated integration as active")
+        bags.inventoryView = views.SINGLE
+        S.GamepadUI = function() return true end
+        optionsNS.Refresh()
+        assert(not shortcut:IsShown() and optionsNS.RuleEnabled("bags", position), "the Gamepad UI treated integration as active")
+        S.Availability, S.GamepadUI, S.PanelButton, M.SearchBridge = available, gamepad, panel, bridge
+        bags.enabled, bags.inventoryView, bags.combineReagentBag = enabled, view, merged
+        bags.reagentWindowMoved, bags.reagentWindowX, bags.reagentWindowY = moved, x, y
+        ctx.suiteWorkspace.select("bags")
+        optionsNS.Refresh()
+    end
     local savedCategories, savedColumns = bags.customCategories, bags.inventoryColumns
     bags.customCategories, bags.inventoryColumns = "1|Raid mats|12", 9
     assert(organisation and organisation._msufSuiteSectionReset and organisation._msufSuiteSectionReset(),
@@ -1878,9 +1939,11 @@ end)() end
     for _, section in ipairs(hudCtx.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    local defaultTopics = flavor == "Forever" and 21 or 24
+    local defaultTopics = flavor == "Forever" and 22 or 25
     local equipment = Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and 1 or 0
-    assert(topics == defaultTopics + #S.CharacterHeader.Fields + equipment, "HUD topics must be separate accordions beneath their feature tabs")
+    local plannerTopics = flavor == "Forever" and 6 or 9
+    assert(topics == defaultTopics + #S.CharacterHeader.Fields + equipment + plannerTopics,
+        "HUD topics must be separate accordions beneath their feature tabs")
     local previousTabs = W.SegmentTabs
     W.SegmentTabs = nil
     local textBuilder = optionsNS.Text
@@ -1913,6 +1976,9 @@ end)() end
     workspace.select("characterPanel")
     assert(workspace.selector.value == "characterPanel" and workspace.groups.characterPanel.frame.shown
         and not preview.host.shown, "narrow HUD cannot select Character Panel")
+    workspace.select("planningTools")
+    assert(workspace.selector.value == "planningTools" and workspace.groups.planningTools.frame.shown
+        and not preview.host.shown, "narrow HUD cannot select Adventure planner")
     for _, widget in ipairs(legacy.widgets) do
         if widget.meta and widget.meta.controlId == "menu2.suite_hud.objectives.x" then
             widget:_msuf2PrepareExactSearchTarget()
@@ -2106,7 +2172,7 @@ end
 local expected = {
     "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts",
     "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_nameplates", "suite_cooldownManager",
-    "suite_skin", "suite_macros", "suite_planningTools", "suite_devMode",
+    "suite_skin", "suite_tooltips", "suite_macros", "suite_devMode",
 }
 local function NavShape(items)
     local out = {}
@@ -2119,8 +2185,8 @@ local COMBAT_ROWS = "#combat suite_nameplates@combat suite_cooldownManager@comba
 local INTERFACE_ROWS = "#interface suite_actionbars@interface suite_minimap@interface suite_damageMeter@interface"
     .. " suite_bags@interface suite_chat@interface suite_dataTexts@interface suite_hud@interface"
 local hostShape = "home@nil #frames uf_player@frames " .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
-    .. " #style opt_colors@style suite_skin@style"
-    .. " #general gameplay@general suite_qualityOfLife@general suite_macros@general suite_planningTools@general"
+    .. " #style opt_colors@style suite_skin@style suite_tooltips@style"
+    .. " #general gameplay@general suite_qualityOfLife@general suite_macros@general"
     .. " suite_devMode@general opt_misc@general profiles@general"
 assert(NavShape(M.navItems) == hostShape, "suite navigation: " .. NavShape(M.navItems))
 assert(not M.pages.suite_characterPanel and M.ALIASES.suite_characterPanel == "suite_hud",
@@ -2194,7 +2260,7 @@ local function Reattach()
 end
 Reattach()
 assert(NavShape(M.navItems) == hostShape, "suite navigation inserted twice: " .. NavShape(M.navItems))
--- HD hosts get twelve distinct destinations; legacy hosts keep page cells.
+-- HD hosts get distinct Suite destinations; legacy hosts keep page cells.
 ;(function()
     local legacy = T.navIconGrid
     for _, page in ipairs(optionsNS.pages) do
@@ -2207,6 +2273,7 @@ assert(NavShape(M.navItems) == hostShape, "suite navigation inserted twice: " ..
         local cell = assert(T.navIconGrid[page.key], "HD icon missing: " .. page.key)
         local hostIcon = page.key == "suite_macros" and cell[1] == 7 and cell[2] == 1
             or page.key == "suite_devMode" and cell[1] == 4 and cell[2] == 2
+            or page.key == "suite_tooltips" and cell[1] == 4 and cell[2] == 0
         assert(cell[1] >= 0 and cell[1] < 8 and (cell[2] == 3 or cell[2] == 4 or hostIcon), "invalid HD atlas cell")
         local key = cell[1] .. ":" .. cell[2]
         assert(not cells[key], "unrelated Suite pages share a navigation symbol")
@@ -2233,10 +2300,10 @@ M.navItems = {
 }
 Reattach()
 local legacyShape = "home@nil #frames uf_player@frames"
-    .. " #appearance opt_bars@appearance opt_misc@appearance suite_skin@appearance "
+    .. " #appearance opt_bars@appearance opt_misc@appearance suite_skin@appearance suite_tooltips@appearance "
     .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
     .. " #features classpower@features gameplay@features suite_qualityOfLife@features suite_macros@features"
-    .. " suite_planningTools@features suite_devMode@features profiles@features"
+    .. " suite_devMode@features profiles@features"
 assert(NavShape(M.navItems) == legacyShape, "suite navigation on a legacy host: " .. NavShape(M.navItems))
 M.navItems = hostItems
 
@@ -2651,7 +2718,8 @@ do
     assert(autoQueueSpec.optIn and autoQueueSpec.automation and autoQueueSpec.defaultEnabled == false
         and autoQueueSpec.rules.roleCheck.default and autoQueueSpec.rules.invites.default,
         "Mythic+ Auto Queue must require opt-in and preserve its independent action defaults")
-    local simpleId = "suite_qualityOfLife_tooltipClassColors_class_colors"
+    local simpleId = flavor == "Forever" and "suite_qualityOfLife_questRewardValue_quest_reward_value"
+        or "suite_qualityOfLife_characterUpgradeWindow_upgrade_equipment"
     local simple = assert(rows[simpleId])
     assert(not simple.hasDetails and not simple.details and not simple.settings
         and resolver(simpleId) == simple.row,
@@ -4168,7 +4236,6 @@ local qolFeaturesByCategory = {
     questsProfessions = {
         "quests_automation", "questRewardValue_quest_reward_value", "trainerLearnAll_trainer_all",
         "fishingComfort_fishing_comfort", "professionAppearance_profession_outfits",
-        "gatheringTooltips_gathering_tooltips",
     },
     groups = {
         "groupFinderLocations_group_finder_locations", "keystoneReadyCheck_keystone_preparation",
@@ -4185,12 +4252,9 @@ local qolFeaturesByCategory = {
         "foreverWorldMap_forever_world_map",
     },
     interface = {
-        "auctionPriceTooltip_auction_price_tooltip",
         "dailyComfort_daily_comfort", "soundProfiles_sound_volumes",
         "mailRecipients_mail_recipients", "mailTemplates_mailTemplates",
         "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter", "popupAttention_popup_attention", "notificationHistory_notice_history",
-        "tooltipClassColors_class_colors", "tooltipSpellCopy_copy_spell_id", "itemCounts_item_counts",
-        "tooltipIDs_tooltip_ids", "tooltipVisibility_tooltip_visibility", "tooltipDetails_tooltip_details", "tooltipMPlusScore_mplus_score",
     },
     gameplay = {
         "actionTracker_action_tracker", "selfCombatText_self_combat_text", "combatStatsHUD_secondary_stats",

@@ -12,6 +12,9 @@ local function Widget()
     function w:SetAllPoints() end
     function w:SetColorTexture() end
     function w:SetPoint(...) self.points[#self.points + 1] = { ... } end
+    function w:GetPoint(index) return unpack(self.points[index] or {}) end
+    function w:GetNumPoints() return #self.points end
+    function w:GetEffectiveScale() return self.scale or 2 end
     function w:ClearAllPoints() self.points = {} end
     function w:SetText(value) self.text = value end
     function w:SetFont(...) self.font = { ... } end
@@ -36,7 +39,13 @@ S.CreateFrame, S.CreateTexture, S.CreateFontString = Widget, Widget, Widget
 local modules = {}
 S.Install = function(id, m) modules[id] = m end
 local combat = false
-local NS = { Safety = { IsForbidden = function(frame) return frame.forbidden == true end },
+local panelPositioner
+local bridge = {
+    SetUnitFrameTooltipPanelPositioner = function(positioner) panelPositioner = positioner end,
+    OwnsUnitFrameTooltip = function(tip) return tip._msufUnitTooltipOwner ~= nil end,
+}
+local NS = { Client = { modernEquipment = true }, HostBridge = bridge,
+    Safety = { IsForbidden = function(frame) return frame.forbidden == true end },
     IsCombatLocked = function() return combat end, Finish = function(callback, ...) return true, callback(...) end }
 NS.Public, NS.PublicText, NS.Finite = S.Public, S.PublicText, S.Finite
 
@@ -55,6 +64,8 @@ end
 
 -- GameTooltip as addon code meets it.
 UIParent = Widget()
+UIParent.GetEffectiveScale = function() return 2 end
+GetCursorPosition = function() return 200, 360 end
 Enum = { TooltipDataType = { Item = 0, Spell = 1, Unit = 2, Mount = 10 }, TooltipDataLineType = { UnitName = 2 } }
 local tooltip = { shown = false, lines = {}, scripts = {}, shows = 0, points = {} }
 function tooltip:AddDoubleLine(left, right, ...) self.lines[#self.lines + 1] = { left, right, ... } end
@@ -81,7 +92,16 @@ function tooltip:SetOwner(owner, anchor, x, y)
     self.ownerCalls = (self.ownerCalls or 0) + 1
     self.owner, self.anchor, self.anchorX, self.anchorY = owner, anchor, x, y
 end
-function tooltip:SetAnchorType(anchor, x, y) self.anchor, self.anchorX, self.anchorY = anchor, x, y end
+function tooltip:SetAnchorType(anchor, x, y)
+    self.anchorWrites = (self.anchorWrites or 0) + 1
+    self.anchor, self.anchorX, self.anchorY = anchor, x, y
+end
+function tooltip:GetAnchorType() return self.anchor, self.anchorX, self.anchorY end
+function tooltip:GetPrimaryTooltipData() return self.primary end
+function tooltip:IsProtected() return self.protected == true end
+function tooltip:GetPoint(index) return unpack(self.points[index] or {}) end
+function tooltip:GetNumPoints() return #self.points end
+function tooltip:GetEffectiveScale() return self.scale or 2 end
 function tooltip:ClearAllPoints() self.points = {} end
 function tooltip:SetPoint(...) self.points[#self.points + 1] = { ... } end
 function tooltip:RefreshDataNextUpdate() error("addon code wrote GameTooltip's update fields") end
@@ -89,6 +109,7 @@ function tooltip:GetUnit() error("GetUnit tests the tooltip GUID, which can be s
 function tooltip:GetProcessingTooltipInfo() return self.processingInfo end
 function tooltip:SetMountBySpellID() end
 GameTooltip = tooltip
+BuffFrameTooltip = setmetatable({ points = {} }, { __index = tooltip })
 local health = { alpha = 1 }
 function health:GetAlpha() return self.alpha end
 function health:SetAlpha(value) self.alpha = value end
@@ -176,7 +197,7 @@ m:Enable()
 m:Enable()
 m:RegisterMovers() -- the controller registers movers after Enable
 Check(#tooltips.post[Enum.TooltipDataType.Unit] == 1 and #tooltips.post[Enum.TooltipDataType.Item] == 1
-    and not next(tooltips.pre), "tooltip details registered twice or used a line pre-call")
+    and #(tooltips.post.ALL or {}) == 1 and not next(tooltips.pre), "tooltip details registered twice or used a line pre-call")
 
 -- One native unit build: Blizzard's name line first, then the post-calls,
 -- then Show(). Blizzard's line data is read only.
@@ -553,10 +574,43 @@ m.config.growth = 2
 GameTooltip_SetDefaultAnchor(tooltip, UIParent)
 point = tooltip.points[1]
 Check(point[1] == "BOTTOMLEFT" and point[4] == 24 and point[5] == 24, "a left corner placed the tooltip off screen")
-tooltip._msufUnitTooltipOwner = {}
-tooltip.points = {}
-GameTooltip_SetDefaultAnchor(tooltip, UIParent)
-Check(tooltip.anchor == "ANCHOR_NONE" and not tooltip.points[1], "the general anchor took over an MSUF unit tooltip")
+local owner = {}
+tooltip._msufUnitTooltipOwner = owner
+tooltip:SetOwner(owner, "ANCHOR_RIGHT")
+local primary = { id = 4 }
+tooltip.primary = primary
+local ownerCalls = tooltip.ownerCalls
+tooltips.Run(Enum.TooltipDataType.Item, tooltip, primary)
+Check(tooltip.anchor == "ANCHOR_NONE" and tooltip.points[1][1] == "BOTTOMLEFT"
+    and tooltip.ownerCalls == ownerCalls and tooltip.owner == owner, "an explicit owner or stale unit marker bypassed the shared anchor")
+local placements = tooltip.points
+tooltips.Run(Enum.TooltipDataType.Item, tooltip, primary)
+Check(tooltip.points == placements, "a stable fixed anchor rewrote geometry")
+tooltip:SetPoint("TOPRIGHT", owner, "BOTTOMLEFT", 0, 0)
+tooltips.Run(Enum.TooltipDataType.Item, tooltip, primary)
+Check(#tooltip.points == 1 and tooltip.points[1][1] == "BOTTOMLEFT", "an extra native point survived the shared anchor")
+tooltip:SetOwner(owner, "ANCHOR_RIGHT")
+tooltips.Run(Enum.TooltipDataType.Item, tooltip, { id = 9 })
+Check(tooltip.anchor == "ANCHOR_RIGHT", "an appended tooltip moved the primary tooltip")
+combat, tooltip.protected = true, true
+tooltips.Run(Enum.TooltipDataType.Item, tooltip, primary)
+Check(tooltip.anchor == "ANCHOR_RIGHT", "the shared anchor moved a protected tooltip in combat")
+tooltip.protected = false
+tooltips.Run(Enum.TooltipDataType.Item, tooltip, primary)
+Check(tooltip.anchor == "ANCHOR_NONE", "an unprotected tooltip lost the shared anchor in combat")
+combat = false
+BuffFrameTooltip:SetOwner(owner, "ANCHOR_BOTTOMLEFT")
+BuffFrameTooltip.primary = { id = 8 }
+tooltips.Run(7, BuffFrameTooltip, BuffFrameTooltip.primary)
+Check(BuffFrameTooltip.anchor == "ANCHOR_NONE" and BuffFrameTooltip.points[1][1] == "BOTTOMLEFT",
+    "Forever's dedicated buff tooltip used a different anchor")
+local panel = Widget()
+panelPositioner(panel)
+Check(panel.points[1][1] == "BOTTOMLEFT" and panel.points[1][4] == 24 and panel.points[1][5] == 24,
+    "the MSUF unit panel did not share the configured corner and offsets")
+panel.scale = 1
+panelPositioner(panel)
+Check(panel.points[1][4] == 48 and panel.points[1][5] == 48, "a scaled unit panel changed the on-screen fixed offsets")
 tooltip._msufUnitTooltipOwner = nil
 S.editMode = true
 m:Refresh()
@@ -572,9 +626,55 @@ Check(spec.place(40, 30) and m.preview.points[1][4] == 40, "the drag preview ign
 m.config.anchor = 2
 m:Refresh()
 Check(not m.preview:IsShown() and not spec.isEnabled(), "the cursor anchor kept the fixed corner mover")
+panelPositioner(panel)
+Check(panel.points[1][1] == "LEFT" and panel.points[1][4] == 238 and panel.points[1][5] == 406,
+    "the unit tooltip used different cursor offsets or missed UI scale")
+m.config.anchor = 1
+m:Refresh()
+local defaultContainer = Widget()
+GameTooltipDefaultContainer = defaultContainer
+defaultContainer:SetPoint("RIGHT", UIParent, "RIGHT", -9, 30)
+local unitData = Data("party1")
+tooltip.primary = unitData
+local function BuildAtCoreAnchor()
+    tooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    tooltip:ClearAllPoints()
+    tooltip:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -24, 16)
+end
+BuildAtCoreAnchor()
+tooltip._msufUnitTooltipOwner = owner
+ownerCalls = tooltip.ownerCalls
+tooltips.Run(Enum.TooltipDataType.Unit, tooltip, unitData)
+point = tooltip.points[1]
+Check(point[1] == "TOPRIGHT" and point[2] == defaultContainer and point[3] == "TOPRIGHT"
+    and point[4] == 0 and point[5] == 0 and tooltip.ownerCalls == ownerCalls,
+    "in Blizzard mode the MSUF Unit Frame kept its private fixed anchor")
+panelPositioner(panel)
+Check(panel.points[1][1] == point[1] and panel.points[1][2] == point[2] and panel.points[1][3] == point[3],
+    "the MSUF panel did not match the native tooltip corner")
+BuildAtCoreAnchor()
+tooltips.Run(Enum.TooltipDataType.Unit, tooltip, Data("player"))
+Check(tooltip.points[1][2] == UIParent, "appended unit data moved the primary in Blizzard mode")
+combat, tooltip.protected = true, true
+tooltips.Run(Enum.TooltipDataType.Unit, tooltip, unitData)
+Check(tooltip.points[1][2] == UIParent, "Blizzard mode moved a protected tooltip in combat")
+tooltip.protected = false
+tooltips.Run(Enum.TooltipDataType.Unit, tooltip, unitData)
+Check(tooltip.points[1][2] == defaultContainer, "the shared Blizzard anchor was lost in combat")
+BuildAtCoreAnchor()
+local unreadableUnit = { blocked = true }
+tooltip.primary = unreadableUnit
+tooltips.Run(Enum.TooltipDataType.Unit, tooltip, unreadableUnit)
+Check(tooltip.points[1][2] == defaultContainer, "combat restriction on unit data suppressed Blizzard placement")
+combat, tooltip._msufUnitTooltipOwner = false, nil
+tooltip.primary = unitData
+BuildAtCoreAnchor()
+tooltips.Run(Enum.TooltipDataType.Unit, tooltip, unitData)
+Check(tooltip.points[1][2] == UIParent, "Blizzard mode moved a unit tooltip Suite does not own")
 S.editMode = false
 m.active = false
 m:Disable()
+Check(panelPositioner == nil, "disabling tooltip details kept control of the Core panel anchor")
 Build("party1")
 Check(#tooltip.lines == 0 and health.alpha == 1 and #reported == 0, "the disabled module kept adding lines")
 print("Tooltip details: " .. checks .. " checks passed")

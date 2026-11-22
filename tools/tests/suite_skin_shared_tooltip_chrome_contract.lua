@@ -55,10 +55,23 @@ local function Test(forever)
     end
 
     local function Texture(r, g, b, a)
-        local values = { rgba = { r, g, b, a } }
+        local values = { rgba = { r, g, b, a }, alpha = 1, shown = true }
         local region = NativeObject({
+            GetAlpha = function() return values.alpha end,
+            IsShown = function() return values.shown end,
+            Show = function() NoNativeWrite(); values.shown = true end,
+            Hide = function() NoNativeWrite(); values.shown = false end,
+            SetAlpha = function(_, alpha)
+                NoNativeWrite()
+                values.alpha = alpha
+                if forever then values.rgba[4] = alpha end
+            end,
             GetVertexColor = function() return unpack(values.rgba) end,
-            SetVertexColor = function(_, ...) NoNativeWrite(); values.rgba = { ... } end,
+            SetVertexColor = function(_, ...)
+                NoNativeWrite()
+                values.rgba = { ... }
+                if forever then values.alpha = values.rgba[4] end
+            end,
             SetGradient = function(_, direction, from, to)
                 NoNativeWrite()
                 values.gradient = { direction, from, to }
@@ -71,8 +84,13 @@ local function Test(forever)
     local function Tooltip()
         local center, fill = Texture(0.15, 0.15, 0.15, 0.93)
         local border, edge = Texture(0.6, 0.6, 0.6, 0.8)
+        local sliceAlpha = 1
         local frame = NativeObject({
-            NineSlice = NativeObject({ Center = center, TopEdge = border }),
+            NineSlice = NativeObject({
+                Center = center, TopEdge = border,
+                GetAlpha = function() return sliceAlpha end,
+                SetAlpha = function(_, alpha) NoNativeWrite(); sliceAlpha = alpha end,
+            }),
             IsForbidden = function(self) return flags[self] == "forbidden" end,
             IsProtected = function(self) return flags[self] == "protected", flags[self] == "protected" end,
         })
@@ -82,17 +100,21 @@ local function Test(forever)
     local tooltip, fill, edge = Tooltip()
     local embedded, embeddedFill = Tooltip()
     local itemReference = Tooltip()
+    local mainCompare, mainCompareFill = Tooltip()
+    local linkCompare, linkCompareFill = Tooltip()
     GameTooltip, EmbeddedItemTooltip, ItemRefTooltip = tooltip, embedded, itemReference
-    GameNoHeaderTooltip, ShoppingTooltip1, ShoppingTooltip2 = nil, nil, nil
+    GameNoHeaderTooltip, ShoppingTooltip1, ShoppingTooltip2 = nil, mainCompare, nil
+    ItemRefShoppingTooltip1, ItemRefShoppingTooltip2 = nil, linkCompare
     GameSmallHeaderTooltip = Tooltip()
     flags[GameSmallHeaderTooltip] = "forbidden"
 
     nativeStyle = function(frame, values, red)
         building = true
         values.rgba = { red, 0.08, 0.09, 1 }
-        if styleHook then styleHook(frame) end
+        if forever then values.alpha = 1 end
         Check(values.rgba[1] == red, "post-hook painted before native widgets finished")
         building = false
+        if styleHook then styleHook(frame) end
     end
     SharedTooltip_SetBackdropStyle = nativeStyle
     hooksecurefunc = function(target, callback)
@@ -161,7 +183,7 @@ local function Test(forever)
         CatalogShopMotion = { Disable = function() end },
     }
 
-    for _, path in ipairs({ "Core/Safety.lua", "Rendering/Geometry.lua", "Rendering/Surface.lua",
+    for _, path in ipairs({ "Core/Safety.lua", "Core/Cosmetics.lua", "Rendering/Geometry.lua", "Rendering/Surface.lua",
         "Adapters/Catalog.lua", "Adapters/CatalogGlass.lua", "Adapters/TooltipChrome.lua",
         "Adapters/GenericWindowsCatalog.lua" }) do
         Load(ns, path)
@@ -189,6 +211,25 @@ local function Test(forever)
     NextFrame()
     Check(fill.rgba[1] == 0.12 and #timers == 0, "style reset left the tooltip native or kept polling")
     Check(materialReads == reads, "a native style reset resolved immutable popup materials")
+    ns.ItemTooltipCard = { HasVisibleHeader = function() return true end }
+    nativeStyle(tooltip, fill, 0.19)
+    Check(fill.rgba[1] == 0.12 and #timers == 0, "a visible card flashed native chrome before the next frame")
+    local chrome = ns.TooltipChrome
+    local slice = tooltip.NineSlice
+    Check(chrome.SetCardBacking(tooltip, "all") and slice:GetAlpha() == 0,
+        "unified card still composites the native slice under its background")
+    nativeStyle(tooltip, fill, 0.24)
+    Check(fill.rgba[4] == 1 and slice:GetAlpha() == 0 and #timers == 0, "native color reset revealed the slice")
+    Check(chrome.SetCardBacking(tooltip, "fill") and slice:GetAlpha() == 1 and not slice.Center:IsShown()
+        and edge.rgba[4] == 0.3, "native border could not stay visible while its fill was hidden")
+    slice.Center:Show()
+    nativeStyle(tooltip, fill, 0.25)
+    Check(not slice.Center:IsShown(), "native style could reveal the fill in Keep mode")
+    local restoredAlpha = forever and .6 or 1
+    Check(chrome.SetCardBacking(tooltip, nil) and slice.Center:IsShown()
+        and math.abs(slice.Center:GetAlpha() - restoredAlpha) < .0001 and math.abs(fill.rgba[4] - 0.60) < 0.0001,
+        "minimal style did not regain its own fill")
+    ns.ItemTooltipCard = nil
     local originalEdge = tooltip.NineSlice.TopEdge
     local replacement, replacementColors = Texture(0.3, 0.4, 0.5, 0.6)
     tooltip.NineSlice.TopEdge = replacement
@@ -210,11 +251,17 @@ local function Test(forever)
     Check(fill.gradient[1] == "HORIZONTAL" and fill.gradient[2].r == 0.12 and fill.gradient[3].r < 0.12
         and edge.rgba[4] == 0, "gradient or border-off option was lost")
 
+    slice:SetAlpha(.85)
+    Check(chrome.SetCardBacking(tooltip, "all") and slice:GetAlpha() == 0,
+        "unified card failed to suppress the native gradient")
     generic.ApplyEntry(itemRef, "test")
-    Check(genericPaints == 1, "unrelated item-reference tooltip was redirected")
+    Check(genericPaints == 1, "the pinned item window lost its existing skin path")
+    Check(mainCompareFill.gradient[2].r == .12 and linkCompareFill.gradient[2].r == .12
+        and chrome.IsActive(mainCompare) and chrome.IsActive(linkCompare), "a comparison retained different chrome")
     nativeStyle(tooltip, fill, 0.22)
     generic.Disable("test")
     NextFrame()
+    Check(slice:GetAlpha() == .85 and slice.Center:IsShown(), "disable lost the native slice visibility or opacity")
     Check(fill.rgba[1] == 0.22 and fill.gradient[2].r == 1 and embeddedFill.rgba[1] == 0.15,
         "disable overwrote the latest native style or left a gradient")
     Check(edge.rgba[1] == 0.6 and edge.rgba[4] == 0.8, "disable left the native border tinted")
