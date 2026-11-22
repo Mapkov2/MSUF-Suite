@@ -255,10 +255,11 @@ function Model.Normalize(source)
     local icon = ReadMacroField(source, "icon", 134400)
     if not Is(icon, "number") or icon ~= icon or icon < 1 or icon > 100000000 or icon % 1 ~= 0 then return nil, "Invalid macro icon" end
     local showTooltip, steps = ReadMacroField(source, "showTooltip", true), ReadMacroField(source, "steps", {})
-    if not Is(showTooltip, "boolean") then return nil, "Invalid macro document" end
+    local highestRank = ReadMacroField(source, "highestRank", false)
+    if not Is(showTooltip, "boolean") or not Is(highestRank, "boolean") then return nil, "Invalid macro document" end
     if not Array(steps, Model.MAX_STEPS) then return nil, "Too many macro actions" end
     local result = { version = Model.VERSION, name = name, mode = mode, scope = scope, icon = icon,
-        raw = raw:gsub("\r\n", "\n"):gsub("\r", "\n"), showTooltip = showTooltip, steps = {} }
+        raw = raw:gsub("\r\n", "\n"):gsub("\r", "\n"), showTooltip = showTooltip, highestRank = highestRank, steps = {} }
     for i, step in ipairs(steps) do
         result.steps[i] = CopyStep(step)
         if not result.steps[i] then return nil, "Invalid macro action" end
@@ -290,5 +291,5 @@ function Model.New(templateID)
         if template.id == templateID then return Model.Normalize(template.document) end
     end
     return { version = Model.VERSION, name = "", scope = "character", icon = 134400,
-        mode = "rules", raw = "", showTooltip = true, steps = { Model.NewStep() } }
+        mode = "rules", raw = "", showTooltip = true, highestRank = false, steps = { Model.NewStep() } }
 end

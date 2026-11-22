@@ -232,7 +232,86 @@ local function Rules(document)
     return table.concat(lines, "\n"), nil, warnings
 end
 
-function Macros.Compile(source, consumableResolver)
+local RANK_COMMANDS = {
+    ["/cast"] = "CAST", ["/use"] = "USE", ["/castsequence"] = "CASTSEQUENCE",
+    ["/castrandom"] = "CASTRANDOM", ["/userandom"] = "USERANDOM",
+    ["#showtooltip"] = "SHOW", ["#show"] = "SHOW",
+}
+
+local function RankCommand(command)
+    command = command:lower()
+    if RANK_COMMANDS[command] then return RANK_COMMANDS[command] end
+    if command:sub(1, 1) ~= "/" then return end
+    for canonical, key in pairs(RANK_COMMANDS) do
+        if canonical:sub(1, 1) == "/" then
+            local prefix, index = "SLASH_" .. key, 1
+            local alias = _G[prefix .. index]
+            while not NS.IsSecret(alias) and type(alias) == "string" do
+                if alias:lower() == command then return key end
+                index = index + 1
+                alias = _G[prefix .. index]
+            end
+        end
+    end
+end
+
+local function RankFormat(text)
+    return (text:lower():gsub("%s+", ""):gsub("%d+", "0"))
+end
+
+local function UnrankedSpell(action, spellFirst)
+    local before, spell, after = action:match("^(%s*!?%s*)(.-)(%s*)$")
+    local name, rank = spell:match("^(.-)%s*%(([^()]*)%)$")
+    local id = spellFirst and tonumber(spell:match("^%d+$"))
+    if id and (id < 1 or id > 2147483647) then return action end
+    if not id and (not rank or not rank:find("%d")) then return action end
+    local info = C_Spell.GetSpellInfo(id or name .. "(" .. rank .. ")")
+    -- A rank saved on another character might not resolve in this spellbook.
+    if not NS.IsSecret(info) and info == nil and name then info = C_Spell.GetSpellInfo(name) end
+    if NS.IsSecret(info) or type(info) ~= "table" then return action end
+    local spellID, baseName = info.spellID, info.name
+    if NS.IsSecret(spellID) or type(spellID) ~= "number" or NS.IsSecret(baseName)
+        or type(baseName) ~= "string" or baseName == "" or not SafeValue(baseName, false) then return action end
+    local subtext = C_Spell.GetSpellSubtext(spellID)
+    if NS.IsSecret(subtext) or type(subtext) ~= "string" or not subtext:find("%d") then return action end
+    if rank and (name:lower() ~= baseName:lower() or RankFormat(rank) ~= RankFormat(subtext)) then return action end
+    if not spellFirst then
+        -- WoW resolves items before spells in these commands.
+        local currentItem, unrankedItem = C_Item.GetItemInfo(spell), C_Item.GetItemInfo(baseName)
+        if NS.IsSecret(currentItem) or currentItem or NS.IsSecret(unrankedItem) or unrankedItem then return action end
+    end
+    return before .. baseName .. after
+end
+
+local function AutomaticRanks(body)
+    -- An unqualified spell name lets WoW select the learned rank when the macro runs.
+    return (body:gsub("[^\n]+", function(line)
+        local command, arguments = line:match("^(%s*%S+%s+)(.+)$")
+        local kind = command and RankCommand(Trim(command))
+        if not kind then return line end
+        arguments = arguments:gsub("[^;]+", function(clause)
+            local offset = 1
+            while true do
+                local nextOffset = clause:match("^%s*%b[]()", offset)
+                if not nextOffset then break end
+                offset = nextOffset
+            end
+            if kind == "CASTSEQUENCE" then
+                offset = clause:match("^%s*reset=%S+%s+()", offset) or offset
+            end
+            local actions = clause:sub(offset)
+            if kind == "CASTSEQUENCE" or kind == "CASTRANDOM" or kind == "USERANDOM" then
+                actions = actions:gsub("[^,]+", function(action) return UnrankedSpell(action, false) end)
+            else
+                actions = UnrankedSpell(actions, kind == "CAST")
+            end
+            return clause:sub(1, offset - 1) .. actions
+        end)
+        return command .. arguments
+    end))
+end
+
+function Macros.Compile(source, consumableResolver, preserveRanks)
     local document, errorKey = Model.Normalize(source)
     if not document then return nil, errorKey end
     local body, warnings
@@ -247,6 +326,7 @@ function Macros.Compile(source, consumableResolver)
     if not body then return nil, errorKey end
     if NS.IsSecret(body) or type(body) ~= "string" then return nil, "Invalid macro text" end
     body = body:gsub("\r\n", "\n"):gsub("\r", "\n")
+    if document.highestRank and not preserveRanks and NS.Client.isForever then body = AutomaticRanks(body) end
     local length = Model.Count(body)
     if not length then return nil, "Invalid macro text" end
     if Trim(body) == "" then return nil, "Enter a macro action" end

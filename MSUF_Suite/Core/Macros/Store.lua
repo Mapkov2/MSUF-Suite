@@ -146,13 +146,21 @@ function Store.Import(index)
     return id
 end
 
-function Store.Preview(document)
+function Store.Preview(document, preserveRanks)
     if NS.InCombat() then return nil, "Macro changes are unavailable in combat" end
     local resolver = Macros.Consumables and Macros.Consumables.Build
-    return Macros.Compile(document, resolver)
+    return Macros.Compile(document, resolver, preserveRanks)
 end
 
-local function Publish(id, replace, notify)
+function Store.PrepareUpdate(id)
+    if NS.InCombat() then return nil, "Macro changes are unavailable in combat" end
+    local data = Database(false)
+    local document = data and data.documents[id]
+    if not document then return nil, "The macro draft is no longer available" end
+    return Macros.Native.PrepareUpdate(Binding(data, document))
+end
+
+function Store.Publish(id, replace, updateTarget)
     if NS.InCombat() then return false, "Macro changes are unavailable in combat" end
     local data = Database(false)
     local source = data and data.documents[id]
@@ -168,18 +176,23 @@ local function Publish(id, replace, notify)
     if not body then return false, errorText end
     local key = BindingKey(document)
     if not key then return false, "Character information is unavailable" end
+    local binding = Binding(data, document)
+    if updateTarget then
+        if not replace or NS.IsSecret(binding) or type(binding) ~= "table"
+            or binding.name ~= updateTarget.name or binding.scope ~= updateTarget.scope
+            or binding.character ~= updateTarget.character then
+            return false, "This draft has no saved WoW macro"
+        end
+        binding = updateTarget
+    end
     local saved
-    saved, errorText = Macros.Native.Publish(document, body, Binding(data, document), replace)
+    saved, errorText = Macros.Native.Publish(document, body, binding, replace)
     if not saved then return false, errorText end
     saved.document = Copy(document)
     data.bindings[key] = data.bindings[key] or {}
     data.bindings[key][id] = saved
-    if notify then Changed() end
+    Changed()
     return true, nil, saved.index
-end
-
-function Store.Publish(id, replace)
-    return Publish(id, replace, true)
 end
 
 function Store.Pickup(id)

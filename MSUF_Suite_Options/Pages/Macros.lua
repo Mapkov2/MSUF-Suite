@@ -13,38 +13,44 @@ Page.initializers[#Page.initializers + 1] = function()
         ui.preview:SetHeight(110)
         ui.preview:SetJustifyV("TOP")
         ui.status = Page.Label(ui, "result-status", "", 16, y - 206, width - 32, T.colors.muted)
+        local actionsY = y - 240
+        if P.Suite.Client.isForever then
+            Page.Toggle(ui, "highest-rank", "Auto Rank Up", Page.document.highestRank, 16, actionsY,
+                width - 32, function(value) Page.document.highestRank = value Page.Changed(false) end)
+            actionsY = actionsY - 38
+        end
         local column = math.floor((width - 42) / 2)
         ui.publish = Page.Button(ui, "publish", Page.bound and "Update WoW macro" or "Create WoW macro",
-            16, y - 240, column, function()
-                if Page.bound then Page.Confirm("macro-publish", Tr("Replace the linked WoW macro?"), function() Helpers.Publish(true) end)
+            16, actionsY, column, function()
+                if Page.bound then Helpers.ConfirmUpdate(ui)
                 else Helpers.Publish(false) end
             end)
         T.SkinPrimaryButton(ui.publish)
-        Page.Button(ui, "save-draft", "Save draft", 26 + column, y - 240, column, function()
+        Page.Button(ui, "save-draft", "Save draft", 26 + column, actionsY, column, function()
             if Helpers.Saved() then Page.message = "Draft saved" Page.Preview() end
         end)
-        local pickup = Page.Button(ui, "pickup", "Pick up macro", 16, y - 278, column, Page.DragMacro, Page.pickupReady)
+        local pickup = Page.Button(ui, "pickup", "Pick up macro", 16, actionsY - 38, column, Page.DragMacro, Page.pickupReady)
         ui.pickup = pickup
         pickup:RegisterForDrag("LeftButton")
         pickup:SetScript("OnDragStart", function() if Page.Active(ui) then Page.DragMacro() end end)
         local iconButton
-        iconButton = Page.Button(ui, "icon", "Choose icon", 26 + column, y - 278, column, function()
+        iconButton = Page.Button(ui, "icon", "Choose icon", 26 + column, actionsY - 38, column, function()
             Page.Pick(iconButton, "any", function(_, icon)
                 Page.document.icon = icon or Page.AUTO_ICON
                 Page.Changed(false)
             end)
         end)
-        Page.Toggle(ui, "showtooltip", "Show tooltip", Page.document.showTooltip, 16, y - 316, column,
+        Page.Toggle(ui, "showtooltip", "Show tooltip", Page.document.showTooltip, 16, actionsY - 76, column,
             function(value) Page.document.showTooltip = value Page.Changed(false) end)
         if Page.bound then
-            Page.Button(ui, "create-copy", "Create another macro", 26 + column, y - 316, column,
+            Page.Button(ui, "create-copy", "Create another macro", 26 + column, actionsY - 76, column,
                 function() Helpers.Publish(false) end)
         end
-        ui.autoIcon = Page.Button(ui, "icon:auto", "Use spell icon", 16, y - 354, column, function()
+        ui.autoIcon = Page.Button(ui, "icon:auto", "Use spell icon", 16, actionsY - 114, column, function()
             Page.document.icon = Page.AUTO_ICON
             Page.Changed(false)
         end)
-        local bottom = Helpers.BindingRow(ui, y - 392, width - 32)
+        local bottom = Helpers.BindingRow(ui, actionsY - 152, width - 32)
         Page.Card(ui, "result", 8, y + 10, width - 16, y - bottom + 14)
         Page.Preview()
         return bottom
@@ -135,7 +141,7 @@ Page.initializers[#Page.initializers + 1] = function()
     Helpers.ChooseTab = function(tab)
         local function Apply()
             if tab == "raw" and Page.document.mode ~= "raw" and not Page.codeEdited then
-                local body, _, _, draftBody = Helpers.Body()
+                local body, _, _, draftBody = Store.Preview(Page.document, true)
                 Page.document.raw = body or draftBody or Page.document.raw
             end
             if tab == "consumable" and not Page.document.consumable then
@@ -271,8 +277,7 @@ Page.initializers[#Page.initializers + 1] = function()
 end
 
 Page.initializers[#Page.initializers + 1] = function()
-    local Page, Helpers, Tr, T, Macros = P.MacroPage, P.MacroPage.helpers, P.Tr, P.T, P.Suite.Macros
-    local Model, Store = Macros.Model, Macros.Store
+    local Helpers = Page.helpers
     function Page.Render()
         local ui = Page.ui
         if not ui or P.Combat() then return end
@@ -308,11 +313,31 @@ Page.initializers[#Page.initializers + 1] = function()
         ui.offsetX, ui.panelWidth = 0, nil
         Page.Finish(ui, y)
     end
+end
 
-    Helpers.Publish = function(replace)
+Page.initializers[#Page.initializers + 1] = function()
+    local Helpers, Tr, Store = Page.helpers, P.Tr, P.Suite.Macros.Store
+    Helpers.ConfirmUpdate = function(ui)
+        local document, id = Page.document, Page.id
+        local target, errorKey, changed = Store.PrepareUpdate(id)
+        if not target then Page.Error(errorKey) return end
+        if target.scope ~= document.scope then Page.Error("Save a new macro to change its storage scope") return end
+        local prompt = changed and Tr("The WoW macro \"%s\" changed. Replace it with this draft?"):format(target.name)
+            or Tr("Replace the linked WoW macro?")
+        Page.Confirm("macro-publish", prompt, function()
+            if Page.Active(ui) and Page.document == document and Page.id == id and Page.tab ~= "library" then
+                Helpers.Publish(true, target)
+            end
+        end)
+    end
+
+    Helpers.Publish = function(replace, updateTarget)
         local id = Helpers.Saved()
         if not id then return end
-        local ok, errorKey = Store.Publish(id, replace)
+        local ok, errorKey = Store.Publish(id, replace, updateTarget)
+        if updateTarget and errorKey == "The WoW macro changed; import it again before replacing it" then
+            errorKey = "The WoW macro changed again. Click Update WoW macro to retry."
+        end
         if not ok then Page.Error(errorKey) return end
         Page.bound, Page.message = true, "Macro saved to WoW"
         Helpers.BindPublished(Page.document)

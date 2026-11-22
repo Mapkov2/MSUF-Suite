@@ -2,6 +2,7 @@ local _, NS = ...
 local Macros = NS.Macros
 local Native = {}
 Macros.Native = Native
+local MACRO_CHANGED = "The WoW macro changed; import it again before replacing it"
 
 local function Number(value)
     return NS.Finite(value) and value >= 0 and value == math.floor(value)
@@ -73,13 +74,33 @@ function Native.Resolve(binding, entries)
             found = entry
         end
     end
-    if not found then return nil, "The WoW macro changed; import it again before replacing it" end
+    if not found then return nil, MACRO_CHANGED end
     return found
 end
 
 local function Capture(entry)
     return { index = entry.index, name = entry.name, body = entry.body, icon = entry.icon, scope = entry.scope,
         character = entry.scope == "character" and Native.Character() or nil }
+end
+
+function Native.PrepareUpdate(binding)
+    local entries, errorText = Native.Scan()
+    if errorText then return nil, errorText end
+    local entry
+    entry, errorText = Native.Resolve(binding, entries)
+    if entry then return Capture(entry) end
+    if errorText ~= MACRO_CHANGED then return nil, errorText end
+
+    -- An explicit update can recover a changed macro when its saved name and scope still identify one row.
+    local candidate
+    for _, current in ipairs(entries) do
+        if current.name == binding.name and current.scope == binding.scope then
+            if candidate then return nil, MACRO_CHANGED end
+            candidate = current
+        end
+    end
+    if not candidate then return nil, MACRO_CHANGED end
+    return Capture(candidate), nil, true
 end
 
 function Native.Binding(index)
@@ -110,9 +131,10 @@ function Native.Publish(document, body, binding, replace)
     elseif not CanCreate(document.scope, entries) then
         return nil, "The selected WoW macro storage is full"
     end
-    for _, entry in ipairs(entries) do
-        if entry.name:lower() == document.name:lower() and (not current or current.index ~= entry.index) then
-            return nil, "That macro name already exists"
+    local name = document.name:lower()
+    if not current or current.name:lower() ~= name then
+        for _, entry in ipairs(entries) do
+            if entry.name:lower() == name then return nil, "That macro name already exists" end
         end
     end
     if current and current.name == document.name and current.icon == document.icon
