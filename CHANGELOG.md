@@ -1,6 +1,164 @@
 # MSUF Suite Changelog
 
 
+## 0.1.32 Alpha - 2026-11-22
+
+### Highlights
+
+- Find open addon windows and check their skin status.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_addon_skins", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.skin.addonSkins.status", "label": "Addon skin status"} -->
+- Choose between compact item tooltips and an item card with an icon, item level and type.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_tooltips", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.skin.theme.itemTooltipStyle", "label": "Item tooltip style"} -->
+- Added a Whisper Messenger with separate conversations for character and Battle.net whispers, an optional launcher, and access to saved character whispers.
+  <!-- msuf-menu-link: {"pageKey": "suite_chat", "sectionId": "suite_chat_chatMessenger_module", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.chatMessenger.enabled", "label": "Whisper messenger"} -->
+- Bags and Bank have optional sortable item lists, a visual search builder, and read-only views of recorded inventories.
+  <!-- msuf-menu-link: {"pageKey": "suite_bags", "sectionId": "suite_bags_listView", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.bags.listView", "label": "Show bag items as a sortable list"} -->
+- Action bars can combine combat, mount, target and mouseover conditions. Bars with native pages also accept custom macro paging rules.
+  <!-- msuf-menu-link: {"pageKey": "suite_actionbars", "sectionId": "suite_actionbars_bar_visibility", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.actionbars.bar1Visibility", "label": "Show this bar"} -->
+- Manage Blizzard equipment sets from the Character Panel, show the active set in Overview, add sets to Custom Panels and place them on independent Action Bar 10.
+  <!-- msuf-menu-link: {"pageKey": "suite_hud", "sectionId": "suite_hud_characterPanel_appearance", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.characterPanel.showEquipmentSetsInOverview", "label": "Show equipment sets in Overview"} -->
+- WoW Forever gains configurable floating damage text over enemies, with Suite font support and an option to hide Blizzard's damage numbers.
+  <!-- msuf-menu-link: {"pageKey": "gameplay", "sectionId": "suite_qualityOfLife_floatingCombatText_floating_combat_text", "controlId": "msufsuite.changelog|forever|suite_qualityOfLife_category_gameplay|", "settingKey": "msufsuite.floatingCombatText.enabled", "label": "Floating combat text"} -->
+- The bank follows Suite presets on both clients. WoW Forever also gains a Spells to Learn panel and refinements to the Glass look and window controls.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_windows", "controlId": "msufsuite.changelog|||", "label": "Blizzard windows"} -->
+
+### Action Bars
+
+- Combine visibility conditions with Any or All and use mouseover to reveal the bar.
+  <!-- msuf-menu-link: {"pageKey": "suite_actionbars", "sectionId": "suite_actionbars_bar_visibility", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.actionbars.bar1Visibility", "label": "Show this bar"} -->
+- Bars 1 through 9 support validated macro paging where a native page is available. Vehicle, override and form paging retain priority. Reserved or invalid pages are rejected.
+  <!-- msuf-menu-link: {"pageKey": "suite_actionbars", "sectionId": "suite_actionbars_bar_paging", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.actionbars.bar1Paging", "label": "Custom paging (macro conditions)"} -->
+- Optional Masque groups skin the buttons created by Suite, including bars 9 and 10 and Suite-created Bar 1 buttons.
+  <!-- msuf-menu-link: {"pageKey": "suite_actionbars", "sectionId": "suite_actionbars_appearance", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.actionbars.masque", "label": "Skin Suite-made buttons with Masque"} -->
+- Refined visibility, paging, key handling and button refreshes during action changes and transitions.
+  <!-- msuf-menu-link: {"pageKey": "suite_actionbars", "sectionId": "suite_actionbars_behavior", "controlId": "msufsuite.changelog|||", "label": "Action bar behavior"} -->
+- Independent Bar 10 accepts equipment-set actions picked up from the Character Panel.
+  <!-- msuf-menu-link: {"pageKey": "suite_actionbars", "sectionId": "suite_actionbars_actionbars_module", "controlId": "menu2.suite.actionbars.suite.actionbars.quick.bar10", "label": "Action bar 10"} -->
+
+### Bags and Bank
+
+- Set Bags and Bank to list view independently. Sort by column, reorder columns and choose which item details to show.
+  <!-- msuf-menu-link: {"pageKey": "suite_bags", "sectionId": "suite_bags_listView", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.bags.listView", "label": "Show bag items as a sortable list"} -->
+- Build searches with grouped conditions, apply them to the current inventory and save them for reuse. Open the builder from the inventory search controls.
+  <!-- msuf-menu-link: {"pageKey": "suite_bags", "sectionId": "suite_bags_listView", "controlId": "msufsuite.changelog|||", "label": "Bag list and inventory search"} -->
+- Browse recorded bags and banks from the inventory window, including recorded Warband Bank contents on Retail. Recorded views show their snapshot date.
+  <!-- msuf-menu-link: {"pageKey": "suite_bags", "sectionId": "suite_bags_inventoryArchive_module", "controlId": "menu2.suite.bags.suite.inventory.archive.enabled", "settingKey": "msufsuite.inventoryArchive.enabled", "label": "Inventory archive"} -->
+- Updated Bank window appearance in Suite Bags. On WoW Forever, the Glass look also extends through the Backpack sidebar and title and footer areas.
+  <!-- msuf-menu-link: {"pageKey": "suite_bags", "sectionId": "suite_bags_bankWindow", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.bags.bankBackground", "label": "Bank background"} -->
+- The native Bank now uses the active Suite preset for item slots and money. Forever also styles the bag slots, side tabs and divider.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_windows", "controlId": "msufsuite.changelog|||", "label": "Blizzard windows"} -->
+- Forever Bank minimize restores the original layout, the native close button stays clickable, and maximize includes space for the side tabs.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_window_controls", "controlId": "msufsuite.changelog|||", "label": "Window position, size and minimize"} -->
+
+### Character Panel
+
+- Name, save, update, equip and delete Blizzard equipment sets. Set their icon, ignored slots and specialization in the set manager.
+  <!-- msuf-menu-link: {"pageKey": "suite_hud", "sectionId": "suite_hud_characterPanel_appearance", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.characterPanel.showEquipmentSetsInOverview", "label": "Show equipment sets in Overview"} -->
+- Toggle the active equipment set in Overview or add Equipment Sets as a card or row in a Custom Panel.
+  <!-- msuf-menu-link: {"pageKey": "suite_hud", "sectionId": "suite_hud_characterPanel_appearance", "controlId": "msufsuite.changelog|||", "label": "Character Panel appearance"} -->
+- The Forever Modern Character Panel uses one translucent shell with matching close-button styling. Custom translucent looks keep the model and equipment interactions available.
+  <!-- msuf-menu-link: {"pageKey": "suite_hud", "sectionId": "suite_hud_characterPanel_appearance", "controlId": "msufsuite.changelog|||", "label": "Character Panel appearance"} -->
+- Fixed the Forever Attributes and report scroll direction, and moved their scrolling to Suite-owned controls.
+  <!-- msuf-menu-link: {"pageKey": "suite_hud", "sectionId": "suite_hud_characterPanel_appearance", "controlId": "msufsuite.changelog|||", "label": "Character Panel appearance"} -->
+
+### Chat
+
+- Enable character whispers, Battle.net whispers or both. Configure the launcher, whether new whispers open the window, the number of tabs and the combat behavior.
+  <!-- msuf-menu-link: {"pageKey": "suite_chat", "sectionId": "suite_chat_chatMessenger_module", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.chatMessenger.enabled", "label": "Whisper messenger"} -->
+- Open archived character whispers from the Messenger. Battle.net conversations are kept for the current session.
+  <!-- msuf-menu-link: {"pageKey": "suite_chat", "sectionId": "suite_chat_chatMessenger_module", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.chatMessenger.showArchive", "label": "Show saved character whispers"} -->
+- Refined compact chat chrome, the toolbar, input transitions and message fading.
+  <!-- msuf-menu-link: {"pageKey": "suite_chat", "sectionId": "suite_chat_window", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.chat.minimalChrome", "label": "Minimal chat style"} -->
+- Updated the Chat settings and preview layout, with shortcuts to the relevant controls from Preview Layers.
+  <!-- msuf-menu-link: {"pageKey": "suite_chat", "sectionId": "suite_chat_window", "controlId": "msufsuite.changelog|||", "label": "Chat window"} -->
+- Retail guild chat privacy can cover the Guild & Communities chat and reveal it on demand.
+  <!-- msuf-menu-link: {"pageKey": "suite_chat", "sectionId": "suite_qualityOfLife_guildChatPrivacy_guild_privacy", "controlId": "msufsuite.changelog|retail|suite_chat_chat_module|", "settingKey": "msufsuite.guildChatPrivacy.enabled", "label": "Guild chat privacy cover (Retail)"} -->
+
+### Minimap
+
+- Reorganized settings into Basics, Appearance, Layout, Buttons and Information displays.
+  <!-- msuf-menu-link: {"pageKey": "suite_minimap", "sectionId": "suite_minimap_minimap_module", "controlId": "msufsuite.changelog|||", "label": "Minimap settings"} -->
+- Updated the preset chooser and the way the preview displays map decorations and button placement.
+  <!-- msuf-menu-link: {"pageKey": "suite_minimap", "sectionId": "suite_minimap_style_presets", "controlId": "msufsuite.changelog|||", "label": "Choose a look"} -->
+- Show the tracking button only while the minimap is hovered. Tracking retains its native click behavior.
+  <!-- msuf-menu-link: {"pageKey": "suite_minimap", "sectionId": "suite_minimap_elements", "controlId": "menu2.suite.minimap.suite.minimap.tracking.mouseover", "settingKey": "msufsuite.minimap.trackingMouseover", "label": "Show the tracking button only on mouseover"} -->
+
+### Nameplates and Cast Bars
+
+- Native nameplate style, native size and personal aura behavior are configurable alongside the per-unit-type pages.
+  <!-- msuf-menu-link: {"pageKey": "suite_nameplates", "sectionId": "suite_nameplates_enemyStyle", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.nameplates.nativeStyle", "label": "Nameplate style"} -->
+- Choose the nameplate health fill and background under Bars, with a separate fill for your focus.
+  <!-- msuf-menu-link: {"pageKey": "opt_bars", "sectionId": "suite_nameplate_health_textures", "controlId": "menu2.opt.bars.suite.nameplates.native.health.fill.texture", "settingKey": "msufsuite.nameplates.nativeHealthFillTexture", "label": "Nameplate health fill texture"} -->
+- Choose the nameplate cast fill and background under Cast Bars. Cast colors have independent overrides for normal and uninterruptible casts.
+  <!-- msuf-menu-link: {"pageKey": "opt_castbar", "sectionId": "suite_nameplate_cast_textures", "controlId": "menu2.opt.castbar.suite.nameplates.native.cast.background.texture", "settingKey": "msufsuite.nameplates.nativeCastBackgroundTexture", "label": "Nameplate castbar background texture"} -->
+- Refined castbar textures, border and spark placement through layout changes, channels, empowers and the interrupt hold. Recycled plates refresh their castbar artwork.
+  <!-- msuf-menu-link: {"pageKey": "opt_castbar", "sectionId": "suite_nameplate_cast_textures", "controlId": "menu2.opt.castbar.suite.nameplates.native.cast.fill.texture", "settingKey": "msufsuite.nameplates.nativeCastFillTexture", "label": "Nameplate castbar fill texture"} -->
+- Choose how to highlight a cast targeting you. The Outline style draws a border, with the native highlight state supplying the trigger.
+  <!-- msuf-menu-link: {"pageKey": "opt_bars", "sectionId": "suite_nameplate_highlights", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.nameplates.castTargetHighlightStyle", "label": "Cast target highlight style"} -->
+- Choose Blizzard, Shared or Off separately for absorbs and heal absorbs.
+  <!-- msuf-menu-link: {"pageKey": "opt_bars", "sectionId": "suite_nameplate_absorbs", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.nameplates.nameplateAbsorbMode", "label": "Absorb (positive)"} -->
+- Per-type cast text settings control spell text, time, fonts and text outline. Castbar icon, width and height have their own controls.
+  <!-- msuf-menu-link: {"pageKey": "suite_nameplates", "sectionId": "suite_nameplates_castbar", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.nameplates.enemyCastTextEnabled", "label": "Customize cast text"} -->
+- Enemy resource bars respect availability and refresh their geometry as plates change.
+  <!-- msuf-menu-link: {"pageKey": "suite_nameplates", "sectionId": "suite_nameplates_enemyPower", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.nameplates.enemyPowerEnabled", "label": "Show enemy power bar"} -->
+- Separate native aura rows from optional custom rows. Updated filtering and duplicate handling, with native row sizing through Blizzard's controls.
+  <!-- msuf-menu-link: {"pageKey": "suite_nameplates", "sectionId": "suite_nameplates_auraWorkspace", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.nameplates.auraDisplayEnabled", "label": "Enable custom aura rows"} -->
+- Preview controls stay on one line and wrap to a new row on narrow layouts. Updated layer selection and removed stray boxes from the element picker.
+  <!-- msuf-menu-link: {"pageKey": "suite_nameplates", "sectionId": "suite_nameplates_enemyStyle", "controlId": "msufsuite.changelog|||", "label": "Enemy nameplate style"} -->
+- Reduced repeated styling on pooled nameplates. Text, layout and pending aura builds update from relevant events, with deferred work when native frames are still settling.
+  <!-- msuf-menu-link: {"pageKey": "suite_nameplates", "sectionId": "suite_nameplates_enemyBasics", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.nameplates.enemySkinEnabled", "label": "Enable"} -->
+
+### Damage Meter and DataTexts
+
+- Anchor a damage meter window above, below or beside another meter.
+  <!-- msuf-menu-link: {"pageKey": "suite_damageMeter", "sectionId": "suite_damageMeter_windows", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.damageMeter.w1AnchorWindow", "label": "Anchor to"} -->
+- Show totals, rates and percentages in separate meter columns or choose a more compact value format.
+  <!-- msuf-menu-link: {"pageKey": "suite_damageMeter", "sectionId": "suite_damageMeter_text", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.damageMeter.numberFormat", "label": "Value format"} -->
+- Group specialization lookup is opt-in. Enabling it sends inspect requests to fill missing specialization information.
+  <!-- msuf-menu-link: {"pageKey": "suite_damageMeter", "sectionId": "suite_damageMeter_bars", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.damageMeter.inspectRemoteSpecs", "label": "Update group specializations (sends inspect requests)"} -->
+- Refined meter windows, rows, breakdown and the preview settings.
+  <!-- msuf-menu-link: {"pageKey": "suite_damageMeter", "sectionId": "suite_damageMeter_damageMeter_module", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.damageMeter.enabled", "label": "Enable module"} -->
+- Use Add data on a DataText bar to add equipment sets, mail and time played, plus talent loadouts and keystones where supported. Equipment and talent sources can open their available choices.
+  <!-- msuf-menu-link: {"pageKey": "suite_dataTexts", "sectionId": "suite_dataTexts_presets", "controlId": "msufsuite.changelog|||", "label": "DataTexts bar editor"} -->
+
+### Gameplay, HUD and Quality of Life
+
+- Forever floating damage text can show estimated personal hits or all hits on enemies. Set the font, critical-hit size, duration and vertical offset.
+  <!-- msuf-menu-link: {"pageKey": "gameplay", "sectionId": "suite_qualityOfLife_floatingCombatText_floating_combat_text", "controlId": "msufsuite.changelog|forever|suite_qualityOfLife_category_gameplay|", "settingKey": "msufsuite.floatingCombatText.font", "label": "Font"} -->
+- Compatible VoiceOver installations can add play, stop and replay controls to quests in the Suite Objective Tracker.
+  <!-- msuf-menu-link: {"pageKey": "suite_hud", "sectionId": "suite_hud_objectives_module", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.objectives.enabled", "label": "Objective Tracker"} -->
+- Add a price comparison to item tooltips while browsing available results in the Forever Auction House.
+  <!-- msuf-menu-link: {"pageKey": "suite_qualityOfLife", "sectionId": "suite_qualityOfLife_auctionPriceTooltip_auction_price_tooltip", "controlId": "msufsuite.changelog|forever|suite_qualityOfLife_category_lootMerchants|", "settingKey": "msufsuite.auctionPriceTooltip.enabled", "label": "Auction house price comparison"} -->
+- Filtered loot notices can use personal loot messages on Forever and combine repeated pickups into one stack notice on both clients.
+  <!-- msuf-menu-link: {"pageKey": "suite_hud", "sectionId": "suite_qualityOfLife_lootToastFilter_filtered_loot", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.lootToastFilter.enabled", "label": "Filtered loot notice"} -->
+- Navigation keeps manually selected destinations active and clears expired guide waypoints. RestedXP destinations refresh after a guide step changes.
+  <!-- msuf-menu-link: {"pageKey": "suite_qualityOfLife", "sectionId": "suite_qualityOfLife_navigation_navigation_basics", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.navigation.enabled", "label": "Navigation & waypoints"} -->
+- Reduced repeated XP estimate updates when the visible text and progress are unchanged.
+  <!-- msuf-menu-link: {"pageKey": "suite_hud", "sectionId": "suite_qualityOfLife_xpBar_xp_bar", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.xpBar.enabled", "label": "Experience bar"} -->
+- Refined Blizzard player aura styling and preview interactions when changing layouts.
+  <!-- msuf-menu-link: {"pageKey": "auras3_styling", "sectionId": "auras3_styling_playerAuras_module", "controlId": "menu2.auras3.styling.suite.player.auras.show.duration", "settingKey": "msufsuite.playerAuras.showDuration", "label": "Show aura duration"} -->
+- Forever's parallel-window handling lets Blizzard manage spellbook and gamepad character-window dismissal.
+  <!-- msuf-menu-link: {"pageKey": "suite_qualityOfLife", "sectionId": "suite_qualityOfLife_dailyComfort_daily_comfort", "controlId": "menu2.suite.quality.of.life.suite.parallel.windows.enabled", "settingKey": "msufsuite.parallelWindows.enabled", "label": "Keep Blizzard windows open"} -->
+
+### Skinning and settings
+
+- Forever's Spells to Learn panel lists unlearned spells and ranks by required level and shows the learning source where available.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_windows", "controlId": "msufsuite.changelog|forever|suite_skin_windows|", "settingKey": "msufsuite.skin.foreverSpellLearning", "label": "Spells to Learn"} -->
+- The Forever Professions overview can minimize and restore, its cards follow the Glass surface, and the crafting scale grip sits on the lower edge.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_window_controls", "controlId": "msufsuite.changelog|||", "label": "Window position, size and minimize"} -->
+- Forever World Map captions update after Blizzard's layout settles.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_window_controls", "controlId": "msufsuite.changelog|||", "label": "Window position, size and minimize"} -->
+- Forever's Compact quest log preserves Blizzard's objective preference and defers reflow during protected transitions.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_quests", "controlId": "msufsuite.changelog|||", "settingKey": "msufsuite.skin.questLog.layout", "label": "Quest list layout"} -->
+- Deferred Forever mailbox skin and layout updates until the opening transition settles.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_windows", "controlId": "msufsuite.changelog|||", "label": "Blizzard windows"} -->
+- Refined shared tooltip chrome, native menu rows, labels, caption titles and tutorial pointers.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_fonts", "controlId": "msufsuite.changelog|||", "label": "Skinning fonts"} -->
+- The interactive skin preview shows the chosen surface and window controls.
+  <!-- msuf-menu-link: {"pageKey": "suite_skin", "sectionId": "suite_skin_material", "controlId": "msufsuite.changelog|||", "label": "Glass and surfaces"} -->
+- In Suite editors such as Minimap, Chat, Damage Meter, Character Panel, Loot Rolls, Skinning and Nameplates, clicking a disabled preview layer opens its settings and keeps the element disabled.
+  <!-- msuf-menu-link: {"pageKey": "suite_minimap", "sectionId": "suite_minimap_layout", "controlId": "msufsuite.changelog|||", "label": "Size and position"} -->
+
 ## 0.1.31 Alpha - 2026-11-21
 
 ### Retail and WoW Forever
