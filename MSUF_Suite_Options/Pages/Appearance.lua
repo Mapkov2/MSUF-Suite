@@ -624,7 +624,9 @@ end
 local function ResetSkinProfile(skin)
     local enabled, windowsEnabled = skin.DB.enabled, skin.DB.blizzardWindowsEnabled
     local characterDetails, characterStats = skin.DB.characterDetails, skin.DB.characterStats
+    local tooltipLayout, itemTooltipStyle = skin.DB.theme.tooltipLayout, skin.DB.theme.itemTooltipStyle
     skin.Database.ResetAll()
+    skin.DB.theme.tooltipLayout, skin.DB.theme.itemTooltipStyle = tooltipLayout, itemTooltipStyle
     skin.DB.enabled, skin.DB.blizzardWindowsEnabled = enabled, windowsEnabled
     skin.DB.characterDetails, skin.DB.characterStats = characterDetails, characterStats
     P.S.ApplyGlobalLook(skin.DB.theme.look)
@@ -734,9 +736,6 @@ local function BuildSections(ctx, b, skin)
     P.BuildSkinQuestLogSection(ctx, b, skin)
     BuildCoverage(ctx, b, skin)
     P.BuildSkinAddonSection(ctx, b, skin)
-    P.BuildSkinTooltipSection(ctx, b, skin)
-    P.BuildSkinTooltipBuilder(ctx, b, skin)
-    P.BuildSkinUnitTooltipSection(ctx, b)
 end
 
 -- Also while the Skin addon is off: its maintenance actions stay findable
@@ -752,8 +751,6 @@ function P.SkinSearchRows(checkpoint)
         if Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then
             BuildBasicsWithoutEngine(ctx, b, nil)
             P.BuildSkinAddonSection(ctx, b)
-            P.BuildSkinTooltipSection(ctx, b)
-            P.BuildSkinTooltipBuilder(ctx, b)
             -- These sections exist when the page loads the engine. Collection
             -- stays metadata-only and never fabricates a setting identity.
             for _, section in ipairs(Kit.ColdSections()) do
@@ -765,10 +762,11 @@ function P.SkinSearchRows(checkpoint)
         else
             SkinUtilityButtons(ctx, nil, 0, 720, nil)
         end
-        P.BuildSkinUnitTooltipSection(ctx, b)
+        P.BuildTooltipSearchRows(ctx, b)
         return ctx.searchRows
     end
     BuildSections(ctx, b, skin)
+    P.BuildTooltipSearchRows(ctx, b, skin)
     Kit.RefreshButton(ctx, nil, skin)
     return ctx.searchRows
 end
@@ -782,7 +780,6 @@ local function Build(ctx)
             P.Combat() and "Open Skinning outside combat to load its settings." or "The Suite skin engine is unavailable.")
         -- Suite modules shown here keep their settings without the engine.
         P.QoLOwners.Build(ctx, b, PAGE)
-        P.BuildSkinUnitTooltipSection(ctx, b)
         return
     end
     -- FixedPreviewSection must own the first builder slot so its reserved
@@ -793,15 +790,11 @@ local function Build(ctx)
             { id = "style", label = "Style", sections = "frame_basic basic material shape fonts icons" },
             { id = "windows", label = "Blizzard windows", sections = "micro hud window_controls windows coverage" },
             { id = "addons", label = "Addon skins", sections = "addon_skins" },
-            { id = "tooltips", label = "Tooltips", sections = "tooltips unit_tooltips tooltip_builder" },
         } })
     local skinPreview = rawget(ctx, "skinPreview")
     if ui then
         ui.refreshPreview = function()
-            local tooltips = ui.selected == "tooltips" and skin.ItemTooltipCard ~= nil
-            if skinPreview then skinPreview.section:SetShown(not tooltips) end
-            P.ShowSkinTooltipPreview(ui, skin, tooltips)
-            if not tooltips and skinPreview then
+            if skinPreview then
                 skinPreview.Layout()
                 skinPreview.Paint()
             end
@@ -813,8 +806,6 @@ local function Build(ctx)
     -- the Battle.net toast) follow Blizzard's windows on their tab.
     P.QoLOwners.Build(ctx, ui and ui.groups.windows.builder or workspace, PAGE,
         ui and function() ui.select("windows") end, "notifications")
-    P.QoLOwners.Build(ctx, ui and ui.groups.tooltips.builder or workspace, PAGE,
-        ui and function() ui.select("tooltips") end, "tooltips")
     P.MenuWorkspace.Finish(ui)
 end
 

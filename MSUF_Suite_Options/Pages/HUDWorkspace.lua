@@ -9,6 +9,7 @@ local FEATURES = {
     { id = "runSummary", label = "Run Summaries" },
     { id = "announcements", label = "Announcements" },
     { id = "afkScreen", label = "AFK Screen" },
+    { id = "planningTools", label = "Adventure planner" },
     { id = "characterPanel", label = "Character Panel" },
     { id = "extras", label = "Additional displays" },
 }
@@ -65,7 +66,7 @@ local function Choose(ui, id)
     for key, group in pairs(ui.groups) do group.frame:SetShown(key == id) end
     if ui.selector then ui.selector:SetValue(id) end
     Height(ui)
-    local hasPreview = id ~= "extras" and id ~= "characterPanel"
+    local hasPreview = id ~= "extras" and id ~= "characterPanel" and id ~= "planningTools"
     ui.preview:Select(hasPreview and id or nil)
     local character = id == "characterPanel"
     if character and not ui.characterPreview then
@@ -129,7 +130,7 @@ function Page.Builder(ctx)
         section._msufSuiteHUDID = id
         section._msufSuiteHUDBuilder = owner
         section._msufSuiteHUDReveal = function() ui.select(id) end
-        ui.sections[#ui.sections + 1] = section
+        ui.sections[sectionId] = section
         return section
     end
     function facade:FinishSection(section, pad)
@@ -170,6 +171,28 @@ function Page.BuildHelpers(ctx)
     P.QoLOwners.Build(ctx, Child(ui, "extras"), "suite_hud", function() ui.select("extras") end)
 end
 
+local function PrepareSections(ui)
+    local page = ui.ctx.entry or ui.ctx
+    local previous = HM.GetMissingSectionResolver(page)
+    -- Search can land on an already-open accordion inside a hidden HUD tab.
+    HM.SetMissingSectionResolver(page, function(sectionId)
+        local section = ui.sections[sectionId]
+        if not section then return previous and previous(sectionId) end
+        section._msufSuiteHUDReveal()
+        return section
+    end)
+    for _, body in pairs(ui.sections) do
+        local entry = HM.GetSectionEntry(body)
+        if entry then
+            local ensure = HM.GetSectionEnsureVisible(entry)
+            HM.SetSectionEnsureVisible(entry, function(...)
+                body._msufSuiteHUDReveal()
+                if ensure then return ensure(...) end
+            end)
+        end
+    end
+end
+
 function Page.Finish(ctx)
     local ui = ctx._msufSuiteHUDWorkspace
     local values, panels = {}, {}
@@ -180,16 +203,7 @@ function Page.Finish(ctx)
             panels[spec.id] = ui.groups[spec.id].frame
         end
     end
-    for _, body in ipairs(ui.sections) do
-        local entry = HM.GetSectionEntry(body)
-        if entry then
-            local ensure = HM.GetSectionEnsureVisible(entry)
-            HM.SetSectionEnsureVisible(entry, function(...)
-                body._msufSuiteHUDReveal()
-                if ensure then return ensure(...) end
-            end)
-        end
-    end
+    PrepareSections(ui)
     ui.preview = P.HUDPreview.Build(ctx, ui.header, ui.width - 32)
     local selector
     if W.SegmentTabs and ui.width - 32 >= math.max(650, #values * 126) then

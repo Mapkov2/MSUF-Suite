@@ -186,7 +186,7 @@ end
 
 function P.Suite.Menu.FocusOwnedTool(id)
     local spec = P.catalog[id]
-    if not spec or not P.OwnedTools[id] then return true end
+    if not spec or not (P.OwnedTools[id] or id == "planningTools") then return true end
     return P.Suite.Menu.FocusSection(spec.page, spec.page .. "_" .. id .. "_module")
 end
 
@@ -206,7 +206,7 @@ function P.AppendToolSearchActions(Add)
             local words = { section.title, P.Tr(section.title) }
             for _, word in ipairs(legacyWords[section.key] or {}) do words[#words + 1] = word end
             Add("planningTools", "action.open." .. section.key, "Open Adventure planner",
-                "suite_planningTools_" .. section.key, nil, nil, nil, { section = P.Tr(section.title), words = words })
+                P.PlannerSectionID(section.key), nil, nil, nil, { section = P.Tr(section.title), words = words })
         end
     end
     Add("buffReminders", "action.planner.preparation", "Preparation", "suite_buffReminders_buffReminders_module")

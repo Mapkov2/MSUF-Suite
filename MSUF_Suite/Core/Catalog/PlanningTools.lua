@@ -3,7 +3,7 @@ local B = NS.CatalogBuild.ForAddon("MSUF_Suite_AdventurePlanner")
 B.Module("planningTools", {
     title = "Adventure planner",
     description = "Your character week, preparation, dungeon goals, saved runs and personal notes in one place.",
-    optIn = true, defaultEnabled = false, page = "suite_planningTools",
+    optIn = true, defaultEnabled = false, page = "suite_hud",
 })
 B.Section("planningTools", "planning_tools", "Adventure planner", {
     B.Bool("weekly", "Remember weekly progress on visited characters", true),

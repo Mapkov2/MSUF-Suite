@@ -61,8 +61,16 @@ local function Change(skin, label, key, fn)
     return result, reason
 end
 
+local tooltipSections = { tooltips = true, tooltip_builder = true, unit_tooltips = true }
+local function PageForSection(section)
+    return tooltipSections[section] and "suite_tooltips" or PAGE
+end
+
 local function Meta(key, section)
-    return P.Meta(PAGE, "skin", key, "setting", "suite_skin_" .. section)
+    local page = PageForSection(section)
+    local meta = P.Meta(page, "skin", key, "setting", "suite_skin_" .. section)
+    meta.pageKey = page
+    return meta
 end
 
 local CHOICE_LABELS = {
@@ -255,7 +263,7 @@ end
 local function Section(ctx, b, id, title, help, rows, open, extra, contextRows, route, reset)
     local sectionId = route and route.section or "suite_skin_" .. id
     if ctx.searchRows then
-        local page = route and route.page
+        local page = route and route.page or PageForSection(id)
         SearchRow(ctx, { kind = "section", label = Tr(title), searchLabel = title, pageKey = page }, sectionId, Tr(title), Tr(help))
         for _, row in ipairs(rows) do SearchRow(ctx, row, sectionId, Tr(title), Tr(help)) end
         for _, row in ipairs(contextRows or {}) do SearchRow(ctx, row, sectionId, Tr(title), Tr(help)) end

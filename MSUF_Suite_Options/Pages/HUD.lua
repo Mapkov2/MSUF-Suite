@@ -194,6 +194,7 @@ local function Build(ctx)
     BuildObjectives(ctx, b)
     BuildSummary(ctx, b)
     BuildAnnouncements(ctx, b)
+    P.BuildHUDPlanner(ctx, b)
     P.BuildHUDCharacterPanel(ctx, b)
     local reputationActions = {
         { "Character Panel colors", function() P.HUDMenu.OpenColors("characterPanel") end, key = "colors" },
@@ -209,4 +210,5 @@ P.RegisterPage({ key = PAGE, label = "HUD", title = "HUD", build = Build, icon =
     aliases = {
         "objectives", "objective tracker", "run summary", "mythic plus", "raid kill", "announcements", "events", "afk", "hud",
         "suite_characterPanel", "character", "character panel", "inspect", "paperdoll", "reputation", "currency",
+        "suite_planningTools", "planner", "adventure", "weekly", "preparation", "loadouts", "runs", "raid", "goals", "lfg", "notes",
     } })

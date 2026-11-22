@@ -1,5 +1,5 @@
 local _, P = ...
-local S, PAGE, ID = P.S, "suite_planningTools", "planningTools"
+local S, PAGE, ID = P.S, "suite_hud", "planningTools"
 -- One settings section per supported area of the planner window.
 -- A tab hidden there is hidden here too: its button could only open the
 -- Weekly overview.
@@ -22,13 +22,16 @@ local function TabSupported(tab)
     end
     return false
 end
+function P.PlannerSectionID(tab)
+    return PAGE .. "_" .. ID .. "_" .. tab
+end
 function P.PlanningRuleTarget(key)
     for _, section in ipairs(P.PlannerSections) do
         for _, ruleKey in ipairs(section.keys) do
-            if ruleKey == key then return PAGE .. "_" .. section.key end
+            if ruleKey == key then return P.PlannerSectionID(section.key) end
         end
     end
-    return PAGE .. "_planningTools_module"
+    return P.PlannerSectionID("module")
 end
 local function Ready()
     local planner = S.PlanningTools
@@ -37,10 +40,7 @@ end
 function P.OpenPlanner(tab)
     if P.Combat() or not TabSupported(tab) then return false end
     if Ready() then return S.PlanningTools.Window.Open(tab) end
-    if not P.Suite.Menu.Open(PAGE) then return false end
-    local called, opened = P.M.SearchBridge.OpenSearchTarget(PAGE, "", nil, nil, {},
-        { pageKey = PAGE, sectionId = PAGE .. "_planningTools_module" })
-    return called == true and opened == true
+    return P.Suite.Menu.Open(PAGE, ID)
 end
 function P.PlannerAction(tab, key)
     local title = "Open Adventure planner"
@@ -60,38 +60,26 @@ function P.BuildPlanningToolsActions(ctx, body, id, section, y, width)
     if tab then return P.PlannerButton(ctx, body, P.catalog[id].page, id, section, tab, y, width) end
     return y
 end
--- Saved exact-search links retain the former workspace preparation contract.
-local function SearchReady() return true end
-local function PreparePlannerSearch(_, entries)
-    for _, entry in ipairs(entries or {}) do
-        if entry.widget then
-            local meta = P.Meta(PAGE, ID, entry.rule.key, "setting", P.PlanningRuleTarget(entry.rule.key))
-            P.RegisterWorkspaceSearch(entry.widget, meta, entry.rule, "suiteWorkspace", SearchReady, entry.label)
-        end
-    end
-end
 local function BuildPlannerSection(ctx, builder, spec)
     if not TabSupported(spec.key) then return end
     local rules = {}
     for _, key in ipairs(spec.keys) do rules[#rules + 1] = P.catalog[ID].rules[key] end
-    local section = PAGE .. "_" .. spec.key
+    local section = P.PlannerSectionID(spec.key)
     P.RuleSection(ctx, builder, PAGE, ID, section, P.Tr(spec.title), rules, {
-        open = true, onBuilt = PreparePlannerSearch,
+        open = true, onBuilt = P.HUDMenu.Prepare,
         extra = function(body, y, width)
-            P.Button(ctx, body, "Open Adventure planner", 16, y, width,
-                function() if Ready() then S.PlanningTools.Window.Open(spec.key) end end, Ready,
-                P.Meta(PAGE, ID, "action.open." .. spec.key, "action", section))
+            local label, key = "Open Adventure planner", "action.open." .. spec.key
+            local meta = P.Meta(PAGE, ID, key, "action", section)
+            local button = P.Button(ctx, body, label, 16, y, width,
+                function() if Ready() then S.PlanningTools.Window.Open(spec.key) end end, Ready, meta)
+            P.HUDMenu.Prepare(body, { { widget = button, rule = { key = key, label = label }, meta = meta } })
             return y - 38
         end,
     })
 end
-local function Build(ctx)
-    local builder = P.W.PageBuilder(ctx)
+function P.BuildHUDPlanner(ctx, builder)
     P.ModuleCard(ctx, builder, PAGE, ID, {
         { "Open Adventure planner", function() P.OpenPlanner("characters") end, Ready, key = "openPlanner" },
-    }, { title = "Adventure planner", open = true })
+    }, { title = "Adventure planner", open = true, prepareControl = P.HUDMenu.PrepareControl })
     for _, section in ipairs(P.PlannerSections) do BuildPlannerSection(ctx, builder, section) end
 end
-P.RegisterPage({ key = PAGE, label = "Adventure planner", title = "Adventure planner", build = Build,
-    icon = { 7, 1 }, nav = "root",
-    aliases = { "planner", "adventure", "weekly", "preparation", "loadouts", "runs", "raid", "goals", "lfg", "notes" } })

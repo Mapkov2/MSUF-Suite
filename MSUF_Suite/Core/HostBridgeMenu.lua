@@ -632,7 +632,7 @@ end
 
 function HostBridge.OpenUnitFrameTooltipSettings()
     local menu = LoadedMenu()
-    return menu and HostBridge.OpenExactMenuSetting(menu, "suite_skin", "suite_skin_unit_tooltips",
+    return menu and HostBridge.OpenExactMenuSetting(menu, "suite_tooltips", "suite_skin_unit_tooltips",
         "msufsuite.skin.unitTooltipMode")
 end
 

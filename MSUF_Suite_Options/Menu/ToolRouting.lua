@@ -1,5 +1,5 @@
 local _, P = ...
-local LEGACY_PAGE = "suite_qualityOfLife"
+local LEGACY_PAGE, LEGACY_PLANNER = "suite_qualityOfLife", "suite_planningTools"
 local actions, settings
 local function RememberLegacyAction(id, oldKey, key, section)
     local page = P.catalog[id].page
@@ -15,7 +15,7 @@ local function EnsureLegacyTargets()
     end
     settings.planningTools, settings.macroBuilder = true, true
     RememberLegacyAction("macroBuilder", "action.open", "action.open", nil)
-    RememberLegacyAction("planningTools", "action.openPlanner", "action.open.characters", "suite_planningTools_characters")
+    RememberLegacyAction("planningTools", "action.openPlanner", "action.open.characters", P.PlannerSectionID("characters"))
 end
 
 local function RelocatedTarget(target, page, control, section)
@@ -26,9 +26,26 @@ local function RelocatedTarget(target, page, control, section)
     return copy
 end
 
+local function RelocatePlannerTarget(target)
+    local id = "planningTools"
+    local page = P.catalog[id].page
+    local tab = (target.sectionId or ""):match("^suite_planningTools_(%w+)$")
+    local key = (target.settingKey or ""):match("^msufsuite%.planningTools%.(.+)$")
+    local section = key and P.PlanningRuleTarget(key) or P.PlannerSectionID(tab or "module")
+    local control
+    if key then
+        control = P.Meta(page, id, key, "setting", section).controlId
+    elseif target.controlId then
+        local action = tab and "action.open." .. tab or "action.openPlanner"
+        control = P.Meta(page, id, action, "action", section).controlId
+    end
+    return page, RelocatedTarget(target, page, control, section)
+end
+
 -- Saved search targets are immutable records. Only the opening target is relocated.
 function P.ResolveToolSearchTarget(page, target)
     if not target then return end
+    if page == LEGACY_PLANNER then return RelocatePlannerTarget(target) end
     if page == "suite_macros" then
         local tab = target.prepareKind == "suiteMacroTab" and target.prepareValue
         if not tab and target.sectionId == "suite_macros_macroBuilder_module" then

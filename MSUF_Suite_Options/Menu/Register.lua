@@ -1,8 +1,7 @@
 local _, P = ...
 local Suite, M, S = P.Suite, P.M, P.S
 -- Suite pages join MSUF's navigation groups by id, in this order. Each page
--- names its group and its place there (nav, navOrder of P.RegisterPage), or
--- uses nav = "root" for a standalone row below the Dashboard. A
+-- names its group and its place there (nav, navOrder of P.RegisterPage). A
 -- host menu without a group (Retail MSUF still has Appearance and Features)
 -- uses the fallback group, or gets the group title in front of its last group.
 local NAV_GROUPS = {
@@ -25,7 +24,7 @@ local HD_NAV_ICONS = {
     suite_actionbars = { 4, 3 }, suite_minimap = { 5, 3 },
     suite_damageMeter = { 6, 3 }, suite_bags = { 7, 3 },
     suite_chat = { 0, 4 }, suite_dataTexts = { 1, 4 },
-    suite_skin = { 2, 4 }, suite_qualityOfLife = { 3, 4 }, suite_macros = { 7, 1 }, suite_planningTools = { 4, 4 },
+    suite_skin = { 2, 4 }, suite_tooltips = { 4, 0 }, suite_qualityOfLife = { 3, 4 }, suite_macros = { 7, 1 },
 }
 local function AddIcons()
     for _, page in ipairs(P.pages) do
@@ -53,7 +52,7 @@ local function PageAddOnEnabled(key)
     -- Skinning also shows Suite modules (QualityOfLifeOwners.lua: the
     -- Battle.net toast; they stay on Quality of Life when the skin AddOn
     -- is off at load). A skin AddOn turned off later leaves the page to them.
-    if key == "suite_skin" and (Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    if (key == "suite_skin" or key == "suite_tooltips") and (Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
         or Suite.HostBridge.UnitFrameTooltipAPI()) then return true end
     local modules = PAGE_MODULES[key]
     if not modules then return key ~= "suite_skin" end
@@ -65,7 +64,7 @@ end
 local function PageEnabled(key)
     if key == "suite_macros" then return true end
     if not PageAddOnEnabled(key) then return false, ADDON_NOTICE end
-    if key == "suite_skin" then
+    if key == "suite_skin" or key == "suite_tooltips" then
         if P.SkinningEnabled() == true and Suite.Client.IsAddOnLoaded("MSUF_Suite_Skin") then return true end
         if not PAGE_MODULES[key] then return false, "Off" end
     end
@@ -140,10 +139,8 @@ local function AddNavigation()
     if type(items) ~= "table" then return false end
     local pagesByKey = {}
     for _, page in ipairs(P.pages) do pagesByKey[page.key] = page end
-    local rootIndex = 1
-    for i, item in ipairs(items) do
+    for _, item in ipairs(items) do
         if item.key and pagesByKey[item.key] then return true end
-        if item.key == "home" then rootIndex = i + 1 end
     end
     local placed = {}
     local function Place(spec, keys)
@@ -158,13 +155,9 @@ local function AddNavigation()
         end
     end
     for _, spec in ipairs(NAV_GROUPS) do Place(spec, GroupPages(spec.id)) end
+    -- A page without a known group still gets a row, at the end of Interface.
     for _, page in ipairs(P.pages) do
-        if page.nav == "root" then
-            table.insert(items, rootIndex, NavRow(page))
-            rootIndex = rootIndex + 1
-        elseif not placed[page.key] then
-            Place(NAV_GROUPS[2], { page.key })
-        end
+        if not placed[page.key] then Place(NAV_GROUPS[2], { page.key }) end
     end
     if type(M.navPrimaryForKey) == "table" then
         for _, page in ipairs(P.pages) do M.navPrimaryForKey[page.key] = page.key end

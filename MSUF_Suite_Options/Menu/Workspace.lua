@@ -256,7 +256,7 @@ function Workspace.Finish(ui)
             P.Meta(ui.spec.page, ui.spec.module, "view.topic", "ephemeral"))
         P.HideControlTitle(ui.selector)
     end
-    Workspace.PlaceTabDivider(ui.toolbar, ui.tabs or ui.selector)
+    if ui.tabs or ui.selector then Workspace.PlaceTabDivider(ui.toolbar, ui.tabs or ui.selector) end
     ui.finished = true
     Choose(ui, ui.selected)
     if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end

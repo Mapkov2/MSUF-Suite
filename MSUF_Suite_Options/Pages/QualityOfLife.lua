@@ -17,7 +17,8 @@ end
 local function GroupRules(group, source)
     local rules = {}
     for _, rule in ipairs(source) do
-        if rule.key ~= group.switch and not rule.hidden then rules[#rules + 1] = rule end
+        local preview = group.id == "tooltipDetails" and P.TooltipPositionTarget(group.id, rule.key)
+        if rule.key ~= group.switch and not rule.hidden and not preview then rules[#rules + 1] = rule end
     end
     return rules
 end

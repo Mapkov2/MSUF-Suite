@@ -25,10 +25,10 @@ local PAGE_WORDS = {
     suite_damageMeter = "damage meter|damage meters|meter|meters|dps meter|healing meter",
     suite_dataTexts = "data text|data texts|datatext|datatexts|info bar|info texts",
     suite_skin = "skin|skins|skinning|window skin|blizzard windows",
+    suite_tooltips = "tooltips|item tooltip|hover tooltip|compare tooltip|unit tooltip",
     suite_qualityOfLife = "quality of life|qualityoflife|quality_of_life|qol|comfort|helpers",
     suite_hud = "hud",
     suite_macros = "macro|macros|makro|makros|sequence|castsequence|consumables|food|drink|healthstone|bandage|raid marker|mouseover",
-    suite_planningTools = "adventure planner|weekly|preparation|loadouts|runs|raid|goals|lfg|notes",
 }
 -- Words players use for a page in their own language: each English word is
 -- searchable in English and, through the locale packs, as its translation.
@@ -127,7 +127,8 @@ end
 -- Page rows and FAQ answers: some module of the page can run here.
 local function PageAvailable(pageKey)
     if pageKey == "suite_macros" or pageKey == "suite_devMode" then return true end
-    if pageKey == "suite_skin" and (SkinAvailable() or Suite.HostBridge.UnitFrameTooltipAPI()) then return true end
+    if (pageKey == "suite_skin" or pageKey == "suite_tooltips")
+        and (SkinAvailable() or Suite.HostBridge.UnitFrameTooltipAPI()) then return true end
     for _, id in ipairs(P.order) do
         if (P.QoLOwners.PageFor(id) or P.catalog[id].page) == pageKey and ModuleAvailable(id) then return true end
     end
@@ -288,6 +289,10 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
         or targetTitle and Tr(targetTitle)
         or not template and (rule.sectionTitle and Tr(rule.sectionTitle)
         or (spec.title ~= page.title and Tr(spec.title))) or nil
+    if rule.searchSection then
+        AddWords(keywords, rule.searchSection)
+        section = section and (section .. " > " .. Tr(rule.searchSection)) or Tr(rule.searchSection)
+    end
     -- Colors are edited from the section's color shortcut, not a control on
     -- the page, so a color row leads to its section. Nameplate colors owned
     -- by Fonts retain the setting identity for the cross-page resolver.
@@ -632,6 +637,19 @@ local function ModuleForRecord(pageKey, settingKey, record)
     return id, key, row
 end
 
+local function SkinSearchRowAvailable(sectionId, settingKey)
+    if sectionId == "suite_skin_unit_tooltips" and
+        not (settingKey and settingKey:match("^msufsuite%.skin%.theme%.tooltipLayout%.unit")) then
+        return P.Suite.HostBridge.UnitFrameTooltipAPI() ~= nil
+    end
+    if not SkinAvailable() then return false end
+    if settingKey == "msufsuite.skin.enabled" then return true end
+    if sectionId == "suite_skin_hud" and P.S.OwnsBlizzardSurface("damageMeter") then
+        return false
+    end
+    return true, P.SkinningEnabled() ~= true
+end
+
 function P.SearchRowAvailable(pageKey, settingKey, record)
     if type(pageKey) ~= "string" then return true end
     record = record or {}
@@ -641,7 +659,7 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     if owner == "skin" and (row.sectionId or record.sectionId) == "suite_hud_characterPanel_equipment" then
         return P.Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and ModuleAvailable("characterPanel")
     end
-    if owner == "skin" then pageKey = "suite_skin"
+    if owner == "skin" and pageKey ~= "suite_tooltips" then pageKey = "suite_skin"
     elseif owner and P.catalog[owner] then pageKey = P.QoLOwners.PageFor(owner) or P.catalog[owner].page or pageKey end
     if pageKey:sub(1, 6) ~= "suite_" then return true end
     if pageKey == "suite_macros" and not owner then return true end
@@ -650,16 +668,8 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     end
     -- Actions built in every state of their page (Pages/Appearance.lua).
     if row.suiteAlways or record.suiteAlways then return true end
-    if pageKey == "suite_skin" and (not owner or owner == "skin") then
-        if (row.sectionId or record.sectionId) == "suite_skin_unit_tooltips" then
-            return P.Suite.HostBridge.UnitFrameTooltipAPI() ~= nil
-        end
-        if not SkinAvailable() then return false end
-        if settingKey == "msufsuite.skin.enabled" then return true end
-        if (row.sectionId or record.sectionId) == "suite_skin_hud" and P.S.OwnsBlizzardSurface("damageMeter") then
-            return false
-        end
-        return true, P.SkinningEnabled() ~= true
+    if (pageKey == "suite_skin" or pageKey == "suite_tooltips") and (not owner or owner == "skin") then
+        return SkinSearchRowAvailable(row.sectionId or record.sectionId, settingKey)
     end
     local id, key = ModuleForRecord(pageKey, settingKey, record)
     if not id then

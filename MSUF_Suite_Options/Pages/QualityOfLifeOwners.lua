@@ -8,8 +8,9 @@ local PAGES = {
     suite_minimap = { title = "Minimap", modules = "mapLandingShortcuts" },
     suite_actionbars = { title = "Action bars", modules = "autoUprank" },
     suite_hud = { title = "Additional displays", modules = "xpBar skyriding flightTimer lootToastFilter" },
-    suite_skin = { title = "Tooltips", modules =
-        "tooltipClassColors tooltipSpellCopy itemCounts tooltipIDs tooltipVisibility tooltipDetails tooltipMPlusScore auctionPriceTooltip gatheringTooltips bnetToast" },
+    suite_skin = { title = "Notifications", modules = "bnetToast" },
+    suite_tooltips = { title = "Tooltips", modules =
+        "tooltipClassColors tooltipSpellCopy itemCounts tooltipIDs tooltipVisibility tooltipDetails tooltipMPlusScore auctionPriceTooltip gatheringTooltips" },
 }
 for page, spec in pairs(PAGES) do
     for id in spec.modules:gmatch("%S+") do destinations[id] = page end
@@ -89,26 +90,74 @@ local function LegacyControls()
     return legacyControls
 end
 
+local oldTooltipSections = { suite_skin_tooltips = "tooltips", suite_skin_tooltip_builder = "tooltip_builder",
+    suite_skin_unit_tooltips = "unit_tooltips" }
+
+local function ResolveTooltipPosition(page, target)
+    local module, key = (target.settingKey or ""):match("^msufsuite%.([^.]+)%.(.+)$")
+    if not key and target.controlId then
+        local axis = target.controlId:match("%.theme%.tooltip%.layout%.([xy])$")
+        if axis and (page == "suite_skin" or page == "suite_tooltips") then
+            module, key = "skin", "theme.tooltipLayout." .. axis
+        else
+            local prefix, suffix = target.controlId:match("%.tooltip%.details%.(cursor)%.([xy])$")
+            if not prefix then prefix, suffix = target.controlId:match("%.tooltip%.details%.(fixed)%.([xy])$") end
+            if prefix then module, key = "tooltipDetails", prefix .. suffix:upper() end
+        end
+    end
+    if not key then return end
+    local meta, _, mode = P.TooltipPositionTarget(module, key)
+    if not meta then return end
+    if mode and mode ~= P.TooltipAnchorMode() then
+        local feature = P.QoLView.FindFeature("tooltipDetails")
+        return P.Meta("suite_tooltips", "tooltipDetails", "anchor", "setting", P.QoLView.FeatureSectionId(feature))
+    end
+    meta.prepareKind, meta.prepareValue = "suiteWorkspace", key
+    return meta
+end
+
 function Owners.Resolve(page, target)
     if not target then return end
+    local position = ResolveTooltipPosition(page, target)
+    if position then return "suite_tooltips", position, {} end
+    if page == "suite_skin" then
+        local section = target.sectionId
+        local control = target.controlId or ""
+        local key = (target.settingKey or ""):match("^msufsuite%.skin%.(.+)$")
+        if not oldTooltipSections[section] then
+            if key == "theme.itemTooltipStyle" or control:find("%.theme%.item%.tooltip%.style$") then
+                section = "suite_skin_tooltips"
+            elseif (key and key:match("^theme%.tooltipLayout%."))
+                or control:find("^menu2%.suite%.skin%.suite%.skin%.theme%.tooltip%.layout%.") then
+                section = "suite_skin_tooltip_builder"
+            end
+        end
+        if oldTooltipSections[section] then
+            local meta = key and P.SkinPageKit.Meta(key, oldTooltipSections[section])
+                or { pageKey = "suite_tooltips", sectionId = section,
+                    controlId = control:gsub("^menu2%.suite%.skin%.", "menu2.suite.tooltips.") }
+            return "suite_tooltips", meta, {}
+        end
+    end
     local unit = page == "opt_misc" and unitTooltipKeys[target.settingKey]
     if unit and P.Suite.HostBridge.UnitFrameTooltipAPI() then
         if unit == "unitTooltipAnchor" and P.UsesSharedTooltipAnchor and P.UsesSharedTooltipAnchor() then
             local feature = P.QoLView.FindFeature("tooltipDetails")
             if feature then
-                return "suite_skin", P.Meta("suite_skin", "tooltipDetails", "anchor", "setting", P.QoLView.FeatureSectionId(feature)), {}
+                return "suite_tooltips",
+                    P.Meta("suite_tooltips", "tooltipDetails", "anchor", "setting", P.QoLView.FeatureSectionId(feature)), {}
             end
         end
         local meta = P.SkinPageKit.Meta(unit, "unit_tooltips")
-        return "suite_skin", meta, {}
+        return "suite_tooltips", meta, {}
     end
     local id, key = (target.settingKey or ""):match("^msufsuite%.([^.]+)%.(.+)$")
     id = id or (target.sectionId or ""):match("^suite_qualityOfLife_([^_]+)_")
     local old = not key and target.controlId and LegacyControls()[target.controlId]
     local feature = old and old.feature or id and P.QoLView.FindFeature(id)
-    local tooltips = active.suite_skin and (target.sectionId == "suite_qualityOfLife_category_tooltips"
+    local tooltips = active.suite_tooltips and (target.sectionId == "suite_qualityOfLife_category_tooltips"
         or target.sectionId == "suite_qualityOfLife_category_opt_misc")
-    local destination = tooltips and "suite_skin" or feature and Owners.PageFor(feature.id)
+    local destination = tooltips and "suite_tooltips" or feature and Owners.PageFor(feature.id)
     if not destination or page == destination then return end
     local copy = {}
     for field, value in pairs(target) do copy[field] = value end
@@ -116,7 +165,7 @@ function Owners.Resolve(page, target)
     copy.sectionId = tooltips and "suite_skin_tooltips" or P.QoLView.FeatureSectionId(feature)
     copy.controlId, copy.controlPath, copy.identityKey, copy.actionKey = nil, nil, nil, nil
     key = key or old and old.kind == "setting" and old.key
-    if key then
+    if key and feature then
         local meta = P.Meta(destination, feature.id, key, "setting", copy.sectionId)
         copy.settingKey = "msufsuite." .. feature.id .. "." .. key
         copy.controlId, copy.controlPath, copy.identityKey = meta.controlId, meta.controlPath, meta.identityKey
