@@ -63,7 +63,7 @@ local function UpdateOutline(state)
     end
     if matchTooltip then
         if state.outline then state.outline:Hide() end
-        state.tooltipOutline = NS.TooltipChrome.PaintOutline(frame, state.tooltipOutline, state.strata, state.level)
+        state.tooltipOutline = Visual.PaintTooltipOutline(frame, state.tooltipOutline, state.strata, state.level)
         return
     end
     if state.tooltipOutline then state.tooltipOutline:Hide() end
@@ -396,7 +396,7 @@ end
 
 local function SettingsChanged(_, domain)
     if domain == "profile" or domain == "motion" or domain == "adapter" or domain == "theme"
-        or domain == "color" or domain == "appearance" or domain == "geometry" then
+        or domain == "color" or domain == "appearance" or domain == "geometry" or domain == "tooltipStyle" then
         for _, state in pairs(visible) do
             UpdateOutline(state)
             for index = 1, #state.veils do Visual.Refresh(state.veils[index]) end

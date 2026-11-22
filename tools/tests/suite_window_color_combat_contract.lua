@@ -13,7 +13,7 @@ local NS = { DB = { enabled = true }, IsCombatLocked = function() return combat 
         IsApplied = function() return false end, Track = function() end },
     CombatGate = { RunOrDefer = function() error("target refresh queued global work") end } }
 local function Load(name) return assert(loadfile(root .. "/MSUF_Suite_Skin/" .. name .. ".lua"))("MSUF_Suite_Skin", NS) end
-NS.Safety = Load("Core/Safety")
+NS.Safety = Load("../MSUF_Suite/Appearance/Safety")
 local yellow, checksArt = Load("Core/BlizzardYellow"), Load("Core/Checkmarks")
 local function Check(value, message) assert(value, message); checks = checks + 1 end
 local function Target(kind)

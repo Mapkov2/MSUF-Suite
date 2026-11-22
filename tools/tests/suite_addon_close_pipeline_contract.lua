@@ -122,7 +122,7 @@ if route=="generic" then
     NS.CharacterStats=NS.CharacterDetails
     NS.EQoLCharacter=NS.CharacterDetails
     NS.WindowControls={Attach=function() end,TrackFocus=function() end,DisableOwner=function() end}
-    assert(loadfile(root.."/MSUF_Suite_Skin/Core/Cosmetics.lua"))("MSUF_Suite_Skin",NS)
+    assert(loadfile(root.."/MSUF_Suite/Appearance/Cosmetics.lua"))("MSUF_Suite_Skin",NS)
     for _,file in ipairs({"AdapterKit","GenericWindows","GenericWindowsNodes","GenericWindowsFrames"}) do
         assert(loadfile(root.."/MSUF_Suite_Skin/Adapters/"..file..".lua"))("MSUF_Suite_Skin",NS)
     end

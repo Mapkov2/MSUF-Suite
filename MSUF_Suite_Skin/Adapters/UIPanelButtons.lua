@@ -224,11 +224,17 @@ end
 -- The show hooks below track a button even while the skin is off: Refresh
 -- skins every tracked button once the skin is enabled, including the
 -- buttons shown between this file's load and Apply.
+local forever = (rawget(NS, "Client") or {}).isForever == true
+local function NativeListAction(button)
+    return forever and (button == Field(_G, "ClassTrainerTrainButton")
+        or button == Field(_G, "MountJournalMountButton") or button == Field(_G, "PetJournalSummonButton"))
+end
+
 local function OnUIPanelButtonShown(button)
     -- Visibility callbacks can run while opening combat UI. Do not retain or
     -- mutate a foreign control in that path; the next out-of-combat show (or a
     -- bounded adapter refresh) will capture it.
-    if not button or NS.IsCombatLocked() then return end
+    if not button or NS.IsCombatLocked() or NativeListAction(button) then return end
     UIPanelButtons.tracked[button] = "legacy"
     SkinButton(button, "legacy")
 end
@@ -364,7 +370,7 @@ local function AdoptFrame(frame, managesAuraButton)
     if hasController then
         hooksecurefunc(frame, "OnShow", OnAdoptedControllerShownHook)
     end
-    if isButton and HasMethod(frame, "HookScript")
+    if isButton and not NativeListAction(frame) and HasMethod(frame, "HookScript")
         and frame:GetScript("OnShow") == native.legacyOnShow then
         frame:HookScript("OnShow", OnAdoptedPanelButtonShownHook)
     end

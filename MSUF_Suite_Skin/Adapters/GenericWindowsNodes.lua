@@ -632,3 +632,9 @@ Shared.SkinIconButtonBase = SkinIconButtonBase
 Shared.SkinInput = SkinInput
 Shared.SkinScrollBar = SkinScrollBar
 Shared.SkinNode = SkinNode
+-- TrackNode adopts direct child buttons, too. A dedicated native list paints
+-- its own actions and rows while the generic adapter owns only its shell.
+function Shared.SkinNativeListRoot(frame, owner, metrics)
+    metrics.nodes = 1
+    SkinRootChrome(frame, owner, metrics)
+end

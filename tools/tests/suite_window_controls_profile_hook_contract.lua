@@ -168,7 +168,7 @@ local function NewSession(forever, look)
     NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
     NS.SuiteCore = function() return core end
-    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
     -- The TOC loads the controls' chrome right before them.

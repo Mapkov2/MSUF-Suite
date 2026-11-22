@@ -24,7 +24,7 @@ local NS = {
     IsCombatLocked = function() return false end,
     Registry = { AddListener = function() end },
 }
-for _, file in ipairs({ "Core/Safety.lua", "Adapters/AdapterKit.lua" }) do
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Adapters/AdapterKit.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local Safety, Kit = NS.Safety, NS.AdapterKit

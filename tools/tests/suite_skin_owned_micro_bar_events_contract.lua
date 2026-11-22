@@ -154,7 +154,7 @@ local function Session(forever)
         RefreshButtonStates = function() return true end,
         RefreshActive = function() return NS.OwnedMicroBar.Apply(MicroMenu, settings) end,
     }
-    for _, file in ipairs({ "Core/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/OwnedMicroBarLayout.lua",
+    for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/OwnedMicroBarLayout.lua",
         "Adapters/OwnedMicroBarVisibility.lua", "Adapters/OwnedMicroBarEditMode.lua", "Adapters/OwnedMicroBar.lua" }) do
         assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
     end

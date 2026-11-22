@@ -62,7 +62,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         NS.menuOpened, NS.menuClosed = opened, closed
     end }
     local function Load(path) assert(loadfile(root .. "/MSUF_Suite_Skin/" .. path))("MSUF_Suite_Skin", NS) end
-    Load("Core/Safety.lua")
+    Load("../MSUF_Suite/Appearance/Safety.lua")
     Load("Rendering/WindowFocusGeometry.lua")
     Load("Rendering/WindowFocusLayers.lua")
     assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowFocusPopups.lua"))("MSUF_Suite_Skin", NS)

@@ -31,7 +31,7 @@ CASES = [
      'if not Motion.Enabled(state.spec) or not Safety.CanCreateRegions(state.target)\n'
      '        or Safety.GetProtection(state.target) then',
      "surface refresh safety budget exceeded"),
-    ("duplicate-safety", "Core/Safety.lua",
+    ("duplicate-safety", "../MSUF_Suite/Appearance/Safety.lua",
      'function Safety.ReadUnprotected(target, name)\n',
      'function Safety.ReadUnprotected(target, name)\n'
      '    if IsForbidden(target) or Safety.GetProtection(target) then return nil end\n',

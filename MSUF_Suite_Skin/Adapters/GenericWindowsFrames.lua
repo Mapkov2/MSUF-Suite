@@ -175,7 +175,7 @@ local function ExplicitControl(frame, key, allowImplicitProtected)
     return nil
 end
 
-local function SkinExplicitFields(frame, owner, metrics)
+local function SkinExplicitFields(frame, owner, metrics, nativeListChrome)
     local allowImplicitProtected = metrics.allowImplicitProtected
     if frame == LootFrame then
         local close = Field(frame, "ClosePanelButton")
@@ -207,9 +207,11 @@ local function SkinExplicitFields(frame, owner, metrics)
         if input then SkinInput(input, owner, metrics) end
     end
 
-    for index = 1, #explicitScrollFields do
-        local scrollBar = ExplicitControl(frame, explicitScrollFields[index], allowImplicitProtected)
-        if scrollBar then SkinScrollBar(scrollBar, owner, metrics) end
+    if not nativeListChrome then
+        for index = 1, #explicitScrollFields do
+            local scrollBar = ExplicitControl(frame, explicitScrollFields[index], allowImplicitProtected)
+            if scrollBar then SkinScrollBar(scrollBar, owner, metrics) end
+        end
     end
 
     for index = 1, #explicitPanelFields do
@@ -566,10 +568,15 @@ local function ApplyFrameNow(frame, owner, mode)
         if Safety.Public(close) and Kit.ParentIs(close, frame) then metrics.nativeClose = close end
     end
     if chrome then SkinWindowChrome(frame, owner, metrics, chrome) end
+    local nativeListChrome = ModeValue(mode, "nativeListChrome", false)
     if not metrics.accentOnly then
-        SkinExplicitFields(frame, owner, metrics)
+        SkinExplicitFields(frame, owner, metrics, nativeListChrome)
     end
-    TraverseTree(frame, owner, metrics, TraversalLimits(mode))
+    if nativeListChrome then
+        Shared.SkinNativeListRoot(frame, owner, metrics)
+    else
+        TraverseTree(frame, owner, metrics, TraversalLimits(mode))
+    end
     if frame == GossipFrame then FinishGossipFooter(frame, owner, metrics) end
     StylePrimaryButton(frame, owner, mode)
 
@@ -591,8 +598,8 @@ local function ApplyFrameNow(frame, owner, mode)
     -- LootFrame animates both the window and its pooled rows; even a content
     -- motion scan can reach those rows after the shell-only pass.
     if frame == LootFrame then return true, "applied", metrics end
-    if ModeValue(mode, "listItem", false) ~= true then GenericWindows.TrackCollapseMotion(frame, owner) end
-    if wantsRootSurface and not metrics.accentOnly and not metrics.fullscreenGuarded then
+    if not nativeListChrome and ModeValue(mode, "listItem", false) ~= true then GenericWindows.TrackCollapseMotion(frame, owner) end
+    if not nativeListChrome and wantsRootSurface and not metrics.accentOnly and not metrics.fullscreenGuarded then
         local role = RootRole(mode)
         GenericWindows.TrackMenuMotion(frame, owner, role == "shell" or role == "panel")
     end

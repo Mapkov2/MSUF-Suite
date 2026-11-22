@@ -84,8 +84,8 @@ NS.ControlSkin = {
 local function Load(path, override)
     assert(loadfile(override or root .. "/MSUF_Suite_Skin/" .. path))("MSUF_Suite_Skin", NS)
 end
-Load("Core/Safety.lua")
-Load("Core/Cosmetics.lua")
+Load("../MSUF_Suite/Appearance/Safety.lua")
+Load("../MSUF_Suite/Appearance/Cosmetics.lua")
 Load("Adapters/AdapterKit.lua")
 Load("Adapters/EncounterJournalPanels.lua", os.getenv("SUITE_EJ_PANELS_SOURCE"))
 Load("Adapters/EncounterJournal.lua", os.getenv("SUITE_EJ_SOURCE"))

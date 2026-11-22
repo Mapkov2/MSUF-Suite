@@ -43,7 +43,7 @@ hooksecurefunc = function(target, method, hook)
         hook(...)
     end
 end
-for _, file in ipairs({ "Core/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/Commerce.lua" }) do
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/Commerce.lua" }) do
     assert(loadfile(root .. file))("MSUF_Suite_Skin", NS)
 end
 
@@ -187,4 +187,73 @@ NS.Commerce.Apply()
 writes = hint.writes
 OpenMail(nil)
 assert(hint.alpha == 0 and hint.writes == writes, "a disabled mail skin keeps updating the empty state")
+
+-- Native send slots have one unnamed stone texture and use the normal texture
+-- for the attached item. Only the seven XML text actions own panel-button art.
+local owners, hidden = {}, {}
+local scans, applies, conceals = 0, 0, 0
+NS.Surface.Ensure = NS.Surface.Attach
+NS.ControlSkin.GetOwner = function(button) return owners[button] end
+NS.ControlSkin.ApplyButton = function(button, owner)
+    assert(not owners[button], "mail stole an existing button skin")
+    owners[button], applies = owner, applies + 1
+    return true
+end
+NS.ControlSkin.DisableOwner = function(owner)
+    for button, current in pairs(owners) do if current == owner then owners[button] = nil end end
+end
+NS.Cosmetics.GetOwner = function(region) return hidden[region] end
+NS.Cosmetics.HideDecoration = function(region, owner)
+    hidden[region], conceals = owner, conceals + 1
+    return true
+end
+NS.Cosmetics.ReleaseDecoration = function(region, owner)
+    if hidden[region] == owner then hidden[region] = nil end
+end
+NS.Cosmetics.RestoreOwner = function(owner)
+    for region, current in pairs(hidden) do if current == owner then hidden[region] = nil end end
+end
+local function Action(parent)
+    local button = { GetParent = function() return parent end }
+    for _, key in ipairs({ "Left", "Middle", "Right" }) do
+        button[key] = { GetParent = function() return button end }
+    end
+    return button
+end
+InboxFrame, SendMailFrame, OpenMailFrame = {}, {}, OpenMailFrame or {}
+OpenAllMail = Action(InboxFrame)
+SendMailMailButton, SendMailCancelButton = Action(SendMailFrame), Action(SendMailFrame)
+OpenMailReplyButton, OpenMailDeleteButton = Action(OpenMailFrame), Action(OpenMailFrame)
+OpenMailCancelButton, OpenMailReportSpamButton = Action(OpenMailFrame), Action(OpenMailFrame)
+owners[OpenAllMail], owners[SendMailCancelButton] = "blizzardWindows", "uipanel-buttons"
+owners[OpenMailReportSpamButton] = "foreign"
+local function Texture(asset, layer)
+    return { GetTexture = function() return asset end, GetDrawLayer = function() return layer end }
+end
+local back, item, border = Texture(130862, "BACKGROUND"), Texture(134400, "ARTWORK"), Texture(130862, "OVERLAY")
+SendMailAttachment1 = { GetRegions = function() scans = scans + 1; return back, item, border end }
+local backPath = Texture("Interface\\Buttons\\UI-Slot-Background", "BACKGROUND")
+SendMailAttachment2 = { GetRegions = function() scans = scans + 1; return backPath end }
+NS.DB.skinCategories.social = true
+NS.IsCombatLocked = function() return true end
+NS.Commerce.Apply()
+assert(scans == 0 and applies == 0 and conceals == 0, "mail painted new controls during combat")
+NS.IsCombatLocked = function() return false end
+NS.Commerce.Apply()
+assert(faded[back] and faded[backPath] and not faded[item] and not faded[border], "mail stone or attached item was styled incorrectly")
+local mailOwner = "blizzardWindows:commerce:mail"
+for _, action in ipairs({ OpenAllMail, SendMailMailButton, SendMailCancelButton, OpenMailReplyButton, OpenMailDeleteButton, OpenMailCancelButton }) do
+    assert(hidden[action.Left] == mailOwner and hidden[action.Middle] == mailOwner and hidden[action.Right] == mailOwner, "mail action exposes red art")
+end
+assert(not hidden[OpenMailReportSpamButton.Left] and owners[OpenMailReportSpamButton] == "foreign", "mail touched a foreign button")
+for _ = 1, 25 do NS.Commerce.Apply() end
+assert(scans == 2 and applies == 4 and conceals == 18, "warm mailbox skin rescanned slots or rebuilt action skins")
+owners[OpenMailReplyButton] = "foreign"
+NS.Commerce.Apply()
+assert(not hidden[OpenMailReplyButton.Left] and owners[OpenMailReplyButton] == "foreign",
+    "mail retained its decorations after another skin took over")
+NS.DB.skinCategories.social = false
+NS.Commerce.Apply()
+assert(not next(hidden) and not owners[SendMailMailButton] and owners[SendMailCancelButton] == "uipanel-buttons"
+    and owners[OpenAllMail] == "blizzardWindows", "disabling mail retained red suppression or removed a borrowed button skin")
 print("Suite mail readability contract passed (" .. (forever and "Forever" or "Retail") .. ")")

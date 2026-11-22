@@ -189,57 +189,6 @@ local function StoreFrameResult(request, index, applied, reason, metrics)
     result.truncated = metrics and metrics.truncated == true or false
 end
 
-local itemReferenceCells = setmetatable({}, { __mode = "k" })
-
-local function ItemReferenceCaptionColor()
-    return NS.Theme.GetColor("text")
-end
-
-local function DismissItemReference(cell)
-    local frame = cell:GetParent()
-    -- This is a special window outside the UI panel layout. Blizzard also
-    -- hides it directly when the same link is clicked or Escape closes it.
-    if cell.itemReferenceOwner and frame == Safety.Field(_G, "ItemRefTooltip")
-        and Safety.CanControl(frame) then
-        frame:Hide()
-    end
-end
-
-local function DrawItemReferenceClose(frame, ownerState, owner)
-    -- The native X calls HideUIPanel, which refuses insecure combat calls
-    -- even for this unmanaged tooltip. Use the same hit rectangle.
-    local close = Safety.Field(frame, "CloseButton")
-    if not Safety.Public(close) or not Safety.CanCreateRegions(frame) or not Safety.CanControl(close)
-        or Safety.Read(close, "GetParent") ~= frame then return end
-    local level = Safety.Read(close, "GetFrameLevel")
-    if not level then return end
-    local caption = NS.SuiteCore().WindowCaption
-    local cell = itemReferenceCells[close]
-    if not cell then
-        cell = Safety.CreateChildFrame("Button", frame)
-        if not cell then return end
-        cell:Hide()
-        cell:EnableMouse(true)
-        cell:SetAllPoints(close)
-        caption.Dress(cell, "close", ItemReferenceCaptionColor)
-        cell:RegisterForClicks("LeftButtonUp")
-        cell:SetScript("OnClick", DismissItemReference)
-        close:HookScript("OnShow", function()
-            if itemReferenceCells[close] == cell and cell.itemReferenceOwner then
-                cell:Show()
-            end
-        end)
-        close:HookScript("OnHide", function() cell:Hide() end)
-        cell:HookScript("OnShow", function() caption.SetKind(cell, "close") end)
-        itemReferenceCells[close] = cell
-    end
-    if not NS.Cosmetics.Fade(close, owner) then return end
-    cell.itemReferenceOwner = owner
-    cell:SetFrameLevel(level + 1)
-    cell:SetShown(Safety.Read(close, "IsShown") == true)
-    ownerState.itemReferenceCell = cell
-end
-
 local function PaintEntryFrame(request, index)
     local entry, owner = request.entry, request.owner
     local frameValue = entry.frames[index]
@@ -250,12 +199,6 @@ local function PaintEntryFrame(request, index)
     end
     request.frames[index] = request.frames[index] or {}
     request.frames[index].pending = nil
-    if entry.id == "core-tooltips" or entry.id == "item-reference-tooltips" and frameValue ~= "ItemRefTooltip" then
-        request.ownerState.coreTooltips = true
-        local ok, reason = NS.TooltipChrome.Apply(frame, owner)
-        StoreFrameResult(request, index, ok, reason)
-        return
-    end
     NS.WindowControls.TrackFocus(frame, owner)
     if NS.IsCombatLocked() and not CanSkin(frame) then
         StoreFrameResult(request, index, false, "waiting")
@@ -263,15 +206,16 @@ local function PaintEntryFrame(request, index)
         return
     end
     if frameValue == "ItemRefTooltip" and entry.id == "item-reference-tooltips" then
-        DrawItemReferenceClose(frame, request.ownerState, owner)
+        -- The pinned tooltip still participates in window focus.
+        StoreFrameResult(request, index, true)
+        return
     end
     local frameMode = type(entry.frameModes) == "table"
         and type(frameValue) == "string" and entry.frameModes[frameValue] or nil
     local mode = CatalogMode(frameMode or entry.mode)
-    if frameValue == "LootFrame" and NS.LootTooltipRows then NS.LootTooltipRows.Apply(frame, owner) end
     if entry.id == "catalog-shop" then
         NS.CatalogShopMotion.Apply(frame, owner)
-    elseif entry.category ~= "hud" and mode.rootSurface ~= false
+    elseif not mode.nativeListChrome and entry.category ~= "hud" and mode.rootSurface ~= false
         and (mode.role == nil or mode.role == "shell" or mode.role == "panel") then
         GenericWindows.PrepareWindowMotion(frame, owner)
     end
@@ -287,6 +231,9 @@ local function PaintEntryFrame(request, index)
     end
     local ok, reason, metrics = ApplyFrameNow(frame, owner, mode)
     StoreFrameResult(request, index, ok, reason, metrics)
+    if ok and mode.nativeListChrome and NS.TrainerCollections.Apply(frame, owner, entry.id) then
+        request.ownerState.nativeListChrome = true
+    end
     if ok and mode.flightMapChrome and NS.FlightMapChrome.Apply(frame, owner) then
         request.ownerState.flightMapChrome = true
     end
@@ -514,7 +461,6 @@ local function RemovePendingForOwner(owner)
 end
 
 local function DisableNow(owner)
-    if NS.LootTooltipRows then NS.LootTooltipRows.Disable(owner) end
     NS.MacroWindow.Disable(owner)
     NS.CatalogShopMotion.Disable(owner)
     local ownerState = OwnerState(owner)
@@ -522,20 +468,15 @@ local function DisableNow(owner)
         NS.QuestWindow.Deactivate(ownerState.questWindow, owner)
         ownerState.questWindow = nil
     end
-    if ownerState.itemReferenceCell then
-        ownerState.itemReferenceCell.itemReferenceOwner = nil
-        ownerState.itemReferenceCell:Hide()
-        ownerState.itemReferenceCell = nil
-    end
     if ownerState.chatConfig then
         ownerState.chatConfig = nil
         NS.ChatConfigSkin.Disable(owner)
     end
-    if ownerState.coreTooltips then
-        ownerState.coreTooltips = nil
-        NS.TooltipChrome.DisableOwner(owner)
-    end
     NS.WindowControls.DisableOwner(owner)
+    if ownerState.nativeListChrome then
+        NS.TrainerCollections.Disable(owner)
+        ownerState.nativeListChrome = nil
+    end
     if ownerState.flightMapChrome then
         NS.FlightMapChrome.Disable(owner)
         ownerState.flightMapChrome = nil

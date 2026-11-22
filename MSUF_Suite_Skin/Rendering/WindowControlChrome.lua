@@ -31,7 +31,7 @@ local outsideGrips = {
     ProfessionsFrame = true, ModelPreviewFrame = true, EventTrace = true, OpacityFrame = true,
     ChatConfigFrame = true, HelpFrame = true, CooldownViewerSettings = true,
     ColorPickerFrame = true, ScriptErrorsFrame = true, ClickBindingFrame = true, QuestFrame = true,
-    MailFrame = true, OpenMailFrame = true,
+    MailFrame = true, OpenMailFrame = true, ClassTrainerFrame = true, CollectionsJournal = true,
 }
 
 function Chrome.Footprint(state)

@@ -52,7 +52,7 @@ local NS = {
     addonName = "MSUF_Suite_Skin", DB = { enabled = true, addonSkins = enabled, skins = { settings = true } },
     AddonSkinDefinitions = { { label = "Example", id = "example", addons = { "ExampleUI" }, roots = { "ExampleWindow" } } },
     IsCombatLocked = function() return false end,
-    Safety = { Public = function() return true end, Field = function(target, key) return target and target[key] end,
+    Safety = { Dispatch = function(callback, ...) return callback(...) end, Public = function() return true end, Field = function(target, key) return target and target[key] end,
         Read = function(target, method) if target and target[method] then return target[method](target) end end },
     AddonSkinVisuals = { Safe = function() return true end, Release = Noop, Tree = Noop, Close = Noop },
     AddonMenus = { AssignAddon = Noop }, GenericWindows = { Disable = function() releases = releases + 1 end,

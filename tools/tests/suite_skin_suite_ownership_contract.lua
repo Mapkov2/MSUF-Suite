@@ -45,12 +45,11 @@ S.states.damageMeter.error = nil
 S.Config("damageMeter").enabled = false
 Check(not S.OwnsBlizzardSurface("damageMeter"), "a disabled Suite meter owns Blizzard's meter")
 
-S.Config("dataTexts").enabled = true
-S.Config("dataTexts").hideBlizzardBagBar = false
-Check(not S.OwnsBlizzardSurface("bagBar"), "DataTexts owns a bag bar it keeps visible")
-S.Config("dataTexts").hideBlizzardBagBar = true
 S.Config("bags").enabled, S.states.bags.active = true, true
-Check(S.OwnsBlizzardSurface("bagBar"), "DataTexts does not own the bag bar it hides")
+S.Config("bags").bagBarVisibility = Suite.BagsBarVisibility.MOUSEOVER
+Check(not S.OwnsBlizzardSurface("bagBar"), "the skin lost a bag bar it can style")
+S.Config("bags").bagBarVisibility = Suite.BagsBarVisibility.NEVER
+Check(S.OwnsBlizzardSurface("bagBar"), "Bags did not claim the bar it hides")
 S.states.bags.active = false
 Check(not S.OwnsBlizzardSurface("chatFrames") and not S.OwnsBlizzardSurface("minimap"),
     "a surface no module replaces is owned")
@@ -88,13 +87,12 @@ Check(not S.OwnsBlizzardSurface("characterDossier"), "an unavailable character p
 available, character.enabled = true, false
 Check(not S.OwnsBlizzardSurface("characterDossier"), "a disabled character panel claimed the dossier")
 
--- Start/stop also reconciles the DataTexts follower surface; unrelated modules never notify.
+-- Bags reconciles the window and the native bag bar together.
 local changedSurfaces = {}
 Suite.Skin = { SurfacesChanged = function(phase, surface, dependent)
     events[#events + 1] = "skin:" .. phase
     changedSurfaces[#changedSurfaces + 1] = table.concat({surface, dependent}, "/")
 end }
-S.Config("dataTexts").enabled = false
 S.started = true
 S.NewContext = function() return { Release = function() end } end
 S.RefreshEditMover = function() end
@@ -106,14 +104,14 @@ S.instances.bags = {
 }
 S.Config("bags").enabled = true
 S.Apply("bags")
-Check(table.concat(events, ",") == "skin:before,enable,skin:after,skin:before,skin:after",
+Check(table.concat(events, ",") == "skin:before,enable,skin:after",
     "the skin did not let go before the Bags module started: " .. table.concat(events, ","))
-Check(table.concat(changedSurfaces, ",") == "bagWindows/bagBar,bagWindows/bagBar,bagBar,bagBar",
+Check(table.concat(changedSurfaces, ",") == "bagWindows/bagBar,bagWindows/bagBar",
     "the bag shell did not reconcile its dependent bag bar on both phases")
 events = {}
 S.Config("bags").enabled = false
 S.Apply("bags")
-Check(table.concat(events, ",") == "skin:before,disable,skin:after,skin:before,skin:after",
+Check(table.concat(events, ",") == "skin:before,disable,skin:after",
     "the skin did not take the bag shell back after the Bags module stopped: " .. table.concat(events, ","))
 events = {}
 S.instances.chat = { Enable = function() end, Refresh = function() end, Disable = function() end }
@@ -149,7 +147,7 @@ local NS = {
     Surface = { Attach = function(frame) return frame end, SetVisible = function() end },
     Checkmarks = { TrackControlTree = function() end },
 }
-for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Core/SuiteOwnership.lua", "Adapters/Blizzard.lua" }) do
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Registry.lua", "Core/SuiteOwnership.lua", "Adapters/Blizzard.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local Ownership, Adapters = NS.SuiteOwnership, NS.Adapters

@@ -43,7 +43,7 @@ local NS = {
     Registry = { AddListener = function() end },
     Surface = { SetVisible = function(target, visible) hidden[target] = visible == false end },
 }
-for _, file in ipairs({ "Core/Safety.lua", "Core/CombatGate.lua", "Adapters/AdapterKit.lua" }) do
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "../MSUF_Suite/Appearance/CombatGate.lua", "Adapters/AdapterKit.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local Kit, Gate, gateFrame = NS.AdapterKit, NS.CombatGate, frames[#frames]

@@ -80,6 +80,9 @@ local function Frame(name, parent, kind)
     function frame:SetNormalTexture(value) self.normalTexture = value end
     function frame:SetHighlightTexture() end
     function frame:SetPushedTexture() end
+    function frame:HasScript(name)
+        return name == "OnShow" or name == "OnHide" or name == "OnSizeChanged" or self:GetScript(name) ~= nil
+    end
     function frame:SetScript(name, callback) self.scripts[name] = callback end
     -- Like the client: a hook on an empty script slot becomes its handler.
     function frame:GetScript(name)
@@ -271,7 +274,7 @@ core.HostBridge.WithMenuHistory = function(...)
     return withHistory(...)
 end
 -- The real guards and layout limits, not stubs.
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(arg[5] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)

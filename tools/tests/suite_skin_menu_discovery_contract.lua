@@ -58,7 +58,7 @@ local function Load(path)
         or root .. "/MSUF_Suite_Skin/" .. path
     assert(loadfile(file))("MSUF_Suite_Skin", NS)
 end
-Load("Core/Safety.lua")
+Load("../MSUF_Suite/Appearance/Safety.lua")
 Load("Rendering/CollapseCollections.lua")
 local collectionTrack = NS.CollapseCollections.Track
 NS.CollapseCollections.Track = function(frame, owner)

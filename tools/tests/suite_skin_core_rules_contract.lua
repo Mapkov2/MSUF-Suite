@@ -14,7 +14,7 @@ MSUF_NS = {}
 local core = {}
 assert(loadfile(root .. "/MSUF_Suite/Core/Platform.lua"))("MSUF_Suite", core)
 local skin = {}
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", skin)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", skin)
 for _, value in ipairs({ 1, 0, "text", true, false, {}, secret, "secret text" }) do
     Check(skin.Safety.Public(value) == core.Public(value),
         "the skin and the core disagree whether a value is readable: " .. tostring(value))

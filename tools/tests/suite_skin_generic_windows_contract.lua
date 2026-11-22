@@ -18,6 +18,7 @@ end
 
 local function Section(name, body)
     if arg[3] == "bag-slots" and name ~= "common menus" then return end
+    if arg[3] == "window-chrome" and name ~= "catalog shop and customer support chrome" then return end
     local ok, message = pcall(body)
     if not ok then failures[#failures + 1] = name .. ": " .. tostring(message) end
 end
@@ -326,12 +327,14 @@ local function ColdSource(file)
     return skin .. file
 end
 -- Safety reads issecretvalue at load; "generic traversal secrets" assigns it later.
+local fixtureMode, fixtureFlavor = ...
+if fixtureMode == "flight-map-fixture" then NS.Client.isForever = fixtureFlavor == "Forever" end
 dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
-for _, file in ipairs({ "Core/Safety.lua", "Core/SuiteOwnership.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/SuiteOwnership.lua",
     "Adapters/Catalog.lua", "Adapters/CatalogGlass.lua",
     "Adapters/AdapterKit.lua", "Adapters/SharedChrome.lua",
     "Adapters/GenericWindows.lua", "Adapters/GenericWindowsNodes.lua", "Adapters/GenericWindowsFrames.lua",
-    "Adapters/GenericWindowsCatalog.lua" }) do
+    "Adapters/FlightMapChrome.lua", "Adapters/GenericWindowsCatalog.lua" }) do
     assert(loadfile(ColdSource(file)))("MSUF_Suite_Skin", NS)
 end
 local GenericWindows = NS.GenericWindows
@@ -349,6 +352,20 @@ local function Frame(name, children)
     end
     function frame:GetNumChildren() return #self.children end
     return frame
+end
+
+if fixtureMode == "flight-map-fixture" then
+    local initialChecks = checks
+    return {
+        NS = NS, loadFrame = genericLoadFrame, source = ColdSource, frame = Frame, expect = Expect,
+        inCombat = function() return locked end,
+        setCombat = function(value) locked = value end,
+        noErrors = function() assert(#reported == 0, table.concat(reported, "\n")) end,
+        finish = function()
+            assert(#failures == 0, table.concat(failures, "\n"))
+            return checks - initialChecks
+        end,
+    }
 end
 
 local rowChild = Frame(nil)
@@ -606,7 +623,8 @@ do
     assert(loadfile(arg[2] or skin .. "Adapters/Catalog.lua"))("MSUF_Suite_Skin", forever)
     local data = forever.BlizzardCatalogData
     for _, file in ipairs({ "Adapters/CatalogGlass.lua", "Adapters/GenericWindows.lua",
-        "Adapters/GenericWindowsNodes.lua", "Adapters/GenericWindowsFrames.lua", "Adapters/GenericWindowsCatalog.lua" }) do
+        "Adapters/GenericWindowsNodes.lua", "Adapters/GenericWindowsFrames.lua",
+        "Adapters/FlightMapChrome.lua", "Adapters/GenericWindowsCatalog.lua" }) do
         assert(loadfile(skin .. file))("MSUF_Suite_Skin", forever)
     end
     Check(#ReviewProblems(data, forever.BlizzardCatalog) == 0 and forever.BlizzardCatalog.glass.valid,
@@ -1517,11 +1535,12 @@ Section("legacy windows", function()
     _G.MerchantFrame = Frame("MerchantFrame")
     local merchantItem = Frame("MerchantItem1")
     _G.MerchantItem1 = merchantItem
-    -- MerchantFrame.xml page buttons: the stone backplate goes, however the
-    -- client spells its path; the label and the arrow textures stay.
+    -- The backplate lookup must leave unrelated regional art and label alone.
+    -- WindowActionSkin owns native arrow slots separately.
     local function Region(objectType, file)
         local region = {}
         function region:GetObjectType() return objectType end
+        function region:GetParent() return self.parent end
         if file then function region:GetTextureFilePath() return file end end
         return region
     end
@@ -1537,11 +1556,19 @@ Section("legacy windows", function()
     for name, regions in pairs({ MerchantPrevPageButton = { label, prevPlate, arrow },
         MerchantNextPageButton = { nextPlate, fallbackPlate, fileID } }) do
         local button = Frame(name)
+        function button:GetParent() return _G.MerchantFrame end
         function button:GetRegions() return unpack(regions) end
+        for _, region in ipairs(regions) do region.parent = button end
         _G[name] = button
     end
-    local faded, fade = {}, NS.Cosmetics.Fade
-    NS.Cosmetics.Fade = function(region, ...) faded[region] = true; return fade(region, ...) end
+    local faded, fadeDecoration = {}, NS.Cosmetics.FadeDecoration
+    local directions, applyExplicit = {}, NS.WindowActionSkin.ApplyExplicit
+    NS.Cosmetics.FadeDecoration = function(region) faded[region] = true; return true end
+    NS.WindowActionSkin.ApplyExplicit = function(button, owner, kind, motion, options)
+        assert(kind == "page" and owner == "legacy:legacy-windows:merchant-rows")
+        directions[button] = options.direction
+        return {}
+    end
     local before = #reported
     local ok, applied, state = pcall(NS.LegacyWindows.Apply, "legacy")
     Expect(ok and applied and state == "partial" and merchantItem.surfaceSpec ~= nil
@@ -1549,8 +1576,10 @@ Section("legacy windows", function()
         "a raising legacy window group stopped the other groups")
     Expect(faded[prevPlate] and faded[nextPlate] and faded[fallbackPlate], "a merchant page button kept its stone backplate")
     Expect(not faded[arrow] and not faded[fileID] and not faded[label],
-        "the merchant page buttons lost more than their backplates")
-    NS.Cosmetics.Fade = fade
+        "the backplate lookup also concealed an unrelated region or label")
+    Expect(directions[MerchantPrevPageButton] == "left" and directions[MerchantNextPageButton] == "right",
+        "merchant backplates and native arrow slots did not share the correct pager directions")
+    NS.Cosmetics.FadeDecoration, NS.WindowActionSkin.ApplyExplicit = fadeDecoration, applyExplicit
     NS.LegacyWindows.Disable("legacy")
     _G.CalendarFrame, _G.CalendarDayButton1, _G.MerchantFrame, _G.MerchantItem1 = nil, nil, nil, nil
     _G.MerchantPrevPageButton, _G.MerchantNextPageButton = nil, nil
@@ -2162,7 +2191,7 @@ Section("prepared Forever spells window combat artwork", function()
     InCombatLockdown = function() return locked end
     -- A warrior's book has no ranks checkbox: this section is about artwork.
     UnitClass = function() return "Warrior", "WARRIOR" end
-    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(skin .. "../MSUF_Suite/Appearance/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
     Load("PlayerSpells.lua")
     local writes = 0
     local function Art()
@@ -2849,11 +2878,12 @@ Section("major windows pvp categories", function()
     _G.PVPUIFrame, _G.WeeklyRewardsFrame = nil, nil
 end)
 
-Section("catalog shop portrait chrome", function()
+Section("catalog shop and customer support chrome", function()
     local previousCosmetics, previousCreate, previousShop, previousUI =
         NS.Cosmetics, CreateFrame, _G.CatalogShopFrame, _G.UIParent
+    local previousHelp = _G.HelpFrame
     local previousForever, previousAttach = NS.Client.isForever, NS.Surface.Attach
-    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(skin .. "../MSUF_Suite/Appearance/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
     NS.Surface.Attach = function(target, spec)
         target.surfaceVisible = true
         return previousAttach(target, spec)
@@ -2865,76 +2895,141 @@ Section("catalog shop portrait chrome", function()
         function region:SetAlpha(value) self.alpha = value; self.writes = self.writes + 1 end
         return region
     end
-    local titleBand, bands
+    local titleBand, bands, logo
     CreateFrame = function()
         local frame = NewFrame()
+        function frame:ClearAllPoints() self.points = {} end
         function frame:SetPoint(...) self.points[#self.points + 1] = { ... } end
+        function frame:SetFrameLevel(level) self.level = level end
+        function frame:EnableMouse(enabled) self.mouse = enabled end
+        function frame:CreateTexture()
+            logo = NewFrame()
+            function logo:SetSize(width, height) self.width, self.height = width, height end
+            function logo:SetPoint(...) self.point = { ... } end
+            function logo:SetTexture(asset) self.asset = asset end
+            function logo:AddMaskTexture(mask) self.mask = mask end
+            return logo
+        end
+        function frame:CreateMaskTexture() return { SetAllPoints = function() end, SetTexture = function() end } end
         frame.points = {}
         titleBand, bands = frame, bands + 1
         return frame
     end
-    local entry = NS.BlizzardCatalog.FindByFrame("CatalogShopFrame")
-    for _, forever in ipairs({ false, true }) do
-        NS.Client.isForever = forever
-        local owner = forever and "contract:shop-forever" or "contract:shop-retail"
-        local frame, nineSlice, title = Frame("CatalogShopFrame"), Frame(), Frame()
-        local container, card = Frame(), Frame()
-        frame.NineSlice, frame.TitleContainer, frame.BackgroundContainer = nineSlice, title, container
-        frame.children = { nineSlice, title, container, card }
-        function nineSlice:GetParent() return frame end
-        function title:GetParent() return frame end
-        nineSlice.TopEdge, nineSlice.BottomEdge = Art(nineSlice, 0.9), Art(nineSlice, 1)
-        frame.TopTileStreaks, container.Background_1, card.Preview = Art(frame, 0.8), Art(container, 1), Art(card, 1)
-        local nativeAction = function() end
-        card.OnClick = nativeAction
-        frame.shown, frame.hooks = false, {}
-        function frame:IsShown() return self.shown end
-        function frame:HookScript(script, callback) self.hooks[script] = callback end
-        function frame:GetParent() return _G.UIParent end
-        function frame:GetWidth() return 1615 end
-        function frame:GetHeight() return 932 end
-        _G.UIParent = { GetWidth = function() return 1620 end, GetHeight = function() return 940 end }
-        _G.CatalogShopFrame = frame
-        titleBand, bands = nil, 0
+    local function Run(name)
+        local entry = NS.BlizzardCatalog.FindByFrame(name)
+        local help = name == "HelpFrame"
+        local expectedBands = help and 0 or 1
+        for _, forever in ipairs({ false, true }) do
+            NS.Client.isForever = forever
+            local owner = "contract:window-chrome:" .. name .. ":" .. tostring(forever)
+            local frame, nineSlice, title = Frame(name), Frame(), Frame()
+            local container, card, portrait = Frame(), Frame(), Frame()
+            function nineSlice:GetFrameLevel() return 500 end
+            function title:GetFrameLevel() return 510 end
+            function portrait:GetFrameLevel() return 400 end
+            frame.NineSlice, frame.TitleContainer, frame.BackgroundContainer = nineSlice, title, container
+            if help then
+                frame.Browser, frame.SpinnerOverlay = container, card
+                function container:GetObjectType() return "Browser" end
+                function container:GetParent() return frame end
+                container.BrowserInset = Art(container, 0.75)
+                frame.Bg = Art(frame, 0.85)
+            else
+                frame.PortraitContainer = portrait
+                function portrait:GetParent() return frame end
+                portrait.portrait = Art(portrait, 0.9)
+                local close = Frame("CatalogShopFrameCloseButton")
+                function close:GetParent() return frame end
+                function close:GetObjectType() return "Button" end
+                function close:CreateFontString() error("the shop close button must keep its native art") end
+                frame.CloseButton = close
+            end
+            frame.children = { nineSlice, title, container, card }
+            if frame.CloseButton then frame.children[#frame.children + 1] = frame.CloseButton end
+            function nineSlice:GetParent() return frame end
+            function title:GetParent() return frame end
+            nineSlice.TopEdge, nineSlice.BottomEdge = Art(nineSlice, 0.9), Art(nineSlice, 1)
+            frame.TopTileStreaks, container.Background_1, card.Preview = Art(frame, 0.8), Art(container, 1), Art(card, 1)
+            local nativeAction = function() end
+            card.OnClick = nativeAction
+            frame.shown, frame.hooks = false, {}
+            function frame:IsShown() return self.shown end
+            function frame:HookScript(script, callback) self.hooks[script] = callback end
+            function frame:GetParent() return _G.UIParent end
+            function frame:GetWidth() return help and 974 or 1615 end
+            function frame:GetHeight() return help and 628 or 932 end
+            _G.UIParent = { GetWidth = function() return 1620 end, GetHeight = function() return 940 end }
+            _G[name] = frame
+            titleBand, bands, logo = nil, 0, nil
 
-        GenericWindows.ApplyEntry(entry, owner)
-        Expect(bands == 0 and frame.hooks.OnShow and nineSlice.TopEdge.writes == 0,
-            "hidden shop was painted before it opened")
-        frame.shown = true
-        frame.hooks.OnShow(frame)
-        Expect(bands == 1 and titleBand.parent == nineSlice and titleBand.surfaceSpec
-            and titleBand.surfaceSpec.fillVisible ~= false,
-            "first opening did not paint a title band on the portrait chrome")
-        Expect(titleBand and titleBand.points[1] and titleBand.points[1][2] == title
-            and titleBand.points[2] and titleBand.points[2][2] == title,
-            "shop title band did not follow Blizzard's caption geometry")
-        Expect(nineSlice.surfaceSpec and nineSlice.surfaceSpec.fillVisible == false
-            and nineSlice.TopEdge.alpha == 0 and nineSlice.BottomEdge.alpha == 0 and frame.TopTileStreaks.alpha == 0,
-            "large shop did not replace the native decorative portrait border")
-        Expect(frame.surfaceSpec == nil and container.Background_1.writes == 0
-            and card.Preview.writes == 0 and card.OnClick == nativeAction,
-            "shop skin affected product art, background or click behavior")
+            GenericWindows.ApplyEntry(entry, owner)
+            Expect(bands == 0 and frame.hooks.OnShow and nineSlice.TopEdge.writes == 0,
+                "hidden window was painted before it opened")
+            frame.shown = true
+            frame.hooks.OnShow(frame)
+            if help then
+                Expect(bands == 0 and nineSlice.surfaceSpec and nineSlice.surfaceSpec.opaqueFill == true
+                    and nineSlice.surfaceSpec.fillVisible ~= false,
+                    "customer support needs one opaque shell without a separate title band")
+                Expect(container.BrowserInset.alpha == 0 and frame.Bg.alpha == 0,
+                    "customer support left its native inset or background showing through")
+            else
+                Expect(bands == 1 and titleBand.parent == frame and titleBand.surfaceSpec
+                    and titleBand.surfaceSpec.fillVisible ~= false,
+                    "first opening did not paint a title band on the shop chrome")
+                Expect(titleBand and titleBand.level == 399 and titleBand.mouse == false,
+                    "title band must stay below native title, close and portrait")
+                Expect(titleBand and titleBand.points[1] and titleBand.points[1][2] == frame
+                    and titleBand.points[2] and titleBand.points[2][2] == title,
+                    "title band did not span the shop from its left edge to the caption controls")
+                Expect(nineSlice.surfaceSpec and nineSlice.surfaceSpec.fillVisible == false,
+                    "the shop shell filled its product canvas")
+                Expect(logo and logo.width == 16 and logo.height == 16 and logo.shown and logo.mask
+                    and logo.point[1] == "LEFT" and logo.point[2] == titleBand and portrait.portrait.alpha == 0,
+                    "the shop did not fit the logo inside the title band")
+                Expect(frame.CloseButton.surfaceSpec == nil, "generic skins changed the native shop close button")
+            end
+            Expect(nineSlice.TopEdge.alpha == 0 and nineSlice.BottomEdge.alpha == 0 and frame.TopTileStreaks.alpha == 0,
+                "window did not replace the native decorative border")
+            Expect(frame.surfaceSpec == nil and container.Background_1.writes == 0
+                and card.Preview.writes == 0 and card.OnClick == nativeAction,
+                "skin affected its content, background or click behavior")
 
-        GenericWindows.ApplyEntry(entry, owner)
-        Expect(bands == 1, "shop repaint duplicated the title band")
-        GenericWindows.Disable(owner)
-        Expect(nineSlice.TopEdge.alpha == 0.9 and nineSlice.BottomEdge.alpha == 1
-            and frame.TopTileStreaks.alpha == 0.8 and titleBand and titleBand.surfaceVisible == false
-            and nineSlice.surfaceVisible == false, "disabling shop skin did not restore its chrome")
-        GenericWindows.ApplyEntry(entry, owner)
-        Expect(bands == 1 and titleBand and titleBand.surfaceVisible == true and nineSlice.TopEdge.alpha == 0,
-            "shop skin could not be re-enabled on a visible frame")
-        GenericWindows.Disable(owner)
+            if help then
+                Expect(container.childReads == 0 and card.childReads == 0,
+                    "customer support skin traversed the browser or spinner")
+            end
+            GenericWindows.ApplyEntry(entry, owner)
+            Expect(bands == expectedBands, "repaint duplicated the title band")
+            GenericWindows.Disable(owner)
+            Expect(nineSlice.TopEdge.alpha == 0.9 and nineSlice.BottomEdge.alpha == 1
+                and frame.TopTileStreaks.alpha == 0.8 and (help or titleBand and titleBand.surfaceVisible == false)
+                and nineSlice.surfaceVisible == false, "disabling the skin did not restore its chrome")
+            if help then
+                Expect(container.BrowserInset.alpha == 0.75 and frame.Bg.alpha == 0.85,
+                    "disabling customer support skin did not restore the native inset and background")
+            else
+                Expect(logo and not logo.shown and portrait.portrait.alpha == 0.9,
+                    "disabling the shop skin did not restore the native portrait")
+            end
+            GenericWindows.ApplyEntry(entry, owner)
+            Expect(bands == expectedBands and (help or titleBand and titleBand.surfaceVisible == true)
+                and nineSlice.surfaceVisible == true and nineSlice.TopEdge.alpha == 0,
+                "skin could not be re-enabled on a visible frame")
+            GenericWindows.Disable(owner)
 
-        function frame:IsForbidden() return true end
-        local painted = GenericWindows.ApplyEntry(entry, owner)
-        Expect(not painted and bands == 1 and nineSlice.TopEdge.alpha == 0.9,
-            "forbidden shop root was painted")
-        GenericWindows.Disable(owner)
+            function frame:IsForbidden() return true end
+            local painted = GenericWindows.ApplyEntry(entry, owner)
+            Expect(not painted and bands == expectedBands and nineSlice.TopEdge.alpha == 0.9,
+                "forbidden root was painted")
+            GenericWindows.Disable(owner)
+        end
     end
+    Run("HelpFrame")
+    Run("CatalogShopFrame")
     NS.Client.isForever, NS.Cosmetics, CreateFrame = previousForever, previousCosmetics, previousCreate
     NS.Surface.Attach = previousAttach
-    _G.CatalogShopFrame, _G.UIParent = previousShop, previousUI
+    _G.CatalogShopFrame, _G.HelpFrame, _G.UIParent = previousShop, previousHelp, previousUI
 end)
 
 Section("taxi map semantic artwork", function()
@@ -2943,7 +3038,7 @@ Section("taxi map semantic artwork", function()
     local previousCosmetics, previousButton = NS.Cosmetics, NS.ControlSkin.ApplyButton
     local previousAction, previousControls = NS.Checkmarks.GetWindowAction, NS.WindowControls.Attach
     local previousTaxi, previousTrade = _G.TaxiFrame, _G.TradeFrame
-    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(skin .. "../MSUF_Suite/Appearance/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
     local function Texture(parent, path)
         local texture = { parent = parent, path = path, alpha = 1, writes = 0 }
         function texture:GetObjectType() return "Texture" end
@@ -3018,6 +3113,30 @@ Section("taxi map semantic artwork", function()
     NS.Checkmarks.GetWindowAction, NS.WindowControls.Attach = previousAction, previousControls
 end)
 
+Section("native loot contents under the skinned shell", function()
+    local previousLoot = LootFrame
+    local item, money = Frame("TestLootItem"), Frame("TestLootMoney")
+    local list = Frame("LootFrameScrollBox", { item, money })
+    function list:HasView() return true end
+    function list:RegisterCallback() error("the loot skin subscribed to pooled rows") end
+    local frame = Frame("LootFrame", { list })
+    frame.ScrollBox = list
+    LootFrame = frame
+    local entry, owner = NS.BlizzardCatalog.FindByFrame("LootFrame"), "contract:loot-shell"
+    GenericWindows.ApplyEntry(entry, owner)
+    Expect(frame.surfaceSpec and frame.surfaceSpec.fillVisible and frame.surfaceSpec.motion == false,
+        "loot did not receive its themed window shell")
+    Expect(list.childReads == 0 and not list.surfaceSpec and not item.surfaceSpec and not money.surfaceSpec,
+        "loot skin touched Blizzard's item or money elements")
+    list.children = { Frame("RecycledLootItem"), Frame("LateLootCurrency") }
+    GenericWindows.ApplyEntry(entry, owner)
+    Expect(list.childReads == 0 and not list.children[1].surfaceSpec and not list.children[2].surfaceSpec,
+        "reapplying the loot skin covered the replenished contents")
+    GenericWindows.Disable(owner)
+    Expect(frame.surfaceVisible == false and list.childReads == 0, "disabling the shell affected its contents")
+    LootFrame = previousLoot
+end)
+
 Section("prey scouting map", function()
     -- Retail/Forever reuse CovenantMissionFrame for the midnight texture kit.
     -- MapTab, its scroll child and detail tiles use the root's frame level;
@@ -3025,7 +3144,7 @@ Section("prey scouting map", function()
     Load("MajorWindows.lua")
     Load("MajorWindowsItems.lua")
     local previousCosmetics = NS.Cosmetics
-    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(skin .. "../MSUF_Suite/Appearance/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
     local function Texture(parent, atlas)
         local texture = { parent = parent, atlas = atlas, alpha = 1 }
         function texture:GetObjectType() return "Texture" end
@@ -4215,11 +4334,11 @@ Section("hidden windows defer cosmetic work until visible", function()
     end
     local function Paints() return counters.attach + counters.yellow end
     do
-        local previousMail, previousForever, queueJob = MailFrame, NS.Client.isForever, NS.Registry.QueueJob
+        local previousMail, previousForever, timers = MailFrame, NS.Client.isForever, C_Timer
         local queued
         local mailbox = Window("MailFrame")
         MailFrame, NS.Client.isForever = mailbox, true
-        NS.Registry.QueueJob = function(job) queued = job end
+        C_Timer = { After = function(delay, job) assert(delay == 0); queued = job end }
         local entry = NS.BlizzardCatalog.FindByFrame("MailFrame")
         GenericWindows.ApplyEntry(entry, "mail-opening")
         mailbox:Display(true)
@@ -4227,7 +4346,7 @@ Section("hidden windows defer cosmetic work until visible", function()
         if queued then queued() end
         Expect(mailbox.surfaceSpec, "the mailbox did not receive its deferred skin")
         GenericWindows.Disable("mail-opening")
-        MailFrame, NS.Client.isForever, NS.Registry.QueueJob = previousMail, previousForever, queueJob
+        MailFrame, NS.Client.isForever, C_Timer = previousMail, previousForever, timers
     end
     Load("SocialUI.lua")
     local social = Window("SocialUIFrame")
@@ -4845,7 +4964,7 @@ Section("native chat configuration", function()
         if locked then jobs[key] = callback else callback() end
     end
     NS.CombatGate.Cancel = function(key) jobs[key] = nil end
-    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(skin .. "../MSUF_Suite/Appearance/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(skin .. "Core/Checkmarks.lua"))("MSUF_Suite_Skin", NS)
     local function Noop() end
     NS.Checkmarks.TrackDropdown = Noop

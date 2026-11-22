@@ -131,7 +131,7 @@ Load("Core/DefaultsLooks.lua")
 NS.DB = NS.CopyValue(NS.Defaults)
 -- This fixture tests global styles; the independent close-style contract covers its default.
 NS.DB.icons.windowActions.closeStyle = "global"
-for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Core/Theme.lua", "Rendering/Geometry.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Registry.lua", "Core/Theme.lua", "Rendering/Geometry.lua",
     "Rendering/Surface.lua", "Rendering/Motion.lua", "Rendering/SurfaceMotion.lua" }) do Load(file) end
 NS.Checkmarks = { GetWindowAction = Noop, TrackButton = Noop, TrackDropdown = Noop,
     UntrackDropdown = Noop, UntrackOwner = Noop }

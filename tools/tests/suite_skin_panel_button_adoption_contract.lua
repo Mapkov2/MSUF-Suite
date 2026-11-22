@@ -241,7 +241,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", SuiteR
 local HostBridge = SuiteRoot.HostBridge
 Check(HostBridge ~= nil and Suite.HostBridge == nil, "the host bridge was not published on the Suite root")
 MSUFSuite = SuiteRoot
-for _, file in ipairs({ "Core/Safety.lua", "Core/CombatGate.lua", "Core/Cosmetics.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "../MSUF_Suite/Appearance/CombatGate.lua", "../MSUF_Suite/Appearance/Cosmetics.lua",
     "Core/SuiteOwnership.lua", "Adapters/UIPanelButtons.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end

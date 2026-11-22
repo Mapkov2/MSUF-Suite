@@ -308,6 +308,10 @@ do
     Suite.HostBridge.UnitFrameTooltipAPI = function() return host end
     local modes = { item = "suite", spell = "suite", unit = "suite", quest = "suite", loot = "suite" }
     local layoutPreset = "compact"
+    local previousTooltips = Suite.Tooltips
+    Suite.Tooltips = skin
+    skin.DB.theme.tooltipLayout = Suite.CopyValue(Suite.TooltipAppearance.defaults.tooltipLayout)
+    skin.DB.theme.itemTooltipStyle = "compact"
     skin.TooltipPalette = { choices = {}, IsActive = function() return false end, Title = function() return 1, 1, 1, 1 end }
     skin.ItemTooltipCard = {
         Create = function(parent)
@@ -349,10 +353,15 @@ do
     local section = SectionOf(ctx, "suite_skin_tooltips")
     optionsNS.EnsureSectionContent(section)
     local controls = ControlsOf(ctx, "suite_skin_tooltips")
-    local preset, itemMode, spellMode, unitMode = controls[1], controls[2], controls[3], controls[4]
+    local preset
+    for _, control in ipairs(ControlsOf(ctx, optionsNS.TooltipBasicsSection)) do
+        if control.meta.settingKey == "msufsuite.skin.theme.itemTooltipStyle" then preset = control break end
+    end
+    Check(preset, "Basics did not build the tooltip preset")
+    local itemMode, spellMode, unitMode = controls[1], controls[2], controls[3]
     local indexed = false
     for _, row in ipairs(optionsNS.SkinSearchRows()) do
-        if row.pageKey == "suite_tooltips" and row.sectionId == "suite_skin_tooltips"
+        if row.pageKey == "suite_tooltips" and row.sectionId == optionsNS.TooltipBasicsSection
             and row.settingKey == "msufsuite.skin.theme.itemTooltipStyle" then
             indexed = true
         end
@@ -364,21 +373,27 @@ do
         Check(button.text ~= "Unitframe tooltips", "the tooltip subsection duplicated its Unit Frame settings link")
     end
     Check(skin.DB.theme.itemTooltipStyle == "compact", "the current tooltip style was not preserved by default")
-    Check(preview.titleButton.scripts.OnClick() and preview.kit:Selected() == preview.handles.title
-        and preview.header.frame:IsShown() and modes.item == "suite", "the compact title had no preview-only position editor")
+    ctx.suiteWorkspace.select("layout")
+    local title = preview.handles.title
+    title.scripts.OnClick(title, "LeftButton")
+    Check(preview.kit:Selected() == title and preview.header.frame:IsShown() and modes.item == "suite",
+        "the compact title had no preview-only position editor")
+    ctx.suiteWorkspace.select("appearance")
+    Check(not preview.forceCard and not preview.header.frame:IsShown(), "the title editor leaked its sample style to Appearance")
+    ctx.suiteWorkspace.select("layout")
     preset.set("detailed")
     itemMode.set("custom")
     unitMode.set("custom")
     Check(modes.item == "custom" and modes.unit == "custom" and modes.spell == "suite", "type styles were not independent")
     Check(spellMode.get() == "suite" and layoutPreset == "detailed", "selecting a type reset the layout")
-    preview.tabs[3].scripts.OnClick()
+    preview.sampleSelector.set(3)
     Check(preview.selected == 3 and preview.header.frame:IsShown(), "the unit sample missed the selected style")
-    preview.combatButton.scripts.OnClick(preview.combatButton)
+    preview.stateSelector.set("combat")
     Check(preview.header.frame:IsShown() and modes.unit == "custom", "combat lost a supported tooltip style")
-    preview.restrictionsButton.scripts.OnClick(preview.restrictionsButton)
-    Check(not preview.header.frame:IsShown() and preview.compact:IsShown() and modes.unit == "custom",
-        "restricted combat preview did not simulate the native fallback")
-    preview.combatButton.scripts.OnClick(preview.combatButton)
+    preview.stateSelector.set("restricted")
+    Check(preview.header.frame:IsShown() and not preview.compact:IsShown() and modes.unit == "custom",
+        "restricted combat hid the selected unit style")
+    preview.stateSelector.set("normal")
     Check(preview.header.frame:IsShown(), "leaving the combat preview did not clear restrictions")
     local heightHandle = preview.handles.rule
     local resize = preview.kit.entries[heightHandle]
@@ -398,7 +413,7 @@ do
     Check(layoutPreset == "compact" and modes.item == "custom" and modes.unit == "custom",
         "resetting the style changed which tooltips use it")
     modes.loot = "custom"
-    preview.tabs[5].scripts.OnClick()
+    preview.sampleSelector.set(5)
     Check(preview.header.unified and not preview.lootFill:IsShown(), "loot preview retained the native texture with matching selected")
     local unitSection = SectionOf(ctx, "suite_skin_unit_tooltips")
     optionsNS.EnsureSectionContent(unitSection)
@@ -475,6 +490,7 @@ do
     optionsNS.Available, optionsNS.SetMany = available, setMany
     local style = BuildSkinPage()
     Check(not style.suiteWorkspace.groups.tooltips, "controls were duplicated on Skinning")
+    Suite.Tooltips = previousTooltips
     skin.ItemTooltipCard = nil
     Suite.HostBridge.UnitFrameTooltipAPI = function() end
 end

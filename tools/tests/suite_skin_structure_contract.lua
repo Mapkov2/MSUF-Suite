@@ -111,8 +111,9 @@ local GUARDS = {
 -- Safety.Dispatch is securecallfunction itself, without a fallback for
 -- harnesses that lack it (every contract stubs it).
 local HARNESS_FALLBACKS = {}
-Check(sources["MSUF_Suite_Skin/Core/Safety.lua"]:find("Safety%.Dispatch = securecallfunction[\r\n]")
-    and not sources["MSUF_Suite_Skin/Core/Safety.lua"]:find("securecallfunction or", 1, true),
+sources["MSUF_Suite/Appearance/Safety.lua"] = Read("MSUF_Suite/Appearance/Safety.lua")
+Check(sources["MSUF_Suite/Appearance/Safety.lua"]:find("Safety%.Dispatch = securecallfunction[\r\n]")
+    and not sources["MSUF_Suite/Appearance/Safety.lua"]:find("securecallfunction or", 1, true),
     "Safety.Dispatch keeps a fallback for harnesses without securecallfunction")
 for path, text in pairs(sources) do
     for _, guard in ipairs(GUARDS) do
@@ -419,7 +420,7 @@ do
         },
         GenericWindows = { Disable = function(owner) released[owner] = true end },
     }
-    for _, file in ipairs({ "Core/Safety.lua", "Core/Checkmarks.lua", "Core/CheckmarksMenus.lua" }) do
+    for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Checkmarks.lua", "Core/CheckmarksMenus.lua" }) do
         assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
     end
     local Checkmarks = NS.Checkmarks
@@ -470,7 +471,7 @@ do
     -- untouched factory color through Safety.SameColor and leaves an edited
     -- one alone.
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Database.lua"))("MSUF_Suite_Skin", NS)
-    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", NS)
     local function LegacyHover(r)
         local profile = NS.CopyValue(NS.Defaults)
         profile.revision = 47

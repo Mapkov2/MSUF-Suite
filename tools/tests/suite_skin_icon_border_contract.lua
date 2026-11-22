@@ -59,7 +59,7 @@ local NS = {
     end },
 }
 InCombatLockdown = function() return locked end
-for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Rendering/IconSkin.lua" }) do
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Registry.lua", "Rendering/IconSkin.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local IconSkin = NS.IconSkin

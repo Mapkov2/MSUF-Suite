@@ -87,6 +87,55 @@ function Windows.RestoreGeometry(entry)
     return true, fitted and "restored" or "normal"
 end
 
+local function Positive(value)
+    return type(value) == "number" and value > 0 and value < math.huge
+end
+
+local function FitGeometry(state, w, h, scale, effective)
+    local uiWidth, uiHeight = S.Read(UIParent, "GetWidth"), S.Read(UIParent, "GetHeight")
+    local uiScale = S.Read(UIParent, "GetEffectiveScale")
+    if not Positive(w) or not Positive(h) or not Positive(scale) or not Positive(effective)
+        or not Positive(uiWidth) or not Positive(uiHeight) or not Positive(uiScale) then return end
+
+    local options = state.options
+    local rect, insets = options.fitRect, options.fitInsets
+    local left, right, bottom, top = 8, uiWidth - 8, 8, uiHeight - 8
+    if rect then
+        left, right = rect.left, math.min(rect.right, uiWidth)
+        bottom, top = rect.bottom, math.min(rect.top, uiHeight)
+    end
+    local availableWidth, availableHeight = right - left, top - bottom
+    if availableWidth <= 0 or availableHeight <= 0 then return end
+
+    local outerWidth, outerHeight = w, h
+    if insets then
+        outerWidth = w + insets.left + insets.right
+        outerHeight = h + insets.top + insets.bottom
+    end
+    local factor = effective / scale / uiScale
+    local fit = math.min(availableWidth / outerWidth, availableHeight / outerHeight) / factor
+    if not Positive(fit) then return end
+    local limits = NS.WindowLayoutLimits
+    local minimum, maximum = options.minScale or limits.minScale, options.maxScale or limits.maxScale
+    if (rect or insets) and math.min(fit, maximum) < minimum then return end
+    fit = math.max(minimum, math.min(maximum, fit))
+
+    local ratio = fit * factor
+    if not Positive(ratio) then return end
+    -- SetPoint offsets are in the fitted frame's units, relative to UIParent's center.
+    local x = rect and (left + availableWidth / 2 - uiWidth / 2) / ratio or 0
+    local y = rect and (bottom + availableHeight / 2 - uiHeight / 2) / ratio or 0
+    if insets then
+        x = x + (insets.left - insets.right) / 2
+        y = y + (insets.bottom - insets.top) / 2
+    end
+    if not (math.abs(x) + w / 2 < math.huge and math.abs(y) + h / 2 < math.huge) then return end
+    return fit, {
+        { "TOPLEFT", UIParent, "CENTER", x - w / 2, y + h / 2 },
+        { "BOTTOMRIGHT", UIParent, "CENTER", x + w / 2, y - h / 2 },
+    }
+end
+
 local function ToggleFit(state)
     if not Available(state) or state.geometryChanging then return end
     if state.fit then
@@ -96,16 +145,11 @@ local function ToggleFit(state)
         local points = NS.WindowControlPolicy.CaptureNativePoints(frame)
         local scale, effective = S.Read(frame, "GetScale"), S.Read(frame, "GetEffectiveScale")
         local w, h = S.Read(frame, "GetWidth"), S.Read(frame, "GetHeight")
-        if not points or not w or not h or not scale or not effective or w <= 0 or h <= 0 or scale <= 0 or effective <= 0 then return end
-        local factor = effective / scale / UIParent:GetEffectiveScale()
-        local fit = math.min((UIParent:GetWidth() - 16) / w, (UIParent:GetHeight() - 16) / h) / factor
-        local limits = NS.WindowLayoutLimits
-        fit = math.max(state.options.minScale or limits.minScale, math.min(state.options.maxScale or limits.maxScale, fit))
+        if not points then return end
+        local fit, fitPoints = FitGeometry(state, w, h, scale, effective)
+        if not fit then return end
         state.fit = { scale = scale, points = points }
-        local applied = ChangeGeometry(state, fit, {
-            { "TOPLEFT", UIParent, "CENTER", -w / 2, h / 2 },
-            { "BOTTOMRIGHT", UIParent, "CENTER", w / 2, -h / 2 },
-        })
+        local applied = ChangeGeometry(state, fit, fitPoints)
         if not applied or (not state.minimized and S.Read(frame, "IsShown") == false) then RestoreSize(state) end
     end
     UpdateGlyph(state)

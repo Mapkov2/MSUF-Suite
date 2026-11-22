@@ -691,8 +691,8 @@ function Surface.TintEdge(target, r, g, b)
     if not (public(target) and public(r) and public(g) and public(b)) then return false end
     local state = NS.Registry.GetSurface(target)
     if not state then
-        local chrome = NS.TooltipChrome
-        return chrome ~= nil and chrome.TintEdge(target, r, g, b)
+        local tooltips = NS.SuiteCore().Tooltips
+        return tooltips ~= nil and tooltips.TooltipChrome.TintEdge(target, r, g, b)
     end
     if not state.edge:IsShown() then return false end
     if r == nil then

@@ -53,8 +53,8 @@ local NS = {
 local secretTexture = setmetatable({}, { __index = function() error("contract: indexed a secret texture") end })
 issecretvalue = function(value) return rawequal(value, secretTexture) end
 dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
-for _, file in ipairs({ "Core/Defaults.lua", "Core/DefaultsLooks.lua", "Core/Database.lua", "Core/Safety.lua",
-    "Core/Registry.lua", "Core/CombatGate.lua", "Core/Theme.lua", "Core/Checkmarks.lua",
+for _, file in ipairs({ "Core/Defaults.lua", "Core/DefaultsLooks.lua", "Core/Database.lua", "../MSUF_Suite/Appearance/Safety.lua",
+    "Core/Registry.lua", "../MSUF_Suite/Appearance/CombatGate.lua", "Core/Theme.lua", "Core/Checkmarks.lua",
     "Core/CheckmarksMenus.lua" }) do
     local override = file == "Core/Checkmarks.lua" and os.getenv("SUITE_CHECKMARKS_SOURCE")
     assert(loadfile(override or root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)

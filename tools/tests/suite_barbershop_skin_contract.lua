@@ -9,7 +9,7 @@ local NS = { Client = { isForever = flavor == "Forever", isMainline = flavor ~= 
     WeakSet = function() return setmetatable({}, {__mode = "k"}) end,
     ObjectType = function(frame) return frame.kind end,
 }}
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", NS)
 local Shared = NS.GenericWindowsShared
 Shared.CanSkin = function(frame, implicit) return NS.Safety.CanCreateRegions(frame, implicit) end
 Shared.Attach = function() attached = attached + 1 return true end

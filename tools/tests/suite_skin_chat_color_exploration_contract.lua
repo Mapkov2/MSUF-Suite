@@ -68,7 +68,7 @@ end
 
 local CHUNKS = {}
 for _, file in ipairs({ "MSUF_Suite/Core/CharacterData.lua", "MSUF_Suite/Integrations/MapkoSkin.lua",
-    "MSUF_Suite_Skin/Core/Safety.lua", "MSUF_Suite_Skin/Adapters/AdapterKit.lua",
+    "MSUF_Suite/Appearance/Safety.lua", "MSUF_Suite_Skin/Adapters/AdapterKit.lua",
     "MSUF_Suite_Skin/Adapters/ChatFrames.lua" }) do
     CHUNKS[file] = assert(loadfile(root .. "/" .. file))
 end
@@ -198,7 +198,7 @@ local function LoadSkin()
         WindowActionSkin = { Apply = function() return nil, "owned by another adapter" end },
         CombatGate = { Cancel = Noop, RunOrDefer = Noop },
     }
-    CHUNKS["MSUF_Suite_Skin/Core/Safety.lua"]("MSUF_Suite_Skin", NS)
+    CHUNKS["MSUF_Suite/Appearance/Safety.lua"]("MSUF_Suite_Skin", NS)
     CHUNKS["MSUF_Suite_Skin/Adapters/AdapterKit.lua"]("MSUF_Suite_Skin", NS)
     CHUNKS["MSUF_Suite_Skin/Adapters/ChatFrames.lua"]("MSUF_Suite_Skin", NS)
     S.chat = NS.ChatFramesSkin

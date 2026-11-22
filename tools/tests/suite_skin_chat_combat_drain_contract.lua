@@ -81,8 +81,8 @@ local NS = {
 _G.MSUFSuite = { ChatState = dofile(root .. "/tools/tests/suite_test_support.lua").ChatStateMock() }
 local chatState = _G.MSUFSuite.ChatState
 local Report = chatState.Report
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/CombatGate.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/CombatGate.lua"))("MSUF_Suite_Skin", NS)
 local Gate, gateFrame = NS.CombatGate, frames[#frames]
 for _, file in ipairs({ "Adapters/AdapterKit.lua", "Core/Checkmarks.lua", "Adapters/ChatFrames.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)

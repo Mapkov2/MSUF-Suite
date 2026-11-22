@@ -233,7 +233,7 @@ NS.MicroMenuSkin = {
     end,
 }
 NS.MicroMenuSkin.RefreshNativeReset = NS.MicroMenuSkin.RefreshActive
-for _, file in ipairs({ "Core/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/OwnedMicroBarLayout.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/OwnedMicroBarLayout.lua",
     "Adapters/OwnedMicroBarVisibility.lua", "Adapters/OwnedMicroBarEditMode.lua", "Adapters/OwnedMicroBar.lua" }) do
     local path = file == "Adapters/OwnedMicroBarLayout.lua" and arg[2] or root .. "/MSUF_Suite_Skin/" .. file
     assert(loadfile(path))("MSUF_Suite_Skin", NS)

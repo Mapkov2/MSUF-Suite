@@ -79,6 +79,10 @@ QuestDetailScrollChildFrame = NativeFrame(QuestFrameDetailPanel)
 QuestRewardScrollChildFrame = NativeFrame(QuestFrameRewardPanel)
 QuestInfoSpacerFrame = NativeFrame(QuestDetailScrollChildFrame)
 QuestInfoObjectivesText = WithOpacity(Text(QuestDetailScrollChildFrame, 0.2, 0.1, 0.1), QuestDetailScrollChildFrame)
+QuestInfoObjectivesHeader = WithOpacity(Text(QuestDetailScrollChildFrame, 0.3, 0.2, 0.1), QuestDetailScrollChildFrame)
+local objectiveText = ""
+function GetObjectiveText() return objectiveText end
+function QuestInfoObjectivesText:GetText() return self.value end
 function QuestInfoSpacerFrame:GetPoint(index)
     assert(index == 1)
     return "TOPLEFT", self.anchor, "BOTTOMLEFT", 0, -20
@@ -150,6 +154,7 @@ function GetRewardMoney() return rewardMoney end
 function GetMoneyString(value) return tostring(value) .. " coins" end
 function BreakUpLargeNumbers(value) return tostring(value) end
 EXPERIENCE_COLON = "Experience:"
+QUEST_REWARDS = "Rewards"
 REWARD_CHOICES = "You may choose one of these rewards:"
 REWARD_ITEMS = "You will also receive:"
 REWARD_ITEMS_ONLY = "You will receive:"
@@ -237,7 +242,25 @@ local function NativeDisplay(parent)
     QuestInfoSpacerFrame.parent, QuestInfoSpacerFrame.anchor = parent, rewards.Header
     if callbacks.QuestInfo_Display then callbacks.QuestInfo_Display() end
 end
-QuestInfo_Display = NativeDisplay
+local mayShow, fullOffer, nativeOffers = false, true, 0
+C_QuestLog = { ShouldShowQuestRewards = function(id) return id == questID and mayShow end }
+QUEST_TEMPLATE_DETAIL = {}
+WorldMapFrame, QuestLogPopupDetailFrame = NativeFrame(), NativeFrame()
+WorldMapFrame:Hide()
+QuestLogPopupDetailFrame:Hide()
+function QuestFrame_GetMaterial() return "Parchment", true end
+function QuestInfo_Display(template, parent, button, material, ...)
+    Check(select("#", ...) == 0, "material contrast flag became mapView on the NPC offer")
+    assert(template == QUEST_TEMPLATE_DETAIL and parent == QuestDetailScrollChildFrame
+        and button == QuestFrameAcceptButton and material == "Parchment", "rebuilt a foreign quest template")
+    nativeOffers = nativeOffers + 1
+    if fullOffer then
+        QuestInfoObjectivesText.value = GetObjectiveText()
+        rewards.shown, rewards.parent = true, parent
+        PopulateNative(#offerItems.choice, #offerItems.reward, rewardXP > 0, rewardMoney > 0, true)
+    end
+    if callbacks.QuestInfo_Display then callbacks.QuestInfo_Display() end
+end
 QuestInfo_ShowRewards = function() rewards.shown = true end
 QuestFrameDetailPanel.onShow = function(self)
     QuestFrameRewardPanel:Hide()
@@ -307,8 +330,9 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         PopulateNative(0, 0, false, false, true)
         callbacks.QuestInfo_ShowRewards()
         NextFrame()
-        Check(offerXP and offerXP:IsVisible() and offerXP.anchor == QuestInfoSpacerFrame
-            and offerXP.text == "Experience: 3950", "XP-only offer did not show the reward returned by the client")
+        Check(offerXP and offerXP:IsVisible() and offerXP.anchor == QuestInfoObjectivesText
+            and offerXP.text == "Rewards\n" .. REWARD_ITEMS_ONLY .. "\nExperience: 3950",
+            "XP-only fallback did not follow the offer objectives")
         rewards.shown = true
         PopulateNative(0, 0, true, false, true)
         callbacks.QuestInfo_ShowRewards()
@@ -321,7 +345,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         rewardXP, rewardMoney = 0, 1250
         callbacks.QuestInfo_ShowRewards()
         NextFrame()
-        Check(offerXP:IsShown() and offerXP.text == "1250 coins", "offer without XP lost its money reward")
+        Check(HasOfferText("1250 coins") and not HasOfferText(EXPERIENCE_COLON), "offer without XP lost its money reward")
 
         offerItems.choice = { { name = "Gemshale Pauldrons", count = 1 }, { name = "Dank Shoulderpads", count = 1 } }
         offerItems.reward = { { name = "Spellshifter Rod", count = 1 } }
@@ -487,7 +511,151 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         NextFrame()
         Check(not HasOfferText("Warm Quest-Scoped Blade") and not HasOfferText("Unmatched Choice"),
             "ambiguous cached choices replaced an unidentifiable active slot")
-        questID, offerItems.choice = 2846, {}
+        -- In a real NPC detail context Blizzard can now lay out its own rows.
+        questID, mayShow, fullOffer = 3007, true, true
+        logData[questID] = {}
+        itemData[9841], itemData[9842] = "Native Hammer", "Native Boots"
+        offerItems.choice = { { name = itemData[9841], itemID = 9841 }, { name = itemData[9842], itemID = 9842 } }
+        QuestInfoFrame.acceptButton, QuestInfoFrame.rewardsFrame = QuestFrameAcceptButton, rewards
+        QuestInfoFrame.questLog, QuestInfoFrame.mapView = nil, nil
+        rewards.shown = false
+        PopulateNative(0, 0, false, false, true)
+        local before = nativeOffers
+        if nativeFades then
+            QuestFrameDetailPanel.fading = 1
+            callbacks.QuestInfo_Display()
+            NextFrame()
+            Check(nativeOffers == before, "offer visualization restarted the NPC reading fade")
+            QuestFrameDetailPanel.fading = nil
+        end
+        WorldMapFrame:Show()
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        Check(nativeOffers == before, "offer visualization rewrote the map's shared widgets")
+        WorldMapFrame:Hide()
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        NextFrame()
+        Check(nativeOffers == before + 1 and rewards:IsVisible() and #rewards.RewardButtons == 2,
+            "warm active offer did not recover the native reward item buttons")
+        local second = rewards.RewardButtons[2]
+        Check(second:GetParent() == rewards and second.questID == questID and second.type == "choice"
+            and second:GetID() == 2 and second.Name:GetText() == "Native Boots" and second:IsVisible(),
+            "native item tooltip lost its live offer kind, index or current row")
+        Check(not HasOfferText("Native Hammer") and not HasOfferText("Native Boots")
+            and QuestInfoFrame.itemChoice == 0, "native offer buttons duplicated text or selected an item")
+        for i = 1, 8 do callbacks.QuestInfo_ShowRewards() end
+        NextFrame()
+        Check(nativeOffers == before + 1, "healthy native item rows kept rebuilding the offer")
+        questID, fullOffer = 3008, false
+        logData[questID] = {}
+        rewards.shown = false
+        PopulateNative(0, 0, false, false, true)
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        NextFrame()
+        Check(nativeOffers == before + 2 and HasOfferText("Native Boots"), "unsuccessful native layout removed fallback rewards")
+        for i = 1, 8 do callbacks.QuestInfo_ShowRewards(); NextFrame() end
+        Check(nativeOffers == before + 2, "unfinished native layout retried indefinitely")
+        questID, offerItems.choice = 3009, {}
+        logData[questID] = { choice = { { name = "Log-only Reward", itemID = 9843 } } }
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        Check(nativeOffers == before + 2 and HasOfferText("Log-only Reward"),
+            "quest-log-only item caused a native offer rebuild")
+        questID, rewardXP, rewardMoney = 3010, 1494, 0
+        logData[questID], fullOffer, mayShow = {}, true, true
+        offerItems.choice, offerItems.reward = {}, {}
+        objectiveText, QuestInfoObjectivesText.value = "Search near the stables for the missing horses.", ""
+        rewards.shown = false
+        PopulateNative(0, 0, false, false, true)
+        before = nativeOffers
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        NextFrame()
+        Check(nativeOffers == before + 1 and QuestInfoObjectivesText.value == objectiveText and rewards:IsVisible()
+            and rewards.XPFrame:IsShown() and not rewards.MoneyFrame:IsShown() and not offerXP:IsShown(),
+            "first Foal Play offer did not recover the native objectives and XP-only reward")
+        questID, rewardXP, rewardMoney, mayShow = 3011, 0, 0, false
+        logData[questID] = { xp = 2936, money = 2000 }
+        objectiveText = "Kill 8 Mudfin Oracles and 8 Mudfin Murlocs."
+        QuestInfoObjectivesText.value, rewards.shown = objectiveText, false
+        PopulateNative(0, 0, false, false, true)
+        QuestInfoSpacerFrame.anchor = rewards.Header
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        Check(offerXP.anchor == QuestInfoObjectivesText and HasOfferText("2000 coins\nExperience: 2936")
+            and not HasOfferText("1494"), "second offer's cold rewards were misplaced or carried over")
+        rewardXP, rewardMoney, mayShow = 2936, 2000, true
+        questEvent(quest, "QUEST_LOG_UPDATE")
+        NextFrame()
+        NextFrame()
+        Check(nativeOffers == before + 2 and rewards:IsVisible() and rewards.anchor == QuestInfoObjectivesText
+            and rewards.XPFrame:IsShown() and rewards.MoneyFrame:IsShown() and not offerXP:IsShown(),
+            "late active Freshwater Fiends amounts did not replace the fallback under the objectives")
+        if nativeFades then
+            QuestInfoObjectivesHeader:SetAlpha(0)
+            QuestInfoObjectivesText:SetAlpha(0)
+            QuestInfoObjectivesHeader.color[4], QuestInfoObjectivesText.color[4] = 0, 0
+            Advance(0.71)
+            NextFrame()
+            Check(QuestInfoObjectivesHeader.alpha == 1 and QuestInfoObjectivesText.alpha == 1
+                and QuestInfoObjectivesHeader.color[4] == 1 and QuestInfoObjectivesText.color[4] == 1,
+                "native reading cleanup left an invisible gap before the XP and silver")
+        end
+        for i = 1, 8 do questEvent(quest, "QUEST_LOG_UPDATE") end
+        Check(nativeOffers == before + 2 and #queuedJobs == 0, "healthy XP and silver page kept painting")
+        -- XP may be ready in the native UI while both the objective and the
+        -- active money value are still missing from an already cached quest.
+        questID, logData[3012], rewardMoney, objectiveText = 3012, {}, 0, ""
+        QuestInfoObjectivesText.value = ""
+        PopulateNative(0, 0, true, false, true)
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        objectiveText = "Kill the remaining murlocs."
+        questEvent(quest, "QUEST_LOG_UPDATE")
+        NextFrame()
+        NextFrame()
+        Check(nativeOffers == before + 3 and QuestInfoObjectivesText.value == objectiveText
+            and not rewards.MoneyFrame:IsShown(), "late objective text alone did not restore the native paragraph")
+        rewardMoney = 2000
+        questEvent(quest, "QUEST_LOG_UPDATE")
+        NextFrame()
+        NextFrame()
+        Check(nativeOffers == before + 4 and QuestInfoObjectivesText.value == objectiveText
+            and rewards.MoneyFrame:IsVisible() and not offerXP:IsShown(),
+            "a previously healthy XP row suppressed the late objective or silver")
+        rewards.anchor, QuestInfoSpacerFrame.anchor = QuestInfoRewardText, rewards.Header
+        callbacks.QuestInfo_ShowRewards()
+        NextFrame()
+        NextFrame()
+        Check(nativeOffers == before + 5 and rewards.anchor == QuestInfoObjectivesText and not offerXP:IsShown(),
+            "a spacer pointing into a misplaced rewards frame concealed its stale anchor")
+        questID, logData[3013], offerItems.reward = 3013, {}, { { itemID = 9900 } }
+        QuestInfoObjectivesText.value, rewards.shown = "", false
+        PopulateNative(0, 0, false, false, true)
+        callbacks.QuestInfo_Display()
+        NextFrame()
+        NextFrame()
+        Check(nativeOffers == before + 6 and rewards.XPFrame:IsVisible() and rewards.MoneyFrame:IsVisible()
+            and QuestInfoObjectivesText.value == objectiveText, "an uncached item held back active objectives and amounts")
+        offerItems.reward = {}
+        if nativeFades then
+            questID, mayShow, rewards.shown = 3014, false, false
+            logData[questID] = { xp = 2936 }
+            PopulateNative(0, 0, false, false, true)
+            UIFrameIsFading = function(region) return region == QuestInfoObjectivesText end
+            callbacks.QuestInfo_Display()
+            NextFrame()
+            Check(not offerXP:IsShown(), "full-opacity fallback jumped ahead of its fading native anchor")
+            UIFrameIsFading = NotFading
+            Advance(0.71)
+            NextFrame()
+            Check(offerXP:IsVisible() and offerXP.anchor == QuestInfoObjectivesText,
+                "fallback did not appear under the objectives once their native fade finished")
+        end
+        objectiveText, rewardXP, rewardMoney = "", 0, 0
+        questID, offerItems.choice, mayShow = 2846, {}, false
     end
     QuestFrameProgressPanel:Show()
     -- The fallback line hides with its parent page at once and is settled after the build.

@@ -78,7 +78,7 @@ local NS = {
     },
     Checkmarks = { TrackTexture = Noop, UntrackOwner = Noop, IsRedButtonArtKit = function() return false end },
 }
-for _, file in ipairs({ "Core/Safety.lua", "Core/Cosmetics.lua", "Core/SuiteOwnership.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "../MSUF_Suite/Appearance/Cosmetics.lua", "Core/SuiteOwnership.lua",
     "Adapters/UIPanelButtons.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end

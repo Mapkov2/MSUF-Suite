@@ -121,6 +121,7 @@ C_AddOns = { LoadAddOn = function(name)
             return true, name
         end,
     }
+    provider.ItemTooltipCard = { Refresh = function() end }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Lifecycle.lua"))(name, provider)
     skinFrame = frames[#frames]
     MapkoSkin = provider

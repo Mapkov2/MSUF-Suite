@@ -20,6 +20,9 @@ do
 local Safety = NS.Safety
 local nativeRoots = {
     LFGListFrame = true, LFGParentFrame = true, SocialUIFrame = true, CommunitiesFrame = true, DamageMeter = true,
+    -- Scrolling can run Blizzard's row initializers. Their display indices
+    -- feed the native Train and Summon actions; never write these controllers.
+    ClassTrainerFrame = true, CollectionsJournal = true,
 }
 
 function NativeList.IsTarget(target)

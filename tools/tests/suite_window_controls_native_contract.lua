@@ -44,6 +44,13 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     end
     assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
     local W = NS.WindowControls
+    local previousLoot, previousLootPanel = LootFrame, UIPanelWindows.LootFrame
+    LootFrame = Frame("LootFrame", UIParent)
+    LootFrame.ClosePanelButton = Frame(nil, LootFrame, "Button")
+    UIPanelWindows.LootFrame = { area = "left" }
+    Check(not NS.WindowControlPolicy.Eligible(LootFrame) and not NS.WindowControlPolicy.IsAnimationWindow(LootFrame),
+        flavor .. " wrapped the native loot session in movable or animated window controls")
+    LootFrame, UIPanelWindows.LootFrame = previousLoot, previousLootPanel
     local saved = {}
     for index, name in ipairs({ "ProfessionsFrame", "FriendsFrame", "PlayerSpellsFrame" }) do
         local panel = Frame(name, UIParent)
@@ -214,6 +221,75 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     W.Refresh()
     Check(nativePasses == before, "refreshing closed windows ran native layout")
 
+    local shop = Frame("CatalogShopFrame", UIParent)
+    _G.CatalogShopFrame = shop
+    local shopClose = Frame("CatalogShopFrameCloseButton", shop, "Button")
+    shopClose:SetSize(24, 24)
+    shopClose.left, shopClose.top = shop.left + shop.width - 24, shop.top
+    local closeClicks = 0
+    shopClose:SetScript("OnClick", function() closeClicks = closeClicks + 1; shop:Hide() end)
+    shop.CloseButton = shopClose
+    Check(W.Attach(shop, "native-shop"), "shop window controls did not attach")
+    local shopControls = W.states[shop]
+    Check(shopClose:GetAlpha() == 1 and not shopControls.closeCell,
+        "shop native close button is faded or overlaid")
+    Check(shopControls.maximize.shown and shopControls.maximize.point[2] == shopClose
+        and shopControls.minimize.shown and shopControls.minimize.point[2] == shopControls.maximize,
+        "shop maximize and minimize did not stay next to the native close")
+    shopClose:GetScript("OnClick")()
+    Check(closeClicks == 1 and not shop:IsShown(), "shop close did not run its original click")
+    _G.CatalogShopFrame = nil
+
+    local wide = Frame("CharacterFrame", UIParent)
+    _G.CharacterFrame = wide
+    local bounds = { width = UIParent:GetWidth() * 1.25, height = 552 }
+    NS.DB.windowControls.scales.CharacterFrame = 1.5
+    NS.DB.windowControls.positions.CharacterFrame = { x = UIParent:GetWidth(), y = 20 }
+    W.SuiteAction(wide, bounds, "prepare")
+    Check(wide:GetScale() * bounds.width < UIParent:GetWidth() and NS.DB.windowControls.scales.CharacterFrame == 1.5,
+        "the Suite overlay clipped at the saved scale or overwrote that scale")
+    Check(wide.point[4] >= 0 and (wide.point[4] + bounds.width) * wide:GetScale() <= UIParent:GetWidth() + .01
+        and wide.point[5] <= 0, "the saved anchor clipped the wider Suite overlay")
+    local wideState = W.states[wide]
+    W.SetSuitePresentation(wide, true)
+    Check(not wideState.grip:IsShown() and not wideState.titleDrag:IsShown(), "duplicate native controls remained visible")
+    local ownedGrip = Frame(nil, wide, "Button")
+    W.SuiteAction(wide, bounds, "scaleStart", ownedGrip)
+    Check(ownedGrip:GetScript("OnUpdate") ~= nil, "the visible Suite grip did not drive scale changes")
+    W.SuiteAction(wide, bounds, "scaleStop")
+    Check(ownedGrip:GetScript("OnUpdate") == nil, "the Suite grip left a driver running on release")
+    W.SetSuitePresentation(wide, false)
+    W.SuiteAction(wide, bounds, "release")
+    wide:Hide()
+    NS.DB.windowControls.scales.CharacterFrame = nil
+    NS.DB.windowControls.positions.CharacterFrame = nil
+    _G.CharacterFrame = nil
+
+    -- The offer's native 78 x 22 Decline button ends only six pixels from
+    -- QuestFrame's right edge and four from its bottom. Keep its full hit area.
+    local savedQuestWindow, savedQuestEntry = QuestFrame, UIPanelWindows.QuestFrame
+    QuestFrame = Frame("QuestFrame", UIParent)
+    QuestFrame.width, QuestFrame.height = 338, 496
+    UIPanelWindows.QuestFrame = { area = "left" }
+    Check(W.Attach(QuestFrame, "quest-footer"), "quest window controls did not attach")
+    local questGrip = W.states[QuestFrame].grip.point
+    Check(questGrip[1] == "TOPLEFT" and questGrip[2] == QuestFrame and questGrip[3] == "BOTTOMRIGHT"
+        and questGrip[4] >= 0 and questGrip[5] <= 0, "quest scale grip intersects the native Decline button")
+    W.DisableOwner("quest-footer")
+    QuestFrame, UIPanelWindows.QuestFrame = savedQuestWindow, savedQuestEntry
+
+    for _, name in ipairs({ "MailFrame", "OpenMailFrame" }) do
+        local savedFrame, savedEntry = _G[name], UIPanelWindows[name]
+        local mail = Frame(name, UIParent)
+        _G[name], UIPanelWindows[name] = mail, { area = "left" }
+        Check(W.Attach(mail, "mail-footer"), name .. " window controls did not attach")
+        local grip = W.states[mail].grip.point
+        Check(grip[1] == "TOPLEFT" and grip[2] == mail and grip[3] == "BOTTOMRIGHT"
+            and grip[4] >= 0 and grip[5] <= 0, name .. " grip intercepts the native footer")
+        W.DisableOwner("mail-footer")
+        _G[name], UIPanelWindows[name] = savedFrame, savedEntry
+    end
+
     -- Exact reviewed standalone utility windows are not UIPanelWindows on
     -- every client. HUD, tooltip, nested panes and secure roots stay excluded.
     for _, name in ipairs({ "SocialUIFrame", "ChatConfigFrame", "HelpFrame", "CooldownViewerSettings",
@@ -233,7 +309,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
                 "compact opacity title strip overlaps the native slider")
             Check(not controls.minimize, "opacity popup gained a minimize button")
         end
-        if name == "ChatConfigFrame" or name == "HelpFrame" or name == "CooldownViewerSettings"
+        if name == "HelpFrame" then
+            local point = controls.grip.point
+            Check(point[1] == "TOPRIGHT" and point[3] == "BOTTOMRIGHT" and point[4] == 0 and point[5] == 0,
+                "HelpFrame scale grip does not dock against the bottom outside the browser")
+        elseif name == "ChatConfigFrame" or name == "CooldownViewerSettings"
             or name == "ColorPickerFrame" or name == "OpacityFrame" or name == "ScriptErrorsFrame"
             or name == "ModelPreviewFrame" or name == "EventTrace" then
             local point = controls.grip.point

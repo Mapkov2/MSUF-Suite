@@ -72,7 +72,7 @@ local NS = {
     },
 }
 local skin = root .. "/MSUF_Suite_Skin/"
-for _, file in ipairs({ "Core/Safety.lua", "Core/BlizzardYellow.lua", "Core/Checkmarks.lua" }) do
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/BlizzardYellow.lua", "Core/Checkmarks.lua" }) do
     assert(loadfile(skin .. file))("MSUF_Suite_Skin", NS)
 end
 local Safety, Yellow, Checkmarks = NS.Safety, NS.BlizzardYellow, NS.Checkmarks
@@ -708,7 +708,7 @@ do
     issecretvalue = function() return false end
     Check(not Safety.Public(secret), "Safety read issecretvalue again after load")
     issecretvalue = nil
-    local bare = assert(loadfile(skin .. "Core/Safety.lua"))("MSUF_Suite_Skin", {})
+    local bare = assert(loadfile(skin .. "../MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", {})
     issecretvalue = loadedWith
     Check(bare.Public(secret) and bare.Public(1), "a client without issecretvalue lost the nil fallback")
 end

@@ -95,6 +95,53 @@ nativeBox:TriggerEvent("released", childRow, childNode)
 Check(childGhost.group:IsPlaying(), "native AddOns category lost its exit animation")
 NS.AddonListMotion.DisableOwner("native-addon-list")
 
+-- A visible AddOns list can already have generic copies when its adapter attaches.
+local function CheckAddonListHandoff()
+    local root = Frame(UIParent, true)
+    local box = List(root, true)
+    root.ScrollBox = box
+    local tree = Node({})
+    local branch = Node({ category = "Group" }, tree, 1)
+    local child = Node({ addonIndex = 1 }, branch)
+    local replacement = Node({ addonIndex = 2 }, branch)
+    local leaving = Node({ addonIndex = 3 }, branch)
+    tree.GetDepth, branch.GetDepth = NativeDepth, NativeDepth
+    child.GetDepth, replacement.GetDepth, leaving.GetDepth = NativeDepth, NativeDepth, NativeDepth
+    local row = Row(box, child, 380, "Original title")
+    row.Title = row.label
+    local header, leavingRow = Row(box, branch, 400), Row(box, leaving, 360)
+    box.rows = { header, row, leavingRow }
+    NS.GenericWindows.trackContent(box, "addon-handoff-generic")
+    local state = NS.AddonListMotion.scrollStates[box]
+    local oldCopy = state.records[row].ghost
+    Check(oldCopy and #oldCopy.fonts == 1 and oldCopy.clip ~= state.ghostClip,
+        "generic AddOns discovery must capture only the visible row art")
+    local closingCopy = state.records[leavingRow].ghost
+    branch.collapsed = true
+    box:TriggerEvent("released", leavingRow, leaving)
+    Check(closingCopy.group:IsPlaying(), "generic discovery did not start the pending exit animation")
+    branch.collapsed, box.rows = false, { header, row }
+    row.node, row.label.text = replacement, "Loaded addon"
+    box:TriggerEvent("initialized", row, replacement)
+    Check(NS.AddonListMotion.Attach(root, "addon-handoff-native"), "AddOns adapter failed to adopt the tracked list")
+    local copy = state.records[row].ghost
+    Check(copy ~= oldCopy and copy.clip == state.ghostClip and not state.ghostRows[oldCopy],
+        "dedicated AddOns adapter retained the generic closing copy")
+    Check(not closingCopy.group:IsPlaying() and not closingCopy.frame:IsShown() and state.ghostActive == 0,
+        "AddOns handoff left a generic exit animation active")
+    Check(copy.fonts[1].text == "Loaded addon" and #copy.fonts == 4 and #copy.textures == 3,
+        "dedicated AddOns adapter did not capture the recycled row and allocate all native regions")
+    Check(NS.AddonListMotion.Attach(root, "addon-handoff-native") and state.records[row].ghost == copy,
+        "reapplying the AddOns adapter discarded a dedicated copy")
+    branch.collapsed = true
+    box:TriggerEvent("released", row, replacement)
+    Check(copy.group:IsPlaying(), "adopted AddOns row lost its exit animation")
+    NS.AddonListMotion.DisableOwner("addon-handoff-native")
+    NS.GenericWindows.releaseContent("addon-handoff-generic")
+    Check(not state.active and not copy.group:IsPlaying(), "released AddOns owners retained the closing animation")
+end
+CheckAddonListHandoff()
+
 -- Settings replaces initializer tables and its provider on every disclosure.
 local settings = Frame(UIParent, true)
 function settings:CreateCategories() end

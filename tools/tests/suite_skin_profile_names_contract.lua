@@ -48,7 +48,7 @@ local skin = {
     Registry = { RefreshAll = Noop, NotifyListeners = Noop },
 }
 for _, file in ipairs({ "Defaults", "DefaultsLooks", "Database", "DatabaseProfiles", "DeflateSize", "ProfileIO", "Safety" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. file .. ".lua"))("MSUF_Suite_Skin", skin)
+    assert(loadfile(root .. (file == "Safety" and "/MSUF_Suite/Appearance/" or "/MSUF_Suite_Skin/Core/") .. file .. ".lua"))("MSUF_Suite_Skin", skin)
 end
 skin.addonName = "MSUF_Suite_Skin"
 MapkoSkin = skin

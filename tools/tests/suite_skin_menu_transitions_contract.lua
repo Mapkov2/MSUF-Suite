@@ -158,7 +158,7 @@ end
 local suite = {}
 assert(loadfile(root .. "/MSUF_Suite/Core/DisclosureMotion.lua"))("MSUF_Suite", suite)
 NS.SuiteCore = function() return suite end
-Load("Core/Safety.lua")
+Load("../MSUF_Suite/Appearance/Safety.lua")
 Load("Rendering/Motion.lua")
 -- Load the real dropdown observer, preserving its callback registration route.
 NS.Checkmarks = { dropdowns = {}, owners = {}, settingsCategoryLists = {}, TrackFrame = Noop }

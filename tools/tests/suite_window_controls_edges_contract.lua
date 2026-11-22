@@ -239,7 +239,7 @@ core.WindowCaption.PixelFactor = function() return nil end
 NS.WindowActionSkin = NS.WindowActionSkin or { Yield = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
 NS.SuiteCore = function() return core end
-for _, file in ipairs({ "Core/Safety.lua", "Core/Defaults.lua", "Core/DefaultsLooks.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Defaults.lua", "Core/DefaultsLooks.lua",
     "Rendering/WindowControlPolicy.lua", "Rendering/WindowControlChrome.lua", "Rendering/WindowControlDelegate.lua",
     "Rendering/WindowControls.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)

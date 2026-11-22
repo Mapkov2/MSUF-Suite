@@ -114,7 +114,7 @@ local NS = {
         ApplyDescendant = function() error("Legacy System used a generic traversal") end,
     },
 }
-for _, path in ipairs({ "Core/Safety.lua", "Core/Cosmetics.lua", "Adapters/AdapterKit.lua", "Rendering/Surface.lua" }) do
+for _, path in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "../MSUF_Suite/Appearance/Cosmetics.lua", "Adapters/AdapterKit.lua", "Rendering/Surface.lua" }) do
     assert(loadfile(root .. path))("Suite", NS)
 end
 NS.AdapterKit.SetMotionProvider(function(frame, owner) motions[frame] = owner end, Noop)

@@ -1,5 +1,4 @@
--- Drive the real registry and detached window renderer. Native
--- panel methods fail if the renderer tries to change visibility or geometry.
+-- Check that the old window-outline entry points cannot leave artwork behind.
 local root = assert(arg[1], "Suite root required")
 local secret = {}
 issecretvalue = function(value) return value == secret end
@@ -75,10 +74,12 @@ local function Setup(forever)
         ns.WindowControls.geometry, ns.WindowControls.interaction = geometry, interaction
     end }
     ns.WindowControlPolicy = { IsAnimationWindow = function(frame) return frame == FriendsFrame end }
-    for _, file in ipairs({ "Core/Client", "Core/Safety", "Core/Registry", "Rendering/Geometry",
-        "Rendering/Motion", "Rendering/WindowFocusGeometry", "Rendering/WindowMotion" }) do
+    for _, file in ipairs({ "Core/Client", "../MSUF_Suite/Appearance/Safety", "Core/Registry", "Rendering/Geometry",
+        "Rendering/Motion", "Rendering/WindowFocusGeometry" }) do
         assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file .. ".lua"))("MSUF_Suite_Skin", ns)
     end
+    local renderer = arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowMotion.lua"
+    assert(loadfile(renderer))("MSUF_Suite_Skin", ns)
     local function Flush()
         local pending = timers
         timers = {}
@@ -94,175 +95,69 @@ end
 
 local function NativeVisible(frame, shown)
     frame.shown = shown
-    frame.hooks[shown and "OnShow" or "OnHide"](frame)
+    local hook = frame.hooks[shown and "OnShow" or "OnHide"]
+    if hook then hook(frame) end
 end
 
-local function Run(forever)
-    local skin, frames, Flush, Combat, Gamepad = Setup(forever)
+local function AssertNoOutline(frames, message)
+    for _, frame in ipairs(frames) do
+        assert(not frame:IsShown() or not frame.textures, message)
+    end
+end
+
+local function Run(forever, scenario)
+    local skin, frames, Flush = Setup(forever)
     local owner, frame, window = "character", CharacterFrame, skin.WindowMotion
-    FriendsFrame = Frame("FriendsFrame", UIParent)
-    assert(window.Watch(FriendsFrame, owner), "catalogued top-level frames should get extended window effects")
-    window.Unwatch(FriendsFrame, owner)
-    ArbitraryFrame = Frame("ArbitraryFrame", UIParent)
-    assert(not window.Watch(ArbitraryFrame, owner), "a global name alone must not opt in")
-    assert(not window.Watch(Frame("CharacterFrame", UIParent), owner), "duplicate name passed the allowlist")
-    frame.name = secret
-    assert(not window.Watch(frame, owner), "secret name passed the allowlist")
-    frame.name = "CharacterFrame"
-    frame.protected = true
-    assert(not window.Watch(frame, owner), "implicit protection must be honored")
-    frame.protected, frame.parent = nil, secret
-    assert(not window.Watch(frame, owner), "secret parent allowed")
-    frame.parent = UIParent
-    assert(window.Watch(frame, owner) and not next(frame.hooks), "default mode installed extended hooks")
-    local function Mode(mode, reduced)
-        skin.DB.theme.windowAnimations, skin.DB.theme.reduceMotion = mode, reduced
-        skin.Registry.NotifyListeners("motion", "windowAnimations")
+    skin.DB.theme.windowAnimations = "extended"
+    if scenario == "close" then
+        window.Watch(frame, owner)
         Flush()
-    end
-    local function Size(width)
-        frame.width = width
-        frame.hooks.OnSizeChanged(frame, width, frame.height)
-    end
-    Mode("extended")
-    Size(500)
-    Size(480)
-    assert(#frames == 2, "resize did visual work before native layout settled")
-    Flush()
-    local proxy = assert(frames[3], "resize failed to create an outline")
-    local driver = frames[2]
-    local function Tick(elapsed) driver.scripts.OnUpdate(driver, elapsed) end
-    assert(proxy:IsShown() and proxy.mouse == false and proxy.anchor == UIParent and proxy.width == 300)
-    assert(proxy.textures.BORDER.asset:match("_edge2%.png$") and proxy.textures.BORDER.alpha >= 0.9)
-    assert(proxy.textures.BACKGROUND.alpha >= 0.12 and proxy.textures.BACKGROUND.alpha <= 0.25)
-    Tick(0.06)
-    assert(proxy.width > 315 and proxy.width < 390 and frame.width == 480 and proxy.alpha > 0.9,
-        "resize effect became too fast or faded too early")
-    Tick(0.15)
-    assert(proxy:IsShown() and proxy.width > 440 and proxy.width < 480 and proxy.alpha > 0.35,
-        "extended resize must still be visible at 210 ms")
-    Tick(0.08)
-    assert(not proxy:IsShown() and not driver.scripts.OnUpdate, "resize must finish and release its driver")
-    frame.scale = 1.2
-    skin.WindowControls.geometry(frame)
-    Flush()
-    assert(proxy:IsShown() and proxy.width == 480, "native scale change has no OnSizeChanged event")
-    NativeVisible(frame, false)
-    assert(proxy:IsShown() and not frame:IsShown(), "native close should be immediate")
-    local closeWidth = proxy.width
-    assert(proxy.textures.BACKGROUND.alpha > 0.2, "close trace must have a visible fill")
-    Tick(0.12)
-    assert(proxy.width < closeWidth * 0.94 and proxy.width > closeWidth * 0.84 and proxy.alpha > 0.7,
-        "extended close must visibly shrink and remain legible halfway through")
-    NativeVisible(frame, true)
-    Flush()
-    assert(not proxy:IsShown() and not driver.scripts.OnUpdate, "reopen did not clear the old close trace")
-    NativeVisible(frame, false)
-    Tick(0.23)
-    assert(proxy:IsShown() and proxy.width < closeWidth * 0.87, "close effect was too short or too small")
-    Tick(0.04)
-    assert(not proxy:IsShown() and not driver.scripts.OnUpdate, "close must finish and release its driver")
-    NativeVisible(frame, true)
-    Flush()
-    skin.WindowControls.interaction(frame, true)
-    Size(510)
-    Flush()
-    assert(not proxy:IsShown(), "manual resizing must stay immediate")
-    skin.WindowControls.interaction(frame, false)
-    Flush()
-    Size(secret)
-    Flush()
-    NativeVisible(frame, false)
-    assert(not proxy:IsShown(), "unreadable bounds must not animate stale geometry")
-    frame.width = 510
-    NativeVisible(frame, true)
-    Flush()
-    Size(600)
-    Combat(true)
-    Combat(false)
-    Flush()
-    assert(not proxy:IsShown(), "queued resize replayed after combat")
-    Size(650)
-    Flush()
-    assert(proxy:IsShown(), "resize did not recover after combat")
-    Mode("extended", true)
-    assert(not proxy:IsShown(), "reduced motion did not stop the active trace")
-    Mode("off")
-    Size(670)
-    Flush()
-    Mode("extended")
-    Gamepad(true)
-    if forever then
-        Size(700)
+        NativeVisible(frame, false)
         Flush()
-        assert(not proxy:IsShown(), "Forever Gamepad UI should own its own windows")
-        Gamepad(false)
-        Mode("extended")
-    end
-    window.Unwatch(frame, owner)
-    NativeVisible(frame, false)
-    assert(not proxy:IsShown() and #frames == 3, "unwatched window still animates or leaks overlays")
-end
-
-local function Shop()
-    local skin, frames, Flush = Setup(true)
-    local window = skin.WindowMotion
-    local shop = Frame("CatalogShopFrame", UIParent)
-    CatalogShopFrame, shop.protected = shop, true
-    for _, method in ipairs({ "GetLeft", "GetBottom", "GetWidth", "GetHeight", "GetFrameLevel", "GetFrameStrata" }) do
-        local read = shop[method]
-        shop[method] = function(self)
-            assert(self.shown, "read Shop geometry after secure teardown")
-            return read(self)
+        AssertNoOutline(frames, "closing a Blizzard window left a detached outline")
+        NativeVisible(frame, true)
+        Flush()
+        NativeVisible(frame, false)
+        window.Unwatch(frame, owner)
+        AssertNoOutline(frames, "reopening and closing left a detached outline")
+    elseif scenario == "resize" then
+        window.Watch(frame, owner)
+        Flush()
+        frame.width = 500
+        if frame.hooks.OnSizeChanged then frame.hooks.OnSizeChanged(frame, 500, frame.height) end
+        Flush()
+        AssertNoOutline(frames, "resizing a Blizzard window drew a detached outline")
+    elseif scenario == "shop" then
+        CatalogShopFrame = Frame("CatalogShopFrame", UIParent)
+        CatalogShopFrame.protected = true
+        for _, mode in ipairs({ "subtle", "extended", "off" }) do
+            skin.DB.theme.windowAnimations = mode
+            window.WatchShop(CatalogShopFrame, "shop")
+            window.ShopVisibility(CatalogShopFrame, true)
+            Flush()
+            AssertNoOutline(frames, "opening the Shop drew a detached outline in " .. mode)
+            NativeVisible(CatalogShopFrame, false)
+            window.ShopVisibility(CatalogShopFrame, false)
+            Flush()
+            AssertNoOutline(frames, "closing the Shop drew a detached outline in " .. mode)
+            window.Unwatch(CatalogShopFrame, "shop")
+            NativeVisible(CatalogShopFrame, true)
         end
+    elseif scenario == "preview" then
+        local sample = Frame("StylePreview", Frame("StylePage", UIParent))
+        window.WatchPreview(sample, owner)
+        Flush()
+        NativeVisible(sample, false)
+        AssertNoOutline(frames, "closing the style sample drew a detached outline")
     end
-    skin.DB.theme.windowAnimations = "extended"
-    assert(window.WatchShop(shop, "shop") and not next(shop.hooks), "secure shop must not have script hooks")
-    Flush()
-    local driver, proxy = frames[2], assert(frames[3], "first already-visible shop did not open with a trace")
-    assert(proxy:IsShown() and proxy.mouse == false and proxy.width == 270)
-    driver.scripts.OnUpdate(driver, 0.15)
-    assert(proxy:IsShown() and proxy.width > 270 and proxy.width < 300, "extended shop reveal lost its motion")
-    shop.shown = false
-    window.ShopVisibility(shop, false)
-    assert(proxy:IsShown() and proxy.width == 300, "native shop close did not start from settled geometry")
-    shop.shown = true
-    window.ShopVisibility(shop, true)
-    assert(not proxy:IsShown(), "rapid shop reopen left the old close trace")
-    Flush()
-    skin.DB.theme.windowAnimations = "subtle"
-    skin.Registry.NotifyListeners("motion", "windowAnimations")
-    window.ShopVisibility(shop, true)
-    Flush()
-    assert(proxy:IsShown() and proxy.width == 300, "subtle shop opening should fade a stationary contour")
-    driver.scripts.OnUpdate(driver, 0.13)
-    assert(not proxy:IsShown() and not driver.scripts.OnUpdate)
-    skin.DB.theme.windowAnimations = "off"
-    window.ShopVisibility(shop, true)
-    Flush()
-    assert(not proxy:IsShown() and not driver.scripts.OnUpdate)
-    window.Unwatch(shop, "shop")
+    assert(not next(frame.hooks), "inactive outline renderer still hooks native windows")
+    assert(frames[2] == nil, "inactive outline renderer still allocates a driver")
 end
 
-local function Preview()
-    local skin, frames, Flush = Setup(false)
-    local parent = Frame("StylePage", UIParent)
-    local sample = Frame("StylePreview", parent)
-    skin.DB.theme.windowAnimations = "extended"
-    assert(skin.WindowMotion.WatchPreview(sample, parent))
-    Flush()
-    parent.shown = false
-    sample.hooks.OnHide(sample)
-    assert(#frames == 2, "hiding the Style page must not leave a preview trace")
-    parent.shown = true
-    sample.hooks.OnShow(sample)
-    Flush()
-    NativeVisible(sample, false)
-    assert(frames[3]:IsShown(), "closing the preview should demonstrate the native-window effect")
+for _, scenario in ipairs({ "close", "resize", "shop", "preview" }) do
+    if not arg[3] or arg[3] == scenario then
+        Run(false, scenario)
+        Run(true, scenario)
+    end
 end
-
-Run(false)
-Run(true)
-Preview()
-Shop()
-print("window motion contract passed on Retail and Forever fixtures")
+print("no detached window outlines on Retail and Forever fixtures")

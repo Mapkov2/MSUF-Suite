@@ -2,7 +2,7 @@
 -- avoiding a repeated Lua wrapper and type check for every absent field.
 local root = assert(arg[1], "repository root required")
 local NS = { IsCombatLocked = function() return false end }
-for _, file in ipairs({ "Core/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/GenericWindows.lua" }) do
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/GenericWindows.lua" }) do
     local override = os.getenv("SUITE_CHROME_SCAN_SOURCE")
     local path = file == "Adapters/GenericWindows.lua" and override or root .. "/MSUF_Suite_Skin/" .. file
     if file == "Adapters/GenericWindows.lua" then print("Chrome scan source: " .. path) end

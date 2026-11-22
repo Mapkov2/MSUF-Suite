@@ -60,6 +60,17 @@ function Ghost.Stop(state)
     state.ghostPendingCopies = nil
 end
 
+function Ghost.DiscardCopies(state)
+    if not state.ghostRows then return end
+    for copy in pairs(state.ghostRows) do
+        local group = copy.group
+        group.record.ghost = nil
+        group:SetScript("OnFinished", nil)
+        group.state, group.record, group.copy = nil, nil, nil
+    end
+    wipe(state.ghostRows)
+end
+
 local function Scrolled(state)
     if state.ghostCategory and not state.ghostPending then Ghost.Stop(state) end
 end

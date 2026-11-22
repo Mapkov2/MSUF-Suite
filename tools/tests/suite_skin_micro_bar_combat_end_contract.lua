@@ -217,7 +217,7 @@ local function Load(file)
     end
     assert(loadfile(source))("MSUF_Suite_Skin", NS)
 end
-for _, file in ipairs({ "Core/Safety.lua", "Core/CombatGate.lua", "Core/Registry.lua", "Adapters/AdapterKit.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "../MSUF_Suite/Appearance/CombatGate.lua", "Core/Registry.lua", "Adapters/AdapterKit.lua",
     "Adapters/OwnedMicroBarLayout.lua", "Adapters/OwnedMicroBarVisibility.lua",
     "Adapters/OwnedMicroBarEditMode.lua" }) do
     Load(file)
@@ -706,7 +706,7 @@ local VNS = {
         return 1, 1, 1, 1
     end },
 }
-for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Rendering/MicroMenuPerformance.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Registry.lua", "Rendering/MicroMenuPerformance.lua",
     "Rendering/MicroMenuVisual.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", VNS)
 end

@@ -63,7 +63,7 @@ Existing RXP widget collections are caught up once after enable or a native them
 rebuild, including fonts and controls beyond the initial tree budget. A pooled
 window's actual acquisition refreshes its rebuilt controls; plain shows stay clean.
 
-## MSUF Suite Skinning API 2.4
+## MSUF Suite Skinning API 2.6
 
 The `MSUF_Suite_Skin` module provides the versioned skinning API for addons such as BetterFriendlist.
 Declare `MSUF_Suite_Skin` as an optional dependency and register after the module loads.
@@ -81,7 +81,7 @@ Older 2.x integrations can request their existing minimum version.
 local provider = _G.MapkoSkin
 if type(provider) ~= "table" or provider.addonName ~= "MSUF_Suite_Skin"
     or type(provider.GetAPI) ~= "function" then return end
-local api = provider.GetAPI(2, 4)
+local api = provider.GetAPI(2, 5)
 if not api then return end
 local skin = api:RegisterAddon("MyAddon", { integrationVersion = 1 })
 if not skin then return end
@@ -126,12 +126,12 @@ This path avoids the built-in window discovery needed by noncooperative addons.
 
 | Method | Targets and options |
 | --- | --- |
-| `SkinDropdown(trigger, options)` | Styles the trigger surface, text and arrow during hover, press, menu open and disable. Standard modern dropdowns expose `Text` and `Arrow`. For a custom trigger, supply its `trigger`, `label` or `arrow` child. The addon still builds and navigates its menu. |
+| `SkinDropdown(trigger, options)` | Styles the trigger surface, text and arrow during hover, press, menu open and disable. `WowStyle1FilterDropdownTemplate` receives a separate down arrow because its original glyph is part of the background. An explicit `arrow` takes precedence. For a custom trigger, supply its `trigger`, `label` or `arrow` child. |
 | `SkinCheckButton(button, options)` | Colors native check and radio indicators, including the disabled checked texture. A custom control may supply `indicator` and `label`. |
-| `SkinSlider(slider, options)` | Styles a Slider or a `MinimalSliderWithSteppersTemplate` wrapper. An optional `track`, `thumb`, `back` or `forward` identifies authored parts. |
+| `SkinSlider(slider, options)` | Styles a Slider or a `MinimalSliderWithSteppersTemplate` wrapper, including its built-in stepper textures and their individual disabled states. Optional `track`, `thumb`, `back` and `forward` identify authored parts. `backArt` and `forwardArt` can identify custom textures on their respective stepper buttons. |
 | `SkinScrollBar(bar, options)` | Styles native Minimal and WowTrim bars, including the track, thumb and both steppers. Slider-based scrollbars accept the slider options. |
 | `SkinWindowAction(button, action, options)` | Actions include `close`, `minimize`, `maximize`, `restore`, `expand` and `collapse`. Expand/collapse can request a `direction` of `left`, `right`, `up` or `down`. An explicit direction selects the chevron in the configured weight and colors. Native style retains the supplied art. |
-| `RegisterWindow(frame, options)` | Opts an addon-owned top-level window into individual caption controls. `closeButton` supplies the caller's close button. `minimize` and `maximize` each opt in independently. The optional `title` labels the restore tab. |
+| `RegisterWindow(frame, options)` | Opts an addon-owned top-level window into individual caption controls. `closeButton` supplies the caller's close button. `minimize` and `maximize` each opt in independently. The optional `title` labels the restore tab. Set `showOnRelease = false` to leave a minimized frame hidden when its controls are removed. |
 
 Supply only regions belonging to the submitted control. The caller owns input,
 selected values, visibility and labels. Releasing a target restores its adopted
@@ -143,7 +143,7 @@ skin:SkinWindowAction(preview.DockButton, "collapse", { direction = "left" })
 skin:SkinWindowAction(settings.CloseButton, "close", { appearance = "caption" })
 skin:RegisterWindow(friends, {
     closeButton = friends.CloseButton, minimize = true, maximize = true,
-    title = "BetterFriendlist", minScale = 0.8, maxScale = 1.25,
+    title = "BetterFriendlist", minScale = 0.8, maxScale = 1.25, showOnRelease = false,
 })
 ```
 
@@ -153,7 +153,47 @@ disabled colors. The supplied button keeps its own hit area, anchors and
 while the Suite's window controls are enabled. Minimizing exposes a restore
 tab. Maximizing fits to available screen space within the scale limits.
 Restoring reinstates the previous scale and anchors. Combat locks these
-actions. `Release(frame)` removes the registration and restores the window.
+actions. `Release(frame)` removes the registration and restores any fitted
+geometry. By default a minimized window is shown when its controls are
+released, including when a Suite setting removes the controls.
+
+`GetWindowState(frame)` returns a snapshot with `fitted` and `minimized`.
+Both flags can be true. Position savers, including `OnHide` handlers, should
+skip saving temporary geometry while `fitted` is true.
+
+`RestoreWindowGeometry(frame)` restores anchors and scale synchronously while
+preserving visibility and minimization. Call it before changing the frame's
+position, scale or size. It returns `true, "restored"` or `true, "normal"` on
+success. If it returns `false, "combat"`, retry after combat before writing
+geometry. An anchor error returns `false, "geometry-failed"` and keeps the
+original geometry available for another restore attempt. Both methods only
+operate on windows registered to the calling scope.
+Use the `windowGeometry` capability to discover these methods.
+
+With `windowFitBounds`, `RegisterWindow` takes two additional options for
+`maximize = true`.
+
+- `fitInsets` reserves space for controls extending beyond the frame. Values
+  are distances in the frame's local units and scale with it. Supply any of
+  `left`, `right`, `top` and `bottom`. Omitted edges are zero.
+- `fitRect` chooses the available rectangle in `UIParent` units measured from
+  its bottom-left corner. Supply all four edges. The Suite clips this rectangle
+  to the current viewport. Omitting the rectangle uses the usual eight-unit
+  screen margin.
+
+The Suite centers the frame together with its reserved space. If the rectangle
+is empty or the available space would require a scale below `minScale` (or
+the Suite default), the maximize click keeps the current geometry. The fit
+uses a copy of the option values. To update them, restore the window and
+register it again with the new bounds.
+
+```lua
+local options = { minimize = true, maximize = true, showOnRelease = false }
+if api:HasCapability("windowFitBounds") then
+    options.fitInsets = { left = 44 } -- Modern side tabs
+end
+skin:RegisterWindow(friends, options)
+```
 
 ### Handing off fallback artwork
 
@@ -188,21 +228,62 @@ UpdateFallback()
 
 ### Styling caller-owned Blizzard_Menu descriptions
 
+When `menuDescriptionStyling` is available, call
+`SkinMenuDescription(rootDescription)` after adding the standard rows in your
+own generator. It opts in the existing descriptions and their submenus. The
+Suite styles labels, indicators, hover and selection on rows from
+`CreateTitle`, `CreateButton`, `CreateCheckbox` and `CreateRadio` inside
+Blizzard's initializer. Blizzard handles input, disabled labels and
+the release of pooled rows. The Suite paints when an opted-in row is
+initialized out of combat and the scope is active. Style changes take effect
+on the next initialization. `ReleaseAll()` and unregistering end the opt-in.
+
+```lua
+dropdown:SetupMenu(function(_, description)
+    description:CreateTitle("Friends")
+    description:CreateButton("Open settings", OpenSettings)
+    description:CreateRadio("By name", IsSortByName, SetSortByName)
+    skin:SkinMenuDescription(description)
+end)
+```
+
+With `menuDescriptionFontOptions`, pass `{ preserveFont = true }` as the
+second argument to `SkinMenuDescription` for font pickers and other menus that
+set their own fonts. Each supported label keeps the font from its initializer.
+The same option still applies the Suite's row colors, indicators, arrows and
+highlights. Blizzard applies its disabled label color after row initialization.
+
+With `menuSurface`, call `CreateMenuMixin(baseMixin)` on the same skin scope
+before creating the root description. Use the resulting mixin for an addon-owned
+dropdown or context menu. It draws the Suite's popup fill and border with
+textures attached to Blizzard's compositor. It inherits the base mixin's
+spacing and layout. The compositor releases the surface with each popup or
+submenu. In combat or while the scope is inactive, newly opened popups use the
+base mixin's surface. After `ReleaseAll()`, create a new mixin to opt in again.
+
+```lua
+-- Assign this only on a dropdown owned by your addon, before SetupMenu.
+if api:HasCapability("menuSurface") then
+    dropdown.menuMixin = skin:CreateMenuMixin(MenuVariants.GetDefaultMenuMixin())
+end
+dropdown:SetupMenu(function(_, description)
+    PopulateFontChoices(description)
+    if api:HasCapability("menuDescriptionFontOptions") then
+        skin:SkinMenuDescription(description, { preserveFont = true })
+    end
+end)
+```
+
+For context menus, use `MenuVariants.GetDefaultContextMenuMixin()` as the base
+and assign the result to your addon-owned context menu owner's `menuMixin`
+before calling `MenuUtil.CreateContextMenu`. For a manually built root, pass
+the mixin to `MenuUtil.CreateRootMenuDescription`.
+
 `GetMenuStyle()` returns a detached snapshot containing RGBA arrays for
 `text`, `title`, `disabled`, `highlight`, `selection`, `background`, `border`,
 `check` and `arrow`, plus the selected font path when available. When the scope
 is inactive it returns `nil` and a reason. Build the snapshot once per menu.
-The addon continues to own menu descriptions, item callbacks and navigation.
-
-```lua
-dropdown:SetupMenu(function(_, description)
-    local style = skin:GetMenuStyle()
-    local title = "Friends"
-    if style then title = CreateColor(unpack(style.title)):WrapTextInColorCode(title) end
-    description:CreateTitle(title)
-    description:CreateButton("Open settings", OpenSettings)
-end)
-```
+Use these tokens to paint your own custom popup.
 
 ## Verification boundary
 

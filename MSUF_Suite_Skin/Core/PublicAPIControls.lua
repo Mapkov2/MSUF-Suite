@@ -11,9 +11,23 @@ local menuColors = {
     highlight = "hover", selection = "active", check = "checkmark", arrow = "blizzardArrow",
 }
 local directions = { left = true, right = true, up = true, down = true }
+local edges = { "left", "right", "top", "bottom" }
 
 local function Options(options)
     return S.Public(options) and (options == nil or type(options) == "table" and getmetatable(options) == nil)
+end
+
+local function Bounds(value, default)
+    if not Options(value) or not value then return nil end
+    local bounds = {}
+    for _, edge in ipairs(edges) do
+        local offset = rawget(value, edge)
+        if not S.Public(offset) then return nil end
+        if offset == nil then offset = default end
+        if type(offset) ~= "number" or not (offset >= 0 and offset < math.huge) then return nil end
+        bounds[edge] = offset
+    end
+    return bounds
 end
 
 local defaultAction = {}
@@ -56,7 +70,9 @@ end
 local function WindowOptions(options)
     if not Options(options) or not options then return nil end
     local spec = {}
-    for _, key in ipairs({ "closeButton", "minimize", "maximize", "minScale", "maxScale", "title", "showOnRelease" }) do
+    for _, key in ipairs({
+        "closeButton", "minimize", "maximize", "minScale", "maxScale", "title", "showOnRelease", "fitInsets", "fitRect",
+    }) do
         local value = rawget(options, key)
         if not S.Public(value) then return nil end
         spec[key] = value
@@ -70,6 +86,15 @@ local function WindowOptions(options)
     end
     if spec.minScale and spec.maxScale and spec.minScale > spec.maxScale then return nil end
     if spec.title ~= nil and (type(spec.title) ~= "string" or #spec.title > 128) then return nil end
+    if spec.fitInsets ~= nil then
+        spec.fitInsets = Bounds(spec.fitInsets, 0)
+        if not spec.fitInsets or not spec.maximize then return nil end
+    end
+    if spec.fitRect ~= nil then
+        local rect = Bounds(spec.fitRect)
+        if not rect or not spec.maximize or rect.left >= rect.right or rect.bottom >= rect.top then return nil end
+        spec.fitRect = rect
+    end
     return spec
 end
 
@@ -160,10 +185,20 @@ function NS.InstallPublicControls(methods, getScope, safe, request, enabled)
         for name, role in pairs(menuColors) do result[name] = { NS.Theme.GetColor(role) } end
         return result
     end
-    function methods:SkinMenuDescription(description)
+    function methods:SkinMenuDescription(description, options)
         local scope, reason = getScope(self)
         if not scope then return false, reason end
-        return NS.PublicMenuStyle.Bind(description, scope, enabled)
+        if not Options(options) then return false, "invalid-options" end
+        local preserveFont = options and rawget(options, "preserveFont")
+        if not S.Public(preserveFont) or preserveFont ~= nil and type(preserveFont) ~= "boolean" then
+            return false, "invalid-options"
+        end
+        return NS.PublicMenuStyle.Bind(description, scope, enabled, preserveFont)
+    end
+    function methods:CreateMenuMixin(base)
+        local scope, reason = getScope(self)
+        if not scope then return nil, reason end
+        return NS.PublicMenuStyle.CreateMixin(base, scope, enabled)
     end
     return ActionOptions
 end

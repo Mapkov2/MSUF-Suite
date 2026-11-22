@@ -109,11 +109,12 @@ local function Load(path)
     end
     assert(loadfile(file))(NS.addonName, NS)
 end
-Load("Core/Safety.lua")
-Load("Core/Cosmetics.lua")
+Load("../MSUF_Suite/Appearance/Safety.lua")
+Load("../MSUF_Suite/Appearance/Cosmetics.lua")
 Load("Core/Defaults.lua")
 NS.DB = { enabled = true, skins = { blizzardWindows = false }, addonSkins = NS.CopyValue(NS.Defaults.addonSkins) }
 NS.GenericWindows = {
+    ApplyDescendant = function() return true end,
     ApplyFrame = function(frame, _, mode)
         paints[frame] = "shell"
         paintModes[frame] = mode
@@ -147,9 +148,12 @@ assert(loadfile(root .. "/MSUF_Suite/Core/AddonSkinCatalog.lua"))("MSUF_Suite", 
 NS.SuiteCore = function() return addonCatalog end
 Load("Adapters/AddonSkinsCatalog.lua")
 Load("Adapters/AddonSkins.lua")
+Load("Adapters/AddonSkinQuestie.lua")
 Load("Adapters/AddonSkinTriggers.lua")
 Load("Adapters/AddonSkinDiscovery.lua")
 Load("Adapters/AddonSkinSpoken.lua")
+NS.MaxDiscoveredAddons = 24
+NS.ValidDiscoveredAddon = function(name) return type(name) == "string" and name:match("^[%w_]+$") ~= nil end
 local function Flush()
     if combat then return end
     for _ = 1, 20 do
@@ -166,12 +170,13 @@ local function Event(name, ...)
     end
 end
 Check(NS.DB.addonSkins.enabled == false, "addon skins must start opt-in")
-Check(#NS.AddonSkinDefinitions == 23, "the requested addon catalog is incomplete")
+Check(#NS.AddonSkinDefinitions >= 35, "the requested addon catalog is incomplete")
 local windows = {}
 for _, entry in ipairs(NS.AddonSkinDefinitions) do
     local window = Frame("Frame", UIParent, "@Interface/AddOns/" .. entry.addons[1] .. "/Settings.lua:10")
     window.backdrop, window.Center = {}, Frame("Texture")
-    windows[entry.id] = window
+    if entry.exact and entry.roots[1] then _G[entry.roots[1]] = window end
+    if not entry.exact or entry.roots[1] then windows[entry.id] = window end
 end
 Event("PLAYER_LOGIN") Flush()
 Check(not next(paints), "disabled addon skins painted a foreign window")
@@ -181,7 +186,8 @@ Check(NS.AddonMenus.widgets[preopened].addonID == "bugSack" and paints[preopened
 gui:Release(preopened)
 dialog.OpenFrames.BugSack = nil
 for id, frame in pairs(windows) do
-    Check(paints[frame] == "shell" and frame.Center.alpha == 0, id .. " window/chrome was not skinned")
+    local shell = paints[frame] == "shell" or surfaces[frame] and surfaces[frame].visible
+    Check(shell and frame.Center.alpha == 0, id .. " window/chrome was not skinned")
 end
 local before = sourceReads
 for _ = 1, 30 do NS.Registry.NotifyListeners("theme", "color") end
@@ -203,6 +209,143 @@ local ordinary = Frame("Frame", UIParent, "@Interface/AddOns/Unrelated/Settings.
 local fullscreen = Frame("Frame", UIParent, "@Interface/AddOns/LootTriage/SettingsWindow.lua:27")
 fullscreen.width, fullscreen.height = 1920, 1080
 NS.AddonSkins.Discover() Flush()
+do
+    local addon = Frame("Frame", UIParent, "@Interface/AddOns/NewWindow/Main.lua:10")
+    local hiddenLibrary = Frame("Frame", UIParent, "@Interface/AddOns/HostAddon/Libs/Shared/View.lua:11")
+    local protected = Frame("Frame", UIParent, "@Interface/AddOns/SecureAddon/Main.lua:10")
+    protected.protected = true
+    local overlay = Frame("Frame", UIParent, "@Interface/AddOns/Overlay/Main.lua:10")
+    overlay.height = 1080
+    local content = Frame("FontString", addon)
+    local title = Frame("FontString", addon)
+    for _, frame in ipairs({ addon, hiddenLibrary, protected, overlay }) do
+        frame.backdrop, frame.Center = {}, Frame("Texture")
+    end
+    addon.TitleText = title
+    for _ = 1, 260 do Frame("Frame", UIParent) end
+    local done = false
+    Check(NS.AddonSkins.ScanWindows(function() done = true end), "manual discovery did not start")
+    local job = assert(next(queue))
+    queue[job] = nil
+    local before = sourceReads
+    job()
+    Check(not done and sourceReads - before <= 128, "manual discovery walked more than one frame's budget")
+    Flush()
+    local candidates = NS.AddonSkins.DiscoveredWindows()
+    Check(done and #candidates == 1 and candidates[1].name == "NewWindow",
+        "explicit scan accepted a library, protected or fullscreen root")
+    Check(not surfaces[addon], "discovering an addon automatically painted it")
+    Check(NS.AddonSkins.SetDiscovered("NewWindow", true), "opt-in did not use the candidate")
+    Flush()
+    Check(surfaces[addon].visible and addon.Center.alpha == 0 and labels[title] and not labels[content],
+        "the basic skin did not limit itself to the chrome")
+    NS.PublicAPI.OnRegistrationChanged("NewWindow", true) Flush()
+    Check(not surfaces[addon].visible and addon.Center.alpha == 1 and not labels[title],
+        "explicit registration did not take ownership over discovery")
+    NS.PublicAPI.OnRegistrationChanged("NewWindow", false) Flush()
+    Check(surfaces[addon].visible, "unregistering missed the approved basic skin")
+    Check(NS.AddonSkins.SetDiscovered("NewWindow", false), "could not opt out again")
+    Check(not surfaces[addon].visible and addon.Center.alpha == 1 and not labels[title],
+        "opting out failed to restore the original visuals")
+    addon:Hide()
+end
+do
+    local engine = {}
+    local controls = { Refresh = Noop }
+    local tabStyle = { SetSideTabSelected = Noop }
+    QuestieLoader = { ImportModule = function(_, name)
+        return ({ QuestieOptionsEngine = engine, QuestieOptionsControls = controls,
+            QuestieOptionsWindow = tabStyle })[name]
+    end }
+    function engine:ShowFrame()
+        QuestieStandaloneSettings = QuestieStandaloneSettings or Frame("Frame", UIParent)
+        QuestieStandaloneSettings:Show()
+    end
+    Event("ADDON_LOADED", "Questie") Flush()
+    engine:ShowFrame()
+    local frame = QuestieStandaloneSettings
+    Check(paintCounts[frame] == 1, "Questie opened before its shell was styled")
+    Flush()
+    Check(paintCounts[frame] == 1, "Questie's first opening scheduled a redundant shell paint")
+    local rowPaints = 0
+    local oldApply = NS.GenericWindows.ApplyDescendant
+    NS.GenericWindows.ApplyDescendant = function(row)
+        rowPaints = rowPaints + 1
+        Check(row:GetParent() == frame, "Questie skinned a row outside its popup")
+        return true
+    end
+    local row = Frame("Button", frame)
+    row.titleFrame = Frame("FontString", row)
+    local nativeSettings = Frame("Button", UIParent)
+    controls.Refresh(nativeSettings)
+    for _ = 1, 100 do controls.Refresh(row) end
+    Flush()
+    Check(rowPaints == 1 and labels[row.titleFrame], "Questie missed or repainted its lazily constructed setting")
+    for _ = 1, 100 do controls.Refresh(row) end
+    Flush()
+    Check(rowPaints == 1, "unchanged Questie settings repeated a skin pass")
+    Check(NS.AddonSkins.SetLook("questie", "nativeFont", true), "Questie font override was refused")
+    Flush()
+    controls.Refresh(row) Flush()
+    Check(not labels[row.titleFrame] and rowPaints == 2, "native font did not restore and preserve the label")
+    Check(NS.AddonSkins.SetLook("questie", "softerWindow", true), "Questie opacity override was refused")
+    Flush()
+    Check(paintModes[frame].fillAlphaScale == 0.65, "the window opacity override did not reach the shell")
+    Check(NS.AddonSkins.SetLook("questie", "reset"), "Questie skin appearance could not follow the profile again")
+    Flush()
+    Check(paintModes[frame].fillAlphaScale == nil, "profile reset retained Questie's softer window")
+    NS.GenericWindows.ApplyDescendant = oldApply
+    QuestieLoader = nil
+    frame:Hide()
+end
+do
+    local dispatch, apply = NS.Safety.Dispatch, NS.GenericWindows.ApplyFrame
+    local faults = 0
+    NS.Safety.Dispatch = function(callback, ...)
+        local ok, result = pcall(callback, ...)
+        if ok then return result end
+    end
+    NS.GenericWindows.ApplyFrame = function(frame, ...)
+        if frame == windows.questie then faults = faults + 1 error("synthetic skin failure") end
+        return apply(frame, ...)
+    end
+    NS.AddonSkins.RefreshFrame(windows.questie) Flush()
+    Check(NS.AddonSkins.GetStatus("questie") == "error" and faults == 1, "faulty skin did not pause")
+    NS.AddonSkins.RefreshFrame(windows.questie) Flush()
+    Check(faults == 1, "paused skin attempted another write")
+    Check(NS.AddonSkins.GetStatus("openMap") == "applied", "one adapter fault paused another addon")
+    NS.GenericWindows.ApplyFrame = apply
+    Check(NS.AddonSkins.RetryAddon("questie"), "retry action failed")
+    Flush()
+    Check(NS.AddonSkins.GetStatus("questie") == "partial", "retry did not reapply visible Questie windows")
+    NS.Safety.Dispatch = dispatch
+end
+do
+    local embedded = Frame("Frame", UIParent)
+    local oldApply = NS.GenericWindows.ApplyDescendant
+    local paintsBefore = paintCounts[windows.openMap]
+    AuctionatorShoppingFrame = embedded
+    NS.GenericWindows.ApplyDescendant = function(frame, _, mode)
+        Check(frame == embedded and mode.rootSurface == false and mode.preserveRootArt,
+            "Auctionator attempted to own the native auction house shell")
+        paints[frame] = "embedded"
+        return true
+    end
+    Event("ADDON_LOADED", "Blizzard_AuctionHouseUI") Flush()
+    Check(paints[embedded] == "embedded" and paintCounts[windows.openMap] == paintsBefore,
+        "late auction house load missed Auctionator or refreshed an unrelated addon")
+    NS.GenericWindows.ApplyDescendant = oldApply
+end
+local openMapPaints = paintCounts[windows.openMap]
+Event("ADDON_LOADED", "Questie") Flush()
+Check(paintCounts[windows.openMap] == openMapPaints, "a Questie load repainted an unrelated addon")
+local readsBeforeDisable = sourceReads
+assert(NS.AddonSkins.SetOption("questie", false)) Flush()
+Check(sourceReads == readsBeforeDisable, "disabling one skin scanned the UI")
+Check(paintCounts[windows.openMap] == openMapPaints, "disabling Questie repainted an unrelated addon")
+assert(NS.AddonSkins.SetOption("questie", true)) Flush()
+Check(paintCounts[windows.openMap] == openMapPaints, "enabling Questie repainted an unrelated addon")
+
 Check(not paints[ordinary] and not paints[fullscreen], "discovery skinned unrelated/fullscreen frames")
 local late
 SlashCmdList.LOOTTRIAGE = function()

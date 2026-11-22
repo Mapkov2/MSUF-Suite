@@ -33,7 +33,7 @@ local NS = {
     Surface = { Attach = function(frame) return frame end, SetVisible = function() end },
     Checkmarks = { TrackControlTree = function() end },
 }
-for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Core/SuiteOwnership.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Registry.lua", "Core/SuiteOwnership.lua",
     "Adapters/Blizzard.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
@@ -141,10 +141,16 @@ end
 
 -- A skin reload that starts in combat can arm the Social UI's native opening.
 do
-    local calls = 0
+    local calls, interactions = 0, 0
     local windows, gate, isLocked = NS.GenericWindows, NS.CombatGate, NS.IsCombatLocked
     local social = true
-    NS.GenericWindows = { IsCategoryEnabled = function(name) return name == "social" and social end }
+    NS.GenericWindows = {
+        IsCategoryEnabled = function(name) return name == "social" and social end,
+        PrepareInteractionWindows = function(owner)
+            assert(owner == "blizzardWindows")
+            interactions = interactions + 1
+        end,
+    }
     NS.CombatGate = { RunOrDefer = function() return false, "combat" end }
     NS.IsCombatLocked = function() return true end
     NS.SocialUISkin = { Apply = function(owner)
@@ -164,6 +170,7 @@ do
     NS.DB.skins.blizzardWindows, NS.DB.enabled = nil, false
     Adapters.ApplyAll()
     assert(calls == 2, "combat startup ignored the Social UI skin toggles")
+    assert(interactions == 3, "combat startup missed the NPC/mail catalog or armed it with the skin disabled")
     NS.DB.skins.worldMap, NS.DB.enabled, NS.SocialUISkin = nil, true, nil
     NS.GenericWindows, NS.CombatGate, NS.IsCombatLocked = windows, gate, isLocked
 end
@@ -284,13 +291,14 @@ local life = {
     Checkmarks = { Apply = Stage("checkmarks") },
     Typography = { ApplyConfigured = Stage("typography") },
     Adapters = { ApplyAll = Stage("adapters") },
+    ItemTooltipCard = { Refresh = Stage("tooltips") },
     PublicAPI = { OnDatabaseReady = function() end, OnPlayerLogin = Stage("api") },
 }
 reported = {}
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Lifecycle.lua"))("MSUF_Suite_Skin", life)
 local lifecycle = frames[#frames]
 lifecycle.script(lifecycle, "PLAYER_LOGIN")
-assert(table.concat(stages, ",") == "look,checkmarks,typography,adapters,api"
+assert(table.concat(stages, ",") == "look,checkmarks,typography,adapters,tooltips,api"
     and Reported("gold text failed"), "a failing login stage stopped the stages after it")
 
 -- Normal skin login warms the hidden LoD panel through the native callback,
@@ -333,6 +341,7 @@ do
             BlizzardYellow = { Apply = Noop },
             Checkmarks = { Apply = Noop, TrackControlTree = Noop },
             Typography = { ApplyConfigured = Noop },
+            ItemTooltipCard = { Refresh = Noop },
             Registry = { RefreshAll = Noop, NotifyListeners = Noop },
             WindowControls = NS.WindowControls,
             PlayerSpellsSkin = {
@@ -450,7 +459,7 @@ debugprofilestop = function() return 0 end
 local locked = false
 InCombatLockdown = function() return locked end
 local gate = { Safety = NS.Safety, IsCombatLocked = function() return locked end }
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/CombatGate.lua"))("MSUF_Suite_Skin", gate)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/CombatGate.lua"))("MSUF_Suite_Skin", gate)
 local gateFrame = frames[#frames]
 local ran = {}
 locked = true
@@ -544,7 +553,7 @@ local engine = {
 }
 -- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
 dofile(root .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(root)
-for _, file in ipairs({ "Core/Defaults.lua", "Core/DefaultsLooks.lua", "Core/Database.lua", "Core/DatabaseProfiles.lua", "Core/Safety.lua",
+for _, file in ipairs({ "Core/Defaults.lua", "Core/DefaultsLooks.lua", "Core/Database.lua", "Core/DatabaseProfiles.lua", "../MSUF_Suite/Appearance/Safety.lua",
     "Core/Registry.lua", "Core/Theme.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", engine)
 end

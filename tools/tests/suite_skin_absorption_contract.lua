@@ -28,7 +28,7 @@ MSUFSuite.InCombat = dofile(arg[1] .. "/tools/tests/suite_test_support.lua").InC
 -- predicate from skin Safety, rather than an incomplete bootstrap table.
 do
     local readers = {}
-    assert(loadfile(arg[1] .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", readers)
+    assert(loadfile(arg[1] .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", readers)
     MSUFSuite.Public = readers.Safety.Public
     assert(loadfile(arg[1] .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", MSUFSuite)
     assert(loadfile(arg[1] .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", MSUFSuite)

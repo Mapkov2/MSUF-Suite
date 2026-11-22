@@ -49,7 +49,7 @@ local ns = {
         end,
     },
 }
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", ns)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", ns)
 assert(loadfile(adapter))("MSUF_Suite_Skin", ns)
 local shop = ns.CatalogShopMotion
 local frame = NativeShop()

@@ -56,7 +56,7 @@ local function NextFrame()
     for _, job in ipairs(jobs) do job() end
 end
 local NS = {
-    Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
+    Safety = assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite_Skin", {}),
     IsCombatLocked = function() return locked end,
     CombatGate = { RunOrDefer = function(key, callback)
         if not locked then
@@ -134,6 +134,12 @@ function QuestFrameGreetingPanel:HookScript(script, callback)
     self.scriptHooks[script] = callback
 end
 
+local selectionEnabled = false
+NS.QuestWindow = { Activate = function() end, Deactivate = function() end }
+NS.QuestRewardSelection = {
+    Enable = function() selectionEnabled = true end,
+    Disable = function() selectionEnabled = false end,
+}
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/QuestText.lua"))("MSUF_Suite_Skin", NS)
 assert(NS.QuestText.Activate(map, "map"))
 assert(callbacks.QuestInfo_Display, "native quest display hook missing")
@@ -272,6 +278,8 @@ NS.QuestText.Deactivate(map, "map")
 -- Exercise the actual quest-window adapter path so a future root-list change
 -- cannot silently leave GossipFrame unregistered again.
 QuestFrame = quest
+quest.TitleContainer = Frame(quest)
+quest.TitleContainer.TitleText = Text(quest.TitleContainer, 0.93, 0.72, 0.10)
 QuestLogPopupDetailFrame = Frame()
 QuestFrameRewardPanel = { MaterialTopLeft = {} }
 -- The real owner registry (AdapterKit.NewOwners) over this test's NS.
@@ -284,6 +292,7 @@ NS.AdapterKit = {
     WeakSet = function() return setmetatable({}, { __mode = "k" }) end,
     CancelDeferred = function() end,
     NewOwners = kitScope.AdapterKit.NewOwners,
+    ParentIs = kitScope.AdapterKit.ParentIs,
     SurfaceSpec = kitScope.AdapterKit.SurfaceSpec,
     HidePortraitBezels = kitScope.AdapterKit.HidePortraitBezels,
 }
@@ -297,8 +306,12 @@ for _, file in ipairs({ "DeepWindows", "DeepWindowsProfessions" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", NS)
 end
 assert(NS.DeepWindows.Apply("quest-test"))
+assert(selectionEnabled, "enabling the NPC quest skin did not activate reward selection")
+assert(quest.TitleContainer.TitleText.color[1] == theme.title[1], "NPC name missed the active title color")
 assert(gossipGreeting.color[1] == 0.84, "quest adapter did not activate GossipFrame text")
 assert(NS.DeepWindows.Disable("quest-test"))
+assert(not selectionEnabled, "disabling the NPC quest skin kept reward selection active")
+assert(quest.TitleContainer.TitleText.color[2] == 0.72, "disabling the quest skin lost the NPC name color")
 assert(gossipGreeting.color[1] == 0.21, "quest adapter did not restore GossipFrame text")
 local parentQueries = 0
 local getParent = QuestInfoDescriptionText.GetParent

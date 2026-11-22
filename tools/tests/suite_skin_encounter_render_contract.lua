@@ -50,7 +50,7 @@ local NS = {
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
 NS.DB = NS.CopyValue(NS.Defaults)
-for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Core/Theme.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Registry.lua", "Core/Theme.lua",
     "Rendering/Geometry.lua", "Rendering/Surface.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
@@ -58,7 +58,7 @@ end
 NS.Checkmarks = { GetWindowAction = Noop, TrackButton = Noop, TrackDropdown = Noop,
     UntrackDropdown = Noop, UntrackOwner = Noop }
 NS.WindowActionSkin = {}
-for _, file in ipairs({ "Core/Cosmetics.lua", "Rendering/ControlSkin.lua", "Adapters/AdapterKit.lua", "Adapters/EncounterJournalPanels.lua" }) do
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Cosmetics.lua", "Rendering/ControlSkin.lua", "Adapters/AdapterKit.lua", "Adapters/EncounterJournalPanels.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local function Text()

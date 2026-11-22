@@ -94,7 +94,7 @@ local function Session(colors)
         WindowActionSkin = { Apply = function() return nil, "owned by another adapter" end },
         CombatGate = { Cancel = Noop, RunOrDefer = Noop },
     }
-    for _, file in ipairs({ "Core/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/ChatFrames.lua" }) do
+    for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/ChatFrames.lua" }) do
         assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
     end
     local chatFrame = {}

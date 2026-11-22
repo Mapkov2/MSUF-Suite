@@ -45,8 +45,8 @@ local function Flush()
         for _, callback in ipairs(current) do callback() end
     end
 end
-fixture.Load("Core/CombatGate.lua")
-fixture.Load("Core/Cosmetics.lua")
+fixture.Load("../MSUF_Suite/Appearance/CombatGate.lua")
+fixture.Load("../MSUF_Suite/Appearance/Cosmetics.lua")
 fixture.Load("Adapters/AdapterKit.lua")
 fixture.Load("Adapters/GameMenu.lua")
 NS.IsCombatLocked = function() return InCombatLockdown() or NS.Motion.combat end

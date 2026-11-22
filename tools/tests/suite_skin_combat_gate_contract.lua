@@ -27,7 +27,7 @@ local NS = {
     IsCombatLocked = function() return locked end,
     Safety = { Dispatch = function(callback, ...) return callback(...) end },
 }
-assert(loadfile(root .. "/MSUF_Suite_Skin/Core/CombatGate.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/CombatGate.lua"))("MSUF_Suite_Skin", NS)
 local Gate, gateFrame = NS.CombatGate, frames[#frames]
 local function EndCombat()
     locked = false

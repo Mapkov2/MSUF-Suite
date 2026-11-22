@@ -175,3 +175,42 @@ function Visual.Refresh(record)
     end
     if ReducedMotion() then Fade(record, record.dim and 1 or 0, true) end
 end
+
+-- Reuse the tooltip's actual edge art on an addon-owned overlay. The center
+-- belongs to the outlined window; only the eight edge pieces are installed.
+local outlineLayout
+function Visual.PaintTooltipOutline(frame, art, strata, level)
+    local tooltips = NS.SuiteCore().Tooltips
+    local r, g, b, a
+    if tooltips and tooltips.DB.enabled then
+        r, g, b, a = tooltips.TooltipChrome.GetBorder()
+    else
+        r, g, b, a = NS.Theme.GetColor("border")
+        a = NS.DB.geometry.border > 0 and a * NS.Theme.GetBorderOpacity() or 0
+    end
+    if a <= 0 then
+        if art then art:Hide() end
+        return art
+    end
+    if not art then
+        if not outlineLayout then
+            local native = NineSliceUtil and NineSliceUtil.GetLayout("TooltipDefaultLayout")
+            if not native then return end
+            outlineLayout = NS.CopyValue(native)
+            outlineLayout.Center = nil
+        end
+        art = CreateFrame("Frame", nil, UIParent, "NineSlicePanelTemplate")
+        art:EnableMouse(false)
+        art:SetAllPoints(frame)
+        NineSliceUtil.ApplyLayout(art, outlineLayout)
+    end
+    local tooltipScale = Safety.Read(GameTooltip, "GetEffectiveScale")
+    local parentScale = Safety.Read(UIParent, "GetEffectiveScale")
+    local scale = tooltipScale and parentScale and parentScale > 0 and tooltipScale / parentScale or 1
+    if art:GetScale() ~= scale then art:SetScale(scale) end
+    if art:GetFrameStrata() ~= strata then art:SetFrameStrata(strata) end
+    if art:GetFrameLevel() ~= level then art:SetFrameLevel(level) end
+    art:SetBorderColor(r, g, b, a)
+    art:Show()
+    return art
+end

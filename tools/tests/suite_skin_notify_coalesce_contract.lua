@@ -63,7 +63,7 @@ local NS = {
     },
     Surface = { Attach = function() return {} end, SetVisible = function() return true end },
 }
-for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Adapters/AdapterKit.lua",
+for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/Registry.lua", "Adapters/AdapterKit.lua",
     "Adapters/MicroMenuStates.lua", "Adapters/MicroMenu.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end

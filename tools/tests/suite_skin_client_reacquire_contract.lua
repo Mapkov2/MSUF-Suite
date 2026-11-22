@@ -6,7 +6,7 @@
 -- tracker, Announcements and Run summary paint fallback colours after being
 -- turned off and on, after Suite skinning off/on, or after a failed module
 -- restarts, until /reload.
--- Loads the real MSUF_Suite_Skin/Core/Safety.lua, PublicAPI.lua,
+-- Loads the real MSUF_Suite/Appearance/Safety.lua, PublicAPI.lua,
 -- PublicAPIMethods.lua and Finalize.lua, MSUF_Suite/Integrations/MapkoSkin.lua
 -- and MSUF_Suite_Modules/Runtime.lua (Context:Skin and Context:Release).
 local root = assert(arg[1], "Suite root required")
@@ -84,7 +84,7 @@ local NS = {
 }
 
 for _, file in ipairs({ "Safety", "CombatGate", "PublicAPIControls", "PublicAPI", "PublicAPIMethods", "Finalize" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. file .. ".lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(root .. ((file == "Safety" or file == "CombatGate") and "/MSUF_Suite/Appearance/" or "/MSUF_Suite_Skin/Core/") .. file .. ".lua"))("MSUF_Suite_Skin", NS)
 end
 NS.EnsureDatabaseReady = Noop
 MapkoSkin = NS

@@ -59,6 +59,12 @@ local hudAccentMode = {
     registerDynamicRows = false,
 }
 
+-- Forever trainers and journals own native click, selection and pool lifecycles.
+local nativeListMode = NS.Client.isForever and {
+    role = "shell", maxDepth = 0, registerDynamicRows = false, motion = false,
+    childSurfaces = false, nativeListChrome = true,
+} or nil
+
 local entries = {
     -- Core character, inventory, NPC, and quest windows.
     {
@@ -170,169 +176,11 @@ local entries = {
         skipGeneric = true,
     },
     {
-        id = "core-tooltips",
-        category = "utility",
-        addon = "Blizzard_GameTooltip",
-        frames = {
-            "GameTooltip", "EmbeddedItemTooltip",
-            "GameNoHeaderTooltip", "GameSmallHeaderTooltip",
-            "ShoppingTooltip1", "ShoppingTooltip2",
-        },
-        mode = "tooltip",
-    },
-    {
         id = "item-reference-tooltips",
         category = "utility",
         addon = "Blizzard_UIPanels_Game",
-        frames = { "ItemRefTooltip", "ItemRefShoppingTooltip1", "ItemRefShoppingTooltip2" },
-        mode = "tooltip",
-    },
-    {
-        id = "battle-pet-tooltips",
-        category = "utility",
-        addon = "Blizzard_FrameXML",
-        frames = { "BattlePetTooltip", "FloatingBattlePetTooltip", "FloatingPetBattleAbilityTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "pet-battle-ui-tooltips",
-        category = "utility",
-        addon = "Blizzard_PetBattleUI",
-        frames = { "PetBattlePrimaryAbilityTooltip", "PetBattlePrimaryUnitTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "garrison-tooltips",
-        category = "utility",
-        addon = "Blizzard_GarrisonBase",
-        frames = {
-            "FloatingGarrisonFollowerAbilityTooltip",
-            "FloatingGarrisonFollowerTooltip",
-            "FloatingGarrisonMissionTooltip",
-            "FloatingGarrisonShipyardFollowerTooltip",
-            "GarrisonFollowerAbilityTooltip",
-            "GarrisonFollowerAbilityWithoutCountersTooltip",
-            "GarrisonFollowerMissionAbilityWithoutCountersTooltip",
-            "GarrisonFollowerTooltip",
-            "GarrisonShipyardFollowerTooltip",
-        },
-        mode = "tooltip",
-    },
-    {
-        id = "catalog-shop-tooltip",
-        category = "utility",
-        addon = "Blizzard_CatalogShop",
-        frames = { "CatalogShopTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "customization-tooltip",
-        category = "utility",
-        addon = "Blizzard_CustomizationUI",
-        frames = { "CustomizationNoHeaderTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "settings-tooltip",
-        category = "utility",
-        addon = "Blizzard_Settings_Shared",
-        frames = { "SettingsTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "collection-tooltips",
-        category = "utility",
-        addon = "Blizzard_Collections",
-        frames = { "PetJournalPrimaryAbilityTooltip", "PetJournalSecondaryAbilityTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "help-tooltips",
-        category = "utility",
-        addon = "Blizzard_HelpFrame",
-        frames = { "BrowserSettingsTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "help-plate-tooltip",
-        category = "utility",
-        addon = "Blizzard_HelpPlate",
-        frames = { "HelpPlateTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "quick-keybind-tooltip",
-        category = "utility",
-        addon = "Blizzard_QuickKeybind",
-        frames = { "QuickKeybindTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "contribution-tooltip",
-        category = "utility",
-        addon = "Blizzard_Contribution",
-        frames = { "ContributionBuffTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "encounter-journal-tooltip",
-        category = "utility",
-        addon = "Blizzard_EncounterJournal",
-        frames = { "EncounterJournalTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "garrison-extra-tooltips",
-        category = "utility",
-        addon = "Blizzard_GarrisonTemplates",
-        frames = {
-            "GarrisonMissionMechanicTooltip", "GarrisonMissionMechanicFollowerCounterTooltip",
-        },
-        mode = "tooltip",
-    },
-    {
-        id = "garrison-ui-extra-tooltips",
-        category = "utility",
-        addon = "Blizzard_GarrisonUI",
-        frames = {
-            "GarrisonBonusAreaTooltip", "GarrisonMissionListTooltipThreatsFrame",
-        },
-        mode = "tooltip",
-    },
-    {
-        id = "housing-finder-tooltip",
-        category = "utility",
-        addon = "Blizzard_HousingHouseFinder",
-        frames = { "HouseFinderHighlightedPlotTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "pvp-tooltips",
-        category = "utility",
-        addon = "Blizzard_PVPUI",
-        frames = { "ConquestTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "party-member-tooltip",
-        category = "utility",
-        addon = "Blizzard_UnitFrame",
-        frames = { "PartyMemberBuffTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "perks-program-tooltip",
-        category = "utility",
-        addon = "Blizzard_PerksProgram",
-        frames = { "PerksProgramTooltip" },
-        mode = "tooltip",
-    },
-    {
-        id = "runeforge-result-tooltip",
-        category = "utility",
-        addon = "Blizzard_RuneforgeUI",
-        frames = { "RuneforgeFrameResultTooltip" },
-        mode = "tooltip",
+        frames = { "ItemRefTooltip" },
+        mode = { rootSurface = false },
     },
 
     -- Mail and social windows.
@@ -544,6 +392,7 @@ local entries = {
         category = "journal",
         addon = "Blizzard_Collections",
         frames = { "CollectionsJournal" },
+        mode = nativeListMode,
     },
     {
         id = "encounter-journal",
@@ -734,6 +583,7 @@ local entries = {
         category = "npc",
         addon = "Blizzard_TrainerUI",
         frames = { "ClassTrainerFrame" },
+        mode = nativeListMode,
     },
     {
         id = "transmog",

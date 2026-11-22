@@ -13,7 +13,7 @@ local abs = math.abs
 local Noop = function() end
 local Ghost = {
     Take = Noop, Capture = Noop, Released = Noop, Layout = Noop, Stop = Noop,
-    Release = Noop, AfterLayout = Noop, Hidden = Noop, Initialized = Noop,
+    Release = Noop, AfterLayout = Noop, Hidden = Noop, Initialized = Noop, DiscardCopies = Noop,
 }
 function AddonListMotion.SetGhostProvider(provider) Ghost = provider end
 
@@ -368,7 +368,11 @@ function AddonListMotion.Attach(root, owner)
         or not Safety.HasMethod(scrollBox, "ForEachFrame") then return false end
     local state = AddonListMotion.scrollStates[scrollBox] or CreateState(root, scrollBox)
     if state.driven then
-        state.driven, state.generic = false, false
+        -- Generic copies use dynamic regions and per-row clips. The AddOns
+        -- adapter needs fixed region slots and a shared clip.
+        StopState(state)
+        Ghost.DiscardCopies(state)
+        state.driven, state.generic, state.model, state.contextRoot = false, false, nil, nil
         if state.registered then scrollBox:RegisterCallback(ScrollBoxListMixin.Event.OnLayout, OnLayout, state) end
     end
     state.owners[owner], state.active = true, true

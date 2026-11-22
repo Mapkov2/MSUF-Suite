@@ -68,7 +68,7 @@ local function Load(file)
     end
     assert(loadfile(path))("MSUF_Suite_Skin", NS)
 end
-Load("Core/Safety.lua")
+Load("../MSUF_Suite/Appearance/Safety.lua")
 Load("Rendering/ScrollMotion.lua")
 local Motion = NS.ScrollMotion
 local function Changed(key)
@@ -598,6 +598,14 @@ do
     -- The Guild roster initializes pooled rows from the scroll interpolation
     -- stack with secret member data. Neither its box nor its linked bar can
     -- adopt addon-owned native interpolation.
+    -- A second adapter requesting scrolling must never acquire the native
+    -- controllers which rebind skill or summon rows during a protected action.
+    for _, name in ipairs({ "ClassTrainerFrame", "CollectionsJournal" }) do
+        local controller, content = LFG(name, name)
+        Check(content.group and content.group.playing, name .. " bypassed native controller ownership")
+        Motion.ReleaseOwner(name)
+        Check(next(controller.callbacks.scroll) == nil, name .. " retained a scroll callback")
+    end
     local roster, rosterContent = LFG("communities", "CommunitiesFrame")
     local rosterBar = Controller(false, true)
     rosterBar.registeredScrollBox = roster

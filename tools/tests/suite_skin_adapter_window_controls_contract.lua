@@ -79,7 +79,8 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     NS.QuestText = { Activate = Noop, Deactivate = Noop }
     for _, path in ipairs({ "Core/SuiteOwnership.lua", "Adapters/Catalog.lua", "Adapters/CatalogGlass.lua", "Adapters/AdapterKit.lua",
         "Adapters/SharedChrome.lua", "Adapters/GenericWindows.lua", "Adapters/GenericWindowsNodes.lua",
-        "Adapters/GenericWindowsFrames.lua", "Adapters/GenericWindowsCatalog.lua",
+        "Adapters/GenericWindowsFrames.lua", "Adapters/CatalogShopMotion.lua", "Adapters/FlightMapChrome.lua",
+        "Adapters/GenericWindowsCatalog.lua",
         "Rendering/WindowControls.lua", "Adapters/SocialUI.lua", "Adapters/MajorWindows.lua",
         "Adapters/MajorWindowsItems.lua", "Adapters/Blizzard.lua" }) do Load(path) end
     local W = NS.WindowControls

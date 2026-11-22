@@ -378,4 +378,21 @@ Check(IO.ImportProfile(addonText, "Addon skin import"), "addon skin profile impo
 local addonImported = Database.GetProfile("Addon skin import").addonSkins
 Check(addonImported.enabled == true and addonImported.questie == false and addonImported.bugSack == true,
     "addon skin choices were lost in export/import")
+local tooltipProfile = Profile(0.4)
+tooltipProfile.theme.itemTooltipStyle = "card"
+tooltipProfile.theme.tooltipLayout = { preset = "dense", spell = true, icon = false, x = 21, headerColor = { .2, .3, .5, 1 },
+    itemStyle = "custom", spellStyle = "suite", unitStyle = "custom",
+    borderMode = "custom", borderWidth = 3, borderColor = { .2, .4, .6, .8 } }
+Check(Database.SetProfile("Tooltip layout", tooltipProfile), "tooltip layout profile creation failed")
+local layoutText = assert(IO.ExportProfile("Tooltip layout"))
+Check(IO.ImportProfile(layoutText, "Tooltip layout import"), "tooltip layout import failed")
+local layoutTheme = Database.GetProfile("Tooltip layout import").theme
+Check(layoutTheme.itemTooltipStyle == "card" and layoutTheme.tooltipLayout.preset == "dense"
+    and layoutTheme.tooltipLayout.spell == true and layoutTheme.tooltipLayout.icon == false
+    and layoutTheme.tooltipLayout.x == 21 and layoutTheme.tooltipLayout.headerColor[3] == .5,
+    "tooltip layout settings did not survive export and import")
+local layout = layoutTheme.tooltipLayout
+Check(layout.itemStyle == "custom" and layout.spellStyle == "suite" and layout.unitStyle == "custom"
+    and layout.borderMode == "custom" and layout.borderWidth == 3 and layout.borderColor[4] == .8,
+    "tooltip type choices or custom frame were lost in export and import")
 print("Suite skin profile import: " .. checks .. " checks passed")

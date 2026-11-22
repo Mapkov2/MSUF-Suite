@@ -15,7 +15,7 @@ local function Frame(kind, parent)
     function frame:SetWidth(width) self.width = width end
     function frame:SetHeight(height) self.height = height end
     function frame:GetWidth() return self.width end
-    function frame:GetHeight() return self.height end
+    function frame:GetHeight() return self.allPoints and self.allPoints:GetHeight() or self.height end
     function frame:SetSize(width, height) self.width, self.height = width, height end
     function frame:SetPoint(point, relative, relativePoint, x, y)
         if type(relative) == "number" then x, y, relative = relative, relativePoint, self.parent end
@@ -30,7 +30,8 @@ local function Frame(kind, parent)
     function frame:SetShown(shown) if shown then self:Show() else self:Hide() end end
     function frame:GetLeft() return 0 end
     function frame:GetTop() return 0 end
-    function frame:SetAllPoints() end
+    function frame:SetAllPoints(relative) self.allPoints = relative end
+    function frame:SetScale(scale) self.scale = scale end
     function frame:EnableMouse() end
     function frame:RegisterForClicks(...) self.clicks = { ... } end
     function frame:LockHighlight() self.highlightLocked = true end
@@ -38,6 +39,7 @@ local function Frame(kind, parent)
     function frame:CreateTexture()
         local texture = fixture.Texture()
         function texture:SetAllPoints() end
+        function texture:SetTexture(path) self.texture = path end
         function texture:SetColorTexture(...) self.color = { ... } end
         function texture:SetGradient(direction, from, to) self.gradient = { direction, from, to } end
         function texture:SetShown(shown) if shown then self:Show() else self:Hide() end end
@@ -70,7 +72,7 @@ ScrollUtil = { InitScrollBoxListWithScrollBar = function(list, _, view) list.ini
 CreateDataProvider = function(data) return data end
 local tracked
 skin.ScrollMotion = { Track = function(_, _, preview) tracked = preview end }
-for _, path in ipairs({ "Core/Cosmetics.lua", "Rendering/IconSkin.lua" }) do
+for _, path in ipairs({ "../MSUF_Suite/Appearance/Cosmetics.lua", "Rendering/IconSkin.lua" }) do
     assert(loadfile(install .. "/MSUF_Suite_Skin/" .. path))("MSUF_Suite_Skin", skin)
 end
 skin.Typography = { GetSelection = function() return "font" end,
@@ -85,6 +87,7 @@ PixelUtil = { GetPixelToUIUnitFactor = function() return 1 end }
 assert(loadfile(install .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", core)
 local P = { Suite = core, S = core.Suite, Tr = function(value) return value end, Combat = function() return false end,
     HM = { GetSectionWidth = function() return 340 end, SkipHistoryCheckpoint = function() end,
+        GetControlLabel = function(button) return button.fs end,
         AllowCombatClick = function() end, SetCommandAction = function() end, SetFixedPreviewHeight = function() end },
     M = { TrackRefresh = function() end }, W = {}, T = { colors = { text = { 1, 1, 1, 1 } } } }
 function P.T.Font(parent, _, text)
@@ -154,6 +157,22 @@ end
 OpensSetting(preview.hoverSample, "shape", "theme.hoverStyle")
 OpensSetting(preview.panel, "material", "theme.materialDepth")
 OpensSetting(preview.shell, "shape", "geometry.family")
+assert(preview.cornerSamples, "the corner samples are missing")
+local windowCorners, buttonCorners = unpack(preview.cornerSamples)
+OpensSetting(windowCorners.button, "shape", "geometry.family")
+OpensSetting(buttonCorners.button, "shape", "geometry.controlShape")
+local previousFamily, previousButton, previousRadius = skin.DB.geometry.family, skin.DB.geometry.controlShape, skin.DB.geometry.radius
+assert(skin.Theme.SetGeometry("family", "round"))
+assert(skin.Theme.SetGeometry("controlShape", "pill"))
+assert(skin.Theme.SetGeometry("radius", 8))
+assert(windowCorners.edge.texture:match("round_r8_edge1%.png$"), "the window sample did not follow the window geometry")
+assert(buttonCorners.edge.texture:match("pill_h24_edge1%.png$"), "the button sample did not follow the button shape")
+assert(windowCorners.edge:IsShown() and select(4, windowCorners.edge:GetVertexColor()) >= .75, "the corner outline is too faint")
+assert(skin.Theme.SetGeometry("controlShape", "squircle"))
+assert(buttonCorners.fill.texture:match("squircle_r8_fill%.png$"), "the button sample did not pick up the radius after leaving Pill")
+assert(skin.Theme.SetGeometry("family", previousFamily))
+assert(skin.Theme.SetGeometry("controlShape", previousButton))
+assert(skin.Theme.SetGeometry("radius", previousRadius))
 OpensSetting(preview.nav, "shape", "theme.smoothScrolling")
 OpensSetting(preview.card, "shape", "theme.readableValues")
 OpensSetting(preview.item, "icons", "theme.iconBorderStyle")
@@ -200,11 +219,20 @@ local function CheckLayout(width)
     local function Bottom(frame) return Top(frame) + frame:GetHeight() end
     local stage = preview.shell
     local footer, chips = preview.footer, preview.chips
+    local windowSample, buttonSample = windowCorners.button, buttonCorners.button
     local tabDividerBottom = 8 + 24 + 26 + 3 + 1
     assert(Top(stage) > tabDividerBottom, "preview overlaps the tabs")
     if width >= 712 then
         assert(stage.points.TOPLEFT.x + stage:GetWidth() < footer.points.TOPLEFT.x)
-    else assert(Bottom(stage) < Top(footer)) end
+        assert(buttonSample.points.TOPLEFT.x + buttonSample:GetWidth() < footer.points.TOPLEFT.x)
+    else assert(Bottom(buttonSample) < Top(footer)) end
+    assert(Bottom(stage) < Top(windowSample) and Bottom(buttonSample) < preview.section:GetHeight())
+    if width - 32 < 320 then
+        assert(Bottom(windowSample) < Top(buttonSample), "corner samples overlap at narrow widths")
+    else
+        assert(Top(windowSample) == Top(buttonSample)
+            and windowSample.points.TOPLEFT.x + windowSample:GetWidth() < buttonSample.points.TOPLEFT.x)
+    end
     assert(Top(chips) == Bottom(footer) + 6)
     assert(Bottom(chips) < preview.section:GetHeight(), "layer bar exceeds its section")
     assert(stage.points.TOPLEFT.x + stage:GetWidth() <= width, "the sample window exceeds its section")
@@ -305,4 +333,4 @@ preview.section:Hide()
 assert(not skin.Registry.listeners[preview], "a hidden preview retained its settings listener")
 preview.section:Show()
 assert(skin.Registry.listeners[preview], "the preview stopped listening after reopening")
-print("Forever skin preview: live materials, exact settings, scroll, dimming, flat symbols and action radius passed")
+print("Forever skin preview: corner samples, live materials, exact settings, scroll, dimming, flat symbols and action radius passed")

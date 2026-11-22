@@ -84,6 +84,22 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     Load("Rendering/WindowFocus.lua")
     local F, W = NS.WindowFocus, NS.WindowControls
     local driver = H.frames[#H.frames]
+    local core = { Suite = {}, Finite = function(value) return type(value) == "number" end }
+    function core.Suite.CreateFrame()
+        local art = Frame()
+        function art:SetAllPoints(other) self.anchor = other end
+        local create = art.CreateTexture
+        function art:CreateTexture()
+            local texture = create(self)
+            function texture:SetWidth(width) self.width = width end
+            return texture
+        end
+        return art
+    end
+    PixelUtil = { GetPixelToUIUnitFactor = function() return 1 end }
+    assert(loadfile(root .. "/MSUF_Suite/Core/WindowCaption.lua"))("MSUF_Suite", core)
+    NS.SuiteCore = function() return core end
+    NS.Theme.GetColor = function() return .1, .2, .3, 1 end
     local foci, held = {}, false
     GetMouseFoci = function() return foci end
     IsMouseButtonDown = function() return held end
@@ -121,6 +137,16 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local c = Native("PlayerSpellsFrame", 1100, 200, 500, 500)
     Check(not W.Attach(a, "windows") and F.records[a], "move-disabled window was not registered for focus")
     Check(not driver.events or not driver.events.GLOBAL_MOUSE_DOWN, "single window installed a global input listener")
+    Check(F.records[a].outline == nil, "disabled outlines allocated artwork")
+    NS.DB.theme.windowOutline = 1
+    listeners[F](F, "appearance", "windowOutline")
+    local outline = F.records[a].outline
+    Check(outline and outline:IsShown() and outline:GetParent() == UIParent and outline.anchor == a and not outline.mouseEnabled,
+        "a standalone native window did not get a passive outline")
+    NS.DB.theme.windowOutline = 2
+    listeners[F](F, "appearance", "windowOutline")
+    Check(F.records[a].outline == outline and outline[1].height == 2 and outline[4].width == 2,
+        "changing thickness did not resize the existing outline")
     W.Attach(b, "windows")
     Check(F.active.frame == b and Dimmed(a) and not Dimmed(b), "newly opened window did not become active")
     Check(driver.events.GLOBAL_MOUSE_DOWN and not driver.scripts.OnUpdate, "focus needs an idle updater or misses input")
@@ -132,6 +158,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     function shell:GetBottom() return self.bottom end
     function shell:IsVisible() return self.shown and a:IsVisible() end
     F.Present(a, shell)
+    Check(not outline:IsShown(), "native outline remained behind the presented Character Panel")
     Check(F.records[a].rect.width == 940 and F.records[a].rect.bottom == 80 and F.records[a].footprintCount == 1,
         "the presented Character Panel dimmed only its stock-sized native host")
     local child, nested = Frame(nil, shell, "Button"), Frame(nil, nil, "Button")
