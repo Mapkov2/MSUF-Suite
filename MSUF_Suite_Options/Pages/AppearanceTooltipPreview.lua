@@ -53,7 +53,7 @@ end
 
 local function SetScenario(preview, value)
     preview.kit:Release()
-    preview.scenario, preview.combat, preview.restricted = value, value ~= "normal", value == "restricted"
+    preview.scenario, preview.restricted = value, value == "restricted"
     Paint(preview)
 end
 
@@ -131,9 +131,6 @@ local function Sample(preview)
         rows[index] = { label, value }
     end
     preview.rows = rows
-    preview.combatNotice = T.Font(preview.stage, "GameFontHighlightSmall", "Hide main tooltip in combat", T.colors.muted)
-    preview.combatNotice:SetPoint("CENTER")
-    preview.combatNotice:Hide()
 end
 
 local function LayerTargets(preview)
@@ -605,9 +602,6 @@ Paint = function(preview)
     local sample, card, header, layers = SAMPLES[preview.selected], preview.card, preview.header, preview.layers
     local loot, rich = sample.id == "loot", IsDetailed(preview, sample)
     local matching = loot and card.MatchesLootSurface()
-    local concealed = P.TooltipPreviewCombatHidden(preview, sample)
-    preview.frame:SetShown(not concealed)
-    preview.combatNotice:SetShown(concealed)
     PaintSample(preview, sample, rich, matching)
     PaintVitals(preview, sample)
     PlaceAnchor(preview)
@@ -711,8 +705,8 @@ local function BuildPreviewControls(preview)
     for index, sample in ipairs(SAMPLES) do samples[index] = { text = Tr(sample.label), value = index } end
     preview.sampleSelector = Dropdown("Tooltips", samples,
         function() return preview.selected end, function(index) SelectSample(preview, index) end, "sample")
-    preview.stateSelector = Dropdown("Preview", Kit.Values({ "normal", "combat", "restricted" },
-        { normal = "Normal", combat = "In combat", restricted = "Combat restrictions" }),
+    preview.stateSelector = Dropdown("Preview", Kit.Values({ "normal", "restricted" },
+        { normal = "Normal", restricted = "Combat restrictions" }),
         function() return preview.scenario end, function(value) SetScenario(preview, value) end, "scenario")
 end
 

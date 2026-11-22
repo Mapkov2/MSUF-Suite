@@ -17,7 +17,7 @@ function P.SkinSearchRow(ctx, row, section, title, help)
         keywords[#keywords + 1] = value.text
     end
     ctx.searchRows[#ctx.searchRows + 1] = {
-        pageKey = row.pageKey or "suite_skin", suiteModuleId = "skin", label = row.label,
+        pageKey = row.pageKey or "suite_skin", suiteModuleId = row.suiteModuleId or "skin", label = row.label,
         kind = row.kind, section = title, keywords = keywords, help = help,
         settingKey = row.kind ~= "color" and row.settingKey or nil,
         controlId = row.kind ~= "color" and row.controlId or nil,

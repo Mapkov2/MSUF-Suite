@@ -1,6 +1,34 @@
 local root = assert(arg[1], "Suite root required")
 SUITE_OPTIONS_FIXTURE = true
-local options = dofile(root .. "/tools/tests/suite_options_menu_contract.lua").optionsNS
+local fixture = dofile(root .. "/tools/tests/suite_options_menu_contract.lua")
+local options, suite = fixture.optionsNS, fixture.S
+
+local ctx = { key = "suite_tooltips", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {},
+    entry = { sections = {} } }
+fixture.SetCurrent(ctx)
+fixture.M.pages.suite_tooltips.build(ctx)
+for _, refresh in ipairs(ctx.refreshers) do refresh() end
+local key = "msufsuite.tooltipIDs.idModifier"
+local setting = assert(options.ResolveTooltipMenuTarget("suite_tooltips", { settingKey = key }))
+local control
+for _, widget in ipairs(ctx.widgets) do
+    if widget.meta and widget.meta.controlId == setting.controlId then control = widget end
+end
+assert(control and control.meta.sectionId == options.TooltipBasicsSection, "the shared detail key is missing from Basics")
+assert(not suite.Config("tooltipIDs").enabled and control.enabled ~= false, "turning IDs off also locked the shared key")
+control.set(2)
+assert(suite.Config("tooltipIDs").idModifier == 2, "changing the detail key lost the saved setting identity")
+assert(suite.Availability("tooltipIDs") and suite.Availability("itemCounts"), "the client's tooltip details are unavailable")
+assert(options.catalog.tooltipVisibility.rules.inCombat.hidden and options.catalog.tooltipVisibility.rules.inInstances.hidden,
+    "the Tooltip page offered a separate combat or instance switch")
+local search = { searchRows = {} }
+options.BuildTooltipSearchRows(search)
+local result
+for _, row in ipairs(search.searchRows) do
+    if row.settingKey == key then result = row end
+end
+assert(result and result.suiteModuleId == "tooltipIDs" and result.sectionId == options.TooltipBasicsSection,
+    "the cold search sent the detail key to Skinning")
 
 local function Region(visible)
     return { visible = visible, shown = true, IsVisible = function(self) return self.visible end,

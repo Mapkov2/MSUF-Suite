@@ -8159,6 +8159,134 @@
       "evidence": "The Suite catalog assigns tooltipVisibility to MSUF_Suite_Tooltips. Its existing settings and menu route through QualityOfLifeOwners.lua are retained.",
       "reason": "The tooltip feature loads from the standalone Tooltips addon.",
       "date": "2026-11-22"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:tooltipVisibility.inCombat\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua retains the stored flag as hidden. TooltipVisibility.lua applies content-type rules in all contexts. suite_tooltip_visibility_contract covers old profiles and all four states.",
+      "reason": "Use one tooltip visibility policy for any combat state or location.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:tooltipVisibility.inInstances\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua retains the stored flag as hidden. TooltipVisibility.lua applies content-type rules in all contexts. suite_tooltip_visibility_contract covers old profiles and all four states.",
+      "reason": "Use one tooltip visibility policy for any combat state or location.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:tooltipVisibility\",\"description\",\"Optionally hide the main tooltip in combat, instances or for selected content types.\"]",
+      "basis": "owner",
+      "evidence": "The Tooltip visibility catalog now describes the same rules everywhere.",
+      "reason": "Describe the shared rules.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:itemCounts\",\"description\",\"Show your owned item count, including bank and Warband bank, on item tooltips.\"]",
+      "basis": "owner",
+      "evidence": "ItemCounts.lua displays bags and bank on Forever and includes the additional bank types on Retail.",
+      "reason": "Use one description for both supported clients.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:itemCounts.byLocation\",\"Separate bags, bank and Warband bank\"]",
+      "basis": "owner",
+      "evidence": "The existing byLocation setting now uses Separate item counts by location; both client paths are exercised by suite_qol_additions_contract.",
+      "reason": "Use a label that fits both supported clients.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:tooltipVisibility.inCombat\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua retains the stored flag as hidden. TooltipVisibility.lua applies content-type rules in all contexts. suite_tooltip_visibility_contract covers old profiles and all four states.",
+      "reason": "Use one tooltip visibility policy for any combat state or location.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:tooltipVisibility.inInstances\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua retains the stored flag as hidden. TooltipVisibility.lua applies content-type rules in all contexts. suite_tooltip_visibility_contract covers old profiles and all four states.",
+      "reason": "Use one tooltip visibility policy for any combat state or location.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:tooltipVisibility\",\"description\",\"Optionally hide the main tooltip in combat, instances or for selected content types.\"]",
+      "basis": "owner",
+      "evidence": "The Tooltip visibility catalog now describes the same rules everywhere.",
+      "reason": "Describe the shared rules.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:itemCounts\",\"description\",\"Show your owned item count, including bank and Warband bank, on item tooltips.\"]",
+      "basis": "owner",
+      "evidence": "ItemCounts.lua displays bags and bank on Forever and includes the additional bank types on Retail.",
+      "reason": "Use one description for both supported clients.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:itemCounts.byLocation\",\"Separate bags, bank and Warband bank\"]",
+      "basis": "owner",
+      "evidence": "The existing byLocation setting now uses Separate item counts by location; both client paths are exercised by suite_qol_additions_contract.",
+      "reason": "Use a label that fits both supported clients.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:tooltipIDs.showAccountCurrency\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "The key remains stored. TooltipIDs.lua omits the account currency listener on Forever; suite_tooltip_enchant_contract checks this alongside the native Currency ID.",
+      "reason": "Only show the account currency preference where it applies.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "locale",
+      "item": "Show your owned item count, including bank and Warband bank, on item tooltips.",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua and QualityOfLifeCatalog.lua use the updated localized strings; the modules keep their existing IDs.",
+      "reason": "Update tooltip wording for consistent rules and both supported clients.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "locale",
+      "item": "Optionally hide the main tooltip in combat, instances or for selected content types.",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua and QualityOfLifeCatalog.lua use the updated localized strings; the modules keep their existing IDs.",
+      "reason": "Update tooltip wording for consistent rules and both supported clients.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "locale",
+      "item": "Separate bags, bank and Warband bank",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua and QualityOfLifeCatalog.lua use the updated localized strings; the modules keep their existing IDs.",
+      "reason": "Update tooltip wording for consistent rules and both supported clients.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "locale",
+      "item": "Item counts in tooltips (Retail)",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua and QualityOfLifeCatalog.lua use the updated localized strings; the modules keep their existing IDs.",
+      "reason": "Update tooltip wording for consistent rules and both supported clients.",
+      "date": "2026-11-22"
+    },
+    {
+      "category": "locale",
+      "item": "Tooltip IDs (Retail)",
+      "basis": "owner",
+      "evidence": "QualityOfLife.lua and QualityOfLifeCatalog.lua use the updated localized strings; the modules keep their existing IDs.",
+      "reason": "Update tooltip wording for consistent rules and both supported clients.",
+      "date": "2026-11-22"
     }
   ]
 }

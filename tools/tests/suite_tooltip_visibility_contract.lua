@@ -84,34 +84,20 @@ module:Enable()
 for _ = 1, 20 do tooltip:Show() end
 assert(buildHooks == 0 and ownerReads == 0, "scale-only tooltip registered visibility work")
 tooltip:NativeHide()
-module.config.inCombat = true
+-- A saved profile can still carry these legacy settings. Rebuilding in any
+-- combination of world/instance and combat/normal uses the same rules.
+module.config.inCombat, module.config.inInstances = true, true
 module:Refresh()
-assert(buildHooks == 1, "enabling the first visibility rule did not register rebuild handling")
-assert(context.events.PLAYER_REGEN_DISABLED and context.events.PLAYER_REGEN_ENABLED
-    and not context.events.PLAYER_ENTERING_WORLD, "combat-only tooltip listener was not selective")
-tooltip:Show()
-assert(tooltip.alpha == 1, "tooltip was concealed outside combat")
--- Combat starts while the tooltip is shown; the lockdown flag is still off.
-context.events.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
-assert(tooltip.shown and tooltip.alpha == 0, "visible tooltip survived combat entry")
-combat = true
-tooltip:Show()
-assert(tooltip.alpha == 0, "a rebuild in combat showed the tooltip")
-combat = false
-context.events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
-assert(tooltip.alpha == 1, "the tooltip stayed concealed after combat")
-tooltip:NativeHide()
-module.config.inCombat, module.config.inInstances = false, true
-module:Refresh()
-assert(not context.events.PLAYER_REGEN_DISABLED and context.events.PLAYER_ENTERING_WORLD,
-    "disabled combat listener remained registered")
-instance = true
-tooltip:Show()
-assert(tooltip.alpha == 0, "instance tooltip rule did not apply")
-tooltip:NativeHide()
-assert(tooltip.alpha == 1, "a concealed tooltip hid without its alpha back")
-instance = false
-module.config.inInstances = false
+assert(buildHooks == 0 and not next(context.events), "old profile installed combat or zone visibility work")
+for _, inCombat in ipairs({ false, true }) do
+    for _, inInstance in ipairs({ false, true }) do
+        combat, instance = inCombat, inInstance
+        tooltip.tooltipType = Enum.TooltipDataType.Item
+        tooltip:Show()
+        assert(tooltip.alpha == 1, "old visibility setting concealed a tooltip")
+        tooltip:NativeHide()
+    end
+end
 module.config.hideItems = true
 module:Refresh()
 tooltip.tooltipType = Enum.TooltipDataType.Spell
@@ -137,8 +123,7 @@ assert(tooltip.alpha == 0, "unit tooltip was not concealed")
 tooltip:NativeHide()
 -- DA-2: a concealed tooltip that the client reuses for plain text without a
 -- Hide in between (SetOwner/ClearLines run OnTooltipCleared) must come back; a
--- rebuild from Blizzard data is judged again by the post-call; state rules keep
--- the tooltip concealed.
+-- rebuild from Blizzard data is judged again by the post-call.
 module.config.hideItems, module.config.hideSpells, module.config.hideUnits = true, false, false
 module:Refresh()
 tooltip.tooltipType = Enum.TooltipDataType.Item
@@ -157,20 +142,20 @@ assert(tooltip.alpha == 1, "a concealed tooltip stayed invisible when reused for
 tooltip:Clear()
 assert(tooltip.alpha == 1, "clearing an unconcealed tooltip changed its alpha")
 tooltip:NativeHide()
-module.config.hideItems, module.config.inCombat = false, true
-module:Refresh()
-combat = true
-tooltip:Show()
-assert(tooltip.alpha == 0, "combat tooltip was not concealed before the reuse")
-tooltip:Clear()
-tooltip:ShowPlain()
-assert(tooltip.alpha == 0, "clearing a tooltip released the combat rule")
-combat = false
-context.events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
-assert(tooltip.alpha == 1, "the tooltip stayed concealed after combat")
-tooltip:NativeHide()
+for _, inCombat in ipairs({ false, true }) do
+    for _, inInstance in ipairs({ false, true }) do
+        combat, instance = inCombat, inInstance
+        tooltip.tooltipType = Enum.TooltipDataType.Item
+        tooltip:Show()
+        assert(tooltip.alpha == 0, "filtered item visibility differed by combat or location")
+        tooltip:Clear()
+        tooltip.tooltipType = Enum.TooltipDataType.Spell
+        tooltip:Show()
+        assert(tooltip.alpha == 1, "unfiltered spell visibility differed by combat or location")
+        tooltip:NativeHide()
+    end
+end
 module.config.hideSpells, module.config.hideUnits = true, true
-module.config.inCombat = false
 module:Refresh()
 -- The shared GameTooltip also renders MSUF unit/group frame tooltips.
 -- Their own Always/OOC/Modifier/Never setting must win over every QoL rule.
@@ -179,8 +164,6 @@ module.config.inCombat, module.config.inInstances = true, true
 combat, instance = true, true
 module:Refresh()
 tooltip:Show()
-context.events.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
-context.events.PLAYER_ENTERING_WORLD(module, "PLAYER_ENTERING_WORLD")
 assert(tooltip.alpha == 1, "QoL overrode MSUF unitframe tooltip visibility")
 tooltip._msufUnitTooltipOwner = nil
 tooltip:Show()
@@ -210,7 +193,7 @@ assert(tooltip.alpha == 1 and next(context.events) == nil, "last rule left a too
 local reads = ownerReads
 for _ = 1, 20 do tooltip:Show() end
 assert(ownerReads == reads and tooltip.alpha == 1, "registered callback repeated inactive visibility work")
-module.config.inInstances = true
+module.config.hideSpells = true
 module:Refresh()
 assert(buildHooks == 1 and tooltip.alpha == 0, "reenabling a rule lost or duplicated its rebuild handling")
 module.active = false

@@ -102,6 +102,9 @@ function P.ResolveTooltipMenuTarget(page, target)
     if page ~= PAGE and page ~= "suite_skin" and page ~= "suite_qualityOfLife" and page ~= "opt_misc" then return end
     local settingKey = target.settingKey or ""
     local id, rule = settingKey:match("^msufsuite%.([^.]+)%.(.+)$")
+    if id == "tooltipIDs" and rule == "idModifier" then
+        return P.Meta(PAGE, id, rule, "setting", basicsSection)
+    end
     if id and P.TooltipLayoutOwnsRule(id, rule) then
         return P.Meta(PAGE, id, rule, "setting", layoutSection)
     end
@@ -140,12 +143,29 @@ local function BuildTypeStyles(ctx, builder, skin)
     })
 end
 
+local function DetailKeyRow()
+    local id, rule = "tooltipIDs", P.catalog.tooltipIDs.rules.idModifier
+    local row = P.RuleRow(PAGE, id, rule, nil, basicsSection)
+    row.pageKey, row.searchLabel, row.tooltip = PAGE, rule.label, Tr(rule.tooltip)
+    row.suiteModuleId, row.suiteAlways = id, true
+    row.unavailable = function()
+        local enabled, reason = P.RuleEnabled(id, rule, nil, true, true)
+        if not enabled then return reason end
+    end
+    return row
+end
+
 local function BuildBasics(ctx, builder, skin)
+    local card = skin and skin.ItemTooltipCard
     P.ModuleCard(ctx, builder, PAGE, "tooltipAppearance", nil, {
-        reset = skin.ItemTooltipCard.Reset,
+        reset = function()
+            if card and not card.Reset() then return false end
+            return P.S.ResetKeys("tooltipIDs", { idModifier = P.catalog.tooltipIDs.rules.idModifier.default })
+        end,
         content = function(body)
             local width = math.max(240, (P.HM.GetSectionWidth(body) or builder.width or 720) - 32)
-            local y, entries = Kit.SettingsGrid(ctx, body, { PresetRow(skin) }, -14, width)
+            local rows = card and { PresetRow(skin), DetailKeyRow() } or { DetailKeyRow() }
+            local y, entries = Kit.SettingsGrid(ctx, body, rows, -14, width)
             P.MenuWorkspace.Prepare(body, entries)
             return y
         end,
@@ -461,6 +481,7 @@ end
 function P.BuildTooltipSearchRows(ctx, builder, skin)
     if skin or P.Suite.Client.AddOnEnabled("MSUF_Suite_Tooltips") then
         P.SkinSearchRow(ctx, PresetRow(skin), basicsSection, Tr("Basics"))
+        P.SkinSearchRow(ctx, DetailKeyRow(), basicsSection, Tr("Basics"))
         BuildTypeStyles(ctx, builder, skin)
         P.BuildSkinTooltipBuilder(ctx, builder, skin)
         BuildTooltipLayout(ctx, builder, skin)
@@ -509,12 +530,6 @@ function P.TooltipDetailsEnabled()
     return P.Available("tooltipDetails") and P.Get("tooltipDetails", "enabled")
 end
 
-function P.TooltipPreviewCombatHidden(preview, sample)
-    return preview.combat and sample.id ~= "loot" and not (sample.id == "unit" and P.TooltipPreviewUsesPanel())
-        and P.Available("tooltipVisibility") and P.Get("tooltipVisibility", "enabled")
-        and P.Get("tooltipVisibility", "inCombat") == true or false
-end
-
 function P.PaintTooltipPreviewBody(preview, sample)
     local rows = sample.rows
     local extra = 0
@@ -557,7 +572,7 @@ local function BuildPage(ctx)
     local builder = P.W.PageBuilder(ctx)
     local skin = Appearance.Engine()
     if not skin then
-        P.ModuleCard(ctx, builder, PAGE, "tooltipAppearance")
+        BuildBasics(ctx, builder)
         BuildTooltipLayout(ctx, builder)
         P.BuildSkinUnitTooltipSection(ctx, builder)
         P.QoLOwners.Build(ctx, builder, PAGE, nil, "tooltips")

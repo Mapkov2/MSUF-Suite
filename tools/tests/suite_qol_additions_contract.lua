@@ -13,8 +13,9 @@ local S = {
     end,
 }
 local combat = false
+local forever = arg[2] == "Forever"
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end,
-    Dispatch = function(callback, ...) return callback(...) end }
+    Client = { isForever = forever }, Dispatch = function(callback, ...) return callback(...) end }
 local function Context()
     local context = { events = {} }
     function context:Event(name, callback) self.events[name] = callback end
@@ -64,7 +65,9 @@ function tooltip:AddDoubleLine(left, right) self.line = { left, right } end
 function tooltip:RefreshDataNextUpdate() error("addon code wrote GameTooltip's update fields") end
 GameTooltip = tooltip
 C_Item = { GetItemCount = function(id, bank, uses, reagent, account)
-    assert(id == 123 and bank and not uses and reagent and account)
+    assert(id == 123 and not uses and reagent == not forever and account == not forever)
+    if forever and not bank then return 4 end
+    assert(bank)
     return 7
 end }
 assert(loadfile(root .. "/MSUF_Suite_Tooltips/ItemCounts.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
@@ -75,6 +78,11 @@ counts:Refresh()
 assert(#tooltips.post[1] == 1 and counts.context.events.ADDON_LOADED == nil, "item tooltip hook did not install")
 callback(tooltip, { id = 123 })
 assert(tooltip.line[1] == "Owned" and tooltip.line[2] == "7", "owned count was not rendered")
+if forever then
+    counts.config.byLocation = true
+    callback(tooltip, { id = 123 })
+    assert(tooltip.line[1] == "Bank" and tooltip.line[2] == "3", "Forever count did not split bags and bank")
+end
 tooltip.line = nil
 callback(tooltip, { id = "secret" })
 assert(not tooltip.line, "secret item ID reached count lookup")

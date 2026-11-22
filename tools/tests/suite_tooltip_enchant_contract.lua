@@ -27,7 +27,8 @@ local suite = {
     Text = function(value) return value end,
     Dispatch = Support.Dispatcher(reported),
 }
-local ns = { Safety = { IsForbidden = function() return false end } }
+local forever = arg[2] == "Forever"
+local ns = { Client = { isForever = forever }, Safety = { IsForbidden = function() return false end } }
 local tooltips = Support.TooltipFixture(root, suite, ns)
 assert(loadfile(root .. "/MSUF_Suite_Tooltips/TooltipIDs.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
@@ -36,6 +37,10 @@ module.active, module.context, module.config = true, context, { showTempEnchant 
 module:Enable()
 module:Enable()
 local Item, Currency = Enum.TooltipDataType.Item, Enum.TooltipDataType.Currency
+function tooltip:GetPrimaryTooltipData() return { type = "secret" } end
+context.events.MODIFIER_STATE_CHANGED(module, "MODIFIER_STATE_CHANGED", "LALT", 1)
+assert(#tooltip.lines == 0, "a withheld tooltip type reached an ID callback")
+tooltip.GetPrimaryTooltipData = nil
 -- Alt pressed over an open tooltip adds its IDs (no rebuild; the stub above
 -- errors on one); no other event is heard while account currency is off.
 local heard = 0
@@ -55,6 +60,15 @@ tooltips.Run(Item, tooltip, { id = 123 })
 assert(#tooltip.lines == 0, "IDs appeared without Alt")
 alt = true
 module.config.showQuestCurrency, module.config.showAccountCurrency, module.config.showSpellIcon = true, true, true
+if forever then
+    module:Refresh()
+    tooltips.Run(Currency, tooltip, { id = 222 })
+    assert(#tooltip.lines == 1 and tooltip.lines[1][1] == "Currency ID"
+        and not context.events.ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED,
+        "Forever touched account currency or failed to display a public ID")
+    print("Suite Forever tooltip IDs passed")
+    return
+end
 C_CurrencyInfo = {
     IsAccountCharacterCurrencyDataReady = function() return true end,
     FetchCurrencyDataFromAccountCharacters = function(id)

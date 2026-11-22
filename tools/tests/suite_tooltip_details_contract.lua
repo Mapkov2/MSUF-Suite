@@ -179,10 +179,15 @@ C_Item = { GetItemInfo = function() return "item", "link", 4, 100, nil, nil, nil
 C_Spell = { GetSpellTexture = function() return 4321 end }
 
 local tooltips = Support.TooltipFixture(root, S, NS)
+local keyMode = { idModifier = 4 }
+S.Config = function(id) assert(id == "tooltipIDs"); return keyMode end
+local alt = false
+IsAltKeyDown = function() return alt end
 local mountReaderPath = root .. "/MSUF_Suite/Core/UnitMount.lua"
 assert(loadfile(mountReaderPath))("test", NS)
-for _, file in ipairs({ "TooltipBorder.lua", "TooltipHiddenLines.lua", "TooltipDetails.lua" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Tooltips/" .. file))("test", { NS = NS, Suite = S })
+local private = { NS = NS, Suite = S }
+for _, file in ipairs({ "TooltipIDs.lua", "TooltipBorder.lua", "TooltipHiddenLines.lua", "TooltipDetails.lua" }) do
+    assert(loadfile(root .. "/MSUF_Suite_Tooltips/" .. file))("test", private)
 end
 local m = modules.tooltipDetails
 m.active, m.events = true, {}
@@ -203,13 +208,14 @@ Check(#tooltips.post[Enum.TooltipDataType.Unit] == 1 and #tooltips.post[Enum.Too
 -- then Show(). Blizzard's line data is read only.
 local function Data(unit)
     local line = { type = Enum.TooltipDataLineType.UnitName, unitToken = unit, lineIndex = 1, leftText = "Title Name" }
-    return { lines = { setmetatable({}, { __index = line, __newindex = function(_, key)
+    return { type = Enum.TooltipDataType.Unit, lines = { setmetatable({}, { __index = line, __newindex = function(_, key)
         error("tooltip line data was written: " .. tostring(key))
     end }) } }
 end
 local function Build(unit)
     tooltip.lines, tooltip.tooltipType = {}, Enum.TooltipDataType.Unit
-    tooltips.Run(Enum.TooltipDataType.Unit, tooltip, Data(unit))
+    tooltip.primary = Data(unit)
+    tooltips.Run(Enum.TooltipDataType.Unit, tooltip, tooltip.primary)
     tooltip:Show()
 end
 local function Leave() tooltip:Hide() end
@@ -254,8 +260,15 @@ InspectFrame.shown, InspectFrame.unit = false, nil
 
 -- Hovered players' item levels are a separate opt-in that sends requests.
 m.config.inspectHovered = true
+m:Refresh()
 now = 1010
+keyMode.idModifier = 1
 Build("party2")
+Check(inspectRequests == 0, "a hover without the detail key requested inspection")
+m.events.MODIFIER_STATE_CHANGED(m, "MODIFIER_STATE_CHANGED", "LSHIFT", 1)
+Check(inspectRequests == 0, "a different key requested inspection")
+alt = true
+m.events.MODIFIER_STATE_CHANGED(m, "MODIFIER_STATE_CHANGED", "LALT", 1)
 Check(inspectRequests == 1 and m.pendingInspect.guid == "GUID-party2", "an eligible hover did not request once")
 tooltips.Run(Enum.TooltipDataType.Unit, tooltip, Data("party2"))
 Check(inspectRequests == 1, "a rebuild duplicated the request")
@@ -265,6 +278,10 @@ local shows = tooltip.shows
 m.events.INSPECT_READY(m, "INSPECT_READY", "GUID-party2")
 Check(LineValue("Item level") == "180" and not m.pendingInspect and tooltip.shows == shows + 1,
     "the hover completion did not paint and size its level")
+shows = tooltip.shows
+m.events.MODIFIER_STATE_CHANGED(m, "MODIFIER_STATE_CHANGED", "LALT", 1)
+Check(tooltip.shows == shows and inspectRequests == 1, "pressing the key again appended duplicate details")
+keyMode.idModifier = 4
 Build("party2")
 Check(inspectRequests == 1 and LineValue("Item level") == "180", "the completed hover was not cached")
 Leave()
@@ -278,6 +295,7 @@ Check(not LineValue("Item level") or LineValue("Item level") ~= "180", "a stale 
 Leave()
 -- Quiet period after any request: one delayed attempt, cancelled by others.
 now = 1022
+keyMode.idModifier, alt = 1, true
 Build("delayed")
 -- The module's waits are context timers (ctx:After keeps one handle per
 -- function); the retry is the one After handle.
@@ -299,8 +317,13 @@ Check(retry and retry:Pending() and retry.due == now + 3 and inspectRequests == 
 Build("delayed")
 Check(retry.due == 1025, "the same hover scheduled a second retry")
 now = 1025
+alt = false
 RunDue()
+Check(inspectRequests == 2 and not m.pendingInspect, "a released detail key still sent a delayed inspect request")
+alt = true
+m.events.MODIFIER_STATE_CHANGED(m, "MODIFIER_STATE_CHANGED", "LALT", 1)
 Check(inspectRequests == 3 and m.pendingInspect.guid == "GUID-delayed", "the delayed attempt did not request")
+keyMode.idModifier = 4
 Foreign("external")
 Check(not m.pendingInspect, "a foreign request did not take over the inspect buffer")
 Leave()

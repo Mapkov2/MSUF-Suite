@@ -19,11 +19,18 @@ local function AddID(tooltip, label, id)
     Line(tooltip, label, tostring(math.floor(id)))
 end
 
-local function IDsWanted()
-    local mode = M.config.idModifier
+function P.TooltipDetailKeyHeld(mode)
     if mode == ALWAYS then return true end
     local held = (READ_KEY[mode] or IsAltKeyDown)()
     return S.Public(held) and held == true
+end
+
+function P.TooltipDetailKeyPressed(mode, key, down)
+    return down == 1 and KEY_MODE[key] == (mode or 1)
+end
+
+local function IDsWanted()
+    return P.TooltipDetailKeyHeld(M.config.idModifier)
 end
 
 -- Blizzard's temporary weapon enchant buttons carry auraType "TempEnchant"
@@ -34,7 +41,7 @@ local function TempEnchant(tooltip)
     local slot = owner:GetID()
     if not S.Finite(slot) then return end
     local info = C_PaperDollInfo.GetTemporaryEnchantmentInfo(slot)
-    if S.Public(info) and type(info) == "table" then AddID(tooltip, "Enchant ID", info.enchantID) end
+    if S.Public(info) and type(info) == "table" and canaccesstable(info) then AddID(tooltip, "Enchant ID", info.enchantID) end
 end
 
 local function Item(tooltip, data)
@@ -76,11 +83,11 @@ local function AccountCurrency(tooltip, id)
         return
     end
     local entries = C_CurrencyInfo.FetchCurrencyDataFromAccountCharacters(id)
-    if not S.Public(entries) or type(entries) ~= "table" then return end
+    if not S.Public(entries) or type(entries) ~= "table" or not canaccesstable(entries) then return end
     local rows, total = {}, 0
     for i = 1, #entries do
         local entry = entries[i]
-        if S.Public(entry) and type(entry) == "table" then
+        if S.Public(entry) and type(entry) == "table" and canaccesstable(entry) then
             local name = S.PublicText(entry.fullCharacterName) or S.PublicText(entry.characterName)
             local amount = entry.quantity
             if name and S.Finite(amount) and amount > 0 then
@@ -99,7 +106,7 @@ local function AccountCurrency(tooltip, id)
 end
 
 local function AccountLines(tooltip, data)
-    if M.config.showAccountCurrency and S.Finite(data.id) and AccountCurrency(tooltip, data.id) then
+    if M.config.showAccountCurrency and not NS.Client.isForever and S.Finite(data.id) and AccountCurrency(tooltip, data.id) then
         accountFor = data
     end
 end
@@ -122,9 +129,9 @@ end
 ------------------------------------------------------------------ open tooltips
 -- A press over a tooltip that was built without IDs appends them.
 local function ModifierPressed(_, _, key, down)
-    if down ~= 1 or KEY_MODE[key] ~= (M.config.idModifier or 1) then return end
+    if not P.TooltipDetailKeyPressed(M.config.idModifier, key, down) then return end
     local tooltip, data = S.TooltipLines.Open()
-    local handler = data and handlers[data.type]
+    local handler = data and S.Finite(data.type) and handlers[data.type]
     if not handler or data == idsFor then return end
     handler(tooltip, data)
     S.TooltipLines.Grow(tooltip)
@@ -135,7 +142,8 @@ end
 local function AccountArrived()
     requested = nil
     local tooltip, data = S.TooltipLines.Open()
-    if not data or data.type ~= Enum.TooltipDataType.Currency or data ~= idsFor or data == accountFor then return end
+    if not data or data ~= idsFor or data == accountFor
+        or not S.Finite(data.type) or data.type ~= Enum.TooltipDataType.Currency then return end
     AccountLines(tooltip, data)
     if accountFor == data then S.TooltipLines.Grow(tooltip) end
 end
@@ -146,7 +154,7 @@ local function Listen(self)
     else
         self.context:Event("MODIFIER_STATE_CHANGED", ModifierPressed)
     end
-    if self.config.showAccountCurrency then
+    if self.config.showAccountCurrency and not NS.Client.isForever then
         self.context:Event("ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED", AccountArrived)
     else
         self.context:RemoveEvent("ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED")

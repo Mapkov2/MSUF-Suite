@@ -189,8 +189,11 @@ local function Load(file)
 end
 Load("TooltipBorder.lua")
 Load("TooltipHiddenLines.lua")
+Load("TooltipIDs.lua")
 Load("TooltipDetails.lua")
 Load("TooltipVisibility.lua")
+local tooltipIDConfig = { idModifier = 4 }
+S.Config = function(id) assert(id == "tooltipIDs"); return tooltipIDConfig end
 local details, visibility = modules.tooltipDetails, modules.tooltipVisibility
 local detailEvents, visibilityEvents = {}, {}
 details.active, visibility.active = true, true
@@ -540,13 +543,15 @@ tooltip:Hide()
 visibility.config.scale = 100
 
 -- The reveal key is watched only while the rules hide a tooltip.
-visibility.config.inCombat, visibility.config.revealModifier = true, 2
+visibility.config.hideItems, visibility.config.revealModifier = true, 2
 visibility:Refresh()
 Check(not visibilityEvents.MODIFIER_STATE_CHANGED, "the reveal key was watched with nothing hidden")
+tooltip.tooltipType = Enum.TooltipDataType.Spell
 tooltip:Show()
-Check(tooltip.alpha == 1 and not visibilityEvents.MODIFIER_STATE_CHANGED, "a tooltip outside combat was watched")
-visibilityEvents.PLAYER_REGEN_DISABLED(visibility, "PLAYER_REGEN_DISABLED")
+Check(tooltip.alpha == 1 and not visibilityEvents.MODIFIER_STATE_CHANGED, "an unfiltered tooltip was watched")
 combat = true
+tooltip.tooltipType = Enum.TooltipDataType.Item
+fixture.Run(TooltipDataProcessor.AllTypes, tooltip, {})
 Check(tooltip.alpha == 0 and visibilityEvents.MODIFIER_STATE_CHANGED, "a hidden tooltip does not watch the reveal key")
 mods.shift = true
 visibilityEvents.MODIFIER_STATE_CHANGED(visibility, "MODIFIER_STATE_CHANGED", "LSHIFT", 1)
@@ -571,15 +576,16 @@ tooltip:Show()
 Check(tooltip.alpha == 1 and visibilityEvents.MODIFIER_STATE_CHANGED, "a tooltip shown with the key held was hidden")
 mods.shift = false
 combat = false
-visibilityEvents.PLAYER_REGEN_ENABLED(visibility, "PLAYER_REGEN_ENABLED")
-Check(tooltip.alpha == 1 and not visibilityEvents.MODIFIER_STATE_CHANGED, "the key was watched after the rules ended")
+tooltip.tooltipType = Enum.TooltipDataType.Spell
+fixture.Run(TooltipDataProcessor.AllTypes, tooltip, {})
+Check(tooltip.alpha == 1 and not visibilityEvents.MODIFIER_STATE_CHANGED, "the key was watched after the content changed")
 tooltip:Hide()
 -- None never watches the key.
 visibility.config.revealModifier = 1
 visibility:Refresh()
 combat = true
+tooltip.tooltipType = Enum.TooltipDataType.Item
 tooltip:Show()
-visibilityEvents.PLAYER_REGEN_DISABLED(visibility, "PLAYER_REGEN_DISABLED")
 Check(tooltip.alpha == 0 and not visibilityEvents.MODIFIER_STATE_CHANGED, "the None choice watched the key")
 mods.shift = true
 tooltip:Hide()
@@ -591,7 +597,7 @@ for choice, key in pairs({ [3] = "ctrl", [4] = "alt" }) do
     visibility:Refresh()
     combat = true
     tooltip:Show()
-    Check(tooltip.alpha == 0, "choice " .. choice .. " did not hide in combat")
+    Check(tooltip.alpha == 0, "choice " .. choice .. " did not hide the filtered item")
     mods[key] = true
     visibilityEvents.MODIFIER_STATE_CHANGED(visibility, "MODIFIER_STATE_CHANGED")
     Check(tooltip.alpha == 1, "choice " .. choice .. " did not use its key")

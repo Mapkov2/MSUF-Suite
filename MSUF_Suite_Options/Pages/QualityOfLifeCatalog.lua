@@ -76,7 +76,7 @@ local GROUPS = {
     { id = "guildChatPrivacy", title = "Guild chat privacy cover (Retail)", switch = "enabled",
         sections = { "guild_privacy" } },
     { id = "innervateCue", title = "Innervate whisper cue (Retail Druid)", switch = "enabled", sections = { "innervate_cue" } },
-    { id = "itemCounts", title = "Item counts in tooltips (Retail)", switch = "enabled", sections = { "item_counts" } },
+    { id = "itemCounts", title = "Item counts in tooltips", switch = "enabled", sections = { "item_counts" } },
     { id = "socketGemSuggestions", title = "Gems in bags (Retail)", switch = "enabled", sections = { "socket_gems" } },
     { id = "tooltipSpellCopy", title = "Copy spell ID (Retail)", switch = "enabled", sections = { "copy_spell_id" } },
     { id = "tooltipMPlusScore", title = "Mythic+ score in tooltips (Retail)", switch = "enabled", sections = { "mplus_score" } },
@@ -151,7 +151,7 @@ local GROUPS = {
     { id = "tooltipDetails", title = "Tooltip details and anchor (Retail)", switch = "enabled", sections = { "tooltip_details" } },
     { id = "popupAttention", title = "Dialogs and loot toasts (Retail)", switch = "enabled",
         sections = { "popup_attention", "popup_revive", "popup_toasts" } },
-    { id = "tooltipIDs", title = "Tooltip IDs (Retail)", switch = "enabled", sections = { "tooltip_ids" } },
+    { id = "tooltipIDs", title = "Tooltip IDs", switch = "enabled", sections = { "tooltip_ids" } },
     { id = "tooltipVisibility", title = "Tooltip visibility", switch = "enabled", sections = { "tooltip_visibility" } },
     { id = "waypoints", title = "Waypoint command", switch = "enabled", sections = { "waypoint_command" } },
 }

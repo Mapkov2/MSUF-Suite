@@ -60,6 +60,10 @@ end
 local inspectCache, inspectOrder = {}, {}
 local INSPECT_QUIET, INSPECT_TIMEOUT, CACHE_SECONDS, CACHE_SIZE = 5, 10, 60, 16
 
+local function DetailKeyMode()
+    return S.Config("tooltipIDs").idModifier
+end
+
 local function Now()
     local value = GetTime()
     if S.Finite(value) then return value end
@@ -128,8 +132,9 @@ end
 -- and nothing else replaced it. GameTooltip:GetUnit() is not used; it tests
 -- the tooltip data's GUID, which can be secret.
 local function StillHovered(unit, guid)
-    return GameTooltip:IsShown() and GameTooltip:IsTooltipType(Enum.TooltipDataType.Unit) == true
-        and M.inspectHoverGUID == guid and Identity(unit) == guid
+    if M.inspectTooltipUnit ~= unit or M.inspectHoverGUID ~= guid or not GameTooltip:IsShown() then return false end
+    local matches = GameTooltip:IsTooltipType(Enum.TooltipDataType.Unit)
+    return S.Public(matches) and matches == true and Identity(unit) == guid
 end
 
 -- One delayed attempt per hover, after the quiet period (ctx:After);
@@ -138,6 +143,10 @@ local HoverLevel
 RetryInspect = function(self)
     local unit, guid = self.retryUnit, self.retryGUID
     if not self.config.inspectHovered or NS.IsCombatLocked() or not StillHovered(unit, guid) then return end
+    if not P.TooltipDetailKeyHeld(DetailKeyMode()) then
+        self.inspectRetryAttempted = nil
+        return
+    end
     HoverLevel(unit)
 end
 
@@ -192,8 +201,11 @@ end
 
 -- The item level and specialization lines of one unit.
 local function LevelLines(t, value, spec)
+    if not value and not spec then return end
     if S.Finite(value) and value > 0 then Detail(t, "Item level", math.floor(value)) end
     if spec then Detail(t, "Specialization", spec) end
+    M.inspectLinesAdded = true
+    return true
 end
 
 local function InspectReady(_, _, guid)
@@ -227,6 +239,7 @@ local function InspectWindowLevel(unit)
 end
 
 local function UnitLevel(t, unit)
+    M.inspectTooltipUnit = nil
     if not M.config.itemLevel then return end
     local value, spec
     local own = UnitIsUnit(unit, "player")
@@ -235,9 +248,27 @@ local function UnitLevel(t, unit)
     elseif _G.InspectFrame and S.PublicText(InspectFrame.unit) then
         value, spec = InspectWindowLevel(unit)
     elseif M.config.inspectHovered then
-        value, spec = HoverLevel(unit)
+        M.inspectTooltipUnit = unit
+        if P.TooltipDetailKeyHeld(DetailKeyMode()) then value, spec = HoverLevel(unit) end
     end
     LevelLines(t, value, spec)
+end
+
+local function InspectModifier(_, _, key, down)
+    local unit = M.inspectTooltipUnit
+    if not unit or M.inspectLinesAdded or NS.IsCombatLocked() or not P.TooltipDetailKeyPressed(DetailKeyMode(), key, down) then return end
+    local tooltip, data = Lines.Open()
+    if not data or not S.Public(data.type) or data.type ~= Enum.TooltipDataType.Unit or Lines.UnitName(data) ~= unit then return end
+    local value, spec = HoverLevel(unit)
+    if LevelLines(tooltip, value, spec) then Lines.Grow(tooltip) end
+end
+
+local function ListenForInspectKey(self)
+    if self.config.itemLevel and self.config.inspectHovered then
+        self.context:Event("MODIFIER_STATE_CHANGED", InspectModifier)
+    else
+        self.context:RemoveEvent("MODIFIER_STATE_CHANGED")
+    end
 end
 
 ------------------------------------------------------------------ unit lines
@@ -565,6 +596,7 @@ local function ReleaseLegacyHealth() Restore(M) end
 
 local function Hidden()
     ClearHoverInspect()
+    M.inspectTooltipUnit, M.inspectLinesAdded = nil, nil
     M.mountGUID, M.mountName, M.mountCollected = nil, nil, nil
     M.forcesGUID, M.forcesPercent = nil, nil
     Border.Restore(GameTooltip)
@@ -573,6 +605,7 @@ end
 
 local function Reset(self)
     ClearHoverInspect()
+    self.inspectTooltipUnit, self.inspectLinesAdded = nil, nil
     self.inspectGUID, self.pendingInspect = nil, nil
     self.mountGUID, self.mountName, self.mountCollected = nil, nil, nil
     self.forcesGUID, self.forcesPercent = nil, nil
@@ -588,6 +621,7 @@ local function InstallDetails(self)
     Lines.Add(self, "Mount", Mount)
     GameTooltip:HookScript("OnHide", Hidden)
     GameTooltip:HookScript("OnTooltipCleared", function(t)
+        self.inspectTooltipUnit, self.inspectLinesAdded = nil, nil
         Border.Restore(t)
         Restore(self)
     end)
@@ -607,6 +641,7 @@ function M:Enable()
         if NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = ReleaseLegacyHealth end
         self.lastInspect = Now()
         self.context:Event("INSPECT_READY", InspectReady)
+        ListenForInspectKey(self)
     end
     Install(self)
     RefreshAnchor()
@@ -614,6 +649,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    if NS.Client.modernEquipment then ListenForInspectKey(self) end
     RefreshAnchor()
     LayoutPreview(self)
     Reset(self)

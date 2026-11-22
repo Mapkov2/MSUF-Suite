@@ -205,22 +205,21 @@ Tooltips.Module("tooltipIDs", {
     title = "Tooltip IDs",
     description = "Show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function()
-        if NS.Client.isForever then return false, "Tooltip IDs are available only in Retail" end
-        return true
-    end,
 })
 B.Section("tooltipIDs", "tooltip_ids", "Tooltip IDs", {
-    Choice("idModifier", "Show IDs with", 1, { "Alt", "Shift", "Ctrl", "Always" }),
+    B.Tooltip(Choice("idModifier", "Tooltip detail key", 1, { "Alt", "Shift", "Ctrl", "Always" }),
+        "Show enabled tooltip IDs and request enabled player details with this key."),
     Bool("showQuestCurrency", "Show quest and currency IDs", true),
     Bool("showSpellIcon", "Show spell icon ID"),
     Bool("showTempEnchant", "Show temporary weapon enchant ID", true),
     Bool("showAccountCurrency", "Show currency on other characters"),
 })
+NS.SuiteCatalog.tooltipIDs.rules.idModifier.hidden = true -- drawn in Tooltips > Basics
+NS.SuiteCatalog.tooltipIDs.rules.showAccountCurrency.hidden = NS.Client.isForever or nil
 
 Tooltips.Module("tooltipVisibility", {
     title = "Tooltip visibility",
-    description = "Optionally hide the main tooltip in combat, instances or for selected content types.",
+    description = "Use the same tooltip visibility rules everywhere.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
 })
 B.Section("tooltipVisibility", "tooltip_visibility", "Tooltip visibility", {
@@ -236,18 +235,17 @@ B.Section("tooltipVisibility", "tooltip_visibility", "Tooltip visibility", {
     B.Tooltip(Number("scale", "Main tooltip scale (percent)", 100, 50, 150, 5),
         "Scales Blizzard's main tooltip. Other tooltips keep their size."),
 })
+-- Keep retired location and combat switches readable in imported profiles.
+NS.SuiteCatalog.tooltipVisibility.rules.inCombat.hidden = true
+NS.SuiteCatalog.tooltipVisibility.rules.inInstances.hidden = true
 
 Tooltips.Module("itemCounts", {
     title = "Item counts in tooltips",
-    description = "Show your owned item count, including bank and Warband bank, on item tooltips.",
+    description = "Show how many you own of an item in its tooltip.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function()
-        if NS.Client.isForever then return false, "Item count tooltips are available only in Retail" end
-        return true
-    end,
 })
 B.Section("itemCounts", "item_counts", "Item counts", {
-    Bool("byLocation", "Separate bags, bank and Warband bank"),
+    Bool("byLocation", "Separate item counts by location"),
 })
 
 B.Module("socketGemSuggestions", {
