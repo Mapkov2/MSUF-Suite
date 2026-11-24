@@ -2,6 +2,7 @@
 -- the Blizzard window adapters that build on the shared AdapterKit.
 local root = assert(arg[1], "Suite root required")
 local skin = root .. "/MSUF_Suite_Skin/"
+local dressingRoomOnly = arg[2] == "--dressing-room"
 local checks = 0
 local function Check(value, message)
     assert(value, message)
@@ -85,7 +86,7 @@ local function HasProblem(problems, prefix)
     return false
 end
 
-do
+if not dressingRoomOnly then
     -- Core/Client.lua loads before the catalog (TOC); the review is Retail's.
     local NS = { Client = { isForever = false } }
     assert(loadfile(skin .. "Adapters/Catalog.lua"))("MSUF_Suite_Skin", NS)
@@ -329,6 +330,7 @@ end
 -- Safety reads issecretvalue at load; "generic traversal secrets" assigns it later.
 local fixtureMode, fixtureFlavor = ...
 if fixtureMode == "flight-map-fixture" then NS.Client.isForever = fixtureFlavor == "Forever" end
+if dressingRoomOnly then NS.Client.isForever = arg[3] == "Forever" end
 dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
 for _, file in ipairs({ "../MSUF_Suite/Appearance/Safety.lua", "Core/SuiteOwnership.lua",
     "Adapters/Catalog.lua", "Adapters/CatalogGlass.lua",
@@ -366,6 +368,95 @@ if fixtureMode == "flight-map-fixture" then
             return checks - initialChecks
         end,
     }
+end
+
+Section("dressing room side panels and controls", function()
+    local previousFade, previousApply = NS.Cosmetics.Fade, NS.ControlSkin.ApplyButton
+    local previousTimer, previousRoot = C_Timer, _G.DressUpFrame
+    local queue = {}
+    C_Timer = { After = function(_, callback) queue[#queue + 1] = callback end }
+    NS.Cosmetics.Fade = function(region)
+        region.alpha = 0
+        return true
+    end
+    NS.ControlSkin.ApplyButton = function(button, _, spec)
+        button.controlSpec = spec
+        if button.Background and spec.regions and spec.regions[1] == "Background" then button.Background.alpha = 0 end
+        if button.Middle then button.Middle.alpha = 0 end
+        return true
+    end
+    local function Texture(atlas)
+        return { alpha = 1, GetObjectType = function() return "Texture" end, GetAtlas = function() return atlas end }
+    end
+    local root = Frame("DressUpFrame")
+    root.shown = false
+    function root:IsVisible() return self.shown end
+    local function Child(kind)
+        local child = Frame(nil)
+        function child:GetParent() return root end
+        function child:GetObjectType() return kind end
+        function child:HookScript(script, callback) self[script] = callback end
+        return child
+    end
+    root.HookScript = function(self, script, callback) self[script] = callback end
+    local details, selection = Child("Frame"), Child("Frame")
+    root.CustomSetDetailsPanel, root.SetSelectionPanel = details, selection
+    details.BlackBackground, details.ClassBackground = Texture(), Texture()
+    selection.BlackBackground = Texture()
+    local detailBorder, itemIcon = Texture("dressingroom-sideframe"), Texture("loottoast-itemborder-green")
+    function details:GetRegions() return self.BlackBackground, self.ClassBackground, detailBorder, itemIcon end
+    selection.Border = Texture("dressingroom-sideframe")
+    function selection:GetRegions() return self.BlackBackground, self.Border end
+
+    local toggle, dropdown, link = Child("Button"), Child("DropdownButton"), Child("DropdownButton")
+    local toggleIcon = Texture("dressingroom-button-appearancelist-up")
+    function toggle:GetNormalTexture() return toggleIcon end
+    dropdown.Background, dropdown.Arrow, link.Middle = Texture(), Texture(), Texture()
+    root.ToggleCustomSetDetailsButton, root.CustomSetDropdown, root.LinkButton = toggle, dropdown, link
+    _G.DressUpFrame = root
+
+    -- GenericWindows is deliberately not run. These are the named parts on
+    -- Blizzard's portrait shell, which can appear before the catalog visits it.
+    local owner = "dressing-room-contract"
+    NS.SharedChrome.Apply(owner)
+    Expect(details.surfaceSpec and selection.surfaceSpec, "shared chrome did not paint both panels on startup")
+    Expect(toggle.surfaceSpec and toggleIcon.alpha == 1, "appearance-list toggle lost its Suite surface or native icon")
+    Expect(dropdown.Background.alpha == 0 and link.Middle.alpha == 0 and dropdown.Arrow.alpha == 1,
+        "native outfit controls were missed or lost the dropdown arrow")
+    local function RestoreNativePaint()
+        dropdown.Background.alpha, link.Middle.alpha = 1, 1
+        detailBorder.alpha, selection.Border.alpha = 1, 1
+    end
+    root.shown = true
+    if root.OnShow then root:OnShow() end
+    RestoreNativePaint()
+    if details.OnShow then details:OnShow() end
+    if selection.OnShow then selection:OnShow() end
+    Expect(#queue == 1, "opening the window and its panels must queue one post-show repaint")
+    if queue[1] then table.remove(queue, 1)() end
+    Expect(detailBorder.alpha == 0 and selection.Border.alpha == 0, "late native gold borders remained visible")
+    Expect(dropdown.Background.alpha == 0 and link.Middle.alpha == 0, "late stock button art remained visible")
+    Expect(details.BlackBackground.alpha == 0 and details.ClassBackground.alpha == 0 and selection.BlackBackground.alpha == 0,
+        "native dressing room panel backgrounds still cover the Suite skin")
+    Expect(itemIcon.alpha == 1, "dressing room skin touched item quality art")
+
+    if details.OnShow then details:OnShow() end
+    NS.SharedChrome.Disable(owner)
+    RestoreNativePaint()
+    if queue[1] then table.remove(queue, 1)() end
+    Expect(details.surfaceVisible == false and selection.surfaceVisible == false and detailBorder.alpha == 1,
+        "a queued dressing room repaint survived disabling the skin")
+    if root.OnShow then root:OnShow() end
+    Expect(#queue == 0, "disabled dressing room scheduled a fresh repaint")
+    C_Timer, _G.DressUpFrame = previousTimer, previousRoot
+    NS.Cosmetics.Fade, NS.ControlSkin.ApplyButton = previousFade, previousApply
+end)
+
+if dressingRoomOnly then
+    assert(#failures == 0, table.concat(failures, "\n"))
+    assert(#reported == 0, table.concat(reported, "\n"))
+    print("Dressing room checks passed: " .. checks)
+    return
 end
 
 local rowChild = Frame(nil)

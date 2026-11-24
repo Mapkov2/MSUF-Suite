@@ -179,16 +179,29 @@ function Safety.ReadUnprotected(target, name)
     return nil
 end
 
+-- Implicitly protected objects refused so far. Every combat-dependent
+-- protection answer is such a refusal: explicit and forbidden ones do not
+-- depend on combat, and an unprotected object passes in and out of combat.
+-- A pass that leaves this count unchanged painted what it would paint after
+-- combat (GenericWindowsCatalog.lua LeftForCombat).
+local implicitRefusals = 0
+
 local function CanDecorate(target, allowImplicitProtected)
     if type(target) ~= "table" or IsForbidden(target) then return false end
     local protected, explicit = ReadProtection(target)
     if explicit then return false end
     if protected then
-        return allowImplicitProtected == true and not InCombatLockdown()
+        if allowImplicitProtected == true and not InCombatLockdown() then return true end
+        implicitRefusals = implicitRefusals + 1
+        return false
     end
     return true
 end
 Safety.CanDecorate = CanDecorate
+
+function Safety.ImplicitRefusals()
+    return implicitRefusals
+end
 
 -- Controls follow the same rule as cosmetic surfaces.
 Safety.CanControl = CanDecorate

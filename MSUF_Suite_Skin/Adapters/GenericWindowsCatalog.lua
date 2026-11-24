@@ -189,6 +189,23 @@ local function StoreFrameResult(request, index, applied, reason, metrics)
     result.truncated = metrics and metrics.truncated == true or false
 end
 
+-- Entries whose own adapters run after the generic pass and keep combat
+-- rules of their own.
+local ownCombatEntries = { ["macros"] = true, ["chat-configuration"] = true, ["catalog-shop"] = true }
+
+-- True when a pass in combat left work that only the full pass after combat
+-- does: an implicitly protected object refused (Safety.ImplicitRefusals; it
+-- covers the traversal, named controls and every helper's protection check),
+-- the window chrome and primary button (both skip combat), window controls
+-- (metrics.windowControls), an entry adapter with its own combat rules, or a
+-- pass that failed. Otherwise the combat pass already painted all the full
+-- pass would paint.
+local function LeftForCombat(entry, mode, ok, metrics, refusals)
+    if not ok or Safety.ImplicitRefusals() ~= refusals or ownCombatEntries[entry.id] then return true end
+    if mode.windowChrome or mode.primaryButton or mode.nativeListChrome or mode.flightMapChrome then return true end
+    return metrics.windowControls == true
+end
+
 local function PaintEntryFrame(request, index)
     local entry, owner = request.entry, request.owner
     local frameValue = entry.frames[index]
@@ -213,6 +230,7 @@ local function PaintEntryFrame(request, index)
     local frameMode = type(entry.frameModes) == "table"
         and type(frameValue) == "string" and entry.frameModes[frameValue] or nil
     local mode = CatalogMode(frameMode or entry.mode)
+    local refusals = NS.IsCombatLocked() and Safety.ImplicitRefusals()
     if entry.id == "catalog-shop" then
         NS.CatalogShopMotion.Apply(frame, owner)
     elseif not mode.nativeListChrome and entry.category ~= "hud" and mode.rootSurface ~= false
@@ -239,7 +257,11 @@ local function PaintEntryFrame(request, index)
     end
     -- Paint safe cosmetics now; finish protected descendants and window controls
     -- once after combat, or on the next show if the window has closed again.
-    if NS.IsCombatLocked() then DeferEntryFrame(request, index) end
+    -- A pass that combat held nothing back from is complete: the end of
+    -- combat by itself repeats no scan or paint.
+    if NS.IsCombatLocked() and LeftForCombat(entry, mode, ok, metrics, refusals) then
+        DeferEntryFrame(request, index)
+    end
     -- Preserve the Macro adapter's specific artwork after this root's pass.
     if entry.id == "macros" then NS.MacroWindow.Apply(frame, owner) end
     if entry.id == "chat-configuration" and ok and NS.ChatConfigSkin.Apply(frame, owner) then

@@ -269,6 +269,14 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             if name == "BankFrame" then
                 UIPanelWindows[name] = { area = "left" }
                 frame.point = { "TOPLEFT", UIParent, "TOPLEFT", 30, -90 }
+                frame.width, frame.height = 738, 460
+                function frame:GetRight() return self.left + self.width end
+                function frame:GetBottom() return self.top - self.height end
+                local panel = Frame("BankPanel", frame)
+                frame.BankPanel = panel
+                panel.width = flavor == "Forever" and 480 or frame.width
+                function panel:GetRight() return frame.left + self.width end
+                function panel:GetBottom() return frame:GetBottom() end
             else
                 UIPanelWindows[name] = nil
                 frame.parent = FullscreenFrame
@@ -289,6 +297,39 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             disable = function(_, owner) return NS.GenericWindows.Disable(owner) end,
         })
         Check(NS.Adapters.Apply("blizzardWindows"), "native inventory adapter failed")
+        local bankState = W.states[BankFrame]
+        local grip, panel = bankState.grip, BankFrame.BankPanel
+        local function CheckBankGrip()
+            Check(grip.point[1] == "BOTTOMRIGHT" and grip.point[2] == panel and grip.point[3] == "BOTTOMRIGHT",
+                flavor .. " bank resize grip is detached from the visible panel corner")
+            local scale = BankFrame.scale
+            local right = (panel:GetRight() + grip.point[4]) * scale
+            local bottom = (panel:GetBottom() + grip.point[5]) * scale
+            Check(right - grip.width * scale >= -0.001 and right <= UIParent.width + 0.001
+                and bottom >= -0.001 and bottom + grip.height * scale <= UIParent.height + 0.001,
+                flavor .. " bank resize grip leaves the screen")
+            Check(grip.point[5] > 28, flavor .. " clamped bank resize grip can cover the native money controls")
+        end
+        CheckBankGrip()
+        Check(grip.point[4] < 0 and grip.surfaceSpec and grip.surfaceSpec.role == "button"
+            and grip.lines and #grip.lines == 2 and not grip.normalTexture,
+            flavor .. " bank resize grip is missing its inset, background or drag mark")
+        local left, top = BankFrame.left, BankFrame.top
+        BankFrame.left, BankFrame.top = UIParent.width - panel.width, BankFrame.height
+        NS.WindowControlChrome.PlaceGrip(grip, bankState)
+        CheckBankGrip()
+        cursorX, cursorY = 500, 500
+        grip.scripts.OnMouseDown(grip, "LeftButton")
+        cursorX, cursorY = 620, 440
+        grip.scripts.OnUpdate(grip)
+        Check(BankFrame.scale > 1, flavor .. " screen-edge bank grip cannot enlarge the window")
+        CheckBankGrip()
+        cursorX, cursorY = 500, 500
+        grip.scripts.OnUpdate(grip)
+        Check(BankFrame.scale == 1, flavor .. " screen-edge bank grip cannot shrink the window")
+        CheckBankGrip()
+        grip.scripts.OnMouseUp(grip)
+        BankFrame.left, BankFrame.top = left, top
         for _, frame in ipairs(inventory) do Exercise(frame, Controls(frame, "blizzardWindows")) end
         -- Blizzard's panel pass lays out the open Bank window in its slot; the
         -- skin keeps that place for the hand-off and never runs the pass itself.

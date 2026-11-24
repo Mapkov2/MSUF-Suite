@@ -603,7 +603,7 @@ local function ApplyFrameNow(frame, owner, mode)
         local role = RootRole(mode)
         GenericWindows.TrackMenuMotion(frame, owner, role == "shell" or role == "panel")
     end
-    NS.WindowControls.Attach(frame, owner)
+    metrics.windowControls = NS.WindowControls.Attach(frame, owner) == true
     return true, "applied", metrics
 end
 

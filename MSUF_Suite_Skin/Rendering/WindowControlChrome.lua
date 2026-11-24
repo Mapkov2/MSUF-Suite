@@ -75,12 +75,29 @@ local function BagHandleEdge(state)
     return below and "BOTTOM" or "TOP", below and -7 or 1
 end
 
+local function BankGrip(grip, frame)
+    -- The Forever bank panel is narrower than its outer frame. Inset the
+    -- grip from the visible corner and clear the money row, which ends at 28.
+    local panel = Safety.Field(frame, "BankPanel") or frame
+    local x, y = -5, 30
+    local ratio = NS.WindowControlPolicy.ScreenRatio(frame)
+    local right, bottom = Safety.Read(panel, "GetRight"), Safety.Read(panel, "GetBottom")
+    local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+    if ratio and PublicNumber(right) and PublicNumber(bottom) and PublicNumber(width) and PublicNumber(height) then
+        x = math.min(width / ratio - right, math.max(x, grip:GetWidth() - right))
+        y = math.max(-bottom, math.min(y, height / ratio - bottom - grip:GetHeight()))
+    end
+    grip:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", x, y)
+end
+
 function Chrome.PlaceGrip(grip, state)
     grip:ClearAllPoints()
     if state.inventory and state.name ~= "BankFrame" then
         local edge, offset = BagHandleEdge(state)
         grip:SetSize(20, 6)
         grip:SetPoint("BOTTOMRIGHT", state.frame, edge .. "RIGHT", -8, offset)
+    elseif state.name == "BankFrame" then
+        BankGrip(grip, state.frame)
     elseif state.name == "WorldMapFrame" then
         -- Clear quest scrolling and keep the grip above a maximized map's bottom edge.
         grip:SetPoint("BOTTOMLEFT", state.frame, "BOTTOMRIGHT", 1, 3)

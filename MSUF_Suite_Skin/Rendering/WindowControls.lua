@@ -171,6 +171,7 @@ local function OnPanelPositionsUpdated(currentFrame)
         elseif Controlled(state) and frame:IsShown() and not Policy.DeferMailLayout(state) and not Policy.DeferMapLayout(state) then
             if not state.drag then ApplyStoredScale(state) end
             ApplyStoredPosition(state)
+            if state.name == "BankFrame" and SafeControls(state) then Chrome.PlaceGrip(state.grip, state) end
             if HasCaption(state) and SafeControls(state) then
                 Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET)
             end
@@ -319,7 +320,10 @@ local function UpdateDrag(state)
     scale = math.floor(scale * 100 + 0.5) / 100
     local fit = state.suiteBounds and Policy.FitGeometry(state)
     if fit then scale = math.min(scale, fit) end
-    if scale ~= current then state.frame:SetScale(scale) end
+    if scale ~= current then
+        state.frame:SetScale(scale)
+        if state.name == "BankFrame" and SafeControls(state) then Chrome.PlaceGrip(state.grip, state) end
+    end
 end
 
 local function OnGripUpdate(grip)
@@ -378,8 +382,9 @@ local function CreateGrip(state)
     controlStates[grip] = state
     grip:SetSize(20, 20)
     grip:SetFrameLevel(Chrome.Level(state) + GRIP_LEVEL_OFFSET)
+    if state.name == "BankFrame" then grip:SetClampedToScreen(true) end
     Chrome.PlaceGrip(grip, state)
-    if state.name == "WorldMapFrame" then
+    if state.name == "WorldMapFrame" or state.name == "BankFrame" then
         Chrome.StyleGrip(grip)
     else
         grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
@@ -737,7 +742,7 @@ end
 local function RecolorMinimize()
     for _, state in pairs(activeStates) do
         if SafeControls(state) then
-            if state.name == "WorldMapFrame" then Chrome.RecolorGrip(state.grip) end
+            if state.name == "WorldMapFrame" or state.name == "BankFrame" then Chrome.RecolorGrip(state.grip) end
             if state.inventory then Chrome.RecolorControl(state.titleDrag) end
             Chrome.RecolorCaption(state)
             if state.restore then Chrome.RecolorControl(state.restore) end

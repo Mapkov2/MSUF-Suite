@@ -41,6 +41,7 @@ local CHAR_CUSTOMIZE_SHOW_CALLBACK = "CharCustomize.OnShow"
 
 local addonKinds = {
     Blizzard_FrameXML = { "talking-head" },
+    Blizzard_UIPanels_Game = { "dressing-room" },
     Blizzard_BNet = { "social-toasts" },
     Blizzard_Minimap = { "addon-compartment" },
     Blizzard_QuickKeybind = { "quick-keybind" },
@@ -54,6 +55,7 @@ local addonKinds = {
 
 local allKinds = {
     "talking-head",
+    "dressing-room",
     "social-toasts",
     "addon-compartment",
     "quick-keybind",
@@ -111,6 +113,14 @@ local RAID_MODE = {
 local POPUP_SPEC = { role = "popup", radius = 8, inset = 0 }
 local TOAST_SPEC = { role = "popup", radius = 6, inset = 0 }
 local HEADER_SPEC = { role = "navigation", radius = 6, inset = 0 }
+local DRESSING_PANEL_SPEC = { role = "panel", radius = 6, inset = 0 }
+local DRESSING_PANEL_ART = { "BlackBackground", "ClassBackground" }
+local DRESSING_BUTTON_SPEC = { role = "button", useControlShape = true, pillHeight = 28, inset = 1 }
+local DRESSING_DROPDOWN_SPEC = {
+    role = "button", useControlShape = true, pillHeight = 28, inset = 1, regions = { "Background" },
+}
+local DRESSING_TOGGLE_SPEC = { role = "button", shape = "round", radius = 4, inset = 1, interactive = true }
+local dressingPanels = { "CustomSetDetailsPanel", "SetSelectionPanel" }
 local SMALL_CLOSE_SPEC = {
     role = "button", useControlShape = true,
     pillHeight = 18, radius = 4, inset = 1,
@@ -308,8 +318,46 @@ local function SkinCombatLog(state)
     return applied
 end
 
+-- Both clients' DressUpFrames.xml places the appearance list and set preview
+-- outside the portrait shell. Their borders share an atlas, but the list's
+-- overlay has no parentKey. Slot icons and quality art are separate regions.
+local function SkinDressingRoom(state)
+    if not NS.GenericWindows.IsCategoryEnabled("character") then return false end
+    local root = Field(_G, "DressUpFrame")
+    if not root then return false end
+
+    local applied = false
+    for _, key in ipairs(dressingPanels) do
+        local panel = Field(root, key)
+        if Kit.ParentIs(panel, root) and Kit.Ensure(state, panel, DRESSING_PANEL_SPEC) then
+            Kit.FadeFields(state, panel, DRESSING_PANEL_ART)
+            Kit.FadeAtlas(state, panel, "dressingroom-sideframe")
+            applied = true
+        end
+    end
+
+    local dropdown = Field(root, "CustomSetDropdown")
+    if Kit.ParentIs(dropdown, root) then
+        applied = Kit.SkinControl(state, dropdown, DRESSING_DROPDOWN_SPEC) or applied
+    end
+    local link = Field(root, "LinkButton")
+    if Kit.ParentIs(link, root) then
+        applied = Kit.SkinControl(state, link, DRESSING_BUTTON_SPEC) or applied
+    end
+    local toggle = Field(root, "ToggleCustomSetDetailsButton")
+    if Kit.ParentIs(toggle, root) then
+        local attached, surface = Kit.Ensure(state, toggle, DRESSING_TOGGLE_SPEC)
+        if attached then
+            surface.edge:SetDrawLayer("OVERLAY", 2)
+            applied = true
+        end
+    end
+    return applied
+end
+
 local kindSkinners = {
     ["talking-head"] = SkinTalkingHead,
+    ["dressing-room"] = SkinDressingRoom,
     ["social-toasts"] = SkinSocialToasts,
     ["addon-compartment"] = SkinAddonCompartment,
     ["quick-keybind"] = SkinQuickKeybind,
@@ -353,10 +401,40 @@ local function OnPlayerChoicePoolReady(frame)
     end
 end
 
--- Mixin() copied PlayerChoiceFrameMixin onto PlayerChoiceFrame when
--- Blizzard_PlayerChoice created it, and self:SetupOptions() resolves on the
--- frame, so the frame instance is hooked (once) rather than the mixin.
+local dressingRoomQueued = false
+local function PaintShownDressingRoom()
+    dressingRoomQueued = false
+    local root = Field(_G, "DressUpFrame")
+    if root and not Kit.IsHidden(root) then RequestKindForOwners("dressing-room") end
+end
+
+local function QueueDressingRoomSkin()
+    if dressingRoomQueued or SharedChrome.activeOwnerCount == 0
+        or not NS.GenericWindows.IsCategoryEnabled("character") then return end
+    -- Blizzard's dropdown and panel handlers still run during the native
+    -- show. Finish after the parent and child OnShow scripts have settled.
+    dressingRoomQueued = true
+    C_Timer.After(0, PaintShownDressingRoom)
+end
+
+local function WatchDressingRoom(target)
+    if target and not SharedChrome.hooks[target] and Safety.HasMethod(target, "HookScript") then
+        target:HookScript("OnShow", QueueDressingRoomSkin)
+        SharedChrome.hooks[target] = true
+    end
+end
+
 local function InstallHooks()
+    local root = Field(_G, "DressUpFrame")
+    if root then
+        WatchDressingRoom(root)
+        for _, key in ipairs(dressingPanels) do
+            local panel = Field(root, key)
+            if Kit.ParentIs(panel, root) then WatchDressingRoom(panel) end
+        end
+    end
+    -- Blizzard copies the PlayerChoice mixin onto the frame at creation.
+    -- Hook that instance, where self:SetupOptions() resolves.
     local frame = _G.PlayerChoiceFrame
     if not frame or SharedChrome.hooks[frame] then return end
     local installed = Kit.HookFunction(frame, "SetupOptions", OnPlayerChoicePoolReady)
