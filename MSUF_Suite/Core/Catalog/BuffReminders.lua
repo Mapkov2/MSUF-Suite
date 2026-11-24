@@ -141,6 +141,9 @@ B.Section(id, "tracking", "What to remind", {
     Bool("soulstoneOnAlly", "Tell me while my Soulstone is on nobody in the group", false),
     Bool("beaconOnAlly", "Tell me while one of my Beacons is on nobody in the group", false),
     Bool("campfireBuff", "Tell me while my campfire buff is missing (Forever)", false),
+    B.Tooltip(Bool("foreverSleepingBag", "Well-Rested (Cozy Sleeping Bag)", false),
+        "Reminds you below max level when Well-Rested is missing, below three stacks, or about to expire. Click to use the sleeping bag from your bags."),
+    Bool("foreverWellFed", "Food buff (Well Fed)", false),
     -- A potion for maps the player picks; Inky Black Potion (item 124640) by default.
     Bool("mapPotion", "Remind me of a potion on maps I pick", false),
     String("mapPotionItem", "Potion for those maps (item ID)", "124640", 10),
@@ -278,6 +281,8 @@ rules.offHandItem.items = true
 rules.mapPotionItem.items = true
 rules.keystoneCover.hidden = NS.Client.isForever or nil
 rules.keystoneMinutes.hidden = NS.Client.isForever or nil
+rules.foreverSleepingBag.hidden = not NS.Client.isForever or nil
+rules.foreverWellFed.hidden = rules.foreverSleepingBag.hidden
 rules.keystoneMinutes.requiresChoice = { key = "keystoneCover", values = { [3] = true } }
 -- Presentation dependencies for the menu: a setting that only matters while
 -- its switch is on (or a sound is chosen) is greyed otherwise. Greying never

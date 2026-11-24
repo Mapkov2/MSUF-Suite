@@ -6,6 +6,7 @@ local R = P.BuffReminders
 -- scans bags or changes live aura/count caches, secure buttons or sounds.
 local ENTRY_KEYS = {
     "classBuff", "groupBuff", "otherClassBuffs", "autoRoguePoisons", "campfireBuff",
+    "foreverSleepingBag", "foreverWellFed",
     "spellIDs", "items", "mainHandItem", "offHandItem", "autoFlask", "autoFood",
     "autoRune", "autoWeapon", "restockNotice", "flaskChoice", "foodChoice",
     "runeChoice", "oilChoice", "mapPotion", "mapPotionItem", "mapPotionMaps", "classReminders",

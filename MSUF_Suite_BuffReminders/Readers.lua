@@ -152,6 +152,11 @@ function R.AuraPresent(entry)
         elseif data then
             local instanceID = data.auraInstanceID
             if not Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
+            if entry.requiredStacks then
+                local stacks = data.applications
+                if not Public(stacks) or type(stacks) ~= "number" then return nil, instanceID end
+                if stacks < entry.requiredStacks then return false, instanceID end
+            end
             local expiration = AuraExpiry(data)
             return true, instanceID, expiration, nil, expiration and data.duration or nil, id
         end
@@ -206,7 +211,7 @@ function R.AuraChangeAffects(entry, info)
             if not Public(spellID) or type(spellID) ~= "number" or MatchesAuraID(entry, spellID, aura.name) then return true end
         end
     end
-    if entry.present == false then return false end
+    if entry.present == false and not entry.auraInstanceID then return false end
     local instanceID = entry.auraInstanceID
     if not instanceID then return true end
     local removed = IDList(info.removedAuraInstanceIDs)
@@ -227,13 +232,15 @@ end
 -- and their spell name (Well Fed) find the usual variants, but no targeted
 -- lookup finds a food aura with another name and an unlisted ID, so such an
 -- aura reads as missing until its next UNIT_AURA delta.
-local foodNames, foodNameSet
+local foodNames, foodNameSet, foodNameSpells
 
-local function FoodNames()
-    if foodNames then return foodNames end
+local function FoodNames(forever)
+    local spells = forever and R.FOREVER_FOOD_NAMES or FOOD_AURAS
+    if foodNameSpells == spells then return foodNames end
+    foodNameSpells = spells
     foodNames, foodNameSet = {}, {}
-    for index = 1, #FOOD_AURAS do
-        local name = C_Spell.GetSpellName(FOOD_AURAS[index])
+    for index = 1, #spells do
+        local name = C_Spell.GetSpellName(spells[index])
         if Public(name) and type(name) == "string" and not foodNameSet[name] then
             foodNames[#foodNames + 1] = name
             foodNameSet[name] = true
@@ -243,12 +250,17 @@ local function FoodNames()
 end
 
 -- An added aura is food by the Well Fed icon or by a food buff's name.
-local function FoodAura(aura)
+local function FoodAura(aura, forever)
     if type(aura.icon) == "number" and FOOD_ICONS[aura.icon] then return true end
     local name = aura.name
     if not Public(name) or type(name) ~= "string" then return false end
-    FoodNames()
+    FoodNames(forever)
     return foodNameSet[name] == true
+end
+
+local function ForeverFoodAura(aura)
+    local spellID = aura.spellId
+    return Public(spellID) and type(spellID) == "number" and R.FOREVER_FOOD_IDS[spellID] or FoodAura(aura, true)
 end
 
 -- Stores one looked-up food aura under its instance ID (or under the lookup
@@ -270,6 +282,7 @@ end
 local function ScanFood(self)
     local food = self.food
     local ids = food.ids
+    local bySpellID = C_UnitAuras.GetPlayerAuraBySpellID
     local keys = food.scanKeys
     if not keys then
         keys = {}
@@ -283,7 +296,7 @@ local function ScanFood(self)
         local snapshot = ids[key]
         if snapshot then
             local spellID = snapshot.spellID
-            local data = spellID and C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+            local data = spellID and bySpellID(spellID)
             if not spellID or not Public(data) then
                 known = false
             elseif data then
@@ -302,11 +315,13 @@ local function ScanFood(self)
             end
         end
     end
-    for index = 1, #FOOD_AURAS do
-        local spellID = FOOD_AURAS[index]
-        if not LearnFood(ids, C_UnitAuras.GetPlayerAuraBySpellID(spellID), spellID) then known = false end
+    local forever = P.NS.Client.isForever
+    local spells = forever and R.FOREVER_FOOD_AURAS or FOOD_AURAS
+    for index = 1, #spells do
+        local spellID = spells[index]
+        if not LearnFood(ids, bySpellID(spellID), spellID) then known = false end
     end
-    local names = FoodNames()
+    local names = FoodNames(forever)
     for index = 1, #names do
         local name = names[index]
         if not LearnFood(ids, C_UnitAuras.GetAuraDataBySpellName("player", name, "HELPFUL"), name) then
@@ -330,10 +345,11 @@ local function ApplyFoodLists(ids, info)
     local added = IDList(info.addedAuras)
     if added == false then return false end
     if added then
+        local matchesFood = P.NS.Client.isForever and ForeverFoodAura or FoodAura
         for _, aura in ipairs(added) do
             if not Public(aura) or not Public(aura.icon) or not Public(aura.auraInstanceID) then return false end
             local id = aura.auraInstanceID
-            if type(id) == "number" and FoodAura(aura) then
+            if type(id) == "number" and matchesFood(aura) then
                 local spellID = aura.spellId
                 if not Public(spellID) or type(spellID) ~= "number" then return false end
                 ids[id] = ids[id] and FillSnapshot(ids[id], aura, spellID) or Snapshot(aura, spellID)

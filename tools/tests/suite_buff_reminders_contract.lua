@@ -1733,4 +1733,77 @@ for i = 2, #BR_FILES do
     end
     assert((name == "Controller.lua") == (code:find("S.Install(", 1, true) ~= nil), name .. " install mismatch")
 end
+do
+    local item, restAura, xpAura = 211527, 429959, 1243969
+    local food, plainFood = 6290, 4540
+    local maxLevel, cached, requested = false, false, 0
+    local oldGameRules, oldItem, oldBags, oldConfig = GameRulesUtil, C_Item, bagItems, module.config
+    local oldLastFood, oldAfter = module.stock.lastFood, C_Timer.After
+    local refreshFood
+    local function Fire(event, ...) eventFrame.OnEvent(eventFrame, event, ...) end
+    C_Timer.After = function(delay, callback)
+        if delay == 0 then refreshFood = callback else oldAfter(delay, callback) end
+    end
+    GameRulesUtil = { IsPlayerAtEffectiveMaxLevel = function() return maxLevel end }
+    C_Item = setmetatable({}, { __index = oldItem })
+    C_Item.IsItemDataCachedByID = function(id) return id ~= food or cached end
+    C_Item.RequestLoadItemDataByID = function(id) if id == food then requested = requested + 1 end end
+    C_Item.GetItemInfoInstant = function() return nil, nil, nil, nil, nil, 0, 5 end
+    C_Item.GetItemSpell = function(id)
+        if id == food and cached then return "Spell 1248377", 1248378 end
+        if id == plainFood then return "Food", 433 end
+    end
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    inventory, bagItems = { [item] = 1, [food] = 1, [plainFood] = 1 }, { food, plainFood }
+    module.config = { spellIDs = "", items = "", mainHandItem = "", offHandItem = "",
+        foreverSleepingBag = true, foreverWellFed = true, foodChoice = tostring(plainFood),
+        size = 38, spacing = 5, columns = 6,
+        borderColor = "e8b855", point = 1, x = 0, y = 0, remindBeforeMinutes = 5 }
+    module:Enable()
+    local buttons = module.view.buttons
+    assert(module.view.mask == 3 and buttons[1].attributes.item1 == "item:211527")
+    assert(requested == 1 and not buttons[2].attributes.item1, "pending food must be an inert notice")
+    cached = true
+    Fire("ITEM_DATA_LOAD_RESULT", food, true)
+    assert(refreshFood, "item data must schedule a refresh outside the bag compile")()
+    assert(buttons[2].attributes.item1 == "item:6290", "only buff food is usable from the reminder")
+    local rested = { spellId = restAura, auraInstanceID = 1701, applications = 2, expirationTime = now + 7000, duration = 7200 }
+    auras[restAura] = rested
+    Fire("UNIT_AURA", "player", { addedAuras = { rested } })
+    assert(module.view.mask == 3, "two stacks must still remind")
+    rested.applications = 3
+    Fire("UNIT_AURA", "player", { updatedAuraInstanceIDs = { 1701 } })
+    assert(module.view.mask == 2, "changing the same aura to three stacks must clear the reminder")
+    rested.expirationTime = now + 120
+    Fire("UNIT_AURA", "player", { updatedAuraInstanceIDs = { 1701 } })
+    assert(module.view.mask == 3, "Well-Rested must warn before expiry")
+    rested.applications = { secret = true }
+    Fire("UNIT_AURA", "player", { updatedAuraInstanceIDs = { 1701 } })
+    assert(module.view.mask == 2, "unreadable stacks must not be reported as missing")
+    local fed = { spellId = xpAura, auraInstanceID = 1702, icon = 1, expirationTime = now + 1200, duration = 1800 }
+    auras[xpAura] = fed
+    Fire("UNIT_AURA", "player", { addedAuras = { fed } })
+    assert(module.view.mask == 0, "a stand-alone XP food aura must satisfy Well Fed")
+    auras[xpAura], auras[restAura] = nil, nil
+    Fire("UNIT_AURA", "player", { removedAuraInstanceIDs = { 1701, 1702 } })
+    inventory[item] = 0
+    Fire("BAG_UPDATE_DELAYED")
+    assert(#module.list.entries == 1 and module.list.entries[1].id == food, "the bag must be owned")
+    inventory[item] = 1
+    Fire("BAG_UPDATE_DELAYED")
+    assert(#module.list.entries == 2, "acquiring a bag must restore the reminder")
+    maxLevel = true
+    Fire("PLAYER_LEVEL_UP")
+    assert(#module.list.entries == 1 and module.list.entries[1].id == food, "the reminder must stop at max level")
+    module:Disable()
+    NS.Client.isForever, NS.Client.modernEquipment = false, true
+    module:Enable()
+    assert(#module.list.entries == 0 and not eventFrame.events.PLAYER_LEVEL_UP and not eventFrame.events.ITEM_DATA_LOAD_RESULT,
+        "Retail must ignore Forever reminders carried over in a profile")
+    module:Disable()
+    GameRulesUtil, C_Item, bagItems, module.config = oldGameRules, oldItem, oldBags, oldConfig
+    inventory, module.stock.lastFood = nil, oldLastFood
+    C_Timer.After = oldAfter
+end
+
 print("Suite buff reminders: secure pool, targeted checks, Rogue spec poisons, advance warnings, restricted aura suppression, combat silence and cleanup passed")

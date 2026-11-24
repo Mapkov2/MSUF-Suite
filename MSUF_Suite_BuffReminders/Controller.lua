@@ -2,13 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local R = P.BuffReminders
 local IN_COMBAT = { inCombat = true }
--- Lifecycle, secure buttons and evaluation. Secure action buttons change
--- only out of combat; in combat a state driver hides the reminders and every
--- listener except PLAYER_REGEN_ENABLED and the compile inputs (OWED) is
--- released. An evaluation re-reads
--- only what its event can have changed and shows the missing entries as a
--- bit mask. Every runtime field lives in one of the state tables State.lua
--- documents.
+-- The secure row hides in combat and releases all but its resume and compile listeners.
 local M = R.NewState({})
 local Public = S.Public
 -- Registered while out of combat. In combat the reminders are hidden by their
@@ -24,7 +18,7 @@ local EVENTS = {
 local COMPILE_EVENTS = {
     SPELLS_CHANGED = true, PLAYER_REGEN_ENABLED = true, PLAYER_SPECIALIZATION_CHANGED = true,
     PLAYER_EQUIPMENT_CHANGED = true, WEAPON_SLOT_CHANGED = true,
-    PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true,
+    PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true, PLAYER_LEVEL_UP = true,
 }
 -- Heard while suspended (combat): the compile inputs combat can change.
 -- Their handler only notes in listen.owed what the combat end owes
@@ -35,7 +29,7 @@ local COMPILE_EVENTS = {
 -- while a group option wants it (RegisterEvents).
 local OWED = {
     SPELLS_CHANGED = "compile", PLAYER_SPECIALIZATION_CHANGED = "compile", PLAYER_EQUIPMENT_CHANGED = "compile",
-    PLAYER_ENTERING_WORLD = "compile", ZONE_CHANGED_NEW_AREA = "compile",
+    PLAYER_ENTERING_WORLD = "compile", ZONE_CHANGED_NEW_AREA = "compile", PLAYER_LEVEL_UP = "compile",
     BAG_UPDATE_DELAYED = "bags", GROUP_ROSTER_UPDATE = "roster",
 }
 -- A bag update ends the bag reads a compile may keep (R.BagsChanged, Entries.lua).
@@ -594,13 +588,16 @@ local function SyncSubzoneEvents(self)
 end
 
 local function RegisterEvents(self)
-    -- Suspended (combat): a refresh at the combat start (MSUF Edit Mode
-    -- closes in its PLAYER_REGEN_DISABLED handler) keeps PLAYER_REGEN_ENABLED
-    -- and the compile inputs (OWED) only.
     local suspended = self.listen.suspended
-    for i = 1, #EVENTS do
-        local event = EVENTS[i]
-        if not suspended or OWED[event] or event == "PLAYER_REGEN_ENABLED" then R.Listen(self, event, OnEvent) end
+    -- Suspend leaves the resume and compile listeners registered.
+    if not suspended then
+        for i = 1, #EVENTS do R.Listen(self, EVENTS[i], OnEvent) end
+    end
+    if NS.Client.isForever then
+        if self.config.foreverSleepingBag then R.Listen(self, "PLAYER_LEVEL_UP", OnEvent)
+        else self.context:RemoveEvent("PLAYER_LEVEL_UP") end
+        if self.config.foreverWellFed and not suspended then R.Listen(self, "ITEM_DATA_LOAD_RESULT", OnEvent)
+        else self.context:RemoveEvent("ITEM_DATA_LOAD_RESULT") end
     end
     SyncRosterEvent(self)
     if suspended then return end
@@ -621,6 +618,7 @@ local function Suspend(self)
         local event = EVENTS[i]
         if event ~= "PLAYER_REGEN_ENABLED" and not OWED[event] then self.context:RemoveEvent(event) end
     end
+    if NS.Client.isForever then self.context:RemoveEvent("ITEM_DATA_LOAD_RESULT") end
     SyncSubzoneEvents(self)
     SyncUnitEvents(self)
     R.SyncPreparationEvents(self, OnEvent)
@@ -640,15 +638,7 @@ local function Resume(self)
     SyncUnitEvents(self)
 end
 
--- Leaving combat compiles only when a compile input changed while suspended:
--- a compile event or a compile refused in combat, a roster change that
--- changed the other classes, a bag change that changed a consumable pick, a
--- step onto or off a potion map (subzone steps are not heard in combat) or
--- item data the last compile still waited for (stock.pending). The
--- 2026-10-11 raid trace compiled at all 4 combat ends (M:Compile 3.0 ms,
--- most of it BuildEntries' bag scans: 608 GetContainerItemID, GetItemCount
--- 13 us each). Otherwise the pet, Healthstone and member-event state are
--- read as a compile reads them.
+-- Only recompile at combat end when an input changed or item data was pending.
 local function CompileAfterCombat(self)
     local owed, stock = Owed(self), self.stock
     if owed.compile or stock.pending or R.OnPotionMap(self) ~= stock.onPotionMap
@@ -691,6 +681,7 @@ OnEvent = function(self, event, unit, updateInfo)
         return
     end
     if NS.IsCombatLocked() then return end
+    if event == "ITEM_DATA_LOAD_RESULT" then return R.FoodItemLoaded(self, unit, updateInfo) end
     if event == "PET_BAR_UPDATE" or event == "PET_UI_UPDATE" or event == "UNIT_PET" then
         if event ~= "UNIT_PET" or unit == "player" then
             R.ReadPet(self)
@@ -721,8 +712,7 @@ OnEvent = function(self, event, unit, updateInfo)
     local foodDirty = event == "UNIT_AURA" and FoodDelta(self, updateInfo)
     if INSTANCE_EVENTS[event] then
         ReadInstance(self, event)
-        -- Re-check food, never forget it: no aura listener runs in combat,
-        -- and the rescan keeps every known food aura that is still active.
+        -- Recheck known food auras after the listener was off in combat.
         self.food.known = nil
     end
     local bagUpdate = event == "BAG_UPDATE_DELAYED"
@@ -785,6 +775,8 @@ function M:Disable()
     R.CancelGroupWork(self)
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     for i = 1, #EVENTS do self.context:RemoveEvent(EVENTS[i]) end
+    self.context:RemoveEvent("PLAYER_LEVEL_UP")
+    self.context:RemoveEvent("ITEM_DATA_LOAD_RESULT")
     self.context:RemoveEvent("PLAYER_UPDATE_RESTING")
     SyncSubzoneEvents(self)
     listen.suspended = false

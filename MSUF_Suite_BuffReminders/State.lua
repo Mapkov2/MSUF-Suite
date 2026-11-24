@@ -38,10 +38,10 @@ R.STATE = {
     food = { "ids", "known", "scanKeys" },
     -- The automatic consumable picks of the last compile (Entries): the
     -- flask, rune, oil and food picked (false for none), whether the map
-    -- potion was in the bags, the last food eaten from the bags, whether
+    -- potion or sleeping bag was in the bags, the last food picked, whether
     -- the player stood on a potion map and whether item or spell data the
     -- compile asked for had not arrived yet (pending).
-    stock = { "flask", "rune", "oil", "food", "potion", "lastFood", "onPotionMap", "pending" },
+    stock = { "flask", "rune", "oil", "food", "potion", "sleepingBag", "lastFood", "onPotionMap", "pending" },
     -- The group (Group). settings: the group options of the last roster
     -- read; buffers: the two roster buffers; units and unitList: the member
     -- set and the member events' unit filter ("player" first); classes: the

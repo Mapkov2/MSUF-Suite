@@ -144,6 +144,7 @@ local function Append(kind, id)
     entry.ranked, entry.spellName = nil, nil
     entry.remember, entry.memory, entry.rememberedAura, entry.missingOnly = nil, nil, nil, nil
     entry.ally, entry.allyMissing, entry.dismissed = nil, nil, nil
+    entry.requiredStacks = nil
     entry.bit, entry.present, entry.expiresAt, entry.totalDuration = nil, nil, nil, nil
     entry.auraInstanceID, entry.instanceIDs, entry.actionID, entry.count = nil, nil, nil, nil
     list[count] = entry
@@ -208,7 +209,8 @@ function R.SameEntries(left, right)
             or a.slot ~= b.slot or a.aliases ~= b.aliases or a.poison ~= b.poison
             or a.poisonRank ~= b.poisonRank or a.restock ~= b.restock or a.group ~= b.group or a.notice ~= b.notice
             or a.category ~= b.category or a.ranked ~= b.ranked or a.spellName ~= b.spellName
-            or a.ally ~= b.ally or a.remember ~= b.remember or a.memory ~= b.memory or a.missingOnly ~= b.missingOnly then
+            or a.ally ~= b.ally or a.remember ~= b.remember or a.memory ~= b.memory or a.missingOnly ~= b.missingOnly
+            or a.requiredStacks ~= b.requiredStacks then
             return false
         end
         if a.candidates or b.candidates then
@@ -420,27 +422,48 @@ local function Pick(self, c, stock)
     return Preferred(stock.items, c[stock.choice]) or stock.items[1], true
 end
 
--- Bag items that are food: a Food & Drink consumable whose use spell is one
--- of the game's eating spells (R.EATING_SPELLS). The answer is kept per item
--- ID for the session; an item whose data has not arrived (nil) is asked again.
+-- A bag item's use spell identifies buff food on this client.
 local EATING_SPELLS = R.EATING_SPELLS
 local CONSUMABLE, FOOD_AND_DRINK = Enum.ItemClass.Consumable, Enum.ItemConsumableSubclass.Fooddrink
-local foodItems = {}
+local foodItems, pendingFoodItems = {}, {}
+
+local function ForeverFood(itemID)
+    local name, spellID = C_Item.GetItemSpell(itemID)
+    if not Public(name) or not Public(spellID) then return nil end
+    if spellID == R.NUTRITIOUS_FOOD then return true end
+    if name then
+        local family = C_Spell.GetSpellName(R.NUTRITIOUS_FOOD)
+        if Public(family) and type(family) == "string" then return name == family end
+    elseif C_Item.IsItemDataCachedByID(itemID) then
+        return false
+    elseif not pendingFoodItems[itemID] then
+        pendingFoodItems[itemID] = true
+        C_Item.RequestLoadItemDataByID(itemID)
+    end
+end
 
 local function IsFood(itemID)
     local food = foodItems[itemID]
     if food ~= nil then return food end
     local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemID)
-    if not Public(classID) or not Public(subClassID) or classID ~= CONSUMABLE or subClassID ~= FOOD_AND_DRINK then
-        foodItems[itemID] = false
-        return false
-    end
-    local _, spellID = C_Item.GetItemSpell(itemID)
-    if not Public(spellID) or type(spellID) ~= "number" then
+    if not Public(classID) or not Public(subClassID) then
         undecided = true
         return nil
     end
-    food = EATING_SPELLS[spellID] == true
+    if classID ~= CONSUMABLE or not NS.Client.isForever and subClassID ~= FOOD_AND_DRINK then
+        foodItems[itemID] = false
+        return false
+    end
+    if NS.Client.isForever then
+        food = ForeverFood(itemID)
+    else
+        local _, spellID = C_Item.GetItemSpell(itemID)
+        if Public(spellID) and type(spellID) == "number" then food = EATING_SPELLS[spellID] == true end
+    end
+    if food == nil then
+        undecided = true
+        return nil
+    end
     foodItems[itemID] = food
     return food
 end
@@ -460,6 +483,25 @@ local bagRevision, bagsReported = 0, false
 
 function R.BagsChanged()
     bagRevision, bagsReported = bagRevision + 1, true
+end
+
+local function RefreshFoodStock(self)
+    if not self.config.foreverWellFed then return end
+    if self.listen.suspended then
+        self.stock.pending = true
+        return
+    end
+    self:Compile()
+    self:Update("visual")
+end
+
+function R.FoodItemLoaded(self, itemID, success)
+    if not Public(itemID) or type(itemID) ~= "number" or not pendingFoodItems[itemID] then return end
+    pendingFoodItems[itemID] = nil
+    if not Public(success) or success ~= true then return end
+    bagRevision = bagRevision + 1
+    -- The native loader can report while a bag compile is still running.
+    self.context:Coalesce(0, RefreshFoodStock):Request()
 end
 
 -- The food in the bags with the highest item ID, and whether every item the
@@ -534,7 +576,7 @@ local function FoodPick(c)
     local choice = ID(c.foodChoice)
     if choice then
         local count = ItemCount(choice)
-        if count and count > 0 then return choice end
+        if count and count > 0 and (not NS.Client.isForever or IsFood(choice)) then return choice end
     end
     return BagFood() or false
 end
@@ -552,13 +594,37 @@ local function AddFoodReminder(self, c)
         return
     end
     local restock = c.restockNotice == true
-    local item = ID(c.foodChoice) or stock.lastFood
-    if restock and item then
-        AddFood(item, restock)
-        return
+    if restock then
+        local item = ID(c.foodChoice)
+        if NS.Client.isForever and item and not IsFood(item) then item = nil end
+        item = item or stock.lastFood
+        if item then
+            AddFood(item, true)
+            return
+        end
     end
-    local entry = AddFood(R.WELL_FED, restock)
+    local entry = AddFood(NS.Client.isForever and R.FOREVER_WELL_FED or R.WELL_FED, restock)
     if entry then entry.notice = "food" end
+end
+
+local function HasSleepingBag()
+    local count = ItemCount(R.SLEEPING_BAG)
+    return count ~= nil and count > 0
+end
+
+local function AddForeverConsumables(self, c)
+    buildingCategory = "consumable"
+    if c.foreverSleepingBag then
+        local maxLevel = GameRulesUtil.IsPlayerAtEffectiveMaxLevel()
+        if Public(maxLevel) and maxLevel == false then
+            self.stock.sleepingBag = HasSleepingBag()
+            if self.stock.sleepingBag then
+                local entry = AddItem(R.SLEEPING_BAG, R.WELL_RESTED)
+                if entry then entry.requiredStacks = R.WELL_RESTED_STACKS end
+            end
+        end
+    end
+    if c.foreverWellFed and not Full() then AddFoodReminder(self, c) end
 end
 
 -- Automatic consumables: the first owned item of each enabled category.
@@ -649,6 +715,7 @@ function R.StockChanged(self)
         local picked = picks[stock.key]
         if picked ~= nil and (FirstStocked(stock.items, self.config[stock.choice]) or false) ~= picked then return true end
     end
+    if picks.sleepingBag ~= nil and HasSleepingBag() ~= picks.sleepingBag then return true end
     undecided = false
     if picks.food ~= nil and FoodPick(self.config) ~= picks.food then return true end
     if undecided then picks.pending = true end
@@ -672,7 +739,7 @@ function R.BuildEntries(self, previewBuffer)
     R.GroupRoster(self)
     local stock = self.stock
     for i = 1, #STOCK do stock[STOCK[i].key] = nil end
-    stock.food, stock.potion = nil, nil
+    stock.food, stock.potion, stock.sleepingBag = nil, nil, nil
     if c.classBuff or c.groupBuff then
         local buff = R.ClassBuff(class)
         if buff and Known(buff.cast) then
@@ -701,6 +768,7 @@ function R.BuildEntries(self, previewBuffer)
     if NS.Client.modernEquipment and c.autoRoguePoisons and class == "ROGUE" then AddRoguePoisons() end
     local mainID, offID = AddConfigured(c)
     if NS.Client.modernEquipment then AddStocked(self, c, mainID, offID) end
+    if NS.Client.isForever then AddForeverConsumables(self, c) end
     AddMapPotion(self, c)
     stock.pending = undecided
     return list

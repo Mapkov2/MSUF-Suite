@@ -21,6 +21,18 @@ R.BEACON_OF_LIGHT, R.BEACON_OF_FAITH = 53563, 156910
 -- runs while the client knows this spell (it has a name).
 R.CAMP_BENEFITS = 1229741
 
+-- Forever's reusable sleeping bag stacks Well-Rested up to three times.
+R.SLEEPING_BAG, R.WELL_RESTED, R.WELL_RESTED_STACKS = 211527, 429959, 3
+
+-- Nutritious Food is the shared use-spell family for Forever's buff food.
+-- Some foods have individually named effects or a separate XP aura.
+R.NUTRITIOUS_FOOD, R.FOREVER_WELL_FED = 1248377, 19705
+R.FOREVER_FOOD_AURAS = { 19705, 18125, 18141, 18192, 18194, 22730, 25661,
+    1243969, 1249519, 1249520 }
+R.FOREVER_FOOD_NAMES = { R.FOREVER_WELL_FED }
+R.FOREVER_FOOD_IDS = {}
+for _, spellID in ipairs(R.FOREVER_FOOD_AURAS) do R.FOREVER_FOOD_IDS[spellID] = true end
+
 -- These spell IDs are already part of MSUF's long-term raid buff presets.
 -- The cast spell and observed aura can differ (notably Blessing of the Bronze).
 local CLASS_BUFF = {
