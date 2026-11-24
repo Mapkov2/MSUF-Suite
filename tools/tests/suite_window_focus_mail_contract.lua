@@ -29,10 +29,33 @@ local body = [======[
             "passive " .. name .. " took focus from inventory")
         toast:Hide(); Tick()
     end
-    mail:Show(); Tick()
+    local settleMail = C_Timer.After
+    local mailJobs = {}
+    C_Timer.After = function(_, job) mailJobs[#mailJobs + 1] = job end
+    local function FlushMailFocus()
+        local jobs = mailJobs
+        mailJobs = {}
+        for _, job in ipairs(jobs) do job() end
+    end
+    _G.combatEdge = true
+    mail:Show()
+    if flavor == "Forever" then
+        Check(F.active.frame == bag and not F.records[mail].extents,
+            "mailbox focus scanned native chrome before Blizzard finished opening mail")
+        split:Show()
+        Check(not F.records[split].extents and #mailJobs == 1,
+            "bags opened by the mailbox ran a synchronous focus pass or queued another pass")
+        FlushMailFocus()
+        Check(F.active.frame == split and F.records[mail].extents and F.records[split].extents,
+            "mail and bag focus did not settle together while combat was still active")
+    else
+        Check(F.active.frame == mail and #mailJobs == 0, "Retail mailbox focus was deferred")
+        split:Show()
+    end
+    _G.combatEdge = false
+    Tick()
     Check(not Dimmed(bag) and #F.records[bag].veils == 0, "the opening mailbox dims an already active bag")
     Check(not Dimmed(mail) and Dimmed(other), "mail exception changed unrelated window focus")
-    split:Show(); Tick()
     Click(other); Tick()
     Check(not Dimmed(bag) and not Dimmed(split) and not Dimmed(mail), "mailing group lost focus after third-window input")
     letter:Show(); Tick()
@@ -42,8 +65,17 @@ local body = [======[
     letter:Hide(); Click(other); Tick()
     Check(Dimmed(bag) and Dimmed(split), "closing mail retained the mailing group")
     split:Hide()
-    mail:Show(); bag:Hide(); Click(other); Tick()
+    mail:Show(); bag:Hide(); FlushMailFocus(); Click(other); Tick()
     Check(Dimmed(mail), "mail without inventory must obey normal focus")
+    if flavor == "Forever" then
+        mail:Hide(); Click(other)
+        local order = F.records[mail].order
+        mail:Show(); mail:Hide(); FlushMailFocus()
+        Check(F.active.frame == other and not F.records[mail].focusVisible and not Dimmed(mail),
+            "a mailbox closed before its focus pass came back into view")
+        Check(F.records[mail].order > order, "queued mailbox show did not retain native opening order")
+    end
+    C_Timer.After = settleMail
 end
 print("suite_window_focus_mail_contract: " .. checks .. " checks passed")
 ]======]

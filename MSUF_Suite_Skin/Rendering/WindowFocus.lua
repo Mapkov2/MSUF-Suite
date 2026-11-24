@@ -17,6 +17,8 @@ local inputWindow
 local Reconcile, UpdateListeners, QueueGeometry, GamepadChanged
 local gamepadRegistry
 local GAMEPAD_FOCUS_EVENT = "Gamepad.RefreshFrameFocus"
+local mailFocusQueued = false
+local mailOutlines = {}
 local tradingBags = {
     ContainerFrameCombinedBags = true,
     ContainerFrame1 = true, ContainerFrame2 = true, ContainerFrame3 = true,
@@ -114,6 +116,7 @@ local function Paint(state)
 end
 
 Reconcile = function()
+    if mailFocusQueued then return end
     local active = ChooseActive()
     if not Enabled() or count < 2 or not active then
         for _, state in pairs(visible) do Hide(state, true) end
@@ -161,6 +164,30 @@ Reconcile = function()
         if clearBounds then Paint(state) else Hide(state, true) end
     end
     UpdateListeners()
+end
+
+local function SettleMailFocus()
+    mailFocusQueued = false
+    for state in pairs(mailOutlines) do
+        mailOutlines[state] = nil
+        if state.focusVisible and IsVisible(state.frame) then UpdateOutline(state) end
+    end
+    Reconcile()
+end
+
+local function UpdateOpeningOutline(state)
+    local policy = NS.WindowControlPolicy
+    if (state.name == "MailFrame" or tradingBags[state.name]) and policy.MailIsOpen() then
+        -- Forever shows the panel and opens inventory before the protected
+        -- reading emote. The focus pass discovers and hooks native chrome.
+        mailOutlines[state] = true
+        if not mailFocusQueued then
+            mailFocusQueued = true
+            C_Timer.After(0, SettleMailFocus)
+        end
+        return
+    end
+    UpdateOutline(state)
 end
 
 local function Step()
@@ -282,7 +309,7 @@ local function Shown(frame)
     if not state or not Owned(state) or not IsVisible(frame) then return end
     if not visible[frame] then visible[frame], count = state, count + 1 end
     state.focusVisible = true
-    UpdateOutline(state)
+    UpdateOpeningOutline(state)
     Promote(state)
 end
 
@@ -305,7 +332,7 @@ local function LayoutChanged(frame)
     local state = visible[frame]
     if state then
         state.chromeDirty = true
-        UpdateOutline(state)
+        if not mailOutlines[state] then UpdateOutline(state) end
     end
     GeometryChanged(frame)
 end
@@ -370,7 +397,7 @@ function Focus.Track(frame, owner)
     if IsVisible(frame) and not visible[frame] then
         visible[frame], count = state, count + 1
         state.focusVisible, state.chromeDirty = true, true
-        UpdateOutline(state)
+        UpdateOpeningOutline(state)
         if state.order == 0 then
             serial = serial + 1
             state.order = serial
