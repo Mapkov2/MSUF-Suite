@@ -1,4 +1,4 @@
-"""Reject callback extraction and foreign menu dispatch in the rank footer."""
+"""Reject native row rebuilds and stale preference reads in the rank footer."""
 import os
 from pathlib import Path
 import subprocess
@@ -10,10 +10,11 @@ LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua5
 SOURCE = ROOT / "MSUF_Suite_Skin/Adapters/PlayerSpells.lua"
 TEST = ROOT / "tools/tests/suite_skin_rank_dispatch_contract.lua"
 CASES = (
-    ("native menu dispatch", 'option:Pick(MenuInputContext.MouseButton, mouseButton)', 'option.responder()',
-     "addon code extracted the native ranks responder"),
-    ("native Pick ownership", 'and issecurevariable(option, "Pick") ', '',
-     "a replaced menu Pick handler rebuilt the native spellbook"),
+    ("rebuild on addon click", "    SetCVar(RANKS_CVAR, not GetCVarBool(RANKS_CVAR))",
+     "    SetCVar(RANKS_CVAR, not GetCVarBool(RANKS_CVAR))\n    button:GetParent():UpdateDisplayedSpells()",
+     "the Suite footer rebuilt native spell rows during its click"),
+    ("stale preference", "    SetCVar(RANKS_CVAR, not GetCVarBool(RANKS_CVAR))",
+     "    SetCVar(RANKS_CVAR, not button.on)", "the next click used stale selection state"),
 )
 
 

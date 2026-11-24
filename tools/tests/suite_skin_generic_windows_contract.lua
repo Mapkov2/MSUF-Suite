@@ -2092,20 +2092,20 @@ Section("forever spellbook ranks toggle", function()
         issecurevariable, MenuInputContext }
     NS.Client.isForever, NS.Client.IsGamepadUI = true, function() return false end
     local cvars, tooltip, class, active = { ShowAllSpellRanks = "0" }, {}, "MAGE", {}
-    local clickPhase, secureResponder, securePick, selectable, hasResponder = nil, true, true, true, true
-    issecurevariable = function(_, key)
-        if key == "responder" then return secureResponder end
-        if key == "Pick" then return securePick end
-        return true
-    end
+    local clickPhase, searchResults, writes = nil, false, 0
+    issecurevariable = function() return true end
     MenuInputContext = { MouseButton = "native mouse input" }
     GetCVarBool = function(name) return cvars[name] == "1" end
-    SetCVar = function(name, value) cvars[name] = value end
+    SetCVar = function(name, value)
+        cvars[name] = value and value ~= "0" and "1" or "0"
+        writes = writes + 1
+    end
     UnitClass = function() return "Class", class end
     SHOW_ALL_SPELL_RANKS = "Show All Spell Ranks"
     GameTooltip = { SetOwner = function() end, Show = function() tooltip.shown = true end }
     GameTooltip_SetTitle = function(_, text) tooltip.title = text end
-    GameTooltip_AddNormalLine = function(_, text) tooltip.line = text end
+    local tooltipLines = {}
+    GameTooltip_AddNormalLine = function(_, text) tooltipLines[#tooltipLines + 1] = text end
     GameTooltip_Hide = function() tooltip.shown = false end
     NS.ControlSkin.Refresh = function(target, on) active[target] = on return true end
     local created = {}
@@ -2139,39 +2139,29 @@ Section("forever spellbook ranks toggle", function()
         function spells:HookScript(name, callback) self.hooks[name] = callback end
         local book = Frame(nil)
         book.PagedSpellsFrame = Frame(nil)
+        function book:IsInSearchResultsMode() return searchResults end
         spells.SpellBookFrame = book
         return spells, book
     end
     local spells, book = Book()
-    local refreshes, entries = 0, 1
-    local function NativeRanksResponder()
-        Expect(clickPhase == "native menu", "native cooldown rebuild bypassed the menu description dispatch")
-        cvars.ShowAllSpellRanks = cvars.ShowAllSpellRanks == "1" and "0" or "1"
-        entries = cvars.ShowAllSpellRanks == "1" and 3 or 1
+    local refreshes, entries, rowOwner = 0, 1, "native"
+    function book:UpdateDisplayedSpells()
+        -- Model ownership of the pooled rows created on this execution path.
+        rowOwner = clickPhase
+        entries = GetCVarBool("ShowAllSpellRanks") and 3 or 1
         refreshes = refreshes + 1
         NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
     end
-    local rankOption = setmetatable({ text = SHOW_ALL_SPELL_RANKS }, { __index = function(_, key)
-        if key == "responder" then error("addon code extracted the native ranks responder") end
-    end })
-    local picks = 0
-    function rankOption:Pick(context, buttonName)
-        Expect(context == MenuInputContext.MouseButton and buttonName == "LeftButton",
-            "rank selection did not use the native mouse input context")
-        if not selectable then return false end
-        picks = picks + 1
-        -- Model the public Menu.lua dispatch; this fixture does not emulate WoW taint.
-        local previous = clickPhase
-        clickPhase = "native menu"
-        NativeRanksResponder()
-        clickPhase = previous
-        return true
-    end
+    local rankOption = { text = SHOW_ALL_SPELL_RANKS }
     function rankOption:IsCheckbox() return true end
-    function rankOption:CanSelect() return selectable end
-    function rankOption:HasResponder() return hasResponder end
-    local description = { tag = "MENU_SPELL_BOOK_SETTINGS" }
-    function description:GetTag() return self.tag end
+    function rankOption:CanSelect() return not searchResults end
+    function rankOption:HasResponder() return true end
+    function rankOption:Pick()
+        SetCVar("ShowAllSpellRanks", not GetCVarBool("ShowAllSpellRanks"))
+        book:UpdateDisplayedSpells()
+    end
+    local description = {}
+    function description:GetTag() return "MENU_SPELL_BOOK_SETTINGS" end
     function description:EnumerateElementDescriptions() return ipairs({ rankOption }) end
     book.SettingsDropdown = Frame(nil)
     function book.SettingsDropdown:GetMenuDescription() return description end
@@ -2206,56 +2196,47 @@ Section("forever spellbook ranks toggle", function()
             clickPhase = nil
         end
         Expect(clickHandler and not toggle.scripts.PreClick and not toggle.scripts.PostClick,
-            "rank toggle still transplants the responder during a hardware click")
+            "rank toggle changed the hardware click handlers")
+        toggle.scripts.OnEnter(toggle)
+        Expect(tooltipLines[1] == "Takes effect when you switch spellbook tabs."
+            and tooltipLines[2] == "To apply immediately, use the rank checkbox in the spellbook settings menu.",
+            "the ranks tooltip did not explain when the preference takes effect")
+
         Click()
-        Expect(toggle.scripts.OnClick == clickHandler and picks == 1, "rank toggle did not use the native menu description")
-        Expect(entries == 3 and refreshes == 1 and active[toggle] == true,
-            "the first bottom click did not immediately show all ranks")
+        Expect(refreshes == 0 and entries == 1 and rowOwner == "native",
+            "the Suite footer rebuilt native spell rows during its click")
+        Expect(writes == 1 and active[toggle] == true, "the Suite footer did not save and paint the rank preference")
+        clickPhase = "native"
+        book:UpdateDisplayedSpells()
+        clickPhase = nil
+        Expect(entries == 3 and refreshes == 1 and rowOwner == "native",
+            "a native category change did not create the lower-rank rows from the preference")
+
         Click()
-        Expect(entries == 1 and refreshes == 2 and active[toggle] == false,
-            "the second bottom click did not immediately hide the lower ranks")
-        cvars.ShowAllSpellRanks = "1"
-        NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
-        Expect(active[toggle] == true, "the ranks toggle missed a native setting change")
+        Expect(writes == 2 and refreshes == 1 and entries == 3 and active[toggle] == false,
+            "the Suite footer did not save the hide-ranks preference separately from the list")
+        clickPhase = "native"
+        book:UpdateDisplayedSpells()
+        Expect(entries == 1 and rowOwner == "native", "the next native category change did not hide the lower ranks")
+        rankOption:Pick()
+        clickPhase = nil
+        Expect(writes == 3 and entries == 3 and refreshes == 3 and active[toggle] == true and rowOwner == "native",
+            "the native checkbox did not immediately update visible rows and synchronize the footer")
         cvars.ShowAllSpellRanks = "0"
         Click()
-        Expect(entries == 3 and refreshes == 3, "the next click used stale selection state")
+        Expect(writes == 4 and GetCVarBool("ShowAllSpellRanks") and active[toggle] == true and refreshes == 3,
+            "the next click used stale selection state")
+
         locked = true
         Click()
         locked = false
-        selectable = false
+        searchResults = true
         Click()
-        selectable = true
-        Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1",
-            "the ranks filter changed while locked or disabled by the native menu")
-        secureResponder = false
-        Click()
-        secureResponder = true
-        Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1", "a tainted responder changed the ranks")
-        hasResponder = false
-        Click()
-        toggle.scripts.OnEnter(toggle)
-        Expect(refreshes == 3 and tooltip.line == "To apply immediately, use the rank checkbox in the spellbook settings menu.",
-            "missing native responder changed ranks or hid the fallback hint")
-        hasResponder = true
-        securePick = false
-        Click()
-        securePick = true
-        Expect(refreshes == 3, "a replaced menu Pick handler rebuilt the native spellbook")
-        local pick = rankOption.Pick
-        rankOption.Pick = nil
-        Click()
-        rankOption.Pick = pick
+        searchResults = false
         Click("RightButton")
         Click("LeftButton", true)
-        Expect(refreshes == 3, "missing native API, right click or mouse-down rebuilt the spellbook")
-        description.tag = "OTHER_MENU"
-        Click()
-        Expect(refreshes == 3 and cvars.ShowAllSpellRanks == "1" and toggle.scripts.OnClick == clickHandler,
-            "a foreign menu rebuilt the native spellbook or replaced the owned handler")
-        toggle.scripts.OnEnter(toggle)
-        Expect(tooltip.line == "To apply immediately, use the rank checkbox in the spellbook settings menu.",
-            "a missing native handler did not expose the fallback hint")
+        Expect(writes == 4 and refreshes == 3 and active[toggle] == true and toggle.scripts.OnClick == clickHandler,
+            "combat, search results, or a non-left-up click changed the rank preference")
         NS.PlayerSpellsSkin.Disable(spells, "ranks")
         Expect(toggle.shown == false, "disabling the spellbook skin left the ranks toggle visible")
     end

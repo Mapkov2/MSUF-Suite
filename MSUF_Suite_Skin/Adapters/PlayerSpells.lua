@@ -272,9 +272,8 @@ local function SkinPagingControls(state, pagingControls)
     SkinGlyphButton(state, PublicField(pagingControls, "NextPageButton"), ">", NEXT_PAGE_SPEC)
 end
 
--- Select the native rank-checkbox description through Blizzard's menu API.
--- Copying its responder into an addon button's OnClick bypasses the native
--- Pick dispatch and taints the secret cooldown update during the rebuild.
+-- Let the native spellbook rebuild from this preference on a category change.
+-- Invoking the menu responder here rebuilds pooled spell rows on an addon click.
 local RANKS_CVAR = "ShowAllSpellRanks"
 local classesWithoutRanks = { ROGUE = true, WARRIOR = true }
 local RANKS_SPEC = { role = "button", activeRole = "navigationActive", useControlShape = true, ownedArt = true }
@@ -287,35 +286,18 @@ local function SyncRanksToggle(button)
     button.Dot:SetColorTexture(NS.Theme.GetColor(on and "accentBright" or "border"))
 end
 
-local function GetRanksOption(book)
-    local menu = Safety.Read(PublicField(book, "SettingsDropdown"), "GetMenuDescription")
-    if Safety.Read(menu, "GetTag") ~= "MENU_SPELL_BOOK_SETTINGS"
-        or not Safety.HasMethod(menu, "EnumerateElementDescriptions") then return end
-    for _, option in menu:EnumerateElementDescriptions() do
-        if PublicField(option, "text") == SHOW_ALL_SPELL_RANKS and Safety.Read(option, "IsCheckbox") == true then
-            if Safety.Read(option, "CanSelect") == true and Safety.Read(option, "HasResponder") == true
-                and issecurevariable(option, "responder")
-                and issecurevariable(option, "Pick") and Safety.HasMethod(option, "Pick") then return option end
-            return
-        end
-    end
-end
-
 local function OnRanksToggleClick(button, mouseButton, down)
     if mouseButton ~= "LeftButton" or down or NS.IsCombatLocked() then return end
-    local option = GetRanksOption(button:GetParent())
-    if not option then return end
-    -- Pick keeps retrieval and execution of the native responder inside Menu.lua.
-    option:Pick(MenuInputContext.MouseButton, mouseButton)
-    if button.on ~= (GetCVarBool(RANKS_CVAR) == true) then SyncRanksToggle(button) end
+    if Safety.Read(button:GetParent(), "IsInSearchResultsMode") ~= false then return end
+    SetCVar(RANKS_CVAR, not GetCVarBool(RANKS_CVAR))
+    SyncRanksToggle(button)
 end
 
 local function OnRanksToggleEnter(button)
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip_SetTitle(GameTooltip, SHOW_ALL_SPELL_RANKS)
-    if not GetRanksOption(button:GetParent()) then
-        GameTooltip_AddNormalLine(GameTooltip, NS.L["To apply immediately, use the rank checkbox in the spellbook settings menu."], true)
-    end
+    GameTooltip_AddNormalLine(GameTooltip, NS.L["Takes effect when you switch spellbook tabs."], true)
+    GameTooltip_AddNormalLine(GameTooltip, NS.L["To apply immediately, use the rank checkbox in the spellbook settings menu."], true)
     GameTooltip:Show()
 end
 
