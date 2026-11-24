@@ -206,15 +206,24 @@ battleRes.layers = {
     } },
 }
 
-for _, layer in ipairs(battleRes.layers) do
-    local key, label, extras = unpack(layer)
-    local rules = { Bool(key .. "Shown", "Show element", true),
-        Number(key .. "X", "Horizontal offset", 0, -160, 160),
-        Number(key .. "Y", "Vertical offset", 0, -120, 120) }
-    for _, rule in ipairs(extras) do rules[#rules + 1] = rule end
-    layer.rules, layer.section = rules, "battle_res_" .. key
-    B.Section("battleRes", layer.section, label, rules)
+-- The layers of a preview element editor (MSUF_Suite_Options/Pages/
+-- QoLLayerEditor.lua), each in a section of its own: a <key>Shown switch
+-- (layer.shown = false starts it off), the <key>X/<key>Y offsets within
+-- range unless layer.fixed, then the layer's own rules.
+function NS.AddQoLLayers(id, prefix, layers, rangeX, rangeY)
+    for _, layer in ipairs(layers) do
+        local key, label, extras = unpack(layer)
+        local rules = { Bool(key .. "Shown", "Show element", layer.shown ~= false) }
+        if not layer.fixed then
+            rules[2] = Number(key .. "X", "Horizontal offset", 0, -rangeX, rangeX)
+            rules[3] = Number(key .. "Y", "Vertical offset", 0, -rangeY, rangeY)
+        end
+        for _, rule in ipairs(extras) do rules[#rules + 1] = rule end
+        layer.rules, layer.section = rules, prefix .. key
+        B.Section(id, layer.section, label, rules)
+    end
 end
+NS.AddQoLLayers("battleRes", "battle_res_", battleRes.layers, 160, 120)
 -- Without the swipe the recharge shows only Blizzard's countdown numbers.
 NS.SuiteCatalog.battleRes.rules.timerTexture.enableKey = "timerSwipe"
 

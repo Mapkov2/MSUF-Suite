@@ -58,9 +58,9 @@ function P.ResolveToolSearchTarget(page, target)
     end
     if target.prepareKind == "suiteCDMBar" then return P.ResolveCDMInspectionTarget(page, target) end
     if page == LEGACY_PAGE or page == "gameplay" then
-        local battleResKey = target.controlId and (target.settingKey or ""):match("^msufsuite%.battleRes%.(.+)$")
-        local rule = battleResKey and P.catalog.battleRes.rules[battleResKey]
-        if rule and rule.section and rule.section:match("^battle_res_") then
+        local id, key = (target.settingKey or ""):match("^msufsuite%.([^.]+)%.(.+)$")
+        local rule = target.controlId and id and P.catalog[id] and P.catalog[id].rules[key]
+        if rule and rule.section and P.QoLLayerSection(id, rule.section) then
             -- The setting route runs the widget's preparation and reveals its layer.
             return page, RelocatedTarget(target, page, nil, target.sectionId)
         end

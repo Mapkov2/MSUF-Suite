@@ -59,6 +59,7 @@ Core\Catalog\QualityOfLife.lua
 Core\Catalog\Tooltips.lua
 Core\Catalog\LootRolls.lua
 Core\Catalog\QualityOfLifeIndicators.lua
+Core\Catalog\LootWindow.lua
 Core\Catalog\ExperienceBar.lua
 Core\Catalog\QualityOfLifeDetails.lua
 Core\Catalog\QualityOfLifeHUD.lua

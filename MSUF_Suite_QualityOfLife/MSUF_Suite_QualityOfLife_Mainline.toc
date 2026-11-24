@@ -123,6 +123,8 @@ LootRollHistory.lua
 LootRollList.lua
 LootRollView.lua
 LootRolls.lua
+LootWindowView.lua
+LootWindow.lua
 LootContainers.lua
 LootVendorRules.lua
 CombatLog.lua

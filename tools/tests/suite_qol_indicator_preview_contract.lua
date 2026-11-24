@@ -46,12 +46,20 @@ local configs = { lootRolls = { enabled = false, width = 380, height = 182, scal
     actionTracker = { enabled = false, width = 360, height = 120, scale = 200 },
     battleRes = { enabled = false, width = 120, height = 48, scale = 200 },
     enemyCastStack = { enabled = false, width = 320, height = 180, scale = 200 },
-    glimmer = { enabled = false, width = 160, height = 120 } }
+    glimmer = { enabled = false, width = 160, height = 120 },
+    lootWindow = { enabled = false, width = 240, height = 140, scale = 200 } }
 local combat, loads, draws, skips, glimmerHides = true, 0, 0, 0, 0
 local available = true
 local S = { Config = function(id) return configs[id] end }
 local P = { S = S, Suite = { Client = { isForever = false }, GlossMaterial = { Available = function() return available end } },
-    Gates = {}, T = { colors = { accent = { 1, 1, 1 }, border = { .1, .1, .1 } } },
+    Gates = {}, T = { colors = { accent = { 1, 1, 1 }, border = { .1, .1, .1 } },
+        Button = function(parent)
+            local button = Widget(parent)
+            function button:SetEnabled(value) self.enabled = value end
+            function button:GetHeight() return 26 end
+            return button
+        end },
+    SetButtonText = function(button, text) button.text = text end,
     Combat = function() return combat end, Tr = function(text) return text end,
     Text = function(parent, text, x, y, width)
         local label = Widget(parent)
@@ -64,7 +72,7 @@ local P = { S = S, Suite = { Client = { isForever = false }, GlossMaterial = { A
         TrackRefresh = function(ctx, callback) ctx.refresh[#ctx.refresh + 1] = callback end }, W = {} }
 P.catalog = {}
 for id, key in pairs({ lootRolls = "width", xpBar = "displayStyle", skyriding = "width", actionTracker = "rowHeight",
-    battleRes = "scale", enemyCastStack = "rowHeight", glimmer = "size" }) do
+    battleRes = "scale", enemyCastStack = "rowHeight", glimmer = "size", lootWindow = "width" }) do
     P.catalog[id] = { rules = { [key] = { label = key } } }
 end
 function P.W.SettingsRows() error("sample sliders must not enter profile bindings/history") end
@@ -87,7 +95,7 @@ C_AddOns = { LoadAddOn = function(name)
     loads = loads + 1
     S.DrawExperienceBarPreview, S.DrawSkyridingPreview = Draw, Draw
     S.DrawActionTrackerPreview, S.DrawBattleResPreview, S.DrawEnemyCastStackPreview = Draw, Draw, Draw
-    S.DrawLootRollPreview = Draw
+    S.DrawLootRollPreview, S.DrawLootWindowPreview = Draw, Draw
     S.DrawGlimmerPreview = Draw
     S.HideGlimmerPreview = function() glimmerHides = glimmerHides + 1 end
 end }
@@ -104,7 +112,8 @@ do
         "cold combat close loaded or called an absent preview renderer")
 end
 for _, width in ipairs({ 260, 720 }) do
-    for _, id in ipairs({ "xpBar", "skyriding", "actionTracker", "battleRes", "enemyCastStack", "glimmer", "lootRolls" }) do
+    for _, id in ipairs({ "xpBar", "skyriding", "actionTracker", "battleRes", "enemyCastStack", "glimmer", "lootRolls",
+        "lootWindow" }) do
         local parent, ctx = Widget(UIParent), { refresh = {} }
         parent.scale = .7
         local bottom = P.BuildQoLIndicatorPreview(ctx, parent, id, width, -42)
@@ -145,6 +154,8 @@ for _, id in ipairs({ "skyriding", "battleRes", "enemyCastStack" }) do
 end
 assert(P.BuildQoLIndicatorPreview({ refresh = {} }, Widget(), "actionTracker", 720, -42) < -42)
 assert(P.BuildQoLIndicatorPreview({ refresh = {} }, Widget(), "lootRolls", 720, -42) < -42)
+assert(P.BuildQoLIndicatorPreview({ refresh = {} }, Widget(), "lootWindow", 720, -42) < -42,
+    "the loot window preview must exist on Forever")
 for _, id in ipairs({ "skyriding", "actionTracker", "battleRes", "enemyCastStack" }) do
     for _, key in ipairs({ "glossEnabled", "glossStrength" }) do
         available = true
@@ -155,4 +166,4 @@ for _, id in ipairs({ "skyriding", "actionTracker", "battleRes", "enemyCastStack
     end
     assert(P.Gates[id]({ key = "scale" }), "Gloss gate blocked an existing setting")
 end
-print("QoL previews: seven scenes, combat recovery, disabled modules, scale fitting, host gates and hide lifecycle OK")
+print("QoL previews: eight scenes, combat recovery, disabled modules, scale fitting, host gates and hide lifecycle OK")

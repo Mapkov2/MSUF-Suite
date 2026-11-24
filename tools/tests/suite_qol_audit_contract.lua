@@ -122,6 +122,15 @@ local function PageSections()
     return listed
 end
 
+-- A layer editor lists its layer sections itself (QualityOfLifeCatalog.lua
+-- adds them after the feature's own sections).
+local function LayerSection(spec, section)
+    for _, layer in ipairs(spec.layers or {}) do
+        if layer.section == section then return true end
+    end
+    return false
+end
+
 local function HelpCatalog()
     local help, listed = HelpTexts(false), PageSections()
     Check(help.trainer_all:find("before buying", 1, true) and HelpTexts(true).trainer_all:find("shortfall", 1, true),
@@ -152,7 +161,8 @@ local function HelpCatalog()
         local spec = catalog[id]
         for _, rule in ipairs(spec.controls) do
             local section = spec.page == "suite_qualityOfLife" and (embedded[rule] or rule.section)
-            Check(not section or listed[section], id .. " section " .. tostring(section) .. " is on no page")
+            Check(not section or listed[section] or LayerSection(spec, section),
+                id .. " section " .. tostring(section) .. " is on no page")
         end
     end
 end

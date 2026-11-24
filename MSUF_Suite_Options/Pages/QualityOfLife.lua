@@ -186,16 +186,34 @@ local function RegisterFeatureRuleSearch(group, sectionId, entries, keywords, pr
     end
 end
 
-local function BuildIndicatorPreview(ctx, details, group, sectionId, width, y, keywords)
+local function BuildIndicatorPreview(ctx, details, group, sectionId, width, y, keywords, resize, sections)
     local bottom, ui = P.BuildQoLIndicatorPreview(ctx, details, group.id, width, y)
-    if ui and ui.editor then
-        return ui.editor.BuildProperties(ui, details, bottom, width - 32, V.GetFeaturePage(group), sectionId,
-            function(entries, prepare) RegisterFeatureRuleSearch(group, sectionId, entries, keywords, prepare) end)
+    local id = group.id
+    if not (ui and ui.editor) then return bottom end
+    local function Register(entries, prepare)
+        RegisterFeatureRuleSearch(group, sectionId, entries, keywords, prepare)
     end
-    return bottom
+    local page = V.GetFeaturePage(group)
+    if ui.editor.BuildSettings then
+        local function BuildFooter(footer)
+            return AddEditModeAction(ctx, footer, group.id, sectionId, 0, width - 32, EDIT_ELEMENTS[group.id])
+        end
+        return ui.editor.BuildSettings(ui, details, bottom, width - 32, page, sectionId, Register, BuildFooter, resize), true
+    end
+    return ui.editor.BuildProperties(ui, details, bottom, width - 32, page, sectionId, Register)
 end
 
-local function BuildFeatureDetails(ctx, details, group, sectionId, width, sections, allRules, keywords)
+local function FeatureColors(details, group, sectionId, rules)
+    local shortcut = P.AttachRuleColors(details, group.title, group.id, rules)
+    if shortcut then
+        P.M.RegisterControlMetadata(shortcut,
+            P.Meta(V.GetFeaturePage(group), group.id, "action.colors." .. group.switch, "action", sectionId),
+            Tr("%s Colors"):format(Tr(group.title)), "button")
+    end
+    return shortcut
+end
+
+local function BuildFeatureDetails(ctx, details, group, sectionId, width, sections, allRules, keywords, resize)
     if group.id == "navigation" then
         return P.BuildNavigationDetails(ctx, details, group, sectionId, width, sections, allRules, keywords, RegisterFeatureRuleSearch)
     end
@@ -208,10 +226,12 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
             16, y, width - 32, P.T.colors.warning or P.T.colors.accent2)
         y = y - math.max(16, math.ceil(warning:GetStringHeight() or 16)) - 10
     end
-    y = BuildIndicatorPreview(ctx, details, group, sectionId, width, y, keywords)
+    local settingsBuilt
+    y, settingsBuilt = BuildIndicatorPreview(ctx, details, group, sectionId, width, y, keywords, resize, sections)
+    if settingsBuilt then return y, math.max(72, -y + 12), FeatureColors(details, group, sectionId, allRules) end
     y = P.BuildNewToolActions(ctx, details, group.id, sectionId, y, width - 32)
     for _, section in ipairs(sections) do
-        if group.id == "battleRes" and section.key ~= "battle_res" then break end
+        if P.QoLLayerSection(group.id, section.key) then break end
         if #sections > 1 and section.source[1] then
             local subtitle = P.Text(details, section.source[1].sectionTitle, 16, y, width - 32, P.T.colors.text)
             y = y - math.max(14, math.ceil(subtitle:GetStringHeight() or 14)) - 6
@@ -247,12 +267,7 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
     elseif group.id == "loadoutReminder" then
         y = AddLoadoutAction(ctx, details, group.id, sectionId, y, width - 32)
     end
-    local colorShortcut = P.AttachRuleColors(details, group.title, group.id, allRules)
-    if colorShortcut then
-        P.M.RegisterControlMetadata(colorShortcut,
-            P.Meta(V.GetFeaturePage(group), group.id, "action.colors." .. group.switch, "action", sectionId),
-            Tr("%s Colors"):format(Tr(group.title)), "button")
-    end
+    local colorShortcut = FeatureColors(details, group, sectionId, allRules)
     local height = math.max(72, -y + 12)
     return y, height, colorShortcut
 end

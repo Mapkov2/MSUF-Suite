@@ -107,6 +107,8 @@ local GROUPS = {
     { id = "durabilityAlert", title = "Low durability warning", switch = "enabled",
         sections = { "durability_warning" } },
     { id = "merchantLevel", title = "Merchant item levels (Retail)", switch = "enabled", sections = { "merchant_level" } },
+    { id = "lootWindow", title = "Minimal loot window", switch = "enabled", sections = { "loot_window", "loot_feed" },
+        aliases = { "loot window", "loot frame", "loot list", "loot feed", "looted items", "beutefenster", "plünderfenster" } },
     { id = "lootContainers", title = "Open new containers (Retail)", switch = "enabled",
         sections = { "open_containers" } },
     { id = "quests", title = "Quest helpers", switch = "enabled", sections = { "automation", "filters" } },
@@ -182,7 +184,7 @@ return {
         Subgroup("gear", "Gear", "characterUpgradeWindow socketGemSuggestions durabilityAlert"),
     } },
     { id = "lootMerchants", title = "Loot & Merchants", subgroups = {
-        Subgroup("loot", "Loot", "loot.quickLoot lootRolls lootToastFilter vaultSpec loot.manageHistory lootContainers cheapestItem"),
+        Subgroup("loot", "Loot", "loot.quickLoot lootWindow lootRolls lootToastFilter vaultSpec loot.manageHistory lootContainers cheapestItem"),
         Subgroup("merchants", "Merchants", "merchantLevel qol.repair qol.autoJunk lootVendorRules merchantList inventoryProtection"),
     } },
     { id = "questsProfessions", title = "Quests & Professions", subgroups = {
@@ -250,9 +252,10 @@ local function Initialize()
         local key = group.switch == "enabled" and group.id or group.id .. "." .. group.switch
         byKey[key] = group
     end
-    for _, layer in ipairs(P.catalog.battleRes.layers) do
-        local sections = byKey.battleRes.sections
-        sections[#sections + 1] = layer.section
+    -- A layer editor's sections follow the feature's own (Pages/QoLLayerEditor.lua).
+    for _, group in ipairs(GROUPS) do
+        local spec = group.switch == "enabled" and P.catalog[group.id]
+        for _, layer in ipairs(spec and spec.layers or {}) do group.sections[#group.sections + 1] = layer.section end
     end
     for index, definition in ipairs(Definitions()) do
         CATEGORIES[index].subgroups = definition.subgroups

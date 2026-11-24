@@ -62,7 +62,9 @@ Pages\XPBarPreviewEditor.lua
 Pages\LootRollPreviewMove.lua
 Pages\LootRollPreviewProperties.lua
 Pages\LootRollPreviewEditor.lua
+Pages\QoLLayerEditor.lua
 Pages\BattleResEditor.lua
+Pages\LootWindowEditor.lua
 Pages\QualityOfLifePreview.lua
 Menu\GraphicsPerformance.lua
 Pages\GraphicsPerformance.lua

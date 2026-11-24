@@ -209,6 +209,10 @@ local CONFIRMED = {
     ["MSUF_Suite_Bags/BankActions.lua UseContainerItem"] = "the player's right click on a Suite bank slot withdraws it",
     ["MSUF_Suite_QualityOfLife/InventoryTransfers.lua UseContainerItem"] =
         "the explicit Move stack click or confirmation of matching stacks; events only observe results, suite_inventory_tools_contract",
+    ["MSUF_Suite_ActionBars/Flyouts.lua CreateMacro"] =
+        "the player's placement or pickup of a flyout; gameplay events never create macros, suite_actionbar_flyouts_contract",
+    ["MSUF_Suite_QualityOfLife/LootWindow.lua LootSlot"] =
+        "the player's click on a row of the minimal loot window; loot events only read slots, suite_loot_window_contract",
 }
 -- Addons whose files all belong to one catalog module.
 local ADDON_MODULE = {

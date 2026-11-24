@@ -4,7 +4,10 @@ local EXPORTS = {
     glimmer = "DrawGlimmerPreview", xpBar = "DrawExperienceBarPreview", skyriding = "DrawSkyridingPreview",
     lootRolls = "DrawLootRollPreview", actionTracker = "DrawActionTrackerPreview",
     battleRes = "DrawBattleResPreview", enemyCastStack = "DrawEnemyCastStackPreview",
+    lootWindow = "DrawLootWindowPreview",
 }
+-- Previews with a layer editor (Pages/QoLLayerEditor.lua), by their P field.
+local EDITORS = { battleRes = "BattleResEditor", lootWindow = "LootWindowEditor" }
 local LOOT_TEST_START = "Test loot rolls (40 players)"
 local LOOT_TEST_STOP = "End loot roll test"
 local RETAIL = { skyriding = true, battleRes = true, enemyCastStack = true }
@@ -27,6 +30,7 @@ local TARGETS = {
     actionTracker = { key = "rowHeight" },
     battleRes = { key = "scale" },
     enemyCastStack = { key = "rowHeight" },
+    lootWindow = { key = "width" },
 }
 
 local function OpenTarget(ui, key)
@@ -62,8 +66,8 @@ local function Target(ui, host, region, key, priority)
     handle:SetShown(region:IsShown())
 end
 
-local function BindTargets(ui, host)
-    if ui.editor then return ui.editor.Bind(ui, host, ui.stage.suiteBattleResPreview, S.Config(ui.id)) end
+local function BindTargets(ui, host, config)
+    if ui.editor then return ui.editor.Bind(ui, host, ui.stage[ui.editor.view], config) end
     local spec = TARGETS[ui.id]
     Target(ui, host, host, spec.key, 0)
     if ui.id == "xpBar" then P.XPBarPreviewEditor.Bind(ui, ui.stage.suiteXPPreview) end
@@ -139,6 +143,7 @@ local function Paint(ui)
     end
     P.SetTranslatedText(ui.status, "")
     local config = S.Config(ui.id)
+    if ui.editor and ui.editor.PreviewConfig then config = ui.editor.PreviewConfig(ui, config) end
     if ui.testButton then
         ui.testButton:SetEnabled(not P.Combat() and S.DrawLootRollListTest ~= nil)
         if ui.lootTest then
@@ -155,7 +160,7 @@ local function Paint(ui)
     host:ClearAllPoints()
     host:SetPoint("CENTER", ui.stage, "CENTER", dx or 0, dy or 0)
     host:Show()
-    BindTargets(ui, host)
+    BindTargets(ui, host, config)
 end
 
 -- Lazy feature details call this once. Only these sliders' sample table changes;
@@ -168,7 +173,7 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
         return y
     end
     if not EXPORTS[id] or RETAIL[id] and P.Suite.Client.isForever then return y end
-    local editor = id == "battleRes" and P.BattleResEditor or nil
+    local editor = EDITORS[id] and P[EDITORS[id]] or nil
     local room = width - 32
     local title = P.Text(parent, "Interactive preview", 16, y, room, P.T.colors.text)
     y = y - math.max(16, math.ceil(title:GetStringHeight() or 16)) - 6

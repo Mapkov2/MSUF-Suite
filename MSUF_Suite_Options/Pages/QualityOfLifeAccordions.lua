@@ -59,8 +59,12 @@ local function BuildAccordion(ui, panel, record)
     local function Content(body)
         record.details = body
         local width = HM.GetSectionWidth(body) or ui.width
+        local function Resize(bottom)
+            record.detailHeight = math.max(72, -bottom + 12)
+            P.FinishBody(panel.builder, body, bottom)
+        end
         local y, height, colors = V.BuildFeatureDetails(ui.ctx, body, group, record.sectionId,
-            width, record.sections, record.allRules, record.keywords)
+            width, record.sections, record.allRules, record.keywords, Resize)
         record.detailHeight, record.colorShortcut = height, colors
         return y
     end
