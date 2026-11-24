@@ -218,7 +218,14 @@ local function PaintElements(self, style)
     end
     self.cooldown:SetSize(38, 38)
     self.cooldown:SetScale((c.timerSize or 100) / 100)
-    if c.timerTexture and c.timerTexture ~= "" then
+    -- Off leaves only the countdown numbers: no swipe and no finish flash.
+    local swipe = c.timerSwipe ~= false
+    if self.drawSwipe ~= swipe then
+        self.cooldown:SetDrawSwipe(swipe)
+        self.cooldown:SetDrawBling(swipe)
+        self.drawSwipe = swipe
+    end
+    if swipe and c.timerTexture and c.timerTexture ~= "" then
         self.cooldown:SetSwipeTexture(S.ResolveTexture(c.timerTexture, WHITE), 0.25, 0.25, 0.25, .8)
         self.customSwipe = true
     elseif self.customSwipe then

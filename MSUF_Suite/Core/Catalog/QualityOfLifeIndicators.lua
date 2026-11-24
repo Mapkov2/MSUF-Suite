@@ -201,6 +201,7 @@ battleRes.layers = {
     { "maximum", "Maximum charges", { Number("maximumSize", "Font size", 12, 6, 48), B.Font("maximumFont", "Font") } },
     { "timer", "Recharge timer", {
         Number("timerSize", "Timer size (percent)", 100, 40, 250),
+        Bool("timerSwipe", "Cooldown swipe", true),
         B.Texture("timerTexture", "Cooldown swipe texture"),
     } },
 }
@@ -214,6 +215,8 @@ for _, layer in ipairs(battleRes.layers) do
     layer.rules, layer.section = rules, "battle_res_" .. key
     B.Section("battleRes", layer.section, label, rules)
 end
+-- Without the swipe the recharge shows only Blizzard's countdown numbers.
+NS.SuiteCatalog.battleRes.rules.timerTexture.enableKey = "timerSwipe"
 
 -- The flight HUD is Retail-only and remains dormant until explicitly enabled.
 B.Module("skyriding", {

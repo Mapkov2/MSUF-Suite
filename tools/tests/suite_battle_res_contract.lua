@@ -24,6 +24,8 @@ local function Widget()
     function w:SetPoint(...) self.point = { ... } end
     function w:ClearAllPoints() end
     function w:SetDrawEdge() end
+    function w:SetDrawSwipe(value) self.drawSwipe, self.swipeWrites = value, (self.swipeWrites or 0) + 1 end
+    function w:SetDrawBling(value) self.drawBling = value end
     function w:SetSwipeTexture(value) self.swipeTexture = value end
     function w:SetHideCountdownNumbers(value) self.hideNumbers = value end
     function w:SetMinimumCountdownDuration(value) self.minimumCountdown = value end
@@ -390,6 +392,20 @@ assert(M.panel.shown and M.panel.texture == "grain" and M.panel.alpha == .38
     and M.panel.width == 180 and M.panel.height == 32)
 assert(M.edges[1].shown and M.edges[1].texture == "line" and M.edges[1].alpha == .42)
 assert(M.cooldown.shown and M.cooldown.swipeTexture == "swipe" and M.cooldown.scale == 1.3)
+assert(M.cooldown.drawSwipe == true and M.cooldown.drawBling == true, "the swipe must stay on by default")
+-- Swipe off keeps the recharge as countdown numbers only and drops the custom swipe art.
+c.timerSwipe = false
+M:Refresh()
+assert(M.cooldown.shown and M.cooldown.drawSwipe == false and M.cooldown.drawBling == false,
+    "timer without swipe still drew the swipe or its flash")
+assert(M.cooldown.swipeTexture ~= "swipe", "custom swipe texture survived with the swipe off")
+local swipeWrites = M.cooldown.swipeWrites
+M:Refresh()
+assert(M.cooldown.swipeWrites == swipeWrites, "an unchanged swipe setting rewrote the cooldown")
+c.timerSwipe = nil
+M:Refresh()
+assert(M.cooldown.drawSwipe == true and M.cooldown.drawBling == true and M.cooldown.swipeTexture == "swipe",
+    "turning the swipe back on did not restore it")
 c.backgroundShown, c.borderOpacity, c.titleShown, c.iconShown, c.maximumShown, c.timerShown = false, 0, false, false, false, false
 local beforeCharges = chargeReads
 M:Refresh()
