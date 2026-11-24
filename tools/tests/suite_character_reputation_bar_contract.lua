@@ -41,8 +41,8 @@ UIParent = Widget()
 UIParent:SetSize(1280, 720)
 GameTooltip = { IsOwned = function() return false end }
 local config = { enabled = false, factionID = 0, x = 0, y = 160 }
-local module, mover, menu
-local panelConfig, inCombat = {}, false
+local module, mover, menu, markedFaction
+local panelConfig, inCombat, refuseWrites = {}, false, false
 FACTION_BAR_COLORS = {
     [2] = { r = .8, g = .1, b = .1 },
     [4] = { r = .9, g = .8, b = .1 },
@@ -56,8 +56,16 @@ local S = {
     RGB = function(hex) return tonumber(hex:sub(1, 2), 16) / 255,
         tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255 end,
     Install = function(_, value) module = value end,
-    Set = function(_, key, value) config[key] = value end,
-    SetMany = function(_, values) for key, value in pairs(values) do config[key] = value end end,
+    Set = function(_, key, value)
+        if refuseWrites then return false end
+        config[key] = value
+        return true
+    end,
+    SetMany = function(_, values)
+        if refuseWrites then return false end
+        for key, value in pairs(values) do config[key] = value end
+        return true
+    end,
     RegisterOwnedMover = function(_, _, spec) mover = spec end,
 }
 local secret = newproxy()
@@ -70,7 +78,16 @@ S.ContextMenu = function(button, generator, ...)
     menu = {
         CreateTitle = function(self, title) self.title = title end,
         CreateCheckbox = function(self, label, checked, toggle, id)
-            self[label] = { checked = function() return checked(id) end, toggle = function() return toggle(id) end }
+            local item = { checked = function() return checked(id) end }
+            item.painted = checked(id)
+            item.toggle = function()
+                -- The native menu uses any truthy responder return as an
+                -- override of the checkbox's default Refresh response.
+                local refresh = "Refresh"
+                local response = toggle(id) or refresh
+                if response == refresh then item.painted = checked(id) end
+            end
+            self[label] = item
         end,
     }
     generator(button, menu, ...)
@@ -89,6 +106,7 @@ local hostileRule = core.SuiteCatalog.characterPanel.rules.reputationColorHostil
 assert(hostileRule.color and not hostileRule.hidden and hostileRule.default == "", "missing Colors menu rule")
 Equal(hostileRule.resolveColor(), .8, "inherited hostile color")
 Load("MSUF_Suite_CharacterPanel/Reputation.lua", NS)
+NS.UpdateTrackedReputation = function(id) markedFaction = id end
 Load("MSUF_Suite_CharacterPanel/ReputationBar.lua", NS)
 AT_WAR = "At War"
 local city = { factionID = 72, canToggleAtWar = false, atWarWith = false }
@@ -113,12 +131,17 @@ NS.OpenReputationMenu(row)
 Equal(menu.title, "Stormwind", "row menu title")
 assert(not menu[AT_WAR], "unavailable war control was offered")
 local track = menu["Show as reputation bar"]
-assert(not track.checked())
+assert(not track.checked() and not track.painted)
 row.factionID, row.factionName = 47, "Gelkis Clan Centaur"
 track.toggle()
 assert(track.checked() and config.factionID == 72, "recycled row changed the faction behind the open menu")
+assert(track.painted, "the open popup did not show the checkmark after enabling")
+refuseWrites = true
 track.toggle()
-assert(not config.enabled, "the selected row could not remove its bar")
+assert(track.painted and track.checked(), "a refused write cleared the open popup's checkmark")
+refuseWrites = false
+track.toggle()
+assert(not config.enabled and not track.painted, "the open popup did not clear the checkmark after disabling")
 NS.OpenReputationMenu(row)
 menu["Show as reputation bar"].toggle()
 assert(config.enabled and config.factionID == 47, "the second faction did not replace the selection")
@@ -183,6 +206,7 @@ module.context = {
     RemoveEvent = function(_, event) events[event] = nil end,
 }
 module:Enable()
+Equal(markedFaction, 47, "mark the tracked faction")
 Equal(module.host.y, 142.5, "below the scaled XP text")
 Equal(module.nameText.text, "Ironforge", "selected faction label")
 Equal(module.percentText.text, "65%", "selected faction progress")
@@ -240,6 +264,21 @@ assert(mover.visible() and mover.getFrame() == module.host and mover.moveValues.
 local origin = {}
 mover.capture(origin)
 Equal(origin.x, module.host.x, "drag origin uses the live automatic anchor")
+local link = assert(mover.extraControls and mover.extraControls[1], "XP link is missing from the mover popup")
+assert(link.kind == "toggle" and link.get(), "automatic profiles do not show the link as enabled")
+local detachedX, detachedY = module.host.x, module.host.y
+link.set(false)
+assert(config.manualPosition and not link.get())
+Equal(config.x, detachedX, "unlink keeps the displayed X")
+Equal(config.y, detachedY, "unlink keeps the displayed Y")
+module:Refresh()
+xp.y, xp.height = 200, 48
+S.SyncReputationBarPlacement()
+Equal(module.host.y, detachedY, "unlinked bar still followed XP")
+link.set(true)
+module:Refresh()
+assert(link.get() and module.host.y ~= detachedY, "relink did not restore automatic placement")
+assert(mover.historyKeys[1] == "manualPosition" and mover.resetKeys[1] == "manualPosition")
 config.manualPosition, config.x, config.y = true, -80, 210
 module:Refresh()
 xp.y = 200
@@ -267,7 +306,32 @@ S.editMode = true
 module:Refresh()
 assert(module.host:IsShown(), "missing faction could not be moved in Edit Mode")
 module:Disable()
-assert(not module.host:IsShown())
+assert(not module.host:IsShown() and markedFaction == nil, "disabling left the faction marked")
+
+-- Register the real Suite mover and exercise the same control and history
+-- callbacks that the host popup uses.
+local popup
+MSUF_EditModeAPI = {
+    RegisterElement = function(_, element) popup = element return true end,
+    GetCapabilities = function() return { positionFields = true, relativePositionSteps = true } end,
+}
+S.catalog, S.states, S.Finite = core.SuiteCatalog, { reputationBar = { active = true } }, NS.Host.Finite
+S.CommitEditPosition = S.SetMany
+Load("MSUF_Suite_Modules/EditMode.lua", {
+    NS = { DB = {}, IsCombatLocked = function() return inCombat end, Safety = NS.Host.Safety }, Suite = S,
+})
+module:RegisterMovers()
+Equal(#popup.extraControls, 1, "host screen coordinates get only the additional toggle")
+local toggle = popup.extraControls[1]
+config.manualPosition, config.x, config.y = false, 0, 160
+local linked = popup.captureState()
+toggle.set(false)
+assert(config.manualPosition and not toggle.get(), "popup failed to detach")
+popup.restoreState(linked)
+assert(toggle.get() and config.x == 0 and config.y == 160, "undo failed to restore the link and saved offsets")
+toggle.set(false)
+popup.resetPosition()
+assert(toggle.get(), "reset failed to restore the default link")
 
 local shared = {}
 Load("MSUF_Suite/Core/ExperienceBarLayout.lua", shared)

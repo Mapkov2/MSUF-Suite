@@ -5,6 +5,7 @@ local Finite, Number = NS.Host.Finite, NS.Number
 local ID = "reputationBar"
 local M = { palette = {} }
 local IN_COMBAT = { inCombat = true }
+local LINK_LABEL = "Attach to XP bar"
 local TITLE = Text("Reputation bar")
 local PROGRESS, REWARD = Text("Progress"), Text("Reward available")
 local WIDTH, HEIGHT, GAP = 320, 20, 10
@@ -178,6 +179,7 @@ local function Refresh(self)
     self.colorDirty = Header.UpdateReputationColors(self.palette, S.Config("characterPanel"), Header.PickerColor("accentBright"))
     Layout(self)
     Paint(self)
+    NS.UpdateTrackedReputation(self.config.factionID > 0 and self.config.factionID or nil)
 end
 
 local function OnRenown(self, _, factionID)
@@ -222,6 +224,23 @@ end
 
 function M:Disable()
     if self.host then self.host:Hide() end
+    NS.UpdateTrackedReputation(nil)
+end
+
+local function CapturePosition(values)
+    local center, bottom = M.host:GetCenter(), M.host:GetBottom()
+    if Finite(center) and Finite(bottom) then
+        values.x, values.y = center - UIParent:GetWidth() / 2, bottom
+        return true
+    end
+end
+
+local function SetXPLink(linked)
+    if linked == not M.config.manualPosition then return true end
+    if linked then return S.Set(ID, "manualPosition", false) end
+    local values = { manualPosition = true }
+    if not CapturePosition(values) then return false end
+    return S.SetMany(ID, values)
 end
 
 function M:RegisterMovers()
@@ -231,10 +250,11 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", point = "BOTTOM",
         historyKeys = { "manualPosition" }, resetKeys = { "manualPosition" },
         moveValues = { manualPosition = true },
-        capture = function(values)
-            local center, bottom = self.host:GetCenter(), self.host:GetBottom()
-            if Finite(center) and Finite(bottom) then values.x, values.y = center - UIParent:GetWidth() / 2, bottom end
-        end,
+        capture = CapturePosition,
+        extraControls = {
+            { id = "xpLink", label = Text(LINK_LABEL), kind = "toggle",
+                get = function() return not self.config.manualPosition end, set = SetXPLink },
+        },
     })
 end
 
@@ -244,8 +264,12 @@ local function IsSelected(id)
 end
 
 local function Toggle(id)
-    if IsSelected(id) then return S.Set(ID, "enabled", false) end
-    return S.SetMany(ID, { enabled = true, factionID = id })
+    -- A truthy return overrides the checkbox's default menu refresh.
+    if IsSelected(id) then
+        S.Set(ID, "enabled", false)
+    else
+        S.SetMany(ID, { enabled = true, factionID = id })
+    end
 end
 
 local function Menu(_, root, id, name)

@@ -478,6 +478,43 @@ local function NewValueRow(list, card)
     return row
 end
 
+local function PaintTrackedReputation(row)
+    local view = row.view
+    local tracked = row.trackedFactionID ~= nil and row.trackedFactionID == view.trackedReputation
+    if tracked and not row.trackedAccent then
+        row.trackedTint = Fill(view, row, "BACKGROUND", GOLD, 1)
+        row.trackedTint:SetAlpha(.10)
+        local accent = CreateTexture(row, nil, "ARTWORK")
+        accent:SetPoint("TOPLEFT", 1, -3)
+        accent:SetPoint("BOTTOMLEFT", 1, 3)
+        accent:SetWidth(2)
+        Tint(view, accent, GOLD)
+        row.trackedAccent = accent
+    end
+    if row.trackedAccent then
+        Visible(row.trackedAccent, tracked)
+        Visible(row.trackedTint, tracked)
+    end
+end
+
+local function UpdateTrackedRows(list)
+    if not list then return end
+    for _, card in ipairs(list.cards) do
+        if not card.panelShown then break end
+        for _, row in ipairs(card.rows) do
+            if not row.panelShown then break end
+            PaintTrackedReputation(row)
+        end
+    end
+end
+
+function View:SetTrackedReputation(factionID)
+    if self.trackedReputation == factionID then return end
+    self.trackedReputation = factionID
+    UpdateTrackedRows(self.report)
+    UpdateTrackedRows(self.combatReport)
+end
+
 local function PaintCard(list, card, index, offset)
     local group, geometry = list.groups[index], list.rowLayouts[index]
     local title = card.title
@@ -515,6 +552,8 @@ local function PaintCard(list, card, index, offset)
             if row.action ~= values.action then Tint(list.view, row.right, values.action and GOLD or TEXT, true) end
             row.action, row.factionID, row.factionName = values.action, values.factionID, values.factionName
         end
+        row.trackedFactionID = values.trackedFactionID or values.factionID
+        if row.trackedFactionID or row.trackedAccent then PaintTrackedReputation(row) end
         local movement = values.layout
         local x, y = list.rowInset, bounds.top
         if movement then x, y = x + movement.x, y - movement.y end

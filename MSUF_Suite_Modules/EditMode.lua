@@ -209,6 +209,7 @@ local function MovePosition(id, spec, request)
         local frame = SpecFrame(spec)
         if not frame then return false end
         Place(frame, SpecPoint(spec), x, y)
+        if spec.onPreviewMove then spec.onPreviewMove() end
         return true
     end
     local values = {
@@ -265,6 +266,7 @@ end
 -- precisePosition=true preserves subpixel anchor offsets across scaled one-pixel steps; extraControls, historyKeys,
 -- sizeKeys (explicit catalog dimensions for this element), moveValues, resetKeys,
 -- place(x, y) (drag preview for x/y that are not UIParent offsets),
+-- onPreviewMove() updates dependent surfaces after standard placement,
 -- move(x, y, request) handles a compound move or returns nil for the normal path,
 -- capture(origin) (live drag start x/y; undo keeps the saved values),
 -- sizeSummary=false hides the popup's W/H readout where the controls say more.

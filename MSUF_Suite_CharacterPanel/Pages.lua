@@ -104,7 +104,7 @@ local function Row(group, label, value, layout, tooltip, argument, format, extra
     end
     row.tooltip, row.tooltipArgument = tooltip, argument
     row.reputationFill, row.reputationReaction = nil, nil
-    row.factionID, row.factionName = nil, nil
+    row.factionID, row.factionName, row.trackedFactionID = nil, nil, nil
     group.rows[index], group.count = row, index
     return row
 end
@@ -527,7 +527,7 @@ end
 
 local function ReadCustomValue(row, source, config, sex)
     row.label, row.value, row.tooltip, row.tooltipArgument = nil, nil, nil, nil
-    row.reputationFill, row.reputationReaction = nil, nil
+    row.reputationFill, row.reputationReaction, row.trackedFactionID = nil, nil, nil
     if source.kind == "currency" then
         local info = C_CurrencyInfo.GetCurrencyInfo(source.target)
         if IsTable(info) then row.label, row.value = String(info.name), Number(info.quantity) end
@@ -541,7 +541,7 @@ local function ReadCustomValue(row, source, config, sex)
     end
     local name = IsTable(info) and String(info.name)
     if name and name ~= "" then
-        row.label = name
+        row.label, row.trackedFactionID = name, source.target or Number(info.factionID)
         Reputation.Populate(row, info, sex, Reputation.Options(config))
     end
 end
@@ -591,6 +591,7 @@ end
 local function CopyCustomValue(group, value, label, layout)
     local row = Row(group, label, value.value, layout, value.tooltip, value.tooltipArgument, value.displayFormat, value.displayExtra)
     row.reputationFill, row.reputationReaction = value.reputationFill, value.reputationReaction
+    row.trackedFactionID = value.trackedFactionID or value.factionID
 end
 
 local function AppendCustomData(group, row, state)

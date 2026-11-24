@@ -532,6 +532,12 @@ local CALLBACKS = {
     contextAction = ContextAction, windowAction = WindowAction,
 }
 
+function NS.UpdateTrackedReputation(factionID)
+    if Module.trackedReputation == factionID then return end
+    Module.trackedReputation = factionID
+    if Module.kind == PLAYER and Module.view then Module.view:SetTrackedReputation(factionID) end
+end
+
 local function AvailableSkin()
     if Module.kind == INSPECT then return Host.Skin.Acquire("characterPanelInspect") end
     if Module.view.nativeLayout then return Module.context:Skin() end
@@ -627,6 +633,7 @@ local function Open(kind, unit, guid, tab, nativeRoot, nativeTab)
     Module.view, Module.nativeTab = view, nativeTab
     Module.kind, Module.unit, Module.guid, Module.gear = kind, unit, guid, model
     view.characterView = Routing.CharacterView(kind)
+    view:SetTrackedReputation(kind == PLAYER and Module.trackedReputation or nil)
     if kind == PLAYER then
         WindowAction("prepare")
         Module.gearStale, Module.durabilityStale = true, true

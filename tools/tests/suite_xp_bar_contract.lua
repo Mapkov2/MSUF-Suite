@@ -222,6 +222,14 @@ assert(worded.sessionText.text == "<Session +0>" and worded.rateText.text == "<X
     and worded.etaText.text == "<To level -->", "an XP detail was joined after translation")
 
 local module, runtime, events, movers, suite = Load("login")
+local previewX
+runtime.SyncReputationBarPlacement = function() previewX = module.host.point[4] end
+module.host:SetPoint("BOTTOM", UIParent, "BOTTOM", 35, 148)
+assert(movers.experience.onPreviewMove, "the XP mover cannot update linked surfaces while dragging")
+movers.experience.onPreviewMove()
+assert(previewX == 35, "linked placement did not receive the preview position")
+runtime.SyncReputationBarPlacement = nil
+module:Refresh()
 assert(module.session.gained == 0 and module.host:IsShown())
 assert(module.restedMarker:IsShown() and module.restedMarker.point[4] == 160
     and module.restedMarker.height == 22,

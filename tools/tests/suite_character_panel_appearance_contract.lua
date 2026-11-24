@@ -532,8 +532,8 @@ end
 do
     FACTION_BAR_COLORS = { [5] = { r = .2, g = .7, b = .35 } }
     local entries = {
-        { label = "Darnassus", value = "Friendly", reputationFill = .4, reputationReaction = 5 },
-        { label = "Ironforge", value = "Friendly", reputationFill = 0, reputationReaction = 5 },
+        { label = "Darnassus", value = "Friendly", factionID = 69, reputationFill = .4, reputationReaction = 5 },
+        { label = "Ironforge", value = "Friendly", trackedFactionID = 47, reputationFill = 0, reputationReaction = 5 },
         { label = "Stormwind", value = "Friendly", reputationFill = .8 },
     }
     local sample = { { title = "Alliance", action = 1, rows = entries } }
@@ -560,6 +560,16 @@ do
         "the standing did not paint its filled fraction and native color")
     assert(emptyRow.reputationTrack:IsShown() and not emptyRow.reputationBar:IsShown(),
         "zero progress should retain only the track")
+    assert(view.SetTrackedReputation, "the report cannot mark the tracked faction")
+    view:SetTrackedReputation(69)
+    assert(row.trackedAccent:IsShown() and row.trackedTint:IsShown() and not emptyRow.trackedAccent,
+        "the highlight did not mark only the chosen faction")
+    view:SetTrackedReputation(47)
+    assert(not row.trackedAccent:IsShown() and emptyRow.trackedAccent:IsShown(),
+        "changing factions did not transfer the highlight immediately")
+    view:SetTrackedReputation(nil)
+    assert(not emptyRow.trackedAccent:IsShown(), "disabling the bar left its row highlighted")
+    view:SetTrackedReputation(69)
     local oldFrames, oldWrites = frames, writes
     view:ShowGroups(sample)
     assert(frames == oldFrames and writes == oldWrites, "warm reputation repaint changed widgets")
@@ -573,11 +583,14 @@ do
     view:RefreshAppearance(skin, { reputationBarHeight = 8 })
     assert(bar.color[2] == .7 and card.rows[3].reputationBar.color[1] == color,
         "removing the override did not restore standing and theme colors")
+    assert(row.trackedAccent.color[1] == color and row.trackedTint.alpha == .10 and bar.color[2] == .7,
+        "the tracked row did not inherit the style accent or changed its standing color")
     local oldHeight = report.height
     report.height = 24
     report.scroll:SetVerticalScroll(78)
     assert(row.left.text == "Stormwind" and row.reputationBar == bar
         and bar.width == (row.panelWidth - 20) * .8, "scrolling did not reuse and repaint the visible row bar")
+    assert(not row.trackedAccent:IsShown(), "scrolling leaked the highlight to a recycled faction row")
     report.height = oldHeight
     report.scroll:SetVerticalScroll(0)
 
@@ -587,6 +600,7 @@ do
         "a recycled row retained its reputation bar or text offset")
     view:SetTabs(reputation, "reputation")
     view:ShowGroups(sample)
+    assert(row.trackedAccent:IsShown(), "the tracked faction lost its highlight after changing tabs")
     assert(row.reputationTrack == track and track:IsShown() and bar:IsShown(),
         "returning to the report did not reuse the hidden bar")
     entries[1].reputationFill, entries[2].reputationFill, entries[3].reputationFill = nil, nil, nil

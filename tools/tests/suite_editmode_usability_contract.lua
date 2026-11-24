@@ -25,8 +25,10 @@ MSUF_EditModeAPI={RegisterElement=function(owner,element) registers=registers+1;
     UnregisterSessionListener=function() S.session=nil end}
 assert(loadfile(root.."/MSUF_Suite_Modules/EditMode.lua"))("test",{NS=NS,Suite=S})
 local visible=true
+local previewX
 assert(S.RegisterOwnedMover("main","main",{label="Main",getFrame=function() return frame end,xKey="x",yKey="y",point="CENTER",
-    visible=function() return visible end,sizeKeys={"width","height","scale"},historyKeys={"width"}}))
+    visible=function() return visible end,sizeKeys={"width","height","scale"},historyKeys={"width"},
+    onPreviewMove=function() previewX=frame.points[4] end}))
 local element=records["MSUFSuite.main/main"]
 assert(element.isEnabled());visible=false;assert(not element.isEnabled(),"inactive element visibility predicate ignored");visible=true
 local controls={};for _,control in ipairs(element.extraControls) do controls[control.id]=control end
@@ -34,6 +36,7 @@ assert(controls.width.label=="translated:Width" and controls.height.label=="tran
 local before=element.captureState();assert(controls.width.set(140) and controls.height.set(30))
 assert(element.restoreState(before) and configs.main.width==100 and configs.main.height==20,"dimension edits lost undo/discard baseline")
 assert(element.movePosition({state=before,deltaX=10,deltaY=-2,phase="drag"}) and frame.points[4]==15 and configs.main.x==5,"drag preview wrote saved position")
+assert(previewX==15,"dependent surfaces were not updated after placement")
 assert(element.movePosition({state=before,deltaX=10,deltaY=-2,phase="commit"}) and configs.main.x==15,"drag commit failed")
 combat=true;assert(not element.movePosition({state=before,deltaX=1,deltaY=1,phase="commit"}),"combat mutation accepted")
 S.SetEditMode(true);S.SetEditMode(false);assert(hides==1,"combat exit deferred own-preview cleanup")

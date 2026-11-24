@@ -614,6 +614,7 @@ local function Run(forever)
                 return {
                     nativeRoot = nativeRoot, nativeLayout = nativeLayout,
                     frame = CreateFrame("Frame", not nativeRoot and buttons.frameName or nil, nativeLayout and nativeRoot or nil),
+                    SetTrackedReputation = function(self, id) self.trackedReputation = id end,
                     SetTabs = function(_, tabs, tab)
                         actions = buttons
                         lastTab, lastTabs = tab, tabs
@@ -725,6 +726,10 @@ local function Run(forever)
     units.player = secret
     Press("C")
     local hostedView = assert(runtime.characterView, "first combat open missed its host")
+    ns.UpdateTrackedReputation(47)
+    assert(hostedView.trackedReputation == 47, "a new bar selection did not reach the open report")
+    ns.UpdateTrackedReputation(nil)
+    assert(hostedView.trackedReputation == nil, "disabling tracking did not clear the open report")
     assert(hostedView == runtime.view and hostedView.nativeRoot == CharacterFrame and hostedView.frame:IsShown()
         and hostedView.nativeLayout == layout and presented == hostedView.frame and CharacterFrame.stockWidth == 338 and geometryApplied == 1
         and nativeModel:IsVisible() and readerChecks == coldReaderChecks and gearReads == coldReads,

@@ -330,12 +330,16 @@ local function HostLeave(host)
     if GameTooltip:IsOwned(host) then GameTooltip:Hide() end
 end
 
+local function SyncReputationPlacement()
+    if S.SyncReputationBarPlacement then S.SyncReputationBarPlacement() end
+end
+
 -- SetShown can run before PaintProgressValues switches to the new level.
 -- Sample here only when the current baseline still belongs to this level.
 local function HostShow()
     local self = M
     self.hostVisible = true
-    if S.SyncReputationBarPlacement then S.SyncReputationBarPlacement() end
+    SyncReputationPlacement()
     local showingRates = self.source == Tracked.XP and self.session and (self.config.showRate or self.config.showETA)
     if showingRates then
         local level, current, maximum = XP()
@@ -350,7 +354,7 @@ end
 local function HostHide(host)
     local self = M
     self.hostVisible = false
-    if S.SyncReputationBarPlacement then S.SyncReputationBarPlacement() end
+    SyncReputationPlacement()
     if self.hovered then HostLeave(host) end
 end
 
@@ -632,7 +636,7 @@ end
 local function Render(self)
     Layout(self)
     PaintValues(self)
-    if S.SyncReputationBarPlacement then S.SyncReputationBarPlacement() end
+    SyncReputationPlacement()
 end
 
 -- The events the track setting and the shown source need (ExperienceTrack.lua).
@@ -730,7 +734,7 @@ function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "experience", {
         label = "Experience bar", order = 630, getFrame = function() return self.host end,
         xKey = "x", yKey = "y", pointKey = "point",
-        quickPosition = true,
+        quickPosition = true, onPreviewMove = SyncReputationPlacement,
         point = function() return POINTS[self.config.point] or "BOTTOM" end,
         historyKeys = { "width", "height", "scale" },
         sizeKeys = { "width", "height", "scale" },
