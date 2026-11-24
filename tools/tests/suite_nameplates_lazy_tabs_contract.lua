@@ -920,10 +920,9 @@ do
         for card in pairs(shortcuts) do
             assert(card ~= panel and card:GetParent() ~= panel, "a second Colors entry appeared in " .. id)
         end
-        local entry = Header(id)
-        local more = assert(entry._msufSuiteResetButton)
-        local popup = assert(more:_msufSuiteEnsureSectionPopup())
-        more:_msufSuiteOpenSectionPopup()
+        local sectionId = "suite_nameplates_" .. id
+        local meta = P.Meta("suite_nameplates", "nameplates", id .. ".colors", "action", sectionId)
+        local action = assert(M.RuntimeControlCatalog.Get(meta.controlId), "missing direct Colors action for " .. id)
         local opened, Open, Picker = {}, P.W.OpenContextColors, M.Widgets.OpenColorContextPicker
         local pickerOpened
         M.Widgets.OpenColorContextPicker = function() pickerOpened = true end
@@ -934,11 +933,9 @@ do
             end
             return Open(anchor, opts, targets)
         end
-        for _, child in ipairs({ popup:GetChildren() }) do
-            if child.GetText and child:GetText() == P.Tr("Colors") then child:Click() break end
-        end
+        action.widget:Click()
         P.W.OpenContextColors, M.Widgets.OpenColorContextPicker = Open, Picker
-        assert(next(opened) and pickerOpened and not popup:IsShown(), "missing Colors in section actions for " .. id)
+        assert(next(opened) and pickerOpened, "the direct Colors action did not open the palette for " .. id)
         return opened
     end
     local enemyColors, neutralColors = Colors("enemyStyle"), Colors("neutralStyle")

@@ -5,7 +5,7 @@ local function LoadNameplatePage(P, root, opened)
     end }
     P.RegisterPage = function() end
     P.Combat = function() return false end
-    P.Suite.NameplateStyle.Roles, P.Suite.NameplateStyle.Elements = {}, {}
+    P.Suite.NameplateStyle.Roles, P.Suite.NameplateStyle.Elements, P.Suite.NameplateStyle.Status = {}, {}, {}
     P.Suite.AnchorPoints, P.Suite.AnchorLabels = {}, {}
     assert(loadfile(root .. "../../MSUF_Suite/Core/NameplateExtensions.lua"))("MSUF_Suite", P.Suite)
     P.NameplatesProfiles = { Basics = function() end }
@@ -20,7 +20,7 @@ local function LoadNameplatePage(P, root, opened)
         assert(page == "suite_nameplates" and section)
         return opened(key, section)
     end }
-    for _, file in ipairs({ "NameplateBarTextures", "NameplatesWorkspace", "NameplatesExtensions", "NameplatesStatus", "NameplatesSectionsLayout", "Nameplates" }) do
+    for _, file in ipairs({ "NameplateBarTextures", "NameplatesWorkspace", "NameplatesExtensions", "NameplatesStatus", "NameplatesSectionsLayout", "Nameplates", "NameplateFonts" }) do
         assert(loadfile(root .. file .. ".lua"))("MSUF_Suite_Options", P)
     end
 end
