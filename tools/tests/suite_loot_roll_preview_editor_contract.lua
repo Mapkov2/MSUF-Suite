@@ -50,6 +50,7 @@ Widget = function(parent, kind)
     function w:SetFrameLevel(level) self.level = level end
     function w:GetFrameLevel() return self.level or (self.parent and self.parent:GetFrameLevel() + 1 or 0) end
     function w:EnableMouse(mouse) self.mouse = mouse end
+    function w:EnableMouseWheel(enabled) self.wheel = enabled end
     function w:RegisterForClicks(...) self.clicks = { ... } end
     function w:EnableKeyboard(enabled) Unlocked("EnableKeyboard") self.keyboard = enabled end
     function w:SetPropagateKeyboardInput(value) Unlocked("SetPropagateKeyboardInput") self.propagate = value end
@@ -95,6 +96,7 @@ UIParent = Widget()
 CreateFrame = function(kind, _, parent) return Widget(parent, kind) end
 GetTime = function() return 100 end
 ITEM_QUALITY_COLORS = { [3] = { r = 0, g = .44, b = .87 }, [4] = { r = .64, g = .21, b = .93 } }
+CLASS_ICON_TCOORDS = { MAGE = { 0, .25, 0, .25 } }
 GameTooltip = Widget()
 function GameTooltip:IsOwned() return false end
 local cursorX, cursorY, mouseDown, focus = 0, 0, false, nil
@@ -163,6 +165,7 @@ local Suite = {
 }
 assert(loadfile(root .. "/MSUF_Suite/Core/PreviewKit.lua"))("MSUF_Suite", Suite)
 local qol = { NS = { AnchorPoints = { "CENTER" }, AnchorLabels = {} }, Suite = Suite, LootRollData = {} }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootRollList.lua"))("MSUF_Suite_QualityOfLife", qol)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootRollView.lua"))("MSUF_Suite_QualityOfLife", qol)
 local loadedRuntime = false
 C_AddOns = { LoadAddOn = function(name)
@@ -203,6 +206,7 @@ local P = {
         end },
     Text = function(parent, text) local label = Widget(parent, "FontString") label.text = text return label end,
     SetTranslatedText = function(label, text) label.text = text end,
+    SetButtonText = function(button, text) button.label = text end,
     HM = { SkipHistoryCheckpoint = function(widget) widget.noHistory = true end,
         SetCommandAction = function(widget, spec) widget.command = spec end,
         SetSearchTargetPrepare = function(widget, prepare) widget.prepare = prepare end },
@@ -267,6 +271,31 @@ assert(view.viewCount == 3 and #editor.rows == 3, "sample rows did not get targe
 assert(#editor.layerButtons == #P.LootRollPreviewEditor.Layers and editor.chips.shown, "layer rail missing")
 assert(editor.chips.points[1][5] < -42 - ui.height and bottom < editor.chips.points[1][5] - editor.chips.height,
     "layer rail overlaps the stage or the settings below")
+local test = assert(ui.testButton, "40-player test button is missing from the loot roll menu")
+assert(test.enabled and not config.enabled and not ui.stage.suiteLootRollListTest,
+    "sample list must load lazily and work without enabling loot rolls")
+Click(test)
+local sample = assert(ui.stage.suiteLootRollListTest).rollListPanel
+assert(sample.frame:IsVisible() and not view.host:IsVisible() and test.label == "End loot roll test")
+assert(sample.players.total == 40 and sample.players.range:GetText() == "6/40" and not sample.players.share)
+for _ = 1, 8 do Click(sample.players.next) end
+assert(sample.players.range:GetText() == "40/40" and not sample.players.next.enabled, "sample is scrollable to player 40")
+Click(test)
+assert(view.host:IsVisible() and not sample.frame:IsShown() and test.label == "Test loot rolls (40 players)")
+Click(test)
+assert(sample.players.range:GetText() == "6/40" and sample == ui.stage.suiteLootRollListTest.rollListPanel,
+    "the test reuses the panel and starts at the first participant")
+ui.stage:Hide()
+assert(not sample.frame:IsShown() and not ui.lootTest, "leaving the menu must stop the test")
+ui.stage:Show()
+assert(view.host:IsVisible() and writes == 0 and not config.enabled, "test changed the profile or the opt-in state")
+Click(test)
+combat, lockdown = true, true
+Fire(ui.stage, "OnEvent", "PLAYER_REGEN_DISABLED")
+assert(not test.enabled and not sample.frame:IsShown(), "combat must close the test and disable its button")
+combat, lockdown = false, false
+Fire(ui.stage, "OnEvent", "PLAYER_REGEN_ENABLED")
+assert(test.enabled and view.host:IsVisible(), "leaving combat must restore the ordinary preview and its test button")
 
 -- Every painted element opens its own setting; the window keeps the gap target.
 local first, last = editor.rows[1], editor.rows[3]

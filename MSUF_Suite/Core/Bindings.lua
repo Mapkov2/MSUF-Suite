@@ -165,6 +165,28 @@ _G.BINDING_NAME_MSUFSUITE_TOGGLE_MAP_OVERLAY = Text("Toggle map overlay")
 _G.BINDING_HEADER_MSUFSUITE_MINIMAP = Text("Minimap")
 _G.BINDING_NAME_MSUFSUITE_TOGGLE_MINIMAP = Text("Show or hide the minimap")
 _G.BINDING_NAME_MSUFSUITE_TOGGLE_MINIMAP_DRAWER = Text("Open or close the addon button drawer")
+_G.BINDING_HEADER_MSUFSUITE_LOOT_ROLLS = Text("Loot roll window")
+_G.BINDING_NAME_MSUFSUITE_LOOT_ROLL_HISTORY = Text("Show or hide the loot roll history")
+_G.BINDING_NAME_MSUFSUITE_LOOT_ROLL_RECENT = Text("Show recent loot rolls")
+_G.BINDING_NAME_MSUFSUITE_LOOT_ROLL_LIST = Text("Toggle automatic roll lists")
+_G.BINDING_NAME_MSUFSUITE_LOOT_ROLL_OPTIONS = Text("Open loot roll settings")
+
+function NS.ToggleLootRollHistory(recent)
+    local module = NS.Suite.instances.lootRolls
+    if module and module.active then module:ToggleRollHistory(recent) end
+end
+
+function NS.ToggleLootRollLists()
+    local suite = NS.Suite
+    local module = suite.instances.lootRolls
+    if module and module.active and not NS.InCombat() then
+        suite.Set("lootRolls", "showParticipants", not module.config.showParticipants)
+    end
+end
+
+function NS.OpenLootRollSettings()
+    return NS.Menu.Open("suite_qualityOfLife", "lootRolls")
+end
 
 -- The minimap is protected: both shortcuts refuse in combat. Hiding lasts
 -- for this session; the Minimap page keeps the saved visibility.

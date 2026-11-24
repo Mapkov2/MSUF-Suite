@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local Data, View = P.LootRollData, P.LootRollView
+local History, List = P.LootRollHistory, P.LootRollList
 local ID = "lootRolls"
 local IN_COMBAT = { inCombat = true }
 local MAX_TRACKED, RESULT_WAIT, CHOICE_SECONDS = 48, 8, 3
@@ -142,6 +143,7 @@ end
 local function StoreDrop(self, encounterID, key)
     local entry = Data.ReadDrop(encounterID, key)
     if not entry then return end
+    if self.historySince and entry.startedAt and entry.startedAt < self.historySince then return end
     local token = tostring(entry.encounterID) .. ":" .. tostring(entry.lootKey)
     if self.ignoredHistory[token] then return end
     if self.seedingHistory and entry.finished then
@@ -163,6 +165,10 @@ local function StoreDrop(self, encounterID, key)
     end
     self.histories[token] = entry
     SetStatus(entry)
+    if not self.historyOutside or self.archive[token]
+        or self.historyLeftAt and entry.startedAt and entry.startedAt <= self.historyLeftAt then
+        History.Record(self, entry)
+    end
 end
 
 local function RefreshEncounter(self, encounterID)
@@ -206,12 +212,14 @@ local function BindHistory(self, now)
         local history, count, complete = HistoryFor(self, entry.link)
         local rolls = RollCount(self, entry.link)
         entry.counts, entry.rollNames = nil, nil
+        entry.players, entry.winner = nil, nil
         entry.selfRoll = nil
         entry.finished, entry.status, entry.statusName, entry.statusRoll, entry.statusChoice = nil, nil, nil, nil, nil
         if entry.link and (count > 1 or rolls > 1) then self.ambiguousLinks[entry.link] = true end
         if history and count == 1 and rolls == 1 and not self.ambiguousLinks[entry.link] then
             history.attached = true
             entry.counts, entry.rollNames = history.counts, history.rollNames
+            entry.players, entry.winner = history.players, history.winner
             entry.finished, entry.status = history.finished, history.status
             entry.statusName, entry.statusRoll, entry.statusChoice = history.statusName, history.statusRoll, history.statusChoice
             if history.choice ~= nil then RecordChoice(entry, history.choice, now) end
@@ -280,11 +288,19 @@ local function Purge(self, now)
     return changed
 end
 
+local function ChoiceExpiry(self, entry)
+    if not entry.choiceUntil then return nil end
+    if not entry.finished and (self.openRoll == entry.rollID or self.config.showParticipants) and S.Finite(entry.endsAt) then
+        return math.max(entry.choiceUntil, entry.endsAt)
+    end
+    return entry.choiceUntil
+end
+
 local function NextExpiry(self, now)
     local deadline
     for _, entry in ipairs(self.order) do
         if entry.removeAt and (not deadline or entry.removeAt < deadline) then deadline = entry.removeAt end
-        local visibleUntil = entry.choiceUntil or not entry.cancelled and entry.endsAt
+        local visibleUntil = ChoiceExpiry(self, entry) or not entry.cancelled and entry.endsAt
         if visibleUntil and visibleUntil > now and (not deadline or visibleUntil < deadline) then
             deadline = visibleUntil
         end
@@ -314,7 +330,8 @@ local function SelectRows(self, now)
         if IsActionable(entry, now) then Append(self, entry) end
     end
     for _, entry in ipairs(self.order) do
-        if entry.choiceUntil and now < entry.choiceUntil and (not entry.finished or not self.config.showResults) then
+        local visibleUntil = ChoiceExpiry(self, entry)
+        if visibleUntil and now < visibleUntil and (not entry.finished or not self.config.showResults) then
             Append(self, entry)
         end
     end
@@ -353,6 +370,27 @@ local function Samples()
     }
 end
 
+local function TestSamples(size)
+    local entries = Samples()
+    local sample = entries[1]
+    sample.token, sample.players = "preview", {}
+    local classes = { "WARRIOR", "PRIEST", "MAGE", "DRUID", "ROGUE" }
+    local choices = { S.Text("Main spec"), S.Text("Off spec"), S.Text("Greed"), S.Text("Pass"), S.Text("Pending") }
+    for index = 1, size do
+        local slot = math.ceil(index * #choices / size)
+        local name = S.Text("Example player %d"):format(index)
+        sample.players[index] = { name = name, coloredName = name, class = classes[(index - 1) % #classes + 1],
+            key = name, label = choices[slot], roll = slot <= 3 and (index == 1 and 100 or math.max(1, 90 - index * 5)),
+            winner = index == 1 }
+    end
+    return entries
+end
+
+local function EndTest(self)
+    self.testEntries, self.openRoll, self.rollListClosed = nil, nil, nil
+    Schedule(self)
+end
+
 local function Tick(_, elapsed)
     if not M.active then return end
     M.tickElapsed = (M.tickElapsed or 0) + elapsed
@@ -374,7 +412,15 @@ Flush = function(self)
     NextExpiry(self, now)
     WatchItems(self)
     local pad = S.GamepadUI()
-    if S.editMode and #self.visibleEntries == 0 and not pad then
+    if self.testEntries and #self.visibleEntries > 0 then
+        self.testEntries = nil
+        self.context:Cancel(EndTest)
+    end
+    self.showingTest = self.testEntries ~= nil and #self.visibleEntries == 0 and not pad and not S.editMode
+    if self.showingTest then
+        self.visibleEntries = self.testEntries
+        self.showingSamples = true
+    elseif S.editMode and #self.visibleEntries == 0 and not pad then
         self.sampleEntries = self.sampleEntries or Samples()
         self.visibleEntries = self.sampleEntries
         self.showingSamples = true
@@ -384,6 +430,7 @@ Flush = function(self)
     View.Paint(self)
     local ticking = View.Tick(self, now)
     self.host:SetShown(not pad and #self.visibleEntries > 0)
+    List.Update(self, pad or S.editMode)
     for frame, record in pairs(self.native) do
         local rollID = frame.rollID
         local hidden = not pad and not S.editMode and S.Finite(rollID) and NativeVisible(self, rollID, now)
@@ -491,7 +538,27 @@ end
 local function ClearHistory(self)
     self.histories, self.historyOrder, self.ignoredHistory, self.ignoredOrder = {}, {}, {}, {}
     self.ambiguousLinks = {}
+    if not self.rolls[self.openRoll] then self.openRoll = nil end
+    self.rollListClosed, self.historySince = nil, nil
+    History.Reset(self)
     Schedule(self)
+end
+
+local function ZoneChanged(self)
+    local location = History.Location()
+    if not location then return end
+    if location == "none" and self.historyLocation and self.historyLocation ~= "none" then
+        -- A corpse run can enter the open world before returning to the same instance.
+        if not self.historyOutside then self.historyLeftAt = History.Time() end
+        self.historyOutside = true
+        return
+    end
+    self.historyOutside, self.historyLeftAt = nil, nil
+    if self.historyLocation and location ~= self.historyLocation then
+        ClearHistory(self)
+        self.historySince = History.Time()
+    end
+    self.historyLocation = location
 end
 
 local function InterfaceChanged(self)
@@ -515,12 +582,45 @@ function M:Choose(entry, rollType)
     self.context:After(.25, CheckSubmission)
 end
 
+function M:ToggleParticipants(entry)
+    if not self.active or not entry then return end
+    local key = entry.rollID or entry.token
+    if self.rollListPanel and self.rollListPanel.frame:IsShown() and self.rollListPanel.key == key then
+        self.openRoll, self.rollListClosed = nil, self.firstRollListKey or key
+    else
+        self.openRoll, self.rollListClosed = key, nil
+    end
+    List.Update(self, S.GamepadUI() or S.editMode)
+    Schedule(self)
+end
+
+function M:ToggleRollHistory(recent)
+    if self.active and not S.GamepadUI() and not S.editMode then List.ToggleHistory(self, recent) end
+end
+
+function M:Preview(size)
+    if not self.active or NS.InCombat() or S.GamepadUI() or S.editMode then return end
+    if self.showingTest then
+        self.context:Cancel(EndTest)
+        EndTest(self)
+    elseif #self.liveEntries == 0 then
+        self.testEntries = TestSamples(size)
+        self.openRoll, self.rollListClosed = nil, nil
+        self.context:After(30, EndTest)
+        Schedule(self)
+    end
+end
+
 function M:Enable()
     self.rolls, self.order, self.pending = {}, {}, {}
     self.histories, self.historyOrder = {}, {}
     self.visibleEntries, self.keys, self.encounters = {}, {}, {}
     self.liveEntries, self.ignoredHistory, self.ignoredOrder = self.visibleEntries, {}, {}
     self.ambiguousLinks = {}
+    self.historyLocation, self.historySince = History.Location(), nil
+    self.historyOutside, self.historyLeftAt = nil, nil
+    self.openRoll, self.rollListClosed = nil, nil
+    History.Reset(self)
     self.native = self.native or {}
     if not self.confirmHooked then
         hooksecurefunc("ConfirmLootRoll", NativeConfirmed)
@@ -535,6 +635,7 @@ function M:Enable()
     self.context:Event("LOOT_HISTORY_UPDATE_DROP", HistoryDrop, IN_COMBAT)
     self.context:Event("LOOT_HISTORY_UPDATE_ENCOUNTER", HistoryEncounter, IN_COMBAT)
     self.context:Event("LOOT_HISTORY_CLEAR_HISTORY", ClearHistory, IN_COMBAT)
+    self.context:Event("PLAYER_ENTERING_WORLD", ZoneChanged, IN_COMBAT)
     self.context:Event("INPUT_DEVICE_INTERFACE_TRANSITION", InterfaceChanged, IN_COMBAT)
     self.context:Event("ADDON_LOADED", NativeShown, IN_COMBAT)
     AttachNative(self)
@@ -546,6 +647,7 @@ end
 
 function M:Refresh()
     if self.showingSamples then self.visibleEntries = {} end
+    List.Invalidate(self)
     View.Layout(self)
     Flush(self)
 end
@@ -556,7 +658,8 @@ function M:Disable()
         self.host:SetScript("OnUpdate", nil)
         self.host:Hide()
     end
-    self.showingSamples = nil
+    List.Update(self, true)
+    self.showingSamples, self.showingTest, self.testEntries = nil, nil, nil
 end
 
 function M:RegisterMovers()
@@ -581,6 +684,19 @@ function S.DrawLootRollPreview(parent, config, _, viewport)
     View.Paint(view)
     View.Tick(view, GetTime())
     return view.host
+end
+
+function S.DrawLootRollListTest(parent, config, viewport)
+    local view = parent.suiteLootRollListTest
+    if not view then
+        local entry = TestSamples(40)[1]
+        local winner = entry.players[1].name
+        entry.statusText = S.Text("Winner: %s"):format(winner)
+        view = { previewParent = parent, entry = entry, lootWins = { [winner] = 2 } }
+        parent.suiteLootRollListTest = view
+    end
+    view.config = config
+    return List.DrawTest(view, viewport)
 end
 
 S.Install(ID, M)

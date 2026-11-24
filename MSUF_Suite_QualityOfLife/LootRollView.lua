@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local History, Data = P.LootRollHistory, P.LootRollData
 local View = {}
 P.LootRollView = View
 
@@ -39,7 +40,9 @@ local function ItemTooltip(button)
     local row = button.row
     if IsPreview(row.owner) or not row.entry then return end
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-    if row.entry.link then GameTooltip:SetHyperlink(row.entry.link)
+    if row.entry.link then
+        GameTooltip:SetHyperlink(row.entry.link)
+        if row.owner.config.showAuctionPrice then Data.AddAuctionPrice(GameTooltip, row.entry) end
     else
         GameTooltip:SetText(row.entry.name or "")
     end
@@ -73,6 +76,21 @@ local function Choose(button)
     if IsPreview(owner) or not entry or not entry.rollID or entry.choice ~= nil or entry.cancelled or entry.finished then return end
     if button.action.id ~= 0 and entry[button.action.flag] ~= true then return end
     owner:Choose(entry, button.action.id)
+end
+
+local function ParticipantClick(button, mouseButton)
+    local row = button.row
+    if IsPreview(row.owner) then return end
+    if mouseButton == "RightButton" then row.owner:ToggleRollHistory()
+    else row.owner:ToggleParticipants(row.entry) end
+end
+
+local function ParticipantTooltip(button)
+    if IsPreview(button.row.owner) then return end
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    GameTooltip:SetText(S.Text("Roll participants"))
+    GameTooltip:AddLine(S.Text("Right-click to open the loot roll history."), .7, .7, .7, true)
+    GameTooltip:Show()
 end
 
 local function Text(parent, justify)
@@ -133,12 +151,29 @@ local function NewRow(owner)
     row.item:SetScript("OnEnter", ItemTooltip)
     row.item:SetScript("OnLeave", HideTooltip)
     row.item:SetScript("OnHide", HideTooltip)
+    row.item:SetScript("OnClick", function(button)
+        if not IsPreview(button.row.owner) then History.Link(button.row.entry) end
+    end)
     row.icon = S.CreateTexture(row.item, nil, "ARTWORK")
     row.icon:SetAllPoints(row.item)
     row.icon:SetTexCoord(.07, .93, .07, .93)
     row.iconBorder = Edges(row.item)
     row.name, row.details, row.status = Text(frame), Text(frame), Text(frame)
     row.remaining = Text(frame, "RIGHT")
+    row.participants = S.CreateFrame("Button", nil, frame)
+    row.participants.row = row
+    row.participants:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row.participants:SetSize(24, 23)
+    row.participants:SetPoint("TOPRIGHT", -4, -2)
+    row.participants:SetScript("OnClick", ParticipantClick)
+    row.participants:SetScript("OnEnter", ParticipantTooltip)
+    row.participants:SetScript("OnLeave", HideTooltip)
+    row.participants:SetScript("OnHide", HideTooltip)
+    local highlight = S.CreateTexture(row.participants, nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetColorTexture(1, 1, 1, .12)
+    row.participants.label = Text(row.participants, "CENTER")
+    row.participants.label:SetAllPoints()
     row.timer = S.CreateFrame("StatusBar", nil, frame)
     row.timer:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     row.timer:SetMinMaxValues(0, 1000)
@@ -209,10 +244,10 @@ local function PlaceRow(self, row, index)
     local nameX, nameY = config.nameOffsetX, config.nameOffsetY - 6
     row.name:ClearAllPoints()
     row.name:SetPoint("TOPLEFT", row.frame, "TOPLEFT", iconSize + 14 + nameX, nameY)
-    row.name:SetPoint("TOPRIGHT", row.frame, "TOPRIGHT", nameX - 39, nameY)
+    row.name:SetPoint("TOPRIGHT", row.frame, "TOPRIGHT", nameX - 66, nameY)
     row.name:SetHeight(sizes.name + 3)
     row.remaining:ClearAllPoints()
-    row.remaining:SetPoint("TOPRIGHT", row.frame, "TOPRIGHT", config.remainingOffsetX - 7, config.remainingOffsetY - 6)
+    row.remaining:SetPoint("TOPRIGHT", row.frame, "TOPRIGHT", config.remainingOffsetX - 31, config.remainingOffsetY - 6)
     row.remaining:SetSize(math.max(29, math.ceil(sizes.remaining * 2.4)), sizes.remaining + 3)
     row.details:ClearAllPoints()
     row.details:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", iconSize + 14 + config.detailsOffsetX, 10 + config.detailsOffsetY)
@@ -246,6 +281,9 @@ local function StyleRow(self, row, style)
     row.status:SetTextColor(unpack(style.text))
     S.QoLStyleText(row.remaining, config, font, sizes.remaining)
     row.remaining:SetTextColor(unpack(style.text))
+    S.QoLStyleText(row.participants.label, config, font, 16)
+    row.participants.label:SetTextColor(unpack(style.text))
+    row.participants.label:SetText("...")
     row.timer:SetStatusBarColor(unpack(style.accent))
     for _, action in ipairs(row.actions) do
         S.QoLStyleText(action.count, config, font, 9)
@@ -425,6 +463,7 @@ local function PaintRow(self, row, entry, index)
     end
     row.status:SetText(status or (not actionable and S.Text("Waiting for result") or ""))
     row.item:EnableMouse(not IsPreview(self))
+    row.participants:EnableMouse(not IsPreview(self))
     local staticTimer = IsPreview(self) and S.Finite(entry.remaining) and not entry.finished
     local hasTimer = actionable and (S.Finite(entry.endsAt) or staticTimer)
     TimerShown(row, hasTimer)

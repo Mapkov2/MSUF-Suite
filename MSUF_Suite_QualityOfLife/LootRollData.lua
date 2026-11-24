@@ -1,5 +1,6 @@
 local _, P = ...
 local S = P.Suite
+local Field = P.NS.AppearancePrimitives.Safety.Field
 local D = {}
 P.LootRollData = D
 
@@ -34,22 +35,26 @@ end
 -- History states are not the numeric actions accepted by RollOnLoot.
 -- NoRoll is an outstanding decision, not Pass; there is no Disenchant
 -- history state in the verified live/forever contracts.
+local ROLL_STATES = {
+    { "NeedMainSpec", 1, S.Text("Main spec") },
+    { "NeedOffSpec", 1, S.Text("Off spec") },
+    { "Transmog", 4, S.Text("Transmog") },
+    { "Greed", 2, S.Text("Greed") },
+    { "Pass", 0, S.Text("Pass") },
+    { "NoRoll", nil, S.Text("Pending") },
+}
+
 local function Action(state)
     if not Key(state) or not PublicTable(Enum) then return nil end
     local states = Enum.EncounterLootDropRollState
     if not PublicTable(states) then return nil end
-    if S.Finite(states.NeedMainSpec) and state == states.NeedMainSpec then return 1 end
-    if S.Finite(states.NeedOffSpec) and state == states.NeedOffSpec then return 1 end
-    if S.Finite(states.Greed) and state == states.Greed then return 2 end
-    if S.Finite(states.Transmog) and state == states.Transmog then return 4 end
-    if S.Finite(states.Pass) and state == states.Pass then return 0 end
+    for rank, definition in ipairs(ROLL_STATES) do
+        local value = states[definition[1]]
+        if S.Finite(value) and state == value then return definition[2], rank, definition[3] end
+    end
 end
 
-local function PlayerName(info)
-    local name = S.PublicText(info.playerName)
-    if not name then return nil end
-    name = name:sub(1, 160)
-    local class = S.PublicText(info.playerClass)
+local function ColoredName(name, class)
     if not class or not PublicTable(RAID_CLASS_COLORS) then return name end
     local color = RAID_CLASS_COLORS[class]
     if not PublicTable(color) then return name end
@@ -58,16 +63,78 @@ local function PlayerName(info)
     return name
 end
 
+local function Player(info)
+    local name = S.PublicText(info.playerName)
+    if not name then return nil end
+    local class = S.PublicText(info.playerClass)
+    local choice, rank, label = Action(info.state)
+    return {
+        name = name, coloredName = ColoredName(name, class), class = class,
+        key = S.PublicText(info.playerGUID) or name, choice = choice, rank = rank, label = label,
+        roll = S.Finite(info.roll) and info.roll or nil, winner = True(info.isWinner),
+        isSelf = True(info.isSelf),
+    }
+end
+
 local function Item(entry)
     if not entry.link then return end
-    local name, _, quality, level, _, _, _, _, _, texture = C_Item.GetItemInfo(entry.link)
+    local name, _, quality, level, _, _, _, _, _, texture, _, _, _, bind = C_Item.GetItemInfo(entry.link)
     if not entry.name then entry.name = S.PublicText(name) end
     if not entry.icon then entry.icon = Icon(texture) end
     if not Key(entry.quality) and Key(quality) then entry.quality = quality end
+    local binds = Enum.ItemBind
+    if S.Finite(bind) and binds and (bind == binds.OnAcquire or bind == binds.Quest) then
+        entry.notAuctionable = true
+    end
     local detailed = C_Item.GetDetailedItemLevelInfo(entry.link)
     if Positive(detailed) then entry.itemLevel = detailed
     elseif Positive(level) then
         entry.itemLevel = level
+    end
+end
+
+local function AddonFunction(provider, method)
+    if not PublicTable(provider) then return end
+    local lookup = provider[method]
+    if S.Public(lookup) and type(lookup) == "function" then return lookup end
+end
+
+local function Price(provider, method, ...)
+    local lookup = AddonFunction(provider, method)
+    if lookup then
+        local amount = P.NS.Dispatch(lookup, ...)
+        if Positive(amount) then return math.floor(amount) end
+    end
+end
+
+local function TSMPrice(link)
+    local api = Field(_G, "TSM_API")
+    local convert = AddonFunction(api, "ToItemString")
+    if not convert then return end
+    local item = S.PublicText(P.NS.Dispatch(convert, link))
+    if item then return Price(api, "GetCustomPriceValue", "DBMarket", item) end
+end
+
+function D.AddAuctionPrice(tooltip, entry)
+    local link = entry.link
+    if not link or entry.bindOnPickUp or entry.notAuctionable then return end
+    local price = Price(Field(Field(_G, "AuctionMaster"), "API"), "GetMarketPrice", link)
+    local source = "AuctionMaster"
+    if not price then
+        price = TSMPrice(link)
+        source = "TradeSkillMaster"
+    end
+    if not price then
+        price = Price(Field(Field(_G, "AucAdvanced"), "API"), "GetMarketValue", link)
+        source = "Auctioneer"
+    end
+    if not price then
+        local api = Field(Field(_G, "Auctionator"), "API")
+        price = Price(Field(api, "v1"), "GetAuctionPriceByItemLink", "MSUF Suite", link)
+        source = "Auctionator"
+    end
+    if price then
+        tooltip:AddLine(S.Text("Auction price (%s): %s"):format(source, C_CurrencyInfo.GetCoinTextureString(price)))
     end
 end
 
@@ -96,17 +163,28 @@ function D.ReadRoll(rollID, durationMilliseconds, now)
     return entry
 end
 
+local function SortPlayers(a, b)
+    if a.rank ~= b.rank then return a.rank < b.rank end
+    local aRoll, bRoll = a.roll or -1, b.roll or -1
+    if aRoll ~= bRoll then return aRoll > bRoll end
+    if a.name ~= b.name then return a.name < b.name end
+    return a.key < b.key
+end
+
 local function ReadParticipants(entry, rolls)
     if not PublicTable(rolls) then return end
     local names = { [0] = {}, {}, {}, {}, {} }
+    local players = {}
     for index = 1, math.min(#rolls, MAX_NAMES) do
         local info = rolls[index]
         if PublicTable(info) then
-            local choice = Action(info.state)
+            local player = Player(info)
+            local choice = player and player.choice
+            if not player then choice = Action(info.state) end
+            if player and player.rank then players[#players + 1] = player end
             if choice ~= nil then
                 entry.counts[choice] = entry.counts[choice] + 1
-                local name = PlayerName(info)
-                if name then names[choice][#names[choice] + 1] = name end
+                if player then names[choice][#names[choice] + 1] = player.coloredName end
                 if True(info.isSelf) then
                     entry.selfChoice = choice
                     if S.Finite(info.roll) then entry.selfRoll = info.roll end
@@ -115,6 +193,8 @@ local function ReadParticipants(entry, rolls)
         end
     end
     for choice = 0, 4 do entry.rollNames[choice] = table.concat(names[choice], "\n") end
+    table.sort(players, SortPlayers)
+    entry.players = players
 end
 
 local function ReadStatus(entry, info)
@@ -128,9 +208,17 @@ local function ReadStatus(entry, info)
         entry.status, result = "leader", leader
     end
     if not result then return end
-    entry.statusName = PlayerName(result)
+    local player = Player(result)
+    entry.statusName = player and player.coloredName
     entry.statusChoice = Action(result.state)
     if S.Finite(result.roll) then entry.statusRoll = result.roll end
+    if entry.finished then
+        entry.winner = player
+        if not player then return end
+        for _, participant in ipairs(entry.players or {}) do
+            if participant.key == player.key then participant.winner = true end
+        end
+    end
 end
 
 function D.ReadDrop(encounterID, lootKey)

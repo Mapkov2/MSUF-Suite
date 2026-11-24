@@ -30,6 +30,20 @@ local function Widget(parent, kind)
     function widget:SetHeight(height) self.height = height Write() end
     function widget:SetScale(scale) self.scale = scale Write() end
     function widget:SetFrameStrata(strata) self.strata = strata Write() end
+    function widget:SetFrameLevel(level) self.level = level end
+    function widget:GetFrameLevel() return self.level or 0 end
+    function widget:SetClampedToScreen(clamped) self.clamped = clamped end
+    function widget:GetHeight() return self.height end
+    function widget:GetWidth() return self.width end
+    function widget:GetSize() return self.width, self.height end
+    function widget:GetEffectiveScale() return self.scale or 1 end
+    function widget:GetRect()
+        if self.left then return self.left, self.bottom, self.width, self.height end
+    end
+    function widget:EnableMouseWheel(enabled) self.wheel = enabled end
+    function widget:SetEnabled(enabled) self.enabled = enabled end
+    function widget:IsShown() return self.shown end
+    function widget:RegisterForClicks(...) self.clicks = { ... } end
     function widget:EnableMouse(mouse) self.mouse = mouse Write() end
     function widget:SetShown(shown) self.shown = shown == true Write() end
     function widget:Show() self.shown = true Write() end
@@ -121,8 +135,15 @@ local Suite = {
     end,
 }
 local namespace = { NS = { AnchorPoints = { "CENTER", "TOPLEFT" } }, Suite = Suite }
+local links, shares = {}, {}
+namespace.LootRollHistory = {
+    Link = function(entry) links[#links + 1] = entry end,
+    Share = function(entry) shares[#shares + 1] = entry end,
+}
 assert(loadfile(viewPath))("MSUF_Suite_QualityOfLife", namespace)
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootRollList.lua"))("MSUF_Suite_QualityOfLife", namespace)
 local View = assert(namespace.LootRollView)
+local List = assert(namespace.LootRollList)
 
 local config = {
     width = 380, rowHeight = 58, rowGap = 4, maxRows = 6, scale = 100,
@@ -427,4 +448,42 @@ Action(editSample.rows[1], 1).button.scripts.OnClick(Action(editSample.rows[1], 
 assert(calls == beforePreview and not Action(editSample.rows[1], 1).button.mouse,
     "Edit Mode samples were interactive")
 assert(nativeReads == 0 and subscriptions == 0, "preview caused native reads or subscriptions")
+CLASS_ICON_TCOORDS = { MAGE = { 0, .25, 0, .25 } }
+local players = {}
+for i = 1, 40 do
+    local name = "Raider " .. i
+    players[i] = { name = name, coloredName = name, key = name,
+        class = "MAGE", label = "Main spec", roll = 101 - i, winner = i == 1 }
+end
+local winner = { token = "final", name = "Final item", link = "|Hitem:17|h[Final item]|h", icon = 5678,
+    finished = true, players = players, statusText = "Winner: Raider 1" }
+module.archive = { final = winner }
+module.archiveOrder = { "final" }
+module.lootWins = { ["Raider 1"] = 2 }
+module.visibleEntries, module.openRoll = { winner }, winner.token
+config.participantsSide, config.participantsScale, config.highlightExtremeRolls = 3, 125, true
+List.Update(module)
+local detail = module.rollListPanel
+assert(detail.frame.shown and detail.frame.clamped and detail.frame.scale == 1.25)
+assert(detail.frame.points[1][1] == "TOPLEFT" and detail.frame.points[1][3] == "BOTTOMLEFT")
+UIParent.width, UIParent.height = 1000, 720
+module.host.left, module.host.bottom = 200, 80
+List.Update(module)
+assert(detail.frame.points[1][1] == "BOTTOMLEFT" and detail.frame.points[1][3] == "TOPLEFT",
+    "an open participant panel flips away from the viewport boundary")
+local first, playersPane = detail.players.rows[1], detail.players
+assert(first.name.text == "Winner: Raider 1" and first.wins.text == 2 and first.icon.shown)
+assert(first.roll.text == 100 and first.roll.textColor[2] == .78 and playersPane.range.text == "6/40")
+for _ = 1, 8 do playersPane.next.scripts.OnClick() end
+assert(playersPane.rows[6].name.text == "Raider 40" and not playersPane.next.enabled)
+playersPane.scripts.OnMouseWheel(playersPane, 1)
+assert(playersPane.rows[6].name.text == "Raider 39", "wheel scroll moves by a single player")
+playersPane.item.scripts.OnClick(playersPane.item)
+playersPane.share.scripts.OnClick()
+assert(links[1] == winner and shares[1] == winner, "actions use the displayed item and result")
+List.ToggleHistory(module)
+local archive = module.rollHistoryPanel
+assert(archive.frame.shown and archive.items.rows[1].entry == winner and archive.players.rows[1].roll.text == 100)
+List.Update(module, true)
+assert(not detail.frame.shown and not archive.frame.shown, "blocked interface hides both auxiliary views")
 print("loot roll view: action guards, counts, geometry, countdown, preview and tooltip contracts passed")

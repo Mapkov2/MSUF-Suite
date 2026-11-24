@@ -67,6 +67,24 @@ end
 SLASH_MSUFSUITEMACROBUILDER1 = "/msufmacro"
 SlashCmdList.MSUFSUITEMACROBUILDER = function() Menu.Open("suite_macros") end
 
+SLASH_MSUFLOOT1 = "/msufloot"
+SlashCmdList.MSUFLOOT = function(message)
+    local command = (Suite.PublicText(message) or ""):match("^%s*(.-)%s*$"):lower()
+    if command == "settings" then return Suite.OpenLootRollSettings() end
+    local module = Suite.Suite.instances.lootRolls
+    if not module or not module.active then
+        Suite.Print(Suite.Text("Enable the Suite loot roll window first."))
+        return
+    end
+    if command == "test" or command == "test 40" then
+        module:Preview(40)
+    elseif command == "test 5" then
+        module:Preview(5)
+    else
+        module:ToggleRollHistory(command == "last")
+    end
+end
+
 -- A summary for MSUF's dashboard card. Pure reads (safe in combat); the
 -- returned table is a new one and the only allocation. nil while the Suite
 -- has not started (a startup error, or a login in combat not yet finished).

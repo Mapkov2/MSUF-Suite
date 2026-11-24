@@ -15,14 +15,17 @@ Enum = { EncounterLootDropRollState = {
     NeedMainSpec = 0, NeedOffSpec = 1, Transmog = 2, Greed = 3, NoRoll = 4, Pass = 5,
 } }
 RAID_CLASS_COLORS = { MAGE = { colorStr = "ff40c7eb" } }
-local S = { Public = function(value) return not issecretvalue(value) end }
+local S = { Public = function(value) return not issecretvalue(value) end, Text = function(value) return value end }
 function S.Finite(value)
     return S.Public(value) and type(value) == "number" and value == value and math.abs(value) < math.huge
 end
 function S.PublicText(value)
     return S.Public(value) and type(value) == "string" and value ~= "" and value or nil
 end
-local private = { Suite = S }
+local NS = { Dispatch = function(fn, ...) return fn(...) end, Safety = {} }
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Bootstrap.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite", NS)
+local private = { Suite = S, NS = NS }
 assert(loadfile(path))("MSUF_Suite_QualityOfLife", private)
 local D = assert(private.LootRollData)
 local secretNumber, secretString, secretTable = Secrets.New("number"), Secrets.New("string"), Secrets.New("table")
@@ -109,6 +112,10 @@ for _, field in ipairs({ "lootListID", "lootListKey" }) do
     Check(entry.selfChoice == 1 and entry.selfRoll == 72 and entry.status == "leader"
         and not entry.finished and entry.statusRoll == 88,
         field .. ": self choice and pending leader stay separate from completed winner")
+    Check(#entry.players == 6 and entry.players[1].label == "Main spec"
+        and entry.players[2].label == "Off spec" and entry.players[2].roll == 72
+        and entry.players[6].label == "Pending" and entry.players[6].choice == nil,
+        field .. ": participant list preserves ranked specs, roll numbers and outstanding choices")
     Check(entry.statusName == "|cff40c7ebMain|r" and entry.rollNames[1]:find("|cff40c7ebMain|r", 1, true),
         field .. ": class-color names in status and participant tooltip")
     info.playerRollState = 5
@@ -157,6 +164,25 @@ drops[1][12] = { itemHyperlink = "item:many", rollInfos = longRolls }
 entry = D.ReadDrop(1, 12)
 local _, lineCount = entry.rollNames[2]:gsub("\n", "\n")
 Check(lineCount < 40 and not entry.rollNames[2]:find("Player41", 1, true), "participant tooltips are bounded")
+local marketLine
+C_CurrencyInfo = { GetCoinTextureString = function(copper) return copper .. "c" end }
+local tooltip = { AddLine = function(_, line) marketLine = line end }
+D.AddAuctionPrice(tooltip, entry)
+Check(not marketLine, "a normal loot tooltip still opens without a price provider")
+AuctionMaster = { API = { GetMarketPrice = function() return secretNumber end } }
+TSM_API = {
+    ToItemString = function(link) return link == "item:many" and "i:123" end,
+    GetCustomPriceValue = function(source, item)
+        assert(source == "DBMarket" and item == "i:123", "TSM gets the documented item string and price source")
+        return 512
+    end,
+}
+D.AddAuctionPrice(tooltip, entry)
+Check(marketLine == "Auction price (TradeSkillMaster): 512c", "a secret provider price falls through to public data")
+entry.bindOnPickUp = true
+marketLine = nil
+D.AddAuctionPrice(tooltip, entry)
+Check(not marketLine, "a bind-on-pickup item has no auction price")
 itemName = nil
 entry = D.ReadDrop(1, 12)
 Check(entry.name == entry.link, "uncached history preserves a readable hyperlink in the name slot")

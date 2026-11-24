@@ -47,9 +47,16 @@ local function Setup(forever, prepare)
     end
     local NS = { Client = { isForever = forever }, AnchorPoints = { [5] = "CENTER" },
         Safety = { IsForbidden = function(frame) return frame.forbidden == true end },
-        Dispatch = function(fn, ...) return fn(...) end }
+        Dispatch = function(fn, ...) return fn(...) end, InCombat = function() return false end,
+        ChatLocked = function() return state.chatLocked == true end }
+    assert(loadfile(root .. "/MSUF_Suite/Appearance/Bootstrap.lua"))("MSUF_Suite", NS)
+    assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite", NS)
     local clock = Support.Clock(100)
     state.clock, state.S = clock, S
+    state.instanceID = 33
+    GetInstanceInfo = function()
+        return "Dungeon", state.instanceKind or "party", 1, nil, nil, nil, nil, state.instanceID
+    end
     UIParent = Frame(false)
     UIParent.shown = true
     local muteParent = Frame(false)
@@ -105,6 +112,7 @@ local function Setup(forever, prepare)
             return result
         end,
         GetAllEncounterInfos = function() return state.encounters end,
+        GetLootHistoryTime = function() return clock.now end,
     }
     local confirmedHook
     hooksecurefunc = function(name, hook)
@@ -142,9 +150,14 @@ local function Setup(forever, prepare)
             end
         end
     end
-    local P = { NS = NS, Suite = S, LootRollView = View }
+    local P = { NS = NS, Suite = S, LootRollView = View, LootRollList = {
+        Update = function() end, Invalidate = function() end,
+        ToggleHistory = function() state.historyOpened = true end,
+    } }
     assert(loadfile(dataPath))("MSUF_Suite_QualityOfLife", P)
+    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootRollHistory.lua"))("MSUF_Suite_QualityOfLife", P)
     assert(loadfile(runtimePath))("MSUF_Suite_QualityOfLife", P)
+    state.historyAPI = P.LootRollHistory
     local M = assert(state.module)
     M.config = { maxRows = 6, resultSeconds = 2, showResults = true, showItemLevel = true, point = 5 }
     M.context = Support.ModuleTimers(root, S, NS)("lootRolls", M, {
@@ -472,6 +485,62 @@ for _, forever in ipairs({ false, true }) do
     declined.rollInfos[2] = { playerName = "Self", playerClass = "MAGE", state = 5, isSelf = true }
     state:Publish(610)
     Check(M.rolls[61].choice == 0, "native history overrides a declined provisional Need request with actual Pass")
+    state:Disable()
+
+    state, M = Setup(forever)
+    M.config.showParticipants = true
+    state:Start(71, "item:identical", 1)
+    state:Start(72, "item:identical", 2)
+    M:Choose(M.rolls[71], 2)
+    state:Cancel(71)
+    state:Frame(4)
+    Check(#M.visibleEntries == 2, "participant list keeps a submitted roll visible while others decide")
+    state:Drop(710, "item:identical", "Winner")
+    state:Drop(720, "item:identical", "Winner")
+    state:Publish(710)
+    state:Publish(710)
+    state:Publish(720)
+    Check(#M.archiveOrder == 2 and M.lootWins.Winner == 2, "equal items keep separate history and event retries do not add wins")
+    Check(not M.rolls[72].players, "identical active rolls are not assigned an ambiguous list")
+    state:Frame(3)
+    Check(M.archive["1:710"] and M.lootWins.Winner == 2, "the history survives popup expiry")
+    M:ToggleRollHistory()
+    Check(state.historyOpened, "history opens after results have expired")
+    local messages, notices = {}, {}
+    local instanceGroup, raid = true, true
+    LE_PARTY_CATEGORY_INSTANCE = 2
+    IsInGroup = function(category) return category == nil or instanceGroup end
+    IsInRaid = function() return raid end
+    C_ChatInfo = { SendChatMessage = function(message, channel) messages[#messages + 1] = { message, channel } end }
+    state.S.Print = function(message) notices[#notices + 1] = message end
+    local completed = M.archive["1:710"]
+    state.historyAPI.Share(completed)
+    instanceGroup = false
+    state.historyAPI.Share(completed)
+    raid = false
+    state.historyAPI.Share(completed)
+    Check(#messages == 3 and messages[1][2] == "INSTANCE_CHAT" and messages[2][2] == "RAID"
+        and messages[3][2] == "PARTY" and messages[1][1]:find("item:identical", 1, true),
+        "manual sharing prefers instance chat and falls back to raid or party")
+    state.chatLocked = true
+    state.historyAPI.Share(completed)
+    Check(#messages == 3 and #notices == 1, "chat lockdown suppresses sending")
+    state.instanceKind = "none"
+    state:Emit("PLAYER_ENTERING_WORLD")
+    state:Frame(1)
+    state:Drop(731, "item:outdoors", "Winner")
+    state:Publish(731)
+    state.instanceKind = "party"
+    state:Emit("PLAYER_ENTERING_WORLD")
+    Check(#M.archiveOrder == 2 and M.lootWins.Winner == 2, "leaving briefly preserves the instance roll history")
+    state.instanceID = 34
+    state:Emit("PLAYER_ENTERING_WORLD")
+    state:Drain()
+    state:Publish(710)
+    Check(#M.archiveOrder == 0 and next(M.lootWins) == nil, "an earlier instance result cannot reappear after zoning")
+    state:Drop(730, "item:new", "Winner")
+    state:Publish(730)
+    Check(M.lootWins.Winner == 1, "the new instance starts a fresh win count")
     state:Disable()
 end
 print("PASS loot-roll controller: " .. checks .. " checks on Retail and Forever with real data/timers")

@@ -119,6 +119,8 @@ LoadoutReminder.lua
 QuietPopups.lua
 Loot.lua
 LootRollData.lua
+LootRollHistory.lua
+LootRollList.lua
 LootRollView.lua
 LootRolls.lua
 LootContainers.lua

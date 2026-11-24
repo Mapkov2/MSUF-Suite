@@ -5,6 +5,8 @@ local EXPORTS = {
     lootRolls = "DrawLootRollPreview", actionTracker = "DrawActionTrackerPreview",
     battleRes = "DrawBattleResPreview", enemyCastStack = "DrawEnemyCastStackPreview",
 }
+local LOOT_TEST_START = "Test loot rolls (40 players)"
+local LOOT_TEST_STOP = "End loot roll test"
 local RETAIL = { skyriding = true, battleRes = true, enemyCastStack = true }
 local function GlossGate(rule)
     if rule.key == "glossEnabled" or rule.key == "glossStrength" then
@@ -105,15 +107,47 @@ local function SampleSlider(ui, parent, key, label, maximum, step, y)
     return y - 30
 end
 
+local function SetLootTest(ui, enabled)
+    if ui.lootTest == enabled then return end
+    ui.lootTest = enabled
+    P.SetButtonText(ui.testButton, Tr(enabled and LOOT_TEST_STOP or LOOT_TEST_START))
+    if not enabled and ui.lootTestFrame then ui.lootTestFrame:Hide() end
+end
+
+local function AddLootTestButton(ui, parent, y)
+    local button = P.T.Button(parent, LOOT_TEST_START, ui.width, 26)
+    ui.testButton = button
+    button:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+    P.HM.SkipHistoryCheckpoint(button)
+    button:SetScript("OnClick", function()
+        if P.Combat() or not ui.stage:IsVisible() or not S.DrawLootRollListTest then return end
+        if not ui.lootTest and ui.lootEditor then P.LootRollPreviewMove.Suspend(ui.lootEditor) end
+        SetLootTest(ui, not ui.lootTest)
+        ui.Paint()
+    end)
+    return y - button:GetHeight() - 8
+end
+
 local function Paint(ui)
     if not ui.stage:IsVisible() then return end
     if ui.moves and ui.moves.drag then return ui.moves:Cancel() end
     if not K.Runtime("MSUF_Suite_QualityOfLife", EXPORTS[ui.id]) then
+        if ui.lootTest then SetLootTest(ui, false) end
+        if ui.testButton then ui.testButton:SetEnabled(false) end
         P.SetTranslatedText(ui.status, Tr("Preview is available outside combat."))
         return
     end
     P.SetTranslatedText(ui.status, "")
     local config = S.Config(ui.id)
+    if ui.testButton then
+        ui.testButton:SetEnabled(not P.Combat() and S.DrawLootRollListTest ~= nil)
+        if ui.lootTest then
+            local view = ui.stage.suiteLootRollPreview
+            if view then view.host:Hide() end
+            ui.lootTestFrame = S.DrawLootRollListTest(ui.stage, config, ui.viewport)
+            return
+        end
+    end
     local native = UIParent:GetEffectiveScale() / ui.stage:GetEffectiveScale()
     ui.viewport.scale = native * (config.scale or 100) / 100
     if ui.restore then ui.restore() end
@@ -145,7 +179,6 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
     y = y - math.max(28, math.ceil(note:GetStringHeight() or 28)) - 8
     local height = id == "xpBar" and 160 or (editor or id == "glimmer") and 190 or 230
     local stage = CreateFrame("Frame", nil, parent, editor and "BackdropTemplate" or nil)
-    stage:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
     stage:SetSize(room, height)
     stage:SetClipsChildren(true)
     local ui = { id = id, ctx = ctx, stage = stage, width = room, height = height, sliders = {}, targets = {}, editor = editor,
@@ -154,6 +187,8 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
     ui.status = P.Text(stage, "", 0, -8, room)
     ui.Paint = function() Paint(ui) end
     ui.OpenTarget = function(key) return OpenTarget(ui, key) end
+    if id == "lootRolls" then y = AddLootTestButton(ui, parent, y) end
+    stage:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
     y = y - height - 8
     if editor then
         y = editor.BuildRail(ui, parent, y, room)
@@ -166,17 +201,23 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
     end
     stage:SetScript("OnShow", function()
         stage:RegisterEvent("PLAYER_REGEN_ENABLED")
-        if editor then stage:RegisterEvent("PLAYER_REGEN_DISABLED") end
+        if editor or ui.testButton then stage:RegisterEvent("PLAYER_REGEN_DISABLED") end
         ui.Paint()
     end)
     stage:SetScript("OnHide", function()
         stage:UnregisterAllEvents()
+        if ui.lootTest then SetLootTest(ui, false) end
         if editor then editor.Release(ui) end
         if id == "glimmer" and S.HideGlimmerPreview then S.HideGlimmerPreview(stage) end
     end)
     stage:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_REGEN_DISABLED" then
             if ui.moves then ui.moves:Release() end
+            if ui.testButton then
+                if ui.lootTest then SetLootTest(ui, false) end
+                ui.testButton:SetEnabled(false)
+                ui.Paint()
+            end
         else ui.Paint() end
     end)
     P.M.TrackRefresh(ctx, ui.Paint)
@@ -184,7 +225,7 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
     ctx.qolIndicatorPreviews[id] = ui
     if stage:IsVisible() then
         stage:RegisterEvent("PLAYER_REGEN_ENABLED")
-        if editor then stage:RegisterEvent("PLAYER_REGEN_DISABLED") end
+        if editor or ui.testButton then stage:RegisterEvent("PLAYER_REGEN_DISABLED") end
         ui.Paint()
     end
     if id == "xpBar" then y = P.XPBarPreviewEditor.Build(ui, parent, y, room) end
