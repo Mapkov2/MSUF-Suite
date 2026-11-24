@@ -1,5 +1,37 @@
 # MSUF Suite Changelog
 
+## 0.45 Alpha - 2026-11-24
+
+Changes since 0.4 Alpha. Supports WoW Retail 12.1.5 and 12.1.7 and WoW Forever 1.60.1. Requires Midnight Simple Unit Frames.
+
+### Action Bars
+
+- Edit a custom flyout directly from its launcher. Reorder or remove entries, add an action from the cursor, and preview the flyout in the Action Bars settings.
+- Customize the flyout arrow, opening direction, entry button size and stack counts. Updated native and custom flyout placement and hover handling.
+- Configure action bar page switching with guided controls and an advanced macro conditions field.
+- Open Action bar setups from Quick Actions for account transfers and recovery. Normal transfers remain available through Profiles.
+
+### Nameplates
+
+- Nameplates can use shared rounded and slanted bar styles. The Bars menu includes a Nameplate cut-direction override and shape previews. Power and mouseover overlays follow the shared options where supported.
+- Nameplate text and aura timer colors are grouped under Fonts. Text controls and settings search link to the corresponding color.
+- Enemy Load Conditions have their own accordion and reset. Style panels have a direct Colors shortcut.
+
+### Loot and HUD
+
+- Added an optional minimal loot window and a movable feed for items received, including through auto loot. The interactive preview lets you place and style individual elements.
+- Refined the Loot Roll participant list and history, including how pending and completed rolls are shown.
+- Floating Combat Text and Action Tracker settings now use dedicated tabs. The Floating Combat Text preview can play a burst, and Battle Resurrection uses the shared preview editor.
+- Added an option to hide the New Area subtitle where zone information is available.
+
+### Character Panel, Buff Reminders and WoW Forever
+
+- The tracked reputation is highlighted in Character Panel lists. A reputation bar linked to the XP bar follows it while moving it in Edit Mode.
+- Preview Buff Reminders sounds in the sound picker.
+- The Forever spellbook rank shortcut applies when switching spellbook tabs. The native settings checkbox can apply the change immediately.
+- Mail window focus waits for Blizzard to finish opening the mailbox.
+- Updated all ten translation packs.
+
 ## 0.1.35 Alpha - 2026-11-23
 
 GitHub prerelease for WoW Retail 12.1.5 and 12.1.7, and WoW Forever 1.60.1. Requires Midnight Simple Unit Frames.
