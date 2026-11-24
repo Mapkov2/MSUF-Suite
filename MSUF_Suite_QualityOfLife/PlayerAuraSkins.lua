@@ -83,14 +83,11 @@ local function PaintNativeRow(frame, look, cache)
     if frame.ConsolidatedBuffs then NS.Dispatch(PaintNative, frame.ConsolidatedBuffs, look, cache) end
 end
 
+-- Natively anchored artwork can have secret bounds; PaintNative then sizes the skin from the template.
 local function Paint(button, look)
+    if look then return PaintNative(button, look, painted) end
     if IsSecret(button) or not button or IsForbidden(button) then return end
-    if not look then return PaintLook(painted, button) end
-    local icon = NativeIcon(button)
-    if not icon then return end
-    local w, h = icon:GetWidth(), icon:GetHeight()
-    if IsSecret(w) or IsSecret(h) then return end
-    PaintLook(painted, button, icon, look, w, h)
+    PaintLook(painted, button)
 end
 local function PaintFrame(name, look)
     local frame = _G[name]

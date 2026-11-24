@@ -159,7 +159,17 @@ if arg[2] then
  print('Player aura geometry: '..mode..' preserved and recovered')
  return
 end
+local arrow=Region(15,30)
+frame.CollapseAndExpandButton=arrow
+arrow:SetPoint('RIGHT',frame,'RIGHT',0,0)
+container:SetPoint('TOPRIGHT',arrow,'TOPLEFT',0,0)
 captured:Enable()
+local point, relative, target = arrow:GetPoint(1)
+assert(point=='TOPRIGHT' and relative==frame and target=='TOPRIGHT',
+ 'the native expand button extends outside the buff frame into the minimap')
+point, relative, target = container:GetPoint(1)
+assert(point=='TOPRIGHT' and relative==arrow and target=='TOPLEFT',
+ 'the buff icons take up the expand button hit area')
 assert(frame.auraFrames[1].width==52,'initial buff not styled')
 assert(not frame.auraFrames[2].shown and frame.auraFrames[2].width==52
  and frame.auraFrames[2].Duration.font[2]==16,'the inactive physical buff slot was not prepared')

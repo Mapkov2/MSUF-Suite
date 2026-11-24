@@ -28,6 +28,7 @@ local BUTTON = { points = true, size = true, scale = true }
 -- SetAllPoints resizes textures by default. Save their intrinsic size independently of the resolved rectangle.
 local ICON = { points = true, intrinsicSize = true }
 local TEXT = { points = true, alpha = true, text = true }
+local DURATION = { points = true, alpha = true, text = true, grid = true } -- 12.x may hide its anchors; the grid restores them
 local BORDER = { size = true }
 local FRAME = { points = true }
 local CONTAINER = { points = true, size = true }
@@ -66,7 +67,7 @@ local function Snapshot(region, aspects)
     local state = {}
     if aspects.points then
         state.points = Points(region)
-        if not state.points and not aspects.intrinsicSize then return end
+        if not (state.points or aspects.intrinsicSize or aspects.grid and NS.Safety.CanAnchor(region)) then return end
     end
     if aspects.size or aspects.intrinsicSize then
         local intrinsic = aspects.intrinsicSize == true
@@ -229,6 +230,7 @@ local function Place(button, icon, slot, container, c, auraAnchor)
         local original = saved[button] or Snapshot(button, BUTTON)
         if not original or (not auraAnchor and not Remember(icon, ICON)) then return end
         saved[button] = original
+        if not auraAnchor then Remember(button.Duration, DURATION) end
     end
     local col, row = (slot - 1) % c.perRow, floor((slot - 1) / c.perRow)
     button:SetScale(1)
@@ -245,11 +247,11 @@ local function Place(button, icon, slot, container, c, auraAnchor)
             artwork.fill = artwork.size and icon.SetAllPoints or FillIconCorners
         end
     end
-    if artwork.points then
+    if artwork.points or NS.Safety.CanAnchor(icon) then
         icon:ClearAllPoints()
         artwork.fill(icon, button)
     elseif artwork.size then
-        -- The native texture is already attached to the button. Only change a size we can restore.
+        -- Hidden 12.x anchors are refilled (the native grid restores them). Restricted ones: only change a size we can restore.
         icon:SetSize(c.iconWidth, c.iconHeight)
     end
     Pin(button.Duration, button, "BOTTOMLEFT")
@@ -272,13 +274,21 @@ local function SaveNativePoints(region)
     if points then original.points, original.reanchored = points, nil end
     return points
 end
-local function Arrow(frame, x, y)
-    local arrow = frame.CollapseAndExpandButton
-    if not arrow then return true end
-    if not Remember(arrow, FRAME) or not SaveNativePoints(arrow) then return end
-    arrow:ClearAllPoints()
-    arrow:SetPoint("TOPLEFT", frame, "TOPRIGHT", x, y)
-    saved[arrow].reanchored = nil
+local function AnchorRegions(frame, x, y, moveArrow)
+    local container, arrow = frame.AuraContainer, frame.CollapseAndExpandButton
+    if arrow and moveArrow then
+        if not Remember(arrow, FRAME) or not SaveNativePoints(arrow) then return end
+        arrow:ClearAllPoints()
+        arrow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", x, y)
+        saved[arrow].reanchored = nil
+    end
+    container:ClearAllPoints()
+    if arrow then
+        container:SetPoint("TOPRIGHT", arrow, "TOPLEFT", 0, 0)
+    else
+        container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", x, y)
+    end
+    saved[container].reanchored = nil
     return true
 end
 
@@ -306,10 +316,7 @@ local function Anchor(frame, list, rows)
     end
     local shift = shifted[frame]
     local x, y = shift and shift[1] or 0, shift and shift[2] or 0
-    if not list.anchored and frame.CollapseAndExpandButton and not Arrow(frame, x, y) then return end
-    container:ClearAllPoints()
-    container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", x, y)
-    original.reanchored = nil
+    if not AnchorRegions(frame, x, y, not list.anchored) then return end
     container:SetSize(c.perRow * (c.iconWidth + c.spacing) - c.spacing,
         rows * (c.iconHeight + c.rowSpacing) - c.rowSpacing)
     list.anchored = true
@@ -685,9 +692,7 @@ end
 -- MSUF Edit Mode previews each row drag on its container and commits through the Suite mover.
 local LAYOUT = { "iconWidth", "iconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" }
 
-local function Round(value)
-    return floor(value + .5)
-end
+local function Round(value) return floor(value + .5) end
 
 -- MSUF drags its own handle instead of recording drag state on the native container.
 local function Handle(frame)
@@ -717,11 +722,7 @@ local function Shift(frame, dx, dy)
         shifted[frame] = shift
     end
     shift[1], shift[2] = dx, dy
-    if not Arrow(frame, dx, dy) then return false end
-    container:ClearAllPoints()
-    container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", dx, dy)
-    saved[container].reanchored = nil
-    return true
+    return AnchorRegions(frame, dx, dy, true) == true
 end
 
 local function InRange(delta, rule, value)

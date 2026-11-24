@@ -49,7 +49,14 @@ Load("MSUF_Suite", NS)
 assert(NS.Database.Initialize(nil))
 local S, W = NS.Suite, core.ProfileWorkbench
 local before = M.AurasPage.AppearanceValues()
-assert(#before == 4 and M.AurasPage.BlizzardVisibilityType() == nil, "bare host changed")
+local BASE = { "buff", "debuff", "playerDefensives", "targetDots", "externals" }
+local function SameBase(list)
+    for index, value in ipairs(BASE) do
+        if not (list[index] and list[index].value == value) then return false end
+    end
+    return true
+end
+assert(#before == #BASE and SameBase(before) and M.AurasPage.BlizzardVisibilityType() == nil, "bare host changed")
 assert(mw:Select("auras3_styling") ~= false)
 mw:RunTimers()
 local P = {}
@@ -93,8 +100,9 @@ end
 Check(foundRows["msufsuite.playerAuras.iconWidth"], "cold search lost layout controls")
 Check(foundRows["msufsuite.playerAuraSkins.enabled"], "cold search lost skin switch")
 local values = M.AurasPage.AppearanceValues()
-Check(#values == 5 and values[5].value == "blizzardPlayer", "extension replaced original Aura types")
-Check(#before == 4, "registration mutated base selector")
+Check(#values == #BASE + 1 and SameBase(values) and values[#BASE + 1].value == "blizzardPlayer",
+    "extension replaced original Aura types")
+Check(#before == #BASE and SameBase(before), "registration mutated base selector")
 Check(M.AurasPage.BlizzardVisibilityType() == "blizzardPlayer", "visibility owner missing")
 Check(M.AurasPage.AppearanceResetProvider("auras3_styling") == nil, "extension claimed normal Aura reset")
 S.Config("playerAuras").iconWidth = 61

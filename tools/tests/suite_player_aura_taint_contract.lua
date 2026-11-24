@@ -10,12 +10,26 @@ local function Check(value, message)
     if not value then failures[#failures + 1] = message end
 end
 
+local function ShippedCanAnchor(isForbidden)
+    local handle = assert(io.open(root .. "/MSUF_Suite/Core/Platform.lua", "rb"))
+    local text = handle:read("*a"):gsub("\r\n", "\n")
+    handle:close()
+    local body = assert(text:match("\n(function Suite%.Safety%.CanAnchor%(.-\nend)\n"),
+        "Suite.Safety.CanAnchor must live in MSUF_Suite/Core/Platform.lua (the Safety of _G.MSUFSuite)")
+    local chunk = assert(loadstring("local Suite, IsSecret = ...\n" .. body .. "\nreturn Suite.Safety.CanAnchor"))
+    return chunk({ Safety = { IsForbidden = isForbidden } },
+        function(value) return type(value) == "table" and value.secret == true end)
+end
+
 local function Run(scenario)
     local previousMode, previousSource = arg[2], arg[3]
     arg[2], arg[3] = "harness", sourceOverride
     local H = assert(loadfile(root .. "/tools/tests/suite_player_auras_contract.lua"))()
     arg[2], arg[3] = previousMode, previousSource
     local frame, module, NS = H.frame, H.module, H.private.NS
+    -- The shipped anchoring guard on the harness's Safety stand-in. Player aura layout's NS is
+    -- _G.MSUFSuite, the Suite core table: its Safety is Platform.lua's Suite.Safety.
+    NS.Safety.CanAnchor = ShippedCanAnchor(NS.Safety.IsForbidden)
     local origin, executionTainted, meterStateTainted = "native", false, false
     local writes, addonWrites, solverCalls = 0, 0, 0
     local cacheOwners, skins, nativeContainers, solverCallsByFrame = {}, {}, {}, {}
@@ -183,9 +197,22 @@ local function Run(scenario)
     origin = "addon"
     local icon = frame.auraFrames[1].Icon
     local getPoint, getWidth, getHeight = icon.GetPoint, icon.GetWidth, icon.GetHeight
-    if scenario == "restricted-icon" then
+    if scenario == "restricted-icon" or scenario == "secret-icon" then
         icon.GetPoint = function() return "TOP", frame.auraFrames[1], "TOP", { secret = true }, 0 end
         icon.GetWidth, icon.GetHeight = function() return { secret = true } end, function() return { secret = true } end
+    end
+    -- 12.x: text anchored to artwork with secret anchors reads secret anchors too.
+    if scenario == "restricted-icon" or scenario == "secret-icon" then
+        for _, text in ipairs({ frame.auraFrames[1].Duration, frame.auraFrames[1].Count }) do
+            text:ClearAllPoints()
+            text:SetPoint("TOP", icon, "BOTTOM", 0, 0)
+            text.GetNumPoints = function() return 1 end
+            text.GetPoint = function() return "TOP", icon, "BOTTOM", { secret = true }, 0 end
+        end
+    end
+    if scenario == "restricted-icon" then
+        icon.IsAnchoringRestricted = function() return true end
+        frame.auraFrames[1].Duration.IsAnchoringRestricted = icon.IsAnchoringRestricted
     end
     module:Enable()
     Check(frame.auraFrames[1].width == 52 and skins[frame.auraFrames[1]] == "taint-test-look",
@@ -373,14 +400,30 @@ local function Run(scenario)
         local p = frame.points[1]
         Check(p and p[2] == Minimap and p[4] == -12 and p[5] == 0, "restricted icon displaced the entire buff row")
         Check(button.Icon.points[1][1] == "TOP" and #button.Icon.points == 1, "Suite overwrote an unreadable native texture anchor")
-        Check(neighbor.width == 52 and button.Duration.points[1][1] == "BOTTOMLEFT" and skins[button] == "taint-test-look",
+        Check(neighbor.width == 52 and neighbor.Duration.points[1][1] == "BOTTOMLEFT" and skins[button] == "taint-test-look",
             "restricted icon prevented Suite skin, duration or neighbor layout")
+        Check(#button.Duration.points == 1 and button.Duration.points[1][1] == "TOP" and button.Duration.font[2] == 10,
+            "Suite wrote a restricted, unreadable duration anchor")
         icon.GetPoint, icon.GetWidth, icon.GetHeight = getPoint, getWidth, getHeight
         module:Refresh()
         Check(#icon.points == 2 and icon.points[1][1] == "TOPLEFT" and icon.points[2][1] == "BOTTOMRIGHT",
             "the previously restricted texture did not fill its slot after becoming readable")
         module:Disable()
         Check(frame.points[1][2] == UIParent and button.Icon.points[1][1] == "TOP", "restricted icon broke native restoration")
+    elseif scenario == "secret-icon" then
+        local button = frame.auraFrames[1]
+        local duration, count = button.Duration, button.Count
+        Check(#icon.points == 2 and icon.points[1][1] == "TOPLEFT" and icon.points[2][1] == "BOTTOMRIGHT",
+            "a texture with unreadable but writable anchors did not fill its slot")
+        Check(#duration.points == 1 and duration.points[1][1] == "BOTTOMLEFT" and duration.font[2] == 16,
+            "an unreadable duration anchor kept the native duration")
+        -- Blizzard's grid never re-anchors Count: it keeps its own anchor on the filled icon.
+        Check(#count.points == 1 and count.points[1][2] == icon and count.font[2] == 10,
+            "Suite moved a count whose native anchor it cannot restore")
+        module:Disable()
+        Check(#icon.points == 1 and icon.points[1][1] == "TOP" and #duration.points == 1 and duration.points[1][2] == icon
+            and duration.font[2] == 10, "the native grid did not restore unreadable icon and duration anchors")
+        icon.GetPoint, icon.GetWidth, icon.GetHeight = getPoint, getWidth, getHeight
     elseif scenario == "fallback" or scenario == "pending-native-flags" or scenario == "pending-native-nil-flag" then
         if scenario == "pending-native-flags" then
             container.addIconsToRight = true
@@ -480,6 +523,7 @@ end
 
 Run("fallback")
 Run("restricted-icon")
+Run("secret-icon")
 Run("disable")
 Run("native-layout-change")
 Run("consolidation")

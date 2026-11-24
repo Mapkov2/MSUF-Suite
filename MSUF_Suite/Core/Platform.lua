@@ -447,6 +447,14 @@ function Suite.Safety.IsForbidden(frame)
     return frame and type(frame.IsForbidden) == "function" and frame:IsForbidden() == true
 end
 
+-- 12.x geometry getters can return secret anchors that stay writable. A region whose anchoring
+-- the client restricts (IsAnchoringRestricted) must not be re-anchored from addon code.
+function Suite.Safety.CanAnchor(region)
+    if not region or Suite.Safety.IsForbidden(region) then return false end
+    local restricted = region.IsAnchoringRestricted and region:IsAnchoringRestricted()
+    return not IsSecret(restricted) and not restricted
+end
+
 function Suite.Client.HasAddOn(name)
     return C_AddOns.DoesAddOnExist(name) == true
 end

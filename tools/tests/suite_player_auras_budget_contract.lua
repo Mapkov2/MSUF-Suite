@@ -709,7 +709,10 @@ assert(table.concat(BuffFrame.ConsolidatedBuffs.Icon.coords, ",") == atlasCrop,
 assert(BuffFrame.auraFrames[1].points[1][4] == -(config.iconWidth + config.spacing),
     "the consolidation icon and first buff share a slot")
 local arrowPoint = BuffFrame.CollapseAndExpandButton.points[1]
-assert(arrowPoint[1] == "TOPLEFT" and arrowPoint[2] == BuffFrame and arrowPoint[3] == "TOPRIGHT",
+local containerPoint = BuffFrame.AuraContainer.points[1]
+assert(arrowPoint[1] == "TOPRIGHT" and arrowPoint[2] == BuffFrame and arrowPoint[3] == "TOPRIGHT",
+    "the collapse arrow projects into the minimap")
+assert(containerPoint[2] == BuffFrame.CollapseAndExpandButton and containerPoint[3] == "TOPLEFT",
     "the collapse arrow covers the first custom icon")
 BuffFrame.consolidate = false
 UnitAura(20, 5)
@@ -754,14 +757,14 @@ SameAsFullRepaint("edit mode exit with no auras")
 -- check. The native protected collapse arrow must still keep its own anchor.
 local arrow = BuffFrame.CollapseAndExpandButton
 arrow:ClearAllPoints()
-arrow:SetPoint("TOPRIGHT", BuffFrame, "TOPRIGHT", 0, 0)
+arrow:SetPoint("TOPRIGHT", BuffFrame, "TOPRIGHT", -9, 0)
 combat, arrow.protected, queued.playerAuras = true, true, nil
 BuffFrame:ApplySystemAnchor()
-assert(queued.playerAuras and arrow.points[1][1] == "TOPRIGHT",
+assert(queued.playerAuras and arrow.points[1][4] == -9,
     "an anchor-only refresh moved a protected native collapse arrow in combat")
 combat, arrow.protected = false, nil
 module:Refresh()
-assert(arrow.points[1][1] == "TOPLEFT", "the collapse arrow was not repaired after combat")
+assert(arrow.points[1][1] == "TOPRIGHT" and arrow.points[1][4] == 0, "the collapse arrow was not repaired after combat")
 
 -- A protected frame in combat waits for the module's queued re-apply; its
 -- unprotected buttons wait with it.

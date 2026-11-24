@@ -141,6 +141,7 @@ local bridge = {
 local config = { buffSkin = "DEFAULT", debuffSkin = "DARK2" }
 local module
 local S = {
+    Finite = function(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end,
     Config = function(id)
         Check(id == "playerAuras", "the piece reads only Player aura layout's choices")
         return config
@@ -288,6 +289,16 @@ Check(Last(buff).look == nil and buff.Duration.layer == "BACKGROUND", "explicit 
 config.buffSkin = "DEFAULT"
 module:Refresh()
 Check(Last(buff).look == LOOKS.DEFAULT, "a usable global default must take precedence again")
+-- Natively anchored artwork can report secret bounds, and no size before its first layout:
+-- the skin still draws, at the template size.
+for _, width in ipairs({ secretSize, 0 }) do
+    buff.Icon.w = width
+    config.buffSkin = config.buffSkin == "DARK2" and "DEFAULT" or "DARK2"
+    module:Refresh()
+    buff.Icon.w = 30
+    Check(Last(buff).look == LOOKS[config.buffSkin] and Last(buff).w == 30 and Last(buff).h == 30,
+        "an unreadable or unresolved icon size must not leave the aura without a visible skin")
+end
 local untouched = BuffFrame.auraFrames[5]
 buff.Icon.h = secretSize
 untouched.TempEnchantBorder.forbidden = true
