@@ -29,8 +29,9 @@ end
 
 -- Several settings that each choose one flag of the same array CVar, flag i
 -- from settings[i]: Keep takes the flag the CVar had before the first custom
--- write, Show sets it, Hide clears it. A name-only category needs a full
--- plate unless the user explicitly chose simplification.
+-- write, Show sets it, Hide clears it. A name-only category always gets a full
+-- plate: a simplified one hides every name but the target's, and a Name only
+-- plate shows nothing else.
 local function Flags(module, key, settings, c, full)
     local custom = false
     for i = 1, #settings do
@@ -52,8 +53,9 @@ local function Flags(module, key, settings, c, full)
     local mask = 0
     for i = 1, #settings do
         local mode, bit = c[settings[i]] or KEEP, 2 ^ (i - 1)
-        local on = mode == SHOW
-        if mode == KEEP and not (full and full[i]) then
+        local forced = full and full[i]
+        local on = mode == SHOW and not forced
+        if mode == KEEP and not forced then
             on = math.floor(before[key] / bit) % 2 == 1
         end
         if on then mask = mask + bit end
@@ -229,6 +231,23 @@ local function PetDisplay(module, mode, plateCVar, nameCVar)
     end
 end
 
+-- Friendly plates inside an instance are forbidden to addons, and no Blizzard
+-- CVar shows an NPC by its name alone. There Name only shows the world names
+-- of NPC Names only while friendly NPCs are on (Roles.RefreshContext). The
+-- lock is "names" then, "off" after the Suite switch turned them off, "plates"
+-- while their native plates were off on entry, and nil outside an instance.
+local NPC_PLATES = "nameplateShowFriendlyNpcs"
+local function NpcLock(module, nameOnly, npcs, was)
+    if not nameOnly or private.Roles.inInstance ~= true then return nil end
+    if not npcs then return "off" end
+    if was == "names" or was == "off" or module.friendlyNpcNamesOnly then return "names" end
+    -- Entry: the native value under any override of the Suite's own.
+    local current = C_CVar.GetCVar(NPC_PLATES)
+    if not NS.Public(current) or type(current) ~= "string" then return "plates" end
+    local before = S.CVarBaseline and S.CVarBaseline("nameplates", NPC_PLATES, current) or current
+    return (tonumber(before) or 0) > 0 and "names" or "plates"
+end
+
 local function Names(module, c)
     -- Names only for party / raid (group members keep their bar) uses the same CVar.
     local namesOnly = c.friendlyNamesOnly or KEEP
@@ -244,8 +263,11 @@ local function Names(module, c)
     end
     PetDisplay(module, c.plateEnemyPets, "nameplateShowEnemyPets", "UnitNameEnemyPetName")
     PetDisplay(module, c.plateFriendlyPets, "nameplateShowFriendlyPlayerPets", "UnitNameFriendlyPetName")
-    local npcs = c.friendlyNpcSkinEnabled ~= false
-    local worldNames = npcs and c.friendlyNPCs == Mode.NPC_NAMES_ONLY
+    local X, npcs = NS.NameplateExtensions, c.friendlyNpcSkinEnabled ~= false
+    local nameOnly = X ~= nil and c.friendlyNPCs == X.NPC_PLATE_NAME_ONLY
+    local was = module.friendlyNpcNamesOnly ~= nil and module.npcLock or nil
+    local lock = NpcLock(module, nameOnly, npcs, was)
+    local worldNames = npcs and (c.friendlyNPCs == Mode.NPC_NAMES_ONLY or lock == "names")
     Toggle(module, (c.enemySkinEnabled ~= false or c.neutralSkinEnabled ~= false) and SHOW or HIDE, "nameplateShowEnemies")
     if c.friendlySkinEnabled == false then
         Toggle(module, HIDE, "nameplateShowFriendlyPlayers")
@@ -253,12 +275,16 @@ local function Names(module, c)
         S.ForgetCVar("nameplates", "nameplateShowFriendlyPlayers")
     end
     if not npcs or worldNames then
-        Toggle(module, HIDE, "nameplateShowFriendlyNpcs")
+        Toggle(module, HIDE, NPC_PLATES)
+    elseif nameOnly and was == "names" and not lock then
+        -- Out of the instance Name only shows its plates again.
+        S.CommitCVar("nameplates", NPC_PLATES, "1")
     else
-        if module.friendlyNpcNamesOnly then Restore("nameplateShowFriendlyNpcs") end
-        S.ForgetCVar("nameplates", "nameplateShowFriendlyNpcs")
+        -- The first pass hands back an override a crash or reload left behind.
+        if module.friendlyNpcNamesOnly ~= false then Restore(NPC_PLATES) end
+        S.ForgetCVar("nameplates", NPC_PLATES)
     end
-    module.friendlyNpcNamesOnly = worldNames
+    module.friendlyNpcNamesOnly, module.npcLock = worldNames, lock
     -- Blizzard's NPC Names = All (SettingsDefinitions_Frame/Nameplates.lua).
     Toggle(module, worldNames and SHOW or KEEP, "UnitNameNPC")
 end
@@ -304,6 +330,7 @@ end
 -- Blizzard may lock CVars during combat: a write then waits for its end
 -- (Skin.lua OnCombatEnded) instead of failing half applied.
 function CVars.Apply(module)
+    CVars.module = module
     if NS.InCombat() then
         module.cvarsPending = true
         return
@@ -326,4 +353,13 @@ function CVars.Apply(module)
     NS.CaptureFriendlyNameplates(module)
     module.friendlyVisibilityWriting = visibilityWriting
     Space(module, c)
+end
+
+-- Entering or leaving an instance (Roles.RefreshContext) moves friendly NPC
+-- Name only between its plates and world names (Names).
+function CVars.InstanceChanged()
+    local module, X = CVars.module, NS.NameplateExtensions
+    if module and module.active and X and module.config.friendlyNPCs == X.NPC_PLATE_NAME_ONLY then
+        CVars.Apply(module)
+    end
 end

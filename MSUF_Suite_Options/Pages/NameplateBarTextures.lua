@@ -73,7 +73,7 @@ end
 
 Textures.OutlineValue = Value
 
-local function SetOverride(enabled, key, value)
+local function SetOverride(enabled, changes)
     local values = { barsOverride = enabled }
     if enabled and not P.Get(ID, "barsOverrideSaved") then
         values.look = P.Get(ID, "look")
@@ -85,19 +85,20 @@ local function SetOverride(enabled, key, value)
         end
         values.barsOverrideSaved = true
     end
-    if key then values[key], values.look = value, P.Get(ID, "look") end
+    for key, value in pairs(changes or {}) do values[key] = value end
     return P.SetMany(ID, values)
 end
 
 local function SetOutlineMode(key, value)
     local look = P.Get(ID, "look")
-    if P.Get(ID, "hideHealthBarBorders") then
-        return P.SetMany(ID, { enemyOutlineMode = 4, friendlyOutlineMode = 4,
-            barsOverride = true, barsOverrideSaved = true, hideHealthBarBorders = false,
-            look = look, [key] = value })
+    if P.Get(ID, "hideHealthBarBorders") or Value("hideHealthBarBorders") then
+        local changes = { enemyOutlineMode = 4, friendlyOutlineMode = 4, hideHealthBarBorders = false, look = look }
+        changes[key] = value
+        return SetOverride(true, changes)
     end
-    if look == 2 then return P.SetMany(ID, { look = look, barsOverride = true, [key] = value }) end
-    if not P.Get(ID, "barsOverride") and Shared() then return SetOverride(true, key, value) end
+    if look == 2 or not P.Get(ID, "barsOverride") and Shared() then
+        return SetOverride(true, { look = look, [key] = value })
+    end
     return P.SetMany(ID, { look = look, [key] = value })
 end
 
@@ -124,7 +125,7 @@ function P.RuleRow(page, id, rule, ...)
         row.min = 1
         row.default = math.max(1, row.default)
     end
-    if rule.key == "barsOverride" then row.set = SetOverride end
+    if rule.key == "barsOverride" then row.set = function(value) return SetOverride(value) end end
     if inherited[rule.key] and not rule.color then
         row.get = function()
             local value = Value(rule.key)
@@ -214,7 +215,8 @@ function Textures.Link(ctx, body, y, width, section, isCast)
 end
 
 function Textures.LinkOutline(ctx, body, y, width, section)
-    y = Link(ctx, body, y, width, section, outline, outline.title)
+    local side = section:match("^suite_nameplates_friendly") and "friendly" or "enemy"
+    y = Link(ctx, body, y, width, section, outline, outline.title, side .. "OutlineMode")
     return Link(ctx, body, y, width, section, highlight, highlight.title)
 end
 
@@ -615,7 +617,30 @@ local function HighlightSection(ctx, builder)
     })
 end
 
-local function Register(spec)
+local STYLE_TITLES = { enemy = "Hostile", neutral = "Neutral", friendly = "Friendly player", friendlyNpc = "Friendly NPC" }
+
+local function Appearance(styles, ctx, builder, defaults)
+    if not styles then return end
+    styles.ensure()
+    for _, source in ipairs(styles.sections) do
+        local title = STYLE_TITLES[source.styleScope]
+        if title then
+            if defaults then
+                local _, reset = styles.rules(source)
+                for _, rule in ipairs(reset) do defaults[rule.key] = rule.default end
+                for _, key in ipairs(styles.positionKeys(source)) do defaults[key] = P.catalog[ID].rules[key].default end
+            else
+                -- Both views use the same rules and own their own lazy tabs and frames.
+                local spec = P.Suite.CopyValue(source)
+                spec.page, spec.title, spec.key = "opt_bars", title, "suite_" .. spec.key
+                spec.tabs[#spec.tabs].extra = nil
+                styles.build(ctx, builder, spec)
+            end
+        end
+    end
+end
+
+local function Register(spec, styles)
     local rules, defaults = {}, {}
     for _, key in ipairs(spec.keys) do
         local rule = P.catalog[ID].rules[key]
@@ -649,6 +674,7 @@ local function Register(spec)
             if #absorbRules > 0 then
                 P.RuleSection(ctx, builder, absorb.page, ID, absorb.section, P.Tr(absorb.title), absorbRules, {})
             end
+            Appearance(styles, ctx, builder)
         end
         provider.reset = function()
             for key in pairs(legacy) do
@@ -659,6 +685,7 @@ local function Register(spec)
                 local rule = P.catalog[ID].rules[key]
                 if rule then defaults[key] = rule.default end
             end
+            Appearance(styles, nil, nil, defaults)
             return reset()
         end
         spec.registered = Bridge.RegisterBarsScope(P.M, "suite_nameplates", P.Tr("Nameplates"), provider)
@@ -678,8 +705,8 @@ local function Register(spec)
     if spec == health then outline.registered, highlight.registered, absorb.registered = spec.registered, spec.registered, spec.registered end
 end
 
-function Textures.Register()
+function Textures.Register(styles)
     if not P.Suite.Client.isMainline then return end
-    Register(health)
+    Register(health, styles)
     Register(cast)
 end

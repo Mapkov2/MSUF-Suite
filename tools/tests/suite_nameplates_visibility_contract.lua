@@ -116,12 +116,14 @@ assert(restored.nameplateStackingTypes and module.flagsBefore.nameplateStackingT
     "all stacking choices on Keep must give Blizzard's value back")
 
 -- Forced enemy names need full minion and minor plates; friendly types keep
--- theirs, and an explicit choice wins over the forced one.
+-- theirs. A simplified plate hides every name but the target's, so Name only
+-- beats an explicit simplification of its own category (others keep theirs).
 Reset()
 Apply({ enemyTextMode = 4, friendlyNamesOnly = 1 })
 assert(Flags(writes.nameplateSimplifiedTypes) == 12, "forced names kept simplified enemy minion or minor plates")
 Apply({ enemyTextMode = 4, friendlyNamesOnly = 1, plateSimpleMinion = 2, plateSimpleFriendlyNpc = 3 })
-assert(Flags(writes.nameplateSimplifiedTypes) == 5, "explicit simplified choices lost against the forced names")
+assert(Flags(writes.nameplateSimplifiedTypes) == 4,
+    "an explicit simplification hid the forced names, or another category lost its own choice")
 
 -- Full native plates keep the name visible when it is the only remaining
 -- element. A neutral or friendly NPC may use either native friendly template.
@@ -150,7 +152,10 @@ CheckNameDisplay({ enemyPlateNameOnly = true }, 12)
 CheckNameDisplay({ friendlyNPCs = 5 }, 0)
 CheckNameDisplay({ neutralPlateNameOnly = true, neutralNameOnlyMode = 2 }, 0)
 CheckNameDisplay({ neutralPlateNameOnly = true, neutralNameOnlyMode = 3 }, 0)
-CheckNameDisplay({ neutralPlateNameOnly = true, plateSimpleFriendlyPlayer = 2, plateSimpleMinus = 2 }, 6)
+-- The reported bug: Friendly NPCs on Name only with Friendly NPC plates on Simplified showed a name
+-- only on the target. Name only keeps every template its NPCs can use at full size.
+CheckNameDisplay({ friendlyNPCs = 5, plateSimpleFriendlyNpc = 2, plateSimpleMinus = 2, plateSimpleMinion = 2 }, 0)
+CheckNameDisplay({ neutralPlateNameOnly = true, plateSimpleFriendlyPlayer = 2, plateSimpleMinus = 2 }, 0)
 CheckNameDisplay({ friendlyNamesOnly = 2, friendlySkinEnabled = false })
 CheckNameDisplay({ friendlyNPCs = 5, friendlyNpcSkinEnabled = false })
 CheckNameDisplay({ neutralPlateNameOnly = true, neutralSkinEnabled = false })

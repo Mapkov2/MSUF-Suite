@@ -1,37 +1,24 @@
 local _, P = ...
 local NS = P.NS
-local Gradient = NS.NameplateStyle.Gradient
+local Style = NS.NameplateStyle
+local Gradient = Style.Gradient
 local Slant = {}
 P.SlantedHealth = Slant
 
-local ROOT = "Interface\\AddOns\\MSUF_Suite\\Media\\Nameplates\\"
-local MASK, EDGE = ROOT .. "SlantedHealthMask.tga", ROOT .. "SlantedHealthEdge.tga"
 local states = setmetatable({}, { __mode = "k" })
+Slant.CreateRim = Style.CreateSlantedRim
 
 local function NewMask(bar, writable)
-    local mask = bar:CreateMaskTexture()
-    mask:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    mask:SetAllPoints(bar)
-    return { mask = mask, writable = writable }
+    return { mask = Style.CreateSlantedMask(bar), writable = writable }
 end
 
-function Slant.CreateRim(bar, layer, sublevel)
-    local rim = bar:CreateTexture(nil, layer, nil, sublevel)
-    rim:SetTexture(EDGE)
-    rim:SetAllPoints(bar)
-    return rim
-end
-
-local function ReplaceMask(state, key, region)
+local function ReplaceMask(state, key, region, mask)
     local previous = state[key]
     if previous == region then return true end
     if previous and not state.writable(previous) or region and not state.writable(region) then return false end
-    if previous then
-        previous:RemoveMaskTexture(state.mask)
-    end
-    if region then
-        region:AddMaskTexture(state.mask)
-    end
+    mask = mask or state.mask
+    if previous then previous:RemoveMaskTexture(mask) end
+    if region then region:AddMaskTexture(mask) end
     state[key] = region
     return true
 end
@@ -58,33 +45,18 @@ function Slant.MaskCast(cast, lease, enabled, writable, mutable)
     return MaskRegions(state, fill, back)
 end
 
-local function PaintRim(visual, size, color)
-    local shown = visual.slanted == true and size > 0
-    local rim = visual.slantRim
-    if shown then
-        if visual.slantColor ~= color then
-            rim:SetVertexColor(NS.RGB(color))
-            visual.slantColor = color
-        end
-        visual.borderColor = color
-    end
-    rim:SetShown(shown)
-    return shown
-end
-
 local function PaintVisual(state, health, visual)
     state.visual = visual
     local active = state.active == true
     if active == (visual.slanted == true) then return end
-    ReplaceMask(state, "role", active and visual.fill or nil)
+    ReplaceMask(state, "role", active and visual.fill or nil, state.fillMask)
     ReplaceMask(state, "backdrop", active and visual.back or nil)
     if active and not visual.slantRim then
-        local rim = Slant.CreateRim(health, "OVERLAY", 7)
-        rim:Hide()
-        visual.slantRim, visual.paintSlantedRim = rim, PaintRim
+        visual.slantRim = Slant.CreateRim(health, "OVERLAY", 7)
+        visual.paintSlantedRim = Style.PaintSlantedRim
     end
     visual.slanted, visual.borderColor = active, nil
-    visual.slantMask = active and state.mask or nil
+    visual.slantMask = active and state.fillMask or nil
     if visual.gradient then Gradient.SetMask(visual.gradient, visual.slantMask) end
     if not active and visual.slantRim then visual.slantRim:Hide() end
 end
@@ -94,6 +66,35 @@ function Slant.Configure(config)
     local changed = enabled ~= (Slant.enabled == true)
     Slant.enabled = enabled
     return changed
+end
+
+local function MaskHealth(state, health, fill, back)
+    local fillDone = ReplaceMask(state, "fill", fill, state.fillMask)
+    if fillDone and fill then
+        Style.FitSlantedFillMask(state, health, fill)
+    elseif fillDone and state.fillAnchor then
+        state.fillMask:ClearAllPoints()
+        state.fillMask:SetAllPoints(health)
+        state.fillAnchor, state.fillWidth = nil, nil
+    end
+    local backDone = ReplaceMask(state, "back", back)
+    return fillDone and backDone
+end
+
+function Slant.OnLayout(uf)
+    if not Slant.enabled then return end
+    local bars = uf.HealthBarsContainer
+    local health = bars and bars.healthBar
+    if not NS.Public(health) or not health then return end
+    local state = states[health]
+    if state and state.active and state.fill and not NS.InCombat() and state.writable(health) then
+        Style.FitSlantedFillMask(state, health, state.fill)
+    end
+end
+
+function Slant.FillMask(health)
+    local state = states[health]
+    return state and state.active and state.fillMask or nil
 end
 
 -- Clipping belongs to the texture lease, including pool reuse and restoration.
@@ -121,9 +122,10 @@ function Slant.Apply(uf, health, styled, writable)
     end
     if not state then
         state = NewMask(health, writable)
+        state.fillMask = Style.CreateSlantedMask(health)
         states[health] = state
     end
-    if not MaskRegions(state, fill, back) then return false end
+    if not MaskHealth(state, health, fill, back) then return false end
     state.active = enabled == true
     if state.visual then PaintVisual(state, health, state.visual) end
     return true

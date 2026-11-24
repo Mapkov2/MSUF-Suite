@@ -54,6 +54,38 @@ function Layout.RenderName(s, m, Get, SetupNumber, Place)
     s.nameText:SetJustifyH(justify or ((centered or m.nameAnchor == 3) and "CENTER" or "LEFT"))
 end
 
+-- Native base point of the health value on the health bar, from
+-- Blizzard_NamePlateUnitFrame:UpdateAnchors (live and forever): AboveHealthBar
+-- puts it above the bar unless Forever keeps it inside. Layout.lua only offsets
+-- the native text, so the preview starts at the same point as the live plate.
+function Layout.HealthTextAnchor(nameAnchor, insideWhenAbove, classicBar)
+    if nameAnchor == 2 and insideWhenAbove ~= true then return "BOTTOMRIGHT", "TOPRIGHT", -4, 2 end
+    return "RIGHT", "RIGHT", -4, nameAnchor == 3 and classicBar == true and -.5 or 0
+end
+
+function Layout.PlaceHealthText(s, m, SetupToggle, Place)
+    local point, relative, x, y = Layout.HealthTextAnchor(m.nameAnchor,
+        SetupToggle("healthTextInsideBarWhenNameAboveHealthBar", false), SetupToggle("useClassicHealthBar", m.classic))
+    s.healthText:SetWidth(78)
+    s.value:SetJustifyH("RIGHT")
+    s.value:SetJustifyV(point == "BOTTOMRIGHT" and "BOTTOM" or "MIDDLE")
+    Place(s, s.healthText, point, s.bar, relative, x, y, "HealthText")
+end
+
+-- Live plates show Blizzard's TextStatusBar value, abbreviated by
+-- AbbreviateLargeNumbers (capNumericDisplay). The sample calls it too, so its
+-- spacing, suffix and locale match; one string per sample percent.
+local SAMPLE_MAX_HEALTH, sampleHealthText = 3500000, {}
+function Layout.HealthValue(percent)
+    local text = sampleHealthText[percent]
+    if not text then
+        local value = math.floor(SAMPLE_MAX_HEALTH * percent / 100)
+        text = AbbreviateLargeNumbers and AbbreviateLargeNumbers(value) or tostring(value)
+        sampleHealthText[percent] = text
+    end
+    return text
+end
+
 function Layout.StyleButton(button)
     local label = P.HM.GetControlLabel(button)
     if not label then return end
@@ -384,7 +416,12 @@ function Layout.Attach(ui, section, toolbar, record)
     if expander and expander.button then
         ui.hint:ClearAllPoints()
         ui.hint:SetPoint("LEFT", section.title or toolbar, section.title and "RIGHT" or "LEFT", section.title and 12 or 160, 0)
-        ui.hint:SetPoint("RIGHT", expander.button, "LEFT", -124, 0)
+        -- The hint ends before Compare all, whose width follows its caption.
+        if ui.groupPreviewButton then
+            ui.hint:SetPoint("RIGHT", ui.groupPreviewButton, "LEFT", -8, 0)
+        else
+            ui.hint:SetPoint("RIGHT", expander.button, "LEFT", -124, 0)
+        end
     end
     -- FixedPreviewSection reserves the compact height on construction. The
     -- expander registers controls but does not initialize their presentation.

@@ -310,6 +310,11 @@ end
 
 -- Menu2 applies the scope as view state and resolves the real section on both
 -- cold and cached pages. The Suite never writes the host profile.
+function HostBridge.IsNameplateFontScope()
+    local profile = HostBridge.CurrentFrameProfile()
+    return profile and profile.general and profile.general._fontScopeKey == "nameplates"
+end
+
 function HostBridge.NameplateFontsTarget(section)
     return "opt_fonts", { sectionId = section }, { general = { _fontScopeKey = "nameplates" } }
 end

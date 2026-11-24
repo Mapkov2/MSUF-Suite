@@ -210,6 +210,92 @@ context:Release()
 Check(live.nameplateShowFriendlyNpcs == "1" and live.UnitNameNPC == "0",
     "current names-only recovery lost the previous native visibility")
 
+-- Name only inside an instance: friendly plates there are forbidden to addons,
+-- so friendly NPCs take world names until the player leaves (CVars.lua
+-- NpcLock, Roles.RefreshContext). The switch, the binding, the Display choice
+-- and the way out keep the player's choice; plates already off stay off.
+do
+    local X, roles = NS.NameplateExtensions, { inInstance = false }
+    private.Roles = roles
+    local function Zone(inside)
+        roles.inInstance = inside
+        private.CVars.InstanceChanged()
+    end
+    local function Shows(plates, names)
+        return live.nameplateShowFriendlyNpcs == plates and live.UnitNameNPC == names
+    end
+    Reset()
+    Apply()
+    local quiet = writes
+    Zone(true)
+    Zone(false)
+    Check(writes == quiet, "an instance change rewrote CVars without Name only")
+
+    Reset({ friendlyNPCs = X.NPC_PLATE_NAME_ONLY })
+    live.nameplateShowFriendlyNpcs = "1"
+    Apply()
+    Check(Shows("1", "0") and NS.FriendlyNameplateShown("friendlyNpc"), "Name only lost its plates outside instances")
+    Zone(true)
+    Check(Shows("0", "1") and NS.FriendlyNameplateShown("friendlyNpc"), "Name only kept forbidden plates in an instance")
+    Check(module.config.friendlyNPCs == X.NPC_PLATE_NAME_ONLY and module.config.friendlyNpcSkinEnabled,
+        "the instance fallback changed the saved display")
+    Apply()
+    Check(Shows("0", "1"), "a refresh in the instance lost the world names")
+    Zone(false)
+    Check(Shows("1", "0") and NS.FriendlyNameplateShown("friendlyNpc"), "leaving the instance kept world names")
+
+    Zone(true)
+    Check(NS.ToggleFriendlyNPCNameplates() and not NS.FriendlyNameplateShown("friendlyNpc") and Shows("0", "0"),
+        "the binding left world names on in the instance")
+    Check(NS.ToggleFriendlyNPCNameplates() and NS.FriendlyNameplateShown("friendlyNpc") and Shows("0", "1"),
+        "the binding showed forbidden plates in the instance")
+    Apply()
+    Zone(false)
+    Check(Shows("1", "0") and module.config.friendlyNPCs == X.NPC_PLATE_NAME_ONLY,
+        "friendly NPCs turned on in the instance stayed off outside")
+
+    -- Health bars show Blizzard's plates there; Name only takes world names back.
+    Zone(true)
+    Check(NS.SetFriendlyNameplates("friendlyNpc", NS.FriendlyNameplateShown("friendlyNpc"), { friendlyNPCs = 2 })
+        and Shows("1", "0"), "Health bars stayed hidden in the instance")
+    Check(NS.SetFriendlyNameplates("friendlyNpc", NS.FriendlyNameplateShown("friendlyNpc"),
+        { friendlyNPCs = X.NPC_PLATE_NAME_ONLY }) and Shows("0", "1"), "Name only kept Blizzard's plates in the instance")
+    live.nameplateShowFriendlyNpcs = "1"
+    NS.SyncFriendlyNameplates(module, "CVAR_UPDATE", "nameplateShowFriendlyNpcs")
+    Check(module.config.friendlyNPCs == 2 and Shows("1", "0"), "Blizzard's NPC On in an instance did not ask for bars")
+    Zone(false)
+
+    -- A reload or crash inside: the next session finds the override either way.
+    Reset({ friendlyNPCs = X.NPC_PLATE_NAME_ONLY })
+    live.nameplateShowFriendlyNpcs = "1"
+    Apply()
+    Zone(true)
+    module.friendlyNpcNamesOnly, module.npcLock = nil, nil
+    Apply()
+    Check(Shows("0", "1"), "a reload in the instance lost its world names")
+    module.friendlyNpcNamesOnly, module.npcLock = nil, nil
+    roles.inInstance = false
+    Apply()
+    Check(Shows("1", "0"), "a session after a crash in an instance kept the plates off")
+
+    combat = true
+    Zone(true)
+    Check(module.cvarsPending and Shows("1", "0"), "an instance change wrote CVars in combat")
+    combat = false
+    Apply()
+    Check(Shows("0", "1"), "the instance change held back for combat was lost")
+    Zone(false)
+
+    -- Natively hidden plates (a profile shared with another character).
+    Reset({ friendlyNPCs = X.NPC_PLATE_NAME_ONLY })
+    Apply()
+    Zone(true)
+    Check(Shows("0", "0") and not NS.FriendlyNameplateShown("friendlyNpc"),
+        "an instance showed world names for friendly NPCs that were off")
+    Zone(false)
+    Check(Shows("0", "0"), "leaving an instance turned natively hidden plates on")
+end
+
 Reset()
 local beforeWrites = writes
 combat = true

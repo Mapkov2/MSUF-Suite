@@ -227,6 +227,7 @@ local function Region()
     function r:SetFormattedText(format, ...) self.text = format:format(...) end
     function r:SetTextHeight(value) self.textHeight = value end
     function r:SetTextColor(...) self.textColor = { ... } end
+    function r:GetTextColor() return unpack(self.textColor or { 1, 1, 1, 1 }) end
     function r:SetJustifyH(value) self.justify = value end
     return r
 end
@@ -420,6 +421,12 @@ hooksecurefunc = function(frame, method, callback)
         return
     end
     if frame == cast then error("do not hook native cast logic") end
+    -- An NPC Blizzard shows like a player keeps its name-only plate and takes its NPC color
+    -- (FriendlyNames color-only state): the name label's own color setters are followed.
+    if frame == name and (method == "SetVertexColor" or method == "SetTextColor" or method == "SetFontObject") then
+        SecureWrap(frame, method, callback)
+        return
+    end
     if frame == uf and method == "UpdateAnchors" then
         layoutCallbacks[#layoutCallbacks + 1] = callback
         layoutHook = function(frame) for _, fn in ipairs(layoutCallbacks) do fn(frame) end end
@@ -494,6 +501,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeBars.lua"))("MSUF_Suite", NS)
 NS.HostBridge.KickReady = function() return nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateShape.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateGradient.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/GlossMaterial.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplatePowerStyle.lua"))("MSUF_Suite", NS)
@@ -1748,6 +1756,11 @@ module.config.friendlyRaidIconOffsetX, module.config.friendlyRaidIconOffsetY = 4
 module.config.friendlyClassificationOffsetX, module.config.friendlyClassificationOffsetY = 7, 2
 module:Refresh()
 assert(name.offsetX == 16 and name.offsetY == 3)
+-- Under Keep Blizzard an NPC on Blizzard's name-only plate takes its NPC (reaction) color: the
+-- paint reaches FriendlyNames through SyncNPCHealth, with no Name only display enabled.
+assert(name.textColor and name.textColor[1] == 0 and name.textColor[2] == 1 and name.textColor[3] == 0
+    and name.vertexColor and name.vertexColor[1] == 0 and name.vertexColor[2] == 1 and name.vertexColor[3] == 0,
+    "a friendly NPC on Blizzard's name-only plate kept its native name color")
 assert(uf.RaidTargetFrame.offsetX == -12 and uf.RaidTargetFrame.offsetY == -9)
 assert(nativeElite.offsetX == 3 and nativeElite.offsetY == 8)
 uf.isFriend = false

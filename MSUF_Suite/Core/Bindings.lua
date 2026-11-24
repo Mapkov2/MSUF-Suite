@@ -18,6 +18,15 @@ local FRIENDLY_CVARS = {
 }
 local NPC_NAMES_ONLY = 4
 
+-- World names stand in for friendly NPC plates with NPC Names only, and with
+-- Name only while the module shows them in an instance: friendly plates there
+-- are forbidden to addons (MSUF_Suite_Nameplates/CVars.lua NpcLock).
+local function WorldNames(config, module)
+    if config.friendlyNPCs == NPC_NAMES_ONLY then return true end
+    module = module or NS.Suite.instances.nameplates
+    return module ~= nil and module.active == true and module.friendlyNpcNamesOnly == true
+end
+
 local function FriendlyNativeValue(key)
     local value = C_CVar.GetCVar(key)
     if not NS.Public(value) or type(value) ~= "string" then return nil end
@@ -31,7 +40,7 @@ function NS.FriendlyNameplateShown(scope, config)
     if not spec then return false end
     config = config or NS.Suite.Config("nameplates")
     if config.enabled ~= true or config[spec.key] == false then return false end
-    local key = scope == "friendlyNpc" and config.friendlyNPCs == NPC_NAMES_ONLY and "UnitNameNPC" or spec.cvar
+    local key = scope == "friendlyNpc" and WorldNames(config) and "UnitNameNPC" or spec.cvar
     return FriendlyNativeValue(key) == "1"
 end
 
@@ -64,7 +73,7 @@ function NS.SetFriendlyNameplates(scope, on, values)
     return suite.SetMany("nameplates", settings, function()
         local module = suite.instances.nameplates
         if not module or not module.active then return false, suite.Status("nameplates") end
-        local namesOnly = scope == "friendlyNpc" and suite.Config("nameplates").friendlyNPCs == NPC_NAMES_ONLY
+        local namesOnly = scope == "friendlyNpc" and WorldNames(suite.Config("nameplates"), module)
         local value = on and not namesOnly and "1" or "0"
         module.friendlyVisibility = module.friendlyVisibility or {}
         module.friendlyVisibility[scope] = value
@@ -74,10 +83,10 @@ function NS.SetFriendlyNameplates(scope, on, values)
     end)
 end
 
-local function FriendlySettings(settings, scope, value, config)
+local function FriendlySettings(settings, scope, value, module)
     settings[FRIENDLY_SCOPES[scope].key] = value == "1"
     -- Blizzard's explicit NPC On requests health bars instead of world names.
-    if scope == "friendlyNpc" and value == "1" and config.friendlyNPCs == NPC_NAMES_ONLY then
+    if scope == "friendlyNpc" and value == "1" and WorldNames(module.config, module) then
         settings.friendlyNPCs = 2
     end
 end
@@ -107,7 +116,7 @@ function NS.SyncFriendlyNameplates(module, event, key)
         local value = FriendlyNativeValue(FRIENDLY_SCOPES[scope].cvar)
         if value then
             seen[scope] = value
-            FriendlySettings(settings, scope, value, module.config)
+            FriendlySettings(settings, scope, value, module)
         else
             remaining = remaining or {}
             remaining[scope] = pending[scope]

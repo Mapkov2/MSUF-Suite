@@ -68,7 +68,7 @@ end
 -- health update. LFG scaling uses the same reference level as EQoL. Returns
 -- true when a fact the plate colors depend on changed.
 function Roles.RefreshContext()
-    local known = Roles.contextKnown
+    local known, wasInside = Roles.contextKnown, Roles.inInstance
     local wasAllowed, wasInstanced, wasTank, wasGrouped, wasReference, wasTanks =
         Roles.allowed, Roles.instanced, Roles.tank, Roles.grouped, Roles.reference, Roles.otherTanks
     local _, instanceType = IsInInstance()
@@ -101,6 +101,8 @@ function Roles.RefreshContext()
     for level in pairs(Roles.lieutenants) do Roles.lieutenants[level] = nil end
     Roles.learnedLieutenant = false
     Roles.contextKnown = true
+    -- Friendly NPC Name only uses world names inside instances (CVars.lua).
+    if known and wasInside ~= Roles.inInstance then private.CVars.InstanceChanged() end
     return not known or wasAllowed ~= Roles.allowed or wasInstanced ~= Roles.instanced
         or wasTank ~= Roles.tank or wasGrouped ~= Roles.grouped or wasReference ~= Roles.reference
         or wasTanks ~= Roles.otherTanks

@@ -181,10 +181,23 @@ local function PublicColor(r, g, b, a)
     return r, g, b, a
 end
 
+-- Blizzard's UpdateShowOnlyName: a friendly unit displayed like a player (UnitTreatAsPlayerForDisplay)
+-- gets a name-only plate while the friendly-player names-only CVar is on. The driver can set
+-- uf.showOnlyName after our paint (handler order varies), so an unset field is read from the unit.
+local function NativeNameOnly(uf, unit)
+    local native = uf.showOnlyName
+    if npcHealthBars[uf] or not S.Public(native) then return false end
+    if native ~= nil then return native == true end
+    local display = UnitTreatAsPlayerForDisplay and UnitTreatAsPlayerForDisplay(unit)
+    if not S.Public(display) or display ~= true then return false end
+    local friend = UnitIsFriend("player", unit)
+    return S.Public(friend) and friend == true and C_CVar.GetCVarBool("nameplateShowOnlyNameForFriendlyPlayerUnits") == true
+end
+
 -- WoW includes UnitTreatAsPlayerForDisplay in its friendly-player CVar.
 -- Correct only the native health component on an explicitly managed NPC.
 -- Its own visibility rules still handle widgets-only units and game objects.
-function Names.SyncNPCHealth(uf, kind, onlyName)
+local function SyncHealth(uf, kind, onlyName)
     local native = uf.showOnlyName
     if not S.Public(native) then return end
     local wanted = native == true and not onlyName and (kind == "neutralNpc"
@@ -210,6 +223,25 @@ function Names.SyncNPCHealth(uf, kind, onlyName)
     end
 end
 
+local nativeHooked
+-- After Blizzard's UpdateShowOnlyName (unit setup, faction, CVar): a color-only NPC that lost its
+-- name-only plate gives its name color back, whatever kind the Suite has recorded for it.
+local function OnNativeNames(uf)
+    local state = onlyNames[uf]
+    if state and state.colorOnly and state.scope and not NativeNameOnly(uf, state.unit) then Names.RestoreNameOnly(uf) end
+end
+
+-- Skin.Paint and Blizzard's UpdateShowOnlyName (Skin.lua hook) both call this for a Friendly NPC on
+-- a name-only plate, in whichever order the driver and the Suite set the plate up. Without a Name
+-- only display (nameOnlyEnabled) this is its only entry: no other plate pays for it.
+function Names.SyncNPCHealth(uf, kind, onlyName)
+    SyncHealth(uf, kind, onlyName)
+    local unit = uf.unit
+    if kind == "friendlyNpc" and Names.nativeNpcNames and M.active and S.Public(unit) and type(unit) == "string" then
+        Names.ApplyNameOnly(uf, unit, nil, nil, kind)
+    end
+end
+
 -- Native font colors can be rounded to 8 bits. Compare the visible RGB to
 -- the palette, never to an immediate readback that may still be native white.
 local function SameRGB(r, g, b, red, green, blue)
@@ -217,28 +249,31 @@ local function SameRGB(r, g, b, red, green, blue)
         or math.abs(r - red) < 1 / 255 and math.abs(g - green) < 1 / 255 and math.abs(b - blue) < 1 / 255
 end
 
+-- On a FontString both color setters also reach its alpha aspect. A name color is written the way
+-- CompactUnitFrame_UpdateName writes one: RGB only, never an alpha (a read-back one can be a fade's 0).
+
 local function RestoreNameColor(uf, state)
     local label = state.label
     if not label then return true end
     if not Writable(uf, label) then return false end
     local r, g, b, a = PublicColor(label:GetTextColor())
-    local vr, vg, vb, va
-    if state.vertexR then vr, vg, vb, va = PublicColor(label:GetVertexColor()) end
-    -- Some clients expose RGB only. A public alpha received directly by a
-    -- setter still belongs to that same channel, including an omitted alpha.
-    if a == nil then a = state.fontAlpha end
-    if va == nil then va = state.vertexAlpha end
+    local npc = state.tintsVertex
+    local vr, vg, vb
+    if npc then vr, vg, vb = PublicColor(label:GetVertexColor()) end
+    local ar, ag, ab = state.appliedR, state.appliedG, state.appliedB
     state.writingColor = true
-    if vr and SameRGB(vr, vg, vb, 1, 1, 1) and not SameRGB(state.vertexR, state.vertexG, state.vertexB, 1, 1, 1) then
-        label:SetVertexColor(state.vertexR, state.vertexG, state.vertexB, va)
+    -- A channel still showing our color (or withheld) returns to its native value: Blizzard's
+    -- last vertex write, else its plain white. A later native write is left alone.
+    if npc and (not vr or ar and SameRGB(vr, vg, vb, ar, ag, ab)) then
+        label:SetVertexColor(state.vertexR or 1, state.vertexG or 1, state.vertexB or 1)
     end
-    if r and SameRGB(r, g, b, state.appliedR, state.appliedG, state.appliedB)
-        and not SameRGB(r, g, b, state.beforeR, state.beforeG, state.beforeB) then
-        label:SetTextColor(state.beforeR, state.beforeG, state.beforeB, a)
+    local br, bg, bb = state.beforeR or 1, state.beforeG or 1, state.beforeB or 1
+    if npc and not r or r and ar and SameRGB(r, g, b, ar, ag, ab) and not SameRGB(r, g, b, br, bg, bb) then
+        label:SetTextColor(br, bg, bb)
     end
-    state.label, state.deferredLabel, state.writingColor = nil, nil, nil
+    state.label, state.deferredLabel, state.writingColor, state.tintsVertex = nil, nil, nil, nil
     state.vertexR, state.vertexG, state.vertexB = nil, nil, nil
-    state.fontAlpha, state.vertexAlpha = nil, nil
+    state.beforeR, state.beforeG, state.beforeB = nil, nil, nil
     return true
 end
 
@@ -273,7 +308,7 @@ local function HideRegion(uf, state, region)
     end
 end
 
-local function ResolveDisplay(kind, unit)
+local function ResolveDisplay(kind, unit, uf)
     local scope = X.OpacityScope(kind)
     if scope == "neutral" and Names.neutralSplit then
         local exists = UnitExists(unit)
@@ -286,6 +321,11 @@ local function ResolveDisplay(kind, unit)
         return
     end
     if scope and X.CustomNameOnly(M.config, scope) then return scope end
+    -- Blizzard's friendly-player rules show such an NPC by name only, in a player class color. Unless
+    -- Show forces its bar, that native plate stays as it is and takes just its NPC color.
+    if kind == "friendlyNpc" and Names.nativeNpcNames and uf and NativeNameOnly(uf, unit) then
+        return scope, nil, true
+    end
 end
 
 local OnBarColor
@@ -293,15 +333,55 @@ local function NativeBarRGB(state, r, g, b)
     -- A pooled bar starts white, and Blizzard can also give a priest trainer
     -- the white player-class bar. An explicit Friendly NPC swatch (including
     -- white) is resolved before the native bar is consulted.
-    if r == 1 and g == 1 and b == 1 and state.scope == "friendlyNpc" and Names.friendlyPaletteEnabled then
-        return friendlyR, friendlyG, friendlyB
+    if r == 1 and g == 1 and b == 1 and state.fallbackR then
+        return state.fallbackR, state.fallbackG, state.fallbackB
     end
     return r, g, b
+end
+
+-- Friendly and neutral NPC names never take the hidden bar's RGB: Blizzard paints NPCs it shows
+-- like players in their class color (a white priest, a pink paladin), and a pooled or Suite-painted
+-- bar can still hold white. The name takes the NPC's own colors instead: grey when dead or tapped
+-- (CompactUnitFrame_UpdateName), the Friendly NPC palette with color by type, else its reaction.
+local function ReactionRGB(scope, unit, typeColor)
+    local dead, denied = UnitIsDead(unit), UnitIsTapDenied(unit)
+    if not (S.Public(dead) and S.Public(denied)) then return nil, nil, nil, true end
+    if dead or denied then return .5, .5, .5 end
+    if typeColor and scope == "friendlyNpc" and Names.friendlyPaletteEnabled then return friendlyR, friendlyG, friendlyB end
+    local reaction = UnitReaction(unit, "player")
+    if not S.Finite(reaction) then return nil, nil, nil, true end
+    if reaction >= 5 then return 0, 1, 0 end
+    if reaction == 4 then return 1, 1, 0 end
+    return 1, 0, 0
+end
+
+local function StateReactionRGB(state)
+    return ReactionRGB(state.scope, state.unit, M.config[state.scope .. "PlateNameTypeColor"] and not state.colorOnly)
+end
+
+-- Blizzard writes the bar only when its color changes (death, tapping, reaction, threat).
+local function WatchBar(uf, state)
+    local bar = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar or uf.healthBar
+    if not (Safe(bar) and bar.GetStatusBarColor) then return end
+    state.bar = bar
+    if not Writable(uf, bar) then
+        state.retryBar = true
+        return
+    end
+    if bar.SetStatusBarColor and barOwners[bar] ~= uf then
+        if not barOwners[bar] then hooksecurefunc(bar, "SetStatusBarColor", OnBarColor) end
+        barOwners[bar] = uf
+    end
+    return bar
 end
 
 local function NameOnlyRGB(uf, state)
     local config = M.config
     local player, scope, unit = state.player, state.scope, state.unit
+    local names = private.NameText
+    local custom, explicit
+    if names and names.CustomNameColor then custom, explicit = names.CustomNameColor(scope) end
+    if explicit then return custom.r, custom.g, custom.b end
     if player == true and scope == "enemy" and config.enemyPlateNameClassColor then
         local _, class = UnitClass(unit)
         local color = S.Public(class) and type(class) == "string" and RAID_CLASS_COLORS[class]
@@ -309,7 +389,8 @@ local function NameOnlyRGB(uf, state)
         return nil, nil, nil, true
     end
     if player then return end
-    local typeColor = config[scope .. "PlateNameTypeColor"]
+    local typeColor = config[scope .. "PlateNameTypeColor"] and not state.colorOnly
+    if not typeColor and custom then return custom.r, custom.g, custom.b end
     if typeColor and scope == "friendlyNpc" and (friendlyOverride or S.Public(uf.isPlayer) and uf.isPlayer == true) then
         return friendlyR, friendlyG, friendlyB
     end
@@ -317,52 +398,65 @@ local function NameOnlyRGB(uf, state)
     if typeColor and scope == "neutral" and config.enemyNeutralEnabled ~= false and config.enemyNeutralColor then
         return NS.RGB(config.enemyNeutralColor)
     end
-    if typeColor and scope == "enemy" and state.role and config["enemy" .. state.role .. "Enabled"] ~= false then
+    if scope ~= "enemy" then
+        WatchBar(uf, state)
+        state.reaction = true
+        local r, g, b, retry = ReactionRGB(scope, unit, typeColor)
+        return r, g, b, retry, true
+    end
+    if typeColor and state.role and config["enemy" .. state.role .. "Enabled"] ~= false then
         local r, g, b = X.NameOnlyNPCColor(config, scope, state.role)
         if r then return r, g, b end
     end
-    -- A hidden StatusBar retains its native color. The role overlay, when
-    -- present, was resolved by the same function used to draw the visible fill.
-    local bar = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar or uf.healthBar
-    if Safe(bar) and bar.GetStatusBarColor then
-        state.bar = bar
-        if Writable(uf, bar) then
-            if bar.SetStatusBarColor and barOwners[bar] ~= uf then
-                if not barOwners[bar] then hooksecurefunc(bar, "SetStatusBarColor", OnBarColor) end
-                barOwners[bar] = uf
-            end
-            local r, g, b = bar:GetStatusBarColor()
-            if S.Finite(r) and S.Finite(g) and S.Finite(b) then
-                r, g, b = NativeBarRGB(state, r, g, b)
-                return r, g, b, nil, true
-            end
-        else
-            state.retryBar = true
+    if typeColor then
+        local r, g, b = UnitSelectionColor(unit)
+        if S.Finite(r) and S.Finite(g) and S.Finite(b) then
+            state.fallbackR, state.fallbackG, state.fallbackB = r, g, b
         end
     end
-    if not typeColor then return nil, nil, nil, nil, true end
-    if scope == "friendlyNpc" then return friendlyR, friendlyG, friendlyB, nil, true end
-    local r, g, b = X.NameOnlyNPCColor(config, scope, state.role)
-    if not r then r, g, b = UnitSelectionColor(unit) end
-    if S.Finite(r) and S.Finite(g) and S.Finite(b) then return r, g, b, nil, true end
-    return nil, nil, nil, nil, true
+    -- A hidden enemy StatusBar retains its native color, including threat. The role overlay,
+    -- when present, was resolved by the same function used to draw the visible fill.
+    local bar = WatchBar(uf, state)
+    if bar then
+        local r, g, b = bar:GetStatusBarColor()
+        if S.Finite(r) and S.Finite(g) and S.Finite(b) then
+            r, g, b = NativeBarRGB(state, r, g, b)
+            return r, g, b, nil, true
+        end
+    end
+    if typeColor then
+        local r, g, b = X.NameOnlyNPCColor(config, scope, state.role)
+        if S.Finite(r) and S.Finite(g) and S.Finite(b) then return r, g, b, nil, true end
+    end
+    return state.fallbackR, state.fallbackG, state.fallbackB, nil, true
 end
 
 local function ResolveNameColor(uf, state)
     local hadColor = state.colorR ~= nil
     state.bar, state.retryBar = nil, nil
+    state.fallbackR, state.fallbackG, state.fallbackB, state.reaction = nil, nil, nil, nil
     state.colorR, state.colorG, state.colorB, state.retryColor, state.followsBar = NameOnlyRGB(uf, state)
     if hadColor ~= (state.colorR ~= nil) and private.NameText then
         private.NameText.ColorOwnerChanged(uf, state.colorR ~= nil)
     end
 end
 
+-- Death, tapping and faction can change while the bar stays hidden. Each native repaint of the
+-- name re-reads them, so a reaction color never goes stale and a withheld one resolves.
+local function FollowReaction(uf, state)
+    if state.retryColor then return ResolveNameColor(uf, state) end
+    if not state.reaction then return end
+    local r, g, b = StateReactionRGB(state)
+    if r then state.colorR, state.colorG, state.colorB = r, g, b end
+end
+
 local function NPCColorOwner(label)
     local uf = labelOwners[label]
     local state = uf and onlyNames[uf]
-    if not M.active or not state or state.writingColor or state.player ~= false or not state.scope or not state.colorR
+    if not M.active or not state or state.writingColor or state.player ~= false or not state.scope
         or not Safe(uf) or uf.name ~= label then return end
-    return uf, state
+    FollowReaction(uf, state)
+    if state.colorR then return uf, state end
 end
 
 -- CompactUnitFrame_UpdateName writes the vertex RGB after setting the name.
@@ -372,16 +466,16 @@ local function OnNativeTint(label, r, g, b, a)
     local uf, state = NPCColorOwner(label)
     if not state then return end
     if not PublicColor(r, g, b, a) then return end
-    if state.label == label then state.beforeR, state.beforeG, state.beforeB, state.fontAlpha = r, g, b, a end
+    if state.label == label then state.beforeR, state.beforeG, state.beforeB = r, g, b end
     ApplyNameColor(uf, state, false, "font", r, g, b, a)
 end
 
 local function OnVertexColor(label, r, g, b, a)
     local uf, state = NPCColorOwner(label)
     if not state or not PublicColor(r, g, b, a) then return end
-    if state.label == label then state.vertexR, state.vertexG, state.vertexB, state.vertexAlpha = r, g, b, a end
+    if state.label == label then state.vertexR, state.vertexG, state.vertexB = r, g, b end
     -- The native setter can change the visible glyph even when the font
-    -- getter still reports our swatch. Keep its opacity in the vertex channel.
+    -- getter still reports our swatch.
     ApplyNameColor(uf, state, not SameRGB(r, g, b, state.colorR, state.colorG, state.colorB), "vertex", r, g, b, a)
 end
 
@@ -390,55 +484,57 @@ local function OnFontObject(label)
     if state then ApplyNameColor(uf, state, true, "fontObject") end
 end
 
+-- Install before the first font read. A new plate can withhold that read until another owner sets
+-- its initial (often white) font color. A color-only plate has no global name hook: these follow it.
+local function ClaimLabel(uf, label)
+    if labelOwners[label] == uf then return end
+    if not labelOwners[label] then
+        hooksecurefunc(label, "SetVertexColor", OnVertexColor)
+        hooksecurefunc(label, "SetTextColor", OnNativeTint)
+        hooksecurefunc(label, "SetFontObject", OnFontObject)
+    end
+    labelOwners[label] = uf
+end
+
+-- Clients differ in how a FontString's vertex and text colors combine, and its color getters can be
+-- withheld. Blizzard colors names through the vertex and never through the text color, so an NPC name
+-- takes its color in both channels. It is written on a new label even when the getters are withheld,
+-- and again after every native write; a withheld readback alone keeps our last write.
 function ApplyNameColor(uf, state, nativeChange, channel, r, g, b, a)
     local label = uf.name
     if nativeChange then state.nativeTintDirty = true end
     if state.label and (state.label ~= label or state.deferredLabel) and not RestoreNameColor(uf, state) then return end
     if not Writable(uf, label) then return end
-    -- Install before the first font read. A new plate can withhold that
-    -- read until another owner sets its initial (often white) font color.
-    if state.player == false and labelOwners[label] ~= uf then
-        if not labelOwners[label] then
-            hooksecurefunc(label, "SetVertexColor", OnVertexColor)
-            hooksecurefunc(label, "SetTextColor", OnNativeTint)
-            hooksecurefunc(label, "SetFontObject", OnFontObject)
-        end
-        labelOwners[label] = uf
-    end
-    local vr, vg, vb, va
+    local npc = state.player == false
+    if npc then ClaimLabel(uf, label) end
+    local vr, vg, vb
     if channel == "vertex" then
-        vr, vg, vb, va = r, g, b, a
-    elseif state.player == false then
-        vr, vg, vb, va = PublicColor(label:GetVertexColor())
-        if not vr then return end
+        vr, vg, vb = r, g, b
+    elseif npc then
+        vr, vg, vb = PublicColor(label:GetVertexColor())
     end
     if channel ~= "font" then
         r, g, b, a = PublicColor(label:GetTextColor())
     end
-    if not r then return end
-    if state.label == label then
-        if a == nil and channel ~= "font" then a = state.fontAlpha end
-        if va == nil and channel ~= "vertex" then va = state.vertexAlpha end
-    end
-    state.fontAlpha, state.vertexAlpha = a, va
-    -- Native selection may already have run before this pooled label was
-    -- claimed. Establish its visible color once, even on a matching readback.
-    local neutralize = vr and not SameRGB(vr, vg, vb, 1, 1, 1)
-    local force = state.nativeTintDirty or neutralize or state.player == false and label ~= state.label
-    if channel == "fontObject" or label ~= state.label or not SameRGB(r, g, b, state.appliedR, state.appliedG, state.appliedB) then
-        -- Keep the native baseline across a palette change on the same label.
-        -- An external color becomes the new baseline when we paint over it.
+    if not r and not npc then return end
+    local fresh = label ~= state.label
+    local cr, cg, cb = state.colorR, state.colorG, state.colorB
+    local ar, ag, ab = state.appliedR, state.appliedG, state.appliedB
+    -- Keep the native baselines across a palette change on the same label.
+    -- An external color becomes the new baseline when we paint over it.
+    if r and (channel == "fontObject" or fresh or not SameRGB(r, g, b, ar, ag, ab)) then
         state.beforeR, state.beforeG, state.beforeB = r, g, b
     end
-    state.label = label
-    state.appliedR, state.appliedG, state.appliedB = state.colorR, state.colorG, state.colorB
-    if force or not SameRGB(r, g, b, state.colorR, state.colorG, state.colorB) then
+    if npc and vr and (fresh or not SameRGB(vr, vg, vb, ar, ag, ab)) then
+        state.vertexR, state.vertexG, state.vertexB = vr, vg, vb
+    end
+    state.label, state.tintsVertex = label, npc or nil
+    state.appliedR, state.appliedG, state.appliedB = cr, cg, cb
+    if state.nativeTintDirty or npc and (fresh or vr and not SameRGB(vr, vg, vb, cr, cg, cb))
+        or r and not SameRGB(r, g, b, cr, cg, cb) then
         state.writingColor = true
-        if neutralize then
-            state.vertexR, state.vertexG, state.vertexB = vr, vg, vb
-            label:SetVertexColor(1, 1, 1, va)
-        end
-        label:SetTextColor(state.colorR, state.colorG, state.colorB, a)
+        if npc then label:SetVertexColor(cr, cg, cb) end
+        label:SetTextColor(cr, cg, cb)
         state.writingColor, state.nativeTintDirty = nil, nil
     end
 end
@@ -455,11 +551,11 @@ local function OnBarTarget(bar)
 end
 
 function Names.ApplyNameOnly(uf, unit, role, barHex, kind)
-    local scope, questText, player
-    if Names.nameOnlyEnabled and S.Public(unit) and type(unit) == "string" then
+    local scope, questText, player, colorOnly
+    if (Names.nameOnlyEnabled or Names.nativeNpcNames) and S.Public(unit) and type(unit) == "string" then
         kind = kind or X.UnitKind(uf, unit)
         player = kind == "friendlyPlayer" or kind == "enemyPlayer"
-        scope, questText = ResolveDisplay(kind, unit)
+        scope, questText, colorOnly = ResolveDisplay(kind, unit, uf)
     end
     if not scope then
         Names.RestoreNameOnly(uf)
@@ -475,14 +571,18 @@ function Names.ApplyNameOnly(uf, unit, role, barHex, kind)
     end
     if state.scope ~= scope and private.Layout and private.Layout.InvalidateName then private.Layout.InvalidateName(uf) end
     if state.scope ~= scope or state.unit ~= unit or state.player ~= player or state.role ~= role or state.barHex ~= barHex
-        or state.revision ~= colorRevision or state.retryColor or state.retryBar
+        or state.revision ~= colorRevision or state.retryColor or state.retryBar or state.colorOnly ~= colorOnly
         or state.followsBar and state.bar ~= (uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar or uf.healthBar) then
         state.scope, state.unit, state.player, state.role, state.revision = scope, unit, player, role, colorRevision
-        state.barHex = barHex
+        state.barHex, state.colorOnly = barHex, colorOnly
         ResolveNameColor(uf, state)
     end
     state.questText = questText
-    if player == false and state.colorR then ApplyNameColor(uf, state) end
+    if player == false and state.colorR then
+        ApplyNameColor(uf, state)
+    elseif player == false and state.retryColor and Writable(uf, uf.name) then
+        ClaimLabel(uf, uf.name) -- an unreadable reaction resolves at the next native repaint
+    end
     local bar = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if player == false and bar and bar ~= state.targetBar and Safe(bar) and bar.SetIsTarget then
         local access = true
@@ -494,14 +594,17 @@ function Names.ApplyNameOnly(uf, unit, role, barHex, kind)
             M.pendingPlates[uf] = true
         end
     end
-    for _, field in ipairs(visualFields) do HideRegion(uf, state, uf[field]) end
+    if not colorOnly then
+        for _, field in ipairs(visualFields) do HideRegion(uf, state, uf[field]) end
+    end
     if not state.colorR then RestoreNameColor(uf, state) end
-    return true, player
+    return not colorOnly, player
 end
 
+-- A color-only NPC keeps Blizzard's own name-only plate: no layout, region or role change.
 function Names.NameOnlyScope(uf)
     local state = onlyNames[uf]
-    return state and state.scope
+    if state and not state.colorOnly then return state.scope end
 end
 
 function Names.IsNameOnly(uf) return Names.NameOnlyScope(uf) ~= nil end
@@ -514,10 +617,10 @@ end
 function Names.NeutralDisplayChanged(uf, unit, kind)
     kind = kind or X.UnitKind(uf, unit)
     local player = kind == "friendlyPlayer" or kind == "enemyPlayer"
-    local scope, questText = ResolveDisplay(kind, unit)
+    local scope, questText, colorOnly = ResolveDisplay(kind, unit, uf)
     local state = onlyNames[uf]
     return scope ~= (state and state.scope) or questText ~= (state and state.questText)
-        or scope ~= nil and state.player ~= player
+        or scope ~= nil and (state.player ~= player or state.colorOnly ~= colorOnly)
 end
 
 function Names.OwnsColor(uf)
@@ -540,7 +643,7 @@ function Names.RefreshRole(uf, role, barHex)
         ResolveNameColor(uf, state)
         if state.colorR then ApplyNameColor(uf, state) else RestoreNameColor(uf, state) end
     end
-    return true
+    return not state.colorOnly
 end
 
 -- Blizzard calls the bar setter only when its RGB changes. Health value
@@ -549,8 +652,14 @@ function OnBarColor(bar, r, g, b)
     local uf = barOwners[bar]
     local state = onlyNames[uf]
     if not state or state.bar ~= bar or not state.scope or not state.followsBar or not M.active or not Safe(uf) then return end
-    if not (S.Finite(r) and S.Finite(g) and S.Finite(b)) then return end
-    r, g, b = NativeBarRGB(state, r, g, b)
+    if state.reaction then
+        r, g, b = StateReactionRGB(state)
+        if not r then return end
+    elseif not (S.Finite(r) and S.Finite(g) and S.Finite(b)) then
+        return
+    else
+        r, g, b = NativeBarRGB(state, r, g, b)
+    end
     if state.label and state.colorR == r and state.colorG == g and state.colorB == b then return end
     local acquired = state.colorR == nil
     state.colorR, state.colorG, state.colorB = r, g, b
@@ -580,7 +689,12 @@ function Names.ConfigureNameOnly()
     colorRevision = colorRevision + 1
     Names.neutralNameOnly = config.neutralPlateNameOnly == true
     Names.neutralSplit = X.NeutralNameSplit(config)
-    Names.nameOnlyEnabled = config.enemyPlateNameOnly or Names.neutralNameOnly or X.CustomNameOnly(config, "friendlyNpc")
+    -- Show forces the bar of an NPC shown like a player (SyncHealth); Keep, Hide and world names leave
+    -- it on Blizzard's name-only plate, which then takes the NPC color (SyncNPCHealth, label hooks).
+    local friendlyNames = X.CustomNameOnly(config, "friendlyNpc")
+    Names.nativeNpcNames = config.friendlyNpcSkinEnabled ~= false and config.friendlyNPCs ~= private.Mode.SHOW
+        and not friendlyNames
+    Names.nameOnlyEnabled = config.enemyPlateNameOnly or Names.neutralNameOnly or friendlyNames
     Names.friendlyPlayerNames = config.friendlyNamesOnly == private.Mode.ALL_NAMES_ONLY or config.friendlyNamesOnly == GROUP_NAMES_ONLY
     local styled = config.look ~= private.Mode.LOOK_BLIZZARD
     local enemy = styled and config.enemy and config.enemyNameVisible ~= false
@@ -600,9 +714,17 @@ function Names.ConfigureNameOnly()
     Names.managedNames = repair.enemyNpc or repair.neutralNpc or repair.friendlyPlayer or repair.friendlyNpc
     Names.typeColorInUse = config.enemyPlateNameOnly and config.enemyPlateNameTypeColor
     Names.RefreshFriendlyPalette()
-    if not Names.nameOnlyEnabled then
-        for uf in pairs(onlyNames) do Names.RestoreNameOnly(uf) end
-    elseif not nameHooked then
+    for uf, state in pairs(onlyNames) do
+        if not (state.colorOnly and Names.nativeNpcNames or not state.colorOnly and Names.nameOnlyEnabled) then
+            Names.RestoreNameOnly(uf)
+        end
+    end
+    if Names.nativeNpcNames and not nativeHooked and private.HookPlates and NamePlateUnitFrameMixin
+        and NamePlateUnitFrameMixin.UpdateShowOnlyName then
+        private.HookPlates("UpdateShowOnlyName", OnNativeNames)
+        nativeHooked = true
+    end
+    if Names.nameOnlyEnabled and not nameHooked then
         hooksecurefunc("CompactUnitFrame_UpdateName", function(uf)
             local state = onlyNames[uf]
             if not M.active or not state then return end

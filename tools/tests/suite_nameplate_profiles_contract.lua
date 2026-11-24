@@ -165,7 +165,7 @@ assert(DB.Create("Other", true))
 local other = DB.GetProfile("Other")
 other.nameplateCVars = { nameplateDebuffPadding = "16" }
 other.suite.modules.nameplates.nativeProfileMode = 2
-assert(DB.Activate("Other") and live.nameplateDebuffPadding ~= "16", "current-Blizzard mode was ignored")
+assert(DB.Activate("Other") and live.nameplateDebuffPadding == "16", "retired Blizzard mode still skipped native settings")
 other.nameplateCVars.nameplateDebuffPadding = "16"
 assert(IO.ActivateNameplateCVars(other, true) and live.nameplateDebuffPadding == "16", "explicit import ignored native data")
 local unavailable = Decode(assert(IO.ExportModule("nameplates")))

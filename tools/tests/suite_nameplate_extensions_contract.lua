@@ -583,6 +583,11 @@ do
 end
 
 do
+    local fade = NS.NameplateExtensions.ReadOpacity({ enemyFadeHealthBackground = 20 }, "enemy")
+    assert(fade.text == .2, "background fade left health text visible with Keep Text off")
+    fade = NS.NameplateExtensions.ReadOpacity({ enemyFadeHealth = 30, enemyFadeHealthBackground = 20,
+        enemyFadeKeepText = true }, "enemy")
+    assert(fade.text == 1, "Keep Text did not protect against both health layers")
     M.config = { enemy = true, friendly = true, look = 3, enemyFadeHealth = 40, enemyFadeHealthBackground = 65,
         enemyFadePower = 50, enemyFadePowerBackground = 75, enemyFadeKeepPrediction = true,
         enemyFadeOutOfCombat = true, enemyFadeOutOfCombatAlpha = 50, plateContextEnabled = true, enemyNpcOpacity = 80 }
@@ -757,6 +762,7 @@ do
     M.active = true
     M.config = { enemy = true, look = 3, neutralPlateNameOnly = true, neutralNameOnlyMode = 2 }
     local _, npc, npcHealth, npcCast = Plate("nameplate4")
+    P.UnitKinds[npc] = "neutralNpc"
     X.Configure(M)
     Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
     local label = npc.labels[1]
@@ -773,8 +779,48 @@ do
     showQuest = true
     Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
     assert(label:IsShown(), "the returning quest label did not recover after the health bar transition")
+    M.config.neutralExtraTextTitle, M.config.neutralFadeHealth = true, 35
+    X.Configure(M)
+    Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
+    local title = npc.labels[2]
+    assert(title and title:GetAlpha() == .35 and label:GetAlpha() == .35,
+        "a new subtitle or an existing quest label escaped the text fade")
+    M.config.neutralFadeKeepText = true
+    X.Configure(M)
+    Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
+    assert(title:GetAlpha() == 1 and label:GetAlpha() == 1, "Keep Text left extra labels faded")
+    assert(label:IsShown() and title and title:IsShown() and title.text == "Enemy title",
+        "NPC title was missing from the name-only plate or hid the existing quest objective")
+    local point, owner, relative = title:GetPoint()
+    assert(point == "TOP" and owner == npc.name and relative == "BOTTOM",
+        "name-only NPC title is not directly below the name")
+    P.FriendlyNames.KeepsQuestText = function() return false end
+    Apply(npc, npcHealth, npcCast, "enemy", "nameplate4")
+    assert(title:IsShown() and not label:IsShown(), "title-only display kept the quest text")
+    local getUnit = C_TooltipInfo.GetUnit
+    C_TooltipInfo.GetUnit = function()
+        return { lines = { { type = 2, leftText = "Enemy" }, { type = 0, leftText = secret } } }
+    end
+    X.OnUnit(M, "UNIT_NAME_UPDATE", "nameplate4")
+    assert(title:IsShown() and IsSecret(title.text), "a secret NPC title did not reach its label unread")
+    C_TooltipInfo.GetUnit = getUnit
+    X.OnUnit(M, "UNIT_NAME_UPDATE", "nameplate4")
+    assert(title:IsShown() and title.text == "Enemy title", "name update did not restore the public title")
+    -- An open-world innkeeper can keep a secret identity: its title still
+    -- shows, quest text needs a public identity, PvP instances read nothing.
+    P.FriendlyNames.KeepsQuestText = function() return true end
+    identityRestricted = true
+    X.OnUnit(M, "UNIT_NAME_UPDATE", "nameplate4")
+    assert(title:IsShown() and title.text == "Enemy title" and not label:IsShown(),
+        "a restricted identity hid the NPC title or kept its quest text")
+    P.Roles.inInstance, P.Roles.instanced = true, false
+    X.OnUnit(M, "UNIT_NAME_UPDATE", "nameplate4")
+    assert(not title:IsShown(), "a PvP instance read a restricted NPC title")
+    P.Roles.inInstance, P.Roles.instanced, identityRestricted = nil, nil, false
+    X.OnUnit(M, "UNIT_NAME_UPDATE", "nameplate4")
+    assert(title:IsShown() and label:IsShown(), "a public identity did not bring title and quest text back")
     X.Restore(npc)
-    assert(not label:IsShown(), "a released plate retained its quest label")
+    assert(not label:IsShown() and not title:IsShown(), "a released plate retained its text")
 end
 -- Roster-only refresh calls the group filter without a full plate paint.
 -- The cast effect releases the native name before the group filter claims it.

@@ -141,9 +141,14 @@ local function ListRow(scope, container, label, action, lookup)
     return row
 end
 
-local function ListSummary(scope, container)
-    local ids = Model.IDs(P.Get(ID, Model.ListKey(scope, container)))
-    if #ids == 0 then return Tr(LIST_LABELS[container.kind].empty) end
+local function ListSummary(container, stored, display)
+    local ids = Model.IDs(stored)
+    if #ids == 0 then
+        if container.kind == "custom" and display == 2 and stored == "" then
+            return Tr("An empty list shows all active auras that match the filters. Add spell IDs to hide verified duplicates.")
+        end
+        return Tr(LIST_LABELS[container.kind].empty)
+    end
     local names = {}
     for index, value in ipairs(SpellValues(ids)) do names[index] = value.text end
     return table.concat(names, ", ")
@@ -179,14 +184,15 @@ local function SpellList(ctx, panel, y, width, scope, container)
     }
     local grid = P.W.SettingsRows(ctx, panel, { x = 16, y = y - 92, width = width, columns = 2, rows = rows })
     local summary = P.Text(panel, "", 16, grid.bottomY - 8, width)
-    local shown
+    local shown, shownDisplay
+    local displayKey = Model.Prefix(scope, container) .. "Display"
     P.M.TrackRefresh(ctx, function()
         local enabled = CanEditList(scope)
         for _, row in ipairs(rows) do grid.controls[row.id]:SetEnabled(enabled) end
-        local stored = P.Get(ID, key)
-        if stored ~= shown then
-            shown = stored
-            P.SetTranslatedText(summary, ListSummary(scope, container))
+        local stored, display = P.Get(ID, key), P.Get(ID, displayKey)
+        if stored ~= shown or display ~= shownDisplay then
+            shown, shownDisplay = stored, display
+            P.SetTranslatedText(summary, ListSummary(container, stored, display))
         end
     end)
     return grid.bottomY - 64
@@ -739,9 +745,11 @@ local function PaintContainer(record, sample, plan, c, facts, visible)
     record.frame:SetPoint(c.point, sample.bar, c.relative, c.x, c.y)
     record.frame:SetSize(c.gridWidth, c.gridHeight)
     local exclusions = plan.exclusions[sample.prefix]
-    local lane = not selected and visible and c.hideDuplicates and (c.helpful and visible.buff or visible.debuff)
-    if selected and #c.rows == 0 then c.rows[1], c.count = { id = 172 }, 1 end
-    PaintIcons(record, record.frame, plan, c, not selected and exclusions and exclusions[c.key], lane)
+    local lane = not selected and not c.filtersOnly and visible and c.hideDuplicates and (c.helpful and visible.buff or visible.debuff)
+    if (selected or c.filtersOnly) and #c.rows == 0 then
+        c.rows[1], c.count = { id = c.helpful and 139 or 172 }, 1
+    end
+    PaintIcons(record, record.frame, plan, c, not selected and not c.filtersOnly and exclusions and exclusions[c.key], lane)
     if previewText and facts.editor then PaintTextHandle(record, sample, plan, c, facts, previewText) end
 end
 

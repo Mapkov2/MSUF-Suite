@@ -80,6 +80,8 @@ local function Pattern(state)
         return
     end
     if state.patternFill ~= fill then texture:SetAllPoints(fill) state.patternFill = fill end
+    local slanted = private.SlantedHealth
+    if slanted then state.patternMask = Style.ReplaceSlantedMask(texture, state.patternMask, slanted.FillMask(state.health)) end
     if state.patternKind ~= chosen or state.patternGeneration ~= generation then
         texture:SetTexture(chosen.texture)
         texture:SetVertexColor(1, 1, 1, 1)

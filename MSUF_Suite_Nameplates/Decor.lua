@@ -43,11 +43,17 @@ function Decor.Configure(owner)
     local c = owner.barSettings or owner.config
     plans = { enemy = Draw.Plan(c, "enemy"), friendly = Draw.Plan(c, "friendly") }
     Decor.inUse = plans.enemy.active or plans.friendly.active
+    for scope, settings in pairs(owner.scopedBars or {}) do
+        local side = (scope == "enemy" or scope == "neutral") and "enemy" or "friendly"
+        plans[scope] = Draw.Plan(settings, side)
+        Decor.inUse = Decor.inUse or plans[scope].active
+    end
     if not Decor.inUse then Decor.Disable() end
 end
 
 function Decor.Paint(uf, health, cast, prefix, unit)
-    local p = plans and plans[prefix]
+    local scope = module.scopedBars and private.AppearanceScope(uf)
+    local p = plans and (plans[scope] or plans[prefix])
     local state = states[health]
     if not p or not p.active then
         Draw.Hide(state)

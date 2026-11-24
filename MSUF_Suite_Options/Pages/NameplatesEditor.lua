@@ -54,7 +54,7 @@ local function Focus(ui, handle)
         key = P.NameplatesSize.Keys(handle) or key
     end
     if handle._key and handle._key:match("%.CastShield$") then return Layers.Focus(ui, "castbar", "castShield") end
-    if P.OpenNameplateStatusItem(ui.sampleKind, handle.keyX) then return end
+    if P.OpenNameplateStatusItem(ui.sampleKind, handle.keyX, ui.scope) then return end
     if OpenSetting(key) then return end
     local section = ui.sections and ui.sections[handle.section]
     if handle._npSettingsTab then
@@ -226,7 +226,9 @@ local function BuildZoomTools(ui)
     ui.zoomLabel:SetJustifyH("CENTER")
     ui.zoomLabel:SetWordWrap(false)
     local zoomIn = Button(tools, "zoomIn", "+", 24, function() Layout.StepZoom(ui, 1) end)
-    ui.zoomControls = { { fit, 36 }, { actual, 36 }, { zoomOut, 24 }, { ui.zoomLabel, 40 }, { zoomIn, 24 } }
+    for _, button in ipairs({ fit, actual, zoomOut, zoomIn }) do P.PreviewCanvas.FitToolbarButton(button) end
+    ui.zoomControls = { { fit, fit:GetWidth() }, { actual, actual:GetWidth() }, { zoomOut, zoomOut:GetWidth() },
+        { ui.zoomLabel, 40 }, { zoomIn, zoomIn:GetWidth() } }
 end
 
 -- The row of sample switches in the preview canvas: plate kind, enemy type, quest and friendly options.
@@ -617,7 +619,9 @@ local function BuildKit(ui)
             P.NameplatesPreviewDecor.Hover(handle, entering)
             if entering then
                 handle.outline(1, "4ebaff")
-                P.SetTranslatedText(ui.hint, Tr(handle._label) .. " - " .. Tr((handle._npSettingsTab or handle._npSettingKey)
+                local opensSettings = handle._npSettingsTab or handle._npSettingKey
+                    or P.NameplateStatusTarget(ui.sampleKind, handle.keyX, ui.scope)
+                P.SetTranslatedText(ui.hint, Tr(handle._label) .. " - " .. Tr(opensSettings
                     and "Drag to move; click for settings" or "Drag to move; right-click for settings"))
             else
                 ui:RefreshSelection()
@@ -627,7 +631,8 @@ local function BuildKit(ui)
         click = function(handle, button, moved)
             if not CanEdit(handle) then return end
             if button == "RightButton" or button == "LeftButton"
-                and (handle._npSettingsTab or handle._npSettingKey) and not moved then
+                and not moved and (handle._npSettingsTab or handle._npSettingKey
+                    or P.NameplateStatusTarget(ui.sampleKind, handle.keyX, ui.scope)) then
                 Focus(ui, handle)
             end
         end,

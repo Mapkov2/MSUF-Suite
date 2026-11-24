@@ -48,7 +48,7 @@ function Text.ResolveSize(config, key, shared)
     return key:match("NameSize$") and shared.nameFontSize or shared.fontSize
 end
 
-function Text.Compile(config, prefix)
+function Text.Compile(config, prefix, scope)
     local mode = MODES[config[prefix .. "NameFormat"] or 2] or MODE_FULL
     local provider = NS.HostBridge.NameFormatter()
     local portable = NS.NameplatePortableText.Stored()
@@ -56,9 +56,10 @@ function Text.Compile(config, prefix)
     local nativeScope = config.look ~= 1 and provider and (provider.Nameplates ~= nil or portable ~= nil)
     local formatting = nativeScope or config.nameFormattingEnabled == true
     local formatter = formatting and provider or nil
-    local color = not nativeScope and config[prefix .. "NameColorEnabled"] == true
+    local colorScope = scope == "neutral" and scope or prefix
+    local color = config[colorScope .. "NameColorEnabled"] == true
     local r, g, b
-    if color then r, g, b = NS.RGB(config[prefix .. "NameColor"] or "ffffff") end
+    if color then r, g, b = NS.RGB(config[colorScope .. "NameColor"] or "ffffff") end
     local shared = Text.Shared(config)
     local side, dots, maxChars = config[prefix .. "NameClipSide"] == 2 and "LEFT" or "RIGHT",
         config[prefix .. "NameNoEllipsis"] ~= true, config[prefix .. "NameMaxChars"] or 12
@@ -70,6 +71,17 @@ function Text.Compile(config, prefix)
         displayName = nativeScope and shared and shared.characterNameParts and provider.DisplayName,
         formatter = formatter, formatID = mode, max = maxChars, side = side, dots = dots,
         customColor = color, r = r, g = g, b = b, shared = shared, colorPainter = shared and provider }
+end
+
+function Text.CustomNameColor(look)
+    if not look then return end
+    local shared = look.shared
+    local color = look.customColor and look or shared and shared.text and shared.text.nameColor
+    local portable = shared and shared.portable
+    if not color and portable and portable.nameColorMode == "CUSTOM" then
+        color = { r = portable.nameColorR or 1, g = portable.nameColorG or 1, b = portable.nameColorB or 1 }
+    end
+    if color and NS.Finite(color.r) and NS.Finite(color.g) and NS.Finite(color.b) then return color end
 end
 
 function Text.Format(state, value, look)

@@ -129,7 +129,11 @@ local function Field(ui, row, body, index)
     edit:SetAutoFocus(false)
     edit:SetJustifyH("RIGHT")
     edit:SetMaxLetters(6)
+    -- Slim insets keep a signed/fractional size ("-12.5") inside the 38 box.
+    if edit.SetTextInsets then edit:SetTextInsets(2, 3, 0, 0) end
     if T.SkinEditBox then T.SkinEditBox(edit) end
+    -- Compact 18 field keeps its height; the value uses the Suite checkbox role.
+    if T.ApplyMenuFont then T.ApplyMenuFont(edit, nil, P.SettingFontRole()) end
     local plus = T.Button(group, "+", 16, 18)
     plus:SetPoint("LEFT", edit, "RIGHT", 2, 0)
     local field = { frame = group, caption = caption, edit = edit, minus = minus, plus = plus }

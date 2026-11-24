@@ -83,11 +83,6 @@ local function Text(owner, value, size, color)
     return label
 end
 
-local function Border(owner)
-    local visual = Style.CreateBorder(owner)
-    return function(size, color) Style.PaintBorder(visual, owner, size, color) end
-end
-
 local function SampleRegion(parent, width, height)
     local frame = CreateFrame("Button", nil, parent)
     frame:SetSize(width, height)
@@ -181,7 +176,7 @@ local function BuildBar(editor, s, cell)
     s.aggroFlash = Fill(bar, "OVERLAY")
     s.aggroFlash:SetAllPoints(bar)
     Tint(s.aggroFlash, "ffff00", 0.24)
-    s.border = Border(bar)
+    s.border = Style.CreateBorder(bar)
     s.healthText = SampleRegion(cell, 78, 18)
     s.value = Text(s.healthText, "", 10, { 1, 1, 1 })
     s.value:SetAllPoints(s.healthText)
@@ -481,9 +476,7 @@ end
 
 local function RenderHealth(editor, s, m)
     local prefix = s.prefix
-    s.healthText:SetWidth(78)
-    s.value:SetJustifyH("RIGHT")
-    Place(s, s.healthText, "RIGHT", s.bar, "RIGHT", -4, 0, "HealthText")
+    P.NameplatesPreviewLayout.PlaceHealthText(s, m, SetupToggle, Place)
     local visible = m.skinDisabled or Get(ID, "look") == 2 or Get(ID, prefix .. "HealthTextVisible") ~= false
     Tint(s.back, Get(ID, prefix .. "BackdropColor"), (Get(ID, prefix .. "BackdropAlpha") or 100) / 100)
     s.back:SetShown(not m.skinDisabled and not s.healthBackgroundPath and Get(ID, "look") ~= 2 and editor:LayerOn("backdrop")
@@ -515,10 +508,9 @@ local function RenderHealth(editor, s, m)
     s.aggroFlash:SetShown(prefix == "enemy" and showAggro and editor:LayerOn("threatFlash") and flashOn)
     local mode = prefix == "enemy" and (Get(ID, "look") == 2 and 1 or Get(ID, "enemyTextMode")) or 2
     local health = s.state.health
-    local amount = string.format("%.1fM", 3.5 * health / 100)
     local showPercent = mode == 1 and NativeBit("nameplateInfoDisplay", 1, true) or mode == 2 or mode == 4
     local showValue = mode == 1 and NativeBit("nameplateInfoDisplay", 2, false) or mode == 3 or mode == 4
-    s.value:SetText(showValue and (amount .. (showPercent and " " .. health .. "%" or ""))
+    s.value:SetText(showValue and (P.NameplatesPreviewLayout.HealthValue(health) .. (showPercent and " " .. health .. "%" or ""))
         or (showPercent and health .. "%" or ""))
     if editor.textSample == "HealthText" and not (showPercent or showValue) then s.value:SetText(health .. "%") end
     s.healthText:SetShown(not m.namesOnly and editor:LayerOn("healthText")
@@ -527,7 +519,8 @@ local function RenderHealth(editor, s, m)
     local styled = not m.skinDisabled and not m.namesOnly and Get(ID, "look") ~= 2 and Get(ID, prefix)
     local border = styled and editor:LayerOn("border") and Style.OutlineSize(c[prefix .. "OutlineMode"],
         c[prefix .. "BorderEnabled"], c[prefix .. "BorderSize"], c.hideHealthBarBorders)
-    s.border(s.highlightColor and s.highlightSize or border or 0, s.highlightColor or c[prefix .. "BorderColor"])
+    Style.PaintBorder(s.border, s.bar, s.highlightColor and s.highlightSize or border or 0,
+        s.highlightColor or c[prefix .. "BorderColor"])
 end
 
 local function RenderHighlight(editor, s, m)
@@ -698,11 +691,48 @@ local function RenderCastDetails(editor, s, m)
     P.NameplatesPreviewDecor.InterruptedCast(editor, s, m, Get)
 end
 
+local function RenderNameText(editor, s, m)
+    if m.skinDisabled then return end
+    local Text, config = P.Suite.NameplateText, P.S.Config(ID)
+    s.nameFormatState = s.nameFormatState or {}
+    local enemyPlayer = s.prefix == "enemy" and editor.enemyPlayer
+    s.nameFormatState.sampleNPC = s.prefix == "enemy" and not enemyPlayer
+    local look = Text.Compile(config, s.prefix, m.scope)
+    if m.npcWorldName then
+        if look.customColor then Text.PaintColor(s.nameText, s.nameFormatState, look) end
+    else
+        Text.Paint(s.nameText, s.nameFormatState, s.nameText:GetText(), look)
+    end
+    local scope = m.nameOnlyScope
+    if not scope or look.customColor then return end
+    if enemyPlayer then
+        local color = Get(ID, "enemyPlateNameClassColor") and RAID_CLASS_COLORS and RAID_CLASS_COLORS.WARRIOR
+        if color then s.nameText:SetTextColor(color.r, color.g, color.b, 1) end
+        return
+    end
+    local r, g, b = P.RGB(m.healthColor)
+    local byType = Get(ID, scope .. "PlateNameTypeColor")
+    local customColor = not byType and Text.CustomNameColor(look)
+    if customColor then
+        r, g, b = customColor.r, customColor.g, customColor.b
+    elseif byType and scope == "friendlyNpc" then
+        local red, green, blue, custom = P.Suite.NameplateExtensions.NameOnlyNPCColor(config, scope)
+        if red and (custom or (r == 1 and g == 1 and b == 1)) then r, g, b = red, green, blue end
+    elseif byType and not m.roleFillColor then
+        if scope == "neutral" and Get(ID, "enemyNeutralEnabled") ~= false then
+            r, g, b = P.RGB(Get(ID, "enemyNeutralColor"))
+        elseif scope == "enemy" and m.descriptor and Get(ID, "enemy" .. m.descriptor.key .. "Enabled") ~= false then
+            r, g, b = P.RGB(Get(ID, "enemy" .. m.descriptor.key .. "Color"))
+        end
+    end
+    s.nameText:SetTextColor(r, g, b, 1)
+end
+
 local function Render(editor, s)
     s.cell:SetShown(editor.sampleKind == s.prefix)
     s.title:SetShown(editor:LayerOn("guides"))
     local m = Metrics(editor, s, s.metrics)
-    m.barSettings = editor.barSettings or P.S.Config(ID)
+    m.barSettings = Style.ScopeBars(editor.barSettings or P.S.Config(ID), m.scope)
     if editor.statusSample and editor.statusSample ~= "Level" then m.levelMode = nil end
     local sample = editor.highlightSample
     local normalSelection = not sample or sample == "aggro"
@@ -714,6 +744,10 @@ local function Render(editor, s)
     RenderVisibility(editor, s, m)
     P.NameplatesPreviewLayout.RenderName(s, m, Get, SetupNumber, Place)
     RenderHighlight(editor, s, m)
+    local bars = m.barSettings
+    local slanted = s.prefix == "enemy" and not m.skinDisabled and not m.namesOnly
+        and bars.look ~= 2 and bars.enemy and bars.enemySlantedHealth == true or false
+    Style.SetSlantedSample(s.bar, s.border, slanted, s.progress, s.pattern, s.back, s.nativeBorder, s.aggroFlash)
     P.NameplatesPreviewDecor.PaintHealthChrome(editor, s, m, not m.skinDisabled and m.barSettings.nativeHealthBackgroundTexture or "")
     P.NameplatesPreviewDecor.PaintLevel(editor, s, m, SetupNumber, Place)
     RenderHealth(editor, s, m)
@@ -721,32 +755,7 @@ local function Render(editor, s)
     RenderTarget(editor, s, m)
     RenderMarkers(editor, s, m)
     RenderFonts(s, m)
-    s.nameFormatState = s.nameFormatState or {}
-    s.nameFormatState.sampleNPC = s.prefix == "enemy" and not editor.enemyPlayer
-    local nameLook = P.Suite.NameplateText.Compile(P.S.Config(ID), s.prefix)
-    if not (m.npcWorldName or m.skinDisabled) then
-        P.Suite.NameplateText.Paint(s.nameText, s.nameFormatState, s.nameText:GetText(), nameLook)
-    end
-    if m.nameOnlyScope then
-        if s.prefix == "enemy" and editor.enemyPlayer and Get(ID, "enemyPlateNameClassColor") then
-            local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS.WARRIOR
-            if color then s.nameText:SetTextColor(color.r, color.g, color.b, 1) end
-        elseif not (s.prefix == "enemy" and editor.enemyPlayer) then
-            local r, g, b = P.RGB(m.healthColor)
-            local scope = m.nameOnlyScope
-            if Get(ID, scope .. "PlateNameTypeColor") then
-                if scope == "friendlyNpc" then
-                    local red, green, blue, custom = P.Suite.NameplateExtensions.NameOnlyNPCColor(P.S.Config(ID), scope)
-                    if custom then r, g, b = red, green, blue end
-                elseif not m.roleFillColor and scope == "neutral" and Get(ID, "enemyNeutralEnabled") ~= false then
-                    r, g, b = P.RGB(Get(ID, "enemyNeutralColor"))
-                elseif not m.roleFillColor and scope == "enemy" and m.descriptor and Get(ID, "enemy" .. m.descriptor.key .. "Enabled") ~= false then
-                    r, g, b = P.RGB(Get(ID, "enemy" .. m.descriptor.key .. "Color"))
-                end
-            end
-            s.nameText:SetTextColor(r, g, b, 1)
-        end
-    end
+    RenderNameText(editor, s, m)
     P.NameplatesPreviewDecor.PaintMirroredHeader(s, m, Get, P.S.Config(ID))
     RenderCastAndAuras(editor, s, m)
     RenderRaid(editor, s, m)

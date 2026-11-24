@@ -223,10 +223,15 @@ local function Build(ctx, builder)
         if P.NameplateFonts.IsTypography(rule.key) then rules[#rules + 1] = rule end
     end
     P.RuleSection(ctx, builder, PAGE, ID, "opt_fonts_nameplate_text", Tr("Nameplate text"), rules)
+    P.NameplateFonts.BuildColors(ctx, builder)
+end
+
+local function BuildScopeColors(ctx, builder)
+    if Suite.HostBridge.IsNameplateFontScope() then P.NameplateFonts.BuildColors(ctx, builder) end
 end
 
 function UI.Register()
     if not Suite.Client.isMainline then return end
-    if P.NameplateFonts.HasLinks() then return end
-    UI.registered = Suite.HostBridge.RegisterPageTail(P.M, PAGE, "MSUF_Suite.NameplateTypography", { build = Build })
+    local build = P.NameplateFonts.HasLinks() and BuildScopeColors or Build
+    UI.registered = Suite.HostBridge.RegisterPageTail(P.M, PAGE, "MSUF_Suite.NameplateTypography", { build = build })
 end

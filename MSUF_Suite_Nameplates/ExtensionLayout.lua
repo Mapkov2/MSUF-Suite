@@ -118,6 +118,14 @@ local function Layer(records, region, alpha)
     if alpha == 1 then records[region] = nil end
 end
 
+function L.FadeText(state, label)
+    local fade = state.layerFade
+    if not fade or fade.text == 1 then return end
+    local records = state.layers or {}
+    Layer(records, label, fade.text)
+    if next(records) then state.layers = records end
+end
+
 local function RestoreLayers(state)
     local records = state.layers
     if records then
@@ -153,6 +161,9 @@ function L.Layers(state, fade, force)
         if visual.gradient then NS.NameplateStyle.Gradient.SetAlpha(visual.gradient, fade.health) end
     end
     for _, key in ipairs(PREDICTION) do Layer(records, health[key], fade.prediction) end
+    if state.labels then
+        for _, label in pairs(state.labels) do Layer(records, label, fade.text) end
+    end
     local bar = P.Power.EnemyBar and P.Power.EnemyBar(uf)
     if bar then
         Layer(records, bar:GetStatusBarTexture(), fade.power)

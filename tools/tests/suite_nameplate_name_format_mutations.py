@@ -9,8 +9,9 @@ cases = [
     ("secret restore", "runtime", "    if not S.Public(current) then\n        ForgetPlain(state)\n        return\n    end", ""),
     ("pooled identity", "runtime", "    Clear(state)\nend\n", "end\n"),
     ("deferred replay", "runtime", "M.pendingPlates[uf], state.look = true, nil", "M.pendingPlates[uf] = true"),
-    ("mapped owner", "runtime", "M.activeUnits[unit] ~= uf or not M.config[prefix]", "not M.config[prefix]"),
-    ("side switch", "runtime", "M.activeUnits[unit] ~= uf or not M.config[prefix]", "M.activeUnits[unit] ~= uf"),
+    ("mapped owner", "runtime", "    if M.activeUnits[unit] ~= uf then return end", "    if not unit then return end"),
+    ("side switch", "runtime", "if not look or not M.config[look.visualSide] then return end", "if not look then return end"),
+    ("neutral scope", "runtime", 'if kind == "neutralNpc" then scope =', 'if kind == "enemyNpc" then scope ='),
     ("restricted color", "runtime", "(look.customColor or look.shared) and state.r", "(look.customColor or look.shared)"),
     ("shared opacity", "helper", "look.shared and look.shared.textColor.a or 1", "1"),
     ("warm work", "runtime", "    if enabled and state and state.unit == unit and state.look == look then return end", ""),
@@ -29,4 +30,4 @@ with tempfile.TemporaryDirectory(prefix="suite-name-format-mutations-") as temp:
         assert result.returncode != 0, label+" mutation survived"
         assert "cannot open" not in result.stderr and "syntax error" not in result.stderr, label+" failed to parse"
         print("rejected "+label)
-print("PASS eight nameplate behavior/secret/performance mutations rejected")
+print(f"PASS {len(cases)} nameplate behavior/secret/performance mutations rejected")

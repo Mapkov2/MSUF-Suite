@@ -163,7 +163,8 @@ X.TextIndicators = {
     [9] = { element = "ExtraTextAbsorb", label = "Absorb amount", anchor = 4, y = 0 },
     [10] = { element = "ExtraTextForces", label = "Mythic+ enemy forces", anchor = 4, y = -12 },
 }
-X.FirstTextSource, X.LastTextSource = 2, 10
+X.FirstTextSource, X.LastTextSource, X.NPCTitleSource = 2, 10, 5
+X.NPCSubtitlePoint = { "TOP", "name", "BOTTOM", 0, -2 }
 
 function X.TextKey(scope, source)
     return scope .. X.TextIndicators[source].element
@@ -272,7 +273,7 @@ function X.ReadOpacity(c, scope)
     if health == 1 and background == 1 and power == 1 and powerBackground == 1 and ooc == 1 then return end
     local text = c[key .. "KeepText"] == true
     return { health = health, background = background, power = power, powerBackground = powerBackground, ooc = ooc,
-        text = text and 1 or health, powerText = text and 1 or power,
+        text = text and 1 or math.min(health, background), powerText = text and 1 or power,
         prediction = c[key .. "KeepPrediction"] == true and 1 or health }
 end
 
@@ -318,6 +319,7 @@ local function TextIndicators(c, plan, scope, entry)
             }
             entry.slots[#entry.slots + 1] = slot
             if source == 3 then entry.questSlot = slot end
+            if source == X.NPCTitleSource then entry.titleSlot = slot end
             entry.sources[source] = true
             plan.sources[source] = true
         end

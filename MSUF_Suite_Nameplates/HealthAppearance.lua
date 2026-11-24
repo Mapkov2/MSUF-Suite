@@ -33,7 +33,7 @@ local function RoleFillColor(health, prefix)
     return c[keys.color]
 end
 
-local function PaintFill(health, visual, prefix)
+local function PaintFill(uf, health, visual, prefix)
     local hex = RoleFillColor(health, prefix)
     if not hex then return ShowVisual(visual.fill, false) end
     local fillTexture = health:GetStatusBarTexture()
@@ -44,25 +44,26 @@ local function PaintFill(health, visual, prefix)
         visual.fillTarget = fillTexture
     end
     local path = visual.focusFill or Textures.healthFill
+    if M.scopedBars then path = Textures.HealthFill(uf) end
     if visual.fillColor ~= hex or visual.fillPath ~= path then Textures.TintRole(visual, hex, path) end
     ShowVisual(visual.fill, true)
 end
 
-local function PaintHealth(health, visual, prefix)
-    if M.config.enemySlantedHealth or visual.slanted then private.SlantedHealth.Visual(health, visual) end
+local function PaintHealth(uf, health, visual, prefix, scope, bars)
     local c, keys = M.config, Key[prefix]
+    if c.enemySlantedHealth or visual.slanted then private.SlantedHealth.Visual(health, visual) end
     local backColor = c[keys.BackdropColor]
     local backAlpha = (c[keys.BackdropAlpha] or 100) / 100
     if visual.backColor ~= backColor or visual.backAlpha ~= backAlpha then
         Color(visual.back, backColor, backAlpha)
         visual.backColor, visual.backAlpha = backColor, backAlpha
     end
-    local borderSize = outlineSizes[prefix]
-    local borderColor = M.barSettings[keys.BorderColor]
+    local borderSize = outlineSizes[scope]
+    local borderColor = bars[keys.BorderColor]
     if not Selection.highlights then Border(visual, health, borderSize, borderColor) end
-    local customBackground = Textures.healthBack and Textures.HealthBackground(prefix)
+    local customBackground = (M.scopedBars or Textures.healthBack) and Textures.HealthBackground(prefix, scope)
     ShowVisual(visual.back, not customBackground and c[keys.BackdropEnabled] ~= false and backAlpha > 0)
-    PaintFill(health, visual, prefix)
+    PaintFill(uf, health, visual, prefix)
     local facts = M.facts[health]
     local marker, quest = facts and facts.marker, facts and facts.quest
     PaintMarker(visual.elite, health, "elite", c[keys.EliteMarker] and marker,

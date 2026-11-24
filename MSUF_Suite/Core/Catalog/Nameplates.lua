@@ -650,6 +650,8 @@ for _, prefix in ipairs({ "enemy", "friendly" }) do
     nameTextRules[#nameTextRules + 1] = B.Bool(prefix .. "NameColorEnabled", "Use custom name color", false)
     nameTextRules[#nameTextRules + 1] = B.Color(prefix .. "NameColor", prefix == "enemy" and "Enemy name color" or "Friendly name color", "ffffff")
 end
+nameTextRules[#nameTextRules + 1] = B.Bool("neutralNameColorEnabled", "Use custom name color", false)
+nameTextRules[#nameTextRules + 1] = B.Color("neutralNameColor", "Neutral name color", "ffffff")
 B.Section(id, "nameText", "Name formats and colors", nameTextRules)
 
 local function BuildLooks()
@@ -784,7 +786,12 @@ for _, prefix in ipairs({ "enemy", "friendly" }) do
         rule.enableKey = prefix .. "NameFormat"
         rule.requiresChoice = { key = prefix .. "NameFormat", values = { [2] = true, [4] = true } }
     end
-    rules[prefix .. "NameColor"].enableKey = prefix .. "NameColorEnabled"
+end
+for _, scope in ipairs({ "enemy", "neutral", "friendly" }) do
+    local color = rules[scope .. "NameColor"]
+    color.enableKey = scope .. "NameColorEnabled"
+    color.inlineColorPage = "opt_fonts"
+    rules[color.enableKey].searchSection = color.label
 end
 EnabledBy({ "enemyThresholdPercent", "enemyThresholdWidth", "enemyThresholdColor" }, "enemyThresholdEnabled")
 EnabledBy({ "enemyFocusMarkerSize", "enemyFocusMarkerColor", "enemyFocusMarkerX", "enemyFocusMarkerY" }, "enemyFocusMarker")
@@ -795,7 +802,7 @@ EnabledBy({ "enemyFocusMarkerSize", "enemyFocusMarkerColor", "enemyFocusMarkerX"
 -- test is the one Context:CVar makes before a write and Blizzard's own
 -- Settings make for the stacking option: a hidden control could not write.
 spec.controlAvailable = function(rule)
-    if rule.key == "nativeProfileMode" or rule.key == "enemy" or rule.key == "friendly"
+    if rule.key == "nativeProfileMode" or rule.key == "protectImport" or rule.key == "enemy" or rule.key == "friendly"
         or rule.key == "enabled" or rule.key == "plateEnemies" or rule.key == "plateFriendlyPlayers"
         or rule.key == "neutralNpcVisible" or rule.key == "hideHealthBarBorders" then
         return false

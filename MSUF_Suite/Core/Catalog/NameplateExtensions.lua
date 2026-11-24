@@ -40,7 +40,41 @@ B.Section(id, "barGradients", "Textures & Gradient", {
     B.Texture("powerFillTexture", "Power bar texture"),
     B.Texture("powerBackgroundTexture", "Power background texture"),
 })
-NS.SuiteCatalog[id].rules.barsOverrideSaved.hidden = true
+local plateRules = NS.SuiteCatalog[id].rules
+plateRules.barsOverrideSaved.hidden = true
+
+local function ScopedAppearance(scope, group, title, label)
+    local style = NS.NameplateStyle
+    local toggle = style.AppearanceSwitch(scope, group)
+    local enabled = B.Bool(toggle, label, false)
+    enabled.appearanceScope, enabled.appearanceGroup = scope, group
+    enabled.requiresChoice = { key = "look", values = { [1] = true, [3] = true, [4] = true } }
+    local saved = B.Bool(toggle .. "Saved", label, false)
+    saved.hidden = true
+    local rules, remap = { enabled, saved }, {}
+    local fields, ordered = style.AppearanceFields(scope, group)
+    for key, parent in pairs(fields) do remap[parent] = key end
+    for _, key in ipairs(ordered) do
+        local parent = fields[key]
+        local source = plateRules[parent]
+        if parent:match("NativeBorderEnabled$") and not source then
+            source = B.Bool(parent, "Show Blizzard health bar border", true)
+            source.client = "forever"
+        end
+        local rule = NS.CopyValue(source)
+        rule.key = key
+        rule.enableKey = remap[source.enableKey] or toggle
+        rule.disabledBy = remap[source.disabledBy]
+        rule.requiresChoice = enabled.requiresChoice
+        rules[#rules + 1] = rule
+    end
+    B.Section(id, scope .. (group == "outline" and "StyleOutline" or "StyleTextures"), title, rules)
+end
+
+for _, scope in ipairs(X.OpacityScopes) do
+    ScopedAppearance(scope, "outline", "Frame Outline", "Customize frame outline")
+    ScopedAppearance(scope, "textures", "Textures & Gradient", "Customize textures and gradient")
+end
 
 local casting = {
     B.Bool("interruptFeedbackEnabled", "Customize interrupted-cast feedback", false),
@@ -121,7 +155,7 @@ local legacyNeutral = B.Bool("neutralNpcContextOverride", "Customize neutral vis
 legacyContext.hidden, legacyNeutral.hidden = true, true
 local context = { legacyContext, legacyNeutral, B.Bool("neutralNpcVisible", "Show neutral nameplates", true) }
 for _, scope in ipairs(X.OpacityScopes) do
-    context[#context + 1] = B.Bool(X.ContextKeys[scope], legacyContext.label, false)
+    context[#context + 1] = B.Bool(X.ContextKeys[scope], "Customize Nameplates", false)
 end
 local dimensions = {}
 for _, kind in ipairs({ "neutralNpc", "friendlyNpc" }) do

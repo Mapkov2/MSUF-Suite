@@ -60,6 +60,7 @@ local private = {
     Layout = { Observe = function() observes = observes + 1 end },
 }
 private.Suite = private.NS
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateExtensions.lua"))("Suite", private.NS)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("Nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeBars.lua"))("Suite", private.NS)
 local function Region(atlas)
@@ -99,6 +100,7 @@ local function Region(atlas)
 end
 
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("Suite", private.NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateShape.lua"))("Suite", private.NS)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CastSettings.lua"))("Nameplates", private)
 assert(loadfile((arg and arg[2]) or root .. "/MSUF_Suite_Nameplates/Textures.lua"))("Nameplates", private)
 local T = private.Textures
@@ -1005,4 +1007,45 @@ do
     assert(not fill.mask and not cast.Background.mask)
     T.Configure({})
 end
-print("Nameplate textures: native fills and backgrounds, cast states, no repeated writes, release, restriction and links passed")
+do
+    local style = private.NS.NameplateStyle
+    local config = { look = 3, nativeHealthFillTexture = "sharedFill", nativeHealthBackgroundTexture = "sharedBack",
+        neutralStyleTexturesOverride = true, neutralStyleNativeHealthFillTexture = "neutralFill",
+        neutralStyleNativeHealthBackgroundTexture = "", neutralStyleOutlineOverride = true,
+        neutralStyleOutlineMode = 3, neutralStyleBorderSize = 4, neutralStyleBorderEnabled = true,
+        friendlyNpcStyleOutlineOverride = true, friendlyNpcStyleOutlineMode = 2 }
+    local function Configure()
+        local scoped = {}
+        for _, scope in ipairs(private.NS.NameplateExtensions.OpacityScopes) do
+            local bars = style.ScopeBars(config, scope)
+            if bars ~= config then scoped[scope] = bars end
+        end
+        T.Configure(config, nil, next(scoped) and scoped or nil)
+    end
+    Configure()
+    private.UnitKinds[uf] = "neutralNpc"
+    T.Apply(uf)
+    assert(health.barTexture.path == "neutralFill" and not health.bgTexture.path)
+    assert(style.ScopeBars(config, "neutral").enemyBorderSize == 4 and config.enemyBorderSize == nil)
+    local writes = health.barTexture.writes
+    Configure()
+    T.Apply(uf)
+    assert(health.barTexture.writes == writes, "unchanged scoped settings rewrote a plate")
+    private.UnitKinds[uf] = "enemyNpc"
+    T.Apply(uf)
+    assert(health.barTexture.path == "sharedFill" and health.bgTexture.path == "sharedBack",
+        "the enemy plate inherited the neutral texture after its reaction changed")
+    private.UnitKinds[uf] = "friendlyNpc"
+    T.Apply(uf)
+    assert(health.barTexture.path == "sharedFill" and not health.bgTexture.path,
+        "the friendly NPC lost its native outline")
+    private.UnitKinds[uf] = "friendlyPlayer"
+    T.Apply(uf)
+    assert(health.bgTexture.path == "sharedBack", "a friendly player inherited the NPC outline")
+    config.look = 2
+    assert(style.ScopeBars(config, "neutral") == config, "the Blizzard look kept the scoped override active")
+    private.UnitKinds[uf] = nil
+    T.Restore(uf)
+    T.Configure({})
+end
+print("Nameplate textures: native fills and backgrounds, scoped appearance, cast states, release and restriction passed")

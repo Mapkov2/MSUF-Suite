@@ -195,6 +195,22 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     assert(allocated < .05, "repeated native names allocated " .. allocated .. " KB")
     assert(hooks == 1, "name posthook installed more than once")
     provider, config.nameTextUseCustomSettings, config.enemyNameColorEnabled = engine, false, false
+    config.enemyNameColorEnabled, config.enemyNameColor = true, "00ff00"
+    config.neutralNameColorEnabled, config.neutralNameColor = true, "ffff00"
+    config.friendlyNameColorEnabled, config.friendlyNameColor = true, "ff00ff"
+    config.friendly = true
+    Names.Configure(config)
+    Names.Apply(uf, "enemy", "nameplate1", "neutralNpc")
+    assert(label.r == 1 and label.g == 1 and label.b == 0, "neutral plate inherited the enemy name color")
+    Native("Neutral Native Repaint")
+    assert(label.r == 1 and label.g == 1 and label.b == 0, "native repaint lost the neutral override")
+    Names.Apply(uf, "enemy", "nameplate1", "enemyNpc")
+    assert(label.r == 0 and label.g == 1 and label.b == 0, "reaction change did not repaint the name")
+    Names.Apply(uf, "friendly", "nameplate1", "neutralNpc")
+    assert(label.r == 1 and label.g == 1 and label.b == 0, "a friendly-routed neutral inherited the friendly color")
+    Names.Apply(uf, "friendly", "nameplate1", "friendlyNpc")
+    assert(label.r == 1 and label.g == 0 and label.b == 1, "friendly override did not follow a recycled nameplate")
+    config.enemyNameColorEnabled, config.neutralNameColorEnabled, config.friendlyNameColorEnabled = false, false, false
     local stored = config.enemyNameMaxChars
     db.general.nameFormat = "ABBREV_SHORT"
     assert(NS.NameplateText.InheritedValue(config, "enemyNameFormat") == 4)

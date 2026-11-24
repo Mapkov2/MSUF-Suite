@@ -242,6 +242,7 @@ local function Cast()
 end
 
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("Test", namespace)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateShape.lua"))("Test", namespace)
 local private = { NS = namespace }
 -- The combat-end owner (Textures.DeferCast): how often a castbar asked for it.
 local owed = setmetatable({}, { __mode = "k" })

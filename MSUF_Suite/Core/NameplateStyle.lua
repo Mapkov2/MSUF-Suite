@@ -522,6 +522,46 @@ function Style.BarSettings(config, shared)
     return setmetatable(shared, { __index = config })
 end
 
+local APPEARANCE_SIDES = { enemy = "enemy", neutral = "enemy", friendly = "friendly", friendlyNpc = "friendly" }
+local APPEARANCE_GROUPS = {
+    outline = { "OutlineMode", "BorderEnabled", "NativeBorderEnabled", "BorderSize", "BorderColor", "BorderStyle", "OuterFrame", "OuterFrameSize",
+        "OuterFrameColor", "ShadowEnabled", "GlowEnabled", "GlowMode", "GlowColor", "EffectSize" },
+    textures = { "nativeHealthFillTexture", "nativeHealthBackgroundTexture",
+        "healthGradientEnabled", "healthGradientStrength", "healthGradientColor", "healthGradientDirLeft",
+        "healthGradientDirRight", "healthGradientDirUp", "healthGradientDirDown", "healthGlossEnabled", "healthGlossStrength" },
+}
+
+function Style.AppearanceFields(scope, group)
+    local side = APPEARANCE_SIDES[scope]
+    local keys, ordered = {}, {}
+    for _, field in ipairs(APPEARANCE_GROUPS[group]) do
+        local key = scope .. "Style" .. field:gsub("^%l", string.upper)
+        keys[key] = group == "outline" and side .. field or field
+        ordered[#ordered + 1] = key
+    end
+    return keys, ordered
+end
+
+function Style.AppearanceSwitch(scope, group)
+    return scope .. (group == "outline" and "StyleOutlineOverride" or "StyleTexturesOverride")
+end
+
+function Style.ScopeBars(bars, scope)
+    local side = APPEARANCE_SIDES[scope]
+    if not side or bars.look == 2 then return bars end
+    local outline = bars[Style.AppearanceSwitch(scope, "outline")]
+    local textures = bars[Style.AppearanceSwitch(scope, "textures")]
+    if not outline and not textures then return bars end
+    local values = {}
+    for group, on in pairs({ outline = outline, textures = textures }) do
+        if on then
+            for key, parent in pairs(Style.AppearanceFields(scope, group)) do values[parent] = bars[key] end
+        end
+    end
+    if outline then values.hideHealthBarBorders = false end
+    return setmetatable(values, { __index = bars })
+end
+
 local HIGHLIGHT_KEYS = { "target", "focus", "aggro", "mouseover" }
 
 function Style.HighlightOrder(order)

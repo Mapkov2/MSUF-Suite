@@ -2,13 +2,38 @@ local _, P = ...
 local Tr, HM = P.Tr, P.HM
 local PAGE, ID = "suite_nameplates", "nameplates"
 
+local RuleRow = P.RuleRow
+function P.RuleRow(page, id, rule, ...)
+    local row = RuleRow(page, id, rule, ...)
+    if not row or id ~= ID then return row end
+    if page == PAGE and rule.section and rule.section:match("StyleOutline$") and not rule.key:match("StyleBorderSize$") then
+        row.outlineFocus = false
+    end
+    if rule.appearanceScope then
+        row.set = function(on)
+            local values = { [rule.key] = on == true }
+            if on and not P.Get(ID, rule.key .. "Saved") then
+                local style = P.Suite.NameplateStyle
+                local config = P.S.Config(ID)
+                local bars = style.BarSettings(config, style.SharedBars())
+                for key, parent in pairs(style.AppearanceFields(rule.appearanceScope, rule.appearanceGroup)) do
+                    local value = bars[parent]
+                    if bars.hideHealthBarBorders and parent:match("OutlineMode$") then value = 4 end
+                    values[key] = value
+                end
+                values[rule.key .. "Saved"] = true
+            end
+            return P.SetMany(ID, values)
+        end
+    end
+    return row
+end
+
 local HELP = {
-    neutralBasics = P.Help("Neutral creatures share Enemy styling. Use Enable to show or hide neutral nameplates.",
+    neutralBasics = P.Help("Show neutral nameplates",
         "A neutral creature uses the Enemy rules once it enters combat."),
     friendlyNpcBasics = P.Help("Choose how friendly NPCs appear. Enable separate dimensions to give their health bars a different size.",
-        "Friendly NPCs share the Friendly appearance. In instances the game may restrict styling."),
-    general = P.Help("Pick a look: Mapko (recommended), Jundies, Blizzard (no skin) or Custom.",
-        "Mapko uses Modern plates, Medium size and the same bar dimensions on Retail and Forever. Guild names and titles also affect names in the world. Bind Toggle friendly NPC nameplates under MSUF Suite in Blizzard Key Bindings. Import protection keeps your current nameplates when importing a full Suite profile; explicit nameplate imports still replace them."),
+        "In instances the game may restrict styling."),
     enemy = P.Help("Set enemy nameplate size, text and appearance.", "Blizzard supplies the name and health values. Mapko requests full enemy plates and both health values so normal enemies show text too. Width and height change only the enemy health bar in pixels; 0 keeps the selected bar dimensions. Backdrop, border and role fill are separate live skin layers in the preview; right-click a layer for its setting. Role colors use the saved palette; mana is only a caster hint. Open the three-dot menu here or Nameplates in MSUF Colors to change the palette."),
     friendly = P.Help("Names, health bars and text on friendly plates.",
         "Show names for all friendly players, names for party and raid members, or health bars. Names only hides Blizzard bars, casts and auras for friendly players; it does not change NPC or enemy plates. Group / outsider in the preview only changes the sample. Blizzard can forbid changes to friendly plates in instances; those frames stay under Blizzard's control."),
@@ -19,11 +44,11 @@ local HELP = {
         "Blizzard owns aggro flashes, progressive highlights and soft target icons. Optional colors tint Blizzard's existing threat textures; its health bar threat color stays under the role-color overlay. Soft target icons also need the nameplate icon switch enabled and a matching soft target in game."),
     decor = P.Help("Frame styling and clear target highlights.",
         "Frames join aligned bars; detached bars keep separate frames. Effects are static. Threshold marks a fixed percentage. Preview switches apply live."),
-    native = P.Help("Set the shared nameplate style, size and player names."),
+    native = P.Help("Presets and the Blizzard nameplate style and size apply to every type."),
     visibility = P.Help("Which units get nameplates and how plates share space.",
         "Set visibility for each unit type and how plates share space."),
-    distance = P.Help("How far plates show, how they fade and shrink, and how stacked plates sit.",
-        "Set the maximum distance, spacing and screen margins here."),
+    stacking = P.Help("Blizzard shares stacking spacing and motion speed across all nameplate types."),
+    distance = P.Help("Blizzard shares distance, fading and screen margins across all nameplate types."),
 }
 
 -- Where every nameplate setting shows, in page order: one accordion per
@@ -138,6 +163,7 @@ local function PositionKeys(spec)
     for _, tab in ipairs(spec.tabs or {}) do
         for _, key in ipairs(tab.keys) do
             local rule = P.catalog[ID].rules[key]
+            if rule and rule.appearanceScope then keys[#keys + 1] = rule.key .. "Saved" end
             if rule and rule.previewFontSizeOverride then keys[#keys + 1] = rule.previewFontSizeOverride end
         end
     end
@@ -159,6 +185,10 @@ end
 -- The same section and tab descriptors drive placement and exact navigation.
 local placed
 local selectedTabs = {}
+local function HasColorAction(spec)
+    return P.W.OpenContextColors and (spec.styleScope or spec.textCards)
+end
+
 local function Place(keys, sectionId, spec, tab)
     for _, key in ipairs(keys or {}) do
         if not placed[key] and not (tab and spec.sharedSettings and spec.sharedSettings[key]) then
@@ -237,11 +267,13 @@ function P.NameplateSearchTarget(rule)
         return PAGE .. "_preview_" .. (side or "current"), side, false
     end
     if section then
-        local side = spec and (spec.searchScope or spec.statusItems and spec.positionSide)
+        local side = P.NameplatesWorkspace.NameOptionScope(rule.key)
+            or spec and (spec.searchScope or spec.statusItems and spec.positionSide)
         if rule.section == "plateHighlightPatterns" then side = spec.styleScope end
         local textIndicator = spec and spec.statusItems and rule.section == "plateExtraText"
         if textIndicator then side = spec.plateScope end
-        local colorTarget = placement.tab == "colors" or textIndicator
+        if spec.styleScope and rule.section and rule.section:match("Style%u") then side = spec.styleScope end
+        local colorTarget = textIndicator or HasColorAction(spec)
         return section, side, colorTarget and rule.color and true or nil
     end
     if rule.key == "enabled" then return PAGE .. "_enemyBasics", "enemy", false end
@@ -265,40 +297,82 @@ function P.OpenNameplateSetting(key)
     end
     local sectionId, _, exact = P.NameplateSearchTarget(rule)
     if not sectionId or exact == false then return false end
+    local scope = P.NameplatesWorkspace.NameOptionScope(key)
+    if scope and P.NameplatesWorkspace.Kind() ~= scope then P.NameplatesWorkspace.Open(scope) end
     local page = P.M.cache and P.M.cache[PAGE]
     RevealSection(page and page.sections and page.sections[sectionId])
     return P.Suite.HostBridge.OpenExactMenuSetting(P.M, PAGE, sectionId, "msufsuite.nameplates." .. key)
 end
 
--- One panel per tab with its rules; a search hit on a rule selects the
--- rule's tab first (the preview's exact setting jump uses the same hook).
-local function ColorTab(panel, width, spec, tab, sectionId, y)
-    local card = P.W.ControlCard and P.W.ControlCard(panel, Tr("Colors"), nil, 16, y, width, 48)
-        or P.T.Panel(panel, nil, P.T.colors.panel2, P.T.colors.borderSoft)
-    if not P.W.ControlCard then
-        card:SetPoint("TOPLEFT", 16, y)
-        card:SetSize(width, 48)
-        P.Text(card, "Colors", 16, -14, width - 60)
+local function NamePalette()
+    local scope = P.NameplatesWorkspace.Kind()
+    if scope == "friendlyNpc" then
+        local fonts = P.NameplateFonts
+        local color = fonts and fonts.FriendlyNPCColorTarget()
+        if color then return {}, nil, function() return { color } end end
+    elseif scope == "neutral" then
+        return Rules({ "enemyNeutralColor" })
+    elseif scope == "enemy" then
+        local keys = {}
+        for _, role in ipairs(P.Suite.NameplateStyle.Roles) do keys[#keys + 1] = "enemy" .. role.key .. "Color" end
+        return Rules(keys)
     end
-    local dots = tab.id == "colors" and (spec.styleScope == "enemy" or spec.styleScope == "neutral")
-    dots = dots and P.NameplatesAuraUI
-    local shortcut = P.AttachRuleColors(card, Tr("Colors"), ID, tab.colorRules, nil, nil,
-        dots and dots.ColorTargets, dots and P.Suite.NameplateAuraColors.LIMIT + 2)
-    if shortcut and P.M.RegisterControlMetadata then
-        local meta = P.Meta(PAGE, ID, spec.key .. ".colors", "action", sectionId)
-        P.M.RegisterControlMetadata(shortcut, meta, "Colors", "button")
-    end
-    return y - 60
 end
 
+local function SectionColors(spec)
+    local function Relevant(rule) return P.RuleEnabled(ID, rule) end
+    local function Settings()
+        local selected = selectedTabs[spec.key] or spec.tabs[1].id
+        if spec.textCards and selected == "name" then return NamePalette() end
+        local palette
+        for _, tab in ipairs(spec.tabs) do
+            if tab.id == "colors" then palette = tab.colorRules end
+            if tab.id == selected and tab.colorRules then
+                if tab.id == "outline" or tab.id == "textures" then return tab.colorRules, Relevant end
+                palette = tab.colorRules
+                break
+            end
+        end
+        if spec.colors then return Rules(spec.colors) end
+        local auraTargets = (spec.styleScope == "enemy" or spec.styleScope == "neutral") and P.NameplatesAuraUI.ColorTargets
+        return palette, nil, auraTargets
+    end
+    return function(popup)
+        local button = P.W.TopButton(popup, "Colors", 250, 24)
+        button:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -76)
+        HM.SkipHistoryCheckpoint(button)
+        popup:SetHeight(116)
+        popup:HookScript("OnShow", function()
+            local rules, enabled = Settings()
+            button:SetShown(rules ~= nil)
+            popup:SetHeight(rules and 116 or 82)
+            local available = rules ~= nil and enabled == nil
+            if rules and enabled then
+                for _, rule in ipairs(rules) do
+                    if enabled(rule) then available = true break end
+                end
+            end
+            P.W.SetControlEnabled(button, available)
+        end)
+        button:SetScript("OnClick", function()
+            if P.Combat() then return end
+            local rules, enabled, extra = Settings()
+            if not rules then return end
+            popup:Hide()
+            P.OpenRuleColors(popup, "Colors", ID, rules, enabled, extra)
+        end)
+    end
+end
+
+-- A search hit selects the rule's lazy tab before the host looks up its control.
 local TAB_BODY_TOP = 59
 
-local function Panels(ctx, builder, body, width, spec, sectionId)
+local function Panels(ctx, builder, body, width, spec, sectionId, tabBodyTop)
     local panels, heights, byTab = {}, {}, {}
     local selectItem
     for _, tab in ipairs(spec.tabs) do
         local panel = CreateFrame("Frame", nil, body)
-        panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -TAB_BODY_TOP)
+        panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -tabBodyTop())
         panel:SetSize(width + 32, 100)
         panels[tab.id], byTab[tab.id] = panel, tab
     end
@@ -311,7 +385,7 @@ local function Panels(ctx, builder, body, width, spec, sectionId)
                 heights[tabId] = height
                 panel:SetHeight(height)
                 if (selectedTabs[spec.key] or spec.tabs[1].id) == tabId then
-                    P.FinishBody(builder, body, -TAB_BODY_TOP - height)
+                    P.FinishBody(builder, body, -tabBodyTop() - height)
                 end
             end)
             return
@@ -322,7 +396,6 @@ local function Panels(ctx, builder, body, width, spec, sectionId)
             y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
         end
         if tab.before then y = tab.before(ctx, panel, y, width, sectionId, spec) end
-        if tab.colorRules then y = ColorTab(panel, width, spec, tab, sectionId, y) end
         local entries
         if spec.textCards then
             y, entries = P.NameplatesSectionsLayout.TextCards(ctx, panel, y, width, spec, tab, sectionId)
@@ -340,10 +413,16 @@ local function Panels(ctx, builder, body, width, spec, sectionId)
             y, rest = P.RuleGrid(ctx, panel, PAGE, ID, rules, y, width, nil, sectionId)
             for _, entry in ipairs(rest) do entries[#entries + 1] = entry end
         else
-            y, entries = P.RuleGrid(ctx, panel, PAGE, ID, tab.rules, y, width, nil, sectionId)
+            y, entries = P.RuleGrid(ctx, panel, spec.page or PAGE, ID, tab.rules, y, width, nil, sectionId)
         end
         for _, entry in ipairs(entries or {}) do
-            if entry.widget then HM.SetSearchTargetPrepare(entry.widget, function() spec.select(tab.id) end) end
+            if entry.widget then
+                local scope = P.NameplatesWorkspace.NameOptionScope(entry.rule.key)
+                HM.SetSearchTargetPrepare(entry.widget, function()
+                    if scope and P.NameplatesWorkspace.Kind() ~= scope then P.NameplatesWorkspace.Open(scope) end
+                    spec.select(tab.id)
+                end)
+            end
         end
         if tab.extra then y = tab.extra(ctx, panel, y, width, sectionId, spec) end
         heights[tabId] = -y + 14
@@ -354,15 +433,20 @@ end
 
 local function Tabs(ctx, builder, body, spec, sectionId)
     local width = math.max(240, (HM.GetSectionWidth(body) or builder.width or 720) - 32)
-    local panels, heights, ensure, selectItem = Panels(ctx, builder, body, width, spec, sectionId)
+    local tabs
+    local function TabBodyTop()
+        return TAB_BODY_TOP + (tabs and tabs:GetHeight() - 26 or 0)
+    end
+    local panels, heights, ensure, selectItem = Panels(ctx, builder, body, width, spec, sectionId, TabBodyTop)
     local values = {}
     for _, tab in ipairs(spec.tabs) do
         values[#values + 1] = { value = tab.id, text = Tr(tab.label) }
     end
     local defaultTab = spec.tabs[1].id
-    local tabs, refresh, _, selectTab = P.W.SegmentTabs(ctx, body, {
-        label = "", compact = true, x = 16, y = -12, values = values, frames = panels,
-        width = math.min(width, math.max(360, (spec.tabWidth or 120) * #values)),
+    local refresh, _, selectTab
+    tabs, refresh, _, selectTab = P.W.SegmentTabs(ctx, body, {
+        label = "", compact = true, wrap = true, x = 16, y = -12, values = values, frames = panels,
+        width = width,
         defaultTab = defaultTab,
         get = function() return selectedTabs[spec.key] or defaultTab end,
         set = function(tab)
@@ -371,12 +455,22 @@ local function Tabs(ctx, builder, body, spec, sectionId)
         end,
         afterRefresh = function(tab)
             ensure(tab)
-            P.FinishBody(builder, body, -TAB_BODY_TOP - (heights[tab] or 100))
+            P.FinishBody(builder, body, -TabBodyTop() - (heights[tab] or 100))
         end,
     })
+    local function LayoutPanels()
+        local top = TabBodyTop()
+        for _, panel in pairs(panels) do
+            panel:ClearAllPoints()
+            panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -top)
+        end
+        P.FinishBody(builder, body, -top - (heights[selectedTabs[spec.key] or defaultTab] or 100))
+    end
+    tabs:HookScript("OnSizeChanged", LayoutPanels)
+    LayoutPanels()
     P.HideControlTitle(tabs)
     if P.M.RegisterControlMetadata then
-        P.M.RegisterControlMetadata(tabs, P.Meta(PAGE, ID, spec.key .. ".tabs", "action", sectionId), spec.title, "segment")
+        P.M.RegisterControlMetadata(tabs, P.Meta(spec.page or PAGE, ID, spec.key .. ".tabs", "action", sectionId), spec.title, "segment")
     end
     return refresh, selectTab, selectItem
 end
@@ -408,7 +502,8 @@ local function PrepareSearch(page, target)
     if rule then
         local _, side = P.NameplateSearchTarget(rule)
         if side and P.NameplatesWorkspace.Kind() ~= side
-            and (rule.section == "plateHighlightPatterns" or P.NameplatesWorkspace.Side() ~= side) then
+            and (rule.section == "plateHighlightPatterns" or P.NameplatesWorkspace.NameOptionScope(key)
+                or P.NameplatesWorkspace.Side() ~= side) then
             P.NameplatesWorkspace.Open(side)
         end
     end
@@ -417,13 +512,14 @@ local function PrepareSearch(page, target)
     local entry = P.M.cache and P.M.cache[PAGE]
     if entry and entry.sections then RevealSection(entry.sections[placement.section]) end
     local spec, tab = placement.spec, placement.tab
-    if not spec or not (spec.prepare or tab) then return end
+    if not spec or not (spec.prepare or tab or rule and rule.color and HasColorAction(spec)) then return end
     if P.Combat() then return false end
     if spec.prepare then return spec.prepare(key) end
+    tab = tab or spec.tabs[1].id
     selectedTabs[spec.key] = tab
     if spec.revealStatus then spec.revealStatus(key) end
     local item = spec.statusSettings and spec.statusSettings[key]
-    local colorControl = tab == "colors" and spec.key .. ".colors"
+    local colorControl = HasColorAction(spec) and spec.key .. ".colors"
         or item and rule and rule.section == "plateExtraText" and item .. ".colors"
     if rule and rule.color and colorControl and P.W.SegmentTabs then
         local scope = next(spec.scopes)
@@ -488,7 +584,7 @@ local function FlatTabbedSection(ctx, builder, spec, sectionId, all, resetRules,
     end
     local reset = PositionKeys(spec)
     if spec.switch and not spec.sharedSwitch then reset[#reset + 1] = spec.switch end
-    local body = P.RuleSection(ctx, builder, PAGE, ID, sectionId, Tr(spec.title), displayRules,
+    local body = P.RuleSection(ctx, builder, spec.page or PAGE, ID, sectionId, Tr(spec.title), displayRules,
         { help = HELP[spec.help or spec.tabs[1].help], open = spec.open, resetKeys = reset, resetRules = resetRules, extra = Extra,
           head = P.NameplatesSectionsLayout.Header(ctx, spec, sectionId) })
     spec.select = function() return body end
@@ -496,8 +592,9 @@ local function FlatTabbedSection(ctx, builder, spec, sectionId, all, resetRules,
 end
 
 local function TabbedSection(ctx, builder, spec)
-    local pageEntry = P.M.cache and P.M.cache[PAGE]
-    local sectionId = PAGE .. "_" .. spec.key
+    local page = spec.page or PAGE
+    local pageEntry = P.M.cache and P.M.cache[page]
+    local sectionId = page .. "_" .. spec.key
     local all, resetRules = TabRules(spec)
     local headerSwitch = P.W.SectionSwitch
     if spec.switch and not headerSwitch then
@@ -516,14 +613,14 @@ local function TabbedSection(ctx, builder, spec)
         content = function(body)
             refresh, selectTab, selectItem = Tabs(ctx, builder, body, spec, sectionId)
             if spec.statusItems then spec.refreshStatusScope = selectItem end
-            if not spec.castCards then
+            if not spec.castCards and not HasColorAction(spec) then
                 P.AttachRuleColors(body, Tr(spec.title), ID, spec.statusItems and Rules(spec.colors) or all)
             end
         end,
         shell = function(body)
             spec.refreshStatusScope = nil
             spec.select = function(tab, item)
-                if P.M.cache and P.M.cache[PAGE] ~= pageEntry then return end
+                if P.M.cache and P.M.cache[page] ~= pageEntry then return end
                 if P.Combat() then return body end
                 if tab then selectedTabs[spec.key] = tab end
                 local entry = HM.GetSectionEntry(body)
@@ -538,12 +635,24 @@ local function TabbedSection(ctx, builder, spec)
             local keys = PositionKeys(spec)
             if spec.switch and not spec.sharedSwitch then keys[#keys + 1] = spec.switch end
             if #resetRules > 0 or #keys > 0 then
-                P.AttachSectionReset(ctx, body, Tr(spec.title), function() return P.ResetRules(ID, resetRules, nil, keys) end)
+                local colors = HasColorAction(spec) and SectionColors(spec)
+                local more = P.AttachSectionReset(ctx, body, Tr(spec.title), function()
+                    local rules = spec.textCards and P.NameplatesWorkspace.ActiveNameRules(resetRules) or resetRules
+                    return P.ResetRules(ID, rules, nil, keys)
+                end, nil, colors)
+                if colors and more and P.M.RegisterControlMetadata then
+                    local meta = P.Meta(page, ID, spec.key .. ".colors", "action", sectionId)
+                    P.M.RegisterControlMetadata(more, meta, "Colors", "button")
+                end
             end
         end,
         finish = function() refresh() end,
     })
 end
+
+P.NameplateStyleSections = {
+    sections = SECTIONS, ensure = EnsureSections, build = TabbedSection, rules = TabRules, positionKeys = PositionKeys,
+}
 
 -- MSUF owns the interrupt-ready indicator on these castbars: its switch and
 -- its look are MSUF's (Castbars > Interrupt Ready Indicator), drawn here by
@@ -622,17 +731,24 @@ function P.SelectNameplatesEnemyTab(tab)
     end
 end
 
-function P.OpenNameplateStatusSection(side, item)
-    if P.Combat() then return end
+local function StatusSection(scope)
     for _, spec in ipairs(SECTIONS) do
-        if spec.statusItems and spec.plateScope == P.NameplatesWorkspace.Kind() and spec.positionSide == side and spec.select then
-            local body = spec.select("basic", item)
-            if body and P.W.FocusCollapsibleSection then
-                P.W.FocusCollapsibleSection(body, { persist = true, flash = true })
-            end
-            return body
-        end
+        if spec.statusItems and spec.plateScope == scope and spec.select then return spec end
     end
+end
+
+local function FocusStatus(spec, item)
+    local body = spec.select("basic", item)
+    if body and P.W.FocusCollapsibleSection then
+        P.W.FocusCollapsibleSection(body, { persist = true, flash = true })
+    end
+    return body
+end
+
+function P.OpenNameplateStatusSection(side, item, scope)
+    if P.Combat() then return end
+    local spec = StatusSection(scope or P.NameplatesWorkspace.Kind())
+    if spec and spec.positionSide == side then return FocusStatus(spec, item) end
 end
 
 function P.OpenNameplateCastDetail(side, tab)
@@ -648,13 +764,22 @@ function P.OpenNameplateCastDetail(side, tab)
     end
 end
 
-function P.OpenNameplateStatusItem(side, key)
-    if P.Combat() then return end
-    local scope = P.NameplatesWorkspace.Kind()
-    for _, spec in ipairs(SECTIONS) do
-        local item = spec.plateScope == scope and spec.positionSide == side and spec.statusSettings and spec.statusSettings[key]
-        if item then return P.OpenNameplateStatusSection(side, item) end
+function P.NameplateStatusTarget(side, key, scope)
+    local spec = StatusSection(scope or P.NameplatesWorkspace.Kind())
+    if not spec or spec.positionSide ~= side then return end
+    local item = spec.statusSettings[key]
+    if item then return spec, item end
+    -- Friendly target arrows use the same settings as enemy target arrows.
+    if side == "friendly" and key and key:match("^enemyTarget") then
+        spec = StatusSection("enemy")
+        if spec and spec.statusSettings[key] == "target" then return spec, "target" end
     end
+end
+
+function P.OpenNameplateStatusItem(side, key, scope)
+    if P.Combat() then return end
+    local spec, item = P.NameplateStatusTarget(side, key, scope)
+    if spec then return FocusStatus(spec, item) end
 end
 
 local function Build(ctx)

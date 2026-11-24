@@ -78,6 +78,7 @@ Core\DataTextAppearance.lua
 Core\Catalog\BuffReminders.lua
 Core\Catalog\Chat.lua
 Core\NameplateStyle.lua
+Core\NameplateShape.lua
 Core\NameplateGradient.lua
 Core\NameplatePowerStyle.lua
 Core\NameplateText.lua

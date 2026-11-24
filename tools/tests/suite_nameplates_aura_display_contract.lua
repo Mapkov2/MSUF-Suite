@@ -55,6 +55,19 @@ do
     assert(not spec.look.visualKeys.auraEnemyDotsVisible and spec.look.visualKeys.auraFont)
     local plan = M.Plan({})
     assert(not plan.used.enemy and not plan.used.friendly)
+    local personal = { auraDisplayEnabled = true, auraEnemyCustom1Visible = true,
+        auraEnemyCustom1OnlyMine = true, auraEnemyCustom1MaxDuration = 30, auraEnemyCustom1HideDuplicates = true }
+    local filtered = M.Plan(personal)
+    local flow = C(filtered, "enemy", "custom1")
+    assert(flow.enabled and filtered.always.enemy and flow.groupCount == 8,
+        "an enabled Custom Debuff flow row with an empty list did not show active debuffs")
+    assert(flow.candidate.includeSpellIDs == nil and flow.candidate.maxDuration == 30
+        and flow.filter == "HARMFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY", "empty list bypassed the selected aura filters")
+    assert(not filtered.exclusions.enemy, "a row without spell IDs claimed duplicates")
+    personal.auraEnemyCustom1Display = 1
+    assert(not C(M.Plan(personal), "enemy", "custom1").enabled, "fixed slots must have configured spells")
+    personal.auraEnemyCustom1Display, personal.auraEnemyCustom1SpellsRetail = 2, "garbage"
+    assert(not C(M.Plan(personal), "enemy", "custom1").enabled, "a malformed nonempty list must not track every spell")
     local inherited = M.Plan({ auraClickthrough = true, auraEnemyCustom1Clickthrough = 3 })
     assert(not C(inherited, "enemy", "custom1").clickthrough and C(inherited, "enemy", "custom2").clickthrough
         and C(inherited, "friendly", "custom1").clickthrough, "tracked rows did not inherit the saved click-through setting independently")
@@ -562,6 +575,15 @@ do
     assert(custom.groups.auras.filter == "HARMFUL|INCLUDE_NAME_PLATE_ONLY" and custom.groups.auras.candidate.includeSpellIDs[339]
         -- the limit is the buttons the group has (one aura here) plus the ramp, not the want of 8 (2026-11-11)
         and custom.groups.auras.max == 3 and custom.groups.auras.layout.layoutIndex == nil and not custom.groups.any)
+    config.auraEnemyCustom1SpellsRetail, config.auraEnemyCustom1OnlyMine = "", true
+    D.Configure(config)
+    assert(D.Apply(uf, "nameplate2", true) and custom.enabled
+        and custom.groups.auras.filter == "HARMFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
+        and custom.groups.auras.candidate.includeSpellIDs == nil, "clearing the whitelist did not activate native debuff filtering")
+    config.auraEnemyCustom1SpellsRetail, config.auraEnemyCustom1OnlyMine = "118,339", nil
+    D.Configure(config)
+    assert(D.Apply(uf, "nameplate2", true) and custom.groups.auras.candidate.includeSpellIDs[339],
+        "restoring the whitelist did not narrow the native group")
     -- combat: an edit waits, the old plan keeps showing, then applies
     combat = true
     config.auraEnemyDotsSize = 40
@@ -1415,6 +1437,17 @@ do
         sample.state.target = false
         UI.Render(editor, sample, {})
         assert(not bound["enemy.Tracked"][1].shown and not sample.auraPreviewState.exclusions.debuff[589])
+        config.auraEnemyCustom1Visible, config.auraEnemyCustom1SpellsRetail = true, ""
+        UI.Render(editor, sample, {})
+        local custom = sample.auraPreviewState.containers.custom1
+        assert(custom.frame.shown and custom.icons[1].frame.shown, "empty Custom Debuff flow did not preview a sample")
+        config.auraEnemyCustom2Visible, config.auraEnemyCustom2SpellsRetail = true, "172"
+        config.auraEnemyCustom2HideDuplicates = true
+        UI.Render(editor, sample, {})
+        assert(custom.icons[1].frame.shown, "a whitelist excluded the synthetic sample of an empty flow row")
+        config.auraEnemyCustom1Display = 1
+        UI.Render(editor, sample, {})
+        assert(not custom.frame.shown, "empty fixed slots should stay hidden")
 
     end
     -- short labels reach the grid, the catalog keeps the full ones

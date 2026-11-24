@@ -57,6 +57,9 @@ end
 -- Per-type enable switches share the regular paint path when all are on.
 local NS, S = private.NS, private.Suite
 local X = NS.NameplateExtensions
+function private.AppearanceScope(uf)
+    return X.OpacityScope(unitKinds[uf]) or private.PlatePrefix(uf)
+end
 local scopes = { suppressed = setmetatable({}, { __mode = "k" }) }
 private.SkinScopes = scopes
 local module, restorePlate, active

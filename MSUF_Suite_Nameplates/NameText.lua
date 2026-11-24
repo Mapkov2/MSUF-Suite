@@ -7,6 +7,7 @@ local states = setmetatable({}, { __mode = "k" })
 local Names = { states = states, inUse = false }
 private.NameText = Names
 local M, looks, hooked, threatHooked
+local customNameColors = {}
 
 function Names.Bind(module) M = module end
 
@@ -150,12 +151,11 @@ end
 local function OnNativeName(uf)
     local state = states[uf]
     if not state or not M.active then return end
-    local unit, prefix = state.unit, state.prefix
-    if not unit or M.activeUnits[unit] ~= uf or not M.config[prefix] then return end
-    -- looks holds owning sides only; this test stands in for Names.inUse.
-    -- Read once here and reused after the label read.
-    local look = looks[prefix]
-    if not look then return end
+    local unit = state.unit
+    if M.activeUnits[unit] ~= uf then return end
+    -- looks holds owning scopes only; this test stands in for Names.inUse.
+    local look = looks[state.prefix]
+    if not look or not M.config[look.visualSide] then return end
     local flag = uf:IsForbidden()
     if IsSecret(flag) or flag then
         state.look = nil
@@ -204,8 +204,11 @@ function Names.FlushRestores()
 end
 
 -- A side owns the native name only when its look formats or colors it.
-local function Owning(look)
-    if look.enabled or look.customColor or look.shared ~= nil then return look end
+local function Owning(look, side)
+    if look.enabled or look.customColor or look.shared ~= nil then
+        look.visualSide = side
+        return look
+    end
 end
 
 -- A side that stopped owning gives back what it wrote and loses its unit
@@ -224,14 +227,27 @@ local function ReleaseDormant()
     end
 end
 
+function Names.CustomNameColor(scope)
+    local color = customNameColors[scope == "friendlyNpc" and "friendly" or scope]
+    return color, color and color.customColor == true
+end
+
 function Names.Configure(config)
     Names.threatNames = private.EasyFeatures and config.look ~= 2 and config.threatNameColor == true
     local enemy, friendly = Text.Compile(config, "enemy"), Text.Compile(config, "friendly")
-    looks = { enemy = Owning(enemy), friendly = Owning(friendly) }
-    Names.inUse = looks.enemy ~= nil or looks.friendly ~= nil
+    local neutral = Text.Compile(config, "enemy", "neutral")
+    local friendlyNeutral = Text.Compile(config, "friendly", "neutral")
+    customNameColors.enemy = Text.CustomNameColor and Text.CustomNameColor(enemy)
+    customNameColors.neutral = Text.CustomNameColor and Text.CustomNameColor(neutral)
+    customNameColors.friendly = Text.CustomNameColor and Text.CustomNameColor(friendly)
+    looks = {
+        enemy = Owning(enemy, "enemy"), neutral = Owning(neutral, "enemy"),
+        friendly = Owning(friendly, "friendly"), friendlyNeutral = Owning(friendlyNeutral, "friendly"),
+    }
+    Names.inUse = next(looks) ~= nil
     if not Names.inUse then
         RestoreInactive()
-    elseif not looks.enemy or not looks.friendly then
+    elseif not looks.enemy or not looks.neutral or not looks.friendly or not looks.friendlyNeutral then
         ReleaseDormant()
     end
     if (Names.inUse or Names.threatNames) and not hooked then
@@ -244,20 +260,25 @@ function Names.Configure(config)
     end
 end
 
-function Names.Apply(uf, prefix, unit)
+function Names.Apply(uf, prefix, unit, kind)
     local state = states[uf]
-    local look = prefix and looks and looks[prefix]
+    local scope = prefix
+    if kind == "neutralNpc" then scope = prefix == "friendly" and "friendlyNeutral" or "neutral" end
+    local look = scope and looks and looks[scope]
     local enabled = Names.inUse and look and unit and M.config[prefix]
     -- Other skin events do no native text/color work on an unchanged look.
     if enabled and state and state.unit == unit and state.look == look then return end
-    if not enabled and (not state or not state.formatted and not state.tinted) then return end
+    if not enabled and (not state or not state.formatted and not state.tinted) then
+        if state and state.prefix ~= scope then state.unit, state.prefix, state.look = nil, nil, nil end
+        return
+    end
     local label = Safe(uf)
     if not label then return end
     if not enabled then
         Restore(state, label)
         state.look = nil
         -- A dormant side's replayed restore ends its unit mapping.
-        if Names.inUse and prefix and not look then state.unit, state.prefix = nil, nil end
+        if scope ~= state.prefix or not look then state.unit, state.prefix = nil, nil end
         return
     end
     if uf.UpdateNameOverride then return end
@@ -265,7 +286,7 @@ function Names.Apply(uf, prefix, unit)
     if IsSecret(shown) or not shown then return end
     if not state then state = {} states[uf] = state end
     if state.unit ~= unit then Clear(state) end
-    state.unit, state.prefix = unit, prefix
+    state.unit, state.prefix = unit, scope
     local current = label:GetText()
     if IsSecret(current) then
         ForgetPlain(state)

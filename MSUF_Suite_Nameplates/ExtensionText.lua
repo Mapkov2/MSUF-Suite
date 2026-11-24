@@ -2,13 +2,17 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local T = {}
 P.ExtensionText = T
-local SOURCES = { target = 2, quest = 3, guild = 4, title = 5, threat = 6, difference = 7, power = 8, absorb = 9, forces = 10 }
+local X = NS.NameplateExtensions
+local SOURCES = { target = 2, quest = 3, guild = 4, title = X.NPCTitleSource,
+    threat = 6, difference = 7, power = 8, absorb = 9, forces = 10 }
 local QUEST_ONLY = { [SOURCES.quest] = true }
+local TITLE_ONLY = { [SOURCES.title] = true }
+local QUEST_AND_TITLE = { [SOURCES.quest] = true, [SOURCES.title] = true }
 local DEFAULT_QUEST_SLOT = { source = SOURCES.quest, anchor = 1, x = 0, y = 2, size = 10, color = "ffffff" }
-local ANCHORS = NS.NameplateExtensions.TextPoints
+local ANCHORS = X.TextPoints
 local EVENT_SOURCES = {
     UNIT_TARGET = { [2] = true, [6] = true, [7] = true },
-    UNIT_NAME_UPDATE = { [2] = true, [3] = true, [4] = true, [5] = true, [10] = true },
+    UNIT_NAME_UPDATE = { [2] = true, [3] = true, [4] = true, [SOURCES.title] = true, [10] = true },
     UNIT_THREAT_LIST_UPDATE = { [6] = true, [7] = true },
     UNIT_THREAT_SITUATION_UPDATE = { [6] = true, [7] = true },
     UNIT_POWER_UPDATE = { [8] = true },
@@ -47,14 +51,24 @@ local function IdentityAllowed(unit)
     return not NS.IsSecret(restricted) and restricted == false
 end
 
+local function NPC(kind)
+    return kind == "enemyNpc" or kind == "friendlyNpc" or kind == "neutralNpc"
+end
+
 -- Both clients tag objective/level/type lines. The untyped line immediately
 -- after an NPC's UnitName is its native subtitle, when one is present.
+-- Blizzard keeps NPC identity secret even in the open world (an innkeeper's
+-- line 2 is secret text there). The title still goes to its label, unread:
+-- FontString:SetText takes secret text. Quests need public text, and PvP
+-- instances are not read.
 local function Tooltip(state, values, sources)
-    if not sources[3] and not sources[5] then return end
+    local quest, title = sources[SOURCES.quest], sources[SOURCES.title] and NPC(state.kind)
+    if not quest and not title then return end
     values.quest, values.title = nil, nil
-    if not IdentityAllowed(state.unit) then return end
-    local related = sources[3] and P.Roles.Quest(state.unit)
-    if not related and not sources[5] then return end
+    local identity, roles = IdentityAllowed(state.unit), P.Roles
+    local related = quest and identity and roles.Quest(state.unit)
+    if not identity and roles.inInstance and not roles.instanced then title = nil end
+    if not related and not title then return end
     local info = C_TooltipInfo.GetUnit(state.unit)
     if not PublicTable(info) or not PublicTable(info.lines) then return end
     local types, ours, player = Enum.TooltipDataLineType, true, PublicText(UnitName("player"))
@@ -66,8 +80,9 @@ local function Tooltip(state, values, sources)
                 ours = player ~= nil and PublicText(row.leftText) == player
             elseif related and ours and row.type == types.QuestObjective and not values.quest then
                 if P.Roles.QuestObjectiveIncomplete(row.leftText) then values.quest = PublicText(row.leftText) end
-            elseif sources[5] and i == 2 and (state.kind == "enemyNpc" or state.kind == "friendlyNpc" or state.kind == "neutralNpc") then
-                if row.type == types.None then values.title = PublicText(row.leftText) end
+            elseif title and i == 2 and row.type == types.None then
+                local text = row.leftText
+                if NS.IsSecret(text) then values.title = text else values.title = PublicText(text) end
             end
         end
     end
@@ -150,8 +165,8 @@ local function Write(label, slot, values)
     label:SetShown(slot.unknown)
 end
 
-local function Place(label, slot, state)
-    local anchor = ANCHORS[slot.anchor]
+local function Place(label, slot, state, anchor)
+    anchor = anchor or ANCHORS[slot.anchor]
     local owner = anchor[2] == "name" and state.uf.name or state.health
     label:ClearAllPoints()
     P.Geometry.Point(label, anchor[1], owner, anchor[3], anchor[4] + slot.x, anchor[5] + slot.y)
@@ -169,38 +184,48 @@ local function CreateLabel(state, slot)
     end
     local label = owner:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     state.labels[slot.source] = label
+    if state.layerFade then P.ExtensionLayout.FadeText(state, label) end
     return label
 end
 
-local function ApplyQuestOnly(state)
-    local slot = state.plan.interaction.neutral.questSlot or DEFAULT_QUEST_SLOT
-    local changed = state.textPlan ~= QUEST_ONLY or state.questSlot ~= slot
+local function PaintNameOnlyText(state, slot, changed, anchor)
+    local label = state.labels[slot.source]
+    if not label then
+        local value = state.textValues[KEYS[slot.source]]
+        if not NS.IsSecret(value) and not value and not slot.unknown then return end
+        label = CreateLabel(state, slot)
+        changed = true
+    end
+    if changed then Place(label, slot, state, anchor) end
+    Write(label, slot, state.textValues)
+end
+
+local function ApplyNameOnly(state, quest, title)
+    local sources = quest and (title and QUEST_AND_TITLE or QUEST_ONLY) or TITLE_ONLY
+    local changed = state.textPlan ~= sources or state.questSlot ~= quest or state.titleSlot ~= title
     if not changed and state.metadataReady then return end
     state.textValues, state.labels = state.textValues or {}, state.labels or {}
     if changed then T.Hide(state) end
-    Tooltip(state, state.textValues, QUEST_ONLY)
-    local label = state.labels[SOURCES.quest]
-    if label or state.textValues.quest or slot.unknown then
-        if not label then
-            label = CreateLabel(state, slot)
-            changed = true
-        end
-        if changed then Place(label, slot, state) end
-        Write(label, slot, state.textValues)
-    end
-    state.metadataReady, state.textPlan, state.questSlot = true, QUEST_ONLY, slot
+    Tooltip(state, state.textValues, sources)
+    if quest then PaintNameOnlyText(state, quest, changed) end
+    if title then PaintNameOnlyText(state, title, changed, X.NPCSubtitlePoint) end
+    state.metadataReady, state.textPlan, state.questSlot, state.titleSlot = true, sources, quest, title
 end
 
 function T.Apply(state, event)
     local scope = state.interaction
     local names = P.FriendlyNames
+    local wasNameOnly = state.questSlot or state.titleSlot
     if names and names.IsNameOnly(state.uf) then
-        if names.KeepsQuestText and names.KeepsQuestText(state.uf) then return ApplyQuestOnly(state) end
-        if state.textPlan == QUEST_ONLY then T.Invalidate(state) end
+        local quest = names.KeepsQuestText and names.KeepsQuestText(state.uf)
+            and (state.plan.interaction.neutral.questSlot or DEFAULT_QUEST_SLOT)
+        local title = scope and scope.titleSlot and NPC(state.kind) and scope.titleSlot
+        if quest or title then return ApplyNameOnly(state, quest, title) end
+        if state.textPlan then T.Invalidate(state) end
         T.Hide(state)
         return
     end
-    if state.textPlan == QUEST_ONLY then T.Invalidate(state) end
+    if wasNameOnly then T.Invalidate(state) end
     if not scope or #scope.slots == 0 then
         T.Hide(state)
         return
@@ -235,6 +260,6 @@ function T.Hide(state)
 end
 
 function T.Invalidate(state)
-    state.metadataReady, state.textPlan, state.questSlot = nil, nil, nil
+    state.metadataReady, state.textPlan, state.questSlot, state.titleSlot = nil, nil, nil, nil
     if state.textValues then for key in pairs(state.textValues) do state.textValues[key] = nil end end
 end

@@ -22,6 +22,7 @@ local badges = setmetatable({}, { __mode = "k" })
 local hookedBadges = setmetatable({}, { __mode = "k" })
 local border, dim, dimAlpha, targetRGB, focusRGB = KEEP, KEEP, 1, nil, nil
 local active, hideAll, hideEnemyBackground, hideFriendlyBackground = false, false, false, false
+local scopedOutline
 local enemyOff, friendlyOff, nativeOff
 local revision, hooked = 0, false
 local original
@@ -298,12 +299,12 @@ local function Restore(health, state)
     end
     plates[health], pending[health] = nil, nil
     if not active and not hideAll and not enemyOff and not friendlyOff
-        and not hideEnemyBackground and not hideFriendlyBackground and next(plates) == nil then
+        and not hideEnemyBackground and not hideFriendlyBackground and not scopedOutline and next(plates) == nil then
         Selection.inUse = false
     end
 end
 
-function Selection.Configure(config)
+function Selection.Configure(config, scopedBars)
     local skin = config.look ~= LOOK_BLIZZARD
     border = skin and config.selectionBorder or KEEP
     dim = skin and config.selectionDim or KEEP
@@ -311,14 +312,23 @@ function Selection.Configure(config)
     nativeOff = not skin and config.barsOverride == true
     enemyOff = (skin or nativeOff) and Style.OutlineOff(config, "enemy")
     friendlyOff = (skin or nativeOff) and Style.OutlineOff(config, "friendly")
-    plan = skin and (not enemyOff or not friendlyOff) and Style.CompileHighlights(config) or nil
+    scopedOutline = nil
+    local enemyOutline, neutralOutline = not enemyOff, not enemyOff
+    for scope, bars in pairs(scopedBars or {}) do
+        if bars[Style.AppearanceSwitch(scope, "outline")] then
+            scopedOutline = true
+            if scope == "enemy" then enemyOutline = not Style.OutlineOff(bars, "enemy") end
+            if scope == "neutral" then neutralOutline = not Style.OutlineOff(bars, "enemy") end
+        end
+    end
+    plan = skin and (scopedOutline or not enemyOff or not friendlyOff) and Style.CompileHighlights(config) or nil
     Selection.highlights = plan ~= nil
-    Selection.aggroEnabled = not enemyOff and config.enemy == true and plan and plan.aggro and true or false
+    Selection.aggroEnabled = (enemyOutline or neutralOutline) and config.enemy == true and plan and plan.aggro and true or false
     active = border ~= KEEP or dim ~= KEEP or plan ~= nil
     hideAll = config.hideHealthBarBorders == true
     hideEnemyBackground = skin and config.enemy and Style.HideNativeOutline(config, "enemy")
     hideFriendlyBackground = skin and config.friendly and Style.HideNativeOutline(config, "friendly")
-    Selection.inUse = active or hideAll or enemyOff or friendlyOff or hideEnemyBackground or hideFriendlyBackground
+    Selection.inUse = active or hideAll or enemyOff or friendlyOff or hideEnemyBackground or hideFriendlyBackground or scopedOutline
         or next(plates) ~= nil
     -- Profiles saved before these settings existed have no colors yet.
     targetRGB = { NS.RGB(config.selectionTargetColor or "ffffff") }
@@ -328,12 +338,19 @@ end
 
 -- A plate pass (Skin.lua Paint, only while inUse) on a health bar it already
 -- checked: styled is false for a plate whose side the skin leaves alone.
-function Selection.Apply(health, styled, uf, prefix, outline, size, color)
+function Selection.Apply(health, styled, uf, prefix, outline, size, color, scope, bars)
     local state = plates[health]
     local sideBackground = prefix == "enemy" and hideEnemyBackground or prefix == "friendly" and hideFriendlyBackground
     local off = hideAll or (styled or nativeOff) and (prefix == "enemy" and enemyOff or prefix == "friendly" and friendlyOff)
+    if scopedOutline and styled and bars then
+        if bars[Style.AppearanceSwitch(scope, "outline")] then
+            off = Style.OutlineOff(bars, prefix)
+            sideBackground = Style.HideNativeOutline(bars, prefix)
+        end
+        if state and state.scope ~= scope then state.revision = nil end
+    end
     local textures = private.Textures
-    local customBackground = textures and textures.healthBack
+    local customBackground = textures and (textures.healthBack or textures.scopedHealth)
         and (not textures.HasHealthBackground or textures.HasHealthBackground(uf))
     local hideBackground = not customBackground and (off or styled and sideBackground)
     if not off and not (styled and (active or hideBackground)) then
@@ -352,7 +369,7 @@ function Selection.Apply(health, styled, uf, prefix, outline, size, color)
         if not PaintBackground(health, state, hideBackground) then RetryPlate(uf) end
     end
     if state.revision ~= revision or state.styled ~= styled or state.side ~= prefix then
-        state.styled, state.side, state.uf = styled, prefix, uf
+        state.styled, state.side, state.uf, state.scope = styled, prefix, uf, scope
         state.mode = off and HIDE or border
         state.levelBadge = NS.Client.isForever and uf and uf.PlayerLevelDiffFrame
         state.highlight = not off and styled and outline ~= nil and plan ~= nil

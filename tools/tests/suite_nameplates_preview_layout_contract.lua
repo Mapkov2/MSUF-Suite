@@ -282,8 +282,10 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         local styleProvider = { AnchorPoints = {}, AnchorLabels = {} }
         assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", styleProvider)
         local style = {
-            LevelMode = styleProvider.NameplateStyle.LevelMode,
+            LevelMode = styleProvider.NameplateStyle.LevelMode, SetSlantedSample = Noop,
             OutlineSize = styleProvider.NameplateStyle.OutlineSize,
+            ScopeBars = styleProvider.NameplateStyle.ScopeBars,
+            AppearanceSwitch = styleProvider.NameplateStyle.AppearanceSwitch,
             AggroHighlightEnabled = styleProvider.NameplateStyle.AggroHighlightEnabled,
             BarSettings = styleProvider.NameplateStyle.BarSettings,
             SharedBars = styleProvider.NameplateStyle.SharedBars,
@@ -311,7 +313,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
             NameplatesSize = { Build = Noop },
             OpenNameplateSetting = function(key) opened = key return true end,
             OpenNameplateStatusSection = function(side) opened = side .. ".status" end,
-            OpenNameplateStatusItem = Noop,
+            OpenNameplateStatusItem = Noop, NameplateStatusTarget = Noop,
             OpenNameplateCastDetail = function(side, tab) opened = side .. "." .. tab return true end,
         }
         assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraDisplay.lua"))("MSUF_Suite", P.Suite)
@@ -322,6 +324,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames-7.0" }) 
         assert(loadfile(arg[4] or root .. "/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options", P)
         assert(loadfile(arg[3] or root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
         assert(loadfile(arg[5] or root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
+        assert(loadfile(root .. "/MSUF_Suite_Options/Menu/PreviewCanvas.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesMultiPreview.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", P)
         CheckCenteredNames(P)

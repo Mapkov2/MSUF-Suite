@@ -8,6 +8,7 @@ private.Textures = Textures
 local healthFill, healthBack, castFill, castBack, focusFill, baseTextures, focusHealth, findFocus
 local darkCastBackground, sharedCastStyle
 local nativeEnemyOutline, nativeFriendlyOutline
+local scopedHealth
 local healthStates = setmetatable({}, { __mode = "k" })
 local castStates = setmetatable({}, { __mode = "k" })
 -- Release plates untextured and reuse their empty state by frame or castbar.
@@ -529,7 +530,7 @@ function Textures.RefreshCastColors()
     for uf in pairs(painted) do Textures.Apply(uf) end
 end
 
-function Textures.Configure(config, style)
+function Textures.Configure(config, style, scopedBars)
     local hadTextures, absorbChanged = Textures.inUse, Absorbs and Absorbs.Configure(config)
     local shapeChanged = Slant and Slant.Configure(config)
     local fill, back, cast, background = config.nativeHealthFillTexture, config.nativeHealthBackgroundTexture,
@@ -551,22 +552,48 @@ function Textures.Configure(config, style)
     textureKeys[5] = focusKey
     local enemyOutline = NS.NameplateStyle.UsesNativeOutline(config, "enemy")
     local friendlyOutline = NS.NameplateStyle.UsesNativeOutline(config, "friendly")
+    local scoped, scopedChanged
+    for scope, bars in pairs(scopedBars or {}) do
+        local side = (scope == "enemy" or scope == "neutral") and "enemy" or "friendly"
+        local previous = scopedHealth and scopedHealth[scope]
+        local fillKey, backKey = bars.nativeHealthFillTexture, bars.nativeHealthBackgroundTexture
+        local fill = Resolve(previous and previous.fillKey, previous and previous.fill, fillKey)
+        local back = not Style.UsesNativeOutline(bars, side)
+            and Resolve(previous and previous.backKey, previous and previous.back, backKey) or nil
+        local native = (side == "enemy" and enemyOutline) or (side == "friendly" and friendlyOutline)
+        if fill ~= hpFill or back ~= (not native and hpBack or nil) then
+            scoped = scoped or {}
+            if previous and previous.fillKey == fillKey and previous.backKey == backKey
+                and previous.fill == fill and previous.back == back then
+                scoped[scope] = previous
+            else
+                scoped[scope] = { fillKey = fillKey, backKey = backKey, fill = fill, back = back }
+                scopedChanged = true
+            end
+        end
+    end
+    for scope in pairs(scopedHealth or {}) do
+        if not scoped or not scoped[scope] then scopedChanged = true break end
+    end
     if hpFill ~= healthFill or hpBack ~= healthBack or spellFill ~= castFill or spellBack ~= castBack or focus ~= focusFill
         or enemyOutline ~= nativeEnemyOutline or friendlyOutline ~= nativeFriendlyOutline or dark ~= darkCastBackground
-        or sharedCastStyle ~= style or absorbChanged or shapeChanged then
+        or sharedCastStyle ~= style or scopedChanged or absorbChanged or shapeChanged then
         generation = generation + 1
     end
-    nativeEnemyOutline, nativeFriendlyOutline = enemyOutline, friendlyOutline
+    nativeEnemyOutline, nativeFriendlyOutline, scopedHealth = enemyOutline, friendlyOutline, scoped
+    Textures.scopedHealth = scoped
     healthFill, healthBack, castFill, castBack = hpFill, hpBack, spellFill, spellBack
     darkCastBackground, sharedCastStyle = dark, style
     focusFill = focus
-    baseTextures = healthFill or healthBack or castFill or castBack or sharedCastStyle
+    baseTextures = healthFill or healthBack or castFill or castBack or sharedCastStyle or scopedHealth
         or Absorbs and Absorbs.inUse or Slant and Slant.enabled
     Textures.inUse, Textures.focusFill = baseTextures or focusFill, focusFill
     Textures.healthFill, Textures.healthBack, Textures.castFill = healthFill, healthBack, castFill
     return hadTextures and not Textures.inUse
 end
-function Textures.HealthBackground(prefix)
+function Textures.HealthBackground(prefix, scope)
+    local scoped = scopedHealth and scopedHealth[scope]
+    if scoped then return scoped.back end
     if prefix == "enemy" and nativeEnemyOutline or prefix == "friendly" and nativeFriendlyOutline then return nil end
     return healthBack
 end
@@ -577,7 +604,9 @@ function Textures.HasHealthBackground(uf)
 end
 
 function Textures.HealthFill(uf)
-    if uf == Textures.focusUF then return focusFill or healthFill end
+    if uf == Textures.focusUF and focusFill then return focusFill end
+    local scoped = scopedHealth and scopedHealth[private.AppearanceScope(uf)]
+    if scoped then return scoped.fill end
     return healthFill
 end
 
@@ -705,7 +734,7 @@ function Textures.Apply(uf, reset, paintedWithLayout)
     -- costs a table lookup on presentation events and touches no region.
     local version = painted[uf]
     local background = healthBack
-    local scopedBackground = background and (nativeEnemyOutline or nativeFriendlyOutline)
+    local scopedBackground = scopedHealth or background and (nativeEnemyOutline or nativeFriendlyOutline)
     local stable = version == generation and not reset
     if stable and not scopedBackground and deferred[uf] == nil then return end
     local useTextures = (not private.SkinAllowed or private.SkinAllowed(uf))
@@ -713,9 +742,11 @@ function Textures.Apply(uf, reset, paintedWithLayout)
     if not useTextures and not version then return end
     if not NS.Public(uf) or not uf or NS.Safety.IsForbidden(uf) then return end
     if scopedBackground then
-        background = Textures.HealthBackground(private.PlatePrefix(uf))
+        local prefix = private.PlatePrefix(uf)
+        background = Textures.HealthBackground(prefix, scopedHealth and private.AppearanceScope(uf))
         local state = healthStates[uf]
-        if stable and deferred[uf] == nil and (state and state.back or nil) == background then return end
+        if stable and deferred[uf] == nil and (state and state.back or nil) == background
+            and (not scopedHealth or (state and state.fill or nil) == Textures.HealthFill(uf)) then return end
     end
     if not Accessible(uf) then
         if version then painted[uf] = 0 end
@@ -757,6 +788,7 @@ end
 -- after a layout pass of the Suite. The styled castbar samples its height once.
 function Textures.OnLayout(uf, finishSpark)
     if not painted[uf] then return end
+    if Slant then Slant.OnLayout(uf) end
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local state = NS.Public(cast) and cast and castStates[cast]
     local appearance = private.CastAppearance

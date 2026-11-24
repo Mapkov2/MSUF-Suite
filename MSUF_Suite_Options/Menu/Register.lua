@@ -280,7 +280,7 @@ end
 AddIcons()
 P.GameplayPage.Register()
 local nameplateTextures = P.NameplateBarTextures
-if nameplateTextures then nameplateTextures.Register() end
+if nameplateTextures then nameplateTextures.Register(P.NameplateStyleSections) end
 local nameplateFonts = P.NameplatesHostOptions
 if nameplateFonts then nameplateFonts.Register() end
 RegisterPages()

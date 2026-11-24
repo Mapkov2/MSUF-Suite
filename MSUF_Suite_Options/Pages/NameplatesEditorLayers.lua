@@ -192,6 +192,12 @@ function Layers.Available(ui, key)
     return true
 end
 
+local function OutlineSetting(ui)
+    local scope = ui.scope or ui.sampleKind
+    local toggle = Style.AppearanceSwitch(scope, "outline")
+    return P.Get(ID, toggle) and scope .. "StyleOutlineMode" or toggle
+end
+
 local function OutlineSize(config, side)
     return Style.OutlineSize(config[side .. "OutlineMode"], config[side .. "BorderEnabled"],
         config[side .. "BorderSize"], config.hideHealthBarBorders)
@@ -212,7 +218,7 @@ function Layers.Active(ui, key)
             and P.Get(ID, ui.sampleKind .. "BackdropAlpha") > 0
     end
     if key == "border" then
-        return OutlineSize(ui.barSettings or P.S.Config(ID), ui.sampleKind) > 0
+        return OutlineSize(Style.ScopeBars(ui.barSettings or P.S.Config(ID), ui.scope), ui.sampleKind) > 0
     end
     if key == "highlightBorders" then
         local c = P.S.Config(ID)
@@ -257,7 +263,7 @@ local function FocusLayer(ui, section, key)
         return
     end
     if key == "status" then
-        P.OpenNameplateStatusSection(ui.sampleKind)
+        P.OpenNameplateStatusSection(ui.sampleKind, nil, ui.scope)
         return
     end
     if key == "castShield" then
@@ -275,13 +281,12 @@ local function FocusLayer(ui, section, key)
     local setting = HIGHLIGHT_SETTINGS[HIGHLIGHT_SAMPLES[key]] or DecorSetting(ui, key) or LAYER_SETTING[key]
     if ui.sampleKind == "friendly" and FRIENDLY_CAST_SETTINGS[key] then
         section, setting = "friendlyCast", FRIENDLY_CAST_SETTINGS[key]
-    elseif key == "backdrop" or key == "border" then
-        setting = ui.sampleKind .. (key == "backdrop" and "BackdropEnabled" or "OutlineMode")
+    elseif key == "border" then
+        setting = OutlineSetting(ui)
+    elseif key == "backdrop" then
+        setting = ui.sampleKind .. "BackdropEnabled"
     elseif key == "raidIcon" then
         setting = ui.sampleKind .. "RaidIcon"
-    elseif key == "classification" then
-        if P.OpenNameplateStatusItem(ui.sampleKind, "enemyRarityIcon") then return end
-        setting = "enemyRarityIcon"
     elseif key == "health" then
         setting = P.NameplatesSize.HealthScope(ui, ui.sampleKind) .. "HealthWidthDelta"
     elseif ui.sampleKind == "friendly" and key == "target" then
@@ -302,7 +307,7 @@ local function FocusLayer(ui, section, key)
     elseif key == "eliteMarker" or key == "questMarker" then
         setting = ui.sampleKind .. (key == "eliteMarker" and "Elite" or "Quest") .. "Marker"
     end
-    if OpenSetting(setting) then return end
+    if P.OpenNameplateStatusItem(ui.sampleKind, setting, ui.scope) or OpenSetting(setting) then return end
     if key == "castTarget" and P.OpenNameplateCastDetail(ui.sampleKind, "spell") then return end
     local target = section == "elements" and P.SelectNameplatesEnemyTab("elements")
         or ui.sections and ui.sections[section]
@@ -368,8 +373,8 @@ local function BlockedLayer(ui, key)
         if c[side .. "BackdropAlpha"] == 0 then return side .. "BackdropAlpha" end
     end
     if key == "border" then
-        local bars = ui.barSettings or c
-        if OutlineSize(bars, side) <= 0 then return bars.hideHealthBarBorders and "hideHealthBarBorders" or side .. "OutlineMode" end
+        local bars = Style.ScopeBars(ui.barSettings or c, ui.scope)
+        if OutlineSize(bars, side) <= 0 then return OutlineSetting(ui) end
     end
     return DisabledHighlight(ui, key, c) or DisabledFeature(ui, key, c)
 end

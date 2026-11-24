@@ -179,7 +179,7 @@ function Filter.Match(state, helpful, id, lane)
         if record.shown and c.hideDuplicates and c.helpful == helpful and c.alpha > 0 then
             if c.fixed then
                 if Fixed(record, id, lane) then return true end
-            elseif Packed(record, id, lane) then
+            elseif not c.filtersOnly and Packed(record, id, lane) then
                 return true
             end
         end

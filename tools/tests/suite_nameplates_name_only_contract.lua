@@ -11,9 +11,17 @@ local NS = { AnchorPoints = {}, AnchorLabels = {}, IsSecret = function(value) re
         if hex == "e5db00" then return .9, .86, 0 end
         return .7, .2, .3
     end }
-local private = { NS = NS, Suite = { Public = Public, Finite = Finite }, Mode = { GROUP_NAMES_ONLY = 3, SHOW = 2 },
+local private = { NS = NS, Suite = { Public = Public, Finite = Finite },
+    Mode = { GROUP_NAMES_ONLY = 3, SHOW = 2, HIDE = 3, NPC_NAMES_ONLY = 4 },
     RoleKey = { Caster = { color = "enemyCasterColor" }, Neutral = { color = "enemyNeutralColor" } } }
 UnitReaction = function() return reaction end
+-- Skin.lua's plate hook registry (private.HookPlates) and the mixin it hooks.
+local plateHooks = {}
+private.HookPlates = function(method, callback) plateHooks[method] = callback end
+NamePlateUnitFrameMixin = { UpdateShowOnlyName = function() end }
+local dead, tapDenied = false, false
+UnitIsDead = function() return dead end
+UnitIsTapDenied = function() return tapDenied end
 UnitAffectingCombat = function() return fighting end
 UnitClass = function() return "Mage", "MAGE" end
 RAID_CLASS_COLORS = { MAGE = { r = .2, g = .6, b = .8 } }
@@ -48,8 +56,9 @@ local function Region(alpha)
         return self.r, self.g, self.b, self.a
     end
     function region:GetVertexColor() return self.vr, self.vg, self.vb, self.va end
-    function region:SetVertexColor(r, g, b, a)
-        self.vertexWrites = (self.vertexWrites or 0) + 1
+    function region:SetVertexColor(...)
+        local r, g, b, a = ...
+        self.vertexWrites, self.vertexArgs = (self.vertexWrites or 0) + 1, select("#", ...)
         self.vr, self.vg, self.vb, self.va = r, g, b, a
         self.glyphR, self.glyphG, self.glyphB = r, g, b
     end
@@ -57,10 +66,13 @@ local function Region(alpha)
     function region:SetText(text) self.text = text end
     function region:IsShown() return true end
     function region:IsForbidden() return false end
-    function region:SetTextColor(r, g, b, a)
-        self.writes = (self.writes or 0) + 1
+    -- An omitted alpha keeps the current one; the record shows whether a writer passed one.
+    function region:SetTextColor(...)
+        local r, g, b, a = ...
+        self.writes, self.textArgs = (self.writes or 0) + 1, select("#", ...)
         if self.refuseOnce then self.refuseOnce = nil return end
-        self.r, self.g, self.b, self.a = r, g, b, a
+        self.r, self.g, self.b = r, g, b
+        if self.textArgs >= 4 then self.a = a end
         self.glyphR, self.glyphG, self.glyphB = r, g, b
     end
     function region:SetFontObject(font)
@@ -346,8 +358,12 @@ config.neutralPlateNameOnly, config.friendlyNPCs = true, 5
 Names.ConfigureNameOnly()
 assert(Paint(uf, uf.unit) and Names.NameOnlyScope(uf) == "neutral")
 assert(uf.name.glyphR == .9 and uf.name.glyphG == .86 and uf.name.glyphB == 0 and uf.name.a == .75)
-assert(uf.name.text == "Neutral quest giver" and uf.name.vr == 1 and uf.name.vg == 1 and uf.name.vb == 1
-    and uf.name.va == .35 and uf.name.alpha == 1, "a vertex tint multiplied the configured glyph or changed opacity")
+-- Blizzard colors names through the vertex: an NPC name carries its color there too, so no combination
+-- rule of the client can leave it white or tinted. On a FontString both setters reach its alpha: the
+-- vertex is written as Blizzard writes it (RGB only) and the font color keeps its own known alpha.
+assert(uf.name.text == "Neutral quest giver" and uf.name.vr == .9 and uf.name.vg == .86 and uf.name.vb == 0
+    and uf.name.vertexArgs == 3 and uf.name.r == .9 and uf.name.a == .75 and uf.name.alpha == 1,
+    "the NPC color missed a channel or passed an opacity")
 uf.name:SetVertexColor(1, 1, 1, 1)
 assert(uf.name.glyphR == .9 and uf.name.glyphG == .86 and uf.name.glyphB == 0,
     "Blizzard's late vertex write left the NPC white while its font still reported the configured yellow")
@@ -432,14 +448,23 @@ NS.HostBridge.NPCNameColor = function() return unpack(friendlyPalette) end
 reaction, uf.isFriend = 5, true
 Names.ConfigureNameOnly()
 assert(Paint(uf, uf.unit))
-assert(label.r == barR and label.g == barG and label.b == barB, "the friendly glyph did not use the hidden bar's actual RGB")
+-- Blizzard paints an NPC shown like a player in its class color; the name keeps the NPC's own color.
+assert(label.r == 0 and label.g == 1 and label.b == 0 and barReads == 0,
+    "a friendly NPC name took or sampled the hidden bar's class color")
 uf.healthBar:SetStatusBarColor(1, 1, 1)
 assert(label.r == 0 and label.g == 1 and label.b == 0, "a white stock or priest bar erased the friendly NPC reaction")
 uf.healthBar:SetStatusBarColor(.25, .7, .85)
 label:SetTextColor(1, 1, 1, .8)
-assert(label.r == barR and label.g == barG and label.a == .8, "a later font writer left the friendly NPC white")
+assert(label.r == 0 and label.g == 1 and label.a == .8, "a later font writer left the friendly NPC white")
+dead = true
+uf.healthBar:SetStatusBarColor(.5, .5, .5)
+assert(label.r == .5 and label.g == .5 and label.b == .5, "the native death recolor did not grey the friendly NPC")
+dead, tapDenied = false, true
+uf.healthBar:SetStatusBarColor(.9, .9, .9)
+assert(label.r == .5 and label.g == .5, "a tapped NPC kept its reaction color")
+tapDenied = false
 uf.healthBar:SetStatusBarColor(.4, .4, .4)
-assert(label.r == .4 and label.g == .4 and label.b == .4, "a native bar recolor needed a target change")
+assert(label.r == 0 and label.g == 1 and label.b == 0, "a native bar recolor leaked onto the friendly NPC name")
 friendlyPalette = {0, .15, 1}
 Names.RefreshFriendlyPalette(true)
 assert(label.r == 0 and label.g == .15 and label.b == 1, "editing Friendly NPC Color did not recolor the visible NPC")
@@ -456,15 +481,23 @@ assert(Names.RefreshRole(uf, "Caster", nil) and label.r == .4, "removing a role 
 Names.RestoreNameOnly(uf)
 uf.name = Region(1)
 local getFont = uf.name.GetTextColor
+-- The white-name bug: a client that withholds the font getters still gets the NPC color on a new
+-- label. Blizzard only ever writes the vertex, so waiting for a public font write never ended.
 uf.name.GetTextColor = function() return secret, secret, secret, secret end
-assert(Paint(uf, uf.unit) and uf.name.writes == nil, "a withheld initial font baseline was inspected or replaced")
+assert(Paint(uf, uf.unit) and uf.name.r == .4 and uf.name.vr == .4 and uf.name.glyphR == .4 and uf.name.glyphG == .4,
+    "a withheld font getter left a new NPC name unpainted")
+local withheldWrites = uf.name.writes
+nativeUpdate(uf)
+assert(uf.name.writes == withheldWrites, "a withheld readback alone rewrote the NPC color")
+uf.name:SetVertexColor(1, 1, 1, 1)
+assert(uf.name.glyphR == .4 and uf.name.vr == .4, "Blizzard's vertex write left the NPC white while the getters were withheld")
 uf.name:SetTextColor(1, 1, 1, .6)
 assert(uf.name.r == .4 and uf.name.g == .4 and uf.name.b == .4 and uf.name.a == .6,
-    "the first public font write left the text white while the getter was withheld")
+    "a public font write left the text white while the getter was withheld")
 uf.name.GetTextColor = getFont
 uf.name:SetVertexColor(.4, .4, .4, .35)
-assert(uf.name.vr == 1 and uf.name.vg == 1 and uf.name.vb == 1 and uf.name.va == .35 and uf.name.a == .6,
-    "even a matching vertex tint would darken the glyph a second time")
+assert(uf.name.vr == .4 and uf.name.vg == .4 and uf.name.vb == .4 and uf.name.va == .35 and uf.name.a == .6,
+    "a matching native vertex write changed the NPC color or an opacity")
 local activeWrites = uf.name.writes
 combat, uf.name.access = true, false
 uf.name:SetVertexColor(1, 1, 1, 1)
@@ -477,9 +510,9 @@ uf.name:SetVertexColor(1, 0, 0, .45)
 assert(uf.name.glyphR == .4 and uf.name.glyphG == .4 and uf.name.a == .6,
     "a conflicting vertex update changed the NPC color or its separate opacity")
 Names.RestoreNameOnly(uf)
-assert(uf.name.vr == 1 and uf.name.vg == 0 and uf.name.vb == 0 and uf.name.va == .45
+assert(uf.name.vr == 1 and uf.name.vg == 0 and uf.name.vb == 0 and uf.name.vertexArgs == 3
     and uf.name.r == 1 and uf.name.g == 1 and uf.name.b == 1 and uf.name.a == .6,
-    "release did not restore both independent native tints and opacities")
+    "release did not restore both native tints, the font opacity, or passed a vertex alpha")
 local releasedWrites = uf.name.writes
 uf.name:SetVertexColor(.1, .2, .3, 1)
 uf.name:SetFontObject({1, 1, 1, .8})
@@ -492,7 +525,7 @@ combat, uf.name.access = false, true
 assert(Paint(uf, uf.unit) and uf.name.glyphR == .4 and uf.name.glyphG == .4,
     "a new occupant inherited a matching cached font color after its predecessor's blocked release")
 Names.RestoreNameOnly(uf)
-assert(uf.name.vr == .8 and uf.name.vg == .1 and uf.name.vb == .2 and uf.name.va == 1
+assert(uf.name.vr == .8 and uf.name.vg == .1 and uf.name.vb == .2 and uf.name.vertexArgs == 3
     and uf.name.r == 1 and uf.name.g == 1 and uf.name.b == 1 and uf.name.a == .8,
     "the new lease restored the previous occupant's baseline")
 uf.name.GetVertexColor = function(self) return self.vr, self.vg, self.vb end
@@ -500,10 +533,10 @@ assert(Paint(uf, uf.unit))
 uf.name:SetVertexColor(.1, .3, .8, .25)
 uf.name:SetTextColor(.7, .2, .6, .65)
 nativeUpdate(uf)
-assert(uf.name.vr == 1 and uf.name.vg == 1 and uf.name.va == .25 and uf.name.a == .65,
-    "an RGB-only vertex getter lost an explicit vertex alpha or imported the font alpha")
+assert(uf.name.vr == .4 and uf.name.vg == .4 and uf.name.vertexArgs == 3 and uf.name.a == .65,
+    "an RGB-only vertex getter passed a vertex alpha or lost the font alpha")
 Names.RestoreNameOnly(uf)
-assert(uf.name.vr == .1 and uf.name.vg == .3 and uf.name.va == .25
+assert(uf.name.vr == .1 and uf.name.vg == .3 and uf.name.vertexArgs == 3
     and uf.name.r == .7 and uf.name.g == .2 and uf.name.a == .65,
     "release mixed an RGB-only vertex channel with the font channel")
 assert(Paint(uf, uf.unit))
@@ -514,4 +547,266 @@ assert(uf.name.vr == .2 and uf.name.va == nil and uf.name.r == .4 and uf.name.a 
     "an omitted vertex alpha or a new matching font object inherited an old baseline")
 UnitIsPlayer = function() return secret end
 assert(not Paint(uf, uf.unit) and trainerClassReads == 0, "restricted identity triggered class coloring")
+do
+    assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
+    local custom = NS.NameplateText.CustomNameColor({ shared = { text = { nameColor = { r = .6, g = .25, b = .8 } } } })
+    local portable = NS.NameplateText.CustomNameColor({ shared = { portable = {
+        nameColorMode = "CUSTOM", nameColorR = .3, nameColorG = .8, nameColorB = .4,
+    } } })
+    assert(custom and custom.r == .6 and portable and portable.g == .8)
+    assert(not NS.NameplateText.CustomNameColor({ shared = { textColor = { r = 1, g = 1, b = 1 } } }),
+        "the default text color became an explicit override")
+
+    Names.RestoreNameOnly(uf)
+    UnitIsPlayer = function() return false end
+    UnitSelectionColor = function() return .1, .8, .2 end
+    reaction, uf.isFriend = 5, true
+    config.friendlyNPCs, config.friendlyNpcPlateNameTypeColor = 5, false
+    uf.healthBar:SetStatusBarColor(1, 1, 1)
+    private.NameText.CustomNameColor = function(scope)
+        assert(scope == "friendlyNpc")
+        return custom
+    end
+    Names.ConfigureNameOnly()
+    assert(Paint(uf, uf.unit) and uf.name.r == .6 and uf.name.b == .8,
+        "a hidden white bar overrode the custom name text color")
+    uf.healthBar:SetStatusBarColor(.4, .4, .4)
+    assert(uf.name.r == .6 and uf.name.b == .8, "a later health tint overrode the custom name text color")
+
+    private.NameText.CustomNameColor = nil
+    uf.healthBar:SetStatusBarColor(1, 1, 1)
+    Names.ConfigureNameOnly()
+    assert(Paint(uf, uf.unit) and uf.name.r == 0 and uf.name.g == 1 and uf.name.b == 0,
+        "a priest NPC's white class bar painted its name white with color by type disabled")
+    reaction = 4
+    config.neutralPlateNameOnly, config.neutralPlateNameTypeColor = true, false
+    uf.isFriend = false
+    Names.ConfigureNameOnly()
+    uf.healthBar:SetStatusBarColor(.96, .55, .73)
+    assert(Paint(uf, uf.unit) and Names.NameOnlyScope(uf) == "neutral"
+        and uf.name.r == 1 and uf.name.g == 1 and uf.name.b == 0,
+        "a paladin NPC's pink class bar painted a neutral name with color by type disabled")
+    reaction = secret
+    uf.healthBar:SetStatusBarColor(.2, .2, .2)
+    assert(uf.name.r == 1 and uf.name.g == 1 and uf.name.b == 0, "an unreadable reaction replaced the neutral color")
+    reaction, uf.isFriend, config.neutralPlateNameTypeColor = 5, true, true
+    Names.RestoreNameOnly(uf)
+    uf.healthBar:SetStatusBarColor(1, 1, 1)
+
+    reaction, uf.isFriend, config.enemyPlateNameTypeColor = 3, false, true
+    Names.ConfigureNameOnly()
+    assert(Paint(uf, uf.unit) and uf.name.g == .8 and uf.name.r == .1,
+        "a white hidden bar discarded the public NPC reaction color while color by type was enabled")
+    Names.RestoreNameOnly(uf)
+end
+-- NPCs Blizzard displays like players (UnitTreatAsPlayerForDisplay) arrive on friendly-player
+-- plates: name only, in a player class color. Unless Show forces their bar (Keep Blizzard, Hide,
+-- world names) they keep that native plate and take only their NPC color.
+do
+    Names.RestoreNameOnly(uf)
+    UnitIsPlayer = function() return false end
+    uf.name, uf.isPlayer, uf.isFriend, uf.showOnlyName, reaction, dead, tapDenied = Region(1), true, true, true, 5, false, false
+    uf.healthBar, uf.HealthBarsContainer.alpha, config.friendlyNpcPlateNameTypeColor = nil, .8, true
+    for _, mode in ipairs({ 1, 3, 4 }) do
+        config.friendlyNPCs = mode
+        Names.ConfigureNameOnly()
+        uf.name:SetVertexColor(1, 1, 1, 1)
+        assert(not Paint(uf, "nameplate5") and not Names.IsNameOnly(uf) and Names.OwnsColor(uf),
+            "a player-style NPC changed its native plate or lost its NPC color in mode " .. mode)
+        assert(uf.name.glyphR == 0 and uf.name.glyphG == 1 and uf.name.glyphB == 0 and uf.HealthBarsContainer.alpha == .8,
+            "a player-style NPC kept its class-colored name or lost a native region in mode " .. mode)
+        uf.name:SetVertexColor(.96, .55, .73, 1)
+        assert(uf.name.glyphR == 0 and uf.name.glyphG == 1, "a native class-color repaint replaced the NPC color")
+        assert(not Names.RefreshRole(uf, nil, nil), "a color-only NPC skipped the plate's own role refresh")
+    end
+    uf.showOnlyName = false
+    assert(not Paint(uf, "nameplate5") and not Names.OwnsColor(uf), "an NPC with a native health bar was recolored")
+    uf.showOnlyName = true
+    config.friendlyNPCs = 2
+    Names.ConfigureNameOnly()
+    assert(not Paint(uf, "nameplate5") and not Names.OwnsColor(uf), "Show recolored a player-style NPC it gives a bar")
+    config.friendlyNPCs, config.friendlyNpcSkinEnabled = 4, false
+    Names.ConfigureNameOnly()
+    assert(not Paint(uf, "nameplate5") and not Names.OwnsColor(uf), "a disabled Friendly NPC skin still recolored an NPC")
+    config.friendlyNpcSkinEnabled = nil
+
+    -- The native driver can handle NAME_PLATE_UNIT_ADDED after the Suite: showOnlyName is still unset
+    -- at our paint. The unit and the CVar decide then; a value Blizzard did set always wins.
+    local displayed, friend, namesCVar, cvarReads = true, true, true, 0
+    UnitTreatAsPlayerForDisplay = function() return displayed end
+    UnitIsFriend = function(a, b) assert(a == "player" and b == "nameplate6") return friend end
+    C_CVar = { GetCVarBool = function(key)
+        assert(key == "nameplateShowOnlyNameForFriendlyPlayerUnits")
+        cvarReads = cvarReads + 1
+        return namesCVar
+    end }
+    config.friendlyNPCs = 1
+    Names.ConfigureNameOnly()
+    Names.RestoreNameOnly(uf)
+    uf.name, uf.showOnlyName = Region(1), nil
+    assert(not Paint(uf, "nameplate6") and Names.OwnsColor(uf) and uf.name.glyphG == 1 and uf.name.glyphR == 0,
+        "a player-style NPC painted before the native driver kept its class color")
+    uf.name:SetVertexColor(.96, .55, .73, 1) -- the driver's later UpdateNameClassColor
+    assert(uf.name.glyphR == 0 and uf.name.glyphG == 1, "the driver's late class color replaced the NPC color")
+    for _, case in ipairs({ { "displayed", false }, { "friend", false }, { "friend", secret }, { "namesCVar", false } }) do
+        Names.RestoreNameOnly(uf)
+        displayed, friend, namesCVar = true, true, true
+        if case[1] == "displayed" then displayed = case[2] elseif case[1] == "friend" then friend = case[2] else namesCVar = case[2] end
+        assert(not Paint(uf, "nameplate6") and not Names.OwnsColor(uf), "an NPC Blizzard shows with a bar was recolored: " .. case[1])
+    end
+    displayed, friend, namesCVar = true, true, true
+    uf.showOnlyName, cvarReads = false, 0
+    assert(not Paint(uf, "nameplate6") and not Names.OwnsColor(uf) and cvarReads == 0,
+        "the unit overrode the driver's own name-only decision")
+    uf.showOnlyName = true
+    assert(not Paint(uf, "nameplate6") and Names.OwnsColor(uf) and cvarReads == 0, "a set native field was read again")
+
+    -- Death and tapping arrive as a native name repaint; an unreadable reaction resolves at the next one.
+    dead = true
+    uf.name:SetVertexColor(.5, .5, .5, 1)
+    assert(uf.name.glyphR == .5 and uf.name.glyphG == .5 and uf.name.glyphB == .5, "a dead color-only NPC kept its reaction")
+    dead = false
+    uf.name:SetVertexColor(1, 1, 1, 1)
+    assert(uf.name.glyphR == 0 and uf.name.glyphG == 1, "a resurrected color-only NPC stayed grey")
+    Names.RestoreNameOnly(uf)
+    uf.name, reaction = Region(1), secret
+    assert(not Paint(uf, "nameplate6") and not Names.OwnsColor(uf), "an unreadable reaction became an NPC color")
+    reaction = 4
+    uf.name:SetVertexColor(1, 1, 1, 1)
+    assert(Names.OwnsColor(uf) and uf.name.glyphR == 1 and uf.name.glyphG == 1 and uf.name.glyphB == 0,
+        "a withheld reaction never colored the NPC once readable")
+    Names.RestoreNameOnly(uf)
+    UnitTreatAsPlayerForDisplay, UnitIsFriend, C_CVar, reaction = nil, nil, nil, 5
+end
+
+-- Without a Name only display Skin.Paint never calls ApplyNameOnly. Its NPC-on-name-only-plate branch
+-- and Blizzard's UpdateShowOnlyName hook (either order) both reach SyncNPCHealth instead.
+do
+    config.enemyPlateNameOnly, config.neutralPlateNameOnly, config.friendlyNPCs = false, false, 1
+    Names.ConfigureNameOnly()
+    assert(not Names.nameOnlyEnabled and Names.nativeNpcNames, "Keep Blizzard turned on a Name only display")
+    UnitIsPlayer = function() return false end
+    uf.name, uf.unit, uf.showOnlyName, uf.isFriend, reaction = Region(1), "nameplate7", true, true, 5
+    uf.HealthBarsContainer.healthBar, uf.HealthBarsContainer.alpha = nil, .8
+    Names.SyncNPCHealth(uf, "friendlyNpc", false)
+    assert(Names.OwnsColor(uf) and not Names.IsNameOnly(uf) and uf.name.glyphR == 0 and uf.name.glyphG == 1
+        and uf.HealthBarsContainer.alpha == .8, "Keep Blizzard left a player-style NPC in its class color")
+    uf.name:SetVertexColor(.96, .55, .73, 1)
+    assert(uf.name.glyphR == 0 and uf.name.glyphG == 1, "a native class repaint won over the NPC color under Keep Blizzard")
+    uf.showOnlyName = false -- the names-only CVar went off: Blizzard's UpdateShowOnlyName
+    Names.SyncNPCHealth(uf, "friendlyNpc", false)
+    assert(not Names.OwnsColor(uf), "an NPC back on its health bar kept the name-only color")
+    uf.showOnlyName = true
+    Names.SyncNPCHealth(uf, "neutralNpc", false)
+    Names.SyncNPCHealth(uf, nil)
+    assert(not Names.OwnsColor(uf), "a plate that is not a Friendly NPC took the color-only path")
+    owner.active = false
+    Names.SyncNPCHealth(uf, "friendlyNpc", false)
+    assert(not Names.OwnsColor(uf), "a disabled module recolored an NPC")
+    owner.active = true
+    -- A faction change the Suite already recorded as hostile: Blizzard's UpdateShowOnlyName follows.
+    Names.SyncNPCHealth(uf, "friendlyNpc", false)
+    assert(Names.OwnsColor(uf) and plateHooks.UpdateShowOnlyName, "the native name-only hook was not registered")
+    plateHooks.UpdateShowOnlyName(uf)
+    assert(Names.OwnsColor(uf), "an unchanged native name-only plate lost its NPC color")
+    uf.showOnlyName = false
+    plateHooks.UpdateShowOnlyName(uf)
+    assert(not Names.OwnsColor(uf) and uf.name.r ~= 0, "an NPC that lost its name-only plate kept the NPC color")
+    uf.showOnlyName = true
+    Names.SyncNPCHealth(uf, "friendlyNpc", false)
+    config.friendlyNPCs = 2
+    Names.ConfigureNameOnly()
+    assert(not Names.OwnsColor(uf) and uf.name.r ~= 0, "switching to Show kept the color-only NPC")
+    config.friendlyNPCs = 1
+    Names.ConfigureNameOnly()
+    Names.SyncNPCHealth(uf, "friendlyNpc", false)
+    config.friendlyNPCs = 5
+    Names.ConfigureNameOnly()
+    assert(not Names.OwnsColor(uf), "switching to the Suite's own Name only kept a color-only state")
+    Names.RestoreNameOnly(uf)
+end
+
+-- The reported bug (Friendly NPCs: Name only, a plain NPC): the name stayed white. Clients disagree
+-- on how a FontString's vertex and text colors combine and can withhold both getters. Under each
+-- rule (the vertex wins, the text wins, the last write wins), with Blizzard's name refresh before
+-- and after our paint, the NPC must show its reaction color.
+do
+    Names.RestoreNameOnly(uf)
+    UnitIsPlayer = function() return false end
+    config.friendlyNPCs, config.friendlyNpcPlateNameTypeColor, config.enemyPlateNameOnly = 5, false, false
+    reaction, dead, tapDenied, uf.isFriend, uf.isPlayer, uf.showOnlyName = 5, false, false, true, false, false
+    uf.healthBar, uf.HealthBarsContainer.healthBar = nil, nil
+    Names.ConfigureNameOnly()
+    for _, model in ipairs({ "vertex", "text", "last" }) do
+        for _, blizzardFirst in ipairs({ true, false }) do
+            Names.RestoreNameOnly(uf)
+            local label = Region(1)
+            label.GetTextColor = function() return secret, secret, secret, secret end
+            label.GetVertexColor = label.GetTextColor
+            uf.name = label
+            -- Both setters reach a FontString's alpha aspect: an explicit nil counts as 0 (the worst
+            -- case), an omitted one keeps it. The name must stay visible without being targeted.
+            local shown = 1
+            for _, method in ipairs({ "SetVertexColor", "SetTextColor" }) do
+                local set = label[method]
+                label[method] = function(self, ...)
+                    if select("#", ...) >= 4 then shown = select(4, ...) or 0 end
+                    return set(self, ...)
+                end
+            end
+            -- CompactUnitFrame_UpdateName: the text, then the vertex color (white outside Legacy).
+            local function Refresh() label:SetText("Lieutenant Prenish") label:SetVertexColor(1, 1, 1) end
+            local function Visible()
+                if model == "vertex" then return label.vr, label.vg, label.vb end
+                if model == "text" then return label.r, label.g, label.b end
+                return label.glyphR, label.glyphG, label.glyphB
+            end
+            if blizzardFirst then Refresh() end
+            assert(Paint(uf, "nameplate8") and Names.NameOnlyScope(uf) == "friendlyNpc", "Name only skipped a friendly NPC")
+            local r, g, b = Visible()
+            assert(not blizzardFirst or r == 0 and g == 1 and b == 0, ("our paint after Blizzard's left %s,%s,%s (%s wins)"):format(
+                tostring(r), tostring(g), tostring(b), model))
+            assert(shown == 1, "our paint hid the untargeted NPC name through a color alpha")
+            Refresh()
+            assert(shown == 1, "a native name refresh left the untargeted NPC name hidden")
+            r, g, b = Visible()
+            assert(r == 0 and g == 1 and b == 0, ("a friendly NPC showed %s,%s,%s (%s wins, Blizzard %s)"):format(
+                tostring(r), tostring(g), tostring(b), model, blizzardFirst and "first" or "second"))
+        end
+    end
+    -- A fade can be under way when we paint: its read-back alpha of 0 is never written into the color.
+    Names.RestoreNameOnly(uf)
+    local fading = Region(1)
+    fading.GetTextColor = function() return 1, 1, 1, 0 end
+    fading.GetVertexColor = fading.GetTextColor
+    uf.name = fading
+    assert(Paint(uf, "nameplate8") and fading.textArgs == 3 and fading.vertexArgs == 3 and fading.a == .9
+        and fading.vr == 0 and fading.r == 0, "a read-back fade alpha was written into the NPC name color")
+    -- Release gives both withheld channels Blizzard's white back, never an earlier lease's baseline.
+    Names.RestoreNameOnly(uf)
+    local label = Region(1)
+    uf.name = label
+    label:SetTextColor(.2, .3, .4, 1)
+    assert(Paint(uf, "nameplate8"))
+    Names.RestoreNameOnly(uf)
+    assert(label.r == .2 and label.g == .3 and label.vr == 1, "a readable lease lost its native colors on release")
+    assert(Paint(uf, "nameplate8"))
+    label.GetTextColor = function() return secret, secret, secret, secret end
+    label.GetVertexColor = label.GetTextColor
+    assert(Paint(uf, "nameplate9") and label.r == 0 and label.vr == 0, "the pooled frame's next NPC stayed unpainted")
+    Names.RestoreNameOnly(uf)
+    assert(label.r == 1 and label.g == 1 and label.b == 1 and label.vr == 1 and label.vg == 1 and label.vb == 1,
+        "a withheld lease kept the NPC color or restored an earlier lease's baseline")
+end
+
+-- Keep Blizzard is the default: its color-only NPCs follow per-label hooks, never a global hook.
+do
+    local hooks = #nameHooks
+    nameHooks = {}
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/FriendlyNames.lua"))("Nameplates", private)
+    private.FriendlyNames.Bind({ config = { friendlyNPCs = 1 }, active = true, pendingPlates = {} })
+    private.FriendlyNames.ConfigureNameOnly()
+    assert(private.FriendlyNames.nativeNpcNames and not private.FriendlyNames.nameOnlyEnabled and #nameHooks == 0
+        and hooks > 0, "the default Friendly NPC display installed a global hook or a Name only display")
+end
 print("Name-only scope selection, color, combat deferral and restoration passed")

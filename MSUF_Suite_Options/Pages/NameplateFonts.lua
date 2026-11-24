@@ -3,12 +3,19 @@ local Text, Bridge = P.Suite.NameplateText, P.Suite.HostBridge
 local Fonts = {}
 P.NameplateFonts = Fonts
 local oldGate, RuleRow = P.Gates.nameplates, P.RuleRow
+local COLOR_SECTION = "opt_fonts_nameplate_colors"
+local COLOR_SCOPES = { "enemy", "neutral", "friendly" }
+local colorKeys = {}
+for _, scope in ipairs(COLOR_SCOPES) do
+    colorKeys[scope .. "NameColor"] = true
+    colorKeys[scope .. "NameColorEnabled"] = true
+end
 local function NativeScope()
     local provider = Bridge.NameFormatter()
     return provider and provider.Nameplates ~= nil
 end
 local function LegacyTextKey(key)
-    if Text.SizeOverrides[key] then return false end
+    if Text.SizeOverrides[key] or colorKeys[key] then return false end
     if key == "nameFormattingEnabled" or key == "nameTextUseCustomSettings" then return true end
     for _, prefix in ipairs({ "enemy", "friendly", "enemyCast", "friendlyCast" }) do
         for _, suffix in ipairs(Text.Suffixes) do if key == prefix .. suffix then return true end end
@@ -47,7 +54,26 @@ function P.RuleRow(page, id, rule, ...)
     end
     return row
 end
-local SHORTEN, COLORS = "fonts_name_shortening", "fonts_name_power_colors"
+local SHORTEN = "fonts_name_shortening"
+
+function Fonts.BuildColors(ctx, builder)
+    local rules, labels, catalog = {}, {}, P.catalog.nameplates.rules
+    for _, scope in ipairs(COLOR_SCOPES) do
+        local color = catalog[scope .. "NameColor"]
+        local toggle = catalog[color.enableKey]
+        rules[#rules + 1], rules[#rules + 2] = toggle, color
+        labels[toggle.key], labels[color.key] = color.label, "Custom color"
+    end
+    P.RuleSection(ctx, builder, "opt_fonts", "nameplates", COLOR_SECTION, P.Tr("Name colors"), rules, {
+        open = true, columns = 2, colors = {}, editWhileOff = true,
+        layoutRows = function(rows)
+            for _, row in ipairs(rows) do
+                row.label = P.Tr(labels[row.id])
+                row.startsGroup = row.kind == "toggle"
+            end
+        end,
+    })
+end
 
 function Fonts.HasLinks()
     return Bridge.HasNameplateFontsMenu(P.M)
@@ -55,10 +81,16 @@ end
 
 function Fonts.TargetForSetting(settingKey)
     local key = settingKey and settingKey:match("^msufsuite%.nameplates%.(.+)$")
-    if not key or not LegacyTextKey(key) then return end
-    if not Fonts.HasLinks() then
-        local fallback = P.NameplatesHostOptions
-        if fallback and fallback.registered then return "opt_fonts", { sectionId = "opt_fonts_nameplate_text" } end
+    if not key then return end
+    local provider = P.NameplatesHostOptions
+    local native = Fonts.HasLinks()
+    if colorKeys[key] and provider and provider.registered then
+        if native then return Bridge.NameplateFontsTarget(COLOR_SECTION) end
+        return "opt_fonts", { sectionId = COLOR_SECTION }
+    end
+    if not LegacyTextKey(key) then return end
+    if not native then
+        if provider and provider.registered then return "opt_fonts", { sectionId = "opt_fonts_nameplate_text" } end
         return
     end
     if key == "nameFormattingEnabled" or key == "nameTextUseCustomSettings" then
@@ -66,13 +98,28 @@ function Fonts.TargetForSetting(settingKey)
     end
     local suffix = key:match("^enemy(.+)$") or key:match("^friendly(.+)$")
     for _, name in ipairs(Text.Suffixes) do
-        if suffix == name then
-            local section = name:find("Color", 1, true) and COLORS or SHORTEN
-            return Bridge.NameplateFontsTarget(section)
-        end
+        if suffix == name then return Bridge.NameplateFontsTarget(SHORTEN) end
     end
     local section = key:match("Font$") and "fonts_global_font" or "fonts_text_style"
     return Bridge.NameplateFontsTarget(section)
+end
+
+function Fonts.FriendlyNPCColorTarget()
+    local colors = Bridge.NPCColors()
+    if not colors or not colors.GetNPCColor or not colors.SetNPCColor then return end
+    local profile = Bridge.CurrentFrameProfile()
+    return {
+        label = P.Tr("Friendly NPC Color"),
+        settingKey = "colors.npc.color.friendly",
+        get = function() return colors.GetNPCColor("friendly") end,
+        set = function(r, g, b)
+            if P.Combat() or profile ~= Bridge.CurrentFrameProfile() then return false end
+            colors.SetNPCColor("friendly", r, g, b)
+            P.S.Apply("nameplates")
+            P.Refresh()
+            return true
+        end,
+    }
 end
 
 function Fonts.AddLinks(ctx, body, y, width, sectionId)
@@ -94,6 +141,6 @@ function Fonts.AddLinks(ctx, body, y, width, sectionId)
     end
     Button("Nameplate font", 16, "fonts_global_font", "action.fontTypography")
     Button("Name format", 24 + buttonWidth, SHORTEN, "action.fontNameFormat")
-    Button("Colors", 32 + 2 * buttonWidth, COLORS, "action.fontNameColors")
+    Button("Text Colors", 32 + 2 * buttonWidth, COLOR_SECTION, "action.fontNameColors")
     return y - 34
 end

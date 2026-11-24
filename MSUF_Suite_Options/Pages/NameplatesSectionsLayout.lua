@@ -180,6 +180,7 @@ local function Text(sections, side, scopes)
     local name = TextTab("name", "Name", side .. "Name", { side .. "NameSize" },
         { side .. "NameRelativeAnchor", side .. "NameOffsetX", side .. "NameOffsetY" },
         side == "friendly" and { "playerGuildNames" } or {})
+    P.NameplatesWorkspace.AddNameOptions(name.keys, scopes)
     local healthFormat = side == "enemy" and { "enemyTextMode", "enemyMirrorHeader" } or {}
     local health = TextTab("hp", "HP Text", side .. "HealthText", { side .. "HealthTextSize" },
         { side .. "HealthTextOffsetX", side .. "HealthTextOffsetY" }, healthFormat)
@@ -204,7 +205,7 @@ local function TextSample(ctx, card, side, tab, width, y)
         if tab.id == "name" then
             sample:SetTextColor(1, 1, 1)
             model.PaintFont(sample, config, side, 12, P.Suite.GlobalFontPath(), P.StylePreviewFont)
-            model.Paint(sample, state, model.Sample(side), model.Compile(config, side))
+            model.Paint(sample, state, model.Sample(side), model.Compile(config, side, P.NameplatesWorkspace.Kind()))
         elseif tab.id == "hp" then
             local mode = side == "enemy" and P.Get(ID, "enemyTextMode") or 2
             model.PaintFont(sample, config, side, 12, P.Suite.GlobalFontPath(), P.StylePreviewFont, true)
@@ -251,11 +252,6 @@ function Layout.TextCards(ctx, panel, y, width, spec, tab, sectionId)
         return top + bottom - 24
     end
     local leftEnd = Card(tab.label, { tab.toggle }, 16, y, left, function(card, top, w)
-        if tab.colors then
-            local rules = {}
-            for _, key in ipairs(tab.colors) do if byKey[key] then rules[#rules + 1] = byKey[key] end end
-            P.AttachRuleColors(card, tab.label, ID, rules)
-        end
         if tab.id == "power" then
             local hint = P.Text(card, "Enable the Resource Bar to show power text.", 16, top, w)
             local function ShowHint() hint:SetShown(not P.Get(ID, "enemyPowerEnabled")) end
@@ -271,7 +267,10 @@ function Layout.TextCards(ctx, panel, y, width, spec, tab, sectionId)
     end)
     if tab.anchor then leftEnd = Card("Position", { tab.anchor }, 16, leftEnd, left) end
     local x = narrow and 16 or left + 30
-    local rightEnd = Card("Appearance", tab.appearance, x, narrow and leftEnd or y, right)
+    local rightEnd = Card("Appearance", tab.appearance, x, narrow and leftEnd or y, right,
+        tab.id == "name" and function(card, top, w)
+            return P.NameplatesWorkspace.NameOptionRows(ctx, card, top, w, sectionId, byKey, entries)
+        end or nil)
     if #tab.format > 0 then rightEnd = Card("Format", tab.format, x, rightEnd, right) end
     rightEnd = Card("Visibility", tab.visibility, x, rightEnd, right, function(card, top, w)
         local label = P.Text(card, "Preview stays visible. 0 seconds = instant.", 16, top, w)
@@ -542,11 +541,13 @@ local function StyleColors(side)
     local function Add(key)
         if not seen[key] then colors[#colors + 1], seen[key] = key, true end
     end
-    for _, suffix in ipairs({ "BorderColor", "BackdropColor", "OuterFrameColor", "GlowColor", "NameColor" }) do
+    for _, suffix in ipairs({ "BorderColor", "BackdropColor", "OuterFrameColor", "GlowColor" }) do
         Add(side .. suffix)
     end
     for _, rule in ipairs(P.catalog[ID].controls) do
         if rule.color and not rule.hidden and rule.section ~= "plateExtraText" and rule.section ~= "plateExtras"
+            and rule.section ~= "plateTextDisplay" and rule.section ~= "nameText"
+            and not (rule.section or ""):match("StyleOutline$") and not (rule.section or ""):match("StyleTextures$")
             and not rule.key:match("^aura") then
             local owner = rule.section == "combatExtensions" and "enemy" or rule.key:match("^(enemy)") or rule.key:match("^(friendly)")
             if not owner or owner == side then Add(rule.key) end
@@ -572,35 +573,46 @@ local function StyleAppearance(side, frame, health, combat, threat)
     local tabs = { Tab("colors", "Colors", keys), Tab("frame", frame.label, { side .. "BackdropEnabled", side .. "BackdropAlpha" }) }
     tabs[1].colors, tabs[1].help, tabs[2].help = colors, health and "roleColors" or nil, frame.help
     if side == "enemy" then tabs[2].keys[#tabs[2].keys + 1] = "enemySlantedHealth" end
-    local textures = P.NameplateBarTextures
-    if not textures.Target("enemyOutlineMode") then
-        local fallback = textures.BarDetailKeys()
-        for _, key in ipairs(fallback) do
-            if key:match("^" .. side) or not key:match("^enemy") and not key:match("^friendly") then
-                tabs[2].keys[#tabs[2].keys + 1] = key
-            end
-        end
-    end
     if combat then tabs[#tabs + 1] = Tab("combat", combat.title, combat.keys) end
     return tabs
 end
 
-local function PlaceStyle(sections, scope, appearance, sharedAppearance)
-    local tabs = {}
-    for _, source in ipairs(appearance) do
-        local tab = Tab(source.id, source.label, source.keys)
-        tab.colors, tab.help, tab.shared = source.colors, source.help, sharedAppearance
-        if tab.id == "frame" then
-            tab.keys = Take(source, 1)
-            for _, pattern in ipairs(P.Suite.NameplateExtensions.Patterns) do
-                local key = scope .. pattern.field
-                tab.keys[#tab.keys + 1], tab.keys[#tab.keys + 2] = key .. "Texture", key .. "Alpha"
-            end
+local function AppearanceTab(scope, suffix, id, title)
+    local keys, colors = {}, {}
+    for _, rule in ipairs(P.catalog[ID].controls) do
+        if rule.section == scope .. suffix and not rule.hidden then
+            local list = rule.color and colors or keys
+            list[#list + 1] = rule.key
         end
-        tabs[#tabs + 1] = tab
     end
+    local tab = Tab(id, title, keys)
+    tab.colors = colors
+    return tab
+end
+
+local function PlaceStyle(sections, scope, appearance, sharedAppearance)
+    local tabs, palette = {}
+    for _, source in ipairs(appearance) do
+        if source.id == "colors" and #source.keys == 0 then
+            palette = source.colors
+        else
+            local tab = Tab(source.id, source.label, source.keys)
+            tab.colors, tab.help, tab.shared = source.colors, source.help, sharedAppearance
+            if tab.id == "frame" then
+                tab.keys = Take(source, 1)
+                for _, pattern in ipairs(P.Suite.NameplateExtensions.Patterns) do
+                    local key = scope .. pattern.field
+                    tab.keys[#tab.keys + 1], tab.keys[#tab.keys + 2] = key .. "Texture", key .. "Alpha"
+                end
+            end
+            tabs[#tabs + 1] = tab
+        end
+    end
+    local index = palette and 2 or 3
+    table.insert(tabs, index, AppearanceTab(scope, "StyleOutline", "outline", "Frame Outline"))
+    table.insert(tabs, index + 1, AppearanceTab(scope, "StyleTextures", "textures", "Textures & Gradient"))
     Add(sections, scope .. "Style", "Style", { [scope] = true }, 20,
-        { tabs = tabs, styleScope = scope, tabWidth = 175 })
+        { tabs = tabs, colors = palette, sharedColors = sharedAppearance, styleScope = scope, tabWidth = 175 })
 end
 
 local function StatusSections(sections, by, side, identity, target, options)
@@ -618,10 +630,10 @@ local function PlaceEnemy(sections, by)
     local dimensions = Take(bar, 1, 2)
     Add(sections, "enemyBasics", "Basics", { enemy = true }, 10, { open = true,
         switch = X.SkinKeys.enemy, enableModule = true, summary = Layout.Dimensions("enemy"),
-        keys = { "enemyPlateNameOnly", "enemyCenterName", "enemyPlateNameClassColor", "enemyPlateNameTypeColor", unpack(dimensions) } })
+        keys = dimensions })
     Add(sections, "neutralBasics", "Basics", { neutral = true }, 10, { open = true,
         switch = X.SkinKeys.neutral, enableModule = true, summary = Layout.Dimensions("neutral"),
-        help = "neutralBasics", keys = { "neutralPlateNameOnly", "neutralCenterName", "neutralPlateNameTypeColor", "neutralNpcSizeOverride",
+        help = "neutralBasics", keys = { "neutralNpcSizeOverride",
             "neutralNpcHealthWidthDelta", "neutralNpcHealthHeightDelta" } })
     local appearance = StyleAppearance("enemy", frame, by.roleColors, by.combatExtensions, by.threatDetail)
     PlaceStyle(sections, "enemy", appearance, false)
@@ -645,13 +657,13 @@ local function PlaceFriendly(sections, by)
     local display, bar, frame = unpack(by.friendly.tabs)
     local dimensions = Take(bar, 1, 2)
     Add(sections, "friendlyBasics", "Basics", { friendly = true }, 10, { open = true,
-        keys = { display.keys[1], "friendlyCenterName", display.keys[2], display.keys[3], dimensions[1], dimensions[2] },
+        keys = { display.keys[3], dimensions[1], dimensions[2] },
         switch = X.SkinKeys.friendly, enableModule = true, help = "friendly",
         summary = Layout.Dimensions("friendly") })
     Add(sections, "friendlyNpcBasics", "Basics", { friendlyNpc = true }, 10, { open = true,
         help = "friendlyNpcBasics", switch = X.SkinKeys.friendlyNpc, enableModule = true,
         summary = Layout.Dimensions("friendlyNpc"),
-        keys = { display.keys[4], "friendlyNpcCenterName", "friendlyNpcPlateNameTypeColor", "friendlyNpcSizeOverride",
+        keys = { "friendlyNpcSizeOverride",
             "friendlyNpcHealthWidthDelta", "friendlyNpcHealthHeightDelta" } })
     local appearance = StyleAppearance("friendly", frame)
     PlaceStyle(sections, "friendly", appearance, false)
@@ -675,13 +687,22 @@ local function ContextTabs(kind, suffixes)
     return tabs
 end
 
+local DISTANCE = { "plateMaxDistanceMode", "plateMaxDistance", "plateOccludedMode", "plateOccludedPercent",
+    "plateFadeDistance", "plateShrinkDistance", "plateInsetMode", "plateTopInset", "plateBottomInset", "plateClampTarget" }
+local VISIBILITY = { enemy = "What enemies to show", neutral = "What neutral NPCs to show",
+    friendly = "What friendly players to show", friendlyNpc = "What friendly NPCs to show" }
+
 local function ExtendBasics(sections, basics, scope, kinds, display, suffixes)
-    local tabs = { Tab("general", "General", basics.keys) }
+    local health = Tab("health", "Health Bar", basics.keys)
     basics.keys = nil
-    tabs[1].help = basics.help
-    tabs[1].extra = Layout.BarLinks
-    tabs[1].keys[#tabs[1].keys + 1] = X.ContextKeys[scope]
-    if display then tabs[#tabs + 1] = Tab("display", "Display", display) end
+    health.help = basics.help
+    local visibility = Tab("visibility", VISIBILITY[scope], display)
+    local stackKey = (scope == "enemy" or scope == "neutral") and "plateStackEnemy" or "plateStackFriendly"
+    local stacking = Tab("stacking", "Stacking", {
+        stackKey, "plateSpacingMode", "plateOverlapV", "plateOverlapH", "plateMotionSpeed",
+    })
+    stacking.help = "stacking"
+    local tabs = { visibility, health, stacking }
     local clicks, range = {}, { scope .. "RangeAuto" }
     for _, field in ipairs(X.InteractionFields) do
         local keys = field:sub(1, 5) == "Range" and range or clicks
@@ -693,8 +714,10 @@ local function ExtendBasics(sections, basics, scope, kinds, display, suffixes)
     tabs[#tabs + 1] = clickTab
     local spell = Tab("spell", "Spell range", range)
     spell.help = "plateRange"
+    local distance = Tab("distance", "Distance", DISTANCE)
+    distance.help = "distance"
     Add(sections, scope .. "Range", "Range Check", { [scope] = true }, 85,
-        { tabs = { spell }, switch = scope .. "RangeEnabled", spellPicker = scope .. "RangeSpell" })
+        { tabs = { spell, distance }, tabWidth = 140, switch = scope .. "RangeEnabled", spellPicker = scope .. "RangeSpell" })
     for _, tab in ipairs(ContextTabs(kinds, suffixes)) do
         tabs[#tabs + 1] = tab
     end
@@ -742,32 +765,36 @@ local function PlaceVisibility(sections, by)
     local kinds = { enemy = { enemyNpc = true, enemyPlayer = true }, neutral = { neutralNpc = true },
         friendly = { friendlyPlayer = true }, friendlyNpc = { friendlyNpc = true } }
     local displays = {
-        enemy = { "plateEnemyMinions", "plateEnemyPets", "plateEnemyGuardians", "plateEnemyTotems",
-            "plateEnemyMinus", "plateSimpleMinion", "plateSimpleMinus", "plateStackEnemy" },
-        friendly = { "plateFriendlyMinions", "plateFriendlyPets", "plateFriendlyGuardians", "plateFriendlyTotems",
-            "plateSimpleFriendlyPlayer", "plateStackFriendly" },
-        friendlyNpc = { "plateSimpleFriendlyNpc" },
+        enemy = { "enemyPlateNameOnly", "plateEnemyMinions", "plateEnemyPets", "plateEnemyGuardians", "plateEnemyTotems",
+            "plateEnemyMinus", "plateSimpleMinion", "plateSimpleMinus", "plateShowAll", "plateOffscreen" },
+        neutral = { "neutralPlateNameOnly" },
+        friendly = { "friendlyNamesOnly", "plateFriendlyMinions", "plateFriendlyPets", "plateFriendlyGuardians", "plateFriendlyTotems",
+            "plateSimpleFriendlyPlayer" },
+        friendlyNpc = { "friendlyNPCs", "plateSimpleFriendlyNpc" },
     }
-    for _, key in ipairs({ "enemy", "neutral", "friendly", "friendlyNpc" }) do
-        ExtendBasics(sections, by[key .. "Basics"], key, kinds[key], displays[key], suffixes)
+    for _, key in ipairs(by.enemyVisibility.keys) do displays.enemy[#displays.enemy + 1] = key end
+    for _, key in ipairs(X.OpacityScopes) do
+        local basics, display = by[key .. "Basics"], displays[key]
+        table.insert(display, 1, X.ContextKeys[key])
+        ExtendBasics(sections, basics, key, kinds[key], display, suffixes)
         AddOpacity(sections, key, kinds[key])
     end
-    Relocate(by, "enemyVisibility", nil, { enemy = true }, 80)
 end
 
-local function PlaceGeneral(sections, by)
-    local scope = { general = true }
+local function NativeStyle(by)
     local function Links(ctx, body, y, width, section)
-        local hint = P.Text(body, "Nameplate style and size apply to all nameplate types.", 16, y - 8, width)
-        y = y - 18 - math.ceil(hint:GetStringHeight() or 14)
-        y = P.NameplateBarTextures.LinkCastTarget(ctx, body, y, width, section)
-        return P.NameplateBarTextures.LinkAbsorbs(ctx, body, y, width, section)
+        local bars = P.NameplateBarTextures
+        y = bars.Link(ctx, body, y, width, section)
+        y = bars.LinkOutline(ctx, body, y, width, section)
+        y = bars.LinkCastTarget(ctx, body, y, width, section)
+        return bars.LinkAbsorbs(ctx, body, y, width, section)
     end
-    Add(sections, "general", "General", scope, 10, { open = true, searchScope = "general", tabs = {
-        Tab("style", "Style", by.native.keys, Links),
-        Tab("distance", "Distance and stacking", by.distance.keys),
-        Tab("profiles", "Profiles", { "nativeProfileMode", "protectImport" }),
-    } })
+    for _, scope in ipairs(X.OpacityScopes) do
+        local style = by[scope .. "Style"]
+        local tab = Tab("blizzard", "Blizzard & presets", by.native.keys, Links)
+        tab.help = "native"
+        style.tabs[#style.tabs + 1] = tab
+    end
 end
 
 function Layout.Arrange(sections)
@@ -776,21 +803,12 @@ function Layout.Arrange(sections)
     PlaceEnemy(sections, by)
     PlaceFriendly(sections, by)
     for _, spec in ipairs(sections) do by[spec.key] = spec end
-    by.distance.keys = { "plateMaxDistanceMode", "plateMaxDistance", "plateOccludedMode", "plateOccludedPercent", "plateFadeDistance",
-        "plateShrinkDistance", "plateSpacingMode", "plateOverlapV", "plateOverlapH", "plateMotionSpeed", "plateInsetMode",
-        "plateTopInset", "plateBottomInset", "plateClampTarget", "plateShowAll", "plateOffscreen" }
     PlaceVisibility(sections, by)
-    PlaceGeneral(sections, by)
+    NativeStyle(by)
     local auras = Relocate(by, "auraWorkspace", "Auras", ALL, 30)
     auras.open, auras.summary = false, P.NameplatesAdvancedAuras.Summary
     for i = #sections, 1, -1 do
         if not sections[i].scopes then table.remove(sections, i) end
     end
-end
-
-function Layout.BarLinks(ctx, body, y, width, sectionId)
-    local bars = P.NameplateBarTextures
-    y = bars.Link(ctx, body, y, width, sectionId)
-    return bars.LinkOutline(ctx, body, y, width, sectionId)
 end
 

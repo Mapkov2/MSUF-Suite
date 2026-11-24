@@ -24,7 +24,8 @@ end
 
 function Profiles.SettingGroup(key, rule)
     local section = rule.section or ""
-    if section == "auraColors" or section == "barGradients" then return "colors" end
+    if section == "auraColors" or section == "barGradients" or section:match("StyleOutline$")
+        or section:match("StyleTextures$") then return "colors" end
     if section:lower():find("aura", 1, true) or key:find("Auras", 1, true)
         or key:find("Buffs", 1, true) or key:find("ControlAura", 1, true) then return "auras" end
     if key:find("Cast", 1, true) or section:lower():find("cast", 1, true) == 1 then return "casts" end

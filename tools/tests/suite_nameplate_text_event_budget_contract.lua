@@ -18,7 +18,7 @@ UnitName = function() Count(reads, "name"); return "A target" end
 UnitDetailedThreatSituation = function() Count(reads, "threat"); return false, nil, 37, nil, 50 end
 C_Secrets = { ShouldUnitIdentityBeSecret = function() return false end }
 GetGuildInfo = function() Count(reads, "guild"); return "A guild" end
-local NS = { IsSecret = function() return false end, NameplateExtensions = { TextPoints = {
+local NS = { IsSecret = function() return false end, NameplateExtensions = { NPCTitleSource = 5, TextPoints = {
     [1] = { "CENTER", "health", "CENTER", 0, 0 },
 } } }
 local function Nop() end

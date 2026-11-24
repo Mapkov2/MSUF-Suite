@@ -8,7 +8,7 @@ P.NameplatesWorkspace = Workspace
 
 local ORDER = { "enemy", "neutral", "friendly", "friendlyNpc" }
 local LABELS = { enemy = "Enemy", neutral = "Neutral", friendly = "Friendly",
-    friendlyNpc = "Friendly NPC", general = "General" }
+    friendlyNpc = "Friendly NPC" }
 local SIDES = { enemy = "enemy", neutral = "enemy", friendly = "friendly", friendlyNpc = "friendly" }
 local X = P.Suite.NameplateExtensions
 local PRIMARY_KINDS = { enemy = "enemyNpc", neutral = "neutralNpc", friendly = "friendlyPlayer", friendlyNpc = "friendlyNpc" }
@@ -21,12 +21,73 @@ local COPY_CATEGORIES = {
 }
 local current = "enemy"
 
+local nameOptions = {
+    enemy = { "enemyCenterName", "enemyPlateNameClassColor", "enemyPlateNameTypeColor", "enemyExtraTextTitle" },
+    neutral = { "neutralCenterName", "neutralPlateNameTypeColor", "neutralExtraTextTitle" },
+    friendly = { "friendlyCenterName", "friendlyNameClassColor" },
+    friendlyNpc = { "friendlyNpcCenterName", "friendlyNpcPlateNameTypeColor", "friendlyNpcExtraTextTitle" },
+}
+local nameOptionScopes = {}
+for scope, keys in pairs(nameOptions) do
+    for _, key in ipairs(keys) do nameOptionScopes[key] = scope end
+end
+
+function Workspace.NameOptionScope(key) return nameOptionScopes[key] end
+
+function Workspace.ActiveNameRules(rules)
+    if not Workspace.ui then return rules end
+    local active = {}
+    for _, rule in ipairs(rules) do
+        local scope = nameOptionScopes[rule.key]
+        if not scope or scope == current then active[#active + 1] = rule end
+    end
+    return active
+end
+
+function Workspace.AddNameOptions(keys, scopes)
+    for _, scope in ipairs(ORDER) do
+        if scopes[scope] then
+            for _, key in ipairs(nameOptions[scope]) do keys[#keys + 1] = key end
+        end
+    end
+end
+
+function Workspace.NameOptionRows(ctx, card, top, width, sectionId, byKey, entries)
+    local ui = Workspace.ui
+    local bottom = top
+    for _, scope in ipairs(ORDER) do
+        local rules = {}
+        for _, key in ipairs(nameOptions[scope]) do
+            if byKey[key] then rules[#rules + 1] = byKey[key] end
+        end
+        if #rules > 0 then
+            local rowTop = ui and top or bottom
+            local rows = CreateFrame("Frame", nil, card)
+            rows:SetPoint("TOPLEFT", card, "TOPLEFT", 0, rowTop)
+            local offset, controls = P.RuleGrid(ctx, rows, PAGE, ID, rules, 0, width, nil, sectionId, 1)
+            rows:SetSize(width + 32, -offset)
+            for _, entry in ipairs(controls) do entries[#entries + 1] = entry end
+            if ui then
+                ui.nameOptionRows[rows] = scope
+                rows:SetShown(current == scope)
+            end
+            bottom = math.min(bottom, rowTop + offset)
+        end
+    end
+    return bottom
+end
+
 function Workspace.Side() return SIDES[current] end
 function Workspace.Kind() return current end
 
 local function CopyCategory(rule, field, scope)
-    local section = rule.section
+    local section = rule.section or ""
     if section == "plateNameOnly" or section == "plateHighlightPatterns" then return "style" end
+    local appearance = section:match("StyleOutline$") and "outline" or section:match("StyleTextures$") and "textures"
+    if appearance then
+        if P.Get(ID, P.Suite.NameplateStyle.AppearanceSwitch(scope, appearance)) then return "style" end
+        return
+    end
     if section == "plateOpacity" then return "opacity" end
     if section == "plateInteraction" or section == "plateExtras" then
         if field:match("^Range") then return "range" end
@@ -85,7 +146,9 @@ function Workspace.CopyValues(source, target, selected)
         local field = key:match("^" .. source .. "(%u.+)$")
         local category = field and CopyCategory(rule, field, source)
         local candidate = category and P.catalog[ID].rules[target .. field]
-        if selected[category] and candidate and CopyCategory(candidate, field, target) == category
+        local section = candidate and candidate.section
+        local appearance = section and (section:match("StyleOutline$") or section:match("StyleTextures$"))
+        if selected[category] and candidate and (appearance or CopyCategory(candidate, field, target) == category)
             and CopyRule(values, key, candidate.key) then
             available[category] = true
         end
@@ -241,6 +304,7 @@ function Workspace.Select(ui, kind, fromFocus)
     ui.selecting = true
     local changed = current ~= kind
     current = kind
+    for rows, scope in pairs(ui.nameOptionRows) do rows:SetShown(kind == scope) end
     local visible = {}
     for _, record in ipairs(ui.sections) do
         local rank = record.scopes[kind]
@@ -283,11 +347,28 @@ function Workspace.Track(ui, body, scopes)
     ui.sections[index] = { entry = entry, scopes = scopes, index = index }
     HM.SetSectionEnsureVisible(entry, function()
         if scopes[current] then return end
-        if scopes.general then Workspace.Select(ui, "general", true) return end
         for _, kind in ipairs(ORDER) do
             if scopes[kind] then Workspace.Select(ui, kind, true) return end
         end
     end)
+end
+
+-- Copy To keeps its translated caption whole (German "Kopieren nach" is wider
+-- than the English button); the type selector wraps left of it.
+local COPY_MIN_WIDTH, COPY_PADDING = 94, 26
+local function CopyButtonWidth()
+    local probe = Workspace.copyMeasure
+    if not probe then
+        probe = UIParent:CreateFontString(nil, "OVERLAY")
+        probe:Hide()
+        Workspace.copyMeasure = probe
+    end
+    if not (P.T.ApplyMenuFont and P.T.ApplyMenuFont(probe, nil, "card") ~= false and probe:GetFont()) then
+        probe:SetFontObject("GameFontHighlightSmall")
+    end
+    probe:SetText(Tr("Copy To"))
+    local measure = probe.GetUnboundedStringWidth or probe.GetStringWidth
+    return math.max(COPY_MIN_WIDTH, math.ceil(measure(probe) or 0) + COPY_PADDING)
 end
 
 -- The fixed header with the type selector and Copy To. Returns nil on a
@@ -296,13 +377,13 @@ end
 function Workspace.Header(ctx, builder)
     if not (W.ScopeOverrideBar and W.MeasureScopeOverrideBar and builder.RequestRelayoutCollapsibles
         and builder.layoutEntries and HM.GetSectionEntry) then return nil end
-    local ui = { builder = builder, sections = {}, building = true }
+    local ui = { builder = builder, sections = {}, nameOptionRows = {}, building = true }
     Workspace.ui = ui
     local width = builder.width or ctx.width or 720
     local values = {}
     for _, kind in ipairs(ORDER) do values[#values + 1] = { value = kind, text = Tr(LABELS[kind]) } end
-    values[#values + 1] = { value = "general", text = Tr(LABELS.general) }
-    local opts = { values = values, width = width, maxRight = width - 118, label = "", labelWidth = 0, startX = 16,
+    local copyWidth = CopyButtonWidth()
+    local opts = { values = values, width = width, maxRight = width - copyWidth - 24, label = "", labelWidth = 0, startX = 16,
         getValue = function() return current end,
         setValue = function(kind) Workspace.Select(ui, kind) end }
     local metrics = W.MeasureScopeOverrideBar(values, opts)
@@ -311,7 +392,13 @@ function Workspace.Header(ctx, builder)
     ui.selector = W.ScopeOverrideBar(ctx, head, opts)
     local theme = P.T
     if theme.Button then
-        ui.copy = P.T.Button(head, "Copy To", 94, 24)
+        ui.copy = P.T.Button(head, "Copy To", copyWidth, 24)
+        local label = HM.GetControlLabel(ui.copy)
+        if label then label:SetWordWrap(false) end
+        local measure = label and (label.GetUnboundedStringWidth or label.GetStringWidth)
+        if measure and math.ceil(measure(label) or 0) + COPY_PADDING > copyWidth then
+            ui.copy:SetWidth(math.ceil(measure(label)) + COPY_PADDING)
+        end
         ui.copy:SetPoint("TOPRIGHT", head, "TOPRIGHT", -12, -14)
         ui.copyPopup = AttachCopy(ctx, head, ui.copy)
     end

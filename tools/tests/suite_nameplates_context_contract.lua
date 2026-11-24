@@ -146,7 +146,7 @@ Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable SetExtraTextEv
 Component("Threat", "Enable Apply Restore Disable Refresh")
 Component("Level", "Bind PaintNative Paint Hide RestoreNative")
 Component("CastTime", "Bind Paint Restore Refresh")
-Component("CVars", "Apply")
+Component("CVars", "Apply InstanceChanged")
 Component("Auras", "Bind Configure Apply Restore")
 Component("KickReady", "Bind Paint Restore Configure Disable OnCast")
 Component("Mouseover", "Bind Configure Restore Disable")
@@ -318,7 +318,10 @@ for _, forever in ipairs({ false, true }) do
         and module.facts[plates[4].UnitFrame.HealthBarsContainer.healthBar].kind == "Boss", "lieutenant reclassification was lost")
     instance, units.nameplate1.quest = "none", true
     Event("ZONE_CHANGED_NEW_AREA")
+    -- Friendly NPC Name only switches between plates and world names here.
+    assert(counts["CVars.InstanceChanged"] == 1, "leaving the instance kept its friendly NPC display")
     Replay("PLAYER_ROLES_ASSIGNED")
+    assert(not counts["CVars.InstanceChanged"], "an unchanged instance state applied the CVars again")
     units.nameplate1.quest = false
     Replay("GROUP_ROSTER_UPDATE")
     assert(not module.visuals[plates[1].UnitFrame.HealthBarsContainer.healthBar].quest.shown, "roster kept stale quest marks")

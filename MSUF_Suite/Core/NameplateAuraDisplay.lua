@@ -354,7 +354,8 @@ local function Tracking(c, values, prefix, rows)
         for id in pairs(row.ids) do target[id] = true end
         c.rows[#c.rows + 1] = row
     end
-    c.groupCount = next(include) and c.max or 0
+    c.groupCount = (c.filtersOnly or next(include)) and c.max or 0
+    if c.filtersOnly then include = nil end
     c.anyCount = next(any) and 1 or 0
     c.count = max(c.groupCount, c.anyCount)
     c.candidate, c.anyCandidate = Candidate(include, limit), Candidate(any, limit)
@@ -386,8 +387,9 @@ local function Compile(config, values, scope, container, preview)
         table.sort(ids)
         parts[#parts + 1] = table.concat(ids, ",") .. (row.any and "*" or "")
     end
+    c.filtersOnly = container.kind == "custom" and values[prefix .. "Display"] == 2 and values[listKey] == ""
     Tracking(c, values, prefix, rows)
-    c.enabled = values.auraDisplayEnabled == true and V("Visible") and #rows > 0
+    c.enabled = values.auraDisplayEnabled == true and V("Visible") and (c.filtersOnly or #rows > 0)
     c.hideDuplicates = V("HideDuplicates")
     parts[#parts + 1] = tostring(c.enabled)
     c.iconSkin, c.padding = V("IconSkin") == true, V("Padding")
@@ -435,7 +437,7 @@ local function AddLaneExclusions(list, destination, helpful)
         -- A target-only row is not an exclusion source for ordinary tracked
         -- rows: they also run on plates where that DoT row is absent.
         if preferred and (not row or source.kind ~= "dots")
-            and source.enabled and source.hideDuplicates and source.helpful == helpful then
+            and source.enabled and source.hideDuplicates and not source.filtersOnly and source.helpful == helpful then
             AddExclusions(ids, source)
         end
     end
@@ -444,7 +446,7 @@ end
 
 local function HasExclusions(list)
     for _, row in ipairs(list) do
-        if row.enabled and row.hideDuplicates then return true end
+        if row.enabled and row.hideDuplicates and not row.filtersOnly then return true end
     end
     return false
 end

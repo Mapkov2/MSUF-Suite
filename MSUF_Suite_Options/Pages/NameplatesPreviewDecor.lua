@@ -8,11 +8,9 @@ local ID = "nameplates"
 local CONFIG = setmetatable({}, { __index = function(_, key) return P.Get(ID, key) end })
 local X = P.Suite.NameplateExtensions
 local TEXT_SAMPLES = { [6] = "85%", [7] = "+1500", [8] = "70 / 100", [9] = "2400", [10] = "+1.25%" }
-
 function Preview.ExtraTextSample(source)
-    return TEXT_SAMPLES[source] or P.Tr(X.TextIndicators[source].label)
+    return TEXT_SAMPLES[source] or P.Tr(source == X.NPCTitleSource and "Innkeeper" or X.TextIndicators[source].label)
 end
-
 local function ExtraTextFrame(editor, sample, scope, item, key)
     local frame = CreateFrame(sample.static and "Frame" or "Button", nil, sample.cell)
     local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -24,7 +22,6 @@ local function ExtraTextFrame(editor, sample, scope, item, key)
     end
     return { frame = frame, label = label }
 end
-
 function Preview.ExtraText(editor, sample, metrics)
     local scope = editor.scope or sample.prefix
     if sample.extraTextScope ~= scope then
@@ -34,21 +31,26 @@ function Preview.ExtraText(editor, sample, metrics)
         sample.extraText = sample.extraTextByScope[scope]
     end
     local labels = sample.extraText
-    local shown = sample.prefix == editor.sampleKind and not (metrics.skinDisabled or metrics.npcWorldName or metrics.nameOnlyScope)
-        and P.Get(ID, "look") ~= 2 and P.Get(ID, sample.prefix) and editor:LayerOn("status")
+    local shown = sample.prefix == editor.sampleKind and not (metrics.skinDisabled or metrics.npcWorldName)
+        and P.Get(ID, "look") ~= 2 and P.Get(ID, sample.prefix)
+    local npc = scope == "friendlyNpc" or scope == "neutral" or scope == "enemy" and not editor.enemyPlayer
     for source = X.FirstTextSource, X.LastTextSource do
         local item = X.TextIndicators[source]
         local key = X.TextKey(scope, source)
         local selected = editor.statusSample == item.element
+        local title = source == X.NPCTitleSource
+        local subtitle = title and metrics.nameOnlyScope
+        local layer = subtitle and "name" or not metrics.nameOnlyScope and "status"
         local visual = labels and labels[source]
-        if shown and (selected or not editor.statusSample and P.Get(ID, key)) then
+        if shown and (not title or npc) and layer and editor:LayerOn(layer)
+            and (selected or not editor.statusSample and P.Get(ID, key)) then
             if not visual then
                 labels = labels or {}
                 visual = ExtraTextFrame(editor, sample, scope, item, key)
                 labels[source], sample.extraText, sample.extraTextByScope[scope] = visual, labels, labels
             end
             local frame, label = visual.frame, visual.label
-            local anchor = X.TextPoints[P.Get(ID, key .. "Anchor")] or X.TextPoints[1]
+            local anchor = subtitle and X.NPCSubtitlePoint or X.TextPoints[P.Get(ID, key .. "Anchor")] or X.TextPoints[1]
             local owner = anchor[2] == "name" and sample.name or sample.bar
             frame:ClearAllPoints()
             frame:SetPoint(anchor[1], owner, anchor[3], anchor[4] + P.Get(ID, key .. "X"), anchor[5] + P.Get(ID, key .. "Y"))
@@ -59,17 +61,16 @@ function Preview.ExtraText(editor, sample, metrics)
             frame:SetSize(math.max(size, label:GetStringWidth() + 4), size + 4)
             local level = item.layer and sample.bar:GetParent():GetFrameLevel() + P.Get(ID, key .. "Layer")
             frame:SetFrameLevel(level or owner:GetFrameLevel() + 1)
+            frame:SetAlpha(metrics.opacity and metrics.opacity.text or 1)
             frame:Show()
         elseif visual then
             visual.frame:Hide()
         end
     end
 end
-
 local function Styled(prefix)
     return P.Get(ID, "look") ~= 2 and P.Get(ID, prefix)
 end
-
 function Preview.LevelMode(editor, prefix, classic, namesOnly)
     local forever = P.Suite.Client.isForever
     local badge = forever == true
@@ -83,7 +84,6 @@ function Preview.LevelMode(editor, prefix, classic, namesOnly)
     return Style.LevelMode(forever, classic, Styled(prefix), enabled,
         forever and P.Get(ID, "levelAppearance"), badge, namesOnly)
 end
-
 local function OutlineOff(s, m, bars)
     local nativeOverride = not m.skinDisabled and bars.look == 2 and bars.barsOverride
     return bars.hideHealthBarBorders or (Styled(s.prefix) or nativeOverride) and Style.OutlineOff(bars, s.prefix)
@@ -173,9 +173,10 @@ function Preview.PaintHealthGradient(s, m)
     local bars = m.barSettings or CONFIG
     local plan = not m.skinDisabled and not m.namesOnly and Styled(s.prefix)
         and gradient.Plan(bars, "health", state and state.plan) or nil
-    s.healthGradient = gradient.Paint(s.bar, state, s.progress, plan)
+    local mask = s.border and s.border.slanted and s.border.fillMask or nil
+    gradient.SetMask(state, mask)
+    s.healthGradient = gradient.Paint(s.bar, state, s.progress, plan, mask)
 end
-
 function Preview.PaintHealthFill(sample, hex, key, tint)
     if sample.healthFillKey == key and sample.healthFillColor == hex then return end
     sample.healthFillKey, sample.healthFillColor = key, hex

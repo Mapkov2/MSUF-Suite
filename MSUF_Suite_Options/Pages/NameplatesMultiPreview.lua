@@ -71,6 +71,11 @@ end
 
 function Multi.Attach(ui)
     local button = P.T.Button(ui.toolbar or ui.body, "Compare all", 108, 20)
+    -- The caption toggles; one width fits both translated captions on one line.
+    P.SetButtonText(button, P.Tr("Single preview"))
+    P.PreviewCanvas.FitToolbarButton(button)
+    P.SetButtonText(button, P.Tr("Compare all"))
+    P.PreviewCanvas.FitToolbarButton(button)
     button:SetScript("OnClick", function() Multi.Set(ui, not ui.groupPreviewEnabled) end)
     P.NameplatesEditorLayers.Register(button, "groupPreview", "Compare all")
     ui.groupPreviewButton = button

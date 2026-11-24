@@ -232,11 +232,15 @@ do
     ns.HostBridge.GlossTexture = function() return not ns.Client.isForever and "gloss" or nil end
     assert(loadfile(root .. "/MSUF_Suite/Core/GlossMaterial.lua"))("MSUF_Suite", ns)
     assert(loadfile(root .. "/MSUF_Suite/Core/NameplateGradient.lua"))("MSUF_Suite", ns)
-    Load("SlantedHealth")
+    assert(loadfile(root .. "/MSUF_Suite/Core/NameplateShape.lua"))("MSUF_Suite", ns)
+    if arg[3] then assert(loadfile(arg[3]))("MSUF_Suite_Nameplates", p) else Load("SlantedHealth") end
     local shape, gradient = p.SlantedHealth, ns.NameplateStyle.Gradient
     local frame, hp = Frame(), Frame()
     local firstFill, secondFill, back = Frame(hp), Frame(hp), Frame(hp)
-    hp.fill, hp.bgTexture = firstFill, back
+    hp.fill, hp.bgTexture, hp.width = firstFill, back, 240
+    firstFill.width, secondFill.width = 125, 95
+    frame.HealthBarsContainer = { healthBar = hp }
+    function hp:GetWidth() return self.width end
     hp.CreateMaskTexture = function(self) return Frame(self) end
     local visual = { fill = Frame(hp), back = Frame(hp) }
     local function Writable(region) return not region.forbidden end
@@ -244,9 +248,17 @@ do
     combat, frame.protected = true, true
     assert(not shape.Apply(frame, hp, true, Writable) and not firstFill.mask, "protected plate was clipped in combat")
     combat = false
-    assert(shape.Apply(frame, hp, true, Writable) and firstFill.mask and firstFill.mask == back.mask)
+    assert(shape.Apply(frame, hp, true, Writable))
+    local fillMask, backdropMask = firstFill.mask, back.mask
+    assert(fillMask and backdropMask and fillMask ~= backdropMask and backdropMask.anchor == hp,
+        "partial health and backdrop need separate masks")
+    assert(fillMask.point and fillMask.point[1] == "BOTTOMRIGHT" and fillMask.point[2] == firstFill and fillMask.width == 240,
+        "fill mask must follow the moving edge without scaling the angle at partial health")
+    hp.width = 220
+    shape.OnLayout(frame)
+    assert(fillMask.width == 220 and fillMask.point[2] == firstFill, "layout resize changed the taper relative to the outline")
     shape.Visual(hp, visual)
-    assert(visual.slanted and visual.fill.mask == firstFill.mask and visual.slantRim)
+    assert(visual.slanted and visual.fill.mask == fillMask and visual.back.mask == backdropMask and visual.slantRim)
 
     local finish = { healthGradientEnabled = true }
     local plan, pending = gradient.Plan(finish, "health"), {}
@@ -275,7 +287,9 @@ do
     end
 
     hp.fill = secondFill
-    assert(shape.Apply(frame, hp, true, Writable) and not firstFill.mask and secondFill.mask == back.mask)
+    assert(shape.Apply(frame, hp, true, Writable) and not firstFill.mask)
+    assert(secondFill.mask == fillMask and fillMask.point[2] == secondFill and back.mask == backdropMask,
+        "replacing the native fill detached the progressive mask")
     gradient.PaintHealth(hp, visual, plan, frame, pending)
     for _, texture in ipairs(layers) do
         assert(texture.mask == secondFill.mask and texture.anchor == secondFill)
@@ -289,7 +303,7 @@ do
     gradient.PaintHealth(hp, visual, plan, frame, pending)
     for _, texture in ipairs(layers) do assert(texture.shown and not texture.mask) end
     prefix = "enemy"
-    assert(shape.Apply(frame, hp, true, Writable) and secondFill.mask)
+    assert(shape.Apply(frame, hp, true, Writable) and secondFill.mask == fillMask and fillMask.point[2] == secondFill)
     for _, texture in ipairs(layers) do assert(texture.shown and texture.mask == secondFill.mask) end
 end
 print("Nameplate extras, clipped native health, and target UnitFrame resources passed")

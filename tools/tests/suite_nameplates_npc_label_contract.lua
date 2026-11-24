@@ -41,12 +41,15 @@ function R:Hide() self:SetShown(false) end
 function R:Show() self:SetShown(true) end
 function R:GetTextColor() return self.r, self.g, self.b, self.a end
 function R:GetVertexColor() return self.vr, self.vg, self.vb, self.va end
-function R:SetTextColor(r, g, b, a)
-    self.r, self.g, self.b, self.a = r, g, b, a or 1
+function R:SetTextColor(...)
+    local r, g, b, a = ...
+    self.r, self.g, self.b, self.textArgs = r, g, b, select("#", ...)
+    if self.textArgs >= 4 then self.a = a or 1 end
     self.colorWrites = self.colorWrites + 1
 end
-function R:SetVertexColor(r, g, b, a)
-    self.vr, self.vg, self.vb, self.va = r, g, b, a or 1
+function R:SetVertexColor(...)
+    local r, g, b, a = ...
+    self.vr, self.vg, self.vb, self.va, self.vertexArgs = r, g, b, a or 1, select("#", ...)
     self.colorWrites = self.colorWrites + 1
 end
 function R:SetFontObject(font) self.r, self.g, self.b, self.a = unpack(font) end
@@ -79,13 +82,15 @@ local function Apply(kind)
 end
 local function CheckRGB(r, g, b)
     assert(name.r == r and name.g == g and name.b == b, "wrong native glyph tint")
-    assert(name.vr == 1 and name.vg == 1 and name.vb == 1, "native vertex tint still modulates the glyph")
+    -- Blizzard colors names through the vertex: the NPC color is carried there as well.
+    assert(name.vr == r and name.vg == g and name.vb == b, "the NPC color missed the native vertex channel")
 end
 
 name.text, name.alpha = "Mature Paletusk", .64
 assert(Apply("neutralNpc") and uf.HealthBarsContainer.alpha == 0)
 CheckRGB(229/255,219/255,0)
-assert(name.alpha == .64 and name.a == .85 and name.va == .75, "name-only tint changed native opacity")
+-- Both setters reach a FontString's alpha: the vertex is written like Blizzard writes it, RGB only.
+assert(name.alpha == .64 and name.a == .85 and name.vertexArgs == 3, "name-only tint changed native opacity")
 assert(name.alphaWrites == 0 and name.visibilityWrites == 0 and name.textWrites == 0 and uf.name == name,
     "coloring took over native text, region or visibility")
 -- Blizzard's separate color channels can be reset while selecting and deselecting.
@@ -93,7 +98,7 @@ name:SetTextColor(.3, .4, .5, .56)
 name:SetVertexColor(.95, .2, .1, .42)
 bar:SetIsTarget(true)
 CheckRGB(229/255,219/255,0)
-assert(name.a == .56 and name.va == .42, "selection changed native opacity")
+assert(name.a == .56 and name.vertexArgs == 3, "selection changed native opacity")
 config.enemyNeutralColor = "782fd4"
 N.ConfigureNameOnly()
 assert(Apply("neutralNpc"))
@@ -114,7 +119,7 @@ assert(name.colorWrites == beforeWrites and name.alphaWrites == 2 and name.textW
     "stable name paints rewrote native presentation")
 N.RestoreNameOnly(uf)
 assert(name.r == .3 and name.g == .4 and name.b == .5 and name.a == .56, "pool release lost native font color")
-assert(name.vr == .95 and name.vg == .2 and name.vb == .1 and name.va == .42, "pool release lost native vertex color")
+assert(name.vr == .95 and name.vg == .2 and name.vb == .1 and name.vertexArgs == 3, "pool release lost native vertex color")
 assert(name.alpha == .78 and name.alphaWrites == 2 and uf.HealthBarsContainer.alpha == 1, "pooled health bar inherited hidden text")
 
 -- Same frame, new friendly NPC, then back to ordinary native bars.

@@ -4,7 +4,7 @@ local Mode, Key, RoleKey = private.Mode, private.Key, private.RoleKey
 local LOOK_BLIZZARD = Mode.LOOK_BLIZZARD
 local Style = NS.NameplateStyle
 local Gradient = Style.Gradient
-local outlineSizes = {}
+local outlineSizes, gradients = {}, {}
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
 local Level, CastTime, CVars, Auras, Status = private.Level, private.CastTime, private.CVars, private.Auras, private.Status
 local KickReady, Selection, AuraColors = private.KickReady, private.Selection, private.AuraColors
@@ -136,23 +136,30 @@ end
 
 local PaintHealth, PaintTarget, PaintFonts = private.HealthAppearance.Bind(M, ShowVisual, outlineSizes, Safe)
 
+local function PlateBars(uf, prefix)
+    local scope = M.scopedBars and (private.AppearanceScope(uf) or prefix) or prefix
+    local bars = M.scopedBars and M.scopedBars[scope]
+    return scope, bars or M.barSettings
+end
+
 local function Paint(uf)
     if not M.active or not Safe(uf) then return end
-    local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+    local healthBars, castBars, config = uf.HealthBarsContainer, uf.CastBarsContainer, M.config
+    local health = healthBars and healthBars.healthBar
     if not Safe(health) then return end
-    local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
-    local prefix, unit = Prefix(uf), M.units[health]
+    local cast = castBars and castBars.castBar
+    local prefix, unit, kind = Prefix(uf), M.units[health], UnitKinds[uf]
     local onlyName, paintPlayerName
     if Names.nameOnlyEnabled then
         local facts = M.facts[health]
-        local barHex = M.config.look ~= LOOK_BLIZZARD and prefix and M.config[prefix]
+        local barHex = config.look ~= LOOK_BLIZZARD and prefix and config[prefix]
             and private.HealthAppearance.RoleFillColor(health, prefix) or nil
-        onlyName, paintPlayerName = Names.ApplyNameOnly(uf, unit, facts and facts.kind, barHex, UnitKinds[uf])
+        onlyName, paintPlayerName = Names.ApplyNameOnly(uf, unit, facts and facts.kind, barHex, kind)
         if onlyName and S.Public(uf.isTarget) and uf.isTarget == true then M.nameOnlyTargetUF = uf end
     end
-    if Names.npcHealthBars[uf] or (UnitKinds[uf] == "neutralNpc" or UnitKinds[uf] == "friendlyNpc")
+    if Names.npcHealthBars[uf] or (kind == "neutralNpc" or kind == "friendlyNpc")
         and S.Public(uf.showOnlyName) and uf.showOnlyName == true then
-        Names.SyncNPCHealth(uf, UnitKinds[uf], onlyName)
+        Names.SyncNPCHealth(uf, kind, onlyName)
     end
     CastTime.Paint(cast, prefix, unit, uf)
     KickReady.Paint(cast, prefix, unit)
@@ -163,14 +170,16 @@ local function Paint(uf)
         Level.PaintNative(uf, prefix)
         Level.Paint(uf, prefix, unit)
     end
-    Layout.Apply(uf, prefix, M.config)
+    Layout.Apply(uf, prefix, config)
     if Power.enemyEnabled then Power.ApplyEnemy(uf, health, prefix, unit) end
-    local styled = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix] == true
+    local styled = prefix and config.look ~= LOOK_BLIZZARD and config[prefix] == true
+    local scope, bars = prefix, M.barSettings
+    if M.scopedBars then scope, bars = PlateBars(uf, prefix) end
     local outline, borderSize, borderColor
     if not styled or onlyName then
         if M.targetUF == uf then M.targetUF = nil end
         HideVisual(M.visuals[health])
-        if styled or Text.shared and prefix and M.config[prefix] then
+        if styled or Text.shared and prefix and config[prefix] then
             PaintFonts(uf, health, cast, prefix)
         else
             RestorePlateFonts(uf, health, cast)
@@ -178,17 +187,20 @@ local function Paint(uf)
     else
         local visual = Visual(health, uf)
         outline = visual
-        borderSize, borderColor = PaintHealth(health, visual, prefix)
-        if M.healthGradient or visual.gradient then Gradient.PaintHealth(health, visual, M.healthGradient, uf, M.pendingPlates) end
+        borderSize, borderColor = PaintHealth(uf, health, visual, prefix, scope, bars)
+        local gradient = gradients[scope]
+        if gradient or visual.gradient then Gradient.PaintHealth(health, visual, gradient, uf, M.pendingPlates) end
         PaintTarget(uf, health, visual, prefix)
         PaintFonts(uf, health, cast, prefix)
     end
     if Mouseover.textInUse then Mouseover.Apply(uf, health, prefix, styled) end
-    if Selection.inUse then Selection.Apply(health, styled == true and not onlyName, uf, prefix, outline, borderSize, borderColor) end
+    if Selection.inUse then
+        Selection.Apply(health, styled == true and not onlyName, uf, prefix, outline, borderSize, borderColor, scope, bars)
+    end
     if Decor.inUse and not onlyName then Decor.Paint(uf, health, cast, prefix, unit) elseif onlyName then Decor.Restore(health) end
     -- DoT colors are applied after the role tint.
     AuraColors.Apply(uf, unit, prefix == "enemy" and not onlyName)
-    if NameText.inUse then NameText.Apply(uf, prefix, unit) end
+    if NameText.inUse then NameText.Apply(uf, prefix, unit, kind) end
     if M.extras then private.EasyFeatures.Paint(uf, health, cast, prefix, unit, styled and not onlyName, M.roles[health]) end
     if onlyName then AuraDisplay.Restore(uf) else AuraDisplay.Apply(uf, unit, prefix == "enemy") end
     if Extensions.inUse then Extensions.Apply(uf, health, cast, prefix, unit) end
@@ -300,7 +312,7 @@ local function RefreshActive(self, contextOnly, auraColors)
                 if Names.nameOnlyEnabled and Names.IsNameOnly(uf) or styled and not visual then Paint(uf)
                 else
                     FilterFriendlyName(uf, prefix)
-                    if styled then PaintHealth(health, visual, prefix) end
+                    if styled then PaintHealth(uf, health, visual, prefix, PlateBars(uf, prefix)) end
                     if auraColors then AuraColors.Apply(uf, unit, prefix == "enemy") end
                 end
             elseif not contextOnly or Safe(health) then
@@ -372,7 +384,7 @@ local function RefreshRole(uf)
         if Names.RefreshRole(uf, facts and facts.kind, private.HealthAppearance.RoleFillColor(health, prefix)) then return end
     end
     if not visual then return Paint(uf) end
-    PaintHealth(health, visual, prefix)
+    PaintHealth(uf, health, visual, prefix, PlateBars(uf, prefix))
     if M.extras then private.EasyFeatures.Role(uf, M.roles[health]) end
 end
 
@@ -380,7 +392,7 @@ local function RefreshTarget(uf, selectionChanged, selectedUnit)
     if not Safe(uf) then return end
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local unit = health and M.units[health]
-    if (Names.nameOnlyEnabled or scopedSkins) and unit then
+    if (Names.nameOnlyEnabled or scopedSkins or M.scopedBars) and unit then
         local kind = UnitKind(uf, unit, selectedUnit)
         if kind ~= UnitKinds[uf] or Names.nameOnlyEnabled and Names.NeutralDisplayChanged(uf, unit, kind) then
             SetRole(uf, unit, kind)
@@ -784,10 +796,25 @@ function M:Refresh()
     self.barSettings = bars
     self.castbarStyle = Textures.SharedCastbar(c, self.castbarStyle)
     self.healthGradient = Gradient and Gradient.Plan(bars, "health", self.healthGradient)
-    outlineSizes.enemy = Style.OutlineSize(bars.enemyOutlineMode, bars.enemyBorderEnabled, bars.enemyBorderSize, bars.hideHealthBarBorders)
-    outlineSizes.friendly = Style.OutlineSize(bars.friendlyOutlineMode, bars.friendlyBorderEnabled, bars.friendlyBorderSize, bars.hideHealthBarBorders)
+    local scopedBars
+    for _, scope in ipairs(NS.NameplateExtensions.OpacityScopes) do
+        local side = (scope == "enemy" or scope == "neutral") and "enemy" or "friendly"
+        local settings = Style.ScopeBars(bars, scope)
+        if settings ~= bars then
+            scopedBars = scopedBars or {}
+            scopedBars[scope] = settings
+        end
+        outlineSizes[scope] = Style.OutlineSize(settings[side .. "OutlineMode"], settings[side .. "BorderEnabled"],
+            settings[side .. "BorderSize"], settings.hideHealthBarBorders)
+        if Gradient and settings ~= bars and c[Style.AppearanceSwitch(scope, "textures")] then
+            gradients[scope] = Gradient.Plan(settings, "health", gradients[scope] ~= self.healthGradient and gradients[scope] or nil)
+        else
+            gradients[scope] = self.healthGradient
+        end
+    end
+    self.scopedBars = scopedBars
     scopedSkins, ApplyAuras = scopes.Configure()
-    local repaintTextures = Textures.Configure(bars, self.castbarStyle)
+    local repaintTextures = Textures.Configure(bars, self.castbarStyle, scopedBars)
     Textures.PrepareFocus()
     Paint = Textures.inUse and PaintTexturedPlate or PaintPlate
     PaintAdded = Textures.focusFill and PaintFocusAdded or Paint
@@ -808,7 +835,7 @@ function M:Refresh()
     CVars.Apply(self)
     Threat.Refresh()
     KickReady.Configure()
-    Selection.Configure(bars)
+    Selection.Configure(bars, scopedBars)
     if private.EasyFeatures then private.EasyFeatures.Configure(self) end
     self.extras = private.EasyFeatures and private.EasyFeatures.enabled
     Mouseover.Configure(self.extras and private.EasyFeatures.hoverPatterns)
