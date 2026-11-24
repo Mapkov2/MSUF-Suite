@@ -7,7 +7,10 @@ for _, forever in ipairs({ false, true }) do
     w.next.scripts.OnClick()
     w.modernDark.scripts.OnClick()
     local p = w.layoutPreview
-    assert(p.screenshot:IsShown() and not p.canvas:IsShown(), "Modern Dark has no real screenshot")
+    assert(p.screenshot:IsShown() and not p.canvas:IsShown(), "Modern Dark has no layout screenshot")
+    assert(p.screenshot.art.texture:match("ModernDarkLayout%.tga$") and p.screenshotNext:IsShown())
+    assert(p.screenshot.art.texCoords[4] == 576 / 1024 and p.viewport:GetText() == Suite.Text("Layout reference"))
+    p.screenshotNext.scripts.OnClick()
     assert(p.screenshot.art.texture == "Interface\\AddOns\\MSUF_Suite\\Media\\ModernDarkPreview.tga")
     assert(p.screenshot.art.texCoords[4] == 1152 / 2048, "padded backing leaked into the image")
     assert(math.abs(p.screenshot:GetWidth() / p.screenshot:GetHeight() - 2559 / 1439) < .0001)

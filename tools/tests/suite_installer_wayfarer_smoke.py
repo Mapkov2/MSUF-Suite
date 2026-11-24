@@ -20,6 +20,9 @@ for _, forever in ipairs({ false, true }) do
     local Suite = H.Setup({ root = root, forever = forever, uiWidth = 1280, uiHeight = 720,
         addons = { MSUF_Suite_Skin = true } })
     local skin = H.FakeSkin()
+    local native = { nameplateShowAll = "0", nameplateCastBarDisplay = "\2@" }
+    C_CVar.GetCVar = function(key) return native[key] end
+    C_CVar.SetCVar = function(key, value) native[key] = value end
     skin.ProfileIO.PrepareProfile = function(text)
         assert(text == Suite.WayfarerSkinCompact)
         return Suite.CopyValue(assert(fixtures[text]).payload)
@@ -123,9 +126,12 @@ for _, forever in ipairs({ false, true }) do
     local ok, reason = Suite.Installer.Apply()
     assert(ok, reason)
     assert(MSUF_DB ~= previous and MSUF_ActiveProfile == "Wayfarer")
+    assert(MSUF_DB.general.UIScale.Enabled == false and MSUF_DB.general.globalUiScaleValue == nil)
     assert(MSUF_GlobalDB.profiles.Default == previous)
     local receipt = Suite.RootDB.installation
     assert(receipt.profile == "wayfarer" and receipt.look == "authored")
+    assert(not receipt.uiScaleEnabled and #H.appliedScales == 1 and not H.appliedScales[1].global)
+    assert(C_CVar.GetCVar("nameplateShowAll") == "1" and C_CVar.GetCVar("nameplateCastBarDisplay") == "\2_")
     local modules = Suite.DB.suite.modules
     local compass = modules.navigationHUD
     assert(compass.enabled and compass.showCompass and compass.hideInCombat and compass.shortcutMode == 2)
@@ -154,7 +160,7 @@ for _, forever in ipairs({ false, true }) do
     assert(data.bar1Slot1Weight == 80 and data.bar1Slot2Weight == 75 and data.bar1Slot3Weight == 100
         and data.bar1Slot4Weight == 145)
     local bars, xp = modules.actionbars, modules.xpBar
-    assert(bars.imported and not bars.profileKeybinds)
+    assert(bars.imported and bars.profileKeybinds)
     assert(bars.bar1Visibility == 1 and bars.bar2Visibility == 1 and bars.bar3Visibility == 1
         and bars.bar4Visibility == 6 and not bars.bar3Vertical)
     assert(xp.enabled and xp.point == 8 and xp.displayStyle == 2 and xp.hideBlizzard and xp.hideBlizzardTracking
@@ -229,6 +235,7 @@ for _, client in ipairs({ "Mainline", "Forever" }) do
     local ok, reason = Public("MSUF_Profiles_ImportIntoNewProfile")("Wayfarer import", FRAME_COMPACT)
     assert(ok, reason)
     Public("MSUF_EnsureDB")()
+    assert(env.MSUF_DB.general.UIScale.Enabled == false and env.MSUF_DB.general.globalUiScaleValue == nil)
     local config = core.UF.Config
     config.Refresh()
     local player, target = config.GetSpec("player"), config.GetSpec("target")
@@ -362,8 +369,15 @@ def main():
     for file, name in factories:
         compact = literal(core / file, f"Suite.{name}Compact")
         fixtures[compact[7:]] = decode(compact, "MSUFM1:MSUF3:")
+        if name == "WayfarerModule":
+            assert b"actionBarKeys" not in fixtures[compact[7:]]
     frames = literal(core / "WayfarerFactory.lua", "Suite.WayfarerFramesCompact")
     fixtures[frames] = decode(frames, "MSUF3:")
+    for payload in (fixtures[frames][b"payload"], fixtures[frames][b"msuf6"][b"payload"]):
+        general = payload[b"general"]
+        assert general[b"UIScale"][b"Enabled"] is False
+        assert general[b"globalUiScalePreset"] == b"auto" and b"globalUiScaleValue" not in general
+        assert b"screenPositionHeight" not in payload[b"player"]
     skin = literal(core / "WayfarerFactory.lua", "Suite.WayfarerSkinCompact")
     fixtures[skin] = decode(skin, "MSKIN1:")
     host = root.parent / "MidnightSimpleUnitFrames-7.0"

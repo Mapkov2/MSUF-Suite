@@ -182,30 +182,58 @@ end
 local function OriginalModernDarkTooltip(profile)
     local modules = profile and profile.suite and profile.suite.modules
     local config, meter = modules and modules.tooltipDetails, modules and modules.damageMeter
-    return config and config.enabled == false and config.anchor == 1
-        and config.growth == 1 and config.fixedX == -24 and config.fixedY == 24
-        and meter and meter.w1Y == 32 and meter.w1Height == 250 and meter.headerOutside == true
+    if not config or config.growth ~= 1 or not meter or meter.w1Y ~= 32 or meter.w1Height ~= 250 or not meter.headerOutside then return false end
+    if (config.uiElementAnchor or 1) > 1 or (config.unitFrameAnchor or 1) > 1
+        or (config.worldUnitAnchor or 1) > 1 or (config.worldObjectAnchor or 1) > 1 then return false end
+    return config.enabled == false and config.anchor == 1 and config.fixedX == -24 and config.fixedY == 24
+        or config.enabled == true and config.anchor == 3 and config.fixedX == -12 and config.fixedY == 340
 end
-
 function P.EnsureModernDarkTooltips()
     local installation = Suite.RootDB and Suite.RootDB.installation
     local name = DB.GetActiveProfileName()
-    if Suite.InCombat() or Suite.Client.isForever or not installation
-        or installation.status ~= "complete" or installation.profile ~= "modernDark"
-        or installation.frameProfileName ~= name or installation.modernDarkTooltipRevision == 1 then return false end
-    local profile = Suite.ProfileVariants.BaseProfile(name)
-    if not profile then return false end
-    if not OriginalModernDarkTooltip(profile) then
-        installation.modernDarkTooltipRevision = 1
+    if Suite.InCombat() or not installation or installation.status ~= "complete" or installation.profile ~= "modernDark"
+        or installation.frameProfileName ~= name or installation.modernDarkTooltipRevision == 2 then return false end
+    local base = Suite.ProfileVariants.BaseProfile(name)
+    if not base then return false end
+    if not OriginalModernDarkTooltip(base) then
+        installation.modernDarkTooltipRevision = 2
         return false
     end
     if not Suite.ProfileVariants.BeforeMutation(name) then return false end
     local original = OriginalModernDarkTooltip(DB.GetProfile(name))
     local ok = original and Suite.Suite.SetMany("tooltipDetails", {
-        enabled = true, anchor = 3, growth = 1, fixedX = -12, fixedY = 340,
+        enabled = true, anchor = 1, growth = 1, fixedX = -12, fixedY = 340,
+        worldUnitAnchor = 4, worldUnitX = -12, worldUnitY = 340, worldObjectAnchor = 4, worldObjectX = -12, worldObjectY = 340,
     }) == true or false
     Suite.ProfileVariants.AfterMutation(name)
-    if ok or not original then installation.modernDarkTooltipRevision = 1 end
+    if ok or not original then installation.modernDarkTooltipRevision = 2 end
+    return ok
+end
+local function OriginalModernDarkPetBar(profile)
+    local modules = profile and profile.suite and profile.suite.modules
+    local bar = modules and modules.actionbars
+    return bar and bar.enabled ~= false and bar.bar4Y == 130 and bar.bar12Point == 8
+        and bar.bar12X == 240 and bar.bar12Y == 170 and bar.bar12Size == 30 and bar.bar12Rows == 1
+        and bar.bar12Visibility == Suite.ActionBarEnum.VISIBILITY.NEVER
+end
+
+function P.EnsureModernDarkPetBar()
+    local receipt, name = Suite.RootDB and Suite.RootDB.installation, DB.GetActiveProfileName()
+    if Suite.InCombat() or not receipt or receipt.status ~= "complete" or receipt.profile ~= "modernDark"
+        or receipt.frameProfileName ~= name or receipt.modernDarkPetBarRevision == 1 then return false end
+    local base = Suite.ProfileVariants.BaseProfile(name)
+    if not base then return false end
+    if not OriginalModernDarkPetBar(base) then
+        receipt.modernDarkPetBarRevision = 1
+        return false
+    end
+    if not Suite.ProfileVariants.BeforeMutation(name) then return false end
+    local original = OriginalModernDarkPetBar(DB.GetProfile(name))
+    local ok = original and Suite.Suite.SetMany("actionbars", {
+        bar12X = 0, bar12Y = 92, bar12Visibility = Suite.ActionBarEnum.VISIBILITY.ALWAYS,
+    }) == true or false
+    Suite.ProfileVariants.AfterMutation(name)
+    if ok or not original then receipt.modernDarkPetBarRevision = 1 end
     return ok
 end
 

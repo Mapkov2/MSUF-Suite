@@ -3,7 +3,10 @@ local Shot = {}
 Suite.InstallerScreenshot = Shot
 local A, Text = Suite.InstallerAppearance, Suite.Text
 local MEDIA = "Interface\\AddOns\\MSUF_Suite\\Media\\"
-local MODERN = { art = MEDIA .. "ModernDarkPreview.tga", ratio = 2559 / 1439, bottom = 1152 / 2048 }
+local MODERN = {
+    { art = MEDIA .. "ModernDarkLayout.tga", ratio = 16 / 9, bottom = 576 / 1024, reference = true },
+    { art = MEDIA .. "ModernDarkPreview.tga", ratio = 2559 / 1439, bottom = 1152 / 2048 },
+}
 local DARK_RAID = { art = MEDIA .. "DarkRaidPreview.tga", ratio = 2550 / 1438, bottom = 577 / 1024 }
 local WAYFARER = { art = MEDIA .. "WayfarerPreview.tga", ratio = 2552 / 1204, bottom = 483 / 512 }
 local BLIZZARD = {
@@ -51,7 +54,8 @@ local function Enlarge(panel)
     local layout = panel.screenshotLayout
     zoom.title:SetText(Text(layout == "wayfarer" and "Wayfarer - layout reference"
         or layout == "darkRaid" and "Dark Raid - layout reference"
-        or layout == "blizzard" and "MSUF Blizzard - layout reference" or "Modern Dark - in-game screenshot"))
+        or layout == "blizzard" and "MSUF Blizzard - layout reference"
+        or spec.reference and "Layout reference" or "Modern Dark - in-game screenshot"))
     Paint(zoom.art, spec)
     zoom:Show()
 end
@@ -71,8 +75,10 @@ function Shot.Build(panel, refresh, window)
         panel.showLayout = not panel.showLayout
         refresh()
     end)
-    panel.screenshotNext = A.Button(panel, 14, 182, 150, Text("Next image"), function()
-        panel.screenshotIndex = panel.screenshotIndex % #BLIZZARD + 1
+    panel.screenshotNext = A.Button(panel, 176, 134, 150, Text("Next image"), function()
+        local gallery = panel.screenshotGallery
+        if not gallery then return end
+        panel.screenshotIndex = panel.screenshotIndex % #gallery + 1
         refresh()
     end)
     panel.screenshotToggle:Hide()
@@ -84,23 +90,26 @@ function Shot.Show(panel, layout, options)
     local available = (layout == "modernDark" or layout == "blizzard" or layout == "darkRaid" or layout == "wayfarer")
         and options and options.layoutStep == true
     local showing = available and not panel.showLayout
+    if panel.screenshotLayout ~= layout then panel.screenshotIndex = 1 end
     panel.screenshotLayout = layout
-    panel.screenshotSpec = layout == "wayfarer" and WAYFARER or layout == "darkRaid" and DARK_RAID
-        or layout == "blizzard" and BLIZZARD[panel.screenshotIndex] or MODERN
+    local gallery = layout == "modernDark" and MODERN or layout == "blizzard" and BLIZZARD or nil
+    panel.screenshotGallery = gallery
+    panel.screenshotSpec = gallery and gallery[panel.screenshotIndex]
+        or layout == "wayfarer" and WAYFARER or DARK_RAID
     panel.screenshotToggle:SetShown(available)
     panel.screenshotToggle.caption:SetText(Text(showing and "Layout" or "Screenshot"))
     panel.screenshot:SetShown(showing)
-    panel.screenshotNext:SetShown(showing and layout == "blizzard")
+    panel.screenshotNext:SetShown(showing and gallery ~= nil)
     panel.canvas:SetShown(not showing)
     if panel.screenshotZoom then panel.screenshotZoom:Hide() end
     if showing then
         local spec = panel.screenshotSpec
         panel.screenshot:SetSize(312, 312 / spec.ratio)
         Paint(panel.screenshot.art, spec)
-        panel.viewport:SetText(Text(layout ~= "modernDark" and "Layout reference" or "In-game screenshot"))
+        panel.viewport:SetText(Text((layout ~= "modernDark" or spec.reference) and "Layout reference" or "In-game screenshot"))
         panel.frameSource:SetText(Text(Suite.InstallerProfiles.LayoutName(layout)))
         panel.info:SetText(Text("Click the screenshot to enlarge."))
-        panel.note:SetText(Text(layout == "wayfarer"
+        panel.note:SetText(Text((layout == "wayfarer" or spec.reference)
             and "This is the design reference. Use Layout to preview your MSUF settings."
             or layout ~= "modernDark" and "Reference images from another UI. Use Layout to preview your MSUF settings."
             or "The screenshot shows an example character. Use Layout to preview your module and frame color choices."))

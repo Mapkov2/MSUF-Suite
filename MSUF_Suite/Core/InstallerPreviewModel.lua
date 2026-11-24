@@ -136,9 +136,11 @@ local function Frames(scene, frames)
     end
 end
 
+local ACTION_BARS = { 1, 2, 3, 4, 5 }
+local MODERN_ACTION_BARS = { 1, 2, 3, 4, 5, 12 }
 local function ActionBars(scene, config)
     if not config or config.enabled == false then return end
-    for _, index in ipairs({ 1, 2, 3, 4, 5 }) do
+    for _, index in ipairs(scene.layout == "modernDark" and MODERN_ACTION_BARS or ACTION_BARS) do
         local prefix = "bar" .. index
         if config[prefix .. "Visibility"] ~= Suite.ActionBarEnum.VISIBILITY.NEVER then
             local count = max(1, Number(config[prefix .. "Buttons"], 12))
@@ -148,7 +150,7 @@ local function ActionBars(scene, config)
             local buttonHeight = config.buttonShape == Suite.ActionBarEnum.BUTTON_SHAPE.SQUARE
                 and math.floor(size * Number(config[prefix .. "HeightPercent"], 100) / 100 + .5) or size
             local width, height = columns * size + (columns - 1) * gap, rows * buttonHeight + (rows - 1) * gap
-            local item = Place(scene, prefix, "Action bars", config[prefix .. "Point"] or 8,
+            local item = Place(scene, prefix, index == 12 and "Pet bar" or "Action bars", config[prefix .. "Point"] or 8,
                 Number(config[prefix .. "X"], 0), Number(config[prefix .. "Y"], 0), width, height, "icons", config)
             item.columns, item.rows, item.count = columns, rows, count
             item.iconWidth, item.iconHeight, item.gap = size, buttonHeight, gap
@@ -161,7 +163,7 @@ local function ColorHex(r, g, b)
         math.floor(r * 255 + .5), math.floor(g * 255 + .5), math.floor(b * 255 + .5))
 end
 
-local function WayfarerBossStack(scene, general, color)
+local function PresetBossStack(scene, general, color)
     local first = scene.boss
     if not first then return end
     local spacing = Number(first.config.spacing, -64)
@@ -182,9 +184,9 @@ local function WayfarerBossStack(scene, general, color)
     end
 end
 
-local function WayfarerCastbars(scene, frames)
+local function PresetCastbars(scene, frames)
     local general = frames and frames.general
-    if scene.layout ~= "wayfarer" or scene.keepFrames or not general then return end
+    if (scene.layout ~= "wayfarer" and scene.layout ~= "modernDark") or scene.keepFrames or not general then return end
     local color = ColorHex(Number(general.castbarInterruptibleR, .78),
         Number(general.castbarInterruptibleG, .53), Number(general.castbarInterruptibleB, .24))
     for _, unit in ipairs({ "player", "target" }) do
@@ -202,7 +204,38 @@ local function WayfarerCastbars(scene, frames)
             rect.fillColor, rect.castOwner = color, owner.config
         end
     end
-    WayfarerBossStack(scene, general, color)
+    PresetBossStack(scene, general, color)
+end
+
+local function ModernAuraRow(scene, unit, kind, rect, aura, shared)
+    local count = Number(shared[kind == "buff" and "maxBuffs" or "maxDebuffs"], 0)
+    if count < 1 then return end
+    local columns = max(1, min(count, Number(shared[kind .. "PerRow"], count)))
+    local rows = math.ceil(count / columns)
+    local size, gap = Number(aura[kind .. "GroupIconSize"], 26), Number(aura[kind .. "Spacing"], 2)
+    local iconHeight = math.floor(size * Number(aura[kind .. "IconHeightPercent"], 100) / 100 + .5)
+    local width, height = columns * size + (columns - 1) * gap, rows * iconHeight + (rows - 1) * gap
+    local anchor = POINTS[POINT_INDEX[aura[kind .. "Anchor"]] or 1]
+    local item = Add(scene, unit .. kind, kind == "buff" and "Buffs" or "Debuffs",
+        rect.x + anchor[1] * (rect.width - width) + Number(aura[kind .. "GroupOffsetX"], 0),
+        rect.y + anchor[2] * (rect.height - height) - Number(aura[kind .. "GroupOffsetY"], 0),
+        width, height, "icons", aura)
+    item.columns, item.rows, item.count = columns, rows, count
+    item.iconWidth, item.iconHeight, item.gap = size, iconHeight, gap
+end
+
+local MODERN_AURA_UNITS = { "player", "target", "boss", "boss2", "boss3", "boss4", "boss5" }
+local function ModernAuraRows(scene, frames)
+    if scene.layout ~= "modernDark" or scene.keepFrames or not frames or not frames.auras3 then return end
+    local units = frames.auras3.perUnit
+    if not units then return end
+    for _, unit in ipairs(MODERN_AURA_UNITS) do
+        local rect, owner = scene[unit], units[unit == "boss" and "boss1" or unit]
+        if rect and owner and owner.layout and owner.layoutShared then
+            ModernAuraRow(scene, unit, "buff", rect, owner.layout, owner.layoutShared)
+            ModernAuraRow(scene, unit, "debuff", rect, owner.layout, owner.layoutShared)
+        end
+    end
 end
 
 local function WayfarerRaid(scene, frames)
@@ -368,7 +401,8 @@ function Model.Build(profile, frames, layout, overrides, viewport)
     if not modules then return scene end
     if layout == "modernDark" or layout == "blizzard" or layout == "darkRaid" then Cooldowns(scene, modules) end
     Frames(scene, frames)
-    WayfarerCastbars(scene, frames)
+    PresetCastbars(scene, frames)
+    ModernAuraRows(scene, frames)
     WayfarerRaid(scene, frames)
     WayfarerShapes(scene, frames)
     ActionBars(scene, modules.actionbars)

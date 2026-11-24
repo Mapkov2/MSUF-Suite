@@ -16,7 +16,7 @@ payload = {path: (root / path).read_bytes() for path in tracked_files(root)
 validate_preset_media(payload)
 
 for asset in ("WayfarerPlaque.tga", "WayfarerEndcap.tga", "WayfarerPreview.tga", "WayfarerMinimapFrame.tga",
-              "QuestVoiceControls.tga",
+              "QuestVoiceControls.tga", "ModernDarkLayout.tga",
               "BlizzardFrames/UnitFrame.tga", "Nameplates/SlantedHealthMask.tga",
               "Nameplates/SlantedHealthEdge.tga"):
     key = f"MSUF_Suite/Media/{asset}"

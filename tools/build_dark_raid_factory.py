@@ -22,6 +22,15 @@ def cooldown_lists(dungeon=False):
              b"shared": {b"c1": [b"s196718", b"s198589"]}}
 
 
+# The bars the dungeon variant fills (variantLists): only Havoc's utility row.
+# A variant never holds listsData, which keeps every bar of every
+# specialization; ProfileVariants.lua converts the lists older installs
+# recorded into these.
+def dungeon_bars():
+    uti = cooldown_lists(True)[b"specs"][577][b"uti"]
+    return {b"v": 1, b"specs": {577: {b"uti": uti}}, b"hidden": {}, b"replace": {577: {b"uti": True}}, b"shared": {}}
+
+
 def frames():
     envelope = decode(literal(CORE / "ModernDarkFactory.lua", "Suite.ModernDarkFramesCompact"), "MSUF3:")
     put(envelope, profile="Dark Raid")
@@ -33,8 +42,8 @@ def frames():
             {b"path": [b"suiteModules", b"damageMeter", b"w2Type"], b"value": 1},
             {b"path": [b"suiteModules", b"damageMeter", b"w2Session"], b"value": 2},
             {b"path": [b"suiteModules", b"cooldownManager", b"uti_perRow"], b"value": 7},
-            {b"path": [b"suiteModules", b"cooldownManager", b"listsData"],
-             b"value": encode(cooldown_lists(True), "MSUF3:").encode()},
+            {b"path": [b"suiteModules", b"cooldownManager", b"variantLists"],
+             b"value": encode(dungeon_bars(), "MSUF3:").encode()},
         ]}]}
     put(db[b"general"], barMode="dark", darkMode=True, useClassColors=False,
         darkBarR=.07, darkBarG=.07, darkBarB=.07, enableHealthGradient=False,
@@ -338,7 +347,11 @@ def main():
     write(CORE / "DarkRaidFactory.lua", "local _, Suite = ...\n-- Optional Dark Raid layout; applied only by the installer.\n"
           + assignment("Suite.DarkRaidFramesCompact", frame)
           + assignment("Suite.DarkRaidModuleCompact", module)
-          + assignment("Suite.DarkRaidSkinCompact", skin_profile), args.check)
+          + assignment("Suite.DarkRaidSkinCompact", skin_profile)
+          + "-- Havoc's seven dungeon utilities, the bars the Dungeon meter variant fills\n"
+          + "-- (variantLists); ProfileVariants.lua converts the whole lists older\n"
+          + "-- installs recorded into these.\n"
+          + assignment("Suite.DarkRaidDungeonLists", encode(dungeon_bars(), "MSUF3:")), args.check)
     if args.export_dir:
         args.export_dir.mkdir(parents=True, exist_ok=True)
         (args.export_dir / "Dark-Raid-UF-GF.txt").write_text(frame + "\n", encoding="utf-8")

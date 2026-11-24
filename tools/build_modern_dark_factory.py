@@ -97,15 +97,12 @@ def frames(classic):
         healthGradientMidR=.025, healthGradientMidG=.031, healthGradientMidB=.035,
         healthGradientHighR=.025, healthGradientHighG=.031, healthGradientHighB=.035,
         fontKey=FONT, fontSize=16, nameFontSize=18, hpFontSize=18, powerFontSize=14,
-        powerColorMode="static", powerBarColorR=.10, powerBarColorG=.43, powerBarColorB=.42,
+        powerColorMode="class", powerBarColorR=.10, powerBarColorG=.43, powerBarColorB=.42,
         nameClassColor=True, nameNpcClassColor=False, npcTypeColorText=True,
         nameColorMode="DEFAULT", textBackdrop=False, fontShadowOpacity=1,
         barOutlineColorR=0, barOutlineColorG=0, barOutlineColorB=0, barOutlineColorA=1,
         anchorToCooldown=True, anchorName="EssentialCooldownViewer", playerCastbarOverrideMode="CLASS")
     bars = db[b"bars"]
-    # Essence has a white native fallback. The reference uses muted teal
-    # segments; other class resources keep their class-specific defaults.
-    db[b"general"][b"classPowerColorOverrides"] = {b"ESSENCE": [.2, 147 / 255, 127 / 255]}
     put(bars, roundedFramesEnabled=False, roundedUnitFrames=False, roundedGroupFrames=False,
         slantedUnitFrames=False, slantedGroupFrames=False, barOutlineThickness=1,
         barOutlineTexture="", showBarBorder=True, barBackgroundAlpha=84,
@@ -177,6 +174,8 @@ def frames(classic):
             textLeft="NONE", textCenter="NONE", textRight="NONE")
     for key in (b"focus", b"boss", b"arena"):
         if isinstance(db.get(key), dict): put(db[key], anchorFrameName="UIParent")
+    # Keep the player cast below the 80px aura row and above the pet frame.
+    put(db[b"general"], castbarPlayerOffsetY=-104)
     # Target cast: full frame width, directly underneath, square spell icon
     # outside its right edge. RIGHT includes the icon in the owner's width.
     put(db[b"general"], castbarTargetDetached=False, castbarTargetMatchWidth=False,
@@ -213,7 +212,29 @@ def frames(classic):
             debuffGroupOffsetY=80 if key == b"player" else 46)
         put(owner[b"layoutShared"], buffPerRow=6, debuffPerRow=6, maxBuffs=6, maxDebuffs=6,
             buffGrowthX="RIGHT", debuffGrowthX="RIGHT", buffGrowthY="DOWN", debuffGrowthY="DOWN")
+    aura_rows(db)
     return encode(envelope, "MSUF3:")
+
+
+def aura_rows(db):
+    units = db[b"auras3"][b"perUnit"]
+    put(units[b"player"][b"layout"], buffGroupOffsetY=50, debuffGroupOffsetY=-59, debuffIconHeightPercent=42)
+    target = units[b"target"]
+    put(target[b"layout"], buffAnchor="TOPRIGHT", buffGroupOffsetY=86,
+        debuffAnchor="TOPRIGHT", debuffGroupOffsetY=48)
+    put(target[b"layoutShared"], buffGrowthX="LEFT", debuffGrowthX="LEFT")
+    for index in range(1, 6):
+        boss = units[f"boss{index}".encode()]
+        put(boss[b"layout"], buffAnchor="TOPLEFT", buffGroupOffsetX=2, buffGroupOffsetY=-48,
+            debuffAnchor="TOPRIGHT", debuffGroupOffsetX=-2, debuffGroupOffsetY=-48,
+            buffGroupIconSize=18, debuffGroupIconSize=18, buffIconHeightPercent=67, debuffIconHeightPercent=67,
+            buffSpacing=2, debuffSpacing=2, buffCooldownTextSize=9, debuffCooldownTextSize=9,
+            buffStackTextSize=8, debuffStackTextSize=8)
+        put(boss[b"layoutShared"], buffPerRow=4, debuffPerRow=4, buffGrowthX="RIGHT", debuffGrowthX="LEFT")
+
+
+def pet_bar(bar):
+    put(bar, bar12Point=8, bar12X=0, bar12Y=92, bar12Visibility=1)
 
 
 def unit_frames(compact):
@@ -285,6 +306,7 @@ def modules():
         bar5Visibility=6, bar1Background=True, bar2Background=True,
         bar1BackgroundColor="080b0d", bar2BackgroundColor="080b0d",
         bar1BackgroundAlpha=80, bar2BackgroundAlpha=80)
+    pet_bar(ab)
     for index in range(1, 6):
         put(ab, **{f"bar{index}ShowEmpty": False, f"bar{index}Keybind": False,
                    f"bar{index}Macro": False})
@@ -295,9 +317,10 @@ def modules():
         headerOutside=True, headerSelectors=False, headerMouseover=False,
         headerHeight=38, headerIconSize=30, headerAlpha=0,
         leftSize=18, rightSize=18, titleSize=20, refreshRate=1.5)
-    # General HUD tooltips grow upward from above the meter's outside header.
-    put(entries[b"tooltipDetails"], enabled=True, anchor=3, growth=1,
-        fixedX=-12, fixedY=340, inspectHovered=False)
+    # World tooltips use the HUD. Spells, bags and DataTexts keep their owner anchors.
+    put(entries[b"tooltipDetails"], enabled=True, anchor=1, growth=1, fixedX=-12, fixedY=340,
+        worldUnitAnchor=4, worldUnitX=-12, worldUnitY=340, worldObjectAnchor=4, worldObjectX=-12, worldObjectY=340,
+        inspectHovered=False)
     chat = entries[b"chat"]
     put(chat, look=4, panelColor="080b0d", panelAlpha=55, borderColor="000000",
         borderSize=2, borderAlpha=100, accentColor="58b9b0", tabActiveColor="479a94", tabClassColor=True,

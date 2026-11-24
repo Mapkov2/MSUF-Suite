@@ -192,6 +192,7 @@ function Start(transition)
     Step(profiles, "EnsureModernPanelLayout")
     Step(profiles, "EnsureModernDarkTooltips")
     Step(profiles, "EnsureModernDarkMinimap")
+    Step(profiles, "EnsureModernDarkPetBar")
     Step(profiles, "EnsureRetailResourceStack", false)
     ShowInstaller()
     -- A restored combat force flag must never gate the Suite's own startup.

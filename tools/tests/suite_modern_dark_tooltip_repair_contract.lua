@@ -22,14 +22,15 @@ end
 local Suite, modules, Counts = Setup(false)
 local config = modules.tooltipDetails
 assert(Suite.SuiteProfiles.EnsureModernDarkTooltips())
-assert(config.enabled and config.anchor == 3 and config.fixedX == -12 and config.fixedY == 340)
+assert(config.enabled and config.anchor == 1 and config.worldUnitAnchor == 4 and config.worldObjectAnchor == 4)
+assert(config.worldUnitY == 340 and config.worldObjectY == 340 and (config.uiElementAnchor or 1) == 1)
 assert(config.fixedY >= modules.damageMeter.w1Y + modules.damageMeter.w1Height + 38 + 20,
     "tooltip overlaps the meter's outside header")
 assert(config.inspectHovered == false and config.itemLevel == true)
 local calls, before, after = Counts()
 assert(calls == 1 and before == 1 and after == 1)
 assert(not Suite.SuiteProfiles.EnsureModernDarkTooltips() and Counts() == 1, "repair repeated")
-for _, choice in ipairs({ "other-preset", "other-profile", "custom-y", "custom-anchor", "off-custom", "meter", "combat", "variant", "forever", "refusal" }) do
+for _, choice in ipairs({ "other-preset", "other-profile", "custom-y", "custom-anchor", "off-custom", "meter", "combat", "variant", "refusal" }) do
     local S, m, GetCalls = Setup(choice == "forever")
     if choice == "other-preset" then S.RootDB.installation.profile = "classic" end
     if choice == "other-profile" then S.RootDB.installation.frameProfileName = "Someone else" end
@@ -45,7 +46,13 @@ for _, choice in ipairs({ "other-preset", "other-profile", "custom-y", "custom-a
     assert(m.tooltipDetails.enabled == false, choice .. " enabled a module")
     if choice == "refusal" then assert(not S.RootDB.installation.modernDarkTooltipRevision) end
 end
-local S, m, GetCalls = Setup(false)
+local S, m, GetCalls = Setup(true)
+m.tooltipDetails.enabled, m.tooltipDetails.anchor = true, 3
+m.tooltipDetails.fixedX, m.tooltipDetails.fixedY = -12, 340
+S.RootDB.installation.modernDarkTooltipRevision = 1
+assert(S.SuiteProfiles.EnsureModernDarkTooltips() and m.tooltipDetails.anchor == 1 and m.tooltipDetails.worldUnitAnchor == 4,
+    "Forever Modern Dark still routed explicitly anchored UI tooltips to its HUD corner")
+S, m, GetCalls = Setup(false)
 S.ProfileVariants.BeforeMutation = function()
     m.tooltipDetails.enabled, m.tooltipDetails.anchor = true, 3
     m.tooltipDetails.fixedX, m.tooltipDetails.fixedY = -40, 150

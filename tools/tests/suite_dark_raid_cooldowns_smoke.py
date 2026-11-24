@@ -20,8 +20,15 @@ dungeon_config = dict(config)
 for patch in frames[b'profileVariants'][b'entries'][0][b'patch']:
     if patch[b'path'][:2] == [b'suiteModules', b'cooldownManager']:
         dungeon_config[patch[b'path'][2]] = patch[b'value']
-dungeon_encoded = dungeon_config[b'listsData'].decode()
+# The dungeon variant fills Havoc's utility row only (variantLists); it never
+# lays the factory's whole bar contents over the player's (listsData).
+assert dungeon_config[b'listsData'] == config[b'listsData'], 'the dungeon variant holds the bar contents'
+dungeon_encoded = dungeon_config[b'variantLists'].decode()
 dungeon_lists = decode(dungeon_encoded, 'MSUF3:')
+bars = decode(literal(factory, 'Suite.DarkRaidDungeonLists'), 'MSUF3:')
+assert dungeon_lists == bars == {b'v': 1, b'hidden': {}, b'shared': {}, b'replace': {577: {b'uti': True}},
+                                 b'specs': {577: {b'uti': [b's183752', b's179057', b's207684', b's217832', b's278326',
+                                                           b's185123', b's195072']}}}, dungeon_lists
 source = (SUITE / 'tools/tests/suite_cooldown_manager_contract.lua').read_text(encoding='utf-8-sig')
 source = source.split('-- Work counters:')[0]
 old = 'MSUF_TryDecodeCompactString=function(text) local n=tonumber(text:match("^MSUF3:(%d+)$"));return n and store[n] or nil end'
