@@ -1,5 +1,9 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+-- The client's secret test (Platform.lua): UNIT_COMBAT reaches EnemyCombat
+-- for every hit, so its payload checks call it directly (S.Public is its
+-- negation behind one more Lua call).
+local IsSecret = NS.IsSecret
 local Feed, Display, Gains = NS.FloatingCombatFeed, P.FloatingTextDisplay, P.FloatingTextGains
 local ID, CAPACITY = "floatingCombatText", 24
 local ESTIMATED, ALL_ENEMIES = 1, 2
@@ -143,7 +147,7 @@ local function Claim(self, school)
 end
 
 local function EnemyCombat(self, _, unit, action, flag, amount, school)
-    if not S.Public(unit) or not S.Public(action) then return end
+    if IsSecret(unit) or IsSecret(action) then return end
     local plate
     if unit == "target" then
         if not self.targetEnemy then return end
@@ -155,7 +159,7 @@ local function EnemyCombat(self, _, unit, action, flag, amount, school)
     else
         return
     end
-    if not S.Public(flag) then flag = nil end
+    if IsSecret(flag) then flag = nil end
     local outcome = Outcomes[action]
     local damage = action == "WOUND"
     if damage and FULL_MITIGATION[flag] then

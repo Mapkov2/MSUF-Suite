@@ -47,8 +47,15 @@ end
 function methods:SetOffset(x, y) self.offsetX, self.offsetY = x, y end
 function methods:CreateAnimationGroup() return New() end
 function methods:CreateAnimation() return New() end
-function methods:Play() self.playing = true end
-function methods:Stop() assert(self.playing); self.playing = false end
+-- Native animation calls, counted for the warm render budget below.
+local animationCalls = { Play = 0, Stop = 0, Restart = 0 }
+function methods:Play() animationCalls.Play = animationCalls.Play + 1; self.playing = true end
+function methods:Stop() assert(self.playing); animationCalls.Stop = animationCalls.Stop + 1; self.playing = false end
+-- AnimationGroup:Restart (SimpleAnimGroupAPIDocumentation) is Stop plus Play.
+function methods:Restart()
+    assert(self.playing, "Restart reached an idle line")
+    animationCalls.Restart = animationCalls.Restart + 1
+end
 function methods:SetFormattedText(format, amount)
     if format == "%s" then assert(rawequal(amount, secret) or amount == wideAmount) end
     self.format, self.amount, paints = format, amount, paints + 1
@@ -123,6 +130,7 @@ local S = { instances = {} }
 local NS = {
     Suite = S, RootDB = {}, Client = { isForever = true, SupportsEvent = function() return true end },
     Public = function(value) return not rawequal(value, secret) end,
+    IsSecret = function(value) return rawequal(value, secret) end,
     Safety = { IsForbidden = function(plate) return plate.forbidden == true end },
     Dispatch = function(fn, ...) return fn(...) end,
     InCombat = function() return inCombat end,
@@ -257,8 +265,27 @@ M:Refresh()
 assert(context.directFrame.events.UNIT_COMBAT and not context.frame.events.UNIT_COMBAT)
 assert(not context.directFrame.events.PLAYER_SWING and not context.frame.events.UNIT_SPELLCAST_SUCCEEDED)
 local created, styled, reads, fontResolves = frames, fontWrites, clockReads, styleCalls
-for _ = 1, 96 do Hit("nameplate1") end
+for _ = 1, 32 do Hit("nameplate1") end
+-- Render budget of a warm hit on a full four-line plate lane, which recycles
+-- its oldest line: VM instructions of the owned event and render files (the
+-- 2026-11-23 Retail raid trace sent 3,653 such hits in 30 s). Measured 182,
+-- previously 231 (shifted row search, Stop plus Play, Lua secret wrapper).
+local WARM_HIT_INSTRUCTIONS = 184
+local owned = {
+    ["@" .. root .. "/MSUF_Suite_QualityOfLife/FloatingCombatText.lua"] = true,
+    ["@" .. root .. "/MSUF_Suite_QualityOfLife/FloatingTextDisplay.lua"] = true,
+}
+local instructions = 0
+debug.sethook(function()
+    local info = debug.getinfo(2, "S")
+    if info and owned[info.source] then instructions = instructions + 1 end
+end, "", 1)
+for _ = 1, 64 do Hit("nameplate1") end
+debug.sethook()
+assert(instructions / 64 <= WARM_HIT_INSTRUCTIONS, ("A warm hit ran %.1f VM instructions, budget %d")
+    :format(instructions / 64, WARM_HIT_INSTRUCTIONS))
 local positionWrites = anchors
+local played, stopped, restarted = animationCalls.Play, animationCalls.Stop, animationCalls.Restart
 collectgarbage("collect")
 collectgarbage("stop")
 local before = collectgarbage("count")
@@ -268,6 +295,10 @@ collectgarbage("restart")
 assert(paints == 194 and frames == created and fontWrites == styled and styleCalls == fontResolves)
 assert(clockReads == reads and anchors == positionWrites, "Warm all-hits path repeated work")
 assert(allocated < 0.25, "Warm all-hits path allocated Lua data")
+-- The recycled line restarts its animation in one native call (the trace
+-- above: 3,619 Stop plus 3,653 Play calls).
+assert(animationCalls.Restart - restarted == 96 and animationCalls.Stop == stopped
+    and animationCalls.Play == played, "A recycled line was stopped and played instead of restarted")
 Hit("target")
 Hit("nameplate2")
 Hit("nameplate3")

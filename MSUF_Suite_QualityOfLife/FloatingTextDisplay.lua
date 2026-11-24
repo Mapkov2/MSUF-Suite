@@ -8,6 +8,17 @@ local NAMEPLATE, LEFT, RIGHT = 1, 2, 3
 local PLATE_ROWS, SIDE_ROWS, GAP = 4, 3, 8
 local PLATE_TRAVEL = 42
 local POINTS = { "CENTER", "RIGHT", "LEFT" }
+-- A lane's occupancy mask holds one distinct bit per taken line (TakeSlot,
+-- Release), so it never exceeds 2^PLATE_ROWS - 1. Its first free line (the
+-- count of low set bits) and that line's bit are fixed: look them up instead
+-- of shifting the mask on every hit. A full lane yields its row count.
+local FREE_ROW, ROW_BIT = {}, {}
+for mask = 0, 2 ^ PLATE_ROWS - 1 do
+    local row, rest = 0, mask
+    while rest % 2 == 1 do row, rest = row + 1, (rest - 1) / 2 end
+    FREE_ROW[mask] = row
+end
+for row = 0, PLATE_ROWS do ROW_BIT[row] = 2 ^ row end
 
 local function Release(self, slot)
     local anchor = slot.anchor
@@ -149,16 +160,20 @@ function Display:NeedsPlate()
         or self.enabled.avoid and self.routes.avoid == NAMEPLATE
 end
 
+-- Returns the slot, whether it was active, and whether its animation still
+-- runs for Show to restart (the full lane's own oldest line only).
 local function TakeSlot(self, anchor, rows)
     local mask = self.occupied[anchor] or 0
-    local row, bit = 0, 1
-    while mask % 2 == 1 do
-        row, bit, mask = row + 1, bit * 2, math.floor(mask / 2)
-    end
-    local slot
+    local row = FREE_ROW[mask]
+    local bit = ROW_BIT[row]
+    local slot, running
     if row == rows then
+        -- The oldest line keeps its anchor, row, motion and placement, so
+        -- Position writes nothing and its running animation is restarted
+        -- after the new text (Show) instead of being stopped here.
         slot = self.head[anchor]
         row, bit = slot.row, slot.rowBit
+        running = slot.playing
     elseif self.freeCount > 0 then
         -- Keep other lanes intact while the pool still has idle slots.
         slot = self.free[self.freeCount]
@@ -170,7 +185,7 @@ local function TakeSlot(self, anchor, rows)
     self.cursor = slot.index
     local wasActive = slot.anchor ~= nil
     if wasActive then
-        if slot.playing then slot.animation:Stop() end
+        if slot.playing and not running then slot.animation:Stop() end
         Release(self, slot)
     end
     self.occupied[anchor] = (self.occupied[anchor] or 0) + bit
@@ -179,7 +194,7 @@ local function TakeSlot(self, anchor, rows)
     slot.older = tail
     if tail then tail.newer = slot else self.head[anchor] = slot end
     self.tail[anchor] = slot
-    return slot, wasActive
+    return slot, wasActive, running
 end
 
 local function Position(self, slot, placement, plan)
@@ -215,7 +230,7 @@ function Display:Show(route, critical, format, amount, plate, stationary)
     local anchor = placement == NAMEPLATE and plate or self.sides[placement]
     if not anchor then return end
     local plan = self.placements[placement]
-    local slot, wasActive = TakeSlot(self, anchor, plan.rows)
+    local slot, wasActive, running = TakeSlot(self, anchor, plan.rows)
     Position(self, slot, placement, plan)
     local text = critical and slot.critical or slot.normal
     if slot.text ~= text then
@@ -232,6 +247,13 @@ function Display:Show(route, critical, format, amount, plate, stationary)
     if format then text:SetFormattedText(format, amount) else text:SetText(amount) end
     if not wasActive then slot.frame:Show() end
     slot.playing = not stationary
-    if slot.playing then slot.animation:Play() end
+    -- Restart is the native Stop plus Play (SimpleAnimGroupAPIDocumentation;
+    -- Blizzard_ActionBar StatusTrackingManager, FrameXML AlertFrameSystems):
+    -- one call restarts a recycled line from its first frame.
+    if slot.playing then
+        if running then slot.animation:Restart() else slot.animation:Play() end
+    elseif running then
+        slot.animation:Stop()
+    end
     return slot
 end
