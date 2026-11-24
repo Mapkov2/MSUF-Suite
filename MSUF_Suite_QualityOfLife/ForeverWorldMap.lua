@@ -8,6 +8,7 @@ local hookedMap, refreshQueued
 local FLIGHT, FIRST_TRANSPORT, LAST_TRANSPORT, ROAD, APPROACH, ENTRANCE = 1, 2, 4, 6, 7, 8
 local KIND_TEXT = { "Flight point", "Boat", "Zeppelin", "Skycutter", [APPROACH] = "Dungeon approach" }
 local IN_COMBAT = { inCombat = true }
+local ABANDON_QUESTION = "forever-map-abandon-marked"
 
 local function MapName(mapID)
     local name = M.mapNames[mapID]
@@ -177,7 +178,75 @@ local function FilterMenu(owner)
     end)
 end
 
-local function ShowFilters(map)
+local function CanAbandonMarkedQuest(questID)
+    if not S.Finite(questID) or questID <= 0 then return false end
+    local watchType = C_QuestLog.GetQuestWatchType(questID)
+    if not S.Finite(watchType) then return false end
+    local canAbandon = C_QuestLog.CanAbandonQuest(questID)
+    local disabled = C_QuestLog.IsQuestDisabledForSession(questID)
+    return S.Public(canAbandon) and canAbandon == true and S.Public(disabled) and disabled == false
+end
+
+local function QuestLogOpen()
+    return M.active and M.map and M.map:IsShown() and not NS.InCombat()
+        and M.map.QuestLog and M.map.QuestLog:IsShown()
+end
+
+local function CanAbandonFromMap()
+    return QuestLogOpen() and not StaticPopup_Visible("ABANDON_QUEST")
+        and not StaticPopup_Visible("ABANDON_QUEST_WITH_ITEMS")
+end
+
+local function AbandonMarkedQuests(questIDs)
+    if not CanAbandonFromMap() then return end
+    local selectedQuest = C_QuestLog.GetSelectedQuest()
+    if not S.Finite(selectedQuest) then selectedQuest = nil end
+    for _, questID in ipairs(questIDs) do
+        if CanAbandonMarkedQuest(questID) then
+            C_QuestLog.SetSelectedQuest(questID)
+            C_QuestLog.SetAbandonQuest()
+            local abandonQuest = C_QuestLog.GetAbandonQuest()
+            if S.Finite(abandonQuest) and abandonQuest == questID then
+                C_QuestLog.AbandonQuest()
+                if questID == selectedQuest then selectedQuest = nil end
+            end
+        end
+    end
+    if selectedQuest then C_QuestLog.SetSelectedQuest(selectedQuest) end
+end
+
+local function ConfirmAbandonMarkedQuests()
+    if not CanAbandonFromMap() then return end
+    local count = C_QuestLog.GetNumQuestWatches()
+    if not S.Finite(count) then return end
+    -- The quest-log checkmarks are watch states, including rows hidden by search or collapsed headers.
+    local questIDs = {}
+    for index = 1, count do
+        local questID = C_QuestLog.GetQuestIDForQuestWatchIndex(index)
+        if CanAbandonMarkedQuest(questID) then questIDs[#questIDs + 1] = questID end
+    end
+    if #questIDs == 0 then
+        NS.Print(S.Text("No marked quests can be abandoned."))
+        return
+    end
+    S.Confirm(ABANDON_QUESTION, {
+        text = S.Text("Abandon marked quests (%d)? This may remove related quest items."),
+        text_arg1 = #questIDs,
+        acceptText = ABANDON_QUEST,
+        cancelText = CANCEL,
+        showAlert = true,
+        callback = function() AbandonMarkedQuests(questIDs) end,
+    })
+end
+
+local function UpdateAbandonButton()
+    if not M.abandon then return end
+    local shown = QuestLogOpen() == true
+    M.abandon:SetShown(shown)
+    if not shown then S.HideQuestion(ABANDON_QUESTION) end
+end
+
+local function ShowMapButtons(map)
     if NS.InCombat() or not map.BorderFrame then return end
     local border = map.BorderFrame
     if not M.filters then
@@ -187,30 +256,46 @@ local function ShowFilters(map)
         button:SetTextToFit(S.Text("Map filters"))
         button:SetScript("OnClick", FilterMenu)
         M.filters = button
+
+        local abandon = S.CreateFrame("Button", nil, border.TitleContainer, "UIPanelButtonTemplate")
+        abandon:SetPoint("TOPRIGHT", button, "TOPLEFT", -4, 0)
+        abandon:SetTextToFit(S.Text("Abandon all marked quests"))
+        abandon:SetScript("OnClick", ConfirmAbandonMarkedQuests)
+        M.abandon = abandon
     end
     -- The title drag strip sits 15 levels above the border or its NineSlice.
     local borderLevel = border:GetFrameLevel()
     local sliceLevel = border.NineSlice and border.NineSlice:GetFrameLevel()
     local titleLevel = border.TitleContainer:GetFrameLevel()
-    M.filters:SetFrameLevel(math.max(S.Finite(borderLevel) and borderLevel or 0,
-        S.Finite(sliceLevel) and sliceLevel or 0, S.Finite(titleLevel) and titleLevel or 0) + 16)
+    local level = math.max(S.Finite(borderLevel) and borderLevel or 0,
+        S.Finite(sliceLevel) and sliceLevel or 0, S.Finite(titleLevel) and titleLevel or 0) + 16
+    M.filters:SetFrameLevel(level)
+    M.abandon:SetFrameLevel(level)
     M.filters:Show()
+    UpdateAbandonButton()
 end
 
-local function FilterCombat(_, event)
+local function HideMapButtons()
+    if not M.filters then return end
+    S.CloseOwnedContextMenu(M.filters)
+    S.HideQuestion(ABANDON_QUESTION)
+    M.filters:Hide()
+    M.abandon:Hide()
+end
+
+local function ButtonCombat(_, event)
     if event == "PLAYER_REGEN_ENABLED" and M.map:IsShown() then
-        ShowFilters(M.map)
-    elseif M.filters then
-        S.CloseOwnedContextMenu(M.filters)
-        M.filters:Hide()
+        ShowMapButtons(M.map)
+    else
+        HideMapButtons()
     end
 end
 
 local function MapShown(map)
     if not M.active or map ~= M.map then return end
-    ShowFilters(map)
-    M.context:Event("PLAYER_REGEN_DISABLED", FilterCombat, IN_COMBAT)
-    M.context:Event("PLAYER_REGEN_ENABLED", FilterCombat, IN_COMBAT)
+    ShowMapButtons(map)
+    M.context:Event("PLAYER_REGEN_DISABLED", ButtonCombat, IN_COMBAT)
+    M.context:Event("PLAYER_REGEN_ENABLED", ButtonCombat, IN_COMBAT)
     M.context:Event("TAXI_NODE_STATUS_CHANGED", MapEvent, IN_COMBAT)
     M.context:Event("PLAYER_LEVEL_UP", MapEvent, IN_COMBAT)
     M.context:Event("CVAR_UPDATE", MapEvent, IN_COMBAT)
@@ -222,10 +307,7 @@ local function MapHidden(map)
     if map ~= M.map then return end
     M.context:RemoveEvent("PLAYER_REGEN_DISABLED")
     M.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    if M.filters then
-        S.CloseOwnedContextMenu(M.filters)
-        M.filters:Hide()
-    end
+    HideMapButtons()
     M.context:RemoveEvent("TAXI_NODE_STATUS_CHANGED")
     M.context:RemoveEvent("PLAYER_LEVEL_UP")
     M.context:RemoveEvent("CVAR_UPDATE")
@@ -251,6 +333,10 @@ local function ObserveMap(map)
     hookedMap = map
     map:HookScript("OnShow", MapShown)
     map:HookScript("OnHide", MapHidden)
+    if map.QuestLog then
+        map.QuestLog:HookScript("OnShow", UpdateAbandonButton)
+        map.QuestLog:HookScript("OnHide", UpdateAbandonButton)
+    end
     hooksecurefunc(map, "RefreshAllDataProviders", QueueRefresh)
     hooksecurefunc(map, "OnMapChanged", QueueRefresh)
     hooksecurefunc(map, "OnCanvasSizeChanged", LayoutChanged)

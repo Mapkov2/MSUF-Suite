@@ -153,6 +153,10 @@ function GameTooltip:Hide() self.shown = false end
 function GameTooltip:IsShown() return self.shown end
 
 WorldMapFrame = Widget()
+WorldMapFrame.QuestLog = Widget()
+function WorldMapFrame.QuestLog:HookScript(event, callback) self[event] = callback end
+function WorldMapFrame.QuestLog:Show() self.shown = true; self:OnShow() end
+function WorldMapFrame.QuestLog:Hide() self.shown = false; self:OnHide() end
 WorldMapFrame.BorderFrame = Widget()
 WorldMapFrame.BorderFrame.NineSlice = Widget()
 WorldMapFrame.BorderFrame.NineSlice:SetFrameLevel(500)
@@ -227,6 +231,13 @@ S.ContextMenu = function(owner, generator)
     end })
 end
 S.CloseOwnedContextMenu = function() end
+local question, questionKey
+S.HideQuestion = function(key)
+    if key == questionKey then question = nil end
+end
+S.Confirm = function(key, data)
+    questionKey, question = key, data
+end
 S.Set = function(id, key, value)
     Check(id == "foreverWorldMap", "pin filter uses its existing settings owner")
     module.config[key] = value
@@ -241,6 +252,12 @@ Check(x <= -76, "map filters leave room for close, maximize and Suite minimize c
 Check(module.filters.parent == border.TitleContainer, "map filters inherit the native title layer")
 Check(module.filters.text == filterLabel and module.filters.width == #filterLabel * 6 + 40,
     "map filters size to the localized label with padding")
+local abandon = assert(module.abandon)
+local abandonPoint, abandonRelative, abandonAnchor, abandonX = unpack(abandon.point)
+Check(abandon:IsShown() and abandon.text == "Abandon all marked quests" and abandon.parent == border.TitleContainer
+    and abandonPoint == "TOPRIGHT" and abandonRelative == module.filters and abandonAnchor == "TOPLEFT"
+    and abandonX < 0 and abandon:GetFrameLevel() == module.filters:GetFrameLevel(),
+    "bulk abandon button sits beside map filters above the drag strip")
 local function ClickTitleAt(cursorX)
     -- Coordinates relative to the map's right edge. Model the actual Suite
     -- drag strip ending at -110 at NineSlice frame level + 15.
@@ -272,6 +289,95 @@ Check(module.filters:IsShown(), "map filters return after combat")
 wipe(choices)
 ClickTitleAt(x - module.filters.width + 1)
 Check(choices["Show flight points"], "filter clicks still win after the native chrome rises")
+
+do
+    local watched, marked = { 101, 102, 103, 104, 105, 106, secret },
+        { [101] = 0, [102] = 1, [103] = 0, [104] = 0, [105] = 0, [106] = 0 }
+    local abandoned, selected, staged, nativeQuestion, message = {}, 200
+    ABANDON_QUEST = "Abandon Quest"
+    CANCEL = "Cancel"
+    NS.Print = function(text) message = text end
+    StaticPopup_Visible = function(which) return which == nativeQuestion and 1 or nil end
+    C_QuestLog = {
+        GetNumQuestWatches = function() return #watched end,
+        GetQuestIDForQuestWatchIndex = function(index) return watched[index] end,
+        GetQuestWatchType = function(id) return marked[id] end,
+        CanAbandonQuest = function(id) return id ~= 104 end,
+        IsQuestDisabledForSession = function(id) return id == 105 end,
+        GetSelectedQuest = function() return selected end,
+        SetSelectedQuest = function(id) selected = id end,
+        SetAbandonQuest = function() staged = selected ~= 106 and selected or 200 end,
+        GetAbandonQuest = function() return staged end,
+        AbandonQuest = function()
+            abandoned[#abandoned + 1] = staged
+            marked[staged] = nil
+            table.remove(watched, 1)
+            if selected == staged then selected = nil end
+        end,
+    }
+    abandon:OnClick()
+    Check(question and question.text_arg1 == 4 and question.showAlert and question.acceptText == ABANDON_QUEST
+        and question.cancelText == CANCEL
+        and #abandoned == 0 and staged == nil, "confirmation counts eligible marked quests before any quest API writes")
+    S.HideQuestion(questionKey)
+    Check(not question and #abandoned == 0, "dismissing confirmation leaves every quest alone")
+    abandon:OnClick()
+    local confirm = question.callback
+    nativeQuestion = "ABANDON_QUEST_WITH_ITEMS"
+    confirm()
+    Check(#abandoned == 0 and staged == nil, "bulk action leaves another quest's native abandon prompt intact")
+    nativeQuestion = nil
+    marked[103], marked[107] = nil, 0
+    watched[#watched + 1] = 107
+    confirm()
+    Check(#abandoned == 2 and abandoned[1] == 101 and abandoned[2] == 102 and selected == 200,
+        "accept abandons the confirmed quests still marked, despite shifting watch indices and a stale staged ID")
+
+    abandon:OnClick()
+    Check(question and question.text_arg1 == 2, "remaining eligible quests can be confirmed independently")
+    confirm = question.callback
+    combat = true
+    waiting.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+    confirm()
+    Check(not abandon:IsShown() and not question and #abandoned == 2,
+        "combat dismisses the question and prevents a stale confirmation from writing")
+    combat = false
+    waiting.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    Check(abandon:IsShown() and abandon:GetFrameLevel() == module.filters:GetFrameLevel(),
+        "the action returns at the same level as filters after combat")
+
+    abandon:OnClick()
+    confirm = question.callback
+    WorldMapFrame:Hide()
+    confirm()
+    Check(not abandon:IsShown() and not question and #abandoned == 2,
+        "closing the map dismisses the question without abandoning anything")
+    WorldMapFrame:Show()
+    abandon:OnClick()
+    confirm = question.callback
+    WorldMapFrame.QuestLog:Hide()
+    confirm()
+    Check(not abandon:IsShown() and module.filters:IsShown() and not question and #abandoned == 2,
+        "closing only the quest pane dismisses the confirmation and leaves filters accessible")
+    WorldMapFrame.QuestLog:Show()
+    Check(abandon:IsShown(), "reopening the quest pane restores its action")
+
+    watched, marked, selected = { 108 }, { [108] = 0 }, nil
+    abandon:OnClick()
+    question.callback()
+    Check(#abandoned == 3 and abandoned[3] == 108 and selected == nil,
+        "the batch works before a quest has been selected in the log")
+    watched, marked, selected = { 109 }, { [109] = 0 }, 109
+    abandon:OnClick()
+    question.callback()
+    Check(#abandoned == 4 and abandoned[4] == 109 and selected == nil,
+        "a quest removed by the batch is not reselected")
+    S.HideQuestion(questionKey)
+    wipe(marked)
+    abandon:OnClick()
+    Check(not question and message == "No marked quests can be abandoned.", "empty selection provides feedback")
+end
+
 local nativeProviders = 0
 for _ in pairs(WorldMapFrame.dataProviders) do nativeProviders = nativeProviders + 1 end
 Check(nativeProviders == 1, "Suite registered a provider in Blizzard's native refresh loop")
