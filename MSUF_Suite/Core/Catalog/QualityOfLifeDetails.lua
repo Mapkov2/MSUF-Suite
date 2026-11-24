@@ -198,6 +198,15 @@ B.Section("tooltipDetails", "tooltip_details", "Tooltip details", {
     Bool("unitMountOwned", "Collection marker for the hovered mount", true),
     Bool("target", "Hovered unit target", true),
     Bool("selfTarget", "Highlight targets that are you", true),
+    Bool("unitCombatStatus", "Combat status icon"),
+    Bool("unitIdentityIcons", "Class and PvP icons"),
+    Bool("unitFaction", "Unit faction"),
+    Bool("unitClassification", "Elite and rare classification"),
+    Bool("unitLocation", "Unit zone and subzone"),
+    Bool("unitThreatStatus", "Threat status indicator"),
+    Bool("unitThreatPercent", "Threat percentage"),
+    B.Tooltip(Choice("unitTargeters", "Units targeting the hovered unit", 1, { "Off", "Group", "Visible nameplates" }),
+        "Counts targets in the selected group of units when Blizzard makes the comparisons available."),
     B.Tooltip(Bool("mythicForces", "Mythic+ enemy forces on enemy tooltips (in keystones)", true),
         "Shows the share of the keystone's enemy forces that an enemy gives, while a Mythic+ keystone is running and Blizzard shows no such line itself."),
     Bool("hideHealth", "Hide unit tooltip health bar"),
@@ -222,13 +231,27 @@ do
     rules.cursorY.requiresChoice = { key = "anchor", values = { [2] = true } }
     rules.growth.requiresChoice = { key = "anchor", values = { [3] = true } }
     if NS.Client.isForever then
-        local anchor = { enabled = true, anchor = true, cursorX = true, cursorY = true,
-            fixedX = true, fixedY = true, growth = true }
-        for key, rule in pairs(rules) do
-            if not anchor[key] then rule.hidden = true end
+        for _, key in ipairs({ "titles", "ownedMount", "unitMount", "unitMountOwned", "mythicForces", "hideHealth",
+            "maxStack", "iconID", "borderColor", "hideFaction", "hidePvP", "hideRealm", "hideGuild" }) do
+            rules[key].hidden = true
         end
     end
 end
+
+local sourceRows = {}
+for _, source in ipairs(NS.TooltipPositions.sources) do
+    local choices = { "Use default position", "Blizzard", "Cursor", "Fixed screen corner" }
+    if source.id == "unitFrame" or source.id == "uiElement" then choices[5] = "At UI element" end
+    sourceRows[#sourceRows + 1] = Choice(source.mode, source.label, 1, choices)
+    sourceRows[#sourceRows + 1] = Number(source.x, "Horizontal offset", 12, -500, 500)
+    sourceRows[#sourceRows + 1] = Number(source.y, "Vertical offset", 12, -500, 500)
+    sourceRows[#sourceRows + 1] = Choice(source.direction, "Anchor point", 1,
+        { "Bottom right", "Bottom left", "Top right", "Top left" })
+    sourceRows[#sourceRows + 1] = Choice(source.side, "Side of UI element", 1,
+        { "Right", "Left", "Above", "Below" })
+end
+B.Section("tooltipDetails", "tooltip_source_positions", "Position by source", sourceRows)
+for _, row in ipairs(sourceRows) do NS.SuiteCatalog.tooltipDetails.rules[row.key].hidden = true end
 B.Module("popupAttention", {
     title = "Dialogs and loot toasts",
     description = "A Suite look, font, minimum height and position for Blizzard dialogs, marked resurrection offers, the item quality written on loot toasts and gold-framed money toasts.",

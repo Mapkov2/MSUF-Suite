@@ -4,7 +4,7 @@ local Card, Safety, Palette = {}, NS.Safety, NS.TooltipPalette
 NS.ItemTooltipCard = Card
 
 local defaults = NS.Defaults.theme.tooltipLayout
-local limits = { iconSize = { 16, 38 }, x = { 4, 22 }, y = { -5, 5 }, height = { 36, defaults.height },
+local limits = { iconSize = { 16, 38 }, x = { 4, 64 }, y = { -14, 14 }, height = { 36, defaults.height },
     borderWidth = { 1, 4 }, unitHealthHeight = { 8, 36 }, unitPowerHeight = { 8, 36 },
     unitHealthTextSize = { 0, 32 }, unitHealthTextX = { -150, 150 }, unitHealthTextY = { -100, 100 } }
 local unitFields = { "unitHealth", "unitPower", "unitValueText", "unitHealthTextFormat", "unitHealthTextFont",
@@ -47,9 +47,23 @@ local function Setting(field)
 end
 Card.Setting = Setting
 function Card.HeaderHeight() return Setting("height") end
-function Card.TypeStyle(kind)
-    local saved = Setting(types[kind])
+
+local function PresetTypeStyle(preset)
+    return preset == "compact" and "suite" or "custom"
+end
+
+function Card.TypeStyleChoice(kind)
+    local settings = NS.DB.theme.tooltipLayout
+    local saved = type(settings) == "table" and settings[types[kind]]
     if saved == "custom" or saved == "suite" then return saved end
+    return "inherit"
+end
+
+function Card.TypeStyle(kind)
+    local choice = Card.TypeStyleChoice(kind)
+    if choice ~= "inherit" then return choice end
+    local base = Setting("presetBase")
+    if base and base ~= "" then return PresetTypeStyle(base) end
     if kind == "loot" then return "suite" end
     if kind == "quest" then return Card.TypeStyle("unit") end
     local legacy = NS.DB.theme.itemTooltipStyle == "card" and (kind == "unit" or Setting(kind))
@@ -69,15 +83,22 @@ end
 
 function Card.SetTypeStyle(kind, value)
     if NS.IsCombatLocked() or not Safety.Public(kind) or not Safety.Public(value) or not types[kind]
-        or (value ~= "custom" and value ~= "suite") then return false end
-    LayoutSettings()[types[kind]] = value
+        or (value ~= "custom" and value ~= "suite" and value ~= "inherit") then return false end
+    if Card.TypeStyleChoice(kind) == value then return true end
+    local settings = LayoutSettings()
+    settings[types[kind]] = value ~= "inherit" and value or nil
+    settings.preset = "custom"
     NS.Registry.NotifyListeners("tooltipStyle", kind)
     return true
 end
 
-function Card.Set(field, value)
+local function MatchPreviewType(settings, kind)
+    if Safety.Public(kind) and types[kind] and Card.TypeStyle(kind) ~= "custom" then settings[types[kind]] = "custom" end
+end
+
+function Card.Set(field, value, kind)
     if NS.IsCombatLocked() or not Safety.Public(field) or not Safety.Public(value)
-        or type(field) ~= "string" or field == "preset" or field == "headerColor" or defaults[field] == nil
+        or type(field) ~= "string" or field == "preset" or field == "presetBase" or field == "headerColor" or defaults[field] == nil
         or field == "borderColor" or Palette.fields[field] or unitColors[field]
         or field == "itemStyle" or field == "spellStyle"
         or field == "unitStyle" or field == "questStyle" or field == "lootStyle"
@@ -86,13 +107,15 @@ function Card.Set(field, value)
     if surfaceModes[field] and not surfaceModes[field][value] then return false end
     local limit = limits[field]
     if limit and (value ~= value or value < limit[1] or value > limit[2]) then return false end
+    if not Safety.Public(kind) or kind ~= nil and Setting(field) == value then return false end
     local settings = LayoutSettings()
     settings[field], settings.preset = value, "custom"
+    MatchPreviewType(settings, kind)
     NS.Registry.NotifyListeners("tooltipStyle", field)
     return true
 end
 
-function Card.SetOffsets(x, y)
+function Card.SetOffsets(x, y, kind)
     if NS.IsCombatLocked() or not Safety.Public(x) or not Safety.Public(y)
         or type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y then return false end
     x = math.max(limits.x[1], math.min(limits.x[2], math.floor(x + .5)))
@@ -100,6 +123,7 @@ function Card.SetOffsets(x, y)
     if x == Setting("x") and y == Setting("y") then return false end
     local settings = LayoutSettings()
     settings.x, settings.y, settings.preset = x, y, "custom"
+    MatchPreviewType(settings, kind)
     NS.Registry.NotifyListeners("tooltipStyle", "position")
     return true
 end
@@ -162,7 +186,7 @@ function Card.SetPaletteColor(key, ...)
     return false
 end
 
-function Card.SetPreset(key, resetSurface)
+function Card.SetPreset(key, resetSurface, usePresetStyles)
     if NS.IsCombatLocked() or not Safety.Public(key) or type(key) ~= "string" then return false end
     local style = presets[key] or Palette.BuildPreset(key)
     if key ~= "custom" and not style then return false end
@@ -173,13 +197,14 @@ function Card.SetPreset(key, resetSurface)
     local previous = theme.tooltipLayout
     local vitals = {}
     for _, field in ipairs(unitFields) do vitals[field] = NS.CopyValue(Setting(field)) end
+    local base = Setting("presetBase")
     if key == "custom" then
         LayoutSettings().preset = "custom"
     else
         theme.tooltipLayout = NS.CopyValue(style)
         local nextLayout = theme.tooltipLayout
         nextLayout.preset = key
-        if key ~= "compact" and presets[key] and type(previous) == "table" and previous.palette then
+        if not usePresetStyles and key ~= "compact" and presets[key] and type(previous) == "table" and previous.palette then
             nextLayout.palette, nextLayout.paletteGradient, nextLayout.paletteDirection =
                 previous.palette, previous.paletteGradient, previous.paletteDirection
             for field in pairs(Palette.fields) do nextLayout[field] = NS.CopyValue(previous[field]) end
@@ -190,7 +215,12 @@ function Card.SetPreset(key, resetSurface)
     end
     local settings = theme.tooltipLayout
     for field, value in pairs(vitals) do settings[field] = value end
-    settings.itemStyle, settings.spellStyle, settings.unitStyle, settings.questStyle, settings.lootStyle = item, spell, unit, quest, loot
+    if usePresetStyles and key ~= "custom" then
+        settings.presetBase = key
+    elseif key ~= "custom" then
+        settings.presetBase = base
+        settings.itemStyle, settings.spellStyle, settings.unitStyle, settings.questStyle, settings.lootStyle = item, spell, unit, quest, loot
+    end
     if resetSurface then cardSurface, lootSurface = defaults.cardSurface, defaults.lootSurface end
     settings.cardSurface, settings.lootSurface = cardSurface, lootSurface
     if not resetSurface then settings.backgroundTexture, settings.headerTexture = backgroundTexture, headerTexture end
@@ -203,6 +233,16 @@ function Card.Preset()
     local key = Setting("preset")
     if key == "custom" or presets[key] or Palette.HasPreset(key) then return key end
     return theme.itemTooltipStyle == "card" and "custom" or "compact"
+end
+
+function Card.PresetChoice()
+    local key = Card.Preset()
+    if key == "custom" then return key end
+    local expected = PresetTypeStyle(key)
+    for kind in pairs(types) do
+        if Card.TypeStyle(kind) ~= expected then return "custom" end
+    end
+    return key
 end
 
 local layoutFields = { "x", "y", "iconSize", "height", "cardSurface", "lootSurface" }

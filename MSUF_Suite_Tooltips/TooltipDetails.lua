@@ -9,6 +9,8 @@ local NS, S = P.NS, P.Suite
 -- data is never written.
 local M = { health = {} }
 local Lines, Border, HiddenLines = S.TooltipLines, S.TooltipBorder, S.TooltipHiddenLines
+local Positions = NS.TooltipPositions
+local UnitDetails, DetailText = P.TooltipUnitDetails, P.TooltipDetailText
 
 local function Detail(t, label, value, selfTarget)
     if value == nil then return end
@@ -72,7 +74,7 @@ end
 local function NativeInspectBusy()
     local spells = _G.PlayerSpellsFrame
     return _G.InspectFrame and (InspectFrame:IsShown() or S.PublicText(InspectFrame.unit))
-        or spells and spells:IsInspecting()
+        or spells and spells.IsInspecting and spells:IsInspecting()
 end
 
 -- The inspected unit's specialization name, from the call Blizzard's Inspect
@@ -86,6 +88,7 @@ end
 
 -- Your own specialization needs no inspect request.
 local function OwnSpec()
+    if NS.Client.isForever then return UnitDetails.OwnTalents() end
     local index = C_SpecializationInfo.GetSpecialization()
     if not S.Finite(index) or index < 1 then return end
     return S.PublicText(select(2, C_SpecializationInfo.GetSpecializationInfo(index)))
@@ -113,7 +116,7 @@ end
 local function ObserveInspect(unit)
     M.inspectGUID = nil
     M.lastInspect = Now()
-    if not M.issuingInspect or unit ~= M.issuingInspect then
+    if not M.issuingInspect or not S.Public(unit) or unit ~= M.issuingInspect then
         CancelInspectRetry()
         M.pendingInspect = nil
         if M.inspectHoverGUID then M.inspectAttempted = true end
@@ -170,18 +173,22 @@ end
 -- while no native or foreign inspect is active. Returns a cached level and
 -- specialization.
 HoverLevel = function(unit)
-    if NS.IsCombatLocked() then
+    local locked = NS.IsCombatLocked()
+    if locked then
         M.pendingInspect = nil
-        return
+        if #inspectOrder == 0 then return end
     end
-    local guid, now = Identity(unit), Now()
-    if not guid or not now then return end
+    local guid = Identity(unit)
+    if not guid then return end
+    local now = Now()
+    if not now then return end
     if M.inspectHoverGUID ~= guid then
         ClearHoverInspect()
         M.inspectHoverGUID = guid
     end
     local entry = inspectCache[guid]
     if entry and now - entry.time < CACHE_SECONDS then return entry.value, entry.spec end
+    if locked then return end
     local pending = M.pendingInspect
     if pending and now - pending.time >= INSPECT_TIMEOUT then M.pendingInspect = nil end
     if M.inspectAttempted or NativeInspectBusy() or not Inspectable(unit) then return end
@@ -201,8 +208,9 @@ end
 
 -- The item level and specialization lines of one unit.
 local function LevelLines(t, value, spec)
-    if not value and not spec then return end
-    if S.Finite(value) and value > 0 then Detail(t, "Item level", math.floor(value)) end
+    local hasLevel = S.Finite(value) and value > 0
+    if not hasLevel and not spec then return end
+    if hasLevel then Detail(t, "Item level", math.floor(value)) end
     if spec then Detail(t, "Specialization", spec) end
     M.inspectLinesAdded = true
     return true
@@ -256,9 +264,10 @@ end
 
 local function InspectModifier(_, _, key, down)
     local unit = M.inspectTooltipUnit
-    if not unit or M.inspectLinesAdded or NS.IsCombatLocked() or not P.TooltipDetailKeyPressed(DetailKeyMode(), key, down) then return end
+    if not unit or M.inspectLinesAdded or not P.TooltipDetailKeyPressed(DetailKeyMode(), key, down) then return end
     local tooltip, data = Lines.Open()
-    if not data or not S.Public(data.type) or data.type ~= Enum.TooltipDataType.Unit or Lines.UnitName(data) ~= unit then return end
+    if not data or not S.Public(data.type) or data.type ~= Enum.TooltipDataType.Unit
+        or (Lines.UnitName(data) or UnitDetails.Token(tooltip, data)) ~= unit then return end
     local value, spec = HoverLevel(unit)
     if LevelLines(tooltip, value, spec) then Lines.Grow(tooltip) end
 end
@@ -284,14 +293,6 @@ local function PlainName(unit, nameText, hideRealm)
     nameText:SetText(realm and not hideRealm and name .. "-" .. realm or name)
 end
 
-local function TargetLine(t, unit)
-    local target = unit .. "target"
-    local exists = UnitExists(target)
-    if not S.Public(exists) or not exists then return end
-    local own = UnitIsUnit(target, "player")
-    Detail(t, "Target", S.PublicText(UnitName(target)), M.config.selfTarget and S.Public(own) and own)
-end
-
 -- Mythic+ forces: the unit's share of the keystone's enemy forces, the value
 -- MSUF_Suite_Modules/MythicPlusPull.lua adds up. Lines examined for a
 -- criteria line of Blizzard's own, which makes ours a second one.
@@ -303,6 +304,7 @@ local function KeystoneActive()
 end
 
 local function HasCriteriaLine(rows)
+    if not PublicTable(rows) then return false end
     local kind = Enum.TooltipDataLineType.UnitCriteriaProgress
     for i = 2, math.min(#rows, FORCES_SCAN) do
         local row = rows[i]
@@ -345,25 +347,25 @@ local function HideHealth(t)
 end
 
 local function Unit(t, data)
+    DetailText.Clear()
     local unit, nameText, nameRow = Lines.UnitName(data)
+    unit = unit or UnitDetails.Token(t, data)
     if not unit then return end
     local c = M.config
-    Border.Unit(t, unit, c.borderColor)
-    if not c.titles then
-        PlainName(unit, nameText, c.hideRealm)
-    elseif c.hideRealm then
-        HiddenLines.Realm(unit, nameText, nameRow)
+    if NS.Client.modernEquipment then
+        Border.Unit(t, unit, c.borderColor)
+        if not c.titles then
+            PlainName(unit, nameText, c.hideRealm)
+        elseif c.hideRealm and nameRow then
+            HiddenLines.Realm(unit, nameText, nameRow)
+        end
+        HiddenLines.Lines(data, unit, c)
+        UnitMount(t, unit)
+        if c.mythicForces then Forces(t, unit, data.lines) end
+        if c.hideHealth then HideHealth(t) end
     end
-    HiddenLines.Lines(data, unit, c)
-    UnitMount(t, unit)
-    if c.guildRank then
-        local _, rank = GetGuildInfo(unit)
-        Detail(t, "Guild rank", S.PublicText(rank))
-    end
-    if c.target then TargetLine(t, unit) end
+    UnitDetails.Paint(t, data, unit, c)
     UnitLevel(t, unit)
-    if c.mythicForces then Forces(t, unit, data.lines) end
-    if c.hideHealth then HideHealth(t) end
 end
 
 ------------------------------------------------------------------ items, spells, mounts
@@ -407,8 +409,8 @@ local CORNERS = {
     { point = "TOPLEFT", x = 1, y = -1 },
 }
 
-local function Corner(config, x, y)
-    local corner = CORNERS[config.growth] or CORNERS[1]
+local function Corner(direction, x, y)
+    local corner = CORNERS[direction] or CORNERS[1]
     return corner.point, corner.x * math.abs(x), corner.y * math.abs(y)
 end
 
@@ -427,11 +429,12 @@ local function FixedPoint(frame, point, relativePoint, x, y, nativeAnchor, relat
     if not reset and old == point and parent == relativeTo and relative == relativePoint and S.Finite(ox) and S.Finite(oy)
         and math.abs(ox - x) < .01 and math.abs(oy - y) < .01 then
         local count = frame:GetNumPoints()
-        if S.Public(count) and count == 1 then return end
+        if S.Public(count) and count == 1 then return true end
     end
     if reset then frame:SetAnchorType("ANCHOR_NONE") end
     frame:ClearAllPoints()
     frame:SetPoint(point, relativeTo, relativePoint, x, y)
+    return true
 end
 
 -- Use the native container's corner without calling SetDefaultAnchor, which
@@ -455,10 +458,16 @@ local function AnchorScales(frame)
     if S.Finite(root) and root > 0 and S.Finite(scale) and scale > 0 then return root, scale end
 end
 
-local function AnchorCorner(frame, nativeAnchor)
+local function AnchorCorner(frame, nativeAnchor, source)
     local root, scale = AnchorScales(frame)
     if not root then return end
-    local point, x, y = Corner(M.config, M.config.fixedX, M.config.fixedY)
+    local config = M.config
+    local point, x, y
+    if source then
+        point, x, y = Corner(config[source.direction], config[source.x], config[source.y])
+    else
+        point, x, y = Corner(config.growth, config.fixedX, config.fixedY)
+    end
     local ratio = root / scale
     FixedPoint(frame, point, point, x * ratio, y * ratio, nativeAnchor)
 end
@@ -468,7 +477,20 @@ local function SharedAnchor()
 end
 
 local function SharedTooltip(t)
-    return SharedAnchor() and S.Public(t) and t and (t == GameTooltip or t == BuffFrameTooltip) and CanAnchor(t)
+    return M.active and S.Public(t) and t and (t == GameTooltip or t == BuffFrameTooltip) and CanAnchor(t)
+end
+
+local function AnchorAtOwner(t, owner, anchor, source)
+    if not S.Public(owner) or not owner or owner == WorldFrame or owner == UIParent or owner == t or not CanAnchor(owner) then return end
+    local secret = owner:IsAnchoringSecret()
+    local restricted = owner:IsAnchoringRestricted()
+    if not S.Public(secret) or secret ~= false or not S.Public(restricted) or restricted ~= false then return end
+    local config = M.config
+    local side = Positions.sides[config[source.side]] or Positions.sides[1]
+    local x, y = config[source.x], config[source.y]
+    if side[1] == "RIGHT" then x = -x end
+    if side[1] == "TOP" then y = -y end
+    return FixedPoint(t, side[1], side[2], x, y, anchor, owner)
 end
 
 -- ANCHOR_CURSOR ignores offsets; ANCHOR_CURSOR_RIGHT applies them from the
@@ -478,21 +500,76 @@ end
 -- clear the tooltip again (OnTooltipCleared) inside the addon's call, in the
 -- middle of the caller's build. So the cursor mode changes only the anchor
 -- type (SetAnchorType with offsets, as ContainerFrame.lua does).
-local function ApplyAnchor(t)
-    local anchor, anchorX, anchorY = t:GetAnchorType()
-    if not S.Public(anchor) then return end
-    if M.config.anchor == 2 then
-        if anchor == "ANCHOR_CURSOR_RIGHT" and S.Public(anchorX) and S.Public(anchorY)
-            and anchorX == M.config.cursorX and anchorY == M.config.cursorY then return end
-        if anchor ~= "ANCHOR_CURSOR_RIGHT" then t:ClearAllPoints() end
-        t:SetAnchorType("ANCHOR_CURSOR_RIGHT", M.config.cursorX, M.config.cursorY)
-        return
-    end
-    AnchorCorner(t, anchor)
+local relativeOwners = setmetatable({}, { __mode = "v" })
+
+local function RestoreDefaultAfterRelativeAnchor(t, anchor)
+    local owner = relativeOwners[t]
+    relativeOwners[t] = nil
+    if not owner then return end
+    local _, relative = t:GetPoint(1)
+    if S.Public(relative) and relative == owner then AnchorBlizzard(t, anchor) end
 end
 
+local function ApplyAnchor(t, source, owner, hostUnit)
+    local config = M.config
+    local override = source and config[source.mode]
+    if not override or override <= 1 then source = nil end
+    local mode = source and override - 1 or config.anchor
+    if mode == 1 and not hostUnit and not relativeOwners[t] then return end
+    local anchor, anchorX, anchorY = t:GetAnchorType()
+    if not S.Public(anchor) then return end
+    if mode == 4 then
+        if AnchorAtOwner(t, owner, anchor, source) then
+            relativeOwners[t] = owner
+            return
+        end
+        mode, source = config.anchor, nil
+    end
+    if mode == 2 then
+        relativeOwners[t] = nil
+        local x, y = config[source and source.x or "cursorX"], config[source and source.y or "cursorY"]
+        if anchor == "ANCHOR_CURSOR_RIGHT" and S.Public(anchorX) and S.Public(anchorY)
+            and anchorX == x and anchorY == y then return end
+        if anchor ~= "ANCHOR_CURSOR_RIGHT" then t:ClearAllPoints() end
+        t:SetAnchorType("ANCHOR_CURSOR_RIGHT", x, y)
+    elseif mode == 3 then
+        relativeOwners[t] = nil
+        AnchorCorner(t, anchor, source)
+    elseif hostUnit then
+        relativeOwners[t] = nil
+        AnchorBlizzard(t, anchor)
+    else
+        RestoreDefaultAfterRelativeAnchor(t, anchor)
+    end
+end
+
+local scopedAnchors, hookedScopedShow
 local function Anchor(t)
-    if SharedTooltip(t) then ApplyAnchor(t) end
+    if not scopedAnchors and SharedAnchor() and SharedTooltip(t) then ApplyAnchor(t) end
+end
+
+local function AnchorSource(t, data)
+    if not canaccesstable(data) or not S.Public(data.type) or data.type == nil then return end
+    local isUnit = data.type == Enum.TooltipDataType.Unit
+    local owner = t:GetOwner()
+    if not S.Public(owner) or not owner then return nil, nil, isUnit end
+    local id
+    local world = owner == WorldFrame
+    if owner == UIParent then
+        local info = t:GetPrimaryTooltipInfo()
+        if PublicTable(info) and S.PublicText(info.getterName) == "GetWorldCursor" then
+            world = true
+        elseif WorldFrame and WorldFrame.IsMouseMotionFocus and not NS.Safety.IsForbidden(WorldFrame) then
+            local focus = WorldFrame:IsMouseMotionFocus()
+            world = S.Public(focus) and focus == true
+        end
+    end
+    if world then
+        id = isUnit and "worldUnit" or "worldObject"
+    elseif owner ~= UIParent then
+        id = isUnit and "unitFrame" or "uiElement"
+    end
+    return Positions.byID[id], owner, isUnit
 end
 
 -- Explicit SetOwner callers (bags, spells, auras and unit frames) bypass
@@ -500,7 +577,20 @@ end
 local function AnchorData(t, data)
     if not SharedTooltip(t) or not S.Public(data) or type(data) ~= "table" then return end
     local primary = t:GetPrimaryTooltipData()
-    if S.Public(primary) and rawequal(primary, data) then ApplyAnchor(t) end
+    if not S.Public(primary) or not rawequal(primary, data) then return end
+    if not scopedAnchors then return ApplyAnchor(t) end
+    local source, owner, isUnit = AnchorSource(t, data)
+    local host = NS.HostBridge
+    local hostUnit = isUnit and host and host.OwnsUnitFrameTooltip and host.OwnsUnitFrameTooltip(t)
+    ApplyAnchor(t, source, owner, hostUnit)
+end
+
+-- Plain SetText tooltips have no data post-call. Give them the shared anchor
+-- without guessing their source or reading the text that Blizzard rendered.
+local function AnchorPlain(t)
+    if not scopedAnchors or not SharedAnchor() or not SharedTooltip(t) then return end
+    local data = t:GetPrimaryTooltipData()
+    if S.Public(data) and data == nil then ApplyAnchor(t) end
 end
 
 local function AnchorBlizzardUnit(t, data)
@@ -513,22 +603,40 @@ local function AnchorBlizzardUnit(t, data)
     if S.Public(anchor) then AnchorBlizzard(t, anchor) end
 end
 
-local function AnchorUnitPanel(panel)
+local function AnchorUnitPanel(panel, owner)
     if not M.active or not CanAnchor(panel) then return end
-    if M.config.anchor == 1 then return AnchorBlizzard(panel) end
-    if M.config.anchor == 2 then
+    local source = scopedAnchors and Positions.byID.unitFrame or nil
+    local override = source and M.config[source.mode]
+    if override == 5 and AnchorAtOwner(panel, owner, nil, source) then return end
+    if not override or override <= 1 or override == 5 then source = nil end
+    local mode = source and override - 1 or M.config.anchor
+    if mode == 1 then return AnchorBlizzard(panel) end
+    if mode == 2 then
         local x, y = GetCursorPosition()
         local root, scale = AnchorScales(panel)
+        local ox, oy = M.config[source and source.x or "cursorX"], M.config[source and source.y or "cursorY"]
         if root and S.Finite(x) and S.Finite(y) then
-            FixedPoint(panel, "LEFT", "BOTTOMLEFT", (x + M.config.cursorX * root) / scale, (y + M.config.cursorY * root) / scale)
+            FixedPoint(panel, "LEFT", "BOTTOMLEFT", (x + ox * root) / scale, (y + oy * root) / scale)
         end
         return
     end
-    AnchorCorner(panel)
+    AnchorCorner(panel, nil, source)
 end
 
 local function RefreshAnchor()
-    if SharedAnchor() then
+    scopedAnchors = false
+    for _, source in ipairs(Positions.sources) do
+        if (M.config[source.mode] or 1) > 1 then
+            scopedAnchors = true
+            break
+        end
+    end
+    if scopedAnchors and not hookedScopedShow then
+        GameTooltip:HookScript("OnShow", AnchorPlain)
+        if BuffFrameTooltip then BuffFrameTooltip:HookScript("OnShow", AnchorPlain) end
+        hookedScopedShow = true
+    end
+    if SharedAnchor() or scopedAnchors then
         Lines.SetPositioner(AnchorData)
     elseif M.active then
         Lines.SetPositioner(AnchorBlizzardUnit, "Unit")
@@ -541,7 +649,7 @@ end
 local function PlacePreview(x, y)
     local frame = M.preview
     if not frame then return false end
-    local point, px, py = Corner(M.config, x, y)
+    local point, px, py = Corner(M.config.growth, x, y)
     frame:ClearAllPoints()
     frame:SetPoint(point, UIParent, point, px, py)
     return true
@@ -568,7 +676,7 @@ end
 
 -- Drags start from the shown, inward offsets.
 local function CaptureOffsets(origin)
-    local _, x, y = Corner(M.config, origin.fixedX, origin.fixedY)
+    local _, x, y = Corner(M.config.growth, origin.fixedX, origin.fixedY)
     origin.fixedX, origin.fixedY = x, y
 end
 
@@ -595,6 +703,7 @@ end
 local function ReleaseLegacyHealth() Restore(M) end
 
 local function Hidden()
+    DetailText.Clear()
     ClearHoverInspect()
     M.inspectTooltipUnit, M.inspectLinesAdded = nil, nil
     M.mountGUID, M.mountName, M.mountCollected = nil, nil, nil
@@ -604,6 +713,7 @@ local function Hidden()
 end
 
 local function Reset(self)
+    DetailText.Clear()
     ClearHoverInspect()
     self.inspectTooltipUnit, self.inspectLinesAdded = nil, nil
     self.inspectGUID, self.pendingInspect = nil, nil
@@ -616,11 +726,14 @@ end
 -- Hooks cannot be removed; they do nothing while the module is off.
 local function InstallDetails(self)
     Lines.Add(self, "Unit", Unit)
-    Lines.Add(self, "Item", Item)
-    Lines.Add(self, "Spell", Spell)
-    Lines.Add(self, "Mount", Mount)
+    if NS.Client.modernEquipment then
+        Lines.Add(self, "Item", Item)
+        Lines.Add(self, "Spell", Spell)
+        Lines.Add(self, "Mount", Mount)
+    end
     GameTooltip:HookScript("OnHide", Hidden)
     GameTooltip:HookScript("OnTooltipCleared", function(t)
+        DetailText.Clear()
         self.inspectTooltipUnit, self.inspectLinesAdded = nil, nil
         Border.Restore(t)
         Restore(self)
@@ -632,24 +745,22 @@ end
 local function Install(self)
     if self.hooked then return end
     hooksecurefunc("GameTooltip_SetDefaultAnchor", Anchor)
-    if NS.Client.modernEquipment then InstallDetails(self) end
+    InstallDetails(self)
     self.hooked = true
 end
 
 function M:Enable()
-    if NS.Client.modernEquipment then
-        if NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = ReleaseLegacyHealth end
-        self.lastInspect = Now()
-        self.context:Event("INSPECT_READY", InspectReady)
-        ListenForInspectKey(self)
-    end
+    if NS.Client.modernEquipment and NS.HostBridge then NS.HostBridge.ReleaseLegacyTooltipHealth = ReleaseLegacyHealth end
+    self.lastInspect = Now()
+    self.context:Event("INSPECT_READY", InspectReady)
+    ListenForInspectKey(self)
     Install(self)
     RefreshAnchor()
     LayoutPreview(self)
 end
 
 function M:Refresh()
-    if NS.Client.modernEquipment then ListenForInspectKey(self) end
+    ListenForInspectKey(self)
     RefreshAnchor()
     LayoutPreview(self)
     Reset(self)

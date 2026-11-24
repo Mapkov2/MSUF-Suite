@@ -220,8 +220,13 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
             local _, entries
             local rules = group.id == "xpBar" and P.XPBarTextOptions.BarRules(section.rules)
                 or group.id == "lootRolls" and P.LootRollPreviewProperties.GridRules(section.rules) or section.rules
-            y, entries = P.RuleGrid(ctx, details, V.GetFeaturePage(group), group.id, rules, y,
-                width - 32, nil, sectionId, nil, nil, true)
+            local page, built = V.GetFeaturePage(group)
+            if page == "suite_tooltips" and group.id == "tooltipDetails" and ctx.suiteWorkspace then
+                built = P.RuleRows(page, group.id, rules, nil, sectionId)
+                P.BindTooltipDetailPreview(ctx.suiteWorkspace, built.rows)
+            end
+            y, entries = P.RuleGrid(ctx, details, page, group.id, rules, y,
+                width - 32, nil, sectionId, nil, built, true)
             RegisterFeatureRuleSearch(group, sectionId, entries, keywords)
         end
         y = y - 12

@@ -201,7 +201,7 @@ assert(not owner.Suite.Availability("tooltipDetails") and tooltipLoads == 0 and 
     "Tooltips ran with the AddOn disabled")
 tooltipEnabled = true
 assert(owner.Suite.Availability("tooltipDetails"), "the shared tooltip anchor is unavailable on " .. flavor)
-assert((owner.Suite.catalog.tooltipDetails.rules.inspectHovered.hidden == true) == (flavor == "Forever"),
+assert(owner.Suite.catalog.tooltipDetails.rules.inspectHovered.hidden ~= true,
     "the shared tooltip anchor exposed Retail inspect controls on Forever")
 assert(type(owner.ForeverFactoryFramesCompact) == "string"
     and owner.ForeverFactoryFramesCompact:match("^MSUF3:")

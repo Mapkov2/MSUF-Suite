@@ -4,31 +4,51 @@ local Kit, M, T, HM, Tr = P.SkinPageKit, P.M, P.T, P.HM, P.Tr
 local Interaction = P.PreviewInteraction
 local PAGE, BUILDER = "suite_tooltips", "suite_skin_tooltip_builder"
 local LAYOUT = "theme.tooltipLayout."
+local ITEM, SPELL, UNIT, QUEST, LOOT, ENEMY, STACK, MOUNT, RIDER = 1, 2, 3, 4, 5, 6, 7, 8, 9
+local PLAYER_ROWS = { { "Level 80 Human Paladin", "" }, { "Alliance", "" }, { "", "" } }
 local function SampleSpec(palette, border)
     return { role = "popup", radius = 0, border = border, motion = false, depth = false, media = "background",
         resolveFill = palette.Fill, appearanceToken = "tooltipPalette" }
 end
 local SAMPLES = {
-    { id = "item", label = "Items", name = function() return Tr("Trailblazer's cloak") end,
+    [ITEM] = { id = "item", label = "Items", name = function() return Tr("Trailblazer's cloak") end,
         icon = 133754, kind = function() return Tr("Back") end, level = 60, color = 3,
         rows = { { "Armor", "38" }, { "Intellect", "+12" }, { "Stamina", "+9" } } },
-    { id = "spell", label = "Spells", name = function() return Tr("Frostbolt") end,
+    [SPELL] = { id = "spell", label = "Spells", name = function() return Tr("Frostbolt") end,
         icon = 135846, kind = function() return Tr("Spell") end,
         rows = { { "Cast time", "2.0 s" }, { "Range", function() return Tr("40 yd") end },
             { "School", function() return Tr("Frost") end } } },
-    { id = "unit", label = "Units", name = function() return Tr("Player Name") end,
-        color = { r = .25, g = .78, b = .92 },
-        rows = { { "Level 80 Human Paladin", "" }, { "Alliance", "" }, { "", "" } } },
-    { id = "quest", label = "Quests", name = function() return Tr("Quest objective progress") end,
+    [UNIT] = { id = "unit", label = "Units", name = function() return Tr("Player Name") end,
+        color = { r = .25, g = .78, b = .92 }, rows = PLAYER_ROWS },
+    [QUEST] = { id = "quest", label = "Quests", name = function() return Tr("Quest objective progress") end,
         color = { r = 1, g = .82, b = .2 },
         rows = { { "Quests", "" }, { "Progress", "3/4" }, { "", "" } } },
-    { id = "loot", label = "Loot", name = function() return Tr("Trailblazer's cloak") end,
+    [LOOT] = { id = "loot", label = "Loot", name = function() return Tr("Trailblazer's cloak") end,
         icon = 133754, kind = function() return Tr("Back") end, level = 60, color = 3 },
+    [ENEMY] = { id = "unit", enemy = true, keystone = true, label = "Enemy unit", name = function() return Tr("Enemy unit") end,
+        color = { r = .95, g = .28, b = .22 }, rows = { { "Level", "56" }, { "", "" }, { "", "" } } },
+    [STACK] = { id = "item", stack = "3", label = "Consumables", name = function() return Tr("Healthstone") end,
+        icon = 538745, rows = { { "Consumables", "" }, { "", "" }, { "", "" } } },
+    [MOUNT] = { id = "spell", mount = true, label = "Mount", name = function() return Tr("Mount") end,
+        icon = 132261, rows = { { "Mount", "" }, { "", "" }, { "", "" } } },
+    [RIDER] = { id = "unit", mounted = true, label = "Mounted", name = function() return Tr("Player Name") end,
+        color = { r = .25, g = .78, b = .92 }, rows = PLAYER_ROWS },
+}
+local DETAIL_SAMPLES = {
+    titles = UNIT, itemLevel = UNIT, inspectHovered = UNIT, spec = UNIT, guildRank = UNIT,
+    target = UNIT, unitCombatStatus = UNIT, unitIdentityIcons = UNIT, unitFaction = UNIT, unitLocation = UNIT,
+    unitTargeters = UNIT, hideHealth = UNIT, hideFaction = UNIT, hidePvP = UNIT, hideRealm = UNIT, hideGuild = UNIT,
+    selfTarget = ENEMY, unitClassification = ENEMY, unitThreatStatus = ENEMY, unitThreatPercent = ENEMY, mythicForces = ENEMY,
+    ownedMount = MOUNT, unitMount = RIDER, unitMountOwned = RIDER, maxStack = STACK, iconID = ITEM,
+}
+local NEEDS_NORMAL = {
+    titles = true, inspectHovered = true, ownedMount = true, unitMount = true, unitMountOwned = true, unitTargeters = true,
+    maxStack = true, iconID = true, hideFaction = true, hidePvP = true, hideRealm = true, hideGuild = true,
 }
 local LAYERS = {
-    { "header", "Header", "headerColor" }, { "title", "Title", "tint", "offset" },
-    { "icon", "Icon", "iconSize", "iconSize" }, { "data", "Details", "level" },
-    { "rule", "Accent line", "height", "height" }, { "border", "Tooltip frame", "borderMode" },
+    { "header", "Header", "headerTexture", "height" }, { "title", "Title", "tint", "offset" },
+    { "icon", "Icon", "icon", "iconSize" }, { "data", "Details", "level" },
+    { "rule", "Accent line", "rule" }, { "border", "Tooltip frame", "borderMode" },
     { "background", "Background", "backgroundTexture" },
 }
 
@@ -44,9 +64,9 @@ end
 
 local Layout, Paint, SelectTitle
 local UNIT_SECTION = "suite_skin_unit_tooltips"
-local function SelectSample(preview, index)
+local function SelectSample(preview, index, nativeUnit)
     preview.kit:Release()
-    preview.selected, preview.forceCard = index, nil
+    preview.selected, preview.forceCard, preview.nativeUnit = index, nil, nativeUnit or index == RIDER
     preview.sampleSelector:SetValue(index)
     Paint(preview)
 end
@@ -57,25 +77,42 @@ local function SetScenario(preview, value)
     Paint(preview)
 end
 
+local function RevealDetail(ui, key)
+    local preview = ui.tooltipPreview
+    if ui.selected ~= "details" or not preview or not preview.root:IsVisible() then return end
+    local index, current = DETAIL_SAMPLES[key], preview.selected
+    local sample = SAMPLES[current]
+    if key == "iconID" and (current == SPELL or current == STACK)
+        or (key == "target" or key == "unitCombatStatus" or key == "unitTargeters" or key == "hideHealth") and sample.id == "unit" then
+        index = current
+    end
+    local nativeUnit = SAMPLES[index].id == "unit"
+    if NEEDS_NORMAL[key] and preview.restricted then
+        preview.scenario, preview.restricted = "normal", false
+        preview.stateSelector:SetValue("normal")
+    end
+    SelectSample(preview, index, nativeUnit)
+end
+
+function P.BindTooltipDetailPreview(ui, rows)
+    for _, row in ipairs(rows) do
+        if DETAIL_SAMPLES[row.id] then
+            local key, read, write = row.id, row.get, row.set
+            row.set = function(value)
+                local previous = read()
+                write(value)
+                if read() ~= previous then RevealDetail(ui, key) end
+            end
+        end
+    end
+end
+
 local function Open(preview, spec, blockedSection)
-    local field = spec and spec[3]
     local sample = SAMPLES[preview.selected]
-    if field == "unitHealthTextFormat" then return P.OpenTooltipHealthTextMenu(preview) end
-    if field == "unitHealth" or field == "unitPower" then
-        if sample.id ~= "unit" then SelectSample(preview, 3) end
-        return preview.ui:Focus(UNIT_SECTION)
-            and P.Suite.HostBridge.OpenExactMenuSetting(M, PAGE, UNIT_SECTION, "msufsuite.skin." .. LAYOUT .. field)
+    if sample.id == "loot" and (spec[1] == "icon" or spec[1] == "rule") then
+        blockedSection = P.TooltipTypesSection
     end
-    if blockedSection == P.TooltipTypesSection or sample.id == "loot" and field ~= "backgroundTexture"
-        and (not field or field == "iconSize" or not IsDetailed(preview, sample)) then
-        local section = P.TooltipTypesSection
-        return preview.ui:Focus(section)
-            and P.Suite.HostBridge.OpenExactMenuSetting(M, PAGE, section, "msufsuite.skin." .. LAYOUT .. sample.id .. "Style")
-    end
-    local section = field and P.TooltipFieldSection(field) or P.TooltipBasicsSection
-    if not preview.ui:Focus(section) then return false end
-    if not field or field == "headerColor" then return true end
-    return P.Suite.HostBridge.OpenExactMenuSetting(M, PAGE, section, "msufsuite.skin." .. LAYOUT .. field)
+    return P.TooltipPositionPreview.Open(preview, spec, sample.id, blockedSection)
 end
 
 local function Put(frame, parent, x, y, width, height)
@@ -118,7 +155,7 @@ local function Sample(preview)
     body:SetPoint("BOTTOMRIGHT", -14, 9)
     preview.body = body
     local rows = {}
-    for index = 1, 7 do
+    for index = 1, 15 do
         local y = -(index - 1) * 19
         local label = body:CreateFontString(nil, "OVERLAY", "GameTooltipText")
         local value = body:CreateFontString(nil, "OVERLAY", "GameTooltipText")
@@ -149,91 +186,19 @@ local function PlaceHit(handle, region)
 end
 
 local ANCHOR_ID = "tooltipDetails"
-local anchorPrefixes = { [2] = "cursor", [3] = "fixed" }
-local corners = {
-    { "BOTTOMRIGHT", -1, 1 }, { "BOTTOMLEFT", 1, 1 },
-    { "TOPRIGHT", -1, -1 }, { "TOPLEFT", 1, -1 },
-}
-
-local function AnchorKeys(preview)
-    local prefix = anchorPrefixes[preview.anchorMode]
-    if prefix then return prefix .. "X", prefix .. "Y" end
-end
-
-local function ReadAnchor(preview)
-    local x, y = AnchorKeys(preview)
-    if x then return P.Get(ANCHOR_ID, x), P.Get(ANCHOR_ID, y) end
-    return 0, 0
-end
-
-local function Clamp(value, minimum, maximum)
-    return math.max(minimum, math.min(maximum, math.floor(value + .5)))
-end
-
-local function WriteAnchor(preview, x, y)
-    if P.Combat() or not preview.root:IsVisible() or preview.anchorMode ~= P.TooltipAnchorMode()
-        or not (P.Suite.Finite(x) and P.Suite.Finite(y)) then return false end
-    local xKey, yKey = AnchorKeys(preview)
-    if not xKey then return false end
-    local rules = P.catalog[ANCHOR_ID].rules
-    return P.SetMany(ANCHOR_ID, { [xKey] = Clamp(x, rules[xKey].min, rules[xKey].max),
-        [yKey] = Clamp(y, rules[yKey].min, rules[yKey].max) })
-end
-
-local function AnchorProjection(preview)
-    local x, y = AnchorKeys(preview)
-    local rules = P.catalog[ANCHOR_ID].rules
-    local corner = preview.anchorMode == 3 and (corners[P.Get(ANCHOR_ID, "growth")] or corners[1])
-    local roomX = math.max(1, preview.stage:GetWidth() - preview.frame:GetWidth() - 24)
-    local roomY = math.max(1, preview.stage:GetHeight() - preview.frame:GetHeight() - (preview.footerHeight or 0) - 24)
-    local divisor = corner and 1 or 2
-    return roomX / (rules[x].max * divisor), roomY / (rules[y].max * divisor), corner
-end
-
-local function PlaceAnchor(preview, x, y)
-    local frame = preview.frame
-    frame:ClearAllPoints()
-    local footer = preview.footerHeight or 0
-    if not preview.anchorMode then
-        frame:SetPoint("CENTER", preview.stage, "CENTER", 0, footer / 2)
-        return
-    end
-    local sx, sy, corner = AnchorProjection(preview)
-    if x == nil then x, y = ReadAnchor(preview) end
-    if corner then
-        frame:SetPoint(corner[1], preview.stage, corner[1], corner[2] * (12 + math.abs(x) * sx),
-            corner[3] * (12 + math.abs(y) * sy) + (corner[3] == 1 and footer or 0))
-    else
-        frame:SetPoint("CENTER", preview.stage, "CENTER", x * sx, y * sy + footer / 2)
-    end
-end
-
-local function DragAnchor(preview, dx, dy)
-    local x, y = ReadAnchor(preview)
-    local sx, sy, corner = AnchorProjection(preview)
-    local xKey, yKey = AnchorKeys(preview)
-    local rules = P.catalog[ANCHOR_ID].rules
-    if corner then
-        local signX, signY = x == 0 and corner[2] or (x < 0 and -1 or 1), y == 0 and corner[3] or (y < 0 and -1 or 1)
-        x = signX * Clamp(math.abs(x) + dx * corner[2] / sx, 0, rules[xKey].max)
-        y = signY * Clamp(math.abs(y) + dy * corner[3] / sy, 0, rules[yKey].max)
-    else
-        x = Clamp(x + dx / sx, rules[xKey].min, rules[xKey].max)
-        y = Clamp(y + dy / sy, rules[yKey].min, rules[yKey].max)
-    end
-    return x, y
-end
+local Position = P.TooltipPositionPreview
+local ReadAnchor, WriteAnchor = Position.Read, Position.Write
+local PlaceAnchor, DragAnchor, Clamp = Position.Place, Position.Drag, Position.Clamp
 
 local function Movable(preview, handle)
-    if preview.ui.selected ~= "layout" then return false end
-    if handle and handle == preview.anchorButton then return preview.anchorMode ~= nil and handle:IsVisible() end
-    if handle and handle.spec[1] == "healthText" then return handle:IsVisible() end
-    if handle and handle.spec[1] == "health" then
-        return handle:IsVisible() and preview.card.Setting("unitHealth") == "show"
-    end
-    if handle and handle.spec[1] == "power" then return handle:IsVisible() and preview.card.Setting("unitPower") end
-    return handle and handle.spec[4] and handle:IsVisible() and preview.header.frame:IsShown()
-        and (handle.spec[1] ~= "icon" or SAMPLES[preview.selected].id ~= "loot")
+    if not handle or not handle:IsVisible() then return false end
+    if Position.IsAnchor(preview, handle) then return Position.CanMove(preview) end
+    if handle == preview.scaleButton then return not preview.usesPanel and P.Get("tooltipVisibility", "enabled") == true end
+    local key = handle.spec[1]
+    if key == "health" then return preview.card.Setting("unitHealth") == "show" end
+    if key == "power" then return preview.card.Setting("unitPower") == true end
+    if key == "healthText" then return true end
+    return handle.spec[4] ~= nil and SAMPLES[preview.selected].id ~= "loot" and preview.header.frame:IsShown()
 end
 
 local function BarPrefix(handle)
@@ -241,21 +206,29 @@ local function BarPrefix(handle)
     if field == "unitHealth" or field == "unitPower" or field == "unitHealthText" then return field end
 end
 
-local function HasAxes(preview, handle)
-    return handle and Movable(preview, handle) == true and
-        (handle == preview.anchorButton or handle.spec[4] == "offset" or BarPrefix(handle) ~= nil)
+local function SizeField(handle)
+    local field = handle and handle.spec[4]
+    if field == "iconSize" or field == "height" then return field end
 end
 
 local function Highlight(preview, handle)
     local selection = preview.selection
     if selection then
-        local show = HasAxes(preview, handle) == true
+        local show = Movable(preview, handle)
         if selection:IsShown() ~= show then
             selection:SetShown(show)
             preview.bar:SetShown(not show)
             Layout(preview)
         end
-        if show then M.PreviewSelectionBar.Refresh(preview.stage) end
+        if show then
+            local single = SizeField(handle) or handle == preview.scaleButton
+            local resize = handle.resize
+            local scalar = single == "height" and "H" or single == "iconSize" and "S" or "%"
+            selection.axisX.title:SetText(resize and "W" or single and scalar or "X")
+            selection.axisY.title:SetText(resize and "H" or "Y")
+            selection.axisY:SetShown(not single)
+            M.PreviewSelectionBar.Refresh(preview.stage)
+        end
     end
     local open
     if handle then open = handle.open end
@@ -263,38 +236,51 @@ local function Highlight(preview, handle)
 end
 
 local function ReadOffsets(preview, handle)
-    if handle and handle == preview.anchorButton then return ReadAnchor(preview) end
+    if Position.IsAnchor(preview, handle) then return ReadAnchor(preview) end
+    if handle and handle == preview.scaleButton then return Position.Scale(preview, true), 0 end
     local prefix = BarPrefix(handle)
+    if prefix and handle.resize then return preview.card.Setting(prefix .. "Width"), preview.card.Setting(prefix .. "Height") end
     if prefix then return preview.card.Setting(prefix .. "X"), preview.card.Setting(prefix .. "Y") end
+    local size = SizeField(handle)
+    if size then return preview.card.Setting(size), 0 end
     return preview.card.Setting("x"), preview.card.Setting("y")
 end
 
 local function WriteOffsets(preview, x, y, handle)
-    if handle and handle == preview.anchorButton then return WriteAnchor(preview, x, y) end
+    if Position.IsAnchor(preview, handle) then return WriteAnchor(preview, x, y) end
     if P.Combat() or not preview.root:IsVisible() then return false end
+    if handle and handle == preview.scaleButton then return Position.WriteScale(preview, x) end
     local prefix = BarPrefix(handle)
     if prefix then
+        if handle.resize then
+            return Kit.Change(preview.skin, handle.spec[2], LAYOUT .. prefix .. "Size", function()
+                return preview.card.SetUnitBarSize(prefix, x, y)
+            end)
+        end
         return Kit.Change(preview.skin, handle.spec[2], LAYOUT .. prefix .. "Position", function()
             return preview.card.SetUnitBarOffsets(prefix, x, y)
         end)
     end
+    local kind = SAMPLES[preview.selected].id
+    local size = SizeField(handle)
+    if size then
+        local min, max = preview.card.Range(size)
+        return Kit.Change(preview.skin, handle.spec[2], LAYOUT .. size, function()
+            return preview.card.Set(size, Clamp(x, min, max), kind)
+        end)
+    end
     return Kit.Change(preview.skin, "Tooltip builder", LAYOUT .. "position", function()
-        return preview.card.SetOffsets(x, y)
+        return preview.card.SetOffsets(x, y, kind)
     end)
 end
 
-local function BuildAnchorHandle(preview)
-    local button = T.Button(preview.root, "Tooltip anchor", 140, 25)
+local function BindAnchorHandle(preview, key, button)
     button.spec = { "anchor", "Tooltip anchor" }
-    button.open = function()
-        return P.Suite.HostBridge.OpenExactMenuSetting(M, PAGE, P.TooltipLayoutSection,
-            "msufsuite.tooltipDetails.anchor")
-    end
-    preview.anchorButton = button
+    button.open = function() return Open(preview, button.spec) end
     button:Hide()
-    preview.kit:Add("anchor", button, function() return ReadAnchor(preview) end, function(x, y, dragged)
+    preview.kit:Add(key, button, function() return ReadAnchor(preview) end, function(x, y, dragged)
         if dragged then
-            if not (preview.dragProfile and preview.dragProfile() and preview.dragMode == P.TooltipAnchorMode()) then
+            if not (preview.dragProfile and preview.dragProfile() and preview.dragMode == Position.Mode(preview)) then
                 return false
             end
             local startX, startY = ReadAnchor(preview)
@@ -303,8 +289,9 @@ local function BuildAnchorHandle(preview)
         return WriteAnchor(preview, x, y)
     end, {
         can = function() return Movable(preview, button) end,
+        scale = function() return preview.stage:GetEffectiveScale() end,
         follow = function(_, dx, dy)
-            if preview.anchorMode and preview.anchorMode == P.TooltipAnchorMode() then
+            if preview.anchorMode and preview.anchorMode == Position.Mode(preview) then
                 PlaceAnchor(preview, DragAnchor(preview, dx, dy))
             end
         end,
@@ -312,14 +299,42 @@ local function BuildAnchorHandle(preview)
     HM.SkipHistoryCheckpoint(button)
 end
 
-local function BindDrag(preview, field)
+local function BuildAnchorHandle(preview)
+    local button = T.Button(preview.root, "Tooltip anchor", 140, 25)
+    local surface = CreateFrame("Button", nil, preview.frame)
+    surface:SetAllPoints(preview.frame)
+    surface:SetFrameLevel(preview.stage:GetFrameLevel() + 14)
+    preview.anchorButton, preview.anchorSurface = button, surface
+    BindAnchorHandle(preview, "anchor", button)
+    BindAnchorHandle(preview, "anchorSurface", surface)
+end
+
+local function BuildScaleHandle(preview)
+    local button = T.Button(preview.root, "Scale", 84, 25)
+    button.spec = { "scale", "Main tooltip scale (percent)" }
+    button.open = function() return Open(preview, button.spec) end
+    preview.scaleButton = button
+    button:Hide()
+    preview.kit:Add("scale", button, function() return Position.Scale(preview, true), 0 end,
+        function(x, _, dragged)
+            if dragged and not (preview.dragProfile and preview.dragProfile()) then return false end
+            return Position.WriteScale(preview, x)
+        end, { can = function() return Movable(preview, button) end,
+            follow = function(_, dx)
+                preview.scaleDraft = Position.ClampScale(Position.Scale(preview, true) + dx)
+                Paint(preview)
+            end })
+    HM.SkipHistoryCheckpoint(button)
+end
+
+local function BindDrag(preview, handle)
+    local field = handle.spec[4]
     local card = preview.card
     local offset = field == "offset"
     local vertical = field == "height"
     local function Read()
         if offset then return ReadOffsets(preview) end
         local value = card.Setting(field)
-        if vertical then return 0, -value end
         return value, 0
     end
     local function Clamp(value)
@@ -330,10 +345,8 @@ local function BindDrag(preview, field)
         if dragged and not (preview.dragProfile and preview.dragProfile() and preview.dragDatabase == preview.skin.DB) then
             return false
         end
-        if offset then return WriteOffsets(preview, x, y) end
-        return Kit.Change(preview.skin, "Tooltip builder", LAYOUT .. field, function()
-            return card.Set(field, Clamp(vertical and -y or x))
-        end)
+        if vertical then x = dragged and card.Setting(field) - y or x + y end
+        return WriteOffsets(preview, x, y, handle)
     end
     local function Follow(_, dx, dy)
         local x, y = Read()
@@ -344,7 +357,7 @@ local function BindDrag(preview, field)
                 math.max(minY, math.min(maxY, y + dy)))
         else
             preview.dragSize = preview.dragSize or {}
-            preview.dragSize[field] = Clamp(vertical and -(y + dy) or x + dx)
+            preview.dragSize[field] = Clamp(vertical and x - dy or x + dx)
             Paint(preview)
         end
     end
@@ -357,13 +370,12 @@ local function BindBarDrag(preview, handle, resize)
     local ax, bx = card.Range(keyA)
     local ay, by = card.Range(keyB)
     local function WidthUnit() return math.max(1, preview.frame:GetWidth() - 4) / 200 end
-    local function Read()
-        local a, b = card.Setting(keyA), card.Setting(keyB)
-        if resize then return (preview.dragWidthUnit or WidthUnit()) * a, -b end
-        return a, b
-    end
-    local function Convert(a, b)
-        if resize then a, b = a / (preview.dragWidthUnit or WidthUnit()), -b end
+    local function Read() return card.Setting(keyA), card.Setting(keyB) end
+    local function Convert(a, b, dragged)
+        if resize and dragged then
+            local width, height = Read()
+            a, b = width + (a - width) / (preview.dragWidthUnit or WidthUnit()), height - (b - height)
+        end
         return Clamp(a, ax, bx), Clamp(b, ay, by)
     end
     local function Write(x, y, dragged)
@@ -371,15 +383,12 @@ local function BindBarDrag(preview, handle, resize)
             return false
         end
         if not Movable(preview, handle) then return false end
-        local a, b = Convert(x, y)
-        if not resize then return WriteOffsets(preview, a, b, handle) end
-        return Kit.Change(preview.skin, handle.spec[2], LAYOUT .. prefix .. "Size", function()
-            return card.SetUnitBarSize(prefix, a, b)
-        end)
+        local a, b = Convert(x, y, dragged)
+        return WriteOffsets(preview, a, b, handle)
     end
     local function Follow(_, dx, dy)
         local x, y = Read()
-        local a, b = Convert(x + dx, y + dy)
+        local a, b = Convert(x + dx, y + dy, true)
         preview.dragSize = preview.dragSize or {}
         local draft = preview.dragSize[prefix] or {}
         preview.dragSize[prefix] = draft
@@ -396,13 +405,14 @@ local function BuildResizeHandle(preview, handle, bar)
     grip:SetSize(17, 17)
     grip:SetPoint("LEFT", bar, "RIGHT", 1, 0)
     grip:SetFrameLevel(handle:GetFrameLevel() + 2)
-    grip.spec, grip.open = handle.spec, handle.open
+    grip.spec, grip.resize = { key, handle.spec[2], BarPrefix(handle) .. "Width", handle.spec[4] }, true
+    grip.open = function() return Open(preview, grip.spec) end
     local icon = grip:CreateTexture(nil, "ARTWORK")
     icon:SetAllPoints()
     icon:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grip:Hide()
-    local read, write, follow = BindBarDrag(preview, handle, true)
-    preview.kit:Add(key .. "Size", grip, read, write, { follow = follow, select = false,
+    local read, write, follow = BindBarDrag(preview, grip, true)
+    preview.kit:Add(key .. "Size", grip, read, write, { follow = follow,
         can = function() return Movable(preview, handle) end })
     preview.handles[key .. "Size"] = grip
     HM.SkipHistoryCheckpoint(grip)
@@ -413,12 +423,15 @@ local function BuildHandles(preview)
     preview.kit = Interaction.Handles(preview.host, {
         owner = stage, manualDrag = true, escape = function() preview.kit:Release() end,
         pointerHeld = function() return IsMouseButtonDown("LeftButton") end,
-        click = function(handle, button, moved)
-            if moved then return end
-            if button == "RightButton" and not P.Combat() then return handle.open() end
-            if handle == preview.handles.title and preview.ui.selected == "layout" and not preview.header.frame:IsShown() then
-                return SelectTitle(preview)
+        selecting = function(handle)
+            if handle and handle == preview.handles.title and not P.Combat() and not preview.header.frame:IsShown()
+                and SAMPLES[preview.selected].id ~= "loot" then
+                preview.forceCard = true
+                Paint(preview)
             end
+        end,
+        click = function(handle, button, moved)
+            if not moved and not P.Combat() and (button == "RightButton" or not Movable(preview, handle)) then return handle.open() end
         end,
         select = function(handle) Highlight(preview, handle) end,
         tip = function(handle, entered)
@@ -432,8 +445,8 @@ local function BuildHandles(preview)
             end
             if phase == "done" or phase == "cancel" then
                 preview.dragProfile, preview.dragDatabase, preview.dragMode, preview.dragWidthUnit = nil, nil, nil, nil
-                if preview.dragSize then
-                    preview.dragSize = nil
+                if preview.dragSize or preview.scaleDraft then
+                    preview.dragSize, preview.scaleDraft = nil, nil
                     Paint(preview)
                 end
             end
@@ -445,11 +458,12 @@ local function BuildHandles(preview)
         local handle = CreateFrame("Button", nil, preview.frame)
         handle:SetFrameLevel(stage:GetFrameLevel() + (key == "background" and 13 or 14 + index))
         handle.spec, handle.open = spec, function() return Open(preview, spec) end
+        if SizeField(handle) then handle.openSize = function() return Open(preview, { key, spec[2], spec[4] }) end end
         PlaceHit(handle, targets[key])
         preview.handles[key] = handle
         local read, write, follow
         if BarPrefix(handle) then read, write, follow = BindBarDrag(preview, handle, false)
-        elseif spec[4] then read, write, follow = BindDrag(preview, spec[4]) end
+        elseif spec[4] then read, write, follow = BindDrag(preview, handle) end
         local controls = follow and { follow = follow, can = function() return Movable(preview, handle) end }
         if key == "healthText" then controls.clicks = { "LeftButtonUp", "RightButtonUp" } end
         preview.kit:Add(key, handle, read, write, controls)
@@ -458,102 +472,17 @@ local function BuildHandles(preview)
     end
 end
 
-local function TrackInput(preview, input)
-    if not input then return end
-    input:HookScript("OnEditFocusGained", function()
-        preview.axisProfile, preview.axisDatabase = P.ProfileGuard(), preview.skin.DB
-        preview.axisMode = preview.anchorMode
-    end)
-    input:HookScript("OnHide", function() preview.axisProfile, preview.axisDatabase, preview.axisMode = nil, nil, nil end)
-end
-
-local function BuildSelection(preview)
-    if not M.PreviewSelectionBar then return end
-    local selection = M.PreviewSelectionBar.Create(preview.stage, {
-        Tr = Tr, Theme = function() return T end,
-        HandleList = function() return preview.kit.list end,
-        HandleLabel = function(handle) return handle.spec[2] end,
-        IsPlaced = function(handle) return HasAxes(preview, handle) == true end,
-        ReadOffsets = function(_, handle) return ReadOffsets(preview, handle) end,
-        WriteOffsets = function(_, handle, x, y, reason)
-            if reason == "PREVIEW_EXACT_OFFSET" and not (preview.axisProfile and preview.axisProfile()
-                and preview.axisDatabase == preview.skin.DB
-                and (handle ~= preview.anchorButton or preview.axisMode == P.TooltipAnchorMode())) then return false end
-            if HasAxes(preview, handle) then return WriteOffsets(preview, x, y, handle) end
-        end,
-        NudgeDelta = function(_, dx, dy) return preview.kit:Nudge(dx, dy) end,
-        ResetOffsets = function(_, handle)
-            if not HasAxes(preview, handle) then return false end
-            if handle == preview.anchorButton then
-                local x, y = AnchorKeys(preview)
-                local rules = P.catalog[ANCHOR_ID].rules
-                return WriteAnchor(preview, rules[x].default, rules[y].default)
-            end
-            if BarPrefix(handle) then return WriteOffsets(preview, 0, 0, handle) end
-            return WriteOffsets(preview, 10, 0)
-        end,
-        OpenSettings = function(_, handle) return handle.open() end,
-        SelectHandle = function(_, handle) preview.kit:Select(handle) return true end,
-    })
-    preview.selection = selection
-    selection:Hide()
-    TrackInput(preview, selection.axisX.edit)
-    TrackInput(preview, selection.axisY.edit)
-end
-
-local function PaintSample(preview, sample, rich, matching)
-    local card, loot = preview.card, sample.id == "loot"
-    local header, layers = preview.header, preview.layers
-    local hasHeader = layers.header and rich
-    -- The Spell sample represents an action button with a displayable icon.
-    local metadata = not preview.restricted or sample.id ~= "item" and sample.id ~= "spell"
-    local icon = not loot and (metadata or sample.id == "spell") and sample.icon or nil
-    local name = sample.name()
-    header.frame:SetPoint("TOPLEFT", preview.frame, "TOPLEFT", loot and 44 or 0, loot and -2 or 0)
-    header.frame:SetPoint("TOPRIGHT", preview.frame, "TOPRIGHT", loot and -1 or 0, loot and -2 or 0)
-    if rich then
-        card.SetUnifiedHeader(header, matching or not loot and card.Setting("cardSurface") == "unified")
-        local kind = (metadata or sample.id == "spell") and sample.kind and sample.kind() or nil
-        local level = metadata and sample.level and Tr("Item level %d"):format(sample.level) or nil
-        card.Draw(header, name, icon, kind, level, metadata and sample.color or nil, loot and 42 or nil, preview.dragSize)
-    end
-    header.frame:SetShown(hasHeader)
-    header.icon:SetShown(hasHeader and icon ~= nil and layers.icon and card.Setting("icon"))
-    header.title:SetShown(hasHeader and layers.title)
-    header.meta:SetShown(hasHeader and layers.data)
-    header.rule:SetShown(hasHeader and layers.rule and card.Setting("rule"))
-    preview.compact:SetPoint("TOPLEFT", loot and 50 or 14, loot and -14 or -11)
-    preview.compact:SetText(name)
-    preview.compact:SetTextColor(preview.palette.Title())
-    preview.compact:SetShown(not rich and layers.header and layers.title)
-    local customOutline = (rich or matching or not loot and preview.palette.IsActive()) and card.Setting("borderMode") ~= "native"
-    local spec = (loot or customOutline or not layers.border) and preview.paintFill or preview.paintChrome
-    if preview.surfaceSpec ~= spec then
-        preview.skin.Surface.Attach(preview.frame, spec)
-        preview.surfaceSpec = spec
-    end
-    preview.skin.Surface.SetVisible(preview.frame, layers.background and (not loot or matching))
-    preview.lootFill:SetShown(layers.background and loot and not matching)
-    preview.lootEdge:SetShown(loot and layers.border and (not rich and not matching or card.Setting("borderMode") == "native"))
-    preview.lootIcon:SetShown(loot and layers.icon)
-    if loot then preview.lootIcon:SetTexture(sample.icon) end
-    local height = rich and (preview.dragSize and preview.dragSize.height or card.HeaderHeight()) or 24
-    preview.body:SetPoint("TOPLEFT", 14, -height - 10)
-    preview.body:SetShown(not loot and layers.data)
-    local extra = P.PaintTooltipPreviewBody(preview, sample)
-    preview.frame:SetHeight(loot and 46 or height + 80 + extra)
-    if preview.bodyExtra ~= extra then
-        preview.bodyExtra = extra
-        Layout(preview)
-    end
-end
-
 local function RefreshAnchorMode(preview)
-    local mode = preview.ui.selected == "layout" and P.TooltipAnchorMode() or nil
-    if mode == preview.anchorMode then return end
-    preview.anchorMode = mode
-    preview.anchorButton:SetShown(mode ~= nil)
-    if preview.kit:Selected() == preview.anchorButton then preview.kit:Release() end
+    local mode, source
+    local layout = preview.ui.selected == "layout"
+    if layout then mode, source = Position.Mode(preview) end
+    if layout == preview.anchorEditor and mode == preview.anchorMode and source == preview.anchorSource
+        and preview.lastSource == preview.positionSource then return end
+    preview.anchorMode, preview.anchorSource, preview.lastSource, preview.anchorEditor = mode, source, preview.positionSource, layout
+    preview.anchorButton:SetShown(layout and P.Available(ANCHOR_ID) == true)
+    preview.anchorSurface:SetShown(Position.CanMove(preview))
+    preview.scaleButton:SetShown(layout and P.Available("tooltipVisibility") == true)
+    if Position.IsAnchor(preview, preview.kit:Selected()) then preview.kit:Release() end
     Layout(preview)
 end
 
@@ -572,7 +501,7 @@ end
 local function PaintVitals(preview, sample)
     if not preview.vitals then return end
     local unit = sample.id == "unit"
-    local panel = P.TooltipPreviewUsesPanel()
+    local panel = preview.usesPanel
     local legacyHidden = P.TooltipDetailsEnabled() and P.Get("tooltipDetails", "hideHealth")
     local layers = preview.layers
     local height = preview.skin.TooltipVitals.PaintPreview(preview.vitals, unit, panel, legacyHidden,
@@ -600,10 +529,21 @@ Paint = function(preview)
     if not preview.root:IsVisible() then return end
     RefreshAnchorMode(preview)
     local sample, card, header, layers = SAMPLES[preview.selected], preview.card, preview.header, preview.layers
+    preview.usesPanel = sample.id == "unit" and P.TooltipPreviewUsesPanel(preview)
     local loot, rich = sample.id == "loot", IsDetailed(preview, sample)
     local matching = loot and card.MatchesLootSurface()
-    PaintSample(preview, sample, rich, matching)
+    local extra = P.PaintTooltipPreviewSample(preview, sample, rich, matching)
+    if preview.bodyExtra ~= extra then
+        preview.bodyExtra = extra
+        Layout(preview)
+    end
     PaintVitals(preview, sample)
+    local scale = preview.usesPanel and 1 or Position.Scale(preview) / 100
+    if preview.displayScale ~= scale then
+        preview.displayScale = scale
+        preview.frame:SetScale(scale)
+        Layout(preview)
+    end
     PlaceAnchor(preview)
     local handles = preview.handles
     PlaceHit(handles.title, rich and header.title or preview.compact)
@@ -646,9 +586,24 @@ local function LayoutTools(preview, width, y)
     end
     Put(preview.sampleSelector, preview.root, 16 + width - choiceWidth - stateWidth - 8, y, choiceWidth, 24)
     Put(preview.stateSelector, preview.root, 16 + width - stateWidth, y, stateWidth, 24)
-    if preview.anchorMode then
+    local layout = preview.ui.selected == "layout"
+    preview.sourceSelector:SetShown(layout)
+    local direction = layout and preview.anchorSource and preview.anchorMode == 3
+    local side = layout and preview.anchorMode == 4
+    preview.directionSelector:SetShown(direction == true)
+    preview.sideSelector:SetShown(side)
+    if layout then
         y = y - 28
-        Put(preview.anchorButton, preview.root, 16 + width - stateWidth, y, stateWidth, 24)
+        local sourceWidth = math.min(math.max(choiceWidth, preview.sourcePreferredWidth or 0), width - stateWidth - 8)
+        Put(preview.sourceSelector, preview.root, 16 + width - sourceWidth - stateWidth - 8, y, sourceWidth, 24)
+        if direction or side then
+            Put(side and preview.sideSelector or preview.directionSelector, preview.root, 16 + width - stateWidth, y, stateWidth, 24)
+        end
+    end
+    if preview.anchorButton:IsShown() or preview.scaleButton:IsShown() then
+        y = y - 28
+        Put(preview.anchorButton, preview.root, 16 + width - choiceWidth - stateWidth - 8, y, choiceWidth, 24)
+        Put(preview.scaleButton, preview.root, 16 + width - stateWidth, y, stateWidth, 24)
     end
     return y - 32
 end
@@ -660,9 +615,11 @@ Layout = function(preview)
     local width = math.max(204, (full and full > 100 and full or ui.width) - 32)
     local top = ui.tabs and ui.tabs:GetHeight() + 24 or 0
     local y = LayoutTools(preview, width, -10 - top)
-    local stageHeight = (preview.anchorMode and 205 or 152) + (preview.footerHeight or 0) + (preview.bodyExtra or 0)
+    local scale = preview.displayScale or 1
+    local baseHeight = (preview.anchorMode and 205 or 152) + (preview.footerHeight or 0) + (preview.bodyExtra or 0)
+    local stageHeight = math.max(baseHeight, (preview.frame:GetHeight() + (preview.footerHeight or 0)) * scale + 32)
     Put(preview.stage, preview.root, 16, y, width, stageHeight)
-    preview.frame:SetWidth(math.min(310, width - (preview.anchorMode and 76 or 32)))
+    preview.frame:SetWidth(math.min(310, (width - (preview.anchorMode and 76 or 32)) / scale))
     PlaceAnchor(preview)
     Interaction.SizeBar(preview.bar, width)
     Interaction.LayoutSelectionBar(preview.selection, width)
@@ -691,6 +648,41 @@ SelectTitle = function(preview)
     return true
 end
 
+function Position.SelectSource(preview, source)
+    preview.kit:Release()
+    preview.positionSource = source
+    preview.sourceSelector:SetValue(source)
+    Paint(preview)
+    local handle = preview.anchorSurface:IsVisible() and preview.anchorSurface or preview.anchorButton
+    if handle:IsVisible() and not P.Combat() then preview.kit:Select(handle) end
+end
+
+local function BuildPositionControls(preview, Dropdown)
+    local sources = { { value = "default", text = Tr("Default position") } }
+    for _, source in ipairs(P.Suite.TooltipPositions.sources) do
+        sources[#sources + 1] = { value = source.id, text = Tr(source.label) }
+    end
+    if T.MeasureTabWidth then
+        local preferred = 0
+        for _, source in ipairs(sources) do
+            preferred = math.max(preferred, T.MeasureTabWidth(source.text) + 24)
+        end
+        preview.sourcePreferredWidth = preferred
+    end
+    preview.sourceSelector = Dropdown(Tr("Position preview source"), sources,
+        function() return preview.positionSource end, function(value) Position.SelectSource(preview, value) end, "source")
+    for _, field in ipairs({ "direction", "side" }) do
+        local rule = P.catalog[ANCHOR_ID].rules[P.Suite.TooltipPositions.sources[1][field]]
+        local values = {}
+        for index, label in ipairs(rule.choices) do values[index] = { value = index, text = Tr(label) } end
+        preview[field .. "Selector"] = Dropdown(rule.label, values, function()
+            return preview.anchorSource and P.Get(ANCHOR_ID, preview.anchorSource[field]) or 1
+        end, function(value)
+            if preview.anchorSource then P.Set(ANCHOR_ID, preview.anchorSource[field], value) end
+        end, field)
+    end
+end
+
 local function BuildPreviewControls(preview)
     local root = preview.root
     preview.caption = T.Font(root, "GameFontHighlight", "Preview", T.colors.text, "card")
@@ -702,19 +694,22 @@ local function BuildPreviewControls(preview)
         return widget
     end
     local samples = {}
-    for index, sample in ipairs(SAMPLES) do samples[index] = { text = Tr(sample.label), value = index } end
+    for index, sample in ipairs(SAMPLES) do
+        if P.Suite.Client.modernEquipment or index < STACK then samples[#samples + 1] = { text = Tr(sample.label), value = index } end
+    end
     preview.sampleSelector = Dropdown("Tooltips", samples,
         function() return preview.selected end, function(index) SelectSample(preview, index) end, "sample")
     preview.stateSelector = Dropdown("Preview", Kit.Values({ "normal", "restricted" },
         { normal = "Normal", restricted = "Combat restrictions" }),
         function() return preview.scenario end, function(value) SetScenario(preview, value) end, "scenario")
+    BuildPositionControls(preview, Dropdown)
 end
 
 local function LayerSetting(preview, key)
     local sample = SAMPLES[preview.selected]
     if key == "health" or key == "power" or key == "healthText" then
         if not preview.frame:IsShown() or key == "healthText" and not preview.layers.health then return end
-        if preview.restricted and key ~= "health" and not P.TooltipPreviewUsesPanel() then return end
+        if preview.restricted and key ~= "health" and not preview.usesPanel then return end
         local target = preview.vitals[key]
         if preview.layers[key] and not target:IsShown() then return UNIT_SECTION end
     end
@@ -734,7 +729,11 @@ local function Build(ui, skin)
     canvas:SetAllPoints()
     canvas:SetColorTexture(.071, .086, .108, 1)
     local preview = { ui = ui, skin = skin, card = skin.ItemTooltipCard, root = root, stage = stage,
-        selected = 1, scenario = "normal", layers = {}, handles = {}, palette = skin.TooltipPalette }
+        selected = ITEM, scenario = "normal", positionSource = "default", layers = {}, handles = {}, rowSettings = {}, palette = skin.TooltipPalette }
+    preview.positionReference = stage:CreateTexture(nil, "ARTWORK")
+    preview.positionReference:SetSize(24, 16)
+    preview.positionReference:SetColorTexture(.31, .47, .59, 1)
+    preview.positionReference:Hide()
     preview.paintChrome, preview.paintFill = SampleSpec(preview.palette), SampleSpec(preview.palette, 0)
     preview.host = P.Suite.PreviewKit.NewHost(nil, { frame = stage, paint = function() Paint(preview) end })
     Sample(preview)
@@ -746,7 +745,9 @@ local function Build(ui, skin)
     preview.bar = Interaction.Bar(ui.ctx, root, ui.width - 32, nil, true)
     BuildHandles(preview)
     BuildAnchorHandle(preview)
-    BuildSelection(preview)
+    BuildScaleHandle(preview)
+    Position.BuildDetailHandles(preview, Open)
+    Position.BuildSelection(preview, Movable, ReadOffsets, WriteOffsets, BarPrefix, SizeField)
     BuildPreviewControls(preview)
     P.BindTooltipPositionSearch(preview, SelectTitle, Paint)
     Interaction.BuildLayerRail(preview, root, preview.layerSpecs, function(key, visible)

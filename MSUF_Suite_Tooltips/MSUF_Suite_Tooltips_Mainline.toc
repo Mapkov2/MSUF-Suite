@@ -22,6 +22,8 @@ TooltipMPlusScore.lua
 TooltipClassColors.lua
 TooltipBorder.lua
 TooltipHiddenLines.lua
+TooltipDetailText.lua
+TooltipUnitDetails.lua
 TooltipDetails.lua
 ItemCounts.lua
 AuctionPriceTooltip.lua

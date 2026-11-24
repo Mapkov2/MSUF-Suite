@@ -148,7 +148,7 @@ local GROUPS = {
         sections = { "character_extras", "character_model", "character_flyouts" },
         keywords = { "charakterfenster", "character window" } },
     { id = "merchantList", title = "Scrollable merchant offers (Retail)", switch = "enabled", sections = { "merchant_list" } },
-    { id = "tooltipDetails", title = "Tooltip details and anchor (Retail)", switch = "enabled", sections = { "tooltip_details" } },
+    { id = "tooltipDetails", title = "Tooltip details and anchor", switch = "enabled", sections = { "tooltip_details" } },
     { id = "popupAttention", title = "Dialogs and loot toasts (Retail)", switch = "enabled",
         sections = { "popup_attention", "popup_revive", "popup_toasts" } },
     { id = "tooltipIDs", title = "Tooltip IDs", switch = "enabled", sections = { "tooltip_ids" } },

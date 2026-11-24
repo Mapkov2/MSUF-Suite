@@ -146,6 +146,7 @@ Pages\AppearanceAddons.lua
 Pages\AppearancePreview.lua
 Pages\AppearanceQuests.lua
 Pages\AppearanceTooltips.lua
+Pages\AppearanceTooltipPositions.lua
 Pages\AppearanceTooltipPreview.lua
 Pages\Appearance.lua
 Menu\ToolRouting.lua

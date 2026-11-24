@@ -45,6 +45,7 @@ local bridge = {
     OwnsUnitFrameTooltip = function(tip) return tip._msufUnitTooltipOwner ~= nil end,
 }
 local NS = { Client = { modernEquipment = true }, HostBridge = bridge,
+    IsSecret = Strict.IsSecret,
     Safety = { IsForbidden = function(frame) return frame.forbidden == true end },
     IsCombatLocked = function() return combat end, Finish = function(callback, ...) return true, callback(...) end }
 NS.Public, NS.PublicText, NS.Finite = S.Public, S.PublicText, S.Finite
@@ -97,7 +98,9 @@ function tooltip:SetAnchorType(anchor, x, y)
     self.anchor, self.anchorX, self.anchorY = anchor, x, y
 end
 function tooltip:GetAnchorType() return self.anchor, self.anchorX, self.anchorY end
+function tooltip:GetOwner() return self.owner end
 function tooltip:GetPrimaryTooltipData() return self.primary end
+function tooltip:GetPrimaryTooltipInfo() return self.primaryInfo end
 function tooltip:IsProtected() return self.protected == true end
 function tooltip:GetPoint(index) return unpack(self.points[index] or {}) end
 function tooltip:GetNumPoints() return #self.points end
@@ -179,14 +182,24 @@ C_Item = { GetItemInfo = function() return "item", "link", 4, 100, nil, nil, nil
 C_Spell = { GetSpellTexture = function() return 4321 end }
 
 local tooltips = Support.TooltipFixture(root, S, NS)
+Support.LoadTooltipPositions(root, NS)
 local keyMode = { idModifier = 4 }
 S.Config = function(id) assert(id == "tooltipIDs"); return keyMode end
 local alt = false
 IsAltKeyDown = function() return alt end
 local mountReaderPath = root .. "/MSUF_Suite/Core/UnitMount.lua"
 assert(loadfile(mountReaderPath))("test", NS)
-local private = { NS = NS, Suite = S }
-for _, file in ipairs({ "TooltipIDs.lua", "TooltipBorder.lua", "TooltipHiddenLines.lua", "TooltipDetails.lua" }) do
+local private = {}
+NS.Suite = S
+NS.AppearancePrimitives = { CombatGate = { Initialize = function() return {} end } }
+NS.TooltipAppearance = { defaults = {} }
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite", NS)
+local previousSuite = MSUFSuite
+MSUFSuite = NS
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/Bootstrap.lua"))("MSUF_Suite_Tooltips", private)
+MSUFSuite = previousSuite
+for _, file in ipairs({ "TooltipIDs.lua", "TooltipBorder.lua", "TooltipHiddenLines.lua", "TooltipDetailText.lua",
+    "TooltipUnitDetails.lua", "TooltipDetails.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Tooltips/" .. file))("test", private)
 end
 local m = modules.tooltipDetails
@@ -225,7 +238,7 @@ end
 
 -- Guild rank, target and the plain item level paths send no request.
 Build("party1")
-Check(LineValue("Guild rank") == "Officer" and LineValue("Target") == "My player" and health.alpha == 0,
+Check(LineValue("Guild rank") == "Officer" and LineValue("Target") == "<You> My player" and health.alpha == 0,
     "guild rank, target or hidden health bar missing")
 local _, targetLine = LineValue("Target")
 Check(targetLine[8] == .2, "a target that is you was not highlighted")
@@ -285,6 +298,15 @@ keyMode.idModifier = 4
 Build("party2")
 Check(inspectRequests == 1 and LineValue("Item level") == "180", "the completed hover was not cached")
 Leave()
+combat = true
+Build("party2")
+Check(inspectRequests == 1 and LineValue("Item level") == "180", "combat lost a verified public inspect result")
+Leave()
+secretIdentity = true
+Build("party2")
+Check(not LineValue("Item level"), "a restricted identity reused public inspect data")
+Leave()
+combat, secretIdentity = false, false
 -- A token that now names another unit: the next build is for that unit.
 now = 1020
 Build("swapA")
@@ -694,7 +716,168 @@ tooltip.primary = unitData
 BuildAtCoreAnchor()
 tooltips.Run(Enum.TooltipDataType.Unit, tooltip, unitData)
 Check(tooltip.points[1][2] == UIParent, "Blizzard mode moved a unit tooltip Suite does not own")
+do
+    local config = m.config
+    WorldFrame = Widget()
+    function owner:IsProtected() return self.protected == true end
+    function owner:IsAnchoringSecret() return self.secretAnchor == true end
+    function owner:IsAnchoringRestricted() return self.restrictedAnchor == true end
+    config.anchor, config.worldUnitAnchor, config.worldObjectAnchor = 2, 4, 2
+    config.worldUnitX, config.worldUnitY, config.worldUnitDirection = 27, 19, 3
+    config.unitFrameAnchor, config.unitFrameX, config.unitFrameY, config.unitFrameSide = 5, 11, 9, 2
+    config.uiElementAnchor, config.uiElementX, config.uiElementY = 3, 37, 31
+    m:Refresh()
+    local function Place(from, data)
+        Leave()
+        tooltip:SetOwner(from, "ANCHOR_NONE")
+        tooltip:ClearAllPoints()
+        tooltip:SetPoint("TOP", UIParent, "TOP", 0, -30)
+        tooltip.primary = data
+        local ownerWrites = tooltip.ownerCalls
+        tooltips.Run(data.type, tooltip, data)
+        Check(tooltip.ownerCalls == ownerWrites, "source placement called SetOwner again")
+    end
+    local item = { type = Enum.TooltipDataType.Item, id = 2 }
+    for _, restricted in ipairs({ false, true }) do
+        combat = restricted
+        Place(WorldFrame, unitData)
+        Check(tooltip.points[1][1] == "TOPRIGHT" and tooltip.points[1][4] == -27, "world unit did not use its corner")
+        Place(WorldFrame, item)
+        Check(tooltip.points[1][1] == "TOP" and tooltip.anchor == "ANCHOR_NONE", "world object lost its Blizzard placement")
+        Place(owner, unitData)
+        Check(tooltip.points[1][2] == owner and tooltip.points[1][3] == "LEFT" and tooltip.points[1][4] == -11,
+            "unitframe did not anchor to the configured side")
+        Place(owner, item)
+        Check(tooltip.anchorX == 37 and tooltip.anchorY == 31, "UI item did not use its own offsets")
+    end
+    tooltip.primaryInfo = { getterName = "GetWorldCursor" }
+    Place(UIParent, item)
+    Check(tooltip.points[1][1] == "TOP" and tooltip.anchor == "ANCHOR_NONE", "native world-cursor data was mistaken for an unknown owner")
+    tooltip.primaryInfo = nil
+    owner.protected = true
+    Place(owner, unitData)
+    Check(tooltip.anchor == "ANCHOR_CURSOR_RIGHT" and tooltip.anchorX == 19, "protected owner did not fall back to the default")
+    Place("secret", unitData)
+    Check(tooltip.anchorX == 19 and #reported == 0, "secret owner leaked into source selection")
+    combat, owner.protected = false, false
+    owner.secretAnchor = true
+    Place(owner, unitData)
+    Check(tooltip.anchorX == 19, "a secret relative anchor bypassed the default")
+    owner.secretAnchor = false
+    panelPositioner(panel, owner)
+    Check(panel.points[1][2] == owner, "MSUF panel lost its known originating frame")
+    panelPositioner(panel)
+    Check(panel.points[1][2] == UIParent, "an older host did not fall back for the custom panel")
+    config.anchor = 1
+    m:Refresh()
+    Place(owner, unitData)
+    tooltip:Show()
+    owner.restrictedAnchor = true
+    tooltips.Run(Enum.TooltipDataType.Unit, tooltip, unitData)
+    Check(tooltip.points[1][2] == defaultContainer,
+        "an open tooltip kept a stale owner anchor after the owner became restricted")
+    owner.restrictedAnchor = false
+    Leave()
+end
 S.editMode = false
+do
+    local targetName, targetsPlayer, threat = Strict.New("string"), Strict.New("boolean"), Strict.New("number")
+    local paints, frameCount, scans, reads = {}, 0, 0, 0
+    local publicDoubleLine = tooltip.AddDoubleLine
+    function tooltip:AddDoubleLine(label, value, ...)
+        assert(not Strict.IsSecret(label) and not Strict.IsSecret(value), "opaque value entered native tooltip lines")
+        publicDoubleLine(self, label, value, ...)
+    end
+    function tooltip:NumLines() return #self.lines end
+    function tooltip:GetLeftLine() return nameText end
+    function tooltip:GetRightLine() return nameText end
+    CreateFrame = function(kind, name, parent)
+        assert(kind == "Frame" and name == nil and parent == nil, "the detail overlay must be created detached")
+        frameCount = frameCount + 1
+        local frame = {}
+        function frame:SetParent(parent) assert(parent == tooltip); self.parent = parent end
+        function frame:CreateFontString()
+            assert(self.parent == tooltip, "the overlay was not attached to the tooltip")
+            local font = Widget()
+            paints[#paints + 1] = font
+            function font:SetWordWrap() end
+            function font:SetJustifyH() end
+            function font:SetWidth() end
+            function font:SetTextColor() end
+            function font:SetAlpha(alpha) self.alpha, self.alphaSecret = alpha, nil end
+            function font:SetAlphaFromBoolean(value) self.alphaSecret = value end
+            function font:SetFormattedText(format, value) self.format, self.text = format, value end
+            return font
+        end
+        return frame
+    end
+    local comparisonsRestricted = true
+    C_Secrets.ShouldUnitComparisonBeSecret = function() return comparisonsRestricted end
+    C_NamePlate = { GetNamePlates = function() scans = scans + 1 return { { unitToken = "nameplate1" } } end }
+    UnitCanAttack = function(_, unit) return unit == "enemy" end
+    UnitAffectingCombat = function() return true end
+    UnitClassification = function() return "elite" end
+    UnitDetailedThreatSituation = function() reads = reads + 1 return nil, threat, threat end
+    UnitThreatSituation = function() return 3 end
+    GetThreatStatusColor = function() return 1, 0, 0 end
+    UnitIsUnit = function(a, b)
+        if a == "enemytarget" and b == "player" then return targetsPlayer end
+        return a == "nameplate1target" and b == "enemy" or a == b
+    end
+    UnitName = function(unit) return unit == "enemytarget" and targetName or "Elemental" end
+    local settings = m.config
+    m.config = { titles = true, anchor = 1, growth = 1, unitCombatStatus = true, unitClassification = true,
+        target = true, selfTarget = true, unitThreatStatus = true, unitThreatPercent = true, unitTargeters = 3 }
+    NS.Client.modernEquipment, NS.Client.isForever, combat = false, true, true
+    local finishWatch = Strict.Watch(root .. "/MSUF_Suite_Tooltips/TooltipDetailText.lua", { strict = true })
+    Build("enemy")
+    Check(#finishWatch() == 0, "Lua evaluated a secret in the tooltip overlay")
+    Check(#reported == 0, reported[1] or "the restricted tooltip reported an error")
+    Check(LineValue("Unit status") and LineValue("Classification") == "Elite" and LineValue("Threat status") == "!",
+        "Forever in combat did not show public unit details")
+    Check(frameCount == 1 and #paints == 3 and rawequal(paints[1].text, targetName)
+        and rawequal(paints[2].alphaSecret, targetsPlayer) and rawequal(paints[3].text, threat)
+        and paints[3].format == "%.0f%%", "a secret did not reach its own display sink")
+    Check(scans == 0 and not LineValue("Targeted by"), "restricted target comparisons scanned nameplates")
+    Leave()
+    Check(not paints[1]:IsShown() and paints[1].text == "" and paints[2].alphaSecret == nil,
+        "overlays retained opaque data after the hover ended")
+    comparisonsRestricted, combat = false, false
+    Build("enemy")
+    Check(scans == 1 and LineValue("Targeted by") == "1 · Elemental" and frameCount == 1,
+        "public nameplate targeting failed or allocated a second overlay frame")
+    m.config.unitThreatPercent, m.config.unitTargeters = false, 1
+    Build("enemy")
+    Check(reads == 2 and scans == 1, "disabled detail options still queried threat percent or nameplates")
+    Leave()
+    C_SpecializationInfo = { GetActiveSpecGroup = function() return 1 end,
+        GetCombatConfigIDForSpecGroup = function(group) assert(group == 1); return 12 end }
+    C_Traits = { GetConfigInfo = function(id) assert(id == 12); return { treeIDs = { 13 } } end,
+        GetGroupDisplayInfoByTreeID = function(tree) assert(tree == 13); return {
+            { groupID = 101, displayName = "Affliction" }, { groupID = 102, displayName = "Demonology" },
+            { groupID = 103, displayName = "Destruction" } } end,
+        GetGroupCurrencyInfo = function(_, ids) assert(#ids == 3 and ids[1] == 101); return {
+            { traitNodeGroupID = 102, currencyInfos = { { spent = 11 } } },
+            { traitNodeGroupID = 103, currencyInfos = { { spent = 0 } } },
+            { traitNodeGroupID = 101, currencyInfos = { { spent = 40 } } } } end }
+    GetZoneText, GetSubZoneText = function() return "Silithus" end, function() return "Twilight Camp" end
+    local pvpFlag = Strict.New("boolean")
+    UnitIsPVP = function() return pvpFlag end
+    UnitFactionGroup = function() return "Alliance", "Alliance" end
+    UnitClass = function() return "Paladin", "PALADIN" end
+    m.config.unitIdentityIcons = true
+    m.config.itemLevel, m.config.spec, m.config.unitLocation = true, true, true
+    combat = true
+    Build("player")
+    Check(LineValue("Item level") == "610" and LineValue("Specialization") == "Affliction (40/11/0)"
+        and LineValue("Zone") == "Silithus" and LineValue("Subzone") == "Twilight Camp",
+        "own item level, committed Forever talents or location were lost in combat")
+    Check(rawequal(paints[1].alphaSecret, pvpFlag), "a secret PvP flag did not reach the faction icon")
+    Leave()
+    combat = false
+    m.config = settings
+    NS.Client.modernEquipment, NS.Client.isForever = true, false
+end
 m.active = false
 m:Disable()
 Check(panelPositioner == nil, "disabling tooltip details kept control of the Core panel anchor")

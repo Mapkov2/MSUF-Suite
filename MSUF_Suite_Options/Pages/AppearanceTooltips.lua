@@ -11,9 +11,9 @@ P.TooltipBasicsSection, P.TooltipTypesSection, P.TooltipLayoutSection = basicsSe
 local layoutFields = { iconSize = true, height = true, cardSurface = true, lootSurface = true }
 local layoutRules = { tooltipDetails = { anchor = true, growth = true }, tooltipVisibility = { scale = true } }
 local EDITOR_TABS = {
-    { id = "basics", label = "Basics", sections = basicsSection },
-    { id = "appearance", label = "Appearance", sections = typesSection .. " suite_skin_tooltip_builder" },
-    { id = "layout", label = "Layout", sections = layoutSection },
+    { id = "basics", label = "Basics", sections = basicsSection .. " " .. typesSection },
+    { id = "appearance", label = "Appearance", sections = "suite_skin_tooltip_builder" },
+    { id = "layout", label = "Layout", sections = layoutSection .. " suite_skin_tooltip_source_positions" },
     { id = "details", label = "Tooltip details", sections = "suite_skin_unit_tooltips" },
 }
 local presetKeys = { "compact", "detailed", "minimal", "dense", "custom" }
@@ -25,7 +25,7 @@ local typeChoices = {
     { id = "quest", label = "Quest and object tooltips" },
     { id = "loot", label = "Loot" },
 }
-local typeValues = { suite = "Suite style", custom = "Custom" }
+local typeValues = { inherit = "Use preset", suite = "Suite style", custom = "Tooltip builder" }
 
 function P.TooltipAnchorMode()
     if not P.Available("tooltipDetails") or not P.Get("tooltipDetails", "enabled") then return end
@@ -61,10 +61,10 @@ local function PresetRow(skin)
     for _, entry in ipairs(skin and skin.TooltipPalette and skin.TooltipPalette.choices or {}) do
         choices[#choices + 1] = { value = entry.key, text = Tr(entry.label) }
     end
-    local row = Kit.Row("dropdown", "Tooltip layout preset", styleKey, styleSection, card and card.Preset,
+    local row = Kit.Row("dropdown", "Tooltip layout preset", styleKey, styleSection, card and card.PresetChoice,
         function(value)
             return Kit.Change(skin, "Tooltip layout preset", styleKey, function()
-                return card.SetPreset(value)
+                return card.SetPreset(value, value ~= "custom", true)
             end)
         end, choices)
     row.sectionId = basicsSection
@@ -73,10 +73,10 @@ end
 
 local function TypeRows(skin)
     local card = skin and skin.ItemTooltipCard
-    local rows, values = {}, Kit.Values({ "suite", "custom" }, typeValues)
+    local rows, values = {}, Kit.Values({ "inherit", "suite", "custom" }, typeValues)
     for _, spec in ipairs(typeChoices) do
         local row = Kit.Row("dropdown", spec.label, "theme.tooltipLayout." .. spec.id .. "Style", styleSection,
-            function() return card.TypeStyle(spec.id) end, function(value)
+            function() return card.TypeStyleChoice(spec.id) end, function(value)
                 return Kit.Change(skin, spec.label, "theme.tooltipLayout." .. spec.id .. "Style", function()
                     return card.SetTypeStyle(spec.id, value)
                 end)
@@ -115,6 +115,13 @@ function P.ResolveTooltipMenuTarget(page, target)
         local meta = Kit.Meta(styleKey, styleSection)
         meta.sectionId = basicsSection
         return meta
+    end
+    for _, spec in ipairs(typeChoices) do
+        local meta = Kit.Meta("theme.tooltipLayout." .. spec.id .. "Style", styleSection)
+        if settingKey == meta.settingKey or control == meta.controlId then
+            meta.sectionId = typesSection
+            return meta
+        end
     end
     for field in pairs(layoutFields) do
         local meta = Kit.Meta("theme.tooltipLayout." .. field, "tooltip_builder")
@@ -485,6 +492,7 @@ function P.BuildTooltipSearchRows(ctx, builder, skin)
         BuildTypeStyles(ctx, builder, skin)
         P.BuildSkinTooltipBuilder(ctx, builder, skin)
         BuildTooltipLayout(ctx, builder, skin)
+        P.BuildTooltipSourcePositions(ctx, builder)
         for axis, label in pairs(titlePositions) do
             local meta = P.TooltipPositionTarget("skin", "theme.tooltipLayout." .. axis)
             meta.kind, meta.label, meta.searchLabel = "slider", Tr(label), label
@@ -507,6 +515,7 @@ function P.BindTooltipPositionSearch(preview, selectTitle, paint)
             if P.Combat() or not preview.root:IsVisible() or mode and mode ~= P.TooltipAnchorMode() then return false end
             preview.ui.select("layout")
             if not mode then return selectTitle(preview) end
+            P.TooltipPositionPreview.SelectSource(preview, "default")
             paint(preview)
             preview.kit:Select(preview.anchorButton)
             return true
@@ -521,7 +530,8 @@ function P.BindTooltipPositionSearch(preview, selectTitle, paint)
     end
 end
 
-function P.TooltipPreviewUsesPanel()
+function P.TooltipPreviewUsesPanel(preview)
+    if preview and preview.nativeUnit then return false end
     local host = P.Suite.HostBridge.UnitFrameTooltipAPI()
     return host and host.GetUnitFrameTooltipSetting("unitTooltipProvider") == "MSUF"
 end
@@ -530,42 +540,150 @@ function P.TooltipDetailsEnabled()
     return P.Available("tooltipDetails") and P.Get("tooltipDetails", "enabled")
 end
 
+local function ShowsNativePlayerDetails(preview, sample)
+    return P.Suite.Client.modernEquipment and sample.id == "unit" and not sample.enemy and not preview.restricted
+        and not P.TooltipPreviewUsesPanel(preview) and P.TooltipDetailsEnabled()
+end
+
+function P.TooltipPreviewName(preview, sample)
+    local name = sample.name()
+    if not ShowsNativePlayerDetails(preview, sample) then return name end
+    if not P.Get("tooltipDetails", "hideRealm") then name = name .. "-Silvermoon" end
+    if P.Get("tooltipDetails", "titles") then name = Tr("Officer") .. " " .. name end
+    return name
+end
+
+local function PaintUnitPreviewDetails(preview, sample, nativePlayer, Add, Append)
+    local combat = P.Get("tooltipDetails", "unitCombatStatus") and "|A:UI-HUD-UnitFrame-Player-CombatIcon:14:14|a" or ""
+    local identity = not sample.enemy and P.Get("tooltipDetails", "unitIdentityIcons") and "|A:classicon-paladin:14:14|a" or ""
+    if combat ~= "" or identity ~= "" then
+        Append(combat ~= "" and "unitCombatStatus" or "unitIdentityIcons", "Unit status", combat .. identity, true)
+    end
+    local target = Tr("Player Name")
+    if sample.enemy and P.Get("tooltipDetails", "selfTarget") then target = "<" .. Tr("You") .. "> " .. target end
+    Add("target", "Target", target)
+    if sample.enemy then
+        Add("unitClassification", "Classification", Tr("Elite"))
+        local indicator = Add("unitThreatStatus", "Threat status", "!")
+        if indicator then indicator:SetTextColor(1, .2, .2) end
+        Add("unitThreatPercent", "Threat", "100%")
+        if sample.keystone and P.Suite.Client.modernEquipment then Add("mythicForces", "Forces", "+1.25%") end
+    else
+        if not P.Get("tooltipDetails", "hideFaction") then Add("unitFaction", "Faction", Tr("Alliance")) end
+        if not P.Get("tooltipDetails", "hideGuild") then Add("guildRank", "Guild rank", Tr("Officer") .. " (3)") end
+        Add("itemLevel", "Item level", "160")
+        if P.Get("tooltipDetails", "itemLevel") then
+            local spec = Tr("Holy")
+            if P.Suite.Client.isForever then spec = spec .. " (40/11/0)" end
+            Add("spec", "Specialization", spec)
+        end
+        Add("unitLocation", "Zone", Tr("Stormwind City"))
+        Add("unitLocation", "Subzone", Tr("Trade District"))
+        if nativePlayer and sample.mounted then
+            Add("unitMount", "Mount", Tr("Mount"))
+            Add("unitMountOwned", "Mount collection", Tr("Collected"))
+        end
+    end
+    local scope = P.Get("tooltipDetails", "unitTargeters")
+    if not preview.restricted and scope and scope > 1 then
+        Append("unitTargeters", "Targeted by", "1 · " .. Tr("Player Name"), true)
+    end
+end
+
 function P.PaintTooltipPreviewBody(preview, sample)
     local rows = sample.rows
     local extra = 0
-    local details = rows and P.Suite.Client.modernEquipment and P.TooltipDetailsEnabled()
-        and not (sample.id == "unit" and P.TooltipPreviewUsesPanel())
+    local details = rows and P.TooltipDetailsEnabled()
+        and not (sample.id == "unit" and P.TooltipPreviewUsesPanel(preview))
+    local nativePlayer = ShowsNativePlayerDetails(preview, sample)
     local function Row(index, label, value, detail)
         local row = preview.rows[index]
+        if preview.rowSettings then preview.rowSettings[index] = nil end
         row[1]:SetText(label)
         row[1]:SetTextColor(detail and .65 or 1, detail and .81 or 1, detail and .87 or 1)
         row[2]:SetText(value)
         row[2]:SetTextColor(detail and .9 or .62, detail and .9 or .83, detail and .9 or 1)
     end
-    local function Add(key, label, value)
-        if not P.Get("tooltipDetails", key) then return end
+    local function Append(key, label, value, detail)
         extra = extra + 1
-        Row(3 + extra, Tr(label), value, true)
+        Row(3 + extra, Tr(label), value, detail)
+        if preview.rowSettings then preview.rowSettings[3 + extra] = key end
+        return preview.rows[3 + extra][2]
+    end
+    local function Add(key, label, value)
+        if P.Get("tooltipDetails", key) then return Append(key, label, value, true) end
     end
     if not rows then return 0 end
     for i, data in ipairs(rows) do
         local value = data[2]
         Row(i, Tr(data[1]), type(value) == "function" and value() or value, false)
     end
+    if nativePlayer then
+        if P.Get("tooltipDetails", "hideFaction") then Row(2, "", "", false) end
+        if not P.Get("tooltipDetails", "hideGuild") then Row(3, "<" .. Tr("Guild") .. ">", "", false) end
+        if not P.Get("tooltipDetails", "hidePvP") then Append("hidePvP", "PvP", "", false) end
+    end
     if details then
-        if sample.id == "unit" and not preview.restricted then
-            Add("guildRank", "Guild rank", Tr("Officer"))
-            Add("target", "Target", Tr("Player Name"))
-            Add("itemLevel", "Item level", "160")
-            if P.Get("tooltipDetails", "itemLevel") then Add("spec", "Specialization", Tr("Paladin")) end
-        elseif sample.id == "item" and not preview.restricted then
+        if sample.id == "unit" then
+            PaintUnitPreviewDetails(preview, sample, nativePlayer, Add, Append)
+        elseif P.Suite.Client.modernEquipment and sample.id == "item" and not preview.restricted then
+            if sample.stack then Add("maxStack", "Maximum stack", sample.stack) end
             Add("iconID", "Item icon ID", tostring(sample.icon))
-        elseif sample.id == "spell" and not preview.restricted then
-            Add("iconID", "Spell icon ID", tostring(sample.icon))
+        elseif P.Suite.Client.modernEquipment and sample.id == "spell" and not preview.restricted then
+            if sample.mount then
+                Add("ownedMount", "Mount collection", Tr("Collected"))
+            else
+                Add("iconID", "Spell icon ID", tostring(sample.icon))
+            end
         end
     end
     for i = 4 + extra, #preview.rows do Row(i, "", "", false) end
     return extra * 19
+end
+
+function P.PaintTooltipPreviewSample(preview, sample, rich, matching)
+    local card, loot = preview.card, sample.id == "loot"
+    local header, layers = preview.header, preview.layers
+    local hasHeader = layers.header and rich
+    -- The Spell sample represents an action button with a displayable icon.
+    local metadata = not preview.restricted or sample.id ~= "item" and sample.id ~= "spell"
+    local icon = not loot and (metadata or sample.id == "spell") and sample.icon or nil
+    local name = P.TooltipPreviewName(preview, sample)
+    header.frame:SetPoint("TOPLEFT", preview.frame, "TOPLEFT", loot and 44 or 0, loot and -2 or 0)
+    header.frame:SetPoint("TOPRIGHT", preview.frame, "TOPRIGHT", loot and -1 or 0, loot and -2 or 0)
+    if rich then
+        card.SetUnifiedHeader(header, matching or not loot and card.Setting("cardSurface") == "unified")
+        local kind = (metadata or sample.id == "spell") and sample.kind and sample.kind() or nil
+        local level = metadata and sample.level and Tr("Item level %d"):format(sample.level) or nil
+        card.Draw(header, name, icon, kind, level, metadata and sample.color or nil, loot and 42 or nil, preview.dragSize)
+    end
+    header.frame:SetShown(hasHeader)
+    header.icon:SetShown(hasHeader and icon ~= nil and layers.icon and card.Setting("icon"))
+    header.title:SetShown(hasHeader and layers.title)
+    header.meta:SetShown(hasHeader and layers.data)
+    header.rule:SetShown(hasHeader and layers.rule and card.Setting("rule"))
+    preview.compact:SetPoint("TOPLEFT", loot and 50 or 14, loot and -14 or -11)
+    preview.compact:SetText(name)
+    preview.compact:SetTextColor(preview.palette.Title())
+    preview.compact:SetShown(not rich and layers.header and layers.title)
+    local customOutline = (rich or matching or not loot and preview.palette.IsActive()) and card.Setting("borderMode") ~= "native"
+    local spec = (loot or customOutline or not layers.border) and preview.paintFill or preview.paintChrome
+    if preview.surfaceSpec ~= spec then
+        preview.skin.Surface.Attach(preview.frame, spec)
+        preview.surfaceSpec = spec
+    end
+    preview.skin.Surface.SetVisible(preview.frame, layers.background and (not loot or matching))
+    preview.lootFill:SetShown(layers.background and loot and not matching)
+    preview.lootEdge:SetShown(loot and layers.border and (not rich and not matching or card.Setting("borderMode") == "native"))
+    preview.lootIcon:SetShown(loot and layers.icon)
+    if loot then preview.lootIcon:SetTexture(sample.icon) end
+    local height = rich and (preview.dragSize and preview.dragSize.height or card.HeaderHeight()) or 24
+    preview.body:SetPoint("TOPLEFT", 14, -height - 10)
+    preview.body:SetShown(not loot and layers.data)
+    local extra = P.PaintTooltipPreviewBody(preview, sample)
+    P.TooltipPositionPreview.PaintDetailHandles(preview, not loot and layers.data)
+    preview.frame:SetHeight(loot and 46 or height + 80 + extra)
+    return extra
 end
 
 local function BuildPage(ctx)
@@ -574,6 +692,7 @@ local function BuildPage(ctx)
     if not skin then
         BuildBasics(ctx, builder)
         BuildTooltipLayout(ctx, builder)
+        P.BuildTooltipSourcePositions(ctx, builder)
         P.BuildSkinUnitTooltipSection(ctx, builder)
         P.QoLOwners.Build(ctx, builder, PAGE, nil, "tooltips")
         return
@@ -586,6 +705,7 @@ local function BuildPage(ctx)
     P.BuildSkinTooltipBuilder(ctx, workspace, skin)
     BuildTypeStyles(ctx, workspace, skin)
     BuildTooltipLayout(ctx, workspace, skin)
+    P.BuildTooltipSourcePositions(ctx, workspace, ui)
     P.BuildSkinUnitTooltipSection(ctx, workspace, skin)
     P.QoLOwners.Build(ctx, ui and ui.groups.details.builder or workspace, PAGE,
         ui and function() ui.select("details") end, "tooltips")

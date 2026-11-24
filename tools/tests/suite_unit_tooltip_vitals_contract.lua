@@ -408,4 +408,14 @@ GameTooltip.width = 284
 CheckSingleBar("show", false, powerBar)
 assert(unitBar.points[1][4] == 83, "enabling health used the old tooltip width")
 CheckSingleBar("native", true, unitBar)
+-- The options can load the renderer before the controller enables it.
+local cold = setmetatable({}, { __index = NS })
+assert(loadfile(root .. "/MSUF_Suite_Tooltips/UnitTooltipVitals.lua"))("Tooltips", cold)
+local coldVitals = cold.TooltipVitals
+mode, power, text = "show", true, true
+local coldPreview = coldVitals.CreatePreview(Frame())
+local reads = unitCalls
+assert(coldVitals.PaintPreview(coldPreview, true, false, false, true, true) > 0
+    and coldPreview.health:IsShown() and coldPreview.power:IsShown(), "opening the cold preview lost its stored bars")
+assert(coldVitals.Enabled == nil and unitCalls == reads, "opening the preview started the live tooltip runtime")
 print("unit tooltip vitals contract: native lifecycle, disabled bars, protected values, preview, and MSUF provider")

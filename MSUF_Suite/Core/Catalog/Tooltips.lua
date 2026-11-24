@@ -1,10 +1,28 @@
 local _, Suite = ...
 local Build = Suite.CatalogBuild
+local Positions = {
+    sources = {
+        { id = "worldUnit", label = "World units" },
+        { id = "worldObject", label = "World objects" },
+        { id = "unitFrame", label = "Unit frames" },
+        { id = "uiElement", label = "Other UI elements" },
+    },
+    byID = {},
+    sides = { { "LEFT", "RIGHT" }, { "RIGHT", "LEFT" }, { "BOTTOM", "TOP" }, { "TOP", "BOTTOM" } },
+}
+Suite.TooltipPositions = Positions
+for _, source in ipairs(Positions.sources) do
+    local id = source.id
+    source.mode, source.x, source.y = id .. "Anchor", id .. "X", id .. "Y"
+    source.direction, source.side = id .. "Direction", id .. "Side"
+    Positions.byID[id] = source
+end
+
 local Appearance = {}
 Suite.TooltipAppearance = Appearance
 
 local defaults = {
-    preset = "", item = true, spell = false, icon = true, level = true, kind = true,
+    preset = "", presetBase = "", item = true, spell = false, icon = true, level = true, kind = true,
     itemStyle = "", spellStyle = "", unitStyle = "", questStyle = "", lootStyle = "suite",
     cardSurface = "unified", lootSurface = "auto", backgroundTexture = "", headerTexture = "",
     unitHealth = "native", unitPower = false, unitValueText = false,

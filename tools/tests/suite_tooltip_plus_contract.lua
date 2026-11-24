@@ -179,6 +179,7 @@ C_ScenarioInfo = {
 
 ------------------------------------------------------------------ modules
 local fixture = Support.TooltipFixture(root, S, NS)
+Support.LoadTooltipPositions(root, NS)
 -- The tooltip's scale belongs to the Suite core's owner (TooltipScale.lua).
 ApproximatelyEqual = function(a, b) return math.abs(a - b) < .000001 end
 NS.Finite = S.Finite
@@ -190,6 +191,8 @@ end
 Load("TooltipBorder.lua")
 Load("TooltipHiddenLines.lua")
 Load("TooltipIDs.lua")
+Load("TooltipDetailText.lua")
+Load("TooltipUnitDetails.lua")
 Load("TooltipDetails.lua")
 Load("TooltipVisibility.lua")
 local tooltipIDConfig = { idModifier = 4 }

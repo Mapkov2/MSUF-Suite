@@ -343,6 +343,13 @@ end
 -- TooltipDataHandler.lua) for isolated tooltip helper tests: post-calls per
 -- tooltip type and line pre-calls are recorded; fixture.Run(kind, tooltip,
 -- data) runs the post-calls of one build. Loads the shared TooltipLines.lua.
+function Support.LoadTooltipPositions(root, ns)
+    local catalogBuild = ns.CatalogBuild
+    ns.CatalogBuild = { Add = function() end, Module = function() end }
+    assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Tooltips.lua"))("MSUF_Suite", ns)
+    ns.CatalogBuild = catalogBuild
+end
+
 function Support.TooltipFixture(root, suite, ns)
     local fixture = { post = {}, pre = {} }
     TooltipDataProcessor = {

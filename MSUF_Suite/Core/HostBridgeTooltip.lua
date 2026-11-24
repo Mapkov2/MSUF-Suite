@@ -36,7 +36,7 @@ local function ObserveShownUnit(panel, unit, opts)
     Suite.Dispatch(tooltipObserver, panel, unit)
 end
 
-local function OfferTooltipPanel(_, unit, opts)
+local function OfferTooltipPanel(owner, unit, opts)
     if not pendingTooltipPanel and not tooltipPositioner and not tooltipObserver then return end
     local panel = _G.MSUF_PlayerInfoFrame
     if not panel then return end
@@ -47,7 +47,7 @@ local function OfferTooltipPanel(_, unit, opts)
     end
     if tooltipPositioner and panel._msufEditPreviewActive ~= true then
         local shown = panel:IsShown()
-        if Suite.Public(shown) and shown == true then Suite.Dispatch(tooltipPositioner, panel) end
+        if Suite.Public(shown) and shown == true then Suite.Dispatch(tooltipPositioner, panel, owner) end
     end
     ObserveShownUnit(panel, unit, opts)
 end

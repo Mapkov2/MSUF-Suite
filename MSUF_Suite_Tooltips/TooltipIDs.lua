@@ -122,6 +122,11 @@ local function Unit(tooltip, data)
     if not IDsWanted() then return end
     idsFor = data
     local guid = S.PublicText(data.guid)
+    if not guid then
+        local unit = S.TooltipLines.UnitName(data)
+        if not unit and P.TooltipUnitDetails then unit = P.TooltipUnitDetails.Token(tooltip, data) end
+        if unit then guid = S.PublicText(UnitGUID(unit)) end
+    end
     if not guid or not (guid:find("^Creature%-") or guid:find("^Vehicle%-")) then return end
     AddID(tooltip, "Creature ID", tonumber((select(6, strsplit("-", guid)))))
 end

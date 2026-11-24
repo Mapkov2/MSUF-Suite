@@ -471,15 +471,20 @@ end
 
 local function DefaultTexture(_, fallback) return fallback end
 
-function Vitals.Refresh()
-    local suite = NS.SuiteCore()
+local function ReadConfig(suite)
     local resolve = suite and suite.ResolveTexture or DefaultTexture
     local mode, power = Card.Setting("unitHealth"), Card.Setting("unitPower")
-    local wanted = NS.DB.enabled and (mode ~= "native" or power)
     config.mode, config.power, config.text = mode, power, Card.Setting("unitValueText")
     config.health = ReadStyle("unitHealth", resolve)
     config.resource = ReadStyle("unitPower", resolve)
     config.healthText = ReadHealthText(suite, config.text)
+    return mode, power
+end
+
+function Vitals.Refresh()
+    local suite = NS.SuiteCore()
+    local mode, power = ReadConfig(suite)
+    local wanted = NS.DB.enabled and (mode ~= "native" or power)
     if wanted and not nativeView and NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer(Vitals, Vitals.Refresh)
     elseif wanted and GameTooltip and not nativeView then
@@ -532,7 +537,10 @@ function Vitals.FontRegistered(key)
     end
 end
 
-function Vitals.CreatePreview(parent) return Create(parent) end
+function Vitals.CreatePreview(parent)
+    if not config.healthText then ReadConfig(NS.SuiteCore()) end
+    return Create(parent)
+end
 
 function Vitals.PaintPreview(view, visible, panel, legacyHidden, healthLayer, powerLayer, previewSize, restricted)
     local native = not panel and config.mode == "native" and not legacyHidden

@@ -746,3 +746,22 @@ GameTooltip.scripts.OnShow()
 GameTooltip.scripts.OnSizeChanged(GameTooltip, 240)
 GameTooltip.scripts.OnHide()
 assert(shown == 1 and hidden == 1 and resized == 1, "the shared tooltip lost the active vitals lifecycle")
+
+-- The editor applies a full preset, while individual types can override it.
+assert(API.SetPreset("detailed") and API.PresetChoice() == "custom", "a mixed legacy layout advertised a full preset")
+assert(API.SetPreset("detailed", true, true) and API.Preset() == "detailed")
+for _, kind in ipairs({ "item", "spell", "unit", "quest", "loot" }) do
+    assert(API.TypeStyleChoice(kind) == "inherit" and API.TypeStyle(kind) == "custom", "a type did not use the selected preset")
+end
+assert(API.PresetChoice() == "detailed", "the settings menu did not display the active shared preset")
+assert(API.SetTypeStyle("spell", "suite") and API.Preset() == "custom" and API.TypeStyle("spell") == "suite")
+assert(API.TypeStyleChoice("item") == "inherit" and API.TypeStyle("item") == "custom", "an override changed another type")
+assert(API.SetTypeStyle("spell", "inherit") and API.TypeStyle("spell") == "custom", "inherit lost the preset after a manual edit")
+assert(API.SetPreset("compact", true, true) and API.Preset() == "compact" and API.TypeStyle("item") == "suite")
+assert(API.SetOffsets(34, -9, "item") and API.Preset() == "custom" and API.TypeStyle("item") == "custom")
+assert(API.Setting("x") == 34 and API.Setting("y") == -9 and API.TypeStyle("spell") == "suite",
+    "moving the item example did not store its position or changed the spell style")
+assert(API.Set("iconSize", 34, "spell") and API.TypeStyle("spell") == "custom" and API.Setting("iconSize") == 34,
+    "resizing the spell example did not activate its live layout")
+assert(API.SetPreset("detailed", true, true) and API.TypeStyleChoice("spell") == "inherit"
+    and API.Setting("x") == 10 and API.Setting("unitHealthWidth") == 100, "reapplying a preset did not restore its geometry")
