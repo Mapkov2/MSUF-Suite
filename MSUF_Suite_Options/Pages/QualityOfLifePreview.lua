@@ -35,6 +35,7 @@ local TARGETS = {
 
 local function OpenTarget(ui, key)
     if P.Combat() or not ui.stage:IsVisible() then return false end
+    if ui.prepareOpenTarget then ui.prepareOpenTarget(key) end
     local group = P.QoLView.FindFeature(ui.id)
     local page = P.QoLView.GetFeaturePage(group)
     local exact = P.Meta(page, ui.id, key, "setting", P.QoLView.FeatureSectionId(group))
@@ -168,7 +169,7 @@ end
 function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
     if id == "floatingCombatText" then
         if K.Runtime("MSUF_Suite_QualityOfLife", "BuildFloatingCombatTextPreview") then
-            return S.BuildFloatingCombatTextPreview(P, ctx, parent, width, y)
+            return S.BuildFloatingCombatTextPreview(P, ctx, parent, width, y, true)
         end
         return y
     end

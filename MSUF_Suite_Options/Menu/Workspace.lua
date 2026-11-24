@@ -243,6 +243,42 @@ function Workspace.WrappingTabs(ui, values, apply)
     return row, Choose
 end
 
+-- Settings inside one accordion keep the preview and section actions above
+-- the tabs. Report only the selected panel's height to the accordion.
+function Workspace.FeatureTabs(ctx, body, page, module, width, y, values, panels, resize)
+    local picker = { ctx = ctx, header = body, width = width + 32, selected = values[1].value,
+        spec = { page = page, module = module } }
+    local row, top, bottom
+    local function Layout()
+        local nextTop = y - row:GetHeight() - 10
+        if nextTop ~= top then
+            top = nextTop
+            for _, panel in pairs(panels) do
+                panel:ClearAllPoints()
+                panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, top)
+            end
+        end
+        local nextBottom = top - panels[picker.selected]:GetHeight()
+        if nextBottom == bottom then return end
+        local ready = bottom ~= nil
+        bottom = nextBottom
+        if ready and resize then resize(bottom) end
+    end
+    local function ShowTab(key)
+        picker.selected = key
+        for id, panel in pairs(panels) do panel:SetShown(id == key) end
+        Layout()
+        return true
+    end
+    local choose
+    row, choose = Workspace.WrappingTabs(picker, values, ShowTab)
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
+    row:HookScript("OnSizeChanged", Layout)
+    ShowTab(picker.selected)
+    return bottom, choose
+end
+
 function Workspace.Finish(ui)
     if not ui then return end
     local entry = ui.ctx.entry or ui.ctx

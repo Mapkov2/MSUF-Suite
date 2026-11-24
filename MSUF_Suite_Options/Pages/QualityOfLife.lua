@@ -189,11 +189,22 @@ end
 local function BuildIndicatorPreview(ctx, details, group, sectionId, width, y, keywords, resize, sections)
     local bottom, ui = P.BuildQoLIndicatorPreview(ctx, details, group.id, width, y)
     local id = group.id
-    if not (ui and ui.editor) then return bottom end
+    if id ~= "floatingCombatText" and id ~= "actionTracker" and not (ui and ui.editor) then return bottom end
     local function Register(entries, prepare)
         RegisterFeatureRuleSearch(group, sectionId, entries, keywords, prepare)
     end
     local page = V.GetFeaturePage(group)
+    if id == "floatingCombatText" then
+        return P.BuildFloatingCombatTextSettings(ctx, details, bottom, width - 32, page, sectionId,
+            sections, ui, Register, resize), true
+    end
+    if id == "actionTracker" then
+        bottom = AddEditModeAction(ctx, details, id, sectionId, bottom, width - 32, EDIT_ELEMENTS[id])
+        local settingsBottom, select = P.BuildActionTrackerSettings(ctx, details, bottom, width - 32, page, sectionId,
+            sections, Register, resize)
+        if ui then ui.prepareOpenTarget = function() select("layout") end end
+        return settingsBottom, true
+    end
     if ui.editor.BuildSettings then
         local function BuildFooter(footer)
             return AddEditModeAction(ctx, footer, group.id, sectionId, 0, width - 32, EDIT_ELEMENTS[group.id])

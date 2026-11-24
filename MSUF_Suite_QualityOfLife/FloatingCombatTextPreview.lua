@@ -2,7 +2,13 @@ local _, P = ...
 local S = P.Suite
 local ID = "floatingCombatText"
 local PREVIEW_SLOTS = 10
-local SHOWCASE = { "crit", "dodge", "parry", "xp" }
+-- One representative per switch. Level-up, reputation and honor share a
+-- placement and color, but each has its own visibility setting.
+local BURST = {
+    { "crit", "hit" }, { "dodge", "avoid" }, { "xp", "xp" }, { "level", "level" },
+    { "reputation", "reputation" }, { "honor", "honor" }, { "power", "power" }, { "enter", "combat" },
+}
+local SAMPLE_TABS = { hit = "hits", avoid = "hits", xp = "gains", gain = "gains", power = "gains", combat = "combat" }
 local min, max, floor, abs = math.min, math.max, math.floor, math.abs
 
 local function UpdateModel(ui)
@@ -72,17 +78,35 @@ local function Show(ui, sample, stationary)
     ui.display:Show(sample.route, sample.critical, sample.format, sample.value, ui.plate, stationary)
 end
 
-local function Play(ui, sample)
-    if not ui.stage:IsVisible() or not ui.display then return end
-    if ui.stationary or not sample then ui.display:Clear() end
-    ui.stationary = nil
-    if sample then
-        Show(ui, sample)
-    else
-        for _, key in ipairs(SHOWCASE) do Show(ui, ui.samples[key]) end
+local function CancelBurst(ui)
+    if not ui.burstTimer then return end
+    ui.burstTimer:Cancel()
+    ui.burstTimer = nil
+end
+
+-- Finish the current wave before drawing more text in a full lane. The
+-- gameplay renderer would otherwise recycle a sample before it was visible.
+local function ShowWave(ui, first, stationary)
+    local display, counts = ui.display, ui.waveCounts
+    wipe(counts)
+    for index = first, #BURST do
+        local key, flag = unpack(BURST[index])
+        if display.enabled[flag] then
+            local sample = ui.samples[key]
+            local lane = display.routes[sample.route]
+            local count = counts[lane] or 0
+            local rows = display.placements[lane].rows
+            if count < rows then
+                counts[lane] = count + 1
+                Show(ui, sample, stationary)
+            elseif not stationary and rows > 0 then
+                return index
+            end
+        end
     end
 end
 
+local Play
 local function TestButton(ui, parent, sample, label, x, y, width)
     local button = ui.menu.T.Button(parent, label, width, 24)
     button:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -91,17 +115,18 @@ local function TestButton(ui, parent, sample, label, x, y, width)
     return button
 end
 
-local function Buttons(ui)
-    local grid, columns = ui.grid, ui.columns
+local function BuildSamples(ui, parent, tab, y)
+    local columns = ui.columns
     local width = (ui.width - (columns - 1) * 6) / columns
-    for i, sample in ipairs(S.FloatingTextSamples) do
-        ui.samples[sample.key] = sample
-        local x = (i - 1) % columns * (width + 6)
-        local y = -floor((i - 1) / columns) * 29
-        ui.buttons[sample.key] = TestButton(ui, grid, sample, sample.label, x, y, width)
+    local count = 0
+    for _, sample in ipairs(S.FloatingTextSamples) do
+        if not tab or SAMPLE_TABS[sample.route] == tab then
+            local x = 16 + count % columns * (width + 6)
+            TestButton(ui, parent, sample, sample.label, x, y - floor(count / columns) * 29, width)
+            count = count + 1
+        end
     end
-    local y = -math.ceil(#S.FloatingTextSamples / columns) * 29 - 2
-    ui.buttons.burst = TestButton(ui, grid, nil, "Play sample burst", 0, y, min(ui.width, 180))
+    return y - math.ceil(count / columns) * 29
 end
 
 local function Paint(ui)
@@ -110,17 +135,49 @@ local function Paint(ui)
     local font = S.ResolveFont(config.font) or S.GlobalFontPath()
     if not ui.display then
         ui.display = S.FloatingTextDisplay.New(ui.content, PREVIEW_SLOTS)
-        Buttons(ui)
     end
     local changed = ui.menu.PreviewCanvas.Changed(ui.settings, config, ui.menu.catalog[ID].rules)
     if not ui.ready or changed or ui.font ~= font then
+        CancelBurst(ui)
         ui.ready, ui.font, ui.stationary = true, font, true
+        ui.duration = config.duration
         ui.display:Configure(config, font)
         MeasureSamples(ui, config, font)
         Fit(ui, config)
-        for _, key in ipairs(SHOWCASE) do Show(ui, ui.samples[key], true) end
+        ShowWave(ui, 1, true)
     end
     UpdateModel(ui)
+end
+
+local function PlayBurst(ui, first)
+    if not ui.stage:IsVisible() then return end
+    ui.display:Clear()
+    local nextSample = ShowWave(ui, first)
+    if nextSample then
+        local timer
+        timer = C_Timer.NewTimer(ui.duration, function()
+            if ui.burstTimer ~= timer then return end
+            Paint(ui)
+            if ui.burstTimer ~= timer then return end
+            ui.burstTimer = nil
+            PlayBurst(ui, nextSample)
+        end)
+        ui.burstTimer = timer
+    end
+end
+
+Play = function(ui, sample)
+    if not ui.stage:IsVisible() then return end
+    -- Menu2 can coalesce the repaint from a settings write until the next frame.
+    Paint(ui)
+    CancelBurst(ui)
+    if ui.stationary and sample then ui.display:Clear() end
+    ui.stationary = nil
+    if sample then
+        Show(ui, sample)
+    else
+        PlayBurst(ui, 1)
+    end
 end
 
 local function CreateStage(ui, parent, y)
@@ -168,6 +225,7 @@ local function WatchPreview(ui, ctx)
     stage:SetScript("OnShow", Shown)
     stage:SetScript("OnHide", function()
         stage:UnregisterAllEvents()
+        CancelBurst(ui)
         if ui.display then ui.display:Clear() end
         ui.ready = false
     end)
@@ -179,21 +237,21 @@ local function WatchPreview(ui, ctx)
     if stage:IsVisible() then Shown() end
 end
 
-function S.BuildFloatingCombatTextPreview(menu, ctx, parent, width, y)
+function S.BuildFloatingCombatTextPreview(menu, ctx, parent, width, y, grouped)
     local room = width - 32
     local title = menu.Text(parent, "Interactive preview", 16, y, room)
     y = y - max(18, math.ceil(title:GetStringHeight() or 18)) - 4
     local hint = menu.Text(parent, "Click an event to preview its movement.", 16, y, room, menu.T.colors.muted)
     y = y - max(16, math.ceil(hint:GetStringHeight() or 16)) - 8
-    local ui = { menu = menu, width = room, height = 306, columns = max(2, min(6, floor(room / 128))),
-        settings = {}, widths = {}, samples = {}, buttons = {} }
+    local ui = { menu = menu, width = room, height = 306, columns = max(1, min(6, floor(room / 128))),
+        settings = {}, widths = {}, samples = {}, waveCounts = {} }
+    for _, sample in ipairs(S.FloatingTextSamples) do ui.samples[sample.key] = sample end
+    ui.BuildSamples = function(panel, tab, top) return BuildSamples(ui, panel, tab, top) end
     CreateStage(ui, parent, y)
     y = y - ui.height - 8
-    ui.grid = CreateFrame("Frame", nil, parent)
-    local height = (math.ceil(#S.FloatingTextSamples / ui.columns) + 1) * 29 + 4
-    ui.grid:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
-    ui.grid:SetSize(room, height)
+    if not grouped then y = BuildSamples(ui, parent, nil, y) end
+    TestButton(ui, parent, nil, "Play sample burst", 16, y, min(room, 180))
     ctx.floatingTextPreview = ui
     WatchPreview(ui, ctx)
-    return y - height - 10
+    return y - 38, ui
 end

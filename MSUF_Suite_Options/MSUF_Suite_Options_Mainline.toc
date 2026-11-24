@@ -65,6 +65,8 @@ Pages\LootRollPreviewEditor.lua
 Pages\QoLLayerEditor.lua
 Pages\BattleResEditor.lua
 Pages\LootWindowEditor.lua
+Pages\FloatingCombatTextSettings.lua
+Pages\ActionTrackerSettings.lua
 Pages\QualityOfLifePreview.lua
 Menu\GraphicsPerformance.lua
 Pages\GraphicsPerformance.lua
