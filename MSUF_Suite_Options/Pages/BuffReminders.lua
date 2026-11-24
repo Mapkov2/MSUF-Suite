@@ -76,7 +76,6 @@ local function PlaySoundChoice(choice)
 end
 
 local function BindSoundPicker(_, entries)
-    if not P.OpenSoundChoicePicker then return end
     for _, entry in ipairs(entries or {}) do
         local widget, rule = entry.widget, entry.rule
         if widget and rule.key == "reminderSound" then
