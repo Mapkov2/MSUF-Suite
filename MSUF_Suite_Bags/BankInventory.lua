@@ -225,10 +225,10 @@ local function Create()
     BankInventory.side, BankInventory.sideChild = P.BagWidgets.Scroll(frame, 133)
     BankInventory.side:SetPoint("TOPLEFT", 10, -GRID_TOP)
     BankInventory.side:SetPoint("BOTTOMLEFT", 10, 40)
-    -- Below the bank window, opposite Blizzard's bank tabs (BankFrame.xml
-    -- TabSystem): the search box and Clean Up button stay free in every view.
+    -- Below the visible panel, opposite Retail's tabs. Forever's outer frame
+    -- extends past the panel, so its right edge would detach the switches.
     BankInventory.modeButton = Button(BankFrame, MODES[BANK_VIEW.TABS], 142, NextMode)
-    BankInventory.modeButton:SetPoint("TOPRIGHT", BankFrame, "BOTTOMRIGHT", -22, 2)
+    BankInventory.modeButton:SetPoint("TOPRIGHT", BankFrame.BankPanel, "BOTTOMRIGHT", -22, 2)
     BankInventory.listButton = Button(BankFrame, "Show as list", 112, ToggleList)
     BankInventory.listButton:SetPoint("RIGHT", BankInventory.modeButton, "LEFT", -6, 0)
     BankFrame:HookScript("OnShow", function()

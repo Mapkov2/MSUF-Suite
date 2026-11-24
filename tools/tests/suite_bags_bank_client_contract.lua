@@ -37,13 +37,33 @@ end
 local function Click(W, button, mouseButton) W.Insecure(button.scripts.OnClick, button, mouseButton or "LeftButton") end
 
 ---------------------------------------------------------------- the mode switch
-do
-    local W = Bank({ config = { bankView = 1 } })
-    local B = W.P.BankInventory
+for _, client in ipairs({ "Mainline", "Forever" }) do
+    local W = Bank({ client = client, config = { bankView = 1 } })
+    local bank, B = W.BankFrame, W.P.BankInventory
     assert(B.modeButton and B.modeButton.shown, "the bank view switch is missing in Blizzard's own bank view")
-    assert(not Overlaps(W, B.modeButton, BankFrame.BankItemSearchBox)
-        and not Overlaps(W, B.modeButton, BankFrame.BankPanel.AutoSortButton),
+    assert(not Overlaps(W, B.modeButton, bank.BankItemSearchBox)
+        and not Overlaps(W, B.modeButton, bank.BankPanel.AutoSortButton),
         "the bank view switch covers Blizzard's bank search box or Clean Up button")
+    -- Camelot's visible panel is narrower than the outer BankFrame.
+    W.Native(function()
+        bank:SetWidth(738)
+        bank:SetScale(1.28)
+    end)
+    local panelLeft, panelBottom, panelWidth = W.Rect(bank.BankPanel)
+    local top = panelBottom + 2 * bank:GetEffectiveScale()
+    local function BelowPanel(button)
+        local left, bottom, width, height = W.Rect(button)
+        return button:IsVisible() and left >= panelLeft and left + width <= panelLeft + panelWidth
+            and math.abs(bottom + height - top) < 0.001
+    end
+    assert(BelowPanel(B.modeButton), client .. " bank view switch is outside the visible bank panel's width")
+    Click(W, B.modeButton)
+    W.Settle()
+    assert(B.active and BelowPanel(B.modeButton) and BelowPanel(B.listButton)
+        and not Overlaps(W, B.modeButton, B.listButton), "organized bank view switches are missing or overlap")
+    Click(W, B.listButton)
+    W.Settle()
+    assert(W.P.BagsModule.config.bankListView == true, "the bank list switch does not change the view")
 end
 
 ---------------------------------------------------------------- item actions
