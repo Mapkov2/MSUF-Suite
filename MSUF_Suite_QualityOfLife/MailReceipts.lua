@@ -116,8 +116,9 @@ function Receipts:Enable()
         self.hooked = true
     end
     for _, event in ipairs(EVENTS) do self.context:Event(event, MailEvent) end
-    local mailbox = NS.Safety.Field(_G, "MailFrame")
-    local shown = mailbox and mailbox:IsShown()
+    local mailbox = MailFrame
+    if not S.Public(mailbox) or not mailbox or NS.Safety.IsForbidden(mailbox) then return end
+    local shown = mailbox:IsShown()
     if S.Public(shown) and shown == true then MailEvent(self, "MAIL_SHOW") end
 end
 

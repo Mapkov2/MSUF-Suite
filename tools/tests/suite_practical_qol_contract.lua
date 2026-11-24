@@ -72,19 +72,32 @@ local function Restock(forever)
     assert(not env.confirm and #purchased == 2, "insufficient bag space avoids a partial purchase")
 end
 
-local function Receipts()
-    local env = inventory.New(root, false)
-    env.NS.Safety = { Field = Field }
+local function Receipts(forever)
+    local env = inventory.New(root, forever)
+    env.NS.Safety = { IsForbidden = function() return false end }
     local capture
     hooksecurefunc = function(name, callback)
-        assert(name == "SendMail")
+        assert(name == "SendMail" and not capture, "hook mail sends once across enable calls")
         capture = callback
     end
     GetSendMailMoney = function() return 14 end
     GetSendMailCOD = function() return 0 end
-    MailFrame:Show()
+    local mailbox = MailFrame
+    MailFrame = nil
     env:Load("MSUF_Suite_QualityOfLife/MailReceipts.lua")
     local module = env:Start("mailReceipts", {})
+    assert(not module.mailOpen and not module.button, "activation works before the mailbox exists")
+
+    MailFrame = mailbox
+    MailFrame:Show()
+    env:Emit(module, "MAIL_SHOW")
+    local button = assert(module.button)
+    assert(module.mailOpen and button:IsShown() and button.parent == mailbox, "opening the mailbox shows its receipts button")
+    module:Disable()
+    assert(not module.mailOpen and not button:IsShown(), "disabling hides the receipts button")
+    env:Start("mailReceipts", {})
+    assert(module.mailOpen and module.button == button and button:IsShown(), "re-enable while the mailbox is already open")
+
     env.attachments[1] = { id = 12, count = 4 }
     capture("Beta")
     env:Emit(module, "MAIL_FAILED")
@@ -318,7 +331,8 @@ end
 
 Restock(false)
 Restock(true)
-Receipts()
+Receipts(false)
+Receipts(true)
 DialogKeys()
 BagDetails(false)
 BagDetails(true)
