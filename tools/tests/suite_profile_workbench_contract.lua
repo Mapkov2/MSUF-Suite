@@ -17,6 +17,18 @@ MSUF_GlobalDB, MSUF_DB, MSUF_ActiveProfile = { profiles = { Default = frame } },
 WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 SlashCmdList = {}
 InCombatLockdown = function() return combat end
+UnitGUID = function(unit) return unit == "player" and "Player-1-00000001" or nil end
+-- Callbacks for the next frame; NextFrame runs them.
+local timers = {}
+C_Timer = { After = function(seconds, callback)
+    assert(seconds == 0 and type(callback) == "function", "only next-frame timers are expected here")
+    timers[#timers + 1] = callback
+end }
+local function NextFrame()
+    local due = timers
+    timers = {}
+    for _, callback in ipairs(due) do callback() end
+end
 C_AddOns = { DoesAddOnExist = function() return false end, IsAddOnLoaded = function() return false end }
 Minimap = { SetMaskTexture = function() end }
 securecallfunction = function(fn, ...) return fn(...) end
@@ -278,7 +290,7 @@ Case("Blizzard nameplate settings transfer and restore", function()
     cvars.nameplateDebuffPadding = "5"
     prepared = assert(provider.PrepareImport(bundle))
     assert(provider.Restore(prepared.provider))
-    assert(cvars.nameplateDebuffPadding == "5", "workbench full import ignored the nameplate protection")
+    assert(cvars.nameplateDebuffPadding == "3", "retired protection still blocks native settings from the full profile")
     Suite.DB.suite.modules.nameplates.protectImport = false
     prepared = assert(provider.PrepareImport(bundle))
     assert(provider.Restore(prepared.provider))
@@ -384,74 +396,128 @@ Case("Friendly visibility ordinary history undo and redo", function()
     assert(done, why)
 end)
 
--- Profile strings carry the action bar key map while the player chose so
--- (actionbars.profileKeybinds). Every import path applies it after the
--- import succeeded and only by the importer's own choice, which no string
--- carries; history steps never replay it.
-Case("Action bar key bindings in profile strings", function()
-    local imported, printed, refuse = {}, {}, nil
-    local carried = { Q = "ACTIONBUTTON1", ["SHIFT-2"] = "MULTIACTIONBAR1BUTTON2" }
+-- Profile strings always carry the exporting character's action bars and
+-- name their WoW version (ProfileClients.lua). Every import path offers this
+-- client's action bars after the import succeeded, and only the player's
+-- answer applies them (Snapshots.lua AskProfileSetup); history steps never
+-- offer them. The other client's are parked in the profile and travel back.
+Case("Action bars in profile strings", function()
+    local asked, printed = 0, {}
+    local retailSetup = { keys = { Q = "ACTIONBUTTON1", ["SHIFT-2"] = "MULTIACTIONBAR1BUTTON2" },
+        slots = { [1] = 133, [13] = 116 }, independentSlots = { [2] = 120 }, class = "MAGE", spec = 63, label = "Fire" }
+    local foreverSetup = { keys = { E = "ACTIONBUTTON3" }, slots = { [2] = 5143 }, class = "MAGE", group = 1, label = "Primary" }
+    local live = retailSetup
     local transfers = {
-        ProfileKeys = function() return Suite.CopyValue(carried) end,
-        ImportProfileKeys = function(keys)
-            if refuse then return false, refuse end
-            imported[#imported + 1] = keys
-            return true
-        end,
+        ProfileSetup = function() return Suite.CopyValue(live) end,
+        AskProfileSetup = function() asked = asked + 1 return true end,
     }
     local print = Suite.Print
     Suite.Print = function(text) printed[#printed + 1] = text end
     Suite.ActionBarSnapshots = transfers
+    Suite.RootDB.actionBarOffer = nil
     local bars = Suite.DB.suite.modules.actionbars
     local function Envelope(text, prefix)
         return encodings[tonumber(text:match(prefix .. "MSUF3:(%d+)"))]
     end
-    bars.profileKeybinds = true
-    local module, bundle = assert(P.ExportModule("actionbars")), assert(P.Export())
-    assert(Envelope(module, "^MSUFM2:").actionBarKeys.retail["SHIFT-2"] == "MULTIACTIONBAR1BUTTON2",
-        "the action bar string lost its key map")
-    assert(Envelope(bundle, "\nMSUFM1:").actionBarKeys.retail.Q == "ACTIONBUTTON1", "the full profile lost its key map")
-    assert(not Envelope(module, "^MSUFM2:").actionBarKeys.forever, "the string claimed keys for the other client")
-    assert(not Envelope(assert(P.ExportModule("nameplates")), "^MSUFM2:").actionBarKeys,
-        "another module's string carried key bindings")
+    local function Offered()
+        local offer = Suite.RootDB.actionBarOffer
+        return offer and offer.setup
+    end
     bars.profileKeybinds = false
-    local plain = Envelope(assert(P.ExportModule("actionbars")), "^MSUFM2:")
-    assert(not plain.actionBarKeys and not Envelope(assert(P.Export()), "\nMSUFM1:").actionBarKeys,
-        "keys were exported against the player's choice")
-    assert(plain.settings.profileKeybinds == true, "the export carried the player's own choice")
+    local module, bundle = assert(P.ExportModule("actionbars")), assert(P.Export())
+    local moduleEnvelope, bundleEnvelope = Envelope(module, "^MSUFM2:"), Envelope(bundle, "\nMSUFM1:")
+    assert(moduleEnvelope.client == "retail" and bundleEnvelope.client == "retail", "a string did not name its WoW version")
+    assert(moduleEnvelope.actionBars.retail.keys["SHIFT-2"] == "MULTIACTIONBAR1BUTTON2"
+        and moduleEnvelope.actionBars.retail.slots[13] == 116 and moduleEnvelope.actionBars.retail.independentSlots[2] == 120,
+        "the action bar string lost its action bars")
+    assert(bundleEnvelope.actionBars.retail.keys.Q == "ACTIONBUTTON1" and bundleEnvelope.actionBars.retail.slots[1] == 133,
+        "the full profile lost its action bars (the retired key choice must not stop them)")
+    assert(not moduleEnvelope.actionBars.forever and moduleEnvelope.actionBarKeys == nil,
+        "the string claimed action bars for the other client or kept the old key map")
+    local plates = Envelope(assert(P.ExportModule("nameplates")), "^MSUFM2:")
+    assert(plates.actionBars == nil and plates.client == "retail", "another module's string carried action bars")
 
-    bars.profileKeybinds = true
     local prepared = assert(provider.PrepareImport(module))
-    assert(#imported == 0, "preparing an import wrote key bindings")
-    assert(provider.Restore(prepared.provider))
-    assert(#imported == 1 and imported[1]["SHIFT-2"] == "MULTIACTIONBAR1BUTTON2", "the module import lost its keys")
+    assert(asked == 0 and Offered() == nil, "preparing an import offered action bars")
+    -- The workbench reviews each value of a snapshot as its own change: the
+    -- offer is one value.
+    for key, value in pairs(prepared.provider) do
+        assert(not tostring(key):find("ction") or key == "importedActionBars" and type(value) == "string",
+            "the offer is not one value of the prepared snapshot: " .. tostring(key))
+    end
+    assert(type(prepared.provider.importedActionBars) == "string", "the prepared import lost its offer")
+    -- MSUF's workbench restores with true as the second argument (its copy's
+    -- second result); its history passes a reason text.
+    assert(provider.Restore(prepared.provider, true))
+    assert(asked == 0 and Offered() == nil, "the import offered before the workbench committed it")
+    NextFrame()
+    assert(asked == 1 and Offered().slots[13] == 116 and Offered().keys.Q == "ACTIONBUTTON1",
+        "the module import did not offer its action bars")
+    Suite.RootDB.actionBarOffer = nil
+    -- The workbench's commit failed and it restored the point before: no offer.
+    local before = assert(provider.Capture())
     prepared = assert(provider.PrepareImport(bundle))
-    assert(provider.Restore(prepared.provider) and #imported == 2, "the full profile import lost its keys")
-    assert(provider.Restore(prepared.provider, "MSUF2_HISTORY_UNDO", "profile-workbench") and #imported == 2,
-        "a history step replayed key bindings")
-    assert(P.ImportModule(module) and #imported == 3, "the direct module import lost its keys")
+    assert(provider.Restore(prepared.provider) and provider.Restore(before))
+    NextFrame()
+    assert(asked == 1 and Offered() == nil, "an import the workbench rolled back offered action bars")
+    prepared = assert(provider.PrepareImport(bundle))
+    assert(provider.Restore(prepared.provider))
+    NextFrame()
+    assert(asked == 2 and Offered().spec == 63, "the full profile import did not offer")
+    Suite.RootDB.actionBarOffer = nil
+    assert(provider.Restore(prepared.provider, "MSUF2_HISTORY_UNDO", "profile-workbench") and asked == 2
+        and Offered() == nil, "a history step offered action bars")
+    NextFrame()
+    assert(asked == 2 and Offered() == nil, "a history step offered action bars a frame later")
+    assert(P.ImportModule(module) and asked == 3 and Offered(), "the direct module import did not offer")
     local job = assert(P.BeginImport(module))
     local done, ok
     repeat done, ok = job:Step() until done
-    assert(ok and #imported == 4, "the stepped module import lost its keys")
-    -- Retail and Forever keep their own keys.
+    assert(ok and asked == 4, "the stepped module import did not offer")
+
+    -- WoW Forever parks Retail's action bars and is offered the exporter's
+    -- key bindings alone; Retail's spells come back with the next string.
+    Suite.RootDB.actionBarOffer = nil
     Suite.Client.isForever = true
     prepared = assert(provider.PrepareImport(module))
-    assert(provider.Restore(prepared.provider) and P.ImportModule(module) and #imported == 4,
-        "keys exported on the other client were imported")
+    assert(provider.Restore(prepared.provider))
+    NextFrame()
+    assert(asked == 5 and Offered().keys.Q == "ACTIONBUTTON1" and Offered().keys["SHIFT-2"] == "MULTIACTIONBAR1BUTTON2"
+        and Offered().slots == nil and Offered().independentSlots == nil and Offered().class == nil,
+        "the other client's key bindings did not come along, or its spells did")
+    Suite.RootDB.actionBarOffer = nil
+    local parked = Suite.DB.suite.modules.actionbars.parkedSetup
+    local decoded = encodings[tonumber(parked:match("^MSUF3:(%d+)"))]
+    assert(decoded.client == "retail" and decoded.setup.slots[13] == 116, "WoW Forever did not park Retail's action bars")
+    live = foreverSetup
+    local foreverModule = assert(P.ExportModule("actionbars"))
+    local foreverEnvelope = Envelope(foreverModule, "^MSUFM2:")
+    assert(foreverEnvelope.client == "forever" and foreverEnvelope.actionBars.forever.slots[2] == 5143
+        and foreverEnvelope.settings.parkedSetup == parked, "the WoW Forever string lost a client's action bars")
     Suite.Client.isForever = false
+    live = retailSetup
+    Suite.DB.suite.modules.actionbars.parkedSetup = ""
+    prepared = assert(provider.PrepareImport(foreverModule))
+    assert(provider.Restore(prepared.provider))
+    NextFrame()
+    assert(asked == 6 and Offered().slots[13] == 116 and Offered().spec == 63 and Offered().keys.E == "ACTIONBUTTON3"
+        and Offered().keys.Q == nil, "Retail's own spells did not come back with the WoW Forever exporter's key bindings")
+    parked = Suite.DB.suite.modules.actionbars.parkedSetup
+    decoded = encodings[tonumber(parked:match("^MSUF3:(%d+)"))]
+    assert(decoded.client == "forever" and decoded.setup.slots[2] == 5143, "Retail did not park WoW Forever's action bars")
 
-    Suite.DB.suite.modules.actionbars.profileKeybinds = false
-    prepared = assert(provider.PrepareImport(module))
-    assert(provider.Restore(prepared.provider) and #imported == 4, "keys were imported against the importer's choice")
-    assert(Suite.DB.suite.modules.actionbars.profileKeybinds == false, "the import replaced the importer's choice")
-    Suite.DB.suite.modules.actionbars.profileKeybinds = true
-    refuse = "unavailable"
+    -- An older string's key map belongs to its client; without the action
+    -- bars the import says how to apply them and the offer waits.
+    Suite.RootDB.actionBarOffer = nil
+    local legacy = "MSUFM2:" .. MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 2, module = "actionbars",
+        revision = moduleEnvelope.revision, settings = moduleEnvelope.settings, actionBarKeys = { retail = { Q = "ACTIONBUTTON2" } } }, "MSUF3")
+    assert(P.ImportModule(legacy) and Offered().keys.Q == "ACTIONBUTTON2" and Offered().slots == nil,
+        "an older string's key map was not offered")
+    Suite.ActionBarSnapshots = nil
     local reports = #printed
-    prepared = assert(provider.PrepareImport(module))
-    assert(provider.Restore(prepared.provider) and #printed == reports + 1, "a refused key import was not reported")
-    refuse, Suite.ActionBarSnapshots = nil, nil
-    assert(P.ImportModule(module) and #printed == reports + 2, "keys for absent action bars were not reported")
+    assert(P.ImportModule(module) and #printed == reports + 1 and Offered().slots[13] == 116,
+        "action bars for absent Suite action bars were not reported or not kept")
+    Suite.RootDB.actionBarOffer = nil
     Suite.Print = print
 end)
 

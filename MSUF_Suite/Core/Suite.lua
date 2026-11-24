@@ -723,17 +723,17 @@ function S.ResetKeys(id, values)
 end
 
 -- A page reset: every setting of the module back to its catalog default
--- except whether it runs, which stays the player's choice (as in a section
--- reset). The factory reset replaces the whole profile (Database.StageFactoryReset)
--- and does not come through here.
+-- except whether it runs (as in a section reset) and the other WoW version's
+-- parked settings (rule.otherClient). The factory reset replaces the whole
+-- profile (Database.StageFactoryReset) and does not come through here.
 function S.Reset(id)
     local db = ActiveSuite()
     if NS.InCombat() or not S.catalog[id] or not db then return false end
-    local enabled = S.Config(id).enabled
+    local old = S.Config(id)
     db.modules[id] = NS.CopyValue(NS.Defaults.suite.modules[id])
     if type(db.moduleLooks) == "table" then db.moduleLooks[id] = nil end
     local config = S.Config(id)
-    if type(enabled) == "boolean" then config.enabled = enabled end
+    for key, rule in pairs(S.catalog[id].rules) do if rule.otherClient or key == "enabled" and type(old[key]) == "boolean" then config[key] = old[key] end end
     if id == "cooldownManager" then config.defaultsVersion = NS.CDM.DEFAULTS_VERSION end
     if config.enabled then AdoptLook(db, id, config) end
     S.states[id].error = nil

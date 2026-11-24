@@ -345,7 +345,13 @@ function Page.NewPopoverEdit(row, kind, width)
     edit:SetAutoFocus(false)
     edit:SetNumeric(kind == "icon")
     edit:SetMaxLetters(kind == "spell" and 100 or kind == "text" and 40 or 10)
+    local numeric = kind == "icon" or kind == "number"
+    -- Signed/fractional values ("-12.5") fit inside the 80 box with slim insets.
+    if numeric and edit.SetTextInsets then edit:SetTextInsets(3, 3, 0, 0) end
     if T.SkinEditBox then T.SkinEditBox(edit) end
+    -- Compact 20 field keeps its height; numbers use the Suite checkbox role.
+    -- Spell and free-text boxes keep their existing font.
+    if numeric and T.ApplyMenuFont then T.ApplyMenuFont(edit, nil, P.SettingFontRole()) end
     edit.row = row
     Page.InitPopoverInput(edit, kind)
     row.edit = edit

@@ -879,12 +879,18 @@ do
     Suite.Client.isForever = false
     local source = Suite.DB.suite.modules.nameplates
     source.look, source.protectImport, source.enemyNameOffsetX = 3, false, 44
+    source.neutralStyleOutlineOverride, source.neutralStyleOutlineMode = true, 3
+    source.friendlyNpcStyleTexturesOverride, source.friendlyNpcStyleNativeHealthFillTexture = true, "Solid"
     local plateModule, plateBundle = assert(P.ExportModule("nameplates")), assert(P.Export())
     source.protectImport, source.enemyNameOffsetX = true, 17
+    source.neutralStyleOutlineMode, source.friendlyNpcStyleNativeHealthFillTexture = 4, ""
     assert(P.Import("ProtectedNameplates", plateBundle))
     local copied = Suite.DB.suite.modules.nameplates
-    assert(copied.protectImport and copied.enemyNameOffsetX == 17 and copied ~= source,
-        "full Suite import did not preserve the protected module independently")
+    assert(not copied.protectImport and copied.enemyNameOffsetX == 44 and copied ~= source,
+        "legacy protection still replaced the incoming nameplate module")
+    assert(copied.neutralStyleOutlineOverride and copied.neutralStyleOutlineMode == 3
+        and copied.friendlyNpcStyleTexturesOverride and copied.friendlyNpcStyleNativeHealthFillTexture == "Solid",
+        "full import lost the separate Nameplate Style settings")
     assert(P.ImportModule(plateModule) and Suite.DB.suite.modules.nameplates.enemyNameOffsetX == 44,
         "explicit nameplate import was blocked by full-profile protection")
     local incoming = Suite.DB.suite.modules.nameplates
@@ -1000,13 +1006,13 @@ do
             and not MSUF_GlobalDB.profiles["Stepped Bundle"], "preparation wrote to a live profile")
     end
     assert(job.phase == "apply" and beginCalls == 1 and prepareCalls == 2 and commitCalls == 0)
-    -- Protection comes from the profile currently in use, even if changed during preparation.
+    -- A legacy preference changed during preparation must not replace the imported module.
     beforeSuite.suite.modules.nameplates = checkedProtection
     reentrant = assert(api.BeginImport(assert(P.ExportModule("minimap"))))
     assert(not reentrant:Step())
     local done, ok, name = job:Step()
     assert(done and ok and name == "Stepped Bundle" and job.completed == job.total and commitCalls == 1)
-    assert(Suite.DB.suite.modules.nameplates.protectImport and not Suite.DB.suite.modules.nameplates.enabled)
+    assert(Suite.DB.suite.modules.nameplates.protectImport ~= true)
     assert(MSUF_ActiveProfile == name and skinActive == name and frameImports == oldFrameImports + 1)
     assert(job:Step() and commitCalls == 1, "a completed job committed twice")
 
@@ -1230,8 +1236,8 @@ do
     S.Config("nameplates").protectImport = true
     Suite.DB.nameplateCVars.nameplateMaxDistance = "48"
     assert(P.Import("Native Nameplates Protected", bundle))
-    assert(live.nameplateDebuffPadding == "9", "full import bypassed nameplate protection")
-    assert(Suite.DB.nameplateCVars.nameplateMaxDistance == "48", "protected import lost an unavailable native setting")
+    assert(live.nameplateDebuffPadding == "5", "legacy protection still blocked incoming Blizzard settings")
+    assert(Suite.DB.nameplateCVars.nameplateMaxDistance ~= "48", "full import kept the outgoing native snapshot")
     assert(P.ImportModuleIntoNew("Native Nameplate Module", module))
     assert(live.nameplateDebuffPadding == "5", "module-to-new import lost native settings")
     native.nameplateDebuffPadding = nil

@@ -172,6 +172,10 @@ EXTRA = {
     "suite_skin_msuf_bridge_contract.lua": [[str(MSUF_LEGACY), str(MSUF_70)]],
     # MSUF's real profile store renames with the Suite and skin stores.
     "suite_profile_rename_contract.lua": [[str(MSUF_70)]],
+    # MSUF's real profile workbench reviews and commits Suite profile strings.
+    "suite_profile_workbench_host_contract.lua": [[str(MSUF_70)]],
+    # Profile variants through MSUF's real Retail and WoW Forever worlds.
+    "suite_profile_variants_host_contract.lua": [[str(MSUF_70)]],
     # Host API v2: the current multi-client Menu2 protocol and Suite link files.
     "suite_host_api_v2_contract.lua": [[str(MSUF_70)]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],

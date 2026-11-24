@@ -1,5 +1,5 @@
 local _, P = ...
-local NS = P.NS
+local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local Native = AB.SnapshotNative
 local Transfers = {}
@@ -10,6 +10,10 @@ local LIMIT, MAX_BYTES, MAX_KEYS = 64, 200000, 256
 local IN_COMBAT = { inCombat = true }
 local LOADOUT_EVENT, LOGOUT_EVENT = "SELECTED_LOADOUT_CHANGED", "PLAYER_LOGOUT"
 local context, job, store, target, watching, dirty, busy, pendingIdentity
+-- The imported profile's action bars this session already asked about
+-- (RootDB.actionBarOffer, profile strings below); AskOffer is set there.
+local asked, AskOffer
+local OFFER_QUESTION = "actionbars:profile-import"
 
 local function Store(create)
     local root = NS.RootDB
@@ -254,8 +258,13 @@ local function CaptureChanged()
     Request()
 end
 
+local function OfferWaiting()
+    local offer = NS.RootDB and NS.RootDB.actionBarOffer
+    return type(offer) == "table" and offer ~= asked
+end
+
 local function Ready()
-    if dirty or pendingIdentity or (target and store.pending[target]) then Request() end
+    if dirty or pendingIdentity or (target and store and store.pending[target]) or OfferWaiting() then Request() end
 end
 
 function Transfers.Retry()
@@ -279,7 +288,7 @@ local function Sync(data, identity)
     local pending = data and target and data.pending[target]
     pendingIdentity = data and target == nil and next(data.pending) ~= nil
     AB.snapshotChanged = capture and CaptureChanged or nil
-    AB.snapshotReady = (capture or pending or pendingIdentity) and Ready or nil
+    AB.snapshotReady = (capture or pending or pendingIdentity or OfferWaiting()) and Ready or nil
     local shouldWatch = capture or pending ~= nil or pendingIdentity == true
     AB.snapshotSetupChanged = shouldWatch and NS.Client.isForever and LoadoutChanged or nil
     if watching ~= shouldWatch then
@@ -349,6 +358,16 @@ local function ApplyMatching(data, identity)
             if not applied then
                 data.pending[key] = jobs
                 table.insert(jobs, i, row)
+            elseif row.profileImport then
+                -- The player answered a question, not the Account transfer page.
+                local result = data.results[1]
+                if result.error then
+                    S.Print(S.Text("The profile's action bars were not applied completely. Account transfer lists the result "
+                        .. "and can restore the previous setup."))
+                else
+                    S.Print(S.Text("Profile action bars applied: %d key bindings and %d spells changed, %d left as they were.")
+                        :format(result.keys, result.slots, result.skippedKeys + result.skippedSlots))
+                end
             end
             return applied
         end
@@ -358,6 +377,7 @@ end
 function AB.FlushSnapshots()
     if not context or busy then return end
     local identity = Current()
+    if identity then AskOffer(identity) end
     local data = Store()
     if not identity or not data then return end
     busy = true
@@ -372,8 +392,9 @@ end
 function AB.StartSnapshots(owner)
     context = owner
     local data = Store()
-    if not data then return end
-    dirty = data.capture == true
+    -- Without a store only an imported profile's action bars can wait.
+    if not data and not OfferWaiting() then return end
+    dirty = data and data.capture == true
     local identity = Current()
     Sync(data, identity)
     Ready()
@@ -381,8 +402,10 @@ end
 
 function AB.StopSnapshots()
     if job then job:Cancel() end
+    -- Closed unanswered: the offer waits for the next start.
+    S.HideQuestion(OFFER_QUESTION)
     AB.snapshotChanged, AB.snapshotReady, AB.snapshotSetupChanged = nil, nil, nil
-    context, job, store, target = nil, nil, nil, nil
+    context, job, store, target, asked = nil, nil, nil, nil, nil
     watching, dirty, busy, pendingIdentity = nil, nil, nil, nil
 end
 
@@ -521,32 +544,221 @@ function Transfers.Restore()
     return true, report
 end
 
--- Profile strings (MSUF_Suite/Core/ProfileIO.lua) carry the key map of the
--- action bar commands when the player chose so (actionbars.profileKeybinds).
--- An import writes it into the binding set this character uses now, as a
--- confirmed keys-only transfer: it is listed under Transfer results, and
--- Restore previous setup undoes it.
-function Transfers.ProfileKeys()
-    local keys, reason = Native.CaptureKeys()
-    if not keys then return nil, reason end
-    return CleanKeys(keys)
+------------------------------------------------------------------ profile strings
+-- Profile strings carry the exporting character's action bars
+-- (MSUF_Suite/Core/ProfileClients.lua): the spells of bars 1 to 10 and of
+-- the native bars, the Suite bars' own spells, and the keys of their
+-- commands. The keys alone go when the bars cannot be read now (combat,
+-- the cursor, an open binding editor).
+function Transfers.ProfileSetup()
+    local identity = Current()
+    if not identity then return nil end
+    local snapshot = not Native.Blocked() and Native.Capture() or nil
+    local keys = CleanKeys(snapshot and snapshot.keys or Native.CaptureKeys())
+    if not keys then return nil end
+    local setup = { keys = keys, class = identity.class, spec = identity.spec, group = identity.group,
+        label = identity.setupLabel }
+    if snapshot then
+        setup.slots = CleanSlots(snapshot.slots, Native.AllowedSlot)
+        setup.independentSlots = CleanSlots(snapshot.independentSlots, Native.AllowedIndependentSlot)
+    end
+    return setup
 end
 
-function Transfers.ImportProfileKeys(keys)
-    if busy then return nil, "busy" end
+-- An imported profile's action bars wait for the player's answers
+-- (ProfileClients.Offer keeps them in RootDB.actionBarOffer): one question
+-- for the key bindings, which come along from either WoW version and apply
+-- to any character, and one for the spells, which are offered only to the
+-- class and specialization they came from. What the player agreed to is
+-- queued as one transfer to this character's current setup: it applies at
+-- once, or once combat, the cursor or an open binding editor allow, Transfer
+-- results list it, a chat line reports it and Restore previous setup undoes
+-- it. No (or Escape) leaves that part as it is. When the transfer cannot be
+-- queued, the offer waits and the next session asks again.
+local function PendingOffer(identity)
+    local root = NS.RootDB
+    local offer = root and root.actionBarOffer
+    if type(offer) ~= "table" then return nil end
+    if offer.client ~= Flavor() or type(offer.setup) ~= "table" then
+        root.actionBarOffer = nil
+        return nil
+    end
+    -- An import whose character could not be read is for the first one asked.
+    if offer.guid == nil then offer.guid = identity.guid end
+    if offer.guid ~= identity.guid then return nil end
+    return offer
+end
+
+local function SpellsFit(setup, identity)
+    return setup.class == identity.class and (setup.spec == nil or identity.spec == nil or setup.spec == identity.spec)
+end
+
+-- The entries of an offered map this addon may write: one it does not know
+-- (another build or WoW version may have more keys, commands or slots) is
+-- left out, the others stay.
+local function Offered(source, valid)
+    local out, count = {}, 0
+    if type(source) ~= "table" then return out, 0 end
+    for key, value in pairs(source) do
+        if count < MAX_KEYS * 2 and valid(key, value) then
+            out[key] = value
+            count = count + 1
+        end
+    end
+    return out, count
+end
+local function OfferedKey(key, command) return Native.ValidKey(key) and Native.AllowedCommand(command) end
+local function OfferedSlot(slot, spell) return PositiveID(slot) and Native.AllowedSlot(slot) and PositiveID(spell) end
+local function OfferedIndependent(slot, spell)
+    return PositiveID(slot) and Native.AllowedIndependentSlot(slot) and PositiveID(spell)
+end
+
+-- The parts of an offer this character can take: the key bindings, and the
+-- spells when they are for this class and specialization.
+local function OfferParts(setup, identity)
+    local keys, keyCount = Offered(setup.keys, OfferedKey)
+    local slots, independent, spellCount = {}, nil, 0
+    if SpellsFit(setup, identity) then
+        local more
+        slots, spellCount = Offered(setup.slots, OfferedSlot)
+        independent, more = Offered(setup.independentSlots, OfferedIndependent)
+        spellCount = spellCount + more
+        if more == 0 then independent = nil end
+    end
+    return keys, keyCount, slots, independent, spellCount
+end
+
+local function DropProfileJobs(data, key)
+    local jobs = data.pending[key]
+    if not jobs then return end
+    for index = #jobs, 1, -1 do
+        if jobs[index].profileImport then table.remove(jobs, index) end
+    end
+    if #jobs == 0 then data.pending[key] = nil end
+end
+
+local function NotNow()
+    S.Print(S.Text("The profile's action bars could not be applied now. You will be asked again after the next reload."))
+end
+
+-- Queues what the player agreed to (wantKeys, wantSpells) of the offer.
+local function AcceptOffer(offer, wantKeys, wantSpells)
+    local root, identity = NS.RootDB, Current()
+    -- A newer import replaced this offer and asks itself.
+    if not root or root.actionBarOffer ~= offer then return end
+    if not identity or busy then return NotNow() end
+    -- scope: the key binding set this character uses; unreadable, nothing applies.
+    local readable, scope = Native.CaptureKeys()
+    local data = readable and Store(true)
+    if not data then return NotNow() end
+    local keyMap, keyCount, slots, independent, spellCount = OfferParts(offer.setup, identity)
+    -- The specialization changed under the open spells question: queuing the
+    -- keys alone would drop the agreed spells, so the offer waits.
+    if wantSpells == true and spellCount == 0 then return NotNow() end
+    local spells, keys = wantSpells == true and spellCount > 0, wantKeys == true and keyCount > 0
+    local record = { class = identity.class, spec = identity.spec, group = identity.group, scope = scope,
+        slots = spells and slots or {}, independentSlots = spells and independent or nil, keys = keys and keyMap or {} }
+    if spells or keys then
+        local key = CharacterKey(identity.name, identity.realm)
+        -- A newer import replaces an earlier one still waiting here; when
+        -- this one cannot be queued, the earlier one stays.
+        local earlier = data.pending[key] and { unpack(data.pending[key]) }
+        DropProfileJobs(data, key)
+        local entry = { target = key, name = identity.name, realm = identity.realm, label = S.Text("Profile import"),
+            record = record, applySlots = spells, applyKeys = keys, profileImport = true }
+        if not Stage(data, { entry }) then
+            data.pending[key] = earlier
+            S.Print(S.Text("The profile's action bars could not be queued: other account transfers for the same bars or "
+                .. "key bindings are pending, or too many transfers are. Finish or cancel them under Account transfer; "
+                .. "you will be asked again after the next reload."))
+            return
+        end
+    end
+    root.actionBarOffer = nil
+    Sync(data, identity)
+    Ready()
+end
+
+local function DeclineOffer(offer)
+    local root = NS.RootDB
+    if root and root.actionBarOffer == offer then root.actionBarOffer = nil end
+end
+
+local function UndoHint()
+    return " " .. S.Text("Restore previous setup under Account transfer undoes it.")
+end
+
+-- scope: the key binding set the character uses ("account" or "character").
+local function KeysQuestion(count, scope)
+    local text = S.Text("This profile includes %d action bar key bindings. Replace this character's action bar key bindings "
+        .. "with them?"):format(count) .. UndoHint()
+    if scope == "account" then
+        text = text .. " " .. S.Text("This character uses account-wide key bindings: they change for every character that uses them.")
+    end
+    return text
+end
+
+local function SpellsQuestion(setup, count)
+    return S.Text("This profile includes the action bar spells of %s: %d spells. Place them on this character's action bars?")
+        :format(setup.label or setup.class or "?", count) .. UndoHint()
+end
+
+-- Asks the questions of an offer one after the other and then queues what
+-- the player agreed to. The next step follows a frame later: Blizzard hides
+-- the answered dialog after its callback returns, and would hide a question
+-- shown from inside it.
+local function AskNext(offer, questions, index, answers)
+    local root = NS.RootDB
+    if not root or root.actionBarOffer ~= offer or asked ~= offer then return end
+    local question = questions[index]
+    if not question then
+        if answers.keys or answers.spells then return AcceptOffer(offer, answers.keys, answers.spells) end
+        return DeclineOffer(offer)
+    end
+    local function Answer(agreed)
+        answers[question.part] = agreed
+        C_Timer.After(0, function() AskNext(offer, questions, index + 1, answers) end)
+    end
+    S.Confirm(OFFER_QUESTION, { text = "%s", text_arg1 = question.text,
+        callback = function() Answer(true) end, cancelCallback = function() Answer(false) end })
+end
+
+-- Asks about the waiting offer once per session (AB.FlushSnapshots runs it
+-- once this character is readable).
+function AskOffer(identity)
+    local waiting = NS.RootDB and NS.RootDB.actionBarOffer
+    if waiting == nil or asked == waiting then return end
+    -- Once per offer and session, also an offer for another character: it
+    -- waits for that one without polling here.
+    asked = waiting
+    local offer = PendingOffer(identity)
+    if not offer then return end
+    local _, keyCount, _, _, spellCount = OfferParts(offer.setup, identity)
+    if spellCount == 0 and keyCount == 0 then
+        NS.RootDB.actionBarOffer = nil
+        return
+    end
+    local questions = {}
+    if keyCount > 0 then
+        local readable, scope = Native.CaptureKeys()
+        questions[#questions + 1] = { part = "keys", text = KeysQuestion(keyCount, readable and scope) }
+    end
+    if spellCount > 0 then questions[#questions + 1] = { part = "spells", text = SpellsQuestion(offer.setup, spellCount) } end
+    AskNext(offer, questions, 1, {})
+end
+
+-- After an import (ProfileClients.Offer). False while the Suite action bars
+-- are off, so the import says how to apply them; true otherwise, also when
+-- the question waits for this character to be readable.
+function Transfers.AskProfileSetup()
+    if not AB.M.active then return false end
+    asked = nil
     local identity = Current()
-    local data = identity and Store(true)
-    if not data then return nil, "unavailable" end
-    keys = CleanKeys(keys)
-    if not keys or not next(keys) then return nil, "invalid" end
-    local blocked = Native.Blocked()
-    if blocked then return nil, blocked end
-    local scope = Native.BindingScope()
-    if not scope then return nil, "unavailable" end
-    local row = { name = identity.name, realm = identity.realm, label = identity.setupLabel, applyKeys = true,
-        record = { scope = scope, slots = {}, keys = keys } }
-    busy = true
-    local applied, reason = NS.Dispatch(Execute, data, identity, row)
-    busy = false
-    return applied == true, reason
+    if identity then
+        AskOffer(identity)
+    elseif context then
+        Sync(Store(), nil)
+        Ready()
+    end
+    return true
 end

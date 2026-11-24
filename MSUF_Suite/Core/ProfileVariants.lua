@@ -2,7 +2,12 @@
 -- of module settings. Core sees a synthetic snapshot root, never a saved alias.
 -- That root holds every catalog rule except the nameplates module and the
 -- automation settings (SuiteCatalog.lua): variants, sync groups and shared
--- variant patches never change what acts on the player's behalf.
+-- variant patches never change what acts on the player's behalf. Profile data
+-- (Build.ProfileData: a module's whole lists, its layouts by specialization,
+-- its bookkeeping) is in the root for copies, exports and undo, but a variant
+-- never holds it: it would bring back the whole collection as it was when
+-- the variant was recorded, as Dark Raid's dungeon variant did with every
+-- cooldown bar. A variant fills single cooldown bars through variantLists.
 local _, Suite = ...
 local P = {}
 Suite.ProfileVariants = P
@@ -15,10 +20,23 @@ local function Allowed(id)
     return id ~= "nameplates" and spec ~= nil and not spec.automation
 end
 
--- The rule of a setting the variant layer may hold, or nil.
-local function VariantRule(id, key)
+-- The rule of a setting the synthetic root carries (copies, exports, undo,
+-- sync), or nil.
+local function SnapshotRule(id, key)
     local rule = Allowed(id) and Suite.SuiteCatalog[id].rules[key]
     if rule and not rule.automation then return rule end
+end
+
+local function ProfileData(id, key)
+    local spec = Suite.SuiteCatalog[id]
+    local rule = spec and spec.rules[key]
+    return rule ~= nil and rule.profileData == true
+end
+
+-- The rule of a setting the variant layer may hold, or nil.
+local function VariantRule(id, key)
+    local rule = SnapshotRule(id, key)
+    if rule and not rule.profileData then return rule end
 end
 
 local function FrameProfile(name)
@@ -53,7 +71,7 @@ function P.VariantKeys(id)
     local keys, name = {}, Suite.Database.GetActiveProfileName()
     if name ~= Suite.HostBridge.ActiveFrameProfileName() then return keys end
     SuitePatches(FrameProfile(name), function(path)
-        if path[2] == id and type(path[3]) == "string" then keys[path[3]] = true end
+        if path[2] == id and type(path[3]) == "string" and VariantRule(id, path[3]) then keys[path[3]] = true end
     end)
     return keys
 end
@@ -135,11 +153,25 @@ local function Resolve(name, create)
 end
 
 -- A patch outside the variant layer is invalid, so a shared variant that
--- names an automation setting is refused before it can be stored.
+-- names an automation setting is refused before it can be stored. Profile
+-- data an older build recorded is not refused: DropProfileData takes it out
+-- of the patch, and Allows keeps it from applying where the core has no
+-- patch translators.
 local function Check(path, value, remove)
-    local rule = #path == 3 and VariantRule(path[2], path[3])
+    local rule = #path == 3 and SnapshotRule(path[2], path[3])
     if not rule then return nil, false end
     if remove then return rule.default, true end
+    local checked = Suite.Suite.CheckProfileValue(rule, value)
+    return checked, checked ~= nil
+end
+
+-- The checked value of a field this client's variants may set (VariantRule)
+-- and whether it is one: ProfileClients.lua puts only such fields back into
+-- variants.
+function P.VariantFieldValue(id, key, value, remove)
+    local rule = type(key) == "string" and VariantRule(id, key)
+    if not rule then return nil, false end
+    if remove then return nil, true end
     local checked = Suite.Suite.CheckProfileValue(rule, value)
     return checked, checked ~= nil
 end
@@ -170,10 +202,13 @@ Snapshot = function(source)
 end
 
 -- Automation settings are not part of the snapshot, so a restore leaves them
--- as they are.
+-- as they are. The end of a recording (saved or cancelled) restores the
+-- profile from before it; profile data changed meanwhile stays a change of
+-- the profile, as no variant can hold it.
 local function Restore(target, source)
     local prepared, valid = Snapshot(source)
     if not valid then return false, "invalid setting value" end
+    local recording = V ~= nil and V.IsRecording() == true
     for id, values in pairs(prepared) do
         local config = target[id]
         if type(config) ~= "table" then
@@ -181,11 +216,63 @@ local function Restore(target, source)
             target[id] = config
         end
         for key in pairs(config) do
-            if VariantRule(id, key) and values[key] == nil then config[key] = nil end
+            if SnapshotRule(id, key) and values[key] == nil and not (recording and ProfileData(id, key)) then
+                config[key] = nil
+            end
         end
-        for key, value in pairs(values) do config[key] = value end
+        for key, value in pairs(values) do
+            if not (recording and ProfileData(id, key)) then config[key] = value end
+        end
     end
     return true
+end
+
+-- Dark Raid's dungeon variant (up to 0.1.35) laid a whole listsData over the
+-- profile for Havoc's seven dungeon utilities. Lists that hold every bar the
+-- factory fills (Suite.DarkRaidDungeonLists, variantLists format) become
+-- just those bars; any other recorded lists are dropped.
+local function SameList(a, b)
+    if type(a) ~= "table" or #a ~= #b then return false end
+    for i = 1, #b do
+        if a[i] ~= b[i] then return false end
+    end
+    return true
+end
+local function FactoryBars(value)
+    local factory, codec = Suite.DarkRaidDungeonLists, Suite.CDM and Suite.CDM.Codec
+    if type(value) ~= "string" or type(factory) ~= "string" or not codec then return nil end
+    local old, bars = codec.DecodeLists(value).specs, codec.DecodeLists(factory).specs
+    if next(bars) == nil then return nil end
+    for spec, slots in pairs(bars) do
+        for slot, list in pairs(slots) do
+            if not SameList(old[spec] and old[spec][slot], list) then return nil end
+        end
+    end
+    return factory
+end
+
+-- Profile data in a variant of an older build leaves the patch whenever the
+-- core validates it: when a variant is applied, saved, imported or recorded.
+-- The applied schema replaces the stored one, so stored variants lose it too.
+local function DropProfileData(patch)
+    local kept, bars, filled
+    for i = 1, #patch do
+        local path = patch[i].path
+        local suite = #path == 3 and path[1] == "suiteModules"
+        local data = suite and ProfileData(path[2], path[3])
+        if data and path[2] == "cooldownManager" and path[3] == "listsData" then bars = FactoryBars(patch[i].value) end
+        if suite and path[2] == "cooldownManager" and path[3] == "variantLists" then filled = true end
+        if data and not kept then
+            kept = {}
+            for j = 1, i - 1 do kept[j] = patch[j] end
+        elseif kept and not data then
+            kept[#kept + 1] = patch[i]
+        end
+    end
+    if bars and not filled then
+        kept[#kept + 1] = { path = { "suiteModules", "cooldownManager", "variantLists" }, value = bars, remove = false }
+    end
+    return kept or patch
 end
 
 local function Apply(reason)
@@ -223,6 +310,7 @@ function P.Register()
         Restore = Restore,
         Apply = Apply,
     })
+    if F.RegisterPatchTranslator then F.RegisterPatchTranslator(DropProfileData) end
     for _, id in ipairs(Suite.SuiteOrder) do
         if Allowed(id) then
             local title = Suite.SuiteCatalog[id].title

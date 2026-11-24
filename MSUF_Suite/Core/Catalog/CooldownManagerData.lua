@@ -335,6 +335,20 @@ end
 function Codec.DecodeLists(text) return Decode(text, CDM.CleanLists) end
 function Codec.DecodeSpells(text) return Decode(text, CDM.CleanSpells) end
 function Codec.DecodePositions(text) return Decode(text, CDM.CleanPositions) end
+-- Bars a profile variant fills (variantLists, in the lists format): a bar it
+-- names for a specialization takes that list as its complete contents; every
+-- other bar and specialization keeps the profile's. Keyed by specialization,
+-- so Retail and WoW Forever never reach each other's bars. lists: a decoded
+-- copy the caller owns.
+function CDM.VariantLists(lists, text)
+    if type(text) ~= "string" or text == "" then return lists end
+    for spec, slots in pairs(Codec.DecodeLists(text).specs) do
+        local own, replace = lists.specs[spec] or {}, lists.replace[spec] or {}
+        lists.specs[spec], lists.replace[spec] = own, replace
+        for slot, list in pairs(slots) do own[slot], replace[slot] = list, true end
+    end
+    return lists
+end
 local function Empty(tbl)
     for _, value in pairs(tbl) do
         if type(value) ~= "table" or next(value) ~= nil then return false end

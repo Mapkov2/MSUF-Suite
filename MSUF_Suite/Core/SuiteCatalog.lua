@@ -224,6 +224,17 @@ end
 -- [module id] = { automation rule keys }, filled by FinalizeCatalog.
 local automationRules = {}
 
+-- Profile data: one stored value for a whole collection (a module's encoded
+-- lists or its layouts for every specialization) or the stored settings' own
+-- bookkeeping (first-run captures, defaults versions). A profile variant would
+-- keep all of it as it was when the variant was recorded, so variants never
+-- hold these (ProfileVariants.lua). Copies, exports, undo and sync carry them
+-- like every other setting.
+function Build.ProfileData(rule)
+    rule.profileData = true
+    return rule
+end
+
 local function CollectAutomation(id)
     local spec = catalog[id]
     if spec.automation then spec.rules.enabled.automation = true end

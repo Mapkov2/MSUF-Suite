@@ -34,6 +34,14 @@ Page.Button, Page.Label, Page.ButtonText = Button, Label, ButtonText
 -- A button that opens a list carries Menu2's dropdown chevron; its caption
 -- ends before the chevron.
 local CHEVRON = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\msuf_dropdown_chevron_down.tga"
+-- These compact list buttons sit in 20 px popover rows; a caption cut short
+-- there shows in full on hover. Buttons with their own tooltip hook it later.
+local function ChevronCaptionEnter(self)
+    local label = HM.GetControlLabel(self)
+    if not (label and label.IsTruncated and label:IsTruncated()) then return end
+    Page.ShowTip(self, label:GetText())
+end
+local function ChevronCaptionLeave(self) Page.HideTip(self) end
 function Page.Chevron(button)
     local chevron = button:CreateTexture(nil, "OVERLAY")
     chevron:SetTexture(CHEVRON)
@@ -46,6 +54,9 @@ function Page.Chevron(button)
         label:ClearAllPoints()
         label:SetPoint("LEFT", button, "LEFT", 4, 0)
         label:SetPoint("RIGHT", chevron, "LEFT", -2, 0)
+        if label.SetWordWrap then label:SetWordWrap(false) end
+        button:HookScript("OnEnter", ChevronCaptionEnter)
+        button:HookScript("OnLeave", ChevronCaptionLeave)
     end
     button.chevron = chevron
     return button

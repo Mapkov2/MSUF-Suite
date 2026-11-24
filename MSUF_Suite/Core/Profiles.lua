@@ -311,7 +311,7 @@ end
 
 function Lifecycle.reset(source, _, skin)
     if DB.HasProfile(source) then
-        local profile = DB.CreateFactoryProfile()
+        local profile = Suite.ProfileClients.Carry(DB.CreateFactoryProfile(), source)
         Suite.Suite.Normalize(profile)
         DB.StoreProfile(source, profile)
         if DB.GetActiveProfileName() == source then DB.Activate(source) end
@@ -689,7 +689,7 @@ function P.InstallFactory(name, frames, modules, skinText, lookName, finish, opt
     if not frames then return false, "Factory frame profile unavailable" end
     local profile, why = IO.PrepareTable(modules, false)
     if not profile then return false, why end
-    DB.PrepareFactory(profile)
+    Suite.ProfileClients.Carry(DB.PrepareFactory(profile))
     local skin = SkinEngine()
     local skinProfile
     if skin then
@@ -725,7 +725,7 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName, finish, option
     end
     local profile, reason = IO.PrepareTable(modules, false)
     if not profile then return false, reason end
-    DB.PrepareFactory(profile)
+    Suite.ProfileClients.Carry(DB.PrepareFactory(profile), name)
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     local skin, skinProfile
     if skinEnabled then

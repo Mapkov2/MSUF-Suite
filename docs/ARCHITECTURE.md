@@ -16,7 +16,22 @@ selected locale is supplied by one locale companion addon.
 - `Core/Profiles.lua`, `ProfileIO.lua` and `ProfileVariants.lua` own profile
   mutation, transfer and overlays. A rejected mutation must preserve the active
   effective configuration, and history restore must update the runtime as well
-  as the saved profile.
+  as the saved profile. Profile variants never hold profile data
+  (`Build.ProfileData`: whole lists, layouts by specialization, bookkeeping);
+  a cooldown manager variant fills single bars through `variantLists`, keyed
+  by specialization so Retail and WoW Forever stay apart.
+- `Core/ProfileClients.lua` keeps Retail's and WoW Forever's data apart in
+  profile strings: a profile holds this client's cooldown manager and parks
+  the other client's (`clientParked`, with what the client's MSUF profile
+  variants set of it), strings name their client and carry
+  the exporting character's action bars, and an import takes a client's part
+  from the string, else from the profile, else the defaults. Action bars are
+  written only after the player agreed (`Snapshots.lua` AskProfileSetup): one
+  question for the key bindings of the string's exporter, offered on either
+  client (the bars' key commands are the same in both games), and one for the
+  spells, offered only on the client they were saved on and only to the same
+  class and specialization. In MSUF's profile workbench they are one reviewed
+  value of the Suite snapshot.
 - `Core/HostBridge.lua` and `HostBridgeMenu.lua` provide the shared boundary for
   host settings and Menu2 services, including late Options loading. New callers
   belong here. Existing compatibility reads in platform, font and nameplate

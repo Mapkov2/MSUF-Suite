@@ -54,6 +54,7 @@ local runtime = {
     Finite = function(value) return type(value) == "number" and value == value and math.abs(value) < math.huge end,
     InCombat = function() return blocked == "combat" end,
     IsCombatLocked = function() return blocked == "combat" end,
+    HideQuestion = function() end,
 }
 suite.Suite = runtime
 local bar = { M = { active = true } }
@@ -76,7 +77,12 @@ function native.AllowedCommand(command)
     return command == "ACTIONBUTTON1" or command == "ACTIONBUTTON2" or command == "ACTIONBUTTON3"
 end
 function native.ValidKey(key) return key == "1" or key == "2" or key == "CTRL-1" end
-function native.CaptureKeys() return Copy(active.keys), active.scope end
+-- keysUnreadable: the binding set is neither the account's nor the character's.
+local keysUnreadable
+function native.CaptureKeys()
+    if keysUnreadable then return nil, "unavailable" end
+    return Copy(active.keys), active.scope
+end
 function native.Capture()
     assert(not blocked, "capture ran while blocked")
     Called("capture")
@@ -119,6 +125,8 @@ local function ApplyChanges(entries, current, field)
     return Count(entries)
 end
 
+-- applyReason: what stopped the apply part-way (the report's reason).
+local applyReason
 function native.Apply(plan)
     assert(not blocked, "apply ran while blocked")
     Called("apply")
@@ -128,7 +136,7 @@ function native.Apply(plan)
     return {
         slots = ApplyChanges(backup.slots, active.slots, "after") + (independentCount or 0),
         keys = ApplyChanges(backup.keys, active.keys, "after"),
-        skippedSlots = plan.skippedSlots, skippedKeys = plan.skippedKeys, backup = Copy(backup),
+        skippedSlots = plan.skippedSlots, skippedKeys = plan.skippedKeys, backup = Copy(backup), reason = applyReason,
     }
 end
 
@@ -451,32 +459,328 @@ assert(not api.Queue(conflictingAccountPacket, { [accountClass.WARRIOR] = "Anoth
     "a second account-wide key package overlapped an already queued shared map")
 assert(#api.Status().pending == 1, "rejected shared binding job changed the queue")
 
--- Profile strings carry the action bar key map. An import writes it into the
--- binding set the character uses now, lists it as a result and can be undone.
+-- Profile strings carry the exporting character's action bars. An import
+-- offers them (RootDB.actionBarOffer, MSUF_Suite/Core/ProfileClients.lua)
+-- and nothing is written before the player agreed: one question for the key
+-- bindings (they come along from either WoW version, for any character),
+-- one for the spells (only for the class and specialization they came
+-- from). What was agreed to is one transfer to the current setup (listed,
+-- reported in chat, undoable); No leaves that part as it is.
+local questions, printed = {}, {}
+runtime.Confirm = function(key, data) questions[#questions + 1] = { key = key, data = data } end
+runtime.Print = function(text) printed[#printed + 1] = text end
+local hidden = 0
+runtime.HideQuestion = function(key)
+    for index = #questions, 1, -1 do
+        if questions[index].key == key then
+            table.remove(questions, index)
+            hidden = hidden + 1
+        end
+    end
+end
+-- Callbacks for the next frame; NextFrame runs them.
+local timers = {}
+C_Timer = { After = function(seconds, callback)
+    assert(seconds == 0 and type(callback) == "function", "only next-frame timers are expected here")
+    timers[#timers + 1] = callback
+end }
+local function NextFrame()
+    local due = timers
+    timers = {}
+    for _, callback in ipairs(due) do callback() end
+end
+-- Answers the shown question; the next step follows a frame later, never
+-- from inside the answer (Blizzard would hide a dialog shown there).
+local function Answer(yes)
+    local question = table.remove(questions, 1)
+    assert(question, "no question was asked")
+    if yes then question.data.callback() else question.data.cancelCallback() end
+    assert(#questions == 0, "a question was shown from inside the answer of the one before")
+    NextFrame()
+end
+local function Printed(text)
+    local line = table.remove(printed, 1)
+    assert(line and line:find(text, 1, true), "expected a chat line with: " .. text .. ", got: " .. tostring(line))
+end
 local profileSource = Character("source-profile", "Profiled", "PRIEST", 258, "profile-source", 701)
 profileSource.keys = { ["1"] = "ACTIONBUTTON2", ["CTRL-1"] = "ACTIONBUTTON3" }
+profileSource.independentSlots = { [2] = 705 }
 Login(profileSource, {})
-local carried = assert(api.ProfileKeys())
-assert(carried["1"] == "ACTIONBUTTON2" and carried["CTRL-1"] == "ACTIONBUTTON3", "the profile key map lost a key")
-local profileTarget = Character("dest-profile", "Keyed", "PRIEST", 258, "profile-target", 702, "account")
-Login(profileTarget, {})
-assert(not api.ImportProfileKeys({ ["1"] = "MOVEFORWARD" }), "an unrelated command entered the bindings")
-assert(not api.ImportProfileKeys({}), "an empty key map was applied")
-blocked = "combat"
-assert(not api.ImportProfileKeys(carried) and profileTarget.keys["1"] == "ACTIONBUTTON1", "keys were written in combat")
+local setup = assert(api.ProfileSetup())
+assert(setup.keys["1"] == "ACTIONBUTTON2" and setup.keys["CTRL-1"] == "ACTIONBUTTON3" and setup.slots[1] == 701
+    and setup.independentSlots[2] == 705 and setup.class == "PRIEST" and setup.spec == 258
+    and setup.label == "PRIEST build", "the profile setup lost a part")
+blocked = "cursor"
+local keysOnly = assert(api.ProfileSetup())
+assert(keysOnly.keys["1"] == "ACTIONBUTTON2" and keysOnly.slots == nil, "a blocked capture did not keep the keys alone")
 blocked = nil
 bar.M.active = false
-assert(not api.ImportProfileKeys(carried) and profileTarget.keys["1"] == "ACTIONBUTTON1",
-    "keys were written while the Suite action bars were off")
+assert(api.ProfileSetup() == nil and api.AskProfileSetup() == false,
+    "the profile setup was read or asked while the Suite action bars were off")
 bar.M.active = true
-assert(api.ImportProfileKeys(carried), "a character-scoped key map did not reach an account-scoped target")
-assert(profileTarget.keys["1"] == "ACTIONBUTTON2" and profileTarget.keys["CTRL-1"] == "ACTIONBUTTON3",
-    "the imported profile keys were not applied")
+
+local thisClient = suite.Client.isForever and "forever" or "retail"
+local db = {}
+local function Offer(value, guid, client)
+    db.actionBarOffer = { v = 1, client = client or thisClient, guid = guid, setup = Copy(value) }
+    return db.actionBarOffer
+end
+local profileTarget = Character("dest-profile", "Keyed", "PRIEST", 258, "profile-target", 702, "account")
+profileTarget.independentSlots = {}
+local function Untouched()
+    return profileTarget.slots[1] == 702 and profileTarget.independentSlots[2] == nil
+        and profileTarget.keys["1"] == "ACTIONBUTTON1" and profileTarget.keys["CTRL-1"] == nil
+end
+Login(profileTarget, db)
+
+-- Both parts, both agreed: the key bindings are asked first, then the
+-- spells; nothing is written or queued before the last answer.
+Offer(setup, "dest-profile")
+assert(api.AskProfileSetup() and #questions == 1 and questions[1].key == "actionbars:profile-import",
+    "the import did not ask about its action bars")
+local question = questions[1].data.text_arg1
+assert(question:find("includes 2 action bar key bindings", 1, true) and questions[1].data.text == "%s"
+    and not question:find("spells", 1, true), "the first question is not the key binding question: " .. question)
+assert(question:find("account-wide key bindings", 1, true), "the question hid that the key bindings are account-wide")
+local applies = calls.apply or 0
+Event()
+assert(#questions == 1, "the same offer was asked twice in one session")
+Answer(true)
+assert(#questions == 1 and Untouched() and #api.Status().pending == 0 and db.actionBarOffer ~= nil,
+    "the key binding answer wrote or queued before the spells were answered")
+question = questions[1].data.text_arg1
+assert(question:find("action bar spells of PRIEST build: 2 spells", 1, true)
+    and not question:find("key bindings", 1, true), "the second question is not the spell question: " .. question)
+blocked = "combat"
+Answer(true)
+assert(db.actionBarOffer == nil and #api.Status().pending == 1 and Untouched() and (calls.apply or 0) == applies
+    and #printed == 0, "the agreed action bars were written in combat or not queued")
+blocked = nil
+Event()
+assert(profileTarget.slots[1] == 701 and profileTarget.independentSlots[2] == 705
+    and profileTarget.keys["1"] == "ACTIONBUTTON2" and profileTarget.keys["CTRL-1"] == "ACTIONBUTTON3"
+    and #api.Status().pending == 0, "the agreed action bars were not applied after combat")
+Printed("Profile action bars applied: 2 key bindings and 2 spells changed, 0 left as they were.")
 local status = api.Status()
-assert(status.results[1].keys == 2 and status.results[1].name == "Keyed" and status.canRestore,
-    "a profile key import was not listed or cannot be undone")
-assert(api.Restore() and profileTarget.keys["1"] == "ACTIONBUTTON1" and profileTarget.keys["CTRL-1"] == nil,
-    "undo did not restore the keys from before the profile import")
+assert(status.results[1].label == "Profile import" and status.results[1].name == "Keyed" and status.canRestore,
+    "the profile import was not listed or cannot be undone")
+assert(api.Restore() and Untouched(), "undo did not restore the bars from before the profile import")
+
+-- With key bindings, without spells; and the other way around.
+Offer(setup, "dest-profile")
+assert(api.AskProfileSetup())
+Answer(true)
+Answer(false)
+Event()
+assert(db.actionBarOffer == nil and profileTarget.keys["1"] == "ACTIONBUTTON2" and profileTarget.keys["CTRL-1"] == "ACTIONBUTTON3"
+    and profileTarget.slots[1] == 702 and profileTarget.independentSlots[2] == nil,
+    "key bindings without spells did not apply the keys alone")
+Printed("Profile action bars applied: 2 key bindings and 0 spells changed")
+assert(api.Restore() and Untouched())
+Offer(setup, "dest-profile")
+assert(api.AskProfileSetup())
+Answer(false)
+Answer(true)
+Event()
+assert(db.actionBarOffer == nil and profileTarget.slots[1] == 701 and profileTarget.independentSlots[2] == 705
+    and profileTarget.keys["1"] == "ACTIONBUTTON1" and profileTarget.keys["CTRL-1"] == nil,
+    "spells without key bindings did not apply the spells alone")
+Printed("Profile action bars applied: 0 key bindings and 2 spells changed")
+assert(api.Restore() and Untouched())
+
+-- No to everything drops the offer; nothing changes and nothing is said.
+Offer(setup, "dest-profile")
+assert(api.AskProfileSetup())
+Answer(false)
+Answer(false)
+Event()
+assert(db.actionBarOffer == nil and #questions == 0 and Untouched() and #api.Status().pending == 0 and #printed == 0,
+    "No still applied, kept the offer or printed")
+-- Also while nothing could be applied anyway: No needs no character.
+Offer(setup, "dest-profile")
+assert(api.AskProfileSetup())
+Answer(false)
+bar.M.active = false
+Answer(false)
+bar.M.active = true
+assert(db.actionBarOffer == nil and #printed == 0, "No kept the offer or printed while the bars could not be read")
+
+-- Key bindings of the other WoW version, or of another class, come without
+-- spells: one question, and the keys apply.
+Offer({ keys = setup.keys }, "dest-profile")
+assert(api.AskProfileSetup() and #questions == 1 and questions[1].data.text_arg1:find("2 action bar key bindings", 1, true))
+Answer(true)
+assert(#questions == 0, "key bindings without spells asked a second question")
+Event()
+assert(profileTarget.keys["1"] == "ACTIONBUTTON2" and profileTarget.slots[1] == 702, "the key bindings alone were not applied")
+Printed("Profile action bars applied: 2 key bindings and 0 spells changed")
+assert(api.Restore() and Untouched())
+
+-- An apply that stopped part-way says so instead of counting.
+Offer({ keys = setup.keys }, "dest-profile")
+assert(api.AskProfileSetup())
+applyReason = "combat"
+Answer(true)
+Event()
+applyReason = nil
+Printed("were not applied completely")
+assert(api.Restore() and Untouched())
+
+-- A key, command or slot this build does not know is left out; the rest
+-- is offered and applied.
+local mixed = Copy(setup)
+mixed.keys["F13"], mixed.keys["2"] = "ACTIONBUTTON1", "MOVEFORWARD"
+mixed.slots[999] = 5
+Offer(mixed, "dest-profile")
+assert(api.AskProfileSetup() and questions[1].data.text_arg1:find("includes 2 action bar key bindings", 1, true),
+    "an unknown key or command dropped the whole key map or was counted")
+Answer(true)
+assert(questions[1].data.text_arg1:find(": 2 spells", 1, true), "an unknown slot dropped the spells or was counted")
+Answer(true)
+Event()
+assert(profileTarget.keys["1"] == "ACTIONBUTTON2" and profileTarget.keys["F13"] == nil and profileTarget.keys["2"] == nil
+    and profileTarget.slots[1] == 701 and profileTarget.slots[999] == nil, "an unknown key, command or slot was written")
+table.remove(printed, 1)
+assert(api.Restore() and Untouched())
+
+-- Turning the Suite action bars off closes the question unanswered; the
+-- offer waits and the next start asks again from the first question. An
+-- offer whose character could not be read is for the first character asked.
+Offer(setup, nil)
+assert(api.AskProfileSetup() and #questions == 1 and db.actionBarOffer.guid == "dest-profile",
+    "an offer without a character was not bound to the one asked")
+local open = questions[1]
+bar.StopSnapshots()
+assert(#questions == 0 and hidden == 1 and db.actionBarOffer ~= nil, "stopping did not close the question or dropped the offer")
+-- An answer that was already on its way when the bars stopped asks nothing more.
+open.data.callback()
+NextFrame()
+assert(#questions == 0 and db.actionBarOffer ~= nil and #api.Status().pending == 0, "a stopped offer went on asking or queued")
+Login(profileTarget, db)
+assert(#questions == 1 and questions[1].data.text_arg1:find("key bindings", 1, true),
+    "the offer was not asked again from its first question after a restart")
+-- Agreeing while it cannot apply keeps the offer and says so.
+Answer(true)
+bar.M.active = false
+Answer(true)
+bar.M.active = true
+assert(db.actionBarOffer ~= nil and #api.Status().pending == 0, "an answer that could not apply dropped the offer or queued")
+Printed("asked again after the next reload")
+-- So does agreeing while the key binding set cannot be read.
+assert(api.AskProfileSetup() and #questions == 1)
+Answer(true)
+keysUnreadable = true
+Answer(true)
+keysUnreadable = nil
+assert(db.actionBarOffer ~= nil and #api.Status().pending == 0, "an answer without a readable key binding set queued a transfer")
+Printed("asked again after the next reload")
+-- Agreeing while it cannot be queued keeps the offer and the earlier import
+-- that still waits: another character's account-wide key bindings are pending.
+local spellsOnly = Copy(setup)
+spellsOnly.keys = {}
+blocked = "combat"
+Offer(spellsOnly, "dest-profile")
+assert(api.AskProfileSetup() and #questions == 1 and questions[1].data.text_arg1:find("spells", 1, true))
+Answer(true)
+assert(db.actionBarOffer == nil and #api.Status().pending == 1, "the spells-only import was not queued")
+assert(api.Queue(accountPacket, { [accountClass.PRIEST] = "Waitingpriest" }, false, true))
+local waiting = Offer(setup, "dest-profile")
+assert(api.AskProfileSetup())
+Answer(true)
+Answer(true)
+local kept = api.Status().pending
+assert(db.actionBarOffer == waiting and #kept == 2, "an import that could not be queued dropped the offer or the earlier import")
+Printed("could not be queued")
+for _, row in ipairs(kept) do assert(api.Cancel(row.id)) end
+blocked = nil
+db.actionBarOffer = nil
+Event()
+assert(Untouched() and #printed == 0, "a cancelled import still applied")
+
+-- Spells agreed to after the specialization changed under the open question
+-- no longer fit: nothing is queued (not even the keys), the offer waits and
+-- the next session asks again.
+local respec = Offer(setup, "dest-profile")
+assert(api.AskProfileSetup())
+Answer(true)
+assert(#questions == 1 and questions[1].data.text_arg1:find("spells", 1, true), "the spells question did not follow")
+profileTarget.identity.spec = 257
+Answer(true)
+Event()
+assert(#api.Status().pending == 0 and Untouched() and db.actionBarOffer == respec,
+    "spells agreed to before a specialization change were dropped or the keys were queued alone")
+Printed("could not be applied now")
+assert(#questions == 0 and #printed == 0, "the offer was asked again in the same session")
+profileTarget.identity.spec = 258
+Login(profileTarget, db)
+assert(#questions == 1 and questions[1].data.text_arg1:find("key bindings", 1, true),
+    "the waiting offer was not asked again after a reload")
+Answer(true)
+Answer(true)
+Event()
+assert(db.actionBarOffer == nil and profileTarget.slots[1] == 701 and profileTarget.independentSlots[2] == 705
+    and profileTarget.keys["1"] == "ACTIONBUTTON2" and profileTarget.keys["CTRL-1"] == "ACTIONBUTTON3",
+    "the offer asked again after a reload did not apply both parts")
+Printed("Profile action bars applied: 2 key bindings and 2 spells changed")
+assert(api.Restore() and Untouched())
+
+-- An unanswered question comes back after a reload; a newer import replaces
+-- an offer (answers to the old one count for nothing), and a newer agreed
+-- import replaces a transfer that still waits.
+local first = Offer(setup, "dest-profile")
+Login(profileTarget, db)
+assert(#questions == 1, "the reload did not ask again")
+local stale = table.remove(questions, 1)
+local newer = Copy(setup)
+newer.slots[1] = 703
+Offer(newer, "dest-profile")
+stale.data.callback()
+NextFrame()
+assert(db.actionBarOffer ~= first and db.actionBarOffer ~= nil and #api.Status().pending == 0 and #questions == 0,
+    "the answer to a replaced offer was applied or asked on")
+assert(api.AskProfileSetup())
+blocked = "combat"
+Answer(true)
+Answer(true)
+Offer(setup, "dest-profile")
+assert(api.AskProfileSetup())
+Answer(true)
+Answer(true)
+assert(#api.Status().pending == 1, "a newer profile import did not replace the waiting one")
+blocked = nil
+Event()
+assert(profileTarget.slots[1] == 701, "the newer profile import did not win")
+table.remove(printed, 1)
+assert(api.Restore() and Untouched())
+
+-- Another class gets the key bindings only, another character nothing, and
+-- an offer of the other WoW version's saved variables is dropped.
+local otherClass = Character("dest-warrior-profile", "Keyedwarrior", "WARRIOR", 71, "warrior-target", 902, "account")
+otherClass.independentSlots = {}
+Login(otherClass, db)
+Offer(setup, "dest-warrior-profile")
+assert(api.AskProfileSetup() and #questions == 1)
+assert(questions[1].data.text_arg1:find("2 action bar key bindings", 1, true), "another class was not asked about the key bindings")
+Answer(true)
+assert(#questions == 0, "another class was offered the spells")
+Event()
+assert(otherClass.slots[1] == 902 and otherClass.keys["1"] == "ACTIONBUTTON2", "another class got the spells or lost the keys")
+table.remove(printed, 1)
+assert(api.Restore() and otherClass.keys["1"] == "ACTIONBUTTON1")
+Offer(setup, "dest-profile")
+assert(api.AskProfileSetup() and #questions == 0 and db.actionBarOffer ~= nil, "another character was asked")
+-- It waits for that character without scheduling work on every event,
+-- also after a reload.
+Login(otherClass, db)
+if bar.snapshotReady then bar.snapshotReady() end
+assert(#questions == 0 and next(jobs) == nil, "an offer for another character kept scheduling work")
+Offer(setup, "dest-warrior-profile", suite.Client.isForever and "retail" or "forever")
+assert(api.AskProfileSetup() and #questions == 0 and db.actionBarOffer == nil,
+    "an offer of the other WoW version was kept or asked")
+Offer({ keys = { ["1"] = "MOVEFORWARD" } }, "dest-warrior-profile")
+assert(api.AskProfileSetup() and #questions == 0 and db.actionBarOffer == nil and otherClass.keys["1"] == "ACTIONBUTTON1",
+    "an offer without a valid key or spell was asked or applied")
+assert(#printed == 0, "an ordinary answer printed a message: " .. tostring(printed[1]))
 
 if flavor == "Forever" then
     local source = Character("source-dual", "Dual", "DRUID", 105, "group:1", 511)

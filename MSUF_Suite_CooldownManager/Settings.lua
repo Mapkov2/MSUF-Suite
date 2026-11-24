@@ -135,7 +135,7 @@ end
 ------------------------------------------------------------------ reading settings
 local hit = {}
 local seenHex = {}
-local lastLists, lastSpells
+local lastLists, lastSpells, lastVariant
 
 -- The countdown's warning stage, and its tenths and urgent stage
 -- (K.Countdown; a change of these drops the last duration text options,
@@ -375,12 +375,13 @@ end
 
 -- The data strings are decoded only when they changed. Per-spell choices
 -- reach cooldown entries through the behavior refresh and aura buttons and
--- overlays through a structural sync.
+-- overlays through a structural sync. The bars a profile variant fills
+-- (variantLists) replace the profile's own lists of those bars only.
 function Settings.DecodeData(config)
-    local lists, spells = config.listsData, config.spellsData
-    if lists ~= lastLists then
-        lastLists = lists
-        C.lists = CDM.Codec.DecodeLists(lists)
+    local lists, spells, variant = config.listsData, config.spellsData, config.variantLists
+    if lists ~= lastLists or variant ~= lastVariant then
+        lastLists, lastVariant = lists, variant
+        C.lists = CDM.VariantLists(CDM.Codec.DecodeLists(lists), variant)
         dirty.resolve = true
     end
     if spells ~= lastSpells then

@@ -177,6 +177,11 @@ B.Section(id, "data", "Data", {
     Number("defaultsVersion", "Defaults version", 0, 0, 1000),
     Bool("essOnViewer", "Essential bar x/y are an offset from Blizzard's bar", false),
     String("positionsData", "Bar layouts by specialization", "", 60000),
+    -- Bars a profile variant fills for one specialization (CDM.VariantLists).
+    String("variantLists", "Bar contents", "", 60000),
+    -- The other WoW version's cooldown manager, parked for profile strings
+    -- (ProfileClients.lua): Retail and WoW Forever keep their own.
+    String("clientParked", "Cooldown manager of the other WoW version", "", 200000),
 })
 -- Saved settings older than this are migrated once, because stored values
 -- never follow a changed default on their own. 1: every bar setting takes
@@ -188,7 +193,7 @@ B.Section(id, "data", "Data", {
 -- positionsData keeps for the other specializations as well.
 CDM.DEFAULTS_VERSION = 3
 CDM.DEFAULTS_KEEP = { enabled = true, raidEssentials = true, listsData = true, spellsData = true, captured = true, defaultsVersion = true,
-    essOnViewer = true, specPositions = true }
+    clientParked = true, essOnViewer = true, specPositions = true }
 
 ------------------------------------------------------------------ per-slot rules
 -- Defaults per slot: one centered stack (Essential, Utility under it, Buffs
@@ -441,9 +446,20 @@ end
 
 ------------------------------------------------------------------ presentation metadata
 local rules = NS.SuiteCatalog[id].rules
-for _, key in ipairs({ "listsData", "spellsData", "captured", "defaultsVersion", "essOnViewer", "positionsData" }) do
+for _, key in ipairs({ "listsData", "spellsData", "captured", "defaultsVersion", "essOnViewer", "positionsData", "variantLists",
+    "clientParked" }) do
     rules[key].hidden = true
 end
+-- Bar contents, per-spell choices and the layouts by specialization are one
+-- value each for every bar and specialization; captured and defaultsVersion
+-- are the stored settings' bookkeeping. None of them belongs to a profile
+-- variant (B.ProfileData): a variant fills single bars through variantLists.
+-- essOnViewer stays with the Essential bar's x/y, which a variant may hold.
+for _, key in ipairs({ "listsData", "spellsData", "positionsData", "captured", "defaultsVersion", "clientParked" }) do
+    B.ProfileData(rules[key])
+end
+-- The other WoW version's settings stay through a reset of this module.
+rules.clientParked.otherClient = true
 for _, slot in ipairs(CDM.SLOTS) do
     local k = CDM.KEYS[slot.key]
     local function Set(suffix, field, value) if k[suffix] then rules[k[suffix]][field] = value end end

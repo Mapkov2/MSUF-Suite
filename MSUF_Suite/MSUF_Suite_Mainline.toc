@@ -110,6 +110,7 @@ Core\NameplatePortableText.lua
 Core\GlossMaterial.lua
 Core\HostBridgeMenu.lua
 Core\NameplateProfiles.lua
+Core\ProfileClients.lua
 Core\ProfileIO.lua
 Core\InstallerLayout.lua
 Core\Profiles.lua

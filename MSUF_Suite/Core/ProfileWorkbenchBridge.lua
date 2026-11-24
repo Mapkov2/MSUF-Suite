@@ -209,7 +209,40 @@ local function ApplyWorkbenchSnapshot(snapshot, historyReason, source)
     return true
 end
 
+-- An import's action bars (ProfileClients.Offer) travel in its prepared
+-- snapshot as one encoded value: the workbench reviews every value of a
+-- snapshot as its own change, and the offer is one choice (unticked, the
+-- import offers nothing). Restore points never hold one.
+local OFFER = "importedActionBars"
+local function PackOffer(snapshot, setup)
+    local encode = IO.StorageCodec()
+    snapshot[OFFER] = setup and encode and encode({ v = 1, setup = setup }) or nil
+end
+
+local function UnpackOffer(snapshot)
+    local text = snapshot[OFFER]
+    local _, decode = IO.StorageCodec()
+    if type(text) ~= "string" or text:sub(1, 6) ~= "MSUF3:" or not decode then return nil end
+    local value = decode(text)
+    return type(value) == "table" and value.v == 1 and value.setup or nil
+end
+
+-- The workbench commits an import after its restore here and restores the
+-- point before it (another call here) when that commit fails: the import's
+-- action bars are offered one frame later, unless a restore came first.
+local offerWaiting
+local function OfferAfterCommit(setup)
+    local token = {}
+    offerWaiting = token
+    C_Timer.After(0, function()
+        if offerWaiting ~= token then return end
+        offerWaiting = nil
+        Suite.Dispatch(Suite.ProfileClients.Offer, setup)
+    end)
+end
+
 function P.RestoreWorkbenchSkin(snapshot, historyReason, source)
+    offerWaiting = nil
     -- Without its store the Suite captured nothing, the skin included: a
     -- point's parts wait in it, and a skin write here could not be undone.
     if not Suite.RootDB then
@@ -236,10 +269,15 @@ function P.RestoreWorkbenchSkin(snapshot, historyReason, source)
     IO.lastNameplateReport = nil
     local ran, ok, reason = Suite.Dispatch(Suite.Finish, ApplyWorkbenchSnapshot, snapshot, historyReason, source)
     if ran and ok then
-        if historyReason == nil then
-            IO.ReportNameplateImport()
-            -- Only a prepared import carries a key map (PrepareWorkbenchImport).
-            Suite.Dispatch(IO.ApplyActionBarKeys, snapshot.actionBarKeys, snapshot.actionBarKeysWanted)
+        if historyReason == nil then IO.ReportNameplateImport() end
+        -- Only a prepared import carries an offer (PrepareWorkbenchImport):
+        -- this client's action bars, applied once the player agrees. MSUF's
+        -- workbench passes true here (State/MSUF_ProfileWorkbench.lua passes
+        -- Fields.CopySnapshot's two results to Restore), its history a reason
+        -- text: a history step never offers.
+        if historyReason == nil or historyReason == true then
+            local setup = UnpackOffer(snapshot)
+            if setup then OfferAfterCommit(setup) end
         end
         return true
     end
@@ -256,8 +294,6 @@ local function PrepareWorkbenchImport(text)
     if not snapshot.suite then return false, "Missing suite profile" end
     snapshot.nameplateSharedExact, snapshot.nameplateSharedStored, snapshot.nameplateSharedPending = nil, nil, nil
     snapshot.hasNameplateSharedSnapshot = nil
-    -- The importer's own choice decides whether a carried key map applies.
-    snapshot.actionBarKeysWanted = IO.ActionBarKeysWanted()
     if text:match("^%s*MSUFS") then
         local bundle, reason = P.WorkbenchPrepareBundle(text)
         if not bundle then return false, reason end
@@ -265,7 +301,7 @@ local function PrepareWorkbenchImport(text)
         snapshot.suite, snapshot.nameplateCVars = bundle.profile.suite, bundle.profile.nameplateCVars
         snapshot.nameplateShared = bundle.profile.nameplateShared
         snapshot.present, snapshot.profile = bundle.provider.present, bundle.provider.profile
-        snapshot.actionBarKeys = bundle.actionBarKeys
+        PackOffer(snapshot, bundle.actionBarOffer)
         return { coreText = bundle.coreText, provider = snapshot }
     end
     if text:match("^%s*MSKIN1:") then
@@ -277,9 +313,9 @@ local function PrepareWorkbenchImport(text)
         snapshot.nameplateShared = nil
         return { provider = snapshot }
     end
-    local id, settings, reason, companion, nameplateCVars, nameplateShared, _, keys = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, companion, nameplateCVars, nameplateShared, _, offer = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
-    snapshot.actionBarKeys = keys
+    PackOffer(snapshot, offer)
     -- Use the same selected settings as the direct module import.
     IO.MergeModuleSettings(snapshot.suite.modules, id, settings, companion)
     snapshot.nameplateCVars, snapshot.nameplateShared = nameplateCVars, nameplateShared

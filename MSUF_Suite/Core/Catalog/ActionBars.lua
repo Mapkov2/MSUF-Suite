@@ -279,6 +279,9 @@ B.Section(id, "behavior", "Behavior", {
         "While the Suite action bars are on, exports carry the keys of bars 1 to 10, and an import replaces your action "
             .. "bar keys in the key binding set this character uses. Restore previous setup under Account transfer undoes it."),
     Bool("imported", "Blizzard layout imported", false),
+    -- The other WoW version's action bars from a profile string, parked
+    -- for the next export (ProfileClients.lua).
+    B.String("parkedSetup", "Action bars of the other WoW version", "", 100000),
 })
 
 -- Compact fallback when Blizzard has no layout to import. All bars start on
@@ -394,10 +397,14 @@ for _, prefix in ipairs({ "keybind", "macro", "count", "cooldown" }) do
     rules[prefix .. "FontOutline"].enableKey = prefix .. "FontOverride"
 end
 rules.imported.hidden = true
--- The key bindings travel with profile strings only while this is on
--- (ProfileIO.lua). The choice itself stays with this profile: no export or
--- import carries it.
+rules.parkedSetup.hidden = true
+B.ProfileData(rules.parkedSetup)
+rules.parkedSetup.otherClient = true
+-- Retired: profile strings always carry the action bars, and an import asks
+-- before it applies them (ProfileClients.lua). The choice stays with this
+-- profile, hidden, so older builds keep reading it.
 rules.profileKeybinds.personal = true
+rules.profileKeybinds.hidden = true
 rules.iconSkin.hidden = true
 rules.disableSkyridingPaging.hidden = NS.Client.isForever or nil
 -- The forms opt-out already covers Moonkin Form.
