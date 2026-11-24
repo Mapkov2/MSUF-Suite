@@ -76,6 +76,7 @@ local function Layer(state, health, rank)
     mask:SetTexture("Interface\\Buttons\\WHITE8X8", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE", "NEAREST")
     mask:SetHeight(SPAN)
     texture:AddMaskTexture(mask)
+    if state.slantMask then texture:AddMaskTexture(state.slantMask) end
     texture:Hide()
     return { texture = texture, mask = mask }
 end
@@ -129,6 +130,8 @@ end
 
 local function New(health)
     local state = { slots = {}, countSlots = {}, singles = {}, layers = {}, allCounts = {}, noneCounts = {} }
+    local slanted = private.SlantedHealth
+    if slanted then state.slantMask = slanted.FillMask(health) end
     -- Keep the large predicate slots out of Blizzard's pooled nameplate
     -- hierarchy, beside the plates. Only the small fill textures belong to
     -- the health bar.
@@ -184,11 +187,13 @@ local function PaintOpacity(state, alpha)
     for _, layer in ipairs(state.layers) do layer.texture:SetAlpha(alpha) end
 end
 
-local function MaskLayers(state, mask)
-    if state.slantMask == mask and not mask then return end
+function Colors.SetSlantMask(uf, mask)
+    local state = states[uf]
+    if not state or state.slantMask == mask then return end
+    local previous = state.slantMask
     for _, layers in ipairs({ state.layers, state.allCounts, state.noneCounts }) do
-        for _, layer in pairs(layers) do
-            layer.slantMask = Style.ReplaceSlantedMask(layer.texture, layer.slantMask, mask)
+        for _, layer in ipairs(layers) do
+            Style.ReplaceSlantedMask(layer.texture, previous, mask)
         end
     end
     state.slantMask = mask
@@ -341,13 +346,9 @@ function Colors.Apply(uf, unit, enemy)
     end
     local textures = private.Textures
     local path = textures and textures.focusFill and textures.HealthFill(uf) or plan.texture
-    local slanted = private.SlantedHealth
-    local mask = slanted and slanted.FillMask(health)
     if state.revision ~= revision or state.fill ~= fill then
         ConfigureState(state, health, path)
-        MaskLayers(state, mask)
     else
-        if state.slantMask ~= mask then MaskLayers(state, mask) end
         if state.path ~= path then RepaintTextures(state, path) end
         if state.active and state.unit == unit then return end
     end

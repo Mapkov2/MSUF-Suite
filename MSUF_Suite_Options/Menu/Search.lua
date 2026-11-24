@@ -318,12 +318,9 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
         AddWords(keywords, rule.searchSection)
         section = section and (section .. " > " .. Tr(rule.searchSection)) or Tr(rule.searchSection)
     end
-    -- Colors are edited from the section's color shortcut, not a control on
-    -- the page, so a color row leads to its section. Nameplate colors owned
-    -- by Fonts retain the setting identity for the cross-page resolver.
     local settingKey = "msufsuite." .. spec.id .. "." .. rule.key
-    local movedColor = kind == "color" and spec.id == "nameplates"
-        and P.NameplateFonts.TargetForSetting(settingKey) ~= nil
+    local movedColor = spec.id == "nameplates" and P.NameplateFonts.OwnsColor(rule)
+    if movedColor then section = Tr("Fonts") .. " > " .. Tr("Nameplates") .. " > " .. Tr("Text Colors") end
     local exact = movedColor or targetExact == true or kind ~= "color" and targetExact ~= false
     local controlId
     if exact and not template and (spec.id == "minimap" or P.OwnedTools[spec.id]

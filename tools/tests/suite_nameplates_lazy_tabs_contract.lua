@@ -164,6 +164,7 @@ P.AttachRuleColors = function(body, title, id, rules, ...)
     return AttachColors(body, title, id, rules, ...)
 end
 local links, statusActions, opacityActions, layoutTabs = {}, {}, {}, {}
+local textColorLinks = {}
 local indicatorChoices = {}
 local BindDropdownAt = M.BindDropdownAt
 M.BindDropdownAt = function(ctx, parent, label, x, y, values, width, get, set, ...)
@@ -175,6 +176,7 @@ end
 local RegisterControlMetadata = M.RegisterControlMetadata
 M.RegisterControlMetadata = function(widget, meta, label, ...)
     local id = meta.sectionId and meta.sectionId:match("^suite_nameplates_(%a+)$")
+    if label == "Text Colors" and (id == "enemyText" or id == "friendlyText") then textColorLinks[id] = widget end
     if id and (id:match("Basics$") or id:match("Style$")) and widget.buttons and widget.values then
         layoutTabs[id] = widget
     end
@@ -243,17 +245,46 @@ if M.RegisterBarsScope then
         "the texture link did not select the dedicated Nameplates scope")
     assert(env.MSUF_DB.general.hpPowerTextSelectedKey == nativeScope, "the link overwrote the unit-frame scope")
     assert(not bars.sections.suite_nameplate_gradients, "the separate gradient accordion is still visible")
-    local styleId = "opt_bars_suite_enemyStyle"
-    local style = assert(bars.sections[styleId], "Bars lacks hostile Nameplate Style")
-    local tabsId = P.Meta("opt_bars", "nameplates", "suite_enemyStyle.tabs", "action", styleId).controlId
-    P.HM.GetSectionEntry(style).SetOpenImmediate(true)
-    P.EnsureSectionContent(style)
-    local entry = assert(M.RuntimeControlCatalog.Get(tabsId), "Bars lacks Nameplate Style tabs")
-    local tabs = entry.widget
-    for index, entry in ipairs(tabs.values) do
-        if entry.value == "frame" then tabs.buttons[index]:Click() end
+    local slantedSection = assert(P.NameplateBarTextures.Target("enemySlantedHealth")).section
+    assert(bars.sections[slantedSection], "Bars lacks the dedicated Slanted Bars accordion")
+    if M.BarsSlantedProvider then
+        assert(slantedSection == "bars_slanted", "Nameplates still builds a separate Slanted Bars section")
     end
-    local slanted = assert(controlsBySection[styleId].enemySlantedHealth, "Bars lacks the slanted Nameplate health switch")
+    assert(Suite.HostBridge.OpenExactMenuSetting(M, "opt_bars", slantedSection, "msufsuite.nameplates.enemySlantedHealth"),
+        "exact targeting did not open the Slanted Bars accordion")
+    local controls = controlsBySection[slantedSection]
+    if slantedSection == "bars_slanted" then
+        local meta = P.Meta("opt_bars", "nameplates", "enemySlantedHealth", "setting", slantedSection)
+        local entry = assert(M.RuntimeControlCatalog.Get(meta.controlId), "shared Slanted Bars lacks the Nameplate switch")
+        controls = { enemySlantedHealth = entry.widget }
+        controlsBySection[slantedSection] = controls
+        assert(scopeBar:GetValue() == last.value, "the exact Nameplate search left the Unit Frame scope selected")
+        assert(scopeBar:SetValue("shared"))
+        assert(P.HM.GetSectionEntry(bars.sections[slantedSection]).outer:IsVisible(),
+            "the shared Slanted Bars section was hidden in the native scope")
+        assert(scopeBar:SetValue(nativeScope))
+        assert(scopeBar:SetValue(last.value))
+        local enabled = assert(M.RuntimeControlCatalog.Get(M.ControlMeta("opt_bars", "global", "slanted.enabled").controlId)).widget
+        if not enabled:GetChecked() then enabled:Click() end
+        local function SharedControl(path)
+            return assert(M.RuntimeControlCatalog.Get(M.ControlMeta("opt_bars", "global", "slanted." .. path).controlId)).widget
+        end
+        for _, path in ipairs({ "units", "groups", "class_resources", "power", "mouseover", "castbars" }) do
+            assert(SharedControl(path):IsVisible(), "Nameplates lost a control from the native Slanted Bars section")
+        end
+        local direction = SharedControl("direction")._msuf2ControlSchema
+        local previous = env.MSUF_DB.bars.slantedBarDirection
+        direction.set("LEFT_UP")
+        assert(direction.get() == "LEFT_UP" and P.Get("nameplates", "slantedDirection") == 5
+            and env.MSUF_DB.bars.slantedBarDirection == previous, "Nameplate cut direction wrote to the Shared profile")
+        direction.set("DEFAULT")
+        assert(P.Get("nameplates", "slantedDirection") == 1)
+        P.Set("nameplates", "enemySlantedHealth", false)
+        SharedControl("apply_preset"):Click()
+        assert(P.Get("nameplates", "enemySlantedHealth"), "the native preset skipped nameplates")
+        P.Set("nameplates", "enemySlantedHealth", false)
+    end
+    local slanted = assert(controls and controls.enemySlantedHealth, "Slanted Bars lacks the Nameplate switch")
     assert(slanted:IsVisible())
     local initialSlanted = P.Get("nameplates", "enemySlantedHealth")
     assert(P.Set("nameplates", "enemySlantedHealth", not initialSlanted))
@@ -298,7 +329,9 @@ if M.RegisterBarsScope then
     toggle.set(true)
     assert(healthTexture.get() == "Blizzard" and P.Get("nameplates", "powerGlossStrength") == 85,
         "turning the override back on lost the custom settings")
+    P.Set("nameplates", "enemySlantedHealth", true)
     assert(M.ResetPageToDefaults("opt_bars"), "nameplate page reset failed")
+    assert(not P.Get("nameplates", "enemySlantedHealth"), "the Nameplates Bars reset left Slanted on")
     assert(P.Get("nameplates", "nativeHealthFillTexture") == P.catalog.nameplates.rules.nativeHealthFillTexture.default
         and env.MSUF_DB.general.hpPowerTextSelectedKey == nativeScope, "page reset crossed scope ownership")
     assert(not P.Get("nameplates", "healthGradientEnabled") and P.Get("nameplates", "powerGradientStrength") == 45,
@@ -362,7 +395,7 @@ local cases={
     {'look','enemyStyle:blizzard'}, {'neutralStyleOutlineMode','neutralStyle:outline'},
     {'friendlyNpcStyleNativeHealthFillTexture','friendlyNpcStyle:textures'},
     {'enemyRangeAuto'}, {'neutralRangeAuto'}, {'friendlyRangeAuto'}, {'friendlyNpcRangeAuto'},
-    {'enemySlantedHealth','enemyStyle:frame'}, {'enemyTargetPatternTexture','enemyStyle:frame'},
+    {'enemySlantedHealth'}, {'enemyTargetPatternTexture','enemyStyle:frame'},
     {'neutralTargetPatternTexture','neutralStyle:frame'}, {'friendlyFocusPatternAlpha','friendlyStyle:frame'},
     {'friendlyNpcHoverPatternTexture','friendlyNpcStyle:frame'},
     {'castIconCombinedHeight','castbar:icon'}, {'castSeamLine','castbar:advanced'},
@@ -393,10 +426,35 @@ mw:RunTimers(1000)
 assert(not M.cache.suite_nameplates.sections.suite_nameplates_shared, "the Shared section was still created")
 assert(not records["msufsuite.nameplates.targetPatternTexture"], "the retired pattern appeared in search")
 local placements = {}
+local conditions
 for _, section in ipairs(P.NameplateSections) do
+    if section.key == "enemyVisibility" then conditions = section end
     for _, tab in ipairs(section.tabs or {}) do
         for _, key in ipairs(tab.keys or {}) do placements[key] = (placements[key] or 0) + 1 end
     end
+end
+assert(conditions and conditions.title == "Load Conditions" and not conditions.open
+    and conditions.scopes.enemy and not conditions.scopes.neutral and not conditions.scopes.friendly
+    and not conditions.scopes.friendlyNpc, "Enemy load conditions need their own collapsed section")
+assert(#conditions.keys == #P.Suite.NameplateExtensions.EnemyConditions, "unexpected settings in Load Conditions")
+for _, condition in ipairs(P.Suite.NameplateExtensions.EnemyConditions) do
+    local key = condition.key
+    local rule = assert(P.catalog.nameplates.rules[key])
+    assert(not placements[key] and rule.sectionTitle == conditions.title, key .. " is outside Load Conditions")
+    if P.catalog.nameplates.controlAvailable(rule) then
+        local target = assert(records["msufsuite.nameplates." .. key]).exactTarget
+        assert(target.sectionId == "suite_nameplates_enemyVisibility", key .. " search missed Load Conditions")
+    end
+end
+assert(placements.plateShowAll == 1 and placements.plateEnemyMinus == 1, "native display controls disappeared")
+local slantedTarget = P.NameplateBarTextures.Target("enemySlantedHealth")
+if slantedTarget then
+    local result = records["msufsuite.nameplates.enemySlantedHealth"]
+    assert(not placements.enemySlantedHealth and result.exactTarget.pageKey == "opt_bars"
+        and result.exactTarget.sectionId == slantedTarget.section,
+        "Slanted must have one control with a search result under Bars > Nameplates")
+else
+    assert(placements.enemySlantedHealth == 1, "the fallback host lost the Slanted switch")
 end
 assert(not placements.protectImport and not placements.nativeProfileMode and not records["msufsuite.nameplates.protectImport"])
 assert(not P.NameplatesWorkspace.Open("general"), "General remained in the type selector")
@@ -465,6 +523,87 @@ local function Open(case)
         assert(panels[case[2]] and panels[case[2]]:IsVisible(),'correct tab did not become visible: '..case[2])
         assert(built[case[2]]==1,'tab was rebuilt: '..case[2])
     end
+end
+local function SlantedLink()
+    if not slantedTarget or slantedTarget.section ~= "bars_slanted" then return end
+    assert(P.OpenNameplateSetting("enemyTargetPatternTexture"))
+    local meta = P.Meta("suite_nameplates", "nameplates", "link.enemySlantedHealth", "action", "suite_nameplates_enemyStyle")
+    local link = assert(M.RuntimeControlCatalog.Get(meta.controlId), "Nameplate Style lacks the Slanted Bars link").widget
+    assert(link:IsVisible())
+    link:Click()
+    assert(M.activeKey == "opt_bars" and M.SelectedBarsExtension() == "suite_nameplates")
+end
+local function RoundedLink()
+    if not M.BarsRoundedProvider then return end
+    local target = assert(P.NameplateBarTextures.Target("roundedHealth"), "Rounded Nameplates lacks a Bars target")
+    assert(target.section == "bars_rounded")
+    assert(not placements.roundedHealth, "the Nameplates menu built a second Rounded toggle")
+    assert(P.OpenNameplateSetting("enemyTargetPatternTexture"))
+    local linkMeta = P.Meta("suite_nameplates", "nameplates", "link.roundedHealth", "action", "suite_nameplates_enemyStyle")
+    local link = assert(M.RuntimeControlCatalog.Get(linkMeta.controlId), "Nameplate Style lacks a Rounded link").widget
+    assert(link:IsVisible())
+    link:Click()
+    assert(M.activeKey == "opt_bars" and M.SelectedBarsExtension() == "suite_nameplates")
+
+    local coreBars = env.MSUF_DB.bars
+    local rounded, slanted = coreBars.roundedFramesEnabled, coreBars.slantedBarsEnabled
+    coreBars.roundedFramesEnabled, coreBars.slantedBarsEnabled = true, false
+    local body = assert(M.cache.opt_bars.sections.bars_rounded)
+    local entry = assert(P.HM.GetSectionEntry(body))
+    assert(entry.outer:IsVisible())
+    local setting = P.Meta("opt_bars", "nameplates", "roundedHealth", "setting", target.section)
+    local toggle = assert(M.RuntimeControlCatalog.Get(setting.controlId), "the shared Rounded section lacks the Nameplates toggle").widget
+    assert(toggle:IsVisible())
+    controlsBySection[target.section] = { roundedHealth = toggle }
+    M.RequestRefresh(M.cache.opt_bars.ctx, "rounded-nameplate-test")
+    mw:RunTimers(1000)
+    if toggle:GetChecked() then toggle:Click() end
+    assert(not P.Get("nameplates", "roundedHealth"))
+    toggle:Click()
+    assert(P.Get("nameplates", "roundedHealth"), "the Rounded Nameplates switch did not update the existing profile")
+    assert(M.SelectBarsExtension(nil) and entry.outer:IsVisible() and toggle:IsVisible())
+    assert(Suite.HostBridge.OpenExactMenuSetting(M, "opt_bars", target.section, setting.settingKey))
+    assert(M.SelectedBarsExtension() == "suite_nameplates" and M.cache.opt_bars.sections.bars_rounded == body)
+    assert(M.ResetPageToDefaults("opt_bars"))
+    assert(not P.Get("nameplates", "roundedHealth"), "Bars Nameplates reset skipped Rounded")
+    coreBars.roundedFramesEnabled, coreBars.slantedBarsEnabled = rounded, slanted
+end
+local function CheckStyleColors()
+    if not P.W.OpenContextColors then return end
+    assert(M.SelectPage("suite_nameplates"))
+    local openColors = P.OpenRuleColors
+    for _, scope in ipairs({ "enemy", "neutral", "friendly", "friendlyNpc" }) do
+        assert(P.NameplatesWorkspace.Open(scope))
+        local section = "suite_nameplates_" .. scope .. "Style"
+        local body = assert(M.cache.suite_nameplates.sections[section])
+        P.HM.GetSectionEntry(body).SetOpenImmediate(true)
+        P.EnsureSectionContent(body)
+        local spec
+        for _, candidate in ipairs(P.NameplateSections) do
+            if candidate.key == scope .. "Style" then spec = candidate end
+        end
+        assert(spec and spec.select("frame"))
+        local meta = P.Meta("suite_nameplates", "nameplates", scope .. "Style.colors", "action", section)
+        local button = assert(M.RuntimeControlCatalog.Get(meta.controlId), "Style Colors has no direct link").widget
+        assert(button:IsVisible() and button:GetParent() == body, "Style Colors is hidden in the overflow")
+        local opened
+        P.OpenRuleColors = function(anchor, title, id, palette)
+            assert(anchor == button and title == "Colors" and id == "nameplates")
+            local expected = (scope == "enemy" or scope == "neutral") and "enemyBackdropColor" or "friendlyBackdropColor"
+            for _, rule in ipairs(palette) do if rule.key == expected then opened = true end end
+        end
+        button:Click()
+        P.OpenRuleColors = openColors
+        assert(opened, "the direct shortcut opened the wrong Nameplate palette")
+    end
+end
+SlantedLink()
+RoundedLink()
+CheckStyleColors()
+for _, scope in ipairs({ "neutral", "friendly" }) do
+    assert(P.NameplatesWorkspace.Open(scope))
+    Open({ "enemyHideInCombat" })
+    assert(P.NameplatesWorkspace.Kind() == "enemy", "Load Conditions search did not switch from " .. scope)
 end
 for _,case in ipairs(cases) do Open(case); Open(case) end
 
@@ -667,7 +806,14 @@ do
         if button.layerKey == "status" then chip = button break end
     end
     assert(chip and not preview.statusButton, "Status icons must be a preview layer")
-    Order("enemy", { "enemyBasics", "enemyStyle" })
+    Order("enemy", { "enemyBasics", "enemyVisibility", "enemyStyle" })
+    local priorCondition, priorWidth = P.Get("nameplates", "enemyHideInCombat"), P.Get("nameplates", "enemyHealthWidthDelta")
+    local look = P.Get("nameplates", "look")
+    assert(P.SetMany("nameplates", { enemyHideInCombat = true, enemyHealthWidthDelta = 22, look = look }))
+    assert(page.sections.suite_nameplates_enemyVisibility._msufSuiteSectionReset())
+    assert(not P.Get("nameplates", "enemyHideInCombat") and P.Get("nameplates", "enemyHealthWidthDelta") == 22,
+        "Load Conditions reset did not stay within its section")
+    assert(P.SetMany("nameplates", { enemyHideInCombat = priorCondition, enemyHealthWidthDelta = priorWidth, look = look }))
     assert(not page.sections.suite_nameplates_general and not page.sections.suite_nameplates_distance)
     local record = assert(records["msufsuite.nameplates.plateFadeDistance"])
     assert(record.exactTarget.sectionId == "suite_nameplates_enemyRange", "distance search missed Range Check")
@@ -723,8 +869,8 @@ do
         "friendlyNpcMarkers", "friendlyNpcRange", "friendlyNpcOpacity" })
     Order("neutral", { "neutralBasics", "neutralStyle", "auraWorkspace", "enemyText", "enemyPower", "castbar",
         "neutralMarkers", "neutralRange", "neutralOpacity" })
-    Order("enemy", { "enemyBasics", "enemyStyle", "auraWorkspace", "enemyText", "enemyPower", "classResources", "castbar",
-        "enemyMarkers", "enemyRange", "enemyOpacity" })
+    Order("enemy", { "enemyBasics", "enemyVisibility", "enemyStyle", "auraWorkspace", "enemyText", "enemyPower",
+        "classResources", "castbar", "enemyMarkers", "enemyRange", "enemyOpacity" })
     assert(not page.sections.suite_nameplates_enemy and not page.sections.suite_nameplates_friendly,
         "Nameplates still registers a Texture Layer accordion")
     assert(not records["msufsuite.nameplates.enemyFillTexture"], "retired fill texture appeared in search")
@@ -796,25 +942,8 @@ do
         return opened
     end
     local enemyColors, neutralColors = Colors("enemyStyle"), Colors("neutralStyle")
-    local record = assert(records["msufsuite.nameplates.enemyPowerTextColor"])
-    local opened, focused, exact = (M.Search._RoutingAPI or api).OpenSearchTarget(record.key,
-        record.label, record.label, record.anchor, record.route, record.exactTarget)
-    assert(opened and focused and exact and panels["enemyText:power"]:IsVisible(),
-        "Power Text color search missed the section actions")
-    local powerColors = Colors("enemyText", "power")
-    assert(powerColors.enemyPowerTextColor and not enemyColors.enemyPowerTextColor)
-    assert(P.NameplatesWorkspace.Open("neutral"))
-    local neutralNameColors = Colors("enemyText", "name")
-    assert(neutralNameColors.enemyNeutralColor and not neutralNameColors.enemyBossColor)
-    assert(P.NameplatesWorkspace.Open("friendlyNpc"))
-    local bridge = P.Suite.HostBridge
-    local getColors = bridge.NPCColors
-    bridge.NPCColors = function()
-        return { GetNPCColor = function() return .1, .8, .3 end, SetNPCColor = function() end }
-    end
-    local npcNameColors = Colors("friendlyText", "name")
-    bridge.NPCColors = getColors
-    assert(npcNameColors["colors.npc.color.friendly"], "Friendly NPC Color is missing from the Text section")
+    assert(not enemyColors.enemyPowerTextColor and not enemyColors.focusReminderColor,
+        "Style has a second editor for a text color")
     assert(enemyColors.enemyBorderColor and neutralColors.enemyBorderColor and enemyColors.enemyBossColor
         and enemyColors.enemyTargetColor and enemyColors.enemyCastIconBorderColor, "enemy style palette is incomplete")
     assert(not page.sections.suite_nameplates_auraColors, "DoT colors still have a standalone accordion")
@@ -822,7 +951,7 @@ do
         local colors = Colors(scope .. "Style", "frame")
         assert(colors.friendlyBackdropColor)
         for _, key in ipairs({ "questNeutralColor", "questHostileColor", "castHealthInterruptible", "castHealthLocked",
-            "focusReminderColor", "executePulseColor" }) do
+            "executePulseColor" }) do
             assert(enemyColors[key] and not colors[key], "Enemy color leaked into " .. scope .. ": " .. key)
         end
     end
@@ -841,8 +970,8 @@ do
             assert(not controlsBySection["suite_nameplates_" .. scope .. "Basics"][key], "centering remained in Basics")
             if scope ~= "friendly" then
                 local colorKey = scope .. "PlateNameTypeColor"
-                Open({ colorKey, side .. "Text:name" })
-                assert(P.NameplatesWorkspace.Kind() == scope, "NPC name color search opened the wrong type")
+                assert(not controlsBySection["suite_nameplates_" .. side .. "Text"][colorKey],
+                    "NPC name color still has a Text control")
                 assert(not controlsBySection["suite_nameplates_" .. scope .. "Basics"][colorKey],
                     "NPC name color remained in Basics")
                 local titleKey = scope .. "ExtraTextTitle"
@@ -854,11 +983,8 @@ do
             { "friendly", "friendlyNpc", "friendlyNameClassColor" } }) do
             local scope, alternative, key = unpack(case)
             assert(P.NameplatesWorkspace.Open(alternative))
-            Open({ key, scope .. "Text:name" })
-            local control = assert(controlsBySection["suite_nameplates_" .. scope .. "Text"][key])
-            assert(P.NameplatesWorkspace.Kind() == scope and control:IsVisible(), "class color search missed player Name settings")
+            assert(not controlsBySection["suite_nameplates_" .. scope .. "Text"][key], "class color remained in Text")
             assert(not controlsBySection["suite_nameplates_" .. scope .. "Basics"][key], "class color remained in Basics")
-            assert(P.NameplatesWorkspace.Open(alternative) and not control:IsVisible(), "class color is visible on NPC Name settings")
             local center = alternative .. "CenterName"
             local previous = config[key]
             local custom = scope == "enemy" and true or 3
@@ -1776,13 +1902,113 @@ do
             assert(P.HM.GetSectionEntry(M.cache.opt_fonts.sections[section]).open, "shortcut did not open " .. section)
         end
         Click("Name format", "fonts_name_shortening")
-        Click("Text Colors", "opt_fonts_nameplate_colors")
+        local colorSection = "fonts_name_power_colors"
+        local openColors, openPicker = P.W.OpenContextColors, M.Widgets.OpenColorContextPicker
+        local picker, opened
+        M.Widgets.OpenColorContextPicker = function() opened = true end
+        P.W.OpenContextColors = function(anchor, options, targets)
+            picker = targets
+            return openColors(anchor, options, targets)
+        end
+        local function Pick(spec, action, tab)
+            spec.select(tab)
+            picker, opened = nil, false
+            action:Click()
+            assert(M.activeKey == "suite_nameplates", "Text Colors left the Nameplates page")
+            assert(opened and picker and #picker == 1, "Text Colors did not open the common picker for the active tab")
+            return picker[1]
+        end
+        for _, scope in ipairs({ "enemy", "neutral", "friendly", "friendlyNpc" }) do
+            local side = scope:match("^friendly") and "friendly" or "enemy"
+            local sectionId = "suite_nameplates_" .. side .. "Text"
+            db.general._fontScopeKey = "player"
+            OpenNameTextCard()
+            assert(P.NameplatesWorkspace.Open(scope))
+            local page = M.cache.suite_nameplates
+            local body = assert(page.sections[sectionId])
+            local spec
+            for _, entry in ipairs(P.NameplateSections) do
+                if entry.key == side .. "Text" then spec = entry break end
+            end
+            assert(spec and spec.select("name"))
+            local action = assert(textColorLinks[side .. "Text"], "missing direct Text Colors link for " .. scope)
+            assert(action:GetParent() == body and action:IsVisible(), "Text Colors is hidden in a different menu or tab")
+            local more = assert(P.HM.GetSectionEntry(body)._msufSuiteResetButton)
+            local popup = more:_msufSuiteEnsureSectionPopup()
+            for _, child in ipairs({ popup:GetChildren() }) do
+                local label = child.GetText and child:GetText()
+                assert(label ~= P.Tr("Colors") and label ~= P.Tr("Text Colors"), "Text actions kept a duplicate color entry")
+            end
+            local nameKey = (scope == "friendlyNpc" and "friendly" or scope) .. "NameColor"
+            local enabledKey, priorColor = nameKey .. "Enabled", P.Get("nameplates", nameKey)
+            local priorEnabled, priorLook = P.Get("nameplates", enabledKey), config.look
+            local name = Pick(spec, action, "name")
+            assert(name.settingKey == "msufsuite.nameplates." .. nameKey, "picker targeted the wrong Nameplate type")
+            local nameState = name.captureState()
+            assert(name.set(.2, .4, .6) and P.Get("nameplates", nameKey) == "336699" and P.Get("nameplates", enabledKey),
+                "custom Nameplate color did not update the Fonts settings")
+            name.restoreState(nameState)
+            assert(P.Get("nameplates", nameKey) == priorColor and P.Get("nameplates", enabledKey) == priorEnabled
+                and config.look == priorLook, "cancel did not restore the name color and mode")
+
+            if scope == "enemy" then
+                local priorTypography, context = db.nameplates, P.AnchoredContextMenu
+                db.nameplates = { fontOverride = false, fontKey = "FRIZQT" }
+                local activate
+                P.AnchoredContextMenu = function(_, generate)
+                    generate(nil, { CreateTitle = function() end,
+                        CreateButton = function(_, label, click)
+                            if label == P.Tr("Use custom settings for this scope") then activate = click end
+                        end })
+                end
+                spec.select("hp")
+                picker, opened = nil, false
+                action:Click()
+                assert(activate and not opened and db.nameplates.fontOverride == false,
+                    "opening HP colors reactivated stored typography without user input")
+                activate()
+                P.AnchoredContextMenu = context
+                assert(opened and picker and #picker == 1 and db.nameplates.fontOverride,
+                    "explicit typography override did not open the HP picker")
+                local hp = Pick(spec, action, "hp")
+                local hpState = assert(hp.captureState())
+                local sharedR = db.general.fontColorCustomR
+                assert(hp.set(.25, .5, .75), "HP font color update failed")
+                local painted = formatter.Nameplates({}).textColor
+                assert(painted.r == .25 and painted.g == .5 and painted.b == .75,
+                    "HP text color did not update the nameplate font scope")
+                assert(db.general.fontColorCustomR == sharedR, "HP color changed Shared")
+                assert(hp.restoreState(hpState), "HP color cancel failed")
+                assert(db.nameplates.fontColorR == hpState.values.fontColorR and db.nameplates.fontOverride,
+                    "HP color cancel did not restore the explicit value under the selected scope")
+                local previousLook = config.look
+                config.look = 1
+                picker, opened = nil, false
+                action:Click()
+                assert(not opened, "HP picker was offered for a look that ignores font scope")
+                config.look, db.nameplates = previousLook, priorTypography
+
+                local power = Pick(spec, action, "power")
+                local previous = P.Get("nameplates", "enemyPowerTextColor")
+                local r, g, b = power.get()
+                assert(power.settingKey == "msufsuite.nameplates.enemyPowerTextColor" and power.set(.2, .4, .6)
+                    and P.Get("nameplates", "enemyPowerTextColor") == "336699", "Power Text did not edit its Fonts color")
+                assert(power.set(r, g, b) and P.Get("nameplates", "enemyPowerTextColor") == previous)
+            end
+            assert(not links["Text Colors"], "Name card repeats the direct Text Colors link")
+        end
+        P.W.OpenContextColors, M.Widgets.OpenColorContextPicker = openColors, openPicker
         assert(not widgets.enemyNameFormat and not widgets.friendlyNameFormat, "legacy disabled name rows are still built")
         assert(config.nameFormattingEnabled == before, "opening Fonts changed a Suite setting")
         assert(db.nameplates == nil or not db.nameplates.fontOverride, "opening Fonts enabled an override")
 
+        local statusColor = P.Suite.NameplateExtensions.TextKey("friendlyNpc", P.Suite.NameplateExtensions.FirstTextSource) .. "Color"
         for key, section in pairs({ enemyNameMaxChars = "fonts_name_shortening",
-            friendlyNameColor = "opt_fonts_nameplate_colors", neutralNameColor = "opt_fonts_nameplate_colors" }) do
+            friendlyNameColor = colorSection, neutralNameColor = colorSection, enemyPowerTextColor = colorSection,
+            enemyPlateNameClassColor = colorSection, friendlyNameClassColor = colorSection, threatNameColor = colorSection,
+            neutralPlateNameTypeColor = colorSection, focusReminderColor = colorSection, [statusColor] = colorSection,
+            enemyLevelColor = colorSection, friendlyStatusAFKColor = colorSection, auraTimeColor = colorSection,
+            auraStackColor = colorSection }) do
             OpenNameTextCard()
             local record = assert(records["msufsuite.nameplates." .. key], "missing Fonts search record for " .. key)
             local selected, anchored, exact = (M.Search._RoutingAPI or api).OpenSearchTarget(record.key,
@@ -1802,8 +2028,9 @@ do
         local found
         for _, value in ipairs(values or {}) do if value.value == "nameplates" then found = true end end
         assert(found and GP.CurrentFontScope() == "nameplates", "Nameplates is absent from the standard Fonts selector")
-        assert(tails > 0 and not M.cache.opt_fonts.sections.opt_fonts_host_nameplates,
-            "native Fonts should show the Suite colors without repeating the host typography")
+        local sections = M.cache.opt_fonts.sections
+        assert(tails > 0 and not sections.opt_fonts_host_nameplates and not sections.opt_fonts_nameplate_colors,
+            "native Fonts should show all colors in one section")
         for _, scope in ipairs({ "enemy", "neutral", "friendly" }) do
             local setting = "msufsuite.nameplates." .. scope .. "NameColor"
             local _, swatch = M.RuntimeControlCatalog.FindBySettingKey(setting, "opt_fonts")
@@ -1895,8 +2122,8 @@ do
         for _, texture in ipairs({ bar:GetRegions() }) do
             local path = texture:GetTexture()
             if type(path) == "string" then
-                if path:match("SlantedHealthMask%.tga$") then masks[texture] = 0 end
-                if path:match("SlantedHealthEdge%.tga$") then rim = texture end
+                if path:match("SlantedHealthMask%.tga$") or path:match("slanted_bar_mask.*%.png$") then masks[texture] = 0 end
+                if path:match("SlantedHealthEdge%.tga$") or path:match("slanted_bar_edge.*%.png$") then rim = texture end
             end
         end
     end
@@ -1915,6 +2142,10 @@ do
         end
     end
     assert(progress and back, "Slanted needs a full-width moving mask and a fixed backdrop mask")
+    P.Set("nameplates", "mouseoverHighlight", true)
+    P.NameplatesPreviewDecor.Hover(bar, true)
+    preview:Paint()
+    P.NameplatesPreviewDecor.Hover(bar, false)
     assert(P.Set("nameplates", "enemyOutlineMode", 4))
     preview:Paint()
     assert(not rim:IsShown(), "Frame Outline Off left the Slanted rim shown")

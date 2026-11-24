@@ -155,7 +155,7 @@ local function ResetItem(item)
     local rules = {}
     for _, key in ipairs(item.keys) do
         local rule = P.catalog[ID].rules[key]
-        if rule and key ~= item.mode then rules[#rules + 1] = rule end
+        if rule and key ~= item.mode and not P.NameplateFonts.OwnsColor(rule) then rules[#rules + 1] = rule end
     end
     P.ResetRules(ID, rules)
 end
@@ -201,13 +201,25 @@ local function BuildItem(ctx, parent, choice, width, item, sectionId, byKey, sel
     local placementWidth = width >= 550 and width - resetWidth - 52 or width - 32
     local entries
     y, entries = P.RuleGrid(ctx, card, PAGE, ID, rules, y, placementWidth, nil, sectionId, 1)
-    local colors = P.AttachRuleColors(panel, item.label, ID, rules)
+    local key
+    for _, setting in ipairs(item.keys) do
+        local rule = P.catalog[ID].rules[setting]
+        if rule and P.NameplateFonts.OwnsColor(rule) then key = setting break end
+    end
+    local colors
+    if key then
+        colors = P.Button(ctx, card, "Text Colors", 0, 0, 144, function()
+            P.NameplateFonts.OpenColors("msufsuite.nameplates." .. key)
+        end)
+    else
+        colors = P.AttachRuleColors(panel, item.label, ID, rules)
+    end
     if colors then
         colors:ClearAllPoints()
         colors:SetPoint("TOPRIGHT", card, "TOPRIGHT", -12, -12)
-        if item.textSource and P.M.RegisterControlMetadata then
+        if (key or item.textSource) and P.M.RegisterControlMetadata then
             local meta = P.Meta(PAGE, ID, item.key .. ".colors", "action", sectionId)
-            P.M.RegisterControlMetadata(colors, meta, "Colors", "button")
+            P.M.RegisterControlMetadata(colors, meta, key and "Text Colors" or "Colors", "button")
         end
     end
     if entry then entries[#entries + 1] = entry end

@@ -213,7 +213,7 @@ for _, condition in ipairs(X.EnemyConditions) do
     end
     enemyVisibility[#enemyVisibility + 1] = rule
 end
-B.Section(id, "enemyLoadConditions", "Visibility", enemyVisibility)
+B.Section(id, "enemyLoadConditions", "Load Conditions", enemyVisibility)
 
 for _, scope in ipairs(X.OpacityScopes) do
     local key = scope .. "Fade"

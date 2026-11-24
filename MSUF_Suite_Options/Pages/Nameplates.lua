@@ -132,7 +132,9 @@ local function Rules(keys)
     local available = P.catalog[ID].controlAvailable
     for _, key in ipairs(keys or {}) do
         local rule = catalog[key]
-        if rule and (not available or available(rule)) then rules[#rules + 1] = rule end
+        if rule and (not available or available(rule)) and not P.NameplateFonts.OwnsColor(rule) then
+            rules[#rules + 1] = rule
+        end
     end
     return rules
 end
@@ -187,6 +189,10 @@ local placed
 local selectedTabs = {}
 local function HasColorAction(spec)
     return P.W.OpenContextColors and (spec.styleScope or spec.textCards)
+end
+
+local function HasStyleColorsLink(spec)
+    return spec.styleScope and (not spec.page or spec.page == PAGE) and HasColorAction(spec)
 end
 
 local function Place(keys, sectionId, spec, tab)
@@ -291,6 +297,8 @@ end
 function P.OpenNameplateSetting(key)
     local rule = key and P.catalog[ID].rules[key]
     if not rule or P.Combat() or not P.catalog[ID].controlAvailable(rule) then return false end
+    local fonts = P.NameplateFonts
+    if fonts.OwnsColor(rule) then return fonts.OpenColors("msufsuite.nameplates." .. key) end
     local bars = P.NameplateBarTextures.Target(key)
     if bars then
         return P.Suite.HostBridge.OpenExactMenuSetting(P.M, bars.page, bars.section, "msufsuite.nameplates." .. key)
@@ -319,48 +327,71 @@ local function NamePalette()
     end
 end
 
-local function SectionColors(spec)
-    local function Relevant(rule) return P.RuleEnabled(ID, rule) end
-    local function Settings()
-        local selected = selectedTabs[spec.key] or spec.tabs[1].id
-        if spec.textCards and selected == "name" then return NamePalette() end
-        local palette
-        for _, tab in ipairs(spec.tabs) do
-            if tab.id == "colors" then palette = tab.colorRules end
-            if tab.id == selected and tab.colorRules then
-                if tab.id == "outline" or tab.id == "textures" then return tab.colorRules, Relevant end
-                palette = tab.colorRules
-                break
-            end
+local function RelevantColor(rule) return P.RuleEnabled(ID, rule) end
+
+local function ColorSettings(spec)
+    local selected = selectedTabs[spec.key] or spec.tabs[1].id
+    if spec.textCards and selected == "name" then return NamePalette() end
+    local palette
+    for _, tab in ipairs(spec.tabs) do
+        if tab.id == "colors" then palette = tab.colorRules end
+        if tab.id == selected and tab.colorRules then
+            if tab.id == "outline" or tab.id == "textures" then return tab.colorRules, RelevantColor end
+            palette = tab.colorRules
+            break
         end
-        if spec.colors then return Rules(spec.colors) end
-        local auraTargets = (spec.styleScope == "enemy" or spec.styleScope == "neutral") and P.NameplatesAuraUI.ColorTargets
-        return palette, nil, auraTargets
     end
+    if spec.colors then return Rules(spec.colors) end
+    local auraTargets = (spec.styleScope == "enemy" or spec.styleScope == "neutral") and P.NameplatesAuraUI.ColorTargets
+    return palette, nil, auraTargets
+end
+
+local function ColorsAvailable(rules, enabled)
+    if not rules then return false end
+    if not enabled then return true end
+    for _, rule in ipairs(rules) do
+        if enabled(rule) then return true end
+    end
+    return false
+end
+
+local function SectionColors(spec)
     return function(popup)
         local button = P.W.TopButton(popup, "Colors", 250, 24)
         button:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -76)
         HM.SkipHistoryCheckpoint(button)
         popup:SetHeight(116)
         popup:HookScript("OnShow", function()
-            local rules, enabled = Settings()
+            local rules, enabled = ColorSettings(spec)
             button:SetShown(rules ~= nil)
             popup:SetHeight(rules and 116 or 82)
-            local available = rules ~= nil and enabled == nil
-            if rules and enabled then
-                for _, rule in ipairs(rules) do
-                    if enabled(rule) then available = true break end
-                end
-            end
-            P.W.SetControlEnabled(button, available)
+            P.W.SetControlEnabled(button, ColorsAvailable(rules, enabled))
         end)
         button:SetScript("OnClick", function()
             if P.Combat() then return end
-            local rules, enabled, extra = Settings()
+            local rules, enabled, extra = ColorSettings(spec)
             if not rules then return end
             popup:Hide()
             P.OpenRuleColors(popup, "Colors", ID, rules, enabled, extra)
         end)
+    end
+end
+
+local STYLE_COLORS_WIDTH = 118
+
+local function AttachStyleColorsLink(body, spec, sectionId)
+    local button = (P.W.TopButton or P.T.Button)(body, "Open Colors", STYLE_COLORS_WIDTH, 24)
+    button:SetPoint("TOPRIGHT", body, "TOPRIGHT", -16, -12)
+    HM.SkipHistoryCheckpoint(button)
+    button:SetScript("OnClick", function()
+        if P.Combat() then return end
+        local rules, enabled, extra = ColorSettings(spec)
+        if ColorsAvailable(rules, enabled) then P.OpenRuleColors(button, "Colors", ID, rules, enabled, extra) end
+    end)
+    local meta = P.Meta(PAGE, ID, spec.key .. ".colors", "action", sectionId)
+    if P.M.RegisterControlMetadata then P.M.RegisterControlMetadata(button, meta, "Colors", "button") end
+    return function()
+        P.W.SetControlEnabled(button, not P.Combat() and ColorsAvailable(ColorSettings(spec)))
     end
 end
 
@@ -443,18 +474,23 @@ local function Tabs(ctx, builder, body, spec, sectionId)
         values[#values + 1] = { value = tab.id, text = Tr(tab.label) }
     end
     local defaultTab = spec.tabs[1].id
+    local function GetTab() return selectedTabs[spec.key] or defaultTab end
+    local colorLink = spec.textCards and P.NameplateFonts.AttachColorLink(body, sectionId, spec.key, GetTab)
+    local refreshStyleColors = HasStyleColorsLink(spec) and AttachStyleColorsLink(body, spec, sectionId)
+    local reservedWidth = refreshStyleColors and STYLE_COLORS_WIDTH + 8 or colorLink and 44 or 0
     local refresh, _, selectTab
     tabs, refresh, _, selectTab = P.W.SegmentTabs(ctx, body, {
         label = "", compact = true, wrap = true, x = 16, y = -12, values = values, frames = panels,
-        width = width,
+        width = width - reservedWidth,
         defaultTab = defaultTab,
-        get = function() return selectedTabs[spec.key] or defaultTab end,
+        get = GetTab,
         set = function(tab)
             selectedTabs[spec.key] = tab
             if spec.onTab then spec.onTab(tab) end
         end,
         afterRefresh = function(tab)
             ensure(tab)
+            if refreshStyleColors then refreshStyleColors() end
             P.FinishBody(builder, body, -TabBodyTop() - (heights[tab] or 100))
         end,
     })
@@ -579,7 +615,12 @@ local function FlatTabbedSection(ctx, builder, spec, sectionId, all, resetRules,
             if tab.before then y = tab.before(ctx, body, y, width, sectionId) end
             if tab.extra then y = tab.extra(ctx, body, y, width, sectionId) end
         end
-        if spec.textCards then y = P.NameplatesSectionsLayout.TextShortcuts(ctx, body, y, width, sectionId) end
+        if spec.textCards then
+            local colorLink = P.NameplateFonts.AttachColorLink(body, sectionId, spec.key, nil, y)
+            local availableWidth = width - (colorLink and 44 or 0)
+            local bottom = P.NameplatesSectionsLayout.TextShortcuts(ctx, body, y, availableWidth, sectionId)
+            y = colorLink and math.min(bottom, y - 26) or bottom
+        end
         return y
     end
     local reset = PositionKeys(spec)
@@ -635,7 +676,9 @@ local function TabbedSection(ctx, builder, spec)
             local keys = PositionKeys(spec)
             if spec.switch and not spec.sharedSwitch then keys[#keys + 1] = spec.switch end
             if #resetRules > 0 or #keys > 0 then
-                local colors = HasColorAction(spec) and SectionColors(spec)
+                local fontsOwnColors = spec.textCards and P.NameplatesHostOptions.registered
+                local colors = not fontsOwnColors and not HasStyleColorsLink(spec)
+                    and HasColorAction(spec) and SectionColors(spec)
                 local more = P.AttachSectionReset(ctx, body, Tr(spec.title), function()
                     local rules = spec.textCards and P.NameplatesWorkspace.ActiveNameRules(resetRules) or resetRules
                     return P.ResetRules(ID, rules, nil, keys)

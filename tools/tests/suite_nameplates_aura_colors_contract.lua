@@ -137,7 +137,14 @@ local function Region(parent)
     function r:SetTexture(path) self.path = path end
     function r:SetVertexColor(...) self.tint = { ... } end
     function r:SetColorTexture(...) self.color = { ... }; writes = writes + 1 end
-    function r:AddMaskTexture(mask) self.mask = mask end
+    function r:AddMaskTexture(mask)
+        if not self.mask then self.mask = mask
+        else assert(not self.slantMask) self.slantMask = mask end
+    end
+    function r:RemoveMaskTexture(mask)
+        assert(self.slantMask == mask, "slanted mask removal must preserve the aura predicate mask")
+        self.slantMask = nil
+    end
     function r:Show() assert(not self.native); self.shown = true; writes = writes + 1 end
     function r:Hide() assert(not self.native); self.shown = false; writes = writes + 1 end
     function r:SetShown(value) assert(not self.native); self.shown = value == true; writes = writes + 1 end
@@ -214,6 +221,8 @@ health.height = 32
 local fill = Region(health)
 function health:GetStatusBarTexture() return fill end
 local uf = { HealthBarsContainer = { healthBar = health } }
+NS.NameplateStyle = NS.NameplateStyle or {}
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateShape.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Mode = { LOOK_BLIZZARD = 2 } }
 assert(loadfile(arg[3] or root .. "/MSUF_Suite_Nameplates/AuraColors.lua"))("MSUF_Suite_Nameplates", private)
 local C = private.AuraColors
@@ -229,8 +238,27 @@ C.Configure({ auraColorsEnabled = false })
 C.Apply(uf, "nameplate1", true)
 assert(creations == 0 and #textures == 0, "disabled feature allocated frames")
 C.Configure(cfg)
+local movingMask = Region(health)
+local shapeReads = 0
+private.SlantedHealth = { FillMask = function(bar)
+    assert(bar == health)
+    shapeReads = shapeReads + 1
+    return movingMask
+end }
 C.Apply(uf, "nameplate1", true)
 assert(creations == 2 and #textures == 3 * A.LIMIT and #containers == 1)
+assert(shapeReads == 1, "new DoT layers did not resolve their slanted mask once")
+for _, texture in ipairs(textures) do assert(texture.mask and texture.slantMask == movingMask) end
+C.SetSlantMask(uf, nil)
+for _, texture in ipairs(textures) do assert(texture.mask and not texture.slantMask) end
+C.SetSlantMask(uf, movingMask)
+for _, texture in ipairs(textures) do assert(texture.mask and texture.slantMask == movingMask) end
+C.SetSlantMask(uf, nil)
+private.SlantedHealth = setmetatable({}, { __index = function(_, key)
+    error("warm aura paint looked up SlantedHealth." .. key)
+end })
+for _ = 1, 100 do C.Apply(uf, "nameplate1", true) end
+private.SlantedHealth = nil
 local container = containers[1]
 assert(not container.slots.all1.shown and not container.slots.all2.shown,
     "a slot without an aura starts visible and shifts the warning mask")

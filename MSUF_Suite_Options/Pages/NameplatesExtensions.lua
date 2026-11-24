@@ -55,12 +55,12 @@ end
 local function EnemyVisibility()
     local keys = {}
     for _, condition in ipairs(X.EnemyConditions or {}) do keys[#keys + 1] = condition.key end
-    return { key = "enemyVisibility", area = "enemies", title = "Visibility", keys = keys,
+    return { key = "enemyVisibility", area = "enemies", title = "Load Conditions", keys = keys,
         help = "enemyLoadConditions", columns = 3,
         summary = function()
             local config = P.S.Config("nameplates")
             local count = 0
-            if config.enemy and config.look ~= 2 then
+            if config.enabled and config.enemy and config.look ~= 2 then
                 for _, condition in ipairs(X.EnemyConditions or {}) do
                     if X.EnemyConditionActive(config, condition) then count = count + 1 end
                 end

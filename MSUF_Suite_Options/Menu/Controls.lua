@@ -404,7 +404,7 @@ function P.AttachRowsSummary(ctx, body, rows)
     end)
 end
 
-local function RuleColorTarget(id, rule, keyFn, isRelevant, getValue)
+local function RuleColorTarget(id, rule, keyFn, isRelevant, getValue, activate)
     local key = keyFn and keyFn(rule.key) or rule.key
     local config, profile, epoch = S.Config(id), P.Suite.DB, colorEpoch
     local barIds = config.barIds
@@ -412,7 +412,8 @@ local function RuleColorTarget(id, rule, keyFn, isRelevant, getValue)
         return epoch == colorEpoch and profile == P.Suite.DB and config == S.Config(id)
             and barIds == config.barIds and (not keyFn or keyFn(rule.key) == key)
     end
-    return {
+    local enableKey = activate and rule.enableKey
+    local target = {
         label = Tr(rule.label),
         sourceSettingKey = "msufsuite." .. id .. "." .. rule.key,
         settingKey = "msufsuite." .. id .. "." .. key,
@@ -424,17 +425,39 @@ local function RuleColorTarget(id, rule, keyFn, isRelevant, getValue)
         set = function(r, g, b)
             if getValue and isRelevant and not isRelevant(rule) then return false end
             if not Current() then return false end
-            return P.Set(id, key, RuleHex(rule, r, g, b))
+            local value = RuleHex(rule, r, g, b)
+            if enableKey then return P.SetMany(id, { [key] = value, [enableKey] = true }) end
+            return P.Set(id, key, value)
         end,
     }
+    if enableKey then
+        target.captureState = function()
+            local records = profile and profile.moduleLooks
+            return {
+                values = { [key] = P.Get(id, key), [enableKey] = P.Get(id, enableKey), look = config.look },
+                hadRecords = records ~= nil,
+                record = records and records[id],
+            }
+        end
+        target.restoreState = function(saved)
+            if not Current() or not S.ResetKeys(id, saved.values) then return end
+            local records = profile and profile.moduleLooks
+            if records then
+                records[id] = saved.record
+                if not saved.hadRecords and not next(records) then profile.moduleLooks = nil end
+            end
+            P.Refresh()
+        end
+    end
+    return target
 end
 
-function P.OpenRuleColors(anchor, title, id, rules, isRelevant, extraTargets)
+function P.OpenRuleColors(anchor, title, id, rules, isRelevant, extraTargets, activate)
     if not W.OpenContextColors then return end
     local targets = extraTargets and extraTargets() or {}
     for _, rule in ipairs(rules) do
         if rule.color and not rule.hidden then
-            targets[#targets + 1] = RuleColorTarget(id, rule, nil, isRelevant)
+            targets[#targets + 1] = RuleColorTarget(id, rule, nil, isRelevant, nil, activate)
         end
     end
     return W.OpenContextColors(anchor, { title = Tr(title), maxTargets = #targets }, targets)

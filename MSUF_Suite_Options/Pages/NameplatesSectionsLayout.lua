@@ -209,6 +209,10 @@ local function TextSample(ctx, card, side, tab, width, y)
         elseif tab.id == "hp" then
             local mode = side == "enemy" and P.Get(ID, "enemyTextMode") or 2
             model.PaintFont(sample, config, side, 12, P.Suite.GlobalFontPath(), P.StylePreviewFont, true)
+            local shared = model.Shared(config)
+            local color = shared and shared.textColor
+            if color then sample:SetTextColor(color.r, color.g, color.b, color.a)
+            else sample:SetTextColor(unpack(P.T.colors.text)) end
             sample:SetText(mode == 3 and "630k" or mode == 4 and "630k 63%" or "63%")
         else
             local power = P.Suite.NameplateStyle.EnemyPower
@@ -777,7 +781,7 @@ local function PlaceVisibility(sections, by)
             "plateSimpleFriendlyPlayer" },
         friendlyNpc = { "friendlyNPCs", "plateSimpleFriendlyNpc" },
     }
-    for _, key in ipairs(by.enemyVisibility.keys) do displays.enemy[#displays.enemy + 1] = key end
+    Relocate(by, "enemyVisibility", nil, { enemy = true }, 15)
     for _, key in ipairs(X.OpacityScopes) do
         local basics, display = by[key .. "Basics"], displays[key]
         table.insert(display, 1, X.ContextKeys[key])

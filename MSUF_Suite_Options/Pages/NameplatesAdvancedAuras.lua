@@ -427,7 +427,12 @@ local function Appearance(ctx, panel, width)
     local y = Heading(panel, "Shared aura appearance", -12, width)
     y = Grid(ctx, panel, Model.NativeShared, y, width, 2)
     y = Heading(panel, "Tracked auras", y - 8, width)
-    return Grid(ctx, panel, Model.AppearanceKeys, y, width, 2)
+    y = Grid(ctx, panel, Model.AppearanceKeys, y, width, 2)
+    if not P.NameplatesHostOptions.registered then return y end
+    P.Button(ctx, panel, "Text Colors", 16, y - 8, 180, function()
+        P.NameplateFonts.OpenColors("msufsuite.nameplates.auraTimeColor")
+    end)
+    return y - 42
 end
 
 local function ContainerOf()
@@ -436,7 +441,10 @@ end
 
 local function ColorShortcut(body)
     local colors, catalog = {}, P.catalog[ID].rules
-    for _, key in ipairs(Model.ColorKeys) do colors[#colors + 1] = catalog[key] end
+    for _, key in ipairs(Model.ColorKeys) do
+        local rule = catalog[key]
+        if not P.NameplateFonts.OwnsColor(rule) then colors[#colors + 1] = rule end
+    end
     P.AttachRuleColors(body, Tr("Auras"), ID, colors, nil, nil, DotColors and function()
         return view.scope == "enemy" and DotColors.ColorTargets() or {}
     end, DotColors and P.Suite.NameplateAuraColors.LIMIT + 2)
@@ -524,7 +532,10 @@ local function ResetView()
     if view.appearance then
         local keys = {}
         for _, list in ipairs({ Model.NativeShared, Model.AppearanceKeys, Model.ColorKeys }) do
-            for _, key in ipairs(list) do keys[#keys + 1] = key end
+            for _, key in ipairs(list) do
+                local rule = P.catalog[ID].rules[key]
+                if rule and not P.NameplateFonts.OwnsColor(rule) then keys[#keys + 1] = key end
+            end
         end
         return P.ResetRules(ID, {}, nil, keys)
     end

@@ -105,7 +105,7 @@ local function BuildSectionPopup(state, spec)
     close:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -6, -6)
     close:SetScript("OnClick", function() ClosePopup(state) end)
     if spec and W.Dropdown and W.MoveWidget then BuildCopyRow(state, spec) end
-    local button = W.TopButton(popup, "Reset section", 250, 24)
+    local button = W.TopButton(popup, state.resetLabel or "Reset section", 250, 24)
     button:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -42)
     button:SetScript("OnClick", function()
         if P.Combat() then return end
@@ -150,14 +150,14 @@ end
 
 -- extend(popup) (optional) adds a page's own actions to the popup when it is
 -- first built, on its first open: popups are UIParent children, never freed.
-function P.AttachSectionReset(ctx, body, title, reset, copy, extend)
+function P.AttachSectionReset(ctx, body, title, reset, copy, extend, resetLabel)
     if not body or type(reset) ~= "function" then return end
     body._msufSuiteSectionReset, body._msufSuiteSectionCopy = reset, copy
     local entry = HM.GetSectionEntry(body)
     if not (entry and entry.header and W.TopButton and M.CreateMenuPopupPanel) then return end
     if entry._msufSuiteResetButton then return entry._msufSuiteResetButton end
     local more = SectionActionButton(entry)
-    local state = { body = body, title = title, entry = entry, more = more, extend = extend }
+    local state = { body = body, title = title, entry = entry, more = more, extend = extend, resetLabel = resetLabel }
     more:SetScript("OnClick", function() ToggleSectionPopup(state) end)
     state.getPopup = function() return state.popup end
     HM.SetSectionPopupGetter(more, state.getPopup)
