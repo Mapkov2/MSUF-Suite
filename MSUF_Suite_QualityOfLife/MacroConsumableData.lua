@@ -265,23 +265,10 @@ for _, spell in ipairs({ 1219187, 1232246, 1232249, 1232250, 1232251, 1232252, 1
     1233762, 1233763, 1233764, 1233765, 1233766, 1233767, 1233768, 1233769, 1233770,
     1259662, 1269305, 1280485, 1283374, 1305158, 1305159 }) do Data.foodSpells[spell] = true end
 
--- Forever cooked foods granting a food bonus, verified 2026-10-31.
--- https://www.wowhead.com/forever/news/all-cooking-food-that-currently-gives-xp-buffs-in-wow-forever-382928
-Data.foreverBuffFood = {
-    [724] = true, [733] = true, [787] = true, [1017] = true, [1082] = true, [2680] = true, [2681] = true, [2682] = true,
-    [2683] = true, [2684] = true, [2685] = true, [2687] = true, [2888] = true, [3220] = true, [3662] = true, [3663] = true,
-    [3664] = true, [3665] = true, [3666] = true, [3726] = true, [3727] = true, [3729] = true, [4457] = true, [4592] = true,
-    [4593] = true, [4594] = true, [5095] = true, [5472] = true, [5476] = true, [5477] = true, [5479] = true, [5480] = true,
-    [6038] = true, [6290] = true, [6316] = true, [6888] = true, [6890] = true, [8364] = true, [8957] = true, [10841] = true,
-    [12209] = true, [12210] = true, [12212] = true, [12213] = true, [12214] = true, [12215] = true, [12216] = true, [12218] = true,
-    [12224] = true, [13851] = true, [13927] = true, [13928] = true, [13929] = true, [13930] = true, [13931] = true, [13932] = true,
-    [13933] = true, [13934] = true, [13935] = true, [17222] = true, [18045] = true, [18254] = true, [20074] = true, [20452] = true,
-    [21072] = true, [21217] = true, [249865] = true, [249866] = true, [249867] = true, [249868] = true, [249869] = true, [249870] = true,
-    [249871] = true, [249872] = true, [249873] = true, [249874] = true, [249875] = true, [249876] = true, [250065] = true, [250066] = true,
-    [250067] = true, [250068] = true, [250069] = true, [250070] = true, [250071] = true, [250072] = true, [250073] = true, [250074] = true,
-    [250075] = true, [250076] = true, [250077] = true, [250078] = true, [250079] = true, [250080] = true, [263509] = true, [263512] = true,
-    [267341] = true, [274971] = true, [274976] = true, [286152] = true,
-}
+-- Forever cooked foods granting a food bonus: the core's verified list,
+-- which the action bar flyouts' Cooking preset shows as well.
+Data.foreverBuffFood = {}
+for _, id in ipairs(P.NS.ForeverCookedFood) do Data.foreverBuffFood[id] = true end
 
 function Data.Get(id)
     local client = P.NS.Client.isForever and Data.forever or Data.retail

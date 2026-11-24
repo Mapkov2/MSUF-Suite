@@ -84,6 +84,15 @@ Page.initializers[#Page.initializers + 1] = function()
         button:SetPoint("TOPLEFT", x + (ui.offsetX or 0), y)
         button:SetWidth(width)
         button:SetText(Tr(text))
+        local label = HM.GetControlLabel(button)
+        if label and not key:match("^tab:") then
+            local measure = label.GetUnboundedStringWidth or label.GetStringWidth
+            local inset = math.max(2, math.min(12, math.floor((width - measure(label) - 2) * 0.5)))
+            label:ClearAllPoints()
+            label:SetPoint("LEFT", button, "LEFT", inset, 0)
+            label:SetPoint("RIGHT", button, "RIGHT", -inset, 0)
+            label:SetWordWrap(false)
+        end
         button:SetEnabled(enabled ~= false and not P.Combat())
         button.action = callback
         return button

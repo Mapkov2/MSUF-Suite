@@ -129,6 +129,8 @@ local function Run(flavor)
     for _, file in ipairs({ "Model", "Compile", "Templates", "Native", "Store" }) do
         assert(loadfile(root .. "/MSUF_Suite/Core/Macros/" .. file .. ".lua"))("MSUF_Suite", NS)
     end
+    -- The Forever cooked food list belongs to the core (action bar flyouts share it).
+    assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/ActionBarFlyouts.lua"))("MSUF_Suite", NS)
     for _, file in ipairs({ "MacroConsumableData", "MacroConsumables", "MacroBuilder" }) do
         assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("QoL", { NS = NS, Suite = S })
     end

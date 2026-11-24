@@ -172,7 +172,8 @@ local function CheckScroll(ctx, body)
     local bottom = -body.point[5] + body:GetHeight()
     local height = ctx.wrapper:GetHeight()
     assert(height >= bottom, "the host scroll range stops before the bottom of the macro page")
-    assert(height == math.max(ctx.viewportHeight, bottom + 40), "the host scroll range did not follow the current page height")
+    local sectionGap = body._msuf2SectionFlowGap or 12
+    assert(height == math.max(ctx.viewportHeight, bottom + 28 + sectionGap), "the host scroll range did not follow the current page height")
     return height
 end
 function P.W.ToggleAt(parent, label)

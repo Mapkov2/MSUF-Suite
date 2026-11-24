@@ -183,8 +183,14 @@ Page.initializers[#Page.initializers + 1] = function()
         y = y - 38
         Page.Label(ui, "quick:title", Tr("Quick start"), 16, y, width - 32, T.colors.muted)
         y = y - 23
-        columns = math.max(2, math.min(#Page.quick, math.floor((width - 32) / 108)))
-        local quickWidth = math.floor((width - 32 - (columns - 1) * 5) / columns)
+        local quickMinWidth = 108
+        if T.MeasureTabWidth then
+            for _, entry in ipairs(Page.quick) do
+                quickMinWidth = math.max(quickMinWidth, T.MeasureTabWidth(Tr(entry[2])) + 4)
+            end
+        end
+        columns = math.max(1, math.min(#Page.quick, math.floor((available + 5) / (quickMinWidth + 5))))
+        local quickWidth = math.floor((available - (columns - 1) * 5) / columns)
         for i, entry in ipairs(Page.quick) do
             local x, row = 16 + ((i - 1) % columns) * (quickWidth + 5), math.floor((i - 1) / columns)
             local button = Page.Button(ui, "quick:" .. entry[1], entry[2], x, y - row * 32, quickWidth,
