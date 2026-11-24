@@ -21,6 +21,18 @@ local function MinimapRules(sources, offsets)
     return rules
 end
 
+-- The information display of each text editor (MinimapInfoFields), for the
+-- action that copies its style onto every other text.
+local TEXT_FIELDS = { info_difficulty = "Difficulty" }
+for _, field in ipairs(P.Suite.MinimapInfoFields) do TEXT_FIELDS["info_" .. field:lower()] = field end
+local function StyleToAllButton(menu, panel, field, y, width)
+    P.Button(menu.ctx, panel, "Use this style for all texts", 16, y - 4, width, function()
+        if P.Combat() then return end
+        P.SetMany(ID, P.Suite.MinimapTextStyleValues(P.S.Config(ID), field))
+    end, nil, P.Meta(PAGE, ID, "text.styleToAll." .. field, "action", PAGE .. "_information"))
+    return y - 42
+end
+
 local sectionTitles = {}
 for _, rule in ipairs(P.catalog[ID].controls) do
     if rule.section and rule.sectionTitle and rule.sectionTitle ~= "" then
@@ -78,6 +90,8 @@ local function BuildMinimapView(menu, group, source, width)
     end
     local rules, entries = MinimapRules({ source }), nil
     y, entries = P.RuleGrid(menu.ctx, panel, PAGE, ID, rules, y, width, nil, PAGE .. "_" .. source)
+    local field = TEXT_FIELDS[source]
+    if field then y = StyleToAllButton(menu, panel, field, y, width) end
     local colorRules = rules
     if source == "info_fps" or source == "info_latency" then
         colorRules = MinimapRules({ source, "info_colors" })
@@ -130,7 +144,7 @@ local function BuildMinimapGroup(menu, id, title, label, sources)
     group.selected = group.sources[1]
     for _, source in ipairs(group.sources) do if selections[id] == source then group.selected = source end end
     menu.groups[id] = group
-    group.body = P.LazySection(menu.builder, PAGE .. "_" .. id, Tr(title), false, {
+    group.body = P.LazySection(menu.builder, PAGE .. "_" .. id, Tr(title), true, {
         content = function(body) BuildMinimapContent(menu, group, body) return group.bottom end,
         finish = function(body, y)
             group.ready = true
@@ -188,36 +202,44 @@ function Menu:ResolveMinimapSection(source)
     if self:SelectMinimapSettings(source) then return self.routes[source].body end
 end
 
-local function BuildMinimapSection(menu, source, sources, extra)
-    local help = menu.helpBySection[source]
-    if #sources > 1 then help = P.Help(help, menu.helpBySection[sources[2]]) end
-    local body = P.RuleSection(menu.ctx, menu.builder, PAGE, ID, PAGE .. "_" .. source, Tr(MinimapTitle(source)), MinimapRules(sources), {
-        help = help, open = source == "layout", extra = extra,
-        onBuilt = function(body, entries)
+-- Sections with an on/off setting carry it as the header switch, like the
+-- other module pages; their other settings wait for it.
+local SWITCHES = { hover_size = "hoverResize", style_glow = "styleGlow", style_backdrop = "styleBackdrop",
+    dungeon = "dungeonButton", specialization = "specButton", addons = "collectButtons" }
+local function BuildMinimapSection(menu, source, extra, open)
+    if not Menu.IsMinimapSectionAvailable(source) then return end
+    local body = P.MenuWorkspace.Rules(menu.ctx, menu.builder, PAGE, ID, PAGE .. "_" .. source, Tr(MinimapTitle(source)),
+        MinimapRules({ source }), {
+        help = menu.helpBySection[source], open = open, extra = extra, switchKey = SWITCHES[source],
+        onBuilt = function(body)
             body._suiteMinimapReady = true
-            PrepareMinimapEntries(menu, entries)
         end,
     })
-    for _, name in ipairs(sources) do
-        menu.routes[name], menu.sections[name] = { body = body }, body
-    end
+    menu.routes[source], menu.sections[source] = { body = body }, body
 end
 
 function Menu.BuildMinimapSections(ctx, builder, sections, help, skinStatus, workspace)
     local menu = setmetatable({ ctx = ctx, builder = builder, sections = sections, helpBySection = help,
         routes = {}, groups = {}, workspace = workspace }, { __index = Menu })
     ctx.minimapSections = menu
-    BuildMinimapSection(menu, "layout", { "layout", "hover_size" })
-    BuildMinimapSection(menu, "shape", { "shape" }, skinStatus)
-    BuildMinimapGroup(menu, "decoration", "Decoration", "Decoration", { "style_art", "style_glow", "style_backdrop" })
-    BuildMinimapSection(menu, "behavior", { "behavior" })
-    BuildMinimapGroup(menu, "buttons", "Blizzard buttons", "Button settings", { "elements", "landing", "dungeon", "specialization" })
-    BuildMinimapSection(menu, "addons", { "addons" }, P.MinimapKeptButtons(ctx, builder))
+    BuildMinimapSection(menu, "layout", nil, true)
+    BuildMinimapSection(menu, "hover_size")
+    BuildMinimapSection(menu, "shape", skinStatus)
+    BuildMinimapSection(menu, "style_art")
+    BuildMinimapSection(menu, "style_glow")
+    BuildMinimapSection(menu, "style_backdrop")
+    BuildMinimapSection(menu, "behavior", nil, true)
+    BuildMinimapSection(menu, "visibility", nil, true)
+    BuildMinimapSection(menu, "elements", nil, true)
+    BuildMinimapSection(menu, "landing")
+    BuildMinimapSection(menu, "dungeon")
+    BuildMinimapSection(menu, "specialization")
+    BuildMinimapSection(menu, "addons", P.MinimapKeptButtons(ctx, builder))
     local info = {}
     for _, field in ipairs(P.Suite.MinimapInfoFields) do info[#info + 1] = "info_" .. field:lower() end
     info[#info + 1], info[#info + 2] = "info_difficulty", "info_colors"
-    BuildMinimapGroup(menu, "information", "Information displays", "Information display", info)
-    BuildMinimapSection(menu, "info_tooltips", { "info_tooltips" })
+    BuildMinimapGroup(menu, "information", "Information texts", "Text to edit", info)
+    BuildMinimapSection(menu, "info_tooltips")
     sections.ResolveMinimapSection = function(source) return menu:ResolveMinimapSection(source) end
     if ctx.entry then
         HM.SetMissingSectionResolver(ctx.entry, function(sectionId)

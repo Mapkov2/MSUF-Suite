@@ -142,7 +142,7 @@ local function CheckPerformanceColors(menu, config)
     end
 end
 local function CheckTabs(ctx, workspace, width)
-    local expected = { "basics", "appearance", "layout", "buttons", "information" }
+    local expected = { "basics", "appearance", "layout", "buttons", "text", "visibility" }
     local row = assert(workspace.tabs)
     Check(#row.items == #expected, "Minimap has the wrong number of tabs")
     Check(ctx.pageItems[1] == "fixed-preview" and ctx.pageItems[2] == "fixed-preview",
@@ -179,9 +179,25 @@ for _, width in ipairs({ 320, 720, 1100 }) do
     for _, section in ipairs(ctx.sections) do
         if section.sectionId == "suite_minimap_navigation" then navigation = section end
     end
-    Check(owned == 11 and navigation, "expected nine settings accordions, the module card and navigation")
+    -- One accordion per topic: the module card, navigation and the settings
+    -- sections (the expansion button and specialization exist on Retail only).
+    Check(owned == (P.Suite.Client.isForever and 16 or 18) and navigation,
+        "expected one accordion per Minimap topic, the module card and navigation")
     Check(ctx.pageItems[1] == "fixed-preview", "preview no longer precedes settings")
-    Check(menu.groups.information and menu.groups.buttons and menu.groups.decoration, "group missing")
+    Check(menu.groups.information and not menu.groups.buttons and not menu.groups.decoration,
+        "only the information texts share one accordion")
+    -- Sections with an on/off setting carry it as their header switch.
+    for source, key in pairs({ hover_size = "hoverResize", style_glow = "styleGlow", style_backdrop = "styleBackdrop",
+        dungeon = "dungeonButton", addons = "collectButtons", specialization = "specButton" }) do
+        local section = menu.sections[source]
+        if section then
+            Check(section.headerSwitch, source .. " has no header switch for " .. key)
+        else
+            Check(source == "specialization" and P.Suite.Client.isForever, "missing section " .. source)
+        end
+    end
+    Check(workspace.sections.suite_minimap_visibility and workspace.sections.suite_minimap_visibility._suiteWorkspaceTab
+        == "visibility", "map visibility is not on the Visibility tab")
     local config, before = S.Config("minimap"), {}
     config.enabled = false
     for key, value in pairs(config) do before[key] = value end
@@ -219,23 +235,23 @@ for _, width in ipairs({ 320, 720, 1100 }) do
     local resolver = P.HM.GetMissingSectionResolver(ctx.entry)
     workspace.select("layout")
     local parent = assert(resolver("suite_minimap_info_clock"), "cold section link did not resolve")
-    Check(parent == info.body and workspace.selected == "information" and info.selected == "info_clock",
+    Check(parent == info.body and workspace.selected == "text" and info.selected == "info_clock",
         "section link selected wrong tab or display")
     menu:SelectMinimapSettings("info_weather")
     Check(Widget(ctx, "infoWeather").enabled == false, "new editor ignored initial module gating")
     Check(info.popup, "closed information reset does not name its selected item")
-    info.popup.heading:SetText(P.Tr("Information displays"))
+    info.popup.heading:SetText(P.Tr("Information texts"))
     info.popup:Show()
     Check(info.popup.heading.text == P.Tr("Weather"), "reset popup names the wrong display")
     local clock = assert(Widget(ctx, "infoClock24Hour"), "clock setting missing")
     workspace.select("buttons")
     P.HM.GetSearchTargetPrepare(clock)()
-    Check(workspace.selected == "information" and info.selected == "info_clock", "warm search did not reveal clock")
+    Check(workspace.selected == "text" and info.selected == "info_clock", "warm search did not reveal clock")
     Check(info.popup.heading.text == P.Tr("Clock"), "open reset popup kept a stale selected display")
     local fps = assert(F.registeredControls["menu2.suite_minimap.minimap.preview.infoFPS"])
     workspace.select("appearance")
     fps.scripts.OnClick(fps, "LeftButton")
-    Check(workspace.selected == "information" and info.selected == "info_fps", "preview did not reveal the information editor")
+    Check(workspace.selected == "text" and info.selected == "info_fps", "preview did not reveal the information editor")
     menu:SelectMinimapSettings("info_weather")
     config.infoWeatherSize, config.infoClockSize = 21, 19
     config.infoWeatherX, config.infoClockX = 45, 63
@@ -256,10 +272,33 @@ for _, width in ipairs({ 320, 720, 1100 }) do
     end
     Check(Focus("style_presets") == menu.sections.style_presets, "ordinary preview fallback was lost")
     Check(Focus("info_fps") == info.body and info.selected == "info_fps", "preview did not select FPS")
-    local decoration = menu.groups.decoration
-    Check(Focus("style_glow") == decoration.body and decoration.selected == "style_glow", "glow preview route wrong")
-    local buttons = menu.groups.buttons
-    Check(Focus("dungeon") == buttons.body and buttons.selected == "dungeon", "group finder preview route wrong")
+    Check(Focus("style_glow") == menu.sections.style_glow and workspace.selected == "appearance", "glow preview route wrong")
+    Check(Focus("dungeon") == menu.sections.dungeon and workspace.selected == "buttons", "group finder preview route wrong")
+    -- Corner pickers read in reading order; the saved values keep their numbers.
+    Check(menu:SelectMinimapSettings("dungeon"), "group finder editor is missing")
+    local corner = assert(Widget(ctx, "dungeonAnchor"), "group finder anchor is missing")
+    local order = {}
+    for i, item in ipairs(corner.row.values) do order[i] = item.text .. "=" .. item.value end
+    Check(table.concat(order, ",") == table.concat({ P.Tr("Top left") .. "=4", P.Tr("Top right") .. "=3",
+        P.Tr("Bottom left") .. "=2", P.Tr("Bottom right") .. "=1" }, ","), "corner order: " .. table.concat(order, ","))
+    local finder = assert(Widget(ctx, "dungeonStyle"))
+    Check(finder.row.values[1].value == P.Suite.MinimapGroupFinderStyle.AUTO
+        and finder.row.values[1].text == P.Tr("Automatic"), "the group finder style does not offer Automatic first")
+    -- One text's style can be copied onto all texts in one write.
+    Check(menu:SelectMinimapSettings("info_clock"), "clock editor missing")
+    local copy = assert(F.registeredControls["menu2.suite_minimap.minimap.text.styleToAll.Clock"],
+        "the clock editor has no action to share its style")
+    local saved = {}
+    for _, key in ipairs({ "infoClockSize", "infoFPSSize", "infoDifficultySize", "infoClockOutline", "infoWeatherOutline" }) do
+        saved[key] = config[key]
+    end
+    config.infoClockSize, config.infoClockOutline = 30, 3
+    copy.scripts.OnClick(copy, "LeftButton")
+    Check(config.infoFPSSize == 30 and config.infoWeatherOutline == 3 and config.infoClockSize == 30,
+        "the clock style did not reach the other texts")
+    Check(config.infoDifficultySize == P.catalog.minimap.rules.infoDifficultySize.max,
+        "a copied size beyond a text's range was not clamped")
+    for key, value in pairs(saved) do config[key] = value end
     if P.Suite.Client.isForever then
         Check(not menu:SelectMinimapSettings("specialization"), "Forever has a specialization editor")
     else
@@ -282,4 +321,22 @@ for _, width in ipairs({ 320, 720, 1100 }) do
         Check(not arrangement.enabled and config.zoomLayout == placements.LEFT, "hiding zoom buttons lost their arrangement")
     end
 end
-print("Minimap tabs, preview, narrow widths, lazy editors, exact routes and scoped reset passed")
+-- Blizzard's queue eye: hiding it, or the group finder button that holds it,
+-- locks the eye's own placement (MinimapElements.QueuePlacement).
+do
+    local rules, config = P.catalog.minimap.rules, S.Config("minimap")
+    local saved = { config.enabled, config.queueStatusHidden, config.dungeonButton, config.queueStatusEnabled }
+    local function Editable(key) return P.RuleEnabled("minimap", rules[key]) end
+    config.enabled, config.queueStatusHidden, config.dungeonButton, config.queueStatusEnabled = true, false, false, true
+    Check(Editable("queueStatusEnabled") and Editable("queueStatusSize") and Editable("queueStatusHidden"),
+        "the queue eye's own placement is locked")
+    config.dungeonButton = true
+    local editable, why = P.RuleEnabled("minimap", rules.queueStatusEnabled, nil, true)
+    Check(not editable and why and why:find(P.Tr(rules.dungeonButton.label), 1, true) and not Editable("queueStatusSize"),
+        "the group finder button left the eye's own placement editable")
+    config.dungeonButton, config.queueStatusHidden = false, true
+    Check(not Editable("queueStatusEnabled") and not Editable("queueStatusSize") and Editable("queueStatusHidden"),
+        "a hidden eye left its placement editable")
+    config.enabled, config.queueStatusHidden, config.dungeonButton, config.queueStatusEnabled = unpack(saved, 1, 4)
+end
+print("Minimap tabs, preview, narrow widths, lazy editors, exact routes, queue eye locks and scoped reset passed")

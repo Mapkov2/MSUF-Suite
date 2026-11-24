@@ -274,11 +274,13 @@ do
             end })
     end
     function P.Text() return { GetStringHeight = function() return 14 end } end
-    function P.Button(_, _, _, _, _, _, onClick, enabled)
-        picker = Control()
-        picker.scripts.OnClick = function() onClick(); Refresh() end
-        picker.isEnabled = enabled
-        return picker
+    local hidePicker
+    function P.Button(_, _, label, _, _, _, onClick, enabled)
+        local control = Control()
+        control.scripts.OnClick = function() onClick(); Refresh() end
+        control.isEnabled = enabled
+        if label == "Choose a button to hide" then hidePicker = control else picker = control end
+        return control
     end
     function P.Meta() return {} end
     function P.SetTranslatedText(target, text) target.text = text end
@@ -309,6 +311,21 @@ do
         and not rows[2].shown, "clicking a listed button did not remove it")
     check(alpha:GetParent() == panel and beta:GetParent() == map, "the removed button did not return to the drawer")
     check(finished == bottom - 30, "the section kept the removed row's room")
+    -- Hidden buttons: a second picker and list; the button waits in the park.
+    hidePicker:Click()
+    check(menu.titles[1] == "Hide a button" and menu.order[1] == "Alpha", "the hide picker does not list the drawer")
+    menu.choose.Alpha()
+    check(S.Config("minimap").drawerHide == "LibDBIcon10_Alpha" and alpha:GetParent() == W.MM.park,
+        "a hidden button stayed in the drawer")
+    check(rows[2].shown and rows[2].text == "Show again: Alpha" and finished == bottom - 2 * 30,
+        "the hidden button has no row after the kept ones")
+    hidePicker:Click()
+    check(menu.order[1] ~= "Alpha", "the hide picker offers a hidden button again")
+    picker:Click()
+    check(menu.order[1] ~= "Alpha", "the keep picker offers a hidden button")
+    rows[2]:Click()
+    check(S.Config("minimap").drawerHide == "" and alpha:GetParent() == panel and not rows[2].shown,
+        "showing a hidden button again did not return it to the drawer")
     -- A dedicated collector pauses the drawer, and with it the picker.
     loaded.HidingBar = true
     check(not picker.isEnabled() and not P.MinimapDrawerOpen(), "the picker stays on while HidingBar collects")

@@ -488,17 +488,18 @@ local function BuildCanvasTools(ui)
     ui.zoomLabel:SetPoint("TOPRIGHT", canvas, "TOPRIGHT", -56, -12)
 
     local function ZoomButton(label, offset, width, zoom)
-        local button = T.Button(canvas, label, width, 23)
+        local button = P.PreviewCanvas.FitToolbarButton(T.Button(canvas, label, width, 23))
         button:SetPoint("TOPRIGHT", canvas, "TOPRIGHT", offset, -7)
         button:SetScript("OnClick", function()
             ui.state.zoom = zoom()
             ui.Paint()
         end)
+        return button
     end
     ZoomButton("-", -96, 28, function() return Clamp(ui.state.zoom - 0.1, 0.2, 1.5) end)
     ZoomButton("+", -12, 28, function() return Clamp(ui.state.zoom + 0.1, 0.2, 1.5) end)
-    ZoomButton("Fit", -130, 35, function() return FitZoom(ui) end)
-    ZoomButton("1:1", -168, 33, function() return 1 end)
+    local fit = ZoomButton("Fit", -130, 35, function() return FitZoom(ui) end)
+    ZoomButton("1:1", -168 - (fit:GetWidth() - 35), 33, function() return 1 end)
 end
 
 local function BuildSelectionBar(ui)

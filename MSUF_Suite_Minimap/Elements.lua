@@ -15,6 +15,7 @@ local mine, watched = setmetatable({}, weak), setmetatable({}, weak)
 local slots, items = {}, {}
 local BASE_SIZE = 21
 local landingBadge, landingButton, queueFrame
+local mailFallback, mailFallbackSource, mailFallbackAtlas
 local trackingButton
 local QUEUE = { key = "QueueStatus", frame = Native.QueueStatus }
 
@@ -180,9 +181,15 @@ local function Wanted(spec, c)
     if not spec.toggle then return true end -- Native conditional visibility.
     local value = c[spec.toggle]
     if spec.key == "Landing" then return value ~= LANDING.NEVER end
-    -- The difficulty text replaces Blizzard's flag.
+    -- The difficulty and calendar day texts replace Blizzard's flag and button.
     if spec == DIFFICULTY then return value and not c.infoDifficulty end
+    if spec.key == "Calendar" then return value and not c.infoCalendarDay end
     return value
+end
+-- The addon button drawer holds the compartment (Drawer.lua); this file keeps
+-- it in its records so disabling the module returns it to Blizzard.
+local function InDrawer(spec, c)
+    return spec.key == "Compartment" and c.showCompartment and MM.CollectsButtons()
 end
 
 local function RowsChanged()
@@ -354,6 +361,47 @@ local function HideSlot(key)
     if slot and not Locked(slot) then slot:Hide() end
 end
 
+local function MailAnimationPlaying(animation)
+    if not MM.Usable(animation) then return false end
+    local playing = animation:IsPlaying()
+    return not S.Public(playing) or playing
+end
+
+-- Blizzard resets the artwork on OnHide, even when only an ancestor hides.
+-- For a visible mail frame, keep its native icon available after that reset.
+local function MissingMailArtwork(slot)
+    local frame = slot and Native.Mail()
+    if not frame or frame:GetParent() ~= slot then return end
+    local visible, icon = frame:IsVisible(), frame.MailIcon
+    if not S.Public(visible) or not visible or not MM.Usable(icon) then return end
+    local shown = icon:IsShown()
+    if not S.Public(shown) or shown or MailAnimationPlaying(frame.NewMailAnim)
+        or MailAnimationPlaying(frame.MailReminderAnim) then return end
+    return frame, icon, S.PublicText(icon:GetAtlas())
+end
+
+local function RefreshMailArtwork(slot)
+    local frame, icon, atlas = MissingMailArtwork(slot)
+    if not atlas or mailFallback and mailFallback:GetParent() ~= frame then
+        if mailFallback then mailFallback:Hide() end
+        if not atlas then return end
+        mailFallback, mailFallbackSource, mailFallbackAtlas = nil, nil, nil
+    end
+    if not mailFallback then
+        if Locked(frame) then return end
+        mailFallback = S.CreateTexture(frame, nil, "BACKGROUND")
+    end
+    if mailFallbackSource ~= icon then
+        mailFallback:SetAllPoints(icon)
+        mailFallbackSource = icon
+    end
+    if mailFallbackAtlas ~= atlas then
+        mailFallback:SetAtlas(atlas)
+        mailFallbackAtlas = atlas
+    end
+    mailFallback:Show()
+end
+
 local function RevealTracking()
     local slot = slots.Tracking
     if not M.active or not slot or Locked(slot) then return end
@@ -381,19 +429,33 @@ local function ObserveTracking(c)
     end
 end
 
+-- Blizzard keeps deciding when its queue eye shows. On the group finder button
+-- the eye sits in the button's eye holder, which follows the button's show
+-- rule; the button hides while the eye shows (DungeonShortcut.lua), and its
+-- own extent already covers the eye.
 local function LayoutQueue()
     local frame, c = Native.QueueStatus(), M.config
-    if queueFrame and (queueFrame ~= frame or not c.queueStatusEnabled) then
+    local placement = frame and Native.QueuePlacement(c)
+    local button = placement == "finder" and MM.dungeonButton
+    if placement == "finder" and not button then placement = nil end
+    if queueFrame and (queueFrame ~= frame or not placement) then
         MM.Release(queueFrame)
         mine[queueFrame], queueFrame = nil, nil
     end
-    if not c.queueStatusEnabled or not frame then
-        MM.SetExtent("queue", 0, 0, 0, 0)
+    if placement ~= "minimap" then MM.SetExtent("queue", 0, 0, 0, 0) end
+    if not placement then return end
+    queueFrame = frame
+    if placement == "hidden" then
+        Park(frame)
+        return
+    end
+    if button then
+        local holder = MM.dungeonEyeHolder
+        Own(frame, holder, "CENTER", holder, "CENTER", 0, 0, Fit(frame, math.min(c.dungeonWidth, c.dungeonHeight)))
         return
     end
     local size, x, y = Native.QueueLayout(c)
     Own(frame, MM.host, "CENTER", MM.host, "TOPLEFT", x, y, Fit(frame, size))
-    queueFrame = frame
     local width, height = MM.Dimensions()
     MM.SetExtent("queue", math.max(0, size / 2 - x), math.max(0, x + size / 2 - width),
         math.max(0, y + size / 2), math.max(0, -y + size / 2 - height))
@@ -415,6 +477,8 @@ local function PlaceCorner(spec, c, frame)
 end
 
 function MM.LayoutElements()
+    -- The queue eye may stand on the group finder button: place the button first.
+    MM.ApplyDungeonShortcut()
     LayoutQueue()
     local c = M.config
     ObserveTracking(c)
@@ -425,6 +489,10 @@ function MM.LayoutElements()
         if spec.key == "Landing" then StyleLanding(frame, c) end
         if not frame then
             HideSlot(spec.key)
+        elseif InDrawer(spec, c) then
+            HideSlot(spec.key)
+            mine[frame] = true
+            Watch(frame)
         elseif not Wanted(spec, c) then
             Park(frame)
             HideSlot(spec.key)
@@ -451,7 +519,7 @@ function MM.LayoutElements()
         end
     end
     for i = count + 1, #items do items[i] = nil end
-    MM.ApplyDungeonShortcut()
+    RefreshMailArtwork(c.showMail and slots.Mail)
     LayoutDiel(c)
     MM.LayoutRow(c.elementRow, items, count, size, c.elementSpacing, c.elementDistance, 0, "elements")
     if MM.rowCount ~= count then
@@ -494,6 +562,7 @@ end
 function MM.ReleaseElements()
     ObserveTracking()
     if landingBadge then landingBadge:Hide() end
+    if mailFallback then mailFallback:Hide() end
     local ring = Native.DayNight()
     for frame in pairs(mine) do
         if frame == ring then ReleaseDiel(frame) else MM.Release(frame) end

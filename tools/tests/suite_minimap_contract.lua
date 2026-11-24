@@ -513,6 +513,57 @@ local function Anchor(frame)
     return point, relative, relativePoint, x, y
 end
 
+for _, client in ipairs({ "Mainline", "Forever" }) do
+    local W = H.New(root, client)
+    W.editModeReady = true
+    local mail = W.cluster.IndicatorFrame.MailFrame
+    local icon = mail:CreateTexture(nil, "ARTWORK")
+    icon:SetAtlas(client == "Forever" and "ui-hud-minimap-mail-icon" or "ui-hud-minimap-mail-up")
+    function icon:GetAtlas() return self.atlas end
+    mail.MailIcon = icon
+    if client == "Mainline" then
+        mail.NewMailAnim = mail:CreateAnimationGroup()
+    end
+    -- Blizzard's OnHide resets the artwork, including when an ancestor hides.
+    mail:SetScript("OnHide", function()
+        if mail.NewMailAnim then mail.NewMailAnim:Stop() end
+        icon:Hide()
+    end)
+    W.Blizzard(function() mail:Show() end)
+    H.Enable(W, { captured = true })
+    W.Step()
+    local fallback = mail.regions[2]
+    check(mail:IsVisible() and not icon:IsShown(), "mail artwork reset was not reproduced")
+    check(fallback and fallback:IsVisible() and fallback.atlas == icon.atlas and select(2, fallback:GetPoint()) == icon,
+        "unread mail must recover its native artwork and anchor when the Suite host appears")
+
+    assert(W.S.Set("minimap", "showMail", false))
+    check(not fallback:IsVisible() and not fallback:IsShown(), "disabling mail must hide the fallback")
+    assert(W.S.Set("minimap", "showMail", true))
+    check(fallback:IsVisible() and #mail.regions == 2, "re-enabling mail must reuse its fallback")
+
+    if mail.NewMailAnim then
+        W.Blizzard(function() mail.NewMailAnim:Play(); mail:GetParent():Layout() end)
+        W.Step()
+        check(not fallback:IsShown(), "the native mail animation must have the artwork to itself")
+        W.Blizzard(function() mail.NewMailAnim:Stop() end)
+    end
+    W.Blizzard(function() icon:Show(); mail:GetParent():Layout() end)
+    W.Step()
+    check(not fallback:IsShown() and icon:IsVisible(), "native artwork must take precedence when it returns")
+    W.Blizzard(function() W.MM.host:Hide(); W.MM.host:Show() end)
+    W.Step()
+    check(fallback:IsVisible() and not icon:IsShown(), "mail must reappear after its host was hidden")
+    W.Blizzard(function() mail:Hide(); mail:GetParent():Layout() end)
+    W.Step()
+    check(not fallback:IsShown() and not mail:IsVisible(), "clearing new mail must clear the indicator")
+    W.Blizzard(function() mail:Show(); mail:GetParent():Layout() end)
+    W.Step()
+    check(fallback:IsVisible(), "unread mail with missing native artwork must recover again")
+    assert(W.S.Set("minimap", "enabled", false))
+    check(not fallback:IsShown(), "releasing the minimap must hide its fallback")
+end
+
 -- Retail element row: Blizzard's own buttons in suite slots, packed by visibility.
 do
     local W = H.New(root, "Mainline")
@@ -654,7 +705,9 @@ do
     check(landing:GetParent() == MM.park, "landing never")
     assert(S.Set("minimap", "landingIcon", 2))
     check(not MM.landingBadge.shown, "hidden expansion button has no badge")
-    assert(S.Set("minimap", "showCompartment", true))
+    -- Without the addon button drawer the compartment keeps its row slot
+    -- (with it, the drawer holds it: suite_minimap_features_contract.lua).
+    assert(S.SetMany("minimap", { showCompartment = true, collectButtons = false }))
     W.Blizzard(function() compartment:Show() end)
     W.Step()
     check(compartment:GetParent():GetParent() == host and select(4, Anchor(compartment:GetParent())) == 46, "compartment row slot")

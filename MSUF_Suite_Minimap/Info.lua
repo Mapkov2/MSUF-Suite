@@ -27,6 +27,12 @@ local zoneColors = {
 }
 local outlines = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
 local TIER_COLORS = NS.MinimapDifficultyColors
+local REVEAL = NS.MinimapTextReveal
+-- Each text shows always or on mouseover; the coordinates keep their own key.
+local function RevealKey(key)
+    return key == "Coordinates" and "infoCoordinatesMode" or "info" .. key .. "Reveal"
+end
+MM.InfoRevealKey = RevealKey
 local Finite = S.Finite
 -- 12.1.0 lacks C_Weather (12.1.5 and WoW Forever have it).
 local GetCurrentWeather = C_Weather and C_Weather.GetCurrentWeather
@@ -209,18 +215,6 @@ function S.SetMinimapPreviewListener(listener)
     previewListener = listener
 end
 
--- Read the already-rendered display state without sampling game data again.
-function S.MinimapInfoPreviewSource(key)
-    if not M.active then return end
-    if not M.infoVisible then return false end
-    if key == "Difficulty" then
-        return M.difficultyActive and M.difficultyText ~= nil and M.difficultyText ~= "", M.difficultyText, M.difficultyColor
-    end
-    local entry = M.infoEntries and M.infoEntries[key]
-    if not entry or not entry.active or not entry.button:IsShown() then return false end
-    return true, entry.text, entry.lastColor, entry.weatherTexture, entry.invite and entry.invite:IsShown()
-end
-
 -- The box, invite mark and hit rectangle follow the measured content width.
 local function Decorate(entry)
     local width = entry.contentWidth or MinimapStyle.InfoTextWidth(entry)
@@ -280,11 +274,11 @@ local function Sample(entry, key)
 end
 
 -- The text's box hugs it like the other texts' boxes do, and rests while
--- there is no text (outside instances).
+-- there is no text (outside instances) or the text waits for the pointer.
 local function FitDifficultyBox(label, text)
     local box, size = M.difficultyBox, M.difficultyBoxSize
     if not box then return end
-    box:SetShown(size ~= nil and text ~= "")
+    box:SetShown(size ~= nil and text ~= "" and label:IsShown())
     if size and text ~= "" then
         local width = label:GetStringWidth()
         box:SetWidth(math.max(size, (Finite(width) and width or 0) + 8))
@@ -315,13 +309,27 @@ local function UpdateDifficulty()
     if changed and previewListener then NS.Dispatch(previewListener, "Difficulty") end
 end
 
+-- The clock carries the invite mark; without it, the calendar day text does.
+local INVITE_HOSTS = { "Clock", "CalendarDay" }
+local function InviteEntry()
+    local entries = M.infoEntries
+    for i = 1, #INVITE_HOSTS do
+        local entry = entries and entries[INVITE_HOSTS[i]]
+        if entry and entry.active then return entry end
+    end
+end
+
 local function UpdateInvite()
-    local entry = M.infoEntries and M.infoEntries.Clock
-    local mark = entry and entry.invite
-    if not mark then return end
-    mark:SetShown(M.inviteWanted and entry.active and Invites() or false)
-    Decorate(entry)
-    if previewListener and not M.infoConfiguring then NS.Dispatch(previewListener, "Clock") end
+    local host = InviteEntry()
+    for i = 1, #INVITE_HOSTS do
+        local entry = M.infoEntries and M.infoEntries[INVITE_HOSTS[i]]
+        local mark = entry and entry.invite
+        if mark then
+            mark:SetShown(entry == host and M.inviteWanted and Invites() or false)
+            Decorate(entry)
+            if previewListener and not M.infoConfiguring then NS.Dispatch(previewListener, INVITE_HOSTS[i]) end
+        end
+    end
 end
 
 local Tick
@@ -360,6 +368,15 @@ function MM.UpdateInfoVisibility()
     if M.difficultyActive then M.difficultyDirty = true end
     if not M.infoTimer then Tick() end
     if previewListener then NS.Dispatch(previewListener) end
+end
+
+-- Texts that just appeared (mouseover) sample on the next tick, which runs now.
+local function Wake()
+    if M.infoTimer then
+        M.infoTimer:Cancel()
+        M.infoTimer = nil
+    end
+    if Visible() then Tick() end
 end
 
 -- Coordinates parked without a position sample again right away.
@@ -538,6 +555,7 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         entry.statusColors = { c.infoDurabilityGoodColor, c.infoDurabilityWarningColor, c.infoDurabilityBadColor }
     end
     entry.interval = c[prefix .. "Interval"] or 1
+    entry.mouseover = c[RevealKey(key)] == REVEAL.MOUSEOVER
     if key == "Clock" then
         entry.clockFormat = (c.infoClock24Hour and "%H:%M" or "%I:%M") .. (c.infoClockSeconds and ":%S" or "")
     elseif key == "Coordinates" then
@@ -613,7 +631,9 @@ local function SyncTextEvents(c)
     local coordinates = c.infoCoordinates and S.CanShowMinimapInfo("Coordinates")
     local difficulty = c.infoDifficulty
     -- The mark stands in for Blizzard's calendar button while that is not shown.
-    M.inviteWanted = c.infoClock and not (c.showCalendar and S.MinimapElementAvailable("Calendar"))
+    -- The calendar day text replaces Blizzard's calendar button (Elements.lua).
+    local calendarShown = c.showCalendar and not c.infoCalendarDay and S.MinimapElementAvailable("Calendar")
+    M.inviteWanted = (c.infoClock or c.infoCalendarDay) and not calendarShown
     Listen(DURABILITY_EVENTS, DurabilityChanged, durability)
     Listen(ZONE_EVENTS, ZoneChanged, location or coordinates or difficulty or weather)
     ListenOne("WEATHER_CHANGED", WeatherChanged, weather)
@@ -652,7 +672,7 @@ local function LayoutEntries(c, hideCoordinates)
             local height = entry.height
             if anchor == TEXT_ANCHOR.ABOVE then above = math.max(above, c[prefix .. "Y"] + height) end
             if anchor == TEXT_ANCHOR.BELOW then below = math.max(below, height - c[prefix .. "Y"]) end
-            entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == NS.MinimapCoordinatesMode.ALWAYS or MM.Revealed())
+            entry.button:SetShown(not entry.mouseover or MM.Revealed())
         elseif entry then
             entry.active = false
             entry.button:Hide()
@@ -662,13 +682,16 @@ local function LayoutEntries(c, hideCoordinates)
 end
 
 local function ApplyInviteMark(c)
-    local clock = M.infoEntries.Clock
-    if clock and M.inviteWanted and not clock.invite then
-        clock.invite = S.CreateTexture(clock.button, nil, "ARTWORK")
-        clock.invite:SetTexture("Interface\\Calendar\\EventNotification")
-        clock.invite:SetTexCoord(0.03125, 0.6484375, 0.03125, 0.8671875)
+    local host = InviteEntry()
+    if host and M.inviteWanted and not host.invite then
+        host.invite = S.CreateTexture(host.button, nil, "ARTWORK")
+        host.invite:SetTexture("Interface\\Calendar\\EventNotification")
+        host.invite:SetTexCoord(0.03125, 0.6484375, 0.03125, 0.8671875)
     end
-    if clock and clock.invite then clock.invite:SetSize(c.infoClockSize, c.infoClockSize) end
+    if host and host.invite then
+        local size = c["info" .. host.button.infoKey .. "Size"]
+        host.invite:SetSize(size, size)
+    end
     UpdateInvite()
 end
 
@@ -707,8 +730,9 @@ local function ApplyDifficultyLabel(c, difficulty)
     label:SetWidth(c.infoDifficultyWidth)
     local justify = Anchor(label, c.infoDifficultyAnchor, c.infoDifficultyX, c.infoDifficultyY)
     label:SetJustifyH(justify)
+    M.difficultyMouseover = c.infoDifficultyReveal == REVEAL.MOUSEOVER
+    label:SetShown(not M.difficultyMouseover or MM.Revealed())
     ApplyDifficultyBox(c, label, justify)
-    label:Show()
     M.difficultyText, M.difficultyColor, M.difficultyDirty = nil, nil, true
 end
 
@@ -755,11 +779,24 @@ end
 MM.OnHover(function(shown)
     if not M.active then return end
     if shown then RefreshTelemetry(true) end
-    local entry = M.infoEntries and M.infoEntries.Coordinates
-    if entry and entry.active and M.config.infoCoordinatesMode == NS.MinimapCoordinatesMode.MOUSEOVER then
-        entry.button:SetShown(shown)
-        if shown then Rearm() end
+    local entries, woken = M.infoEntries, false
+    if entries then
+        for _, key in ipairs(keys) do
+            local entry = entries[key]
+            if entry and entry.active and entry.mouseover then
+                entry.button:SetShown(shown)
+                if shown then
+                    entry.due, entry.dirty, woken = nil, true, true
+                end
+            end
+        end
     end
+    local label = M.difficultyActive and M.difficultyMouseover and M.difficultyLabel
+    if label then
+        label:SetShown(shown)
+        FitDifficultyBox(label, M.difficultyText or "")
+    end
+    if woken then Wake() end
     if previewListener then NS.Dispatch(previewListener) end
 end)
 

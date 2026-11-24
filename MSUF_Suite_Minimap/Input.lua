@@ -68,9 +68,21 @@ local function TrackingButton()
     if MM.Usable(button) then return button end
 end
 
+-- The middle click always runs its action (Nothing included); the right
+-- click only while it has one, otherwise Blizzard keeps its ping.
+local function ClickAction(button)
+    if button == "MiddleButton" then return M.config.middleClick end
+    if button == "RightButton" then
+        local action = M.config.rightClick
+        if action and action ~= MIDDLE.NOTHING then return action end
+    end
+end
+MM.ClickAction = ClickAction
+
 local function MouseUp(_, button)
-    if button ~= "MiddleButton" or not M.active or NS.IsCombatLocked() then return end
-    local action = M.config.middleClick
+    if not M.active or NS.IsCombatLocked() then return end
+    local action = ClickAction(button)
+    if not action then return end
     if action == MIDDLE.TRACKING then
         -- Blizzard's tracking menu opens on the press of its own
         -- DropdownButton (OnMouseDown_Intrinsic), which no secure click
@@ -113,7 +125,7 @@ end
 local padInput, modeWatch
 local function MapMouseUp(_, _, button)
     local map = inputMap
-    if button ~= "MiddleButton" or not padInput or not MM.Usable(map) then return end
+    if not M.active or not ClickAction(button) or not padInput or not MM.Usable(map) then return end
     local over = map:IsMouseMotionFocus()
     if S.Public(over) and over == true then MouseUp(map, button) end
 end
@@ -159,7 +171,7 @@ local function WrapMap(map)
     local originalMouseUp = map:GetScript("OnMouseUp")
     local originalMouseWheel = map:GetScript("OnMouseWheel")
     local mouseUp = function(self, button, ...)
-        if button == "MiddleButton" then return MouseUp(self, button) end
+        if M.active and ClickAction(button) then return MouseUp(self, button) end
         if originalMouseUp then return originalMouseUp(self, button, ...) end
     end
     map:SetScript("OnMouseUp", mouseUp)
@@ -350,12 +362,71 @@ local function PlaceZoom(mode)
     if not zoomOut:IsShown() then zoomOut:Show() end
 end
 
+------------------------------------------------------------------ visibility conditions
+-- Host.lua applies the map's visibility; these decide its conditions. Pet
+-- battles and vehicles are macro conditions: they join the state driver ahead
+-- of the mode, and a hidden mouseover map asks them before it wakes.
+-- Instances are not a macro condition: zone changes re-apply them, which
+-- happens outside combat; a change during lockdown waits for its end. The
+-- key binding hides the map for this session. MSUF Edit Mode ignores all of it.
+local INSTANCE_HIDE = NS.MinimapInstanceHide
+function MM.VisibilityConditions(c)
+    if S.editMode then return "" end
+    -- The vehicle clauses match the bag bar's and data bars' "In vehicle" rule.
+    return (c.hidePetBattle and "[petbattle] hide; " or "")
+        .. (c.hideVehicle and "[@player,unithasvehicleui] hide; [vehicleui] hide; " or "")
+end
+local function InstanceHidden(c)
+    local mode = c.hideInstances
+    if not mode or mode == INSTANCE_HIDE.NEVER then return false end
+    local inside, kind = IsInInstance()
+    if not S.Public(inside) or inside ~= true or not S.Public(kind) then return false end
+    if kind == "raid" then return mode ~= INSTANCE_HIDE.DUNGEONS end
+    return kind == "party" and mode ~= INSTANCE_HIDE.RAIDS
+end
+function MM.HiddenByCondition()
+    return M.userHidden == true or InstanceHidden(M.config)
+end
+-- The conditions hide the map right now (mouseover reads them when it wakes).
+function MM.ConditionsHide(prefix)
+    return prefix ~= "" and SecureCmdOptionParse(prefix .. "show") == "hide"
+end
+local function Reapply()
+    if not M.active then return end
+    if NS.IsCombatLocked() then S.Queue("minimap") else MM.ApplyVisibility() end
+end
+local CONDITION_EVENTS = { "PET_BATTLE_OPENING_START", "PET_BATTLE_CLOSE", "UNIT_ENTERED_VEHICLE", "UNIT_EXITED_VEHICLE" }
+local ZONE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA" }
+-- Only a configured condition listens; the signature avoids re-registering.
+function MM.SyncVisibilityEvents(c, mode)
+    local conditions = mode == VISIBILITY.MOUSEOVER and MM.VisibilityConditions(c) ~= ""
+    local zones = c.hideInstances ~= nil and c.hideInstances ~= INSTANCE_HIDE.NEVER
+    local signature = (conditions and 1 or 0) + (zones and 2 or 0)
+    if M.visibilityEvents == signature then return end
+    M.visibilityEvents = signature
+    for i = 1, #CONDITION_EVENTS do
+        if conditions then MM.Listen(CONDITION_EVENTS[i], "visibility", Reapply)
+        else MM.Unlisten(CONDITION_EVENTS[i], "visibility") end
+    end
+    for i = 1, #ZONE_EVENTS do
+        if zones then MM.Listen(ZONE_EVENTS[i], "visibilityZone", Reapply)
+        else MM.Unlisten(ZONE_EVENTS[i], "visibilityZone") end
+    end
+end
+-- The key binding; the protected map waits for combat to end.
+function MM.ToggleShown()
+    if not M.active or NS.InCombat() then return false end
+    M.userHidden = not M.userHidden or nil
+    MM.ApplyVisibility()
+    return true
+end
+
 local function NeedsHover(c)
     return c.visibility == VISIBILITY.MOUSEOVER or c.zoomButtons == ZOOM.MOUSEOVER
         or (c.showTracking and c.trackingMouseover and not S.GamepadUI())
         or (c.hoverResize and c.visibility ~= VISIBILITY.NEVER)
         or (MM.CollectsButtons() and c.drawerMouseover)
-        or (c.infoCoordinates and c.infoCoordinatesMode == NS.MinimapCoordinatesMode.MOUSEOVER)
+        or MM.TextsNeedHover(c)
         or (c.showLanding == NS.MinimapLanding.MOUSEOVER and S.MinimapElementAvailable("Landing"))
 end
 -- In mouseover visibility the host is hidden, so the catcher cannot be its child.
@@ -422,6 +493,72 @@ MM.flushers.rotate = function()
     M.context:CVar("rotateMinimap", rotate == ROTATE.ROTATE and "1" or "0")
 end
 local function LayoutApplied() MM.Queue("rotate") end
+
+------------------------------------------------------------------ north marker
+-- Blizzard's compass ring fades with the cluster decorations (Host.lua), so a
+-- rotating map would no longer show north. A small N rides the map's edge
+-- instead. It follows the shared heading watch (S.CompassHeading) only while
+-- it is visible: shown while the map rotates, hidden with the host.
+local north
+local NORTH_INSET = 7
+local function Rotating(c)
+    if c.rotate == ROTATE.ROTATE then return true end
+    if c.rotate ~= ROTATE.BLIZZARD then return false end
+    local value = C_CVar.GetCVar("rotateMinimap")
+    return S.Public(value) and value == "1"
+end
+-- Bearings grow clockwise; north sits opposite the player's turn.
+local function PlaceNorth(_, bearing)
+    if not north or not Finite(bearing) or bearing == north.bearing then return end
+    north.bearing = bearing
+    local radians = math.rad(bearing)
+    local dx, dy = -math.sin(radians), math.cos(radians)
+    local halfWidth = math.max(0, (MM.width or 0) / 2 - NORTH_INSET)
+    local halfHeight = math.max(0, (MM.height or 0) / 2 - NORTH_INSET)
+    local reach
+    if M.config.shape == NS.MinimapShape.CIRCLE then
+        reach = math.min(halfWidth, halfHeight)
+    else
+        local ax, ay = math.abs(dx), math.abs(dy)
+        reach = math.min(ax > 0 and halfWidth / ax or halfWidth, ay > 0 and halfHeight / ay or halfHeight)
+    end
+    north:ClearAllPoints()
+    north:SetPoint("CENTER", MM.host, "CENTER", dx * reach, dy * reach)
+end
+local function WatchNorth() S.CompassHeading.Watch(north, PlaceNorth) end
+local function StopNorth() S.CompassHeading.Watch(north, nil) end
+local function NorthChanged(_, _, name)
+    if name == "rotateMinimap" and M.active then MM.ApplyNorth() end
+end
+function MM.ApplyNorth()
+    local c = M.config
+    local wanted = M.active and c.showNorth and Rotating(c) or false
+    if c.showNorth and c.rotate == ROTATE.BLIZZARD then
+        MM.Listen("CVAR_UPDATE", "north", NorthChanged)
+    elseif M.context then
+        MM.Unlisten("CVAR_UPDATE", "north")
+    end
+    if not wanted then
+        if north then north:Hide() end
+        return
+    end
+    if not north then
+        north = S.CreateFrame("Frame", nil, MM.host)
+        north:SetSize(16, 16)
+        north:EnableMouse(false)
+        north.label = S.CreateFontString(north, nil, "OVERLAY", "GameFontNormalSmall")
+        north.label:SetAllPoints(north)
+        -- The localized letter the Suite compass uses (Core/Compass.lua).
+        north.label:SetText((S.Text("N E S W")):match("^(%S+)") or "N")
+        north:SetScript("OnShow", WatchNorth)
+        north:SetScript("OnHide", StopNorth)
+        north:Hide()
+    end
+    north:SetFrameLevel(MM.mapLevel + 13)
+    north.bearing = nil
+    north:Show()
+    PlaceNorth(nil, S.CompassHeading.Read())
+end
 local trackingGamepad
 local function TrackingInputChanged()
     local pad = S.GamepadUI()
@@ -462,6 +599,8 @@ end
 
 function MM.ReleaseInput()
     MM.Unlisten("GAME_PAD_ACTIVE_CHANGED", "trackingHover")
+    MM.Unlisten("CVAR_UPDATE", "north")
+    if north then north:Hide() end
     M.context:Cancel(ResetZoom)
     if leaveJob then leaveJob:Cancel() end
     MM.hovered = false

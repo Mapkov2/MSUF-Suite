@@ -86,6 +86,15 @@ function Native.ButtonTexture(button)
 end
 function Native.QueueStatus() return Global("QueueStatusButton") end
 function Native.QueueLayout(config) return config.queueStatusSize, config.queueStatusX, config.queueStatusY end
+-- Where the runtime and its preview put Blizzard's queue eye: "hidden" parks
+-- it; "finder" stands it in for the group finder button while the player is
+-- queued, so the map shows one group finder; "minimap" uses the eye's own
+-- offsets; nil leaves it to Blizzard.
+function Native.QueuePlacement(config)
+    if config.queueStatusHidden then return "hidden" end
+    if config.dungeonButton then return "finder" end
+    if config.queueStatusEnabled then return "minimap" end
+end
 function Native.Difficulty() return Cluster("InstanceDifficulty") end
 function Native.DayNight() return Cluster("DielFrame") end
 function Native.DayNightContainer() return Cluster("MinimapContainer") end

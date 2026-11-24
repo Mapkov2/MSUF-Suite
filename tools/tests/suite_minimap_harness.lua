@@ -143,6 +143,7 @@ function H.New(root, client, options)
     function R:SetColorTexture(...) self.color = { ... } end
     function R:SetGradient(...) self.gradient = { ... } end
     function R:SetVertexColor(...) self.vertex = { ... } end
+    function R:SetDesaturation(value) self.desaturation = value end
     function R:SetBlendMode(value) self.blend = value end
     function R:SetRotation(value) self.rotation = value end
     function R:CreateAnimationGroup()
@@ -441,6 +442,8 @@ function H.New(root, client, options)
         W.secure = false
     end
     W.ResolveMacro = ResolveMacro
+    -- The visibility conditions ask the client the same way (Input.lua).
+    G.SecureCmdOptionParse = function(value) return ResolveMacro(value) end
     -- The client runs PLAYER_REGEN_DISABLED handlers before lockdown starts
     -- and PLAYER_REGEN_ENABLED handlers after it ended; state drivers resolve
     -- on the next frame, already inside the new state.

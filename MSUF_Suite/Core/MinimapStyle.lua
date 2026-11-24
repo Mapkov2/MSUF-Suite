@@ -124,39 +124,90 @@ function Style.PaintZoomOutGlyph(glyph, scale, enabled)
     end
 end
 
--- The native queue-eye atlas is a subrectangle, not a whole texture file.
--- Crop inside that rectangle so runtime and preview show the same iris.
-function Style.PaintDungeonButton(button, icon, style, scale)
-    local modern = style == 2
-    local band, inner = rawget(button, "dungeonBand"), rawget(button, "dungeonInner")
-    if modern and not band then
-        band = button:CreateTexture(nil, "BACKGROUND", nil, 1)
-        inner = button:CreateTexture(nil, "BACKGROUND", nil, 2)
-        button.dungeonBand, button.dungeonInner = band, inner
-        band:SetColorTexture(22 / 255, 25 / 255, 27 / 255, 1)
-        inner:SetColorTexture(0, 0, 0, 1)
+-- The group finder symbol stands square in the button's middle: a white Suite
+-- glyph tinted by the caller (tools/build_group_finder_symbols.py), or
+-- Blizzard's eye. Its static "groupfinder-eye-single" atlas has no art on WoW
+-- Forever (a green square), so the eye is the first frame of the searching
+-- flipbook both clients animate (Blizzard_LFGUtil LFGEye.xml: 8 rows, 11 columns).
+local SYMBOL = NS.MinimapGroupFinderSymbol
+local GLYPHS = {
+    [SYMBOL.EYE] = SUITE_MEDIA .. "GroupFinder\\Eye", [SYMBOL.SEARCH] = SUITE_MEDIA .. "GroupFinder\\Search",
+    [SYMBOL.GROUP] = SUITE_MEDIA .. "GroupFinder\\Group", [SYMBOL.DUNGEON] = SUITE_MEDIA .. "GroupFinder\\Dungeon",
+}
+-- After SetAtlas the client reads texture coordinates inside the atlas, not
+-- the file (seen on WoW Forever), so the frame is cut from the atlas' own file
+-- in file coordinates; without that file, the cut is relative to the atlas.
+local EYE_FLIPBOOK, EYE_COLUMNS, EYE_ROWS = "groupfinder-eye-flipbook-searching", 11, 8
+local function PaintBlizzardEye(icon)
+    local info = C_Texture.GetAtlasInfo(EYE_FLIPBOOK)
+    info = NS.Public(info) and type(info) == "table" and info or nil
+    local file = info and (info.file or info.filename)
+    local l, r, t, b
+    if info then l, r, t, b = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord end
+    if (type(file) == "number" or type(file) == "string") and NS.Finite(l) and NS.Finite(r) and NS.Finite(t)
+        and NS.Finite(b) then
+        icon:SetTexture(file)
+        icon:SetTexCoord(l, l + (r - l) / EYE_COLUMNS, t, t + (b - t) / EYE_ROWS)
+        return
     end
-    if band then
-        band:ClearAllPoints()
-        band:SetPoint("TOPLEFT", button, "TOPLEFT", 2 * scale, -2 * scale)
-        band:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2 * scale, 2 * scale)
-        inner:ClearAllPoints()
-        inner:SetPoint("TOPLEFT", button, "TOPLEFT", 4 * scale, -4 * scale)
-        inner:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4 * scale, 4 * scale)
-        band:SetShown(modern)
-        inner:SetShown(modern)
+    icon:SetAtlas(EYE_FLIPBOOK)
+    icon:SetTexCoord(0, 1 / EYE_COLUMNS, 0, 1 / EYE_ROWS)
+end
+
+-- The symbol's colour: Automatic takes the accent of the map's look preset,
+-- else of the profile's Suite look, and keeps Blizzard's eye in its own
+-- colours (nil). "class" asks the caller for the player's class colour.
+local ACCENT, TINT = NS.MinimapLookAccent, NS.MinimapGroupFinderTint
+function Style.GroupFinderTint(config)
+    local mode = config.dungeonIconTint
+    if mode == TINT.CLASS then return "class" end
+    if mode == TINT.CUSTOM then return config.dungeonIconColor end
+    if config.dungeonIcon == SYMBOL.BLIZZARD then return nil end
+    local db = NS.DB and NS.DB.suite
+    local look = db and NS.SuiteLooks.indexes[db.globalLook]
+    return ACCENT[config.stylePreset] or ACCENT[GLOBAL_PRESETS[look]] or ACCENT[11]
+end
+
+-- Modern Dark sets the symbol on a round dark badge whose ring takes the
+-- symbol's colour; Default shows it bare. A tinted Blizzard eye is
+-- desaturated first. A glyph the client has not loaded yet (a new file needs
+-- a game restart) falls back to Blizzard's eye. Never a box: returns false,
+-- so callers hide their rectangular plates.
+function Style.PaintDungeonButton(button, icon, style, scale, symbol, width, height, r, g, b)
+    local side = math.max(1, math.min(width or 26, height or 26))
+    local badge = style == 2
+    local ring, disc = rawget(button, "dungeonRing"), rawget(button, "dungeonDisc")
+    if badge and not ring then
+        ring = button:CreateTexture(nil, "BACKGROUND", nil, 1)
+        disc = button:CreateTexture(nil, "BACKGROUND", nil, 2)
+        ring:SetTexture(MEDIA .. "Circle.tga")
+        disc:SetTexture(MEDIA .. "Circle.tga")
+        disc:SetVertexColor(0.05, 0.06, 0.08, 0.92)
+        ring:SetPoint("CENTER", button, "CENTER")
+        disc:SetPoint("CENTER", button, "CENTER")
+        button.dungeonRing, button.dungeonDisc = ring, disc
     end
-    local inset = (modern and 5 or 2) * scale
+    if ring then
+        if r then ring:SetVertexColor(r, g, b, 0.75) else ring:SetVertexColor(0.30, 0.34, 0.39, 0.95) end
+        ring:SetSize(side, side)
+        disc:SetSize(math.max(1, side - 2 * scale), math.max(1, side - 2 * scale))
+        ring:SetShown(badge)
+        disc:SetShown(badge)
+    end
+    local size = badge and side * .62 or side
     icon:ClearAllPoints()
-    icon:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
-    icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
-    icon:SetAtlas("groupfinder-eye-single")
-    local info = C_Texture.GetAtlasInfo("groupfinder-eye-single")
-    if not NS.Public(info) or type(info) ~= "table" then return end
-    local l, r, t, b = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
-    if not (NS.Finite(l) and NS.Finite(r) and NS.Finite(t) and NS.Finite(b)) then return end
-    local x, y = modern and .30 or .16, modern and .36 or .30
-    icon:SetTexCoord(l + (r - l) * x, r - (r - l) * x, t + (b - t) * y, b - (b - t) * y)
+    icon:SetPoint("CENTER", button, "CENTER")
+    icon:SetSize(size, size)
+    local glyph = symbol ~= SYMBOL.BLIZZARD and (GLYPHS[symbol] or GLYPHS[SYMBOL.EYE])
+    if glyph and icon:SetTexture(glyph) ~= false then
+        icon:SetTexCoord(0, 1, 0, 1)
+        icon:SetDesaturation(0)
+    else
+        PaintBlizzardEye(icon)
+        icon:SetDesaturation(r and 1 or 0)
+    end
+    icon:SetVertexColor(r or 1, g or 1, b or 1, 1)
+    return false
 end
 
 -- Shared by the live weather entry and the options preview. WeatherType and
@@ -266,16 +317,23 @@ local function Assign(texture, path)
 end
 
 -- Automatic uses a matching minimap preset, then the profile's Suite look.
+local function AutomaticDrawer(config)
+    local db = NS.DB and NS.DB.suite
+    local look = db and NS.SuiteLooks.indexes[db.globalLook]
+    return DRAWER_PRESETS[config.stylePreset] or DRAWER_PRESETS[GLOBAL_PRESETS[look]] or DEFAULT_DRAWER
+end
 function Style.PaintDrawerToggle(icon, config, highlight)
-    local path = DRAWER_TEXTURES[config.drawerStyle]
-    if not path then
-        local db = NS.DB and NS.DB.suite
-        local look = db and NS.SuiteLooks.indexes[db.globalLook]
-        local style = DRAWER_PRESETS[config.stylePreset] or DRAWER_PRESETS[GLOBAL_PRESETS[look]]
-        path = DRAWER_TEXTURES[style or DEFAULT_DRAWER]
-    end
+    local path = DRAWER_TEXTURES[config.drawerStyle] or DRAWER_TEXTURES[AutomaticDrawer(config)]
     Assign(icon, path)
     if highlight then Assign(highlight, path) end
+end
+-- The group finder button's Automatic style follows the same look: the dark
+-- band for the modern and dark palettes, the plain button for Forever's gold.
+local FINDER = NS.MinimapGroupFinderStyle
+function Style.GroupFinderStyle(config)
+    local style = config.dungeonStyle
+    if style ~= FINDER.AUTO then return style end
+    return AutomaticDrawer(config) == DRAWER.FOREVER and FINDER.DEFAULT or FINDER.MODERN_DARK
 end
 
 local function Visible(layerOn, key)

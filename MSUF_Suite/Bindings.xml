@@ -8,6 +8,12 @@
 	<Binding name="MSUFSUITE_TOGGLE_MAP_OVERLAY" category="MSUF Suite">
 		if MSUFSuite and MSUFSuite.ToggleMapOverlay then MSUFSuite.ToggleMapOverlay() end
 	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_MINIMAP" header="MSUFSUITE_MINIMAP" category="MSUF Suite">
+		if MSUFSuite and MSUFSuite.ToggleMinimap then MSUFSuite.ToggleMinimap() end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_MINIMAP_DRAWER" category="MSUF Suite">
+		if MSUFSuite and MSUFSuite.ToggleMinimapDrawer then MSUFSuite.ToggleMinimapDrawer() end
+	</Binding>
 	<!-- Commands for the suite-only action bars 9 and 10. They have no bodies:
 	     MSUF Suite routes keys bound here to its buttons with override click
 	     bindings while the action bar module is active. -->

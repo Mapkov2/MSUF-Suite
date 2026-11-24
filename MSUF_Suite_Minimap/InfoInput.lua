@@ -173,6 +173,8 @@ local function Enter(button)
         local hint = M.config.infoClockClick == CLOCK_CLICK.CALENDAR and "Left: calendar. Right: clock."
             or "Left: clock. Right: calendar."
         GameTooltip:AddLine(S.Text(hint), .7, .8, .9)
+    elseif key == "CalendarDay" and entry.invite and entry.invite:IsShown() then
+        GameTooltip:AddLine(S.Text("Calendar invitations are waiting."), 1, .82, 0)
     elseif key == "Coordinates" or key == "Location" and M.config.infoLocationClick then
         GameTooltip:AddLine(S.Text("Click to open the world map."), .7, .8, .9)
     elseif key == "Durability" then
@@ -183,3 +185,27 @@ end
 
 -- The scripts of every information text button.
 MM.InfoScripts = { OnClick = Click, OnEnter = Enter, OnLeave = Leave, OnHide = Hidden }
+
+-- Read the already-rendered display state without sampling game data again
+-- (Info.lua renders the texts).
+function S.MinimapInfoPreviewSource(key)
+    if not M.active then return end
+    if not M.infoVisible then return false end
+    if key == "Difficulty" then
+        local label = M.difficultyLabel
+        return M.difficultyActive and label ~= nil and label:IsShown() and M.difficultyText ~= nil
+            and M.difficultyText ~= "", M.difficultyText, M.difficultyColor
+    end
+    local entry = M.infoEntries and M.infoEntries[key]
+    if not entry or not entry.active or not entry.button:IsShown() then return false end
+    return true, entry.text, entry.lastColor, entry.weatherTexture, entry.invite and entry.invite:IsShown()
+end
+
+-- The hover catcher (Input.lua) runs while a text waits for the pointer.
+local MOUSEOVER = NS.MinimapTextReveal.MOUSEOVER
+function MM.TextsNeedHover(c)
+    for _, key in ipairs(NS.MinimapInfoFields) do
+        if c["info" .. key] and c[MM.InfoRevealKey(key)] == MOUSEOVER and S.CanShowMinimapInfo(key) then return true end
+    end
+    return c.infoDifficulty and c.infoDifficultyReveal == MOUSEOVER or false
+end

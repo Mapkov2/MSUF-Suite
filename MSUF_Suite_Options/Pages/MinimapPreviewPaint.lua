@@ -410,11 +410,17 @@ local function IconWanted(config, spec, drawer, drawerShown)
     end
     if key == "specialization" then return config.specButton and (config.specShowSpec or config.specShowLoot) end
     if key == "dungeon" then return config.dungeonButton end
+    -- Only an eye at its own offsets is drawn: hidden, or standing in for the group finder button, it has none.
+    if key == "queueStatus" and Native.QueuePlacement(config) ~= "minimap" then return false end
     if key == "folio" then
         if config.showLanding == LANDING.NEVER then return false end
         nativeKey = "Landing"
     elseif key == "difficulty" then
         if not config.showDifficulty or config.infoDifficulty then return false end
+    elseif key == "calendar" and config.infoCalendarDay then
+        return false -- The calendar day text replaces the button.
+    elseif key == "compartment" and Suite.MinimapCompartmentInDrawer(config) then
+        return false -- The addon drawer holds it.
     elseif spec[4] and not config[spec[4]] then
         return false
     end
@@ -614,12 +620,17 @@ local function PaintIcon(ui, config, item, size, index, single)
     if key == "specialization" then
         PaintSpec(ui, config, item)
     elseif key == "dungeon" then
-        Suite.MinimapStyle.PaintDungeonButton(button, button.previewIcon, config.dungeonStyle, scale)
-        button:SetSize(config.dungeonWidth * scale, config.dungeonHeight * scale)
+        local width, height = config.dungeonWidth * scale, config.dungeonHeight * scale
+        local tint, r, g, b = Suite.MinimapStyle.GroupFinderTint(config)
+        if tint == "class" then r, g, b = PlayerClassColor(P.RGB("e6ecf2")) elseif tint then r, g, b = P.RGB(tint) end
+        local plate = Suite.MinimapStyle.PaintDungeonButton(button, button.previewIcon,
+            Suite.MinimapStyle.GroupFinderStyle(config), scale, config.dungeonIcon, width, height, r, g, b)
+        button:SetSize(width, height)
         local anchor = Suite.MinimapDungeonAnchors[config.dungeonAnchor]
         button:ClearAllPoints()
         button:SetPoint(anchor[1], ui.map, anchor[2], config.dungeonX * scale, config.dungeonY * scale)
         Tint(item.backdrop, 0, 0, 0, 1)
+        item.backdrop:SetShown(plate ~= false)
     elseif key == "folio" then
         PaintFolio(ui, config, item, size)
     elseif key == "difficulty" then

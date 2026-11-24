@@ -26,7 +26,8 @@ local WIDE = 2 / 3
 local SHADOW_STRENGTHS = { 0.45, 0.25, 0.12 }
 local HYBRID_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local WRAP = "CLAMPTOBLACKADDITIVE"
-local DRIVERS = { [VISIBILITY.IN_COMBAT] = "[combat] show; hide", [VISIBILITY.OUT_OF_COMBAT] = "[combat] hide; show" }
+local DRIVERS = { [VISIBILITY.IN_COMBAT] = "[combat] show; hide", [VISIBILITY.OUT_OF_COMBAT] = "[combat] hide; show",
+    [VISIBILITY.ALWAYS] = "show" }
 -- The underlay exists on WoW Forever's Camelot skin only.
 local TEXTURES = { "MinimapCompassTexture", "MinimapCompassTextureUnderlay" }
 
@@ -730,15 +731,24 @@ end
 -- Show/Hide, never alpha: the engine draws terrain and blips regardless of
 -- alpha. The map is protected, so combat conditions use a state driver that is
 -- (un)registered out of combat only; mouseover waits for combat to end.
+-- Pet battle and vehicle conditions and the session hide (Input.lua) join
+-- that driver ahead of the mode.
 local function Mode()
     if S.editMode then return VISIBILITY.ALWAYS end
+    if MM.HiddenByCondition() then return VISIBILITY.NEVER end
     return M.config.visibility
 end
+MM.VisibilityMode = Mode
 function MM.ApplyVisibility()
     local host = MM.host
     if not host or NS.IsCombatLocked() then return end
+    local c = M.config
     local mode = Mode()
+    local prefix = MM.VisibilityConditions(c)
+    MM.SyncVisibilityEvents(c, mode)
     local driver = DRIVERS[mode]
+    -- Without a condition, Always needs no driver at all.
+    if driver and (mode ~= VISIBILITY.ALWAYS or prefix ~= "") then driver = prefix .. driver else driver = nil end
     if M.driver ~= driver then
         if M.driver then UnregisterStateDriver(host, "visibility") end
         M.driver = driver
@@ -748,7 +758,7 @@ function MM.ApplyVisibility()
     if mode == VISIBILITY.NEVER then
         host:Hide()
     elseif mode == VISIBILITY.MOUSEOVER then
-        host:SetShown(MM.hovered)
+        host:SetShown(MM.hovered and not MM.ConditionsHide(prefix))
     else
         host:Show()
     end
@@ -757,7 +767,11 @@ end
 
 MM.OnHover(function()
     if not M.active or not MM.host or Mode() ~= VISIBILITY.MOUSEOVER then return end
-    if NS.IsCombatLocked() then S.Queue("minimap") else MM.host:SetShown(MM.hovered) end
+    if NS.IsCombatLocked() then
+        S.Queue("minimap")
+    else
+        MM.host:SetShown(MM.hovered and not MM.ConditionsHide(MM.VisibilityConditions(M.config)))
+    end
 end)
 
 function MM.ReleaseHost()
@@ -765,7 +779,7 @@ function MM.ReleaseHost()
     for kind in pairs(pending) do pending[kind] = nil end
     local host = MM.host
     if host and M.driver then UnregisterStateDriver(host, "visibility") end
-    M.driver, M.captureWaiting = nil, nil
+    M.driver, M.captureWaiting, M.visibilityEvents, M.userHidden = nil, nil, nil, nil
     MM.ReleaseHybrid()
     local lost = MM.ReleaseMap()
     if host then host:Hide() end

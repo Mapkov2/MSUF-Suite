@@ -162,6 +162,24 @@ _G.BINDING_NAME_MSUFSUITE_RESET_DAMAGE_METER = Text("Reset damage meter")
 _G.BINDING_NAME_MSUFSUITE_TOGGLE_FPS = Text("Toggle FPS display")
 _G.BINDING_NAME_MSUFSUITE_QUICK_ACTIONS = Text("Quick actions")
 _G.BINDING_NAME_MSUFSUITE_TOGGLE_MAP_OVERLAY = Text("Toggle map overlay")
+_G.BINDING_HEADER_MSUFSUITE_MINIMAP = Text("Minimap")
+_G.BINDING_NAME_MSUFSUITE_TOGGLE_MINIMAP = Text("Show or hide the minimap")
+_G.BINDING_NAME_MSUFSUITE_TOGGLE_MINIMAP_DRAWER = Text("Open or close the addon button drawer")
+
+-- The minimap is protected: both shortcuts refuse in combat. Hiding lasts
+-- for this session; the Minimap page keeps the saved visibility.
+local function MinimapShortcut(method)
+    local suite = NS.Suite
+    local map = suite.instances.minimap
+    if map and map.active then
+        if NS.InCombat() then return false end
+        return map[method](map)
+    end
+    if not NS.InCombat() then suite.Print(Text("Enable the Suite minimap to use this shortcut.")) end
+    return false
+end
+function NS.ToggleMinimap() return MinimapShortcut("ToggleShown") end
+function NS.ToggleMinimapDrawer() return MinimapShortcut("ToggleDrawer") end
 function NS.ToggleMapOverlay()
     local suite = NS.Suite
     local hud = suite.instances.navigationHUD

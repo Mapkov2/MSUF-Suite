@@ -77,6 +77,8 @@ NS.MinimapRotate = { BLIZZARD = 1, ROTATE = 2, NORTH_UP = 3 }
 NS.MinimapZoomButtons = { MOUSEOVER = 1, ALWAYS = 2, HIDE = 3 }
 NS.MinimapZoomLayout = { FREE = 1, ABOVE = 2, BELOW = 3, LEFT = 4, RIGHT = 5 }
 NS.MinimapMiddleClick = { NOTHING = 1, TRACKING = 2, CALENDAR = 3, WORLD_MAP = 4, MICRO_MENU = 5 }
+-- Instance kinds that hide the map (Host.lua reads IsInInstance on zone changes).
+NS.MinimapInstanceHide = { NEVER = 1, RAIDS = 2, DUNGEONS = 3, BOTH = 4 }
 NS.MinimapLanding = { ALWAYS = 1, MOUSEOVER = 2, NEVER = 3 }
 NS.MinimapLandingIcon = { BLIZZARD = 1, BOOK = 2 }
 NS.MinimapDrawerStyle = { AUTO = 1, FOREVER = 2, MODERN = 3, DARK = 4 }
@@ -88,6 +90,17 @@ NS.MinimapClockClick = { CALENDAR = 1, CLOCK = 2 }
 NS.MinimapInfoTooltip = { VALUE = 1, LOCKOUTS = 2, VAULT = 3, NONE = 4 }
 NS.MinimapLatencySource = { HOME = 1, WORLD = 2, BOTH = 3 }
 NS.MinimapCoordinatesMode = { MOUSEOVER = 1, ALWAYS = 2 }
+-- Every information text shows always or on mouseover; the coordinates keep
+-- their established key (infoCoordinatesMode) with the same numbering.
+NS.MinimapTextReveal = NS.MinimapCoordinatesMode
+NS.MinimapGroupFinderStyle = { DEFAULT = 1, MODERN_DARK = 2, AUTO = 3 }
+NS.MinimapGroupFinderSymbol = { EYE = 1, BLIZZARD = 2, SEARCH = 3, GROUP = 4, DUNGEON = 5 }
+NS.MinimapGroupFinderShow = { ALWAYS = 1, MOUSEOVER = 2, OUT_OF_COMBAT = 3, QUEUED = 4 }
+NS.MinimapGroupFinderTint = { AUTO = 1, CLASS = 2, CUSTOM = 3 }
+-- The accent of each minimap look preset, as on the options' preset tiles;
+-- "class" is the player's class colour (Class Style).
+NS.MinimapLookAccent = { [2] = "aab5c2", [3] = "b7a4ff", [4] = "ffc078", [5] = "a7e8ff", [6] = "c1d6df",
+    [7] = "d8b66a", [8] = "57c7df", [9] = "b9ab86", [10] = "c9a46d", [11] = "e6ecf2", [12] = "class" }
 NS.MinimapDurabilityMode = { LOWEST = 1, COMBINED = 2 }
 NS.MinimapInstanceKind = { ALL = 1, RAIDS = 2, DUNGEONS = 3 }
 -- Colour per difficulty tier (1 normal, 2 heroic, 3 mythic, 4 raid finder or
@@ -109,6 +122,11 @@ function NS.MinimapButtonCollector()
         if NS.Client.IsAddOnLoaded(name) then return name end
     end
 end
+-- One place for addon launchers: while the Suite drawer collects buttons,
+-- Blizzard's addon compartment sits in the drawer instead of its own slot.
+function NS.MinimapCompartmentInDrawer(config)
+    return config.showCompartment == true and config.collectButtons == true and not NS.MinimapButtonCollector()
+end
 
 -- Addon buttons the player keeps on the map instead of in the drawer: their
 -- frame names, one per line, in the hidden setting drawerKeep.
@@ -124,13 +142,13 @@ function Kept.Names(text)
     return names, set
 end
 -- The list with the name added; nil when the name cannot be stored or the list is full.
-function Kept.With(text, name)
+function Kept.With(text, name, key)
     local names, set = Kept.Names(text)
     if set[name] then return text end
     if name:find("%c") or #names >= KEPT_LIMIT then return nil end
     names[#names + 1] = name
     local joined = table.concat(names, "\n")
-    if #joined > NS.SuiteCatalog.minimap.rules.drawerKeep.maxLength then return nil end
+    if #joined > NS.SuiteCatalog.minimap.rules[key or "drawerKeep"].maxLength then return nil end
     return joined
 end
 function Kept.Without(text, name)
@@ -159,7 +177,11 @@ B.Section(id, "layout", "Size and position", {
 })
 B.Section(id, "dungeon", "Group finder", {
     Bool("dungeonButton", "Group finder", false),
-    Choice("dungeonStyle", "Style", 1, { "Default", "Modern Dark" }),
+    Choice("dungeonStyle", "Style", 1, { "Default", "Modern Dark", "Automatic" }),
+    Choice("dungeonIcon", "Symbol", 1, { "Eye", "Blizzard eye", "Search", "Group", "Dungeon" }),
+    Choice("dungeonIconTint", "Symbol color", 1, { "Automatic", "Class color", "Custom color" }),
+    Color("dungeonIconColor", "Custom color", "e6ecf2"),
+    Choice("dungeonShow", "When to show", 1, { "Always", "Mouseover", "Out of combat", "Only while queued" }),
     Number("dungeonWidth", "Width", 52, 20, 100),
     Number("dungeonHeight", "Height", 26, 16, 60),
     Choice("dungeonAnchor", "Anchor", 1, { "Bottom right", "Bottom left", "Top right", "Top left" }),
@@ -289,21 +311,31 @@ B.Section(id, "style_backdrop", "Background plate", {
     Number("styleBackdropPadding", "Plate padding", clean.styleBackdropPadding, 0, 32),
 })
 B.Section(id, "behavior", "Map behavior", {
-    Choice("visibility", "Show the minimap", 1, { "Always", "In combat", "Out of combat", "Mouseover", "Never" }),
-    Number("mapOpacity", "Map opacity (percent)", 100, 10, 100),
     Choice("rotate", "Map rotation", 1, { "Blizzard setting", "Rotate with the player", "North stays up" }),
+    Bool("showNorth", "North marker while the map rotates", false),
     Bool("scrollZoom", "Scroll to zoom", true),
     Number("zoomResetSeconds", "Reset zoom after manual zoom (seconds, 0: never)", 0, 0, 15),
     Choice("zoomButtons", "Zoom buttons", 1, { "Show on mouseover", "Always show", "Hide" }),
     Choice("zoomLayout", "Zoom button arrangement", NS.MinimapZoomLayout.FREE,
         { "Free positioning", "Plus above minus", "Plus below minus", "Plus left of minus", "Plus right of minus" }),
     Choice("middleClick", "Middle-click action", 2, { "Nothing", "Tracking menu", "Calendar", "World map", "Micro menu" }),
+    -- Same values as the middle click; the first keeps Blizzard's ping.
+    Choice("rightClick", "Right-click action", 1, { "Blizzard ping", "Tracking menu", "Calendar", "World map", "Micro menu" }),
+})
+B.Section(id, "visibility", "Map visibility", {
+    Choice("visibility", "Show the minimap", 1, { "Always", "In combat", "Out of combat", "Mouseover", "Never" }),
+    Number("mapOpacity", "Map opacity (percent)", 100, 10, 100),
+    Bool("hidePetBattle", "Hide during pet battles", false),
+    Bool("hideVehicle", "Hide in vehicles", false),
+    Choice("hideInstances", "Hide inside instances", NS.MinimapInstanceHide.NEVER,
+        { "Never", "In raids", "In dungeons", "In raids and dungeons" }),
 })
 -- Offset labels are built here, so their format strings translate here.
 local HORIZONTAL, VERTICAL = NS.Text("%s horizontal offset"), NS.Text("%s vertical offset")
-for _, name in ipairs({ "zoomIn", "zoomOut" }) do
-    B.Add(id, Number(name .. "X", HORIZONTAL:format(name), 0, -600, 600, .5), "behavior")
-    B.Add(id, Number(name .. "Y", VERTICAL:format(name), 0, -600, 600, .5), "behavior")
+for _, zoom in ipairs({ { "zoomIn", NS.Text("Zoom in") }, { "zoomOut", NS.Text("Zoom out") } }) do
+    local name, label = zoom[1], zoom[2]
+    B.Add(id, Number(name .. "X", HORIZONTAL:format(label), 0, -600, 600, .5), "behavior")
+    B.Add(id, Number(name .. "Y", VERTICAL:format(label), 0, -600, 600, .5), "behavior")
 end
 local zoomLabel = NS.Text("Zoom buttons")
 B.Add(id, Number("zoomGroupX", HORIZONTAL:format(zoomLabel), 0, -600, 600), "behavior")
@@ -319,6 +351,7 @@ B.Section(id, "elements", "Blizzard buttons", {
     Number("difficultyButtonX", "Difficulty icon horizontal offset", 0, -300, 300),
     Number("difficultyButtonY", "Difficulty icon vertical offset", 0, -300, 300),
     Bool("showCompartment", "Addon compartment", false),
+    Bool("queueStatusHidden", "Hide queue status eye", false),
     Bool("queueStatusEnabled", "Anchor queue status to minimap", false),
     Number("queueStatusSize", "Queue status eye size", 32, 16, 64),
     Number("queueStatusX", "Queue status horizontal offset", -2, -600, 600),
@@ -361,17 +394,21 @@ B.Section(id, "addons", "Addon buttons", {
     Number("drawerButtonSize", "Drawer icon size", 24, 14, 40),
     Number("drawerColumns", "Drawer columns", 4, 1, 8),
     Bool("drawerList", "Show addon names in a list", false),
+    Bool("drawerOpenOnHover", "Open the drawer on mouseover", false),
+    Number("drawerAutoClose", "Close the open drawer after (seconds, 0: stay open)", 0, 0, 30),
     Number("drawerX", "Drawer horizontal offset", 0, -600, 600),
     Number("drawerY", "Drawer vertical offset", 0, -600, 600),
     -- Edited by the page's picker and list (MinimapButtonList.lua), not as text.
     String("drawerKeep", "Keep these buttons on the minimap", "", 1200),
+    -- Buttons the player hides completely, edited like drawerKeep.
+    String("drawerHide", "Hide these buttons", "", 1200),
 })
 
 -- Information texts keep their established keys and per-text styling.
 local infoFields = { { "Clock", 2, 0, -4, 120, "Show clock" }, { "FPS", 7, 4, 4, 100, "Show FPS" },
     { "Latency", 9, -4, 4, 110, "Show latency" }, { "Coordinates", 1, 4, -4, 100, "Show coordinates" },
     { "Durability", 3, -4, -4, 110, "Show durability" }, { "Location", 8, 0, 4, 220, "Show location" },
-    { "CalendarDay", 3, -24, -30, 60, "Calendar day" },
+    { "CalendarDay", 3, -24, -30, 60, "Show calendar day" },
     { "Weather", 11, 0, -4, 120, "Show weather" } }
 NS.MinimapInfoFields = {}
 for _, field in ipairs(infoFields) do
@@ -384,6 +421,10 @@ for _, field in ipairs(infoFields) do
     local function Info(rule)
         rule.enableKey = prefix
         return B.Add(id, rule, section, key)
+    end
+    -- Coordinates keep infoCoordinatesMode (same values) further below.
+    if key ~= "Coordinates" then
+        Info(Choice(prefix .. "Reveal", "When to show", NS.MinimapTextReveal.ALWAYS, { "On mouseover", "Always" }))
     end
     if key == "Weather" then
         Info(Choice("infoWeatherDisplay", "Weather display", NS.MinimapWeatherDisplay.BOTH,
@@ -434,7 +475,7 @@ InfoOption("Latency", Choice("infoLatencySource", "Latency source", 2, { "Home",
 InfoOption("Latency", Number("infoLatencyInterval", "Latency update interval (seconds)", 5, 0.2, 30, 0.1))
 InfoOption("Latency", Number("infoLatencyWarning", "Warning latency (ms)", 100, 0, 2000))
 InfoOption("Latency", Number("infoLatencyBad", "High latency (ms)", 200, 0, 3000))
-InfoOption("Coordinates", Choice("infoCoordinatesMode", "Show coordinates", 2, { "On mouseover", "Always" }))
+InfoOption("Coordinates", Choice("infoCoordinatesMode", "When to show", 2, { "On mouseover", "Always" }))
 InfoOption("Coordinates", Bool("infoCoordinatesHideInstance", "Hide coordinates in instances", true))
 InfoOption("Coordinates", Number("infoCoordinatesInterval", "Coordinate update interval (seconds)", 0.5, 0.1, 5, 0.05))
 InfoOption("Coordinates", Number("infoCoordinatesDecimals", "Coordinate decimal places", 1, 0, 3))
@@ -476,6 +517,7 @@ B.Section(id, "info_tooltips", "Hover details", {
 })
 B.Add(id, Bool("infoDifficulty", "Show instance difficulty as text", false), "info_difficulty", "Difficulty")
 for _, rule in ipairs({
+    Choice("infoDifficultyReveal", "When to show", NS.MinimapTextReveal.ALWAYS, { "On mouseover", "Always" }),
     Font("infoDifficultyFont", "Text font"),
     Number("infoDifficultySize", "Text size", 12, 8, 24),
     Choice("infoDifficultyOutline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }),
@@ -497,6 +539,26 @@ for _, rule in ipairs({
 end
 
 local rules = NS.SuiteCatalog.minimap.rules
+-- "Use this style for all texts": the shared style settings of one text
+-- copied onto every other text (one write; values outside a target's range
+-- are clamped, settings a target lacks are skipped).
+local TEXT_STYLE = { "Font", "Size", "Outline", "Rendering", "Shadow", "ShadowOpacity", "ShadowDistance",
+    "Color", "ClassColor", "Box", "BoxColor" }
+function NS.MinimapTextStyleValues(config, source)
+    local values, fields = {}, { "Difficulty" }
+    for _, field in ipairs(NS.MinimapInfoFields) do fields[#fields + 1] = field end
+    for _, field in ipairs(fields) do
+        if field ~= source then
+            for _, suffix in ipairs(TEXT_STYLE) do
+                local from, to = rules["info" .. source .. suffix], rules["info" .. field .. suffix]
+                local value = from and to and config[from.key]
+                if type(value) == "number" and to.min and to.max then value = math.max(to.min, math.min(to.max, value)) end
+                if value ~= nil then values[to.key] = value end
+            end
+        end
+    end
+    return values
+end
 rules.showDayNight.hidden = not NS.Client.isForever or nil
 for _, key in ipairs({ "specButton", "specShowSpec", "specShowLoot", "specCorner", "specSize", "specX", "specY" }) do
     rules[key].hidden = NS.Client.isForever or nil
@@ -534,17 +596,31 @@ for _, key in ipairs({ "zoomInX", "zoomInY", "zoomOutX", "zoomOutY", "zoomGroupX
 end
 rules.borderColor.disabledBy = "borderClassColor"
 rules.queueStatusSize.enableKey = "queueStatusEnabled"
+-- The group finder button holds the queue eye (MinimapElements.QueuePlacement).
+rules.queueStatusEnabled.disabledBy, rules.queueStatusSize.disabledBy = "dungeonButton", "dungeonButton"
 rules.landingIcon.requiresChoice = { key = "showLanding", values = { [1] = true, [2] = true } }
 rules.zoomResetSeconds.enableKey = "scrollZoom"
 rules.zoomLayout.requiresChoice = { key = "zoomButtons", values = { [1] = true, [2] = true } }
 rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverResize"
 rules.trackingMouseover.enableKey = "showTracking"
-rules.drawerKeep.hidden = true
+rules.drawerKeep.hidden, rules.drawerHide.hidden = true, true
 for _, key in ipairs({ "drawerStyle", "drawerRow", "drawerButtonSize", "drawerColumns", "drawerList",
-    "drawerMouseover", "drawerKeep" }) do
+    "drawerMouseover", "drawerKeep", "drawerOpenOnHover", "drawerAutoClose", "drawerHide" }) do
     rules[key].enableKey = "collectButtons"
 end
+rules.showNorth.requiresChoice = { key = "rotate", values = { [NS.MinimapRotate.BLIZZARD] = true, [NS.MinimapRotate.ROTATE] = true } }
+-- Menus list corners in reading order; the stored values keep their numbers.
+rules.dungeonAnchor.choiceOrder = { 4, 3, 2, 1 }
+rules.specCorner.choiceOrder = { 2, 1, 4, 3 }
+rules.dungeonStyle.choiceOrder = { 3, 1, 2 }
+for _, key in ipairs({ "dungeonStyle", "dungeonIcon", "dungeonIconTint", "dungeonIconColor", "dungeonShow",
+    "dungeonWidth", "dungeonHeight", "dungeonAnchor" }) do
+    rules[key].enableKey = "dungeonButton"
+end
+rules.dungeonIconColor.requiresChoice = { key = "dungeonIconTint", values = { [NS.MinimapGroupFinderTint.CUSTOM] = true } }
 rules.infoDifficultyColor.disabledBy = "infoDifficultyColors"
+-- A text replaces Blizzard's own button for the same information.
+rules.showDifficulty.disabledBy, rules.showCalendar.disabledBy = "infoDifficulty", "infoCalendarDay"
 rules.infoDifficultyBoxColor.requiresChoice = { key = "infoDifficultyBox", values = { [2] = true, [3] = true } }
 for _, key in ipairs({ "infoGoodColor", "infoWarningColor", "infoBadColor" }) do rules[key].enableKey = "infoStatusColors" end
 for _, key in ipairs({ "infoLocationZone", "infoLocationSubzone" }) do

@@ -237,6 +237,9 @@ do
     external.Border.GetTexture = function() return "Interface\\Common\\RingBorder" end
     MinimapBackdrop = { ExternalEventURLButton = external }
     config.showTracking, config.showCalendar, config.showMail, config.showCompartment = true,true,true,true
+    -- The row compartment and calendar: the addon drawer would hold the one,
+    -- the calendar day text (all texts are on above) would replace the other.
+    config.collectButtons, config.infoCalendarDay = false, false
     config.showCrafting, config.showDifficulty, config.infoDifficulty = true,true,false
     config.zoomButtons = P.Suite.MinimapZoomButtons.ALWAYS
     ui.state.layers.hidden = false
@@ -368,6 +371,22 @@ do
     tracking.GetWidth = function() return secret end
     ui.Paint()
     assert(icons.tracking.button.previewIcon:IsShown(), "unresolved native geometry lost its sample")
+    -- Blizzard's queue eye is drawn only at its own offsets: standing in for the
+    -- group finder button or hidden, it has no place of its own.
+    local queue = Frame(45, 45)
+    queue.Eye = { texture = Texture("groupfinder-eye-single", 45, 45) }
+    QueueStatusButton = queue
+    config.queueStatusEnabled, config.dungeonButton, config.queueStatusHidden = true, false, false
+    ui.Paint()
+    assert(icons.queueStatus.button:IsShown(), "the anchored queue eye left the preview")
+    config.dungeonButton = true
+    ui.Paint()
+    assert(not icons.queueStatus.button:IsShown() and icons.dungeon.button:IsShown(),
+        "the preview drew the eye beside the group finder button it stands in for")
+    config.dungeonButton, config.queueStatusHidden = false, true
+    ui.Paint()
+    assert(not icons.queueStatus.button:IsShown(), "the preview drew a hidden queue eye")
+    config.queueStatusEnabled, config.queueStatusHidden, QueueStatusButton = false, false, nil
     MinimapCluster,GameTimeFrame,AddonCompartmentFrame = nil,nil,nil
     ui.Paint()
     assert(icons.crafting.button:IsShown(), "unbuilt native root must retain the editable cold sample")

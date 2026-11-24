@@ -11,29 +11,43 @@ local function MinimapTabs(ui, values, choose)
     return row, selectTab
 end
 
+-- The tab set of the other module pages (Damage meter, Chat): Basics,
+-- Appearance, Layout, then the module's own topics, Text and Visibility.
 local WORKSPACE = { page = PAGE, module = ID, title = "Minimap", height = 50,
     buildSelector = MinimapTabs, tabs = {
     { id = "basics", label = "Basics", sections = "minimap_module behavior navigation" },
-    { id = "appearance", label = "Appearance", sections = "style_presets shape decoration" },
-    { id = "layout", label = "Layout", sections = "layout" },
-    { id = "buttons", label = "Buttons", sections = "buttons addons" },
-    { id = "information", label = "Information displays", sections = "information info_tooltips" },
+    { id = "appearance", label = "Appearance", sections = "style_presets shape style_art style_glow style_backdrop" },
+    { id = "layout", label = "Layout", sections = "layout hover_size" },
+    { id = "buttons", label = "Buttons", sections = "elements landing dungeon specialization addons" },
+    { id = "text", label = "Text", sections = "information info_tooltips" },
+    { id = "visibility", label = "Visibility", sections = "visibility" },
 } }
 local WEATHER, SHAPE, TOOLTIP = Suite.MinimapWeatherDisplay, Suite.MinimapShape, Suite.MinimapInfoTooltip
 
 local HELP = {
     layout = "Select the map in the preview, then drag it or adjust X and Y in the preview's position bar.",
-    hover_size = "The map grows or shrinks to the chosen width and height while the pointer is over it, then returns to its normal size. A circular map keeps its height equal to its width.",
     shape = "Choose the map shape, then adjust its border and outer shadow.",
     style_presets = "Start with a look, then tune its artwork, glow and plate. Changing a detail switches the preset label to Custom without losing the other settings.",
     style_art = "Layer original Suite border artwork above or behind the map. Choose Custom texture for a local texture path or file ID; negative rotation moves the other way.",
     style_glow = "A soft light behind the map, independent of the border and artwork.",
     style_backdrop = "A colored plate sits behind the map and its border. Padding extends it beyond the map edge.",
-    behavior = "The mouse wheel zooms the map. Middle-click runs the chosen action; left and right clicks keep working as usual.",
-    elements = "Blizzard's own buttons stay functional. The row is their starting position; drag each icon freely in the preview.",
+    behavior = "The mouse wheel zooms the map. Middle-click runs the chosen action; right-click keeps Blizzard's ping"
+        .. " unless you give it an action. Left-click always pings.",
+    visibility = "Choose when the map shows. Pet battle, vehicle and instance conditions hide it on top of that"
+        .. " choice; MSUF Edit Mode always shows it. A key binding (Key Bindings > MSUF Suite > Minimap) hides it"
+        .. " for this session.",
+    hover_size = "The map grows or shrinks to the chosen width and height while the pointer is over it, then returns to its normal size. A circular map keeps its height equal to its width.",
+    elements = "Blizzard's own buttons stay functional. The row is their starting position; drag each icon freely in"
+        .. " the preview. While the addon button drawer is on, the addon compartment sits in the drawer. The calendar"
+        .. " day and difficulty texts replace their Blizzard buttons.",
     landing = "Omnium Folio is Midnight's expansion button. Choose Never to remove it, or Simple book for a smaller, quieter icon that still opens the feature.",
+    dungeon = "A button that opens the group finder. While you are queued, Blizzard's queue eye takes its place."
+        .. " Automatic follows the minimap look.",
     specialization = "Click the minimap button for Blizzard's specialization and loot specialization choices. Choices are disabled in combat and the button hides when both menus are turned off.",
-    addons = P.Help("Collect addon buttons in one drawer.", "Buttons that addons place on the minimap are collected into a drawer. Drag its button in the preview; click it to open the icons in a grid. When MinimapButtonButton is loaded, it manages addon buttons instead."),
+    addons = P.Help("Collect addon buttons in one drawer.", "Buttons that addons place on the minimap are collected"
+        .. " into a drawer. Drag its button in the preview; click it, hover it or use its key binding to open the"
+        .. " icons. Pick buttons below to keep them on the map or hide them. When MinimapButtonButton is loaded, it"
+        .. " manages addon buttons instead."),
     info_weather = "Show weather as text, an icon, or both. Choose Blizzard icons or original Forever artwork. The tooltip keeps the weather name when only the icon is shown.",
     info_colors = "Shared colors for the FPS and latency texts.",
     info_tooltips = "Used when a clock, FPS or latency text shows instance lockouts or the Great Vault on mouseover.",
@@ -57,6 +71,7 @@ P.Gates[ID] = function(rule, key)
         if key ~= prefix .. "Shadow" and not P.Get(ID, prefix .. "Shadow") then return false end
     end
     if rule.key == "shape" and S.CanShapeMinimap and not S.CanShapeMinimap() then return false end
+    if (key == "queueStatusEnabled" or key == "queueStatusSize") and P.Get(ID, "queueStatusHidden") then return false end
     if rule.key == "hoverHeight" and P.Get(ID, "shape") == SHAPE.CIRCLE then return false end
     if rule.infoField and S.CanShowMinimapInfo and not P.Get(ID, key) and not S.CanShowMinimapInfo(rule.infoField) then return false end
     local element = ELEMENTS[rule.key]
@@ -158,6 +173,8 @@ local function Build(ctx)
     P.BuildMinimapPreview(ctx, builder, sections)
     local b, ui = P.MenuWorkspace.Builder(ctx, spec)
     P.ModuleCard(ctx, b, PAGE, ID, {
+        { "Move on screen", function() P.MoveOnScreen(ID, "map") end,
+          function() return P.EditModeReady() and S.Status(ID) == "Active" end, key = "move" },
         { "Collect addon buttons again", function() if S.MinimapRescanButtons then S.MinimapRescanButtons() end end,
           function() return S.MinimapRescanButtons ~= nil and P.MinimapDrawerOpen() end, key = "rescan" },
         -- A dedicated collector (Suite.MinimapButtonCollectors) owns the addon
@@ -179,7 +196,7 @@ local function Build(ctx)
         return y - 38
       end,
     })
-    P.QoLOwners.Build(ctx, ui and ui.groups.basics.builder or b, PAGE, ui and function() ui.select("basics") end)
+    P.QoLOwners.Build(ctx, ui and ui.groups.buttons.builder or b, PAGE, ui and function() ui.select("buttons") end)
     P.MenuWorkspace.Finish(ui)
 end
 

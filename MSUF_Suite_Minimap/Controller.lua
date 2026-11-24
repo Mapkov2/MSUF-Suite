@@ -15,18 +15,33 @@ local CATEGORIES = {
     { name = "geometry", sections = { "hover_size" }, extra = { "size", "shape" } },
     { name = "position", extra = { "point", "x", "y" } },
     { name = "opacity", extra = { "mapOpacity" } },
+    -- The map's show conditions; Refresh applies visibility every time.
+    { name = "visibility", sections = { "visibility" } },
     { name = "border", sections = { "shape", "style_presets", "style_art", "style_glow", "style_backdrop" },
         extra = { "size" } },
-    { name = "input", sections = { "behavior" }, extra = { "hoverResize", "showLanding", "collectButtons",
-        "drawerMouseover", "infoCoordinates", "infoCoordinatesMode", "showTracking", "trackingMouseover" } },
-    { name = "elements", sections = { "elements", "landing", "dungeon" }, extra = { "infoDifficulty", "borderSize" } },
+    { name = "input", sections = { "behavior" }, extra = { "visibility", "hoverResize", "showLanding", "collectButtons",
+        "drawerMouseover", "infoCoordinates", "infoCoordinatesMode", "showTracking", "trackingMouseover",
+        "infoDifficulty", "infoDifficultyReveal" } },
+    { name = "elements", sections = { "elements", "landing", "dungeon" }, extra = { "infoDifficulty", "borderSize", "stylePreset",
+        "infoCalendarDay", "collectButtons" } },
     { name = "drawer", sections = { "addons" }, extra = { "elementRow", "elementSize", "elementSpacing",
-        "elementDistance", "borderSize", "borderColor", "borderClassColor", "stylePreset" } },
+        "elementDistance", "borderSize", "borderColor", "borderClassColor", "stylePreset", "showCompartment" } },
     { name = "specialization", sections = { "specialization" }, extra = { "borderColor", "borderClassColor" } },
     -- Every information text and its tooltip settings.
     { name = "texts", prefix = "info_", extra = { "borderSize", "borderColor", "borderClassColor", "showCalendar" } },
 }
 MM.applyCategories = CATEGORIES
+-- A text on mouseover needs the hover catcher (Input.lua NeedsHover).
+for _, category in ipairs(CATEGORIES) do
+    if category.name == "input" then
+        for _, field in ipairs(NS.MinimapInfoFields) do
+            if field ~= "Coordinates" then
+                category.extra[#category.extra + 1] = "info" .. field
+                category.extra[#category.extra + 1] = "info" .. field .. "Reveal"
+            end
+        end
+    end
+end
 
 local function Covers(category, section)
     if not section then return false end
@@ -81,6 +96,8 @@ local function AddonLoaded(_, _, name)
         if M.active then
             MM.Force("drawer")
             MM.Force("input")
+            -- The addon compartment returns from the drawer to its own slot.
+            MM.Force("elements")
             S.Apply("minimap")
         end
     elseif name == "Blizzard_HybridMinimap" then
@@ -167,6 +184,7 @@ function M:Refresh()
     end
     if dirty.border or dirty.geometry or MM.style:IconSkinChanged(self.config) then MM.ApplyBorder() end
     if dirty.input then MM.ApplyInput() end
+    if dirty.input or dirty.geometry or dirty.border then MM.ApplyNorth() end
     if dirty.elements or dirty.geometry then MM.LayoutElements() end
     if dirty.drawer then MM.ApplyDrawer() elseif dirty.geometry then MM.LayoutDrawer() end
     if dirty.specialization or dirty.geometry then MM.ApplySpecialization() end
@@ -209,6 +227,11 @@ function M:RegisterMovers()
         },
     })
 end
+
+-- Key bindings (MSUF_Suite/Core/Bindings.lua): hide the map for this
+-- session, open or close the addon button drawer.
+function M:ToggleShown() return MM.ToggleShown() end
+function M:ToggleDrawer() return MM.ToggleDrawer() end
 
 function S.CanShapeMinimap()
     return MM.Usable(_G.Minimap)

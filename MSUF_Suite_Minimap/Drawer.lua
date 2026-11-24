@@ -10,9 +10,12 @@ local weak = { __mode = "k" }
 local collected, hooked, labels = setmetatable({}, weak), setmetatable({}, weak), setmetatable({}, weak)
 local list, visible, rowItem = {}, {}, {}
 local toggle, panel, single, library
+-- Blizzard's addon compartment while it sits in the drawer (Elements.lua
+-- keeps its record and returns it to Blizzard).
+local compartment
 local libraryToken = {}
 local detached = setmetatable({}, weak)
-local GAP, MARGIN, RESCAN_DELAY = 4, 8, 0.1
+local GAP, MARGIN, RESCAN_DELAY, HOVER_CLOSE = 4, 8, 0.1, 0.4
 local Kept = NS.MinimapKeptButtons
 -- A dedicated collector (NS.MinimapButtonCollectors) takes permanent ownership
 -- of the buttons it collects. Keep the map active, but never compete with its
@@ -39,6 +42,17 @@ local function KeptButtons()
         keptText, keptSet = text, set
     end
     return keptSet
+end
+-- The collected buttons the player hides completely: they wait in the
+-- hidden park frame (Host.lua) and return when the name leaves the list.
+local hiddenText, hiddenSet = "", {}
+local function HiddenButtons()
+    local text = M.config.drawerHide or ""
+    if text ~= hiddenText then
+        local _, set = Kept.Names(text)
+        hiddenText, hiddenSet = text, set
+    end
+    return hiddenSet
 end
 
 -- Blizzard frames, the suite's own and known replacements are never collected.
@@ -191,20 +205,49 @@ function S.MinimapButtonLayoutMenu(anchor)
     return true
 end
 
+local CloseCheck
 local function ClosePanel()
+    if M.context then M.context:Cancel(CloseCheck) end
     if panel then panel:Hide() end
 end
-local function ClickAway()
+local function PointerInside()
     local overPanel, overToggle = panel:IsMouseOver(), toggle:IsMouseOver()
-    if S.Public(overPanel) and overPanel or S.Public(overToggle) and overToggle then return end
+    if S.Public(overPanel) and overPanel or S.Public(overToggle) and overToggle then return true end
+    -- The compartment's own menu opens outside the panel: keep the drawer for its click.
+    local open = compartment and compartment.IsMenuOpen and compartment:IsMenuOpen()
+    if S.Public(open) and open == true then return true end
     -- An addon button may be the mouse target instead of its parent panel.
-    -- Keep the panel alive through the mouse-down so the button gets OnClick.
     for i = 1, #visible do
         local button = visible[i]
         local overButton = MM.Usable(button) and button:IsMouseOver()
-        if S.Public(overButton) and overButton then return end
+        if S.Public(overButton) and overButton then return true end
     end
-    ClosePanel()
+    return false
+end
+-- Keep the panel alive through the mouse-down so an addon button gets OnClick.
+local function ClickAway()
+    if not PointerInside() then ClosePanel() end
+end
+-- An open drawer closes on its own after the pointer left it: shortly when it
+-- opened on mouseover, after the chosen seconds otherwise (0: stays open).
+local function CloseDelay(c)
+    if c.drawerOpenOnHover then return HOVER_CLOSE end
+    return c.drawerAutoClose or 0
+end
+local function ArmClose()
+    if not M.context then return end
+    local delay = M.active and CloseDelay(M.config) or 0
+    if delay > 0 then M.context:After(delay, CloseCheck) else M.context:Cancel(CloseCheck) end
+end
+function CloseCheck()
+    if not panel or not panel:IsShown() then return end
+    if PointerInside() then ArmClose() else ClosePanel() end
+end
+local function OpenPanel()
+    panel:Show()
+    -- Registered only while the panel is open.
+    MM.Listen("GLOBAL_MOUSE_DOWN", "drawer", ClickAway)
+    ArmClose()
 end
 local function TogglePanel(self, button)
     if button == "RightButton" then
@@ -216,9 +259,21 @@ local function TogglePanel(self, button)
         ClosePanel()
         return
     end
-    panel:Show()
-    -- Registered only while the panel is open.
-    MM.Listen("GLOBAL_MOUSE_DOWN", "drawer", ClickAway)
+    OpenPanel()
+end
+-- The key binding opens and closes the drawer like a click on its button.
+function MM.ToggleDrawer()
+    if not M.active or not toggle or not MM.CollectsButtons() then return false end
+    -- A single button sits on the row by itself; there is no drawer to open.
+    if #visible == 0 or #visible == 1 and not M.config.drawerList then return false end
+    TogglePanel(toggle, "LeftButton")
+    return true
+end
+local function PointerEntered()
+    if M.context then M.context:Cancel(CloseCheck) end
+end
+local function PointerLeft()
+    if panel:IsShown() then ArmClose() end
 end
 local function ShowTip(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
@@ -230,6 +285,15 @@ local function ShowTip(self)
 end
 local function HideTip(self)
     if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+end
+local function ToggleEnter(self)
+    ShowTip(self)
+    PointerEntered()
+    if M.active and M.config.drawerOpenOnHover and not panel:IsShown() then OpenPanel() end
+end
+local function ToggleLeave(self)
+    HideTip(self)
+    PointerLeft()
 end
 local function EnsureDrawer()
     if toggle then return end
@@ -246,8 +310,8 @@ local function EnsureDrawer()
     toggle.highlight:SetBlendMode("ADD")
     toggle.highlight:SetAlpha(0.2)
     toggle:SetScript("OnClick", TogglePanel)
-    toggle:SetScript("OnEnter", ShowTip)
-    toggle:SetScript("OnLeave", HideTip)
+    toggle:SetScript("OnEnter", ToggleEnter)
+    toggle:SetScript("OnLeave", ToggleLeave)
     toggle:Hide()
     panel = S.CreateFrame("Frame", nil, host)
     panel:SetFrameStrata("DIALOG")
@@ -258,8 +322,14 @@ local function EnsureDrawer()
     panel.back:SetColorTexture(0.05, 0.05, 0.05, 0.92)
     panel.edges = {}
     for i = 1, 4 do panel.edges[i] = S.CreateTexture(panel, nil, "BORDER") end
-    panel:SetScript("OnEnter", MM.HoverEnter)
-    panel:SetScript("OnLeave", MM.HoverLeave)
+    panel:SetScript("OnEnter", function()
+        MM.HoverEnter()
+        PointerEntered()
+    end)
+    panel:SetScript("OnLeave", function()
+        MM.HoverLeave()
+        PointerLeft()
+    end)
     panel:SetScript("OnHide", function()
         if M.context then MM.Unlisten("GLOBAL_MOUSE_DOWN", "drawer") end
         if M.active then MM.NotifyHover() end
@@ -323,7 +393,7 @@ local function PlaceDrawerList(count, cell, level)
         label:ClearAllPoints()
         label:SetPoint("LEFT", content, "TOPLEFT", MARGIN + cell + 8, y)
         label:SetWidth(width - 2 * MARGIN - cell - 8)
-        label:SetText(Kept.Label(button:GetName()))
+        label:SetText(button == compartment and S.Text("Addon compartment") or Kept.Label(button:GetName()))
         label:Show()
     end
     for i = count + 1, #labels do labels[i]:Hide() end
@@ -332,20 +402,36 @@ local function PlaceDrawerList(count, cell, level)
     scroll:Show()
 end
 
-function MM.LayoutDrawer()
-    local c = M.config
-    if not MM.CollectsButtons() or not toggle then return end
-    local count, level = 0, panel:GetFrameLevel() + 2
-    local positions = Positions()
+-- Blizzard shows its compartment while addons are registered there; it
+-- comes first in the drawer. Returns how many visible slots it takes.
+local function AddCompartment(c, level)
+    compartment = c.showCompartment and NS.MinimapElements.Compartment() or nil
+    if not compartment then return 0 end
+    local shown = compartment:IsShown()
+    if not S.Public(shown) or shown then
+        visible[1] = compartment
+        return 1
+    end
+    MM.Place(compartment, panel, "CENTER", panel, "CENTER", 0, 0, nil, "DIALOG", level)
+    return 0
+end
+
+-- The drawer's shown buttons in order (visible); returns their number.
+local function CollectVisible(c, level)
+    local count = AddCompartment(c, level)
+    local positions, hidden = Positions(), HiddenButtons()
     for i = 1, #list do
         local button = list[i]
         if collected[button] and MM.Usable(button) then
             local shown = button:IsShown()
-            local position = positions and positions[button:GetName()]
+            local name = button:GetName()
+            local position = not hidden[name] and positions and positions[name]
             -- A button collected again (also by undo or Edit Mode Cancel)
             -- leaves its empty holder.
             if not position and detached[button] then detached[button]:Hide() end
-            if position then
+            if hidden[name] then
+                MM.Place(button, MM.park, "CENTER", MM.park, "CENTER", 0, 0)
+            elseif position then
                 PlaceDetached(button, position)
             elseif not S.Public(shown) or shown then
                 count = count + 1
@@ -357,6 +443,28 @@ function MM.LayoutDrawer()
         end
     end
     for i = count + 1, #visible do visible[i] = nil end
+    return count
+end
+
+local function PlaceDrawerGrid(c, count, cell, level)
+    if panel.listScroll then panel.listScroll:Hide() end
+    local columns = math.min(c.drawerColumns, count)
+    local rows = math.ceil(count / columns)
+    panel:SetSize(MARGIN * 2 + columns * cell + (columns - 1) * GAP, MARGIN * 2 + rows * cell + (rows - 1) * GAP)
+    for i = 1, count do
+        local button = visible[i]
+        local column, row = (i - 1) % columns, math.floor((i - 1) / columns)
+        local x = MARGIN + column * (cell + GAP) + cell / 2
+        local y = -(MARGIN + row * (cell + GAP) + cell / 2)
+        MM.Place(button, panel, "CENTER", panel, "TOPLEFT", x, y, MM.Fit(button, cell), "DIALOG", level)
+    end
+end
+
+function MM.LayoutDrawer()
+    local c = M.config
+    if not MM.CollectsButtons() or not toggle then return end
+    local level = panel:GetFrameLevel() + 2
+    local count = CollectVisible(c, level)
     local start = c.drawerRow == c.elementRow and (MM.rowCount or 0) or 0
     StyleDrawer(c)
     if count == 1 and not c.drawerList then
@@ -384,21 +492,10 @@ function MM.LayoutDrawer()
     local anchor = PANEL_ANCHORS[c.drawerRow] or PANEL_ANCHORS[1]
     panel:ClearAllPoints()
     panel:SetPoint(anchor[1], toggle, anchor[2], anchor[3], anchor[4])
-    local cell = c.drawerButtonSize
     if c.drawerList then
-        PlaceDrawerList(count, cell, level)
-        return
-    end
-    if panel.listScroll then panel.listScroll:Hide() end
-    local columns = math.min(c.drawerColumns, count)
-    local rows = math.ceil(count / columns)
-    panel:SetSize(MARGIN * 2 + columns * cell + (columns - 1) * GAP, MARGIN * 2 + rows * cell + (rows - 1) * GAP)
-    for i = 1, count do
-        local button = visible[i]
-        local column, row = (i - 1) % columns, math.floor((i - 1) / columns)
-        local x = MARGIN + column * (cell + GAP) + cell / 2
-        local y = -(MARGIN + row * (cell + GAP) + cell / 2)
-        MM.Place(button, panel, "CENTER", panel, "TOPLEFT", x, y, MM.Fit(button, cell), "DIALOG", level)
+        PlaceDrawerList(count, c.drawerButtonSize, level)
+    else
+        PlaceDrawerGrid(c, count, c.drawerButtonSize, level)
     end
 end
 
@@ -497,6 +594,7 @@ function MM.ReleaseDrawer()
     end
     library = nil
     ClosePanel()
+    compartment = nil
     for i = #list, 1, -1 do
         ReleaseButton(list[i])
         list[i] = nil

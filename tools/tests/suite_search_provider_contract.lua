@@ -992,7 +992,7 @@ do
             local previous = Suite.Suite.Config("minimap").showMail
             local selected, anchored, exact = api.OpenSearchTarget(row.key, query, row.label, row.anchor, row.route, target)
             world.widgets:RunTimers(80)
-            local buttons = M.cache[page].sections.suite_minimap_buttons
+            local buttons = M.cache[page].sections.suite_minimap_elements
             local _, widget = M.RuntimeControlCatalog.FindBySettingKey(setting, page)
             Check(selected and anchored and exact and buttons._msuf2CollapsibleEntry.open and widget and widget:IsVisible(),
                 "the Mail result did not open Blizzard buttons and reveal the Mail toggle")
@@ -1001,7 +1001,7 @@ do
         Check(M.cache[page] == nil, "the Mail route must also work from an unvisited page")
         OpenMail("Mail indicator")
         Check(M.cache[page]._msuf2ResolveMissingSection("suite_minimap_dungeon"),
-            "could not switch the Blizzard buttons workspace")
+            "could not open the group finder section")
         OpenMail("Mail indicator")
 
         for _, offset in ipairs({ "Mail horizontal offset", "Mail vertical offset" }) do
