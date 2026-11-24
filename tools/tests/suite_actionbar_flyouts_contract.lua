@@ -834,6 +834,47 @@ local function AppearanceCases(AB, API)
     assert(#Listening() == 0, "the appearance left a listener after close")
 end
 
+local function MacroIndexCase(Suite, S, AB)
+    local API = S.ActionBarFlyouts
+    local id = assert(API.Create("Launcher"))
+    assert(API.Place(id, 2))
+    assert(CreateMacro("Tracked macro", 1234, "/say tracked"))
+    assert(API.AddEntry(id, { kind = "macro", id = "Tracked macro" }))
+    local box = AB.Diagnostics.Flyouts.Box(id)
+    local opener = AB.Diagnostics.Flyouts.Opener()
+    local before = GetMacroIndexByName("Launcher")
+    AB.M.config.flyoutArrow = false
+    AB.Flyouts.RefreshMarkerAppearance()
+
+    AB.SNIPPET, AB.VirtualPaint = { CLICK = "" }, { SyncEvents = function() end }
+    AB.Execute, AB.MarkBar = function() end, function() end
+    C_SpecializationInfo = {
+        GetActiveSpecGroup = function() return 1 end,
+        GetSpecialization = function() return 1 end,
+        GetSpecializationInfo = function() return 1 end,
+    }
+    local handlers = {}
+    local context = { Event = function(_, event, fn) handlers[event] = fn end }
+    assert(loadfile(root .. "/MSUF_Suite_ActionBars/VirtualActions.lua"))("MSUF_Suite_ActionBars",
+        { NS = Suite, Suite = S, ActionBars = AB })
+    AB.Virtual.Start(context)
+    CreateMacro("A different macro", 1234, "/say other")
+    handlers.UPDATE_MACROS()
+    local after = GetMacroIndexByName("Launcher")
+    assert(before ~= after and opener.attrs["m" .. after] == id and opener.attrs["m" .. before] == nil,
+        "the closed flyout did not update its launcher after macro indexes moved with the arrow disabled")
+    EnterCombat()
+    Click("MSUFSuiteFlyouts", tostring(id))
+    assert(box:IsShown() and box.points[1][2] == AB.bars[2].buttons[1].button,
+        "the combat flyout no longer anchors to its launcher after macro indexes moved")
+    assert(box.entries[1].attrs.macro == "Tracked macro", "the combat entry still depends on a changing macro index")
+    Click("MSUFSuiteFlyouts", tostring(id))
+    handlers.UPDATE_MACROS()
+    LeaveCombat()
+    AB.Virtual.Resume()
+    assert(#Listening() == 0, "the macro update left a flyout listener running")
+end
+
 for _, forever in ipairs({ false, true }) do
     local client = forever and "forever" or "retail"
     local Suite, S, AB = Load(forever)
@@ -860,6 +901,10 @@ for _, forever in ipairs({ false, true }) do
     AB.Flyouts.Start()
     AB.BuildStyle()
     AppearanceCases(AB, S.ActionBarFlyouts)
+    Suite, S, AB = Load(forever)
+    AB.Flyouts.Start()
+    AB.BuildStyle()
+    MacroIndexCase(Suite, S, AB)
 end
 
 if #failures > 0 then

@@ -7,7 +7,7 @@ local NS, S = P.NS, P.Suite
 -- version (MSUFSuiteFlyoutsDB[retail|forever]), outside the Suite profiles.
 -- Closed flyouts subscribe to no events. The opener prepares one flyout out
 -- of combat. A combat click uses the secure snapshot from startup or the
--- last preparation.
+-- last preparation. Macro changes refresh the secure launcher and macro entries.
 local AB = P.ActionBars
 local Frames = AB.FlyoutFrames
 local Data = NS.ActionBarFlyouts
@@ -23,11 +23,11 @@ local FOOD_CLASS, FOOD_SUBCLASS = 0, 5
 local LAST_BAG = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
 local CHANGED = "MSUFSuite.ActionBars.FlyoutsChanged"
 local BAG_UPDATE = "BAG_UPDATE_DELAYED"
-local OPEN_EVENTS = { "UPDATE_MACROS", "SPELLS_CHANGED", "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "PLAYER_LEVEL_UP" }
+local OPEN_EVENTS = { "SPELLS_CHANGED", "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "PLAYER_LEVEL_UP" }
 
 local store, active, scheduled, built, listener, openID, listeningBags
 local pendingFull, pendingBags
-local markerMacrosDirty
+local pendingMacros
 local macroOf, flyoutOfMacro, flyoutOfName = {}, {}, {}
 local indexFlyout, shownCount, bagDependencies = {}, {}, {}
 
@@ -116,16 +116,7 @@ local function ScanMacros()
     for index = limit + 1, limit + character do ReadMacro(index) end
 end
 
-function Flyouts.RefreshMarkers(macrosChanged)
-    if macrosChanged then markerMacrosDirty = true end
-    if markerMacrosDirty then
-        if NS.InCombat() then
-            AB.flyoutMarkerPending = true
-            return
-        end
-        markerMacrosDirty = nil
-        ScanMacros()
-    end
+function Flyouts.RefreshMarkers()
     UpdateMarkers(true)
 end
 
@@ -212,7 +203,7 @@ local function Resolve(saved, owned)
         local index = GetMacroIndexByName(id)
         if not Finite(index) or index < 1 then return nil end
         local _, icon = GetMacroInfo(index)
-        return { kind = kind, id = id, type = "macro", attribute = "macro", value = index,
+        return { kind = kind, id = id, type = "macro", attribute = "macro", value = id,
             icon = Public(icon) and icon or nil, name = id }
     end
 end
@@ -309,6 +300,40 @@ function Flyouts.Prepare(id)
     Apply(flyout)
 end
 
+local function RefreshMacroEntries(list)
+    for _, flyout in ipairs(list) do
+        for _, entry in ipairs(flyout.entries) do
+            if entry.kind == "macro" then
+                Apply(flyout)
+                break
+            end
+        end
+    end
+end
+
+-- VirtualActions already owns UPDATE_MACROS for the separate action bar.
+-- Refresh the opener's index map even when launcher arrows are disabled.
+-- Secure entry actions use macro names so an old snapshot cannot run a
+-- different macro that took the old index.
+function Flyouts.MacrosChanged()
+    if not active or not built then return end
+    local list = Store().list
+    if #list == 0 then return end
+    if NS.InCombat() then
+        pendingMacros = true
+        return
+    end
+    pendingMacros = nil
+    ScanMacros()
+    MapMacros()
+    RefreshMacroEntries(list)
+    UpdateMarkers(MarkersEnabled())
+end
+
+function Flyouts.ResumeMacros()
+    if pendingMacros then Flyouts.MacrosChanged() end
+end
+
 local function FlushOpen()
     scheduled = nil
     local full, bags = pendingFull, pendingBags
@@ -390,7 +415,7 @@ function Flyouts.Stop()
     active = false
     StopWatching()
     UpdateMarkers(false)
-    markerMacrosDirty, AB.flyoutMarkerPending = nil, nil
+    pendingMacros, AB.flyoutMarkerPending = nil, nil
     if not NS.IsCombatLocked() then Frames.SetEnabled(false) end
 end
 

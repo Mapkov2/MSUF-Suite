@@ -132,6 +132,7 @@ end
 
 function Virtual.Resume()
     if pending then Virtual.Sync(true) end
+    AB.Flyouts.ResumeMacros()
 end
 
 local function SpecChanged(_, event, unit)
@@ -140,7 +141,7 @@ end
 
 local function MacroChanged()
     Virtual.Sync(true, true)
-    if AB.flyoutMarkers then AB.Flyouts.RefreshMarkers(true) end
+    AB.Flyouts.MacrosChanged()
 end
 
 local IN_COMBAT = { inCombat = true }
