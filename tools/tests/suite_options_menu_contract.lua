@@ -1585,7 +1585,42 @@ do (function()
         "returning to a native HUD feature did not restore its preview")
     local announcement = S.Config("announcements")
     ui.select("announcements")
-    preview.pickers.announcements.set("quest")
+    preview.pickers.announcements.set("zone")
+    local hideNewArea = Control("announcements", "hideNewAreaSubtitle")
+    assert(hideNewArea.meta.sectionId == "suite_hud_announcements_content" and not announcement.hideNewAreaSubtitle
+        and preview.bannerArt.subtitle.text == optionsNS.Tr("NEW AREA"), "the zone subtitle switch is missing or on by default")
+    do
+        local exact, focused, oldBridge, oldFocus = nil, nil, M.SearchBridge, W.FocusCollapsibleSection
+        M.SearchBridge = { OpenSearchTarget = function(page, _, _, _, _, target)
+            assert(page == "suite_hud")
+            exact = target
+            return true, true, true
+        end }
+        W.FocusCollapsibleSection = function(body) focused = body end
+        local subtitle = preview.texts.subtitle
+        subtitle.scripts.OnClick(subtitle, "LeftButton")
+        assert(exact and exact.controlId == hideNewArea.meta.controlId and exact.sectionId == hideNewArea.meta.sectionId
+            and preview.target.label == "NEW AREA" and not focused and not announcement.hideNewAreaSubtitle,
+            "clicking NEW AREA must open the exact setting without changing its value")
+        M.SearchBridge = nil
+        subtitle.scripts.OnClick(subtitle, "LeftButton")
+        assert(focused == hudSections.suite_hud_announcements_content, "older host did not open announcement content")
+        M.SearchBridge = oldBridge
+        hideNewArea.set(true)
+        assert(announcement.hideNewAreaSubtitle and preview.bannerArt.subtitle.text == ""
+            and not preview.bannerArt.subtitle.shown and not subtitle.shown, "the switch left the subtitle or its hit area visible")
+        focused = nil
+        preview.pickers.announcements.set("quest")
+        preview.selection.button.scripts.OnClick()
+        assert(preview.target.label == "Subtitle" and focused == hudSections.suite_hud_announcements_type,
+            "the settings shortcut for the quest subtitle retained the New Area link")
+        assert(preview.bannerArt.subtitle.text == optionsNS.Tr("QUEST COMPLETE") and subtitle.shown,
+            "the zone subtitle switch hid the quest preview subtitle")
+        W.FocusCollapsibleSection = oldFocus
+        hideNewArea.set(false)
+        ui.select("objectives")
+        ui.select("announcements")
+    end
     announcement.colorStyle, announcement.questColor = 2, "ff0000"
     announcement.titleSize, announcement.backgroundOpacity = 40, 20
     preview:Paint()

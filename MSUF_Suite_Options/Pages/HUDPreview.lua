@@ -8,6 +8,8 @@ local modes = { objectives = "quests", runSummary = "raid", announcements = "zon
 -- accordion of the HUD workspace (HUDWorkspace.lua).
 local ARTWORK = { label = "Banner artwork", section = "artwork" }
 local FRAME = { label = "Banner frame", section = "bannerFrame" }
+local SUBTITLE = { label = "Subtitle", section = "appearance" }
+local NEW_AREA = { label = "NEW AREA", sectionId = "suite_hud_announcements_content", control = "hideNewAreaSubtitle" }
 local LEVEL_KEYS = { "levelClean", "levelHealth", "levelPower", "levelTalents", "levelAttributes" }
 local LEVEL_UP_SOUNDKIT = 888 -- Blizzard's LEVELUP sound kit
 local FRAME_EDGE, MIN_PICKER_WIDTH = 10, 120
@@ -180,7 +182,18 @@ end
 local function Focus(ui, target)
     local workspace = ui.ctx._msufSuiteHUDWorkspace
     local group = workspace.groups[ui.id]
-    local body = target and target.section and group[target.section] or group.artwork or group.appearance or group.body
+    local body = target and target.sectionId and workspace.sections[target.sectionId]
+    if body then
+        P.EnsureSectionContent(body)
+        local bridge = M.SearchBridge
+        if bridge and bridge.OpenSearchTarget then
+            local exact = P.Meta("suite_hud", "announcements", target.control, "setting", target.sectionId)
+            local called, opened, focused = bridge.OpenSearchTarget("suite_hud", "", nil, nil, {}, exact)
+            if called and opened and focused then return end
+        end
+    else
+        body = target and target.section and group[target.section] or group.artwork or group.appearance or group.body
+    end
     if P.W.FocusCollapsibleSection then P.W.FocusCollapsibleSection(body, { flash = true }) end
 end
 
@@ -274,10 +287,10 @@ end
 
 -- Sized to the drawn text (SyncBanner): the rest of its row belongs to the
 -- artwork and frame below it.
-local function TextHandle(ui, key, label)
+local function TextHandle(ui, key, target)
     local art, region = ui.bannerArt, CreateFrame("Button", nil, ui.canvas)
     region:SetPoint("CENTER", art[key], "CENTER")
-    Target(ui, region, { label = label, section = "appearance" }, LEVEL.text)
+    Target(ui, region, target, LEVEL.text)
     region.textKey = key
     ui.texts[key], ui.marks[#ui.marks + 1] = region, region
     local function Read() return Art.TextOffset(S.Config("announcements"), key) end
@@ -337,7 +350,12 @@ SyncBanner = function(ui)
     for key, region in pairs(ui.texts) do
         local text = art[key]
         if key == "subtitle" then
-            region:SetShown(banner and (not level or ui.levelDetails ~= ""))
+            local previous = region.target
+            region.target = banner and modes.announcements == "zone" and NEW_AREA or SUBTITLE
+            region:SetShown(banner and text:IsShown())
+            if banner and ui.target == previous and region.target ~= previous then
+                SelectTarget(ui, region.target, ui.marked)
+            end
         end
         region:SetSize(math.max(24, text:GetStringWidth() + 12), math.max(12, text:GetStringHeight() + 6))
     end
@@ -364,11 +382,13 @@ local function BannerEditor(ui)
         tip = function(region, entering) MarkBanner(ui, entering and region.target or nil) end,
         select = function(region) if region then SelectTarget(ui, region.target, true) end end,
         click = function(region, _, moved) ClickBannerPart(ui, region, moved) end,
-        drag = function(region, phase) if phase == "done" then Focus(ui, region.target) end end,
+        drag = function(region, phase)
+            if phase == "done" then Focus(ui, region.textKey == "subtitle" and SUBTITLE or region.target) end
+        end,
         escape = function() ui.handles:Release() end,
     })
-    TextHandle(ui, "title", "Headline")
-    TextHandle(ui, "subtitle", "Subtitle")
+    TextHandle(ui, "title", { label = "Headline", section = "appearance" })
+    TextHandle(ui, "subtitle", SUBTITLE)
     FrameHandles(ui)
 end
 

@@ -19,6 +19,9 @@ local function Check(value, message)
 end
 
 ------------------------------------------------------------------ catalog
+Check(rules.hideNewAreaSubtitle and rules.hideNewAreaSubtitle.default == false
+    and rules.hideNewAreaSubtitle.section == "content" and rules.hideNewAreaSubtitle.enableKey == "zone",
+    "the New Area subtitle switch has the wrong default or placement")
 for key, expected in pairs({
     showFrame = { true }, frameStyle = { 1, 1, 3 }, frameThickness = { 1, 1, 4 }, frameOpacity = { 48, 5, 100 },
     frameColorSource = { 1, 1, 3 }, frameColor = { "f5cf70" }, artOpacity = { 100, 10, 100 },

@@ -163,12 +163,10 @@ local function Summary(ui, mode)
     return width, height
 end
 
--- One banner of each kind, shaped like the runtime's own
--- (MSUF_Suite_Modules/Announcements.lua): a zone without a subzone says NEW
--- AREA, an achievement and a scenario name themselves, a level counts up.
+-- One banner of each kind, including an unrestricted zone without a subzone.
 -- The runtime's painter draws it (MSUF_Suite/Core/AnnouncementArt.lua).
 local ANNOUNCEMENTS = {
-    zone = { title = "Example Dungeon", subtitle = "NEW AREA" },
+    zone = { title = "Example Zone", subtitle = "NEW AREA" },
     quest = { title = "Example Quest", subtitle = "QUEST COMPLETE" },
     achievement = { title = "Example Achievement", subtitle = "ACHIEVEMENT EARNED" },
     level = { title = "LEVEL %d" },
@@ -186,7 +184,7 @@ local function Announcement(ui, mode)
         title = title:format(SAMPLE_LEVEL)
         local gains = Art.LevelGains(38, 24, 1, 0, 1, 2, 3, 2, P.Suite.Client.isForever and 1 or nil)
         subtitle = Art.LevelDetails(ui.config, gains)
-    else
+    elseif kind ~= "zone" or not ui.config.hideNewAreaSubtitle then
         subtitle = Tr(sample.subtitle)
     end
     Art.Theme(art, ui.config, V.Skin(), level)

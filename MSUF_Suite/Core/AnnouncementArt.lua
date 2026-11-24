@@ -319,7 +319,7 @@ function Art.Show(art, config, kind, title, subtitle)
     art.title:SetTextColor(r, g, b)
     art.subtitle:SetText(subtitle or "")
     art.title:Show()
-    art.subtitle:Show()
+    art.subtitle:SetShown(subtitle ~= nil and subtitle ~= "")
     Art.Tint(art, r, g, b)
 end
 

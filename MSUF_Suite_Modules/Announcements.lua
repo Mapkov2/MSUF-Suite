@@ -59,6 +59,21 @@ local function Theme(self)
     self.host:SetPoint(point, UIParent, point, c.x, c.y)
 end
 
+local function CanHideNewAreaSubtitle()
+    local inside = IsInInstance()
+    if not S.Public(inside) or inside ~= false then return false end
+    local inactive = Enum.AddOnRestrictionState.Inactive
+    -- Activating restrictions already count during ADDON_RESTRICTION_STATE_CHANGED.
+    for kind, restriction in pairs(Enum.AddOnRestrictionType) do
+        -- Chat lockdown can be active independently of gameplay restrictions.
+        if kind ~= "Chat" then
+            local state = C_RestrictedActions.GetAddOnRestrictionState(restriction)
+            if not S.Public(state) or state ~= inactive then return false end
+        end
+    end
+    return true
+end
+
 local function Paint(self, item)
     local gains = item.levelGains
     if self.art.cleanLevel ~= Art.UseCleanLevel(self.config, gains ~= nil) then
@@ -70,7 +85,17 @@ local function Paint(self, item)
         self.host:SetHeight(height)
     end
     local subtitle = gains and Art.LevelDetails(self.config, gains) or item.subtitle
+    if item.kind == "zone" and not subtitle then
+        if not self.config.hideNewAreaSubtitle or not CanHideNewAreaSubtitle() then subtitle = Tr("NEW AREA") end
+    end
     Art.Show(self.art, self.config, item.kind, item.title, subtitle)
+end
+
+local function OnRestriction(self)
+    local item = self.current
+    if self.config.hideNewAreaSubtitle and not S.editMode and item and item.kind == "zone" and not item.subtitle then
+        Paint(self, item)
+    end
 end
 
 -- Clearing the banner or opening Edit Mode cancels its hold timer.
@@ -180,7 +205,7 @@ local function Zone(self)
     -- Retail and WoW Forever both have C_ChallengeMode (Forever runs no keystones).
     local active = C_ChallengeMode.IsChallengeModeActive()
     if S.Public(active) and active == true then return end
-    Enqueue(self, "zone", subzone or zone, subzone and zone or Tr("NEW AREA"), "zone:" .. key)
+    Enqueue(self, "zone", subzone or zone, subzone and zone, "zone:" .. key)
 end
 
 -- Zone texts settle after the change events; read them on the next frame.
@@ -458,6 +483,7 @@ function M:Enable()
     Theme(self)
     self.queue, self.showing, self.current, self.expiresAt, self.previewing = {}, false, nil, nil, nil
     for _, event in ipairs(EVENTS) do self.context:Event(event, Event, IN_COMBAT) end
+    self.context:Event("ADDON_RESTRICTION_STATE_CHANGED", OnRestriction, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", NativeAnnouncements, IN_COMBAT)
     self.lastZone = CurrentZoneKey()
     NativeAnnouncements(self)

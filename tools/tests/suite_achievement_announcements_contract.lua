@@ -64,7 +64,7 @@ S.PublicText = function(value)
     return S.Public(value) and type(value) == "string" and value ~= "" and value or nil
 end
 S.ReadText = function(fn, ...) return S.PublicText((fn(...))) end
-S.Text = function(value) return value end
+S.Text = function(value) return value == "NEW AREA" and "NEUES GEBIET" or value end
 S.Dispatch = function(fn, ...) return fn(...) end
 S.GlobalFontPath = function() return "font" end
 S.ResolveFont = function() return "font" end
@@ -233,6 +233,57 @@ assert(banner.title.text == "LEVEL 27" and banner.host:IsShown() and not banner.
     "the static queue dropped the level-up banner")
 clock.Advance(4.1)
 assert(not banner.host:IsShown() and not banner.showing, "the last static banner did not clear")
+
+-- The localized fallback can disappear without hiding any supplied subtitle.
+local zoneTitle, subzone, inside = "Tanaris", "", false
+Enum.AddOnRestrictionType = { Combat = 0, Encounter = 1, ChallengeMode = 2, PvPMatch = 3, Map = 4, Chat = 5 }
+Enum.AddOnRestrictionState = { Inactive = 0, Activating = 1, Active = 2 }
+local restrictionStates = { [Enum.AddOnRestrictionType.Chat] = Enum.AddOnRestrictionState.Active }
+C_RestrictedActions = { GetAddOnRestrictionState = function(kind) return restrictionStates[kind] or 0 end }
+IsInInstance = function() return inside end
+GetZoneText, GetSubZoneText = function() return zoneTitle end, function() return subzone end
+banner.config.zone = true
+banner:Refresh()
+local function ChangeZone(title, subtitle)
+    zoneTitle, subzone = title, subtitle or ""
+    ctx.events.ZONE_CHANGED_NEW_AREA(banner, "ZONE_CHANGED_NEW_AREA")
+    clock.Frame()
+end
+ChangeZone("Tanaris")
+assert(banner.host:IsShown() and banner.title.text == "Tanaris" and banner.subtitle.text == "NEUES GEBIET",
+    "default zone banner lost its fallback")
+banner.config.hideNewAreaSubtitle = true
+banner:Refresh()
+assert(banner.host:IsShown() and banner.title.text == "Tanaris" and banner.subtitle.text == "" and not banner.subtitle.shown,
+    "chat lockdown prevented the switch from hiding just the open-world fallback")
+local expiry = banner.expiresAt
+local function Restriction(kind, state)
+    restrictionStates[kind] = state
+    ctx.events.ADDON_RESTRICTION_STATE_CHANGED(banner, "ADDON_RESTRICTION_STATE_CHANGED", kind, state)
+end
+Restriction(Enum.AddOnRestrictionType.Combat, 1)
+assert(banner.subtitle.text == "NEUES GEBIET" and banner.subtitle.shown and banner.expiresAt == expiry,
+    "activating restriction did not restore the fallback")
+Restriction(Enum.AddOnRestrictionType.Map, 2)
+Restriction(Enum.AddOnRestrictionType.Combat, 0)
+assert(banner.subtitle.text == "NEUES GEBIET", "one lifted restriction overrode another active restriction")
+Restriction(Enum.AddOnRestrictionType.Map, 0)
+assert(banner.subtitle.text == "", "the fallback stayed visible after restrictions lifted")
+ChangeZone("NEUES GEBIET", "Named subzone")
+assert(banner.title.text == "Named subzone" and banner.subtitle.text == "NEUES GEBIET" and banner.subtitle.shown,
+    "a real subtitle was suppressed because it matched the fallback text")
+inside = true
+ChangeZone("Dungeon")
+assert(banner.subtitle.text == "NEUES GEBIET", "an instance banner lost its fallback")
+inside = false
+Restriction(Enum.AddOnRestrictionType.Map, secret)
+ChangeZone("Kalimdor")
+assert(banner.subtitle.text == "NEUES GEBIET", "an unknown restriction state suppressed the fallback")
+ctx.events.QUEST_ACCEPTED(banner, "QUEST_ACCEPTED", 44)
+clock.Advance(4.1)
+assert(banner.title.text == "Quest 44" and banner.subtitle.text == "QUEST ACCEPTED",
+    "the toggle suppressed a quest subtitle")
+
 -- New unrelated alerts never acquire a per-frame polling loop.
 for _, object in ipairs({ banner.host, first, second, overflow }) do assert(not object.OnUpdate) end
 print("achievement scalar delivery, native fallback, combat queue, toggles and replay budget passed")

@@ -234,6 +234,8 @@ B.Module("announcements", {
 })
 B.Section("announcements", "content", "Announcements", {
     B.Bool("zone", "Zone and subzone", true),
+    B.Tooltip(B.Bool("hideNewAreaSubtitle", "Hide 'New Area' subtitle", false),
+        "Hides only 'New Area' in the open world when gameplay restrictions are inactive. Subzone names and other subtitles stay visible."),
     B.Bool("eventToasts", "Replace Blizzard event banners", true),
     B.Bool("quests", "Quest accepted and completed", true),
     B.Bool("achievements", "Achievements", true),
@@ -272,6 +274,7 @@ B.Section("announcements", "frame", "Banner frame", {
     B.Color("frameColor", "Frame", "f5cf70"),
 })
 local announcementRules = NS.SuiteCatalog.announcements.rules
+announcementRules.hideNewAreaSubtitle.enableKey = "zone"
 announcementRules.artStyle.enableKey = "showBoxArt"
 announcementRules.artOpacity.enableKey = "showBoxArt"
 for _, key in ipairs({ "frameStyle", "frameThickness", "frameOpacity", "frameColorSource", "frameColor" }) do
