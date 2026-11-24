@@ -590,6 +590,7 @@ local function ParsePaging(text)
     if #clauses == 0 then return nil, "Add at least one clause." end
     return { driver = table.concat(clauses, "; "), pages = pages, final = final }
 end
+NS.ParseActionBarPaging = ParsePaging
 
 -- Whether an enabled bar keeps manual page `page` (2 to 6) as its own.
 function NS.ActionBarPageOwned(config, page)
@@ -603,6 +604,7 @@ end
 -- pages 7 to 11 it shows anyway; for any bar a manual page 2 to 6 that no
 -- enabled bar owns and no lower bar's custom paging claimed first.
 local function PageAllowed(config, index, page, claims)
+    if not HOME_PAGES[index] or page % 1 ~= 0 then return false end
     if page == HOME_PAGES[index] or (index == 1 and page >= 7 and page <= 11) then return true end
     if page < 2 or page > 6 then
         if index == 1 then return false, "Bar 1 pages to pages 1 to 11." end
@@ -615,6 +617,7 @@ local function PageAllowed(config, index, page, claims)
     if claim and claim ~= index then return false, "Page %d is already paged by action bar %d.", page, claim end
     return true
 end
+NS.ActionBarPagingPageAllowed = PageAllowed
 
 local function Check(config, index, claims)
     local text = config["bar" .. index .. "Paging"]

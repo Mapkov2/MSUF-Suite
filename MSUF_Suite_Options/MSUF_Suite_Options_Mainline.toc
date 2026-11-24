@@ -31,6 +31,7 @@ Pages\ActionBarsSnapshots.lua
 Pages\ActionBarsFlyouts.lua
 Pages\ActionBarsPreviewData.lua
 Pages\ActionBarsPreview.lua
+Pages\ActionBarsPaging.lua
 Pages\ActionBars.lua
 Pages\MinimapPreviewArt.lua
 Pages\MinimapPreviewPaint.lua

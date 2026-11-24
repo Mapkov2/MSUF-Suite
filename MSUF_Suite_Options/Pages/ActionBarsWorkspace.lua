@@ -14,7 +14,7 @@ local function Groups()
             { id = "layout", label = "Layout", sections = "editor bar_layout" },
             { id = "text", label = "Text", sections = "bar_text" },
             { id = "visibility", label = "Visibility", sections = "bar_visibility global_visibility" },
-            { id = "paging", label = "Paging", sections = "bar_paging" },
+            { id = "paging", label = "Page switching", sections = "bar_paging_guided bar_paging" },
             { id = "flyouts", label = "Flyouts", sections = "flyouts" },
         }
     end

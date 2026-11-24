@@ -25,7 +25,7 @@ local GROUPS = {
             "CondFocus", "CondFlying", "CondGroup", "CondCasting", "CondSkyriding", "CondInstance", "CondHousing", "HideGamepad",
             "GroupOnly", "Alpha", "FadeAlpha", "FadeDuration", "ClickThrough", "Tooltip" } },
     -- Never copied: a paging text names pages of its own bar.
-    { id = "paging", title = "Paging for the selected bar", suffixes = { "Paging" } },
+    { id = "paging", title = "Macro conditions", suffixes = { "Paging" } },
     { id = "layout", title = "Layout for the selected bar",
         suffixes = { "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty", "FlyoutDirection",
         "Layer", "Point", "X", "Y" } },
@@ -614,6 +614,7 @@ local function Build(ctx)
             if GroupOf(rule.key:sub(5)) == group.id then rules[#rules + 1] = rule end
         end
         local paging = group.id == "paging"
+        if paging then P.ActionBarPagingPage.Build(ctx, b, function() return selected end) end
         local status = paging and PagingStatus or group.id == "visibility" and ConditionStatus or nil
         P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_bar_" .. group.id, Tr(group.title), rules,
             { keyFn = BarKey, open = false, copy = not paging and SectionCopy(group.id) or nil, essential = ESSENTIAL[group.id],
