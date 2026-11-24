@@ -7,6 +7,12 @@ P.LootRollData = D
 local MAX_NAMES, MAX_ENCOUNTERS = 40, 8
 local encounterTimes = {}
 
+function D.HighlightRollFormat(format, roll)
+    if S.Finite(roll) and (roll == 1 or roll == 100) then
+        return (format:gsub("%%d", "|cffffc733%%d|r"))
+    end
+end
+
 local function PublicTable(value)
     return S.Public(value) and type(value) == "table"
 end

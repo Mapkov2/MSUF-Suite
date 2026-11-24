@@ -287,9 +287,13 @@ for _, forever in ipairs({ false, true }) do
     state:Cancel(1)
     Check(entry.choice == 1 and entry.cancelled, "native cancel event commits the last requested choice")
     Muted(state, 1, false)
-    state:Drop(11, "item:1", "Winner")
+    local result = state:Drop(11, "item:1", "Winner")
+    result.winner.roll = 100
     state:Publish(11)
     Check(entry.finished and entry.status == "winner" and entry.statusName == "Winner", "unambiguous result reaches same row")
+    Check(entry.statusText == "Winner: Winner (Greed 100)"
+        and entry.highlightedStatusText == "Winner: Winner (Greed |cffffc733100|r)",
+        "actual Greed history builds both popup result strings")
     state:Frame(2.1)
     Check(#M.order == 0 and not M.host.shown, "configured result timeout removes winner and idle stack")
     state:Start(2, nil, 2)

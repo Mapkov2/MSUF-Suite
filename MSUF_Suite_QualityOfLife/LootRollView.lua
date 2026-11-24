@@ -15,8 +15,16 @@ local ACTIONS = {
 local ACTION_LABELS = {}
 for _, action in ipairs(ACTIONS) do ACTION_LABELS[action.id] = action.label end
 
-local function ChoiceText(entry, label)
-    if S.Finite(entry.selfRoll) then return S.Text("Your roll: %s (%d)"):format(label, entry.selfRoll) end
+local function StatusText(config, entry)
+    return config.highlightExtremeRolls and entry.highlightedStatusText or entry.statusText
+end
+
+local function ChoiceText(config, entry, label)
+    if S.Finite(entry.selfRoll) then
+        local format = S.Text("Your roll: %s (%d)")
+        if config.highlightExtremeRolls then format = Data.HighlightRollFormat(format, entry.selfRoll) or format end
+        return format:format(label, entry.selfRoll)
+    end
     return S.Text("Your roll: %s"):format(label)
 end
 
@@ -55,7 +63,8 @@ local function RollTooltip(button)
     if IsPreview(row.owner) or not entry then return end
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
     local label = S.Text(action.label)
-    GameTooltip:SetText(entry.choice == action.id and ChoiceText(entry, label) or label)
+    local config = row.owner.config
+    GameTooltip:SetText(entry.choice == action.id and ChoiceText(config, entry, label) or label)
     local names = entry.rollNames and entry.rollNames[action.id]
     if names and names ~= "" then
         GameTooltip:AddLine(names, 1, 1, 1, true)
@@ -65,7 +74,7 @@ local function RollTooltip(button)
         GameTooltip:AddLine(S.Text("No rolls yet."), .7, .7, .7, true)
     end
     if entry.choice == action.id and entry.status == "leader" and entry.statusText then
-        GameTooltip:AddLine(entry.statusText, 1, 1, 1, true)
+        GameTooltip:AddLine(StatusText(config, entry), 1, 1, 1, true)
     end
     GameTooltip:Show()
 end
@@ -374,7 +383,12 @@ local function Actions(self, row, entry)
             local hasCount = not entry.finished and self.config.showCounts and counted
             action.count:SetShown(showSelfRoll or hasCount)
             action.backdrop:SetShown(showSelfRoll or hasCount)
-            if showSelfRoll or hasCount then action.count:SetText(showSelfRoll and entry.selfRoll or count) end
+            if showSelfRoll then
+                local highlighted = self.config.highlightExtremeRolls and Data.HighlightRollFormat("%d", entry.selfRoll)
+                action.count:SetText(highlighted and highlighted:format(entry.selfRoll) or entry.selfRoll)
+            elseif hasCount then
+                action.count:SetText(count)
+            end
             shown = shown + 1
         end
     end
@@ -457,9 +471,9 @@ local function PaintRow(self, row, entry, index)
     row.details:SetText(Details(self.config, entry))
     local actionable = Actions(self, row, entry)
     local choice = ACTION_LABELS[entry.choice]
-    local status = entry.statusText
+    local status = StatusText(self.config, entry)
     if choice and (not entry.finished or self.config.showResults == false and not IsPreview(self)) then
-        status = ChoiceText(entry, S.Text(choice))
+        status = ChoiceText(self.config, entry, S.Text(choice))
     end
     row.status:SetText(status or (not actionable and S.Text("Waiting for result") or ""))
     row.item:EnableMouse(not IsPreview(self))

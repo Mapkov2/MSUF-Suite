@@ -19,16 +19,19 @@ local function ResultText(entry, short, detailed)
     local name = entry.statusName or S.Text("Unknown")
     local action = entry.statusChoice and ACTION_NAMES[entry.statusChoice]
     if action and S.Finite(entry.statusRoll) then
-        return S.Text(detailed):format(name, S.Text(action), entry.statusRoll)
+        local format, label = S.Text(detailed), S.Text(action)
+        local highlighted = Data.HighlightRollFormat(format, entry.statusRoll)
+        return format:format(name, label, entry.statusRoll), highlighted and highlighted:format(name, label, entry.statusRoll)
     end
     return S.Text(short):format(name)
 end
 
 local function SetStatus(entry)
+    entry.highlightedStatusText = nil
     if entry.status == "winner" then
-        entry.statusText = ResultText(entry, "Winner: %s", "Winner: %s (%s %d)")
+        entry.statusText, entry.highlightedStatusText = ResultText(entry, "Winner: %s", "Winner: %s (%s %d)")
     elseif entry.status == "leader" then
-        entry.statusText = ResultText(entry, "Current leader: %s", "Current leader: %s (%s %d)")
+        entry.statusText, entry.highlightedStatusText = ResultText(entry, "Current leader: %s", "Current leader: %s (%s %d)")
     elseif entry.status == "allPassed" then
         entry.statusText = S.Text("Everyone passed")
     elseif entry.choice or entry.cancelled then

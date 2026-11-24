@@ -1,5 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local viewPath = arg[2] or root .. "/MSUF_Suite_QualityOfLife/LootRollView.lua"
+local dataPath = arg[3] or root .. "/MSUF_Suite_QualityOfLife/LootRollData.lua"
 local writes, nativeReads, subscriptions = 0, 0, 0
 local anchors, fonts, colors = 0, 0, 0
 
@@ -140,6 +141,9 @@ namespace.LootRollHistory = {
     Link = function(entry) links[#links + 1] = entry end,
     Share = function(entry) shares[#shares + 1] = entry end,
 }
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Bootstrap.lua"))("MSUF_Suite", namespace.NS)
+assert(loadfile(root .. "/MSUF_Suite/Appearance/Safety.lua"))("MSUF_Suite", namespace.NS)
+assert(loadfile(dataPath))("MSUF_Suite_QualityOfLife", namespace)
 assert(loadfile(viewPath))("MSUF_Suite_QualityOfLife", namespace)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootRollList.lua"))("MSUF_Suite_QualityOfLife", namespace)
 local View = assert(namespace.LootRollView)
@@ -242,7 +246,37 @@ View.Paint(module)
 need.button.scripts.OnEnter(need.button)
 assert(need.count.text == 72 and GameTooltip.text == "Your roll: Need (72)",
     "the winner row shows the player's actual rolled number when the API provides it")
-active.selfRoll = nil
+local greed = Action(row, 2)
+active.choice, active.selfRoll = 2, 100
+active.statusText = "Winner: Player100 (Greed 100)"
+active.highlightedStatusText = "Winner: Player100 (Greed |cffffc733100|r)"
+config.highlightExtremeRolls = true
+View.Paint(module)
+assert(row.status.text == active.highlightedStatusText, "the popup highlights only the winning roll number")
+greed.button.scripts.OnEnter(greed.button)
+assert(greed.count.text == "|cffffc733100|r" and GameTooltip.text == "Your roll: Greed (|cffffc733100|r)",
+    "the selected Greed badge and tooltip highlight the player's roll of 100")
+config.highlightExtremeRolls = false
+View.Paint(module)
+assert(row.status.text == active.statusText and greed.count.text == 100, "disabling highlight restores normal text")
+config.highlightExtremeRolls = true
+active.selfRoll = 1
+View.Paint(module)
+assert(greed.count.text == "|cffffc7331|r", "the selected Greed badge also highlights a roll of 1")
+active.selfRoll = 72
+View.Paint(module)
+assert(greed.count.text == 72, "ordinary player rolls retain their normal text")
+active.finished, active.counts[2], active.status, active.statusText = false, 1, "leader", "Current leader: Player100 (Greed 100)"
+active.highlightedStatusText = "Current leader: Player100 (Greed |cffffc733100|r)"
+active.selfRoll = 1
+View.Paint(module)
+greed.button.scripts.OnEnter(greed.button)
+assert(row.status.text == "Your roll: Greed (|cffffc7331|r)" and GameTooltip.line == active.highlightedStatusText,
+    "the in-progress row highlights the player's roll and its tooltip highlights the leader's roll")
+assert(greed.count.text == 1, "a count of one participant does not get a roll highlight")
+active.finished, active.counts[2], active.status = true, 2, nil
+active.selfRoll, active.highlightedStatusText = nil, nil
+config.highlightExtremeRolls = false
 config.showResults = false
 active.choice = 0
 View.Paint(module)
