@@ -7,7 +7,9 @@ local GROUP_HEADER, GROUP_ROW, GROUP_GAP = 30, 24, 8
 local VALUE_SIZE, BAR_INSET, BAR_BOTTOM, TEXT_GAP = 11, 10, 2, 4
 local CreateFrame, CreateTexture = NS.Suite.CreateFrame, NS.Suite.CreateTexture
 local Number, ReadText = NS.Number, NS.String
-local SCROLL_STEP, SCROLL_WIDTH, TRACK_INSET, MIN_THUMB = 30, 16, 15, 24
+local SCROLL_WIDTH, TRACK_WIDTH, TRACK_INSET, MIN_THUMB = 16, 8, 19, 23
+local WHEEL_ROWS, PAGE_FRACTION = 2, .95
+local STEP_DELAY, STEP_INTERVAL = .5, .1
 local Layout = { HeaderHeight = GROUP_HEADER, Gap = GROUP_GAP, ValueSize = VALUE_SIZE }
 NS.GroupLayout = Layout
 
@@ -156,7 +158,6 @@ function Layout.FirstRow(rows, count, earliest)
     end
     return low
 end
-local STEP_DELAY, STEP_INTERVAL = .3, .06
 
 local function VerticalScroll(scroll, offset)
     local list = scroll.panelList
@@ -171,71 +172,169 @@ local function MoveCanvas(list, offset)
     return true
 end
 
-local function PaintSteppers(list)
+local function PaintOwnedScroll(list)
+    local start = list.range > 0 and list.thumbTravel * list.offset / list.range or 0
+    list.thumbStart = start
+    list.thumb:SetPoint("TOP", list.track, "TOP", 0, -start)
     list.up:SetAlpha(list.offset > 0 and 1 or .45)
     list.down:SetAlpha(list.offset < list.range and 1 or .45)
 end
 
-local function SyncSlider(list, rangeChanged)
-    list.layingOut = true
-    if rangeChanged then
-        if list.range > 0 then
-            local trackHeight = list.height - 2 * TRACK_INSET
-            local thumbHeight = floor(trackHeight * list.height / list.content + .5)
-            list.thumb:SetHeight(min(trackHeight, max(MIN_THUMB, thumbHeight)))
-        end
-        list.slider:SetMinMaxValues(0, max(1, list.range))
-        list.bar:SetShown(list.range > 0)
-    end
-    -- Vertical sliders use zero at the top, like Blizzard's scroll frames.
-    list.slider:SetValue(list.offset)
-    list.layingOut = false
-    PaintSteppers(list)
-end
-
 local function ScrollOwnedList(list, offset)
     if not MoveCanvas(list, offset) then return end
-    SyncSlider(list, false)
+    PaintOwnedScroll(list)
     list.paint(list, list.offset)
+    return true
 end
 
-local function StopStepper(button)
-    button:SetScript("OnUpdate", nil)
+local function NewBarArt(frame, top, middle, bottom)
+    local start = CreateTexture(frame, nil, "ARTWORK", nil, 1)
+    start:SetAtlas(top, true)
+    start:SetPoint("TOP")
+    local fill = CreateTexture(frame, nil, "ARTWORK")
+    fill:SetAtlas(middle)
+    local finish = CreateTexture(frame, nil, "ARTWORK", nil, 1)
+    finish:SetAtlas(bottom, true)
+    finish:SetPoint("BOTTOM")
+    fill:SetPoint("TOPLEFT", start, "BOTTOMLEFT")
+    fill:SetPoint("BOTTOMRIGHT", finish, "TOPRIGHT")
+    return start, fill, finish
 end
 
-local function MakeStepper(view, bar, edge, icon, step)
-    local button = NS.Window.CreateChild(view, "Button", bar)
+local function StopUpdate(control)
+    control:SetScript("OnUpdate", nil)
+end
+
+local function LeftMouseDown()
+    local down = IsMouseButtonDown("LeftButton")
+    return NS.Public(down) and down
+end
+
+local function BindRepeat(control, step)
+    local delay
+    local function Repeat(self, elapsed)
+        if not LeftMouseDown() then return StopUpdate(self) end
+        local over = self:IsMouseOver()
+        if not NS.Public(over) or not over then return end
+        delay = delay - elapsed
+        if delay <= 0 then
+            step(false)
+            delay = STEP_INTERVAL
+        end
+    end
+    control:SetScript("OnMouseDown", function(self, key)
+        if ReadText(key) ~= "LeftButton" or not step(true) then return end
+        delay = STEP_DELAY
+        self:SetScript("OnUpdate", Repeat)
+    end)
+    control:SetScript("OnMouseUp", function(self, key)
+        if ReadText(key) == "LeftButton" then StopUpdate(self) end
+    end)
+    control:SetScript("OnHide", StopUpdate)
+end
+
+local function MakeStepper(list, edge, icon, direction)
+    local button = NS.Window.CreateChild(list.view, "Button", list.bar)
     button:SetPoint(edge)
-    button:SetSize(16, 11)
+    button:SetSize(17, 11)
     button:SetNormalAtlas(icon)
     button:SetHighlightAtlas(icon .. "-over")
     button:SetPushedAtlas(icon .. "-down")
-    local delay, repeated
-    local function Repeat(self, elapsed)
-        delay = delay - elapsed
-        if delay > 0 then return end
-        local over = self:IsMouseOver()
-        if not NS.Public(over) or not over then return end
-        step()
-        delay, repeated = STEP_INTERVAL, true
-    end
-    button:SetScript("OnMouseDown", function(self, key)
-        if not NS.Public(key) or key ~= "LeftButton" then return end
-        delay, repeated = STEP_DELAY, false
-        self:SetScript("OnUpdate", Repeat)
-    end)
-    button:SetScript("OnMouseUp", StopStepper)
-    button:SetScript("OnHide", StopStepper)
-    button:SetScript("OnClick", function()
-        if not repeated then step() end
-        repeated = false
+    BindRepeat(button, function()
+        return ScrollOwnedList(list, list.offset + direction * list.scrollStep)
     end)
     return button
 end
 
--- Forever's ScrollFrameTemplate runs Blizzard's scrollbar update during
--- construction and range changes. Its steppers and thumb reject secret
--- enabled states. Hosted reports use the list's own public pixel offsets.
+local function CursorOnTrack(track)
+    local _, y = GetCursorPosition()
+    local scale, top = Number(track:GetEffectiveScale()), Number(track:GetTop())
+    y = Number(y)
+    if y and scale and scale > 0 and top then return top - y / scale end
+end
+
+local function MakeTrack(list, child)
+    local track = child(list.view, "Frame", list.bar)
+    track:SetPoint("TOP", 0, -TRACK_INSET)
+    track:SetPoint("BOTTOM", 0, TRACK_INSET)
+    track:SetWidth(TRACK_WIDTH)
+    track:EnableMouse(true)
+    NewBarArt(track, "minimal-scrollbar-track-top", "!minimal-scrollbar-track-middle", "minimal-scrollbar-track-bottom")
+
+    local direction
+    BindRepeat(track, function(first)
+        local cursor = CursorOnTrack(track)
+        if not cursor or list.range == 0 then return end
+        local side = 0
+        if cursor < list.thumbStart then
+            side = -1
+        elseif cursor > list.thumbStart + list.thumbHeight then
+            side = 1
+        end
+        if first then direction = side end
+        if side == 0 or side ~= direction then return end
+        return ScrollOwnedList(list, list.offset + direction * list.height * PAGE_FRACTION)
+    end)
+    return track
+end
+
+local function MakeThumb(list, child)
+    local track = list.track
+    local thumb = child(list.view, "Button", track)
+    thumb:SetPoint("TOP")
+    thumb:SetSize(TRACK_WIDTH, MIN_THUMB)
+    thumb:SetHitRectInsets(-4, -4, -4, -4)
+    thumb:EnableMouse(true)
+    local prefix = "minimal-scrollbar-small-thumb-"
+    local start, fill, finish = NewBarArt(thumb, prefix .. "top", prefix .. "middle", prefix .. "bottom")
+
+    local grab, hover
+    local function ShowState()
+        local suffix = grab and "-down" or hover and "-over" or ""
+        start:SetAtlas(prefix .. "top" .. suffix, true)
+        fill:SetAtlas(prefix .. "middle" .. suffix)
+        finish:SetAtlas(prefix .. "bottom" .. suffix, true)
+    end
+    local function Stop(self)
+        grab = nil
+        StopUpdate(self)
+        ShowState()
+    end
+    local function Drag(self)
+        if not LeftMouseDown() then return Stop(self) end
+        local cursor = CursorOnTrack(track)
+        if cursor and list.thumbTravel > 0 then
+            ScrollOwnedList(list, (cursor - grab) * list.range / list.thumbTravel)
+        end
+    end
+    thumb:SetScript("OnEnter", function()
+        hover = true
+        ShowState()
+    end)
+    thumb:SetScript("OnLeave", function()
+        hover = false
+        ShowState()
+    end)
+    thumb:SetScript("OnMouseDown", function(self, key)
+        if ReadText(key) ~= "LeftButton" or list.thumbTravel <= 0 then return end
+        local cursor = CursorOnTrack(track)
+        if not cursor then return end
+        grab = cursor - list.thumbStart
+        ShowState()
+        self:SetScript("OnUpdate", Drag)
+    end)
+    thumb:SetScript("OnMouseUp", function(self, key)
+        if ReadText(key) == "LeftButton" then Stop(self) end
+    end)
+    thumb:SetScript("OnHide", function(self)
+        hover = false
+        Stop(self)
+    end)
+    return thumb
+end
+
+-- Blizzard's SettingsList uses MinimalScrollBar. Keep its art and controls
+-- on Suite frames so native scroll scripts never read hosted secret ranges.
 local function MakeOwnedScroll(list)
     local view, width, height = list.view, list.width, list.height
     local child = NS.Window.CreateChild
@@ -254,47 +353,23 @@ local function MakeOwnedScroll(list)
     local bar = child(view, "Frame", scroll)
     bar:SetPoint("TOPRIGHT")
     bar:SetSize(SCROLL_WIDTH, height)
+    list.scroll, list.canvas, list.bar = scroll, canvas, bar
+    list.offset, list.range, list.thumbTravel = 0, 0, 0
+    list.scrollStep = GROUP_ROW
+    list.track = MakeTrack(list, child)
+    list.thumb = MakeThumb(list, child)
+    list.up = MakeStepper(list, "TOP", "minimal-scrollbar-arrow-top", -1)
+    list.down = MakeStepper(list, "BOTTOM", "minimal-scrollbar-arrow-bottom", 1)
     bar:Hide()
-    local slider = child(view, "Slider", bar)
-    slider:SetOrientation("VERTICAL")
-    slider:EnableMouse(true)
-    slider:SetPoint("TOP", 0, -TRACK_INSET)
-    slider:SetPoint("BOTTOM", 0, TRACK_INSET)
-    slider:SetWidth(SCROLL_WIDTH)
-    slider:SetMinMaxValues(0, 1)
-    local track = CreateTexture(slider, nil, "BACKGROUND")
-    track:SetPoint("TOP")
-    track:SetPoint("BOTTOM")
-    track:SetWidth(5)
-    track:SetColorTexture(0, 0, 0, .55)
-    local thumb = CreateTexture(slider, nil, "ARTWORK")
-    thumb:SetSize(9, MIN_THUMB)
-    slider:SetThumbTexture(thumb)
 
-    list.scroll, list.canvas, list.bar, list.slider, list.thumb = scroll, canvas, bar, slider, thumb
-    list.offset, list.range = 0, 0
-    list.up = MakeStepper(view, bar, "TOP", "minimal-scrollbar-arrow-top", function()
-        ScrollOwnedList(list, list.offset - SCROLL_STEP)
-    end)
-    list.down = MakeStepper(view, bar, "BOTTOM", "minimal-scrollbar-arrow-bottom", function()
-        ScrollOwnedList(list, list.offset + SCROLL_STEP)
-    end)
     local function Wheel(_, delta)
         delta = Number(delta)
-        if delta then ScrollOwnedList(list, list.offset - delta * SCROLL_STEP) end
+        if delta then ScrollOwnedList(list, list.offset - delta * WHEEL_ROWS * list.scrollStep) end
     end
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", Wheel)
-    slider:EnableMouseWheel(true)
-    slider:SetScript("OnMouseWheel", Wheel)
-    slider:SetScript("OnValueChanged", function(_, value)
-        if list.layingOut then return end
-        value = Number(value)
-        if value and MoveCanvas(list, value) then
-            PaintSteppers(list)
-            list.paint(list, list.offset)
-        end
-    end)
+    for _, target in ipairs({ scroll, list.track, list.thumb }) do
+        target:EnableMouseWheel(true)
+        target:SetScript("OnMouseWheel", Wheel)
+    end
 end
 
 function Layout.NewList(view, parent, width, height, columns, paint, fixed)
@@ -422,12 +497,23 @@ local function UpdateOwnedScroll(list, content, reset)
     local rangeChanged = list.range ~= range
     list.range = range
     local moved = MoveCanvas(list, reset and 0 or list.offset)
-    if moved or rangeChanged then SyncSlider(list, rangeChanged) end
+    if rangeChanged then
+        if range > 0 then
+            local trackHeight = max(0, list.height - 2 * TRACK_INSET)
+            list.thumbHeight = min(trackHeight, max(MIN_THUMB, trackHeight * list.height / content))
+            list.thumbTravel = trackHeight - list.thumbHeight
+            list.thumb:SetHeight(list.thumbHeight)
+        else
+            list.thumbTravel = 0
+        end
+        list.bar:SetShown(range > 0)
+    end
+    if moved or rangeChanged then PaintOwnedScroll(list) end
     return list.offset
 end
 
 function Layout.UpdateScroll(list, content, reset)
-    if list.slider then return UpdateOwnedScroll(list, content, reset) end
+    if list.track then return UpdateOwnedScroll(list, content, reset) end
     local scroll = list.scroll
     if not scroll then return 0 end
     local oldOffset = Number(scroll:GetVerticalScroll())

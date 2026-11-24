@@ -192,7 +192,12 @@ local suite = {
         }, ...)
     end,
     CreateFrame = Create,
-    CreateTexture = function() return Create("Texture") end,
+    CreateTexture = function(parent)
+        local texture = Create("Texture", nil, parent)
+        parent.textures = parent.textures or {}
+        table.insert(parent.textures, texture)
+        return texture
+    end,
     CreateFontString = function(parent) return Create("FontString", nil, parent) end,
     SetFont = function(font, path, size) font.fontPath, font.fontSize = path or fontPath, size Write() end,
     GlobalFontPath = function() return fontPath end,
@@ -932,7 +937,7 @@ do
     local foreverDock = ns.View.New({ tab = Noop, group = Noop }, nil, native)
     rejectNativeScrollTemplate = false
     foreverDock:ShowGroups(groups)
-    assert(foreverDock.report.slider and foreverDock.report.scroll:IsShown()
+    assert(foreverDock.report.track and foreverDock.report.scroll:IsShown()
         and foreverDock.report.cards[1].title.label.text == "Quick", "the Forever dock lost its report")
 end
 
@@ -1342,56 +1347,92 @@ do
     local longRows = {}
     for i = 1, 48 do longRows[i] = { label = "Row " .. i, value = i } end
     local longReport = { { title = "Long report", rows = longRows } }
+    local function ScrollTo(list, delta)
+        list.scroll.scripts.OnMouseWheel(list.scroll, delta)
+    end
     local function CheckOwnedScroll(list)
         assert(list.scroll.kind == "Frame" and not list.scroll.template and list.canvas.parent.clipsChildren
             and list.bar:IsShown(), "the Forever list lost its clipped viewport or scroll controls")
-        local slider, offset = list.slider, list.offset
-        local trackHeight = list.height - 30
-        local expectedHeight = math.floor(trackHeight * list.height / list.content + .5)
-        assert(slider.thumb.height == expectedHeight and slider.thumb.width >= 9
-            and slider.width >= 16 and slider.thumb.color,
-            "the thumb does not reflect visible content or lost its high-contrast treatment")
-        assert(offset == 0 and slider.value == 0, "the top of the list placed the thumb at the wrong end")
+        local track, thumb, startY = assert(list.track, "the list lacks Blizzard-style track art"), list.thumb, cursorY
+        local expectedHeight = (list.height - 38) * list.height / list.content
+        assert(math.abs(thumb.height - expectedHeight) < .001 and thumb.width == 8 and track.width == 8,
+            "the narrow thumb does not reflect the visible portion of the list")
+        assert(track.textures[1].art == "minimal-scrollbar-track-top"
+            and track.textures[2].art == "!minimal-scrollbar-track-middle"
+            and track.textures[3].art == "minimal-scrollbar-track-bottom"
+            and thumb.textures[1].art == "minimal-scrollbar-small-thumb-top"
+            and thumb.textures[2].art == "minimal-scrollbar-small-thumb-middle"
+            and thumb.textures[3].art == "minimal-scrollbar-small-thumb-bottom",
+            "the scrollbar did not use Blizzard's track and thumb atlas pieces")
+        assert(list.offset == 0 and thumb.point[5] == 0 and list.up.alpha < 1,
+            "the list did not start at the top with its back arrow dimmed")
         list.scroll.scripts.OnMouseWheel(list.scroll, -1)
-        assert(list.offset == offset + 30 and list.canvas.point[3] == list.offset,
-            "the wheel did not move the report canvas")
-        list.down.scripts.OnClick(list.down)
-        assert(list.offset == offset + 60 and slider.value == list.offset,
-            "the forward stepper did not move the scrollbar with the report")
-        list.up.scripts.OnClick(list.up)
-        assert(list.offset == offset + 30, "the back stepper did not scroll back")
+        assert(list.offset == 48 and list.canvas.point[3] == list.offset and thumb.point[5] < 0,
+            "one wheel notch did not move the canvas and thumb by two rows")
+
         local down = list.down
         down.IsMouseOver = function() return true end
         down.scripts.OnMouseDown(down, "LeftButton")
-        down.scripts.OnUpdate(down, .31)
+        assert(list.offset == 72, "the forward arrow did not step on press")
+        down.scripts.OnUpdate(down, .4)
+        assert(list.offset == 72, "the forward arrow repeated before Blizzard's hold delay")
+        down.scripts.OnUpdate(down, .11)
         down.scripts.OnMouseUp(down, "LeftButton")
-        down.scripts.OnClick(down)
-        assert(list.offset == offset + 60 and not down.scripts.OnUpdate,
-            "the held stepper failed to repeat or moved a second time on release")
-        slider:SetValue(list.range)
-        assert(list.offset == list.range and list.cards[1].rows[1].left.text ~= "Row 1",
+        assert(list.offset == 96 and not down.scripts.OnUpdate, "the arrow did not repeat and stop on release")
+        list.up.scripts.OnMouseDown(list.up, "LeftButton")
+        list.up.scripts.OnMouseUp(list.up, "LeftButton")
+        assert(list.offset == 72, "the back arrow did not scroll back")
+
+        ScrollTo(list, 100)
+        assert(list.offset == 0, "wheel scrolling did not respect the top boundary")
+        cursorY = (track:GetTop() - list.height + 42) * track:GetEffectiveScale()
+        track.IsMouseOver = function() return true end
+        track.scripts.OnMouseDown(track, "LeftButton")
+        assert(list.offset == math.min(list.range, .95 * list.height), "clicking the track did not page down")
+        track.scripts.OnUpdate(track, .51)
+        assert(list.offset == math.min(list.range, 1.9 * list.height), "a held track did not page toward the cursor")
+        track.scripts.OnMouseUp(track, "LeftButton")
+
+        ScrollTo(list, 100)
+        track:SetScale(.8)
+        local scale = track:GetEffectiveScale()
+        cursorY = (track:GetTop() - 4) * scale
+        thumb.scripts.OnEnter(thumb)
+        assert(thumb.textures[2].art == "minimal-scrollbar-small-thumb-middle-over")
+        thumb.scripts.OnMouseDown(thumb, "LeftButton")
+        assert(thumb.textures[2].art == "minimal-scrollbar-small-thumb-middle-down")
+        thumb.scripts.OnUpdate(thumb)
+        assert(list.offset == 0, "grabbing the thumb jumped the scroll position")
+        cursorY = cursorY - (list.height - 38 - thumb.height) * scale
+        thumb.scripts.OnUpdate(thumb)
+        assert(math.abs(list.offset - list.range) < .001 and list.cards[1].rows[1].left.text ~= "Row 1",
             "dragging to the bottom did not repaint the visible rows")
         local stop = Strict.Watch(path .. "GroupLayout.lua", { strict = true })
         local hiddenValue = Strict.New("number")
         list.scroll.scripts.OnMouseWheel(list.scroll, hiddenValue)
-        slider.scripts.OnValueChanged(slider, hiddenValue)
+        cursorY = hiddenValue
+        thumb.scripts.OnUpdate(thumb)
         local violations = stop()
         assert(#violations == 0, table.concat(violations, " | "))
-        assert(list.offset == list.range, "restricted input changed the visible offset")
-        list.down.scripts.OnClick(list.down)
-        assert(list.offset == list.range, "the bottom stepper scrolled past the last row")
-        slider:SetValue(0)
+        assert(math.abs(list.offset - list.range) < .001, "restricted input changed the visible offset")
+        mouseDown = false
+        thumb.scripts.OnUpdate(thumb)
+        mouseDown = true
+        thumb.scripts.OnLeave(thumb)
+        assert(not thumb.scripts.OnUpdate and thumb.textures[2].art == "minimal-scrollbar-small-thumb-middle")
+        cursorY = startY
+        ScrollTo(list, 100)
         assert(list.offset == 0 and list.cards[1].rows[1].left.text == "Row 1",
-            "dragging the thumb back up did not return to the first row")
+            "scrolling back up did not return to the first row")
     end
     full:ShowGear(gear.left, gear.right, gear.weapons, longReport, nil, empty, true)
     CheckOwnedScroll(full.rail)
     full:ShowGroups(longReport)
     CheckOwnedScroll(full.report)
-    local smallThumb = full.report.slider.thumb.height
+    local smallThumb = full.report.thumb.height
     for i = #longRows, 20, -1 do longRows[i] = nil end
     full:ShowGroups(longReport)
-    assert(full.report.range > 0 and full.report.slider.thumb.height > smallThumb,
+    assert(full.report.range > 0 and full.report.thumb.height > smallThumb,
         "the thumb did not grow as the scroll range shortened")
     full:ShowGroups(groups)
     assert(full.report.offset == 0 and full.report.canvas.point[3] == 0 and not full.report.bar:IsShown(),
@@ -1405,7 +1446,7 @@ do
         local search = full.reputationSearch
         assert(search:IsShown() and search.parent == full.footer and search.point[2] == full.frame
             and search:GetFrameLevel() > full.report.scroll:GetFrameLevel() and search.count.text == "19")
-        full.report.slider:SetValue(full.report.range)
+        ScrollTo(full.report, -100)
         search.edit:SetText("Row 18")
         search.edit.scripts.OnTextChanged(search.edit)
         assert(full.report.offset == 0 and search.count.text == "1 / 19" and full.report.cards[1].rows[1].left.text == "Row 18",
@@ -1415,7 +1456,7 @@ do
         local previousTab = full.tab
         full.tab, liveCombat = "reputation", true
         full:ShowGroups(longReport, true)
-        full.report.slider:SetValue(full.report.range)
+        ScrollTo(full.report, -100)
         assert(full.report.scroll:IsShown() and full.report.offset > 0 and not search:IsShown(),
             "the Forever combat report lost scrolling through cached factions")
         full.tab, liveCombat = previousTab, false
@@ -1491,7 +1532,10 @@ do
     editor.input.scripts.OnEscapePressed(editor.input)
     assert(editEntry.closed and not editor:IsShown() and pane.main:IsShown(), "escape did not cancel the editor")
     assert(#list.buttons < #sets and list.range > 0, "the set list did not recycle rows or allow scrolling")
-    list.slider:SetValue(list.range)
+    ScrollTo(list, 100)
+    ScrollTo(list, -1)
+    assert(list.offset == math.min(list.range, 72), "one wheel notch must move by two equipment-set rows")
+    ScrollTo(list, -100)
     assert(list.buttons[1].set.id > 0 and not list.buttons[1].check:IsShown())
 
     full:ShowGroups(groups)

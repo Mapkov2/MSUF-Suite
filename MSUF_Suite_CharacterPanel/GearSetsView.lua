@@ -317,9 +317,9 @@ local function NewPane(view, parent, style)
     local available = style.width - 2 * INSET
     local height = style.height - START - 3 * BUTTON - 3 * GAP - INSET
     local list = Layout.NewList(view, main, available, height, 1, PaintRows)
+    if list.track then list.scrollStep = STEP end
     pane.list, list.pane, list.style, list.buttons = list, pane, style, {}
     list.scroll:SetPoint("TOPLEFT", INSET, -START)
-    if list.thumb then style.Tint(view, list.thumb, style.accent) end
     local blank = style.Font(view, main, 11, style.muted)
     blank:SetPoint("TOPLEFT", INSET, -29)
     blank:SetPoint("RIGHT", -INSET, 0)
@@ -388,7 +388,6 @@ function SetView.ShowList(list, fixed, groups, reset, combat, style)
         if not split then
             split = Layout.NewList(view, list.parent, view.bodyWidth - style.width - style.gap, list.height, list.columns, list.paint)
             view.setReport = split
-            if split.thumb then style.Tint(view, split.thumb, style.accent) end
         end
         Layout.ShowList(split, nil, groups, reset or not split.scroll.panelShown, false, show)
     end

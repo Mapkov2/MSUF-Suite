@@ -602,9 +602,7 @@ function View:VisitReport(visitor)
 end
 
 local function NewList(view, parent, width, height, columns)
-    local list = GroupLayout.NewList(view, parent, width, height, columns, PaintList)
-    if list.thumb then Tint(view, list.thumb, GOLD_LINE) end
-    return list
+    return GroupLayout.NewList(view, parent, width, height, columns, PaintList)
 end
 
 local function CloseDetails(button)
@@ -706,9 +704,9 @@ function View:ShowGroups(groups, combat, search, resetScroll)
     if self.gear then Visible(self.gear, false) end
     if self.reportCover then Visible(self.reportCover, true) end
     Window.SyncGlass(self)
-    -- Forever's hosted report owns its slider. The cached rows can still be
+    -- Forever's hosted report owns its scrollbar. The cached rows can still be
     -- scrolled in combat without running faction queries or native scroll scripts.
-    local fixed = combat and not (self.tab == "reputation" and self.report.slider)
+    local fixed = combat and not (self.tab == "reputation" and self.report.track)
     self.combatReport = GroupLayout.ShowList(self.report, self.combatReport, groups or GROUP_EMPTY, reset, fixed, Visible, SET_STYLE)
     Text(self.hint, "")
 end
