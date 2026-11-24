@@ -56,6 +56,7 @@ local function Visual(bar, markerOwner)
     visual.quest = markerOwner:CreateTexture(nil, "OVERLAY", nil, 7)
     visual.quest:Hide()
     M.visuals[bar] = visual
+    if not private.SlantedHealth.BindVisual(bar, visual) then Textures.RetryShape(markerOwner) end
     return visual
 end
 

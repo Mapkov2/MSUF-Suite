@@ -486,6 +486,7 @@ local function Hover(sample, on)
     end
     if not texture then
         texture = Style.CreateHighlight(sample.bar)
+        sample.hoverSlantMask = Style.ReplaceSlantedMask(texture, nil, sample.hoverSlantTarget)
         sample.highlight = texture
     end
     Style.PaintHighlight(texture, P.Get(ID, "mouseoverHighlightColor"))

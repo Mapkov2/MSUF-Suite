@@ -1048,4 +1048,33 @@ do
     T.Restore(uf)
     T.Configure({})
 end
+do
+    local shapeChecks, paints, bound = 0, 0
+    local visual = {}
+    private.SlantedHealth = {
+        Configure = function() end,
+        enabled = true,
+        Apply = function(_, _, styled, _, _, visuals)
+            shapeChecks = shapeChecks + 1
+            bound = styled and visuals and visuals[health] or nil
+            return true
+        end,
+    }
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/Textures.lua"))("Nameplates", private)
+    local textures = private.Textures
+    textures.Bind({ [health] = visual })
+    textures.Configure({ look = 3 })
+    local function Paint() paints = paints + 1 end
+    textures.Paint(uf, Paint)
+    assert(shapeChecks == 1 and bound == visual, "texture setup missed the cached Slanted visual")
+    for _ = 1, 100 do textures.Paint(uf, Paint) end
+    assert(shapeChecks == 1 and paints == 101, "warm texture paint entered Slanted setup")
+    combat = true
+    textures.RetryShape(uf)
+    assert(events.PLAYER_REGEN_ENABLED and shapeChecks == 1, "a deferred visual mask was lost")
+    EndCombat()
+    assert(shapeChecks == 2 and bound == visual, "combat replay did not rebind the cached Slanted visual")
+    textures.Restore(uf)
+    assert(shapeChecks == 3 and not bound, "Slanted texture release was skipped")
+end
 print("Nameplate textures: native fills and backgrounds, scoped appearance, cast states, release and restriction passed")

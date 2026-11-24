@@ -52,7 +52,13 @@ local function Show(uf)
     if not health then return end
     local texture = highlights[health]
     if not texture then
-        texture = Style.CreateHighlight(health)
+        local slanted = private.SlantedHealth
+        if slanted then
+            texture = slanted.AcquireOverlay(uf, health, "mouseHighlight", Style.CreateHighlight)
+            if not texture then return end
+        else
+            texture = Style.CreateHighlight(health)
+        end
         highlights[health] = texture
     end
     if texture._npColor ~= color then

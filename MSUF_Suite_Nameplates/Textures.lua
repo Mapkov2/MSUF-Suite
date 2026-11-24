@@ -83,6 +83,17 @@ function Textures.ObserveHostStyles(module)
             end
         end)
     end
+    if Slant and bridge.ObserveSharedNameplateShape then
+        module.barShapeJob = module.context:Coalesce(0, function(owner)
+            if owner.active and (Slant.SharedChanged(owner.config)
+                or Textures.SharedCastbar(owner.config, owner.castbarStyle) ~= owner.castbarStyle) then
+                RefreshNameplates()
+            end
+        end)
+        bridge.ObserveSharedNameplateShape(function()
+            if module.active then module.barShapeJob:Request() end
+        end)
+    end
     if bridge.ObserveSharedCastbarStyle then
         module.castbarJob = module.context:Coalesce(0, ApplySharedCastbar)
         bridge.ObserveSharedCastbarStyle(function()
@@ -687,21 +698,24 @@ local function Apply(uf, reset, useTextures, background, deferSpark)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local absorbDone = not Absorbs or Absorbs.Apply(uf, health, useTextures, Writable)
-    local shapeDone = not Slant or Slant.Apply(uf, health, useTextures, Writable)
-    if not useTextures then
-        local healthDone = ApplyHealth(uf, health)
-        local castDone = ApplyCast(uf, cast)
-        return healthDone and castDone and absorbDone and shapeDone
-    end
-    local fill = Textures.HealthFill(uf)
+    local fill = useTextures and Textures.HealthFill(uf) or nil
     if fill then
-        -- Both clients rebuild anchors when names-only mode changes. The
-        -- fill is invisible there. Background ownership still feeds Selection.
+        -- Names-only hides the fill. Background ownership still feeds Selection.
         local namesOnly = private.HealthNameOnly(uf)
         if NS.Public(namesOnly) and namesOnly == true then fill = nil end
     end
+    local state = healthStates[uf]
+    background = useTextures and background or nil
+    local backChanged = reset or (state and state.back or nil) ~= background
     local healthDone = ApplyHealth(uf, health, reset, fill, background)
-    local castDone = ApplyCast(uf, cast, reset, castFill, castBack, sharedCastStyle, deferSpark)
+    -- Attach the shape after the texture and its native slice have been updated.
+    local shapeDone = not Slant or Slant.Apply(uf, health, useTextures, Writable, backChanged, visuals)
+    local castDone
+    if useTextures then
+        castDone = ApplyCast(uf, cast, reset, castFill, castBack, sharedCastStyle, deferSpark)
+    else
+        castDone = ApplyCast(uf, cast)
+    end
     return healthDone and castDone and absorbDone and shapeDone
 end
 local function FlushDeferred(frame)
@@ -727,6 +741,12 @@ Defer = function(uf, restore)
     end
     restoreFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     listening = true
+end
+
+-- A region first allocated after the texture lease can owe a mask.
+function Textures.RetryShape(uf)
+    painted[uf] = 0
+    if deferred[uf] ~= true then Defer(uf, false) end
 end
 
 function Textures.Apply(uf, reset, paintedWithLayout)

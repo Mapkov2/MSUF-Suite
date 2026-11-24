@@ -11,5 +11,12 @@ function Settings.Read(config)
     local style = {}
     for key, value in pairs(current or {}) do style[key] = value end
     style.targetHighlight = target == true or nil
+    if style.slanted and Style.SlantedSettings then
+        local _, direction = Style.SlantedSettings(config)
+        style.slantedDirection = direction
+    elseif current and Style.RoundedCastMaterial then
+        local material = Style.RoundedCastMaterial()
+        if material then style.slanted, style.slantedDirection = true, material end
+    end
     return style
 end

@@ -60,7 +60,7 @@ local function PaintRim(cast, state, size, targeted, known, active)
     end
     local rim = state.rim
     if not rim then
-        rim = private.SlantedHealth.CreateRim(cast, "ARTWORK", 5)
+        rim = private.SlantedHealth.CreateRim(cast, "ARTWORK", 5, state.slantedDirection)
         state.rim = rim
     end
     if known then
@@ -140,10 +140,14 @@ local function PaintNativeTarget(cast, state, replace, reset)
     return true
 end
 
-local function SetShape(cast, state, enabled)
+local function SetShape(cast, state, enabled, direction)
     local slant = private.SlantedHealth
     if not slant or not (enabled or state.castMask) then return true end
-    if not slant.MaskCast(cast, state, enabled, Writable) then return false end
+    if not slant.MaskCast(cast, state, enabled, Writable, nil, direction) then return false end
+    if enabled and state.rim and state.slantedDirection ~= direction then
+        Style.SetShapeRimMedia(state.rim, direction)
+    end
+    state.slantedDirection = direction
     if enabled ~= state.slanted then
         if enabled and state.visual then Style.PaintBorder(state.visual, cast, 0) end
         if not enabled and state.rim then state.rim:Hide() end
@@ -156,7 +160,7 @@ function Outline.RefreshShape(cast)
     local state = Public(cast) and states[cast]
     if not state or not state.slanted then return true end
     if not Writable(cast) then return false end
-    return private.SlantedHealth.MaskCast(cast, state, true, Writable, Mutable)
+    return private.SlantedHealth.MaskCast(cast, state, true, Writable, Mutable, state.slantedDirection)
 end
 
 function Outline.Paint(cast, settings, reset)
@@ -169,7 +173,7 @@ function Outline.Paint(cast, settings, reset)
         state = {}
         states[cast] = state
     end
-    local shapeDone = SetShape(cast, state, slanted)
+    local shapeDone = SetShape(cast, state, slanted, settings and settings.slantedDirection)
     local targetDone = PaintNativeTarget(cast, state, replace, reset)
     state.targetActive = replace and state.targetRegion ~= nil
     state.settings, state.width = settings, width or 0

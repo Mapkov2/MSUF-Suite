@@ -58,6 +58,10 @@ local function CaptureName(state)
     return true
 end
 
+local function CreatePattern(health)
+    return health:CreateTexture(nil, "ARTWORK", nil, 5)
+end
+
 local function Pattern(state)
     local plan = state.patternPlan
     local chosen
@@ -73,15 +77,21 @@ local function Pattern(state)
         state.patternKind = nil
         return
     end
-    if not state.pattern then state.pattern = state.health:CreateTexture(nil, "ARTWORK", nil, 5) end
+    if not state.pattern then
+        local slanted = private.SlantedHealth
+        if slanted then
+            state.pattern = slanted.AcquireOverlay(state.uf, state.health, "pattern", CreatePattern)
+            if not state.pattern then return end
+        else
+            state.pattern = CreatePattern(state.health)
+        end
+    end
     local texture, fill = state.pattern, state.health:GetStatusBarTexture()
     if not Writable(fill) then
         texture:Hide()
         return
     end
     if state.patternFill ~= fill then texture:SetAllPoints(fill) state.patternFill = fill end
-    local slanted = private.SlantedHealth
-    if slanted then state.patternMask = Style.ReplaceSlantedMask(texture, state.patternMask, slanted.FillMask(state.health)) end
     if state.patternKind ~= chosen or state.patternGeneration ~= generation then
         texture:SetTexture(chosen.texture)
         texture:SetVertexColor(1, 1, 1, 1)

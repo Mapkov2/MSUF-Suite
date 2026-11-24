@@ -27,6 +27,10 @@ local outline = { page = "opt_bars", section = "suite_nameplate_outline", title 
     "enemyOutlineMode", "friendlyOutlineMode", "selectionBorder", "highlightTarget", "highlightFocus",
     "selectionTargetColor", "selectionFocusColor",
 } }
+local slanted = { page = "opt_bars", section = "suite_nameplate_slanted", title = "Slanted Bars",
+    searchBySetting = true, keys = { "enemySlantedHealth", "slantedDirection" } }
+local rounded = { page = "opt_bars", section = "bars_rounded", title = "Rounded Texture",
+    searchBySetting = true, keys = { "roundedHealth" } }
 local legacy = { enemyBorderEnabled = true, friendlyBorderEnabled = true,
     enemyNativeBorderEnabled = true, friendlyNativeBorderEnabled = true, hideHealthBarBorders = true }
 local highlight = { page = "opt_bars", section = "suite_nameplate_highlights", title = "Highlight Borders", searchBySetting = true, keys = {
@@ -44,7 +48,7 @@ for _, side in ipairs({ "enemy", "friendly" }) do
     end
 end
 local OPEN_CAST = "Open castbar textures"
-local sections = { health, cast, outline, highlight, absorb }
+local sections = { health, cast, outline, rounded, slanted, highlight, absorb }
 
 local inherited = {
     nativeHealthFillTexture = true, nativeHealthBackgroundTexture = true,
@@ -169,11 +173,13 @@ function Textures.Target(key)
     end
 end
 
-function Textures.LegacyRule(key) return legacy[key] == true end
+function Textures.LegacyRule(key)
+    return legacy[key] == true or key == "roundedHealth" and not rounded.registered
+end
 
 function Textures.BarDetailKeys()
     local keys = {}
-    for _, spec in ipairs({ outline, highlight, absorb }) do
+    for _, spec in ipairs({ outline, rounded, slanted, highlight, absorb }) do
         for _, key in ipairs(spec.keys) do keys[#keys + 1] = key end
     end
     return keys
@@ -222,6 +228,11 @@ end
 
 function Textures.LinkCastTarget(ctx, body, y, width, section)
     return Link(ctx, body, y, width, section, highlight, "Cast target highlight style", "castTargetHighlightStyle")
+end
+
+function Textures.LinkShapes(ctx, body, y, width, section)
+    y = Link(ctx, body, y, width, section, rounded, rounded.title)
+    return Link(ctx, body, y, width, section, slanted, slanted.title)
 end
 
 function Textures.LinkAbsorbs(ctx, body, y, width, section)
@@ -634,10 +645,65 @@ local function Appearance(styles, ctx, builder, defaults)
                 local spec = P.Suite.CopyValue(source)
                 spec.page, spec.title, spec.key = "opt_bars", title, "suite_" .. spec.key
                 spec.tabs[#spec.tabs].extra = nil
+                for _, tab in ipairs(spec.tabs) do
+                    if tab.extra == Textures.LinkShapes then tab.extra = nil end
+                end
                 styles.build(ctx, builder, spec)
             end
         end
     end
+end
+
+local function ShapePreview(card, width, height, settings)
+    local Style = P.Suite.NameplateStyle
+    local host = CreateFrame("Frame", nil, card)
+    host:SetPoint("TOPLEFT", card, "TOPLEFT", 20, -36)
+    host:SetSize(width, height)
+    local function Bar(y, size, value, r, g, b)
+        local bar = CreateFrame("StatusBar", nil, host)
+        bar:SetPoint("TOPLEFT", host, "TOPLEFT", 0, y)
+        bar:SetSize(width, size)
+        bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        bar:SetStatusBarColor(r, g, b)
+        bar:SetMinMaxValues(0, 100)
+        bar:SetValue(value)
+        local background = bar:CreateTexture(nil, "BACKGROUND")
+        background:SetAllPoints(bar)
+        background:SetColorTexture(.11, .11, .11, 1)
+        return bar, background, Style.CreateBorder(bar)
+    end
+    local health, healthBack, healthBorder = Bar(0, height - 10, 78, .72, .24, .18)
+    local power, powerBack, powerBorder = Bar(10 - height, 10, 66, .25, .48, .81)
+    function host:Refresh()
+        local enabled, material, shapedPower = settings(P.S.Config(ID))
+        Style.SetShapeSample(health, healthBorder, enabled, health:GetStatusBarTexture(), nil, material, healthBack)
+        Style.SetShapeSample(power, powerBorder, enabled and shapedPower, power:GetStatusBarTexture(), nil, material, powerBack)
+        Style.PaintBorder(healthBorder, health, 1, "000000")
+        Style.PaintBorder(powerBorder, power, 1, "000000")
+    end
+    return host
+end
+
+local function ShapeProvider(key, section, settings)
+    return {
+        enabledMeta = P.Meta("opt_bars", ID, key, "setting", section),
+        getEnabled = function() return P.Get(ID, key) end,
+        setEnabled = function(value) return P.Set(ID, key, value) end,
+        preview = function(card, width, height) return ShapePreview(card, width, height, settings) end,
+    }
+end
+
+local function SlantedProvider()
+    local Style = P.Suite.NameplateStyle
+    local provider = ShapeProvider("enemySlantedHealth", "bars_slanted", Style.SlantedSettings)
+    provider.getDirection = function() return Style.SlantedDirections[P.Get(ID, "slantedDirection")] or "DEFAULT" end
+    provider.setDirection = function(value)
+        for index, direction in ipairs(Style.SlantedDirections) do
+            if direction == value then return P.Set(ID, "slantedDirection", index) end
+        end
+        return false
+    end
+    return provider
 end
 
 local function Register(spec, styles)
@@ -669,6 +735,9 @@ local function Register(spec, styles)
         provider.build = function(ctx, builder)
             build(ctx, builder)
             OutlineSection(ctx, builder)
+            if not provider.slanted then
+                P.RuleSection(ctx, builder, slanted.page, ID, slanted.section, P.Tr(slanted.title), Rules(slanted), {})
+            end
             HighlightSection(ctx, builder)
             local absorbRules = Rules(absorb)
             if #absorbRules > 0 then
@@ -688,12 +757,25 @@ local function Register(spec, styles)
             Appearance(styles, nil, nil, defaults)
             return reset()
         end
+        if Bridge.HasSharedSlantedBars and Bridge.HasSharedSlantedBars(P.M) then provider.slanted = SlantedProvider() end
+        if Bridge.HasSharedRoundedBars and Bridge.HasSharedRoundedBars(P.M) then
+            provider.rounded = ShapeProvider("roundedHealth", rounded.section, P.Suite.NameplateStyle.RoundedSettings)
+        end
         spec.registered = Bridge.RegisterBarsScope(P.M, "suite_nameplates", P.Tr("Nameplates"), provider)
         if spec.registered then
-            outline.registered, highlight.registered, absorb.registered = true, true, true
+            if provider.slanted then slanted.section = "bars_slanted" end
+            rounded.registered = provider.rounded ~= nil
+            outline.registered, slanted.registered, highlight.registered, absorb.registered = true, true, true, true
             Bridge.RegisterSearchTargetResolver(P.M, "MSUF_Suite.NameplateHealthTextures", function(page, target)
                 local section = target and target.sectionId
+                local key = target and target.settingKey
+                if page == spec.page and (provider.slanted and section == slanted.section
+                    and key == "msufsuite.nameplates.enemySlantedHealth" or provider.rounded and section == rounded.section
+                    and key == "msufsuite.nameplates.roundedHealth") then
+                    Bridge.SelectBarsExtension(P.M, "suite_nameplates")
+                end
                 if page == spec.page and (section == spec.section or section == outline.section
+                    or section == slanted.section or section == rounded.section
                     or section == highlight.section or section == absorb.section) then
                     return page, target, { accordion = { [page .. ":" .. section] = true } }
                 end
@@ -701,8 +783,12 @@ local function Register(spec, styles)
             return
         end
     end
+    provider.slanted, provider.rounded = nil, nil
     spec.registered = Bridge.RegisterPageTail(P.M, spec.page, "MSUF_Suite." .. spec.section, provider)
-    if spec == health then outline.registered, highlight.registered, absorb.registered = spec.registered, spec.registered, spec.registered end
+    if spec == health then
+        outline.registered, slanted.registered = spec.registered, spec.registered
+        highlight.registered, absorb.registered = spec.registered, spec.registered
+    end
 end
 
 function Textures.Register(styles)

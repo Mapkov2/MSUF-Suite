@@ -572,7 +572,9 @@ local function StyleAppearance(side, frame, health, combat, threat)
     end
     local tabs = { Tab("colors", "Colors", keys), Tab("frame", frame.label, { side .. "BackdropEnabled", side .. "BackdropAlpha" }) }
     tabs[1].colors, tabs[1].help, tabs[2].help = colors, health and "roleColors" or nil, frame.help
-    if side == "enemy" then tabs[2].keys[#tabs[2].keys + 1] = "enemySlantedHealth" end
+    if side == "enemy" and not P.NameplateBarTextures.Target("enemySlantedHealth") then
+        tabs[2].keys[#tabs[2].keys + 1] = "enemySlantedHealth"
+    end
     if combat then tabs[#tabs + 1] = Tab("combat", combat.title, combat.keys) end
     return tabs
 end
@@ -599,6 +601,9 @@ local function PlaceStyle(sections, scope, appearance, sharedAppearance)
             local tab = Tab(source.id, source.label, source.keys)
             tab.colors, tab.help, tab.shared = source.colors, source.help, sharedAppearance
             if tab.id == "frame" then
+                if scope == "enemy" and P.NameplateBarTextures.Target("enemySlantedHealth") then
+                    tab.extra = P.NameplateBarTextures.LinkShapes
+                end
                 tab.keys = Take(source, 1)
                 for _, pattern in ipairs(P.Suite.NameplateExtensions.Patterns) do
                     local key = scope .. pattern.field

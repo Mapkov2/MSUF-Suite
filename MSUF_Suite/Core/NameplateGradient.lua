@@ -122,12 +122,15 @@ function Gradient.PaintHealth(health, visual, plan, uf, pending)
     if not (plan or previous) then return end
     local fill = plan and health:GetStatusBarTexture()
     if not NS.Public(fill) or fill and NS.Safety.IsForbidden(fill) then fill = nil end
+    local initialMask
     if plan and (not previous or previous.plan ~= plan or previous.target ~= fill) then
         local combat = NS.InCombat()
         if not CanAttach(uf, health, fill, combat) then
             if combat then pending[uf] = true end
             fill = nil
+        elseif not previous then
+            initialMask = visual.slantMask
         end
     end
-    visual.gradient = Gradient.Paint(health, previous, fill, plan, visual.slantMask)
+    visual.gradient = Gradient.Paint(health, previous, fill, plan, initialMask)
 end

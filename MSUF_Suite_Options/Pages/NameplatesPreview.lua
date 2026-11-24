@@ -745,9 +745,13 @@ local function Render(editor, s)
     P.NameplatesPreviewLayout.RenderName(s, m, Get, SetupNumber, Place)
     RenderHighlight(editor, s, m)
     local bars = m.barSettings
-    local slanted = s.prefix == "enemy" and not m.skinDisabled and not m.namesOnly
-        and bars.look ~= 2 and bars.enemy and bars.enemySlantedHealth == true or false
-    Style.SetSlantedSample(s.bar, s.border, slanted, s.progress, s.pattern, s.back, s.nativeBorder, s.aggroFlash)
+    local enabled, direction, _, hover = Style.NameplateShapeSettings(bars)
+    local shaped = enabled and (s.prefix == "enemy" or type(direction) == "table")
+        and not m.skinDisabled and not m.namesOnly and bars[s.prefix] or false
+    Style.SetShapeSample(s.bar, s.border, shaped, s.progress, s.pattern, direction,
+        s.back, s.nativeBorder, s.selectedBar, s.aggroFlash)
+    s.hoverSlantTarget = shaped and hover and s.border.mask or nil
+    if s.highlight then s.hoverSlantMask = Style.ReplaceSlantedMask(s.highlight, s.hoverSlantMask, s.hoverSlantTarget) end
     P.NameplatesPreviewDecor.PaintHealthChrome(editor, s, m, not m.skinDisabled and m.barSettings.nativeHealthBackgroundTexture or "")
     P.NameplatesPreviewDecor.PaintLevel(editor, s, m, SetupNumber, Place)
     RenderHealth(editor, s, m)

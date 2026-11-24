@@ -115,6 +115,11 @@ assert(uf.name.color[1] == 1 and uf.name.color[2] == 0)
 local tint, pattern
 for _,t in ipairs(health.textures) do if t.texture == "pattern" then pattern=t elseif rawequal(t.boolean,locked) then tint=t end end
 assert(tint and pattern and pattern.shown, "opaque cast lock or target pattern missing")
+p.SlantedHealth = setmetatable({}, { __index = function(_, key)
+    error("warm pattern paint looked up SlantedHealth." .. key)
+end })
+for _ = 1, 100 do p.EasyFeatures.Paint(uf, health, cast, "enemy", "nameplate1", true, "ThreatLost") end
+p.SlantedHealth = nil
 assert(rawequal(tint.boolean,locked), "cast lock was transformed in Lua")
 assert(cast.Icon.alpha == 0, "combined icon did not replace the native icon visually")
 p.EasyFeatures.SetOpacity(uf,.5)
@@ -240,15 +245,19 @@ do
     hp.fill, hp.bgTexture, hp.width = firstFill, back, 240
     firstFill.width, secondFill.width = 125, 95
     frame.HealthBarsContainer = { healthBar = hp }
+    frame.selectionHighlight, frame.aggroFlash = Frame(hp), Frame(hp)
+    hp.deselectedOverlay, hp.selectedBorder = Frame(hp), Frame(hp)
     function hp:GetWidth() return self.width end
     hp.CreateMaskTexture = function(self) return Frame(self) end
     local visual = { fill = Frame(hp), back = Frame(hp) }
+    local visuals = {}
     local function Writable(region) return not region.forbidden end
+    local function Apply(reset) return shape.Apply(frame, hp, true, Writable, reset, visuals) end
     shape.Configure({ look = 3, enemySlantedHealth = true })
     combat, frame.protected = true, true
-    assert(not shape.Apply(frame, hp, true, Writable) and not firstFill.mask, "protected plate was clipped in combat")
+    assert(not Apply() and not firstFill.mask, "protected plate was clipped in combat")
     combat = false
-    assert(shape.Apply(frame, hp, true, Writable))
+    assert(Apply())
     local fillMask, backdropMask = firstFill.mask, back.mask
     assert(fillMask and backdropMask and fillMask ~= backdropMask and backdropMask.anchor == hp,
         "partial health and backdrop need separate masks")
@@ -257,8 +266,80 @@ do
     hp.width = 220
     shape.OnLayout(frame)
     assert(fillMask.width == 220 and fillMask.point[2] == firstFill, "layout resize changed the taper relative to the outline")
-    shape.Visual(hp, visual)
+    assert(frame.selectionHighlight.mask == fillMask and frame.aggroFlash.mask == backdropMask
+        and hp.deselectedOverlay.mask == backdropMask and hp.selectedBorder.mask == backdropMask,
+        "Blizzard selection, flash and dim layers escaped the slanted background")
+    local oldFlash, moved = frame.aggroFlash, Frame(hp)
+    frame.aggroFlash = moved
+    local attach, rebound = back.AddMaskTexture, false
+    function back:AddMaskTexture(mask) rebound = true attach(self, mask) end
+    assert(Apply(true))
+    assert(rebound and not oldFlash.mask and moved.mask == backdropMask,
+        "rebuilding native anchors lost a background or overlay mask")
+    local hover = Frame(hp)
+    ns.NameplateStyle.CreateHighlight = function(bar) assert(bar == hp) return hover end
+    ns.NameplateStyle.PaintHighlight = function(_, hex) assert(hex == "ffffff") end
+    Load("Mouseover")
+    local mouseEvent
+    p.Mouseover.Bind({ config = { look = 3, enemy = true, mouseoverHighlight = true },
+        context = { Event = function(_, _, callback) mouseEvent = callback end } })
+    plates.mouseover = { UnitFrame = frame }
+    p.Mouseover.Configure()
+    assert(hover.shown and hover.mask == backdropMask,
+        "creating the mouseover highlight after the plate must clip the whole highlight")
+    local hoveredPlate = plates.mouseover
+    p.SlantedHealth = setmetatable({}, { __index = function(_, key)
+        error("reused hover highlight looked up SlantedHealth." .. key)
+    end })
+    plates.mouseover = nil
+    mouseEvent()
+    plates.mouseover = hoveredPlate
+    mouseEvent()
+    assert(hover.shown and hover.mask == backdropMask)
+    p.SlantedHealth = shape
+    visual.back.forbidden = true
+    visuals[hp] = visual
+    assert(not shape.BindVisual(hp, visual) and not visual.slanted, "a failed backdrop mask must leave shaping eligible for retry")
+    visual.back.forbidden = nil
+    assert(Apply(), "the cold texture retry did not bind the newly created plate visual")
     assert(visual.slanted and visual.fill.mask == fillMask and visual.back.mask == backdropMask and visual.slantRim)
+    p.Suite = ns
+    p.Geometry = { LevelBadgeShown = function() end }
+    p.Textures, p.Selection = {}, {}
+    Load("HealthAppearance")
+    local function AssertWarmHealthPaint()
+        local paintConfig = setmetatable({ enemyBackdropColor = "000000" }, { __index = function(_, key)
+            assert(key ~= "enemySlantedHealth" and key ~= "roundedHealth", "warm health paint queried shape settings")
+        end })
+        local function Show(region, visible) if region then region:SetShown(visible) end end
+        local PaintHealth = p.HealthAppearance.Bind({ config = paintConfig, facts = {} }, Show, {}, Writable)
+        p.SlantedHealth = setmetatable({}, { __index = function(_, key)
+            error("warm health paint looked up SlantedHealth." .. key)
+        end })
+        for _ = 1, 100 do PaintHealth(frame, hp, visual, "enemy", "enemy", {}) end
+        p.SlantedHealth = shape
+    end
+    AssertWarmHealthPaint()
+    local pattern = Frame(hp)
+    local allocations, retries = 0, 0
+    p.Textures.RetryShape = function(uf)
+        assert(uf == frame)
+        retries = retries + 1
+    end
+    local function CreatePattern(bar)
+        assert(bar == hp)
+        allocations = allocations + 1
+        return pattern
+    end
+    pattern.forbidden = true
+    for _ = 1, 2 do
+        assert(not shape.AcquireOverlay(frame, hp, "pattern", CreatePattern),
+            "an unmasked overlay must stay out of the paint path")
+    end
+    assert(allocations == 1 and retries == 2, "overlay retry allocated a second texture")
+    pattern.forbidden = nil
+    assert(Apply() and pattern.mask == fillMask, "cold replay did not mask the pending overlay")
+    assert(shape.AcquireOverlay(frame, hp, "pattern", CreatePattern) == pattern and allocations == 1)
 
     local finish = { healthGradientEnabled = true }
     local plan, pending = gradient.Plan(finish, "health"), {}
@@ -268,6 +349,10 @@ do
     combat = false
     gradient.PaintHealth(hp, visual, plan, frame, pending)
     assert(visual.gradient[2].mask == firstFill.mask, "health gradient covers the slanted edge")
+    local warmGradient = setmetatable({ gradient = visual.gradient }, { __index = function(_, key)
+        assert(key ~= "slantMask", "stable gradient paint queried the shape mask")
+    end })
+    for _ = 1, 100 do gradient.PaintHealth(hp, warmGradient, plan, frame, pending) end
 
     finish.healthGradientDirLeft, finish.healthGradientDirUp, finish.healthGradientDirDown = true, true, true
     finish.healthGlossEnabled = true
@@ -287,7 +372,7 @@ do
     end
 
     hp.fill = secondFill
-    assert(shape.Apply(frame, hp, true, Writable) and not firstFill.mask)
+    assert(Apply() and not firstFill.mask)
     assert(secondFill.mask == fillMask and fillMask.point[2] == secondFill and back.mask == backdropMask,
         "replacing the native fill detached the progressive mask")
     gradient.PaintHealth(hp, visual, plan, frame, pending)
@@ -297,13 +382,98 @@ do
 
     gradient.PaintHealth(hp, visual, nil, frame, pending)
     prefix = "friendly"
-    assert(shape.Apply(frame, hp, true, Writable) and not back.mask and not secondFill.mask
+    assert(Apply() and not back.mask and not secondFill.mask
         and not visual.slanted and not visual.fill.mask and not visual.slantRim.shown)
+    assert(not (frame.selectionHighlight.mask or frame.aggroFlash.mask or hp.deselectedOverlay.mask
+        or hp.selectedBorder.mask or hover.mask or pattern.mask),
+        "a recycled friendly plate kept the slanted overlay masks")
     for _, texture in ipairs(layers) do assert(not texture.shown and not texture.mask) end
     gradient.PaintHealth(hp, visual, plan, frame, pending)
     for _, texture in ipairs(layers) do assert(texture.shown and not texture.mask) end
     prefix = "enemy"
-    assert(shape.Apply(frame, hp, true, Writable) and secondFill.mask == fillMask and fillMask.point[2] == secondFill)
+    assert(Apply() and secondFill.mask == fillMask and fillMask.point[2] == secondFill)
+    assert(hover.mask == backdropMask and pattern.mask == fillMask,
+        "previously created highlights must regain their masks on reuse")
     for _, texture in ipairs(layers) do assert(texture.shown and texture.mask == secondFill.mask) end
+    prefix = "friendly"
+    assert(Apply())
+    frame.aggroFlash.forbidden = true
+    prefix = "enemy"
+    assert(not Apply() and back.mask)
+    prefix = "friendly"
+    frame.aggroFlash.forbidden = nil
+    assert(Apply())
+    assert(not (back.mask or frame.selectionHighlight.mask or hp.deselectedOverlay.mask or hp.selectedBorder.mask),
+        "release must clean up masks from an incomplete shape pass")
+    prefix = "enemy"
+    local shared = true
+    ns.HostBridge.SharedSlantedBars = function() return shared, "RIGHT_UP", true, false end
+    local config = { look = 3, enemySlantedHealth = true, slantedDirection = 5 }
+    assert(shape.Configure(config) and Apply())
+    assert(fillMask.point[1] == "BOTTOMLEFT" and fillMask.texture:find("mask_left_up", 1, true)
+        and visual.slantRim.texture:find("edge_left_up", 1, true), "left cut was not applied to the fill and rim")
+    assert(not hover.mask and pattern.mask == fillMask, "the shared mouseover switch affected the wrong layers")
+    config.slantedDirection = 1
+    assert(shape.Configure(config) and Apply() and fillMask.point[1] == "BOTTOMRIGHT"
+        and backdropMask.texture:find("mask_right_up", 1, true), "the cached mask did not inherit the shared cut")
+    shared = false
+    assert(shape.SharedChanged(config) and shape.Configure(config) and Apply())
+    assert(not (back.mask or secondFill.mask or visual.slantRim.shown), "shared master disable left a slanted plate")
+    local rounded, strength = true, 2
+    ns.HostBridge.SharedRoundedBars = function()
+        if rounded then return "rounded_mask_" .. strength, "rounded_edge_" .. strength, true, true, true end
+    end
+    ns.HostBridge.ApplyNameplateShapeSlice = function(texture, path)
+        texture.slice = path:find("rounded_", 1, true) and path or nil
+    end
+    prefix, config.roundedHealth = "friendly", true
+    assert(shape.Configure(config) and Apply())
+    assert(back.mask == backdropMask and secondFill.mask == fillMask and fillMask.anchor == hp,
+        "rounded progress must be clipped to the same fixed corners as the backdrop")
+    assert(fillMask.slice == "rounded_mask_2" and visual.slantRim.slice == "rounded_edge_2"
+        and hover.mask == backdropMask and pattern.mask == fillMask, "rounded media missed a cached surface")
+    strength = 5
+    assert(shape.SharedChanged(config) and shape.Configure(config) and Apply())
+    assert(secondFill.mask == fillMask and fillMask.slice == "rounded_mask_5"
+        and visual.slantRim.slice == "rounded_edge_5", "rounding strength replaced the cached mask or missed the rim")
+    AssertWarmHealthPaint()
+    local style = ns.NameplateStyle
+    local castbar = Frame()
+    castbar.fill, castbar.Background = Frame(castbar), Frame(castbar)
+    castbar.CreateMaskTexture = hp.CreateMaskTexture
+    local castLease = {}
+    local material = assert(style.RoundedCastMaterial())
+    assert(shape.MaskCast(castbar, castLease, true, Writable, nil, material)
+        and castbar.fill.mask.slice == "rounded_mask_5" and castbar.Background.mask == castbar.fill.mask,
+        "the inherited Rounded castbar toggle missed its fill or background")
+    assert(shape.MaskCast(castbar, castLease, false, Writable) and not castbar.fill.mask and not castbar.Background.mask)
+    assert(loadfile(root .. "/MSUF_Suite/Core/NameplatePowerStyle.lua"))("MSUF_Suite", ns)
+    local powerBar = Frame()
+    powerBar.CreateMaskTexture = hp.CreateMaskTexture
+    powerBar.fill, powerBar.enemyPowerBackground = Frame(powerBar), Frame(powerBar)
+    style.EnemyPower.Paint(powerBar, { slanted = true, slantedDirection = material, height = 5, layer = 0,
+        border = 1, borderColor = "000000", color = { .2, .4, .8 }, background = { .1, .1, .1 }, backgroundAlpha = 1 })
+    assert(powerBar.fill.mask.slice == "rounded_mask_5" and powerBar.enemyPowerBackground.mask.anchor == powerBar,
+        "the Rounded power bar fill and backdrop did not share the outer corners")
+    local borderNS = setmetatable({}, { __index = ns })
+    assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", borderNS)
+    local border = borderNS.NameplateStyle.CreateBorder(hp)
+    local roundedRim = Frame(hp)
+    border.slantRim, border.paintSlantedRim = roundedRim, style.PaintSlantedRim
+    borderNS.NameplateStyle.PaintBorder(border, hp, 1, "ffffff")
+    assert(roundedRim.shown, "the bound rim renderer missed the visible outline")
+    local warmBorder = setmetatable({ borderSize = 1, borderColor = "ffffff" }, { __index = function(_, key)
+        error("an unchanged border entered its renderer: " .. key)
+    end })
+    for _ = 1, 100 do borderNS.NameplateStyle.PaintBorder(warmBorder, hp, 1, "ffffff") end
+    borderNS.NameplateStyle.PaintBorder(border, hp, 0)
+    assert(not roundedRim.shown)
+    prefix, rounded, shared = "enemy", false, true
+    assert(shape.Configure(config) and Apply() and secondFill.mask == fillMask
+        and not fillMask.slice and not visual.slantRim.slice
+        and fillMask.point[1] == "BOTTOMRIGHT", "changing back to Slanted kept the rounded slice")
+    prefix = "friendly"
+    assert(Apply() and not back.mask and not secondFill.mask and not hover.mask,
+        "pooled friendly plates retained the enemy Slanted lease")
 end
 print("Nameplate extras, clipped native health, and target UnitFrame resources passed")

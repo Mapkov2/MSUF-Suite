@@ -815,6 +815,19 @@ function HostBridge.RegisterPageExtension(menu, page, name, provider)
     return menu.RegisterPageExtension(page, name, provider) == true
 end
 
+function HostBridge.HasSharedRoundedBars(menu)
+    return AppearanceAction(menu, "BarsRoundedProvider") ~= nil
+end
+
+function HostBridge.HasSharedSlantedBars(menu)
+    return AppearanceAction(menu, "BarsSlantedProvider") ~= nil
+end
+
+function HostBridge.SelectBarsExtension(menu, key)
+    local select = AppearanceAction(menu, "SelectBarsExtension")
+    return select and select(key)
+end
+
 function HostBridge.RegisterBarsScope(menu, key, label, provider)
     if not AppearanceAction(menu, "RegisterBarsScope") then return false end
     KeepSuiteSearchTerms(menu)

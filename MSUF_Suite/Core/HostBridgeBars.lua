@@ -165,6 +165,43 @@ function HostBridge.SharedNameplateBars()
     return out
 end
 
+function HostBridge.SharedSlantedBars()
+    local db = HostBridge.CurrentFrameProfile()
+    local bars = type(db) == "table" and db.bars
+    if type(bars) ~= "table" then return true, nil, true, true end
+    local host = HostBridge.Namespace()
+    local direction = host and host.RoundedSurface and (bars.slantedBarDirection or "RIGHT_DOWN")
+    return bars.slantedBarsEnabled ~= false, direction, bars.slantedPowerBars ~= false, bars.slantedMouseover ~= false
+end
+
+function HostBridge.SharedRoundedBars()
+    local db = HostBridge.CurrentFrameProfile()
+    local bars = type(db) == "table" and db.bars
+    if type(bars) ~= "table" or bars.roundedFramesEnabled ~= true then return end
+    local host = HostBridge.Namespace()
+    local surface = host and host.RoundedSurface
+    if not surface or not surface.ResolveMedia then return end
+    local mask, edge = surface.ResolveMedia()
+    return mask, edge, bars.roundedPowerBars ~= false, bars.roundedMouseover ~= false, bars.roundedCastbars == true
+end
+
+function HostBridge.ApplyNameplateShapeSlice(region, path)
+    local host = HostBridge.Namespace()
+    local surface = host and host.RoundedSurface
+    if surface and surface.ApplyMediaSlice then surface.ApplyMediaSlice(region, path) end
+end
+
+local shapeWatcher
+function HostBridge.ObserveSharedNameplateShape(callback)
+    if shapeWatcher then return end
+    local host = HostBridge.Namespace()
+    local exports = host and host.PublicGlobals
+    if exports and type(exports.MSUF_ApplyRoundedUnitframes) == "function" then
+        hooksecurefunc(exports, "MSUF_ApplyRoundedUnitframes", callback)
+        shapeWatcher = true
+    end
+end
+
 local barsWatchers
 function HostBridge.ObserveSharedNameplateBars(callback)
     if barsWatchers then return end

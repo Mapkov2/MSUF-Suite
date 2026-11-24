@@ -45,6 +45,9 @@ function EnemyPower.Plan(config, previous)
     local alpha = PowerNumber(config.enemyPowerBackgroundAlpha, 80, 0, 100) / 100
     local fillKey, backgroundTextureKey = config.powerFillTexture or "", config.powerBackgroundTexture or ""
     local gradient = Gradient and Gradient.Plan(config, "power", previous and previous.gradient)
+    local enabled, direction, slantedPower
+    if Style.NameplateShapeSettings then enabled, direction, slantedPower = Style.NameplateShapeSettings(config) end
+    local slanted = enabled and slantedPower or false
     if previous and previous.enabled and previous.smooth == smooth and previous.chunked == chunked
         and previous.placement == placement and previous.source == source and previous.layer == layer
         and previous.detachedWidth == detachedWidth and previous.detachedHeight == detachedHeight
@@ -52,6 +55,7 @@ function EnemyPower.Plan(config, previous)
         and previous.byType == byType
         and previous.width == width and previous.height == height and previous.x == x and previous.y == y
         and previous.colorKey == color and previous.gradient == gradient
+        and previous.slanted == slanted and previous.slantedDirection == direction
         and previous.backgroundKey == background and previous.backgroundAlpha == alpha
         and previous.fillKey == fillKey and previous.backgroundTextureKey == backgroundTextureKey then
         return previous
@@ -84,6 +88,8 @@ function EnemyPower.Plan(config, previous)
         fillTexture = NS.ResolveTexture(fillKey) or POWER_WHITE,
         backgroundTexture = NS.ResolveTexture(backgroundTextureKey),
         gradient = gradient,
+        slanted = slanted,
+        slantedDirection = direction,
     }
 end
 
@@ -145,8 +151,23 @@ function EnemyPower.Paint(bar, plan, r, g, b)
             bar.enemyPowerBaseLevel = bar.enemyPowerBaseLevel or bar:GetFrameLevel()
             bar:SetFrameLevel(bar.enemyPowerBaseLevel + plan.layer)
         end
-        if plan.border > 0 and not bar.enemyPowerBorder then bar.enemyPowerBorder = Style.CreateBorder(bar) end
-        if bar.enemyPowerBorder then Style.PaintBorder(bar.enemyPowerBorder, bar, plan.border, plan.borderColor) end
+        if (plan.border > 0 or plan.slanted) and not bar.enemyPowerBorder then
+            bar.enemyPowerBorder = Style.CreateBorder(bar)
+        end
+        local visual = bar.enemyPowerBorder
+        if visual then
+            if plan.slanted or visual.slanted then
+                Style.SetShapeSample(bar, visual, plan.slanted, bar:GetStatusBarTexture(), nil,
+                    plan.slantedDirection, bar.enemyPowerBackground)
+                Gradient.SetMask(bar.powerGradient, plan.slanted and visual.fillMask or nil)
+                if bar.enemyPowerLoss then
+                    local trail = bar.enemyPowerLoss
+                    trail.slantMask = Style.ReplaceSlantedMask(trail.bar:GetStatusBarTexture(), trail.slantMask,
+                        plan.slanted and visual.mask or nil)
+                end
+            end
+            Style.PaintBorder(visual, bar, plan.border, plan.borderColor)
+        end
         if not previous or previous.backgroundKey ~= plan.backgroundKey or previous.backgroundAlpha ~= plan.backgroundAlpha
             or previous.backgroundTexture ~= plan.backgroundTexture then
             local background = plan.background
@@ -212,6 +233,10 @@ function EnemyPower.PaintLoss(bar, plan, maximum)
     if not trail then
         trail = NewLoss(bar)
         bar.enemyPowerLoss = trail
+        local visual = bar.enemyPowerBorder
+        if visual and visual.slanted then
+            trail.slantMask = Style.ReplaceSlantedMask(trail.bar:GetStatusBarTexture(), nil, visual.mask)
+        end
         EnemyPower.LossRange(bar, maximum)
     end
     if trail.color ~= plan.lossColor then

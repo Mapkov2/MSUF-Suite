@@ -22,7 +22,12 @@ local rules = {
     B.Number("targetUnitFrameResourceHeight", "Target frame resource height", 5, 2, 30),
     B.Number("targetUnitFrameResourceY", "Target frame resource vertical offset", -8, -200, 200),
     B.Bool("enemySlantedHealth", "Slanted enemy health bars", false),
+    B.Choice("slantedDirection", "Cut direction", 1, { "Use shared style", "Right edge: lower corner",
+        "Right edge: upper corner", "Left edge: lower corner", "Left edge: upper corner",
+        "Both edges: lower corners", "Both edges: upper corners" }),
 }
+rules[#rules].hidden = true
+rules[#rules + 1] = B.Bool("roundedHealth", "Rounded frame texture", false)
 rules[1].enableKey = "enemyQuestColors"
 for _, index in ipairs({ 2, 3 }) do rules[index].enableKey = "questReactionColors" end
 for _, index in ipairs({ 5, 6, 7 }) do rules[index].enableKey = "targetClassResource" end

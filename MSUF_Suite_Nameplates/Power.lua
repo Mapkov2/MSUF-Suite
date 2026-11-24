@@ -196,7 +196,8 @@ function Power.ApplyEnemy(uf, health, prefix, unit, refreshResource)
     local previous = bar and bar.enemyPowerPlan
     local move = Enemy.GeometryChanged(previous, plan)
     local combat = NS.InCombat()
-    local layoutLocked = combat and (move or Enemy.Height(previous) ~= Enemy.Height(plan) or previous.border ~= plan.border)
+    local layoutLocked = combat and (move or Enemy.Height(previous) ~= Enemy.Height(plan) or previous.border ~= plan.border
+        or previous.slanted ~= plan.slanted or previous.slantedDirection ~= plan.slantedDirection)
     if not CanAttach(uf, health, bottom, bar, layoutLocked) then
         Power.RestoreEnemy(uf)
         if combat then owner.pendingPlates[uf] = true end

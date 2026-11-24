@@ -435,6 +435,7 @@ function Style.CreateBorder(owner)
 end
 
 function Style.PaintBorder(visual, owner, size, color)
+    if visual.borderSize == size and (size <= 0 or visual.borderColor == color) then return end
     local edges = visual.edges
     local slanted = visual.paintSlantedRim and visual.paintSlantedRim(visual, size, color)
     if size <= 0 or slanted then
