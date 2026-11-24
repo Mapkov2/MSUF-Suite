@@ -415,11 +415,14 @@ local function Pickers(ui, parent)
             end, P.Meta("suite_hud", feature, "view.preview", "ephemeral"))
         ui.pickers[id] = picker
     end
-    ui.artPicker = DecorationPicker(ui, parent, 28 + announcementWidth, announcementWidth,
+    local artworkX = 28 + announcementWidth
+    ui.artPicker = DecorationPicker(ui, parent, artworkX, announcementWidth,
         { key = "artStyle", switch = "showBoxArt", section = "suite_hud_announcements_artwork", view = "view.artwork" })
-    if not withFrame then return end
-    ui.framePicker = DecorationPicker(ui, parent, 40 + 2 * announcementWidth, announcementWidth,
-        { key = "frameStyle", switch = "showFrame", section = "suite_hud_announcements_frame", view = "view.frame" })
+    if withFrame then
+        ui.framePicker = DecorationPicker(ui, parent, artworkX + announcementWidth + 12, announcementWidth,
+            { key = "frameStyle", switch = "showFrame", section = "suite_hud_announcements_frame", view = "view.frame" })
+    end
+    return artworkX
 end
 
 function Preview.Build(ctx, parent, width)
@@ -450,14 +453,16 @@ function Preview.Build(ctx, parent, width)
             Preview.Stop(ui)
         end })
     BannerEditor(ui)
-    Pickers(ui, parent)
+    local detailsX = Pickers(ui, parent)
+    local playX = width - 130
     ui.playButton = P.T.Button(parent, "Play preview", 146, 26)
-    ui.playButton:SetPoint("TOPLEFT", width - 130, -66)
+    ui.playButton:SetPoint("TOPLEFT", playX, -66)
     HM.SkipHistoryCheckpoint(ui.playButton)
     HM.AllowCombatClick(ui.playButton)
     ui.playButton:SetScript("OnClick", function() Preview.Play(ui, true) end)
-    ui.levelDetailsButton = P.T.Button(parent, "Level-up details", math.min(160, width - 156), 26)
-    ui.levelDetailsButton:SetPoint("TOPLEFT", 16, -66)
+    -- The level sample hides the artwork picker and uses its slot for details.
+    ui.levelDetailsButton = P.T.Button(parent, "Level-up details", math.min(160, playX - detailsX - 12), 26)
+    ui.levelDetailsButton:SetPoint("TOPLEFT", detailsX, -66)
     HM.SkipHistoryCheckpoint(ui.levelDetailsButton)
     ui.levelDetailsButton:Hide()
     ui.levelDetailsButton:SetScript("OnClick", OpenLevelDetails)
