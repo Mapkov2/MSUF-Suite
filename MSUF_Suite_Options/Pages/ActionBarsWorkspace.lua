@@ -9,7 +9,7 @@ local function Groups()
     if not groups then
         groups = {
             { id = "shared", label = "All action bars",
-                sections = "actionbars_module account_transfer keyAudit_module cooldowns text behavior" },
+                sections = "actionbars_module keyAudit_module cooldowns text behavior" },
             { id = "appearance", label = "Appearance", sections = "look appearance bar_background bar_ornaments" },
             { id = "layout", label = "Layout", sections = "editor bar_layout" },
             { id = "text", label = "Text", sections = "bar_text" },

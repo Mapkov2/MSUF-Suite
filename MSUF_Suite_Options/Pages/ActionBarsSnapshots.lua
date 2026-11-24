@@ -1,11 +1,8 @@
 local _, P = ...
 local M, Suite, Tr, HM = P.M, P.Suite, P.Tr, P.HM
-local PAGE, MODULE, SECTION = "suite_actionbars", "actionbars", "suite_actionbars_account_transfer"
+local PAGE, MODULE, SECTION = "suite_actionbar_setups", "actionbars", "suite_actionbars_account_transfer"
 local ROW_COUNT, ROW_HEIGHT = 5, 67
 local EMPTY_STATUS = { saved = {}, pending = {}, results = {} }
-
-local Page = {}
-P.ActionBarSnapshotsPage = Page
 
 local function Api()
     return Suite.ActionBarSnapshots
@@ -218,14 +215,10 @@ local function BuildPackage(ui, y)
     end)
     ui.input:HookScript("OnEditFocusLost", function(input) ui.text = input:GetText() end)
     y = y - 54
-    local export = AddButton(ui, "Export account setups", 16, y, half, function() Export(ui) end,
+    AddButton(ui, "Export account setups", 16, y, half, function() Export(ui) end,
         function() return Api() ~= nil end, "export")
-    local preview = AddButton(ui, "Preview import", 28 + half, y, half, function() Preview(ui) end,
+    AddButton(ui, "Preview import", 28 + half, y, half, function() Preview(ui) end,
         function() return Api() ~= nil end, "preview")
-    P.ActionBarMenu.Prepare(ui.body, {
-        { widget = export, rule = { key = "transfer.export", label = "Export account setups" }, meta = Meta("export") },
-        { widget = preview, rule = { key = "transfer.preview", label = "Preview import" }, meta = Meta("preview") },
-    })
     return y - 48
 end
 
@@ -316,11 +309,11 @@ local function BuildRows(ui, y)
     return y - 34
 end
 
-function Page.Build(ctx, builder)
-    P.LazySection(builder, SECTION, Tr("Account transfer"), false, {
+local function Build(ctx)
+    local builder = P.W.PageBuilder(ctx)
+    P.LazySection(builder, SECTION, Tr("Account transfer"), true, {
         content = function(body)
             local width = math.max(240, (HM.GetSectionWidth(body) or builder.width or 720) - 32)
-            body._msufSuiteActionBarSectionId = SECTION
             local ui = { body = body, ctx = ctx, width = width, half = math.floor((width - 12) / 2),
                 status = EMPTY_STATUS, rows = {}, view = "saved", mode = "both", page = 1,
                 text = "", assignments = {}, revision = 0 }
@@ -337,3 +330,6 @@ function Page.Build(ctx, builder)
         finish = function(body, y) P.FinishBody(builder, body, y) end,
     })
 end
+
+-- Quick Actions opens this tool directly. Profiles handle normal transfers.
+M.RegisterPage(PAGE, { title = "Action bar setups", build = Build, version = 1 })

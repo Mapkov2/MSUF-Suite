@@ -5,6 +5,27 @@ local function Check(expected, actual, description)
     assert(expected == actual, description .. " (expected " .. tostring(expected) .. ", got " .. tostring(actual) .. ")")
 end
 
+local function VerifyTransferPage()
+    local options = root .. "/MSUF_Suite_Options/Pages/"
+    local registered, sections = {}, {}
+    local P = { Suite = {}, HM = {}, Tr = function(value) return value end,
+        M = { RegisterPage = function(key, page) registered[key] = page end },
+        W = { PageBuilder = function() return {} end },
+        LazySection = function(_, id, title, open) sections[id] = { title = title, open = open } end }
+    assert(loadfile(options .. "ActionBarsSnapshots.lua"))("MSUF_Suite_Options", P)
+    local transfer = assert(registered.suite_actionbar_setups, "the quick action's transfer page is unregistered")
+    transfer.build({})
+    local section = assert(sections.suite_actionbars_account_transfer, "the page does not offer the transfer controls")
+    Check("Account transfer", section.title, "existing transfer section")
+    Check(true, section.open, "the tool opens with the transfer section expanded")
+
+    local handle = assert(io.open(options .. "ActionBars.lua", "rb"))
+    local actionBars = handle:read("*a")
+    handle:close()
+    assert(not actionBars:find("P.ActionBarSnapshotsPage", 1, true), "the Action Bars page still mounts the transfer tool")
+end
+VerifyTransferPage()
+
 local function NewWorld(forever)
     local E = Fixture.New(root, forever)
     local NS, S = E.NS, E.S
@@ -82,13 +103,11 @@ local function VerifyLaunch(forever)
     E:Item(0, 2, 999, 3)
     E:Flush()
     NS.ActionBarSnapshots = {}
-    NS.Menu = { Open = function(page) calls.menuPage = page return true end,
-        FocusSection = function(_, section) calls.menuSection = section return true end }
+    NS.Menu = { Open = function(page) calls.menuPage = page return true end }
     assert(slash("action bar setups"))
     local setups = assert(FindWindow(E, S.QuickActions))
     Keyboard(setups, "OnEnterPressed")
-    Check("suite_actionbars", calls.menuPage, "setups shortcut opens the Action Bars page")
-    Check("suite_actionbars_account_transfer", calls.menuSection, "setups shortcut focuses account transfer")
+    Check("suite_actionbar_setups", calls.menuPage, "setups shortcut opens the dedicated transfer page")
     local characterConfig = S.Config("characterPanel")
     S.instances.characterPanel = { active = true, running = true, config = characterConfig }
     S.OpenCharacterPanelTab = function(tab)

@@ -362,8 +362,8 @@ local function ApplyMatching(data, identity)
                 -- The player answered a question, not the Account transfer page.
                 local result = data.results[1]
                 if result.error then
-                    S.Print(S.Text("The profile's action bars were not applied completely. Account transfer lists the result "
-                        .. "and can restore the previous setup."))
+                    S.Print(S.Text("The profile's action bars were not applied completely. Account transfer "
+                        .. "(Quick actions > Action bar setups) lists the result and can restore the previous setup."))
                 else
                     S.Print(S.Text("Profile action bars applied: %d key bindings and %d spells changed, %d left as they were.")
                         :format(result.keys, result.slots, result.skippedKeys + result.skippedSlots))
@@ -669,8 +669,8 @@ local function AcceptOffer(offer, wantKeys, wantSpells)
         if not Stage(data, { entry }) then
             data.pending[key] = earlier
             S.Print(S.Text("The profile's action bars could not be queued: other account transfers for the same bars or "
-                .. "key bindings are pending, or too many transfers are. Finish or cancel them under Account transfer; "
-                .. "you will be asked again after the next reload."))
+                .. "key bindings are pending, or too many transfers are. Finish or cancel them under Account transfer "
+                .. "(Quick actions > Action bar setups); you will be asked again after the next reload."))
             return
         end
     end
@@ -685,7 +685,7 @@ local function DeclineOffer(offer)
 end
 
 local function UndoHint()
-    return " " .. S.Text("Restore previous setup under Account transfer undoes it.")
+    return " " .. S.Text("Restore previous setup under Account transfer (Quick actions > Action bar setups) undoes it.")
 end
 
 -- scope: the key binding set the character uses ("account" or "character").

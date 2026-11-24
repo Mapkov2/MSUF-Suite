@@ -277,7 +277,8 @@ B.Section(id, "behavior", "Behavior", {
     Number("pageAlt", "Page while holding Alt", 4, 1, 6),
     B.Tooltip(Bool("profileKeybinds", "Include key bindings in profile exports and imports", true),
         "While the Suite action bars are on, exports carry the keys of bars 1 to 10, and an import replaces your action "
-            .. "bar keys in the key binding set this character uses. Restore previous setup under Account transfer undoes it."),
+            .. "bar keys in the key binding set this character uses. Restore previous setup under Account transfer "
+            .. "(Quick actions > Action bar setups) undoes it."),
     Bool("imported", "Blizzard layout imported", false),
     -- The other WoW version's action bars from a profile string, parked
     -- for the next export (ProfileClients.lua).

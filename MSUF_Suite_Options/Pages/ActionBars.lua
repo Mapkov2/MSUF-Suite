@@ -626,7 +626,6 @@ local function Build(ctx)
         P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_" .. section, Tr(rules[1].sectionTitle), rules,
             { help = HELP[section], open = false, extra = section == "appearance" and SkinStatus(ctx) or nil })
     end
-    P.ActionBarSnapshotsPage.Build(ctx, b)
     P.ActionBarFlyoutsPage.Build(ctx, b)
     P.BuildOwnedTool(ctx, b, "keyAudit")
     P.ActionBarMenu.BuildHelpers(ctx)
