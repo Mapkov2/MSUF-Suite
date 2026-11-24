@@ -136,7 +136,7 @@ end
 local function SetCompactTitleHeight(row, list, compact)
     local record = list.titleHeights[row]
     if not (compact or record) or not CanPaint(row, list, list.implicit) then return end
-    local current = Safety.Read(row, "GetHeight")
+    local current = Safety.Read(row, "GetHeight", true)
     if type(current) ~= "number" then return end
     if not compact then
         list.titleHeights[row] = nil
@@ -151,6 +151,7 @@ local function SetCompactTitleHeight(row, list, compact)
     -- QuestLogQuests_AddQuestButton includes objectives in the title's height.
     -- Its objective-free baseline adds 8 for text, 4 for spacing and 6 for the POI.
     local height = textHeight + 18
+    if record and current == record.applied and height == record.requested then return end
     if current ~= height then
         if not record or current ~= record.applied then
             record = titleSizes[row]
@@ -161,8 +162,10 @@ local function SetCompactTitleHeight(row, list, compact)
             record.native = current
             list.titleHeights[row] = record
         end
-        record.applied = height
+        record.requested = height
         row:SetHeight(height)
+        -- Keep the stored UI size for ownership checks. The client can round the Lua value.
+        record.applied = Safety.Read(row, "GetHeight", true)
         list.changed = true
     elseif record and current ~= record.applied then
         list.titleHeights[row] = nil

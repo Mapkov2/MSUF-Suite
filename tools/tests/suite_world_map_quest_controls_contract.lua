@@ -230,6 +230,34 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active, Hol
         NativeRebuild()
         Check(objective:IsShown() and row:GetHeight() == nativeTitleHeight,
             "native objectives did not return after the user enabled them")
+
+        -- Frame dimensions can round when stored, and again in the anchored rectangle.
+        local setHeight, getHeight = row.SetHeight, row.GetHeight
+        local heightWrites = 0
+        textHeight = 16.2
+        function row:SetHeight(height)
+            self.height = math.floor(height * 262144 + 0.5) / 262144
+            heightWrites = heightWrites + 1
+        end
+        function row:GetHeight(ignoreRect)
+            if ignoreRect then return self.height end
+            return math.floor(self.height + 0.5)
+        end
+        NS.WorldMapQuests.SetLayout("compact")
+        Check(not objective:IsShown() and row:GetHeight(true) ~= textHeight + 18
+            and row:GetHeight() < nativeTitleHeight, "fixture did not round the applied Compact height")
+        NS.WorldMapQuests.SetLayout("blizzard")
+        Check(objective:IsShown() and row:GetHeight(true) == nativeTitleHeight
+            and contents.height == nativeTitleHeight + other:GetHeight(),
+            "switching a rounded Compact row to Blizzard left its objectives in a compact-height list")
+        NS.WorldMapQuests.SetLayout("compact")
+        local beforeRefresh = heightWrites
+        NS.WorldMapQuests.Refresh()
+        Check(heightWrites == beforeRefresh, "a Compact refresh reapplied an unchanged rounded height")
+        NS.WorldMapQuests.SetLayout("blizzard")
+        Check(row:GetHeight(true) == nativeTitleHeight, "a Compact refresh lost the original Blizzard height")
+        row.SetHeight, row.GetHeight, textHeight = setHeight, getHeight, 16
+
         NS.WorldMapQuests.SetLayout("compact")
         Check(not objective:IsShown() and contents.visibleObjectives == 0, "returning to Compact lost the objective mask")
     end
