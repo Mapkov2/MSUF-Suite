@@ -49,10 +49,14 @@ function O.CreateSlider(parent, labelText, minimum, maximum, step, getter, sette
     step = step < 1 and 0.01 or 1
     local row = O.CreatePanel(parent, "card")
     row:SetSize(width or 520, 58)
-    local label = O.CreateText(row, labelText, 12, "text")
+    local label = O.CreateText(row, labelText, 14, "text")
     label:SetPoint("TOPLEFT", 12, -9)
-    local valueText = O.CreateText(row, "", 11, "accent", "RIGHT")
+    local valueText = O.CreateText(row, "", 14, "accent", "RIGHT")
     valueText:SetPoint("TOPRIGHT", -12, -9)
+    -- A long translated label stops before the value instead of under it.
+    label:SetPoint("TOPRIGHT", valueText, "TOPLEFT", -8, 0)
+    label:SetWordWrap(false)
+    label:SetMaxLines(1)
     local slider, track, thumb = CreateSliderBar(row, minimum, maximum, step)
 
     local internalChange = false
@@ -113,10 +117,12 @@ end
 function O.CreateInput(parent, labelText, getter, setter, width, options)
     local row = O.CreatePanel(parent, "card")
     row:SetSize(width or 520, 58)
-    local label = O.CreateText(row, labelText, 12, "text")
+    local label = O.CreateText(row, labelText, 14, "text")
     label:SetPoint("TOPLEFT", 12, -9)
 
     local input = CreateInputBox(row, 8)
+    local path, size, flags = label:GetFont()
+    if path then input:SetFont(path, size, flags or "") end
     input:SetPoint("BOTTOMLEFT", 12, 8)
     input:SetPoint("BOTTOMRIGHT", -12, 8)
     input:SetHeight(24)

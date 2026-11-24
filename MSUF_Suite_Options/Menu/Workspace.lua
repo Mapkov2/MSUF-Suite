@@ -274,13 +274,18 @@ function Workspace.Finish(ui)
         ui.tabs, ui.chooseTab = ui.spec.buildSelector(ui, values, function(id) return Choose(ui, id) end)
     elseif W.SegmentTabs then
         local tabs, refresh, _, choose = W.SegmentTabs(ui.ctx, ui.header, {
-            label = "", compact = true, values = values, frames = panels, width = ui.width - 32,
+            label = "", compact = true, wrap = true, values = values, frames = panels, width = ui.width - 32,
             defaultTab = ui.selected, get = function() return ui.selected end,
             set = function(id) Choose(ui, id) end, afterRefresh = function(id) Choose(ui, id) end,
             x = 16, y = ui.spec.tabY or 12,
         })
         P.HideControlTitle(tabs)
         ui.tabs, ui.chooseTab = tabs, choose
+        local function FitTabsHeader()
+            Workspace.FitHeader(ui, (ui.spec.height or 62) + tabs:GetHeight() - 26)
+        end
+        tabs:HookScript("OnSizeChanged", FitTabsHeader)
+        FitTabsHeader()
         refresh()
     else
         ui.selector = M.BindDropdownAt(ui.ctx, ui.header, ui.spec.title, 16, ui.spec.tabY or 12, values, ui.width - 32,

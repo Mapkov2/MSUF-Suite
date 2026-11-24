@@ -155,6 +155,34 @@ Check(newFields.button._msuf2SkipHistoryCheckpoint and newFields.button._msuf2Al
     and newFields.theme.navIconColors.suite_one == newFields.theme.navIconColors.home,
     "the page build did not leave the protocol fields MSUF reads")
 
+-- Dropdown fields: the title aligns left without wrapping on every host; only
+-- a host without the 26 px field lifts its 22 px field to 24 px.
+do
+    local function Field(kind, height)
+        local title = {}
+        function title:SetJustifyH(value) self.justify = value end
+        function title:SetWordWrap(value) self.wrap = value end
+        local field = { _msuf2ControlKind = kind, _msuf2Title = title, height = height }
+        function field:GetHeight() return self.height end
+        function field:SetHeight(value) self.height = value end
+        return field
+    end
+    local currentM = { Theme = Theme(), Widgets = { DROPDOWN_FIELD_H = 26 } }
+    for _, case in ipairs({ { HostBridge.Menu2(OldHost()), 24 }, { newHM, 24 }, { HostBridge.Menu2(currentM), 22 } }) do
+        local field = Field("dropdown", 22)
+        Check(case[1].StyleDropdownField(field) == field, "StyleDropdownField must return its widget")
+        Check(field._msuf2Title.justify == "LEFT" and field._msuf2Title.wrap == false,
+            "a dropdown title must align left without wrapping")
+        Check(field.height == case[2], "a dropdown field got the wrong height for its host")
+        local tall = Field("dropdown", 32)
+        case[1].StyleDropdownField(tall)
+        Check(tall.height == 32, "a dropdown with its own height must keep it")
+        local slider = Field("slider", 22)
+        case[1].StyleDropdownField(slider)
+        Check(slider.height == 22 and slider._msuf2Title.justify == nil, "only dropdown fields are styled")
+    end
+end
+
 ------------------------------------------------------------------ Suite API
 local log
 local function Logger(name, result)

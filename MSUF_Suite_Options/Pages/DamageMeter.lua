@@ -188,6 +188,16 @@ local SECTION_SWITCHES = {
 }
 local VISIBILITY_LABELS = { window = "Header", namesFont = "Name", valuesFont = "Value", headerFont = "Title" }
 
+local BAR_GROUP_START = { iconStyle = true, rowBorderMode = true, glossEnabled = true }
+local BAR_WIDE_LABEL = { trackAlpha = true, inspectRemoteSpecs = true }
+
+local function LayoutBarRows(rows)
+    for _, row in ipairs(rows) do
+        row.startsGroup = BAR_GROUP_START[row.id]
+        row.fullWidth = BAR_WIDE_LABEL[row.id]
+    end
+end
+
 local function BuildRuleSections(ctx, b)
     for _, section in ipairs({ "general", "bars", "text", "window", "details", "timer", "surfaces", "borders", "iconBorder",
         "separators", "namesFont", "valuesFont", "headerFont", "detailsFont", "timerFont", "timerDock" }) do
@@ -201,6 +211,7 @@ local function BuildRuleSections(ctx, b)
                 { help = HELP[section] or section:find("Font", 1, true) and FONT_HELP, open = section == "general",
                   switchKey = SECTION_SWITCHES[section], switchLabel = VISIBILITY_LABELS[section],
                   dimSwitch = not VISIBILITY_LABELS[section],
+                  layoutRows = section == "bars" and LayoutBarRows or nil,
                   extra = section == "bars" and function(body, y, width)
                       return IconSkinStatus(ctx, body, BuildGradientPad(ctx, body, y, width), width)
                   end or nil })

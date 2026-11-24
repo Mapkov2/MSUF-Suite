@@ -334,7 +334,7 @@ function O.CreateToggle(parent, labelText, getter, setter, width, options)
     button:SetSize(width or 430, 38)
     NS.Surface.SkinOwnedButton(button, { role = "card", useControlShape = false })
 
-    local label = O.CreateText(button, labelText, 12, "text")
+    local label = O.CreateText(button, labelText, 14, "text")
     label:SetPoint("LEFT", 12, 0)
 
     local track = CreateFrame("Frame", nil, button)
@@ -375,7 +375,8 @@ function O.CreateToggle(parent, labelText, getter, setter, width, options)
         Refresh()
         CommitWidgetChange(labelText, options, began)
     end)
-    if O.AttachOutlineControl then O.AttachOutlineControl(button, labelText, options and options.outlineSetting, -60) end
+    local gear = O.AttachOutlineControl and O.AttachOutlineControl(button, labelText, options and options.outlineSetting, -60)
+    label:SetPoint("RIGHT", gear or track, "LEFT", -8, 0)
     return button
 end
 
@@ -389,7 +390,7 @@ end
 function O.CreateCycle(parent, labelText, values, getter, setter, width, formatter, options)
     local row = O.CreatePanel(parent, "card")
     row:SetSize(width or 520, 42)
-    local label = O.CreateText(row, labelText, 12, "text")
+    local label = O.CreateText(row, labelText, 14, "text")
     label:SetPoint("LEFT", 12, 0)
 
     local valueButton = O.CreateSettingButton(row, "", 180, 28, function()
@@ -410,6 +411,8 @@ function O.CreateCycle(parent, labelText, values, getter, setter, width, formatt
     end, nil, options and options.refused)
     valueButton:SetPoint("RIGHT", -8, 0)
     local valueLabel = O.widgetStates[valueButton].label
+    local path, size, flags = label:GetFont()
+    if path then valueLabel:SetFont(path, size, flags or "") end
 
     local painted, hasPainted = nil, false
     O.TrackAndRefresh(function()
@@ -418,7 +421,8 @@ function O.CreateCycle(parent, labelText, values, getter, setter, width, formatt
         painted, hasPainted = value, true
         valueLabel:SetText(formatter and formatter(value) or tostring(value))
     end)
-    if O.AttachOutlineControl then O.AttachOutlineControl(row, labelText, options and options.outlineSetting, -195) end
+    local gear = O.AttachOutlineControl and O.AttachOutlineControl(row, labelText, options and options.outlineSetting, -195)
+    label:SetPoint("RIGHT", gear or valueButton, "LEFT", -8, 0)
     return row
 end
 
@@ -430,8 +434,9 @@ function O.CreateSegmented(parent, labelText, values, getter, setter, width, for
     local rowWidth = width or 520
     local row = O.CreatePanel(parent, "card")
     row:SetSize(rowWidth, 72)
-    local label = O.CreateText(row, labelText, 12, "text")
+    local label = O.CreateText(row, labelText, 14, "text")
     label:SetPoint("TOPLEFT", 12, -9)
+    local font, size, flags = label:GetFont()
 
     local gap = 6
     local innerWidth = rowWidth - 24
@@ -454,6 +459,7 @@ function O.CreateSegmented(parent, labelText, values, getter, setter, width, for
                     CommitWidgetChange(labelText, options, began)
                 end
             end, "navigation")
+        if font then O.widgetStates[button].label:SetFont(font, size, flags or "") end
         if index == 1 then
             button:SetPoint("BOTTOMLEFT", 12, 8)
         else

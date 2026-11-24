@@ -1074,7 +1074,9 @@ do
                 nested:RelayoutCollapsibles()
                 local bottom = settings._msuf2RelayoutY + offset + details._msuf2RelayoutY - details.outer:GetHeight()
                 local gap = bottom - appearance._msuf2RelayoutY
-                Check(gap == 8, "Data settings to Appearance gap must be exactly 8, got " .. tostring(gap))
+                local expected = world.core.MSUF2.Widgets.ACCORDION_FLOW_GAP or 8
+                Check(gap == expected, "Data settings to Appearance gap must be exactly " .. tostring(expected)
+                    .. ", got " .. tostring(gap))
             end
         end
         local removalId = P.Meta("suite_dataTexts", "dataTexts", "bar400000.remove", "action",

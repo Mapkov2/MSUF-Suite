@@ -237,7 +237,7 @@ end
 function O.CreateColorRow(parent, colorKey, labelText, width, description)
     local row = O.CreatePanel(parent, "card")
     row:SetSize(width or 600, 50)
-    local label = O.CreateText(row, labelText, 12, "text")
+    local label = O.CreateText(row, labelText, 14, "text")
     label:SetPoint("TOPLEFT", 12, -8)
 
     local help = O.CreateText(row, description or colorKey, 9, "dim")

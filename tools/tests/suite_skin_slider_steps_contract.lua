@@ -181,6 +181,43 @@ end
 O.RefreshAll()
 O.RefreshAll()
 assert(writes == 0 and moves == 0, "a slider repainted an unchanged value")
+
+-- The slider number renders as large as a checkbox label (14), measured with
+-- the real text helper and its size floors; a long label stops before it.
+local themeOptions = { TrackRefresh = function() end, textRoles = {} }
+assert(loadfile("MSUF_Suite_Skin_Options/Shell/Theme.lua"))("MSUF_Suite_Skin_Options",
+    { NS = NS, Options = themeOptions })
+local function RenderedSize(call)
+    local applied
+    local host = { CreateFontString = function()
+        local fontString = Frame()
+        function fontString:SetFont(_, height) applied = height end
+        return fontString
+    end }
+    themeOptions.CreateText(host, "", call.size, call.colorKey)
+    return applied
+end
+local createText, textCalls = O.CreateText, {}
+O.CreateText = function(parent, value, size, colorKey, ...)
+    local text = createText(parent, value, size, colorKey, ...)
+    textCalls[#textCalls + 1] = { size = size, colorKey = colorKey, text = text }
+    text.points = {}
+    function text:SetPoint(...) self.points[#self.points + 1] = { ... } end
+    return text
+end
+Slider(0, 100, 1, 50)
+local sliderLabelCall, sliderValueCall = textCalls[1], textCalls[2]
+textCalls = {}
+O.CreateToggle(Frame(), "Toggle", function() return true end, function() end)
+local checkboxLabelCall = textCalls[1]
+O.CreateText = createText
+assert(RenderedSize(checkboxLabelCall) == 14 and RenderedSize(sliderValueCall) == 14,
+    "the slider number is not as large as a checkbox label")
+local stopsBeforeValue = false
+for _, point in ipairs(sliderLabelCall.text.points) do
+    if point[2] == sliderValueCall.text and point[1] == "TOPRIGHT" then stopsBeforeValue = true end
+end
+assert(stopsBeforeValue, "a long slider label can run under the slider number")
 print("Suite Skinning sliders: single, Shift 5x and Ctrl 10x steps passed")
 
 local function LastFrame(kind)
@@ -373,6 +410,41 @@ assert(#dropdown.filtered == 20 and lowered <= 3,
 watcher:GetScript("OnEvent")(watcher, "PLAYER_REGEN_DISABLED")
 assert(not dropdown.blocker.shown and not watcher.events.PLAYER_REGEN_DISABLED,
     "the dropdown blocker survived into combat")
+
+-- Dropdown presentation: the collapsed control is 2 taller (30) inside the
+-- unchanged 42 row; list text keeps the checkbox label color; the popup
+-- opens below-right normally and flips above / left-aligned near the
+-- bottom / left viewport edges.
+local createSetting, valueHeights = O.CreateSettingButton, {}
+O.CreateSettingButton = function(parent, text, width, height, ...)
+    valueHeights[#valueHeights + 1] = height
+    return createSetting(parent, text, width, height, ...)
+end
+local _, placedButton = O.CreateDropdown(Frame(), "Placed", choices, function() return choices[1] end,
+    function() end, 400)
+O.CreateSettingButton = createSetting
+assert(valueHeights[#valueHeights] == 30, "the dropdown value control is not 30 high")
+UIParent = { GetEffectiveScale = function() return 1 end, GetHeight = function() return 800 end }
+placedButton.GetEffectiveScale = function() return 1 end
+local function PlaceAt(bottom, right)
+    placedButton.GetBottom = function() return bottom end
+    placedButton.GetTop = function() return bottom + 30 end
+    placedButton.GetRight = function() return right end
+    local point, relative
+    dropdown.frame.SetPoint = function(_, p, _, r) point, relative = p, r end
+    placedButton:GetScript("OnClick")(placedButton, "LeftButton")
+    assert(dropdown.blocker.shown, "the dropdown did not open for placement")
+    assert(dropdown.rows[1].caption.role == "text", "an open dropdown row lost the checkbox label color")
+    watcher:GetScript("OnEvent")(watcher, "PLAYER_REGEN_DISABLED")
+    return point, relative
+end
+local point, relative = PlaceAt(500, 900)
+assert(point == "TOPRIGHT" and relative == "BOTTOMRIGHT", "the dropdown left its natural anchor: " .. tostring(point))
+point, relative = PlaceAt(40, 1200)
+assert(point == "BOTTOMRIGHT" and relative == "TOPRIGHT", "a bottom-right dropdown did not open upwards")
+point, relative = PlaceAt(500, 200)
+assert(point == "TOPLEFT" and relative == "BOTTOMLEFT", "a dropdown near the left edge clipped its popup")
+UIParent = nil
 
 -- Setting widgets refuse a click in combat before the click sound plays.
 local sounds = 0

@@ -31,15 +31,28 @@ function T.Font(parent, template, text, color, role)
     return theme.Font(parent, template, text, color, role)
 end
 
-function P.StyleMenuControl(widget)
+-- Setting controls (labels, dropdown values, numbers) share the host's
+-- settings role: card weight at the settings size. Hosts without it, and
+-- plain action buttons, keep "card". Dropdown titles align left on every
+-- host (HostBridgeMenu.lua StyleDropdownField).
+function P.SettingFontRole()
+    return theme.SETTING_CARD_ROLE or "card"
+end
+function P.StyleMenuControl(widget, role)
     local title, label = HM.GetControlTitle(widget), HM.GetControlLabel(widget)
-    ApplyMenuFont(title, "card")
-    if label ~= title then ApplyMenuFont(label, "card") end
+    role = role or P.SettingFontRole()
+    ApplyMenuFont(title, role)
+    if label ~= title then ApplyMenuFont(label, role) end
+    if HM.StyleDropdownField then HM.StyleDropdownField(widget) end
     return widget
 end
 
 function T.Button(parent, text, width, height, opts)
-    return P.StyleMenuControl(theme.Button(parent, text, width, height, opts))
+    return P.StyleMenuControl(theme.Button(parent, text, width, height, opts), "card")
+end
+
+function P.W.Dropdown(parent, label, values, width)
+    return P.StyleMenuControl(widgets.Dropdown(parent, label, values, width))
 end
 
 function P.W.SettingsRows(ctx, parent, spec)

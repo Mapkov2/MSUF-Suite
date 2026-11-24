@@ -137,11 +137,14 @@ local function RuleHex(rule, r, g, b)
     return value
 end
 
+-- rule.choiceOrder lists the stored values in the order the menu shows them
+-- (corner pickers read in reading order without renumbering saved values).
 local function ChoiceValues(rule)
     if not rule._suiteMenuValues then
-        local values = {}
+        local values, order = {}, rule.choiceOrder
         for i = 1, #rule.choices do
-            values[i] = { value = i, text = Tr(rule.choices[i]), icon = rule.choiceIcons and rule.choiceIcons[i] }
+            local value = order and order[i] or i
+            values[i] = { value = value, text = Tr(rule.choices[value]), icon = rule.choiceIcons and rule.choiceIcons[value] }
         end
         rule._suiteMenuValues = values
     end
@@ -154,7 +157,7 @@ local function GatedChoiceValues(base, gate)
     return function()
         for i = 1, #base do
             values[i] = values[i] or { value = base[i].value, text = base[i].text }
-            values[i].disabled = not gate(i)
+            values[i].disabled = not gate(base[i].value)
         end
         return values
     end
@@ -196,7 +199,7 @@ end
 -- One W.SettingsRows row for a catalog rule. `keyFn` maps the template key to
 -- the live key when shared controls edit the selected bar or window.
 function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
-    if rule.color and pageKey ~= "colors" then return nil end
+    if rule.color and pageKey ~= "colors" and not (rule.inlineColorPage and pageKey == rule.inlineColorPage) then return nil end
     local function Key() return keyFn and keyFn(rule.key) or rule.key end
     local row = P.Meta(pageKey, id, rule.key, "setting", sectionId)
     row.id, row.label = rule.key, Tr(rule.label)
@@ -300,9 +303,8 @@ end
 function P.RuleRows(pageKey, id, rules, keyFn, sectionId)
     local rows, pending, strings = {}, {}, {}
     for _, rule in ipairs(rules) do
-        -- Suite pages edit colors from their section shortcut. Only the
-        -- canonical MSUF Colors page renders inline color rows.
-        if not rule.hidden and (pageKey == "colors" or not rule.color) then
+        -- Color rows are inline on Colors and in sections that opt in.
+        if not rule.hidden and (pageKey == "colors" or not rule.color or rule.inlineColorPage and pageKey == rule.inlineColorPage) then
             local row = P.RuleRow(pageKey, id, rule, keyFn, sectionId)
             if row then
                 rows[#rows + 1] = row
@@ -396,7 +398,7 @@ function P.AttachRowsSummary(ctx, body, rows)
         end
         local text = table.concat(parts, " - ")
         if previous ~= text then
-            W.SetCollapsibleSummary(body, text)
+            W.SetCollapsibleSummary(body, text, parts[1], parts[2])
             previous = text
         end
     end)
@@ -425,6 +427,17 @@ local function RuleColorTarget(id, rule, keyFn, isRelevant, getValue)
             return P.Set(id, key, RuleHex(rule, r, g, b))
         end,
     }
+end
+
+function P.OpenRuleColors(anchor, title, id, rules, isRelevant, extraTargets)
+    if not W.OpenContextColors then return end
+    local targets = extraTargets and extraTargets() or {}
+    for _, rule in ipairs(rules) do
+        if rule.color and not rule.hidden then
+            targets[#targets + 1] = RuleColorTarget(id, rule, nil, isRelevant)
+        end
+    end
+    return W.OpenContextColors(anchor, { title = Tr(title), maxTargets = #targets }, targets)
 end
 
 -- Suite accordions use this shortcut as their sole color entry point.
@@ -515,6 +528,7 @@ end
 function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     opts = opts or {}
     local built, entries = P.RuleRows(pageKey, id, rules, opts.keyFn, sectionId), nil
+    if opts.layoutRows then opts.layoutRows(built.rows) end
     local function Content(body)
         local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
         local y = -18

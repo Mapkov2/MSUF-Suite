@@ -13,6 +13,20 @@ function K.Button(parent, x, y, width, height, open)
     P.HM.SkipHistoryCheckpoint(button)
     return button
 end
+function K.FitToolbarButton(button)
+    local label = P.HM.GetControlLabel(button)
+    if label then
+        local measure = label.GetUnboundedStringWidth or label.GetStringWidth
+        button:SetWidth(math.max(button:GetWidth(), math.ceil(measure(label)) + 10))
+        label:ClearAllPoints()
+        label:SetPoint("LEFT", button, "LEFT", 4, 0)
+        label:SetPoint("RIGHT", button, "RIGHT", -4, 0)
+        label:SetJustifyH("CENTER")
+        label:SetWordWrap(false)
+    end
+    return button
+end
+
 function K.Jump(ui, region, parent, section)
     local button = CreateFrame("Button", nil, parent)
     button:SetAllPoints(region)

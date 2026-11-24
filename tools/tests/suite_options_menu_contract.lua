@@ -5351,8 +5351,6 @@ do
 end
 function optionsNS.MinimapFocus(source)
     local group = source:match("^info_") and source ~= "info_tooltips" and "information"
-        or ({ style_art = "decoration", style_glow = "decoration", style_backdrop = "decoration",
-            elements = "buttons", landing = "buttons", dungeon = "buttons", specialization = "buttons" })[source]
     return "suite_minimap_" .. (group or source)
 end
 local focusedSection, focusOpts

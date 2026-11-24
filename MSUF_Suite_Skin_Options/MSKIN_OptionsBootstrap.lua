@@ -107,7 +107,7 @@ end
 
 function O.AttachOutlineControl(row, label, key, offsetX)
     local bridge = NS.SuiteCore().HostBridge
-    if bridge and bridge.ConsiderOutlineControl then bridge.ConsiderOutlineControl(row, label, key, row, offsetX) end
+    if bridge and bridge.ConsiderOutlineControl then return bridge.ConsiderOutlineControl(row, label, key, row, offsetX) end
 end
 
 function O.SetMode(mode)

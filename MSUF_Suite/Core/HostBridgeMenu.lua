@@ -185,6 +185,26 @@ local function LegacyNavIcon(T, pageKey, spec)
     return added
 end
 
+-- A dropdown's title reads from the field's left edge and never wraps onto
+-- it. A host without the 26 px field (Widgets.DROPDOWN_FIELD_H) keeps its
+-- field 24 px below the title; 24 px instead of 22 still ends 48 px below it.
+local LEGACY_DROPDOWN_FIELD_H, COMPAT_DROPDOWN_FIELD_H = 22, 24
+local function DropdownFieldStyler(M)
+    local widgets = M.Widgets
+    local lift = not (type(widgets) == "table" and widgets.DROPDOWN_FIELD_H)
+    return function(widget)
+        if not widget or rawget(widget, "_msuf2ControlKind") ~= "dropdown" then return widget end
+        local title = rawget(widget, "_msuf2Title")
+        if title then
+            title:SetJustifyH("LEFT")
+            if title.SetWordWrap then title:SetWordWrap(false) end
+        end
+        local height = lift and widget.GetHeight and tonumber(widget:GetHeight())
+        if height and math.abs(height - LEGACY_DROPDOWN_FIELD_H) < 0.5 then widget:SetHeight(COMPAT_DROPDOWN_FIELD_H) end
+        return widget
+    end
+end
+
 ------------------------------------------------------------------ resolution
 local function HasMenuAPI(M)
     if type(M.HOST_API_VERSION) ~= "number" or M.HOST_API_VERSION < MENU_API_VERSION then return false end
@@ -201,11 +221,13 @@ local function Build(M)
         for name, step in pairs(L) do adapter[name] = step end
         adapter.MarkSegmentChoice = markSegmentChoice
         adapter.AddNavIcon = function(pageKey, spec) return LegacyNavIcon(T, pageKey, spec) end
+        adapter.StyleDropdownField = DropdownFieldStyler(M)
         return adapter
     end
     local adapter = { mode = "host", SetFixedPreviewCompactHeight = L.SetFixedPreviewCompactHeight,
         TrackControlInteraction = L.TrackControlInteraction,
-        MarkSegmentChoice = markSegmentChoice, HookToggleHover = HookToggleHover }
+        MarkSegmentChoice = markSegmentChoice, HookToggleHover = HookToggleHover,
+        StyleDropdownField = DropdownFieldStyler(M) }
     for index = 1, #NAMES do adapter[NAMES[index]] = M[NAMES[index]] end
     return adapter
 end
