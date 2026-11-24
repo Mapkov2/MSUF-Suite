@@ -6,6 +6,7 @@
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
+## SavedVariables: MSUFSuiteFlyoutsDB
 ## SavedVariablesPerCharacter: MSUFSuiteIndependentBar
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
@@ -30,4 +31,7 @@ Paint.lua
 NativeButtons.lua
 Flush.lua
 Events.lua
+FlyoutFrames.lua
+Flyouts.lua
+FlyoutAPI.lua
 Controller.lua

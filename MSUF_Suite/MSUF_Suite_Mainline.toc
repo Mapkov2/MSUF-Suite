@@ -46,6 +46,7 @@ Core\ExperienceBarLayout.lua
 Core\Catalog\ActionBars.lua
 Core\Bindings.lua
 Core\Catalog\ActionBarConditions.lua
+Core\Catalog\ActionBarFlyouts.lua
 Core\Catalog\Minimap.lua
 Core\MinimapStyle.lua
 Core\MinimapElements.lua

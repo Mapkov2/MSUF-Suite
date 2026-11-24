@@ -221,7 +221,10 @@ end
 -- Settings without runtime work; any other setting nobody listed above
 -- rebuilds everything (a per-bar one: everything of its bar), so a new
 -- setting is never silently ignored.
-local NO_WORK = { enabled = true, imported = true, look = true, pickupModifier = true, autoAddSpells = true }
+-- parkedSetup holds the other WoW version's bars (ProfileClients.lua) and
+-- profileKeybinds is retired: data only.
+local NO_WORK = { enabled = true, imported = true, look = true, pickupModifier = true, autoAddSpells = true,
+    parkedSetup = true, profileKeybinds = true }
 local FULL = {
     style = true, curves = true, events = true, native = true, repaint = true, paging = true, alpha = true,
     drag = true, visible = true, panels = true, assist = true, masque = true,
@@ -449,6 +452,7 @@ function M:Enable()
     self:Refresh()
     AB.Virtual.Start(self.context)
     AB.StartSnapshots(self.context)
+    AB.Flyouts.Start()
 end
 
 function M:Refresh()
@@ -514,6 +518,7 @@ function M:Disable()
     Dispatch(S.RestoreCVar, "actionbars", "AutoPushSpellToActionBar")
     Dispatch(AB.Masque.Release)
     Dispatch(AB.StopSnapshots)
+    Dispatch(AB.Flyouts.Stop)
     Dispatch(AB.Virtual.Stop, self.context)
     Dispatch(AB.StopAssist)
     Dispatch(AB.StopDispatcher)

@@ -28,6 +28,7 @@ Pages\DamageMeterPreview.lua
 Pages\MenuSamples.lua
 Pages\ActionBarsWorkspace.lua
 Pages\ActionBarsSnapshots.lua
+Pages\ActionBarsFlyouts.lua
 Pages\ActionBarsPreviewData.lua
 Pages\ActionBarsPreview.lua
 Pages\ActionBars.lua

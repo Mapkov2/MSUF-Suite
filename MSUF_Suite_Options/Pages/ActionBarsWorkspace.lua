@@ -15,6 +15,7 @@ local function Groups()
             { id = "text", label = "Text", sections = "bar_text" },
             { id = "visibility", label = "Visibility", sections = "bar_visibility global_visibility" },
             { id = "paging", label = "Paging", sections = "bar_paging" },
+            { id = "flyouts", label = "Flyouts", sections = "flyouts" },
         }
     end
     return groups

@@ -238,6 +238,15 @@ end
 local function BuildKeybind(ctx, body, y)
     local button = (W.RoleButton and W.RoleButton(body, "Keybind Mode", "success", 200, 24))
         or W.TopButton(body, "Keybind Mode", 200, 24)
+    local caption = HM.GetControlLabel(button)
+    if caption then
+        caption:ClearAllPoints()
+        caption:SetPoint("LEFT", button, "LEFT", 12, 0)
+        caption:SetPoint("RIGHT", button, "RIGHT", -12, 0)
+        caption:SetJustifyH("CENTER")
+        caption:SetWordWrap(false)
+    end
+    if P.T.FitButtonWidth then P.T.FitButtonWidth(button, 200) end
     button:SetPoint("TOPRIGHT", body, "TOPRIGHT", -110, y)
     HM.SkipHistoryCheckpoint(button)
     button:SetScript("OnClick", function()
@@ -618,6 +627,7 @@ local function Build(ctx)
             { help = HELP[section], open = false, extra = section == "appearance" and SkinStatus(ctx) or nil })
     end
     P.ActionBarSnapshotsPage.Build(ctx, b)
+    P.ActionBarFlyoutsPage.Build(ctx, b)
     P.BuildOwnedTool(ctx, b, "keyAudit")
     P.ActionBarMenu.BuildHelpers(ctx)
     P.ActionBarMenu.Finish(ctx)
