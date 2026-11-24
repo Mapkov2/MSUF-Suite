@@ -124,6 +124,13 @@ local function SlotLeave(button)
 end
 Actions.enter, Actions.leave = SlotEnter, SlotLeave
 
+local function SlotHidden(button)
+    local hovered = Actions.hovered == button
+    if hovered then Actions.hovered = nil end
+    if Actions.Owner() == button then Actions.Detach() end
+    if hovered or GameTooltip:IsOwned(button) then HideTooltip(button) end
+end
+
 local function BarEnter(frame)
     SetHover(frame.bar, true)
     M:SampleTelemetry()
@@ -166,6 +173,7 @@ local function CreateSlot(bar, slot)
     button:SetScript("OnClick", Click)
     button:SetScript("OnEnter", SlotEnter)
     button:SetScript("OnLeave", SlotLeave)
+    button:SetScript("OnHide", SlotHidden)
     -- Only volume places take the wheel; the others leave it to the camera.
     button:SetScript("OnMouseWheel", Actions.Wheel)
     button:EnableMouseWheel(false)
@@ -206,6 +214,7 @@ local function CreateBadge(bar)
     badge:SetScript("OnClick", Click)
     badge:SetScript("OnEnter", SlotEnter)
     badge:SetScript("OnLeave", SlotLeave)
+    badge:SetScript("OnHide", SlotHidden)
     local badgeArt = S.CreateTexture(badge, nil, "OVERLAY")
     badgeArt:SetAllPoints(badge)
     badgeArt:SetTexture(BADGE)

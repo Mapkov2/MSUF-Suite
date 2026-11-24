@@ -458,6 +458,40 @@ do
         and tip.lines[2] == "Current | 11G 23S 45K", "the gold DataText tooltip did not show the full amount")
     W.Fire(slots[1], "OnLeave")
     assert(not tip.shown, "leaving a DataText kept its tooltip")
+    local original = G.GetInventoryItemDurability
+    G.GetInventoryItemDurability = function(slot)
+        if slot == 1 then return 0, 100 end
+        if slot == 3 then return 10, 40 end
+        if slot == 5 then return 50, 50 end
+        if slot == 16 then return W.secret, 100 end
+    end
+    G.GetInventoryItemID = function(_, slot) if slot == 1 then return 123 end end
+    G.C_Item = G.C_Item or {}
+    G.C_Item.GetItemNameByID = function(id) if id == 123 then return "Cracked Helm" end end
+    W.Fire(slots[2], "OnEnter")
+    local details = table.concat(tip.lines, "\n")
+    assert(tip.owner == slots[2] and details:find("Cracked Helm | 0%", 1, true)
+        and details:find("Equipment slot 3 | 25%", 1, true) and not details:find("100%", 1, true),
+        "Durability should identify broken and worn gear and skip new or unreadable items")
+    W.Fire(slots[2], "OnLeave")
+    assert(not tip.shown, "leaving Durability left its tooltip pinned")
+    W.Fire(slots[2], "OnEnter")
+    W.Fire(slots[2], "OnHide")
+    assert(not tip.shown, "hiding Durability without OnLeave left its tooltip pinned")
+    W.Fire(slots[2], "OnEnter")
+    S.Apply("dataTexts")
+    assert(not tip.shown, "moving or refreshing Durability left its tooltip pinned")
+    G.GetInventoryItemDurability = original
+    local config = M.config
+    config.bar1FullScreen, config.bar2Enabled, config.bar2Slot1 = true, true, 4
+    S.Apply("dataTexts")
+    assert(M.bars[1].frame:GetFrameStrata() == "LOW" and M.bars[2].frame:GetFrameStrata() == "MEDIUM",
+        "a full-screen bar can intercept a floating bar's hover")
+    config.bar1Layer = 12
+    S.Apply("dataTexts")
+    assert(M.bars[1].frame:GetFrameStrata() == "MEDIUM", "auto priority overrode the explicit bar layer")
+    config.bar1FullScreen, config.bar1Layer, config.bar2Enabled = false, -1, false
+    S.Apply("dataTexts")
 end
 money = W.secret
 W.Event("PLAYER_MONEY")

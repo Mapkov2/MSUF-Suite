@@ -292,8 +292,7 @@ local function InstallResolver(ctx, bars, choose)
 end
 
 local ACTION_ROW_Y, ACTION_HEIGHT = -42, 28
--- MoveWidget positions the dropdown 24 px below its hidden title.
-local SELECTOR_TITLE_Y = ACTION_ROW_Y + 24
+local SELECTOR_TITLE_Y = ACTION_ROW_Y + (W.DROPDOWN_FIELD_OFFSET or 24)
 
 local function FitNavigation(ctx, navigation, buttons)
     local width = navigation:GetWidth()

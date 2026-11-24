@@ -268,6 +268,27 @@ function Standard.Format(key)
     return label, value, severity
 end
 
+local SLOT_LABEL = {
+    [1] = HEADSLOT, [3] = SHOULDERSLOT, [5] = CHESTSLOT, [6] = WAISTSLOT, [7] = LEGSSLOT,
+    [8] = FEETSLOT, [9] = WRISTSLOT, [10] = HANDSSLOT, [16] = MAINHANDSLOT,
+    [17] = SECONDARYHANDSLOT, [18] = RANGEDSLOT,
+}
+local function DurabilityTooltip(tooltip, text)
+    for slot = 1, 19 do
+        local current, maximum = GetInventoryItemDurability(slot)
+        if Finite(current) and Finite(maximum) and current >= 0 and current < maximum then
+            local id = GetInventoryItemID("player", slot)
+            local name = Finite(id) and S.PublicText(C_Item.GetItemNameByID(id))
+            local label = name or SLOT_LABEL[slot] or S.Text("Equipment slot %d"):format(slot)
+            local ratio = current / maximum
+            local detail = string.format("%d%% (%d/%d)", floor(ratio * 100 + .5), current, maximum)
+            local low = ratio <= durabilityLimit
+            tooltip:AddDoubleLine(label, detail, 1, 1, 1, 1, low and .3 or 1, low and .3 or 1)
+        end
+    end
+    tooltip:AddLine(text or NO_VALUE, 1, 1, 1)
+end
+
 -- The detail lines of a built-in source below the tooltip title.
 function Standard.TooltipLines(tooltip, button, config)
     local key = button.source
@@ -293,6 +314,8 @@ function Standard.TooltipLines(tooltip, button, config)
         if Finite(home) and Finite(world) then
             tooltip:AddDoubleLine(TEXT.homeWorld, floor(home + .5) .. " / " .. Milliseconds(world))
         end
+    elseif key == "durability" then
+        DurabilityTooltip(tooltip, button.text)
     elseif key == "memory" then
         P.MemoryTooltip(tooltip)
     elseif key == "xp" then

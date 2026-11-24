@@ -625,7 +625,8 @@ NS.DataTextPresets = {
         sources = information },
     { id = "infoBottom", title = "Bottom information bar", description = "Everyday information across the bottom of your screen.",
         sources = information },
-    { id = "minimap", title = "Minimap companion", description = "A compact clock, FPS and latency bar.",
+    { id = "minimap", title = "Minimap companion",
+        description = "A compact clock, FPS and latency bar attached below the Suite minimap.",
         sources = { "clock", "fps", "latency" } },
     { id = "microMenu", title = "Micro menu button",
         description = "Quick access to the native game menus.", sources = { "microMenu" }, style = modernStyle },
@@ -714,8 +715,15 @@ function NS.DataTextPresetValues(id, bar, config)
             if key == "clock" then values[prefix .. "Slot" .. slot .. "Placement"] = NS.DataTextPlacement.CENTER end
         end
     elseif id == "minimap" then
-        values[prefix .. "Width"], values[prefix .. "Point"] = 240, 3
-        values[prefix .. "X"], values[prefix .. "Y"] = -20, -220
+        -- Attached below the Suite minimap and as wide as it (within the bar's
+        -- range); the free position below stands in while the map is off.
+        local map = NS.Suite and NS.Suite.Config("minimap")
+        local size = map and tonumber(map.size)
+        local width = spec.rules[prefix .. "Width"]
+        local low, high = width and width.min or 180, width and width.max or 900
+        values[prefix .. "Width"] = size and math.max(low, math.min(high, size)) or 240
+        values[prefix .. "Point"], values[prefix .. "X"], values[prefix .. "Y"] = 3, -20, -220
+        values[prefix .. "MinimapDock"], values[prefix .. "MinimapDockGap"] = true, 2
     elseif id == "microMenu" then
         values[prefix .. "Width"] = 180
     elseif id == "antique" then

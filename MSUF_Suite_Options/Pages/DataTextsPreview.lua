@@ -485,7 +485,7 @@ local function BindWheel(ui, frame)
 end
 
 local function ZoomButton(ui, label, tip, x, width, click)
-    local button = T.Button(ui.host, label, width, 23)
+    local button = P.PreviewCanvas.FitToolbarButton(T.Button(ui.host, label, width, 23))
     button:SetPoint("TOPRIGHT", ui.host, "TOPRIGHT", x, -8)
     button:SetScript("OnClick", click)
     HM.SkipHistoryCheckpoint(button)
@@ -542,13 +542,14 @@ local function BuildViewport(ui, chrome)
 end
 
 local function BuildZoomTools(ui)
-    ui.zoomOut = ZoomButton(ui, "-", "Zoom out", -176, 26, function() StepZoom(ui, -1) end)
+    ui.zoomFit = ZoomButton(ui, "Fit", "Fit", -49, 54, function() SetZoom(ui) end)
+    local extra = ui.zoomFit:GetWidth() - 54
+    ui.zoomOut = ZoomButton(ui, "-", "Zoom out", -176 - extra, 26, function() StepZoom(ui, -1) end)
     ui.zoomLabel = T.Font(ui.host, "GameFontDisableSmall", "", T.colors.muted)
     ui.zoomLabel:SetPoint("LEFT", ui.zoomOut, "RIGHT", 3, 0)
     ui.zoomLabel:SetSize(38, 23)
     ui.zoomLabel:SetJustifyH("CENTER")
-    ui.zoomIn = ZoomButton(ui, "+", "Zoom in", -106, 26, function() StepZoom(ui, 1) end)
-    ui.zoomFit = ZoomButton(ui, "Fit", "Fit", -49, 54, function() SetZoom(ui) end)
+    ui.zoomIn = ZoomButton(ui, "+", "Zoom in", -106 - extra, 26, function() StepZoom(ui, 1) end)
     ui.zoomOne = ZoomButton(ui, "1:1", "Preview", -12, 34, function() SetZoom(ui, 1) end)
 end
 

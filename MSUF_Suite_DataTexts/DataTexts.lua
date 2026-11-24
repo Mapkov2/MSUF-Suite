@@ -488,6 +488,9 @@ local function RefreshBar(index, mapAnchor)
     local bar = Bars.Create(index)
     Bars.EnsureSlots(bar, c)
     local frame, layer = bar.frame, c[bar.prefix .. "Layer"]
+    -- An automatic full-screen strip sits underneath floating DataText bars.
+    local strata = (layer == nil or layer < 0) and c[bar.prefix .. "FullScreen"] and "LOW" or "MEDIUM"
+    if frame:GetFrameStrata() ~= strata then frame:SetFrameStrata(strata) end
     local restored = S.ApplyOwnedLayer(frame, layer)
     Bars.SetVisibilityCallbacks(bar, not M.paused)
     S.ApplyOwnedChildLayer(bar.visual, frame, layer, 1, restored)
@@ -584,7 +587,9 @@ function M:Refresh(resample)
         if not NS.startingBeforeLockdown then self.refreshAfterCombat = true end
         return
     end
-    -- Popup rows describe the old binding; they cannot survive a rebind.
+    -- Hover content describes the old binding and position.
+    local hovered = Actions.hovered
+    if hovered then Bars.HideTooltip(hovered) end
     Actions.ClosePopup()
     if self.config.trackAltGold then GoldLedger.Capture() end
     RefreshLayout(self)
