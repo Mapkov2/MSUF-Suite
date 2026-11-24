@@ -108,7 +108,7 @@ function API.AddPreset(key, name)
     local ok, problem = F.Editable()
     if not ok then return nil, problem end
     local preset = Data.Preset(key)
-    if not preset then return nil, NOT_FOUND end
+    if not preset then return nil, S.Text(NOT_FOUND) end
     return F.NewFlyout(name or preset.flyoutName, Copy(preset.entries), Icon(C_Item.GetItemIconByID(preset.iconItem)), preset.key)
 end
 
@@ -123,7 +123,12 @@ function API.Delete(id)
     if not flyout then return nil, position end
     F.ScanMacros()
     local index = F.macroOf[id]
-    if index then DeleteMacro(index) end
+    if index then
+        local name = PublicText(GetMacroInfo(index))
+        local update = name and GetMacroIndexByName(name) == index
+        DeleteMacro(index)
+        if update and AB.Virtual then AB.Virtual.UpdateFlyoutName(name, nil) end
+    end
     table.remove(F.Store().list, position)
     return F.Changed()
 end
@@ -132,11 +137,20 @@ function API.Rename(id, name)
     local flyout, problem = F.Editable(id)
     if not flyout then return nil, problem end
     name = Data.CleanName(name)
-    if not name then return nil, "Enter a name for the flyout." end
+    if not name then return nil, S.Text("Enter a name for the flyout.") end
+    F.ScanMacros()
+    local oldName = flyout.name
+    local oldMacro = F.macroOf[id]
+    local oldMacroName = oldMacro and PublicText(GetMacroInfo(oldMacro))
+    local update = oldMacroName and GetMacroIndexByName(oldMacroName) == oldMacro
     flyout.name = name
-    if F.macroOf[id] then
+    if oldMacro then
         local index, failure = F.WriteMacro(flyout)
-        if not index then return nil, failure end
+        if not index then
+            flyout.name = oldName
+            return nil, failure
+        end
+        if update and AB.Virtual and name ~= oldMacroName then AB.Virtual.UpdateFlyoutName(oldMacroName, name) end
     end
     return F.Changed()
 end
@@ -149,47 +163,74 @@ function API.SetOwned(id, on)
 end
 
 ------------------------------------------------------------------ entries
-function API.AddEntry(id, entry)
+local function ExcludeAutoFood(flyout, entry)
+    if entry.kind ~= "item" then return end
+    for _, saved in ipairs(flyout.entries) do
+        if saved.kind == "bag" then
+            flyout.excludedFood = flyout.excludedFood or {}
+            flyout.excludedFood[entry.id] = true
+            return
+        end
+    end
+end
+
+function API.AddEntry(id, entry, before)
     local flyout, problem = F.Editable(id)
     if not flyout then return nil, problem end
     entry = Data.CleanEntry(entry)
-    if not entry then return nil, "This cannot go into a flyout." end
+    if not entry then return nil, S.Text("This cannot go into a flyout.") end
     for _, kept in ipairs(flyout.entries) do
-        if Data.SameEntry(kept, entry) then return nil, "This flyout already holds it." end
+        if Data.SameEntry(kept, entry) then return nil, S.Text("This flyout already holds it.") end
     end
-    if #flyout.entries >= Data.MAX_ENTRIES then return nil, "This flyout is full." end
-    flyout.entries[#flyout.entries + 1] = entry
+    if #flyout.entries >= Data.MAX_ENTRIES then return nil, S.Text("This flyout is full.") end
+    local position = before and flyout.entries[before.position] == before.source and before.position or #flyout.entries + 1
+    table.insert(flyout.entries, position, entry)
+    ExcludeAutoFood(flyout, entry)
     return Saved(flyout)
 end
 
 -- What the cursor holds: a spell, item, toy, mount or macro.
-function API.AddCursor(id)
+function API.AddCursor(id, before)
     local entry, problem = F.CursorEntry()
-    if not entry then return nil, problem or "Pick up a spell, item, toy, mount or macro first." end
-    local ok, failure = API.AddEntry(id, entry)
+    if not entry then return nil, problem or S.Text("Pick up a spell, item, toy, mount or macro first.") end
+    local ok, failure = API.AddEntry(id, entry, before)
     if ok then ClearCursor() end
     return ok, failure
+end
+
+function API.PickupEntry(id, entry)
+    local flyout, problem = F.Editable(id)
+    if not flyout then return nil, problem end
+    if not entry or flyout.entries[entry.position] ~= entry.source then return nil, S.Text(NOT_FOUND) end
+    local held = GetCursorInfo()
+    if not Public(held) or held ~= nil then return end
+    S.Dispatch(AB.Virtual.PickupNative, entry)
+    local picked = F.CursorEntry()
+    if not picked or not Data.SameEntry(picked, entry) then return end
+    ExcludeAutoFood(flyout, entry)
+    if entry.source.kind ~= "bag" then table.remove(flyout.entries, entry.position) end
+    return Saved(flyout)
 end
 
 -- "item:4540", "spell:8690", "toy:…", "mount:…" or a bare number (an item
 -- when the client knows one, else a spell).
 function API.AddText(id, text)
-    if type(text) ~= "string" then return nil, "Enter an item or spell ID, for example item:4540." end
+    if type(text) ~= "string" then return nil, S.Text("Enter an item or spell ID, for example item:4540.") end
     local kind, number = text:lower():match("^%s*(%a+)%s*:%s*(%d+)%s*$")
     number = tonumber(number or text:match("^%s*(%d+)%s*$"))
-    if not number then return nil, "Enter an item or spell ID, for example item:4540." end
+    if not number then return nil, S.Text("Enter an item or spell ID, for example item:4540.") end
     if not kind then
         kind = Finite((C_Item.GetItemInfoInstant(number))) and "item" or "spell"
         if kind == "item" and Yes(PlayerHasToy(number)) then kind = "toy" end
     end
-    if kind == "spell" and not PublicText(C_Spell.GetSpellName(number)) then return nil, "No spell has this ID." end
+    if kind == "spell" and not PublicText(C_Spell.GetSpellName(number)) then return nil, S.Text("No spell has this ID.") end
     return API.AddEntry(id, { kind = kind, id = number })
 end
 
 function API.RemoveEntry(id, position)
     local flyout, problem = F.Editable(id)
     if not flyout then return nil, problem end
-    if not flyout.entries[position] then return nil, NOT_FOUND end
+    if not flyout.entries[position] then return nil, S.Text(NOT_FOUND) end
     table.remove(flyout.entries, position)
     return Saved(flyout)
 end
@@ -199,8 +240,8 @@ function API.MoveEntry(id, position, delta)
     if not flyout then return nil, problem end
     local target = position + delta
     local entries = flyout.entries
-    if not entries[position] or not entries[target] then return nil, NOT_FOUND end
-    entries[position], entries[target] = entries[target], entries[position]
+    if not entries[position] or not entries[target] then return nil, S.Text(NOT_FOUND) end
+    table.insert(entries, target, table.remove(entries, position))
     return Saved(flyout)
 end
 
@@ -213,8 +254,104 @@ function API.Pickup(id)
     if not index then return nil, failure end
     ClearCursor()
     PickupMacro(index)
-    EventRegistry:TriggerEvent("MSUFSuite.ActionBars.FlyoutsChanged")
-    return true
+    return F.Changed()
+end
+
+local function NativeSlot(rec)
+    local slot = rec.button:GetAttribute("action")
+    if Finite(slot) and slot >= 1 and slot <= 180 and slot % 1 == 0 then return slot end
+end
+
+function API.ButtonFlyout(rec)
+    if rec.virtual then
+        local index = rec.button:GetAttribute("macro")
+        return Finite(index) and F.flyoutOfMacro[index] or nil
+    end
+    local slot = NativeSlot(rec)
+    return slot and F.SlotOwner(slot) or nil
+end
+
+local function ButtonEntry(rec)
+    if rec.virtual then
+        local entry = rec.virtualAction
+        return Data.CleanEntry(entry), entry ~= nil
+    end
+    local slot = NativeSlot(rec)
+    if not slot then return nil, true end
+    local filled = HasAction(slot)
+    if not Public(filled) then return nil, true end
+    if not filled then return nil, false end
+    local kind, id, sub = GetActionInfo(slot)
+    if not Public(kind) or not Public(id) or not Public(sub) then return nil, true end
+    if kind == "macro" then
+        if sub == "spell" or sub == "item" then
+            id = PublicText(GetActionText(slot))
+        else
+            local name = Finite(id) and PublicText(GetMacroInfo(id))
+            id = name and GetMacroIndexByName(name) == id and name or nil
+        end
+    elseif kind == "item" and Finite(id) and Yes(PlayerHasToy(id)) then
+        kind = "toy"
+    end
+    return Data.CleanEntry({ kind = kind, id = id }), true
+end
+
+local function PlaceOnButton(rec, flyout, cursor)
+    local slot = not rec.virtual and NativeSlot(rec)
+    if not slot and not rec.virtual then return nil, S.Text("The flyout could not be placed on this button.") end
+    local index, problem = F.WriteMacro(flyout)
+    if not index then return nil, problem end
+    if rec.virtual then
+        if AB.Virtual.SetFlyout(rec, flyout.name) then
+            if cursor then ClearCursor() end
+            return true
+        end
+    else
+        if cursor then ClearCursor() end
+        PickupMacro(index)
+        local kind, picked = GetCursorInfo()
+        if Public(kind) and Public(picked) and kind == "macro" and picked == index then PlaceAction(slot) end
+        if F.SlotOwner(slot) == flyout.id then
+            ClearCursor()
+            return true
+        end
+        ClearCursor()
+        if cursor then S.Dispatch(AB.Virtual.PickupNative, cursor) end
+    end
+    return nil, S.Text("The flyout could not be placed on this button.")
+end
+
+local function AutoName()
+    local id = F.Store().nextID
+    local name = Data.CleanName(S.Text("Flyout %d"):format(id))
+    local index = name and GetMacroIndexByName(name)
+    if Finite(index) and index == 0 then return name end
+    for suffix = 1, Constants.MacroConsts.MAX_ACCOUNT_MACROS + Constants.MacroConsts.MAX_CHARACTER_MACROS do
+        name = ("MSUF%d-%d"):format(id, suffix)
+        index = GetMacroIndexByName(name)
+        if Finite(index) and index == 0 then return name end
+    end
+end
+
+function API.DropOnButton(rec)
+    local ok, problem = F.Editable()
+    if not ok then return nil, problem end
+    F.ScanMacros()
+    local id = API.ButtonFlyout(rec)
+    if id then
+        ok, problem = API.AddCursor(id)
+        if ok then return id end
+        return nil, problem
+    end
+    local cursor
+    cursor, problem = F.CursorEntry()
+    if not cursor then return nil, problem or S.Text("Pick up a spell, item, toy, mount or macro first.") end
+    local old, filled = ButtonEntry(rec)
+    if filled and not old then return nil, S.Text("Choose an empty button or a spell, item or macro button.") end
+    local entries = old and { old, cursor } or { cursor }
+    return F.NewFlyout(AutoName(), entries, nil, nil, function(flyout)
+        return PlaceOnButton(rec, flyout, cursor)
+    end)
 end
 
 -- Places the flyout on the first empty button of an action bar (1 to 9);
@@ -240,7 +377,6 @@ function API.Place(id, index)
     PickupMacro(macro)
     PlaceAction(slot)
     ClearCursor()
-    F.MapSlot(slot)
-    EventRegistry:TriggerEvent("MSUFSuite.ActionBars.FlyoutsChanged")
+    F.Changed()
     return true, number
 end

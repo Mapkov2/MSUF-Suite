@@ -8,6 +8,33 @@ local _, NS = ...
 local Flyouts = { VERSION = 1, MAX_FLYOUTS = 40, MAX_ENTRIES = 120, MAX_SHOWN = 24, MAX_NAME = 16, PER_LINE = 12 }
 NS.ActionBarFlyouts = Flyouts
 
+local ARROW_MEDIA = "Interface\\AddOns\\MSUF_Suite\\Media\\FlyoutArrow"
+local ARROW_TEXTURES = { [2] = ARROW_MEDIA .. "Modern", [3] = ARROW_MEDIA .. "Dark", [4] = ARROW_MEDIA .. "Forever" }
+local ARROW_LAYOUT = {
+    UP = { "TOP", 0, -1, 0 },
+    DOWN = { "BOTTOM", 0, 1, math.pi },
+    LEFT = { "LEFT", 1, 0, math.pi / 2 },
+    RIGHT = { "RIGHT", -1, 0, -math.pi / 2 },
+}
+
+function Flyouts.StyleArrow(arrow, style, size)
+    local texture = ARROW_TEXTURES[style]
+    if texture then
+        arrow:SetTexture(texture)
+        arrow:SetSize(size, size)
+    else
+        arrow:SetAtlas("ui-hud-actionbar-pageuparrow-up", false)
+        arrow:SetSize(size, math.floor(size * 11 / 14 + .5))
+    end
+end
+
+function Flyouts.PositionArrow(arrow, anchor, direction)
+    local layout = ARROW_LAYOUT[direction] or ARROW_LAYOUT.UP
+    arrow:ClearAllPoints()
+    arrow:SetPoint(layout[1], anchor, layout[1], layout[2], layout[3])
+    arrow:SetRotation(layout[4])
+end
+
 -- Entry kinds. "bag" is a group the runtime fills from the bags (food: every
 -- usable Food & Drink item the character carries).
 Flyouts.KINDS = { spell = true, item = true, toy = true, mount = true, macro = true, bag = true }
@@ -125,6 +152,13 @@ function Flyouts.CleanFlyout(flyout)
     local clean = { id = flyout.id, name = name, owned = flyout.owned ~= false, entries = {},
         icon = Whole(flyout.icon, 2147483647) and flyout.icon or nil,
         preset = type(flyout.preset) == "string" and #flyout.preset <= 32 and flyout.preset or nil }
+    if type(flyout.excludedFood) == "table" then
+        local excluded = {}
+        for id, value in pairs(flyout.excludedFood) do
+            if value == true and Whole(id, 2147483647) then excluded[id] = true end
+        end
+        if next(excluded) then clean.excludedFood = excluded end
+    end
     if type(flyout.entries) == "table" then
         for _, entry in ipairs(flyout.entries) do
             local valid = Flyouts.CleanEntry(entry)

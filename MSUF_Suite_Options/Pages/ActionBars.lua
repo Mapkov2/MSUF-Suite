@@ -317,7 +317,8 @@ local function BuildSelection(ctx, b, attachCopy)
             meta = P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"),
             rule = { key = "editor.copyTo", label = "Copy To" } },
     }
-    local find = BuildPreview(ctx, body, narrow and -148 or -110, width, 132, narrow)
+    local previewHeight, flyoutRoom = 132, narrow and 48 or 64
+    local find = BuildPreview(ctx, body, narrow and -148 or -110, width, previewHeight, narrow)
     function ctx.RefreshActionBarScope()
         local shared = P.ActionBarMenu.IsShared(ctx)
         local title = HM.GetControlTitle(picker)
@@ -328,7 +329,16 @@ local function BuildSelection(ctx, b, attachCopy)
             copyButton:SetShown(not shared)
             if shared then copyTo.Hide() end
         end
-        P.ActionBarPreview.RefreshScope(ctx._msufSuiteActionBarPreview)
+        local preview = ctx._msufSuiteActionBarPreview
+        local extra = toolbar and P.ActionBarMenu.IsFlyouts(ctx) and flyoutRoom or 0
+        if preview.height ~= previewHeight + extra then
+            preview.height = previewHeight + extra
+            preview.host:SetHeight(preview.height)
+            HM.SetFixedPreviewHeight(body, height + extra)
+            body:SetHeight(height + extra)
+            if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
+        end
+        P.ActionBarPreview.RefreshScope(preview)
     end
     M.TrackRefresh(ctx, ctx.RefreshActionBarScope)
     if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end

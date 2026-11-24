@@ -96,6 +96,18 @@ function S.ActionBarPreviewTint(index, ordinal)
     return rec.outOfRange and "rangeColor" or rec.usable and AB.TINT_KEYS[rec.usable] or nil
 end
 
+-- Reads the existing marker and direction for the Flyouts tab only.
+function S.ActionBarPreviewFlyout(index)
+    local bar = M.active and AB.bars[index]
+    local rec = bar and bar.owned and bar.buttons[1]
+    local direction = rec and rec.button:GetAttribute("flyoutDirection")
+    if not S.Public(direction) or type(direction) ~= "string" then return end
+    for i = 1, bar.count or 0 do
+        if bar.buttons[i].flyoutMarkerShown then return direction, i end
+    end
+    return direction
+end
+
 -- Layout contract shared with the menu preview. n buttons, R = clamp(rows).
 -- Rows first: perRow = ceil(n/R), rows = ceil(n/perRow). Columns first:
 -- perColumn = R, columns = ceil(n/R), rows = min(R, n).
@@ -375,8 +387,10 @@ function AB.LayoutBar(bar)
     if bar.owned then
         local direction = FLYOUT_ATTRIBUTE[config[keys.FlyoutDirection]] or AutomaticFlyout(header, columns, rows)
         for i = 1, #bar.buttons do
-            local button = bar.buttons[i].button
+            local record = bar.buttons[i]
+            local button = record.button
             if button:GetAttribute("flyoutDirection") ~= direction then button:SetAttribute("flyoutDirection", direction) end
+            if record.flyoutMarker then AB.FlyoutFrames.LayoutMarker(record, direction) end
             button:EnableMouse(mouse)
         end
         header:SetAttribute("count", count)

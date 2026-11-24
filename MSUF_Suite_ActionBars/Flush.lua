@@ -305,6 +305,7 @@ end
 local function NativeFullWalk()
     WalkNative(NativeColor)
     if M.config.procGlow == PROC_PIXEL then WalkNative(GlowCheck) end
+    if AB.flyoutMarkers then AB.Flyouts.RefreshMarkers() end
 end
 
 -- The uncapped paint kinds, in this order.

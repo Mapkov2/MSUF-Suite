@@ -26,6 +26,11 @@ function Page.IsShared(ctx)
     return (workspace and workspace.selected or selectedTab) == "shared"
 end
 
+function Page.IsFlyouts(ctx)
+    local workspace = ctx._msufSuiteActionBarWorkspace
+    return (workspace and workspace.selected or selectedTab) == "flyouts"
+end
+
 local function GroupFor(sectionId)
     local suffix = sectionId:match("^suite_actionbars_(.+)$")
     for _, spec in ipairs(Groups()) do
@@ -42,11 +47,14 @@ end
 
 local function Choose(workspace, key)
     if not workspace.groups[key] then return end
+    local changed = workspace.selected ~= key and (workspace.selected == "flyouts" or key == "flyouts")
     workspace.selected, selectedTab = key, key
     for id, group in pairs(workspace.groups) do group.frame:SetShown(id == key) end
     if workspace.selector then workspace.selector:SetValue(key) end
     UpdateHeight(workspace)
     workspace.ctx.RefreshActionBarScope()
+    local preview = workspace.ctx._msufSuiteActionBarPreview
+    if changed and preview then preview.Paint() end
 end
 
 local function NewWorkspace(ctx, builder)

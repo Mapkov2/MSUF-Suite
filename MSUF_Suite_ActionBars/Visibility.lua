@@ -31,7 +31,7 @@ for _, bit in ipairs({ 2, 4, 8, 16 }) do
         [false] = 'self:RunAttribute("msuf-reveal",' .. bit .. ',false)',
     }
 end
--- What Lua last set for bits 2, 8 and 16 (nil: unknown). Bit 4 is also set by
+-- What Lua last set for its reveal bits (nil: unknown). Bit 4 is also set by
 -- the restricted drag snippet, so it is never remembered; secureReveal says
 -- it may be set and Lua has not cleared it since.
 local revealed = {}
@@ -341,8 +341,9 @@ end
 -- combat drags from suite buttons use the secure bit 4 instead.
 function AB.ApplyDrag()
     if AB.panelPending and not NS.IsCombatLocked() then AB.SyncPanelReveal() end
-    local kind = GetCursorInfo()
+    local kind, id = GetCursorInfo()
     local dragging = S.Public(kind) and PLACEABLE[kind] or false
+    if dragging or AB.flyoutDrag then AB.FlyoutEdit.CursorChanged(kind, id) end
     AB.dragging = dragging
     if dragging then secureReveal = true end
     if NS.IsCombatLocked() then
@@ -372,8 +373,11 @@ function AB.CursorChanged()
     -- A pickup from a suite button sets bit 4 in restricted code; the cursor
     -- holds something placeable at this event even if the drag is over
     -- before the settle runs.
-    local kind = GetCursorInfo()
-    if not S.Public(kind) or PLACEABLE[kind] then secureReveal = true end
+    local kind, id = GetCursorInfo()
+    local readable = S.Public(kind)
+    local dragging = readable and PLACEABLE[kind]
+    if dragging or AB.flyoutDrag then AB.FlyoutEdit.CursorChanged(kind, id) end
+    if not readable or dragging then secureReveal = true end
     if AB.settling then return end
     AB.settling = true
     C_Timer.After(0.05, Settle)

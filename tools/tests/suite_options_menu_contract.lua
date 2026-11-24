@@ -1121,6 +1121,31 @@ do
             and bars.tabControls[1].segment.values[1].value == "shared",
             "All action bars must be the first tab and the initial workspace")
         local preview = bars._msufSuiteActionBarPreview
+        local readFlyout = S.ActionBarPreviewFlyout
+        S.ActionBarPreviewFlyout = function() return "UP", 3 end
+        workspace.select("flyouts")
+        local sample = assert(preview.flyout, "Flyouts tab lacks a sample")
+        assert(preview.host:GetHeight() == 196 and bars.fixedPreview.record.heightResolver() == 358,
+            "open sample did not reserve room in the fixed preview")
+        assert(preview.flyoutTile == preview.tiles[3], "preview missed the assigned launcher")
+        assert(sample:IsShown() and sample.arrow:IsShown() and sample.entries[1].count:IsShown(), "missing Flyout art or counts")
+        local oldEntrySize = sample.entries[1]:GetWidth()
+        cfg.flyoutArrowStyle, cfg.flyoutArrowSize, cfg.flyoutButtonScale, cfg.bar1FlyoutDirection = 4, 20, 125, 5
+        M.RequestRefresh()
+        assert(sample.arrow.texture:match("FlyoutArrowForever$") and sample.arrow:GetWidth() == 20, "preview arrow was not restyled")
+        assert(sample.entries[1]:GetWidth() > oldEntrySize and sample.entries[1].points[1][3] == "TOPRIGHT", "sample did not resize or turn")
+        cfg.flyoutArrow, cfg.flyoutStackCounts = false, false
+        S.ActionBarPreviewFlyout = function() return "UP" end
+        M.RequestRefresh()
+        assert(sample:IsShown() and not sample.arrow:IsShown() and not sample.entries[1].count:IsShown(), "preview kept hidden overlays")
+        assert(preview.flyoutTile == preview.tiles[3], "turning the arrow off moved the preview")
+        S.ActionBarPreviewFlyout = readFlyout
+        for _, key in ipairs({ "flyoutArrow", "flyoutArrowSize", "flyoutArrowStyle", "flyoutButtonScale", "flyoutStackCounts",
+            "bar1FlyoutDirection" }) do cfg[key] = before[key] end
+        workspace.select("shared")
+        assert(not sample:IsShown(), "flyout sample leaked into another tab")
+        assert(preview.host:GetHeight() == 132 and bars.fixedPreview.record.heightResolver() == 294,
+            "leaving Flyouts did not restore the preview height")
         local copy = Control("editor.copyTo")
         assert(Control("editor.selected")._msuf2Title.text == optionsNS.Tr("Preview bar")
             and preview.status.text == optionsNS.Tr("Shared settings affect every action bar.")

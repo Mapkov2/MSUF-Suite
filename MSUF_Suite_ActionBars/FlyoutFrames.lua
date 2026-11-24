@@ -16,60 +16,25 @@ AB.FlyoutFrames = Frames
 local Public, Finite = S.Public, S.Finite
 local Data = NS.ActionBarFlyouts
 Frames.OPENER = "MSUFSuiteFlyouts"
--- An open flyout waits this long for the mouse in combat; out of combat a
--- click anywhere else closes it, like Blizzard's spell flyouts.
+-- In combat the client closes the flyout after the mouse leaves.
 local COMBAT_WAIT = 4
 local SECURE_ATTRIBUTES = { "spell", "item", "toy", "macro" }
 local TOOLTIP = AB.ENUM.TOOLTIP
-
-local opener, watcher, openBox
+local opener, openCountBox
 local boxes = {}
 
--- The opener's click handler (SecureHandlerClickTemplate): the mouse button
--- name is the flyout id. Slot and macro owners are attributes the data side
--- writes out of combat ("s<slot>", "m<macro index>").
-local OPEN = [[
-local id=tonumber(button)
-if not id or not self:GetAttribute("enabled") then return end
-local open=self:GetAttribute("openid")
-self:SetAttribute("openid",nil)
-if open then
-    local current=self:GetFrameRef("c"..open)
-    if current and current:IsShown() then
-        current:Hide()
-        if open==id then return end
-    end
-end
-local box=self:GetFrameRef("c"..id)
-local count=box and box:GetAttribute("count") or 0
-if count<1 then return end
-local anchor,first
-for i=1,self:GetAttribute("candidates") or 0 do
-    local b=self:GetFrameRef("b"..i)
-    if b and b:IsVisible() then
-        local slot,hit=b:GetAttribute("action")
-        if slot then
-            hit=self:GetAttribute("s"..slot)==id
-        elseif b:GetAttribute("type")=="macro" and b:GetAttribute("macro") then
-            hit=self:GetAttribute("m"..b:GetAttribute("macro"))==id
-        end
-        if hit then
-            if b:IsUnderMouse() then
-                anchor=b
-                break
-            end
-            first=first or b
-        end
-    end
-end
-anchor=anchor or first or self
+local LAYOUT = [[
 local dir=anchor:GetAttribute("flyoutDirection") or "UP"
-local size=anchor~=self and anchor:GetWidth() or 36
-if size<16 then size=16 elseif size>80 then size=80 end
+local size=anchor:GetWidth()
+if size<2 then size=36 elseif size<16 then size=16 elseif size>80 then size=80 end
+size=floor(size*(box:GetAttribute("entryScale") or 1)+0.5)
+if size<16 then size=16 end
 local per=box:GetAttribute("perline") or 12
 local step=size+4
 local lines=floor((count-1)/per)+1
+if lines<1 then lines=1 end
 local across=count<per and count or per
+if across<1 then across=1 end
 local width,height=across*step+2,lines*step+2
 if dir=="UP" or dir=="DOWN" then width,height=height,width end
 box:SetWidth(width)
@@ -90,9 +55,58 @@ for j=1,count do
     elseif dir=="RIGHT" then e:SetPoint("TOPLEFT",box,"TOPLEFT",along,-side)
     else e:SetPoint("BOTTOMLEFT",box,"BOTTOMLEFT",side,along) end
 end
+]]
+
+local REFLOW = [[
+local box=self
+local anchor=self:GetFrameRef("layoutAnchor")
+local count=self:GetAttribute("count") or 0
+]] .. LAYOUT
+
+-- The opener's click handler (SecureHandlerClickTemplate): the mouse button
+-- name is the flyout id. Sample the actual slot's action on the click.
+-- Macro owners ("m<macro index>") were prepared out of combat.
+local OPEN = [[
+local id=tonumber(button)
+if not id or not self:GetAttribute("enabled") then return end
+local open=self:GetAttribute("openid")
+self:SetAttribute("openid",nil)
+if open then
+    local current=self:GetFrameRef("c"..open)
+    if current and current:IsShown() then
+        current:Hide()
+        if open==id then return end
+    end
+end
+local box=self:GetFrameRef("c"..id)
+local count=box and box:GetAttribute("count") or 0
+local combat=SecureCmdOptionParse("[combat] 1; 0")=="1"
+if not box or (combat and count<1) then return end
+local anchor,first
+for i=1,self:GetAttribute("candidates") or 0 do
+    local b=self:GetFrameRef("b"..i)
+    if b and b:IsVisible() then
+        local slot,hit=b:GetAttribute("action")
+        if slot then
+            local kind,macro,subtype=GetActionInfo(slot)
+            hit=kind=="macro" and macro and subtype~="spell" and subtype~="item" and self:GetAttribute("m"..macro)==id
+        elseif b:GetAttribute("type")=="macro" and b:GetAttribute("macro") then
+            hit=self:GetAttribute("m"..b:GetAttribute("macro"))==id
+        end
+        if hit then
+            if b:IsUnderMouse() then
+                anchor=b
+                break
+            end
+            first=first or b
+        end
+    end
+end
+anchor=anchor or first or self
+]] .. LAYOUT .. [[
 self:SetAttribute("openid",id)
 box:Show()
-if SecureCmdOptionParse("[combat] 1; 0")=="1" then
+if combat then
     box:RegisterAutoHide(]] .. COMBAT_WAIT .. [[)
     if anchor~=self then box:AddToAutoHide(anchor) end
 else
@@ -101,7 +115,11 @@ end
 ]]
 -- An entry closes its flyout once its own click ran (the post body needs a
 -- message from the pre body).
-local USED_PRE, USED_POST = [[return nil,true]], [[control:Hide()]]
+local USED_PRE = [[
+if self:GetAttribute("msufFlyoutDrop") then return false end
+return nil,true
+]]
+local USED_POST = [[control:Hide()]]
 
 ------------------------------------------------------------------ look
 local function FontSize(button)
@@ -153,21 +171,25 @@ local function ShowCooldown(button, entry)
     if ticking and began > 0 and length > 0 then swipe:SetCooldown(began, length) else swipe:Clear() end
 end
 
--- Count and cooldown, read when the flyout opens. A count goes straight to
--- the font string; only a readable zero greys the icon.
-local function Paint(button)
-    local entry = button.entry
-    if not entry then return end
-    Style(button)
+-- Counts can also change on a bag event while the flyout is visible.
+-- Only a readable zero greys the icon.
+local function PaintCount(button, entry)
     local empty = false
     if entry.item and entry.kind ~= "toy" then
         local count = C_Item.GetItemCount(entry.item, false, true)
-        button.count:SetText(count)
+        if AB.M.config.flyoutStackCounts ~= false then button.count:SetText(count) else button.count:SetText("") end
         empty = Public(count) and count == 0
     else
         button.count:SetText("")
     end
     button.icon:SetDesaturated(empty)
+end
+
+local function Paint(button)
+    local entry = button.entry
+    if not entry then return end
+    Style(button)
+    PaintCount(button, entry)
     ShowCooldown(button, entry)
 end
 
@@ -193,30 +215,20 @@ local function Leave(button)
     if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
 end
 
------------------------------------------------------------------- outside clicks
--- Out of combat a mouse press outside the open flyout and its button closes
--- it. The listener exists only while a flyout is open.
 local function Anchor(box)
     local _, relative = box:GetPoint(1)
     return relative
 end
 
-local function Outside()
-    local box = openBox
-    if not box or NS.IsCombatLocked() or box:IsMouseOver() then return end
+local function Reflow(box)
     local anchor = Anchor(box)
-    if anchor and anchor ~= opener and anchor:IsMouseOver() then return end
-    box:Hide()
+    if not anchor then return end
+    SecureHandlerSetFrameRef(box, "layoutAnchor", anchor)
+    SecureHandlerExecute(box, REFLOW)
 end
 
-local function Watch(box)
-    if not NS.Client.SupportsEvent("GLOBAL_MOUSE_DOWN") then return end
-    if not watcher then
-        watcher = S.CreateFrame("Frame")
-        watcher:SetScript("OnEvent", Outside)
-    end
-    openBox = box
-    watcher:RegisterEvent("GLOBAL_MOUSE_DOWN")
+local function EntryScale()
+    return (AB.M.config.flyoutButtonScale or 100) / 100
 end
 
 -- The bar the flyout opened on decides its tooltips.
@@ -229,15 +241,57 @@ end
 local function Shown(box)
     box.tooltip = TooltipMode(box)
     for index = 1, box.count or 0 do S.Dispatch(Paint, box.entries[index]) end
-    if not NS.IsCombatLocked() then Watch(box) end
+    if not NS.InCombat() then
+        openCountBox = box.hasItemCounts and box or nil
+        AB.Flyouts.WatchOpen(box.flyoutID, box.hasItemCounts)
+        AB.FlyoutEdit.FlyoutOpened(box)
+    end
 end
 
 local function Hidden(box)
-    if openBox == box then
-        openBox = nil
-        if watcher then watcher:UnregisterEvent("GLOBAL_MOUSE_DOWN") end
-    end
+    if openCountBox == box then openCountBox = nil end
+    AB.Flyouts.WatchOpen(nil)
+    AB.FlyoutEdit.FlyoutClosed(box)
     for _, button in ipairs(box.entries) do Leave(button) end
+end
+
+function Frames.RefreshBagCounts()
+    local box = openCountBox
+    if not box then return end
+    for position = 1, box.count do
+        local button = box.entries[position]
+        local entry = button.entry
+        if entry.item and entry.kind ~= "toy" then PaintCount(button, entry) end
+    end
+end
+
+local function Receive(button)
+    AB.FlyoutEdit.DropIn(button:GetParent(), button.entry)
+end
+
+local function Drag(button)
+    if NS.InCombat() or not button.entry then return end
+    if not (AB.grid:GetAttribute("unlocked") or IsModifiedClick("PICKUPACTION")) then return end
+    Leave(button)
+    S.ActionBarFlyouts.PickupEntry(button:GetParent().flyoutID, button.entry)
+end
+
+local function BeforeClick(button, _, down)
+    if down or NS.InCombat() then return end
+    local kind = GetCursorInfo()
+    if not Public(kind) or kind ~= nil then button:SetAttribute("msufFlyoutDrop", true) end
+end
+
+local function AfterClick(button)
+    if NS.InCombat() or not button:GetAttribute("msufFlyoutDrop") then return end
+    button:SetAttribute("msufFlyoutDrop", nil)
+    Receive(button)
+end
+
+local function BeforeOpen(_, mouse)
+    local id = tonumber(mouse)
+    local box = id and boxes[id]
+    if box and not box:IsShown() then AB.Flyouts.Prepare(id) end
 end
 
 ------------------------------------------------------------------ frames
@@ -251,6 +305,7 @@ local function Opener()
     opener:EnableMouse(false)
     opener:RegisterForClicks("AnyUp", "AnyDown")
     opener:SetAttribute("_onclick", OPEN)
+    opener:SetScript("PreClick", BeforeOpen)
     return opener
 end
 
@@ -260,8 +315,10 @@ local function NewBox(id)
     box:SetClampedToScreen(true)
     box:EnableMouse(false)
     box:SetAttribute("perline", Data.PER_LINE)
+    box:SetAttribute("entryScale", EntryScale())
+    box:SetAttribute("count", 0)
     box:Hide()
-    box.entries, box.count = {}, 0
+    box.entries, box.count, box.flyoutID = {}, 0, id
     box:HookScript("OnShow", Shown)
     box:HookScript("OnHide", Hidden)
     SecureHandlerSetFrameRef(Opener(), "c" .. id, box)
@@ -276,6 +333,7 @@ end
 local function NewEntry(box, index)
     local button = S.CreateFrame("Button", nil, box, "SecureActionButtonTemplate")
     button:RegisterForClicks("AnyUp")
+    button:RegisterForDrag("LeftButton", "RightButton")
     button:SetAttribute("useOnKeyDown", false)
     button:SetSize(36, 36)
     button.slot = Region(button, "BACKGROUND")
@@ -290,10 +348,20 @@ local function NewEntry(box, index)
     button:SetPushedTexture(button.press)
     button.cooldown = S.CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
-    button.count = S.CreateFontString(button.cooldown, nil, "OVERLAY")
+    -- A cleared cooldown can hide its frame. Keep stack text above the swipe
+    -- on an always-visible sibling, like the count on a regular action.
+    local labels = S.CreateFrame("Frame", nil, button)
+    labels:SetAllPoints(button)
+    labels:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
+    labels:EnableMouse(false)
+    button.count = S.CreateFontString(labels, nil, "OVERLAY")
     button.count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
     button:SetScript("OnEnter", Enter)
     button:SetScript("OnLeave", Leave)
+    button:SetScript("OnDragStart", Drag)
+    button:SetScript("OnReceiveDrag", Receive)
+    button:SetScript("PreClick", BeforeClick)
+    button:SetScript("PostClick", AfterClick)
     SecureHandlerWrapScript(button, "OnClick", box, USED_PRE, USED_POST)
     SecureHandlerSetFrameRef(box, "e" .. index, button)
     box.entries[index] = button
@@ -310,9 +378,13 @@ local function Assign(button, entry)
     if button:GetAttribute("type") ~= kind then button:SetAttribute("type", kind) end
     button.entry = entry
     if entry then
-        button.icon:SetTexture(entry.icon or 134400)
-        button:Show()
-    else
+        local icon = entry.icon or 134400
+        if button.currentIcon ~= icon then
+            button.currentIcon = icon
+            button.icon:SetTexture(icon)
+        end
+        if not button:IsShown() then button:Show() end
+    elseif button:IsShown() then
         button:Hide()
     end
 end
@@ -332,28 +404,77 @@ function Frames.SetEnabled(on)
     if not on then Frames.CloseAll() end
 end
 
--- The flyout id whose macro an action slot or a macro index holds.
-function Frames.SetSlot(slot, id)
-    Opener():SetAttribute("s" .. slot, id)
-end
-
+-- The flyout id whose macro a macro index holds.
 function Frames.SetMacro(index, id)
     Opener():SetAttribute("m" .. index, id)
+end
+
+function Frames.LayoutMarker(rec, direction)
+    local arrow = rec.flyoutMarker
+    if not arrow or rec.flyoutMarkerDirection == direction then return end
+    rec.flyoutMarkerDirection = direction
+    Data.PositionArrow(arrow, rec.button, direction)
+end
+
+function Frames.Marker(rec, shown)
+    local arrow = rec.flyoutMarker
+    if not arrow and shown then
+        arrow = S.CreateTexture(AB.DecorationHost(rec), nil, "OVERLAY", nil, 5)
+        rec.flyoutMarker = arrow
+        rec.flyoutMarkerShown = true
+    elseif arrow and rec.flyoutMarkerShown ~= shown then
+        rec.flyoutMarkerShown = shown
+        arrow:SetShown(shown)
+    end
+    if shown then
+        local config = AB.M.config
+        local size, style = config.flyoutArrowSize or 14, config.flyoutArrowStyle or 1
+        if rec.flyoutMarkerSize ~= size or rec.flyoutMarkerStyle ~= style then
+            rec.flyoutMarkerSize, rec.flyoutMarkerStyle = size, style
+            Data.StyleArrow(arrow, style, size)
+            local direction = rec.flyoutMarkerDirection or rec.button:GetAttribute("flyoutDirection") or "UP"
+            rec.flyoutMarkerDirection = direction
+            Data.PositionArrow(arrow, rec.button, direction)
+        end
+    end
+end
+
+function Frames.RefreshAppearance()
+    local scale = EntryScale()
+    for _, box in pairs(boxes) do
+        local changed = box:GetAttribute("entryScale") ~= scale
+        if changed then box:SetAttribute("entryScale", scale) end
+        if box:IsShown() then
+            if changed then Reflow(box) end
+            Shown(box)
+        end
+    end
 end
 
 -- A flyout's shown entries (resolved by Flyouts.lua: type, attribute, value,
 -- icon and the item or spell its count and cooldown follow).
 function Frames.Apply(id, entries)
     local box = boxes[id] or NewBox(id)
-    if box:IsShown() then box:Hide() end
-    for index, entry in ipairs(entries) do Assign(box.entries[index] or NewEntry(box, index), entry) end
+    local oldCount = box.count
+    local hasItemCounts = false
+    for index, entry in ipairs(entries) do
+        if entry.item and entry.kind ~= "toy" then hasItemCounts = true end
+        Assign(box.entries[index] or NewEntry(box, index), entry)
+    end
     for index = #entries + 1, #box.entries do Assign(box.entries[index], nil) end
-    box.count = #entries
-    box:SetAttribute("count", #entries)
+    box.count, box.hasItemCounts = #entries, hasItemCounts
+    if oldCount ~= box.count then box:SetAttribute("count", box.count) end
+    if not box:IsShown() then return end
+    if oldCount ~= box.count then Reflow(box) end
+    Shown(box)
 end
 
 function Frames.Remove(id)
-    if boxes[id] then Frames.Apply(id, {}) end
+    local box = boxes[id]
+    if box then
+        box:Hide()
+        Frames.Apply(id, {})
+    end
 end
 
 -- Runs before the lockdown (PLAYER_REGEN_DISABLED) and on disable.

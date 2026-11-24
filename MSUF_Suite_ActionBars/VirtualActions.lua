@@ -106,14 +106,15 @@ local function Apply(rec, action)
     rec.virtualAttribute, rec.virtualAction = attribute, action
 end
 
-local function Repaint(bar)
+local function Repaint(bar, deferMarkers)
     AB.Execute(bar.header, AB.SNIPPET.GRID)
     AB.MarkBar(bar)
     AB.VirtualPaint.SyncEvents(AB.M.context)
+    if AB.flyoutMarkers and not deferMarkers then AB.Flyouts.BarMarkers(bar) end
     EventRegistry:TriggerEvent("MSUFSuite.ActionBars.ActionsChanged")
 end
 
-function Virtual.Sync(force)
+function Virtual.Sync(force, deferMarkers)
     if NS.InCombat() then
         pending = true
         return
@@ -125,7 +126,7 @@ function Virtual.Sync(force)
     activeSpec, assignments = spec, CurrentAssignments(spec)
     pending = nil
     for i = 1, #bar.buttons do Apply(bar.buttons[i], ValidAction(assignments[i])) end
-    Repaint(bar)
+    Repaint(bar, deferMarkers)
     if changed and AB.snapshotSetupChanged then AB.snapshotSetupChanged() end
 end
 
@@ -138,7 +139,8 @@ local function SpecChanged(_, event, unit)
 end
 
 local function MacroChanged()
-    Virtual.Sync(true)
+    Virtual.Sync(true, true)
+    if AB.flyoutMarkers then AB.Flyouts.RefreshMarkers(true) end
 end
 
 local IN_COMBAT = { inCombat = true }
@@ -277,6 +279,7 @@ local function PickupNative(action)
         C_TransmogOutfitInfo.PickupOutfit(id)
     end
 end
+Virtual.PickupNative = PickupNative
 
 local function Pickup(action)
     S.Dispatch(PickupNative, action)
@@ -297,6 +300,28 @@ local function Set(rec, action)
     if action and action.kind == "equipmentset" or previous and previous.kind == "equipmentset" then SyncSetEvents() end
     Repaint(rec.bar)
     if AB.snapshotChanged then AB.snapshotChanged() end
+end
+
+function Virtual.SetFlyout(rec, name)
+    if Editable(rec.button) ~= rec then return false end
+    local action = name and { kind = "macro", id = name } or nil
+    if action and not SecureAction(action) then return false end
+    Set(rec, action)
+    return true
+end
+
+function Virtual.UpdateFlyoutName(before, after)
+    for _, slots in pairs(SavedAssignments()) do
+        if type(slots) == "table" then
+            for index = 1, AB.BUTTONS do
+                local action = ValidAction(slots[index])
+                if action and action.kind == "macro" and action.id == before then
+                    slots[index] = after and { kind = "macro", id = after } or nil
+                end
+            end
+        end
+    end
+    Virtual.Sync(true)
 end
 
 function Virtual.SnapshotSpell(index)

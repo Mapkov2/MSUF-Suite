@@ -5,10 +5,9 @@ local NS, S = P.NS, P.Suite
 -- WoW macro per flyout ("/click MSUFSuiteFlyouts <id>") goes onto any Suite
 -- action button and opens it, also in combat. Saved per account and per WoW
 -- version (MSUFSuiteFlyoutsDB[retail|forever]), outside the Suite profiles.
--- All work happens out of combat: the listener unregisters its bag, slot,
--- macro and spell events at PLAYER_REGEN_DISABLED (before the lockdown) and
--- catches up once at PLAYER_REGEN_ENABLED. Without a flyout nothing is
--- created and nothing listens.
+-- Closed flyouts subscribe to no events. The opener prepares one flyout out
+-- of combat. A combat click uses the secure snapshot from startup or the
+-- last preparation.
 local AB = P.ActionBars
 local Frames = AB.FlyoutFrames
 local Data = NS.ActionBarFlyouts
@@ -19,18 +18,18 @@ local Public, Finite, PublicText = S.Public, S.Finite, S.PublicText
 local CLIENT = Data.Client()
 local MARKER = "/click " .. Frames.OPENER .. " "
 local UNKNOWN_ICON = 134400
-local MAX_SLOT = 180
 -- Consumable / Food & Drink (Enum.ItemClass, Enum.ItemConsumableSubclass).
 local FOOD_CLASS, FOOD_SUBCLASS = 0, 5
 local LAST_BAG = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
 local CHANGED = "MSUFSuite.ActionBars.FlyoutsChanged"
--- Listened to only out of combat and only while a flyout exists.
-local QUIET = { "BAG_UPDATE_DELAYED", "ACTIONBAR_SLOT_CHANGED", "UPDATE_MACROS", "SPELLS_CHANGED", "NEW_TOY_ADDED",
-    "NEW_MOUNT_ADDED", "PLAYER_LEVEL_UP" }
+local BAG_UPDATE = "BAG_UPDATE_DELAYED"
+local OPEN_EVENTS = { "UPDATE_MACROS", "SPELLS_CHANGED", "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "PLAYER_LEVEL_UP" }
 
-local store, active, pending, scheduled, built, listener, quiet
+local store, active, scheduled, built, listener, openID, listeningBags
+local pendingFull, pendingBags
+local markerMacrosDirty
 local macroOf, flyoutOfMacro, flyoutOfName = {}, {}, {}
-local slotFlyout, indexFlyout, shownCount = {}, {}, {}
+local indexFlyout, shownCount, bagDependencies = {}, {}, {}
 
 ------------------------------------------------------------------ store
 local function Store()
@@ -49,6 +48,50 @@ local function Find(id)
     for position, flyout in ipairs(Store().list) do
         if flyout.id == id then return flyout, position end
     end
+end
+
+local function HasMarker(kind, index, subtype)
+    if not Public(kind) then return end
+    if kind ~= "macro" then return false end
+    if not Public(index) or not Public(subtype) then return end
+    return subtype ~= "spell" and subtype ~= "item" and Finite(index) and flyoutOfMacro[index] ~= nil
+end
+
+local function PaintMarker(rec, shown)
+    if shown == nil then
+        AB.flyoutMarkerPending = true
+    else
+        Frames.Marker(rec, shown)
+    end
+end
+
+function Flyouts.SlotMarkers(records, kind, index, subtype)
+    local shown = HasMarker(kind, index, subtype)
+    for i = 1, #records do
+        local rec = records[i]
+        if rec.bar.owned and not rec.virtual then PaintMarker(rec, shown) end
+    end
+end
+
+function Flyouts.BarMarkers(bar)
+    if not bar.owned then return end
+    for _, rec in ipairs(bar.buttons) do
+        local shown = false
+        if AB.flyoutMarkers then
+            if rec.virtual then
+                shown = HasMarker(rec.button:GetAttribute("type"), rec.button:GetAttribute("macro"))
+            elseif rec.slot then
+                shown = HasMarker(GetActionInfo(rec.slot))
+            end
+        end
+        PaintMarker(rec, shown)
+    end
+end
+
+local function UpdateMarkers(enabled)
+    if not enabled and not AB.flyoutMarkers then return end
+    AB.flyoutMarkers = enabled and true or nil
+    for _, bar in pairs(AB.bars) do Flyouts.BarMarkers(bar) end
 end
 
 ------------------------------------------------------------------ macros
@@ -73,28 +116,43 @@ local function ScanMacros()
     for index = limit + 1, limit + character do ReadMacro(index) end
 end
 
+function Flyouts.RefreshMarkers(macrosChanged)
+    if macrosChanged then markerMacrosDirty = true end
+    if markerMacrosDirty then
+        if NS.InCombat() then
+            AB.flyoutMarkerPending = true
+            return
+        end
+        markerMacrosDirty = nil
+        ScanMacros()
+    end
+    UpdateMarkers(true)
+end
+
+local function MarkersEnabled()
+    return AB.M.config.flyoutArrow ~= false and #Store().list > 0
+end
+
+function Flyouts.RefreshMarkerAppearance()
+    if not active then return end
+    local enabled = MarkersEnabled()
+    if enabled and not AB.flyoutMarkers then ScanMacros() end
+    UpdateMarkers(enabled)
+end
+
 -- The flyout a slot's macro opens. A macro without a spell or item reports
 -- its index; the macro name covers any other answer.
 local function SlotOwner(slot)
     local kind, id, sub = GetActionInfo(slot)
     if not Public(kind) or kind ~= "macro" or not Public(id) or not Public(sub) then return nil end
-    if flyoutOfMacro[id] then return flyoutOfMacro[id] end
     if sub == "spell" or sub == "item" then return nil end
+    if flyoutOfMacro[id] then return flyoutOfMacro[id] end
     local name = GetActionText(slot)
     return PublicText(name) and flyoutOfName[name] or nil
 end
 
-local function MapSlot(slot)
-    local id = SlotOwner(slot)
-    if slotFlyout[slot] == id then return end
-    slotFlyout[slot] = id
-    Frames.SetSlot(slot, id)
-end
-
--- Slots for the paged and reused buttons; macro indices for bar 10, whose
--- buttons hold a macro directly (VirtualActions.lua).
-local function MapAll()
-    for slot = 1, MAX_SLOT do MapSlot(slot) end
+-- The opener samples the live action slot on the click, so there is no slot-event cache.
+local function MapMacros()
     for index, id in pairs(indexFlyout) do
         if flyoutOfMacro[index] ~= id then
             indexFlyout[index] = nil
@@ -191,111 +249,134 @@ local function BagFood()
     return found
 end
 
-local function Add(list, seen, entry)
+local function Add(list, seen, entry, saved, position)
     if not entry or #list >= Data.MAX_SHOWN then return end
     local key = entry.type .. ":" .. tostring(entry.value)
     if seen[key] then return end
     seen[key] = true
+    entry.source, entry.position = saved, position
     list[#list + 1] = entry
 end
 
 -- What a flyout shows now, in its order.
 local function Shown(flyout)
     local list, seen = {}, {}
-    for _, saved in ipairs(flyout.entries) do
+    local excluded = flyout.excludedFood
+    local tracksBags = false
+    for position, saved in ipairs(flyout.entries) do
         if saved.kind == "bag" then
-            for _, id in ipairs(BagFood()) do Add(list, seen, ItemEntry(id, "item")) end
+            tracksBags = true
+            for _, id in ipairs(BagFood()) do
+                if not (excluded and excluded[id]) then Add(list, seen, ItemEntry(id, "item"), saved, position) end
+            end
         else
-            Add(list, seen, Resolve(saved, flyout.owned))
+            if flyout.owned and saved.kind == "item" then tracksBags = true end
+            Add(list, seen, Resolve(saved, flyout.owned), saved, position)
         end
     end
-    return list
+    return list, tracksBags
 end
 
 ------------------------------------------------------------------ sync
+local function Apply(flyout)
+    local id = flyout.id
+    local entries, tracksBags = Shown(flyout)
+    shownCount[id], bagDependencies[id] = #entries, tracksBags or nil
+    Frames.Apply(id, entries)
+end
+
 local function ApplyAll()
     local current = {}
     for _, flyout in ipairs(Store().list) do
-        local list = Shown(flyout)
-        Frames.Apply(flyout.id, list)
-        shownCount[flyout.id], current[flyout.id] = #list, true
+        Apply(flyout)
+        current[flyout.id] = true
     end
     for id in pairs(shownCount) do
         if not current[id] then
             Frames.Remove(id)
-            shownCount[id] = nil
+            shownCount[id], bagDependencies[id] = nil, nil
         end
     end
 end
 
-local function Quiet(on)
-    if quiet == on then return end
-    quiet = on
-    for _, event in ipairs(QUIET) do
-        if NS.Client.SupportsEvent(event) then
-            if on then listener:RegisterEvent(event) else listener:UnregisterEvent(event) end
-        end
-    end
+-- Active only on startup, an explicit edit, or when opening out of combat.
+function Flyouts.Prepare(id)
+    if not active or NS.InCombat() then return end
+    local flyout = Find(id)
+    if not flyout then return end
+    ScanMacros()
+    MapMacros()
+    Apply(flyout)
 end
 
-local Sync
-local function Schedule()
-    if scheduled then return end
-    scheduled = true
-    C_Timer.After(0, function() Sync() end)
-end
-
-local function OnEvent(_, event, slot)
-    if event == "PLAYER_REGEN_DISABLED" then
-        Quiet(false)
-        Frames.CloseAll()
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        Quiet(true)
-        Sync()
-    elseif event == "ACTIONBAR_SLOT_CHANGED" and Finite(slot) and slot >= 1 and slot <= MAX_SLOT then
-        MapSlot(slot)
-    else
-        Schedule()
-    end
-end
-
--- Combat transitions only while a flyout exists; the quiet events only
--- outside combat.
-local function SyncEvents()
-    local wanted = active and #Store().list > 0
-    if not wanted and not listener then return end
-    if not listener then
-        listener = S.CreateFrame("Frame")
-        listener:SetScript("OnEvent", OnEvent)
-    end
-    if wanted then
-        listener:RegisterEvent("PLAYER_REGEN_DISABLED")
-        listener:RegisterEvent("PLAYER_REGEN_ENABLED")
-        Quiet(not NS.InCombat())
-    else
-        listener:UnregisterAllEvents()
-        quiet = false
-    end
-end
-
-function Sync()
+local function FlushOpen()
     scheduled = nil
-    if not active then return end
-    if NS.IsCombatLocked() then
-        pending = true
+    local full, bags = pendingFull, pendingBags
+    pendingFull, pendingBags = nil, nil
+    local id = openID
+    if not id or NS.InCombat() then return end
+    if full then
+        Flyouts.Prepare(id)
+    elseif bags then
+        if bagDependencies[id] then
+            local flyout = Find(id)
+            if flyout then Apply(flyout) end
+        else
+            Frames.RefreshBagCounts()
+        end
+    end
+end
+
+local function StopWatching()
+    if not openID then return end
+    openID, listeningBags, pendingFull, pendingBags = nil, nil, nil, nil
+    listener:UnregisterAllEvents()
+    if scheduled then scheduled:Cancel() scheduled = nil end
+end
+
+local function OnEvent(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        StopWatching()
+        Frames.CloseAll()
         return
     end
-    pending = nil
+    if event == BAG_UPDATE then pendingBags = true else pendingFull = true end
+    if not scheduled then scheduled = C_Timer.NewTimer(0, FlushOpen) end
+end
+
+function Flyouts.WatchOpen(id, hasItems)
+    if not id then return StopWatching() end
+    if not active or NS.InCombat() then return end
+    if openID ~= id then
+        StopWatching()
+        if not listener then
+            listener = S.CreateFrame("Frame")
+            listener:SetScript("OnEvent", OnEvent)
+        end
+        openID = id
+        listener:RegisterEvent("PLAYER_REGEN_DISABLED")
+        for _, event in ipairs(OPEN_EVENTS) do
+            if NS.Client.SupportsEvent(event) then listener:RegisterEvent(event) end
+        end
+    end
+    local wanted = (hasItems or bagDependencies[id] == true) and NS.Client.SupportsEvent(BAG_UPDATE)
+    if listeningBags == wanted then return end
+    listeningBags = wanted
+    if wanted then listener:RegisterEvent(BAG_UPDATE) else listener:UnregisterEvent(BAG_UPDATE) end
+end
+
+local function Sync()
+    if not active or NS.IsCombatLocked() then return end
     if not built then
-        if #Store().list == 0 then return SyncEvents() end
+        if #Store().list == 0 then return end
         built = true
         Frames.Candidates(AB.owned)
     end
     Frames.SetEnabled(true)
     ScanMacros()
+    MapMacros()
     ApplyAll()
-    MapAll()
-    SyncEvents()
+    UpdateMarkers(MarkersEnabled())
 end
 Flyouts.Sync = Sync
 
@@ -306,12 +387,11 @@ function Flyouts.Start()
 end
 
 function Flyouts.Stop()
-    active, pending = false, nil
+    active = false
+    StopWatching()
+    UpdateMarkers(false)
+    markerMacrosDirty, AB.flyoutMarkerPending = nil, nil
     if not NS.IsCombatLocked() then Frames.SetEnabled(false) end
-    if listener then
-        listener:UnregisterAllEvents()
-        quiet = false
-    end
 end
 
 ------------------------------------------------------------------ editing
@@ -331,39 +411,53 @@ end
 local function WriteMacro(flyout)
     ScanMacros()
     local index, body, icon = macroOf[flyout.id], MARKER .. flyout.id, MacroIcon(flyout)
+    local named = GetMacroIndexByName(flyout.name)
+    if not Finite(named) or (named > 0 and named ~= index) then
+        return nil, S.Text("A macro already uses this name.")
+    end
     if index then
         local name, current = GetMacroInfo(index)
-        if name ~= flyout.name or current ~= icon then EditMacro(index, flyout.name, icon, body) end
+        if PublicText(name) == flyout.name and Public(current) and current == icon then return index end
+        EditMacro(index, flyout.name, icon, body)
     else
         local account = GetNumMacros()
         if not Finite(account) or account >= Constants.MacroConsts.MAX_ACCOUNT_MACROS then
-            return nil, "Your account-wide macros are full. Delete one to place this flyout."
+            return nil, S.Text("Your account-wide macros are full. Delete one to place this flyout.")
         end
         CreateMacro(flyout.name, icon, body, false)
     end
     ScanMacros()
-    MapAll()
     index = macroOf[flyout.id]
-    if not index then return nil, "The flyout macro could not be created." end
+    if not index then return nil, S.Text("The flyout macro could not be created.") end
     return index
 end
 
 local function Editable(id)
-    if not active then return nil, "Turn on the Suite action bars to use flyouts." end
-    if NS.InCombat() then return nil, "Flyouts can be edited out of combat." end
+    if not active then return nil, S.Text("Turn on the Suite action bars to use flyouts.") end
+    if NS.InCombat() then return nil, S.Text("Flyouts can be edited out of combat.") end
     if id == nil then return true end
     local flyout, position = Find(id)
-    if not flyout then return nil, "This flyout no longer exists." end
+    if not flyout then return nil, S.Text("This flyout no longer exists.") end
     return flyout, position
 end
 
-local function NewFlyout(name, entries, icon, preset)
+local function NewFlyout(name, entries, icon, preset, place)
     local data = Store()
-    if #data.list >= Data.MAX_FLYOUTS then return nil, "You have reached the maximum number of flyouts." end
+    if #data.list >= Data.MAX_FLYOUTS then return nil, S.Text("You have reached the maximum number of flyouts.") end
     local flyout = Data.CleanFlyout({ id = data.nextID, name = name, entries = entries, icon = icon, preset = preset })
-    if not flyout then return nil, "Enter a name for the flyout." end
-    data.nextID = data.nextID + 1
+    if not flyout then return nil, S.Text("Enter a name for the flyout.") end
     data.list[#data.list + 1] = flyout
+    if place then
+        local ok, problem = place(flyout)
+        if not ok then
+            local macro = macroOf[flyout.id]
+            if macro then DeleteMacro(macro) end
+            data.list[#data.list] = nil
+            ScanMacros()
+            return nil, problem
+        end
+    end
+    data.nextID = data.nextID + 1
     Changed()
     return flyout.id
 end
@@ -373,23 +467,30 @@ local function CursorEntry()
     if not Public(kind) or not Public(id) or not Public(spell) then return nil end
     if kind == "spell" and Finite(spell) then return { kind = "spell", id = spell } end
     if kind == "item" and Finite(id) then return { kind = Yes(PlayerHasToy(id)) and "toy" or "item", id = id } end
-    if kind == "mount" and Finite(id) then return { kind = "mount", id = id } end
+    if (kind == "mount" or kind == "toy") and Finite(id) then return { kind = kind, id = id } end
     if kind == "macro" and Finite(id) then
         local name, _, body = GetMacroInfo(id)
-        if PublicText(body) and body:sub(1, #MARKER) == MARKER then return nil, "A flyout cannot hold another flyout." end
-        return PublicText(name) and { kind = "macro", id = name } or nil
+        if PublicText(body) and body:sub(1, #MARKER) == MARKER then return nil, S.Text("A flyout cannot hold another flyout.") end
+        if PublicText(name) and GetMacroIndexByName(name) == id then return { kind = "macro", id = name } end
     end
     return nil
+end
+
+function Flyouts.IsFlyoutMacro(index)
+    local _, _, body = GetMacroInfo(index)
+    body = PublicText(body)
+    return body and body:sub(1, #MARKER) == MARKER or false
 end
 
 -- Shared with FlyoutAPI.lua.
 Flyouts.Store, Flyouts.Find, Flyouts.Shown, Flyouts.Changed = Store, Find, Shown, Changed
 Flyouts.WriteMacro, Flyouts.Editable, Flyouts.NewFlyout, Flyouts.CursorEntry = WriteMacro, Editable, NewFlyout, CursorEntry
-Flyouts.MapSlot, Flyouts.ScanMacros, Flyouts.macroOf, Flyouts.shownCount = MapSlot, ScanMacros, macroOf, shownCount
+Flyouts.ScanMacros, Flyouts.macroOf, Flyouts.shownCount = ScanMacros, macroOf, shownCount
+Flyouts.SlotOwner, Flyouts.flyoutOfMacro = SlotOwner, flyoutOfMacro
 Flyouts.MARKER = MARKER
 
 -- Read-only views for the contract tests; nothing in the addon calls them.
 AB.Diagnostics.FlyoutData = {
-    SlotFlyout = slotFlyout, IndexFlyout = indexFlyout,
-    Listener = function() return listener end, Quiet = function() return quiet end,
+    Listener = function() return listener end,
+    Open = function() return openID end,
 }

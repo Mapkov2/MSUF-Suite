@@ -220,6 +220,13 @@ B.Section(id, "appearance", "Button appearance", {
             .. "where Blizzard's buttons cannot be reused) to Masque, one Masque group per bar. Bars that reuse Blizzard's "
             .. "buttons keep the Suite look. Turning it off restores the Suite look at once."),
 })
+B.Section(id, "flyouts", "Flyouts", {
+    Bool("flyoutArrow", "Show flyout arrow", true),
+    Number("flyoutArrowSize", "Flyout arrow size", 14, 8, 24),
+    Choice("flyoutArrowStyle", "Flyout arrow style", 1, { "Blizzard", "Clean Modern", "Midnight Dark", "MSUF Forever" }),
+    Bool("flyoutStackCounts", "Show flyout stack counts", true),
+    Number("flyoutButtonScale", "Flyout button size (percent)", 100, 75, 150, 5),
+})
 B.Section(id, "cooldowns", "Cooldowns and states", {
     Bool("cooldownNumbers", "Show cooldown numbers", true),
     Bool("rechargeNumbers", "Show recharge numbers while charges remain", true),
@@ -389,6 +396,8 @@ end
 
 local rules = NS.SuiteCatalog.actionbars.rules
 rules.mediaBorder.border = true
+rules.flyoutArrowSize.enableKey = "flyoutArrow"
+rules.flyoutArrowStyle.enableKey = "flyoutArrow"
 for _, key in ipairs({ "specialKeybind", "specialKeybindSize", "specialCooldownSize" }) do
     rules[key].enableKey = "styleSpecialButtons"
 end

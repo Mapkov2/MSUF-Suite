@@ -71,7 +71,8 @@ local function SlotChanged(_, _, slot)
         WakeRetry()
         return
     end
-    local kind, id = GetActionInfo(slot)
+    local kind, id, subtype = GetActionInfo(slot)
+    if AB.flyoutMarkers then AB.Flyouts.SlotMarkers(list, kind, id, subtype) end
     local flyout = Public(kind) and kind == "flyout"
     local nativeEffects = AB.nativeSlotEffects
     local changed = GridChanged(slot, kind, id)
@@ -284,6 +285,10 @@ end
 
 local function RegenEnabled()
     AB.Virtual.Resume()
+    if AB.flyoutMarkerPending then
+        AB.flyoutMarkerPending = nil
+        if AB.flyoutMarkers then AB.Flyouts.RefreshMarkers() end
+    end
     if AB.snapshotReady then AB.snapshotReady() end
     -- A spellbook or macro window closed (or opened) in combat.
     if AB.panelPending then AB.SyncPanelReveal() end
@@ -474,6 +479,7 @@ function AB.OnHeaderAttribute(bar, name, value)
         end
         AB.PageSlots(bar, value)
         for i = 1, #buttons do MapButton(buttons[i]) end
+        if AB.flyoutMarkers then AB.Flyouts.BarMarkers(bar) end
         if bar.index == MAIN_BAR and not bar.native then protected.routing = true end
         AB.MarkBar(bar)
         EventRegistry:TriggerEvent(ACTIONS_CHANGED)

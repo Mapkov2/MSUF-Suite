@@ -7,12 +7,23 @@ local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local RING = "Interface\\AddOns\\MSUF_Suite_Modules\\Media\\Minimap\\Halo"
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
 local PROC_GLOW = Suite.ActionBarEnum.PROC_GLOW
+local Flyouts = Suite.ActionBarFlyouts
 -- The sample spell alert: Blizzard's alert frame is 1.4x its button and the
 -- pixel glow 2 pixels wide on the bars (Paint.lua). The arrows are the bars'
 -- own (Decorations.lua): 17x14 buttons in a 17x34 frame, 4 pixels off bar 1.
 local ALERT_ATLAS, ALERT_SCALE, PIXEL_GLOW = "UI-HUD-RotationHelper-ProcAltGlow", 1.4, 2
 local PAGE_ARROW = { width = 17, height = 14, frameHeight = 34, gap = 4,
     atlases = { "ui-hud-actionbar-pageuparrow-up", "ui-hud-actionbar-pagedownarrow-up" } }
+local FLYOUT_POINTS = {
+    UP = { "BOTTOMLEFT", "TOPLEFT", 0, 1 },
+    DOWN = { "TOPLEFT", "BOTTOMLEFT", 0, -1 },
+    LEFT = { "TOPRIGHT", "TOPLEFT", -1, 0 },
+    RIGHT = { "TOPLEFT", "TOPRIGHT", 1, 0 },
+}
+local FLYOUT_DIRECTIONS = { [2] = "UP", [3] = "DOWN", [4] = "LEFT", [5] = "RIGHT" }
+local FLYOUT_ICONS = { "Interface\\Icons\\INV_Misc_Food_15", "Interface\\Icons\\INV_Potion_54" }
+local FLYOUT_COUNTS = { 7, 18 }
+local FLYOUT_GAP = 4
 local function Edges(parent, layer)
     local edges = {}
     for i = 1, 4 do edges[i] = parent:CreateTexture(nil, layer or "OVERLAY") end
@@ -51,9 +62,11 @@ local function Focus(ui, suffix)
 end
 local function Target(ui, button, key, section)
     button:SetScript("OnClick", function()
-        P.PreviewInteraction.Select(ui.selection, button, section == "bar_ornaments" and "Endcaps"
-            or section == "bar_background" and "Background" or "Action buttons", function() Focus(ui, section) end)
-        Focus(ui, section)
+        local target = ui.flyoutTile == button and "flyouts" or section
+        P.PreviewInteraction.Select(ui.selection, button, target == "bar_ornaments" and "Endcaps"
+            or target == "bar_background" and "Background" or target == "flyouts" and "Flyouts" or "Action buttons",
+            function() Focus(ui, target) end)
+        Focus(ui, target)
     end)
     HM.SkipHistoryCheckpoint(button)
     HM.AllowCombatClick(button)
@@ -72,6 +85,7 @@ local function NewCooldown(tile)
 end
 local function NewTile(ui, ordinal)
     local tile = CreateFrame("Button", nil, ui.canvas)
+    tile.ordinal = ordinal
     tile.fill = tile:CreateTexture(nil, "BACKGROUND")
     tile.icon = tile:CreateTexture(nil, "ARTWORK")
     tile.mask = tile:CreateMaskTexture()
@@ -330,6 +344,94 @@ local function PageArrows(ui, side)
         left and -PAGE_ARROW.gap or PAGE_ARROW.gap, 0)
 end
 
+local function NewFlyout(canvas)
+    local sample = CreateFrame("Frame", nil, canvas)
+    sample:SetAllPoints(canvas)
+    sample.entries = {}
+    sample.arrow = sample:CreateTexture(nil, "OVERLAY", nil, 5)
+    for i, asset in ipairs(FLYOUT_ICONS) do
+        local entry = CreateFrame("Frame", nil, sample)
+        entry.icon = entry:CreateTexture(nil, "ARTWORK")
+        entry.icon:SetTexture(asset)
+        entry.edges = Edges(entry)
+        entry.count = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        entry.count:SetPoint("BOTTOMRIGHT", -2, 2)
+        entry.count:SetText(FLYOUT_COUNTS[i])
+        sample.entries[i] = entry
+    end
+    return sample
+end
+
+local function FlyoutSample(ui, c, p, bar, shown, columns, rows, size)
+    if bar > Suite.ActionBarEnum.BAR.LAST_ACTION or not P.ActionBarMenu.IsFlyouts(ui.ctx) then return end
+    local liveDirection, ordinal
+    if S.ActionBarPreviewFlyout then liveDirection, ordinal = S.ActionBarPreviewFlyout(bar) end
+    local tile = ordinal and ui.tiles[ordinal]
+    if not tile and c.flyoutArrow == false and ui.flyoutBar == bar then
+        tile = ui.flyoutTile
+    end
+    tile = tile or ui.displayed[shown] or ui.tiles[1]
+    if not tile.filled then
+        tile.icon:SetTexture(134062)
+        tile.icon:Show()
+        tile.filled = true
+    end
+    local direction = FLYOUT_DIRECTIONS[c[p .. "FlyoutDirection"]] or liveDirection
+    if not FLYOUT_POINTS[direction] then direction = columns >= rows and "UP" or "RIGHT" end
+    local entrySize = math.floor(math.max(16, math.min(80, size)) * (c.flyoutButtonScale or 100) / 100 + .5)
+    return tile, direction, math.max(16, entrySize)
+end
+
+local function PaintFlyout(ui, tile, direction, size, c, color)
+    local sample = ui.flyout
+    if not tile then
+        if sample then sample:Hide() end
+        return
+    end
+    if not sample then
+        sample = NewFlyout(ui.canvas)
+        ui.flyout = sample
+    end
+    sample:SetFrameLevel(tile.text:GetFrameLevel() + 1)
+    sample:Show()
+    sample.arrow:SetShown(c.flyoutArrow ~= false)
+    if c.flyoutArrow ~= false then
+        Flyouts.StyleArrow(sample.arrow, c.flyoutArrowStyle, c.flyoutArrowSize or 14)
+        Flyouts.PositionArrow(sample.arrow, tile, direction)
+    end
+    local layout = FLYOUT_POINTS[direction]
+    local edge, zoom = math.max(c.borderSize or 1, 1), c.iconZoom / 100
+    local font = c.countFontOverride and c.countFont ~= "" and c.countFont or c.font
+    local outline = c.countFontOverride and c.countFontOutline or c.fontOutline
+    local fontSize = math.max(8, math.min(18, math.floor(size * .32 + .5)))
+    for i, entry in ipairs(sample.entries) do
+        local offset = FLYOUT_GAP + (i - 1) * (size + FLYOUT_GAP)
+        entry:ClearAllPoints()
+        entry:SetPoint(layout[1], tile, layout[2], layout[3] * offset, layout[4] * offset)
+        entry:SetSize(size, size)
+        entry.icon:SetPoint("TOPLEFT", edge, -edge)
+        entry.icon:SetPoint("BOTTOMRIGHT", -edge, edge)
+        entry.icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
+        Border(entry.edges, entry, edge, color, true)
+        P.StylePreviewFont(entry.count, Suite.ResolveFont(font), fontSize, OUTLINES[outline] or "",
+            c.fontRendering, c.fontShadow, c.fontShadowOpacity, c.fontShadowDistance)
+        entry.count:SetTextColor(P.RGB(c.countColor))
+        entry.count:SetShown(c.flyoutStackCounts ~= false)
+    end
+end
+
+local function FlyoutBounds(left, right, bottom, top, x, y, size, height, entry, direction)
+    local length = #FLYOUT_ICONS * (entry + FLYOUT_GAP) + 4
+    if direction == "UP" then
+        return left, math.max(right, x + entry + 4), bottom, math.max(top, y + length)
+    elseif direction == "DOWN" then
+        return left, math.max(right, x + entry + 4), math.min(bottom, y - height - length), top
+    elseif direction == "LEFT" then
+        return math.min(left, x - length), right, math.min(bottom, y - entry - 4), top
+    end
+    return left, math.max(right, x + size + length), math.min(bottom, y - entry - 4), top
+end
+
 -- Fit the whole decorated bar, including asymmetric offsets, inside the
 -- canvas. Large padding or endcaps must not overlap the header controls.
 local function Bounds(c, p, width, height, size, buttonHeight, arrowSide)
@@ -412,6 +514,15 @@ local function Paint(ui)
     local width, height = columns * size + (columns - 1) * gap, rows * buttonHeight + (rows - 1) * gap
     local arrowSide = Preview.PageArrowSide(bar, c)
     local left, right, bottom, top = Bounds(c, p, width, height, size, buttonHeight, arrowSide)
+    local shown = ReadTiles(ui, bar, count, c)
+    Preview.Sample(ui.displayed, shown, bar, c)
+    local flyoutTile, direction, entrySize = FlyoutSample(ui, c, p, bar, shown, columns, rows, size)
+    ui.flyoutTile, ui.flyoutBar = flyoutTile, bar
+    if flyoutTile then
+        local col, row = Suite.ActionBarCell(flyoutTile.ordinal - 1, columns, rows, r, c[p .. "Vertical"], c[p .. "Start"])
+        local x, y = col * (size + gap) - width / 2, height / 2 - row * (buttonHeight + gap)
+        left, right, bottom, top = FlyoutBounds(left, right, bottom, top, x, y, size, buttonHeight, entrySize, direction)
+    end
     local fit = math.min(1, ui.width / (right - left), (ui.height - 44) / (top - bottom))
     ui.canvas:SetSize(width, height)
     ui.canvas:SetScale(fit)
@@ -422,7 +533,6 @@ local function Paint(ui)
     PageArrows(ui, arrowSide)
     local color = ClassColor(c, "borderClassColor", "borderColor")
     Background(ui, c, p, width, height, color)
-    Preview.Sample(ui.displayed, ReadTiles(ui, bar, count, c), bar, c)
     local look = TileForm(c)
     for i, tile in ipairs(ui.tiles) do
         local shown = i <= count
@@ -437,6 +547,7 @@ local function Paint(ui)
     end
     Endcap(ui, c, p, "Left", color)
     Endcap(ui, c, p, "Right", color)
+    PaintFlyout(ui, flyoutTile, direction, entrySize, c, color)
     P.PreviewInteraction.Refresh(ui.selection)
 end
 

@@ -166,6 +166,8 @@ for _, suffix in ipairs({ "Visibility", "CondCombine", "CondCombat", "CondMounte
 end
 Global({ "pageArrows", "pageArrowSide" }, { allLayout = true })
 Global({ "showOnDrag" }, { drag = true })
+Global({ "flyoutArrow", "flyoutArrowSize", "flyoutArrowStyle" }, { flyoutMarkerAppearance = true })
+Global({ "flyoutStackCounts", "flyoutButtonScale" }, { flyoutAppearance = true })
 -- Masque takes or returns the Suite-made buttons, then the style pass runs.
 Global({ "masque" }, { style = true, masque = true })
 Global({ "disableFormPaging", "disableMoonkinPaging", "disableSkyridingPaging", "pagingModifiers", "pageShift", "pageCtrl",
@@ -475,6 +477,8 @@ function M:Refresh()
     if work.curves then AB.UpdateCurves() end
     ApplyLayout()
     ApplyStyle()
+    if work.flyoutMarkerAppearance then AB.Flyouts.RefreshMarkerAppearance() end
+    if work.flyoutAppearance then AB.FlyoutFrames.RefreshAppearance() end
     if work.extras or work.style or rebuild or AB.specialPending then
         AB.specialEpoch = (AB.specialEpoch or 0) + 1
         AB.SyncSpecialButtons()
@@ -518,6 +522,7 @@ function M:Disable()
     Dispatch(S.RestoreCVar, "actionbars", "AutoPushSpellToActionBar")
     Dispatch(AB.Masque.Release)
     Dispatch(AB.StopSnapshots)
+    Dispatch(AB.FlyoutEdit.Stop)
     Dispatch(AB.Flyouts.Stop)
     Dispatch(AB.Virtual.Stop, self.context)
     Dispatch(AB.StopAssist)
