@@ -1,6 +1,7 @@
 local _, P = ...
 local S, Tr = P.S, P.Tr
 local PAGE, ID = "suite_buffReminders", "buffReminders"
+local ADDON = "MSUF_Suite_BuffReminders"
 -- The recommended consumables use Retail's items and equipment rules.
 P.Requires.modernEquipment = function() return P.Suite.Client.modernEquipment == true end
 
@@ -68,6 +69,30 @@ local function SkinStatus(ctx)
     end
 end
 
+local function PlaySoundChoice(choice)
+    if P.PreviewCanvas.Runtime(ADDON, "BuffRemindersPlaySound") then
+        return S.BuffRemindersPlaySound(choice, P.Get(ID, "reminderSoundChannel"))
+    end
+end
+
+local function BindSoundPicker(_, entries)
+    if not P.OpenSoundChoicePicker then return end
+    for _, entry in ipairs(entries or {}) do
+        local widget, rule = entry.widget, entry.rule
+        if widget and rule.key == "reminderSound" then
+            widget:SetScript("OnClick", function(anchor)
+                if not P.RuleEnabled(ID, rule) then return end
+                P.OpenSoundChoicePicker(anchor, P.Get(ID, rule.key), rule.choices,
+                    function(value)
+                        if P.RuleEnabled(ID, rule) then P.Set(ID, rule.key, value) end
+                    end, PlaySoundChoice)
+            end)
+            widget:HookScript("OnHide", P.CloseSoundChoicePicker)
+            return
+        end
+    end
+end
+
 local function AnchorGrid(ctx, rules)
     return function(body, y, width)
         local section = PAGE .. "_position"
@@ -118,6 +143,7 @@ local function Build(ctx)
                 P.MenuWorkspace.Rules(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),
                     P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = false,
                         extra = section[1] == "appearance" and SkinStatus(ctx) or nil,
+                        onBuilt = section[1] == "appearance" and BindSoundPicker or nil,
                         grid = section[1] == "position" and AnchorGrid(ctx, P.SectionRules(ID, "position")) or nil })
             end
         end

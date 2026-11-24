@@ -622,7 +622,16 @@ do
         eq(played[1] and played[1].kit, kit, "sound choice " .. choice)
         eq(played[1] and played[1].channel, "SFX", "sound channel")
         module:Disable()
+        played = {}
+        S.BuffRemindersPlaySound(choice, 3)
+        eq(played[1] and played[1].kit, kit, "preview sound choice " .. choice)
+        eq(played[1] and played[1].channel, "Dialog", "preview sound channel")
+        eq(#played, 1, "sound preview changed the live alert count")
     end
+    played = {}
+    S.BuffRemindersPlaySound(1, 2)
+    S.BuffRemindersPlaySound(99, 2)
+    assert(#played == 0, "None and unknown choices must be silent")
 end
 
 -- The menu preview shows the class reminders: the character's own, and a

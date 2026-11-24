@@ -1,6 +1,5 @@
 local _, P = ...
--- Cooldown manager page, sound picker: a pooled popup that the per-spell
--- popover (CooldownManagerPopover.lua) opens through Page.OpenSoundPicker.
+-- Pooled sound picker for CDM spell alerts and fixed lists of Suite sounds.
 local Page = P.CDMPage
 local Tr = P.Tr
 local EMPTY = {}
@@ -51,7 +50,10 @@ local function SoundRowClick(self)
 end
 local function SoundPlayClick(self)
     local item = self.row and self.row.item
-    if item and not item.header then Page.PlaySound(item.value) end
+    if item and item.playable and sounds.onPlay and not P.Combat() then sounds.onPlay(item.value) end
+end
+local function SoundPlayEnter(self)
+    if sounds.fixedChoices then Page.ShowTip(self, Tr("Play")) else Page.SoundTestEnter(self) end
 end
 local function SoundRowEnter(self) if self.item and not self.item.header then self.hover:Show() end end
 local function SoundRowLeave(self) self.hover:Hide() end
@@ -71,7 +73,7 @@ local function SoundRow(index)
     row.play = Button(row, "Play", 44, 18, SoundPlayClick)
     row.play.row = row
     row.play:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-    row.play:HookScript("OnEnter", Page.SoundTestEnter)
+    row.play:HookScript("OnEnter", SoundPlayEnter)
     row.play:HookScript("OnLeave", Page.HideTip)
     row:SetScript("OnClick", SoundRowClick)
     row:SetScript("OnEnter", SoundRowEnter)
@@ -91,7 +93,7 @@ local function PaintSoundRow(row, item)
         r, g, b = TextColor()
     end
     row.text:SetTextColor(r, g, b)
-    row.play:SetShown(not item.header and item.value ~= "")
+    row.play:SetShown(item.playable)
     row.hover:Hide()
 end
 function Page.FilterSounds()
@@ -138,6 +140,7 @@ local function SoundItem(n, value, text, header, section, group)
         sounds.items[n] = item
     end
     item.value, item.text, item.header, item.section, item.group = value, text, header, section, group
+    item.playable = not header and value ~= ""
     local search = type(text) == "string" and text:lower() or ""
     item.search = group and (search .. " " .. group.search) or search
     return item
@@ -206,17 +209,11 @@ local function EnsureSounds()
     sounds.muteNote:SetPoint("BOTTOMLEFT", sounds, "BOTTOMLEFT", 14, 12)
     sounds.OnClosed = function(self)
         self.search:ClearFocus()
-        self.onPick = nil
+        self.onPick, self.onPlay = nil, nil
     end
     return sounds
 end
-function Page.OpenSoundPicker(anchor, current, onPick)
-    if P.Combat() then return false end
-    if sounds and sounds:IsShown() and sounds.anchor == anchor then
-        sounds:Hide()
-        return false
-    end
-    EnsureSounds()
+local function BuildCooldownSounds(current)
     current = type(current) == "string" and current or ""
     local kits = Page.BlizzardSounds()
     local n = 1
@@ -226,17 +223,54 @@ function Page.OpenSoundPicker(anchor, current, onPick)
         n = n + 1
         SoundItem(n, current, Page.SoundLabel(current))
     end
-    n = AddMediaSounds(AddKitSounds(n, kits))
-    Page.ClosePopups(Page.popover)
-    sounds.count, sounds.current, sounds.onPick = n, current, onPick
+    return AddMediaSounds(AddKitSounds(n, kits)), current
+end
+
+local function OpenPicker(anchor, current, onPick, choices, onPlay)
+    if P.Combat() then return false end
+    if sounds and sounds:IsShown() and sounds.anchor == anchor then
+        sounds:Hide()
+        return false
+    end
+    EnsureSounds()
+    local count
+    if choices then
+        count = #choices
+        for index, label in ipairs(choices) do
+            SoundItem(index, index, Tr(label)).playable = index > 1
+        end
+    else
+        count, current = BuildCooldownSounds(current)
+    end
+    local parent = not choices and Page.popover or nil
+    Page.ClosePopups(parent)
+    sounds.count, sounds.current, sounds.onPick, sounds.onPlay = count, current, onPick, onPlay
+    sounds.fixedChoices = choices ~= nil
+    sounds:SetHeight(choices and 50 + count * 22 or SOUND_H)
     Page.PlacePopup(sounds, anchor)
-    if Page.popover then sounds:SetFrameLevel(Page.popover:GetFrameLevel() + 20) end
+    sounds:SetFrameLevel(parent and parent:GetFrameLevel() + 20 or anchor:GetFrameLevel() + 20)
+    sounds.search:SetShown(not choices)
     sounds.search:SetText("")
-    local muted = P.Get(Page.ID, "muteSounds") == true
+    local muted = not choices and P.Get(Page.ID, "muteSounds") == true
     sounds.muteNote:SetShown(muted)
+    sounds.scroll:SetPoint("TOPLEFT", sounds, "TOPLEFT", 12, choices and -38 or -66)
     sounds.scroll:SetPoint("BOTTOMRIGHT", sounds, "BOTTOMRIGHT", -26, muted and 32 or 12)
     sounds.scroll:SetVerticalScroll(0)
     Page.FilterSounds()
     sounds:Show()
     return true
+end
+
+function Page.OpenSoundPicker(anchor, current, onPick)
+    return OpenPicker(anchor, current, onPick, nil, Page.PlaySound)
+end
+
+function P.OpenSoundChoicePicker(anchor, current, choices, onPick, onPlay)
+    -- Fixed lists retain their saved numeric values, with None in slot one.
+    if type(choices) ~= "table" or #choices == 0 or type(onPlay) ~= "function" then return false end
+    return OpenPicker(anchor, current, onPick, choices, onPlay)
+end
+
+function P.CloseSoundChoicePicker(anchor)
+    if sounds and sounds.anchor == anchor then sounds:Hide() end
 end

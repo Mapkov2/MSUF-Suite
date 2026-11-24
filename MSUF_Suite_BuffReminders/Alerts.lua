@@ -7,6 +7,15 @@ local CHANNELS = { "Master", "SFX", "Dialog" }
 local SOUNDS = { false, "RAID_WARNING", "READY_CHECK", "IG_QUEST_LOG_OPEN", "ALARM_CLOCK_WARNING_3", "MAP_PING",
     "TELL_MESSAGE" }
 
+local function PlayReminderSound(choice, channel)
+    if not S.Public(choice) or not S.Public(channel) then return false end
+    local name = SOUNDS[choice or 1]
+    local kit = name and SOUNDKIT[name]
+    if not kit then return false end
+    return PlaySound(kit, CHANNELS[channel or 1] or "Master")
+end
+S.BuffRemindersPlaySound = PlayReminderSound
+
 -- The border effect of an entry's category, and its color.
 local function BorderStyle(self, entry)
     local c = self.config
