@@ -84,4 +84,79 @@ for _, total in ipairs({8,148,164,236}) do
     W.Settle()
     assert(W.M.combatScale==nil and #W.errors==0 and #W.combatLayout==0,"temporary fit did not restore")
 end
+do
+    local W = H.New(root, { client = arg[2] or "Mainline", catalogPresentation = true, unprotectedBags = true,
+        screenWidth = 960, screenHeight = 1440, config = { inventoryView = 1, windowScale = 1.5,
+            inventoryColumns = 8, inventoryRows = 7, animationMode = 2 } })
+    W.sizes[0], W.sizes[1], W.sizes[2] = 20, 36, 36
+    W.Apply(); W.OpenBags(); W.Settle()
+    local view = W.P.InventoryView
+    local next = view.next
+    local native = next.SetEnabled
+    assert(next:IsEnabled() and not next.bagNextPulse, "ordinary pagination pulsed without a viewport limit")
+
+    W.screenHeight = 480
+    W.Fire("DISPLAY_SIZE_CHANGED"); W.Settle()
+    local pulse = assert(next.bagNextPulse, "a height limit hid slots without pulsing Next")
+    assert(pulse:IsPlaying() and pulse.looping == "BOUNCE", "the Next hint is not a repeating native animation")
+    view.MoveScroll(view.maxScroll)
+    assert(not next:IsEnabled() and not pulse:IsPlaying(), "the hint kept pulsing on the last page")
+    view.MoveScroll(-view.scroll)
+    assert(pulse:IsPlaying(), "returning to an earlier page did not restore the hint")
+
+    local configure, calls = W.P.BagMotion.UpdateNextHint, 0
+    W.P.BagMotion.UpdateNextHint = function(...)
+        calls = calls + 1
+        return configure(...)
+    end
+    W.EnterCombat()
+    assert(next.SetEnabled == native and not pulse:IsPlaying(), "combat did not detach the Next hint")
+    W.screenHeight = 500
+    W.Fire("DISPLAY_SIZE_CHANGED"); W.Settle()
+    assert(view.layout == "suite" and calls == 0 and not pulse:IsPlaying(),
+        "combat resize ran the Next hint despite using the native button method")
+    W.LeaveCombat(); W.Settle()
+    assert(pulse:IsPlaying(), "the capped window did not restore its hint outside combat")
+
+    W.CloseBags(); W.Settle()
+    assert(next.SetEnabled == native and not pulse:IsPlaying(), "closing bags left the hint attached")
+    W.OpenBags(); W.Settle()
+    assert(pulse:IsPlaying(), "reopening a capped bag did not restore its hint")
+
+    W.screenWidth, W.screenHeight = 650, 1440
+    W.S.Set("bags", "inventoryColumns", 16)
+    W.Fire("DISPLAY_SIZE_CHANGED"); W.Settle()
+    assert(view.geometry.capacity >= W.config.inventoryRows and view.geometry.columns < W.config.inventoryColumns
+        and pulse:IsPlaying(), "a width-only limit did not pulse in the grid")
+    W.S.Set("bags", "listView", true); W.Settle()
+    assert(next:IsEnabled() and not pulse:IsPlaying(), "a width-only limit incorrectly pulsed in the list")
+    W.S.Set("bags", "listView", false); W.Settle()
+    assert(pulse:IsPlaying(), "returning to the width-capped grid did not restore its hint")
+
+    W.S.Set("bags", "animationMode", W.NS.BagsAnimation.OFF); W.Settle()
+    assert(next.SetEnabled == native and not pulse:IsPlaying(), "turning animations off left the hint attached")
+    assert(#W.errors == 0 and #W.taint == 0 and #W.combatLayout == 0, "paging hint caused errors or taint")
+end
+
+do
+    local W = H.New(root, { client = arg[2] or "Mainline", catalogPresentation = true,
+        screenWidth = 1600, screenHeight = 1080, config = { inventoryView = 6, windowScale = 1.5,
+            inventoryColumns = 10, inventoryRows = 6, autoSizeWindow = false, animationMode = 3 } })
+    W.sizes[0], W.sizes[1], W.sizes[2], W.sizes[5] = 20, 36, 24, 20
+    W.Apply(); W.OpenBags(); W.Settle()
+    local view = W.P.InventoryView
+    assert(view.visibleRows == 6 and view.model.lineCount == 12 and view.geometry.capacity > 6
+        and view.geometry.columns == 10, "fixture must page only because the bag was manually resized")
+    assert(view.next.bagNextPulse and view.next.bagNextPulse:IsPlaying(),
+        "a manually resized bag with rows 1–6 of 12 did not pulse")
+    W.S.Set("bags", "autoSizeWindow", true); W.Settle()
+    assert(view.next:IsEnabled() and not view.next.bagNextPulse:IsPlaying(),
+        "ordinary auto-fit paging pulsed after leaving the manual size")
+    W.S.Set("bags", "autoSizeWindow", false); W.Settle()
+    assert(view.next.bagNextPulse:IsPlaying(), "returning to the manual size did not restore the pulse")
+    W.S.Set("bags", "inventoryRows", 12); W.Settle()
+    assert(not view.next:IsEnabled() and not view.next.bagNextPulse:IsPlaying(),
+        "the manually sized bag kept pulsing with every row visible")
+end
+
 print("Bags content fit, manual size, scale, full-height, preview and combat passed: "..(arg[2] or "Mainline"))

@@ -981,6 +981,7 @@ function H.New(root, options)
             return animation
         end
         function group:SetToFinalAlpha(value) self.finalAlpha = value end
+        function group:SetLooping(value) self.looping = value end
         function group:SetScript(event, callback) self.scripts[event] = callback end
         function group:IsPlaying() return self.playing end
         function group:Play()

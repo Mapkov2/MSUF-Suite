@@ -220,6 +220,8 @@ local function OnEvent(_, event, value, success)
         P.BagWindowMotion.Cancel()
         P.BagResize.Cancel()
         InventoryView.transitionPending, InventoryView.categoryTransitionPending = false, false
+        P.InventoryRendering.AllowNextHint(false)
+        P.BagMotion.StopNextHint()
         P.BagMotion.StopAll()
         P.EquippedBags.Close()
         M:RefreshWindowLayout()
@@ -238,7 +240,10 @@ local function OnEvent(_, event, value, success)
         Index.InvalidateBag(InventoryView.index, value)
         return
     end
-    if event == "PLAYER_REGEN_ENABLED" then InventoryView.positionsDirty = true end
+    if event == "PLAYER_REGEN_ENABLED" then
+        InventoryView.positionsDirty, InventoryView.measureConfig = true, nil
+        P.InventoryRendering.AllowNextHint(true)
+    end
     if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
         M.resizeCorner = nil
         P.BagWindowMotion.Cancel()
@@ -282,7 +287,7 @@ local function NativeLayoutChanged()
 end
 
 local function WindowShown()
-    InventoryView.animate = true
+    InventoryView.animate, InventoryView.measureConfig = true, nil
     Index.Invalidate(InventoryView.index)
     Index.Retry(InventoryView.index)
     Request()
@@ -301,6 +306,7 @@ local function WindowHidden()
     InventoryView.transitionPending, InventoryView.categoryTransitionPending = false, false
     P.BagWindowMotion.Cancel()
     P.BagResize.Cancel()
+    P.BagMotion.StopNextHint()
     P.BagMotion.StopAll()
     P.EquippedBags.Close()
     ShowChrome(false)
@@ -376,6 +382,7 @@ function InventoryView.Refresh()
         return
     end
     Model.Prepare(InventoryView.model, M.config)
+    P.InventoryRendering.AllowNextHint(not NS.InCombat())
     InventoryView.measureConfig = nil
     InventoryView.context.physicalSlots = NS.BagsPhysicalOrder(M.config)
     if InventoryView.nativeMouseWheel == nil then InventoryView.nativeMouseWheel = InventoryView.frame:IsMouseWheelEnabled() end
@@ -442,6 +449,7 @@ function InventoryView.Release()
     if Keyring then Keyring.Hide() end
     if InventoryView.events then InventoryView.events:UnregisterAllEvents() end
     ShowChrome(false)
+    P.BagMotion.StopNextHint()
     P.BagMotion.StopAll()
     P.InventoryEditor.Hide()
     P.EquippedBags.Close()

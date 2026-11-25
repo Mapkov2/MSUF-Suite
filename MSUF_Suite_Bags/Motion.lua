@@ -4,6 +4,7 @@ local Motion = { records = setmetatable({}, { __mode = "k" }) }
 P.BagMotion = Motion
 local MODE = NS.BagsAnimation
 local StopSelection = function() end
+local nextButton, nativeNextEnabled, widthOnly
 function Motion.SetSelectionStop(callback) StopSelection = callback end
 
 local function New(frame)
@@ -23,6 +24,49 @@ local function Mode(config)
     return config.animationMode
 end
 Motion.Mode = Mode
+
+local function NextPulse(button)
+    local group = button.bagNextPulse
+    if group then return group end
+    group = button:CreateAnimationGroup()
+    group:SetLooping("BOUNCE")
+    local fade = group:CreateAnimation("Alpha")
+    fade:SetFromAlpha(1)
+    fade:SetToAlpha(.7)
+    fade:SetDuration(.75)
+    fade:SetSmoothing("IN_OUT")
+    button.bagNextPulse = group
+    return group
+end
+
+local function SetNextEnabled(button, enabled)
+    nativeNextEnabled(button, enabled)
+    local pulse = enabled and not P.BagWindowMotion.active
+        and not (widthOnly and P.InventoryRendering.Listed())
+    local group = pulse and NextPulse(button) or button.bagNextPulse
+    if not group or group:IsPlaying() == pulse then return end
+    if pulse then group:Play() else group:Stop() end
+end
+
+function Motion.StopNextHint()
+    if not nextButton then return end
+    nextButton.SetEnabled = nativeNextEnabled
+    if nextButton.bagNextPulse then nextButton.bagNextPulse:Stop() end
+    nextButton, nativeNextEnabled, widthOnly = nil, nil, nil
+end
+
+-- Only the Suite-owned button is wrapped. Restoring its method at the combat
+-- edge leaves the normal paging render path with no animation call or check.
+function Motion.UpdateNextHint(button, config, limitedRows, limitedColumns)
+    if not (limitedRows or limitedColumns) or Mode(config) == MODE.OFF then
+        Motion.StopNextHint()
+        return
+    end
+    widthOnly = not limitedRows
+    if nextButton == button then return end
+    nextButton, nativeNextEnabled = button, button.SetEnabled
+    button.SetEnabled = SetNextEnabled
+end
 
 -- Native animation objects run only during a transition; no Lua OnUpdate,
 -- timers. Hit regions and native items never animate.

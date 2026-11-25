@@ -7,6 +7,7 @@ local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local CELL, TOP, FOOTER, COMBAT_TOP = 40, 122, 50, 66
 local InventoryView
 local Presentation = P.BagPresentation
+local MeasureViewport = Presentation.Measure
 local Rendering = {}
 P.InventoryRendering = Rendering
 
@@ -242,6 +243,16 @@ local function PaintGrid(layout, g, columns, visibleRows, sidebar, font)
     Grid.PositionText(InventoryView.position, InventoryView.scroll, visibleRows, InventoryView.model.lineCount)
 end
 
+local function MeasureWithNextHint(g, c, width, available, money, lines, drawer)
+    Presentation.Measure(g, c, width, available, money, lines, drawer)
+    local limitedRows = not g.fullHeight and (not c.autoSizeWindow or g.capacity < c.inventoryRows)
+    P.BagMotion.UpdateNextHint(InventoryView.next, c, limitedRows, g.columns < c.inventoryColumns)
+end
+
+function Rendering.AllowNextHint(allowed)
+    MeasureViewport = allowed and MeasureWithNextHint or Presentation.Measure
+end
+
 local function Measure(c, listed)
     local g = InventoryView.geometry
     local available, width, screenHeight = Available()
@@ -259,7 +270,7 @@ local function Measure(c, listed)
         and g.measureCollapsed == c.collapseCategorySidebar and g.measureCompact == c.compactGroups then
         g.rows, g.height = g.baseRows, g.baseHeight
     else
-        Presentation.Measure(g, c, width, available, money, nil, drawer)
+        MeasureViewport(g, c, width, available, money, nil, drawer)
         InventoryView.measureConfig = not resizing and c or nil
         g.measureWidth, g.measureHeight, g.measureMoney, g.measureDrawer = width, available, money, drawer
         g.measureColumns, g.measureRows, g.measureMode = c.inventoryColumns, c.inventoryRows, c.inventoryView
