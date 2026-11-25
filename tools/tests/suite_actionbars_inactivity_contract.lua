@@ -1,6 +1,6 @@
 -- Real paint, native hooks and native walks; public activity gates secret times.
 local root = assert(arg[1])
-local function New(isolate)
+local function New(isolate, direct)
     local w = { duration = 0, desat = 0, alpha = 1, evaluations = 0, writes = 0,
         remaining = 0, hooks = {}, scripts = {}, secret = {}, secretChecks = 0, checks = 0, boundaries = 0,
         stateReads = 0, stateWrites = 0, decorWrites = 0, tints = 0 }
@@ -20,10 +20,10 @@ local function New(isolate)
             return result
         end,
         USABLE = { USABLE = 1, NO_POWER = 2, UNUSABLE = 3, OUT_OF_RANGE = 4 }, USABLE_TINT = {} }
-    local M = { active = true, config = { desaturateCooldown = true, cooldownAlpha = 40,
+    local M = { active = true, config = { desaturateCooldown = not direct, cooldownAlpha = direct and 100 or 40,
         castHighlight = true, hideEmptyCharges = false, procGlow = 1 } }
     local AB = { M = M, records = {}, bars = {}, owned = {}, Diagnostics = {}, UpdateAssist = function() end,
-        ENUM = { PROC_GLOW = { BLIZZARD = 1, PIXEL = 2, NONE = 3 }, BAR = { MAIN = 1 } } }
+        ENUM = { PROC_GLOW = { BLIZZARD = 1, PIXEL = 2, NONE = 3 }, BAR = { MAIN = 1 }, BORDER_ART = { BLIZZARD = 1 } } }
     local duration = {}
     function duration:EvaluateRemainingDuration(curve)
         w.evaluations = w.evaluations + 1
@@ -121,6 +121,50 @@ local function Info(active)
     end })
 end
 local idle, active = Info(false), Info(true)
+do
+    local flat = New()
+    local ab, rec, button = flat.ab, flat.rec, flat.button
+    button.checked = true
+    flat:Reset()
+    for _ = 1, 100 do flat.hooks.UpdateState(button) end
+    assert(flat.stateReads == 0 and flat.boundaries == 0 and flat.stateWrites == 0,
+        "a flat native button observed Blizzard's checked state without a Suite overlay")
+    local noop = function() end
+    local shape = setmetatable({}, { __index = function() return noop end })
+    rawset(button, "GetWidth", function() return 32 end)
+    rawset(button, "GetHeight", button.GetWidth)
+    button.cooldown.SetSwipeTexture, button.chargeCooldown.SetSwipeTexture = noop, noop
+    button.lossOfControlCooldown.SetSwipeTexture = noop
+    rec.borderArt = shape
+    setmetatable(rec.stateArt, getmetatable(shape))
+    ab.DecorationHost, ab.ShowEdges = noop, noop
+    local config = ab.M.config
+    config.borderArt, config.borderExpansion, config.borderScale, config.borderSize = 1, 0, 100, 1
+    ab.StyleDecoration(rec, 32)
+    assert(flat.stateReads == 1 and flat.decorShown == true,
+        "enabling a Suite overlay did not show the already checked native button")
+    button.checked = flat.secret
+    flat.hooks.UpdateState(button)
+    assert(flat.decorShown == false, "restricted native checked state was used as decoration")
+    config.borderArt, config.castHighlight = 2, false
+    ab.StyleDecoration(rec, 32)
+    flat:Reset()
+    button.checked = true
+    flat.hooks.UpdateState(button)
+    assert(flat.stateWrites == 1 and not button.checked and flat.stateReads == 0,
+        "flat button failed to suppress Blizzard's highlight or queried its own write")
+end
+do
+    local direct = New(false, true)
+    assert(not direct.hooks.ActionButton_ApplyCooldown and not direct.hooks.UpdateAction and not direct.scripts.OnShow,
+        "native cooldowns registered feedback observers with both effects disabled")
+    direct.ab.M.config.desaturateCooldown = true
+    direct.ab.UpdateCurves()
+    direct.ab.RefreshNativeBar(direct.rec.bar)
+    direct:Paint(idle, idle, idle)
+    assert(direct.rec.feedbackInactive and direct.hooks.UpdateAction and direct.scripts.OnShow,
+        "enabling native feedback did not install its complete observer set")
+end
 local function Neutral(w, label)
     assert(w.desat == 0 and w.alpha == 1, label .. ": neutral sinks differ")
 end
@@ -303,6 +347,27 @@ print("ActionBars native inactivity: sink equivalence, invalidations, secret fal
 
 -- Native state and usable post-hooks must honor the same dormant flag as
 -- normal paint walks. Catch up before the existing reveal raises opacity.
+do
+    local native = New(true)
+    native.rec.usable, native.rec.feedbackNeutral = 1, true
+    native:Reset()
+    local vm = Instructions(function()
+        for i = 1, 100 do native.hooks.UpdateUsable(native.button) end
+    end)
+    print(("Neutral native usability x100: VM=%d; boundaries=%d; tints=%d"):format(vm, native.boundaries, native.tints))
+    assert(native.boundaries == 0 and native.tints == 0 and not native.rec.usable and not native.rec.feedbackNeutral,
+        "neutral native usability entered a painter or left a stale cache")
+    native.rec.outOfRange = true
+    native.ab.Painter.Tint = function() error("test: invalid renderer") end
+    native.hooks.UpdateUsable(native.button, nil, true, false)
+    assert(native.errors == 1 and native.boundaries == 1, "native usability painter escaped its error boundary")
+    native.rec.usable = 1
+    native.hooks.UpdateUsable(native.secret)
+    native.ab.M.active = false
+    native.hooks.UpdateUsable(native.button)
+    assert(native.rec.usable == 1 and native.boundaries == 1,
+        "a restricted button or disabled permanent hook entered native usability")
+end
 w = New(true)
 w.ab.M.config.castHighlight = false
 w.ab.M.config.rangeColoring = true
@@ -344,7 +409,7 @@ print(("ActionBars dormant state/usable x100: VM=%d checkedReads=%d checkedWrite
 assert(w.stateReads == 0 and w.stateWrites == 0 and w.decorWrites == 0 and w.tints == 0,
     "dormant native state/usable post-hooks painted")
 assert(memoryMin < .01 and vm <= 6500, "dormant native post-hook allocation/VM budget")
-assert(w.boundaries == 200, "native post-hooks lost their isolated error boundary")
+assert(w.boundaries == 100, "dormant state lost isolation or usability entered its painter")
 assert(w.rec.feedbackNeutral == nil, "dormant usability lost feedback invalidation")
 local header = w.rec.bar.header
 local setAlpha = header.SetAlpha
@@ -399,7 +464,7 @@ assert(w.decorShown == true and not w.rec.nativeStateDirty, "hidden disable/re-e
 w:Fade(0, false); w.hooks.UpdateState(w.button)
 local second = { cooldown = {}, icon = { SetDesaturation = w.button.icon.SetDesaturation }, checked = true,
     GetChecked = w.button.GetChecked, SetChecked = w.button.SetChecked, SetAlpha = w.button.SetAlpha }
-local sibling = { native = true, nativeHooks = true, slot = w.rec.slot, bar = w.rec.bar, button = second,
+local sibling = { native = true, nativeHooks = true, nativeFeedbackHooks = true, slot = w.rec.slot, bar = w.rec.bar, button = second,
     filled = true, nativeStateDirty = true, decorFancy = true,
     stateArt = { SetShown = function(_, shown) w.siblingShown = shown end } }
 w.rec.bar.buttons[2], w.ab.records[second] = sibling, sibling

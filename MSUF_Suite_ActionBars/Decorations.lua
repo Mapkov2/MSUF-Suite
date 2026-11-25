@@ -342,6 +342,12 @@ function AB.StyleDecoration(rec, size)
     -- ring of shaped ones (their state art stays: it shows pressed and checked).
     local skin = style.skin
     local fancy = round or (c.borderArt == BORDER_ART.BLIZZARD and not skin)
+    if fancy and not rec.decorFancy and rec.native then
+        -- A flat button leaves checked state to Blizzard. Read it once when
+        -- a Suite overlay starts displaying it, including after Masque.
+        local checked = c.castHighlight and button:GetChecked()
+        rec.decorChecked = S.Public(checked) and checked == true
+    end
     rec.decorFancy = fancy
     if fancy then
         local host = AB.DecorationHost(rec)

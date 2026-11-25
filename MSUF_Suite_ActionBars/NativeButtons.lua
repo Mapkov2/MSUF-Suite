@@ -16,6 +16,7 @@ local OUT_OF_RANGE = S.USABLE.OUT_OF_RANGE
 local AcquireRange, Usable, CooldownFeedback = Painter.AcquireRange, Painter.Usable, Painter.CooldownFeedback
 local GlowCheck, SetGlow = Painter.GlowCheck, Painter.SetGlow
 local cooldownOwners = {}
+local cooldownHooked
 
 local function InvalidateFeedback(rec)
     rec.feedbackInactive, rec.feedbackNeutral, rec.feedbackSlot = nil, nil, nil
@@ -83,25 +84,13 @@ local function NativeState(rec)
     if not M.config.castHighlight then rec.button:SetChecked(false) end
 end
 
-local function NativeUsablePost(button, usable, noMana)
-    local rec = AB.records[button]
-    if not rec or not rec.native or not M.active then return end
-    -- Blizzard paints the state now: the cached one is old until the suite
-    -- reads it again below (the preview asks, S.ActionBarPreviewTint).
-    rec.usable = nil
-    -- Level-link usability paint can desaturate an inactive icon again.
-    rec.feedbackNeutral = nil
-    -- Blizzard has already painted usable state. Only an active range
-    -- override needs reapplying; another IsUsableAction call here would
-    -- duplicate the native call on every usable update.
-    if rec.bar.paintDormant then return end
+local function PaintNativeUsable(rec, usable, noMana)
+    rec.tint = nil
     if rec.outOfRange then
-        rec.tint = nil
         Painter.Tint(rec, true)
-    elseif AB.style.customTints then
+    else
         -- Custom usability colors: Blizzard's payload says which one, so
         -- only an update without payload (it read the answer itself) asks again.
-        rec.tint = nil
         if noMana == nil then usable = nil end
         Usable(rec, usable, noMana)
     end
@@ -109,23 +98,23 @@ end
 
 local function CatchUpState(rec)
     if not M.config.castHighlight then NativeState(rec) end
+    if not rec.decorFancy then
+        rec.nativeStateDirty = nil
+        return
+    end
     local checked = rec.button:GetChecked()
     rec.decorChecked = Public(checked) and checked == true
     AB.UpdateDecorState(rec)
     rec.nativeStateDirty = nil
 end
 
-local function NativeStatePost(button)
-    local rec = AB.records[button]
-    if rec and rec.native and M.active then
-        -- Native state keeps changing while a mouseover bar is faded. Its
-        -- decoration catches up in the existing synchronous reveal pass.
-        if rec.bar.paintDormant then
-            rec.nativeStateDirty = true
-            return
-        end
-        CatchUpState(rec)
+local function NativeStatePost(rec)
+    -- The existing synchronous reveal pass updates a faded bar before display.
+    if rec.bar.paintDormant then
+        rec.nativeStateDirty = true
+        return
     end
+    CatchUpState(rec)
 end
 
 local function NativeCountdownPost(button)
@@ -150,8 +139,24 @@ end
 -- Blizzard runs these post-hooks inside its own call chains (button
 -- updates, the alert manager): each runs isolated, so an error is reported
 -- and never stops Blizzard's caller.
-local function NativeUsableHook(button, _, usable, noMana) Dispatch(NativeUsablePost, button, usable, noMana) end
-local function NativeStateHook(button) Dispatch(NativeStatePost, button) end
+local function NativeUsableHook(button, _, usable, noMana)
+    if not M.active or IsSecret(button) then return end
+    local rec = AB.records[button]
+    if not rec or not rec.native then return end
+    -- Blizzard just painted the icon. The preview and cooldown painter
+    -- must discard their answers even on a faded bar.
+    rec.usable, rec.feedbackNeutral = nil, nil
+    if not rec.bar.paintDormant and (rec.outOfRange or AB.style.customTints) then
+        Dispatch(PaintNativeUsable, rec, usable, noMana)
+    end
+end
+local function NativeStateHook(button)
+    if not M.active or IsSecret(button) then return end
+    local rec = AB.records[button]
+    if rec and rec.native and (rec.decorFancy or not M.config.castHighlight) then
+        Dispatch(NativeStatePost, rec)
+    end
+end
 local function NativeCountdownHook(button) Dispatch(NativeCountdownPost, button) end
 local function NativeAlertHook(manager, button) Dispatch(NativeAlertPost, manager, button) end
 local function NativeCooldownHook(normal, info, charge, chargeInfo, loss, lossInfo)
@@ -168,10 +173,13 @@ end
 -- Shared button hooks, present on both clients and installed with the first
 -- reused bar; foreign cooldowns never enter the isolated observer.
 local function HookNativeShared()
+    if not AB.directDuration and not cooldownHooked then
+        hooksecurefunc("ActionButton_ApplyCooldown", NativeCooldownHook)
+        cooldownHooked = true
+    end
     if AB.nativeSharedHooked then return end
     AB.nativeSharedHooked = true
     hooksecurefunc("ActionButton_UpdateCooldownNumberHidden", NativeCountdownHook)
-    hooksecurefunc("ActionButton_ApplyCooldown", NativeCooldownHook)
     hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", NativeAlertHook)
 end
 
@@ -186,11 +194,16 @@ end
 
 local function RefreshNativeButton(rec)
     InvalidateFeedback(rec)
-    cooldownOwners[rec.button.cooldown] = rec
     if not rec.nativeHooks then
         rec.nativeHooks = true
         hooksecurefunc(rec.button, "UpdateUsable", NativeUsableHook)
         hooksecurefunc(rec.button, "UpdateState", NativeStateHook)
+    end
+    if not AB.directDuration then
+        cooldownOwners[rec.button.cooldown] = rec
+    end
+    if not AB.directDuration and not rec.nativeFeedbackHooks then
+        rec.nativeFeedbackHooks = true
         -- UpdateAction owns slot/page changes, including forced same-slot
         -- replacements. A post-hook discards any earlier paint in that call.
         hooksecurefunc(rec.button, "UpdateAction", NativeInvalidateHook)
