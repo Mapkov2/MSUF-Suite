@@ -1,5 +1,27 @@
 # MSUF Suite Changelog
 
+## 0.46 Alpha - 2026-11-25
+
+Changes since 0.45 Alpha. Supports WoW Retail 12.1.5 and 12.1.7 and WoW Forever 1.60.1. Requires Midnight Simple Unit Frames.
+
+### Action Bars
+
+- Custom flyouts can show learned spells, usable items from your bags and class or profession teleports. Retail has dungeon, raid and season teleport presets and a shortcut to pick up your Mythic+ keystone. WoW Forever can show keys from bags and the keyring.
+- Refined native button feedback and how the Suite updates the special zone buttons.
+
+### Bags and Nameplates
+
+- Added a one-bag view with a separate reagent section and, on WoW Forever, a keyring section. Inventory search reuses recent name matches. The next-page hint appears when the available space limits the grid.
+- Nameplate names and bars recover more reliably when Blizzard reuses a frame. Enemy nameplates in grouped instances can apply the configured width to restricted names. The Suite reapplies cast bar dimensions and spell text positioning when the client allows it.
+- Reduced repeat work for nameplate cast bars, auras and highlights, and for DataTexts, navigation, chat and tooltips.
+
+### Quality of Life and Skinning
+
+- Set player buff and debuff icon widths and heights independently. Disabling the Suite layout restores Blizzard's native grid and duration text.
+- Battle Resurrection preview elements have their own anchors. Blizzard visibility controls appear in both Floating Combat Text tabs.
+- Expanded the Retail Dungeons & Raids finder skin across queue controls and Premade Groups.
+- Updated all ten translation packs.
+
 ## 0.45 Alpha - 2026-11-24
 
 Changes since 0.4 Alpha. Supports WoW Retail 12.1.5 and 12.1.7 and WoW Forever 1.60.1. Requires Midnight Simple Unit Frames.
