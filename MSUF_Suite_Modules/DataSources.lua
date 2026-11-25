@@ -1,6 +1,7 @@
 local _, Private = ...
 local S, NS = Private.Suite, Private.NS
 local Dispatch, Finite, PublicText = S.Dispatch, S.Finite, S.PublicText
+local max, abs = math.max, math.abs
 
 -- All Suite information displays share one deadline timer. A display owns one
 -- reusable task per owner key; the native timer exists only while a task is due.
@@ -45,14 +46,14 @@ local function ArmTimer()
     for _, task in pairs(tasks) do
         if not due or task.due < due then due = task.due end
     end
-    if timer and due and timerDue and math.abs(timerDue - due) <= 0.001 then return end
+    if timer and due and timerDue and abs(timerDue - due) <= 0.001 then return end
     if timer then
         timer:Cancel()
         timer, timerDue = nil, nil
     end
     if not due then return end
     timerDue = due
-    timer = C_Timer.NewTimer(math.max(0.05, due - GetTime()), FireTimer)
+    timer = C_Timer.NewTimer(max(0.05, due - GetTime()), FireTimer)
 end
 
 -- The signal map runs a due task alone (isolated, like FireTimer's batch).
@@ -69,8 +70,8 @@ end
 -- Every due task holds its own deadline under its key (signalAt). Only a
 -- deadline that moved is set again and only a task that went is dropped, so
 -- a display's tick costs one native call.
-local function ArmSignals()
-    for _, task in pairs(tasks) do
+local function ArmSignal(task)
+    if tasks[task.owner] == task then
         local key, due = task.key, task.due
         if not key then
             key = #taskOfKey + 1
@@ -80,20 +81,16 @@ local function ArmSignals()
             task.signalAt = due
             signals:SignalAt(key, due)
         end
-    end
-    for key = 1, #taskOfKey do
-        local task = taskOfKey[key]
-        if task.signalAt and tasks[task.owner] ~= task then
-            task.signalAt = nil
-            signals:CancelSignal(key)
-        end
+    elseif task.signalAt then
+        task.signalAt = nil
+        signals:CancelSignal(task.key)
     end
 end
-Arm = function()
+Arm = function(task)
     local NewTimedSignalMap = C_Timer.NewTimedSignalMap
     if NewTimedSignalMap then signals = NewTimedSignalMap(TaskDue) end
-    Arm = signals and ArmSignals or ArmTimer
-    return Arm()
+    Arm = signals and ArmSignal or ArmTimer
+    return Arm(task)
 end
 
 local function CancelTask(task)
@@ -101,7 +98,7 @@ local function CancelTask(task)
     local owner = task.owner
     if tasks[owner] == task then
         tasks[owner] = nil
-        if not dispatching then Arm() end
+        if not dispatching then Arm(task) end
     end
 end
 
@@ -116,7 +113,7 @@ function S.ScheduleDataTick(owner, delay, callback)
         taskPool[owner] = task
     end
     task.generation = task.generation + 1
-    task.due = GetTime() + math.max(0.05, delay)
+    task.due = GetTime() + max(0.05, delay)
     task.callback = callback
     tasks[owner] = task
     if not dispatching then Arm() end

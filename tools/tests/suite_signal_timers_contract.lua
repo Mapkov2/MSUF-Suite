@@ -334,6 +334,17 @@ do
     assert(#reported == 1 and calls.two == 3, "a raising tick stopped the other owner")
     assert(one.key == oneKey and two.key == twoKey, "a display owner's signal key changed")
     assert(log.cancel == 1, "the display tick dropped a key that had no signal")
+    local function TickCost()
+        local used = 0
+        debug.sethook(function() used = used + 1 end, "", 1)
+        S.ScheduleDataTick("one", 1, Again):Cancel()
+        debug.sethook()
+        return used
+    end
+    local initial = TickCost()
+    for i = 1, 64 do S.ScheduleDataTick("dormant" .. i, 30, Again):Cancel() end
+    local populated = TickCost()
+    assert(populated <= initial + 10, ("dormant owners increased the next tick from %d to %d instructions"):format(initial, populated))
 end
 
 ------------------------------------------------------------------ the cooldown manager's trailing windows
