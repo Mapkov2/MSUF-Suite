@@ -23,15 +23,16 @@ extra.cooldown = { HookScript = Hook, GetCountdownFontString = function() return
 local zoneTime = Region()
 local zoneButton = { Cooldown = { HookScript = Hook, GetCountdownFontString = function() return zoneTime end },
     HookScript = Hook, GetFrameLevel = extra.GetFrameLevel }
-local zone = { Style = Region(), UpdateDisplayedZoneAbilities = function() end,
-    SpellButtonContainer = { EnumerateActive = function()
+local zone = { Style = Region(),
+    SpellButtonContainer = { SetContents = function() end, EnumerateActive = function()
         local first = true
         return function() if first then first = false; return zoneButton end end
     end } }
 ExtraActionButton1, ZoneAbilityFrame = extra, zone
 local zoneCallback
 hooksecurefunc = function(object, method, callback)
-    assert(object == zone and method == "UpdateDisplayedZoneAbilities", "unexpected native hook")
+    assert(object == zone.SpellButtonContainer and method == "SetContents",
+        "unchanged or empty Blizzard zone-ability refreshes would schedule button styling")
     zoneCallback = callback
 end
 local NS = { InCombat = function() return combat end }
@@ -55,6 +56,9 @@ assert(extra.style.alpha == 0 and zone.Style.alpha == 0, "artwork stayed visible
 assert(extra.HotKey.alpha == 0 and extra.HotKey.font == "keys" and extra.HotKey.size == 13, "extra hotkey style")
 assert(time.font == "time" and time.size == 17 and zoneCallback, "zone/extra cooldown style or update lifecycle")
 local prior = writes
+zoneCallback()
+assert(pending == 1, "a new set of native zone buttons was not scheduled")
+pending = 0
 combat, config.hideSpecialArtwork = true, false
 AB.SyncSpecialButtons()
 assert(writes == prior and queued == 1 and AB.specialPending, "combat change was not deferred")

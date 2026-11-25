@@ -165,7 +165,9 @@ function AB.SyncSpecialButtons()
     if zone then
         Artwork(zone.Style)
         if M.config.styleSpecialButtons and not zoneHooked then
-            hooksecurefunc(zone, "UpdateDisplayedZoneAbilities", Queue)
+            -- Blizzard only replaces these buttons for a changed, nonempty
+            -- display. Its outer update also runs when the list stays empty.
+            hooksecurefunc(zone.SpellButtonContainer, "SetContents", Queue)
             zoneHooked = true
         end
         for button in zone.SpellButtonContainer:EnumerateActive() do StyleButton(button, false) end
