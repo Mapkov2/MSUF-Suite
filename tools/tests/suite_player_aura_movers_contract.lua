@@ -229,8 +229,8 @@ end
 assert(buffs.isEnabled() and debuffs.isEnabled(), "the movers are not available while the layout runs")
 Pinned("enabled")
 
--- Popup controls: buffs edit x/y and the shared icon layout; debuffs edit
--- their own offsets in place of a generic X/Y.
+-- Popup controls: each mover owns its dimensions and shares zoom and spacing.
+-- Debuffs have relative offsets.
 local function Ids(element)
     local ids = {}
     for index, control in ipairs(element.extraControls) do
@@ -241,7 +241,7 @@ local function Ids(element)
     return table.concat(ids, ",")
 end
 assert(Ids(buffs) == "x,y,iconWidth,iconHeight,iconZoom,perRow,spacing,rowSpacing", "buff controls: " .. Ids(buffs))
-assert(Ids(debuffs) == "debuffX,debuffOffset,iconWidth,iconHeight,iconZoom,perRow,spacing,rowSpacing",
+assert(Ids(debuffs) == "debuffX,debuffOffset,debuffIconWidth,debuffIconHeight,iconZoom,perRow,spacing,rowSpacing",
     "debuff controls: " .. Ids(debuffs))
 -- Their size is in those controls: the host's W/H readout of the block goes.
 assert(buffs.sizeSummary == false and debuffs.sizeSummary == false, "the movers keep the W/H readout")
@@ -263,6 +263,29 @@ assert(Crop(BuffFrame.auraFrames[1]) == "0.000,1.000,0.250,0.750" and Crop(Debuf
 assert(debuffs.extraControls[5].set(20))
 assert(Crop(BuffFrame.auraFrames[2]) == "0.200,0.800,0.350,0.650", "zoom 20: " .. Crop(BuffFrame.auraFrames[2]))
 assert(S.Set("playerAuras", "iconZoom", 7))
+
+-- The popup and native grid reflow use the right dimensions throughout each row.
+local initialBuffs, initialDebuffs = buffs.captureState(), debuffs.captureState()
+assert(buffs.extraControls[3].set(60) and buffs.extraControls[4].set(30))
+assert(debuffs.extraControls[3].set(36) and debuffs.extraControls[4].set(42))
+local function CheckGeometry(frame, width, height)
+    local first, second = frame.auraFrames[1], frame.auraFrames[2]
+    assert(first.width == width and first.height == height, "aura size came from the wrong row")
+    assert(first.DebuffBorder.width == width + 2 and first.DebuffBorder.height == height + 2, "aura border size")
+    assert(Anchor(second)[4] == -(width + config.spacing), "column step came from the wrong row")
+    assert(frame.AuraContainer.width == config.perRow * (width + config.spacing) - config.spacing, "container width")
+    assert(frame.AuraContainer.height == height, "container height")
+end
+CheckGeometry(BuffFrame, 60, 30)
+CheckGeometry(DebuffFrame, 36, 42)
+assert(Crop(BuffFrame.auraFrames[1]) == "0.070,0.930,0.285,0.715", "buff aspect crop")
+assert(Crop(DebuffFrame.auraFrames[1]) == "0.131,0.869,0.070,0.930", "debuff aspect crop")
+DebuffFrame:UpdateGridLayout()
+CheckGeometry(DebuffFrame, 36, 42)
+assert(debuffs.restoreState(initialDebuffs))
+CheckGeometry(BuffFrame, 60, 30)
+CheckGeometry(DebuffFrame, rules.debuffIconWidth.default, rules.debuffIconHeight.default)
+assert(buffs.restoreState(initialBuffs))
 assert(rules.debuffOffset.min < 0, "the debuff row cannot be dragged above the buff row")
 
 -- A buff drag previews on both containers and never runs the system overrides.

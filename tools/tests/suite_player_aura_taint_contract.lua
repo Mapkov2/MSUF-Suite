@@ -141,13 +141,17 @@ local function Run(scenario)
             writes = writes + 1
             if origin == "addon" then addonWrites = addonWrites + 1 end
         end
+        local point = "TOP"
+        if not self.isHorizontal then point = self.addIconsToRight and "LEFT" or "RIGHT"
+        elseif self.addIconsToTop then point = "BOTTOM" end
+        local opposite = ({ TOP = "BOTTOM", BOTTOM = "TOP", LEFT = "RIGHT", RIGHT = "LEFT" })[point]
         for _, button in ipairs(auras) do
             button:SetScale(1)
             button:SetSize(30, 40)
             button.Icon:ClearAllPoints()
-            button.Icon:SetPoint("TOP", button, "TOP", 0, 0)
+            button.Icon:SetPoint(point, button, point, 0, 0)
             button.Duration:ClearAllPoints()
-            button.Duration:SetPoint("TOP", button.Icon, "BOTTOM", 0, 0)
+            button.Duration:SetPoint(point, button.Icon, opposite, 0, 0)
         end
         self:GetParent():UpdateSize()
         GridLayoutUtil.ApplyGridLayout(auras, cache.anchor, cache.layout)
@@ -197,12 +201,13 @@ local function Run(scenario)
     origin = "addon"
     local icon = frame.auraFrames[1].Icon
     local getPoint, getWidth, getHeight = icon.GetPoint, icon.GetWidth, icon.GetHeight
-    if scenario == "restricted-icon" or scenario == "secret-icon" then
+    local unavailableGrid = scenario == "disable-with-unreadable-native-anchors"
+    if scenario == "restricted-icon" or scenario == "secret-icon" or unavailableGrid then
         icon.GetPoint = function() return "TOP", frame.auraFrames[1], "TOP", { secret = true }, 0 end
         icon.GetWidth, icon.GetHeight = function() return { secret = true } end, function() return { secret = true } end
     end
     -- 12.x: text anchored to artwork with secret anchors reads secret anchors too.
-    if scenario == "restricted-icon" or scenario == "secret-icon" then
+    if scenario == "restricted-icon" or scenario == "secret-icon" or unavailableGrid then
         for _, text in ipairs({ frame.auraFrames[1].Duration, frame.auraFrames[1].Count }) do
             text:ClearAllPoints()
             text:SetPoint("TOP", icon, "BOTTOM", 0, 0)
@@ -340,6 +345,33 @@ local function Run(scenario)
         local adopted = pcall(module.Refresh, module)
         first.SetScale = setter
         Check(adopted and debuff.auraFrames[1].width == 67, "one row aborted adoption of the other row")
+    elseif unavailableGrid then
+        local button = frame.auraFrames[1]
+        local duration = button.Duration
+        Check(duration.points[1][1] == "BOTTOMLEFT" and duration.points[1][2] == button,
+            "unreadable native anchors prevented the suite timer placement")
+        -- The live grid can change orientation while the Suite layout owns the row.
+        container.isHorizontal, container.addIconsToRight = false, true
+        Native(frame.UpdateGridLayout, frame)
+        nativeCache = container.currentGridLayoutInfo
+        Check(duration.points[1][1] == "BOTTOMLEFT", "native reflow reclaimed a Suite timer")
+        local otherIcon = failed.Icon
+        otherIcon.forbidden = true
+        local beforeSolver = solverCallsByFrame[frame]
+        module:Disable()
+        Check(solverCallsByFrame[frame] == beforeSolver, "a restricted slot reached the native grid solver")
+        Check(yieldHistory[#yieldHistory] == false and skins[button] == nil,
+            "disabling both pieces did not release the icon skin")
+        otherIcon.forbidden = nil
+        -- A buff refresh does not rewrite its grid anchors (e.g. Edit Mode exit).
+        Native(frame.UpdateAuraButtons, frame)
+        local point = duration.points[1]
+        Check(#duration.points == 1 and point and point[1] == "LEFT" and point[2] == icon and point[3] == "RIGHT",
+            "disabled layout left the timer inside its icon after a buff refresh")
+        point = icon.points[1]
+        Check(#icon.points == 1 and point and point[1] == "LEFT" and point[2] == button and point[3] == "LEFT",
+            "disabled layout left the icon stretched after a buff refresh")
+        Check(duration.font[2] == 10, "disabled layout retained the Suite timer font")
     elseif scenario == "disable-forbidden-saved-icon" then
         local icon = frame.auraFrames[1].Icon
         local clear, coordinates = icon.ClearAllPoints, icon.SetTexCoord
@@ -547,6 +579,7 @@ Run("cleanup-solver-error")
 Run("persistent-solver-error")
 Run("cleanup-region-error")
 Run("independent-adoption")
+Run("disable-with-unreadable-native-anchors")
 Run("disable-forbidden-saved-icon")
 assert(#failures == 0, table.concat(failures, "\n"))
 print("player aura native cache ownership and downstream damage meter paths: " .. checks .. " checks passed")

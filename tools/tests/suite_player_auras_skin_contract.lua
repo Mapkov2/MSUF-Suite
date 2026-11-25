@@ -160,6 +160,7 @@ Check(rules.buffSkin and rules.buffSkin.hidden and rules.buffSkin.default == "DE
 local config = {}
 for key, rule in pairs(rules) do config[key] = rule.default end
 config.debuffSkin = "DARK2"
+config.debuffIconWidth, config.debuffIconHeight = 39, 32
 local handlers = {} -- the module's events (context:Event)
 module.config, module.context = config, { Event = function(_, event, handler) handlers[event] = handler end }
 
@@ -209,7 +210,9 @@ local buff, debuff = BuffFrame.auraFrames[1], DebuffFrame.auraFrames[1]
 local call = PaintsOf(buff)[1]
 Check(call and call.look == LOOKS.DEFAULT and call.anchor == buff.Icon and call.w == config.iconWidth
     and call.h == config.iconHeight, "a buff takes the Buffs row's look around its Icon at the icon size")
-Check(PaintsOf(debuff)[1] and PaintsOf(debuff)[1].look == LOOKS.DARK2, "a debuff takes the Debuffs row's look")
+call = PaintsOf(debuff)[1]
+Check(call and call.look == LOOKS.DARK2 and call.w == config.debuffIconWidth and call.h == config.debuffIconHeight,
+    "a debuff takes the Debuffs row's look and dimensions")
 Check(PaintsOf(BuffFrame.ConsolidatedBuffs)[1] and PaintsOf(BuffFrame.ConsolidatedBuffs)[1].look == LOOKS.DEFAULT,
     "the consolidated buffs button (on BuffFrame itself) takes the Buffs row's look")
 Check(outline[buff] and not outline[buff].shown, "the skin replaces the module's outline")
@@ -370,7 +373,7 @@ do
         local body = Body(head):lower()
         Check(not body:find("skin", 1, true) and not body:find("look", 1, true), head .. " must run Suite main's code")
     end
-    Check(Body("local function Sync("):find("Place(button, button.Icon, slot, frame.AuraContainer, c, anchor)", 1, true),
+    Check(Body("local function Sync("):find("Place(button, button.Icon, slot, frame.AuraContainer, geometry, anchor)", 1, true),
         "Sync must use the shared placement path")
 end
 print("suite player auras skin contract passed")

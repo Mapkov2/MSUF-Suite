@@ -9,8 +9,7 @@ local saved, borders, hooked, debuffs, laid, styled = {}, {}, {}, {}, {}, {}
 local looks, skinned, shifted, handles = {}, {}, {}, {}
 local generation, fontPath = 0, nil
 local borderRed, borderGreen, borderBlue
-local cropLeft, cropRight, cropTop, cropBottom
-local stepX, stepY
+local buffGeometry, debuffGeometry = {}, {}
 local unpack, select, floor, ceil, max, min = unpack, select, math.floor, math.ceil, math.max, math.min
 local IsSecret = NS.IsSecret
 local Finite = S.Finite
@@ -190,25 +189,26 @@ local function Pin(region, button, point)
     region:SetPoint(point, button, point, point == "BOTTOMRIGHT" and -2 or 2, 1)
 end
 
-local function NativeBorder(region, c)
+local function NativeBorder(region, geometry)
     if not region then return end
     if not Remember(region, BORDER) then return end
-    region:SetSize(c.iconWidth + 2, c.iconHeight + 2)
+    region:SetSize(geometry.width + 2, geometry.height + 2)
 end
 
-local function Style(button, icon, c)
+local function Style(button, icon, geometry)
+    local c = M.config
     styled[button] = generation
     if icon.SetTexCoord then
         -- ConsolidatedBuffs uses a sub-rectangle of an atlas, not an aura icon.
         if not (buffFrame and button == buffFrame.ConsolidatedBuffs) then
             local original = saved[icon]
             original.coords = original.coords or Numbers(8, icon:GetTexCoord())
-            if original.coords then icon:SetTexCoord(cropLeft, cropRight, cropTop, cropBottom) end
+            if original.coords then icon:SetTexCoord(geometry.left, geometry.right, geometry.top, geometry.bottom) end
         end
         Border(button, icon, c)
     end
-    NativeBorder(button.DebuffBorder, c)
-    NativeBorder(button.TempEnchantBorder, c)
+    NativeBorder(button.DebuffBorder, geometry)
+    NativeBorder(button.TempEnchantBorder, geometry)
     Font(button.Count, c)
     Font(button.Duration, c)
     Pin(button.Count, button, "BOTTOMRIGHT")
@@ -216,15 +216,15 @@ local function Style(button, icon, c)
 end
 
 local style = Style
-local function StyleSkinned(button, icon, c)
-    Style(button, icon, c)
+local function StyleSkinned(button, icon, geometry)
+    Style(button, icon, geometry)
     local border = borders[button]
-    if border and P.PlayerAuraSkins.PaintLook(skinned, button, icon, looks[button:GetParent()], c.iconWidth, c.iconHeight) then
+    if border and P.PlayerAuraSkins.PaintLook(skinned, button, icon, looks[button:GetParent()], geometry.width, geometry.height) then
         border:Hide()
     end
 end
 
-local function Place(button, icon, slot, container, c, auraAnchor)
+local function Place(button, icon, slot, container, geometry, auraAnchor)
     if not saved[button] or (not auraAnchor and not saved[icon]) then
         if not icon then return end
         local original = saved[button] or Snapshot(button, BUTTON)
@@ -232,12 +232,12 @@ local function Place(button, icon, slot, container, c, auraAnchor)
         saved[button] = original
         if not auraAnchor then Remember(button.Duration, DURATION) end
     end
-    local col, row = (slot - 1) % c.perRow, floor((slot - 1) / c.perRow)
+    local col, row = (slot - 1) % geometry.perRow, floor((slot - 1) / geometry.perRow)
     button:SetScale(1)
-    button:SetSize(c.iconWidth, c.iconHeight)
+    button:SetSize(geometry.width, geometry.height)
     button:ClearAllPoints()
-    button:SetPoint("TOPRIGHT", container, "TOPRIGHT", -col * stepX, -row * stepY)
-    -- Keep the fixed native IconInfo dimensions of private auras; reposition only their public anchor.
+    button:SetPoint("TOPRIGHT", container, "TOPRIGHT", -col * geometry.stepX, -row * geometry.stepY)
+    -- Keep the native IconInfo for private auras.
     if auraAnchor then return true end
     local artwork = saved[icon]
     if not artwork.points and artwork.checked ~= generation then
@@ -252,10 +252,10 @@ local function Place(button, icon, slot, container, c, auraAnchor)
         artwork.fill(icon, button)
     elseif artwork.size then
         -- Hidden 12.x anchors are refilled (the native grid restores them). Restricted ones: only change a size we can restore.
-        icon:SetSize(c.iconWidth, c.iconHeight)
+        icon:SetSize(geometry.width, geometry.height)
     end
     Pin(button.Duration, button, "BOTTOMLEFT")
-    if styled[button] ~= generation then style(button, icon, c) end
+    if styled[button] ~= generation then style(button, icon, geometry) end
     return true
 end
 
@@ -304,8 +304,8 @@ local function SeatFrame(frame, list)
     return true
 end
 
-local function Anchor(frame, list, rows)
-    local c, container = M.config, frame.AuraContainer
+local function Anchor(frame, list, rows, geometry)
+    local container = frame.AuraContainer
     local original = saved[container] or Remember(container, CONTAINER)
     if not original then return end
     local cache = container.currentGridLayoutInfo
@@ -317,8 +317,7 @@ local function Anchor(frame, list, rows)
     local shift = shifted[frame]
     local x, y = shift and shift[1] or 0, shift and shift[2] or 0
     if not AnchorRegions(frame, x, y, not list.anchored) then return end
-    container:SetSize(c.perRow * (c.iconWidth + c.spacing) - c.spacing,
-        rows * (c.iconHeight + c.rowSpacing) - c.rowSpacing)
+    container:SetSize(geometry.fullWidth, geometry.height + (rows - 1) * geometry.stepY)
     list.anchored = true
     return true
 end
@@ -472,7 +471,7 @@ local function Sync(frame)
     if not (M.active and frame and frame.AuraContainer and frame.auraFrames) then return end
     local list = laid[frame]
     if not list then
-        list = { n = -1 }
+        list = { n = -1, geometry = debuffs[frame] and debuffGeometry or buffGeometry }
         laid[frame] = list
     end
     if list.restoring then return end
@@ -496,7 +495,7 @@ local function Sync(frame)
         generation, list.n, list.restyle = generation + 1, -1, false
         list.anchored, list.framed = false, false
     end
-    local buttons, collect, c = frame.auraFrames, frame.ConsolidatedBuffs, M.config
+    local buttons, collect = frame.auraFrames, frame.ConsolidatedBuffs
     local offset = Offset(collect, list)
     local private = frame.PrivateAuraAnchors and #frame.PrivateAuraAnchors or 0
     local ordinary = #buttons - private
@@ -506,6 +505,7 @@ local function Sync(frame)
     if list.offset ~= offset then valid = -1 end
     if valid == #buttons and list.anchored and not list.reset and list.filled == filled
         and list[0] == collect and SamePool(buttons, list) then return end
+    local geometry = list.geometry
     for index = collect and 0 or 1, #buttons do
         local button = index == 0 and collect or buttons[index]
         local anchor = index > ordinary
@@ -517,7 +517,7 @@ local function Sync(frame)
             if locked and Refused(button, list) then return end
             local slot = index == 0 and 1 or index + offset
             if anchor then slot = filled + index - ordinary end
-            if Place(button, button.Icon, slot, frame.AuraContainer, c, anchor) then list[index] = button
+            if Place(button, button.Icon, slot, frame.AuraContainer, geometry, anchor) then list[index] = button
             elseif Unused(frame, button) then
                 list[index] = nil
             else
@@ -527,14 +527,14 @@ local function Sync(frame)
         end
     end
     list.n, list.reset, list.filled, list.offset = #buttons, false, filled, offset
-    local rows = max(1, ceil((filled + offset + private) / c.perRow))
+    local rows = max(1, ceil((filled + offset + private) / geometry.perRow))
     if list.rows == rows and list.anchored then return end
     if locked == nil then
         locked = NS.IsCombatLocked()
         if locked and Refused(frame, list) then return end
     end
     if locked and not list.anchored and frame.CollapseAndExpandButton and Refused(frame.CollapseAndExpandButton, list) then return end
-    if Anchor(frame, list, rows) then list.rows = rows
+    if Anchor(frame, list, rows, geometry) then list.rows = rows
     else
         FallBack(frame, list, frame, locked)
     end
@@ -602,7 +602,6 @@ local function SetLook(name, choice)
     if container then looks[container] = look end
 end
 
--- Resolve looks on the settings path, including changes reported by the host.
 local function ResolveLooks()
     local c = M.config
     SetLook("BuffFrame", c.buffSkin)
@@ -618,15 +617,22 @@ local function ResolveLooks()
     style = next(looks) and StyleSkinned or Style
 end
 
+local function UpdateGeometry(geometry, width, height, c)
+    geometry.width, geometry.height, geometry.perRow = width, height, c.perRow
+    geometry.stepX, geometry.stepY = width + c.spacing, height + c.rowSpacing
+    geometry.fullWidth = geometry.perRow * geometry.stepX - c.spacing
+    local half = .5 - c.iconZoom / 100
+    local x, y = half * min(1, width / height), half * min(1, height / width)
+    geometry.left, geometry.right, geometry.top, geometry.bottom = .5 - x, .5 + x, .5 - y, .5 + y
+end
+
 local function Adopt()
     buffFrame, debuffFrame = _G.BuffFrame, _G.DebuffFrame
     local c = M.config
     fontPath = S.ResolveFont(c.font) or NS.MSUFMedia.font
-    stepX, stepY = c.iconWidth + c.spacing, c.iconHeight + c.rowSpacing
     borderRed, borderGreen, borderBlue = S.RGB(c.borderColor)
-    local half = .5 - c.iconZoom / 100
-    local x, y = half * math.min(1, c.iconWidth / c.iconHeight), half * math.min(1, c.iconHeight / c.iconWidth)
-    cropLeft, cropRight, cropTop, cropBottom = .5 - x, .5 + x, .5 - y, .5 + y
+    UpdateGeometry(buffGeometry, c.iconWidth, c.iconHeight, c)
+    UpdateGeometry(debuffGeometry, c.debuffIconWidth or c.iconWidth, c.debuffIconHeight or c.iconHeight, c)
     -- Any refresh, including drag commit or cancel, returns preview containers to their frames.
     for frame in pairs(shifted) do shifted[frame] = nil end
     Invalidate()
@@ -689,12 +695,10 @@ function M:Disable()
     end
 end
 
--- MSUF Edit Mode previews each row drag on its container and commits through the Suite mover.
-local LAYOUT = { "iconWidth", "iconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" }
+local BUFF_LAYOUT = { "iconWidth", "iconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" }
+local DEBUFF_LAYOUT = { "debuffIconWidth", "debuffIconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" }
 
 local function Round(value) return floor(value + .5) end
-
--- MSUF drags its own handle instead of recording drag state on the native container.
 local function Handle(frame)
     local container = frame and frame.AuraContainer
     if not (container and saved[container]) then return end
@@ -729,7 +733,6 @@ local function InRange(delta, rule, value)
     return max(rule.min - value, min(rule.max - value, delta))
 end
 
--- Respect the native Edit Mode system clamp, including its selection insets.
 local function OnScreen(frame, scale, dx, dy)
     if not frame then return dx, dy end
     local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
@@ -772,19 +775,17 @@ local function Drag(debuffRow, request)
     return moved
 end
 
-local function Control(key)
+local function Control(key, axis)
     local rule = S.catalog[ID].rules[key]
-    return { id = key, label = S.Text(rule.label), kind = "number", min = rule.min, max = rule.max,
-        step = rule.step or 1,
+    return { id = key, label = S.Text(rule.label), kind = "number",
+        positionAxis = axis, min = rule.min, max = rule.max, step = rule.step or 1,
         get = function() return S.Config(ID)[key] end,
         set = function(value) return S.Set(ID, key, value) end }
 end
 
--- Debuff Y grows downwards. Both movers share the layout settings.
 local function DebuffControls()
-    local controls = { Control("debuffX"), Control("debuffOffset") }
-    controls[1].positionAxis, controls[2].positionAxis = "x", "y"
-    for _, key in ipairs(LAYOUT) do controls[#controls + 1] = Control(key) end
+    local controls = { Control("debuffX", "x"), Control("debuffOffset", "y") }
+    for _, key in ipairs(DEBUFF_LAYOUT) do controls[#controls + 1] = Control(key) end
     return controls
 end
 
@@ -794,8 +795,7 @@ function M:RegisterMovers()
         getFrame = function() return Handle(buffFrame) end,
         visible = function() return Visible(buffFrame) end,
         move = function(_, _, request) return Drag(false, request) end,
-        historyKeys = LAYOUT, sizeSummary = false,
-        sizeKeys = { "iconWidth", "iconHeight", "iconZoom", "perRow", "spacing", "rowSpacing" },
+        sizeSummary = false, sizeKeys = BUFF_LAYOUT,
     })
     debuffControls = debuffControls or DebuffControls()
     S.RegisterOwnedMover(ID, "debuffs", {
@@ -803,7 +803,7 @@ function M:RegisterMovers()
         getFrame = function() return Handle(debuffFrame) end,
         visible = function() return Visible(debuffFrame) end,
         move = function(_, _, request) return Drag(true, request) end,
-        quickPosition = false, extraControls = debuffControls, historyKeys = LAYOUT, sizeSummary = false,
+        quickPosition = false, extraControls = debuffControls, historyKeys = DEBUFF_LAYOUT, sizeSummary = false,
     })
 end
 

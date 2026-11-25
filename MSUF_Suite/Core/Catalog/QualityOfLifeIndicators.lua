@@ -58,10 +58,17 @@ B.Add("xpBar", Bool("foreverOptimizer", "Forever XP Optimizer", false), "xp_bar"
 B.Module("playerAuras", {
     title = "Player aura layout", description = "Style native player buffs and debuffs beside the minimap.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    prepareConfig = function(config)
+        -- Existing profiles used the buff dimensions for both rows.
+        config.debuffIconWidth = config.debuffIconWidth or config.iconWidth
+        config.debuffIconHeight = config.debuffIconHeight or config.iconHeight
+    end,
 })
 B.Section("playerAuras", "player_auras", "Player aura layout", {
-    Number("iconWidth", "Icon width", 52, 16, 100),
-    Number("iconHeight", "Icon height", 26, 12, 100),
+    Number("iconWidth", "Buff icon width", 52, 16, 100),
+    Number("iconHeight", "Buff icon height", 26, 12, 100),
+    Number("debuffIconWidth", "Debuff icon width", 52, 16, 100),
+    Number("debuffIconHeight", "Debuff icon height", 26, 12, 100),
     -- The icon artwork cut from each side (7: the crop this layout always had).
     Number("iconZoom", "Icon zoom (percent)", 7, 0, 30),
     Number("perRow", "Icons per row", 12, 1, 32),

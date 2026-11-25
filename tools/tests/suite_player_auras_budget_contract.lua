@@ -499,8 +499,10 @@ local function Snapshot(frame)
 end
 -- Every shown button carries the configured geometry, crop, anchors and fonts.
 local function Painted(frame, label)
-    local offset = frame == DebuffFrame and config.debuffOffset or 0
-    local shiftX = frame == DebuffFrame and config.debuffX or 0
+    local debuff = frame == DebuffFrame
+    local offset, shiftX = debuff and config.debuffOffset or 0, debuff and config.debuffX or 0
+    local width = debuff and config.debuffIconWidth or config.iconWidth
+    local height = debuff and config.debuffIconHeight or config.iconHeight
     assert(#frame.points == 1 and frame.points[1][2] == Minimap, label .. ": the frame left the minimap")
     assert(frame.points[1][4] == config.x + shiftX and frame.points[1][5] == config.y - offset,
         label .. ": the frame is not at the configured position")
@@ -508,7 +510,7 @@ local function Painted(frame, label)
     for _, button in ipairs(frame.auraFrames) do buttons[#buttons + 1] = button end
     for _, button in ipairs(buttons) do
         if button.shown then
-            assert(button.width == config.iconWidth and button.height == config.iconHeight and button.scale == 1,
+            assert(button.width == width and button.height == height and button.scale == 1,
                 label .. ": a shown button kept native geometry")
             if not button.isAuraAnchor then
                 local duration = button.Duration.points
@@ -640,14 +642,16 @@ assert(anchorDirty == dirty, "an aura update moved a frame: Edit Mode anchors ma
 -- Private anchors immediately follow the packed ordinary prefix after gains,
 -- losses, row wrapping and secret visibility. Their Icon and Duration stay native.
 local private = DebuffFrame.PrivateAuraAnchors
+config.debuffIconWidth, config.debuffIconHeight = 40, 38
+module:Refresh()
 for _, count in ipairs({ 0, 1, config.perRow - 1, config.perRow, 2 }) do
     for _, button in ipairs(DebuffFrame.auraFrames) do button.secret = { IsShown = true } end
     UnitAura(20, count)
     for index, button in ipairs(private) do
         local slot = count + index - 1
         local point = button.points[1]
-        assert(point[4] == -(slot % config.perRow) * (config.iconWidth + config.spacing)
-            and point[5] == -math.floor(slot / config.perRow) * (config.iconHeight + config.rowSpacing),
+        assert(point[4] == -(slot % config.perRow) * (config.debuffIconWidth + config.spacing)
+            and point[5] == -math.floor(slot / config.perRow) * (config.debuffIconHeight + config.rowSpacing),
             "a private anchor left a gap or covered an ordinary debuff")
         assert(button.Icon.points[1][1] == "TOP" and button.Duration.points[1][2] == button.Icon,
             "Suite changed the artwork of a private aura")
@@ -668,7 +672,7 @@ for api in pairs(refreshCalls) do
 end
 
 -- A new position or size in the options moves and repaints both frames.
-config.x, config.y, config.debuffOffset, config.iconWidth = config.x - 30, config.y - 10, config.debuffOffset + 20, 40
+config.x, config.y, config.debuffOffset, config.iconWidth = config.x - 30, config.y - 10, config.debuffOffset + 20, 46
 module:Refresh()
 Painted(BuffFrame, "configuration change")
 Painted(DebuffFrame, "configuration change")

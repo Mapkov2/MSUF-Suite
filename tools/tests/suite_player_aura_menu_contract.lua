@@ -97,7 +97,22 @@ for _, row in ipairs(P.SearchRows()) do
         foundRows[row.settingKey] = row
     end
 end
-Check(foundRows["msufsuite.playerAuras.iconWidth"], "cold search lost layout controls")
+for _, key in ipairs({ "iconWidth", "iconHeight", "debuffIconWidth", "debuffIconHeight" }) do
+    Check(foundRows["msufsuite.playerAuras." .. key], "cold search lost " .. key)
+end
+local oldProfile = { suite = { schema = 1, revision = S.MigrationRevision, modules = {
+    playerAuras = { iconWidth = 61, iconHeight = 31 },
+} } }
+S.Normalize(oldProfile)
+local oldLayout = oldProfile.suite.modules.playerAuras
+Check(oldLayout.debuffIconWidth == 61 and oldLayout.debuffIconHeight == 31, "legacy profile lost its dimensions")
+oldLayout.debuffIconWidth, oldLayout.iconHeight = 44, 27
+S.Normalize(oldProfile)
+Check(oldLayout.debuffIconWidth == 44 and oldLayout.debuffIconHeight == 31, "normalize linked the sizes again")
+oldLayout.debuffIconWidth = P.catalog.playerAuras.rules.debuffIconWidth.default
+local imported = assert(NS.ProfileIO.PrepareTable(oldProfile)).suite.modules.playerAuras
+Check(imported.iconWidth == 61 and imported.debuffIconWidth == oldLayout.debuffIconWidth
+    and imported.debuffIconHeight == 31, "profile import linked explicit dimensions")
 Check(foundRows["msufsuite.playerAuraSkins.enabled"], "cold search lost skin switch")
 local values = M.AurasPage.AppearanceValues()
 Check(#values == #BASE + 1 and SameBase(values) and values[#BASE + 1].value == "blizzardPlayer",
@@ -127,10 +142,15 @@ end
 CheckSelectorBounds(M.cache.auras3_styling.wrapper)
 Check(Widget("auras3.shared.hideBlizzardBuffFrame"), "missing host Buff visibility")
 Check(Widget("auras3.shared.hideBlizzardDebuffFrame"), "missing host Debuff visibility")
-local width = Widget("msufsuite.playerAuras.iconWidth")
-Check(width, "missing Suite layout control")
-assert(loadfile(root .. "/tools/tests/menu_core_world.lua"))().FireScript(width, "OnValueChanged", 63)
-Check(S.Config("playerAuras").iconWidth == 63, "layout control wrote wrong owner")
+local world = assert(loadfile(root .. "/tools/tests/menu_core_world.lua"))()
+local layout = S.Config("playerAuras")
+for _, edit in ipairs({ { "iconWidth", 63 }, { "iconHeight", 37 }, { "debuffIconWidth", 42 }, { "debuffIconHeight", 41 } }) do
+    local widget = Widget("msufsuite.playerAuras." .. edit[1])
+    Check(widget, "missing Suite layout control for " .. edit[1])
+    world.FireScript(widget, "OnValueChanged", edit[2])
+    Check(layout[edit[1]] == edit[2], "layout control wrote the wrong setting")
+end
+Check(layout.iconWidth == 63 and layout.iconHeight == 37, "editing debuff dimensions changed the buff dimensions")
 Check(Widget("msufsuite.playerAuras.enabled"), "layout header switch missing")
 Check(Widget("msufsuite.playerAuraSkins.enabled"), "skin header switch missing")
 local original = { pageKey = "suite_qualityOfLife", settingKey = "msufsuite.playerAuras.iconWidth",
@@ -173,12 +193,14 @@ model.WriteHideBlizzardDebuffFrame(true)
 local beforeShape = model.EnsureDB().shared.appearanceIconShapes
 beforeShape = beforeShape and beforeShape.buff
 Check(M.ResetPageToDefaults("auras3_styling"), "extension reset failed")
-Check(S.Config("playerAuras").iconWidth == P.catalog.playerAuras.rules.iconWidth.default, "reset missed Suite layout")
+Check(S.Config("playerAuras").iconWidth == P.catalog.playerAuras.rules.iconWidth.default, "reset missed buff width")
+Check(S.Config("playerAuras").debuffIconWidth == P.catalog.playerAuras.rules.debuffIconWidth.default, "reset missed debuff width")
 Check(not model.ReadHideBlizzardBuffFrame() and not model.ReadHideBlizzardDebuffFrame(), "reset missed visibility")
 Check((model.EnsureDB().shared.appearanceIconShapes or {}).buff == beforeShape, "extension reset changed UnitFrame appearance")
 Check(core.History.Undo(), "Aura reset was not undoable")
 Settle()
-Check(S.Config("playerAuras").iconWidth == 63, "undo did not restore Suite layout")
+Check(S.Config("playerAuras").iconWidth == 63, "undo did not restore buff width")
+Check(S.Config("playerAuras").debuffIconWidth == 42, "undo did not restore debuff width")
 Check(model.ReadHideBlizzardBuffFrame() and model.ReadHideBlizzardDebuffFrame(), "undo did not restore core visibility")
 Check(core.History.Redo(), "Aura reset was not redoable")
 Settle()
