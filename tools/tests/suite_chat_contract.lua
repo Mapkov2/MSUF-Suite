@@ -120,6 +120,7 @@ local function Frame(name)
     function frame:SetSize(width, height) self.width, self.height = width, height end
     function frame:GetWidth() return self.width or 64 end
     function frame:GetHeight() return self.height or 32 end
+    function frame:GetSize() return self:GetWidth(), self:GetHeight() end
     function frame:SetAllPoints(owner)
         assert(self.template ~= "SecureActionButtonTemplate" or not owner.rejectsProtectedAnchor,
             "Cannot anchor protected frames to regions")

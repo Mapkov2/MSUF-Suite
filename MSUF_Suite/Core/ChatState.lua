@@ -66,6 +66,7 @@ local keyed = setmetatable({}, { __mode = "k" })
 local hovered = setmetatable({}, { __mode = "k" })
 local sizes = setmetatable({}, { __mode = "k" })
 local geometry = setmetatable({}, { __mode = "k" })
+local HasSecret = hasanysecretvalues
 local geometryWanted, geometryDue, sinceGeometry = false, false, 0
 local follower, events, probe, windowsDue, layoutDue, checkDue, editMode
 local lastSelected, lastChat, lastDocked, lastFrames, lastMoving, lastWindows = false, false, -1, -1, nil, nil
@@ -188,35 +189,46 @@ local function CheckSizes(observed)
     for index = 1, count do
         local frame = frames[index]
         if not observed then frame = _G[frame] end
-        if frame then
-            local width, height, record = frame:GetWidth(), frame:GetHeight(), sizes[frame]
-            if not record then
-                sizes[frame] = { width = width, height = height }
-            elseif width ~= record.width or height ~= record.height then
-                record.width, record.height = width, height
-                Notify("resized", frame)
+        if frame and not Suite.Safety.IsForbidden(frame) then
+            local width, height = frame:GetSize()
+            local public
+            if HasSecret then public = not HasSecret(width, height)
+            else public = Suite.Public(width) and Suite.Public(height) end
+            if public then
+                local record = sizes[frame]
+                if not record then
+                    sizes[frame] = { width = width, height = height }
+                elseif width ~= record.width or height ~= record.height then
+                    record.width, record.height = width, height
+                    Notify("resized", frame)
+                end
             end
         end
     end
 end
 
 local function RegionChanged(region)
-    if not region or Suite.Safety.IsForbidden(region) then return false end
     local count = region:GetNumPoints()
     if not Suite.Finite(count) or count < 1 then return false end
     local point, relative, edge, x, y = region:GetPoint(1)
-    local width, height, scale = region:GetWidth(), region:GetHeight(), region:GetEffectiveScale()
-    if not (Suite.Public(point) and Suite.Public(relative) and Suite.Public(edge)
-        and Suite.Finite(x) and Suite.Finite(y) and Suite.Finite(width)
-        and Suite.Finite(height) and Suite.Finite(scale)) then return false end
+    local width, height = region:GetSize()
+    local scale = region:GetEffectiveScale()
+    if HasSecret then
+        if HasSecret(point, relative, edge, x, y, width, height, scale) then return false end
+    elseif not (Suite.Public(point) and Suite.Public(relative) and Suite.Public(edge)
+        and Suite.Public(x) and Suite.Public(y) and Suite.Public(width)
+        and Suite.Public(height) and Suite.Public(scale)) then return false end
     local record = geometry[region]
+    if record and record.count == count and record.point == point and record.relative == relative and record.edge == edge
+        and record.x == x and record.y == y and record.width == width and record.height == height and record.scale == scale then
+        return false
+    end
+    -- An unchanged public reading already matched the validated snapshot.
+    if not (Suite.Finite(x) and Suite.Finite(y) and Suite.Finite(width)
+        and Suite.Finite(height) and Suite.Finite(scale)) then return false end
     if not record then
         record = {}
         geometry[region] = record
-    end
-    if record.count == count and record.point == point and record.relative == relative and record.edge == edge
-        and record.x == x and record.y == y and record.width == width and record.height == height and record.scale == scale then
-        return false
     end
     record.count, record.point, record.relative, record.edge = count, point, relative, edge
     record.x, record.y, record.width, record.height, record.scale = x, y, width, height, scale
@@ -232,7 +244,9 @@ local function CheckGeometry(silent)
         if frame and not Suite.Safety.IsForbidden(frame) then
             local changed = RegionChanged(frame)
             local box = frame.editBox
-            if box and ChatState.IsPermanentBox(box) then changed = RegionChanged(box) or changed end
+            if box and not Suite.Safety.IsForbidden(box) and ChatState.IsPermanentBox(box) then
+                changed = RegionChanged(box) or changed
+            end
             if changed and not silent then Notify("geometry", frame) end
         end
     end

@@ -37,9 +37,17 @@ local function RunNextFrame()
 end
 hooksecurefunc = function(name) error("ChatState hooked " .. tostring(name)) end
 local reported = {}
+local finiteReads = 0
+hasanysecretvalues = function(...)
+    for i = 1, select("#", ...) do if select(i, ...) == "secret" then return true end end
+    return false
+end
 local Suite = {
     Public = function(value) return value ~= "secret" end,
-    Finite = function(value) return type(value) == "number" and value == value and math.abs(value) < math.huge end,
+    Finite = function(value)
+        finiteReads = finiteReads + 1
+        return type(value) == "number" and value == value and math.abs(value) < math.huge
+    end,
     Safety = { IsForbidden = function() return false end },
     Client = { SupportsEvent = function(event) return event ~= "ACTIVE_COMBAT_CONFIG_CHANGED" end },
     Dispatch = function(callback, ...)
@@ -73,6 +81,7 @@ local function ChatFrame(index, temporary)
     function frame:IsShown() return self.shown end
     function frame:GetWidth() return self.width end
     function frame:GetHeight() return self.height end
+    function frame:GetSize() return self.width, self.height end
     function frame:GetNumPoints() return 0 end
     function frame:HookScript() error("ChatState hooked a chat frame script") end
     local box = { name = "ChatFrame" .. index .. "EditBox", hooks = {} }
@@ -96,6 +105,7 @@ local function Geometry(region, parent)
     function region:GetEffectiveScale() return 1 end
     region.GetWidth = region.GetWidth or function() return 400 end
     region.GetHeight = region.GetHeight or function() return 32 end
+    region.GetSize = region.GetSize or function(self) return self:GetWidth(), self:GetHeight() end
 end
 Geometry(first, UIParent)
 Geometry(first.editBox, first)
@@ -175,6 +185,12 @@ buttonDown = true
 first.width = 420
 Tick()
 Check(Last("resized") and Last("resized")[2] == first, "a live resize was not reported while the button was held")
+local lastPublicWidth, resizeCount = first.width, Count("resized")
+first.width = "secret"
+Tick()
+first.width = lastPublicWidth
+Tick()
+Check(Count("resized") == resizeCount, "a restricted resize replaced the previous public dimensions")
 buttonDown = false
 events.OnEvent(events, "GLOBAL_MOUSE_DOWN")
 MOVING_CHATFRAME = second
@@ -242,6 +258,9 @@ Check(not follower.shown, "the follower kept running after Edit Mode")
 handlers.geometry = Record("geometry")
 State.Watch(seen, handlers)
 Tick()
+finiteReads = 0
+Tick(.11)
+Check(finiteReads == 5, "steady chat geometry revalidated dimensions already equal to its finite snapshot")
 for _ = 1, 50 do Tick() end
 -- Only the first native frame needs geometry methods for these focused reads.
 second.GetNumPoints = function() return 0 end
