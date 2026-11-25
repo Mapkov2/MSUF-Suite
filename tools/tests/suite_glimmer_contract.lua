@@ -4,7 +4,7 @@ local inReach, plateAvailable, dead = false, true, false
 local cvars = { SoftTargetInteract = "3", SoftTargetInteractOnlyInRange = "1", SoftTargetIconGameObject = "0", SoftTargetInteractArc = "0",
     outlineModeShowLootEffectWhenDisabled = "0", graphicsOutlineMode = "2", raidGraphicsOutlineMode = "1" }
 local savedBefore, tooltip = {}, nil
-local cursorReads, tooltipReads = 0, 0
+local cursorReads, tooltipReads, categoryReads = 0, 0, 0
 local hasCursor = true
 local writes, events, created = {}, {}, 0
 local timers, nativeWrites, animationStarts = {}, 0, 0
@@ -48,7 +48,8 @@ local function Region()
 end
 UIParent = Region()
 local secret = {}
-local plate = setmetatable({ IsForbidden = function() return false end },
+local forbidden = false
+local plate = setmetatable({ IsForbidden = function() return forbidden end },
     { __newindex = function() error("native frame write") end })
 C_NamePlate = { GetNamePlateForUnit = function()
     if cvars.SoftTargetInteract ~= "3" then return nil end
@@ -57,7 +58,7 @@ end }
 -- World objects do not need to exist as normal units (native CompactUnitFrame_UpdateVisible).
 UnitExists = function() return false end
 UNIT_SKINNABLE_LEATHER = "Kürschnerbar"
-UnitIsGameObject = function() return object end
+UnitIsGameObject = function() categoryReads = categoryReads + 1 return object end
 UnitIsDead = function(unit)
     assert(unit == "softinteract")
     return dead
@@ -110,7 +111,23 @@ module.context = { Event = function(_, key, callback) events[key] = callback end
         if events.CVAR_UPDATE then events.CVAR_UPDATE(module, "CVAR_UPDATE", key) end
         return true
     end }
+-- Join a crowd with no soft-interact anchor. Other players' plates cannot host our effect.
+local getPlateAtStart = C_NamePlate.GetNamePlateForUnit
+local ambient = {}
+local mappedEventUnits = 0
+C_NamePlate.GetNamePlateForUnit = function(unit)
+    if unit ~= "softinteract" then mappedEventUnits = mappedEventUnits + 1 return ambient end
+end
 module:Enable()
+local categoriesAtStart, writesAtStart = categoryReads, nativeWrites
+for i = 1, 254 do
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate7")
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate7")
+end
+assert(categoryReads == categoriesAtStart and mappedEventUnits == 0 and nativeWrites == writesAtStart,
+    "unrelated crowd plates classified the interaction target, resolved event units or repainted the effect")
+C_NamePlate.GetNamePlateForUnit = getPlateAtStart
+events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
 assert(module.host.shown and module.host.point[2] == plate,
     "game-object ore was rejected while UnitExists is false or before direct interaction range")
 assert(#writes == 6 and cvars.SoftTargetInteractOnlyInRange == "0" and cvars.SoftTargetInteractArc == "2",
@@ -362,8 +379,25 @@ assert(module.host.shown, "enabling Interact Key did not resume the glow")
 -- removal cannot hide this overlay, while the current plate must release.
 local getPlate=C_NamePlate.GetNamePlateForUnit
 C_NamePlate.GetNamePlateForUnit=function(unit) if unit=="nameplate2" then return {} end return plate end
+events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate2")
 events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate2")
-assert(module.host.shown, "unrelated removal hid the interact target")
+assert(module.host.shown, "unrelated plates hid a visible effect")
+for _, event in ipairs({ "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED" }) do
+    forbidden = secret
+    events[event](module, event, "nameplate2")
+    assert(not module.host.shown, "a visible anchor becoming restricted kept its effect on " .. event)
+    forbidden = false
+    events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+end
+local nextPlate = { IsForbidden = function() return false end }
+C_NamePlate.GetNamePlateForUnit = function(unit)
+    if unit == "softinteract" or unit == "nameplate2" then return nextPlate end
+    return plate
+end
+events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate2")
+assert(module.host.point[2] == nextPlate, "a newly available interact anchor did not replace the previous one")
+C_NamePlate.GetNamePlateForUnit = getPlate
+events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
 events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
 assert(not module.host.shown and module.host.point==nil, "removed native anchor retained")
 events.QUEST_LOG_UPDATE(module, "QUEST_LOG_UPDATE")

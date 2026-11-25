@@ -12,7 +12,7 @@ local CURSOR_WORDS = { mine = "ore", herb = "herb", quest = "quest", important =
 local OBJECT_CVARS = { softtargeticongameobject = "SoftTargetIconGameObject",
     softtargetinteractonlyinrange = "SoftTargetInteractOnlyInRange" }
 local EVENTS = { "CVAR_UPDATE", "PLAYER_SOFT_INTERACT_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED",
-    "PLAYER_REGEN_ENABLED", "QUEST_LOG_UPDATE", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED" }
+    "PLAYER_REGEN_ENABLED", "QUEST_LOG_UPDATE" }
 
 local function CursorKinds(self)
     for name, kind in pairs(CURSORS) do
@@ -191,18 +191,33 @@ local function Event(self, event, unit)
         self.changedCVars[key] = true
         return Apply(self)
     end
-    if event == "NAME_PLATE_UNIT_REMOVED" or event == "NAME_PLATE_UNIT_ADDED" then
-        local plate = S.Public(unit) and unit and C_NamePlate.GetNamePlateForUnit(unit)
-        if S.Public(plate) and plate then
-            if event == "NAME_PLATE_UNIT_REMOVED" and plate == self.plate then
-                self.removedPlate, self.plate = plate, nil
-                return Visuals.Hide(self.host)
-            elseif event == "NAME_PLATE_UNIT_ADDED" and plate == self.removedPlate then
-                self.removedPlate = nil
-            end
-        end
-    end
     if event == "PLAYER_REGEN_ENABLED" and (self.pending or self.pendingSparkle) then return Apply(self) end
+    Update(self, event)
+end
+
+local function PlateRemoved(self, event, unit)
+    if not self.plate then
+        local target = C_NamePlate.GetNamePlateForUnit(UNIT)
+        if S.Public(target) and (not target or target == self.removedPlate) then return end
+        return Update(self, event)
+    end
+    local plate = S.Public(unit) and unit and C_NamePlate.GetNamePlateForUnit(unit)
+    if S.Public(plate) and plate == self.plate then
+        self.removedPlate, self.plate = plate, nil
+        return Visuals.Hide(self.host)
+    end
+    -- Recheck restrictions and category on any currently tracked anchor.
+    Update(self, event)
+end
+
+local function PlateAdded(self, event, unit)
+    if self.removedPlate then
+        local plate = S.Public(unit) and unit and C_NamePlate.GetNamePlateForUnit(unit)
+        if S.Public(plate) and plate == self.removedPlate then self.removedPlate = nil end
+    else
+        local target = C_NamePlate.GetNamePlateForUnit(UNIT)
+        if S.Public(target) and not target then return Visuals.Hide(self.host) end
+    end
     Update(self, event)
 end
 
@@ -212,6 +227,8 @@ function M:Enable()
     self.probe:Hide()
     CursorKinds(self)
     for _, event in ipairs(EVENTS) do self.context:Event(event, Event, IN_COMBAT) end
+    self.context:Event("NAME_PLATE_UNIT_ADDED", PlateAdded, IN_COMBAT)
+    self.context:Event("NAME_PLATE_UNIT_REMOVED", PlateRemoved, IN_COMBAT)
     Apply(self)
 end
 
