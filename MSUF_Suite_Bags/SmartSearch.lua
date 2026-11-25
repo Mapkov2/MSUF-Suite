@@ -216,7 +216,8 @@ function Search.Create(view, request, parent, place)
     edit:SetScript("OnTextChanged", function(self)
         local query = self:GetText()
         local compiled = NS.InventoryRules.Compile(query)
-        self:SetTextColor(compiled and 1 or 1, compiled and 1 or .4, compiled and 1 or .3)
+        self:SetTextColor(1, compiled and 1 or .4, compiled and 1 or .3)
+        view.model.typedQuery, view.model.typedRule = query, compiled
         view.smartQuery, view.scroll = query, 0
         request()
     end)

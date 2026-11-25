@@ -544,6 +544,114 @@ local function ArrangeGroups(model, config, state, selected, categories, plan, p
     for i = 1, #model.groups do Arrange(model.groups[i], selected, collapsed, order) end
 end
 
+-- Each cached fragment points to physical positions in the current name
+-- snapshot. Longer fragments can only match positions already in a shorter
+-- fragment's list. Keeping a few lists also makes backspacing cheap.
+local SEARCH_FRAGMENTS = 4
+local NO_ITEMS = {}
+
+local function IndexTerm(rule)
+    if #rule ~= 1 then return end
+    local terms, best = rule[1]
+    for i = 1, #terms do
+        local term = terms[i]
+        if not term.negate and (term.field == "search" or term.field == "name")
+            and (not best or #term.value > #best.value) then
+            best = term
+        end
+    end
+    return best
+end
+
+local function RebuildNameIndex(index, items, field)
+    local raw, names = index.raw, index.names
+    for i = #items + 1, index.count or 0 do raw[i], names[i] = nil, nil end
+    local indexable = true
+    for i = 1, #items do
+        local name = items[i][field]
+        local kind = type(name)
+        raw[i] = name
+        names[i] = kind == "string" and name:lower() or ""
+        -- Generic inventory records may have a list of values for a text field.
+        if kind == "table" then indexable = false end
+    end
+    Clear(index.fragments)
+    index.field, index.count, index.indexable, index.next = field, #items, indexable, 1
+    return index
+end
+
+local function NameIndex(model, items, field)
+    local index = model.nameIndex
+    if not index then
+        index = { raw = {}, names = {}, fragments = {} }
+        model.nameIndex = index
+    end
+    if index.field ~= field or index.count ~= #items then return RebuildNameIndex(index, items, field) end
+    -- Slot records are reused and amended in place. Check the indexed field
+    -- in input order, so moves, bank scopes and late metadata all use current
+    -- candidates. The full matcher still sees current values of other fields.
+    local raw = index.raw
+    for i = 1, #items do
+        if raw[i] ~= items[i][field] then return RebuildNameIndex(index, items, field) end
+    end
+    return index
+end
+
+local function FragmentPositions(index, text)
+    local fragments, parent = index.fragments
+    for i = 1, #fragments do
+        local fragment = fragments[i]
+        if fragment.text == text then return fragment.positions end
+        if (not parent or #fragment.positions < #parent)
+            and text:find(fragment.text, 1, true) then
+            parent = fragment.positions
+        end
+    end
+    local fragment = fragments[index.next]
+    local positions, count, names = fragment and fragment.positions or {}, 0, index.names
+    -- If this is also the parent list, compact it in place in input order.
+    for i = 1, parent and #parent or index.count do
+        local position = parent and parent[i] or i
+        if names[position]:find(text, 1, true) then
+            count = count + 1
+            positions[count] = position
+        end
+    end
+    for i = #positions, count + 1, -1 do positions[i] = nil end
+    if fragment then fragment.text = text
+    else fragments[index.next] = { text = text, positions = positions } end
+    index.next = index.next % SEARCH_FRAGMENTS + 1
+    return positions
+end
+
+local function QueryItems(model, items, query)
+    if not query:find("%S") then return items end
+    local rules = P.NS.InventoryRules
+    if query ~= model.query then
+        local compiled
+        if query == model.typedQuery then compiled = model.typedRule
+        else compiled = rules.Compile(query) end
+        model.query, model.queryRule = query, compiled
+    end
+    local rule = model.queryRule
+    if not rule then return NO_ITEMS, query end
+    local term = IndexTerm(rule)
+    if term then
+        local index = NameIndex(model, items, term.field)
+        if index.indexable then
+            local positions = FragmentPositions(index, term.value)
+            if #positions == 0 then return NO_ITEMS, query end
+            local matches = model.searchItems or {}
+            model.searchItems = matches
+            for i = #matches, #positions + 1, -1 do matches[i] = nil end
+            for i = 1, #positions do matches[i] = items[positions[i]] end
+            if #rule[1] == 1 then rule = nil end
+            return matches, query, rules, rule
+        end
+    end
+    return items, query, rules, rule
+end
+
 function Model.Build(model, items, config, state, context)
     if model.recentAnnotated then ClearRecentAnnotations(model) end
     Clear(model.groups)
@@ -581,10 +689,8 @@ function Model.Build(model, items, config, state, context)
     model.flat = mode == VIEW.SINGLE
     local showSets = categories and config.groupEquipmentSets and config.category_equipment ~= false
     local query = context and context.query
-    if query and not query:find("%S") then query = nil end
-    if query and query ~= model.query then
-        model.query, model.queryRule = query, P.NS.InventoryRules.Compile(query)
-    end
+    local rules, rule
+    if query then items, query, rules, rule = QueryItems(model, items, query) end
     -- searching: Blizzard's search marks non-matching slots isFiltered.
     local searching = context and context.searching
     local special = context and (context.hasKeyring or context.hasReagent)
@@ -596,7 +702,7 @@ function Model.Build(model, items, config, state, context)
         local item = items[i]
         if not (config.hideEmptySlots and not item.itemID)
             and not (searching and (item.filtered or not item.itemID))
-            and (not query or item.itemID and model.queryRule and P.NS.InventoryRules.Matches(model.queryRule, item)) then
+            and (not query or item.itemID and (not rule or rules.Matches(rule, item))) then
             local key, label, order, expansion, translate, expansionName = groupForItem(item, config, state, model)
             Add(model, Group(model, key, label, order, expansion, translate, expansionName), item, merge)
             -- An item can belong to several equipment sets. Each set filter
@@ -607,6 +713,7 @@ function Model.Build(model, items, config, state, context)
             end
         end
     end
+    if query and items == model.searchItems then Clear(items) end
     if categories and not config.hideEmptyCategories and not query and not searching then
         AddEmptyCategories(model, config, plan)
     end
