@@ -21,6 +21,26 @@ local function Icon(value)
     return Finite(value) and value or nil
 end
 
+local function PresetIcon(preset)
+    if preset.iconItem then return Icon(C_Item.GetItemIconByID(preset.iconItem)) end
+    if preset.iconSpell then return Icon(C_Spell.GetSpellTexture(preset.iconSpell)) end
+    return preset.icon
+end
+
+local function PresetText(preset, requireAvailable)
+    if requireAvailable and preset.class then
+        local _, class = UnitClass("player")
+        if not Public(class) or class ~= preset.class then return end
+    end
+    local title, macroName, description = preset.Text()
+    if preset.nativeBook then
+        local name, _, _, known = GetFlyoutInfo(preset.nativeBook)
+        if requireAvailable and not Yes(known) then return end
+        title = PublicText(name)
+    end
+    return title, macroName, description
+end
+
 -- Name and icon of a saved entry for the editor list.
 local function Describe(entry)
     local kind, id = entry.kind, entry.id
@@ -37,8 +57,13 @@ local function Describe(entry)
         local index, icon = GetMacroIndexByName(id), nil
         if Finite(index) and index > 0 then icon = select(2, GetMacroInfo(index)) end
         return id, Icon(icon)
+    elseif kind == "bag" and id == "food" then
+        return S.Text("All food and drink in your bags"), Icon(C_Item.GetItemIconByID(BAG_ICON_ITEM))
     end
-    return S.Text("All food and drink in your bags"), Icon(C_Item.GetItemIconByID(BAG_ICON_ITEM))
+    for _, preset in ipairs(Data.Presets()) do
+        if Data.SameEntry(preset.entries[1], entry) then return PresetText(preset), PresetIcon(preset) end
+    end
+    return S.Text("Unknown")
 end
 API.Describe = Describe
 
@@ -61,7 +86,15 @@ function API.Ready()
 end
 
 function API.Presets()
-    return Data.Presets()
+    local rows = {}
+    for _, preset in ipairs(Data.Presets()) do
+        local label, macroName, description = PresetText(preset, true)
+        if label then
+            rows[#rows + 1] = { key = preset.key, label = label, flyoutName = macroName,
+                category = preset.category, description = description }
+        end
+    end
+    return rows
 end
 
 function API.List()
@@ -86,7 +119,7 @@ function API.Entries(id)
     for position, entry in ipairs(flyout.entries) do
         local name, icon = Describe(entry)
         rows[position] = { kind = entry.kind, id = entry.id, name = name, icon = icon,
-            active = entry.kind == "bag" or showing[entry.kind .. ":" .. tostring(entry.id)] == true }
+            active = Data.ExclusionField(entry) ~= nil or showing[entry.kind .. ":" .. tostring(entry.id)] == true }
     end
     return rows
 end
@@ -109,7 +142,9 @@ function API.AddPreset(key, name)
     if not ok then return nil, problem end
     local preset = Data.Preset(key)
     if not preset then return nil, S.Text(NOT_FOUND) end
-    return F.NewFlyout(name or preset.flyoutName, Copy(preset.entries), Icon(C_Item.GetItemIconByID(preset.iconItem)), preset.key)
+    local label, macroName = PresetText(preset, true)
+    if not label then return nil, S.Text(NOT_FOUND) end
+    return F.NewFlyout(name or macroName, Copy(preset.entries), PresetIcon(preset), preset.key)
 end
 
 function API.Create(name)
@@ -163,13 +198,12 @@ function API.SetOwned(id, on)
 end
 
 ------------------------------------------------------------------ entries
-local function ExcludeAutoFood(flyout, entry)
-    if entry.kind ~= "item" then return end
+local function ExcludeGenerated(flyout, entry)
     for _, saved in ipairs(flyout.entries) do
-        if saved.kind == "bag" then
-            flyout.excludedFood = flyout.excludedFood or {}
-            flyout.excludedFood[entry.id] = true
-            return
+        if (entry.kind == "item" and saved.kind == "bag") or (entry.kind == "spell" and saved.kind == "spellbook") then
+            local field = Data.ExclusionField(saved)
+            flyout[field] = flyout[field] or {}
+            flyout[field][entry.id] = true
         end
     end
 end
@@ -185,7 +219,7 @@ function API.AddEntry(id, entry, before)
     if #flyout.entries >= Data.MAX_ENTRIES then return nil, S.Text("This flyout is full.") end
     local position = before and flyout.entries[before.position] == before.source and before.position or #flyout.entries + 1
     table.insert(flyout.entries, position, entry)
-    ExcludeAutoFood(flyout, entry)
+    ExcludeGenerated(flyout, entry)
     return Saved(flyout)
 end
 
@@ -207,8 +241,8 @@ function API.PickupEntry(id, entry)
     S.Dispatch(AB.Virtual.PickupNative, entry)
     local picked = F.CursorEntry()
     if not picked or not Data.SameEntry(picked, entry) then return end
-    ExcludeAutoFood(flyout, entry)
-    if entry.source.kind ~= "bag" then table.remove(flyout.entries, entry.position) end
+    ExcludeGenerated(flyout, entry)
+    if not Data.ExclusionField(entry.source) then table.remove(flyout.entries, entry.position) end
     return Saved(flyout)
 end
 

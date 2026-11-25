@@ -3443,6 +3443,12 @@
    "symbol": "saved (= MSUFSuiteFlyoutsDB)"
   },
   {
+   "file": "MSUF_Suite_ActionBars/FlyoutSources.lua",
+   "kind": "client",
+   "reason": "WoW Forever has a native keyring container. Retail does not expose it, and the flyout only reads it for the Forever keys preset.",
+   "symbol": "KEYRING_CONTAINER"
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/ActionBarsFlyouts.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",

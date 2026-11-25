@@ -10,6 +10,7 @@ local NS, S = P.NS, P.Suite
 -- last preparation. Macro changes refresh the secure launcher and macro entries.
 local AB = P.ActionBars
 local Frames = AB.FlyoutFrames
+local Sources = AB.FlyoutSources
 local Data = NS.ActionBarFlyouts
 local Flyouts = {}
 AB.Flyouts = Flyouts
@@ -18,18 +19,15 @@ local Public, Finite, PublicText = S.Public, S.Finite, S.PublicText
 local CLIENT = Data.Client()
 local MARKER = "/click " .. Frames.OPENER .. " "
 local UNKNOWN_ICON = 134400
--- Consumable / Food & Drink (Enum.ItemClass, Enum.ItemConsumableSubclass).
-local FOOD_CLASS, FOOD_SUBCLASS = 0, 5
-local LAST_BAG = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
 local CHANGED = "MSUFSuite.ActionBars.FlyoutsChanged"
 local BAG_UPDATE = "BAG_UPDATE_DELAYED"
-local OPEN_EVENTS = { "SPELLS_CHANGED", "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "PLAYER_LEVEL_UP" }
+local OPEN_EVENTS = { "SPELLS_CHANGED", "SPELL_FLYOUT_UPDATE", "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "PLAYER_LEVEL_UP" }
 
 local store, active, scheduled, built, listener, openID, listeningBags
-local pendingFull, pendingBags
+local pendingFull, pendingBags, listeningSeason
 local pendingMacros
 local macroOf, flyoutOfMacro, flyoutOfName = {}, {}, {}
-local indexFlyout, shownCount, bagDependencies = {}, {}, {}
+local indexFlyout, shownCount, bagDependencies, seasonDependencies = {}, {}, {}, {}
 
 ------------------------------------------------------------------ store
 local function Store()
@@ -167,8 +165,8 @@ local function ItemEntry(id, kind)
 end
 
 local function SpellEntry(kind, id, spell, icon, name)
-    icon = icon or C_Spell.GetSpellTexture(spell)
-    name = name or C_Spell.GetSpellName(spell)
+    icon = Public(icon) and icon or C_Spell.GetSpellTexture(spell)
+    name = PublicText(name) or C_Spell.GetSpellName(spell)
     return { kind = kind, id = id, spell = spell, type = "spell", attribute = "spell", value = spell,
         icon = Public(icon) and icon or nil, name = PublicText(name) or nil }
 end
@@ -208,71 +206,65 @@ local function Resolve(saved, owned)
     end
 end
 
--- Usable Food & Drink items in the bags, highest required level first.
-local function FoodRank(id)
-    local _, _, _, level, minimum = C_Item.GetItemInfo(id)
-    return (Finite(minimum) and minimum or 0) * 10000 + (Finite(level) and level or 0)
-end
-
-local function IsFood(id)
-    local _, _, _, _, _, class, subclass = C_Item.GetItemInfoInstant(id)
-    return class == FOOD_CLASS and subclass == FOOD_SUBCLASS and Yes((C_Item.IsUsableItem(id)))
-end
-
-local function BagFood()
-    local found, seen, rank = {}, {}, {}
-    for bag = 0, LAST_BAG do
-        local slots = C_Container.GetContainerNumSlots(bag)
-        for slot = 1, Finite(slots) and slots or 0 do
-            local id = C_Container.GetContainerItemID(bag, slot)
-            if Finite(id) and not seen[id] then
-                seen[id] = true
-                if IsFood(id) then
-                    found[#found + 1], rank[id] = id, FoodRank(id)
-                end
-            end
-        end
-    end
-    table.sort(found, function(a, b)
-        if rank[a] ~= rank[b] then return rank[a] > rank[b] end
-        return a > b
-    end)
-    return found
-end
-
 local function Add(list, seen, entry, saved, position)
     if not entry or #list >= Data.MAX_SHOWN then return end
-    local key = entry.type .. ":" .. tostring(entry.value)
+    local key = (entry.type or "keystone") .. ":" .. tostring(entry.value or entry.id)
     if seen[key] then return end
     seen[key] = true
     entry.source, entry.position = saved, position
     list[#list + 1] = entry
 end
 
+local function AddBagEntries(list, seen, flyout, source, position)
+    local excluded = flyout[Data.ExclusionField(source)]
+    for _, item in ipairs(Sources.BagItems(source.id)) do
+        if not (excluded and excluded[item.id]) then
+            local entry = ItemEntry(item.id, "item")
+            if item.link then
+                -- A keystone is placed on the cursor, then slotted by Blizzard.
+                entry.type, entry.attribute, entry.value = nil, nil, nil
+                entry.keystone = item
+            end
+            Add(list, seen, entry, source, position)
+        end
+    end
+end
+
+local function AddBookEntries(list, seen, flyout, source, position)
+    local excluded = flyout.excludedSpells
+    for _, spell in ipairs(Sources.BookSpells(source.id)) do
+        if not (excluded and excluded[spell.id]) then
+            local icon = spell.iconSpell and C_Spell.GetSpellTexture(spell.iconSpell) or spell.icon
+            Add(list, seen, SpellEntry("spell", spell.id, spell.id, icon, spell.name), source, position)
+        end
+    end
+end
+
 -- What a flyout shows now, in its order.
 local function Shown(flyout)
     local list, seen = {}, {}
-    local excluded = flyout.excludedFood
-    local tracksBags = false
+    local tracksBags, tracksSeason = false, false
     for position, saved in ipairs(flyout.entries) do
         if saved.kind == "bag" then
             tracksBags = true
-            for _, id in ipairs(BagFood()) do
-                if not (excluded and excluded[id]) then Add(list, seen, ItemEntry(id, "item"), saved, position) end
-            end
+            AddBagEntries(list, seen, flyout, saved, position)
+        elseif saved.kind == "spellbook" then
+            if saved.id == "dungeonSeason" then tracksSeason = true end
+            AddBookEntries(list, seen, flyout, saved, position)
         else
             if flyout.owned and saved.kind == "item" then tracksBags = true end
             Add(list, seen, Resolve(saved, flyout.owned), saved, position)
         end
     end
-    return list, tracksBags
+    return list, tracksBags, tracksSeason
 end
 
 ------------------------------------------------------------------ sync
 local function Apply(flyout)
     local id = flyout.id
-    local entries, tracksBags = Shown(flyout)
+    local entries, tracksBags, tracksSeason = Shown(flyout)
     shownCount[id], bagDependencies[id] = #entries, tracksBags or nil
+    seasonDependencies[id] = tracksSeason or nil
     Frames.Apply(id, entries)
 end
 
@@ -285,7 +277,7 @@ local function ApplyAll()
     for id in pairs(shownCount) do
         if not current[id] then
             Frames.Remove(id)
-            shownCount[id], bagDependencies[id] = nil, nil
+            shownCount[id], bagDependencies[id], seasonDependencies[id] = nil, nil, nil
         end
     end
 end
@@ -354,7 +346,7 @@ end
 
 local function StopWatching()
     if not openID then return end
-    openID, listeningBags, pendingFull, pendingBags = nil, nil, nil, nil
+    openID, listeningBags, listeningSeason, pendingFull, pendingBags = nil, nil, nil, nil, nil
     listener:UnregisterAllEvents()
     if scheduled then scheduled:Cancel() scheduled = nil end
 end
@@ -382,6 +374,15 @@ function Flyouts.WatchOpen(id, hasItems)
         listener:RegisterEvent("PLAYER_REGEN_DISABLED")
         for _, event in ipairs(OPEN_EVENTS) do
             if NS.Client.SupportsEvent(event) then listener:RegisterEvent(event) end
+        end
+    end
+    local season = seasonDependencies[id] and NS.Client.SupportsEvent("CHALLENGE_MODE_MAPS_UPDATE") or false
+    if listeningSeason ~= season then
+        listeningSeason = season
+        if season then
+            listener:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
+        else
+            listener:UnregisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
         end
     end
     local wanted = (hasItems or bagDependencies[id] == true) and NS.Client.SupportsEvent(BAG_UPDATE)

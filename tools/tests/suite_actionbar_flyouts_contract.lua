@@ -159,13 +159,16 @@ local function NewWorld(forever)
         if frame.name then _G[frame.name] = nil end
     end
     World = { frames = {}, timers = {}, events = {}, handlerCalls = 0, combat = false, lockdown = false,
-        bags = { [0] = {}, [1] = {}, [2] = {}, [3] = {}, [4] = {} }, items = {}, spells = {}, toys = {}, mounts = {},
+        bags = { [-2] = {}, [0] = {}, [1] = {}, [2] = {}, [3] = {}, [4] = {} }, items = {}, spells = {}, toys = {}, mounts = {},
+        spellbooks = {}, season = {}, class = "WARRIOR",
         macros = {}, charMacros = {}, actions = {}, cursor = nil, triggered = {} }
     _G.MSUFSuiteFlyoutsDB = nil
     UIParent = NewFrame("Frame", "UIParent")
     GameTooltip = NewFrame("GameTooltip", "GameTooltip")
     function GameTooltip:IsOwned() return false end
+    function GameTooltip:SetBagItem(bag, slot) self.bag, self.slot = bag, slot end
     STANDARD_TEXT_FONT, NUM_BAG_SLOTS, NUM_TOTAL_EQUIPPED_BAG_SLOTS = "font", 4, nil
+    KEYRING_CONTAINER = -2
     Constants = { MacroConsts = { MAX_ACCOUNT_MACROS = 120, MAX_CHARACTER_MACROS = 30 } }
     function wipe(t) for key in pairs(t) do t[key] = nil end return t end
     C_Timer = {
@@ -202,7 +205,7 @@ local function InstallClient()
     local W = World
     local function Count(id)
         local n = 0
-        for bag = 0, 4 do for _, stack in pairs(W.bags[bag]) do if stack.id == id then n = n + stack.count end end end
+        for _, bag in pairs(W.bags) do for _, stack in pairs(bag) do if stack.id == id then n = n + stack.count end end end
         return n
     end
     C_Item = {
@@ -225,13 +228,29 @@ local function InstallClient()
     C_Container = {
         GetContainerNumSlots = function(bag) return W.bags[bag] and 20 or 0 end,
         GetContainerItemID = function(bag, slot) local s = W.bags[bag] and W.bags[bag][slot] return s and s.id end,
+        GetContainerItemLink = function(bag, slot) local s = W.bags[bag][slot] return s and s.link end,
+        PickupContainerItem = function(bag, slot)
+            assert(not W.combat and not W.cursor)
+            W.cursor = { kind = "item", id = W.bags[bag][slot].id }
+        end,
     }
     C_Spell = {
         GetSpellTexture = function(id) return 2000000 + id end,
         GetSpellName = function(id) return W.spells[id] and ("Spell" .. id) or nil end,
+        GetSpellInfo = function(id) return { name = "Spell" .. id, iconID = 2000000 + id } end,
+        GetSpellSubtext = function() end,
         GetSpellCooldownDuration = function() return nil end,
     }
     function IsPlayerSpell(id) return W.spells[id] == true end
+    C_SpellBook = { IsSpellKnown = IsPlayerSpell, GetNumSpellBookSkillLines = function() return 0 end }
+    C_ChallengeMode = { GetMapTable = function() return W.season end, GetMapUIInfo = function(id) return "Dungeon " .. id end }
+    C_MythicPlus = { RequestMapInfo = function() end }
+    function UnitClass() return World.class, World.class end
+    function GetFlyoutInfo(id)
+        local book = W.spellbooks[id]
+        if book then return book.name, nil, #book, true end
+    end
+    function GetFlyoutSlotInfo(id, slot) return unpack(W.spellbooks[id][slot]) end
     function PlayerHasToy(id) return W.toys[id] == true end
     C_MountJournal = { GetMountInfoByID = function(id)
         local m = W.mounts[id]
@@ -325,6 +344,8 @@ local function Load(forever)
     S.Public = function(value) return value ~= SECRET end
     S.Finite = function(v) return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge end
     S.PublicText = function(v) return type(v) == "string" and v ~= "" and v or nil end
+    Suite.Public, Suite.Finite, Suite.PublicText, Suite.Text = S.Public, S.Finite, S.PublicText, function(text) return text end
+    assert(loadfile(root .. "/MSUF_Suite/Core/DungeonPortalBook.lua"))("MSUF_Suite", Suite)
     S.Text = function(text) return text end
     S.Print = function(text) World.feedback = text end
     S.CloseOwnedContextMenu, S.HideQuestion = function() end, function() end
@@ -411,7 +432,7 @@ local function Load(forever)
         end
     end
     local P = { NS = Suite, Suite = S, ActionBars = AB }
-    for _, file in ipairs({ "FlyoutFrames", "Flyouts", "FlyoutAPI", "FlyoutEdit" }) do
+    for _, file in ipairs({ "FlyoutSources", "FlyoutFrames", "Flyouts", "FlyoutAPI", "FlyoutEdit" }) do
         assert(loadfile(root .. "/MSUF_Suite_ActionBars/" .. file .. ".lua"))("MSUF_Suite_ActionBars", P)
     end
     return Suite, S, AB
@@ -432,15 +453,17 @@ local function Stack(bag, slot, id, count) World.bags[bag][slot] = { id = id, co
 ------------------------------------------------------------------ data
 local function DataCases(Suite, forever)
     local Data = Suite.ActionBarFlyouts
-    local keys = {}
-    for _, preset in ipairs(Data.Presets()) do keys[#keys + 1] = preset.key end
+    assert(Data.Preset("bagFood") and Data.Preset("potions") and Data.Preset("bandages"))
+    assert(Data.Preset("hearthstones") and Data.Preset("engineering"))
     if forever then
-        Check(table.concat(keys, ",") == "vendorFood,vendorDrinks,cooking,bagFood", "Forever presets: " .. table.concat(keys, ","))
+        assert(Data.Preset("keys") and not Data.Preset("keystone") and not Data.Preset("dungeonSeason"))
+        assert(Data.Preset("vendorDrinks"))
         local cooking = Data.Preset("cooking")
         Check(#cooking.entries == #Suite.ForeverCookedFood and #cooking.entries == 100, "Cooking preset lost entries")
         Check(Data.Preset("vendorFood").entries[1].id == 8932, "vendor food is not best first")
     else
-        Check(table.concat(keys, ",") == "bagFood", "Retail presets: " .. table.concat(keys, ","))
+        assert(Data.Preset("keystone") and Data.Preset("dungeonSeason") and not Data.Preset("keys"))
+        assert(not Data.Preset("vendorFood") and not Data.Preset("vendorDrinks") and not Data.Preset("cooking"))
     end
     for _, preset in ipairs(Data.Presets()) do
         Check(Data.CleanName(preset.flyoutName) == preset.flyoutName, preset.key .. ": preset name is not a valid macro name")
@@ -749,6 +772,118 @@ local function GeneratedFoodCase(Suite, S, AB)
     Check(box:IsShown() and box.count == 1 and not World.cursor, "an empty flyout did not accept an item")
 end
 
+local function MagePresetCases(S, AB, forever)
+    local API = S.ActionBarFlyouts
+    API.OpenPresets(UIParent)
+    assert(not World.menu["Mage portals"] and not API.AddPreset("magePortals"), "a non-mage could create a mage preset")
+    World.class = "MAGE"
+    World.spellbooks[12] = { name = "Portals", { 10059, 210059, true }, { 11416, 11416, false } }
+    World.spellbooks[1] = { name = "Teleports", { 3567, 3567, true }, { 3563, 3563, SECRET } }
+    World.spells[10059], World.spells[1308652] = true, forever
+    API.OpenPresets(UIParent)
+    assert(World.menu["Mage portals"] and World.menu["Mage teleports"], "mage presets missing from the actual menu")
+    World.menu["Mage portals"].callback()
+    assert(World.cursor and World.cursor.kind == "macro", "the preset click did not pick up its new macro")
+    PlaceAction(1)
+    local portals = API.List()[1].id
+    Click("MSUFSuiteFlyouts", tostring(portals))
+    local box = AB.Diagnostics.Flyouts.Box(portals)
+    assert(box.count == 1 and box.entries[1].attrs.spell == 10059 and box.entries[1].icon.lastSetTexture[1] == 2210059,
+        "unlearned, duplicate or override spells were not resolved like the native flyout")
+    World.spellbooks[12][2][3] = true
+    Fire("SPELL_FLYOUT_UPDATE")
+    RunTimers()
+    assert(box.count == 2 and box.entries[2].attrs.spell == 11416, "a recently learned portal did not appear")
+    Run(box.entries[1], "OnDragStart")
+    assert(box.count == 1 and World.cursor.id == 10059, "dragging out a spell did not exclude it from the generated list")
+    ClearCursor()
+    local teleports = assert(API.AddPreset("mageTeleports"))
+    local shown = AB.Flyouts.Shown(AB.Flyouts.Find(teleports))
+    assert(#shown == (forever and 2 or 1) and shown[1].spell == 3567,
+        "the teleport book included portals, unknown spells or the wrong faction's book")
+    if forever then assert(shown[2].spell == 1308652, "the trainer's Dalaran teleport was missed") end
+end
+
+local function SeasonalPresetCases(S, AB)
+    local API = S.ActionBarFlyouts
+    World.spells[1254400], World.spells[393256] = true, true
+    World.spellbooks[246] = { name = "Hero's Path: Midnight", { 1254400, 1254400, true } }
+    World.spellbooks[242] = { name = "Hero's Path: TWW Raids", { 100005, 100005, true } }
+    API.OpenPresets(UIParent)
+    local menu = World.menu
+    assert(menu["Dungeon teleports"]["Current season"] and menu["Dungeon teleports"]["Hero's Path: Midnight"])
+    assert(menu["Raid teleports"]["Hero's Path: TWW Raids"], "Raid Paths belong in their own menu")
+    local older = assert(API.AddPreset("path246"))
+    assert(AB.Diagnostics.Flyouts.Box(older).entries[1].attrs.spell == 1254400, "the expansion preset did not use its book")
+    local id = assert(API.AddPreset("dungeonSeason"))
+    Click("MSUFSuiteFlyouts", tostring(id))
+    local box = AB.Diagnostics.Flyouts.Box(id)
+    assert(box.count == 0, "an unknown season offered arbitrary learned portals")
+    World.season = { 557 }
+    Fire("CHALLENGE_MODE_MAPS_UPDATE")
+    RunTimers()
+    assert(box.count == 1 and box.entries[1].attrs.spell == 1254400, "the native season did not fill the open flyout")
+    World.season = { 399 }
+    Fire("CHALLENGE_MODE_MAPS_UPDATE")
+    RunTimers()
+    assert(box.count == 1 and box.entries[1].attrs.spell == 393256, "a changed season left an old portal active")
+    Click("MSUFSuiteFlyouts", tostring(id))
+    assert(#Listening() == 0, "season notifications remained subscribed with the flyout closed")
+end
+
+local function KeyPresetCases(S, AB, forever)
+    local API = S.ActionBarFlyouts
+    Stack(0, 1, 500, 1)
+    Stack(0, 2, 501, 1)
+    World.items[500], World.items[501] = { class = 13 }, { class = 15 }
+    if forever then
+        Stack(-2, 1, 500, 1)
+        Stack(-2, 2, 502, 1)
+        local id = assert(API.AddPreset("keys"))
+        local box = AB.Diagnostics.Flyouts.Box(id)
+        assert(box.count == 2 and box.entries[1].attrs.item == "item:502" and box.entries[2].attrs.item == "item:500",
+            "the keyring and bag keys were not merged and deduplicated")
+        return
+    end
+    World.bags[0][1].link = "|Hitem:500:0|h[Not a Mythic+ keystone]|h"
+    World.bags[0][2].link = "|Hkeystone:501:557:10:0|h[Keystone]|h"
+    local id = assert(API.AddPreset("keystone"))
+    Click("MSUFSuiteFlyouts", tostring(id))
+    local box = AB.Diagnostics.Flyouts.Box(id)
+    assert(box.count == 1 and box.entries[1].entry.id == 501 and not box.entries[1].attrs.type)
+    Run(box.entries[1], "OnEnter")
+    assert(GameTooltip.bag == 0 and GameTooltip.slot == 2, "a keystone tooltip lost its dungeon and level")
+    World.bags[0][2].link = "|Hkeystone:501:399:11:0|h[Different keystone]|h"
+    Run(box.entries[1], "PostClick", "LeftButton", false)
+    assert(not World.cursor, "an outdated keystone button picked up the item that replaced it")
+    Fire("BAG_UPDATE_DELAYED")
+    RunTimers()
+    Run(box.entries[1], "PostClick", "LeftButton", false)
+    assert(World.cursor and World.cursor.id == 501, "clicking the current keystone did not pick it up from its bag")
+    ClearCursor()
+end
+
+local function UtilityPresetCases(S, AB, forever)
+    Stack(0, 1, 6948, 1)
+    Stack(0, 2, 13446, 1)
+    Stack(0, 3, 14530, 1)
+    World.items[13446], World.items[14530] = { sub = 1 }, { sub = 7 }
+    local API = S.ActionBarFlyouts
+    for key, item in pairs({ hearthstones = 6948, potions = 13446, bandages = 14530 }) do
+        local box = AB.Diagnostics.Flyouts.Box(assert(API.AddPreset(key)))
+        assert(box.count == 1 and box.entries[1].attrs.item == "item:" .. item, key .. " did not show the matching carried item")
+    end
+    if forever then
+        Stack(0, 4, 18984, 1)
+    else
+        World.toys[18984] = true
+    end
+    local box = AB.Diagnostics.Flyouts.Box(assert(API.AddPreset("engineering")))
+    assert(box.count == 1 and box.entries[1].entry.id == 18984, "the owned engineering teleporter was missed")
+    assert(box.entries[1].attrs.type == (forever and "item" or "toy"),
+        "the engineering teleporter used the wrong action type for the client")
+end
+
 local function BagWorkCases(AB, API)
     local id = assert(API.Create("Static items"))
     assert(API.SetOwned(id, false))
@@ -905,6 +1040,16 @@ for _, forever in ipairs({ false, true }) do
     AB.Flyouts.Start()
     AB.BuildStyle()
     MacroIndexCase(Suite, S, AB)
+    Suite, S, AB = Load(forever)
+    AB.Flyouts.Start()
+    AB.BuildStyle()
+    MagePresetCases(S, AB, forever)
+    Suite, S, AB = Load(forever)
+    AB.Flyouts.Start()
+    AB.BuildStyle()
+    UtilityPresetCases(S, AB, forever)
+    KeyPresetCases(S, AB, forever)
+    if not forever then SeasonalPresetCases(S, AB) end
 end
 
 if #failures > 0 then

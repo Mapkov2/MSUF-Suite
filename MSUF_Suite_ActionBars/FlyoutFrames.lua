@@ -201,6 +201,8 @@ local function Enter(button)
     tip:SetOwner(button, "ANCHOR_RIGHT")
     if entry.kind == "toy" then
         tip:SetToyByItemID(entry.id)
+    elseif entry.keystone and AB.FlyoutSources.KeystoneStillInSlot(entry.keystone) then
+        tip:SetBagItem(entry.keystone.bag, entry.keystone.slot)
     elseif entry.item then
         tip:SetItemByID(entry.item)
     elseif entry.spell then
@@ -282,10 +284,17 @@ local function BeforeClick(button, _, down)
     if not Public(kind) or kind ~= nil then button:SetAttribute("msufFlyoutDrop", true) end
 end
 
-local function AfterClick(button)
-    if NS.InCombat() or not button:GetAttribute("msufFlyoutDrop") then return end
-    button:SetAttribute("msufFlyoutDrop", nil)
-    Receive(button)
+local function AfterClick(button, mouse, down)
+    if down or NS.InCombat() then return end
+    if button:GetAttribute("msufFlyoutDrop") then
+        button:SetAttribute("msufFlyoutDrop", nil)
+        Receive(button)
+    elseif mouse == "LeftButton" then
+        local key = button.entry and button.entry.keystone
+        if not key or not AB.FlyoutSources.KeystoneStillInSlot(key) then return end
+        local held = GetCursorInfo()
+        if Public(held) and held == nil then C_Container.PickupContainerItem(key.bag, key.slot) end
+    end
 end
 
 local function BeforeOpen(_, mouse)

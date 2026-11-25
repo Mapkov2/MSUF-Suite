@@ -31,6 +31,7 @@ Paint.lua
 NativeButtons.lua
 Flush.lua
 Events.lua
+FlyoutSources.lua
 FlyoutFrames.lua
 Flyouts.lua
 FlyoutAPI.lua

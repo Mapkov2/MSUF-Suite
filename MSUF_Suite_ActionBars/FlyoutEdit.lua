@@ -201,6 +201,32 @@ local function SavedOptions(root, flyout)
     end)
 end
 
+local function PresetOptions(root)
+    local categories = {}
+    for _, preset in ipairs(API.Presets()) do
+        local menu = root
+        if preset.category then
+            local category = preset.category
+            if not categories[category] then
+                local label = category == "dungeons" and S.Text("Dungeon teleports") or S.Text("Raid teleports")
+                categories[category] = root:CreateButton(label)
+            end
+            menu = categories[category]
+        end
+        local option = menu:CreateButton(preset.label, function()
+            if NS.InCombat() or CursorBusy() then return end
+            local id, failure = API.AddPreset(preset.key, preset.flyoutName)
+            if Report(id, failure) then Pickup(id) end
+        end)
+        if preset.description then
+            option:SetTooltip(function(tooltip)
+                tooltip:SetText(preset.label)
+                tooltip:AddLine(preset.description, .85, .85, .85, true)
+            end)
+        end
+    end
+end
+
 local function OpenList(owner, saved)
     local ok, problem = API.Ready()
     if not Report(ok, problem) or CursorBusy() then return end
@@ -211,18 +237,7 @@ local function OpenList(owner, saved)
             for _, flyout in ipairs(list) do SavedOptions(root, flyout) end
             return
         end
-        for _, preset in ipairs(API.Presets()) do
-            local label = S.Text(preset.label)
-            local option = root:CreateButton(label, function()
-                if NS.InCombat() or CursorBusy() then return end
-                local id, failure = API.AddPreset(preset.key, S.Text(preset.flyoutName))
-                if Report(id, failure) then Pickup(id) end
-            end)
-            option:SetTooltip(function(tooltip)
-                tooltip:SetText(label)
-                tooltip:AddLine(S.Text(preset.description), .85, .85, .85, true)
-            end)
-        end
+        PresetOptions(root)
     end)
 end
 

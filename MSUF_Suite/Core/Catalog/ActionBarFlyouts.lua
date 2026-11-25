@@ -35,10 +35,19 @@ function Flyouts.PositionArrow(arrow, anchor, direction)
     arrow:SetRotation(layout[4])
 end
 
--- Entry kinds. "bag" is a group the runtime fills from the bags (food: every
--- usable Food & Drink item the character carries).
-Flyouts.KINDS = { spell = true, item = true, toy = true, mount = true, macro = true, bag = true }
-Flyouts.BAGS = { food = true }
+-- Bag and spellbook entries follow the character instead of saving a snapshot.
+Flyouts.KINDS = { spell = true, item = true, toy = true, mount = true, macro = true, bag = true, spellbook = true }
+Flyouts.BAGS = { food = true, potion = true, bandage = true, keys = true, keystone = true }
+Flyouts.MAGE_BOOKS = { magePortals = { 12, 11 }, mageTeleports = { 8, 1 } }
+
+-- Blizzard's Hero's Path flyouts. Each set fits on an action bar flyout.
+-- The menu takes the expansion labels from GetFlyoutInfo at runtime.
+local DUNGEON_BOOKS = {
+    { 246, "Midnight Paths" }, { 232, "TWW Paths" }, { 227, "Dragonflight" },
+    { 220, "Shadowlands" }, { 223, "BfA Paths" }, { 224, "Legion Paths" },
+    { 96, "Draenor Paths" }, { 84, "Pandaria Paths" }, { 230, "Cataclysm" }, { 274, "Wrath Paths" },
+}
+local RAID_BOOKS = { { 242, "TWW Raids" }, { 231, "DF Raids" }, { 222, "SL Raids" } }
 
 -- WoW Forever cooked food and drinks with a food bonus, best first (nominal
 -- recovery, then item ID). Verified 2026-10-31:
@@ -63,31 +72,104 @@ local VENDOR_FOOD = {
 -- WoW Forever vendor water, best first.
 local VENDOR_DRINKS = { 8766, 1645, 1708, 1205, 1179, 159 }
 
-local function Items(ids)
-    local entries = {}
-    for i, id in ipairs(ids) do entries[i] = { kind = "item", id = id } end
+local function Entries(kind, ids, entries)
+    entries = entries or {}
+    for _, id in ipairs(ids) do entries[#entries + 1] = { kind = kind, id = id } end
     return entries
 end
 
+local function Bag(id)
+    return { { kind = "bag", id = id } }
+end
+
+local function Spellbook(id)
+    return { { kind = "spellbook", id = id } }
+end
+
 -- Presets per WoW version. flyoutName is the new flyout's name (a macro name, at
--- most MAX_NAME characters); iconItem gives the macro its icon.
-local BAG_FOOD = { { kind = "bag", id = "food" } }
+-- most MAX_NAME characters); iconItem or iconSpell gives the macro its icon.
+local BAG_FOOD = Bag("food")
+local FOREVER_RETURN = Entries("spell", { 556, 18960 }, Entries("item", { 6948 }))
+local RETAIL_RETURN = Entries("item", { 6948 })
+Entries("toy", { 110560, 140192 }, RETAIL_RETURN)
+Entries("spell", { 556, 193753, 18960, 126892, 50977, 265225, 1238686 }, RETAIL_RETURN)
+Entries("item", { 63206, 63207, 63352, 63353, 65360, 65274, 44934, 44935, 40585, 46874 }, RETAIL_RETURN)
+Entries("toy", { 54452, 64488, 142542, 162973, 165669, 168907, 172179, 184353 }, RETAIL_RETURN)
+
+-- These two Forever items are toys on Retail, alongside the newer devices.
+local FOREVER_ENGINEERING = { 18984, 18986 }
+local RETAIL_ENGINEERING = {
+    248485, 221966, 198156, 172924, 168807, 168808, 151652, 112059, 87215, 48933, 18984, 18986, 30542, 30544,
+}
+
+-- Language packs can be loaded after this catalog. Translate when a preset
+-- is described or picked up, so the current Suite language is used.
+local function Preset(preset, label, description, macroName)
+    preset.flyoutName = preset.flyoutName or macroName or label
+    function preset.Text()
+        local title = label and NS.Text(label)
+        return title, macroName and NS.Text(macroName) or title or preset.flyoutName,
+            description and NS.Text(description)
+    end
+    return preset
+end
+
+local COMMON_PRESETS = {
+    Preset({ key = "magePortals", iconSpell = 10059, class = "MAGE", entries = Spellbook("magePortals") },
+        "Mage portals", "Shows the spells you have learned."),
+    Preset({ key = "mageTeleports", iconSpell = 3561, class = "MAGE", entries = Spellbook("mageTeleports") },
+        "Mage teleports", "Shows the spells you have learned."),
+    Preset({ key = "potions", iconItem = 13446, entries = Bag("potion") },
+        "Potions", "Shows what you can use from your bags."),
+    Preset({ key = "bandages", iconItem = 14530, entries = Bag("bandage") },
+        "Bandages", "Shows what you can use from your bags."),
+}
+
 Flyouts.PRESETS = {
     forever = {
-        { key = "vendorFood", label = "Vendor food", flyoutName = "Food", iconItem = 4540, entries = Items(VENDOR_FOOD),
-          description = "Bread, fruit, meat, cheese, mushrooms and fish from vendors. Shows what you carry, best first." },
-        { key = "vendorDrinks", label = "Vendor drinks", flyoutName = "Drinks", iconItem = 159, entries = Items(VENDOR_DRINKS),
-          description = "Water from innkeepers and vendors. Shows what you carry, best first." },
-        { key = "cooking", label = "Cooking", flyoutName = "Cooking", iconItem = 2681, entries = Items(NS.ForeverCookedFood),
-          description = "Cooked food and drinks with a food bonus. Shows what you carry, best first." },
-        { key = "bagFood", label = "Food and drink in bags", flyoutName = "Bag food", iconItem = 4540, entries = BAG_FOOD,
-          description = "Every food and drink in your bags that you can use, highest level first." },
+        Preset({ key = "keys", icon = 134237, entries = Bag("keys") },
+            "Keys", "Shows keys in your bags and keyring."),
+        Preset({ key = "hearthstones", iconItem = 6948, entries = FOREVER_RETURN },
+            "Hearthstone / portals", nil, "Hearthstone"),
+        Preset({ key = "engineering", iconItem = 18984, entries = Entries("item", FOREVER_ENGINEERING) },
+            "Engineering teleports", nil, "Eng. teleports"),
+        Preset({ key = "vendorFood", iconItem = 4540, entries = Entries("item", VENDOR_FOOD) },
+            "Vendor food", "Bread, fruit, meat, cheese, mushrooms and fish from vendors. Shows what you carry, best first.", "Food"),
+        Preset({ key = "vendorDrinks", iconItem = 159, entries = Entries("item", VENDOR_DRINKS) },
+            "Vendor drinks", "Water from innkeepers and vendors. Shows what you carry, best first.", "Drinks"),
+        Preset({ key = "cooking", iconItem = 2681, entries = Entries("item", NS.ForeverCookedFood) },
+            "Cooking", "Cooked food and drinks with a food bonus. Shows what you carry, best first."),
+        Preset({ key = "bagFood", iconItem = 4540, entries = BAG_FOOD },
+            "Food and drink in bags", "Every food and drink in your bags that you can use, highest level first.", "Bag food"),
     },
     retail = {
-        { key = "bagFood", label = "Food and drink", flyoutName = "Food", iconItem = 4540, entries = BAG_FOOD,
-          description = "Every food and drink in your bags that you can use, highest level first." },
+        Preset({ key = "keystone", iconItem = 180653, entries = Bag("keystone") },
+            "Keystone", "Click to pick up the Mythic+ keystone in your bags."),
+        Preset({ key = "dungeonSeason", iconSpell = 1254400, category = "dungeons", entries = Spellbook("dungeonSeason") },
+            "Current season", "Shows the spells you have learned.", "Season portals"),
+        Preset({ key = "hearthstones", iconItem = 6948, entries = RETAIL_RETURN },
+            "Hearthstone / portals", nil, "Hearthstone"),
+        Preset({ key = "engineering", iconItem = 248485, entries = Entries("toy", RETAIL_ENGINEERING) },
+            "Engineering teleports", nil, "Eng. teleports"),
+        Preset({ key = "bagFood", iconItem = 4540, entries = BAG_FOOD },
+            "Food and drink", "Every food and drink in your bags that you can use, highest level first.", "Food"),
     },
 }
+
+for _, presets in pairs(Flyouts.PRESETS) do
+    for _, preset in ipairs(COMMON_PRESETS) do presets[#presets + 1] = preset end
+end
+
+local function AddPathPresets(books, category)
+    local presets = Flyouts.PRESETS.retail
+    for _, book in ipairs(books) do
+        local id, name = book[1], book[2]
+        presets[#presets + 1] = Preset({ key = "path" .. id, category = category, nativeBook = id,
+            flyoutName = name, entries = Spellbook(id) }, nil, "Shows the spells you have learned.")
+    end
+end
+AddPathPresets(DUNGEON_BOOKS, "dungeons")
+AddPathPresets(RAID_BOOKS, "raids")
 
 function Flyouts.Client()
     return NS.Client.isForever and "forever" or "retail"
@@ -132,6 +214,10 @@ function Flyouts.CleanEntry(entry)
     if type(entry) ~= "table" or not Flyouts.KINDS[entry.kind] then return nil end
     local kind, id = entry.kind, entry.id
     if kind == "bag" then return Flyouts.BAGS[id] and { kind = kind, id = id } or nil end
+    if kind == "spellbook" then
+        if not Flyouts.MAGE_BOOKS[id] and id ~= "dungeonSeason" and not Whole(id, 2147483647) then return nil end
+        return { kind = kind, id = id }
+    end
     if kind == "macro" then
         id = Flyouts.CleanName(id)
         return id and { kind = kind, id = id } or nil
@@ -144,6 +230,20 @@ local function SameEntry(a, b)
 end
 Flyouts.SameEntry = SameEntry
 
+function Flyouts.ExclusionField(entry)
+    if entry.kind == "bag" then return entry.id == "food" and "excludedFood" or "excludedItems" end
+    if entry.kind == "spellbook" then return "excludedSpells" end
+end
+
+local function CleanExclusions(saved)
+    if type(saved) ~= "table" then return nil end
+    local excluded = {}
+    for id, value in pairs(saved) do
+        if value == true and Whole(id, 2147483647) then excluded[id] = true end
+    end
+    return next(excluded) and excluded or nil
+end
+
 -- One flyout as saved; nil when it has no valid id or name.
 function Flyouts.CleanFlyout(flyout)
     if type(flyout) ~= "table" or not Whole(flyout.id, 999999) then return nil end
@@ -152,13 +252,9 @@ function Flyouts.CleanFlyout(flyout)
     local clean = { id = flyout.id, name = name, owned = flyout.owned ~= false, entries = {},
         icon = Whole(flyout.icon, 2147483647) and flyout.icon or nil,
         preset = type(flyout.preset) == "string" and #flyout.preset <= 32 and flyout.preset or nil }
-    if type(flyout.excludedFood) == "table" then
-        local excluded = {}
-        for id, value in pairs(flyout.excludedFood) do
-            if value == true and Whole(id, 2147483647) then excluded[id] = true end
-        end
-        if next(excluded) then clean.excludedFood = excluded end
-    end
+    clean.excludedFood = CleanExclusions(flyout.excludedFood)
+    clean.excludedItems = CleanExclusions(flyout.excludedItems)
+    clean.excludedSpells = CleanExclusions(flyout.excludedSpells)
     if type(flyout.entries) == "table" then
         for _, entry in ipairs(flyout.entries) do
             local valid = Flyouts.CleanEntry(entry)

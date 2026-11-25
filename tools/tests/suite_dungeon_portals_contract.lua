@@ -73,6 +73,8 @@ local S = { Install = function(_, m) module = m end, Public = function(v) return
 local NS = { Client = {}, IsCombatLocked = function() return combat end,
     DungeonPortalSet = { ALL = 1, SEASON = 2, CUSTOM = 3 },
     Dispatch = function(callback, ...) return callback(...) end }
+NS.Public, NS.Finite, NS.PublicText = S.Public, S.Finite, S.PublicText
+assert(loadfile(root .. "/MSUF_Suite/Core/DungeonPortalBook.lua"))("test", NS)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/DungeonPortals.lua"))("test", { NS = NS, Suite = S })
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local clock = Support.Clock()
