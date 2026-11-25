@@ -456,8 +456,10 @@ local NS = { IsSecret = issecretvalue, IsCombatLocked = Native("InCombatLockdown
     MSUFMedia = { font = "msuf.ttf" },
     -- No MSUF host here: no icon skin look, nothing paints.
     HostBridge = { PlayerAuraSkin = function() end, PaintIconSkin = function() return false end, WatchIconSkins = function() end } }
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuras.lua"))("MSUF_Suite_QualityOfLife",
-    { NS = NS, Suite = S, PlayerAuraSkins = { Yield = function() end } })
+local private = { NS = NS, Suite = S }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuraSkins.lua"))("MSUF_Suite_QualityOfLife", private)
+private.PlayerAuraSkins.Yield = function() end
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuras.lua"))("MSUF_Suite_QualityOfLife", private)
 
 local catalogNS = { Client = { isForever = false }, Text = function(text) return text end }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", catalogNS)

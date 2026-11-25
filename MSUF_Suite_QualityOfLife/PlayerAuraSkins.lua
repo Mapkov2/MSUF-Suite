@@ -66,6 +66,63 @@ local function NativeIcon(button)
     if not (IsSecret(private) or private or IsSecret(icon) or not icon or IsForbidden(icon)) then return icon end
 end
 
+local function NativeGrid(container)
+    if IsSecret(container) or not container or IsForbidden(container) then return end
+    local cache = container.currentGridLayoutInfo
+    if not IsSecret(cache) and type(cache) == "table" then return cache end
+end
+
+local OPPOSITE = { TOP = "BOTTOM", BOTTOM = "TOP", LEFT = "RIGHT", RIGHT = "LEFT" }
+
+-- The loaded BuffFrame grid anchors the icon to its slot and the timer to the
+-- opposite edge of the icon, including Edit Mode's vertical and upward layouts.
+local function NativePoints(button, region, container)
+    local cache = NativeGrid(container)
+    if not cache or IsForbidden(button) then return end
+    local icon = NativeIcon(button)
+    if not icon then return end
+    local horizontal, up, right = cache.isHorizontal, cache.addIconsToTop, cache.addIconsToRight
+    if IsSecret(horizontal) or IsSecret(up) or IsSecret(right) then return end
+    local point
+    if horizontal then point = up and "BOTTOM" or "TOP"
+    else point = right and "LEFT" or "RIGHT" end
+    if region == icon then return { { n = 5, point, button, point, 0, 0 } } end
+    local duration = button.Duration
+    if not IsSecret(duration) and region == duration then
+        return { { n = 5, point, icon, OPPOSITE[point], 0, 0 } }
+    end
+end
+
+-- Restore native geometry while keeping the layout cache on an owned receiver.
+local GRID_KEYS = { "isHorizontal", "iconStride", "iconPadding", "addIconsToRight", "addIconsToTop" }
+local function RestoreGrid(frame)
+    if IsForbidden(frame) then return end
+    local container = frame.AuraContainer
+    local cache = NativeGrid(container)
+    if not cache then return end
+    local anchor, layout = cache.anchor, cache.layout
+    if IsSecret(anchor) or IsSecret(layout) or not anchor or not layout then return end
+    -- Reuse the last native layout even while new settings are pending.
+    local proxy = { currentGridLayoutInfo = cache, iconScale = container.iconScale,
+        GetParent = function() return frame end }
+    for _, key in ipairs(GRID_KEYS) do
+        local value = cache[key]
+        if IsSecret(value) then return end
+        proxy[key] = value
+    end
+    local icons, collect = frame.auraFrames, frame.ConsolidatedBuffs
+    local include = collect and collect:ShouldShow()
+    if IsSecret(include) then return end
+    if include then
+        icons = { collect }
+        for _, button in ipairs(frame.auraFrames) do icons[#icons + 1] = button end
+    end
+    for _, button in ipairs(icons) do
+        if not button.Icon or not button.Duration or IsForbidden(button)
+            or IsForbidden(button.Icon) or IsForbidden(button.Duration) then return end
+    end
+    AuraContainerMixin.UpdateGridLayout(proxy, icons, frame.doNotAnchorDisabledFrames)
+end
 -- While a button uses the native grid, its artwork may still have secret resolved bounds.
 local function PaintNative(button, look, cache)
     if IsSecret(button) or not button or IsForbidden(button) then return end
@@ -151,6 +208,8 @@ P.PlayerAuraSkins = {
     PaintNativeRow = PaintNativeRow,
     PaintLook = PaintLook,
     SetLayers = SetLayers,
+    NativePoints = NativePoints,
+    RestoreGrid = RestoreGrid,
     Yield = function(on)
         yielded = on == true
         Apply()

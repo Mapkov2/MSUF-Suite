@@ -158,7 +158,8 @@ S.Apply = function(id)
     if S.states[id].active then module:Refresh() end
     S.states[id].editMode = S.editMode == true
 end
-P.PlayerAuraSkins = { Yield = function() end }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuraSkins.lua"))("MSUF_Suite_QualityOfLife", P)
+P.PlayerAuraSkins.Yield = function() end
 
 -- MSUF's public Edit Mode API (MSUF_EditMode_PublicAPI.lua), reduced to registration.
 local elements = {}

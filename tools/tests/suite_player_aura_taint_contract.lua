@@ -219,6 +219,11 @@ local function Run(scenario)
         icon.IsAnchoringRestricted = function() return true end
         frame.auraFrames[1].Duration.IsAnchoringRestricted = icon.IsAnchoringRestricted
     end
+    local lateDuration = frame.auraFrames[1].Duration
+    local readFont = lateDuration.GetFont
+    if scenario == "late-duration-style" then
+        lateDuration.GetFont = function() return { secret = true } end
+    end
     module:Enable()
     Check(frame.auraFrames[1].width == 52 and skins[frame.auraFrames[1]] == "taint-test-look",
         scenario .. ": custom aura layout or skin was not adopted")
@@ -264,7 +269,18 @@ local function Run(scenario)
         Native(StatusTrayManager.UpdateTrayAndBuffFrameLayout)
     end
 
-    if scenario == "direct-frame-release" or scenario == "direct-frame-adopt" or scenario == "direct-frame-refill" then
+    if scenario == "late-duration-style" then
+        Check(lateDuration.points[1][2] == icon and lateDuration.font[2] == 10,
+            "the layout wrote a timer whose font could not be restored yet")
+        lateDuration.GetFont = readFont
+        Native(frame.UpdateGridLayout, frame)
+        nativeCache = container.currentGridLayoutInfo
+        Check(lateDuration.points[1][1] == "BOTTOMLEFT" and lateDuration.font[2] == 16,
+            "a newly writable timer moved inside the icon without the Suite font")
+        module:Disable()
+        Check(lateDuration.points[1][2] == icon and lateDuration.font[2] == 10,
+            "disabling the layout left the timer's late style applied")
+    elseif scenario == "direct-frame-release" or scenario == "direct-frame-adopt" or scenario == "direct-frame-refill" then
         -- A native snap or drag can write the Edit Mode override without
         -- invoking ApplySystemAnchor. Capture it before a release or re-adopt.
         Native(frame.ClearAllPoints, frame)
@@ -580,6 +596,7 @@ Run("persistent-solver-error")
 Run("cleanup-region-error")
 Run("independent-adoption")
 Run("disable-with-unreadable-native-anchors")
+Run("late-duration-style")
 Run("disable-forbidden-saved-icon")
 assert(#failures == 0, table.concat(failures, "\n"))
 print("player aura native cache ownership and downstream damage meter paths: " .. checks .. " checks passed")

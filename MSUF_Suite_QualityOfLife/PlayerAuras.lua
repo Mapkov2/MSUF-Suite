@@ -27,7 +27,7 @@ local BUTTON = { points = true, size = true, scale = true }
 -- SetAllPoints resizes textures by default. Save their intrinsic size independently of the resolved rectangle.
 local ICON = { points = true, intrinsicSize = true }
 local TEXT = { points = true, alpha = true, text = true }
-local DURATION = { points = true, alpha = true, text = true, grid = true } -- 12.x may hide its anchors; the grid restores them
+local DURATION = { points = true, alpha = true, text = true }
 local BORDER = { size = true }
 local FRAME = { points = true }
 local CONTAINER = { points = true, size = true }
@@ -61,12 +61,22 @@ local function FillIconCorners(icon, button)
     icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT")
 end
 
-local function Snapshot(region, aspects)
+local function CapturePoints(region, state, button, container)
+    state.points = Points(region)
+    -- The native anchor can be writeable even when its resolved offsets are secret.
+    -- Keep a per-button restore plan so one unavailable slot cannot strand another.
+    if not state.points and container and NS.Safety.CanAnchor(region) then
+        state.points = P.PlayerAuraSkins.NativePoints(button, region, container)
+        if state.points then state.nativeButton, state.nativeContainer = button, container end
+    end
+end
+
+local function Snapshot(region, aspects, button, container)
     if not region or NS.Safety.IsForbidden(region) then return end
     local state = {}
     if aspects.points then
-        state.points = Points(region)
-        if not (state.points or aspects.intrinsicSize or aspects.grid and NS.Safety.CanAnchor(region)) then return end
+        CapturePoints(region, state, button, container)
+        if not (state.points or aspects.intrinsicSize) then return end
     end
     if aspects.size or aspects.intrinsicSize then
         local intrinsic = aspects.intrinsicSize == true
@@ -95,8 +105,8 @@ local function Snapshot(region, aspects)
     return state
 end
 
-local function Remember(region, aspects)
-    if not saved[region] then saved[region] = Snapshot(region, aspects) end
+local function Remember(region, aspects, button, container)
+    if not saved[region] then saved[region] = Snapshot(region, aspects, button, container) end
     return saved[region]
 end
 
@@ -110,11 +120,17 @@ local function RestoreRegion(region, state)
         saved[region] = nil
         return
     end
-    if state.points and not state.reanchored then
+    local points = state.points
+    if state.nativeContainer then
+        points = NS.Safety.CanAnchor(region)
+            and (P.PlayerAuraSkins.NativePoints(state.nativeButton, region, state.nativeContainer) or points)
+        if points and NS.Safety.IsForbidden(points[1][2]) then points = nil end
+    end
+    if points and not state.reanchored then
         local clear = region.ClearAllPointsBase or region.ClearAllPoints
         local set = region.SetPointBase or region.SetPoint
         clear(region)
-        for _, point in ipairs(state.points) do set(region, unpack(point, 1, point.n)) end
+        for _, point in ipairs(points) do set(region, unpack(point, 1, point.n)) end
     end
     Put(region, "SetSize", state.size)
     Put(region, "SetScale", state.scale)
@@ -174,17 +190,19 @@ local function Border(button, icon, c)
 end
 
 local function Font(region, c)
-    if not (region and region.SetFont) then return end
-    if not Remember(region, TEXT) then return end
+    if not saved[region] then return end
     region:SetFont(fontPath, c.fontSize, "OUTLINE")
     region:SetTextColor(1, 1, 1, 1)
     region:SetShadowColor(0, 0, 0, 1)
     region:SetShadowOffset(1, -1)
 end
 
-local function Pin(region, button, point)
+local function Pin(region, button, point, container)
     if not (region and region.SetFont) then return end
-    if not Remember(region, TEXT) then return end
+    if not saved[region] then
+        if not Remember(region, container and DURATION or TEXT, button, container) then return end
+        styled[button] = nil
+    end
     region:ClearAllPoints()
     region:SetPoint(point, button, point, point == "BOTTOMRIGHT" and -2 or 2, 1)
 end
@@ -197,7 +215,6 @@ end
 
 local function Style(button, icon, geometry)
     local c = M.config
-    styled[button] = generation
     if icon.SetTexCoord then
         -- ConsolidatedBuffs uses a sub-rectangle of an atlas, not an aura icon.
         if not (buffFrame and button == buffFrame.ConsolidatedBuffs) then
@@ -209,10 +226,11 @@ local function Style(button, icon, geometry)
     end
     NativeBorder(button.DebuffBorder, geometry)
     NativeBorder(button.TempEnchantBorder, geometry)
+    Pin(button.Count, button, "BOTTOMRIGHT")
     Font(button.Count, c)
     Font(button.Duration, c)
-    Pin(button.Count, button, "BOTTOMRIGHT")
     if saved[button.Duration] then button.Duration:SetAlpha(c.showDuration and 1 or 0) end
+    styled[button] = generation
 end
 
 local style = Style
@@ -228,9 +246,8 @@ local function Place(button, icon, slot, container, geometry, auraAnchor)
     if not saved[button] or (not auraAnchor and not saved[icon]) then
         if not icon then return end
         local original = saved[button] or Snapshot(button, BUTTON)
-        if not original or (not auraAnchor and not Remember(icon, ICON)) then return end
+        if not original or (not auraAnchor and not Remember(icon, ICON, button, container)) then return end
         saved[button] = original
-        if not auraAnchor then Remember(button.Duration, DURATION) end
     end
     local col, row = (slot - 1) % geometry.perRow, floor((slot - 1) / geometry.perRow)
     button:SetScale(1)
@@ -241,20 +258,21 @@ local function Place(button, icon, slot, container, geometry, auraAnchor)
     if auraAnchor then return true end
     local artwork = saved[icon]
     if not artwork.points and artwork.checked ~= generation then
-        artwork.points, artwork.checked = Points(icon), generation
+        CapturePoints(icon, artwork, button, container)
+        artwork.checked = generation
         if not artwork.size then
             artwork.size = Numbers(2, icon:GetWidth(true), icon:GetHeight(true))
             artwork.fill = artwork.size and icon.SetAllPoints or FillIconCorners
         end
     end
-    if artwork.points or NS.Safety.CanAnchor(icon) then
+    if artwork.points then
         icon:ClearAllPoints()
         artwork.fill(icon, button)
     elseif artwork.size then
-        -- Hidden 12.x anchors are refilled (the native grid restores them). Restricted ones: only change a size we can restore.
+        -- When we cannot restore the anchor, only override a size we can restore.
         icon:SetSize(geometry.width, geometry.height)
     end
-    Pin(button.Duration, button, "BOTTOMLEFT")
+    Pin(button.Duration, button, "BOTTOMLEFT", container)
     if styled[button] ~= generation then style(button, icon, geometry) end
     return true
 end
@@ -343,36 +361,6 @@ local function PaintNativeSkins(frame)
     if look then P.PlayerAuraSkins.PaintNativeRow(frame, look, skinned) end
 end
 
--- Restore native geometry while keeping the layout cache on an owned receiver.
-local GRID_KEYS = { "isHorizontal", "iconStride", "iconPadding", "addIconsToRight", "addIconsToTop" }
-local function RestoreGrid(frame)
-    if NS.Safety.IsForbidden(frame) or NS.Safety.IsForbidden(frame.AuraContainer) then return end
-    local container = frame.AuraContainer
-    local cache = container.currentGridLayoutInfo
-    if IsSecret(cache) or type(cache) ~= "table" then return end
-    local anchor, layout = cache.anchor, cache.layout
-    if IsSecret(anchor) or IsSecret(layout) or not anchor or not layout then return end
-    -- Reuse the last native layout even while new settings are pending.
-    local proxy = { currentGridLayoutInfo = cache, iconScale = container.iconScale,
-        GetParent = function() return frame end }
-    for _, key in ipairs(GRID_KEYS) do
-        local value = cache[key]
-        if IsSecret(value) then return end
-        proxy[key] = value
-    end
-    local icons, collect = frame.auraFrames, frame.ConsolidatedBuffs
-    local include = collect and collect:ShouldShow()
-    if IsSecret(include) then return end
-    if include then
-        icons = { collect }
-        for _, button in ipairs(frame.auraFrames) do icons[#icons + 1] = button end
-    end
-    for _, button in ipairs(icons) do
-        if not button.Icon or not button.Duration or NS.Safety.IsForbidden(button)
-            or NS.Safety.IsForbidden(button.Icon) or NS.Safety.IsForbidden(button.Duration) then return end
-    end
-    AuraContainerMixin.UpdateGridLayout(proxy, icons, frame.doNotAnchorDisabledFrames)
-end
 local function RestoreNative(frame, list)
     RestoreRegion(frame.CollapseAndExpandButton, saved[frame.CollapseAndExpandButton])
     local container, collect = frame.AuraContainer, frame.ConsolidatedBuffs
@@ -387,7 +375,8 @@ local function RollBack(frame, list)
     if list.attempts == 2 then return end
     list.restoring, list.attempts = true, (list.attempts or 0) + 1
     local restored = list.rollback == "grid" or NS.Dispatch(NS.Finish, RestoreNative, frame, list)
-    local solved = restored and NS.Dispatch(NS.Finish, RestoreGrid, frame)
+    -- A skipped grid leaves the per-region restoration in place. Retry a grid that raised.
+    local solved = restored and NS.Dispatch(NS.Finish, P.PlayerAuraSkins.RestoreGrid, frame)
     NS.Dispatch(PaintNativeSkins, frame)
     list.restoring, list.rollback = nil, nil
     if not solved then list.rollback = restored and "grid" or true end
@@ -650,10 +639,10 @@ local function FinishCleanup()
     if NS.IsCombatLocked() then return end
     if cleanup then cleanup:UnregisterEvent("PLAYER_REGEN_ENABLED") end
     NS.Dispatch(Restore)
-    for _, list in pairs(laid) do
-        list.failed, list.restoring, list.rollback = nil, nil, nil
+    for frame in pairs(laid) do
+        laid[frame] = nil
+        NS.Dispatch(P.PlayerAuraSkins.RestoreGrid, frame)
     end
-    for frame in pairs(hooked) do NS.Dispatch(RestoreGrid, frame) end
     P.PlayerAuraSkins.Yield(false)
 end
 
@@ -673,6 +662,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    if not self.active then return end
     ResolveLooks()
     Adopt()
     if NS.IsCombatLocked() then return end
