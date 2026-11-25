@@ -183,6 +183,9 @@ B.Section("battleRes", "battle_res", "Battle resurrection", {
 
 NS.SuiteCatalog.battleRes.rules.glossStrength.enableKey = "glossEnabled"
 
+local battleResAnchors = { "Default position" }
+for _, label in ipairs(NS.AnchorLabels) do battleResAnchors[#battleResAnchors + 1] = label end
+
 -- The editor and the display share the layer keys. Empty media selections
 -- inherit the original appearance, and zero dimensions follow the card.
 battleRes.layers = {
@@ -204,9 +207,18 @@ battleRes.layers = {
         B.Tooltip(B.String("iconTexture", "Icon texture path or file ID", "", 260), "Leave blank to use the spell icon."),
     } },
     { "title", "Title", { Number("titleSize", "Font size", 11, 6, 48), B.Font("titleFont", "Font") } },
-    { "count", "Charges", { Number("countSize", "Size (0 = automatic)", 0, 0, 48), B.Font("countFont", "Font") } },
-    { "maximum", "Maximum charges", { Number("maximumSize", "Font size", 12, 6, 48), B.Font("maximumFont", "Font") } },
+    { "count", "Charges", {
+        Choice("countPoint", "Anchor point", 1, battleResAnchors),
+        Number("countSize", "Size (0 = automatic)", 0, 0, 48),
+        B.Font("countFont", "Font"),
+    } },
+    { "maximum", "Maximum charges", {
+        Choice("maximumPoint", "Anchor point", 1, battleResAnchors),
+        Number("maximumSize", "Font size", 12, 6, 48),
+        B.Font("maximumFont", "Font"),
+    } },
     { "timer", "Recharge timer", {
+        Choice("timerPoint", "Anchor point", 1, battleResAnchors),
         Number("timerSize", "Timer size (percent)", 100, 40, 250),
         Bool("timerSwipe", "Cooldown swipe", true),
         B.Texture("timerTexture", "Cooldown swipe texture"),

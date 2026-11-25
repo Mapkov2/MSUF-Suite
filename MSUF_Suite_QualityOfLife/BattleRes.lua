@@ -147,14 +147,41 @@ local function PaintTexture(region, texture, color, alpha)
     end
 end
 
+local function PlaceTimer(self, point, x, y)
+    local host, c = self.host, self.config
+    local scale = (c.timerSize or 100) / 100
+    if c.textOnly then
+        if point then
+            Anchor(self.time, point, host, point, x, y)
+            Anchor(self.separator, "RIGHT", self.time, "LEFT", -2, 0)
+        else
+            local separatorX = c.fontSize * 13 / 11 + x
+            Anchor(self.separator, "LEFT", host, "LEFT", separatorX, y)
+            Anchor(self.time, "LEFT", host, "LEFT", separatorX + c.fontSize * scale, y)
+        end
+    elseif point then
+        Anchor(self.cooldown, point, self.icon, point, x / scale, y / scale)
+    else
+        Anchor(self.cooldown, "CENTER", host, "LEFT", (22 + x) / scale, y / scale)
+    end
+end
+
 local function PlaceLayer(self, key, x, y)
     local host, c = self.host, self.config
+    -- Choice 1 preserves the original placement. Explicit points follow the
+    -- icon in card mode and the display itself in text-only mode.
+    local point = POINTS[(c[key .. "Point"] or 1) - 1]
     if key == "background" or key == "border" then
         Anchor(key == "background" and self.panel or self.borderBounds, "CENTER", host, "CENTER", x, y)
     elseif key == "icon" then
         Anchor(self.icon, "LEFT", host, "LEFT", 3 + x, y)
     elseif key == "title" then
         Anchor(self.title, "TOPLEFT", host, "LEFT", 48 + x, 17 + y)
+    elseif key == "timer" then
+        PlaceTimer(self, point, x, y)
+    elseif point then
+        local relative = c.textOnly and host or self.icon
+        Anchor(self[key], point, relative, point, x, y)
     elseif key == "count" then
         if c.textOnly then Anchor(self.count, "LEFT", host, "LEFT", x, y)
         else
@@ -162,13 +189,6 @@ local function PlaceLayer(self, key, x, y)
         end
     elseif key == "maximum" then
         Anchor(self.maximum, "BOTTOMLEFT", host, "LEFT", 64 + x, -17 + y)
-    elseif c.textOnly then
-        local separatorX = c.fontSize * 13 / 11 + x
-        Anchor(self.separator, "LEFT", host, "LEFT", separatorX, y)
-        Anchor(self.time, "LEFT", host, "LEFT", separatorX + c.fontSize * (c.timerSize or 100) / 100, y)
-    else
-        local scale = (c.timerSize or 100) / 100
-        Anchor(self.cooldown, "CENTER", host, "LEFT", (22 + x) / scale, y / scale)
     end
 end
 

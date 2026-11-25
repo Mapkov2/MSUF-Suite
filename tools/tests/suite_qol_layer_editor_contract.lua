@@ -292,6 +292,16 @@ Check(controllers[1].released and hidden[1] == stage, "release must hand the sta
 local battleUI = { stage = New(), targets = {}, width = 300, height = 190, ctx = {}, Paint = function() end }
 P.BattleResEditor.BuildRail(battleUI, New(), -20, 300)
 Check(battleUI.selectedLayer == "background" and not battleUI.offsetBar, "battle resurrection must retain its existing editor")
+local battleRules = {}
+P.BattleResEditor.BuildProperties(battleUI, New(), -100, 300, "suite_qualityOfLife", "section", function(entries)
+    for _, entry in ipairs(entries) do battleRules[entry.rule.key] = entry.rule end
+end)
+for _, key in ipairs({ "count", "maximum", "timer" }) do
+    local rule = battleRules[key .. "Point"]
+    Check(rule and rule.section == "battle_res_" .. key and rule.default == 1
+        and rule.choices[1] == "Default position" and #rule.choices == #catalogNS.AnchorLabels + 1
+        and rule.choices[6] == "Center", key .. " must offer the default and nine anchor points in its layer settings")
+end
 local battleHost = New()
 local battleView = { panel = New(battleHost), borderBounds = New(battleHost), icon = New(battleHost), title = New(battleHost),
     count = New(battleHost), maximum = New(battleHost), cooldown = New(battleHost), time = New(battleHost) }

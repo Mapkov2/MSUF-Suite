@@ -162,6 +162,12 @@ local function Event(name)
     callbacks[name](M, name)
 end
 
+local function AssertPoint(region, point, relative, relativePoint, x, y)
+    local anchor = region.point
+    assert(anchor[1] == point and anchor[2] == relative and anchor[3] == relativePoint
+        and anchor[4] == x and anchor[5] == y, "incorrect " .. point .. " anchor or offset")
+end
+
 charges = { currentCharges = 1, maxCharges = 1, isActive = false, display = "1" }
 M:Enable()
 M:RegisterMovers() -- the controller registers movers after Enable
@@ -365,6 +371,15 @@ previewConfig.font, previewConfig.fontSize = "PreviewWarm.ttf", 20
 assert(S.DrawBattleResPreview(parent, previewConfig, nil, viewport) == previewHost)
 AssertFont(preview, "PreviewWarm.ttf", 20)
 assert(not preview.durationBinding and #nativeBindings == bindingCount, "preview allocated a live duration binding")
+previewConfig.countPoint, previewConfig.timerPoint = 6, 10 -- Center, Bottom right
+previewConfig.timerX, previewConfig.timerY = -4, 3
+S.DrawBattleResPreview(parent, previewConfig, nil, viewport)
+AssertPoint(preview.count, "CENTER", preview.host, "CENTER", 0, 0)
+AssertPoint(preview.time, "BOTTOMRIGHT", preview.host, "BOTTOMRIGHT", -4, 3)
+AssertPoint(preview.separator, "RIGHT", preview.time, "LEFT", -2, 0)
+S.MoveBattleResPreviewLayer(preview, "timer", 8, 6)
+AssertPoint(preview.time, "BOTTOMRIGHT", preview.host, "BOTTOMRIGHT", 8, 6)
+AssertPoint(preview.separator, "RIGHT", preview.time, "LEFT", -2, 0)
 
 -- Independent geometry and saved media must reach the live display without
 -- touching charge reads except when the corresponding element is enabled.
@@ -387,11 +402,28 @@ assert(displayReads == beforeDisplay and durationReads == beforeDuration)
 c.backgroundOpacity, c.backgroundTexture, c.backgroundWidth, c.backgroundHeight = 38, "grain", 180, 32
 c.borderShown, c.borderTexture, c.borderOpacity = true, "line", 42
 c.timerShown, c.timerTexture, c.timerSize = true, "swipe", 130
+c.countX, c.countY, c.timerX, c.timerY = 7, -3, 13, -26
 M:Refresh()
 assert(M.panel.shown and M.panel.texture == "grain" and M.panel.alpha == .38
     and M.panel.width == 180 and M.panel.height == 32)
 assert(M.edges[1].shown and M.edges[1].texture == "line" and M.edges[1].alpha == .42)
 assert(M.cooldown.shown and M.cooldown.swipeTexture == "swipe" and M.cooldown.scale == 1.3)
+AssertPoint(M.count, "BOTTOMLEFT", M.host, "LEFT", 55, -22)
+AssertPoint(M.cooldown, "CENTER", M.host, "LEFT", 35 / 1.3, -26 / 1.3)
+c.countPoint, c.maximumPoint, c.timerPoint = 6, 4, 9 -- Center, Top right, Bottom
+M:Refresh()
+AssertPoint(M.count, "CENTER", M.icon, "CENTER", 7, -3)
+AssertPoint(M.maximum, "TOPRIGHT", M.icon, "TOPRIGHT", 0, 0)
+AssertPoint(M.cooldown, "BOTTOM", M.icon, "BOTTOM", 10, -20)
+S.DrawBattleResPreview(parent, c, nil, viewport)
+AssertPoint(preview.count, "CENTER", preview.icon, "CENTER", 7, -3)
+AssertPoint(preview.cooldown, "BOTTOM", preview.icon, "BOTTOM", 10, -20)
+S.MoveBattleResPreviewLayer(preview, "timer", 26, -13)
+AssertPoint(preview.cooldown, "BOTTOM", preview.icon, "BOTTOM", 20, -10)
+c.countPoint, c.maximumPoint, c.timerPoint = 1, 1, 1
+M:Refresh()
+AssertPoint(M.count, "BOTTOMLEFT", M.host, "LEFT", 55, -22)
+AssertPoint(M.cooldown, "CENTER", M.host, "LEFT", 35 / 1.3, -26 / 1.3)
 assert(M.cooldown.drawSwipe == true and M.cooldown.drawBling == true, "the swipe must stay on by default")
 -- Swipe off keeps the recharge as countdown numbers only and drops the custom swipe art.
 c.timerSwipe = false
