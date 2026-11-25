@@ -112,16 +112,31 @@ local function ColorObject(existing, r, g, b, a)
     return CreateColor(r, g, b, a)
 end
 
-function Surface.PrepareFill(_, spec) return { ResolveFill(spec) } end
+-- Cards and comparison backings share a handful of fill specifications.
+-- Keep the last resolved plan per spec; a palette edit creates a new plan
+-- so regions still showing the old colors retain their original endpoints.
+local fillPlans = {}
+function Surface.PrepareFill(_, spec)
+    local r, g, b, a, tr, tg, tb, ta, gradient, direction = ResolveFill(spec)
+    local plan = fillPlans[spec]
+    if plan and plan[1] == r and plan[2] == g and plan[3] == b and plan[4] == a
+        and plan[5] == tr and plan[6] == tg and plan[7] == tb and plan[8] == ta
+        and plan[9] == gradient and plan[10] == direction then return plan end
+    plan = { r, g, b, a, tr, tg, tb, ta, gradient, direction }
+    fillPlans[spec] = plan
+    return plan
+end
 
 function Surface.PaintFill(texture, _, state, _, prepared)
     local r, g, b, a, tr, tg, tb, ta, gradient, direction = unpack(prepared)
     if gradient or state.gradientFrom then
         texture:SetVertexColor(1, 1, 1, 1)
-        state.gradientFrom = ColorObject(state.gradientFrom, r, g, b, a)
+        prepared.from = prepared.from or ColorObject(state.gradientFrom, r, g, b, a)
+        state.gradientFrom = prepared.from
         local finish = state.gradientFrom
         if gradient then
-            state.gradientTo = ColorObject(state.gradientTo, tr, tg, tb, ta)
+            prepared.to = prepared.to or ColorObject(state.gradientTo, tr, tg, tb, ta)
+            state.gradientTo = prepared.to
             finish = state.gradientTo
         end
         texture:SetGradient(direction, state.gradientFrom, finish)

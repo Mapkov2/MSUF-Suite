@@ -82,7 +82,10 @@ local function Frame(parent)
     function frame:HookScript(name, script) self:SetScript(name, script) end
     function frame:RegisterEvent(event) self.events[event] = true end
     function frame:RegisterUnitEvent(event, unit) self.events[event] = unit end
-    function frame:UnregisterAllEvents() self.events = {} end
+    function frame:UnregisterAllEvents()
+        assert(next(self.events), "tooltip cleared an event frame without any registrations")
+        self.events = {}
+    end
     frames[#frames + 1] = frame
     return frame
 end

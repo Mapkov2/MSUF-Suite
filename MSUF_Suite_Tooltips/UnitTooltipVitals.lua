@@ -347,7 +347,7 @@ local function Watch(view, unit)
     end
     if view.unit ~= unit or view.watchHealth ~= config.mode or view.watchPower ~= config.power then
         local frame = view.event
-        frame:UnregisterAllEvents()
+        if view.unit then frame:UnregisterAllEvents() end
         if config.mode == "show" then
             frame:RegisterUnitEvent("UNIT_HEALTH", unit)
             frame:RegisterUnitEvent("UNIT_MAXHEALTH", unit)

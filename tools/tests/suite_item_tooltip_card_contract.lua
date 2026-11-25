@@ -682,6 +682,25 @@ assert(card:IsShown() and reads == beforeRestrictedItem + 2 and card.textures[1]
 GameTooltip.GetItem = savedGetItem
 combat = false
 Flush()
+do
+    local surfaceNS = { SuiteCore = function() return {} end }
+    assert(loadfile(root .. "/MSUF_Suite_Tooltips/Surface.lua"))("MSUF_Suite_Tooltips", surfaceNS)
+    local surface, colors, alpha = surfaceNS.Surface, 0, 1
+    CreateColor = function(r, g, b, a)
+        colors = colors + 1
+        return { r = r, g = g, b = b, a = a }
+    end
+    local spec = { resolveFill = function()
+        return 1, 0, 0, alpha, 0, 1, 0, 1, true, "VERTICAL"
+    end }
+    local texture = { SetVertexColor = Noop, SetGradient = function(self, _, from) self.from = from end }
+    for i = 1, 8 do surface.PaintFill(texture, nil, {}, nil, surface.PrepareFill(nil, spec)) end
+    assert(colors == 2, "identical tooltip gradients allocated a new color pair per region")
+    local first = texture.from
+    alpha = .4
+    surface.PaintFill(texture, nil, {}, nil, surface.PrepareFill(nil, spec))
+    assert(texture.from.a == .4 and first.a == 1, "changing a tooltip gradient altered an existing color or lost the update")
+end
 print("item tooltip cards: public quest and object data, palettes, restricted fallback and comparisons passed")
 
 -- Independent vital styling follows the tooltip profile across layout presets.
