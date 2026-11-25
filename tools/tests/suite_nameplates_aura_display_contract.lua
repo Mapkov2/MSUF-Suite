@@ -333,6 +333,7 @@ do
         AfterAuraBuild = function(owner, callback) log[#log + 1] = "afterbuild"; buildWaits[owner] = callback end,
         CancelAuraBuild = function(owner) buildWaits[owner] = nil end,
         RealAurasOnly = function() return true end }, Safety = { IsForbidden = function() return false end } }
+    NS.IsSecret = function() return false end
     NS.Public = function() return true end
     NS.Finite = function(value) return type(value) == "number" end
     NS.Text = function(s) return s end

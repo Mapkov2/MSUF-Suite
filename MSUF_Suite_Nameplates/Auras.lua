@@ -1,5 +1,6 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
+local IsSecret = NS.IsSecret
 -- Click-through for Blizzard's nameplate aura buttons. A protected button
 -- refuses SetMouseClickEnabled in combat with ADDON_ACTION_BLOCKED, which is
 -- not a Lua error, so such a change waits for the end of combat.
@@ -190,7 +191,7 @@ local function UpdateDuplicates(auras, state)
         return
     end
     local pool = auras.auraItemFramePool
-    if not S.Public(pool) or not pool then return end
+    if IsSecret(pool) or not pool then return end
     if not private.AuraFilter.Visible(state) then
         if next(hidden) then RestoreIcons(auras) end
         return
@@ -353,7 +354,7 @@ local function ApplyPool(pool, auras, policy)
         return ApplyMixedPool(pool, auras, policy)
     end
     local count = pool:GetNumActive()
-    if not S.Public(count) or type(count) ~= "number" then count = nil end
+    if IsSecret(count) or type(count) ~= "number" then count = nil end
     local peak = peaks[pool]
     if count and peak and count <= peak then return end
     local done = count ~= nil
@@ -374,7 +375,7 @@ local function AfterList(auras, lane)
     -- Both clients refresh Debuffs, Buffs and then Crowd Control, even when
     -- that last lane is hidden. Observe the completed pool without hooking
     -- RefreshAuras itself or looking at the aura list or UNIT_AURA payload.
-    if not S.Public(lane) or lane ~= lastLanes[auras] then return end
+    if IsSecret(lane) or lane ~= lastLanes[auras] then return end
     local state = duplicateStates[auras]
     if state then
         if AuraDataReadable() then

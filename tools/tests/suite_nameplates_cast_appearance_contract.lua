@@ -1038,12 +1038,12 @@ do
     local forward = Plate(NativeStyle())
     local forwardPanel = forward.created[6]
     assert(forwardPanel.shown and forwardPanel.width == 160 and forward.Spark.height == 9 * 2.1)
-    Repeat("native, secret width hint", forward, 9, 1, 0, secret, 9)
+    Repeat("native, secret width hint", forward, 7, 1, 0, secret, 9)
     Repeat("native, nonnumeric width hint", forward, 9, 1, 0, "160", 9)
     Repeat("native, secret height hint", forward, 10, 1, 0, 160, secret)
     Repeat("native, no size hints", forward, 9, 1, 0)
     combat = true
-    Repeat("native, combat, secret hints", forward, 11, 1, 0, secret, secret)
+    Repeat("native, combat, secret hints", forward, 9, 1, 0, secret, secret)
     combat = false
     assert(forwardPanel.shown and forwardPanel.width == 160 and forward.Spark.height == 9 * 2.1)
 
@@ -1114,7 +1114,7 @@ do
     forward.width = 156
     Call(forward, secret, 12)
     assert(not forwardPanel.shown, "a recovered width displayed the panel of a hidden spell name")
-    Repeat("native, hidden spell name, secret hints", forward, 7, 1, 0, secret, secret)
+    Repeat("native, hidden spell name, secret hints", forward, 0, 0, 0, secret, secret)
     forward:SetNameTextShown(true)
     assert(forwardPanel.shown and forwardPanel.width == 156)
 
@@ -2185,6 +2185,36 @@ do
     SetVisible(veiled, true)
     assert(Observed(veiled) and veiled.observer.attached == 1)
     combat = false
+end
+
+do
+    -- Native layout can resolve another size notification inside GetWidth.
+    NamePlateSetupOptions.spellNameInsideCastBar = false
+    local frame = Cast()
+    frame.classicStyleCastBar = false
+    assert(appearance.Apply(frame, { artwork = true }))
+    local panel = frame.created[2]
+    assert(panel.shown and panel.width == 160)
+    local GetWidth = frame.GetWidth
+    local nested, settled = false, 175
+    function frame:GetWidth()
+        if not nested then
+            nested = true
+            self.hooks.OnSizeChanged(self, secret, 9)
+            self.width = settled
+        end
+        return GetWidth(self)
+    end
+    local writes = meter.writes
+    frame.width = 175
+    frame.hooks.OnSizeChanged(frame, secret, 9)
+    assert(panel.width == 175 and meter.writes - writes == 1, "a nested size callback wrote the same width twice")
+
+    -- A public change hint can settle back at the original width after the
+    -- nested callback already painted a different one.
+    writes, nested, frame.width = meter.writes, false, 185
+    frame.hooks.OnSizeChanged(frame, 185, 9)
+    assert(panel.width == 175 and meter.writes - writes == 2, "a nested size callback left a stale panel width")
 end
 
 print("Nameplate Castbar inherited outline, artwork, spark, reverse fill, interrupt effects and release passed")

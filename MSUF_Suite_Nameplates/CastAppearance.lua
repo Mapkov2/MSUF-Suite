@@ -14,9 +14,10 @@ local UNREADABLE = {}
 
 local function Writable(region)
     if not NS.Public(region) or not region or NS.Safety.IsForbidden(region) then return false end
-    if not region.CanBeAccessedInContext then return true end
-    local allowed = region:CanBeAccessedInContext()
-    return NS.Public(allowed) and allowed == true
+    local canAccess = region.CanBeAccessedInContext
+    if not canAccess then return true end
+    local allowed = canAccess(region)
+    return Public(allowed) and allowed == true
 end
 
 local function Mutable(cast)
@@ -71,7 +72,7 @@ end
 local function PaintArtwork(cast, state, settings)
     local art, enabled = state.art, settings and settings.artwork == true
     -- The cast width this paint is complete for, false when it used none.
-    -- OnSizeChanged repeats a paint that left it open.
+    -- The size observer repeats a paint that left it open.
     state.artFit = nil
     if not enabled then
         if art then
@@ -115,17 +116,6 @@ local function PaintArtwork(cast, state, settings)
         end
     end
     art.name:SetShown(showName == true)
-    state.artFit = width
-end
-
--- The panel has the cast's width, which no anchor can express. The width is
--- the cast's current one, public and positive.
-local function ResizeArtwork(state, width)
-    local art = state.art
-    if art.width ~= width then
-        art.name:SetWidth(width)
-        art.width = width
-    end
     state.artFit = width
 end
 
@@ -390,6 +380,14 @@ local function SyncArtwork(cast)
     if state.observeOwed then Reobserve(cast, state) end
 end
 
+-- The width observer of the artwork. The native castbar never carries a size
+-- script of this file: a child of this file covers the cast, so its size is
+-- the cast's, and its OnSizeChanged is set only while the cast is effectively
+-- visible. A cast without a live cast, or on a hidden plate, runs no Lua on a
+-- resize and has no width read. The child is created with the first visible
+-- frame of a style with the name panel, or by the Apply of a protected cast.
+local owners = setmetatable({}, { __mode = "k" })
+
 -- The size callback serves the artwork's name panel alone: its width is the
 -- cast's, which is anchor-derived and moves with the plate. The spark has no
 -- part in it: a style without that panel has no observer, and with one the
@@ -402,10 +400,11 @@ end
 -- withholds gets one complete paint, which leaves UNREADABLE, and then only
 -- that read until it is public again. A denied callback without two public
 -- dimensions opens the fit for the next one.
-local function OnSizeChanged(cast, width, height)
-    local state = Public(cast) and states[cast]
-    local settings = state and state.settings
-    if not HasNamePanel(settings) then return end
+local function OnObservedSize(child, width, height)
+    local cast = owners[child]
+    local state = cast and states[cast]
+    -- An already queued callback must also respect a release or detach.
+    if not state or not state.observing then return end
     local artFit = state.artFit
     if artFit == false then return end
     local hinted = Finite(width) and Finite(height)
@@ -417,37 +416,25 @@ local function OnSizeChanged(cast, width, height)
     end
     -- An open fit, and a panel that was collapsed, take a complete paint.
     if artFit == nil or hinted and artFit ~= UNREADABLE and artFit <= 0 then
-        return PaintArtwork(cast, state, settings)
+        return PaintArtwork(cast, state, state.settings)
     end
     width = cast:GetWidth()
     local current = Finite(width)
     if current ~= (artFit ~= UNREADABLE) then
-        PaintArtwork(cast, state, settings)
-    elseif current then
-        -- Only a shown panel has a width to follow.
-        if artFit <= 0 or width <= 0 then
-            if width ~= artFit then PaintArtwork(cast, state, settings) end
-        elseif hinted or width ~= artFit then
-            ResizeArtwork(state, width)
-        end
+        return PaintArtwork(cast, state, state.settings)
     end
-end
-
--- The width observer of the artwork. The native castbar never carries a size
--- script of this file: a child of this file covers the cast, so its size is
--- the cast's, and its OnSizeChanged is set only while the cast is effectively
--- visible. A cast without a live cast, or on a hidden plate, runs no Lua on a
--- resize and has no width read. The child is created with the first visible
--- frame of a style with the name panel, or by the Apply of a protected cast.
-local owners = setmetatable({}, { __mode = "k" })
-
--- A callback that is already under way when the observer is detached or the
--- cast released, or one of a script the client would not let this file
--- remove, stops here, before any geometry.
-local function OnObservedSize(child, width, height)
-    local cast = owners[child]
-    local state = cast and states[cast]
-    if state and state.observing then return OnSizeChanged(cast, width, height) end
+    if not current or width == artFit and not hinted then return end
+    if artFit <= 0 or width <= 0 then
+        if width ~= artFit then return PaintArtwork(cast, state, state.settings) end
+        return
+    end
+    -- Resolving the width can deliver another size callback first.
+    local art = state.art
+    if art.width ~= width then
+        art.name:SetWidth(width)
+        art.width = width
+    end
+    state.artFit = width
 end
 
 -- Settles state.seen: the client's public answer, else the event delivered
@@ -512,7 +499,7 @@ local function Observe(cast, state)
 end
 
 Reobserve = function(cast, state)
-    if Observe(cast, state) then OnSizeChanged(cast) end
+    if Observe(cast, state) then OnObservedSize(state.observer) end
 end
 
 local function OnCastShown(cast)
