@@ -41,8 +41,9 @@ end
 -- Only discovery retains these public identities. Protection and visibility
 -- are read again on every pass; no native/secret result is cached for painting.
 local function Fields(record, keys, values, remember)
+    local frame = record.frame
     for index = 1, #keys do
-        local value = Safety.Field(record.frame, keys[index])
+        local value = frame[keys[index]]
         if not Safety.Public(value) then return false end
         if remember then values[index] = value elseif values[index] ~= value then return false end
     end
@@ -51,8 +52,11 @@ end
 
 local function Bodies(record, remember, owner)
     if not Fields(record, bodyKeys, record.bodies, remember) then return false end
+    if not remember and not record.hasBodies then return true end
+    if remember then record.hasBodies = false end
     for index = 1, #bodyKeys do
         local body = record.bodies[index]
+        if remember and body ~= nil then record.hasBodies = true end
         local kind = body ~= nil and body ~= record.frame and Safe(body) or nil
         if remember then record.bodyKinds[index] = kind elseif record.bodyKinds[index] ~= kind then return false end
         if kind then

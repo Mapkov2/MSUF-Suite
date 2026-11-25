@@ -199,12 +199,9 @@ if os.getenv("SUITE_MENU_DISCOVERY_MEASURE") then return end
 Check((calls.discovery or 0) == 0, "unchanged tree repeated discovery")
 Check(native.IsForbidden <= 219 * 110, "resize repeated safety checks")
 Check(native.GetChildren == 219 * 25, "resize skipped exact child identity verification")
--- Runtime instruction cap is filled from the immutable old-code comparison.
--- Immutable old code: 12,828,300 VM instructions including widget spies.
--- Accepted trade: ~23.2 KiB additional cold storage for this 25-node snapshot,
--- bounded to 480 nodes/edges, plus one error boundary per scan. Warm allocations
--- are unchanged in the two-run allocation probe. Native calls count separately.
-Check(instructions < 6000000, "resize instruction budget regressed")
+-- 5,688,900 before the field/body pass optimization, 4,725,100 after,
+-- including widget spies. Child identity and native safety checks are counted above.
+Check(instructions < 5250000, "resize instruction budget regressed")
 
 -- Reopening the same Blizzard panel and re-adopting its current owner still
 -- verify child identities without running the provider-discovery walk again.
@@ -220,7 +217,8 @@ print(string.format("warm-menu-budget: discovery=%d forbidden=%d children=%d vm~
     calls.discovery or 0, native.IsForbidden or 0, native.GetChildren or 0, instructions))
 Check((calls.discovery or 0) == 0, "unchanged show/re-track repeated discovery")
 Check(native.GetChildren == 120 * 25, "warm show/re-track missed a child identity check")
-Check(instructions < 3400000, "warm show/re-track instruction budget regressed")
+-- 3,136,900 before the same optimization, 2,608,800 after.
+Check(instructions < 2950000, "warm show/re-track instruction budget regressed")
 
 -- Equal count, different identities: discover the replacement including deeper children.
 local replacement, list = Frame(), Frame()
